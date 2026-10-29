@@ -177,6 +177,7 @@
  "GET /api/racks": "AFFAFFFU",
  "GET /api/rate-cards": "AFFAFFFU",
  "GET /api/rate-cards/[id]": "AFFAFFFU",
+ "GET /api/reports/yearly": "AAFAFFFU",
  "GET /api/reservations": "AAAAFFFU",
  "GET /api/reservations/[id]": "AAAAFFFU",
  "GET /api/reservations/[id]/late-checkout": "AAAAFFFU",

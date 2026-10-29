@@ -83,6 +83,10 @@ export const NAV: NavGroup[] = [
     { key: 'showcase', label: 'Owner Showcase', icon: 'presentation', path: '/performance/showcase', area: 'performance', fresh: true },
     { key: 'showcaseControl', label: 'Showcase control', icon: 'sliders-horizontal', path: '/performance/showcase-control', area: 'performance', badge: 'showcase', fresh: true },
   ] },
+  // Reports sit under Home (owner, 29 Oct 2026). Their figures are Finance's, so the permission area stays Finance.
+  { label: 'REPORTS', workspace: 'rental', phone: false, items: [
+    { key: 'yearlyReport', label: 'Yearly unit report', icon: 'file-spreadsheet', path: '/reports/yearly', area: 'finance', fresh: true },
+  ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
     { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'reservations' },
     { key: 'bookings', label: 'Reservations', icon: 'book-open', path: '/reservations/bookings', area: 'reservations' },
