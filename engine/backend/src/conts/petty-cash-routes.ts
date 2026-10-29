@@ -3,8 +3,8 @@
 // behind the Ledger guard (view). Ledger edit (scm.payment_voucher.write) checks and rejects receipts and records cash;
 // Ledger full (scm.payment_voucher.approve) sets floats, overrides and bank details, writes off and tops up.
 //   GET   /accounting/petty-cash/floats                    overview: one row per float, with totals
-//   POST  /accounting/petty-cash/floats                    { departmentId, keeperUserId, floatSen, warnPct? }
-//   PATCH /accounting/petty-cash/floats/:id                { keeperUserId?, floatSen?, warnPct?, active? }
+//   POST  /accounting/petty-cash/floats                    { departmentId, keeperUserId, accountCode, floatSen, warnPct? }
+//   PATCH /accounting/petty-cash/floats/:id                { keeperUserId?, accountCode?, floatSen?, warnPct?, active? }
 //   GET   /accounting/petty-cash/floats/:id/receipts?month=YYYY-MM
 //   POST  /accounting/petty-cash/floats/:id/top-up         { bankAccountCode }  -> a draft voucher to the keeper
 //   POST  /accounting/petty-cash/floats/:id/returned       { amountSen, date, note? }
@@ -17,6 +17,8 @@
 //   POST  /accounting/petty-cash/receipts/:id/voucher      { bankAccountCode }  -> a draft voucher to the person
 //   GET|PUT /accounting/petty-cash/overrides               [{ userId, floatId }]
 //   GET|PUT /accounting/staff-bank/:userId                 { bankName, accountNo, accountName }  (Ledger full)
+// Each float books to its own cash-in-hand account (e.g. Maintenance -> 315-0101 PETTY CASH - AMIN; chew 29 Oct 2026):
+// a receipt credits it, a write-off credits it, a top-up debits it.
 // Every status change claims the row first (a conditional update that must change exactly one row), so a double click
 // or two people at once cannot check, repay or write off a receipt twice.
 import { hasHouzsPerm } from '../scm/lib/houzs-perms';
@@ -80,7 +82,7 @@ export async function receiptAccountProblem(sb: any, companyId: number, codes: s
   if (error) return 'The chart of accounts could not be read.';
   const found = new Map(((accts ?? []) as Array<{ account_code: string; account_name: string; is_active: boolean | null; acc_money: boolean | null; special_type: string | null }>).map(a => [a.account_code, a]));
   const headers = new Set(((kids ?? []) as Array<{ parent_code: string }>).map(k => k.parent_code));
-  const reserved = new Set([...CONTROL_ROLES.map(r => roles[r]), roles.PETTY_CASH, roles.CASH, roles.BANK_DEFAULT, roles.CUSTOMER_DEPOSITS]);
+  const reserved = new Set([...CONTROL_ROLES.map(r => roles[r]), roles.CASH, roles.BANK_DEFAULT, roles.CUSTOMER_DEPOSITS]);
   for (const code of wanted) {
     const a = found.get(code);
     if (!a) return `${code} is not in the chart of accounts.`;
@@ -89,6 +91,50 @@ export async function receiptAccountProblem(sb: any, companyId: number, codes: s
     if (a.acc_money === true || reserved.has(code) || a.special_type === 'SDC' || a.special_type === 'SCC') return `${code} ${a.account_name} cannot be used on a receipt: choose an expense account.`;
   }
   return null;
+}
+
+type ChartRow = { account_code: string; account_name: string; account_type?: string; acc_money: boolean | null; special_type: string | null; parent_code: string | null; is_active: boolean | null };
+/** A cash-in-hand account a float may book to: active, not a header, money of kind SCH (cash in hand, as the chart
+ *  marks its PETTY CASH accounts), and not the cash drawer's own. */
+const isFloatAccount = (a: ChartRow, headers: Set<string>, cashCode: string) =>
+  a.is_active === true && !headers.has(a.account_code) && a.acc_money === true && a.special_type === 'SCH' && a.account_code !== cashCode;
+
+/** Null when `code` may be this float's account, else the refusal. */
+async function floatAccountProblem(sb: any, companyId: number, code: string, floatId: string | null): Promise<{ status: 409 | 422; body: Record<string, string> } | null> {
+  const [{ data: acct }, { data: kids }, roles, live] = await Promise.all([
+    sb.from('accounts').select('account_code, account_name, acc_money, special_type, parent_code, is_active').eq('company_id', companyId).eq('account_code', code).maybeSingle(),
+    sb.from('accounts').select('account_code, parent_code').eq('company_id', companyId).eq('parent_code', code),
+    resolveRoles(sb, companyId),
+    floatsOf(sb, companyId, { activeOnly: true }),
+  ]);
+  const headers = new Set(((kids ?? []) as Array<{ parent_code: string }>).map(k => k.parent_code));
+  if (!acct || !isFloatAccount(acct as ChartRow, headers, roles.CASH)) {
+    return { status: 422, body: { error: 'account_not_petty_cash', message: `${code} is not a petty cash account: choose a cash-in-hand account such as PETTY CASH - (keeper).` } };
+  }
+  if (live.some(f => f.id !== floatId && f.account_code === code)) return { status: 409, body: { error: 'account_has_float', message: `${code} ${(acct as ChartRow).account_name} already belongs to another float.` } };
+  return null;
+}
+
+/** Whether anything is booked to a float's account yet: a checked or written-off receipt's journal, or a top-up voucher. */
+async function floatBooked(sb: any, companyId: number, floatId: string): Promise<boolean> {
+  const [{ data: rc }, { data: pv }] = await Promise.all([
+    sb.from('staff_receipts').select('id, je_id, writeoff_je_id').eq('company_id', companyId).eq('float_id', floatId),
+    sb.from('payment_vouchers').select('id, status').eq('company_id', companyId).eq('petty_cash_float_id', floatId),
+  ]);
+  return ((rc ?? []) as Array<{ je_id: string | null; writeoff_je_id: string | null }>).some(r => r.je_id || r.writeoff_je_id)
+    || ((pv ?? []) as Array<{ status: string }>).some(v => v.status !== 'CANCELLED');
+}
+
+/** The account a float books to, by the receipt's float. */
+async function floatAccountOf(sb: any, floatId: string): Promise<string | null> {
+  const { data } = await sb.from('petty_cash_floats').select('id, account_code').eq('id', floatId).maybeSingle();
+  return (data as { account_code: string | null } | null)?.account_code ?? null;
+}
+
+async function accountNames(sb: any, companyId: number, codes: string[]): Promise<Map<string, string>> {
+  if (codes.length === 0) return new Map();
+  const { data } = await sb.from('accounts').select('account_code, account_name').eq('company_id', companyId).in('account_code', codes);
+  return new Map(((data ?? []) as Array<{ account_code: string; account_name: string }>).map(a => [a.account_code, a.account_name]));
 }
 
 async function loadFloat(c: Ctx, companyId: number): Promise<FloatRow | null> {
@@ -132,8 +178,9 @@ export const listFloatsHandler = async (c: Ctx): Promise<Response> => {
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
   const floats = await floatsOf(sb, co.companyId);
-  const [bal, names, depts, waiting] = await Promise.all([
+  const [bal, names, depts, accts, waiting] = await Promise.all([
     floatBalances(sb, floats), staffNames(sb), departmentNames(sb),
+    accountNames(sb, co.companyId, floats.map(f => f.account_code).filter((x): x is string => !!x)),
     allRows<{ float_id: string; amount_sen: number }>((f, t) => sb.from('staff_receipts').select('id, float_id, amount_sen').eq('company_id', co.companyId).eq('status', 'HANDED_IN').not('float_id', 'is', null).order('id').range(f, t)),
   ]);
   const rows = floats.map(f => {
@@ -141,7 +188,8 @@ export const listFloatsHandler = async (c: Ctx): Promise<Response> => {
     const b = bal.get(f.id)!;
     return {
       id: f.id, departmentId: f.department_id, departmentName: depts.get(f.department_id) ?? '', keeperUserId: f.keeper_user_id,
-      keeperName: names.get(f.keeper_user_id) ?? '', floatSen: Number(f.float_sen), warnPct: Number(f.warn_pct), active: f.active,
+      keeperName: names.get(f.keeper_user_id) ?? '', accountCode: f.account_code, accountName: f.account_code ? accts.get(f.account_code) ?? '' : null,
+      floatSen: Number(f.float_sen), warnPct: Number(f.warn_pct), active: f.active,
       balanceSen: b.balanceSen, low: b.low, lastTopUpOn: b.lastTopUpOn, topUpRequested: f.topup_requested_at != null,
       waitingCheckSen: w.reduce((n, r) => n + Number(r.amount_sen), 0), waitingCheckCount: w.length,
     };
@@ -157,19 +205,22 @@ export const createFloatHandler = async (c: Ctx): Promise<Response> => {
   const b = await bodyOf(c);
   const departmentId = String(b?.departmentId ?? '').trim();
   const keeperUserId = String(b?.keeperUserId ?? '').trim();
+  const accountCode = String(b?.accountCode ?? '').trim();
   const floatSen = sen(b?.floatSen);
   const warnPct = b?.warnPct == null ? 20 : Number(b.warnPct);
-  if (!departmentId || !keeperUserId || floatSen == null || !(Number.isInteger(warnPct) && warnPct >= 0 && warnPct <= 100)) {
-    return c.json({ error: 'validation', message: 'Pick the department and the keeper, and enter the float.' }, 422);
+  if (!departmentId || !keeperUserId || !accountCode || floatSen == null || !(Number.isInteger(warnPct) && warnPct >= 0 && warnPct <= 100)) {
+    return c.json({ error: 'validation', message: 'Pick the department, the keeper and the petty cash account, and enter the float.' }, 422);
   }
   const sb = c.get('supabase');
+  const bad = await floatAccountProblem(sb, co.companyId, accountCode, null);
+  if (bad) return c.json(bad.body, bad.status);
   const live = await floatsOf(sb, co.companyId, { activeOnly: true });
   if (live.some(f => f.department_id === departmentId)) return c.json({ error: 'department_has_float', message: 'This department already has a petty cash float.' }, 409);
   if (live.some(f => f.keeper_user_id === keeperUserId)) return c.json({ error: 'keeper_has_float', message: 'This person already keeps a petty cash float.' }, 409);
   const { data, error } = await sb.from('petty_cash_floats').insert({
-    company_id: co.companyId, department_id: departmentId, keeper_user_id: keeperUserId, float_sen: floatSen, warn_pct: warnPct, active: true, created_by: who(c),
+    company_id: co.companyId, department_id: departmentId, keeper_user_id: keeperUserId, account_code: accountCode, float_sen: floatSen, warn_pct: warnPct, active: true, created_by: who(c),
   }).select('*').single();
-  if (isUniqueClash(error)) return c.json({ error: 'department_has_float', message: 'This department or person already has a petty cash float.' }, 409);
+  if (isUniqueClash(error)) return c.json({ error: 'department_has_float', message: 'This department, person or account already has a petty cash float.' }, 409);
   if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
   return c.json({ float: data }, 201);
 };
@@ -192,8 +243,22 @@ export const updateFloatHandler = async (c: Ctx): Promise<Response> => {
     if (live.some(x => x.id !== f.id && x.keeper_user_id === k)) return c.json({ error: 'keeper_has_float', message: 'This person already keeps a petty cash float.' }, 409);
     patch.keeper_user_id = k;
   }
+  if (b.accountCode !== undefined) {
+    const code = String(b.accountCode ?? '').trim();
+    if (!code) return c.json({ error: 'validation', message: 'Choose the petty cash account.' }, 422);
+    if (code !== f.account_code) {
+      const sb = c.get('supabase');
+      const bad = await floatAccountProblem(sb, co.companyId, code, f.id);
+      if (bad) return c.json(bad.body, bad.status);
+      /* What is booked stays on the old account; moving the float would split its money across two. */
+      if (f.account_code && (await floatBooked(sb, co.companyId, f.id))) {
+        return c.json({ error: 'account_in_use', message: `Receipts or top-ups are already booked to ${f.account_code}. Move its balance with a journal entry and start a new float instead.` }, 409);
+      }
+      patch.account_code = code;
+    }
+  }
   const { data, error } = await c.get('supabase').from('petty_cash_floats').update(patch).eq('id', f.id).select('*').single();
-  if (isUniqueClash(error)) return c.json({ error: 'keeper_has_float', message: 'This department or person already has a petty cash float.' }, 409);
+  if (isUniqueClash(error)) return c.json({ error: 'keeper_has_float', message: 'This department, person or account already has a petty cash float.' }, 409);
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
   return c.json({ float: data });
 };
@@ -206,9 +271,10 @@ export const floatReceiptsHandler = async (c: Ctx): Promise<Response> => {
   const sb = c.get('supabase');
   const rows = (await receiptsWhere(sb, co.companyId, f.id, c.req.query('month')))
     .sort((a, b) => String(b.spend_date).localeCompare(String(a.spend_date)) || b.receipt_no.localeCompare(a.receipt_no));
-  const [bal, names, depts] = await Promise.all([floatBalances(sb, [f]), staffNames(sb), departmentNames(sb)]);
+  const [bal, names, depts, accts] = await Promise.all([floatBalances(sb, [f]), staffNames(sb), departmentNames(sb), accountNames(sb, co.companyId, f.account_code ? [f.account_code] : [])]);
   return c.json({
-    float: { id: f.id, departmentName: depts.get(f.department_id) ?? '', keeperName: names.get(f.keeper_user_id) ?? '', floatSen: Number(f.float_sen), warnPct: Number(f.warn_pct), active: f.active, ...bal.get(f.id) },
+    float: { id: f.id, departmentName: depts.get(f.department_id) ?? '', keeperName: names.get(f.keeper_user_id) ?? '',
+      accountCode: f.account_code, accountName: f.account_code ? accts.get(f.account_code) ?? '' : null, floatSen: Number(f.float_sen), warnPct: Number(f.warn_pct), active: f.active, ...bal.get(f.id) },
     receipts: await receiptViews(sb, co.companyId, rows),
   });
 };
@@ -294,7 +360,7 @@ async function checkOne(c: Ctx, companyId: number, it: Record<string, unknown>):
     }
   }
   if (r.float_id) {
-    const je = await postReceiptJournal(sb, companyId, { receiptNo: r.receipt_no, spendDate: String(r.spend_date).slice(0, 10),
+    const je = await postReceiptJournal(sb, companyId, { receiptNo: r.receipt_no, spendDate: String(r.spend_date).slice(0, 10), floatAccountCode: await floatAccountOf(sb, r.float_id),
       lines: lines.map(l => ({ accountCode: String(l.account_code), amountSen: Number(l.amount_sen), department: l.department, description: l.description })) });
     if (!je.ok) {
       await undo();
@@ -367,7 +433,7 @@ export const writeOffReceiptHandler = async (c: Ctx): Promise<Response> => {
   if (!(await claim(sb, r.id, 'REJECTED', { status: 'WRITTEN_OFF', writeoff_account_code: accountCode }))) {
     return c.json({ error: 'not_rejected', message: 'This receipt is no longer waiting to be repaid or written off.' }, 409);
   }
-  const je = await postWriteOffJournal(sb, co.companyId, { receiptNo: r.receipt_no, amountSen: Number(r.amount_sen), accountCode, date });
+  const je = await postWriteOffJournal(sb, co.companyId, { receiptNo: r.receipt_no, amountSen: Number(r.amount_sen), accountCode, date, floatAccountCode: await floatAccountOf(sb, r.float_id) });
   if (!je.ok) {
     await claim(sb, r.id, 'WRITTEN_OFF', { status: 'REJECTED', writeoff_account_code: null });
     return c.json({ error: 'journal_failed', message: (je as { reason?: string }).reason ?? je.status }, 409);
@@ -402,8 +468,7 @@ export const topUpHandler = async (c: Ctx): Promise<Response> => {
   /* One top-up at a time: a draft already raised for this float is finished or cancelled first. */
   const { data: open } = await sb.from('payment_vouchers').select('id, pv_number, status').eq('company_id', co.companyId).eq('petty_cash_float_id', f.id).eq('status', 'DRAFT');
   if ((open ?? []).length > 0) return c.json({ error: 'top_up_open', message: `Voucher ${(open as Array<{ pv_number: string }>)[0].pv_number} already tops this float up.` }, 409);
-  const roles = await resolveRoles(sb, co.companyId);
-  if (roles.PETTY_CASH === roles.CASH) return c.json({ error: 'petty_cash_not_set', message: 'Name the petty cash account in Ledger setup first.' }, 409);
+  if (!f.account_code) return c.json({ error: 'float_account_missing', message: "Choose this float's petty cash account first." }, 409);
   const bal = (await floatBalances(sb, [f])).get(f.id)!;
   const amount = topUpAmount(Number(f.float_sen), bal.balanceSen);
   if (amount <= 0) return c.json({ error: 'nothing_to_top_up', message: 'The float is already at its amount.' }, 409);
@@ -414,7 +479,7 @@ export const topUpHandler = async (c: Ctx): Promise<Response> => {
   const nos = checked.map(r => r.receipt_no).sort();
   const made = await claimsDeps.createVoucher(c, {
     payeeName: names.get(f.keeper_user_id) || 'Petty cash keeper', creditAccountCode: bank, purpose: 'OTHER',
-    lines: [{ debitAccountCode: roles.PETTY_CASH, amountSen: amount, description: `Petty cash top-up — ${depts.get(f.department_id) ?? 'department'}`, department: 'shared' }],
+    lines: [{ debitAccountCode: f.account_code, amountSen: amount, description: `Petty cash top-up — ${depts.get(f.department_id) ?? 'department'}`, department: 'shared' }],
     notes: nos.length ? `Top-up for receipts ${nos.join(', ')}` : 'Petty cash float',
   });
   if (!made.ok) return c.json(made.body, made.status as 400);
@@ -530,29 +595,32 @@ export const putStaffBankHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ ok: true });
 };
 
-/** What finance's petty cash screens pick from: departments and staff (Property OS), banks to pay from, and the
- *  accounts a receipt or a write-off may go to (never money or a control account). */
+/** What finance's petty cash screens pick from: departments and staff (Property OS), the cash-in-hand accounts a float
+ *  may book to (with the float already on each), banks to pay from (never a float's own account), and the accounts a
+ *  receipt or a write-off may go to (never money or a control account). */
 export const optionsHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
-  const [{ data: depts }, { data: staff }, accts, roles] = await Promise.all([
+  const [{ data: depts }, { data: staff }, accts, roles, live] = await Promise.all([
     sb.schema('public').from('conts_departments').select('id, name, kind, side'),
     sb.schema('public').from('conts_staff').select('id, full_name, department_id, active'),
     allRows<{ account_code: string; account_name: string; account_type: string; acc_money: boolean | null; special_type: string | null; parent_code: string | null; is_active: boolean | null }>((f, t) =>
       sb.from('accounts').select('account_code, account_name, account_type, acc_money, special_type, parent_code, is_active').eq('company_id', co.companyId).order('account_code').range(f, t)),
     resolveRoles(sb, co.companyId),
+    floatsOf(sb, co.companyId, { activeOnly: true }),
   ]);
   const active = accts.filter(a => a.is_active === true);
-  const headers = new Set(accts.map(a => a.parent_code).filter(Boolean));
-  const reserved = new Set([...CONTROL_ROLES.map(r => roles[r]), roles.PETTY_CASH, roles.CASH, roles.BANK_DEFAULT, roles.CUSTOMER_DEPOSITS]);
+  const headers = new Set(accts.map(a => a.parent_code).filter((p): p is string => !!p));
+  const reserved = new Set([...CONTROL_ROLES.map(r => roles[r]), roles.CASH, roles.BANK_DEFAULT, roles.CUSTOMER_DEPOSITS]);
+  const floatOn = new Map(live.filter(f => f.account_code).map(f => [String(f.account_code), f.id]));
   const costable = active.filter(a => !headers.has(a.account_code) && a.acc_money !== true && !a.special_type && !reserved.has(a.account_code));
   return c.json({
     departments: ((depts ?? []) as Array<{ id: string; name: string; kind: string; side: string }>).map(d => ({ id: d.id, name: d.name, kind: d.kind, side: d.side })).sort((a, b) => a.name.localeCompare(b.name)),
     staff: ((staff ?? []) as Array<{ id: string; full_name: string; department_id: string | null; active: boolean }>).filter(s => s.active).map(s => ({ id: s.id, name: s.full_name, departmentId: s.department_id })).sort((a, b) => a.name.localeCompare(b.name)),
-    banks: active.filter(a => a.acc_money === true && a.account_code !== roles.PETTY_CASH).map(a => ({ code: a.account_code, name: a.account_name })),
+    floatAccounts: accts.filter(a => isFloatAccount(a, headers, roles.CASH)).map(a => ({ code: a.account_code, name: a.account_name, floatId: floatOn.get(a.account_code) ?? null })),
+    banks: active.filter(a => a.acc_money === true && !floatOn.has(a.account_code)).map(a => ({ code: a.account_code, name: a.account_name })),
     expenseAccounts: costable.filter(a => a.account_type === 'EXPENSE').map(a => ({ code: a.account_code, name: a.account_name })),
     writeOffAccounts: costable.map(a => ({ code: a.account_code, name: a.account_name })),
-    pettyCashAccountSet: roles.PETTY_CASH !== roles.CASH,
   });
 };

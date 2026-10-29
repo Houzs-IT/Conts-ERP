@@ -11,7 +11,8 @@ export type PettyOptions = {
   banks: { code: string; name: string }[];
   expenseAccounts: { code: string; name: string }[];
   writeOffAccounts: { code: string; name: string }[];
-  pettyCashAccountSet: boolean;
+  /** Cash-in-hand accounts a float may book to, with the active float already on each (null: free). */
+  floatAccounts: { code: string; name: string; floatId: string | null }[];
 };
 export const usePettyOptions = () => useQuery({
   queryKey: ["petty-options"], queryFn: () => authedFetch<PettyOptions>("/accounting/petty-cash/options"), staleTime: 120_000,

@@ -401,9 +401,7 @@ async function putRole(c: any, role: AccountRole): Promise<Response> {
      what comes next lands on the new one. Said once, with the balance, before it happens (Conts, spec 3.4). */
   const roleCodes = await resolveRoles(sb, co.companyId);
   const current = roleCodes[role];
-  /* Petty cash still on its fallback (the cash drawer's account) has nothing of its own to move (Conts). */
-  const firstPettyCash = role === 'PETTY_CASH' && current === roleCodes.CASH;
-  if (current !== code && body.confirm !== true && OPEN_BALANCE_ROLES.includes(role) && !firstPettyCash) {
+  if (current !== code && body.confirm !== true && OPEN_BALANCE_ROLES.includes(role)) {
     const { data: lines, error: lErr } = await paginateAll((from, to) => sb.from('v_gl_entries')
       .select('debit_sen, credit_sen, reversed, reversed_by_je').eq('company_id', co.companyId).eq('account_code', current)
       .order('line_id').range(from, to));

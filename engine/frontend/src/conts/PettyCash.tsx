@@ -58,9 +58,16 @@ export function PettyCash() {
         .map((s) => ({ value: s.id, label: s.name, detail: o.departments.find((d) => d.id === s.departmentId)?.name })),
     });
     if (!keeper) return;
+    const free = o.floatAccounts.filter((a) => !a.floatId);
+    if (free.length === 0) { setNote("Every petty cash account already has a float. Add one to the chart first, e.g. PETTY CASH - (keeper)."); return; }
+    const account = await choose({
+      title: "Which account is this float booked to?", body: "Receipts paid from the float come off this account; a top-up goes into it.",
+      options: free.map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })),
+    });
+    if (!account) return;
     const amount = await prompt({ title: "How much is the float?", placeholder: "RM, e.g. 1000", confirmLabel: "Set the float", validate: (v) => (!ringgitToSen(v) ? "Enter an amount in RM, more than 0." : null) });
     if (amount == null) return;
-    await run(`${pettyPath}/floats`, { departmentId: dept, keeperUserId: keeper, floatSen: ringgitToSen(amount) });
+    await run(`${pettyPath}/floats`, { departmentId: dept, keeperUserId: keeper, accountCode: account, floatSen: ringgitToSen(amount) });
   };
 
   const totals = floats.data?.totals;
@@ -68,6 +75,7 @@ export function PettyCash() {
   const columns = useMemo<Column<FloatRow>[]>(() => [
     { key: "dept", label: "Department", render: (f) => <Link className="font-semibold underline" to={`/scm/petty-cash/${f.id}`}>{f.departmentName || "—"}</Link>, getValue: (f) => f.departmentName },
     { key: "keeper", label: "Kept by", render: (f) => f.keeperName, getValue: (f) => f.keeperName },
+    { key: "account", label: "Account", render: (f) => (f.accountCode ? `${f.accountCode} ${f.accountName ?? ""}`.trim() : <span className="text-err">Not chosen</span>), getValue: (f) => f.accountCode ?? "" },
     { key: "float", label: "Float", align: "right", render: (f) => <Money sen={f.floatSen} />, getValue: (f) => f.floatSen },
     {
       key: "balance", label: "Balance", align: "right", getValue: (f) => f.balanceSen,
@@ -87,9 +95,9 @@ export function PettyCash() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <PageHeader eyebrow="Finance" title="Petty cash" description="One float per department. Receipts handed in come off the balance at once; a top-up brings the float back to its amount."
         actions={full ? <Button disabled={!opts.data} onClick={() => void newFloat()}>New float</Button> : undefined} />
-      {opts.data && !opts.data.pettyCashAccountSet && (
+      {live.some((f) => !f.accountCode) && (
         <div role="note" className="rounded border border-warning-text/30 bg-warning-bg px-3 py-2 text-sm text-warning-text">
-          The petty cash account is not named yet. Name it under Ledger setup → Posting rules → Petty cash; until then checked receipts are not booked and no top-up can be made.
+          {live.filter((f) => !f.accountCode).map((f) => f.departmentName || "A float").join(", ")} has no petty cash account: its receipts cannot be checked and it cannot be topped up. Open the float → Change float → The account.
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
