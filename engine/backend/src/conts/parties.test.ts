@@ -133,14 +133,25 @@ describe('the control a party posts to', () => {
     expect(await debtorControl(sb, CO, '301-M001')).toEqual({ ok: true, control: '301-0000' });
   });
 
-  test('an unknown or empty debtor code falls back to the AR rule', async () => {
-    const { debtorControl, rolesForDebtor } = await import('./parties');
-    const { DEFAULT_ROLE_CODES } = await import('../acc/rules');
-    const sb = fakeSb({ debtors: [] });
+  test('an unknown or empty debtor code has no control, and its posting is refused — never guessed onto the AR rule', async () => {
+    /* chew, 29 Oct 2026: 不知道就别乱记账，等 finance 处理. */
+    const { debtorControl, resolveDebtorRoles } = await import('./parties');
+    const sb = fakeSb({ debtors: [], acc_account_roles: [] });
     expect(await debtorControl(sb, CO, '301-M999')).toEqual({ ok: true, control: null });
     expect(await debtorControl(sb, CO, null)).toEqual({ ok: true, control: null });
-    expect(rolesForDebtor(DEFAULT_ROLE_CODES, null).AR).toBe(DEFAULT_ROLE_CODES.AR);
-    expect(rolesForDebtor(DEFAULT_ROLE_CODES, '302-0000').AR).toBe('302-0000');
+    const unknown = await resolveDebtorRoles(sb, CO, '301-M999');
+    expect(unknown).toMatchObject({ ok: false, noAccount: true });
+    expect((unknown as { error: string }).error).toContain('Customer 301-M999 has no account');
+    const none = await resolveDebtorRoles(sb, CO, '  ');
+    expect(none).toMatchObject({ ok: false, noAccount: true });
+    expect((none as { error: string }).error).toContain('names no customer');
+  });
+
+  test("a customer with a control posts AR to that control", async () => {
+    const { resolveDebtorRoles } = await import('./parties');
+    const sb = fakeSb({ debtors: [{ id: 'd1', company_id: CO, code: '302-M001', name: 'MS LEE', control_account: '302-0000', is_active: true }], acc_account_roles: [] });
+    const r = await resolveDebtorRoles(sb, CO, '302-M001');
+    expect(r.ok && r.roles.AR).toBe('302-0000');
   });
 
   test('a read that fails is not read as "no control"', async () => {
@@ -206,11 +217,12 @@ describe('opening a debtor for a new order', () => {
     expect(sb.tables.debtors).toHaveLength(1);
   });
 
-  test('a kind with no control row opens under the AR rule', async () => {
+  test('a kind with no control row opens no debtor — finance chooses the account, never the AR rule (chew, 29 Oct 2026)', async () => {
     const { ensureDebtor } = await import('./parties');
     const sb = fakeSb({ acc_debtor_control_map: MAP.map((r) => ({ ...r })), acc_account_roles: [], debtors: [] });
     const r = await ensureDebtor(sb, CO, { name: 'HOOKKA', phone: null, customerId: null, orderKind: 'STANDARD' });
-    expect(r).toEqual({ ok: true, code: '300-H001', created: true });
+    expect(r).toEqual({ ok: true, code: null, created: false });
+    expect(sb.tables.debtors).toHaveLength(0);
   });
 
   test('the same customer on a job of the other kind gets a debtor of its own under that control (chew, 24 Oct 2026)', async () => {
@@ -224,8 +236,8 @@ describe('opening a debtor for a new order', () => {
   test('a walk-in with no phone is not attached to another customer of the same name', async () => {
     const { ensureDebtor } = await import('./parties');
     const sb = fakeSb({ acc_debtor_control_map: MAP.map((r) => ({ ...r })), acc_account_roles: [], debtors: [{ id: 'd1', company_id: CO, code: '301-M001', name: 'MR TAN', control_account: '301-0000', customer_id: null, phone: null, is_active: true }] });
-    const r = await ensureDebtor(sb, CO, { name: 'MR TAN', phone: null, customerId: 'c-7', orderKind: 'STANDARD' });
-    expect(r).toEqual({ ok: true, code: '300-M001', created: true });
+    const r = await ensureDebtor(sb, CO, { name: 'MR TAN', phone: null, customerId: 'c-7', orderKind: 'RENOVATION' });
+    expect(r).toEqual({ ok: true, code: '301-M002', created: true });
   });
 
   test('a name and phone match takes on the customer; one already tied to another customer is not it', async () => {
@@ -312,6 +324,14 @@ describe('opening a debtor inside a renovation transaction', () => {
     const { ensureDebtorSql } = await import('./parties');
     const db = fakeDb([{ code: '301-M001', name: 'MR TAN', phone: null, customer_id: null }], { RENOVATION: '301-0000' });
     expect(await ensureDebtorSql(db, CO, { name: 'MR TAN', phone: null, customerId: 'c-7', orderKind: 'RENOVATION' })).toBe('301-M002');
+  });
+
+  test('a kind with no control row opens no debtor — never the AR rule', async () => {
+    const { ensureDebtorSql } = await import('./parties');
+    const db = fakeDb([], { RENOVATION: '301-0000' });
+    expect(await ensureDebtorSql(db, CO, { name: 'HOOKKA', phone: null, customerId: 'c-7', orderKind: 'STANDARD' })).toBeNull();
+    expect(db.debtors).toHaveLength(0);
+    expect(db.sent.some((s) => /acc_account_roles|insert/.test(s))).toBe(false);
   });
 });
 

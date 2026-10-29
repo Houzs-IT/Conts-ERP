@@ -28,6 +28,8 @@ type World = {
   binds?: Row[];
   jes?: Row[];
   jeLines?: Row[];
+  /** scm.debtors — the customer's own account. One with none is never guessed onto the AR rule (chew, 29 Oct 2026). */
+  debtors?: Row[];
   /** columns the query planner must not find — drives a 42703 on that read. */
   missing?: Record<string, string[]>;
 };
@@ -37,9 +39,12 @@ const BINDS: Row[] = [
   { company_id: 1, group_code: 'MATTRESS', sales_account: '500-0001', purchase_account: '601-0001' },
 ];
 
-const world = ({ invoices, items, binds = BINDS, jes = [], jeLines = [], missing = {} }: World = {}) =>
+const DEBTORS: Row[] = [{ company_id: 1, code: 'C-001', control_account: '300-0000' }];
+
+const world = ({ invoices, items, binds = BINDS, jes = [], jeLines = [], debtors = DEBTORS, missing = {} }: World = {}) =>
   fakeSb(
     {
+      debtors,
       sales_invoice_items: items ?? [
         { id: 'l-1', sales_invoice_id: 'si-1', item_group: 'sofa', line_total_sen: 388800 },
       ],
@@ -157,6 +162,16 @@ describe('postSiRevenue — booking the revenue once', () => {
     const out = await postSiRevenue(sb, INV);
     expect(out).toMatchObject({ ok: true, status: 'posted' });
     expect(siJes(sb)).toHaveLength(2);
+  });
+
+  it('a customer with no account is NOT posted, and the reason names the customer — never guessed onto the AR rule', async () => {
+    /* chew, 29 Oct 2026: 不知道就别乱记账，等 finance 处理. The invoice stays unposted until finance sets the account. */
+    const sb = world({ debtors: [] });
+    const out = await postSiRevenue(sb, INV);
+    expect(out).toMatchObject({ ok: false, status: 'post_failed' });
+    expect(String((out as { reason?: string }).reason)).toContain('Customer C-001 has no account');
+    expect(sb.tables.journal_entries).toHaveLength(0);
+    expect(sb.tables.journal_entry_lines).toHaveLength(0);
   });
 
   it('refuses a zero-total invoice rather than booking an empty entry', async () => {

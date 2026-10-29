@@ -18,6 +18,10 @@ const CHART: Row[] = ['300-0000', '500-0000', '320-0000', '310-0010', '326-0000'
    code the business may or may not keep. */
 const SO: Row = { doc_no: 'SO-2608-001', company_id: 1, debtor_name: 'Ah Meng', phone: '0123', customer_id: 'cust-1', debtor_code: null };
 
+/* Every customer here has an account of its own (scm.debtors): one with none is
+   never guessed onto the AR rule (chew, 29 Oct 2026), so the posting is refused. */
+const DEBTOR = (code: string): Row => ({ company_id: 1, code, control_account: DEFAULT_ROLE_CODES.AR });
+
 const PAY = (over: Partial<Row> = {}): Row => ({
   id: 'pay-1',
   so_doc_no: 'SO-2608-001',
@@ -36,6 +40,7 @@ const world = (over: { pays?: Row[]; jes?: Row[]; acquirers?: Row[] } = {}) =>
     acc_acquirers: over.acquirers ?? [
       { company_id: 1, code: 'MBB', display_name: 'MBB', transit_account_code: '888-0000', is_active: true },
     ],
+    debtors: [DEBTOR('cust-1')],
     mfg_sales_orders: [SO],
     mfg_sales_order_payments: over.pays ?? [PAY()],
     journal_entries: over.jes ?? [],
@@ -58,7 +63,7 @@ describe('postSoPayment — the money finally reaches the books', () => {
 
   it('a debtor code, when the business keeps one, is the party code; a blank one falls back to the customer id', async () => {
     const coded = fakeSb({
-      accounts: CHART, acc_account_roles: [], acc_acquirers: [],
+      accounts: CHART, acc_account_roles: [], acc_acquirers: [], debtors: [DEBTOR('300-C001')],
       mfg_sales_orders: [{ ...SO, debtor_code: '300-C001' }],
       mfg_sales_order_payments: [PAY({ method: 'cash' })], journal_entries: [], journal_entry_lines: [],
     });
@@ -66,7 +71,7 @@ describe('postSoPayment — the money finally reaches the books', () => {
     expect(coded.tables.journal_entry_lines[1]).toMatchObject({ party_code: '300-C001', party_name: 'Ah Meng' });
 
     const blank = fakeSb({
-      accounts: CHART, acc_account_roles: [], acc_acquirers: [],
+      accounts: CHART, acc_account_roles: [], acc_acquirers: [], debtors: [DEBTOR('cust-1')],
       mfg_sales_orders: [{ ...SO, debtor_code: '  ' }],
       mfg_sales_order_payments: [PAY({ method: 'cash' })], journal_entries: [], journal_entry_lines: [],
     });
@@ -93,6 +98,15 @@ describe('postSoPayment — the money finally reaches the books', () => {
     const sb = world();
     const out = await postSoPayment(sb, PAY({ method: 'imported' }) as never);
     expect(out).toMatchObject({ ok: true, status: 'skipped_imported' });
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+
+  it('a customer with no account is refused by name and books nothing — never guessed onto the AR rule', async () => {
+    const sb = world();
+    sb.tables.debtors = [];
+    const out = await postSoPayment(sb, PAY() as never);
+    expect(out).toMatchObject({ ok: false, status: 'post_failed' });
+    expect(String((out as { reason?: string }).reason)).toContain('Customer cust-1 has no account');
     expect(sb.tables.journal_entries).toHaveLength(0);
   });
 
@@ -142,7 +156,7 @@ describe('reverseSoPayment — a deleted payment leaves no live money behind', (
 describe('postSiPayment — the invoice-side twin', () => {
   const SI: Row = { id: 'si-1', invoice_number: 'HC-SI-2608-001', company_id: 1, debtor_code: 'C1', debtor_name: 'Ah Meng', migrated_no_stock: false };
   const siWorld = (si: Row = SI) => fakeSb({
-    accounts: CHART, acc_account_roles: [], acc_acquirers: [],
+    accounts: CHART, acc_account_roles: [], acc_acquirers: [], debtors: [DEBTOR('C1')],
     sales_invoices: [si], journal_entries: [], journal_entry_lines: [],
   });
   const SIPAY: Row = { id: 'sp-1', sales_invoice_id: 'si-1', paid_at: '2026-08-10', method: 'cash', merchant_provider: null, amount_sen: 1000, company_id: 1 };
@@ -357,7 +371,7 @@ describe('payments dated before the ledger start (Conts)', () => {
 
   it('an invoice payment before the start is a skip', async () => {
     const sb = started([]);
-    sb.tables.sales_invoices = [{ id: 'si-1', invoice_number: 'SI-1', company_id: 1, debtor_code: null, debtor_name: 'A' }];
+    sb.tables.sales_invoices = [{ id: 'si-1', invoice_number: 'SI-1', company_id: 1, debtor_code: 'cust-1', debtor_name: 'A' }];
     const out = await postSiPayment(sb, { id: 'sp-1', sales_invoice_id: 'si-1', paid_at: '2026-11-02', method: 'cash', merchant_provider: null, amount_sen: 100, company_id: 1 });
     expect(out).toEqual({ ok: true, status: 'skipped_before_ledger_start' });
   });

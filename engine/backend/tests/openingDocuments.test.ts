@@ -45,7 +45,10 @@ describe('opening documents post nothing themselves', () => {
 
 describe('opening documents settle as usual', () => {
   test('a payment on an opening sales invoice posts Dr bank Cr AR and lowers the debtor ageing', async () => {
-    const sb = fakeSb({ accounts: CHART, acc_account_roles: [], acc_acquirers: [], sales_invoices: [{ ...OPENING_SI }], journal_entries: [], journal_entry_lines: [] });
+    const sb = fakeSb({
+      accounts: CHART, acc_account_roles: [], acc_acquirers: [], sales_invoices: [{ ...OPENING_SI }], journal_entries: [], journal_entry_lines: [],
+      debtors: [{ company_id: CO, code: 'C1', name: 'Ah Meng', control_account: '300-0000', is_active: true }],
+    });
     const out = await postSiPayment(sb, { id: 'sp-1', sales_invoice_id: 'si-o1', paid_at: '2026-12-05', method: 'cash', merchant_provider: null, amount_sen: 20_000, company_id: CO } as never);
     expect(out).toMatchObject({ ok: true, status: 'posted' });
     const lines = sb.tables.journal_entry_lines;
