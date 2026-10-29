@@ -65,9 +65,15 @@ export function PettyCash() {
       options: free.map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })),
     });
     if (!account) return;
-    const amount = await prompt({ title: "How much is the float?", placeholder: "RM, e.g. 1000", confirmLabel: "Set the float", validate: (v) => (!ringgitToSen(v) ? "Enter an amount in RM, more than 0." : null) });
+    const amount = await prompt({ title: "How much is the float?", placeholder: "RM, e.g. 1000", confirmLabel: "Next", validate: (v) => (!ringgitToSen(v) ? "Enter an amount in RM, more than 0." : null) });
     if (amount == null) return;
-    await run(`${pettyPath}/floats`, { departmentId: dept, keeperUserId: keeper, accountCode: account, floatSen: ringgitToSen(amount) });
+    /* A float that already exists outside the ERP starts from the cash counted in the keeper's hands (chew 29 Oct 2026). */
+    const opening = await prompt({
+      title: "Cash the keeper holds now", body: "For a float that is already running: count the cash in hand. Leave it at 0 for a new float paid out by voucher.",
+      defaultValue: "0", placeholder: "RM", confirmLabel: "Set the float", validate: (v) => (ringgitToSen(v || "0") == null ? "Enter an amount in RM, or 0." : null),
+    });
+    if (opening == null) return;
+    await run(`${pettyPath}/floats`, { departmentId: dept, keeperUserId: keeper, accountCode: account, floatSen: ringgitToSen(amount), openingSen: ringgitToSen(opening || "0") });
   };
 
   const totals = floats.data?.totals;

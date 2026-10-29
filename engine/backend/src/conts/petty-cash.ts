@@ -6,10 +6,11 @@ export type ReceiptStatus = 'HANDED_IN' | 'CHECKED' | 'TOPPED_UP' | 'PAID_BACK' 
 export type LineDepartment = 'rental' | 'supply' | 'shared';
 export interface FloatEvent { kind: 'PAID_IN' | 'RETURNED' | 'REPAID'; amountSen: number }
 
-/** Money paid to the keeper, less every receipt on the float (a replaced one is counted through its replacement),
- *  plus repayments of rejected receipts, less cash returned to finance. Below zero is the keeper's own money. */
-export function floatBalance(events: FloatEvent[], receipts: { amountSen: number; status: ReceiptStatus }[]): number {
-  let sen = 0;
+/** The cash the keeper held when the float started on the ERP, plus money paid to the keeper, less every receipt on
+ *  the float (a replaced one is counted through its replacement), plus repayments of rejected receipts, less cash
+ *  returned to finance. Below zero is the keeper's own money. */
+export function floatBalance(events: FloatEvent[], receipts: { amountSen: number; status: ReceiptStatus }[], openingSen = 0): number {
+  let sen = openingSen;
   for (const e of events) sen += e.kind === 'RETURNED' ? -e.amountSen : e.amountSen;
   for (const r of receipts) if (r.status !== 'REPLACED') sen -= r.amountSen;
   return sen;

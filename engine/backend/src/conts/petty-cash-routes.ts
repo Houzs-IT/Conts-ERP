@@ -3,8 +3,8 @@
 // behind the Ledger guard (view). Ledger edit (scm.payment_voucher.write) checks and rejects receipts and records cash;
 // Ledger full (scm.payment_voucher.approve) sets floats, overrides and bank details, writes off and tops up.
 //   GET   /accounting/petty-cash/floats                    overview: one row per float, with totals
-//   POST  /accounting/petty-cash/floats                    { departmentId, keeperUserId, accountCode, floatSen, warnPct? }
-//   PATCH /accounting/petty-cash/floats/:id                { keeperUserId?, accountCode?, floatSen?, warnPct?, active? }
+//   POST  /accounting/petty-cash/floats                    { departmentId, keeperUserId, accountCode, floatSen, warnPct?, openingSen?, openingOn? }
+//   PATCH /accounting/petty-cash/floats/:id                { keeperUserId?, accountCode?, floatSen?, warnPct?, active?, openingSen?, openingOn? }
 //   GET   /accounting/petty-cash/floats/:id/receipts?month=YYYY-MM
 //   POST  /accounting/petty-cash/floats/:id/top-up         { bankAccountCode }  -> a draft voucher to the keeper
 //   POST  /accounting/petty-cash/floats/:id/returned       { amountSen, date, note? }
@@ -140,6 +140,16 @@ async function isFloatAccountCode(sb: any, companyId: number, code: string): Pro
 }
 const NOT_A_BANK = { error: 'bank_is_petty_cash', message: "That is a petty cash float's account: choose the bank the money is paid from." };
 
+/** Whether anything has happened on a float yet: money paid in or returned, or a receipt handed in. Until then the
+ *  cash it started with may be corrected; after, the balance has moved on from it. */
+async function floatStarted(sb: any, floatId: string): Promise<boolean> {
+  const [{ data: ev }, { data: rc }] = await Promise.all([
+    sb.from('petty_cash_events').select('id').eq('float_id', floatId).limit(1),
+    sb.from('staff_receipts').select('id').eq('float_id', floatId).limit(1),
+  ]);
+  return ((ev ?? []) as unknown[]).length > 0 || ((rc ?? []) as unknown[]).length > 0;
+}
+
 async function accountNames(sb: any, companyId: number, codes: string[]): Promise<Map<string, string>> {
   if (codes.length === 0) return new Map();
   const { data } = await sb.from('accounts').select('account_code, account_name').eq('company_id', companyId).in('account_code', codes);
@@ -198,6 +208,7 @@ export const listFloatsHandler = async (c: Ctx): Promise<Response> => {
     return {
       id: f.id, departmentId: f.department_id, departmentName: depts.get(f.department_id) ?? '', keeperUserId: f.keeper_user_id,
       keeperName: names.get(f.keeper_user_id) ?? '', accountCode: f.account_code, accountName: f.account_code ? accts.get(f.account_code) ?? '' : null,
+      openingSen: Number(f.opening_sen), openingOn: f.opening_on,
       floatSen: Number(f.float_sen), warnPct: Number(f.warn_pct), active: f.active,
       balanceSen: b.balanceSen, low: b.low, lastTopUpOn: b.lastTopUpOn, topUpRequested: f.topup_requested_at != null,
       waitingCheckSen: w.reduce((n, r) => n + Number(r.amount_sen), 0), waitingCheckCount: w.length,
@@ -217,9 +228,12 @@ export const createFloatHandler = async (c: Ctx): Promise<Response> => {
   const accountCode = String(b?.accountCode ?? '').trim();
   const floatSen = sen(b?.floatSen);
   const warnPct = b?.warnPct == null ? 20 : Number(b.warnPct);
+  const openingSen = b?.openingSen == null || b.openingSen === '' ? 0 : sen(b.openingSen);
+  const openingOn = DATE.test(String(b?.openingOn ?? '')) ? String(b!.openingOn) : todayMyt();
   if (!departmentId || !keeperUserId || !accountCode || floatSen == null || !(Number.isInteger(warnPct) && warnPct >= 0 && warnPct <= 100)) {
     return c.json({ error: 'validation', message: 'Pick the department, the keeper and the petty cash account, and enter the float.' }, 422);
   }
+  if (openingSen == null) return c.json({ error: 'validation', message: 'Enter the cash the keeper holds now, or leave it at 0.' }, 422);
   const sb = c.get('supabase');
   const bad = await floatAccountProblem(sb, co.companyId, accountCode, null);
   if (bad) return c.json(bad.body, bad.status);
@@ -227,7 +241,7 @@ export const createFloatHandler = async (c: Ctx): Promise<Response> => {
   if (live.some(f => f.department_id === departmentId)) return c.json({ error: 'department_has_float', message: 'This department already has a petty cash float.' }, 409);
   if (live.some(f => f.keeper_user_id === keeperUserId)) return c.json({ error: 'keeper_has_float', message: 'This person already keeps a petty cash float.' }, 409);
   const { data, error } = await sb.from('petty_cash_floats').insert({
-    company_id: co.companyId, department_id: departmentId, keeper_user_id: keeperUserId, account_code: accountCode, float_sen: floatSen, warn_pct: warnPct, active: true, created_by: who(c),
+    company_id: co.companyId, department_id: departmentId, keeper_user_id: keeperUserId, account_code: accountCode, opening_sen: openingSen, opening_on: openingSen > 0 ? openingOn : null, float_sen: floatSen, warn_pct: warnPct, active: true, created_by: who(c),
   }).select('*').single();
   if (isUniqueClash(error)) return c.json({ error: 'department_has_float', message: 'This department, person or account already has a petty cash float.' }, 409);
   if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
@@ -262,6 +276,15 @@ export const updateFloatHandler = async (c: Ctx): Promise<Response> => {
     if (live.some(x => x.id !== f.id && x.keeper_user_id === k)) return c.json({ error: 'keeper_has_float', message: 'This person already keeps a petty cash float.' }, 409);
     patch.keeper_user_id = k;
   }
+  if (b.openingSen !== undefined) {
+    const v = sen(b.openingSen);
+    if (v == null) return c.json({ error: 'validation', message: 'Enter the cash the keeper held at the start.' }, 422);
+    if (await floatStarted(c.get('supabase'), f.id)) {
+      return c.json({ error: 'opening_locked', message: 'Money or receipts have already moved on this float, so its starting cash can no longer change. Record the difference as cash returned or a top-up.' }, 409);
+    }
+    patch.opening_sen = v;
+    patch.opening_on = v > 0 ? (DATE.test(String(b.openingOn ?? '')) ? String(b.openingOn) : f.opening_on ?? todayMyt()) : null;
+  }
   if (b.accountCode !== undefined) {
     const code = String(b.accountCode ?? '').trim();
     if (!code) return c.json({ error: 'validation', message: 'Choose the petty cash account.' }, 422);
@@ -293,7 +316,8 @@ export const floatReceiptsHandler = async (c: Ctx): Promise<Response> => {
   const [bal, names, depts, accts] = await Promise.all([floatBalances(sb, [f]), staffNames(sb), departmentNames(sb), accountNames(sb, co.companyId, f.account_code ? [f.account_code] : [])]);
   return c.json({
     float: { id: f.id, departmentName: depts.get(f.department_id) ?? '', keeperName: names.get(f.keeper_user_id) ?? '',
-      accountCode: f.account_code, accountName: f.account_code ? accts.get(f.account_code) ?? '' : null, floatSen: Number(f.float_sen), warnPct: Number(f.warn_pct), active: f.active, ...bal.get(f.id) },
+      accountCode: f.account_code, accountName: f.account_code ? accts.get(f.account_code) ?? '' : null,
+      openingSen: Number(f.opening_sen), openingOn: f.opening_on, floatSen: Number(f.float_sen), warnPct: Number(f.warn_pct), active: f.active, ...bal.get(f.id) },
     receipts: await receiptViews(sb, co.companyId, rows),
   });
 };

@@ -8,9 +8,9 @@ import type { FloatRow, PaymentRequest } from "./claimsQueries";
 const act = vi.fn(async (p: unknown) => (p as { path: string }).path.endsWith("/voucher") ? { pvId: "PV1" } : { ok: true });
 let full = true;
 const floats: FloatRow[] = [
-  { id: "F1", departmentId: "d1", departmentName: "Maintenance", keeperUserId: "u1", keeperName: "Ah Keong", accountCode: "315-0101", accountName: "PETTY CASH - AMIN", floatSen: 100000, warnPct: 20, active: true,
+  { id: "F1", departmentId: "d1", departmentName: "Maintenance", keeperUserId: "u1", keeperName: "Ah Keong", accountCode: "315-0101", accountName: "PETTY CASH - AMIN", openingSen: 0, openingOn: null, floatSen: 100000, warnPct: 20, active: true,
     balanceSen: 15000, low: true, lastTopUpOn: "2026-10-01", topUpRequested: true, waitingCheckSen: 4500, waitingCheckCount: 2 },
-  { id: "F2", departmentId: "d2", departmentName: "Cleaning", keeperUserId: "u2", keeperName: "Siti", accountCode: null, accountName: null, floatSen: 50000, warnPct: 20, active: true,
+  { id: "F2", departmentId: "d2", departmentName: "Cleaning", keeperUserId: "u2", keeperName: "Siti", accountCode: null, accountName: null, openingSen: 0, openingOn: null, floatSen: 50000, warnPct: 20, active: true,
     balanceSen: -2000, low: true, lastTopUpOn: null, topUpRequested: false, waitingCheckSen: 0, waitingCheckCount: 0 },
 ];
 const request: PaymentRequest = {
@@ -59,14 +59,14 @@ describe("Petty cash overview", () => {
     expect(screen.getByText("315-0101 PETTY CASH - AMIN")).toBeTruthy();
     expect(screen.getByRole("note").textContent).toContain("Cleaning has no petty cash account");
   });
-  it("a new float sends the account chosen, offering only accounts no float uses", async () => {
+  it("a new float sends the account chosen (only accounts no float uses) and the cash the keeper already holds", async () => {
     act.mockClear();
     chooseFn.mockClear();
     chooseFn.mockResolvedValueOnce("d3").mockResolvedValueOnce("u9").mockResolvedValueOnce("315-0100");
-    promptFn.mockResolvedValueOnce("500");
+    promptFn.mockResolvedValueOnce("500").mockResolvedValueOnce("350");
     render(<MemoryRouter><PettyCash /></MemoryRouter>);
     fireEvent.click(screen.getByText("New float"));
-    await waitFor(() => expect(act).toHaveBeenCalledWith({ path: "/accounting/petty-cash/floats", body: { departmentId: "d3", keeperUserId: "u9", accountCode: "315-0100", floatSen: 50000 }, method: "POST" }));
+    await waitFor(() => expect(act).toHaveBeenCalledWith({ path: "/accounting/petty-cash/floats", body: { departmentId: "d3", keeperUserId: "u9", accountCode: "315-0100", floatSen: 50000, openingSen: 35000 }, method: "POST" }));
     expect(chooseFn.mock.calls[2][0].options.map((o) => o.value)).toEqual(["315-0100"]);
   });
   it("only Ledger full sees New float", () => {

@@ -29,6 +29,8 @@ export type FloatSummary = {
   departmentName?: string; keeperName?: string; warnPct?: number; active?: boolean;
   /** The float's own account in the chart, e.g. 315-0101 PETTY CASH - AMIN; null books nothing. */
   accountCode: string | null; accountName: string | null;
+  /** Cash the keeper held when the float started on the ERP (counted at go-live), and the day it was counted. */
+  openingSen: number; openingOn: string | null;
 };
 export type FloatRow = FloatSummary & {
   departmentId: string; departmentName: string; keeperUserId: string; keeperName: string; warnPct: number; active: boolean;

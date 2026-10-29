@@ -14,6 +14,9 @@ describe('floatBalance', () => {
     const rs = (['REJECTED', 'WRITTEN_OFF', 'CHECKED', 'TOPPED_UP'] as const).map(status => ({ amountSen: 1000, status }));
     expect(floatBalance([{ kind: 'PAID_IN', amountSen: 5000 }], rs)).toBe(1000);
   });
+  test('the cash the keeper held when the float started counts first', () => {
+    expect(floatBalance([], [{ amountSen: 35000, status: 'HANDED_IN' }], 165000)).toBe(130000);
+  });
   test('it can go below zero', () => {
     expect(floatBalance([{ kind: 'PAID_IN', amountSen: 100000 }], [{ amountSen: 112000, status: 'HANDED_IN' }])).toBe(-12000);
   });

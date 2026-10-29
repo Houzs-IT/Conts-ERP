@@ -98,6 +98,29 @@ describe('the overview', () => {
     expect(ok.status).toBe(201);
     expect((await ok.json() as any).float).toMatchObject({ account_code: '315-0100' });
   });
+  test('a float can start with the cash its keeper already holds; the top-up makes up the rest', async () => {
+    const sb = world();
+    fakeVoucher(sb);
+    const made1 = await post(app(sb, [FULL_KEY]), '/floats', { departmentId: 'reno', keeperUserId: 'u-x', floatSen: 200000, accountCode: '315-0100', openingSen: 165000, openingOn: '2026-11-01' });
+    expect(made1.status).toBe(201);
+    const id = (await made1.json() as any).float.id;
+    expect(sb.tables.petty_cash_floats.find(f => f.id === id)).toMatchObject({ opening_sen: 165000, opening_on: '2026-11-01' });
+    const listed = (await (await app(sb, []).request('/floats')).json() as any).floats.find((f: any) => f.id === id);
+    expect(listed).toMatchObject({ balanceSen: 165000, openingSen: 165000, openingOn: '2026-11-01' });
+    expect(await (await post(app(sb, [FULL_KEY]), `/floats/${id}/top-up`, { bankAccountCode: '310-0010' })).json()).toMatchObject({ amountSen: 35000 });
+    expect(sb.tables.journal_entries).toHaveLength(0); // the account's balance comes in with the opening balances, not from here
+  });
+  test('the starting cash is checked, and can be corrected only before anything happens on the float', async () => {
+    const sb = world();
+    const a = app(sb, [FULL_KEY]);
+    expect((await post(a, '/floats', { departmentId: 'reno', keeperUserId: 'u-x', floatSen: 1000, accountCode: '315-0100', openingSen: -5 })).status).toBe(422);
+    const patch = (body: unknown) => a.request('/floats/F1', { method: 'PATCH', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
+    expect(await (await patch({ openingSen: 50000 })).json()).toMatchObject({ error: 'opening_locked' }); // F1 has money paid in and a receipt
+    sb.tables.petty_cash_events.length = 0;
+    sb.tables.staff_receipts.splice(0, 1);
+    expect((await patch({ openingSen: 50000, openingOn: '2026-11-01' })).status).toBe(200);
+    expect(sb.tables.petty_cash_floats[0]).toMatchObject({ opening_sen: 50000, opening_on: '2026-11-01' });
+  });
   test('the account can be changed until something is booked to it', async () => {
     const sb = world();
     const patch = (body: unknown) => app(sb, [FULL_KEY]).request('/floats/F1', { method: 'PATCH', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });

@@ -12,6 +12,8 @@ export interface FloatRow {
   active: boolean; topup_requested_at: string | null;
   /** The float's own cash-in-hand account in the chart (chew 29 Oct 2026); null books nothing. */
   account_code: string | null;
+  /** Cash the keeper held when the float started on the ERP (chew 29 Oct 2026), and the day it was counted. */
+  opening_sen: number; opening_on: string | null;
 }
 export interface ReceiptRow {
   id: string; receipt_no: string; submitter_user_id: string; float_id: string | null; spend_date: string; amount_sen: number;
@@ -47,7 +49,7 @@ export async function floatBalances(sb: Db, floats: FloatRow[]): Promise<Map<str
   for (const f of floats) {
     const events = ((ev ?? []) as Array<{ float_id: string; kind: FloatEvent['kind']; amount_sen: number; event_date: string }>).filter(e => e.float_id === f.id);
     const receipts = ((rc ?? []) as Array<{ float_id: string; amount_sen: number; status: ReceiptStatus }>).filter(r => r.float_id === f.id);
-    const balanceSen = floatBalance(events.map(e => ({ kind: e.kind, amountSen: Number(e.amount_sen) })), receipts.map(r => ({ amountSen: Number(r.amount_sen), status: r.status })));
+    const balanceSen = floatBalance(events.map(e => ({ kind: e.kind, amountSen: Number(e.amount_sen) })), receipts.map(r => ({ amountSen: Number(r.amount_sen), status: r.status })), Number(f.opening_sen));
     const paidIn = events.filter(e => e.kind === 'PAID_IN').map(e => e.event_date).sort();
     out.set(f.id, { balanceSen, low: lowBalance(Number(f.float_sen), balanceSen, Number(f.warn_pct)), lastTopUpOn: paidIn.at(-1) ?? null });
   }
