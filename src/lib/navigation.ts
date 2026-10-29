@@ -137,6 +137,9 @@ export const NAV: NavGroup[] = [
     // Every desk role: report a problem with the system to IT and follow it. No permission area, since a person
     // only ever reads their own requests (functions/_lib/itHub.ts). Its count comes from lib/itSupport.ts.
     { key: 'itSupport', label: 'IT Support', icon: 'life-buoy', path: '/system/it-support', badge: 'itSupport' },
+    // Every desk role (finance, 29 Oct 2026): hand in receipts and ask finance to pay. No permission area: the engine
+    // answers each person with their own only (functions/api/claims/[[path]].ts).
+    { key: 'myClaims', label: 'My claims', icon: 'receipt', path: '/my-claims' },
   ] },
 
   // Supply chain workspace. Mirrors Houzs's hierarchy: section -> collapsible area -> page.
@@ -214,6 +217,7 @@ export const NAV: NavGroup[] = [
   { label: SUPPLY_SYSTEM, workspace: 'supply', items: [
     { key: 'categoryAccess', label: 'Category access', icon: 'tags', path: '/system/category-access', area: 'users', full: true },
     { key: 'itSupportSupply', label: 'IT Support', icon: 'life-buoy', path: '/supply/it-support', area: 'itSupport', badge: 'itSupport' },
+    { key: 'myClaimsSupply', label: 'My claims', icon: 'receipt', path: '/supply/my-claims' },
   ] },
 ];
 

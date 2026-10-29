@@ -10,7 +10,8 @@ import { jobTitle } from '../lib/vocabulary';
 
 /** The portal's bottom bar. */
 const TABS: { to: string; label: keyof PortalStrings['nav']; icon: string; match: (path: string) => boolean }[] = [
-  { to: '/portal/today', label: 'jobs', icon: 'ClipboardList', match: p => !/^\/portal\/(clock|pay|me)/.test(p) },
+  { to: '/portal/today', label: 'jobs', icon: 'ClipboardList', match: p => !/^\/portal\/(clock|pay|me|receipts)/.test(p) },
+  { to: '/portal/receipts', label: 'receipts', icon: 'Receipt', match: p => p.startsWith('/portal/receipts') },
   { to: '/portal/clock', label: 'clock', icon: 'Clock', match: p => p.startsWith('/portal/clock') },
   { to: '/portal/pay', label: 'pay', icon: 'Wallet', match: p => p.startsWith('/portal/pay') },
   { to: '/portal/me', label: 'me', icon: 'CircleUser', match: p => p.startsWith('/portal/me') },

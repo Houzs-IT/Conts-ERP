@@ -42,7 +42,7 @@ interface Issue {
   blocksUnit: boolean; ownerApprovalRequired: boolean; ownerApprovedAt: string | null; chargeTo: ChargeTo; reporter: string | null;
   startedAt: string | null; endedAt: string | null; photoCount: number; documentCount: number; windows: RepairWin[];
   quotedAmount: number | null; finalAmount: number | null; expensed: number | null; expensedOn: string | null; skuId: string | null; skuName: string | null; skuCode: string | null;
-  ownerHasLogin: boolean; billingDate: string | null; collectedAt: string | null; contractorAmount: number | null; contractorPaidAt: string | null;
+  ownerHasLogin: boolean; billingDate: string | null; collectedAt: string | null; contractorAmount: number | null; contractorPaidAt: string | null; staffPurchasesSen?: number | null;
   /** Migration 0126: job type, severity, parts and due date; approvalStatus is Needs owner approval / Approved / Not needed. */
   jobType?: JobType; severity?: 'minor' | 'major'; dueOn?: string | null; needsParts?: boolean; partsArrivedAt?: string | null;
   approvalStatus?: 'needed' | 'approved' | 'not_needed';
@@ -569,6 +569,9 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
                 </div>
                 <span className="text-meta text-muted-ink">What their claim says. Attach the claim below so accounts can pay it.</span>
               </div>
+              {!!i.staffPurchasesSen && (
+                <span className="text-meta">Bought by staff for this job: <strong>{rm(i.staffPurchasesSen)}</strong>, handed in as receipts and paid back to them. Part of the job's cost; the owner pays the quote only.</span>
+              )}
               <DateMark label="Paid to the technician or contractor" amount={i.contractorAmount} at={i.contractorPaidAt} busy={busy === 'paid'} markLabel="Mark paid"
                 note={i.contractorAmount == null ? 'Enter the amount owed first.' : undefined}
                 onSet={day => void act('paid', () => api.patch(`/maintenance/issues/${i.id}`, { contractorPaidAt: day }), day ? 'Marked paid.' : 'Marked not paid.')} />

@@ -14,6 +14,8 @@ import { CATEGORY, FormRow, INPUT, TEXTAREA, ProblemPhotos, Segmented, hm, uploa
 import { statusOf } from '../lib/status';
 import { usePortalText, usePortalDates, wordFor } from '../lib/portalI18n';
 import { useFieldRefresh, useFreshIds } from '../lib/fieldLive';
+import { MoneyInput } from '../components/inputs';
+import { readReceipt } from '../lib/claims';
 
 /* GET /api/field/repairs and /api/field/repairs/:id (functions/api/field/repairs*.ts). No amounts: the server never sends any. */
 interface Repair {
@@ -140,6 +142,9 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
   const [busy, setBusy] = useState<string | null>(null);
   const [stage, setStage] = useState<'before' | 'after'>('before');
   const [fileKind, setFileKind] = useState('claim');
+  /* A purchase of their own for the job (finance, 29 Oct 2026): one photo, its amount read and confirmed, handed in as a
+     receipt to be paid back from the department's petty cash or by finance. */
+  const [purchase, setPurchase] = useState<{ file: File; amountSen: number | null; spendDate: string | null } | null>(null);
   const [note, setNote] = useState('');
   const [doneNote, setDoneNote] = useState('');
   const j = d.data?.job;
@@ -165,6 +170,26 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
     catch (e) { toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(e, t.jobs.checkSignal) }); refresh(); return false; }
     finally { setBusy(null); }
   }
+  async function pickPurchase(list: FileList) {
+    const file = list[0];
+    if (!file) return;
+    setBusy('reading');
+    const read = await readReceipt([file]);
+    setBusy(null);
+    setPurchase({ file, amountSen: read.amountSen, spendDate: read.date });
+  }
+  async function handInPurchase() {
+    if (!purchase?.amountSen) return;
+    setBusy('purchase');
+    try {
+      const res = await uploadTo(`/maintenance/issues/${id}/documents`, { kind: 'purchase', amountSen: String(purchase.amountSen), ...(purchase.spendDate ? { spendDate: purchase.spendDate } : {}) })(purchase.file) as { receipt?: unknown };
+      if (res.receipt === 'failed') toast({ tone: 'warning', title: tr.notHandedIn });
+      else toast({ tone: 'success', title: tr.handedIn });
+      setPurchase(null);
+    } catch (e) { toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(e, t.jobs.checkSignal) }); }
+    finally { setBusy(null); refresh(); }
+  }
+
   async function uploadFiles(list: FileList) {
     setBusy('files');
     const res = await runEach(Array.from(list), f => uploadTo(`/maintenance/issues/${id}/documents`, { kind: fileKind })(f), f => f.name);
@@ -277,12 +302,24 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
                   {working && (
                     <FormRow label={tr.fileKindLabel}>
                       <select className={cx(INPUT, 'h-11')} value={fileKind} onChange={e => setFileKind(e.target.value)}>
-                        {['claim', 'receipt', 'invoice', 'pod'].map(k => <option key={k} value={k}>{wordFor(tr.fileKind, k)}</option>)}
+                        {['purchase', 'claim', 'receipt', 'invoice', 'pod'].map(k => <option key={k} value={k}>{wordFor(tr.fileKind, k)}</option>)}
                       </select>
                     </FormRow>
                   )}
+                  {working && purchase && (
+                    <div className="flex flex-col gap-2 rounded-control bg-muted px-3 py-3">
+                      <span className="text-meta text-muted-ink">{purchase.file.name}</span>
+                      <MoneyInput label={tr.purchaseAmount} valueSen={purchase.amountSen} onChangeSen={v => setPurchase({ ...purchase, amountSen: v })} />
+                      <span className="flex gap-2">
+                        <Button size="touch" variant="primary" disabled={!purchase.amountSen || busy === 'purchase'} onClick={() => void handInPurchase()}>{tr.handIn}</Button>
+                        <Button size="touch" variant="secondary" disabled={busy === 'purchase'} onClick={() => setPurchase(null)}>{t.common.back}</Button>
+                      </span>
+                    </div>
+                  )}
                   <FileList files={d.data!.files.map(f => ({ id: f.id, name: f.fileName, href: f.url, size: f.byteSize, label: `${f.kind in tr.fileKind ? wordFor(tr.fileKind, f.kind) : tr.fileKind.other} · ${short(f.uploadedAt.slice(0, 10))}` }))}
-                    add={working ? { label: tr.addFile, hint: tr.addFileHint, accept: 'image/*,application/pdf', multiple: true, busy: busy === 'files', onPick: fl => void uploadFiles(fl) } : undefined} />
+                    add={working && !purchase ? (fileKind === 'purchase'
+                      ? { label: busy === 'reading' ? tr.reading : tr.addFile, hint: tr.purchaseHint, accept: 'image/*,application/pdf', multiple: false, busy: busy === 'reading', onPick: fl => void pickPurchase(fl) }
+                      : { label: tr.addFile, hint: tr.addFileHint, accept: 'image/*,application/pdf', multiple: true, busy: busy === 'files', onPick: fl => void uploadFiles(fl) }) : undefined} />
                 </section>
               )}
 
