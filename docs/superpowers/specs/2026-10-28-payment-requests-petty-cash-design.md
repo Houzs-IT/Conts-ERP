@@ -247,7 +247,7 @@ money paid to the keeper (posted vouchers)
 | Event | Journal |
 |---|---|
 | A voucher to the keeper posts | Dr petty cash, Cr bank |
-| A receipt on a float is checked | Dr each line's account, Cr petty cash, on the spend date. A closed month moves it to the first open month, and the receipt keeps its real date (SOP §3.10) |
+| A receipt on a float is checked | Dr each line's account, Cr petty cash, on the spend date. The engine has no month close yet; a spend date before the ledger start date is posted on the ledger start date, and the receipt keeps its real date |
 | A rejected receipt | Nothing |
 | A repayment | Nothing (the cash goes back into the tin) |
 | A write-off | Dr the account finance picks, for example a staff debtor; Cr petty cash |
