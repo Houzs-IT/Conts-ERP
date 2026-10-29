@@ -30,7 +30,8 @@ import { isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
     start, which the opening balances already carry and which is skipped as it always was. */
 async function noAccountResult(sb: any, companyId: number | null, entryDate: string, reason: string): Promise<PostPaymentResult> {
   const ls = await loadLedgerSettings(sb, companyId);
-  if (ls.ok && isBeforeLedgerStart(entryDate, ls.settings)) return { ok: true, status: 'skipped_before_ledger_start' };
+  if (!ls.ok) return { ok: false, status: 'post_failed', reason: 'The ledger settings could not be read.' };
+  if (isBeforeLedgerStart(entryDate, ls.settings)) return { ok: true, status: 'skipped_before_ledger_start' };
   return { ok: false, status: 'customer_no_account', reason };
 }
 

@@ -845,6 +845,7 @@ export const postSiHandler = async (c: AccCtx): Promise<Response> => {
   }
   if (r.status === 'invoice_not_found') return c.json({ error: 'invoice_not_found' }, 404);
   if (r.status === 'zero_total')        return c.json({ error: 'zero_total' }, 400);
+  if (r.status === 'customer_no_account') return c.json({ error: 'customer_no_account', message: r.reason }, 409);
   return c.json({ error: r.status, reason: r.reason }, 500);
 };
 accounting.post('/post/si/:invoiceNumber', postSiHandler);
