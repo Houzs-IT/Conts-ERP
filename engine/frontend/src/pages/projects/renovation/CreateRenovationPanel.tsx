@@ -30,6 +30,12 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
   const [attending, setAttending] = useState<AttendingPerson[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* Conts (finance phase 1.5; SOP 3.4): a customer project, or an internal one — the company's own money (a unit to
+     rent out, the showroom) — with its department and budget instead of a customer. */
+  const [funding, setFunding] = useState<"customer" | "internal">("customer");
+  const [department, setDepartment] = useState<"" | "rental" | "supply">("");
+  const [budgetRm, setBudgetRm] = useState("");
+  const internal = funding === "internal";
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
   const activeTypes = (types.data?.data ?? []).filter((t) => t.active);
   const typeId = f.projectTypeId || (activeTypes[0] ? String(activeTypes[0].id) : "");
@@ -37,23 +43,27 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
   const projectName = projectNameFrom(cp.building, cp.unitNo, cp.customerName);
   const [tried, setTried] = useState(false);
   /* The same required fields as the sales order (owner, 14 Oct 2026); the server checks them too. */
-  const missing = tried && propertyReady ? missingFields(cp) : undefined;
+  const missing = tried && propertyReady && !internal ? missingFields(cp) : undefined;
 
   async function submit() {
     setTried(true);
-    if (!cp.customerName.trim()) { setError("Enter the customer or owner name."); return; }
-    if (propertyReady && missingFields(cp).size > 0) { setError(`Fill in: ${[...missingFields(cp)].join(", ")}.`); return; }
+    const budgetSen = Math.round(Number(budgetRm.replace(/,/g, "")) * 100);
+    if (internal && !department) { setError("Choose the department this internal project counts to."); return; }
+    if (internal && !(budgetSen > 0)) { setError("Enter the internal project's budget."); return; }
+    if (!internal && !cp.customerName.trim()) { setError("Enter the customer or owner name."); return; }
+    if (!internal && propertyReady && missingFields(cp).size > 0) { setError(`Fill in: ${[...missingFields(cp)].join(", ")}.`); return; }
     if (!typeId) { setError("Pick a project type."); return; }
     setBusy(true);
     setError(null);
     try {
       const r = await renovationApi.create({
-        name: projectName, projectTypeId: Number(typeId), customerName: cp.customerName.trim(),
+        name: projectName || (internal ? `INTERNAL ${department.toUpperCase()}` : projectName), projectTypeId: Number(typeId), customerName: cp.customerName.trim() || (internal ? "INTERNAL" : ""),
+        ...(internal ? { funding: "internal", internalDepartment: department, budgetSen } : {}),
         customerPhone: cp.customerPhone || null, customerEmail: cp.customerEmail.trim() || null, building: cp.building.trim() || null,
         unitNo: cp.unitNo.trim() || null, plannedHandoverDate: f.plannedHandoverDate || null,
         renoPicPersonId: picPersonId, attendingPersonIds: attending.map((a) => a.id),
         /* The whole block, checked and saved with the project in one request. */
-        ...(propertyReady ? { customerInfo: toProjectBody(cp) } : {}),
+        ...(propertyReady && !internal ? { customerInfo: toProjectBody(cp) } : {}),
       });
       onCreated(r.id);
     } catch (e) {
@@ -83,6 +93,28 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
             </select>
           </Field>
         </div>
+        <section>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="Funding">
+              <select aria-label="Funding" className={inputClass} value={funding} onChange={(e) => setFunding(e.target.value as "customer" | "internal")}>
+                <option value="customer">Customer project</option>
+                <option value="internal">Internal (our own money)</option>
+              </select>
+            </Field>
+            {internal && (
+              <Field label="Counts to">
+                <select aria-label="Counts to" className={inputClass} value={department} onChange={(e) => setDepartment(e.target.value as "" | "rental" | "supply")}>
+                  <option value="">— Choose —</option>
+                  <option value="rental">Rental (a unit to rent out)</option>
+                  <option value="supply">Supply chain (showroom)</option>
+                </select>
+              </Field>
+            )}
+            {internal && (
+              <Field label="Budget (RM)"><input aria-label="Budget (RM)" inputMode="decimal" className={inputClass} value={budgetRm} onChange={(e) => setBudgetRm(e.target.value)} placeholder="0.00" /></Field>
+            )}
+          </div>
+        </section>
         <section>
           <CustomerBlock mode="project" value={cp} onChange={setCp} lists={lists.data ?? undefined} disabled={busy}
             hideProperty={!propertyReady} missing={missing} />

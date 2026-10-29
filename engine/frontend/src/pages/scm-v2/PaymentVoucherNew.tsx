@@ -49,6 +49,7 @@ import { PageHeader } from '../../components/Layout';
 import { resolveFxRate, deriveRateFromMyrPaid } from './fx-rate';
 
 import { fmtMoneySen } from '../../vendor/shared/format';
+import { ProjectLimitField } from '../../conts/ProjectLimitField';
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
 
@@ -152,6 +153,8 @@ export const PaymentVoucherNew = () => {
   }, [rolesQ.data, moneyAccounts]);
   const [voucherDate, setVoucherDate]             = useState<string>(() => todayMyt());
   const [notes, setNotes]                         = useState<string>('');
+  // Conts (finance phase 1.5; SOP 3.4): the project this voucher pays, for its limit.
+  const [projectId, setProjectId]                 = useState<number | null>(null);
 
   /* Internal transfer INSIDE the PV (GL redesign item 10, owner: 不能直接在
      pv 那边开转账就好吗) — same document, same Draft→Checked→Approved chain,
@@ -590,6 +593,7 @@ export const PaymentVoucherNew = () => {
         creditAccountCode,
         voucherDate,
         notes:             notes || undefined,
+        ...(projectId != null ? { projectId } : {}),
         // Multi-currency (Phase 1-A) — resolved currency + rate. MYR forces 1
         // (server enforces too); a blank/invalid foreign rate → 1.
         currency,
@@ -725,6 +729,10 @@ export const PaymentVoucherNew = () => {
                 placeholder={accountsQ.isLoading ? 'Loading accounts…' : '— Bank / cash —'}
               />
             </label>
+            {!transferMode && !isRefund && (
+              <ProjectLimitField projectId={projectId} onChange={setProjectId} amountSen={totalSen}
+                fieldClass={styles.field} labelClass={styles.fieldLabel} inputClass={styles.fieldInput} />
+            )}
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Notes</span>
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Internal notes" className={styles.fieldInput} rows={2} style={{ resize: 'vertical', minHeight: 60 }} />

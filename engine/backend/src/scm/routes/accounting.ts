@@ -70,6 +70,7 @@ import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './account
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
 import { partyLedgerHandler } from '../../conts/party-ledger';
+import { approveLimitRequestHandler, createLimitRequestHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler } from '../../conts/project-limit-routes';
 import { assertAuditWritable, auditUnavailableBody, compactChanges, fieldChange, recordEntityAudit, type AuditActor } from '../lib/entity-audit';
 import { journalEntryEdit } from './accounting-journal-edit';
 import { reportLayoutGet, reportLayoutPut, reportLayoutReset } from './accounting-report-layouts';
@@ -219,6 +220,15 @@ accounting.post('/chart/import/match', chartImportMatchHandler);
 accounting.get('/debtors', listDebtorsHandler);
 /* Conts: one customer's or supplier's ledger (conts/party-ledger.ts). */
 accounting.get('/party-ledger', partyLedgerHandler);
+/* Conts: a project's limit and extra limit (conts/project-limit-routes.ts; SOP 3.4). */
+accounting.get('/projects', listProjectsHandler);
+accounting.get('/everyday-expense', listEverydayExpenseHandler);
+accounting.put('/everyday-expense', setEverydayExpenseHandler);
+accounting.get('/projects/:id/limit', projectLimitHandler);
+accounting.post('/projects/:id/limit-requests', createLimitRequestHandler);
+accounting.get('/limit-requests', listLimitRequestsHandler);
+accounting.post('/limit-requests/:id/approve', approveLimitRequestHandler);
+accounting.post('/limit-requests/:id/reject', rejectLimitRequestHandler);
 accounting.post('/debtors', createDebtorHandler);
 accounting.patch('/debtors/:id', patchDebtorHandler);
 accounting.put('/chart/rename', chartRenameHandler);

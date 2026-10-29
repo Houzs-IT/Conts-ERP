@@ -66,6 +66,7 @@ import { resolveFxRate, deriveRateFromMyrPaid } from './fx-rate';
 import { useUnsavedWork } from '../../lib/unsavedWork';
 
 import { fmtMoneySen } from '../../vendor/shared/format';
+import { ProjectLimitField } from '../../conts/ProjectLimitField';
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
 
@@ -229,6 +230,8 @@ export const PaymentVoucherDetail = () => {
   const [creditAccountCode, setCreditAccountCode] = useState('');
   const [voucherDate, setVoucherDate]             = useState('');
   const [notes, setNotes]                         = useState('');
+  // Conts (finance phase 1.5; SOP 3.4): the project this voucher pays (on its lines), for its limit.
+  const [editProjectId, setEditProjectId]         = useState<number | null>(null);
   /* Multi-currency (Phase 1-A) — MYR per 1 unit of the PV currency, string-typed.
      Seeded from the voucher on enter-edit; shown only for a foreign currency. */
   const [exchangeRate, setExchangeRate]           = useState('1');
@@ -265,6 +268,7 @@ export const PaymentVoucherDetail = () => {
     setCreditAccountCode(pv.credit_account_code ?? '');
     setVoucherDate(pv.voucher_date ?? '');
     setNotes(pv.notes ?? '');
+    setEditProjectId(lines.find((l) => l.project_id != null)?.project_id ?? null);
     setExchangeRate(String(pv.exchange_rate ?? '1'));
     /* Cleared on entering edit, never back-derived from the stored rate: the MYR
        field means "this is what I actually paid", and inventing it from a rate would
@@ -457,6 +461,7 @@ export const PaymentVoucherDetail = () => {
         creditAccountCode,
         voucherDate,
         notes:             notes || null,
+        ...(isRefundPv ? {} : { projectId: editProjectId }),
         // Multi-currency (Phase 1-A) — resolved currency + rate. MYR forces 1
         // (server enforces too); a blank/invalid foreign rate → 1.
         currency:          editCurrency,
@@ -673,6 +678,10 @@ export const PaymentVoucherDetail = () => {
               <InfoCell label="Currency" value={viewCurrency} />
               {viewCurrency !== 'MYR' && <InfoCell label="Exchange Rate" value={`${pv.exchange_rate} (MYR per 1 ${viewCurrency})`} />}
               <InfoCell label="Notes" value={pv.notes ?? null} />
+              {!isRefundPv && lines.some((l) => l.project_id != null) && (
+                <ProjectLimitField projectId={lines.find((l) => l.project_id != null)?.project_id ?? null} onChange={() => undefined} amountSen={isDraft && !pv.submitted_at ? viewTotalSen : 0} disabled
+                  fieldClass={styles.field} labelClass={styles.fieldLabel} inputClass={styles.fieldInput} />
+              )}
             </div>
           ) : (
             <div className={styles.formGrid2}>
@@ -748,6 +757,10 @@ export const PaymentVoucherDetail = () => {
                 <span className={styles.fieldLabel}>Notes</span>
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className={styles.fieldInput} rows={2} style={{ resize: 'vertical', minHeight: 60 }} />
               </label>
+              {!isRefundPv && (
+                <ProjectLimitField projectId={editProjectId} onChange={setEditProjectId} amountSen={viewTotalSen} exceptPvId={id}
+                  fieldClass={styles.field} labelClass={styles.fieldLabel} inputClass={styles.fieldInput} />
+              )}
             </div>
           )}
         </div>
