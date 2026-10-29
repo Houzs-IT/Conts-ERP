@@ -16,6 +16,7 @@ import { usePortalText, usePortalDates, wordFor } from '../lib/portalI18n';
 import { useFieldRefresh, useFreshIds } from '../lib/fieldLive';
 import { MoneyInput } from '../components/inputs';
 import { readReceipt } from '../lib/claims';
+import { todayMyt } from '../lib/format';
 
 /* GET /api/field/repairs and /api/field/repairs/:id (functions/api/field/repairs*.ts). No amounts: the server never sends any. */
 interface Repair {
@@ -144,7 +145,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
   const [fileKind, setFileKind] = useState('claim');
   /* A purchase of their own for the job (finance, 29 Oct 2026): one photo, its amount read and confirmed, handed in as a
      receipt to be paid back from the department's petty cash or by finance. */
-  const [purchase, setPurchase] = useState<{ file: File; amountSen: number | null; spendDate: string | null } | null>(null);
+  const [purchase, setPurchase] = useState<{ id: string; file: File; amountSen: number | null; spendDate: string | null } | null>(null);
   const [note, setNote] = useState('');
   const [doneNote, setDoneNote] = useState('');
   const j = d.data?.job;
@@ -176,14 +177,15 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
     setBusy('reading');
     const read = await readReceipt([file]);
     setBusy(null);
-    setPurchase({ file, amountSen: read.amountSen, spendDate: read.date });
+    // A date read the wrong way round can land in the future; then the day it is handed in is used.
+    setPurchase({ id: crypto.randomUUID(), file, amountSen: read.amountSen, spendDate: read.date && read.date <= todayMyt() ? read.date : null });
   }
   async function handInPurchase() {
     if (!purchase?.amountSen) return;
     setBusy('purchase');
     try {
-      const res = await uploadTo(`/maintenance/issues/${id}/documents`, { kind: 'purchase', amountSen: String(purchase.amountSen), ...(purchase.spendDate ? { spendDate: purchase.spendDate } : {}) })(purchase.file) as { receipt?: unknown };
-      if (res.receipt === 'failed') toast({ tone: 'warning', title: tr.notHandedIn });
+      const res = await uploadTo(`/maintenance/issues/${id}/documents`, { kind: 'purchase', receiptId: purchase.id, amountSen: String(purchase.amountSen), ...(purchase.spendDate ? { spendDate: purchase.spendDate } : {}) })(purchase.file) as { receipt?: unknown; message?: string | null };
+      if (res.receipt === 'failed') { toast({ tone: 'warning', title: tr.notHandedIn, body: res.message ?? undefined }); return; }
       else toast({ tone: 'success', title: tr.handedIn });
       setPurchase(null);
     } catch (e) { toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(e, t.jobs.checkSignal) }); }

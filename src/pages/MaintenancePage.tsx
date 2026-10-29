@@ -66,7 +66,7 @@ const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 
 const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
 // The item catalog: staff pick an item (or Other) on a job; management and operations keep the list (request M3).
 const SHOW_CATALOG = true;
-const DOC_KIND: Record<string, string> = { claim: 'Claim from the technician or contractor', invoice: 'Invoice to the payer', receipt: 'Receipt', pod: 'Proof of work', other: 'File' };
+const DOC_KIND: Record<string, string> = { claim: 'Claim from the technician or contractor', invoice: 'Invoice to the payer', receipt: 'Receipt', purchase: 'Bought by staff (handed in as a receipt)', pod: 'Proof of work', other: 'File' };
 /** Who the money is collected from; the company and a warranty pay their own share, so nothing is collected. */
 const COLLECT_FROM: Partial<Record<ChargeTo, string>> = { owner: 'the owner', guest_deposit: "the guest's deposit" };
 const FIELD_ROLES = ['housekeeper', 'technician'];

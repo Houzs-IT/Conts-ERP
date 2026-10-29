@@ -114,7 +114,7 @@ export function PettyCashFloat() {
       const v = await prompt({ title: "The new float", defaultValue: fmtSenPlain(f.floatSen).replace(/,/g, ""), validate: (x) => (ringgitToSen(x) == null ? "Enter an amount in RM." : null) });
       if (v != null) await run(`${pettyPath}/floats/${id}`, { floatSen: ringgitToSen(v) }, "PATCH");
     } else if (how === "keeper") {
-      const keeper = await choose({ title: "Who keeps the cash now?", body: "Count the cash with both of them at the handover.", options: (opts.data?.staff ?? []).slice(0, 40).map((s) => ({ value: s.id, label: s.name })) });
+      const keeper = await choose({ title: "Who keeps the cash now?", body: "Count the cash with both of them at the handover.", options: (opts.data?.staff ?? []).map((s) => ({ value: s.id, label: s.name })) });
       if (keeper) await run(`${pettyPath}/floats/${id}`, { keeperUserId: keeper }, "PATCH");
     } else if (how === "close") {
       if (await confirm({ title: "Close this float?", body: "Receipts can no longer be handed in on it. Record the cash given back first.", confirmLabel: "Close", danger: true })) await run(`${pettyPath}/floats/${id}`, { active: false }, "PATCH");

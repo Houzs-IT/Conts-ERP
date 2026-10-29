@@ -4,7 +4,7 @@ import Icon from '../components/Icon';
 import { StaleBanner } from '../components/DataState';
 import { Select } from '../components/Select';
 import { Field } from '../components/Field';
-import { MoneyInput } from '../components/inputs';
+import { MoneyInput, DateField } from '../components/inputs';
 import { FileDropRow } from '../components/Attachments';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
@@ -24,7 +24,8 @@ export default function FieldReceiptsPage() {
   const t = usePortalText();
   const tr = t.receipts;
   const me = useApi<Me>('/claims/me');
-  const mine = useApi<{ receipts: Receipt[] }>(`/claims/receipts?month=${thisMonthMyt()}`);
+  // Every month: a receipt rejected last month must stay in sight until it is dealt with.
+  const mine = useApi<{ receipts: Receipt[] }>('/claims/receipts');
   const [handingIn, setHandingIn] = useState(false);
   return (
     <div className="flex flex-col gap-4">
@@ -78,6 +79,7 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
   const [reading, setReading] = useState(false);
   const [amountSen, setAmountSen] = useState<number | null>(null);
   const [spendDate, setSpendDate] = useState(todayMyt());
+  const [dateTouched, setDateTouched] = useState(false);
   const [vendorName, setVendorName] = useState('');
   const [unitId, setUnitId] = useState('');
   const [note, setNote] = useState('');
@@ -91,7 +93,7 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
     const read = await readReceipt(chosen);
     setReading(false);
     if (read.amountSen != null && amountSen == null) setAmountSen(read.amountSen);
-    if (read.date && read.date <= todayMyt()) setSpendDate(read.date);
+    if (read.date && read.date <= todayMyt() && !dateTouched) setSpendDate(read.date);
     if (read.vendorName && !vendorName) setVendorName(read.vendorName);
   }
   async function send() {
@@ -113,6 +115,7 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
       <FileDropRow label={reading ? tr.reading : tr.photo} hint={tr.photoHint} accept="image/*,application/pdf" multiple onPick={l => void pick(l)} busy={reading}
         chosen={files.length ? files.map(f => f.name).join(', ') : null} tall />
       <MoneyInput label={tr.amount} valueSen={amountSen} onChangeSen={setAmountSen} />
+      <DateField label={tr.date} value={spendDate} onChange={v => { setSpendDate(v); setDateTouched(true); }} max={todayMyt()} />
       <Field label={tr.note} value={note} onChange={e => setNote(e.target.value)} placeholder={tr.notePh} maxLength={300} />
       <Select label={tr.unit} showLabel size="md" value={unitId} onChange={setUnitId}
         options={[{ value: '', label: tr.noUnit }, ...(units.data?.units ?? []).map(u => ({ value: u.id, label: `${u.building} ${u.unitNumber}` }))]} />

@@ -10,7 +10,10 @@ export async function forwardClaims(env: Env, session: Session, method: 'GET' | 
   if (!scmEngineConfigured(env)) return fail('NOT_CONFIGURED', 'Claims are not set up on this environment yet.', 501);
   let res: Response;
   try {
-    res = await fetch(`${env.SCM_ENGINE_API!.replace(/\/+$/, '')}/api/claims-forward${enginePath}`, {
+    /* Each path segment is encoded again, so nothing in a path can step outside the claims routes. */
+    const [pathPart, query = ''] = enginePath.split('?');
+    const safe = pathPart.split('/').map(seg => encodeURIComponent(decodeURIComponent(seg))).join('/');
+    res = await fetch(`${env.SCM_ENGINE_API!.replace(/\/+$/, '')}/api/claims-forward${safe}${query ? `?${query}` : ''}`, {
       method,
       headers: { 'x-conts-staff': await claimsAssertion(env, session), ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -21,7 +24,7 @@ export async function forwardClaims(env: Env, session: Session, method: 'GET' | 
   const type = res.headers.get('content-type') ?? '';
   // A receipt's photo or PDF comes back as it is.
   if (!type.includes('application/json')) {
-    return new Response(res.body, { status: res.status, headers: { 'content-type': type || 'application/octet-stream', 'content-disposition': res.headers.get('content-disposition') ?? 'inline', 'cache-control': 'private, max-age=300' } });
+    return new Response(res.body, { status: res.status, headers: { 'content-type': type || 'application/octet-stream', 'content-disposition': res.headers.get('content-disposition') ?? 'inline', 'cache-control': res.ok ? 'private, max-age=300' : 'no-store', 'x-content-type-options': 'nosniff' } });
   }
   const data = await res.json<Record<string, unknown>>().catch(() => null);
   if (!res.ok) {

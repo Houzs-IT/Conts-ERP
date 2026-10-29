@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
+import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
 import { isAssignee } from '../../../../_lib/maintenance';
 import { fileToUpload, forwardClaims } from '../../../../_lib/claimsForward';
@@ -52,25 +52,40 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (file.size > MAX_BYTES) return fail('VALIDATION', 'That file is too large (15 MB limit).', 422);
   const kind = ['pod', 'invoice', 'claim', 'receipt', 'purchase'].includes(String(form?.get('kind'))) ? String(form?.get('kind')) : 'other'; // counted as a document, not a photo
   const amountSen = Number(form?.get('amountSen'));
-  if (kind === 'purchase' && !(Number.isInteger(amountSen) && amountSen > 0)) return fail('VALIDATION', 'Enter the amount on the receipt.', 422, { amountSen: 'Enter the amount.' });
   const spendDate = /^\d{4}-\d{2}-\d{2}$/.test(String(form?.get('spendDate') ?? '')) ? String(form?.get('spendDate')) : null;
+  // A purchase is checked before anything is saved: what the finance system would refuse is refused here first.
+  if (kind === 'purchase') {
+    if (!(Number.isInteger(amountSen) && amountSen > 0)) return fail('VALIDATION', 'Enter the amount on the receipt.', 422, { amountSen: 'Enter the amount.' });
+    if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type)) return fail('VALIDATION', 'A receipt must be a photo (JPEG, PNG, WebP) or a PDF.', 422);
+    if (spendDate && spendDate > mytToday()) return fail('VALIDATION', 'The receipt date cannot be in the future.', 422, { spendDate: 'Check the date.' });
+  }
   const upload = kind === 'purchase' ? await fileToUpload(file) : null;
 
-  const docId = crypto.randomUUID();
+  /* A purchase's document and receipt share one id the phone chooses, so sending it again after a lost reply finds
+     both instead of making a second receipt and paying twice. */
+  const asked = String(form?.get('receiptId') ?? '').toLowerCase();
+  const docId = kind === 'purchase' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(asked) ? asked : crypto.randomUUID();
   const key = `maintenance/${id}/${docId}`;
-  await env.MEDIA.put(key, file, { httpMetadata: { contentType: file.type || 'application/octet-stream' } });
-  await run(env, `
-    INSERT INTO documents (id, kind, file_name, mime_type, byte_size, storage_key, unit_id, maintenance_id, uploaded_by, captured_at, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    docId, kind, file.name.slice(0, 120), file.type || 'application/octet-stream', file.size, key, issue.unit_id, id, session.userId, nowIso(), nowIso());
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.document', entityTable: 'maintenance_issues', entityId: id, after: { documentId: docId, kind }, source: field ? 'field_app' : 'web' });
+  if (!(await one(env, 'SELECT 1 AS x FROM documents WHERE id = ?', docId))) {
+    await env.MEDIA.put(key, file, { httpMetadata: { contentType: file.type || 'application/octet-stream' } });
+    await run(env, `
+      INSERT INTO documents (id, kind, file_name, mime_type, byte_size, storage_key, unit_id, maintenance_id, uploaded_by, captured_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      docId, kind, file.name.slice(0, 120), file.type || 'application/octet-stream', file.size, key, issue.unit_id, id, session.userId, nowIso(), nowIso());
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.document', entityTable: 'maintenance_issues', entityId: id, after: { documentId: docId, kind }, source: field ? 'field_app' : 'web' });
+  }
   if (!upload) return json({ documentId: docId }, 201);
+  /* A job given to the technician by name only is theirs (isAssignee); the finance system knows jobs by account, so the
+     account is written on the job before the receipt goes. */
+  if (field) await run(env, 'UPDATE maintenance_issues SET assignee_user_id = ? WHERE id = ? AND assignee_user_id IS NULL', session.userId, id).catch(() => undefined);
   // The same photo is handed in as a receipt on this job; the document stays saved even if the finance system is down.
   const res = await forwardClaims(env, session, 'POST', '/receipts', {
-    ...(spendDate ? { spendDate } : {}), amountSen, vendorName: form?.get('vendorName') ? String(form.get('vendorName')).slice(0, 200) : undefined,
+    id: docId, ...(spendDate ? { spendDate } : {}), amountSen, vendorName: form?.get('vendorName') ? String(form.get('vendorName')).slice(0, 200) : undefined,
     lines: [{ maintenanceIssueId: id, amountSen }], files: [upload],
   });
-  const receipt = res.ok ? await res.json<{ id: string; receiptNo: string; route: string }>().catch(() => null) : null;
-  if (receipt) await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'claims.receipt', entityTable: 'staff_receipts', entityId: receipt.id, after: { no: receipt.receiptNo, amountSen, maintenanceId: id }, source: field ? 'field_app' : 'web' });
-  return json({ documentId: docId, receipt: receipt ? { receiptNo: receipt.receiptNo, route: receipt.route } : 'failed' }, 201);
+  const body = await res.json<{ id?: string; receiptNo?: string; route?: string; error?: { message?: string } }>().catch(() => null);
+  if (!res.ok || !body?.receiptNo) return json({ documentId: docId, receipt: 'failed', message: body?.error?.message ?? null }, 201);
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'claims.receipt', entityTable: 'staff_receipts', entityId: String(body.id), after: { no: body.receiptNo, amountSen, maintenanceId: id }, source: field ? 'field_app' : 'web' });
+  return json({ documentId: docId, receipt: { receiptNo: body.receiptNo, route: body.route } }, 201);
 };
+

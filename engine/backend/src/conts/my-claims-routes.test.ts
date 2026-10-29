@@ -216,3 +216,16 @@ describe('nothing paid twice, nothing half-saved', () => {
     expect((await handIn(a, { lines: [{ amountSen: 4500, department: 'shared', projectId: 999 }] })).status).toBe(422);
   });
 });
+
+describe('a receipt sent again', () => {
+  test('with the same id comes back as the same receipt, not a second one', async () => {
+    const sb = world();
+    const id = '0f7c2a1e-5b3d-4c8e-9a1f-2b3c4d5e6f70';
+    const first = await handIn(appFor(sb, TECH), { id });
+    expect(first.status).toBe(201);
+    const again = await handIn(appFor(sb, TECH), { id });
+    expect(again.status).toBe(200);
+    expect(sb.tables.staff_receipts).toHaveLength(1);
+    expect((await handIn(appFor(sb, CLEAN), { id })).status).toBe(409);
+  });
+});

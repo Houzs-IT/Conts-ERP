@@ -124,6 +124,7 @@ function ReceiptForm({ me, onDone }: { me: Me; onDone: () => void }) {
   const [files, setFiles] = useState<File[]>([]);
   const [reading, setReading] = useState(false);
   const [spendDate, setSpendDate] = useState(todayMyt());
+  const [dateTouched, setDateTouched] = useState(false);
   const [amountSen, setAmountSen] = useState<number | null>(null);
   const [vendorName, setVendorName] = useState('');
   const [note, setNote] = useState('');
@@ -138,7 +139,7 @@ function ReceiptForm({ me, onDone }: { me: Me; onDone: () => void }) {
     const read = await readReceipt(chosen);
     setReading(false);
     if (read.amountSen != null && amountSen == null) setAmountSen(read.amountSen);
-    if (read.date) setSpendDate(read.date);
+    if (read.date && read.date <= todayMyt() && !dateTouched) setSpendDate(read.date);
     if (read.vendorName && !vendorName) setVendorName(read.vendorName);
   }
   async function send() {
@@ -163,7 +164,7 @@ function ReceiptForm({ me, onDone }: { me: Me; onDone: () => void }) {
       <FileDropRow label="Add the receipt" hint="Photos or a PDF. The amount is read from it; check it before you send." accept="image/*,application/pdf" multiple
         onPick={l => void pick(l)} busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-        <DateField label="Date on the receipt" value={spendDate} onChange={setSpendDate} max={todayMyt()} />
+        <DateField label="Date on the receipt" value={spendDate} onChange={v => { setSpendDate(v); setDateTouched(true); }} max={todayMyt()} />
         <MoneyInput label="Amount" valueSen={amountSen} onChangeSen={setAmountSen} />
         <Field label="Shop" value={vendorName} onChange={e => setVendorName(e.target.value)} maxLength={200} />
       </div>

@@ -37,7 +37,13 @@ export function PettyCash() {
   const [note, setNote] = useState<string | null>(null);
   const run = async (path: string, body: unknown, method: "POST" | "PATCH" | "PUT" = "POST") => {
     setNote(null);
-    try { return await act.mutateAsync({ path, body, method }); } catch (e) { setNote(e instanceof Error ? e.message : "Not saved."); return null; }
+    try {
+      const res = await act.mutateAsync({ path, body, method });
+      /* A check answers 207 when a receipt was not checked: say why. */
+      const failed = (res.results as Array<{ ok: boolean; message?: string }> | undefined)?.filter((x) => !x.ok) ?? [];
+      if (failed.length) setNote(failed.map((x) => x.message ?? "Not checked.").join(" "));
+      return res;
+    } catch (e) { setNote(e instanceof Error ? e.message : "Not saved."); return null; }
   };
 
   const newFloat = async () => {
@@ -48,11 +54,11 @@ export function PettyCash() {
     if (!dept) return;
     const keeper = await choose({
       title: "Who keeps the cash?",
-      options: [...o.staff].sort((a, b) => Number(b.departmentId === dept) - Number(a.departmentId === dept) || a.name.localeCompare(b.name)).slice(0, 30)
+      options: [...o.staff].sort((a, b) => Number(b.departmentId === dept) - Number(a.departmentId === dept) || a.name.localeCompare(b.name))
         .map((s) => ({ value: s.id, label: s.name, detail: o.departments.find((d) => d.id === s.departmentId)?.name })),
     });
     if (!keeper) return;
-    const amount = await prompt({ title: "How much is the float?", placeholder: "RM, e.g. 1000", confirmLabel: "Set the float", validate: (v) => (ringgitToSen(v) == null ? "Enter an amount in RM." : null) });
+    const amount = await prompt({ title: "How much is the float?", placeholder: "RM, e.g. 1000", confirmLabel: "Set the float", validate: (v) => (!ringgitToSen(v) ? "Enter an amount in RM, more than 0." : null) });
     if (amount == null) return;
     await run(`${pettyPath}/floats`, { departmentId: dept, keeperUserId: keeper, floatSen: ringgitToSen(amount) });
   };
@@ -190,7 +196,7 @@ function Overrides({ run, floats }: { run: (path: string, body: unknown, method?
   const floatOf = (id: string) => floats.find((f) => f.id === id)?.departmentName ?? "—";
   const save = (next: { userId: string; floatId: string }[]) => run(`${pettyPath}/overrides`, { overrides: next }, "PUT");
   const add = async () => {
-    const person = await choose({ title: "Who?", options: (opts.data?.staff ?? []).filter((s) => !list.some((o) => o.userId === s.id)).slice(0, 40).map((s) => ({ value: s.id, label: s.name })) });
+    const person = await choose({ title: "Who?", options: (opts.data?.staff ?? []).filter((s) => !list.some((o) => o.userId === s.id)).map((s) => ({ value: s.id, label: s.name })) });
     if (!person) return;
     const floatId = await choose({ title: `${nameOf(person)} hands receipts in to`, options: floats.map((f) => ({ value: f.id, label: `${f.departmentName} — kept by ${f.keeperName}` })) });
     if (floatId) await save([...list, { userId: person, floatId }]);
