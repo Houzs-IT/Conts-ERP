@@ -334,8 +334,13 @@ Design rules for these screens follow the project's existing engine theme. Numbe
   - Maintenance receipts come from the job.
   - Cleaning receipts are not always tied to a job, so a standalone phone submit is needed.
   - Usually one person per department holds the petty cash and the others claim from them in cash. Some receipts go instead as a claim paid by finance.
-  - **Open:** who decides between "pay from the holder's petty cash" and "send to finance as a claim": the holder, finance, or an amount rule.
-  - **Open:** whether field staff see any amount or balance on the phone.
+  - **Settled 2026-10-29:** an ordinary staff member's receipt goes through **their supervisor's petty cash**. The supervisor is the holder; the amount is taken off the supervisor's float.
+  - **Settled 2026-10-29:** ordinary staff see no amounts and no balance on the phone.
+  - **Open:** how the system knows a staff member's supervisor.
+  - **Open:** whether the supervisor may instead send a receipt to finance as a claim.
+- **Goods, settled 2026-10-29:**
+  - Maintenance parts go into the store, at weighted-average cost. The drawing rules are still to be settled with management.
+  - Supply chain goods go through a PO. When the goods arrive, or when payment is due, a payment request is submitted against the PO. Supply chain goods are never bought out of petty cash.
   - The phone screens need all four portal languages (en, ms, zh, my).
 
   Sections 4.4a, 4.5 and 4.7 still describe the earlier "the submitter holds the float" model and will be rewritten once this is settled.
