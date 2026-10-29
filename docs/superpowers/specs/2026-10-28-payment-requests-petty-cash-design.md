@@ -189,28 +189,28 @@ All product text is English with British spelling. The field portal's screens ar
 - submitter, float (resolved by §4.2 at hand-in and fixed on the receipt), spend date, files, lines, note.
 
 ```
-Handed in → Paid out (keeper) → Checked (finance) → Topped up
+Handed in (= paid from the float) → Checked (finance) → Topped up
    ↘ Rejected (finance, reason) → a proper receipt → Handed in again
                                 ↘ Repaid (money given back to the float)
                                 ↘ Written off (finance)
 ```
 
-- **Finance may check before or after the keeper pays out.**
-- **Paid out:**
-  - The keeper confirms the amount (correcting the OCR if needed) and marks the receipt paid.
-  - A keeper's own spending is handed in already paid out.
-- **Rejected before paid out:** the keeper does not pay.
-- **Rejected after paid out:** the submitter owes the float. A later proper receipt, a repayment, or a write-off clears it.
+- **A receipt on a float counts as paid the moment it is handed in** (chew, 2026-10-29: "就提交时当做已付吧，那是他们之间的事了").
+  - Its amount comes off the balance at once.
+  - When the keeper hands the cash over is between them; the system records no pay-out step.
+- **Rejected:** the submitter owes the float. A later proper receipt, a repayment, or a write-off clears it.
+- **Department decides the fields** (chew, 2026-10-29). Renovation receipts mostly must name a project, and renovation staff work only in the engine.
 - **Paid back by finance** (no float, §4.2 step 3):
-  - The receipt has no float and goes to finance's "Receipts to pay back" list. There is no "Paid out" step and no request row, so nothing counts twice.
+  - The receipt has no float and goes to finance's "Receipts to pay back" list. There is no request row, so nothing counts twice.
   - Finance confirms the amount and account while checking, then **Create voucher** makes a DRAFT Payment voucher to the submitter, using the staff bank details (§4.8).
   - The receipt is "Paid back" when that voucher posts.
   - Over the project limit is flagged, never refused, like any receipt.
-- **Resubmitting after a rejection:** a proper receipt handed in after a rejected, already paid-out one replaces it and keeps "Paid out". It is not paid out again.
+- **Resubmitting after a rejection:** a proper receipt handed in after a rejected one replaces it. It is not taken off the balance a second time.
 - **Which amount counts:**
-  - The keeper's figure at Paid out is the cash handed over.
-  - Finance's figure at Checked is the cost. It is the one the ledger posts and the project limit uses.
-  - If finance's figure differs from a paid-out amount, the keeper's tab shows the difference: "pay RM x more" or "collect RM x back". Settling it records a further pay-out or a repayment.
+  - The OCR amount, or the amount an office submitter confirms, is taken off the balance at hand-in.
+  - Finance may correct it while checking. The balance follows the corrected figure, and the ledger and the project limit use it. Any difference in cash is settled between the keeper and the staff member.
+  - An unreadable receipt has no amount and is marked "Amount to confirm". Finance enters the amount.
+  - The keeper may also enter the amount, on their own tab.
 - **No passing on** (chew, "b"): the keeper has no way to send a receipt to finance.
 - **Project limit:** a receipt's project lines count as used from Handed in (SOP §6). They stop counting when the receipt is rejected and then repaid or written off. Over the limit is flagged, never refused.
 
@@ -223,20 +223,19 @@ Handed in → Paid out (keeper) → Checked (finance) → Topped up
 
 ```
 money paid to the keeper (posted vouchers)
-  − receipts paid out
-  + rejected paid-out receipts that were repaid
+  − receipts handed in on the float
+  + rejected receipts that were repaid
   − money returned to finance
 ```
 
-- **"Waiting to pay out"** (handed in, not yet paid) is shown beside the balance; it is not taken off.
 - **Overspending is allowed** (chew, 2026-10-28). The balance can go below zero, which is the keeper's own money. Nothing is refused for it. It shows in the danger colour.
 - **Banner:** shown to the keeper and to finance below the warning %.
 
 **Money to the keeper** (a new float, a raise, a top-up):
 - Always a Payment voucher, purpose `OTHER`, to the keeper, with one line on the petty cash account, linked to the float.
-- **"Top up"** proposes **float − balance**, which brings the float back to its amount. It therefore includes write-offs, and any paid-out receipt still owed by a staff member.
-  - The voucher lists the paid-out and checked receipts it covers, and they turn "Topped up" when it posts.
-  - Receipts paid out but not yet checked are shown as a warning. Finance may still top up, or check them first.
+- **"Top up"** proposes **float − balance**, which brings the float back to its amount. It therefore includes write-offs, and any rejected receipt still owed by a staff member.
+  - The voucher lists the checked receipts it covers, and they turn "Topped up" when it posts.
+  - Receipts not yet checked are shown as a warning. Finance may still top up, or check them first.
   - A later repayment raises the balance, so it simply lowers the next top-up.
 - **The keeper's "Ask for a top-up"** flags the float for finance.
 
@@ -247,7 +246,7 @@ money paid to the keeper (posted vouchers)
 | Event | Journal |
 |---|---|
 | A voucher to the keeper posts | Dr petty cash, Cr bank |
-| A receipt is both paid out and checked | Dr each line's account, Cr petty cash, on the spend date. A closed month moves it to the first open month, and the receipt keeps its real date (SOP §3.10) |
+| A receipt on a float is checked | Dr each line's account, Cr petty cash, on the spend date. A closed month moves it to the first open month, and the receipt keeps its real date (SOP §3.10) |
 | A rejected receipt | Nothing |
 | A repayment | Nothing (the cash goes back into the tin) |
 | A write-off | Dr the account finance picks, for example a staff debtor; Cr petty cash |
@@ -322,9 +321,8 @@ Submitted (waiting for payment) → Part paid → Paid
 - **"Hand in a receipt":** a button on the Jobs tab. Take photos, optionally pick a unit, add a note, send.
 - **"My receipts":** each receipt with date, what it was for, and status in words (Waiting, Paid back, Rejected and why). No amounts.
 - **For a field keeper only, a "Petty cash" tab:**
-  - balance and waiting to pay out;
-  - the receipts waiting for them, each with photo, submitter, the read amount, and an amount field;
-  - "Paid out";
+  - the balance;
+  - this month's receipts on their float, each with photo, submitter and amount, so they know what cash to hand over. The amount can be entered where OCR could not read it;
   - "Ask for a top-up".
 
 **My claims** (engine page; also in Property OS through the frame):
@@ -341,13 +339,13 @@ Submitted (waiting for payment) → Part paid → Paid
 - **Create voucher**, **Reject**, **Close**.
 
 *Petty cash overview:* one row per float.
-- Columns: department, keeper, float, balance, waiting to pay out, waiting for a check (amount and count), last top-up, low-balance marker.
+- Columns: department, keeper, float, balance, waiting for a check (amount and count), last top-up, low-balance marker.
 - A totals row.
 - **New float**, **Change float / keeper**.
 - **Staff pointed at another float:** a small list to add and remove overrides.
 
 *Float page:*
-- Header: float, balance, waiting to pay out, waiting for a check.
+- Header: float, balance, waiting for a check.
 - Month filter, defaulting to this month.
 - Table columns: date, submitter, description, department, unit / job / project, account, amount, status, receipts (thumbnails that open the file).
 - Finance can set the account and correct the amount while checking.
@@ -373,7 +371,7 @@ The screens follow the engine's existing theme. Amounts are right-aligned, in RM
 | Who | Can do |
 |---|---|
 | Any staff member | Hand in receipts; see their own receipts and requests. Office staff may also ask finance to pay |
-| A float's keeper | See and pay out the receipts on their own float; ask for a top-up |
+| A float's keeper | See the receipts on their own float, enter missing amounts, ask for a top-up |
 | Ledger edit | Process requests; check and reject receipts; record returned and repaid; see every float |
 | Ledger full | Also set floats, keepers, overrides, staff bank details, top-ups and write-offs. Approving a voucher still needs voucher approve, as today |
 
