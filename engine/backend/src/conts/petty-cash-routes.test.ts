@@ -177,6 +177,19 @@ describe('money out', () => {
     expect(sb.tables.payment_vouchers[0].petty_cash_float_id).toBe('F1');
     expect((await post(app(sb, [FULL_KEY]), '/floats/F1/top-up', { bankAccountCode: '310-0010' })).status).toBe(409);
   });
+  test("a float's account is never the bank a top-up or a pay-back is paid from", async () => {
+    const sb = world();
+    fakeVoucher(sb);
+    expect(await (await post(app(sb, [FULL_KEY]), '/floats/F1/top-up', { bankAccountCode: '315-0101' })).json()).toMatchObject({ error: 'bank_is_petty_cash' });
+    expect(made).toHaveLength(0);
+  });
+  test('a closed float opened again is refused when its account went to another float', async () => {
+    const sb = world();
+    sb.tables.petty_cash_floats.push({ id: 'F0', company_id: CO, department_id: 'reno', keeper_user_id: 'u-old', float_sen: 1000, warn_pct: 20, active: false, topup_requested_at: null, account_code: '315-0101' });
+    const res = await app(sb, [FULL_KEY]).request('/floats/F0', { method: 'PATCH', body: JSON.stringify({ active: true }), headers: { 'content-type': 'application/json' } });
+    expect(await res.json()).toMatchObject({ error: 'account_has_float' });
+    expect(sb.tables.petty_cash_floats[1].active).toBe(false);
+  });
   test('a float without its account is not topped up', async () => {
     const sb = world();
     fakeVoucher(sb);

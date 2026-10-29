@@ -68,9 +68,9 @@ export async function ledgerSetupStatus(sb: Db, companyId: number): Promise<Ledg
     sb.from("acc_item_group_accounts").select(`group_code, ${BINDING_COLUMNS.join(", ")}`).eq("company_id", companyId),
     sb.from("acc_bank_letters").select("account_code, letter").eq("company_id", companyId),
     loadLedgerSettings(sb, companyId),
-    sb.from("petty_cash_floats").select("account_code").eq("company_id", companyId).eq("active", true),
+    sb.from("petty_cash_floats").select("account_code").eq("company_id", companyId),
   ]);
-  for (const r of [chartRes, groupsRes, bindsRes, lettersRes]) if (r.error) throw new Error(r.error.message);
+  for (const r of [chartRes, groupsRes, bindsRes, lettersRes, floatsRes]) if (r.error) throw new Error(r.error.message);
   if (!settings.ok) throw new Error("The ledger settings could not be read.");
   const chart = (chartRes.data ?? []) as ChartRow[];
 
@@ -87,7 +87,7 @@ export async function ledgerSetupStatus(sb: Db, companyId: number): Promise<Ledg
     .filter((g) => g.missing.length > 0);
 
   // The cash drawer mints on its fixed letter (payment-vouchers.ts mintFormalPvNo); every other money account needs one,
-  // except a petty cash float's own account (Conts): nothing pays a voucher out of it.
+  // except a petty cash float's own account, open or closed (Conts): nothing pays a voucher out of it.
   const floatAccounts = new Set(((floatsRes.data ?? []) as Array<{ account_code: string | null }>).map((f) => f.account_code).filter(Boolean));
   const lettered = new Set(((lettersRes.data ?? []) as Array<{ account_code: string; letter: string | null }>)
     .filter((l) => String(l.letter ?? "").trim()).map((l) => l.account_code));

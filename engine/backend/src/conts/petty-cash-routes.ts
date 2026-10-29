@@ -115,21 +115,30 @@ async function floatAccountProblem(sb: any, companyId: number, code: string, flo
   return null;
 }
 
-/** Whether anything is booked to a float's account yet: a checked or written-off receipt's journal, or a top-up voucher. */
+/** Whether anything is booked to a float's account yet: a receipt checked or written off (by its journal or its status,
+ *  since the journal is stamped on the receipt after it posts), or a top-up voucher. */
+const BOOKED = new Set(['CHECKED', 'TOPPED_UP', 'WRITTEN_OFF']);
 async function floatBooked(sb: any, companyId: number, floatId: string): Promise<boolean> {
   const [{ data: rc }, { data: pv }] = await Promise.all([
-    sb.from('staff_receipts').select('id, je_id, writeoff_je_id').eq('company_id', companyId).eq('float_id', floatId),
+    sb.from('staff_receipts').select('id, status, je_id, writeoff_je_id').eq('company_id', companyId).eq('float_id', floatId),
     sb.from('payment_vouchers').select('id, status').eq('company_id', companyId).eq('petty_cash_float_id', floatId),
   ]);
-  return ((rc ?? []) as Array<{ je_id: string | null; writeoff_je_id: string | null }>).some(r => r.je_id || r.writeoff_je_id)
+  return ((rc ?? []) as Array<{ status: string; je_id: string | null; writeoff_je_id: string | null }>).some(r => r.je_id || r.writeoff_je_id || BOOKED.has(r.status))
     || ((pv ?? []) as Array<{ status: string }>).some(v => v.status !== 'CANCELLED');
 }
 
 /** The account a float books to, by the receipt's float. */
-async function floatAccountOf(sb: any, floatId: string): Promise<string | null> {
-  const { data } = await sb.from('petty_cash_floats').select('id, account_code').eq('id', floatId).maybeSingle();
+async function floatAccountOf(sb: any, companyId: number, floatId: string): Promise<string | null> {
+  const { data } = await sb.from('petty_cash_floats').select('id, account_code').eq('company_id', companyId).eq('id', floatId).maybeSingle();
   return (data as { account_code: string | null } | null)?.account_code ?? null;
 }
+
+/** A float's account (any float's, open or closed) is cash in a keeper's hands, never the bank a voucher is paid from. */
+async function isFloatAccountCode(sb: any, companyId: number, code: string): Promise<boolean> {
+  const { data } = await sb.from('petty_cash_floats').select('id').eq('company_id', companyId).eq('account_code', code).limit(1);
+  return ((data ?? []) as unknown[]).length > 0;
+}
+const NOT_A_BANK = { error: 'bank_is_petty_cash', message: "That is a petty cash float's account: choose the bank the money is paid from." };
 
 async function accountNames(sb: any, companyId: number, codes: string[]): Promise<Map<string, string>> {
   if (codes.length === 0) return new Map();
@@ -236,6 +245,16 @@ export const updateFloatHandler = async (c: Ctx): Promise<Response> => {
   if (b.floatSen !== undefined) { const v = sen(b.floatSen); if (v == null) return c.json({ error: 'validation', message: 'Enter the float.' }, 422); patch.float_sen = v; }
   if (b.warnPct !== undefined) { const v = Number(b.warnPct); if (!(Number.isInteger(v) && v >= 0 && v <= 100)) return c.json({ error: 'validation' }, 422); patch.warn_pct = v; }
   if (b.active !== undefined) patch.active = b.active === true;
+  /* Opening a closed float again: its department, keeper and account may have gone to another float meanwhile. */
+  if (b.active === true && !f.active) {
+    const sb = c.get('supabase');
+    const live = await floatsOf(sb, co.companyId, { activeOnly: true });
+    if (live.some(x => x.department_id === f.department_id)) return c.json({ error: 'department_has_float', message: 'This department already has a petty cash float.' }, 409);
+    const keeper = b.keeperUserId !== undefined ? String(b.keeperUserId).trim() : f.keeper_user_id;
+    if (live.some(x => x.keeper_user_id === keeper)) return c.json({ error: 'keeper_has_float', message: 'This person already keeps a petty cash float.' }, 409);
+    const code = b.accountCode !== undefined ? String(b.accountCode ?? '').trim() : f.account_code;
+    if (code) { const bad = await floatAccountProblem(sb, co.companyId, code, f.id); if (bad) return c.json(bad.body, bad.status); }
+  }
   if (b.keeperUserId !== undefined) {
     const k = String(b.keeperUserId).trim();
     if (!k) return c.json({ error: 'validation', message: 'Pick the keeper.' }, 422);
@@ -360,7 +379,7 @@ async function checkOne(c: Ctx, companyId: number, it: Record<string, unknown>):
     }
   }
   if (r.float_id) {
-    const je = await postReceiptJournal(sb, companyId, { receiptNo: r.receipt_no, spendDate: String(r.spend_date).slice(0, 10), floatAccountCode: await floatAccountOf(sb, r.float_id),
+    const je = await postReceiptJournal(sb, companyId, { receiptNo: r.receipt_no, spendDate: String(r.spend_date).slice(0, 10), floatAccountCode: await floatAccountOf(sb, companyId, r.float_id),
       lines: lines.map(l => ({ accountCode: String(l.account_code), amountSen: Number(l.amount_sen), department: l.department, description: l.description })) });
     if (!je.ok) {
       await undo();
@@ -433,7 +452,7 @@ export const writeOffReceiptHandler = async (c: Ctx): Promise<Response> => {
   if (!(await claim(sb, r.id, 'REJECTED', { status: 'WRITTEN_OFF', writeoff_account_code: accountCode }))) {
     return c.json({ error: 'not_rejected', message: 'This receipt is no longer waiting to be repaid or written off.' }, 409);
   }
-  const je = await postWriteOffJournal(sb, co.companyId, { receiptNo: r.receipt_no, amountSen: Number(r.amount_sen), accountCode, date, floatAccountCode: await floatAccountOf(sb, r.float_id) });
+  const je = await postWriteOffJournal(sb, co.companyId, { receiptNo: r.receipt_no, amountSen: Number(r.amount_sen), accountCode, date, floatAccountCode: await floatAccountOf(sb, co.companyId, r.float_id) });
   if (!je.ok) {
     await claim(sb, r.id, 'WRITTEN_OFF', { status: 'REJECTED', writeoff_account_code: null });
     return c.json({ error: 'journal_failed', message: (je as { reason?: string }).reason ?? je.status }, 409);
@@ -465,6 +484,7 @@ export const topUpHandler = async (c: Ctx): Promise<Response> => {
   const bank = String((await bodyOf(c))?.bankAccountCode ?? '').trim();
   if (!bank) return c.json({ error: 'validation', message: 'Choose the bank the top-up is paid from.' }, 422);
   const sb = c.get('supabase');
+  if (await isFloatAccountCode(sb, co.companyId, bank)) return c.json(NOT_A_BANK, 422);
   /* One top-up at a time: a draft already raised for this float is finished or cancelled first. */
   const { data: open } = await sb.from('payment_vouchers').select('id, pv_number, status').eq('company_id', co.companyId).eq('petty_cash_float_id', f.id).eq('status', 'DRAFT');
   if ((open ?? []).length > 0) return c.json({ error: 'top_up_open', message: `Voucher ${(open as Array<{ pv_number: string }>)[0].pv_number} already tops this float up.` }, 409);
@@ -512,6 +532,7 @@ export const receiptVoucherHandler = async (c: Ctx): Promise<Response> => {
   const bank = String((await bodyOf(c))?.bankAccountCode ?? '').trim();
   if (!bank) return c.json({ error: 'validation', message: 'Choose the bank the person is paid from.' }, 422);
   const sb = c.get('supabase');
+  if (await isFloatAccountCode(sb, co.companyId, bank)) return c.json(NOT_A_BANK, 422);
   const r = await loadReceipt(c, co.companyId, c.req.param('id'));
   if (!r) return c.json({ error: 'not_found' }, 404);
   if (r.float_id) return c.json({ error: 'paid_from_float', message: 'This receipt is paid from petty cash.' }, 409);
@@ -608,18 +629,19 @@ export const optionsHandler = async (c: Ctx): Promise<Response> => {
     allRows<{ account_code: string; account_name: string; account_type: string; acc_money: boolean | null; special_type: string | null; parent_code: string | null; is_active: boolean | null }>((f, t) =>
       sb.from('accounts').select('account_code, account_name, account_type, acc_money, special_type, parent_code, is_active').eq('company_id', co.companyId).order('account_code').range(f, t)),
     resolveRoles(sb, co.companyId),
-    floatsOf(sb, co.companyId, { activeOnly: true }),
+    floatsOf(sb, co.companyId),
   ]);
   const active = accts.filter(a => a.is_active === true);
   const headers = new Set(accts.map(a => a.parent_code).filter((p): p is string => !!p));
   const reserved = new Set([...CONTROL_ROLES.map(r => roles[r]), roles.CASH, roles.BANK_DEFAULT, roles.CUSTOMER_DEPOSITS]);
-  const floatOn = new Map(live.filter(f => f.account_code).map(f => [String(f.account_code), f.id]));
+  const floatOn = new Map(live.filter(f => f.active && f.account_code).map(f => [String(f.account_code), f.id]));
+  const everFloat = new Set(live.map(f => f.account_code).filter((x): x is string => !!x));
   const costable = active.filter(a => !headers.has(a.account_code) && a.acc_money !== true && !a.special_type && !reserved.has(a.account_code));
   return c.json({
     departments: ((depts ?? []) as Array<{ id: string; name: string; kind: string; side: string }>).map(d => ({ id: d.id, name: d.name, kind: d.kind, side: d.side })).sort((a, b) => a.name.localeCompare(b.name)),
     staff: ((staff ?? []) as Array<{ id: string; full_name: string; department_id: string | null; active: boolean }>).filter(s => s.active).map(s => ({ id: s.id, name: s.full_name, departmentId: s.department_id })).sort((a, b) => a.name.localeCompare(b.name)),
     floatAccounts: accts.filter(a => isFloatAccount(a, headers, roles.CASH)).map(a => ({ code: a.account_code, name: a.account_name, floatId: floatOn.get(a.account_code) ?? null })),
-    banks: active.filter(a => a.acc_money === true && !floatOn.has(a.account_code)).map(a => ({ code: a.account_code, name: a.account_name })),
+    banks: active.filter(a => a.acc_money === true && !everFloat.has(a.account_code)).map(a => ({ code: a.account_code, name: a.account_name })),
     expenseAccounts: costable.filter(a => a.account_type === 'EXPENSE').map(a => ({ code: a.account_code, name: a.account_name })),
     writeOffAccounts: costable.map(a => ({ code: a.account_code, name: a.account_name })),
   });
