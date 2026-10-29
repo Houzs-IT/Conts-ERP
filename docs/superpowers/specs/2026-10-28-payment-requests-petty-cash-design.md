@@ -334,9 +334,13 @@ Design rules for these screens follow the project's existing engine theme. Numbe
   - Maintenance receipts come from the job.
   - Cleaning receipts are not always tied to a job, so a standalone phone submit is needed.
   - Usually one person per department holds the petty cash and the others claim from them in cash. Some receipts go instead as a claim paid by finance.
-  - **Settled 2026-10-29:** an ordinary staff member's receipt goes through **their supervisor's petty cash**. The supervisor is the holder; the amount is taken off the supervisor's float.
+  - **Settled 2026-10-29 (replaces "the supervisor's petty cash"):** petty cash is **per department, one float per department**.
+    - Each float has one keeper. The keeper can be any staff member, not necessarily a supervisor.
+    - The receipts of everyone in that department are paid from the department's float. The keeper pays the staff member back in cash, and the amount comes off the float.
+    - An individual staff member can be pointed at another department's float in their settings; most people need no change.
+    - A department with no float: receipts go to finance as a claim.
+    - The existing user "manager" field is not used for this, because keepers are often not supervisors.
   - **Settled 2026-10-29:** ordinary staff see no amounts and no balance on the phone.
-  - **Open:** how the system knows a staff member's supervisor.
   - **Open:** whether the supervisor may instead send a receipt to finance as a claim.
 - **Goods, settled 2026-10-29:**
   - Maintenance parts go into the store, at weighted-average cost. The drawing rules are still to be settled with management.
