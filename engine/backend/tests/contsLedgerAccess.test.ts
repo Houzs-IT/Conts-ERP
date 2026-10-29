@@ -273,25 +273,3 @@ describe('the ledger settings history is the Ledger\'s', () => {
     expect(((await ok.json()) as { entries: unknown[] }).entries).toHaveLength(1);
   });
 });
-
-describe('My claims for office staff with no engine area (Conts)', () => {
-  test('a sign-on with every area at none but claims gets the one claims-only role; without claims, none', async () => {
-    const env = fakeDb([OWNER]);
-    expect(await roleIdFor(env as never, 'operations_staff', parseContsAccess(levels('none'))!)).toBeNull();
-    const id = await roleIdFor(env as never, 'operations_staff', parseContsAccess(levels('none'))!, { claims: true });
-    expect(id).not.toBeNull();
-    expect(env.roles.find((r) => r.id === id)).toMatchObject({ name: 'Conts: claims only', permissions: '[]' });
-    expect(await roleIdFor(env as never, 'finance_admin', parseContsAccess(levels('none'))!, { claims: true })).toBe(id);
-  });
-  test('a field role or an owner never signs on, claims or not', async () => {
-    const env = fakeDb([OWNER]);
-    expect(await roleIdFor(env as never, 'technician', parseContsAccess(levels('none'))!, { claims: true })).toBeNull();
-    expect(await roleIdFor(env as never, 'owner', parseContsAccess(levels('full'))!, { claims: true })).toBeNull();
-  });
-  test('someone with an engine area keeps the role named after their levels', async () => {
-    const env = fakeDb([OWNER]);
-    const withClaims = await roleIdFor(env as never, 'operations_staff', parseContsAccess(levels('view'))!, { claims: true });
-    const without = await roleIdFor(env as never, 'operations_staff', parseContsAccess(levels('view'))!);
-    expect(withClaims).toBe(without);
-  });
-});

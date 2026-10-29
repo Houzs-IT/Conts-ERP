@@ -22,9 +22,6 @@ export async function scmEngineAssertion(env: Env, session: Session): Promise<st
   // The role's level in each engine area travels with the sign-on, so the engine enforces the same chart.
   const levels = await levelsFor(env, session);
   const access = Object.fromEntries(ENGINE_AREAS.map(k => [k, levels[k]]));
-  // My claims (finance, 29 Oct 2026): every office account may hand in receipts and ask finance to pay, even with no
-  // engine area. Sent apart from the area levels; the engine opens only the claims screens for it.
-  access.claims = 'edit';
   const body = b64url(enc.encode(JSON.stringify({ email: session.email, name: session.fullName, role: session.role, access, exp: Date.now() + 45_000 })));
   const key = await crypto.subtle.importKey('raw', enc.encode(env.SCM_ENGINE_SSO_SECRET!), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return `${body}.${b64url(await crypto.subtle.sign('HMAC', key, enc.encode(body)))}`;
