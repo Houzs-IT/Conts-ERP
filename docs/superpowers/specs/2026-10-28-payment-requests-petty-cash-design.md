@@ -30,10 +30,11 @@ All product text is English with British spelling. The field portal's screens ar
    - It is paid back from their department's petty cash.
    - If the department has none, finance pays it back by bank transfer.
    - Field staff never choose who pays.
-2. **Any office staff member can ask finance to pay**, from either system, and follow the request to "Paid":
-   - a reimbursement;
+2. **Any office staff member can ask finance to pay a supplier**, from either system, and follow the request to "Paid":
    - a supplier payment, including one against a PO;
    - a deposit.
+
+   Their own spending is a receipt (goal 1).
 3. **A department's keeper sees the receipts waiting for them**, pays out cash and marks them paid. The float's balance follows.
 4. **Finance works in one place: the engine's Finance area.**
    - Turn requests into Payment vouchers, or reject them.
@@ -98,7 +99,11 @@ All product text is English with British spelling. The field portal's screens ar
 - **All new tables live in schema `scm`.** All rules live in the engine backend (`engine/backend/src/conts/`).
 - **Property OS never writes these tables.** It forwards to the engine (§4.3). This is the only way to meet the "no two copies" anti-goal; finance, the Payment vouchers and the project limit already live in the engine.
 - **Migrations:**
-  - They go in the root `migrations-pg/`, after the latest number on `origin/main` (0176 today), granted to `scm_engine` as the other `scm` migrations there are.
+  - They go in the root `migrations-pg/`, after the latest number on `origin/main` (0176 today).
+  - New `scm` tables are owned by `scm_engine` and granted to `service_role` and `pos_app`, as `0162_project_limit.sql` does, because the engine reaches them through the REST client.
+- **Prerequisite:** this builds on the project-limit work on branch `feat/finance-1b-h-project-limit` (`engine/backend/src/conts/project-limit.ts`, not yet on `origin/main`).
+  - That branch must be merged first, with its 0162 migration renumbered.
+  - Where this document says "as today" about the project limit, it means that branch.
   - `engine/backend/src/db/migrations-pg/` is the frozen Houzs copy. It is not used.
 - **The inherited Houzs table `scm.acc_payment_requests` is not reused.**
   - Its requester is an engine integer id.
@@ -109,7 +114,7 @@ All product text is English with British spelling. The field portal's screens ar
 
 **A person** is keyed by their Property OS user id (`pos.users.id`, text).
 - The engine finds the caller's key by email through the view `public.conts_staff`.
-- That view gains `department_id` and the department's `side`.
+- That view gains `department_id`, the department's `side`, and the role.
 
 **A department** is a row of `pos.departments`. Its `kind` is one of management, staff, cleaning or maintenance, and its `side` is one of conts, dream_crafter or both.
 
@@ -120,7 +125,7 @@ All product text is English with British spelling. The field portal's screens ar
 **Which float takes a person's receipts:**
 1. their own override, if finance set one;
 2. otherwise their department's active float;
-3. otherwise none: the receipt becomes a reimbursement request to finance (§4.5).
+3. otherwise none. The receipt stays a receipt with no float, and finance pays it back by bank transfer (§4.5, "Paid back by finance").
 
 **The default line department** comes from the person's department side:
 
@@ -130,7 +135,10 @@ All product text is English with British spelling. The field portal's screens ar
 | dream_crafter | supply |
 | both or none | shared |
 
-**Field staff** are accounts whose role is housekeeper or technician. Production has no such accounts yet, so they must be created before field staff can hand in receipts.
+**Field staff** are accounts whose role is housekeeper or technician.
+- They sign in by phone and PIN. Their email is the placeholder `<id>@no-email.invalid` (`migrations-pg/0143_field_pin_sign_in.sql`), which still matches by email.
+- Production has no field accounts yet, and no account in a Cleaning, Maintenance or Renovation department.
+- Accounts and departments must be set up before field staff can hand in receipts. Until people are placed in departments, everyone's default line department comes out as "shared".
 
 ### 4.3 Where people submit, and how the engine knows them
 
@@ -193,7 +201,16 @@ Handed in → Paid out (keeper) → Checked (finance) → Topped up
   - A keeper's own spending is handed in already paid out.
 - **Rejected before paid out:** the keeper does not pay.
 - **Rejected after paid out:** the submitter owes the float. A later proper receipt, a repayment, or a write-off clears it.
-- **No float** (§4.2 step 3): the receipt becomes a reimbursement request to finance (§4.6). It never enters any float.
+- **Paid back by finance** (no float, §4.2 step 3):
+  - The receipt has no float and goes to finance's "Receipts to pay back" list. There is no "Paid out" step and no request row, so nothing counts twice.
+  - Finance confirms the amount and account while checking, then **Create voucher** makes a DRAFT Payment voucher to the submitter, using the staff bank details (§4.8).
+  - The receipt is "Paid back" when that voucher posts.
+  - Over the project limit is flagged, never refused, like any receipt.
+- **Resubmitting after a rejection:** a proper receipt handed in after a rejected, already paid-out one replaces it and keeps "Paid out". It is not paid out again.
+- **Which amount counts:**
+  - The keeper's figure at Paid out is the cash handed over.
+  - Finance's figure at Checked is the cost. It is the one the ledger posts and the project limit uses.
+  - If finance's figure differs from a paid-out amount, the keeper's tab shows the difference: "pay RM x more" or "collect RM x back". Settling it records a further pay-out or a repayment.
 - **No passing on** (chew, "b"): the keeper has no way to send a receipt to finance.
 - **Project limit:** a receipt's project lines count as used from Handed in (SOP §6). They stop counting when the receipt is rejected and then repaid or written off. Over the limit is flagged, never refused.
 
@@ -217,7 +234,10 @@ money paid to the keeper (posted vouchers)
 
 **Money to the keeper** (a new float, a raise, a top-up):
 - Always a Payment voucher, purpose `OTHER`, to the keeper, with one line on the petty cash account, linked to the float.
-- **"Top up"** proposes the total of receipts that are both paid out and checked but not yet topped up. Its voucher lists them, and they turn "Topped up" when it posts.
+- **"Top up"** proposes **float − balance**, which brings the float back to its amount. It therefore includes write-offs, and any paid-out receipt still owed by a staff member.
+  - The voucher lists the paid-out and checked receipts it covers, and they turn "Topped up" when it posts.
+  - Receipts paid out but not yet checked are shown as a warning. Finance may still top up, or check them first.
+  - A later repayment raises the balance, so it simply lowers the next top-up.
 - **The keeper's "Ask for a top-up"** flags the float for finance.
 
 **"Returned"** is the keeper giving cash back: the float is lowered or closed. Finance records it with a date and an amount. In the ledger it is an ordinary money-received entry, made by hand; the form says so.
@@ -238,9 +258,10 @@ money paid to the keeper (posted vouchers)
 ### 4.6 Payment requests (to finance)
 
 **Types:**
-- `REIMBURSEMENT`: an office staff member's own spending when their department has no float, and every receipt that §4.2 step 3 sends to finance.
 - `PAYMENT`: to a supplier, optionally against a PO.
 - `DEPOSIT`
+
+A person's own spending is never a request. It is always a receipt (§4.5), paid back from a float or, with no float, by finance.
 
 **Header:**
 - requester, payee, wanted pay date, note
@@ -249,7 +270,6 @@ money paid to the keeper (posted vouchers)
 - files, lines
 
 **Payee:**
-- **Reimbursement:** the requester. Bank details come from §4.8.
 - **Payment and deposit:** a supplier from `scm.suppliers`, which already holds bank details. If not on the list, the payee is typed in and marked "to be checked"; finance must link or add the supplier before paying (SOP §3.2).
 - **With a PO:** the supplier comes from the PO.
 
@@ -285,11 +305,13 @@ Submitted (waiting for payment) → Part paid → Paid
 ### 4.6a Maintenance jobs
 
 - **The job's document upload** (`functions/api/maintenance/issues/[id]/documents.ts`) gains a kind: **"My purchase (pay me back)"**. My call: it is a document type in the existing list, not a payer choice.
-  - Uploading it hands in a receipt for the job (§4.5) with the same file, so there is no second upload.
+  - Uploading it hands in a receipt for the job (§4.5). The person uploads once.
+    - Property OS keeps the file in its `MEDIA` bucket as today.
+    - The forwarding Function sends a copy to the engine's bucket for the receipt.
   - The existing kinds (contractor's bill, receipt, invoice, proof of work) are unchanged. A contractor's bill keeps its path (`contractor_amount`).
 - **The owner pays the job's quote** through the existing complete → expense flow (SOP §3.11). The receipt is the company's cost of the job.
 - **The job page shows its receipts as part of actual cost** (office only; field staff see no amounts). When actual cost goes above the quote, the job shows the SOP §3.11 step 4 warning.
-- **Two read-only views:**
+- **Two read-only views** (part of the list in §5):
   - one of `pos.maintenance_issues` (id, unit, title, assignee, state) for `scm_engine`;
   - one of receipt lines by job for `pos_app`.
 
@@ -342,9 +364,9 @@ The screens follow the engine's existing theme. Amounts are right-aligned, in RM
 
 ### 4.8 Staff bank details
 
-- A new table keyed by person: bank name, account number, account name, checked by, checked at.
-- Finance keeps it; HR supplies the details (SOP §2).
-- A reimbursement can be submitted without bank details, but **Create voucher** is refused until they are checked. The requester sees "Bank details missing — please ask finance".
+- **In-house cleaners and technicians:** their details already live in `pos.employees` (`bank_name`, `bank_account`; `migrations-pg/0165_employees.sql`, linked through the technician and cleaner rosters). They are read from there through a view for `scm_engine`, not copied.
+- **Everyone else:** a new table keyed by person, with bank name, account number, account name, checked by and checked at. Finance keeps it; HR supplies the details (SOP §2).
+- A receipt paid back by finance can be handed in without bank details. **Create voucher** is refused until there are details, and the person sees "Bank details missing — please ask finance".
 
 ### 4.9 Permissions
 
@@ -377,6 +399,7 @@ The screens follow the engine's existing theme. Amounts are right-aligned, in RM
 - **New views:**
   - Property OS units, for `scm_engine`;
   - maintenance jobs, for `scm_engine`;
+  - employees' bank details, for `scm_engine`;
   - receipt lines by job, for `pos_app`.
 
 ## 6. Open, not blocking this version
