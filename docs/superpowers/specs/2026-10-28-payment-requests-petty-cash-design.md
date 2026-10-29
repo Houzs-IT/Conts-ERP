@@ -237,6 +237,8 @@ money paid to the keeper (posted vouchers)
 - **Overspending is allowed** (chew, 2026-10-28). The balance can go below zero, which is the keeper's own money. Nothing is refused for it. It shows in the danger colour.
 - **Banner:** shown to the keeper and to finance below the warning %.
 
+**Cash already held at the start** (chew, 2026-10-29): the floats run before the ERP does. At go-live finance enters the cash counted in each keeper's hands as the float's starting cash (`opening_sen`, `opening_on`). The balance starts from it, so the first top-up only makes up the rest. Nothing is booked for it, because the float account's balance comes in with the opening balances (SOP 7.1). It may be corrected until anything has moved on the float: a receipt, money paid in, or cash returned.
+
 **Money to the keeper** (a new float, a raise, a top-up):
 - Always a Payment voucher, purpose `OTHER`, to the keeper, with one line on the float's own account, linked to the float.
 - **"Top up"** proposes **float − balance**, which brings the float back to its amount. It therefore includes write-offs, and any rejected receipt still owed by a staff member.

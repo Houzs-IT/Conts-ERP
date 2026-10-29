@@ -22,6 +22,8 @@ const ringgitToSen = (v: string): number | null => {
   const n = Number(v.replace(/[,\s]/g, "").replace(/^RM/i, ""));
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
 };
+/** As ringgitToSen, but 0 (or blank) is allowed: the cash a keeper held at the start may be nothing. */
+const ringgitToSen0 = (v: string): number | null => (v.trim() === "" || Number(v.replace(/[,\s]/g, "").replace(/^RM/i, "")) === 0 ? 0 : ringgitToSen(v));
 
 export function PettyCashFloat() {
   const { id = "" } = useParams();
@@ -109,7 +111,7 @@ export function PettyCashFloat() {
   };
   const changeFloat = async () => {
     if (!f) return;
-    const how = await choose({ title: "Change the float", options: [{ value: "amount", label: "The amount" }, { value: "keeper", label: "Who keeps it" }, { value: "account", label: "The account" }, { value: "close", label: "Close this float" }] });
+    const how = await choose({ title: "Change the float", options: [{ value: "amount", label: "The amount" }, { value: "keeper", label: "Who keeps it" }, { value: "account", label: "The account" }, { value: "opening", label: "Cash at the start" }, { value: "close", label: "Close this float" }] });
     if (how === "amount") {
       const v = await prompt({ title: "The new float", defaultValue: fmtSenPlain(f.floatSen).replace(/,/g, ""), validate: (x) => (ringgitToSen(x) == null ? "Enter an amount in RM." : null) });
       if (v != null) await run(`${pettyPath}/floats/${id}`, { floatSen: ringgitToSen(v) }, "PATCH");
@@ -122,6 +124,10 @@ export function PettyCashFloat() {
         options: (opts.data?.floatAccounts ?? []).filter((a) => !a.floatId || a.floatId === id).map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })),
       });
       if (account) await run(`${pettyPath}/floats/${id}`, { accountCode: account }, "PATCH");
+    } else if (how === "opening") {
+      const v = await prompt({ title: "Cash the keeper held at the start", body: "Only before any receipt, top-up or cash returned on this float.", defaultValue: fmtSenPlain(f.openingSen ?? 0).replace(/,/g, ""),
+        validate: (x) => (ringgitToSen0(x) == null ? "Enter an amount in RM, or 0." : null) });
+      if (v != null) await run(`${pettyPath}/floats/${id}`, { openingSen: ringgitToSen0(v) }, "PATCH");
     } else if (how === "close") {
       if (await confirm({ title: "Close this float?", body: "Receipts can no longer be handed in on it. Record the cash given back first.", confirmLabel: "Close", danger: true })) await run(`${pettyPath}/floats/${id}`, { active: false }, "PATCH");
     }
@@ -185,7 +191,8 @@ export function PettyCashFloat() {
           </span>
         } />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
-        <StatCard label="Float" value={f ? <Money sen={f.floatSen} /> : null} pending={!f} failed={q.isError} onRetry={() => void q.refetch()} />
+        <StatCard label="Float" value={f ? <Money sen={f.floatSen} /> : null} pending={!f} failed={q.isError} onRetry={() => void q.refetch()}
+          subtitle={f?.openingSen ?  `Started with RM ${fmtSenPlain(f.openingSen)}${f.openingOn ? ` on ${f.openingOn}` : ""}` : undefined} />
         <StatCard label="Balance (cash the keeper should hold)" value={f ? <Money sen={f.balanceSen} strong /> : null} pending={!f} failed={q.isError}
           tone={f && f.balanceSen < 0 ? "error" : f?.low ? "warning" : "default"}
           subtitle={f ? (f.balanceSen < 0 ? "Below zero: the keeper's own money is in it" : f.low ? "Running low" : `Top-up now: RM ${fmtSenPlain(Math.max(0, f.floatSen - f.balanceSen))}`) : undefined} />
