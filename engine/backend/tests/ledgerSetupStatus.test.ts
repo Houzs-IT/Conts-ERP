@@ -68,6 +68,13 @@ describe('ledgerSetupStatus', () => {
     expect(s.ready).toBe(true);
   });
 
+  test("cash over / short is retired: no cash drawer, cash goes straight to the bank", async () => {
+    /* chew, 29 Oct 2026: 我没收现金的；现金都是直接进银行的. */
+    const s = await ledgerSetupStatus(world({ accounts: fullChart().filter((a) => a.account_code !== DEFAULT_ROLE_CODES.OVER_SHORT) }), CO);
+    expect(s.roles.map((r) => r.role)).not.toContain('OVER_SHORT');
+    expect(s.ready).toBe(true);
+  });
+
   test('a role pointing at a code that is not in the chart is a problem', async () => {
     const s = await ledgerSetupStatus(world({ accounts: fullChart().filter((a) => a.account_code !== DEFAULT_ROLE_CODES.AR_OTHER) }), CO);
     expect(s.roles.find((r) => r.role === 'AR_OTHER')).toMatchObject({ role: 'AR_OTHER', accountCode: DEFAULT_ROLE_CODES.AR_OTHER, problem: 'missing_account' });
