@@ -488,5 +488,7 @@
  "PUT /api/users/[id]/category-access": "AFFFFFFU",
  "PUT /api/users/access": "AFFFFFFU",
  "PUT /api/users/org-chart": "AFFFFFFU",
- "PUT /api/working-hours": "AFFFFFFU"
+ "PUT /api/working-hours": "AFFFFFFU",
+ "GET /api/claims/[[path]]": "AAAAFFFU",
+ "POST /api/claims/[[path]]": "AAAAFFFU"
 }
