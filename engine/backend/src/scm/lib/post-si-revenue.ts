@@ -39,7 +39,7 @@ export type PostSiResult =
      product group, or a group with no sales account bound for this company.
      The invoice stays unposted, by name; bind the group (Accounting → Item
      Groups) or fix the line, and the next create/confirm/resync posts it. */
-  | { ok: false; status: 'invoice_not_found' | 'zero_total' | 'no_lines' | 'line_ungrouped' | 'group_unbound' | 'je_insert_failed' | 'lines_insert_failed' | 'post_failed'; reason?: string };
+  | { ok: false; status: 'invoice_not_found' | 'zero_total' | 'no_lines' | 'line_ungrouped' | 'group_unbound' | 'je_insert_failed' | 'lines_insert_failed' | 'post_failed' | 'customer_no_account'; reason?: string };
 
 /**
  * Post (or no-op if already posted) the GL entry for a Sales Invoice.
@@ -117,9 +117,10 @@ export async function postSiRevenue(sb: any, invoiceNumber: string): Promise<Pos
     partyCode = customerPartyCode(order?.debtor_code, order?.customer_id);
   }
 
-  /* Conts: the customer's own control (scm.debtors), else the AR rule. */
+  /* Conts: the customer's own control (scm.debtors). A customer with none stays unposted, by name, until finance sets
+     it (chew, 29 Oct 2026); the next create/confirm/resync posts it. */
   const dr = await resolveDebtorRoles(sb, companyId, partyCode);
-  if (!dr.ok) return { ok: false, status: 'post_failed', reason: dr.error };
+  if (!dr.ok) return { ok: false, status: dr.noAccount ? 'customer_no_account' : 'post_failed', reason: dr.error };
   const roles = dr.roles;
   const r = await postJournal(sb, {
     companyId,

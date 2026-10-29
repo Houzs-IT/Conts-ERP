@@ -265,7 +265,7 @@ export async function postDepositInvoice(
   sb: Db,
   di: { id: string; companyId: number; diNumber: string; soDocNo: string; partyCode: string | null; partyName: string | null; amountSen: number; invoiceDate: string },
 ): Promise<{ ok: true; jeNo: string; status: 'posted' | 'already_posted' } | { ok: false; reason: string }> {
-  /* Conts: the customer's own control (scm.debtors), else the AR rule. */
+  /* Conts: the customer's own control (scm.debtors); a customer with none is refused, never the AR rule. */
   const dr = await resolveDebtorRoles(sb, di.companyId, di.partyCode);
   if (!dr.ok) return { ok: false, reason: dr.error };
   const roles = dr.roles;

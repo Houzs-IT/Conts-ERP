@@ -255,7 +255,7 @@ export async function refundCreateGuard(
       }, 409),
     };
   }
-  /* Conts: the customer's own control (scm.debtors), else the AR rule — where the money it refunds was booked. */
+  /* Conts: the customer's own control (scm.debtors), where the money it refunds was booked; none is refused. */
   const dr = await resolveDebtorRoles(sb, co.companyId, customerPartyCode(s.customer.debtorCode, s.customer.customerId));
   if (!dr.ok) return { ok: false, resp: dr.noAccount ? c.json({ error: 'customer_no_account', message: dr.error }, 409) : c.json({ error: 'load_failed', reason: dr.error }, 500) };
   const roles = dr.roles;

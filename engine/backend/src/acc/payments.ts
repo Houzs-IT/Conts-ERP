@@ -24,6 +24,15 @@ import { debtorControl, noCustomerAccountReason, resolveDebtorRoles } from '../c
 import { accMastersCompanyId } from './masters-company';
 import { paymentEntryDrift, type EntryFact, type PaymentDrift, type PaymentFact } from './payment-drift';
 import { mytDateOf } from '../scm/lib/my-time';
+import { isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
+
+/** A customer with no account of its own: refused for finance to set it, unless the payment is dated before the books
+    start, which the opening balances already carry and which is skipped as it always was. */
+async function noAccountResult(sb: any, companyId: number | null, entryDate: string, reason: string): Promise<PostPaymentResult> {
+  const ls = await loadLedgerSettings(sb, companyId);
+  if (ls.ok && isBeforeLedgerStart(entryDate, ls.settings)) return { ok: true, status: 'skipped_before_ledger_start' };
+  return { ok: false, status: 'customer_no_account', reason };
+}
 
 export type SoPaymentRow = {
   id: string;
@@ -129,9 +138,9 @@ export async function postSoPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: b
   const customerName = order?.debtor_name ?? null;
   const customerCode = customerPartyCode(order?.debtor_code, order?.customer_id);
 
-  /* Conts: the customer's own control (scm.debtors), else the AR rule. */
+  /* Conts: the customer's own control (scm.debtors); a customer with none waits for finance, never the AR rule. */
   const dr = await resolveDebtorRoles(sb, companyId, customerCode);
-  if (!dr.ok) return { ok: false, status: 'post_failed', reason: dr.error };
+  if (!dr.ok) return dr.noAccount ? noAccountResult(sb, companyId, entryDate, dr.error) : { ok: false, status: 'post_failed', reason: dr.error };
   const roles = dr.roles;
   const transit = p.method === 'merchant' || p.method === 'installment'
     ? await transitFor(sb, companyId, p.merchant_provider)
@@ -207,8 +216,8 @@ async function postConvertedPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: b
   if (!fromCtl.ok) return { ok: false, status: 'post_failed', reason: fromCtl.error };
   if (!toCtl.ok) return { ok: false, status: 'post_failed', reason: toCtl.error };
   /* Never guessed onto the AR rule: a customer with no account waits for finance (chew, 29 Oct 2026). */
-  if (!fromCtl.control) return { ok: false, status: 'customer_no_account', reason: noCustomerAccountReason(from.code) };
-  if (!toCtl.control) return { ok: false, status: 'customer_no_account', reason: noCustomerAccountReason(to.code) };
+  if (!fromCtl.control) return noAccountResult(sb, companyId, entryDate, noCustomerAccountReason(from.code));
+  if (!toCtl.control) return noAccountResult(sb, companyId, entryDate, noCustomerAccountReason(to.code));
   const input = {
     companyId,
     entryDate,
@@ -291,7 +300,7 @@ export async function postSiPayment(sb: any, p: SiPaymentRow): Promise<PostPayme
     customerCode = o.code;
   }
   const dr = await resolveDebtorRoles(sb, companyId, customerCode);
-  if (!dr.ok) return { ok: false, status: 'post_failed', reason: dr.error };
+  if (!dr.ok) return dr.noAccount ? noAccountResult(sb, companyId, entryDate, dr.error) : { ok: false, status: 'post_failed', reason: dr.error };
   const roles = dr.roles;
   const transit = p.method === 'merchant' || p.method === 'installment'
     ? await transitFor(sb, companyId, p.merchant_provider)

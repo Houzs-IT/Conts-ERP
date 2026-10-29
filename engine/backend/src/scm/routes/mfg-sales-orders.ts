@@ -2736,8 +2736,9 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
     }
   }
   /* Conts (finance phase 1.5; SOP 2.1): the order's customer as a debtor — the code the screen picked, else the
-     debtor already opened for this customer, else a new one under the control a standard order maps to. Best-effort
-     like the customer above: a sale is never refused for it, and an order with no code posts under the AR rule. */
+     debtor already opened for this customer, else a new one under the control a standard order maps to (none mapped:
+     no debtor). Best-effort like the customer above: a sale is never refused for it, but an order with no customer
+     account posts nothing until finance sets one (chew, 29 Oct 2026). */
   let orderDebtorCode: string | null = String(body.debtorCode ?? body.customerCode ?? '').trim() || null;
   if (!orderDebtorCode && body._scanShell !== true && customerName) {
     const d = await ensureDebtor(sb, casCo.companyId, {

@@ -168,7 +168,7 @@ describe('postSiRevenue — booking the revenue once', () => {
     /* chew, 29 Oct 2026: 不知道就别乱记账，等 finance 处理. The invoice stays unposted until finance sets the account. */
     const sb = world({ debtors: [] });
     const out = await postSiRevenue(sb, INV);
-    expect(out).toMatchObject({ ok: false, status: 'post_failed' });
+    expect(out).toMatchObject({ ok: false, status: 'customer_no_account' });
     expect(String((out as { reason?: string }).reason)).toContain('Customer C-001 has no account');
     expect(sb.tables.journal_entries).toHaveLength(0);
     expect(sb.tables.journal_entry_lines).toHaveLength(0);

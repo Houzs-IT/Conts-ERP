@@ -153,7 +153,7 @@ export function suggestSupplierMatches(
 /* ── The control a party posts to (PR B; spec 2.4) ─────────────────────────────────────────────────────────── */
 
 /** The control account a customer's receivables post to, from scm.debtors (an inactive customer keeps its control).
-    No code, or a code with no row, is `control: null` — the caller then posts to the AR rule as before. A read that
+    No code, or a code with no row, is `control: null` — the caller then refuses to post (never the AR rule). A read that
     does not answer is `ok: false`: it must never read as "no control", or the line would land on the wrong one. */
 export async function debtorControl(sb: Db, companyId: number | null, debtorCode: string | null | undefined): Promise<{ ok: true; control: string | null } | { ok: false; error: string }> {
   const code = String(debtorCode ?? '').trim();

@@ -105,8 +105,16 @@ describe('postSoPayment — the money finally reaches the books', () => {
     const sb = world();
     sb.tables.debtors = [];
     const out = await postSoPayment(sb, PAY() as never);
-    expect(out).toMatchObject({ ok: false, status: 'post_failed' });
+    expect(out).toMatchObject({ ok: false, status: 'customer_no_account' });
     expect(String((out as { reason?: string }).reason)).toContain('Customer cust-1 has no account');
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+
+  it('a payment dated before the books start is skipped as before, account or not (the opening balances carry it)', async () => {
+    const sb = world();
+    sb.tables.debtors = [];
+    sb.tables.acc_company_settings = [{ company_id: 1, ledger_start_date: '2099-01-01', fiscal_year_end_month: 8 }];
+    expect(await postSoPayment(sb, PAY() as never)).toMatchObject({ ok: true, status: 'skipped_before_ledger_start' });
     expect(sb.tables.journal_entries).toHaveLength(0);
   });
 
