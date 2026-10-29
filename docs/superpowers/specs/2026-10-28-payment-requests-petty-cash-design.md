@@ -141,26 +141,30 @@ All product text is English with British spelling. The field portal's screens ar
 - Production has no field accounts yet, and no account in a Cleaning, Maintenance or Renovation department.
 - Accounts and departments must be set up before field staff can hand in receipts. Until people are placed in departments, everyone's default line department comes out as "shared".
 
-### 4.3 Where people submit, and how the engine knows them
+### 4.3 Where people submit, and how the engine knows them (revised 29 Oct after review)
 
-| Who | Where | How |
-|---|---|---|
-| Staff signed in to the engine | "My claims" in the engine | Engine page |
-| Office staff in Property OS | "My claims" in the Property OS sidebar | The same engine page in the existing frame and single sign-on (`functions/api/supply-chain/engine-session.ts`) |
-| Field staff on the phone | The field portal: the receipt upload on their maintenance job, the stand-alone "Hand in a receipt", and the keeper's "Petty cash" tab | Property OS pages. Their Functions forward each call to the engine, server to server |
+**Everyone submits in Property OS.** Every Conts staff member has a Property OS account; the engine has accounts only for
+those with an engine area, and an engine session also opens routes that need only a sign-in (search, the assistant), which
+carry customer details. So there is no engine sign-in for claims (a claims-only engine role was built and removed in review).
 
-**Office staff with no engine area.** Today the single sign-on refuses anyone with no engine area (`engine/backend/src/conts/sso.ts:64`). So a new engine area, **My claims**, is given to every non-field staff member and counts as access there.
+| Who | Where |
+|---|---|
+| Office staff | **My claims** in the Property OS sidebar: hand in a receipt, ask finance to pay, mine, and for a keeper the float |
+| Field staff on the phone | The field portal: the receipt upload on their maintenance job, "Hand in a receipt", "My receipts", and the keeper's "Petty cash" tab |
 
-**The field staff path.** Each forwarded call carries a new signed staff assertion: the person's id and email, signed with the existing engine assertion key, and expiring after a short time.
-- The engine checks it in its own middleware, separate from the single sign-on.
-- The single sign-on accepts only the existing assertion (`functions/_lib/scmEngine.ts:25`, `engine/backend/src/conts/sso.ts:19-33`), and it refuses field roles.
+**How the engine knows them.**
+- Property OS Functions forward each call to the engine at `/api/claims-forward/*`, server to server.
+- Each call carries a signed staff assertion: `{ aud: "claims", userId, email, exp }`. It is HMAC-SHA256 with the single sign-on secret, and `exp` is at most 60 seconds ahead.
+- The engine checks the assertion (`conts/staff-identity.ts`), finds the person by email in `public.conts_staff`, and requires the asserted id to be that person.
+- The route is mounted before the engine's global session check and answers on the assertion alone.
 
-**Staff endpoints** are `/scm/my/*`.
-- They need a signed-in Conts staff member only, and are mounted outside `/payment-vouchers`. So neither `scmAreaGuard("scm.finance.accounting")` nor `requireLedgerAccess` applies to them.
-- Every query is limited to the caller's own key. A keeper's endpoints are limited to their own float.
-- The bill reader is reached through `/scm/my/extract`, which calls the same `acc/bill-extract.ts`.
+`/api/claims/*` is the same router for someone signed in to the engine; finance's own screens use its pickers.
 
-**Finance endpoints** keep the Ledger gate.
+**Staff endpoints** need only a Conts staff member.
+- Every query is limited to the caller, and a keeper's to their own float.
+- The bill reader is reached through `/extract` on the same router.
+
+**Finance endpoints** stay under `/api/scm/accounting/*`, behind the Ledger gate.
 
 ### 4.4 Lines, files, OCR (shared by receipts and requests)
 
