@@ -23,6 +23,7 @@ import { describe, expect, test } from 'vitest';
 import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
 import { depositInvoices } from '../src/scm/routes/deposit-invoices';
 import { bookSoPaymentBestEffort } from '../src/scm/lib/so-payment-row';
+import { recordAndConfirm } from './lib/confirm-payment';
 import {
   cancelDepositInvoiceForPaymentBestEffort, issueDepositInvoice, reissueDepositInvoiceBestEffort,
 } from '../src/acc/deposit-invoices';
@@ -50,7 +51,11 @@ const INVOICES: Row[] = [
 ];
 const ON = { company_id: CO, deposit_invoice_enabled: true, deposit_invoice_from: '2026-09-01' };
 
-function harness(opts: { settings?: Row[]; perms?: readonly string[]; payments?: Row[] } = {}) {
+/* Every payment here was confirmed by finance (SOP 4.2) unless a test says otherwise: an unconfirmed payment is not
+   due a deposit invoice — it is issued when the money is confirmed (acc/receipt-confirm). */
+const CONFIRMED_IDS = ['p-1', 'p-2', 'p-3', 'p-x', 'p-old', 'p-bal'];
+
+function harness(opts: { settings?: Row[]; perms?: readonly string[]; payments?: Row[]; unconfirmed?: string[] } = {}) {
   const sb = fakeSb({
     accounts: CHART.map((r) => ({ ...r })),
     companies: [{ id: CO, code: '2990', name: '2990' }],
@@ -64,6 +69,8 @@ function harness(opts: { settings?: Row[]; perms?: readonly string[]; payments?:
     acc_company_settings: (opts.settings ?? []).map((r) => ({ ...r })),
     acc_deposit_invoices: [],
     acc_credit_notes: [],
+    acc_official_receipts: CONFIRMED_IDS.filter((id) => !(opts.unconfirmed ?? []).includes(id))
+      .map((id) => ({ id: `or-${id}`, company_id: CO, payment_source: 'SOPAY', payment_id: id, status: 'FORMAL', channel_account_code: '310-0010' })),
     journal_entries: [], journal_entry_lines: [],
   }, {}, [], ['journal_entry_lines']);
   const app = new Hono();
@@ -99,14 +106,14 @@ const jes = (sb: ReturnType<typeof harness>['sb']) => sb.tables.journal_entries 
 describe('the birth of a deposit invoice', () => {
   test('the switch off: a booked payment gets no deposit invoice', async () => {
     const { sb } = harness();
-    await bookSoPaymentBestEffort(sb, payment('p-1'), 'payment');
+    await recordAndConfirm(sb, payment('p-1'), 'payment');
     expect(jes(sb).map((j) => j.source_type)).toEqual(['SOPAY']);
     expect(dis(sb)).toHaveLength(0);
   });
 
   test('the switch on from 2026-09-01: a payment on 09-05 is invoiced {co}-DI-2609-001 and posted Dr AR (the customer) / Cr 509-0000 on its day; the next takes 002', async () => {
     const { sb } = harness({ settings: [ON] });
-    await bookSoPaymentBestEffort(sb, payment('p-1'), 'payment');
+    await recordAndConfirm(sb, payment('p-1'), 'payment');
     expect(dis(sb)).toHaveLength(1);
     const di = dis(sb)[0]!;
     expect(di).toMatchObject({
@@ -120,7 +127,7 @@ describe('the birth of a deposit invoice', () => {
       { code: '300-0000', dr: 100_000, cr: 0, party: 'cust-larding' },
       { code: '509-0000', dr: 0, cr: 100_000, party: null },
     ]);
-    await bookSoPaymentBestEffort(sb, payment('p-2', { amount_sen: 50_000, paid_at: '2026-09-06' }), 'payment');
+    await recordAndConfirm(sb, payment('p-2', { amount_sen: 50_000, paid_at: '2026-09-06' }), 'payment');
     expect(dis(sb).map((d) => d.di_number)).toEqual(['2990-DI-2609-001', '2990-DI-2609-002']);
   });
 
@@ -148,12 +155,26 @@ describe('the birth of a deposit invoice', () => {
     const { app, sb } = harness({ settings: [ON], payments: [payment('p-1'), payment('p-x', { so_doc_no: '2990-SO-2609-009' })] });
     const refund = await issueDepositInvoice(sb, { paymentId: 'p-x', soDocNo: '2990-SO-2609-009', paidAt: '2026-09-05', amountSen: 100_000 });
     expect(refund).toEqual({ ok: true, status: 'not_due', why: 'order_not_live' });
-    await bookSoPaymentBestEffort(sb, payment('p-x', { so_doc_no: '2990-SO-2609-009' }), 'payment');
+    await recordAndConfirm(sb, payment('p-x', { so_doc_no: '2990-SO-2609-009' }), 'payment');
     expect(dis(sb)).toHaveLength(0);
     const st = await json(app, '/deposit-invoices/settings', 'GET');
     expect(await st.json()).toMatchObject({ missingCount: 1 });
     const issue = await json(app, '/deposit-invoices/issue-missing', 'POST', {});
     expect(await issue.json()).toEqual({ ok: true, issued: ['2990-DI-2609-001'], skipped: [] });
+  });
+
+  test('a payment finance has not confirmed is not due one — at the hook, directly, and in the backlog', async () => {
+    const { app, sb } = harness({ settings: [ON], payments: [payment('p-1')], unconfirmed: ['p-1'] });
+    await bookSoPaymentBestEffort(sb, payment('p-1'), 'payment');
+    expect(dis(sb)).toHaveLength(0);
+    expect(jes(sb)).toHaveLength(0);
+    expect(await issueDepositInvoice(sb, { paymentId: 'p-1', soDocNo: '2990-SO-2609-001', paidAt: '2026-09-05', amountSen: 100_000, method: 'cash' }))
+      .toEqual({ ok: true, status: 'not_due', why: 'not_confirmed' });
+    const st = await json(app, '/deposit-invoices/settings', 'GET');
+    expect(await st.json()).toMatchObject({ missingCount: 0 });
+    /* Finance confirms: the invoice is born then. */
+    await recordAndConfirm(sb, payment('p-1'));
+    expect(dis(sb).map((d) => d.di_number)).toEqual(['2990-DI-2609-001']);
   });
 
   test('issuing twice for one payment finds the standing invoice: one row, one journal', async () => {
@@ -170,7 +191,7 @@ describe('the birth of a deposit invoice', () => {
 describe('the invoice follows the payment', () => {
   test('an edit that moves the amount cancels the invoice by contra and issues the next number; one that moves nothing is left alone', async () => {
     const { sb } = harness({ settings: [ON] });
-    await bookSoPaymentBestEffort(sb, payment('p-1'), 'payment');
+    await recordAndConfirm(sb, payment('p-1'), 'payment');
     await reissueDepositInvoiceBestEffort(sb, { paymentId: 'p-1', docNo: '2990-SO-2609-001', paidAt: '2026-09-05', amountSen: 100_000, method: 'cash' });
     expect(dis(sb)).toHaveLength(1);
     await reissueDepositInvoiceBestEffort(sb, { paymentId: 'p-1', docNo: '2990-SO-2609-001', paidAt: '2026-09-05', amountSen: 80_000, method: 'cash' });
@@ -189,7 +210,7 @@ describe('the invoice follows the payment', () => {
 
   test('a deleted payment cancels its invoice by contra, kept on file with the reason', async () => {
     const { sb } = harness({ settings: [ON] });
-    await bookSoPaymentBestEffort(sb, payment('p-1'), 'payment');
+    await recordAndConfirm(sb, payment('p-1'), 'payment');
     await cancelDepositInvoiceForPaymentBestEffort(sb, { paymentId: 'p-1', reason: 'payment on 2990-SO-2609-001 deleted' });
     expect(dis(sb)).toEqual([expect.objectContaining({ di_number: '2990-DI-2609-001', status: 'CANCELLED', cancel_reason: 'payment on 2990-SO-2609-001 deleted' })]);
     expect(jes(sb).map((j) => j.source_type)).toEqual(['SOPAY', 'DI', 'DI_REVERSAL']);
@@ -210,7 +231,7 @@ describe('an invoice with a credit note against it stays (the closed-DI guard, o
 
   test('closed by the final invoice: a payment edit issues nothing and contras nothing, a delete leaves it, the page refuses and names the note', async () => {
     const { app, sb } = harness({ settings: [ON] });
-    await bookSoPaymentBestEffort(sb, payment('p-1'), 'payment');
+    await recordAndConfirm(sb, payment('p-1'), 'payment');
     const di = dis(sb)[0]!;
     noteOn(sb, di);
     di.credit_note_id = 'cn-1';
@@ -234,7 +255,7 @@ describe('an invoice with a credit note against it stays (the closed-DI guard, o
 
   test('a partial refund note is a note too: the invoice stands for the remainder, an edit re-issues nothing, the page refuses', async () => {
     const { app, sb } = harness({ settings: [ON] });
-    await bookSoPaymentBestEffort(sb, payment('p-1'), 'payment');
+    await recordAndConfirm(sb, payment('p-1'), 'payment');
     const di = dis(sb)[0]!;
     noteOn(sb, di, { id: 'cn-2', note_number: '2990-CN-2609-004', total_sen: 30_000, refund_pv_id: 'pv-1' });
     await reissueDepositInvoiceBestEffort(sb, { paymentId: 'p-1', docNo: '2990-SO-2609-001', paidAt: '2026-09-05', amountSen: 80_000, method: 'cash' });
@@ -254,8 +275,8 @@ describe('an invoice with a credit note against it stays (the closed-DI guard, o
 describe('the routes', () => {
   test('the list, filtered by status; one invoice opens with its payment', async () => {
     const { app, sb } = harness({ settings: [ON], payments: [payment('p-1'), payment('p-2', { amount_sen: 50_000 })] });
-    await bookSoPaymentBestEffort(sb, payment('p-1'), 'payment');
-    await bookSoPaymentBestEffort(sb, payment('p-2', { amount_sen: 50_000 }), 'payment');
+    await recordAndConfirm(sb, payment('p-1'), 'payment');
+    await recordAndConfirm(sb, payment('p-2', { amount_sen: 50_000 }), 'payment');
     await cancelDepositInvoiceForPaymentBestEffort(sb, { paymentId: 'p-2', reason: 'test' });
     const all = await json(app, '/deposit-invoices', 'GET');
     expect(all.status).toBe(200);
@@ -300,7 +321,7 @@ describe('the routes', () => {
 
   test('cancel needs a reason and writes the contra; post again fills a missing journal; a cancelled invoice is not posted', async () => {
     const { app, sb } = harness({ settings: [ON] });
-    await bookSoPaymentBestEffort(sb, payment('p-1'), 'payment');
+    await recordAndConfirm(sb, payment('p-1'), 'payment');
     const id = String(dis(sb)[0]!.id);
     const noReason = await json(app, `/deposit-invoices/${id}/cancel`, 'POST', {});
     expect(noReason.status).toBe(400);
@@ -326,7 +347,7 @@ describe('the routes', () => {
 
   test('the switch, the backlog button, post and cancel answer 403 without the PV keys; reading does not', async () => {
     const { app, sb } = harness({ settings: [ON], perms: ['scm.access'] });
-    await bookSoPaymentBestEffort(sb, payment('p-1'), 'payment');
+    await recordAndConfirm(sb, payment('p-1'), 'payment');
     const id = String(dis(sb)[0]!.id);
     expect((await json(app, '/deposit-invoices', 'GET')).status).toBe(200);
     expect((await json(app, '/deposit-invoices/settings', 'GET')).status).toBe(200);

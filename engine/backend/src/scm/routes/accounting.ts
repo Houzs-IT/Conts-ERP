@@ -83,7 +83,7 @@ import { performanceReport, savePerformanceSettingsHandler } from './accounting-
 import { forecastFiguresHandler, forecastGetHandler, forecastPutHandler } from './accounting-forecast';
 import { dashboardHandler } from './accounting-dashboard';
 import { numberingGet, numberingPut } from './accounting-numbering';
-import { receiptsList, receiptEnsure, receiptFormalise } from './accounting-receipts';
+import { receiptsList, receiptEnsure, receiptFormalise, receiptConfirmBanks } from './accounting-receipts';
 import { receiptsCheck } from './accounting-receipts-check';
 import { receiptsBackfillPlan, receiptsBackfillRun } from './accounting-receipts-backfill';
 import { ACCOUNT_SECTIONS, defaultSectionFor } from '../lib/account-sections';
@@ -209,6 +209,7 @@ accounting.get('/receipts', receiptsList);
 accounting.post('/receipts/ensure', receiptEnsure);
 accounting.get('/receipts/backfill', receiptsBackfillPlan);
 accounting.get('/receipts/check', receiptsCheck);
+accounting.get('/receipts/banks', receiptConfirmBanks);
 accounting.post('/receipts/backfill', receiptsBackfillRun);
 accounting.post('/receipts/:id/formalise', receiptFormalise);
 accounting.post('/item-groups', itemGroupCreate);

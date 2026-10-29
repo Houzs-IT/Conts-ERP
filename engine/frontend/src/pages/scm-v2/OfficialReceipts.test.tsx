@@ -1,5 +1,7 @@
 /* OfficialReceipts — the OR book (GL redesign 9b): drafts print with the
-   watermark, Confirm money formalises, formal rows only print. Since
+   watermark, formal rows only print. Confirm received (SOP 4.2, 29 Oct 2026)
+   is finance's alone (scm.payment_voucher.post): it asks which bank the money
+   landed in, the default bank first, and says what it issued and posted. Since
    2026-09-16 (owner: or 我如何查看 amount 是对的) the page opens on this month:
    the list carries the month and sums under it, and the month's CHECK reads
    the customer payments against the receipts and names every row behind a
@@ -11,7 +13,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test, vi } from 'vitest';
 
-const { fetchMock, pdfMock, check } = vi.hoisted(() => {
+const { fetchMock, pdfMock, check, perms, chooseMock, notifyMock } = vi.hoisted(() => {
   const rows = [
     {
       id: 5, or_number: 'HCDraftOR-2609-002', status: 'DRAFT', payment_source: 'SOPAY', payment_id: 'p2',
@@ -39,16 +41,25 @@ const { fetchMock, pdfMock, check } = vi.hoisted(() => {
   return {
     fetchMock: vi.fn(async (path: string, _init?: RequestInit) => {
       if (path.startsWith('/accounting/receipts/check')) return check.current;
-      if (path.startsWith('/accounting/receipts/')) return { ok: true, orNumber: 'HCMOR-2609-001' };
+      if (path === '/accounting/receipts/banks') {
+        return { defaultCode: '310-0010', banks: [{ code: '310-0005', name: 'AMBANK' }, { code: '310-0010', name: 'HONG LEONG' }, { code: '310-0020', name: 'MAYBANK' }] };
+      }
+      if (path.startsWith('/accounting/receipts/')) return { ok: true, orNumber: 'HCMOR-2609-001', already: false, posting: { status: 'posted', jeNo: 'HC-JV-2609-014' } };
       return { receipts: rows };
     }),
     pdfMock: vi.fn(async (_r: unknown, _o: unknown) => {}),
     check,
+    perms: { finance: true },
+    chooseMock: vi.fn(async (_o: { title: string; options: Array<{ value: string; label: string }> }) => '310-0020' as string | null),
+    notifyMock: vi.fn(async (_o: { title: string; body?: unknown }) => {}),
   };
 });
 vi.mock('../../vendor/scm/lib/authed-fetch', () => ({
   authedFetch: (path: string, init?: RequestInit) => fetchMock(path, init),
 }));
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ can: (p: string) => p === 'scm.payment_voucher.post' && perms.finance }) }));
+vi.mock('../../vendor/scm/components/ChoiceDialog', () => ({ useChoice: () => chooseMock }));
+vi.mock('../../vendor/scm/components/NotifyDialog', () => ({ useNotify: () => notifyMock }));
 vi.mock('../../vendor/scm/lib/receipt-pdf', () => ({ generateReceiptPdf: pdfMock }));
 
 import { OfficialReceipts, monthWord, mytMonth } from './OfficialReceipts';
@@ -62,13 +73,30 @@ const draw = () => {
 const listPaths = () => fetchMock.mock.calls.map(([p]) => p).filter((p) => p.startsWith('/accounting/receipts') && !p.startsWith('/accounting/receipts/'));
 
 describe('the OR book', () => {
-  test('a draft offers Print + Confirm money; a formal row only prints', async () => {
+  test('a draft offers Print + Confirm received to finance; a formal row only prints', async () => {
+    perms.finance = true;
     draw();
     await waitFor(() => expect(screen.getByText('HCDraftOR-2609-002')).toBeTruthy());
     expect(screen.getByText('HCCOR-2609-001')).toBeTruthy();
-    /* One Confirm money (the draft), two Prints (both rows). */
-    expect(screen.getAllByText('Confirm money')).toHaveLength(1);
+    /* One Confirm received (the draft), two Prints (both rows). */
+    expect(screen.getAllByText('Confirm received')).toHaveLength(1);
     expect(screen.getAllByText('Print')).toHaveLength(2);
+  });
+
+  test('anyone without the finance key sees no Confirm received', async () => {
+    perms.finance = false;
+    draw();
+    await waitFor(() => expect(screen.getByText('HCDraftOR-2609-002')).toBeTruthy());
+    expect(screen.queryByText('Confirm received')).toBeNull();
+    perms.finance = true;
+  });
+
+  test('Waiting for confirmation lists the drafts', async () => {
+    fetchMock.mockClear();
+    draw();
+    await waitFor(() => expect(screen.getByText('HCDraftOR-2609-002')).toBeTruthy());
+    fireEvent.click(screen.getByText('Waiting for confirmation'));
+    await waitFor(() => expect(listPaths()).toContain(`/accounting/receipts?status=DRAFT&month=${mytMonth()}`));
   });
 
   test('Print hands the ROW to the pdf (draft prints the watermark side)', async () => {
@@ -82,13 +110,37 @@ describe('the OR book', () => {
     expect(opts).toEqual({ action: 'print' });
   });
 
-  test('Confirm money POSTs the formalise route for THAT receipt', async () => {
+  test('Confirm received asks which bank (the default first), POSTs it for THAT receipt and says what was issued and posted', async () => {
     fetchMock.mockClear();
+    chooseMock.mockClear();
+    notifyMock.mockClear();
     draw();
-    await waitFor(() => expect(screen.getByText('Confirm money')).toBeTruthy());
-    fireEvent.click(screen.getByText('Confirm money'));
-    await waitFor(() =>
-      expect(fetchMock.mock.calls.some(([p]) => p === '/accounting/receipts/5/formalise')).toBe(true));
+    await waitFor(() => expect(screen.getByText('Confirm received')).toBeTruthy());
+    fireEvent.click(screen.getByText('Confirm received'));
+    await waitFor(() => expect(chooseMock).toHaveBeenCalledTimes(1));
+    const asked = chooseMock.mock.calls[0]![0];
+    expect(asked.options.map((o) => o.value)).toEqual(['310-0010', '310-0005', '310-0020']);
+    expect(asked.options[0]!.label).toContain('default');
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(([p]) => p === '/accounting/receipts/5/formalise');
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post![1]!.body))).toEqual({ accountCode: '310-0020' });
+    });
+    await waitFor(() => expect(notifyMock).toHaveBeenCalledTimes(1));
+    const said = notifyMock.mock.calls[0]![0];
+    expect(said.title).toBe('Payment confirmed');
+    expect(String(said.body)).toContain('HCMOR-2609-001');
+    expect(String(said.body)).toContain('HC-JV-2609-014');
+  });
+
+  test('cancelling the bank choice confirms nothing', async () => {
+    fetchMock.mockClear();
+    chooseMock.mockImplementationOnce(async () => null);
+    draw();
+    await waitFor(() => expect(screen.getByText('Confirm received')).toBeTruthy());
+    fireEvent.click(screen.getByText('Confirm received'));
+    await waitFor(() => expect(chooseMock).toHaveBeenCalled());
+    expect(fetchMock.mock.calls.some(([p]) => String(p).endsWith('/formalise'))).toBe(false);
   });
 
   test('opens on this month: the list carries it and sums under the rows; the check names the totals, the difference and the payment without a receipt', async () => {

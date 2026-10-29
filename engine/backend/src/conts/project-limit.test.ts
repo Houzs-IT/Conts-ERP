@@ -26,6 +26,8 @@ const world = (over: Record<string, Row[]> = {}) => publicTablesOnly(fakeSb({
   ],
   mfg_sales_orders: [{ doc_no: 'SO-1', company_id: CO, project_id: 7, status: 'RENO_IN_PROGRESS' }],
   mfg_sales_order_payments: [{ id: 'p1', company_id: CO, so_doc_no: 'SO-1', amount_sen: 1_000_000, method: 'transfer' }],
+  /* Finance confirmed p1 against the bank (SOP 4.2): only confirmed money counts. */
+  acc_official_receipts: [{ id: 1, company_id: CO, payment_source: 'SOPAY', payment_id: 'p1', status: 'FORMAL', channel_account_code: '310-0010' }],
   sales_invoices: [], sales_invoice_payments: [],
   payment_vouchers: [], payment_voucher_lines: [],
   project_limit_requests: [],
@@ -65,6 +67,27 @@ describe('a project’s limit', () => {
       { id: 'r2', company_id: CO, project_id: 7, kind: 'amount', amount_sen: 900_000, status: 'PENDING' },
     ] });
     expect(await projectLimit(sb, CO, 7)).toMatchObject({ limitSen: 800_000 });
+  });
+
+  /* SOP 4.2/4.5: 财务核对银行确实收到 → 才算已收，项目额度才增加. Refunds and money moved between orders count as they stand. */
+  test('a payment counts only once finance confirms it; a refund and money moved count as they stand', async () => {
+    const sb = world({
+      mfg_sales_order_payments: [
+        { id: 'p1', company_id: CO, so_doc_no: 'SO-1', amount_sen: 1_000_000, method: 'transfer' },
+        { id: 'p2', company_id: CO, so_doc_no: 'SO-1', amount_sen: 500_000, method: 'cash' },
+        { id: 'p3', company_id: CO, so_doc_no: 'SO-1', amount_sen: 200_000, method: 'converted' },
+        { id: 'p4', company_id: CO, so_doc_no: 'SO-1', amount_sen: -100_000, method: 'converted' },
+      ],
+      sales_invoices: [{ id: 'si-1', company_id: CO, so_doc_no: 'SO-1', status: 'SENT' }],
+      sales_invoice_payments: [{ id: 'sp1', company_id: CO, sales_invoice_id: 'si-1', amount_sen: 300_000, method: 'transfer' }],
+    });
+    /* p2 (cash, still a draft receipt) and sp1 (no receipt confirmed) wait. */
+    expect(await projectLimit(sb, CO, 7)).toMatchObject({ receivedSen: 1_100_000, limitSen: 770_000 });
+    sb.tables.acc_official_receipts.push(
+      { id: 2, company_id: CO, payment_source: 'SOPAY', payment_id: 'p2', status: 'FORMAL', channel_account_code: '310-0010' },
+      { id: 3, company_id: CO, payment_source: 'SIPAY', payment_id: 'sp1', status: 'FORMAL', channel_account_code: '310-0010' },
+    );
+    expect(await projectLimit(sb, CO, 7)).toMatchObject({ receivedSen: 1_900_000, limitSen: 1_330_000 });
   });
 
   test('a project’s own share replaces the company’s', async () => {

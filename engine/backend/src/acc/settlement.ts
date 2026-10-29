@@ -33,7 +33,7 @@ import type { ParseResult } from './settlement-parse';
 import { resolveRoles, settlementLines, settlementReceiptLines, statementChargeLines, clearingMoveLinesFrom } from './rules';
 import { recordSoAudit } from '../scm/lib/so-audit';
 import { deriveAccountSheet } from '../scm/lib/so-payment-row';
-import { formaliseReceiptsForSettlement } from './receipts';
+import { confirmReceiptsForSettlement } from './receipt-confirm';
 import { companyCodeById } from '../scm/lib/doc-no';
 import type { PaymentCandidate } from './settlement-match';
 import { fmtSen } from '../scm/shared/format';
@@ -946,6 +946,30 @@ export async function confirmSettlementRow(sb: any, input: ConfirmInput): Promis
     return { ok: false, status: posted.status, reason: posted.reason ?? 'the entry was refused by the posting gate' };
   }
 
+  /* 对账确认 = 钱确定到手:the card payments' Official Receipts turn FORMAL
+     on the acquirer's payout bank (GL redesign item 9 — 卡款 merchant recon
+     确认那笔时自动转正). BEST-EFFORT: the confirm's truth is the fee entry
+     above; a receipt hiccup (or an unconfigured bank letter) leaves the OR
+     in draft for the manual confirm button, never unwinds the settlement.
+     A receipt formalised here is the payment confirmed (SOP 4.2), so its
+     payment posts now — BEFORE the move below, so money keyed in without a
+     bank, posted at this confirmation onto the generic clearing account, is
+     moved to the merchant's own like money posted before it. */
+  try {
+    const code = await companyCodeById(sb, companyId);
+    if (code) {
+      await confirmReceiptsForSettlement(
+        sb, companyId, code,
+        chosen.map((p) => ({ source: p.source, id: p.id })),
+        acq.acquirer.bank_account_code ?? null,
+        input.userName,
+      );
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[receipts] settlement formalise skipped:', e);
+  }
+
   /* 做 2: the money this statement has just named leaves the generic clearing
      account for the merchant's own. After the fee, which is the confirm's
      truth; a move that fails leaves the fee standing and asks for a second
@@ -973,25 +997,6 @@ export async function confirmSettlementRow(sb: any, input: ConfirmInput): Promis
     return { ok: false, status: 'stamp_failed', reason: `${upErr.message} (the entry ${posted.jeNo ?? '(none — no fee to book)'} DID post — press confirm again to finish stamping the line)` };
   }
 
-  /* 对账确认 = 钱确定到手:the card payments' Official Receipts turn FORMAL
-     on the acquirer's payout bank (GL redesign item 9 — 卡款 merchant recon
-     确认那笔时自动转正). BEST-EFFORT: the confirm's truth is the fee entry
-     above; a receipt hiccup (or an unconfigured bank letter) leaves the OR
-     in draft for the manual confirm button, never unwinds the settlement. */
-  try {
-    const code = await companyCodeById(sb, companyId);
-    if (code) {
-      await formaliseReceiptsForSettlement(
-        sb, companyId, code,
-        chosen.map((p) => ({ source: p.source, id: p.id })),
-        acq.acquirer.bank_account_code ?? null,
-        input.userName,
-      );
-    }
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.error('[receipts] settlement formalise skipped:', e);
-  }
   return {
     ok: true,
     status: 'confirmed',

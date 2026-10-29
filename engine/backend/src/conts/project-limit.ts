@@ -1,6 +1,7 @@
 // Conts only (not part of Houzs's code): the project limit (finance phase 1.5; SOP 3.4, chew 20-25 Oct 2026). A
 // payment voucher for a project must stay within its limit:
-//   a customer project: limit = what the customer has paid × the project's share (its own, else the company's, 70%)
+//   a customer project: limit = what the customer has paid, as finance confirmed it (SOP 4.2/4.5)
+//                       × the project's share (its own, else the company's, 70%)
 //                       + extra amounts approved;
 //   an internal project (the company's own money): limit = its budget + extra budget approved;
 //   used     = the project's lines on POSTED vouchers;  reserved = its lines on vouchers submitted, not yet posted;
@@ -11,6 +12,7 @@
 import { paginateAll } from '../scm/lib/paginate-all';
 import { receiptCountsForLimit, type ReceiptStatus } from './petty-cash';
 import { requestReservation } from './payment-requests';
+import { awaitsConfirmation, confirmedPaymentIds } from '../acc/receipts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in the modules it sits beside */
 type Db = any;
@@ -107,25 +109,41 @@ async function claimsOnProject(sb: Db, companyId: number, projectId: number): Pr
   return { ok: true, usedSen, reservedSen };
 }
 
-/** What the customer of a project has paid: the payments on its sales orders and on their invoices. */
+type PayRow = { id: string; amount_sen: number; method: string | null };
+
+/** The money of these payment rows that counts as received. A customer payment counts once finance has confirmed it
+ *  (its official receipt is FORMAL — SOP 4.2/4.5: 财务核对银行确实收到 → 才算已收，项目额度才增加); a 'converted' row is
+ *  money moved in (positive) or out / refunded (negative) and counts as it stands (SOP 4.4: a refund lowers the limit),
+ *  as do migration-era 'imported' rows and a customer credit applied (acc/receipts awaitsConfirmation). */
+async function receivedOf(sb: Db, companyId: number, source: 'SOPAY' | 'SIPAY', rows: PayRow[]): Promise<{ ok: true; sen: number } | Fail> {
+  const needsConfirm = (p: PayRow) => awaitsConfirmation(p.method, p.amount_sen);
+  const conf = await confirmedPaymentIds(sb, companyId, source, rows.filter(needsConfirm).map((p) => String(p.id)));
+  if (!conf.ok) return { ok: false, error: conf.reason };
+  return { ok: true, sen: rows.filter((p) => !needsConfirm(p) || conf.ids.has(String(p.id))).reduce((s, p) => s + Number(p.amount_sen ?? 0), 0) };
+}
+
+/** What the customer of a project has paid: the confirmed payments on its sales orders and on their invoices. */
 async function projectReceived(sb: Db, companyId: number, projectId: number): Promise<{ ok: true; sen: number } | Fail> {
   const { data: sos, error } = await sb.from('mfg_sales_orders').select('doc_no, status').eq('company_id', companyId).eq('project_id', projectId);
   if (error) return { ok: false, error: error.message };
   const docNos = ((sos ?? []) as Array<{ doc_no: string; status: string }>).filter((o) => String(o.status).toUpperCase() !== 'CANCELLED').map((o) => o.doc_no);
   if (docNos.length === 0) return { ok: true, sen: 0 };
   const [sop, sis] = await Promise.all([
-    sb.from('mfg_sales_order_payments').select('amount_sen, method').eq('company_id', companyId).in('so_doc_no', docNos),
+    sb.from('mfg_sales_order_payments').select('id, amount_sen, method').eq('company_id', companyId).in('so_doc_no', docNos),
     sb.from('sales_invoices').select('id, status').eq('company_id', companyId).in('so_doc_no', docNos),
   ]);
   if (sop.error) return { ok: false, error: sop.error.message };
   if (sis.error) return { ok: false, error: sis.error.message };
-  /* Every row: a 'converted' one is money moved in (positive) or out / refunded (negative) — SOP 4.4: a refund lowers the limit. */
-  let sen = ((sop.data ?? []) as Array<{ amount_sen: number }>).reduce((s, p) => s + Number(p.amount_sen ?? 0), 0);
+  const so = await receivedOf(sb, companyId, 'SOPAY', (sop.data ?? []) as PayRow[]);
+  if (!so.ok) return so;
+  let sen = so.sen;
   const siIds = ((sis.data ?? []) as Array<{ id: string; status: string }>).filter((s) => !['DRAFT', 'CANCELLED', 'VOID'].includes(String(s.status).toUpperCase())).map((s) => s.id);
   if (siIds.length > 0) {
-    const { data: sip, error: sipErr } = await sb.from('sales_invoice_payments').select('amount_sen').eq('company_id', companyId).in('sales_invoice_id', siIds);
+    const { data: sip, error: sipErr } = await sb.from('sales_invoice_payments').select('id, amount_sen, method').eq('company_id', companyId).in('sales_invoice_id', siIds);
     if (sipErr) return { ok: false, error: sipErr.message };
-    sen += ((sip ?? []) as Array<{ amount_sen: number }>).reduce((s, p) => s + Number(p.amount_sen ?? 0), 0);
+    const si = await receivedOf(sb, companyId, 'SIPAY', (sip ?? []) as PayRow[]);
+    if (!si.ok) return si;
+    sen += si.sen;
   }
   return { ok: true, sen };
 }

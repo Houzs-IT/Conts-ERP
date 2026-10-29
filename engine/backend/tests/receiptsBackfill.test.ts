@@ -2,10 +2,11 @@
      · the plan names, per payment month, how many receipts the run would
        mint and on which series, from the live maxima; converted and zero
        rows are not counted; a payment with a receipt is not counted;
-     · the run creates each missing receipt through the live call (cash
-       FORMAL at once on COR, the rest DRAFT), then turns the card payments
-       merchant reconciliation has confirmed formal on the payout bank's
-       letter, in payment-date order; a second run does nothing;
+     · the run creates each missing receipt through the live call (all
+       DRAFT — cash too waits for finance since SOP 4.2), then turns the card
+       payments merchant reconciliation has confirmed formal on the payout
+       bank's letter, in payment-date order, and posts each payment it
+       confirmed; a second run does nothing;
      · a caller without the key is refused. */
 
 import { Hono } from 'hono';
@@ -46,9 +47,13 @@ const world = (over: Record<string, Row[]> = {}) => fakeSb(
     acc_bank_letters: [{ company_id: CO, account_code: '310-0010', letter: 'M' }, { company_id: CO, account_code: '310-0020', letter: 'H' }],
     acc_numbering: [],
     acc_account_roles: [{ company_id: CO, role: 'CASH', account_code: '320-0000' }],
-    accounts: [],
+    accounts: ['300-0000', '310-0010', '326-0000'].map((code) => ({ company_id: CO, account_code: code, account_name: code, account_type: 'ASSET', parent_code: null, is_active: true })),
     companies: [{ id: CO, code: '2990' }],
     sales_invoice_payments: [],
+    /* The confirmed card payment's order and customer, so its posting lands. */
+    mfg_sales_orders: [{ doc_no: '2990-SO-2606-002', company_id: CO, customer_id: 'cust-1', debtor_code: null, debtor_name: 'MS LEE' }],
+    debtors: [{ company_id: CO, code: 'cust-1', name: 'MS LEE', control_account: '300-0000', is_active: true }],
+    journal_entries: [], journal_entry_lines: [],
     ...over,
   },
   {},
@@ -84,7 +89,8 @@ describe('the plan', () => {
     expect(plan.months.map((m) => [m.ym, m.payments, m.cash, m.confirmedCards, m.unlettered])).toEqual([['2606', 3, 1, 1, 0], ['2607', 1, 0, 0, 0]]);
     const june = plan.months[0]!.series;
     expect(june.find((s) => s.series === '2990-DraftOR-2606')).toEqual({ series: '2990-DraftOR-2606', count: 3, from: '2990-DraftOR-2606-001', to: '2990-DraftOR-2606-003' });
-    expect(june.find((s) => s.series === '2990-COR-2606')).toEqual({ series: '2990-COR-2606', count: 1, from: '2990-COR-2606-001', to: '2990-COR-2606-001' });
+    /* Cash is counted but takes no cash number: finance confirms it onto a bank. */
+    expect(june.find((s) => s.series === '2990-COR-2606')).toBeUndefined();
     expect(june.find((s) => s.series === '2990-MOR-2606')).toEqual({ series: '2990-MOR-2606', count: 1, from: '2990-MOR-2606-001', to: '2990-MOR-2606-001' });
     /* July's draft series already holds 001 — the run continues from 002. */
     expect(plan.months[1]!.series).toEqual([{ series: '2990-DraftOR-2607', count: 1, from: '2990-DraftOR-2607-002', to: '2990-DraftOR-2607-002' }]);
@@ -121,8 +127,12 @@ describe('the run', () => {
     expect(out).toMatchObject({ created: 4, formalised: 1, failed: [], remaining: 0 });
     const rows = sb.tables.acc_official_receipts as Row[];
     const byPayment = new Map(rows.map((r) => [String(r.payment_id), r]));
-    expect(byPayment.get('p-cash')).toMatchObject({ status: 'FORMAL', or_number: '2990-COR-2606-001', doc_no: '2990-SO-2606-001', amount_sen: 50_000, paid_at: '2026-06-03' });
+    expect(byPayment.get('p-cash')).toMatchObject({ status: 'DRAFT', doc_no: '2990-SO-2606-001', amount_sen: 50_000, paid_at: '2026-06-03' });
+    expect(String(byPayment.get('p-cash')!.or_number)).toMatch(/^2990-DraftOR-2606-00[1-3]$/);
     expect(byPayment.get('p-card-1')).toMatchObject({ status: 'FORMAL', or_number: '2990-MOR-2606-001', channel_account_code: '310-0010' });
+    /* Confirmed = received: the card payment it formalised posts, and only that one. */
+    expect((sb.tables.journal_entries as Row[]).map((j) => [j.source_type, j.source_doc_no])).toEqual([['SOPAY', 'p-card-1']]);
+    expect((sb.tables.journal_entry_lines as Row[]).find((l) => Number(l.debit_sen) > 0)).toMatchObject({ account_code: '326-0000', debit_sen: 100_000 });
     expect(byPayment.get('p-card-2')).toMatchObject({ status: 'DRAFT' });
     expect(String(byPayment.get('p-card-2')!.or_number)).toMatch(/^2990-DraftOR-2606-00[1-3]$/);
     expect(byPayment.get('p-transfer')).toMatchObject({ status: 'DRAFT', or_number: '2990-DraftOR-2607-002' });

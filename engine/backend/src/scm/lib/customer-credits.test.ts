@@ -499,8 +499,11 @@ describe('settlePiPaidSen — routes through the atomic function, falls back onl
 // ============================================================================
 type SoCreditStore = {
   creditRows: Array<{ amount_sen: number; company_id?: number | null }>;
-  payRows: Array<{ amount_sen: number; company_id?: number | null }>;
+  payRows: Array<{ id?: string; amount_sen: number; company_id?: number | null; method?: string }>;
   inserts: Array<{ table: string; payload: Record<string, unknown> }>;
+  /* FORMAL receipts (finance confirmed — SOP 4.2) and live posted entries (posted before confirmation existed). */
+  receipts?: Array<{ payment_id: string }>;
+  entries?: Array<{ source_doc_no: string; reversed: boolean }>;
 };
 
 function fakeSoSb(store: SoCreditStore) {
@@ -524,6 +527,8 @@ function fakeSoSb(store: SoCreditStore) {
       }
       if (this.table === 'customer_credits') return { data: store.creditRows, error: null };
       if (this.table === 'mfg_sales_order_payments') return { data: store.payRows, error: null };
+      if (this.table === 'acc_official_receipts') return { data: store.receipts ?? [], error: null };
+      if (this.table === 'journal_entries') return { data: store.entries ?? [], error: null };
       return { data: this.singleRow ? null : [], error: null };
     }
     then<T>(onF: (v: { data: unknown; error: unknown }) => T) {
@@ -534,18 +539,28 @@ function fakeSoSb(store: SoCreditStore) {
 }
 
 const SO_ARGS = { docNo: 'HC-SO-013276', debtorCode: 'CUST-1', debtorName: 'Alice', createdBy: 'staff-1' };
+const PAID = { id: 'p1', amount_sen: 200_000, company_id: 1, method: 'transfer' };
 
 describe('creditFromCancelledSo — nets the cancel refund against any reopen contra', () => {
   test('first cancel with a deposit writes one SO_CANCEL_REFUND for the paid total', async () => {
-    const store: SoCreditStore = { creditRows: [], payRows: [{ amount_sen: 200_000, company_id: 1 }], inserts: [] };
+    const store: SoCreditStore = { creditRows: [], payRows: [PAID], inserts: [], receipts: [{ payment_id: 'p1' }] };
     const res = await creditFromCancelledSo(fakeSoSb(store), SO_ARGS);
     expect(res).toEqual({ credited: 200_000 });
     const led = store.inserts.find((i) => i.table === 'customer_credits');
     expect(led?.payload).toMatchObject({ amount_sen: 200_000, source_type: 'SO_CANCEL_REFUND', source_doc_no: 'HC-SO-013276' });
   });
 
+  /* SOP 4.2: money counts as received once finance confirms it — or it was posted before confirmation existed. */
+  test('a payment finance has not confirmed is no credit; one posted before confirmation existed is', async () => {
+    const waiting: SoCreditStore = { creditRows: [], payRows: [PAID], inserts: [] };
+    expect(await creditFromCancelledSo(fakeSoSb(waiting), SO_ARGS)).toEqual({ credited: 0, reason: 'no_paid' });
+    expect(waiting.inserts).toHaveLength(0);
+    const legacy: SoCreditStore = { creditRows: [], payRows: [PAID], inserts: [], entries: [{ source_doc_no: 'p1', reversed: false }] };
+    expect(await creditFromCancelledSo(fakeSoSb(legacy), SO_ARGS)).toEqual({ credited: 200_000 });
+  });
+
   test('a standing credit is never doubled — a second cancel no-ops', async () => {
-    const store: SoCreditStore = { creditRows: [{ amount_sen: 200_000 }], payRows: [{ amount_sen: 200_000, company_id: 1 }], inserts: [] };
+    const store: SoCreditStore = { creditRows: [{ amount_sen: 200_000 }], payRows: [PAID], inserts: [], receipts: [{ payment_id: 'p1' }] };
     const res = await creditFromCancelledSo(fakeSoSb(store), SO_ARGS);
     expect(res).toEqual({ credited: 0, reason: 'already_credited' });
     expect(store.inserts).toHaveLength(0);
@@ -554,8 +569,9 @@ describe('creditFromCancelledSo — nets the cancel refund against any reopen co
   test('after a reopen reversed the credit (net 0), a fresh cancel credits again', async () => {
     const store: SoCreditStore = {
       creditRows: [{ amount_sen: 200_000 }, { amount_sen: -200_000 }],
-      payRows: [{ amount_sen: 200_000, company_id: 1 }],
+      payRows: [PAID],
       inserts: [],
+      receipts: [{ payment_id: 'p1' }],
     };
     const res = await creditFromCancelledSo(fakeSoSb(store), SO_ARGS);
     expect(res).toEqual({ credited: 200_000 });

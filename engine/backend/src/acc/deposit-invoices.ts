@@ -19,9 +19,10 @@
 // is left alone. 2990 first; HOUZS later (owner: houzs 那边往后也是需要，只是
 // 暂时先关闭).
 //
-// WHERE IT FIRES. so-payment-row's bookSoPaymentBestEffort — the one hook
-// every payment birth passes (the panel, the scan job, both SO-create deposit
-// inserts); the edit re-post cancels and re-issues; the delete cancels.
+// WHERE IT FIRES. When finance confirms the payment (Conts, SOP 4.2: money is
+// received once the bank is checked) — acc/receipt-confirm, after its official
+// receipt turns FORMAL; an unconfirmed payment is not due one. The edit
+// re-post cancels and re-issues; the delete cancels.
 // Everything here is best-effort at the hook: the money is recorded first,
 // and issue-missing (the page's button) heals any invoice a hiccup skipped.
 //
@@ -35,6 +36,7 @@ import { postJournal, reverseJournal } from './engine';
 import { depositInvoiceLines, resolveRoles } from './rules';
 import { resolveDebtorRoles } from '../conts/parties';
 import { customerPartyCode } from './payments';
+import { awaitsConfirmation, confirmedPaymentIds, receiptConfirmation } from './receipts';
 import { companyCodeById, docMonthTag, mintMonthlyDocNo } from '../scm/lib/doc-no';
 import { docPrefixForCode } from '../scm/lib/companyScope';
 import { absorbsOrderDeposit } from '../scm/lib/si-order-deposit';
@@ -112,7 +114,8 @@ export async function saveDepositInvoiceSettings(
 
 /* ── Is one due? ─────────────────────────────────────────────────────────── */
 
-export type NotDueWhy = 'switched_off' | 'before_start' | 'no_date' | 'no_amount' | 'invoice_exists' | 'order_not_live';
+/* not_confirmed: finance has not confirmed the money yet (its official receipt is not FORMAL — SOP 4.2). */
+export type NotDueWhy = 'switched_off' | 'before_start' | 'no_date' | 'no_amount' | 'invoice_exists' | 'order_not_live' | 'not_confirmed';
 
 /** Orders that never became orders, or were taken back: their money is a
     refund or a credit, never a sale (docs/bugs/0832) — the sales side's one
@@ -204,6 +207,16 @@ export async function issueDepositInvoice(sb: Db, p: IssueInput): Promise<IssueR
   if (NOT_AN_ORDER.has(String(order.status ?? '').toUpperCase())) return { ok: true, status: 'not_due', why: 'order_not_live' };
   const companyId = order.company_id ?? null;
   if (companyId == null) return { ok: false, status: 'no_company', reason: `${soDocNo} carries no company` };
+
+  /* Money counts as received once finance confirms it (SOP 4.2): the invoice
+     waits for the payment's receipt to be FORMAL (or a posting from before
+     confirmation existed), and acc/receipt-confirm issues it then. Money moved
+     between orders was confirmed where it came in. */
+  if (awaitsConfirmation(p.method, p.amountSen)) {
+    const conf = await receiptConfirmation(sb, companyId, 'SOPAY', paymentId);
+    if (!conf.ok) return { ok: false, status: 'read_failed', reason: `receipt: ${conf.reason}` };
+    if (!conf.confirmed) return { ok: true, status: 'not_due', why: 'not_confirmed' };
+  }
 
   const due = await depositInvoiceDue(sb, { companyId, soDocNo, paidAt: p.paidAt, amountSen: p.amountSen });
   if (!due.ok) return { ok: false, status: 'read_failed', reason: due.reason };
@@ -456,7 +469,11 @@ export async function missingDepositInvoices(
   if (st.settings.fromDate) q = q.gte('paid_at', st.settings.fromDate);
   const { data: pays, error: payErr } = await q;
   if (payErr) return { ok: false, reason: `payments: ${payErr.message}` };
-  const candidates = ((pays ?? []) as MissingPayment[]).filter((p) => dayOf(p.paid_at) != null && Number(p.amount_sen) > 0);
+  const dated = ((pays ?? []) as MissingPayment[]).filter((p) => dayOf(p.paid_at) != null && Number(p.amount_sen) > 0);
+  /* Only money finance has confirmed is owed its invoice (SOP 4.2). */
+  const confirmed = await confirmedPaymentIds(sb, companyId, 'SOPAY', dated.filter((p) => awaitsConfirmation(p.method, p.amount_sen)).map((p) => String(p.id)));
+  if (!confirmed.ok) return { ok: false, reason: `receipts: ${confirmed.reason}` };
+  const candidates = dated.filter((p) => !awaitsConfirmation(p.method, p.amount_sen) || confirmed.ids.has(String(p.id)));
   if (candidates.length === 0) return { ok: true, enabled: true, payments: [] };
 
   const { data: dis, error: diErr } = await sb.from('acc_deposit_invoices')

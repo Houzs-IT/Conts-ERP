@@ -16,6 +16,7 @@
 
 import { isMissingRpc } from './rpc-missing';
 import { fmtSen } from '../shared/format';
+import { awaitsConfirmation, confirmedPaymentIds } from '../../acc/receipts';
 
 export type CreditSourceType =
   | 'SI_CANCEL_REFUND'   // SI was cancelled with paid_sen > 0 → credit equal to paid_sen
@@ -600,18 +601,27 @@ export async function creditFromCancelledSo(
      credit row) but it is reported honestly instead of as "nothing was paid". */
   const { data: pays, error: paysErr } = await sb
     .from('mfg_sales_order_payments')
-    .select('amount_sen, company_id')
+    .select('id, amount_sen, company_id, method')
     .eq('so_doc_no', args.docNo);
   if (paysErr) {
     /* eslint-disable-next-line no-console */
     console.error('[customer-credit] SO deposit read failed — cancel refund NOT credited:', args.docNo, paysErr.message);
     return { credited: 0, reason: 'deposits_read_failed' };
   }
-  const payRows = (pays ?? []) as Array<{ amount_sen: number; company_id?: number | null }>;
-  const total = payRows.reduce((s, p) => s + Number(p.amount_sen ?? 0), 0);
-  if (total <= 0) return { credited: 0, reason: 'no_paid' };
+  const payRows = (pays ?? []) as Array<{ id: string; amount_sen: number; company_id?: number | null; method?: string | null }>;
   // Multi-company (mig 0061): the ledger row inherits the SO's company (via its payments).
   const companyId = payRows.find((p) => p.company_id != null)?.company_id ?? null;
+  /* Only money finance has confirmed was received (SOP 4.2; acc/receipts): a
+     payment still waiting for the bank check is no credit to hand back. */
+  const confirmed = await confirmedPaymentIds(sb, companyId, 'SOPAY', payRows.filter((p) => awaitsConfirmation(p.method, p.amount_sen)).map((p) => String(p.id)));
+  if (!confirmed.ok) {
+    /* eslint-disable-next-line no-console */
+    console.error('[customer-credit] SO deposit confirmation read failed — cancel refund NOT credited:', args.docNo, confirmed.reason);
+    return { credited: 0, reason: 'deposits_read_failed' };
+  }
+  const total = payRows.filter((p) => !awaitsConfirmation(p.method, p.amount_sen) || confirmed.ids.has(String(p.id)))
+    .reduce((s, p) => s + Number(p.amount_sen ?? 0), 0);
+  if (total <= 0) return { credited: 0, reason: 'no_paid' };
 
   const r = await addCustomerCredit(sb, {
     debtorCode: args.debtorCode,
@@ -624,6 +634,44 @@ export async function creditFromCancelledSo(
     companyId,
   });
   return r.ok ? { credited: total } : { credited: 0, reason: r.reason };
+}
+
+/**
+ * A payment of a CANCELLED order confirmed by finance after the cancel (SOP 4.2):
+ * the cancel credited only the money confirmed then, so this payment joins the
+ * customer's credit now — one SO_CANCEL_REFUND row naming the payment
+ * (source_doc_id), so confirming again or re-running adds nothing, and a reopen's
+ * contra (reverseCancelledSoCredit nets every SO_CANCEL_REFUND) takes it back
+ * with the rest. A live order, a row that is not money arriving, or an order
+ * with no debtor code credits nothing.
+ */
+export async function creditConfirmedPaymentOfCancelledSo(
+  sb: any,
+  p: { paymentId: string; docNo: string; amountSen: number; method: string; companyId: number },
+): Promise<{ credited: number; reason?: string }> {
+  if (!awaitsConfirmation(p.method, p.amountSen)) return { credited: 0, reason: 'not_received_money' };
+  const { data: so, error: soErr } = await sb.from('mfg_sales_orders')
+    .select('status, debtor_code, debtor_name').eq('doc_no', p.docNo).eq('company_id', p.companyId).maybeSingle();
+  if (soErr) return { credited: 0, reason: `order read failed: ${soErr.message}` };
+  const order = so as { status?: string | null; debtor_code?: string | null; debtor_name?: string | null } | null;
+  if (String(order?.status ?? '').toUpperCase() !== 'CANCELLED') return { credited: 0, reason: 'order_live' };
+  if (!order?.debtor_code || !order.debtor_code.trim()) return { credited: 0, reason: 'no_debtor' };
+  const { data: existing, error: exErr } = await sb.from('customer_credits')
+    .select('id').eq('source_type', 'SO_CANCEL_REFUND').eq('source_doc_id', p.paymentId).limit(1);
+  if (exErr) return { credited: 0, reason: `guard read failed: ${exErr.message}` };
+  if (((existing ?? []) as unknown[]).length > 0) return { credited: 0, reason: 'already_credited' };
+  const r = await addCustomerCredit(sb, {
+    debtorCode: order.debtor_code,
+    debtorName: order.debtor_name ?? null,
+    amountSen: p.amountSen,
+    sourceType: 'SO_CANCEL_REFUND',
+    sourceDocNo: p.docNo,
+    sourceDocId: p.paymentId,
+    notes: `Payment on cancelled Sales Order ${p.docNo} confirmed by finance after the cancel: carried as customer credit.`,
+    createdBy: null,
+    companyId: p.companyId,
+  });
+  return r.ok ? { credited: p.amountSen } : { credited: 0, reason: r.reason };
 }
 
 /**

@@ -9,7 +9,7 @@ import { fakeSb, type Row } from '../scm/lib/fake-postgrest';
 import { postSoPayment, postSiPayment, reverseSoPayment, backfillSoPayments, unbookedPayments } from './payments';
 import { DEFAULT_ROLE_CODES } from './rules';
 
-const CHART: Row[] = ['300-0000', '500-0000', '320-0000', '310-0010', '326-0000', '327-0000', '888-0000'].map((code) => ({
+const CHART: Row[] = ['300-0000', '500-0000', '320-0000', '310-0010', '310-0020', '326-0000', '327-0000', '888-0000'].map((code) => ({
   account_code: code, account_name: code, account_type: 'ASSET', parent_code: null, is_active: true, company_id: 1,
 }));
 
@@ -21,6 +21,11 @@ const SO: Row = { doc_no: 'SO-2608-001', company_id: 1, debtor_name: 'Ah Meng', 
 /* Every customer here has an account of its own (scm.debtors): one with none is
    never guessed onto the AR rule (chew, 29 Oct 2026), so the posting is refused. */
 const DEBTOR = (code: string): Row => ({ company_id: 1, code, control_account: DEFAULT_ROLE_CODES.AR });
+
+/* Finance has confirmed every payment here — its official receipt is FORMAL (Conts, SOP 4.2): an unconfirmed payment
+   waits and posts nothing (tests/confirmCustomerReceipts.test.ts). `bank`: the bank it was confirmed onto. */
+const CONFIRMED = (ids: string[], source: 'SOPAY' | 'SIPAY' = 'SOPAY', bank: string | null = null): Row[] =>
+  ids.map((id) => ({ id: `or-${source}-${id}`, company_id: 1, payment_source: source, payment_id: id, status: 'FORMAL', channel_account_code: bank }));
 
 const PAY = (over: Partial<Row> = {}): Row => ({
   id: 'pay-1',
@@ -43,6 +48,7 @@ const world = (over: { pays?: Row[]; jes?: Row[]; acquirers?: Row[] } = {}) =>
     debtors: [DEBTOR('cust-1')],
     mfg_sales_orders: [SO],
     mfg_sales_order_payments: over.pays ?? [PAY()],
+    acc_official_receipts: [...CONFIRMED(['pay-1', 'pay-2', 'pay-3', 'pay-t']), ...CONFIRMED(['sp-1'], 'SIPAY')],
     journal_entries: over.jes ?? [],
     journal_entry_lines: [],
   });
@@ -64,7 +70,7 @@ describe('postSoPayment — the money finally reaches the books', () => {
   it('a debtor code, when the business keeps one, is the party code; a blank one falls back to the customer id', async () => {
     const coded = fakeSb({
       accounts: CHART, acc_account_roles: [], acc_acquirers: [], debtors: [DEBTOR('300-C001')],
-      mfg_sales_orders: [{ ...SO, debtor_code: '300-C001' }],
+      mfg_sales_orders: [{ ...SO, debtor_code: '300-C001' }], acc_official_receipts: CONFIRMED(['pay-1']),
       mfg_sales_order_payments: [PAY({ method: 'cash' })], journal_entries: [], journal_entry_lines: [],
     });
     await postSoPayment(coded, PAY({ method: 'cash' }) as never);
@@ -72,7 +78,7 @@ describe('postSoPayment — the money finally reaches the books', () => {
 
     const blank = fakeSb({
       accounts: CHART, acc_account_roles: [], acc_acquirers: [], debtors: [DEBTOR('cust-1')],
-      mfg_sales_orders: [{ ...SO, debtor_code: '  ' }],
+      mfg_sales_orders: [{ ...SO, debtor_code: '  ' }], acc_official_receipts: CONFIRMED(['pay-1']),
       mfg_sales_order_payments: [PAY({ method: 'cash' })], journal_entries: [], journal_entry_lines: [],
     });
     await postSoPayment(blank, PAY({ method: 'cash' }) as never);
@@ -86,12 +92,23 @@ describe('postSoPayment — the money finally reaches the books', () => {
     expect(sb.tables.journal_entry_lines[0]).toMatchObject({ account_code: DEFAULT_ROLE_CODES.TRANSIT_EDC });
   });
 
-  it('cash debits CASH; transfer debits the default bank', async () => {
+  /* Conts (SOP 4.2): the company banks all its cash, so cash is confirmed onto a bank like a transfer — never CASH. */
+  it('cash and transfer debit the bank finance confirmed them onto; none named, the default bank', async () => {
     const sb = world();
+    sb.tables.acc_official_receipts.push(...CONFIRMED(['pay-c'], 'SOPAY', '310-0020'));
     await postSoPayment(sb, PAY({ id: 'pay-c', method: 'cash' }) as never);
     await postSoPayment(sb, PAY({ id: 'pay-t', method: 'transfer' }) as never);
     const debits = sb.tables.journal_entry_lines.filter((l) => l.debit_sen > 0).map((l) => l.account_code);
-    expect(debits).toEqual([DEFAULT_ROLE_CODES.CASH, DEFAULT_ROLE_CODES.BANK_DEFAULT]);
+    expect(debits).toEqual(['310-0020', DEFAULT_ROLE_CODES.BANK_DEFAULT]);
+  });
+
+  it('a payment finance has not confirmed waits and books nothing', async () => {
+    const sb = world();
+    sb.tables.acc_official_receipts = [{ id: 'or-d', company_id: 1, payment_source: 'SOPAY', payment_id: 'pay-1', status: 'DRAFT', channel_account_code: null }];
+    expect(await postSoPayment(sb, PAY() as never)).toEqual({ ok: true, status: 'waiting_confirmation' });
+    sb.tables.acc_official_receipts = [];
+    expect(await postSoPayment(sb, PAY() as never)).toEqual({ ok: true, status: 'waiting_confirmation' });
+    expect(sb.tables.journal_entries).toHaveLength(0);
   });
 
   it('imported rows never book — AutoCount already carries that money', async () => {
@@ -136,7 +153,7 @@ describe('postSoPayment — the money finally reaches the books', () => {
   it('an SO lookup that does not answer fails CLOSED', async () => {
     const sb = fakeSb({
       accounts: CHART, acc_account_roles: [], acc_acquirers: [],
-      mfg_sales_orders: [SO], journal_entries: [], journal_entry_lines: [],
+      mfg_sales_orders: [SO], acc_official_receipts: CONFIRMED(['pay-1']), journal_entries: [], journal_entry_lines: [],
     }, { mfg_sales_orders: ['company_id'] });
     const out = await postSoPayment(sb, PAY() as never);
     expect(out).toMatchObject({ ok: false, status: 'so_read_failed' });
@@ -165,15 +182,16 @@ describe('postSiPayment — the invoice-side twin', () => {
   const SI: Row = { id: 'si-1', invoice_number: 'HC-SI-2608-001', company_id: 1, debtor_code: 'C1', debtor_name: 'Ah Meng', migrated_no_stock: false };
   const siWorld = (si: Row = SI) => fakeSb({
     accounts: CHART, acc_account_roles: [], acc_acquirers: [], debtors: [DEBTOR('C1')],
-    sales_invoices: [si], journal_entries: [], journal_entry_lines: [],
+    sales_invoices: [si], acc_official_receipts: CONFIRMED(['sp-1'], 'SIPAY'), journal_entries: [], journal_entry_lines: [],
   });
   const SIPAY: Row = { id: 'sp-1', sales_invoice_id: 'si-1', paid_at: '2026-08-10', method: 'cash', merchant_provider: null, amount_sen: 1000, company_id: 1 };
 
-  it('books Dr CASH / Cr AR against the invoice', async () => {
+  it('books Dr the bank / Cr AR against the invoice', async () => {
     const sb = siWorld();
     const out = await postSiPayment(sb, SIPAY as never);
     expect(out).toMatchObject({ ok: true, status: 'posted' });
     expect(sb.tables.journal_entries[0]).toMatchObject({ source_type: 'SIPAY', source_doc_no: 'sp-1' });
+    expect(sb.tables.journal_entry_lines[0]).toMatchObject({ account_code: DEFAULT_ROLE_CODES.BANK_DEFAULT, debit_sen: 1000 });
   });
 
   it('a MIGRATED invoice books nothing — its receivable lives in AutoCount', async () => {
@@ -229,11 +247,16 @@ describe('payments that never reached the ledger', () => {
     source_doc_no: docNo, entry_date: entryDate, posted: true, reversed: false, ...over,
   });
 
-  const world = (tables: Record<string, unknown[]>) => fakeSb({
-    journal_entries: [], journal_entry_lines: [],
-    mfg_sales_order_payments: [], sales_invoice_payments: [],
-    ...tables,
-  } as never);
+  /* Every payment here is confirmed by finance unless a test says otherwise: an unconfirmed one is waiting, not unbooked. */
+  const world = (tables: Record<string, unknown[]>, unconfirmed: string[] = []) => {
+    const ids = (t: string) => ((tables[t] ?? []) as Array<{ id: string }>).map((r) => r.id).filter((id) => !unconfirmed.includes(id));
+    return fakeSb({
+      journal_entries: [], journal_entry_lines: [],
+      mfg_sales_order_payments: [], sales_invoice_payments: [],
+      acc_official_receipts: [...CONFIRMED(ids('mfg_sales_order_payments')), ...CONFIRMED(ids('sales_invoice_payments'), 'SIPAY')],
+      ...tables,
+    } as never);
+  };
 
   it('says nothing at all until this company has booked its FIRST payment', async () => {
     /* No entry anywhere: the module is not running here, so unbooked is the
@@ -281,6 +304,16 @@ describe('payments that never reached the ledger', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.rows).toHaveLength(0);
+  });
+
+  it('a payment finance has not confirmed is waiting, not unbooked — in the list and in the never-booked sum', async () => {
+    const r = await unbookedPayments(world({
+      journal_entries: [je('p2', '2026-08-01')],
+      mfg_sales_order_payments: [payRow('p2', 'SO-2', '2026-08-01', 50000), payRow('p3', 'SO-3', '2026-08-05', 12345)],
+    }, ['p3']), 1);
+    expect(r.ok && r.rows).toEqual([]);
+    const fresh = await unbookedPayments(world({ mfg_sales_order_payments: [payRow('p1', 'SO-1', '2026-01-05', 50000)] }, ['p1']), 1);
+    expect(fresh.ok && fresh.neverBooked).toEqual({ count: 0, totalSen: 0, firstPaidOn: null, lastPaidOn: null });
   });
 
   /* A reversed entry is not a booking: the money is on the document and NOT in

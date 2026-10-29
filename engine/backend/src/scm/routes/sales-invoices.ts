@@ -47,8 +47,8 @@ import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
 import { stampDoLineSoRefs } from '../lib/so-ref-lookup';
 import { enrichLinesWithFabricSupplierCode } from '../lib/fabric-supplier-code';
 import { dateOrNull, coerceEmptyDates } from '../lib/date-coerce';
-import { postUnpostedSiPayments, reverseSiPayment } from '../../acc/payments';
-import { insertSiPaymentRow } from '../lib/si-payment-row';
+import { postUnpostedSiPayments } from '../../acc/payments';
+import { afterSiPaymentRemoved, insertSiPaymentRow } from '../lib/si-payment-row';
 import { recomputeSiPaid as recomputePaid, readOrderDepositForInvoice } from '../lib/si-order-deposit';
 import { stampSoDates, stampDoNumber, stampOrderDeposit } from '../lib/si-list-stamps';
 import { SI_HEADER_COLS, SI_LIST_SELECT, filterSiList, orderSiList, readSiListFilters } from '../lib/si-list-read';
@@ -1634,7 +1634,7 @@ salesInvoices.delete('/:id/payments/:paymentId', async (c) => {
   if (error) return c.json({ error: 'delete_failed', reason: error.message }, 500);
   await recomputePaid(sb, id);
   // Accounting hook (需求书 6.3, owner approved 2026-08-16): void the deleted payment's entry; never-booked rows no-op.
-  const unbooked = await reverseSiPayment(sb, paymentId, (inv as { invoice_number?: string | null } | null)?.invoice_number ?? null);
+  const unbooked = await afterSiPaymentRemoved(sb, paymentId, (inv as { invoice_number?: string | null } | null)?.invoice_number ?? null);
   // eslint-disable-next-line no-console
   if (!unbooked.ok) console.error('[acc] SI payment reversal failed:', paymentId, unbooked.status, unbooked.reason);
   try { await reconcileSiOverpay(sb, id); }
