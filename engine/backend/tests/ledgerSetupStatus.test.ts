@@ -61,6 +61,13 @@ describe('ledgerSetupStatus', () => {
     expect(s.ready).toBe(true);
   });
 
+  test("customer deposits are retired: a deposit sits on the customer's own account, so no rule and no account to set", async () => {
+    /* chew, 29 Oct 2026: 顾客定金直接进顾客 account. */
+    const s = await ledgerSetupStatus(world({ accounts: fullChart().filter((a) => a.account_code !== DEFAULT_ROLE_CODES.CUSTOMER_DEPOSITS) }), CO);
+    expect(s.roles.map((r) => r.role)).not.toContain('CUSTOMER_DEPOSITS');
+    expect(s.ready).toBe(true);
+  });
+
   test('a role pointing at a code that is not in the chart is a problem', async () => {
     const s = await ledgerSetupStatus(world({ accounts: fullChart().filter((a) => a.account_code !== DEFAULT_ROLE_CODES.AR_OTHER) }), CO);
     expect(s.roles.find((r) => r.role === 'AR_OTHER')).toMatchObject({ role: 'AR_OTHER', accountCode: DEFAULT_ROLE_CODES.AR_OTHER, problem: 'missing_account' });
