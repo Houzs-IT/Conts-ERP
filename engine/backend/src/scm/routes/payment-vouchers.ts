@@ -65,6 +65,7 @@ import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
   requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../lib/companyScope';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { postNowHandler } from '../../conts/pv-post-now';
+import { afterVoucherCancelledBestEffort, afterVoucherPostedBestEffort } from "../../conts/claims-voucher-hooks";
 import { normalizeCurrency, normalizeExchangeRate, masterRateForCurrency } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange, assertAuditWritable, auditUnavailableBody } from '../lib/entity-audit';
@@ -1173,6 +1174,8 @@ export const postPaymentVoucherHandler = async (c: any) => {
   /* The deposit-invoice half of a refund (docs/bugs/0860): a credit note per invoice it draws on. */
   await refundDepositInvoicesBestEffort(sb, refundHookInput({ ...pv, ...refundPv, id, company_id: companyId }, totalSen, approvalActor(c)));
   await mirrorRefundBestEffort(sb, refundHookInput({ ...pv, ...refundPv, id, company_id: companyId }, totalSen, approvalActor(c)));
+  /* Conts: a top-up, a staff pay-back or a payment request settles with its voucher (conts/claims-voucher-hooks.ts). */
+  await afterVoucherPostedBestEffort(sb, id);
 
   /* The money-out event. Recorded here rather than after the PI settlement loop
      below so a settlement hiccup cannot cost us the record that the GL was
@@ -1738,6 +1741,8 @@ export const cancelPaymentVoucherHandler = async (c: any) => {
   if (rev.ok && isRefund(head.purpose)) await bookRefundCredit(sb, head, 'reversal');
   if (rev.ok && isRefund(head.purpose)) await releaseRefundNotesBestEffort(sb, { companyId: co.companyId, pvId: id, pvNumber: cancelled.pv_number, actor: approvalActor(c) });
   if (rev.ok && isRefund(head.purpose)) await removeMirrorRowsBestEffort(sb, { companyId: co.companyId, match: { refund_pv_id: id }, why: `refund voucher ${cancelled.pv_number} cancelled` });
+  /* Conts: undo what posting settled (a top-up, a staff pay-back, a payment request). */
+  await afterVoucherCancelledBestEffort(sb, id);
   if (!rev.ok) {
     // eslint-disable-next-line no-console
     console.error(`[pv-accounting] reversal failed for ${cancelled.pv_number}:`, rev.status, rev.reason);
