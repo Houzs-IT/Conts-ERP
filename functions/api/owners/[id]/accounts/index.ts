@@ -1,16 +1,18 @@
 import { type Env, one, all, run, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession } from '../../../../_lib/auth';
+import { can } from '../../../../_lib/access';
 import { bankAccountsReady, parseAccountInput, last4Of } from '../../../../_lib/ownerBank';
 
 const NOT_READY = () => fail('NOT_READY', 'Several bank accounts need the latest database update.', 501);
 
 /** GET /api/owners/:id/accounts: the owner's extra bank accounts (the main one is on the owner itself), tail only:
  *  { data: [{ id, label, bankName, accountHolder, last4, inUse }] }, inUse = how many units pay to it.
- *  Management, finance and operations managers (session.manage). Never the full number: see ./[accountId]/reveal. */
+ *  The same people who see the main account's full number (owners/[id]/reveal.ts). Never the full number: see
+ *  ./[accountId]/reveal. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can see an owner\'s bank accounts.', 403);
+  if (!(session.manage || can(session, 'finance', 'view'))) return fail('FORBIDDEN', 'Only management and finance can see an owner\'s other bank accounts.', 403);
 
   const id = String(params.id);
   if (!(await one(env, 'SELECT 1 AS x FROM owners WHERE id = ?', id))) return fail('NOT_FOUND', 'That owner no longer exists.', 404);
@@ -27,7 +29,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change an owner\'s bank accounts.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management and finance can change an owner\'s bank accounts.', 403);
 
   const id = String(params.id);
   const owner = await one<{ display_name: string }>(env, 'SELECT display_name FROM owners WHERE id = ?', id);

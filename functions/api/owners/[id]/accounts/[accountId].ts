@@ -11,7 +11,7 @@ const SELECT = 'SELECT id, label, bank_name, account_number, account_holder FROM
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change an owner\'s bank accounts.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management and finance can change an owner\'s bank accounts.', 403);
 
   const ownerId = String(params.id), id = String(params.accountId);
   if (!(await bankAccountsReady(env))) return fail('NOT_READY', 'Several bank accounts need the latest database update.', 501);
@@ -45,7 +45,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change an owner\'s bank accounts.', 403);
+  if (!session.manage) return fail('FORBIDDEN', 'Only management and finance can change an owner\'s bank accounts.', 403);
 
   const ownerId = String(params.id), id = String(params.accountId);
   if (!(await bankAccountsReady(env))) return fail('NOT_READY', 'Several bank accounts need the latest database update.', 501);
