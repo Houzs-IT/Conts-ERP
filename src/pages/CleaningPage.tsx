@@ -11,7 +11,8 @@ import { EmptyState, Skeleton } from '../components/States';
 import { AttachmentLabel, MediaGallery } from '../components/Attachments';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
-import { CleanerChecklist, CleanerChips } from '../components/CleanerPicks';
+import { CleanerChecklist, CleanerChips, cleanerHint } from '../components/CleanerPicks';
+import { Floating } from '../components/DataTableParts';
 import { LateCheckoutBlock } from '../components/booking/BookingDrawer';
 import { sizeLine } from '../lib/unitSize';
 import SplitPane from '../components/SplitPane';
@@ -588,28 +589,70 @@ function CardLine({ icon, className, children }: { icon: string; className?: str
   );
 }
 
-/** The chip under the lines: "Assign cleaner" with a dropdown, or the cleaner's name once the job has one. A job with a
- *  team, a started job or a finished one only shows the names: change those in the job's panel. */
+/** The chip under the lines: "Assign cleaner" opens a small list (name, how busy they are, search when the roster is long),
+ *  or it shows the cleaner's name once the job has one. A job with a team, a started job or a finished one only shows the
+ *  names: change those in the job's panel. */
 function CleanerChip({ r, cleaners, assigning, onAssign }: { r: Row; cleaners: Cleaner[]; assigning: boolean; onAssign: (cleanerId: string, name: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const anchor = useRef<HTMLButtonElement>(null);
   const names = r.cleaners.length ? r.cleaners.map(c => c.name) : r.assigneeName ? [r.assigneeName] : [];
   const text = names.length ? `${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ''}` : 'Assign cleaner';
   const editable = (r.status !== 'cleaning' && r.status !== 'done') && r.cleaners.length <= 1;
+  const close = useCallback(() => { setOpen(false); setQ(''); }, []);
+  // The least busy first, so the person to pick is at the top.
+  const list = useMemo(() => {
+    const n = q.trim().toLowerCase();
+    return cleaners.filter(c => !n || c.name.toLowerCase().includes(n)).sort((a, b) => a.busy - b.busy || a.name.localeCompare(b.name));
+  }, [cleaners, q]);
+  const chip = cx('inline-flex items-center gap-1.5 h-8 px-2.5 max-w-full min-w-0 rounded-control border border-solid border-line bg-card text-meta font-medium', names.length ? 'text-ink' : 'text-muted-ink');
+  if (!editable) return <span title={names.join(', ') || undefined} className={chip}><Icon name="UserPlus" size="sm" /><span className="truncate">{text}</span></span>;
+  const pick = (c: Cleaner) => { close(); if (c.id !== r.cleanerId) onAssign(c.id, c.name); };
   return (
-    <span title={names.join(', ') || undefined}
-      className={cx('relative inline-flex items-center gap-1.5 h-8 px-2.5 max-w-full min-w-0 rounded-control border border-solid border-line bg-card text-meta font-medium',
-        names.length ? 'text-ink' : 'text-muted-ink', editable && 'cursor-pointer hover:border-ink focus-within:[box-shadow:0_0_0_2px_var(--color-gold)]', assigning && 'opacity-60')}>
-      <Icon name="UserPlus" size="sm" />
-      <span className="truncate">{text}</span>
-      {editable && <Icon name="ChevronDown" size="sm" />}
-      {editable && (
-        <select aria-label={`Cleaner for ${r.unitNumber}`} disabled={assigning} value={r.cleanerId ?? ''} onClick={e => e.stopPropagation()}
-          onChange={e => { const id = e.target.value; onAssign(id, cleaners.find(c => c.id === id)?.name ?? 'nobody'); }}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-          <option value="" disabled={!r.cleanerId}>{r.cleanerId ? 'Take cleaner off' : 'Assign cleaner'}</option>
-          {cleaners.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-      )}
-    </span>
+    <>
+      <button ref={anchor} type="button" disabled={assigning} aria-haspopup="dialog" aria-expanded={open} aria-label={`Cleaner for ${r.unitNumber}: ${text}`}
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }} onKeyDown={e => e.stopPropagation()} title={names.join(', ') || undefined}
+        className={cx(chip, 'cursor-pointer [font-family:inherit] hover:border-ink disabled:opacity-60 disabled:cursor-default', open && 'border-ink bg-page')}>
+        <Icon name="UserPlus" size="sm" /><span className="truncate">{assigning ? 'Saving...' : text}</span>
+        <span className={cx('grid transition-transform duration-150', open && 'rotate-180')}><Icon name="ChevronDown" size="sm" /></span>
+      </button>
+      <Floating anchor={anchor} open={open} onClose={close} width={288} maxHeight={380} label={`Pick a cleaner for ${r.unitNumber}`}>
+        {/* The panel is portalled, but React still sends its clicks up to the card: stop them here. */}
+        <div onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} className="flex flex-col">
+          <div className="px-3 pt-2.5 pb-1.5 text-meta font-semibold text-muted-ink">Assign {r.unitNumber}</div>
+          {cleaners.length > 6 && (
+            <div className="px-2 pb-1.5">
+              <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search cleaners" aria-label="Search cleaners" className={cx(INPUT, 'h-9')} />
+            </div>
+          )}
+          <div role="listbox" aria-label="Cleaners" className="px-1 pb-1 max-h-[260px] overflow-y-auto overscroll-contain">
+            {list.length === 0 && <div className="px-3 py-3 text-copy text-muted-ink">{cleaners.length ? 'No cleaner with that name.' : 'No cleaners on the roster yet.'}</div>}
+            {list.map(c => {
+              const current = c.id === r.cleanerId;
+              return (
+                <button key={c.id} type="button" role="option" aria-selected={current} onClick={() => pick(c)}
+                  className={cx('w-full min-h-11 flex items-center gap-2.5 px-2.5 py-1.5 rounded-[8px] border-0 text-left cursor-pointer [font-family:inherit] text-copy', current ? 'bg-gold-tint' : 'bg-transparent hover:bg-muted')}>
+                  <span aria-hidden className="flex-none w-8 h-8 rounded-full grid place-items-center bg-muted text-ink text-[11px] font-semibold">{initials(c.name)}</span>
+                  <span className="min-w-0 flex-1 flex flex-col">
+                    <span className="truncate font-medium text-ink">{c.name}</span>
+                    <span className="truncate text-meta text-muted-ink">{cleanerHint(c)}</span>
+                  </span>
+                  {current && <Icon name="Check" size="sm" />}
+                </button>
+              );
+            })}
+          </div>
+          {r.cleanerId && (
+            <div className="p-1 [border-top:1px_solid_var(--color-line-soft)]">
+              <button type="button" onClick={() => { close(); onAssign('', ''); }}
+                className="w-full min-h-10 flex items-center gap-2 px-2.5 rounded-[8px] border-0 bg-transparent hover:bg-muted text-left cursor-pointer [font-family:inherit] text-copy text-danger">
+                <Icon name="X" size="sm" />Take the cleaner off
+              </button>
+            </div>
+          )}
+        </div>
+      </Floating>
+    </>
   );
 }
 
