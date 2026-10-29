@@ -31,20 +31,23 @@ function world(over: Record<string, Row[]> = {}) {
     /* Every money account except the cash drawer needs a letter: the bank here. */
     acc_bank_letters: [{ company_id: CO, account_code: DEFAULT_ROLE_CODES.BANK_DEFAULT, letter: 'M' }],
     acc_company_settings: [{ company_id: CO, ledger_start_date: '2026-12-01', fiscal_year_end_month: 8 }],
+    petty_cash_floats: [],
     ...over,
   });
 }
 
 describe('ledgerSetupStatus', () => {
-  test('petty cash on an account of its own is no problem', async () => {
-    const s = await ledgerSetupStatus(world({ acc_account_roles: [{ company_id: CO, role: 'PETTY_CASH', account_code: DEFAULT_ROLE_CODES.BANK_DEFAULT }] }), CO);
-    expect(s.roles.find((r) => r.role === 'PETTY_CASH')!.problem).toBeNull();
+  test("petty cash is each float's own account: no petty cash rule, and a float's account needs no voucher letter", async () => {
+    const pc = acct('315-0101', { account_name: 'PETTY CASH - AMIN', acc_money: true, special_type: 'SCH' });
+    const s = await ledgerSetupStatus(world({ accounts: [...fullChart(), pc], petty_cash_floats: [{ id: 'F1', company_id: CO, account_code: '315-0101', active: false }] }), CO);
+    expect(s.roles.map((r) => r.role)).not.toContain('PETTY_CASH');
+    expect(s.banksWithoutLetter).toEqual([]);
+    expect(s.ready).toBe(true);
   });
 
   test('ready when every role, item group binding, bank letter and the ledger start are set', async () => {
     const s = await ledgerSetupStatus(world(), CO);
-    /* Petty cash still on the cash drawer's account (Conts) is named, and does not hold the books back. */
-    expect(s.roles.filter((r) => r.problem)).toEqual([expect.objectContaining({ role: 'PETTY_CASH', problem: 'same_as_cash' })]);
+    expect(s.roles.filter((r) => r.problem)).toEqual([]);
     expect(s.itemGroups).toEqual([]);
     expect(s.banksWithoutLetter).toEqual([]);
     expect(s.ledgerStartDate).toBe('2026-12-01');
@@ -143,8 +146,7 @@ describe('the clearing rules and the retired rules', () => {
   test('a sensible chart is ready: clearings not money, the retired rules left out', async () => {
     const chart = realChart();
     const s = await ledgerSetupStatus(world({ accounts: chart, acc_bank_letters: lettersFor(chart) }), CO);
-    /* Petty cash still on the cash drawer's account (Conts) is named, and does not hold the books back. */
-    expect(s.roles.filter((r) => r.problem)).toEqual([expect.objectContaining({ role: 'PETTY_CASH', problem: 'same_as_cash' })]);
+    expect(s.roles.filter((r) => r.problem)).toEqual([]);
     expect(s.roles.map((r) => r.role)).not.toContain('SALES');
     expect(s.roles.map((r) => r.role)).not.toContain('INVENTORY');
     expect(s.roles.map((r) => r.role)).not.toContain('CLOSING_STOCK');

@@ -10,6 +10,8 @@ type Db = any;
 export interface FloatRow {
   id: string; company_id: number; department_id: string; keeper_user_id: string; float_sen: number; warn_pct: number;
   active: boolean; topup_requested_at: string | null;
+  /** The float's own cash-in-hand account in the chart (chew 29 Oct 2026); null books nothing. */
+  account_code: string | null;
 }
 export interface ReceiptRow {
   id: string; receipt_no: string; submitter_user_id: string; float_id: string | null; spend_date: string; amount_sen: number;

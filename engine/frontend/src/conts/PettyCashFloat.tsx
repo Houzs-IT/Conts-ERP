@@ -109,13 +109,19 @@ export function PettyCashFloat() {
   };
   const changeFloat = async () => {
     if (!f) return;
-    const how = await choose({ title: "Change the float", options: [{ value: "amount", label: "The amount" }, { value: "keeper", label: "Who keeps it" }, { value: "close", label: "Close this float" }] });
+    const how = await choose({ title: "Change the float", options: [{ value: "amount", label: "The amount" }, { value: "keeper", label: "Who keeps it" }, { value: "account", label: "The account" }, { value: "close", label: "Close this float" }] });
     if (how === "amount") {
       const v = await prompt({ title: "The new float", defaultValue: fmtSenPlain(f.floatSen).replace(/,/g, ""), validate: (x) => (ringgitToSen(x) == null ? "Enter an amount in RM." : null) });
       if (v != null) await run(`${pettyPath}/floats/${id}`, { floatSen: ringgitToSen(v) }, "PATCH");
     } else if (how === "keeper") {
       const keeper = await choose({ title: "Who keeps the cash now?", body: "Count the cash with both of them at the handover.", options: (opts.data?.staff ?? []).map((s) => ({ value: s.id, label: s.name })) });
       if (keeper) await run(`${pettyPath}/floats/${id}`, { keeperUserId: keeper }, "PATCH");
+    } else if (how === "account") {
+      const account = await choose({
+        title: "Which account is this float booked to?", body: "Only until something is booked to it: after that, move the balance with a journal entry and start a new float.",
+        options: (opts.data?.floatAccounts ?? []).filter((a) => !a.floatId || a.floatId === id).map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })),
+      });
+      if (account) await run(`${pettyPath}/floats/${id}`, { accountCode: account }, "PATCH");
     } else if (how === "close") {
       if (await confirm({ title: "Close this float?", body: "Receipts can no longer be handed in on it. Record the cash given back first.", confirmLabel: "Close", danger: true })) await run(`${pettyPath}/floats/${id}`, { active: false }, "PATCH");
     }
@@ -168,13 +174,14 @@ export function PettyCashFloat() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <PageHeader eyebrow="Finance · Petty cash" title={f ? `${f.departmentName || "Petty cash"} — kept by ${f.keeperName ?? ""}` : "Petty cash"}
+        description={f ? (f.accountCode ? `Booked to ${f.accountCode} ${f.accountName ?? ""}`.trim() : "No account chosen yet: receipts cannot be checked and the float cannot be topped up.") : undefined}
         back="/scm/petty-cash"
         actions={
           <span style={{ display: "inline-flex", gap: 8, flexWrap: "wrap" }}>
             <Button variant="secondary" disabled={!receipts.length} onClick={() => void exportPettyCash(f?.departmentName ?? "float", month, receipts)}>Export to Excel</Button>
             {edit && <Button variant="secondary" onClick={() => void returned()}>Cash returned</Button>}
             {full && <Button variant="secondary" onClick={() => void changeFloat()}>Change float</Button>}
-            {full && <Button disabled={!f || act.isPending || !opts.data?.pettyCashAccountSet} title={opts.data && !opts.data.pettyCashAccountSet ? "Name the petty cash account in Ledger setup first." : undefined} onClick={() => void topUp()}>Top up</Button>}
+            {full && <Button disabled={!f || act.isPending || !f.accountCode} title={f && !f.accountCode ? "Choose this float's account first (Change float → The account)." : undefined} onClick={() => void topUp()}>Top up</Button>}
           </span>
         } />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>

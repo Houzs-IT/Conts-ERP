@@ -43,7 +43,7 @@ export const useSaveLedgerSettings = () => {
 };
 
 /* ── Is the ledger ready to go live? (spec 3.4) — GET /accounting/setup-status ─────────────────────────────── */
-export type RoleProblem = "missing_account" | "inactive" | "header" | "not_money" | "not_clearing" | "same_as_cash";
+export type RoleProblem = "missing_account" | "inactive" | "header" | "not_money" | "not_clearing";
 /** What kind of account a rule takes: a bank or the drawer, a 326- / 327- clearing (not money), or any account. */
 export type RoleKind = "money" | "clearing" | "any";
 export type LedgerSetupStatus = {
@@ -94,5 +94,4 @@ export const PROBLEM_TEXT: Record<RoleProblem, string> = {
   header: "has accounts under it — choose one of those",
   not_money: "must be a bank or cash account",
   not_clearing: "must be a 326- / 327- clearing account, not a bank",
-  same_as_cash: "must be its own account, not the cash drawer's — receipts are not booked until it is",
 };

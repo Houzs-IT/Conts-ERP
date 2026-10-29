@@ -2,25 +2,31 @@
      · the overview balance follows the float's events and receipts; a department or keeper has one active float;
      · checking a float receipt posts one CLM journal; a receipt finance pays back posts none at check;
      · a rejection needs a reason; a write-off needs full access; a repayment adds the cash back once;
-     · a top-up drafts a voucher of float − balance on the float; paying a person back needs their bank details. */
+     · a top-up drafts a voucher of float − balance on the float; paying a person back needs their bank details;
+     · each float books to its own cash-in-hand account (chew 29 Oct 2026), one float per account. */
 import { Hono } from 'hono';
 import { afterEach, describe, expect, test } from 'vitest';
 import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import {
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
-  checkReceiptsHandler, claimsDeps, createFloatHandler, listFloatsHandler, receiptVoucherHandler, rejectReceiptHandler,
-  repaidReceiptHandler, topUpHandler, writeOffReceiptHandler, EDIT_KEY, FULL_KEY,
+  checkReceiptsHandler, claimsDeps, createFloatHandler, listFloatsHandler, optionsHandler, receiptVoucherHandler, rejectReceiptHandler,
+  repaidReceiptHandler, topUpHandler, updateFloatHandler, writeOffReceiptHandler, EDIT_KEY, FULL_KEY,
 } from './petty-cash-routes';
 
 const CO = 1;
-const CHART = ['320-0100', '905-0000', '305-0100', '310-0010'].map(code => ({ account_code: code, account_name: code, account_type: 'ASSET', parent_code: null, is_active: true, company_id: CO }));
+const CHART = [
+  ...['905-0000', '305-0100'].map(code => ({ account_code: code, account_name: code, account_type: 'ASSET', parent_code: null, is_active: true, company_id: CO })),
+  { account_code: '310-0010', account_name: 'MAYBANK', account_type: 'ASSET', parent_code: null, is_active: true, acc_money: true, special_type: 'SBK', company_id: CO },
+  { account_code: '315-0100', account_name: 'PETTY CASH - ALEX (RENO)', account_type: 'ASSET', parent_code: null, is_active: true, acc_money: true, special_type: 'SCH', company_id: CO },
+  { account_code: '315-0101', account_name: 'PETTY CASH - AMIN', account_type: 'ASSET', parent_code: null, is_active: true, acc_money: true, special_type: 'SCH', company_id: CO },
+];
 const receipt = (over: Record<string, unknown>) => ({
   company_id: CO, receipt_no: 'CLM-2611-001', submitter_user_id: 'u-tech', float_id: 'F1', spend_date: '2026-11-03', amount_sen: 4500,
   vendor_name: null, note: null, status: 'HANDED_IN', reject_reason: null, checked_at: null, checked_by: null, topup_pv_id: null,
   payback_pv_id: null, replaces_id: null, source: 'field_app', created_at: '2026-11-03T00:00:00Z', ...over,
 });
 const world = () => publicTablesOnly(fakeSb({
-  petty_cash_floats: [{ id: 'F1', company_id: CO, department_id: 'maint', keeper_user_id: 'u-keeper', float_sen: 100000, warn_pct: 20, active: true, topup_requested_at: null }],
+  petty_cash_floats: [{ id: 'F1', company_id: CO, department_id: 'maint', keeper_user_id: 'u-keeper', float_sen: 100000, warn_pct: 20, active: true, topup_requested_at: null, account_code: '315-0101' }],
   petty_cash_events: [{ id: 'E1', float_id: 'F1', kind: 'PAID_IN', amount_sen: 100000, event_date: '2026-11-01' }],
   staff_receipts: [receipt({ id: 'R1' }), receipt({ id: 'R2', receipt_no: 'CLM-2611-002', float_id: null, submitter_user_id: 'u-ops', amount_sen: 3000 })],
   staff_receipt_lines: [
@@ -29,10 +35,10 @@ const world = () => publicTablesOnly(fakeSb({
   ],
   staff_receipt_files: [], staff_bank_details: [], payment_vouchers: [],
   accounts: CHART, journal_entries: [], journal_entry_lines: [],
-  acc_account_roles: [{ company_id: CO, role: 'PETTY_CASH', account_code: '320-0100' }],
+  acc_account_roles: [],
   acc_company_settings: [{ company_id: CO, ledger_start_date: null, fiscal_year_end_month: 8 }],
   conts_staff: [{ id: 'u-keeper', full_name: 'Ah Keong' }, { id: 'u-tech', full_name: 'Ah Wai' }, { id: 'u-ops', full_name: 'Wei Wen' }],
-  conts_departments: [{ id: 'maint', name: 'Maintenance' }],
+  conts_departments: [{ id: 'maint', name: 'Maintenance', kind: 'team', side: 'rental' }, { id: 'reno', name: 'Renovation', kind: 'team', side: 'supply' }],
   conts_employee_bank: [],
 }), ['conts_staff', 'conts_departments', 'conts_employee_bank', 'projects']);
 
@@ -46,6 +52,8 @@ const app = (sb: ReturnType<typeof world>, perms: string[]) => {
   });
   a.get('/floats', listFloatsHandler);
   a.post('/floats', createFloatHandler);
+  a.patch('/floats/:id', updateFloatHandler);
+  a.get('/options', optionsHandler);
   a.post('/floats/:id/top-up', topUpHandler);
   a.post('/receipts/check', checkReceiptsHandler);
   a.post('/receipts/:id/reject', rejectReceiptHandler);
@@ -69,15 +77,44 @@ afterEach(() => { claimsDeps.createVoucher = realCreate; made.length = 0; });
 describe('the overview', () => {
   test('balance is money paid in less receipts handed in on the float', async () => {
     const res = await (await app(world(), []).request('/floats')).json() as any;
-    expect(res.floats[0]).toMatchObject({ keeperName: 'Ah Keong', departmentName: 'Maintenance', floatSen: 100000, balanceSen: 95500, waitingCheckSen: 4500, waitingCheckCount: 1, low: false });
+    expect(res.floats[0]).toMatchObject({ keeperName: 'Ah Keong', departmentName: 'Maintenance', accountCode: '315-0101', accountName: 'PETTY CASH - AMIN', floatSen: 100000, balanceSen: 95500, waitingCheckSen: 4500, waitingCheckCount: 1, low: false });
     expect(res.totals).toMatchObject({ floatSen: 100000, balanceSen: 95500 });
   });
   test('a department or a keeper has one active float', async () => {
     const a = app(world(), [FULL_KEY]);
-    expect((await post(a, '/floats', { departmentId: 'maint', keeperUserId: 'u-x', floatSen: 50000 })).status).toBe(409);
-    expect((await post(a, '/floats', { departmentId: 'clean', keeperUserId: 'u-keeper', floatSen: 50000 })).status).toBe(409);
-    expect((await post(a, '/floats', { departmentId: 'clean', keeperUserId: 'u-x', floatSen: 50000 })).status).toBe(201);
-    expect((await post(app(world(), [EDIT_KEY]), '/floats', { departmentId: 'clean', keeperUserId: 'u-x', floatSen: 1 })).status).toBe(403);
+    expect((await post(a, '/floats', { departmentId: 'maint', keeperUserId: 'u-x', floatSen: 50000, accountCode: '315-0100' })).status).toBe(409);
+    expect((await post(a, '/floats', { departmentId: 'reno', keeperUserId: 'u-keeper', floatSen: 50000, accountCode: '315-0100' })).status).toBe(409);
+    expect((await post(a, '/floats', { departmentId: 'reno', keeperUserId: 'u-x', floatSen: 50000, accountCode: '315-0100' })).status).toBe(201);
+    expect((await post(app(world(), [EDIT_KEY]), '/floats', { departmentId: 'reno', keeperUserId: 'u-x', floatSen: 1, accountCode: '315-0100' })).status).toBe(403);
+  });
+  test("a float needs its own cash-in-hand account: not a bank, not an expense, not another float's", async () => {
+    const a = app(world(), [FULL_KEY]);
+    const body = { departmentId: 'reno', keeperUserId: 'u-x', floatSen: 50000 };
+    expect((await post(a, '/floats', body)).status).toBe(422);
+    expect(await (await post(a, '/floats', { ...body, accountCode: '905-0000' })).json()).toMatchObject({ error: 'account_not_petty_cash' });
+    expect(await (await post(a, '/floats', { ...body, accountCode: '310-0010' })).json()).toMatchObject({ error: 'account_not_petty_cash' });
+    expect(await (await post(a, '/floats', { ...body, accountCode: '315-0101' })).json()).toMatchObject({ error: 'account_has_float' });
+    const ok = await post(a, '/floats', { ...body, accountCode: '315-0100' });
+    expect(ok.status).toBe(201);
+    expect((await ok.json() as any).float).toMatchObject({ account_code: '315-0100' });
+  });
+  test('the account can be changed until something is booked to it', async () => {
+    const sb = world();
+    const patch = (body: unknown) => app(sb, [FULL_KEY]).request('/floats/F1', { method: 'PATCH', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
+    expect((await patch({ accountCode: '315-0100' })).status).toBe(200);
+    expect(sb.tables.petty_cash_floats[0].account_code).toBe('315-0100');
+    await post(app(sb, [EDIT_KEY]), '/receipts/check', { items: [{ id: 'R1' }] });
+    expect(sb.tables.journal_entry_lines.find(l => Number(l.credit_sen) > 0)?.account_code).toBe('315-0100');
+    expect(await (await patch({ accountCode: '315-0101' })).json()).toMatchObject({ error: 'account_in_use' });
+    expect(sb.tables.petty_cash_floats[0].account_code).toBe('315-0100');
+  });
+  test("options: the cash-in-hand accounts to pick from, and banks without the floats' accounts", async () => {
+    const res = await (await app(world(), []).request('/options')).json() as any;
+    expect(res.floatAccounts).toEqual([
+      { code: '315-0100', name: 'PETTY CASH - ALEX (RENO)', floatId: null },
+      { code: '315-0101', name: 'PETTY CASH - AMIN', floatId: 'F1' },
+    ]);
+    expect(res.banks.map((b: any) => b.code)).toEqual(['310-0010', '315-0100']);
   });
 });
 
@@ -117,27 +154,48 @@ describe('rejecting, repaying, writing off', () => {
     expect((await post(a, '/receipts/R1/repaid')).status).toBe(409);
     expect((await (await a.request('/floats')).json() as any).floats[0].balanceSen).toBe(100000);
   });
-  test('a write-off needs full access and posts Dr the chosen account, Cr petty cash', async () => {
+  test("a write-off needs full access and posts Dr the chosen account, Cr the float's account", async () => {
     const sb = world();
     await post(app(sb, [EDIT_KEY]), '/receipts/R1/reject', { reason: 'Lost' });
     expect((await post(app(sb, [EDIT_KEY]), '/receipts/R1/write-off', { accountCode: '305-0100' })).status).toBe(403);
     expect((await post(app(sb, [FULL_KEY]), '/receipts/R1/write-off', { accountCode: '305-0100' })).status).toBe(200);
     expect(sb.tables.journal_entries[0]).toMatchObject({ source_type: 'CLW' });
+    expect(sb.tables.journal_entry_lines.map(l => [l.account_code, l.debit_sen, l.credit_sen])).toEqual([['305-0100', 4500, 0], ['315-0101', 0, 4500]]);
     expect(sb.tables.staff_receipts[0].status).toBe('WRITTEN_OFF');
   });
 });
 
 describe('money out', () => {
-  test('a top-up drafts float − balance on the petty cash account, linked to the float', async () => {
+  test("a top-up drafts float − balance on the float's own account, linked to the float", async () => {
     const sb = world();
     fakeVoucher(sb);
     const res = await post(app(sb, [FULL_KEY]), '/floats/F1/top-up', { bankAccountCode: '310-0010' });
     expect(res.status).toBe(201);
     expect(await res.json()).toMatchObject({ amountSen: 4500 });
     expect(made[0]).toMatchObject({ creditAccountCode: '310-0010', purpose: 'OTHER', payeeName: 'Ah Keong' });
-    expect((made[0].lines as any[])[0]).toMatchObject({ debitAccountCode: '320-0100', amountSen: 4500 });
+    expect((made[0].lines as any[])[0]).toMatchObject({ debitAccountCode: '315-0101', amountSen: 4500 });
     expect(sb.tables.payment_vouchers[0].petty_cash_float_id).toBe('F1');
     expect((await post(app(sb, [FULL_KEY]), '/floats/F1/top-up', { bankAccountCode: '310-0010' })).status).toBe(409);
+  });
+  test("a float's account is never the bank a top-up or a pay-back is paid from", async () => {
+    const sb = world();
+    fakeVoucher(sb);
+    expect(await (await post(app(sb, [FULL_KEY]), '/floats/F1/top-up', { bankAccountCode: '315-0101' })).json()).toMatchObject({ error: 'bank_is_petty_cash' });
+    expect(made).toHaveLength(0);
+  });
+  test('a closed float opened again is refused when its account went to another float', async () => {
+    const sb = world();
+    sb.tables.petty_cash_floats.push({ id: 'F0', company_id: CO, department_id: 'reno', keeper_user_id: 'u-old', float_sen: 1000, warn_pct: 20, active: false, topup_requested_at: null, account_code: '315-0101' });
+    const res = await app(sb, [FULL_KEY]).request('/floats/F0', { method: 'PATCH', body: JSON.stringify({ active: true }), headers: { 'content-type': 'application/json' } });
+    expect(await res.json()).toMatchObject({ error: 'account_has_float' });
+    expect(sb.tables.petty_cash_floats[1].active).toBe(false);
+  });
+  test('a float without its account is not topped up', async () => {
+    const sb = world();
+    fakeVoucher(sb);
+    sb.tables.petty_cash_floats[0].account_code = null;
+    expect(await (await post(app(sb, [FULL_KEY]), '/floats/F1/top-up', { bankAccountCode: '310-0010' })).json()).toMatchObject({ error: 'float_account_missing' });
+    expect(made).toHaveLength(0);
   });
   test('paying a person back needs a checked receipt and bank details', async () => {
     const sb = world();
@@ -161,7 +219,7 @@ describe('what a receipt may book to', () => {
     sb.tables.accounts.push({ account_code: '400-0000', account_name: 'AP', account_type: 'LIABILITY', parent_code: null, is_active: true, company_id: CO });
     const res = await (await post(app(sb, [EDIT_KEY]), '/receipts/check', { items: [{ id: 'R1', lines: [{ department: 'rental', accountCode: '400-0000', amountSen: 4500 }] }] })).json() as any;
     expect(res.results[0]).toMatchObject({ ok: false, error: 'account_not_allowed' });
-    const toPetty = await (await post(app(sb, [EDIT_KEY]), '/receipts/check', { items: [{ id: 'R1', lines: [{ department: 'rental', accountCode: '320-0100', amountSen: 4500 }] }] })).json() as any;
+    const toPetty = await (await post(app(sb, [EDIT_KEY]), '/receipts/check', { items: [{ id: 'R1', lines: [{ department: 'rental', accountCode: '315-0101', amountSen: 4500 }] }] })).json() as any;
     expect(toPetty.results[0]).toMatchObject({ ok: false, error: 'account_not_allowed' });
     expect(sb.tables.staff_receipts[0].status).toBe('HANDED_IN');
     expect(sb.tables.journal_entries).toHaveLength(0);
@@ -171,7 +229,7 @@ describe('what a receipt may book to', () => {
   test('a failed journal leaves the receipt waiting, not checked', async () => {
     const sb = world();
     sb.tables.acc_company_settings[0].ledger_start_date = null;
-    sb.tables.acc_account_roles.length = 0; // petty cash back on the cash drawer's account: nothing is booked
+    sb.tables.petty_cash_floats[0].account_code = null; // a float without its account: nothing is booked
     const res = await (await post(app(sb, [EDIT_KEY]), '/receipts/check', { items: [{ id: 'R1' }] })).json() as any;
     expect(res.results[0]).toMatchObject({ ok: false, error: 'journal_failed' });
     expect(sb.tables.staff_receipts[0].status).toBe('HANDED_IN');

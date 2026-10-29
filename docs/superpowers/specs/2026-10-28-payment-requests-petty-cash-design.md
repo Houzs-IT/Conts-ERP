@@ -119,9 +119,10 @@ All product text is English with British spelling. The field portal's screens ar
 
 **A department** is a row of `pos.departments`. Its `kind` is one of management, staff, cleaning or maintenance, and its `side` is one of conts, dream_crafter or both.
 
-**A float** belongs to one department and has one keeper.
+**A float** belongs to one department and has one keeper, and books to its own account in the chart (§4.5).
 - At most one active float per department.
 - A person keeps at most one float.
+- An account belongs to at most one active float.
 
 **Which float takes a person's receipts:**
 1. their own override, if finance set one;
@@ -237,7 +238,7 @@ money paid to the keeper (posted vouchers)
 - **Banner:** shown to the keeper and to finance below the warning %.
 
 **Money to the keeper** (a new float, a raise, a top-up):
-- Always a Payment voucher, purpose `OTHER`, to the keeper, with one line on the petty cash account, linked to the float.
+- Always a Payment voucher, purpose `OTHER`, to the keeper, with one line on the float's own account, linked to the float.
 - **"Top up"** proposes **float − balance**, which brings the float back to its amount. It therefore includes write-offs, and any rejected receipt still owed by a staff member.
   - The voucher lists the checked receipts it covers, and they turn "Topped up" when it posts.
   - Receipts not yet checked are shown as a warning. Finance may still top up, or check them first.
@@ -256,8 +257,11 @@ money paid to the keeper (posted vouchers)
 | A repayment | Nothing (the cash goes back into the tin) |
 | A write-off | Dr the account finance picks, for example a staff debtor; Cr petty cash |
 
-- There is one petty cash GL account, chosen in the Ledger setup posting rules.
-- The split by float lives in the petty cash tables, not in separate GL accounts.
+- **Each float books to its own GL account** (chew, 2026-10-29; replaces one petty cash account chosen in Ledger setup). The chart already keeps one cash-in-hand account per float, named after its keeper: for example Renovation → 315-0100 PETTY CASH - ALEX (RENO), Maintenance → 315-0101 PETTY CASH - AMIN. "Petty cash" in the table above means that account.
+  - The account is chosen when the float is set up: an active cash-in-hand account (money, kind SCH), not the cash drawer, and not another active float's.
+  - It can be changed only until something is booked to it. After that, the balance is moved with a journal entry and a new float started.
+  - A float without its account books nothing: its receipts wait unchecked and it cannot be topped up.
+  - A float's account needs no voucher letter, and is not offered as a bank to pay from.
 
 ### 4.6 Payment requests (to finance)
 
