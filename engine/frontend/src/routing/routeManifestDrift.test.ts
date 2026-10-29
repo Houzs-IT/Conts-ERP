@@ -90,7 +90,8 @@ describe("executable route contract", () => {
     // 172 since 2026-10-24 (Conts): /scm/debtors, every customer under its control.
     // 173 since 2026-10-25 (Conts): /scm/party-ledger, one customer's or supplier's ledger.
     // 174 since 2026-10-26 (Conts): /scm/limit-requests, extra project limit asked for and decided.
-    expect(STAFF_ROUTE_PATTERNS).toHaveLength(174);
+    // 177 since 2026-10-29 (Conts): /scm/payment-requests, /scm/petty-cash and a float's page.
+    expect(STAFF_ROUTE_PATTERNS).toHaveLength(177);
     expect(new Set(STAFF_ROUTE_PATTERNS).size).toBe(STAFF_ROUTE_PATTERNS.length);
     expect([...STAFF_ROUTE_PATTERNS].sort()).toEqual([...appPages].sort());
   });
@@ -136,7 +137,8 @@ describe("executable route contract", () => {
     // 181 since 2026-10-24 — /scm/debtors (Conts).
     // 182 since 2026-10-25 — /scm/party-ledger (Conts).
     // 183 since 2026-10-26 — /scm/limit-requests (Conts).
-    expect(ROUTE_CONTRACT).toHaveLength(183);
+    // 186 since 2026-10-29 — the three petty cash and payment request pages (Conts).
+    expect(ROUTE_CONTRACT).toHaveLength(186);
   });
 
   it("keeps every desktop nav destination on a live staff route", () => {
