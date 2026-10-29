@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
 import { isAssignee } from '../../../../_lib/maintenance';
+import { fileToUpload, forwardClaims } from '../../../../_lib/claimsForward';
 
 /** GET /api/maintenance/issues/:id/documents — the job's files: before and after photos and videos, the proof of
  *  work and the invoice, oldest first, each with its download address. */
@@ -26,7 +27,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 const MAX_BYTES = 15 * 1024 * 1024;
 
 /** POST /api/maintenance/issues/:id/documents — multipart `file`, `kind`: claim (the technician's or contractor's bill
- *  to the company), invoice (the bill to the owner or guest), receipt (proof a payment was made), pod (proof of work).
+ *  to the company), invoice (the bill to the owner or guest), receipt (proof a payment was made), pod (proof of work),
+ *  purchase (something the person bought for the job with their own or their department's petty cash: with
+ *  `amountSen`, and optionally `spendDate` and `vendorName`, it is also handed in as a receipt on this job, to be paid
+ *  back; the job's cost, never charged to the owner again — finance, 28-29 Oct 2026).
  *  Accounts pay the contractor from these, and they back the expense on the owner statement. A technician on the phone
  *  adds them only to a job that is theirs and still open. Stored in R2 (binding MEDIA); without that binding the request
  *  is refused, not faked. */
@@ -46,7 +50,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const file = form?.get('file');
   if (!(file instanceof File)) return fail('VALIDATION', 'Attach a file.', 422);
   if (file.size > MAX_BYTES) return fail('VALIDATION', 'That file is too large (15 MB limit).', 422);
-  const kind = ['pod', 'invoice', 'claim', 'receipt'].includes(String(form?.get('kind'))) ? String(form?.get('kind')) : 'other'; // counted as a document, not a photo
+  const kind = ['pod', 'invoice', 'claim', 'receipt', 'purchase'].includes(String(form?.get('kind'))) ? String(form?.get('kind')) : 'other'; // counted as a document, not a photo
+  const amountSen = Number(form?.get('amountSen'));
+  if (kind === 'purchase' && !(Number.isInteger(amountSen) && amountSen > 0)) return fail('VALIDATION', 'Enter the amount on the receipt.', 422, { amountSen: 'Enter the amount.' });
+  const spendDate = /^\d{4}-\d{2}-\d{2}$/.test(String(form?.get('spendDate') ?? '')) ? String(form?.get('spendDate')) : null;
+  const upload = kind === 'purchase' ? await fileToUpload(file) : null;
 
   const docId = crypto.randomUUID();
   const key = `maintenance/${id}/${docId}`;
@@ -56,5 +64,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     docId, kind, file.name.slice(0, 120), file.type || 'application/octet-stream', file.size, key, issue.unit_id, id, session.userId, nowIso(), nowIso());
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.document', entityTable: 'maintenance_issues', entityId: id, after: { documentId: docId, kind }, source: field ? 'field_app' : 'web' });
-  return json({ documentId: docId }, 201);
+  if (!upload) return json({ documentId: docId }, 201);
+  // The same photo is handed in as a receipt on this job; the document stays saved even if the finance system is down.
+  const res = await forwardClaims(env, session, 'POST', '/receipts', {
+    ...(spendDate ? { spendDate } : {}), amountSen, vendorName: form?.get('vendorName') ? String(form.get('vendorName')).slice(0, 200) : undefined,
+    lines: [{ maintenanceIssueId: id, amountSen }], files: [upload],
+  });
+  const receipt = res.ok ? await res.json<{ id: string; receiptNo: string; route: string }>().catch(() => null) : null;
+  if (receipt) await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'claims.receipt', entityTable: 'staff_receipts', entityId: receipt.id, after: { no: receipt.receiptNo, amountSen, maintenanceId: id }, source: field ? 'field_app' : 'web' });
+  return json({ documentId: docId, receipt: receipt ? { receiptNo: receipt.receiptNo, route: receipt.route } : 'failed' }, 201);
 };

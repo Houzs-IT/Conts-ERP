@@ -71,6 +71,11 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/documents\/[^/]+\/download$/],
   // The history of their own cleans and repairs (functions/api/audit/index.ts limits it to those).
   ['GET', /^\/api\/audit$/],
+  // Their own receipts and, for a float's keeper, the float (finance, 29 Oct 2026): forwarded to the engine, which limits
+  // every answer to the person. The handler (functions/api/claims/[[path]].ts) passes only its own short list of paths,
+  // and refuses the office-only ones (requests, suppliers, purchase orders) for field accounts.
+  ['GET', /^\/api\/claims\/[a-z0-9_/-]+$/i],
+  ['POST', /^\/api\/claims\/[a-z0-9_/-]+$/i],
 ];
 
 /** Supply chain endpoints only check for a signed-in user, and carry prices and costs;
