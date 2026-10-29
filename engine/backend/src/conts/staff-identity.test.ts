@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { Hono } from 'hono';
 import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import { signStaffAssertion, verifyStaffAssertion, staffByEmail, staffFromAssertion, staffFromSession } from './staff-identity';
+/* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 
 const SECRET = 'x'.repeat(40);
 const STAFF = [
@@ -51,7 +52,7 @@ describe('staffFromAssertion', () => {
     const t = await signStaffAssertion(SECRET, { userId: 'u-tech', email: 'u-tech@no-email.invalid', exp: Date.now() + 30_000 });
     const res = await appWith(staffFromAssertion).request('/me', { headers: { 'x-conts-staff': t } }, env);
     expect(res.status).toBe(200);
-    expect((await res.json()).userId).toBe('u-tech');
+    expect(((await res.json()) as { userId: string }).userId).toBe('u-tech');
   });
   test('no header, a bad one, or an id that is not the email\'s person: 401', async () => {
     const a = appWith(staffFromAssertion);
@@ -70,7 +71,7 @@ describe('staffFromAssertion', () => {
 describe('staffFromSession', () => {
   test('the signed-in engine user, by email', async () => {
     const res = await appWith(staffFromSession, { email: 'weiwen@theconts.com' }).request('/me', {}, env);
-    expect((await res.json()).userId).toBe('u-ops');
+    expect(((await res.json()) as { userId: string }).userId).toBe('u-ops');
   });
   test('an engine user who is not Conts staff: 401', async () => {
     expect((await appWith(staffFromSession, { email: 'houzs@x.com' }).request('/me', {}, env)).status).toBe(401);

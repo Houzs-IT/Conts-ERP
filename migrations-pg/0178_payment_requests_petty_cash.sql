@@ -1,7 +1,7 @@
 -- REVERSAL: drop table scm.staff_receipt_files, scm.staff_receipt_lines, scm.staff_receipts, scm.petty_cash_events,
 --   scm.petty_cash_overrides, scm.petty_cash_floats, scm.payment_request_files, scm.payment_request_lines,
 --   scm.payment_requests, scm.staff_bank_details; drop view public.conts_units, public.conts_maintenance_jobs,
---   public.conts_employee_bank, pos.staff_receipt_job_lines; alter table scm.payment_vouchers drop column
+--   public.conts_employee_bank, public.conts_departments, pos.staff_receipt_job_lines; alter table scm.payment_vouchers drop column
 --   payment_request_id, drop column petty_cash_float_id, drop column staff_receipt_id; alter table
 --   scm.payment_voucher_lines drop column unit_id; and re-create public.conts_staff as in 0113.
 -- Staff payment requests and petty cash (finance; SOP 3.2, 3.5 and 6; design
@@ -17,7 +17,7 @@
 --   scm.staff_bank_details       bank details of staff not on the HR employee record
 --   scm.payment_vouchers         gains the request, float or receipt it pays; its lines gain the Rental unit
 --   public.conts_staff           gains department_id, the department's side and the role
---   public.conts_units / conts_maintenance_jobs / conts_employee_bank   read-only views for the engine
+--   public.conts_departments / conts_units / conts_maintenance_jobs / conts_employee_bank   read-only views for the engine
 --   pos.staff_receipt_job_lines  read-only view of receipts by maintenance job, for Property OS
 -- APPLY: by hand, to production before the code merges, in one transaction with its public.pos_migrations row.
 
@@ -211,6 +211,9 @@ create or replace view public.conts_staff as
     left join pos.departments d on d.id = u.department_id
    where u.role <> 'owner';
 
+create or replace view public.conts_departments as
+  select d.id, d.name, d.kind, d.side from pos.departments d;
+
 create or replace view public.conts_units as
   select u.id, p.name as building, u.unit_number
     from pos.units u join pos.properties p on p.id = u.property_id;
@@ -228,7 +231,7 @@ create or replace view public.conts_employee_bank as
    where coalesce(c.user_id, t.user_id) is not null and e.bank_account is not null;
 
 do $$ declare v text; begin
-  foreach v in array array['conts_staff', 'conts_units', 'conts_maintenance_jobs', 'conts_employee_bank'] loop
+  foreach v in array array['conts_staff', 'conts_departments', 'conts_units', 'conts_maintenance_jobs', 'conts_employee_bank'] loop
     execute format('revoke all on public.%I from public, anon, authenticated', v);
     execute format('grant select on public.%I to scm_engine, service_role', v);
   end loop;

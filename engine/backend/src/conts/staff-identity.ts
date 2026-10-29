@@ -3,6 +3,7 @@
 // user id. Someone signed in to the engine is found by email; a field worker on the phone has no engine account, so
 // Property OS's server forwards their call with a short-lived assertion signed with the single sign-on secret.
 import type { MiddlewareHandler } from 'hono';
+/* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 
 export interface Staff {
   userId: string; name: string; email: string; departmentId: string | null; side: string | null; role: string; field: boolean;
@@ -14,7 +15,7 @@ const enc = new TextEncoder();
 const b64url = (bytes: ArrayBuffer | Uint8Array) =>
   btoa(String.fromCharCode(...new Uint8Array(bytes as ArrayBuffer))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const fromB64url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), ch => ch.charCodeAt(0));
-const hmacKey = (secret: string, use: KeyUsage) =>
+const hmacKey = (secret: string, use: 'sign' | 'verify') =>
   crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [use]);
 
 /** `base64url(JSON).base64url(HMAC-SHA256)`, the same shape as the single sign-on assertion (conts/sso.ts). */

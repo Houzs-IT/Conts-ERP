@@ -33,7 +33,7 @@ describe("0178_payment_requests_petty_cash", () => {
   });
 
   test("the views the engine and Property OS read", () => {
-    for (const v of ["public.conts_staff", "public.conts_units", "public.conts_maintenance_jobs", "public.conts_employee_bank", "pos.staff_receipt_job_lines"])
+    for (const v of ["public.conts_staff", "public.conts_departments", "public.conts_units", "public.conts_maintenance_jobs", "public.conts_employee_bank", "pos.staff_receipt_job_lines"])
       expect(body).toContain(`create or replace view ${v} as`);
     expect(body).toContain("grant select on public.%i to scm_engine, service_role");
     expect(body).toContain("grant select on pos.staff_receipt_job_lines to pos_app");

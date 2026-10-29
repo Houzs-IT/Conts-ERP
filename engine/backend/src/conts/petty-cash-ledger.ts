@@ -6,6 +6,7 @@
 import { postJournal, type PostJournalResult } from '../acc/engine';
 import { resolveRoles, type RuleLine } from '../acc/rules';
 import { loadLedgerSettings } from '../acc/ledger-settings';
+/* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in acc/engine.ts */
 
 export interface ReceiptLineForJournal { accountCode: string; amountSen: number; department: string; description?: string | null }
 
