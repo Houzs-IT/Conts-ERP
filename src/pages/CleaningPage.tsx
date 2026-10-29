@@ -634,7 +634,7 @@ function CleanerChip({ r, cleaners, assigning, onAssign }: { r: Row; cleaners: C
               <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search cleaners" aria-label="Search cleaners" className={cx(INPUT, 'h-9')} />
             </div>
           )}
-          <div role="group" aria-label="Cleaners" className="px-1 pb-1 max-h-[260px] overflow-y-auto overscroll-contain">
+          <div role="group" aria-label="Cleaners" className="px-1 pb-1 max-h-[200px] overflow-y-auto overscroll-contain">
             {list.length === 0 && <div className="px-3 py-3 text-copy text-muted-ink">{cleaners.length ? 'No cleaner with that name.' : 'No cleaners on the roster yet.'}</div>}
             {list.map(c => {
               const on = picked.includes(c.id);
@@ -652,7 +652,7 @@ function CleanerChip({ r, cleaners, assigning, onAssign }: { r: Row; cleaners: C
               );
             })}
           </div>
-          <div className="flex items-center justify-end gap-2 p-2 [border-top:1px_solid_var(--color-line-soft)]">
+          <div className="sticky bottom-0 bg-card flex items-center justify-end gap-2 p-2 [border-top:1px_solid_var(--color-line-soft)]">
             <Button type="button" variant="ghost" size="sm" onClick={close}>Cancel</Button>
             <Button type="button" variant={picked.length || !current.length ? 'primary' : 'danger'} size="sm" disabled={!changed} disabledReason="Change who is ticked first" onClick={apply}>
               {!picked.length && current.length ? 'Take everyone off' : picked.length > 1 ? `Apply ${picked.length}` : 'Apply'}
