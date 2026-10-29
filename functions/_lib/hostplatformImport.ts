@@ -687,6 +687,35 @@ export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today 
   return { units, errors, notes };
 }
 
+/** A unit's bank account as the workbook gives it, for choosing the owner's main account (planOwnerBanks). */
+export interface BankPick { ownerId: string; unitId: string; account: string; bankName: string | null; holder: string | null; label: string }
+export const bankKey = (a: string) => a.replace(/[\s-]/g, '');
+
+/** The owner's main account is the one most of their units use (a tie goes to the first row); a unit whose account
+ *  differs gets an extra account. `fixed` holds owners whose stored main account the import will not replace (rows it
+ *  did not create): their stored number is the main, so every unit with another number needs its own account.
+ *  `mains` has the picked row for each owner not in `fixed`; `extras` the units that need an account of their own. */
+export function planOwnerBanks<T extends BankPick>(picks: T[], fixed: Map<string, string> = new Map()): { mains: Map<string, T>; extras: T[] } {
+  const byOwner = new Map<string, T[]>();
+  for (const p of picks) byOwner.set(p.ownerId, [...(byOwner.get(p.ownerId) ?? []), p]);
+  const mains = new Map<string, T>(), extras: T[] = [];
+  for (const [ownerId, list] of byOwner) {
+    const stored = fixed.get(ownerId);
+    let main: string | null = stored === undefined ? null : bankKey(stored);
+    if (main === null) {
+      const count = new Map<string, number>();
+      for (const { account } of list) count.set(bankKey(account), (count.get(bankKey(account)) ?? 0) + 1);
+      // Counting in row order and replacing only on a strictly higher count keeps the first row on a tie.
+      let best = 0;
+      for (const [key, n] of count) if (n > best) { best = n; main = key; }
+      const pick = list.find(p => bankKey(p.account) === main);
+      if (pick) mains.set(ownerId, pick);
+    }
+    extras.push(...list.filter(p => bankKey(p.account) !== main));
+  }
+  return { mains, extras };
+}
+
 export interface OwnerIn { id: string; name: string; ic: string | null; bankName: string | null; bankAccount: string | null; bankHolder: string | null }
 /* Owner ids are opaque: they once embedded the IC number ('wb-owner-<ic>'), which then showed in URLs and the audit
  * log. Now 'wb-owner-' / 'hp-owner-' + the first 16 hex characters of sha256('conts-owner:' + key), where the key is

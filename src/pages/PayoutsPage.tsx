@@ -34,7 +34,11 @@ interface Payload {
 }
 const PAGE_SIZE = 100;
 const SIZES = [50, 100, 200, 500];
-export interface BankRow { units: string; ownerName: string; bankName: string | null; accountNumber: string; amount: number; payouts: number }
+export interface BankRow {
+  units: string; ownerName: string; bankName: string | null; accountNumber: string; amount: number; payouts: number;
+  /** The unit split could not be made, so the row is not safe to transfer without a look. `note` says why. */
+  checkByHand: boolean; note?: string;
+}
 const BANK_COLS: ExportColumn[] = [
   { label: 'Units', kind: 'text' }, { label: 'Owner name', kind: 'text' }, { label: 'Bank', kind: 'text' },
   { label: 'Account number', kind: 'text' }, { label: 'Amount', kind: 'money' },
@@ -155,9 +159,13 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
     }
     const params: Record<string, string> = only ? { ids: only.map(r => r.id).join(',') } : { ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}) };
     const { data: list, capped } = await api.get<{ data: BankRow[]; capped: boolean }>(`/payouts/export?${new URLSearchParams(params)}`);
-    downloadTable('xlsx', 'payouts', 'Payouts', BANK_COLS, list.map(r => [r.units, titleCase(r.ownerName), bankName(r.bankName) ?? '', r.accountNumber, r.amount]));
-    toast({ tone: capped ? 'warning' : 'success', title: `Excel file ready: ${plural(list.length, 'owner')}, ${plural(list.reduce((n, r) => n + r.payouts, 0), 'payout')}.`,
-      body: capped ? 'Only the first 5,000 fit in one file. Narrow the filters to get the rest.' : 'Full account numbers are in this file. Keep it safe and delete it once the transfers are made.' });
+    // The extra column appears only when a row needs it, so an ordinary file is unchanged.
+    const byHand = list.filter(r => r.checkByHand).length;
+    downloadTable('xlsx', 'payouts', 'Payouts', byHand ? [...BANK_COLS, { label: 'Check by hand', kind: 'text' }] : BANK_COLS,
+      list.map(r => [r.units, titleCase(r.ownerName), bankName(r.bankName) ?? '', r.accountNumber, r.amount, ...(byHand ? [r.checkByHand ? r.note ?? 'Check this row by hand.' : ''] : [])]));
+    const safe = capped ? 'Only the first 5,000 fit in one file. Narrow the filters to get the rest.' : 'Full account numbers are in this file. Keep it safe and delete it once the transfers are made.';
+    toast({ tone: capped || byHand ? 'warning' : 'success', title: `Excel file ready: ${plural(list.length, 'owner')}, ${plural(list.reduce((n, r) => n + r.payouts, 0), 'payout')}.`,
+      body: byHand ? `${plural(byHand, 'row')} ${byHand === 1 ? 'needs' : 'need'} checking by hand before you transfer. ${safe}` : safe });
   }
 
   const columns = useMemo<Column<Payout>[]>(() => [

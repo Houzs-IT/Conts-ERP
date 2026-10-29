@@ -9,6 +9,7 @@ import { masked, titleCase } from '../../lib/format';
 import { bankName, BANK_NAME } from '../../lib/vocabulary';
 import { BANKS } from '../units/shared';
 import { Section, Modal, type Owner } from './shared';
+import { OtherAccounts } from './OtherAccounts';
 
 /** The full IC / passport or bank account number, asked for one at a time. Every reveal is in the audit log
  *  (GET /api/owners/:id/reveal); asking again hides it, and nothing is kept after leaving the page. */
@@ -61,6 +62,7 @@ export function PayoutDetails({ owner, canEdit, onSaved }: { owner: Owner; canEd
 
   const acct = shown.bank !== undefined ? (shown.bank || 'Not on file') : owner.bankAccountLast4 ? masked(owner.bankAccountLast4) : 'Not on file';
   return (
+    <>
     <Section title="Payout details" action={canEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setEditing(true)}>Edit</Button> : undefined}>
       <div className="flex flex-col">
         <DetailRow label="Bank" value={bankName(owner.bankName) ?? 'Not on file'} />
@@ -70,6 +72,8 @@ export function PayoutDetails({ owner, canEdit, onSaved }: { owner: Owner; canEd
       <span className="text-caption text-muted-ink">Only the last four digits are shown. Showing the full number is recorded in the history. These details are the owner's, for every unit they own.</span>
       {editing && <EditPayout owner={owner} onClose={() => setEditing(false)} onSaved={() => { reset(); setEditing(false); onSaved?.(); }} />}
     </Section>
+    <OtherAccounts owner={owner} canEdit={canEdit} />
+    </>
   );
 }
 

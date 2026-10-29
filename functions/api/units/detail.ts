@@ -145,6 +145,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       isListed: !!unit.is_listed,
       // 0125: a showroom or warehouse is never on the channels; the screen hides the channel and occupancy parts.
       purpose: unit.purpose ?? 'rental', usedBy: unit.used_by ?? null, contractCode: unit.c_id ? terms.contractCode : null,
+      // 0180: which of the owner's extra bank accounts this unit is paid to (null: the owner's main). Staff only; u.* has it once the column exists.
+      bankAccountId: money ? unit.bank_account_id ?? null : null,
       listedAt: unit.listed_at,
       fittedOutAt: unit.fitted_out_at,
       channels: channels.map(c => c.channel),

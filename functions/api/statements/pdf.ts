@@ -1,5 +1,6 @@
 import { type Env, one, all, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
+import { differingAccountTails } from '../../_lib/ownerBank';
 import { companyDetails, printPage, esc, ringgit, longDate } from '../../_lib/letterhead';
 
 /**
@@ -52,6 +53,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     LEFT JOIN properties p ON p.id = u.property_id
     WHERE l.statement_id = ? ORDER BY l.sort_order, l.occurred_on`, id);
 
+  // Accounts the units are paid to when any is not the main one (0180): bank and last four of each, never a number. [] otherwise.
+  const tails = s.state === 'paid' ? await differingAccountTails(env, id) : [];
   const company = await companyDetails(env);
   const signed = (sen: number) => sen < 0 ? `− ${ringgit(sen)}` : ringgit(sen);
   const period = new Date(s.period_start).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
@@ -79,8 +82,8 @@ ${provisional ? '<div class="lh-flag">Draft figures. This statement is not final
     <tr class="lh-total"><td colspan="3">Net Payout to Owner</td><td class="num">${ringgit(s.net_payout)}</td></tr>
   </tbody>
 </table>
-<p class="lh-note">${s.state === 'paid' && s.bank_account_last4
-    ? `Transferred to ${esc(s.bank_name ?? 'your account')} ····${esc(s.bank_account_last4)}.`
+<p class="lh-note">${s.state === 'paid' && (s.bank_account_last4 || tails.length)
+    ? `Transferred to ${tails.length ? tails.map(t => `${esc(t.bankName ?? 'your account')} ····${esc(t.last4)}`).join(', ') : `${esc(s.bank_name ?? 'your account')} ····${esc(s.bank_account_last4)}`}.`
     : 'Payment is made to the bank account on your contract.'}
   Every deduction above carries a category, a date and a reference.</p>`;
 
