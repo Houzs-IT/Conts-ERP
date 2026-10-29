@@ -249,8 +249,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
     act('plan-all', () => api.post('/housekeeping/plan', { reservationIds: visibleDepartures.map(d => d.reservationId) }), { title: `${visibleDepartures.length} cleaning jobs planned.` });
   const undoLeft = (taskId: string, unit: string) =>
     act(`left-${taskId}`, () => api.post('/housekeeping/guest-left', { taskId, undo: true }), { title: `${unit}: guest no longer marked out.` });
-  const assignOne = (taskId: string, unit: string, cleanerId: string, name: string) =>
-    act(`assign-${taskId}`, () => api.post(`/housekeeping/tasks/${taskId}/assign`, { cleanerIds: cleanerId ? [cleanerId] : [], force: true }), { title: cleanerId ? `${unit}: given to ${name}.` : `${unit}: cleaner taken off.` });
+  const assignOne = (taskId: string, unit: string, cleanerIds: string[], label: string) =>
+    act(`assign-${taskId}`, () => api.post(`/housekeeping/tasks/${taskId}/assign`, { cleanerIds, force: true }), { title: cleanerIds.length ? `${unit}: given to ${label}.` : `${unit}: cleaners taken off.` });
   const setCheckIn = (reservationId: string, time: string, unit: string) =>
     act(`in-${reservationId}`, () => api.patch(`/reservations/${reservationId}/details`, { checkInTime: time }), { title: `${unit}: next check-in ${time}.` });
 
@@ -456,7 +456,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   group: { id: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }; now: number; future: boolean; selected: string | null; busy: string | null;
   onSelect: (id: string) => void; onGuestLeft: (b: { taskId?: string; reservationId?: string }, unit: string) => void; onUndoLeft: (taskId: string, unit: string) => void;
   onCheckIn: (reservationId: string, time: string, unit: string) => void; onPlan: (d: Departure) => void; onAssign?: () => void; picks?: Picks;
-  cleaners: Cleaner[]; onAssignOne: (taskId: string, unit: string, cleanerId: string, name: string) => void;
+  cleaners: Cleaner[]; onAssignOne: (taskId: string, unit: string, cleanerIds: string[], label: string) => void;
 }) {
   const external = group.id === 'external';
   const doneN = group.rows.filter(r => r.status === 'done').length;
@@ -554,7 +554,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
       {/* One card per job, as many across as fit (a card is at least 320px wide). */}
       <div className="grid gap-3 p-3 @4xl:p-4 [border-top:1px_solid_var(--color-line-soft)] [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
         {group.rows.map(r => <CleanCard key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} assigning={busy === `assign-${r.id}`}
-          savingIn={!!r.next?.reservationId && busy === `in-${r.next.reservationId}`} cleaners={cleaners} onAssign={(id, name) => onAssignOne(r.id, r.unitNumber, id, name)}
+          savingIn={!!r.next?.reservationId && busy === `in-${r.next.reservationId}`} cleaners={cleaners} onAssign={(ids, label) => onAssignOne(r.id, r.unitNumber, ids, label)}
           picked={picks ? picks.has(r.id) : undefined} onPick={picks ? on => picks.toggle([r.id], on) : undefined}
           onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} onUndoLeft={() => onUndoLeft(r.id, r.unitNumber)}
           onCheckIn={time => r.next?.reservationId && onCheckIn(r.next.reservationId, time, r.unitNumber)} />)}
@@ -589,67 +589,75 @@ function CardLine({ icon, className, children }: { icon: string; className?: str
   );
 }
 
-/** The chip under the lines: "Assign cleaner" opens a small list (name, how busy they are, search when the roster is long),
- *  or it shows the cleaner's name once the job has one. A job with a team, a started job or a finished one only shows the
- *  names: change those in the job's panel. */
-function CleanerChip({ r, cleaners, assigning, onAssign }: { r: Row; cleaners: Cleaner[]; assigning: boolean; onAssign: (cleanerId: string, name: string) => void }) {
+/** The chip under the lines: "Assign cleaner" opens a small list where you tick one or more cleaners (the first ticked is the
+ *  main one), then press Apply. A started or finished job only shows its names: change those in the job's panel. */
+function CleanerChip({ r, cleaners, assigning, onAssign }: { r: Row; cleaners: Cleaner[]; assigning: boolean; onAssign: (cleanerIds: string[], label: string) => void }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
+  const current = useMemo(() => [...new Set([r.cleanerId, ...r.cleaners.map(c => c.cleanerId)].filter((id): id is string => !!id))], [r.cleanerId, r.cleaners]);
+  const [picked, setPicked] = useState<string[]>(current);
   const anchor = useRef<HTMLButtonElement>(null);
   const names = r.cleaners.length ? r.cleaners.map(c => c.name) : r.assigneeName ? [r.assigneeName] : [];
   const text = names.length ? `${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ''}` : 'Assign cleaner';
-  const editable = (r.status !== 'cleaning' && r.status !== 'done') && r.cleaners.length <= 1;
+  const editable = r.status !== 'cleaning' && r.status !== 'done';
   const close = useCallback(() => { setOpen(false); setQ(''); }, []);
+  const toggle = (id: string) => setPicked(p => (p.includes(id) ? p.filter(v => v !== id) : [...p, id]));
   // The least busy first, so the person to pick is at the top.
   const list = useMemo(() => {
     const n = q.trim().toLowerCase();
     return cleaners.filter(c => !n || c.name.toLowerCase().includes(n)).sort((a, b) => a.busy - b.busy || a.name.localeCompare(b.name));
   }, [cleaners, q]);
+  const changed = picked.length !== current.length || picked.some((id, i) => id !== current[i]);
+  const apply = () => {
+    close();
+    if (changed) onAssign(picked, picked.map(id => cleaners.find(c => c.id === id)?.name ?? 'cleaner').join(', '));
+  };
   const chip = cx('inline-flex items-center gap-1.5 h-8 px-2.5 max-w-full min-w-0 rounded-control border border-solid border-line bg-card text-meta font-medium', names.length ? 'text-ink' : 'text-muted-ink');
   if (!editable) return <span title={names.join(', ') || undefined} className={chip}><Icon name="UserPlus" size="sm" /><span className="truncate">{text}</span></span>;
-  const pick = (c: Cleaner) => { close(); if (c.id !== r.cleanerId) onAssign(c.id, c.name); };
   return (
     <>
-      <button ref={anchor} type="button" disabled={assigning} aria-haspopup="dialog" aria-expanded={open} aria-label={`Cleaner for ${r.unitNumber}: ${text}`}
-        onClick={e => { e.stopPropagation(); setOpen(o => !o); }} onKeyDown={e => e.stopPropagation()} title={names.join(', ') || undefined}
+      <button ref={anchor} type="button" disabled={assigning} aria-haspopup="dialog" aria-expanded={open} aria-label={`Cleaners for ${r.unitNumber}: ${text}`}
+        onClick={e => { e.stopPropagation(); if (!open) setPicked(current); setOpen(o => !o); }} onKeyDown={e => e.stopPropagation()} title={names.join(', ') || undefined}
         className={cx(chip, 'cursor-pointer [font-family:inherit] hover:border-ink disabled:opacity-60 disabled:cursor-default', open && 'border-ink bg-page')}>
         <Icon name="UserPlus" size="sm" /><span className="truncate">{assigning ? 'Saving...' : text}</span>
         <span className={cx('grid transition-transform duration-150', open && 'rotate-180')}><Icon name="ChevronDown" size="sm" /></span>
       </button>
-      <Floating anchor={anchor} open={open} onClose={close} width={288} maxHeight={380} label={`Pick a cleaner for ${r.unitNumber}`}>
+      <Floating anchor={anchor} open={open} onClose={close} width={296} maxHeight={420} label={`Pick cleaners for ${r.unitNumber}`}>
         {/* The panel is portalled, but React still sends its clicks up to the card: stop them here. */}
         <div onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} className="flex flex-col">
-          <div className="px-3 pt-2.5 pb-1.5 text-meta font-semibold text-muted-ink">Assign {r.unitNumber}</div>
+          <div className="px-3 pt-2.5 pb-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-meta font-semibold text-muted-ink">Assign {r.unitNumber}</span>
+            <span className="text-meta text-muted-ink tabular-nums">{picked.length ? `${picked.length} picked` : 'Tick one or more'}</span>
+          </div>
           {cleaners.length > 6 && (
             <div className="px-2 pb-1.5">
               <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search cleaners" aria-label="Search cleaners" className={cx(INPUT, 'h-9')} />
             </div>
           )}
-          <div role="listbox" aria-label="Cleaners" className="px-1 pb-1 max-h-[260px] overflow-y-auto overscroll-contain">
+          <div role="group" aria-label="Cleaners" className="px-1 pb-1 max-h-[260px] overflow-y-auto overscroll-contain">
             {list.length === 0 && <div className="px-3 py-3 text-copy text-muted-ink">{cleaners.length ? 'No cleaner with that name.' : 'No cleaners on the roster yet.'}</div>}
             {list.map(c => {
-              const current = c.id === r.cleanerId;
+              const on = picked.includes(c.id);
               return (
-                <button key={c.id} type="button" role="option" aria-selected={current} onClick={() => pick(c)}
-                  className={cx('w-full min-h-11 flex items-center gap-2.5 px-2.5 py-1.5 rounded-[8px] border-0 text-left cursor-pointer [font-family:inherit] text-copy', current ? 'bg-gold-tint' : 'bg-transparent hover:bg-muted')}>
+                <label key={c.id} className={cx('min-h-11 flex items-center gap-2.5 px-2.5 py-1.5 rounded-[8px] cursor-pointer text-copy', on ? 'bg-gold-tint' : 'hover:bg-muted')}>
+                  <input type="checkbox" checked={on} onChange={() => toggle(c.id)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); apply(); } }}
+                    className="w-4 h-4 m-0 flex-none accent-[var(--color-brand-black)]" />
                   <span aria-hidden className="flex-none w-8 h-8 rounded-full grid place-items-center bg-muted text-ink text-[11px] font-semibold">{initials(c.name)}</span>
                   <span className="min-w-0 flex-1 flex flex-col">
                     <span className="truncate font-medium text-ink">{c.name}</span>
                     <span className="truncate text-meta text-muted-ink">{cleanerHint(c)}</span>
                   </span>
-                  {current && <Icon name="Check" size="sm" />}
-                </button>
+                  {on && picked.length > 1 && picked[0] === c.id && <span className="flex-none text-caption text-gold-ink">Main</span>}
+                </label>
               );
             })}
           </div>
-          {r.cleanerId && (
-            <div className="p-1 [border-top:1px_solid_var(--color-line-soft)]">
-              <button type="button" onClick={() => { close(); onAssign('', ''); }}
-                className="w-full min-h-10 flex items-center gap-2 px-2.5 rounded-[8px] border-0 bg-transparent hover:bg-muted text-left cursor-pointer [font-family:inherit] text-copy text-danger">
-                <Icon name="X" size="sm" />Take the cleaner off
-              </button>
-            </div>
-          )}
+          <div className="flex items-center justify-end gap-2 p-2 [border-top:1px_solid_var(--color-line-soft)]">
+            <Button type="button" variant="ghost" size="sm" onClick={close}>Cancel</Button>
+            <Button type="button" variant={picked.length || !current.length ? 'primary' : 'danger'} size="sm" disabled={!changed} disabledReason="Change who is ticked first" onClick={apply}>
+              {!picked.length && current.length ? 'Take everyone off' : picked.length > 1 ? `Apply ${picked.length}` : 'Apply'}
+            </Button>
+          </div>
         </div>
       </Floating>
     </>
@@ -661,7 +669,7 @@ function CleanerChip({ r, cleaners, assigning, onAssign }: { r: Row; cleaners: C
  *  and nobody ticked; yellow: guest out, clean not finished). */
 function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onAssign, picked, onPick }: {
   r: Row; now: number; active: boolean; busy: boolean; assigning: boolean; savingIn: boolean; cleaners: Cleaner[]; onSelect: () => void; onGuestLeft: () => void; onUndoLeft: () => void;
-  onCheckIn: (time: string) => void; onAssign: (cleanerId: string, name: string) => void; picked?: boolean; onPick?: (on: boolean) => void;
+  onCheckIn: (time: string) => void; onAssign: (cleanerIds: string[], label: string) => void; picked?: boolean; onPick?: (on: boolean) => void;
 }) {
   const st = statusOf('cleaning', r.status);
   const files = r.photoCount + r.videoCount;
