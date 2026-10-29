@@ -35,11 +35,11 @@ await clean('yr-a', 'yr-cleaner', 6_000);
 await clean('yr-b', 'yr-cleaner', 4_000);
 await clean('yr-nobody', null, 9_999);   // no cleaner did it: the pay screen skips it, so does the report
 
-let r = await call('GET', `/api/reports/yearly?year=${year}`, undefined, 'housekeeper');
+let r = await call('GET', `/api/finance/yearly-report?year=${year}`, undefined, 'housekeeper');
 check('only finance and management may see it', r.status === 403, r.status);
-r = await call('GET', `/api/reports/yearly?year=${Number(year) + 1}`);
+r = await call('GET', `/api/finance/yearly-report?year=${Number(year) + 1}`);
 check('a year ahead is refused', r.status === 422, r.status);
-r = await call('GET', `/api/reports/yearly?year=${year}`);
+r = await call('GET', `/api/finance/yearly-report?year=${year}`);
 check('report loads', r.status === 200, r.text.slice(0, 300));
 check('twelve months', r.json?.months?.length === 12, JSON.stringify(r.json?.months));
 const row = (r.json?.rows ?? []).find(x => x.unitId === unit.id && x.month === month);

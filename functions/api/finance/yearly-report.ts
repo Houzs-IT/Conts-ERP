@@ -9,7 +9,7 @@ import { hasCleanPrices, priceBook, layoutKey } from '../../_lib/cleaningPrices'
 import { CLEAN_KINDS_SQL } from '../../_lib/cleaning';
 import type { YearlyRow } from '../../../src/lib/yearlyReport';
 
-/** GET /api/reports/yearly?year=2026 — the yearly unit report (PLAN-yearly-report.md): for every profit-share and
+/** GET /api/finance/yearly-report?year=2026 — the yearly unit report (PLAN-yearly-report.md): for every profit-share and
  *  fixed-rent unit, each month's figures from the statement engine (as GET /api/portfolio/owner-report, so the two agree)
  *  plus what The Conts paid cleaners for the cleans finished on the unit that month (as GET /api/housekeeping/pay).
  *  Only inputs are sent; every block, total and difference is worked out by src/lib/yearlyReport.ts. */

@@ -84,7 +84,7 @@ export default function YearlyReportPage() {
   const thisYear = Number(todayMyt().slice(0, 4));
   const year = String(Math.min(thisYear, Math.max(2020, Number(url.get('year')) || thisYear)));
   const building = url.get('building'), contract = url.get('contract'), q = url.get('q').trim().toLowerCase();
-  const { data, loading, error, reload } = useApi<Payload>(`/reports/yearly?year=${year}`);
+  const { data, loading, error, reload } = useApi<Payload>(`/finance/yearly-report?year=${year}`);
 
   const shown = useMemo(() => (data?.units ?? []).filter(u => (!building || u.building === building) && (!q || `${u.building} ${u.number} ${u.owner}`.toLowerCase().includes(q))), [data, building, q]);
   // The contract filter goes by each month's own contract, so a unit that changed contract keeps its other months.
