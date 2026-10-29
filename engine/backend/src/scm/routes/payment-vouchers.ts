@@ -919,6 +919,13 @@ export const updatePaymentVoucherHandler = async (c: any) => {
     return c.json({ error: 'refund_lines_fixed', message: 'A refund has one line the system writes — change the refund amount instead.' }, 400);
   }
   if (body.lines !== undefined) {
+    /* Conts: a voucher made from a payment request, a staff receipt or a petty cash top-up keeps the lines it was made
+       with (each carries its request line's project and unit, and pays only what is owed). Cancel it and make it again. */
+    const { data: made } = await sb.from('payment_vouchers').select('payment_request_id, staff_receipt_id, petty_cash_float_id').eq('id', id).maybeSingle();
+    const m = made as { payment_request_id?: string | null; staff_receipt_id?: string | null; petty_cash_float_id?: string | null } | null;
+    if (m?.payment_request_id || m?.staff_receipt_id || m?.petty_cash_float_id) {
+      return c.json({ error: 'lines_fixed', message: 'This voucher was made from a request, a receipt or a petty cash top-up, so its lines are fixed. Cancel it and make it again from there.' }, 409);
+    }
     const built = buildLines(body.lines);
     if ('error' in built) return c.json({ error: built.error }, 400);
     /* Same self-debit door as the create path, against the EFFECTIVE Paid

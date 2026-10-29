@@ -279,8 +279,15 @@ export const requestVoucherHandler = async (c: Ctx): Promise<Response> => {
     return c.json({ error: 'update_failed', reason: link.error.message }, 500);
   }
   /* Each voucher line keeps its request line's project and unit. */
+  /* Each voucher line keeps its request line's project and unit, except a line on an everyday-expense account (rent,
+     utilities): it is outside the project limit on the request, and stays outside it on the voucher, which debits the
+     supplier's control rather than that account. */
+  const codes = [...new Set(owed.map(l => l.account_code).filter((x): x is string => !!x))];
+  const { data: ev } = codes.length ? await sb.from('accounts').select('account_code, everyday_expense').eq('company_id', co.companyId).in('account_code', codes) : { data: [] };
+  const everyday = new Set(((ev ?? []) as Array<{ account_code: string; everyday_expense: boolean | null }>).filter(x => x.everyday_expense === true).map(x => x.account_code));
   for (const [i, l] of owed.entries()) {
-    await sb.from('payment_voucher_lines').update({ project_id: l.project_id, unit_id: l.unit_id }).eq('pv_id', made.id).eq('line_no', i + 1);
+    const up = await sb.from('payment_voucher_lines').update({ project_id: l.account_code && everyday.has(l.account_code) ? null : l.project_id, unit_id: l.unit_id }).eq('pv_id', made.id).eq('line_no', i + 1);
+    if (up.error) { await dropDraft(sb, made.id); return c.json({ error: 'update_failed', reason: up.error.message }, 500); }
   }
   /* Withdrawn, rejected or closed while the voucher was being made: the request wins and the draft goes. */
   const { data: still } = await sb.from('payment_requests').select('status').eq('id', r.id).maybeSingle();
@@ -318,6 +325,9 @@ export const closeRequestHandler = async (c: Ctx): Promise<Response> => {
   const sb = c.get('supabase');
   const r = await loadRequest(c, co.companyId);
   if (!r) return c.json({ error: 'not_found' }, 404);
+  /* A voucher already submitted for approval is cancelled on the voucher screen first, with its own trail. */
+  const { data: inApproval } = await sb.from('payment_vouchers').select('id, pv_number').eq('company_id', co.companyId).eq('payment_request_id', r.id).eq('status', 'DRAFT').not('submitted_at', 'is', null);
+  if ((inApproval ?? []).length > 0) return c.json({ error: 'voucher_in_approval', message: `Voucher ${(inApproval as Array<{ pv_number: string }>)[0].pv_number} is in approval. Cancel it first.` }, 409);
   if (!(await claimRequest(sb, r.id, 'PART_PAID', { status: 'CLOSED', reason: reason.slice(0, 500), decided_by: who(c), decided_at: now() }))) {
     return c.json({ error: 'not_part_paid', message: 'Only a part-paid request can be closed.' }, 409);
   }
@@ -335,6 +345,7 @@ export const linkSupplierHandler = async (c: Ctx): Promise<Response> => {
   const r = await loadRequest(c, co.companyId);
   if (!r) return c.json({ error: 'not_found' }, 404);
   if (!OPEN.has(r.status)) return c.json({ error: 'not_open', message: 'This request is no longer waiting for payment.' }, 409);
+  if (live(await vouchersOf(sb, co.companyId, r.id)).length > 0) return c.json({ error: 'voucher_exists', message: 'A voucher already pays this request; cancel it before changing the supplier.' }, 409);
   const { data: s } = supplierId ? await sb.from('suppliers').select('id, name').eq('company_id', co.companyId).eq('id', supplierId).maybeSingle() : { data: null };
   if (!s) return c.json({ error: 'validation', message: 'Choose a supplier on the list.' }, 422);
   const { error } = await sb.from('payment_requests').update({ supplier_id: s.id, payee_name: s.name, payee_to_check: false, updated_at: now() }).eq('id', r.id);

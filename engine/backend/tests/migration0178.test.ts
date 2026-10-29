@@ -53,6 +53,6 @@ describe("0178 guards against paying twice", () => {
     expect(body).toMatch(/create unique index if not exists payment_vouchers_float_draft on scm\.payment_vouchers \(petty_cash_float_id\)\s+where petty_cash_float_id is not null and status = 'draft'/);
     expect(body).toContain("create unique index petty_cash_events_repaid on scm.petty_cash_events (receipt_id) where kind = 'repaid'");
     expect(body).toMatch(/create unique index if not exists payment_vouchers_request_draft on scm\.payment_vouchers \(payment_request_id\)\s+where payment_request_id is not null and status = 'draft'/);
-    expect(body).toContain('create unique index staff_receipts_replaces on scm.staff_receipts (replaces_id) where replaces_id is not null');
+    expect(body).toContain('create unique index if not exists staff_receipts_replaces on scm.staff_receipts (replaces_id) where replaces_id is not null');
   });
 });
