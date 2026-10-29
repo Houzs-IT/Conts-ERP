@@ -23,6 +23,8 @@ import { formaliseReceiptsForSettlement, receiptConfirmation } from './receipts'
 import { issueDepositInvoiceBestEffort } from './deposit-invoices';
 import { reverseJournal } from './engine';
 import { resolveRoles } from './rules';
+import { paymentReconciliation } from './payment-reconciled';
+import { creditConfirmedPaymentOfCancelledSo } from '../scm/lib/customer-credits';
 
 /* The untyped client the poster takes, borrowed rather than spelled out again
    (a new file's lint ceiling is zero — payout-charge.ts's reason). */
@@ -33,31 +35,80 @@ const log = (...args: unknown[]): void => {
   console.error('[acc/receipt-confirm]', ...args);
 };
 
+type Fail = { ok: false; status: string; reason: string };
+
+/** The payment's live posted entry when it debits a money account OTHER than
+    `bank` — a cash / transfer payment posted before confirmation existed, on the
+    old rule's account (cash CASH, transfer BANK_DEFAULT). Null when there is no
+    live entry or it already sits on `bank`. */
+async function entryOnAnotherBank(
+  sb: Db,
+  source: 'SOPAY' | 'SIPAY',
+  paymentId: string,
+  companyId: number,
+  bank: string,
+): Promise<{ ok: true; entry: { id: string; entry_date: string | null; account: string } | null } | Fail> {
+  const { data: jes, error: jeErr } = await sb.from('journal_entries')
+    .select('id, je_no, entry_date, reversed').eq('source_type', source).eq('source_doc_no', paymentId).eq('company_id', companyId);
+  if (jeErr) return { ok: false, status: 'entry_read_failed', reason: jeErr.message };
+  const live = ((jes ?? []) as Array<{ id: string; entry_date: string | null; reversed: boolean | null }>).find((j) => j.reversed !== true);
+  if (!live) return { ok: true, entry: null };
+  const { data: lines, error: lErr } = await sb.from('journal_entry_lines').select('account_code, debit_sen').eq('journal_entry_id', live.id);
+  if (lErr) return { ok: false, status: 'entry_read_failed', reason: lErr.message };
+  const debit = ((lines ?? []) as Array<{ account_code: string; debit_sen: number | null }>).find((l) => Number(l.debit_sen ?? 0) > 0);
+  if (!debit || debit.account_code === bank) return { ok: true, entry: null };
+  return { ok: true, entry: { id: live.id, entry_date: live.entry_date, account: debit.account_code } };
+}
+
+/** May this payment be confirmed onto `bank`? Refused (with the sentence to
+    show) when it was posted before confirmation existed onto ANOTHER account
+    and that entry is already reconciled — matched on a bank statement, in a
+    closed month, settled on a merchant report (acc/payment-reconciled, the
+    edit path's own check): the books closed over it, so it is not moved, and
+    finance confirms it on the account it sits on. Fails closed. */
+export async function bankChangeRefusal(
+  sb: Db,
+  p: { source: 'SOPAY' | 'SIPAY'; paymentId: string; companyId: number; method: string; bank: string },
+): Promise<{ ok: true; refusal: string | null } | Fail> {
+  if (p.method !== 'cash' && p.method !== 'transfer') return { ok: true, refusal: null };
+  const on = await entryOnAnotherBank(sb, p.source, p.paymentId, p.companyId, p.bank);
+  if (!on.ok) return on;
+  if (!on.entry) return { ok: true, refusal: null };
+  const rec = await paymentReconciliation(sb, p.companyId, p.paymentId, p.source);
+  if (!rec.ok) return { ok: false, status: 'reconciliation_unreadable', reason: `Could not check whether this payment is already reconciled, so nothing was changed (${rec.reason}).` };
+  if (!rec.by) return { ok: true, refusal: null };
+  const where = rec.by.kind === 'bank' ? `matched on the bank statement (entry ${rec.by.jeNo})`
+    : rec.by.kind === 'month' ? `in the closed month ${rec.by.month}`
+    : `settled on the merchant report of ${rec.by.on}`;
+  return { ok: true, refusal: `This payment is already posted to ${on.entry.account} and ${where}, so it cannot move to ${p.bank}: confirm it on ${on.entry.account}.` };
+}
+
 /** A cash / transfer payment posted BEFORE confirmation existed sits on the
     accounts of the old rule (cash CASH, transfer BANK_DEFAULT). Confirmed now
     onto another bank, its entry is reversed — the contra dated on the original
     entry, as an edit's is (acc/payment-repost) — so the post that follows lands
-    on the bank finance chose. Nothing to do when it already sits there. */
+    on the bank finance chose. Nothing to do when it already sits there; never
+    done to an entry already reconciled (bankChangeRefusal, which the confirm
+    route asks first; asked again here so no other caller can move one). */
 async function alignToConfirmedBank(
   sb: Db,
   source: 'SOPAY' | 'SIPAY',
   paymentId: string,
   companyId: number,
   method: string,
-): Promise<{ ok: true } | { ok: false; status: string; reason: string }> {
+): Promise<{ ok: true } | Fail> {
   if (method !== 'cash' && method !== 'transfer') return { ok: true };
   const conf = await receiptConfirmation(sb, companyId, source, paymentId);
   if (!conf.ok) return { ok: false, status: 'receipt_read_failed', reason: conf.reason };
   if (!conf.confirmed || conf.legacy) return { ok: true };
   const bank = conf.channelAccountCode || (await resolveRoles(sb, companyId)).BANK_DEFAULT;
-  const { data: jes, error: jeErr } = await sb.from('journal_entries')
-    .select('id, je_no, entry_date, reversed').eq('source_type', source).eq('source_doc_no', paymentId).eq('company_id', companyId);
-  if (jeErr) return { ok: false, status: 'entry_read_failed', reason: jeErr.message };
-  const live = ((jes ?? []) as Array<{ id: string; entry_date: string | null; reversed: boolean | null }>).find((j) => j.reversed !== true);
-  if (!live) return { ok: true };
-  const { data: lines, error: lErr } = await sb.from('journal_entry_lines').select('account_code, debit_sen').eq('journal_entry_id', live.id);
-  if (lErr) return { ok: false, status: 'entry_read_failed', reason: lErr.message };
-  if (((lines ?? []) as Array<{ account_code: string; debit_sen: number | null }>).some((l) => Number(l.debit_sen ?? 0) > 0 && l.account_code === bank)) return { ok: true };
+  const on = await entryOnAnotherBank(sb, source, paymentId, companyId, bank);
+  if (!on.ok) return on;
+  if (!on.entry) return { ok: true };
+  const live = on.entry;
+  const refused = await bankChangeRefusal(sb, { source, paymentId, companyId, method, bank });
+  if (!refused.ok) return refused;
+  if (refused.refusal) return { ok: false, status: 'payment_reconciled', reason: refused.refusal };
   const undone = await reverseJournal(sb, {
     sourceType: source,
     sourceDocNo: paymentId,
@@ -77,6 +128,9 @@ export async function postConfirmedPayment(
   source: 'SOPAY' | 'SIPAY',
   paymentId: string,
   companyId: number,
+  /* True only when THIS call's confirmation turned the receipt formal: a payment confirmed before its order was
+     cancelled is already in the cancel-time credit, and a re-run must not add it again. */
+  opts: { newlyConfirmed?: boolean } = {},
 ): Promise<PostPaymentResult> {
   if (source === 'SIPAY') {
     const { data, error } = await sb.from('sales_invoice_payments')
@@ -99,6 +153,14 @@ export async function postConfirmedPayment(
   /* The deposit invoice stands on the confirmation, not on the posting: a
      posting refusal (a customer with no account yet) is healed separately. */
   await issueDepositInvoiceBestEffort(sb, data as Record<string, unknown>, 'confirm');
+  /* A cancelled order credited the money confirmed when it was cancelled;
+     money confirmed since joins the customer's credit (idempotent per payment). */
+  if (!opts.newlyConfirmed) return posted;
+  const row = data as SoPaymentRow;
+  const credited = await creditConfirmedPaymentOfCancelledSo(sb, {
+    paymentId, docNo: row.so_doc_no, amountSen: Number(row.amount_sen), method: row.method, companyId,
+  });
+  if (credited.reason && credited.reason !== 'order_live' && credited.reason !== 'already_credited') log('confirm: cancelled-order credit not added:', paymentId, credited.reason);
   return posted;
 }
 
@@ -119,7 +181,7 @@ export async function confirmReceiptsForSettlement(
     if (o.outcome !== 'formalised' && o.outcome !== 'already_formal') continue;
     const source = payments.find((p) => p.id === o.paymentId)?.source === 'SIPAY' ? 'SIPAY' : 'SOPAY';
     try {
-      const r = await postConfirmedPayment(sb, source, o.paymentId, companyId);
+      const r = await postConfirmedPayment(sb, source, o.paymentId, companyId, { newlyConfirmed: o.outcome === 'formalised' });
       if (!r.ok) log(`settlement: ${source} ${o.paymentId} confirmed but not posted:`, r.status, r.reason);
     } catch (e) {
       log(`settlement: posting ${source} ${o.paymentId} threw:`, e);

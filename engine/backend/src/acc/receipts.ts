@@ -168,8 +168,8 @@ export async function formaliseReceipt(
       channel_account_code: input.accountCode,
       issued_at: at,
       issued_by: input.actor,
-    }).eq('id', r.id).eq('status', 'DRAFT').select('id');
-    if (!error && ((won ?? []) as unknown[]).length > 0) return { ok: true, orNumber: formalNo };
+    }).eq('id', r.id).eq('status', 'DRAFT').select('id').maybeSingle();
+    if (!error && won) return { ok: true, orNumber: formalNo };
     if (!error) {
       const { data: again, error: againErr } = await sb.from('acc_official_receipts')
         .select('or_number, status').eq('id', r.id).maybeSingle();

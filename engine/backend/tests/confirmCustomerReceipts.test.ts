@@ -343,6 +343,26 @@ describe('a payment posted before confirmation existed', () => {
     expect(linesOf(sb, 'p-tr')[0]).toMatchObject({ code: '310-0010', dr: 120_000 });
   });
 
+  test.each([
+    ['matched on a bank statement', (sb: World) => { sb.tables.acc_bank_statement_matches = [{ company_id: CO, je_no: liveSopay(sb)[0]!.je_no }]; }, 'bank statement'],
+    ['in a closed month', (sb: World) => { sb.tables.acc_bank_month_locks = [{ company_id: CO, account_code: '310-0010', period_month: '2026-10-01', released_at: null, locked_at: '2026-11-02' }]; }, '2026-10'],
+  ])('%s, it is not moved: the bank change is refused and nothing is written', async (_why, reconcile, says) => {
+    const sb = await legacy();
+    reconcile(sb);
+    const before = (sb.tables.journal_entries as Row[]).filter((j) => String(j.source_type).startsWith('SOPAY')).length;
+    const r = await harness(sb).confirm(receiptOf(sb, 'p-tr')!.id, { accountCode: '310-0020' });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('payment_reconciled');
+    expect(String(r.body.message)).toContain(says);
+    expect(String(r.body.message)).toContain('confirm it on 310-0010');
+    expect(receiptOf(sb, 'p-tr')).toMatchObject({ status: 'DRAFT' });
+    expect((sb.tables.journal_entries as Row[]).filter((j) => String(j.source_type).startsWith('SOPAY')).length).toBe(before);
+    /* On the bank it already sits on, it confirms and moves nothing. */
+    const same = await harness(sb).confirm(receiptOf(sb, 'p-tr')!.id, { accountCode: '310-0010' });
+    expect(same.body).toMatchObject({ ok: true, posting: { status: 'already_posted' } });
+    expect((sb.tables.journal_entries as Row[]).filter((j) => String(j.source_type).startsWith('SOPAY')).length).toBe(before);
+  });
+
   test('confirmed later onto another bank, its entry moves there: the old one reversed, one live entry on the chosen bank', async () => {
     const sb = await legacy();
     const r = await harness(sb).confirm(receiptOf(sb, 'p-tr')!.id, { accountCode: '310-0020' });
@@ -401,6 +421,25 @@ describe('finance confirms what the payment says', () => {
     expect(b).toMatchObject({ ok: true, already: true });
     expect(b.ok && b.orNumber).toBe(a.ok && a.orNumber);
     expect(receiptOf(sb, 'p-tr')).toMatchObject({ status: 'FORMAL', channel_account_code: '310-0010', issued_by: 'A' });
+  });
+
+  /* A cancelled order credited only the money confirmed when it was cancelled; money confirmed afterwards joins the credit. */
+  test("confirming a payment of a cancelled order adds it to the customer's credit, once", async () => {
+    const sb = world({ customer_credits: [] });
+    await recordBoth(sb);
+    const order = (sb.tables.mfg_sales_orders as Row[])[0]!;
+    order.status = 'CANCELLED';
+    order.debtor_code = 'cust-1';
+    const id = receiptOf(sb, 'p-tr')!.id;
+    await harness(sb).confirm(id, { accountCode: '310-0010' });
+    await harness(sb).confirm(id, { accountCode: '310-0010' });
+    expect(sb.tables.customer_credits).toEqual([expect.objectContaining({
+      debtor_code: 'cust-1', amount_sen: 100_000, source_type: 'SO_CANCEL_REFUND', source_doc_no: SO, source_doc_id: 'p-tr', company_id: CO,
+    })]);
+    /* A live order's confirmation credits nothing. */
+    order.status = 'CONFIRMED';
+    await harness(sb).confirm(receiptOf(sb, 'p-cash')!.id, { accountCode: '310-0010' });
+    expect(sb.tables.customer_credits).toHaveLength(1);
   });
 
   test("another company's formal receipt for the same payment id is no confirmation", async () => {

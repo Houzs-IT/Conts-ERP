@@ -12,7 +12,7 @@
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { confirmBankRefusal, confirmBanks, ensureReceiptForPayment, formaliseReceipt } from '../../acc/receipts';
-import { postConfirmedPayment } from '../../acc/receipt-confirm';
+import { bankChangeRefusal, postConfirmedPayment } from '../../acc/receipt-confirm';
 import { resolveRoles } from '../../acc/rules';
 import { companyCodeById } from '../lib/doc-no';
 import { paginateAll } from '../lib/paginate-all';
@@ -117,7 +117,7 @@ export const receiptFormalise = async (c: any): Promise<Response> => {
   const rec = recRaw as { status: string; payment_source: string; payment_id: string; amount_sen: number };
   const source = rec.payment_source === 'SIPAY' ? 'SIPAY' : 'SOPAY';
   const { data: payRaw, error: payErr } = await sb.from(source === 'SIPAY' ? 'sales_invoice_payments' : 'mfg_sales_order_payments')
-    .select('id, amount_sen').eq('id', rec.payment_id).eq('company_id', co.companyId).maybeSingle();
+    .select('id, amount_sen, method').eq('id', rec.payment_id).eq('company_id', co.companyId).maybeSingle();
   if (payErr) return c.json({ error: 'load_failed', reason: payErr.message }, 500);
   if (!payRaw) return c.json({ error: 'payment_gone', message: 'The payment behind this receipt was deleted, so there is nothing to confirm.' }, 409);
   const paySen = Number((payRaw as { amount_sen: number }).amount_sen);
@@ -133,6 +133,15 @@ export const receiptFormalise = async (c: any): Promise<Response> => {
   const allowed = await confirmBankRefusal(sb, co.companyId, accountCode);
   if (!allowed.ok) return c.json({ error: 'load_failed', reason: allowed.reason }, 500);
   if (allowed.refusal) return c.json({ error: 'bank_not_allowed', message: allowed.refusal }, 400);
+  /* Posted before confirmation existed onto another account, and already
+     reconciled there: it is not moved — confirm it where it sits. */
+  if (rec.status !== 'FORMAL') {
+    const moving = await bankChangeRefusal(sb, {
+      source, paymentId: String(rec.payment_id), companyId: co.companyId, method: String((payRaw as { method?: string }).method ?? ''), bank: accountCode,
+    });
+    if (!moving.ok) return c.json({ error: moving.status, message: moving.reason }, 500);
+    if (moving.refusal) return c.json({ error: 'payment_reconciled', message: moving.refusal }, 409);
+  }
   const code = await companyCodeById(sb, co.companyId);
   if (!code) return c.json({ error: 'load_failed', reason: `company ${co.companyId} has no code` }, 500);
 
@@ -146,7 +155,7 @@ export const receiptFormalise = async (c: any): Promise<Response> => {
      re-runs the post, which echoes or heals). */
   let posting: { status: string; jeNo?: string; reason?: string };
   try {
-    const p = await postConfirmedPayment(sb, source, String(rec.payment_id), co.companyId);
+    const p = await postConfirmedPayment(sb, source, String(rec.payment_id), co.companyId, { newlyConfirmed: r.already !== true });
     posting = p.ok
       ? { status: p.status, ...('jeNo' in p ? { jeNo: p.jeNo } : {}) }
       : { status: p.status, ...(p.reason ? { reason: p.reason } : {}) };
