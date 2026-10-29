@@ -50,6 +50,12 @@ function harness(tables: Record<string, Row[]> = {}, perms: readonly string[] = 
       acc_vendor_memory: [],
       companies: [{ id: CO, code: '2990' }],
       customer_credits: [],
+      /* Each customer's own account — the order's by its customer id, the invoice's by its debtor code. One with
+         none is refused, never guessed onto the AR rule (chew, 29 Oct 2026). */
+      debtors: [
+        { company_id: CO, code: 'cust-1', name: 'Ah Meng', control_account: '300-0000', is_active: true },
+        { company_id: CO, code: 'D001', name: 'Ali', control_account: '300-0000', is_active: true },
+      ],
       entity_audit_log: [],
       journal_entries: [{ ...BOOKED_JE }],
       journal_entry_lines: [],
@@ -165,6 +171,16 @@ describe('create — the one line is the system\'s', () => {
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ error: 'refund_exceeds_booked', bookedSen: 50000, refundedSen: 30000, refundableSen: 20000 });
     expect(sb.tables.payment_vouchers).toHaveLength(1);
+  });
+
+  test('a customer with no account is refused with the reason, and nothing is written', async () => {
+    const { app, sb } = harness({ debtors: [] });
+    const res = await app.request('/payment-vouchers', json(REFUND));
+    expect(res.status).toBe(409);
+    const body = await res.json() as { error: string; message: string };
+    expect(body.error).toBe('customer_no_account');
+    expect(body.message).toContain('Customer cust-1 has no account');
+    expect(sb.tables.payment_vouchers).toHaveLength(0);
   });
 
   test('an ineligible document, a missing amount, a non-money Paid From — each refused before anything is written', async () => {

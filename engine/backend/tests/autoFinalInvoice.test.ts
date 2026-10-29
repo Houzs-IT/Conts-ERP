@@ -44,6 +44,8 @@ function harness(opts: { settings?: Row[]; doStatus?: string; extraDos?: Row[]; 
     // Conts C6: a copied line's code must be in Products.
     mfg_products: ['SOFA-3S', 'MAT-Q'].map((code) => ({ code, company_id: CO, status: 'ACTIVE' })),
     acc_account_roles: [],
+    /* The customer's own account: one with none is refused, never guessed onto the AR rule (chew, 29 Oct 2026). */
+    debtors: [{ company_id: CO, code: 'cust-larding', name: 'Larding Chen', control_account: '300-0000', is_active: true }],
     acc_company_settings: (opts.settings ?? []).map((r) => ({ ...r })),
     acc_item_group_accounts: [
       { company_id: CO, group_code: 'SOFA', sales_account: '500-0003', purchase_account: '601-0003' },

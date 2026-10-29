@@ -58,6 +58,8 @@ function harness() {
     accounts: CHART.map((r) => ({ ...r })),
     companies: [{ id: CO, code: '2990', name: '2990' }],
     acc_account_roles: [],
+    /* The customer's own account: one with none is refused, never guessed onto the AR rule (chew, 29 Oct 2026). */
+    debtors: [{ company_id: CO, code: 'cust-larding', name: 'Larding Chen', control_account: '300-0000', is_active: true }],
     acc_company_settings: [{ ...ON }],
     acc_item_group_accounts: [{ company_id: CO, group_code: 'SOFA', sales_account: '500-0003', purchase_account: '601-0003' }],
     mfg_sales_orders: [{ doc_no: SO, company_id: CO, status: 'DELIVERED', debtor_code: null, debtor_name: 'Larding Chen', customer_id: 'cust-larding', phone: '0123' }],

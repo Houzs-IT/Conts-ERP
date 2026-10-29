@@ -270,6 +270,7 @@ export const postCreditNoteHandler = async (c: any): Promise<Response> => {
   const posted = await postCreditNote(c.get('supabase'), { companyId: co.companyId, note, actor: who(c) });
   if (!posted.ok) {
     if (posted.status === 'lines_required') return c.json({ error: 'lines_required', message: posted.reason }, 400);
+    if (posted.status === 'customer_no_account') return c.json({ error: 'customer_no_account', message: posted.reason }, 409);
     if (posted.status === 'load_failed' || posted.status === 'save_failed') return c.json({ error: posted.status, reason: posted.reason }, 500);
     return c.json({ error: 'post_failed', status: posted.status, reason: posted.reason }, 500);
   }

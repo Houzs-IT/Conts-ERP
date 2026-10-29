@@ -18,8 +18,9 @@ export const roleKind = (role: AccountRole): RoleKind =>
 
 /** Rules nothing posts on any more, so they are not part of being ready: SALES was the template's (sales post by item
     group), INVENTORY and CLOSING_STOCK the one-account stock the three stock buckets replaced (2026-09-21), PETTY_CASH
-    the one petty cash account each float's own account replaced (Conts, chew 29 Oct 2026). */
-export const RETIRED_ROLES: readonly AccountRole[] = ["SALES", "INVENTORY", "CLOSING_STOCK", "PETTY_CASH"];
+    the one petty cash account each float's own account replaced (Conts, chew 29 Oct 2026), and AR: every customer posts
+    to its own account, and one without is never guessed onto a default (Conts, chew 29 Oct 2026). */
+export const RETIRED_ROLES: readonly AccountRole[] = ["SALES", "INVENTORY", "CLOSING_STOCK", "PETTY_CASH", "AR"];
 
 /** Rules whose account holds open balances — what customers and suppliers owe, money waiting in a clearing, deposits,
     stock. Moving one leaves those balances on the old account while new postings go to the new one, so the move is

@@ -57,6 +57,8 @@ const world = () => fakeSb({
     { company_id: 1, code: 'MBB', display_name: 'MBB', transit_account_code: '888-0000', is_active: true },
     { company_id: 1, code: 'PBB', display_name: 'PBB', transit_account_code: '999-0000', is_active: true },
   ],
+  /* The customer's own account: one with none is refused, never guessed onto the AR rule (chew, 29 Oct 2026). */
+  debtors: [{ company_id: 1, code: 'cust-1', control_account: DEFAULT_ROLE_CODES.AR }],
   mfg_sales_orders: [SO],
   mfg_sales_order_payments: [PAY()],
   journal_entries: [],

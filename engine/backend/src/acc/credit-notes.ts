@@ -129,7 +129,7 @@ export async function postCreditNote(
     }
   } else {
     const dr = await resolveDebtorRoles(sb, p.companyId, party.code);
-    if (!dr.ok) return { ok: false, status: 'load_failed', reason: dr.error };
+    if (!dr.ok) return { ok: false, status: dr.noAccount ? 'customer_no_account' : 'load_failed', reason: dr.error };
     roles = dr.roles;
   }
   const ruleLines = kind === 'CN' ? creditNoteLines(roles, { note_number: String(note.note_number) }, party, lines)

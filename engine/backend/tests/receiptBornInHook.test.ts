@@ -28,6 +28,8 @@ const world = () => fakeSb(
     companies: [{ id: CO, code: '2990', name: '2990' }],
     mfg_sales_orders: [{ doc_no: '2990-SO-2609-001', company_id: CO, debtor_code: null, debtor_name: 'Larding Chen', customer_id: 'cust-1', status: 'CONFIRMED' }],
     mfg_sales_order_payments: [],
+    /* The order's customer has an account of its own (chew, 29 Oct 2026: none is never guessed onto the AR rule). */
+    debtors: [{ company_id: CO, code: 'cust-1', name: 'Larding Chen', control_account: '300-0000', is_active: true }],
     acc_account_roles: [],
     acc_company_settings: [],
     acc_deposit_invoices: [],

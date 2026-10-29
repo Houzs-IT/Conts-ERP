@@ -57,6 +57,9 @@ function harness(opts: { settings?: Row[]; perms?: readonly string[]; payments?:
     mfg_sales_orders: ORDERS.map((r) => ({ ...r })),
     mfg_sales_order_payments: (opts.payments ?? []).map((r) => ({ ...r })),
     sales_invoices: INVOICES.map((r) => ({ ...r })),
+    /* Each order's customer has an account of its own: one with none is refused, never guessed onto the AR rule
+       (chew, 29 Oct 2026). */
+    debtors: ORDERS.map((o) => ({ company_id: CO, code: o.customer_id, name: o.debtor_name, control_account: '300-0000', is_active: true })),
     acc_account_roles: [],
     acc_company_settings: (opts.settings ?? []).map((r) => ({ ...r })),
     acc_deposit_invoices: [],
