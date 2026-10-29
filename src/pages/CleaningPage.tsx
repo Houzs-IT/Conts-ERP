@@ -717,7 +717,7 @@ function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSele
               {r.previous.lateCheckOut && <StatusBadge tone="warning" size="sm">Late checkout</StatusBadge>}
             </> : <span>No guest leaving</span>}
           </CardLine>
-          {rowT === 'overdue' && <div className={cx(CARD_NOTE, 'text-danger font-medium')}>Checkout time passed. Tap Guest has left once they are out.</div>}
+          {rowT === 'overdue' && <div className={cx(CARD_NOTE, 'text-danger font-medium')}>Checkout time passed.</div>}
           {r.guestOut && r.guestLeftAt && (
             <div className={cx(CARD_NOTE, 'text-muted-ink')}>
               {r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}
@@ -735,14 +735,14 @@ function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSele
         </CardLine>
       </>}
 
-      <div className="flex items-center gap-2 min-w-0 pt-0.5">
+      <div className="mt-auto flex items-center gap-2 min-w-0 pt-0.5">
         <CleanerChip r={r} cleaners={cleaners} assigning={assigning} onAssign={onAssign} />
         {meta && <span className="ml-auto min-w-0 truncate text-meta text-muted-ink">{meta}</span>}
       </div>
 
       {r.status === 'done'
-        ? <div className="mt-auto text-meta text-muted-ink">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</div>
-        : mayTick && !r.guestOut && <Button size="sm" variant="primary" className="w-full mt-auto" loading={busy} onClick={stop(onGuestLeft)}>Guest has left</Button>}
+        ? <div className="text-meta text-muted-ink">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</div>
+        : mayTick && !r.guestOut && <Button size="sm" variant="primary" className="w-full" loading={busy} onClick={stop(onGuestLeft)}>Guest has left</Button>}
     </div>
   );
 }
