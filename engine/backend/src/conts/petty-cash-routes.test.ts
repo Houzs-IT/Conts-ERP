@@ -26,7 +26,7 @@ const receipt = (over: Record<string, unknown>) => ({
   payback_pv_id: null, replaces_id: null, source: 'field_app', created_at: '2026-11-03T00:00:00Z', ...over,
 });
 const world = () => publicTablesOnly(fakeSb({
-  petty_cash_floats: [{ id: 'F1', company_id: CO, department_id: 'maint', keeper_user_id: 'u-keeper', float_sen: 100000, warn_pct: 20, active: true, topup_requested_at: null, account_code: '315-0101' }],
+  petty_cash_floats: [{ id: 'F1', company_id: CO, department_id: 'maint', keeper_user_id: 'u-keeper', float_sen: 100000, warn_pct: 20, active: true, topup_requested_at: null, account_code: '315-0101', opening_sen: 0, opening_on: null }],
   petty_cash_events: [{ id: 'E1', float_id: 'F1', kind: 'PAID_IN', amount_sen: 100000, event_date: '2026-11-01' }],
   staff_receipts: [receipt({ id: 'R1' }), receipt({ id: 'R2', receipt_no: 'CLM-2611-002', float_id: null, submitter_user_id: 'u-ops', amount_sen: 3000 })],
   staff_receipt_lines: [
@@ -118,6 +118,11 @@ describe('the overview', () => {
     expect(await (await patch({ openingSen: 50000 })).json()).toMatchObject({ error: 'opening_locked' }); // F1 has money paid in and a receipt
     sb.tables.petty_cash_events.length = 0;
     sb.tables.staff_receipts.splice(0, 1);
+    sb.tables.payment_vouchers.push({ id: 'PV9', company_id: CO, status: 'DRAFT', petty_cash_float_id: 'F1' }); // a top-up drafted from the balance
+    expect(await (await patch({ openingSen: 50000 })).json()).toMatchObject({ error: 'opening_locked' });
+    sb.tables.payment_vouchers[0].status = 'CANCELLED';
+    expect((await patch({ openingSen: 50000, openingOn: '2026-02-30' })).status).toBe(422);
+    expect((await patch({ openingSen: '' })).status).toBe(422);
     expect((await patch({ openingSen: 50000, openingOn: '2026-11-01' })).status).toBe(200);
     expect(sb.tables.petty_cash_floats[0]).toMatchObject({ opening_sen: 50000, opening_on: '2026-11-01' });
   });

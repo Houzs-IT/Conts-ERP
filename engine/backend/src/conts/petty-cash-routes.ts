@@ -140,15 +140,20 @@ async function isFloatAccountCode(sb: any, companyId: number, code: string): Pro
 }
 const NOT_A_BANK = { error: 'bank_is_petty_cash', message: "That is a petty cash float's account: choose the bank the money is paid from." };
 
-/** Whether anything has happened on a float yet: money paid in or returned, or a receipt handed in. Until then the
- *  cash it started with may be corrected; after, the balance has moved on from it. */
-async function floatStarted(sb: any, floatId: string): Promise<boolean> {
-  const [{ data: ev }, { data: rc }] = await Promise.all([
+/** Whether anything has happened on a float yet: money paid in or returned, a receipt handed in, or a top-up voucher
+ *  (even a draft: it was sized from the balance). Until then the cash it started with may be corrected. A failed read
+ *  throws rather than answering "not started". */
+async function floatStarted(sb: any, companyId: number, floatId: string): Promise<boolean> {
+  const [ev, rc, pv] = await Promise.all([
     sb.from('petty_cash_events').select('id').eq('float_id', floatId).limit(1),
     sb.from('staff_receipts').select('id').eq('float_id', floatId).limit(1),
+    sb.from('payment_vouchers').select('id, status').eq('company_id', companyId).eq('petty_cash_float_id', floatId),
   ]);
-  return ((ev ?? []) as unknown[]).length > 0 || ((rc ?? []) as unknown[]).length > 0;
+  for (const res of [ev, rc, pv]) if (res.error) throw new Error(String(res.error.message));
+  return (ev.data ?? []).length > 0 || (rc.data ?? []).length > 0 || ((pv.data ?? []) as Array<{ status: string }>).some(v => v.status !== 'CANCELLED');
 }
+/** A real calendar day, YYYY-MM-DD. */
+const isDay = (v: unknown): v is string => DATE.test(String(v ?? '')) && new Date(`${String(v)}T00:00:00Z`).toISOString().slice(0, 10) === String(v);
 
 async function accountNames(sb: any, companyId: number, codes: string[]): Promise<Map<string, string>> {
   if (codes.length === 0) return new Map();
@@ -208,7 +213,7 @@ export const listFloatsHandler = async (c: Ctx): Promise<Response> => {
     return {
       id: f.id, departmentId: f.department_id, departmentName: depts.get(f.department_id) ?? '', keeperUserId: f.keeper_user_id,
       keeperName: names.get(f.keeper_user_id) ?? '', accountCode: f.account_code, accountName: f.account_code ? accts.get(f.account_code) ?? '' : null,
-      openingSen: Number(f.opening_sen), openingOn: f.opening_on,
+      openingSen: Number(f.opening_sen ?? 0), openingOn: f.opening_on ?? null,
       floatSen: Number(f.float_sen), warnPct: Number(f.warn_pct), active: f.active,
       balanceSen: b.balanceSen, low: b.low, lastTopUpOn: b.lastTopUpOn, topUpRequested: f.topup_requested_at != null,
       waitingCheckSen: w.reduce((n, r) => n + Number(r.amount_sen), 0), waitingCheckCount: w.length,
@@ -229,7 +234,8 @@ export const createFloatHandler = async (c: Ctx): Promise<Response> => {
   const floatSen = sen(b?.floatSen);
   const warnPct = b?.warnPct == null ? 20 : Number(b.warnPct);
   const openingSen = b?.openingSen == null || b.openingSen === '' ? 0 : sen(b.openingSen);
-  const openingOn = DATE.test(String(b?.openingOn ?? '')) ? String(b!.openingOn) : todayMyt();
+  if (b?.openingOn != null && b.openingOn !== '' && !isDay(b.openingOn)) return c.json({ error: 'validation', message: 'Check the date the cash was counted.' }, 422);
+  const openingOn = isDay(b?.openingOn) ? b!.openingOn : todayMyt();
   if (!departmentId || !keeperUserId || !accountCode || floatSen == null || !(Number.isInteger(warnPct) && warnPct >= 0 && warnPct <= 100)) {
     return c.json({ error: 'validation', message: 'Pick the department, the keeper and the petty cash account, and enter the float.' }, 422);
   }
@@ -276,14 +282,15 @@ export const updateFloatHandler = async (c: Ctx): Promise<Response> => {
     if (live.some(x => x.id !== f.id && x.keeper_user_id === k)) return c.json({ error: 'keeper_has_float', message: 'This person already keeps a petty cash float.' }, 409);
     patch.keeper_user_id = k;
   }
-  if (b.openingSen !== undefined) {
-    const v = sen(b.openingSen);
+  if (b.openingSen !== undefined || b.openingOn !== undefined) {
+    const v = b.openingSen === undefined ? Number(f.opening_sen ?? 0) : typeof b.openingSen === 'number' || (typeof b.openingSen === 'string' && b.openingSen.trim() !== '') ? sen(b.openingSen) : null;
     if (v == null) return c.json({ error: 'validation', message: 'Enter the cash the keeper held at the start.' }, 422);
-    if (await floatStarted(c.get('supabase'), f.id)) {
+    if (b.openingOn !== undefined && !isDay(b.openingOn)) return c.json({ error: 'validation', message: 'Check the date the cash was counted.' }, 422);
+    if (await floatStarted(c.get('supabase'), co.companyId, f.id)) {
       return c.json({ error: 'opening_locked', message: 'Money or receipts have already moved on this float, so its starting cash can no longer change. Record the difference as cash returned or a top-up.' }, 409);
     }
     patch.opening_sen = v;
-    patch.opening_on = v > 0 ? (DATE.test(String(b.openingOn ?? '')) ? String(b.openingOn) : f.opening_on ?? todayMyt()) : null;
+    patch.opening_on = v > 0 ? (isDay(b.openingOn) ? b.openingOn : f.opening_on ?? todayMyt()) : null;
   }
   if (b.accountCode !== undefined) {
     const code = String(b.accountCode ?? '').trim();
@@ -317,7 +324,7 @@ export const floatReceiptsHandler = async (c: Ctx): Promise<Response> => {
   return c.json({
     float: { id: f.id, departmentName: depts.get(f.department_id) ?? '', keeperName: names.get(f.keeper_user_id) ?? '',
       accountCode: f.account_code, accountName: f.account_code ? accts.get(f.account_code) ?? '' : null,
-      openingSen: Number(f.opening_sen), openingOn: f.opening_on, floatSen: Number(f.float_sen), warnPct: Number(f.warn_pct), active: f.active, ...bal.get(f.id) },
+      openingSen: Number(f.opening_sen ?? 0), openingOn: f.opening_on ?? null, floatSen: Number(f.float_sen), warnPct: Number(f.warn_pct), active: f.active, ...bal.get(f.id) },
     receipts: await receiptViews(sb, co.companyId, rows),
   });
 };

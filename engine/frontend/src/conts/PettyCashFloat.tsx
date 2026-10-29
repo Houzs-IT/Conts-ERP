@@ -125,7 +125,7 @@ export function PettyCashFloat() {
       });
       if (account) await run(`${pettyPath}/floats/${id}`, { accountCode: account }, "PATCH");
     } else if (how === "opening") {
-      const v = await prompt({ title: "Cash the keeper held at the start", body: "Only before any receipt, top-up or cash returned on this float.", defaultValue: fmtSenPlain(f.openingSen).replace(/,/g, ""),
+      const v = await prompt({ title: "Cash the keeper held at the start", body: "Only before any receipt, top-up or cash returned on this float.", defaultValue: fmtSenPlain(f.openingSen ?? 0).replace(/,/g, ""),
         validate: (x) => (ringgitToSen0(x) == null ? "Enter an amount in RM, or 0." : null) });
       if (v != null) await run(`${pettyPath}/floats/${id}`, { openingSen: ringgitToSen0(v) }, "PATCH");
     } else if (how === "close") {
@@ -192,7 +192,7 @@ export function PettyCashFloat() {
         } />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
         <StatCard label="Float" value={f ? <Money sen={f.floatSen} /> : null} pending={!f} failed={q.isError} onRetry={() => void q.refetch()}
-          subtitle={f && f.openingSen > 0 ? `Started with RM ${fmtSenPlain(f.openingSen)}${f.openingOn ? ` on ${f.openingOn}` : ""}` : undefined} />
+          subtitle={f?.openingSen ?  `Started with RM ${fmtSenPlain(f.openingSen)}${f.openingOn ? ` on ${f.openingOn}` : ""}` : undefined} />
         <StatCard label="Balance (cash the keeper should hold)" value={f ? <Money sen={f.balanceSen} strong /> : null} pending={!f} failed={q.isError}
           tone={f && f.balanceSen < 0 ? "error" : f?.low ? "warning" : "default"}
           subtitle={f ? (f.balanceSen < 0 ? "Below zero: the keeper's own money is in it" : f.low ? "Running low" : `Top-up now: RM ${fmtSenPlain(Math.max(0, f.floatSen - f.balanceSen))}`) : undefined} />
