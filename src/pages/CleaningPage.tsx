@@ -539,7 +539,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         <button type="button" onClick={() => setShut(v => !v)} aria-expanded={!shut}
           className="min-w-0 mr-auto flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
           <Icon name={shut ? 'ChevronRight' : 'ChevronDown'} size="sm" color="var(--color-muted-ink)" />
-          <span className="text-[15px] font-semibold tracking-[-0.005em]">{group.name}</span>
+          <span className="text-[16px] font-semibold tracking-[-0.005em]">{group.name}</span>
           <span className="text-meta text-muted-ink tabular-nums">{plural(group.rows.length, 'job')} · {doneN} done</span>
           {group.departures.length > 0 && <StatusBadge tone="critical">{group.departures.length} to plan</StatusBadge>}
         </button>
@@ -664,9 +664,18 @@ function CleanerChip({ r, cleaners, assigning, onAssign }: { r: Row; cleaners: C
   );
 }
 
-/** One job on tablet and up, laid out like the reference board: unit and status pill, who leaves, who arrives, the
- *  cleaner dropdown, and one button for what is next. Only the border carries the colour (red: checkout time passed
- *  and nobody ticked; yellow: guest out, clean not finished). */
+/** One colour per card, used by its border and its status pill alike: red when the checkout time has passed and nobody
+ *  ticked, yellow once the guest is out (or the cleaner started) and the clean is not finished, else the status's own. */
+const CARD_TONE: Record<NonNullable<CleanRowTone>, { border: string; pill: 'critical' | 'warning' }> = {
+  overdue: { border: 'border-danger-line', pill: 'critical' },
+  out: { border: 'border-warning-line', pill: 'warning' },
+};
+const CARD = 'rounded-card border-2 border-solid p-4 text-copy flex flex-col gap-2.5 min-w-0';
+const CARD_TITLE = 'text-[17px] leading-tight font-bold text-ink [overflow-wrap:anywhere]';
+const CARD_NOTE = 'pl-6 text-meta';
+
+/** One job on tablet and up, laid out like the reference board. Every card has the same rows in the same order (title and
+ *  status, leaving guest, arriving guest, cleaner, then the one action that is next), so they line up across the grid. */
 function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onAssign, picked, onPick }: {
   r: Row; now: number; active: boolean; busy: boolean; assigning: boolean; savingIn: boolean; cleaners: Cleaner[]; onSelect: () => void; onGuestLeft: () => void; onUndoLeft: () => void;
   onCheckIn: (time: string) => void; onAssign: (cleanerIds: string[], label: string) => void; picked?: boolean; onPick?: (on: boolean) => void;
@@ -675,100 +684,95 @@ function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSele
   const files = r.photoCount + r.videoCount;
   const mayTick = !!r.previous && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
   const pending = !!r.previous && !r.guestOut && r.status !== 'done' && r.status !== 'cleaning';
-  const tone = rowTone(r, now);
+  const rowT = rowTone(r, now);
+  const tone = rowT ? CARD_TONE[rowT] : null;
   const meta = [r.unit?.size ?? r.unit?.layout, KIND_LABEL[r.kind] ?? r.kind].filter(Boolean).join(' · ');
   const arrives = r.day === mytDay(0) ? 'today' : dayLabel(r.day);
   const stop = (fn: () => void) => (e: { stopPropagation: () => void }) => { e.stopPropagation(); fn(); };
+  const pillLabel = pending ? 'Pending checkout' : PHONE_STATUS[r.status] ?? st.label;
   return (
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(); } }}
-      className={cx('rounded-card border-2 border-solid p-4 text-copy cursor-pointer flex flex-col gap-3 min-w-0 outline-none focus-visible:[box-shadow:0_0_0_2px_var(--color-gold)]',
-        active ? 'bg-gold-tint border-[var(--color-gold)]' : tone === 'overdue' ? 'bg-card border-danger-line' : tone === 'out' ? 'bg-card border-warning-line' : 'bg-card border-line hover:bg-page')}>
+      className={cx(CARD, 'cursor-pointer outline-none focus-visible:[box-shadow:0_0_0_2px_var(--color-gold)]',
+        active ? 'bg-gold-tint border-[var(--color-gold)]' : cx('bg-card hover:bg-page', tone?.border ?? 'border-line'))}>
       <div className="flex items-start gap-3 min-w-0">
         {onPick && (
           <input type="checkbox" checked={!!picked} onChange={e => onPick(e.target.checked)} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
-            aria-label={`Select ${r.unitNumber}, ${dayLabel(r.day)}`} className="flex-none w-4 h-4 mt-1.5 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
+            aria-label={`Select ${r.unitNumber}, ${dayLabel(r.day)}`} className="flex-none w-4 h-4 mt-1 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
         )}
         <div className="min-w-0 flex-1 flex items-baseline flex-wrap gap-x-2 gap-y-0.5">
-          <b className="text-[20px] leading-tight font-bold text-ink [overflow-wrap:anywhere]">{r.external ? r.external.address : r.unitNumber}</b>
+          <b className={CARD_TITLE}>{r.external ? r.external.address : r.unitNumber}</b>
           {r.carriedOver && <span className="text-meta font-medium text-muted-ink whitespace-nowrap" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</span>}
         </div>
-        <span className="flex-none">
-          {pending
-            ? <StatusBadge tone={tone === 'overdue' ? 'critical' : 'warning'} outline size="sm">Pending checkout</StatusBadge>
-            : <StatusBadge tone={st.tone} size="sm">{PHONE_STATUS[r.status] ?? st.label}</StatusBadge>}
-        </span>
+        <span className="flex-none"><StatusBadge tone={tone?.pill ?? st.tone} size="sm">{pillLabel}</StatusBadge></span>
       </div>
 
       {r.external ? (
         <CardLine icon="Users" className="text-muted-ink"><span className="text-ink">{r.external.clientName ?? 'No client name'}</span>{r.external.clientPhone && <span>{r.external.clientPhone}</span>}</CardLine>
-      ) : (
-        <>
-          {r.previous && (
-            <div className="flex flex-col gap-0.5 min-w-0">
-              <CardLine icon="Users" className="text-muted-ink">
-                <span className="text-ink">{r.previous.guestName}</span>
-                {tone === 'overdue' ? <b className="text-gold-ink font-semibold">Past checkout time ({r.previous.checkOutTime})</b> : <span>Checkout by <b className="[font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b></span>}
-                {r.previous.lateCheckOut && <StatusBadge tone="warning" size="sm">Late checkout</StatusBadge>}
-              </CardLine>
-              {r.guestOut && r.guestLeftAt && (
-                <div className="pl-6 text-meta text-muted-ink">
-                  {r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}
-                  {mayTick && <> · <button type="button" disabled={busy} onClick={stop(onUndoLeft)} onKeyDown={e => e.stopPropagation()}
-                    className="p-0 bg-transparent border-0 underline cursor-pointer text-muted-ink [font-family:inherit] [font-size:inherit] disabled:opacity-50">Undo</button></>}
-                </div>
-              )}
+      ) : <>
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <CardLine icon="Users" className="text-muted-ink">
+            {r.previous ? <>
+              <span className="text-ink">{r.previous.guestName}</span>
+              <span>Checkout by <b className="text-ink [font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b></span>
+              {r.previous.lateCheckOut && <StatusBadge tone="warning" size="sm">Late checkout</StatusBadge>}
+            </> : <span>No guest leaving</span>}
+          </CardLine>
+          {rowT === 'overdue' && <div className={cx(CARD_NOTE, 'text-danger font-medium')}>Checkout time passed. Tap Guest has left once they are out.</div>}
+          {r.guestOut && r.guestLeftAt && (
+            <div className={cx(CARD_NOTE, 'text-muted-ink')}>
+              {r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}
+              {mayTick && <> · <button type="button" disabled={busy} onClick={stop(onUndoLeft)} onKeyDown={e => e.stopPropagation()}
+                className="p-0 bg-transparent border-0 underline cursor-pointer text-muted-ink [font-family:inherit] [font-size:inherit] disabled:opacity-50">Undo</button></>}
             </div>
           )}
-          {r.next && (
-            <CardLine icon="LogIn" className={cx('font-medium', r.status === 'done' ? 'text-muted-ink' : 'text-danger')}>
-              <span>Next guest arrives {arrives} <CheckInTime time={r.next.checkInTime} saving={savingIn} onSave={r.next.reservationId && r.status !== 'done' ? onCheckIn : undefined} />
-                {r.next.earlyCheckIn && <span className="ml-1.5"><StatusBadge tone="warning" size="sm">Early check-in</StatusBadge></span>}</span>
-              <span className="text-meta whitespace-nowrap"><TimeLeft at={r.next.checkInAt} now={now} done={r.status === 'done'} /></span>
-            </CardLine>
-          )}
-        </>
-      )}
+        </div>
+        <CardLine icon="LogIn" className={cx(r.next && r.status !== 'done' ? 'text-danger font-medium' : 'text-muted-ink')}>
+          {r.next ? <>
+            <span>Next guest arrives {arrives} <CheckInTime time={r.next.checkInTime} saving={savingIn} onSave={r.next.reservationId && r.status !== 'done' ? onCheckIn : undefined} /></span>
+            {r.next.earlyCheckIn && <StatusBadge tone="warning" size="sm">Early check-in</StatusBadge>}
+            <span className="text-meta font-normal whitespace-nowrap"><TimeLeft at={r.next.checkInAt} now={now} done={r.status === 'done'} /></span>
+          </> : <span>No check-in {arrives}</span>}
+        </CardLine>
+      </>}
 
-      {r.status === 'done' && <div className="text-meta text-muted-ink">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</div>}
-
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center gap-2 min-w-0 pt-0.5">
         <CleanerChip r={r} cleaners={cleaners} assigning={assigning} onAssign={onAssign} />
         {meta && <span className="ml-auto min-w-0 truncate text-meta text-muted-ink">{meta}</span>}
       </div>
 
-      {mayTick && !r.guestOut && (
-        <Button size="sm" variant={tone === 'overdue' ? 'danger' : 'primary'} className="w-full mt-auto" loading={busy} onClick={stop(onGuestLeft)}>Guest has left</Button>
-      )}
+      {r.status === 'done'
+        ? <div className="mt-auto text-meta text-muted-ink">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</div>
+        : mayTick && !r.guestOut && <Button size="sm" variant="primary" className="w-full mt-auto" loading={busy} onClick={stop(onGuestLeft)}>Guest has left</Button>}
     </div>
   );
 }
 
-/** A checkout with no cleaning job yet, drawn like a job card. */
+/** A checkout with no cleaning job yet, drawn with the same rows as a job card. */
 function DepartureCard({ d, now, future, busy, savingIn, onGuestLeft, onCheckIn, onPlan }: {
   d: Departure; now: number; future: boolean; busy: { left: boolean; plan: boolean }; savingIn: boolean;
   onGuestLeft: () => void; onCheckIn: (time: string) => void; onPlan: () => void;
 }) {
   return (
-    <div className="rounded-card border-2 border-solid border-danger-line bg-card p-4 text-copy flex flex-col gap-3 min-w-0">
+    <div className={cx(CARD, 'bg-card border-danger-line')}>
       <div className="flex items-start gap-3 min-w-0">
-        <b className="min-w-0 flex-1 text-[20px] leading-tight font-bold text-ink [overflow-wrap:anywhere]">{d.unitNumber}</b>
-        <span className="flex-none"><StatusBadge tone="critical" outline size="sm">No cleaning job</StatusBadge></span>
+        <b className={cx(CARD_TITLE, 'min-w-0 flex-1')}>{d.unitNumber}</b>
+        <span className="flex-none"><StatusBadge tone="critical" size="sm">No cleaning job</StatusBadge></span>
       </div>
       <CardLine icon="Users" className="text-muted-ink">
         <span className="text-ink">{d.guestName}</span>
-        <span>Checkout by <b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b></span>
+        <span>Checkout by <b className="text-ink [font-variant-numeric:tabular-nums]">{d.checkOutTime}</b></span>
         {d.lateCheckOut && <StatusBadge tone="warning" size="sm">Late checkout</StatusBadge>}
         {d.state === 'checked_out' && <StatusBadge tone="gold" size="sm">Out</StatusBadge>}
       </CardLine>
-      {d.next && (
-        <CardLine icon="LogIn" className="font-medium text-danger">
+      <CardLine icon="LogIn" className={d.next ? 'text-danger font-medium' : 'text-muted-ink'}>
+        {d.next ? <>
           <span>Next guest arrives today <CheckInTime time={d.next.checkInTime} saving={savingIn} onSave={d.next.reservationId ? onCheckIn : undefined} /></span>
-          <span className="text-meta whitespace-nowrap"><TimeLeft at={d.next.checkInAt} now={now} /></span>
-        </CardLine>
-      )}
-      <div className="mt-auto flex flex-col gap-2">
-        <Button size="sm" variant="primary" className="w-full" loading={busy.plan} onClick={onPlan}>Plan cleaning</Button>
-        {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" className="w-full" loading={busy.left} onClick={onGuestLeft}>Guest has left</Button>}
+          <span className="text-meta font-normal whitespace-nowrap"><TimeLeft at={d.next.checkInAt} now={now} /></span>
+        </> : <span>No check-in today</span>}
+      </CardLine>
+      <div className="mt-auto pt-0.5 flex items-center gap-2">
+        <Button size="sm" variant="primary" className="flex-1" loading={busy.plan} onClick={onPlan}>Plan cleaning</Button>
+        {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" className="flex-1" loading={busy.left} onClick={onGuestLeft}>Guest has left</Button>}
       </div>
     </div>
   );
