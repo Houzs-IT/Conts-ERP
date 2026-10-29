@@ -22,6 +22,10 @@ interface Payload { year: string; months: string[]; units: Unit[]; rows: YearlyR
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const unitName = (u: Unit) => `${u.building} ${u.number}`;
 const GRID = '[border-left:1px_solid_var(--color-line)]';
+/** The Show filter: one option per figure, plus the three cleaning tables together. */
+const CLEANING = ['cleanerCost', 'cleaningOwner', 'cleaningEarned'];
+const SHOW_OPTIONS = [...BLOCKS.slice(0, 8), { key: 'cleaning', label: 'Cleaning (all three)' }, ...BLOCKS.slice(8)].map(b => ({ value: b.key, label: b.label }));
+const showsBlock = (show: string, key: string) => !show || show === key || (show === 'cleaning' && CLEANING.includes(key));
 
 function Cell({ sen, strong }: { sen: number | null; strong?: boolean }) {
   if (sen === null) return <span className="text-muted-ink">–</span>;
@@ -83,7 +87,7 @@ export default function YearlyReportPage() {
   const url = useUrlState();
   const thisYear = Number(todayMyt().slice(0, 4));
   const year = String(Math.min(thisYear, Math.max(2020, Number(url.get('year')) || thisYear)));
-  const building = url.get('building'), contract = url.get('contract'), q = url.get('q').trim().toLowerCase();
+  const show = url.get('report'), building = url.get('building'), contract = url.get('contract'), q = url.get('q').trim().toLowerCase();
   const { data, loading, error, reload } = useApi<Payload>(`/finance/yearly-report?year=${year}`);
 
   const shown = useMemo(() => (data?.units ?? []).filter(u => (!building || u.building === building) && (!q || `${u.building} ${u.number} ${u.owner}`.toLowerCase().includes(q))), [data, building, q]);
@@ -120,6 +124,7 @@ export default function YearlyReportPage() {
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2">
           <Select label="Year" value={year} onChange={v => url.set({ year: v === String(thisYear) ? null : v })} className="w-[130px]" options={years.map(y => ({ value: y, label: y }))} />
+          <FilterSelect label="Report" value={show} all="All reports" onChange={v => url.set({ report: v })} options={SHOW_OPTIONS} className="w-[260px]" />
           <FilterSelect label="Building" value={building} all="All buildings" onChange={v => url.set({ building: v })} options={buildings} className="w-[200px]" />
           <FilterSelect label="Contract" value={contract} all="All contracts" onChange={v => url.set({ contract: v })}
             options={[{ value: 'PS', label: 'Profit share' }, { value: 'LT', label: 'Fixed rent' }]} className="w-[160px]" />
@@ -129,7 +134,7 @@ export default function YearlyReportPage() {
         {error && <StaleBanner message={data ? `Showing the last figures we have. ${error}` : error} onRetry={reload} />}
         {loading && !data ? <TableSkeleton rows={8} cols={7} />
           : !rows.length ? <EmptyState kind={building || contract || q ? 'filtered' : 'empty'} title="No figures for this year." />
-          : BLOCKS.map(b => {
+          : BLOCKS.filter(b => showsBlock(show, b.key)).map(b => {
             const grid = grids.find(g => g.key === b.key);
             return grid && <Section key={b.key} title={b.label} note={BLOCK_NOTE[b.key]}><Grid grid={grid} units={shown} months={data?.months ?? []} toDate={data?.toDate ?? null} /></Section>;
           })}
