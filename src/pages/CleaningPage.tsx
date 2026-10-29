@@ -694,7 +694,7 @@ function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSele
         </div>
         <span className="flex-none">
           {pending
-            ? <StatusBadge tone={tone === 'overdue' ? 'critical' : 'warning'} outline size="sm"><Icon name="LogOut" size="sm" />Pending checkout</StatusBadge>
+            ? <StatusBadge tone={tone === 'overdue' ? 'critical' : 'warning'} outline size="sm">Pending checkout</StatusBadge>
             : <StatusBadge tone={st.tone} size="sm">{PHONE_STATUS[r.status] ?? st.label}</StatusBadge>}
         </span>
       </div>
