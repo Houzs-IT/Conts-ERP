@@ -529,3 +529,30 @@ export const putStaffBankHandler = async (c: Ctx): Promise<Response> => {
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
   return c.json({ ok: true });
 };
+
+/** What finance's petty cash screens pick from: departments and staff (Property OS), banks to pay from, and the
+ *  accounts a receipt or a write-off may go to (never money or a control account). */
+export const optionsHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const [{ data: depts }, { data: staff }, accts, roles] = await Promise.all([
+    sb.schema('public').from('conts_departments').select('id, name, kind, side'),
+    sb.schema('public').from('conts_staff').select('id, full_name, department_id, active'),
+    allRows<{ account_code: string; account_name: string; account_type: string; acc_money: boolean | null; special_type: string | null; parent_code: string | null; is_active: boolean | null }>((f, t) =>
+      sb.from('accounts').select('account_code, account_name, account_type, acc_money, special_type, parent_code, is_active').eq('company_id', co.companyId).order('account_code').range(f, t)),
+    resolveRoles(sb, co.companyId),
+  ]);
+  const active = accts.filter(a => a.is_active === true);
+  const headers = new Set(accts.map(a => a.parent_code).filter(Boolean));
+  const reserved = new Set([...CONTROL_ROLES.map(r => roles[r]), roles.PETTY_CASH, roles.CASH, roles.BANK_DEFAULT, roles.CUSTOMER_DEPOSITS]);
+  const costable = active.filter(a => !headers.has(a.account_code) && a.acc_money !== true && !a.special_type && !reserved.has(a.account_code));
+  return c.json({
+    departments: ((depts ?? []) as Array<{ id: string; name: string; kind: string; side: string }>).map(d => ({ id: d.id, name: d.name, kind: d.kind, side: d.side })).sort((a, b) => a.name.localeCompare(b.name)),
+    staff: ((staff ?? []) as Array<{ id: string; full_name: string; department_id: string | null; active: boolean }>).filter(s => s.active).map(s => ({ id: s.id, name: s.full_name, departmentId: s.department_id })).sort((a, b) => a.name.localeCompare(b.name)),
+    banks: active.filter(a => a.acc_money === true && a.account_code !== roles.PETTY_CASH).map(a => ({ code: a.account_code, name: a.account_name })),
+    expenseAccounts: costable.filter(a => a.account_type === 'EXPENSE').map(a => ({ code: a.account_code, name: a.account_name })),
+    writeOffAccounts: costable.map(a => ({ code: a.account_code, name: a.account_name })),
+    pettyCashAccountSet: roles.PETTY_CASH !== roles.CASH,
+  });
+};

@@ -232,6 +232,7 @@ accounting.get('/limit-requests', listLimitRequestsHandler);
 accounting.post('/limit-requests/:id/approve', approveLimitRequestHandler);
 accounting.post('/limit-requests/:id/reject', rejectLimitRequestHandler);
 /* Conts: petty cash floats and staff receipts (conts/petty-cash-routes.ts; SOP 6). */
+accounting.get('/petty-cash/options', pettyCash.optionsHandler);
 accounting.get('/petty-cash/floats', pettyCash.listFloatsHandler);
 accounting.post('/petty-cash/floats', pettyCash.createFloatHandler);
 accounting.patch('/petty-cash/floats/:id', pettyCash.updateFloatHandler);
