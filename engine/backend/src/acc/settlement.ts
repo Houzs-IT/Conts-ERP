@@ -33,7 +33,7 @@ import type { ParseResult } from './settlement-parse';
 import { resolveRoles, settlementLines, settlementReceiptLines, statementChargeLines, clearingMoveLinesFrom } from './rules';
 import { recordSoAudit } from '../scm/lib/so-audit';
 import { deriveAccountSheet } from '../scm/lib/so-payment-row';
-import { formaliseReceiptsForSettlement } from './receipts';
+import { confirmReceiptsForSettlement } from './receipt-confirm';
 import { companyCodeById } from '../scm/lib/doc-no';
 import type { PaymentCandidate } from './settlement-match';
 import { fmtSen } from '../scm/shared/format';
@@ -977,11 +977,13 @@ export async function confirmSettlementRow(sb: any, input: ConfirmInput): Promis
      on the acquirer's payout bank (GL redesign item 9 — 卡款 merchant recon
      确认那笔时自动转正). BEST-EFFORT: the confirm's truth is the fee entry
      above; a receipt hiccup (or an unconfigured bank letter) leaves the OR
-     in draft for the manual confirm button, never unwinds the settlement. */
+     in draft for the manual confirm button, never unwinds the settlement.
+     A receipt formalised here is the payment confirmed (SOP 4.2), so its
+     payment posts now — Dr its clearing account / Cr the customer. */
   try {
     const code = await companyCodeById(sb, companyId);
     if (code) {
-      await formaliseReceiptsForSettlement(
+      await confirmReceiptsForSettlement(
         sb, companyId, code,
         chosen.map((p) => ({ source: p.source, id: p.id })),
         acq.acquirer.bank_account_code ?? null,

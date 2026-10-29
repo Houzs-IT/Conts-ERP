@@ -62,8 +62,9 @@ export async function insertSiPaymentRow(sb: any, p: SiPaymentRowInput) {
     created_by:         p.createdBy,
   }).select(SI_PAYMENT_COLS).single();
 
-  /* The Official Receipt is born with the payment (GL redesign item 9) —
-     DRAFT for card/transfer, formal at once for cash. BEST-EFFORT: the money
+  /* The Official Receipt is born with the payment (GL redesign item 9) — a
+     DRAFT for every method until finance confirms the money (SOP 4.2), which
+     is when the payment posts (acc/receipt-confirm). BEST-EFFORT: the money
      is recorded; a receipt hiccup must never un-record it, and
      ensureReceiptForPayment heals the gap at the next print. */
   if (!res.error) {

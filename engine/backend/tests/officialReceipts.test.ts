@@ -1,7 +1,7 @@
 // Official Receipts (GL redesign item 9). Pinned:
-//   • a recorded card payment births a DRAFT receipt ({co}DraftOR-YYMM-NNN);
-//     a CASH payment is FORMAL in the same breath on the COR series — 钱当场
-//     在手; one payment, one receipt, forever (the retry finds the row);
+//   • a recorded payment births a DRAFT receipt ({co}DraftOR-YYMM-NNN) — cash
+//     too since SOP 4.2 (29 Oct 2026): finance confirms it onto the bank it was
+//     deposited in; one payment, one receipt, forever (the retry finds the row);
 //   • the manual confirm mints the channel number from the money account's
 //     letter (default bank when none named) and refuses, with the setup card
 //     named, when the bank has no letter;
@@ -27,7 +27,7 @@ const world = (over: Record<string, Row[]> = {}) => fakeSb(
     acc_bank_letters: [{ company_id: CO, account_code: '310-0010', letter: 'M' }],
     acc_numbering: [],
     acc_account_roles: [],
-    accounts: [],
+    accounts: [{ company_id: CO, account_code: '310-0010', account_name: 'CASH AT BANK', acc_money: true, is_active: true }],
     companies: [{ id: CO, code: '2990' }],
     mfg_sales_order_payments: [],
     sales_invoice_payments: [],
@@ -56,11 +56,12 @@ describe('birth', () => {
     expect(sb.tables.acc_official_receipts).toHaveLength(1);
   });
 
-  test('a CASH payment is FORMAL in the same breath, on the COR series', async () => {
+  test('a CASH payment is a DRAFT like any other — finance confirms it onto a bank', async () => {
     const sb = world();
     const r = await createReceiptForPayment(sb, { ...CARD, paymentId: 'p2', method: 'cash' });
-    expect(r).toMatchObject({ ok: true, status: 'FORMAL', orNumber: `2990-COR-${yymm}-001` });
-    expect(sb.tables.acc_official_receipts[0]).toMatchObject({ status: 'FORMAL', channel_account_code: '320-0000' });
+    expect(r).toMatchObject({ ok: true, status: 'DRAFT', orNumber: `2990-DraftOR-${yymm}-001` });
+    expect(sb.tables.acc_official_receipts[0]).toMatchObject({ status: 'DRAFT' });
+    expect(sb.tables.acc_official_receipts[0]!.channel_account_code ?? null).toBeNull();
   });
 });
 

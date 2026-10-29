@@ -16,6 +16,12 @@
 //     carries that money (the same seam as migrated_no_stock documents).
 //   • zero/negative amounts — a refund is a different document, not a
 //     negative receipt.
+//   • a payment finance has not confirmed yet (Conts, chew 29 Oct 2026; SOP
+//     4.2/4.5): money counts as received only once finance has checked the
+//     bank, i.e. its official receipt is FORMAL. Until then the poster answers
+//     'waiting_confirmation' and writes nothing; acc/receipt-confirm posts it
+//     the moment the receipt is formalised. Cash and transfer then debit the
+//     bank finance chose (the receipt's channel account, else BANK_DEFAULT).
 // ----------------------------------------------------------------------------
 
 import { postJournal, reverseJournal, validateJournal, type ReverseJournalResult } from './engine';
@@ -25,6 +31,7 @@ import { accMastersCompanyId } from './masters-company';
 import { paymentEntryDrift, type EntryFact, type PaymentDrift, type PaymentFact } from './payment-drift';
 import { mytDateOf } from '../scm/lib/my-time';
 import { isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
+import { awaitsConfirmation, confirmedPaymentIds, receiptConfirmation } from './receipts';
 
 /** A customer with no account of its own: refused for finance to set it, unless the payment is dated before the books
     start, which the opening balances already carry and which is skipped as it always was. */
@@ -58,6 +65,8 @@ export type PostPaymentResult =
   | { ok: true; status: 'posted' | 'already_posted'; jeNo: string; jeId: string }
   /** skipped_before_ledger_start: dated before the books start (Conts) — in the opening balances. */
   | { ok: true; status: 'skipped_imported' | 'skipped_zero' | 'skipped_before_ledger_start' }
+  /** Finance has not confirmed the money yet (its receipt is not FORMAL): nothing written, a normal wait. */
+  | { ok: true; status: 'waiting_confirmation' }
   /** The dry run's answer: the gate would take it, with these lines (docs/bugs/0652). */
   | { ok: true; status: 'would_post'; entryDate: string; lines: RuleLine[] }
   | { ok: false; status: string; reason?: string };
@@ -109,6 +118,22 @@ const paymentDate = (paidAt: string | null): string | null => {
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
 };
 
+/** The bank a confirmed payment landed in (null: none named, BANK_DEFAULT
+    answers), or the wait, or the failed read. Card money ignores the bank and
+    keeps its clearing account; a row that is not money arriving (a customer
+    credit applied) has nothing to confirm and keeps today's posting. */
+async function confirmedMoney(
+  sb: any,
+  source: 'SOPAY' | 'SIPAY',
+  p: { id: string; method: string; amount_sen: number },
+): Promise<{ ok: true; bank: string | null } | { ok: true; waiting: true } | { ok: false; status: string; reason: string }> {
+  if (!awaitsConfirmation(p.method, p.amount_sen)) return { ok: true, bank: null };
+  const conf = await receiptConfirmation(sb, source, p.id);
+  if (!conf.ok) return { ok: false, status: 'receipt_read_failed', reason: conf.reason };
+  if (!conf.confirmed) return { ok: true, waiting: true };
+  return { ok: true, bank: conf.channelAccountCode };
+}
+
 export async function postSoPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: boolean } = {}): Promise<PostPaymentResult> {
   if (p.method === 'imported') return { ok: true, status: 'skipped_imported' };
   /* Money moved from a cancelled order is not money received: it books the
@@ -118,6 +143,9 @@ export async function postSoPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: b
   if (!Number.isInteger(amountSen) || amountSen <= 0) return { ok: true, status: 'skipped_zero' };
   const entryDate = paymentDate(p.paid_at);
   if (!entryDate) return { ok: false, status: 'bad_paid_at', reason: `payment ${p.id} has no usable paid_at` };
+  const money = await confirmedMoney(sb, 'SOPAY', p);
+  if (!money.ok) return { ok: false, status: money.status, reason: money.reason };
+  if ('waiting' in money) return { ok: true, status: 'waiting_confirmation' };
 
   // The SO carries the company and the customer identity for the AR leg.
   // The order table names its customer debtor_name (and the phone, phone) —
@@ -157,6 +185,7 @@ export async function postSoPayment(sb: any, p: SoPaymentRow, opts: { dryRun?: b
       method: p.method,
       docNo: p.so_doc_no,
       transitAccountCode: transit,
+      moneyAccountCode: money.bank || roles.BANK_DEFAULT,
       customerCode,
       customerName,
     }, amountSen),
@@ -290,6 +319,9 @@ export async function postSiPayment(sb: any, p: SiPaymentRow): Promise<PostPayme
   /* A migrated invoice booked NO receivable here (AutoCount carries it), so
      its payment must not relieve an AR this ledger never recorded. */
   if (inv.migrated_no_stock === true) return { ok: true, status: 'skipped_imported' };
+  const money = await confirmedMoney(sb, 'SIPAY', p);
+  if (!money.ok) return { ok: false, status: money.status, reason: money.reason };
+  if ('waiting' in money) return { ok: true, status: 'waiting_confirmation' };
 
   const companyId = inv.company_id ?? p.company_id ?? null;
   /* The customer the invoice named on its AR (post-si-revenue): the debtor code, else the order's customer — so the
@@ -317,6 +349,7 @@ export async function postSiPayment(sb: any, p: SiPaymentRow): Promise<PostPayme
       method: p.method,
       docNo: inv.invoice_number ?? p.sales_invoice_id,
       transitAccountCode: transit,
+      moneyAccountCode: money.bank || roles.BANK_DEFAULT,
       customerCode,
       customerName: inv.debtor_name ?? null,
     }, amountSen),
@@ -495,9 +528,28 @@ export type NeverBooked = { count: number; totalSen: number; firstPaidOn: string
 
 async function neverBookedSummary(sb: any, companyId: number): Promise<{ ok: true; summary: NeverBooked } | { ok: false; reason: string }> {
   const summary: NeverBooked = { count: 0, totalSen: 0, firstPaidOn: null, lastPaidOn: null };
-  const fold = (raw: Array<Record<string, any>>) => {
+  /* Only money finance has confirmed was due to book (acc/receipts). */
+  const confirmed = new Set<string>();
+  {
+    let from = 0;
+    const page = 1000;
+    for (;;) {
+      const { data, error } = await sb.from('acc_official_receipts')
+        .select('payment_source, payment_id')
+        .eq('company_id', companyId).eq('status', 'FORMAL')
+        .order('id')
+        .range(from, from + page - 1);
+      if (error) return { ok: false, reason: `receipts: ${error.message}` };
+      const rows = (data ?? []) as Array<{ payment_source: string; payment_id: string }>;
+      for (const r of rows) confirmed.add(`${r.payment_source}:${r.payment_id}`);
+      if (rows.length < page) break;
+      from += page;
+    }
+  }
+  const fold = (source: 'SOPAY' | 'SIPAY', raw: Array<Record<string, any>>) => {
     for (const r of raw) {
       if (String(r.method ?? '') === 'imported') continue;
+      if (awaitsConfirmation(String(r.method ?? ''), r.amount_sen) && !confirmed.has(`${source}:${String(r.id ?? '')}`)) continue;
       const amountSen = Number(r.amount_sen ?? 0);
       if (!Number.isInteger(amountSen) || amountSen <= 0) continue;
       const paidOn = String(r.paid_at ?? '').slice(0, 10);
@@ -508,7 +560,7 @@ async function neverBookedSummary(sb: any, companyId: number): Promise<{ ok: tru
       if (summary.lastPaidOn == null || paidOn > summary.lastPaidOn) summary.lastPaidOn = paidOn;
     }
   };
-  for (const table of ['mfg_sales_order_payments', 'sales_invoice_payments'] as const) {
+  for (const [table, source] of [['mfg_sales_order_payments', 'SOPAY'], ['sales_invoice_payments', 'SIPAY']] as const) {
     let from = 0;
     const page = 1000;
     for (;;) {
@@ -520,7 +572,7 @@ async function neverBookedSummary(sb: any, companyId: number): Promise<{ ok: tru
         .range(from, from + page - 1);
       if (error) return { ok: false, reason: `${table}: ${error.message}` };
       const rows = (data ?? []) as Array<Record<string, any>>;
-      fold(rows);
+      fold(source, rows);
       if (rows.length < page) break;
       from += page;
     }
@@ -578,14 +630,17 @@ export async function unbookedPayments(
     source: 'SOPAY' | 'SIPAY',
     raw: Array<Record<string, any>>,
     docOf: (r: Record<string, any>) => string,
+    confirmed: Set<string>,
   ) => {
     for (const r of raw) {
       const id = String(r.id ?? '');
       if (!id || booked.has(id)) continue;
-      /* The same three the poster itself skips, or the panel would report as
-         failures the rows it was told to leave alone. */
+      /* The same skips as the poster itself, or the panel would report as
+         failures the rows it was told to leave alone — a payment finance has
+         not confirmed yet is waiting, not failed. */
       const method = String(r.method ?? '');
       if (method === 'imported') continue;
+      if (awaitsConfirmation(method, r.amount_sen) && !confirmed.has(id)) continue;
       const amountSen = Number(r.amount_sen ?? 0);
       if (!Number.isInteger(amountSen) || amountSen <= 0) continue;
       const paidOn = String(r.paid_at ?? '').slice(0, 10);
@@ -598,13 +653,19 @@ export async function unbookedPayments(
     .select('id, so_doc_no, paid_at, amount_sen, method')
     .eq('company_id', companyId).gte('paid_at', since);
   if (soErr) return { ok: false, reason: `SO payments: ${soErr.message}` };
-  take('SOPAY', (soRaw ?? []) as Array<Record<string, any>>, (r) => String(r.so_doc_no ?? ''));
+  const soRows = (soRaw ?? []) as Array<Record<string, any>>;
+  const soConfirmed = await confirmedPaymentIds(sb, companyId, 'SOPAY', soRows.filter((r) => !booked.has(String(r.id ?? ''))).map((r) => String(r.id ?? '')));
+  if (!soConfirmed.ok) return { ok: false, reason: `receipts: ${soConfirmed.reason}` };
+  take('SOPAY', soRows, (r) => String(r.so_doc_no ?? ''), soConfirmed.ids);
 
   const { data: siRaw, error: siErr } = await sb.from('sales_invoice_payments')
     .select('id, sales_invoice_id, paid_at, amount_sen, method')
     .eq('company_id', companyId).gte('paid_at', since);
   if (siErr) return { ok: false, reason: `SI payments: ${siErr.message}` };
-  take('SIPAY', (siRaw ?? []) as Array<Record<string, any>>, (r) => String(r.sales_invoice_id ?? ''));
+  const siRows = (siRaw ?? []) as Array<Record<string, any>>;
+  const siConfirmed = await confirmedPaymentIds(sb, companyId, 'SIPAY', siRows.filter((r) => !booked.has(String(r.id ?? ''))).map((r) => String(r.id ?? '')));
+  if (!siConfirmed.ok) return { ok: false, reason: `receipts: ${siConfirmed.reason}` };
+  take('SIPAY', siRows, (r) => String(r.sales_invoice_id ?? ''), siConfirmed.ids);
 
   /* Oldest first: the one that has been wrong longest is the one to chase. */
   rows.sort((a, b) => a.paidOn.localeCompare(b.paidOn));

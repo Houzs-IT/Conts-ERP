@@ -20,7 +20,7 @@ import { afterConvertedRowBooked, afterConvertedRowRemoved } from './so-money';
 import { mytDateOf, todayMyt } from './my-time';
 import { ledgerFactsOf, repostSoPaymentEdit } from '../../acc/payment-repost';
 import { createReceiptForPayment } from '../../acc/receipts';
-import { cancelDepositInvoiceForPaymentBestEffort, issueDepositInvoiceBestEffort, reissueDepositInvoiceBestEffort } from '../../acc/deposit-invoices';
+import { cancelDepositInvoiceForPaymentBestEffort, reissueDepositInvoiceBestEffort } from '../../acc/deposit-invoices';
 import { companyCodeById } from './doc-no';
 import { recomputeSiPaidForOrder } from './si-order-deposit';
 import { checkPaymentSlipDate } from '../shared/payment-slip-date';
@@ -127,22 +127,17 @@ export async function bookSoPaymentBestEffort(sb: any, row: Record<string, unkno
     await mirrorConvertedRowBestEffort(sb, row, where);
     return;
   }
-  /* THE OFFICIAL RECEIPT IS BORN HERE (GL redesign item 9) — DRAFT for
-     card/transfer, formal at once for cash. It used to be born in
-     recordSoPaymentRow alone, so the two SO-create inserts (the POS deposit,
-     the split rows) recorded money with no receipt — 12 payments since
-     2026-09-05 (docs/bugs/0935). Every row reaches this hook, so the rule is
-     written once, beside the deposit invoice's. BEST-EFFORT: the money is
-     recorded; a receipt hiccup must never un-record it, and
-     ensureReceiptForPayment heals the gap at the next print. */
+  /* THE OFFICIAL RECEIPT IS BORN HERE (GL redesign item 9) — a DRAFT, for
+     every method: cash too waits for finance (Conts, SOP 4.2). It used to be
+     born in recordSoPaymentRow alone, so the two SO-create inserts (the POS
+     deposit, the split rows) recorded money with no receipt — 12 payments
+     since 2026-09-05 (docs/bugs/0935). Every row reaches this hook, so the
+     rule is written once. BEST-EFFORT: the money is recorded; a receipt
+     hiccup must never un-record it, and ensureReceiptForPayment heals the gap
+     at the next print. The booking above answers waiting_confirmation until
+     finance confirms the receipt; the deposit invoice (docs/bugs/0828) is
+     issued then too, not here — both by acc/receipt-confirm. */
   await draftReceiptBestEffort(sb, row, where);
-  /* THE DEPOSIT INVOICE IS BORN HERE TOO (docs/bugs/0828) — every payment
-     row reaches this hook (the panel, the scan job, both SO-create deposit
-     inserts), so the rule "a deposit gets its invoice" is written once. It
-     decides for itself whether the company's switch is on, the date is on or
-     after the start, and the order has no final invoice yet. Best-effort like
-     the booking above: the money is recorded either way. */
-  await issueDepositInvoiceBestEffort(sb, row, where);
 }
 
 /** The receipt a booked SO payment row is owed, from the row as stored —

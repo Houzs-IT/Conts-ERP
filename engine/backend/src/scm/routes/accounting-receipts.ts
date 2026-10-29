@@ -3,22 +3,28 @@
 // The receipts themselves are born inside the payment writers and formalised
 // by the money-confirmation hooks (acc/receipts.ts); this file is the screen's
 // three doors: list them, fetch-or-heal one for a payment (the print button's
-// path), and the MANUAL confirm — the owner's 客户催收据 route: he verified
-// the slip himself, the receipt goes formal now, recon links up later.
+// path), and FINANCE'S CONFIRM (Conts, chew 29 Oct 2026; SOP 4.2/4.5): finance
+// checked the bank statement, names the bank the money landed in, and the
+// receipt goes formal — which is the payment received: it posts, its deposit
+// invoice issues and the project limit counts it (acc/receipt-confirm.ts).
 // ----------------------------------------------------------------------------
 
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
-import { ensureReceiptForPayment, formaliseReceipt } from '../../acc/receipts';
+import { confirmBankRefusal, confirmBanks, ensureReceiptForPayment, formaliseReceipt } from '../../acc/receipts';
+import { postConfirmedPayment } from '../../acc/receipt-confirm';
 import { resolveRoles } from '../../acc/rules';
 import { companyCodeById } from '../lib/doc-no';
 import { paginateAll } from '../lib/paginate-all';
 import { monthRange } from './accounting-receipts-check';
 
 /* Receipts are a sales-side paper: the writer key covers recording payments,
-   so it covers handing over the receipt for one. */
+   so it covers seeing and printing the receipt for one. */
 const requirePerm = (c: any): boolean =>
   hasHouzsPerm(c, 'scm.payment_voucher.post') || hasHouzsPerm(c, 'scm.sales_order.write');
+/* Confirming the money is finance's alone: the salesperson records, finance
+   checks the bank (SOP 4.2). */
+const requireConfirmPerm = (c: any): boolean => hasHouzsPerm(c, 'scm.payment_voucher.post');
 
 /* ── GET /accounting/receipts?status=&limit=&month=YYYY-MM ─────────────────
    Without a month: the newest `limit` receipts. With one: every receipt whose
@@ -74,12 +80,25 @@ export const receiptEnsure = async (c: any): Promise<Response> => {
   return c.json({ receipt: row });
 };
 
+/* ── GET /accounting/receipts/banks ─────────────────────────────────────────
+   The banks the confirm may name (active money accounts, never CASH or a
+   petty cash float) and the default one — the confirm dialog's choice. */
+export const receiptConfirmBanks = async (c: any): Promise<Response> => {
+  if (!requireConfirmPerm(c)) return c.json({ error: "You don't have permission to confirm receipts." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const r = await confirmBanks(c.get('supabase'), co.companyId);
+  if (!r.ok) return c.json({ error: 'load_failed', reason: r.reason }, 500);
+  return c.json({ defaultCode: r.defaultCode, banks: r.banks });
+};
+
 /* ── POST /accounting/receipts/:id/formalise — {accountCode?} ─────────────
-   The human said the money is real. accountCode names where it landed; left
-   out, the company's default bank answers (transfers into the main account —
-   the common case the owner described). */
+   Finance checked the bank: the money is real. accountCode names the bank it
+   landed in; left out, the company's default bank answers (BANK_DEFAULT). The
+   payment then posts at once, best-effort — the answer says what posted, or
+   why not; the receipt is formal either way. */
 export const receiptFormalise = async (c: any): Promise<Response> => {
-  if (!requirePerm(c)) return c.json({ error: "You don't have permission to confirm receipts." }, 403);
+  if (!requireConfirmPerm(c)) return c.json({ error: "Only finance can confirm customer payments." }, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const id = Number(c.req.param('id'));
@@ -90,6 +109,9 @@ export const receiptFormalise = async (c: any): Promise<Response> => {
 
   const roles = await resolveRoles(sb, co.companyId);
   const accountCode = String(body?.accountCode ?? '').trim() || roles.BANK_DEFAULT;
+  const allowed = await confirmBankRefusal(sb, co.companyId, accountCode);
+  if (!allowed.ok) return c.json({ error: 'load_failed', reason: allowed.reason }, 500);
+  if (allowed.refusal) return c.json({ error: 'bank_not_allowed', message: allowed.refusal }, 400);
   const code = await companyCodeById(sb, co.companyId);
   if (!code) return c.json({ error: 'load_failed', reason: `company ${co.companyId} has no code` }, 500);
 
@@ -98,5 +120,24 @@ export const receiptFormalise = async (c: any): Promise<Response> => {
   if (!r.ok) {
     return c.json({ error: r.status, message: r.reason }, r.status === 'bank_letter_missing' ? 409 : r.status === 'not_found' ? 404 : 500);
   }
-  return c.json({ ok: true, orNumber: r.orNumber, already: r.already === true });
+
+  /* Confirmed = received: post the payment now (an already-formal receipt
+     re-runs the post, which echoes or heals). */
+  const { data: rec, error: recErr } = await sb.from('acc_official_receipts')
+    .select('payment_source, payment_id').eq('id', id).eq('company_id', co.companyId).maybeSingle();
+  let posting: { status: string; jeNo?: string; reason?: string };
+  if (recErr || !rec) {
+    posting = { status: 'not_posted', reason: recErr?.message ?? 'the receipt could not be read back' };
+  } else {
+    const source = (rec as { payment_source: string }).payment_source === 'SIPAY' ? 'SIPAY' : 'SOPAY';
+    try {
+      const p = await postConfirmedPayment(sb, source, String((rec as { payment_id: string }).payment_id), co.companyId);
+      posting = p.ok
+        ? { status: p.status, ...('jeNo' in p ? { jeNo: p.jeNo } : {}) }
+        : { status: p.status, ...(p.reason ? { reason: p.reason } : {}) };
+    } catch (e) {
+      posting = { status: 'not_posted', reason: e instanceof Error ? e.message : String(e) };
+    }
+  }
+  return c.json({ ok: true, orNumber: r.orNumber, already: r.already === true, posting });
 };

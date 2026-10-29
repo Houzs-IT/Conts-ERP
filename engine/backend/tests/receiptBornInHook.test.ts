@@ -4,7 +4,8 @@
    rows), which reach the hook and never reached recordSoPaymentRow, receipt
    their money too. Pinned:
      · a card row booked through the hook births a DRAFT receipt on the
-       payment's month; a cash row a FORMAL one at once;
+       payment's month; a cash row a DRAFT too (SOP 4.2: finance confirms
+       cash onto a bank), and the hook books neither until finance confirms;
      · the row as SO-create selects it (no created_by) is enough;
      · booking the same row twice finds the same receipt;
      · a converted row births none — it was receipted when first received. */
@@ -60,16 +61,16 @@ describe('the receipt is born with the booking', () => {
     expect(receipts(sb)[0]).toMatchObject({ payment_source: 'SOPAY', payment_id: 'p-1', status: 'DRAFT', or_number: '2990-DraftOR-2609-001', amount_sen: 100_000, doc_no: '2990-SO-2609-001', method: 'merchant', created_by: null });
     await bookSoPaymentBestEffort(sb, soCreateRow('p-1'), 'deposit at SO create');
     expect(receipts(sb)).toHaveLength(1);
-    /* And it was booked — the hook still books. */
-    expect((sb.tables.journal_entries as Row[]).map((j) => j.source_type)).toEqual(['SOPAY']);
+    /* And it waits — nothing is booked until finance confirms the money (SOP 4.2). */
+    expect(sb.tables.journal_entries as Row[]).toEqual([]);
   });
 
-  test('a cash row is formal at once; a converted row gets no receipt', async () => {
+  test('a cash row is a draft too; a converted row gets no receipt', async () => {
     const sb = world();
     await bookSoPaymentBestEffort(sb, soCreateRow('p-2', { method: 'cash', merchant_provider: null, created_by: 'u-1' }), 'split payment at SO create');
     expect(receipts(sb)).toHaveLength(1);
-    expect(receipts(sb)[0]).toMatchObject({ payment_id: 'p-2', status: 'FORMAL', created_by: 'u-1' });
-    expect(String(receipts(sb)[0]!.or_number)).toMatch(/^2990-COR-2609-\d{3}$/);
+    expect(receipts(sb)[0]).toMatchObject({ payment_id: 'p-2', status: 'DRAFT', created_by: 'u-1' });
+    expect(String(receipts(sb)[0]!.or_number)).toMatch(/^2990-DraftOR-2609-\d{3}$/);
     await bookSoPaymentBestEffort(sb, soCreateRow('p-3', { method: 'converted', merchant_provider: null, converted_from_so_doc_no: '2990-SO-2607-024' }), 'split payment at SO create');
     expect(receipts(sb).map((r) => r.payment_id)).toEqual(['p-2']);
   });

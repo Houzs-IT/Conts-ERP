@@ -19,7 +19,7 @@ const acct = (code: string, type: string, special: string | null = null): Row =>
 });
 const CHART: Row[] = [
   acct('300-0000', 'ASSET', 'SDC'), acct('301-0000', 'ASSET', 'SDC'), acct('302-0000', 'ASSET', 'SDC'),
-  acct('320-0000', 'ASSET'), acct('400-0000', 'LIABILITY', 'SCC'), acct('405-0000', 'LIABILITY', 'SCC'),
+  acct('310-0010', 'ASSET'), acct('320-0000', 'ASSET'), acct('400-0000', 'LIABILITY', 'SCC'), acct('405-0000', 'LIABILITY', 'SCC'),
   acct('500-0003', 'INCOME'), acct('510-0000', 'INCOME'), acct('601-0003', 'EXPENSE'), acct('612-0000', 'EXPENSE'),
 ];
 const DEBTORS: Row[] = [
@@ -34,6 +34,11 @@ const world = (over: Record<string, Row[]> = {}) => fakeSb({
   debtors: DEBTORS.map((r) => ({ ...r })),
   suppliers: [],
   mfg_sales_orders: [], sales_invoices: [], sales_invoice_items: [], journal_entries: [], journal_entry_lines: [],
+  /* The payments posted here were confirmed by finance (SOP 4.2): an unconfirmed one waits and posts nothing. */
+  acc_official_receipts: [
+    { id: 1, company_id: CO, payment_source: 'SIPAY', payment_id: 'sp-1', status: 'FORMAL', channel_account_code: '310-0010' },
+    { id: 2, company_id: CO, payment_source: 'SOPAY', payment_id: 'op-1', status: 'FORMAL', channel_account_code: '310-0010' },
+  ],
   ...over,
 }, {}, [], ['journal_entry_lines']);
 const arLine = (sb: ReturnType<typeof world>) => (sb.tables.journal_entry_lines as Row[])

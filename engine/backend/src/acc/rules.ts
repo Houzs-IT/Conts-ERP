@@ -20,8 +20,10 @@
 //  Acquirer payout received  | Dr bank               / Cr transit      | SETTLEBANK  | SETTLEBANK_REVERSAL
 //
 //  Customer-payment debit side, by the sales panel's own method model:
-//    cash                 -> CASH role (335-0000)
-//    transfer             -> BANK_DEFAULT role (the transfer lands in the bank)
+//    cash, transfer       -> the bank finance confirmed it onto (Conts, SOP 4.2:
+//                            the poster passes the receipt's channel account,
+//                            else BANK_DEFAULT); with no bank given, the old
+//                            defaults: cash -> CASH role, transfer -> BANK_DEFAULT
 //    merchant/installment -> the acquirer's transit account (scm.acc_acquirers),
 //                            falling back to the TRANSIT_EDC role when the
 //                            acquirer is unmapped - loudly, never silently
@@ -523,13 +525,18 @@ export function customerPaymentLines(
     method: string;
     docNo: string;
     transitAccountCode?: string | null; // resolved acquirer transit, when mapped
+    /* The bank finance confirmed a cash or transfer payment onto (its receipt's
+       channel account); cash and transfer both land there when given. */
+    moneyAccountCode?: string | null;
     customerCode?: string | null;
     customerName?: string | null;
   },
   amountSen: number,
 ): RuleLine[] {
+  const banked = p.method === 'cash' || p.method === 'transfer';
   const debitAccount =
-    p.method === 'cash' ? roles.CASH
+    banked && p.moneyAccountCode ? p.moneyAccountCode
+    : p.method === 'cash' ? roles.CASH
     : p.method === 'transfer' ? roles.BANK_DEFAULT
     : (p.transitAccountCode || roles.TRANSIT_EDC);
   return [

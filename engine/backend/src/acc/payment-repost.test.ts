@@ -29,7 +29,7 @@ import { ledgerBearingChange, repostSoPaymentEdit, type PaymentLedgerFacts } fro
 import { postSoPayment, type SoPaymentRow } from './payments';
 import { DEFAULT_ROLE_CODES } from './rules';
 
-const CHART: Row[] = ['300-0000', '500-0000', '320-0000', '310-0010', '888-0000', '999-0000'].map((code) => ({
+const CHART: Row[] = ['300-0000', '500-0000', '320-0000', '310-0010', '310-0020', '888-0000', '999-0000'].map((code) => ({
   account_code: code, account_name: code, account_type: 'ASSET', parent_code: null, is_active: true, company_id: 1,
 }));
 
@@ -51,7 +51,7 @@ const facts = (over: Partial<PaymentLedgerFacts> = {}): PaymentLedgerFacts => ({
 });
 
 const world = () => fakeSb({
-  accounts: CHART,
+  accounts: CHART.map((a) => ({ ...a })),
   acc_account_roles: [],
   acc_acquirers: [
     { company_id: 1, code: 'MBB', display_name: 'MBB', transit_account_code: '888-0000', is_active: true },
@@ -61,6 +61,9 @@ const world = () => fakeSb({
   debtors: [{ company_id: 1, code: 'cust-1', control_account: DEFAULT_ROLE_CODES.AR }],
   mfg_sales_orders: [SO],
   mfg_sales_order_payments: [PAY()],
+  /* Finance confirmed the payment onto 310-0020 (Conts, SOP 4.2): an unconfirmed one posts nothing, so nothing to
+     re-post; a confirmed one re-posts onto the bank finance chose. */
+  acc_official_receipts: [{ id: 'or-1', company_id: 1, payment_source: 'SOPAY', payment_id: 'pay-1', status: 'FORMAL', channel_account_code: '310-0020' }],
   journal_entries: [],
   journal_entry_lines: [],
 });
@@ -149,9 +152,18 @@ describe('repostSoPaymentEdit — the entry follows the payment', () => {
     expect(live[0].total_debit_sen).toBe(199_100);
     expect(sb.tables.journal_entries.filter((j: Row) => j.reversed)).toHaveLength(1);
 
+    /* Still the bank finance confirmed the cash onto. */
     const lines = sb.tables.journal_entry_lines.filter((l: Row) => l.journal_entry_id === live[0].id);
-    expect(lines[0]).toMatchObject({ account_code: DEFAULT_ROLE_CODES.CASH, debit_sen: 199_100 });
+    expect(lines[0]).toMatchObject({ account_code: '310-0020', debit_sen: 199_100 });
     expect(lines[1]).toMatchObject({ account_code: DEFAULT_ROLE_CODES.AR, credit_sen: 199_100 });
+  });
+
+  it('an edit of a payment finance has not confirmed posts nothing — nothing was posted to reverse', async () => {
+    const sb = world();
+    sb.tables.acc_official_receipts[0]!.status = 'DRAFT';
+    const out = await repostSoPaymentEdit(sb, { before: facts(), after: PAY({ amount_sen: 199_100 }) as unknown as SoPaymentRow });
+    expect(out).toEqual({ ok: true, status: 'not_booked', moved: ['amount'], reason: 'waiting_confirmation' });
+    expect(sb.tables.journal_entries).toHaveLength(0);
   });
 
   it('the contra sits on the ORIGINAL entry date, so the month it was booked in nets to zero', async () => {
@@ -173,16 +185,17 @@ describe('repostSoPaymentEdit — the entry follows the payment', () => {
     expect(contra.entry_date).toBe('2026-09-01');
   });
 
+  /* Cash and transfer both land in the bank finance chose; a card lands in its acquirer's transit. */
   it('a corrected METHOD moves the money to the account that method debits', async () => {
     const sb = await booked();
     const out = await repostSoPaymentEdit(sb, {
       before: facts(),
-      after: PAY({ method: 'transfer' }) as unknown as SoPaymentRow,
+      after: PAY({ method: 'merchant', merchant_provider: 'MBB' }) as unknown as SoPaymentRow,
     });
     expect(out).toMatchObject({ ok: true, status: 'reposted', moved: ['method'] });
     const live = active(sb)[0];
     const lines = sb.tables.journal_entry_lines.filter((l: Row) => l.journal_entry_id === live.id);
-    expect(lines[0]).toMatchObject({ account_code: DEFAULT_ROLE_CODES.BANK_DEFAULT, debit_sen: 199_000 });
+    expect(lines[0]).toMatchObject({ account_code: '888-0000', debit_sen: 199_000 });
   });
 
   it('a corrected ACQUIRER moves the money to that acquirer\'s own transit account', async () => {
@@ -241,7 +254,7 @@ describe('repostSoPaymentEdit — the entry follows the payment', () => {
      to heal. */
   it('a re-post the gate refuses comes back as a refusal, naming the reason', async () => {
     const sb = await booked();
-    for (const a of sb.tables.accounts) if (a.account_code === DEFAULT_ROLE_CODES.BANK_DEFAULT) a.is_active = false;
+    for (const a of sb.tables.accounts) if (a.account_code === '310-0020') a.is_active = false;
     const out = await repostSoPaymentEdit(sb, {
       before: facts(),
       after: PAY({ method: 'transfer' }) as unknown as SoPaymentRow,

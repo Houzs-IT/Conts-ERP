@@ -8,10 +8,13 @@
 //   DRAFT   printable with a DRAFT stamp, numbered on the draft series
 //           ({co}DraftOR-YYMM-NNN) — the salesperson can hand something over;
 //   FORMAL  the moment the money is CONFIRMED — which mints the channel
-//           number: cash {co}COR-YYMM-NNN immediately (钱当场在手), card when
-//           merchant recon confirms that payment, transfer by a manual
-//           confirm; ANY draft can be formalised by hand after a human
-//           verified the money (客户催收据).
+//           number: card when merchant recon confirms that payment; transfer
+//           AND cash when finance confirms it against the bank statement and
+//           names the bank it landed in (chew, 29 Oct 2026, SOP 4.2/4.5: the
+//           company banks all its cash, so cash is confirmed onto a bank,
+//           never the CASH account). FORMAL is what "received" means: the
+//           payment posts, its deposit invoice issues and the project limit
+//           counts it only from here (acc/receipt-confirm.ts).
 //
 // The channel letters are the PV letter table (scm.acc_bank_letters) — the
 // same bank is the same letter on a voucher and a receipt; C is RESERVED for
@@ -73,8 +76,8 @@ export async function channelLetterFor(
 
 /**
  * Create the DRAFT receipt for one recorded payment — idempotent on the
- * payment key (a retry or a second caller finds the existing row). A CASH
- * payment is formalised in the same breath: the drawer is its own proof.
+ * payment key (a retry or a second caller finds the existing row). Every
+ * method, cash included, stays a draft until finance confirms the money.
  */
 export async function createReceiptForPayment(
   sb: any,
@@ -107,17 +110,6 @@ export async function createReceiptForPayment(
     }).select('id').single();
     if (!error) {
       const id = Number((data as { id: number }).id);
-      if (p.method === 'cash') {
-        const roles = await resolveRoles(sb, p.companyId);
-        const f = await formaliseReceipt(sb, {
-          companyId: p.companyId, companyCode: p.companyCode, receiptId: id,
-          accountCode: roles.CASH, actor: p.createdBy ?? null,
-        });
-        if (f.ok) return { ok: true, id, orNumber: f.orNumber, status: 'FORMAL' };
-        /* The cash formalisation failing must not lose the receipt — it stays
-           a draft the manual button can finish. */
-        return { ok: true, id, orNumber: draftNo, status: 'DRAFT' };
-      }
       return { ok: true, id, orNumber: draftNo, status: 'DRAFT' };
     }
     const dupPayment = /payment_source|payment_id/.test(String(error.message ?? '')) && /duplicate key/i.test(String(error.message ?? ''));
@@ -180,6 +172,97 @@ export async function formaliseReceipt(
     if (!clash) return { ok: false, status: 'save_failed', reason: error.message };
   }
   return { ok: false, status: 'save_failed', reason: 'could not mint a formal receipt number after 8 attempts' };
+}
+
+/** Methods whose rows are not money arriving from a customer, so finance has
+    nothing to confirm and they keep their own rules: money moved between
+    orders and its refund / move-out mirrors ('converted'), migration-era rows
+    ('imported'), a customer credit balance applied to an invoice ('credit'). */
+const NOT_RECEIVED_MONEY = new Set(['converted', 'imported', 'credit']);
+
+/** Does this payment row count as received only once finance confirms it? */
+export const awaitsConfirmation = (method: string | null | undefined, amountSen: unknown): boolean =>
+  !NOT_RECEIVED_MONEY.has(String(method ?? '')) && Number(amountSen ?? 0) > 0;
+
+/** Has finance confirmed this payment? Its receipt FORMAL = confirmed, with
+    the money account it was confirmed onto. No receipt = not confirmed. */
+export async function receiptConfirmation(
+  sb: any,
+  source: 'SOPAY' | 'SIPAY',
+  paymentId: string,
+): Promise<{ ok: true; confirmed: boolean; channelAccountCode: string | null } | { ok: false; reason: string }> {
+  const { data, error } = await sb.from('acc_official_receipts')
+    .select('status, channel_account_code')
+    .eq('payment_source', source).eq('payment_id', paymentId).maybeSingle();
+  if (error) return { ok: false, reason: error.message };
+  const r = data as { status?: string; channel_account_code?: string | null } | null;
+  return { ok: true, confirmed: r?.status === 'FORMAL', channelAccountCode: r?.channel_account_code ?? null };
+}
+
+/** Which of these payments finance has confirmed — one read per 150 ids, for
+    the readers that sum received money (the project limit, the Self-check). */
+export async function confirmedPaymentIds(
+  sb: any,
+  companyId: number,
+  source: 'SOPAY' | 'SIPAY',
+  paymentIds: string[],
+): Promise<{ ok: true; ids: Set<string> } | { ok: false; reason: string }> {
+  const ids = new Set<string>();
+  for (let i = 0; i < paymentIds.length; i += 150) {
+    const { data, error } = await sb.from('acc_official_receipts')
+      .select('payment_id')
+      .eq('company_id', companyId).eq('payment_source', source).eq('status', 'FORMAL')
+      .in('payment_id', paymentIds.slice(i, i + 150));
+    if (error) return { ok: false, reason: error.message };
+    for (const r of (data ?? []) as Array<{ payment_id: string }>) ids.add(String(r.payment_id));
+  }
+  return { ok: true, ids };
+}
+
+export type ConfirmBank = { code: string; name: string };
+
+/** The banks finance may confirm customer money onto: the company's active
+    money accounts, less the CASH account and every petty cash float's account
+    — the company banks all customer cash, never keeps it in a drawer or float. */
+export async function confirmBanks(
+  sb: any,
+  companyId: number,
+): Promise<{ ok: true; banks: ConfirmBank[]; defaultCode: string } | { ok: false; reason: string }> {
+  const [accts, floats] = await Promise.all([
+    sb.from('accounts').select('account_code, account_name, acc_money, is_active').eq('company_id', companyId).eq('acc_money', true).order('account_code'),
+    sb.from('petty_cash_floats').select('account_code').eq('company_id', companyId),
+  ]);
+  if (accts.error) return { ok: false, reason: accts.error.message };
+  if (floats.error) return { ok: false, reason: floats.error.message };
+  const roles = await resolveRoles(sb, companyId);
+  const floatCodes = new Set(((floats.data ?? []) as Array<{ account_code: string | null }>).map((f) => String(f.account_code ?? '')));
+  const banks = ((accts.data ?? []) as Array<{ account_code: string; account_name: string | null; is_active: boolean | null }>)
+    .filter((a) => a.is_active === true && a.account_code !== roles.CASH && !floatCodes.has(a.account_code))
+    .map((a) => ({ code: a.account_code, name: a.account_name ?? a.account_code }));
+  return { ok: true, banks, defaultCode: roles.BANK_DEFAULT };
+}
+
+/** Why customer money may not be confirmed onto this account — null when it may. */
+export async function confirmBankRefusal(
+  sb: any,
+  companyId: number,
+  accountCode: string,
+): Promise<{ ok: true; refusal: string | null } | { ok: false; reason: string }> {
+  const roles = await resolveRoles(sb, companyId);
+  if (accountCode === roles.CASH) {
+    return { ok: true, refusal: `${accountCode} is the CASH account. Customer cash is banked: confirm it onto the bank it was deposited in.` };
+  }
+  const { data: floats, error: fErr } = await sb.from('petty_cash_floats').select('id').eq('company_id', companyId).eq('account_code', accountCode).limit(1);
+  if (fErr) return { ok: false, reason: fErr.message };
+  if (((floats ?? []) as unknown[]).length > 0) {
+    return { ok: true, refusal: `${accountCode} is a petty cash float. Confirm customer money onto the bank it landed in.` };
+  }
+  const list = await confirmBanks(sb, companyId);
+  if (!list.ok) return list;
+  if (!list.banks.some((b) => b.code === accountCode)) {
+    return { ok: true, refusal: `${accountCode} is not an active bank account. Choose the bank the money landed in.` };
+  }
+  return { ok: true, refusal: null };
 }
 
 /**

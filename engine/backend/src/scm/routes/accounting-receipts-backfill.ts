@@ -6,8 +6,10 @@
 // numbers the run would take; the run (POST) creates each receipt through the
 // same call the live path uses, in payment-date order, and then turns the
 // card payments merchant reconciliation has already confirmed formal on their
-// payout bank — exactly what a confirm does today. Idempotent: a payment with
-// a receipt is never touched, so a second press does nothing.
+// payout bank — exactly what a confirm does today, posting each payment it
+// confirms. Cash and transfers stay drafts: finance confirms them against the
+// bank (SOP 4.2). Idempotent: a payment with a receipt is never touched, so a
+// second press does nothing.
 
 import type { Context } from 'hono';
 import type { Env, Variables } from '../env';
@@ -15,7 +17,8 @@ import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId, docPrefixForCode } from '../lib/companyScope';
 import { companyCodeById, docMonthTag } from '../lib/doc-no';
 import { paginateAll } from '../lib/paginate-all';
-import { createReceiptForPayment, formaliseReceiptsForSettlement } from '../../acc/receipts';
+import { createReceiptForPayment } from '../../acc/receipts';
+import { confirmReceiptsForSettlement } from '../../acc/receipt-confirm';
 import { resolveRoles } from '../../acc/rules';
 
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
@@ -145,7 +148,8 @@ async function planFor(sb: any, companyId: number, companyCode: string, rows: Mi
     let cash = 0; let confirmed = 0; let unlettered = 0;
     for (const r of list) {
       bump(`${prefix}DraftOR-${ym}`);
-      if (r.method === 'cash') { cash += 1; bump(`${prefix}COR-${ym}`); }
+      /* Cash is counted, and stays a draft: finance confirms it onto a bank. */
+      if (r.method === 'cash') cash += 1;
       if (r.acquirer) {
         const letter = letters.letters.get(r.acquirer) ?? null;
         if (letter) { confirmed += 1; bump(`${prefix}${letter}OR-${ym}`); } else unlettered += 1;
@@ -224,7 +228,7 @@ export const receiptsBackfillRun = async (c: Ctx) => {
   const byAcquirer = new Map<string, Missing[]>();
   for (const r of missing.rows) if (r.acquirer) byAcquirer.set(r.acquirer, [...(byAcquirer.get(r.acquirer) ?? []), r]);
   for (const [acquirer, list] of byAcquirer) {
-    const outcomes = await formaliseReceiptsForSettlement(
+    const outcomes = await confirmReceiptsForSettlement(
       sb, co.companyId, code, list.map((r) => ({ source: 'SOPAY', id: r.id })), bankOf.get(acquirer) ?? null, actor,
     );
     for (const o of outcomes) {

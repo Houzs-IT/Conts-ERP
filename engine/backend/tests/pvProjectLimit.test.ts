@@ -28,6 +28,8 @@ function harness(sen: number) {
     projects: [{ id: 7, company_id: CO, name: 'SKYLINE A-12-06', funding: 'customer', limit_pct_bp: null, budget_sen: null }],
     mfg_sales_orders: [{ doc_no: 'SO-1', company_id: CO, project_id: 7, status: 'RENO_IN_PROGRESS' }],
     mfg_sales_order_payments: [{ id: 'p1', company_id: CO, so_doc_no: 'SO-1', amount_sen: 1_000_000, method: 'transfer' }],
+    /* Finance confirmed p1 against the bank (SOP 4.2): only confirmed money counts for the limit. */
+    acc_official_receipts: [{ id: 1, company_id: CO, payment_source: 'SOPAY', payment_id: 'p1', status: 'FORMAL', channel_account_code: '310-0010' }],
     sales_invoices: [], sales_invoice_payments: [], project_limit_requests: [],
     purchase_invoices: [], purchase_orders: [], ap_invoice_lines: [],
     payment_voucher_lines: [{ id: 'l1', pv_id: 'pv-1', company_id: CO, line_no: 1, description: 'Carpentry', debit_account_code: '601-0001', amount_sen: sen, project_id: 7 }],
