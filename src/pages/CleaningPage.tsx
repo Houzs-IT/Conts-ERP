@@ -1034,7 +1034,8 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
         <div className="grid grid-flow-col auto-cols-fr gap-3 max-md:order-last max-md:sticky max-md:bottom-0 max-md:z-[2] max-md:-mx-5 max-md:-mb-5 max-md:px-5 max-md:pt-3 max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:bg-card max-md:[border-top:1px_solid_var(--color-line)]">
           {row.state !== 'in_progress' && (
             // One black button, the next step: Start until the clean is under way, then a photo, then Mark complete.
-            <Button variant="primary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${row.id}/start`, {}), 'Cleaning job started.')}>Start</Button>
+            <Button variant="primary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'}
+              disabled={!!row.previous && !row.guestOut} disabledReason="Tick Guest has left first. The guest may still be in the unit." onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${row.id}/start`, {}), 'Cleaning job started.')}>Start</Button>
           )}
           {row.state === 'in_progress' && files === 0 && (
             <Button variant="primary" icon={<Icon name="ImagePlus" size="sm" />} onClick={() => openAdd.current?.()}>Add photos or videos</Button>
