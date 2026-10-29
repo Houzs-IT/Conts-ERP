@@ -19,7 +19,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { refreshNavCounts } from '../lib/navBadges';
 import { api, errorMessage } from '../lib/api';
-import { useCleaners } from '../lib/useCleaners';
+import { useCleaners, type Cleaner } from '../lib/useCleaners';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { UnitPicker } from '../components/UnitPicker';
 import { useMedia, useNow } from '../lib/useMedia';
@@ -248,6 +248,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
     act('plan-all', () => api.post('/housekeeping/plan', { reservationIds: visibleDepartures.map(d => d.reservationId) }), { title: `${visibleDepartures.length} cleaning jobs planned.` });
   const undoLeft = (taskId: string, unit: string) =>
     act(`left-${taskId}`, () => api.post('/housekeeping/guest-left', { taskId, undo: true }), { title: `${unit}: guest no longer marked out.` });
+  const assignOne = (taskId: string, unit: string, cleanerId: string, name: string) =>
+    act(`assign-${taskId}`, () => api.post(`/housekeeping/tasks/${taskId}/assign`, { cleanerIds: cleanerId ? [cleanerId] : [], force: true }), { title: cleanerId ? `${unit}: given to ${name}.` : `${unit}: cleaner taken off.` });
   const setCheckIn = (reservationId: string, time: string, unit: string) =>
     act(`in-${reservationId}`, () => api.patch(`/reservations/${reservationId}/details`, { checkInTime: time }), { title: `${unit}: next check-in ${time}.` });
 
@@ -302,7 +304,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
               <div className="px-3 pb-3 flex flex-col gap-3">
                 {overdueGroups.map(g => (
                   <BuildingCard key={g.key} group={g} now={now} future={false} selected={selected} busy={busy}
-                    onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan}
+                    onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan} cleaners={cleaners} onAssignOne={assignOne}
                     picks={mayBulk ? { has: id => picks.has(id), toggle: togglePicks } : undefined} />
                 ))}
               </div>
@@ -317,7 +319,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         )}
         {groups.map(g => (
           <BuildingCard key={g.key} group={g} now={now} future={date > mytDay(0)} selected={selected} busy={busy}
-            onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan}
+            onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan} cleaners={cleaners} onAssignOne={assignOne}
             onAssign={() => setAssignFor({ buildingId: g.id, name: g.name })} />
         ))}
         {/* Room under the last job for the bar pinned to the bottom of a phone. */}
@@ -449,10 +451,11 @@ function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'c
 /** Ticks for the overdue bulk close: only passed in the Overdue section, and only for management. */
 interface Picks { has: (id: string) => boolean; toggle: (ids: string[], on: boolean) => void }
 
-function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onPlan, onAssign, picks }: {
+function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onPlan, onAssign, onAssignOne, cleaners, picks }: {
   group: { id: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }; now: number; future: boolean; selected: string | null; busy: string | null;
   onSelect: (id: string) => void; onGuestLeft: (b: { taskId?: string; reservationId?: string }, unit: string) => void; onUndoLeft: (taskId: string, unit: string) => void;
   onCheckIn: (reservationId: string, time: string, unit: string) => void; onPlan: (d: Departure) => void; onAssign?: () => void; picks?: Picks;
+  cleaners: Cleaner[]; onAssignOne: (taskId: string, unit: string, cleanerId: string, name: string) => void;
 }) {
   const external = group.id === 'external';
   const doneN = group.rows.filter(r => r.status === 'done').length;
@@ -547,38 +550,17 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         </div>
       </header>
       {!shut && <>
-      {/* One card per job, as many across as fit (a card is at least 280px wide). */}
-      <div className="grid gap-3 p-3 @4xl:p-4 [border-top:1px_solid_var(--color-line-soft)] [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
-        {group.rows.map(r => <CleanCard key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} savingIn={!!r.next?.reservationId && busy === `in-${r.next.reservationId}`}
+      {/* One card per job, as many across as fit (a card is at least 320px wide). */}
+      <div className="grid gap-3 p-3 @4xl:p-4 [border-top:1px_solid_var(--color-line-soft)] [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
+        {group.rows.map(r => <CleanCard key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} assigning={busy === `assign-${r.id}`}
+          savingIn={!!r.next?.reservationId && busy === `in-${r.next.reservationId}`} cleaners={cleaners} onAssign={(id, name) => onAssignOne(r.id, r.unitNumber, id, name)}
           picked={picks ? picks.has(r.id) : undefined} onPick={picks ? on => picks.toggle([r.id], on) : undefined}
           onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} onUndoLeft={() => onUndoLeft(r.id, r.unitNumber)}
-          onCheckIn={t => r.next?.reservationId && onCheckIn(r.next.reservationId, t, r.unitNumber)} />)}
-        {group.departures.map(d => (
-          <div key={d.reservationId} className="rounded-card border-2 border-solid border-danger-line bg-card p-4 text-copy flex flex-col gap-2 min-w-0">
-            <div className="flex items-center flex-wrap gap-x-2 gap-y-1 min-w-0">
-              <b className="flex-none whitespace-nowrap text-[17px] leading-tight text-ink">{d.unitNumber}</b>
-              <span className="ml-auto"><StatusBadge tone="critical">No cleaning job</StatusBadge></span>
-            </div>
-            <div className="flex items-baseline flex-wrap gap-x-2 gap-y-0.5 min-w-0">
-              <span className="text-ink [overflow-wrap:anywhere]">{d.guestName}</span>
-              <span className="text-muted-ink">Checkout by <b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b></span>
-              {d.lateCheckOut && <StatusBadge tone="warning">Late checkout</StatusBadge>}
-              {d.state === 'checked_out' && <StatusBadge tone="gold">Out</StatusBadge>}
-            </div>
-            <div className="min-w-0 flex items-baseline flex-wrap gap-x-2 gap-y-0.5">
-              {d.next ? <>
-                <span className="text-muted-ink">Next guest</span>
-                <CheckInTime time={d.next.checkInTime} saving={!!d.next.reservationId && busy === `in-${d.next.reservationId}`} onSave={d.next.reservationId ? t => onCheckIn(d.next!.reservationId!, t, d.unitNumber) : undefined} />
-                <span className="text-ink [overflow-wrap:anywhere]">{d.next.guestName}</span>
-                <span className="ml-auto text-meta whitespace-nowrap"><TimeLeft at={d.next.checkInAt} now={now} /></span>
-              </> : <span className="text-muted-ink">No check-in</span>}
-            </div>
-            <div className="mt-auto pt-1 flex items-center gap-2 flex-wrap">
-              <Button size="sm" variant="primary" className="flex-1" loading={busy === `plan-${d.reservationId}`} onClick={() => onPlan(d)}>Plan cleaning</Button>
-              {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" loading={busy === `left-${d.reservationId}`} onClick={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)}>Guest left</Button>}
-            </div>
-          </div>
-        ))}
+          onCheckIn={time => r.next?.reservationId && onCheckIn(r.next.reservationId, time, r.unitNumber)} />)}
+        {group.departures.map(d => <DepartureCard key={d.reservationId} d={d} now={now} future={future} savingIn={!!d.next?.reservationId && busy === `in-${d.next.reservationId}`}
+          busy={{ left: busy === `left-${d.reservationId}`, plan: busy === `plan-${d.reservationId}` }}
+          onGuestLeft={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)} onPlan={() => onPlan(d)}
+          onCheckIn={time => d.next?.reservationId && onCheckIn(d.next.reservationId, time, d.unitNumber)} />)}
       </div>
       {group.repairs.length > 0 && (
         <div className="px-4 @4xl:px-5 py-2.5 [border-top:1px_solid_var(--color-line-soft)] bg-page flex flex-col gap-1">
@@ -596,79 +578,147 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   );
 }
 
-/** One job on tablet and up (a card, like the phone's): unit and status, who leaves, who arrives, the cleaner, and the one action that is next. */
-function CleanCard({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUndoLeft, onCheckIn, picked, onPick }: {
-  r: Row; now: number; active: boolean; busy: boolean; savingIn: boolean; onSelect: () => void; onGuestLeft: () => void; onUndoLeft: () => void; onCheckIn: (time: string) => void;
-  picked?: boolean; onPick?: (on: boolean) => void;
+/** A line of a card with its small icon in front, as on the reference board. */
+function CardLine({ icon, className, children }: { icon: string; className?: string; children: ReactNode }) {
+  return (
+    <div className={cx('flex items-start gap-2 min-w-0 text-copy', className)}>
+      <span className="flex-none h-[22px] grid place-items-center"><Icon name={icon} size="sm" /></span>
+      <div className="min-w-0 flex-1 flex items-baseline flex-wrap gap-x-3 gap-y-0.5 [overflow-wrap:anywhere]">{children}</div>
+    </div>
+  );
+}
+
+/** The chip under the lines: "Assign cleaner" with a dropdown, or the cleaner's name once the job has one. A job with a
+ *  team, a started job or a finished one only shows the names: change those in the job's panel. */
+function CleanerChip({ r, cleaners, assigning, onAssign }: { r: Row; cleaners: Cleaner[]; assigning: boolean; onAssign: (cleanerId: string, name: string) => void }) {
+  const names = r.cleaners.length ? r.cleaners.map(c => c.name) : r.assigneeName ? [r.assigneeName] : [];
+  const text = names.length ? `${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ''}` : 'Assign cleaner';
+  const editable = (r.status !== 'cleaning' && r.status !== 'done') && r.cleaners.length <= 1;
+  return (
+    <span title={names.join(', ') || undefined}
+      className={cx('relative inline-flex items-center gap-1.5 h-8 px-2.5 max-w-full min-w-0 rounded-control border border-solid border-line bg-card text-meta font-medium',
+        names.length ? 'text-ink' : 'text-muted-ink', editable && 'cursor-pointer hover:border-ink focus-within:[box-shadow:0_0_0_2px_var(--color-gold)]', assigning && 'opacity-60')}>
+      <Icon name="UserPlus" size="sm" />
+      <span className="truncate">{text}</span>
+      {editable && <Icon name="ChevronDown" size="sm" />}
+      {editable && (
+        <select aria-label={`Cleaner for ${r.unitNumber}`} disabled={assigning} value={r.cleanerId ?? ''} onClick={e => e.stopPropagation()}
+          onChange={e => { const id = e.target.value; onAssign(id, cleaners.find(c => c.id === id)?.name ?? 'nobody'); }}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+          <option value="" disabled={!r.cleanerId}>{r.cleanerId ? 'Take cleaner off' : 'Assign cleaner'}</option>
+          {cleaners.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      )}
+    </span>
+  );
+}
+
+/** One job on tablet and up, laid out like the reference board: unit and status pill, who leaves, who arrives, the
+ *  cleaner dropdown, and one button for what is next. Only the border carries the colour (red: checkout time passed
+ *  and nobody ticked; yellow: guest out, clean not finished). */
+function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onAssign, picked, onPick }: {
+  r: Row; now: number; active: boolean; busy: boolean; assigning: boolean; savingIn: boolean; cleaners: Cleaner[]; onSelect: () => void; onGuestLeft: () => void; onUndoLeft: () => void;
+  onCheckIn: (time: string) => void; onAssign: (cleanerId: string, name: string) => void; picked?: boolean; onPick?: (on: boolean) => void;
 }) {
   const st = statusOf('cleaning', r.status);
   const files = r.photoCount + r.videoCount;
-  // The footer button marks the guest out (or takes the mark back while nobody has started).
   const mayTick = !!r.previous && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
-  const label = r.status === 'done' ? 'Ready to check in' : st.label;
+  const pending = !!r.previous && !r.guestOut && r.status !== 'done' && r.status !== 'cleaning';
   const tone = rowTone(r, now);
-  const names = r.cleaners.length ? r.cleaners.map(c => c.name) : r.assigneeName ? [r.assigneeName] : [];
   const meta = [r.unit?.size ?? r.unit?.layout, KIND_LABEL[r.kind] ?? r.kind].filter(Boolean).join(' · ');
+  const arrives = r.day === mytDay(0) ? 'today' : dayLabel(r.day);
   const stop = (fn: () => void) => (e: { stopPropagation: () => void }) => { e.stopPropagation(); fn(); };
   return (
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(); } }}
-      className={cx('rounded-card border-2 border-solid p-4 text-copy cursor-pointer flex flex-col gap-2 min-w-0 outline-none focus-visible:[box-shadow:0_0_0_2px_var(--color-gold)]',
-        active ? 'bg-gold-tint border-[var(--color-gold)]' : tone === 'overdue' ? 'bg-danger-bg border-danger-line' : tone === 'out' ? 'bg-warning-bg border-warning-line' : 'bg-card border-line hover:bg-page')}>
-      <div className="flex items-center flex-wrap gap-x-2 gap-y-1 min-w-0">
+      className={cx('rounded-card border-2 border-solid p-4 text-copy cursor-pointer flex flex-col gap-3 min-w-0 outline-none focus-visible:[box-shadow:0_0_0_2px_var(--color-gold)]',
+        active ? 'bg-gold-tint border-[var(--color-gold)]' : tone === 'overdue' ? 'bg-card border-danger-line' : tone === 'out' ? 'bg-card border-warning-line' : 'bg-card border-line hover:bg-page')}>
+      <div className="flex items-start gap-3 min-w-0">
         {onPick && (
           <input type="checkbox" checked={!!picked} onChange={e => onPick(e.target.checked)} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
-            aria-label={`Select ${r.unitNumber}, ${dayLabel(r.day)}`} className="flex-none w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
+            aria-label={`Select ${r.unitNumber}, ${dayLabel(r.day)}`} className="flex-none w-4 h-4 mt-1.5 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
         )}
-        {r.external ? <b className="min-w-0 text-[17px] leading-tight text-ink [overflow-wrap:anywhere]">{r.external.address}</b> : <b className="flex-none whitespace-nowrap text-[17px] leading-tight text-ink">{r.unitNumber}</b>}
-        {r.carriedOver && <StatusBadge tone="warning" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge>}
-        <span className="ml-auto min-w-0"><StatusBadge tone={st.tone} className="whitespace-normal">{label}</StatusBadge></span>
-      </div>
-      {r.external ? (
-        <div className="min-w-0">{r.external.clientName ?? <span className="text-muted-ink">No client name</span>}{r.external.clientPhone && <span className="text-muted-ink"> · {r.external.clientPhone}</span>}</div>
-      ) : (
-        <>
-          <div className="min-w-0">
-            {r.previous ? (
-              <div className="flex items-baseline flex-wrap gap-x-2 gap-y-0.5">
-                <span className="text-ink [overflow-wrap:anywhere]">{r.previous.guestName}</span>
-                <span className="text-muted-ink">Checkout by <b className="[font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b></span>
-                {r.previous.lateCheckOut && <StatusBadge tone="warning">Late checkout</StatusBadge>}
-              </div>
-            ) : <span className="text-muted-ink">No departing guest</span>}
-            {r.guestOut && r.guestLeftAt && <div className="text-meta text-gold-ink">{r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}</div>}
-            {tone === 'overdue' && <div className="text-meta text-danger font-medium">{OVERDUE_NOTE}</div>}
-          </div>
-          <div className="min-w-0 flex items-baseline flex-wrap gap-x-2 gap-y-0.5">
-            {r.next ? <>
-              <span className="text-muted-ink">Next guest</span>
-              <CheckInTime time={r.next.checkInTime} saving={savingIn} onSave={r.next.reservationId && r.status !== 'done' ? onCheckIn : undefined} />
-              <span className="text-ink [overflow-wrap:anywhere]">{r.next.guestName}</span>
-              {r.next.earlyCheckIn && <StatusBadge tone="warning">Early check-in</StatusBadge>}
-              <span className="ml-auto text-meta whitespace-nowrap"><TimeLeft at={r.next.checkInAt} now={now} done={r.status === 'done'} /></span>
-            </> : <span className="text-muted-ink">No check-in</span>}
-          </div>
-        </>
-      )}
-      <div className="flex items-center gap-2 min-w-0 text-meta text-muted-ink">
-        <span className="min-w-0 truncate">{meta}</span>
-        <span className={cx('ml-auto flex-none max-w-[50%] truncate', names.length ? 'text-ink' : 'text-danger font-medium')} title={names.join(', ') || undefined}>
-          {names.length ? `${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ''}` : 'Unassigned'}
+        <div className="min-w-0 flex-1 flex items-baseline flex-wrap gap-x-2 gap-y-0.5">
+          <b className="text-[20px] leading-tight font-bold text-ink [overflow-wrap:anywhere]">{r.external ? r.external.address : r.unitNumber}</b>
+          {r.carriedOver && <span className="text-meta font-medium text-muted-ink whitespace-nowrap" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</span>}
+        </div>
+        <span className="flex-none">
+          {pending
+            ? <StatusBadge tone={tone === 'overdue' ? 'critical' : 'warning'} outline size="sm"><Icon name="LogOut" size="sm" />Pending checkout</StatusBadge>
+            : <StatusBadge tone={st.tone} size="sm">{PHONE_STATUS[r.status] ?? st.label}</StatusBadge>}
         </span>
       </div>
-      {(mayTick || r.status === 'done') && (
-        <div className="mt-auto pt-1">
-          {r.status === 'done' ? (
-            <span className="text-meta text-muted-ink">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</span>
-          ) : r.guestOut ? (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-meta text-gold-ink font-medium">Guest is out</span>
-              <Button size="sm" variant="secondary" loading={busy} onClick={stop(onUndoLeft)}>Undo</Button>
+
+      {r.external ? (
+        <CardLine icon="Users" className="text-muted-ink"><span className="text-ink">{r.external.clientName ?? 'No client name'}</span>{r.external.clientPhone && <span>{r.external.clientPhone}</span>}</CardLine>
+      ) : (
+        <>
+          {r.previous && (
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <CardLine icon="Users" className="text-muted-ink">
+                <span className="text-ink">{r.previous.guestName}</span>
+                {tone === 'overdue' ? <b className="text-gold-ink font-semibold">Past checkout time ({r.previous.checkOutTime})</b> : <span>Checkout by <b className="[font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b></span>}
+                {r.previous.lateCheckOut && <StatusBadge tone="warning" size="sm">Late checkout</StatusBadge>}
+              </CardLine>
+              {r.guestOut && r.guestLeftAt && (
+                <div className="pl-6 text-meta text-muted-ink">
+                  {r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}
+                  {mayTick && <> · <button type="button" disabled={busy} onClick={stop(onUndoLeft)} onKeyDown={e => e.stopPropagation()}
+                    className="p-0 bg-transparent border-0 underline cursor-pointer text-muted-ink [font-family:inherit] [font-size:inherit] disabled:opacity-50">Undo</button></>}
+                </div>
+              )}
             </div>
-          ) : (
-            <Button size="sm" variant="primary" className="w-full" loading={busy} onClick={stop(onGuestLeft)}>Guest has left</Button>
           )}
-        </div>
+          {r.next && (
+            <CardLine icon="LogIn" className={cx('font-medium', r.status === 'done' ? 'text-muted-ink' : 'text-danger')}>
+              <span>Next guest arrives {arrives} <CheckInTime time={r.next.checkInTime} saving={savingIn} onSave={r.next.reservationId && r.status !== 'done' ? onCheckIn : undefined} />
+                {r.next.earlyCheckIn && <span className="ml-1.5"><StatusBadge tone="warning" size="sm">Early check-in</StatusBadge></span>}</span>
+              <span className="text-meta whitespace-nowrap"><TimeLeft at={r.next.checkInAt} now={now} done={r.status === 'done'} /></span>
+            </CardLine>
+          )}
+        </>
       )}
+
+      {r.status === 'done' && <div className="text-meta text-muted-ink">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</div>}
+
+      <div className="flex items-center gap-2 min-w-0">
+        <CleanerChip r={r} cleaners={cleaners} assigning={assigning} onAssign={onAssign} />
+        {meta && <span className="ml-auto min-w-0 truncate text-meta text-muted-ink">{meta}</span>}
+      </div>
+
+      {mayTick && !r.guestOut && (
+        <Button size="sm" variant={tone === 'overdue' ? 'danger' : 'primary'} className="w-full mt-auto" loading={busy} onClick={stop(onGuestLeft)}>Guest has left</Button>
+      )}
+    </div>
+  );
+}
+
+/** A checkout with no cleaning job yet, drawn like a job card. */
+function DepartureCard({ d, now, future, busy, savingIn, onGuestLeft, onCheckIn, onPlan }: {
+  d: Departure; now: number; future: boolean; busy: { left: boolean; plan: boolean }; savingIn: boolean;
+  onGuestLeft: () => void; onCheckIn: (time: string) => void; onPlan: () => void;
+}) {
+  return (
+    <div className="rounded-card border-2 border-solid border-danger-line bg-card p-4 text-copy flex flex-col gap-3 min-w-0">
+      <div className="flex items-start gap-3 min-w-0">
+        <b className="min-w-0 flex-1 text-[20px] leading-tight font-bold text-ink [overflow-wrap:anywhere]">{d.unitNumber}</b>
+        <span className="flex-none"><StatusBadge tone="critical" outline size="sm">No cleaning job</StatusBadge></span>
+      </div>
+      <CardLine icon="Users" className="text-muted-ink">
+        <span className="text-ink">{d.guestName}</span>
+        <span>Checkout by <b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b></span>
+        {d.lateCheckOut && <StatusBadge tone="warning" size="sm">Late checkout</StatusBadge>}
+        {d.state === 'checked_out' && <StatusBadge tone="gold" size="sm">Out</StatusBadge>}
+      </CardLine>
+      {d.next && (
+        <CardLine icon="LogIn" className="font-medium text-danger">
+          <span>Next guest arrives today <CheckInTime time={d.next.checkInTime} saving={savingIn} onSave={d.next.reservationId ? onCheckIn : undefined} /></span>
+          <span className="text-meta whitespace-nowrap"><TimeLeft at={d.next.checkInAt} now={now} /></span>
+        </CardLine>
+      )}
+      <div className="mt-auto flex flex-col gap-2">
+        <Button size="sm" variant="primary" className="w-full" loading={busy.plan} onClick={onPlan}>Plan cleaning</Button>
+        {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" className="w-full" loading={busy.left} onClick={onGuestLeft}>Guest has left</Button>}
+      </div>
     </div>
   );
 }
