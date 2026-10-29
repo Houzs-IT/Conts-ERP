@@ -9,6 +9,8 @@
 // everyday-expense account (rent, utilities: paid as usual, outside the limit). Reservation follows the voucher's
 // state, so a rejected or withdrawn voucher (submitted_at cleared) gives its reservation back by itself.
 import { paginateAll } from '../scm/lib/paginate-all';
+import { receiptCountsForLimit, type ReceiptStatus } from './petty-cash';
+import { requestReservation } from './payment-requests';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in the modules it sits beside */
 type Db = any;
@@ -43,6 +45,63 @@ async function projectLines(sb: Db, companyId: number, projectIds: number[]): Pr
     ok: true,
     lines: lines.filter((l) => !everyday.has(l.debit_account_code) && pvOf.has(l.pv_id)).map((l) => ({ ...l, pv: pvOf.get(l.pv_id)! })),
   };
+}
+
+/** Staff receipts and payment requests on a project (design 2026-10-28 §4.5-4.6). A receipt's money is already spent,
+ *  so it is used from the moment it is handed in, until its own pay-back voucher counts instead. A request reserves only
+ *  what its vouchers (not cancelled) do not yet carry. Everyday-expense lines are left out, as on vouchers. */
+async function claimsOnProject(sb: Db, companyId: number, projectId: number): Promise<{ ok: true; usedSen: number; reservedSen: number } | Fail> {
+  const [rl, ql] = await Promise.all([
+    sb.from('staff_receipt_lines').select('receipt_id, amount_sen, account_code').eq('project_id', projectId),
+    sb.from('payment_request_lines').select('request_id, amount_sen, account_code').eq('project_id', projectId),
+  ]);
+  if (rl.error) return { ok: false, error: rl.error.message };
+  if (ql.error) return { ok: false, error: ql.error.message };
+  const rLines = (rl.data ?? []) as Array<{ receipt_id: string; amount_sen: number; account_code: string | null }>;
+  const qLines = (ql.data ?? []) as Array<{ request_id: string; amount_sen: number; account_code: string | null }>;
+  if (rLines.length === 0 && qLines.length === 0) return { ok: true, usedSen: 0, reservedSen: 0 };
+  const codes = [...new Set([...rLines, ...qLines].map((l) => l.account_code).filter((a): a is string => !!a))];
+  const { data: accts, error: aErr } = codes.length
+    ? await sb.from('accounts').select('account_code, everyday_expense').eq('company_id', companyId).in('account_code', codes)
+    : { data: [], error: null };
+  if (aErr) return { ok: false, error: aErr.message };
+  const everyday = new Set(((accts ?? []) as Array<{ account_code: string; everyday_expense: boolean | null }>).filter((a) => a.everyday_expense === true).map((a) => a.account_code));
+  const counted = <T extends { account_code: string | null }>(ls: T[]) => ls.filter((l) => !l.account_code || !everyday.has(l.account_code));
+
+  let usedSen = 0;
+  const rCounted = counted(rLines);
+  if (rCounted.length) {
+    const { data: rs, error } = await sb.from('staff_receipts').select('id, status, payback_pv_id').eq('company_id', companyId).in('id', [...new Set(rCounted.map((l) => l.receipt_id))]);
+    if (error) return { ok: false, error: error.message };
+    const live = new Set(((rs ?? []) as Array<{ id: string; status: ReceiptStatus; payback_pv_id: string | null }>)
+      .filter((r) => receiptCountsForLimit({ status: r.status, paybackPvId: r.payback_pv_id })).map((r) => r.id));
+    usedSen = rCounted.filter((l) => live.has(l.receipt_id)).reduce((s, l) => s + Number(l.amount_sen), 0);
+  }
+
+  let reservedSen = 0;
+  const qCounted = counted(qLines);
+  if (qCounted.length) {
+    const { data: qs, error } = await sb.from('payment_requests').select('id, status').eq('company_id', companyId).in('id', [...new Set(qCounted.map((l) => l.request_id))]);
+    if (error) return { ok: false, error: error.message };
+    const open = ((qs ?? []) as Array<{ id: string; status: string }>).filter((q) => q.status === 'SUBMITTED' || q.status === 'PART_PAID').map((q) => q.id);
+    if (open.length) {
+      const { data: pvs, error: pErr } = await sb.from('payment_vouchers').select('id, payment_request_id, status').eq('company_id', companyId).in('payment_request_id', open);
+      if (pErr) return { ok: false, error: pErr.message };
+      const vouchers = ((pvs ?? []) as Array<{ id: string; payment_request_id: string; status: string }>).filter((p) => p.status !== 'CANCELLED');
+      const { data: vls, error: vErr } = vouchers.length
+        ? await sb.from('payment_voucher_lines').select('pv_id, project_id, amount_sen').eq('company_id', companyId).in('pv_id', vouchers.map((p) => p.id))
+        : { data: [], error: null };
+      if (vErr) return { ok: false, error: vErr.message };
+      const reqOfPv = new Map(vouchers.map((p) => [p.id, p.payment_request_id]));
+      for (const q of open) {
+        const own = qCounted.filter((l) => l.request_id === q).map((l) => ({ projectId: projectId, amountSen: Number(l.amount_sen) }));
+        const paid = ((vls ?? []) as Array<{ pv_id: string; project_id: number | null; amount_sen: number }>)
+          .filter((l) => reqOfPv.get(l.pv_id) === q).map((l) => ({ projectId: l.project_id == null ? null : Number(l.project_id), amountSen: Number(l.amount_sen) }));
+        reservedSen += requestReservation(own, paid).get(projectId) ?? 0;
+      }
+    }
+  }
+  return { ok: true, usedSen, reservedSen };
 }
 
 /** What the customer of a project has paid: the payments on its sales orders and on their invoices. */
@@ -102,6 +161,10 @@ export async function projectLimit(sb: Db, companyId: number, projectId: number,
     if (l.pv.status === 'POSTED') usedSen += Number(l.amount_sen);
     else if (l.pv.status === 'DRAFT' && l.pv.submitted_at && l.pv_id !== exceptPvId) reservedSen += Number(l.amount_sen);
   }
+  const claims = await claimsOnProject(sb, companyId, projectId);
+  if (!claims.ok) return claims;
+  usedSen += claims.usedSen;
+  reservedSen += claims.reservedSen;
   return { ok: true, projectId, projectName: proj.name, funding, pctBp, receivedSen, limitSen, usedSen, reservedSen, leftSen: limitSen - usedSen - reservedSen };
 }
 

@@ -110,3 +110,38 @@ describe('a new project’s funding', () => {
     expect(fundingFrom({ funding: 'owner' })).toEqual({ ok: false, error: 'funding_invalid' });
   });
 });
+
+/* Staff receipts and payment requests (design 2026-10-28 §4.5-4.6): a receipt counts as used from the moment it is
+   handed in, until its own pay-back voucher takes over; a request reserves only what its vouchers do not yet carry. */
+describe('receipts and requests', () => {
+  const rc = (id: string, status: string, payback: string | null = null): Row => ({ id, company_id: CO, status, payback_pv_id: payback });
+  const rl = (receipt: string, sen: number, account = '601-0001'): Row => ({ id: `${receipt}-l`, receipt_id: receipt, project_id: 7, amount_sen: sen, account_code: account });
+
+  test('a receipt handed in is used at once; a replaced, repaid or written-off one is not; an everyday one never', async () => {
+    const sb = world({
+      staff_receipts: [rc('R1', 'HANDED_IN'), rc('R2', 'REPLACED'), rc('R3', 'REJECTED'), rc('R4', 'REPAID'), rc('R5', 'CHECKED')],
+      staff_receipt_lines: [rl('R1', 5000), rl('R2', 9000), rl('R3', 1000), rl('R4', 7000), rl('R5', 2000, '903-0001')],
+    });
+    expect(await projectLimit(sb, CO, 7)).toMatchObject({ usedSen: 6000, reservedSen: 0 });
+  });
+
+  test('once its pay-back voucher exists, that voucher counts instead, never both', async () => {
+    const sb = world({
+      staff_receipts: [rc('R1', 'PAID_BACK', 'PB')],
+      staff_receipt_lines: [rl('R1', 5000)],
+      payment_vouchers: pv('PB', 5000, { status: 'POSTED' }),
+      payment_voucher_lines: [line('PB', 5000)],
+    });
+    expect(await projectLimit(sb, CO, 7)).toMatchObject({ usedSen: 5000 });
+  });
+
+  test('a request reserves what its vouchers do not carry; a closed one reserves nothing', async () => {
+    const sb = world({
+      payment_requests: [{ id: 'Q1', company_id: CO, status: 'PART_PAID' }, { id: 'Q2', company_id: CO, status: 'CLOSED' }],
+      payment_request_lines: [{ request_id: 'Q1', project_id: 7, amount_sen: 10_000, account_code: '601-0001' }, { request_id: 'Q2', project_id: 7, amount_sen: 50_000, account_code: '601-0001' }],
+      payment_vouchers: pv('PQ', 4000, { status: 'POSTED', payment_request_id: 'Q1' }),
+      payment_voucher_lines: [line('PQ', 4000)],
+    });
+    expect(await projectLimit(sb, CO, 7)).toMatchObject({ usedSen: 4000, reservedSen: 6000 });
+  });
+});
