@@ -127,7 +127,8 @@ export const OfficialReceipts = () => {
   });
   /* Which bank did the money land in? The default bank first. */
   const confirmReceived = async (r: ReceiptRow) => {
-    const list = banks.data ?? await qc.fetchQuery({ queryKey: ['official-receipts-banks'], queryFn: () => authedFetch<ConfirmBanks>('/accounting/receipts/banks') });
+    const list: ConfirmBanks | undefined = banks.data ?? await qc.fetchQuery({ queryKey: ['official-receipts-banks'], queryFn: () => authedFetch<ConfirmBanks>('/accounting/receipts/banks') });
+    if (!list) return;
     const ordered = [...list.banks].sort((a, b) => Number(b.code === list.defaultCode) - Number(a.code === list.defaultCode))
       .map((b) => (b.code === list.defaultCode ? { ...b, name: `${b.name} (default)` } : b));
     const code = await chooseBank(ordered, `${fmtSen(r.amount_sen)} on ${r.doc_no ?? r.or_number} — received in which bank?`);
