@@ -27,6 +27,8 @@ interface ContractView {
   minimumGuarantee: number; guaranteeStartsOn: string | null; guaranteeEndsOn: string | null;
   /** PS YGRR: the guarantee for each contract year, sen. */
   yearlyGuarantee?: number; contractCode?: ContractCode; agreementDocumentId?: string | null;
+  /** False while the code is only read from the terms; the tab then asks for the type before saving. */
+  typeStored?: boolean;
   monthlyRent: number; deposit: number | null; tenantName: string | null;
   startsOn: string | null; endsOn: string | null; renewsOn: string | null; miscCharges: boolean; sharedWith: number; createdAt: string | null;
   /** MANAGE: the owner's amount a month, sen. */
@@ -138,6 +140,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   const [preview, setPreview] = useState<Example | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [extending, setExtending] = useState(false);
+  const [picked, setPicked] = useState(false);
 
   const current = data?.current ?? null;
   const allowedCodes = data?.allowedCodes;
@@ -148,10 +151,12 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
     if (!current.id && allowedCodes?.length && !allowedCodes.includes(o.contractCode)) return { ...o, contractCode: allowedCodes[0], revenueModel: CODE[allowedCodes[0]].model };
     return o;
   }, [current, allowedCodes]);
-  useEffect(() => { if (original) { setDraft(original); setMode('update'); setFields({}); setPreview(null); } }, [original]);
+  useEffect(() => { if (original) { setDraft(original); setMode('update'); setFields({}); setPreview(null); setPicked(false); } }, [original]);
   const d = draft ?? original;
-  const dirty = !!d && !!original && JSON.stringify(d) !== JSON.stringify(original);
-  const local = d ? problems(d) : {};
+  // A contract with no saved type is read from its terms; saving would lock that guess in, so the type is chosen first.
+  const typeUnset = !!current?.id && current.typeStored === false && mode === 'update';
+  const dirty = (!!d && !!original && JSON.stringify(d) !== JSON.stringify(original)) || (typeUnset && picked);
+  const local: Record<string, string> = { ...(d ? problems(d) : {}), ...(typeUnset && !picked ? { contractCode: 'Choose the contract type first.' } : {}) };
   const shown = { ...local, ...fields };
 
   // The example follows the form: once the terms change, the server works last month out again on them.
@@ -175,6 +180,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   // The current code stays offered even if the list has moved on (an older GRR), so the form can show it.
   const offered = CODES.filter(c => (data?.allowedCodes ?? CODES.filter(x => x.code !== 'WH' && x.code !== 'WH LT' && x.code !== 'GRR').map(x => x.code)).includes(c.code) || c.code === d.contractCode);
   const example = preview ?? data?.example ?? null;
+  const guess = current.contractCode ?? codeFromModel(current.revenueModel);
 
   async function save() {
     if (!d) return;
@@ -232,7 +238,13 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           {purpose !== 'rental' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">A {PURPOSE_LABEL[purpose].toLowerCase()} unit is not run on the channels: it takes a WH lease (a fixed monthly rent to the owner) or a WH LT let (one tenant, such as Dream Crafter, rents it; the owner gets the rent less the operator share).</div>}
           <Select label="Income model" showLabel size="md" className="max-w-[560px]" value={d.contractCode}
             options={offered.map(o => ({ value: o.code, label: `${o.code}${o.pkg && o.pkg !== '-' ? ` ${o.pkg}` : ''} - ${o.label}` }))}
-            onChange={v => { const o = CODE[v as ContractCode]; set({ contractCode: o.code, revenueModel: o.model }); }} />
+            onChange={v => { const o = CODE[v as ContractCode]; set({ contractCode: o.code, revenueModel: o.model }); setPicked(true); }} />
+          {typeUnset && !picked && (
+            <div className="flex flex-wrap items-center justify-between gap-3 py-[10px] px-[14px] rounded-control bg-gold-tint text-copy">
+              <span>Type not set. This contract has no saved type; it is being read as <b>{codeName(guess)}</b> from its terms. Choose the type above, or keep this one, before saving.</span>
+              <Button size="sm" variant="secondary" onClick={() => setPicked(true)}>Keep {guess}</Button>
+            </div>
+          )}
           {(() => {
             const o = CODE[d.contractCode];
             return (
