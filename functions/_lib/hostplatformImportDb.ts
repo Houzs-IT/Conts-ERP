@@ -10,7 +10,7 @@
 import {
   type ListingPlan, type ReservationPlan, type WorkbookUnitIn, type AirbnbEarningIn, type CleaningIn, type ExpenseIn, type CreditIn,
   type PayoutMonthIn, type KnownUnit, type KnownProperty, type RowError,
-  PLACEHOLDER_OWNER, RESERVATION_MONEY_COLUMNS, CHANNEL_LABEL, placeholderGuestName, guestId as guestIdFor, type Channel, normaliseLocation, canonicalState, canonicalCity, slug, hash, unitKey, workbookMatcher, matchWorkbookUnitHow, buildingForPrefix, splitWorkbookId, workbookOwnerId, listingOwnerId, stayState,
+  PLACEHOLDER_OWNER, RESERVATION_MONEY_COLUMNS, CHANNEL_LABEL, placeholderGuestName, guestId as guestIdFor, type Channel, normaliseLocation, canonicalState, canonicalCity, slug, hash, unitKey, workbookMatcher, matchWorkbookUnitHow, buildingForPrefix, splitWorkbookId, workbookOwnerId, listingOwnerId, stayState, planOwnerBanks, bankKey, type BankPick,
 } from './hostplatformImport';
 
 /** The three helpers of db.ts, bound to an environment. Lets the test script run the same SQL on PGlite. */
@@ -334,6 +334,8 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
   const matchedIds = new Set<string>(), contractIds = new Set<string>();
   const accounts: Record<string, unknown>[] = [], debts: Record<string, unknown>[] = [], poolMonths: Record<string, unknown>[] = [];
   const accountIds = new Set<string>(), poolIds = new Set<string>();
+  // Each unit's bank account from the sheet, to pick the owner's main account and give an odd unit its own (0180).
+  const picks: BankPick[] = [];
   let matched = 0, workbookOnly = 0;
   // A unit matched by its own code is taken first; the whole-unit row of a split unit ('TRION-B6106' next to
   // 'TRION-B6106(A)' and '(B)') then does not borrow room (A), and becomes a unit of its own.
@@ -359,12 +361,13 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
     const first = firstHits.get(w.workbookId);
     const hit = first && (first.how === 'code' || !claimed.has(first.unit.id)) ? (snap.units.find(u => u.id === first.unit.id) as typeof snap.units[number]) : null;
     if (hit && first?.how === 'room') claimed.add(hit.id);
-    let unitId: string, unitOurs: boolean, contractId: string | null | undefined;
+    let unitId: string, unitOurs: boolean, contractId: string | null | undefined, unitOwner: string | null, building: string;
     if (hit) {
       matched++;
       matchedIds.add(hit.id);
       unitId = hit.id; unitOurs = isOurs(hit.id); contractId = hit.contractId;
       const takeOwner = ownerId && (unitOurs || hit.ownerName === PLACEHOLDER_OWNER);
+      unitOwner = takeOwner ? ownerId : hit.ownerId ?? null; building = hit.propertyName;
       updates.push({
         id: unitId, ours: unitOurs, owner_id: takeOwner ? ownerId : null, listing_name: w.listingName, address: w.address,
         package: w.pkg, term: w.term, split_kind: w.split, split_value: w.splitValue, misc_charges: w.miscCharges ? 1 : 0, updated_at: now,
@@ -378,7 +381,7 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
         const loc = normaliseLocation({ address: w.address });
         newProps.push({ id: b.id, name: b.name, address_line: w.address ?? '', city: loc.city ?? '', state: loc.state ?? '', postcode: loc.postcode, country_code: 'MY', created_at: now, updated_at: now });
       }
-      unitId = `wb-unit-${slug(w.workbookId)}`; unitOurs = true; contractId = null;
+      unitId = `wb-unit-${slug(w.workbookId)}`; unitOurs = true; contractId = null; unitOwner = ownerId ?? placeholder; building = b.name;
       newUnits.push({
         id: unitId, property_id: b.id, owner_id: ownerId ?? placeholder, unit_number: code || w.workbookId, unit_code: code || w.workbookId,
         listing_name: w.listingName, address: w.address, base_rate: 0, is_listed: 0, package: w.pkg ?? 'Package C', term: w.term ?? 'Long term',
@@ -386,6 +389,9 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
       });
       snap.units.push({ id: unitId, unitNumber: code || w.workbookId, propertyId: b.id, propertyName: b.name, ownerName: '' });
     }
+
+    // Only a unit that ends up with this owner counts toward, or can point at, one of this owner's accounts.
+    if (ownerId && unitOwner === ownerId && w.bankAccount) picks.push({ ownerId, unitId, account: w.bankAccount, bankName: w.bankName, holder: w.bankHolder, label: building });
 
     // Utility accounts and pool months belong to the unit; the first workbook row that lands on a unit wins.
     for (const a of w.utilityAccounts) {
@@ -426,6 +432,17 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
   add(res, 'properties', await upsert(db, 'properties',
     [['id', 'text'], ['name', 'text'], ['address_line', 'text'], ['city', 'text'], ['state', 'text'], ['postcode', 'text'], ['country_code', 'text'], ['created_at', 'text'], ['updated_at', 'text']],
     newProps, 'DO NOTHING'));
+  // The owner's main account is the one most of their units use. An owner the import does not own keeps the stored
+  // main account, so units on any other number need an account of their own.
+  const bankReady = (await hasColumn(db, 'units', 'bank_account_id')) && (await hasColumn(db, 'owner_bank_accounts', 'id'));
+  const kept = picks.length ? await db.all<{ id: string; bank_account_number: string | null }>(
+    "SELECT id, bank_account_number FROM owners WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND bank_account_number <> ''",
+    JSON.stringify([...new Set(picks.map(p => p.ownerId).filter(id => !isOurs(id)))])) : [];
+  const bankPlan = planOwnerBanks(picks, new Map(kept.flatMap(o => (o.bank_account_number ? [[o.id, o.bank_account_number] as [string, string]] : []))));
+  for (const [ownerId, p] of bankPlan.mains) {
+    const row = ownerRows.get(ownerId);
+    if (row) Object.assign(row, { bank_name: p.bankName, bank_account_number: p.account, bank_account_last4: p.account.slice(-4), bank_account_holder: p.holder });
+  }
   add(res, 'owners', await upsert(db, 'owners',
     [['id', 'text'], ['display_name', 'text'], ['email', 'text'], ['ic_number', 'text'], ['bank_name', 'text'], ['bank_account_number', 'text'], ['bank_account_last4', 'text'], ['bank_account_holder', 'text'], ['created_at', 'text'], ['updated_at', 'text']],
     [...ownerRows.values()], `DO UPDATE SET ${['ic_number', 'bank_name', 'bank_account_number', 'bank_account_last4', 'bank_account_holder'].map(c =>
@@ -439,6 +456,8 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
     const out = await db.all(`
       UPDATE units u SET
         owner_id = COALESCE(x.owner_id, u.owner_id),
+        ${bankReady ? `bank_account_id = CASE WHEN x.owner_id IS NOT NULL AND x.owner_id <> u.owner_id THEN NULL ELSE u.bank_account_id END,
+        bank_account_chosen = CASE WHEN x.owner_id IS NOT NULL AND x.owner_id <> u.owner_id THEN false ELSE u.bank_account_chosen END,` : ''}
         listing_name = CASE WHEN x.ours THEN COALESCE(x.listing_name, u.listing_name) ELSE COALESCE(u.listing_name, x.listing_name) END,
         address = CASE WHEN x.ours THEN COALESCE(x.address, u.address) ELSE COALESCE(u.address, x.address) END,
         package = CASE WHEN x.ours AND x.package IS NOT NULL THEN x.package ELSE u.package END,
@@ -466,6 +485,27 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
   if (links.length) {
     await db.run(`UPDATE units u SET contract_id = x.contract_id FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, contract_id text) WHERE u.id = x.id AND u.contract_id IS NULL`, JSON.stringify(links));
     await db.run(`UPDATE owner_contracts c SET unit_id = x.id FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, contract_id text) WHERE c.id = x.contract_id AND c.unit_id IS NULL`, JSON.stringify(links));
+  }
+
+  // A unit whose sheet account is not its owner's main gets an account of its own (one per owner and number) and points at
+  // it, only where it points at none today and no person chose one on the unit page (bank_account_chosen, the main
+  // account included): an account a person set is never changed.
+  if (bankPlan.extras.length && !bankReady) {
+    res.notes.push(`${bankPlan.extras.length} units use a different bank account from their owner's main one. They are paid to the main account until migration 0180 is applied.`);
+  } else if (bankPlan.extras.length) {
+    const made = new Map<string, Record<string, unknown>>(), points: Record<string, unknown>[] = [];
+    for (const p of bankPlan.extras) {
+      const id = `wb-obank-${hash(`${p.ownerId}|${bankKey(p.account)}`)}`;
+      if (!made.has(id)) made.set(id, { id, owner_id: p.ownerId, label: p.label, bank_name: p.bankName, account_number: p.account, account_holder: p.holder, account_last4: bankKey(p.account).slice(-4), created_at: now, updated_at: now });
+      points.push({ id: p.unitId, account_id: id, owner_id: p.ownerId });
+    }
+    add(res, 'owner_bank_accounts', await upsert(db, 'owner_bank_accounts',
+      [['id', 'text'], ['owner_id', 'text'], ['label', 'text'], ['bank_name', 'text'], ['account_number', 'text'], ['account_holder', 'text'], ['account_last4', 'text'], ['created_at', 'text'], ['updated_at', 'text']],
+      [...made.values()], 'DO NOTHING'));
+    const set = await db.all(`UPDATE units u SET bank_account_id = x.account_id
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, account_id text, owner_id text)
+      WHERE u.id = x.id AND u.owner_id = x.owner_id AND u.bank_account_id IS NULL AND NOT u.bank_account_chosen RETURNING u.id`, JSON.stringify(points));
+    res.notes.push(`${set.length} units got their own bank account because their account in the sheet differs from the owner's main one.`);
   }
 
   add(res, 'unit_utility_accounts', await upsert(db, 'unit_utility_accounts',

@@ -3,6 +3,7 @@ import { auditMany } from '../../_lib/history';
 import { requireSession } from '../../_lib/auth';
 import { notify, notifyUsers } from '../../_lib/notify';
 import { refOf } from '../../_lib/ops';
+import { bankAccountsReady, extraLast4Sql } from '../../_lib/ownerBank';
 
 const STATES = ['failed', 'pending', 'processing', 'paid'];
 const METHOD_LABEL: Record<string, string> = { bank_transfer: 'Bank transfer', ibg: 'IBG', duitnow: 'DuitNow' };
@@ -66,7 +67,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       ownerName: r.display_name, amount: Number(r.amount), currency: r.currency,
       state: r.state, method: METHOD_LABEL[r.method] ?? r.method,
       // Never the full account number, only the tail.
-      bankName: r.bank_name, bankLast4: r.bank_account_last4,
+      bankName: r.bank_name, bankLast4: r.bank_account_last4 || r.bank_last4,
       paidAt: r.paid_at, failureReason: r.failure_reason, source: r.source ?? 'generated',
     })),
   });
@@ -92,8 +93,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!statementIds?.length) return fail('VALIDATION', 'Select at least one statement.', 422);
 
   const placeholders = statementIds.map(() => '?').join(',');
+  // No main account is fine when every line's unit has its own (0180); the payout then keeps the first one's last four.
+  const extra = (await bankAccountsReady(env)) ? extraLast4Sql('s') : 'NULL::text';
   const rows = await all<any>(env, `
-    SELECT s.id, s.state, s.owner_id, s.net_payout, o.bank_account_last4,
+    SELECT s.id, s.state, s.owner_id, s.net_payout, o.bank_account_last4, ${extra} AS extra_last4,
            EXISTS (SELECT 1 FROM payouts x WHERE x.statement_id = s.id) AS has_payout
     FROM owner_statements s JOIN owners o ON o.id = s.owner_id
     WHERE s.id IN (${placeholders})`, ...statementIds);
@@ -111,11 +114,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       skipped.push({ id: s.id, reason: 'This statement already has a payout.' });
       continue;
     }
-    if (!s.bank_account_last4) {
+    const last4: string | null = s.bank_account_last4 || s.extra_last4;
+    if (!last4) {
       skipped.push({ id: s.id, reason: 'No bank details on file for this owner.' });
       continue;
     }
-    created.push({ id: crypto.randomUUID(), statement_id: s.id, owner_id: s.owner_id, amount: s.net_payout, bank_last4: s.bank_account_last4 });
+    created.push({ id: crypto.randomUUID(), statement_id: s.id, owner_id: s.owner_id, amount: s.net_payout, bank_last4: last4 });
   }
 
   if (created.length) {

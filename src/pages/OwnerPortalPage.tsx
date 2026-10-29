@@ -45,6 +45,8 @@ interface Summary {
     amount: number; state: PayoutState;
     paidAt: string | null; scheduledFor: string | null;
     bankName: string | null; bankLast4: string | null;
+    /** Each account the month was paid to, when some units pay to a different account; empty otherwise. */
+    accounts?: { bankName: string | null; last4: string }[];
   };
   grossToNet: GrossToNetLine[];
   stats: { occupancy: number; adr: number; bookings: number; rating: number | null; reviews: number };
@@ -211,8 +213,11 @@ export default function OwnerPortalPage() {
     }
   }
 
+  const tails = st.payout.accounts?.length
+    ? st.payout.accounts.map(a => `${a.bankName ? `${a.bankName} ` : ''}····${a.last4}`).join(', ')
+    : `${st.payout.bankName ?? ''}${st.payout.bankLast4 ? ` ····${st.payout.bankLast4}` : ''}`.trim();
   const payoutLine = st.payout.state === 'paid' && st.payout.paidAt
-    ? `Transferred ${date(st.payout.paidAt)}${st.payout.bankName ? ` · ${st.payout.bankName}` : ''}${st.payout.bankLast4 ? ` ····${st.payout.bankLast4}` : ''}`
+    ? `Transferred ${date(st.payout.paidAt)}${tails ? ` · ${tails}` : ''}`
     : st.payout.scheduledFor ? `Scheduled for ${date(st.payout.scheduledFor)}` : null;
 
   const statsCards = [

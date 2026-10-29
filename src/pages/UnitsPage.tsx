@@ -34,10 +34,12 @@ import FinancialsTab, { MonthStepper, useFinancialMonth } from './units/Financia
 import { SaveBar, DetailsForm, DocumentsCard, BuildingModal, ConfirmAdd, AddUnitModal } from './units/UnitForms';
 import { UnitCostsCard, BillModal } from './owners/Costs';
 import ContractTab, { ModelChip } from './units/ContractTab';
+import { PaysTo } from './units/PaysTo';
+import { bankName } from '../lib/vocabulary';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import { RecordHistory } from '../components/RecordHistory';
 import {
-  mayEditUnits, STATES, layoutFromBedrooms,
+  mayEditUnits, mayChoosePayAccount, STATES, layoutFromBedrooms,
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
 } from './units/shared';
 import { statusLabel, statusOf, TONE_STYLE } from '../lib/status';
@@ -565,8 +567,10 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
       {stacked && on('contract') && <h3 className="m-0 mt-2 text-heading font-semibold">Contract and documents</h3>}
       {on('contract') && (money
-        ? <ContractTab key={u.id} unitId={u.id} canEdit={canEdit} onSaved={reload}
-            footer={<DocumentsCard unitId={u.id} unitLabel={unitLabel} documents={d.documents ?? []} onUploaded={reloadDetail} />} />
+        ? <><PaysTo unitId={u.id} ownerId={u.owner.id} accountId={u.bankAccountId ?? null} canEdit={mayChoosePayAccount(user)} onSaved={reloadDetail}
+            mainAccount={form?.bankAccount ? `${bankName(form.bankName) ?? form.bankName} ${form.bankAccount}` : undefined} />
+          <ContractTab key={u.id} unitId={u.id} canEdit={canEdit} onSaved={reload}
+            footer={<DocumentsCard unitId={u.id} unitLabel={unitLabel} documents={d.documents ?? []} onUploaded={reloadDetail} />} /></>
         : <>
           <Card><div className="p-8 text-center text-copy text-muted-ink">The owner's contract is visible to finance and management.</div></Card>
           <DocumentsCard unitId={u.id} unitLabel={unitLabel} documents={d.documents ?? []} onUploaded={reloadDetail} />

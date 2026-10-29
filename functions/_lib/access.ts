@@ -163,6 +163,7 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; w
   { method: 'GET', path: /^\/api\/housekeeping\/(cleaners|crew)$/, area: null, why: 'Names of the cleaners for the assign pickers on the dashboard and in reservations.' },
   { method: 'GET', path: /^\/api\/integrations$/, area: 'reservations', why: 'The calendar shows which channels each unit is connected to.' },
   { method: 'POST', path: /^\/api\/integrations\/sync$/, area: 'reservations', why: 'The calendar\'s button that gets new reservations from the channels.' },
+  { method: 'PATCH', path: /^\/api\/units\/[^/]+\/bank-account$/, area: 'owners', why: 'Choosing which of the owner\'s bank accounts a unit is paid to is owner payout work.' },
   { method: 'POST', path: /^\/api\/owners\/[^/]+\/notify$/, area: 'dashboard', why: 'The dashboard\'s exception action that tells an owner about a problem with their unit.' },
   { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a reservation or a guest record; Messages itself stays under Communication.' },
   // Finance reads bookings but does not make or change them (owner, 11 Oct 2026); taking a guest's payment, recording
