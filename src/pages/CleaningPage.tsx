@@ -742,7 +742,7 @@ function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSele
 
       {r.status === 'done'
         ? <div className="text-meta text-muted-ink">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</div>
-        : mayTick && !r.guestOut && <Button size="sm" variant="primary" className="w-full" loading={busy} onClick={stop(onGuestLeft)}>Guest has left</Button>}
+        : mayTick && !r.guestOut && <Button size="sm" variant="danger" className="w-full" loading={busy} onClick={stop(onGuestLeft)}>Guest has left</Button>}
     </div>
   );
 }
@@ -772,7 +772,7 @@ function DepartureCard({ d, now, future, busy, savingIn, onGuestLeft, onCheckIn,
       </CardLine>
       <div className="mt-auto pt-0.5 flex items-center gap-2">
         <Button size="sm" variant="primary" className="flex-1" loading={busy.plan} onClick={onPlan}>Plan cleaning</Button>
-        {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" className="flex-1" loading={busy.left} onClick={onGuestLeft}>Guest has left</Button>}
+        {d.state !== 'checked_out' && !future && <Button size="sm" variant="danger" className="flex-1" loading={busy.left} onClick={onGuestLeft}>Guest has left</Button>}
       </div>
     </div>
   );
