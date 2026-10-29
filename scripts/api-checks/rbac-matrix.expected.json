@@ -91,6 +91,7 @@
  "GET /api/finance/filters": "AAFAFFFU",
  "GET /api/finance/payables": "AAFAFFFU",
  "GET /api/finance/unit-pnl": "AAFAFFFU",
+ "GET /api/finance/yearly-report": "AAFAFFFU",
  "GET /api/fleet-health": "AFFAFFFU",
  "GET /api/goods-receipts": "AFFAFFFU",
  "GET /api/goods-receipts/[id]": "AFFAFFFU",

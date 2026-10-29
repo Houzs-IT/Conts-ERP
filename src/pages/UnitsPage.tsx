@@ -16,6 +16,7 @@ import ChannexChannelsCard from '../components/ChannexChannelsCard';
 import { StaleBanner } from '../components/DataState';
 import { RecordSkeleton, TreeSkeleton } from './units/UnitsSkeleton';
 import { UnitList } from './units/UnitList';
+import { exportUnits } from './units/unitExport';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -273,7 +274,11 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const setListMode = (on: boolean) => setParams(p => { const n = new URLSearchParams(on ? '' : p); if (on) n.set('view', 'list'); else n.delete('view'); return n; }, { replace: true });
   const header = (
     <PageHeader title="Units" sub={props.data ? `${plural(units.length, 'unit')} · ${plural(buildings.length, 'building')}` : 'Loading units…'}
-      actions={<Button size="sm" variant="secondary" icon={<Icon name={listMode ? 'FolderTree' : 'Table2'} size="sm" />} onClick={() => setListMode(!listMode)}>{listMode ? 'Tree and record' : 'List of all units'}</Button>}
+      actions={<>
+        <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} disabled={units.length === 0} title="Download every unit with every field as an Excel file"
+          onClick={() => exportUnits(units, buildings, readiness)}>Export all units</Button>
+        <Button size="sm" variant="secondary" icon={<Icon name={listMode ? 'FolderTree' : 'Table2'} size="sm" />} onClick={() => setListMode(!listMode)}>{listMode ? 'Tree and record' : 'List of all units'}</Button>
+      </>}
       primary={canEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button> : undefined} />
   );
 
