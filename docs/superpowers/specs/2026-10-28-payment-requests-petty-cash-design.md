@@ -53,7 +53,8 @@ All product text is English with British spelling. The field portal's screens ar
 - **Buying Supply chain goods out of petty cash.** Supply chain goods always go through a PO, and are paid by a payment request against it (chew, 2026-10-29).
 - The Payment centre (SOP §3.6) and bank batch files (§3.7).
 - The "owes a formal invoice" tracking list and deposit offsets (§3.8). This design only sets the flag.
-- Charging an owner from a receipt. The owner is charged through the maintenance job's quote, as today (§4.6).
+- Charging an owner from a receipt. The owner is charged through the maintenance job's quote, as today (§4.6a).
+- Owner-paid items that are not maintenance, for example a kettle for a unit. They are parked by chew (2026-10-29) and stay as today: operations record them in Property OS. In this version, a receipt is a company cost or a maintenance job's cost.
 - Notifications other than on-screen banners and badges.
 - Engine mobile screens: Houzs's phone app stays switched off.
 
@@ -61,7 +62,7 @@ All product text is English with British spelling. The field portal's screens ar
 
 - A receipt or request counted twice: in a balance, the ledger or a project limit.
 - An owner charged both by a job's quote and by a receipt for the same job.
-- Staff seeing other people's money. Field staff see no amounts at all, except a keeper for their own float (§4.7).
+- Staff seeing other people's money. Field staff see only the amounts of their own receipts: no balance, and no job quote or cost. A keeper also sees their own float (§4.7).
 - Two copies of the data or the rules, one per system, that can drift apart.
 - A receipt refused because a project is over its limit. The money is already spent (SOP §6), so it is flagged, never refused.
 
@@ -77,7 +78,7 @@ All product text is English with British spelling. The field portal's screens ar
 - Example: quote RM 130, faucet RM 45. The owner is charged RM 130; RM 45 is the job's cost.
 
 **2026-10-29**
-- Field staff (technicians, cleaners) only hand in receipts. They choose nothing, type no amount, and see no amounts or balance.
+- Field staff (technicians, cleaners) only hand in receipts and choose no payer. They see no balance. (Revised the same day: they do see and confirm the OCR amount of their own receipt, chew: "我希望他们提交时看到金额".)
   - The receipt is read by OCR.
   - Everything the system reads is checked on finance's side.
 - **One float per department**, kept by one person. The keeper can be any staff member, not necessarily a supervisor.
@@ -175,13 +176,13 @@ All product text is English with British spelling. The field portal's screens ar
 
 **OCR:**
 - The bill reader reads the payee, date, number and amount when a receipt is handed in.
-- For field staff, the read amount is stored as the receipt's amount without showing it to them. Their line takes:
+- **Every submitter sees the read amount and confirms or corrects it before sending** (chew, 2026-10-29). Field staff included. If OCR reads nothing, they type it. Their line takes:
   - the job's unit, department and job, for a job receipt;
   - their default department, for a stand-alone receipt, plus a unit if they pick one. Cleaners pick a unit from a list, with no amounts shown.
 
   The expense account is left for finance.
-- Office staff see the read figures and confirm them before submitting.
-- Unreadable: the amount stays empty, and the receipt is marked "Amount to confirm" for the keeper and finance.
+- Office staff also see the other read figures (payee, date, number).
+- Finance can still correct any amount while checking (§4.5).
 
 ### 4.5 Receipts and petty cash
 
@@ -209,7 +210,7 @@ Handed in (= paid from the float) → Checked (finance) → Topped up
 - **Which amount counts:**
   - The OCR amount, or the amount an office submitter confirms, is taken off the balance at hand-in.
   - Finance may correct it while checking. The balance follows the corrected figure, and the ledger and the project limit use it. Any difference in cash is settled between the keeper and the staff member.
-  - An unreadable receipt has no amount and is marked "Amount to confirm". Finance enters the amount.
+  - (Every receipt has an amount from hand-in, since the submitter confirms or types it.)
   - The keeper may also enter the amount, on their own tab.
 - **No passing on** (chew, "b"): the keeper has no way to send a receipt to finance.
 - **Project limit:** a receipt's project lines count as used from Handed in (SOP §6). They stop counting when the receipt is rejected and then repaid or written off. Over the limit is flagged, never refused.
@@ -309,17 +310,17 @@ Submitted (waiting for payment) → Part paid → Paid
     - The forwarding Function sends a copy to the engine's bucket for the receipt.
   - The existing kinds (contractor's bill, receipt, invoice, proof of work) are unchanged. A contractor's bill keeps its path (`contractor_amount`).
 - **The owner pays the job's quote** through the existing complete → expense flow (SOP §3.11). The receipt is the company's cost of the job.
-- **The job page shows its receipts as part of actual cost** (office only; field staff see no amounts). When actual cost goes above the quote, the job shows the SOP §3.11 step 4 warning.
+- **The job page shows its receipts as part of actual cost** (office only; field staff see no job cost). When actual cost goes above the quote, the job shows the SOP §3.11 step 4 warning.
 - **Two read-only views** (part of the list in §5):
   - one of `pos.maintenance_issues` (id, unit, title, assignee, state) for `scm_engine`;
   - one of receipt lines by job for `pos_app`.
 
 ### 4.7 Screens
 
-**Field portal** (phone; four languages; no amounts unless the person is a keeper):
+**Field portal** (phone; four languages; field staff see the amounts of their own receipts only, and a keeper also sees their float):
 - **On a maintenance job:** the upload offers "My purchase (pay me back)".
 - **"Hand in a receipt":** a button on the Jobs tab. Take photos, optionally pick a unit, add a note, send.
-- **"My receipts":** each receipt with date, what it was for, and status in words (Waiting, Paid back, Rejected and why). No amounts.
+- **"My receipts":** each receipt with date, what it was for, and status in words (Waiting, Paid back, Rejected and why). With amounts.
 - **For a field keeper only, a "Petty cash" tab:**
   - the balance;
   - this month's receipts on their float, each with photo, submitter and amount, so they know what cash to hand over. The amount can be entered where OCR could not read it;
@@ -356,7 +357,7 @@ Submitted (waiting for payment) → Part paid → Paid
   - follows the month filter;
   - one row per receipt line;
   - shows the number of receipts.
-- Over-limit and "Amount to confirm" flags.
+- Over-limit flags.
 
 The screens follow the engine's existing theme. Amounts are right-aligned, in RM.
 
