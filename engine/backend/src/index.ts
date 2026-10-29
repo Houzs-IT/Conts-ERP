@@ -27,6 +27,8 @@ import clientErrors from "./routes/clientErrors";
 import udf from "./routes/udf";
 import authRoutes from "./routes/auth";
 import contsSso from "./conts/sso";
+import { myClaimsRouter } from "./conts/my-claims-routes";
+import { claimsClient, staffFromAssertion, staffFromSession } from "./conts/staff-identity";
 import totpRoutes from "./routes/totp";
 import users from "./routes/users";
 import roles from "./routes/roles";
@@ -403,6 +405,11 @@ app.route("/api/public/contractor-calendar", publicContractorCalendar);
 app.route("/api/public/brand-calendar", publicBrandCalendar);
 // PUBLIC no-login Beta Client PO list: the signed token names the one project. See routes/renovationBetaClientPublic.ts.
 app.route("/api/public/beta-client", renovationBetaClientPublic);
+// Conts: staff receipts and requests forwarded by Property OS's server for a person with no engine account (a cleaner
+// or technician on the phone). No engine session: the call carries a short-lived assertion signed with the single
+// sign-on secret, naming the person; every query is limited to them (conts/staff-identity.ts, conts/my-claims-routes.ts).
+app.use("/api/claims-forward/*", claimsClient, staffFromAssertion, companyContext);
+app.route("/api/claims-forward", myClaimsRouter("forward"));
 
 app.use("/api/*", auth);
 
@@ -525,6 +532,10 @@ app.route("/api/assr-print", assrPrint);
 // conditions AND also lets a position pass when it has ANY scm* page-access
 // area granted at >= view — so per-position SCM grants work without removing
 // any existing user's access. (Was requireAnyPermission(["*","scm.access"]).)
+// Conts: a signed-in member of staff's own receipts and requests ("My claims"). Outside /api/scm on purpose: anyone
+// on the Conts staff list may use it, with no Supply chain or Finance access (conts/my-claims-routes.ts).
+app.use("/api/claims/*", claimsClient, staffFromSession);
+app.route("/api/claims", myClaimsRouter("session"));
 app.use("/api/scm/*", requireScmAccess);
 app.route("/api/scm", scmApp);
 

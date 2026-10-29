@@ -14,7 +14,7 @@ type Db = Parameters<typeof loadLedgerSettings>[0];
     setup refuses money there, and Daily Bank shows them beside the banks). Any: every other rule. */
 export type RoleKind = "money" | "clearing" | "any";
 export const roleKind = (role: AccountRole): RoleKind =>
-  role === "CASH" || role === "BANK_DEFAULT" ? "money" : role === "TRANSIT_EDC" || role === "TRANSIT_ONLINE" ? "clearing" : "any";
+  role === "CASH" || role === "BANK_DEFAULT" || role === "PETTY_CASH" ? "money" : role === "TRANSIT_EDC" || role === "TRANSIT_ONLINE" ? "clearing" : "any";
 
 /** Rules nothing posts on any more, so they are not part of being ready: SALES was the template's (sales post by item
     group), INVENTORY and CLOSING_STOCK the one-account stock the three stock buckets replaced (2026-09-21). */
@@ -25,14 +25,14 @@ export const RETIRED_ROLES: readonly AccountRole[] = ["SALES", "INVENTORY", "CLO
     confirmed first. The default bank and the drawer are not here: each bank keeps its own money, and moving the
     default only changes where new vouchers start. */
 export const OPEN_BALANCE_ROLES: readonly AccountRole[] = [
-  "AR", "AR_OTHER", "AP", "AP_OTHER", "TRANSIT_EDC", "TRANSIT_ONLINE", "CUSTOMER_DEPOSITS",
+  "AR", "AR_OTHER", "AP", "AP_OTHER", "TRANSIT_EDC", "TRANSIT_ONLINE", "CUSTOMER_DEPOSITS", "PETTY_CASH",
   "INVENTORY_CUSTOMER", "INVENTORY_DISPLAY", "INVENTORY_SERVICE",
 ];
 
 export const BINDING_COLUMNS = ["sales_account", "sales_return_account", "purchase_account", "purchase_return_account"] as const;
 export type BindingColumn = (typeof BINDING_COLUMNS)[number];
 
-export type RoleProblem = "missing_account" | "inactive" | "header" | "not_money" | "not_clearing";
+export type RoleProblem = "missing_account" | "inactive" | "header" | "not_money" | "not_clearing" | "same_as_cash";
 
 export interface LedgerSetupStatus {
   ready: boolean;
@@ -74,7 +74,11 @@ export async function ledgerSetupStatus(sb: Db, companyId: number): Promise<Ledg
 
   const roleRows = (Object.keys(DEFAULT_ROLE_CODES) as AccountRole[])
     .filter((role) => !RETIRED_ROLES.includes(role))
-    .map((role) => ({ role, accountCode: roles[role], kind: roleKind(role), problem: roleProblem(role, roles[role], chart) }));
+    .map((role) => ({
+      role, accountCode: roles[role], kind: roleKind(role),
+      /* Petty cash (Conts) must be its own account, not the cash drawer's: until it is, receipts are not booked. */
+      problem: roleProblem(role, roles[role], chart) ?? (role === "PETTY_CASH" && roles.PETTY_CASH === roles.CASH ? "same_as_cash" as const : null),
+    }));
 
   const binds = new Map(((bindsRes.data ?? []) as Array<Record<string, unknown>>).map((b) => [String(b.group_code), b]));
   const itemGroups = ((groupsRes.data ?? []) as Array<{ code: string; is_active: boolean | null }>)
@@ -86,7 +90,7 @@ export async function ledgerSetupStatus(sb: Db, companyId: number): Promise<Ledg
   const lettered = new Set(((lettersRes.data ?? []) as Array<{ account_code: string; letter: string | null }>)
     .filter((l) => String(l.letter ?? "").trim()).map((l) => l.account_code));
   const banksWithoutLetter = chart
-    .filter((a) => a.acc_money === true && a.is_active === true && a.account_code !== roles.CASH && !lettered.has(a.account_code))
+    .filter((a) => a.acc_money === true && a.is_active === true && a.account_code !== roles.CASH && a.account_code !== roles.PETTY_CASH && !lettered.has(a.account_code))
     .map((a) => a.account_code).sort();
 
   /* Conts: a customer or supplier control is posted to directly; one with sub-accounts would refuse every posting. */
@@ -97,7 +101,8 @@ export async function ledgerSetupStatus(sb: Db, companyId: number): Promise<Ledg
 
   const ledgerStartDate = settings.settings.ledgerStartDate;
   return {
-    ready: roleRows.every((r) => !r.problem) && itemGroups.length === 0 && banksWithoutLetter.length === 0
+    /* Petty cash not named yet is shown, but does not hold the books back: only receipts wait for it. */
+    ready: roleRows.every((r) => !r.problem || r.problem === "same_as_cash") && itemGroups.length === 0 && banksWithoutLetter.length === 0
       && controlsWithChildren.length === 0 && ledgerStartDate != null,
     roles: roleRows, itemGroups, banksWithoutLetter, controlsWithChildren, ledgerStartDate,
   };

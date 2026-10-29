@@ -65,6 +65,7 @@ import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
   requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../lib/companyScope';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { postNowHandler } from '../../conts/pv-post-now';
+import { afterVoucherCancelledBestEffort, afterVoucherPostedBestEffort } from "../../conts/claims-voucher-hooks";
 import { normalizeCurrency, normalizeExchangeRate, masterRateForCurrency } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange, assertAuditWritable, auditUnavailableBody } from '../lib/entity-audit';
@@ -918,6 +919,13 @@ export const updatePaymentVoucherHandler = async (c: any) => {
     return c.json({ error: 'refund_lines_fixed', message: 'A refund has one line the system writes — change the refund amount instead.' }, 400);
   }
   if (body.lines !== undefined) {
+    /* Conts: a voucher made from a payment request, a staff receipt or a petty cash top-up keeps the lines it was made
+       with (each carries its request line's project and unit, and pays only what is owed). Cancel it and make it again. */
+    const { data: made } = await sb.from('payment_vouchers').select('payment_request_id, staff_receipt_id, petty_cash_float_id').eq('id', id).maybeSingle();
+    const m = made as { payment_request_id?: string | null; staff_receipt_id?: string | null; petty_cash_float_id?: string | null } | null;
+    if (m?.payment_request_id || m?.staff_receipt_id || m?.petty_cash_float_id) {
+      return c.json({ error: 'lines_fixed', message: 'This voucher was made from a request, a receipt or a petty cash top-up, so its lines are fixed. Cancel it and make it again from there.' }, 409);
+    }
     const built = buildLines(body.lines);
     if ('error' in built) return c.json({ error: built.error }, 400);
     /* Same self-debit door as the create path, against the EFFECTIVE Paid
@@ -1092,6 +1100,8 @@ export const postPaymentVoucherHandler = async (c: any) => {
         .update({ status: 'POSTED', posted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', id), co.companyId);
     }
+    /* Conts: a post that died after its journal settles here, on the retry (idempotent; conts/claims-voucher-hooks.ts). */
+    await afterVoucherPostedBestEffort(sb, id);
     return c.json({ ok: true, alreadyPosted: true, jeNo: active.je_no, jeId: active.id });
   }
 
@@ -1173,6 +1183,8 @@ export const postPaymentVoucherHandler = async (c: any) => {
   /* The deposit-invoice half of a refund (docs/bugs/0860): a credit note per invoice it draws on. */
   await refundDepositInvoicesBestEffort(sb, refundHookInput({ ...pv, ...refundPv, id, company_id: companyId }, totalSen, approvalActor(c)));
   await mirrorRefundBestEffort(sb, refundHookInput({ ...pv, ...refundPv, id, company_id: companyId }, totalSen, approvalActor(c)));
+  /* Conts: a top-up, a staff pay-back or a payment request settles with its voucher (conts/claims-voucher-hooks.ts). */
+  await afterVoucherPostedBestEffort(sb, id);
 
   /* The money-out event. Recorded here rather than after the PI settlement loop
      below so a settlement hiccup cannot cost us the record that the GL was
@@ -1738,6 +1750,8 @@ export const cancelPaymentVoucherHandler = async (c: any) => {
   if (rev.ok && isRefund(head.purpose)) await bookRefundCredit(sb, head, 'reversal');
   if (rev.ok && isRefund(head.purpose)) await releaseRefundNotesBestEffort(sb, { companyId: co.companyId, pvId: id, pvNumber: cancelled.pv_number, actor: approvalActor(c) });
   if (rev.ok && isRefund(head.purpose)) await removeMirrorRowsBestEffort(sb, { companyId: co.companyId, match: { refund_pv_id: id }, why: `refund voucher ${cancelled.pv_number} cancelled` });
+  /* Conts: undo what posting settled (a top-up, a staff pay-back, a payment request). */
+  if (rev.ok) await afterVoucherCancelledBestEffort(sb, id);
   if (!rev.ok) {
     // eslint-disable-next-line no-console
     console.error(`[pv-accounting] reversal failed for ${cancelled.pv_number}:`, rev.status, rev.reason);

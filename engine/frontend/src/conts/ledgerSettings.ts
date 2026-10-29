@@ -43,7 +43,7 @@ export const useSaveLedgerSettings = () => {
 };
 
 /* ── Is the ledger ready to go live? (spec 3.4) — GET /accounting/setup-status ─────────────────────────────── */
-export type RoleProblem = "missing_account" | "inactive" | "header" | "not_money" | "not_clearing";
+export type RoleProblem = "missing_account" | "inactive" | "header" | "not_money" | "not_clearing" | "same_as_cash";
 /** What kind of account a rule takes: a bank or the drawer, a 326- / 327- clearing (not money), or any account. */
 export type RoleKind = "money" | "clearing" | "any";
 export type LedgerSetupStatus = {
@@ -81,7 +81,7 @@ export const ROLE_LABELS: Record<string, string> = {
   AR: "Trade debtors (customers)", AR_OTHER: "Other debtors", SALES: "Sales (fallback)", INVENTORY: "Stock (fallback)",
   AP: "Trade creditors (suppliers)", AP_OTHER: "Other creditors", CASH: "Cash in hand", BANK_DEFAULT: "Default bank",
   TRANSIT_EDC: "Card machine clearing", TRANSIT_ONLINE: "Online payment clearing", CUSTOMER_DEPOSITS: "Customer deposits",
-  OVER_SHORT: "Cash over / short", CLOSING_STOCK: "Closing stock (one account)",
+  OVER_SHORT: "Cash over / short", CLOSING_STOCK: "Closing stock (one account)", PETTY_CASH: "Petty cash",
   INVENTORY_CUSTOMER: "Stock — customer", INVENTORY_DISPLAY: "Stock — display", INVENTORY_SERVICE: "Stock — service",
   OPENING_STOCK_CUSTOMER: "Opening stock — customer", OPENING_STOCK_DISPLAY: "Opening stock — display", OPENING_STOCK_SERVICE: "Opening stock — service",
   CLOSING_STOCK_CUSTOMER: "Closing stock — customer", CLOSING_STOCK_DISPLAY: "Closing stock — display", CLOSING_STOCK_SERVICE: "Closing stock — service",
@@ -94,4 +94,5 @@ export const PROBLEM_TEXT: Record<RoleProblem, string> = {
   header: "has accounts under it — choose one of those",
   not_money: "must be a bank or cash account",
   not_clearing: "must be a 326- / 327- clearing account, not a bank",
+  same_as_cash: "must be its own account, not the cash drawer's — receipts are not booked until it is",
 };
