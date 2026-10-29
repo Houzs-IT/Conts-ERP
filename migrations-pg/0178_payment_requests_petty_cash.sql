@@ -195,6 +195,10 @@ create unique index if not exists payment_vouchers_staff_receipt_live on scm.pay
   where staff_receipt_id is not null and status <> 'CANCELLED';
 create unique index if not exists payment_vouchers_float_draft on scm.payment_vouchers (petty_cash_float_id)
   where petty_cash_float_id is not null and status = 'DRAFT';
+-- One draft at a time pays a request, and a rejected receipt is replaced once.
+create unique index if not exists payment_vouchers_request_draft on scm.payment_vouchers (payment_request_id)
+  where payment_request_id is not null and status = 'DRAFT';
+create unique index staff_receipts_replaces on scm.staff_receipts (replaces_id) where replaces_id is not null;
 alter table scm.payment_voucher_lines add column if not exists unit_id text;
 
 do $$ declare t text; begin

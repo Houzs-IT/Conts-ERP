@@ -22,3 +22,16 @@ export function requestReservation(requestLines: { projectId: number | null; amo
   for (const [p, sen] of out) if (sen <= 0) out.delete(p);
   return out;
 }
+
+/** What a request still owes, line by line: the amount its posted vouchers have paid comes off the lines in order, so a
+ *  second voucher pays only the rest, each part keeping its own line's project and unit. */
+export function linesStillOwed<L extends { amount_sen: number }>(lines: L[], paidSen: number): L[] {
+  let left = Math.max(0, paidSen);
+  const out: L[] = [];
+  for (const l of lines) {
+    const take = Math.min(left, l.amount_sen);
+    left -= take;
+    if (l.amount_sen - take > 0) out.push({ ...l, amount_sen: l.amount_sen - take });
+  }
+  return out;
+}

@@ -21,7 +21,8 @@ const hmacKey = (secret: string, use: 'sign' | 'verify') =>
 
 /** `base64url(JSON).base64url(HMAC-SHA256)`, the same shape as the single sign-on assertion (conts/sso.ts). */
 export async function signStaffAssertion(secret: string, a: { userId: string; email: string; exp: number }): Promise<string> {
-  const body = b64url(enc.encode(JSON.stringify({ userId: a.userId, email: a.email, exp: a.exp })));
+  /* aud keeps a staff assertion apart from a sign-on one, though both are signed with the same secret. */
+  const body = b64url(enc.encode(JSON.stringify({ aud: 'claims', userId: a.userId, email: a.email, exp: a.exp })));
   const sig = await crypto.subtle.sign('HMAC', await hmacKey(secret, 'sign'), enc.encode(body));
   return `${body}.${b64url(sig)}`;
 }
@@ -31,23 +32,25 @@ export async function verifyStaffAssertion(secret: string, token: string, now = 
   if (!body || !sig) return null;
   try {
     if (!(await crypto.subtle.verify('HMAC', await hmacKey(secret, 'verify'), fromB64url(sig), enc.encode(body)))) return null;
-    const a = JSON.parse(new TextDecoder().decode(fromB64url(body))) as { userId?: unknown; email?: unknown; exp?: unknown };
-    if (typeof a.userId !== 'string' || typeof a.email !== 'string' || typeof a.exp !== 'number') return null;
+    const a = JSON.parse(new TextDecoder().decode(fromB64url(body))) as { aud?: unknown; userId?: unknown; email?: unknown; exp?: unknown };
+    if (a.aud !== 'claims' || typeof a.userId !== 'string' || typeof a.email !== 'string' || typeof a.exp !== 'number') return null;
     if (a.exp < now || a.exp > now + MAX_AGE_MS) return null;
     return { userId: a.userId, email: a.email };
   } catch { return null; }
 }
 
 /** The active Conts staff member with this email (public.conts_staff), or null. */
-export async function staffByEmail(sb: any, email: string): Promise<Staff | null> {
+/** The active Conts staff member with this email (public.conts_staff), or null; 'unavailable' when the list cannot be read. */
+export async function staffByEmail(sb: any, email: string): Promise<Staff | null | 'unavailable'> {
   const e = email.trim().toLowerCase();
   if (!e) return null;
   const { data, error } = await sb.schema('public').from('conts_staff')
     .select('id, full_name, email, department_id, department_side, role, active')
-    .ilike('email', e.replace(/[\\%_]/g, m => `\\${m}`));
-  if (error) return null;
-  const row = ((data ?? []) as Array<Record<string, unknown>>).find(r => String(r.email ?? '').toLowerCase() === e);
-  if (!row || row.active !== true) return null;
+    .ilike('email', e.replace(/[\\%_]/g, (m: string) => `\\${m}`));
+  if (error) return 'unavailable';
+  /* An email can sit on an old, switched-off account too: the active one is the person. */
+  const row = ((data ?? []) as Array<Record<string, unknown>>).find(r => String(r.email ?? '').toLowerCase() === e && r.active === true);
+  if (!row) return null;
   return {
     userId: String(row.id), name: String(row.full_name ?? ''), email: String(row.email),
     departmentId: (row.department_id as string | null) ?? null, side: (row.department_side as string | null) ?? null,
@@ -55,12 +58,14 @@ export async function staffByEmail(sb: any, email: string): Promise<Staff | null
   };
 }
 
+const unavailable = (c: any) => c.json({ error: 'unavailable', message: 'The staff list could not be read. Try again in a moment.' }, 503);
 const refuse = (c: any) => c.json({ error: 'not_staff', message: 'You are not signed in as a member of staff.' }, 401);
 
 /** For a person signed in to the engine (mounted after the global auth): their email finds them. */
 export const staffFromSession: MiddlewareHandler = async (c: any, next) => {
   const email = (c.get('user') as { email?: string } | undefined)?.email;
   const staff = email ? await staffByEmail(c.get('supabase'), email) : null;
+  if (staff === 'unavailable') return unavailable(c);
   if (!staff) return refuse(c);
   c.set('staff', staff);
   await next();
@@ -73,6 +78,7 @@ export const staffFromAssertion: MiddlewareHandler = async (c: any, next) => {
   const token = c.req.header('x-conts-staff');
   const a = token ? await verifyStaffAssertion(secret, token) : null;
   const staff = a ? await staffByEmail(c.get('supabase'), a.email) : null;
+  if (staff === 'unavailable') return unavailable(c);
   if (!a || !staff || staff.userId !== a.userId) return refuse(c);
   c.set('staff', staff);
   await next();

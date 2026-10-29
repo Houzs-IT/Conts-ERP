@@ -17,11 +17,12 @@
 import { Hono } from 'hono';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { todayMyt } from '../scm/lib/my-time';
-import { DOC_FILE_MIMES, MAX_DOC_FILE_BYTES, decodeBase64 } from '../scm/lib/doc-files';
+import { DOC_FILE_MIMES } from '../scm/lib/doc-files';
+import { MAX_FILES, decodeFiles, fileResponse, removeFiles, storeFiles } from './claims-files';
 import { docMonthTag, insertWithDocNoRetry, mintMonthlyDocNo } from '../scm/lib/doc-no';
 import { extractOneBill } from '../acc/bill-extract';
 import { lineDepartment, resolveFloatId } from './petty-cash';
-import { RECEIPT_COLS, filesOf, floatBalances, linesOf, monthRange, receiptView, staffNames, type FloatRow, type ReceiptRow } from './petty-cash-store';
+import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, receiptView, staffNames, type FloatRow, type ReceiptRow } from './petty-cash-store';
 import type { Staff } from './staff-identity';
 import { buildLines } from './claims-lines';
 import { myRequestRoutes } from './payment-request-routes';
@@ -29,8 +30,6 @@ import { myRequestRoutes } from './payment-request-routes';
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 type Ctx = any;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' };
-const MAX_FILES = 8;
 const staffOf = (c: Ctx): Staff => c.get('staff');
 const bodyOf = async (c: Ctx): Promise<Record<string, unknown> | null> => { try { return await c.req.json(); } catch { return null; } };
 
@@ -87,61 +86,67 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   if (!(Number.isInteger(amountSen) && amountSen > 0)) return c.json({ error: 'validation', message: 'Enter the amount on the receipt.' }, 422);
   const spendDate = DATE.test(String(b.spendDate ?? '')) ? String(b.spendDate) : todayMyt();
   if (spendDate > todayMyt()) return c.json({ error: 'validation', message: 'The receipt date cannot be in the future.' }, 422);
-  const files = Array.isArray(b.files) ? (b.files as Array<Record<string, unknown>>) : [];
-  if (files.length === 0 || files.length > MAX_FILES) return c.json({ error: 'validation', message: 'Add a photo of the receipt.' }, 422);
-  const decoded: Array<{ name: string; mime: string; bytes: Uint8Array }> = [];
-  for (const f of files) {
-    const mime = String(f.mime ?? '');
-    const bytes = decodeBase64(String(f.dataBase64 ?? ''));
-    if (!DOC_FILE_MIMES.has(mime) || !bytes || bytes.byteLength === 0) return c.json({ error: 'bad_type', message: 'Photos (JPEG, PNG, WebP) or a PDF only.' }, 400);
-    if (bytes.byteLength > MAX_DOC_FILE_BYTES) return c.json({ error: 'bad_size', message: 'Each file must be under 20 MB.' }, 400);
-    decoded.push({ name: String(f.name ?? 'receipt').slice(0, 200), mime, bytes });
-  }
-  const built = await buildLines(sb, staff, b.lines, amountSen);
+  const decoded = decodeFiles(b.files, 'a photo of the receipt');
+  if (!decoded.ok) return c.json({ error: decoded.error, message: decoded.message }, decoded.status);
+  const built = await buildLines(sb, staff, b.lines, amountSen, co.companyId);
   if (!built.ok) return c.json({ error: 'validation', message: built.message }, 422);
 
-  /* A proper receipt for one finance rejected replaces it and keeps its float. */
+  /* A proper receipt for one finance rejected replaces it and keeps its float. The old one is claimed first, so two
+     replacements at once cannot both be made; it goes back to Rejected if this one is not saved. */
   let replaces: ReceiptRow | null = null;
   if (b.replacesId) {
     const { data } = await sb.from('staff_receipts').select(RECEIPT_COLS).eq('company_id', co.companyId).eq('id', String(b.replacesId)).eq('submitter_user_id', staff.userId).maybeSingle();
     replaces = (data as ReceiptRow | null) ?? null;
     if (!replaces) return c.json({ error: 'not_found' }, 404);
-    if (replaces.status !== 'REJECTED') return c.json({ error: 'not_rejected', message: 'Only a rejected receipt can be replaced.' }, 409);
+    const { data: claimed } = await sb.from('staff_receipts').update({ status: 'REPLACED', updated_at: new Date().toISOString() })
+      .eq('id', replaces.id).eq('status', 'REJECTED').select('id').maybeSingle();
+    if (!claimed) return c.json({ error: 'not_rejected', message: 'Only a rejected receipt can be replaced.' }, 409);
   }
+  const unclaim = async () => { if (replaces) await sb.from('staff_receipts').update({ status: 'REJECTED' }).eq('id', replaces.id).eq('status', 'REPLACED'); };
   const floatId = replaces ? replaces.float_id : await myFloatId(sb, co.companyId, staff);
   const source = c.get('claimsSource') === 'forward' ? (staff.field ? 'field_app' : 'property_os') : 'engine';
 
+  /* Files first, under the receipt's own id: a failed upload leaves no receipt behind. */
+  const id = crypto.randomUUID();
+  let stored: Awaited<ReturnType<typeof storeFiles>> = [];
+  try { stored = await storeFiles(bucket, `claims/${co.companyId}/${id}`, decoded.files); } catch {
+    await unclaim();
+    return c.json({ error: 'upload_failed', message: 'The photos could not be saved. Try again.' }, 502);
+  }
+  const fail = async (reason: string) => {
+    await sb.from('staff_receipts').delete().eq('id', id);
+    await removeFiles(bucket, stored.map(s => s.r2_key));
+    await unclaim();
+    return c.json({ error: 'save_failed', reason }, 500);
+  };
   const { data: row, error } = await insertWithDocNoRetry<{ id: string; receipt_no: string }>(
     () => mintMonthlyDocNo(sb, 'staff_receipts', 'receipt_no', `CLM-${docMonthTag(spendDate)}`),
     no => sb.from('staff_receipts').insert({
-      company_id: co.companyId, receipt_no: no, submitter_user_id: staff.userId, float_id: floatId, spend_date: spendDate,
+      id, company_id: co.companyId, receipt_no: no, submitter_user_id: staff.userId, float_id: floatId, spend_date: spendDate,
       amount_sen: amountSen, vendor_name: b.vendorName ? String(b.vendorName).slice(0, 200) : null, note: b.note ? String(b.note).slice(0, 500) : null,
       status: 'HANDED_IN', replaces_id: replaces?.id ?? null, source,
     }).select('id, receipt_no').single(),
   );
-  if (error || !row) return c.json({ error: 'save_failed', reason: error?.message ?? 'insert returned nothing' }, 500);
-  const ins = await sb.from('staff_receipt_lines').insert(built.lines.map(l => ({ ...l, receipt_id: row.id })));
-  if (ins.error) return c.json({ error: 'save_failed', reason: ins.error.message }, 500);
-  for (const f of decoded) {
-    const key = `claims/${co.companyId}/${row.id}/${crypto.randomUUID()}.${EXT[f.mime]}`;
-    await bucket.put(key, f.bytes.buffer as ArrayBuffer, { httpMetadata: { contentType: f.mime } });
-    const fr = await sb.from('staff_receipt_files').insert({ receipt_id: row.id, r2_key: key, file_name: f.name, mime: f.mime, byte_size: f.bytes.byteLength });
-    if (fr.error) return c.json({ error: 'save_failed', reason: fr.error.message }, 500);
-  }
-  if (replaces) await sb.from('staff_receipts').update({ status: 'REPLACED', updated_at: new Date().toISOString() }).eq('id', replaces.id).eq('status', 'REJECTED');
-  return c.json({ id: row.id, receiptNo: row.receipt_no, route: floatId ? 'float' : 'finance' }, 201);
+  if (error || !row) return fail(error?.message ?? 'insert returned nothing');
+  const ins = await sb.from('staff_receipt_lines').insert(built.lines.map(l => ({ ...l, receipt_id: id })));
+  if (ins.error) return fail(ins.error.message);
+  const fr = await sb.from('staff_receipt_files').insert(stored.map(s => ({ ...s, receipt_id: id })));
+  if (fr.error) return fail(fr.error.message);
+  return c.json({ id, receiptNo: row.receipt_no, route: floatId ? 'float' : 'finance' }, 201);
 };
 
 export const myReceiptsHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
-  let q = sb.from('staff_receipts').select(RECEIPT_COLS).eq('company_id', co.companyId).eq('submitter_user_id', staffOf(c).userId);
   const m = monthRange(c.req.query('month'));
-  if (m) q = q.gte('spend_date', m.from).lt('spend_date', m.to);
-  const { data, error } = await q;
-  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  const rows = ((data ?? []) as ReceiptRow[]).sort((a, b) => String(b.spend_date).localeCompare(String(a.spend_date)) || b.receipt_no.localeCompare(a.receipt_no));
+  const userId = staffOf(c).userId;
+  const all = await allRows<ReceiptRow>((f, t) => {
+    let q = sb.from('staff_receipts').select(RECEIPT_COLS).eq('company_id', co.companyId).eq('submitter_user_id', userId);
+    if (m) q = q.gte('spend_date', m.from).lt('spend_date', m.to);
+    return q.order('id').range(f, t);
+  });
+  const rows = all.sort((a, b) => String(b.spend_date).localeCompare(String(a.spend_date)) || b.receipt_no.localeCompare(a.receipt_no));
   const ids = rows.map(r => r.id);
   const [lines, files, names] = await Promise.all([linesOf(sb, ids), filesOf(sb, ids), staffNames(sb)]);
   return c.json({ receipts: rows.map(r => receiptView(r, lines.get(r.id) ?? [], files.get(r.id) ?? [], names)) });
@@ -162,7 +167,7 @@ export const receiptFileHandler = async (c: Ctx): Promise<Response> => {
   if (!f) return c.json({ error: 'not_found' }, 404);
   const obj = await c.env?.SLIPS?.get(f.r2_key);
   if (!obj) return c.json({ error: 'not_found' }, 404);
-  return new Response(obj.body, { headers: { 'content-type': f.mime, 'content-disposition': `inline; filename="${String(f.file_name).replace(/"/g, '')}"`, 'cache-control': 'private, max-age=300' } });
+  return fileResponse(obj, f.file_name, f.mime);
 };
 
 export const myFloatHandler = async (c: Ctx): Promise<Response> => {
@@ -171,12 +176,13 @@ export const myFloatHandler = async (c: Ctx): Promise<Response> => {
   const sb = c.get('supabase');
   const f = await keptFloat(sb, co.companyId, staffOf(c));
   if (!f) return c.json({ error: 'not_found', message: 'You do not keep a petty cash float.' }, 404);
-  let q = sb.from('staff_receipts').select(RECEIPT_COLS).eq('company_id', co.companyId).eq('float_id', f.id);
   const m = monthRange(c.req.query('month') ?? todayMyt().slice(0, 7));
-  if (m) q = q.gte('spend_date', m.from).lt('spend_date', m.to);
-  const { data, error } = await q;
-  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  const rows = ((data ?? []) as ReceiptRow[]).sort((a, b) => String(b.spend_date).localeCompare(String(a.spend_date)) || b.receipt_no.localeCompare(a.receipt_no));
+  const all = await allRows<ReceiptRow>((fr, t) => {
+    let q = sb.from('staff_receipts').select(RECEIPT_COLS).eq('company_id', co.companyId).eq('float_id', f.id);
+    if (m) q = q.gte('spend_date', m.from).lt('spend_date', m.to);
+    return q.order('id').range(fr, t);
+  });
+  const rows = all.sort((a, b) => String(b.spend_date).localeCompare(String(a.spend_date)) || b.receipt_no.localeCompare(a.receipt_no));
   const ids = rows.map(r => r.id);
   const [bal, lines, files, names] = await Promise.all([floatBalances(sb, [f]), linesOf(sb, ids), filesOf(sb, ids), staffNames(sb)]);
   return c.json({
@@ -260,7 +266,7 @@ export const purchaseOrdersHandler = async (c: Ctx): Promise<Response> => {
   const { data, error } = await query.order('po_number', { ascending: false }).limit(50);
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   return c.json({ purchaseOrders: ((data ?? []) as Array<{ id: string; po_number: string; supplier_id: string; status: string; total_sen: number; project_id: number | null }>)
-    .map(p => ({ id: p.id, poNumber: p.po_number, supplierId: p.supplier_id, status: p.status, totalSen: Number(p.total_sen ?? 0), projectId: p.project_id })) });
+    .map(p => ({ id: p.id, poNumber: p.po_number, supplierId: p.supplier_id, status: p.status, totalSen: Number(p.total_sen), projectId: p.project_id })) });
 };
 
 /** The staff router. `source` marks which mount it is, for the receipt's source. */

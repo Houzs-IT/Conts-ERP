@@ -33,10 +33,11 @@ const world = () => publicTablesOnly(fakeSb({
   ],
   conts_units: [{ id: 'UNIT-A01', building: 'Skyline', unit_number: 'A-01' }],
   conts_staff: [{ id: 'u-tech', full_name: 'Ah Wai' }, { id: 'u-keeper', full_name: 'Ah Keong' }],
-  suppliers: [{ id: 'S1', name: 'ACE HARDWARE' }],
+  suppliers: [{ id: 'S1', company_id: CO, code: '400-A001', name: 'ACE HARDWARE', control_account: null }],
   purchase_orders: [{ id: 'PO1', company_id: CO, supplier_id: 'S1' }],
   projects: [{ id: 7, company_id: CO, name: 'SHOWROOM', funding: 'internal', limit_pct_bp: null, budget_sen: 10_000 }],
-  project_limit_requests: [], accounts: [], acc_company_settings: [{ company_id: CO, project_limit_pct_bp: 7000 }],
+  project_limit_requests: [], acc_company_settings: [{ company_id: CO, project_limit_pct_bp: 7000 }],
+  accounts: ['601-0001', '906-0000'].map(code => ({ company_id: CO, account_code: code, account_name: code, account_type: 'EXPENSE', is_active: true, acc_money: false, parent_code: null, special_type: null, everyday_expense: false })),
 }), ['conts_maintenance_jobs', 'conts_units', 'conts_staff', 'projects']);
 
 const bucket = () => { const m = new Map<string, ArrayBuffer>(); return { m, put: async (k: string, v: ArrayBuffer) => { m.set(k, v); }, get: async (k: string) => (m.has(k) ? { body: m.get(k) } : null) }; };
@@ -147,7 +148,9 @@ describe('payment requests', () => {
     fin.post('/r/:id/voucher', requestVoucherHandler);
     fin.post('/r/:id/close', closeRequestHandler);
     expect((await post(fin, `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(201);
-    expect(body).toMatchObject({ purpose: 'SUPPLIER_PAYMENT', supplierId: 'S1', projectId: 7 });
+    /* It pays the supplier: every line on the supplier's creditors control, so the deposit stands as an advance. */
+    expect(body).toMatchObject({ purpose: 'SUPPLIER_PAYMENT', supplierId: 'S1' });
+    expect((body.lines as Array<{ debitAccountCode: string; amountSen: number }>)).toEqual([expect.objectContaining({ debitAccountCode: '400-0000', amountSen: 8_000 })]);
     expect(sb.tables.payment_vouchers[0].payment_request_id).toBe(made.id);
     expect((await post(a, `/requests/${made.id}/withdraw`, {})).status).toBe(409);
     /* Part paid by a 3,000 voucher, then closed: the rest is freed. */
@@ -157,5 +160,59 @@ describe('payment requests', () => {
     expect(await projectLimit(sb, CO, 7)).toMatchObject({ usedSen: 3_000, reservedSen: 5_000 });
     expect((await post(fin, `/r/${made.id}/close`, { reason: 'Supplier gave a discount' })).status).toBe(200);
     expect(await projectLimit(sb, CO, 7)).toMatchObject({ usedSen: 3_000, reservedSen: 0 });
+  });
+});
+
+describe('nothing paid twice, nothing half-saved', () => {
+  const ask = (a: Hono<any>, over: Record<string, unknown> = {}) => post(a, '/requests', { type: 'PAYMENT', supplierId: 'S1', amountSen: 5000, files: [PNG], lines: [{ amountSen: 3000, department: 'rental', accountCode: '601-0001' }, { amountSen: 2000, department: 'shared', accountCode: '906-0000' }], ...over });
+  const realCreate = claimsDeps.createVoucher;
+  afterEach(() => { claimsDeps.createVoucher = realCreate; });
+  const finance = (sb: ReturnType<typeof world>) => {
+    const fin = new Hono<{ Variables: Record<string, unknown> }>();
+    fin.use('*', async (c, next) => { c.set('supabase', sb); c.set('companyId', CO); c.set('houzsUser', { name: 'Chew', permissions_set: new Set([FULL_KEY]) }); await next(); });
+    fin.post('/r/:id/voucher', requestVoucherHandler);
+    return fin;
+  };
+
+  test('one draft at a time; a second voucher pays only what is still owed', async () => {
+    const sb = world();
+    const made = await (await ask(appFor(sb, OPS, 'session'))).json() as { id: string };
+    const bodies: Array<Record<string, unknown>> = [];
+    claimsDeps.createVoucher = async (_c, b) => { bodies.push(b); const id = `PV${bodies.length}`; sb.tables.payment_vouchers.push({ id, company_id: CO, status: 'DRAFT' }); return { ok: true, id, pvNumber: id }; };
+    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(201);
+    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(409);
+    /* The first voucher posts 3,500 of the 5,000: the first line is paid, and 1,500 of the second is still owed. */
+    sb.tables.payment_vouchers[0].status = 'POSTED';
+    sb.tables.payment_voucher_lines.push({ pv_id: 'PV1', company_id: CO, amount_sen: 3_500, project_id: null, debit_account_code: '400-0000' });
+    sb.tables.payment_requests[0].status = 'PART_PAID';
+    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(201);
+    expect((bodies[1].lines as Array<{ amountSen: number }>).map(l => l.amountSen)).toEqual([1_500]);
+  });
+
+  test('a request withdrawn while its voucher is made: the draft is dropped', async () => {
+    const sb = world();
+    const made = await (await ask(appFor(sb, OPS, 'session'))).json() as { id: string };
+    claimsDeps.createVoucher = async () => { sb.tables.payment_vouchers.push({ id: 'PV1', company_id: CO, status: 'DRAFT' }); sb.tables.payment_requests[0].status = 'WITHDRAWN'; return { ok: true, id: 'PV1', pvNumber: 'PV1' }; };
+    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(409);
+    expect(sb.tables.payment_vouchers[0].status).toBe('CANCELLED');
+  });
+
+  test('a failed upload leaves no receipt, and a replaced receipt goes back to rejected', async () => {
+    const sb = world();
+    const first = await (await handIn(appFor(sb, TECH))).json() as { id: string };
+    sb.tables.staff_receipts[0].status = 'REJECTED';
+    const broken = { SLIPS: { put: async () => { throw new Error('R2 down'); }, get: async () => null, delete: async () => undefined } };
+    const res = await appFor(sb, TECH).request('/receipts', { method: 'POST', body: JSON.stringify({ spendDate: '2026-10-03', amountSen: 4500, files: [PNG], replacesId: first.id }), headers: { 'content-type': 'application/json' } }, broken);
+    expect(res.status).toBe(502);
+    expect(sb.tables.staff_receipts).toHaveLength(1);
+    expect(sb.tables.staff_receipts[0].status).toBe('REJECTED');
+  });
+
+  test('a cost on a money or control account, or a project that is not the company\'s, is refused', async () => {
+    const sb = world();
+    sb.tables.accounts.push({ company_id: CO, account_code: '310-0010', account_name: 'Bank', account_type: 'ASSET', is_active: true, acc_money: true, parent_code: null, special_type: null });
+    const a = appFor(sb, OPS, 'session');
+    expect((await handIn(a, { lines: [{ amountSen: 4500, department: 'shared', accountCode: '310-0010' }] })).status).toBe(422);
+    expect((await handIn(a, { lines: [{ amountSen: 4500, department: 'shared', projectId: 999 }] })).status).toBe(422);
   });
 });

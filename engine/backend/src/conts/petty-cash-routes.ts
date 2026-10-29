@@ -26,6 +26,7 @@ import { CONTROL_ROLES, resolveRoles } from '../acc/rules';
 import { projectLimit } from './project-limit';
 import { topUpAmount } from './petty-cash';
 import { postReceiptJournal, postWriteOffJournal } from './petty-cash-ledger';
+import { fileResponse } from './claims-files';
 import {
   RECEIPT_COLS, allRows, departmentNames, filesOf, floatBalances, floatsOf, linesOf, monthRange, receiptView, staffNames,
   type FloatRow, type ReceiptLineRow, type ReceiptRow,
@@ -228,7 +229,7 @@ export const financeReceiptFileHandler = async (c: Ctx): Promise<Response> => {
   const { data: f } = await c.get('supabase').from('staff_receipt_files').select('r2_key, file_name, mime').eq('receipt_id', r.id).eq('id', c.req.param('fileId')).maybeSingle();
   const obj = f ? await c.env?.SLIPS?.get(f.r2_key) : null;
   if (!f || !obj) return c.json({ error: 'not_found' }, 404);
-  return new Response(obj.body, { headers: { 'content-type': f.mime, 'content-disposition': `inline; filename="${String(f.file_name).replace(/"/g, '')}"`, 'cache-control': 'private, max-age=300' } });
+  return fileResponse(obj, f.file_name, f.mime);
 };
 
 type LineIn = { department?: unknown; unitId?: unknown; maintenanceIssueId?: unknown; projectId?: unknown; accountCode?: unknown; amountSen?: unknown; description?: unknown };
