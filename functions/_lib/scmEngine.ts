@@ -26,3 +26,14 @@ export async function scmEngineAssertion(env: Env, session: Session): Promise<st
   const key = await crypto.subtle.importKey('raw', enc.encode(env.SCM_ENGINE_SSO_SECRET!), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return `${body}.${b64url(await crypto.subtle.sign('HMAC', key, enc.encode(body)))}`;
 }
+
+/** A one-minute statement, for the engine's staff claim routes, of which staff member a forwarded call is for: their
+ *  Property OS user id and email, signed with the same secret as the sign-on and marked `aud: 'claims'` so neither
+ *  can be used as the other (engine/backend/src/conts/staff-identity.ts). Field accounts and office staff alike:
+ *  every claim call goes through here, so no one needs an engine account to hand in a receipt. */
+export async function claimsAssertion(env: Env, session: Session): Promise<string> {
+  const enc = new TextEncoder();
+  const body = b64url(enc.encode(JSON.stringify({ aud: 'claims', userId: session.userId, email: session.email, exp: Date.now() + 45_000 })));
+  const key = await crypto.subtle.importKey('raw', enc.encode(env.SCM_ENGINE_SSO_SECRET!), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return `${body}.${b64url(await crypto.subtle.sign('HMAC', key, enc.encode(body)))}`;
+}

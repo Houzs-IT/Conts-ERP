@@ -86,6 +86,17 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   if (!(Number.isInteger(amountSen) && amountSen > 0)) return c.json({ error: 'validation', message: 'Enter the amount on the receipt.' }, 422);
   const spendDate = DATE.test(String(b.spendDate ?? '')) ? String(b.spendDate) : todayMyt();
   if (spendDate > todayMyt()) return c.json({ error: 'validation', message: 'The receipt date cannot be in the future.' }, 422);
+  /* The caller may name the receipt's id (a uuid): sent again after a lost reply, the same receipt comes back instead
+     of a second one being made. */
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const askedId = typeof b.id === 'string' && UUID.test(b.id) ? b.id.toLowerCase() : null;
+  if (askedId) {
+    const { data: seen } = await sb.from('staff_receipts').select('id, receipt_no, float_id, submitter_user_id').eq('id', askedId).maybeSingle();
+    if (seen) {
+      if (seen.submitter_user_id !== staff.userId) return c.json({ error: 'conflict', message: 'That receipt id is taken.' }, 409);
+      return c.json({ id: seen.id, receiptNo: seen.receipt_no, route: seen.float_id ? 'float' : 'finance' }, 200);
+    }
+  }
   const decoded = decodeFiles(b.files, 'a photo of the receipt');
   if (!decoded.ok) return c.json({ error: decoded.error, message: decoded.message }, decoded.status);
   const built = await buildLines(sb, staff, b.lines, amountSen, co.companyId);
@@ -107,7 +118,7 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   const source = c.get('claimsSource') === 'forward' ? (staff.field ? 'field_app' : 'property_os') : 'engine';
 
   /* Files first, under the receipt's own id: a failed upload leaves no receipt behind. */
-  const id = crypto.randomUUID();
+  const id = askedId ?? crypto.randomUUID();
   let stored: Awaited<ReturnType<typeof storeFiles>> = [];
   try { stored = await storeFiles(bucket, `claims/${co.companyId}/${id}`, decoded.files); } catch {
     await unclaim();
