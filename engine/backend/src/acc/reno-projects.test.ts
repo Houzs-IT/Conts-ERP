@@ -100,3 +100,17 @@ describe('renovation project status rows', () => {
     expect(await renoProjectRows(world(), 9, '2026-11-30')).toEqual([]);
   });
 });
+
+describe('GET /reno-projects', () => {
+  it('answers the rows as at the date; a bad date is refused', async () => {
+    const { Hono } = await import('hono');
+    const { renoProjectsHandler } = await import('./reno-projects');
+    const a = new Hono();
+    a.use('*', async (c, next) => { c.set('supabase' as never, world() as never); c.set('companyId' as never, CO as never); await next(); });
+    a.get('/reno-projects', renoProjectsHandler as never);
+    const ok = await a.request('/reno-projects?asOf=2026-11-30');
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({ asOf: '2026-11-30', rows: [{ soDocNo: SO }] });
+    expect((await a.request('/reno-projects?asOf=30/11/2026')).status).toBe(400);
+  });
+});

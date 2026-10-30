@@ -74,6 +74,7 @@ export const STAFF_ROUTE_PATTERNS = [
   "/scm/ledger-setup",
   "/scm/debtors",
   "/scm/einvoice",
+  "/scm/reno-projects",
   "/scm/limit-requests",
   "/scm/payment-requests",
   "/scm/petty-cash",

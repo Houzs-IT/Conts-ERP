@@ -12,6 +12,8 @@
 // ----------------------------------------------------------------------------
 
 import { paginateAll } from '../scm/lib/paginate-all';
+import { requireActiveCompanyId } from '../scm/lib/companyScope';
+import { todayMyt } from '../scm/lib/my-time';
 import { nextInstalmentAmount } from '../scm/shared/renovation-money';
 import { confirmedPaymentIds } from './receipts';
 import { contractCompletions, type ContractCompletion } from './reno-completion';
@@ -56,7 +58,8 @@ const BRAND_OF_PARENT: Record<string, string> = { '480': 'Dream Crafter', '481':
 const gaps = (dates: Array<string | null>): Array<number | null> => [1, 2, 3].map((i) => daysBetween(dates[i - 1] ?? null, dates[i] ?? null));
 
 export async function renoProjectRows(sb: Db, companyId: number, asOf: string): Promise<RenoProjectRow[]> {
-  const comps = await contractCompletions(sb, companyId, asOf);
+  /* A contract cancelled by the date is no longer a project to follow. */
+  const comps = (await contractCompletions(sb, companyId, asOf)).filter((c) => c.status !== 'CANCELLED');
   if (comps.length === 0) return [];
   const docs = comps.map((c) => c.soDocNo);
   const projectIds = [...new Set(comps.map((c) => c.projectId).filter((p): p is number => p != null))];
@@ -201,3 +204,20 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     };
   });
 }
+
+/* ── GET /accounting/reno-projects?asOf=YYYY-MM-DD ─────────────────────────
+   Mounted under /accounting, so the Ledger guard stands in front; reading only. */
+export const renoProjectsHandler = async (c: any): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const raw = String(c.req.query('asOf') ?? '').trim();
+  const asOf = raw || todayMyt();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || Number.isNaN(Date.parse(`${asOf}T00:00:00Z`))) {
+    return c.json({ error: 'bad_date', message: 'Enter a date like 2026-11-30.' }, 400);
+  }
+  try {
+    return c.json({ asOf, rows: await renoProjectRows(c.get('supabase'), co.companyId, asOf) });
+  } catch (e) {
+    return c.json({ error: 'load_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
+  }
+};

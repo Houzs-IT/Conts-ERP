@@ -31,6 +31,7 @@ import { safeRate, toMyrSen } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { einvoiceOutboxGet, einvoiceOutboxList, einvoiceRefresh, einvoiceSettingsGet, einvoiceSettingsPut } from '../../acc/einvoice-routes';
+import { renoProjectsHandler } from '../../acc/reno-projects';
 import { postJournal, reverseJournal } from '../../acc/engine';
 import { beforeLedgerStartMessage, isBeforeLedgerStart, ledgerDatesRefusal, loadLedgerSettings, saveLedgerSettings } from '../../acc/ledger-settings';
 import { backfillSoPayments, paymentEntryDisagreements, unbookedPayments } from '../../acc/payments';
@@ -500,6 +501,9 @@ accounting.put('/einvoice/settings', einvoiceSettingsPut);
 accounting.get('/einvoice/outbox', einvoiceOutboxList);
 accounting.post('/einvoice/outbox/refresh', einvoiceRefresh);
 accounting.get('/einvoice/outbox/:id', einvoiceOutboxGet);
+
+/* ── Renovation project status (SOP 4.2.3; management only) — acc/reno-projects.ts ── */
+accounting.get('/reno-projects', renoProjectsHandler);
 
 /* ── Opening balances (Conts, spec 3.8) — acc/opening.ts. Writing them needs the post key; the check is read by
    the same people (it shows control and bank balances). ── */
