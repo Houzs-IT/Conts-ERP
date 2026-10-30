@@ -104,13 +104,14 @@ type Check = { ok: true } | { ok: false; field: string; message: string };
 
 /* Loose on purpose: an unusual but real TIN must not lock finance out. */
 const TIN_RE = /^(C|CS|D|E|F|FA|PT|TA|TC|TN|TR|TP|J|LE|IG|OG)\d{8,12}$/;
+export const looksLikeTin = (tin: string): boolean => TIN_RE.test(tin.toUpperCase());
 
 export function validateEInvoiceSettings(s: EInvoiceSettings): Check {
   if (!/^\d{3}$/.test(s.classificationCode)) return { ok: false, field: 'classificationCode', message: 'The classification code is three digits, for example 022.' };
   if (!(s.taxType in TAX_TYPES)) return { ok: false, field: 'taxType', message: 'Choose a tax type from the list.' };
   if (s.sstEnabled) return { ok: false, field: 'sstEnabled', message: 'SST postings are not built yet. Leave SST off until they are.' };
   const x = s.seller;
-  if (x.tin && !TIN_RE.test(x.tin.toUpperCase())) return { ok: false, field: 'seller.tin', message: 'The TIN starts with letters (C for a company) followed by digits, for example C12345678901.' };
+  if (x.tin && !looksLikeTin(x.tin)) return { ok: false, field: 'seller.tin', message: 'The TIN starts with letters (C for a company) followed by digits, for example C12345678901.' };
   if (x.msicCode && !/^\d{5}$/.test(x.msicCode)) return { ok: false, field: 'seller.msicCode', message: 'The MSIC code is five digits.' };
   if (x.stateCode && !/^(0[1-9]|1[0-7])$/.test(x.stateCode)) return { ok: false, field: 'seller.stateCode', message: 'Choose the state from the list.' };
   if (x.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.email)) return { ok: false, field: 'seller.email', message: 'That email address does not look right.' };

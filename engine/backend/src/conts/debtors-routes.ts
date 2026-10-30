@@ -6,11 +6,13 @@
 //   PATCH /accounting/debtors/:id                   name, contact, notes, active; another control only once nothing
 //                                                   is owing on the old one (it could not follow: manual journals
 //                                                   may not touch a control)
+//   Both take the e-invoice tax identity: tin, idType, idNumber, sstNo (acc/einvoice-identity.ts).
 import { hasHouzsPerm } from '../scm/lib/houzs-perms';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { paginateAll } from '../scm/lib/paginate-all';
 import { resolveRoles } from '../acc/rules';
 import { debtorLetter, nextPartyCode, partyBalanceOn } from './parties';
+import { taxIdentityPatch } from '../acc/einvoice-identity';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 type Ctx = any;
@@ -20,8 +22,9 @@ const canWrite = (c: Ctx) => hasHouzsPerm(c, 'scm.payment_voucher.post');
 type DebtorRow = {
   id: string; code: string; name: string; control_account: string; customer_id: string | null;
   phone: string | null; email: string | null; address: string | null; notes: string | null; is_active: boolean;
+  tin: string | null; id_type: string | null; id_number: string | null; sst_no: string | null;
 };
-const COLS = 'id, code, name, control_account, customer_id, phone, email, address, notes, is_active';
+const COLS = 'id, code, name, control_account, customer_id, phone, email, address, notes, is_active, tin, id_type, id_number, sst_no';
 const text = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
 /** The customer controls of the chart (special type SDC), by code — less the Other Debtors control, which keeps the
@@ -85,9 +88,11 @@ export const createDebtorHandler = async (c: Ctx): Promise<Response> => {
   if (typed && !typed.startsWith(`${control.slice(0, 3)}-`)) {
     return c.json({ error: 'code_not_under_control', message: `${typed} does not sit under ${control}: a code under it starts ${control.slice(0, 3)}-.` }, 400);
   }
+  const tax = taxIdentityPatch(body, null);
+  if (!tax.ok) return c.json({ error: tax.error, message: tax.message }, 400);
   const fields = {
     company_id: co.companyId, name, control_account: control, phone: text(body.phone), email: text(body.email),
-    address: text(body.address), notes: text(body.notes), is_active: true,
+    address: text(body.address), notes: text(body.notes), is_active: true, ...tax.patch,
   };
   for (let attempt = 0; attempt < 5; attempt += 1) {
     let code = typed;
@@ -127,6 +132,9 @@ export const patchDebtorHandler = async (c: Ctx): Promise<Response> => {
     if (body[from] !== undefined) patch[to] = text(body[from]);
   }
   if (body.isActive !== undefined) patch.is_active = body.isActive === true;
+  const tax = taxIdentityPatch(body, row.id_type);
+  if (!tax.ok) return c.json({ error: tax.error, message: tax.message }, 400);
+  Object.assign(patch, tax.patch);
   if (body.controlAccount !== undefined && body.controlAccount !== row.control_account) {
     const control = text(body.controlAccount);
     const ctl = await customerControls(sb, co.companyId);

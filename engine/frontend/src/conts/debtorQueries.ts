@@ -6,11 +6,13 @@ import { authedFetch } from "../vendor/scm/lib/authed-fetch";
 export type Debtor = {
   id: string; code: string; name: string; control_account: string; customer_id: string | null;
   phone: string | null; email: string | null; address: string | null; notes: string | null; is_active: boolean;
+  /** E-invoice tax identity (acc/einvoice-identity.ts). */
+  tin: string | null; id_type: string | null; id_number: string | null; sst_no: string | null;
 };
 export type DebtorControl = { code: string; name: string; debtors: Debtor[] };
 export type DebtorInput = {
   name?: string; code?: string; controlAccount?: string; phone?: string; email?: string; address?: string; notes?: string;
-  isActive?: boolean;
+  isActive?: boolean; tin?: string; idType?: string; idNumber?: string; sstNo?: string;
 };
 
 const KEY = ["conts-debtors"];
