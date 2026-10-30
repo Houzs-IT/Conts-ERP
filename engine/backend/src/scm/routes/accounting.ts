@@ -65,6 +65,7 @@ import {
 } from './accounting-chart';
 import { itemGroupsList, itemGroupCreate, itemGroupBind, itemGroupPatch, subCategoryBind } from './accounting-item-groups';
 import { piPeriodicBackfill } from './accounting-pi-backfill';
+import { renoOpeningApply, renoOpeningPreview } from './accounting-reno-opening';
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
 import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
@@ -549,6 +550,9 @@ export const openingCheckHandler = async (c: AccCtx): Promise<Response> => {
   return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
 };
 accounting.get('/opening/check', openingCheckHandler);
+/* Renovation contracts signed before the ledger start, seeded at go-live (accounting-reno-opening.ts; posts nothing). */
+accounting.post('/renovation-opening/preview', renoOpeningPreview);
+accounting.post('/renovation-opening/apply', renoOpeningApply);
 
 /* ════════════════════════════════════════════════════════════════════════
    Journal Entries

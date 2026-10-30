@@ -254,7 +254,7 @@ export async function nextInstalmentOffer(sb: Db, companyId: number, soDocNo: st
 
     const siRows = (sis.data ?? []) as Si[];
     const issued = siRows.filter((s) => !['DRAFT', 'CANCELLED'].includes(String(s.status).toUpperCase()));
-    const netBilledSen = issued.reduce((s, x) => s + Number(x.total_sen ?? 0), 0)
+    const netBilledSen = issued.reduce((s, x) => s + Number(x.total_sen), 0)
       + Number((contract.data as { billed_before_golive_sen?: number } | null)?.billed_before_golive_sen ?? 0)
       - creditedSen
       - billRows.filter((b) => b.kind === 'CREDIT_NOTE' && live(b.credit_note_id)).reduce((s, b) => s - Number(b.amount_sen), 0);
@@ -273,7 +273,7 @@ export async function nextInstalmentOffer(sb: Db, companyId: number, soDocNo: st
       const { data: recs, error } = await sb.from('acc_official_receipts').select('amount_sen')
         .eq('company_id', companyId).eq('payment_source', source).eq('status', 'FORMAL').in('payment_id', ids);
       if (error) return null;
-      receivedSen += ((recs ?? []) as Array<{ amount_sen: number }>).reduce((s, r) => s + Number(r.amount_sen ?? 0), 0);
+      receivedSen += ((recs ?? []) as Array<{ amount_sen: number }>).reduce((s, r) => s + Number(r.amount_sen), 0);
     }
     if (receivedSen <= netBilledSen) return null;
 

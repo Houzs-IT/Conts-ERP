@@ -50,7 +50,7 @@ export function toDay(v: unknown): string | null {
 const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
 
 /** The sheet's rows keyed by the template's column names, from the row that carries them all. */
-function readGrid(grid: unknown[][], columns: readonly string[]): { rows: { line: number; cells: Record<string, unknown> }[]; error: string | null } {
+export function readGrid(grid: unknown[][], columns: readonly string[]): { rows: { line: number; cells: Record<string, unknown> }[]; error: string | null } {
   const want = columns.map(norm);
   const headerAt = grid.findIndex((r) => want.every((c) => r.some((x) => norm(x) === c)));
   if (headerAt < 0) return { rows: [], error: `The sheet needs the columns ${columns.join(", ")}.` };

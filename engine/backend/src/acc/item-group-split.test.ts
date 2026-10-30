@@ -53,7 +53,7 @@ describe('purchases by sub-category', () => {
 
   test('the sales side is unchanged: it reads the line group only', async () => {
     const r = await splitByItemGroup(world(), {
-      companyId: CO, docNo: 'SI-1', items: [{ item_group: 'BUILTIN', item_code: 'RN-TVC-01', line_total_sen: 10_000 } as never],
+      companyId: CO, docNo: 'SI-1', items: [{ item_group: 'BUILTIN', item_code: 'RN-TVC-01', line_total_sen: 10_000 }],
       account: 'sales_account', myrSen: (s) => s, totalSen: 10_000,
     });
     expect(r).toEqual({ ok: true, groups: [{ groupCode: 'BUILTIN', accountCode: '502-0000', myrSen: 10_000 }] });
