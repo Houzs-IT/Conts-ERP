@@ -132,11 +132,12 @@ export function ModelChip({ model, label }: { model: RevenueModel; label?: strin
   return <StatusBadge tone={MODEL_TONE[model]} label={label ?? MODEL[model].label} />;
 }
 
-export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unitId: string; canEdit: boolean; onSaved: () => void; footer?: ReactNode }) {
+/** `startNew`: only the form for a new contract with a later start date, for the narrow Scheduled changes panel. */
+export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew }: { unitId: string; canEdit: boolean; onSaved: () => void; footer?: ReactNode; startNew?: boolean }) {
   const toast = useToast();
   const { data, loading, error, reload } = useApi<Payload>(`/units/${encodeURIComponent(unitId)}/contract`);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [mode, setMode] = useState<'update' | 'new'>('update');
+  const [mode, setMode] = useState<'update' | 'new'>(startNew ? 'new' : 'update');
   const [fields, setFields] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<Example | null>(null);
@@ -153,24 +154,25 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
     if (!current.id && allowedCodes?.length && !allowedCodes.includes(o.contractCode)) return { ...o, contractCode: allowedCodes[0], revenueModel: CODE[allowedCodes[0]].model };
     return o;
   }, [current, allowedCodes]);
-  useEffect(() => { if (original) { setDraft(original); setMode('update'); setFields({}); setPreview(null); setPicked(false); } }, [original]);
+  useEffect(() => { if (original) { setDraft(startNew ? { ...original, startsOn: '', endsOn: '', renewsOn: '' } : original); setMode(startNew ? 'new' : 'update'); setFields({}); setPreview(null); setPicked(false); } }, [original, startNew]);
   const d = draft ?? original;
   // A contract with no saved type is read from its terms; saving would lock that guess in, so the type is chosen first.
   const typeUnset = !!current?.id && current.typeStored === false && mode === 'update';
   const dirty = (!!d && !!original && JSON.stringify(d) !== JSON.stringify(original)) || (typeUnset && picked);
-  const local: Record<string, string> = { ...(d ? problems(d) : {}), ...(typeUnset && !picked ? { contractCode: 'Choose the contract type first.' } : {}) };
+  const local: Record<string, string> = { ...(d ? problems(d) : {}), ...(typeUnset && !picked ? { contractCode: 'Choose the contract type first.' } : {}),
+    ...(startNew && d && (!d.startsOn || d.startsOn <= todayMyt()) ? { startsOn: 'Pick a day after today.' } : {}) };
   const shown = { ...local, ...fields };
 
   // The example follows the form: once the terms change, the server works last month out again on them.
   useEffect(() => {
-    if (!d || !dirty || Object.keys(problems(d)).length) { setPreview(null); return; }
+    if (startNew || !d || !dirty || Object.keys(problems(d)).length) { setPreview(null); return; }
     const t = setTimeout(() => {
       setPreviewing(true);
       api.post<{ example: Example | null }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d), month: data?.month })
         .then(r => setPreview(r.example)).catch(() => setPreview(null)).finally(() => setPreviewing(false));
     }, 350);
     return () => clearTimeout(t);
-  }, [d, dirty, unitId, data?.month]);
+  }, [d, dirty, unitId, data?.month, startNew]);
 
   if (!d || !current) {
     return <Card><div className="p-8 text-center text-copy text-muted-ink">{loading ? 'Loading the contract…' : error ?? 'The contract could not be loaded.'}</div></Card>;
@@ -188,7 +190,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
     setSaving(true);
     try {
       const r = await api.put<{ split: boolean }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d), mode });
-      toast({ tone: 'success', title: mode === 'new' ? 'New contract started.' : 'Contract saved.',
+      toast({ tone: 'success', title: startNew ? `Contract scheduled from ${date(d.startsOn)}.` : mode === 'new' ? 'New contract started.' : 'Contract saved.',
         body: `${codeName(d.contractCode)}: ${CODE[d.contractCode].label}.${r.split ? ' This unit now has its own contract; the other units keep theirs.' : ''} Draft owner statements change when regenerated; final ones keep their figures.` });
       setMode('update'); reload(); onSaved();
     } catch (e) {
@@ -205,7 +207,13 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   );
   const day = (k: 'startsOn' | 'endsOn' | 'renewsOn' | 'guaranteeStartsOn' | 'guaranteeEndsOn', label: string) => (
     <DateField label={label} value={d[k]} onChange={v => set({ [k]: v })} error={shown[k]}
-      min={k === 'endsOn' || k === 'renewsOn' ? d.startsOn || undefined : k === 'guaranteeEndsOn' ? d.guaranteeStartsOn || undefined : undefined} />
+      min={k === 'endsOn' || k === 'renewsOn' ? d.startsOn || undefined : k === 'guaranteeEndsOn' ? d.guaranteeStartsOn || undefined : k === 'startsOn' && startNew ? todayMyt(1) : undefined} />
+  );
+
+  const formGrid = startNew ? 'grid grid-cols-2 gap-4' : 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4';
+  const saveButton = (
+    <Button size="sm" variant="primary" loading={saving} disabled={!dirty || Object.keys(local).length > 0}
+      disabledReason={Object.values(local)[0] ?? 'Nothing has changed'} onClick={() => void save()}>{startNew ? 'Schedule contract' : mode === 'new' ? 'Start contract' : 'Save contract'}</Button>
   );
 
   return (
@@ -218,18 +226,17 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
               {current.id && current.contractCode && <><CodeBadge code={current.contractCode} size="sm" />{' '}</>}
               {current.id && current.startsOn && current.startsOn.slice(0, 10) > todayMyt() ? <>Starts {date(current.startsOn)} · {current.termsLabel}{data!.untilThen ? <>. Until then: {data!.untilThen.termsLabel}</> : ''}</>
                 : current.id ? <>In force {current.startsOn ? `from ${date(current.startsOn)}` : ''}{current.endsOn ? ` to ${date(current.endsOn)}` : ''} · {current.termsLabel}</> : <>No contract record yet: the unit's own split is used ({current.termsLabel}). Saving creates its contract.</>}
-              {data!.history.length > 0 && <> · <a href="#contract-history" className="text-gold-ink">Contract history ({data!.history.length})</a></>}
+              {!startNew && data!.history.length > 0 && <> · <a href="#contract-history" className="text-gold-ink">Contract history ({data!.history.length})</a></>}
             </span>
           </div>
-          {canEdit && (
+          {canEdit && !startNew && (
             <div className="flex flex-wrap items-center gap-2">
               {dirty && <span className="text-meta text-warning">Unsaved changes</span>}
               <GenerateAgreement unitId={unitId} refreshKey={(current.id ?? 'none') + (current.startsOn ?? '')} />
               {current.id && mode === 'update' && !dirty && <Button size="sm" variant="secondary" icon={<Icon name="CalendarPlus" size="sm" />} onClick={() => setExtending(true)}>Extend / renew</Button>}
               {current.id && mode === 'update' && <Button size="sm" variant="secondary" onClick={() => { setMode('new'); set({ startsOn: '', endsOn: '', renewsOn: '' }); }}>Start a new contract</Button>}
               {mode === 'new' && <Button size="sm" variant="tertiary" onClick={() => { setMode('update'); setDraft(original); }}>Cancel new contract</Button>}
-              <Button size="sm" variant="primary" loading={saving} disabled={!dirty || Object.keys(local).length > 0}
-                disabledReason={Object.values(local)[0] ?? 'Nothing has changed'} onClick={() => void save()}>{mode === 'new' ? 'Start contract' : 'Save contract'}</Button>
+              {saveButton}
             </div>
           )}
         </div>
@@ -263,7 +270,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
             );
           })()}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className={formGrid}>
             {share && <>
               {/* MANAGE: the owner's amount in RM instead of a %; the owner % still makes the split up to 100 until
                   the MANAGE payout is decided (PLAN-units-form.md Q6b). */}
@@ -302,7 +309,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
               ['Deposit utilities', 'depositUtilities', 'rentOutDepositUtilities'],
               ['Deposit card', 'depositCard', 'rentOutDepositCard'],
             ] as const;
-            const gridCols = 'grid grid-cols-[84px_minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 px-4';
+            const gridCols = cx('grid grid-cols-[84px_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 px-4', !startNew && 'sm:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)]');
             const gap = (d.rentOutAmount ?? 0) - (d.monthlyRent ?? 0);
             return (
               <div role="group" aria-label="Rent to rent terms" className="rounded-card [border:1px_solid_var(--color-line)] bg-page overflow-hidden max-w-[760px]">
@@ -327,7 +334,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
               </div>
             );
           })()}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className={formGrid}>
             {day('startsOn', m === 'master_lease' ? 'Lease starts' : isTenancy(m) ? 'Tenancy starts' : 'Contract starts')}
             {day('endsOn', m === 'master_lease' ? 'Lease ends' : isTenancy(m) ? 'Tenancy ends' : 'Contract ends')}
             {day('renewsOn', 'Renews on')}
@@ -340,14 +347,15 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
           </div>
           {m === 'long_term' && <p className="m-0 text-meta text-muted-ink">A long-term let is not sold on the channels; take it off the channels on the Overview tab.</p>}
         </fieldset>
+        {startNew && canEdit && <div className="px-5 pb-5">{saveButton}</div>}
       </Card>
 
       {extending && current.id && <ExtendContractModal unitId={unitId} unitLabel={data!.unit.label}
         current={{ code: current.contractCode ?? codeFromModel(current.revenueModel), termsLabel: current.termsLabel, startsOn: current.startsOn, endsOn: current.endsOn }}
         onClose={() => setExtending(false)} onSaved={() => { setExtending(false); reload(); onSaved(); }} />}
-      <StatementExample example={example} month={data!.month} draft={dirty && !!preview} busy={previewing} />
+      {!startNew && <StatementExample example={example} month={data!.month} draft={dirty && !!preview} busy={previewing} />}
 
-      {data!.history.length > 0 && (
+      {!startNew && data!.history.length > 0 && (
         <Card>
           <div id="contract-history" className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
             <span className="text-[16px] font-semibold tracking-[-0.01em]">Contract history</span>
