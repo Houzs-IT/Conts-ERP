@@ -127,7 +127,7 @@ export async function convertQuotationToSo(
   actor: RenoActor,
   quotationId: string,
   body: { version: number; soDate?: string | null },
-): Promise<{ docNo: string; contractSen: number }> {
+): Promise<{ docNo: string; contractSen: number; soDate: string }> {
   const q = await lockQuotation(db, quotationId, actor.companyId);
   if (q.version !== body.version) throw refuse(409, 'stale_version', 'Someone else saved this quotation first. Reload to see their changes.', { version: q.version });
   if (q.convertedSoDocNo) throw refuse(409, 'already_converted', `This quotation is already sales order ${q.convertedSoDocNo}.`, { docNo: q.convertedSoDocNo });
@@ -223,7 +223,7 @@ export async function convertQuotationToSo(
   );
   await auditSo(db, { companyId: actor.companyId, docNo, action: 'CREATE', actorName: actor.name, status: 'RENO_CONFIRMED', note: `Renovation contract from quotation ${rev.docNo}` });
   await auditEntity(db, { companyId: actor.companyId, entityType: 'reno_quotation', entityId: quotationId, docNo: rev.docNo, action: 'CONVERT', actorName: actor.name, note: docNo });
-  return { docNo, contractSen: revised };
+  return { docNo, contractSen: revised, soDate };
 }
 
 export interface ContractHeader {

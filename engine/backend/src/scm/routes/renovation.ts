@@ -30,6 +30,7 @@ import { listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplat
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
 import { onRenovationSoLinesChanged } from '../lib/renovation-hooks';
 import { postSiRevenue } from '../lib/post-si-revenue';
+import { postContractChange } from '../../acc/reno-ledger';
 import { CREDIT_NOTE_HEADER, postCreditNote } from '../../acc/credit-notes';
 import { categoryGroupOf, type UomDef } from '../shared/renovation-catalog';
 import { loadUomsSql } from './renovation-catalog-settings';
@@ -147,10 +148,23 @@ renovation.post('/quotations/:id/status', handle(PERM.quote, async (c, { tx }) =
 
 renovation.post('/quotations/:id/convert', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
-  const out = await tx((db) => convertQuotationToSo(db, actorOf(c), param(c, 'id'), { version: intParam(b.version, 'version'), soDate: b.soDate ?? null }));
+  const actor = actorOf(c);
+  const out = await tx((db) => convertQuotationToSo(db, actor, param(c, 'id'), { version: intParam(b.version, 'version'), soDate: b.soDate ?? null }));
   await onRenovationSoLinesChanged(out.docNo, sqlRead);
-  return c.json(out, 201);
+  const posting = await postContractAfterCommit(c, actor, out.docNo, out.soDate);
+  return c.json({ ...out, posting }, 201);
 }));
+
+/** After commit: post the contract's change to its project accounts (acc/reno-ledger). A refusal leaves it unposted
+    and is reported, never thrown — the next change posts the whole difference. */
+async function postContractAfterCommit(c: C, actor: RenoActor, soDocNo: string, date: string): Promise<{ status: string; reason?: string }> {
+  try {
+    const r = await postContractChange(c.get('supabase'), { companyId: actor.companyId, soDocNo, date, actor: actor.name });
+    return { status: r.status, reason: r.ok ? undefined : r.reason };
+  } catch (err) {
+    return { status: 'post_failed', reason: err instanceof Error ? err.message : String(err) };
+  }
+}
 
 renovation.post('/quotations/:id/save-as-template', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
@@ -348,11 +362,13 @@ renovation.post('/variation-orders/:id/status', handle(PERM.quote, async (c, { t
 
 renovation.post('/variation-orders/:id/approve', handle(PERM.voApply, async (c, { tx, sqlRead }) => {
   const b = await json(c);
-  const out = await tx((db) => applyVo(db, actorOf(c), param(c, 'id'), {
+  const actor = actorOf(c);
+  const out = await tx((db) => applyVo(db, actor, param(c, 'id'), {
     version: intParam(b.version, 'version'), signedName: typeof b.signedName === 'string' ? b.signedName : null, signedAt: b.signedAt ?? null,
   }));
   await onRenovationSoLinesChanged(out.soDocNo, sqlRead);
-  return c.json(out);
+  const posting = await postContractAfterCommit(c, actor, out.soDocNo, out.docDate);
+  return c.json({ ...out, posting });
 }));
 
 renovation.get('/sales-orders/:docNo/po-flags', handle(null, async (c, { sqlRead }) => c.json({ flags: await listPoFlags(sqlRead, param(c, 'docNo')) })));
