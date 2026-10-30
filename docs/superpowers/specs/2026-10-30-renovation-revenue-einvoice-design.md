@@ -68,7 +68,7 @@ At the same time chew wants:
 5. **Existing customer accounts** in AutoCount are already one per project (named with the unit, e.g. "MS CHUAH (DIVO B-16-05)"), so they come across as they are.
 6. **Payment before its invoice:** the normal way is to invoice first and collect after. As a fallback, when finance confirms a payment and the project has more received than invoiced, the confirm offers "Bill the next instalment now" (or later).
 
-Still for chew's accountant: the e-invoice classification code for renovation work.
+7. **Classification code:** 022 (Others) for now (chew), kept as a company setting so the accountant can change it.
 
 ## 8. Calls made in writing this design (check them)
 
