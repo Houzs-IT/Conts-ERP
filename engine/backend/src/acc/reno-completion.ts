@@ -147,3 +147,53 @@ export async function contractCompletions(sb: Db, companyId: number, asOf: strin
     };
   });
 }
+
+export interface RenovationPeriod {
+  /** Σ over contracts of earned at `to` − earned the day before `from`. */
+  earnedSen: number;
+  /** The same change in what was invoiced (what the books show). */
+  invoicedSen: number;
+  contracts: number;
+  /** The period's booked cost on the contracts' projects, by EXPENSE account: the performance P&L takes it out of the
+      expenses as booked and shows it as the renovation cost. */
+  costByAccount: Record<string, number>;
+}
+
+const dayBefore = (d: string): string => new Date(new Date(`${d}T00:00:00Z`).getTime() - 86_400_000).toISOString().slice(0, 10);
+
+/** Renovation for the performance P&L over [from, to] (Task 5). Never posted. */
+export async function renovationForPeriod(sb: Db, companyId: number, from: string, to: string): Promise<RenovationPeriod> {
+  const [atEnd, atStart] = await Promise.all([contractCompletions(sb, companyId, to), contractCompletions(sb, companyId, dayBefore(from))]);
+  const start = new Map(atStart.map((c) => [c.soDocNo, c]));
+  let earnedSen = 0;
+  let invoicedSen = 0;
+  for (const c of atEnd) {
+    const s = start.get(c.soDocNo);
+    earnedSen += c.earnedSen - (s?.earnedSen ?? 0);
+    invoicedSen += c.invoicedSen - (s?.invoicedSen ?? 0);
+  }
+  const projects = [...new Set(atEnd.map((c) => c.projectId).filter((p): p is number => p != null))];
+  const costByAccount: Record<string, number> = {};
+  if (projects.length) {
+    const [lines, expense] = await Promise.all([
+      all((f, t) => sb.from('journal_entry_lines').select('id, journal_entry_id, account_code, debit_sen, credit_sen')
+        .eq('company_id', companyId).in('project_id', projects).order('id').range(f, t), 'cost lines'),
+      all((f, t) => sb.from('accounts').select('account_code').eq('company_id', companyId).eq('account_type', 'EXPENSE').order('account_code').range(f, t), 'accounts'),
+    ]);
+    const jeIds = [...new Set(lines.map((l) => String(l.journal_entry_id)))];
+    const jes = jeIds.length
+      ? await all((f, t) => sb.from('journal_entries').select('id, entry_date, posted').eq('company_id', companyId).in('id', jeIds).order('id').range(f, t), 'journal entries')
+      : [];
+    const jeById = new Map(jes.map((j) => [String(j.id), j]));
+    const expenseCodes = new Set(expense.map((a) => String(a.account_code)));
+    for (const l of lines) {
+      const je = jeById.get(String(l.journal_entry_id));
+      const d = je ? day(je.entry_date) : '';
+      if (!je || je.posted !== true || d < from || d > to || !expenseCodes.has(String(l.account_code))) continue;
+      const code = String(l.account_code);
+      costByAccount[code] = (costByAccount[code] ?? 0) + Number(l.debit_sen ?? 0) - Number(l.credit_sen ?? 0);
+    }
+    for (const [k, v] of Object.entries(costByAccount)) if (v === 0) delete costByAccount[k];
+  }
+  return { earnedSen, invoicedSen, contracts: atEnd.length, costByAccount };
+}

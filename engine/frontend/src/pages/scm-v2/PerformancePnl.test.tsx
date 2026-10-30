@@ -52,13 +52,14 @@ const report: PerformanceReport = {
   },
 };
 const lastPath = { value: '' };
+const current: { value: PerformanceReport } = { value: report };
 const saveMutate = vi.fn();
 const pdfMock = vi.fn(async (..._args: unknown[]) => {});
 const xlsxMock = vi.fn(async (..._args: unknown[]) => {});
 
 vi.mock('../../vendor/scm/lib/performance-report-queries', async (importOriginal) => ({
   ...(await importOriginal() as object),
-  usePerformanceReport: (from: string, to: string) => { lastPath.value = `${from}|${to}`; return { data: report, isLoading: false, isError: false, error: null }; },
+  usePerformanceReport: (from: string, to: string) => { lastPath.value = `${from}|${to}`; return { data: current.value, isLoading: false, isError: false, error: null }; },
   useSavePerformanceSettings: () => ({ mutate: saveMutate, isPending: false }),
 }));
 vi.mock('../../vendor/scm/lib/performance-pnl-pdf', () => ({ generatePerformancePdf: pdfMock, downloadPerformanceXlsx: xlsxMock }));
@@ -121,6 +122,22 @@ describe('the Performance P&L tab', () => {
     const notes = screen.getByLabelText('Performance notes');
     expect(notes.textContent).toContain('in place of account 900-O001 OPERATIING EXPENSE; the 2,435.50 booked on that account in the period is left out');
     expect(notes.textContent).toContain('free gifts');
+  });
+
+  test('renovation shows by completion, with what the books invoiced and the difference as memo lines', () => {
+    const ren = { earnedSen: 5_384_615, costSen: 3_500_000, gpSen: 1_884_615, gpPct: 35, invoicedSen: 3_500_000, differenceSen: -1_884_615, contracts: 1 };
+    current.value = { ...report, renovation: ren, groups: [...report.groups,
+      { key: 'renovation', label: 'Renovation (by completion — not in the books)', lines: 1, salesSen: ren.earnedSen, cogsSen: ren.costSen, gpSen: ren.gpSen, gpPct: 35 }] };
+    render(<PerformanceTab />);
+    const rows = screen.getAllByRole('row');
+    const reno = rows.find((r) => within(r).queryByText(/^Renovation \(by completion/))!;
+    expect(reno.textContent).toContain('1 contract');
+    expect(within(reno).getByText('53,846.15')).toBeTruthy();
+    const invoiced = rows.find((r) => r.getAttribute('data-memo') === 'invoiced')!;
+    expect(within(invoiced).getByText('35,000.00')).toBeTruthy();
+    const diff = rows.find((r) => r.getAttribute('data-memo') === 'difference')!;
+    expect(within(diff).getByText('(18,846.15)')).toBeTruthy();
+    current.value = report;
   });
 
   test('the strip saves the rate as basis points and the account; PDF prints the report', () => {

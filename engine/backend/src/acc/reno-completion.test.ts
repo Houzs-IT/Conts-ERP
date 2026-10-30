@@ -116,3 +116,14 @@ describe('contractCompletions', () => {
     expect(await contractCompletions(world(), CO, '2026-11-02')).toEqual([]);
   });
 });
+
+describe('renovationForPeriod', () => {
+  it('earned and invoiced are the change over the period; cost is the period booking by account', async () => {
+    const { renovationForPeriod } = await import('./reno-completion');
+    const r = await renovationForPeriod(world(), CO, '2026-11-01', '2026-11-30');
+    /* Nov: cost 2,000,000 to date (the 500,000 reversed within the month), earned 3,076,923; invoiced 5,000,000; signed 3 Nov. */
+    expect(r).toEqual({ earnedSen: 3_076_923, invoicedSen: 5_000_000, contracts: 1, costByAccount: { '620-0010': 2_000_000 } });
+    const dec = await renovationForPeriod(world(), CO, '2026-12-01', '2026-12-31');
+    expect(dec).toEqual({ earnedSen: 0, invoicedSen: 0, contracts: 1, costByAccount: {} });
+  });
+});

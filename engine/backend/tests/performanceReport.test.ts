@@ -257,3 +257,57 @@ describe('the Performance P&L', () => {
     expect(r.netSen).toBe(28000);
   });
 });
+
+/* Renovation by completion (Conts; plan 2026-10-31-renovation-completion-dashboard.md Task 5; SOP 4.2.1): the
+   performance P&L shows renovation at what the work earned, never what was invoiced; invoiced and the difference are
+   memo lines. Never posted. */
+describe('the Performance P&L — renovation by completion', () => {
+  const base = {
+    from: '2026-11-01', to: '2026-11-30',
+    settings: { rateBp: 1600, account: '900-O001' },
+    account: { code: '900-O001', name: 'OPERATING EXPENSE' },
+  };
+
+  test('renovation orders leave the sales-order side', () => {
+    const r = buildPerformanceReport({
+      ...base,
+      orders: [
+        { doc_no: 'SO-R', so_date: '2026-11-03', status: 'RENO_CONFIRMED', delivery_fee_sen: null, so_kind: 'RENOVATION' },
+        { doc_no: 'SO-F', so_date: '2026-11-03', status: 'DELIVERED', delivery_fee_sen: null, so_kind: 'STANDARD' },
+      ],
+      lines: [
+        { doc_no: 'SO-R', item_group: 'RENOVATION', item_code: 'RN-X', qty: 1, total_sen: 10_000_000, unit_cost_sen: 0, line_cost_sen: 6_500_000, cancelled: false },
+        { doc_no: 'SO-F', item_group: 'sofa', item_code: 'SOFA-L3', qty: 1, total_sen: 100_000, unit_cost_sen: 0, line_cost_sen: 60_000, cancelled: false },
+      ],
+      expenses: [],
+    });
+    expect(r.totals.salesSen).toBe(100_000);
+    expect(r.orders.counted).toBe(1);
+    expect(r.renovation).toBeNull();
+  });
+
+  test('earned and cost for the month come from completion; that cost leaves the other expenses', () => {
+    const r = buildPerformanceReport({
+      ...base, orders: [], lines: [],
+      expenses: [{ code: '620-0010', name: 'RENOVATION - WORKS', amountSen: 3_600_000 }, { code: '905-0000', name: 'RENT', amountSen: 200_000 }],
+      renovation: { earnedSen: 5_384_615, invoicedSen: 3_500_000, contracts: 1, costByAccount: { '620-0010': 3_500_000 } },
+    });
+    expect(r.renovation).toEqual({ earnedSen: 5_384_615, costSen: 3_500_000, gpSen: 1_884_615, gpPct: 35, invoicedSen: 3_500_000, differenceSen: -1_884_615, contracts: 1 });
+    expect(r.totals).toMatchObject({ salesSen: 5_384_615, cogsSen: 3_500_000, gpSen: 1_884_615 });
+    expect(r.groups.at(-1)).toEqual({ key: 'renovation', label: 'Renovation (by completion — not in the books)', lines: 1, salesSen: 5_384_615, cogsSen: 3_500_000, gpSen: 1_884_615, gpPct: 35 });
+    /* RM 1,000 of 620-0010 is not a renovation project's: it stays an expense, as booked. */
+    expect(r.otherExpenses.map((e) => [e.code, e.amountSen])).toEqual([['620-0010', 100_000], ['905-0000', 200_000]]);
+  });
+
+  test('non-renovation project cost stays in other expenses', () => {
+    const r = buildPerformanceReport({
+      ...base, orders: [], lines: [],
+      expenses: [{ code: '905-0000', name: 'RENT', amountSen: 200_000 }],
+      renovation: { earnedSen: 0, invoicedSen: 0, contracts: 0, costByAccount: {} },
+    });
+    expect(r.otherExpenses.map((e) => e.code)).toEqual(['905-0000']);
+    /* No renovation contract: no block, no row. */
+    expect(r.renovation).toBeNull();
+    expect(r.groups.map((g) => g.key)).not.toContain('renovation');
+  });
+});

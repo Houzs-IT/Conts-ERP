@@ -149,7 +149,7 @@ type Preload = {
   /** The compare groups' sales and purchase accounts, from the same bindings. */
   compareAccounts: CompareAccounts;
   /** The Performance P&L's own inputs, read once for the window: the sales orders and their lines, the rate and account, the rate's account row. */
-  perf: { settings: PerformanceSettings; orders: PerfOrder[]; lines: PerfLine[]; rateAccount: { code: string; name: string } | null };
+  perf: { settings: PerformanceSettings; orders: PerfOrder[]; lines: PerfLine[]; rateAccount: { code: string; name: string } | null; renovation?: PerfSources['renovation'] };
   /** The Cash Flow's own inputs, read once: the money accounts and what the window's supplier-payment vouchers settled. */
   rp: { moneyAccounts: Array<{ code: string; name: string }>; splits: Map<string, RpSplit[]>; acquirerTransits: string[] };
 };
@@ -263,7 +263,7 @@ async function preload(sb: Sb, companyId: number, layoutIds: number[], windowSta
       gl: glRows,
       moves: moves.rows, bucketOf: wh.of, accounts: accs.accounts, roles, closingBooked: closings.closingBooked, ledger: ledger.settings, layouts,
       forecast: { grid, accounts: fAccounts.accounts }, purchaseAccountsOf: bindings.purchaseAccountsOf, categoryOfItem, compareAccounts: bindings.compareAccounts,
-      perf: { settings: settings.settings, orders: orders.orders, lines: lines.lines, rateAccount: rateAccount.account },
+      perf: { settings: settings.settings, orders: orders.orders, lines: lines.lines, rateAccount: rateAccount.account, renovation: perfDb.renovation },
       rp: { moneyAccounts: money.accounts, splits: splits.byPv, acquirerTransits: acquirers.codes },
     },
   };
@@ -319,6 +319,7 @@ function sourcesOf(pre: Preload): { report: ReportSources; rp: RpSources; perf: 
       return { ok: true as const, lines: pre.perf.lines.filter((l) => want.has(l.doc_no)) };
     },
     rateAccount: async () => ({ ok: true as const, account: pre.perf.rateAccount }),
+    renovation: pre.perf.renovation,
   };
   return { report, rp, perf };
 }
