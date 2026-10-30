@@ -46,14 +46,14 @@ function world(over: Record<string, Row[]> = {}) {
     mfg_sales_order_items: [item('a', 10_000_000, 6_500_000, '2026-11-03')],
     journal_entries: [
       { id: 'je1', company_id: CO, entry_date: '2026-11-10', posted: true },
-      { id: 'je2', company_id: CO, entry_date: '2026-11-20', posted: true },
-      { id: 'je3', company_id: CO, entry_date: '2026-11-25', posted: true },
+      // je3 reversed je2: the books count neither side (acc/reversal-pairs)
+      { id: 'je2', company_id: CO, entry_date: '2026-11-20', posted: true, reversed: true, reversed_by_je: 'je3' },
+      { id: 'je3', company_id: CO, entry_date: '2026-11-25', posted: true, reversed_by_je: 'je2' },
     ],
     journal_entry_lines: [
       { id: 'l1', company_id: CO, journal_entry_id: 'je1', account_code: '620-0010', debit_sen: 2_000_000, credit_sen: 0, project_id: 7 },
       { id: 'l2', company_id: CO, journal_entry_id: 'je1', account_code: '405-0000', debit_sen: 0, credit_sen: 2_000_000, project_id: null },
       { id: 'l3', company_id: CO, journal_entry_id: 'je2', account_code: '620-0010', debit_sen: 500_000, credit_sen: 0, project_id: 7 },
-      // je3 reverses je2: the cost nets out from its date
       { id: 'l4', company_id: CO, journal_entry_id: 'je3', account_code: '620-0010', debit_sen: 0, credit_sen: 500_000, project_id: 7 },
       // a deposit to a supplier (an asset) is not cost
       { id: 'l5', company_id: CO, journal_entry_id: 'je1', account_code: '160-0000', debit_sen: 900_000, credit_sen: 0, project_id: 7 },
@@ -73,9 +73,32 @@ describe('contractCompletions', () => {
     });
   });
 
-  it('a reversed cost does not count', async () => {
-    expect((await contractCompletions(world(), CO, '2026-11-22'))[0]!.costToDateSen).toBe(2_500_000);
+  it('a reversed cost does not count, on either side, at any date (as the books)', async () => {
+    expect((await contractCompletions(world(), CO, '2026-11-22'))[0]!.costToDateSen).toBe(2_000_000);
     expect((await contractCompletions(world(), CO, '2026-11-30'))[0]!.costToDateSen).toBe(2_000_000);
+  });
+
+  it('handover counts from its own day: an earlier month keeps its percentage', async () => {
+    const sb = world({ projects: [{ id: 7, company_id: CO, handed_over_at: '2026-12-04T03:00:00Z' }],
+      mfg_sales_orders: [{ doc_no: SO, company_id: CO, status: 'RENO_COMPLETED', project_id: 7 }] });
+    expect((await contractCompletions(sb, CO, '2026-11-30'))[0]).toMatchObject({ pctBp: 3077, earnedSen: 3_076_923 });
+    expect((await contractCompletions(sb, CO, '2026-12-31'))[0]).toMatchObject({ pctBp: 10000, earnedSen: 10_000_000 });
+  });
+
+  it('a cancelled contract is live until its advance is cleared, then has earned what it kept', async () => {
+    const sb = world({
+      mfg_sales_orders: [{ doc_no: SO, company_id: CO, status: 'CANCELLED', project_id: 7 }],
+      journal_entries: [...world().tables.journal_entries, { id: 'rc', company_id: CO, source_type: 'RCAN', source_doc_no: SO, entry_date: '2026-12-10', posted: true }],
+    });
+    expect((await contractCompletions(sb, CO, '2026-11-30'))[0]).toMatchObject({ earnedSen: 3_076_923, revisedContractSen: 10_000_000 });
+    expect((await contractCompletions(sb, CO, '2026-12-31'))[0]).toMatchObject({ status: 'CANCELLED', earnedSen: 5_000_000, revisedContractSen: 5_000_000 });
+  });
+
+  it('a line counts from its line date, else the day it was keyed in Malaysia', async () => {
+    const sb = world({ mfg_sales_order_items: [item('a', 10_000_000, 6_500_000, '2026-11-03'),
+      { ...item('vo', 1_000_000, 600_000, '2026-11-30'), created_at: '2026-11-30T23:00:00Z' }] });
+    expect((await contractCompletions(sb, CO, '2026-11-30'))[0]!.revisedContractSen).toBe(10_000_000);
+    expect((await contractCompletions(sb, CO, '2026-12-01'))[0]!.revisedContractSen).toBe(11_000_000);
   });
 
   it('VO in the month moves earned in that month only', async () => {
@@ -123,6 +146,9 @@ describe('renovationForPeriod', () => {
     const r = await renovationForPeriod(world(), CO, '2026-11-01', '2026-11-30');
     /* Nov: cost 2,000,000 to date (the 500,000 reversed within the month), earned 3,076,923; invoiced 5,000,000; signed 3 Nov. */
     expect(r).toEqual({ earnedSen: 3_076_923, invoicedSen: 5_000_000, contracts: 1, costByAccount: { '620-0010': 2_000_000 } });
+    /* The months add up to the range. */
+    const q = await renovationForPeriod(world(), CO, '2026-11-01', '2026-12-31');
+    expect(q.earnedSen).toBe(r.earnedSen + (await renovationForPeriod(world(), CO, '2026-12-01', '2026-12-31')).earnedSen);
     const dec = await renovationForPeriod(world(), CO, '2026-12-01', '2026-12-31');
     expect(dec).toEqual({ earnedSen: 0, invoicedSen: 0, contracts: 1, costByAccount: {} });
   });
