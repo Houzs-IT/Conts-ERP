@@ -20,16 +20,21 @@
 // so any remainder lands on the largest group.
 //
 // Purchases by sub-category (renovation revenue plan Task 9, chew 30 Oct 2026):
-// a purchase line that carries a product (item_code → scm.mfg_products, the
+// a RENOVATION purchase line (item_group RENOVATION, from a renovation PO) that
+// carries a product (item_code → scm.mfg_products, the
 // ACTIVE row first) books to its product's sub-category purchase account, else
 // its product's category group's (acc/reno-accounts resolveLineAccounts — the
 // rule the renovation revenue side reads). A line with no product keeps its
-// own item_group as before. The sales side is unchanged.
+// own item_group as before, and so does every other purchase line. The sales
+// side is unchanged.
 // ----------------------------------------------------------------------------
 
 import { resolveLineAccounts, type LineAccountKey } from './reno-accounts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
+
+/** A renovation purchase line (from a renovation PO): the only kind that books by its product's sub-category. */
+const isRenovation = (it: GroupSplitLine): boolean => String(it.item_group ?? '').trim().toUpperCase() === 'RENOVATION';
 type Db = any;
 
 export type GroupSplitLine = { item_group: string | null; line_total_sen: number | null; item_code?: string | null };
@@ -60,7 +65,7 @@ export async function splitByItemGroup(
   /* Purchases: each line's product, when it has one, decides its key (group / sub-category). */
   const productOf = new Map<string, LineAccountKey>();
   if (p.account === 'purchase_account') {
-    const codes = [...new Set(p.items.map((it) => String(it.item_code ?? '').trim()).filter(Boolean))];
+    const codes = [...new Set(p.items.filter(isRenovation).map((it) => String(it.item_code ?? '').trim()).filter(Boolean))];
     if (codes.length > 0) {
       const { data, error } = await sb.from('mfg_products').select('code, category_group, sub_category, status')
         .eq('company_id', p.companyId).in('code', codes);
@@ -79,7 +84,7 @@ export async function splitByItemGroup(
   const keyOf = new Map<string, LineAccountKey>();
   const foreignByGroup = new Map<string, number>();
   for (const it of p.items) {
-    const prod = productOf.get(String(it.item_code ?? '').trim());
+    const prod = isRenovation(it) ? productOf.get(String(it.item_code ?? '').trim()) : undefined;
     const g = prod?.group ?? String(it.item_group ?? '').trim().toUpperCase();
     if (!g) {
       return { ok: false, status: 'line_ungrouped', reason: `${p.docNo} has a line with no product group — fix the line, then post.` };

@@ -25,7 +25,7 @@ import { reverseJournal } from './engine';
 import { resolveRoles } from './rules';
 import { paymentReconciliation } from './payment-reconciled';
 import { creditConfirmedPaymentOfCancelledSo } from '../scm/lib/customer-credits';
-import { nextInstalmentAmount } from '../scm/shared/renovation-money';
+import { instalmentPreview } from '../scm/shared/renovation-money';
 
 /* The untyped client the poster takes, borrowed rather than spelled out again
    (a new file's lint ceiling is zero — payout-charge.ts's reason). */
@@ -253,9 +253,10 @@ export async function nextInstalmentOffer(sb: Db, companyId: number, soDocNo: st
     const creditedSen = creditRows.filter((c) => live(c.credit_note_id)).reduce((s, c) => s + Number(c.amount_sen), 0);
 
     const siRows = (sis.data ?? []) as Si[];
+    const billedBeforeSen = Number((contract.data as { billed_before_golive_sen?: number | string | null } | null)?.billed_before_golive_sen ?? 0);
     const issued = siRows.filter((s) => !['DRAFT', 'CANCELLED'].includes(String(s.status).toUpperCase()));
     const netBilledSen = issued.reduce((s, x) => s + Number(x.total_sen), 0)
-      + Number((contract.data as { billed_before_golive_sen?: number } | null)?.billed_before_golive_sen ?? 0)
+      + billedBeforeSen
       - creditedSen
       - billRows.filter((b) => b.kind === 'CREDIT_NOTE' && live(b.credit_note_id)).reduce((s, b) => s - Number(b.amount_sen), 0);
 
@@ -280,17 +281,19 @@ export async function nextInstalmentOffer(sb: Db, companyId: number, soDocNo: st
     /* The next instalment at billInstalment's amount: the schedule as billingView reads it. */
     const schedule = ((insts.data ?? []) as Array<{ id: string; seq: number; label: string | null; pct_bp: number }>)
       .map((i) => ({ ...i, seq: Number(i.seq), pct_bp: Number(i.pct_bp) })).sort((a, b) => a.seq - b.seq);
-    const billed = new Set(billRows.map((b) => b.instalment_id));
-    const next = schedule.find((i) => !billed.has(i.id));
-    if (!next) return null;
+    const billedBySeq = new Map<number, number>();
+    for (const b of billRows) {
+      const i = schedule.find((x) => x.id === b.instalment_id);
+      if (i) billedBySeq.set(i.seq, Number(b.amount_sen));
+    }
     const revisedSen = ((items.data ?? []) as Array<{ total_sen: number | null; cancelled: boolean | null }>)
       .filter((r) => r.cancelled !== true).reduce((s, r) => s + Number(r.total_sen ?? 0), 0);
-    const { amountSen } = nextInstalmentAmount({
-      instalments: schedule.map((i) => ({ seq: i.seq, pctBp: i.pct_bp })),
-      seq: next.seq,
-      revisedContractSen: revisedSen,
-      billedSen: billRows.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen,
-    });
+    /* What AutoCount invoiced before go-live counts as billed, and the instalments it covers are skipped. */
+    const preview = instalmentPreview(schedule.map((i) => ({ seq: i.seq, pctBp: i.pct_bp })), revisedSen, billedBySeq, creditedSen, billedBeforeSen);
+    const nextSeq = preview.find((x) => !x.billed && !x.beforeGoLive)?.seq;
+    const next = schedule.find((i) => i.seq === nextSeq);
+    if (!next) return null;
+    const amountSen = preview.find((x) => x.seq === next.seq)?.amountSen ?? 0;
     if (amountSen <= 0) return null;
     return { soDocNo, instalmentId: next.id, seq: next.seq, label: next.label || `Instalment ${next.seq}`, amountSen, receivedSen, billedSen: netBilledSen };
   } catch (e) {

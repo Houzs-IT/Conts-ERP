@@ -7,7 +7,8 @@
 
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
-import { applyRenoOpening, previewRenoOpening, type RenoOpeningRow } from '../../acc/reno-opening';
+import { applyRenoOpening, previewRenoOpening, type RenoOpeningRow, type RenoOpeningTx } from '../../acc/reno-opening';
+import { inRenoTx, sqlFor } from '../lib/renovation-db';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context, untyped as in the other accounting-* handlers */
 const MAX_ROWS = 2000;
@@ -45,8 +46,11 @@ export const renoOpeningPreview = async (c: any): Promise<Response> => {
 export const renoOpeningApply = async (c: any): Promise<Response> => {
   const b = await readRows(c);
   if (!b.ok) return b.res;
-  const r = await applyRenoOpening(c.get('supabase'), b.companyId, b.rows);
+  /* Every row in one SQL transaction (the renovation routes' own): a failure on any row rolls back them all. */
+  const sql = sqlFor(c.env ?? {});
+  const runTx: RenoOpeningTx | null = sql ? (f) => inRenoTx(sql, (db) => f(db)) : null;
+  const r = await applyRenoOpening(c.get('supabase'), b.companyId, b.rows, runTx);
   if (r.ok) return c.json(r);
   if (r.status === 'problems') return c.json({ error: 'Some rows have problems: nothing was applied.', rows: r.rows }, 409);
-  return c.json({ error: r.error }, 500);
+  return c.json({ error: r.error }, sql ? 500 : 503);
 };

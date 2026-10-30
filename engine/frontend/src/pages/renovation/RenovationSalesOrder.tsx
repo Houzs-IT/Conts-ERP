@@ -392,7 +392,7 @@ export function RenovationSalesOrder() {
                   <td className="px-3 py-2"><div className="font-semibold">{i.label || `Instalment ${i.seq}`}</div><div className="max-w-[340px] text-[11.5px] text-ink-muted">{i.description}</div></td>
                   <td className="py-2 text-right tabular-nums">{pctLabel(i.pctBp)}<div className="text-[11px] text-ink-muted">cum. {pctLabel(i.cumBp)}</div></td>
                   <td className="py-2 pl-2 text-ink-secondary">{i.stageCode ? STAGE_LABEL[i.stageCode as StageKey] : '—'}</td>
-                  <td className={cn('py-2 text-right font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{rm(i.amountSen)}{!i.bill && !i.isNext ? <div className="text-[10.5px] font-normal">projected</div> : null}</td>
+                  <td className={cn('py-2 text-right font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{i.billedBeforeGoLive ? <span className="text-[11px]">Billed before go-live</span> : <>{rm(i.amountSen)}{!i.bill && !i.isNext ? <div className="text-[10.5px] font-normal">projected</div> : null}</>}</td>
                   <td className="py-2 pl-4">
                     {i.bill?.invoiceNumber && <Link className="font-semibold text-primary" to={`/scm/sales-invoices/${i.bill.salesInvoiceId}`}>{i.bill.invoiceNumber}</Link>}
                     {i.bill?.noteNumber && <Link className="font-semibold text-primary" to="/scm/credit-notes">{i.bill.noteNumber}</Link>}
@@ -411,9 +411,9 @@ export function RenovationSalesOrder() {
             <li key={i.id} className={cn('px-3 py-2.5 text-[12.5px]', i.isNext && 'bg-primary-soft/40')}>
               <div className="flex items-start justify-between gap-2">
                 <span className="font-semibold">{i.label || `Instalment ${i.seq}`} · {pctLabel(i.pctBp)}</span>
-                <span className={cn('font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{rm(i.amountSen)}</span>
+                <span className={cn('font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{i.billedBeforeGoLive ? 'Billed before go-live' : rm(i.amountSen)}</span>
               </div>
-              <div className="text-[11.5px] text-ink-muted">{i.stageCode ? STAGE_LABEL[i.stageCode as StageKey] : 'No stage'} · cum. {pctLabel(i.cumBp)}{!i.bill && !i.isNext ? ' · projected' : ''}</div>
+              <div className="text-[11.5px] text-ink-muted">{i.stageCode ? STAGE_LABEL[i.stageCode as StageKey] : 'No stage'} · cum. {pctLabel(i.cumBp)}{!i.bill && !i.isNext && !i.billedBeforeGoLive ? ' · projected' : ''}</div>
               {i.bill && <div className="mt-0.5 text-[12px]">{i.bill.invoiceNumber ?? i.bill.noteNumber ?? 'Closed, nothing to bill'} · {fmtDate(i.bill.invoiceDate)}{i.bill.kind === 'INVOICE' ? ` · received ${rm(i.bill.paidSen)}` : ''}</div>}
               {i.isNext && live && can('scm.renovation.bill') && <Button className="mt-2 h-8 w-full" onClick={() => setBilling(i)}>Bill this instalment</Button>}
             </li>

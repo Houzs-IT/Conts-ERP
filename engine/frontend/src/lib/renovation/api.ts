@@ -137,6 +137,8 @@ export interface BillRow {
 
 export interface BillingInstalment extends Instalment {
   id: string; cumBp: number; bill: BillRow | null; isNext: boolean; amountSen: number;
+  /** Covered by what AutoCount invoiced before go-live: never billed here. */
+  billedBeforeGoLive?: boolean;
 }
 
 /** A credit note that lowered the contract. */
@@ -146,8 +148,8 @@ export interface ContractCredit {
 
 export interface BillingView {
   soDocNo: string; status: string; originalContractSen: number; revisedContractSen: number; voTotalSen: number;
-  /** Net of contract credit notes. */
-  billedSen: number; creditedSen: number; credits: ContractCredit[];
+  /** Net of contract credit notes, what AutoCount invoiced before go-live included. */
+  billedSen: number; billedBeforeGoLiveSen?: number; creditedSen: number; credits: ContractCredit[];
   receivedSen: number; nextSeq: number | null; instalments: BillingInstalment[];
 }
 

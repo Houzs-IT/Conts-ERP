@@ -56,6 +56,33 @@ describe("Renovation contracts at go-live", () => {
     await waitFor(() => expect(screen.getByText(/1 contract seeded/)).toBeTruthy());
   });
 
+  it("an Apply refused for problems found meanwhile shows them in the table", async () => {
+    previewAsync.mockResolvedValueOnce({ ok: true, rows: [{ ...ROWS[0], problems: [], contractSen: 10_000_000, current: null }, { ...ROWS[1], problems: [], contractSen: 2_000_000, current: null }] });
+    applyAsync.mockRejectedValueOnce(Object.assign(new Error("Some rows have problems: nothing was applied."), {
+      status: 409,
+      body: JSON.stringify({ error: "Some rows have problems: nothing was applied.", rows: [
+        { ...ROWS[0], problems: [], contractSen: 10_000_000, current: null },
+        { ...ROWS[1], problems: ["2990-SO-2609-002 has already posted to 480-D009: changing its advance account would double the advance."], contractSen: 2_000_000, current: null },
+      ] }),
+    }));
+    render(<RenovationOpening canSave ledgerStartDate="2026-11-01" />);
+    upload();
+    const apply = await screen.findByRole("button", { name: "Apply" });
+    await waitFor(() => expect((apply as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(apply);
+    await waitFor(() => expect(screen.getByText(/has already posted to 480-D009/)).toBeTruthy());
+    expect(screen.getByText(/nothing was applied/i)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("uses the theme's tokens, never a hard-coded colour", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const { dirname, resolve } = await import("node:path");
+    const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "RenovationOpening.tsx"), "utf8");
+    expect(src).not.toMatch(/#[0-9a-fA-F]{3,6}\b|rgba?\(/);
+  });
+
   it("waits for the start of the books", () => {
     render(<RenovationOpening canSave ledgerStartDate={null} />);
     expect(screen.getByText(/Set the day the books start first/)).toBeTruthy();

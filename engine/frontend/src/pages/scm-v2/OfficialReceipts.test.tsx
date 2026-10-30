@@ -49,7 +49,7 @@ const { fetchMock, pdfMock, check, perms, chooseMock, notifyMock } = vi.hoisted(
     }),
     pdfMock: vi.fn(async (_r: unknown, _o: unknown) => {}),
     check,
-    perms: { finance: true },
+    perms: { finance: true, bill: true },
     chooseMock: vi.fn(async (_o: { title: string; options: Array<{ value: string; label: string }> }) => '310-0020' as string | null),
     notifyMock: vi.fn(async (_o: { title: string; body?: unknown }) => {}),
   };
@@ -57,7 +57,7 @@ const { fetchMock, pdfMock, check, perms, chooseMock, notifyMock } = vi.hoisted(
 vi.mock('../../vendor/scm/lib/authed-fetch', () => ({
   authedFetch: (path: string, init?: RequestInit) => fetchMock(path, init),
 }));
-vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ can: (p: string) => p === 'scm.payment_voucher.post' && perms.finance }) }));
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ can: (p: string) => (p === 'scm.payment_voucher.post' && perms.finance) || (p === 'scm.renovation.bill' && perms.bill) }) }));
 vi.mock('../../vendor/scm/components/ChoiceDialog', () => ({ useChoice: () => chooseMock }));
 vi.mock('../../vendor/scm/components/NotifyDialog', () => ({ useNotify: () => notifyMock }));
 vi.mock('../../vendor/scm/lib/receipt-pdf', () => ({ generateReceiptPdf: pdfMock }));
@@ -173,6 +173,28 @@ describe('the OR book', () => {
       fetchMock.mockImplementation(base);
       chooseMock.mockReset();
       chooseMock.mockImplementation(async () => '310-0020');
+    }
+  });
+
+  test('without the bill permission the offer is not made: the confirm only says what it did', async () => {
+    const offer = { soDocNo: 'HC-SO-2611-009', instalmentId: 'inst-2', seq: 2, label: 'Carpentry', amountSen: 400000, receivedSen: 400000, billedSen: 300000 };
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (path: string, init?: RequestInit) => (path.endsWith('/formalise')
+      ? { ok: true, orNumber: 'HCMOR-2609-001', already: false, posting: { status: 'posted', jeNo: 'HC-JV-2609-014' }, billNext: offer }
+      : base(path, init)));
+    perms.bill = false;
+    try {
+      chooseMock.mockClear();
+      notifyMock.mockClear();
+      draw();
+      await waitFor(() => expect(screen.getByText('Confirm received')).toBeTruthy());
+      fireEvent.click(screen.getByText('Confirm received'));
+      await waitFor(() => expect(notifyMock).toHaveBeenCalledTimes(1));
+      expect(chooseMock).toHaveBeenCalledTimes(1);
+      expect(notifyMock.mock.calls[0]![0].title).toBe('Payment confirmed');
+    } finally {
+      perms.bill = true;
+      fetchMock.mockImplementation(base);
     }
   });
 

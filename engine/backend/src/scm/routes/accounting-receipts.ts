@@ -163,11 +163,14 @@ export const receiptFormalise = async (c: any): Promise<Response> => {
     posting = { status: 'not_posted', reason: e instanceof Error ? e.message : String(e) };
   }
   /* A renovation payment ahead of its invoice (spec 7.6): more confirmed than invoiced offers the next instalment,
-     which the screen bills through the renovation bill route at this amount, or leaves for later. */
+     which the screen bills through the renovation bill route at this amount, or leaves for later. Only on the confirm
+     that made the receipt formal, and only to someone who may also bill (the bill route's own permission). */
   let billNext = null;
-  try {
-    const soDocNo = await soOfPayment(sb, source, String(rec.payment_id), co.companyId);
-    if (soDocNo) billNext = await nextInstalmentOffer(sb, co.companyId, soDocNo);
-  } catch { billNext = null; }
+  if (r.already !== true && hasHouzsPerm(c, 'scm.renovation.bill')) {
+    try {
+      const soDocNo = await soOfPayment(sb, source, String(rec.payment_id), co.companyId);
+      if (soDocNo) billNext = await nextInstalmentOffer(sb, co.companyId, soDocNo);
+    } catch { billNext = null; }
+  }
   return c.json({ ok: true, orNumber: r.orNumber, already: r.already === true, posting, ...(billNext ? { billNext } : {}) });
 };

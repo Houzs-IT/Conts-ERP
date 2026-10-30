@@ -23,6 +23,7 @@ import { isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
 import { ALLOC_BILL_CREDIT, ALLOC_CREDIT, ALLOC_INVOICE, CONTRACT_CANCELLED, CONTRACT_CHANGED, CONTRACT_SIGNED } from './reno-ledger';
 import { ADVANCE_PARENT } from './reno-advance-account';
 import { fmtSen } from '../scm/shared/format';
+import type { RenoDb } from '../scm/lib/renovation-db';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as everywhere in acc/ */
 type Sb = any;
@@ -32,6 +33,9 @@ export type RenoOpeningPreviewRow = RenoOpeningRow & {
   problems: string[];
   /** The contract as it stands (live SO rows without RENO-CREDIT); null when the SO is unknown. */
   contractSen: number | null;
+  /** The contract at go-live: contractSen less the VOs approved or dated on or after the ledger start. It becomes the
+      baseline (golive_contract_sen) the first time the contract is seeded; those VOs then post as RVO. */
+  goLiveContractSen: number | null;
   /** What the contract holds now, so finance sees what changes. */
   current: { debtorCode: string | null; advanceAccountCode: string | null; billedBeforeGoLiveSen: number } | null;
 };
@@ -40,6 +44,12 @@ export type RenoOpeningPreviewRow = RenoOpeningRow & {
 const CUSTOMER_CONTROLS = ['301', '302', '303'];
 const ADVANCE_PARENTS = Object.values(ADVANCE_PARENT).map((p) => p.code);
 const CHUNK = 200;
+
+/** A timestamp's day in Malaysia (UTC+8), the day the ledger dates by. */
+const mytDay = (ts: string): string => new Date(new Date(ts).getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
+
+/** Runs `f` in one SQL transaction (the renovation routes' inRenoTx): a throw rolls every write back. */
+export type RenoOpeningTx = <T>(f: (db: RenoDb) => Promise<T>) => Promise<T>;
 
 const errText = (e: unknown): string => (e as { message?: string } | null)?.message ?? String(e);
 
@@ -106,8 +116,8 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
     const accountCodes = [...new Set(rows.map((r) => r.advanceAccountCode).filter(Boolean))];
     const byCompany = (q: Sb) => q.eq('company_id', companyId);
 
-    const sos = await readIn<{ doc_no: string; so_kind: string; so_date: string | null; debtor_code: string | null }>(
-      sb, 'mfg_sales_orders', 'doc_no, so_kind, so_date, debtor_code', 'doc_no', docs, byCompany);
+    const sos = await readIn<{ doc_no: string; so_kind: string; so_date: string | null; debtor_code: string | null; status: string | null }>(
+      sb, 'mfg_sales_orders', 'doc_no, so_kind, so_date, debtor_code, status', 'doc_no', docs, byCompany);
     const contracts = await readIn<{ so_doc_no: string; company_id: number | null; advance_account_code: string | null; billed_before_golive_sen: number | null }>(
       sb, 'reno_so_contracts', 'so_doc_no, company_id, advance_account_code, billed_before_golive_sen', 'so_doc_no', docs);
     const debtors = await readIn<{ code: string; control_account: string | null }>(sb, 'debtors', 'code, control_account', 'code', debtorCodes, byCompany);
@@ -116,6 +126,8 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
     const children = await readIn<{ parent_code: string }>(sb, 'accounts', 'parent_code', 'parent_code', accountCodes, byCompany);
     const allocs = await readIn<{ so_doc_no: string; source_type: string; source_doc_no: string }>(
       sb, 'reno_revenue_allocations', 'so_doc_no, source_type, source_doc_no', 'so_doc_no', docs, byCompany);
+    const vos = await readIn<{ so_doc_no: string; status: string; doc_date: string | null; approved_at: string | null; net_sen: number | null }>(
+      sb, 'reno_variation_orders', 'so_doc_no, status, doc_date, approved_at, net_sen', 'so_doc_no', docs, byCompany);
     const items: Array<{ doc_no: string; item_code: string | null; total_sen: number | null; cancelled: boolean | null }> = [];
     for (let i = 0; i < docs.length; i += CHUNK) {
       const part = docs.slice(i, i + CHUNK);
@@ -141,6 +153,13 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
       const contractSen = so
         ? items.filter((i) => i.doc_no === r.soDocNo && i.cancelled !== true && i.item_code !== 'RENO-CREDIT').reduce((s, i) => s + Number(i.total_sen ?? 0), 0)
         : null;
+      /* The contract at go-live: today's less the VOs approved or dated on or after the ledger start (they post as RVO). */
+      const afterStart = start
+        ? vos.filter((v) => v.so_doc_no === r.soDocNo && v.status === 'APPROVED'
+          && ((v.doc_date != null && String(v.doc_date).slice(0, 10) >= start) || (v.approved_at != null && mytDay(v.approved_at) >= start)))
+          .reduce((s, v) => s + Number(v.net_sen ?? 0), 0)
+        : 0;
+      const goLiveContractSen = contractSen == null ? null : contractSen - afterStart;
       const current = contract ? {
         debtorCode: so?.debtor_code ?? null,
         advanceAccountCode: String(contract.advance_account_code ?? '').trim() || null,
@@ -152,6 +171,8 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
       else if ((count.get(r.soDocNo) ?? 0) > 1) problems.push(`${r.soDocNo} is listed more than once.`);
       if (r.soDocNo && (!so || so.so_kind !== 'RENOVATION' || !contract)) {
         problems.push(`${r.soDocNo} is not a renovation contract of this company.`);
+      } else if (so?.status === 'CANCELLED') {
+        problems.push(`${r.soDocNo} is cancelled: there is nothing to seed.`);
       } else if (so && start && !isBeforeLedgerStart(String(so.so_date ?? '').slice(0, 10), ls.settings)) {
         problems.push(`${r.soDocNo} was signed on or after the ledger start (${start}): it posts through the ledger, not this import.`);
       }
@@ -199,7 +220,7 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
           }
         }
       }
-      out.push({ ...r, problems, contractSen, current });
+      out.push({ ...r, problems, contractSen, goLiveContractSen, current });
     }
     return { ok: true, rows: out };
   } catch (err) {
@@ -207,29 +228,34 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
   }
 }
 
-/** Write every row, or none when any row has a problem (see the header). Posts nothing. */
-export async function applyRenoOpening(sb: Sb, companyId: number, input: RenoOpeningRow[]): Promise<
+/** Write every row, or none (see the header): every row is checked first, then all are written in ONE SQL transaction
+    (`runTx`), so any failure rolls back every row. Posts nothing. `runTx` null = no database connection: nothing. */
+export async function applyRenoOpening(sb: Sb, companyId: number, input: RenoOpeningRow[], runTx: RenoOpeningTx | null): Promise<
   { ok: true; applied: number } | { ok: false; status: 'problems'; rows: RenoOpeningPreviewRow[] } | { ok: false; status: 'failed'; error: string }
 > {
   const pv = await previewRenoOpening(sb, companyId, input);
   if (!pv.ok) return { ok: false, status: 'failed', error: pv.error };
   if (pv.rows.some((r) => r.problems.length > 0)) return { ok: false, status: 'problems', rows: pv.rows };
-
-  const { data: existing, error: eErr } = await sb.from('reno_so_contracts').select('so_doc_no, golive_contract_sen').in('so_doc_no', pv.rows.map((r) => r.soDocNo));
-  if (eErr) return { ok: false, status: 'failed', error: errText(eErr) };
-  const baselineOf = new Map(((existing ?? []) as Array<{ so_doc_no: string; golive_contract_sen: number | null }>).map((c) => [c.so_doc_no, c.golive_contract_sen]));
-
-  let applied = 0;
-  for (const r of pv.rows) {
-    const { error: soErr } = await sb.from('mfg_sales_orders').update({ debtor_code: r.debtorCode, updated_at: new Date().toISOString() })
-      .eq('company_id', companyId).eq('doc_no', r.soDocNo);
-    if (soErr) return { ok: false, status: 'failed', error: `${r.soDocNo}: the customer could not be saved (${errText(soErr)}); ${applied} row${applied === 1 ? '' : 's'} before it saved. Apply again.` };
-    /* The baseline is the contract when first seeded: a VO posted since then is already in the ledger. */
-    const patch: Record<string, unknown> = { advance_account_code: r.advanceAccountCode, billed_before_golive_sen: r.billedBeforeGoLiveSen };
-    if (baselineOf.get(r.soDocNo) == null) patch.golive_contract_sen = r.contractSen ?? 0;
-    const { error: cErr } = await sb.from('reno_so_contracts').update(patch).eq('so_doc_no', r.soDocNo);
-    if (cErr) return { ok: false, status: 'failed', error: `${r.soDocNo}: the contract could not be saved (${errText(cErr)}); ${applied} row${applied === 1 ? '' : 's'} before it saved. Apply again.` };
-    applied += 1;
+  if (!runTx) return { ok: false, status: 'failed', error: 'The database connection is not configured: nothing was applied.' };
+  try {
+    const applied = await runTx(async (db) => {
+      for (const r of pv.rows) {
+        const so = await db.q<{ doc_no: string }>(
+          'update scm.mfg_sales_orders set debtor_code = $2, updated_at = now() where doc_no = $1 and company_id = $3 returning doc_no',
+          [r.soDocNo, r.debtorCode, companyId]);
+        if (so.length === 0) throw new Error(`${r.soDocNo} was not found`);
+        /* The baseline is the contract at go-live, set the first time only: a VO posted since is in the ledger. */
+        const c = await db.q<{ so_doc_no: string }>(
+          `update scm.reno_so_contracts set advance_account_code = $2, billed_before_golive_sen = $3,
+              golive_contract_sen = coalesce(golive_contract_sen, $4), updated_at = now()
+            where so_doc_no = $1 returning so_doc_no`,
+          [r.soDocNo, r.advanceAccountCode, r.billedBeforeGoLiveSen, r.goLiveContractSen ?? 0]);
+        if (c.length === 0) throw new Error(`the contract record of ${r.soDocNo} was not found`);
+      }
+      return pv.rows.length;
+    });
+    return { ok: true, applied };
+  } catch (err) {
+    return { ok: false, status: 'failed', error: `Nothing was applied: ${errText(err)}. Apply again.` };
   }
-  return { ok: true, applied };
 }

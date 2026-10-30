@@ -45,6 +45,17 @@ describe('purchases by sub-category', () => {
     ] });
   });
 
+  test('only renovation lines read their product: every other purchase line keeps its own item_group', async () => {
+    const r = await split(world(), [
+      { item_group: 'WORKS', item_code: 'RN-TVC-01', line_total_sen: 70_000 },
+      { item_group: 'RENOVATION', item_code: 'RN-TVC-01', line_total_sen: 30_000 },
+    ]);
+    expect(r).toEqual({ ok: true, groups: [
+      { groupCode: 'WORKS', accountCode: '601-0000', myrSen: 70_000 },
+      { groupCode: 'BUILTIN / TV_CABINET', accountCode: '602-0010', myrSen: 30_000 },
+    ] });
+  });
+
   test('a product whose sub-category and group have no purchase account refuses by name', async () => {
     const r = await split(world(), [{ item_group: 'RENOVATION', item_code: 'RN-ODD-01', line_total_sen: 10_000 }]);
     expect(r).toMatchObject({ ok: false, status: 'group_unbound' });

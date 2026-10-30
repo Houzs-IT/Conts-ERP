@@ -127,7 +127,8 @@ export const OfficialReceipts = () => {
     onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ['official-receipts'] });
       void qc.invalidateQueries({ queryKey: ['official-receipts-check'] });
-      if (r.billNext) void offerNextInstalment(r, r.billNext);
+      /* Only to someone who may also bill (the bill route's permission). */
+      if (r.billNext && can('scm.renovation.bill')) void offerNextInstalment(r, r.billNext);
       else void notify({ title: 'Payment confirmed', body: confirmedSentence(r) });
     },
   });

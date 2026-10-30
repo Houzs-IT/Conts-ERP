@@ -235,23 +235,38 @@ export function nextInstalmentAmount(p: NextInstalmentInput): NextInstalmentResu
 }
 
 /** Amounts for every instalment as if nothing changes from here on. `creditedSen`: what contract credit notes took
-    back (they lower the revised contract and what is billed, so later instalments are worked out net). */
-export function instalmentPreview(instalments: InstalmentPct[], revisedContractSen: number, billed: ReadonlyMap<number, number>, creditedSen = 0): Array<{ seq: number; amountSen: number; billed: boolean }> {
+    back (they lower the revised contract and what is billed, so later instalments are worked out net).
+    `billedBeforeGoLiveSen`: what AutoCount invoiced before the ledger start (Conts, 30 Oct 2026). It counts as
+    billed; an instalment not billed here whose cumulative target it covers is `beforeGoLive` (amount 0) and is
+    skipped, and the instalment it falls in bills only the rest. */
+export function instalmentPreview(
+  instalments: InstalmentPct[], revisedContractSen: number, billed: ReadonlyMap<number, number>, creditedSen = 0, billedBeforeGoLiveSen = 0,
+): Array<{ seq: number; amountSen: number; billed: boolean; beforeGoLive: boolean }> {
   const rows = [...instalments].sort((a, b) => a.seq - b.seq);
-  let billedSen = -creditedSen;
-  const out: Array<{ seq: number; amountSen: number; billed: boolean }> = [];
+  let billedSen = billedBeforeGoLiveSen - creditedSen;
+  const out: Array<{ seq: number; amountSen: number; billed: boolean; beforeGoLive: boolean }> = [];
   for (const r of rows) {
     const done = billed.get(r.seq);
     if (done !== undefined) {
       billedSen += done;
-      out.push({ seq: r.seq, amountSen: done, billed: true });
+      out.push({ seq: r.seq, amountSen: done, billed: true, beforeGoLive: false });
       continue;
     }
     const n = nextInstalmentAmount({ instalments: rows, seq: r.seq, revisedContractSen, billedSen });
+    if (instalmentBeforeGoLive(n.targetSen, billedBeforeGoLiveSen)) {
+      out.push({ seq: r.seq, amountSen: 0, billed: false, beforeGoLive: true });
+      continue;
+    }
     billedSen += n.amountSen;
-    out.push({ seq: r.seq, amountSen: n.amountSen, billed: false });
+    out.push({ seq: r.seq, amountSen: n.amountSen, billed: false, beforeGoLive: false });
   }
   return out;
+}
+
+/** An instalment not billed here is covered by what AutoCount invoiced before go-live when its cumulative target is
+    no more than that amount. */
+export function instalmentBeforeGoLive(targetSen: number, billedBeforeGoLiveSen: number): boolean {
+  return billedBeforeGoLiveSen > 0 && targetSen <= billedBeforeGoLiveSen;
 }
 
 /** A PO instalment's amount: percentage of the PO total, the last one taking the remainder. */

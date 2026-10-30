@@ -17,7 +17,7 @@ import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
 import { cancelGate, contractPostingState, postContractCancel, postContractChange } from '../src/acc/reno-ledger';
 import { postSiRevenue, reverseSiRevenue } from '../src/scm/lib/post-si-revenue';
 import { cancelCreditNote, postCreditNote } from '../src/acc/credit-notes';
-import { assembleView, creditContract } from '../src/scm/lib/renovation-billing';
+import { assembleView, billInstalment, creditContract } from '../src/scm/lib/renovation-billing';
 import type { RenoDb } from '../src/scm/lib/renovation-db';
 
 const CO = 2;
@@ -310,6 +310,51 @@ describe('renovation credit notes', () => {
     expect(v.creditedSen).toBe(500_000);
     /* 30% of 95,000 = 28,500, less 5,000 billed net. */
     expect(v.instalments.find((i) => i.seq === 2)!.amountSen).toBe(2_350_000);
+  });
+});
+
+/* What AutoCount invoiced before go-live is billed (plan Task 8 review): it counts in billedSen, the instalments it
+   covers show as billed before go-live and are skipped, and the next one is worked out after it. */
+describe('billing an old contract after go-live', () => {
+  const inst = [
+    { id: 'a', seq: 1, label: 'Deposit', pctBp: 3000, description: '', stageCode: null, trigger: 'manual' },
+    { id: 'b', seq: 2, label: 'Carpentry', pctBp: 4000, description: '', stageCode: null, trigger: 'manual' },
+    { id: 'c', seq: 3, label: 'Handover', pctBp: 3000, description: '', stageCode: null, trigger: 'manual' },
+  ];
+
+  test('contract 100k, AutoCount invoiced 30k (instalment 1): the next is instalment 2, never instalment 1 again', () => {
+    const v = assembleView(SO, 'RENO_IN_PROGRESS', 10_000_000, 10_000_000, inst, [], 0, [], 3_000_000);
+    expect(v.billedSen).toBe(3_000_000);
+    expect(v.nextSeq).toBe(2);
+    expect(v.instalments.map((i) => [i.seq, i.billedBeforeGoLive, i.isNext, i.amountSen])).toEqual([
+      [1, true, false, 0],
+      [2, false, true, 4_000_000],
+      [3, false, false, 3_000_000],
+    ]);
+  });
+
+  test('a go-live amount between two targets: the instalment it falls in bills the rest of it', () => {
+    const v = assembleView(SO, 'RENO_IN_PROGRESS', 10_000_000, 10_000_000, inst, [], 0, [], 5_000_000);
+    expect(v.nextSeq).toBe(2);
+    expect(v.instalments.find((i) => i.seq === 2)!.amountSen).toBe(2_000_000);
+  });
+
+  test('billInstalment refuses a covered instalment and bills the next at cum% less everything billed', async () => {
+    const { db, seen } = scriptDb([
+      [/as revised_sen/, () => [{ doc_no: SO, status: 'RENO_IN_PROGRESS', original_contract_sen: 10_000_000, revised_sen: 10_000_000, billed_before_golive_sen: 3_000_000 }]],
+      [HEAD_RE, () => [{ ...head, status: 'RENO_IN_PROGRESS' }]],
+      [/from scm\.reno_doc_instalments/, () => inst.map((i) => ({ id: i.id, so_doc_no: SO, seq: i.seq, label: i.label, pct_bp: i.pctBp, description: '', stage_code: null, trigger: 'manual' }))],
+      [/from scm\.reno_instalment_bills b/, () => []],
+      [/from scm\.reno_contract_credits cc/, () => []],
+      [/next_doc_no_n/, () => [{ n: 1 }]],
+      [/insert into scm\.sales_invoices/, () => [{ id: 'si-2' }]],
+    ]);
+    await expect(billInstalment(db, actor, SO, 'a', { expectedAmountSen: 3_000_000 })).rejects.toMatchObject({ code: 'not_next' });
+    const out = await billInstalment(db, actor, SO, 'b', { expectedAmountSen: 4_000_000, invoiceDate: '2026-11-20' });
+    expect(out).toMatchObject({ kind: 'INVOICE', amountSen: 4_000_000 });
+    const bill = seen.find((s) => /insert into scm\.reno_instalment_bills/.test(s.text))!;
+    /* billed_before_sen records everything billed before this one, AutoCount's 30k included. */
+    expect(bill.params[8]).toBe(3_000_000);
   });
 });
 

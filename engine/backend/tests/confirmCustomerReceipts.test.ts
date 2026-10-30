@@ -472,15 +472,37 @@ describe('a renovation payment ahead of its invoice offers the next instalment',
     reno_contract_credits: [], acc_credit_notes: [],
     ...over,
   });
-  const recordAndConfirm = async (sb: World) => {
+  const BILLS = ['scm.payment_voucher.post', 'scm.renovation.bill'];
+  const recordAndConfirm = async (sb: World, perms = BILLS) => {
     await bookSoPaymentBestEffort(sb, payment(sb, 'r-1'), 'payment');
-    return harness(sb).confirm(receiptOf(sb, 'r-1')!.id, { accountCode: '310-0010' });
+    return harness(sb, perms).confirm(receiptOf(sb, 'r-1')!.id, { accountCode: '310-0010' });
   };
+
+  test('offered only to someone who may also bill, and only on the confirm that makes the receipt formal', async () => {
+    const noBill = await recordAndConfirm(reno(400_000), ['scm.payment_voucher.post']);
+    expect(noBill.status).toBe(200);
+    expect(noBill.body.billNext ?? null).toBeNull();
+
+    const sb = reno(400_000);
+    expect((await recordAndConfirm(sb)).body.billNext).toBeTruthy();
+    const again = await harness(sb, BILLS).confirm(receiptOf(sb, 'r-1')!.id, { accountCode: '310-0010' });
+    expect(again.body).toMatchObject({ ok: true, already: true });
+    expect(again.body.billNext ?? null).toBeNull();
+  });
 
   test('a confirm that leaves more received than billed offers the next instalment', async () => {
     const sb = reno(400_000);
     const r = await recordAndConfirm(sb);
     expect(r.status).toBe(200);
+    expect(r.body.billNext).toEqual({ soDocNo: RSO, instalmentId: 'inst-2', seq: 2, label: 'Carpentry', amountSen: 400_000, receivedSen: 400_000, billedSen: 300_000 });
+  });
+
+  test('an old contract: the AutoCount go-live amount counts as billed, and the offer is the instalment after it', async () => {
+    const sb = reno(400_000, {
+      reno_so_contracts: [{ so_doc_no: RSO, company_id: CO, advance_account_code: '480-S012', billed_before_golive_sen: 300_000 }],
+      reno_instalment_bills: [], sales_invoices: [],
+    });
+    const r = await recordAndConfirm(sb);
     expect(r.body.billNext).toEqual({ soDocNo: RSO, instalmentId: 'inst-2', seq: 2, label: 'Carpentry', amountSen: 400_000, receivedSen: 400_000, billedSen: 300_000 });
   });
 

@@ -12,13 +12,26 @@ import {
   type RenoOpeningPreviewRow, type RenoOpeningRow,
 } from "./renoOpening";
 
-const GOOD = "var(--c-secondary-a, #2F5D4F)";
-const BAD = "var(--c-festive-b, #B8331F)";
+const GOOD = "var(--c-success)";
+const BAD = "var(--c-error)";
+const BAD_ROW = "var(--c-error-bg)";
 const MUTED = "var(--fg-muted)";
 const num: React.CSSProperties = { textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "4px 8px", whiteSpace: "nowrap" };
 const cell: React.CSSProperties = { padding: "4px 8px" };
 const rm = (sen: number): string => (sen / 100).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const errText = (e: unknown, fallback: string): string => (e instanceof Error ? e.message : fallback);
+
+/** The rows of an Apply refused with 409 (the server checked again and found problems), from the error's body. */
+function refusedRows(e: unknown): RenoOpeningPreviewRow[] | null {
+  const body = (e as { body?: unknown } | null)?.body;
+  if (typeof body !== "string") return null;
+  try {
+    const parsed = JSON.parse(body) as { rows?: unknown };
+    return Array.isArray(parsed.rows) ? (parsed.rows as RenoOpeningPreviewRow[]) : null;
+  } catch {
+    return null;
+  }
+}
 
 /** What a row changes, against what the contract holds now. */
 const changed = (now: string | null | undefined, next: string): string => (now && now !== next ? ` (was ${now})` : "");
@@ -73,6 +86,9 @@ export function RenovationOpening({ canSave, ledgerStartDate }: { canSave: boole
       setNote({ ok: true, text: `${r.applied} contract${r.applied === 1 ? "" : "s"} seeded.` });
       reset();
     } catch (e) {
+      /* A 409 carries every row with what is wrong with it now (a posting since the preview): show them. */
+      const refused = refusedRows(e);
+      if (refused) setChecked(refused);
       setNote({ ok: false, text: errText(e, "Nothing was applied.") });
     }
   };
@@ -106,7 +122,7 @@ export function RenovationOpening({ canSave, ledgerStartDate }: { canSave: boole
               </div>
               <div style={{ overflowX: "auto", maxHeight: 400, overflowY: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-13)" }}>
-                  <thead style={{ position: "sticky", top: 0, background: "var(--bg-surface, var(--bg, #fff))" }}>
+                  <thead style={{ position: "sticky", top: 0, background: "var(--bg)" }}>
                     <tr style={{ textAlign: "left", color: MUTED }}>
                       <th style={cell}>SO</th><th style={cell}>Customer</th><th style={cell}>Advance</th>
                       <th style={{ ...num, fontWeight: 400 }}>Contract (RM)</th><th style={{ ...num, fontWeight: 400 }}>Invoiced before (RM)</th>
@@ -116,7 +132,7 @@ export function RenovationOpening({ canSave, ledgerStartDate }: { canSave: boole
                   <tbody>
                     {[...checked].sort((a, b) => Number(b.problems.length > 0) - Number(a.problems.length > 0)).map((r, i) => (
                       <tr key={`${r.soDocNo}-${i}`} data-bad={r.problems.length > 0 ? true : undefined}
-                        style={{ borderTop: "1px solid var(--line)", background: r.problems.length > 0 ? "rgba(184, 51, 31, 0.08)" : undefined }}>
+                        style={{ borderTop: "1px solid var(--line)", background: r.problems.length > 0 ? BAD_ROW : undefined }}>
                         <td style={cell}>{r.soDocNo}</td>
                         <td style={cell}>{r.debtorCode}<span style={{ color: MUTED }}>{changed(r.current?.debtorCode, r.debtorCode)}</span></td>
                         <td style={cell}>{r.advanceAccountCode}<span style={{ color: MUTED }}>{changed(r.current?.advanceAccountCode, r.advanceAccountCode)}</span></td>

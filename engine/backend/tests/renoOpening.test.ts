@@ -15,6 +15,7 @@ import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
 import { applyRenoOpening, previewRenoOpening, type RenoOpeningRow } from '../src/acc/reno-opening';
 import { renoOpeningApply, renoOpeningPreview } from '../src/scm/routes/accounting-reno-opening';
 import { contractPostingState, postContractChange } from '../src/acc/reno-ledger';
+import type { RenoDb } from '../src/scm/lib/renovation-db';
 
 const CO = 2;
 const OLD = '2990-SO-2609-001';
@@ -55,12 +56,45 @@ function world(over: Record<string, Row[]> = {}) {
       { so_doc_no: OLD2, company_id: CO, advance_account_code: null, billed_before_golive_sen: 0 },
       { so_doc_no: NEW, company_id: CO, advance_account_code: '480-D008', billed_before_golive_sen: 0 },
     ],
-    reno_revenue_allocations: [],
+    reno_revenue_allocations: [], reno_variation_orders: [],
     journal_entries: [], journal_entry_lines: [],
     ...over,
   }, {}, [], ['journal_entry_lines']);
 }
 type World = ReturnType<typeof world>;
+
+/** The SQL transaction Apply writes in, over the fake tables: its writes land only when the whole function returns;
+    `failOn` makes a statement fail (a lost connection, a constraint), which rolls every write back. */
+function fakeTx(sb: World, failOn?: (text: string, params: readonly unknown[]) => boolean) {
+  return async <T>(f: (db: RenoDb) => Promise<T>): Promise<T> => {
+    const pending: Array<() => void> = [];
+    const db: RenoDb = {
+      async q<R>(text: string, params: readonly unknown[] = []): Promise<R[]> {
+        if (failOn?.(text, params)) throw new Error('connection reset');
+        if (/update scm.mfg_sales_orders/.test(text)) {
+          const row = (sb.tables.mfg_sales_orders as Row[]).find((x) => x.doc_no === params[0] && x.company_id === params[2]);
+          if (!row) return [];
+          pending.push(() => { row.debtor_code = params[1]; });
+          return [{ doc_no: params[0] }] as R[];
+        }
+        if (/update scm.reno_so_contracts/.test(text)) {
+          const row = (sb.tables.reno_so_contracts as Row[]).find((x) => x.so_doc_no === params[0]);
+          if (!row) return [];
+          pending.push(() => {
+            row.advance_account_code = params[1];
+            row.billed_before_golive_sen = params[2];
+            row.golive_contract_sen = row.golive_contract_sen ?? params[3];
+          });
+          return [{ so_doc_no: params[0] }] as R[];
+        }
+        throw new Error(`unexpected statement: ${text}`);
+      },
+    };
+    const out = await f(db);
+    for (const w of pending) w();
+    return out;
+  };
+}
 
 const good: RenoOpeningRow = { soDocNo: OLD, debtorCode: '301-C005', advanceAccountCode: '480-D007', billedBeforeGoLiveSen: 3_000_000 };
 
@@ -147,7 +181,7 @@ describe('the go-live preview', () => {
       ],
     });
     expect((await problemsOf(paid, [good]))[0]).toEqual([expect.stringContaining('already posted with customer 301-C004')]);
-    expect(await applyRenoOpening(paid, CO, [good])).toMatchObject({ ok: false, status: 'problems' });
+    expect(await applyRenoOpening(paid, CO, [good], fakeTx(paid))).toMatchObject({ ok: false, status: 'problems' });
     expect((paid.tables.mfg_sales_orders as Row[]).find((s) => s.doc_no === OLD)!.debtor_code).toBe('301-C004');
 
     /* A reversed posting no longer holds it. */
@@ -174,7 +208,7 @@ describe('the go-live preview', () => {
 describe('Apply', () => {
   test('writes the customer, the advance account, the go-live amount and baseline; posts nothing', async () => {
     const sb = world();
-    const r = await applyRenoOpening(sb, CO, [good, { ...good, soDocNo: OLD2, advanceAccountCode: '480-D008', billedBeforeGoLiveSen: 0 }]);
+    const r = await applyRenoOpening(sb, CO, [good, { ...good, soDocNo: OLD2, advanceAccountCode: '480-D008', billedBeforeGoLiveSen: 0 }], fakeTx(sb));
     expect(r).toEqual({ ok: true, applied: 2 });
     expect((sb.tables.mfg_sales_orders as Row[]).find((s) => s.doc_no === OLD)).toMatchObject({ debtor_code: '301-C005' });
     expect((sb.tables.reno_so_contracts as Row[]).find((c) => c.so_doc_no === OLD)).toMatchObject({
@@ -186,17 +220,55 @@ describe('Apply', () => {
 
   test('one bad row stops the whole file, with nothing written', async () => {
     const sb = world();
-    const r = await applyRenoOpening(sb, CO, [good, { ...good, soDocNo: OLD2, advanceAccountCode: '500-0000' }]);
+    const r = await applyRenoOpening(sb, CO, [good, { ...good, soDocNo: OLD2, advanceAccountCode: '500-0000' }], fakeTx(sb));
     expect(r).toMatchObject({ ok: false, status: 'problems' });
     expect((sb.tables.mfg_sales_orders as Row[]).find((s) => s.doc_no === OLD)!.debtor_code).toBeNull();
     expect((sb.tables.reno_so_contracts as Row[]).find((c) => c.so_doc_no === OLD)!.advance_account_code).toBeNull();
   });
 
+  test('a failure on row 2 rolls row 1 back: nothing is written', async () => {
+    const sb = world();
+    const rows = [good, { ...good, soDocNo: OLD2, advanceAccountCode: '480-D008', billedBeforeGoLiveSen: 0 }];
+    const r = await applyRenoOpening(sb, CO, rows, fakeTx(sb, (text, params) => /reno_so_contracts/.test(text) && params[0] === OLD2));
+    expect(r).toMatchObject({ ok: false, status: 'failed', error: expect.stringContaining('Nothing was applied') });
+    expect((sb.tables.mfg_sales_orders as Row[]).find((s) => s.doc_no === OLD)!.debtor_code).toBeNull();
+    expect((sb.tables.reno_so_contracts as Row[]).find((c) => c.so_doc_no === OLD)).toMatchObject({ advance_account_code: null, billed_before_golive_sen: 0 });
+  });
+
+  test('without a database connection nothing is applied', async () => {
+    expect(await applyRenoOpening(world(), CO, [good], null)).toMatchObject({ ok: false, status: 'failed' });
+  });
+
+  test('a cancelled contract is refused', async () => {
+    const sb = world({ mfg_sales_orders: [so(OLD, '2026-09-10', { status: 'CANCELLED' }), so(OLD2, '2026-09-20'), so(NEW, '2026-11-03')] });
+    expect((await problemsOf(sb, [good]))[0]).toEqual([expect.stringContaining('is cancelled')]);
+  });
+
+  /* The baseline is the contract at go-live: a VO approved on or after the ledger start but before the seeding is
+     left out of it, so it posts as RVO. */
+  test('a VO approved on 5 Nov, seeded on 10 Nov: the baseline leaves it out and it posts as RVO', async () => {
+    const sb = world({
+      reno_variation_orders: [
+        { id: 'vo-1', company_id: CO, so_doc_no: OLD, vo_no: 'VO-1', seq: 1, status: 'APPROVED', doc_date: '2026-10-20', approved_at: '2026-10-21T03:00:00Z', net_sen: 200_000 },
+        { id: 'vo-2', company_id: CO, so_doc_no: OLD, vo_no: 'VO-2', seq: 2, status: 'APPROVED', doc_date: '2026-11-05', approved_at: '2026-11-05T02:00:00Z', net_sen: 500_000 },
+        { id: 'vo-3', company_id: CO, so_doc_no: OLD, vo_no: 'VO-3', seq: 3, status: 'DRAFT', doc_date: '2026-11-06', approved_at: null, net_sen: 900_000 },
+      ],
+    });
+    /* The contract today carries both approved VOs: 10,000,000 + VO-2's 500,000 (VO-1 is in the 10,000,000 already). */
+    (sb.tables.mfg_sales_order_items as Row[]).push(item('a5', OLD, 500_000));
+    const pv = await previewRenoOpening(sb, CO, [good]);
+    expect(pv).toMatchObject({ ok: true, rows: [{ problems: [], contractSen: 10_500_000, goLiveContractSen: 10_000_000 }] });
+    expect(await applyRenoOpening(sb, CO, [good], fakeTx(sb))).toEqual({ ok: true, applied: 1 });
+    expect((sb.tables.reno_so_contracts as Row[]).find((c) => c.so_doc_no === OLD)!.golive_contract_sen).toBe(10_000_000);
+    expect(await postContractChange(sb, { companyId: CO, soDocNo: OLD, date: '2026-11-05', actor: 'Chew' })).toMatchObject({ ok: true, status: 'posted', deltaSen: 500_000 });
+    expect((sb.tables.journal_entries as Row[]).map((j) => [j.source_type, j.source_doc_no, j.entry_date])).toEqual([['RVO', `${OLD}-1`, '2026-11-05']]);
+  });
+
   test('a second Apply keeps the first baseline (a VO posted since stays counted)', async () => {
     const sb = world();
-    await applyRenoOpening(sb, CO, [good]);
+    await applyRenoOpening(sb, CO, [good], fakeTx(sb));
     (sb.tables.mfg_sales_order_items as Row[]).push(item('a4', OLD, 500_000));
-    await applyRenoOpening(sb, CO, [good]);
+    await applyRenoOpening(sb, CO, [good], fakeTx(sb));
     expect((sb.tables.reno_so_contracts as Row[]).find((c) => c.so_doc_no === OLD)!.golive_contract_sen).toBe(10_000_000);
   });
 });
@@ -204,7 +276,7 @@ describe('Apply', () => {
 describe('a seeded old contract in the ledger', () => {
   test('a VO after go-live posts only its difference, up or down; the contract itself never re-posts', async () => {
     const sb = world();
-    await applyRenoOpening(sb, CO, [good]);
+    await applyRenoOpening(sb, CO, [good], fakeTx(sb));
     expect(await postContractChange(sb, { companyId: CO, soDocNo: OLD, date: '2026-11-12', actor: 'Chew' })).toMatchObject({ ok: true, status: 'nothing' });
     expect(await contractPostingState(sb, { companyId: CO, soDocNo: OLD })).toMatchObject({ ok: true, status: 'in_step', contractSen: 10_000_000, postedSen: 10_000_000 });
 
@@ -258,7 +330,8 @@ describe('the routes', () => {
     expect(pv).toMatchObject({ status: 200, body: { rows: [{ soDocNo: OLD, problems: [] }] } });
     const bad = await call(fin, '/accounting/renovation-opening/apply', { rows: [{ ...good, advanceAccountCode: '500-0000' }] });
     expect(bad.status).toBe(409);
+    /* A clean file needs the database transaction: none is configured here. */
     const ok = await call(fin, '/accounting/renovation-opening/apply', { rows: [good] });
-    expect(ok).toMatchObject({ status: 200, body: { ok: true, applied: 1 } });
+    expect(ok.status).toBe(503);
   });
 });
