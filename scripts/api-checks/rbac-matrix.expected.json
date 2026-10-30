@@ -239,6 +239,7 @@
  "GET /api/units/[id]/channels/airbnb-listings": "EEFFFFFU",
  "GET /api/units/[id]/contract": "AAFAFFFU",
  "GET /api/units/detail": "AAAAFFFU",
+ "GET /api/units/export": "AAAAFFFU",
  "GET /api/units/financials": "AAFAFFFU",
  "GET /api/units/jobs": "AAAAFFFU",
  "GET /api/units/stays": "AAAAFFFU",

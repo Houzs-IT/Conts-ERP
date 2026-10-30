@@ -118,13 +118,13 @@ export function bedsLabel(beds: Bed[]): string {
   const name: Record<BedSize, string> = { king: 'King', queen: 'Queen', super_single: 'Super single', single: 'Single', sofa_bed: 'Sofa bed', single_floor_mattress: 'Single floor mattress', double_decker: 'Double decker' };
   return beds.map(b => `${b.quantity} ${name[b.size] ?? b.size}`).join(' · ');
 }
-/** "LEVEL 5-100 (Tandem)": level first, then the lot, then the note (staff sheet UNIT, 23 Oct 2026). A level typed
+/** "LEVEL 5-LOT-100 (Tandem)": level first, then the lot, then the note (staff sheet UNIT, 23 Oct 2026). A level typed
  *  as "L5" or "Level 5" is not doubled up. */
 export function bayLabel(b: { lotNumber: string; level?: string | null; note?: string | null }): string {
   const lot = b.lotNumber.trim(), level = b.level?.trim().replace(/^(level|lvl|l)\s*(?=\d)/i, ''), note = b.note?.trim();
-  return `${level ? `LEVEL ${level}-${lot}` : lot}${note ? ` (${note})` : ''}`;
+  return `${level ? `LEVEL ${level}-LOT-${lot}` : lot}${note ? ` (${note})` : ''}`;
 }
-/** "2 bays: LEVEL 2-105, LEVEL 2-106". */
+/** "2 bays: LEVEL 2-LOT-105, LEVEL 2-LOT-106". */
 export function baysLabel(bays: { lotNumber: string; level?: string | null; note?: string | null }[]): string {
   if (!bays.length) return '';
   return `${bays.length} ${bays.length === 1 ? 'bay' : 'bays'}: ${bays.map(bayLabel).join(', ')}`;
@@ -139,7 +139,7 @@ export async function saveBays(env: Env, unitId: string, bays: BayInput[]) {
     unitId, now, JSON.stringify(bays.map((b, n) => ({ lot: b.lotNumber.trim(), level: b.level?.trim() ?? '', note: b.note?.trim() ?? '', n }))));
 }
 
-/** "2 bays: LEVEL 2-105, LEVEL 2-106" for one unit, or null (also before 0125). For the screens that show how to get in. */
+/** "2 bays: LEVEL 2-LOT-105, LEVEL 2-LOT-106" for one unit, or null (also before 0125). For the screens that show how to get in. */
 export async function parkingFor(env: Env, unitId: string): Promise<string | null> {
   if (!(await purposeReady(env))) return null;
   const bays = await all<{ lot_number: string; level: string | null; note: string | null }>(env, 'SELECT lot_number, level, note FROM unit_parking_bays WHERE unit_id = ? ORDER BY sort_order, lot_number', unitId);

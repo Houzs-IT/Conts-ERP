@@ -83,9 +83,9 @@ export const NAV: NavGroup[] = [
     { key: 'showcase', label: 'Owner Showcase', icon: 'presentation', path: '/performance/showcase', area: 'performance', fresh: true },
     { key: 'showcaseControl', label: 'Showcase control', icon: 'sliders-horizontal', path: '/performance/showcase-control', area: 'performance', badge: 'showcase', fresh: true },
   ] },
-  // Reports sit under Home (owner, 29 Oct 2026). Their figures are Finance's, so the permission area stays Finance.
+  // Reports sit under Home (owner, 29 Oct 2026), with their own permission area since 30 Oct 2026.
   { label: 'REPORTS', workspace: 'rental', phone: false, items: [
-    { key: 'yearlyReport', label: 'Yearly unit report', icon: 'file-spreadsheet', path: '/reports/yearly', area: 'finance', fresh: true },
+    { key: 'yearlyReport', label: 'Yearly unit report', icon: 'file-spreadsheet', path: '/reports/yearly', area: 'reports', fresh: true },
   ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
     { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'reservations' },
@@ -120,9 +120,9 @@ export const NAV: NavGroup[] = [
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
   { label: 'FINANCE', workspace: 'rental', phone: false, items: financeItems('/finance', '') },
   { label: 'GROWTH', workspace: 'rental', items: [
-    { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'performance', full: true },
-    { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'performance' },
-    { key: 'automations', label: 'Automations', icon: 'workflow', path: '/communication/automations', area: 'comms' },
+    { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'pricing', full: true },
+    { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'pricing' },
+    { key: 'automations', label: 'Automations', icon: 'workflow', path: '/communication/automations', area: 'automations' },
   ] },
   { label: 'SYSTEM', workspace: 'rental', items: [
     { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
@@ -240,7 +240,7 @@ export const WORKSPACE_LABEL: Record<Workspace, string> ={ rental: 'The Conts', 
  *  functions/api/system/health (management, finance, operations managers): keep the two in sync. */
 const DENY: Partial<Record<UserRole, string[]>> = {
   // scInvoices matches MONEY_ONLY in functions/api/_middleware.ts.
-  operations_staff: ['finance', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'scInvoices', 'ledger'],
+  operations_staff: ['finance', 'reports', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'scInvoices', 'ledger'],
   housekeeper: ['*'],
   technician: ['*'],
   owner: ['*'],
