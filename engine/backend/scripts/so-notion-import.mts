@@ -35,7 +35,7 @@ const NOTE = 'note:so-notion-import:';
 const SYSTEM_STAFF = '00000000-0000-4000-8000-000000000001';
 
 interface DataLine { kind: 'ITEM' | 'TEXT'; itemCode?: string; description: string; qty?: number; unitPriceSen?: number; discountBp?: number; netSen?: number }
-interface DataVersion { file: string; docDate: string | null; lastAmended: string | null; preparedBy: string; to: string; payableSen: number; linesSen: number; sections: Array<{ heading: string; lines: DataLine[] }> }
+interface DataVersion { file: string; docDate: string | null; lastAmended: string | null; preparedBy: string; to: string; payableSen: number; linesSen: number; sections: Array<{ heading: string; lumpSumSen?: number; lines: DataLine[] }> }
 interface DataProject { project: string; projectId: number | null; versions: DataVersion[] }
 
 const data = JSON.parse(readFileSync(arg('data') ?? join(root, 'docs/so-import/so-notion-data.json'), 'utf8')) as { projects: DataProject[] };
@@ -76,7 +76,8 @@ const keyOf = (code: string | null, desc: string, net: number) => `${code}|${des
 
 async function importProject(db: RenoDb, actor: RenoActor, p: DataProject) {
   const [first, ...later] = p.versions;
-  const sections = first.sections.map((s) => ({ heading: s.heading, lines: s.lines.map(lineInput) }));
+  const sections: Array<{ heading: string; lumpSumSen?: number; lines: Record<string, unknown>[] }> =
+    first.sections.map((s) => ({ heading: s.heading, ...(s.lumpSumSen != null ? { lumpSumSen: s.lumpSumSen } : {}), lines: s.lines.map(lineInput) }));
   let docDiscountSen = 0;
   if (first.linesSen > first.payableSen) docDiscountSen = first.linesSen - first.payableSen;
   if (first.payableSen > first.linesSen) {
@@ -133,7 +134,27 @@ async function importProject(db: RenoDb, actor: RenoActor, p: DataProject) {
     if (v.lastAmended) await db.q(`update scm.reno_so_contracts set last_amended = $2::date where so_doc_no = $1`, [docNo, v.lastAmended]);
     vos.push(vo.voNo);
   }
+  await soScreenFields(db, docNo, p.projectId, actor.companyId);
   return { docNo, vos, total: p.versions[p.versions.length - 1].payableSen };
+}
+
+/* The sales order screen (owner, 29 Oct): Item shows the line's catalog product, so it reads as the SKU it is bound
+   to; the PDF's own wording and sizes move to Remarks. The contract and its print keep the PDF wording.
+   The delivery state / city / postcode come from the project, as the screen's other order details do. */
+async function soScreenFields(db: RenoDb, docNo: string, projectId: number | null, companyId: number) {
+  await db.q(
+    `update scm.mfg_sales_order_items i set remark = i.description, description = p.name
+       from (select distinct on (code) code, name from scm.mfg_products where company_id = $2 order by code, id) p
+      where i.doc_no = $1 and p.code = i.item_code and i.item_code not like 'RENO-%' and i.description is distinct from p.name`,
+    [docNo, companyId],
+  );
+  if (projectId == null) return;
+  await db.q(
+    `update scm.mfg_sales_orders o set city = coalesce(p.city, o.city), postcode = coalesce(p.postcode, o.postcode),
+            customer_state = coalesce(p.state, o.customer_state)
+       from public.projects p where o.doc_no = $1 and p.id = $2`,
+    [docNo, projectId],
+  );
 }
 
 try {
@@ -149,7 +170,10 @@ try {
   const lost = data.projects.filter((p) => p.projectId != null && !found.has(p.projectId)).map((p) => p.project);
   if (lost.length) throw new Error(`Projects not found: ${lost.join(', ')}. Nothing was written.`);
   let done = 0, skipped = 0;
-  for (const p of data.projects) {
+  /* oldest SO first, so the numbers inside each month run in date order */
+  const soDateOf = (p: DataProject) => p.versions[0].docDate ?? p.versions[0].lastAmended ?? '9999';
+  const ordered = [...data.projects].sort((a, b) => soDateOf(a).localeCompare(soDateOf(b)) || a.project.localeCompare(b.project));
+  for (const p of ordered) {
     if (ONLY && p.project !== ONLY) continue;
     const noteKey = NOTE + p.project;
     const [note] = await sql`select value from scm.app_config where key = ${noteKey}`;
@@ -164,7 +188,7 @@ try {
       const db = renoDbOf(tx as unknown as UnsafeRunner);
       const r = await importProject(db, actor, p);
       await db.q(`insert into scm.app_config (key, value, description, company_id) values ($1, $2, $3, $4)`,
-        [noteKey, r.docNo, `Notion SO import 26 Oct 2026: ${r.docNo}${r.vos.length ? ` + ${r.vos.join(', ')}` : ''}`, actor.companyId]);
+        [noteKey, r.docNo, `Notion SO import (re-run 30 Oct 2026): ${r.docNo}${r.vos.length ? ` + ${r.vos.join(', ')}` : ''}`, actor.companyId]);
       return r;
     });
     console.log(`done  ${p.project}: ${res.docNo}${res.vos.length ? ` + ${res.vos.length} VO` : ''}, RM ${(res.total / 100).toFixed(2)}`);

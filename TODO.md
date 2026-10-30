@@ -542,8 +542,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - [ ] Owner mockup (artifact 1vwc4QNboJAH4MN7eRF5Rk) could not be read by the agent; compare Drawings against it by eye.
 
 ## Notion SO import (feat/so-notion-import, no migration, 26 Oct 2026, docs/so-import/)
-- Done on production 26-27 Oct: 79 SOs (78 linked to projects), 27 VOs, RM 3,688,221; one-off workflow removed; renumbering in docs/so-import/README.md.
-- Owner: quotations of the 10 renumbered SOs keep import-day numbers (QT-2610-xxx), renumber or not; VO numbers stay VO-<SO>-NN or become TC-VO-YYMM-NNN.
-- Owner: payments received per SO come from Accounts; THE HIPSTER C10-05 MS IRIS has no project (TC-SO-2610-006, imported without one); MAPLE B18-3 had three same-day PDFs, ordered by guess.
+- Re-imported 30 Oct with the fixed parser (docs/so-import/README.md "Re-import"); delete the one-off workflow again once it has run.
+- Owner: layout, built-up area and missing postcodes of the 79 projects (sheet sent 30 Oct); VO numbers stay VO-<SO>-NN or become TC-VO-YYMM-NNN.
+- Owner: payments received per SO come from Accounts; MAPLE B18-3 had three same-day PDFs, ordered by guess.
 
 - Health warnings (CONTS-0005, owner 26 Oct): management is emailed when a System health card turns red or a channel is reported down on status.channex.io, and when it clears. Email only for now; a WhatsApp copy is the owner's later call. Runs on the 5-minute health report, so production only (the cron worker); staging shows the new Channel status card but sends no warnings.

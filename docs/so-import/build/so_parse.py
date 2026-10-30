@@ -40,7 +40,7 @@ def parse(path):
                              ('date', r'\bDate\s+(\d{1,2}/\d{1,2}/\d{2,4})'), ('amend', r'LAST AMEND\s*:\s*(\S+)')):
                 m = re.search(pat, line)
                 if m and key not in doc['head']: doc['head'][key] = m.group(1).strip()
-        last = None; page_start = len(doc['items']); in_terms = False
+        last = None; parent = None; page_start = len(doc['items']); in_terms = False; strays = []
         for c in cl[hi + 1:]:
             line = ' '.join(w['text'] for w in c)
             for mm in re.finditer(r'(FINAL TOTAL|GRAND TOTAL)\s*(?!\(RM\))[:]?\s*(?:RM)?\s*([\d,]{3,}(?:\.\d+)?)', line):
@@ -53,7 +53,7 @@ def parse(path):
                 continue
             if re.match(r'(Payment shall|Customer shall|Goods sold|The company reserves|PAGE OF)', line.strip(), re.I):
                 m = re.search(r'(FINAL TOTAL|GRAND TOTAL|TOTAL)\s*\(RM\)\s*([\d,]+\.?\d*)', line)
-                if m: doc['stated'].setdefault(m.group(1), []).append(num(m.group(2)))
+                if m: doc['stated'].setdefault(m.group(1), []).append(num(m.group(2))); strays.append(num(m.group(2)))
                 m = re.search(r'\bRM\s*([\d,]{4,}(\.\d+)?)\s*$', line)
                 if m: doc['stated'].setdefault('RM', []).append(num(m.group(1)))
                 continue
@@ -65,7 +65,7 @@ def parse(path):
             if re.search(r'\bTOTAL\b', line) and not re.search(r'[A-Z]{3,}', re.sub(r'(FINAL|GRAND|SUB)?\s*TOTAL|\(RM\)|RM', '', line)):
                 m = re.findall(r'([\d,]+\.?\d*)', line)
                 k = 'FINAL TOTAL' if 'FINAL' in line else 'GRAND TOTAL' if 'GRAND' in line else 'TOTAL'
-                if m: doc['stated'].setdefault(k, []).append(num(m[-1]))
+                if m: doc['stated'].setdefault(k, []).append(num(m[-1])); strays.append(num(m[-1]))
                 continue
             desc = [w for w in c if w['x1'] < X['qty'] - 4]
             rest = [w for w in c if w['x1'] >= X['qty'] - 4]
@@ -86,6 +86,7 @@ def parse(path):
             if not dtext and has_num and qty is None and price is not None and amt is None:
                 continue  # page subtotal of discounted prices
             if not dtext:  # stray amount / qty for the line above
+                if amt is not None and last is not None and last.get('amt') is not None: strays.append(amt)
                 if last is not None:
                     if amt is not None and last.get('amt') is None: last['amt'] = amt
                     if price is not None and last.get('price') is None: last['price'] = price
@@ -98,19 +99,31 @@ def parse(path):
                 doc['summary'].append({'desc': dtext, 'price': price, 'amt': amt}); continue
             if dtext and re.search(r'^(LESS\s*:?\s*)?([A-Z ]*\s)?DISCOUNT\b|^DEPOSIT|^BALANCE|^SST\b|^ROUNDING', dtext, re.I) and has_num:
                 doc['summary'].append({'desc': dtext, 'price': price, 'amt': amt}); continue
-            heading_like = not has_num and no is None and dtext.isupper() and not DIM.search(dtext) and (
+            head_words = dtext.isupper() and not DIM.search(dtext) and not dtext.startswith('-') and (
                 re.search(r'WORK|@|AREA|ROOM|KITCHEN|CURTAIN|LIVING|MASTER|M\s*&\s*E|ELECTRIC|PLUMB|PAINT|CEILING|TILE|FLOOR|MISC|OTHER|FURNITURE|DESIGN|LIGHT|SERVICE', dtext))
+            heading_like = not has_num and no is None and head_words
             if heading_like:
-                sec = dtext; last = None; continue
+                sec = dtext; last = None; parent = None; continue
+            # a section heading printed with the section's one price ("WIRING WORKS (ESTIMATE)  7000"): the lines under
+            # it carry rates, not amounts; so_build decides lump sum vs subtotal from those lines
+            if no is None and amt is not None and qty is None and price is None and head_words:
+                sec = dtext; parent = None
+                last = {'page': pi + 1, 'sec': sec, 'no': None, 'desc': dtext, 'qty': None, 'price': None, 'disc': None, 'amt': amt, 'detail': [], 'lump': True}
+                doc['items'].append(last); last = None; continue
+            # "- BEDROOM 2   1   760" under a numbered item: a priced part of that item
+            if no is None and has_num and dtext.startswith('-') and parent is not None:
+                dtext = parent['desc'] + ' - ' + dtext.lstrip('-* ').strip()
             if not has_num and no is None and last is not None:
                 last['detail'].append(dtext); continue
             if not has_num and no is None and last is None:
                 sec = dtext; continue
             last = {'page': pi + 1, 'sec': sec, 'no': no, 'desc': dtext, 'qty': qty, 'price': price, 'disc': disc, 'amt': amt, 'detail': []}
+            if no is not None: parent = last
             doc['items'].append(last)
         # a page subtotal printed in the amount column beside a body line
         pg_items = [i for i in doc['items'][page_start:] if i['amt'] is not None]
-        if len(pg_items) > 1:
+        # ...unless a stray row already printed the page's sum (then the last line is a real one that happens to match)
+        if len(pg_items) > 1 and not any(abs(s - sum(i['amt'] for i in pg_items)) < 1 for s in strays):
             lastamt = pg_items[-1]
             if abs(sum(i['amt'] for i in pg_items[:-1]) - lastamt['amt']) < 1: lastamt['amt'] = None; lastamt['subtotal_dropped'] = True
     doc['fmt'] = fmt
