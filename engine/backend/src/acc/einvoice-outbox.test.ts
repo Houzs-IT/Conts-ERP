@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fakeSb, type Row } from '../scm/lib/fake-postgrest';
-import { cancelOutbox, einvoiceWarning, prepareCreditNote, prepareInvoice, refreshAll, refreshForDebtor } from './einvoice-outbox';
+import { cancelOutbox, einvoiceWarning, prepareCreditNote, prepareInvoice, refreshAll, refreshForDebtor, refreshStale } from './einvoice-outbox';
 
 const CO = 2;
 const SO = '2990-SO-2611-001';
@@ -171,5 +171,18 @@ describe('e-invoice outbox (review)', () => {
     tables.acc_credit_notes[0].reason = 'r'.repeat(400);
     expect(await prepareCreditNote(sb, CO, 'cn-1')).toEqual({ status: 'READY', missing: [] });
     expect((tables.acc_einvoice_outbox[0].payload as any).lines[0].description).toHaveLength(300);
+  });
+});
+
+describe('e-invoice outbox: catching up after a settings save', () => {
+  it('re-prepares rows older than the last save, a batch at a time, then reports none left', async () => {
+    const { sb, tables } = world();
+    await prepareInvoice(sb, CO, 'si-1');
+    await prepareCreditNote(sb, CO, 'cn-1');
+    for (const r of tables.acc_einvoice_outbox) r.prepared_at = '2020-01-01T00:00:00.000Z';
+    tables.acc_company_settings[0].updated_at = '2020-01-02T00:00:00.000Z';
+    expect(await refreshStale(sb, CO, 1)).toEqual({ refreshed: 1, remaining: 1 });
+    expect(await refreshStale(sb, CO, 1)).toEqual({ refreshed: 1, remaining: 0 });
+    expect(await refreshStale(sb, CO, 1)).toEqual({ refreshed: 0, remaining: 0 });
   });
 });

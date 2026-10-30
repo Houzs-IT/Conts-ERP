@@ -709,6 +709,8 @@ export const ALL_NAV_TABS: NavTab[] = [
           // Debtors (Conts, finance phase 1.5) — every customer under its control, coded like AutoCount.
           { to: "/scm/party-ledger?kind=debtor", label: "Customer Ledger", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/debtors", label: "Debtors", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          // E-invoice (Conts) — renovation invoices and credit notes prepared for LHDN; nothing is sent yet.
+          { to: "/scm/einvoice", label: "E-invoice", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/other-debtors", label: "Other Debtors", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/outstanding", label: "Outstanding", icon: AlertCircle, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.outstanding"] },
           { to: "/scm/unbilled-deliveries", label: "Not Yet Billed", icon: HandCoins, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.outstanding"] },

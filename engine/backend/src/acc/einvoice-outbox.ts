@@ -171,6 +171,30 @@ export async function refreshAll(sb: Db, companyId: number): Promise<number> {
   return reprepare(sb, companyId, (data ?? []) as Row[]);
 }
 
+/** One request's worth of catching up after the settings changed: the open rows prepared before the settings were last
+    saved, oldest first, at most `limit` of them (each row is several reads and writes; a request has a ceiling). When
+    none is stale, the not-ready rows are tried once. `remaining` is what is still stale after this batch. */
+export async function refreshStale(sb: Db, companyId: number, limit: number): Promise<{ refreshed: number; remaining: number }> {
+  const { data: set, error: sErr } = await sb.from('acc_company_settings').select('updated_at').eq('company_id', companyId).maybeSingle();
+  if (sErr) fail('settings', sErr);
+  const since = (set as { updated_at?: string | null } | null)?.updated_at ?? null;
+  let stale: Row[] = [];
+  if (since) {
+    const { data, error } = await sb.from('acc_einvoice_outbox').select(OPEN_COLS).eq('company_id', companyId).in('status', OPEN)
+      .lt('prepared_at', since).order('prepared_at', { ascending: true }).order('id', { ascending: true });
+    if (error) fail('read', error);
+    stale = (data ?? []) as Row[];
+  }
+  if (!stale.length) {
+    const { data, error } = await sb.from('acc_einvoice_outbox').select(OPEN_COLS).eq('company_id', companyId).eq('status', 'NOT_READY')
+      .order('prepared_at', { ascending: true }).order('id', { ascending: true }).limit(limit);
+    if (error) fail('read', error);
+    return { refreshed: await reprepare(sb, companyId, (data ?? []) as Row[]), remaining: 0 };
+  }
+  const batch = stale.slice(0, limit);
+  return { refreshed: await reprepare(sb, companyId, batch), remaining: stale.length - batch.length };
+}
+
 /** What the billing screen says after a document posted: a warning only while e-invoice is on and the row lacks
     something. Null otherwise. */
 export async function einvoiceWarning(sb: Db, companyId: number, kind: DocKind, docNumber: string): Promise<string | null> {

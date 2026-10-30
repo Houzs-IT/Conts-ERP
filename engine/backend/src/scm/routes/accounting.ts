@@ -30,6 +30,7 @@ import { paginateAll } from '../lib/paginate-all';
 import { safeRate, toMyrSen } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { hasHouzsPerm } from '../lib/houzs-perms';
+import { einvoiceOutboxGet, einvoiceOutboxList, einvoiceRefresh, einvoiceSettingsGet, einvoiceSettingsPut } from '../../acc/einvoice-routes';
 import { postJournal, reverseJournal } from '../../acc/engine';
 import { beforeLedgerStartMessage, isBeforeLedgerStart, ledgerDatesRefusal, loadLedgerSettings, saveLedgerSettings } from '../../acc/ledger-settings';
 import { backfillSoPayments, paymentEntryDisagreements, unbookedPayments } from '../../acc/payments';
@@ -491,6 +492,13 @@ export const ledgerSettingsPut = async (c: AccCtx): Promise<Response> => {
   return c.json(r.settings);
 };
 accounting.put('/settings/ledger', ledgerSettingsPut);
+
+/* ── E-invoice settings and outbox (renovation; nothing is sent) — acc/einvoice-routes.ts ── */
+accounting.get('/einvoice/settings', einvoiceSettingsGet);
+accounting.put('/einvoice/settings', einvoiceSettingsPut);
+accounting.get('/einvoice/outbox', einvoiceOutboxList);
+accounting.post('/einvoice/outbox/refresh', einvoiceRefresh);
+accounting.get('/einvoice/outbox/:id', einvoiceOutboxGet);
 
 /* ── Opening balances (Conts, spec 3.8) — acc/opening.ts. Writing them needs the post key; the check is read by
    the same people (it shows control and bank balances). ── */
