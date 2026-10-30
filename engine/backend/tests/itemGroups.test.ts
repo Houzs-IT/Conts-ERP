@@ -11,7 +11,7 @@ import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
 import {
-  itemGroupsList, itemGroupCreate, itemGroupBind, itemGroupPatch,
+  itemGroupsList, itemGroupCreate, itemGroupBind, itemGroupPatch, subCategoryBind,
 } from '../src/scm/routes/accounting-item-groups';
 
 const GL_PERM = 'scm.payment_voucher.post';
@@ -29,6 +29,12 @@ const GROUPS: Row[] = [
   { code: 'BEDLINES', name: 'Bedlines', is_active: true },
 ];
 
+const SUBS: Row[] = [
+  { group_code: 'BUILTIN', code: 'TV_CABINET', label: 'TV cabinet', sort_order: 20, active: true },
+  { group_code: 'BUILTIN', code: 'STUDY_TABLE', label: 'Study table', sort_order: 10, active: true },
+  { group_code: 'BUILTIN', code: 'OLD_SHELF', label: 'Old shelf', sort_order: 30, active: false },
+];
+
 const GOOD_ACCOUNTS = {
   purchase: '601-0003', sales: '501-0000', salesReturn: '510-0000', purchaseReturn: '612-0000',
 };
@@ -38,6 +44,8 @@ function harness(tables: Record<string, Row[]> = {}, perms: readonly string[] = 
     accounts: CHART.map((r) => ({ ...r })),
     acc_item_groups: GROUPS.map((r) => ({ ...r })),
     acc_item_group_accounts: [],
+    product_sub_categories: SUBS.map((r) => ({ ...r })),
+    acc_sub_category_accounts: [],
     ...tables,
   });
   /* The registry function lives in Postgres; the fake mirrors its one visible
@@ -65,6 +73,7 @@ function harness(tables: Record<string, Row[]> = {}, perms: readonly string[] = 
   app.post('/accounting/item-groups', itemGroupCreate as never);
   app.put('/accounting/item-groups/:code/accounts', itemGroupBind as never);
   app.patch('/accounting/item-groups/:code', itemGroupPatch as never);
+  app.put('/accounting/item-groups/sub-categories/:code', subCategoryBind as never);
   return { app, sb };
 }
 
@@ -218,5 +227,75 @@ describe('a binding is never a control account or a header', () => {
     expect(((await ap.json()) as { message: string }).message).toContain('400-0000');
     expect((await put(app, '/accounting/item-groups/BEDLINES/accounts', { companyId: 2, accounts: { ...GOOD_ACCOUNTS, sales: '500-0000' } })).status).toBe(400);
     expect((await put(app, '/accounting/item-groups/BEDLINES/accounts', { companyId: 2, accounts: { ...GOOD_ACCOUNTS, sales: '404-0000' } })).status).toBe(200);
+  });
+});
+
+/* Renovation revenue (spec 2.4, plan Task 1): sales and purchase accounts per product sub-category; an empty side uses
+   the group's. The same account checks as a group binding — a header (parent) account can never be bound. */
+describe('sub-category bindings', () => {
+  const chart = [
+    ...CHART,
+    { company_id: 2, account_code: '500-0000', account_name: 'SALES', account_type: 'INCOME', is_active: true },
+    { company_id: 2, account_code: '500-0001', account_name: 'SALES - X', account_type: 'INCOME', is_active: true, parent_code: '500-0000' },
+    { company_id: 2, account_code: '502-0010', account_name: 'SALES OF TV CABINET', account_type: 'INCOME', is_active: true },
+    { company_id: 2, account_code: '602-0010', account_name: 'PURCHASE OF TV CABINET', account_type: 'EXPENSE', is_active: true },
+  ];
+
+  test("GET lists the active sub-categories with each company's binding", async () => {
+    const { app } = harness({
+      acc_sub_category_accounts: [
+        { company_id: 2, sub_category_code: 'TV_CABINET', sales_account: '502-0010', purchase_account: null },
+        { company_id: 7, sub_category_code: 'TV_CABINET', sales_account: '999-0000', purchase_account: null },
+      ],
+    });
+    const body = await (await app.request('/accounting/item-groups')).json() as {
+      subCategories: Array<{ code: string; label: string; groupCode: string; bindings: Record<string, unknown> }>;
+    };
+    expect(body.subCategories.map((s) => s.code)).toEqual(['STUDY_TABLE', 'TV_CABINET']);
+    const tv = body.subCategories.find((s) => s.code === 'TV_CABINET')!;
+    expect(tv).toMatchObject({ label: 'TV cabinet', groupCode: 'BUILTIN' });
+    expect(tv.bindings).toEqual({ 2: { salesAccount: '502-0010', purchaseAccount: null } });
+    expect(body.subCategories.find((s) => s.code === 'STUDY_TABLE')!.bindings).toEqual({});
+  });
+
+  test('a sub-category cannot be bound to a parent account', async () => {
+    const { app, sb } = harness({ accounts: chart.map((r) => ({ ...r })) });
+    const header = await put(app, '/accounting/item-groups/sub-categories/TV_CABINET', { companyId: 2, salesAccount: '500-0000', purchaseAccount: null });
+    expect(header.status).toBe(400);
+    expect(((await header.json()) as { message: string }).message).toBe('Sales account 500-0000 has accounts under it — choose one of those.');
+    expect(sb.tables.acc_sub_category_accounts).toHaveLength(0);
+
+    const ok = await put(app, '/accounting/item-groups/sub-categories/TV_CABINET', { companyId: 2, salesAccount: '502-0010', purchaseAccount: '602-0010' });
+    expect(ok.status).toBe(200);
+    expect(sb.tables.acc_sub_category_accounts).toEqual([expect.objectContaining({
+      company_id: 2, sub_category_code: 'TV_CABINET', sales_account: '502-0010', purchase_account: '602-0010',
+    })]);
+  });
+
+  test("null clears a side; both null removes the binding (the group's accounts apply)", async () => {
+    const { app, sb } = harness({
+      accounts: chart.map((r) => ({ ...r })),
+      acc_sub_category_accounts: [
+        { company_id: 2, sub_category_code: 'TV_CABINET', sales_account: '502-0010', purchase_account: '602-0010' },
+      ],
+    });
+    expect((await put(app, '/accounting/item-groups/sub-categories/tv_cabinet', { companyId: 2, salesAccount: '502-0010', purchaseAccount: null })).status).toBe(200);
+    expect(sb.tables.acc_sub_category_accounts).toEqual([expect.objectContaining({ sales_account: '502-0010', purchase_account: null })]);
+    expect((await put(app, '/accounting/item-groups/sub-categories/TV_CABINET', { companyId: 2, salesAccount: null, purchaseAccount: '' })).status).toBe(200);
+    expect(sb.tables.acc_sub_category_accounts).toHaveLength(0);
+  });
+
+  test('an unknown sub-category is 404, another company is 403, a missing account is named', async () => {
+    const { app } = harness({ accounts: chart.map((r) => ({ ...r })) });
+    expect((await put(app, '/accounting/item-groups/sub-categories/NOPE', { companyId: 2, salesAccount: '502-0010', purchaseAccount: null })).status).toBe(404);
+    expect((await put(app, '/accounting/item-groups/sub-categories/TV_CABINET', { companyId: 9, salesAccount: '502-0010', purchaseAccount: null })).status).toBe(403);
+    const gone = await put(app, '/accounting/item-groups/sub-categories/TV_CABINET', { companyId: 2, salesAccount: null, purchaseAccount: '699-9999' });
+    expect(gone.status).toBe(400);
+    expect(((await gone.json()) as { message: string }).message).toContain('Purchase account 699-9999');
+  });
+
+  test('no GL permission — 403', async () => {
+    const { app } = harness({}, []);
+    expect((await put(app, '/accounting/item-groups/sub-categories/TV_CABINET', { companyId: 2, salesAccount: null, purchaseAccount: null })).status).toBe(403);
   });
 });

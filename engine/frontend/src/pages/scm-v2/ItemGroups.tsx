@@ -12,14 +12,14 @@
 // group created here is immediately pickable on a product.
 // ----------------------------------------------------------------------------
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { getActiveCompanyId } from '../../lib/activeCompany';
 import { PiBackfillCard } from './PiBackfill';
 import { SearchCombo, type ComboOption } from '../../vendor/scm/components/SearchCombo';
 import { useAccountRoles, useAccounts } from '../../vendor/scm/lib/accounting-queries';
 import {
-  useItemGroups, useCreateItemGroup, useBindItemGroup, usePatchItemGroup,
-  type ItemGroupBinding,
+  useItemGroups, useCreateItemGroup, useBindItemGroup, usePatchItemGroup, useBindSubCategory,
+  type ItemGroupBinding, type ItemSubCategory, type SubCategoryBinding,
 } from './accounting-phase1-queries';
 
 /* Each slot names the side of the ledger it may bind to — the purchase slots
@@ -49,6 +49,15 @@ export function accountsForBinding<A extends { account_code: string; account_typ
   const parents = new Set(accounts.map((a) => a.parent_code).filter(Boolean));
   const advanceOk = (a: A) => advance && a.account_type === 'LIABILITY' && !controls.has(a.account_code) && !parents.has(a.account_code);
   return accounts.filter((a) => a.is_active !== false && (a.account_type === side || advanceOk(a)));
+}
+/** Which accounts a sub-category's own binding may pick (renovation revenue, spec 2.4): its ledger side, active, and
+    never a parent account — posting refuses one, so it is never offered. */
+export function accountsForSubCategory<A extends { account_code: string; account_type: string; is_active?: boolean | null; parent_code?: string | null }>(
+  column: 'sales_account' | 'purchase_account', accounts: readonly A[],
+): A[] {
+  const side = column === 'sales_account' ? 'INCOME' : 'EXPENSE';
+  const parents = new Set(accounts.map((a) => a.parent_code).filter(Boolean));
+  return accounts.filter((a) => a.is_active !== false && a.account_type === side && !parents.has(a.account_code));
 }
 const COLUMN_OF: Record<keyof ItemGroupBinding, BindingColumn> = {
   purchase: 'purchase_account', sales: 'sales_account', salesReturn: 'sales_return_account', purchaseReturn: 'purchase_return_account',
@@ -109,6 +118,10 @@ const fieldStyle: React.CSSProperties = {
   background: 'white',
 };
 const softText: React.CSSProperties = { fontSize: 'var(--fs-13)', color: 'var(--text-soft, #8a8578)' };
+const linkBtnStyle: React.CSSProperties = {
+  display: 'block', padding: 0, border: 'none', background: 'transparent',
+  color: 'var(--c-ink)', textDecoration: 'underline', fontSize: 'var(--fs-13)', cursor: 'pointer',
+};
 
 export const ItemGroupsTab = () => {
   const groupsQ = useItemGroups();
@@ -116,6 +129,7 @@ export const ItemGroupsTab = () => {
   const create = useCreateItemGroup();
   const bind = useBindItemGroup();
   const patchGroup = usePatchItemGroup();
+  const bindSub = useBindSubCategory();
 
   const companies = groupsQ.data?.companies ?? [];
   const activeCo = getActiveCompanyId() ?? companies.at(0)?.id ?? null;
@@ -137,14 +151,19 @@ export const ItemGroupsTab = () => {
       const i = order.indexOf(section);
       return i < 0 ? order.length : i;
     };
-    const build = (group: string, column: BindingColumn): ComboOption[] => accountsForBinding(group, column, accountsQ.data?.accounts ?? [], controls)
+    const toOptions = (list: Array<{ account_code: string; account_name: string; section?: string | null }>): ComboOption[] => list
       .map((a) => ({
         value: a.account_code,
         label: `${a.account_code} — ${a.account_name}`,
         group: a.section ?? UNSHELVED,
       }))
       .sort((x, y) => (rank(x.group) - rank(y.group)) || x.value.localeCompare(y.value));
+    const all = accountsQ.data?.accounts ?? [];
+    const build = (group: string, column: BindingColumn): ComboOption[] => toOptions(accountsForBinding(group, column, all, controls));
     return {
+      /* A sub-category's own sales / purchase account: its side only, never a parent. */
+      SUB_SALES: toOptions(accountsForSubCategory('sales_account', all)),
+      SUB_PURCHASE: toOptions(accountsForSubCategory('purchase_account', all)),
       EXPENSE: build('', 'purchase_account'), INCOME: build('', 'sales_account'),
       /* RENOVATION's sales side: income and liability accounts (the advance). */
       RENOVATION_SALES: build('RENOVATION', 'sales_account'),
@@ -157,6 +176,18 @@ export const ItemGroupsTab = () => {
      SUGGESTED defaults (marked as such) — the sign-off flow. */
   const [drafts, setDrafts] = useState<Record<string, ItemGroupBinding>>({});
   const [showNew, setShowNew] = useState(false);
+  /* Which groups have their sub-category list open. */
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(new Set());
+  const subsByGroup = useMemo(() => {
+    const m = new Map<string, ItemSubCategory[]>();
+    for (const s of groupsQ.data?.subCategories ?? []) m.set(s.groupCode, [...(m.get(s.groupCode) ?? []), s]);
+    return m;
+  }, [groupsQ.data]);
+  const toggleGroup = (code: string) => setOpenGroups((cur) => {
+    const next = new Set(cur);
+    if (next.has(code)) next.delete(code); else next.add(code);
+    return next;
+  });
 
   if (groupsQ.isLoading) return <div style={softText}>Loading…</div>;
   if (groupsQ.isError || !groupsQ.data) return <div style={softText}>Item groups did not load. Refresh to retry.</div>;
@@ -201,11 +232,24 @@ export const ItemGroupsTab = () => {
               const draft = draftOf(g.code, saved);
               const dirty = differs(draft, saved);
               const suggested = !saved && pick(drafts, g.code) === undefined && pick(SUGGESTED, g.code) !== undefined;
+              const subs = subsByGroup.get(g.code) ?? [];
+              const open = openGroups.has(g.code);
               return (
-                <tr key={g.code} style={{ borderTop: '1px solid var(--border-weak, #e3e1da)', opacity: g.isActive ? 1 : 0.55 }}>
+                <Fragment key={g.code}>
+                <tr style={{ borderTop: '1px solid var(--border-weak, #e3e1da)', opacity: g.isActive ? 1 : 0.55 }}>
                   <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
                     <b>{g.code}</b>
                     <div style={softText}>{g.name}{!g.isActive && ' · off'}</div>
+                    {subs.length > 0 && (
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        onClick={() => toggleGroup(g.code)}
+                        style={{ ...linkBtnStyle, marginTop: 2 }}
+                      >
+                        {`Sub-categories (${subs.length})`}
+                      </button>
+                    )}
                   </td>
                   {SLOTS.map((s) => (
                     <td key={s.key} style={{ padding: '6px 10px' }}>
@@ -247,15 +291,30 @@ export const ItemGroupsTab = () => {
                     </button>
                   </td>
                 </tr>
+                {open && (
+                  <tr>
+                    <td colSpan={SLOTS.length + 3} style={{ padding: '0 10px 10px 28px' }}>
+                      <SubCategoryTable
+                        subs={subs}
+                        coKey={coKey}
+                        salesOptions={optionsByWants.SUB_SALES}
+                        purchaseOptions={optionsByWants.SUB_PURCHASE}
+                        pending={bindSub.isPending}
+                        onSave={(code, b) => bindSub.mutate({ code, companyId: activeCo, ...b })}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
         </table>
       </div>
 
-      {(bind.isError || create.isError || patchGroup.isError) && (
+      {(bind.isError || create.isError || patchGroup.isError || bindSub.isError) && (
         <div style={{ fontSize: 'var(--fs-13)', color: 'var(--c-danger, #a33)' }}>
-          {String(((bind.error ?? create.error ?? patchGroup.error) as { message?: string } | null)?.message ?? 'The change was not saved.')}
+          {String(((bind.error ?? create.error ?? patchGroup.error ?? bindSub.error) as { message?: string } | null)?.message ?? 'The change was not saved.')}
         </div>
       )}
 
@@ -324,5 +383,79 @@ const NewGroupDialog = ({
         </div>
       </div>
     </div>
+  );
+};
+
+/* ── A group's sub-categories — each may carry its own sales / purchase account ──
+   Renovation revenue (spec 2.4): a renovation line books to its sub-category's account, else its group's. An empty
+   picker means "uses the group's account"; Save writes this company's two sides, Use group clears both. */
+const SubCategoryTable = ({
+  subs, coKey, salesOptions, purchaseOptions, pending, onSave,
+}: {
+  subs: ItemSubCategory[];
+  coKey: string;
+  salesOptions: ComboOption[];
+  purchaseOptions: ComboOption[];
+  pending: boolean;
+  onSave: (code: string, binding: SubCategoryBinding) => void;
+}) => {
+  type Draft = { sales: string; purchase: string };
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const savedOf = (s: ItemSubCategory): Draft => {
+    const b = pick(s.bindings, coKey);
+    return { sales: b?.salesAccount ?? '', purchase: b?.purchaseAccount ?? '' };
+  };
+  const draftOf = (s: ItemSubCategory): Draft => pick(drafts, s.code) ?? savedOf(s);
+  const setSide = (s: ItemSubCategory, side: keyof Draft, value: string) =>
+    setDrafts((d) => ({ ...d, [s.code]: { ...draftOf(s), [side]: value } }));
+  const forget = (code: string) => setDrafts((d) => { const { [code]: _gone, ...rest } = d; return rest; });
+  const orNull = (v: string): string | null => (v.trim() === '' ? null : v.trim());
+
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-13)' }}>
+      <thead>
+        <tr style={softText}>
+          <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500 }}>Sub-category</th>
+          <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500, minWidth: 180 }}>Sales</th>
+          <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500, minWidth: 180 }}>Purchase</th>
+          <th style={{ padding: '4px 8px' }} />
+        </tr>
+      </thead>
+      <tbody>
+        {subs.map((s) => {
+          const saved = savedOf(s);
+          const draft = draftOf(s);
+          const dirty = draft.sales !== saved.sales || draft.purchase !== saved.purchase;
+          const hasOwn = saved.sales !== '' || saved.purchase !== '';
+          return (
+            <tr key={s.code} style={{ borderTop: '1px solid var(--border-weak, #e3e1da)' }}>
+              <td style={{ padding: '4px 8px', whiteSpace: 'nowrap' }}>
+                {s.label}
+                <div style={softText}>{s.code}</div>
+              </td>
+              <td style={{ padding: '4px 8px' }}>
+                <SearchCombo options={salesOptions} value={draft.sales} onChange={(v) => setSide(s, 'sales', v)}
+                  aria-label={`${s.code} Sales account`} placeholder="Uses the group's account" />
+              </td>
+              <td style={{ padding: '4px 8px' }}>
+                <SearchCombo options={purchaseOptions} value={draft.purchase} onChange={(v) => setSide(s, 'purchase', v)}
+                  aria-label={`${s.code} Purchase account`} placeholder="Uses the group's account" />
+              </td>
+              <td style={{ padding: '4px 8px', whiteSpace: 'nowrap' }}>
+                <button type="button" style={btnStyle(true, !dirty || pending)} disabled={!dirty || pending}
+                  onClick={() => { onSave(s.code, { salesAccount: orNull(draft.sales), purchaseAccount: orNull(draft.purchase) }); forget(s.code); }}>
+                  Save
+                </button>{' '}
+                <button type="button" style={btnStyle(false, !hasOwn || pending)} disabled={!hasOwn || pending}
+                  title="Clear both sides — the group's accounts apply"
+                  onClick={() => { onSave(s.code, { salesAccount: null, purchaseAccount: null }); forget(s.code); }}>
+                  Use group
+                </button>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 };

@@ -8,11 +8,12 @@
 
 import { describe, expect, test, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import type { ItemGroup } from './accounting-phase1-queries';
+import type { ItemGroup, ItemSubCategory } from './accounting-phase1-queries';
 
 const bindMutate = vi.fn();
 const createMutate = vi.fn();
 const patchMutate = vi.fn();
+const subBindMutate = vi.fn();
 
 const GROUPS: ItemGroup[] = [
   {
@@ -22,15 +23,21 @@ const GROUPS: ItemGroup[] = [
   { code: 'BEDLINES', name: 'Bedlines', isActive: true, bindings: {} },
 ];
 
+const SUBS: ItemSubCategory[] = [
+  { code: 'SHEET', label: 'Bed sheet', groupCode: 'BEDLINES', bindings: { '2': { salesAccount: '502-0000', purchaseAccount: null } } },
+  { code: 'PILLOW', label: 'Pillow', groupCode: 'BEDLINES', bindings: {} },
+];
+
 vi.mock('./accounting-phase1-queries', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useItemGroups: () => ({
     isLoading: false, isError: false,
-    data: { companies: [{ id: 1, code: 'HOUZS' }, { id: 2, code: '2990' }], groups: GROUPS },
+    data: { companies: [{ id: 1, code: 'HOUZS' }, { id: 2, code: '2990' }], groups: GROUPS, subCategories: SUBS },
   }),
   useCreateItemGroup: () => ({ mutate: createMutate, isPending: false, isError: false, error: null }),
   useBindItemGroup: () => ({ mutate: bindMutate, isPending: false, isError: false, error: null }),
   usePatchItemGroup: () => ({ mutate: patchMutate, isPending: false, isError: false, error: null }),
+  useBindSubCategory: () => ({ mutate: subBindMutate, isPending: false, isError: false, error: null }),
 }));
 
 vi.mock('../../vendor/scm/lib/accounting-queries', () => ({
@@ -59,12 +66,13 @@ vi.mock('../../vendor/scm/lib/accounting-queries', () => ({
 
 vi.mock('../../lib/activeCompany', () => ({ getActiveCompanyId: () => 2 }));
 
-import { ItemGroupsTab, accountsForBinding } from './ItemGroups';
+import { ItemGroupsTab, accountsForBinding, accountsForSubCategory } from './ItemGroups';
 
 beforeEach(() => {
   bindMutate.mockClear();
   createMutate.mockClear();
   patchMutate.mockClear();
+  subBindMutate.mockClear();
 });
 
 describe('the sign-off flow', () => {
@@ -187,5 +195,58 @@ describe('which accounts a binding offers', () => {
   test('other groups still list income accounts only', () => {
     expect(codes(accountsForBinding('SOFA', 'sales_account', chart))).toEqual(['500-0000']);
     expect(codes(accountsForBinding('SOFA', 'purchase_return_account', chart))).toEqual(['601-0000']);
+  });
+});
+
+/* Renovation revenue (spec 2.4, plan Task 1): each group lists its sub-categories, each with its own sales and purchase
+   account; an empty side uses the group's account. */
+describe('sub-category accounts', () => {
+  const openBedlines = () => {
+    render(<ItemGroupsTab />);
+    expect(screen.queryByLabelText('PILLOW Sales account')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Sub-categories (2)' }));
+  };
+
+  test("a group's sub-categories open under it; an unbound side says it uses the group's account", () => {
+    openBedlines();
+    const sales = screen.getByLabelText('PILLOW Sales account') as HTMLInputElement;
+    expect(sales.value).toBe('');
+    expect(sales.placeholder).toBe("Uses the group's account");
+    expect((screen.getByLabelText('SHEET Sales account') as HTMLInputElement).value).toContain('502-0000');
+    /* SOFA has none, so it offers no toggle. */
+    const sofa = screen.getByText('SOFA').closest('tr') as HTMLElement;
+    expect(sofa.textContent).not.toContain('Sub-categories');
+  });
+
+  test('Save sends this sub-category\'s two sides for the active company, the empty one as null', () => {
+    openBedlines();
+    const purchase = screen.getByLabelText('PILLOW Purchase account');
+    fireEvent.focus(purchase);
+    fireEvent.change(purchase, { target: { value: '602-0000' } });
+    fireEvent.mouseDown(screen.getAllByText(/^602-0000 — /)[0]);
+    const row = screen.getByText('Pillow').closest('tr') as HTMLElement;
+    fireEvent.click(Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Save')!);
+    expect(subBindMutate).toHaveBeenCalledTimes(1);
+    expect(subBindMutate.mock.calls[0][0]).toEqual({ code: 'PILLOW', companyId: 2, salesAccount: null, purchaseAccount: '602-0000' });
+  });
+
+  test("'Use group' clears both sides of a bound sub-category", () => {
+    openBedlines();
+    const row = screen.getByText('Bed sheet').closest('tr') as HTMLElement;
+    const save = Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Save')!;
+    expect(save.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Use group')!);
+    expect(subBindMutate.mock.calls[0][0]).toEqual({ code: 'SHEET', companyId: 2, salesAccount: null, purchaseAccount: null });
+  });
+
+  test('the picker never offers a parent account, only its own ledger side', () => {
+    const chart = [
+      { account_code: '500-0000', account_name: 'SALES', account_type: 'INCOME', is_active: true },
+      { account_code: '500-0001', account_name: 'SALES - X', account_type: 'INCOME', is_active: true, parent_code: '500-0000' },
+      { account_code: '599-0000', account_name: 'OLD SALES', account_type: 'INCOME', is_active: false },
+      { account_code: '601-0000', account_name: 'PURCHASES', account_type: 'EXPENSE', is_active: true },
+    ];
+    expect(accountsForSubCategory('sales_account', chart).map((a) => a.account_code)).toEqual(['500-0001']);
+    expect(accountsForSubCategory('purchase_account', chart).map((a) => a.account_code)).toEqual(['601-0000']);
   });
 });
