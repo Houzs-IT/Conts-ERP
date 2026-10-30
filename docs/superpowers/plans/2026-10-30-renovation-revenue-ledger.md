@@ -197,7 +197,7 @@
 - Test: `engine/backend/tests/renoOpening.test.ts`
 
 **Interfaces:**
-- Produces: `POST /accounting/renovation-opening/preview` and `/apply` with `{ rows: [{ soDocNo, debtorCode, advanceAccountCode, billedBeforeGoLiveSen }] }`. Preview flags: unknown SO, debtor not under 301/302 or 303, advance account not a child of 480/481, amount above the contract. Apply writes `mfg_sales_orders.debtor_code`, `reno_so_contracts.advance_account_code`, `billed_before_golive_sen`; posts nothing (opening balances carry the money). Finance permission (`scm.payment_voucher.post`).
+- Produces: `POST /accounting/renovation-opening/preview` and `/apply` with `{ rows: [{ soDocNo, debtorCode, advanceAccountCode, billedBeforeGoLiveSen }] }`. Preview flags: unknown SO, debtor not under 301/302 or 303, advance account not a child of 480/481, amount above the contract. Apply writes `mfg_sales_orders.debtor_code`, `reno_so_contracts.advance_account_code`, `billed_before_golive_sen`; posts nothing (opening balances carry the money). It also records the contract amount at go-live as the RCON baseline (an allocation-free marker the RVO logic reads, e.g. a zero-journal baseline row or a column `posted_contract_sen`), so a VO after go-live on an old contract posts its difference (PR 2 posts nothing for contracts signed before the ledger start). Finance permission (`scm.payment_voucher.post`).
 
 - [ ] **Step 1: Write the failing tests** — preview refuses each bad row by name; apply writes the three fields and no journal.
 - [ ] **Step 2–4:** FAIL, implement, PASS; `npx tsc -b`.
