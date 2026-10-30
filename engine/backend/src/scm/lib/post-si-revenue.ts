@@ -24,6 +24,7 @@ import { customerPartyCode } from '../../acc/payments';
 import { applyDepositInvoicesBestEffort } from '../../acc/deposit-invoices';
 import { isBeforeLedgerStart, loadLedgerSettings } from '../../acc/ledger-settings';
 import { postRenovationInvoice, reclearIfCancelled, releaseInvoiceAllocations } from '../../acc/reno-ledger';
+import { cancelAfterReversal, prepareAfterPosting } from '../../acc/einvoice-outbox';
 
 export type PostSiResult =
   | { ok: true; status: 'posted'; jeNo: string; jeId: string; totalSen: number }
@@ -94,6 +95,8 @@ export async function postSiRevenue(sb: any, invoiceNumber: string): Promise<Pos
       const r = await postRenovationInvoice(sb, {
         companyId, soDocNo: siSo, invoiceNumber: si.invoice_number, invoiceDate: si.invoice_date, totalSen, debtorName: si.debtor_name ?? null,
       });
+      /* Its e-invoice record waits in the outbox (acc/einvoice-outbox); never blocks the posting. */
+      if (r.ok) await prepareAfterPosting(sb, companyId, 'INVOICE', (si as { id: string }).id);
       if (r.ok) return r.status === 'posted' ? { ok: true, status: 'posted', jeNo: r.jeNo, jeId: r.jeId, totalSen } : { ok: true, status: 'already_posted', jeNo: r.jeNo, jeId: r.jeId };
       if (r.status === 'group_unbound' || r.status === 'line_ungrouped') return { ok: false, status: r.status, reason: r.reason };
       if (r.status === 'no_customer_account') return { ok: false, status: 'customer_no_account', reason: r.reason };
@@ -228,6 +231,7 @@ export async function reverseSiRevenue(sb: any, invoiceNumber: string): Promise<
     const rel = await releaseInvoiceAllocations(sb, invoiceNumber, inv?.company_id ?? null);
     if (!rel.ok) return { ok: false, status: 'reversal_read_failed', reason: `${invoiceNumber} reversed, but its renovation revenue allocation was not cleared: ${rel.reason}` };
     if (rel.soDocNo && inv?.company_id != null) await reclearIfCancelled(sb, inv.company_id, rel.soDocNo);
+    if (rel.soDocNo && inv?.company_id != null) await cancelAfterReversal(sb, inv.company_id, 'INVOICE', invoiceNumber);
   }
   return rev;
 }

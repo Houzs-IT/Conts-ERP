@@ -127,6 +127,8 @@ describe('renovation invoices by the waterfall', () => {
     /* Posting again changes nothing. */
     expect(await postSiRevenue(sb, no)).toMatchObject({ ok: true, status: 'already_posted' });
     expect(allocatedTotal(sb)).toBe(1_000_000);
+    /* Its e-invoice record waits in the outbox (not ready: the test customer has no ID). */
+    expect(sb.tables.acc_einvoice_outbox.map((o) => [o.doc_kind, o.doc_number, o.status])).toEqual([['INVOICE', no, 'NOT_READY']]);
   });
 
   test('the second invoice continues where the first stopped', async () => {
@@ -173,6 +175,7 @@ describe('renovation invoices by the waterfall', () => {
     expect(await reverseSiRevenue(sb, second.no)).toMatchObject({ ok: true, status: 'reversed' });
     expect(sb.tables.reno_revenue_allocations.filter((a) => a.source_doc_no === second.no)).toHaveLength(0);
     expect(revenueToDate(sb)).toBe(1_000_000);
+    expect(sb.tables.acc_einvoice_outbox.find((o) => o.doc_number === second.no)!.status).toBe('CANCELLED');
     /* The next invoice re-fills fixture first, as the cancelled one did. */
     const third = await invoice(sb, 600_000);
     expect(journalOf(sb, 'SI', third.no)).toEqual([
@@ -259,6 +262,7 @@ describe('renovation credit notes', () => {
     expect(sb.tables.acc_credit_note_lines.filter((l) => l.note_id === 'cn-1').map((l) => [l.account_code, l.amount_sen])).toEqual([['501-0020', 222_223], ['501-0030', 277_777]]);
     expect(sb.tables.acc_credit_notes[0].status).toBe('POSTED');
     expect(revenueToDate(sb)).toBe(500_000);
+    expect(sb.tables.acc_einvoice_outbox.filter((o) => o.doc_kind === 'CREDIT_NOTE').map((o) => [o.doc_number, o.status])).toEqual([['2990CN-2611-001', 'NOT_READY']]);
     /* The customer owes the contract less the credit; the RENO-CREDIT row did not move the advance. */
     expect(balances(sb)['301-0000']).toBe(9_500_000);
     expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toMatchObject({ status: 'in_step', postedSen: 10_000_000 });
@@ -269,6 +273,7 @@ describe('renovation credit notes', () => {
     expect(sb.tables.reno_revenue_allocations.filter((a) => a.source_doc_no === '2990CN-2611-001')).toHaveLength(0);
     expect(sb.tables.mfg_sales_order_items.find((i) => i.id === 'cc-cn-1')!.cancelled).toBe(true);
     expect(revenueToDate(sb)).toBe(1_000_000);
+    expect(sb.tables.acc_einvoice_outbox.find((o) => o.doc_kind === 'CREDIT_NOTE')!.status).toBe('CANCELLED');
   });
 
   test('a credit above what is invoiced is refused by the ledger too', async () => {

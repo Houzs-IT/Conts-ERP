@@ -23,6 +23,7 @@ import { resolveDebtorRoles } from '../conts/parties';
 import { docMonthTag, mintMonthlyDocNo } from '../scm/lib/doc-no';
 import { todayMyt } from '../scm/lib/my-time';
 import { postRenovationCredit, releaseRenovationCredit, renovationCreditKind } from './reno-ledger';
+import { cancelAfterReversal, prepareAfterPosting } from './einvoice-outbox';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
 type Db = any;
@@ -120,7 +121,10 @@ export async function postCreditNote(
     if (rk.kind) {
       const r = await postRenovationCredit(sb, { companyId: p.companyId, kind: rk.kind, note: note as never });
       if (!r.ok) return { ok: false, status: r.status, reason: r.reason };
-      return markPosted(sb, p, r.jeNo, r.status);
+      const marked = await markPosted(sb, p, r.jeNo, r.status);
+      /* Its e-invoice record waits in the outbox (acc/einvoice-outbox); never blocks the posting. */
+      if (marked.ok) await prepareAfterPosting(sb, p.companyId, 'CREDIT_NOTE', String(note.id));
+      return marked;
     }
   }
   const { data: lineRows, error: lErr } = await sb.from('acc_credit_note_lines')
@@ -196,6 +200,7 @@ export async function cancelCreditNote(
   /* A renovation credit gives its revenue allocation back, and a contract credit its amount to the contract. */
   if (String(note.kind) === 'CN' && note.so_doc_no) {
     await releaseRenovationCredit(sb, { companyId: p.companyId, noteId: String(note.id), noteNumber: String(note.note_number), soDocNo: String(note.so_doc_no) });
+    await cancelAfterReversal(sb, p.companyId, 'CREDIT_NOTE', String(note.note_number));
   }
   const { error: upErr } = await sb.from('acc_credit_notes').update({
     status: 'CANCELLED', cancelled_at: new Date().toISOString(), cancelled_by: p.actor, updated_at: new Date().toISOString(),

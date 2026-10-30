@@ -32,6 +32,7 @@ import { onRenovationSoLinesChanged } from '../lib/renovation-hooks';
 import { postSiRevenue } from '../lib/post-si-revenue';
 import { cancelGate, contractPostingState, postContractCancel, postContractChange } from '../../acc/reno-ledger';
 import { CREDIT_NOTE_HEADER, postCreditNote } from '../../acc/credit-notes';
+import { einvoiceWarning, type DocKind } from '../../acc/einvoice-outbox';
 import { categoryGroupOf, type UomDef } from '../shared/renovation-catalog';
 import { loadUomsSql } from './renovation-catalog-settings';
 
@@ -353,8 +354,15 @@ renovation.post('/sales-orders/:docNo/credit', handle(PERM.bill, async (c, { tx 
   const result = await tx((db) => creditContract(db, actor, docNo, {
     amountSen: intParam(b.amountSen, 'amountSen'), reason: typeof b.reason === 'string' ? b.reason : '', noteDate: typeof b.noteDate === 'string' ? b.noteDate : null,
   }));
-  return c.json({ ...result, posting: await postNoteAfterCommit(c, actor, result.creditNoteId) }, 201);
+  const posting = await postNoteAfterCommit(c, actor, result.creditNoteId);
+  return c.json({ ...result, posting, einvoiceWarning: await warningAfterPosting(c, actor, 'CREDIT_NOTE', result.noteNumber) }, 201);
 }));
+
+/** While e-invoice is on: what the posted document's e-invoice still lacks (acc/einvoice-outbox). Null otherwise; never thrown. */
+async function warningAfterPosting(c: C, actor: RenoActor, kind: DocKind, docNumber: string | undefined): Promise<string | null> {
+  if (!docNumber) return null;
+  try { return await einvoiceWarning(c.get('supabase'), actor.companyId, kind, docNumber); } catch { return null; }
+}
 
 /** After commit: post a renovation credit note (acc/credit-notes → acc/reno-ledger). Reported, never thrown. */
 async function postNoteAfterCommit(c: C, actor: RenoActor, creditNoteId: string): Promise<{ status: string; reason?: string }> {
@@ -402,7 +410,9 @@ renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(PERM.bill, a
   } catch (err) {
     posting = { status: 'post_failed', reason: err instanceof Error ? err.message : String(err) };
   }
-  return c.json({ ...result, posting }, 201);
+  const einvoice = result.kind === 'INVOICE' ? await warningAfterPosting(c, actor, 'INVOICE', result.invoiceNumber)
+    : result.kind === 'CREDIT_NOTE' ? await warningAfterPosting(c, actor, 'CREDIT_NOTE', result.noteNumber) : null;
+  return c.json({ ...result, posting, einvoiceWarning: einvoice }, 201);
 }));
 
 /* ── Variation orders ───────────────────────────────────────────────────── */
