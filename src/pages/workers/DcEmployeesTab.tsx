@@ -1,32 +1,31 @@
 import { useMemo, useState } from 'react';
-import PageHeader from '../components/PageHeader';
-import { Button } from '../components/Button';
-import Icon from '../components/Icon';
-import { StaleBanner } from '../components/DataState';
-import { DataTable, type Column } from '../components/DataTable';
-import { Modal } from '../components/Modal';
-import { Field } from '../components/Field';
-import { Select } from '../components/Select';
-import { DateField, PhoneInput, phoneProblem } from '../components/inputs';
-import { useToast } from '../components/Toast';
-import { useApi } from '../lib/useApi';
-import { api, ApiFailure, notifyFailure } from '../lib/api';
-import { mayWork } from '../lib/areaAccess';
-import { useSession } from '../lib/session';
-import { plural, todayMyt } from '../lib/format';
-import type { DcEmployee, DcEmployeeInput } from '../../functions/_lib/hrFields';
+import { Button } from '../../components/Button';
+import Icon from '../../components/Icon';
+import { StaleBanner } from '../../components/DataState';
+import { DataTable, type Column } from '../../components/DataTable';
+import { Modal } from '../../components/Modal';
+import { Field } from '../../components/Field';
+import { Select } from '../../components/Select';
+import { DateField, PhoneInput, phoneProblem } from '../../components/inputs';
+import { useToast } from '../../components/Toast';
+import { useApi } from '../../lib/useApi';
+import { api, ApiFailure, notifyFailure } from '../../lib/api';
+import { mayWork } from '../../lib/areaAccess';
+import { useSession } from '../../lib/session';
+import { plural, todayMyt } from '../../lib/format';
+import type { DcEmployee, DcEmployeeInput } from '../../../functions/_lib/hrFields';
 
 /* ------------------------------------------------------------------ *
- * Dream Crafter > HR > Employees: Dream Crafter's own staff (owner,
- * 30 Oct 2026, migration 0185), kept apart from The Conts' cleaners and
- * technicians. Details only for now: pay, app access and clock-in come
- * with Dream Crafter payroll and attendance.
+ * Dream Crafter > HR > Employees > Employee Master: Dream Crafter's own
+ * staff (owner, 30 Oct 2026, migration 0185), kept apart from The Conts'
+ * cleaners and technicians. Details only for now: pay, app access and
+ * clock-in come with Dream Crafter payroll and attendance.
  * ------------------------------------------------------------------ */
 
 const statusOf = (e: DcEmployee): { label: string; tone: 'success' | 'neutral' } =>
   e.status === 'resigned' ? { label: 'Resigned', tone: 'neutral' } : { label: 'Active', tone: 'success' };
 
-export default function DcEmployeesPage() {
+export default function DcEmployeesTab({ onChanged }: { onChanged: () => void }) {
   const { data, loading, error, reload } = useApi<{ data: DcEmployee[] }>('/employees/dream-crafter');
   const { user } = useSession();
   const mayEdit = mayWork(user, 'hr');
@@ -44,8 +43,7 @@ export default function DcEmployeesPage() {
 
   return (
     <>
-      <PageHeader title="Employees" sub={data ? `Dream Crafter staff · ${plural(people.length, 'employee')}` : 'Dream Crafter staff'}
-        primary={mayEdit ? <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={add}>Add Employee</Button> : undefined} />
+      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? plural(people.length, 'employee') : 'Loading the list…'}</p>
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <DataTable<DcEmployee>
@@ -53,10 +51,19 @@ export default function DcEmployeesPage() {
         rowKey={e => e.id} pageSize={0} noun={['employee', 'employees']} exportName="dream-crafter-employees"
         rowTone={e => (e.status === 'resigned' ? 'muted' : null)}
         onRowClick={mayEdit ? e => setForm({ person: e }) : undefined}
+        header={
+          <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
+            <span className="flex flex-col gap-0.5">
+              <span className="text-[16px] font-semibold tracking-[-0.01em]">Employee Master</span>
+              <span className="text-meta text-muted-ink">The people who work for Dream Crafter. Open a person to change their details.</span>
+            </span>
+            {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={add}>Add Employee</Button>}
+          </div>
+        }
         empty={{ title: 'No Dream Crafter employees yet.', body: 'Add the first person who works for Dream Crafter.', icon: 'Users', action: mayEdit ? { label: 'Add Employee', onClick: add } : undefined }}
       />
 
-      {form && <DcEmployeeForm person={form.person} onClose={() => setForm(null)} onSaved={() => { setForm(null); reload(); }} />}
+      {form && <DcEmployeeForm person={form.person} onClose={() => setForm(null)} onSaved={() => { setForm(null); reload(); onChanged(); }} />}
     </>
   );
 }
