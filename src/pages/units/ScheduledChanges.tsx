@@ -17,6 +17,8 @@ interface ContractPayload { current: ContractTerms; untilThen?: ContractTerms | 
 type Figures = { charge: number | null; pay: number | null };
 
 const amountOf = (sen: number | null) => (sen == null ? 'list price' : rm(sen));
+/** The item's list name is older than the clean names staff use: a clean reads as on the Details tab. */
+const nameOf = (c: UnitPriceChange) => CLEAN_KINDS.find(([k]) => k === c.cleanKind)?.[1] ?? c.name;
 const Heading = ({ children }: { children: string }) => <h3 className="m-0 text-copy font-semibold">{children}</h3>;
 
 /** A unit's changes that wait for a date (owner, 30 Oct 2026): its own basic clean, deep clean and maintenance prices,
@@ -59,7 +61,7 @@ export function ScheduledChanges({ unitId, unitLabel, money, onClose, onOpenCont
   async function cancel(c: UnitPriceChange) {
     try {
       await api.del(`/housekeeping/unit-prices?unitId=${id}&itemId=${encodeURIComponent(c.itemId)}&effectiveFrom=${c.effectiveFrom}`);
-      toast({ tone: 'success', title: 'Scheduled change cancelled.', body: `${c.name} from ${date(c.effectiveFrom)}.` });
+      toast({ tone: 'success', title: 'Scheduled change cancelled.', body: `${nameOf(c)} from ${date(c.effectiveFrom)}.` });
       prices.reload();
     } catch (e) { notifyFailure(e); }
   }
@@ -67,7 +69,7 @@ export function ScheduledChanges({ unitId, unitLabel, money, onClose, onOpenCont
   const row = (c: UnitPriceChange) => (
     <li key={`${c.itemId}:${c.effectiveFrom}`} className="flex items-start justify-between gap-3 py-2.5 [border-top:1px_solid_var(--color-line-soft)]">
       <span className="flex flex-col gap-0.5 min-w-0">
-        <span className="text-copy font-medium [overflow-wrap:anywhere]">{c.name}</span>
+        <span className="text-copy font-medium [overflow-wrap:anywhere]">{nameOf(c)}</span>
         <span className="text-meta text-muted-ink">{c.effectiveFrom <= '2000-01-01' ? 'From the start' : `From ${date(c.effectiveFrom)}`} · Owner {amountOf(c.ownerPrice)} · Cost {amountOf(c.internalCost)}</span>
       </span>
       {c.scheduled && mayEdit && <Button size="sm" variant="tertiary" onClick={() => void cancel(c)}>Cancel</Button>}
