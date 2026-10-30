@@ -8,11 +8,13 @@ export type Debtor = {
   phone: string | null; email: string | null; address: string | null; notes: string | null; is_active: boolean;
   /** E-invoice tax identity (acc/einvoice-identity.ts). */
   tin: string | null; id_type: string | null; id_number: string | null; sst_no: string | null;
+  city: string | null; postcode: string | null; state: string | null; country: string | null;
 };
 export type DebtorControl = { code: string; name: string; debtors: Debtor[] };
 export type DebtorInput = {
   name?: string; code?: string; controlAccount?: string; phone?: string; email?: string; address?: string; notes?: string;
   isActive?: boolean; tin?: string; idType?: string; idNumber?: string; sstNo?: string;
+  city?: string; postcode?: string; state?: string; country?: string;
 };
 
 const KEY = ["conts-debtors"];

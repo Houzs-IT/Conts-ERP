@@ -6,7 +6,8 @@
 //   PATCH /accounting/debtors/:id                   name, contact, notes, active; another control only once nothing
 //                                                   is owing on the old one (it could not follow: manual journals
 //                                                   may not touch a control)
-//   Both take the e-invoice tax identity: tin, idType, idNumber, sstNo (acc/einvoice-identity.ts).
+//   Both take the e-invoice tax identity: tin, idType, idNumber, sstNo (acc/einvoice-identity.ts), and the address's
+//   city, postcode, state and country, which the e-invoice needs.
 import { hasHouzsPerm } from '../scm/lib/houzs-perms';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { paginateAll } from '../scm/lib/paginate-all';
@@ -23,8 +24,9 @@ type DebtorRow = {
   id: string; code: string; name: string; control_account: string; customer_id: string | null;
   phone: string | null; email: string | null; address: string | null; notes: string | null; is_active: boolean;
   tin: string | null; id_type: string | null; id_number: string | null; sst_no: string | null;
+  city: string | null; postcode: string | null; state: string | null; country: string | null;
 };
-const COLS = 'id, code, name, control_account, customer_id, phone, email, address, notes, is_active, tin, id_type, id_number, sst_no';
+const COLS = 'id, code, name, control_account, customer_id, phone, email, address, notes, is_active, tin, id_type, id_number, sst_no, city, postcode, state, country';
 const text = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
 /** The customer controls of the chart (special type SDC), by code — less the Other Debtors control, which keeps the
@@ -92,7 +94,8 @@ export const createDebtorHandler = async (c: Ctx): Promise<Response> => {
   if (!tax.ok) return c.json({ error: tax.error, message: tax.message }, 400);
   const fields = {
     company_id: co.companyId, name, control_account: control, phone: text(body.phone), email: text(body.email),
-    address: text(body.address), notes: text(body.notes), is_active: true, ...tax.patch,
+    address: text(body.address), city: text(body.city), postcode: text(body.postcode), state: text(body.state), country: text(body.country),
+    notes: text(body.notes), is_active: true, ...tax.patch,
   };
   for (let attempt = 0; attempt < 5; attempt += 1) {
     let code = typed;
@@ -128,7 +131,8 @@ export const patchDebtorHandler = async (c: Ctx): Promise<Response> => {
     if (!name) return c.json({ error: 'name_required', message: 'A customer needs a name.' }, 400);
     patch.name = name;
   }
-  for (const [from, to] of [['phone', 'phone'], ['email', 'email'], ['address', 'address'], ['notes', 'notes']] as const) {
+  for (const [from, to] of [['phone', 'phone'], ['email', 'email'], ['address', 'address'], ['city', 'city'], ['postcode', 'postcode'], ['state', 'state'],
+    ['country', 'country'], ['notes', 'notes']] as const) {
     if (body[from] !== undefined) patch[to] = text(body[from]);
   }
   if (body.isActive !== undefined) patch.is_active = body.isActive === true;

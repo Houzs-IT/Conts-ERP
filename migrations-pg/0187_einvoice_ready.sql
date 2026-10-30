@@ -1,12 +1,14 @@
 -- REVERSAL: drop table scm.acc_einvoice_outbox; alter table scm.debtors drop column tin, drop column id_type, drop column id_number,
---   drop column sst_no; alter table scm.acc_company_settings drop column einvoice_active, ... (every column added below).
+--   drop column sst_no, drop column city, drop column postcode, drop column state, drop column country; alter table scm.acc_company_settings drop column einvoice_active, ... (every column added below).
 -- Renovation e-invoice ready, switched off (finance, chew 30 Oct 2026; spec
 -- docs/superpowers/specs/2026-10-30-renovation-revenue-einvoice-design.md goal 7, 7.4, 7.7; plan
 -- docs/superpowers/plans/2026-10-30-renovation-einvoice-ready.md Task 1).
 --   scm.acc_company_settings  the e-invoice switch (off), classification code (022), tax type (06 Not applicable), the SST
 --                             switch kept for later (stored only), the renovation invoice description template, and the
 --                             seller's details. Dream Crafter and The Conts are one company, so one seller (chew).
---   scm.debtors               the buyer's tax identity on each project account: TIN, ID type and number, SST number.
+--   scm.debtors               the buyer's tax identity on each project account: TIN, ID type and number, SST number, and
+--                             the address's city, postcode, state and country (a renovation contract carries only two
+--                             address lines, and an e-invoice needs the state).
 --   scm.acc_einvoice_outbox   one e-invoice record per renovation invoice / credit note, prepared when it posts. Nothing
 --                             sends it until a connector exists.
 -- Numbered 0187: 0186 (reno_golive_baseline, unit_price_effective_from) is the last on production and on every branch.
@@ -40,7 +42,11 @@ alter table scm.debtors
   add column if not exists tin text,
   add column if not exists id_type text,
   add column if not exists id_number text,
-  add column if not exists sst_no text;
+  add column if not exists sst_no text,
+  add column if not exists city text,
+  add column if not exists postcode text,
+  add column if not exists state text,
+  add column if not exists country text;
 
 do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'debtors_id_type_check') then

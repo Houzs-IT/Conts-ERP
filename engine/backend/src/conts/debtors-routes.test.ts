@@ -175,3 +175,12 @@ describe('Debtors: real-world numbers (review)', () => {
     expect(await res.json()).toMatchObject({ error: 'invalid_id_number' });
   });
 });
+
+describe('Debtors: the address an e-invoice needs', () => {
+  test('patch and create store city, postcode, state and country', async () => {
+    const res = await send(app(world()), 'PATCH', '/debtors/d1', { city: 'Kuala Lumpur', postcode: '50450', state: 'Kuala Lumpur', country: '' });
+    expect(await res.json()).toMatchObject({ debtor: { city: 'Kuala Lumpur', postcode: '50450', state: 'Kuala Lumpur', country: null } });
+    const made = await send(app(world()), 'POST', '/debtors', { name: 'MS ONG', controlAccount: '301-0000', city: 'Shah Alam', state: 'Selangor' });
+    expect(await made.json()).toMatchObject({ debtor: { city: 'Shah Alam', state: 'Selangor' } });
+  });
+});
