@@ -133,6 +133,49 @@ describe('the OR book', () => {
     expect(String(said.body)).toContain('HC-JV-2609-014');
   });
 
+  /* Payment before its invoice (renovation, spec 7.6): more confirmed than invoiced offers the next instalment. */
+  test('a confirm that offers the next instalment bills it at the offered amount on "now", and nothing on "Later"', async () => {
+    const offer = { soDocNo: 'HC-SO-2611-009', instalmentId: 'inst-2', seq: 2, label: 'Carpentry', amountSen: 400000, receivedSen: 400000, billedSen: 300000 };
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith('/formalise')) return { ok: true, orNumber: 'HCMOR-2609-001', already: false, posting: { status: 'posted', jeNo: 'HC-JV-2609-014' }, billNext: offer };
+      if (path.includes('/instalments/')) return { kind: 'INVOICE', invoiceNumber: 'HC-SI-2611-002', amountSen: 400000, posting: { status: 'posted' } };
+      return base(path, init);
+    });
+    try {
+      for (const pick of ['later', 'now'] as const) {
+        fetchMock.mockClear();
+        chooseMock.mockReset();
+        chooseMock.mockImplementationOnce(async () => '310-0020').mockImplementationOnce(async () => pick);
+        notifyMock.mockClear();
+        const view = draw();
+        await waitFor(() => expect(screen.getByText('Confirm received')).toBeTruthy());
+        fireEvent.click(screen.getByText('Confirm received'));
+        await waitFor(() => expect(chooseMock).toHaveBeenCalledTimes(2));
+        const asked = chooseMock.mock.calls[1]![0];
+        expect(asked.options.map((o) => o.label)).toEqual(['Bill the next instalment now', 'Later']);
+        const bill = () => fetchMock.mock.calls.find(([p]) => String(p).includes('/instalments/'));
+        if (pick === 'now') {
+          await waitFor(() => expect(bill()).toBeTruthy());
+          expect(bill()![0]).toBe('/renovation/sales-orders/HC-SO-2611-009/instalments/inst-2/bill');
+          expect(JSON.parse(String(bill()![1]!.body))).toMatchObject({ expectedAmountSen: 400000 });
+          await waitFor(() => expect(notifyMock).toHaveBeenCalled());
+          expect(String(notifyMock.mock.calls.at(-1)![0].body)).toContain('HC-SI-2611-002');
+        } else {
+          /* The choice itself said the payment is confirmed: Later bills nothing and says nothing more. */
+          await new Promise((r) => setTimeout(r, 20));
+          expect(bill()).toBeUndefined();
+          expect(notifyMock).not.toHaveBeenCalled();
+        }
+        view.unmount();
+      }
+    } finally {
+      fetchMock.mockImplementation(base);
+      chooseMock.mockReset();
+      chooseMock.mockImplementation(async () => '310-0020');
+    }
+  });
+
   test('cancelling the bank choice confirms nothing', async () => {
     fetchMock.mockClear();
     chooseMock.mockImplementationOnce(async () => null);

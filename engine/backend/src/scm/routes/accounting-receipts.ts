@@ -12,7 +12,7 @@
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { confirmBankRefusal, confirmBanks, ensureReceiptForPayment, formaliseReceipt } from '../../acc/receipts';
-import { bankChangeRefusal, postConfirmedPayment } from '../../acc/receipt-confirm';
+import { bankChangeRefusal, nextInstalmentOffer, postConfirmedPayment, soOfPayment } from '../../acc/receipt-confirm';
 import { resolveRoles } from '../../acc/rules';
 import { companyCodeById } from '../lib/doc-no';
 import { paginateAll } from '../lib/paginate-all';
@@ -162,5 +162,12 @@ export const receiptFormalise = async (c: any): Promise<Response> => {
   } catch (e) {
     posting = { status: 'not_posted', reason: e instanceof Error ? e.message : String(e) };
   }
-  return c.json({ ok: true, orNumber: r.orNumber, already: r.already === true, posting });
+  /* A renovation payment ahead of its invoice (spec 7.6): more confirmed than invoiced offers the next instalment,
+     which the screen bills through the renovation bill route at this amount, or leaves for later. */
+  let billNext = null;
+  try {
+    const soDocNo = await soOfPayment(sb, source, String(rec.payment_id), co.companyId);
+    if (soDocNo) billNext = await nextInstalmentOffer(sb, co.companyId, soDocNo);
+  } catch { billNext = null; }
+  return c.json({ ok: true, orNumber: r.orNumber, already: r.already === true, posting, ...(billNext ? { billNext } : {}) });
 };

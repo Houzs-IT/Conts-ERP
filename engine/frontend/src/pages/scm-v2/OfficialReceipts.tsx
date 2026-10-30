@@ -32,6 +32,7 @@ import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
 import { useAuth } from '../../auth/AuthContext';
 import { useChooseBank } from '../../conts/ClaimsParts';
+import { useChoice } from '../../vendor/scm/components/ChoiceDialog';
 
 type ReceiptRow = ReceiptPdfData & {
   id: number;
@@ -41,8 +42,11 @@ type ReceiptRow = ReceiptPdfData & {
   created_at: string;
 };
 
+/** A renovation payment ahead of its invoice (spec 7.6): the next instalment, at the amount the bill route expects. */
+type BillNext = { soDocNo: string; instalmentId: string; seq: number; label: string; amountSen: number; receivedSen: number; billedSen: number };
 /** What the confirm answers: the receipt number, and what posted (or why not). */
-type ConfirmResult = { ok: boolean; orNumber: string; already?: boolean; posting?: { status: string; jeNo?: string; reason?: string } };
+type ConfirmResult = { ok: boolean; orNumber: string; already?: boolean; posting?: { status: string; jeNo?: string; reason?: string }; billNext?: BillNext };
+type BillAnswer = { kind: string; invoiceNumber?: string; amountSen: number; posting?: { status: string; reason?: string } };
 type ConfirmBanks = { defaultCode: string; banks: Array<{ code: string; name: string }> };
 
 /** The confirm's answer in one sentence for the dialog. */
@@ -93,6 +97,7 @@ export const OfficialReceipts = () => {
   /* Confirming money is finance's (SOP 4.2): the salesperson records, finance checks the bank. */
   const canConfirm = can('scm.payment_voucher.post');
   const chooseBank = useChooseBank();
+  const choose = useChoice();
   const notify = useNotify();
   const [status, setStatus] = useState<'' | 'DRAFT' | 'FORMAL'>('');
   /* '' = any month: the newest 100 receipts. */
@@ -122,9 +127,32 @@ export const OfficialReceipts = () => {
     onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ['official-receipts'] });
       void qc.invalidateQueries({ queryKey: ['official-receipts-check'] });
-      void notify({ title: 'Payment confirmed', body: confirmedSentence(r) });
+      if (r.billNext) void offerNextInstalment(r, r.billNext);
+      else void notify({ title: 'Payment confirmed', body: confirmedSentence(r) });
     },
   });
+  /* More confirmed than invoiced on a renovation contract: bill the next instalment now (the renovation bill route,
+     at the amount offered — it refuses if a VO moved it meanwhile), or later from the contract. */
+  const offerNextInstalment = async (r: ConfirmResult, b: BillNext) => {
+    const pick = await choose({
+      title: 'Payment confirmed',
+      body: `${confirmedSentence(r)} ${b.soDocNo} has ${fmtSen(b.receivedSen)} confirmed against ${fmtSen(b.billedSen)} invoiced. Bill ${b.label} (instalment ${b.seq}) for ${fmtSen(b.amountSen)}?`,
+      options: [{ value: 'now', label: 'Bill the next instalment now' }, { value: 'later', label: 'Later' }],
+      cancelLabel: 'Close',
+    });
+    if (pick !== 'now') return;
+    try {
+      const bill = await authedFetch<BillAnswer>(
+        `/renovation/sales-orders/${encodeURIComponent(b.soDocNo)}/instalments/${encodeURIComponent(b.instalmentId)}/bill`,
+        { method: 'POST', body: JSON.stringify({ expectedAmountSen: b.amountSen }) },
+      );
+      void qc.invalidateQueries({ queryKey: ['reno'] });
+      const posted = !bill.posting || bill.posting.status === 'posted' || bill.posting.status === 'already_posted' ? '' : ` Its journal is not posted yet (${bill.posting.reason ?? bill.posting.status}).`;
+      void notify({ title: 'Instalment billed', body: `Sales invoice ${bill.invoiceNumber ?? ''} issued for ${fmtSen(bill.amountSen)}.${posted}` });
+    } catch (e) {
+      void notify({ title: 'Not billed', body: (e as { message?: string } | null)?.message ?? 'The instalment was not billed. Bill it from the contract.' });
+    }
+  };
   /* Which bank did the money land in? The default bank first. */
   const confirmReceived = async (r: ReceiptRow) => {
     const list: ConfirmBanks | undefined = banks.data ?? await qc.fetchQuery({ queryKey: ['official-receipts-banks'], queryFn: () => authedFetch<ConfirmBanks>('/accounting/receipts/banks') });

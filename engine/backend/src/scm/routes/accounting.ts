@@ -946,13 +946,13 @@ export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<
      shares. */
   const { data: itemsRaw, error: itemsErr } = await sb
     .from('purchase_invoice_items')
-    .select('item_group, line_total_sen')
+    .select('item_code, item_group, line_total_sen')
     .eq('purchase_invoice_id', pi.id);
   if (itemsErr) return { ok: false, status: 'post_failed', reason: `PI lines: ${itemsErr.message}` };
   const split = await splitByItemGroup(sb, {
     companyId,
     docNo: pi.invoice_number,
-    items: (itemsRaw ?? []) as Array<{ item_group: string | null; line_total_sen: number | null }>,
+    items: (itemsRaw ?? []) as Array<{ item_code: string | null; item_group: string | null; line_total_sen: number | null }>,
     account: 'purchase_account',
     myrSen: (sen) => toMyrSen(sen, pi.exchange_rate),
     totalSen,
