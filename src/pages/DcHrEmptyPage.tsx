@@ -11,8 +11,8 @@ import { EmptyState } from '../components/States';
 const PAGES = {
   attendance: {
     title: 'Attendance', sub: 'Who clocked in and out each day at a Dream Crafter site', icon: 'UserCheck',
-    empty: 'No Dream Crafter employees yet',
-    body: 'Once Dream Crafter staff are added to HR, everyone shows here each day: clock-in and clock-out, the selfie, whether they were at a Dream Crafter site, and anyone not in or on leave. A punch left open more than 16 hours shows as no clock-out for the office to fix, and the office can key a day for someone who forgot to clock in.',
+    empty: 'Dream Crafter clock-in is not set up yet',
+    body: 'Dream Crafter staff are added on HR > Employees. Once they can clock in, everyone shows here each day: clock-in and clock-out, the selfie, whether they were at a Dream Crafter site, and anyone not in or on leave. A punch left open more than 16 hours shows as no clock-out for the office to fix, and the office can key a day for someone who forgot to clock in.',
   },
   'punch-sites': {
     title: 'Punch Sites', sub: 'Where a Dream Crafter punch counts as on site', icon: 'MapPin',

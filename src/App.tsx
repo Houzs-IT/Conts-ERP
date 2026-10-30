@@ -101,6 +101,7 @@ const SystemHealthPage = lazy(() => import('./pages/SystemHealthPage'));
 const ItSupportPage = lazy(() => import('./pages/ItSupportPage'));
 const DcEmployeePerformancePage = lazy(() => import('./pages/DcEmployeePerformancePage'));
 const DcHrEmptyPage = lazy(() => import('./pages/DcHrEmptyPage'));
+const DcEmployeesPage = lazy(() => import('./pages/DcEmployeesPage'));
 const MyClaimsPage = lazy(() => import('./pages/MyClaimsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
@@ -394,6 +395,7 @@ function Routed() {
         <Route path="/supply/it-support" element={<ItSupportPage />} />
         <Route path="/my-claims" element={<MyClaimsPage />} />
         <Route path="/supply/my-claims" element={<MyClaimsPage />} />
+        <Route path="/supply/hr/employees" element={<DcEmployeesPage />} />
         <Route path="/supply/hr/attendance" element={<DcHrEmptyPage page="attendance" />} />
         <Route path="/supply/hr/punch-sites" element={<DcHrEmptyPage page="punch-sites" />} />
         <Route path="/supply/hr/performance" element={<DcEmployeePerformancePage />} />
