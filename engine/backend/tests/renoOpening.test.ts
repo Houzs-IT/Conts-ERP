@@ -124,6 +124,47 @@ describe('the go-live preview', () => {
     expect((await problemsOf(sb, [good]))[0]).toEqual([]);
   });
 
+  /* The customer account like the advance: lines already posted with the old customer as party would stay with it. */
+  test('the customer account cannot change once this contract posted with the old customer as party', async () => {
+    const withDebtor = (over: Record<string, Row[]> = {}) => world({
+      mfg_sales_orders: [so(OLD, '2026-09-10', { debtor_code: '301-C004' }), so(OLD2, '2026-09-20'), so(NEW, '2026-11-03')],
+      debtors: [
+        { company_id: CO, code: '301-C005', name: 'MS CHUAH (DIVO B-16-05)', control_account: '301-0000', is_active: true },
+        { company_id: CO, code: '301-C004', name: 'MS CHUAH', control_account: '301-0000', is_active: true },
+      ],
+      ...over,
+    });
+    /* Nothing posted yet: the customer may change. */
+    expect((await problemsOf(withDebtor(), [good]))[0]).toEqual([]);
+
+    /* A confirmed payment on the order posted Cr the customer control with 301-C004 as party. */
+    const paid = withDebtor({
+      mfg_sales_order_payments: [{ id: 'pay-1', so_doc_no: OLD, company_id: CO, amount_sen: 100_000 }],
+      journal_entries: [{ id: 'je-p', company_id: CO, source_type: 'SOPAY', source_doc_no: 'pay-1', reversed: false, posted: true }],
+      journal_entry_lines: [
+        { id: 'l1', journal_entry_id: 'je-p', account_code: '310-0010', debit_sen: 100_000, credit_sen: 0, party_code: null },
+        { id: 'l2', journal_entry_id: 'je-p', account_code: '301-0000', debit_sen: 0, credit_sen: 100_000, party_type: 'CUSTOMER', party_code: '301-C004' },
+      ],
+    });
+    expect((await problemsOf(paid, [good]))[0]).toEqual([expect.stringContaining('already posted with customer 301-C004')]);
+    expect(await applyRenoOpening(paid, CO, [good])).toMatchObject({ ok: false, status: 'problems' });
+    expect((paid.tables.mfg_sales_orders as Row[]).find((s) => s.doc_no === OLD)!.debtor_code).toBe('301-C004');
+
+    /* A reversed posting no longer holds it. */
+    (paid.tables.journal_entries as Row[])[0].reversed = true;
+    expect((await problemsOf(paid, [good]))[0]).toEqual([]);
+
+    /* The contract's own journals hold it too. */
+    const signed = withDebtor({
+      journal_entries: [{ id: 'je-v', company_id: CO, source_type: 'RVO', source_doc_no: `${OLD}-1`, reversed: false, posted: true }],
+      journal_entry_lines: [
+        { id: 'l3', journal_entry_id: 'je-v', account_code: '301-0000', debit_sen: 50_000, credit_sen: 0, party_type: 'CUSTOMER', party_code: '301-C004' },
+        { id: 'l4', journal_entry_id: 'je-v', account_code: '480-D007', debit_sen: 0, credit_sen: 50_000, party_code: null },
+      ],
+    });
+    expect((await problemsOf(signed, [good]))[0]).toEqual([expect.stringContaining('already posted with customer 301-C004')]);
+  });
+
   test('with no ledger start every row waits for it', async () => {
     const sb = world({ acc_company_settings: [{ company_id: CO, ledger_start_date: null, fiscal_year_end_month: 8 }] });
     expect((await problemsOf(sb, [good]))[0]).toEqual([expect.stringContaining('Set the day the books start')]);

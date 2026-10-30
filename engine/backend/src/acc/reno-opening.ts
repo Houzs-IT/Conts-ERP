@@ -12,9 +12,11 @@
 //                                                       a VO after go-live posts only its difference (RVO).
 // It posts nothing: the opening balances carry the money.
 //
-// Two guards against doubling the advance: the advance account cannot change once this contract has posted to the
-// one it has (its RCON / RVO / RCAN journals, or the invoices and credit notes allocated on it); and the go-live
-// amount cannot change once revenue has been allocated from it.
+// Guards: the advance account cannot change once this contract has posted to the one it has, nor the customer once
+// it has posted lines naming the old customer as party (its RCON / RVO / RCAN journals, the invoices and credit notes
+// allocated on it, the payments on the order and its invoices); and the go-live amount cannot change once revenue has
+// been allocated from it. The generic SO header edit cannot change a renovation SO's customer at all (the renovation
+// write fence), so this import is the one place it changes after conversion.
 
 import { paginateAll } from '../scm/lib/paginate-all';
 import { isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
@@ -51,22 +53,38 @@ async function readIn<T>(sb: Sb, table: string, cols: string, column: string, va
   return out;
 }
 
-/** Whether this contract has posted to `advance`: a live (not reversed) journal of its own (RCON / RVO / RCAN) or of
-    a document allocated on it (an invoice, a credit note) with a line on that account. */
-async function contractPostedTo(sb: Sb, companyId: number, soDocNo: string, advance: string, allocDocs: string[]): Promise<boolean> {
+/** The live (not reversed) journals this contract has posted: its own (RCON / RVO / RCAN), the documents allocated on
+    it (invoices, credit notes), and the payments on the order and on its invoices (SOPAY / SIPAY). */
+async function contractJournalIds(sb: Sb, companyId: number, soDocNo: string, allocDocs: string[]): Promise<string[]> {
   const own = new RegExp(`^${soDocNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(-\\d+)?$`);
   const { data: mine, error } = await sb.from('journal_entries').select('id, source_doc_no, reversed')
     .eq('company_id', companyId).in('source_type', [CONTRACT_SIGNED, CONTRACT_CHANGED, CONTRACT_CANCELLED]).like('source_doc_no', `${soDocNo}%`);
   if (error) throw new Error(`The journals of ${soDocNo} could not be read: ${errText(error)}`);
   const ids = ((mine ?? []) as Array<{ id: string; source_doc_no: string; reversed: boolean | null }>)
     .filter((j) => !j.reversed && own.test(j.source_doc_no)).map((j) => String(j.id));
+  const live = (rows: Array<{ id: string; reversed: boolean | null }>) => rows.filter((j) => !j.reversed).map((j) => String(j.id));
   if (allocDocs.length > 0) {
-    const docs = await readIn<{ id: string; reversed: boolean | null }>(sb, 'journal_entries', 'id, reversed', 'source_doc_no', allocDocs,
-      (q) => q.eq('company_id', companyId).in('source_type', ['SI', 'CN']));
-    ids.push(...docs.filter((j) => !j.reversed).map((j) => String(j.id)));
+    ids.push(...live(await readIn(sb, 'journal_entries', 'id, reversed', 'source_doc_no', allocDocs,
+      (q) => q.eq('company_id', companyId).in('source_type', ['SI', 'CN']))));
   }
+  const soPays = await readIn<{ id: string }>(sb, 'mfg_sales_order_payments', 'id', 'so_doc_no', [soDocNo], (q) => q.eq('company_id', companyId));
+  const sis = await readIn<{ id: string }>(sb, 'sales_invoices', 'id', 'so_doc_no', [soDocNo], (q) => q.eq('company_id', companyId));
+  const siPays = sis.length > 0
+    ? await readIn<{ id: string }>(sb, 'sales_invoice_payments', 'id', 'sales_invoice_id', sis.map((s) => String(s.id)), (q) => q.eq('company_id', companyId))
+    : [];
+  for (const [source, pays] of [['SOPAY', soPays], ['SIPAY', siPays]] as const) {
+    if (pays.length === 0) continue;
+    ids.push(...live(await readIn(sb, 'journal_entries', 'id, reversed', 'source_doc_no', pays.map((p) => String(p.id)),
+      (q) => q.eq('company_id', companyId).eq('source_type', source))));
+  }
+  return [...new Set(ids)];
+}
+
+/** Whether any of `ids` has a line on `account`, or (with `party`) a customer line naming that party. */
+async function anyLine(sb: Sb, ids: string[], match: { account: string } | { party: string }): Promise<boolean> {
   if (ids.length === 0) return false;
-  const lines = await readIn<{ id: string }>(sb, 'journal_entry_lines', 'id', 'journal_entry_id', ids, (q) => q.eq('account_code', advance));
+  const lines = await readIn<{ id: string }>(sb, 'journal_entry_lines', 'id', 'journal_entry_id', ids,
+    (q) => ('account' in match ? q.eq('account_code', match.account) : q.eq('party_code', match.party)));
   return lines.length > 0;
 }
 
@@ -167,10 +185,17 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
           problems.push(`Revenue is already allocated on ${r.soDocNo} from its go-live amount (${fmtSen(current.billedBeforeGoLiveSen)}): it cannot change now.`);
         }
         const old = current.advanceAccountCode;
-        if (old && r.advanceAccountCode && old !== r.advanceAccountCode) {
+        const oldDebtor = String(current.debtorCode ?? '').trim();
+        const advanceMoves = !!old && !!r.advanceAccountCode && old !== r.advanceAccountCode;
+        const debtorMoves = !!oldDebtor && !!r.debtorCode && oldDebtor !== r.debtorCode;
+        if (advanceMoves || debtorMoves) {
           const allocDocs = [...new Set(mine.filter((a) => [ALLOC_INVOICE, ALLOC_CREDIT, ALLOC_BILL_CREDIT].includes(a.source_type)).map((a) => a.source_doc_no))];
-          if (await contractPostedTo(sb, companyId, r.soDocNo, old, allocDocs)) {
+          const ids = await contractJournalIds(sb, companyId, r.soDocNo, allocDocs);
+          if (advanceMoves && old && await anyLine(sb, ids, { account: old })) {
             problems.push(`${r.soDocNo} has already posted to ${old}: changing its advance account to ${r.advanceAccountCode} would leave those postings behind and double the advance.`);
+          }
+          if (debtorMoves && await anyLine(sb, ids, { party: oldDebtor })) {
+            problems.push(`${r.soDocNo} has already posted with customer ${oldDebtor}: changing its customer account to ${r.debtorCode} would leave those postings (what the customer owes and has paid) on ${oldDebtor}. Keep ${oldDebtor}, or move them first.`);
           }
         }
       }
