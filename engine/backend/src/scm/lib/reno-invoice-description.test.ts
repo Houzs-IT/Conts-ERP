@@ -35,3 +35,9 @@ describe('renovation invoice description', () => {
       .toBe('2nd Progress Billing for Interior Design & Renovation Works (20% as per Sales Order, refer to attached breakdown)');
   });
 });
+
+describe('renovation invoice description (review)', () => {
+  it('a label with $ patterns stays as typed', () => {
+    expect(renderRenoDescription('{label} end', { seq: 1, pctBp: 1000, label: "A $' B $& C $$", soDocNo: 'SO-1' })).toBe("A $' B $& C $$ end");
+  });
+});

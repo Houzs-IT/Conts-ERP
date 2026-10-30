@@ -127,3 +127,49 @@ describe('e-invoice outbox', () => {
       .toBe("E-invoice not ready: buyer ID number. The invoice is saved; fill in the customer's details on the customer account.");
   });
 });
+
+describe('e-invoice outbox (review)', () => {
+  it("the customer account's address fills what the contract lacks, and a later edit makes the row READY", async () => {
+    const bare = { address1: 'D-25-13 Skyline', address2: 'Jalan Ampang', city: null, postcode: null, state: null, customer_country: null };
+    const { sb, tables } = world({
+      sales_invoices: [{ ...world().tables.sales_invoices[0], ...bare }],
+      debtors: [{ id: 'd1', company_id: CO, code: '301-M002', name: 'MS LEE', id_type: 'NRIC', id_number: '900101145678' }],
+    });
+    expect(await prepareInvoice(sb, CO, 'si-1')).toEqual({ status: 'NOT_READY', missing: ['buyer address', 'buyer state'] });
+    Object.assign(tables.debtors[0], { city: 'Kuala Lumpur', postcode: '50450', state: 'Kuala Lumpur' });
+    expect(await refreshForDebtor(sb, CO, '301-M002')).toBe(1);
+    expect(tables.acc_einvoice_outbox[0]).toMatchObject({ status: 'READY' });
+    expect(tables.acc_einvoice_outbox[0].payload).toMatchObject({
+      buyer: { address: { line1: 'D-25-13 Skyline', line2: 'Jalan Ampang', city: 'Kuala Lumpur', postcode: '50450', stateCode: '14', country: 'MYS' } },
+    });
+  });
+
+  it("the customer account's own address line wins over the document's", async () => {
+    const { sb, tables } = world({
+      debtors: [{ id: 'd1', company_id: CO, code: '301-M002', name: 'MS LEE', id_type: 'NRIC', id_number: '900101145678',
+        address: '12 Jalan Bukit', city: 'Petaling Jaya', postcode: '46000', state: 'Selangor' }],
+    });
+    await prepareInvoice(sb, CO, 'si-1');
+    expect(tables.acc_einvoice_outbox[0].payload).toMatchObject({ buyer: { address: { line1: '12 Jalan Bukit', line2: null, city: 'Petaling Jaya', stateCode: '10' } } });
+  });
+
+  it('a reopened invoice is queued again', async () => {
+    const { sb, tables } = world();
+    await prepareInvoice(sb, CO, 'si-1');
+    await cancelOutbox(sb, CO, 'INVOICE', '2990SI-2611-001');
+    expect(await prepareInvoice(sb, CO, 'si-1')).toEqual({ status: 'READY', missing: [] });
+    expect(tables.acc_einvoice_outbox).toHaveLength(1);
+    expect(tables.acc_einvoice_outbox[0].status).toBe('READY');
+  });
+
+  it("a credit note's description is its reason, not the ledger's rewritten line, and fits 300 characters", async () => {
+    const { sb, tables } = world({
+      acc_credit_note_lines: [{ id: 'cnl-1', company_id: CO, note_id: 'cn-1', line_no: 1, description: 'Special discount — revenue given back', amount_sen: 600_000 }],
+    });
+    await prepareCreditNote(sb, CO, 'cn-1');
+    expect((tables.acc_einvoice_outbox[0].payload as any).lines[0].description).toBe('Special discount');
+    tables.acc_credit_notes[0].reason = 'r'.repeat(400);
+    expect(await prepareCreditNote(sb, CO, 'cn-1')).toEqual({ status: 'READY', missing: [] });
+    expect((tables.acc_einvoice_outbox[0].payload as any).lines[0].description).toHaveLength(300);
+  });
+});

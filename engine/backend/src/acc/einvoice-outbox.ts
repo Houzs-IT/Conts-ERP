@@ -7,11 +7,14 @@
 // Rows a connector has taken (SUBMITTED, VALID, REJECTED) are never touched
 // here. Nothing sends anything: the connector comes later (chew).
 //
+// The buyer's address comes from the customer account when it holds one (a renovation contract carries only two
+// address lines, and LHDN needs the state); otherwise from the document itself.
+//
 // Callers run this after posting and never let it undo or block a posting:
 // failures are logged by the caller and the next refresh catches up.
 // ----------------------------------------------------------------------------
 
-import { buildEInvoice, type EInvoiceBuyer, type EInvoiceDoc } from './einvoice-build';
+import { buildEInvoice, MAX_DESCRIPTION, type EInvoiceBuyer, type EInvoiceDoc } from './einvoice-build';
 import { loadEInvoiceSettings, type EInvoiceSettings } from './einvoice-settings';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
@@ -36,18 +39,24 @@ async function isRenovation(sb: Db, companyId: number, soDocNo: string | null): 
 
 async function debtorOf(sb: Db, companyId: number, code: string | null): Promise<Row | null> {
   if (!code) return null;
-  const { data, error } = await sb.from('debtors').select('name, phone, email, tin, id_type, id_number, sst_no').eq('company_id', companyId).eq('code', code).maybeSingle();
+  const { data, error } = await sb.from('debtors').select('name, phone, email, tin, id_type, id_number, sst_no, address, city, postcode, state, country').eq('company_id', companyId).eq('code', code).maybeSingle();
   if (error) fail('customer account', error);
   return (data as Row | null) ?? null;
 }
 
-const buyerOf = (debtor: Row | null, fallbackName: string | null, addr: Row): EInvoiceBuyer => ({
-  name: debtor?.name ?? fallbackName ?? '',
-  tin: debtor?.tin ?? null, idType: debtor?.id_type ?? null, idNumber: debtor?.id_number ?? null, sstNo: debtor?.sst_no ?? null,
-  address1: addr.address1 ?? null, address2: addr.address2 ?? null, city: addr.city ?? null, postcode: addr.postcode ?? null,
-  state: addr.state ?? addr.customer_state ?? null, country: addr.customer_country ?? null,
-  phone: addr.phone ?? debtor?.phone ?? null, email: addr.email ?? debtor?.email ?? null,
-});
+const pick = (...v: unknown[]): string | null => { for (const x of v) { const s = String(x ?? '').trim(); if (s) return s; } return null; };
+
+const buyerOf = (debtor: Row | null, fallbackName: string | null, addr: Row): EInvoiceBuyer => {
+  const own = pick(debtor?.address);
+  return {
+    name: pick(debtor?.name, fallbackName) ?? '',
+    tin: debtor?.tin ?? null, idType: debtor?.id_type ?? null, idNumber: debtor?.id_number ?? null, sstNo: debtor?.sst_no ?? null,
+    address1: own ?? pick(addr.address1), address2: own ? null : pick(addr.address2),
+    city: pick(debtor?.city, addr.city), postcode: pick(debtor?.postcode, addr.postcode),
+    state: pick(debtor?.state, addr.state, addr.customer_state), country: pick(debtor?.country, addr.customer_country),
+    phone: pick(addr.phone, debtor?.phone), email: pick(addr.email, debtor?.email),
+  };
+};
 
 /** Write the row unless a connector already holds it; returns the row's status after. */
 async function save(
@@ -58,7 +67,8 @@ async function save(
     .eq('company_id', companyId).eq('doc_kind', kind).eq('doc_number', doc.number).maybeSingle();
   if (error) fail('read', error);
   const existing = cur as { id: string; status: OutboxStatus } | null;
-  if (existing && !OPEN.includes(existing.status)) return { status: existing.status, missing: [] };
+  /* A connector's rows stay as they are; a CANCELLED row comes back when its document is posted again (reopened). */
+  if (existing && !OPEN.includes(existing.status) && existing.status !== 'CANCELLED') return { status: existing.status, missing: [] };
   const built = buildEInvoice(doc, buyer, s);
   const missing = built.ok ? [] : built.missing;
   const status: OutboxStatus = built.ok ? 'READY' : 'NOT_READY';
@@ -89,6 +99,8 @@ export async function prepareInvoice(sb: Db, companyId: number, salesInvoiceId: 
   return save(sb, companyId, 'INVOICE', doc, buyerOf(debtor, si.debtor_name ?? null, si), si.debtor_code ?? null, { sales_invoice_id: si.id }, s);
 }
 
+const capped = (s: string): string => { const t = s.trim(); return t.length > MAX_DESCRIPTION ? `${t.slice(0, MAX_DESCRIPTION - 1)}…` : t; };
+
 /** A renovation credit note's row; null when its order is not a renovation contract. It references the contract's
     live invoices dated on or before it (a contract credit is not tied to one invoice). */
 export async function prepareCreditNote(sb: Db, companyId: number, creditNoteId: string, settings?: EInvoiceSettings): Promise<Prepared> {
@@ -115,7 +127,8 @@ export async function prepareCreditNote(sb: Db, companyId: number, creditNoteId:
   const s = settings ?? await loadEInvoiceSettings(sb, companyId);
   const doc: EInvoiceDoc = {
     kind: 'CREDIT_NOTE', number: cn.note_number, date: noteDate,
-    description: String(((lines ?? []) as Row[])[0]?.description ?? cn.reason ?? ''), amountSen: Number(cn.total_sen), references,
+    /* The note's reason as it was raised: posting rewrites its lines with the ledger's own wording. */
+    description: capped(String(cn.reason ?? ((lines ?? []) as Row[])[0]?.description ?? '')), amountSen: Number(cn.total_sen), references,
   };
   const debtor = await debtorOf(sb, companyId, cn.party_code ?? null);
   return save(sb, companyId, 'CREDIT_NOTE', doc, buyerOf(debtor, cn.party_name ?? null, (so as Row | null) ?? {}), cn.party_code ?? null, { credit_note_id: cn.id }, s);

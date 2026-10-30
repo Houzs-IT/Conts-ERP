@@ -16,9 +16,10 @@ const pctOf = (bp: number): string => `${Number((bp / 100).toFixed(2))}%`;
 
 export function renderRenoDescription(tpl: string | null, v: { seq: number; pctBp: number; label: string; soDocNo: string }): string {
   const template = tpl && tpl.trim() ? tpl.trim() : DEFAULT_RENO_DESCRIPTION;
+  /* Replacer functions: a label holding $& or $' must stay as typed, not act as a replacement pattern. */
   const fill = (label: string) => template
-    .replace(/\{ordinal\}/g, ordinal(v.seq)).replace(/\{seq\}/g, String(v.seq)).replace(/\{pct\}/g, pctOf(v.pctBp))
-    .replace(/\{so\}/g, v.soDocNo).replace(/\{label\}/g, label)
+    .replace(/\{ordinal\}/g, () => ordinal(v.seq)).replace(/\{seq\}/g, () => String(v.seq)).replace(/\{pct\}/g, () => pctOf(v.pctBp))
+    .replace(/\{so\}/g, () => v.soDocNo).replace(/\{label\}/g, () => label)
     .replace(/\s+/g, ' ').replace(/\(\s/g, '(').replace(/\s\)/g, ')').trim();
   const label = v.label.trim();
   let out = fill(label);
