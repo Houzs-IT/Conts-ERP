@@ -411,7 +411,8 @@ async function checkOne(c: Ctx, companyId: number, it: Record<string, unknown>):
   }
   if (r.float_id) {
     const je = await postReceiptJournal(sb, companyId, { receiptNo: r.receipt_no, spendDate: String(r.spend_date).slice(0, 10), floatAccountCode: await floatAccountOf(sb, companyId, r.float_id),
-      lines: lines.map(l => ({ accountCode: String(l.account_code), amountSen: Number(l.amount_sen), department: l.department, description: l.description })) });
+      lines: lines.map(l => ({ accountCode: String(l.account_code), amountSen: Number(l.amount_sen), department: l.department, description: l.description,
+        projectId: l.project_id == null ? null : Number(l.project_id) })) });
     if (!je.ok) {
       await undo();
       return { id, ok: false, error: 'journal_failed', message: `${r.receipt_no}: ${(je as { reason?: string }).reason ?? je.status}` };

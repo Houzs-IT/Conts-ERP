@@ -8,7 +8,7 @@ import { type RuleLine } from '../acc/rules';
 import { loadLedgerSettings } from '../acc/ledger-settings';
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in acc/engine.ts */
 
-export interface ReceiptLineForJournal { accountCode: string; amountSen: number; department: string; description?: string | null }
+export interface ReceiptLineForJournal { accountCode: string; amountSen: number; department: string; description?: string | null; projectId?: number | null }
 
 /** The engine has no month close yet: a spend dated before the books start is booked on the start date. */
 async function bookingDate(sb: any, companyId: number, date: string): Promise<string> {
@@ -27,7 +27,7 @@ export async function postReceiptJournal(sb: any, companyId: number,
   if (!r.floatAccountCode) return NOT_SET;
   const total = r.lines.reduce((n, l) => n + l.amountSen, 0);
   const lines: RuleLine[] = [
-    ...r.lines.map(l => ({ accountCode: l.accountCode, debitSen: l.amountSen, creditSen: 0, department: dept(l.department), notes: l.description ?? undefined })),
+    ...r.lines.map(l => ({ accountCode: l.accountCode, debitSen: l.amountSen, creditSen: 0, department: dept(l.department), notes: l.description ?? undefined, projectId: l.projectId ?? null })),
     { accountCode: r.floatAccountCode, debitSen: 0, creditSen: total },
   ];
   return postJournal(sb, {

@@ -380,3 +380,27 @@ describe('departments on an AP invoice', () => {
     expect(sb.tables.ap_invoice_lines.map((l) => l.department)).toEqual(['supply', 'supply']);
   });
 });
+
+/* The project on each line (Conts, renovation completion %; plan 2026-10-31 Task 2): a subcontractor's bill names the
+   project its cost belongs to, and the posting carries it on the expense leg. */
+describe('projects on an AP invoice', () => {
+  test('a line keeps its project on the bill and on its expense leg; a line without one has none', async () => {
+    const { app, sb } = harness();
+    const created = await (await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [
+      { description: 'Tiling labour', debitAccountCode: '900-A001', amountSen: 50_000, projectId: 7 },
+      { description: 'Cleaning', debitAccountCode: '900-A002', amountSen: 2_000 },
+    ] })).json() as { invoice: Row };
+    expect(sb.tables.ap_invoice_lines.map((l) => l.project_id)).toEqual([7, null]);
+    expect((await json(app, `/ap-invoices/${created.invoice.id}/post`, 'POST')).status).toBe(200);
+    const je = sb.tables.journal_entries.find((j) => j.source_type === 'API')!;
+    expect(sb.tables.journal_entry_lines.filter((l) => l.journal_entry_id === je.id).map((l) => [l.account_code, l.project_id ?? null]))
+      .toEqual([['900-A001', 7], ['900-A002', null], ['405-0000', null]]);
+  });
+
+  test('a project that is not a number is refused', async () => {
+    const { app, sb } = harness();
+    const bad = await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '900-A001', amountSen: 100, projectId: 'skyline' }] });
+    expect(bad.status).toBe(400);
+    expect(sb.tables.ap_invoices).toHaveLength(0);
+  });
+});

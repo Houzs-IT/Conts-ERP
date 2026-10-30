@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
+import { useProjectOptions } from '../../conts/projectLimitQueries';
 import { X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
@@ -30,13 +31,15 @@ import { fmtSen } from '../../vendor/shared/format';
 import styles from './SalesOrderDetail.module.css';
 
 /* Conts: each line's department (finance phase 1, spec 3.5), required before saving. */
-export type ApFormLine = { rid: number; description: string; debitAccountCode: string; amountSen: number; department: Department | '' };
+/* Conts: and the project a cost belongs to (a renovation subcontractor's bill), blank for none — the renovation
+   completion % reads booked cost by project. */
+export type ApFormLine = { rid: number; description: string; debitAccountCode: string; amountSen: number; department: Department | ''; projectId?: number | null };
 export type ApFormValues = { supplierId: string; supplierRef: string; invoiceDate: string; dueDate: string; description: string; lines: ApFormLine[] };
 export type ApFormMode = 'new' | 'edit' | 'copy';
 /** What the routes take — POST / for new and copy, PATCH /:id for edit. */
 export type ApFormSubmit = {
   supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate: string | null; notes?: string;
-  lines: Array<{ description?: string; debitAccountCode: string; amountSen: number; department?: Department }>;
+  lines: Array<{ description?: string; debitAccountCode: string; amountSen: number; department?: Department; projectId?: number | null }>;
 };
 
 const myt = (): string => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
@@ -54,6 +57,7 @@ export const toSubmit = (v: ApFormValues): ApFormSubmit => ({
     .map((l) => ({
       ...(l.description.trim() ? { description: l.description.trim() } : {}),
       debitAccountCode: l.debitAccountCode, amountSen: l.amountSen, ...(l.department ? { department: l.department } : {}),
+      projectId: l.projectId ?? null,
     })),
 });
 
@@ -123,6 +127,7 @@ export const ApInvoiceForm = ({
   onCancel: () => void;
 }) => {
   const [v, setV] = useState<ApFormValues>(initial);
+  const projects = useProjectOptions();
   const set = (patch: Partial<ApFormValues>) => setV((prev) => ({ ...prev, ...patch }));
   const patchLine = (rid: number, patch: Partial<ApFormLine>) =>
     setV((prev) => ({ ...prev, lines: prev.lines.map((l) => (l.rid === rid ? { ...l, ...patch } : l)) }));
@@ -270,6 +275,7 @@ export const ApInvoiceForm = ({
             <th style={th}>Description</th>
             <th style={{ ...th, textAlign: 'right', width: 150 }}>Amount (RM)</th>
             <th style={{ ...th, width: 150 }}>Department</th>
+            <th style={{ ...th, width: 180 }}>Project</th>
             <th style={{ ...th, width: 36 }} />
           </tr>
         </thead>
@@ -293,6 +299,14 @@ export const ApInvoiceForm = ({
               <td style={td}>
                 <DepartmentSelect className={styles.fieldInput} style={{ width: '100%' }} label={`line ${l.rid} department`} blank="Choose…"
                   value={l.department} onChange={(dep) => patchLine(l.rid, { department: dep })} />
+              </td>
+              <td style={td}>
+                <select className={styles.fieldInput} style={{ width: '100%' }} aria-label={`line ${l.rid} project`}
+                  value={l.projectId == null ? '' : String(l.projectId)}
+                  onChange={(e) => patchLine(l.rid, { projectId: e.target.value ? Number(e.target.value) : null })}>
+                  <option value="">No project</option>
+                  {(projects.data?.projects ?? []).map((p) => <option key={p.id} value={p.id}>{p.code ? `${p.code} · ` : ''}{p.name}</option>)}
+                </select>
               </td>
               <td style={td}>
                 {v.lines.length > 1 && (

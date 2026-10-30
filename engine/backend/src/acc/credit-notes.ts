@@ -24,6 +24,7 @@ import { docMonthTag, mintMonthlyDocNo } from '../scm/lib/doc-no';
 import { todayMyt } from '../scm/lib/my-time';
 import { postRenovationCredit, releaseRenovationCredit, renovationCreditKind } from './reno-ledger';
 import { cancelAfterReversal, prepareAfterPosting } from './einvoice-outbox';
+import { projectOfPurchaseInvoice } from '../conts/project-limit';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
 type Db = any;
@@ -150,7 +151,7 @@ export async function postCreditNote(
   }
   const ruleLines = kind === 'CN' ? creditNoteLines(roles, { note_number: String(note.note_number) }, party, lines)
     : kind === 'DN' ? debitNoteLines(roles, { note_number: String(note.note_number) }, party, lines)
-    : supplierCreditNoteLines(roles, { note_number: String(note.note_number) }, party, lines);
+    : supplierCreditNoteLines(roles, { note_number: String(note.note_number) }, party, lines, kind === 'SCN' ? await scnProject(sb, p.companyId, note) : null);
   const je = await postJournal(sb, {
     companyId: p.companyId,
     entryDate: String(note.note_date),
@@ -161,6 +162,21 @@ export async function postCreditNote(
   });
   if (!je.ok) return { ok: false, status: je.status, reason: (je as { reason?: string }).reason ?? je.status };
   return markPosted(sb, p, je.jeNo, je.status === 'already_posted' ? 'already_posted' : 'posted');
+}
+
+/** The project a supplier credit note gives cost back to: its purchase invoice's (through the PO or GRN), or its AP
+    invoice's when that bill's lines name one project. */
+async function scnProject(sb: Db, companyId: number, note: Row): Promise<number | null> {
+  if (note.ap_invoice_id) {
+    const { data, error } = await sb.from('ap_invoice_lines').select('project_id').eq('company_id', companyId).eq('invoice_id', note.ap_invoice_id);
+    if (error) return null;
+    const ids = [...new Set(((data ?? []) as Array<{ project_id: number | null }>).map((l) => l.project_id).filter((p) => p != null))];
+    return ids.length === 1 ? Number(ids[0]) : null;
+  }
+  if (!note.purchase_invoice_id) return null;
+  const { data, error } = await sb.from('purchase_invoices').select('purchase_order_id, grn_id').eq('company_id', companyId).eq('id', note.purchase_invoice_id).maybeSingle();
+  if (error || !data) return null;
+  return projectOfPurchaseInvoice(sb, companyId, data as { purchase_order_id?: string | null; grn_id?: string | null });
 }
 
 /** A DRAFT note whose journal is posted becomes POSTED. */
