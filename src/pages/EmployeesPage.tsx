@@ -99,7 +99,7 @@ export default function EmployeesPage({ dreamCrafter = false }: EmployeesPagePro
   else if (dreamCrafter && (tab === 'attendance' || tab === 'punch-sites')) body = <DcHrEmptyTab page={tab} />;
   else if (dreamCrafter) {
     body = <EmptyState icon="Users" title="Not set up for Dream Crafter yet"
-      body="Dream Crafter clock-in and payroll are not built yet, so this stays empty. Add staff on Staff > Employee Master." />;
+      body="Dream Crafter clock-in and payroll are not built yet, so this is empty for now. Add staff on Staff > Employee Master." />;
   }
   else if (tab === 'working-hours') body = <WorkingHoursTab />;
   else if (tab === 'attendance') body = <AttendanceTab />;
