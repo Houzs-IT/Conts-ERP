@@ -125,13 +125,28 @@ export const PerformanceTab = () => {
             </thead>
             <tbody>
               {r.groups.map((g) => (
-                <tr key={g.key} data-group={g.key}>
-                  <td style={td}>{g.label}<span style={soft}> · {g.lines} {g.lines === 1 ? 'line' : 'lines'}</span></td>
+                <Fragment key={g.key}>
+                <tr data-group={g.key}>
+                  <td style={td}>{g.label}<span style={soft}> · {g.lines} {g.key === 'renovation' ? (g.lines === 1 ? 'contract' : 'contracts') : g.lines === 1 ? 'line' : 'lines'}</span></td>
                   <td style={{ ...td, ...num }}>{fmtPerf(g.salesSen)}</td>
                   <td style={{ ...td, ...num }}>{fmtPerf(g.cogsSen)}</td>
                   <td style={{ ...td, ...num, color: g.gpSen < 0 ? danger : undefined }}>{fmtPerf(g.gpSen)}</td>
                   <td style={{ ...td, ...num }}>{fmtPerfPct(g.gpPct)}</td>
                 </tr>
+                {/* Memo (SOP 4.2.1): the books follow the invoices; the row above is the work done. */}
+                {g.key === 'renovation' && r.renovation && (
+                  <>
+                    <tr data-memo="invoiced" style={soft}>
+                      <td style={{ ...td, paddingLeft: 24 }}>Invoiced (books)</td>
+                      <td style={{ ...td, ...num }}>{fmtPerf(r.renovation.invoicedSen)}</td><td style={td} /><td style={td} /><td style={td} />
+                    </tr>
+                    <tr data-memo="difference" style={soft}>
+                      <td style={{ ...td, paddingLeft: 24 }}>Difference (invoiced − earned)</td>
+                      <td style={{ ...td, ...num }}>{fmtPerf(r.renovation.differenceSen)}</td><td style={td} /><td style={td} /><td style={td} />
+                    </tr>
+                  </>
+                )}
+                </Fragment>
               ))}
               <tr style={{ fontWeight: 700, borderTop: '2px solid var(--c-ink, #221f20)' }}>
                 <td style={td}>Total<span style={{ ...soft, fontWeight: 400 }}> · {r.orders.counted} orders, {r.orders.notDelivered} not yet delivered</span></td>

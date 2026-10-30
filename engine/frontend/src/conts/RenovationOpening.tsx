@@ -125,7 +125,7 @@ export function RenovationOpening({ canSave, ledgerStartDate }: { canSave: boole
                   <thead style={{ position: "sticky", top: 0, background: "var(--bg)" }}>
                     <tr style={{ textAlign: "left", color: MUTED }}>
                       <th style={cell}>SO</th><th style={cell}>Customer</th><th style={cell}>Advance</th>
-                      <th style={{ ...num, fontWeight: 400 }}>Contract (RM)</th><th style={{ ...num, fontWeight: 400 }}>Invoiced before (RM)</th>
+                      <th style={{ ...num, fontWeight: 400 }}>Contract (RM)</th><th style={{ ...num, fontWeight: 400 }}>Invoiced before (RM)</th><th style={{ ...num, fontWeight: 400 }}>Cost before (RM)</th>
                       <th style={cell}>Problem</th>
                     </tr>
                   </thead>
@@ -138,6 +138,7 @@ export function RenovationOpening({ canSave, ledgerStartDate }: { canSave: boole
                         <td style={cell}>{r.advanceAccountCode}<span style={{ color: MUTED }}>{changed(r.current?.advanceAccountCode, r.advanceAccountCode)}</span></td>
                         <td style={num}>{r.contractSen == null ? "—" : rm(r.contractSen)}</td>
                         <td style={num}>{rm(r.billedBeforeGoLiveSen)}</td>
+                        <td style={num}>{r.costBeforeGoLiveSen == null ? (r.current?.costBeforeGoLiveSen == null ? "—" : `${rm(r.current.costBeforeGoLiveSen)} (kept)`) : rm(r.costBeforeGoLiveSen)}</td>
                         <td style={{ ...cell, color: BAD }}>{r.problems.join(" ")}</td>
                       </tr>
                     ))}

@@ -182,7 +182,7 @@ export function costGroupOfItemGroup(itemGroup: string | null | undefined): Cost
 }
 
 /** The Performance P&L's group → the cost group (its cost is the Spend measure). */
-export function costGroupOfPerformance(key: PerformanceGroupKey): CostGroupKey | null {
+export function costGroupOfPerformance(key: PerformanceGroupKey | 'renovation'): CostGroupKey | null {
   switch (key) {
     case 'sofa': return 'sofa';
     case 'mattress': case 'bedframe': return 'bedding';
@@ -259,7 +259,7 @@ export function compareGroupOfItemGroup(itemGroup: string | null | undefined): C
 }
 
 /** The Performance P&L's group → the compare group. */
-export function compareGroupOfPerformance(key: PerformanceGroupKey): CompareGroupKey {
+export function compareGroupOfPerformance(key: PerformanceGroupKey | 'renovation'): CompareGroupKey {
   switch (key) {
     case 'sofa': return 'sofa';
     case 'mattress': case 'bedframe': return 'bedding';
