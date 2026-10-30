@@ -234,10 +234,11 @@ export function nextInstalmentAmount(p: NextInstalmentInput): NextInstalmentResu
   return { cumBp, targetSen, amountSen: targetSen - p.billedSen, isLast };
 }
 
-/** Amounts for every instalment as if nothing changes from here on. */
-export function instalmentPreview(instalments: InstalmentPct[], revisedContractSen: number, billed: ReadonlyMap<number, number>): Array<{ seq: number; amountSen: number; billed: boolean }> {
+/** Amounts for every instalment as if nothing changes from here on. `creditedSen`: what contract credit notes took
+    back (they lower the revised contract and what is billed, so later instalments are worked out net). */
+export function instalmentPreview(instalments: InstalmentPct[], revisedContractSen: number, billed: ReadonlyMap<number, number>, creditedSen = 0): Array<{ seq: number; amountSen: number; billed: boolean }> {
   const rows = [...instalments].sort((a, b) => a.seq - b.seq);
-  let billedSen = 0;
+  let billedSen = -creditedSen;
   const out: Array<{ seq: number; amountSen: number; billed: boolean }> = [];
   for (const r of rows) {
     const done = billed.get(r.seq);

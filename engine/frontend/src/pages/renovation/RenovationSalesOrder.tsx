@@ -93,6 +93,62 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
   );
 }
 
+/** Finance: a credit note that lowers the contract (a special discount, less work, a refund). Never more than is
+    invoiced so far; later instalments are worked out on the lower contract. */
+function CreditDialog({ c, open, onClose }: { c: ContractView; open: boolean; onClose: () => void }) {
+  const [date, setDate] = useState(todayIso());
+  const [amount, setAmount] = useState<number | null>(null);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ noteNumber: string; amountSen: number; posting: { status: string; reason?: string } }>(
+    `/sales-orders/${encodeURIComponent(c.docNo)}/credit`, 'POST', body));
+  useEffect(() => { if (open) { setDate(todayIso()); setAmount(null); setReason(''); setError(null); setResult(null); } }, [open]);
+  if (!open) return null;
+  const billed = c.billing.billedSen;
+  const tooMuch = amount !== null && amount > billed;
+  const submit = async () => {
+    setError(null);
+    try {
+      const r = await run.mutateAsync({ amountSen: amount, reason, noteDate: date });
+      const posted = r.posting.status === 'posted' || r.posting.status === 'already_posted' ? 'journal posted' : `journal not posted yet (${r.posting.reason ?? r.posting.status})`;
+      setResult([`Credit note ${r.noteNumber}`, rm(r.amountSen), posted].join(' · '));
+    } catch (e) { setError(refusalOf(e).message); }
+  };
+  return (
+    <ModalOverlay open onClose={onClose} title="Credit note" icon={<ReceiptText size={16} />}
+      footer={result
+        ? <div className="flex w-full justify-end"><Button onClick={onClose}>Done</Button></div>
+        : (
+          <div className="flex w-full justify-end gap-2">
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button variant="danger" disabled={run.isPending || !amount || amount <= 0 || tooMuch || !reason.trim()} onClick={submit}>
+              {run.isPending ? 'Raising…' : `Raise credit note${amount ? ` ${rm(amount)}` : ''}`}
+            </Button>
+          </div>
+        )}>
+      <div className="space-y-3 text-[13px]">
+        <div className="rounded-lg bg-surface-2 p-3">
+          <div className="flex justify-between"><span className="text-ink-secondary">Revised contract</span><span className="tabular-nums">{rm(c.billing.revisedContractSen)}</span></div>
+          <div className="flex justify-between"><span className="text-ink-secondary">Invoiced so far (net)</span><span className="font-semibold tabular-nums">{rm(billed)}</span></div>
+        </div>
+        <p className="text-ink-secondary">The credit lowers revenue, what the customer owes and the contract. Later instalments are worked out on the lower contract.</p>
+        {!result && (
+          <>
+            <Field label="Amount (RM)" hint={tooMuch ? `No more than ${rm(billed)}: only what is invoiced can be credited.` : undefined}>
+              <MoneyInput nullable value={amount} onChange={setAmount} className={inputCls} ariaLabel="Credit amount" />
+            </Field>
+            <Field label="Reason"><input className={inputCls} value={reason} maxLength={200} placeholder="e.g. Special discount, deposit refund" onChange={(e) => setReason(e.target.value)} /></Field>
+            <Field label="Credit note date"><input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+          </>
+        )}
+        {result && <div className="rounded bg-synced-bg px-3 py-2 font-semibold text-synced">{result}</div>}
+        <ErrorBanner error={error} />
+      </div>
+    </ModalOverlay>
+  );
+}
+
 function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
   const [open, setOpen] = useState(false);
   const preview = usePoSplit(c.docNo, open);
@@ -246,7 +302,9 @@ function ContractPostingAction({ docNo }: { docNo: string }) {
       if (warning) toast.warning(warning); else toast.success('Contract posted.');
     } catch (e) { toast.warning(contractPostingWarning({ status: 'post_failed', reason: refusalOf(e).message }) ?? refusalOf(e).message); }
   };
-  const gap = 'contractSen' in s ? `Ledger ${rm(s.postedSen)} of ${rm(s.contractSen)}` : `Not posted: ${s.reason}`;
+  const gap = !('contractSen' in s) ? `Not posted: ${s.reason}`
+    : s.uncleared ? `Cancelled: ${rm(s.uncleared)} of advance not cleared`
+    : `Ledger ${rm(s.postedSen)} of ${rm(s.contractSen)}`;
   return (
     <div className="flex items-center gap-2">
       <span className="text-[12px] text-warning-text">{gap}</span>
@@ -264,6 +322,7 @@ export function RenovationSalesOrder() {
   const { can } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [billing, setBilling] = useState<BillingInstalment | null>(null);
+  const [crediting, setCrediting] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
   if (c.isLoading || !c.data) return <div className="p-8 text-center text-[13px] text-ink-muted">{c.error ? refusalOf(c.error).message : 'Loading contract…'}</div>;
@@ -275,7 +334,11 @@ export function RenovationSalesOrder() {
   const setStatus = async (to: string, label: string, danger?: boolean) => {
     if (!(await serviceConfirm({ title: `${label}?`, danger }))) return;
     setError(null);
-    try { await run.mutateAsync(() => renoSend(`/sales-orders/${encodeURIComponent(k.docNo)}/status`, 'POST', { status: to })); } catch (e) { setError(refusalOf(e).message); }
+    try {
+      const r = await run.mutateAsync(() => renoSend<{ status: string; posting?: ContractPosting }>(`/sales-orders/${encodeURIComponent(k.docNo)}/status`, 'POST', { status: to })) as { posting?: ContractPosting };
+      const warning = contractPostingWarning(r.posting);
+      if (warning) setError(warning);
+    } catch (e) { setError(refusalOf(e).message); }
   };
   const newVo = async () => {
     setError(null);
@@ -316,7 +379,14 @@ export function RenovationSalesOrder() {
         <Stat label="Received" value={rm(b.receivedSen)} tone="ok" />
         <Stat label="To bill" value={rm(b.revisedContractSen - b.billedSen)} />
       </div>
-      <Card title="Progress billing" dense actions={<ContractPostingAction docNo={k.docNo} />}>
+      <Card title="Progress billing" dense actions={(
+        <div className="flex flex-wrap items-center gap-2">
+          <ContractPostingAction docNo={k.docNo} />
+          {live && can('scm.renovation.bill') && can('scm.payment_voucher.post') && b.billedSen > 0 && (
+            <Button variant="secondary" className="h-8" icon={<ReceiptText size={14} />} onClick={() => setCrediting(true)}>Credit note</Button>
+          )}
+        </div>
+      )}>
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[720px] text-left text-[12.5px]">
             <thead className="bg-surface-2 text-[10.5px] uppercase tracking-wide text-ink-muted">
@@ -355,6 +425,23 @@ export function RenovationSalesOrder() {
             </li>
           ))}
         </ul>
+        {b.credits.length > 0 && (
+          <div className="border-t border-border-subtle px-3 py-2 text-[12.5px]">
+            <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted">Credit notes on the contract · {rm(b.creditedSen)}</div>
+            <ul className="divide-y divide-border-subtle">
+              {b.credits.map((cr, i) => (
+                <li key={cr.creditNoteId ?? i} className="flex items-start justify-between gap-3 py-1.5">
+                  <span className="min-w-0">
+                    <Link className="font-semibold text-primary" to="/scm/credit-notes">{cr.noteNumber ?? 'Credit note'}</Link>
+                    <span className="text-ink-secondary"> · {cr.noteDate ? fmtDate(cr.noteDate) : ''}{cr.reason ? ` · ${cr.reason}` : ''}</span>
+                    {cr.noteStatus === 'DRAFT' && <span className="ml-1 text-warning-text">(not posted yet)</span>}
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums text-err">−{rm(cr.amountSen)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </Card>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card title="Variation orders" actions={live && can('scm.renovation.quote') ? <Button variant="secondary" icon={<FilePlus2 size={15} />} onClick={newVo}>New VO</Button> : null}>
@@ -386,6 +473,7 @@ export function RenovationSalesOrder() {
       <LinesCard c={k} canEdit={live && can('scm.renovation.po_split')} filesEditable={k.status !== 'CANCELLED'} />
       <DocAttachments docType="sales_order" docId={k.docNo} canEdit={k.status !== 'CANCELLED'} />
       <BillDialog c={k} inst={billing} onClose={() => setBilling(null)} />
+      <CreditDialog c={k} open={crediting} onClose={() => setCrediting(false)} />
       <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="sales order" docNo={k.docNo} defaultFormat={k.header.printFormat}
         build={(format) => buildPrintDoc({ kind: 'SALES_ORDER', docNo: k.docNo, format, brand, header: { ...k.header, customerName: k.header.customerName || k.debtorName, docDate: k.header.docDate ?? k.soDate /* eslint-disable-line @typescript-eslint/no-unnecessary-condition -- doc_date may be null on older SOs; fall back to the SO date */ }, sections: k.sections, instalments: k.instalments })} />
     </div>

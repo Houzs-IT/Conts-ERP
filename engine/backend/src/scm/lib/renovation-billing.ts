@@ -8,13 +8,20 @@
    billInstalment bills the lowest unbilled instalment:
      amount = cumulative % x revised contract sum - already billed
    positive -> a sales invoice from the SO (one RENO-PROGRESS line, item group
-   RENOVATION) with revenue posted after commit; negative -> a credit note to the
-   RENOVATION group's sales-return account, only once the caller confirms it;
-   zero -> the instalment closes with no document. The caller sends the amount it
-   showed; if a VO moved it meanwhile the bill is refused (409) with the new one. */
+   RENOVATION) with revenue posted after commit; negative -> a credit note, only
+   once the caller confirms it, posted after commit as a renovation credit (revenue
+   given back by the waterfall into the advance, acc/reno-ledger); zero -> the
+   instalment closes with no document. The caller sends the amount it showed; if a
+   VO moved it meanwhile the bill is refused (409) with the new one.
+
+   creditContract (finance, spec 7.1) raises a credit note that lowers the contract:
+   a RENO-CREDIT row of minus its amount on the SO (later instalments are worked out
+   on the lower total) and a scm.reno_contract_credits row; its journal posts after
+   commit (Dr revenue / Cr the customer). It never credits more than is invoiced net.
+   billedSen counts contract credits net. */
 
 import { auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb, type UnsafeRunner, renoDbOf } from './renovation-db';
-import { readContractHead, RENO_LIVE_STATUSES } from './renovation-so';
+import { readContractHead, recomputeSoHeader, RENO_LIVE_STATUSES } from './renovation-so';
 import type { RenoActor } from './renovation-quotation';
 import { instalmentPreview, nextInstalmentAmount } from '../shared/renovation-money';
 import { fmtSen } from '../shared/format';
@@ -32,9 +39,16 @@ export interface BillingInstalment {
   amountSen: number;
 }
 
+/** A credit note that lowered the contract (creditContract). */
+export interface ContractCredit {
+  creditNoteId: string | null; noteNumber: string | null; amountSen: number; noteDate: string | null; reason: string | null; noteStatus: string | null;
+}
+
 export interface BillingView {
   soDocNo: string; status: string; originalContractSen: number; revisedContractSen: number; voTotalSen: number;
-  billedSen: number; receivedSen: number; nextSeq: number | null; instalments: BillingInstalment[];
+  /** Net of contract credits. */
+  billedSen: number; creditedSen: number; credits: ContractCredit[];
+  receivedSen: number; nextSeq: number | null; instalments: BillingInstalment[];
 }
 
 export async function billingView(runner: RenoDb | UnsafeRunner, soDocNo: string, companyId?: number): Promise<BillingView> {
@@ -77,17 +91,30 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
       where b.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) order by b.so_doc_no, b.seq`,
     [docsJson],
   );
+  const creditRows = await db.q<{ so_doc_no: string; credit_note_id: string | null; note_number: string | null; amount_sen: number; note_date: string | null; reason: string | null; cn_status: string | null }>(
+    `select cc.so_doc_no, cc.credit_note_id, cc.note_number, cc.amount_sen, cn.note_date::text as note_date, cn.reason, cn.status as cn_status
+       from scm.reno_contract_credits cc
+       left join scm.acc_credit_notes cn on cn.id = cc.credit_note_id
+      where cc.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) and coalesce(cn.status, '') <> 'CANCELLED'
+      order by cc.so_doc_no, cc.created_at`,
+    [docsJson],
+  );
   for (const so of sos) {
     const instalments = instRows
       .filter((r) => r.so_doc_no === so.doc_no)
       .map((r) => ({ id: r.id, seq: Number(r.seq), label: r.label, pctBp: Number(r.pct_bp), description: r.description, stageCode: r.stage_code, trigger: r.trigger }));
     const soBills = bills.filter((b) => b.so_doc_no === so.doc_no);
-    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills));
+    const credits: ContractCredit[] = creditRows.filter((r) => r.so_doc_no === so.doc_no).map((r) => ({
+      creditNoteId: r.credit_note_id, noteNumber: r.note_number, amountSen: Number(r.amount_sen), noteDate: r.note_date, reason: r.reason, noteStatus: r.cn_status,
+    }));
+    const creditedSen = credits.reduce((s, c) => s + c.amountSen, 0);
+    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits));
   }
   return out;
 }
 
-function assembleView(
+/** Exported for tests. `creditedSen` (contract credit notes) comes off what is billed. */
+export function assembleView(
   soDocNo: string,
   status: string,
   originalContractSen: number | null,
@@ -97,6 +124,8 @@ function assembleView(
     instalment_id: string; seq: number; kind: BillRow['kind']; amount_sen: number; invoice_date: string; invoice_number: string | null;
     sales_invoice_id: string | null; note_number: string | null; credit_note_id: string | null; paid_sen: number | null; si_status: string | null; cn_status: string | null;
   }>,
+  creditedSen = 0,
+  credits: ContractCredit[] = [],
 ): BillingView {
   const billByInst = new Map(bills.map((b) => [b.instalment_id, b]));
   const billedMap = new Map<number, number>();
@@ -104,7 +133,7 @@ function assembleView(
     const b = billByInst.get(i.id);
     if (b) billedMap.set(i.seq, Number(b.amount_sen));
   }
-  const preview = instalmentPreview(instalments.map((i) => ({ seq: i.seq, pctBp: i.pctBp })), revised, billedMap);
+  const preview = instalmentPreview(instalments.map((i) => ({ seq: i.seq, pctBp: i.pctBp })), revised, billedMap, creditedSen);
   const nextSeq = instalments.find((i) => !billByInst.has(i.id))?.seq ?? null;
   let cum = 0;
   const rows: BillingInstalment[] = instalments.map((i) => {
@@ -121,12 +150,12 @@ function assembleView(
       } : null,
     };
   });
-  const billedSen = bills.reduce((s, b) => s + Number(b.amount_sen), 0);
+  const billedSen = bills.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen;
   const receivedSen = bills.reduce((s, b) => s + (b.kind === 'INVOICE' ? Number(b.paid_sen ?? 0) : 0), 0);
   const original = originalContractSen === null ? revised : Number(originalContractSen);
   return {
     soDocNo, status, originalContractSen: original, revisedContractSen: revised, voTotalSen: revised - original,
-    billedSen, receivedSen, nextSeq, instalments: rows,
+    billedSen, creditedSen, credits, receivedSen, nextSeq, instalments: rows,
   };
 }
 
@@ -192,13 +221,9 @@ export async function billInstalment(
       throw refuse(409, 'credit_note_needs_confirm', `This instalment comes to ${fmtSen(n.amountSen)}: the contract is over-billed. Confirm to raise a credit note.`,
         { amountSen: n.amountSen });
     }
-    const [acct] = await db.q<{ sales_return_account: string }>(
-      `select sales_return_account from scm.acc_item_group_accounts where company_id = $1 and group_code = 'RENOVATION'`,
-      [actor.companyId],
-    );
-    if (!acct?.sales_return_account) {
-      throw refuse(409, 'group_unbound', 'The RENOVATION item group has no sales-return account yet. Bind it on Accounting > Item Groups, then bill again.');
-    }
+    /* The note's line names the advance account for now; posting spreads it over revenue by the waterfall and
+       rewrites the line to the accounts it went to (acc/reno-ledger postRenovationCredit). */
+    const advance = await advanceAccountOf(db, soDocNo);
     const noteNumber = await mintDocNo(db, 'acc_credit_notes', 'note_number', `${actor.docPrefix}CN-${yymmOf(invoiceDate)}`);
     const [cn] = await db.q<{ id: string }>(
       `insert into scm.acc_credit_notes (company_id, note_number, kind, party_type, party_code, party_name, so_doc_no, source_doc_no, note_date,
@@ -208,7 +233,7 @@ export async function billInstalment(
     );
     await db.q(
       `insert into scm.acc_credit_note_lines (company_id, note_id, line_no, description, account_code, amount_sen) values ($1, $2, 1, $3, $4, $5)`,
-      [actor.companyId, cn.id, `Progress billing credit: ${label}`, acct.sales_return_account, -n.amountSen],
+      [actor.companyId, cn.id, `Progress billing credit: ${label}`, advance, -n.amountSen],
     );
     result = { kind: 'CREDIT_NOTE', amountSen: n.amountSen, noteNumber, creditNoteId: cn.id };
   } else {
@@ -226,4 +251,86 @@ export async function billInstalment(
     note: `Instalment ${inst.seq}: ${result.kind === 'INVOICE' ? result.invoiceNumber : result.kind === 'CREDIT_NOTE' ? result.noteNumber : 'nothing to bill'} ${fmtSen(result.amountSen)}`,
   });
   return result;
+}
+
+async function advanceAccountOf(db: RenoDb, soDocNo: string): Promise<string> {
+  const [c] = await db.q<{ advance_account_code: string | null }>(`select advance_account_code from scm.reno_so_contracts where so_doc_no = $1`, [soDocNo]);
+  const code = String(c?.advance_account_code ?? '').trim();
+  if (!code) throw refuse(409, 'no_advance_account', `Contract ${soDocNo} has no advance account yet. Finance sets it first, then try again.`);
+  return code;
+}
+
+/** What the contract has invoiced, net: issued invoices + what AutoCount invoiced before go-live − contract credits −
+    negative instalments (cancelled documents left out). */
+export async function netBilledSql(db: RenoDb, soDocNo: string): Promise<number> {
+  const [r] = await db.q<{ net_billed_sen: number | string | null }>(
+    `select (
+        coalesce((select sum(si.total_sen) from scm.sales_invoices si
+                   where si.so_doc_no = $1 and si.status::text not in ('DRAFT', 'CANCELLED')), 0)
+      + coalesce((select c.billed_before_golive_sen from scm.reno_so_contracts c where c.so_doc_no = $1), 0)
+      - coalesce((select sum(cc.amount_sen) from scm.reno_contract_credits cc
+                    left join scm.acc_credit_notes cn on cn.id = cc.credit_note_id
+                   where cc.so_doc_no = $1 and coalesce(cn.status, '') <> 'CANCELLED'), 0)
+      - coalesce((select sum(-b.amount_sen) from scm.reno_instalment_bills b
+                    left join scm.acc_credit_notes cn on cn.id = b.credit_note_id
+                   where b.so_doc_no = $1 and b.kind = 'CREDIT_NOTE' and coalesce(cn.status, '') <> 'CANCELLED'), 0)
+      )::bigint as net_billed_sen`,
+    [soDocNo],
+  );
+  return Number(r?.net_billed_sen ?? 0);
+}
+
+export interface CreditResult { noteNumber: string; creditNoteId: string; amountSen: number }
+
+/** A credit note that lowers the contract (see the header): a special discount, less work, a refund. */
+export async function creditContract(
+  db: RenoDb,
+  actor: RenoActor,
+  soDocNo: string,
+  body: { amountSen: number; reason: string; noteDate?: string | null },
+): Promise<CreditResult> {
+  const amountSen = Number(body.amountSen);
+  if (!Number.isSafeInteger(amountSen) || amountSen <= 0) throw refuse(400, 'invalid_amount', 'The credit must be an amount above zero.');
+  const reason = String(body.reason ?? '').trim();
+  if (!reason) throw refuse(400, 'reason_required', 'Say why the contract is credited (for example a special discount or a refund).');
+  const head = await readContractHead(db, soDocNo, actor.companyId, true);
+  if (!(RENO_LIVE_STATUSES as readonly string[]).includes(head.status)) throw refuse(409, 'contract_not_live', `A ${head.status} contract cannot be credited.`);
+  const net = await netBilledSql(db, soDocNo);
+  if (amountSen > net) {
+    throw refuse(409, 'credit_exceeds_billed',
+      `A credit note of ${fmtSen(amountSen)} is more than ${soDocNo} has invoiced so far (${fmtSen(net)}, net of earlier credits). Invoice first, or credit less.`,
+      { netBilledSen: net });
+  }
+  if (!head.debtorCode) throw refuse(409, 'no_customer_account', `Contract ${soDocNo} names no customer account. Set it, then try again.`);
+  const advance = await advanceAccountOf(db, soDocNo);
+  const noteDate = body.noteDate || todayKl();
+  const noteNumber = await mintDocNo(db, 'acc_credit_notes', 'note_number', `${actor.docPrefix}CN-${yymmOf(noteDate)}`);
+  const [cn] = await db.q<{ id: string }>(
+    `insert into scm.acc_credit_notes (company_id, note_number, kind, party_type, party_code, party_name, so_doc_no, source_doc_no, note_date,
+        total_sen, reason, status, created_by)
+     values ($1, $2, 'CN', 'CUSTOMER', $3, $4, $5, $5, $6::date, $7, $8, 'DRAFT', $9) returning id`,
+    [actor.companyId, noteNumber, head.debtorCode, head.debtorName, soDocNo, noteDate, amountSen, reason, actor.name],
+  );
+  await db.q(
+    `insert into scm.acc_credit_note_lines (company_id, note_id, line_no, description, account_code, amount_sen) values ($1, $2, 1, $3, $4, $5)`,
+    [actor.companyId, cn.id, reason, advance, amountSen],
+  );
+  /* The contract comes down by the credit: one RENO-CREDIT row of minus its amount, sharing its id with the credit
+     record so a cancelled note can find and cancel it. */
+  const creditId = crypto.randomUUID();
+  const [max] = await db.q<{ n: number | null }>(`select max(line_no) as n from scm.mfg_sales_order_items where doc_no = $1`, [soDocNo]);
+  await db.q(
+    `insert into scm.mfg_sales_order_items (id, doc_no, line_date, debtor_name, item_group, item_code, description, uom, location,
+        qty, unit_price_sen, discount_sen, total_sen, total_inc_sen, balance_sen, unit_cost_sen, line_cost_sen, line_margin_sen, line_no, company_id)
+     values ($1, $2, $3::date, $4, 'RENOVATION', 'RENO-CREDIT', $5, 'LOT', '', 1, $6, 0, $6, $6, $6, 0, 0, $6, $7, $8)`,
+    [creditId, soDocNo, noteDate, head.debtorName, `Credit note ${noteNumber}: ${reason}`, -amountSen, Number(max?.n ?? 0) + 1, actor.companyId],
+  );
+  await db.q(
+    `insert into scm.reno_contract_credits (id, company_id, so_doc_no, credit_note_id, note_number, amount_sen, created_by)
+     values ($1, $2, $3, $4, $5, $6, $7)`,
+    [creditId, actor.companyId, soDocNo, cn.id, noteNumber, amountSen, actor.name],
+  );
+  await recomputeSoHeader(db, soDocNo);
+  await auditSo(db, { companyId: actor.companyId, docNo: soDocNo, action: 'CREDIT_CONTRACT', actorName: actor.name, note: `${noteNumber} ${fmtSen(amountSen)}: ${reason}` });
+  return { noteNumber, creditNoteId: cn.id, amountSen };
 }

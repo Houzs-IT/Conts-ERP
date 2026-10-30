@@ -139,9 +139,16 @@ export interface BillingInstalment extends Instalment {
   id: string; cumBp: number; bill: BillRow | null; isNext: boolean; amountSen: number;
 }
 
+/** A credit note that lowered the contract. */
+export interface ContractCredit {
+  creditNoteId: string | null; noteNumber: string | null; amountSen: number; noteDate: string | null; reason: string | null; noteStatus: string | null;
+}
+
 export interface BillingView {
   soDocNo: string; status: string; originalContractSen: number; revisedContractSen: number; voTotalSen: number;
-  billedSen: number; receivedSen: number; nextSeq: number | null; instalments: BillingInstalment[];
+  /** Net of contract credit notes. */
+  billedSen: number; creditedSen: number; credits: ContractCredit[];
+  receivedSen: number; nextSeq: number | null; instalments: BillingInstalment[];
 }
 
 export type ContractStatus = 'RENO_CONFIRMED' | 'RENO_IN_PROGRESS' | 'RENO_COMPLETED' | 'CLOSED' | 'CANCELLED';
@@ -281,7 +288,7 @@ export function contractPostingWarning(p: ContractPosting | undefined): string |
 
 export type ContractPostingState =
   | { ok: true; status: 'before_ledger_start'; reason: string }
-  | { ok: true; status: 'in_step' | 'under_posted'; contractSen: number; postedSen: number }
+  | { ok: true; status: 'in_step' | 'under_posted'; contractSen: number; postedSen: number; uncleared?: number }
   | { ok: false; status: string; reason: string };
 
 /** Finance only: whether the ledger carries the contract as it stands. */
