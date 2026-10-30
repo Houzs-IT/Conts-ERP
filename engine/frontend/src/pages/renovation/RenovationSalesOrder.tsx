@@ -17,7 +17,7 @@ import { useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
 import { STAGE_LABEL, RENO_STAGES, type StageKey } from '../../vendor/shared/renovation-stages';
 import { qtyLabel } from '../../vendor/shared/renovation-money';
 import {
-  contractPostingWarning, refusalOf, renoSend, useBrands, useContract, useContractPosting, usePoFlags, usePoSplit, useRenoMutation,
+  CONTRACT_NEXT_STATUS, contractPostingWarning, refusalOf, renoSend, useBrands, useContract, useContractPosting, usePoFlags, usePoSplit, useRenoMutation,
   type BillingInstalment, type ContractPosting, type ContractView, type DocLine,
 } from '../../lib/renovation/api';
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
@@ -26,12 +26,6 @@ import { ContractProjectCard } from './ContractProjectCard';
 import { DocAttachments, LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 import { Card, ErrorBanner, Field, fmtDate, inputCls, MoneyInput, pctLabel, rm, Stat, StatusPill, todayIso } from './shared';
 import { cn } from '../../lib/utils';
-
-const NEXT_STATUS: Record<string, Array<{ to: string; label: string; danger?: boolean }>> = {
-  RENO_CONFIRMED: [{ to: 'RENO_IN_PROGRESS', label: 'Works started' }, { to: 'CANCELLED', label: 'Cancel contract', danger: true }],
-  RENO_IN_PROGRESS: [{ to: 'RENO_COMPLETED', label: 'Works completed' }],
-  RENO_COMPLETED: [{ to: 'CLOSED', label: 'Close contract' }],
-};
 
 function lineQty(l: DocLine): string {
   const m = l.measureMilli ?? null;
@@ -363,7 +357,7 @@ export function RenovationSalesOrder() {
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status={k.status} />
             <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Print</Button>
-            {can('scm.renovation.quote') && (NEXT_STATUS[k.status] ?? []).map((n) => (
+            {can('scm.renovation.quote') && (CONTRACT_NEXT_STATUS[k.status] ?? []).map((n) => (
               <Button key={n.to} variant={n.danger ? 'danger' : 'secondary'} onClick={() => setStatus(n.to, n.label, n.danger)}>{n.label}</Button>
             ))}
           </div>

@@ -355,6 +355,14 @@ export function instalmentsForSave(rows: Instalment[]): unknown[] {
   return rows.map((r) => ({ seq: r.seq, label: r.label, pctBp: r.pctBp, description: r.description, stageCode: r.stageCode, trigger: r.trigger }));
 }
 
+/** The status moves the contract page offers. Cancel contract from Confirmed or In progress (chew, 30 Oct 2026); the
+    server holds it until the contract and its documents are posted (acc/reno-ledger cancelGate). */
+export const CONTRACT_NEXT_STATUS: Record<string, Array<{ to: string; label: string; danger?: boolean }>> = {
+  RENO_CONFIRMED: [{ to: 'RENO_IN_PROGRESS', label: 'Works started' }, { to: 'CANCELLED', label: 'Cancel contract', danger: true }],
+  RENO_IN_PROGRESS: [{ to: 'RENO_COMPLETED', label: 'Works completed' }, { to: 'CANCELLED', label: 'Cancel contract', danger: true }],
+  RENO_COMPLETED: [{ to: 'CLOSED', label: 'Close contract' }],
+};
+
 export const STATUS_LABEL: Record<string, string> = {
   DRAFT: 'Draft', SENT: 'Sent', ACCEPTED: 'Accepted', REJECTED: 'Rejected', EXPIRED: 'Expired', APPROVED: 'Approved', CANCELLED: 'Cancelled',
   RENO_CONFIRMED: 'Confirmed', RENO_IN_PROGRESS: 'In progress', RENO_COMPLETED: 'Completed', CLOSED: 'Closed',

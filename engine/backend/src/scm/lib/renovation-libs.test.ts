@@ -107,7 +107,10 @@ describe('status machines and numbering', () => {
   test('contract', () => {
     expect(contractTransitionAllowed('RENO_CONFIRMED', 'RENO_IN_PROGRESS')).toBe(true);
     expect(contractTransitionAllowed('RENO_COMPLETED', 'CLOSED')).toBe(true);
-    expect(contractTransitionAllowed('RENO_IN_PROGRESS', 'CANCELLED')).toBe(false);
+    /* chew, 30 Oct 2026: an in-progress contract may be cancelled too, by the same rules as a confirmed one. */
+    expect(contractTransitionAllowed('RENO_CONFIRMED', 'CANCELLED')).toBe(true);
+    expect(contractTransitionAllowed('RENO_IN_PROGRESS', 'CANCELLED')).toBe(true);
+    expect(contractTransitionAllowed('RENO_COMPLETED', 'CANCELLED')).toBe(false);
     expect(contractTransitionAllowed('CLOSED', 'RENO_IN_PROGRESS')).toBe(false);
   });
 

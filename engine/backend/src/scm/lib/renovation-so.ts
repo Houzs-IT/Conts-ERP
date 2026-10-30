@@ -25,7 +25,8 @@ export type RenoSoStatus = (typeof RENO_LIVE_STATUSES)[number] | 'CLOSED' | 'CAN
 
 const NEXT: Record<RenoSoStatus, RenoSoStatus[]> = {
   RENO_CONFIRMED: ['RENO_IN_PROGRESS', 'CANCELLED'],
-  RENO_IN_PROGRESS: ['RENO_COMPLETED', 'RENO_CONFIRMED'],
+  /* chew, 30 Oct 2026: an in-progress contract may be cancelled too, by the same rules (cancelGate, the PO check). */
+  RENO_IN_PROGRESS: ['RENO_COMPLETED', 'RENO_CONFIRMED', 'CANCELLED'],
   RENO_COMPLETED: ['CLOSED', 'RENO_IN_PROGRESS'],
   CLOSED: [],
   CANCELLED: [],
