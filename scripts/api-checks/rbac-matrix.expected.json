@@ -76,6 +76,7 @@
  "GET /api/driver-leave": "AFFAFFFU",
  "GET /api/drivers": "AAAAFFFU",
  "GET /api/employees": "AFFFFFFU",
+ "GET /api/employees/performance": "AFFFFFFU",
  "GET /api/expenses/breakdown": "AAFAFFFU",
  "GET /api/expenses/report": "AAFAFFFU",
  "GET /api/expenses/utilities": "AAFAFFFU",

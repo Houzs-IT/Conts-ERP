@@ -19,6 +19,7 @@ const LeaveTab = lazy(() => import('./workers/LeaveTab'));
 const PenaltiesTab = lazy(() => import('./workers/PenaltiesTab'));
 const LaborCostTab = lazy(() => import('./workers/LaborCostTab'));
 const DepartmentLaborTab = lazy(() => import('./workers/DepartmentLaborTab'));
+const EmployeePerformanceTab = lazy(() => import('./workers/EmployeePerformanceTab'));
 
 /* ------------------------------------------------------------------ *
  * HR > Employees: Hookka's Employees page (erp.hookka.com /employees),
@@ -62,10 +63,10 @@ const tabsIn = (section: (typeof SECTIONS)[number]): typeof TABS[number][] =>
   section.tabs.flatMap(k => TABS.filter(t => t.key === k));
 
 /** Tabs Hookka measures from factory job cards. The Conts has not decided what production time is for cleaning and
- *  repair jobs (owner, 26 Oct 2026), so they stay empty rather than show a made-up figure. */
+ *  repair jobs (owner, 26 Oct 2026), so they stay empty rather than show a made-up figure. Employee Performance
+ *  already counts each cleaner's Basic and Deep cleans, at 0 minutes a job until the times are decided. */
 const UNDECIDED: Partial<Record<TabKey, string>> = {
   efficiency: 'Each person\'s production time against the hours they clocked.',
-  detail: 'One person\'s production hours, jobs and efficiency over a period.',
   'department-performance': 'Each department\'s production hours and efficiency, day by day.',
 };
 
@@ -92,6 +93,7 @@ export default function EmployeesPage() {
   else if (tab === 'penalties') body = <PenaltiesTab />;
   else if (tab === 'labor-cost') body = <LaborCostTab />;
   else if (tab === 'department-labor') body = <DepartmentLaborTab />;
+  else if (tab === 'detail') body = <EmployeePerformanceTab />;
   else {
     body = <EmptyState icon="Activity" title="Production time is not decided yet"
       body={`${UNDECIDED[tab] ?? ''} On Hookka this comes from factory job cards. It stays empty until The Conts decides what counts as production time for cleaning and repair jobs.`} />;
