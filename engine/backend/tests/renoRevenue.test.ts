@@ -356,6 +356,25 @@ describe('billing an old contract after go-live', () => {
     /* billed_before_sen records everything billed before this one, AutoCount's 30k included. */
     expect(bill.params[8]).toBe(3_000_000);
   });
+
+  test("the invoice line and header use finance's description template", async () => {
+    const answers: Array<[RegExp, (params: readonly unknown[]) => unknown[]]> = [
+      [/as revised_sen/, () => [{ doc_no: SO, status: 'RENO_IN_PROGRESS', original_contract_sen: 10_000_000, revised_sen: 10_000_000, billed_before_golive_sen: 3_000_000 }]],
+      [HEAD_RE, () => [{ ...head, status: 'RENO_IN_PROGRESS' }]],
+      [/from scm\.reno_doc_instalments/, () => inst.map((i) => ({ id: i.id, so_doc_no: SO, seq: i.seq, label: i.label, pct_bp: i.pctBp, description: '', stage_code: null, trigger: 'manual' }))],
+      [/next_doc_no_n/, () => [{ n: 1 }]],
+      [/insert into scm\.sales_invoices/, () => [{ id: 'si-2' }]],
+    ];
+    const { db, seen } = scriptDb(answers);
+    await billInstalment(db, actor, SO, 'b', { expectedAmountSen: 4_000_000, invoiceDate: '2026-11-20' });
+    const want = '2nd Progress Billing for Interior Design & Renovation Works (40% Carpentry as per Sales Order, refer to attached breakdown)';
+    expect(seen.find((s) => /insert into scm\.sales_invoice_items/.test(s.text))!.params[1]).toBe(want);
+    expect(seen.find((s) => /insert into scm\.sales_invoices/.test(s.text))!.params[6]).toBe(want);
+
+    const custom = scriptDb([[/reno_invoice_description/, () => [{ reno_invoice_description: '{ordinal} claim: {label} ({so})' }]], ...answers]);
+    await billInstalment(custom.db, actor, SO, 'b', { expectedAmountSen: 4_000_000, invoiceDate: '2026-11-20' });
+    expect(custom.seen.find((s) => /insert into scm\.sales_invoice_items/.test(s.text))!.params[1]).toBe(`2nd claim: Carpentry (${SO})`);
+  });
 });
 
 /** A RenoDb that answers by the query's text; every statement is kept for the test to read. */
