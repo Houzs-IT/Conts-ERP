@@ -152,3 +152,26 @@ describe('Debtors: e-invoice tax identity', () => {
     expect(await res.json()).toMatchObject({ debtor: { id_type: 'PASSPORT', id_number: 'A1234567' } });
   });
 });
+
+describe('Debtors: real-world numbers (review)', () => {
+  test('old and printed registration numbers are accepted', async () => {
+    for (const n of ['001234567-K', 'JM0123456-X', 'LLP0012345-LGN']) {
+      expect((await send(app(world()), 'PATCH', '/debtors/d1', { idType: 'BRN', idNumber: n })).status).toBe(200);
+    }
+    const res = await send(app(world()), 'PATCH', '/debtors/d1', { idType: 'BRN', idNumber: '201901000005 (1312525-A)' });
+    expect(await res.json()).toMatchObject({ debtor: { id_number: '201901000005' } });
+  });
+
+  test('older and general TIN prefixes are accepted', async () => {
+    for (const tin of ['SG10234567020', 'EI00000000010', 'TJ12345678']) {
+      expect((await send(app(world()), 'PATCH', '/debtors/d1', { tin })).status).toBe(200);
+    }
+  });
+
+  test('changing only the ID type re-checks the stored number', async () => {
+    const sb = world({ debtors: [{ id: 'd1', company_id: CO, code: '301-M001', name: 'MS LEE', control_account: '301-0000', is_active: true, id_type: 'PASSPORT', id_number: 'A1234567' }] });
+    const res = await send(app(sb), 'PATCH', '/debtors/d1', { idType: 'NRIC' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_id_number' });
+  });
+});

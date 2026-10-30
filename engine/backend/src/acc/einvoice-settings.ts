@@ -102,8 +102,9 @@ export function sellerMissing(s: EInvoiceSettings): string[] {
 
 type Check = { ok: true } | { ok: false; field: string; message: string };
 
-/* Loose on purpose: an unusual but real TIN must not lock finance out. */
-const TIN_RE = /^(C|CS|D|E|F|FA|PT|TA|TC|TN|TR|TP|J|LE|IG|OG)\d{8,12}$/;
+/* Loose on purpose (one or two letters, then digits): an unusual but real TIN (old SG/OG, TJ, the EI general TINs)
+   must not lock finance out. */
+const TIN_RE = /^[A-Z]{1,2}\d{8,12}$/;
 export const looksLikeTin = (tin: string): boolean => TIN_RE.test(tin.toUpperCase());
 
 export function validateEInvoiceSettings(s: EInvoiceSettings): Check {

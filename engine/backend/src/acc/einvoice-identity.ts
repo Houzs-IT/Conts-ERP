@@ -14,20 +14,28 @@ const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 export function normaliseIdNumber(type: IdType, raw: string): string | null {
   const v = raw.toUpperCase().replace(/\s+/g, '');
   if (type === 'NRIC') { const d = v.replace(/-/g, ''); return /^\d{12}$/.test(d) ? d : null; }
-  if (type === 'BRN') return /^\d{12}$/.test(v) || /^\d{1,7}-?[A-Z]$/.test(v) ? v : null;
+  if (type === 'BRN') {
+    /* The new 12-digit number wins when SSM's printed form carries both: 201901000005 (1312525-A). */
+    const twelve = /(^|\D)(\d{12})(\D|$)/.exec(v);
+    if (twelve) return twelve[2];
+    return /^[A-Z]{0,3}\d{4,10}-?[A-Z]{1,3}$/.test(v) ? v : null;
+  }
   return /^[A-Z0-9-]{4,20}$/.test(v) ? v : null;
 }
 
-/** The columns a create/patch body sets (only the keys it sends), or why it is refused. `currentIdType` is the
-    account's type now, for a body that sends only a number. */
-export function taxIdentityPatch(body: Record<string, unknown>, currentIdType: string | null): { ok: true; patch: Record<string, string | null> } | Refusal {
+/** The columns a create/patch body sets (only the keys it sends), or why it is refused. `current` is what the account
+    holds now, for a body that sends only a number or only a type. */
+export function taxIdentityPatch(
+  body: Record<string, unknown>,
+  current: { idType: string | null; idNumber: string | null },
+): { ok: true; patch: Record<string, string | null> } | Refusal {
   const patch: Record<string, string | null> = {};
   if (body.tin !== undefined) {
     const tin = text(body.tin).toUpperCase().replace(/\s+/g, '');
     if (tin && !looksLikeTin(tin)) return { ok: false, error: 'invalid_tin', message: 'The TIN starts with letters (IG for an individual, C for a company) followed by digits.' };
     patch.tin = tin || null;
   }
-  let type = currentIdType as IdType | null;
+  let type = current.idType as IdType | null;
   if (body.idType !== undefined) {
     const t = text(body.idType).toUpperCase();
     if (t && !(ID_TYPES as readonly string[]).includes(t)) return { ok: false, error: 'invalid_id_type', message: 'The ID type is MyKad (NRIC), business registration (BRN), passport or army ID.' };
@@ -45,6 +53,12 @@ export function taxIdentityPatch(body: Record<string, unknown>, currentIdType: s
       }
       patch.id_number = n;
     }
+  }
+  /* A new type alone re-checks the number the account already holds. */
+  if (body.idType !== undefined && body.idNumber === undefined && type && current.idNumber) {
+    const n = normaliseIdNumber(type, current.idNumber);
+    if (!n) return { ok: false, error: 'invalid_id_number', message: `The ID number on this account is not a ${type} number. Change the number too.` };
+    patch.id_number = n;
   }
   if (body.sstNo !== undefined) patch.sst_no = text(body.sstNo).toUpperCase() || null;
   return { ok: true, patch };

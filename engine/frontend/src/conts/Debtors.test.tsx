@@ -83,9 +83,23 @@ describe("Debtors", () => {
     fireEvent.change(screen.getByLabelText("Tax ID (TIN)"), { target: { value: "IG12345678901" } });
     fireEvent.change(screen.getByLabelText("ID type"), { target: { value: "NRIC" } });
     fireEvent.change(screen.getByLabelText("ID number"), { target: { value: "900101-14-5678" } });
-    fireEvent.change(screen.getByLabelText("SST registration no."), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("SST registration no."), { target: { value: "W10-1808-31000001" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saveAsync).toHaveBeenCalledTimes(1));
-    expect(saveAsync.mock.calls[0][0]).toMatchObject({ id: "d1", body: { tin: "IG12345678901", idType: "NRIC", idNumber: "900101-14-5678", sstNo: "" } });
+    expect(saveAsync.mock.calls[0][0]).toMatchObject({ id: "d1", body: { tin: "IG12345678901", idType: "NRIC", idNumber: "900101-14-5678", sstNo: "W10-1808-31000001" } });
+  });
+});
+
+describe("Debtors: only changed tax fields are sent", () => {
+  it("a rename sends no tax fields", async () => {
+    saveAsync.mockReset();
+    saveAsync.mockResolvedValue({ debtor: {} });
+    render(<MemoryRouter><Debtors /></MemoryRouter>);
+    fireEvent.click(screen.getByText(/301-M001 MS LEE/));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "MS LEE AH" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAsync).toHaveBeenCalledTimes(1));
+    const body = saveAsync.mock.calls[0][0].body as Record<string, unknown>;
+    expect(["tin", "idType", "idNumber", "sstNo"].filter((k) => k in body)).toEqual([]);
   });
 });

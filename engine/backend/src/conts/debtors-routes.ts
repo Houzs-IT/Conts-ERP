@@ -88,7 +88,7 @@ export const createDebtorHandler = async (c: Ctx): Promise<Response> => {
   if (typed && !typed.startsWith(`${control.slice(0, 3)}-`)) {
     return c.json({ error: 'code_not_under_control', message: `${typed} does not sit under ${control}: a code under it starts ${control.slice(0, 3)}-.` }, 400);
   }
-  const tax = taxIdentityPatch(body, null);
+  const tax = taxIdentityPatch(body, { idType: null, idNumber: null });
   if (!tax.ok) return c.json({ error: tax.error, message: tax.message }, 400);
   const fields = {
     company_id: co.companyId, name, control_account: control, phone: text(body.phone), email: text(body.email),
@@ -132,7 +132,7 @@ export const patchDebtorHandler = async (c: Ctx): Promise<Response> => {
     if (body[from] !== undefined) patch[to] = text(body[from]);
   }
   if (body.isActive !== undefined) patch.is_active = body.isActive === true;
-  const tax = taxIdentityPatch(body, row.id_type);
+  const tax = taxIdentityPatch(body, { idType: row.id_type, idNumber: row.id_number });
   if (!tax.ok) return c.json({ error: tax.error, message: tax.message }, 400);
   Object.assign(patch, tax.patch);
   if (body.controlAccount !== undefined && body.controlAccount !== row.control_account) {

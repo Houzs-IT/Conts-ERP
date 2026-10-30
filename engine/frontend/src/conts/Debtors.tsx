@@ -48,6 +48,12 @@ const fromDebtor = (d: Debtor): FormValues => ({
   tin: d.tin ?? "", idType: d.id_type ?? "", idNumber: d.id_number ?? "", sstNo: d.sst_no ?? "",
 });
 
+const taxChanges = (was: FormValues, now: FormValues): Partial<DebtorInput> => {
+  const out: Partial<DebtorInput> = {};
+  for (const k of ["tin", "idType", "idNumber", "sstNo"] as const) if (now[k] !== was[k]) out[k] = now[k];
+  return out;
+};
+
 export function Debtors() {
   const q = useDebtors();
   const save = useSaveDebtor();
@@ -77,7 +83,8 @@ export function Debtors() {
     const id = editing === "new" ? null : editing.id;
     const body: DebtorInput = {
       name: v.name, controlAccount: v.controlAccount, phone: v.phone, email: v.email, address: v.address, notes: v.notes,
-      tin: v.tin, idType: v.idType, idNumber: v.idNumber, sstNo: v.sstNo,
+      /* Only what changed: a stored value the server would now refuse must not block a rename. */
+      ...(editing === "new" ? { tin: v.tin, idType: v.idType, idNumber: v.idNumber, sstNo: v.sstNo } : taxChanges(fromDebtor(editing), v)),
       ...(id ? { isActive: v.isActive } : { code: v.code }),
     };
     /* A move asks first; the server refuses it while the customer still owes on the old control, and says so. */
