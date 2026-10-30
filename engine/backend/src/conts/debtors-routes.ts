@@ -14,6 +14,7 @@ import { paginateAll } from '../scm/lib/paginate-all';
 import { resolveRoles } from '../acc/rules';
 import { debtorLetter, nextPartyCode, partyBalanceOn } from './parties';
 import { taxIdentityPatch } from '../acc/einvoice-identity';
+import { refreshForDebtor } from '../acc/einvoice-outbox';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 type Ctx = any;
@@ -160,5 +161,12 @@ export const patchDebtorHandler = async (c: Ctx): Promise<Response> => {
   }
   const { data: saved, error } = await sb.from('debtors').update(patch).eq('company_id', co.companyId).eq('id', id).select(COLS).maybeSingle();
   if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  /* The customer's e-invoice details changed: its waiting e-invoices are prepared again (logged, never fails the save). */
+  if (['name', 'phone', 'email', 'tin', 'id_type', 'id_number', 'sst_no'].some((k) => k in patch)) {
+    try { await refreshForDebtor(sb, co.companyId, row.code); } catch (err) {
+      /* eslint-disable-next-line no-console */
+      console.error('[einvoice] refresh after customer edit failed:', row.code, err instanceof Error ? err.message : err);
+    }
+  }
   return c.json({ debtor: saved });
 };

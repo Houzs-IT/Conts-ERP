@@ -25,6 +25,8 @@ import { readContractHead, recomputeSoHeader, RENO_LIVE_STATUSES } from './renov
 import type { RenoActor } from './renovation-quotation';
 import { instalmentPreview, nextInstalmentAmount } from '../shared/renovation-money';
 import { fmtSen } from '../shared/format';
+import { renderRenoDescription } from './reno-invoice-description';
+import { MAX_DESCRIPTION } from '../../acc/einvoice-build';
 
 export interface BillRow {
   instalmentId: string; seq: number; kind: 'INVOICE' | 'CREDIT_NOTE' | 'ZERO'; amountSen: number; invoiceDate: string;
@@ -199,8 +201,11 @@ export async function billInstalment(
       { amountSen: n.amountSen });
   }
   const invoiceDate = body.invoiceDate || todayKl();
-  const pct = `${(inst.pctBp / 100).toFixed(inst.pctBp % 100 ? 2 : 0)}%`;
-  const label = `${inst.label || `Instalment ${inst.seq}`} (${pct}) of ${soDocNo}`;
+  /* The one line the invoice (and its e-invoice) carries, from finance's template (acc/einvoice-settings.ts). */
+  const [tpl] = await db.q<{ reno_invoice_description: string | null }>(
+    'select reno_invoice_description from scm.acc_company_settings where company_id = $1', [actor.companyId]);
+  const label = renderRenoDescription(tpl?.reno_invoice_description ?? null, { seq: inst.seq, pctBp: inst.pctBp, label: inst.label, soDocNo });
+  const creditLabel = `Credit: ${label}`.length > MAX_DESCRIPTION ? `Credit: ${label}`.slice(0, MAX_DESCRIPTION - 1) + '…' : `Credit: ${label}`;
   let result: BillResult;
   if (n.amountSen > 0) {
     const invoiceNumber = await mintDocNo(db, 'sales_invoices', 'invoice_number', `${actor.docPrefix}SI-${yymmOf(invoiceDate)}`);
@@ -214,12 +219,12 @@ export async function billInstalment(
               o.city, o.postcode, o.customer_state, o.customer_state, o.customer_country
          from scm.mfg_sales_orders o where o.doc_no = $2
        returning id`,
-      [invoiceNumber, soDocNo, head.debtorCode, head.debtorName, invoiceDate, n.amountSen, `Progress billing: ${label}`, head.branding, actor.staffId, actor.companyId],
+      [invoiceNumber, soDocNo, head.debtorCode, head.debtorName, invoiceDate, n.amountSen, label, head.branding, actor.staffId, actor.companyId],
     );
     await db.q(
       `insert into scm.sales_invoice_items (sales_invoice_id, item_code, item_group, description, qty, unit_price_sen, line_total_sen, uom, line_no, company_id)
        values ($1, 'RENO-PROGRESS', 'RENOVATION', $2, 1, $3, $3, 'LOT', 1, $4)`,
-      [si.id, `Progress billing: ${label}`, n.amountSen, actor.companyId],
+      [si.id, label, n.amountSen, actor.companyId],
     );
     result = { kind: 'INVOICE', amountSen: n.amountSen, invoiceNumber, salesInvoiceId: si.id };
   } else if (n.amountSen < 0) {
@@ -235,11 +240,11 @@ export async function billInstalment(
       `insert into scm.acc_credit_notes (company_id, note_number, kind, party_type, party_code, party_name, so_doc_no, source_doc_no, note_date,
           total_sen, reason, status, created_by)
        values ($1, $2, 'CN', 'CUSTOMER', $3, $4, $5, $5, $6::date, $7, $8, 'DRAFT', $9) returning id`,
-      [actor.companyId, noteNumber, head.debtorCode, head.debtorName, soDocNo, invoiceDate, -n.amountSen, `Progress billing credit: ${label}`, actor.name],
+      [actor.companyId, noteNumber, head.debtorCode, head.debtorName, soDocNo, invoiceDate, -n.amountSen, creditLabel, actor.name],
     );
     await db.q(
       `insert into scm.acc_credit_note_lines (company_id, note_id, line_no, description, account_code, amount_sen) values ($1, $2, 1, $3, $4, $5)`,
-      [actor.companyId, cn.id, `Progress billing credit: ${label}`, advance, -n.amountSen],
+      [actor.companyId, cn.id, creditLabel, advance, -n.amountSen],
     );
     result = { kind: 'CREDIT_NOTE', amountSen: n.amountSen, noteNumber, creditNoteId: cn.id };
   } else {

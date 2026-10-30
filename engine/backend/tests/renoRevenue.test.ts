@@ -127,6 +127,8 @@ describe('renovation invoices by the waterfall', () => {
     /* Posting again changes nothing. */
     expect(await postSiRevenue(sb, no)).toMatchObject({ ok: true, status: 'already_posted' });
     expect(allocatedTotal(sb)).toBe(1_000_000);
+    /* Its e-invoice record waits in the outbox (not ready: the test customer has no ID). */
+    expect(sb.tables.acc_einvoice_outbox.map((o) => [o.doc_kind, o.doc_number, o.status])).toEqual([['INVOICE', no, 'NOT_READY']]);
   });
 
   test('the second invoice continues where the first stopped', async () => {
@@ -173,6 +175,7 @@ describe('renovation invoices by the waterfall', () => {
     expect(await reverseSiRevenue(sb, second.no)).toMatchObject({ ok: true, status: 'reversed' });
     expect(sb.tables.reno_revenue_allocations.filter((a) => a.source_doc_no === second.no)).toHaveLength(0);
     expect(revenueToDate(sb)).toBe(1_000_000);
+    expect(sb.tables.acc_einvoice_outbox.find((o) => o.doc_number === second.no)!.status).toBe('CANCELLED');
     /* The next invoice re-fills fixture first, as the cancelled one did. */
     const third = await invoice(sb, 600_000);
     expect(journalOf(sb, 'SI', third.no)).toEqual([
@@ -259,6 +262,7 @@ describe('renovation credit notes', () => {
     expect(sb.tables.acc_credit_note_lines.filter((l) => l.note_id === 'cn-1').map((l) => [l.account_code, l.amount_sen])).toEqual([['501-0020', 222_223], ['501-0030', 277_777]]);
     expect(sb.tables.acc_credit_notes[0].status).toBe('POSTED');
     expect(revenueToDate(sb)).toBe(500_000);
+    expect(sb.tables.acc_einvoice_outbox.filter((o) => o.doc_kind === 'CREDIT_NOTE').map((o) => [o.doc_number, o.status])).toEqual([['2990CN-2611-001', 'NOT_READY']]);
     /* The customer owes the contract less the credit; the RENO-CREDIT row did not move the advance. */
     expect(balances(sb)['301-0000']).toBe(9_500_000);
     expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toMatchObject({ status: 'in_step', postedSen: 10_000_000 });
@@ -269,6 +273,7 @@ describe('renovation credit notes', () => {
     expect(sb.tables.reno_revenue_allocations.filter((a) => a.source_doc_no === '2990CN-2611-001')).toHaveLength(0);
     expect(sb.tables.mfg_sales_order_items.find((i) => i.id === 'cc-cn-1')!.cancelled).toBe(true);
     expect(revenueToDate(sb)).toBe(1_000_000);
+    expect(sb.tables.acc_einvoice_outbox.find((o) => o.doc_kind === 'CREDIT_NOTE')!.status).toBe('CANCELLED');
   });
 
   test('a credit above what is invoiced is refused by the ledger too', async () => {
@@ -355,6 +360,25 @@ describe('billing an old contract after go-live', () => {
     const bill = seen.find((s) => /insert into scm\.reno_instalment_bills/.test(s.text))!;
     /* billed_before_sen records everything billed before this one, AutoCount's 30k included. */
     expect(bill.params[8]).toBe(3_000_000);
+  });
+
+  test("the invoice line and header use finance's description template", async () => {
+    const answers: Array<[RegExp, (params: readonly unknown[]) => unknown[]]> = [
+      [/as revised_sen/, () => [{ doc_no: SO, status: 'RENO_IN_PROGRESS', original_contract_sen: 10_000_000, revised_sen: 10_000_000, billed_before_golive_sen: 3_000_000 }]],
+      [HEAD_RE, () => [{ ...head, status: 'RENO_IN_PROGRESS' }]],
+      [/from scm\.reno_doc_instalments/, () => inst.map((i) => ({ id: i.id, so_doc_no: SO, seq: i.seq, label: i.label, pct_bp: i.pctBp, description: '', stage_code: null, trigger: 'manual' }))],
+      [/next_doc_no_n/, () => [{ n: 1 }]],
+      [/insert into scm\.sales_invoices/, () => [{ id: 'si-2' }]],
+    ];
+    const { db, seen } = scriptDb(answers);
+    await billInstalment(db, actor, SO, 'b', { expectedAmountSen: 4_000_000, invoiceDate: '2026-11-20' });
+    const want = '2nd Progress Billing for Interior Design & Renovation Works (40% Carpentry as per Sales Order, refer to attached breakdown)';
+    expect(seen.find((s) => /insert into scm\.sales_invoice_items/.test(s.text))!.params[1]).toBe(want);
+    expect(seen.find((s) => /insert into scm\.sales_invoices/.test(s.text))!.params[6]).toBe(want);
+
+    const custom = scriptDb([[/reno_invoice_description/, () => [{ reno_invoice_description: '{ordinal} claim: {label} ({so})' }]], ...answers]);
+    await billInstalment(custom.db, actor, SO, 'b', { expectedAmountSen: 4_000_000, invoiceDate: '2026-11-20' });
+    expect(custom.seen.find((s) => /insert into scm\.sales_invoice_items/.test(s.text))!.params[1]).toBe(`2nd claim: Carpentry (${SO})`);
   });
 });
 
