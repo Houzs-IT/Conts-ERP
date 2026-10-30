@@ -1,15 +1,14 @@
 import { useMemo } from 'react';
-import PageHeader from '../components/PageHeader';
-import { StatTile, StatRow } from '../components/Metric';
-import { StaleBanner } from '../components/DataState';
-import { DataTable, type Column } from '../components/DataTable';
-import { useApi } from '../lib/useApi';
-import type { DcEmployee } from '../../functions/_lib/hrFields';
+import { StatTile, StatRow } from '../../components/Metric';
+import { StaleBanner } from '../../components/DataState';
+import { DataTable, type Column } from '../../components/DataTable';
+import { useApi } from '../../lib/useApi';
+import type { DcEmployee } from '../../../functions/_lib/hrFields';
 
 /* ------------------------------------------------------------------ *
- * Dream Crafter > HR > Employee Performance: the Dream Crafter version of
- * The Conts' Employee Performance (HR > Employees). Its one job card is
- * the renovation project. Each active Dream Crafter employee is listed;
+ * Dream Crafter > HR > Employees > Employee Performance: the Dream Crafter
+ * version of The Conts' Employee Performance tab. Its one job card is the
+ * renovation project. Each active Dream Crafter employee is listed;
  * no project is linked to a person yet, so there are no counts to show.
  * ------------------------------------------------------------------ */
 
@@ -17,7 +16,7 @@ import type { DcEmployee } from '../../functions/_lib/hrFields';
 const JOB_CARDS = [{ kind: 'renovation_project', label: 'Renovation project', minutes: 0 }] as const;
 const NOT_YET = <span className="text-muted-ink">—</span>;
 
-export default function DcEmployeePerformancePage() {
+export default function DcEmployeePerformanceTab() {
   const { data, loading, error, reload } = useApi<{ data: DcEmployee[] }>('/employees/dream-crafter');
   const people = (data?.data ?? []).filter(e => e.status === 'active');
 
@@ -30,23 +29,22 @@ export default function DcEmployeePerformancePage() {
   ], []);
 
   return (
-    <>
-      <PageHeader title="Employee Performance" sub="Renovation projects each Dream Crafter employee finishes, per month" />
+    <div className="flex flex-col gap-5">
       <StatRow cols={2}>
         {JOB_CARDS.map(c => <StatTile key={c.kind} label={c.label} value="—" hint={`Standard time ${c.minutes} min per job`} />)}
         <StatTile label="Efficiency" value="—" hint="Not worked out while the standard minutes are 0" />
       </StatRow>
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
-      <div className="mt-5">
+      <div>
         <DataTable<DcEmployee>
           id="dc-employee-performance" columns={columns} rows={loading && people.length === 0 ? null : people}
           rowKey={e => e.id} pageSize={0} noun={['employee', 'employees']}
-          empty={{ title: 'No Dream Crafter employees yet.', body: 'Add Dream Crafter staff on HR > Employees and they show here.', icon: 'Users' }}
+          empty={{ title: 'No Dream Crafter employees yet.', body: 'Add Dream Crafter staff on Staff > Employee Master and they show here.', icon: 'Users' }}
         />
         <p className="m-0 mt-3 text-meta text-muted-ink">
           Renovation projects are not linked to a person yet, and the standard time is 0 min a project until the office decides it, so counts and efficiency are not worked out.
         </p>
       </div>
-    </>
+    </div>
   );
 }
