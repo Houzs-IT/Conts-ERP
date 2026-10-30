@@ -146,6 +146,9 @@ export async function validateJournal(sb: any, input: PostJournalInput): Promise
     if (l.department != null && !isDepartment(l.department)) {
       return { ok: false, status: 'bad_line', reason: `line on ${l.accountCode} names an unknown department` };
     }
+    if (l.projectId != null && !Number.isSafeInteger(l.projectId)) {
+      return { ok: false, status: 'bad_line', reason: `line on ${l.accountCode} names a project that is not a whole number` };
+    }
     dr += l.debitSen ?? 0;
     cr += l.creditSen ?? 0;
   }
@@ -308,6 +311,7 @@ export async function postJournal(sb: any, input: PostJournalInput): Promise<Pos
     party_name: l.partyName ?? null,
     notes: l.notes ?? null,
     department: l.department ?? DEFAULT_DEPARTMENT,
+    project_id: l.projectId ?? null,
   }));
   const { error: linesErr } = await sb.from('journal_entry_lines').insert(lineRows);
   if (linesErr) {
@@ -432,7 +436,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
   // accounts instead of the real ones.
   const { data: origLines, error: origLinesErr } = await sb
     .from('journal_entry_lines')
-    .select('account_code, debit_sen, credit_sen, party_type, party_code, party_name, notes, department')
+    .select('account_code, debit_sen, credit_sen, party_type, party_code, party_name, notes, department, project_id')
     .eq('journal_entry_id', orig.id)
     .order('line_no');
   if (origLinesErr) return { ok: false, status: 'reversal_read_failed', reason: `origLines: ${origLinesErr.message}` };
@@ -445,6 +449,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
     party_name: string | null;
     notes: string | null;
     department?: string | null;
+    project_id?: number | null;
   }>;
 
   const companyId = orig.company_id ?? null;
@@ -500,6 +505,8 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
           notes: `Reversal — ${l.notes ?? ''}`.trim(),
           // The contra sits in the original's department, so that department nets to nothing.
           department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT,
+          // And on the original's project, so the project's booked cost nets to nothing.
+          project_id: l.project_id ?? null,
         }))
       : (input.fallbackLines ? input.fallbackLines(totalSen) : []).map((l, i) => ({
           ...companyCol,
@@ -513,6 +520,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
           party_name: l.partyName ?? null,
           notes: l.notes ?? null,
           department: l.department ?? DEFAULT_DEPARTMENT,
+          project_id: l.projectId ?? null,
         }));
   if (swapped.length === 0) {
     await sb.from('journal_entries').delete().eq('id', revJe.id);

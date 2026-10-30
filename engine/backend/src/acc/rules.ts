@@ -238,6 +238,8 @@ export type RuleLine = {
   partyName?: string | null;
   notes?: string | null;
   department?: Department | null;
+  /** The project a cost line belongs to (public.projects id): the renovation completion % reads booked cost by it. */
+  projectId?: number | null;
 };
 
 /** Sales invoice issued (docs/bugs/0829): Dr AR for the invoice total, the
