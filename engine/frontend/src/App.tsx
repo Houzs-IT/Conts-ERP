@@ -128,6 +128,7 @@ const ContsPettyCash = lazy(() => import("./conts/PettyCash").then((m) => ({ def
 const ContsPettyCashFloat = lazy(() => import("./conts/PettyCashFloat").then((m) => ({ default: m.PettyCashFloat })));
 const ContsDebtors = lazy(() => import("./conts/Debtors").then((m) => ({ default: m.Debtors })));
 const ContsLedgerSetup = lazy(() => import("./conts/LedgerSetup").then((m) => ({ default: m.LedgerSetup })));
+const ContsEInvoice = lazy(() => import("./conts/EInvoice").then((m) => ({ default: m.EInvoice })));
 const ScmOtherDebtorsV2 = lazy(() => import("./pages/scm-v2/OtherDebtors").then((m) => ({ default: m.OtherDebtors })));
 const ScmReceiptsV2 = lazy(() => import("./pages/scm-v2/Receipts").then((m) => ({ default: m.Receipts })));
 const ScmOfficialReceiptsV2 = lazy(() => import("./pages/scm-v2/OfficialReceipts").then((m) => ({ default: m.OfficialReceipts })));
@@ -785,6 +786,7 @@ export default function App() {
         <Route path="/scm/petty-cash" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsPettyCash /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/petty-cash/:id" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsPettyCashFloat /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/debtors" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsDebtors /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/einvoice" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsEInvoice /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/other-debtors" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmOtherDebtorsV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/receipts" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmReceiptsV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/official-receipts" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmOfficialReceiptsV2 /></Scm2990Shell></ScmGuard>} />

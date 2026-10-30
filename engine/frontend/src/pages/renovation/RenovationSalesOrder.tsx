@@ -38,10 +38,11 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  const [einvoice, setEinvoice] = useState<string | null>(null);
   const qc = useQueryClient();
-  const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ kind: string; invoiceNumber?: string; noteNumber?: string; amountSen: number; posting: { status: string; reason?: string } }>(
+  const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ kind: string; invoiceNumber?: string; noteNumber?: string; amountSen: number; posting: { status: string; reason?: string }; einvoiceWarning?: string | null }>(
     `/sales-orders/${encodeURIComponent(c.docNo)}/instalments/${inst!.id}/bill`, 'POST', body));
-  useEffect(() => { setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); }, [inst]);
+  useEffect(() => { setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst]);
   if (!inst) return null;
   const negative = amount < 0;
   const submit = async (confirmCreditNote = false) => {
@@ -51,6 +52,7 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
       const doc = r.kind === 'INVOICE' ? `Sales invoice ${r.invoiceNumber}` : r.kind === 'CREDIT_NOTE' ? `Credit note ${r.noteNumber}` : 'Nothing to bill: instalment closed';
       const posted = r.posting.status === 'posted' || r.posting.status === 'already_posted' ? 'journal posted' : r.posting.status === 'not_needed' ? '' : `journal not posted yet (${r.posting.reason ?? r.posting.status})`;
       setNote(null);
+      setEinvoice(r.einvoiceWarning ?? null);
       setResult([doc, rm(r.amountSen), posted].filter(Boolean).join(' · '));
     } catch (e) {
       const f = refusalOf(e);
@@ -81,6 +83,7 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
         {note && <div className="rounded bg-warning-bg px-3 py-2 text-warning-text">{note}</div>}
         {!result && <Field label={negative ? 'Credit note date' : 'Invoice date'}><input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Field>}
         {result && <div className="rounded bg-synced-bg px-3 py-2 font-semibold text-synced">{result}</div>}
+        {einvoice && <div className="rounded bg-warning-bg px-3 py-2 text-warning-text">{einvoice}</div>}
         <ErrorBanner error={error} />
       </div>
     </ModalOverlay>
@@ -95,9 +98,10 @@ function CreditDialog({ c, open, onClose }: { c: ContractView; open: boolean; on
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
-  const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ noteNumber: string; amountSen: number; posting: { status: string; reason?: string } }>(
+  const [einvoice, setEinvoice] = useState<string | null>(null);
+  const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ noteNumber: string; amountSen: number; posting: { status: string; reason?: string }; einvoiceWarning?: string | null }>(
     `/sales-orders/${encodeURIComponent(c.docNo)}/credit`, 'POST', body));
-  useEffect(() => { if (open) { setDate(todayIso()); setAmount(null); setReason(''); setError(null); setResult(null); } }, [open]);
+  useEffect(() => { if (open) { setDate(todayIso()); setAmount(null); setReason(''); setError(null); setResult(null); setEinvoice(null); } }, [open]);
   if (!open) return null;
   const billed = c.billing.billedSen;
   const tooMuch = amount !== null && amount > billed;
@@ -106,6 +110,7 @@ function CreditDialog({ c, open, onClose }: { c: ContractView; open: boolean; on
     try {
       const r = await run.mutateAsync({ amountSen: amount, reason, noteDate: date });
       const posted = r.posting.status === 'posted' || r.posting.status === 'already_posted' ? 'journal posted' : `journal not posted yet (${r.posting.reason ?? r.posting.status})`;
+      setEinvoice(r.einvoiceWarning ?? null);
       setResult([`Credit note ${r.noteNumber}`, rm(r.amountSen), posted].join(' · '));
     } catch (e) { setError(refusalOf(e).message); }
   };
@@ -137,6 +142,7 @@ function CreditDialog({ c, open, onClose }: { c: ContractView; open: boolean; on
           </>
         )}
         {result && <div className="rounded bg-synced-bg px-3 py-2 font-semibold text-synced">{result}</div>}
+        {einvoice && <div className="rounded bg-warning-bg px-3 py-2 text-warning-text">{einvoice}</div>}
         <ErrorBanner error={error} />
       </div>
     </ModalOverlay>
