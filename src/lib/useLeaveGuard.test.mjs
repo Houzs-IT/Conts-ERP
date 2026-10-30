@@ -1,7 +1,7 @@
 // node --test src/lib/useLeaveGuard.test.mjs. Which moves count as leaving a form with unsaved changes.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { leavesPlace } from './useLeaveGuard.ts';
+import { confirmLeaving, leavesPlace } from './useLeaveGuard.ts';
 
 const here = { pathname: '/properties/units/a', search: '?tab=details' };
 const params = ['tab', 'view'];
@@ -15,6 +15,10 @@ test('another tab or view on the same page is leaving', () => {
   assert.equal(leavesPlace(here, { pathname: here.pathname, search: '?tab=contract' }, params), true);
   assert.equal(leavesPlace(here, { pathname: here.pathname, search: '' }, params), true);
   assert.equal(leavesPlace(here, { pathname: here.pathname, search: '?tab=details&view=list' }, params), true);
+});
+
+test('with no form open, signing out or switching company goes straight on', async () => {
+  assert.equal(await confirmLeaving(), true);
 });
 
 test('a search box or filter on the same tab is not leaving', () => {
