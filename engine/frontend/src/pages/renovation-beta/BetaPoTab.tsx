@@ -33,6 +33,7 @@ import {
   linesApi, linesCsv, postVo, refusalText,
   voBatches, type LineEdit, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
+import { BetaLoading } from "./BetaLoading";
 
 /** One colour per category band, in the mockup's spirit: [bar, band background, text]. */
 const BAND_BARS = ["#1A6B66", "#B4540A", "#1F4E8C", "#7A3E9D", "#2E7D32", "#A12622"] as const;
@@ -105,7 +106,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   }, [q.data]);
 
   if (q.error) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The sales order lines could not be loaded: {q.error}</p>;
-  if (!q.data) return <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading PO...</p>;
+  if (!q.data) return <BetaLoading label="Loading PO" />;
   const d = q.data;
   const editable = p.canWrite && editing;
   const toggle = (key: string): void => setClosed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
@@ -311,7 +312,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                     <th style={headStyle}>DO</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="stag">
                   {tree.map((c, ci) => {
                     const open = !closed.has(c.key);
                     const band = BANDS[ci % BANDS.length];

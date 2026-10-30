@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
+import { etag } from "hono/etag";
 import { secureHeaders } from "hono/secure-headers";
 import type { Env } from "./types";
 import { GIT_SHA, resolveBuildSha } from "./build-info";
@@ -26,6 +27,8 @@ import clientErrors from "./routes/clientErrors";
 import udf from "./routes/udf";
 import authRoutes from "./routes/auth";
 import contsSso from "./conts/sso";
+import { myClaimsRouter } from "./conts/my-claims-routes";
+import { claimsClient, staffFromAssertion, staffFromSession } from "./conts/staff-identity";
 import totpRoutes from "./routes/totp";
 import users from "./routes/users";
 import roles from "./routes/roles";
@@ -171,6 +174,17 @@ const inboxBustAfterWrite: MiddlewareHandler<{ Bindings: Env }> = async (c, next
   if (c.res.status >= 200 && c.res.status < 300) {
     const uid = c.get("user")?.id;
     if (uid != null) await bustInboxForUser(c.env, uid);
+  }
+};
+
+// Beta answers differ per user (category scope, finance hidden) and per company (X-Company-Id), so a browser may keep
+// them but must ask the server again before reuse, and a shared cache must never hold one. `no-cache` plus the ETag
+// from etag() below lets an unchanged answer come back as a small 304. Never `public`, never Hono cache().
+export const betaCacheHeaders: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
+  await next();
+  if (c.req.method === "GET" && c.res.status === 200) {
+    c.res.headers.set("Cache-Control", "private, no-cache");
+    c.res.headers.append("Vary", "Authorization, X-Company-Id");
   }
 };
 
@@ -391,6 +405,11 @@ app.route("/api/public/contractor-calendar", publicContractorCalendar);
 app.route("/api/public/brand-calendar", publicBrandCalendar);
 // PUBLIC no-login Beta Client PO list: the signed token names the one project. See routes/renovationBetaClientPublic.ts.
 app.route("/api/public/beta-client", renovationBetaClientPublic);
+// Conts: staff receipts and requests forwarded by Property OS's server for a person with no engine account (a cleaner
+// or technician on the phone). No engine session: the call carries a short-lived assertion signed with the single
+// sign-on secret, naming the person; every query is limited to them (conts/staff-identity.ts, conts/my-claims-routes.ts).
+app.use("/api/claims-forward/*", claimsClient, staffFromAssertion, companyContext);
+app.route("/api/claims-forward", myClaimsRouter("forward"));
 
 app.use("/api/*", auth);
 
@@ -463,6 +482,11 @@ app.use("/api/renovation/*", inboxBustAfterWrite);
 app.route("/api/renovation", renovation);
 // Beta workspace (owner, 23 Oct 2026): behind the auth gate, switched off in production by renovationBeta's first middleware.
 app.use("/api/beta/*", inboxBustAfterWrite);
+// etag() is registered first so it wraps betaCacheHeaders: a 304 it builds then carries Cache-Control and Vary.
+// It reads each response body whole to hash it, so every route under /api/beta must stay small JSON: a file or
+// download route belongs elsewhere.
+app.use("/api/beta/*", etag());
+app.use("/api/beta/*", betaCacheHeaders);
 app.route("/api/beta", renovationBeta);
 app.route("/api/beta", renovationBetaSheets);
 app.route("/api/sales", sales);
@@ -508,6 +532,10 @@ app.route("/api/assr-print", assrPrint);
 // conditions AND also lets a position pass when it has ANY scm* page-access
 // area granted at >= view — so per-position SCM grants work without removing
 // any existing user's access. (Was requireAnyPermission(["*","scm.access"]).)
+// Conts: a signed-in member of staff's own receipts and requests ("My claims"). Outside /api/scm on purpose: anyone
+// on the Conts staff list may use it, with no Supply chain or Finance access (conts/my-claims-routes.ts).
+app.use("/api/claims/*", claimsClient, staffFromSession);
+app.route("/api/claims", myClaimsRouter("session"));
 app.use("/api/scm/*", requireScmAccess);
 app.route("/api/scm", scmApp);
 

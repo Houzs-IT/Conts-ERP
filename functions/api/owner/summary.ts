@@ -2,6 +2,7 @@ import { type Env, all, one, json } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { ownerFor, VISIBLE } from '../../_lib/ownerScope';
 import { daysIn, todayMyt } from '../../_lib/ops';
+import { differingAccountTails } from '../../_lib/ownerBank';
 import { deductionTerm } from '../../../src/lib/statementTerms';
 
 /** GET /api/owner/summary?period=YYYY-MM — the gross-to-net for one finalised statement (the latest by default), payout and month stats. */
@@ -59,6 +60,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const payout = st ? await one<any>(env, 'SELECT state, amount, paid_at, bank_last4 FROM payouts WHERE statement_id = ? AND owner_id = ? ORDER BY created_at DESC LIMIT 1', st.id, owner.id) : null;
 
+  // Accounts the units are paid to when any is not the main one (0180): bank and last four of each, never a number. [] otherwise.
+  const accounts = st ? await differingAccountTails(env, st.id) : [];
+
   const perf = await one<any>(env, `
     SELECT COUNT(*) AS bookings, COALESCE(SUM(r.check_out::date - r.check_in::date), 0) AS nights, COALESCE(SUM(r.collected_revenue), 0) AS revenue
     FROM reservations r JOIN units u ON u.id = r.unit_id
@@ -76,6 +80,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       amount: Number(payout?.amount ?? st?.net_payout ?? 0), state: payout?.state ?? 'pending',
       paidAt: payout?.paid_at ?? null, scheduledFor: null,
       bankName: owner.bank_name, bankLast4: payout?.bank_last4 ?? owner.bank_account_last4,
+      accounts,
     },
     grossToNet,
     stats: {

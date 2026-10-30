@@ -15,7 +15,7 @@ import { controlCheckHandler, postPiAccounting } from '../src/scm/routes/account
 import { REVERSAL_SOURCE } from '../src/acc/rules';
 
 const CO = 1;
-const CHART: Row[] = ['300-0000', '320-0000', '400-0000', '500-0000', '601-0000'].map((code) => ({
+const CHART: Row[] = ['300-0000', '310-0010', '320-0000', '400-0000', '500-0000', '601-0000'].map((code) => ({
   account_code: code, account_name: code, account_type: code.startsWith('4') ? 'LIABILITY' : code.startsWith('5') ? 'INCOME' : code.startsWith('6') ? 'EXPENSE' : 'ASSET',
   parent_code: null, is_active: true, company_id: CO,
 }));
@@ -45,7 +45,12 @@ describe('opening documents post nothing themselves', () => {
 
 describe('opening documents settle as usual', () => {
   test('a payment on an opening sales invoice posts Dr bank Cr AR and lowers the debtor ageing', async () => {
-    const sb = fakeSb({ accounts: CHART, acc_account_roles: [], acc_acquirers: [], sales_invoices: [{ ...OPENING_SI }], journal_entries: [], journal_entry_lines: [] });
+    const sb = fakeSb({
+      accounts: CHART, acc_account_roles: [], acc_acquirers: [], sales_invoices: [{ ...OPENING_SI }], journal_entries: [], journal_entry_lines: [],
+      debtors: [{ company_id: CO, code: 'C1', name: 'Ah Meng', control_account: '300-0000', is_active: true }],
+      /* Finance confirmed the money onto the bank (SOP 4.2). */
+      acc_official_receipts: [{ id: 1, company_id: CO, payment_source: 'SIPAY', payment_id: 'sp-1', status: 'FORMAL', channel_account_code: '310-0010' }],
+    });
     const out = await postSiPayment(sb, { id: 'sp-1', sales_invoice_id: 'si-o1', paid_at: '2026-12-05', method: 'cash', merchant_provider: null, amount_sen: 20_000, company_id: CO } as never);
     expect(out).toMatchObject({ ok: true, status: 'posted' });
     const lines = sb.tables.journal_entry_lines;

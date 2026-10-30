@@ -151,7 +151,11 @@ export async function repostSoPaymentEdit(
     if (undone.status === 'reversed') { originalJeNo = undone.originalJeNo; contraJeNo = undone.jeNo; }
   }
 
-  const rebooked: PostPaymentResult = await postSoPayment(sb, p.after);
+  /* A payment that was posted keeps its posting through the edit: a confirmed
+     one re-posts on the bank finance chose, one posted before confirmation
+     existed on the accounts it had — never reversed and then left waiting.
+     One never posted (finance has not confirmed it) stays waiting. */
+  const rebooked: PostPaymentResult = await postSoPayment(sb, p.after, { wasPosted: live != null });
   if (!rebooked.ok) {
     /* The old entry is already reversed and the new one did not land, so this
        payment now has NO active entry. That is a state the Self-check unbooked

@@ -23,6 +23,8 @@ let copySourceDetail: { paymentVoucher: Record<string, unknown>; lines: Array<Re
 let reservations: { byPi: Record<string, number>; byApInvoice: Record<string, number>; holders: Record<string, string[]> } = { byPi: {}, byApInvoice: {}, holders: {} };
 /* The document a Customer Refund names (§14) — set by the refund test. */
 let refundSource: Record<string, unknown> | undefined;
+/* Conts (finance phase 1.5): the project field reads its own queries; this page's tests are about the voucher. */
+vi.mock('../../conts/ProjectLimitField', () => ({ ProjectLimitField: () => null }));
 vi.mock('../../vendor/scm/lib/payment-voucher-queries', () => ({
   useCreatePaymentVoucher: () => ({ mutateAsync, isPending: false }),
   usePvReservations: () => ({ data: reservations, isLoading: false }),

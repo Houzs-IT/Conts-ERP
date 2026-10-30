@@ -317,7 +317,7 @@ function YearPage({ r, u }: { r: Report; u: Unit }) {
 }
 
 const MODEL_NAME: Record<string, string> = {
-  management: 'Profit share', management_guarantee: 'Profit share, minimum guarantee', management_yearly_guarantee: 'Profit share, yearly guarantee', grr: 'Guaranteed rent', master_lease: 'Master lease', long_term: 'Long-term let', wh_long_term: 'Showroom / warehouse long-term let',
+  management: 'Profit share', management_guarantee: 'Profit share, minimum guarantee', management_yearly_guarantee: 'Profit share, yearly guarantee', grr: 'Guaranteed rent', master_lease: 'Master lease', long_term: 'Long-term let',
 };
 
 /** By owner, page 1: every unit of the statement on one page, with the owner's total. */

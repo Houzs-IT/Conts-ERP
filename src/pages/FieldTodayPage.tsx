@@ -183,6 +183,8 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
   const files = detail.data?.media.length ?? j.photoCount;
   // Not started, started without proof, started with proof, finished. The server's state and photo count decide it.
   const phase = j.done ? 'done' : j.state !== 'in_progress' ? 'todo' : files > 0 ? 'proof' : 'started';
+  // The server refuses a start while the departing guest is in (housekeeping/tasks/[id]/start.ts): Guest left comes first.
+  const guestIn = !j.done && !!j.previous && !j.guestOut;
 
   async function act(key: string, fn: () => Promise<unknown>, ok: string) {
     setBusy(key);
@@ -274,7 +276,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
               ? <span>{t.jobs.finishBy} <b className="tabular-nums">{j.next.checkInTime}</b> · <TimeLeft at={j.next.checkInAt} now={now} /></span>
               : <span className="text-muted-ink">{t.jobs.noArrival}</span>)}
             {!j.done && daysLate(j.day) > 0 && <span className="text-danger">{t.jobs.overdueFrom(t.common.days(daysLate(j.day)), weekday(j.day))}</span>}
-            {!j.done && j.previous && !j.guestOut && (
+            {guestIn && phase !== 'todo' && (
               <Button size="touch" variant="secondary" loading={busy === 'left'} onClick={() => void act('left', () => api.post('/housekeeping/guest-left', { taskId: j.id }), t.jobs.guestLeftOk)}>{t.jobs.guestLeft}</Button>
             )}
           </section>
@@ -306,7 +308,15 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
       {/* Pinned above the phone's home bar. data-action-bar lifts the staging View as switch above it (ViewAs.tsx). */}
       {(phase !== 'done' || !j.external) && (
         <div data-action-bar className="flex-none bg-card [border-top:1px_solid_var(--color-line)] px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] flex flex-col gap-2">
-          {phase === 'todo' ? (
+          {phase === 'todo' && guestIn ? (
+            <>
+              <span className="text-meta text-muted-ink">{t.jobs.startAfterGuestLeft}</span>
+              <Button size="touch" variant="primary" className="w-full" loading={busy === 'left'}
+                onClick={() => void act('left', () => api.post('/housekeeping/guest-left', { taskId: j.id }), t.jobs.guestLeftOk)}>
+                {t.jobs.guestLeft}
+              </Button>
+            </>
+          ) : phase === 'todo' ? (
             <Button size="touch" variant="primary" className="w-full" loading={busy === 'start'}
               onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${j.id}/start`, {}), t.jobs.startedAt(hm(new Date().toISOString())))}>
               {t.jobs.start}

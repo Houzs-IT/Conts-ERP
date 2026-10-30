@@ -153,7 +153,7 @@ export function suggestSupplierMatches(
 /* ── The control a party posts to (PR B; spec 2.4) ─────────────────────────────────────────────────────────── */
 
 /** The control account a customer's receivables post to, from scm.debtors (an inactive customer keeps its control).
-    No code, or a code with no row, is `control: null` — the caller then posts to the AR rule as before. A read that
+    No code, or a code with no row, is `control: null` — the caller then refuses to post (never the AR rule). A read that
     does not answer is `ok: false`: it must never read as "no control", or the line would land on the wrong one. */
 export async function debtorControl(sb: Db, companyId: number | null, debtorCode: string | null | undefined): Promise<{ ok: true; control: string | null } | { ok: false; error: string }> {
   const code = String(debtorCode ?? '').trim();
@@ -175,10 +175,21 @@ export function apControlFor(roles: RoleCodes, supplier: { code: string | null; 
   return apControlOf(roles, supplier);
 }
 
-/** The company's posting roles with AR pointed at this customer's own control: what every receivable posting asks. */
-export async function resolveDebtorRoles(sb: Db, companyId: number | null, debtorCode: string | null | undefined): Promise<{ ok: true; roles: RoleCodes } | { ok: false; error: string }> {
+/** Why a customer's posting waits: no customer on the document, or a customer with no account of its own. */
+export function noCustomerAccountReason(debtorCode: string | null | undefined): string {
+  const code = String(debtorCode ?? '').trim();
+  return code
+    ? `Customer ${code} has no account (for example 301-0000, 302-0000 or 303-0000). Set it on the customer, then post again.`
+    : 'This document names no customer. Choose the customer, then post again.';
+}
+
+/** The company's posting roles with AR pointed at this customer's own control: what every receivable posting asks.
+    A customer with no control of its own is never guessed onto the AR rule (chew, 29 Oct 2026: 不知道就别乱记账，等
+    finance 处理): the posting is refused with `noAccount`, and the document stays unposted until finance sets it. */
+export async function resolveDebtorRoles(sb: Db, companyId: number | null, debtorCode: string | null | undefined): Promise<{ ok: true; roles: RoleCodes } | { ok: false; error: string; noAccount?: true }> {
   const ctl = await debtorControl(sb, companyId, debtorCode);
   if (!ctl.ok) return { ok: false, error: `The customer's control could not be read: ${ctl.error}` };
+  if (!ctl.control) return { ok: false, error: noCustomerAccountReason(debtorCode), noAccount: true };
   return { ok: true, roles: rolesForDebtor(await resolveRoles(sb, companyId), ctl.control) };
 }
 
@@ -209,20 +220,22 @@ export function nextPartyCode(prefix3: string, letter: string, existing: string[
 }
 
 /** The customer of a new order, as a debtor: the one already opened for this customer under this control (by customer id, else by
-    name and phone), or a new one under the control the order's kind maps to (scm.acc_debtor_control_map; none →
-    the AR rule), coded the next in its series. Two orders opening one at the same time cannot take one code:
+    name and phone), or a new one under the control the order's kind maps to (scm.acc_debtor_control_map). A kind
+    with no control mapped opens nothing (`code: null`): finance chooses the customer's account, never a guess.
+    Coded the next in its series. Two orders opening one at the same time cannot take one code:
     the unique index refuses the second, which reads again and takes the next. */
 export async function ensureDebtor(
   sb: Db, companyId: number,
   input: { name: string; phone: string | null; email?: string | null; customerId: string | null; orderKind: OrderKind },
-): Promise<{ ok: true; code: string; created: boolean } | { ok: false; error: string }> {
+): Promise<{ ok: true; code: string | null; created: boolean } | { ok: false; error: string }> {
   const name = input.name.trim();
   if (!name) return { ok: false, error: 'A customer needs a name.' };
   const phone = input.phone?.trim() || null;
   const { data: mapRow, error: mapErr } = await sb.from('acc_debtor_control_map').select('control_account')
     .eq('company_id', companyId).eq('order_kind', input.orderKind).maybeSingle();
   if (mapErr) return { ok: false, error: mapErr.message };
-  const control = (mapRow as { control_account?: string } | null)?.control_account ?? (await resolveRoles(sb, companyId)).AR;
+  const control = (mapRow as { control_account?: string } | null)?.control_account;
+  if (!control) return { ok: true, code: null, created: false };
   /* One debtor per customer per control (chew, 24 Oct 2026): the same customer on a renovation and on an inhouse
      renovation has two, so each kind's sales and margin stay apart. Only debtors under this control are looked at. */
   const found = async (): Promise<{ ok: true; code: string | null } | { ok: false; error: string }> => {
@@ -277,14 +290,14 @@ export async function ensureDebtorSql(
   db: { q<T = Record<string, unknown>>(text: string, params?: readonly unknown[]): Promise<T[]> },
   companyId: number,
   input: { name: string; phone: string | null; email?: string | null; customerId: string | null; orderKind: OrderKind },
-): Promise<string> {
+): Promise<string | null> {
   const name = input.name.trim();
   const phone = input.phone?.trim() || null;
   const [mapped] = await db.q<{ control_account: string }>(
     'select control_account from scm.acc_debtor_control_map where company_id = $1 and order_kind = $2', [companyId, input.orderKind]);
-  const [role] = mapped ? [] : await db.q<{ account_code: string }>(
-    `select account_code from scm.acc_account_roles where company_id = $1 and role = 'AR'`, [companyId]);
-  const control = mapped?.control_account ?? role?.account_code ?? DEFAULT_ROLE_CODES.AR;
+  /* As ensureDebtor: a kind with no control mapped opens nothing; finance chooses the account. */
+  if (!mapped) return null;
+  const control = mapped.control_account;
   /* As ensureDebtor: one debtor per customer per control, so only this control's debtors are looked at. */
   if (input.customerId) {
     const [byCustomer] = await db.q<{ code: string }>(

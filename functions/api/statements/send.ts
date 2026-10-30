@@ -2,6 +2,7 @@ import { type Env, all, run, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { auditMany } from '../../_lib/history';
+import { bankAccountsReady, extraLast4Sql } from '../../_lib/ownerBank';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -30,17 +31,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       actorId: session.userId, actorLabel: session.fullName, action: 'statement.send',
       entityTable: 'owner_statements', entityId: r.id, before: { state: 'finalised' }, after: { state: 'sent' },
     })));
-    const info = await all<{ id: string; net_payout: number; owner_id: string; bank_account_last4: string | null; display_name: string; email: string; has_payout: boolean }>(env, `
-      SELECT s.id, s.net_payout, s.owner_id, o.bank_account_last4, o.display_name, o.email,
+    // No main account is fine when every line's unit has its own (0180); the payout then keeps the first one's last four.
+    const extra = (await bankAccountsReady(env)) ? extraLast4Sql('s') : 'NULL::text';
+    const info = await all<{ id: string; net_payout: number; owner_id: string; bank_account_last4: string | null; extra_last4: string | null; display_name: string; email: string; has_payout: boolean }>(env, `
+      SELECT s.id, s.net_payout, s.owner_id, o.bank_account_last4, ${extra} AS extra_last4, o.display_name, o.email,
              EXISTS (SELECT 1 FROM payouts p WHERE p.statement_id = s.id) AS has_payout
       FROM owner_statements s JOIN owners o ON o.id = s.owner_id
       WHERE s.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, ids);
     const byId = new Map(info.map(x => [x.id, x]));
     // A sent statement gets its payout row straight away. With no bank details on file it starts as failed, so finance sees it.
-    const payouts = sendable.map(r => byId.get(r.id)).filter((p): p is NonNullable<typeof p> => !!p && !p.has_payout).map(p => ({
-      id: crypto.randomUUID(), statement_id: p.id, owner_id: p.owner_id, amount: p.net_payout, state: p.bank_account_last4 ? 'pending' : 'failed',
-      bank_last4: p.bank_account_last4, failure_reason: p.bank_account_last4 ? null : 'No bank details on file for this owner.',
-    }));
+    const payouts = sendable.map(r => byId.get(r.id)).filter((p): p is NonNullable<typeof p> => !!p && !p.has_payout).map(p => {
+      const last4 = p.bank_account_last4 || p.extra_last4;
+      return {
+        id: crypto.randomUUID(), statement_id: p.id, owner_id: p.owner_id, amount: p.net_payout, state: last4 ? 'pending' : 'failed',
+        bank_last4: last4, failure_reason: last4 ? null : 'No bank details on file for this owner.',
+      };
+    });
     if (payouts.length) {
       await run(env, `
         INSERT INTO payouts (id, statement_id, owner_id, amount, currency, state, method, bank_last4, failure_reason, created_at)

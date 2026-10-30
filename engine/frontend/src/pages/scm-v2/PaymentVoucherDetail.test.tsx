@@ -32,6 +32,8 @@ const { updateAsync, idle, DETAIL } = vi.hoisted(() => {
   };
   return { updateAsync, idle, DETAIL };
 });
+/* Conts (finance phase 1.5): the project field reads its own queries; this page's tests are about the voucher. */
+vi.mock('../../conts/ProjectLimitField', () => ({ ProjectLimitField: () => null }));
 vi.mock('../../vendor/scm/lib/payment-voucher-queries', async (importOriginal) => ({
   /* The real constants stay (PV_FILE_ACCEPT for the files card); only the hooks are stubbed. */
   ...(await importOriginal<typeof import('../../vendor/scm/lib/payment-voucher-queries')>()),

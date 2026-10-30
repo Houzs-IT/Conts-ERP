@@ -17,8 +17,13 @@ export const roleKind = (role: AccountRole): RoleKind =>
   role === "CASH" || role === "BANK_DEFAULT" ? "money" : role === "TRANSIT_EDC" || role === "TRANSIT_ONLINE" ? "clearing" : "any";
 
 /** Rules nothing posts on any more, so they are not part of being ready: SALES was the template's (sales post by item
-    group), INVENTORY and CLOSING_STOCK the one-account stock the three stock buckets replaced (2026-09-21). */
-export const RETIRED_ROLES: readonly AccountRole[] = ["SALES", "INVENTORY", "CLOSING_STOCK"];
+    group), INVENTORY and CLOSING_STOCK the one-account stock the three stock buckets replaced (2026-09-21), PETTY_CASH
+    the one petty cash account each float's own account replaced (Conts, chew 29 Oct 2026), and AR: every customer posts
+    to its own account, and one without is never guessed onto a default (Conts, chew 29 Oct 2026). CUSTOMER_DEPOSITS was
+    reserved and never posted: a deposit sits on the customer's own account until the invoice (Conts, chew 29 Oct 2026:
+    顾客定金直接进顾客 account). OVER_SHORT books the daily cash count, and Conts keeps no cash drawer: cash goes straight
+    to the bank (chew, 29 Oct 2026); with no account, a count would post nothing rather than land on a guess. */
+export const RETIRED_ROLES: readonly AccountRole[] = ["SALES", "INVENTORY", "CLOSING_STOCK", "PETTY_CASH", "AR", "CUSTOMER_DEPOSITS", "OVER_SHORT"];
 
 /** Rules whose account holds open balances — what customers and suppliers owe, money waiting in a clearing, deposits,
     stock. Moving one leaves those balances on the old account while new postings go to the new one, so the move is
@@ -60,21 +65,24 @@ export function roleProblem(role: AccountRole, code: string, chart: readonly Cha
 }
 
 export async function ledgerSetupStatus(sb: Db, companyId: number): Promise<LedgerSetupStatus> {
-  const [roles, chartRes, groupsRes, bindsRes, lettersRes, settings] = await Promise.all([
+  const [roles, chartRes, groupsRes, bindsRes, lettersRes, settings, floatsRes] = await Promise.all([
     resolveRoles(sb, companyId),
     sb.from("accounts").select("account_code, is_active, acc_money, parent_code, special_type").eq("company_id", companyId),
     sb.from("acc_item_groups").select("code, is_active").order("code"),
     sb.from("acc_item_group_accounts").select(`group_code, ${BINDING_COLUMNS.join(", ")}`).eq("company_id", companyId),
     sb.from("acc_bank_letters").select("account_code, letter").eq("company_id", companyId),
     loadLedgerSettings(sb, companyId),
+    sb.from("petty_cash_floats").select("account_code").eq("company_id", companyId),
   ]);
-  for (const r of [chartRes, groupsRes, bindsRes, lettersRes]) if (r.error) throw new Error(r.error.message);
+  for (const r of [chartRes, groupsRes, bindsRes, lettersRes, floatsRes]) if (r.error) throw new Error(r.error.message);
   if (!settings.ok) throw new Error("The ledger settings could not be read.");
   const chart = (chartRes.data ?? []) as ChartRow[];
 
   const roleRows = (Object.keys(DEFAULT_ROLE_CODES) as AccountRole[])
     .filter((role) => !RETIRED_ROLES.includes(role))
-    .map((role) => ({ role, accountCode: roles[role], kind: roleKind(role), problem: roleProblem(role, roles[role], chart) }));
+    .map((role) => ({
+      role, accountCode: roles[role], kind: roleKind(role), problem: roleProblem(role, roles[role], chart),
+    }));
 
   const binds = new Map(((bindsRes.data ?? []) as Array<Record<string, unknown>>).map((b) => [String(b.group_code), b]));
   const itemGroups = ((groupsRes.data ?? []) as Array<{ code: string; is_active: boolean | null }>)
@@ -82,11 +90,13 @@ export async function ledgerSetupStatus(sb: Db, companyId: number): Promise<Ledg
     .map((g) => ({ group: g.code, missing: BINDING_COLUMNS.filter((col) => !String(binds.get(g.code)?.[col] ?? "").trim()) }))
     .filter((g) => g.missing.length > 0);
 
-  // The cash drawer mints on its fixed letter (payment-vouchers.ts mintFormalPvNo); every other money account needs one.
+  // The cash drawer mints on its fixed letter (payment-vouchers.ts mintFormalPvNo); every other money account needs one,
+  // except a petty cash float's own account, open or closed (Conts): nothing pays a voucher out of it.
+  const floatAccounts = new Set(((floatsRes.data ?? []) as Array<{ account_code: string | null }>).map((f) => f.account_code).filter(Boolean));
   const lettered = new Set(((lettersRes.data ?? []) as Array<{ account_code: string; letter: string | null }>)
     .filter((l) => String(l.letter ?? "").trim()).map((l) => l.account_code));
   const banksWithoutLetter = chart
-    .filter((a) => a.acc_money === true && a.is_active === true && a.account_code !== roles.CASH && !lettered.has(a.account_code))
+    .filter((a) => a.acc_money === true && a.is_active === true && a.account_code !== roles.CASH && !floatAccounts.has(a.account_code) && !lettered.has(a.account_code))
     .map((a) => a.account_code).sort();
 
   /* Conts: a customer or supplier control is posted to directly; one with sub-accounts would refuse every posting. */

@@ -173,6 +173,8 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "scm.payment_voucher.check", resource: "Supply Chain", verb: "manage", label: "Check payment voucher", description: "The first of the two yeses (owner 2026-09-02): check a prepared Payment Voucher — checking locks it and reserves it against Daily Bank's available money; a checker may also reject back to draft" },
   // Conts (finance phase 1): the Ledger area. Every ledger route asks for it literally (conts/ledger-access.ts).
   { key: "scm.ledger.use", resource: "Supply Chain", verb: "manage", label: "Use the ledger", description: "Accounts, payment vouchers, receipts and bank reconciliation. Never implied by *." },
+  // Conts (finance phase 1.5; SOP 3.4): extra limit for a project, approved by someone other than who asked.
+  { key: "scm.project_limit.approve", resource: "Supply Chain", verb: "manage", label: "Approve extra project limit", description: "Approve or reject a request for more limit (an amount, a higher percentage) or more budget on a project; never one's own request" },
   { key: "scm.payment_voucher.approve", resource: "Supply Chain", verb: "manage", label: "Approve payment voucher", description: "The second yes: approve a checked Payment Voucher — approval posts the GL entry in the same breath; an approver may also reject back to draft" },
 
   // Correcting a customer payment after the day it was keyed (owner +

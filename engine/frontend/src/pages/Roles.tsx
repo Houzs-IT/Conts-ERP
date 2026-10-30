@@ -43,7 +43,6 @@ import {
   type Verb,
 } from "../lib/rolesPermissionModel";
 import { RoleSettingsDrawer } from "./roles/RoleSettingsDrawer";
-import { RoleCategoryAccess } from "./roles/RoleCategoryAccess";
 import { NewRoleModal, RolePickerModal, type NewRoleDraft } from "./roles/RolesModals";
 
 type GroupFilter = "all" | "system" | "custom";
@@ -800,11 +799,6 @@ export function RolesTab({
                   </div>
                 </>
               ) : null}
-
-              {/* product categories: stored apart from the matrix, also on system roles (not the owner role) */}
-              {!isBulk && !current.permissions.includes("*") && (
-                <RoleCategoryAccess key={current.id} role={current} canManage={canManage} />
-              )}
             </>
           )}
         </div>

@@ -55,6 +55,9 @@ function harness(perms: readonly string[] = PV_KEYS) {
     suppliers: SUPPLIERS.map((r) => ({ ...r })),
     mfg_sales_orders: ORDERS.map((r) => ({ ...r })),
     sales_invoices: INVOICES.map((r) => ({ ...r })),
+    /* The order's customer has an account of its own: one with none is refused, never guessed onto the AR rule
+       (chew, 29 Oct 2026). */
+    debtors: [{ company_id: CO, code: customerPartyCode(null, 'cust-larding'), name: 'Larding Chen', control_account: '300-0000', is_active: true }],
     acc_account_roles: [],
     acc_credit_notes: [], acc_credit_note_lines: [],
     journal_entries: [], journal_entry_lines: [],

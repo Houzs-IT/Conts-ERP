@@ -21,7 +21,7 @@ import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
 import { depositInvoices } from '../src/scm/routes/deposit-invoices';
 import { postPaymentVoucherHandler, cancelPaymentVoucherHandler } from '../src/scm/routes/payment-vouchers';
 import { refundSourceHandler } from '../src/scm/lib/pv-refund';
-import { bookSoPaymentBestEffort } from '../src/scm/lib/so-payment-row';
+import { recordAndConfirm } from './lib/confirm-payment';
 import { postSiRevenue } from '../src/scm/lib/post-si-revenue';
 import { refundDepositInvoices } from '../src/acc/deposit-refunds';
 
@@ -34,6 +34,7 @@ const acct = (code: string, name: string, type: string, over: Row = {}): Row => 
 });
 const CHART: Row[] = [
   acct('300-0000', 'ACCOUNT RECEIVEABLE', 'ASSET', { special_type: 'SDC' }),
+  acct('310-0010', 'CASH AT BANK', 'ASSET', { acc_money: true }),
   acct('320-0000', 'CASH IN HAND', 'ASSET', { acc_money: true }),
   acct('500-0003', 'SALES OF SOFA', 'INCOME'),
   acct('509-0000', 'DEPOSIT PAY BY CUSTOMER', 'INCOME'),
@@ -58,6 +59,8 @@ function harness() {
     accounts: CHART.map((r) => ({ ...r })),
     companies: [{ id: CO, code: '2990', name: '2990' }],
     acc_account_roles: [],
+    /* The customer's own account: one with none is refused, never guessed onto the AR rule (chew, 29 Oct 2026). */
+    debtors: [{ company_id: CO, code: 'cust-larding', name: 'Larding Chen', control_account: '300-0000', is_active: true }],
     acc_company_settings: [{ ...ON }],
     acc_item_group_accounts: [{ company_id: CO, group_code: 'SOFA', sales_account: '500-0003', purchase_account: '601-0003' }],
     mfg_sales_orders: [{ doc_no: SO, company_id: CO, status: 'DELIVERED', debtor_code: null, debtor_name: 'Larding Chen', customer_id: 'cust-larding', phone: '0123' }],
@@ -102,8 +105,8 @@ const netOf = (sb: ReturnType<typeof harness>['sb'], code: string) =>
 
 /** Two deposits on the order, each with its deposit invoice. */
 async function withTwoDeposits(sb: ReturnType<typeof harness>['sb']) {
-  await bookSoPaymentBestEffort(sb, payment('p-1', 100_000, '2026-09-02'), 'payment');
-  await bookSoPaymentBestEffort(sb, payment('p-2', 50_000, '2026-09-05'), 'payment');
+  await recordAndConfirm(sb, payment('p-1', 100_000, '2026-09-02'), 'payment');
+  await recordAndConfirm(sb, payment('p-2', 50_000, '2026-09-05'), 'payment');
   expect(dis(sb).map((d) => d.di_number)).toEqual(['2990-DI-2609-001', '2990-DI-2609-002']);
 }
 const withFinalInvoice = (sb: ReturnType<typeof harness>['sb']) => {
@@ -193,8 +196,8 @@ describe('a refund voucher on an order with deposit invoices', () => {
     const rows = () => sb.tables.mfg_sales_order_payments as Row[];
     const mirror = rows().find((r) => r.refund_pv_id === 'pv1')!;
     expect(mirror).toMatchObject({ so_doc_no: SO, method: 'converted', amount_sen: -120_000, paid_at: '2026-09-08', account_sheet: 'Refund 2990-CRF-2609-001', note: 'Refunded by 2990-CRF-2609-001', created_by: null });
-    /* The two deposits above were handed to the hook, never inserted: the mirror is the only row here. */
-    expect(rows().map((r) => r.amount_sen)).toEqual([-120_000]);
+    /* Beside the two deposits (recorded, then confirmed), the mirror is the only new row. */
+    expect(rows().map((r) => r.amount_sen)).toEqual([100_000, 50_000, -120_000]);
     expect(jes(sb).some((j) => j.source_doc_no === mirror.id)).toBe(false);
     expect((sb.tables.mfg_so_audit_log as Row[]).map((a) => [a.so_doc_no, a.action, a.source, a.payment_id])).toEqual([[SO, 'ADD_PAYMENT', 'automation', mirror.id]]);
     /* Posting again finds it (the voucher is already posted, but the hook is idempotent on its own). */
@@ -203,13 +206,13 @@ describe('a refund voucher on an order with deposit invoices', () => {
     expect(rows().filter((r) => r.refund_pv_id === 'pv1')).toHaveLength(1);
 
     expect((await app.request('/payment-vouchers/pv1/cancel', { method: 'POST' })).status).toBe(200);
-    expect(rows()).toEqual([]);
+    expect(rows().map((r) => r.id)).toEqual(['p-1', 'p-2']);
     expect((sb.tables.mfg_so_audit_log as Row[]).map((a) => [a.action, a.note])).toEqual([['ADD_PAYMENT', 'Refund voucher 2990-CRF-2609-001 posted'], ['DELETE_PAYMENT', 'refund voucher 2990-CRF-2609-001 cancelled']]);
   });
 
   test('money no deposit invoice covers raises no note, and is reported', async () => {
     const { sb } = harness();
-    await bookSoPaymentBestEffort(sb, payment('p-1', 100_000, '2026-09-02'), 'payment');
+    await recordAndConfirm(sb, payment('p-1', 100_000, '2026-09-02'), 'payment');
     const r = await refundDepositInvoices(sb, { companyId: CO, pvId: 'pv1', pvNumber: '2990-CRF-2609-001', voucherDate: '2026-09-08', soDocNo: SO, amountSen: 120_000, actor: 'Chew' });
     expect(r).toMatchObject({ ok: true, uncoveredSen: 20_000 });
     expect((r as { raised: Array<{ diNumber: string; sen: number; closed: boolean }> }).raised).toEqual([

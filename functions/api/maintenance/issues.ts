@@ -44,6 +44,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const windows = await windowsFor(env, rows.map(r => r.id));
   const money = can(session, 'finance', 'view');
   const billing = await hasBilling(env);
+  // What staff bought for each job and handed in as receipts (finance, 29 Oct 2026): part of the job's actual cost, never
+  // charged to the owner again. Read from the engine's receipts through pos.staff_receipt_job_lines (migration 0178).
+  const purchases = new Map<string, number>();
+  if (money) {
+    try {
+      for (const p of await all<{ id: string; sen: number }>(env, 'SELECT maintenance_issue_id AS id, SUM(amount_sen) AS sen FROM staff_receipt_job_lines GROUP BY maintenance_issue_id')) purchases.set(p.id, Number(p.sen));
+    } catch { /* before migration 0178: no receipts yet */ }
+  }
   return json({
     generatedAt: nowIso(),
     // False until migration 0108 is applied: the screen then hides billing date, collected and contractor payment.
@@ -74,6 +82,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       ownerHasLogin: !!r.owner_has_login,
       billingDate: money && billing ? r.billing_date ?? null : null, collectedAt: money && billing ? r.collected_at ?? null : null,
       contractorAmount: money && billing ? r.contractor_amount ?? null : null, contractorPaidAt: money && billing ? r.contractor_paid_at ?? null : null,
+      staffPurchasesSen: money ? purchases.get(r.id) ?? 0 : null,
     })),
   });
 };

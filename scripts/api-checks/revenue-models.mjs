@@ -13,7 +13,7 @@ import { build } from 'esbuild';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const out = await build({
-  stdin: { contents: `export * from './functions/_lib/ownerStatement.ts'; export * from './functions/_lib/revenueModel.ts';`, resolveDir: root, loader: 'ts' },
+  stdin: { contents: `export * from './functions/_lib/ownerStatement.ts'; export * from './functions/_lib/revenueModel.ts'; export { contractView } from './functions/_lib/unitContract.ts';`, resolveDir: root, loader: 'ts' },
   bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'error',
 });
 const tmp = mkdtempSync(join(tmpdir(), 'rm-check-'));
@@ -96,15 +96,6 @@ const costs = [cost('e1', 'electricity', 30000), cost('c1', 'cleaning', 8000), c
   check('long_term: tenancy from 16 Sep -> 15 of 30 days of rent', half.gross === 150000 && half.operatorShare === 15000, `income ${rm(half.gross)}`);
   check('long_term: no miscellaneous charge even if flagged', month({ ...u, contract_misc: 1 }, [], []).deductionGroups.find(g => g.category === 'misc').amount === 0);
 }
-{
-  // A showroom / warehouse let (WH LT, migration 0139) is worked out exactly as a long-term let.
-  const lt = month(unit({ revenue_model: 'long_term', grr_amount: 300000, management_fee_pct: 10, tenant_name: 'Dream Crafter' }), stays, costs);
-  const wh = month(unit({ revenue_model: 'wh_long_term', grr_amount: 300000, management_fee_pct: 10, tenant_name: 'Dream Crafter' }), stays, costs);
-  check('wh_long_term: same rent, costs, fee and payout as long_term; bookings ignored',
-    wh.terms.model === 'wh_long_term' && wh.gross === lt.gross && wh.nights === 0 && wh.deductions === lt.deductions && wh.operatorShare === lt.operatorShare && wh.payoutBeforeAdjustments === lt.payoutBeforeAdjustments && adds(wh),
-    `income ${rm(wh.gross)} fee ${rm(wh.operatorShare)} payout ${rm(wh.payoutBeforeAdjustments)}`);
-  check('wh_long_term: one rent line names the tenant', wh.lines.some(l => l.type === 'gross' && l.category === 'long_term_rent' && /Dream Crafter/.test(l.description)));
-}
 
 /* ---------- 4. Contract history ---------- */
 console.log('\n4. Contract history (unitForMonth)');
@@ -128,11 +119,11 @@ check('owner + management + agent must add to 100', !!M.invalidDraft({ revenueMo
 check('75/20/5 is valid', Object.keys(M.invalidDraft({ revenueModel: 'management', ownerPct: 75, managementPct: 20, agentPct: 5, startsOn: '2026-09-01' })).length === 0);
 check('a guarantee needs its monthly minimum', !!M.invalidDraft({ revenueModel: 'management_guarantee', ownerPct: 75, managementPct: 25, startsOn: '2026-09-01' }).minimumGuarantee);
 check('a long-term let needs its tenant', !!M.invalidDraft({ revenueModel: 'long_term', monthlyRent: 200000, startsOn: '2026-09-01' }).tenantName);
-check('a showroom / warehouse let needs its tenant', !!M.invalidDraft({ revenueModel: 'wh_long_term', monthlyRent: 200000, startsOn: '2026-09-01' }).tenantName);
+check('WH LT is gone (migration 0181)', !M.isRevenueModel('wh_long_term'));
 {
-  const c = M.draftColumns({ revenueModel: 'wh_long_term', monthlyRent: 400000, managementPct: 10, tenantName: ' Dream Crafter ', ownerPct: 75, deposit: 1000, startsOn: '2026-09-01' });
-  check('a showroom / warehouse let keeps the rent, the operator % and the tenant, nothing else',
-    c.revenue_model === 'wh_long_term' && c.model === 'management' && c.grr_amount === 400000 && c.management_fee_pct === 10 && c.tenant_name === 'Dream Crafter' && c.deposit_amount === null && c.minimum_guarantee === 0);
+  const c = M.draftColumns({ revenueModel: 'long_term', monthlyRent: 400000, managementPct: 0, tenantName: ' Dream Crafter ', ownerPct: 75, deposit: 1000, startsOn: '2026-09-01' });
+  check('a long-term let keeps the rent and the tenant, nothing else',
+    c.revenue_model === 'long_term' && c.model === 'management' && c.grr_amount === 400000 && c.management_fee_pct === 0 && c.tenant_name === 'Dream Crafter' && c.deposit_amount === null && c.minimum_guarantee === 0);
 }
 {
   const c = M.draftColumns({ revenueModel: 'grr', monthlyRent: 300000, ownerPct: 75, minimumGuarantee: 280000, startsOn: '2026-09-01' });
@@ -193,6 +184,17 @@ if (process.env.BIGDATA_PORT) {
     throw Object.assign(new Error('rollback'), { rollback: true });
   }).catch(e => { if (!e.rollback) throw e; });
   await db.end();
+}
+
+console.log('\nContract type saved or only read from the terms (the Contract tab asks before it saves a guess)');
+{
+  const row = over => ({ id: 'c', model: 'management', management_fee_pct: 25, grr_amount: 0, minimum_guarantee: 0, ...over });
+  const view = c => M.contractView(c, { package: 'Package A' }, 25);
+  check('no code and no model saved: type not stored', view(row({})).typeStored === false);
+  check('a saved contract_code: type stored', view(row({ contract_code: 'PS GRR', minimum_guarantee: 310000 })).typeStored === true);
+  check('a saved revenue_model: type stored', view(row({ revenue_model: 'long_term' })).typeStored === true);
+  check('a contract_code that is not a code does not count', view(row({ contract_code: 'XYZ' })).typeStored === false);
+  check('no contract record: type not stored', M.contractView(null, { package: 'Package A', split_kind: null, split_value: null }, 25).typeStored === false);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall ok');

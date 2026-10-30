@@ -3,7 +3,7 @@
    control on scm.suppliers.control_account. Pinned, one per kind of entry:
      · an invoice debits the customer's control and names the customer; its payment credits the same control;
      · an order payment, a credit note and money moved between two customers' orders use each customer's control;
-     · a customer with no record keeps the AR rule (nothing changes for it);
+     · a customer with no record is refused and stays unposted, never guessed onto the AR rule (chew, 29 Oct 2026);
      · a purchase invoice and a supplier credit note credit / debit the supplier's own control. */
 import { describe, expect, test } from 'vitest';
 import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
@@ -19,7 +19,7 @@ const acct = (code: string, type: string, special: string | null = null): Row =>
 });
 const CHART: Row[] = [
   acct('300-0000', 'ASSET', 'SDC'), acct('301-0000', 'ASSET', 'SDC'), acct('302-0000', 'ASSET', 'SDC'),
-  acct('320-0000', 'ASSET'), acct('400-0000', 'LIABILITY', 'SCC'), acct('405-0000', 'LIABILITY', 'SCC'),
+  acct('310-0010', 'ASSET'), acct('320-0000', 'ASSET'), acct('400-0000', 'LIABILITY', 'SCC'), acct('405-0000', 'LIABILITY', 'SCC'),
   acct('500-0003', 'INCOME'), acct('510-0000', 'INCOME'), acct('601-0003', 'EXPENSE'), acct('612-0000', 'EXPENSE'),
 ];
 const DEBTORS: Row[] = [
@@ -34,6 +34,11 @@ const world = (over: Record<string, Row[]> = {}) => fakeSb({
   debtors: DEBTORS.map((r) => ({ ...r })),
   suppliers: [],
   mfg_sales_orders: [], sales_invoices: [], sales_invoice_items: [], journal_entries: [], journal_entry_lines: [],
+  /* The payments posted here were confirmed by finance (SOP 4.2): an unconfirmed one waits and posts nothing. */
+  acc_official_receipts: [
+    { id: 1, company_id: CO, payment_source: 'SIPAY', payment_id: 'sp-1', status: 'FORMAL', channel_account_code: '310-0010' },
+    { id: 2, company_id: CO, payment_source: 'SOPAY', payment_id: 'op-1', status: 'FORMAL', channel_account_code: '310-0010' },
+  ],
   ...over,
 }, {}, [], ['journal_entry_lines']);
 const arLine = (sb: ReturnType<typeof world>) => (sb.tables.journal_entry_lines as Row[])
@@ -65,6 +70,8 @@ describe('receivables post to the customer\'s control', () => {
     const sb = world({
       sales_invoices: [SI({ debtor_code: null, so_doc_no: 'HC-SO-2612-001' })],
       mfg_sales_orders: [{ doc_no: 'HC-SO-2612-001', company_id: CO, customer_id: 'cust-9', debtor_code: null, debtor_name: 'MS LEE' }],
+      /* The order's customer, keyed on its customer id, with an account of its own. */
+      debtors: [{ id: 'd9', company_id: CO, code: 'cust-9', name: 'MS LEE', control_account: DEFAULT_ROLE_CODES.AR, is_active: true }],
     });
     await postSiPayment(sb, { id: 'sp-1', sales_invoice_id: 'si-1', paid_at: '2026-12-05', method: 'cash', merchant_provider: null, amount_sen: 9_000, company_id: CO } as never);
     expect(arLine(sb)).toEqual([{ code: DEFAULT_ROLE_CODES.AR, dr: 0, cr: 9_000, party: 'cust-9' }]);
@@ -103,10 +110,13 @@ describe('receivables post to the customer\'s control', () => {
     expect(arLine(sb)).toEqual([{ code: '302-0000', dr: 0, cr: 2_000, party: '302-M005' }]);
   });
 
-  test('a customer with no record keeps the AR rule', async () => {
+  test('a customer with no record posts nothing and says why — never guessed onto the AR rule', async () => {
     const sb = world({ sales_invoices: [SI({ debtor_code: '300-X999' })], sales_invoice_items: [{ ...ITEM }] });
-    await postSiRevenue(sb, 'HC-SI-2612-001');
-    expect(arLine(sb)).toEqual([{ code: DEFAULT_ROLE_CODES.AR, dr: 30_000, cr: 0, party: '300-X999' }]);
+    const r = await postSiRevenue(sb, 'HC-SI-2612-001');
+    expect(r).toMatchObject({ ok: false });
+    expect(String((r as { reason?: string }).reason)).toContain('Customer 300-X999 has no account');
+    expect(sb.tables.journal_entries).toHaveLength(0);
+    expect(arLine(sb)).toEqual([]);
   });
 
   test('a customer whose record cannot be read posts nothing', async () => {

@@ -70,6 +70,9 @@ import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './account
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
 import { partyLedgerHandler } from '../../conts/party-ledger';
+import { approveLimitRequestHandler, createLimitRequestHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler } from '../../conts/project-limit-routes';
+import * as pettyCash from '../../conts/petty-cash-routes';
+import * as paymentRequests from '../../conts/payment-request-routes';
 import { assertAuditWritable, auditUnavailableBody, compactChanges, fieldChange, recordEntityAudit, type AuditActor } from '../lib/entity-audit';
 import { journalEntryEdit } from './accounting-journal-edit';
 import { reportLayoutGet, reportLayoutPut, reportLayoutReset } from './accounting-report-layouts';
@@ -80,7 +83,7 @@ import { performanceReport, savePerformanceSettingsHandler } from './accounting-
 import { forecastFiguresHandler, forecastGetHandler, forecastPutHandler } from './accounting-forecast';
 import { dashboardHandler } from './accounting-dashboard';
 import { numberingGet, numberingPut } from './accounting-numbering';
-import { receiptsList, receiptEnsure, receiptFormalise } from './accounting-receipts';
+import { receiptsList, receiptEnsure, receiptFormalise, receiptConfirmBanks } from './accounting-receipts';
 import { receiptsCheck } from './accounting-receipts-check';
 import { receiptsBackfillPlan, receiptsBackfillRun } from './accounting-receipts-backfill';
 import { ACCOUNT_SECTIONS, defaultSectionFor } from '../lib/account-sections';
@@ -206,6 +209,7 @@ accounting.get('/receipts', receiptsList);
 accounting.post('/receipts/ensure', receiptEnsure);
 accounting.get('/receipts/backfill', receiptsBackfillPlan);
 accounting.get('/receipts/check', receiptsCheck);
+accounting.get('/receipts/banks', receiptConfirmBanks);
 accounting.post('/receipts/backfill', receiptsBackfillRun);
 accounting.post('/receipts/:id/formalise', receiptFormalise);
 accounting.post('/item-groups', itemGroupCreate);
@@ -219,6 +223,41 @@ accounting.post('/chart/import/match', chartImportMatchHandler);
 accounting.get('/debtors', listDebtorsHandler);
 /* Conts: one customer's or supplier's ledger (conts/party-ledger.ts). */
 accounting.get('/party-ledger', partyLedgerHandler);
+/* Conts: a project's limit and extra limit (conts/project-limit-routes.ts; SOP 3.4). */
+accounting.get('/projects', listProjectsHandler);
+accounting.get('/everyday-expense', listEverydayExpenseHandler);
+accounting.put('/everyday-expense', setEverydayExpenseHandler);
+accounting.get('/projects/:id/limit', projectLimitHandler);
+accounting.post('/projects/:id/limit-requests', createLimitRequestHandler);
+accounting.get('/limit-requests', listLimitRequestsHandler);
+accounting.post('/limit-requests/:id/approve', approveLimitRequestHandler);
+accounting.post('/limit-requests/:id/reject', rejectLimitRequestHandler);
+/* Conts: petty cash floats and staff receipts (conts/petty-cash-routes.ts; SOP 6). */
+accounting.get('/petty-cash/options', pettyCash.optionsHandler);
+accounting.get('/petty-cash/floats', pettyCash.listFloatsHandler);
+accounting.post('/petty-cash/floats', pettyCash.createFloatHandler);
+accounting.patch('/petty-cash/floats/:id', pettyCash.updateFloatHandler);
+accounting.get('/petty-cash/floats/:id/receipts', pettyCash.floatReceiptsHandler);
+accounting.post('/petty-cash/floats/:id/top-up', pettyCash.topUpHandler);
+accounting.post('/petty-cash/floats/:id/returned', pettyCash.returnedHandler);
+accounting.get('/petty-cash/receipts', pettyCash.financeReceiptsHandler);
+accounting.post('/petty-cash/receipts/check', pettyCash.checkReceiptsHandler);
+accounting.post('/petty-cash/receipts/:id/reject', pettyCash.rejectReceiptHandler);
+accounting.post('/petty-cash/receipts/:id/repaid', pettyCash.repaidReceiptHandler);
+accounting.post('/petty-cash/receipts/:id/write-off', pettyCash.writeOffReceiptHandler);
+accounting.post('/petty-cash/receipts/:id/voucher', pettyCash.receiptVoucherHandler);
+accounting.get('/petty-cash/overrides', pettyCash.listOverridesHandler);
+accounting.put('/petty-cash/overrides', pettyCash.putOverridesHandler);
+accounting.get('/staff-bank/:userId', pettyCash.getStaffBankHandler);
+accounting.put('/staff-bank/:userId', pettyCash.putStaffBankHandler);
+accounting.get('/petty-cash/receipts/:id/files/:fileId', pettyCash.financeReceiptFileHandler);
+/* Conts: payment requests from staff (conts/payment-request-routes.ts; SOP 3.2, 3.5). */
+accounting.get('/payment-requests', paymentRequests.listRequestsHandler);
+accounting.post('/payment-requests/:id/voucher', paymentRequests.requestVoucherHandler);
+accounting.post('/payment-requests/:id/reject', paymentRequests.rejectRequestHandler);
+accounting.post('/payment-requests/:id/close', paymentRequests.closeRequestHandler);
+accounting.patch('/payment-requests/:id/supplier', paymentRequests.linkSupplierHandler);
+accounting.get('/payment-requests/:id/files/:fileId', paymentRequests.requestFileHandler);
 accounting.post('/debtors', createDebtorHandler);
 accounting.patch('/debtors/:id', patchDebtorHandler);
 accounting.put('/chart/rename', chartRenameHandler);
@@ -361,7 +400,8 @@ async function putRole(c: any, role: AccountRole): Promise<Response> {
 
   /* Moving a rule whose account already carries postings splits the books: what is posted stays on the old account,
      what comes next lands on the new one. Said once, with the balance, before it happens (Conts, spec 3.4). */
-  const current = (await resolveRoles(sb, co.companyId))[role];
+  const roleCodes = await resolveRoles(sb, co.companyId);
+  const current = roleCodes[role];
   if (current !== code && body.confirm !== true && OPEN_BALANCE_ROLES.includes(role)) {
     const { data: lines, error: lErr } = await paginateAll((from, to) => sb.from('v_gl_entries')
       .select('debit_sen, credit_sen, reversed, reversed_by_je').eq('company_id', co.companyId).eq('account_code', current)
@@ -806,6 +846,7 @@ export const postSiHandler = async (c: AccCtx): Promise<Response> => {
   }
   if (r.status === 'invoice_not_found') return c.json({ error: 'invoice_not_found' }, 404);
   if (r.status === 'zero_total')        return c.json({ error: 'zero_total' }, 400);
+  if (r.status === 'customer_no_account') return c.json({ error: 'customer_no_account', message: r.reason }, 409);
   return c.json({ error: r.status, reason: r.reason }, 500);
 };
 accounting.post('/post/si/:invoiceNumber', postSiHandler);

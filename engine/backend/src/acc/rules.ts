@@ -20,8 +20,10 @@
 //  Acquirer payout received  | Dr bank               / Cr transit      | SETTLEBANK  | SETTLEBANK_REVERSAL
 //
 //  Customer-payment debit side, by the sales panel's own method model:
-//    cash                 -> CASH role (335-0000)
-//    transfer             -> BANK_DEFAULT role (the transfer lands in the bank)
+//    cash, transfer       -> the bank finance confirmed it onto (Conts, SOP 4.2:
+//                            the poster passes the receipt's channel account,
+//                            else BANK_DEFAULT); with no bank given, the old
+//                            defaults: cash -> CASH role, transfer -> BANK_DEFAULT
 //    merchant/installment -> the acquirer's transit account (scm.acc_acquirers),
 //                            falling back to the TRANSIT_EDC role when the
 //                            acquirer is unmapped - loudly, never silently
@@ -56,7 +58,10 @@ export type AccountRole =
      the final invoice is a sale the day it arrives — the owner's e-invoice
      reading, 2026-09-12 — booked on the DEPOSIT PAY BY CUSTOMER sales
      account, never on the deposit LIABILITY (CUSTOMER_DEPOSITS above). */
-  | 'DEPOSIT_INCOME';
+  | 'DEPOSIT_INCOME'
+  /* Conts: the petty cash every department's float is paid from and every
+     checked receipt is credited to (SOP 6; design 2026-10-28 §4.5). */
+  | 'PETTY_CASH';
 
 /* Fallback = the accountant's own AutoCount codes (migration 0344; owner
    decision 2026-09-02: 迁到 AutoCount 码). Every company carries these codes,
@@ -89,6 +94,7 @@ export const DEFAULT_ROLE_CODES: Record<AccountRole, string> = {
   SALES_RETURNS: '510-0000',     // RETURN INWARDS (a customer credit note's default line)
   PURCHASE_RETURNS: '612-0000',  // PURCHASES RETURN (a supplier credit note's default line)
   DEPOSIT_INCOME: '509-0000',    // DEPOSIT PAY BY CUSTOMER (a deposit invoice's credit side)
+  PETTY_CASH: '320-0000',        // CASH IN HAND until finance names the petty cash account in Ledger setup
 };
 
 /** The accounts each closing-stock bucket books on (acc/stock-close.ts). */
@@ -519,13 +525,18 @@ export function customerPaymentLines(
     method: string;
     docNo: string;
     transitAccountCode?: string | null; // resolved acquirer transit, when mapped
+    /* The bank finance confirmed a cash or transfer payment onto (its receipt's
+       channel account); cash and transfer both land there when given. */
+    moneyAccountCode?: string | null;
     customerCode?: string | null;
     customerName?: string | null;
   },
   amountSen: number,
 ): RuleLine[] {
+  const banked = p.method === 'cash' || p.method === 'transfer';
   const debitAccount =
-    p.method === 'cash' ? roles.CASH
+    banked && p.moneyAccountCode ? p.moneyAccountCode
+    : p.method === 'cash' ? roles.CASH
     : p.method === 'transfer' ? roles.BANK_DEFAULT
     : (p.transitAccountCode || roles.TRANSIT_EDC);
   return [

@@ -16,8 +16,15 @@ import { controlCheckHandler } from '../src/scm/routes/accounting';
 
 const CO = 1;
 
+/* Every payment here was confirmed by finance (SOP 4.2): one still waiting is not a booking failure. */
+const confirmedAll = (tables: Record<string, Row[]>): Row[] => [
+  ...(tables.mfg_sales_order_payments ?? []).map((p) => ({ company_id: CO, payment_source: 'SOPAY', payment_id: p.id, status: 'FORMAL' })),
+  ...(tables.sales_invoice_payments ?? []).map((p) => ({ company_id: CO, payment_source: 'SIPAY', payment_id: p.id, status: 'FORMAL' })),
+];
+
 const harness = (tables: Record<string, Row[]>) => {
   const sb = fakeSb({
+    acc_official_receipts: confirmedAll(tables),
     accounts: [
       { account_code: '300-0000', account_name: 'Trade Debtor', account_type: 'ASSET', is_active: true, company_id: CO },
       { account_code: '400-0000', account_name: 'Trade Creditor', account_type: 'LIABILITY', is_active: true, company_id: CO },

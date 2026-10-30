@@ -18,6 +18,8 @@ export const SPLITS = ['Not set', 'Profit share', 'GRR — guaranteed rent'];
 /** Who may edit unit master data, contracts, lettings and channels: Full on Units. Those handlers gate on session.manage,
  *  which for a desk person in Units (not a management-only area) means Full. */
 export const mayEditUnits = (user: SessionUser | null | undefined): boolean => mayRun(user, 'properties');
+/** Where a unit's payout goes is owner payout work, so it follows the Owners area, not Units. */
+export const mayChoosePayAccount = (user: SessionUser | null | undefined): boolean => mayRun(user, 'owners');
 
 export const LAYOUTS = [
   ['studio', 'Studio'], ['1_bedroom', '1 bedroom'], ['2_bedroom', '2 bedroom'], ['3_bedroom', '3 bedroom'], ['4_plus_bedroom', '4+ bedroom'],
@@ -98,6 +100,8 @@ export interface UnitDetail {
     revenueModel?: RevenueModel; revenueModelLabel?: string; termsLabel?: string;
     baseRate?: number;
     purpose?: UnitPurpose; usedBy?: string | null; contractCode?: ContractCode | null;
+    /** The owner's extra bank account this unit is paid to; null: the owner's main account. */
+    bankAccountId?: string | null;
   };
   performance: {
     period: string; occupancy: number; occupiedNights: number; adr: number;

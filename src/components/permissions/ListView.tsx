@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type CSSProperties, type DragEvent, type FormEvent } from 'react';
 import { Button } from '../Button';
 import { Field } from '../Field';
 import { Select } from '../Select';
@@ -27,12 +27,72 @@ function peopleCount(e: unknown): number | null {
   return typeof count === 'number' ? count : 0;
 }
 
+/** A drag in progress: what is held, and the scope it may be dropped in (the departments of one side, the positions of one department). */
+interface Held { id: string; scope: string }
+interface DropAt { id: string; after: boolean }
+
+/**
+ * Native drag and drop for a short list. The grip starts the drag and only a row of the same scope takes the drop, so a
+ * position cannot land in another department and a department cannot leave its side. The drop is told which row it
+ * landed on and whether above or below its middle.
+ */
+function useReorderDrag(onDrop: (id: string, targetId: string, after: boolean) => void) {
+  // What is held lives in a ref so the drag handlers always see it; the state beside it only dims the row. The state is
+  // set after the drag has started: re-rendering inside dragstart makes Chrome end the drag at once.
+  const heldRef = useRef<Held | null>(null);
+  const [held, setHeld] = useState<Held | null>(null);
+  const [at, setAt] = useState<DropAt | null>(null);
+  const end = () => { heldRef.current = null; setHeld(null); setAt(null); };
+  const isAfter = (e: DragEvent<HTMLElement>): boolean => {
+    const box = e.currentTarget.getBoundingClientRect();
+    return e.clientY > box.top + box.height / 2;
+  };
+  return {
+    handle: (id: string, scope: string) => ({
+      draggable: true,
+      onDragStart: (e: DragEvent<HTMLElement>) => {
+        e.stopPropagation();
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', id);
+        const image = e.currentTarget.closest('[data-reorder-row]');
+        if (image) e.dataTransfer.setDragImage(image, 16, 16);
+        heldRef.current = { id, scope };
+        window.setTimeout(() => setHeld(heldRef.current), 0);
+      },
+      onDragEnd: end,
+    }),
+    row: (id: string, scope: string) => ({
+      onDragOver: (e: DragEvent<HTMLElement>) => {
+        const h = heldRef.current;
+        if (!h || h.scope !== scope || h.id === id) return;
+        e.preventDefault(); e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        const after = isAfter(e);
+        if (at?.id !== id || at.after !== after) setAt({ id, after });
+      },
+      onDrop: (e: DragEvent<HTMLElement>) => {
+        const h = heldRef.current;
+        if (!h || h.scope !== scope || h.id === id) return;
+        e.preventDefault(); e.stopPropagation();
+        onDrop(h.id, id, isAfter(e));
+        end();
+      },
+    }),
+    /** Dimmed while held; a line above or below the row it would land next to. */
+    style: (id: string): CSSProperties => ({
+      opacity: held?.id === id ? 0.45 : undefined,
+      boxShadow: at?.id === id ? `inset 0 ${at.after ? '-' : ''}2px 0 var(--color-info)` : undefined,
+    }),
+  };
+}
+type DragApi = ReturnType<typeof useReorderDrag>;
+
 /**
  * View 3 of the Permissions tab: the managed list that the invite and edit forms pick from. Departments are grouped by
  * the side they work on; each one lists its positions. Only management can change it.
  */
 export default function ListView({ onGoToDepartments }: { onGoToDepartments: () => void }) {
-  const { data, loading, error, reload } = useDepartments();
+  const { data, error, reload } = useDepartments();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
@@ -42,9 +102,16 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
   const [newKind, setNewKind] = useState<DepartmentKind>('staff');
   const [newSide, setNewSide] = useState<UserSide>('conts');
   const [addError, setAddError] = useState<string | null>(null);
+  // Both read `departments` and `reorderTo` below; they only run on a drop, after the list has rendered.
+  const deptDrag = useReorderDrag((id, target, after) => void reorderTo(departments, id, target, after, i => `/departments/${i}`));
+  const posDrag = useReorderDrag((id, target, after) => {
+    const d = departments.find(x => x.positions.some(p => p.id === id));
+    if (d) void reorderTo(d.positions, id, target, after, i => `/departments/positions/${i}`);
+  });
 
   if (error && !data) return <div className="p-5 text-copy text-muted-ink">{error}</div>;
-  if (loading || !data) return <div className="p-5 text-copy text-muted-ink">Loading departments…</div>;
+  // Only the first read blanks the page: after a change the list stays, so a drag or an arrow press does not flash it away.
+  if (!data) return <div className="p-5 text-copy text-muted-ink">Loading departments…</div>;
 
   const { canEdit } = data;
   const departments = data.departments.filter(d => !isFieldKind(d.kind));
@@ -69,15 +136,28 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
     }
   }
 
-  /** Reorder by renumbering: swap two neighbours in the full list, then save the sort of every item whose place changed. */
+  /** Saves a new order by renumbering: only the items whose place changed are sent. */
+  async function saveOrder<T extends { id: string; sort: number }>(list: T[], order: string[], path: (id: string) => string) {
+    const changed = order.map((oid, i) => ({ oid, sort: i + 1 })).filter(({ oid, sort }) => list.find(x => x.id === oid)?.sort !== sort);
+    if (changed.length === 0) return;
+    await run(() => Promise.all(changed.map(({ oid, sort }) => api.patch(path(oid), { sort }))), 'The order was not saved.');
+  }
+  /** The arrow keys: swap an item with its neighbour. */
   async function reorder<T extends { id: string; sort: number }>(list: T[], id: string, delta: -1 | 1, path: (id: string) => string) {
     const order = list.map(x => x.id);
     const at = order.indexOf(id);
     const to = at + delta;
     if (at < 0 || to < 0 || to >= order.length) return;
     [order[at], order[to]] = [order[to], order[at]];
-    const changed = order.map((oid, i) => ({ oid, sort: i + 1 })).filter(({ oid, sort }) => list.find(x => x.id === oid)?.sort !== sort);
-    await run(() => Promise.all(changed.map(({ oid, sort }) => api.patch(path(oid), { sort }))), 'The order was not saved.');
+    await saveOrder(list, order, path);
+  }
+  /** A drop: take the item out and put it next to the row it was dropped on. */
+  async function reorderTo<T extends { id: string; sort: number }>(list: T[], id: string, targetId: string, after: boolean, path: (id: string) => string) {
+    const order = list.map(x => x.id).filter(x => x !== id);
+    const target = order.indexOf(targetId);
+    if (target < 0) return;
+    order.splice(after ? target + 1 : target, 0, id);
+    await saveOrder(list, order, path);
   }
   const moveDepartment = (id: string, delta: -1 | 1) => reorder(departments, id, delta, i => `/departments/${i}`);
   const movePosition = (d: Department, id: string, delta: -1 | 1) => reorder(d.positions, id, delta, i => `/departments/positions/${i}`);
@@ -151,7 +231,7 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
           <section key={g.side} aria-label={g.label}>
             <div className="py-2 px-5 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold tracking-[0.06em] uppercase text-muted-ink">{g.label}</div>
             {list.map(d => (
-              <DepartmentCard key={d.id} d={d} canEdit={canEdit} busy={busy}
+              <DepartmentCard key={d.id} d={d} canEdit={canEdit} busy={busy} deptDrag={deptDrag} posDrag={posDrag}
                 canUp={departments.indexOf(d) > 0} canDown={departments.indexOf(d) < departments.length - 1}
                 onMove={delta => moveDepartment(d.id, delta)}
                 onPatch={(patch, fail) => run(() => api.patch(`/departments/${d.id}`, patch), fail)}
@@ -174,8 +254,8 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
   );
 }
 
-function DepartmentCard({ d, canEdit, busy, canUp, canDown, onMove, onPatch, onKindChange, onDelete, onAddPosition, onRenamePosition, onMovePosition, onDeletePosition }: {
-  d: Department; canEdit: boolean; busy: boolean; canUp: boolean; canDown: boolean;
+function DepartmentCard({ d, canEdit, busy, deptDrag, posDrag, canUp, canDown, onMove, onPatch, onKindChange, onDelete, onAddPosition, onRenamePosition, onMovePosition, onDeletePosition }: {
+  d: Department; canEdit: boolean; busy: boolean; deptDrag: DragApi; posDrag: DragApi; canUp: boolean; canDown: boolean;
   onMove: (delta: -1 | 1) => void;
   onPatch: (patch: { name?: string; side?: UserSide }, failTitle: string) => Promise<boolean>;
   onKindChange: (kind: DepartmentKind) => void;
@@ -187,9 +267,10 @@ function DepartmentCard({ d, canEdit, busy, canUp, canDown, onMove, onPatch, onK
 }) {
   const [newPosition, setNewPosition] = useState('');
   return (
-    <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-2.5">
-      <div className="flex items-center gap-3 flex-wrap">
-        <ReorderButtons disabled={!canEdit || busy} canUp={canUp} canDown={canDown} label={d.name} onMove={onMove} />
+    <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-2.5"
+      {...deptDrag.row(d.id, `dept:${d.side}`)} style={deptDrag.style(d.id)}>
+      <div data-reorder-row className="flex items-center gap-3 flex-wrap">
+        <ReorderHandle disabled={!canEdit || busy} canUp={canUp} canDown={canDown} label={d.name} onMove={onMove} drag={deptDrag.handle(d.id, `dept:${d.side}`)} />
         <EditableName value={d.name} canEdit={canEdit} onSave={name => onPatch({ name }, 'The department was not renamed.')} className="text-copy font-semibold" />
         <span className="text-caption text-muted-ink">{plural(d.headCount, 'person', 'people')}</span>
         <span className="flex-1" />
@@ -206,8 +287,9 @@ function DepartmentCard({ d, canEdit, busy, canUp, canDown, onMove, onPatch, onK
       {KIND_NOTE[d.kind] && <span className="text-caption text-muted-ink">{KIND_NOTE[d.kind]}</span>}
       <ul className="m-0 p-0 pl-[34px] list-none flex flex-col gap-1.5">
         {d.positions.map((p, i) => (
-          <li key={p.id} className="flex items-center gap-3 flex-wrap">
-            <ReorderButtons disabled={!canEdit || busy} canUp={i > 0} canDown={i < d.positions.length - 1} label={p.name} onMove={delta => onMovePosition(p, delta)} />
+          <li key={p.id} data-reorder-row className="flex items-center gap-3 flex-wrap" {...posDrag.row(p.id, `pos:${d.id}`)} style={posDrag.style(p.id)}>
+            <ReorderHandle disabled={!canEdit || busy} canUp={i > 0} canDown={i < d.positions.length - 1} label={p.name} onMove={delta => onMovePosition(p, delta)}
+              drag={posDrag.handle(p.id, `pos:${d.id}`)} />
             <EditableName value={p.name} canEdit={canEdit} onSave={name => onRenamePosition(p, name)} className="text-copy" />
             <span className="text-caption text-muted-ink">{plural(p.headCount, 'person', 'people')}</span>
             {canEdit && <Button size="sm" variant="tertiary" onClick={() => onDeletePosition(p)} disabled={busy} aria-label={`Delete ${p.name}`}>Delete</Button>}
@@ -228,12 +310,34 @@ function DepartmentCard({ d, canEdit, busy, canUp, canDown, onMove, onPatch, onK
   );
 }
 
-function ReorderButtons({ disabled, canUp, canDown, label, onMove }: { disabled: boolean; canUp: boolean; canDown: boolean; label: string; onMove: (delta: -1 | 1) => void }) {
-  const BTN = 'grid place-items-center w-6 h-5 p-0 border-none bg-transparent text-muted-ink cursor-pointer disabled:opacity-30 disabled:cursor-default';
+type DragHandleProps = ReturnType<DragApi['handle']>;
+
+/**
+ * The grip a row is dragged by. Arrow keys on the grip move the row too, and a touch screen, which cannot drag, shows
+ * the two arrow buttons instead.
+ */
+function ReorderHandle({ disabled, canUp, canDown, label, onMove, drag }: {
+  disabled: boolean; canUp: boolean; canDown: boolean; label: string; onMove: (delta: -1 | 1) => void; drag: DragHandleProps;
+}) {
+  const ARROW = 'grid place-items-center w-6 h-5 p-0 border-none bg-transparent text-muted-ink cursor-pointer disabled:opacity-30 disabled:cursor-default';
   return (
-    <span className="flex flex-col flex-none">
-      <button type="button" className={BTN} disabled={disabled || !canUp} onClick={() => onMove(-1)} aria-label={`Move ${label} up`}><span className="rotate-180 grid"><Icon name="ChevronDown" size="sm" /></span></button>
-      <button type="button" className={BTN} disabled={disabled || !canDown} onClick={() => onMove(1)} aria-label={`Move ${label} down`}><Icon name="ChevronDown" size="sm" /></button>
+    <span className="flex items-center flex-none">
+      {/* A span, not a button: Firefox does not start a drag from a button. */}
+      <span role="button" aria-disabled={disabled} tabIndex={disabled ? -1 : 0} title={disabled ? undefined : 'Drag to reorder'}
+        aria-label={`Reorder ${label}. Drag it, or press the up or down arrow key.`}
+        {...(disabled ? {} : drag)}
+        onKeyDown={e => {
+          if (disabled) return;
+          if (e.key === 'ArrowUp' && canUp) { e.preventDefault(); onMove(-1); }
+          else if (e.key === 'ArrowDown' && canDown) { e.preventDefault(); onMove(1); }
+        }}
+        className={`grid place-items-center w-6 h-6 text-muted-ink rounded-control ${disabled ? 'opacity-30' : 'cursor-grab active:cursor-grabbing hover:text-ink'}`}>
+        <Icon name="GripVertical" size="sm" />
+      </span>
+      <span className="hidden [@media(pointer:coarse)]:flex flex-col">
+        <button type="button" className={ARROW} disabled={disabled || !canUp} onClick={() => onMove(-1)} aria-label={`Move ${label} up`}><span className="rotate-180 grid"><Icon name="ChevronDown" size="sm" /></span></button>
+        <button type="button" className={ARROW} disabled={disabled || !canDown} onClick={() => onMove(1)} aria-label={`Move ${label} down`}><Icon name="ChevronDown" size="sm" /></button>
+      </span>
     </span>
   );
 }

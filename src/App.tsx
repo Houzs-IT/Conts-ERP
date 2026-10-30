@@ -79,6 +79,8 @@ const StockTransfersPage = lazy(() => import('./pages/StockTransfersPage'));
 const StockTakesPage = lazy(() => import('./pages/StockTakesPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
+const UnitPnlPage = lazy(() => import('./pages/UnitPnlPage'));
+const YearlyReportPage = lazy(() => import('./pages/YearlyReportPage'));
 const StatementDetailPage = lazy(() => import('./pages/StatementDetailPage'));
 const OwnerIncomeReportPage = lazy(() => import('./pages/OwnerIncomeReportPage'));
 const StatementsPrintPage = lazy(async () => ({ default: (await import('./pages/OwnerIncomeReportPage')).StatementsPrintPage }));
@@ -92,10 +94,12 @@ const ReviewsPage = lazy(() => import('./pages/ReviewsPage'));
 const InboxPage = lazy(() => import('./pages/InboxPage'));
 const AutomationsPage = lazy(() => import('./pages/AutomationsPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
+const CategoryAccessPage = lazy(() => import('./pages/CategoryAccessPage'));
 const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
 const HostPlatformImportPage = lazy(() => import('./pages/HostPlatformImportPage'));
 const SystemHealthPage = lazy(() => import('./pages/SystemHealthPage'));
 const ItSupportPage = lazy(() => import('./pages/ItSupportPage'));
+const MyClaimsPage = lazy(() => import('./pages/MyClaimsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
@@ -105,6 +109,7 @@ const FieldHome = lazy(() => import('./pages/FieldHome'));
 const FieldClockPage = lazy(() => import('./pages/FieldClockPage'));
 const FieldMePage = lazy(() => import('./pages/FieldMePage'));
 const FieldPayPage = lazy(() => import('./pages/FieldPayPage'));
+const FieldReceiptsPage = lazy(() => import('./pages/FieldReceiptsPage'));
 const OwnerPortalPage = lazy(() => import('./pages/OwnerPortalPage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
 const MobileSettingsHub = lazy(() => import('./components/MobileSettingsHub'));
@@ -242,7 +247,7 @@ function Routed() {
   if (user.role === 'housekeeper' || user.role === 'technician') {
     // Cleaners' and technicians' screens moved from /field (then /worker) to /portal; old bookmarks and links follow.
     if (/^\/(field|worker)(\/|$)/.test(location.pathname)) return <Navigate to={location.pathname.replace(/^\/(field|worker)/, '/portal') + location.search} replace />;
-    return <Suspense fallback={<Fallback />}><FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : location.pathname.startsWith('/portal/clock') ? <FieldClockPage /> : location.pathname.startsWith('/portal/me') ? <FieldMePage /> : location.pathname.startsWith('/portal/pay') ? <FieldPayPage /> : <FieldHome />}</Suspense></FieldShell></Suspense>;
+    return <Suspense fallback={<Fallback />}><FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : location.pathname.startsWith('/portal/clock') ? <FieldClockPage /> : location.pathname.startsWith('/portal/me') ? <FieldMePage /> : location.pathname.startsWith('/portal/pay') ? <FieldPayPage /> : location.pathname.startsWith('/portal/receipts') ? <FieldReceiptsPage /> : <FieldHome />}</Suspense></FieldShell></Suspense>;
   }
   // Owners see only their own portal, whatever the address bar says.
   if (user.role === 'owner') {
@@ -348,6 +353,8 @@ function Routed() {
         {/* Owner statements and owner payouts moved onto the owner; Expenses is Accounts payable (owner, 11 Oct 2026). */}
         <Route path="/finance/payables" element={<ExpensesPage />} />
         <Route path="/finance/utility-bills" element={<ExpensesPage utilities />} />
+        <Route path="/finance/unit-pnl" element={<UnitPnlPage />} />
+        <Route path="/reports/yearly" element={<YearlyReportPage />} />
         <Route path="/finance/expenses" element={<Moved to="/finance/payables" />} />
         <Route path="/finance/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
         <Route path="/finance/statements/:id" element={<MovedStatement />} />
@@ -356,6 +363,7 @@ function Routed() {
         {/* The same screens in the supply chain Finance group, so that sidebar stays put (finance phase 1). */}
         <Route path="/supply/finance/payables" element={<ExpensesPage />} />
         <Route path="/supply/finance/utility-bills" element={<ExpensesPage utilities />} />
+        <Route path="/supply/finance/unit-pnl" element={<UnitPnlPage />} />
         <Route path="/supply/finance/approvals" element={<ApprovalsPage />} />
         {/* Project monitor was dropped (owner, 11 Oct 2026): old links open the Schedule. */}
         <Route path="/projects/monitor" element={<Moved to="/projects/calendar" />} />
@@ -373,6 +381,7 @@ function Routed() {
         <Route path="/account" element={<AccountPage />} />
         <Route path="/change-password" element={<Navigate to="/" replace />} />
         <Route path="/system/users" element={<UsersPage />} />
+        <Route path="/system/category-access" element={<CategoryAccessPage />} />
         <Route path="/system/integrations" element={<IntegrationsPage />} />
         <Route path="/system/integrations/hostplatform" element={<HostPlatformImportPage />} />
         <Route path="/settings" element={<SettingsHome />} />
@@ -381,6 +390,8 @@ function Routed() {
         <Route path="/system/health" element={<SystemHealthPage />} />
         <Route path="/system/it-support" element={<ItSupportPage />} />
         <Route path="/supply/it-support" element={<ItSupportPage />} />
+        <Route path="/my-claims" element={<MyClaimsPage />} />
+        <Route path="/supply/my-claims" element={<MyClaimsPage />} />
         <Route path="*" element={<NotDesignedPage />} />
       </Route>
     </Routes>

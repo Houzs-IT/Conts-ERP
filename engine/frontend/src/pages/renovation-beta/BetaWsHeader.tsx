@@ -3,7 +3,8 @@
 
 import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { ArrowLeft, MessageCircle, Pencil } from "lucide-react";
+import { motion } from "motion/react";
 import { usePeople } from "../projects/renovation/PersonSelect";
 import type { ProjectDetailV2 } from "../projects/renovation/simpleApi";
 import type { AssignRole, BetaDialog } from "./BetaForms";
@@ -90,62 +91,64 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
 
   return (
     <section style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0, flex: "1 1 320px" }}>
-        <Link to="/beta/projects" aria-label="Back to the project list" style={{ ...btnStyle("outline", "lg"), width: 44, padding: 0, flex: "none" }}>
+      {/* A grid: the team chips sit under the title on a wide screen, and take the full width under it on a phone
+          (.ws-head in BetaWsUi.tsx), where the column beside the back button was too narrow for them. */}
+      <div className="ws-head" style={{ display: "grid", gridTemplateColumns: "44px minmax(0, 1fr)", columnGap: 12, alignItems: "start", minWidth: 0, flex: "1 1 320px" }}>
+        <Link to="/beta/projects" aria-label="Back to the project list" style={{ ...btnStyle("outline", "lg"), width: 44, padding: 0 }}>
           <ArrowLeft size={18} aria-hidden="true" />
         </Link>
-        {/* Grows to the row's width, so the team chips wrap at the page edge and not at the title's width. */}
-        <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ minWidth: 0 }}>
           <h1 className="h1" style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: "-.02em", overflowWrap: "anywhere" }}>{title}</h1>
           <div style={{ marginTop: 4, color: BETA.muted, fontSize: 14 }}>
             {line}
             {left && <> <span style={{ color: left.late ? WS.red : WS.green, fontWeight: 600 }}>{left.text}</span></>}
           </div>
-          <div role="group" aria-label="Project team" className="chips" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 12 }}>
-            {chips.map((c) => {
-              const bg = c.lead ? BETA.blueSoft : BETA.surface;
-              const one = c.who.length === 1 ? infoOf(c.who[0].id) : "";
-              const extra = one || (c.who.length > 1 ? c.who.map((x) => x.name).join(", ") : "");
-              // The chip fits its text, as the design's pills do; the third line shows only when it has something to say.
-              const body = (
-                <>
-                  <AvatarStack who={c.who} ring={bg} />
-                  <span style={{ display: "flex", flexDirection: "column", gap: 2, lineHeight: 1.2, minWidth: 0 }}>
-                    <span style={{ fontSize: 11, color: BETA.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.role}</span>
-                    <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{peopleLine(c.who)}</span>
-                    {extra && <span style={{ fontSize: 12, color: BETA.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{extra}</span>}
-                  </span>
-                </>
-              );
-              const box = { display: "flex", alignItems: "center", gap: 10, minHeight: CARD_H, maxWidth: 300, minWidth: 0, padding: "6px 14px 6px 8px", borderRadius: 32, background: bg, border: `1px solid ${c.lead ? BETA.blue : BETA.glassEdge}`, boxSizing: "border-box" } as const;
-              return (
-                <div key={c.key} title={c.who.map((x) => x.name).join(", ") || undefined} style={{ ...box, padding: 0, gap: 0, overflow: "hidden" }}>
-                  {canWrite ? (
-                    <button type="button" onClick={() => openDialog({ t: "assign", projectId: p.id, role: c.key })} aria-label={`${c.role}: ${c.who.map((x) => x.name).join(", ") || "not set"}. Change`}
-                      style={{ ...box, border: 0, borderRadius: 0, flex: 1, background: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
-                      {body}
-                      <Pencil size={14} aria-hidden="true" style={{ flex: "none", marginLeft: 2, color: BETA.muted }} />
-                    </button>
-                  ) : <div style={{ ...box, border: 0, flex: 1, background: "transparent" }}>{body}</div>}
-                  {c.lead && designer && (
-                    <a
-                      href={whatsappLink(phone, `Hi ${designer}, about ${p.name}.`)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ flex: "none", marginRight: 8, minHeight: 32, padding: "0 12px", borderRadius: 999, background: BETA.accentFill, color: "#FFFFFF", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", textDecoration: "none" }}
-                    >
-                      WhatsApp<span className="sr"> {designer}</span>
-                    </a>
-                  )}
-                </div>
-              );
-            })}
-            {canWrite && (
-              <button type="button" onClick={() => openDialog({ t: "assign", projectId: p.id })} style={{ minHeight: CARD_H, padding: "0 20px", border: `1.5px dashed ${BETA.dash}`, borderRadius: 999, background: "transparent", color: BETA.ink, font: "inherit", fontWeight: 600, cursor: "pointer" }}>
-                Assign
-              </button>
-            )}
-          </div>
+        </div>
+        <div role="group" aria-label="Project team" className="chips" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 12 }}>
+          {chips.map((c) => {
+            // The lead's tint is see-through, so it sits on a solid surface: the page's colour wash must not show through.
+            const bg = c.lead ? `linear-gradient(${BETA.pick}, ${BETA.pick}), ${BETA.surface}` : BETA.surface;
+            const one = c.who.length === 1 ? infoOf(c.who[0].id) : "";
+            const extra = one || (c.who.length > 1 ? c.who.map((x) => x.name).join(", ") : "");
+            // The chip fits its text, as the design's pills do; the third line shows only when it has something to say.
+            const body = (
+              <>
+                <AvatarStack who={c.who} ring={BETA.surface} />
+                <span style={{ display: "flex", flexDirection: "column", gap: 2, lineHeight: 1.2, minWidth: 0 }}>
+                  <span style={{ fontSize: 11, color: BETA.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".05em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.role}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{peopleLine(c.who)}</span>
+                  {extra && <span style={{ fontSize: 12, color: BETA.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{extra}</span>}
+                </span>
+              </>
+            );
+            const box = { display: "flex", alignItems: "center", gap: 10, minHeight: CARD_H, maxWidth: 300, minWidth: 0, padding: "6px 14px 6px 8px", borderRadius: 32, background: bg, border: `1px solid ${c.lead ? BETA.border : BETA.glassEdge}`, boxSizing: "border-box" } as const;
+            return (
+              <div key={c.key} className={c.lead ? "chip-lead" : undefined} title={c.who.map((x) => x.name).join(", ") || undefined} style={{ ...box, padding: 0, gap: 0, overflow: "hidden" }}>
+                {canWrite ? (
+                  <button type="button" onClick={() => openDialog({ t: "assign", projectId: p.id, role: c.key })} aria-label={`${c.role}: ${c.who.map((x) => x.name).join(", ") || "not set"}. Change`}
+                    style={{ ...box, border: 0, borderRadius: 0, flex: 1, background: "transparent", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
+                    {body}
+                    <Pencil size={14} aria-hidden="true" style={{ flex: "none", marginLeft: 2, color: BETA.muted }} />
+                  </button>
+                ) : <div style={{ ...box, border: 0, flex: 1, background: "transparent" }}>{body}</div>}
+                {c.lead && designer && (
+                  <a
+                    href={whatsappLink(phone, `Hi ${designer}, about ${p.name}.`)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ flex: "none", marginRight: 8, minHeight: 32, padding: "0 12px", borderRadius: 999, background: BETA.accentFill, color: "#FFFFFF", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
+                  >
+                    <MessageCircle size={14} aria-hidden="true" />WhatsApp<span className="sr"> {designer}</span>
+                  </a>
+                )}
+              </div>
+            );
+          })}
+          {canWrite && (
+            <button type="button" onClick={() => openDialog({ t: "assign", projectId: p.id })} style={{ minHeight: CARD_H, padding: "0 20px", border: `1.5px dashed ${BETA.dash}`, borderRadius: 999, background: "transparent", color: BETA.ink, font: "inherit", fontWeight: 600, cursor: "pointer" }}>
+              Assign
+            </button>
+          )}
         </div>
       </div>
     </section>
@@ -169,36 +172,50 @@ const DOT_NOW = "radial-gradient(circle at 32% 26%,#FFD0DA 0%,#F7889E 55%,#EE5C7
 const LINE_DONE = "linear-gradient(90deg,#6E9BFF,#C9A6F2,#F6A9C4)";
 
 export function BetaWsStepper({ items, hold }: { items: StepperItem[]; hold: string | null }): ReactElement {
+  // On a phone (.step-cap) the dots fit the width and only the current step is written out under them.
+  const capAt = Math.max(items.findIndex((s) => s.state === "current"), items.map((s) => s.state).lastIndexOf("done"), 0);
+  const cap = items[capAt];
   return (
-    // .no-bar: it still scrolls sideways on a phone, without the grey bar and arrows inside the card.
+    // .no-bar: a tablet still scrolls sideways, without the grey bar and arrows inside the card.
     <div className="no-bar" style={{ ...GLASS, overflowX: "auto", overflowY: "hidden", borderRadius: 26, padding: "20px 8px 16px" }}>
-      <ol aria-label="Project stages" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", minWidth: 560 }}>
+      <ol aria-label="Project stages" className="steps" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", minWidth: 560 }}>
         {items.map((s, i) => {
           const last = i === items.length - 1;
           const done = s.state === "done";
           const now = s.state === "current";
           const dot = { position: "relative", boxSizing: "border-box", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" } as const;
           return (
-            <li key={s.key} ref={now ? scrollIntoRow : undefined} aria-current={now ? "step" : undefined} style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, textAlign: "center" }}>
-              {!last && <div aria-hidden="true" style={{ position: "absolute", top: 13, left: "50%", width: "100%", height: 6, borderRadius: 6, background: done ? LINE_DONE : BETA.stepTrack, boxShadow: done ? "0 0 10px rgba(47,107,255,.4)" : undefined }} />}
+            <motion.li key={s.key} ref={now ? scrollIntoRow : undefined} aria-current={now ? "step" : undefined} initial={{ opacity: 0, scale: 0.7, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", stiffness: 380, damping: 26, delay: 0.05 + i * 0.05 }} style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, textAlign: "center" }}>
+              {!last && <motion.div aria-hidden="true" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: 0.45, ease: "easeOut", delay: 0.2 + i * 0.07 }} style={{ position: "absolute", top: 13, left: "50%", width: "100%", height: 6, borderRadius: 6, transformOrigin: "left center", background: done ? LINE_DONE : BETA.stepTrack, boxShadow: done ? "0 0 10px rgba(47,107,255,.4)" : undefined }} />}
               {done ? (
                 <div style={{ ...dot, zIndex: 1, width: 30, height: 30, background: DOT_DONE, boxShadow: "inset 0 2px 3px rgba(255,255,255,.6),inset 0 -3px 6px rgba(10,40,140,.3),0 6px 12px -4px rgba(47,107,255,.5)" }}><WsCheck /></div>
               ) : now ? (
                 <div style={{ ...dot, zIndex: 1, width: 34, height: 34, marginTop: -2, background: DOT_NOW, boxShadow: "0 0 0 6px rgba(238,92,120,.12),0 10px 24px -6px rgba(238,92,120,.55),inset 0 2px 3px rgba(255,255,255,.6),inset 0 -4px 8px rgba(170,40,70,.25)" }}>
+                  <span className="ring" aria-hidden="true" />
                   <span style={{ width: 12, height: 12, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#FFFFFF,#FFE3EA)", boxShadow: "0 0 6px rgba(255,255,255,.9)" }} />
                 </div>
               ) : (
                 <div style={{ ...dot, zIndex: 1, width: 30, height: 30, background: BETA.stepNext, border: `1px solid ${BETA.stepNextEdge}`, boxShadow: BETA.stepNextShadow }} />
               )}
-              <div style={{ marginTop: now ? 0 : undefined, fontSize: 13, fontWeight: now ? 700 : 600, color: now ? BETA.stepNow : done ? BETA.ink : BETA.muted }}>
-                {s.label}<span className="sr">{done ? " (done)" : now ? " (current step)" : " (not yet)"}</span>
+              <div className="step-text" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: now ? 700 : 600, color: now ? BETA.stepNow : done ? BETA.ink : BETA.muted }}>
+                  {s.label}<span className="sr">{done ? " (done)" : now ? " (current step)" : " (not yet)"}</span>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: now ? 600 : 400, color: now ? BETA.stepNow : BETA.faint }}>{s.sub}</div>
+                {now && hold && <WsBadge tone={TONE_WAIT} size={11}>{hold}</WsBadge>}
               </div>
-              <div style={{ fontSize: 12, fontWeight: now ? 600 : 400, color: now ? BETA.stepNow : BETA.faint }}>{s.sub}</div>
-              {now && hold && <WsBadge tone={TONE_WAIT} size={11}>{hold}</WsBadge>}
-            </li>
+            </motion.li>
           );
         })}
       </ol>
+      {cap && (
+        <div className="step-cap" aria-hidden="true" style={{ flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: "4px 8px", marginTop: 12, padding: "0 8px", textAlign: "center", fontSize: 13 }}>
+          <span style={{ fontWeight: 700, color: cap.state === "current" ? BETA.stepNow : BETA.ink }}>{cap.label}</span>
+          {cap.sub !== "-" && <span style={{ fontWeight: 600, color: cap.state === "current" ? BETA.stepNow : BETA.muted }}>{cap.sub}</span>}
+          {cap.state === "current" && hold && <WsBadge tone={TONE_WAIT} size={11}>{hold}</WsBadge>}
+          <span style={{ width: "100%", fontSize: 12, color: BETA.faint }}>Step {capAt + 1} of {items.length}</span>
+        </div>
+      )}
     </div>
   );
 }

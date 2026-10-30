@@ -3,7 +3,7 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { type Building, type Unit } from './shared';
 import type { UnitReadiness } from '../../lib/types';
 import { statusOf } from '../../lib/status';
-import { PURPOSE_LABEL, USED_BY, CODES, codeName } from '../../lib/revenueModel';
+import { PURPOSE_LABEL, USED_BY, CODES, codeName, packageOf } from '../../lib/revenueModel';
 import { CodeBadge } from './UnitExtras';
 
 const USED_BY_LABEL = Object.fromEntries(USED_BY.map(u => [u.value, u.label]));
@@ -31,7 +31,8 @@ export function UnitList({ units, buildings, readiness, loading, error, onRetry,
     { key: 'state', label: 'State', value: u => byId.get(u.buildingId)?.state ?? u.state, width: 130, filter: { kind: 'select' } },
     { key: 'city', label: 'City', value: u => byId.get(u.buildingId)?.city ?? '', hidden: true, width: 130 },
     { key: 'owner', label: 'Owner', type: 'person', value: u => u.ownerName, width: 170 },
-    { key: 'package', label: 'Package', value: u => u.pkg, width: 110, filter: { kind: 'select' } },
+    // From the contract's code, so it can never disagree with the Contract column (units.package is a stale import field).
+    { key: 'package', label: 'Package', value: u => packageOf(u.contractCode), width: 110, filter: { kind: 'select' } },
     { key: 'code', label: 'Contract', value: u => u.contractCode ?? null, width: 96, render: u => <CodeBadge code={u.contractCode} size="sm" />,
       filter: { kind: 'select', options: CODES.map(c => ({ value: c.code, label: `${codeName(c.code)} · ${c.label}` })) } },
     { key: 'terms', label: 'Terms', value: u => u.termsLabel ?? null, width: 150 },

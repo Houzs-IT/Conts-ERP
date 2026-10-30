@@ -56,13 +56,13 @@ const BASE_TOKENS = {
   /* A solid fill that carries white text: a done dot, a check, a "today" circle; and a small dark tag or avatar. */
   accentFill: ["#0F5F58", "#1F8F82"],
   avatar: ["#111216", "rgba(120,160,255,.28)"],
-  focus: ["#5C96FF", "#9FC0FF"],
+  focus: ["#2F6BFF", "#9FC0FF"],
   /* Flat tints inside a card: a panel, a table head, a chip, the row that was opened last, a teal highlight. */
   panel: ["rgba(255,255,255,.55)", "rgba(255,255,255,.05)"],
   head: ["rgba(255,255,255,.4)", "rgba(255,255,255,.04)"],
   chip: ["rgba(10,10,10,.05)", "rgba(255,255,255,.08)"],
   row: ["rgba(255,255,255,.82)", "rgba(255,255,255,.06)"],
-  pick: ["rgba(230,237,255,.75)", "rgba(80,130,255,.16)"],
+  pick: ["rgba(10,10,10,.07)", "rgba(255,255,255,.1)"],
   tealSoft: ["rgba(220,240,237,.6)", "rgba(40,200,180,.1)"],
   /* Glass: cards get the background, edge, glow and blur; the solid pair is what reduced transparency swaps in. */
   glass: ["linear-gradient(180deg,rgba(255,255,255,.86),rgba(244,246,251,.62))", "linear-gradient(180deg,rgba(255,255,255,.085),rgba(255,255,255,.025))"],
@@ -71,13 +71,22 @@ const BASE_TOKENS = {
   glassShadow: [GLASS_SHADOW_VISION, GLASS_SHADOW_NIGHT],
   blur: ["blur(30px) saturate(1.6)", "blur(30px) saturate(1.6)"],
   blurSm: ["blur(12px)", "blur(12px)"],
+  /* A chosen filter, tab or day: flat ink, so blue stays for the one main action. The text colour is its pair. */
+  selInk: ["#111216", "#EEF1F8"],
+  selInkText: ["#FFFFFF", "#151823"],
   /* Buttons: the blue pill for the main action, the glass pill for the rest. */
   blue: ["#2F6BFF", "#7FA6FF"],
   blueSoft: ["#E6EDFF", "rgba(80,130,255,.18)"],
-  btnMain: ["linear-gradient(180deg,rgba(92,150,255,.96) 0%,rgba(31,91,234,.92) 100%)", "linear-gradient(180deg,rgba(120,170,255,.55) 0%,rgba(50,100,230,.45) 100%)"],
+  btnMain: ["linear-gradient(180deg,rgba(47,107,255,.97) 0%,rgba(31,91,234,.94) 100%)", "linear-gradient(180deg,rgba(120,170,255,.55) 0%,rgba(50,100,230,.45) 100%)"],
   btnMainShadow: [
     "inset 0 2px 3px rgba(255,255,255,.55),inset 0 -5px 10px rgba(10,40,140,.3),0 10px 22px -8px rgba(47,107,255,.6),0 0 24px rgba(90,150,255,.55),0 0 0 1px rgba(160,200,255,.6)",
     "inset 0 1px 2px rgba(255,255,255,.55),inset 0 -6px 12px rgba(20,50,160,.35),0 0 0 1px rgba(150,195,255,.7),0 0 28px rgba(70,140,255,.7),0 12px 24px -10px rgba(0,0,0,.6)",
+  ],
+  /* The green pill of a confirming action (approve, complete, close): white text stays at 4.5:1 or better on both skins. */
+  btnConfirm: ["linear-gradient(180deg,#187A70 0%,#0F5F58 100%)", "linear-gradient(180deg,#1A8276 0%,#13665D 100%)"],
+  btnConfirmShadow: [
+    "inset 0 2px 3px rgba(255,255,255,.4),inset 0 -5px 10px rgba(5,50,45,.3),0 10px 22px -8px rgba(15,95,88,.55),0 0 0 1px rgba(120,200,190,.55)",
+    "inset 0 1px 2px rgba(255,255,255,.4),inset 0 -6px 12px rgba(5,50,45,.35),0 0 0 1px rgba(120,220,205,.6),0 12px 24px -10px rgba(0,0,0,.6)",
   ],
   btnGlass: ["linear-gradient(180deg,rgba(255,255,255,.82) 0%,rgba(244,246,250,.42) 100%)", "linear-gradient(180deg,rgba(255,255,255,.14) 0%,rgba(255,255,255,.04) 100%)"],
   btnGlassShadow: [
@@ -85,6 +94,8 @@ const BASE_TOKENS = {
     "inset 0 1px 1px rgba(255,255,255,.22),0 0 0 1px rgba(170,140,255,.35),0 0 18px -4px rgba(150,110,255,.45),0 10px 20px -10px rgba(0,0,0,.6)",
   ],
   btnEdge: ["rgba(255,255,255,.7)", "rgba(150,175,255,.24)"],
+  /* The glass pill sits on a white card, so a white edge made it vanish: it gets a slate edge in the light skin. */
+  btnGlassEdge: ["rgba(55,70,125,.65)", "rgba(150,175,255,.24)"],
   /* The project stepper: the track, a step not reached yet, the step in progress and a step done. */
   stepTrack: ["rgba(255,255,255,.55)", "rgba(255,255,255,.08)"],
   stepNext: ["linear-gradient(180deg,rgba(255,255,255,.9),rgba(240,244,250,.55))", "linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.04))"],
@@ -153,11 +164,22 @@ export const BETA_SKIN_CSS: string = (() => {
     ...Object.entries(BASE_TOKENS).map(([name, pair]) => `--beta-${name}:${pair[i]}`),
     ...Object.entries(TONE_TOKENS).flatMap(([family, keys]) => Object.entries(keys).map(([k, pair]) => `--beta-tone-${family}-${k}:${pair[i]}`)),
   ].join(";");
-  return `:root{${rows(0)}}
+  /* Compose Semi Bold is the one weight the font has; 100 to 900 all map to it so a heading is not faux-bolded on top.
+     On a touch screen every text field is 16px: iPhone Safari zooms the whole page into any field set smaller, and the
+     page then stays zoomed after the field closes.
+     The engine's page skeleton (shown while a Beta screen's code loads) is light cream; on the night skin it is dimmed
+     so opening a project does not flash white. The rule lives here because the screen that was open keeps this style
+     tag mounted, hidden, while the next one loads. */
+  return `@font-face{font-family:"Compose";src:url(/fonts/compose-semibold.ttf) format("truetype");font-weight:100 900;font-style:normal;font-display:swap}
+:root{--beta-font:"Compose",system-ui,sans-serif;${rows(0)}}
+html.beta-page :is(body,button,input,select,textarea){font-family:var(--beta-font)}
 html[data-beta-skin="night"]{${rows(1)}}
 @media (prefers-reduced-transparency:reduce){:root,html[data-beta-skin="night"]{--beta-glass:var(--beta-glassSolid);--beta-blur:none;--beta-blurSm:none}}
 html.beta-page body,html.beta-page main.paper-grain{background:var(--beta-page);background-attachment:fixed}
-html.beta-page[data-beta-skin="night"]{color-scheme:dark}`;
+html.beta-page[data-beta-skin="night"]{color-scheme:dark}
+@media (pointer:coarse){html.beta-page :is(input:not([type=checkbox],[type=radio],[type=range],[type=file],[type=color]),select,textarea){font-size:16px!important}}
+html.beta-page[data-beta-skin="night"] .skeleton{background:linear-gradient(90deg,rgba(255,255,255,.05) 0%,rgba(255,255,255,.11) 50%,rgba(255,255,255,.05) 100%);background-size:800px 100%}
+@media (prefers-reduced-motion:no-preference){.stag>*{animation:bwsin .34s cubic-bezier(.2,.8,.2,1) both}@keyframes bwsin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.stag>*:nth-child(1){animation-delay:0ms}.stag>*:nth-child(2){animation-delay:45ms}.stag>*:nth-child(3){animation-delay:90ms}.stag>*:nth-child(4){animation-delay:135ms}.stag>*:nth-child(5){animation-delay:180ms}.stag>*:nth-child(6){animation-delay:225ms}.stag>*:nth-child(7){animation-delay:270ms}.stag>*:nth-child(8){animation-delay:315ms}.stag>*:nth-child(9){animation-delay:360ms}.stag>*:nth-child(10){animation-delay:405ms}.stag>*:nth-child(11){animation-delay:450ms}.stag>*:nth-child(12){animation-delay:495ms}}`;
 })();
 
 /* ---------- Shared looks (inline styles that more than one file uses) ---------- */
@@ -173,9 +195,20 @@ export const PILL_MAIN: CSSProperties = {
   backdropFilter: BETA.blurSm, WebkitBackdropFilter: BETA.blurSm,
 };
 
+/** A chosen filter pill: flat ink, no glow, so it does not read as the main action. */
+export const PILL_SELECTED: CSSProperties = {
+  border: `1px solid ${BETA.selInk}`, borderRadius: 999, background: BETA.selInk, color: BETA.selInkText,
+};
+
+/** The green pill of a confirming action: approve, complete, close. */
+export const PILL_CONFIRM: CSSProperties = {
+  border: `1px solid ${BETA.btnEdge}`, borderRadius: 999, background: BETA.btnConfirm, boxShadow: BETA.btnConfirmShadow, color: "#FFFFFF",
+  backdropFilter: BETA.blurSm, WebkitBackdropFilter: BETA.blurSm,
+};
+
 /** The glass pill of every other button. */
 export const PILL_GLASS: CSSProperties = {
-  border: `1px solid ${BETA.btnEdge}`, borderRadius: 999, background: BETA.btnGlass, boxShadow: BETA.btnGlassShadow, color: BETA.ink,
+  border: `1px solid ${BETA.btnGlassEdge}`, borderRadius: 999, background: BETA.btnGlass, boxShadow: BETA.btnGlassShadow, color: BETA.ink,
   backdropFilter: BETA.blurSm, WebkitBackdropFilter: BETA.blurSm,
 };
 

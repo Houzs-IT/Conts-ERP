@@ -16,7 +16,10 @@ import { BetaCalDeadlines } from "./BetaCalDeadlines";
 import { BetaCalProgress } from "./BetaCalProgress";
 import { BetaCalMonth } from "./BetaCalMonth";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
-import { BetaSkin } from "./BetaWsUi";
+import { BetaSkin, useBetaPreload } from "./BetaWsUi";
+import { motion } from "motion/react";
+import { BetaLoading } from "./BetaLoading";
+import { BetaMotion, SPRING } from "./betaMotion";
 
 type CalTab = "design" | "prog" | "mine";
 const TABS: ReadonlyArray<readonly [CalTab, string]> = [["design", "Deadlines"], ["prog", "Progress"], ["mine", "Calendar"]];
@@ -26,6 +29,7 @@ export const ADD_PROJECT_PATH = "/projects?view=list&new=1";
 
 /** The colours are set before anything else draws, so the loading line and an error already have them. */
 export function RenovationBetaCalendar(): ReactElement {
+  useBetaPreload();
   return (
     <>
       <BetaSkin />
@@ -52,7 +56,7 @@ function CalendarScreen(): ReactElement {
   const m = useMemo(() => (q.data ? buildModel(q.data) : null), [q.data]);
 
   if (q.error && !m) return <ErrorBanner text={`The calendar could not be loaded: ${q.error}`} onRetry={q.reload} />;
-  if (!m) return <p style={{ padding: "40px 0", textAlign: "center", color: MUTED, fontSize: 14 }}>Loading calendar...</p>;
+  if (!m) return <BetaLoading label="Loading calendar" size="page" />;
 
   const who: Viewing = pick ?? m.mePersonId ?? "All";
   const viewingName = who === "All" ? null : m.everyone.find((x) => x.id === who)?.name ?? null;
@@ -84,24 +88,26 @@ function CalendarScreen(): ReactElement {
   const raw = (id: number): BetaBoardProject | undefined => q.data?.projects.find((p) => p.id === id);
 
   const switchBtn = (on: boolean): CSSProperties => ({
-    minHeight: 36, padding: "0 14px", border: `2px solid ${on ? BETA.blue : "transparent"}`, borderRadius: 999, font: "inherit", fontWeight: 600, cursor: "pointer",
+    minHeight: 36, padding: "0 14px", border: "2px solid transparent", position: "relative", borderRadius: 999, font: "inherit", fontWeight: 600, cursor: "pointer",
     background: on ? BETA.surface : "transparent", color: on ? BETA.ink : INK_SOFT,
   });
 
   return (
+    <BetaMotion>
     <div style={{ display: "flex", flexDirection: "column", gap: 16, color: BETA.ink }}>
       <section style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: "-.02em" }}>Calendar</h1>
           <div style={{ marginTop: 4, color: MUTED, fontSize: 14 }}>{SOP_LABEL(m)}</div>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: INK_SOFT }}>
+        {/* minWidth 0 down to the select: a select is as wide as its longest name, and on a phone it ran off the screen. */}
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, minWidth: 0, maxWidth: "100%" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: INK_SOFT, minWidth: 0, maxWidth: "100%" }}>
             Viewing
             <select
               value={String(who)}
               onChange={(e) => setPick(e.target.value === "All" ? "All" : Number(e.target.value))}
-              style={{ minHeight: 40, border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, padding: "0 12px", font: "inherit", fontWeight: 600, background: BETA.field, boxShadow: BETA.btnGlassShadow, color: BETA.ink }}
+              style={{ minHeight: 40, minWidth: 0, maxWidth: "100%", flex: "1 1 auto", border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, padding: "0 12px", font: "inherit", fontWeight: 600, background: BETA.field, boxShadow: BETA.btnGlassShadow, color: BETA.ink }}
             >
               <option value="All">Whole team</option>
               {m.people.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
@@ -110,7 +116,10 @@ function CalendarScreen(): ReactElement {
           </label>
           <div role="tablist" aria-label="Calendar views" style={{ display: "flex", gap: 2, padding: 3, borderRadius: 999, background: BETA.head }}>
             {TABS.map(([key, label]) => (
-              <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} style={switchBtn(tab === key)}>{label}</button>
+              <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} style={switchBtn(tab === key)}>
+                {tab === key && <motion.span layoutId="cal-view-ring" transition={SPRING} aria-hidden="true" style={{ position: "absolute", inset: -2, border: `2px solid ${BETA.selInk}`, borderRadius: 999, pointerEvents: "none" }} />}
+                {label}
+              </button>
             ))}
           </div>
         </div>
@@ -184,5 +193,6 @@ function CalendarScreen(): ReactElement {
       />
       {toast}
     </div>
+    </BetaMotion>
   );
 }

@@ -3,7 +3,7 @@ import { checkDate } from './validate';
 /** How an owner is paid for a unit: one revenue model per contract (migration 0093). The model decides how the
  *  monthly statement is worked out (ownerStatement.ts); the Units screen's Contract tab shows only its fields. */
 
-export const REVENUE_MODELS = ['management', 'management_guarantee', 'management_yearly_guarantee', 'grr', 'master_lease', 'long_term', 'wh_long_term'] as const;
+export const REVENUE_MODELS = ['management', 'management_guarantee', 'management_yearly_guarantee', 'grr', 'master_lease', 'long_term'] as const;
 export type RevenueModel = typeof REVENUE_MODELS[number];
 export const isRevenueModel = (v: unknown): v is RevenueModel => typeof v === 'string' && (REVENUE_MODELS as readonly string[]).includes(v);
 
@@ -14,7 +14,6 @@ export const MODEL_LABEL: Record<RevenueModel, string> = {
   grr: 'Guaranteed rent (GRR)',
   master_lease: 'Master lease',
   long_term: 'Long-term let',
-  wh_long_term: 'Showroom / warehouse long-term',
 };
 
 /** The model of a contract row, or of a unit with no contract. A contract that has no revenue_model (written by the
@@ -48,7 +47,6 @@ export function termsLabel(model: RevenueModel, t: { ownerPct: number | null; ag
     case 'grr': return `GRR ${rm(t.rent ?? 0)}/mo`;
     case 'master_lease': return `Master lease ${rm(t.rent ?? 0)}/mo`;
     case 'long_term': return `Long-term ${rm(t.rent ?? 0)}/mo`;
-    case 'wh_long_term': return `WH long-term ${rm(t.rent ?? 0)}/mo`;
   }
 }
 
@@ -85,9 +83,8 @@ export function rentToRentColumns(d: ContractDraft): Record<(typeof RENT_TO_RENT
 
 /** A profit share: the owner gets a percentage of the net (with or without a guarantee). */
 export const isShare = (m: RevenueModel) => m === 'management' || m === 'management_guarantee' || m === 'management_yearly_guarantee';
-/** Let to one tenant: the owner gets the tenant's rent less the operator %. A rental unit (long_term) or a showroom /
- *  warehouse (wh_long_term); the sums are the same. */
-export const isTenancy = (m: RevenueModel) => m === 'long_term' || m === 'wh_long_term';
+/** Let to one tenant: the owner gets the tenant's rent less the operator %. */
+export const isTenancy = (m: RevenueModel) => m === 'long_term';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const sen = (v: unknown) => Number.isInteger(v) && (v as number) >= 0;

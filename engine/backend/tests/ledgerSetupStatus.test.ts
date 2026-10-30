@@ -31,11 +31,20 @@ function world(over: Record<string, Row[]> = {}) {
     /* Every money account except the cash drawer needs a letter: the bank here. */
     acc_bank_letters: [{ company_id: CO, account_code: DEFAULT_ROLE_CODES.BANK_DEFAULT, letter: 'M' }],
     acc_company_settings: [{ company_id: CO, ledger_start_date: '2026-12-01', fiscal_year_end_month: 8 }],
+    petty_cash_floats: [],
     ...over,
   });
 }
 
 describe('ledgerSetupStatus', () => {
+  test("petty cash is each float's own account: no petty cash rule, and a float's account needs no voucher letter", async () => {
+    const pc = acct('315-0101', { account_name: 'PETTY CASH - AMIN', acc_money: true, special_type: 'SCH' });
+    const s = await ledgerSetupStatus(world({ accounts: [...fullChart(), pc], petty_cash_floats: [{ id: 'F1', company_id: CO, account_code: '315-0101', active: false }] }), CO);
+    expect(s.roles.map((r) => r.role)).not.toContain('PETTY_CASH');
+    expect(s.banksWithoutLetter).toEqual([]);
+    expect(s.ready).toBe(true);
+  });
+
   test('ready when every role, item group binding, bank letter and the ledger start are set', async () => {
     const s = await ledgerSetupStatus(world(), CO);
     expect(s.roles.filter((r) => r.problem)).toEqual([]);
@@ -45,25 +54,46 @@ describe('ledgerSetupStatus', () => {
     expect(s.ready).toBe(true);
   });
 
-  test('a role pointing at a code that is not in the chart is a problem', async () => {
+  test('AR is retired: every customer posts to its own account, so it is not a rule and its account does not hold the books back', async () => {
+    /* chew, 29 Oct 2026: a customer with no account is never guessed onto a default. */
     const s = await ledgerSetupStatus(world({ accounts: fullChart().filter((a) => a.account_code !== DEFAULT_ROLE_CODES.AR) }), CO);
-    expect(s.roles.find((r) => r.role === 'AR')).toMatchObject({ role: 'AR', accountCode: DEFAULT_ROLE_CODES.AR, problem: 'missing_account' });
+    expect(s.roles.map((r) => r.role)).not.toContain('AR');
+    expect(s.ready).toBe(true);
+  });
+
+  test("customer deposits are retired: a deposit sits on the customer's own account, so no rule and no account to set", async () => {
+    /* chew, 29 Oct 2026: 顾客定金直接进顾客 account. */
+    const s = await ledgerSetupStatus(world({ accounts: fullChart().filter((a) => a.account_code !== DEFAULT_ROLE_CODES.CUSTOMER_DEPOSITS) }), CO);
+    expect(s.roles.map((r) => r.role)).not.toContain('CUSTOMER_DEPOSITS');
+    expect(s.ready).toBe(true);
+  });
+
+  test("cash over / short is retired: no cash drawer, cash goes straight to the bank", async () => {
+    /* chew, 29 Oct 2026: 我没收现金的；现金都是直接进银行的. */
+    const s = await ledgerSetupStatus(world({ accounts: fullChart().filter((a) => a.account_code !== DEFAULT_ROLE_CODES.OVER_SHORT) }), CO);
+    expect(s.roles.map((r) => r.role)).not.toContain('OVER_SHORT');
+    expect(s.ready).toBe(true);
+  });
+
+  test('a role pointing at a code that is not in the chart is a problem', async () => {
+    const s = await ledgerSetupStatus(world({ accounts: fullChart().filter((a) => a.account_code !== DEFAULT_ROLE_CODES.AR_OTHER) }), CO);
+    expect(s.roles.find((r) => r.role === 'AR_OTHER')).toMatchObject({ role: 'AR_OTHER', accountCode: DEFAULT_ROLE_CODES.AR_OTHER, problem: 'missing_account' });
     expect(s.ready).toBe(false);
   });
 
   test('the bank role must be a money account; inactive and header accounts are problems too', async () => {
     const chart = fullChart().map((a) => (a.account_code === DEFAULT_ROLE_CODES.BANK_DEFAULT ? { ...a, acc_money: false }
       : a.account_code === DEFAULT_ROLE_CODES.AP ? { ...a, is_active: false } : a));
-    chart.push(acct('300-0001', { parent_code: DEFAULT_ROLE_CODES.AR }));
+    chart.push(acct('305-0001', { parent_code: DEFAULT_ROLE_CODES.AR_OTHER }));
     const s = await ledgerSetupStatus(world({ accounts: chart }), CO);
     expect(s.roles.find((r) => r.role === 'BANK_DEFAULT')!.problem).toBe('not_money');
     expect(s.roles.find((r) => r.role === 'AP')!.problem).toBe('inactive');
-    expect(s.roles.find((r) => r.role === 'AR')!.problem).toBe('header');
+    expect(s.roles.find((r) => r.role === 'AR_OTHER')!.problem).toBe('header');
   });
 
   test('an override is what is checked, not the default', async () => {
-    const s = await ledgerSetupStatus(world({ acc_account_roles: [{ company_id: CO, role: 'AR', account_code: '399-9999' }] }), CO);
-    expect(s.roles.find((r) => r.role === 'AR')).toMatchObject({ role: 'AR', accountCode: '399-9999', problem: 'missing_account' });
+    const s = await ledgerSetupStatus(world({ acc_account_roles: [{ company_id: CO, role: 'AR_OTHER', account_code: '399-9999' }] }), CO);
+    expect(s.roles.find((r) => r.role === 'AR_OTHER')).toMatchObject({ role: 'AR_OTHER', accountCode: '399-9999', problem: 'missing_account' });
   });
 
   test('an active item group missing a binding, a bank without a letter, no start date: each named', async () => {

@@ -10,7 +10,8 @@
 // derives nothing.
 // ----------------------------------------------------------------------------
 
-import { createReceiptForPayment } from '../../acc/receipts';
+import { createReceiptForPayment, dropDraftReceipt } from '../../acc/receipts';
+import { reverseSiPayment } from '../../acc/payments';
 import { companyCodeById } from './doc-no';
 
 export const SI_PAYMENT_COLS =
@@ -62,8 +63,9 @@ export async function insertSiPaymentRow(sb: any, p: SiPaymentRowInput) {
     created_by:         p.createdBy,
   }).select(SI_PAYMENT_COLS).single();
 
-  /* The Official Receipt is born with the payment (GL redesign item 9) —
-     DRAFT for card/transfer, formal at once for cash. BEST-EFFORT: the money
+  /* The Official Receipt is born with the payment (GL redesign item 9) — a
+     DRAFT for every method until finance confirms the money (SOP 4.2), which
+     is when the payment posts (acc/receipt-confirm). BEST-EFFORT: the money
      is recorded; a receipt hiccup must never un-record it, and
      ensureReceiptForPayment heals the gap at the next print. */
   if (!res.error) {
@@ -83,4 +85,13 @@ export async function insertSiPaymentRow(sb: any, p: SiPaymentRowInput) {
     }
   }
   return res;
+}
+
+/** After an invoice payment is deleted: void its ledger entry (a never-booked
+    row no-ops) and drop its DRAFT receipt, so money that is gone cannot be
+    confirmed (acc/receipts dropDraftReceipt). Best-effort, like the SO side. */
+export async function afterSiPaymentRemoved(sb: any, paymentId: string, invoiceNo: string | null) {
+  const unbooked = await reverseSiPayment(sb, paymentId, invoiceNo);
+  await dropDraftReceipt(sb, 'SIPAY', paymentId);
+  return unbooked;
 }

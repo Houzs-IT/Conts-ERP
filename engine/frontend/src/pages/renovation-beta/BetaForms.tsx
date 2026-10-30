@@ -18,6 +18,7 @@ import { BETA, PILL_GLASS, PILL_MAIN, TONES } from "./renovationBetaTheme";
 import { MediaPicker } from "./BetaMedia";
 import { uploadMeasureFile } from "./renovationBetaMediaApi";
 import { simpleApi } from "../projects/renovation/simpleApi";
+import { AnimatePresence } from "motion/react";
 
 export type BetaDialog =
   | { t: "work"; ev: CalEvent | null; day: string }
@@ -652,8 +653,12 @@ function DatesForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactElement
 
 /* ---------- the one that picks the dialog ---------- */
 
-export function BetaDialogs({ dialog, env }: { dialog: BetaDialog | null; env: FormEnv }): ReactElement | null {
-  if (!dialog) return null;
+export function BetaDialogs({ dialog, env }: { dialog: BetaDialog | null; env: FormEnv }): ReactElement {
+  // AnimatePresence keeps the last dialog on screen while it fades out.
+  return <AnimatePresence>{dialog && <div key={dialog.t} style={{ display: "contents" }}>{dialogOf(dialog, env)}</div>}</AnimatePresence>;
+}
+
+function dialogOf(dialog: BetaDialog, env: FormEnv): ReactElement | null {
   if (dialog.t === "work") return <WorkForm key={dialog.ev?.id ?? "new"} env={env} ev={dialog.ev} day={dialog.day} />;
   const p = env.m.byId.get(dialog.projectId);
   if (!p) return null;

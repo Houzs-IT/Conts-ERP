@@ -3,10 +3,13 @@
 // Every customer payment's OFFICIAL RECEIPT document lives here: the drafts
 // waiting for their money to be confirmed and the formal run per channel.
 // Distinct from /scm/receipts (这个月收了什么钱 money-in list) — that page is
-// about the ledger, this one is about the paper. Two buttons per row — Print
-// (DRAFT prints with the watermark) and, on a draft, Confirm money — the
-// owner's 客户催收据 path: he verified the slip himself, the receipt goes
-// formal now (default = the company bank; recon links up later).
+// about the ledger, this one is about the paper. Buttons per row — Print
+// (DRAFT prints with the watermark) and, on a draft, Confirm received —
+// finance's alone (scm.payment_voucher.post; SOP 4.2/4.5, 29 Oct 2026): the
+// salesperson records the payment, finance checks the bank statement, picks
+// the bank the money landed in (the default bank first) and confirms. Only
+// then is the money received: the receipt goes formal, the payment posts and
+// the project limit counts it. Waiting for confirmation lists the drafts.
 //
 // Opens on THIS MONTH (owner 2026-09-16: or 我如何查看 amount 是对的): every
 // receipt whose payment day falls in it, oldest first, a total under the
@@ -25,7 +28,10 @@ import { humaniseStatusKey } from '../../vendor/scm/lib/status-pill';
 import { DataTable, type Column } from '../../components/DataTable';
 import { generateReceiptPdf, type ReceiptPdfData } from '../../vendor/scm/lib/receipt-pdf';
 import { Modal } from '../../vendor/scm/components/Modal';
+import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
+import { useAuth } from '../../auth/AuthContext';
+import { useChooseBank } from '../../conts/ClaimsParts';
 
 type ReceiptRow = ReceiptPdfData & {
   id: number;
@@ -33,6 +39,19 @@ type ReceiptRow = ReceiptPdfData & {
   payment_id: string;
   channel_account_code: string | null;
   created_at: string;
+};
+
+/** What the confirm answers: the receipt number, and what posted (or why not). */
+type ConfirmResult = { ok: boolean; orNumber: string; already?: boolean; posting?: { status: string; jeNo?: string; reason?: string } };
+type ConfirmBanks = { defaultCode: string; banks: Array<{ code: string; name: string }> };
+
+/** The confirm's answer in one sentence for the dialog. */
+export const confirmedSentence = (r: ConfirmResult): string => {
+  const p = r.posting;
+  const posted = !p ? ''
+    : p.status === 'posted' || p.status === 'already_posted' ? ` Posted to the ledger as ${p.jeNo ?? 'a journal entry'}.`
+    : ` Not posted yet (${p.reason ?? p.status.replace(/_/g, ' ')}) — the Self-check card lists it.`;
+  return `Receipt ${r.orNumber} issued.${posted}`;
 };
 
 export type ReceiptsCheck = {
@@ -70,6 +89,11 @@ const btn = (primary?: boolean, disabled?: boolean): React.CSSProperties => ({
 
 export const OfficialReceipts = () => {
   const qc = useQueryClient();
+  const { can } = useAuth();
+  /* Confirming money is finance's (SOP 4.2): the salesperson records, finance checks the bank. */
+  const canConfirm = can('scm.payment_voucher.post');
+  const chooseBank = useChooseBank();
+  const notify = useNotify();
   const [status, setStatus] = useState<'' | 'DRAFT' | 'FORMAL'>('');
   /* '' = any month: the newest 100 receipts. */
   const [month, setMonth] = useState<string>(mytMonth());
@@ -86,13 +110,31 @@ export const OfficialReceipts = () => {
     enabled: Boolean(month),
     staleTime: 15_000,
   });
+  const banks = useQuery({
+    queryKey: ['official-receipts-banks'],
+    queryFn: () => authedFetch<ConfirmBanks>('/accounting/receipts/banks'),
+    enabled: canConfirm,
+    staleTime: 60_000,
+  });
   const formalise = useMutation({
-    mutationFn: (id: number) => authedFetch<{ ok: boolean; orNumber: string }>(`/accounting/receipts/${id}/formalise`, { method: 'POST', body: '{}' }),
-    onSuccess: () => {
+    mutationFn: (v: { id: number; accountCode: string }) =>
+      authedFetch<ConfirmResult>(`/accounting/receipts/${v.id}/formalise`, { method: 'POST', body: JSON.stringify({ accountCode: v.accountCode }) }),
+    onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ['official-receipts'] });
       void qc.invalidateQueries({ queryKey: ['official-receipts-check'] });
+      void notify({ title: 'Payment confirmed', body: confirmedSentence(r) });
     },
   });
+  /* Which bank did the money land in? The default bank first. */
+  const confirmReceived = async (r: ReceiptRow) => {
+    const list: ConfirmBanks | undefined = banks.data ?? await qc.fetchQuery({ queryKey: ['official-receipts-banks'], queryFn: () => authedFetch<ConfirmBanks>('/accounting/receipts/banks') });
+    if (!list) return;
+    const ordered = [...list.banks].sort((a, b) => Number(b.code === list.defaultCode) - Number(a.code === list.defaultCode))
+      .map((b) => (b.code === list.defaultCode ? { ...b, name: `${b.name} (default)` } : b));
+    const code = await chooseBank(ordered, `${fmtSen(r.amount_sen)} on ${r.doc_no ?? r.or_number} — received in which bank?`);
+    if (!code) return;
+    formalise.mutate({ id: r.id, accountCode: code });
+  };
   const rows = useMemo(() => q.data?.receipts ?? [], [q.data]);
   /* The rows on screen after the table's own funnels: the total adds up THOSE. */
   const [shown, setShown] = useState<ReceiptRow[]>([]);
@@ -118,16 +160,16 @@ export const OfficialReceipts = () => {
         <span style={{ whiteSpace: 'nowrap' }}>
           <button type="button" style={btn()} onClick={() => { void generateReceiptPdf(r, { action: 'print' }); }}>Print</button>{' '}
           <button type="button" style={btn()} onClick={() => setFilesFor(r)}>Files</button>{' '}
-          {r.status !== 'FORMAL' && (
+          {r.status !== 'FORMAL' && canConfirm && (
             <button type="button" style={btn(true, formalise.isPending)} disabled={formalise.isPending}
-              onClick={() => formalise.mutate(r.id)}>
-              Confirm money
+              onClick={() => { void confirmReceived(r); }}>
+              Confirm received
             </button>
           )}
         </span>
       ),
     },
-  ], [formalise]);
+  ], [formalise, canConfirm, banks.data]);
   const c = check.data;
   const clean = c != null && c.diffSen === 0 && c.missing.length === 0 && c.mismatched.length === 0 && c.orphans.length === 0;
 
@@ -135,7 +177,7 @@ export const OfficialReceipts = () => {
     <div className="space-y-3">
       <PageHeader eyebrow="Finance" title="Official Receipts" />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {([['', 'All'], ['DRAFT', 'Draft — money not confirmed'], ['FORMAL', 'Formal']] as const).map(([v, label]) => (
+        {([['', 'All'], ['DRAFT', 'Waiting for confirmation'], ['FORMAL', 'Confirmed']] as const).map(([v, label]) => (
           <button key={v || 'all'} type="button" style={btn(status === v)} onClick={() => setStatus(v)}>{label}</button>
         ))}
         <span style={{ width: 12 }} />
@@ -144,7 +186,7 @@ export const OfficialReceipts = () => {
         {month
           ? <button type="button" style={btn()} onClick={() => setMonth('')}>Any month</button>
           : <button type="button" style={btn()} onClick={() => setMonth(mytMonth())}>This month</button>}
-        <span style={soft}>现金当场正式;卡款等 merchant recon;转账你核对后按 Confirm money。</span>
+        <span style={soft}>Cash and transfers: finance checks the bank statement, then Confirm received. Card payments are confirmed by merchant reconciliation.</span>
       </div>
 
       {month && (

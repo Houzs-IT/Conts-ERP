@@ -15,6 +15,7 @@ import {
   MONTHS, PROBLEM_TEXT, ROLE_LABELS, useLedgerSettings, useSaveLedgerSettings, useSetRole, useSetupStatus, type LedgerSettings,
 } from "./ledgerSettings";
 import { OpeningBalances } from "./OpeningBalances";
+import { EverydayExpense } from "./EverydayExpense";
 
 const isClearingCode = (code: string): boolean => /^32[67]-/.test(code);
 const rm = (sen: number): string => (sen / 100).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -98,6 +99,8 @@ export function LedgerSetup() {
       <PostingRules canSave={canSave} />
       {/* The saved start date, not the one being typed: the opening day is the day before what is in force. */}
       {q.isSuccess && <OpeningBalances canSave={canSave} ledgerStartDate={q.data.ledgerStartDate} />}
+      {/* Conts (finance phase 1.5; SOP 3.4): the expense accounts outside a project limit. */}
+      <EverydayExpense canSave={canSave} />
     </div>
   );
 }

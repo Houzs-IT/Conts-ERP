@@ -65,6 +65,7 @@ import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
   requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../lib/companyScope';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { postNowHandler } from '../../conts/pv-post-now';
+import { afterVoucherCancelledBestEffort, afterVoucherPostedBestEffort } from "../../conts/claims-voucher-hooks";
 import { normalizeCurrency, normalizeExchangeRate, masterRateForCurrency } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange, assertAuditWritable, auditUnavailableBody } from '../lib/entity-audit';
@@ -75,6 +76,7 @@ import { requireLeafAccount } from './accounting-chart';
 import { planPvRateAdoption, isRateRetainedFromPv, roundRate6 } from '../lib/pv-rate-adoption';
 import { recostFromGrn } from '../lib/recost';
 import { fmtSen } from '../shared/format';
+import { checkVoucherLimit, overLimitBody, resolveVoucherProject } from '../../conts/project-limit';
 
 export const paymentVouchers = new Hono<{ Bindings: Env; Variables: Variables }>();
 paymentVouchers.use('*', supabaseAuth);
@@ -96,7 +98,7 @@ const PV_AUDIT_FIELDS: Array<[string, string]> = [
 const HEADER =
   'id, pv_number, voucher_date, payee_name, supplier_id, credit_account_code, currency, exchange_rate, purpose, notes, total_sen, status, posted_at, created_at, created_by, updated_at, company_id, submitted_at, submitted_by, checked_at, checked_by, approved_at, approved_by, refund_source_type, refund_source_doc_no, customer_id, debtor_code';
 
-const LINE = 'id, pv_id, line_no, description, debit_account_code, amount_sen, created_at, department';
+const LINE = 'id, pv_id, line_no, description, debit_account_code, amount_sen, created_at, department, project_id';
 
 /* Migration 0202 — the PV purpose. Only SUPPLIER_PAYMENT settles AP (its
    allocations decrement the linked PIs' paid_sen); FREIGHT / OTHER post the GL
@@ -704,6 +706,10 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
     const breach = await allocationHeadroomBreach(sb, c, allocBuilt.rows, null);
     if (breach) return c.json(breach, breach.error === 'load_failed' ? 500 : 409);
   }
+  /* Conts (finance phase 1.5; SOP 3.4): the project it pays — named, else its bills' — on every line, for the limit. */
+  const vp = await resolveVoucherProject(sb, activeCompanyId(c) ?? 0, body.projectId, { piIds: piIdsOf(allocBuilt.rows), apInvoiceIds: apInvoiceIdsOf(allocBuilt.rows) });
+  if (!vp.ok) return c.json(vp.body, vp.status);
+  const voucherProject = vp.projectId;
   const currency = normalizeCurrency(body.currency);
   /* Migration 0082 — the rate auto-fills from the currency MASTER (rate_to_myr)
      unless the body sends an explicit one; MYR ⇒ 1, a strict no-op. */
@@ -751,7 +757,7 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
     return coId == null ? del : scopeToCompanyId(del, coId);
   };
 
-  const rowsWithId = built.rows.map((r) => ({ ...r, pv_id: h.id }));
+  const rowsWithId = built.rows.map((r) => ({ ...r, pv_id: h.id, project_id: voucherProject }));
   const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(rowsWithId, c));
   if (lErr) { await rollbackHeader(); return c.json({ error: 'lines_insert_failed', reason: lErr.message }, 500); }
 
@@ -834,6 +840,27 @@ export const updatePaymentVoucherHandler = async (c: any) => {
   const editable = pvCanEdit(before as PvApprovalShape);
   if (!editable.ok) return c.json({ error: editable.error, message: editable.message }, 409);
 
+  /* Conts (finance phase 1.5; SOP 3.4): the project it pays, settled before anything is written — named in this edit,
+     else the one it named before, checked against the bills it will pay. */
+  let voucherProject: number | null | undefined;
+  if (body.projectId !== undefined || body.allocations !== undefined || body.lines !== undefined) {
+    const { data: was } = await sb.from('payment_voucher_lines').select('project_id').eq('company_id', co.companyId).eq('pv_id', id).limit(1);
+    const before0 = ((was ?? []) as Array<{ project_id: number | null }>)[0]?.project_id ?? null;
+    let bills: { piIds: string[]; apInvoiceIds: string[] };
+    if (body.allocations !== undefined) {
+      const ab = buildAllocations(body.allocations);
+      if ('error' in ab) return c.json({ error: ab.error }, 400);
+      bills = { piIds: piIdsOf(ab.rows), apInvoiceIds: apInvoiceIdsOf(ab.rows) };
+    } else {
+      const { data: al } = await sb.from('pv_allocations').select('pi_id, ap_invoice_id').eq('company_id', co.companyId).eq('pv_id', id);
+      const rows = (al ?? []) as Array<{ pi_id: string | null; ap_invoice_id: string | null }>;
+      bills = { piIds: rows.map((r) => r.pi_id).filter(Boolean) as string[], apInvoiceIds: rows.map((r) => r.ap_invoice_id).filter(Boolean) as string[] };
+    }
+    const vp = await resolveVoucherProject(sb, co.companyId, body.projectId !== undefined ? body.projectId : before0, bills);
+    if (!vp.ok) return c.json(vp.body, vp.status);
+    voucherProject = vp.projectId;
+  }
+
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (body.payeeName !== undefined) {
     const v = String(body.payeeName).trim();
@@ -892,6 +919,13 @@ export const updatePaymentVoucherHandler = async (c: any) => {
     return c.json({ error: 'refund_lines_fixed', message: 'A refund has one line the system writes — change the refund amount instead.' }, 400);
   }
   if (body.lines !== undefined) {
+    /* Conts: a voucher made from a payment request, a staff receipt or a petty cash top-up keeps the lines it was made
+       with (each carries its request line's project and unit, and pays only what is owed). Cancel it and make it again. */
+    const { data: made } = await sb.from('payment_vouchers').select('payment_request_id, staff_receipt_id, petty_cash_float_id').eq('id', id).maybeSingle();
+    const m = made as { payment_request_id?: string | null; staff_receipt_id?: string | null; petty_cash_float_id?: string | null } | null;
+    if (m?.payment_request_id || m?.staff_receipt_id || m?.petty_cash_float_id) {
+      return c.json({ error: 'lines_fixed', message: 'This voucher was made from a request, a receipt or a petty cash top-up, so its lines are fixed. Cancel it and make it again from there.' }, 409);
+    }
     const built = buildLines(body.lines);
     if ('error' in built) return c.json({ error: built.error }, 400);
     /* Same self-debit door as the create path, against the EFFECTIVE Paid
@@ -919,7 +953,7 @@ export const updatePaymentVoucherHandler = async (c: any) => {
       if (leafErr) return leafErr;
     }
     await sb.from('payment_voucher_lines').delete().eq('pv_id', id);
-    const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(built.rows.map((r) => ({ ...r, pv_id: id })), c));
+    const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(built.rows.map((r) => ({ ...r, pv_id: id, ...(voucherProject !== undefined ? { project_id: voucherProject } : {}) })), c));
     if (lErr) return c.json({ error: 'lines_update_failed', reason: lErr.message }, 500);
     updates.total_sen = built.total;
     newTotal = built.total;
@@ -961,6 +995,10 @@ export const updatePaymentVoucherHandler = async (c: any) => {
 
   const { data, error } = await sb.from('payment_vouchers').update(updates).eq('id', id).select(HEADER).single();
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
+  if (voucherProject !== undefined) {
+    const { error: pErr } = await sb.from('payment_voucher_lines').update({ project_id: voucherProject }).eq('company_id', co.companyId).eq('pv_id', id);
+    if (pErr) return c.json({ error: 'update_failed', reason: pErr.message }, 500);
+  }
 
   /* Diff the NORMALISED values actually written (updates), not the raw body:
      purpose/currency/exchangeRate are all coerced above, and a log of what the
@@ -1062,6 +1100,8 @@ export const postPaymentVoucherHandler = async (c: any) => {
         .update({ status: 'POSTED', posted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', id), co.companyId);
     }
+    /* Conts: a post that died after its journal settles here, on the retry (idempotent; conts/claims-voucher-hooks.ts). */
+    await afterVoucherPostedBestEffort(sb, id);
     return c.json({ ok: true, alreadyPosted: true, jeNo: active.je_no, jeId: active.id });
   }
 
@@ -1115,7 +1155,7 @@ export const postPaymentVoucherHandler = async (c: any) => {
   let refundArControl = '';
   if (isRefund(pv.purpose)) {
     const dr = await resolveDebtorRoles(sb, companyId, refundParty);
-    if (!dr.ok) return c.json({ error: 'post_failed', reason: dr.error }, 500);
+    if (!dr.ok) return dr.noAccount ? c.json({ error: 'customer_no_account', message: dr.error }, 409) : c.json({ error: 'post_failed', reason: dr.error }, 500);
     refundArControl = dr.roles.AR;
   }
   const r = await postJournal(sb, {
@@ -1143,6 +1183,8 @@ export const postPaymentVoucherHandler = async (c: any) => {
   /* The deposit-invoice half of a refund (docs/bugs/0860): a credit note per invoice it draws on. */
   await refundDepositInvoicesBestEffort(sb, refundHookInput({ ...pv, ...refundPv, id, company_id: companyId }, totalSen, approvalActor(c)));
   await mirrorRefundBestEffort(sb, refundHookInput({ ...pv, ...refundPv, id, company_id: companyId }, totalSen, approvalActor(c)));
+  /* Conts: a top-up, a staff pay-back or a payment request settles with its voucher (conts/claims-voucher-hooks.ts). */
+  await afterVoucherPostedBestEffort(sb, id);
 
   /* The money-out event. Recorded here rather than after the PI settlement loop
      below so a settlement hiccup cannot cost us the record that the GL was
@@ -1447,6 +1489,12 @@ export const submitPaymentVoucherHandler = async (c: any) => {
   const { sb, id, pv, companyId } = loaded;
   const v = pvCanPrepare(pv as PvApprovalShape);
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 409);
+  /* Conts (finance phase 1.5; SOP 3.4): within the project's limit, or not submitted. */
+  const lim = await checkVoucherLimit(sb, companyId, id);
+  if (!lim.ok) {
+    if ('error' in lim) return c.json({ error: 'load_failed', reason: lim.error }, 500);
+    return c.json(overLimitBody(lim.over), 409);
+  }
   const who = approvalActor(c);
   const at = new Date().toISOString();
   const { error } = await scopeToCompanyId(sb.from('payment_vouchers')
@@ -1498,6 +1546,15 @@ export const checkPaymentVoucherHandler = async (c: any) => {
   const { sb, id, pv, companyId } = loaded;
   const v = pvCanCheck(pv as PvApprovalShape);
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 409);
+  /* Conts (finance phase 1.5; SOP 3.4): again here — a prepared voucher can still be edited until it is checked, and
+     after the check it cannot; so the amount that is checked is the amount that fits. */
+  {
+    const lim = await checkVoucherLimit(sb, companyId, id);
+    if (!lim.ok) {
+      if ('error' in lim) return c.json({ error: 'load_failed', reason: lim.error }, 500);
+      return c.json(overLimitBody(lim.over), 409);
+    }
+  }
   const who = approvalActor(c);
   const at = new Date().toISOString();
 
@@ -1693,6 +1750,8 @@ export const cancelPaymentVoucherHandler = async (c: any) => {
   if (rev.ok && isRefund(head.purpose)) await bookRefundCredit(sb, head, 'reversal');
   if (rev.ok && isRefund(head.purpose)) await releaseRefundNotesBestEffort(sb, { companyId: co.companyId, pvId: id, pvNumber: cancelled.pv_number, actor: approvalActor(c) });
   if (rev.ok && isRefund(head.purpose)) await removeMirrorRowsBestEffort(sb, { companyId: co.companyId, match: { refund_pv_id: id }, why: `refund voucher ${cancelled.pv_number} cancelled` });
+  /* Conts: undo what posting settled (a top-up, a staff pay-back, a payment request). */
+  if (rev.ok) await afterVoucherCancelledBestEffort(sb, id);
   if (!rev.ok) {
     // eslint-disable-next-line no-console
     console.error(`[pv-accounting] reversal failed for ${cancelled.pv_number}:`, rev.status, rev.reason);
@@ -1887,6 +1946,19 @@ export const applyAdvanceHandler = async (c: any) => {
   if (outside.length > 0) return c.json(ALLOCATION_NOT_THIS_COMPANY(outside), 404);
   const held = await allocationPisOnHold(sb, c, piIds);
   if (held.length > 0) return c.json(ALLOCATION_ON_HOLD(held), 409);
+  /* Conts (finance phase 1.5; SOP 3.4): an advance paid ahead with no project takes the project of the bills it now
+     settles, so its money counts on that project's limit. One that already names a project keeps it; bills of
+     another project, or of two, are refused as a voucher's are. */
+  {
+    const { data: was } = await sb.from('payment_voucher_lines').select('project_id').eq('company_id', co.companyId).eq('pv_id', id).limit(1);
+    const named = ((was ?? []) as Array<{ project_id: number | null }>)[0]?.project_id ?? null;
+    const vp = await resolveVoucherProject(sb, co.companyId, named, { piIds, apInvoiceIds: apIds });
+    if (!vp.ok) return c.json(vp.body, vp.status);
+    if (vp.projectId != null && named == null) {
+      const { error: pErr } = await sb.from('payment_voucher_lines').update({ project_id: vp.projectId }).eq('company_id', co.companyId).eq('pv_id', id);
+      if (pErr) return c.json({ error: 'save_failed', reason: pErr.message }, 500);
+    }
+  }
 
   let appliedSen = 0;
   const results: Array<{ piId: string | null; apInvoiceId: string | null; askedSen: number; appliedSen: number }> = [];

@@ -195,3 +195,13 @@ export interface Paged<T> {
   partial?: boolean;
   failed?: string[];
 }
+
+/** An extra bank account on an owner (GET /api/owners/:id/accounts). Only the last four digits ever come with the list;
+ *  `inUse` is how many units pay to it. */
+export interface OwnerBankAccount {
+  id: string; label: string | null; bankName: string; accountHolder: string; last4: string; inUse: number;
+}
+/** The body to add or change an extra account. On a change, an empty `accountNumber` keeps the stored one. */
+export interface OwnerBankAccountInput {
+  label?: string; bankName?: string; accountNumber?: string; accountHolder?: string;
+}

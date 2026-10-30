@@ -9,7 +9,7 @@ import {
   type ApptItem, type BoardModel, type DesignProject, type DueItem, type Kind, type ApptKey, type PersonRef, type TodoItem, type Viewing,
 } from "./renovationBetaBoard";
 import { rememberLastProject } from "./renovationBetaBoardApi";
-import { Badge, BTN, BTN_FILL, BTN_MAIN, EmptyBox, INK_SOFT, MUTED, PoDoneButton } from "./BetaCalParts";
+import { Badge, BTN, BTN_AMEND, BTN_CONFIRM, BTN_FILL, BTN_MAIN, EmptyBox, INK_SOFT, MUTED, PoDoneButton } from "./BetaCalParts";
 
 const LI: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 0", borderTop: `1px solid ${BETA.lineSoft}` };
 const LIST: CSSProperties = { listStyle: "none", margin: 0, padding: 0 };
@@ -38,11 +38,13 @@ interface Props extends DeadlineActions {
   viewingName: string | null;
 }
 
+/** The padding and its negative margin give the one-line name a finger-sized tap area without moving the lines round it. */
 function NameLink({ p }: { p: DesignProject }): ReactElement {
   return (
-    <div style={{ ...CLIP }}>
-      <Link to={`/beta/projects/${p.id}`} onClick={() => rememberLastProject(p.id)} style={{ color: BETA.ink, fontWeight: 600, textDecoration: "none" }}>{p.name}</Link>
-    </div>
+    <Link to={`/beta/projects/${p.id}`} onClick={() => rememberLastProject(p.id)}
+      style={{ ...CLIP, display: "block", padding: "8px 0", margin: "-8px 0", color: BETA.ink, fontWeight: 600, textDecoration: "none" }}>
+      {p.name}
+    </Link>
   );
 }
 
@@ -111,7 +113,7 @@ function Section({ title, color, children, count }: { title: string; color: stri
   return (
     <section>
       <h3 style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color }}>{title} · {count}</h3>
-      <ol style={LIST}>{children}</ol>
+      <ol className="stag" style={LIST}>{children}</ol>
     </section>
   );
 }
@@ -154,8 +156,8 @@ export function BetaCalDeadlines({ m, who, canAssign, viewingName, ...act }: Pro
                         </div>
                         {canAssign && (
                           <div style={{ flex: "none", display: "flex", gap: 6, flexWrap: "wrap" }}>
-                            <button type="button" disabled={act.busy} onClick={() => act.onAmend(x.p.id, x.k)} style={BTN}>+ Amendment</button>
-                            <button type="button" disabled={act.busy} onClick={() => act.onApprove(x.p, x.k)} style={BTN_MAIN}>Client approved</button>
+                            <button type="button" disabled={act.busy} onClick={() => act.onAmend(x.p.id, x.k)} style={BTN_AMEND}>+ Amendment</button>
+                            <button type="button" disabled={act.busy} onClick={() => act.onApprove(x.p, x.k)} style={BTN_CONFIRM}>Client approved</button>
                           </div>
                         )}
                       </li>
@@ -187,7 +189,7 @@ export function BetaCalDeadlines({ m, who, canAssign, viewingName, ...act }: Pro
           {g.todo.length > 0 ? (
             <aside style={{ flex: "1 1 300px", minWidth: 0, background: BETA.tbPanel, border: `1px solid ${BETA.tbEdge}`, borderRadius: 26, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
               <h3 style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: TONES.amber.ink }}>To book / to do · {g.todo.length}</h3>
-              <ol style={LIST}>{g.todo.map((x) => <TodoRow key={`${x.p.id}-${x.k}`} m={m} who={who} x={x} canAssign={canAssign} act={act} />)}</ol>
+              <ol className="stag" style={LIST}>{g.todo.map((x) => <TodoRow key={`${x.p.id}-${x.k}`} m={m} who={who} x={x} canAssign={canAssign} act={act} />)}</ol>
             </aside>
           ) : (
             <aside style={{ flex: "1 1 300px", minWidth: 0, background: TONES.accent.soft, border: `1px solid ${TONES.accent.line}`, borderRadius: 26, padding: "14px 16px", fontSize: 13, color: TONES.accent.ink, fontWeight: 600 }}>

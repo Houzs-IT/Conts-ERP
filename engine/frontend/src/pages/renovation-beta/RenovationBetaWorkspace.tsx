@@ -5,9 +5,12 @@
    The project, the workspace and the design records are loaded here once and handed to the tabs; every write
    shows a notice and reloads all three. */
 
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { motion } from "motion/react";
+import { ChevronDown } from "lucide-react";
+import { BetaMotion, SPRING, STAGGER } from "./betaMotion";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
 import { simpleApi } from "../projects/renovation/simpleApi";
@@ -22,14 +25,15 @@ import { BetaTimelineTab } from "./BetaTimelineTab";
 import { BetaVoTab } from "./BetaVoTab";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
 import { BetaWsHeader, BetaWsStepper } from "./BetaWsHeader";
-import { BetaSkin, WS, WsNotice, WsStyle } from "./BetaWsUi";
+import { BetaSkin, useBetaPreload, WS, WsNotice, WsStyle } from "./BetaWsUi";
 import type { BetaTabProps, BoardView } from "./betaShared";
 import { betaApi } from "./renovationBetaApi";
 import { projectView } from "./renovationBetaBoard";
-import { boardApi, boardKey, forgetLastProject, invalidateBeta, rememberLastProject } from "./renovationBetaBoardApi";
+import { boardApi, boardKey, forgetLastProject, invalidateBeta, projectBoardFromHome, rememberLastProject } from "./renovationBetaBoardApi";
 import { mytDay, stepperItems } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
 import { BETA_TABS, tabFromParam, type BetaTabKey } from "./renovationBetaTabs";
+import { BetaLoading } from "./BetaLoading";
 
 /** A request the server answered with 404: the project is gone, or Beta is switched off. */
 function isNotFound(e: unknown): boolean {
@@ -38,6 +42,7 @@ function isNotFound(e: unknown): boolean {
 
 /** The colours are set before anything else draws, so the loading line and an error already have them. */
 export function RenovationBetaWorkspace(): ReactElement {
+  useBetaPreload();
   return (
     <>
       <BetaSkin />
@@ -52,12 +57,17 @@ function WorkspaceScreen(): ReactElement {
   const tab = tabFromParam(params.get("tab"));
   const valid = Number.isInteger(id) && id > 0;
   const q = useQuery(["renovation-beta", "detail", id], () => simpleApi.detail(id), [id], { enabled: valid });
+  const queryClient = useQueryClient();
   // The same board answer Home and Calendar use, for this one project: people, dates and condition match them.
-  const bq = useQuery(boardKey(undefined, id), () => boardApi.board(undefined, id).catch((e: unknown) => { if (isNotFound(e)) forgetLastProject(); throw e; }), [id], { enabled: valid });
+  // When Home is already in the cache it seeds this (stamped with Home's own age, so it still refetches if stale).
+  const bq = useQuery(boardKey(undefined, id), () => boardApi.board(undefined, id).catch((e: unknown) => { if (isNotFound(e)) forgetLastProject(); throw e; }), [id], {
+    enabled: valid,
+    initialData: () => projectBoardFromHome(queryClient, id)?.data,
+    initialDataUpdatedAt: () => projectBoardFromHome(queryClient, id)?.at,
+  });
   const ws = useQuery(["renovation-beta", "workspace", id], () => betaApi.workspace(id), [id], { enabled: valid });
   const rec = useQuery(["renovation-beta", "records", id], () => simpleApi.designRecords(id), [id], { enabled: valid });
   const { can } = useAuth();
-  const queryClient = useQueryClient();
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [dialog, setDialog] = useState<BetaDialog | null>(null);
   const d = q.data;
@@ -68,10 +78,21 @@ function WorkspaceScreen(): ReactElement {
     if (loaded) rememberLastProject(id);
   }, [loaded, id]);
 
+  // On a phone the tabs scroll sideways: bring the open one into view (Client PO, Defects and Timeline sat off the edge),
+  // moving only the tab row, never the page.
+  const tabsRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = tabsRef.current;
+    const on = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!nav || !on || nav.scrollWidth <= nav.clientWidth) return;
+    const at = on.getBoundingClientRect().left - nav.getBoundingClientRect().left + nav.scrollLeft;
+    nav.scrollLeft = Math.max(0, at - (nav.clientWidth - on.offsetWidth) / 2);
+  }, [tab, loaded]);
+
   if (!valid) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>This project address is not valid.</p>;
-  if (q.loading && !d) return <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading project...</p>;
+  if (q.loading && !d) return <BetaLoading label="Loading project" size="page" />;
   if (q.error || !d) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>The project could not be loaded: {q.error ?? "not found"}</p>;
-  if (bq.loading && !bq.data) return <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading project...</p>;
+  if (bq.loading && !bq.data) return <BetaLoading label="Loading project" size="page" />;
   const raw = bq.data?.projects.find((x) => x.id === id);
   if (bq.error || !view || !raw) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>The project could not be loaded: {bq.error ?? "not found"}</p>;
   const board: BoardView = { ...view, raw };
@@ -93,12 +114,15 @@ function WorkspaceScreen(): ReactElement {
   const hold = d.hold ? (d.hold.flag === "in_defect" ? "In defect" : "On hold") : null;
 
   return (
+    <BetaMotion>
     <div className="bws" style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", minWidth: 0, paddingBottom: 40 }}>
       <WsStyle />
-      <BetaWsHeader d={d} p={board.p} people={board.m.everyone} canWrite={can("projects.write")} today={today} openDialog={setDialog} />
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
+        <BetaWsHeader d={d} p={board.p} people={board.m.everyone} canWrite={can("projects.write")} today={today} openDialog={setDialog} />
+      </motion.div>
       <BetaWsStepper items={items} hold={hold} />
 
-      <nav aria-label="Project sections" className="tabs">
+      <nav ref={tabsRef} aria-label="Project sections" className="tabs">
         {BETA_TABS.map((t) => (
           <button
             key={t.key}
@@ -108,18 +132,27 @@ function WorkspaceScreen(): ReactElement {
             onClick={() => { setNotice(null); openTab(t.key); }}
           >
             {t.label}
+            {t.key === tab && <motion.span layoutId="beta-tab-ink" className="tab-ink" transition={SPRING} aria-hidden="true" />}
           </button>
         ))}
       </nav>
+      {/* Phone: ten tabs don't fit, so a picker jumps straight to any section (.tab-pick in BetaWsUi.tsx swaps it in). */}
+      <label className="tab-pick">
+        <span className="sr">Project section</span>
+        <select value={tab} onChange={(e) => { setNotice(null); openTab(tabFromParam(e.target.value)); }}>
+          {BETA_TABS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+        </select>
+        <ChevronDown size={18} aria-hidden="true" />
+      </label>
 
       <div aria-live="polite">{notice && <WsNotice tone={notice.tone}>{notice.text}</WsNotice>}</div>
 
       {ws.error || rec.error ? (
         <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>This section could not be loaded: {ws.error ?? rec.error}</p>
       ) : !props ? (
-        <p style={{ padding: "40px 0", textAlign: "center", fontSize: 14, color: BETA.muted }}>Loading {current.label.toLowerCase()}...</p>
+        <BetaLoading label={`Loading ${current.label.toLowerCase()}`} />
       ) : (
-        <div className="fade" style={{ display: "flex", flexDirection: "column", gap: 20 }} aria-label={current.label} role="region">
+        <motion.div key={tab} variants={STAGGER} initial="hidden" animate="show" style={{ display: "flex", flexDirection: "column", gap: 20 }} aria-label={current.label} role="region">
           {tab === "overview" && <BetaOverviewTab {...props} />}
           {tab === "drawings" && <BetaDrawingsTab {...props} />}
           {tab === "site" && <BetaSiteTab {...props} />}
@@ -130,7 +163,7 @@ function WorkspaceScreen(): ReactElement {
           {tab === "client-po" && <BetaClientPoTab {...props} />}
           {tab === "do" && <BetaDoTab {...props} />}
           {tab === "gr" && <BetaGrTab {...props} />}
-        </div>
+        </motion.div>
       )}
 
       <BetaDialogs
@@ -138,5 +171,6 @@ function WorkspaceScreen(): ReactElement {
         env={{ m: board.m, who: "All", onClose: () => setDialog(null), onSaved: (text) => { setDialog(null); onDone(text); } }}
       />
     </div>
+    </BetaMotion>
   );
 }

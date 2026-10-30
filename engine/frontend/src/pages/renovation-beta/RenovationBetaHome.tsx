@@ -3,6 +3,7 @@
    Plan: docs/superpowers/plans/2026-10-23-beta-project-workspace.md, section 10. */
 
 import { useMemo, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Search, X } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
@@ -10,11 +11,14 @@ import { money } from "../projects/renovation/renovationModel";
 import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type ConditionWord, type HomeRow, type HomeTab } from "./renovationBetaBoard";
 import { HOME_SORTS, keepOrder, matchesSearch, newestFirst, orderOf, sortFromParam, type HomeSort } from "./renovationBetaHomeModel";
-import { boardApi, boardKey, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
+import { boardApi, boardKey, prefetchOnIntent, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
-import { BetaSkin } from "./BetaWsUi";
+import { BetaSkin, useBetaPreload } from "./BetaWsUi";
 import { simpleApi, type BoardRowV2 } from "../projects/renovation/simpleApi";
 import { mytDay, slaDayText } from "./renovationBetaModel";
+import { motion } from "motion/react";
+import { BetaLoading } from "./BetaLoading";
+import { BetaMotion, SPRING } from "./betaMotion";
 
 const TH = {
   padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, letterSpacing: ".04em", textTransform: "uppercase", color: MUTED,
@@ -79,10 +83,12 @@ function StatusCell({ r }: { r: HomeRow }): ReactElement {
   return <span title={r.cond} style={{ display: "inline-flex", minWidth: 0, maxWidth: "100%" }}><DotText dot={dot} ink={ink} bg={bg}>{r.word}</DotText></span>;
 }
 
-/** A finished design says Done in green; anything else shows the days left or late. */
-function DueCell({ r, small = false }: { r: HomeRow; small?: boolean }): ReactElement {
+/** A finished design says Done in green; anything else shows the days left or late. On a phone card (small) no due
+    date shows nothing: a lone dash in the card's corner read as a stray mark. */
+function DueCell({ r, small = false }: { r: HomeRow; small?: boolean }): ReactElement | null {
   if (r.word === "Done") return <DotText dot={TONES.accent.dot} ink={TONES.accent.ink} bg={TONES.accent.soft}>Done</DotText>;
-  return r.left === null ? DASH : <DuePill left={r.left} small={small} />;
+  if (r.left === null) return small ? null : DASH;
+  return <DuePill left={r.left} small={small} />;
 }
 
 type Sla = { step: string; text: string; over: boolean } | null;
@@ -97,6 +103,7 @@ function slaOf(r: BoardRowV2 | undefined, today: string): Sla {
 
 /** The colours are set before anything else draws, so the loading line and an error already have them. */
 export function RenovationBetaHome(): ReactElement {
+  useBetaPreload();
   return (
     <>
       <BetaSkin />
@@ -107,6 +114,7 @@ export function RenovationBetaHome(): ReactElement {
 
 function HomeScreen(): ReactElement {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const q = useQuery(boardKey(), () => boardApi.board(), []);
   // Step and SLA come from the current project board, so both screens agree while they run side by side.
   const steps = useQuery(["renovation-beta", "step-sla"], () => simpleApi.boardRows(), []);
@@ -131,7 +139,7 @@ function HomeScreen(): ReactElement {
   const m = useMemo(() => (q.data ? buildModel(q.data) : null), [q.data]);
 
   if (q.error && !m) return <ErrorBanner text={`The projects could not be loaded: ${q.error}`} onRetry={q.reload} />;
-  if (!m) return <p style={{ padding: "40px 0", textAlign: "center", color: MUTED, fontSize: 14 }}>Loading projects...</p>;
+  if (!m) return <BetaLoading label="Loading projects" size="page" />;
 
   const counts = homeCounts(m);
   const inTab = homeList(m, tab);
@@ -156,6 +164,7 @@ function HomeScreen(): ReactElement {
   }
 
   return (
+    <BetaMotion>
     <div style={{ display: "flex", flexDirection: "column", gap: 16, color: BETA.ink }}>
       <section>
         <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: "-.02em" }}>All projects</h1>
@@ -200,7 +209,9 @@ function HomeScreen(): ReactElement {
       </div>
 
       {/* One row that scrolls sideways when narrow: wrapped, the five groups took three uneven rows on a phone. */}
-      <div role="tablist" aria-label="Project groups" style={{ display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "none", borderBottom: `1px solid ${BETA.line}` }}>
+      <div role="tablist" aria-label="Project groups" style={{ display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "none", borderBottom: `1px solid ${BETA.line}`,
+        // A solid backing: the page's grid lines ran through the tab labels.
+        background: BETA.glassSolid, padding: "4px 8px 0", borderRadius: "12px 12px 0 0" }}>
         {HOME_TABS.map(([key, label]) => {
           const on = tab === key;
           return (
@@ -212,19 +223,20 @@ function HomeScreen(): ReactElement {
               onClick={() => setTab(key)}
               style={{
                 display: "inline-flex", flex: "none", whiteSpace: "nowrap", alignItems: "center", gap: 6, minHeight: 40, padding: "0 12px", border: 0, borderRadius: "8px 8px 0 0",
-                marginBottom: -1, background: on ? BETA.chip : "transparent", borderBottom: `3px solid ${on ? BETA.blue : "transparent"}`, font: "inherit", fontSize: 14,
+                marginBottom: -1, background: on ? BETA.chip : "transparent", borderBottom: "3px solid transparent", position: "relative", font: "inherit", fontSize: 14,
                 fontWeight: on ? 700 : 500, color: on ? BETA.ink : MUTED, cursor: "pointer",
               }}
             >
               {label}
               <span style={{ fontSize: 12, color: MUTED }}>{tabCount(key)}</span>
+              {on && <motion.span layoutId="home-tab-ink" transition={SPRING} aria-hidden="true" style={{ position: "absolute", left: 6, right: 6, bottom: -3, height: 3, borderRadius: "3px 3px 0 0", background: BETA.selInk }} />}
             </button>
           );
         })}
       </div>
 
       {phone ? (
-        <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        <ol className="stag" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
           {rows.length === 0 && <li style={{ color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</li>}
           {rows.map((r) => <PhoneCard key={r.p.id} r={r} sla={slaOf(slaById.get(r.p.id), today)} onOpen={() => rememberLastProject(r.p.id)} />)}
         </ol>
@@ -243,12 +255,12 @@ function HomeScreen(): ReactElement {
                 {showPay && <th scope="col" style={TH}>Payment</th>}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="stag">
               {rows.length === 0 && <tr><td colSpan={showPay ? 5 : 4} style={{ ...TD, color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</td></tr>}
               {rows.map((r) => {
                 const [tagInk, tagBg] = betaTagTone(r.p.tag);
                 return (
-                  <tr key={r.p.id} onClick={(e) => rowClick(e, r.p.id)} style={{ cursor: "pointer", background: r.p.id === last ? BETA.pick : BETA.row }}>
+                  <tr key={r.p.id} onClick={(e) => rowClick(e, r.p.id)} {...prefetchOnIntent(queryClient, r.p.id)} style={{ cursor: "pointer", background: r.p.id === last ? BETA.pick : BETA.row }}>
                     <td style={TD}>
                       <span title={r.p.tag} style={{ display: "inline-block", maxWidth: "100%", padding: "2px 8px", borderRadius: 10, background: tagBg, color: tagInk, fontSize: 12, fontWeight: 600, lineHeight: 1.35, overflowWrap: "anywhere" }}>
                         {r.p.tag.toUpperCase()}
@@ -273,6 +285,7 @@ function HomeScreen(): ReactElement {
 
       <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · {sort === "newest" ? "newest first" : "due soonest first"} · tap a project to open it</div>
     </div>
+    </BetaMotion>
   );
 }
 

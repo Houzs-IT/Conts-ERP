@@ -16,6 +16,7 @@ import ChannexChannelsCard from '../components/ChannexChannelsCard';
 import { StaleBanner } from '../components/DataState';
 import { RecordSkeleton, TreeSkeleton } from './units/UnitsSkeleton';
 import { UnitList } from './units/UnitList';
+import { exportUnits } from './units/unitExport';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -33,10 +34,12 @@ import FinancialsTab, { MonthStepper, useFinancialMonth } from './units/Financia
 import { SaveBar, DetailsForm, DocumentsCard, BuildingModal, ConfirmAdd, AddUnitModal } from './units/UnitForms';
 import { UnitCostsCard, BillModal } from './owners/Costs';
 import ContractTab, { ModelChip } from './units/ContractTab';
+import { PaysTo } from './units/PaysTo';
+import { bankName } from '../lib/vocabulary';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import { RecordHistory } from '../components/RecordHistory';
 import {
-  mayEditUnits, STATES, layoutFromBedrooms,
+  mayEditUnits, mayChoosePayAccount, STATES, layoutFromBedrooms,
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
 } from './units/shared';
 import { statusLabel, statusOf, TONE_STYLE } from '../lib/status';
@@ -143,7 +146,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const dirty = !!form && !!edits[form.id];
 
   // Every write waits for the server; a refused save leaves the edits in place to correct and save again.
-  async function save(endContract = false, quiet = false): Promise<void> {
+  async function save(quiet = false): Promise<void> {
     if (!form || inFlight.current) return;
     const sent = edits[form.id];
     const before = original.find(u => u.id === form.id);
@@ -162,10 +165,8 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       ...plain, layoutType: rest.layoutType ?? layoutFromBedrooms(rest.bedrooms), ...(ownerId && ownerId !== before?.ownerId ? { ownerId } : {}),
       ...(changed('purpose') ? { purpose } : {}), ...(changed('usedBy') ? { usedBy: usedBy ?? null } : {}), ...(changed('beds') ? { beds } : {}),
       ...(changed('parkingBays') ? { parkingBays: (parkingBays ?? []).map(b => ({ lotNumber: b.lotNumber, level: b.level, note: b.note })) } : {}),
-      ...(endContract ? { endContract: true } : {}),
     };
     setSaving(true); inFlight.current = true;
-    let retry = false;
     try {
       await api.patch(`/units/${form.id}`, body);
       if (!quiet) toast({ tone: 'success', title: 'Changes saved.', body: `${form.listingName || form.unitCode} updated.` });
@@ -175,14 +176,9 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
       reloadAll();
     } catch (e) {
       setSaveFailed(true);
-      // A new purpose the contract does not fit: say so, and on a yes end the contract and save again.
-      if (e instanceof ApiFailure && e.code === 'CONTRACT_MISMATCH' && !endContract) {
-        retry = (await ask({ title: 'End the current contract?', body: e.message, meta: 'The ended contract stays in the contract history of the unit.',
-          confirmLabel: 'End contract and save', cancelLabel: 'Keep it', danger: true })) !== null;
-      } else notifyFailure(e);
+      notifyFailure(e);
     }
     finally { setSaving(false); inFlight.current = false; }
-    if (retry) await save(true, quiet);
   }
   // Moving the unit to another owner or building is never saved by leaving a box: it waits for Save, so a slip in a
   // list cannot move a unit (its contract stays with the previous owner).
@@ -193,7 +189,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   function autoSave() {
     if (!form || !dirty || inFlight.current || saveFailed || moving) return;
     if ((form.parkingBays ?? []).some(b => !b.lotNumber.trim())) return;
-    void save(false, true);
+    void save(true);
   }
   // A box changed while a save was on its way is saved as soon as that save is back.
   useEffect(() => { if (!saving) autoSave(); }, [saving]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -273,7 +269,11 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const setListMode = (on: boolean) => setParams(p => { const n = new URLSearchParams(on ? '' : p); if (on) n.set('view', 'list'); else n.delete('view'); return n; }, { replace: true });
   const header = (
     <PageHeader title="Units" sub={props.data ? `${plural(units.length, 'unit')} · ${plural(buildings.length, 'building')}` : 'Loading units…'}
-      actions={<Button size="sm" variant="secondary" icon={<Icon name={listMode ? 'FolderTree' : 'Table2'} size="sm" />} onClick={() => setListMode(!listMode)}>{listMode ? 'Tree and record' : 'List of all units'}</Button>}
+      actions={<>
+        <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} disabled={units.length === 0} title="Download every unit with every field as an Excel file"
+          onClick={() => exportUnits(units, buildings, readiness)}>Export all units</Button>
+        <Button size="sm" variant="secondary" icon={<Icon name={listMode ? 'FolderTree' : 'Table2'} size="sm" />} onClick={() => setListMode(!listMode)}>{listMode ? 'Tree and record' : 'List of all units'}</Button>
+      </>}
       primary={canEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button> : undefined} />
   );
 
@@ -560,8 +560,10 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
       {stacked && on('contract') && <h3 className="m-0 mt-2 text-heading font-semibold">Contract and documents</h3>}
       {on('contract') && (money
-        ? <ContractTab key={u.id} unitId={u.id} canEdit={canEdit} onSaved={reload}
-            footer={<DocumentsCard unitId={u.id} unitLabel={unitLabel} documents={d.documents ?? []} onUploaded={reloadDetail} />} />
+        ? <><PaysTo unitId={u.id} ownerId={u.owner.id} accountId={u.bankAccountId ?? null} canEdit={mayChoosePayAccount(user)} onSaved={reloadDetail}
+            mainAccount={form?.bankAccount ? `${bankName(form.bankName) ?? form.bankName} ${form.bankAccount}` : undefined} />
+          <ContractTab key={u.id} unitId={u.id} canEdit={canEdit} onSaved={reload}
+            footer={<DocumentsCard unitId={u.id} unitLabel={unitLabel} documents={d.documents ?? []} onUploaded={reloadDetail} />} /></>
         : <>
           <Card><div className="p-8 text-center text-copy text-muted-ink">The owner's contract is visible to finance and management.</div></Card>
           <DocumentsCard unitId={u.id} unitLabel={unitLabel} documents={d.documents ?? []} onUploaded={reloadDetail} />

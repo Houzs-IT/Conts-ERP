@@ -15,7 +15,7 @@ import { SCM_SYSTEM_STAFF_ID } from '../src/scm/middleware/auth';
 import { describe, expect, test } from 'vitest';
 import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
 import { depositInvoices } from '../src/scm/routes/deposit-invoices';
-import { bookSoPaymentBestEffort } from '../src/scm/lib/so-payment-row';
+import { recordAndConfirm } from './lib/confirm-payment';
 import { postSiRevenue } from '../src/scm/lib/post-si-revenue';
 import { releaseDepositInvoicesFromInvoice } from '../src/acc/deposit-invoices';
 
@@ -28,6 +28,7 @@ const acct = (code: string, name: string, type: string, over: Row = {}): Row => 
 });
 const CHART: Row[] = [
   acct('300-0000', 'ACCOUNT RECEIVEABLE', 'ASSET', { special_type: 'SDC' }),
+  acct('310-0010', 'CASH AT BANK', 'ASSET', { acc_money: true }),
   acct('320-0000', 'CASH IN HAND', 'ASSET'),
   acct('500-0003', 'SALES OF SOFA', 'INCOME'),
   acct('509-0000', 'DEPOSIT PAY BY CUSTOMER', 'INCOME'),
@@ -40,6 +41,8 @@ function harness() {
     accounts: CHART.map((r) => ({ ...r })),
     companies: [{ id: CO, code: '2990', name: '2990' }],
     acc_account_roles: [],
+    /* The customer's own account: one with none is refused, never guessed onto the AR rule (chew, 29 Oct 2026). */
+    debtors: [{ company_id: CO, code: 'cust-larding', name: 'Larding Chen', control_account: '300-0000', is_active: true }],
     acc_company_settings: [{ ...ON }],
     acc_item_group_accounts: [{ company_id: CO, group_code: 'SOFA', sales_account: '500-0003', purchase_account: '601-0003' }],
     mfg_sales_orders: [{ doc_no: SO, company_id: CO, status: 'DELIVERED', debtor_code: null, debtor_name: 'Larding Chen', customer_id: 'cust-larding' }],
@@ -79,8 +82,8 @@ const linesOf = (sb: ReturnType<typeof harness>['sb'], jeNo: string) => {
     the final invoice exists (a deposit after it is no deposit) — then the
     final invoice, raised and not yet posted. */
 async function withTwoDeposits(sb: ReturnType<typeof harness>['sb']) {
-  await bookSoPaymentBestEffort(sb, payment('p-1', 100_000, '2026-09-02'), 'payment');
-  await bookSoPaymentBestEffort(sb, payment('p-2', 50_000, '2026-09-05'), 'payment');
+  await recordAndConfirm(sb, payment('p-1', 100_000, '2026-09-02'), 'payment');
+  await recordAndConfirm(sb, payment('p-2', 50_000, '2026-09-05'), 'payment');
   expect(dis(sb).map((d) => d.di_number)).toEqual(['2990-DI-2609-001', '2990-DI-2609-002']);
   (sb.tables.sales_invoices as Row[]).push({
     id: 'si-1', company_id: CO, invoice_number: SI, so_doc_no: SO, status: 'SENT', invoice_date: '2026-09-10',

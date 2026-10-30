@@ -27,7 +27,9 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  *  - Projects > Calendar is "Schedule"; Service / Project maintenance are "Case settings" / "Project settings",
  *    so no two menu entries share a name.
  */
-const SUPPLY_SUPPORT = 'SUPPORT';
+/** The Dream Crafter group that holds IT Support and Category access. It shares its label with the Rental System group,
+ *  so anything keyed by group label must also use the workspace. */
+const SUPPLY_SYSTEM = 'SYSTEM';
 const SUPPLY_FINANCE = 'FINANCE';
 
 export type SettingsSectionKey = 'company' | 'operations' | 'locale' | 'report' | 'agreement' | 'approvals' | 'services' | 'security';
@@ -62,6 +64,8 @@ export function financeItems(prefix: '/finance' | '/supply/finance', keySuffix: 
     { key: `payables${keySuffix}`, label: 'Accounts payable', icon: 'wallet', path: `${prefix}/payables`, area: 'finance' },
     // Staff could not find where utilities go (comment sheet, Oct 2026): the month's bills of every unit, on Accounts payable.
     { key: `utilityBills${keySuffix}`, label: 'Utility bills', icon: 'zap', path: `${prefix}/utility-bills`, area: 'finance' },
+    // What each unit earned and spent, in two layers (chew, 28 Oct 2026: it belongs in Finance).
+    { key: `unitPnl${keySuffix}`, label: 'Unit P&L', icon: 'chart-column', path: `${prefix}/unit-pnl`, area: 'finance' },
     { key: `approvals${keySuffix}`, label: 'Approvals', icon: 'stamp', path: `${prefix}/approvals`, area: 'finance', badge: 'approvals' },
     ...LEDGER_SCREENS.map(s => ({
       key: `ledger_${s.slug}${keySuffix}`, label: s.label, icon: LEDGER_ICON[s.slug] ?? 'book-open', path: `${prefix}/${s.slug}`, area: 'ledger',
@@ -78,6 +82,10 @@ export const NAV: NavGroup[] = [
     // Sales staff open it in front of a prospective owner (CONTS-0006); it opens full screen, without the menu.
     { key: 'showcase', label: 'Owner Showcase', icon: 'presentation', path: '/performance/showcase', area: 'performance', fresh: true },
     { key: 'showcaseControl', label: 'Showcase control', icon: 'sliders-horizontal', path: '/performance/showcase-control', area: 'performance', badge: 'showcase', fresh: true },
+  ] },
+  // Reports sit under Home (owner, 29 Oct 2026). Their figures are Finance's, so the permission area stays Finance.
+  { label: 'REPORTS', workspace: 'rental', phone: false, items: [
+    { key: 'yearlyReport', label: 'Yearly unit report', icon: 'file-spreadsheet', path: '/reports/yearly', area: 'finance', fresh: true },
   ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
     { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'reservations' },
@@ -129,6 +137,9 @@ export const NAV: NavGroup[] = [
     // Every desk role: report a problem with the system to IT and follow it. No permission area, since a person
     // only ever reads their own requests (functions/_lib/itHub.ts). Its count comes from lib/itSupport.ts.
     { key: 'itSupport', label: 'IT Support', icon: 'life-buoy', path: '/system/it-support', badge: 'itSupport' },
+    // Every desk role (finance, 29 Oct 2026): hand in receipts and ask finance to pay. No permission area: the engine
+    // answers each person with their own only (functions/api/claims/[[path]].ts).
+    { key: 'myClaims', label: 'My claims', icon: 'receipt', path: '/my-claims' },
   ] },
 
   // Supply chain workspace. Mirrors Houzs's hierarchy: section -> collapsible area -> page.
@@ -202,8 +213,11 @@ export const NAV: NavGroup[] = [
   { label: SUPPLY_FINANCE, workspace: 'supply', phone: false, items: financeItems('/supply/finance', 'Supply') },
   // The same IT Support screen as under System, at its own address so the supply chain sidebar stays put.
   // A Property OS screen, not an engine one: the engine must not call a Houzs address (CLAUDE.md).
-  { label: SUPPLY_SUPPORT, workspace: 'supply', items: [
+  // Category access sets, per person, which product categories the renovation beta screens show (management only, so Full on Users and roles).
+  { label: SUPPLY_SYSTEM, workspace: 'supply', items: [
+    { key: 'categoryAccess', label: 'Category access', icon: 'tags', path: '/system/category-access', area: 'users', full: true },
     { key: 'itSupportSupply', label: 'IT Support', icon: 'life-buoy', path: '/supply/it-support', area: 'itSupport', badge: 'itSupport' },
+    { key: 'myClaimsSupply', label: 'My claims', icon: 'receipt', path: '/supply/my-claims' },
   ] },
 ];
 
@@ -275,7 +289,7 @@ export function navFor(role: UserRole, engine = false, access?: Record<string, A
   const groups = navGroups(role, engine, access);
   // IT Support and Finance are in the supply chain sidebar only so it stays put; alone they must not open the
   // supply chain workspace to someone with no supply chain screens (Finance is then in Rental only).
-  const shared = (g: NavGroup) => g.workspace === 'supply' && (g.label === SUPPLY_SUPPORT || g.label === SUPPLY_FINANCE);
+  const shared = (g: NavGroup) => g.workspace === 'supply' && (g.label === SUPPLY_SYSTEM || g.label === SUPPLY_FINANCE);
   const supplyWork = groups.some(g => g.workspace === 'supply' && !shared(g));
   return supplyWork ? groups : groups.filter(g => !shared(g));
 }

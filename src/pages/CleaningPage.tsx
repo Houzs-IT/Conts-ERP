@@ -11,7 +11,8 @@ import { EmptyState, Skeleton } from '../components/States';
 import { AttachmentLabel, MediaGallery } from '../components/Attachments';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
-import { CleanerChecklist, CleanerChips } from '../components/CleanerPicks';
+import { CleanerChecklist, CleanerChips, cleanerHint } from '../components/CleanerPicks';
+import { Floating } from '../components/DataTableParts';
 import { LateCheckoutBlock } from '../components/booking/BookingDrawer';
 import { sizeLine } from '../lib/unitSize';
 import SplitPane from '../components/SplitPane';
@@ -19,7 +20,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { refreshNavCounts } from '../lib/navBadges';
 import { api, errorMessage } from '../lib/api';
-import { useCleaners } from '../lib/useCleaners';
+import { useCleaners, type Cleaner } from '../lib/useCleaners';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { UnitPicker } from '../components/UnitPicker';
 import { useMedia, useNow } from '../lib/useMedia';
@@ -248,6 +249,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
     act('plan-all', () => api.post('/housekeeping/plan', { reservationIds: visibleDepartures.map(d => d.reservationId) }), { title: `${visibleDepartures.length} cleaning jobs planned.` });
   const undoLeft = (taskId: string, unit: string) =>
     act(`left-${taskId}`, () => api.post('/housekeeping/guest-left', { taskId, undo: true }), { title: `${unit}: guest no longer marked out.` });
+  const assignOne = (taskId: string, unit: string, cleanerIds: string[], label: string) =>
+    act(`assign-${taskId}`, () => api.post(`/housekeeping/tasks/${taskId}/assign`, { cleanerIds, force: true }), { title: cleanerIds.length ? `${unit}: given to ${label}.` : `${unit}: cleaners taken off.` });
   const setCheckIn = (reservationId: string, time: string, unit: string) =>
     act(`in-${reservationId}`, () => api.patch(`/reservations/${reservationId}/details`, { checkInTime: time }), { title: `${unit}: next check-in ${time}.` });
 
@@ -302,7 +305,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
               <div className="px-3 pb-3 flex flex-col gap-3">
                 {overdueGroups.map(g => (
                   <BuildingCard key={g.key} group={g} now={now} future={false} selected={selected} busy={busy}
-                    onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan}
+                    onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan} cleaners={cleaners} onAssignOne={assignOne}
                     picks={mayBulk ? { has: id => picks.has(id), toggle: togglePicks } : undefined} />
                 ))}
               </div>
@@ -317,7 +320,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         )}
         {groups.map(g => (
           <BuildingCard key={g.key} group={g} now={now} future={date > mytDay(0)} selected={selected} busy={busy}
-            onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan}
+            onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan} cleaners={cleaners} onAssignOne={assignOne}
             onAssign={() => setAssignFor({ buildingId: g.id, name: g.name })} />
         ))}
         {/* Room under the last job for the bar pinned to the bottom of a phone. */}
@@ -446,22 +449,14 @@ function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'c
 
 /* ---------- one building ---------- */
 
-// Columns follow the card's own width, not the window's. Checkout and check-in hold full guest names, so they get at
-// least 220px and the most share. Status must fit "Guest out, ready to clean", which was cut off at the card edge on
-// a laptop. No amount column: the board is for running the cleans (staff sheet CLEANING, 23 Oct 2026); the price is
-// in the job's panel and Cleaning > Prices.
-const COLS = '@4xl:grid @4xl:grid-cols-[minmax(0,0.7fr)_minmax(220px,1.4fr)_minmax(220px,1.4fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,1.3fr)] @6xl:grid-cols-[minmax(0,0.7fr)_minmax(220px,1.4fr)_minmax(220px,1.4fr)_minmax(0,0.6fr)_minmax(0,0.55fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,1.4fr)] @4xl:items-center @4xl:gap-2.5';
-const HIDDEN_IN_NARROW_TABLE = '@4xl:@max-6xl:hidden';
-const STACKED_LABEL = '@4xl:hidden flex-none w-[60px] text-meta text-muted-ink';
-const LABELLED_CELL = 'min-w-0 items-baseline gap-2';
-
 /** Ticks for the overdue bulk close: only passed in the Overdue section, and only for management. */
 interface Picks { has: (id: string) => boolean; toggle: (ids: string[], on: boolean) => void }
 
-function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onPlan, onAssign, picks }: {
+function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onPlan, onAssign, onAssignOne, cleaners, picks }: {
   group: { id: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }; now: number; future: boolean; selected: string | null; busy: string | null;
   onSelect: (id: string) => void; onGuestLeft: (b: { taskId?: string; reservationId?: string }, unit: string) => void; onUndoLeft: (taskId: string, unit: string) => void;
   onCheckIn: (reservationId: string, time: string, unit: string) => void; onPlan: (d: Departure) => void; onAssign?: () => void; picks?: Picks;
+  cleaners: Cleaner[]; onAssignOne: (taskId: string, unit: string, cleanerIds: string[], label: string) => void;
 }) {
   const external = group.id === 'external';
   const doneN = group.rows.filter(r => r.status === 'done').length;
@@ -544,7 +539,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         <button type="button" onClick={() => setShut(v => !v)} aria-expanded={!shut}
           className="min-w-0 mr-auto flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
           <Icon name={shut ? 'ChevronRight' : 'ChevronDown'} size="sm" color="var(--color-muted-ink)" />
-          <span className="text-[15px] font-semibold tracking-[-0.005em]">{group.name}</span>
+          <span className="text-[16px] font-semibold tracking-[-0.005em]">{group.name}</span>
           <span className="text-meta text-muted-ink tabular-nums">{plural(group.rows.length, 'job')} · {doneN} done</span>
           {group.departures.length > 0 && <StatusBadge tone="critical">{group.departures.length} to plan</StatusBadge>}
         </button>
@@ -556,29 +551,18 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         </div>
       </header>
       {!shut && <>
-      <div className={cx('hidden text-meta font-semibold text-muted-ink px-5 py-2 [border-top:1px_solid_var(--color-line-soft)]', COLS)}>
-        <div>{external ? 'Address' : 'Unit'}</div><div>{external ? 'Client' : 'Checkout (leaving)'}</div><div>{external ? '' : 'Check-in (arriving)'}</div><div>Time left</div><div className={HIDDEN_IN_NARROW_TABLE}>Type</div><div className={HIDDEN_IN_NARROW_TABLE}>Layout</div><div>Cleaner</div><div>Status</div>
+      {/* One card per job, as many across as fit (a card is at least 320px wide). */}
+      <div className="grid gap-3 p-3 @4xl:p-4 [border-top:1px_solid_var(--color-line-soft)] [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
+        {group.rows.map(r => <CleanCard key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} assigning={busy === `assign-${r.id}`}
+          savingIn={!!r.next?.reservationId && busy === `in-${r.next.reservationId}`} cleaners={cleaners} onAssign={(ids, label) => onAssignOne(r.id, r.unitNumber, ids, label)}
+          picked={picks ? picks.has(r.id) : undefined} onPick={picks ? on => picks.toggle([r.id], on) : undefined}
+          onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} onUndoLeft={() => onUndoLeft(r.id, r.unitNumber)}
+          onCheckIn={time => r.next?.reservationId && onCheckIn(r.next.reservationId, time, r.unitNumber)} />)}
+        {group.departures.map(d => <DepartureCard key={d.reservationId} d={d} now={now} future={future} savingIn={!!d.next?.reservationId && busy === `in-${d.next.reservationId}`}
+          busy={{ left: busy === `left-${d.reservationId}`, plan: busy === `plan-${d.reservationId}` }}
+          onGuestLeft={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)} onPlan={() => onPlan(d)}
+          onCheckIn={time => d.next?.reservationId && onCheckIn(d.next.reservationId, time, d.unitNumber)} />)}
       </div>
-      {group.rows.map(r => <CleanRow key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} savingIn={!!r.next?.reservationId && busy === `in-${r.next.reservationId}`}
-        picked={picks ? picks.has(r.id) : undefined} onPick={picks ? on => picks.toggle([r.id], on) : undefined}
-        onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} onUndoLeft={() => onUndoLeft(r.id, r.unitNumber)}
-        onCheckIn={t => r.next?.reservationId && onCheckIn(r.next.reservationId, t, r.unitNumber)} />)}
-      {group.departures.map(d => (
-        <div key={d.reservationId} className={cx('px-4 @4xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy grid grid-cols-1 @sm:grid-cols-2 items-baseline gap-x-4 gap-y-1.5', COLS)}>
-          <div className="col-span-full @4xl:col-auto flex items-center gap-x-2 flex-wrap min-w-0"><span className="min-w-0"><b>{d.unitNumber}</b>{d.unit?.size && <span className="ml-1.5 @4xl:hidden text-meta text-muted-ink">{d.unit.size}</span>}</span><span className="@4xl:hidden"><StatusBadge tone="critical">No cleaning job planned</StatusBadge></span></div>
-          <div className="min-w-0"><GuestLine time={<b className="[font-variant-numeric:tabular-nums]">{d.checkOutTime}</b>} name={d.guestName} />{d.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}{d.state === 'checked_out' && <StatusBadge tone="gold" className="ml-1">Out</StatusBadge>}</div>
-          <div className="min-w-0">{d.next ? <GuestLine time={<CheckInTime time={d.next.checkInTime} saving={!!d.next.reservationId && busy === `in-${d.next.reservationId}`} onSave={d.next.reservationId ? t => onCheckIn(d.next!.reservationId!, t, d.unitNumber) : undefined} />} name={d.next.guestName} /> : <span className="text-muted-ink">No check-in</span>}</div>
-          <div><span className="@4xl:hidden text-muted-ink">Time left </span><TimeLeft at={d.next?.checkInAt} now={now} /></div>
-          <div className="hidden @6xl:block text-muted-ink">—</div>
-          <div className="hidden @6xl:block min-w-0">{d.unit?.size ?? d.unit?.layout ?? <span className="text-muted-ink">—</span>}</div>
-          <div className="hidden @4xl:block text-muted-ink">—</div>
-          <div className="col-span-full @4xl:col-auto flex items-center gap-2 flex-wrap justify-end @4xl:justify-start pt-1 @4xl:pt-0">
-            <span className="hidden @4xl:inline"><StatusBadge tone="critical">No cleaning job</StatusBadge></span>
-            <Button size="sm" variant="primary" loading={busy === `plan-${d.reservationId}`} onClick={() => onPlan(d)}>Plan cleaning</Button>
-            {d.state !== 'checked_out' && !future && <Button size="sm" variant="secondary" loading={busy === `left-${d.reservationId}`} onClick={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)}>Guest left</Button>}
-          </div>
-        </div>
-      ))}
       {group.repairs.length > 0 && (
         <div className="px-4 @4xl:px-5 py-2.5 [border-top:1px_solid_var(--color-line-soft)] bg-page flex flex-col gap-1">
           {group.repairs.map(w => (
@@ -595,56 +579,200 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   );
 }
 
-function CleanRow({ r, now, active, busy, savingIn, onSelect, onGuestLeft, onUndoLeft, onCheckIn, picked, onPick }: {
-  r: Row; now: number; active: boolean; busy: boolean; savingIn: boolean; onSelect: () => void; onGuestLeft: () => void; onUndoLeft: () => void; onCheckIn: (time: string) => void;
-  picked?: boolean; onPick?: (on: boolean) => void;
+/** A line of a card with its small icon in front, as on the reference board. */
+function CardLine({ icon, className, children }: { icon: string; className?: string; children: ReactNode }) {
+  return (
+    <div className={cx('flex items-start gap-2 min-w-0 text-copy', className)}>
+      <span className="flex-none h-[22px] grid place-items-center"><Icon name={icon} size="sm" /></span>
+      <div className="min-w-0 flex-1 flex items-baseline flex-wrap gap-x-3 gap-y-0.5 [overflow-wrap:anywhere]">{children}</div>
+    </div>
+  );
+}
+
+/** The chip under the lines: "Assign cleaner" opens a small list where you tick one or more cleaners (the first ticked is the
+ *  main one), then press Apply. A started or finished job only shows its names: change those in the job's panel. */
+function CleanerChip({ r, cleaners, assigning, onAssign }: { r: Row; cleaners: Cleaner[]; assigning: boolean; onAssign: (cleanerIds: string[], label: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const current = useMemo(() => [...new Set([r.cleanerId, ...r.cleaners.map(c => c.cleanerId)].filter((id): id is string => !!id))], [r.cleanerId, r.cleaners]);
+  const [picked, setPicked] = useState<string[]>(current);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const names = r.cleaners.length ? r.cleaners.map(c => c.name) : r.assigneeName ? [r.assigneeName] : [];
+  const text = names.length ? `${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ''}` : 'Assign cleaner';
+  const editable = r.status !== 'cleaning' && r.status !== 'done';
+  const close = useCallback(() => { setOpen(false); setQ(''); }, []);
+  const toggle = (id: string) => setPicked(p => (p.includes(id) ? p.filter(v => v !== id) : [...p, id]));
+  // The least busy first, so the person to pick is at the top.
+  const list = useMemo(() => {
+    const n = q.trim().toLowerCase();
+    return cleaners.filter(c => !n || c.name.toLowerCase().includes(n)).sort((a, b) => a.busy - b.busy || a.name.localeCompare(b.name));
+  }, [cleaners, q]);
+  const changed = picked.length !== current.length || picked.some((id, i) => id !== current[i]);
+  const apply = () => {
+    close();
+    if (changed) onAssign(picked, picked.map(id => cleaners.find(c => c.id === id)?.name ?? 'cleaner').join(', '));
+  };
+  const chip = cx('inline-flex items-center gap-1.5 h-8 px-2.5 max-w-full min-w-0 rounded-control border border-solid border-line bg-card text-meta font-medium', names.length ? 'text-ink' : 'text-muted-ink');
+  if (!editable) return <span title={names.join(', ') || undefined} className={chip}><Icon name="UserPlus" size="sm" /><span className="truncate">{text}</span></span>;
+  return (
+    <>
+      <button ref={anchor} type="button" disabled={assigning} aria-haspopup="dialog" aria-expanded={open} aria-label={`Cleaners for ${r.unitNumber}: ${text}`}
+        onClick={e => { e.stopPropagation(); if (!open) setPicked(current); setOpen(o => !o); }} onKeyDown={e => e.stopPropagation()} title={names.join(', ') || undefined}
+        className={cx(chip, 'cursor-pointer [font-family:inherit] hover:border-ink disabled:opacity-60 disabled:cursor-default', open && 'border-ink bg-page')}>
+        <Icon name="UserPlus" size="sm" /><span className="truncate">{assigning ? 'Saving...' : text}</span>
+        <span className={cx('grid transition-transform duration-150', open && 'rotate-180')}><Icon name="ChevronDown" size="sm" /></span>
+      </button>
+      <Floating anchor={anchor} open={open} onClose={close} width={296} maxHeight={420} label={`Pick cleaners for ${r.unitNumber}`}>
+        {/* The panel is portalled, but React still sends its clicks up to the card: stop them here. */}
+        <div onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} className="flex flex-col">
+          <div className="px-3 pt-2.5 pb-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-meta font-semibold text-muted-ink">Assign {r.unitNumber}</span>
+            <span className="text-meta text-muted-ink tabular-nums">{picked.length ? `${picked.length} picked` : 'Tick one or more'}</span>
+          </div>
+          {cleaners.length > 6 && (
+            <div className="px-2 pb-1.5">
+              <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search cleaners" aria-label="Search cleaners" className={cx(INPUT, 'h-9')} />
+            </div>
+          )}
+          <div role="group" aria-label="Cleaners" className="px-1 pb-1 max-h-[200px] overflow-y-auto overscroll-contain">
+            {list.length === 0 && <div className="px-3 py-3 text-copy text-muted-ink">{cleaners.length ? 'No cleaner with that name.' : 'No cleaners on the roster yet.'}</div>}
+            {list.map(c => {
+              const on = picked.includes(c.id);
+              return (
+                <label key={c.id} className={cx('min-h-11 flex items-center gap-2.5 px-2.5 py-1.5 rounded-[8px] cursor-pointer text-copy', on ? 'bg-gold-tint' : 'hover:bg-muted')}>
+                  <input type="checkbox" checked={on} onChange={() => toggle(c.id)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); apply(); } }}
+                    className="w-4 h-4 m-0 flex-none accent-[var(--color-brand-black)]" />
+                  <span aria-hidden className="flex-none w-8 h-8 rounded-full grid place-items-center bg-muted text-ink text-[11px] font-semibold">{initials(c.name)}</span>
+                  <span className="min-w-0 flex-1 flex flex-col">
+                    <span className="truncate font-medium text-ink">{c.name}</span>
+                    <span className="truncate text-meta text-muted-ink">{cleanerHint(c)}</span>
+                  </span>
+                  {on && picked.length > 1 && picked[0] === c.id && <span className="flex-none text-caption text-gold-ink">Main</span>}
+                </label>
+              );
+            })}
+          </div>
+          <div className="sticky bottom-0 bg-card flex items-center justify-end gap-2 p-2 [border-top:1px_solid_var(--color-line-soft)]">
+            <Button type="button" variant="ghost" size="sm" onClick={close}>Cancel</Button>
+            <Button type="button" variant={picked.length || !current.length ? 'primary' : 'danger'} size="sm" disabled={!changed} disabledReason="Change who is ticked first" onClick={apply}>
+              {!picked.length && current.length ? 'Take everyone off' : picked.length > 1 ? `Apply ${picked.length}` : 'Apply'}
+            </Button>
+          </div>
+        </div>
+      </Floating>
+    </>
+  );
+}
+
+/** One colour per card, used by its border and its status pill alike: red when the checkout time has passed and nobody
+ *  ticked, yellow once the guest is out (or the cleaner started) and the clean is not finished, else the status's own. */
+const CARD_TONE: Record<NonNullable<CleanRowTone>, { border: string; pill: 'critical' | 'warning' }> = {
+  overdue: { border: 'border-danger-line', pill: 'critical' },
+  out: { border: 'border-warning-line', pill: 'warning' },
+};
+const CARD = 'rounded-card border-2 border-solid p-4 text-copy flex flex-col gap-2.5 min-w-0';
+const CARD_TITLE = 'text-[17px] leading-tight font-bold text-ink [overflow-wrap:anywhere]';
+const CARD_NOTE = 'pl-6 text-meta';
+
+/** One job on tablet and up, laid out like the reference board. Every card has the same rows in the same order (title and
+ *  status, leaving guest, arriving guest, cleaner, then the one action that is next), so they line up across the grid. */
+function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSelect, onGuestLeft, onUndoLeft, onCheckIn, onAssign, picked, onPick }: {
+  r: Row; now: number; active: boolean; busy: boolean; assigning: boolean; savingIn: boolean; cleaners: Cleaner[]; onSelect: () => void; onGuestLeft: () => void; onUndoLeft: () => void;
+  onCheckIn: (time: string) => void; onAssign: (cleanerIds: string[], label: string) => void; picked?: boolean; onPick?: (on: boolean) => void;
 }) {
   const st = statusOf('cleaning', r.status);
   const files = r.photoCount + r.videoCount;
-  // One tap on the row marks the guest out (or takes the mark back while nobody has started); the tick is the button.
   const mayTick = !!r.previous && r.status !== 'done' && r.status !== 'cleaning' && r.day <= mytDay(0);
-  const label = r.status === 'done' ? 'Ready to check in' : st.label;
-  const tone = rowTone(r, now);
-  const tick = mayTick && <GuestOutTick out={r.guestOut} busy={busy} onTick={r.guestOut ? onUndoLeft : onGuestLeft} />;
+  const pending = !!r.previous && !r.guestOut && r.status !== 'done' && r.status !== 'cleaning';
+  const rowT = rowTone(r, now);
+  const tone = rowT ? CARD_TONE[rowT] : null;
+  const meta = [r.unit?.size ?? r.unit?.layout, KIND_LABEL[r.kind] ?? r.kind].filter(Boolean).join(' · ');
+  const arrives = r.day === mytDay(0) ? 'today' : dayLabel(r.day);
+  const stop = (fn: () => void) => (e: { stopPropagation: () => void }) => { e.stopPropagation(); fn(); };
+  const pillLabel = pending ? 'Pending checkout' : PHONE_STATUS[r.status] ?? st.label;
   return (
     <div role="button" tabIndex={0} aria-pressed={active} onClick={onSelect} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(); } }}
-      className={cx('px-4 @4xl:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] text-copy cursor-pointer grid grid-cols-1 @sm:grid-cols-2 items-baseline gap-x-4 gap-y-1.5 outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]', COLS,
-        active ? 'bg-gold-tint [box-shadow:inset_3px_0_0_var(--color-gold)]' : TONE_BG[tone ?? 'none'])}>
-      <div className="col-span-full @4xl:col-auto flex flex-wrap @max-4xl:flex-nowrap items-center gap-x-2 gap-y-1 min-w-0">
+      className={cx(CARD, 'cursor-pointer outline-none focus-visible:[box-shadow:0_0_0_2px_var(--color-gold)]',
+        active ? 'bg-gold-tint border-[var(--color-gold)]' : cx('bg-card hover:bg-page', tone?.border ?? 'border-line'))}>
+      <div className="flex items-start gap-3 min-w-0">
         {onPick && (
           <input type="checkbox" checked={!!picked} onChange={e => onPick(e.target.checked)} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
-            aria-label={`Select ${r.unitNumber}, ${dayLabel(r.day)}`} className="flex-none w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
+            aria-label={`Select ${r.unitNumber}, ${dayLabel(r.day)}`} className="flex-none w-4 h-4 mt-1 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
         )}
-        <span className="min-w-0 truncate">
-          <b className="text-ink whitespace-nowrap">{r.unitNumber}</b>
-        </span>
-        {r.carriedOver && <span className="flex-none"><StatusBadge tone="warning" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge></span>}
-        <span className="@4xl:hidden ml-auto flex-none flex items-center gap-2"><StatusBadge tone={st.tone}>{label}</StatusBadge>{tick}</span>
-      </div>
-      <div className="min-w-0 flex items-start gap-2">
-        {!r.external && <span className={cx(STACKED_LABEL, 'self-baseline')}>Out</span>}
-        <div className="min-w-0 self-baseline">
-          {r.external ? <>{r.external.clientName ?? <span className="text-muted-ink">No client name</span>}{r.external.clientPhone && <div className="text-meta text-muted-ink">{r.external.clientPhone}</div>}</>
-            : <>{r.previous ? <GuestLine time={<b className="[font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b>} name={r.previous.guestName} /> : <span className="text-muted-ink">No departing guest</span>}
-              {r.previous?.lateCheckOut && <StatusBadge tone="warning" className="ml-1">Late checkout</StatusBadge>}
-              {r.guestOut && r.guestLeftAt && <div className="text-meta text-gold-ink">{r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}</div>}
-              {tone === 'overdue' && <div className="text-meta text-danger font-medium">{OVERDUE_NOTE}</div>}</>}
+        <div className="min-w-0 flex-1 flex items-baseline flex-wrap gap-x-2 gap-y-0.5">
+          <b className={CARD_TITLE}>{r.external ? r.external.address : r.unitNumber}</b>
+          {r.carriedOver && <span className="text-meta font-medium text-muted-ink whitespace-nowrap" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</span>}
         </div>
+        <span className="flex-none"><StatusBadge tone={tone?.pill ?? st.tone} size="sm">{pillLabel}</StatusBadge></span>
       </div>
-      <div className={cx(LABELLED_CELL, r.external ? 'hidden @4xl:flex' : 'flex')}>
-        {!r.external && <><span className={STACKED_LABEL}>In</span><span className="min-w-0">
-          {r.next ? <GuestLine time={<CheckInTime time={r.next.checkInTime} saving={savingIn} onSave={r.next.reservationId && r.status !== 'done' ? onCheckIn : undefined} />} name={r.next.guestName} /> : <span className="text-muted-ink">No check-in</span>}
-          {r.next?.earlyCheckIn && <StatusBadge tone="warning" className="ml-1">Early check-in</StatusBadge>}</span></>}
+
+      {r.external ? (
+        <CardLine icon="Users" className="text-muted-ink"><span className="text-ink">{r.external.clientName ?? 'No client name'}</span>{r.external.clientPhone && <span>{r.external.clientPhone}</span>}</CardLine>
+      ) : <>
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <CardLine icon="Users" className="text-muted-ink">
+            {r.previous ? <>
+              <span className="text-ink">{r.previous.guestName}</span>
+              <span>Checkout by <b className="text-ink [font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b></span>
+              {r.previous.lateCheckOut && <StatusBadge tone="warning" size="sm">Late checkout</StatusBadge>}
+            </> : <span>No guest leaving</span>}
+          </CardLine>
+          {rowT === 'overdue' && <div className={cx(CARD_NOTE, 'text-danger font-medium')}>Checkout time passed.</div>}
+          {r.guestOut && r.guestLeftAt && (
+            <div className={cx(CARD_NOTE, 'text-muted-ink')}>
+              {r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}
+              {mayTick && <> · <button type="button" disabled={busy} onClick={stop(onUndoLeft)} onKeyDown={e => e.stopPropagation()}
+                className="p-0 bg-transparent border-0 underline cursor-pointer text-muted-ink [font-family:inherit] [font-size:inherit] disabled:opacity-50">Undo</button></>}
+            </div>
+          )}
+        </div>
+        <CardLine icon="LogIn" className={cx(r.next && r.status !== 'done' ? 'text-danger font-medium' : 'text-muted-ink')}>
+          {r.next ? <>
+            <span>Next guest arrives {arrives} <CheckInTime time={r.next.checkInTime} saving={savingIn} onSave={r.next.reservationId && r.status !== 'done' ? onCheckIn : undefined} /></span>
+            {r.next.earlyCheckIn && <StatusBadge tone="warning" size="sm">Early check-in</StatusBadge>}
+            <span className="text-meta font-normal whitespace-nowrap"><TimeLeft at={r.next.checkInAt} now={now} done={r.status === 'done'} /></span>
+          </> : <span>No check-in {arrives}</span>}
+        </CardLine>
+      </>}
+
+      <div className="mt-auto flex items-center gap-2 min-w-0 pt-0.5">
+        <CleanerChip r={r} cleaners={cleaners} assigning={assigning} onAssign={onAssign} />
+        {meta && <span className="ml-auto min-w-0 truncate text-meta text-muted-ink">{meta}</span>}
       </div>
-      <div className={cx(LABELLED_CELL, r.next ? 'flex' : 'hidden @4xl:flex')}><span className={STACKED_LABEL}>Time left</span><TimeLeft at={r.next?.checkInAt} now={now} done={r.status === 'done'} /></div>
-      <div className={cx(LABELLED_CELL, 'flex', HIDDEN_IN_NARROW_TABLE)}><span className={STACKED_LABEL}>Type</span>{KIND_LABEL[r.kind] ?? r.kind}</div>
-      <div className={cx(LABELLED_CELL, 'flex', HIDDEN_IN_NARROW_TABLE, !r.unit?.layout && !r.unit?.size && '@max-4xl:hidden')}><span className={STACKED_LABEL}>Layout</span><span className="min-w-0">{r.unit?.size ?? r.unit?.layout ?? <span className="text-muted-ink">—</span>}</span></div>
-      <CleanerCell r={r} />
-      <div className="hidden @4xl:flex items-center gap-1.5 flex-wrap min-w-0">
-        {/* Wraps inside its column rather than spilling past the card edge, where it was cut off. */}
-        <span className="hidden @4xl:inline min-w-0"><StatusBadge tone={st.tone} className="whitespace-normal">{label}</StatusBadge></span>
-        {r.status === 'done' && <span className="hidden @4xl:inline text-meta text-muted-ink whitespace-nowrap">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</span>}
-        {tick && <span className="ml-auto flex-none">{tick}</span>}
+
+      {r.status === 'done'
+        ? <div className="text-meta text-muted-ink">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</div>
+        : mayTick && !r.guestOut && <Button size="sm" variant="danger" className="w-full" loading={busy} onClick={stop(onGuestLeft)}>Guest has left</Button>}
+    </div>
+  );
+}
+
+/** A checkout with no cleaning job yet, drawn with the same rows as a job card. */
+function DepartureCard({ d, now, future, busy, savingIn, onGuestLeft, onCheckIn, onPlan }: {
+  d: Departure; now: number; future: boolean; busy: { left: boolean; plan: boolean }; savingIn: boolean;
+  onGuestLeft: () => void; onCheckIn: (time: string) => void; onPlan: () => void;
+}) {
+  return (
+    <div className={cx(CARD, 'bg-card border-danger-line')}>
+      <div className="flex items-start gap-3 min-w-0">
+        <b className={cx(CARD_TITLE, 'min-w-0 flex-1')}>{d.unitNumber}</b>
+        <span className="flex-none"><StatusBadge tone="critical" size="sm">No cleaning job</StatusBadge></span>
+      </div>
+      <CardLine icon="Users" className="text-muted-ink">
+        <span className="text-ink">{d.guestName}</span>
+        <span>Checkout by <b className="text-ink [font-variant-numeric:tabular-nums]">{d.checkOutTime}</b></span>
+        {d.lateCheckOut && <StatusBadge tone="warning" size="sm">Late checkout</StatusBadge>}
+        {d.state === 'checked_out' && <StatusBadge tone="gold" size="sm">Out</StatusBadge>}
+      </CardLine>
+      <CardLine icon="LogIn" className={d.next ? 'text-danger font-medium' : 'text-muted-ink'}>
+        {d.next ? <>
+          <span>Next guest arrives today <CheckInTime time={d.next.checkInTime} saving={savingIn} onSave={d.next.reservationId ? onCheckIn : undefined} /></span>
+          <span className="text-meta font-normal whitespace-nowrap"><TimeLeft at={d.next.checkInAt} now={now} /></span>
+        </> : <span>No check-in today</span>}
+      </CardLine>
+      <div className="mt-auto pt-0.5 flex items-center gap-2">
+        <Button size="sm" variant="primary" className="flex-1" loading={busy.plan} onClick={onPlan}>Plan cleaning</Button>
+        {d.state !== 'checked_out' && !future && <Button size="sm" variant="danger" className="flex-1" loading={busy.left} onClick={onGuestLeft}>Guest has left</Button>}
       </div>
     </div>
   );
@@ -747,15 +875,6 @@ function GuestOutTick({ out, busy, onTick, small }: { out: boolean; busy: boolea
   );
 }
 
-/** The time on its own line, then the full guest name, which wraps instead of being cut short. */
-function GuestLine({ time, name }: { time: ReactNode; name: string }) {
-  return (
-    <span className="flex flex-col min-w-0">
-      <span>{time}</span><span className="text-ink [overflow-wrap:anywhere]">{name}</span>
-    </span>
-  );
-}
-
 /** The next guest's check-in time: tap it to change it right on the row (a time picker), which moves Time left. */
 function CheckInTime({ time, saving, onSave }: { time: string; saving: boolean; onSave?: (time: string) => void }) {
   const [editing, setEditing] = useState(false);
@@ -776,22 +895,6 @@ function CheckInTime({ time, saving, onSave }: { time: string; saving: boolean; 
       <TimeField aria-label="Next check-in time" autoFocus value={v} onChange={setV} className={cx(INPUT, 'h-8 w-[110px] px-2')} />
       <button type="button" onClick={save} aria-label="Save the check-in time" className="h-8 w-8 grid place-items-center rounded-control border border-solid border-black bg-black text-white cursor-pointer"><Icon name="Check" size="sm" /></button>
     </span>
-  );
-}
-
-/** The job's cleaners: one name, or the first name and "+N" with everyone in the tooltip. */
-function CleanerCell({ r }: { r: Row }) {
-  const names = r.cleaners.length ? r.cleaners.map(c => c.name) : r.assigneeName ? [r.assigneeName] : [];
-  return (
-    // Unassigned stays grey on the row: the building header already counts it in red.
-    // The tooltip carries the whole name when the narrow column cuts it short.
-    <div className={cx(LABELLED_CELL, 'flex', !names.length && 'text-muted-ink')} title={names.join(', ') || undefined}>
-      <span className={STACKED_LABEL}>{names.length > 1 ? 'Cleaners' : 'Cleaner'}</span>
-      {/* Phones have the room to list everyone; the desk column shows the first and how many more. */}
-      <span className="truncate @4xl:hidden">{names.length ? names.join(', ') : 'Unassigned'}</span>
-      <span className="truncate hidden @4xl:inline">{names[0] ?? 'Unassigned'}</span>
-      {names.length > 1 && <span className="hidden @4xl:inline flex-none text-meta font-semibold text-muted-ink">+{names.length - 1}</span>}
-    </div>
   );
 }
 
@@ -931,7 +1034,8 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
         <div className="grid grid-flow-col auto-cols-fr gap-3 max-md:order-last max-md:sticky max-md:bottom-0 max-md:z-[2] max-md:-mx-5 max-md:-mb-5 max-md:px-5 max-md:pt-3 max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:bg-card max-md:[border-top:1px_solid_var(--color-line)]">
           {row.state !== 'in_progress' && (
             // One black button, the next step: Start until the clean is under way, then a photo, then Mark complete.
-            <Button variant="primary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${row.id}/start`, {}), 'Cleaning job started.')}>Start</Button>
+            <Button variant="primary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'}
+              disabled={!!row.previous && !row.guestOut} disabledReason="Tick Guest has left first. The guest may still be in the unit." onClick={() => void act('start', () => api.post(`/housekeeping/tasks/${row.id}/start`, {}), 'Cleaning job started.')}>Start</Button>
           )}
           {row.state === 'in_progress' && files === 0 && (
             <Button variant="primary" icon={<Icon name="ImagePlus" size="sm" />} onClick={() => openAdd.current?.()}>Add photos or videos</Button>

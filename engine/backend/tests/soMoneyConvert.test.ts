@@ -67,6 +67,9 @@ function harness(tables: Record<string, Row[]> = {}) {
     {
       accounts: CHART.map((r) => ({ ...r })),
       acc_account_roles: [],
+      /* Each customer's own account, by customer id: money moved for one with none is refused, never guessed onto
+         the AR rule (chew, 29 Oct 2026). */
+      debtors: ['cust-1', 'cust-2', 'cust-3'].map((code) => ({ company_id: CO, code, control_account: '300-0000', is_active: true })),
       acc_bank_letters: [{ company_id: CO, account_code: '310-0010', letter: 'M' }],
       acc_numbering: [],
       acc_company_settings: [],
