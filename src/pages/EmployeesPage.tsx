@@ -10,6 +10,7 @@ import type { AttendanceLine } from '../../functions/api/attendance/index';
 
 const WorkingHoursTab = lazy(() => import('./workers/WorkingHoursTab'));
 const AttendanceTab = lazy(() => import('./workers/AttendanceTab'));
+const PunchSitesTab = lazy(() => import('./workers/PunchSitesTab'));
 const PayrollTab = lazy(() => import('./workers/PayrollTab'));
 const AdvancesTab = lazy(() => import('./workers/AdvancesTab'));
 const EmployeesTab = lazy(() => import('./workers/EmployeesTab'));
@@ -24,7 +25,8 @@ const EmployeePerformanceTab = lazy(() => import('./workers/EmployeePerformanceT
  * HR > Employees: Hookka's Employees page (erp.hookka.com /employees),
  * its eleven tabs in its order with its labels and icons (owner, 26 Oct
  * 2026: follow Hookka's tabs), plus Outside Companies: the cleaning and
- * repair companies, which have no HR record (Operations > Workers is gone).
+ * repair companies, which have no HR record (Operations > Workers is gone),
+ * and Punch Sites: where a phone punch counts as on site (27 Oct 2026).
  * Leave is off the bar, as on Hookka ("hidden until rollout"), and still
  * opens from its notices at ?tab=leave.
  * ------------------------------------------------------------------ */
@@ -32,6 +34,7 @@ const EmployeePerformanceTab = lazy(() => import('./workers/EmployeePerformanceT
 const TABS = [
   { key: 'working-hours', label: 'Working Hours', icon: 'Clock' },
   { key: 'attendance', label: 'Attendance', icon: 'UserCheck' },
+  { key: 'punch-sites', label: 'Punch Sites', icon: 'MapPin' },
   { key: 'labor-cost', label: 'Labor Cost', icon: 'DollarSign' },
   { key: 'efficiency', label: 'Efficiency Overview', icon: 'Activity' },
   { key: 'department-labor', label: 'Department Labor', icon: 'DollarSign' },
@@ -49,7 +52,7 @@ const isTab = (v: string | null): v is TabKey => v === 'leave' || TABS.some(t =>
 /** Twelve tabs do not fit in one row, so the bar shows three sections and the second row shows the pages in the
  *  chosen section (owner, 27 Oct 2026). Hookka's order is kept inside each section. */
 const SECTIONS = [
-  { key: 'hours', label: 'Hours', tabs: ['working-hours', 'attendance', 'efficiency', 'detail', 'department-performance'] },
+  { key: 'hours', label: 'Hours', tabs: ['working-hours', 'attendance', 'punch-sites', 'efficiency', 'detail', 'department-performance'] },
   { key: 'staff', label: 'Staff', tabs: ['employee-master', 'outside'] },
   { key: 'pay', label: 'Pay', tabs: ['payroll', 'advances', 'penalties', 'labor-cost', 'department-labor'] },
 ] as const satisfies readonly { key: string; label: string; tabs: readonly TabKey[] }[];
@@ -81,6 +84,7 @@ export default function EmployeesPage() {
   let body: ReactNode;
   if (tab === 'working-hours') body = <WorkingHoursTab />;
   else if (tab === 'attendance') body = <AttendanceTab />;
+  else if (tab === 'punch-sites') body = <PunchSitesTab />;
   else if (tab === 'payroll') body = <PayrollTab />;
   else if (tab === 'advances') body = <AdvancesTab />;
   else if (tab === 'employee-master') body = <EmployeesTab />;
