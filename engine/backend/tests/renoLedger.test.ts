@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from 'vitest';
 import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
-import { contractPostedSen, postContractChange } from '../src/acc/reno-ledger';
+import { contractPostedSen, contractPostingState, postContractChange } from '../src/acc/reno-ledger';
 
 const CO = 2;
 const SO = '2990-SO-2611-001';
@@ -106,12 +106,56 @@ describe('renovation contract postings', () => {
 
   test('a contract signed before the ledger start posts nothing', async () => {
     const sb = harness({ soDate: '2026-10-15' });
+    /* Not a failure: nothing to post, so old contracts report no noise. */
     const r = await postContractChange(sb, { companyId: CO, soDocNo: SO, date: '2026-10-15', actor: 'Chew' });
-    expect(r).toMatchObject({ ok: false, status: 'before_ledger_start' });
+    expect(r).toMatchObject({ ok: true, status: 'before_ledger_start' });
     /* Its VO after go-live does not post the whole contract either: the opening balances carry it. */
     const vo = await postContractChange(sb, { companyId: CO, soDocNo: SO, date: '2026-11-12', actor: 'Chew' });
-    expect(vo).toMatchObject({ ok: false, status: 'before_ledger_start' });
+    expect(vo).toMatchObject({ ok: true, status: 'before_ledger_start' });
     expect(sb.tables.journal_entries).toHaveLength(0);
+    expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toMatchObject({ ok: true, status: 'before_ledger_start' });
+  });
+
+  test('the posting state tells finance when the contract is under-posted', async () => {
+    const sb = harness();
+    expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toEqual({ ok: true, status: 'under_posted', contractSen: 10_000_000, postedSen: 0 });
+    await postContractChange(sb, { companyId: CO, soDocNo: SO, date: '2026-11-03', actor: 'Chew' });
+    expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toEqual({ ok: true, status: 'in_step', contractSen: 10_000_000, postedSen: 10_000_000 });
+    sb.tables.mfg_sales_order_items.push(item('i3', 250_000));
+    expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toMatchObject({ status: 'under_posted', contractSen: 10_250_000, postedSen: 10_000_000 });
+    const none = harness({ advance: null });
+    expect(await contractPostingState(none, { companyId: CO, soDocNo: SO })).toMatchObject({ ok: false, status: 'no_advance_account' });
+  });
+
+  test('two VOs racing for one number: the loser re-reads and posts what remains under the next', async () => {
+    const sb = harness();
+    await postContractChange(sb, { companyId: CO, soDocNo: SO, date: '2026-11-03', actor: 'Chew' });
+    /* VO B read the journals before VO A posted -1 … */
+    const snapshot = sb.tables.journal_entries.map((r) => ({ ...r }));
+    sb.tables.mfg_sales_order_items.push(item('i3', 500_000));
+    await postContractChange(sb, { companyId: CO, soDocNo: SO, date: '2026-11-10', actor: 'A' });
+    /* … and sees the contract after both VOs. */
+    sb.tables.mfg_sales_order_items.push(item('i4', 300_000));
+    const stale = fakeSb({ journal_entries: snapshot });
+    let first = true;
+    const racing = new Proxy(sb, {
+      get(target, key, recv) {
+        if (key !== 'from') return Reflect.get(target, key, recv);
+        return (table: string) => {
+          if (table === 'journal_entries' && first) { first = false; return stale.from(table); }
+          return target.from(table);
+        };
+      },
+    });
+    expect(await postContractChange(racing, { companyId: CO, soDocNo: SO, date: '2026-11-10', actor: 'B' })).toMatchObject({ ok: true, status: 'posted', deltaSen: 300_000 });
+    expect(entries(sb).map((e) => [e.source_doc_no, e.lines[0].dr])).toEqual([[SO, 10_000_000], [`${SO}-1`, 500_000], [`${SO}-2`, 300_000]]);
+    expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toMatchObject({ status: 'in_step', postedSen: 10_800_000 });
+  });
+
+  test('finance posting again with no date: the signing on the contract date', async () => {
+    const sb = harness();
+    expect(await postContractChange(sb, { companyId: CO, soDocNo: SO, date: null, actor: 'Finance' })).toMatchObject({ ok: true, status: 'posted' });
+    expect(entries(sb)[0]).toMatchObject({ source_type: 'RCON', entry_date: '2026-11-03' });
   });
 
   test('no advance account refuses by name', async () => {

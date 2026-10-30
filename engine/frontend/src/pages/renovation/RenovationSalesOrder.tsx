@@ -11,13 +11,14 @@ import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
 import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapModal';
 import { useAuth } from '../../auth/AuthContext';
+import { useToast } from '../../hooks/useToast';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
 import { STAGE_LABEL, RENO_STAGES, type StageKey } from '../../vendor/shared/renovation-stages';
 import { qtyLabel } from '../../vendor/shared/renovation-money';
 import {
-  refusalOf, renoSend, useBrands, useContract, usePoFlags, usePoSplit, useRenoMutation,
-  type BillingInstalment, type ContractView, type DocLine,
+  contractPostingWarning, refusalOf, renoSend, useBrands, useContract, useContractPosting, usePoFlags, usePoSplit, useRenoMutation,
+  type BillingInstalment, type ContractPosting, type ContractView, type DocLine,
 } from '../../lib/renovation/api';
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { PrintDialog } from './PrintDialog';
@@ -228,6 +229,32 @@ function SectionRows({ section, canEdit, edits, setEdits, suppliers, supplierNam
   );
 }
 
+/** Finance: when the ledger does not carry the contract as it stands (a post after convert or a VO was refused),
+    say so and offer to post it again. Nothing shows for anyone else, or when it is in step. */
+function ContractPostingAction({ docNo }: { docNo: string }) {
+  const { can } = useAuth();
+  const toast = useToast();
+  const finance = can('scm.payment_voucher.post');
+  const state = useContractPosting(docNo, finance);
+  const run = useRenoMutation(() => renoSend<ContractPosting>(`/sales-orders/${encodeURIComponent(docNo)}/post-contract`, 'POST', {}));
+  const s = state.data;
+  if (!finance || !s || s.status === 'in_step' || s.status === 'before_ledger_start') return null;
+  const post = async () => {
+    try {
+      const r = await run.mutateAsync(undefined);
+      const warning = contractPostingWarning(r);
+      if (warning) toast.warning(warning); else toast.success('Contract posted.');
+    } catch (e) { toast.warning(contractPostingWarning({ status: 'post_failed', reason: refusalOf(e).message }) ?? refusalOf(e).message); }
+  };
+  const gap = 'contractSen' in s ? `Ledger ${rm(s.postedSen)} of ${rm(s.contractSen)}` : `Not posted: ${s.reason}`;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[12px] text-warning-text">{gap}</span>
+      <Button variant="secondary" className="h-8" disabled={run.isPending} onClick={post}>{run.isPending ? 'Posting…' : 'Post contract'}</Button>
+    </div>
+  );
+}
+
 export function RenovationSalesOrder() {
   const { docNo } = useParams();
   const c = useContract(docNo);
@@ -289,7 +316,7 @@ export function RenovationSalesOrder() {
         <Stat label="Received" value={rm(b.receivedSen)} tone="ok" />
         <Stat label="To bill" value={rm(b.revisedContractSen - b.billedSen)} />
       </div>
-      <Card title="Progress billing" dense>
+      <Card title="Progress billing" dense actions={<ContractPostingAction docNo={k.docNo} />}>
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[720px] text-left text-[12.5px]">
             <thead className="bg-surface-2 text-[10.5px] uppercase tracking-wide text-ink-muted">

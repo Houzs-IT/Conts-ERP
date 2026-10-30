@@ -30,7 +30,7 @@ import { listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplat
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
 import { onRenovationSoLinesChanged } from '../lib/renovation-hooks';
 import { postSiRevenue } from '../lib/post-si-revenue';
-import { postContractChange } from '../../acc/reno-ledger';
+import { contractPostingState, postContractChange } from '../../acc/reno-ledger';
 import { CREDIT_NOTE_HEADER, postCreditNote } from '../../acc/credit-notes';
 import { categoryGroupOf, type UomDef } from '../shared/renovation-catalog';
 import { loadUomsSql } from './renovation-catalog-settings';
@@ -154,6 +154,28 @@ renovation.post('/quotations/:id/convert', handle(PERM.quote, async (c, { tx, sq
   const posting = await postContractAfterCommit(c, actor, out.docNo, out.soDate);
   return c.json({ ...out, posting }, 201);
 }));
+
+/* Finance: whether the ledger carries the contract as it stands, and posting it again when a post after commit was
+   refused (acc/reno-ledger). REST only — no SQL transaction. */
+const FINANCE_POST = 'scm.payment_voucher.post';
+
+renovation.get('/sales-orders/:docNo/contract-posting', async (c) => {
+  if (!hasHouzsPerm(c, FINANCE_POST)) return c.json({ error: 'forbidden', message: `You need the "${FINANCE_POST}" permission for this.` }, 403);
+  const docNo = c.req.param('docNo');
+  return c.json(await contractPostingState(c.get('supabase'), { companyId: actorOf(c).companyId, soDocNo: docNo }));
+});
+
+renovation.post('/sales-orders/:docNo/post-contract', async (c) => {
+  if (!hasHouzsPerm(c, FINANCE_POST)) return c.json({ error: 'forbidden', message: `You need the "${FINANCE_POST}" permission for this.` }, 403);
+  const actor = actorOf(c);
+  try {
+    const r = await postContractChange(c.get('supabase'), { companyId: actor.companyId, soDocNo: c.req.param('docNo'), date: null, actor: actor.name });
+    return c.json(r, r.ok ? 200 : 409);
+  } catch (err) {
+    console.error('[renovation] post contract failed:', err);
+    return c.json({ ok: false, status: 'post_failed', reason: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
 
 /** After commit: post the contract's change to its project accounts (acc/reno-ledger). A refusal leaves it unposted
     and is reported, never thrown — the next change posts the whole difference. */

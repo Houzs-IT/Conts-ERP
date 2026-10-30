@@ -13,12 +13,13 @@ import { paginateAll } from '../scm/lib/paginate-all';
 import { postJournal } from './engine';
 import { isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
 import { noCustomerAccountReason } from '../conts/parties';
+import { todayMyt } from '../scm/lib/my-time';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as everywhere in acc/ */
 type Sb = any;
 
 export type RenoPostResult =
-  | { ok: true; status: 'posted' | 'already_posted' | 'nothing'; jeNo?: string; deltaSen?: number }
+  | { ok: true; status: 'posted' | 'already_posted' | 'nothing' | 'before_ledger_start'; jeNo?: string; deltaSen?: number; reason?: string }
   | { ok: false; status: string; reason?: string };
 
 /** Source types of the contract's own postings: the signing, then each change. */
@@ -53,10 +54,17 @@ async function contractJournals(sb: Sb, companyId: number, soDocNo: string): Pro
   };
 }
 
-/** Post the contract's change since its last posting (see the header). `date` is the document date of the change:
-    the contract date at signing, the VO's date after. */
-export async function postContractChange(sb: Sb, p: { companyId: number; soDocNo: string; date: string; actor: string | null }): Promise<RenoPostResult> {
-  const { companyId, soDocNo } = p;
+type Ctx = {
+  advance: string; control: string; debtorCode: string; partyName: string | null; soDate: string;
+  contractSen: number; postedSen: number; jes: JeRow[]; active: JeRow[];
+};
+type CtxResult =
+  | { ok: true; beforeStart: true; reason: string }
+  | ({ ok: true; beforeStart: false } & Ctx)
+  | { ok: false; status: string; reason: string };
+
+/** Everything a posting needs: the contract, its accounts, what it stands at and what is already posted. */
+async function loadContractCtx(sb: Sb, companyId: number, soDocNo: string): Promise<CtxResult> {
   const { data: so, error: soErr } = await sb.from('mfg_sales_orders').select('doc_no, so_kind, so_date, debtor_code')
     .eq('company_id', companyId).eq('doc_no', soDocNo).maybeSingle();
   if (soErr) return { ok: false, status: 'load_failed', reason: soErr.message };
@@ -66,10 +74,7 @@ export async function postContractChange(sb: Sb, p: { companyId: number; soDocNo
   if (!ls.ok) return { ok: false, status: 'ledger_settings_failed', reason: 'The ledger settings could not be read.' };
   const signed = String(so.so_date ?? '').slice(0, 10);
   if (isBeforeLedgerStart(signed, ls.settings)) {
-    return {
-      ok: false, status: 'before_ledger_start',
-      reason: `Contract ${soDocNo} was signed before the ledger start (${ls.settings.ledgerStartDate}); the opening balances carry it.`,
-    };
+    return { ok: true, beforeStart: true, reason: `Contract ${soDocNo} was signed before the ledger start (${ls.settings.ledgerStartDate}); the opening balances carry it.` };
   }
 
   const { data: contract, error: cErr } = await sb.from('reno_so_contracts').select('advance_account_code')
@@ -108,35 +113,63 @@ export async function postContractChange(sb: Sb, p: { companyId: number; soDocNo
     postedSen = ((lines ?? []) as Array<{ debit_sen: number | null; credit_sen: number | null }>)
       .reduce((s, l) => s + Number(l.credit_sen ?? 0) - Number(l.debit_sen ?? 0), 0);
   }
+  return { ok: true, beforeStart: false, advance, control, debtorCode, partyName, soDate: signed, contractSen, postedSen, jes: jes.rows, active };
+}
 
-  const delta = contractSen - postedSen;
-  if (delta === 0) return { ok: true, status: 'nothing', deltaSen: 0 };
+export type ContractPostingState =
+  | { ok: true; status: 'before_ledger_start'; reason: string }
+  | { ok: true; status: 'in_step' | 'under_posted'; contractSen: number; postedSen: number }
+  | { ok: false; status: string; reason: string };
 
-  const first = !active.some((r) => r.source_type === CONTRACT_SIGNED);
-  let sourceType = CONTRACT_SIGNED;
-  let sourceDocNo = soDocNo;
-  if (!first) {
-    /* The next number after every change ever posted, reversed ones included, so a number is never reused. */
-    const n = jes.rows.filter((r) => r.source_type === CONTRACT_CHANGED)
-      .reduce((m, r) => Math.max(m, Number(r.source_doc_no.slice(soDocNo.length + 1)) || 0), 0) + 1;
-    sourceType = CONTRACT_CHANGED;
-    sourceDocNo = `${soDocNo}-${n}`;
+/** Whether the ledger carries the contract as it stands (finance's "Post contract" shows when it does not). */
+export async function contractPostingState(sb: Sb, p: { companyId: number; soDocNo: string }): Promise<ContractPostingState> {
+  const ctx = await loadContractCtx(sb, p.companyId, p.soDocNo);
+  if (!ctx.ok) return ctx;
+  if (ctx.beforeStart) return { ok: true, status: 'before_ledger_start', reason: ctx.reason };
+  return { ok: true, status: ctx.contractSen === ctx.postedSen ? 'in_step' : 'under_posted', contractSen: ctx.contractSen, postedSen: ctx.postedSen };
+}
+
+/** Post the contract's change since its last posting (see the header). `date` is the document date of the change:
+    the contract date at signing, the VO's date after; null (finance posting again) = the contract date for the first
+    posting, today after. Two changes racing for one number: the one answered
+    already_posted reads again and posts what remains under the next number (once). */
+export async function postContractChange(sb: Sb, p: { companyId: number; soDocNo: string; date: string | null; actor: string | null }): Promise<RenoPostResult> {
+  const { companyId, soDocNo } = p;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const ctx = await loadContractCtx(sb, companyId, soDocNo);
+    if (!ctx.ok) return ctx;
+    if (ctx.beforeStart) return { ok: true, status: 'before_ledger_start', reason: ctx.reason };
+
+    const delta = ctx.contractSen - ctx.postedSen;
+    if (delta === 0) return { ok: true, status: attempt === 0 ? 'nothing' : 'already_posted', deltaSen: 0 };
+
+    const first = !ctx.active.some((r) => r.source_type === CONTRACT_SIGNED);
+    let sourceType = CONTRACT_SIGNED;
+    let sourceDocNo = soDocNo;
+    if (!first) {
+      /* The next number after every change ever posted, reversed ones included, so a number is never reused. */
+      const n = ctx.jes.filter((r) => r.source_type === CONTRACT_CHANGED)
+        .reduce((m, r) => Math.max(m, Number(r.source_doc_no.slice(soDocNo.length + 1)) || 0), 0) + 1;
+      sourceType = CONTRACT_CHANGED;
+      sourceDocNo = `${soDocNo}-${n}`;
+    }
+    const amount = Math.abs(delta);
+    const customer = { accountCode: ctx.control, partyType: 'CUSTOMER', partyCode: ctx.debtorCode, partyName: ctx.partyName };
+    const lines = delta > 0
+      ? [{ ...customer, debitSen: amount, creditSen: 0 }, { accountCode: ctx.advance, debitSen: 0, creditSen: amount }]
+      : [{ accountCode: ctx.advance, debitSen: amount, creditSen: 0 }, { ...customer, debitSen: 0, creditSen: amount }];
+    const r = await postJournal(sb, {
+      companyId,
+      entryDate: p.date ?? (first ? ctx.soDate : todayMyt()),
+      sourceType,
+      sourceDocNo,
+      narration: first
+        ? `Renovation contract ${soDocNo} signed`
+        : `Renovation contract ${soDocNo} ${delta > 0 ? 'increased' : 'reduced'} by variation${p.actor ? ` (${p.actor})` : ''}`,
+      lines,
+    });
+    if (!r.ok) return { ok: false, status: r.status, reason: r.reason };
+    if (r.status !== 'already_posted') return { ok: true, status: 'posted', jeNo: r.jeNo, deltaSen: delta };
   }
-  const amount = Math.abs(delta);
-  const customer = { accountCode: control, partyType: 'CUSTOMER', partyCode: debtorCode, partyName };
-  const lines = delta > 0
-    ? [{ ...customer, debitSen: amount, creditSen: 0 }, { accountCode: advance, debitSen: 0, creditSen: amount }]
-    : [{ accountCode: advance, debitSen: amount, creditSen: 0 }, { ...customer, debitSen: 0, creditSen: amount }];
-  const r = await postJournal(sb, {
-    companyId,
-    entryDate: p.date,
-    sourceType,
-    sourceDocNo,
-    narration: first
-      ? `Renovation contract ${soDocNo} signed`
-      : `Renovation contract ${soDocNo} ${delta > 0 ? 'increased' : 'reduced'} by variation${p.actor ? ` (${p.actor})` : ''}`,
-    lines,
-  });
-  if (!r.ok) return { ok: false, status: r.status, reason: r.reason };
-  return { ok: true, status: r.status === 'already_posted' ? 'already_posted' : 'posted', jeNo: r.jeNo, deltaSen: delta };
+  return { ok: true, status: 'already_posted' };
 }
