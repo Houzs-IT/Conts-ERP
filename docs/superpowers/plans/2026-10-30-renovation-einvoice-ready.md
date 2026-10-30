@@ -373,7 +373,7 @@ Within PR 3, update SOP 4.2.1 with one paragraph on the e-invoice:
 
 ## Calls made in this plan (check them)
 
-- **One seller.** Dream Crafter and The Conts are one company (one chart: 480 and 481 are in the same ledger), so both brands issue under one seller TIN. If Dream Crafter is a separate legal entity, the seller block must move per brand. **Ask chew before Task 1.**
+- **One seller (confirmed by chew, 30 Oct 2026: "同一间公司").** Dream Crafter and The Conts are one company, so both brands issue under one seller TIN.
 - **General TIN for individuals.** A buyer with only a MyKad gets the general TIN `EI00000000010` plus their IC number; a foreign buyer gets `EI00000000020` with a passport. Verify against LHDN's guideline before Task 3 ships.
 - **Credit note references.** A credit note references all of the contract's invoices up to its date. A contract credit is not tied to one invoice.
 - **Where the address comes from.** The invoice's own address (copied from the SO) is used, not a new address on the customer account.
