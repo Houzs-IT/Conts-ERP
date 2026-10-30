@@ -309,3 +309,22 @@
 - **Old contracts need their cost before go-live** to show the right completion %. It is an optional column on the go-live upload; until it is filled, such rows are flagged.
   - Confirmed by chew on 31 Oct 2026 ("可以给，我 auto count 有份 project 记录开销的"): chew provides each project's cost to 31 Oct 2026 from AutoCount's project expense record.
 - **Performance P&L for renovation** shows earned revenue, not invoiced revenue. Invoiced revenue and the difference are memo lines on the same block.
+
+## As built (31 Oct 2026)
+
+- PR 1 [#499]: as planned, plus:
+  - **AP invoice lines take a project.** The column existed but nothing filled it; the form has a Project column. A project must be one of the company's.
+  - **Left out:** manual journals (they carry no project) and petty cash write-offs (a loss, not project cost).
+  - **No migration:** the index `idx_jel_project` already existed.
+- PR 2 [#500]:
+  - **Migration renumbered** to 0188 (`0188_reno_golive_cost.sql`).
+  - **Completion is as at its date:**
+    - reversal pairs are not counted (the books' rule);
+    - handover comes from `projects.handed_over_at`;
+    - a cancelled contract is live until its RCAN, then has earned what it kept;
+    - a line counts from its `line_date`, else from the day it was keyed in Malaysia.
+  - **Data is read once.** The figures are worked out in memory, and the dashboard reads them once for all periods.
+  - **Performance P&L:** renovation is a group row, so every export adds up. The opex base leaves out renovation.
+- PR 3:
+  - **Limit left:** read per row by the page from the existing limit route (a hidden column by default), not in the rows.
+  - **Brand:** taken from the advance account (480 = Dream Crafter, 481 = The Conts).
