@@ -31,27 +31,36 @@ export const sideSql = (u: string, d: string) => `CASE WHEN ${d}.side IN ('conts
 /** Whether a person may be put on `side` in a department on `departmentSide`: only a Both department leaves the choice. */
 export const sideFits = (departmentSide: Side, side: Side) => departmentSide === 'both' || departmentSide === side;
 
-/** The area groups each side closes. Finance and System are on neither list, so they follow the role. The Dream Crafter
- *  groups match its sidebar sections (owner, 26 Oct 2026; migration 0172 copied the old Dream Crafter baseline to each). */
+/** The area groups each side closes. Finance and System are on neither list, so they follow the role. Each side's
+ *  groups match its sidebar sections: Dream Crafter's since 26 Oct 2026 (migration 0172), The Conts' since 30 Oct 2026
+ *  (migration 0182 moved the stored rules). */
 const CLOSED_BY_SIDE: Record<Side, string[]> = {
   conts: ['Service cases', 'Projects', 'Supply chain'],
-  dream_crafter: ['Workspace', 'Operations', 'HR', 'Growth'],
+  dream_crafter: ['Home', 'Reports', 'Reservations', 'Operations', 'HR', 'Units', 'Growth'],
   both: [],
 };
 /** Management always sees both sides, so nobody can lock the system out of one. */
 export const closedBySide = (kind: DepartmentKind, side: Side, group: string): boolean => kind !== 'management' && CLOSED_BY_SIDE[side].includes(group);
 const offSide = (kind: DepartmentKind, side: Side, area: Area): boolean => closedBySide(kind, side, area.group);
 
+// The Conts' groups are its sidebar sections, in menu order (owner, 30 Oct 2026), and each area sits in the section
+// its pages are in. Areas whose pages sat in two sections were split: Pricing and reviews off Performance,
+// Automations off Messages, Reports off Finance (migration 0182 copied their stored rules).
 export const AREAS: Area[] = [
-  { key: 'dashboard', label: 'Dashboard', group: 'Workspace', api: ['dashboard'] },
-  { key: 'portfolio', label: 'Portfolio', group: 'Workspace', api: ['portfolio'], managed: true, strictRead: true },
+  { key: 'dashboard', label: 'Dashboard', group: 'Home', api: ['dashboard'] },
+  { key: 'portfolio', label: 'Portfolio', group: 'Home', api: ['portfolio'], managed: true, strictRead: true },
+  { key: 'performance', label: 'Performance', group: 'Home', api: ['analytics', 'showcase'] },
+  // The yearly unit report. Its figures are Finance's, so it stays management-only like Finance.
+  { key: 'reports', label: 'Reports', group: 'Reports', api: [], managed: true, strictRead: true },
   // Reservations arrive from the channels through the API; finance reads them but does not create or change them (owner, 11 Oct 2026).
-  { key: 'reservations', label: 'Reservations', group: 'Operations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
+  { key: 'reservations', label: 'Reservations', group: 'Reservations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
+  { key: 'comms', label: 'Messages', group: 'Reservations', api: ['messages'] },
   { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'] },
-  { key: 'properties', label: 'Units', group: 'Operations', api: ['properties', 'units', 'unit-layout-types', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
   // Field staff's HR record: IC, bank, salary and statutory (PLAN-hr-employees.md). Its own group so Operations staff do
   // not see pay by default. The cleaner and technician rosters themselves stay under Operations.
   { key: 'hr', label: 'Employees', group: 'HR', api: ['employees', 'attendance', 'leaves', 'payroll', 'working-hours', 'penalties', 'labor-cost'], strictRead: true },
+  { key: 'properties', label: 'Units', group: 'Units', api: ['properties', 'units', 'unit-layout-types', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
+  { key: 'owners', label: 'Owners', group: 'Units', api: ['owners', 'contracts'] },
   { key: 'serviceCases', label: 'Service cases', group: 'Service cases', api: [] },
   { key: 'projects', label: 'Projects', group: 'Projects', api: [] },
   { key: 'scSales', label: 'Sales order', group: 'Supply chain', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
@@ -62,12 +71,11 @@ export const AREAS: Area[] = [
   { key: 'scWarehouse', label: 'Warehouse', group: 'Supply chain', api: ['loading-list', 'warehouses', 'racks', 'stock', 'stock-takes', 'stock-transfers'] },
   // 'owner': the owner portal's endpoints, which finance and management also open as an owner (?ownerId=).
   { key: 'finance', label: 'Finance', group: 'Finance', api: ['finance', 'expenses', 'statements', 'payouts', 'approvals', 'owner'], managed: true, strictRead: true },
-  { key: 'owners', label: 'Owners', group: 'Finance', api: ['owners', 'contracts'] },
   // The company ledger in the engine (finance phase 1): no Property OS routes, sent to the engine at sign-on.
   // Operations managers read the rest of Finance but never the company books.
   { key: 'ledger', label: 'Ledger', group: 'Finance', api: [], managed: true, strictRead: true },
-  { key: 'performance', label: 'Performance', group: 'Growth', api: ['analytics', 'pricing', 'rates', 'reviews', 'showcase'] },
-  { key: 'comms', label: 'Communication', group: 'Growth', api: ['messages', 'automations'] },
+  { key: 'pricing', label: 'Pricing and reviews', group: 'Growth', api: ['pricing', 'rates', 'reviews'] },
+  { key: 'automations', label: 'Automations', group: 'Growth', api: ['automations'] },
   // The user list is read by management and operations managers only (functions/api/users), so finance admins start at none.
   { key: 'users', label: 'Users and roles', group: 'System', api: ['users', 'departments'], managed: true },
   { key: 'integrations', label: 'Integrations', group: 'System', api: ['integrations'], managed: true },
@@ -165,7 +173,8 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; w
   { method: 'POST', path: /^\/api\/integrations\/sync$/, area: 'reservations', why: 'The calendar\'s button that gets new reservations from the channels.' },
   { method: 'PATCH', path: /^\/api\/units\/[^/]+\/bank-account$/, area: 'owners', why: 'Choosing which of the owner\'s bank accounts a unit is paid to is owner payout work.' },
   { method: 'POST', path: /^\/api\/owners\/[^/]+\/notify$/, area: 'dashboard', why: 'The dashboard\'s exception action that tells an owner about a problem with their unit.' },
-  { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a reservation or a guest record; Messages itself stays under Communication.' },
+  { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a reservation or a guest record; the Messages inbox keeps its own area.' },
+  { method: 'GET', path: /^\/api\/finance\/yearly-report$/, area: 'reports', why: 'The yearly unit report sits under Reports in the menu.' },
   // Finance reads bookings but does not make or change them (owner, 11 Oct 2026); taking a guest's payment, recording
   // a channel payout and issuing a receipt are finance's own work, so those writes follow the Finance area.
   { method: 'POST', path: /^\/api\/reservations\/[^/]+\/payments$/, area: 'finance', why: 'Recording a guest payment on a reservation is money work.' },

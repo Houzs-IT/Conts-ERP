@@ -90,6 +90,8 @@ test('the side closes the other side\'s categories, never for management', () =>
   assert.equal(closedBySide('staff', 'conts', 'Supply chain'), true);
   assert.equal(closedBySide('staff', 'conts', 'Operations'), false);
   assert.equal(closedBySide('staff', 'dream_crafter', 'Growth'), true);
+  assert.equal(closedBySide('staff', 'dream_crafter', 'Units'), true);
+  assert.equal(closedBySide('staff', 'dream_crafter', 'Finance'), false);
   assert.equal(closedBySide('staff', 'both', 'Supply chain'), false);
   assert.equal(closedBySide('management', 'conts', 'Supply chain'), false);
 });

@@ -65,7 +65,7 @@ test('management is Full everywhere and nothing changes it', () => {
 });
 
 test('cleaning and maintenance have no desk areas, whatever is stored', () => {
-  const r = rules({ user: { dashboard: 'full' }, department: { 'group:Workspace': 'full' } });
+  const r = rules({ user: { dashboard: 'full' }, department: { 'group:Home': 'full' } });
   for (const kind of ['cleaning', 'maintenance']) {
     for (const a of AREAS) assert.deepEqual(resolveFor(r, { kind }, a), { level: 'none', origin: 'none' });
   }
@@ -75,22 +75,29 @@ test('cleaning and maintenance have no desk areas, whatever is stored', () => {
 // before departments: Operations staff, Operations manager and Finance admin columns). HR came later (migration 0165)
 // and nobody is seeded into it: pay and bank details stay hidden until management grants HR.
 const seeded = {
-  operations_staff: { dashboard: 'none', portfolio: 'none', reservations: 'edit', operations: 'edit', properties: 'edit', hr: 'none', serviceCases: 'edit', projects: 'edit', scSales: 'edit', scInvoices: 'none', scConsignment: 'edit', scProcurement: 'edit', scTransportPlan: 'edit', scWarehouse: 'edit', finance: 'none', owners: 'none', ledger: 'none', performance: 'edit', comms: 'edit', users: 'none', integrations: 'none', settings: 'none', health: 'none' },
-  operations_manager: { dashboard: 'full', portfolio: 'full', reservations: 'full', operations: 'full', properties: 'full', hr: 'none', serviceCases: 'full', projects: 'full', scSales: 'full', scInvoices: 'view', scConsignment: 'full', scProcurement: 'full', scTransportPlan: 'full', scWarehouse: 'full', finance: 'view', owners: 'view', ledger: 'none', performance: 'full', comms: 'full', users: 'full', integrations: 'full', settings: 'full', health: 'full' },
-  finance_admin: { dashboard: 'view', portfolio: 'view', reservations: 'view', operations: 'view', properties: 'view', hr: 'none', serviceCases: 'view', projects: 'view', scSales: 'view', scInvoices: 'full', scConsignment: 'view', scProcurement: 'view', scTransportPlan: 'view', scWarehouse: 'view', finance: 'full', owners: 'full', ledger: 'full', performance: 'full', comms: 'none', users: 'none', integrations: 'full', settings: 'full', health: 'full' },
+  operations_staff: { dashboard: 'none', portfolio: 'none', reservations: 'edit', operations: 'edit', properties: 'edit', hr: 'none', serviceCases: 'edit', projects: 'edit', scSales: 'edit', scInvoices: 'none', scConsignment: 'edit', scProcurement: 'edit', scTransportPlan: 'edit', scWarehouse: 'edit', finance: 'none', owners: 'none', ledger: 'none', performance: 'edit', comms: 'edit', reports: 'none', pricing: 'edit', automations: 'edit', users: 'none', integrations: 'none', settings: 'none', health: 'none' },
+  operations_manager: { dashboard: 'full', portfolio: 'full', reservations: 'full', operations: 'full', properties: 'full', hr: 'none', serviceCases: 'full', projects: 'full', scSales: 'full', scInvoices: 'view', scConsignment: 'full', scProcurement: 'full', scTransportPlan: 'full', scWarehouse: 'full', finance: 'view', owners: 'view', ledger: 'none', performance: 'full', comms: 'full', reports: 'view', pricing: 'full', automations: 'full', users: 'full', integrations: 'full', settings: 'full', health: 'full' },
+  finance_admin: { dashboard: 'view', portfolio: 'view', reservations: 'view', operations: 'view', properties: 'view', hr: 'none', serviceCases: 'view', projects: 'view', scSales: 'view', scInvoices: 'full', scConsignment: 'view', scProcurement: 'view', scTransportPlan: 'view', scWarehouse: 'view', finance: 'full', owners: 'full', ledger: 'full', performance: 'full', comms: 'none', reports: 'full', pricing: 'full', automations: 'none', users: 'none', integrations: 'full', settings: 'full', health: 'full' },
 };
 
 test('the seeded rules give the levels of the old role chart', () => {
-  // Migration 0172 copied each seeded Dream Crafter baseline to its three sidebar categories.
+  // Migration 0172 copied each seeded Dream Crafter baseline to its three sidebar categories. Migration 0182 copied
+  // Workspace to Home, Finance to Reports, Operations to Reservations and Units, and pinned the areas that changed
+  // category (performance, comms, owners) to the level they had.
   const dc = level => ({ 'group:Service cases': level, 'group:Projects': level, 'group:Supply chain': level });
-  const staffDept = { 'group:Operations': 'edit', ...dc('edit'), 'group:Growth': 'edit', scInvoices: 'none' };
+  const staffDept = {
+    'group:Operations': 'edit', 'group:Reservations': 'edit', 'group:Units': 'edit', ...dc('edit'), 'group:Growth': 'edit',
+    scInvoices: 'none', performance: 'edit', comms: 'edit', owners: 'none',
+  };
   const financeDept = {
-    'group:Workspace': 'view', 'group:Operations': 'view', ...dc('view'), 'group:Finance': 'full',
-    'group:Growth': 'full', 'group:System': 'full', scInvoices: 'full', comms: 'none', users: 'none',
+    'group:Home': 'view', 'group:Reports': 'full', 'group:Reservations': 'view', 'group:Operations': 'view', 'group:Units': 'view',
+    ...dc('view'), 'group:Finance': 'full', 'group:Growth': 'full', 'group:System': 'full',
+    scInvoices: 'full', comms: 'none', automations: 'none', users: 'none', performance: 'full', owners: 'full',
   };
   const managerPosition = {
-    'group:Workspace': 'full', 'group:Operations': 'full', ...dc('full'), 'group:Finance': 'view',
-    'group:Growth': 'full', 'group:System': 'full', scInvoices: 'view', ledger: 'none',
+    'group:Home': 'full', 'group:Reports': 'view', 'group:Reservations': 'full', 'group:Operations': 'full', 'group:Units': 'full',
+    ...dc('full'), 'group:Finance': 'view', 'group:Growth': 'full', 'group:System': 'full',
+    scInvoices: 'view', ledger: 'none', performance: 'full', comms: 'full', owners: 'view',
   };
   const people = {
     operations_staff: rules({ department: staffDept }),
