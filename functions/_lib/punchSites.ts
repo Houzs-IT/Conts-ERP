@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Punch sites (migration 0174): the buildings a phone punch is checked against, each with its own radius. The fields
+ * Punch sites (migration 0183): the buildings a phone punch is checked against, each with its own radius. The fields
  * and their rules, shared by the API and the Punch Sites tab; the geometry is in attendanceCalc.ts.
  */
 
@@ -13,7 +13,7 @@ export const toSite = (r: PunchSiteRow): PunchSite => ({ id: r.id, name: r.name,
 
 export const RADIUS_MIN = 20;
 export const RADIUS_MAX = 5000;
-export const NOT_MIGRATED_SITES = 'Punch radiuses need a database update (migration 0174) that has not been applied yet.';
+export const NOT_MIGRATED_SITES = 'Punch radiuses need a database update (migration 0183) that has not been applied yet.';
 
 /** A building's radius, or null to go back to the default. */
 export const radiusInput = z.object({

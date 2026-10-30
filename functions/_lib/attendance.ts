@@ -45,7 +45,7 @@ export async function readPunch(request: Request): Promise<{ action: 'in' | 'out
 
 export const hasPunchRadius = (env: Env): Promise<boolean> => hasColumn(env, 'properties', 'punch_radius_m').catch(() => false);
 
-/** Every building with a map location, each with its own punch radius (migration 0174) or ON_SITE_METRES. */
+/** Every building with a map location, each with its own punch radius (migration 0183) or ON_SITE_METRES. */
 export async function punchSites(env: Env): Promise<Site[]> {
   const radius = (await hasPunchRadius(env)) ? `COALESCE(punch_radius_m, ${ON_SITE_METRES})` : String(ON_SITE_METRES);
   return all<Site>(env, `SELECT id, name, latitude AS lat, longitude AS lng, ${radius} AS "radiusM" FROM properties WHERE latitude IS NOT NULL AND longitude IS NOT NULL`);

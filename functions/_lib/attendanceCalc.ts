@@ -4,7 +4,7 @@
  */
 
 export interface Point { lat: number; lng: number }
-/** A building with a map location and its punch radius (its own, migration 0174, or ON_SITE_METRES). */
+/** A building with a map location and its punch radius (its own, migration 0183, or ON_SITE_METRES). */
 export interface Site extends Point { id: string; name: string; radiusM: number }
 export interface Nearest { id: string; name: string; metres: number; radiusM: number; onSite: boolean }
 
