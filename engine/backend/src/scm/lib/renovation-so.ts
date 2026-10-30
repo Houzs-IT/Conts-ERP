@@ -12,6 +12,7 @@
 
 import { auditEntity, auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb } from './renovation-db';
 import { contractOrderKind, ensureDebtorSql } from '../../conts/parties';
+import { openAdvanceAccountSql } from '../../acc/reno-advance-account';
 import { cloneSections, insertInstalments, insertSections, readInstalments, readSections, totalsOf, toMoneyLine } from './renovation-doc-lines';
 import { lockQuotation, readRevision, type RenoActor } from './renovation-quotation';
 import type { DocHeaderInput, NormSection, PrintFormat } from './renovation-validate';
@@ -126,7 +127,7 @@ export async function convertQuotationToSo(
   actor: RenoActor,
   quotationId: string,
   body: { version: number; soDate?: string | null },
-): Promise<{ docNo: string; contractSen: number }> {
+): Promise<{ docNo: string; contractSen: number; soDate: string }> {
   const q = await lockQuotation(db, quotationId, actor.companyId);
   if (q.version !== body.version) throw refuse(409, 'stale_version', 'Someone else saved this quotation first. Reload to see their changes.', { version: q.version });
   if (q.convertedSoDocNo) throw refuse(409, 'already_converted', `This quotation is already sales order ${q.convertedSoDocNo}.`, { docNo: q.convertedSoDocNo });
@@ -169,11 +170,23 @@ export async function convertQuotationToSo(
   /* Conts (finance phase 1.5; SOP 2.1): the contract's customer as a debtor under its control — renovation 301-0000
      or inhouse renovation 302-0000, by the project's kind else the brand's (contractOrderKind) — so its invoices and
      payments name the customer and post to its control. The project's customer, when it has one. */
-  const [proj] = q.projectId ? await db.q<{ customer_id: string | null }>(`select customer_id from public.projects where id = $1`, [q.projectId]) : [];
+  const [proj] = q.projectId ? await db.q<{ customer_id: string | null; name: string | null }>(`select customer_id, name from public.projects where id = $1`, [q.projectId]) : [];
   const customerId = proj?.customer_id ?? null;
+  /* One customer account per project and its own advance sub-account (spec 2.5; chew 30 Oct 2026): never reused,
+     and no guessing — a kind with no control mapped refuses the conversion until finance maps it. */
+  const orderKind = await contractOrderKind(db, q.projectId ?? null, q.brandId ?? null);
+  const unitLabel = [h.building, h.unitNo].map((s) => (s ?? '').trim()).filter(Boolean).join(' ');
   const debtorCode = await ensureDebtorSql(db, actor.companyId, {
-    name: debtorName, phone: h.customerPhone || null, email: h.customerEmail || null, customerId,
-    orderKind: await contractOrderKind(db, q.projectId ?? null, q.brandId ?? null),
+    name: debtorName, phone: h.customerPhone || null, email: h.customerEmail || null, customerId, orderKind, perProject: true, unitLabel,
+  });
+  if (!debtorCode) {
+    throw refuse(422, 'no_customer_control',
+      `No customer control account is mapped for ${orderKind === 'INHOUSE_RENOVATION' ? 'inhouse renovation' : 'renovation'} contracts (normally ${orderKind === 'INHOUSE_RENOVATION' ? '302-0000' : '301-0000'}). Ask finance to map it before converting this quotation.`,
+      { orderKind });
+  }
+  const advanceAccountCode = await openAdvanceAccountSql(db, actor.companyId, {
+    kind: orderKind === 'INHOUSE_RENOVATION' ? 'INHOUSE_RENOVATION' : 'RENOVATION',
+    projectName: (proj?.name ?? '').trim() || unitLabel || debtorName,
   });
   await db.q(
     `insert into scm.mfg_sales_orders (doc_no, so_date, so_kind, status, debtor_name, debtor_code, customer_id, project_id, branding, ref, phone, email,
@@ -193,11 +206,11 @@ export async function convertQuotationToSo(
   await db.q(
     `insert into scm.reno_so_contracts (so_doc_no, company_id, project_id, quotation_id, quotation_revision_id, quote_doc_no, brand_id, print_format,
         attention, customer_name, building, unit_no, prepared_by, doc_date, last_amended, intro, terms_note, doc_discount_sen, doc_discount_label,
-        promo_lines, discount_so_item_id, original_contract_sen, term_template_id, created_by)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::date, $15::date, $16, $17, $18, $19, $20::text::jsonb, $21, $22, $23, $24)`,
+        promo_lines, discount_so_item_id, original_contract_sen, term_template_id, created_by, advance_account_code)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::date, $15::date, $16, $17, $18, $19, $20::text::jsonb, $21, $22, $23, $24, $25)`,
     [docNo, actor.companyId, q.projectId, quotationId, rev.id, rev.docNo, q.brandId, h.printFormat, h.attention, debtorName, h.building, h.unitNo,
       h.preparedBy, soDate, h.lastAmended, h.intro, h.termsNote, h.docDiscountSen, h.docDiscountLabel, JSON.stringify(h.promoLines), discountItemId,
-      revised, h.termTemplateId, actor.name],
+      revised, h.termTemplateId, actor.name, advanceAccountCode],
   );
   await db.q(`update scm.reno_quotation_revisions set frozen_at = coalesce(frozen_at, now()) where id = $1`, [rev.id]);
   await db.q(
@@ -210,7 +223,7 @@ export async function convertQuotationToSo(
   );
   await auditSo(db, { companyId: actor.companyId, docNo, action: 'CREATE', actorName: actor.name, status: 'RENO_CONFIRMED', note: `Renovation contract from quotation ${rev.docNo}` });
   await auditEntity(db, { companyId: actor.companyId, entityType: 'reno_quotation', entityId: quotationId, docNo: rev.docNo, action: 'CONVERT', actorName: actor.name, note: docNo });
-  return { docNo, contractSen: revised };
+  return { docNo, contractSen: revised, soDate };
 }
 
 export interface ContractHeader {

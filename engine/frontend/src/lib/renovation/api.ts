@@ -269,6 +269,30 @@ export function usePoSplit(docNo: string | undefined, enabled: boolean) {
   return useQuery({ queryKey: qk.poSplit(docNo ?? ''), queryFn: () => renoGet<SplitPreview>(`/sales-orders/${encodeURIComponent(docNo!)}/po-split`), enabled: Boolean(docNo) && enabled });
 }
 
+/** How a contract change was posted to the project's accounts, as convert / VO approve / post-contract answer it. */
+export type ContractPosting = { ok?: boolean; status: string; reason?: string };
+
+/** The warning to show when a saved change did not post (null when it posted, had nothing to post, or the contract
+    predates the ledger start). */
+export function contractPostingWarning(p: ContractPosting | undefined): string | null {
+  if (!p || ['posted', 'already_posted', 'nothing', 'before_ledger_start'].includes(p.status)) return null;
+  return `The contract was saved but not posted: ${p.reason ?? p.status}. Finance can post it again from the contract.`;
+}
+
+export type ContractPostingState =
+  | { ok: true; status: 'before_ledger_start'; reason: string }
+  | { ok: true; status: 'in_step' | 'under_posted'; contractSen: number; postedSen: number }
+  | { ok: false; status: string; reason: string };
+
+/** Finance only: whether the ledger carries the contract as it stands. */
+export function useContractPosting(docNo: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['reno', 'contract-posting', docNo ?? ''] as const,
+    queryFn: () => renoGet<ContractPostingState>(`/sales-orders/${encodeURIComponent(docNo!)}/contract-posting`),
+    enabled: Boolean(docNo) && enabled,
+  });
+}
+
 export function usePoFlags(docNo: string | undefined) {
   return useQuery({ queryKey: qk.poFlags(docNo ?? ''), queryFn: () => renoGet<{ flags: PoFlag[] }>(`/sales-orders/${encodeURIComponent(docNo!)}/po-flags`), enabled: Boolean(docNo) });
 }
