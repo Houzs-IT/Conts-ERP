@@ -2,8 +2,12 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/
 import { isOnTask } from '../../../../_lib/taskCleaners';
 import { noOpenBlockerSql } from '../../../../_lib/maintenance';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
+import { MYT_DATE } from '../../../../_lib/ops';
+import { CLEAN_KINDS_SQL, LIVE_STAY_SQL } from '../../../../_lib/cleaning';
 
-/** POST /api/housekeeping/tasks/:id/start — the cleaner (or a manager) starts the job; the unit shows Cleaning. */
+/** POST /api/housekeeping/tasks/:id/start — the cleaner (or a manager) starts the job; the unit shows Cleaning.
+ *  A clean after a departing stay starts only once the guest is out (ticked, or the booking Checked out): since the
+ *  automatic guest-out mark went (26 Oct 2026) nothing else stops a start while the guest is still in the unit. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -14,6 +18,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (isFieldRole(session.role) && !(await isOnTask(env, t.id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
   if (t.state === 'resolved') return fail('CONFLICT', 'That task is already finished.', 409);
   if (t.state === 'in_progress') return json({ ok: true });
+  // The departing stay is found exactly as the board and the cleaner's Today page find it, so the rule matches the screen.
+  const day = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
+  const guestIn = await one<{ x: number }>(env, `
+    SELECT 1 AS x FROM tasks t
+    JOIN LATERAL (
+      SELECT r.state FROM reservations r
+      WHERE (r.id = t.reservation_id) OR (t.reservation_id IS NULL AND r.unit_id = t.unit_id AND r.check_out = ${day} AND ${LIVE_STAY_SQL('r')})
+      ORDER BY (r.id = t.reservation_id) DESC LIMIT 1
+    ) prev ON TRUE
+    WHERE t.id = ? AND t.kind IN ${CLEAN_KINDS_SQL} AND t.guest_left_at IS NULL AND prev.state <> 'checked_out'`, id);
+  if (guestIn) return fail('GUEST_IN', 'The guest is not marked out yet. Tap Guest has left first, then start.', 409);
 
   const now = nowIso();
   await run(env, "UPDATE tasks SET state = 'in_progress', started_at = COALESCE(started_at, ?), assignee_id = COALESCE(assignee_id, ?), updated_at = ? WHERE id = ?", now, session.userId, now, id);
