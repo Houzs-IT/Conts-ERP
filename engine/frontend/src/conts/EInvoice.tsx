@@ -12,7 +12,7 @@ import { useAuth } from "../auth/AuthContext";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
 import { refusalOf } from "./debtorQueries";
 import {
-  LHDN_STATES, STATUS_LABEL, previewDescription, useEInvoiceSettings, useOutbox, useOutboxRow, useRefreshOutbox, useSaveEInvoiceSettings,
+  LHDN_STATES, STATUS_LABEL, formOf, previewDescription, useEInvoiceSettings, useOutbox, useOutboxRow, useRefreshOutbox, useSaveEInvoiceSettings,
   type EInvoiceSettings, type EInvoiceSeller, type OutboxRow, type OutboxStatus,
 } from "./einvoiceQueries";
 
@@ -57,12 +57,17 @@ export function EInvoice() {
   const [note, setNote] = useState<{ field?: string; text: string; ok?: boolean } | null>(null);
   const [openRow, setOpenRow] = useState<string | null>(null);
   const row = useOutboxRow(openRow);
+  const [recheck, setRecheck] = useState<{ text: string; ok: boolean } | null>(null);
+  const runRecheck = () => {
+    setRecheck(null);
+    refresh.mutate(undefined, {
+      onSuccess: (r) => setRecheck({ ok: true, text: r.remaining > 0 ? `${r.refreshed} checked, ${r.remaining} still to go: press Re-check all again.` : `${r.refreshed} checked. All up to date.` }),
+      onError: (err) => setRecheck({ ok: false, text: refusalOf(err).message ?? (err instanceof Error ? err.message : "The re-check failed.") }),
+    });
+  };
 
   useEffect(() => {
-    if (settings.data && !v) {
-      const { sellerMissing: _m, taxTypes: _t, ...rest } = settings.data;
-      setV(rest);
-    }
+    if (settings.data && !v) setV(formOf(settings.data));
   }, [settings.data, v]);
   const setSeller = (k: keyof EInvoiceSeller, value: string) => setV((p) => (p ? { ...p, seller: { ...p.seller, [k]: value } } : p));
   const counts = outbox.data?.counts;
@@ -72,8 +77,11 @@ export function EInvoice() {
     if (!v) return;
     setNote(null);
     try {
-      await save.mutateAsync(v);
-      setNote({ text: "Saved. Waiting e-invoices were checked again.", ok: true });
+      const saved = await save.mutateAsync(v);
+      /* The form shows what the server keeps (an upper-cased TIN, the default template for a blank one). */
+      setV(formOf(saved));
+      const left = saved.recheckRemaining ?? 0;
+      setNote({ text: left > 0 ? `Saved. ${left} waiting e-invoices still to re-check: press Re-check all.` : "Saved. Waiting e-invoices were checked again.", ok: true });
     } catch (err) {
       const r = refusalOf(err) as { message?: string; field?: string };
       setNote({ field: r.field, text: r.message ?? (err instanceof Error ? err.message : "The settings could not be saved.") });
@@ -102,11 +110,12 @@ export function EInvoice() {
             </div>
           ))}
           {canWrite && (
-            <Button variant="ghost" size="sm" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
+            <Button variant="ghost" size="sm" disabled={refresh.isPending} onClick={runRecheck}>
               {refresh.isPending ? "Checking…" : "Re-check all"}
             </Button>
           )}
         </div>
+        {recheck && <div role={recheck.ok ? "status" : "alert"} style={{ color: recheck.ok ? undefined : "var(--c-festive-b, #b3261e)" }}>{recheck.text}</div>}
       </section>
 
       {v && (

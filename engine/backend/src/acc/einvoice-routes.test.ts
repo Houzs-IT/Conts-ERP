@@ -109,7 +109,7 @@ describe('e-invoice routes', () => {
     });
     const res = await app(sb).request('/einvoice/outbox/refresh', { method: 'POST' });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ refreshed: 0 });
+    expect(await res.json()).toEqual({ refreshed: 0, remaining: 0 });
     expect((await app(sb, []).request('/einvoice/outbox/refresh', { method: 'POST' })).status).toBe(403);
   });
 });

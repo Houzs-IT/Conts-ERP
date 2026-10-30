@@ -4,12 +4,12 @@
 //   PUT  /accounting/einvoice/settings          save (400 invalid_setting with the field and message)
 //   GET  /accounting/einvoice/outbox?status=    the rows, newest first, with counts by status
 //   GET  /accounting/einvoice/outbox/:id        one row with its payload
-//   POST /accounting/einvoice/outbox/refresh    prepare every open row again
+//   POST /accounting/einvoice/outbox/refresh    prepare again the rows the last settings save left stale, a batch at a time
 // Nothing here sends anything to LHDN.
 import { hasHouzsPerm } from '../scm/lib/houzs-perms';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { paginateAll } from '../scm/lib/paginate-all';
-import { refreshAll, type OutboxStatus } from './einvoice-outbox';
+import { refreshStale, type OutboxStatus } from './einvoice-outbox';
 import { loadEInvoiceSettings, saveEInvoiceSettings, sellerMissing, TAX_TYPES, type EInvoiceSeller, type EInvoiceSettings } from './einvoice-settings';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
@@ -17,6 +17,8 @@ type Ctx = any;
 const NO_PERM = { error: "You don't have permission to change the e-invoice settings." };
 const canWrite = (c: Ctx) => hasHouzsPerm(c, 'scm.payment_voucher.post');
 const STATUSES: OutboxStatus[] = ['NOT_READY', 'READY', 'SUBMITTED', 'VALID', 'REJECTED', 'CANCELLED'];
+/** Rows one request prepares again: each is several reads and writes, and a request has a ceiling. */
+const BATCH = 50;
 
 const view = (s: EInvoiceSettings) => ({ ...s, sellerMissing: sellerMissing(s), taxTypes: TAX_TYPES });
 
@@ -63,16 +65,16 @@ export const einvoiceSettingsPut = async (c: Ctx): Promise<Response> => {
   if (!saved.ok) {
     return saved.field ? c.json({ error: 'invalid_setting', field: saved.field, message: saved.message }, 400) : c.json({ error: 'save_failed', reason: saved.message }, 500);
   }
-  /* The seller's details and the codes are in every payload: the waiting rows are prepared again. */
-  try { await refreshAll(sb, co.companyId); } catch (err) {
+  /* The seller's details and the codes are in every payload: the waiting rows are prepared again, a batch now and
+     the rest by "Re-check all". A failure here never turns the save into an error. */
+  let recheckRemaining: number | null = null;
+  try { recheckRemaining = (await refreshStale(sb, co.companyId, BATCH)).remaining; } catch (err) {
     /* eslint-disable-next-line no-console */
     console.error('[einvoice] refresh after settings save failed:', err instanceof Error ? err.message : err);
   }
-  try {
-    return c.json(view(await loadEInvoiceSettings(sb, co.companyId)));
-  } catch (e) {
-    return c.json({ error: 'load_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
-  }
+  let after = s;
+  try { after = await loadEInvoiceSettings(sb, co.companyId); } catch { /* saved; answer what was sent */ }
+  return c.json({ ...view(after), recheckRemaining });
 };
 
 type OutRow = { id: string; doc_kind: string; doc_number: string; debtor_code: string | null; status: OutboxStatus; missing: string[] | null; payload: any; prepared_at: string };
@@ -90,7 +92,7 @@ export const einvoiceOutboxList = async (c: Ctx): Promise<Response> => {
   const sb = c.get('supabase');
   const res = await paginateAll((from, to) => sb.from('acc_einvoice_outbox')
     .select('id, doc_kind, doc_number, debtor_code, status, missing, payload, prepared_at').eq('company_id', co.companyId)
-    .order('prepared_at', { ascending: false }).range(from, to));
+    .order('prepared_at', { ascending: false }).order('id', { ascending: true }).range(from, to));
   if (res.error) return c.json({ error: 'load_failed', reason: (res.error as { message?: string }).message ?? '' }, 500);
   const all = (res.data ?? []) as OutRow[];
   const counts = Object.fromEntries(STATUSES.map((s) => [s, all.filter((r) => r.status === s).length]));
@@ -113,7 +115,7 @@ export const einvoiceRefresh = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   try {
-    return c.json({ refreshed: await refreshAll(c.get('supabase'), co.companyId) });
+    return c.json(await refreshStale(c.get('supabase'), co.companyId, BATCH));
   } catch (e) {
     return c.json({ error: 'refresh_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
   }

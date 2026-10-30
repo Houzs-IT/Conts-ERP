@@ -84,10 +84,21 @@ describe("E-invoice page", () => {
       .toBe("1st Progress Billing for Interior Design & Renovation Works (15% Deposit & Design Fee as per Sales Order, refer to attached breakdown)");
   });
 
-  it("re-check all asks the server", () => {
+  it("re-check all asks the server and says what is left", async () => {
     refreshMutate.mockReset();
+    refreshMutate.mockImplementation((_: unknown, o: { onSuccess: (r: unknown) => void }) => o.onSuccess({ refreshed: 50, remaining: 12 }));
     page();
     fireEvent.click(screen.getByRole("button", { name: "Re-check all" }));
     expect(refreshMutate).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("50 checked, 12 still to go: press Re-check all again.")).toBeTruthy();
+  });
+
+  it("after saving, the form shows what the server kept", async () => {
+    saveAsync.mockReset();
+    saveAsync.mockResolvedValue({ ...SETTINGS, seller: { ...SETTINGS.seller, tin: "C12345678901" }, recheckRemaining: 0 });
+    page();
+    fireEvent.change(screen.getByLabelText("Seller TIN"), { target: { value: "c12345678901" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect((screen.getByLabelText("Seller TIN") as HTMLInputElement).value).toBe("C12345678901"));
   });
 });

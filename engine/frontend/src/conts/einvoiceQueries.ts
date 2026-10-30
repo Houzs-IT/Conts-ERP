@@ -11,7 +11,13 @@ export type EInvoiceSettings = {
   active: boolean; classificationCode: string; taxType: string; sstEnabled: boolean;
   sstMode: "EXCLUSIVE" | "INCLUSIVE" | null; sstOutputAccount: string | null; renoDescriptionTemplate: string; seller: EInvoiceSeller;
 };
-export type EInvoiceSettingsView = EInvoiceSettings & { sellerMissing: string[]; taxTypes: Record<string, string> };
+export type EInvoiceSettingsView = EInvoiceSettings & { sellerMissing: string[]; taxTypes: Record<string, string>; recheckRemaining?: number | null };
+
+/** The editable part of the server's answer. */
+export function formOf(v: EInvoiceSettingsView): EInvoiceSettings {
+  const { sellerMissing: _m, taxTypes: _t, recheckRemaining: _r, ...rest } = v;
+  return rest;
+}
 
 export type OutboxStatus = "NOT_READY" | "READY" | "SUBMITTED" | "VALID" | "REJECTED" | "CANCELLED";
 export type OutboxRow = {
@@ -53,7 +59,7 @@ export const useOutboxRow = (id: string | null) => useQuery({
 export const useRefreshOutbox = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => authedFetch<{ refreshed: number }>("/accounting/einvoice/outbox/refresh", { method: "POST" }),
+    mutationFn: () => authedFetch<{ refreshed: number; remaining: number }>("/accounting/einvoice/outbox/refresh", { method: "POST" }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: OUTBOX }); },
   });
 };
