@@ -45,9 +45,36 @@ def sections_of(d):
     secs, cur = [], None
     for i in d['items']:
         h = (i['sec'] or '').strip()[:200]
+        if i.get('lump'):
+            cur = {'heading': h, 'lines': [], 'lumpSumSen': sen(i['amt']), 'priced': 0, 'lumpItem': i,
+                   'prev': secs[-1]['heading'] if secs else ''}
+            secs.append(cur); continue
         if cur is None or cur['heading'] != h: cur = {'heading': h, 'lines': []}; secs.append(cur)
-        cur['lines'].append(line_of(i, 'DISC' in (d['fmt'] or '')))
-    return secs
+        if 'lumpSumSen' in cur and i['amt'] is not None: cur['priced'] += sen(i['amt'])
+        cur['lines'].append((i, line_of(i, 'DISC' in (d['fmt'] or ''))))
+    for s in secs:
+        lump = 'lumpSumSen' in s and s['priced'] == 0 and len(s['lines']) > 0
+        if 'lumpSumSen' in s and not lump:
+            # lines under it have their own amounts: the heading's figure is their subtotal, or it was itself a priced line
+            if abs(s['priced'] - s['lumpSumSen']) > 100:
+                it = s['lumpItem']; s['lines'].insert(0, (it, line_of(it, 'DISC' in (d['fmt'] or ''))))
+                s['heading'] = s['prev']
+            del s['lumpSumSen']
+        for k in ('priced', 'lumpItem', 'prev'): s.pop(k, None)
+        lines = []
+        for i, l in s['lines']:
+            if lump and l['kind'] == 'ITEM':
+                # inside a lump sum the printed figure is a rate, kept in the text
+                if i['price'] is not None: l['description'] = (l['description'] + f" (RM {i['price']:g})")[:480]
+                l.update(unitPriceSen=0, netSen=0); l.pop('discountBp', None)
+            lines.append(l)
+        s['lines'] = lines
+    merged = []
+    for s in secs:
+        if merged and merged[-1]['heading'] == s['heading'] and 'lumpSumSen' not in s and 'lumpSumSen' not in merged[-1]:
+            merged[-1]['lines'] += s['lines']
+        else: merged.append(s)
+    return merged
 
 by_proj = collections.defaultdict(list)
 for f, d in R.items():
@@ -70,7 +97,7 @@ for name, vs in sorted(by_proj.items()):
     versions, prev_sig = [], None
     for f, d in vs:
         secs = sections_of(d)
-        linesSen = sum(l.get('netSen', 0) for s in secs for l in s['lines'])
+        linesSen = sum(l.get('netSen', 0) for s in secs for l in s['lines']) + sum(s.get('lumpSumSen', 0) for s in secs)
         payable = d.get('payable')
         disc = d['fmt'] and 'DISC' in (d['fmt'] or '')
         if payable is None or (disc and d.get('payable_how') == 'pagetotals'): payable = linesSen / 100
