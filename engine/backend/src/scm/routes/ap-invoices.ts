@@ -84,6 +84,17 @@ function buildLines(raw: unknown): { lines: CleanLine[]; total: number } | { err
   return { lines, total: lines.reduce((s, l) => s + l.amountSen, 0) };
 }
 
+/** Every project the lines name must be one of the company's (public.projects): a cost must never sit on a project
+    that does not exist. Null = all good; else the refusal. */
+async function projectRefusal(c: any, companyId: number, lines: CleanLine[]): Promise<Response | null> {
+  const ids = [...new Set(lines.map((l) => l.projectId).filter((p): p is number => p != null))];
+  if (ids.length === 0) return null;
+  const { data, error } = await c.get('supabase').schema('public').from('projects').select('id').eq('company_id', companyId).in('id', ids);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  const found = new Set(((data ?? []) as Array<{ id: number }>).map((p) => Number(p.id)));
+  return ids.every((p) => found.has(p)) ? null : c.json({ error: 'bad_line', message: 'A line names a project this company does not have. Pick the project again.' }, 400);
+}
+
 async function loadInvoice(c: any, id: string): Promise<{ inv: Row } | { resp: Response }> {
   const sb = c.get('supabase');
   const { data, error } = await scopeToCompany(sb.from('ap_invoices').select(HEADER).eq('id', id), c).maybeSingle();
@@ -190,6 +201,8 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
   }
   const built = buildLines(body.lines);
   if ('error' in built) return c.json({ error: built.error, message: built.message }, 400);
+  const badProject = await projectRefusal(c, co.companyId, built.lines);
+  if (badProject) return badProject;
   const invoiceDate = dateOrNull(body.invoiceDate) ?? todayMyt();
   const dueDate = dateOrNull(body.dueDate);
 
@@ -302,6 +315,8 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   if (body.lines !== undefined) {
     const built = buildLines(body.lines);
     if ('error' in built) return c.json({ error: built.error, message: built.message }, 400);
+    const badProject = await projectRefusal(c, co.companyId, built.lines);
+    if (badProject) return badProject;
     if (built.total < paid) {
       return c.json({ error: 'total_below_paid', message: `${inv.invoice_number} already has ${fmtSen(paid)} paid against it — the total cannot fall below that.` }, 409);
     }

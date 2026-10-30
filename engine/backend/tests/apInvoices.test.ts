@@ -385,7 +385,7 @@ describe('departments on an AP invoice', () => {
    project its cost belongs to, and the posting carries it on the expense leg. */
 describe('projects on an AP invoice', () => {
   test('a line keeps its project on the bill and on its expense leg; a line without one has none', async () => {
-    const { app, sb } = harness();
+    const { app, sb } = harness({ projects: [{ id: 7, company_id: CO, name: 'SKYLINE' }] });
     const created = await (await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [
       { description: 'Tiling labour', debitAccountCode: '900-A001', amountSen: 50_000, projectId: 7 },
       { description: 'Cleaning', debitAccountCode: '900-A002', amountSen: 2_000 },
@@ -397,10 +397,12 @@ describe('projects on an AP invoice', () => {
       .toEqual([['900-A001', 7], ['900-A002', null], ['405-0000', null]]);
   });
 
-  test('a project that is not a number is refused', async () => {
-    const { app, sb } = harness();
+  test('a project that is not a number, or not one of this company’s, is refused', async () => {
+    const { app, sb } = harness({ projects: [{ id: 7, company_id: 99, name: 'OTHER' }] });
     const bad = await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '900-A001', amountSen: 100, projectId: 'skyline' }] });
     expect(bad.status).toBe(400);
+    const other = await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '900-A001', amountSen: 100, projectId: 7 }] });
+    expect(other.status).toBe(400);
     expect(sb.tables.ap_invoices).toHaveLength(0);
   });
 });
