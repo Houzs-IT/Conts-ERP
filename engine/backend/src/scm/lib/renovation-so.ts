@@ -389,8 +389,9 @@ export async function setContractStatus(db: RenoDb, actor: RenoActor, docNo: str
   const head = await readContractHead(db, docNo, actor.companyId, true);
   if (!contractTransitionAllowed(head.status, to)) throw refuse(409, 'bad_transition', `A contract that is ${head.status} cannot become ${to}.`);
   if (to === 'CANCELLED') {
-    const [b] = await db.q<{ n: number }>(`select count(*)::int as n from scm.reno_instalment_bills where so_doc_no = $1`, [docNo]);
-    if (Number(b.n) > 0) throw refuse(409, 'has_bills', 'This contract has been billed; issue credit notes instead of cancelling it.');
+    /* A billed contract may be cancelled (spec 7.2): finance first credits whatever is refunded; the cancel then
+       clears the part never invoiced from the advance (acc/reno-ledger postContractCancel, after commit), and what
+       was invoiced and not credited stays as revenue. */
     const [p] = await db.q<{ n: number }>(
       `select count(*)::int as n from scm.purchase_order_items pi join scm.purchase_orders po on po.id = pi.purchase_order_id
          join scm.mfg_sales_order_items si on si.id = pi.so_item_id

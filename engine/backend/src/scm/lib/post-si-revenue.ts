@@ -23,6 +23,7 @@ import { splitByItemGroup } from '../../acc/item-group-split';
 import { customerPartyCode } from '../../acc/payments';
 import { applyDepositInvoicesBestEffort } from '../../acc/deposit-invoices';
 import { isBeforeLedgerStart, loadLedgerSettings } from '../../acc/ledger-settings';
+import { postRenovationInvoice, releaseInvoiceAllocations } from '../../acc/reno-ledger';
 
 export type PostSiResult =
   | { ok: true; status: 'posted'; jeNo: string; jeId: string; totalSen: number }
@@ -81,6 +82,24 @@ export async function postSiRevenue(sb: any, invoiceNumber: string): Promise<Pos
 
   const totalSen = Number(si.total_sen);
   if (totalSen <= 0) return { ok: false, status: 'zero_total' };
+
+  /* A RENOVATION CONTRACT'S INVOICE moves the contract's advance to revenue by the waterfall (acc/reno-ledger,
+     plan 2026-10-30-renovation-revenue-ledger.md Task 5) instead of the item-group split: Dr the project's advance
+     sub-account / Cr the sub-category revenue accounts. The receivable was posted whole at signing. */
+  const siSo = (si as { so_doc_no?: string | null }).so_doc_no ?? null;
+  if (siSo && companyId != null) {
+    const { data: order, error: oErr } = await sb.from('mfg_sales_orders').select('so_kind').eq('company_id', companyId).eq('doc_no', siSo).maybeSingle();
+    if (oErr) return { ok: false, status: 'post_failed', reason: `order: ${oErr.message}` };
+    if ((order as { so_kind?: string } | null)?.so_kind === 'RENOVATION') {
+      const r = await postRenovationInvoice(sb, {
+        companyId, soDocNo: siSo, invoiceNumber: si.invoice_number, invoiceDate: si.invoice_date, totalSen, debtorName: si.debtor_name ?? null,
+      });
+      if (r.ok) return r.status === 'posted' ? { ok: true, status: 'posted', jeNo: r.jeNo, jeId: r.jeId, totalSen } : { ok: true, status: 'already_posted', jeNo: r.jeNo, jeId: r.jeId };
+      if (r.status === 'group_unbound' || r.status === 'line_ungrouped') return { ok: false, status: r.status, reason: r.reason };
+      if (r.status === 'no_customer_account') return { ok: false, status: 'customer_no_account', reason: r.reason };
+      return { ok: false, status: 'post_failed', reason: `${r.status}: ${r.reason}` };
+    }
+  }
 
   /* WHICH SALES ACCOUNT each ringgit belongs to (docs/bugs/0829, the mirror
      of the purchase side): the invoice's lines carry their product group, the
@@ -193,7 +212,7 @@ export async function reverseSiRevenue(sb: any, invoiceNumber: string): Promise<
     if (!ls.ok) return { ok: false, status: 'reversal_read_failed', reason: 'The ledger settings could not be read.' };
     if (isBeforeLedgerStart(inv.invoice_date, ls.settings)) return { ok: true, status: 'before_ledger_start' };
   }
-  return reverseJournal(sb, {
+  const rev = await reverseJournal(sb, {
     sourceType: 'SI',
     sourceDocNo: invoiceNumber,
     narration: (orig) => `Reversal of ${orig.je_no} — Sales invoice ${invoiceNumber} cancelled`,
@@ -203,6 +222,13 @@ export async function reverseSiRevenue(sb: any, invoiceNumber: string): Promise<
       { accountCode: DEFAULT_ROLE_CODES.AR, debitSen: 0, creditSen: totalSen, notes: `Reverse AR ${invoiceNumber}` },
     ],
   });
+  /* A renovation invoice gives its tiers back with its journal, so the next invoice re-fills them (no rows for
+     any other invoice). */
+  if (rev.ok && rev.status !== 'before_ledger_start') {
+    const rel = await releaseInvoiceAllocations(sb, invoiceNumber);
+    if (!rel.ok) return { ok: false, status: 'reversal_read_failed', reason: `${invoiceNumber} reversed, but its renovation revenue allocation was not cleared: ${rel.reason}` };
+  }
+  return rev;
 }
 
 export type ResyncSiResult =
