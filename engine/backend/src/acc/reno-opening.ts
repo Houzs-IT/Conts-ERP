@@ -28,7 +28,9 @@ import type { RenoDb } from '../scm/lib/renovation-db';
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as everywhere in acc/ */
 type Sb = any;
 
-export type RenoOpeningRow = { soDocNo: string; debtorCode: string; advanceAccountCode: string; billedBeforeGoLiveSen: number };
+/** `costBeforeGoLiveSen`: what AutoCount's project expense record shows spent on the contract before go-live (chew,
+    31 Oct 2026), for the completion % (acc/reno-completion). Null = not given: what the contract holds stays. */
+export type RenoOpeningRow = { soDocNo: string; debtorCode: string; advanceAccountCode: string; billedBeforeGoLiveSen: number; costBeforeGoLiveSen?: number | null };
 export type RenoOpeningPreviewRow = RenoOpeningRow & {
   problems: string[];
   /** The contract as it stands (live SO rows without RENO-CREDIT); null when the SO is unknown. */
@@ -37,7 +39,7 @@ export type RenoOpeningPreviewRow = RenoOpeningRow & {
       baseline (golive_contract_sen) the first time the contract is seeded; those VOs then post as RVO. */
   goLiveContractSen: number | null;
   /** What the contract holds now, so finance sees what changes. */
-  current: { debtorCode: string | null; advanceAccountCode: string | null; billedBeforeGoLiveSen: number } | null;
+  current: { debtorCode: string | null; advanceAccountCode: string | null; billedBeforeGoLiveSen: number; costBeforeGoLiveSen: number | null } | null;
 };
 
 /** The customer controls a renovation project's customer may sit under. */
@@ -105,6 +107,7 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
     debtorCode: r.debtorCode.trim(),
     advanceAccountCode: r.advanceAccountCode.trim(),
     billedBeforeGoLiveSen: Number(r.billedBeforeGoLiveSen),
+    costBeforeGoLiveSen: r.costBeforeGoLiveSen == null ? null : Number(r.costBeforeGoLiveSen),
   }));
   try {
     const ls = await loadLedgerSettings(sb, companyId);
@@ -118,8 +121,8 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
 
     const sos = await readIn<{ doc_no: string; so_kind: string; so_date: string | null; debtor_code: string | null; status: string | null }>(
       sb, 'mfg_sales_orders', 'doc_no, so_kind, so_date, debtor_code, status', 'doc_no', docs, byCompany);
-    const contracts = await readIn<{ so_doc_no: string; company_id: number | null; advance_account_code: string | null; billed_before_golive_sen: number | null }>(
-      sb, 'reno_so_contracts', 'so_doc_no, company_id, advance_account_code, billed_before_golive_sen', 'so_doc_no', docs);
+    const contracts = await readIn<{ so_doc_no: string; company_id: number | null; advance_account_code: string | null; billed_before_golive_sen: number | null; golive_cost_sen: number | null }>(
+      sb, 'reno_so_contracts', 'so_doc_no, company_id, advance_account_code, billed_before_golive_sen, golive_cost_sen', 'so_doc_no', docs);
     const debtors = await readIn<{ code: string; control_account: string | null }>(sb, 'debtors', 'code, control_account', 'code', debtorCodes, byCompany);
     const accounts = await readIn<{ account_code: string; parent_code: string | null; is_active: boolean | null }>(
       sb, 'accounts', 'account_code, parent_code, is_active', 'account_code', accountCodes, byCompany);
@@ -164,6 +167,7 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
         debtorCode: so?.debtor_code ?? null,
         advanceAccountCode: String(contract.advance_account_code ?? '').trim() || null,
         billedBeforeGoLiveSen: Number(contract.billed_before_golive_sen ?? 0),
+        costBeforeGoLiveSen: contract.golive_cost_sen == null ? null : Number(contract.golive_cost_sen),
       } : null;
 
       if (!start) problems.push('Set the day the books start first (Books, above): only contracts signed before it are seeded here.');
@@ -198,6 +202,10 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
         problems.push('The amount invoiced before go-live must be a plain RM figure, zero or more.');
       } else if (contractSen != null && r.billedBeforeGoLiveSen > contractSen) {
         problems.push(`${fmtSen(r.billedBeforeGoLiveSen)} invoiced before go-live is more than the contract (${fmtSen(contractSen)}).`);
+      }
+
+      if (r.costBeforeGoLiveSen != null && (!Number.isInteger(r.costBeforeGoLiveSen) || r.costBeforeGoLiveSen < 0)) {
+        problems.push('The cost before go-live must be a plain RM figure, zero or more (or left blank).');
       }
 
       if (current && so) {
@@ -247,9 +255,9 @@ export async function applyRenoOpening(sb: Sb, companyId: number, input: RenoOpe
         /* The baseline is the contract at go-live, set the first time only: a VO posted since is in the ledger. */
         const c = await db.q<{ so_doc_no: string }>(
           `update scm.reno_so_contracts set advance_account_code = $2, billed_before_golive_sen = $3,
-              golive_contract_sen = coalesce(golive_contract_sen, $4), updated_at = now()
+              golive_contract_sen = coalesce(golive_contract_sen, $4), golive_cost_sen = coalesce($5, golive_cost_sen), updated_at = now()
             where so_doc_no = $1 returning so_doc_no`,
-          [r.soDocNo, r.advanceAccountCode, r.billedBeforeGoLiveSen, r.goLiveContractSen ?? 0]);
+          [r.soDocNo, r.advanceAccountCode, r.billedBeforeGoLiveSen, r.goLiveContractSen ?? 0, r.costBeforeGoLiveSen ?? null]);
         if (c.length === 0) throw new Error(`the contract record of ${r.soDocNo} was not found`);
       }
       return pv.rows.length;

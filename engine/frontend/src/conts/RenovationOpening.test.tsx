@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const ROWS = [
-  { soDocNo: "2990-SO-2609-001", debtorCode: "301-C005", advanceAccountCode: "480-D007", billedBeforeGoLiveSen: 3_000_000 },
-  { soDocNo: "2990-SO-2609-002", debtorCode: "300-C001", advanceAccountCode: "480-D008", billedBeforeGoLiveSen: 0 },
+  { soDocNo: "2990-SO-2609-001", debtorCode: "301-C005", advanceAccountCode: "480-D007", billedBeforeGoLiveSen: 3_000_000, costBeforeGoLiveSen: null },
+  { soDocNo: "2990-SO-2609-002", debtorCode: "300-C001", advanceAccountCode: "480-D008", billedBeforeGoLiveSen: 0, costBeforeGoLiveSen: null },
 ];
 const previewAsync = vi.fn();
 const applyAsync = vi.fn(async (_rows: unknown) => ({ ok: true, applied: 1 }));

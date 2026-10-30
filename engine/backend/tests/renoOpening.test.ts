@@ -84,6 +84,7 @@ function fakeTx(sb: World, failOn?: (text: string, params: readonly unknown[]) =
             row.advance_account_code = params[1];
             row.billed_before_golive_sen = params[2];
             row.golive_contract_sen = row.golive_contract_sen ?? params[3];
+            row.golive_cost_sen = params[4] ?? row.golive_cost_sen ?? null;
           });
           return [{ so_doc_no: params[0] }] as R[];
         }
@@ -216,6 +217,19 @@ describe('Apply', () => {
     });
     expect(sb.tables.journal_entries).toHaveLength(0);
     expect(sb.tables.reno_revenue_allocations).toHaveLength(0);
+  });
+
+  test('upload stores cost before go-live; a blank cost keeps what the contract holds', async () => {
+    const sb = world();
+    expect(await applyRenoOpening(sb, CO, [{ ...good, costBeforeGoLiveSen: 2_000_000 }], fakeTx(sb))).toEqual({ ok: true, applied: 1 });
+    expect((sb.tables.reno_so_contracts as Row[]).find((c) => c.so_doc_no === OLD)!.golive_cost_sen).toBe(2_000_000);
+    expect(await applyRenoOpening(sb, CO, [{ ...good, costBeforeGoLiveSen: null }], fakeTx(sb))).toEqual({ ok: true, applied: 1 });
+    expect((sb.tables.reno_so_contracts as Row[]).find((c) => c.so_doc_no === OLD)!.golive_cost_sen).toBe(2_000_000);
+  });
+
+  test('a cost before go-live that is not a plain figure is refused by name', async () => {
+    const r = await previewRenoOpening(world(), CO, [{ ...good, costBeforeGoLiveSen: -5 }]);
+    expect(r.ok && r.rows[0]!.problems).toContain('The cost before go-live must be a plain RM figure, zero or more (or left blank).');
   });
 
   test('one bad row stops the whole file, with nothing written', async () => {
