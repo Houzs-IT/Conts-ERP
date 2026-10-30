@@ -65,6 +65,16 @@ describe('openAdvanceAccountSql', () => {
     expect(db.accounts).toHaveLength(1);
   });
 
+  test('a leading "SO - " on the project name is not part of its letter or name', async () => {
+    const db = fakeDb([parent('480-0000'), child('480-T004', '480-0000')]);
+    expect(await openAdvanceAccountSql(db, 1, { kind: 'RENOVATION', projectName: 'SO - THE HIPSTER C10-05 MS IRIS' })).toBe('480-T005');
+    expect(db.accounts.find((a) => a.account_code === '480-T005')?.account_name).toBe('THE HIPSTER C10-05 MS IRIS');
+    expect(await openAdvanceAccountSql(db, 1, { kind: 'RENOVATION', projectName: 'so-trofi a-3-1' })).toBe('480-T006');
+    expect(db.accounts.find((a) => a.account_code === '480-T006')?.account_name).toBe('trofi a-3-1');
+    /* Only a leading "SO" followed by a dash: SOHO is a name. */
+    expect(await openAdvanceAccountSql(db, 1, { kind: 'RENOVATION', projectName: 'SOHO SUITES' })).toBe('480-S001');
+  });
+
   test('an inactive parent refuses too', async () => {
     const db = fakeDb([{ ...parent('480-0000'), is_active: false }]);
     await expect(openAdvanceAccountSql(db, 1, { kind: 'RENOVATION', projectName: 'A' })).rejects.toThrow(/480-0000/);

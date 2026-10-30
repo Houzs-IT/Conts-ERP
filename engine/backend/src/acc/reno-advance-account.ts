@@ -35,7 +35,8 @@ export async function openAdvanceAccountSql(db: Db, companyId: number, p: { kind
       `Account ${parent.code} (advances for ${parent.label}) is ${row ? 'deactivated' : 'not in the chart of accounts'}. Finance must ${row ? 'reactivate' : 'add'} it before this quotation can be converted.`,
       { account: parent.code });
   }
-  const name = p.projectName.trim();
+  /* Project names often carry a leading "SO - " (chew, 30 Oct 2026): not part of the project's letter or name. */
+  const name = p.projectName.trim().replace(/^so\s*-\s*/i, '').trim();
   if (!name) throw refuse(422, 'no_project_name', 'The project has no name to open its advance account with.');
   const prefix3 = parent.code.slice(0, 3);
   const letter = projectLetter(name);
