@@ -9,6 +9,8 @@ import { flushWhenQuiet } from './channexQueue';
 import { channexConfigured } from './channex';
 import { cleaningNotice, repairNotice } from './notices';
 import { releaseRepairBlocks } from './repairBlocks';
+import { hasAttendance } from './attendance';
+import { FORGOTTEN_AFTER_HOURS } from './attendanceCalc';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -229,6 +231,27 @@ export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobRep
   return { job: 'overdue-sweep', summary: `Marked ${plural(tasks.length, 'task')} Overdue; announced ${recentCleans.length} cleaning jobs, ${repairs.length} maintenance jobs, ${stale.length} unsent owner statements.`, items };
 }
 
+/** Hourly: a punch left open longer than FORGOTTEN_AFTER_HOURS is marked a forgotten clock-out, so the desk and the
+ *  phone stop counting it up and payroll pays it as a normal shift. No clock-out time is made up: the office keys the real
+ *  one on Attendance. The phone's next clock-in or clock-out does the same; this catches the people who do neither. */
+export async function forgottenClockOuts(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  if (!(await hasAttendance(env))) return { job: 'forgotten-clock-outs', summary: 'Attendance is not set up on this database (migration 0166).' };
+  const cutoff = new Date((o.now ?? new Date()).getTime() - FORGOTTEN_AFTER_HOURS * 3600e3).toISOString();
+  const open = await all<{ id: string; employee_id: string; work_date: string; clock_in_at: string }>(env, `
+    SELECT id, employee_id, work_date, clock_in_at FROM attendance WHERE clock_out_at IS NULL AND forgot_out = 0 AND clock_in_at < ?`, cutoff);
+  const items = open.map(r => `${r.work_date}: employee ${r.employee_id}, in at ${r.clock_in_at}`);
+  if (o.dryRun || !open.length) {
+    return { job: 'forgotten-clock-outs', summary: open.length ? `Would mark ${plural(open.length, 'punch', 'punches')} as a forgotten clock-out.` : `No punch open longer than ${FORGOTTEN_AFTER_HOURS} hours.`, items };
+  }
+  const ids = JSON.stringify(open.map(r => r.id));
+  await run(env, `UPDATE attendance SET forgot_out = 1, updated_at = ? WHERE clock_out_at IS NULL AND forgot_out = 0 AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, nowIso(), ids);
+  await run(env, `
+    INSERT INTO audit_log (actor_id, actor_label, action, entity_table, entity_id, before_state, after_state, source, occurred_at)
+    SELECT NULL, 'Scheduled job', 'attendance.forgot_out', 'attendance', x, '{"forgotOut":false}', '{"forgotOut":true}', 'system', ?
+    FROM jsonb_array_elements_text(?::text::jsonb) AS x`, nowIso(), ids);
+  return { job: 'forgotten-clock-outs', summary: `Marked ${plural(open.length, 'punch', 'punches')} open longer than ${FORGOTTEN_AFTER_HOURS} hours as a forgotten clock-out.`, items };
+}
+
 /** Daily at 08:00 MYT: one "today" notice for operations: arrivals, departures, cleans (and how many have nobody),
  *  repairs open and repair visits today. */
 export async function dailyDigest(env: Env, o: RunOptions = {}): Promise<JobReport> {
@@ -279,7 +302,7 @@ export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<Job
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
   [CRON.fiveMinutes]: [hostplatformPull],
   [CRON.quarterHour]: [drainOutbox, repairBlockSweep],
-  [CRON.hourly]: [overdueSweep],
+  [CRON.hourly]: [overdueSweep, forgottenClockOuts],
   [CRON.daily]: [dailyDigest],
 };
 

@@ -58,7 +58,7 @@ export const AREAS: Area[] = [
   { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'] },
   // Field staff's HR record: IC, bank, salary and statutory (PLAN-hr-employees.md). Its own group so Operations staff do
   // not see pay by default. The cleaner and technician rosters themselves stay under Operations.
-  { key: 'hr', label: 'Employees', group: 'HR', api: ['employees', 'attendance', 'leaves', 'payroll', 'working-hours', 'penalties', 'labor-cost'], strictRead: true },
+  { key: 'hr', label: 'Employees', group: 'HR', api: ['employees', 'attendance', 'punch-sites', 'leaves', 'payroll', 'working-hours', 'penalties', 'labor-cost'], strictRead: true },
   { key: 'properties', label: 'Units', group: 'Units', api: ['properties', 'units', 'unit-layout-types', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
   { key: 'owners', label: 'Owners', group: 'Units', api: ['owners', 'contracts'] },
   { key: 'serviceCases', label: 'Service cases', group: 'Service cases', api: [] },

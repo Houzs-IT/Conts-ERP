@@ -12,7 +12,8 @@ import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapMod
 import { useAuth } from '../../auth/AuthContext';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { lineAmounts, qtyLabel } from '../../vendor/shared/renovation-money';
-import { refusalOf, renoSend, sectionsForSave, useBrands, useContract, useRenoMutation, useVo, type DocLine, type DocSection } from '../../lib/renovation/api';
+import { contractPostingWarning, refusalOf, renoSend, sectionsForSave, useBrands, useContract, useRenoMutation, useVo, type ContractPosting, type DocLine, type DocSection } from '../../lib/renovation/api';
+import { useToast } from '../../hooks/useToast';
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { amountsOf, blankSection, DocEditor } from './DocEditor';
 import { PrintDialog } from './PrintDialog';
@@ -35,6 +36,7 @@ export function VariationOrderEditor() {
   const contract = useContract(vo.data?.soDocNo);
   const brands = useBrands();
   const { can } = useAuth();
+  const toast = useToast();
   const [title, setTitle] = useState('');
   const [docDate, setDocDate] = useState(todayIso());
   const [adds, setAdds] = useState<DocSection[]>([]);
@@ -90,7 +92,15 @@ export function VariationOrderEditor() {
     await act(() => renoSend(`/variation-orders/${v.id}/status`, 'POST', { status: to, version: v.version }));
   };
   const approve = async () => {
-    if (await act(() => renoSend(`/variation-orders/${v.id}/approve`, 'POST', { version: v.version, signedName: signedName || null }))) setApproveOpen(false);
+    let posting: ContractPosting | undefined;
+    const ok = await act(async () => {
+      const r = await renoSend<{ posting?: ContractPosting }>(`/variation-orders/${v.id}/approve`, 'POST', { version: v.version, signedName: signedName || null });
+      posting = r.posting;
+    });
+    if (!ok) return;
+    setApproveOpen(false);
+    const warning = contractPostingWarning(posting);
+    if (warning) toast.warning(warning);
   };
   const toggleOmit = (lineId: string, on: boolean) => { setOmits(on ? [...omits, { lineId, omitQty: null }] : omits.filter((o) => o.lineId !== lineId)); setDirty(true); };
   const brand = brands.data?.brands.find((b) => b.brandId === contract.data?.header.brandId);

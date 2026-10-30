@@ -9,7 +9,7 @@ import { MoneyText } from '../../components/MoneyText';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
-import { date, monthLabel, rm } from '../../lib/format';
+import { date, monthLabel, rm, todayMyt } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { MODEL, MODEL_TONE, CODES, CODE, codeName, codeFromModel, isTenancy, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
 import { ExtendContractModal, GenerateAgreement } from './ContractExtras';
@@ -52,6 +52,8 @@ interface Payload {
   /** The codes this unit may take (the same for every purpose, migration 0181). */
   allowedCodes?: ContractCode[];
   current: ContractView; history: ContractView[]; example: Example | null;
+  /** The contract that applies until the current one's later start date, if any. */
+  untilThen?: ContractView | null;
 }
 
 interface Draft {
@@ -214,7 +216,8 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
             <span className="text-[16px] font-semibold tracking-[-0.01em]">Income model</span>
             <span className="text-meta text-muted-ink">
               {current.id && current.contractCode && <><CodeBadge code={current.contractCode} size="sm" />{' '}</>}
-              {current.id ? <>In force {current.startsOn ? `from ${date(current.startsOn)}` : ''}{current.endsOn ? ` to ${date(current.endsOn)}` : ''} · {current.termsLabel}</> : <>No contract record yet: the unit's own split is used ({current.termsLabel}). Saving creates its contract.</>}
+              {current.id && current.startsOn && current.startsOn.slice(0, 10) > todayMyt() ? <>Starts {date(current.startsOn)} · {current.termsLabel}{data!.untilThen ? <>. Until then: {data!.untilThen.termsLabel}</> : ''}</>
+                : current.id ? <>In force {current.startsOn ? `from ${date(current.startsOn)}` : ''}{current.endsOn ? ` to ${date(current.endsOn)}` : ''} · {current.termsLabel}</> : <>No contract record yet: the unit's own split is used ({current.termsLabel}). Saving creates its contract.</>}
               {data!.history.length > 0 && <> · <a href="#contract-history" className="text-gold-ink">Contract history ({data!.history.length})</a></>}
             </span>
           </div>
