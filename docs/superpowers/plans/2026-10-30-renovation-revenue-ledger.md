@@ -17,7 +17,7 @@
 - Tier order: SERVICE → (WORKS, LIGHTING) → BUILTIN → (FURNITURE, APPLIANCE, SOFT) → AIRBNB. Within a tier, in proportion to the lines' contract amounts.
 - Ledger start date is 2026-11-01: an event dated before it posts nothing (the opening balances carry it); `postJournal` already answers `before_ledger_start`.
 - A parent account (one with child accounts) can never be bound or posted to.
-- Every new scm table: `grant all … to service_role, pos_app` (see `migrations-pg/0178_payment_requests_petty_cash.sql:212`). Production SQL never uses DROP. Next free migration number: 0181 (check `public.pos_migrations` on production and every open branch first). Migrations are applied to production by hand, in one transaction with their `pos_migrations` row (checksum = sha256 of the file with CRLF→LF, first 16 hex), before the code merges.
+- Every new scm table: `grant all … to service_role, pos_app` (see `migrations-pg/0178_payment_requests_petty_cash.sql:212`). Production SQL never uses DROP. Migration numbers: Task 1 used 0184 (applied 2026-10-30; 0181–0183 were taken); Task 3 adds a NEW file with the next free number (check `public.pos_migrations` on production and every open branch first). Migrations are applied to production by hand, in one transaction with their `pos_migrations` row (checksum = sha256 of the file with CRLF→LF, first 16 hex), before the code merges.
 - A customer with no account is never guessed onto a default (PR #473); a payment counts only once finance confirms it (PR #476). Do not weaken either.
 - Engine frontend: run `npx tsc -b` before merging (the deploy runs it; `tsc --noEmit` is not enough).
 - Tests that already fail on main and are not ours: specialsRecordedNeverPriced, soLineFreezeRoutes, renovationRecords, doStockLeavesOnConfirm, plus load-only timeouts (journalClasses, journalEntryEdit, opening, classifyTests).
@@ -36,7 +36,7 @@
 
 | File | Responsibility |
 |---|---|
-| `migrations-pg/0181_renovation_revenue_ledger.sql` | new tables and columns (Task 1, 3) |
+| `migrations-pg/0184_renovation_revenue_ledger.sql` (Task 1, applied) and the next free number for Task 3 | new tables and columns |
 | `engine/backend/src/acc/reno-waterfall.ts` (new) | pure waterfall |
 | `engine/backend/src/acc/reno-accounts.ts` (new) | account resolution by sub-category / group |
 | `engine/backend/src/acc/reno-ledger.ts` (new) | contract journals: signed, VO, invoice, credit, cancel |
@@ -53,7 +53,7 @@
 ### Task 1: Sub-category account bindings
 
 **Files:**
-- Create: `migrations-pg/0181_renovation_revenue_ledger.sql` (this task adds the first table; Task 3 appends to the same file before it is applied)
+- Create: `migrations-pg/0184_renovation_revenue_ledger.sql` (done, applied to production 2026-10-30)
 - Create: `engine/backend/src/acc/reno-accounts.ts`
 - Modify: `engine/backend/src/scm/routes/accounting-item-groups.ts`, `engine/frontend/src/pages/scm-v2/ItemGroups.tsx`
 - Test: `engine/backend/src/acc/reno-accounts.test.ts`, `engine/backend/tests/itemGroups.test.ts`
@@ -98,7 +98,7 @@
 ### Task 3: Each contract opens its own customer account and advance sub-account
 
 **Files:**
-- Modify: `migrations-pg/0181_renovation_revenue_ledger.sql`, `engine/backend/src/conts/parties.ts` (`ensureDebtorSql`), `engine/backend/src/scm/lib/renovation-so.ts` (`convertQuotationToSo`)
+- Create: `migrations-pg/<next free number>_renovation_contract_ledger.sql` (check production and every branch first), `engine/backend/src/conts/parties.ts` (`ensureDebtorSql`), `engine/backend/src/scm/lib/renovation-so.ts` (`convertQuotationToSo`)
 - Create: `engine/backend/src/acc/reno-advance-account.ts`
 - Test: `engine/backend/src/conts/parties.test.ts`, `engine/backend/src/acc/reno-advance-account.test.ts`
 
@@ -225,7 +225,8 @@
 ## PRs
 
 - PR 1: Tasks 1–2 (no ledger effect).
-- PR 2: Tasks 3–4 + migration 0181 applied first.
+- PR 1 (#481) live 2026-10-30.
+- PR 2: Tasks 3–4 + its migration applied first.
 - PR 3: Tasks 5–7.
 - PR 4: Tasks 8–9.
 - PR 5: Task 10 (can go with PR 3).
