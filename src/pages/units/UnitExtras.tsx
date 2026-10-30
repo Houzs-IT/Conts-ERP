@@ -13,12 +13,12 @@ import { Select, type Bed, type Bay } from './shared';
 const BED_LABEL = Object.fromEntries(BED_SIZES.map(b => [b.value, b.label]));
 /** "1 King · 2 Single", as the server writes it. */
 export const bedsText = (beds: Bed[] | undefined) => (beds ?? []).map(b => `${b.quantity} ${BED_LABEL[b.size] ?? b.size}`).join(' · ');
-/** "LEVEL 5-100 (Tandem)", as the server writes it (bayLabel in functions/_lib/unitPurpose.ts). */
+/** "LEVEL 5-LOT-100 (Tandem)", as the server writes it (bayLabel in functions/_lib/unitPurpose.ts). */
 const bayText = (b: Bay) => {
   const lot = b.lotNumber.trim(), level = b.level?.trim().replace(/^(level|lvl|l)\s*(?=\d)/i, ''), note = b.note?.trim();
-  return `${level ? `LEVEL ${level}-${lot}` : lot}${note ? ` (${note})` : ''}`;
+  return `${level ? `LEVEL ${level}-LOT-${lot}` : lot}${note ? ` (${note})` : ''}`;
 };
-/** "2 bays: LEVEL 2-105, LEVEL 2-106". */
+/** "2 bays: LEVEL 2-LOT-105, LEVEL 2-LOT-106". */
 export const baysText = (bays: Bay[] | undefined) => {
   const l = (bays ?? []).filter(b => b.lotNumber.trim());
   return l.length ? `${l.length} ${l.length === 1 ? 'bay' : 'bays'}: ${l.map(bayText).join(', ')}` : '';
@@ -54,7 +54,7 @@ export function BedsEditor({ beds, onChange, disabled }: { beds: Bed[]; onChange
   );
 }
 
-/** Any number of car park bays: level, lot number (required) and a note, in the order they are read: LEVEL 5-100A (Tandem). */
+/** Any number of car park bays: level, lot number (required) and a note, in the order they are read: LEVEL 5-LOT-100A (Tandem). */
 export function BaysEditor({ bays, onChange, disabled }: { bays: Bay[]; onChange: (b: Bay[]) => void; disabled?: boolean }) {
   const set = (i: number, p: Partial<Bay>) => onChange(bays.map((x, j) => (j === i ? { ...x, ...p } : x)));
   // A fresh row stays calm: the missing-lot error shows once a box in the row has been left or the row has other content.
