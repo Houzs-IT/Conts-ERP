@@ -36,14 +36,17 @@ function LimitLeft({ projectId }: { projectId: number | null }) {
 const money = (key: keyof RenoProjectRow, label: string, defaultHidden = false): Column<RenoProjectRow> => ({
   key, label, align: "right", defaultHidden,
   render: (r) => <span style={num}>{rm(Number(r[key]))}</span>, getValue: (r) => Number(r[key]),
+  exportValue: (r) => Number(r[key]) / 100, exportFormat: "money",
 });
 const percent = (key: "collectedBp" | "completionBp" | "expectedGpBp" | "gpToDateBp", label: string, defaultHidden = false): Column<RenoProjectRow> => ({
   key, label, align: "right", defaultHidden,
   render: (r) => <span style={{ ...num, color: (r[key] ?? 0) < 0 ? BAD : undefined }}>{pct(r[key])}</span>, getValue: (r) => r[key] ?? -1e9,
+  exportValue: (r) => (r[key] == null ? null : Number(r[key]) / 100), exportFormat: "number",
 });
 const gap = (which: "gapsByInvoiceDays" | "gapsByPaymentDays", i: number, label: string): Column<RenoProjectRow> => ({
   key: `${which}${i}`, label, align: "right", defaultHidden: true,
   render: (r) => <span style={num}>{days(r[which][i] ?? null)}</span>, getValue: (r) => r[which][i] ?? -1,
+  exportValue: (r) => r[which][i] ?? null, exportFormat: "number",
 });
 
 const COLUMNS: Column<RenoProjectRow>[] = [
@@ -69,6 +72,7 @@ const COLUMNS: Column<RenoProjectRow>[] = [
     key: "next", label: "Next instalment", defaultHidden: true,
     render: (r) => (r.nextInstalment ? <span>{r.nextInstalment.seq}. {r.nextInstalment.label} <span style={num}>{rm(r.nextInstalment.amountSen)}</span></span> : "—"),
     getValue: (r) => r.nextInstalment?.amountSen ?? 0,
+    exportValue: (r) => (r.nextInstalment ? `${r.nextInstalment.seq}. ${r.nextInstalment.label} ${rm(r.nextInstalment.amountSen)}` : ""),
   },
   gap("gapsByInvoiceDays", 0, "Days 1→2 (invoice)"), gap("gapsByInvoiceDays", 1, "Days 2→3 (invoice)"), gap("gapsByInvoiceDays", 2, "Days 3→4 (invoice)"),
   gap("gapsByPaymentDays", 0, "Days 1→2 (paid)"), gap("gapsByPaymentDays", 1, "Days 2→3 (paid)"), gap("gapsByPaymentDays", 2, "Days 3→4 (paid)"),
@@ -84,7 +88,8 @@ const COLUMNS: Column<RenoProjectRow>[] = [
   money("owedToSuppliersSen", "Owed to suppliers", true),
   percent("expectedGpBp", "Expected GP %", true),
   percent("gpToDateBp", "GP to date %"),
-  { key: "limit", label: "Limit left", align: "right", defaultHidden: true, render: (r) => <LimitLeft projectId={r.projectId} />, getValue: () => 0 },
+  /* Read per row on screen from the project limit route: not sorted or exported from this table. */
+  { key: "limit", label: "Limit left", align: "right", defaultHidden: true, render: (r) => <LimitLeft projectId={r.projectId} />, exportValue: () => null },
   {
     key: "alerts", label: "Alerts",
     render: (r) => {
@@ -114,7 +119,8 @@ export function RenoProjects() {
   const q = useRenoProjects(asOf);
   const rows = useMemo(() => q.data?.rows ?? [], [q.data]);
   const k = useMemo(() => kpisOf(rows), [rows]);
-  const diff = k.invoicedSen - k.earnedSen;
+  /* Earned against what the books invoiced: ▲ earned is ahead (work not yet invoiced), ▼ behind (invoiced ahead of the work). */
+  const diff = k.earnedSen - k.invoicedSen;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
@@ -132,7 +138,7 @@ export function RenoProjects() {
         <Kpi label="Revised contracts (RM)" value={q.data ? rmShort(k.revisedSen) : "—"} note={q.data ? `${rows.length} project${rows.length === 1 ? "" : "s"}` : undefined} />
         <Kpi label="Invoiced — the books (RM)" value={q.data ? rmShort(k.invoicedSen) : "—"} />
         <Kpi label="Earned by completion (RM)" value={q.data ? rmShort(k.earnedSen) : "—"}
-          note={q.data ? `${diff >= 0 ? "▲" : "▼"} RM ${rm(Math.abs(diff))} ${diff >= 0 ? "invoiced ahead of the work" : "of work not yet invoiced"}` : undefined} />
+          note={q.data ? (diff === 0 ? "Same as invoiced" : `${diff > 0 ? "▲" : "▼"} RM ${rm(Math.abs(diff))} ${diff > 0 ? "of work not yet invoiced" : "invoiced ahead of the work"}`) : undefined} />
         <Kpi label="Projects over budget" value={q.data ? String(k.overBudget) : "—"} tone={k.overBudget > 0 ? "bad" : undefined}
           note={q.data ? (k.overBudget > 0 ? "Cost spent above the expected cost" : "None") : undefined} />
       </div>

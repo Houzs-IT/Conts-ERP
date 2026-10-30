@@ -93,7 +93,7 @@ async function all(q: (from: number, to: number) => any, what: string): Promise<
   return (r.data ?? []) as Row[];
 }
 /** An `in` read split to the URL budget (paginate-all chunkIn): a long list never fails the whole report. */
-async function inChunks<V extends string | number>(values: V[], q: (batch: V[], from: number, to: number) => any, what: string): Promise<Row[]> {
+export async function inChunks<V extends string | number>(values: V[], q: (batch: V[], from: number, to: number) => any, what: string): Promise<Row[]> {
   if (values.length === 0) return [];
   const r = await chunkIn<Row, V>(values, q);
   if (r.error) fail(what, r.error);

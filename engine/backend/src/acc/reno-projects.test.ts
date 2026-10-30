@@ -19,8 +19,18 @@ function world(over: Record<string, Row[]> = {}) {
       { id: 'vo', doc_no: SO, company_id: CO, item_code: 'RN-VO', total_sen: 1_000_000, line_cost_sen: 600_000, cancelled: false, created_at: '2026-11-20T03:00:00Z' },
     ],
     projects: [{ id: 7, company_id: CO, code: 'P7', name: 'SKYLINE D-25-13', reno_stage: 'CARPENTRY', planned_handover_date: '2026-11-25', salesperson_name: 'ALEX' }],
-    journal_entries: [{ id: 'je1', company_id: CO, entry_date: '2026-11-10', posted: true }],
-    journal_entry_lines: [{ id: 'l1', company_id: CO, journal_entry_id: 'je1', account_code: '620-0010', debit_sen: 5_550_000, credit_sen: 0, project_id: 7 }],
+    journal_entries: [
+      { id: 'je1', company_id: CO, entry_date: '2026-11-10', posted: true },
+      { id: 'jc', company_id: CO, entry_date: '2026-11-03', posted: true },  // contract posted to the advance
+      { id: 'js', company_id: CO, entry_date: '2026-11-13', posted: true },  // invoices moved it to revenue
+      { id: 'jd', company_id: CO, entry_date: '2026-12-02', posted: true },  // after the date
+    ],
+    journal_entry_lines: [
+      { id: 'l1', company_id: CO, journal_entry_id: 'je1', account_code: '620-0010', debit_sen: 5_550_000, credit_sen: 0, project_id: 7 },
+      { id: 'a1', company_id: CO, journal_entry_id: 'jc', account_code: '481-S012', debit_sen: 0, credit_sen: 11_000_000, project_id: null },
+      { id: 'a2', company_id: CO, journal_entry_id: 'js', account_code: '481-S012', debit_sen: 5_000_000, credit_sen: 0, project_id: null },
+      { id: 'a3', company_id: CO, journal_entry_id: 'jd', account_code: '481-S012', debit_sen: 1_000_000, credit_sen: 0, project_id: null },
+    ],
     reno_doc_instalments: [
       { so_doc_no: SO, seq: 1, label: 'Deposit', pct_bp: 1000, trigger: 'manual' },
       { so_doc_no: SO, seq: 2, label: 'Carpentry', pct_bp: 4000, trigger: 'manual' },
@@ -44,10 +54,25 @@ function world(over: Record<string, Row[]> = {}) {
       { company_id: CO, payment_source: 'SIPAY', payment_id: 'p1', status: 'FORMAL' },
       { company_id: CO, payment_source: 'SIPAY', payment_id: 'p2', status: 'FORMAL' },
     ],
-    purchase_orders: [{ id: 'po1', company_id: CO, project_id: 7, status: 'SUBMITTED', total_sen: 3_000_000 }],
-    purchase_invoices: [{ id: 'pi1', company_id: CO, purchase_order_id: 'po1', status: 'POSTED', total_sen: 2_000_000, paid_sen: 500_000 }],
+    purchase_orders: [
+      { id: 'po1', company_id: CO, project_id: 7, status: 'SUBMITTED', total_sen: 3_000_000, po_date: '2026-11-05' },
+      { id: 'po2', company_id: CO, project_id: 7, status: 'SUBMITTED', total_sen: 9_000_000, po_date: '2026-12-05' },  // after the date
+    ],
+    purchase_invoices: [
+      { id: 'pi1', company_id: CO, purchase_order_id: 'po1', status: 'POSTED', total_sen: 2_000_000, paid_sen: 2_000_000, invoice_date: '2026-11-08' },
+      { id: 'pi2', company_id: CO, purchase_order_id: 'po1', status: 'DRAFT', total_sen: 300_000, paid_sen: 0, invoice_date: '2026-11-09' },  // a draft is not owed
+    ],
+    /* pi1: 5,000 paid on 10 Nov; the rest on 3 Dec (after the date, so still owed as at 30 Nov). */
+    pv_allocations: [
+      { company_id: CO, pv_id: 'pv1', pi_id: 'pi1', ap_invoice_id: null, amount_sen: 500_000, applied_sen: 500_000 },
+      { company_id: CO, pv_id: 'pv2', pi_id: 'pi1', ap_invoice_id: null, amount_sen: 1_500_000, applied_sen: 1_500_000 },
+    ],
+    payment_vouchers: [
+      { id: 'pv1', company_id: CO, status: 'POSTED', voucher_date: '2026-11-10' },
+      { id: 'pv2', company_id: CO, status: 'POSTED', voucher_date: '2026-12-03' },
+    ],
     ap_invoice_lines: [{ company_id: CO, invoice_id: 'ap1', project_id: 7, amount_sen: 400_000 }, { company_id: CO, invoice_id: 'ap1', project_id: 9, amount_sen: 600_000 }],
-    ap_invoices: [{ id: 'ap1', company_id: CO, status: 'POSTED', total_sen: 1_000_000, paid_sen: 0 }],
+    ap_invoices: [{ id: 'ap1', company_id: CO, status: 'POSTED', total_sen: 1_000_000, paid_sen: 0, invoice_date: '2026-11-12' }],
     reno_contract_credits: [], acc_credit_notes: [],
     ...over,
   });

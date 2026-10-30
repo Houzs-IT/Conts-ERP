@@ -44,7 +44,7 @@ describe("Renovation projects", () => {
     expect(within(screen.getByLabelText("Revised contracts (RM)")).getByText("160K")).toBeTruthy();
     expect(within(screen.getByLabelText("Invoiced — the books (RM)")).getByText("60K")).toBeTruthy();
     const earned = screen.getByLabelText("Earned by completion (RM)");
-    expect(earned.textContent).toContain("▼ RM 35,985.92 of work not yet invoiced");
+    expect(earned.textContent).toContain("▲ RM 35,985.92 of work not yet invoiced");
     expect(within(screen.getByLabelText("Projects over budget")).getByText("1")).toBeTruthy();
   });
 
