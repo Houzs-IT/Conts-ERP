@@ -101,3 +101,23 @@ describe('allocationDelta', () => {
     expect(Object.fromEntries(allocationDelta(new Map([['a', 5]]), new Map([['a', 5], ['gone', 7]])))).toEqual({ gone: -7 });
   });
 });
+
+/* Review of PR 1: largest remainder is worked out afresh at each cumulative, so a line can sit 1 sen lower at a bigger
+   total. Kept on purpose — the journal groups by account and the invoice is one line — but the deltas must still sum to
+   exactly the invoice amount. */
+describe('rounding between invoices', () => {
+  const tiny: RevenueLine[] = [
+    { key: 'a', group: 'WORKS', subCategory: null, amountSen: 1 },
+    { key: 'b', group: 'WORKS', subCategory: null, amountSen: 3 },
+    { key: 'c', group: 'LIGHTING', subCategory: null, amountSen: 3 },
+  ];
+  test('a positive invoice may carry a −1 sen line, and its deltas still sum to the invoice', () => {
+    const at3 = waterfallTarget(tiny, 3);
+    const at4 = waterfallTarget(tiny, 4);
+    expect(Object.fromEntries(at3)).toEqual({ a: 1, b: 1, c: 1 });
+    expect(Object.fromEntries(at4)).toEqual({ a: 0, b: 2, c: 2 });
+    const d = allocationDelta(at4, at3);
+    expect(Object.fromEntries(d)).toEqual({ a: -1, b: 1, c: 1 });
+    expect(sum(d)).toBe(1);
+  });
+});

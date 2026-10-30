@@ -80,7 +80,10 @@ export function waterfallTarget(lines: RevenueLine[], cumulativeSen: number): Ma
   return out;
 }
 
-/** What to post to move from `already` to `target`: per key, target − already, non-zero differences only. */
+/** What to post to move from `already` to `target`: per key, target − already, non-zero differences only.
+    Largest remainder is worked out afresh at each cumulative, so a line can sit 1 sen lower at a bigger total (lines
+    of 1, 3, 3 sen: [1, 1, 1] at 3, [0, 2, 2] at 4) — a positive invoice may then carry a −1 sen line. Kept on purpose:
+    the journal groups by account, the invoice is one line, and the deltas still sum to exactly the invoice amount. */
 export function allocationDelta(target: Map<string, number>, already: Map<string, number>): Map<string, number> {
   const out = new Map<string, number>();
   for (const key of new Set([...target.keys(), ...already.keys()])) {

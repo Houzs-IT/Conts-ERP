@@ -230,6 +230,24 @@ describe('sub-category accounts', () => {
     expect(subBindMutate.mock.calls[0][0]).toEqual({ code: 'PILLOW', companyId: 2, salesAccount: null, purchaseAccount: '602-0000' });
   });
 
+  test('a refused save keeps the picks; a saved one drops the draft', () => {
+    openBedlines();
+    const purchase = screen.getByLabelText('PILLOW Purchase account') as HTMLInputElement;
+    fireEvent.focus(purchase);
+    fireEvent.change(purchase, { target: { value: '602-0000' } });
+    fireEvent.mouseDown(screen.getAllByText(/^602-0000 — /)[0]);
+    fireEvent.blur(purchase);
+    const row = screen.getByText('Pillow').closest('tr') as HTMLElement;
+    const save = () => fireEvent.click(Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Save')!);
+    /* The server refuses: mutate never calls onSuccess. */
+    save();
+    expect((screen.getByLabelText('PILLOW Purchase account') as HTMLInputElement).value).toContain('602-0000');
+    /* Accepted: onSuccess runs, the draft goes and the row shows what the server holds (still nothing here). */
+    subBindMutate.mockImplementationOnce((_body: unknown, opts?: { onSuccess?: () => void }) => { opts?.onSuccess?.(); });
+    save();
+    expect((screen.getByLabelText('PILLOW Purchase account') as HTMLInputElement).value).toBe('');
+  });
+
   test("'Use group' clears both sides of a bound sub-category", () => {
     openBedlines();
     const row = screen.getByText('Bed sheet').closest('tr') as HTMLElement;
@@ -248,5 +266,13 @@ describe('sub-category accounts', () => {
     ];
     expect(accountsForSubCategory('sales_account', chart).map((a) => a.account_code)).toEqual(['500-0001']);
     expect(accountsForSubCategory('purchase_account', chart).map((a) => a.account_code)).toEqual(['601-0000']);
+  });
+
+  test('the picker never offers a control account (the server refuses one too)', () => {
+    const chart = [
+      { account_code: '500-0001', account_name: 'SALES - X', account_type: 'INCOME', is_active: true },
+      { account_code: '505-0000', account_name: 'CONTROL-LIKE INCOME', account_type: 'INCOME', is_active: true },
+    ];
+    expect(accountsForSubCategory('sales_account', chart, new Set(['505-0000'])).map((a) => a.account_code)).toEqual(['500-0001']);
   });
 });

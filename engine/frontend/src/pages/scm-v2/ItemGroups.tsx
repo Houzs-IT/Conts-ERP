@@ -53,11 +53,13 @@ export function accountsForBinding<A extends { account_code: string; account_typ
 /** Which accounts a sub-category's own binding may pick (renovation revenue, spec 2.4): its ledger side, active, and
     never a parent account — posting refuses one, so it is never offered. */
 export function accountsForSubCategory<A extends { account_code: string; account_type: string; is_active?: boolean | null; parent_code?: string | null }>(
-  column: 'sales_account' | 'purchase_account', accounts: readonly A[],
+  column: 'sales_account' | 'purchase_account', accounts: readonly A[], controls: ReadonlySet<string> = new Set(),
 ): A[] {
   const side = column === 'sales_account' ? 'INCOME' : 'EXPENSE';
   const parents = new Set(accounts.map((a) => a.parent_code).filter(Boolean));
-  return accounts.filter((a) => a.is_active !== false && a.account_type === side && !parents.has(a.account_code));
+  /* The server's rules (verifyAccounts): active, not a header, not a control account. */
+  return accounts.filter((a) => a.is_active !== false && a.account_type === side
+    && !parents.has(a.account_code) && !controls.has(a.account_code));
 }
 const COLUMN_OF: Record<keyof ItemGroupBinding, BindingColumn> = {
   purchase: 'purchase_account', sales: 'sales_account', salesReturn: 'sales_return_account', purchaseReturn: 'purchase_return_account',
@@ -162,8 +164,8 @@ export const ItemGroupsTab = () => {
     const build = (group: string, column: BindingColumn): ComboOption[] => toOptions(accountsForBinding(group, column, all, controls));
     return {
       /* A sub-category's own sales / purchase account: its side only, never a parent. */
-      SUB_SALES: toOptions(accountsForSubCategory('sales_account', all)),
-      SUB_PURCHASE: toOptions(accountsForSubCategory('purchase_account', all)),
+      SUB_SALES: toOptions(accountsForSubCategory('sales_account', all, controls)),
+      SUB_PURCHASE: toOptions(accountsForSubCategory('purchase_account', all, controls)),
       EXPENSE: build('', 'purchase_account'), INCOME: build('', 'sales_account'),
       /* RENOVATION's sales side: income and liability accounts (the advance). */
       RENOVATION_SALES: build('RENOVATION', 'sales_account'),
@@ -300,7 +302,7 @@ export const ItemGroupsTab = () => {
                         salesOptions={optionsByWants.SUB_SALES}
                         purchaseOptions={optionsByWants.SUB_PURCHASE}
                         pending={bindSub.isPending}
-                        onSave={(code, b) => bindSub.mutate({ code, companyId: activeCo, ...b })}
+                        onSave={(code, b, saved) => bindSub.mutate({ code, companyId: activeCo, ...b }, { onSuccess: saved })}
                       />
                     </td>
                   </tr>
@@ -397,7 +399,8 @@ const SubCategoryTable = ({
   salesOptions: ComboOption[];
   purchaseOptions: ComboOption[];
   pending: boolean;
-  onSave: (code: string, binding: SubCategoryBinding) => void;
+  /** `saved` runs once the server accepts — only then is the draft dropped, so a refused save keeps the picks. */
+  onSave: (code: string, binding: SubCategoryBinding, saved: () => void) => void;
 }) => {
   type Draft = { sales: string; purchase: string };
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -443,12 +446,12 @@ const SubCategoryTable = ({
               </td>
               <td style={{ padding: '4px 8px', whiteSpace: 'nowrap' }}>
                 <button type="button" style={btnStyle(true, !dirty || pending)} disabled={!dirty || pending}
-                  onClick={() => { onSave(s.code, { salesAccount: orNull(draft.sales), purchaseAccount: orNull(draft.purchase) }); forget(s.code); }}>
+                  onClick={() => onSave(s.code, { salesAccount: orNull(draft.sales), purchaseAccount: orNull(draft.purchase) }, () => forget(s.code))}>
                   Save
                 </button>{' '}
                 <button type="button" style={btnStyle(false, !hasOwn || pending)} disabled={!hasOwn || pending}
                   title="Clear both sides — the group's accounts apply"
-                  onClick={() => { onSave(s.code, { salesAccount: null, purchaseAccount: null }); forget(s.code); }}>
+                  onClick={() => onSave(s.code, { salesAccount: null, purchaseAccount: null }, () => forget(s.code))}>
                   Use group
                 </button>
               </td>

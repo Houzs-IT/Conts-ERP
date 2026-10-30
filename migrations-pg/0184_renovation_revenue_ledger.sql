@@ -29,3 +29,5 @@ alter table scm.acc_sub_category_accounts enable row level security;
 revoke all on scm.acc_sub_category_accounts from anon, authenticated;
 -- The engine reaches it through the Supabase REST client (service_role).
 grant all on scm.acc_sub_category_accounts to service_role, pos_app;
+
+notify pgrst, 'reload schema';
