@@ -17,7 +17,7 @@ import { useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
 import { STAGE_LABEL, RENO_STAGES, type StageKey } from '../../vendor/shared/renovation-stages';
 import { qtyLabel } from '../../vendor/shared/renovation-money';
 import {
-  contractPostingWarning, refusalOf, renoSend, useBrands, useContract, useContractPosting, usePoFlags, usePoSplit, useRenoMutation,
+  CONTRACT_NEXT_STATUS, contractPostingWarning, refusalOf, renoSend, useBrands, useContract, useContractPosting, usePoFlags, usePoSplit, useRenoMutation,
   type BillingInstalment, type ContractPosting, type ContractView, type DocLine,
 } from '../../lib/renovation/api';
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
@@ -26,12 +26,6 @@ import { ContractProjectCard } from './ContractProjectCard';
 import { DocAttachments, LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 import { Card, ErrorBanner, Field, fmtDate, inputCls, MoneyInput, pctLabel, rm, Stat, StatusPill, todayIso } from './shared';
 import { cn } from '../../lib/utils';
-
-const NEXT_STATUS: Record<string, Array<{ to: string; label: string; danger?: boolean }>> = {
-  RENO_CONFIRMED: [{ to: 'RENO_IN_PROGRESS', label: 'Works started' }, { to: 'CANCELLED', label: 'Cancel contract', danger: true }],
-  RENO_IN_PROGRESS: [{ to: 'RENO_COMPLETED', label: 'Works completed' }],
-  RENO_COMPLETED: [{ to: 'CLOSED', label: 'Close contract' }],
-};
 
 function lineQty(l: DocLine): string {
   const m = l.measureMilli ?? null;
@@ -363,7 +357,7 @@ export function RenovationSalesOrder() {
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status={k.status} />
             <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Print</Button>
-            {can('scm.renovation.quote') && (NEXT_STATUS[k.status] ?? []).map((n) => (
+            {can('scm.renovation.quote') && (CONTRACT_NEXT_STATUS[k.status] ?? []).map((n) => (
               <Button key={n.to} variant={n.danger ? 'danger' : 'secondary'} onClick={() => setStatus(n.to, n.label, n.danger)}>{n.label}</Button>
             ))}
           </div>
@@ -398,7 +392,7 @@ export function RenovationSalesOrder() {
                   <td className="px-3 py-2"><div className="font-semibold">{i.label || `Instalment ${i.seq}`}</div><div className="max-w-[340px] text-[11.5px] text-ink-muted">{i.description}</div></td>
                   <td className="py-2 text-right tabular-nums">{pctLabel(i.pctBp)}<div className="text-[11px] text-ink-muted">cum. {pctLabel(i.cumBp)}</div></td>
                   <td className="py-2 pl-2 text-ink-secondary">{i.stageCode ? STAGE_LABEL[i.stageCode as StageKey] : '—'}</td>
-                  <td className={cn('py-2 text-right font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{rm(i.amountSen)}{!i.bill && !i.isNext ? <div className="text-[10.5px] font-normal">projected</div> : null}</td>
+                  <td className={cn('py-2 text-right font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{i.billedBeforeGoLive ? <span className="text-[11px]">Billed before go-live</span> : <>{rm(i.amountSen)}{!i.bill && !i.isNext ? <div className="text-[10.5px] font-normal">projected</div> : null}</>}</td>
                   <td className="py-2 pl-4">
                     {i.bill?.invoiceNumber && <Link className="font-semibold text-primary" to={`/scm/sales-invoices/${i.bill.salesInvoiceId}`}>{i.bill.invoiceNumber}</Link>}
                     {i.bill?.noteNumber && <Link className="font-semibold text-primary" to="/scm/credit-notes">{i.bill.noteNumber}</Link>}
@@ -417,9 +411,9 @@ export function RenovationSalesOrder() {
             <li key={i.id} className={cn('px-3 py-2.5 text-[12.5px]', i.isNext && 'bg-primary-soft/40')}>
               <div className="flex items-start justify-between gap-2">
                 <span className="font-semibold">{i.label || `Instalment ${i.seq}`} · {pctLabel(i.pctBp)}</span>
-                <span className={cn('font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{rm(i.amountSen)}</span>
+                <span className={cn('font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{i.billedBeforeGoLive ? 'Billed before go-live' : rm(i.amountSen)}</span>
               </div>
-              <div className="text-[11.5px] text-ink-muted">{i.stageCode ? STAGE_LABEL[i.stageCode as StageKey] : 'No stage'} · cum. {pctLabel(i.cumBp)}{!i.bill && !i.isNext ? ' · projected' : ''}</div>
+              <div className="text-[11.5px] text-ink-muted">{i.stageCode ? STAGE_LABEL[i.stageCode as StageKey] : 'No stage'} · cum. {pctLabel(i.cumBp)}{!i.bill && !i.isNext && !i.billedBeforeGoLive ? ' · projected' : ''}</div>
               {i.bill && <div className="mt-0.5 text-[12px]">{i.bill.invoiceNumber ?? i.bill.noteNumber ?? 'Closed, nothing to bill'} · {fmtDate(i.bill.invoiceDate)}{i.bill.kind === 'INVOICE' ? ` · received ${rm(i.bill.paidSen)}` : ''}</div>}
               {i.isNext && live && can('scm.renovation.bill') && <Button className="mt-2 h-8 w-full" onClick={() => setBilling(i)}>Bill this instalment</Button>}
             </li>

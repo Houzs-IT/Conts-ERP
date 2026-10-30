@@ -8,6 +8,8 @@
 // because it always posts the whole difference.
 //
 // Contracts signed before the ledger start post nothing: the opening balances carry their receivable and advance.
+// Once finance seeds one at go-live (acc/reno-opening, plan Task 8), the contract amount it was seeded at is its
+// baseline (reno_so_contracts.golive_contract_sen): a VO after go-live posts the difference from it, as RVO.
 
 //
 // Invoices and credit notes (plan Tasks 5–6): each one moves revenue by the waterfall. What every event allocated to
@@ -94,6 +96,8 @@ async function customerOf(sb: Sb, companyId: number, debtorCode: string): Promis
 }
 
 type Ctx = {
+  /** Signed before the ledger start and seeded at go-live: its baseline counts as posted; it never posts RCON. */
+  golive: boolean; ledgerStart: string | null;
   advance: string; control: string; debtorCode: string; partyName: string | null; soDate: string; status: string;
   contractSen: number; postedSen: number; jes: JeRow[]; active: JeRow[];
 };
@@ -112,13 +116,16 @@ async function loadContractCtx(sb: Sb, companyId: number, soDocNo: string): Prom
   const ls = await loadLedgerSettings(sb, companyId);
   if (!ls.ok) return { ok: false, status: 'ledger_settings_failed', reason: 'The ledger settings could not be read.' };
   const signed = String(so.so_date ?? '').slice(0, 10);
-  if (isBeforeLedgerStart(signed, ls.settings)) {
-    return { ok: true, beforeStart: true, status: String(so.status ?? ''), reason: `Contract ${soDocNo} was signed before the ledger start (${ls.settings.ledgerStartDate}); the opening balances carry it.` };
-  }
-
-  const { data: contract, error: cErr } = await sb.from('reno_so_contracts').select('advance_account_code')
+  const { data: contract, error: cErr } = await sb.from('reno_so_contracts').select('advance_account_code, golive_contract_sen')
     .eq('so_doc_no', soDocNo).maybeSingle();
   if (cErr) return { ok: false, status: 'load_failed', reason: cErr.message };
+  /* Signed before the ledger start: posts nothing until finance seeds it at go-live (acc/reno-opening); then the
+     contract amount it was seeded at counts as posted, and a later VO posts its difference (RVO, never RCON). */
+  const golive = isBeforeLedgerStart(signed, ls.settings);
+  const baseline = contract?.golive_contract_sen == null ? null : Number(contract.golive_contract_sen);
+  if (golive && baseline == null) {
+    return { ok: true, beforeStart: true, status: String(so.status ?? ''), reason: `Contract ${soDocNo} was signed before the ledger start (${ls.settings.ledgerStartDate}); the opening balances carry it.` };
+  }
   const advance = String(contract?.advance_account_code ?? '').trim();
   if (!advance) return { ok: false, status: 'no_advance_account', reason: `Contract ${soDocNo} has no advance account. Set it, then post again.` };
 
@@ -137,15 +144,15 @@ async function loadContractCtx(sb: Sb, companyId: number, soDocNo: string): Prom
   const jes = await contractJournals(sb, companyId, soDocNo);
   if (!jes.ok) return { ok: false, status: 'load_failed', reason: jes.error };
   const active = jes.rows.filter((r) => !r.reversed);
-  let postedSen = 0;
+  let postedSen = golive ? (baseline ?? 0) : 0;
   if (active.length > 0) {
     const { data: lines, error: lErr } = await sb.from('journal_entry_lines').select('journal_entry_id, account_code, debit_sen, credit_sen')
       .in('journal_entry_id', active.map((r) => r.id)).eq('account_code', advance);
     if (lErr) return { ok: false, status: 'load_failed', reason: lErr.message };
-    postedSen = ((lines ?? []) as Array<{ debit_sen: number | null; credit_sen: number | null }>)
+    postedSen += ((lines ?? []) as Array<{ debit_sen: number | null; credit_sen: number | null }>)
       .reduce((s, l) => s + Number(l.credit_sen ?? 0) - Number(l.debit_sen ?? 0), 0);
   }
-  return { ok: true, beforeStart: false, advance, control, debtorCode, partyName, soDate: signed, status: String(so.status ?? ''), contractSen, postedSen, jes: jes.rows, active };
+  return { ok: true, beforeStart: false, golive, ledgerStart: ls.settings.ledgerStartDate ?? null, advance, control, debtorCode, partyName, soDate: signed, status: String(so.status ?? ''), contractSen, postedSen, jes: jes.rows, active };
 }
 
 export type ContractPostingState =
@@ -184,7 +191,7 @@ export async function postContractChange(sb: Sb, p: { companyId: number; soDocNo
     const delta = ctx.contractSen - ctx.postedSen;
     if (delta === 0) return { ok: true, status: attempt === 0 ? 'nothing' : 'already_posted', deltaSen: 0 };
 
-    const first = !ctx.active.some((r) => r.source_type === CONTRACT_SIGNED);
+    const first = !ctx.golive && !ctx.active.some((r) => r.source_type === CONTRACT_SIGNED);
     let sourceType = CONTRACT_SIGNED;
     let sourceDocNo = soDocNo;
     if (!first) {
@@ -199,9 +206,13 @@ export async function postContractChange(sb: Sb, p: { companyId: number; soDocNo
     const lines = delta > 0
       ? [{ ...customer, debitSen: amount, creditSen: 0 }, { accountCode: ctx.advance, debitSen: 0, creditSen: amount }]
       : [{ accountCode: ctx.advance, debitSen: amount, creditSen: 0 }, { ...customer, debitSen: 0, creditSen: amount }];
+    let entryDate = p.date ?? (first ? ctx.soDate : todayMyt());
+    /* A seeded old contract's VO dated before go-live but applied after the seeding: the baseline does not carry
+       it, so it posts on the ledger start. */
+    if (ctx.golive && ctx.ledgerStart && entryDate < ctx.ledgerStart) entryDate = ctx.ledgerStart;
     const r = await postJournal(sb, {
       companyId,
-      entryDate: p.date ?? (first ? ctx.soDate : todayMyt()),
+      entryDate,
       sourceType,
       sourceDocNo,
       narration: first

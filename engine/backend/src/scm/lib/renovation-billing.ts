@@ -35,6 +35,8 @@ export interface BillRow {
 export interface BillingInstalment {
   id: string; seq: number; label: string; pctBp: number; cumBp: number; description: string; stageCode: string | null;
   trigger: string; bill: BillRow | null; isNext: boolean;
+  /** Covered by what AutoCount invoiced before go-live: shown as billed before go-live, never billed here. */
+  billedBeforeGoLive: boolean;
   /** Amount if billed now (next instalment) or projected from today's contract sum (later ones). */
   amountSen: number;
 }
@@ -46,8 +48,8 @@ export interface ContractCredit {
 
 export interface BillingView {
   soDocNo: string; status: string; originalContractSen: number; revisedContractSen: number; voTotalSen: number;
-  /** Net of contract credits. */
-  billedSen: number; creditedSen: number; credits: ContractCredit[];
+  /** Net of contract credits, what AutoCount invoiced before go-live included. */
+  billedSen: number; billedBeforeGoLiveSen: number; creditedSen: number; credits: ContractCredit[];
   receivedSen: number; nextSeq: number | null; instalments: BillingInstalment[];
 }
 
@@ -65,8 +67,8 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
   const docs = [...new Set(soDocNos)];
   if (docs.length === 0) return out;
   const docsJson = JSON.stringify(docs);
-  const sos = await db.q<{ doc_no: string; status: string; original_contract_sen: number | null; revised_sen: number }>(
-    `select o.doc_no, o.status::text as status, c.original_contract_sen,
+  const sos = await db.q<{ doc_no: string; status: string; original_contract_sen: number | null; revised_sen: number; billed_before_golive_sen: number | string | null }>(
+    `select o.doc_no, o.status::text as status, c.original_contract_sen, c.billed_before_golive_sen,
             (select coalesce(sum(i.total_sen), 0)::int from scm.mfg_sales_order_items i where i.doc_no = o.doc_no and not i.cancelled) as revised_sen
        from scm.mfg_sales_orders o
        left join scm.reno_so_contracts c on c.so_doc_no = o.doc_no
@@ -108,12 +110,13 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
       creditNoteId: r.credit_note_id, noteNumber: r.note_number, amountSen: Number(r.amount_sen), noteDate: r.note_date, reason: r.reason, noteStatus: r.cn_status,
     }));
     const creditedSen = credits.reduce((s, c) => s + c.amountSen, 0);
-    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits));
+    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits, Number(so.billed_before_golive_sen ?? 0)));
   }
   return out;
 }
 
-/** Exported for tests. `creditedSen` (contract credit notes) comes off what is billed. */
+/** Exported for tests. `creditedSen` (contract credit notes) comes off what is billed; `billedBeforeGoLiveSen` (what
+    AutoCount invoiced before the ledger start) counts as billed, and the instalments it covers are skipped. */
 export function assembleView(
   soDocNo: string,
   status: string,
@@ -126,6 +129,7 @@ export function assembleView(
   }>,
   creditedSen = 0,
   credits: ContractCredit[] = [],
+  billedBeforeGoLiveSen = 0,
 ): BillingView {
   const billByInst = new Map(bills.map((b) => [b.instalment_id, b]));
   const billedMap = new Map<number, number>();
@@ -133,8 +137,9 @@ export function assembleView(
     const b = billByInst.get(i.id);
     if (b) billedMap.set(i.seq, Number(b.amount_sen));
   }
-  const preview = instalmentPreview(instalments.map((i) => ({ seq: i.seq, pctBp: i.pctBp })), revised, billedMap, creditedSen);
-  const nextSeq = instalments.find((i) => !billByInst.has(i.id))?.seq ?? null;
+  const preview = instalmentPreview(instalments.map((i) => ({ seq: i.seq, pctBp: i.pctBp })), revised, billedMap, creditedSen, billedBeforeGoLiveSen);
+  const covered = new Set(preview.filter((p) => p.beforeGoLive).map((p) => p.seq));
+  const nextSeq = [...instalments].sort((a, b) => a.seq - b.seq).find((i) => !billByInst.has(i.id) && !covered.has(i.seq))?.seq ?? null;
   let cum = 0;
   const rows: BillingInstalment[] = instalments.map((i) => {
     cum += i.pctBp;
@@ -142,6 +147,7 @@ export function assembleView(
     return {
       id: i.id, seq: i.seq, label: i.label, pctBp: i.pctBp, cumBp: cum, description: i.description, stageCode: i.stageCode, trigger: i.trigger,
       isNext: i.seq === nextSeq,
+      billedBeforeGoLive: !b && covered.has(i.seq),
       amountSen: preview.find((p) => p.seq === i.seq)?.amountSen ?? 0,
       bill: b ? {
         instalmentId: i.id, seq: Number(b.seq), kind: b.kind, amountSen: Number(b.amount_sen), invoiceDate: b.invoice_date,
@@ -150,12 +156,12 @@ export function assembleView(
       } : null,
     };
   });
-  const billedSen = bills.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen;
+  const billedSen = bills.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen + billedBeforeGoLiveSen;
   const receivedSen = bills.reduce((s, b) => s + (b.kind === 'INVOICE' ? Number(b.paid_sen ?? 0) : 0), 0);
   const original = originalContractSen === null ? revised : Number(originalContractSen);
   return {
     soDocNo, status, originalContractSen: original, revisedContractSen: revised, voTotalSen: revised - original,
-    billedSen, creditedSen, credits, receivedSen, nextSeq, instalments: rows,
+    billedSen, billedBeforeGoLiveSen, creditedSen, credits, receivedSen, nextSeq, instalments: rows,
   };
 }
 

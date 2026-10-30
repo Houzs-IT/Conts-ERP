@@ -65,6 +65,7 @@ import {
 } from './accounting-chart';
 import { itemGroupsList, itemGroupCreate, itemGroupBind, itemGroupPatch, subCategoryBind } from './accounting-item-groups';
 import { piPeriodicBackfill } from './accounting-pi-backfill';
+import { renoOpeningApply, renoOpeningPreview } from './accounting-reno-opening';
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
 import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
@@ -549,6 +550,9 @@ export const openingCheckHandler = async (c: AccCtx): Promise<Response> => {
   return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
 };
 accounting.get('/opening/check', openingCheckHandler);
+/* Renovation contracts signed before the ledger start, seeded at go-live (accounting-reno-opening.ts; posts nothing). */
+accounting.post('/renovation-opening/preview', renoOpeningPreview);
+accounting.post('/renovation-opening/apply', renoOpeningApply);
 
 /* ════════════════════════════════════════════════════════════════════════
    Journal Entries
@@ -946,13 +950,13 @@ export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<
      shares. */
   const { data: itemsRaw, error: itemsErr } = await sb
     .from('purchase_invoice_items')
-    .select('item_group, line_total_sen')
+    .select('item_code, item_group, line_total_sen')
     .eq('purchase_invoice_id', pi.id);
   if (itemsErr) return { ok: false, status: 'post_failed', reason: `PI lines: ${itemsErr.message}` };
   const split = await splitByItemGroup(sb, {
     companyId,
     docNo: pi.invoice_number,
-    items: (itemsRaw ?? []) as Array<{ item_group: string | null; line_total_sen: number | null }>,
+    items: (itemsRaw ?? []) as Array<{ item_code: string | null; item_group: string | null; line_total_sen: number | null }>,
     account: 'purchase_account',
     myrSen: (sen) => toMyrSen(sen, pi.exchange_rate),
     totalSen,

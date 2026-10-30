@@ -51,6 +51,7 @@ vi.mock("./opening", async (importOriginal) => ({
 }));
 vi.mock("../vendor/scm/components/ConfirmDialog", () => ({ useConfirm: () => confirmFn }));
 vi.mock("./EverydayExpense", () => ({ EverydayExpense: () => null }));
+vi.mock("./RenovationOpening", () => ({ RenovationOpening: () => null }));
 
 import { LedgerSetup } from "./LedgerSetup";
 

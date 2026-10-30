@@ -25,6 +25,7 @@ import { reverseJournal } from './engine';
 import { resolveRoles } from './rules';
 import { paymentReconciliation } from './payment-reconciled';
 import { creditConfirmedPaymentOfCancelledSo } from '../scm/lib/customer-credits';
+import { instalmentPreview } from '../scm/shared/renovation-money';
 
 /* The untyped client the poster takes, borrowed rather than spelled out again
    (a new file's lint ceiling is zero — payout-charge.ts's reason). */
@@ -188,4 +189,115 @@ export async function confirmReceiptsForSettlement(
     }
   }
   return outcomes;
+}
+
+/* ── Payment before its invoice (renovation; spec 7.6, plan 2026-10-30-renovation-revenue-ledger.md Task 9) ──────── */
+
+export type BillNextOffer = {
+  soDocNo: string; instalmentId: string; seq: number; label: string;
+  /** What the bill route expects (`expectedAmountSen`), worked out as billInstalment does. */
+  amountSen: number;
+  receivedSen: number; billedSen: number;
+};
+
+const RENO_LIVE = ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'];
+
+/** The SO a payment belongs to: an order payment's own, an invoice payment's invoice's. */
+export async function soOfPayment(sb: Db, source: 'SOPAY' | 'SIPAY', paymentId: string, companyId: number): Promise<string | null> {
+  if (source === 'SOPAY') {
+    const { data } = await sb.from('mfg_sales_order_payments').select('so_doc_no').eq('id', paymentId).eq('company_id', companyId).maybeSingle();
+    return (data as { so_doc_no?: string | null } | null)?.so_doc_no ?? null;
+  }
+  const { data: pay } = await sb.from('sales_invoice_payments').select('sales_invoice_id').eq('id', paymentId).eq('company_id', companyId).maybeSingle();
+  const siId = (pay as { sales_invoice_id?: string | null } | null)?.sales_invoice_id;
+  if (!siId) return null;
+  const { data: si } = await sb.from('sales_invoices').select('so_doc_no').eq('id', siId).eq('company_id', companyId).maybeSingle();
+  return (si as { so_doc_no?: string | null } | null)?.so_doc_no ?? null;
+}
+
+/** After a confirm on a live renovation contract: when the money finance has confirmed on it exceeds what it has
+    invoiced net (issued invoices + what AutoCount invoiced before go-live - contract credits - negative instalments,
+    the rule of renovation-billing netBilledSql), the next unbilled instalment, when billing it would raise an
+    invoice. Null otherwise, and on any read that does not answer: the offer is a convenience, and the bill route
+    checks everything again. */
+export async function nextInstalmentOffer(sb: Db, companyId: number, soDocNo: string): Promise<BillNextOffer | null> {
+  try {
+    const { data: so } = await sb.from('mfg_sales_orders').select('so_kind, status').eq('company_id', companyId).eq('doc_no', soDocNo).maybeSingle();
+    const head = so as { so_kind?: string; status?: string } | null;
+    if (!head || head.so_kind !== 'RENOVATION' || !RENO_LIVE.includes(String(head.status))) return null;
+
+    const [items, insts, bills, sis, contract, credits, soPays] = await Promise.all([
+      sb.from('mfg_sales_order_items').select('total_sen, cancelled').eq('company_id', companyId).eq('doc_no', soDocNo),
+      sb.from('reno_doc_instalments').select('id, seq, label, pct_bp').eq('so_doc_no', soDocNo),
+      sb.from('reno_instalment_bills').select('instalment_id, kind, amount_sen, credit_note_id').eq('so_doc_no', soDocNo),
+      sb.from('sales_invoices').select('id, status, total_sen').eq('company_id', companyId).eq('so_doc_no', soDocNo),
+      sb.from('reno_so_contracts').select('billed_before_golive_sen').eq('so_doc_no', soDocNo).maybeSingle(),
+      sb.from('reno_contract_credits').select('credit_note_id, amount_sen').eq('so_doc_no', soDocNo),
+      sb.from('mfg_sales_order_payments').select('id').eq('company_id', companyId).eq('so_doc_no', soDocNo),
+    ]);
+    for (const r of [items, insts, bills, sis, contract, credits, soPays]) if (r.error) return null;
+    type Bill = { instalment_id: string; kind: string; amount_sen: number; credit_note_id: string | null };
+    type Si = { id: string; status: string; total_sen: number };
+    const billRows = (bills.data ?? []) as Bill[];
+    const creditRows = (credits.data ?? []) as Array<{ credit_note_id: string | null; amount_sen: number }>;
+
+    /* Cancelled credit notes lower nothing. */
+    const noteIds = [...new Set([...creditRows.map((c) => c.credit_note_id), ...billRows.map((b) => b.credit_note_id)].filter((x): x is string => !!x))];
+    const cancelledNotes = new Set<string>();
+    if (noteIds.length > 0) {
+      const { data: notes, error } = await sb.from('acc_credit_notes').select('id, status').in('id', noteIds);
+      if (error) return null;
+      for (const n of (notes ?? []) as Array<{ id: string; status: string }>) if (n.status === 'CANCELLED') cancelledNotes.add(n.id);
+    }
+    const live = (id: string | null) => !id || !cancelledNotes.has(id);
+    const creditedSen = creditRows.filter((c) => live(c.credit_note_id)).reduce((s, c) => s + Number(c.amount_sen), 0);
+
+    const siRows = (sis.data ?? []) as Si[];
+    const billedBeforeSen = Number((contract.data as { billed_before_golive_sen?: number | string | null } | null)?.billed_before_golive_sen ?? 0);
+    const issued = siRows.filter((s) => !['DRAFT', 'CANCELLED'].includes(String(s.status).toUpperCase()));
+    const netBilledSen = issued.reduce((s, x) => s + Number(x.total_sen), 0)
+      + billedBeforeSen
+      - creditedSen
+      - billRows.filter((b) => b.kind === 'CREDIT_NOTE' && live(b.credit_note_id)).reduce((s, b) => s - Number(b.amount_sen), 0);
+
+    /* Confirmed money: the FORMAL receipts of the order's payments and of its invoices' payments. */
+    const soPayIds = ((soPays.data ?? []) as Array<{ id: string }>).map((p) => String(p.id));
+    let siPayIds: string[] = [];
+    if (siRows.length > 0) {
+      const { data: sp, error } = await sb.from('sales_invoice_payments').select('id').eq('company_id', companyId).in('sales_invoice_id', siRows.map((s) => s.id));
+      if (error) return null;
+      siPayIds = ((sp ?? []) as Array<{ id: string }>).map((p) => String(p.id));
+    }
+    let receivedSen = 0;
+    for (const [source, ids] of [['SOPAY', soPayIds], ['SIPAY', siPayIds]] as const) {
+      if (ids.length === 0) continue;
+      const { data: recs, error } = await sb.from('acc_official_receipts').select('amount_sen')
+        .eq('company_id', companyId).eq('payment_source', source).eq('status', 'FORMAL').in('payment_id', ids);
+      if (error) return null;
+      receivedSen += ((recs ?? []) as Array<{ amount_sen: number }>).reduce((s, r) => s + Number(r.amount_sen), 0);
+    }
+    if (receivedSen <= netBilledSen) return null;
+
+    /* The next instalment at billInstalment's amount: the schedule as billingView reads it. */
+    const schedule = ((insts.data ?? []) as Array<{ id: string; seq: number; label: string | null; pct_bp: number }>)
+      .map((i) => ({ ...i, seq: Number(i.seq), pct_bp: Number(i.pct_bp) })).sort((a, b) => a.seq - b.seq);
+    const billedBySeq = new Map<number, number>();
+    for (const b of billRows) {
+      const i = schedule.find((x) => x.id === b.instalment_id);
+      if (i) billedBySeq.set(i.seq, Number(b.amount_sen));
+    }
+    const revisedSen = ((items.data ?? []) as Array<{ total_sen: number | null; cancelled: boolean | null }>)
+      .filter((r) => r.cancelled !== true).reduce((s, r) => s + Number(r.total_sen ?? 0), 0);
+    /* What AutoCount invoiced before go-live counts as billed, and the instalments it covers are skipped. */
+    const preview = instalmentPreview(schedule.map((i) => ({ seq: i.seq, pctBp: i.pct_bp })), revisedSen, billedBySeq, creditedSen, billedBeforeSen);
+    const nextSeq = preview.find((x) => !x.billed && !x.beforeGoLive)?.seq;
+    const next = schedule.find((i) => i.seq === nextSeq);
+    if (!next) return null;
+    const amountSen = preview.find((x) => x.seq === next.seq)?.amountSen ?? 0;
+    if (amountSen <= 0) return null;
+    return { soDocNo, instalmentId: next.id, seq: next.seq, label: next.label || `Instalment ${next.seq}`, amountSen, receivedSen, billedSen: netBilledSen };
+  } catch (e) {
+    log('next instalment offer not worked out:', soDocNo, e);
+    return null;
+  }
 }
