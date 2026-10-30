@@ -5,6 +5,7 @@ import { todayMyt } from '../../../_lib/ops';
 import { statementSettings, type Query } from '../../../_lib/ownerStatement';
 import { invalidDraft, draftColumns, rentToRentColumns, modelOf, MODEL_LABEL, type ContractDraft } from '../../../_lib/revenueModel';
 import { contractView, unitExample, lastMonth } from '../../../_lib/unitContract';
+import { heldContract } from '../../../_lib/datedRows';
 import { purposeReady, codesFor, codeOf, isContractCode, CODE_MODEL, CODE_LABEL, type Purpose, type ContractCode } from '../../../_lib/unitPurpose';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -38,12 +39,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   ]);
   const current = rows.find(r => r.id === u.contract_id) ?? null;
   const view = contractView(current, u, settings.defaultFeePct, Number(shared?.n ?? 0));
+  // A new contract set to start later: the unit is already on its record, so say which one applies until then.
+  const before = heldContract(current, rows, todayMyt());
   return json({
     generatedAt: nowIso(), month,
     unit: { id, label: `${u.property_name} ${u.unit_number}`, ownerId: u.owner_id, ownerName: u.owner_name, purpose: u.purpose as Purpose },
     // The income models this unit may take: the same for every purpose (migration 0181).
     allowedCodes: codesFor(current ? view.contractCode : null),
     current: view,
+    untilThen: before ? contractView(before, u, settings.defaultFeePct) : null,
     history: rows.filter(r => r.id !== u.contract_id).map(r => contractView(r, u, settings.defaultFeePct)),
     example,
   });

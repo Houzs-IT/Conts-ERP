@@ -16,6 +16,7 @@ import ChannexChannelsCard from '../components/ChannexChannelsCard';
 import { StaleBanner } from '../components/DataState';
 import { RecordSkeleton, TreeSkeleton } from './units/UnitsSkeleton';
 import { UnitList } from './units/UnitList';
+import { ScheduledChanges } from './units/ScheduledChanges';
 import { exportUnits } from './units/unitExport';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
@@ -395,6 +396,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   const [fmonth, setFmonth] = useFinancialMonth();
   const [utilityBill, setUtilityBill] = useState(false);
   const [billsSaved, setBillsSaved] = useState(0);
+  const [scheduling, setScheduling] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -454,6 +456,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
   return (
     <>
+      {scheduling && <ScheduledChanges unitId={u.id} unitLabel={unitLabel} money={money} onClose={() => setScheduling(false)}
+        onOpenContract={() => { setScheduling(false); setTab('contract'); }} />}
       <Card>
         <div className="pt-[14px] px-[14px] pb-0">
           <CoverPhotoDrop photo={photo} onPick={takeFile} busy={uploading} className="h-[96px] sm:h-[128px]"
@@ -474,6 +478,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                 <Select label="Status" className="w-[150px]" value={readiness} onChange={v => changeReadiness(v as UnitReadiness)}
                   options={READINESS_OPTIONS.map(r => ({ value: r, label: statusLabel('readiness', r), color: TONE_STYLE[statusOf('readiness', r).tone].fg }))} />
               </span>
+              {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="CalendarClock" size="sm" />} onClick={() => setScheduling(true)}>Scheduled changes</Button>}
               {form?.parentUnitId && <StatusBadge tone="warning" label="Sub-unit" />}
               <PurposeBadge purpose={u.purpose} />
               <CodeBadge code={u.contractCode} />

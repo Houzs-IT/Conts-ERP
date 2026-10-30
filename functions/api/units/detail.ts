@@ -6,6 +6,7 @@ import { stampMyt } from '../../_lib/ops';
 import { stayMonths, metrics, monthEndExclusive, daysInMonth as daysInMonthOf } from '../../_lib/revenue';
 import { statementSettings } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
+import { heldContract } from '../../_lib/datedRows';
 import { MODEL_LABEL } from '../../_lib/revenueModel';
 import { unitMonthPnl, cachedQuery } from '../../_lib/unitPnl';
 import { addressOf, ownerDetailsReady } from '../../_lib/ownerDetails';
@@ -123,7 +124,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const perf = metrics(perfRows, daysInMonth);
 
   const pnl = money2?.pnl, companyPnl = money2?.companyPnl;
-  const terms = contractView(unit.c_id ? { ...unit, id: unit.c_id, misc_charges: unit.c_misc } : null, unit, settings.defaultFeePct);
+  // A new contract set to start later does not show on the unit until that day: the header reads the one in force.
+  const row = unit.c_id ? { ...unit, id: unit.c_id, misc_charges: unit.c_misc } : null;
+  const later = row && String(row.starts_on ?? '').slice(0, 10) > mytToday()
+    ? heldContract(row, await all<any>(env, 'SELECT * FROM owner_contracts WHERE unit_id = ?', unitId), mytToday()) : null;
+  const terms = contractView(later ?? row, unit, settings.defaultFeePct);
 
   return json({
     generatedAt: new Date().toISOString(),
@@ -158,9 +163,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         address: money ? addressOf(unit) : null,
       },
       contract: unit.management_fee_pct != null ? {
-        id: unit.c_id ?? null,
-        managementFeePct: unit.management_fee_pct,
-        startsOn: unit.starts_on, renewsOn: unit.renews_on,
+        id: later?.id ?? unit.c_id ?? null,
+        managementFeePct: later?.management_fee_pct ?? unit.management_fee_pct,
+        startsOn: later?.starts_on ?? unit.starts_on, renewsOn: later ? later.renews_on : unit.renews_on,
       } : null,
       revenueModel: terms.revenueModel, revenueModelLabel: MODEL_LABEL[terms.revenueModel], termsLabel: terms.termsLabel,
       ...(money ? { baseRate: unit.base_rate } : {}),
