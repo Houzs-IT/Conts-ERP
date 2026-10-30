@@ -307,4 +307,5 @@
 - **The 99% cap** before handover is in, from SOP 4.2.1. "Handed over" means status `RENO_COMPLETED`.
 - **"Work ahead of money"** is flagged when completion % exceeds collected % by 20 points or more. It is a constant, not a setting.
 - **Old contracts need their cost before go-live** to show the right completion %. It is an optional column on the go-live upload; until it is filled, such rows are flagged.
+  - Confirmed by chew on 31 Oct 2026 ("可以给，我 auto count 有份 project 记录开销的"): chew provides each project's cost to 31 Oct 2026 from AutoCount's project expense record.
 - **Performance P&L for renovation** shows earned revenue, not invoiced revenue. Invoiced revenue and the difference are memo lines on the same block.
