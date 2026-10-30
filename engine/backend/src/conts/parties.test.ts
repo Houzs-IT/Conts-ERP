@@ -326,6 +326,26 @@ describe('opening a debtor inside a renovation transaction', () => {
     expect(await ensureDebtorSql(db, CO, { name: 'MR TAN', phone: null, customerId: 'c-7', orderKind: 'RENOVATION' })).toBe('301-M002');
   });
 
+  test('a per-project debtor is never reused', async () => {
+    /* One customer account per project (spec 2.5; chew 30 Oct 2026): MS LEE's second project is a new debtor, named with
+       its unit as AutoCount names them. */
+    const { ensureDebtorSql } = await import('./parties');
+    const db = fakeDb([{ code: '301-M001', name: 'MS LEE', phone: '012', customer_id: 'c-9', control_account: '301-0000' }], { RENOVATION: '301-0000' });
+    const input = { name: 'MS LEE', phone: '012', customerId: 'c-9', orderKind: 'RENOVATION' as const, perProject: true, unitLabel: 'SKYLINE D-25-13' };
+    expect(await ensureDebtorSql(db, CO, input)).toBe('301-M002');
+    expect(db.debtors.find((d) => d.code === '301-M002')).toMatchObject({ name: 'MS LEE (SKYLINE D-25-13)', customer_id: 'c-9', control_account: '301-0000' });
+    /* Never looked up by customer or by name: a third project opens a third account. */
+    expect(await ensureDebtorSql(db, CO, { ...input, unitLabel: 'TROFI A-3-1' })).toBe('301-M003');
+    expect(db.debtors.find((d) => d.code === '301-M003')?.name).toBe('MS LEE (TROFI A-3-1)');
+  });
+
+  test('a per-project debtor with no control row still opens nothing', async () => {
+    const { ensureDebtorSql } = await import('./parties');
+    const db = fakeDb([], {});
+    expect(await ensureDebtorSql(db, CO, { name: 'MS LEE', phone: null, customerId: null, orderKind: 'RENOVATION', perProject: true, unitLabel: 'X' })).toBeNull();
+    expect(db.debtors).toHaveLength(0);
+  });
+
   test('a kind with no control row opens no debtor — never the AR rule', async () => {
     const { ensureDebtorSql } = await import('./parties');
     const db = fakeDb([], { RENOVATION: '301-0000' });
