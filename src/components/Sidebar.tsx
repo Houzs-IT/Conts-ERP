@@ -4,6 +4,7 @@ import { color, dcGlass, shell, radius, motion, text } from '../theme';
 import { groupName, navFor, withoutOffItems, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, type Workspace } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
+import { confirmLeaving } from '../lib/useLeaveGuard';
 import { useNavCounts } from '../lib/navBadges';
 import { rememberPage, useItUnread } from '../lib/itSupport';
 import { jobTitle } from '../lib/vocabulary';
@@ -169,13 +170,16 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const [ws, setWs] = useState<Workspace>(() => workspaceOf(path) ?? readWs());
   useEffect(() => { const w = workspaceOf(path); if (w) { setWs(w); saveWs(w); } }, [path]);
   useEffect(() => rememberPage(path), [path]);
-  const pick = (w: Workspace) => {
-    saveWs(w);
+  const pick = async (w: Workspace): Promise<void> => {
     const first = all.find(g => g.workspace === w)?.items[0];
     const target = first?.path ?? first?.children?.[0]?.path;
+    const moves = !!target && workspaceOf(path) !== w;
+    // Asked before the menu changes, so staying keeps the menu that matches the page.
+    if (moves && !await confirmLeaving()) return;
+    saveWs(w);
     const swap = () => {
       flushSync(() => setWs(w));
-      if (target && workspaceOf(path) !== w) navigate(target);
+      if (moves) navigate(target);
     };
     // The two sides wear different skins, so the swap is one snapshot crossfade, as the theme switch does (lib/theme.ts).
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -259,7 +263,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
         open ? (
           <div role="tablist" aria-label="Workspace" style={{ margin: '12px 10px 0', padding: 3, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, borderRadius: radius.control, background: look.track }}>
             {(['rental', 'supply'] as Workspace[]).map(w => (
-              <button key={w} role="tab" aria-selected={ws === w} onClick={() => pick(w)}
+              <button key={w} role="tab" aria-selected={ws === w} onClick={() => void pick(w)}
                 // A real border, not a shadow, so high-contrast mode still shows which side is chosen.
                 style={{ height: 28, borderRadius: 6, border: `1px solid ${ws === w ? look.tabOnBorder : 'transparent'}`, cursor: 'pointer', font: 'inherit', fontSize: text.meta, fontWeight: 500,
                   background: ws === w ? look.tabOnBg : 'transparent', color: ws === w ? look.tabOnInk : look.text, boxShadow: ws === w ? look.tabOnShadow : undefined }}>
@@ -268,7 +272,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
             ))}
           </div>
         ) : (
-          <button onClick={() => pick(ws === 'rental' ? 'supply' : 'rental')} title={`Switch to ${WORKSPACE_LABEL[ws === 'rental' ? 'supply' : 'rental']}`}
+          <button onClick={() => void pick(ws === 'rental' ? 'supply' : 'rental')} title={`Switch to ${WORKSPACE_LABEL[ws === 'rental' ? 'supply' : 'rental']}`}
             aria-label={`Workspace: ${WORKSPACE_LABEL[ws]}. Switch to ${WORKSPACE_LABEL[ws === 'rental' ? 'supply' : 'rental']}`}
             style={{ margin: '10px auto 0', width: 40, height: 28, display: 'grid', placeItems: 'center', borderRadius: radius.sm, border: 'none', cursor: 'pointer', background: look.track, color: look.railSwitchInk }}>
             <Icon name={ws === 'rental' ? 'House' : 'Boxes'} size="sm" />
