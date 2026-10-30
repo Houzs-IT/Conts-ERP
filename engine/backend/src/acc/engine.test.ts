@@ -68,6 +68,26 @@ describe('postJournal — the one gate', () => {
     expect(sb.tables.journal_entry_lines.map((l) => l.department)).toEqual(['rental', 'shared', 'supply']);
   });
 
+  /* The project (Conts, renovation completion %, plan 2026-10-31 Task 1): a cost line names the project it belongs to. */
+  it("keeps a line's project", async () => {
+    const sb = world();
+    await postJournal(sb, { ...base, lines: [
+      { accountCode: '905-0000', debitSen: 300, creditSen: 0, projectId: 7 },
+      { accountCode: '500-0000', debitSen: 0, creditSen: 300 },
+    ] });
+    expect(sb.tables.journal_entry_lines.map((l) => l.project_id)).toEqual([7, null]);
+  });
+
+  it('refuses a project that is not a whole number, before anything is written', async () => {
+    const sb = world();
+    const out = await postJournal(sb, { ...base, lines: [
+      { accountCode: '905-0000', debitSen: 100, creditSen: 0, projectId: 7.5 },
+      { accountCode: '500-0000', debitSen: 0, creditSen: 100 },
+    ] });
+    expect(out).toMatchObject({ ok: false, status: 'bad_line' });
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+
   it('defaults to supply when a line has none', async () => {
     const sb = world();
     await postJournal(sb, { ...base, lines: drCr(100, 100) });
@@ -273,6 +293,14 @@ describe('reverseJournal — voiding through the same gate', () => {
     const rev = sb.tables.journal_entries.find((j) => j.source_type === 'SI_REVERSAL')!;
     const revLines = sb.tables.journal_entry_lines.filter((l) => l.journal_entry_id === rev.id);
     expect(revLines.map((l) => l.department)).toEqual(['rental', 'shared']);
+  });
+
+  it('a reversal keeps the project on its lines', async () => {
+    const lines = [{ ...LIVE_LINES[0], project_id: 7 }, { ...LIVE_LINES[1], project_id: null }];
+    const sb = world({ jes: [{ ...LIVE }], jeLines: lines });
+    await reverseJournal(sb, revInput);
+    const rev = sb.tables.journal_entries.find((j) => j.source_type === 'SI_REVERSAL')!;
+    expect(sb.tables.journal_entry_lines.filter((l) => l.journal_entry_id === rev.id).map((l) => l.project_id)).toEqual([7, null]);
   });
 
   it('nothing_to_reverse when no ACTIVE entry exists', async () => {

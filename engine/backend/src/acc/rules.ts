@@ -238,6 +238,8 @@ export type RuleLine = {
   partyName?: string | null;
   notes?: string | null;
   department?: Department | null;
+  /** The project a cost line belongs to (public.projects id): the renovation completion % reads booked cost by it. */
+  projectId?: number | null;
 };
 
 /** Sales invoice issued (docs/bugs/0829): Dr AR for the invoice total, the
@@ -335,7 +337,9 @@ export function debitNoteLines(roles: RoleCodes, note: { note_number: string }, 
 /** Supplier credit note posted: Dr the supplier's AP control (400 or 405 by
     the supplier's code, the PI's and the PV's split) / Cr each line's account
     (PURCHASES RETURN by default) — we owe that supplier that much less. */
-export function supplierCreditNoteLines(roles: RoleCodes, note: { note_number: string }, supplier: NoteParty, lines: NoteLine[]): RuleLine[] {
+/** `projectId`: the project of the purchase invoice the note gives back on; its cost legs carry it, so the project's
+    booked cost comes down. */
+export function supplierCreditNoteLines(roles: RoleCodes, note: { note_number: string }, supplier: NoteParty, lines: NoteLine[], projectId: number | null = null): RuleLine[] {
   const totalSen = lines.reduce((s, l) => s + l.amountSen, 0);
   return [
     {
@@ -347,6 +351,7 @@ export function supplierCreditNoteLines(roles: RoleCodes, note: { note_number: s
       accountCode: l.accountCode, debitSen: 0, creditSen: l.amountSen,
       partyType: null, partyCode: null, partyName: null,
       notes: l.description ?? `Supplier credit note ${note.note_number}`,
+      projectId,
     })),
   ];
 }
@@ -360,7 +365,7 @@ export function apInvoiceLines(
   roles: RoleCodes,
   inv: { invoice_number: string },
   supplier: { code: string | null; name: string | null; control_account?: string | null },
-  debits: Array<{ accountCode: string; myrSen: number; description: string | null; department?: Department | null }>,
+  debits: Array<{ accountCode: string; myrSen: number; description: string | null; department?: Department | null; projectId?: number | null }>,
 ): RuleLine[] {
   return [
     ...debits.map((d) => ({
@@ -372,6 +377,7 @@ export function apInvoiceLines(
       partyName: null,
       notes: d.description ?? `AP invoice ${inv.invoice_number}`,
       department: d.department ?? DEFAULT_DEPARTMENT,
+      projectId: d.projectId ?? null,
     })),
     // Conts: the supplier's AP is credited per department (one line when the bill has one), so each balances.
     ...splitByDepartment(debits.map((d) => ({ department: d.department, sen: d.myrSen }))).map((part) => ({
@@ -392,6 +398,8 @@ export function piLines(
   pi: { invoice_number: string },
   supplier: { code: string | null; name: string | null; control_account?: string | null },
   groupDebits: Array<{ groupCode: string; accountCode: string; myrSen: number }>,
+  /** The project the invoice's PO (or GRN) was raised for: its cost legs carry it. */
+  projectId: number | null = null,
 ): RuleLine[] {
   const totalSen = groupDebits.reduce((s, g) => s + g.myrSen, 0);
   return [
@@ -403,6 +411,7 @@ export function piLines(
       partyCode: null,
       partyName: null,
       notes: `Purchases — ${g.groupCode} on ${pi.invoice_number}`,
+      projectId,
     })),
     {
       accountCode: apControlOf(roles, supplier),
@@ -423,7 +432,7 @@ export function piLines(
  */
 export function pvLines(
   pv: { pv_number: string; payee_name: string; credit_account_code: string },
-  debitLegs: Array<{ description: string | null; debit_account_code: string; myrSen: number; department?: Department | null }>,
+  debitLegs: Array<{ description: string | null; debit_account_code: string; myrSen: number; department?: Department | null; project_id?: number | null }>,
   supplier: { code: string | null; name: string | null; control_account?: string | null },
   /** The supplier's own AP control (a supplier payment): the Dr leg on it IS
       the supplier's sub-ledger, so it carries the party the way the invoice
@@ -442,6 +451,8 @@ export function pvLines(
       partyName: onControl ? (supplier.name ?? pv.payee_name) : null,
       notes: `${l.description ?? 'Payment'} — ${pv.pv_number}`,
       department: l.department ?? DEFAULT_DEPARTMENT,
+      // A direct expense keeps its line's project; settling a bill carries none (the bill booked the cost).
+      projectId: onControl ? null : (l.project_id ?? null),
     };
   });
   // Conts: the bank is credited per department (one line when the voucher has one department, as before).

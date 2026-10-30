@@ -1114,8 +1114,8 @@ export const postPaymentVoucherHandler = async (c: any) => {
   if (!gate.ok) return c.json({ error: gate.error, message: gate.message }, 409);
 
   const { data: linesRaw } = await sb.from('payment_voucher_lines')
-    .select('line_no, description, debit_account_code, amount_sen, department').eq('pv_id', id).order('line_no');
-  const lines = (linesRaw ?? []) as Array<{ line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department?: Department | null }>;
+    .select('line_no, description, debit_account_code, amount_sen, department, project_id').eq('pv_id', id).order('line_no');
+  const lines = (linesRaw ?? []) as Array<{ line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department?: Department | null; project_id?: number | null }>;
   if (lines.length === 0) return c.json({ error: 'no_lines', message: 'Voucher has no lines to post' }, 400);
 
   /* FX conversion AT POST TIME (MYR-only today → rate 1). Each Dr leg =

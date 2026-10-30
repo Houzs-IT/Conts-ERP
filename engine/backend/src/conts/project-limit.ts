@@ -238,6 +238,19 @@ export async function projectOfBills(sb: Db, companyId: number, bills: { piIds: 
   return { ok: true, projectId: projects.size === 1 ? [...projects][0]! : null };
 }
 
+/** The project one purchase invoice was bought for: its PO's, else its GRN's. Null when neither names one, or a read
+    fails (the posting goes ahead without it; booked cost by project is management information). */
+export async function projectOfPurchaseInvoice(sb: Db, companyId: number, pi: { purchase_order_id?: string | null; grn_id?: string | null }): Promise<number | null> {
+  for (const [table, id] of [['purchase_orders', pi.purchase_order_id], ['grns', pi.grn_id]] as const) {
+    if (!id) continue;
+    const { data, error } = await sb.from(table).select('project_id').eq('company_id', companyId).eq('id', id).maybeSingle();
+    if (error) continue;
+    const p = (data as { project_id?: number | null } | null)?.project_id;
+    if (p != null) return Number(p);
+  }
+  return null;
+}
+
 /** The project a voucher pays (SOP 3.4): the one named on it, else the one its bills belong to. A name that differs
     from the bills', or bills of two projects, is refused — one voucher pays one project. */
 export async function resolveVoucherProject(

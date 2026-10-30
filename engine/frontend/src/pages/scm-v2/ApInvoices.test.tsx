@@ -40,6 +40,7 @@ const ROWS = [
 ];
 
 vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
+vi.mock('../../conts/projectLimitQueries', () => ({ useProjectOptions: () => ({ data: { projects: [{ id: 7, code: 'P7', name: 'SKYLINE D-25-13', funding: 'customer' }] } }) }));
 vi.mock('../../vendor/scm/lib/ap-invoice-queries', () => ({
   useApInvoices: () => ({ data: { rows: ROWS }, isLoading: false, isError: false, error: null }),
   useApInvoiceDetail: (id: string | null) => ({ data: id ? {
@@ -156,11 +157,13 @@ describe('raising an AP invoice', () => {
     /* Conts: each line's department (finance phase 1, spec 3.5) — Save waits for it. */
     expect((within(d).getByText('Save as draft').closest('button') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 'rental' } });
+    /* Conts: the project a cost belongs to (renovation completion %, plan 2026-10-31 Task 2) — blank means none. */
+    fireEvent.change(within(d).getByLabelText('line 1 project'), { target: { value: '7' } });
     fireEvent.click(within(d).getByText('Save as draft'));
     await waitFor(() => expect(createAsync).toHaveBeenCalled());
     expect(createAsync.mock.calls[0]![0]).toMatchObject({
       supplierId: 'sup-h', supplierInvoiceRef: 'HVH-1001', notes: 'Rent October',
-      lines: [{ description: 'Rent Oct', debitAccountCode: '900-A001', amountSen: 42_000, department: 'rental' }],
+      lines: [{ description: 'Rent Oct', debitAccountCode: '900-A001', amountSen: 42_000, department: 'rental', projectId: 7 }],
     });
   });
 
@@ -169,7 +172,7 @@ describe('raising an AP invoice', () => {
     fireEvent.click(screen.getByText('New AP invoice'));
     const d = dialog();
     const amountHead = within(d).getByText('Amount (RM)');
-    expect([...amountHead.parentElement!.children].map((c) => c.textContent)).toEqual(['Account', 'Description', 'Amount (RM)', 'Department', '']);
+    expect([...amountHead.parentElement!.children].map((c) => c.textContent)).toEqual(['Account', 'Description', 'Amount (RM)', 'Department', 'Project', '']);
 
     fireEvent.keyDown(within(d).getByLabelText('line 1 amount'), { key: 'Insert' });
     expect(within(d).getByLabelText('line 2 amount')).toBeTruthy();

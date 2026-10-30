@@ -73,6 +73,7 @@ import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, 
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
 import { partyLedgerHandler } from '../../conts/party-ledger';
 import { approveLimitRequestHandler, createLimitRequestHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler } from '../../conts/project-limit-routes';
+import { projectOfPurchaseInvoice } from '../../conts/project-limit';
 import * as pettyCash from '../../conts/petty-cash-routes';
 import * as paymentRequests from '../../conts/payment-request-routes';
 import { assertAuditWritable, auditUnavailableBody, compactChanges, fieldChange, recordEntityAudit, type AuditActor } from '../lib/entity-audit';
@@ -891,7 +892,7 @@ export type PostPiResult =
 export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<PostPiResult> {
   const { data: piRaw, error } = await sb
     .from('purchase_invoices')
-    .select('id, invoice_number, invoice_date, supplier_id, total_sen, currency, exchange_rate, company_id, migrated_no_stock, opening_balance, suppliers(code, name, control_account)')
+    .select('id, invoice_number, invoice_date, supplier_id, total_sen, currency, exchange_rate, company_id, migrated_no_stock, opening_balance, purchase_order_id, grn_id, suppliers(code, name, control_account)')
     .eq('invoice_number', invoiceNumber)
     .single();
   if (error || !piRaw) return { ok: false, status: 'invoice_not_found' };
@@ -976,6 +977,10 @@ export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<
      (fails closed on a read blip — a blip must never book a SECOND payable),
      the je_no mint, and the write sequence; this function owns the PI
      specifics: the fetch, the migrated guard, FX, and the rule's lines. */
+  /* The project the purchase was for (its PO, else its GRN): the renovation completion % reads booked cost by it. */
+  const projectId = companyId != null
+    ? await projectOfPurchaseInvoice(sb, companyId, piRaw as { purchase_order_id?: string | null; grn_id?: string | null })
+    : null;
   const roles = await resolveRoles(sb, companyId);
   const r = await postJournal(sb, {
     companyId,
@@ -983,7 +988,7 @@ export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<
     sourceType: 'PI',
     sourceDocNo: pi.invoice_number,
     narration: `Purchase invoice ${pi.invoice_number} — ${supplier.name ?? ''}`,
-    lines: piLines(roles, pi, supplier, groupDebits),
+    lines: piLines(roles, pi, supplier, groupDebits, projectId),
   });
   if (r.ok) {
     if (r.status === 'already_posted') return { ok: true, status: 'already_posted', jeNo: r.jeNo, jeId: r.jeId };
