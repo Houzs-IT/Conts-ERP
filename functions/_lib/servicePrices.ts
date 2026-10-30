@@ -1,6 +1,7 @@
 import { type Env, all, run, fail, nowIso, mytToday } from './db';
 import { hasColumn } from './auth';
 import { layoutTypes } from './layoutTypes';
+import { inForce } from './datedRows';
 
 /** Service prices (owner, 17 Oct 2026; migration 0127): one item list for cleaning and maintenance, each item with an
  *  owner price (what the owner is charged) and an internal cost (what it costs us), effective-dated. A job takes the
@@ -30,8 +31,9 @@ export interface PriceRow { id: string; item_id: string; layout: string; effecti
 export interface Amounts { owner: number | null; internal: number | null; source: 'unit' | 'table' | null; itemId: string | null; effectiveFrom: string | null }
 const NONE: Amounts = { owner: null, internal: null, source: null, itemId: null, effectiveFrom: null };
 
-/** The row in force on `day` among rows sorted newest first. */
-export const inForce = (rows: PriceRow[] | undefined, day: string) => rows?.find(r => r.effective_from <= day) ?? null;
+/** Migration 0186: a unit's own prices take a date. A row from before it applies "from the start". */
+export const hasDatedUnitPrices = (env: Env) => hasColumn(env, 'unit_service_prices', 'effective_from').catch(() => false);
+export const FROM_THE_START = '2000-01-01';
 
 export interface Book {
   items: ServiceItem[];
@@ -48,11 +50,14 @@ export async function serviceBook(env: Env, unitIds: string[]): Promise<Book> {
     all<PriceRow>(env, 'SELECT id, item_id, layout, effective_from, owner_price, internal_cost FROM service_item_prices ORDER BY effective_from DESC'),
   ]);
   const ids = [...new Set(unitIds.filter(Boolean))];
-  const own = ids.length ? await all<{ unit_id: string; item_id: string; owner_price: number | null; internal_cost: number | null }>(env,
-    'SELECT unit_id, item_id, owner_price, internal_cost FROM unit_service_prices WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', JSON.stringify(ids)) : [];
+  const dated = ids.length ? await hasDatedUnitPrices(env) : false;
+  const own = ids.length ? await all<{ unit_id: string; item_id: string; effective_from: string; owner_price: number | null; internal_cost: number | null }>(env,
+    `SELECT unit_id, item_id, ${dated ? 'effective_from' : `'${FROM_THE_START}' AS effective_from`}, owner_price, internal_cost FROM unit_service_prices
+     WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY effective_from DESC`, JSON.stringify(ids)) : [];
   const byKey = new Map<string, PriceRow[]>();
   for (const p of prices) byKey.set(`${p.item_id}:${p.layout}`, [...(byKey.get(`${p.item_id}:${p.layout}`) ?? []), p]);
-  const ownAt = new Map(own.map(o => [`${o.unit_id}:${o.item_id}`, o]));
+  const ownAt = new Map<string, typeof own>();
+  for (const o of own) ownAt.set(`${o.unit_id}:${o.item_id}`, [...(ownAt.get(`${o.unit_id}:${o.item_id}`) ?? []), o]);
   const byId = new Map(items.map(i => [i.id, i]));
   return {
     items,
@@ -61,7 +66,7 @@ export async function serviceBook(env: Env, unitIds: string[]): Promise<Book> {
       const item = itemId ? byId.get(itemId) : null;
       if (!item) return NONE;
       const row = inForce(byKey.get(`${item.id}:${item.by_layout ? layout : 'all'}`), day) ?? (item.by_layout ? inForce(byKey.get(`${item.id}:all`), day) : null);
-      const o = unitId ? ownAt.get(`${unitId}:${item.id}`) : undefined;
+      const o = unitId ? inForce(ownAt.get(`${unitId}:${item.id}`), day) : null;
       const owner = o?.owner_price ?? row?.owner_price ?? null, internal = o?.internal_cost ?? row?.internal_cost ?? null;
       const source = o && (o.owner_price != null || o.internal_cost != null) ? 'unit' : owner != null || internal != null ? 'table' : null;
       return { owner: owner == null ? null : Number(owner), internal: internal == null ? null : Number(internal), source, itemId: item.id, effectiveFrom: row?.effective_from ?? null };

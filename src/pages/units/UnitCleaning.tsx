@@ -11,7 +11,9 @@ import { rm } from '../../lib/format';
  *  cleaner is paid. A box left empty uses the list price, shown in grey. Amounts are sen. */
 
 export interface UnitPrice { internalCost: number | null; externalCharge: number | null; source: 'unit' | 'table' | null; override: { internalCost: number | null; externalCharge: number | null } | null }
-export interface UnitPriceData { ready: boolean; rows: Array<{ unitId: string; prices: Record<string, UnitPrice> }>; mayEdit: boolean }
+/** A unit's own price in force or still to come (management only). Both figures empty: the list price from that day. */
+export interface UnitPriceChange { itemId: string; name: string; domain: string; cleanKind: string | null; effectiveFrom: string; ownerPrice: number | null; internalCost: number | null; scheduled: boolean }
+export interface UnitPriceData { ready: boolean; rows: Array<{ unitId: string; prices: Record<string, UnitPrice> }>; mayEdit: boolean; dated?: boolean; changes?: UnitPriceChange[] }
 
 export const CLEAN_KINDS = [['turnover', 'Basic clean'], ['deep_clean', 'Deep clean']] as const;
 
