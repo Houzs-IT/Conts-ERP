@@ -38,11 +38,28 @@ const COLUMNS: Column<Row>[] = [
   },
 ];
 
-type FormValues = { name: string; code: string; controlAccount: string; phone: string; email: string; address: string; notes: string; isActive: boolean };
+type FormValues = {
+  name: string; code: string; controlAccount: string; phone: string; email: string; address: string; notes: string; isActive: boolean;
+  tin: string; idType: string; idNumber: string; sstNo: string; city: string; postcode: string; state: string; country: string;
+};
 const fromDebtor = (d: Debtor): FormValues => ({
   name: d.name, code: d.code, controlAccount: d.control_account, phone: d.phone ?? "", email: d.email ?? "",
   address: d.address ?? "", notes: d.notes ?? "", isActive: d.is_active,
+  tin: d.tin ?? "", idType: d.id_type ?? "", idNumber: d.id_number ?? "", sstNo: d.sst_no ?? "",
+  city: d.city ?? "", postcode: d.postcode ?? "", state: d.state ?? "", country: d.country ?? "",
 });
+
+/** The states an e-invoice knows (LHDN codes 01–16), by the names the e-invoice builder reads. */
+const MY_STATES = [
+  "Johor", "Kedah", "Kelantan", "Melaka", "Negeri Sembilan", "Pahang", "Pulau Pinang", "Perak", "Perlis", "Selangor",
+  "Terengganu", "Sabah", "Sarawak", "Kuala Lumpur", "Labuan", "Putrajaya",
+];
+
+const taxChanges = (was: FormValues, now: FormValues): Partial<DebtorInput> => {
+  const out: Partial<DebtorInput> = {};
+  for (const k of ["tin", "idType", "idNumber", "sstNo"] as const) if (now[k] !== was[k]) out[k] = now[k];
+  return out;
+};
 
 export function Debtors() {
   const q = useDebtors();
@@ -60,7 +77,8 @@ export function Debtors() {
     setNote(null);
     setEditing(d);
     setV(d === "new"
-      ? { name: "", code: "", controlAccount: controls[0]?.code ?? "", phone: "", email: "", address: "", notes: "", isActive: true }
+      ? { name: "", code: "", controlAccount: controls[0]?.code ?? "", phone: "", email: "", address: "", notes: "", isActive: true,
+          tin: "", idType: "", idNumber: "", sstNo: "", city: "", postcode: "", state: "", country: "" }
       : fromDebtor(d));
   };
   const close = () => { setEditing(null); setV(null); setNote(null); };
@@ -72,6 +90,9 @@ export function Debtors() {
     const id = editing === "new" ? null : editing.id;
     const body: DebtorInput = {
       name: v.name, controlAccount: v.controlAccount, phone: v.phone, email: v.email, address: v.address, notes: v.notes,
+      city: v.city, postcode: v.postcode, state: v.state, country: v.country,
+      /* Only what changed: a stored value the server would now refuse must not block a rename. */
+      ...(editing === "new" ? { tin: v.tin, idType: v.idType, idNumber: v.idNumber, sstNo: v.sstNo } : taxChanges(fromDebtor(editing), v)),
       ...(id ? { isActive: v.isActive } : { code: v.code }),
     };
     /* A move asks first; the server refuses it while the customer still owes on the old control, and says so. */
@@ -147,10 +168,56 @@ export function Debtors() {
                 <span className={styles.fieldLabel}>Address</span>
                 <input className={styles.fieldInput} value={v.address} onChange={(e) => set("address", e.target.value)} />
               </label>
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>City</span>
+                <input className={styles.fieldInput} value={v.city} onChange={(e) => set("city", e.target.value)} />
+              </label>
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>Postcode</span>
+                <input className={styles.fieldInput} value={v.postcode} onChange={(e) => set("postcode", e.target.value)} />
+              </label>
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>State</span>
+                <select className={styles.fieldInput} value={v.state} onChange={(e) => set("state", e.target.value)}>
+                  <option value="">—</option>
+                  {!MY_STATES.includes(v.state) && v.state && <option value={v.state}>{v.state}</option>}
+                  {MY_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>Country</span>
+                <input className={styles.fieldInput} value={v.country} placeholder="Malaysia" onChange={(e) => set("country", e.target.value)} />
+              </label>
               <label className={styles.field} style={{ gridColumn: "1 / -1" }}>
                 <span className={styles.fieldLabel}>Notes</span>
                 <input className={styles.fieldInput} value={v.notes} onChange={(e) => set("notes", e.target.value)} />
               </label>
+              <div style={{ gridColumn: "1 / -1", fontWeight: 600, marginTop: "var(--space-2)" }}>E-invoice</div>
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>Tax ID (TIN)</span>
+                <input className={styles.fieldInput} value={v.tin} onChange={(e) => set("tin", e.target.value.toUpperCase())} />
+              </label>
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>ID type</span>
+                <select className={styles.fieldInput} value={v.idType} onChange={(e) => set("idType", e.target.value)}>
+                  <option value="">—</option>
+                  <option value="NRIC">MyKad (NRIC)</option>
+                  <option value="BRN">Business registration (BRN)</option>
+                  <option value="PASSPORT">Passport</option>
+                  <option value="ARMY">Army ID</option>
+                </select>
+              </label>
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>ID number</span>
+                <input className={styles.fieldInput} value={v.idNumber} onChange={(e) => set("idNumber", e.target.value)} />
+              </label>
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>SST registration no.</span>
+                <input className={styles.fieldInput} value={v.sstNo} onChange={(e) => set("sstNo", e.target.value)} />
+              </label>
+              <div style={{ gridColumn: "1 / -1", color: "var(--fg-muted)", fontSize: "var(--fs-12)" }}>
+                Individuals without a TIN: leave it blank and give the MyKad number.
+              </div>
               {editing !== "new" && (
                 <label style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
                   <input type="checkbox" checked={v.isActive} onChange={(e) => set("isActive", e.target.checked)} /> Active
