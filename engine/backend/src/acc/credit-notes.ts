@@ -195,7 +195,7 @@ export async function cancelCreditNote(
   }
   /* A renovation credit gives its revenue allocation back, and a contract credit its amount to the contract. */
   if (String(note.kind) === 'CN' && note.so_doc_no) {
-    await releaseRenovationCredit(sb, { companyId: p.companyId, noteId: String(note.id), noteNumber: String(note.note_number) });
+    await releaseRenovationCredit(sb, { companyId: p.companyId, noteId: String(note.id), noteNumber: String(note.note_number), soDocNo: String(note.so_doc_no) });
   }
   const { error: upErr } = await sb.from('acc_credit_notes').update({
     status: 'CANCELLED', cancelled_at: new Date().toISOString(), cancelled_by: p.actor, updated_at: new Date().toISOString(),

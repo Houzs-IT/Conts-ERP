@@ -30,7 +30,7 @@ import { listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplat
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
 import { onRenovationSoLinesChanged } from '../lib/renovation-hooks';
 import { postSiRevenue } from '../lib/post-si-revenue';
-import { contractPostingState, postContractCancel, postContractChange } from '../../acc/reno-ledger';
+import { cancelGate, contractPostingState, postContractCancel, postContractChange } from '../../acc/reno-ledger';
 import { CREDIT_NOTE_HEADER, postCreditNote } from '../../acc/credit-notes';
 import { categoryGroupOf, type UomDef } from '../shared/renovation-catalog';
 import { loadUomsSql } from './renovation-catalog-settings';
@@ -323,6 +323,12 @@ renovation.post('/sales-orders/:docNo/status', handle(PERM.quote, async (c, { tx
   if (!s.success) throw new RenoError(400, 'invalid_status', 'Unknown contract status.');
   const actor = actorOf(c);
   const docNo = param(c, 'docNo');
+  if (s.data === 'CANCELLED') {
+    /* A billed contract needs finance; the contract and every issued document on it must be posted first, so the
+       clearing after commit sees the whole advance (acc/reno-ledger cancelGate). */
+    const gate = await cancelGate(c.get('supabase'), { companyId: actor.companyId, soDocNo: docNo, isFinance: hasHouzsPerm(c, FINANCE_POST) });
+    if (!gate.ok) throw new RenoError(gate.status === 'forbidden' ? 403 : gate.status === 'load_failed' ? 503 : 409, gate.status, gate.reason);
+  }
   const out = await tx((db) => setContractStatus(db, actor, docNo, s.data as RenoSoStatus, typeof b.note === 'string' ? b.note : undefined));
   if (out.status !== 'CANCELLED') return c.json(out);
   /* After commit: clear the part never invoiced from the advance (acc/reno-ledger). A refusal is reported, never

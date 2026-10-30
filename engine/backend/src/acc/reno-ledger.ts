@@ -47,8 +47,6 @@ export const ALLOC_OPENING = 'OPENING';
 export const ALLOC_INVOICE = 'SI';
 export const ALLOC_CREDIT = 'CN';
 export const ALLOC_BILL_CREDIT = 'BILL_CN';
-/** The sources that moved the advance (an invoice out of it, a negative instalment back into it). */
-const MOVES_ADVANCE = new Set([ALLOC_INVOICE, ALLOC_BILL_CREDIT]);
 
 /** The contract as it stands: its live SO rows, without the RENO-CREDIT rows a credit note adds (a credit note posts
     its own journal against revenue; it does not move the advance). */
@@ -100,7 +98,7 @@ type Ctx = {
   contractSen: number; postedSen: number; jes: JeRow[]; active: JeRow[];
 };
 type CtxResult =
-  | { ok: true; beforeStart: true; reason: string }
+  | { ok: true; beforeStart: true; reason: string; status: string }
   | ({ ok: true; beforeStart: false } & Ctx)
   | { ok: false; status: string; reason: string };
 
@@ -115,7 +113,7 @@ async function loadContractCtx(sb: Sb, companyId: number, soDocNo: string): Prom
   if (!ls.ok) return { ok: false, status: 'ledger_settings_failed', reason: 'The ledger settings could not be read.' };
   const signed = String(so.so_date ?? '').slice(0, 10);
   if (isBeforeLedgerStart(signed, ls.settings)) {
-    return { ok: true, beforeStart: true, reason: `Contract ${soDocNo} was signed before the ledger start (${ls.settings.ledgerStartDate}); the opening balances carry it.` };
+    return { ok: true, beforeStart: true, status: String(so.status ?? ''), reason: `Contract ${soDocNo} was signed before the ledger start (${ls.settings.ledgerStartDate}); the opening balances carry it.` };
   }
 
   const { data: contract, error: cErr } = await sb.from('reno_so_contracts').select('advance_account_code')
@@ -156,23 +154,20 @@ export type ContractPostingState =
   | { ok: false; status: string; reason: string };
 
 /** Whether the ledger carries the contract as it stands (finance's "Post contract" shows when it does not). A
-    cancelled contract is also under-posted while the advance left was not cleared (`uncleared`). */
+    cancelled contract is in step only when its advance sub-account's balance is 0 (`uncleared` = what is left),
+    contracts signed before the ledger start included (their opening balance sits on the advance). */
 export async function contractPostingState(sb: Sb, p: { companyId: number; soDocNo: string }): Promise<ContractPostingState> {
   const ctx = await loadContractCtx(sb, p.companyId, p.soDocNo);
   if (!ctx.ok) return ctx;
-  if (ctx.beforeStart) return { ok: true, status: 'before_ledger_start', reason: ctx.reason };
-  const base = { contractSen: ctx.contractSen, postedSen: ctx.postedSen };
-  if (ctx.contractSen !== ctx.postedSen) return { ok: true, status: 'under_posted', ...base };
-  if (ctx.status === 'CANCELLED') {
-    const left = await advanceLeft(sb, p.companyId, p.soDocNo, ctx.postedSen);
-    if (!left.ok) return left;
-    const { data, error } = await sb.from('journal_entries').select('id, reversed')
-      .eq('company_id', p.companyId).eq('source_type', CONTRACT_CANCELLED).eq('source_doc_no', p.soDocNo);
-    if (error) return { ok: false, status: 'load_failed', reason: error.message };
-    const cleared = ((data ?? []) as Array<{ reversed: boolean | null }>).some((r) => !r.reversed);
-    if (!cleared && left.sen !== 0) return { ok: true, status: 'under_posted', ...base, uncleared: left.sen };
+  const base = ctx.beforeStart ? { contractSen: 0, postedSen: 0 } : { contractSen: ctx.contractSen, postedSen: ctx.postedSen };
+  const status = ctx.status;
+  if (status === 'CANCELLED') {
+    const cc = await loadCancelCtx(sb, p.companyId, p.soDocNo);
+    if (!cc.ok) return ctx.beforeStart && cc.status === 'no_advance_account' ? { ok: true, status: 'before_ledger_start', reason: ctx.reason } : cc;
+    return cc.balanceSen === 0 ? { ok: true, status: 'in_step', ...base } : { ok: true, status: 'under_posted', ...base, uncleared: cc.balanceSen };
   }
-  return { ok: true, status: 'in_step', ...base };
+  if (ctx.beforeStart) return { ok: true, status: 'before_ledger_start', reason: ctx.reason };
+  return { ok: true, status: ctx.contractSen === ctx.postedSen ? 'in_step' : 'under_posted', ...base };
 }
 
 /** Post the contract's change since its last posting (see the header). `date` is the document date of the change:
@@ -232,24 +227,15 @@ async function readAllocations(sb: Sb, companyId: number, soDocNo: string): Prom
   return { ok: true, rows: ((data ?? []) as AllocRow[]).map((r) => ({ ...r, amount_sen: Number(r.amount_sen) })) };
 }
 
-/** The advance the contract still holds: what its RCON / RVO posted, less what invoices moved out of it (and
-    negative instalments moved back). */
-async function advanceLeft(sb: Sb, companyId: number, soDocNo: string, postedSen: number): Promise<{ ok: true; sen: number } | { ok: false; status: string; reason: string }> {
-  const allocs = await readAllocations(sb, companyId, soDocNo);
-  if (!allocs.ok) return { ok: false, status: 'load_failed', reason: allocs.error };
-  const moved = allocs.rows.filter((a) => MOVES_ADVANCE.has(a.source_type)).reduce((s, a) => s + a.amount_sen, 0);
-  return { ok: true, sen: postedSen - moved };
-}
-
 type RevenueCtx = {
-  advance: string; control: string; debtorCode: string; partyName: string | null; billedBeforeSen: number;
+  status: string; advance: string; control: string; debtorCode: string; partyName: string | null; billedBeforeSen: number;
   lines: ContractRevenueLine[]; accountOf: (l: ContractRevenueLine) => string; allocs: AllocRow[];
 };
 
 /** What a revenue event needs: the contract's accounts, its lines with their revenue accounts, and its allocations.
     A line whose product has no group, or whose sub-category and group have no sales account, refuses by name. */
 async function loadRevenueCtx(sb: Sb, companyId: number, soDocNo: string): Promise<{ ok: true; ctx: RevenueCtx } | { ok: false; status: string; reason: string }> {
-  const { data: so, error: soErr } = await sb.from('mfg_sales_orders').select('doc_no, so_kind, debtor_code')
+  const { data: so, error: soErr } = await sb.from('mfg_sales_orders').select('doc_no, so_kind, debtor_code, status')
     .eq('company_id', companyId).eq('doc_no', soDocNo).maybeSingle();
   if (soErr) return { ok: false, status: 'load_failed', reason: soErr.message };
   if (!so || so.so_kind !== 'RENOVATION') return { ok: false, status: 'not_renovation', reason: `${soDocNo} is not a renovation contract.` };
@@ -286,19 +272,54 @@ async function loadRevenueCtx(sb: Sb, companyId: number, soDocNo: string): Promi
   return {
     ok: true,
     ctx: {
-      advance, control: customer.control, debtorCode, partyName: customer.partyName,
+      status: String(so.status ?? ''), advance, control: customer.control, debtorCode, partyName: customer.partyName,
       billedBeforeSen: Number(contract?.billed_before_golive_sen ?? 0),
       lines, accountOf: (l) => accounts.accountOf({ group: l.group, subCategory: l.subCategory }), allocs: allocs.rows,
     },
   };
 }
 
+/** An old contract's first event: what AutoCount invoiced before go-live is filled first, with no journal (the
+    opening balances carry it). Two first events racing both seed; each then keeps the lowest id per line and deletes
+    the rest, so they converge on one seed (the amounts are the same target either way). Returns the allocations. */
+async function seedOpening(sb: Sb, companyId: number, soDocNo: string, ctx: RevenueCtx): Promise<{ ok: true; rows: AllocRow[] } | { ok: false; status: string; reason: string }> {
+  let target: Map<string, number>;
+  try {
+    target = waterfallTarget(ctx.lines, ctx.billedBeforeSen);
+  } catch (err) {
+    return { ok: false, status: 'post_failed', reason: `${soDocNo}: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  const rows = ctx.lines.filter((l) => (target.get(l.key) ?? 0) !== 0).map((l) => ({
+    company_id: companyId, so_doc_no: soDocNo, source_type: ALLOC_OPENING, source_doc_no: soDocNo,
+    line_key: l.key, account_code: ctx.accountOf(l), amount_sen: target.get(l.key) ?? 0,
+  }));
+  const { error } = await sb.from('reno_revenue_allocations').insert(rows);
+  if (error) return { ok: false, status: 'allocations_failed', reason: `The go-live allocation of ${soDocNo} could not be saved: ${error.message}` };
+  const after = await readAllocations(sb, companyId, soDocNo);
+  if (!after.ok) return { ok: false, status: 'load_failed', reason: after.error };
+  const keep = new Map<string, string>();
+  for (const a of after.rows.filter((r) => r.source_type === ALLOC_OPENING)) {
+    const k = keep.get(a.line_key);
+    if (k === undefined || String(a.id) < k) keep.set(a.line_key, String(a.id));
+  }
+  const extra = after.rows.filter((r) => r.source_type === ALLOC_OPENING && keep.get(r.line_key) !== String(r.id)).map((r) => r.id);
+  if (extra.length > 0) {
+    const { error: dErr } = await sb.from('reno_revenue_allocations').delete().in('id', extra);
+    if (dErr) return { ok: false, status: 'allocations_failed', reason: `The go-live allocation of ${soDocNo} was saved twice and could not be tidied: ${dErr.message}` };
+  }
+  return { ok: true, rows: after.rows.filter((r) => !extra.includes(r.id)) };
+}
+
 export type RevenueEventResult =
   | { ok: true; status: 'posted' | 'already_posted'; jeNo: string; jeId: string }
   | { ok: false; status: string; reason: string };
 
+type Move = { key: string; account: string; amount: number };
+
 /** Post one revenue event (see the header). `amountSen` is signed: + an invoice, − a credit. Idempotent on
-    (journalSource, docNo): a second call answers already_posted and leaves the allocations as they are. */
+    (journalSource, docNo): a second call answers already_posted and leaves the allocations as they are. A give-back
+    debits the accounts the line's revenue was booked to (latest first), not today's binding. On a cancelled contract
+    the advance is cleared again after posting. */
 async function postRevenueEvent(sb: Sb, p: {
   companyId: number; soDocNo: string; allocSource: string; journalSource: string; docNo: string; date: string;
   amountSen: number; counter: 'advance' | 'customer'; narration: string;
@@ -307,22 +328,10 @@ async function postRevenueEvent(sb: Sb, p: {
   if (!loaded.ok) return loaded;
   const ctx = loaded.ctx;
 
-  /* An old contract's first event: what AutoCount invoiced before go-live is filled first, with no journal (the
-     opening balances carry it). */
   if (ctx.allocs.length === 0 && ctx.billedBeforeSen > 0) {
-    let target: Map<string, number>;
-    try {
-      target = waterfallTarget(ctx.lines, ctx.billedBeforeSen);
-    } catch (err) {
-      return { ok: false, status: 'post_failed', reason: `${p.soDocNo}: ${err instanceof Error ? err.message : String(err)}` };
-    }
-    const rows = ctx.lines.filter((l) => (target.get(l.key) ?? 0) !== 0).map((l) => ({
-      company_id: p.companyId, so_doc_no: p.soDocNo, source_type: ALLOC_OPENING, source_doc_no: p.soDocNo,
-      line_key: l.key, account_code: ctx.accountOf(l), amount_sen: target.get(l.key) ?? 0,
-    }));
-    const { data, error } = await sb.from('reno_revenue_allocations').insert(rows).select('id, source_type, source_doc_no, line_key, account_code, amount_sen');
-    if (error) return { ok: false, status: 'allocations_failed', reason: `The go-live allocation of ${p.soDocNo} could not be saved: ${error.message}` };
-    ctx.allocs = ((data ?? rows) as AllocRow[]).map((r) => ({ ...r, amount_sen: Number(r.amount_sen) }));
+    const seeded = await seedOpening(sb, p.companyId, p.soDocNo, ctx);
+    if (!seeded.ok) return seeded;
+    ctx.allocs = seeded.rows;
   }
 
   const isMine = (a: AllocRow) => a.source_type === p.allocSource && a.source_doc_no === p.docNo;
@@ -336,13 +345,16 @@ async function postRevenueEvent(sb: Sb, p: {
   }
 
   const already = new Map<string, number>();
-  const accountOfKey = new Map<string, string>();
+  /* Per line, what sits on each account (insertion order), for give-backs. */
+  const booked = new Map<string, Map<string, number>>();
   for (const a of ctx.allocs) {
     if (isMine(a)) continue;
     already.set(a.line_key, (already.get(a.line_key) ?? 0) + a.amount_sen);
-    accountOfKey.set(a.line_key, a.account_code);
+    const m = booked.get(a.line_key) ?? new Map<string, number>();
+    m.set(a.account_code, (m.get(a.account_code) ?? 0) + a.amount_sen);
+    booked.set(a.line_key, m);
   }
-  for (const l of ctx.lines) accountOfKey.set(l.key, ctx.accountOf(l));
+  const bindingOf = new Map(ctx.lines.map((l) => [l.key, ctx.accountOf(l)]));
   const allocatedSen = [...already.values()].reduce((s, v) => s + v, 0);
   const cumulative = allocatedSen + p.amountSen;
   if (cumulative < 0) {
@@ -362,15 +374,29 @@ async function postRevenueEvent(sb: Sb, p: {
   } catch (err) {
     return { ok: false, status: 'post_failed', reason: `${p.soDocNo}: ${err instanceof Error ? err.message : String(err)}` };
   }
-  /* Net per revenue account, in the contract's line order (then lines no longer on it). */
-  const order = [...ctx.lines.map((l) => l.key), ...[...delta.keys()].filter((k) => !ctx.lines.some((l) => l.key === k))];
-  const nets = new Map<string, number>();
+  /* In the contract's line order (then lines no longer on it). */
+  const order = [...ctx.lines.map((l) => l.key), ...[...delta.keys()].filter((k) => !bindingOf.has(k))];
+  const moves: Move[] = [];
   for (const key of order) {
     const d = delta.get(key);
     if (!d) continue;
-    const account = accountOfKey.get(key)!;
-    nets.set(account, (nets.get(account) ?? 0) + d);
+    const onAccounts = [...(booked.get(key) ?? new Map<string, number>())].filter(([, v]) => v > 0);
+    if (d > 0) {
+      moves.push({ key, account: bindingOf.get(key) ?? onAccounts[onAccounts.length - 1]?.[0] ?? '', amount: d });
+      continue;
+    }
+    let left = -d;
+    for (const [account, v] of [...onAccounts].reverse()) {
+      if (left <= 0) break;
+      const take = Math.min(left, v);
+      moves.push({ key, account, amount: -take });
+      left -= take;
+    }
+    if (left > 0) moves.push({ key, account: bindingOf.get(key) ?? onAccounts[0]?.[0] ?? '', amount: -left });
   }
+  if (moves.some((m) => !m.account)) return { ok: false, status: 'post_failed', reason: `${p.soDocNo}: a line has no revenue account to post to.` };
+  const nets = new Map<string, number>();
+  for (const m of moves) nets.set(m.account, (nets.get(m.account) ?? 0) + m.amount);
 
   const counterLine = p.counter === 'advance'
     ? { accountCode: ctx.advance }
@@ -389,9 +415,9 @@ async function postRevenueEvent(sb: Sb, p: {
       const { error } = await sb.from('reno_revenue_allocations').delete().in('id', mine.map((a) => a.id));
       if (error) return { ok: false, status: 'allocations_failed', reason: `${p.docNo} posted as ${r.jeNo}, but its old allocations could not be cleared: ${error.message}` };
     }
-    const rows = order.filter((k) => delta.get(k)).map((k) => ({
+    const rows = moves.filter((m) => m.amount !== 0).map((m) => ({
       company_id: p.companyId, so_doc_no: p.soDocNo, source_type: p.allocSource, source_doc_no: p.docNo,
-      line_key: k, account_code: accountOfKey.get(k)!, amount_sen: delta.get(k)!,
+      line_key: m.key, account_code: m.account, amount_sen: m.amount,
     }));
     if (rows.length > 0) {
       const { error } = await sb.from('reno_revenue_allocations').insert(rows);
@@ -405,6 +431,7 @@ async function postRevenueEvent(sb: Sb, p: {
       }
     }
   }
+  if (r.status === 'posted' && ctx.status === 'CANCELLED') await reclearIfCancelled(sb, p.companyId, p.soDocNo);
   return { ok: true, status: r.status === 'already_posted' ? 'already_posted' : 'posted', jeNo: r.jeNo, jeId: r.jeId };
 }
 
@@ -433,6 +460,8 @@ export async function renovationCreditKind(sb: Sb, companyId: number, noteId: st
   return { ok: true, kind: null };
 }
 
+type NoteLineRow = { company_id: number; note_id: string; line_no: number; description: string | null; account_code: string; amount_sen: number };
+
 /** A renovation credit note: Dr revenue (given back from the last tier filled) / Cr the customer control for a
     contract credit, or Cr the advance for a negative instalment (source CN, doc = the note number). On a fresh posting
     the note's own lines are rewritten to the revenue accounts it debited, when every one of them is a debit. */
@@ -446,72 +475,228 @@ export async function postRenovationCredit(sb: Sb, p: {
     docNo: n.note_number, date: String(n.note_date).slice(0, 10), amountSen: -Number(n.total_sen), counter: p.kind === 'contract' ? 'customer' : 'advance',
     narration: `Credit note ${n.note_number} — ${n.party_name ?? ''} (renovation ${n.so_doc_no})${n.reason ? ` (${n.reason})` : ''}`,
   });
-  if (r.ok && r.status === 'posted') {
-    const { data: jl } = await sb.from('journal_entry_lines').select('account_code, debit_sen, credit_sen, party_code').eq('journal_entry_id', r.jeId);
-    const all = (jl ?? []) as Array<{ account_code: string; debit_sen: number; credit_sen: number }>;
-    const debits = all.filter((l) => Number(l.debit_sen) > 0);
-    const credits = all.filter((l) => Number(l.credit_sen) > 0);
-    /* Only the counter leg is a credit: the note's lines become the revenue debits. Best-effort — the journal is
-       the record; the lines only tell the reader where it went. */
-    if (credits.length === 1 && debits.length > 0) {
-      const { error: delErr } = await sb.from('acc_credit_note_lines').delete().eq('company_id', p.companyId).eq('note_id', n.id);
-      if (!delErr) {
-        await sb.from('acc_credit_note_lines').insert(debits.map((l, i) => ({
-          company_id: p.companyId, note_id: n.id, line_no: i + 1, description: `${n.reason ?? 'Renovation credit'} — revenue given back`,
-          account_code: l.account_code, amount_sen: Number(l.debit_sen),
-        })));
-      }
-    }
-  }
+  if (r.ok && r.status === 'posted') await rewriteNoteLines(sb, p.companyId, n, r.jeId);
   return r;
 }
 
-/** Cancelling a credit note takes its revenue allocation away (its journal is reversed by the caller); a contract
-    credit's RENO-CREDIT row is cancelled too, so the contract stands at its amount again. Best-effort, logged. */
-export async function releaseRenovationCredit(sb: Sb, p: { companyId: number; noteId: string; noteNumber: string }): Promise<void> {
-  const { error } = await sb.from('reno_revenue_allocations').delete().eq('company_id', p.companyId)
-    .in('source_type', [ALLOC_CREDIT, ALLOC_BILL_CREDIT]).eq('source_doc_no', p.noteNumber);
-  if (error) console.error(`[reno-ledger] allocations of ${p.noteNumber} not cleared:`, error.message);
-  const { data: cc, error: ccErr } = await sb.from('reno_contract_credits').select('id').eq('company_id', p.companyId).eq('credit_note_id', p.noteId);
-  if (ccErr) { console.error(`[reno-ledger] contract credit of ${p.noteNumber} not read:`, ccErr.message); return; }
-  const ids = ((cc ?? []) as Array<{ id: string }>).map((r) => r.id);
-  if (ids.length > 0) {
-    const { error: upErr } = await sb.from('mfg_sales_order_items').update({ cancelled: true }).in('id', ids).eq('item_code', 'RENO-CREDIT');
-    if (upErr) console.error(`[reno-ledger] RENO-CREDIT row of ${p.noteNumber} not cancelled:`, upErr.message);
+/** Best-effort: the journal is the record; the lines only tell the reader where it went. Never leaves a note with
+    no lines — a failed insert puts the old lines back. */
+async function rewriteNoteLines(sb: Sb, companyId: number, n: { id: string; note_number: string; reason?: string | null }, jeId: string): Promise<void> {
+  const { data: jl, error: jErr } = await sb.from('journal_entry_lines').select('account_code, debit_sen, credit_sen').eq('journal_entry_id', jeId);
+  if (jErr) return;
+  const all = (jl ?? []) as Array<{ account_code: string; debit_sen: number; credit_sen: number }>;
+  const debits = all.filter((l) => Number(l.debit_sen) > 0);
+  /* Only when the counter leg is the one credit: the note's lines become the revenue debits. */
+  if (all.filter((l) => Number(l.credit_sen) > 0).length !== 1 || debits.length === 0) return;
+  const { data: oldData, error: oErr } = await sb.from('acc_credit_note_lines').select('company_id, note_id, line_no, description, account_code, amount_sen')
+    .eq('company_id', companyId).eq('note_id', n.id);
+  if (oErr) return;
+  const old = (oldData ?? []) as NoteLineRow[];
+  const { error: delErr } = await sb.from('acc_credit_note_lines').delete().eq('company_id', companyId).eq('note_id', n.id);
+  if (delErr) { console.error(`[reno-ledger] lines of ${n.note_number} not rewritten:`, delErr.message); return; }
+  const { error: insErr } = await sb.from('acc_credit_note_lines').insert(debits.map((l, i) => ({
+    company_id: companyId, note_id: n.id, line_no: i + 1, description: `${n.reason ?? 'Renovation credit'} — revenue given back`,
+    account_code: l.account_code, amount_sen: Number(l.debit_sen),
+  })));
+  if (insErr) {
+    console.error(`[reno-ledger] lines of ${n.note_number} not rewritten, old lines put back:`, insErr.message);
+    const { error: backErr } = await sb.from('acc_credit_note_lines').insert(old);
+    if (backErr) console.error(`[reno-ledger] ${n.note_number} has lost its lines: ${backErr.message}`);
   }
 }
 
+/** The SO header roll-up from its live lines (the REST twin of renovation-so recomputeSoHeader). */
+async function recomputeSoHeaderRest(sb: Sb, companyId: number, soDocNo: string): Promise<void> {
+  const { data: items, error } = await paginateAll((from, to) => sb.from('mfg_sales_order_items').select('id, total_sen, line_cost_sen, cancelled')
+    .eq('company_id', companyId).eq('doc_no', soDocNo).order('id').range(from, to));
+  if (error) { console.error(`[reno-ledger] ${soDocNo} header not recomputed:`, (error as { message?: string }).message); return; }
+  const live = ((items ?? []) as Array<{ total_sen: number | null; line_cost_sen: number | null; cancelled: boolean | null }>).filter((r) => r.cancelled !== true);
+  const total = live.reduce((s, r) => s + Number(r.total_sen ?? 0), 0);
+  const cost = live.reduce((s, r) => s + Number(r.line_cost_sen ?? 0), 0);
+  const { data: so, error: soErr } = await sb.from('mfg_sales_orders').select('paid_sen, version').eq('company_id', companyId).eq('doc_no', soDocNo).maybeSingle();
+  if (soErr || !so) return;
+  const { error: upErr } = await sb.from('mfg_sales_orders').update({
+    local_total_sen: total, subtotal_sen: total, total_revenue_sen: total, others_sen: total, total_cost_sen: cost, others_cost_sen: cost,
+    total_margin_sen: total - cost, line_count: live.length, balance_sen: total - Number(so.paid_sen ?? 0), version: Number(so.version ?? 0) + 1,
+    updated_at: new Date().toISOString(),
+  }).eq('company_id', companyId).eq('doc_no', soDocNo);
+  if (upErr) console.error(`[reno-ledger] ${soDocNo} header not recomputed:`, upErr.message);
+}
+
+/** Cancelling a credit note takes its revenue allocation away (its journal is reversed by the caller); a contract
+    credit's RENO-CREDIT row is cancelled too, so the contract stands at its amount again; a cancelled contract is
+    cleared again. Best-effort, logged. */
+export async function releaseRenovationCredit(sb: Sb, p: { companyId: number; noteId: string; noteNumber: string; soDocNo?: string | null }): Promise<void> {
+  const { error } = await sb.from('reno_revenue_allocations').delete().eq('company_id', p.companyId)
+    .in('source_type', [ALLOC_CREDIT, ALLOC_BILL_CREDIT]).eq('source_doc_no', p.noteNumber);
+  if (error) console.error(`[reno-ledger] allocations of ${p.noteNumber} not cleared:`, error.message);
+  const { data: cc, error: ccErr } = await sb.from('reno_contract_credits').select('id, so_doc_no').eq('company_id', p.companyId).eq('credit_note_id', p.noteId);
+  if (ccErr) { console.error(`[reno-ledger] contract credit of ${p.noteNumber} not read:`, ccErr.message); return; }
+  const rows = (cc ?? []) as Array<{ id: string; so_doc_no: string }>;
+  if (rows.length > 0) {
+    const { error: upErr } = await sb.from('mfg_sales_order_items').update({ cancelled: true }).in('id', rows.map((r) => r.id)).eq('item_code', 'RENO-CREDIT');
+    if (upErr) console.error(`[reno-ledger] RENO-CREDIT row of ${p.noteNumber} not cancelled:`, upErr.message);
+    else await recomputeSoHeaderRest(sb, p.companyId, rows[0].so_doc_no);
+  }
+  const so = p.soDocNo ?? rows[0]?.so_doc_no ?? null;
+  if (so) await reclearIfCancelled(sb, p.companyId, so);
+}
+
 /** A cancelled invoice gives its tiers back: its allocations go (the caller reversed its journal). */
-export async function releaseInvoiceAllocations(sb: Sb, invoiceNumber: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const { error } = await sb.from('reno_revenue_allocations').delete().eq('source_type', ALLOC_INVOICE).eq('source_doc_no', invoiceNumber);
-  return error ? { ok: false, reason: error.message } : { ok: true };
+export async function releaseInvoiceAllocations(sb: Sb, invoiceNumber: string, companyId: number | null): Promise<{ ok: true; soDocNo: string | null } | { ok: false; reason: string }> {
+  const scoped = (q: Sb) => (companyId != null ? q.eq('company_id', companyId) : q);
+  const { data, error: rErr } = await scoped(sb.from('reno_revenue_allocations').select('so_doc_no').eq('source_type', ALLOC_INVOICE).eq('source_doc_no', invoiceNumber));
+  if (rErr) return { ok: false, reason: rErr.message };
+  const rows = (data ?? []) as Array<{ so_doc_no: string }>;
+  if (rows.length === 0) return { ok: true, soDocNo: null };
+  const { error } = await scoped(sb.from('reno_revenue_allocations').delete().eq('source_type', ALLOC_INVOICE).eq('source_doc_no', invoiceNumber));
+  return error ? { ok: false, reason: error.message } : { ok: true, soDocNo: rows[0].so_doc_no };
 }
 
 /* ── Cancel contract ────────────────────────────────────────────────────────────────────────────────────────────── */
 
-/** After the contract is CANCELLED: clear the advance it still holds (what was never invoiced) — Dr advance / Cr the
-    customer control, source RCAN, doc = the SO. Whatever was invoiced and not credited stays as revenue. */
+/** The live ledger balance of one account in one company (credit − debit): posted, not reversed, not a contra —
+    the rule the balance views use. The OPENING journal counts like any other. */
+async function accountBalance(sb: Sb, companyId: number, accountCode: string): Promise<{ ok: true; sen: number } | { ok: false; status: string; reason: string }> {
+  const { data, error } = await paginateAll((from, to) => sb.from('journal_entry_lines').select('journal_entry_id, debit_sen, credit_sen')
+    .eq('account_code', accountCode).order('journal_entry_id').range(from, to));
+  if (error) return { ok: false, status: 'load_failed', reason: `The balance of ${accountCode} could not be read: ${(error as { message?: string }).message ?? String(error)}` };
+  const lines = (data ?? []) as Array<{ journal_entry_id: string; debit_sen: number | null; credit_sen: number | null }>;
+  const ids = [...new Set(lines.map((l) => String(l.journal_entry_id)))];
+  const live = new Set<string>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data: jes, error: jErr } = await sb.from('journal_entries').select('id, company_id, posted, reversed, reversed_by_je').in('id', ids.slice(i, i + 200));
+    if (jErr) return { ok: false, status: 'load_failed', reason: `The journals on ${accountCode} could not be read: ${jErr.message}` };
+    for (const j of (jes ?? []) as Array<{ id: string; company_id: number | null; posted: boolean | null; reversed: boolean | null; reversed_by_je: string | null }>) {
+      if (Number(j.company_id) === companyId && j.posted !== false && !j.reversed && !j.reversed_by_je) live.add(String(j.id));
+    }
+  }
+  return { ok: true, sen: lines.filter((l) => live.has(String(l.journal_entry_id))).reduce((s, l) => s + Number(l.credit_sen ?? 0) - Number(l.debit_sen ?? 0), 0) };
+}
+
+type CancelCtx = {
+  status: string; advance: string; control: string; debtorCode: string; partyName: string | null; balanceSen: number;
+  rcan: Array<{ source_doc_no: string; reversed: boolean | null }>;
+};
+
+/** A contract's clearing state, whenever it was signed: its advance account's balance and its RCAN journals. */
+async function loadCancelCtx(sb: Sb, companyId: number, soDocNo: string): Promise<({ ok: true } & CancelCtx) | { ok: false; status: string; reason: string }> {
+  const { data: so, error: soErr } = await sb.from('mfg_sales_orders').select('doc_no, so_kind, debtor_code, status')
+    .eq('company_id', companyId).eq('doc_no', soDocNo).maybeSingle();
+  if (soErr) return { ok: false, status: 'load_failed', reason: soErr.message };
+  if (!so || so.so_kind !== 'RENOVATION') return { ok: false, status: 'not_renovation', reason: `${soDocNo} is not a renovation contract.` };
+  const { data: contract, error: cErr } = await sb.from('reno_so_contracts').select('advance_account_code').eq('so_doc_no', soDocNo).maybeSingle();
+  if (cErr) return { ok: false, status: 'load_failed', reason: cErr.message };
+  const advance = String(contract?.advance_account_code ?? '').trim();
+  if (!advance) return { ok: false, status: 'no_advance_account', reason: `Contract ${soDocNo} has no advance account. Set it, then post again.` };
+  const debtorCode = String(so.debtor_code ?? '').trim();
+  const customer = await customerOf(sb, companyId, debtorCode);
+  if (!customer.ok) return customer;
+  const bal = await accountBalance(sb, companyId, advance);
+  if (!bal.ok) return bal;
+  const { data: jes, error: jErr } = await sb.from('journal_entries').select('source_doc_no, reversed')
+    .eq('company_id', companyId).eq('source_type', CONTRACT_CANCELLED).like('source_doc_no', `${soDocNo}%`);
+  if (jErr) return { ok: false, status: 'load_failed', reason: jErr.message };
+  const rcanRe = new RegExp(`^${soDocNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(-\\d+)?$`);
+  return {
+    ok: true, status: String(so.status ?? ''), advance, control: customer.control, debtorCode, partyName: customer.partyName, balanceSen: bal.sen,
+    rcan: ((jes ?? []) as Array<{ source_doc_no: string; reversed: boolean | null }>).filter((r) => rcanRe.test(r.source_doc_no)),
+  };
+}
+
+/** On a CANCELLED contract: clear what its advance sub-account holds — the ledger balance, so a late invoice, a
+    reversal or an opening balance is caught too — Dr advance / Cr the customer control (the reverse for a debit
+    balance). Source RCAN: doc = the SO the first time, then SO-2, SO-3 … each time the balance is non-zero again.
+    Dated `date` (the cancel date) or today, never before the ledger start. Whatever was invoiced and not credited
+    stays as revenue. */
 export async function postContractCancel(sb: Sb, p: { companyId: number; soDocNo: string; date: string | null; actor: string | null }): Promise<RenoPostResult> {
-  const ctx = await loadContractCtx(sb, p.companyId, p.soDocNo);
-  if (!ctx.ok) return ctx;
-  if (ctx.beforeStart) return { ok: true, status: 'before_ledger_start', reason: ctx.reason };
-  if (ctx.status !== 'CANCELLED') return { ok: false, status: 'not_cancelled', reason: `Contract ${p.soDocNo} is not cancelled.` };
-  const left = await advanceLeft(sb, p.companyId, p.soDocNo, ctx.postedSen);
-  if (!left.ok) return left;
-  if (left.sen === 0) return { ok: true, status: 'nothing', deltaSen: 0 };
-  const amount = Math.abs(left.sen);
-  const customer = { accountCode: ctx.control, partyType: 'CUSTOMER', partyCode: ctx.debtorCode, partyName: ctx.partyName };
-  const lines = left.sen > 0
-    ? [{ accountCode: ctx.advance, debitSen: amount, creditSen: 0 }, { ...customer, debitSen: 0, creditSen: amount }]
-    : [{ ...customer, debitSen: amount, creditSen: 0 }, { accountCode: ctx.advance, debitSen: 0, creditSen: amount }];
-  const r = await postJournal(sb, {
-    companyId: p.companyId,
-    entryDate: p.date ?? todayMyt(),
-    sourceType: CONTRACT_CANCELLED,
-    sourceDocNo: p.soDocNo,
-    narration: `Renovation contract ${p.soDocNo} cancelled — the part never invoiced cleared${p.actor ? ` (${p.actor})` : ''}`,
-    lines,
-  });
-  if (!r.ok) return { ok: false, status: r.status, reason: r.reason };
-  return { ok: true, status: r.status === 'already_posted' ? 'already_posted' : 'posted', jeNo: r.jeNo, deltaSen: left.sen };
+  const { companyId, soDocNo } = p;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const c = await loadCancelCtx(sb, companyId, soDocNo);
+    if (!c.ok) return c;
+    if (c.status !== 'CANCELLED') return { ok: false, status: 'not_cancelled', reason: `Contract ${soDocNo} is not cancelled.` };
+    if (c.balanceSen === 0) return { ok: true, status: attempt === 0 ? 'nothing' : 'already_posted', deltaSen: 0 };
+
+    const ls = await loadLedgerSettings(sb, companyId);
+    if (!ls.ok) return { ok: false, status: 'ledger_settings_failed', reason: 'The ledger settings could not be read.' };
+    let date = p.date ?? todayMyt();
+    if (isBeforeLedgerStart(date, ls.settings)) date = String(ls.settings.ledgerStartDate);
+
+    const n = c.rcan.reduce((m, r) => Math.max(m, r.source_doc_no === soDocNo ? 1 : Number(r.source_doc_no.slice(soDocNo.length + 1)) || 0), 0) + 1;
+    const sourceDocNo = n === 1 ? soDocNo : `${soDocNo}-${n}`;
+    const amount = Math.abs(c.balanceSen);
+    const customer = { accountCode: c.control, partyType: 'CUSTOMER', partyCode: c.debtorCode, partyName: c.partyName };
+    const lines = c.balanceSen > 0
+      ? [{ accountCode: c.advance, debitSen: amount, creditSen: 0 }, { ...customer, debitSen: 0, creditSen: amount }]
+      : [{ ...customer, debitSen: amount, creditSen: 0 }, { accountCode: c.advance, debitSen: 0, creditSen: amount }];
+    const r = await postJournal(sb, {
+      companyId, entryDate: date, sourceType: CONTRACT_CANCELLED, sourceDocNo,
+      narration: `Renovation contract ${soDocNo} cancelled — advance ${c.advance} cleared${p.actor ? ` (${p.actor})` : ''}`,
+      lines,
+    });
+    if (!r.ok) return { ok: false, status: r.status, reason: r.reason };
+    if (r.status !== 'already_posted') return { ok: true, status: 'posted', jeNo: r.jeNo, deltaSen: c.balanceSen };
+  }
+  return { ok: true, status: 'already_posted' };
+}
+
+/** After a posting or reversal that touched a contract's advance: when the contract is cancelled, clear it again.
+    Best-effort, logged — finance's "Post contract" retries. */
+export async function reclearIfCancelled(sb: Sb, companyId: number, soDocNo: string): Promise<void> {
+  try {
+    const { data: so } = await sb.from('mfg_sales_orders').select('status, so_kind').eq('company_id', companyId).eq('doc_no', soDocNo).maybeSingle();
+    if (!so || so.so_kind !== 'RENOVATION' || so.status !== 'CANCELLED') return;
+    const r = await postContractCancel(sb, { companyId, soDocNo, date: null, actor: null });
+    if (!r.ok) console.error(`[reno-ledger] ${soDocNo} advance not cleared again:`, r.status, r.reason);
+  } catch (err) {
+    console.error(`[reno-ledger] ${soDocNo} advance not cleared again:`, err);
+  }
+}
+
+export type CancelGate = { ok: true } | { ok: false; status: 'forbidden' | 'contract_under_posted' | 'documents_unposted' | 'load_failed'; reason: string };
+
+/** Before a contract is cancelled. A billed contract needs finance (scm.payment_voucher.post). The contract must be
+    posted in full (RCON / RVO in step), and every issued invoice and credit note on it posted — otherwise the
+    clearing would miss them. Contracts signed before the ledger start are not held by their contract posting. */
+export async function cancelGate(sb: Sb, p: { companyId: number; soDocNo: string; isFinance: boolean }): Promise<CancelGate> {
+  const { companyId, soDocNo } = p;
+  const { data: bills, error: bErr } = await sb.from('reno_instalment_bills').select('id').eq('so_doc_no', soDocNo).limit(1);
+  if (bErr) return { ok: false, status: 'load_failed', reason: bErr.message };
+  if ((bills ?? []).length > 0 && !p.isFinance) {
+    return { ok: false, status: 'forbidden', reason: 'This contract has been billed: cancelling it needs the "scm.payment_voucher.post" permission (finance).' };
+  }
+
+  const state = await contractPostingState(sb, { companyId, soDocNo });
+  if (!state.ok) return { ok: false, status: 'contract_under_posted', reason: `Contract ${soDocNo} is not posted (${state.reason}). Finance posts it first, then cancel.` };
+  if (state.status === 'under_posted') {
+    return { ok: false, status: 'contract_under_posted', reason: `Contract ${soDocNo} is not fully posted (ledger ${fmtSen(state.postedSen)} of ${fmtSen(state.contractSen)}). Finance posts the contract first, then cancel.` };
+  }
+
+  const ls = await loadLedgerSettings(sb, companyId);
+  if (!ls.ok) return { ok: false, status: 'load_failed', reason: 'The ledger settings could not be read.' };
+  const inLedger = (d: string | null | undefined) => !isBeforeLedgerStart(String(d ?? '').slice(0, 10), ls.settings);
+  const unposted: string[] = [];
+
+  const { data: sis, error: sErr } = await sb.from('sales_invoices').select('invoice_number, invoice_date, status, migrated_no_stock, opening_balance')
+    .eq('company_id', companyId).eq('so_doc_no', soDocNo);
+  if (sErr) return { ok: false, status: 'load_failed', reason: sErr.message };
+  const issued = ((sis ?? []) as Array<{ invoice_number: string; invoice_date: string; status: string; migrated_no_stock?: boolean | null; opening_balance?: boolean | null }>)
+    .filter((s) => !['DRAFT', 'CANCELLED'].includes(String(s.status).toUpperCase()) && !s.migrated_no_stock && !s.opening_balance && inLedger(s.invoice_date));
+  if (issued.length > 0) {
+    const { data: jes, error: jErr } = await sb.from('journal_entries').select('source_doc_no, reversed')
+      .eq('company_id', companyId).eq('source_type', 'SI').in('source_doc_no', issued.map((s) => s.invoice_number));
+    if (jErr) return { ok: false, status: 'load_failed', reason: jErr.message };
+    const posted = new Set(((jes ?? []) as Array<{ source_doc_no: string; reversed: boolean | null }>).filter((j) => !j.reversed).map((j) => j.source_doc_no));
+    unposted.push(...issued.filter((s) => !posted.has(s.invoice_number)).map((s) => s.invoice_number));
+  }
+
+  const { data: notes, error: nErr } = await sb.from('acc_credit_notes').select('note_number, note_date, status')
+    .eq('company_id', companyId).eq('so_doc_no', soDocNo).eq('status', 'DRAFT');
+  if (nErr) return { ok: false, status: 'load_failed', reason: nErr.message };
+  unposted.push(...((notes ?? []) as Array<{ note_number: string; note_date: string }>).filter((n) => inLedger(n.note_date)).map((n) => n.note_number));
+
+  if (unposted.length > 0) {
+    return { ok: false, status: 'documents_unposted', reason: `${unposted.join(', ')} on ${soDocNo} ${unposted.length === 1 ? 'is' : 'are'} not posted yet. Post ${unposted.length === 1 ? 'it' : 'them'} first, then cancel.` };
+  }
+  return { ok: true };
 }

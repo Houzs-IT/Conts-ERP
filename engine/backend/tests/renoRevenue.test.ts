@@ -14,7 +14,7 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
-import { contractPostingState, postContractCancel, postContractChange } from '../src/acc/reno-ledger';
+import { cancelGate, contractPostingState, postContractCancel, postContractChange } from '../src/acc/reno-ledger';
 import { postSiRevenue, reverseSiRevenue } from '../src/scm/lib/post-si-revenue';
 import { cancelCreditNote, postCreditNote } from '../src/acc/credit-notes';
 import { assembleView, creditContract } from '../src/scm/lib/renovation-billing';
@@ -391,8 +391,8 @@ describe('cancel contract', () => {
     expect(revenueToDate(sb)).toBe(400_000);
     expect(-(bal['505-0000'] ?? 0)).toBe(200_000);
     expect(bal['301-0000']).toBe(10_000_000 - 600_000 - 9_000_000);
-    /* Again: nothing more. */
-    expect(await postContractCancel(sb, { companyId: CO, soDocNo: SO, date: '2026-11-25', actor: 'Finance' })).toMatchObject({ ok: true, status: 'already_posted' });
+    /* Again: the advance is at 0, nothing more. */
+    expect(await postContractCancel(sb, { companyId: CO, soDocNo: SO, date: '2026-11-25', actor: 'Finance' })).toMatchObject({ ok: true, status: 'nothing' });
     expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toMatchObject({ status: 'in_step' });
   });
 
@@ -400,6 +400,164 @@ describe('cancel contract', () => {
     const sb = harness();
     await postContractChange(sb, { companyId: CO, soDocNo: SO, date: '2026-11-03', actor: 'Chew' });
     sb.tables.mfg_sales_orders[0].status = 'CANCELLED';
-    expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toMatchObject({ status: 'under_posted' });
+    expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toMatchObject({ status: 'under_posted', uncleared: 10_000_000 });
+  });
+
+  /** Signed, invoiced 1,000,000 and cancelled (advance cleared to 0). */
+  async function cancelled() {
+    const sb = harness();
+    await postContractChange(sb, { companyId: CO, soDocNo: SO, date: '2026-11-03', actor: 'Chew' });
+    await invoice(sb, 1_000_000);
+    sb.tables.mfg_sales_orders[0].status = 'CANCELLED';
+    expect(await postContractCancel(sb, { companyId: CO, soDocNo: SO, date: '2026-11-25', actor: 'Finance' })).toMatchObject({ ok: true, status: 'posted', deltaSen: 9_000_000 });
+    return sb;
+  }
+
+  test('an invoice cancelled after the contract was cancelled: the advance is cleared again', async () => {
+    const sb = await cancelled();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-27T04:00:00Z'));
+    const no = sb.tables.sales_invoices[0].invoice_number;
+    sb.tables.sales_invoices[0].status = 'CANCELLED';
+    expect(await reverseSiRevenue(sb, no)).toMatchObject({ ok: true, status: 'reversed' });
+    expect(journalOf(sb, 'RCAN', `${SO}-2`)).toEqual([
+      { account: '480-S012', dr: 1_000_000, cr: 0, party: null },
+      { account: '301-0000', dr: 0, cr: 1_000_000, party: '301-M002' },
+    ]);
+    expect(balances(sb)['480-S012'] ?? 0).toBe(0);
+    expect(revenueToDate(sb)).toBe(0);
+    expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toMatchObject({ status: 'in_step' });
+  });
+
+  test('an invoice posted late on a cancelled contract: the advance is cleared again', async () => {
+    const sb = await cancelled();
+    await invoice(sb, 500_000, '2026-11-26');
+    expect(journalOf(sb, 'RCAN', `${SO}-2`)).toEqual([
+      { account: '301-0000', dr: 500_000, cr: 0, party: '301-M002' },
+      { account: '480-S012', dr: 0, cr: 500_000, party: null },
+    ]);
+    expect(balances(sb)['480-S012'] ?? 0).toBe(0);
+    expect(revenueToDate(sb)).toBe(1_500_000);
+  });
+
+  test('an old contract with only its opening balance on the advance is cleared to 0', async () => {
+    const sb = harness({ soDate: '2026-10-10', billedBefore: 1_000_000 });
+    sb.tables.journal_entries.push({ id: 'op-1', company_id: CO, je_no: 'OB-1', entry_date: '2026-10-31', source_type: 'OPENING', source_doc_no: 'OPENING', posted: true, reversed: false, reversed_by_je: null, total_debit_sen: 9_000_000, total_credit_sen: 9_000_000 });
+    sb.tables.journal_entry_lines.push({ id: 1, company_id: CO, journal_entry_id: 'op-1', line_no: 1, account_code: '480-S012', debit_sen: 0, credit_sen: 9_000_000 });
+    sb.tables.mfg_sales_orders[0].status = 'CANCELLED';
+    expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toMatchObject({ status: 'under_posted', uncleared: 9_000_000 });
+    const r = await postContractCancel(sb, { companyId: CO, soDocNo: SO, date: null, actor: 'Finance' });
+    expect(r).toMatchObject({ ok: true, status: 'posted', deltaSen: 9_000_000 });
+    expect(journalOf(sb, 'RCAN', SO)).toEqual([
+      { account: '480-S012', dr: 9_000_000, cr: 0, party: null },
+      { account: '301-0000', dr: 0, cr: 9_000_000, party: '301-M002' },
+    ]);
+    expect(balances(sb)['480-S012'] ?? 0).toBe(0);
+    /* Dated today, or the ledger start when today is before it. */
+    expect(sb.tables.journal_entries.find((j) => j.source_type === 'RCAN')!.entry_date >= '2026-11-01').toBe(true);
+    expect(await contractPostingState(sb, { companyId: CO, soDocNo: SO })).toMatchObject({ status: 'in_step' });
+  });
+});
+
+describe('the cancel gate', () => {
+  test('refused while the contract is under-posted', async () => {
+    const sb = harness();
+    const r = await cancelGate(sb, { companyId: CO, soDocNo: SO, isFinance: true });
+    expect(r).toMatchObject({ ok: false, status: 'contract_under_posted' });
+    if (!r.ok) expect(r.reason).toContain(SO);
+  });
+
+  test('refused while an issued invoice or a credit note on it is unposted', async () => {
+    const sb = harness();
+    await postContractChange(sb, { companyId: CO, soDocNo: SO, date: '2026-11-03', actor: 'Chew' });
+    sb.tables.sales_invoices.push({ id: 'si-x', invoice_number: '2990SI-2611-900', invoice_date: '2026-11-05', total_sen: 100_000, company_id: CO, so_doc_no: SO, status: 'SENT' });
+    const r = await cancelGate(sb, { companyId: CO, soDocNo: SO, isFinance: true });
+    expect(r).toMatchObject({ ok: false, status: 'documents_unposted' });
+    if (!r.ok) expect(r.reason).toContain('2990SI-2611-900');
+
+    const sb2 = harness();
+    await postContractChange(sb2, { companyId: CO, soDocNo: SO, date: '2026-11-03', actor: 'Chew' });
+    draftNote(sb2, 'cn-1', '2990CN-2611-001', 100_000);
+    const r2 = await cancelGate(sb2, { companyId: CO, soDocNo: SO, isFinance: true });
+    expect(r2).toMatchObject({ ok: false, status: 'documents_unposted' });
+    if (!r2.ok) expect(r2.reason).toContain('2990CN-2611-001');
+  });
+
+  test('a billed contract needs finance to cancel it', async () => {
+    const sb = harness();
+    await postContractChange(sb, { companyId: CO, soDocNo: SO, date: '2026-11-03', actor: 'Chew' });
+    expect(await cancelGate(sb, { companyId: CO, soDocNo: SO, isFinance: false })).toEqual({ ok: true });
+    await invoice(sb, 1_000_000);
+    sb.tables.reno_instalment_bills.push({ id: 'b-1', company_id: CO, so_doc_no: SO, kind: 'INVOICE', amount_sen: 1_000_000 });
+    expect(await cancelGate(sb, { companyId: CO, soDocNo: SO, isFinance: false })).toMatchObject({ ok: false, status: 'forbidden' });
+    expect(await cancelGate(sb, { companyId: CO, soDocNo: SO, isFinance: true })).toEqual({ ok: true });
+  });
+
+  test('an old contract signed before the ledger start is not held by the contract posting', async () => {
+    const sb = harness({ soDate: '2026-10-10' });
+    expect(await cancelGate(sb, { companyId: CO, soDocNo: SO, isFinance: true })).toEqual({ ok: true });
+  });
+});
+
+describe('review fixes', () => {
+  test('a give-back debits the account the revenue went to, not today\'s binding', async () => {
+    const sb = harness();
+    await invoice(sb, 1_000_000);
+    sb.tables.acc_sub_category_accounts.find((r) => r.sub_category_code === 'ELECTRICAL')!.sales_account = '501-0090';
+    const note = draftNote(sb, 'cn-1', '2990CN-2611-001', 500_000);
+    contractCredit(sb, 'cn-1', '2990CN-2611-001', 500_000);
+    expect(await postCreditNote(sb, { companyId: CO, note, actor: 'Finance' })).toMatchObject({ ok: true });
+    expect(journalOf(sb, 'CN', '2990CN-2611-001')).toEqual([
+      { account: '301-0000', dr: 0, cr: 500_000, party: '301-M002' },
+      { account: '501-0020', dr: 222_223, cr: 0, party: null },
+      { account: '501-0030', dr: 277_777, cr: 0, party: null },
+    ]);
+  });
+
+  test('cancelling a contract credit puts the contract back to its amount', async () => {
+    const sb = harness();
+    await invoice(sb, 1_000_000);
+    const note = draftNote(sb, 'cn-1', '2990CN-2611-001', 500_000);
+    contractCredit(sb, 'cn-1', '2990CN-2611-001', 500_000);
+    await postCreditNote(sb, { companyId: CO, note, actor: 'Finance' });
+    await cancelCreditNote(sb, { companyId: CO, note: sb.tables.acc_credit_notes[0], actor: 'Finance', entryDate: '2026-11-21' });
+    expect(sb.tables.mfg_sales_orders[0].local_total_sen).toBe(10_000_000);
+    expect(sb.tables.mfg_sales_orders[0].line_count).toBe(5);
+  });
+
+  test('a posted note keeps its lines when the rewrite cannot be saved', async () => {
+    const base = harness();
+    await invoice(base, 1_000_000);
+    const note = draftNote(base, 'cn-1', '2990CN-2611-001', 500_000);
+    contractCredit(base, 'cn-1', '2990CN-2611-001', 500_000);
+    let failed = false;
+    const sb = new Proxy(base, {
+      get(target, key, recv) {
+        if (key !== 'from') return Reflect.get(target, key, recv);
+        return (table: string) => {
+          const b = target.from(table);
+          if (table !== 'acc_credit_note_lines' || failed) return b;
+          return new Proxy(b, { get(t, k, r) {
+            if (k !== 'insert') return Reflect.get(t, k, r);
+            return () => { failed = true; return Promise.resolve({ data: null, error: { message: 'down' } }); };
+          } });
+        };
+      },
+    });
+    expect(await postCreditNote(sb, { companyId: CO, note, actor: 'Finance' })).toMatchObject({ ok: true, status: 'posted' });
+    expect(failed).toBe(true);
+    expect(base.tables.acc_credit_note_lines.filter((l) => l.note_id === 'cn-1').map((l) => [l.account_code, l.amount_sen])).toEqual([['480-S012', 500_000]]);
+  });
+
+  test('two first invoices racing on an old contract seed its go-live amount once', async () => {
+    const sb = harness({ soDate: '2026-10-10', billedBefore: 1_000_000 });
+    sb.tables.sales_invoices.push(
+      { id: 'si-a', invoice_number: '2990SI-2611-801', invoice_date: '2026-11-12', debtor_code: '301-M002', debtor_name: 'MS LEE', total_sen: 100_000, company_id: CO, so_doc_no: SO, status: 'SENT' },
+      { id: 'si-b', invoice_number: '2990SI-2611-802', invoice_date: '2026-11-12', debtor_code: '301-M002', debtor_name: 'MS LEE', total_sen: 100_000, company_id: CO, so_doc_no: SO, status: 'SENT' },
+    );
+    await Promise.all([postSiRevenue(sb, '2990SI-2611-801'), postSiRevenue(sb, '2990SI-2611-802')]);
+    const opening = sb.tables.reno_revenue_allocations.filter((a) => a.source_type === 'OPENING');
+    expect(opening.reduce((s, a) => s + Number(a.amount_sen), 0)).toBe(1_000_000);
+    expect(new Set(opening.map((a) => a.line_key)).size).toBe(opening.length);
   });
 });

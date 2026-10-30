@@ -23,7 +23,7 @@ import { splitByItemGroup } from '../../acc/item-group-split';
 import { customerPartyCode } from '../../acc/payments';
 import { applyDepositInvoicesBestEffort } from '../../acc/deposit-invoices';
 import { isBeforeLedgerStart, loadLedgerSettings } from '../../acc/ledger-settings';
-import { postRenovationInvoice, releaseInvoiceAllocations } from '../../acc/reno-ledger';
+import { postRenovationInvoice, reclearIfCancelled, releaseInvoiceAllocations } from '../../acc/reno-ledger';
 
 export type PostSiResult =
   | { ok: true; status: 'posted'; jeNo: string; jeId: string; totalSen: number }
@@ -222,11 +222,12 @@ export async function reverseSiRevenue(sb: any, invoiceNumber: string): Promise<
       { accountCode: DEFAULT_ROLE_CODES.AR, debitSen: 0, creditSen: totalSen, notes: `Reverse AR ${invoiceNumber}` },
     ],
   });
-  /* A renovation invoice gives its tiers back with its journal, so the next invoice re-fills them (no rows for
-     any other invoice). */
+  /* A renovation invoice gives its tiers back with its journal, so the next invoice re-fills them, and a cancelled
+     contract is cleared again (no rows for any other invoice). */
   if (rev.ok && rev.status !== 'before_ledger_start') {
-    const rel = await releaseInvoiceAllocations(sb, invoiceNumber);
+    const rel = await releaseInvoiceAllocations(sb, invoiceNumber, inv?.company_id ?? null);
     if (!rel.ok) return { ok: false, status: 'reversal_read_failed', reason: `${invoiceNumber} reversed, but its renovation revenue allocation was not cleared: ${rel.reason}` };
+    if (rel.soDocNo && inv?.company_id != null) await reclearIfCancelled(sb, inv.company_id, rel.soDocNo);
   }
   return rev;
 }
