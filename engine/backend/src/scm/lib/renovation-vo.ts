@@ -169,7 +169,7 @@ export async function applyVo(
   actor: RenoActor,
   id: string,
   body: { version: number; signedName?: string | null; signedAt?: string | null },
-): Promise<{ soDocNo: string; netSen: number; revisedContractSen: number; flags: number }> {
+): Promise<{ soDocNo: string; netSen: number; revisedContractSen: number; flags: number; voNo: string; docDate: string }> {
   const v0 = await lockVo(db, id, actor.companyId);
   const head = await readContractHead(db, v0.so_doc_no, actor.companyId, true);
   const v = await lockVo(db, id, actor.companyId);
@@ -304,7 +304,7 @@ export async function applyVo(
     companyId: actor.companyId, docNo: soDocNo, action: 'VO_APPLY', actorName: actor.name,
     note: `${v.vo_no} approved: ${rows.length} line(s) added, ${omits.length} omitted, net ${fmtSen(net)}${flags ? `, ${flags} PO line(s) flagged` : ''}`,
   });
-  return { soDocNo, netSen: net, revisedContractSen: revised, flags };
+  return { soDocNo, netSen: net, revisedContractSen: revised, flags, voNo: v.vo_no, docDate: v.doc_date };
 }
 
 export async function listPoFlags(db: RenoDb, soDocNo: string) {

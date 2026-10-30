@@ -4,7 +4,7 @@
 //   node scripts/cron-dry-run.mjs                            every job, dry run, database 127.0.0.1:55433
 //   node scripts/cron-dry-run.mjs --db=postgres://postgres:local@127.0.0.1:55433/postgres
 //   node scripts/cron-dry-run.mjs --job=overdue-sweep        one job (channex-outbox, notification-outbox,
-//                                                            repair-blocks, overdue-sweep, daily-digest,
+//                                                            repair-blocks, overdue-sweep, forgotten-clock-outs, daily-digest,
 //                                                            hub-health-report)
 //   --hub=http://127.0.0.1:8787 --hub-key=<key>             a LOCAL IT Hub for hub-health-report (it sends
 //                                                            nothing otherwise; a non-local hub is refused)
@@ -40,7 +40,7 @@ const J = await import(pathToFileURL(out).href);
 
 const env = { HYPERDRIVE: { connectionString: db }, SESSION_SECRET: 'unused',
   ...(hub ? { IT_HUB_URL: hub, IT_HUB_API_KEY: arg('hub-key') ?? '', APP_ORIGIN: 'http://127.0.0.1:8788' } : {}) };
-const all = { 'channex-outbox': J.channexOutbox, 'notification-outbox': J.drainOutbox, 'repair-blocks': J.repairBlockSweep, 'overdue-sweep': J.overdueSweep, 'daily-digest': J.dailyDigest, 'hub-health-report': J.hubHealthReport };
+const all = { 'channex-outbox': J.channexOutbox, 'notification-outbox': J.drainOutbox, 'repair-blocks': J.repairBlockSweep, 'overdue-sweep': J.overdueSweep, 'forgotten-clock-outs': J.forgottenClockOuts, 'daily-digest': J.dailyDigest, 'hub-health-report': J.hubHealthReport };
 const pick = arg('job');
 if (pick && !all[pick]) { console.error(`Unknown job ${pick}. One of: ${Object.keys(all).join(', ')}`); process.exit(2); }
 const jobs = pick ? [all[pick]] : Object.values(all);

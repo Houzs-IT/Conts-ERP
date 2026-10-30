@@ -23,13 +23,14 @@ import {
 } from '../lib/renovation-quotation';
 import { convertQuotationToSo, patchContract, readContract, setContractStatus, type RenoSoStatus } from '../lib/renovation-so';
 import { previewPoSplit, raisePos } from '../lib/renovation-po-split';
-import { billingView, billInstalment } from '../lib/renovation-billing';
+import { billingView, billInstalment, creditContract } from '../lib/renovation-billing';
 import { applyVo, createVo, listPoFlags, readVo, resolvePoFlag, saveVo, setVoStatus } from '../lib/renovation-vo';
 import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule } from '../lib/renovation-po-schedule';
 import { listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
 import { onRenovationSoLinesChanged } from '../lib/renovation-hooks';
 import { postSiRevenue } from '../lib/post-si-revenue';
+import { cancelGate, contractPostingState, postContractCancel, postContractChange } from '../../acc/reno-ledger';
 import { CREDIT_NOTE_HEADER, postCreditNote } from '../../acc/credit-notes';
 import { categoryGroupOf, type UomDef } from '../shared/renovation-catalog';
 import { loadUomsSql } from './renovation-catalog-settings';
@@ -147,10 +148,53 @@ renovation.post('/quotations/:id/status', handle(PERM.quote, async (c, { tx }) =
 
 renovation.post('/quotations/:id/convert', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
-  const out = await tx((db) => convertQuotationToSo(db, actorOf(c), param(c, 'id'), { version: intParam(b.version, 'version'), soDate: b.soDate ?? null }));
+  const actor = actorOf(c);
+  const out = await tx((db) => convertQuotationToSo(db, actor, param(c, 'id'), { version: intParam(b.version, 'version'), soDate: b.soDate ?? null }));
   await onRenovationSoLinesChanged(out.docNo, sqlRead);
-  return c.json(out, 201);
+  const posting = await postContractAfterCommit(c, actor, out.docNo, out.soDate);
+  return c.json({ ...out, posting }, 201);
 }));
+
+/* Finance: whether the ledger carries the contract as it stands, and posting it again when a post after commit was
+   refused (acc/reno-ledger). REST only — no SQL transaction. */
+const FINANCE_POST = 'scm.payment_voucher.post';
+
+renovation.get('/sales-orders/:docNo/contract-posting', async (c) => {
+  if (!hasHouzsPerm(c, FINANCE_POST)) return c.json({ error: 'forbidden', message: `You need the "${FINANCE_POST}" permission for this.` }, 403);
+  const docNo = c.req.param('docNo');
+  return c.json(await contractPostingState(c.get('supabase'), { companyId: actorOf(c).companyId, soDocNo: docNo }));
+});
+
+renovation.post('/sales-orders/:docNo/post-contract', async (c) => {
+  if (!hasHouzsPerm(c, FINANCE_POST)) return c.json({ error: 'forbidden', message: `You need the "${FINANCE_POST}" permission for this.` }, 403);
+  const actor = actorOf(c);
+  try {
+    const sb = c.get('supabase');
+    const soDocNo = c.req.param('docNo');
+    const r = await postContractChange(sb, { companyId: actor.companyId, soDocNo, date: null, actor: actor.name });
+    if (!r.ok) return c.json(r, 409);
+    /* A cancelled contract whose clearing was refused: clear it now (nothing to do answers 'not_cancelled' for a
+       live one, which is not a failure here). */
+    const cancel = await postContractCancel(sb, { companyId: actor.companyId, soDocNo, date: null, actor: actor.name });
+    if (!cancel.ok && cancel.status !== 'not_cancelled') return c.json(cancel, 409);
+    if (cancel.ok && cancel.status === 'posted') return c.json(cancel);
+    return c.json(r);
+  } catch (err) {
+    console.error('[renovation] post contract failed:', err);
+    return c.json({ ok: false, status: 'post_failed', reason: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
+
+/** After commit: post the contract's change to its project accounts (acc/reno-ledger). A refusal leaves it unposted
+    and is reported, never thrown — the next change posts the whole difference. */
+async function postContractAfterCommit(c: C, actor: RenoActor, soDocNo: string, date: string): Promise<{ status: string; reason?: string }> {
+  try {
+    const r = await postContractChange(c.get('supabase'), { companyId: actor.companyId, soDocNo, date, actor: actor.name });
+    return { status: r.status, reason: r.ok ? undefined : r.reason };
+  } catch (err) {
+    return { status: 'post_failed', reason: err instanceof Error ? err.message : String(err) };
+  }
+}
 
 renovation.post('/quotations/:id/save-as-template', handle(PERM.quote, async (c, { tx, sqlRead }) => {
   const b = await json(c);
@@ -277,8 +321,53 @@ renovation.post('/sales-orders/:docNo/status', handle(PERM.quote, async (c, { tx
   const b = await json(c);
   const s = z.enum(['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED', 'CLOSED', 'CANCELLED']).safeParse(b.status);
   if (!s.success) throw new RenoError(400, 'invalid_status', 'Unknown contract status.');
-  return c.json(await tx((db) => setContractStatus(db, actorOf(c), param(c, 'docNo'), s.data as RenoSoStatus, typeof b.note === 'string' ? b.note : undefined)));
+  const actor = actorOf(c);
+  const docNo = param(c, 'docNo');
+  if (s.data === 'CANCELLED') {
+    /* A billed contract needs finance; the contract and every issued document on it must be posted first, so the
+       clearing after commit sees the whole advance (acc/reno-ledger cancelGate). */
+    const gate = await cancelGate(c.get('supabase'), { companyId: actor.companyId, soDocNo: docNo, isFinance: hasHouzsPerm(c, FINANCE_POST) });
+    if (!gate.ok) throw new RenoError(gate.status === 'forbidden' ? 403 : gate.status === 'load_failed' ? 503 : 409, gate.status, gate.reason);
+  }
+  const out = await tx((db) => setContractStatus(db, actor, docNo, s.data as RenoSoStatus, typeof b.note === 'string' ? b.note : undefined));
+  if (out.status !== 'CANCELLED') return c.json(out);
+  /* After commit: clear the part never invoiced from the advance (acc/reno-ledger). A refusal is reported, never
+     thrown; finance posts it again from the contract. */
+  let posting: { status: string; reason?: string };
+  try {
+    const r = await postContractCancel(c.get('supabase'), { companyId: actor.companyId, soDocNo: docNo, date: null, actor: actor.name });
+    posting = { status: r.status, reason: r.ok ? undefined : r.reason };
+  } catch (err) {
+    posting = { status: 'post_failed', reason: err instanceof Error ? err.message : String(err) };
+  }
+  return c.json({ ...out, posting });
 }));
+
+/* Finance: a credit note that lowers the contract (a special discount, less work, a refund). Needs the billing
+   permission and finance's posting permission; the journal posts after commit. */
+renovation.post('/sales-orders/:docNo/credit', handle(PERM.bill, async (c, { tx }) => {
+  if (!hasHouzsPerm(c, FINANCE_POST)) return c.json({ error: 'forbidden', message: `You need the "${FINANCE_POST}" permission for this.` }, 403);
+  const b = await json(c);
+  const actor = actorOf(c);
+  const docNo = param(c, 'docNo');
+  const result = await tx((db) => creditContract(db, actor, docNo, {
+    amountSen: intParam(b.amountSen, 'amountSen'), reason: typeof b.reason === 'string' ? b.reason : '', noteDate: typeof b.noteDate === 'string' ? b.noteDate : null,
+  }));
+  return c.json({ ...result, posting: await postNoteAfterCommit(c, actor, result.creditNoteId) }, 201);
+}));
+
+/** After commit: post a renovation credit note (acc/credit-notes → acc/reno-ledger). Reported, never thrown. */
+async function postNoteAfterCommit(c: C, actor: RenoActor, creditNoteId: string): Promise<{ status: string; reason?: string }> {
+  try {
+    const sb = c.get('supabase');
+    const { data: note, error } = await sb.from('acc_credit_notes').select(CREDIT_NOTE_HEADER).eq('id', creditNoteId).single();
+    if (error || !note) return { status: 'load_failed', reason: error?.message };
+    const r = await postCreditNote(sb, { companyId: actor.companyId, note: note as never, actor: actor.name });
+    return { status: r.status, reason: r.ok ? undefined : r.reason };
+  } catch (err) {
+    return { status: 'post_failed', reason: err instanceof Error ? err.message : String(err) };
+  }
+}
 
 renovation.get('/sales-orders/:docNo/po-split', handle(null, async (c, { sqlRead }) =>
   c.json(await previewPoSplit(sqlRead, param(c, 'docNo'), actorOf(c).companyId))));
@@ -308,12 +397,7 @@ renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(PERM.bill, a
       const r = await postSiRevenue(sb, result.invoiceNumber);
       posting = { status: r.status, reason: 'reason' in r ? r.reason : undefined };
     } else if (result.kind === 'CREDIT_NOTE' && result.creditNoteId) {
-      const { data: note, error } = await sb.from('acc_credit_notes').select(CREDIT_NOTE_HEADER).eq('id', result.creditNoteId).single();
-      if (error || !note) posting = { status: 'load_failed', reason: error?.message };
-      else {
-        const r = await postCreditNote(sb, { companyId: actor.companyId, note: note as never, actor: actor.name });
-        posting = { status: r.ok ? r.status : r.status, reason: r.ok ? undefined : r.reason };
-      }
+      posting = await postNoteAfterCommit(c, actor, result.creditNoteId);
     }
   } catch (err) {
     posting = { status: 'post_failed', reason: err instanceof Error ? err.message : String(err) };
@@ -348,11 +432,13 @@ renovation.post('/variation-orders/:id/status', handle(PERM.quote, async (c, { t
 
 renovation.post('/variation-orders/:id/approve', handle(PERM.voApply, async (c, { tx, sqlRead }) => {
   const b = await json(c);
-  const out = await tx((db) => applyVo(db, actorOf(c), param(c, 'id'), {
+  const actor = actorOf(c);
+  const out = await tx((db) => applyVo(db, actor, param(c, 'id'), {
     version: intParam(b.version, 'version'), signedName: typeof b.signedName === 'string' ? b.signedName : null, signedAt: b.signedAt ?? null,
   }));
   await onRenovationSoLinesChanged(out.soDocNo, sqlRead);
-  return c.json(out);
+  const posting = await postContractAfterCommit(c, actor, out.soDocNo, out.docDate);
+  return c.json({ ...out, posting });
 }));
 
 renovation.get('/sales-orders/:docNo/po-flags', handle(null, async (c, { sqlRead }) => c.json({ flags: await listPoFlags(sqlRead, param(c, 'docNo')) })));

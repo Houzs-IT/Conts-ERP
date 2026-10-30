@@ -13,7 +13,7 @@ export type PrintFormat = (typeof PRINT_FORMATS)[number];
 export const INSTALMENT_TRIGGERS = ['so_confirmed', 'stage_start', 'stage_done'] as const;
 export const PO_PAYABLE_ON = ['ON_CONFIRM', 'ON_RECEIPT', 'ON_HANDOVER', 'MANUAL'] as const;
 /* Codes the documents write themselves; never typed on a line. */
-export const RESERVED_ITEM_CODES = ['RENO-ADJUST', 'RENO-DISCOUNT', 'RENO-PROGRESS'] as const;
+export const RESERVED_ITEM_CODES = ['RENO-ADJUST', 'RENO-DISCOUNT', 'RENO-PROGRESS', 'RENO-CREDIT'] as const;
 
 const int = z.number().int();
 const money = int.min(-2_000_000_000).max(2_000_000_000);
