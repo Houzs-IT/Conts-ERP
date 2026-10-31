@@ -16,6 +16,7 @@ export const MFG_PRODUCT_CATEGORIES = [
   // Renovation groups (Conts, migration 0060; renovation-catalog.ts holds the tree).
   'WORKS', 'BUILTIN', 'FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT',
   'AIRBNB', // migration 0162
+  'RAW', // migration 0189
 ] as const;
 
 export type MfgProductCategory = (typeof MFG_PRODUCT_CATEGORIES)[number];
@@ -38,6 +39,7 @@ export const MFG_CATEGORY_LABELS: Readonly<Record<MfgProductCategory, string>> =
   APPLIANCE: 'Appliances',
   SOFT: 'Soft furnishing',
   AIRBNB: 'Airbnb supplies',
+  RAW: 'Raw material',
 };
 
 export function isMfgProductCategory(c: string | null | undefined): c is MfgProductCategory {

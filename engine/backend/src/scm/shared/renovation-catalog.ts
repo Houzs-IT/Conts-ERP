@@ -23,7 +23,7 @@ export type StageKey =
   | 'warranty'
   | 'closed';
 
-export const CATALOG_GROUPS = ['WORKS', 'BUILTIN', 'FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT', 'SERVICE', 'AIRBNB'] as const;
+export const CATALOG_GROUPS = ['WORKS', 'BUILTIN', 'FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT', 'SERVICE', 'AIRBNB', 'RAW'] as const;
 export type CatalogGroup = (typeof CATALOG_GROUPS)[number];
 
 export interface GroupDef {
@@ -42,6 +42,7 @@ export const RENOVATION_GROUPS: readonly GroupDef[] = [
   { code: 'SERVICE', label: 'Service', stage: 'soft_furnishing' },
   // Things only an Airbnb unit needs (kitchenware, cleaning, consumables, labels); owner, 26 Oct 2026, migration 0163.
   { code: 'AIRBNB', label: 'Airbnb supplies', stage: 'soft_furnishing' },
+  { code: 'RAW', label: 'Raw material', stage: 'hardware' },
 ];
 
 export interface SubCategoryDef {
@@ -125,6 +126,15 @@ export const SUB_CATEGORIES: readonly SubCategoryDef[] = [
   { group: 'AIRBNB', code: 'FIXTURE', label: 'Fixture', sort: 30 },
   { group: 'AIRBNB', code: 'CONSUMABLES', label: 'Consumables', sort: 40 },
   { group: 'AIRBNB', code: 'SIGNAGE', label: 'Signage', sort: 50 },
+  { group: 'RAW', code: 'CEMENT_SAND', label: 'Cement & sand', sort: 10 },
+  { group: 'RAW', code: 'TILE_ADHESIVE', label: 'Tile adhesive & grout', sort: 20 },
+  { group: 'RAW', code: 'BOARD', label: 'Gypsum & board', sort: 30 },
+  { group: 'RAW', code: 'TIMBER', label: 'Timber & plywood', sort: 40 },
+  { group: 'RAW', code: 'WIRE_FITTING', label: 'Wire & electrical fittings', sort: 50 },
+  { group: 'RAW', code: 'PIPE_FITTING', label: 'Pipe & plumbing fittings', sort: 60 },
+  { group: 'RAW', code: 'PAINT_SEALANT', label: 'Paint & sealant', sort: 70 },
+  { group: 'RAW', code: 'HARDWARE', label: 'Hardware & fasteners', sort: 80 },
+  { group: 'RAW', code: 'OTHER_RAW', label: 'Other raw material', sort: 90 },
 ];
 
 /* Legacy Houzs category -> group. SERVICE maps to itself with no sub-category. */
@@ -142,7 +152,7 @@ const LEGACY_GROUP: Readonly<Record<string, CatalogGroup>> = {
   SERVICE: 'SERVICE',
 };
 
-const NEW_GROUPS: ReadonlySet<string> = new Set(['WORKS', 'BUILTIN', 'FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT', 'AIRBNB']);
+const NEW_GROUPS: ReadonlySet<string> = new Set(['WORKS', 'BUILTIN', 'FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT', 'AIRBNB', 'RAW']);
 
 export function isCatalogGroup(x: string | null | undefined): x is CatalogGroup {
   return (CATALOG_GROUPS as readonly string[]).includes(String(x ?? ''));
