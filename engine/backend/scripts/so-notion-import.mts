@@ -148,6 +148,7 @@ async function soScreenFields(db: RenoDb, docNo: string, projectId: number | nul
       where i.doc_no = $1 and p.code = i.item_code and i.item_code not like 'RENO-%' and i.description is distinct from p.name`,
     [docNo, companyId],
   );
+  await areaRooms(db, docNo);
   if (projectId == null) return;
   await db.q(
     `update scm.mfg_sales_orders o set city = coalesce(p.city, o.city), postcode = coalesce(p.postcode, o.postcode),
@@ -155,6 +156,53 @@ async function soScreenFields(db: RenoDb, docNo: string, projectId: number | nul
        from public.projects p where o.doc_no = $1 and p.id = $2`,
     [docNo, projectId],
   );
+}
+
+/* Rooms (owner, 31 Oct): the SO's rooms are areas of the home, as on an order made in the screens, not the PDF's trade
+   headings (those stay on the contract and its print). A line's area is read from its PDF wording, the part after
+   "@" first ("SHOE CABINET @ CAR POUCH"), else its section heading; a line naming none is Common area. */
+const AREA_ORDER = ['Living hall', 'Dining', 'Kitchen', 'Master bedroom', ...Array.from({ length: 9 }, (_, i) => `Bedroom ${i + 1}`),
+  'Master bathroom', 'Bathroom', 'Study room', 'Maid room', 'Walk-in closet', 'Yard', 'Balcony', 'Entrance', 'Common area'];
+const AREA_RULES: Array<[RegExp, string | ((m: RegExpMatchArray) => string)]> = [
+  [/\bMASTER\s*(BED\s*)?ROOM\s*(TOILET|BATH)|\bMASTER\s*(TOILET|BATH)/, 'Master bathroom'],
+  [/\bMASTER\s*(BED\s*)?(ROOM|BR)\b|\bMASTER\b/, 'Master bedroom'],
+  [/\bWALK[\s-]*IN\b/, 'Walk-in closet'],
+  [/\bMAID\b/, 'Maid room'],
+  [/\b(?:BED\s*ROOM|BEDRM|ROOM|BR)\s*0?([1-9])\b/, (m) => `Bedroom ${m[1]}`],
+  [/\bTOILET|\bBATH\s*ROOM|\bWASH\s*ROOM|\bWC\b/, 'Bathroom'],
+  [/\bSTUDY\s*(ROOM|AREA)\b/, 'Study room'],
+  [/\bLIVING|\bSOFA\b|\bTV\s*(AREA|WALL)\b|\bFAMILY\s*(HALL|AREA)\b/, 'Living hall'],
+  [/\bDINING|\bDININING/, 'Dining'],
+  [/\bKITCHEN|\bPANTRY\b/, 'Kitchen'],
+  [/\bYARD\b|\bUTILITY\b|\bLAUNDRY\b/, 'Yard'],
+  [/\bBALCONY|\bBOUCONY|\bBALCONI/, 'Balcony'],
+  [/\bFOYER\b|\bENTRANCE\b|\bCAR\s*(PORCH|POUCH|PARK)\b|\bGATE\b/, 'Entrance'],
+];
+function areaOf(text: string | null | undefined): string | null {
+  const t = String(text ?? '').toUpperCase();
+  if (!t.trim()) return null;
+  const at = t.lastIndexOf('@');
+  for (const part of at >= 0 ? [t.slice(at + 1), t] : [t]) {
+    for (const [re, to] of AREA_RULES) {
+      const m = part.match(re);
+      if (m) return typeof to === 'string' ? to : to(m);
+    }
+  }
+  return null;
+}
+
+async function areaRooms(db: RenoDb, docNo: string) {
+  const lines = await db.q<{ id: string; remark: string | null; description: string | null; room: string | null }>(
+    `select id::text as id, remark, description, room from scm.mfg_sales_order_items where doc_no = $1`, [docNo]);
+  const rows = lines.map((l) => ({ id: l.id, room: areaOf(l.remark ?? l.description) ?? areaOf(l.room) ?? 'Common area' }));
+  const used = new Set(rows.map((r) => r.room));
+  const rooms = AREA_ORDER.filter((a) => used.has(a));
+  await db.q(
+    `update scm.mfg_sales_order_items i set room = x.room
+       from jsonb_to_recordset($2::text::jsonb) as x(id uuid, room text) where i.id = x.id and i.doc_no = $1`,
+    [docNo, JSON.stringify(rows)],
+  );
+  await db.q(`update scm.mfg_sales_orders set room_sections = $2::text::jsonb where doc_no = $1`, [docNo, JSON.stringify(rooms)]);
 }
 
 try {

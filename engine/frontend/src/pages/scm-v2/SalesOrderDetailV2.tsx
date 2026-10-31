@@ -107,7 +107,8 @@ import { useSoInfoLists, useSoRooms } from "../projects/renovation/customerPrope
 import { projectDatesText } from "../projects/renovation/customerPropertyModel";
 import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
 import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
-import { roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
+import { categoryRooms, roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
+import { useMfgProducts } from "../../vendor/scm/lib/mfg-products-queries";
 import { CONTS_LINES_BY_NAME, contsLineIdentity } from "../../conts/flowRules";
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from "./renovationSoAreaLines";
 import { soStatusDisplay } from "../../vendor/scm/lib/so-status";
@@ -658,6 +659,15 @@ function SalesOrderDetailV2ReadOnly() {
     ),
     [detail.data, coverage.data]
   );
+  /* "By category" (owner, 31 Oct 2026): the lines under their catalog category; the page and the print follow
+     whichever of By item / By area / By category is chosen (By item prints by area, as before). */
+  const catalogQ = useMfgProducts({ enabled: !!printRooms });
+  const categoryView = useMemo(() => {
+    if (!printRooms || !catalogQ.data) return undefined;
+    const groups = new Map(catalogQ.data.map((p) => [p.code, p.category_group || p.category]));
+    return categoryRooms(items, (code) => groups.get(code));
+  }, [printRooms, catalogQ.data, items]);
+  const shownRooms = linesView === "category" ? categoryView : printRooms;
 
   const st = salesOrder ? displayStatusFor(salesOrder) : null;
 
@@ -848,7 +858,7 @@ function SalesOrderDetailV2ReadOnly() {
           payments as never,
           action,
           pwpCodes,
-          printRooms || printProjectDates ? { rooms: printRooms, projectDates: printProjectDates } : undefined
+          shownRooms || printProjectDates ? { rooms: shownRooms ?? printRooms, projectDates: printProjectDates } : undefined
         )
       )
       .catch((e) =>
@@ -1523,10 +1533,10 @@ function SalesOrderDetailV2ReadOnly() {
                 ) : undefined
               }
             >
-              {printRooms && linesView === "area" ? (
+              {shownRooms && linesView !== "item" ? (
                 <SoAreaLines<SoItem>
                   items={items}
-                  rooms={printRooms}
+                  rooms={shownRooms}
                   columns={lineColumns.filter((col) => ["item", "qty", "unit", "disc", "total"].includes(col.key))}
                   money={(sen) => fmtMoney(sen, salesOrder.currency)}
                 />

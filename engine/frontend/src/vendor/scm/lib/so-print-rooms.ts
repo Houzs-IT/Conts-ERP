@@ -36,3 +36,30 @@ export function roomGroups<T extends { id: string; total_sen?: number | null }>(
   }
   return out;
 }
+
+/* "By category" (owner, 31 Oct 2026): the same grouping keyed on each line's catalog category instead of its room,
+   so the page and the print can show either. A line whose code is not in the catalog (the renovation system rows:
+   document discount, lump sums) prints under "Other items". Pure. */
+const CATEGORY_LABELS: Record<string, string> = {
+  BUILTIN: 'Built-in', WORKS: 'Works', LIGHTING: 'Lighting', SOFT: 'Soft furnishing', FURNITURE: 'Furniture',
+  APPLIANCE: 'Appliances', SERVICE: 'Service',
+};
+const CATEGORY_ORDER = ['Built-in', 'Works', 'Lighting', 'Soft furnishing', 'Furniture', 'Appliances', 'Service'];
+export function categoryLabel(group: string | null | undefined): string | null {
+  const g = String(group ?? '').trim().toUpperCase();
+  if (!g) return null;
+  return CATEGORY_LABELS[g] ?? g.charAt(0) + g.slice(1).toLowerCase().replace(/_/g, ' ');
+}
+export function categoryRooms(
+  items: ReadonlyArray<{ id: string; item_code?: string | null }>,
+  groupOf: (code: string) => string | null | undefined,
+): SoPrintRooms {
+  const byItem: Record<string, string> = {};
+  for (const it of items) {
+    const label = it.item_code ? categoryLabel(groupOf(it.item_code)) : null;
+    if (label) byItem[it.id] = label;
+  }
+  const used = new Set(Object.values(byItem));
+  const order = [...CATEGORY_ORDER.filter((c) => used.has(c)), ...[...used].filter((c) => !CATEGORY_ORDER.includes(c)).sort()];
+  return { order, byItem };
+}
