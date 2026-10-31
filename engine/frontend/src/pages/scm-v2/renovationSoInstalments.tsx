@@ -13,7 +13,7 @@ interface BillingInstalment {
 }
 interface BillingView { receivedSen: number; revisedContractSen: number; instalments: BillingInstalment[] }
 
-export interface SoInstalmentRow { seq: number; label: string; pctBp: number; amountSen: number; paidSen: number }
+export interface SoInstalmentRow { seq: number; label: string; pctBp: number; amountSen: number; paidSen: number; slot?: boolean }
 
 export function useSoInstalments(docNo: string | null, enabled: boolean) {
   return useQuery({
@@ -41,6 +41,18 @@ export function instalmentRows(view: BillingView | undefined, recordedSen: numbe
   });
 }
 
+const ORD = ["1st", "2nd", "3rd", "4th"];
+
+/** An order with no instalment schedule: four payments, each filled by one recorded payment, oldest first, more when
+    more are recorded. The same strip the project's payments card shows (services/renovation/beta.ts paymentsOf). */
+export function paymentSlots(payments: readonly { amount_sen: number; paid_at?: string | null; created_at?: string }[]): SoInstalmentRow[] {
+  const paid = payments.filter((p) => (p.amount_sen || 0) > 0)
+    .sort((a, b) => String(a.paid_at ?? a.created_at ?? "").localeCompare(String(b.paid_at ?? b.created_at ?? "")));
+  return Array.from({ length: Math.max(4, paid.length) }, (_, i) => ({
+    seq: i + 1, label: `${ORD[i] ?? `${i + 1}th`} payment`, pctBp: 0, amountSen: paid[i]?.amount_sen ?? 0, paidSen: paid[i]?.amount_sen ?? 0, slot: true,
+  }));
+}
+
 /** What the next payment should collect once `paidSen` is on the order: the first instalment's unpaid remainder. */
 export function nextInstalmentSen(rows: readonly SoInstalmentRow[], paidSen: number): number {
   let left = paidSen;
@@ -63,11 +75,11 @@ export function SoInstalments({ rows, money }: { rows: readonly SoInstalmentRow[
           <div key={r.seq} className="rounded-lg border border-border-subtle px-3 py-2">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-secondary">{r.label}</span>
-              <span className="text-[11px] text-ink-muted">{(r.pctBp / 100).toFixed(r.pctBp % 100 ? 1 : 0)}%</span>
+              {!r.slot && <span className="text-[11px] text-ink-muted">{(r.pctBp / 100).toFixed(r.pctBp % 100 ? 1 : 0)}%</span>}
             </div>
-            <div className="mt-1 text-[14px] font-bold text-ink">{money(r.amountSen)}</div>
+            <div className="mt-1 text-[14px] font-bold text-ink">{r.slot && r.amountSen === 0 ? "-" : money(r.amountSen)}</div>
             <div className={`mt-0.5 text-[11.5px] ${paid ? "text-synced" : part ? "text-warning-text" : "text-ink-muted"}`}>
-              {paid ? "Paid" : part ? `Paid ${money(r.paidSen)}` : "Not paid"}
+              {paid ? (r.slot ? "Received" : "Paid") : part ? `Paid ${money(r.paidSen)}` : r.slot ? "Not received" : "Not paid"}
             </div>
           </div>
         );

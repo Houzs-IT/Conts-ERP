@@ -37,7 +37,8 @@ describe('mergeLanesForVo', () => {
 describe('poPickerOffers', () => {
   test('never offers a customer-supplied line', () => {
     expect(poPickerOffers({ itemCode: 'CUS-TILE', itemGroup: 'builtin', mainSupplierCode: 'CUSTOMER' })).toBe(false);
-    expect(poPickerOffers({ itemCode: 'CUS-TILE', itemGroup: 'builtin', mainSupplierCode: null })).toBe(false);
+    // A CUS- code with no supplier is an ordinary line: the supplier decides (owner, 1 Nov 2026).
+    expect(poPickerOffers({ itemCode: 'CUS-TILE', itemGroup: 'builtin', mainSupplierCode: null })).toBe(true);
     expect(poPickerOffers({ itemCode: 'TILE-01', itemGroup: 'builtin', mainSupplierCode: 'CUSTOMER' })).toBe(false);
   });
   test('does not offer a works or service line with no supplier, but does when it has one', () => {

@@ -31,11 +31,10 @@ export const CUSTOMER_SUPPLIER_CODE = 'CUSTOMER';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the request's PostgREST client, untyped like its siblings
 type Sb = any;
 
-/** Customer-supplied, from the SKU's main supplier: supplier CUSTOMER, or no supplier at all on a CUS-* placeholder
-    (the same rule as voGoesTo in renovation-po-split.ts). Pure, for tests. */
-export function isCustomerGoods(itemCode: string, mainSupplierCode: string | null): boolean {
-  if (mainSupplierCode) return mainSupplierCode.toUpperCase() === CUSTOMER_SUPPLIER_CODE;
-  return itemCode.trim().toUpperCase().startsWith('CUS-');
+/** Customer-supplied: the SKU's main supplier is CUSTOMER (owner, 1 Nov 2026: the SKU's supplier decides, not a
+    CUS- code). The same rule as voGoesTo in renovation-po-split.ts. Pure, for tests. */
+export function isCustomerGoods(_itemCode: string, mainSupplierCode: string | null): boolean {
+  return (mainSupplierCode ?? '').toUpperCase() === CUSTOMER_SUPPLIER_CODE;
 }
 
 /** The item codes among `codes` that are customer-supplied. Empty when the switch is off. A failed read answers

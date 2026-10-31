@@ -54,7 +54,7 @@ describe("Client PO area", () => {
             all: async () => ({
               results: [{
                 id: "l1", doc_no: "TC-SO-2610-002", item_code: "CUS-DINING", description: "Dining set", qty: 1, uom: "SET", unit_cost_sen: 0, photo_urls: null,
-                room: "Living hall", supply_by_owner: null, line_supplier_code: null, main_supplier_code: null, measure: null, measure_uom: null, vo_no: null,
+                room: "Living hall", supply_by_owner: null, line_supplier_code: null, main_supplier_code: "CUSTOMER", measure: null, measure_uom: null, vo_no: null,
                 cat_label: null, cat_sort: null, sub_label: null, sub_sort: null, sku_photos: "[]",
               }],
             }),
