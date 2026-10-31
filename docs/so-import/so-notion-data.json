@@ -1,5 +1,5 @@
 {
- "built": "2026-10-30",
+ "built": "2026-10-31",
  "source": "Notion SO export (Notion SO.zip, 107 PDFs), owner 26 Oct 2026",
  "projects": [
   {
@@ -16624,7 +16624,7 @@
         {
          "kind": "ITEM",
          "itemCode": "RN-FLOORING",
-         "description": "FLOORING WORKS",
+         "description": "FLOORING WORKS - - 6MM SPC FLOORINGS ( INCLUDED SKIRTING & PROFILE ) / * 710 SQFT ( ESTIMATE )",
          "qty": 1,
          "unitPriceSen": 954060,
          "netSen": 954060
@@ -16946,7 +16946,7 @@
         {
          "kind": "ITEM",
          "itemCode": "RN-ELECTRICAL",
-         "description": "LOOPING NEW SOCKET FROM EXISTING SOCKET",
+         "description": "LOOPING NEW SOCKET FROM EXISTING SOCKET - *COVER INSTALLATION & MANUFACTURING ERROR",
          "qty": 10,
          "unitPriceSen": 11000,
          "netSen": 110000
@@ -17178,7 +17178,7 @@
         {
          "kind": "ITEM",
          "itemCode": "RN-COUNTERTOP",
-         "description": "BACK SPLASH QUARTZ STONE - W : 9.43 FT X H : 2 FT",
+         "description": "BACK SPLASH QUARTZ STONE - W : 9.43 FT X H : 2 FT / * INCLUDED HACKING ORI TILES",
          "qty": 1,
          "unitPriceSen": 188600,
          "netSen": 188600
@@ -18023,7 +18023,7 @@
      "linesSen": 1665000,
      "sections": [
       {
-       "heading": "-MIX & MATCH WITH WALLPAPER/VASARI PAINT/FLUTED PANEL)",
+       "heading": "WALL DESIGN FOR SELECTED AREA -MIX & MATCH WITH WALLPAPER/VASARI PAINT/FLUTED PANEL)",
        "lines": [
         {
          "kind": "ITEM",
@@ -18602,7 +18602,7 @@
         {
          "kind": "ITEM",
          "itemCode": "RN-ELECTRICAL",
-         "description": "LOOPING SUBSEQUENZE SOCKET (CONCEAL WORK) - SEPT PROMO FREE UPGRADE TO E0",
+         "description": "LOOPING SUBSEQUENZE SOCKET (CONCEAL WORK) - SEPT PROMO FREE UPGRADE TO E0 / Additional Terms : / All cabinetry carcasses and doors shall be fabricated using E0 Grade Melamine boards. / A renovation progress update will be provided to the Client every 5–7 working days throughout the / renovation period. Updates may include site progress, completed works, ongoing works, and upcoming / works.",
          "qty": 5,
          "unitPriceSen": 12000,
          "netSen": 60000
@@ -18610,11 +18610,11 @@
        ]
       },
       {
-       "heading": "works.",
+       "heading": "2RENOVATION PROGRESS UPDATE",
        "lines": [
         {
          "kind": "TEXT",
-         "description": "PRICE GUARANTEE - All agreed prices are firm and fixed. No increase due to material or market fluctuations. / Price changes apply only for Variation Orders (VO) or increased dimensions. / 4WARRANTY / A 1-year warranty is provided for carpentry and wiring works from the date of completion. / This warranty covers defects in workmanship only and excludes damages caused by misuse, / normal wear and tear, or external factors."
+         "description": "PRICE GUARANTEE - All agreed prices are firm and fixed. No increase due to material or market fluctuations. / Price changes apply only for Variation Orders (VO) or increased dimensions. / 4WARRANTY / A 1-year warranty is provided for carpentry and wiring works from the date of completion. / This warranty covers defects in workmanship only and excludes damages caused by misuse, / normal wear and tear, or external factors. / A 7-year warranty is provided for all sofa structures"
         }
        ]
       }
@@ -41225,16 +41225,11 @@
         {
          "kind": "ITEM",
          "itemCode": "RN-ELECTRICAL",
-         "description": "LOOPING NEW LIGHT POINT ( PENDANT LIGHT ) (HACKING)",
+         "description": "LOOPING NEW LIGHT POINT ( PENDANT LIGHT ) (HACKING) - * SHARE WITH KITCHEN EXISTING SWITCH",
          "qty": 1,
          "unitPriceSen": 10000,
          "netSen": 10000
-        }
-       ]
-      },
-      {
-       "heading": "* SHARE WITH KITCHEN EXISTING SWITCH",
-       "lines": [
+        },
         {
          "kind": "ITEM",
          "itemCode": "LED-KNK-005",
@@ -41673,7 +41668,7 @@
         {
          "kind": "ITEM",
          "itemCode": "TV-HIS-50",
-         "description": "HISENSE 50 '' SMART TV (WALL MOUNTED )",
+         "description": "HISENSE 50 '' SMART TV (WALL MOUNTED ) - * AIRCOND SUPPLY AND INSTALL BY OWNERSELF",
          "qty": 1,
          "unitPriceSen": 150000,
          "netSen": 150000
@@ -42444,7 +42439,7 @@
         {
          "kind": "ITEM",
          "itemCode": "TV-HIS-50",
-         "description": "HISENSE 50 '' SMART TV (WALL MOUNTED )",
+         "description": "HISENSE 50 '' SMART TV (WALL MOUNTED ) - * AIRCOND SUPPLY INSTALL BY OWNERSELF",
          "qty": 1,
          "unitPriceSen": 150000,
          "netSen": 150000
@@ -42979,7 +42974,7 @@
         {
          "kind": "ITEM",
          "itemCode": "RN-KITCHEN_CABINET",
-         "description": "TALL CABINET W/4G GLASS DOOR & COLOR CARCASS",
+         "description": "TALL CABINET W/4G GLASS DOOR & COLOR CARCASS - W : 1.5 F X D : 2 FT X H : 9 FT",
          "qty": 1,
          "unitPriceSen": 211500,
          "netSen": 211500
@@ -42987,7 +42982,7 @@
        ]
       },
       {
-       "heading": "W : 1.5 F X D : 2 FT X H : 9 FT",
+       "heading": "@LIVING AREA",
        "lines": [
         {
          "kind": "ITEM",
@@ -43189,16 +43184,11 @@
         {
          "kind": "ITEM",
          "itemCode": "RN-PAINTING",
-         "description": "WHOLE HOUSE WALL PAINTING ( NIPPON EASY WASH ) - * 2 LAYER",
+         "description": "WHOLE HOUSE WALL PAINTING ( NIPPON EASY WASH ) - * 2 LAYER / * EXCLUDE HIGH CEILING LIVING AREA PART",
          "qty": 1,
          "unitPriceSen": 750000,
          "netSen": 750000
-        }
-       ]
-      },
-      {
-       "heading": "* EXCLUDE HIGH CEILING LIVING AREA PART",
-       "lines": [
+        },
         {
          "kind": "ITEM",
          "itemCode": "RN-PLUMBING",
@@ -43922,16 +43912,11 @@
         {
          "kind": "ITEM",
          "itemCode": "RN-SIGNAGE",
-         "description": "PLYWOOD PANEL REINTSALL - \"CARRES\" LOGO BEHIND COUNTER",
+         "description": "PLYWOOD PANEL REINTSALL - \"CARRES\" LOGO BEHIND COUNTER - * NO LIGHT",
          "qty": 1,
          "unitPriceSen": 100000,
          "netSen": 100000
-        }
-       ]
-      },
-      {
-       "heading": "* NO LIGHT",
-       "lines": [
+        },
         {
          "kind": "ITEM",
          "itemCode": "RN-PAINTING",
@@ -44087,7 +44072,7 @@
         {
          "kind": "ITEM",
          "itemCode": "RN-KITCHEN_CABINET",
-         "description": "TALL CABINET (2EP) W/4G GLASS DOOR &COLOR CARCASS",
+         "description": "TALL CABINET (2EP) W/4G GLASS DOOR &COLOR CARCASS - W : 1.5 FT X D : 400MM X H : 9.5 FT",
          "qty": 1,
          "unitPriceSen": 266000,
          "netSen": 266000
@@ -44095,7 +44080,7 @@
        ]
       },
       {
-       "heading": "W : 1.5 FT X D : 400MM X H : 9.5 FT",
+       "heading": "@ LIVING",
        "lines": [
         {
          "kind": "ITEM",
