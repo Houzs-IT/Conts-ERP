@@ -21,7 +21,7 @@ describe("amendmentLineChange", () => {
     expect(v).toMatchObject({ qty: -3, amountSen: -30000, change: "deduct" });
   });
   it("a customer SKU goes to Client PO", () => {
-    expect(amendmentLineChange(line({ new_item_code: "CUS-TV", new_qty: 1, new_unit_price_sen: 0 })).goesTo).toBe("client");
+    expect(amendmentLineChange(line({ new_item_code: "CUS-TV", new_qty: 1, new_unit_price_sen: 0, main_supplier: "CUSTOMER" })).goesTo).toBe("client");
   });
   it("a price-only change keeps the line's quantity beside the money", () => {
     const v = amendmentLineChange(line({ change_type: "SPEC", new_item_code: "RN-ELECTRICAL", new_qty: 1, new_unit_price_sen: 120000,

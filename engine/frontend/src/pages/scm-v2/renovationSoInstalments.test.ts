@@ -31,3 +31,13 @@ describe("renovation SO instalments", () => {
     expect(instalmentRows(undefined, 10)).toEqual([]);
   });
 });
+
+describe("an order with no instalment schedule", () => {
+  it("shows four payments filled oldest first", async () => {
+    const { paymentSlots } = await import("./renovationSoInstalments");
+    const rows = paymentSlots([{ amount_sen: 10_000, paid_at: "2026-10-24" }, { amount_sen: 5_000, paid_at: "2026-10-20" }]);
+    expect(rows.map((r) => r.amountSen)).toEqual([5_000, 10_000, 0, 0]);
+    expect(rows.map((r) => r.label)).toEqual(["1st payment", "2nd payment", "3rd payment", "4th payment"]);
+    expect(rows.every((r) => r.slot)).toBe(true);
+  });
+});

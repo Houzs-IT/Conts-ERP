@@ -186,7 +186,7 @@ describe('PO split grouping', () => {
     const r = groupForPo(rows);
     expect(r.groups.map((g) => g.lines.map((l) => l.description))).toEqual([['cabinet', 'customer tv, re-sourced']]);
     expect(r.skipped.map((l) => [l.description, l.reason])).toEqual([['customer fridge', 'Customer-supplied: the customer orders it, no purchase order']]);
-    expect(needsPurchaseOrder({ itemCode: 'CUS-FRIDGE', supplyByOwner: false, category: 'APPLIANCE', supplierId: 'sup-c', unitCostSen: 0 })).toBe(false);
+    expect(needsPurchaseOrder({ itemCode: 'CUS-FRIDGE', supplyByOwner: false, category: 'APPLIANCE', supplierId: 'sup-c', unitCostSen: 0, supplierCode: 'CUSTOMER' })).toBe(false);
     expect(needsPurchaseOrder({ itemCode: 'CUS-TV', supplyByOwner: false, category: 'APPLIANCE', supplierId: 'sup-a', unitCostSen: 90000 })).toBe(true);
   });
 

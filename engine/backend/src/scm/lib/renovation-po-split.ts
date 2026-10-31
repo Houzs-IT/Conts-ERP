@@ -63,22 +63,21 @@ interface CandidateRow {
 /** Whether a contract line is meant to get a PO at all (the same rules groupForPo applies, before quantity).
     A line with a cost but no supplier still needs one: the split blocks until a supplier is picked. Lines that
     never get one (system rows, owner-supplied goods, in-house work) also never get a proof of delivery. */
-/** Customer-supplied items (owner, 22 Oct 2026): the CUS-* placeholder SKUs, linked to supplier CUSTOMER at cost 0.
-    The customer buys the item and The Conts only manages it, so nothing is ordered from anyone: no PO, not even a
-    zero one. A CUS-* line someone re-priced and pointed at a real supplier is ordered as usual. */
+/** Customer-supplied items (owner, 22 Oct 2026; 1 Nov 2026 the supplier alone decides): the line's supplier, else
+    the SKU's, is CUSTOMER. The customer buys the item and The Conts only manages it, so nothing is ordered from
+    anyone: no PO, not even a zero one. */
 export function isCustomerSupplied(l: { itemCode: string | null; supplierCode?: string | null; unitCostSen: number }): boolean {
-  if (l.supplierCode != null) return l.supplierCode === 'CUSTOMER';
-  return String(l.itemCode ?? '').startsWith('CUS-') && Number(l.unitCostSen) === 0;
+  return l.supplierCode === 'CUSTOMER';
 }
 
 /** May the PO "Transfer from Sales Order" picker offer this SO line? (owner, 24 Oct 2026) Not a line whose SKU the
-    customer supplies (main supplier CUSTOMER, or a CUS-* placeholder with no supplier), and not a service or site
+    customer supplies (main supplier CUSTOMER), and not a service or site
     works line with no supplier to buy it from. A line with a real supplier is offered as before. */
 export function poPickerOffers(l: { itemCode: string | null; itemGroup: string | null; mainSupplierCode: string | null }): boolean {
   const code = String(l.itemCode ?? '').toUpperCase();
   if (l.mainSupplierCode === 'CUSTOMER') return false;
   if (l.mainSupplierCode) return true;
-  if (code.startsWith('CUS-') || code.startsWith('RENO-') || code.startsWith('SVC-')) return false;
+  if (code.startsWith('RENO-') || code.startsWith('SVC-')) return false;
   const group = categoryGroupOf(l.itemGroup);
   if (group === 'WORKS' || group === 'SERVICE') return false;
   return !String(l.itemGroup ?? '').toUpperCase().includes('SERVICE');
@@ -87,7 +86,7 @@ export function poPickerOffers(l: { itemCode: string | null; itemGroup: string |
 /** Where a VO line goes (owner, 24 Oct 2026): the client buys it (Client PO), we buy it (PO), or it is our own works /
     service with no supplier to buy it from. Same rule as poPickerOffers. */
 export function voGoesTo(l: { itemCode: string | null; itemGroup: string | null; mainSupplierCode: string | null }): 'po' | 'client' | 'works' {
-  if (l.mainSupplierCode === 'CUSTOMER' || (!l.mainSupplierCode && String(l.itemCode ?? '').toUpperCase().startsWith('CUS-'))) return 'client';
+  if (l.mainSupplierCode === 'CUSTOMER') return 'client';
   return poPickerOffers(l) ? 'po' : 'works';
 }
 

@@ -33,8 +33,8 @@ describe('SO line remarks', () => {
 });
 
 describe('customer-supplied goods hold no stock', () => {
-  it('supplier CUSTOMER, or a CUS-* SKU with no supplier', () => {
-    expect(isCustomerGoods('CUS-SOFA', null)).toBe(true);
+  it('the main supplier is CUSTOMER; a CUS- code alone decides nothing (owner, 1 Nov 2026)', () => {
+    expect(isCustomerGoods('CUS-SOFA', null)).toBe(false);
     expect(isCustomerGoods('ANY-1', 'CUSTOMER')).toBe(true);
     expect(isCustomerGoods('CUS-TV', 'LOTWIN')).toBe(false);
     expect(isCustomerGoods('BED-HKA-1003-(Q)', 'HOOKKA')).toBe(false);
@@ -49,7 +49,7 @@ describe('customer-supplied goods hold no stock', () => {
       ],
     });
     const got = await customerGoodsCodes(sb, ['CUS-SOFA', 'BED-HKA-1003-(Q)', 'CUS-TV', 'CUS-DINING'], 1);
-    expect([...got].sort()).toEqual(['CUS-DINING', 'CUS-SOFA']);
+    expect([...got].sort()).toEqual(['CUS-SOFA']);
   });
   it('a failed read checks stock as usual', async () => {
     const sb = fakeSb({ suppliers: [], supplier_material_bindings: [] }, { supplier_material_bindings: ['is_main_supplier'] });
