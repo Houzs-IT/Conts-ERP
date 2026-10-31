@@ -112,9 +112,15 @@ export function colourOf(l: Pick<ManagedLine, "variants">): string {
 
 /** A sofa or bedframe picks its fabric and heights on the order's own configurator; only the remark, qty and SKU
     change here for those lines. */
-export function colourEditable(l: Pick<ManagedLine, "itemGroup" | "variants">): boolean {
+/* Groups whose SKUs have no colour or code to pick (owner, 1 Nov 2026: "不是每个 SKU 都有 variance"): site works,
+   services and raw materials. */
+const NO_VARIANT_GROUPS = new Set(["WORKS", "SERVICE", "RAW"]);
+
+export function colourEditable(l: Pick<ManagedLine, "itemGroup" | "variants"> & { categoryCode?: string | null; goesTo?: GoesTo }): boolean {
   const g = String(l.itemGroup ?? "").toLowerCase();
   if (g.includes("sofa") || g.includes("bedframe")) return false;
+  if (l.categoryCode && NO_VARIANT_GROUPS.has(l.categoryCode.toUpperCase())) return false;
+  if (l.goesTo === "works") return false;
   return !l.variants.fabricCode;
 }
 

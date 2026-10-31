@@ -681,7 +681,9 @@ export async function computeMrp(
     if (r.so?.project_id == null) return [r];
     const plan = planOf.get(r.id);
     if (!plan?.order_on || plan.no_po) return [];
-    return [plan.deliver_on ? { ...r, line_delivery_date: plan.deliver_on, line_delivery_date_overridden: true } : r];
+    /* The line's own processing date stands in for the order's (MRP's Processing Date column and date basis). */
+    const so = r.so ? { ...r.so, processing_date: plan.order_on } : r.so;
+    return [plan.deliver_on ? { ...r, so, line_delivery_date: plan.deliver_on, line_delivery_date_overridden: true } : { ...r, so }];
   });
   const isDatedLine = (r: DemandRow): boolean => deliveryOf(r) !== null;
 
