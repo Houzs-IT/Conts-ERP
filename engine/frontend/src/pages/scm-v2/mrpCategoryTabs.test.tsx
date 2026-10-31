@@ -50,6 +50,8 @@ let mrpData: MrpResponse;
  *  while requesting another is this bug with extra steps. */
 let lastCategory: string | null | undefined;
 
+// The MRP tabs follow the product catalog when the server sends one; these tests run the Houzs tabs (no catalog).
+vi.mock('../../vendor/scm/lib/renovation-catalog-queries', () => ({ useRenovationCatalog: () => ({ query: { data: undefined }, groups: [] }) }));
 vi.mock('../../vendor/scm/lib/mrp-queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../vendor/scm/lib/mrp-queries')>()),
   useMrp: (args: { category: string }) => {

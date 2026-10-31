@@ -37,6 +37,8 @@ const mrpData: MrpResponse = {
   totals: { skuCount: 2, shortageSkuCount: 1, shortageUnits: 2, sofaSetCount: 0, sofaSetShortageCount: 0 },
 };
 
+// The MRP tabs follow the product catalog when the server sends one; these tests run the Houzs tabs (no catalog).
+vi.mock('../../vendor/scm/lib/renovation-catalog-queries', () => ({ useRenovationCatalog: () => ({ query: { data: undefined }, groups: [] }) }));
 vi.mock('../../vendor/scm/lib/mrp-queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../vendor/scm/lib/mrp-queries')>()),
   useMrp: () => ({ data: mrpData, isLoading: false, isError: false, error: null, refetch: () => {} }),

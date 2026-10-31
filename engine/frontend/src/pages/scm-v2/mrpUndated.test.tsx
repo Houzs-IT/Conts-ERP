@@ -71,6 +71,8 @@ let mrpData: MrpResponse = response({ lines: 0, shortageUnits: 0, sofaSets: 0, s
    have caught the wire being cut. */
 let lastIncludeUndated: boolean | undefined;
 
+// The MRP tabs follow the product catalog when the server sends one; these tests run the Houzs tabs (no catalog).
+vi.mock('../../vendor/scm/lib/renovation-catalog-queries', () => ({ useRenovationCatalog: () => ({ query: { data: undefined }, groups: [] }) }));
 vi.mock('../../vendor/scm/lib/mrp-queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../vendor/scm/lib/mrp-queries')>()),
   useMrp: (args: { includeUndated?: boolean }) => {
