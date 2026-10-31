@@ -15,6 +15,7 @@
 import type { CSSProperties } from 'react';
 import { maintActiveValues } from '@2990s/shared';
 import { useMaintenanceConfig } from '../lib/mfg-products-queries';
+import { useRenovationCatalog } from '../lib/renovation-catalog-queries';
 import {
   parseSupplierCategories,
   resolveSupplierCategoryPool,
@@ -25,6 +26,10 @@ import {
  *  falling back to the default five when unset/empty. */
 export function useSupplierCategoryPool(): string[] {
   const resolved = useMaintenanceConfig('master');
+  /* Conts (owner, 1 Nov 2026): a supplier's categories are the product catalog's groups, not Houzs's Sofa /
+     Bedframe / Mattress. Without a catalog from the server the maintained pool remains. */
+  const groups = useRenovationCatalog().query.data?.groups;
+  if (groups && groups.length > 0) return groups.map((g) => g.label);
   return resolveSupplierCategoryPool(maintActiveValues(resolved.data?.data?.supplierCategories));
 }
 
