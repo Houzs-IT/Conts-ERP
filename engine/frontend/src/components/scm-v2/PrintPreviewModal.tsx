@@ -139,6 +139,7 @@ export function PrintPreviewModal({
   docNo,
   companyName,
   rows,
+  options,
   onViewPdf,
   viewLabel = "View full PDF",
   onPrint,
@@ -159,6 +160,8 @@ export function PrintPreviewModal({
      every document that cannot be re-headed. */
   companyName?: string;
   rows: PrintPreviewRow[];
+  /** Choices that change the document (e.g. the SO's By area / By category layout), above the card. */
+  options?: ReactNode;
   /** Render the real PDF in a new tab. Omit to hide the button. */
   onViewPdf?: PrintAction;
   /** Label for that button — HTML surfaces open a page, not a PDF. */
@@ -229,6 +232,7 @@ export function PrintPreviewModal({
         </>
       }
     >
+      {options && <div className="mb-3">{options}</div>}
       <div className="overflow-hidden rounded-xl border border-border-subtle">
         <div className="flex items-start justify-between gap-3 bg-sidebar px-5 py-4 text-sidebar-ink">
           <div>

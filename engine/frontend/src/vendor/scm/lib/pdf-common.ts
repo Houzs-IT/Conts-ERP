@@ -723,20 +723,39 @@ export function deliverPdfBlob(
     openPdfPreviewTab(blob, blobUrl, filename);
     return;
   }
-  openPdfPrintTab(blobUrl, filename);
+  openPdfPrintTab(blob, blobUrl, filename);
 }
+
+/* Inside the Conts ERP frame (erp.theconts.com embeds this app from another site) the browser keeps this page's
+   storage and blob URLs apart from those of a tab it opens, so the tab cannot read what this page stored: the
+   service-worker route answered 404 ("View full PDF", owner 31 Oct 2026). There the tab gets its own blob URL. */
+const isEmbedded = (): boolean => {
+  try {
+    return window.top !== window.self;
+  } catch {
+    return true;
+  }
+};
+
+const tabBlobUrl = (tab: Window, blob: Blob, fallback: string): string => {
+  try {
+    return (tab as Window & typeof globalThis).URL.createObjectURL(blob);
+  } catch {
+    return fallback;
+  }
+};
 
 /* 'print' — the named wrapper page (route 2), never the service-worker path:
    the viewer sits in a VISIBLE iframe there, the shape Chrome prints reliably,
    and the page carries a Print button for a second go. Opened synchronously
    for the same reason the preview's tab is. */
-function openPdfPrintTab(blobUrl: string, filename: string): void {
+function openPdfPrintTab(blob: Blob, blobUrl: string, filename: string): void {
   const tab = window.open('', '_blank');
   if (!tab) {
     renderViaIframe(blobUrl, true);
     return;
   }
-  writeNamedPdfTab(tab, blobUrl, filename, { print: true });
+  writeNamedPdfTab(tab, tabBlobUrl(tab, blob, blobUrl), filename, { print: true });
 }
 
 /* ── The preview tab ──────────────────────────────────────────────────────────
@@ -765,6 +784,10 @@ function openPdfPreviewTab(blob: Blob, blobUrl: string, filename: string): void 
   if (!tab) {
     // Popup blocked — the raw blob is still better than nothing.
     window.open(blobUrl, '_blank');
+    return;
+  }
+  if (isEmbedded()) {
+    writeNamedPdfTab(tab, tabBlobUrl(tab, blob, blobUrl), filename);
     return;
   }
   void (async () => {
