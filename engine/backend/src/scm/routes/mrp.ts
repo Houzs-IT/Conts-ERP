@@ -173,7 +173,10 @@ const MRP_READ_CONCURRENCY = 6;
    closed order in history. */
 const sqlNotInList = (statuses: Iterable<string>): string =>
   `(${[...statuses].map((s) => `"${s}"`).join(',')})`;
-const SO_DONE_SQL = sqlNotInList(SO_DONE);
+/* A running renovation contract (owner, 1 Nov 2026) is read too, but only its lines the project's PO tab has
+   released with a processing date reach the plan (the line-plan rule below). RENO_COMPLETED stays done. */
+const RENO_RUNNING = new Set(['RENO_CONFIRMED', 'RENO_IN_PROGRESS']);
+const MRP_DEMAND_DONE_SQL = sqlNotInList(new Set([...SO_DONE].filter((st) => !RENO_RUNNING.has(st))));
 const PO_DEAD_SQL = sqlNotInList(PO_DEAD);
 
 type DemandRow = {
@@ -640,7 +643,7 @@ export async function computeMrp(
       so:mfg_sales_orders!inner ( debtor_name, status, so_date, customer_delivery_date, amended_delivery_date, processing_date, customer_state, sales_location, project_id )
     `)
     .eq('cancelled', false)
-    .not('so.status', 'in', SO_DONE_SQL))
+    .not('so.status', 'in', MRP_DEMAND_DONE_SQL))
     .order('id')
     .range(from, to));
   if (demandErr) throw new Error(`mrp_load_failed: ${demandErr.message}`);
@@ -660,7 +663,7 @@ export async function computeMrp(
      under both flag values. `includeUndated` only controls whether undated
      rows appear in the RESULT (visibility, not math). */
   const demandOpen = ((demandRaw ?? []) as unknown as DemandRow[]).filter(
-    (r) => r.item_code && r.so && !SO_DONE.has(r.so.status) && r.qty > 0,
+    (r) => r.item_code && r.so && (!SO_DONE.has(r.so.status) || (RENO_RUNNING.has(r.so.status) && r.so.project_id != null)) && r.qty > 0,
   );
   /* Conts projects (owner, 1 Nov 2026: "只要一有 Processing Date，它就会跳去 MRP 让我开 order"). A line of an order
      that belongs to a project is demand only once the project's PO tab gives it a processing date
