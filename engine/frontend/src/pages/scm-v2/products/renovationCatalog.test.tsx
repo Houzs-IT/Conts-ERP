@@ -87,10 +87,10 @@ describe('CatalogChips', () => {
     const [s, setS] = useState<string | null>(null);
     return (<><CatalogChips group={g} sub={s} onGroup={setG} onSub={setS} /><output>{`${g}|${s}`}</output></>);
   }
-  test('shows the eight groups; a group shows its own sub-categories; picking a new group clears the sub', () => {
+  test('shows the nine groups; a group shows its own sub-categories; picking a new group clears the sub', () => {
     wrap(<Harness />);
     const groups = within(screen.getByRole('group', { name: 'Category group' })).getAllByRole('button');
-    expect(groups.map((b) => b.textContent)).toEqual(['All', 'Works', 'Built-in', 'Furniture', 'Lighting', 'Appliances', 'Soft furnishing', 'Service', 'Airbnb supplies']);
+    expect(groups.map((b) => b.textContent)).toEqual(['All', 'Works', 'Built-in', 'Furniture', 'Lighting', 'Appliances', 'Soft furnishing', 'Service', 'Airbnb supplies', 'Raw material']);
     expect(screen.queryByRole('group', { name: 'Sub-category' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Works' }));
     const subs = within(screen.getByRole('group', { name: 'Sub-category' })).getAllByRole('button').map((b) => b.textContent);
