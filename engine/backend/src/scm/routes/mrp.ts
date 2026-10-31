@@ -215,6 +215,8 @@ type DemandRow = {
        "when to order" is orderByDate below, derived from the delivery date and
        the category lead time. NOT a production date: there is no production. */
     customer_state: string | null;       // staff #8 — show the customer's state (info-only)
+    /* Conts: the project the order belongs to. A project's lines are released by the PO tab's line plan below. */
+    project_id?: number | null;
     sales_location: string | null;       // the SO's OWN warehouse of record (lib/so-warehouse.ts)
   } | null;
 };
@@ -635,7 +637,7 @@ export async function computeMrp(
     .from('mfg_sales_order_items')
     .select(`
       id, doc_no, item_code, description, item_group, variants, qty, warehouse_id, line_delivery_date, line_delivery_date_overridden, line_no, created_at, cancelled, allocated_batch_no,
-      so:mfg_sales_orders!inner ( debtor_name, status, so_date, customer_delivery_date, amended_delivery_date, processing_date, customer_state, sales_location )
+      so:mfg_sales_orders!inner ( debtor_name, status, so_date, customer_delivery_date, amended_delivery_date, processing_date, customer_state, sales_location, project_id )
     `)
     .eq('cancelled', false)
     .not('so.status', 'in', SO_DONE_SQL))
@@ -657,9 +659,27 @@ export async function computeMrp(
      take supply from a dated line and every dated line's coverage is IDENTICAL
      under both flag values. `includeUndated` only controls whether undated
      rows appear in the RESULT (visibility, not math). */
-  const demandActive = ((demandRaw ?? []) as unknown as DemandRow[]).filter(
+  const demandOpen = ((demandRaw ?? []) as unknown as DemandRow[]).filter(
     (r) => r.item_code && r.so && !SO_DONE.has(r.so.status) && r.qty > 0,
   );
+  /* Conts projects (owner, 1 Nov 2026: "只要一有 Processing Date，它就会跳去 MRP 让我开 order"). A line of an order
+     that belongs to a project is demand only once the project's PO tab gives it a processing date
+     (scm.reno_beta_line_plans.order_on) and does not mark it "No PO"; its delivery date is the one set there. Orders
+     with no project keep the rule above. */
+  const projectLineIds = demandOpen.filter((r) => r.so?.project_id != null).map((r) => r.id);
+  const { data: planRows, error: planErr } = await chunkIn<{ so_item_id: string; order_on: string | null; deliver_on: string | null; no_po: boolean }>(
+    projectLineIds,
+    (batch, from, to) => scoped(sb.from('reno_beta_line_plans').select('so_item_id, order_on, deliver_on, no_po').in('so_item_id', batch))
+      .order('so_item_id').range(from, to),
+  );
+  if (planErr) throw new Error(`mrp_load_failed: ${planErr.message}`);
+  const planOf = new Map(planRows.map((p) => [p.so_item_id, p]));
+  const demandActive = demandOpen.flatMap((r): DemandRow[] => {
+    if (r.so?.project_id == null) return [r];
+    const plan = planOf.get(r.id);
+    if (!plan?.order_on || plan.no_po) return [];
+    return [plan.deliver_on ? { ...r, line_delivery_date: plan.deliver_on, line_delivery_date_overridden: true } : r];
+  });
   const isDatedLine = (r: DemandRow): boolean => deliveryOf(r) !== null;
 
   // A partially-delivered SO keeps its header status active (the header only

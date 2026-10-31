@@ -20,7 +20,7 @@
 // Backed by GET /mrp (apps/api/src/routes/mrp.ts).
 // ----------------------------------------------------------------------------
 
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { ChevronRight, ChevronDown, RefreshCw, Truck, ShoppingCart, CalendarRange, Clock, Download } from 'lucide-react';
 import { DataTable, type Column } from '../../components/DataTable';
@@ -33,7 +33,8 @@ import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import { useAuth, isAdminLevel } from '../../vendor/scm/lib/auth';
 import { useCreatePosFromSoItems } from '../../vendor/scm/lib/suppliers-queries';
 import { newIdempotencyKey } from '../../lib/idempotency';
-import { mrpViews, mrpCategoryOf } from './mrp-views';
+import { mrpViews, mrpCategoryOf, mrpGroupViews } from './mrp-views';
+import { useRenovationCatalog } from '../../vendor/scm/lib/renovation-catalog-queries';
 import {
   type ModelGroup, type MrpFilters, rowKey, computeTabModels, lineInWindow, groupEarliestDate,
 } from './mrp-model-pipeline';
@@ -288,6 +289,13 @@ export const Mrp = () => {
      recomputing the plan live on every open (mrp-snapshot.ts isDefaultMrpView).
      See docs/bugs/ — the sofa-cover pull-in was dead since the per-category
      tab split. */
+  /* Conts (owner, 1 Nov 2026): the tabs are the product catalog's groups, not Houzs's Sofa / Bedframe / Mattress. */
+  const catalog = useRenovationCatalog();
+  const serverGroups = catalog.query.data?.groups;
+  const groupViews = useMemo(() => (serverGroups && serverGroups.length > 0 ? mrpGroupViews(serverGroups) : null), [serverGroups]);
+  useEffect(() => {
+    if (groupViews && !groupViews.some((v) => v.value === view)) setView(groupViews[0]!.value);
+  }, [groupViews, view]);
   const apiCategory = view === 'sofa' ? null : mrpCategoryOf(view);
   const q = useMrp({ category: apiCategory, warehouseId, includeUndated: showUndated });
   const data = q.data;
@@ -298,7 +306,7 @@ export const Mrp = () => {
      had nine members, and the four that had no tab were dropped by the server
      before render and again by the filter below: planned, quantified, shown
      nowhere. See mrp-views.ts. */
-  const views = mrpViews(data?.categories);
+  const views = groupViews ?? mrpViews(data?.categories);
   /* Stored planning snapshot (option B, 2026-08-19). `data.stored` is true when
      this came from the saved snapshot (the default view opens instantly from it);
      `regenerate` recomputes it server-side. See mrp-snapshot.ts. */

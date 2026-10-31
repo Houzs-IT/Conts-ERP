@@ -31,6 +31,7 @@
 
 /* A Sofa Accessory row lives on the Sofa tab, under its own SO (mrp-sofa-accessory.ts). */
 import { isSofaAccessory } from './mrp-sofa-accessory';
+import { categoryGroupOf } from '../../vendor/shared/renovation-catalog';
 
 
 export type MrpView = {
@@ -42,7 +43,13 @@ export type MrpView = {
    *  other tab claims — see `OTHERS` below. */
   category: string | null;
   label: string;
+  /** Conts (owner, 1 Nov 2026): the catalog group this tab shows ('' = Others, rows in no group). Set, the tab
+   *  asks the server for everything and keeps the rows whose category falls in this group. */
+  group?: string;
 };
+
+/** The id of a catalog-group tab; mrpCategoryOf answers null for it (the tab filters by group itself). */
+const GROUP_PREFIX = 'group-';
 
 /* SERVICE is the one member that legitimately has no tab: `isServiceLine` skips
    service lines BEFORE the category filter ("they never create purchase
@@ -100,6 +107,7 @@ const OTHERS: MrpView = { value: 'others', category: null, label: 'Others' };
  */
 export function mrpCategoryOf(value: string): string | null {
   const v = value.trim().toLowerCase();
+  if (v.startsWith(GROUP_PREFIX)) return null;
   /* The Others tab stands for a SET, so it asks for no filter at all and sorts
      the rows out itself (`rowBelongsToView`). Returning 'OTHERS' here would send
      the engine a category no product has, and it would answer with nothing. */
@@ -131,8 +139,21 @@ export function mrpViews(
 }
 
 /** Does a row belong on this tab? The Others tab claims what no other tab does. */
+/** Conts: one tab per product catalog group (Works, Built-in, ... Raw material) in catalog order, then Others for
+    a row whose category is in no group. Replaces the Houzs Sofa / Bedframe / Mattress / Accessories tabs. */
+export function mrpGroupViews(groups: readonly { code: string; label: string }[]): MrpView[] {
+  return [
+    ...groups.filter((g) => !NEVER_A_TAB.has(g.code)).map((g): MrpView => ({ value: `${GROUP_PREFIX}${g.code.toLowerCase()}`, category: null, label: g.label, group: g.code })),
+    { value: `${GROUP_PREFIX}others`, category: null, label: 'Others', group: '' },
+  ];
+}
+
 export function rowBelongsToView(view: MrpView, rowCategory: string | null | undefined): boolean {
   const cat = (rowCategory ?? '').trim().toUpperCase();
+  if (view.group !== undefined) {
+    if (cat === '' || NEVER_A_TAB.has(cat)) return false;
+    return (categoryGroupOf(cat) ?? '') === view.group;
+  }
   // The Sofa tab also owns Sofa Accessory rows — they park under their own SO there.
   if (view.category === 'SOFA' && isSofaAccessory(cat)) return true;
   if (view.category !== null) return cat === view.category;
