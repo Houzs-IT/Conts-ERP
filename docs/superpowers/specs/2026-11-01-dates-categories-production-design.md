@@ -73,8 +73,15 @@ Flow:
 Screens: Production > Production orders (list, detail with works, materials, linked POs / GRs, cost); MRP gets a
 Raw material tab from the catalog; the PO detail shows the production order it became.
 
-## Open questions for the owner
+## Owner answers (1 Nov 2026, later the same day)
 
-- Does in-house labour cost go into the production order's actual cost (timesheets / fixed rate), or only
-  materials for now?
-- Who may convert a PO into a production order and order raw materials (role)?
+- Actual cost counts raw materials only for now; labour cost is adjusted later.
+- Nobody converts by hand: a production order is created automatically when a PO to INHOUSE is issued (and
+  follows it: a cancelled PO cancels its production order while nothing has been ordered for it).
+- Reference: Hookka ERP (`weisiang329-eng/hookka-erp-testing`, read-only). It is a full furniture factory
+  (one production order per confirmed SO item created upstream, BOM-driven job cards per department, shop-floor
+  scans, a cost ledger, MRP persistence with on-order and MOQ in migrations 0112 / 0230). Conts takes the shape,
+  not the weight: the production order is created upstream automatically like Hookka's, materials come from a
+  per-SKU material list (a light BOM: works SKU -> raw material SKU x qty per unit) that can be edited on the
+  order, MRP nets stock and what is already on order like Hookka's, and actual cost is the received raw-material
+  cost. No departments, job cards or scans.
