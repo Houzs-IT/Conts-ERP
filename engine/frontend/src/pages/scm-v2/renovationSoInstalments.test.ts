@@ -1,0 +1,33 @@
+import { describe, expect, it } from "vitest";
+import { instalmentRows, nextInstalmentSen } from "./renovationSoInstalments";
+
+const view = (receivedSen = 0) => ({
+  receivedSen, revisedContractSen: 100_000,
+  instalments: [
+    { id: "a", seq: 1, label: "1ST PAYMENT", pctBp: 3000, amountSen: 30_000, bill: null },
+    { id: "b", seq: 2, label: "2ND PAYMENT", pctBp: 3000, amountSen: 30_000, bill: null },
+    { id: "c", seq: 3, label: "3RD PAYMENT", pctBp: 3500, amountSen: 35_000, bill: null },
+    { id: "d", seq: 4, label: "4TH PAYMENT", pctBp: 500, amountSen: 5_000, bill: null },
+  ],
+});
+
+describe("renovation SO instalments", () => {
+  it("fills the instalments in order with the money recorded on the order", () => {
+    const rows = instalmentRows(view(), 45_000);
+    expect(rows.map((r) => r.paidSen)).toEqual([30_000, 15_000, 0, 0]);
+  });
+  it("counts money paid on a bill once", () => {
+    const v = view(30_000);
+    v.instalments[0].bill = { kind: "INVOICE", amountSen: 30_000, paidSen: 30_000 } as never;
+    expect(instalmentRows(v, 30_000).map((r) => r.paidSen)).toEqual([30_000, 0, 0, 0]);
+  });
+  it("offers the next instalment's remainder, not the whole balance", () => {
+    const rows = instalmentRows(view(), 0);
+    expect(nextInstalmentSen(rows, 0)).toBe(30_000);
+    expect(nextInstalmentSen(rows, 45_000)).toBe(15_000);
+    expect(nextInstalmentSen(rows, 100_000)).toBe(0);
+  });
+  it("is empty for an order with no schedule", () => {
+    expect(instalmentRows(undefined, 10)).toEqual([]);
+  });
+});

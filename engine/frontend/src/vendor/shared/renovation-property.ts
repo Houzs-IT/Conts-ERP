@@ -14,7 +14,8 @@
      still OPEN: a standard order in DRAFT or CONFIRMED that has not been proceeded
      (no processing date); an empty project value never clears an SO field. A
      proceeded, delivered or cancelled order and every renovation contract
-     (signed) keep what they were printed with.
+     (signed) keep what they were printed with, except the customer's phone and
+     email, which reach every order that is not cancelled (owner, 1 Nov 2026).
    - Linking an existing SO from the project copies the SO into the project the
      same way as saving the SO.
    - A new SO opened from a project starts from the project's values. */
