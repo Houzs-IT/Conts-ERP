@@ -11,7 +11,7 @@
 // linked non-current node is clicked so the caller can navigate to the
 // real document.
 
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Share2, X as XIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
@@ -83,6 +83,13 @@ export function ModalOverlay({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  // Esc closes it, as every other dialog in the app does (owner, 1 Nov 2026: the Print preview ignored it).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
   return createPortal(
     <>
       <div

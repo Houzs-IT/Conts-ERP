@@ -465,17 +465,17 @@ export async function loadContractLines(db: Db, docNos: readonly string[]): Prom
   try {
     res = await rows<LineDbRow>(db,
       `WITH secs AS (
-         SELECT s.id::text AS sid, to_jsonb(s)->>'so_doc_no' AS doc_no
+         SELECT s.id AS sid, s.so_doc_no AS doc_no
            FROM scm.reno_doc_sections s
-          WHERE to_jsonb(s)->>'so_doc_no' IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+          WHERE s.so_doc_no IN (SELECT jsonb_array_elements_text(?::text::jsonb))
        )
        SELECT to_jsonb(l) AS j, i.id::text AS so_item_id, secs.doc_no, i.qty, i.item_code, i.description, i.location,
               p.category::text AS category, to_jsonb(p)->>'category_group' AS category_group, to_jsonb(p)->>'sub_category' AS sub_category
          FROM scm.reno_doc_lines l
-         JOIN secs ON secs.sid = to_jsonb(l)->>'section_id'
-         JOIN scm.mfg_sales_order_items i ON i.id::text = to_jsonb(l)->>'so_item_id' AND i.cancelled = false
+         JOIN secs ON secs.sid = l.section_id
+         JOIN scm.mfg_sales_order_items i ON i.id = l.so_item_id AND i.cancelled = false
          LEFT JOIN LATERAL (SELECT * FROM scm.mfg_products mp WHERE mp.code = i.item_code ORDER BY mp.company_id = i.company_id DESC LIMIT 1) p ON true
-        WHERE upper(coalesce(to_jsonb(l)->>'kind', '')) IN ('ITEM', 'CHILD')`, ids(docNos));
+        WHERE upper(coalesce(l.kind, '')) IN ('ITEM', 'CHILD')`, ids(docNos));
   } catch (e) {
     if (isMissingRelation(e)) return { lines: null };
     throw e;
