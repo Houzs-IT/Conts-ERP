@@ -7,9 +7,9 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
-import { SUB_CATEGORIES, UOMS, subCategoriesOf, uomPrintLabel, type CatalogGroup, type SubCategoryDef, type UomDef } from '../../shared/renovation-catalog';
+import { RENOVATION_GROUPS, SUB_CATEGORIES, UOMS, subCategoriesOf, uomPrintLabel, type CatalogGroup, type SubCategoryDef, type UomDef } from '../../shared/renovation-catalog';
 
-type CatalogResponse = { subCategories: SubCategoryDef[]; uoms?: UomDef[]; canEdit: boolean };
+type CatalogResponse = { groups?: Array<{ code: string; label: string; sort_order: number }>; subCategories: SubCategoryDef[]; uoms?: UomDef[]; canEdit: boolean };
 
 const KEY = ['renovation-catalog'] as const;
 
@@ -21,6 +21,8 @@ export function useRenovationCatalog() {
   });
   const all: readonly SubCategoryDef[] = q.data?.subCategories ?? SUB_CATEGORIES;
   const uoms: readonly UomDef[] = q.data?.uoms ?? UOMS;
+  /** The category groups with their names, in their order (product_category_groups). */
+  const groups: ReadonlyArray<{ code: string; label: string }> = q.data?.groups ?? RENOVATION_GROUPS;
   const read = useMemo(() => ({
     /** What a picker offers: the group's shown sub-categories, plus `keep` when a SKU already carries a hidden one. */
     pickable: (group: CatalogGroup, keep?: string | null) =>
@@ -30,7 +32,7 @@ export function useRenovationCatalog() {
     pickableUoms: (keep?: string | null) => uoms.filter((u) => u.active !== false || u.code === keep),
     uomPrint: (code: string | null | undefined): string => uomPrintLabel(code, uoms),
   }), [all, uoms]);
-  return { query: q, all, uoms, canEdit: q.data?.canEdit ?? false, ...read };
+  return { query: q, all, uoms, groups, canEdit: q.data?.canEdit ?? false, ...read };
 }
 
 export function useAddSubCategory() {

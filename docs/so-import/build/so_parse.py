@@ -19,7 +19,7 @@ def header_fields(ws):
 
 def parse(path):
     pdf = pdfplumber.open(path); doc = {'pages': len(pdf.pages), 'items': [], 'stated': {}, 'head': {}, 'summary': []}
-    sec = None; fmt = None
+    sec = None; fmt = None; sec_page = -1
     for pi, pg in enumerate(pdf.pages):
         cl = clusters(pg.extract_words())
         hi = next((i for i, c in enumerate(cl) if any(w['text'] in ('Description', 'DESCRIPTION') for w in c)), None)
@@ -99,11 +99,11 @@ def parse(path):
                 doc['summary'].append({'desc': dtext, 'price': price, 'amt': amt}); continue
             if dtext and re.search(r'^(LESS\s*:?\s*)?([A-Z ]*\s)?DISCOUNT\b|^DEPOSIT|^BALANCE|^SST\b|^ROUNDING', dtext, re.I) and has_num:
                 doc['summary'].append({'desc': dtext, 'price': price, 'amt': amt}); continue
-            head_words = dtext.isupper() and not DIM.search(dtext) and not dtext.startswith('-') and (
+            head_words = dtext.isupper() and not DIM.search(dtext) and not dtext.startswith(('-', '*', '(')) and (
                 re.search(r'WORK|@|AREA|ROOM|KITCHEN|CURTAIN|LIVING|MASTER|M\s*&\s*E|ELECTRIC|PLUMB|PAINT|CEILING|TILE|FLOOR|MISC|OTHER|FURNITURE|DESIGN|LIGHT|SERVICE', dtext))
             heading_like = not has_num and no is None and head_words
             if heading_like:
-                sec = dtext; last = None; parent = None; continue
+                sec = dtext; sec_page = pi; last = None; parent = None; continue
             # a section heading printed with the section's one price ("WIRING WORKS (ESTIMATE)  7000"): the lines under
             # it carry rates, not amounts; so_build decides lump sum vs subtotal from those lines
             if no is None and amt is not None and qty is None and price is None and head_words:
@@ -115,7 +115,12 @@ def parse(path):
                 dtext = parent['desc'] + ' - ' + dtext.lstrip('-* ').strip()
             if not has_num and no is None and last is not None:
                 last['detail'].append(dtext); continue
+            if not has_num and no is None and last is None and sec and sec_page == pi and dtext[0] in '-(':
+                sec = (sec + ' ' + dtext)[:200]; continue  # a heading's second line
             if not has_num and no is None and last is None:
+                # first line of a page carrying on the item above (its size, a "* note", "- part"): not a heading
+                if doc['items'] and (DIM.search(dtext) or dtext[0] in '-*(' or not dtext.isupper()):
+                    doc['items'][-1]['detail'].append(dtext); continue
                 sec = dtext; continue
             last = {'page': pi + 1, 'sec': sec, 'no': no, 'desc': dtext, 'qty': qty, 'price': price, 'disc': disc, 'amt': amt, 'detail': []}
             if no is not None: parent = last

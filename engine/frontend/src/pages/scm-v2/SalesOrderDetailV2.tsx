@@ -107,7 +107,9 @@ import { useSoInfoLists, useSoRooms } from "../projects/renovation/customerPrope
 import { projectDatesText } from "../projects/renovation/customerPropertyModel";
 import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
 import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
-import { roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
+import { categoryRooms, roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
+import { useMfgProducts } from "../../vendor/scm/lib/mfg-products-queries";
+import { useRenovationCatalog } from "../../vendor/scm/lib/renovation-catalog-queries";
 import { CONTS_LINES_BY_NAME, contsLineIdentity } from "../../conts/flowRules";
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from "./renovationSoAreaLines";
 import { soStatusDisplay } from "../../vendor/scm/lib/so-status";
@@ -620,6 +622,8 @@ function SalesOrderDetailV2ReadOnly() {
   const renoRooms = useSoRooms(docNo, renoMode).data ?? null;
   /* "By item" (the table) or "By area" (room headings with subtotals); offered when the order has rooms. */
   const [linesView, setLinesView] = useState<SoLinesView>("item");
+  /* The PDF's own layout, chosen in the Print preview (owner, 31 Oct 2026: "export PDF 应该都是 by default by area"). */
+  const [printLayout, setPrintLayout] = useState<SoLinesView>("area");
   const printRooms = renoMode && renoRooms && renoRooms.roomSections.length > 0
     ? { order: renoRooms.roomSections, byItem: renoRooms.itemRooms } : undefined;
   /* The printed Start / End date are the linked project's (owner, 15 Oct 2026), from the same read as the rooms
@@ -658,6 +662,18 @@ function SalesOrderDetailV2ReadOnly() {
     ),
     [detail.data, coverage.data]
   );
+  /* "By category" (owner, 31 Oct 2026): the lines under their catalog category; the page and the print follow
+     whichever of By item / By area / By category is chosen (By item prints by area, as before). */
+  const catalogQ = useMfgProducts({ enabled: !!printRooms });
+  const catalogNames = useRenovationCatalog();
+  const categoryView = useMemo(() => {
+    if (!printRooms || !catalogQ.data) return undefined;
+    const products = new Map(catalogQ.data.map((p) => [p.code, { group: p.category_group || p.category, sub: p.sub_category }]));
+    return categoryRooms(items, (code) => products.get(code), { groups: catalogNames.groups, subs: catalogNames.all });
+  }, [printRooms, catalogQ.data, items, catalogNames.groups, catalogNames.all]);
+  const shownRooms = linesView === "category" ? categoryView : printRooms;
+  /* "By item" prints the plain line list; until the catalog has loaded, "By category" prints by area. */
+  const pdfRooms = printLayout === "item" ? undefined : printLayout === "category" ? categoryView ?? printRooms : printRooms;
 
   const st = salesOrder ? displayStatusFor(salesOrder) : null;
 
@@ -848,7 +864,7 @@ function SalesOrderDetailV2ReadOnly() {
           payments as never,
           action,
           pwpCodes,
-          printRooms || printProjectDates ? { rooms: printRooms, projectDates: printProjectDates } : undefined
+          printRooms || printProjectDates ? { rooms: pdfRooms, projectDates: printProjectDates } : undefined
         )
       )
       .catch((e) =>
@@ -1523,10 +1539,10 @@ function SalesOrderDetailV2ReadOnly() {
                 ) : undefined
               }
             >
-              {printRooms && linesView === "area" ? (
+              {shownRooms && linesView !== "item" ? (
                 <SoAreaLines<SoItem>
                   items={items}
-                  rooms={printRooms}
+                  rooms={shownRooms}
                   columns={lineColumns.filter((col) => ["item", "qty", "unit", "disc", "total"].includes(col.key))}
                   money={(sen) => fmtMoney(sen, salesOrder.currency)}
                 />
@@ -1846,6 +1862,12 @@ function SalesOrderDetailV2ReadOnly() {
             ),
           },
         ]}
+        options={printRooms ? (
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[12px] font-semibold text-ink-secondary">PDF layout</span>
+            <SoLinesViewToggle view={printLayout} onChange={setPrintLayout} />
+          </div>
+        ) : undefined}
         {...print.handlers}
       />
     </div>

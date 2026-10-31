@@ -148,6 +148,7 @@ async function soScreenFields(db: RenoDb, docNo: string, projectId: number | nul
       where i.doc_no = $1 and p.code = i.item_code and i.item_code not like 'RENO-%' and i.description is distinct from p.name`,
     [docNo, companyId],
   );
+  await areaRooms(db, docNo);
   if (projectId == null) return;
   await db.q(
     `update scm.mfg_sales_orders o set city = coalesce(p.city, o.city), postcode = coalesce(p.postcode, o.postcode),
@@ -155,6 +156,54 @@ async function soScreenFields(db: RenoDb, docNo: string, projectId: number | nul
        from public.projects p where o.doc_no = $1 and p.id = $2`,
     [docNo, projectId],
   );
+}
+
+/* Rooms (owner, 31 Oct): the SO's rooms are areas of the home named by the system's own room rule
+   (roomSectionHeadings / generateRooms): Common area, Living hall, Bedroom 1..N, Bathroom 1..M. Master bedroom is
+   Bedroom 1 and master bathroom Bathroom 1, as in the PDFs' "MASTER / BEDROOM 2" numbering. A line's area is read
+   from its PDF wording, the part after "@" first, else its section heading; wording naming two places, or none
+   (kitchen, yard, whole house), is Common area. The same rule fixed the first import in place:
+   docs/so-import/fix-headings-and-areas.sql. */
+const COMMON = 'Common area';
+function areaOne(t: string): string | null {
+  let m: RegExpMatchArray | null;
+  if (/MASTER\s*(BED\s*)?(ROOM\s*)?(TOILET|BATH)/.test(t)) return 'Bathroom 1';
+  if ((m = t.match(/\b(?:TOILET|BATH\s*ROOM|BATH|WASH\s*ROOM|WC)\s*0?([1-9])\b/))) return `Bathroom ${m[1]}`;
+  if (/\bMASTER\b/.test(t)) return 'Bedroom 1';
+  if ((m = t.match(/\b(?:BED\s*ROOM|BEDRM|ROOM|BR)\s*0?([1-9])\b/))) return `Bedroom ${m[1]}`;
+  if (/\b(TOILET|BATH\s*ROOM|WASH\s*ROOM|WC\b)/.test(t)) return 'BATH?';
+  if (/\bBED\s*ROOM/.test(t)) return 'BED?';
+  if (/\b(LIVING|SOFA|DINING|DININING|FAMILY\s*(HALL|AREA))|\bTV\s*(AREA|WALL)/.test(t)) return 'Living hall';
+  return null;
+}
+function areaMany(t: string): string | null {
+  const found = new Set(t.split(/\s*(?:&|\+|,|\bAND\b)\s*/).map(areaOne).filter((a): a is string => a !== null));
+  return found.size === 0 ? null : found.size === 1 ? [...found][0]! : COMMON;
+}
+function areaOf(text: string | null | undefined): string | null {
+  const t = String(text ?? '').toUpperCase();
+  const at = t.lastIndexOf('@');
+  return (at >= 0 ? areaMany(t.slice(at + 1)) : null) ?? areaMany(t);
+}
+const roomRank = (a: string) => (a === COMMON ? 0 : a === 'Living hall' ? 1 : a.startsWith('Bedroom') ? 2 : 3) * 100 + (Number(a.replace(/\D/g, '')) || 0);
+
+async function areaRooms(db: RenoDb, docNo: string) {
+  const lines = await db.q<{ id: string; remark: string | null; description: string | null; room: string | null }>(
+    `select id::text as id, remark, description, room from scm.mfg_sales_order_items where doc_no = $1`, [docNo]);
+  const rows = lines.map((l) => ({ id: l.id, room: areaOf(l.remark ?? l.description) ?? areaOf(l.room) ?? COMMON }));
+  /* an unnumbered toilet / bedroom is the second one when the order also has the master one, else the first */
+  const has = new Set(rows.map((r) => r.room));
+  for (const r of rows) {
+    if (r.room === 'BATH?') r.room = has.has('Bathroom 1') ? 'Bathroom 2' : 'Bathroom 1';
+    if (r.room === 'BED?') r.room = has.has('Bedroom 1') ? 'Bedroom 2' : 'Bedroom 1';
+  }
+  const rooms = [...new Set(rows.map((r) => r.room))].sort((a, b) => roomRank(a) - roomRank(b));
+  await db.q(
+    `update scm.mfg_sales_order_items i set room = x.room
+       from jsonb_to_recordset($2::text::jsonb) as x(id uuid, room text) where i.id = x.id and i.doc_no = $1`,
+    [docNo, JSON.stringify(rows)],
+  );
+  await db.q(`update scm.mfg_sales_orders set room_sections = $2::text::jsonb where doc_no = $1`, [docNo, JSON.stringify(rooms)]);
 }
 
 try {
