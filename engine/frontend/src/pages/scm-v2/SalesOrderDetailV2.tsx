@@ -109,6 +109,7 @@ import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
 import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
 import { categoryRooms, roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
 import { useMfgProducts } from "../../vendor/scm/lib/mfg-products-queries";
+import { useRenovationCatalog } from "../../vendor/scm/lib/renovation-catalog-queries";
 import { CONTS_LINES_BY_NAME, contsLineIdentity } from "../../conts/flowRules";
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from "./renovationSoAreaLines";
 import { soStatusDisplay } from "../../vendor/scm/lib/so-status";
@@ -662,11 +663,12 @@ function SalesOrderDetailV2ReadOnly() {
   /* "By category" (owner, 31 Oct 2026): the lines under their catalog category; the page and the print follow
      whichever of By item / By area / By category is chosen (By item prints by area, as before). */
   const catalogQ = useMfgProducts({ enabled: !!printRooms });
+  const catalogNames = useRenovationCatalog();
   const categoryView = useMemo(() => {
     if (!printRooms || !catalogQ.data) return undefined;
-    const groups = new Map(catalogQ.data.map((p) => [p.code, p.category_group || p.category]));
-    return categoryRooms(items, (code) => groups.get(code));
-  }, [printRooms, catalogQ.data, items]);
+    const products = new Map(catalogQ.data.map((p) => [p.code, { group: p.category_group || p.category, sub: p.sub_category }]));
+    return categoryRooms(items, (code) => products.get(code), { groups: catalogNames.groups, subs: catalogNames.all });
+  }, [printRooms, catalogQ.data, items, catalogNames.groups, catalogNames.all]);
   const shownRooms = linesView === "category" ? categoryView : printRooms;
 
   const st = salesOrder ? displayStatusFor(salesOrder) : null;

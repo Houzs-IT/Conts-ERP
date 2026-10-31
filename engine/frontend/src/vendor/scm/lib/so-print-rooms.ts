@@ -37,29 +37,31 @@ export function roomGroups<T extends { id: string; total_sen?: number | null }>(
   return out;
 }
 
-/* "By category" (owner, 31 Oct 2026): the same grouping keyed on each line's catalog category instead of its room,
-   so the page and the print can show either. A line whose code is not in the catalog (the renovation system rows:
-   document discount, lump sums) prints under "Other items". Pure. */
-const CATEGORY_LABELS: Record<string, string> = {
-  BUILTIN: 'Built-in', WORKS: 'Works', LIGHTING: 'Lighting', SOFT: 'Soft furnishing', FURNITURE: 'Furniture',
-  APPLIANCE: 'Appliances', SERVICE: 'Service',
-};
-const CATEGORY_ORDER = ['Built-in', 'Works', 'Lighting', 'Soft furnishing', 'Furniture', 'Appliances', 'Service'];
-export function categoryLabel(group: string | null | undefined): string | null {
-  const g = String(group ?? '').trim().toUpperCase();
-  if (!g) return null;
-  return CATEGORY_LABELS[g] ?? g.charAt(0) + g.slice(1).toLowerCase().replace(/_/g, ' ');
+/* "By category" (owner, 31 Oct 2026): the same grouping keyed on each line's catalog category and sub-category,
+   named and ordered as Products > SKU Master keeps them (product_category_groups, product_sub_categories), shown as
+   "Works · Plaster ceiling" like the renovation lists. A line whose code is not in the catalog (the renovation system
+   rows: document discount, lump sums) prints under "Other items". Pure. */
+export interface CatalogNames {
+  groups: ReadonlyArray<{ code: string; label: string }>;
+  subs: ReadonlyArray<{ group: string; code: string; label: string; sort: number; legacy?: readonly string[] }>;
 }
 export function categoryRooms(
   items: ReadonlyArray<{ id: string; item_code?: string | null }>,
-  groupOf: (code: string) => string | null | undefined,
+  productOf: (code: string) => { group?: string | null; sub?: string | null } | undefined,
+  names: CatalogNames,
 ): SoPrintRooms {
   const byItem: Record<string, string> = {};
+  const rank = new Map<string, number>();
   for (const it of items) {
-    const label = it.item_code ? categoryLabel(groupOf(it.item_code)) : null;
-    if (label) byItem[it.id] = label;
+    const p = it.item_code ? productOf(it.item_code) : undefined;
+    const gi = names.groups.findIndex((g) => g.code === p?.group);
+    if (!p || gi < 0) continue;
+    const subs = names.subs.filter((s) => s.group === p.group);
+    const sub = p.sub ? subs.find((s) => s.code === p.sub || s.legacy?.includes(p.sub!)) : undefined;
+    const label = sub ? `${names.groups[gi]!.label} · ${sub.label}` : names.groups[gi]!.label;
+    byItem[it.id] = label;
+    rank.set(label, gi * 100000 + (sub ? sub.sort : 99999));
   }
-  const used = new Set(Object.values(byItem));
-  const order = [...CATEGORY_ORDER.filter((c) => used.has(c)), ...[...used].filter((c) => !CATEGORY_ORDER.includes(c)).sort()];
+  const order = [...rank.keys()].sort((a, b) => rank.get(a)! - rank.get(b)! || a.localeCompare(b));
   return { order, byItem };
 }
