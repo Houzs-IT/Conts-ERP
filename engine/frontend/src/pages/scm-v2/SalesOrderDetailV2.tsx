@@ -112,6 +112,7 @@ import { useMfgProducts } from "../../vendor/scm/lib/mfg-products-queries";
 import { useRenovationCatalog } from "../../vendor/scm/lib/renovation-catalog-queries";
 import { CONTS_LINES_BY_NAME, contsLineIdentity } from "../../conts/flowRules";
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from "./renovationSoAreaLines";
+import { SoInstalments, instalmentRows, nextInstalmentSen, useSoInstalments } from "./renovationSoInstalments";
 import { soStatusDisplay } from "../../vendor/scm/lib/so-status";
 import { soRowStatus } from "./so-list-status";
 // ─── Row types (subset — see MfgSalesOrdersList.tsx for the full SoRow) ────
@@ -640,6 +641,12 @@ function SalesOrderDetailV2ReadOnly() {
   // Followup #81 — the printed SO reads payments from the ledger, not the
   // deprecated header columns; fetch them for the Print PDF handler.
   const printPaymentsQ = useSalesOrderPayments(docNo ?? null);
+  /* The renovation contract's four instalments (owner, 1 Nov 2026), as the project's payments strip shows them. */
+  const instalmentsQ = useSoInstalments(docNo ?? null, renoMode);
+  const instalments = useMemo(
+    () => instalmentRows(instalmentsQ.data, (printPaymentsQ.data ?? []).reduce((s, p) => s + (p.amount_sen || 0), 0)),
+    [instalmentsQ.data, printPaymentsQ.data],
+  );
 
   // Replace the auto-derived "Scm" module crumb with the actual SO doc no.
   // Falls back to the raw route param while detail is loading so the top bar
@@ -1596,6 +1603,10 @@ function SalesOrderDetailV2ReadOnly() {
                     initialDrafts={paymentRetryDrafts}
                     onDraftCommitted={paymentRetryCommitted}
                     onUnsavedChange={setUnsavedPayments}
+                    nextAmountSen={instalments.length > 0
+                      ? (paid) => nextInstalmentSen(instalments, Math.max(paid, instalmentsQ.data?.receivedSen ?? 0))
+                      : undefined}
+                    aboveRows={<SoInstalments rows={instalments} money={(sen) => fmtMoney(sen, salesOrder.currency)} />}
                     headerAction={canOfferPayEdit ? (
                       <Button variant="secondary" onClick={() => setPayEditing((v) => !v)} icon={<Wallet size={14} />}>
                         {payEditing ? "Done" : "Collect payment"}

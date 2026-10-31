@@ -272,6 +272,8 @@ export async function readSoRooms(db: Db, docNo: string): Promise<{ roomSections
   };
 }
 
+const CONTACT_KEYS: readonly SharedFieldKey[] = ["customerPhone", "customerEmail"];
+
 /** Project -> its open SOs (soOpenForProjectSync): every filled project value becomes the SO's; an empty one
     never clears an SO field. Returns the doc numbers refreshed and those left as printed. */
 export async function pushProjectToOpenSos(db: Db, projectId: number): Promise<{ updated: string[]; kept: string[] }> {
@@ -289,8 +291,17 @@ export async function pushProjectToOpenSos(db: Db, projectId: number): Promise<{
   /* Before 0115 the project's address is its single text: lines 1 and 2 go across. */
   const values: Record<string, unknown> = { ...p };
   const sets = fields.map((f) => `${f.so} = coalesce(${castOf(f.kind)}, ${f.so})`);
+  /* The customer's phone and email are contact details, not contract terms (owner, 1 Nov 2026: "改任意一边都可以"):
+     a filled project value reaches every linked SO that is not cancelled, a signed contract included. */
+  const contact = fields.filter((f) => CONTACT_KEYS.includes(f.key));
+  const contactSets = contact.map((f) => `${f.so} = coalesce(${castOf(f.kind)}, ${f.so})`);
   for (const so of sos.results ?? []) {
-    if (!soOpenForProjectSync(so)) { kept.push(so.doc_no); continue; }
+    if (!soOpenForProjectSync(so)) {
+      await db.prepare(`UPDATE scm.mfg_sales_orders SET ${contactSets.join(", ")}, updated_at = now() WHERE doc_no = ? AND status::text <> 'CANCELLED'`)
+        .bind(...contact.map((f) => bindOf(values[f.key])), so.doc_no).run();
+      kept.push(so.doc_no);
+      continue;
+    }
     await db.prepare(
       `UPDATE scm.mfg_sales_orders SET ${sets.join(", ")}, updated_at = now()
         WHERE doc_no = ? AND status::text IN ('DRAFT', 'CONFIRMED') AND processing_date IS NULL AND proceeded_at IS NULL`,
