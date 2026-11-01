@@ -664,8 +664,8 @@ export const PaymentVoucherNew = () => {
           {!isAp && !isRefund && (
             <div style={{ display: 'flex', gap: 8, marginBottom: 'var(--space-3)' }}>
               {/* 付给供应商/其他 vs 内部转账 (item 10) — same paper, same chain. */}
-              <Button variant={!isTransfer ? 'primary' : 'secondary'} onClick={() => setIsTransfer(false)}>付款 Payment</Button>
-              <Button variant={isTransfer ? 'primary' : 'secondary'} onClick={() => setIsTransfer(true)}>内部转账 Transfer</Button>
+              <Button variant={!isTransfer ? 'primary' : 'secondary'} onClick={() => setIsTransfer(false)}>Payment</Button>
+              <Button variant={isTransfer ? 'primary' : 'secondary'} onClick={() => setIsTransfer(true)}>Transfer</Button>
             </div>
           )}
           <div className={styles.formGrid2}>
@@ -791,7 +791,7 @@ export const PaymentVoucherNew = () => {
                 placeholder="0.00" aria-label="Transfer amount" />
             </label>
             <div style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
-              过账时:Dr {toAccountCode || '收方'} / Cr {creditAccountCode || 'Paid From'} — approve 才进 GL,和付款单同一条审批链。
+              On posting: Dr {toAccountCode || 'Paid To'} / Cr {creditAccountCode || 'Paid From'} — it reaches the GL only when approved, through the same approval chain as payments.
             </div>
           </div>
         </section>
@@ -803,7 +803,7 @@ export const PaymentVoucherNew = () => {
           <div className={styles.cardHeader}>
             <h2 className={styles.cardTitle}>Refunds</h2>
             <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
-              {refundSrc ? `${fmtRm(refundSrc.refundableSen)} refundable` : '认单为主 — name the order or the cancelled invoice'}
+              {refundSrc ? `${fmtRm(refundSrc.refundableSen)} refundable` : 'Name the order or the cancelled invoice'}
             </span>
           </div>
           <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>

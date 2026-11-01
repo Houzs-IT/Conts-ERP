@@ -121,7 +121,7 @@ const buildPvColumns = (): GridColumn<PaymentVoucherRow>[] => [
         )}
         {advanceOpenSen(r) > 0 && (
           <span style={{ fontSize: 'var(--fs-12, 12px)', color: ADVANCE_BLUE, fontWeight: 600, whiteSpace: 'nowrap' }}>
-            预付未冲 {fmtMoney(advanceOpenSen(r), r.currency)}
+            Advance not yet offset {fmtMoney(advanceOpenSen(r), r.currency)}
           </span>
         )}
       </span>

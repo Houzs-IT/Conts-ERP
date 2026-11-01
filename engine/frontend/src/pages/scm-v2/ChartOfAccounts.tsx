@@ -288,8 +288,8 @@ export const ChartOfAccounts = () => {
     const srcRow = accounts.find((x) => x.code === src);
     if (!srcRow || (srcRow.parentCode ?? '') === target.code) return;
     const ok = await askConfirm({
-      title: `把 ${src} 挂到 ${target.code} 下？`,
-      body: `${srcRow.name} → under ${target.name}. A target that carries postings or references refuses (父户不记账); the move itself never touches the GL.`,
+      title: `Move ${src} under ${target.code}?`,
+      body: `${srcRow.name} → under ${target.name}. A target that carries postings or references refuses (a header account never books); the move itself never touches the GL.`,
       confirmLabel: 'Move',
     });
     if (!ok) return;
@@ -312,13 +312,13 @@ export const ChartOfAccounts = () => {
     const srcRow = accounts.find((x) => x.code === src);
     if (!srcRow || srcRow.section === section) return;
     if (srcRow.parentCode) {
-      void notify({ title: `${src} 是子户`, body: `子户跟着 header 走 — drag ${srcRow.parentCode} instead, or move ${src} to the root first.`, tone: 'error' });
+      void notify({ title: `${src} is a child account`, body: `A child account follows its header — drag ${srcRow.parentCode} instead, or move ${src} to the root first.`, tone: 'error' });
       return;
     }
     const newType = sections.find((s) => s.section === section)?.type ?? srcRow.type;
     const kids = accounts.filter((x) => x.parentCode === src).length;
     const ok = await askConfirm({
-      title: `把 ${src} 移到 ${section}?`,
+      title: `Move ${src} to ${section}?`,
       body: `${srcRow.name}${kids > 0 ? ` and its ${kids} sub-account(s)` : ''} → ${section}${newType !== srcRow.type ? ` — the type changes ${srcRow.type} → ${newType}, and the statements follow the section` : ''}. The GL is untouched.`,
       confirmLabel: 'Move',
     });
@@ -354,7 +354,7 @@ export const ChartOfAccounts = () => {
     if (codeChanged) {
       const ok = await askConfirm({
         title: `Rename ${editing.code} → ${editCode.trim()}?`,
-        body: '改码全账跟: every journal line, voucher, settlement link and role binding moves to the new code in one transaction — or none of it does.',
+        body: 'The whole ledger follows the new code: every journal line, voucher, settlement link and role binding moves to the new code in one transaction — or none of it does.',
         confirmLabel: 'Rename everywhere',
       });
       if (!ok) return;
@@ -585,7 +585,7 @@ export const ChartOfAccounts = () => {
                 aria-label="Quick mode — untick and delete without confirms"
                 onChange={(e) => setQuickMode(e.target.checked)}
                 style={{ width: 14, height: 14, accentColor: 'var(--c-festive-b, #B8331F)' }} />
-              ⚡ Quick mode · 免确认
+              ⚡ Quick mode · no confirmation
             </label>
           </div>
         ) : undefined}
@@ -612,7 +612,7 @@ export const ChartOfAccounts = () => {
                 style={{ padding: '6px 8px', border: '1px solid var(--border-weak, #d8d5cd)', borderRadius: 6 }} />
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>Section — 决定 type</span>
+              <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>Section — sets the type</span>
               <select value={newSection} onChange={(e) => setNewSection(e.target.value)} aria-label="New account section"
                 style={{ padding: '6px 8px', border: '1px solid var(--border-weak, #d8d5cd)', borderRadius: 6 }}>
                 <option value="">— section —</option>
@@ -620,7 +620,7 @@ export const ChartOfAccounts = () => {
               </select>
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>Parent (optional — 子户跟着 header 的 section)</span>
+              <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>Parent (optional — a child account takes its header's section)</span>
               <input value={newParent} onChange={(e) => setNewParent(e.target.value)} list="chart-parent-codes" placeholder="305-0000"
                 style={{ fontFamily: 'var(--font-mono)', padding: '6px 8px', border: '1px solid var(--border-weak, #d8d5cd)', borderRadius: 6, width: 150 }} />
             </label>
@@ -629,18 +629,18 @@ export const ChartOfAccounts = () => {
               <select value={newSpecial} onChange={(e) => pickSpecial(e.target.value)} aria-label="Special type"
                 style={{ padding: '6px 8px', border: '1px solid var(--border-weak, #d8d5cd)', borderRadius: 6 }}>
                 <option value="">— none —</option>
-                <option value="SBK">SBK · 银行</option>
-                <option value="SCH">SCH · 现金</option>
-                <option value="SOP">SOP · 电子钱包/其他</option>
-                <option value="SFA">SFA · 固定资产 (带折旧对)</option>
-                <option value="SAD">SAD · 累计折旧</option>
+                <option value="SBK">SBK · Bank</option>
+                <option value="SCH">SCH · Cash</option>
+                <option value="SOP">SOP · E-wallet / other</option>
+                <option value="SFA">SFA · Fixed asset (with depreciation pair)</option>
+                <option value="SAD">SAD · Accumulated depreciation</option>
                 <option value="SRE">SRE · Retained earning</option>
                 <option value="SDP">SDP · Deferred</option>
-                <option value="SOS">SOS · 期初存货</option>
-                <option value="SCS">SCS · 期末存货</option>
-                <option value="SDC">SDC · Debtor control (由模块过账)</option>
-                <option value="SCC">SCC · Creditor control (由模块过账)</option>
-                <option value="SBS">SBS · Stock control (由模块过账)</option>
+                <option value="SOS">SOS · Opening stock</option>
+                <option value="SCS">SCS · Closing stock</option>
+                <option value="SDC">SDC · Debtor control (posted by the module)</option>
+                <option value="SCC">SCC · Creditor control (posted by the module)</option>
+                <option value="SBS">SBS · Stock control (posted by the module)</option>
               </select>
             </label>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -651,7 +651,7 @@ export const ChartOfAccounts = () => {
               <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', alignItems: 'flex-end', padding: 'var(--space-2)', border: '1px dashed var(--border-weak, #d8d5cd)', borderRadius: 8 }}>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <input type="checkbox" checked={depOn} onChange={(e) => setDepOn(e.target.checked)} />
-                  同时开折旧户 (SAD)
+                  Also open the depreciation account (SAD)
                 </label>
                 {depOn && (<>
                   <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -665,7 +665,7 @@ export const ChartOfAccounts = () => {
                       style={{ padding: '6px 8px', border: '1px solid var(--border-weak, #d8d5cd)', borderRadius: 6 }} />
                   </label>
                   <Button variant="ghost" size="sm" onClick={() => deriveDep(newCode, newName)}>
-                    照惯例填 (+5 / ACCUM. DEPRN.)
+                    Fill by convention (+5 / ACCUM. DEPRN.)
                   </Button>
                 </>)}
               </div>
@@ -778,7 +778,7 @@ export const ChartOfAccounts = () => {
           </div>
           <div className={styles.cardBody} style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', alignItems: 'flex-end', fontSize: 'var(--fs-13)' }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>Code — 改码全账跟</span>
+              <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>Code — the whole ledger follows a new code</span>
               <input value={editCode} onChange={(e) => setEditCode(e.target.value)}
                 style={{ fontFamily: 'var(--font-mono)', padding: '6px 8px', border: '1px solid var(--border-weak, #d8d5cd)', borderRadius: 6, width: 130 }} />
             </label>
@@ -788,7 +788,7 @@ export const ChartOfAccounts = () => {
                 style={{ padding: '6px 8px', border: '1px solid var(--border-weak, #d8d5cd)', borderRadius: 6 }} />
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>Section — 决定 type{editing.parentCode ? ' (子户跟着 header)' : ''}</span>
+              <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>Section — sets the type{editing.parentCode ? ' (a child account follows its header)' : ''}</span>
               <select value={editSection} onChange={(e) => setEditSection(e.target.value)} aria-label="Edit section"
                 disabled={editing.parentCode != null}
                 style={{ padding: '6px 8px', border: '1px solid var(--border-weak, #d8d5cd)', borderRadius: 6 }}>
@@ -797,7 +797,7 @@ export const ChartOfAccounts = () => {
               </select>
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>Under (parent — 留空 = 根)</span>
+              <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>Under (parent — blank = top level)</span>
               <input value={editParent} onChange={(e) => setEditParent(e.target.value)} list="chart-parent-codes" aria-label="Edit parent"
                 style={{ fontFamily: 'var(--font-mono)', padding: '6px 8px', border: '1px solid var(--border-weak, #d8d5cd)', borderRadius: 6, width: 150 }} />
             </label>
@@ -818,7 +818,7 @@ export const ChartOfAccounts = () => {
         <div className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>Every account, every company</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
-            tick = the company uses it · unticking a header takes its children · headers never book (父户不记账)
+            tick = the company uses it · unticking a header takes its children · headers never book
           </span>
         </div>
         {/* The LIST scrolls inside the card, not the page (owner 2026-09-04:

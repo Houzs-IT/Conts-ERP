@@ -730,7 +730,7 @@ export function DeliveryMapPanel({
         )}
         {ungeocoded.length > 0 && (
           <div className="rounded-md border border-border bg-surface-dim px-2.5 py-1.5 text-[11.5px] text-ink-secondary">
-            <span className="font-semibold">{ungeocoded.length} 张单定位不到 — 检查地址.</span>
+            <span className="font-semibold">{ungeocoded.length} order(s) could not be placed on the map — check the address.</span>
             <ul className="mt-0.5 list-disc pl-4">
               {ungeocoded.map((u) => (
                 <li key={u.ref}>

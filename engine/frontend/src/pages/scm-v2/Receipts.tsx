@@ -332,7 +332,7 @@ export const Receipts = () => {
 
       {adding && (
         <Modal
-          title={editing ? `Edit ${editing.number} — 改了会重新过账` : debtorMode ? 'New receipt — Other Debtor — 录入即过账' : 'New receipt — 录入即过账'}
+          title={editing ? `Edit ${editing.number} — saving re-posts it` : debtorMode ? 'New receipt — Other Debtor — posts when saved' : 'New receipt — posts when saved'}
           onClose={closeForm}
           width="min(980px, 100%)"
           ariaLabel={editing ? 'Edit receipt' : 'New receipt'}
@@ -375,7 +375,7 @@ export const Receipts = () => {
                 </label>
               ) : (
                 <label className={styles.field}>
-                  <span className={styles.fieldLabel}>Received from (打字就行)</span>
+                  <span className={styles.fieldLabel}>Received from (type a name)</span>
                   <input value={payer} onChange={(e) => setPayer(e.target.value)} className={styles.fieldInput} />
                 </label>
               )}

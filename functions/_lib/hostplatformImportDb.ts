@@ -398,7 +398,7 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
       const id = `wb-uacct-${slug(unitId)}-${a.kind}`;
       if (accountIds.has(id)) continue;
       accountIds.add(id);
-      accounts.push({ id, unit_id: unitId, kind: a.kind, account_no: a.accountNo, provider: a.provider, note: 'From owner workbook (Unit资料)', created_at: now, updated_at: now });
+      accounts.push({ id, unit_id: unitId, kind: a.kind, account_no: a.accountNo, provider: a.provider, note: 'From owner workbook (units sheet)', created_at: now, updated_at: now });
     }
     for (const m of w.poolMonths) {
       const id = `wb-pool-${slug(unitId)}-${m.month.replace('-', '')}`;
