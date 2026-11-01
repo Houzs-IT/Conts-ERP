@@ -333,6 +333,8 @@ type SoHeader = {
      below fires with no processing date involved. */
   po_locked?: boolean;
   vo_locked?: boolean;
+  /** RENOVATION for a renovation contract: its lines change only through the renovation routes. */
+  so_kind?: string | null;
   vo_applies_on_raise?: boolean;
   has_children?: boolean; downstream_fully_frozen?: boolean; // a live DO/SI exists / every line is on one (shared/so-line-freeze.ts)
   has_open_amendment?: boolean;
@@ -1181,6 +1183,47 @@ export const SalesOrderDetail = () => {
      fields hit `lines.length === 0` and never created an amendment at all ("我
      amend 了東西不給 approval"). Now: validate the header, save the direct half,
      and send the frozen half + the line diffs as the amendment. */
+  /* A renovation contract (so_kind RENOVATION) refuses the generic SO writes: its lines change through a contract VO
+     (add / omit, on the contract page), its customer and address on its project. What saves here is each line's
+     options and remark (PUT /renovation-so-info/:docNo/lines/:id/spec) and the Order information block. */
+  const saveContractEdit = async (handle: CustomerCardHandle) => {
+    if (!header) return;
+    const lines = buildAmendmentLines();
+    const byId = new Map(items.map((it) => [it.id, it]));
+    const specOnly = lines.every((l) => {
+      const it = l.salesOrderItemId ? byId.get(l.salesOrderItemId) : undefined;
+      return !!it && l.changeType === 'SPEC' && (l.newItemCode ?? it.item_code) === it.item_code && l.newQty === it.qty
+        && l.newUnitPriceSen === it.unit_price_sen && l.newDiscountSen === undefined;
+    });
+    if (!specOnly || addingDrafts.length > 0) {
+      setSaveError('On a renovation contract, adding or removing a line or changing its SKU, qty or price is a variation order: use New VO on the contract page. Options and remarks save here.');
+      return;
+    }
+    if (handle.hasHeaderPatchChanges()) {
+      setSaveError("A renovation contract's customer, address and dates are changed on its project (Customer info, Edit); they follow to this order.");
+      return;
+    }
+    if (lines.length === 0 && !handle.hasDirectHeaderChanges()) { setSaveError(AMENDMENT_NOTHING_TO_SUBMIT); return; }
+    setSavingOrder(true);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        handle.save({ onSuccess: () => resolve(), onError: (msg) => reject(new Error(msg)) }, { renoBlockOnly: true });
+      });
+      for (const l of lines) {
+        await authedFetch(`/renovation-so-info/${encodeURIComponent(header.doc_no)}/lines/${encodeURIComponent(l.salesOrderItemId ?? '')}/spec`, {
+          method: 'PUT', body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
+        });
+      }
+      setSavingOrder(false);
+      endEditSession();
+      void detail.refetch();
+      notify({ title: 'Saved', body: lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.` : 'Order information saved.', tone: 'success' });
+    } catch (e) {
+      setSavingOrder(false);
+      setSaveError(e instanceof Error ? e.message : 'Something went wrong.');
+    }
+  };
+
   const submitAmendment = async () => {
     const handle = customerCardRef.current;
     if (!handle || !header || savingOrder) return;
@@ -1220,6 +1263,7 @@ export const SalesOrderDetail = () => {
       return;
     }
 
+    if (header.so_kind === 'RENOVATION') { await saveContractEdit(handle); return; }
     const { changes: headerChanges } = handle.getLockedHeaderChanges();
     const lines = buildAmendmentLines();
 
@@ -2097,7 +2141,7 @@ export const SalesOrderDetail = () => {
                   <Button variant="primary"
                     onClick={() => { void submitAmendment(); }} disabled={migratedLocked || savingOrder || createAmendment.isPending}>
                     <Save {...ICON} />
-                    <span>{savingOrder || createAmendment.isPending ? 'Submitting…' : header.vo_locked ? 'Record VO' : 'Submit VO'}</span>
+                    <span>{savingOrder || createAmendment.isPending ? 'Submitting…' : header.so_kind === 'RENOVATION' ? 'Save' : header.vo_locked ? 'Record VO' : 'Submit VO'}</span>
                   </Button>
                 ) : (
                   <Button variant="primary"
@@ -2825,9 +2869,11 @@ type CustomerCardHandle = {
     // the server's aggregated `problems` list — so the page Save can show EVERY
     // reason at once (owner 2026-07-18), not just the first line.
     cb: { onSuccess: () => void; onError: (msg: string, raw?: unknown) => void },
-    opts?: { keepLockedColsAsOriginal?: boolean },
+    opts?: { keepLockedColsAsOriginal?: boolean; renoBlockOnly?: boolean },
   ) => void;
   reset: () => void;
+  /** Header fields the SO PATCH or an amendment would carry (not the Order information block). */
+  hasHeaderPatchChanges: () => boolean;
   /** Owner 2026-06-03 — current (possibly edited) phone value, so the page
       Save can enforce the compulsory-phone rule before any write, mirroring
       the New SO guard. */
@@ -3397,7 +3443,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
 
   const trySave = (
     cb?: { onSuccess?: () => void; onError?: (msg: string, raw?: unknown) => void },
-    opts?: { keepLockedColsAsOriginal?: boolean },
+    opts?: { keepLockedColsAsOriginal?: boolean; renoBlockOnly?: boolean },
   ) => {
     const err = validateDates();
     if (err) {
@@ -3430,7 +3476,9 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       else void notify({ title: 'Order information is incomplete', body: msg, tone: 'error' });
       return;
     }
-    trySave({
+    /* A renovation contract refuses the SO PATCH; only its Order information block is written. */
+    const save = opts?.renoBlockOnly ? (c: Parameters<typeof trySave>[0]) => c?.onSuccess?.() : trySave;
+    save({
       onSuccess: () => {
         /* Only a changed block is sent: a VO that touches lines alone has nothing to write here. */
         if (!renoChanged()) { cb?.onSuccess?.(); return; }
@@ -3460,6 +3508,8 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
     getLockedHeaderChanges: () =>
       buildAmendmentHeaderChanges(lockedHeaderNow, lockedHeaderOriginal),
     hasDirectHeaderChanges: () => hasHeaderChanges(directHeaderPatch()) || renoChanged(),
+    hasHeaderPatchChanges: () => hasHeaderChanges(directHeaderPatch())
+      || hasAmendmentHeaderChanges(buildAmendmentHeaderChanges(lockedHeaderNow, lockedHeaderOriginal)),
     fairDayKeys: () => fairDayCheck(buildPayload(), originalPayloadRef.current),
   }));
 
