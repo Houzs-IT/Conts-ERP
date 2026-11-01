@@ -192,12 +192,16 @@ export async function raisePos(
       [poNumber, g.supplierId, poDate, body.expectedAt ?? null, g.totalSen, `Renovation contract ${docNo}`, actor.staffId, actor.companyId],
     );
     await db.q(
+      /* The SO line's options and its planned delivery date (the PO tab's line plan) ride to the supplier's line: a PO
+         raised here came out with neither (owner run, 1 Nov 2026). */
       `insert into scm.purchase_order_items (purchase_order_id, material_kind, item_code, material_name, qty, unit_price_sen, line_total_sen,
-          item_group, description, description2, uom, unit_cost_sen, so_item_id, line_no, company_id)
+          item_group, description, description2, uom, unit_cost_sen, so_item_id, line_no, company_id, variants, delivery_date)
        select $2, 'mfg_product', x.item_code, x.description, x.qty, x.unit_cost_sen, x.amount_sen, 'RENOVATION', x.description, x.description2,
-              x.uom, x.unit_cost_sen, x.so_item_id, x.line_no, $3
+              x.uom, x.unit_cost_sen, x.so_item_id, x.line_no, $3, si.variants, lp.deliver_on
          from jsonb_to_recordset($1::text::jsonb) as x(item_code text, description text, qty int, unit_cost_sen int, amount_sen int,
-              description2 text, uom text, so_item_id uuid, line_no int)`,
+              description2 text, uom text, so_item_id uuid, line_no int)
+         left join scm.mfg_sales_order_items si on si.id = x.so_item_id
+         left join scm.reno_beta_line_plans lp on lp.so_item_id = x.so_item_id`,
       [JSON.stringify(g.lines.map((l, i) => ({ item_code: l.itemCode, description: l.description, qty: l.qty, unit_cost_sen: l.unitCostSen,
         amount_sen: l.amountSen, description2: l.description2, uom: l.uom, so_item_id: l.soItemId, line_no: i + 1 }))), po.id, actor.companyId],
     );
