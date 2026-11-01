@@ -78,15 +78,15 @@ export const PiBackfillCard = () => {
   return (
     <div style={{ border: '1px solid var(--c-line, rgba(34,31,32,0.12))', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)' }} className="space-y-2">
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
-        <b style={{ fontSize: 'var(--fs-14)' }}>PI backfill — 历史采购发票补账</b>
-        <span style={soft}>先 Dry run 看清单;执行时每张走正常引擎(旧 330 先反转再重开),按发票日期入账,重复跑是 no-op。只动当前公司。</span>
+        <b style={{ fontSize: 'var(--fs-14)' }}>PI backfill — post past purchase invoices</b>
+        <span style={soft}>Run Dry run first to see the list. Writing posts each invoice through the normal engine (an old 330 entry is reversed and re-posted) on its invoice date; running it again changes nothing. Current company only.</span>
         <span style={{ flex: 1 }} />
         <button type="button" style={btn(false, busy != null)} disabled={busy != null} onClick={() => void dryRun()}>
           {busy === 'dry' ? 'Checking…' : 'Dry run'}
         </button>
         <button type="button" style={btn(true, busy != null || !preview || pendingCount === 0)}
           disabled={busy != null || !preview || pendingCount === 0} onClick={() => void write()}>
-          {busy === 'write' ? 'Writing…' : `执行写入${preview ? ` (${pendingCount})` : ''}`}
+          {busy === 'write' ? 'Writing…' : `Write${preview ? ` (${pendingCount})` : ''}`}
         </button>
       </div>
 
@@ -108,14 +108,14 @@ export const PiBackfillCard = () => {
               ))}
             </div>
           )}
-          {pendingCount === 0 && <div style={{ color: 'var(--c-good, #2f5d4f)' }}>账已齐 — 没有要补的发票。</div>}
+          {pendingCount === 0 && <div style={{ color: 'var(--c-good, #2f5d4f)' }}>Up to date — no invoice left to post.</div>}
         </div>
       )}
 
       {outcomes && (
         <div style={{ fontSize: 'var(--fs-13)' }} className="space-y-1">
           <div>
-            写入结果:<b>{outcomes.length - failed.length}</b> done{failed.length > 0 && <> · <span style={{ color: 'var(--c-danger, #a33)' }}>{failed.length} failed</span></>}
+            Result: <b>{outcomes.length - failed.length}</b> done{failed.length > 0 && <> · <span style={{ color: 'var(--c-danger, #a33)' }}>{failed.length} failed</span></>}
           </div>
           {failed.length > 0 && (
             <div style={{ maxHeight: 140, overflowY: 'auto', border: '1px solid var(--border-weak, #e3e1da)', borderRadius: 'var(--radius-sm, 6px)', padding: '4px 8px' }}>

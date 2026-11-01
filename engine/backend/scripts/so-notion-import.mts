@@ -208,7 +208,7 @@ async function areaRooms(db: RenoDb, docNo: string) {
 
 try {
   const [co] = await sql`select id from public.companies where code = 'HOUZS'`;
-  const actor: RenoActor = { name: 'Notion SO import', staffId: SYSTEM_STAFF, companyId: Number(co.id), docPrefix: 'TC-' };
+  const actor: RenoActor = { name: 'SO import', staffId: SYSTEM_STAFF, companyId: Number(co.id), docPrefix: 'TC-' };
   const codes = [...new Set(data.projects.flatMap((p) => p.versions.flatMap((v) => v.sections.flatMap((s) => s.lines.map((l) => l.itemCode).filter(Boolean)))))] as string[];
   const known = new Set((await sql`select distinct code from scm.mfg_products where company_id = ${actor.companyId} and code = any(${codes})`).map((r) => r.code as string));
   const missing = codes.filter((c) => !known.has(c));
@@ -237,7 +237,7 @@ try {
       const db = renoDbOf(tx as unknown as UnsafeRunner);
       const r = await importProject(db, actor, p);
       await db.q(`insert into scm.app_config (key, value, description, company_id) values ($1, $2, $3, $4)`,
-        [noteKey, r.docNo, `Notion SO import (re-run 30 Oct 2026): ${r.docNo}${r.vos.length ? ` + ${r.vos.join(', ')}` : ''}`, actor.companyId]);
+        [noteKey, r.docNo, `SO import (re-run 30 Oct 2026): ${r.docNo}${r.vos.length ? ` + ${r.vos.join(', ')}` : ''}`, actor.companyId]);
       return r;
     });
     console.log(`done  ${p.project}: ${res.docNo}${res.vos.length ? ` + ${res.vos.length} VO` : ''}, RM ${(res.total / 100).toFixed(2)}`);

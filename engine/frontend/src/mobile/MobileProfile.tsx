@@ -43,6 +43,7 @@ import {
   LANG_LABELS,
   LANG_SUBLABELS,
   MOBILE_LANGS,
+  OFFERED_MOBILE_LANGS,
   setMobileLang,
   useMobileLang,
   useT,
@@ -799,7 +800,7 @@ function LanguageScreen({ onBack }: { onBack: () => void }) {
   return (
     <SubScreen title={t("lang.title")} onBack={onBack}>
       <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 14, overflow: "hidden" }}>
-        {MOBILE_LANGS.map((code, i) => {
+        {OFFERED_MOBILE_LANGS.map((code, i) => {
           const selected = code === lang;
           return (
             <button

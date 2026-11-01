@@ -37,6 +37,8 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 export const MOBILE_LANGS = ["en", "ms", "zh", "bn"] as const;
+/** The languages offered on the profile screen: no Chinese (owner, 1 Nov 2026). */
+export const OFFERED_MOBILE_LANGS: readonly MobileLang[] = ["en", "ms", "bn"];
 export type MobileLang = (typeof MOBILE_LANGS)[number];
 
 /**
@@ -71,7 +73,7 @@ function readStoredLang(): MobileLang {
   if (volatileLang !== null) return volatileLang;
   try {
     const v = localStorage.getItem(STORAGE_KEY);
-    if (isMobileLang(v)) return v;
+    if (isMobileLang(v) && v !== "zh") return v;
     if (v !== null) localStorage.removeItem(STORAGE_KEY);
   } catch {
     /* private mode / storage disabled — fall through to English */

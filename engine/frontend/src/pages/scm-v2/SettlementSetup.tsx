@@ -419,7 +419,7 @@ const NumberingRow = () => {
       <div className={css.defLabel}>Voucher numbering</div>
       <div className="space-y-2" style={{ minWidth: 0 }}>
         <div className={css.defRow}>
-          <span style={softText}>每家银行一个字母 (Maybank M → 2990-MPV-2609-001);位数你自己定</span>
+          <span style={softText}>One letter per bank (Maybank M → 2990-MPV-2609-001); you choose the digits</span>
           <span style={{ flex: 1 }} />
           <span style={softText}>Digits</span>
           <select aria-label="Voucher number digits" value={shownDigits}
@@ -446,8 +446,8 @@ const NumberingRow = () => {
               {a.fixedCash === true ? (
                 /* The drawer: C on both papers (CPV / COR), minted off
                    roles.CASH — nothing to type, nothing the Save sends. */
-                <span title="现金系列固定 C — 付款 CPV,收据 COR" style={{ padding: '4px 8px', fontWeight: 700 }}>
-                  C <span style={softText}>· CPV/COR 固定</span>
+                <span title="Cash series is always C — payments CPV, receipts COR" style={{ padding: '4px 8px', fontWeight: 700 }}>
+                  C <span style={softText}>· CPV/COR fixed</span>
                 </span>
               ) : (
                 <input

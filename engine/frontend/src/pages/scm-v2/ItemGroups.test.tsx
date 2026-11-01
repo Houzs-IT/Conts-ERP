@@ -79,7 +79,7 @@ describe('the sign-off flow', () => {
   test('an unbound group arrives pre-filled with the suggestion, marked unsaved', () => {
     render(<ItemGroupsTab />);
     // BEDLINES has no saved binding for company 2 → suggested defaults shown.
-    expect(screen.getByText('建议 · unsaved')).toBeTruthy();
+    expect(screen.getByText('Suggested · unsaved')).toBeTruthy();
     const purchase = screen.getByLabelText('BEDLINES Purchase account') as HTMLInputElement;
     expect(purchase.value).toContain('602-0000');
   });

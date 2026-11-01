@@ -293,7 +293,7 @@ export const ApInvoices = () => {
 
   const formTitle = form?.mode === 'edit'
     ? `Edit ${form.invoiceNumber ?? 'AP invoice'}`
-    : form?.mode === 'copy' ? `New AP invoice — copied from ${form.invoiceNumber ?? 'a bill'}` : 'New AP invoice — 非库存的供应商账单';
+    : form?.mode === 'copy' ? `New AP invoice — copied from ${form.invoiceNumber ?? 'a bill'}` : 'New AP invoice — a supplier bill not for stock';
 
   return (
     <div className="space-y-4">

@@ -1534,8 +1534,8 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
           <td />
           <td colSpan={10} className="py-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
             {poMode === 'combined'
-              ? 'Accessories on this order (皮套 / pillow) — ride on the sofa PO when a supplier matches, else their own PO'
-              : 'Accessories on this order (皮套 / pillow) — ordered on their own PO (Per-SO); switch to Combined to ride on the sofa PO'}
+              ? 'Accessories on this order (cover / pillow) — ride on the sofa PO when a supplier matches, else their own PO'
+              : 'Accessories on this order (cover / pillow) — ordered on their own PO (Per-SO); switch to Combined to ride on the sofa PO'}
           </td>
         </tr>
       )}

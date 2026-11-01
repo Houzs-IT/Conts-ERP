@@ -16,6 +16,8 @@ import { dateIn, time } from './format';
 export const PORTAL_LANGS = ['en', 'ms', 'zh', 'my'] as const;
 export type PortalLang = (typeof PORTAL_LANGS)[number];
 const isLang = (v: unknown): v is PortalLang => PORTAL_LANGS.some(l => l === v);
+/** The languages a person can pick: the system is English, with the field workers' own languages; no Chinese (owner, 1 Nov 2026). */
+export const OFFERED_PORTAL_LANGS: readonly PortalLang[] = PORTAL_LANGS.filter(l => l !== 'zh');
 
 /** Each language in its own script, so the person can find theirs. */
 export const LANG_LABEL: Record<PortalLang, string> = { en: 'English', ms: 'Bahasa Melayu', zh: '中文', my: 'မြန်မာ' };
@@ -28,7 +30,7 @@ const listeners = new Set<() => void>();
 function stored(): PortalLang {
   try {
     const v = localStorage.getItem(KEY);
-    return isLang(v) ? v : 'en';
+    return isLang(v) && v !== 'zh' ? v : 'en';
   } catch {
     return 'en'; // storage blocked (private window): the portal reads in English
   }

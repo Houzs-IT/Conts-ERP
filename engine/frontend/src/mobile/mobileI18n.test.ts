@@ -24,15 +24,15 @@ describe("mobile language preference", () => {
     expect(result.current).toBe("bn");
 
     act(() => {
-      localStorage.setItem("houzs.mobile.lang", "zh");
+      localStorage.setItem("houzs.mobile.lang", "ms");
       window.dispatchEvent(new StorageEvent("storage", {
         key: "houzs.mobile.lang",
         oldValue: "bn",
-        newValue: "zh",
+        newValue: "ms",
         storageArea: localStorage,
       }));
     });
-    expect(result.current).toBe("zh");
+    expect(result.current).toBe("ms");
 
     act(() => {
       localStorage.clear();
@@ -49,6 +49,11 @@ describe("mobile language preference", () => {
     });
     setMobileLang("ms");
     expect(getMobileLang()).toBe("ms");
+  });
+
+  it("a stored Chinese choice reads as English (owner, 1 Nov 2026: no Chinese)", () => {
+    localStorage.setItem("houzs.mobile.lang", "zh");
+    expect(getMobileLang()).toBe("en");
   });
 
   it("removes unsupported stored values", () => {

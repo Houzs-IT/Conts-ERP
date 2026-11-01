@@ -213,7 +213,7 @@ export const ItemGroupsTab = () => {
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
         <div style={softText}>
           Binding for company <b>{companies.find((co) => co.id === activeCo)?.code ?? activeCo}</b> — a group must be
-          bound here before its purchases can post. 灰字 = 建议,按 Save 才生效.
+          bound here before its purchases can post. Grey = suggested; it takes effect when you press Save.
         </div>
         <button type="button" style={btnStyle(true)} onClick={() => setShowNew(true)}>New group</button>
       </div>
@@ -266,7 +266,7 @@ export const ItemGroupsTab = () => {
                   ))}
                   <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
                     {saved && !dirty && <span style={{ color: 'var(--c-good, #2f5d4f)' }}>bound</span>}
-                    {suggested && <span style={softText}>建议 · unsaved</span>}
+                    {suggested && <span style={softText}>Suggested · unsaved</span>}
                     {!saved && !suggested && !complete(draft) && <span style={{ color: 'var(--c-danger, #a33)' }}>unbound</span>}
                     {dirty && !suggested && (saved || complete(draft)) && <span style={softText}>edited · unsaved</span>}
                   </td>
@@ -362,7 +362,7 @@ const NewGroupDialog = ({
       <div role="dialog" aria-label="New item group" style={{ ...cardStyle, background: 'var(--c-paper, #fff)', width: 'min(440px, 92vw)' }}>
         <div className="space-y-2">
           <b>New group</b>
-          <div style={softText}>四个 account 都绑了才能 create — 没绑的 group 不给过账。</div>
+          <div style={softText}>All four accounts must be bound before you can create it — a group without them cannot post.</div>
           <input style={{ ...fieldStyle, width: '100%' }} placeholder="Code (e.g. CURTAIN)" value={code}
             aria-label="Group code" onChange={(e) => setCode(e.target.value)} />
           <input style={{ ...fieldStyle, width: '100%' }} placeholder="Name" value={name}
