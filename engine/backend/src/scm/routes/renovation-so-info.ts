@@ -8,6 +8,7 @@
 //   GET  /so/:docNo           an existing SO's order information (the edit form)
 //   PUT  /:docNo              save the SO's order information and write it back to its project
 //   PUT  /:docNo/rooms        save the SO's room list and its lines' rooms
+//   PUT  /:docNo/lines/:itemId/spec   a line's variants and remark (renovation contracts too)
 //
 // The create path (POST /api/scm/mfg-sales-orders with a `renovation` block) and
 // this PUT share applyRenovationSoInfo below. Reads ride the Sales Orders view
@@ -34,6 +35,9 @@ import {
   type SoShared,
 } from '../../services/renovation/customerProperty';
 import { cleanRoomName, cleanRoomSections, readPropertyInput, renoSoRequiredProblems, type PropertyProblem } from '../shared/renovation-property';
+import { canonicalizeVariants } from '../shared/so-variant-rule';
+import { buildVariantSummary } from '../shared/variant-summary';
+import { variantCategoryOf } from '../lib/renovation-flow-rules';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -238,6 +242,56 @@ renovationSoInfo.put('/:docNo', async (c: C) => {
   });
   if (!r.ok) return c.json(r.body, r.status);
   return c.json({ ok: true, docNo, projectId: r.projectId });
+});
+
+/* A line's variants and remark (owner, 1 Nov 2026: the SO line carries the options its SKU has, picked on the SO).
+   A renovation contract changes lines only through a contract VO, which adds or omits lines and never touches the
+   options, so this is the one place they are set. Money, quantity and SKU never move here, and a line a live PO
+   already buys keeps what the supplier was sent: that change goes through the PO amendment. */
+renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
+  const db = dbOf(c);
+  const docNo = c.req.param('docNo') ?? '';
+  const itemId = c.req.param('itemId') ?? '';
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!body || typeof body.variants !== 'object' || body.variants === null || Array.isArray(body.variants)) {
+    return c.json({ error: 'variants_required', message: 'Send the line options.' }, 400);
+  }
+  const line = await db.prepare(
+    `SELECT i.id::text AS id, i.item_code, i.variants, i.remark, i.company_id::int AS company_id, o.status::text AS status,
+            p.category::text AS category, p.sub_category
+       FROM scm.mfg_sales_order_items i
+       JOIN scm.mfg_sales_orders o ON o.doc_no = i.doc_no
+       LEFT JOIN scm.mfg_products p ON p.code = i.item_code AND p.company_id = o.company_id
+      WHERE i.doc_no = ? AND i.id::text = ?${activeCompanySql(c, 'o.company_id')}`,
+  ).bind(docNo, itemId).first<{ id: string; item_code: string; variants: unknown; remark: string | null; company_id: number; status: string; category: string | null; sub_category: string | null }>();
+  if (!line) return c.json({ error: 'line_not_found', message: `That line is not on sales order ${docNo}.` }, 404);
+  if (line.status === 'CANCELLED' || line.status === 'CLOSED') return c.json({ error: 'so_closed', message: `Sales order ${docNo} is ${line.status.toLowerCase()}.` }, 409);
+  const po = await db.prepare(
+    `SELECT po.doc_no FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
+      WHERE pi.so_item_id::text = ? AND po.status::text NOT IN ('CANCELLED', 'DRAFT') LIMIT 1`,
+  ).bind(itemId).first<{ doc_no: string }>();
+  const group = (variantCategoryOf(line.category, line.sub_category) ?? '').toLowerCase();
+  const raw = { ...(body.variants as Record<string, unknown>) };
+  delete raw.remark;
+  const variants = canonicalizeVariants(group, raw);
+  const before = typeof line.variants === 'string' ? JSON.parse(line.variants) as unknown : line.variants;
+  const remark = typeof body.remark === 'string' ? body.remark.trim().slice(0, 500) : (line.remark ?? '');
+  const sameOptions = JSON.stringify(canonicalizeVariants(group, (before ?? {}) as Record<string, unknown>)) === JSON.stringify(variants);
+  if (sameOptions && remark === (line.remark ?? '')) return c.json({ ok: true, changed: false });
+  if (po && !sameOptions) {
+    return c.json({ error: 'line_on_po', message: `${po.doc_no} already buys this line from the supplier. Change its options through that PO's amendment.` }, 409);
+  }
+  const summary = buildVariantSummary(group, variants) || null;
+  await db.prepare(
+    `UPDATE scm.mfg_sales_order_items SET variants = ?::jsonb, description2 = coalesce(?, description2), remark = nullif(?, '')
+      WHERE id::text = ? AND doc_no = ?`,
+  ).bind(JSON.stringify(variants), summary, remark, itemId, docNo).run();
+  await db.prepare(
+    `INSERT INTO scm.mfg_so_audit_log (so_doc_no, company_id, action, actor_name_snapshot, field_changes, status_snapshot, source, note)
+     VALUES (?, ?, 'UPDATE', ?, ?::jsonb, ?, 'renovation', ?)`,
+  ).bind(docNo, line.company_id, String(c.get('houzsUser')?.name ?? ''), JSON.stringify([{ field: 'variants', from: before ?? null, to: variants }]),
+    line.status, `${line.item_code}: options ${summary ?? 'cleared'}${remark !== (line.remark ?? '') ? `; remark ${remark || 'cleared'}` : ''}`).run();
+  return c.json({ ok: true, changed: true, variants, summary });
 });
 
 /* ── Attachments on the whole order (owner, 14 Oct 2026; mig 0115 scm.mfg_sales_orders.attachments) ──
