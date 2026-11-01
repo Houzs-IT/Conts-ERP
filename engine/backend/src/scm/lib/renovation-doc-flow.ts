@@ -165,6 +165,20 @@ export async function stampContractFromQuotation(
   if (addr.address1) {
     await db.q(`update scm.mfg_sales_orders set address1 = $2, address2 = $3 where doc_no = $1`, [docNo, addr.address1, addr.address2 || null]);
   }
+  /* The project's other shared fields the quotation does not carry (salesperson, structured address, sales location):
+     a converted SO came out with no salesperson though its project had one (owner run, 1 Nov 2026). Blanks only. */
+  if (q.projectId != null) {
+    await db.q(
+      `update scm.mfg_sales_orders o set salesperson_id = coalesce(o.salesperson_id, p.salesperson_staff_id),
+          email = coalesce(nullif(o.email, ''), nullif(p.customer_email, '')),
+          customer_state = coalesce(nullif(o.customer_state, ''), nullif(p.state, '')), city = coalesce(nullif(o.city, ''), nullif(p.city, '')),
+          postcode = coalesce(nullif(o.postcode, ''), nullif(p.postcode, '')),
+          customer_country = coalesce(nullif(o.customer_country, ''), nullif(p.country, '')),
+          sales_location = coalesce(nullif(o.sales_location, ''), nullif(p.sales_location, ''))
+         from public.projects p where o.doc_no = $1 and p.id = $2 and p.company_id = $3`,
+      [docNo, q.projectId, q.companyId],
+    );
+  }
   if (!(await soPropertyReady(db))) return;
   const rooms = contractRooms(q.sections);
   await db.q(
