@@ -29,7 +29,7 @@ import { BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
-  amountAfter, byAreaBlocks, byCategory, livePo, colourEditable, colourOf, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
+  amountAfter, byAreaBlocks, byCategory, livePo, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
   linesApi, linesCsv, postVo, refusalText,
   voBatches, type LineEdit, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
@@ -574,11 +574,9 @@ function DescCell(r: RowCtx): ReactElement {
   );
 }
 
+/* The variants the SO line carries, as the SKU picked on the SO defines them (a bedframe's colour, leg and gap; most
+   SKUs have none and use the remark). Changed on the SO, not here (owner, 1 Nov 2026). */
 function VariantCell(r: RowCtx): ReactElement {
-  if (r.editable && colourEditable(r.l)) {
-    return <input aria-label={`Colour for ${r.l.itemCode}`} placeholder="Colour / code" title={r.l.variantText ?? undefined} style={{ ...editInput, width: "100%" }}
-      value={r.edit?.colour ?? colourOf(r.l)} onChange={(ev) => r.setEdit({ colour: ev.target.value })} />;
-  }
   return r.l.variantText ? <span title={r.l.variantText} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{r.l.variantText}</span> : <span style={metaStyle}>-</span>;
 }
 
