@@ -224,9 +224,12 @@ renovationSoInfo.put('/:docNo', async (c: C) => {
        FROM scm.mfg_sales_orders WHERE doc_no = ?${activeCompanySql(c)}`,
   ).bind(docNo).first<{ so_kind: string; status: string; debtor_name: string | null; phone: string | null; address1: string | null; company_id: number }>();
   if (!so) return c.json({ error: 'so_not_found', message: `Sales order ${docNo} does not exist.` }, 404);
-  if (so.so_kind !== 'STANDARD') return c.json({ error: 'renovation_contract', message: 'A renovation contract keeps the header it was signed with.' }, 409);
   if (so.status === 'CANCELLED' || so.status === 'CLOSED') return c.json({ error: 'so_closed', message: `Sales order ${docNo} is ${so.status.toLowerCase()}.` }, 409);
-  const input = readRenovationBlock(body);
+  /* A renovation contract shares its customer and property with the project both ways like any SO (owner, 1 Nov
+     2026: "I change either side"); it only keeps the room sections it was signed with. Refusing the whole block
+     made every VO saved from the SO page fail on a contract. */
+  const read = readRenovationBlock(body);
+  const input = so.so_kind === 'STANDARD' ? read : { ...read, roomSections: null };
   const problems = renovationSoProblems(input, { customerName: so.debtor_name ?? '', phone: so.phone ?? '', address1: so.address1 ?? '' });
   if (problems.length) return c.json({ error: 'validation_failed', problems }, 422);
   const r = await applyRenovationSoInfo(db, docNo, input, {
