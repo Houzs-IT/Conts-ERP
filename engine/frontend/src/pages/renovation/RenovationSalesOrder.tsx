@@ -177,6 +177,13 @@ function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
               <ul className="list-disc pl-5">{p.blocked.map((l) => <li key={l.lineId}>{l.description}</li>)}</ul>
             </div>
           )}
+          {(p.unsupplied ?? []).length > 0 && (
+            <div className="rounded-lg border border-warning-text/30 bg-warning-bg p-2.5 text-[12.5px] text-warning-text">
+              <div className="font-semibold">Not ordered: no supplier ({(p.unsupplied ?? []).length})</div>
+              <ul className="list-disc pl-5">{(p.unsupplied ?? []).map((l) => <li key={l.lineId}>{l.description}</li>)}</ul>
+              <div>Pick a supplier on the line (Edit), or leave it if it is bought another way.</div>
+            </div>
+          )}
           {(p.skipped.length > 0 || p.alreadyOrdered.length > 0) && (
             <details className="text-[12.5px] text-ink-secondary">
               <summary className="cursor-pointer font-semibold">{p.skipped.length} line(s) need no PO, {p.alreadyOrdered.length} already ordered</summary>

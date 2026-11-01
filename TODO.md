@@ -548,7 +548,4 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 - Health warnings (CONTS-0005, owner 26 Oct): management is emailed when a System health card turns red or a channel is reported down on status.channex.io, and when it clears. Email only for now; a WhatsApp copy is the owner's later call. Runs on the 5-minute health report, so production only (the cron worker); staging shows the new Channel status card but sends no warnings.
 
-- Flow run 1 Nov (TEST RN-2611-001 / TC-SO-2611-001 / TC-PO-2611-001 / TC-GRN-2611-001): lines on renovation contracts keep item_group RENOVATION, so the PO quick view summary drops divan and gap and the GRN picker shows category OTHERS; summary and category should come from the SKU (variantCategoryOf).
-- Flow run 1 Nov: a contract furniture line with no supplier and no cost falls under "need no PO" silently (SOFA 3S); Plan POs should flag furniture without a supplier.
-- Flow run 1 Nov: MRP opens on the last stored snapshot, so new demand shows only after Regenerate.
 - Flow run 1 Nov, not yet run: DO from the contract, POD upload, PO PDF and send; native date boxes could not be driven remotely (dates set in the DB for the TEST lines).

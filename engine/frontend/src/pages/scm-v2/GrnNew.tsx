@@ -593,7 +593,9 @@ export const GrnNew = () => {
   // the full catalogue to resolve a bound SKU's itemGroup. Fires only when a
   // supplier is set AND a manual line actually exists (in any mode), so a
   // PO-sourced receipt with no hand-added line never pays for the lookup.
-  const allSkusQ = useMfgProducts({ enabled: !!supplierId && lines.some((l) => l.purchaseOrderItemId === null) });
+  /* Also for a renovation contract's lines (item_group RENOVATION, kept for accounting): their pill shows the SKU's
+     own category instead (owner run, 1 Nov 2026). */
+  const allSkusQ = useMfgProducts({ enabled: (!!supplierId && lines.some((l) => l.purchaseOrderItemId === null)) || lines.some((l) => l.itemGroup?.toUpperCase() === 'RENOVATION') });
   const categoryForCode = (code: string): string | undefined => {
     const sku = (allSkusQ.data ?? []).find((p) => p.code === code);
     return sku?.category ? sku.category.toLowerCase() : undefined;
@@ -1092,7 +1094,7 @@ export const GrnNew = () => {
                       }}>
                         LINE {idx + 1}
                       </span>
-                      {l.itemGroup && <ItemGroupPill group={l.itemGroup} />}
+                      {l.itemGroup && <ItemGroupPill group={l.itemGroup.toUpperCase() === 'RENOVATION' ? categoryForCode(l.itemCode) ?? l.itemGroup : l.itemGroup} />}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                       <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
