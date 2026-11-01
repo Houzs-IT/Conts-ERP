@@ -149,7 +149,7 @@ describe('PO split grouping', () => {
       row({ description: 'cabinet' }),
       row({ description: 'labour', supplier_id: 'sup-b', supplier_name: 'B', category: 'WORKS', supply_by_owner: true }),
       row({ description: 'owner lamp', supply_by_owner: true }),
-      row({ description: 'in house', supplier_id: null, unit_cost_sen: 0 }),
+      row({ description: 'in house', category: 'WORKS', supplier_id: null, unit_cost_sen: 0 }),
       row({ description: 'no supplier', supplier_id: null }),
       row({ description: 'done', ordered_qty: 1 }),
       row({ description: 'system', item_code: 'RENO-ADJUST' }),
@@ -158,6 +158,7 @@ describe('PO split grouping', () => {
     expect(r.skipped.map((l) => l.description)).toEqual(['owner lamp', 'in house']);
     expect(r.blocked.map((l) => l.description)).toEqual(['no supplier']);
     expect(r.alreadyOrdered.map((l) => l.description)).toEqual(['done']);
+    expect(r.unsupplied).toEqual([]);
   });
 
   test('needsPurchaseOrder agrees with the split: only lines the split would order (or blocks) need one', () => {
@@ -165,7 +166,7 @@ describe('PO split grouping', () => {
       row({ description: 'cabinet' }),
       row({ description: 'labour', category: 'WORKS', supply_by_owner: true }),
       row({ description: 'owner lamp', supply_by_owner: true }),
-      row({ description: 'in house', supplier_id: null, unit_cost_sen: 0 }),
+      row({ description: 'in house', category: 'WORKS', supplier_id: null, unit_cost_sen: 0 }),
       row({ description: 'no supplier', supplier_id: null }),
       row({ description: 'system', item_code: 'RENO-ADJUST' }),
     ];
@@ -188,6 +189,16 @@ describe('PO split grouping', () => {
     expect(r.skipped.map((l) => [l.description, l.reason])).toEqual([['customer fridge', 'Customer-supplied: the customer orders it, no purchase order']]);
     expect(needsPurchaseOrder({ itemCode: 'CUS-FRIDGE', supplyByOwner: false, category: 'APPLIANCE', supplierId: 'sup-c', unitCostSen: 0, supplierCode: 'CUSTOMER' })).toBe(false);
     expect(needsPurchaseOrder({ itemCode: 'CUS-TV', supplyByOwner: false, category: 'APPLIANCE', supplierId: 'sup-a', unitCostSen: 90000 })).toBe(true);
+  });
+
+  test('furniture with no supplier and no cost is named as not ordered, not filed as in-house work (owner run, 1 Nov 2026)', () => {
+    const r = groupForPo([
+      row({ description: 'SOFA 3S', category: 'FURNITURE', supplier_id: null, unit_cost_sen: 0 }),
+      row({ description: 'wiring', category: 'WORKS', supplier_id: null, unit_cost_sen: 0 }),
+    ]);
+    expect(r.unsupplied.map((l) => l.description)).toEqual(['SOFA 3S']);
+    expect(r.skipped.map((l) => l.description)).toEqual(['wiring']);
+    expect(r.blocked).toEqual([]);
   });
 
   test('one supplier, two category groups: two POs, never one mixed PO (owner, 14 Oct 2026)', () => {

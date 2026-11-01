@@ -51,7 +51,12 @@ export interface SplitPreview {
   blocked: SplitLine[];
   skipped: SplitLine[];
   alreadyOrdered: SplitLine[];
+  /* Goods (furniture, lighting, appliances, soft furnishing) with no supplier: not ordered, and said so, where they
+     used to sit silently under "need no PO" as in-house work (owner run, 1 Nov 2026). Does not block the raise. */
+  unsupplied: SplitLine[];
 }
+
+const GOODS_GROUPS: ReadonlySet<string> = new Set(['FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT']);
 
 interface CandidateRow {
   line_id: string; so_item_id: string; kind: 'ITEM' | 'CHILD'; item_code: string; description: string; qty: number; measure: string | null;
@@ -100,7 +105,7 @@ export function needsPurchaseOrder(l: { itemCode: string | null; supplyByOwner: 
 
 /** Pure grouping, exported for tests. */
 export function groupForPo(rows: CandidateRow[]): SplitPreview {
-  const out: SplitPreview = { groups: [], blocked: [], skipped: [], alreadyOrdered: [] };
+  const out: SplitPreview = { groups: [], blocked: [], skipped: [], alreadyOrdered: [], unsupplied: [] };
   const groups = new Map<string, SplitGroup>();
   for (const r of rows) {
     const measureMilli = r.measure === null ? null : parseMeasureMilli(String(Number(r.measure)));
@@ -123,7 +128,8 @@ export function groupForPo(rows: CandidateRow[]): SplitPreview {
       out.skipped.push({ ...line, reason: 'Customer-supplied: the customer orders it, no purchase order' }); continue;
     }
     if (!r.supplier_id) {
-      if (Number(r.unit_cost_sen) === 0) out.skipped.push({ ...line, reason: 'No supplier and no cost: done in house' });
+      if (Number(r.unit_cost_sen) === 0 && GOODS_GROUPS.has(group ?? '')) out.unsupplied.push({ ...line, reason: 'No supplier: pick one on the contract line to order it' });
+      else if (Number(r.unit_cost_sen) === 0) out.skipped.push({ ...line, reason: 'No supplier and no cost: done in house' });
       else out.blocked.push({ ...line, reason: 'Has a cost but no supplier' });
       continue;
     }

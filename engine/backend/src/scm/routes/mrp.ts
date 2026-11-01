@@ -1882,7 +1882,15 @@ mrp.get('/', async (c) => {
        `computedAt` let the page show "as of <time>". */
     if (isDefaultMrpView(catFilter, whFilter, includeUndated)) {
       const snap = await readMrpSnapshot(sb, companyId);
-      if (snap) return c.json({ ...snap.result, computedAt: snap.computedAt, stored: true });
+      /* Conts runs no scheduled jobs (engine rule), so nothing refreshes the snapshot every 15 minutes: an older one
+         is recomputed and stored on open, or new orders showed only after Regenerate (owner run, 1 Nov 2026). */
+      if (snap && Date.now() - Date.parse(snap.computedAt) < MRP_SNAPSHOT_FRESH_MS) {
+        return c.json({ ...snap.result, computedAt: snap.computedAt, stored: true });
+      }
+      if (companyId != null) {
+        const fresh = await refreshMrpSnapshot(sb, companyId, await loadLeadBuffers(c.env.DB), new Date().toISOString());
+        return c.json({ ...fresh.result, computedAt: fresh.computedAt, stored: true });
+      }
     }
     const result = await computeMrp(sb, { catFilter, whFilter, includeUndated, companyId, leadBuffers: await loadLeadBuffers(c.env.DB) });
     return c.json({ ...result, computedAt: new Date().toISOString(), stored: false });
@@ -1890,6 +1898,9 @@ mrp.get('/', async (c) => {
     return c.json({ error: 'load_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
+
+/* Short: Conts's plan is small and fast to compute; the snapshot only saves recomputing on quick reopens. */
+const MRP_SNAPSHOT_FRESH_MS = 60 * 1000;
 
 /* Manual "Regenerate" — recompute the default-view MRP for the active company
    and store it, then return it fresh. POST is gated 'edit' on scm.procurement.mrp
