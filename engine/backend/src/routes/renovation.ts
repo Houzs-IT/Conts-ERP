@@ -506,7 +506,9 @@ app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
     keyHolder: v.keyHolder,
     vo: v.vo,
     people: {
-      sales: { id: f.project.sales_person_id ?? null, name: f.project.sales_person_name ?? null },
+      /* The salesperson picked on the project or its SO (salesperson_staff_id, name kept in salesperson_name) when no
+         project person is set: the card showed "-" for a project whose salesperson was chosen (owner run, 1 Nov 2026). */
+      sales: { id: f.project.sales_person_id ?? null, name: f.project.sales_person_name ?? f.project.salesperson_name ?? null },
       designer: { id: f.project.designer_person_id ?? null, name: f.project.designer_person_name ?? null },
       renoPic: { id: f.project.reno_pic_person_id ?? null, name: f.project.reno_pic_person_name ?? null },
       // Owner, 14 Oct 2026: the screen shows Project PIC (reno_pic_person_id) and Attending (project_attendees).

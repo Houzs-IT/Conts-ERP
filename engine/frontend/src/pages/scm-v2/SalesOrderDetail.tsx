@@ -78,7 +78,7 @@ import {
 } from '../../vendor/scm/lib/so-amendment-header';
 import { diffHeaderPayload, hasHeaderChanges } from '../../vendor/scm/lib/so-header-diff';
 import { soSaveEndFields, soVersionAfter } from '../../vendor/scm/lib/so-save-lease';
-import { planAmendmentSubmit, amendmentSubmittedNotice, AMENDMENT_MODE_BANNER, VO_MODE_BANNER,
+import { planAmendmentSubmit, amendmentSubmittedNotice, AMENDMENT_MODE_BANNER, VO_MODE_BANNER, CONTRACT_MODE_BANNER,
   AMENDMENT_NOTHING_TO_SUBMIT } from '../../vendor/scm/lib/so-amendment-submit';
 import { useAmendmentSubmitDialog } from '../../vendor/scm/components/AmendmentSubmitDialog';
 import { todayMyt } from '../../vendor/scm/lib/dates';
@@ -2299,7 +2299,7 @@ export const SalesOrderDetail = () => {
         }}>
           <Lock {...ICON} />
           {/* Shared copy — both surfaces were wrong about addresses. */}
-          <span>{header.vo_locked ? VO_MODE_BANNER : AMENDMENT_MODE_BANNER}</span>
+          <span>{header.so_kind === 'RENOVATION' ? CONTRACT_MODE_BANNER : header.vo_locked ? VO_MODE_BANNER : AMENDMENT_MODE_BANNER}</span>
         </div>
       )}
 
