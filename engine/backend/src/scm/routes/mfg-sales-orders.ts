@@ -4875,7 +4875,11 @@ mfgSalesOrders.post('/validate', async (c) => {
       customerName: str(body.debtorName) || str(body.customerName), phone: str(body.phone), address1: str(body.address1),
     }).filter((p) => p.field !== 'Customer name' && p.field !== 'Phone number')
     : [];
+  /* An edit sends the stored phone as origPhone. The PATCH only refuses blanking a stored phone, so an order
+     saved without one (the imported renovation SOs have none) is not blocked here for a value it never had. */
+  const phoneSavedBlank = isEdit && typeof body.origPhone === 'string' && body.origPhone.trim() === '';
   const problems = collectSoSubmitProblems({
+    phoneOptional: phoneSavedBlank,
     renovation: !!renoBlock,
     extra: renoExtra,
     customerName: str(body.debtorName) || str(body.customerName),
