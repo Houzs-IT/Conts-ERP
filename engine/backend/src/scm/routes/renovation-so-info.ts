@@ -267,9 +267,9 @@ renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
   if (!line) return c.json({ error: 'line_not_found', message: `That line is not on sales order ${docNo}.` }, 404);
   if (line.status === 'CANCELLED' || line.status === 'CLOSED') return c.json({ error: 'so_closed', message: `Sales order ${docNo} is ${line.status.toLowerCase()}.` }, 409);
   const po = await db.prepare(
-    `SELECT po.doc_no FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
+    `SELECT po.po_number FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
       WHERE pi.so_item_id::text = ? AND po.status::text NOT IN ('CANCELLED', 'DRAFT') LIMIT 1`,
-  ).bind(itemId).first<{ doc_no: string }>();
+  ).bind(itemId).first<{ po_number: string }>();
   const group = (variantCategoryOf(line.category, line.sub_category) ?? '').toLowerCase();
   const raw = { ...(body.variants as Record<string, unknown>) };
   delete raw.remark;
@@ -279,16 +279,16 @@ renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
   const sameOptions = JSON.stringify(canonicalizeVariants(group, (before ?? {}) as Record<string, unknown>)) === JSON.stringify(variants);
   if (sameOptions && remark === (line.remark ?? '')) return c.json({ ok: true, changed: false });
   if (po && !sameOptions) {
-    return c.json({ error: 'line_on_po', message: `${po.doc_no} already buys this line from the supplier. Change its options through that PO's amendment.` }, 409);
+    return c.json({ error: 'line_on_po', message: `${po.po_number} already buys this line from the supplier. Change its options through that PO's amendment.` }, 409);
   }
   const summary = buildVariantSummary(group, variants) || null;
   await db.prepare(
-    `UPDATE scm.mfg_sales_order_items SET variants = ?::jsonb, description2 = coalesce(?, description2), remark = nullif(?, '')
+    `UPDATE scm.mfg_sales_order_items SET variants = ?::text::jsonb, description2 = coalesce(?, description2), remark = nullif(?, '')
       WHERE id::text = ? AND doc_no = ?`,
   ).bind(JSON.stringify(variants), summary, remark, itemId, docNo).run();
   await db.prepare(
     `INSERT INTO scm.mfg_so_audit_log (so_doc_no, company_id, action, actor_name_snapshot, field_changes, status_snapshot, source, note)
-     VALUES (?, ?, 'UPDATE', ?, ?::jsonb, ?, 'renovation', ?)`,
+     VALUES (?, ?, 'UPDATE', ?, ?::text::jsonb, ?, 'renovation', ?)`,
   ).bind(docNo, line.company_id, String(c.get('houzsUser')?.name ?? ''), JSON.stringify([{ field: 'variants', from: before ?? null, to: variants }]),
     line.status, `${line.item_code}: options ${summary ?? 'cleared'}${remark !== (line.remark ?? '') ? `; remark ${remark || 'cleared'}` : ''}`).run();
   return c.json({ ok: true, changed: true, variants, summary });
