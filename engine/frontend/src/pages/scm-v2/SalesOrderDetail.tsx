@@ -1217,7 +1217,7 @@ export const SalesOrderDetail = () => {
       setSavingOrder(false);
       endEditSession();
       void detail.refetch();
-      notify({ title: 'Saved', body: lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.` : 'Order information saved.', tone: 'success' });
+      notify({ title: 'Saved', body: lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.` : 'Order information saved.', tone: 'info' });
     } catch (e) {
       setSavingOrder(false);
       setSaveError(e instanceof Error ? e.message : 'Something went wrong.');
@@ -3509,7 +3509,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       buildAmendmentHeaderChanges(lockedHeaderNow, lockedHeaderOriginal),
     hasDirectHeaderChanges: () => hasHeaderChanges(directHeaderPatch()) || renoChanged(),
     hasHeaderPatchChanges: () => hasHeaderChanges(directHeaderPatch())
-      || hasAmendmentHeaderChanges(buildAmendmentHeaderChanges(lockedHeaderNow, lockedHeaderOriginal)),
+      || hasAmendmentHeaderChanges(buildAmendmentHeaderChanges(lockedHeaderNow, lockedHeaderOriginal).changes),
     fairDayKeys: () => fairDayCheck(buildPayload(), originalPayloadRef.current),
   }));
 
