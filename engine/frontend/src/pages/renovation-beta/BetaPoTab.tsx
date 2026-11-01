@@ -31,7 +31,7 @@ import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos
 import {
   amountAfter, byAreaBlocks, byCategory, livePo, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
   linesApi, linesCsv, postVo, refusalText,
-  voBatches, type LineEdit, type ManagedLine, type PendingPoChange, type PostedVo,
+  postContractLines, voBatches, type LineEdit, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
 import { BetaLoading } from "./BetaLoading";
 
@@ -118,10 +118,14 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const needPo = buy.filter((l) => !l.plan.noPo && !l.pos.some((x) => x.poStatus !== "CANCELLED"));
   const canConfirmPo = can("scm.po_amendment.approve");
 
+  /* Renovation contracts: their SKU and qty change by a contract VO on the contract page; remarks save here. */
+  const contractSo = new Set(d.sos.filter((s) => s.renovation).map((s) => s.docNo));
   const save = async (): Promise<void> => {
     setSaving(true);
     const posted: PostedVo[] = [];
-    for (const b of batches) posted.push(await postVo(b, `beta-lines-${p.projectId}-${b.docNo}-${Date.now()}`));
+    for (const b of batches) {
+      posted.push(contractSo.has(b.docNo) ? await postContractLines(b) : await postVo(b, `beta-lines-${p.projectId}-${b.docNo}-${Date.now()}`));
+    }
     setSaving(false);
     setConfirming(false);
     const refused: Record<string, string> = {};
@@ -220,7 +224,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
 
   const deliveries = site.data?.deliveries ?? [];
   const cell = (l: ManagedLine): RowCtx => ({
-    l, edit: edits[l.id], editable: editable && l.voLocked, finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
+    l, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
     setEdit: (patch) => setEdit(l.id, patch), pick: () => setPicking(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
     grDocs: lineDocs(l.id, deliveries, "goods_received"), doDocs: lineDocs(l.id, deliveries, "delivery_order"), openDoc,
@@ -498,6 +502,8 @@ interface RowCtx {
   l: ManagedLine;
   edit: LineEdit | undefined;
   editable: boolean;
+  /** A renovation contract's line: SKU and qty change by a contract VO, not here. */
+  contract: boolean;
   finance: boolean;
   today: string;
   plansReady: boolean;
@@ -520,7 +526,10 @@ function changed(r: RowCtx): LineEdit | null {
 function SkuCell(r: RowCtx): ReactElement {
   const e = changed(r);
   const code = e?.itemCode ?? r.l.itemCode;
-  if (!r.editable) return <span title={code} style={{ display: "block", fontFamily: "ui-monospace, monospace", fontSize: 12, ...ellipsis }}>{code}</span>;
+  if (!r.editable || r.contract) {
+    return <span title={r.contract && r.editable ? `${code}: a SKU change on a renovation contract is a contract VO (Create PO opens the contract, then New VO)` : code}
+      style={{ display: "block", fontFamily: "ui-monospace, monospace", fontSize: 12, ...ellipsis }}>{code}</span>;
+  }
   return (
     <button type="button" onClick={r.pick} aria-label={`Change SKU ${r.l.itemCode}`} title={e?.itemCode ? `${code} (was ${r.l.itemCode})` : `${code}: change SKU`}
       style={{ ...editInput, width: "100%", display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontFamily: "ui-monospace, monospace", fontSize: 12, fontWeight: e?.itemCode ? 700 : 400 }}>
@@ -581,7 +590,7 @@ function VariantCell(r: RowCtx): ReactElement {
 }
 
 function QtyCell(r: RowCtx): ReactElement {
-  if (!r.editable) return <span>{r.l.qty}</span>;
+  if (!r.editable || r.contract) return <span title={r.contract && r.editable ? "A qty change on a renovation contract is a contract VO (Create PO opens the contract, then New VO)" : undefined}>{r.l.qty}</span>;
   return (
     <input aria-label={`Qty for ${r.l.itemCode}`} type="text" inputMode="numeric" title={r.l.uom} style={{ ...editInput, width: "100%", maxWidth: 64, textAlign: "right" }}
       value={r.edit?.qty === undefined ? String(r.l.qty) : Number.isNaN(r.edit.qty) ? "" : String(r.edit.qty)}
@@ -751,7 +760,7 @@ function SaveResult({ posted, onClose }: { posted: PostedVo[]; onClose: () => vo
         {posted.map((x) => (
           <div key={x.docNo}>
             {x.applied
-              ? <span style={{ color: WS.green }}><b>Saved.</b> {x.docNo} changed{x.amendmentNo ? ` (${x.amendmentNo})` : ""}; the VO is in the VO tab.</span>
+              ? <span style={{ color: WS.green }}><b>Saved.</b> {x.docNo} changed{x.amendmentNo ? ` (${x.amendmentNo}); the VO is in the VO tab.` : "."}</span>
               : <span style={{ color: WS.red }}><b>{x.docNo} not changed.</b> {x.refusal}</span>}
             {x.followUps.length > 0 && (
               <div style={{ color: WS.amber }}>
