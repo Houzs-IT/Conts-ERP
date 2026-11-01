@@ -2115,7 +2115,7 @@ export const SalesOrderDetail = () => {
       {/* PR-A — Inline error from the page-level Save. Cleared on Edit /
           Cancel / next successful Save. */}
       {saveError && (
-        <div className={styles.bannerWarn}>
+        <div className={styles.bannerWarn} ref={(el) => { el?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}>
           <strong>Save failed.</strong>
           <span>{saveError}</span>
         </div>
@@ -3421,7 +3421,9 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
   const trySaveWithReno: typeof trySave = (cb, opts) => {
     if (!reno) { trySave(cb, opts); return; }
     setRenoTried(true);
-    const miss = missingFields(blockValue);
+    /* Checked only when the block is being written: the imported contracts came without a layout or size, and a VO on
+       their lines alone must not ask for them. */
+    const miss = renoChanged() ? missingFields(blockValue) : new Set<string>();
     if (miss.size > 0) {
       const msg = `Fill in: ${[...miss].join(', ')}.`;
       if (cb?.onError) cb.onError(msg);
@@ -3430,6 +3432,8 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
     }
     trySave({
       onSuccess: () => {
+        /* Only a changed block is sent: a VO that touches lines alone has nothing to write here. */
+        if (!renoChanged()) { cb?.onSuccess?.(); return; }
         void soInfoApi.save(header.doc_no, toRenovationBlock(renoInfo))
           .then(() => { renoLoaded.current = JSON.stringify(toRenovationBlock(renoInfo)); cb?.onSuccess?.(); })
           .catch((e: unknown) => {
