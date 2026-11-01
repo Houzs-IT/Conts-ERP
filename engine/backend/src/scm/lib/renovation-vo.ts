@@ -21,9 +21,12 @@ import { auditSo, refuse, todayKl, type RenoDb } from './renovation-db';
 import { insertSections, readSections, toMoneyLine, type DocLineOut } from './renovation-doc-lines';
 import { insertSoItems, mirrorRowsFor, readContractHead, recomputeSoHeader, RENO_LIVE_STATUSES } from './renovation-so';
 import type { RenoActor } from './renovation-quotation';
-import type { NormSection } from './renovation-validate';
+import type { NormLine, NormSection } from './renovation-validate';
 import { lineAmounts, lineCostSen, soMirrorRow } from '../shared/renovation-money';
 import { fmtSen } from '../shared/format';
+import { canonicalizeVariants } from '../shared/so-variant-rule';
+import { buildVariantSummary } from '../shared/variant-summary';
+import { variantCategoryOf } from './renovation-flow-rules';
 
 export type VoStatus = 'DRAFT' | 'SENT' | 'APPROVED' | 'CANCELLED';
 
@@ -169,7 +172,7 @@ export async function applyVo(
   actor: RenoActor,
   id: string,
   body: { version: number; signedName?: string | null; signedAt?: string | null },
-): Promise<{ soDocNo: string; netSen: number; revisedContractSen: number; flags: number; voNo: string; docDate: string }> {
+): Promise<{ soDocNo: string; netSen: number; revisedContractSen: number; flags: number; voNo: string; docDate: string; added: Array<{ voLineId: string; soItemId: string }> }> {
   const v0 = await lockVo(db, id, actor.companyId);
   const head = await readContractHead(db, v0.so_doc_no, actor.companyId, true);
   const v = await lockVo(db, id, actor.companyId);
@@ -181,6 +184,7 @@ export async function applyVo(
   const targets = await contractTargets(db, soDocNo);
   const addSections: NormSection[] = [];
   const omits: Array<{ target: OmitTarget; omitQty: number | null; amountSen: number }> = [];
+  const voLineOf = new Map<string, string>();
   for (const s of voSections) {
     const adds = s.lines.filter((l) => l.voChange !== 'OMIT');
     for (const l of s.lines.filter((x) => x.voChange === 'OMIT')) {
@@ -190,6 +194,7 @@ export async function applyVo(
     }
     if (adds.length) {
       const idMap = new Map(adds.map((l) => [l.id, crypto.randomUUID()]));
+      for (const [from, to] of idMap) voLineOf.set(to, from);
       addSections.push({
         id: crypto.randomUUID(), heading: s.heading, bandColor: s.bandColor, sortOrder: s.sortOrder, lumpSumSen: null, pageBreakBefore: s.pageBreakBefore,
         lines: adds.map((l) => ({ ...l, id: idMap.get(l.id)!, parentId: l.parentId ? (idMap.get(l.parentId) ?? null) : null, voChange: 'ADD', omitTargetLineId: null, omitQty: null })),
@@ -304,7 +309,140 @@ export async function applyVo(
     companyId: actor.companyId, docNo: soDocNo, action: 'VO_APPLY', actorName: actor.name,
     note: `${v.vo_no} approved: ${rows.length} line(s) added, ${omits.length} omitted, net ${fmtSen(net)}${flags ? `, ${flags} PO line(s) flagged` : ''}`,
   });
-  return { soDocNo, netSen: net, revisedContractSen: revised, flags, voNo: v.vo_no, docDate: v.doc_date };
+  const added = addSections.flatMap((s) => s.lines).filter((l) => l.soItemId).map((l) => ({ voLineId: voLineOf.get(l.id)!, soItemId: l.soItemId! }));
+  return { soDocNo, netSen: net, revisedContractSen: revised, flags, voNo: v.vo_no, docDate: v.doc_date, added };
+}
+
+/** One line's edit from the SO page or the project PO tab. Absent = unchanged. `remove` omits the line whole;
+    variants and remark apply to the line that replaces it when the SKU changes. */
+export interface QuickLineEdit { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string }
+/** A line added on the SO page, in a room. */
+export interface QuickLineAdd { room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string }
+
+type QuickProduct = { name: string; costSen: number; supplierId: string | null; uom: string | null; group?: string };
+
+/** The VO lines an edited contract line becomes (owner, 2 Nov 2026: qty and SKU change in place, the VO is raised for
+    you). A VO only adds or omits, so:
+    - fewer of the same thing: omit the difference (the line stays; its PO line is flagged AMEND);
+    - more of the same thing on a line a PO already buys: add the difference as its own line, so the PO line stands
+      and the extra is ordered on its own;
+    - anything else (more with no PO yet, another SKU, another price, a measured line): omit the line whole and add
+      it again as it now is, in the same room. */
+export function quickVoLines(t: DocLineOut, e: QuickLineEdit, onPo: boolean, product: QuickProduct | null): { omit: NormLine | null; add: NormLine | null; sameSku: boolean } | null {
+  const code = e.itemCode?.trim() || t.itemCode;
+  const qty = e.qty ?? t.qty;
+  const price = e.unitPriceSen ?? t.unitPriceSen;
+  const { measure: _m, baseSen: _b, netSen: _n, overridden: _o, voId: _v, omittedByVoId: _x, soItemCancelled: _c, ...line } = t;
+  const base: NormLine = { ...line, parentId: null, kind: t.kind === 'CHILD' ? 'ITEM' : t.kind, soItemId: null };
+  const omit = (n: number | null): NormLine => ({ ...base, id: crypto.randomUUID(), voChange: 'OMIT', omitTargetLineId: t.id, omitQty: n });
+  if (e.remove) return { omit: omit(null), add: null, sameSku: true };
+  if (code === t.itemCode && qty === t.qty && price === t.unitPriceSen) return null;
+  const sameSku = code === t.itemCode;
+  const add = (n: number): NormLine => ({
+    ...base, id: crypto.randomUUID(), voChange: 'ADD', omitTargetLineId: null, omitQty: null, amountOverrideSen: null, qty: n, unitPriceSen: price,
+    ...(sameSku || !product ? {} : { itemCode: code, description: product.name, unitCostSen: product.costSen, supplierId: product.supplierId, uom: product.uom ?? base.uom, stageCode: null }),
+  });
+  if (sameSku && price === t.unitPriceSen && t.measureMilli === null) {
+    if (qty < t.qty) return { omit: omit(t.qty - qty), add: null, sameSku };
+    if (onPo) return { omit: null, add: add(qty - t.qty), sameSku };
+  }
+  return { omit: omit(null), add: add(qty), sameSku };
+}
+
+/** Edit contract lines in place: raise one VO for every change, approve it, and carry each replaced line's options,
+    remark and dates onto the line that replaces it. */
+export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edits: QuickLineEdit[], newLines: QuickLineAdd[], title: string): Promise<Awaited<ReturnType<typeof applyVo>>> {
+  const targets = await contractTargets(db, soDocNo);
+  const bySoItem = new Map([...targets.values()].filter((t) => t.soItemId).map((t) => [t.soItemId!, t]));
+  const codes = [...new Set([...edits.map((e) => e.itemCode?.trim()), ...newLines.map((a) => a.itemCode.trim())].filter((c): c is string => !!c))];
+  const products = new Map<string, QuickProduct>();
+  if (codes.length) {
+    const rows = await db.q(
+      `select p.code, p.name, to_jsonb(p) ->> 'uom' as uom, p.category::text as category, to_jsonb(p) ->> 'sub_category' as sub_category, coalesce(b.unit_price_sen, p.cost_price_sen, 0)::int as cost_sen, b.supplier_id
+         from scm.mfg_products p
+         left join lateral (select supplier_id, unit_price_sen from scm.supplier_material_bindings smb
+                             where smb.item_code = p.code and smb.company_id = p.company_id
+                             order by smb.is_main_supplier desc, smb.is_cost_anchor desc, smb.created_at limit 1) b on true
+        where p.company_id = $1 and p.code = any(string_to_array($2, chr(31)))`,
+      [actor.companyId, codes.join('\u001f')],
+    );
+    for (const r of rows) {
+      products.set(r.code, { name: r.name, costSen: Number(r.cost_sen), supplierId: r.supplier_id ?? null, uom: r.uom ?? null, group: (variantCategoryOf(r.category, r.sub_category) ?? '').toLowerCase() });
+    }
+    const missing = codes.filter((c) => !products.has(c));
+    if (missing.length) throw refuse(422, 'unknown_products', `Products not in the catalog: ${missing.join(', ')}.`, { codes: missing });
+  }
+  const sections = new Map<string, NormSection>();
+  const adds: Array<{ lineId: string; fromSoItemId: string | null; sameSku: boolean; itemCode: string; variants?: Record<string, unknown>; remark?: string }> = [];
+  const put = (heading: string, l: NormLine) => {
+    const s = sections.get(heading) ?? { id: crypto.randomUUID(), heading, bandColor: null, sortOrder: sections.size + 1, lumpSumSen: null, pageBreakBefore: false, lines: [] };
+    s.lines.push({ ...l, sortOrder: s.lines.length + 1 });
+    sections.set(heading, s);
+  };
+  for (const e of edits) {
+    const t = bySoItem.get(e.soItemId);
+    if (!t) throw refuse(422, 'line_not_editable', 'One of the lines is no longer live on the contract (or sits in a lump-sum section). Reload and try again.');
+    if (e.qty !== undefined && (!Number.isInteger(e.qty) || e.qty < 1)) throw refuse(422, 'bad_qty', `"${t.description}": qty must be a whole number, 1 or more.`);
+    if (e.unitPriceSen !== undefined && (!Number.isInteger(e.unitPriceSen) || e.unitPriceSen < 0)) throw refuse(422, 'bad_price', `"${t.description}": the price cannot be negative.`);
+    const po = await db.q(
+      `select 1 from scm.purchase_order_items pi join scm.purchase_orders po on po.id = pi.purchase_order_id
+        where pi.so_item_id = $1 and po.status::text <> 'CANCELLED' limit 1`,
+      [t.soItemId],
+    );
+    const code = e.itemCode?.trim();
+    const out = quickVoLines(t, e, po.length > 0, code ? products.get(code) ?? null : null);
+    if (!out) continue;
+    if (out.omit) put(t.sectionHeading, out.omit);
+    if (out.add) {
+      put(t.sectionHeading, out.add);
+      adds.push({ lineId: out.add.id, fromSoItemId: t.soItemId!, sameSku: out.sameSku, itemCode: out.add.itemCode!, variants: e.variants, remark: e.remark });
+    }
+  }
+  for (const a of newLines) {
+    const prod = products.get(a.itemCode.trim())!;
+    const room = a.room.trim();
+    const line: NormLine = {
+      id: crypto.randomUUID(), parentId: null, kind: 'ITEM', sortOrder: 0, room, itemCode: a.itemCode.trim(), description: prod.name, qty: a.qty,
+      measureMilli: null, measureUom: null, uom: prod.uom, unitPriceSen: a.unitPriceSen, listPriceSen: null, discountBp: 0, amountOverrideSen: null,
+      isFoc: false, supplyByOwner: false, highlight: 'NONE', supplierId: prod.supplierId, unitCostSen: prod.costSen, stageCode: null,
+      pageBreakBefore: false, voChange: 'ADD', omitTargetLineId: null, omitQty: null,
+    };
+    put(room || 'Additional works', line);
+    adds.push({ lineId: line.id, fromSoItemId: null, sameSku: false, itemCode: line.itemCode!, variants: a.variants, remark: a.remark });
+  }
+  if (sections.size === 0) throw refuse(422, 'nothing_changed', 'Nothing on the contract changed.');
+  const vo = await createVo(db, actor, soDocNo, { title });
+  const saved = await saveVo(db, actor, vo.id, { version: 1, sections: [...sections.values()] });
+  const out = await applyVo(db, actor, vo.id, { version: saved.version });
+  for (const a of adds) {
+    const to = out.added.find((x) => x.voLineId === a.lineId)?.soItemId;
+    if (!to) continue;
+    if (!a.sameSku && (a.variants || a.remark)) {
+      const group = products.get(a.itemCode)?.group ?? '';
+      const raw = { ...(a.variants ?? {}) };
+      delete raw.remark;
+      const variants = canonicalizeVariants(group, raw);
+      await db.q(
+        `update scm.mfg_sales_order_items set variants = $2::text::jsonb, description2 = coalesce($3, description2), remark = nullif($4, '') where id = $1`,
+        [to, JSON.stringify(variants), buildVariantSummary(group, variants) || null, (a.remark ?? '').trim().slice(0, 500)],
+      );
+    }
+    if (!a.fromSoItemId) continue;
+    if (a.sameSku) {
+      await db.q(
+        `update scm.mfg_sales_order_items n set variants = o.variants, description2 = coalesce(o.description2, n.description2), remark = o.remark
+           from scm.mfg_sales_order_items o where n.id = $1 and o.id = $2`,
+        [to, a.fromSoItemId],
+      );
+    }
+    await db.q(
+      `insert into scm.reno_beta_line_plans (so_item_id, company_id, order_on, deliver_on, no_po, updated_by, updated_at)
+       select $1, company_id, order_on, deliver_on, no_po and $3, updated_by, now() from scm.reno_beta_line_plans where so_item_id = $2
+       on conflict (so_item_id) do nothing`,
+      [to, a.fromSoItemId, a.sameSku],
+    );
+  }
+  return out;
 }
 
 export async function listPoFlags(db: RenoDb, soDocNo: string) {

@@ -24,7 +24,7 @@ import {
 import { convertQuotationToSo, patchContract, readContract, setContractStatus, type RenoSoStatus } from '../lib/renovation-so';
 import { previewPoSplit, raisePos } from '../lib/renovation-po-split';
 import { billingView, billInstalment, creditContract } from '../lib/renovation-billing';
-import { applyVo, createVo, listPoFlags, readVo, resolvePoFlag, saveVo, setVoStatus } from '../lib/renovation-vo';
+import { applyVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, setVoStatus } from '../lib/renovation-vo';
 import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule } from '../lib/renovation-po-schedule';
 import { listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
@@ -449,6 +449,28 @@ renovation.post('/variation-orders/:id/approve', handle(PERM.voApply, async (c, 
   await onRenovationSoLinesChanged(out.soDocNo, sqlRead);
   const posting = await postContractAfterCommit(c, actor, out.soDocNo, out.docDate);
   return c.json({ ...out, posting });
+}));
+
+/* Qty, SKU or price edited on a contract line (SO page, project PO tab): one VO raised and approved for you. */
+renovation.post('/sales-orders/:docNo/line-edits', handle(PERM.voApply, async (c, { tx, sqlRead }) => {
+  const b = await json(c);
+  const s = z.object({
+    title: z.string().max(200).optional(),
+    edits: z.array(z.object({
+      soItemId: z.string().uuid(), qty: z.number().int().min(1).optional(), itemCode: z.string().max(80).optional(), unitPriceSen: z.number().int().min(0).optional(),
+      remove: z.boolean().optional(), variants: z.record(z.string(), z.unknown()).optional(), remark: z.string().max(500).optional(),
+    })).max(200).default([]),
+    adds: z.array(z.object({
+      room: z.string().max(120), itemCode: z.string().min(1).max(80), qty: z.number().int().min(1), unitPriceSen: z.number().int().min(0),
+      variants: z.record(z.string(), z.unknown()).optional(), remark: z.string().max(500).optional(),
+    })).max(200).default([]),
+  }).safeParse(b);
+  if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
+  const actor = actorOf(c);
+  const out = await tx((db) => quickVo(db, actor, param(c, 'docNo'), s.data.edits, s.data.adds, s.data.title ?? 'Changed on the order'));
+  await onRenovationSoLinesChanged(out.soDocNo, sqlRead);
+  const posting = await postContractAfterCommit(c, actor, out.soDocNo, out.docDate);
+  return c.json({ voNo: out.voNo, netSen: out.netSen, revisedContractSen: out.revisedContractSen, flags: out.flags, posting });
 }));
 
 renovation.get('/sales-orders/:docNo/po-flags', handle(null, async (c, { sqlRead }) => c.json({ flags: await listPoFlags(sqlRead, param(c, 'docNo')) })));

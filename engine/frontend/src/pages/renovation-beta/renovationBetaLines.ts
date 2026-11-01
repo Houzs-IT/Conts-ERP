@@ -230,23 +230,49 @@ export interface PostedVo {
 interface CreatedVo { amendment?: { id: string; amendment_no: string }; amendments?: Array<{ id: string; amendment_no: string }>; selfApprovable?: string[] }
 interface AppliedVo { poFollowUps?: Array<{ poNumber: string; amendmentNo: string }> }
 
-/** Raise the VO and apply it. A VO the order refuses to apply (a received or delivered line, say) is withdrawn with
-    the reason, so it does not sit open and block the next save. */
-/** A renovation contract refuses the SO amendment route (its lines change by a contract VO, which only adds or omits),
-    so a remark or options edit here is written to the line itself (renovation-so-info spec route). No VO: nothing
-    the customer pays for moved. */
+export interface ContractLineEdit { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number }
+
+/** The qty and SKU changes of a contract batch, in the shape the contract's line-edits route takes. */
+export function contractLineEdits(b: VoBatch): ContractLineEdit[] {
+  return b.lines.flatMap((l) => {
+    const old = (l.oldSnapshot ?? {}) as { itemCode?: string; qty?: number };
+    const e: ContractLineEdit = { soItemId: l.salesOrderItemId ?? "" };
+    if (l.newItemCode && l.newItemCode !== old.itemCode) e.itemCode = l.newItemCode;
+    if (l.newQty !== undefined && l.newQty !== old.qty) e.qty = l.newQty;
+    return e.itemCode !== undefined || e.qty !== undefined ? [e] : [];
+  });
+}
+
+/** Change contract lines' qty, SKU or price: the server raises one contract VO and approves it
+    (scm/lib/renovation-vo.ts quickVo). */
+export async function postContractLineEdits(docNo: string, edits: ContractLineEdit[], title: string): Promise<{ voNo: string; flags: number }> {
+  return authedFetch<{ voNo: string; flags: number }>(`/renovation/sales-orders/${encodeURIComponent(docNo)}/line-edits`, {
+    method: "POST", body: JSON.stringify({ edits, title: title.slice(0, 200) }),
+  });
+}
+
+/** A renovation contract refuses the SO amendment route (its lines change by a contract VO, which only adds or omits).
+    Options and remarks are written to the line itself (renovation-so-info spec route; no VO, nothing the customer pays
+    for moved), first, so a line that is then replaced carries them; qty and SKU changes then raise the contract VO. */
 export async function postContractLines(b: VoBatch): Promise<PostedVo> {
+  let voNo: string | null = null;
   try {
     for (const l of b.lines) {
+      if (l.changeType === "QTY") continue;
       await authedFetch(`/renovation-so-info/${encodeURIComponent(b.docNo)}/lines/${encodeURIComponent(l.salesOrderItemId ?? "")}/spec`, {
         method: "PUT", body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
       });
     }
+    const edits = contractLineEdits(b);
+    if (edits.length) voNo = (await postContractLineEdits(b.docNo, edits, "Changed on the project PO tab")).voNo;
   } catch (e) {
-    return { docNo: b.docNo, amendmentNo: null, applied: false, refusal: refusalText(e), followUps: [] };
+    return { docNo: b.docNo, amendmentNo: voNo, applied: false, refusal: refusalText(e), followUps: [] };
   }
-  return { docNo: b.docNo, amendmentNo: null, applied: true, refusal: null, followUps: [] };
+  return { docNo: b.docNo, amendmentNo: voNo, applied: true, refusal: null, followUps: [] };
 }
+
+/** Raise the VO and apply it. A VO the order refuses to apply (a received or delivered line, say) is withdrawn with
+    the reason, so it does not sit open and block the next save. */
 
 export async function postVo(b: VoBatch, idempotencyKey: string): Promise<PostedVo> {
   let created: CreatedVo;

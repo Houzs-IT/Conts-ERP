@@ -72,8 +72,8 @@ describe("PO tab", () => {
     expect(within(region).getAllByText("Not yet").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    // A renovation contract's SKU and qty change by a contract VO: plain here; the remark and dates still open.
-    expect(within(region).queryAllByLabelText(/^Qty for/)).toHaveLength(0);
+    // A renovation contract's SKU and qty open too (saving raises a contract VO for you), with the remark and dates.
+    expect(within(region).getAllByLabelText(/^Qty for/)).toHaveLength(2);
     expect(within(region).getAllByRole("button", { name: /Add a remark to/ }).length).toBe(2);
     expect(within(region).getByLabelText("PO date of TC-PO-2610-006")).toBeTruthy();
 
