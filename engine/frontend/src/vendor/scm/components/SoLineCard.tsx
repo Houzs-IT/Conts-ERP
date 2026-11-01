@@ -70,6 +70,7 @@ import styles from './SoLineCard.module.css';
 import { DateField } from "./DateField";
 import { DiscountInput } from './DiscountInput';
 import { NumberInput } from './NumberInput';
+import { variantCategoryOf } from '../lib/renovationVariantCategory';
 import { RenovationPhotoButton, renovationLineStyles as compactStyles } from './renovationSoLineCompact';
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
@@ -401,7 +402,7 @@ const SoLineCardInner = ({
      the persisted itemGroup. This makes an already-malformed draft show the
      right configurator the moment it's opened — not only future lines. */
   const skuCategoryQ = useSkuCategoryByCode(draft.itemCode || undefined);
-  const resolvedCategory = String(picked?.category ?? skuCategoryQ.data ?? '').toLowerCase();
+  const resolvedCategory = String((picked ? variantCategoryOf(picked.category, picked.sub_category) : '') || (skuCategoryQ.data ?? '')).toLowerCase();
   const category = resolvedCategory || draft.itemGroup.toLowerCase();
 
   /* Heal the persisted line + seed the sofa Leg default (owner 2026-07-13).
@@ -474,7 +475,7 @@ const SoLineCardInner = ({
 
   const pickProduct = (p: MfgProductRow) => {
     setPicked(p);
-    const category = p.category.toLowerCase();
+    const category = variantCategoryOf(p.category, p.sub_category).toLowerCase();
     /* PR #141 — Sofa-set inherit: same-category follower lines copy the
        master's variants on pick. The seed only removes the flash of an empty
        configurator; the live cascade in the parent form is what actually keeps

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   ADDRESS_FIT_ON_SAVE, SOFA_MIX_RULE_ON, brandingFromLineBrands, buildingTypeFromProperty, customerGoodsCodes,
   deliveredOnTimestamp, doBrandingFromLines, isCustomerGoods, poMissingAxesForSoLine, renovationDoSiteFields, soLineRemarkOf,
+  variantCategoryOf,
 } from './renovation-flow-rules';
 import { createMixRefusal, lineMixRefusal, amendmentMixRefusal } from './main-mix';
 import { fitAddressIfTouched } from './so-address-on-save';
@@ -145,5 +146,18 @@ describe('a new DO takes its branding from its lines, not the SO header (TESTING
     expect(await doBrandingFromLines(sb(), [
       { itemCode: 'AKEMI APEX MATT (Q)', soItemId: 'matt-q' }, { itemCode: 'BED-HKA-1003-(Q)', soItemId: 'bed-q' },
     ], 1)).toBe('AKEMI / HOOKKA INDUSTRIES SDN BHD');
+  });
+});
+
+describe('the SKU decides the SO line variant fields', () => {
+  it('a renovation Furniture SKU filed under Sofa or Bedframe gets their fields', () => {
+    expect(variantCategoryOf('FURNITURE', 'SOFA')).toBe('SOFA');
+    expect(variantCategoryOf('FURNITURE', 'BEDFRAME')).toBe('BEDFRAME');
+  });
+  it('other SKUs keep their own category', () => {
+    expect(variantCategoryOf('FURNITURE', 'DINING')).toBe('FURNITURE');
+    expect(variantCategoryOf('BEDFRAME', 'BEDFRAME')).toBe('BEDFRAME');
+    expect(variantCategoryOf('SOFT', 'BED_LINEN')).toBe('SOFT');
+    expect(variantCategoryOf(null, null)).toBeNull();
   });
 });
