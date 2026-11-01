@@ -31,7 +31,7 @@ import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos
 import {
   amountAfter, byAreaBlocks, byCategory, livePo, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
   linesApi, linesCsv, postVo, refusalText,
-  postContractLines, voBatches, type LineEdit, type ManagedLine, type PendingPoChange, type PostedVo,
+  contractLineEdits, postContractLines, voBatches, type LineEdit, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
 import { BetaLoading } from "./BetaLoading";
 
@@ -118,8 +118,17 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const needPo = buy.filter((l) => !l.plan.noPo && !l.pos.some((x) => x.poStatus !== "CANCELLED"));
   const canConfirmPo = can("scm.po_amendment.approve");
 
-  /* Renovation contracts: their SKU and qty change by a contract VO on the contract page; remarks save here. */
+  /* Renovation contracts: a SKU or qty change raises one contract VO per contract (approved for you); options and
+     remarks save on the line with no VO. */
   const contractSo = new Set(d.sos.filter((s) => s.renovation).map((s) => s.docNo));
+  const raisesVo = (b: VoBatch): boolean => !contractSo.has(b.docNo) || contractLineEdits(b).length > 0;
+  const voBatchesShown = batches.filter((b) => !contractSo.has(b.docNo));
+  const batchTitle = (b: VoBatch): string => {
+    if (!contractSo.has(b.docNo)) return `${voLabel(voBatchesShown.indexOf(b))} on ${b.docNo}`;
+    return raisesVo(b) ? `New contract VO on ${b.docNo}` : `${b.docNo}: saved on the lines, no VO (nothing the customer pays for changes)`;
+  };
+  const anyVo = batches.some(raisesVo);
+  const saveLabel = anyVo ? "Save & post to VO" : "Save";
   const save = async (): Promise<void> => {
     setSaving(true);
     const posted: PostedVo[] = [];
@@ -380,27 +389,27 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
             ? <button type="button" style={btnStyle("outline", "md")} onClick={() => { setEdits({}); setRefusals({}); setEditing(false); }}>Discard</button>
             : <button type="button" style={btnStyle("outline", "md")} onClick={() => { setRefusals({}); setEditing(false); }}>Done</button>}
           <button type="button" style={btnStyle("teal", "md")} disabled={problems.length > 0 || changedCount === 0} onClick={() => setConfirming(true)}>
-            Save & post to VO{batches.length > 0 ? ` (${batches.map((_, i) => voLabel(i)).join(", ")})` : ""}
+            {saveLabel}{voBatchesShown.length > 0 ? ` (${voBatchesShown.map((_, i) => voLabel(i)).join(", ")})` : ""}
           </button>
         </div>
       )}
 
       {confirming && (
         <WsDialog
-          title="Save & post to VO"
-          sub="These changes apply to the sales order now. No approval is needed; the VO keeps the record."
+          title={saveLabel}
+          sub={anyVo ? "These changes apply to the sales order now. No approval is needed; the VO keeps the record." : "These changes save on the order's lines now."}
           onClose={() => { if (!saving) setConfirming(false); }}
           wide
           footer={(
             <>
               <button type="button" style={btnStyle("outline")} disabled={saving} onClick={() => setConfirming(false)}>Back</button>
-              <button type="button" style={btnStyle("teal")} disabled={saving} onClick={() => void save()}>{saving ? "Saving..." : "Save & post to VO"}</button>
+              <button type="button" style={btnStyle("teal")} disabled={saving} onClick={() => void save()}>{saving ? "Saving..." : saveLabel}</button>
             </>
           )}
         >
-          {batches.map((b, i) => (
+          {batches.map((b) => (
             <div key={b.docNo} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontWeight: 700 }}>{voLabel(i)} on {b.docNo}</div>
+              <div style={{ fontWeight: 700 }}>{batchTitle(b)}</div>
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, display: "flex", flexDirection: "column", gap: 4 }}>
                 {lines.filter((l) => l.soDocNo === b.docNo).map((l) => {
                   const e = effectiveEdit(l, edits[l.id]);
@@ -413,7 +422,11 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                         <span style={{ color: WS.text2 }}> · amount {money(l.amountSen)} {"->"} {money(after)}</span>
                       )}
                       {l.pos.some((x) => x.poStatus !== "CANCELLED") && (e.qty !== undefined || e.itemCode || e.colour !== undefined) && (
-                        <div style={{ ...metaStyle, color: WS.amber }}>On a PO: the PO itself changes only after the PO change is approved.</div>
+                        <div style={{ ...metaStyle, color: WS.amber }}>
+                          {contractSo.has(l.soDocNo)
+                            ? "On a PO: the PO line is flagged for purchasing to change; the PO itself does not change by itself."
+                            : "On a PO: the PO itself changes only after the PO change is approved."}
+                        </div>
                       )}
                     </li>
                   );
@@ -431,7 +444,11 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         <BetaSkuPicker
           current={picking.itemCode}
           onClose={() => setPicking(null)}
-          onPick={(code, name, priceSen) => { setEdit(picking.id, { itemCode: code, pickedName: name, pickedPriceSen: priceSen }); setPicking(null); }}
+          onPick={(code, name, priceSen) => {
+            // A contract line keeps its contract price when the SKU changes (the VO re-adds it at that price).
+            setEdit(picking.id, contractSo.has(picking.soDocNo) ? { itemCode: code, pickedName: name } : { itemCode: code, pickedName: name, pickedPriceSen: priceSen });
+            setPicking(null);
+          }}
         />
       )}
     </>
@@ -502,7 +519,7 @@ interface RowCtx {
   l: ManagedLine;
   edit: LineEdit | undefined;
   editable: boolean;
-  /** A renovation contract's line: SKU and qty change by a contract VO, not here. */
+  /** A renovation contract's line: a SKU or qty change raises a contract VO, and keeps the line's price. */
   contract: boolean;
   finance: boolean;
   today: string;
@@ -526,8 +543,8 @@ function changed(r: RowCtx): LineEdit | null {
 function SkuCell(r: RowCtx): ReactElement {
   const e = changed(r);
   const code = e?.itemCode ?? r.l.itemCode;
-  if (!r.editable || r.contract) {
-    return <span title={r.contract && r.editable ? `${code}: a SKU change on a renovation contract is a contract VO (Create PO opens the contract, then New VO)` : code}
+  if (!r.editable) {
+    return <span title={code}
       style={{ display: "block", fontFamily: "ui-monospace, monospace", fontSize: 12, ...ellipsis }}>{code}</span>;
   }
   return (
@@ -590,7 +607,7 @@ function VariantCell(r: RowCtx): ReactElement {
 }
 
 function QtyCell(r: RowCtx): ReactElement {
-  if (!r.editable || r.contract) return <span title={r.contract && r.editable ? "A qty change on a renovation contract is a contract VO (Create PO opens the contract, then New VO)" : undefined}>{r.l.qty}</span>;
+  if (!r.editable) return <span>{r.l.qty}</span>;
   return (
     <input aria-label={`Qty for ${r.l.itemCode}`} type="text" inputMode="numeric" title={r.l.uom} style={{ ...editInput, width: "100%", maxWidth: 64, textAlign: "right" }}
       value={r.edit?.qty === undefined ? String(r.l.qty) : Number.isNaN(r.edit.qty) ? "" : String(r.edit.qty)}

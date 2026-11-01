@@ -1183,20 +1183,17 @@ export const SalesOrderDetail = () => {
      fields hit `lines.length === 0` and never created an amendment at all ("我
      amend 了東西不給 approval"). Now: validate the header, save the direct half,
      and send the frozen half + the line diffs as the amendment. */
-  /* A renovation contract (so_kind RENOVATION) refuses the generic SO writes: its lines change through a contract VO
-     (add / omit, on the contract page), its customer and address on its project. What saves here is each line's
-     options and remark (PUT /renovation-so-info/:docNo/lines/:id/spec) and the Order information block. */
+  /* A renovation contract (so_kind RENOVATION) refuses the generic SO writes; its customer and address change on its
+     project. Here: the Order information block, each line's options and remark (PUT /renovation-so-info/:docNo/lines/:id/spec,
+     no VO), then every added, removed or re-priced line, SKU or qty change as one contract VO approved for you
+     (POST /renovation/sales-orders/:docNo/line-edits, owner 2 Nov 2026). Options go first so a line the VO then
+     replaces carries them. */
   const saveContractEdit = async (handle: CustomerCardHandle) => {
     if (!header) return;
     const lines = buildAmendmentLines();
     const byId = new Map(items.map((it) => [it.id, it]));
-    const specOnly = lines.every((l) => {
-      const it = l.salesOrderItemId ? byId.get(l.salesOrderItemId) : undefined;
-      return !!it && l.changeType === 'SPEC' && (l.newItemCode ?? it.item_code) === it.item_code && l.newQty === it.qty
-        && l.newUnitPriceSen === it.unit_price_sen && l.newDiscountSen === undefined;
-    });
-    if (!specOnly || addingDrafts.length > 0) {
-      setSaveError('On a renovation contract, adding or removing a line or changing its SKU, qty or price is a variation order: use New VO on the contract page. Options and remarks save here.');
+    if (lines.some((l) => l.newDiscountSen !== undefined)) {
+      setSaveError("A renovation contract's line discount is changed on the contract page (New VO). Change the price here instead.");
       return;
     }
     if (handle.hasHeaderPatchChanges()) {
@@ -1204,20 +1201,53 @@ export const SalesOrderDetail = () => {
       return;
     }
     if (lines.length === 0 && !handle.hasDirectHeaderChanges()) { setSaveError(AMENDMENT_NOTHING_TO_SUBMIT); return; }
+    type Edit = { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string };
+    const edits: Edit[] = [];
+    const adds: Array<{ room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string }> = [];
+    const specs: typeof lines = [];
+    for (const l of lines) {
+      const variants = (l.newVariants ?? undefined) as Record<string, unknown> | undefined;
+      if (l.changeType === 'ADD') {
+        adds.push({ room: String((l.oldSnapshot as { room?: string } | undefined)?.room ?? ''), itemCode: l.newItemCode ?? '', qty: l.newQty ?? 1,
+          unitPriceSen: Math.max(0, Math.round(l.newUnitPriceSen ?? 0)), variants, remark: l.newRemark });
+        continue;
+      }
+      const it = l.salesOrderItemId ? byId.get(l.salesOrderItemId) : undefined;
+      if (!it) continue;
+      if (l.changeType === 'REMOVE') { edits.push({ soItemId: it.id, remove: true }); continue; }
+      const e: Edit = { soItemId: it.id };
+      const code = l.newItemCode ?? it.item_code;
+      if (code !== it.item_code) Object.assign(e, { itemCode: code, variants, remark: l.newRemark });
+      else if (l.changeType === 'SPEC') specs.push(l);
+      if (l.newQty !== undefined && l.newQty !== it.qty) e.qty = l.newQty;
+      if (l.newUnitPriceSen !== undefined && l.newUnitPriceSen !== it.unit_price_sen) e.unitPriceSen = Math.max(0, Math.round(l.newUnitPriceSen));
+      if (e.itemCode !== undefined || e.qty !== undefined || e.unitPriceSen !== undefined) edits.push(e);
+    }
     setSavingOrder(true);
     try {
       await new Promise<void>((resolve, reject) => {
         handle.save({ onSuccess: () => resolve(), onError: (msg) => reject(new Error(msg)) }, { renoBlockOnly: true });
       });
-      for (const l of lines) {
+      for (const l of specs) {
         await authedFetch(`/renovation-so-info/${encodeURIComponent(header.doc_no)}/lines/${encodeURIComponent(l.salesOrderItemId ?? '')}/spec`, {
           method: 'PUT', body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
         });
       }
+      const vo = edits.length || adds.length
+        ? await authedFetch<{ voNo: string; flags: number }>(`/renovation/sales-orders/${encodeURIComponent(header.doc_no)}/line-edits`, {
+          method: 'POST', body: JSON.stringify({ edits, adds, title: 'Changed on the sales order' }),
+        })
+        : null;
       setSavingOrder(false);
       endEditSession();
       void detail.refetch();
-      notify({ title: 'Saved', body: lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.` : 'Order information saved.', tone: 'info' });
+      notify({
+        title: 'Saved',
+        body: vo
+          ? `${vo.voNo} raised and applied: ${edits.length + adds.length} line change${edits.length + adds.length === 1 ? '' : 's'}.${vo.flags ? ` ${vo.flags} PO line${vo.flags === 1 ? '' : 's'} flagged for purchasing to change.` : ''}`
+          : lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.` : 'Order information saved.',
+        tone: 'info',
+      });
     } catch (e) {
       setSavingOrder(false);
       setSaveError(e instanceof Error ? e.message : 'Something went wrong.');

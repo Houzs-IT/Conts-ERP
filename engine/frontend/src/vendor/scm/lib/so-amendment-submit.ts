@@ -147,8 +147,8 @@ export const VO_MODE_BANNER =
 
 /** A renovation contract: lines change by a contract VO on the contract page; options and remarks save here. */
 export const CONTRACT_MODE_BANNER =
-  'This is a renovation contract. Line options (fabric, sizes) and remarks save here with Save. To add or remove a line, '
-  + 'or change its SKU, qty or price, raise a VO on the contract page; the customer and address are changed on the project.';
+  'This is a renovation contract. Edit the lines here and press Save: options and remarks save on the line, and adding '
+  + 'or removing a line or changing its SKU, qty or price raises a contract VO for you. The customer and address are changed on the project.';
 
 export const AMENDMENT_MODE_BANNER =
   'This order is already ordered from the supplier. Edit the lines, dates, delivery '

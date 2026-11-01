@@ -550,6 +550,5 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 - Flow run 1 Nov (TEST RN-2611-001 / TC-SO-2611-001 / TC-PO-2611-001 / TC-GRN-2611-001): lines on renovation contracts keep item_group RENOVATION, so the PO quick view summary drops divan and gap and the GRN picker shows category OTHERS; summary and category should come from the SKU (variantCategoryOf).
 - Flow run 1 Nov: a contract furniture line with no supplier and no cost falls under "need no PO" silently (SOFA 3S); Plan POs should flag furniture without a supplier.
-- Flow run 1 Nov: the PO tab confirm dialog still says "VO-01 ... the VO keeps the record" for a contract remark save, which raises no VO.
 - Flow run 1 Nov: MRP opens on the last stored snapshot, so new demand shows only after Regenerate.
 - Flow run 1 Nov, not yet run: DO from the contract, POD upload, PO PDF and send; native date boxes could not be driven remotely (dates set in the DB for the TEST lines).
