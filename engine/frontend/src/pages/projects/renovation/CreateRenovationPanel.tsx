@@ -75,6 +75,7 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
   return (
     <Dialog
       title="New renovation project"
+      keepOpen={JSON.stringify(cp) !== JSON.stringify(EMPTY_CUSTOMER_PROPERTY) || budgetRm !== "" || f.plannedHandoverDate !== ""}
       wide
       onClose={onClose}
       footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button onClick={submit} disabled={busy}>{busy ? "Creating..." : "Create project"}</Button></>}

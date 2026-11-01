@@ -3,7 +3,8 @@
    drawer; phone: one card per line. Amounts come from the shared money module,
    so the screen and the server agree to the sen. */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, LayoutGrid, Plus, Search, Trash2 } from 'lucide-react';
 import { formatRm, lineAmounts, parseMeasureMilli, type RenoLineKind } from '../../vendor/shared/renovation-money';
 import { RENO_STAGES, STAGE_LABEL } from '../../vendor/shared/renovation-stages';
@@ -66,6 +67,22 @@ export function ProductPicker({ value, onPick, disabled }: { value: string | nul
   const [rows, setRows] = useState<ProductPick[]>([]);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  /* The list floats on the page: a room section scrolls sideways, so an absolute list inside it was cut off. */
+  const [pos, setPos] = useState<{ left: number; top: number; up: boolean } | null>(null);
+  useLayoutEffect(() => {
+    if (!open) { setPos(null); return; }
+    const place = () => {
+      const r = ref.current?.getBoundingClientRect();
+      if (!r) return;
+      const up = window.innerHeight - r.bottom < 340 && r.top > window.innerHeight - r.bottom;
+      setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - 348)), top: up ? r.top - 4 : r.bottom + 4, up });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => { window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     let live = true;
@@ -77,7 +94,10 @@ export function ProductPicker({ value, onPick, disabled }: { value: string | nul
   }, [q, open]);
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!ref.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false);
+    };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [open]);
@@ -91,8 +111,9 @@ export function ProductPicker({ value, onPick, disabled }: { value: string | nul
         <Search size={12} className="shrink-0" />
         <span className="truncate">{value ?? 'Pick product'}</span>
       </button>
-      {open && (
-        <div className="absolute left-0 top-9 z-30 w-[340px] max-w-[85vw] rounded-lg border border-border bg-surface p-2 shadow-lg">
+      {open && pos && createPortal(
+        <div ref={panelRef} style={{ position: 'fixed', left: pos.left, top: pos.top, transform: pos.up ? 'translateY(-100%)' : undefined }}
+          className="z-[1000] w-[340px] max-w-[85vw] rounded-lg border border-border bg-surface p-2 shadow-lg">
           <input autoFocus className={`${inputCls} w-full`} placeholder="Search code or name (RN- for generic works)" value={q} onChange={(e) => setQ(e.target.value)} />
           <div className="mt-2 max-h-64 overflow-auto">
             {busy && rows.length === 0 && <div className="px-2 py-3 text-[12px] text-ink-muted">Searching…</div>}
@@ -105,7 +126,8 @@ export function ProductPicker({ value, onPick, disabled }: { value: string | nul
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
