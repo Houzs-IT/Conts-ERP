@@ -30,6 +30,8 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
 /** The Dream Crafter group that holds IT Support and Category access. It shares its label with the Rental System group,
  *  so anything keyed by group label must also use the workspace. */
 const SUPPLY_SYSTEM = 'SYSTEM';
+/** The Dream Crafter group at the top that holds My claims; it shares its label with the Rental Home group. */
+const SUPPLY_HOME = 'HOME';
 /** Finance is eight groups in both sidebars (chew, 2 Nov 2026: one long Finance list was hard to read). */
 const FINANCE_PREFIX = 'FINANCE';
 const isFinanceGroup = (label: string): boolean => label === FINANCE_PREFIX || label.startsWith(`${FINANCE_PREFIX} · `);
@@ -108,6 +110,10 @@ const FINANCE_PART_ICON: Record<string, string> = {
 export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
     { key: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', path: '/', area: 'dashboard' },
+    // Every desk role (finance, 29 Oct 2026): hand in receipts and ask finance to pay. At the top (chew, 2 Nov 2026: it
+    // was hard to find under System). No permission area: the engine answers each person with their own only
+    // (functions/api/claims/[[path]].ts).
+    { key: 'myClaims', label: 'My claims', icon: 'receipt', path: '/my-claims' },
     { key: 'portfolio', label: 'Portfolio', icon: 'layers', path: '/portfolio', area: 'portfolio' },
     { key: 'unitReport', label: 'Overall unit report', icon: 'file-spreadsheet', path: '/portfolio/owner-report', area: 'portfolio', full: true },
     { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance', full: true },
@@ -171,13 +177,15 @@ export const NAV: NavGroup[] = [
     // Every desk role: report a problem with the system to IT and follow it. No permission area, since a person
     // only ever reads their own requests (functions/_lib/itHub.ts). Its count comes from lib/itSupport.ts.
     { key: 'itSupport', label: 'IT Support', icon: 'life-buoy', path: '/system/it-support', badge: 'itSupport' },
-    // Every desk role (finance, 29 Oct 2026): hand in receipts and ask finance to pay. No permission area: the engine
-    // answers each person with their own only (functions/api/claims/[[path]].ts).
-    { key: 'myClaims', label: 'My claims', icon: 'receipt', path: '/my-claims' },
   ] },
 
   // Supply chain workspace. Mirrors Houzs's hierarchy: section -> collapsible area -> page.
   // Service cases and Projects come from the supply chain engine only (ENGINE_ONLY below).
+  /* My claims at the top of the supply chain sidebar too (chew, 2 Nov 2026). Like System and Finance it is there so the
+     sidebar stays put: alone it does not open the supply chain workspace (navFor). */
+  { label: SUPPLY_HOME, workspace: 'supply', items: [
+    { key: 'myClaimsSupply', label: 'My claims', icon: 'receipt', path: '/supply/my-claims' },
+  ] },
   { label: 'SERVICE CASES', workspace: 'supply', items: [
     { key: 'serviceCaseList', label: 'Service cases', icon: 'zap', path: '/service/cases', area: 'serviceCases' },
     { key: 'serviceMetrics', label: 'Quality metrics', icon: 'trending-up', path: '/service/metrics', area: 'serviceCases' },
@@ -255,7 +263,6 @@ export const NAV: NavGroup[] = [
   { label: SUPPLY_SYSTEM, workspace: 'supply', items: [
     { key: 'categoryAccess', label: 'Category access', icon: 'tags', path: '/system/category-access', area: 'users', full: true },
     { key: 'itSupportSupply', label: 'IT Support', icon: 'life-buoy', path: '/supply/it-support', area: 'itSupport', badge: 'itSupport' },
-    { key: 'myClaimsSupply', label: 'My claims', icon: 'receipt', path: '/supply/my-claims' },
   ] },
 ];
 
@@ -330,7 +337,7 @@ export function navFor(role: UserRole, engine = false, access?: Record<string, A
   const groups = navGroups(role, engine, access);
   // IT Support and Finance are in the supply chain sidebar only so it stays put; alone they must not open the
   // supply chain workspace to someone with no supply chain screens (Finance is then in Rental only).
-  const shared = (g: NavGroup) => g.workspace === 'supply' && (g.label === SUPPLY_SYSTEM || isFinanceGroup(g.label));
+  const shared = (g: NavGroup) => g.workspace === 'supply' && (g.label === SUPPLY_SYSTEM || g.label === SUPPLY_HOME || isFinanceGroup(g.label));
   const supplyWork = groups.some(g => g.workspace === 'supply' && !shared(g));
   return supplyWork ? groups : groups.filter(g => !shared(g));
 }
