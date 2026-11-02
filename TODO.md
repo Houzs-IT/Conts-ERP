@@ -190,6 +190,8 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 
 ## Owner Hub (owner, 2 Nov 2026; plan docs/mockups/owner-hub-plan.html)
 - Step 1 (feat/owner-b-menu): Showcase control removed (menu, page, route, /api/showcase/overrides); "Owner Showcase" menu item is now Owner B (/owner-b, area Performance), a Beta beside Owners (A), which is unchanged. View as owner opens an owner's real portal read-only (?ownerId=, Finance only) and records owner.view_as on the owner's History.
+- Step 2 (feat/demo-store, migration 0199): schema demo (reservations, reviews, units, owners, guests, ids demo-), views demo.v_* (real rows live + demo rows + shadows), demo.shadow(), demo.clear(), and the rule pos.refuse_demo_ids on the five tables and the money and channel tables. A migration that drops or retypes a column of those five pos tables must run `select demo.drop_views();` before and `select demo.sync();` after; one that adds a column runs `select demo.sync();`.
+- Staging still has three old seed reviews with demo-review- ids in pos.reviews (from scripts/demo-data-2.sql, renamed seed-review- since). The rule leaves them alone; delete them with scripts/delete-demo-data-2.sql when convenient.
 - Drop pos.showcase_overrides (migration 0164) one release after Showcase control's removal; nothing reads it now.
 - Owners (A) is replaced by Owner B only after the owner approves B. Until then Owner B edits nothing: editing stays on Owners.
 
