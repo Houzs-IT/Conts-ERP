@@ -162,7 +162,7 @@ export const NAV: NavGroup[] = [
   { label: 'GROWTH', workspace: 'rental', items: [
     { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'pricing', full: true },
     { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'pricing' },
-    // Guest messages from Airbnb, Booking.com and WhatsApp, below Reviews (owner, 2 Nov 2026; migration 0199 moved the
+    // Guest messages from Airbnb, Booking.com and WhatsApp, below Reviews (owner, 2 Nov 2026; migration 0200 moved the
     // permission area with it, so nobody's access changed).
     { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
     { key: 'automations', label: 'Automations', icon: 'workflow', path: '/communication/automations', area: 'automations' },

@@ -1,6 +1,6 @@
 import { fail } from './db';
 
-/** Saved replies: short texts staff insert into a message instead of typing them again (migration 0200). Shared by
+/** Saved replies: short texts staff insert into a message instead of typing them again (migration 0201). Shared by
  *  everyone who works in Messages. */
 export const TITLE_MAX = 80, BODY_MAX = 2000;
 

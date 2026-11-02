@@ -17,7 +17,7 @@
 --                                 asks for the messages of a conversation that changed.
 --   messages.attachments          files the guest sent, as [{"url": "...", "name": "..."}], when Channex gives them.
 --   saved_replies                 the short replies staff insert into a message (Messages > Saved replies).
--- APPLY: by hand, in one transaction with its public.pos_migrations row, after 0199.
+-- APPLY: by hand, in one transaction with its public.pos_migrations row, after 0200. Ends with demo.sync() because it adds columns to pos.reviews (demo store, migration 0199).
 set local search_path = pos;
 set local lock_timeout = '5s';
 
@@ -47,3 +47,5 @@ CREATE TABLE IF NOT EXISTS saved_replies (
 ALTER TABLE saved_replies OWNER TO pos_app;
 ALTER TABLE saved_replies ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT, UPDATE, DELETE ON saved_replies TO pos_app;
+
+select demo.sync();

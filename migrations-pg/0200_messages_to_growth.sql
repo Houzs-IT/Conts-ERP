@@ -1,4 +1,4 @@
--- REVERSAL: DELETE FROM pos.access_rules WHERE updated_by = 'migration 0199';
+-- REVERSAL: DELETE FROM pos.access_rules WHERE updated_by = 'migration 0200';
 -- Messages moves from the Reservations section of the menu to Growth, below Reviews (owner, 2 Nov 2026), so its
 -- permission area (comms) moves from the Reservations category to Growth (functions/_lib/access.ts). This is step 3
 -- of migration 0182 run the other way for that one area.
@@ -16,7 +16,7 @@ set local search_path = pos;
 
 -- a. Pins at position scope, before any department pin exists.
 INSERT INTO access_rules (scope, scope_id, area, level, updated_by)
-SELECT 'position', p.id, 'comms', COALESCE(pr.level, dr.level, 'none'), 'migration 0199'
+SELECT 'position', p.id, 'comms', COALESCE(pr.level, dr.level, 'none'), 'migration 0200'
 FROM positions p
 LEFT JOIN access_rules pr ON pr.scope = 'position' AND pr.scope_id = p.id AND pr.area = 'group:Reservations' AND pr.level <> 'inherit'
 LEFT JOIN access_rules pg ON pg.scope = 'position' AND pg.scope_id = p.id AND pg.area = 'group:Growth' AND pg.level <> 'inherit'
@@ -29,7 +29,7 @@ ON CONFLICT (scope, scope_id, area) DO UPDATE SET level = EXCLUDED.level, update
 
 -- b. Pins at department scope.
 INSERT INTO access_rules (scope, scope_id, area, level, updated_by)
-SELECT 'department', d.id, 'comms', COALESCE(dr.level, 'none'), 'migration 0199'
+SELECT 'department', d.id, 'comms', COALESCE(dr.level, 'none'), 'migration 0200'
 FROM departments d
 LEFT JOIN access_rules dr ON dr.scope = 'department' AND dr.scope_id = d.id AND dr.area = 'group:Reservations' AND dr.level <> 'inherit'
 LEFT JOIN access_rules dg ON dg.scope = 'department' AND dg.scope_id = d.id AND dg.area = 'group:Growth' AND dg.level <> 'inherit'

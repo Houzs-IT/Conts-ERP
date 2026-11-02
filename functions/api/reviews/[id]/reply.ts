@@ -6,7 +6,7 @@ import { pushReviewReplyIfLinked } from '../../../_lib/channexMessageSync';
 /** POST /api/reviews/:id/reply { body } — saves the host's reply on the review, and posts it to the channel too when
  *  the review came from one (Airbnb or Booking.com via Channex; a review with no channex_review_id just stays local, as
  *  a direct-booking review always has). The post never blocks or fails this save, same rule as every other Channex
- *  sync here: its outcome is kept on the review (migration 0200) and returned, so the card can say "Saved here, not
+ *  sync here: its outcome is kept on the review (migration 0201) and returned, so the card can say "Saved here, not
  *  posted" with a Retry. Retry is this same call with the same text. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);

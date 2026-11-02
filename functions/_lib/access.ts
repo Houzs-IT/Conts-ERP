@@ -74,7 +74,7 @@ export const AREAS: Area[] = [
   // Operations managers read the rest of Finance but never the company books.
   { key: 'ledger', label: 'Ledger', group: 'Finance', api: [], managed: true, strictRead: true },
   { key: 'pricing', label: 'Pricing and reviews', group: 'Growth', api: ['pricing', 'rates', 'reviews'] },
-  // Messages sat under Reservations from 30 Oct to 2 Nov 2026; migration 0199 pinned its stored levels when it moved here.
+  // Messages sat under Reservations from 30 Oct to 2 Nov 2026; migration 0200 pinned its stored levels when it moved here.
   { key: 'comms', label: 'Messages', group: 'Growth', api: ['messages'] },
   { key: 'automations', label: 'Automations', group: 'Growth', api: ['automations'] },
   // The user list is read by management and operations managers only (functions/api/users), so finance admins start at none.
