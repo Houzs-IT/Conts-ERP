@@ -209,8 +209,8 @@ export const createReceiptHandler = async (c: any): Promise<Response> => {
     credit_account_code: l.code,
     amount_sen: l.amountSen,
     department: l.department,
-    project_id: l.projectId,
-    unit_id: l.unitId,
+    ...(l.projectId != null ? { project_id: l.projectId } : {}),
+    ...(l.unitId ? { unit_id: l.unitId } : {}),
   })));
   if (lineErr) {
     await sb.from('acc_receipts').delete().eq('company_id', coId).eq('id', receipt.id);
@@ -373,7 +373,8 @@ export const updateReceiptHandler = async (c: any): Promise<Response> => {
     const { error: lineErr } = await sb.from('acc_receipt_lines').insert(lines.map((l, i) => ({
       company_id: coId, receipt_id: receipt.id, line_no: i + 1,
       description: l.description, credit_account_code: l.code, amount_sen: l.amountSen, department: l.department,
-      project_id: l.projectId, unit_id: l.unitId,
+      ...(l.projectId != null ? { project_id: l.projectId } : {}),
+      ...(l.unitId ? { unit_id: l.unitId } : {}),
     })));
     if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
   }

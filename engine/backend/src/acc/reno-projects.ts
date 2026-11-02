@@ -70,7 +70,7 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   const projectIds = [...new Set(comps.map((c) => c.projectId).filter((p): p is number => p != null))];
 
   const [contracts, orders, projects, instalments, bills, soPays, invoices, pos] = await Promise.all([
-    inChunks(docs, (b, f, t) => sb.from('reno_so_contracts').select('so_doc_no, original_contract_sen, advance_account_code, customer_name, doc_date')
+    inChunks(docs, (b, f, t) => sb.from('reno_so_contracts').select('so_doc_no, original_contract_sen, advance_account_code, customer_name, doc_date, billed_before_golive_sen')
       .eq('company_id', companyId).in('so_doc_no', b).order('so_doc_no').range(f, t), 'contracts'),
     inChunks(docs, (b, f, t) => sb.from('mfg_sales_orders').select('doc_no, debtor_code, debtor_name, agent').eq('company_id', companyId).in('doc_no', b).order('doc_no').range(f, t), 'orders'),
     inChunks(projectIds, (b, f, t) => sb.schema('public').from('projects').select('id, code, name, reno_stage, planned_handover_date, salesperson_name')
@@ -82,7 +82,23 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     inChunks(projectIds, (b, f, t) => sb.from('purchase_orders').select('id, project_id, status, total_sen, po_date').eq('company_id', companyId).in('project_id', b).order('id').range(f, t), 'purchase orders'),
   ]);
 
-  const liveSi = invoices.filter((i) => !['DRAFT', 'CANCELLED', 'VOID'].includes(String(i.status).toUpperCase()));
+  /* A contract signed before go-live: what AutoCount still had open on it came over as opening invoices of the project's
+     customer (one customer account per project), with no SO. Their payments are the contract's too. A customer on more
+     than one contract cannot be told apart, so only a customer with one contract is matched. */
+  const docsOfDebtor = new Map<string, string[]>();
+  for (const o of orders) if (o.debtor_code) docsOfDebtor.set(String(o.debtor_code), [...(docsOfDebtor.get(String(o.debtor_code)) ?? []), String(o.doc_no)]);
+  const soleDebtors = [...docsOfDebtor].filter(([, d]) => d.length === 1).map(([code]) => code);
+  const openingSis = await inChunks(soleDebtors, (b, f, t) => sb.from('sales_invoices').select('id, so_doc_no, status, debtor_code, total_sen, opening_balance')
+    .eq('company_id', companyId).eq('opening_balance', true).in('debtor_code', b).order('id').range(f, t), 'opening invoices');
+  const openingOutstanding = new Map<string, number>();
+  for (const i of openingSis) {
+    if (['DRAFT', 'CANCELLED', 'VOID'].includes(String(i.status).toUpperCase())) continue;
+    const doc = docsOfDebtor.get(String(i.debtor_code))![0]!;
+    i.so_doc_no = i.so_doc_no ?? doc;
+    openingOutstanding.set(doc, (openingOutstanding.get(doc) ?? 0) + Number(i.total_sen ?? 0));
+  }
+  const liveSi = [...invoices, ...openingSis.filter((i) => !invoices.some((x) => String(x.id) === String(i.id)))]
+    .filter((i) => !['DRAFT', 'CANCELLED', 'VOID'].includes(String(i.status).toUpperCase()));
   const siDoc = new Map(liveSi.map((i) => [String(i.id), String(i.so_doc_no)]));
   /* As at the date: a PO raised by then, not drafted or cancelled. */
   const livePos = pos.filter((p) => !['CANCELLED', 'DRAFT'].includes(String(p.status).toUpperCase()) && (!p.po_date || day(p.po_date) <= asOf));
@@ -104,6 +120,16 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   if (openingDeposits.error) fail('opening deposits', openingDeposits.error);
   const ledgerStart = day((settings.data as Row | null)?.ledger_start_date) || null;
   const depositsTagged = ((openingDeposits.data ?? []) as Row[]).some(countsInTheBooks);
+  /* The renovation deposit account's balance in the OPENING journal: nil means no deposit was out at go-live (null: no opening journal yet). */
+  const { data: opJes, error: opErr } = await sb.from('journal_entries').select('id, posted, reversed, reversed_by_je').eq('company_id', companyId).eq('source_type', 'OPENING');
+  if (opErr) fail('opening journal', opErr);
+  const opJe = ((opJes ?? []) as Row[]).find(countsInTheBooks);
+  let openingRenoDepositSen: number | null = null;
+  if (opJe) {
+    const { data: ol, error: olErr } = await sb.from('journal_entry_lines').select('debit_sen, credit_sen').eq('journal_entry_id', opJe.id).eq('account_code', RENOVATION_DEPOSIT_ACCOUNT);
+    if (olErr) fail('opening journal', olErr);
+    openingRenoDepositSen = ((ol ?? []) as Row[]).reduce((t, l) => t + Number(l.debit_sen ?? 0) - Number(l.credit_sen ?? 0), 0);
+  }
   const apIds = [...new Set(apLines.map((l) => String(l.invoice_id)))];
   /* As at the date: bills dated by then and posted (a draft is not owed yet). */
   const livePis = pis.filter((x) => !['CANCELLED', 'DRAFT'].includes(String(x.status).toUpperCase()) && day(x.invoice_date) <= asOf);
@@ -164,6 +190,14 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   };
   for (const p of soPays) if ((soOk as { ids: Set<string> }).ids.has(String(p.id))) addPay(String(p.so_doc_no), p);
   for (const p of siPays) if ((siOk as { ids: Set<string> }).ids.has(String(p.id))) addPay(siDoc.get(String(p.sales_invoice_id)), p);
+  /* What AutoCount collected before go-live: what it invoiced less what was still open at go-live, on the day before. */
+  if (ledgerStart) {
+    const eve = new Date(Date.parse(`${ledgerStart}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+    for (const k of contracts) {
+      const before = Number(k.billed_before_golive_sen ?? 0) - (openingOutstanding.get(String(k.so_doc_no)) ?? 0);
+      if (before > 0) addPay(String(k.so_doc_no), { paid_at: eve, amount_sen: before });
+    }
+  }
 
   /* Supplier side per project, as at the date. */
   const piByPo = new Map<string, Row[]>();
@@ -249,13 +283,14 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
       gpToDateBp: bp(c.invoicedSen - costSpentSen, c.invoicedSen),
       workAheadOfMoney: c.pctBp - (collectedBp ?? 0) >= WORK_AHEAD_BP,
       closeOut: !c.handedOver ? null : closeOutOf({
-        allInstalmentsBilled: !next,
+        allInstalmentsBilled: c.invoicedSen >= c.revisedContractSen,
         notInvoicedSen: Math.max(c.revisedContractSen - c.invoicedSen, 0),
         notReceivedSen: Math.max(c.revisedContractSen - receivedSen, 0),
+        hasProject: c.projectId != null,
         owedToSuppliersSen: c.projectId != null ? owed.get(c.projectId) ?? 0 : 0,
         orderedNotBilledSen: c.projectId != null ? orderedNotBilled.get(c.projectId) ?? 0 : 0,
         /* A contract signed before go-live may have paid its deposit in AutoCount: known once the opening deposits are tagged. */
-        depositKnown: depositsTagged || !ledgerStart || !k.doc_date || day(k.doc_date) >= ledgerStart,
+        depositKnown: depositsTagged || openingRenoDepositSen === 0 || !ledgerStart || !k.doc_date || day(k.doc_date) >= ledgerStart,
         depositLeftSen: c.projectId != null ? depositLeft.get(c.projectId) ?? 0 : 0,
         hasAdvanceAccount: !!String(k.advance_account_code ?? '').trim(),
         advanceLeftSen: k.advance_account_code ? advanceLeft.get(String(k.advance_account_code).trim()) ?? 0 : 0,

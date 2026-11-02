@@ -183,3 +183,32 @@ describe('close-out', () => {
     expect((await renoProjectRows(w, CO, '2026-11-30'))[0]!.closeOut!.checks[2]!.ok).toBe(true);
   });
 });
+
+/* Review fixes (2 Nov 2026): a contract signed before go-live counts what AutoCount collected, its opening invoices'
+   payments, and its AutoCount billing; a deposit is known when the opening balances carry none on 330-0040. */
+describe('close-out of a contract signed before go-live', () => {
+  const old = () => {
+    const w = world();
+    w.tables.projects[0]!.handed_over_at = '2026-11-28T04:00:00Z';
+    Object.assign(w.tables.reno_so_contracts[0]!, { doc_date: '2026-08-01', billed_before_golive_sen: 5_000_000 });
+    /* AutoCount invoiced RM 50,000; RM 10,000 of it was still open at go-live: an opening invoice of the project's customer. */
+    w.tables.sales_invoices.push({ id: 'op1', company_id: CO, so_doc_no: null, debtor_code: '301-M002', opening_balance: true, invoice_date: '2026-09-30', total_sen: 1_000_000, status: 'SENT' });
+    w.tables.sales_invoice_payments.push({ id: 'p9', company_id: CO, sales_invoice_id: 'op1', paid_at: '2026-11-15T02:00:00Z', amount_sen: 1_000_000 });
+    w.tables.acc_official_receipts.push({ company_id: CO, payment_source: 'SIPAY', payment_id: 'p9', status: 'FORMAL' });
+    return w;
+  };
+
+  it('counts AutoCount collection and the opening invoice paid since', async () => {
+    const r = (await renoProjectRows(old(), CO, '2026-11-30'))[0]!;
+    /* RM 40,000 before go-live + RM 10,000 on the opening invoice + RM 20,000 confirmed since on the new invoices. */
+    expect(r.receivedSen).toBe(7_000_000);
+  });
+
+  it('a deposit is known when the opening balances carry none on 330-0040', async () => {
+    const w = old();
+    expect((await renoProjectRows(w, CO, '2026-11-30'))[0]!.closeOut!.checks[2]!.ok).toBeNull();
+    w.tables.journal_entries.push({ id: 'op', company_id: CO, source_type: 'OPENING', entry_date: '2026-10-31', posted: true });
+    w.tables.journal_entry_lines.push({ id: 'o1', company_id: CO, journal_entry_id: 'op', account_code: '310-0001', debit_sen: 100, credit_sen: 0 });
+    expect((await renoProjectRows(w, CO, '2026-11-30'))[0]!.closeOut!.checks[2]!.ok).toBe(true);
+  });
+});

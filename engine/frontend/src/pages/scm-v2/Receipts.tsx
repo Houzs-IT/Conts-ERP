@@ -436,7 +436,7 @@ export const Receipts = () => {
               )
             )}
             {!debtorMode && lines.map((l) => (
-              <div key={l.rid} style={{ display: 'grid', gridTemplateColumns: `minmax(200px, 1fr) minmax(240px, 1fr) 160px 150px 220px${editing ? ' auto' : ''}`, gap: 'var(--space-2)', alignItems: 'center' }}>
+              <div key={l.rid} style={{ display: 'grid', gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 'var(--space-2)', alignItems: 'center' }}>
                 <input placeholder="Description" value={l.description} className={styles.fieldInput}
                   onChange={(e) => patchLine(l.rid, { description: e.target.value })} />
                 <AccountSelect accounts={accounts} value={l.creditAccountCode} className={styles.fieldInput}

@@ -17,6 +17,8 @@ export const RENOVATION_DEPOSIT_ACCOUNT = '330-0040';
 
 export interface CloseOutInput {
   allInstalmentsBilled: boolean; notInvoicedSen: number; notReceivedSen: number;
+  /** A contract with no project cannot be checked for its suppliers or its deposit. */
+  hasProject: boolean;
   owedToSuppliersSen: number; orderedNotBilledSen: number;
   /** False when the contract was signed before the ledger start and no opening deposits are in the books. */
   depositKnown: boolean; depositLeftSen: number;
@@ -41,8 +43,8 @@ export function closeOutOf(i: CloseOutInput): CloseOut {
     i.owedToSuppliersSen > 0 ? `${rm(i.owedToSuppliersSen)} owed to suppliers` : null,
     i.orderedNotBilledSen > 0 ? `${rm(i.orderedNotBilledSen)} ordered, not billed` : null,
   ].filter(Boolean).join('; ');
-  const suppliers: CloseOutCheck = supplierLeft ? { key: 'suppliers', ok: false, text: supplierLeft } : { key: 'suppliers', ok: true, text: 'Done' };
-  const deposit: CloseOutCheck = !i.depositKnown
+  const suppliers: CloseOutCheck = !i.hasProject ? { key: 'suppliers', ok: null, text: 'No project: suppliers not checked' } : supplierLeft ? { key: 'suppliers', ok: false, text: supplierLeft } : { key: 'suppliers', ok: true, text: 'Done' };
+  const deposit: CloseOutCheck = !i.hasProject ? { key: 'deposit', ok: null, text: 'No project: deposit not checked' } : !i.depositKnown
     ? { key: 'deposit', ok: null, text: 'Deposit unknown: opening deposits not uploaded' }
     : i.depositLeftSen > 0 ? { key: 'deposit', ok: false, text: `${rm(i.depositLeftSen)} deposit not returned` }
     : i.depositLeftSen < 0 ? { key: 'deposit', ok: false, text: `${rm(i.depositLeftSen)} more returned than paid` }

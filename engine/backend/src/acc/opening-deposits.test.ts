@@ -79,3 +79,37 @@ describe('opening deposits', () => {
     expect((sb.tables.journal_entries as Row[]).some((j) => j.source_type === 'OPENING_DEPOSITS')).toBe(false);
   });
 });
+
+describe('opening deposits — review fixes (2 Nov 2026)', () => {
+  test('a second upload-and-reverse cycle reverses cleanly, each contra with its own number', async () => {
+    const sb = world();
+    await opening(sb);
+    for (let i = 0; i < 2; i += 1) {
+      expect(await importOpeningDeposits(sb, CO, ROWS, 'Chew')).toMatchObject({ ok: true });
+      expect(await reverseOpeningDeposits(sb, CO)).toMatchObject({ ok: true });
+    }
+    const contras = (sb.tables.journal_entries as Row[]).filter((j) => String(j.source_type).startsWith('OPENING_DEPOSITS') && j.source_doc_no !== 'OPENING-DEPOSITS');
+    expect(contras).toHaveLength(2);
+    expect(new Set(contras.map((j) => j.source_doc_no)).size).toBe(2);
+    expect(contras.every((j) => j.posted)).toBe(true);
+  });
+
+  test('the opening journal cannot be reversed while deposits are tagged on it', async () => {
+    const { reverseOpeningJournal } = await import('./opening');
+    const sb = world();
+    await opening(sb);
+    await importOpeningDeposits(sb, CO, ROWS, 'Chew');
+    expect(await reverseOpeningJournal(sb, CO)).toMatchObject({ ok: false });
+    await reverseOpeningDeposits(sb, CO);
+    expect(await reverseOpeningJournal(sb, CO)).toMatchObject({ ok: true });
+  });
+
+  test('a unit deposit moves to Rental: tagged in rental, untagged side off supply', async () => {
+    const sb = world();
+    await opening(sb);
+    await importOpeningDeposits(sb, CO, [ROWS[2]!], 'Chew');
+    const je = (sb.tables.journal_entries as Row[]).find((j) => j.source_type === 'OPENING_DEPOSITS')!;
+    const lines = (sb.tables.journal_entry_lines as Row[]).filter((l) => l.journal_entry_id === je.id);
+    expect(lines.map((l) => [l.department, l.debit_sen, l.credit_sen, l.unit_id ?? null])).toEqual([['rental', 30_000, 0, 'u-a31'], ['supply', 0, 30_000, null]]);
+  });
+});

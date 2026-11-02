@@ -413,7 +413,7 @@ describe('a receipt line names its project or unit', () => {
     const tables = tagged();
     const res = await post(harness(tables), '/', body({ department: 'supply', projectId: 7 }));
     expect(res.status, await res.clone().text()).toBe(201);
-    expect(tables.acc_receipt_lines[0]).toMatchObject({ project_id: 7, unit_id: null });
+    expect([tables.acc_receipt_lines[0]!.project_id, tables.acc_receipt_lines[0]!.unit_id ?? null]).toEqual([7, null]);
     const cr = tables.journal_entry_lines.find((l) => l.account_code === '330-0040')!;
     const dr = tables.journal_entry_lines.find((l) => l.account_code === '310-0010')!;
     expect([cr.project_id, dr.project_id ?? null]).toEqual([7, null]);

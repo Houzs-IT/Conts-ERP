@@ -66,15 +66,16 @@ export async function importOpeningDeposits(
 
   const existing = await activeDeposits(sb, companyId);
   if (!existing.ok) return { ok: false, error: existing.error };
-  if (existing.je && !opts.dryRun) return { ok: false, error: `The opening deposits ${existing.je.je_no} are already in the books — reverse them first to import again.` };
+  if (existing.je) return { ok: false, error: `The opening deposits ${existing.je.je_no} are already in the books — reverse them first to import again.` };
 
   const [{ data: accs, error: aErr }, { data: projects, error: pErr }, { data: units, error: uErr }] = await Promise.all([
-    sb.from('accounts').select('account_code, account_type, is_active').eq('company_id', companyId).like('account_code', '330-%'),
+    sb.from('accounts').select('account_code, account_type, is_active, parent_code').eq('company_id', companyId).like('account_code', '330-%'),
     sb.schema('public').from('projects').select('id, code').eq('company_id', companyId),
     sb.schema('public').from('conts_units').select('id, building, unit_number'),
   ]);
   if (aErr || pErr || uErr) return { ok: false, error: (aErr ?? pErr ?? uErr).message };
-  const depositAccount = new Set(((accs ?? []) as Row[]).filter((a) => a.account_type === 'ASSET' && a.is_active !== false).map((a) => String(a.account_code)));
+  const parents = new Set(((accs ?? []) as Row[]).map((a) => String(a.parent_code ?? '')).filter(Boolean));
+  const depositAccount = new Set(((accs ?? []) as Row[]).filter((a) => a.account_type === 'ASSET' && a.is_active !== false && !parents.has(String(a.account_code))).map((a) => String(a.account_code)));
   const projectOf = new Map(((projects ?? []) as Row[]).filter((p) => p.code).map((p) => [norm(p.code), Number(p.id)]));
   const unitOf = new Map(((units ?? []) as Row[]).map((u) => [`${norm(u.building)}|${norm(u.unit_number)}`, String(u.id)]));
 
@@ -112,8 +113,10 @@ export async function importOpeningDeposits(
 
   /* A project's deposit is Renovation's, a unit's is Rental's; each account comes off untagged in the same department. */
   const dept = (l: { projectId: number | null }): Department => (l.projectId != null ? 'supply' : 'rental');
+  /* The opening balances sit in the default department (supply): the untagged side comes off there, so a unit's deposit
+     moves to Rental where it is returned. */
   const offs = new Map<string, number>();
-  for (const l of lines) offs.set(`${l.accountCode}|${dept(l)}`, (offs.get(`${l.accountCode}|${dept(l)}`) ?? 0) + l.sen);
+  for (const l of lines) offs.set(`${l.accountCode}|supply`, (offs.get(`${l.accountCode}|supply`) ?? 0) + l.sen);
   const r = await postJournal(sb, {
     companyId, entryDate: day, sourceType: OPENING_DEPOSITS, sourceDocNo: DOC,
     narration: `Opening deposits by project or unit, imported by ${actorName}`,
@@ -135,6 +138,8 @@ export async function reverseOpeningDeposits(sb: Db, companyId: number): Promise
   const { data: je } = await sb.from('journal_entries').select('entry_date').eq('id', existing.je.id).maybeSingle();
   const r = await reverseJournal(sb, {
     sourceType: OPENING_DEPOSITS, jeId: existing.je.id, companyId, entryDate: String((je as Row | null)?.entry_date ?? '').slice(0, 10),
+    /* One contra source number per cycle (acc/opening.ts reverseOpeningJournal): a shared one trips the one-active-source index. */
+    sourceDocNo: `OPENING-DEPOSITS-REV-${existing.je.je_no}`,
     narration: (orig) => `Reversal of ${orig.je_no} — opening deposits to be imported again`,
   });
   if (!r.ok) return { ok: false, error: r.reason ? `${r.status}: ${r.reason}` : r.status };

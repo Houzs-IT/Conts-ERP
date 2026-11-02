@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { closeOutOf, type CloseOutInput } from './reno-close-out';
 
 const done: CloseOutInput = {
-  allInstalmentsBilled: true, notInvoicedSen: 0, notReceivedSen: 0,
+  allInstalmentsBilled: true, notInvoicedSen: 0, notReceivedSen: 0, hasProject: true,
   owedToSuppliersSen: 0, orderedNotBilledSen: 0,
   depositKnown: true, depositLeftSen: 0,
   hasAdvanceAccount: true, advanceLeftSen: 0,
@@ -36,6 +36,9 @@ describe('closeOutOf', () => {
     const r = closeOutOf({ ...done, depositKnown: false });
     expect(r.checks[2]).toEqual({ key: 'deposit', ok: null, text: 'Deposit unknown: opening deposits not uploaded' });
     expect(r.closed).toBe(false);
+    const noProject = closeOutOf({ ...done, hasProject: false });
+    expect(noProject.checks.map((c) => [c.ok, c.text]).slice(1, 3)).toEqual([[null, 'No project: suppliers not checked'], [null, 'No project: deposit not checked']]);
+    expect(noProject.closed).toBe(false);
     expect(closeOutOf({ ...done, hasAdvanceAccount: false }).checks[3]).toEqual({ key: 'advance', ok: null, text: 'No advance account: seed the contract at go-live' });
   });
 });
