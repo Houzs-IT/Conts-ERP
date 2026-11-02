@@ -107,7 +107,7 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
                 <select aria-label="Counts to" className={inputClass} value={department} onChange={(e) => setDepartment(e.target.value as "" | "rental" | "supply")}>
                   <option value="">— Choose —</option>
                   <option value="rental">Rental (a unit to rent out)</option>
-                  <option value="supply">Supply chain (showroom)</option>
+                  <option value="supply">Renovation (showroom)</option>
                 </select>
               </Field>
             )}

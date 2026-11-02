@@ -3,7 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authedFetch } from "../vendor/scm/lib/authed-fetch";
 
-export type ProjectOption = { id: number; code: string | null; name: string; funding: "customer" | "internal" };
+export type ProjectOption = {
+  id: number; code: string | null; name: string; funding: "customer" | "internal";
+  /* For the voucher's project picker (chew 2 Nov 2026): the customer, the contract's status, the handover, done. */
+  customer_name: string | null; contract_status: string | null; planned_handover_date: string | null; handed_over_at: string | null;
+  created_at: string | null; done: boolean;
+};
 export type ProjectLimit = {
   projectId: number; projectName: string; funding: "customer" | "internal"; pctBp: number | null; receivedSen: number | null;
   limitSen: number; usedSen: number; reservedSen: number; leftSen: number;
@@ -53,3 +58,10 @@ export const useDecideLimit = () => {
     },
   });
 };
+
+/** The Property OS units, for a voucher's Rental lines (chew 2 Nov 2026). */
+export const useUnitOptions = () => useQuery({
+  queryKey: ["conts-units"],
+  queryFn: () => authedFetch<{ units: Array<{ id: string; building: string; unitNumber: string }> }>("/accounting/units"),
+  staleTime: 300_000,
+});

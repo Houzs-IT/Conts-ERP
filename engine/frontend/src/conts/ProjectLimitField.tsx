@@ -3,17 +3,19 @@
 // shows beside it, and when the voucher is more than is left, a request for extra limit can be sent from here.
 import { useState } from "react";
 import { fmtSenPlain } from "../vendor/shared/format";
-import { useAskLimit, useProjectLimit, useProjectOptions } from "./projectLimitQueries";
+import { useAskLimit, useProjectLimit } from "./projectLimitQueries";
+import { ProjectPicker } from "./Pickers";
 
 const BAD = "var(--c-festive-b, #b3261e)";
 
-export function ProjectLimitField({ projectId, onChange, amountSen, disabled, exceptPvId, fieldClass, labelClass, inputClass }: {
+export function ProjectLimitField({ projectId, onChange, amountSen, disabled, exceptPvId, fieldClass, labelClass, inputClass, required }: {
   projectId: number | null; onChange: (id: number | null) => void; amountSen: number; disabled?: boolean;
+  /** A Renovation voucher must name its project (chew 2 Nov 2026). */
+  required?: boolean;
   /** A voucher already submitted, being edited: its own reservation is not counted against it. */
   exceptPvId?: string | null;
   fieldClass?: string; labelClass?: string; inputClass?: string;
 }) {
-  const projects = useProjectOptions();
   const limit = useProjectLimit(projectId, exceptPvId ?? null);
   const ask = useAskLimit();
   const [asking, setAsking] = useState(false);
@@ -37,14 +39,11 @@ export function ProjectLimitField({ projectId, onChange, amountSen, disabled, ex
 
   return (
     <div className={fieldClass} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <span className={labelClass}>Project</span>
-        <select aria-label="Project" className={inputClass} value={projectId ?? ""} disabled={disabled}
-          onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}>
-          <option value="">— None, or the one its bills belong to —</option>
-          {(projects.data?.projects ?? []).map((p) => <option key={p.id} value={p.id}>{p.code ? `${p.code} · ` : ""}{p.name}{p.funding === "internal" ? " (internal)" : ""}</option>)}
-        </select>
-      </label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span className={labelClass}>Project{required ? " *" : ""}</span>
+        <ProjectPicker value={projectId} onChange={onChange} disabled={disabled} inputClass={inputClass}
+          placeholder={required ? "Choose a project…" : "None, or the one its bills belong to"} />
+      </div>
       {l && (
         <span style={{ fontSize: "var(--fs-12)", color: over > 0 ? BAD : "var(--fg-muted)" }}>
           {l.funding === "internal" ? "Budget" : "Limit"} left RM {fmtSenPlain(l.leftSen)} of RM {fmtSenPlain(l.limitSen)}

@@ -312,6 +312,7 @@ export async function postJournal(sb: any, input: PostJournalInput): Promise<Pos
     notes: l.notes ?? null,
     department: l.department ?? DEFAULT_DEPARTMENT,
     project_id: l.projectId ?? null,
+    ...(l.unitId ? { unit_id: l.unitId } : {}),
   }));
   const { error: linesErr } = await sb.from('journal_entry_lines').insert(lineRows);
   if (linesErr) {
@@ -436,7 +437,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
   // accounts instead of the real ones.
   const { data: origLines, error: origLinesErr } = await sb
     .from('journal_entry_lines')
-    .select('account_code, debit_sen, credit_sen, party_type, party_code, party_name, notes, department, project_id')
+    .select('account_code, debit_sen, credit_sen, party_type, party_code, party_name, notes, department, project_id, unit_id')
     .eq('journal_entry_id', orig.id)
     .order('line_no');
   if (origLinesErr) return { ok: false, status: 'reversal_read_failed', reason: `origLines: ${origLinesErr.message}` };
@@ -450,6 +451,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
     notes: string | null;
     department?: string | null;
     project_id?: number | null;
+    unit_id?: string | null;
   }>;
 
   const companyId = orig.company_id ?? null;
@@ -507,6 +509,8 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
           department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT,
           // And on the original's project, so the project's booked cost nets to nothing.
           project_id: l.project_id ?? null,
+          // And on the original's unit, so the unit's cost nets to nothing.
+          ...(l.unit_id ? { unit_id: l.unit_id } : {}),
         }))
       : (input.fallbackLines ? input.fallbackLines(totalSen) : []).map((l, i) => ({
           ...companyCol,

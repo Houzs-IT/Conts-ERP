@@ -38,7 +38,7 @@ function parseReceiptLine(raw: unknown, i: number): ReceiptLine | { error: 'bad_
     return { error: 'bad_line', message: `Line ${i + 1}: amountSen must be a positive integer (got ${String(l?.amountSen)}).` };
   }
   if (l?.department != null && !isDepartment(l.department)) {
-    return { error: 'bad_line', message: `Line ${i + 1}: the department must be Rental, Supply chain or Shared.` };
+    return { error: 'bad_line', message: `Line ${i + 1}: the department must be Rental, Renovation or Shared.` };
   }
   return {
     description: l?.description ? String(l.description).trim() : null, code, amountSen: amount,

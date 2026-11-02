@@ -240,6 +240,9 @@ export type RuleLine = {
   department?: Department | null;
   /** The project a cost line belongs to (public.projects id): the renovation completion % reads booked cost by it. */
   projectId?: number | null;
+  /** The Rental unit a cost line was paid for (public.conts_units id; finance only, never charged to the owner): the
+      Rental costs by unit report reads it (chew 2 Nov 2026). */
+  unitId?: string | null;
 };
 
 /** Sales invoice issued (docs/bugs/0829): Dr AR for the invoice total, the
@@ -432,7 +435,7 @@ export function piLines(
  */
 export function pvLines(
   pv: { pv_number: string; payee_name: string; credit_account_code: string },
-  debitLegs: Array<{ description: string | null; debit_account_code: string; myrSen: number; department?: Department | null; project_id?: number | null }>,
+  debitLegs: Array<{ description: string | null; debit_account_code: string; myrSen: number; department?: Department | null; project_id?: number | null; unit_id?: string | null }>,
   supplier: { code: string | null; name: string | null; control_account?: string | null },
   /** The supplier's own AP control (a supplier payment): the Dr leg on it IS
       the supplier's sub-ledger, so it carries the party the way the invoice
@@ -453,6 +456,8 @@ export function pvLines(
       department: l.department ?? DEFAULT_DEPARTMENT,
       // A direct expense keeps its line's project; settling a bill carries none (the bill booked the cost).
       projectId: onControl ? null : (l.project_id ?? null),
+      // A Rental line's unit, the same way; only Rental lines carry one (chew 2 Nov 2026).
+      unitId: onControl || (l.department ?? DEFAULT_DEPARTMENT) !== 'rental' ? null : (l.unit_id ?? null),
     };
   });
   // Conts: the bank is credited per department (one line when the voucher has one department, as before).

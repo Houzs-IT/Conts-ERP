@@ -71,7 +71,7 @@ function buildLines(raw: unknown): { lines: CleanLine[]; total: number } | { err
       return { error: 'bad_line', message: `Line ${i + 1}: amountSen must be a positive integer (got ${String(l?.amountSen)}).` };
     }
     if (l?.department != null && !isDepartment(l.department)) {
-      return { error: 'bad_line', message: `Line ${i + 1}: the department must be Rental, Supply chain or Shared.` };
+      return { error: 'bad_line', message: `Line ${i + 1}: the department must be Rental, Renovation or Shared.` };
     }
     /* The project a cost belongs to (a renovation subcontractor's bill): blank = none. */
     const project = l?.projectId == null || l.projectId === '' ? null : Number(l.projectId);

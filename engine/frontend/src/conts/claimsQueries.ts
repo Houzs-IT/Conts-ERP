@@ -45,7 +45,7 @@ export const RECEIPT_STATUS: Record<ReceiptStatus, string> = {
 export const REQUEST_STATUS: Record<RequestStatus, string> = {
   SUBMITTED: "Waiting for payment", PART_PAID: "Part paid", PAID: "Paid", REJECTED: "Rejected", CLOSED: "Closed", WITHDRAWN: "Withdrawn",
 };
-export const DEPARTMENT: Record<LineDepartment, string> = { rental: "Rental", supply: "Supply chain", shared: "Shared" };
+export const DEPARTMENT: Record<LineDepartment, string> = { rental: "Rental", supply: "Renovation", shared: "Shared" };
 
 const PETTY = "/accounting/petty-cash";
 const REQUESTS = "/accounting/payment-requests";

@@ -12,7 +12,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
-import { useProjectOptions } from '../../conts/projectLimitQueries';
+import { ProjectPicker } from '../../conts/Pickers';
 import { X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
@@ -127,7 +127,6 @@ export const ApInvoiceForm = ({
   onCancel: () => void;
 }) => {
   const [v, setV] = useState<ApFormValues>(initial);
-  const projects = useProjectOptions();
   const set = (patch: Partial<ApFormValues>) => setV((prev) => ({ ...prev, ...patch }));
   const patchLine = (rid: number, patch: Partial<ApFormLine>) =>
     setV((prev) => ({ ...prev, lines: prev.lines.map((l) => (l.rid === rid ? { ...l, ...patch } : l)) }));
@@ -301,12 +300,8 @@ export const ApInvoiceForm = ({
                   value={l.department} onChange={(dep) => patchLine(l.rid, { department: dep })} />
               </td>
               <td style={td}>
-                <select className={styles.fieldInput} style={{ width: '100%' }} aria-label={`line ${l.rid} project`}
-                  value={l.projectId == null ? '' : String(l.projectId)}
-                  onChange={(e) => patchLine(l.rid, { projectId: e.target.value ? Number(e.target.value) : null })}>
-                  <option value="">No project</option>
-                  {(projects.data?.projects ?? []).map((p) => <option key={p.id} value={p.id}>{p.code ? `${p.code} · ` : ''}{p.name}</option>)}
-                </select>
+                <ProjectPicker inputClass={styles.fieldInput} ariaLabel={`line ${l.rid} project`} placeholder="No project"
+                  value={l.projectId ?? null} onChange={(id) => patchLine(l.rid, { projectId: id })} />
               </td>
               <td style={td}>
                 {v.lines.length > 1 && (

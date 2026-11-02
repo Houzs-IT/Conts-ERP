@@ -110,10 +110,32 @@ export const rejectLimitRequestHandler = decide('REJECTED');
 export const listProjectsHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const { data, error } = await c.get('supabase').schema('public').from('projects').select('id, code, name, funding')
+  const sb = c.get('supabase');
+  /* The voucher's project picker (chew 2 Nov 2026) sorts and labels by these: the customer, the contract's status (its
+     sales order: the project's own status column is not kept up), the handover, and whether it is done. */
+  const { data, error } = await sb.schema('public').from('projects')
+    .select('id, code, name, funding, customer_name, planned_handover_date, handed_over_at, closed_at, created_at')
     .eq('company_id', co.companyId).order('id', { ascending: false }).limit(2000);
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  return c.json({ projects: data ?? [] });
+  const rows = (data ?? []) as Array<Record<string, any>>;
+  const ids = rows.map((p) => Number(p.id));
+  const statusOf = new Map<number, string>();
+  if (ids.length > 0) {
+    const { data: sos, error: sErr } = await sb.from('mfg_sales_orders').select('project_id, status, doc_no')
+      .eq('company_id', co.companyId).in('project_id', ids).order('doc_no');
+    if (sErr) return c.json({ error: 'load_failed', reason: sErr.message }, 500);
+    /* A cancelled order does not hide a live one on the same project. */
+    for (const s of (sos ?? []) as Array<{ project_id: number; status: string }>) {
+      const was = statusOf.get(Number(s.project_id));
+      if (!was || /CANCEL/.test(was)) statusOf.set(Number(s.project_id), String(s.status));
+    }
+  }
+  return c.json({
+    projects: rows.map((p) => {
+      const status = statusOf.get(Number(p.id)) ?? null;
+      return { ...p, contract_status: status, done: !!p.handed_over_at || !!p.closed_at || status === 'RENO_COMPLETED' || status === 'CLOSED' || (status != null && /CANCEL/.test(status)) };
+    }),
+  });
 };
 
 /** GET /accounting/everyday-expense — the expense accounts, each marked or not as an everyday expense (SOP 3.4: rent,

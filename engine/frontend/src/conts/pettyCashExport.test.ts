@@ -24,7 +24,7 @@ describe("pettyCashRows", () => {
     expect(rows[0]).toEqual(PETTY_CASH_HEADER);
     expect(rows).toHaveLength(4);
     expect(rows[1]).toEqual(["2026-10-03", "CLM-2610-001", "Ah Wai", "ACE", "Tap", "Rental", "Skyline A-01 · Maintenance job", "905-0000", 45, "Checked", 2]);
-    expect(rows[2].slice(5, 11)).toEqual(["Supply chain", "P7", "", 19.99, "Waiting for a check", 0]);
+    expect(rows[2].slice(5, 11)).toEqual(["Renovation", "P7", "", 19.99, "Waiting for a check", 0]);
     expect(rows[3][8]).toBe(0.01);
   });
 });
