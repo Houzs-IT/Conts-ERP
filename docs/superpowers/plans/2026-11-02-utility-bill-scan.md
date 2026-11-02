@@ -17,7 +17,7 @@
   - Property OS reaches them with `forwardClaims` (`functions/_lib/claimsForward.ts`).
   - **No Cloudflare key for chew to set.** This replaces Task 8's Pages-side SDK call in the 27 Oct plan.
 
-**Tech Stack:** Property OS React + Pages Functions + Postgres (`pos`); engine Hono + vitest; Claude Haiku 5.5 / Sonnet 5.5.
+**Tech Stack:** Property OS React + Pages Functions + Postgres (`pos`); engine Hono + vitest; Claude Sonnet 5.5.
 
 **Spec:**
 - `docs/superpowers/specs/2026-10-27-utility-bills-design.md` §5 (flow, reading, matching, guards) and the 28 Oct split decision in `docs/finance/FINANCE-SOP.md` §3.10.
@@ -37,8 +37,7 @@
 - **Everything can be changed by hand.** Before "Record bills", every field of every row can be edited: kind, bill month, period from/to, amount, unit, the tick. The split preview follows the edits. After recording, bills are edited and deleted on the Utility bills screen as today.
 
 **Earlier decisions (spec §5, 27 Oct)**
-- **Models.** Haiku 5.5 first. Sonnet 5.5 again when the read has no amount or no month, matches red, or fails the ±50 % guard.
-  - Both ids live in one constant: `UTILITY_READ_MODELS = { first: 'claude-haiku-5-5', retry: 'claude-sonnet-5-5' }`.
+- **Model (chew, 2 Nov 2026: "直接用 sonnet").** Every page is read once with Sonnet 5.5; no Haiku first and no second read. This replaces the 27 Oct "Haiku first" rule. The id lives in one constant, `UTILITY_READ_MODEL = 'claude-sonnet-5-5'`. A page with no amount or no month is red and the user types the figures. About RM 0.04 a page.
   - No reading time limit.
 - **Matching** follows spec §5.3. **Guards** follow §5.4: "Already recorded" is unticked; ±50 % of the last three bills is amber; unreadable is red.
 - **Copy:** "Scan bills", "Reading page 12 of 40", "Record 37 bills", "Already recorded", "Pick the unit", "Owner paid this bill".
@@ -67,25 +66,25 @@
 
 ---
 
-### Task 1: Engine — read one utility page, Haiku then Sonnet
+### Task 1: Engine — read one utility page with Sonnet
 
 **Files:**
 - Create: `engine/backend/src/acc/utility-bill-read.ts`, `engine/backend/src/acc/utility-bill-read.test.ts`
 - Modify: `engine/backend/src/conts/my-claims-routes.ts` (route `POST /utility-bills/read`), its test file
 
 **Interfaces:**
-- Produces: `UTILITY_READ_MODELS`.
+- Produces: `UTILITY_READ_MODEL`.
 - Produces: `type UtilityRead`, with the spec §5.2 fields in sen and `null` when absent: `kind`, `provider`, `billMonth`, `periodFrom`, `periodTo`, `amountDueSen`, `currentChargesSen`, `accountNoVisible`, `accountNoFull`, `depositSen`, `invoiceNo`, `premiseAddress`, `buildingName`, `unitText`, `ownerName`, `meterPrevious`, `meterCurrent`, `confidenceNotes`.
 - Produces: `coerceUtilityRead(raw: unknown): UtilityRead`, which turns "RM 1,311.18" into 131118, keeps masks as `X` and accepts only ISO dates.
-- Produces: `needsRetry(r: UtilityRead): boolean`, true when there is no amount or no bill month.
-- Produces: `readUtilityPage(key: string, file: { mime: string; dataBase64: string }, opts?: { retry?: boolean }): Promise<{ read: UtilityRead; model: string } | { error: string }>`. It uses `anthropicFetchWithRetry` from `scm/lib/scan-ocr.ts` with structured output (`output_config.format`, a JSON schema) and effort low. Read the claude-api skill's cURL/TypeScript notes for the exact request shape first.
-- Produces (HTTP, forward only, office staff): `POST /utility-bills/read` with body `{ file: {name,mime,dataBase64}, retry?: boolean }` → `{ read, model }`. Without the key it answers 503 `SCAN_NOT_SET_UP`.
+- Produces: `readFailed(r: UtilityRead): boolean`, true when there is no amount or no bill month.
+- Produces: `readUtilityPage(key: string, file: { mime: string; dataBase64: string }, ): Promise<{ read: UtilityRead; model: string } | { error: string }>`. It uses `anthropicFetchWithRetry` from `scm/lib/scan-ocr.ts` with structured output (`output_config.format`, a JSON schema) and effort low. Read the claude-api skill's cURL/TypeScript notes for the exact request shape first.
+- Produces (HTTP, forward only, office staff): `POST /utility-bills/read` with body `{ file: {name,mime,dataBase64} }` → `{ read, model }`. Without the key it answers 503 `SCAN_NOT_SET_UP`.
 
 - [ ] **Step 1: Failing tests** (fetch stubbed):
   - "RM 1,311.18" → 131118;
   - "2104010945XX02" is kept;
-  - a missing amount → `needsRetry` is true;
-  - `retry: true` sends `claude-sonnet-5-5`, otherwise `claude-haiku-5-5`;
+  - a missing amount → `readFailed` is true;
+  - the request names `claude-sonnet-5-5`;
   - an unreadable answer → `{ error }`, never an amount of 0;
   - a field login gets 403 on the route.
 - [ ] **Step 2:** Run `npx vitest run --config vitest.light.config.mts src/acc/utility-bill-read.test.ts`. Expect FAIL; implement; expect PASS.
@@ -146,7 +145,7 @@
 - Test: `scripts/api-checks/utility-scan.mjs`, with the engine stubbed through `SCM_ENGINE_API`.
 
 **Interfaces:**
-- Produces: `POST /api/expenses/utilities/scan { documentId, batchId }` → `{ scanId, model, read, match, split }`. It reads the image from R2, forwards it to `/utility-bills/read`, retries with `retry: true` when Task 1's `needsRetry` says so or the match is red or out of range, then writes one `utility_bill_scans` row. It requires `session.manage` (403 otherwise).
+- Produces: `POST /api/expenses/utilities/scan { documentId, batchId }` → `{ scanId, model, read, match, split }`. It reads the image from R2, forwards it to `/utility-bills/read` (once), then writes one `utility_bill_scans` row. It requires `session.manage` (403 otherwise).
 - Produces: `POST /api/expenses/utilities/scan/record { batchId, rows: { scanId, accountId|unitId, kind, billMonth, periodFrom, periodTo, amountSen, chargeTo, ownerPaid }[] }` → `{ recorded, rolled, adjustments, byProvider: { provider, bills: […] }[] }`.
   - It runs in one transaction: expense (with the period), the split charge, the O2 credit, the marks, and `utility_bill_scans.expense_id`.
   - `byProvider` lists only rows not ticked "Owner paid".
@@ -198,10 +197,9 @@
 - [ ] **Step 1:** Apply 0197 to production by hand: one transaction with its `public.pos_migrations` row, no DROP. Then open the PR, wait for the property-os and rbac checks, merge, and watch the deploy.
 - [ ] **Step 2:** Run the scan on chew's Aug–Oct samples **without recording**. Report:
   - green, amber and red counts;
-  - how many pages needed Sonnet;
   - any wrong green;
   - the API cost.
 
-  If Haiku alone reads fewer than about three pages in four, ask chew before telling the team to use it.
+  If Sonnet reads fewer than about nine pages in ten right, show chew the misses before telling the team to use it.
 - [ ] **Step 3:** A fresh opus reviewer goes over the engine and Property OS diffs against this plan's Review Focus. Fix the findings test-first.
 - [ ] **Step 4:** Update `docs/finance/FINANCE-SOP.md` §3.10 (the split is built; owner paid → O2; one payment request per provider per scan), and tell chew in Chinese.
