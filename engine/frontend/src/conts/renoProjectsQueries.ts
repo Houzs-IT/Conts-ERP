@@ -16,7 +16,11 @@ export type RenoProjectRow = {
   overBudget: boolean; lossExpected: boolean; goliveCostMissing: boolean;
   expectedGpBp: number | null; gpToDateBp: number | null;
   workAheadOfMoney: boolean;
+  /** SOP 4.2.2: the close-out check of a handed-over project; null before handover. */
+  closeOut: CloseOut | null;
 };
+export type CloseOutCheck = { key: "billed" | "suppliers" | "deposit" | "advance"; ok: boolean | null; text: string };
+export type CloseOut = { closed: boolean; checks: CloseOutCheck[] };
 
 export const useRenoProjects = (asOf: string) => useQuery({
   queryKey: ["conts-reno-projects", asOf],
@@ -32,6 +36,7 @@ export function alertsOf(r: RenoProjectRow): string[] {
   if (r.workAheadOfMoney) out.push("Work ahead of money");
   if (r.goliveCostMissing) out.push("Cost before go-live not entered");
   if (r.delayed) out.push("Delayed");
+  if (r.closeOut && !r.closeOut.closed) out.push("Not closed");
   return out;
 }
 

@@ -18,6 +18,8 @@ import { nextInstalmentAmount } from '../scm/shared/renovation-money';
 import { confirmedPaymentIds } from './receipts';
 import { contractCompletions, inChunks, type ContractCompletion } from './reno-completion';
 import { countsInTheBooks } from './reversal-pairs';
+import { closeOutOf, RENOVATION_DEPOSIT_ACCOUNT, type CloseOut } from './reno-close-out';
+import { OPENING_DEPOSITS } from './opening-deposits';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
 type Db = any;
@@ -39,6 +41,8 @@ export interface RenoProjectRow {
   overBudget: boolean; lossExpected: boolean; goliveCostMissing: boolean;
   expectedGpBp: number | null; gpToDateBp: number | null;
   workAheadOfMoney: boolean;
+  /** SOP 4.2.2: the close-out check of a handed-over project (acc/reno-close-out); null before handover. */
+  closeOut: CloseOut | null;
 }
 
 const day = (v: unknown): string => String(v ?? '').slice(0, 10);
@@ -66,7 +70,7 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   const projectIds = [...new Set(comps.map((c) => c.projectId).filter((p): p is number => p != null))];
 
   const [contracts, orders, projects, instalments, bills, soPays, invoices, pos] = await Promise.all([
-    inChunks(docs, (b, f, t) => sb.from('reno_so_contracts').select('so_doc_no, original_contract_sen, advance_account_code, customer_name')
+    inChunks(docs, (b, f, t) => sb.from('reno_so_contracts').select('so_doc_no, original_contract_sen, advance_account_code, customer_name, doc_date')
       .eq('company_id', companyId).in('so_doc_no', b).order('so_doc_no').range(f, t), 'contracts'),
     inChunks(docs, (b, f, t) => sb.from('mfg_sales_orders').select('doc_no, debtor_code, debtor_name, agent').eq('company_id', companyId).in('doc_no', b).order('doc_no').range(f, t), 'orders'),
     inChunks(projectIds, (b, f, t) => sb.schema('public').from('projects').select('id, code, name, reno_stage, planned_handover_date, salesperson_name')
@@ -84,13 +88,22 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   const livePos = pos.filter((p) => !['CANCELLED', 'DRAFT'].includes(String(p.status).toUpperCase()) && (!p.po_date || day(p.po_date) <= asOf));
   const poIds = livePos.map((p) => String(p.id));
   const advanceCodes = [...new Set(contracts.map((c) => String(c.advance_account_code ?? '').trim()).filter(Boolean))];
-  const [siPays, pis, apLines, advLines] = await Promise.all([
+  const [siPays, pis, apLines, advLines, depLines, settings, openingDeposits] = await Promise.all([
     inChunks(liveSi.map((i) => String(i.id)), (b, f, t) => sb.from('sales_invoice_payments').select('id, sales_invoice_id, paid_at, amount_sen').eq('company_id', companyId)
       .in('sales_invoice_id', b).order('id').range(f, t), 'invoice payments'),
     inChunks(poIds, (b, f, t) => sb.from('purchase_invoices').select('id, purchase_order_id, status, total_sen, invoice_date').eq('company_id', companyId).in('purchase_order_id', b).order('id').range(f, t), 'purchase invoices'),
     inChunks(projectIds, (b, f, t) => sb.from('ap_invoice_lines').select('invoice_id, project_id, amount_sen').eq('company_id', companyId).in('project_id', b).order('invoice_id').range(f, t), 'AP invoice lines'),
     inChunks(advanceCodes, (b, f, t) => sb.from('journal_entry_lines').select('id, journal_entry_id, account_code, debit_sen, credit_sen').eq('company_id', companyId).in('account_code', b).order('id').range(f, t), 'advance lines'),
+    /* SOP 4.2.2: each project's building deposit, on 330-0040 by project (chew 2 Nov 2026). */
+    inChunks(projectIds, (b, f, t) => sb.from('journal_entry_lines').select('id, journal_entry_id, project_id, debit_sen, credit_sen').eq('company_id', companyId)
+      .eq('account_code', RENOVATION_DEPOSIT_ACCOUNT).in('project_id', b).order('id').range(f, t), 'deposit lines'),
+    sb.from('acc_company_settings').select('ledger_start_date').eq('company_id', companyId).maybeSingle(),
+    sb.from('journal_entries').select('id, posted, reversed, reversed_by_je').eq('company_id', companyId).eq('source_type', OPENING_DEPOSITS),
   ]);
+  if (settings.error) fail('settings', settings.error);
+  if (openingDeposits.error) fail('opening deposits', openingDeposits.error);
+  const ledgerStart = day((settings.data as Row | null)?.ledger_start_date) || null;
+  const depositsTagged = ((openingDeposits.data ?? []) as Row[]).some(countsInTheBooks);
   const apIds = [...new Set(apLines.map((l) => String(l.invoice_id)))];
   /* As at the date: bills dated by then and posted (a draft is not owed yet). */
   const livePis = pis.filter((x) => !['CANCELLED', 'DRAFT'].includes(String(x.status).toUpperCase()) && day(x.invoice_date) <= asOf);
@@ -98,7 +111,7 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     confirmedPaymentIds(sb, companyId, 'SOPAY', soPays.map((p) => String(p.id))),
     confirmedPaymentIds(sb, companyId, 'SIPAY', siPays.map((p) => String(p.id))),
     inChunks(apIds, (b, f, t) => sb.from('ap_invoices').select('id, status, total_sen, invoice_date').eq('company_id', companyId).in('id', b).order('id').range(f, t), 'AP invoices'),
-    inChunks([...new Set(advLines.map((l) => String(l.journal_entry_id)))], (b, f, t) => sb.from('journal_entries').select('id, entry_date, posted, reversed, reversed_by_je')
+    inChunks([...new Set([...advLines, ...depLines].map((l) => String(l.journal_entry_id)))], (b, f, t) => sb.from('journal_entries').select('id, entry_date, posted, reversed, reversed_by_je')
       .eq('company_id', companyId).in('id', b).order('id').range(f, t), 'advance entries'),
   ]);
   if (!soOk.ok) fail('receipts', { message: soOk.reason });
@@ -131,6 +144,14 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     const je = advJeOf.get(String(l.journal_entry_id));
     if (!je || !countsInTheBooks(je) || day(je.entry_date) > asOf) continue;
     advanceLeft.set(String(l.account_code), (advanceLeft.get(String(l.account_code)) ?? 0) + Number(l.credit_sen ?? 0) - Number(l.debit_sen ?? 0));
+  }
+
+  /* The building deposit still out per project as at the date: debit − credit on 330-0040, as the books count it. */
+  const depositLeft = new Map<number, number>();
+  for (const l of depLines) {
+    const je = advJeOf.get(String(l.journal_entry_id));
+    if (!je || !countsInTheBooks(je) || day(je.entry_date) > asOf) continue;
+    depositLeft.set(Number(l.project_id), (depositLeft.get(Number(l.project_id)) ?? 0) + Number(l.debit_sen ?? 0) - Number(l.credit_sen ?? 0));
   }
 
   /* Confirmed money per contract, dated (SOP 4.2: a payment counts once finance confirms it). */
@@ -227,6 +248,18 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
       expectedGpBp: bp(c.revisedContractSen - c.expectedCostSen, c.revisedContractSen),
       gpToDateBp: bp(c.invoicedSen - costSpentSen, c.invoicedSen),
       workAheadOfMoney: c.pctBp - (collectedBp ?? 0) >= WORK_AHEAD_BP,
+      closeOut: !c.handedOver ? null : closeOutOf({
+        allInstalmentsBilled: !next,
+        notInvoicedSen: Math.max(c.revisedContractSen - c.invoicedSen, 0),
+        notReceivedSen: Math.max(c.revisedContractSen - receivedSen, 0),
+        owedToSuppliersSen: c.projectId != null ? owed.get(c.projectId) ?? 0 : 0,
+        orderedNotBilledSen: c.projectId != null ? orderedNotBilled.get(c.projectId) ?? 0 : 0,
+        /* A contract signed before go-live may have paid its deposit in AutoCount: known once the opening deposits are tagged. */
+        depositKnown: depositsTagged || !ledgerStart || !k.doc_date || day(k.doc_date) >= ledgerStart,
+        depositLeftSen: c.projectId != null ? depositLeft.get(c.projectId) ?? 0 : 0,
+        hasAdvanceAccount: !!String(k.advance_account_code ?? '').trim(),
+        advanceLeftSen: k.advance_account_code ? advanceLeft.get(String(k.advance_account_code).trim()) ?? 0 : 0,
+      }),
     };
   });
 }

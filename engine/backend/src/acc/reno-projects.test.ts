@@ -139,3 +139,47 @@ describe('GET /reno-projects', () => {
     expect((await a.request('/reno-projects?asOf=30/11/2026')).status).toBe(400);
   });
 });
+
+/* The close-out check on a handed-over project (SOP 4.2.2; plan 2026-11-02-renovation-close-out Task 3). */
+describe('close-out', () => {
+  const handedOver = (extraJes: Row[] = [], extraLines: Row[] = []) => {
+    const w = world();
+    w.tables.projects[0]!.handed_over_at = '2026-11-28T04:00:00Z';
+    w.tables.journal_entries.push(...extraJes);
+    w.tables.journal_entry_lines.push(...extraLines);
+    return w;
+  };
+  const dep = (id: string, je: string, dr: number, cr: number) => ({ id, company_id: CO, journal_entry_id: je, account_code: '330-0040', debit_sen: dr, credit_sen: cr, project_id: 7 });
+
+  it('is null before handover', async () => {
+    expect((await renoProjectRows(world(), CO, '2026-11-30'))[0]!.closeOut).toBeNull();
+  });
+
+  it('a deposit paid, part returned and the rest kept as cost clears; without the journal it shows', async () => {
+    const jes = [
+      { id: 'dp', company_id: CO, entry_date: '2026-11-04', posted: true },
+      { id: 'dr', company_id: CO, entry_date: '2026-11-29', posted: true },
+      { id: 'dk', company_id: CO, entry_date: '2026-11-29', posted: true },
+    ];
+    const paidAndPart = [dep('d1', 'dp', 100_000, 0), dep('d2', 'dr', 0, 80_000)];
+    const open = (await renoProjectRows(handedOver(jes.slice(0, 2), paidAndPart), CO, '2026-11-30'))[0]!.closeOut!;
+    expect(open.checks.find((c) => c.key === 'deposit')).toEqual({ key: 'deposit', ok: false, text: 'RM 200.00 deposit not returned' });
+    const cleared = (await renoProjectRows(handedOver(jes, [...paidAndPart, dep('d3', 'dk', 0, 20_000)]), CO, '2026-11-30'))[0]!.closeOut!;
+    expect(cleared.checks.find((c) => c.key === 'deposit')!.ok).toBe(true);
+  });
+
+  it('says what is still open on the example contract', async () => {
+    const r = (await renoProjectRows(handedOver(), CO, '2026-11-30'))[0]!.closeOut!;
+    expect(r.closed).toBe(false);
+    expect(r.checks.map((c) => c.ok)).toEqual([false, false, true, false]);
+    expect(r.checks[0]!.text).toContain('not yet received');
+  });
+
+  it('a contract signed before go-live: the deposit is unknown until the opening deposits are in', async () => {
+    const w = handedOver();
+    w.tables.reno_so_contracts[0]!.doc_date = '2026-08-01';
+    expect((await renoProjectRows(w, CO, '2026-11-30'))[0]!.closeOut!.checks[2]!.ok).toBeNull();
+    w.tables.journal_entries.push({ id: 'od', company_id: CO, source_type: 'OPENING_DEPOSITS', entry_date: '2026-10-31', posted: true });
+    expect((await renoProjectRows(w, CO, '2026-11-30'))[0]!.closeOut!.checks[2]!.ok).toBe(true);
+  });
+});
