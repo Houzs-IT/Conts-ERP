@@ -20,8 +20,11 @@
 // counted the way the books count them (acc/reversal-pairs: posted, and neither
 // side of a reversal), plus — for a contract signed before the ledger start —
 // the cost AutoCount booked before go-live (golive_cost_sen). Expected total
-// cost is the cost of the contract's live lines, VOs included (spec section 8:
-// kept simple; the HOD re-estimate comes later).
+// cost is the cost of the contract's live lines, VOs included, plus the changes
+// finance or HOD made to it (reno_expected_cost_changes; plan 2026-11-02-
+// renovation-expected-cost-review.md). A change is kept as an adjustment on top
+// of the lines and counts from its own day: an earlier month never moves, and a
+// later VO still adds its cost.
 //
 // The data is read once (loadRenovationData) and the figures are worked out in
 // memory for any date or period (completionsAt, periodOf): the dashboard reads
@@ -56,6 +59,8 @@ export interface ContractCompletion extends Completion {
   /** As at the date: the order's status, or 'CANCELLED' once its advance was cleared. */
   status: string;
   revisedContractSen: number; expectedCostSen: number; costToDateSen: number; invoicedSen: number;
+  /** The live lines' cost alone, before any change to the expected cost. */
+  lineCostSen: number;
   differenceSen: number;
   goliveCostMissing: boolean;
 }
@@ -77,6 +82,8 @@ export interface RenovationData {
   /** Issued invoices (+), contract credits (−) and negative instalments (−), each on its own date. */
   invoiced: Dated[];
   costLines: CostLine[];
+  /** Changes to the expected cost, each from its own day (effective_on). */
+  adjustments: Dated[];
 }
 
 const day = (v: unknown): string => String(v ?? '').slice(0, 10);
@@ -116,10 +123,10 @@ export async function loadRenovationData(sb: Db, companyId: number, soDocNos?: s
     if (setErr) fail('settings', setErr);
     ledgerStart = day((set as Row | null)?.ledger_start_date) || null;
   }
-  if (contractRows.length === 0) return { ledgerStart, contracts: [], lines: [], invoiced: [], costLines: [] };
+  if (contractRows.length === 0) return { ledgerStart, contracts: [], lines: [], invoiced: [], costLines: [], adjustments: [] };
   const docs = contractRows.map((c) => String(c.so_doc_no));
 
-  const [orders, items, invoices, credits, negBills, rcan, expense] = await Promise.all([
+  const [orders, items, invoices, credits, negBills, rcan, expense, changes] = await Promise.all([
     inChunks(docs, (b, f, t) => sb.from('mfg_sales_orders').select('doc_no, status, project_id').eq('company_id', companyId).in('doc_no', b).order('doc_no').range(f, t), 'orders'),
     inChunks(docs, (b, f, t) => sb.from('mfg_sales_order_items').select('id, doc_no, total_sen, line_cost_sen, cancelled, line_date, created_at')
       .eq('company_id', companyId).in('doc_no', b).order('id').range(f, t), 'contract lines'),
@@ -131,6 +138,8 @@ export async function loadRenovationData(sb: Db, companyId: number, soDocNos?: s
     all((f, t) => sb.from('journal_entries').select('id, source_doc_no, entry_date, posted, reversed, reversed_by_je')
       .eq('company_id', companyId).eq('source_type', CONTRACT_CANCELLED).order('id').range(f, t), 'contract cancellations'),
     all((f, t) => sb.from('accounts').select('account_code').eq('company_id', companyId).eq('account_type', 'EXPENSE').order('account_code').range(f, t), 'accounts'),
+    inChunks(docs, (b, f, t) => sb.from('reno_expected_cost_changes').select('id, so_doc_no, effective_on, adjustment_sen')
+      .eq('company_id', companyId).in('so_doc_no', b).order('id').range(f, t), 'expected cost changes'),
   ]);
 
   const orderOf = new Map(orders.map((o) => [String(o.doc_no), o]));
@@ -193,7 +202,8 @@ export async function loadRenovationData(sb: Db, companyId: number, soDocNos?: s
     if (!je || !countsInTheBooks(je) || !expenseCodes.has(String(l.account_code))) return [];
     return [{ projectId: Number(l.project_id), account: String(l.account_code), date: day(je.entry_date), sen: Number(l.debit_sen ?? 0) - Number(l.credit_sen ?? 0) }];
   });
-  return { ledgerStart, contracts, lines, invoiced, costLines };
+  const adjustments: Dated[] = changes.map((x) => ({ doc: String(x.so_doc_no), date: day(x.effective_on), sen: Number(x.adjustment_sen ?? 0) }));
+  return { ledgerStart, contracts, lines, invoiced, costLines, adjustments };
 }
 
 /* ── The figures, in memory ──────────────────────────────────────────────── */
@@ -208,7 +218,8 @@ export function completionsAt(d: RenovationData, asOf: string): ContractCompleti
     if (!isCancelled && !(RENO_LIVE_STATUSES as readonly string[]).includes(c.status)) continue;
     const closed = isCancelled && !!c.cancelledOn && c.cancelledOn <= asOf;
     const mine = d.lines.filter((l) => l.doc === c.soDocNo && !l.cancelled && l.date <= asOf);
-    const expectedCostSen = mine.reduce((s, l) => s + l.costSen, 0);
+    const lineCostSen = mine.reduce((s, l) => s + l.costSen, 0);
+    const expectedCostSen = lineCostSen + d.adjustments.filter((x) => x.doc === c.soDocNo && x.date <= asOf).reduce((s, x) => s + x.sen, 0);
     const invoicedSen = d.invoiced.filter((x) => x.doc === c.soDocNo && x.date <= asOf).reduce((s, x) => s + x.sen, 0) + c.billedBeforeGoLiveSen;
     const revisedContractSen = closed ? invoicedSen : mine.reduce((s, l) => s + l.sen, 0);
     const costToDateSen = (c.projectId != null
@@ -219,7 +230,7 @@ export function completionsAt(d: RenovationData, asOf: string): ContractCompleti
     const signedBefore = !!d.ledgerStart && !!c.signedOn && c.signedOn < d.ledgerStart;
     out.push({
       soDocNo: c.soDocNo, projectId: c.projectId, asOf, status: closed ? 'CANCELLED' : isCancelled ? 'RENO_IN_PROGRESS' : c.status,
-      revisedContractSen, expectedCostSen, costToDateSen, invoicedSen,
+      revisedContractSen, expectedCostSen, costToDateSen, invoicedSen, lineCostSen,
       ...comp, differenceSen: invoicedSen - comp.earnedSen, goliveCostMissing: signedBefore && c.goliveCostSen == null,
     });
   }
