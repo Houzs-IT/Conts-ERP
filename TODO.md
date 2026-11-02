@@ -18,6 +18,11 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Scheduled worker theconts-cron (Channex outbox retry, email/WhatsApp retry, overdue sweep, 08:00 digest, repair-block release): published by the "Deploy scheduled jobs" workflow on merge or by hand (.github/workflows/deploy-cron.yml); needs repository secret CHANNEX_API_KEY (live key). Local check: node scripts/cron-dry-run.mjs.
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
 - Building listings (feat/channex-buildings, migration 0128): a unit set up in Channex becomes a room type inside its building's Channex property; Booking.com / Agoda are connected per building with each room paired to a unit, and Disconnect on one unit keeps the others connected. Units set up before 0128 (the live pilot unit) keep a listing of their own and cannot share a hotel until moved. Tested on the Channex sandbox with hotel 4372137: scripts/api-checks/channex-buildings.mjs. Needs 0128 on staging, then production, before merge.
+- Messages and Reviews (feat/messages-reviews, migrations 0200 and 0201): Messages moved under Growth; threads and reviews page through Channex, edited reviews and replies written on the site come in, inquiries before booking and reviews with no reservation are kept. Needs 0200 and 0201 on staging, then production, before merge.
+- Nothing arrives from Channex for messages or reviews until the owner installs the Messages & Reviews app on the Conts Channex account (Channex answers 403 until then).
+- No scheduled pull for messages and reviews (owner, 2 Nov 2026: screens first); they come in on the Channex webhook and the Sync button only.
+- Booking.com's review window is kept at the owner's 14 days in src/lib/reviewRules.ts; Booking.com publishes 28, change it there if stays are shown closed too early.
+- A pull reads at most 5 pages (500) of Channex reviews; a guest edit to an older review than that is not picked up.
 
 ## Supply Chain as a copy of Houzs (decision: option B, resumed 7 Oct)
 - Plan: copy Houzs's supply chain screens and server code into Conts, re-coloured gold and black, instead of re-drawing each screen. Rental side untouched. Houzs's code is on this machine at C:\dev\Houzs-ERP (reference only).
@@ -551,7 +556,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - [ ] Owner mockup (artifact 1vwc4QNboJAH4MN7eRF5Rk) could not be read by the agent; compare Drawings against it by eye.
 
 ## In-house SO import, The Conts brand (feat/inhouse-so-seed, no migration, 2 Nov 2026, docs/so-import/inhouse/)
-- Skyline Embassy: 18 SOs (one per quotation sheet, dated 31 Oct 2026, AutoCount 302-/481- accounts reused) and a renovation project per Owner Data unit; run by the one-off workflow so-inhouse-import.yml, remove it after.
+- Skyline Embassy written on production 2 Nov: TC-SO-2610-007..024 (18 SOs, RM 579,770.00, dated 31 Oct, AutoCount 302-/481- accounts reused) and 22 projects RN-2610-008..029 (Embassy + Other tab). The one-off workflow so-inhouse-import.yml stays for the KL 48 run; remove it after.
 - KL 48: 44 units ready (19 Type A, 25 Type B) but not written: the Owner Data holds no per-unit selling price; waiting for the owner. B-17-09, B-25-08, B-35-13A have no AutoCount customer / advance account.
 
 ## Notion SO import (feat/so-notion-import, no migration, 26 Oct 2026, docs/so-import/)

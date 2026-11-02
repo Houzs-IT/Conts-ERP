@@ -1,10 +1,24 @@
-import { describe, expect, it } from "vitest";
-import { amendmentLine, amountAfter, byAreaBlocks, contractLineEdits, dateSettable, editProblem, effectiveEdit, groupDate, groupDateTargets, lineDates, lineLate, linesCsv, refusalText, voBatches, type ManagedLine } from "./renovationBetaLines";
+import { describe, expect, it, vi } from "vitest";
+
+const h = vi.hoisted(() => ({ calls: [] as Array<[string, unknown]> }));
+vi.mock("../../vendor/scm/lib/authed-fetch", () => ({
+  authedFetch: async (path: string, init?: { body?: string }) => {
+    h.calls.push([path, init?.body ? JSON.parse(init.body) : null]);
+    if (path.includes("/lines/b/spec")) return { ok: true, changed: true, voNo: "VO-TC-SO-1-02", flags: 1 };
+    if (path.endsWith("/line-edits")) return { voNo: "VO-TC-SO-1-03", flags: 0 };
+    return { ok: true, changed: true };
+  },
+}));
+
+import {
+  amendmentLine, amountAfter, byAreaBlocks, contractLineEdits, dateSettable, editProblem, effectiveEdit, groupDate, groupDateTargets, lineDates, lineLate, linesCsv,
+  postContractLines, refusalText, variantsAfter, voBatches, type ManagedLine,
+} from "./renovationBetaLines";
 
 const line = (over: Partial<ManagedLine> = {}): ManagedLine => ({
   id: "i1", soDocNo: "TC-SO-1", soStatus: "CONFIRMED", voLocked: true, lineNo: 1, itemCode: "PNT-5L", description: "Paint 5L", variantText: null,
   variants: { colorCode: "White", remark: "old side channel" }, itemGroup: "materials", uom: "TIN", qty: 2, unitPriceSen: 10000, discountSen: 0, amountSen: 20000,
-  area: "Living", remark: null, supplierName: "Nippon", goesTo: "po", categoryCode: null, subCode: null, categoryLabel: "Paint", categorySort: 1, subLabel: "General", subSort: 1,
+  area: "Living", remark: null, supplierName: "Nippon", goesTo: "po", categoryCode: null, subCode: null, variantCategory: null, categoryLabel: "Paint", categorySort: 1, subLabel: "General", subSort: 1,
   pos: [], photoKeys: [], skuPhotos: [], gr: "no", do: "no", plan: { orderOn: null, deliverOn: null, noPo: false }, ...over,
 });
 
@@ -121,5 +135,49 @@ describe("contractLineEdits", () => {
     expect(contractLineEdits(b[0])).toEqual([{ soItemId: "i1", qty: 4 }]);
     const sku = voBatches([l], { i1: { itemCode: "PNT-10L" } });
     expect(contractLineEdits(sku[0])).toEqual([{ soItemId: "i1", itemCode: "PNT-10L" }]);
+  });
+});
+
+describe("picked variants (owner, 2 Nov 2026)", () => {
+  const sofa = line({ id: "s", itemCode: "SOF-GEN-3S", variantCategory: "SOFA", itemGroup: "RENOVATION", variants: { colourId: "PC1461-02", fabricId: "PC1461", fabricCode: "PC1461-02", colourLabel: "PC1461-02", fabricLabel: "PC1461", seatHeight: "24", legHeight: "Default" } });
+  const bed = line({ id: "b", itemCode: "BED-HKA-1003-(K)", variantCategory: "BEDFRAME", itemGroup: "RENOVATION", variants: { fabricCode: "PC1461-01", divanHeight: '4"', gap: '4"', legHeight: '1"', totalHeight: '9"' } });
+  const pick = { fabricCode: "PC1461-03", colourId: "PC1461-03", fabricId: "PC1461", colourLabel: "PC1461-03" };
+  it("a pick lays its keys over the line's variants; the remark key is never sent", () => {
+    expect(variantsAfter(line(), {})).toEqual({ colorCode: "White" });
+    expect(variantsAfter(sofa, pick)).toEqual({ ...sofa.variants, ...pick });
+  });
+  it("an edit counts only the keys that moved, and the VO line carries the whole variants", () => {
+    expect(effectiveEdit(sofa, { variants: { fabricCode: "PC1461-02", seatHeight: "24" } })).toBeNull();
+    const e = effectiveEdit(sofa, { variants: { ...pick, fabricId: "PC1461", seatHeight: "24" } })!;
+    expect(e.variants).toEqual({ fabricCode: "PC1461-03", colourId: "PC1461-03", colourLabel: "PC1461-03" });
+    const a = amendmentLine(sofa, e);
+    expect(a.changeType).toBe("SPEC");
+    expect(a.newVariants).toEqual({ ...sofa.variants, ...pick });
+  });
+  it("the batch names the lines whose variants moved, and those a live PO buys; the words use the SO field names", () => {
+    const po = { poId: "p", poNumber: "TC-PO-1", poStatus: "RECEIVED", poLineId: "pl", poDate: null, deliveryDate: null, supplierRevised: false, qty: 1, received: 1, photoKeys: [] };
+    const b = voBatches([sofa, { ...bed, pos: [po] }], { s: { variants: pick }, b: { variants: { divanHeight: '6"', totalHeight: '11"' } } });
+    expect(b[0].optionIds).toEqual(["s", "b"]);
+    expect(b[0].poOptionIds).toEqual(["b"]);
+    expect(b[0].reason).toContain("SOF-GEN-3S: Fabric PC1461-02 -> PC1461-03");
+    expect(b[0].reason).toContain('Divan height 4" -> 6"; Total height 9" -> 11"');
+  });
+});
+
+describe("postContractLines", () => {
+  it("variants alone go to the line's spec route (the server raises the VO for a PO line); with a qty change they ride the VO edit", async () => {
+    h.calls.length = 0;
+    const po = { poId: "p", poNumber: "TC-PO-1", poStatus: "RECEIVED", poLineId: "pl", poDate: null, deliveryDate: null, supplierRevised: false, qty: 1, received: 1, photoKeys: [] };
+    const lines = [
+      line({ id: "a", variantCategory: "SOFA", variants: { fabricCode: "F1", seatHeight: "24" } }),
+      line({ id: "b", variantCategory: "BEDFRAME", variants: { divanHeight: '4"' }, pos: [po] }),
+      line({ id: "c", variantCategory: "SOFA", variants: { fabricCode: "F1" } }),
+    ];
+    const [b] = voBatches(lines, { a: { variants: { fabricCode: "F2" } }, b: { variants: { divanHeight: '6"' } }, c: { qty: 5, variants: { seatHeight: "28" } } });
+    const r = await postContractLines(b);
+    expect(h.calls.map((c) => c[0])).toEqual(["/renovation-so-info/TC-SO-1/lines/a/spec", "/renovation-so-info/TC-SO-1/lines/b/spec", "/renovation/sales-orders/TC-SO-1/line-edits"]);
+    expect(h.calls[0][1]).toEqual({ variants: { fabricCode: "F2", seatHeight: "24" } });
+    expect((h.calls[2][1] as { edits: unknown[] }).edits).toEqual([{ soItemId: "c", qty: 5, variants: { fabricCode: "F1", seatHeight: "28" } }]);
+    expect(r).toMatchObject({ applied: true, amendmentNo: "VO-TC-SO-1-02, VO-TC-SO-1-03", poFlags: 1 });
   });
 });

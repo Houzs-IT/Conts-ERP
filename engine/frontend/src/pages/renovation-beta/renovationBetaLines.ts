@@ -52,6 +52,8 @@ export interface ManagedLine {
   /** The catalog group and sub-category codes (null: the product has none). */
   categoryCode: string | null;
   subCode: string | null;
+  /** The category that picks the line's variant fields, as the SO line reads it (sofa / bedframe / ...). */
+  variantCategory: string | null;
   categoryLabel: string;
   categorySort: number;
   subLabel: string;
@@ -100,8 +102,29 @@ export interface LineEdit {
   pickedName?: string;
   pickedPriceSen?: number;
   colour?: string;
+  /** Variant keys picked on the PO tab with the SO line's pickers (renovationVariantPicker.tsx), over the line's own.
+      Only the keys a pick wrote. */
+  variants?: Record<string, unknown>;
   qty?: number;
   remark?: string;
+}
+
+/* ---------- variants (owner, 2 Nov 2026: picked on the PO tab with the SO line's own pickers) ---------- */
+
+/* The variant keys a person reads, with the SO line's field names; a fabric pick also writes colourId, fabricId and
+   labels, which follow the fabric code and are not listed on their own. */
+const VARIANT_WORDS: ReadonlyArray<readonly [string, string]> = [
+  ["fabricCode", "Fabric"], ["seatHeight", "Seat size"], ["divanHeight", "Divan height"], ["legHeight", "Leg height"],
+  ["gap", "Gap"], ["totalHeight", "Total height"],
+];
+
+const asText = (v: unknown): string => (v === undefined || v === null ? "" : String(v).trim());
+
+/** The line's variants after the picks (the remark key is never part of the variants sent). */
+export function variantsAfter(l: Pick<ManagedLine, "variants">, picked: Readonly<Record<string, unknown>> | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...l.variants, ...(picked ?? {}) };
+  delete out.remark;
+  return out;
 }
 
 /** The colour as a line holds it: the variant key the order's summary prints (variant-summary.ts colorCode). */
@@ -109,9 +132,6 @@ export function colourOf(l: Pick<ManagedLine, "variants">): string {
   const v = l.variants.colorCode;
   return typeof v === "string" ? v : "";
 }
-
-/** A sofa or bedframe picks its fabric and heights on the order's own configurator; only the remark, qty and SKU
-    change here for those lines. */
 
 /** The edit with every field equal to the line dropped; null when nothing moved. */
 export function effectiveEdit(l: ManagedLine, e: LineEdit | undefined): LineEdit | null {
@@ -123,6 +143,10 @@ export function effectiveEdit(l: ManagedLine, e: LineEdit | undefined): LineEdit
     if (e.pickedPriceSen !== undefined) out.pickedPriceSen = e.pickedPriceSen;
   }
   if (e.colour !== undefined && e.colour.trim() !== colourOf(l).trim()) out.colour = e.colour.trim();
+  if (e.variants) {
+    const moved = Object.fromEntries(Object.entries(e.variants).filter(([k, v]) => asText(v) !== asText(l.variants[k])));
+    if (Object.keys(moved).length) out.variants = moved;
+  }
   if (e.qty !== undefined && Number.isFinite(e.qty) && e.qty !== l.qty) out.qty = e.qty;
   if (e.remark !== undefined && e.remark.trim() !== (l.remark ?? "").trim()) out.remark = e.remark.trim();
   return Object.keys(out).length ? out : null;
@@ -156,6 +180,9 @@ export function editWords(l: ManagedLine, e: LineEdit): string[] {
   const out: string[] = [];
   if (e.itemCode) out.push(`SKU ${l.itemCode} -> ${e.itemCode}${e.pickedName ? ` (${e.pickedName})` : ""}`);
   if (e.colour !== undefined) out.push(`Colour ${colourOf(l) || "none"} -> ${e.colour || "none"}`);
+  for (const [k, label] of VARIANT_WORDS) {
+    if (e.variants && k in e.variants) out.push(`${label} ${asText(l.variants[k]) || "none"} -> ${asText(e.variants[k]) || "none"}`);
+  }
   if (e.qty !== undefined) out.push(`Qty ${l.qty} -> ${e.qty}`);
   if (e.remark !== undefined) out.push(e.remark ? `Remark: ${e.remark}` : "Remark cleared");
   return out;
@@ -165,13 +192,12 @@ export function editWords(l: ManagedLine, e: LineEdit): string[] {
     buildAmendmentLines): QTY when only the qty moved, else SPEC with the whole variants blob; the remark only when it
     moved; the old values as the snapshot. */
 export function amendmentLine(l: ManagedLine, e: LineEdit): CreateAmendmentLine {
-  const variants: Record<string, unknown> = { ...l.variants };
-  delete variants.remark;
+  const variants = variantsAfter(l, e.variants);
   if (e.colour !== undefined) {
     if (e.colour) variants.colorCode = e.colour;
     else delete variants.colorCode;
   }
-  const qtyOnly = e.qty !== undefined && e.itemCode === undefined && e.colour === undefined && e.remark === undefined;
+  const qtyOnly = e.qty !== undefined && e.itemCode === undefined && e.colour === undefined && e.variants === undefined && e.remark === undefined;
   const unit = unitAfter(l, e);
   return {
     salesOrderItemId: l.id,
@@ -185,7 +211,11 @@ export function amendmentLine(l: ManagedLine, e: LineEdit): CreateAmendmentLine 
   };
 }
 
-export interface VoBatch { docNo: string; reason: string; lines: CreateAmendmentLine[]; words: string[] }
+export interface VoBatch {
+  docNo: string; reason: string; lines: CreateAmendmentLine[]; words: string[];
+  /** The SO lines whose variants were typed, and of those the ones a live PO buys (a contract raises a VO for them). */
+  optionIds: string[]; poOptionIds: string[];
+}
 
 /** One VO per sales order for everything edited on it. */
 export function voBatches(lines: readonly ManagedLine[], edits: Readonly<Record<string, LineEdit>>): VoBatch[] {
@@ -193,8 +223,12 @@ export function voBatches(lines: readonly ManagedLine[], edits: Readonly<Record<
   for (const l of lines) {
     const e = effectiveEdit(l, edits[l.id]);
     if (!e || !l.voLocked) continue;
-    const b = by.get(l.soDocNo) ?? { docNo: l.soDocNo, reason: "", lines: [], words: [] };
+    const b = by.get(l.soDocNo) ?? { docNo: l.soDocNo, reason: "", lines: [], words: [], optionIds: [], poOptionIds: [] };
     b.lines.push(amendmentLine(l, e));
+    if (e.variants) {
+      b.optionIds.push(l.id);
+      if (livePo(l)) b.poOptionIds.push(l.id);
+    }
     b.words.push(`${l.itemCode}: ${editWords(l, e).join("; ")}`);
     by.set(l.soDocNo, b);
   }
@@ -222,6 +256,8 @@ export interface PostedVo {
   docNo: string;
   amendmentNo: string | null;
   applied: boolean;
+  /** PO lines a contract VO flagged for purchasing (the line was replaced with its new options or qty). */
+  poFlags?: number;
   /** Set when the order refused the change; the VO was withdrawn so the next one is not blocked. */
   refusal: string | null;
   followUps: Array<{ poNumber: string; amendmentNo: string }>;
@@ -230,7 +266,7 @@ export interface PostedVo {
 interface CreatedVo { amendment?: { id: string; amendment_no: string }; amendments?: Array<{ id: string; amendment_no: string }>; selfApprovable?: string[] }
 interface AppliedVo { poFollowUps?: Array<{ poNumber: string; amendmentNo: string }> }
 
-export interface ContractLineEdit { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number }
+export interface ContractLineEdit { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; variants?: Record<string, unknown>; remark?: string }
 
 /** The qty and SKU changes of a contract batch, in the shape the contract's line-edits route takes. */
 export function contractLineEdits(b: VoBatch): ContractLineEdit[] {
@@ -252,23 +288,38 @@ export async function postContractLineEdits(docNo: string, edits: ContractLineEd
 }
 
 /** A renovation contract refuses the SO amendment route (its lines change by a contract VO, which only adds or omits).
-    Options and remarks are written to the line itself (renovation-so-info spec route; no VO, nothing the customer pays
-    for moved), first, so a line that is then replaced carries them; qty and SKU changes then raise the contract VO. */
+    Options and remarks are written to the line itself (renovation-so-info spec route): no VO when no PO buys the line
+    yet; on a line a live PO buys, new options make the server raise a contract VO that replaces the line and flags its
+    PO line for purchasing (owner, 2 Nov 2026). Qty and SKU changes then raise the contract VO; a line whose options
+    and qty or SKU both moved sends its options with that edit, so it is replaced once, as it now is. */
 export async function postContractLines(b: VoBatch): Promise<PostedVo> {
-  let voNo: string | null = null;
+  const vos: string[] = [];
+  let flags = 0;
   try {
+    const edits = contractLineEdits(b);
     for (const l of b.lines) {
+      const id = l.salesOrderItemId ?? "";
+      const edit = edits.find((e) => e.soItemId === id);
+      if (edit && b.optionIds.includes(id)) {
+        edit.variants = (l.newVariants ?? {}) as Record<string, unknown>;
+        if (l.newRemark !== undefined) edit.remark = l.newRemark;
+        continue;
+      }
       if (l.changeType === "QTY") continue;
-      await authedFetch(`/renovation-so-info/${encodeURIComponent(b.docNo)}/lines/${encodeURIComponent(l.salesOrderItemId ?? "")}/spec`, {
+      const r = await authedFetch<{ voNo?: string; flags?: number } | null>(`/renovation-so-info/${encodeURIComponent(b.docNo)}/lines/${encodeURIComponent(id)}/spec`, {
         method: "PUT", body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
       });
+      if (r?.voNo) { vos.push(r.voNo); flags += r.flags ?? 0; }
     }
-    const edits = contractLineEdits(b);
-    if (edits.length) voNo = (await postContractLineEdits(b.docNo, edits, "Changed on the project PO tab")).voNo;
+    if (edits.length) {
+      const r = await postContractLineEdits(b.docNo, edits, "Changed on the project PO tab");
+      vos.push(r.voNo);
+      flags += r.flags ?? 0;
+    }
   } catch (e) {
-    return { docNo: b.docNo, amendmentNo: voNo, applied: false, refusal: refusalText(e), followUps: [] };
+    return { docNo: b.docNo, amendmentNo: vos.join(", ") || null, applied: false, refusal: refusalText(e), followUps: [], poFlags: flags };
   }
-  return { docNo: b.docNo, amendmentNo: voNo, applied: true, refusal: null, followUps: [] };
+  return { docNo: b.docNo, amendmentNo: vos.join(", ") || null, applied: true, refusal: null, followUps: [], poFlags: flags };
 }
 
 /** Raise the VO and apply it. A VO the order refuses to apply (a received or delivered line, say) is withdrawn with

@@ -1,4 +1,5 @@
 import { type Env, one, all, json, fail } from '../../_lib/db';
+import { REVIEW_COLUMNS, REVIEW_FROM, reviewOut } from '../../_lib/reviews';
 import { can } from '../../_lib/access';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { fromSql, columnsSql, toRow } from '../../_lib/bookingList';
@@ -110,13 +111,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     SELECT bp.*, u.full_name AS created_by_name FROM booking_payments bp LEFT JOIN users u ON u.id = bp.created_by
     WHERE bp.reservation_id = ? ORDER BY bp.status = 'expected', COALESCE(bp.received_on, '9999'), bp.created_at, bp.id`, id)).map(toPayment) : [];
 
-  const [auditRows, messages, notices] = await Promise.all([
+  const [auditRows, messages, notices, reviewRow, threadRow] = await Promise.all([
     all<any>(env, `SELECT action, actor_label, before_state, after_state, occurred_at FROM audit_log
       WHERE entity_table = 'reservations' AND entity_id = ? ORDER BY occurred_at LIMIT 100`, id),
     all<any>(env, `SELECT m.direction, m.sent_at, m.is_automated FROM messages m JOIN message_threads t ON t.id = m.thread_id
       WHERE t.reservation_id = ? ORDER BY m.sent_at LIMIT 50`, id),
     all<any>(env, `SELECT template, channel, state, queued_at, sent_at FROM notification_log
       WHERE entity_table = 'reservations' AND entity_id = ? ORDER BY queued_at LIMIT 50`, id),
+    // The review this stay left, shown in the drawer (Reviews, owner 2 Nov 2026).
+    one<any>(env, `SELECT ${REVIEW_COLUMNS} ${REVIEW_FROM} WHERE v.reservation_id = ? ORDER BY v.reviewed_at DESC LIMIT 1`, id),
+    one<{ id: string }>(env, 'SELECT id FROM message_threads WHERE reservation_id = ? ORDER BY last_message_at DESC LIMIT 1', id),
   ]);
 
   const channel = CHANNEL_LABEL[row.channel] ?? row.channel;
@@ -170,6 +174,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     unitId: row.unit_id,
     guestId: row.guest_id ?? null,
     guestEmail: row.guest_email ?? null,
+    review: reviewRow ? reviewOut(reviewRow) : null,
+    threadId: threadRow?.id ?? null,
     nationality: lines.guestNationality ?? row.guest_country ?? null,
     notes: row.notes ?? null,
     staffNotes: hasStaffNotes ? row.staff_notes ?? null : null,

@@ -34,3 +34,17 @@ Decisions (owner and coordinator, 2 Nov 2026):
 - KL 48: Type A / Type B picks the PDF lines. The Owner Data holds no per-unit selling price (its "Business Model"
   column is the rental arrangement, to be ignored), so the KL 48 orders carry the PDF package total as a PLACEHOLDER:
   the importer dry-runs them and refuses to write them until the price source is given.
+
+## Result on production (2 Nov 2026)
+
+Dry run (all groups, run 41467173554): 66 projects, 59 orders, RM 1,140,370.00 at KL 48 placeholder prices, no account
+opened, all rolled back. Write (EMBASSY, OTHER; run 41473106495), one transaction:
+
+- 22 projects: RN-2610-008 to RN-2610-025 (the 18 Embassy units) and RN-2610-026 to RN-2610-029 (Other tab: SKYLINE
+  KUCHAI B-53-09, M ASTRA A-12-02, A-23-19, A-26-05).
+- 18 SOs, TC-SO-2610-007 to TC-SO-2610-024, dated 31 Oct 2026, RM 579,770.00, 723 lines; each on its unit's AutoCount
+  302- customer and 481- advance account. Customers 302- (83) and advance accounts 481- (107) unchanged in number.
+
+Not written: KL 48 (44 units: 19 Type A, 25 Type B) until the per-unit price is given; B-17-09, B-25-08 and B-35-13A
+have no AutoCount accounts. The Other tab's two rows whose unit number is a date (Puchong Savile D'Lake, M Astra) have
+no project.
