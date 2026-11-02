@@ -1,5 +1,7 @@
 import { type Env, all, one, nowIso } from './db';
 import { channexConfigured, channexListWebhooks } from './channex';
+import { CLEAN_KINDS_SQL } from './cleaning';
+import { overdueCleans } from './cleanOverdue';
 
 /** Audit actions worth a second look: accounts and passwords, settings, money leaving, and anything deleted
  *  or cleared. A SQL condition on audit_log.action, shared by the health counts and the audit feed. */
@@ -159,7 +161,10 @@ export async function measureHealth(env: Env, origin: string) {
 
   // The background worker leaves no record of running, so it is judged by the work it should have done.
   const jobs = guarded('jobs', 'Background jobs', async () => {
-    const tasks = await one<{ n: number }>(env, "SELECT count(*)::int AS n FROM tasks WHERE state IN ('open','assigned','in_progress') AND due_at IS NOT NULL AND due_at < ?", ago(HOUR));
+    const other = await one<{ n: number }>(env, `SELECT count(*)::int AS n FROM tasks WHERE state IN ('open','assigned','in_progress') AND kind NOT IN ${CLEAN_KINDS_SQL} AND due_at IS NOT NULL AND due_at < ?`, ago(HOUR));
+    // A cleaning job falls due by the one overdue rule (src/lib/cleanOverdue.ts); an hour past it, the sweep should have marked it.
+    const cleans = (await overdueCleans(env, Date.now() - HOUR)).filter(t => ['open', 'assigned', 'in_progress'].includes(t.state)).length;
+    const tasks = { n: (other?.n ?? 0) + cleans };
     const mail = await one<{ n: number }>(env, "SELECT count(*)::int AS n FROM notification_log WHERE state = 'queued' AND channel <> 'in_app' AND queued_at < ?", ago(DAY));
     const left = [
       (tasks?.n ?? 0) > 0 ? `${plural(tasks!.n, 'job')} past due and not marked overdue` : '',

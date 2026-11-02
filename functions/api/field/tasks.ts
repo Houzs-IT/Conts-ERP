@@ -7,6 +7,8 @@ import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners } f
 import { LIVE_STAY_SQL, mytToday, isDay, standardItems } from '../../_lib/cleaning';
 import { hasCleanPrices } from '../../_lib/cleaningPrices';
 import { AFTER_FILE_SQL } from '../../_lib/media';
+import { standardCheckIn } from '../../_lib/cleanOverdue';
+import { nextCheckIn } from '../../../src/lib/cleanOverdue';
 
 /** GET /api/field/tasks?date=today — the signed-in person's own jobs for the day (plus, for today, anything left over from earlier),
  *  with the guest leaving and the guest arriving on each unit, so a cleaner on the phone sees what the office sees.
@@ -53,6 +55,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     WHERE ${mineSql(ready)}
       AND (${when} = ?${carry ? ` OR (t.state != 'resolved' AND ${when} < ?)` : ''})
     ORDER BY p.name NULLS LAST, u.unit_number`, ...mineArgs(ready, session.userId), date, ...(carry ? [date] : []));
+  const stdIn = await standardCheckIn(env);
   const defaultOut = (await all<{ value: string }>(env, `SELECT value FROM settings WHERE key IN ('operations.checkOut','ops.check_out') ORDER BY key = 'operations.checkOut' DESC LIMIT 1`))[0]?.value ?? '11:00';
 
   return json({
@@ -60,6 +63,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     rows: rows.map(r => {
       const sameDay = r.next_guest_at && r.due_at && r.next_guest_at.slice(0, 10) === r.due_at.slice(0, 10);
       const guestOut = !!r.guest_left_at || r.prev_state === 'checked_out';
+      // The next guest's real check-in, as on the office's board (src/lib/cleanOverdue.ts).
+      const cin = r.next_guest ? nextCheckIn({ day: r.day, reservationTime: r.next_time ?? '', taskNextGuestAt: r.next_guest_at, standard: stdIn }) : null;
       return {
         id: r.id, unitId: r.unit_id, kind: r.kind, state: r.state,
         // An external clean has an address and maybe a client instead of a unit (owner, 17 Oct 2026).
@@ -75,7 +80,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count), afterCount: Number(r.after_count),
         checklist: { done: Number(r.ticks), total: standardItems(r.kind).length + Number(r.custom_items) },
         guestOut, guestLeftAt: r.guest_left_at ?? null, guestLeftAuto: (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_time || defaultOut}:00+08:00`), previous: r.prev_guest ? { guestName: r.prev_guest, checkOutTime: r.prev_time || '11:00', state: r.prev_state } : null,
-        next: r.next_guest ? { guestName: r.next_guest, checkInTime: r.next_time || '15:00', checkInAt: `${r.day}T${r.next_time || '15:00'}:00+08:00` } : null,
+        next: cin ? { guestName: r.next_guest, checkInTime: cin, checkInAt: `${r.day}T${cin}:00+08:00` } : null,
         sync: r.state === 'resolved' ? 'synced' : r.sync === 'synced' ? null : r.sync,
         syncedAt: r.state === 'resolved' ? r.updated_at : null,
       };

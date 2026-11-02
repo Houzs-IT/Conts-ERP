@@ -15,12 +15,13 @@ export type PhoneJobTone = 'overdue' | 'out' | null;
 const TONE_BG: Record<NonNullable<PhoneJobTone> | 'none', string> = { overdue: 'bg-danger-bg', out: 'bg-warning-bg', none: 'active:bg-page' };
 
 /**
- * One job, three short lines: unit and status; building (and, for the office, who has it); the guest leaving and the
+ * One job, three short lines: unit and status; who has it (and the building, when the card is not under its building's
+ * header, or an external job's client); the guest leaving and the
  * guest arriving as times only. No guest names and no unit size: those are on the job sheet (owner, 2 Nov 2026).
  * The whole row opens the job sheet; controls inside it stop their own clicks.
  */
 export function PhoneJobCard({ title, building, lead, badges, status, right, out, arrive, note, tone, active, onSelect, label }: {
-  title: string; building: string; lead?: ReactNode; badges?: ReactNode; status: ReactNode; right?: ReactNode;
+  title: string; building?: string; lead?: ReactNode; badges?: ReactNode; status: ReactNode; right?: ReactNode;
   out?: ReactNode; arrive?: ReactNode; note?: ReactNode; tone?: PhoneJobTone; active?: boolean; onSelect?: () => void; label?: string;
 }) {
   return (
@@ -36,10 +37,12 @@ export function PhoneJobCard({ title, building, lead, badges, status, right, out
           {badges}
           <span className="ml-auto min-w-0 flex items-center justify-end gap-1.5">{status}</span>
         </div>
-        <div className="flex items-center gap-2 min-w-0 text-meta text-muted-ink">
-          <span className="min-w-0 truncate">{building}</span>
-          {right && <span className="flex-none ml-auto flex items-center">{right}</span>}
-        </div>
+        {(building || right) && (
+          <div className="flex items-center gap-2 min-w-0 text-meta text-muted-ink">
+            {building && <span className="min-w-0 truncate">{building}</span>}
+            {right && <span className="flex-none ml-auto flex items-center">{right}</span>}
+          </div>
+        )}
         {(out || arrive) && <div className="flex items-center flex-wrap gap-x-4 gap-y-1 min-w-0">{out}{arrive}</div>}
         {note}
       </div>

@@ -2,6 +2,10 @@ import { type Env, all, one, json, fail, nowIso } from '../../_lib/db';
 import { taskCleanersReady, cleanerNamesSql } from '../../_lib/taskCleaners';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, hhmm, slaFor } from '../../_lib/ops';
+import { NEXT_STAY_TIME_SQL, standardCheckIn } from '../../_lib/cleanOverdue';
+import { cleanDeadline, nextCheckIn } from '../../../src/lib/cleanOverdue';
+
+const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'];
 
 /** GET /api/operations/today?date= — every open job for the day (cleaning, inspection, maintenance), riskiest first.
  *  Work that is already overdue from earlier days stays on the list until it is done. */
@@ -15,9 +19,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const date = asked && /^\d{4}-\d{2}-\d{2}$/.test(asked) ? asked : today;
   const day = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const ready = await taskCleanersReady(env);
+  const stdIn = await standardCheckIn(env);
 
   const tasks = await all<any>(env, `
-    SELECT t.id, t.kind, t.state, t.title, t.instructions, t.due_at, t.next_guest_at, t.assignee_id, ${day} AS day,
+    SELECT t.id, t.kind, t.state, t.title, t.instructions, t.due_at, t.next_guest_at, t.assignee_id, ${day} AS day, ${NEXT_STAY_TIME_SQL('t')} AS stay_time,
            u.id AS unit_id, u.unit_number, u.readiness, u.base_rate, p.name AS property_name, COALESCE(${cleanerNamesSql(ready)}, cl.full_name, a.full_name, '') AS assignee_name,
            o.id AS owner_id, o.display_name AS owner_name
     FROM tasks t JOIN units u ON u.id = t.unit_id JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
@@ -51,7 +56,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const rows = [
     ...tasks.map(t => {
-      const sla = slaFor(t.state, t.due_at);
+      // A cleaning job's deadline is the one overdue rule's (src/lib/cleanOverdue.ts), not its due time (the checkout) or a stored state.
+      const sla = CLEAN_KINDS.includes(t.kind)
+        ? slaFor(t.state === 'overdue' ? 'open' : t.state, new Date(cleanDeadline(t.day, nextCheckIn({ day: t.day, reservationTime: t.stay_time, taskNextGuestAt: t.next_guest_at, standard: stdIn }))).toISOString())
+        : slaFor(t.state, t.due_at);
       return {
         id: t.id, kind: t.kind, unitNumber: t.unit_number, propertyName: t.property_name,
         work: t.title, note: t.instructions, readiness: t.readiness, day: t.day, carriedOver: t.day < date,

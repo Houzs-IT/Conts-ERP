@@ -2,6 +2,7 @@ import { type Env, one, json, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
 import { CLEAN_KINDS_SQL, LIVE_STAY_SQL } from '../../_lib/cleaning';
+import { overdueCleans } from '../../_lib/cleanOverdue';
 import { waitingCount, approvalsEnabled } from '../../_lib/approvals';
 import { levelsFor } from '../../_lib/access';
 import { showcaseReady } from '../../_lib/showcase';
@@ -23,7 +24,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         + (SELECT count(*)::int FROM reservations r WHERE ${LIVE_STAY_SQL('r')} AND r.check_out = to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS today,
       (SELECT count(*)::int FROM tasks WHERE state != 'resolved' AND kind IN ${CLEAN_KINDS_SQL}
          AND ${MYT_DATE('COALESCE(scheduled_for, due_at, created_at)')} <= to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS cleaning,
-      (SELECT count(*)::int FROM tasks WHERE state != 'resolved' AND (state = 'overdue' OR (due_at IS NOT NULL AND due_at < ?))) AS overdue,
+      (SELECT count(*)::int FROM tasks WHERE state != 'resolved' AND kind NOT IN ${CLEAN_KINDS_SQL} AND (state = 'overdue' OR (due_at IS NOT NULL AND due_at < ?))) AS overdue,
       (SELECT count(*)::int FROM maintenance_issues WHERE state != 'resolved') AS maintenance,
       (SELECT count(*)::int FROM maintenance_issues WHERE state != 'resolved' AND owner_approval_required = 1 AND owner_approved_at IS NULL AND charge_to = 'owner') AS maintenance_awaiting,
       (SELECT count(*)::int FROM message_threads WHERE is_read = 0) AS inbox,
@@ -38,8 +39,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            (SELECT max(called_at) FROM channex_calls WHERE status BETWEEN 200 AND 299) AS last_sent,
            (SELECT count(*)::int FROM channex_outbox o WHERE o.status = 'failed' AND o.unit_id IN (SELECT unit_id FROM channex_channels)) AS failed`),
     waitingCount(env, session), approvalsEnabled(env), levelsFor(env, session)]);
+  // Cleaning jobs follow the one overdue rule (src/lib/cleanOverdue.ts), not their due time or a stored state.
+  const overdueCleanCount = (await overdueCleans(env, Date.now())).length;
   const channels = { units: ch?.units ?? 0, lastSentAt: ch?.last_sent ?? null, failed: ch?.failed ?? 0 };
-  const n = c!;
+  const n = { ...c!, overdue: c!.overdue + overdueCleanCount };
   // Each count and alert follows the role's level for the area it points into, so nobody is shown a count of
   // records they cannot open or an alert whose link answers "no access".
   const sees = (area: string) => session.role === 'management' || lv[area] !== 'none';
