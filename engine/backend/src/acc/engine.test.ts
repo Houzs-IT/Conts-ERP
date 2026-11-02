@@ -78,6 +78,16 @@ describe('postJournal — the one gate', () => {
     expect(sb.tables.journal_entry_lines.map((l) => l.project_id)).toEqual([7, null]);
   });
 
+  /* The Rental unit (chew 2 Nov 2026; plan 2026-11-02-voucher-purpose Task 2): kept on the line it names. */
+  it("keeps a line's unit", async () => {
+    const sb = world();
+    await postJournal(sb, { ...base, lines: [
+      { accountCode: '905-0000', debitSen: 300, creditSen: 0, department: 'rental', unitId: 'u-a31' },
+      { accountCode: '500-0000', debitSen: 0, creditSen: 300, department: 'rental' },
+    ] });
+    expect(sb.tables.journal_entry_lines.map((l) => l.unit_id ?? null)).toEqual(['u-a31', null]);
+  });
+
   it('refuses a project that is not a whole number, before anything is written', async () => {
     const sb = world();
     const out = await postJournal(sb, { ...base, lines: [
@@ -301,6 +311,14 @@ describe('reverseJournal — voiding through the same gate', () => {
     await reverseJournal(sb, revInput);
     const rev = sb.tables.journal_entries.find((j) => j.source_type === 'SI_REVERSAL')!;
     expect(sb.tables.journal_entry_lines.filter((l) => l.journal_entry_id === rev.id).map((l) => l.project_id)).toEqual([7, null]);
+  });
+
+  it('a reversal keeps the unit on its lines', async () => {
+    const lines = [{ ...LIVE_LINES[0], unit_id: 'u-a31' }, { ...LIVE_LINES[1] }];
+    const sb = world({ jes: [{ ...LIVE }], jeLines: lines });
+    await reverseJournal(sb, revInput);
+    const rev = sb.tables.journal_entries.find((j) => j.source_type === 'SI_REVERSAL')!;
+    expect(sb.tables.journal_entry_lines.filter((l) => l.journal_entry_id === rev.id).map((l) => l.unit_id ?? null)).toEqual(['u-a31', null]);
   });
 
   it('nothing_to_reverse when no ACTIVE entry exists', async () => {

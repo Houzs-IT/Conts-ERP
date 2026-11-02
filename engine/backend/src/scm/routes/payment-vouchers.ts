@@ -98,7 +98,7 @@ const PV_AUDIT_FIELDS: Array<[string, string]> = [
 const HEADER =
   'id, pv_number, voucher_date, payee_name, supplier_id, credit_account_code, currency, exchange_rate, purpose, notes, total_sen, status, posted_at, created_at, created_by, updated_at, company_id, submitted_at, submitted_by, checked_at, checked_by, approved_at, approved_by, refund_source_type, refund_source_doc_no, customer_id, debtor_code';
 
-const LINE = 'id, pv_id, line_no, description, debit_account_code, amount_sen, created_at, department, project_id';
+const LINE = 'id, pv_id, line_no, description, debit_account_code, amount_sen, created_at, department, project_id, unit_id';
 
 /* Migration 0202 — the PV purpose. Only SUPPLIER_PAYMENT settles AP (its
    allocations decrement the linked PIs' paid_sen); FREIGHT / OTHER post the GL
@@ -233,11 +233,23 @@ async function settledDepartmentLegs<L extends DebitLeg>(
 }
 
 /* ── Normalise + validate the incoming lines, recompute the header total ──── */
+type PvLineRow = { line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department: Department; unit_id?: string | null };
+
+/** The units the lines name that are not Property OS units (public.conts_units). */
+export async function unknownUnits(sb: any, rows: Array<{ unit_id?: string | null }>): Promise<string[] | { error: string }> {
+  const ids = [...new Set(rows.map((r) => r.unit_id).filter((u): u is string => !!u))];
+  if (ids.length === 0) return [];
+  const { data, error } = await sb.schema('public').from('conts_units').select('id').in('id', ids);
+  if (error) return { error: error.message };
+  const known = new Set(((data ?? []) as Array<{ id: string }>).map((u) => String(u.id)));
+  return ids.filter((u) => !known.has(u));
+}
+
 export function buildLines(
   raw: unknown,
-): { rows: Array<{ line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department: Department }>; total: number } | { error: string } {
+): { rows: Array<PvLineRow>; total: number } | { error: string } {
   if (!Array.isArray(raw) || raw.length === 0) return { error: 'lines_required' };
-  const rows: Array<{ line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department: Department }> = [];
+  const rows: Array<PvLineRow> = [];
   let total = 0;
   for (let i = 0; i < raw.length; i += 1) {
     const line = raw[i] as Record<string, unknown>;
@@ -246,12 +258,17 @@ export function buildLines(
     if (amount === null) return { error: 'line_amount_invalid' };
     // Conts: the line's department (spec 3.5); none is Supply chain.
     if (line.department != null && !isDepartment(line.department)) return { error: 'department_invalid' };
+    /* Conts (chew 2 Nov 2026): a Rental line may name the unit it was paid for. Absent = unchanged on an edit. */
+    const unitRaw = line.unitId;
+    const unitId = unitRaw === undefined ? undefined : unitRaw === null || String(unitRaw).trim() === '' ? null : String(unitRaw).trim();
+    if (unitId && line.department !== 'rental') return { error: 'unit_not_rental' };
     rows.push({
       line_no: i + 1,
       description: (line.description as string | undefined)?.trim() || null,
       debit_account_code: debit ?? '',
       amount_sen: amount,
       department: isDepartment(line.department) ? line.department : DEFAULT_DEPARTMENT,
+      ...(unitId !== undefined ? { unit_id: unitId } : {}),
     });
     total += amount;
   }
@@ -643,6 +660,11 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
   if (refund && !refund.ok) return refund.resp;
   const built = refund && refund.ok ? { rows: refund.rows, total: refund.total } : buildLines(body.lines);
   if ('error' in built) return c.json({ error: built.error }, 400);
+  {
+    const bad = await unknownUnits(c.get('supabase'), built.rows as Array<{ unit_id?: string | null }>);
+    if (!Array.isArray(bad)) return c.json({ error: 'load_failed', reason: bad.error }, 500);
+    if (bad.length > 0) return c.json({ error: 'unit_unknown', message: 'Choose the unit from the list.' }, 400);
+  }
   /* A line debiting the SAME account the voucher pays from would post money
      into itself — meaningless for an expense and a self-transfer for the
      internal-transfer shape (GL redesign item 10). Refused at typing time. */
@@ -928,6 +950,11 @@ export const updatePaymentVoucherHandler = async (c: any) => {
     }
     const built = buildLines(body.lines);
     if ('error' in built) return c.json({ error: built.error }, 400);
+    {
+      const bad = await unknownUnits(sb, built.rows);
+      if (!Array.isArray(bad)) return c.json({ error: 'load_failed', reason: bad.error }, 500);
+      if (bad.length > 0) return c.json({ error: 'unit_unknown', message: 'Choose the unit from the list.' }, 400);
+    }
     /* Same self-debit door as the create path, against the EFFECTIVE Paid
        From (the incoming one when this edit changes it, else the stored). */
     const effectiveCredit = updates.credit_account_code != null
@@ -952,8 +979,12 @@ export const updatePaymentVoucherHandler = async (c: any) => {
       const leafErr = await requireLeafAccount(c, co.companyId, dCode);
       if (leafErr) return leafErr;
     }
+    /* A line the edit does not name a unit for keeps the one it had (by line number), unless it is no longer Rental. */
+    const { data: hadLines } = await sb.from('payment_voucher_lines').select('line_no, unit_id').eq('pv_id', id);
+    const hadUnit = new Map(((hadLines ?? []) as Array<{ line_no: number; unit_id: string | null }>).map((l) => [Number(l.line_no), l.unit_id ?? null]));
+    const keptRows = built.rows.map((r) => ({ ...r, unit_id: r.unit_id !== undefined ? r.unit_id : r.department === 'rental' ? hadUnit.get(r.line_no) ?? null : null }));
     await sb.from('payment_voucher_lines').delete().eq('pv_id', id);
-    const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(built.rows.map((r) => ({ ...r, pv_id: id, ...(voucherProject !== undefined ? { project_id: voucherProject } : {}) })), c));
+    const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(keptRows.map((r) => ({ ...r, pv_id: id, ...(voucherProject !== undefined ? { project_id: voucherProject } : {}) })), c));
     if (lErr) return c.json({ error: 'lines_update_failed', reason: lErr.message }, 500);
     updates.total_sen = built.total;
     newTotal = built.total;
@@ -1114,8 +1145,8 @@ export const postPaymentVoucherHandler = async (c: any) => {
   if (!gate.ok) return c.json({ error: gate.error, message: gate.message }, 409);
 
   const { data: linesRaw } = await sb.from('payment_voucher_lines')
-    .select('line_no, description, debit_account_code, amount_sen, department, project_id').eq('pv_id', id).order('line_no');
-  const lines = (linesRaw ?? []) as Array<{ line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department?: Department | null; project_id?: number | null }>;
+    .select('line_no, description, debit_account_code, amount_sen, department, project_id, unit_id').eq('pv_id', id).order('line_no');
+  const lines = (linesRaw ?? []) as Array<{ line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department?: Department | null; project_id?: number | null; unit_id?: string | null }>;
   if (lines.length === 0) return c.json({ error: 'no_lines', message: 'Voucher has no lines to post' }, 400);
 
   /* FX conversion AT POST TIME (MYR-only today → rate 1). Each Dr leg =
