@@ -8,7 +8,7 @@ import Icon from '../components/Icon';
 import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { Skeleton } from '../components/States';
-import { AttachmentLabel, MediaGallery, FileList, FileDropRow } from '../components/Attachments';
+import { AttachmentLabel, MediaGallery, FileList, FileDropRow, PhotosPdfButton } from '../components/Attachments';
 import { DataTable, type Column } from '../components/DataTable';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
@@ -607,7 +607,9 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       </section>
 
       <section className="flex flex-col gap-2.5">
-        <AttachmentLabel title="Photos and videos" count={media.length} />
+        <AttachmentLabel title="Photos and videos" count={media.length}
+          hint={<PhotosPdfButton items={[...media].sort((a, b) => Number(a.stage === 'after') - Number(b.stage === 'after'))} title={jobLabel(i)} sub={`Maintenance: ${i.title}`} fileStem={jobLabel(i)}
+            label={m => (m.stage === 'after' ? 'Fixed' : 'The problem')} />} />
         <Segmented label="Problem or fixed" value={stage} onChange={setStage} options={[
           { value: 'before', label: <>The problem <span className="text-muted-ink tabular-nums">{counts.before}</span></> },
           { value: 'after', label: <>Fixed <span className="text-muted-ink tabular-nums">{counts.after}</span></> },

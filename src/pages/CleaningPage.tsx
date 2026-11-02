@@ -8,7 +8,7 @@ import Icon from '../components/Icon';
 import { Select, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { EmptyState, Skeleton } from '../components/States';
-import { AttachmentLabel } from '../components/Attachments';
+import { AttachmentLabel, PhotosPdfButton } from '../components/Attachments';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { CleanerChecklist, CleanerChips, cleanerHint } from '../components/CleanerPicks';
@@ -40,7 +40,7 @@ import { statusOf } from '../lib/status';
 import { cleanRowTone, type CleanRowTone } from '../lib/cleanRowTone';
 import { StatusBadge } from '../components/StatusBadge';
 import { PhoneJobCard, PhoneJobList, PhoneStayTime } from '../components/ops/PhoneJobCard';
-import { CleanProof, stageCounts } from '../components/ops/CleanProof';
+import { CleanProof, stageCounts, stageOf } from '../components/ops/CleanProof';
 import { sortForCleaner, type CleanOrderInput } from '../lib/cleanOrder';
 
 /* ---------- what the board endpoint answers (functions/api/housekeeping/board.ts) ---------- */
@@ -1002,7 +1002,9 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
 
       <div className="flex flex-col gap-2">
         {data ? <CleanProof taskId={row.id} media={data.media} done={done} onUploaded={refresh} openAddRef={openAdd}
-            hint={!done && files === 0 ? 'At least 1 After photo or video to complete' : undefined}
+            hint={!done && files === 0 ? 'At least 1 After photo or video to complete'
+              : <PhotosPdfButton items={[...data.media].sort((a, b) => Number(stageOf(a) === 'after') - Number(stageOf(b) === 'after'))} title={unitLabel}
+                sub={`Cleaning (${KIND_LABEL[row.kind] ?? row.kind}) for ${dayLabel(row.day)}`} fileStem={unitLabel} label={m => (stageOf(m) === 'before' ? 'Before' : 'After')} />}
             words={{ title: 'Proof of work', beforeOrAfter: 'Before or after the clean', before: 'Before', after: 'After', addBefore: 'Add Before photos', addAfter: 'Add After photos',
               noBefore: 'No Before photo. Optional.', noAfter: 'No After photo yet.' }} />
           : <><AttachmentLabel title="Proof of work" count={files} /><Skeleton height={84} /></>}
