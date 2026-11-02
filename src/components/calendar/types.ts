@@ -3,8 +3,8 @@ import type { BookingChannel, ReservationState } from '../../lib/types';
 export interface CalendarUnit { id: string; unitNumber: string; propertyId?: string; propertyName: string; channels?: BookingChannel[];
   /** Booking sites the unit is connected to through Channex; only these get a price sent. */
   linked?: BookingChannel[];
-  /** Channex: a live channel, set up but no channel left, or never set up. */
-  channex?: 'connected' | 'disconnected' | 'none' }
+  /** Channex: a live channel, set up but no channel left, still on HostPlatform (bookings come in, prices are not sent), or none. */
+  channex?: 'connected' | 'disconnected' | 'hostplatform' | 'none' }
 
 export interface CalendarBlock {
   id: string; unitId: string; channel: BookingChannel; state: ReservationState;
