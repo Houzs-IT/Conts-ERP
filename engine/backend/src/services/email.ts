@@ -46,6 +46,9 @@ export type EmailPurpose =
   // clientErrors.ts). Internal channel — default ON when the toggle row is
   // missing, like the other digests.
   | "client_error_digest"
+  // Conts: new renovation cost alerts to HOD (acc/reno-cost-alerts). Internal;
+  // the real switch is the company's reno_alert_hod_notify, off by default.
+  | "reno_cost_alert"
   | "generic";
 
 export interface SendOptions {
@@ -122,6 +125,7 @@ const PURPOSE_TOGGLE_KEYS: Record<EmailPurpose, string> = {
   document_report: "email.document_report",
   purchase_order: "email.purchase_order",
   client_error_digest: "email.client_error_digest",
+  reno_cost_alert: "email.reno_cost_alert",
   // No toggle for 'generic' — caller opted in explicitly.
   generic: "email.enabled",
 };

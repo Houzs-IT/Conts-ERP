@@ -32,6 +32,10 @@ import { todayMyt } from '../lib/my-time';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { einvoiceOutboxGet, einvoiceOutboxList, einvoiceRefresh, einvoiceSettingsGet, einvoiceSettingsPut } from '../../acc/einvoice-routes';
 import { renoProjectsHandler } from '../../acc/reno-projects';
+import {
+  changeExpectedCostHandler, expectedCostLogHandler, getAlertSettingsHandler, keepCostAlertHandler, listCostAlertsHandler,
+  pendingCostAlertsHandler, putAlertSettingsHandler,
+} from '../../acc/reno-cost-review-routes';
 import { postJournal, reverseJournal } from '../../acc/engine';
 import { beforeLedgerStartMessage, isBeforeLedgerStart, ledgerDatesRefusal, loadLedgerSettings, saveLedgerSettings } from '../../acc/ledger-settings';
 import { backfillSoPayments, paymentEntryDisagreements, unbookedPayments } from '../../acc/payments';
@@ -504,6 +508,14 @@ accounting.get('/einvoice/outbox/:id', einvoiceOutboxGet);
 
 /* ── Renovation project status (SOP 4.2.3; management only) — acc/reno-projects.ts ── */
 accounting.get('/reno-projects', renoProjectsHandler);
+/* The expected-cost review (SOP 4.2.1) — acc/reno-cost-review-routes.ts. Changing or keeping needs scm.reno_estimate.change. */
+accounting.get('/reno-cost-alerts', listCostAlertsHandler);
+accounting.get('/reno-cost-alerts/pending-count', pendingCostAlertsHandler);
+accounting.post('/reno-cost-alerts/:id/keep', keepCostAlertHandler);
+accounting.post('/reno-projects/:soDocNo/expected-cost', changeExpectedCostHandler);
+accounting.get('/reno-expected-cost-log', expectedCostLogHandler);
+accounting.get('/reno-alert-settings', getAlertSettingsHandler);
+accounting.put('/reno-alert-settings', putAlertSettingsHandler);
 
 /* ── Opening balances (Conts, spec 3.8) — acc/opening.ts. Writing them needs the post key; the check is read by
    the same people (it shows control and bank balances). ── */

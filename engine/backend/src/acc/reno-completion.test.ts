@@ -153,3 +153,40 @@ describe('renovationForPeriod', () => {
     expect(dec).toEqual({ earnedSen: 0, invoicedSen: 0, contracts: 1, costByAccount: {} });
   });
 });
+
+/* The expected-cost review (plan 2026-11-02-renovation-expected-cost-review.md Task 1; SOP 4.2.1 实际和预计有差):
+   a change counts from its own day, on top of the lines, so an earlier month never moves and a later VO still adds. */
+describe('expected cost changes', () => {
+  /* Cost to date 5,500,000 against RM 65,000 expected: the SOP's November. */
+  const reviewed = (over: Record<string, Row[]> = {}) => world({
+    journal_entry_lines: [
+      { id: 'l1', company_id: CO, journal_entry_id: 'je1', account_code: '620-0010', debit_sen: 5_500_000, credit_sen: 0, project_id: 7 },
+    ],
+    reno_expected_cost_changes: [{ id: 1, company_id: CO, so_doc_no: SO, effective_on: '2026-12-03', adjustment_sen: 1_000_000 }],
+    ...over,
+  });
+
+  it('takes a change from its day on', async () => {
+    const nov = (await contractCompletions(reviewed(), CO, '2026-11-30'))[0]!;
+    expect(nov).toMatchObject({ expectedCostSen: 6_500_000, lineCostSen: 6_500_000, pctBp: 8462 });
+    const dec = (await contractCompletions(reviewed(), CO, '2026-12-03'))[0]!;
+    expect(dec).toMatchObject({ expectedCostSen: 7_500_000, lineCostSen: 6_500_000, pctBp: 7333 });
+  });
+
+  it('a VO after a change still adds its cost', async () => {
+    const sb = reviewed({ mfg_sales_order_items: [item('a', 10_000_000, 6_500_000, '2026-11-03'), item('vo', 300_000, 200_000, '2026-12-10')] });
+    expect((await contractCompletions(sb, CO, '2026-12-10'))[0]!.expectedCostSen).toBe(7_700_000);
+  });
+
+  it('another company\'s change does not count', async () => {
+    const sb = reviewed({ reno_expected_cost_changes: [{ id: 1, company_id: 9, so_doc_no: SO, effective_on: '2026-12-03', adjustment_sen: 1_000_000 }] });
+    expect((await contractCompletions(sb, CO, '2026-12-31'))[0]!.expectedCostSen).toBe(6_500_000);
+  });
+
+  it('November is unchanged by a December change', async () => {
+    const { renovationForPeriod } = await import('./reno-completion');
+    const without = await renovationForPeriod(reviewed({ reno_expected_cost_changes: [] }), CO, '2026-11-01', '2026-11-30');
+    const withIt = await renovationForPeriod(reviewed(), CO, '2026-11-01', '2026-11-30');
+    expect(withIt.earnedSen).toBe(without.earnedSen);
+  });
+});

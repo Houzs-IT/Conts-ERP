@@ -35,6 +35,26 @@ vi.mock("../components/DataTable", () => ({
   ),
 }));
 
+/* The expected-cost review (plan 2026-11-02 Task 4): the change button needs scm.reno_estimate.change; the review tabs. */
+const perms = new Set<string>();
+const changingFor: string[] = [];
+vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ can: (k: string) => perms.has(k) }) }));
+vi.mock("./renoCostReviewQueries", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./renoCostReviewQueries")>()),
+  useCostAlerts: () => ({ data: { alerts: [{ id: "a1" }, { id: "a2" }] } }),
+}));
+vi.mock("./RenoCostReview", () => ({
+  NeedsReview: () => <div>needs-review</div>,
+  AlertSettingsPanel: () => <div>alert-settings</div>,
+  CostChanges: () => <div>cost-changes</div>,
+  ExpectedCostDialog: ({ row }: { row: { soDocNo: string } }) => { changingFor.push(row.soDocNo); return <div>dialog {row.soDocNo}</div>; },
+}));
+vi.mock("../components/TabStrip", () => ({
+  TabStrip: ({ options, onChange }: { options: Array<{ value: string; label: string; count?: number }>; onChange: (v: string) => void }) => (
+    <nav>{options.map((o) => <button key={o.value} onClick={() => onChange(o.value)}>{o.label}{o.count ? ` (${o.count})` : ""}</button>)}</nav>
+  ),
+}));
+
 import { RenoProjects } from "./RenoProjects";
 const page = () => render(<MemoryRouter><RenoProjects /></MemoryRouter>);
 
@@ -60,7 +80,23 @@ describe("Renovation projects", () => {
     asked.length = 0;
     page();
     fireEvent.change(screen.getByLabelText("As at"), { target: { value: "2026-11-30" } });
-    expect(asked.at(-1)).toBe("2026-11-30");
+    expect(asked).toContain("2026-11-30");
+  });
+
+  it("the change button shows only with the key; the review tabs show their parts", () => {
+    perms.clear();
+    const { unmount } = page();
+    expect(screen.queryAllByText("Change expected cost")).toHaveLength(0);
+    unmount();
+    perms.add("scm.reno_estimate.change");
+    page();
+    fireEvent.click(screen.getAllByText("Change expected cost")[0]!);
+    expect(changingFor.at(-1)).toBe("SO-1");
+    fireEvent.click(screen.getByText("Needs review (2)"));
+    expect(screen.getByText("needs-review")).toBeTruthy();
+    expect(screen.getByText("alert-settings")).toBeTruthy();
+    fireEvent.click(screen.getByText("Changes"));
+    expect(screen.getByText("cost-changes")).toBeTruthy();
   });
 
   it("money is right-aligned in RM; a negative is in brackets", () => {

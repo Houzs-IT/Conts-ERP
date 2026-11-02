@@ -8,8 +8,15 @@ import { PageHeader } from "../components/Layout";
 import { DataTable, type Column } from "../components/DataTable";
 import { DateField } from "../vendor/scm/components/DateField";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
+import { TabStrip } from "../components/TabStrip";
+import { Button } from "../components/Button";
+import { useAuth } from "../auth/AuthContext";
 import { useProjectLimit } from "./projectLimitQueries";
 import { alertsOf, kpisOf, useRenoProjects, type RenoProjectRow } from "./renoProjectsQueries";
+import { AlertSettingsPanel, CostChanges, ExpectedCostDialog, NeedsReview } from "./RenoCostReview";
+import { CHANGE_KEY, useCostAlerts } from "./renoCostReviewQueries";
+
+type Tab = "projects" | "review" | "changes";
 
 const BAD = "var(--c-error, #b3261e)";
 const GOOD = "var(--c-success, #2F5D4F)";
@@ -116,8 +123,21 @@ function Kpi({ label, value, note, tone }: { label: string; value: string; note?
 
 export function RenoProjects() {
   const [asOf, setAsOf] = useState(today());
+  const [tab, setTab] = useState<Tab>("projects");
+  const [changing, setChanging] = useState<RenoProjectRow | null>(null);
+  const { can } = useAuth();
+  const canChange = can(CHANGE_KEY);
   const q = useRenoProjects(asOf);
+  /* The review acts on today's figures, whatever date the table shows. */
+  const now = useRenoProjects(today());
+  const alerts = useCostAlerts();
   const rows = useMemo(() => q.data?.rows ?? [], [q.data]);
+  const columns = useMemo<Column<RenoProjectRow>[]>(() => (canChange ? [...COLUMNS, {
+    key: "change", label: "", exportValue: () => null,
+    render: (r: RenoProjectRow) => (r.handedOver ? null : (
+      <Button className="h-8" variant="secondary" onClick={() => setChanging(now.data?.rows.find((x) => x.soDocNo === r.soDocNo) ?? r)}>Change expected cost</Button>
+    )),
+  }] : COLUMNS), [canChange, now.data]);
   const k = useMemo(() => kpisOf(rows), [rows]);
   /* Earned against what the books invoiced: ▲ earned is ahead (work not yet invoiced), ▼ behind (invoiced ahead of the work). */
   const diff = k.earnedSen - k.invoicedSen;
@@ -127,13 +147,30 @@ export function RenoProjects() {
       <PageHeader
         title="Renovation projects"
         description="Completion revenue is for management; the books follow the invoices."
-        actions={(
+        actions={tab === "projects" ? (
           <label className={styles.field} style={{ minWidth: 160 }}>
             <span className={styles.fieldLabel}>As at</span>
             <DateField value={asOf} onChange={(v) => v && setAsOf(v)} aria-label="As at" className={styles.fieldInput} />
           </label>
-        )}
+        ) : undefined}
       />
+      <TabStrip<Tab>
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "projects", label: "Projects" },
+          { value: "review", label: "Needs review", count: alerts.data?.alerts.length || undefined },
+          { value: "changes", label: "Changes" },
+        ]}
+      />
+      {tab === "review" && (
+        <>
+          <NeedsReview rows={now.data?.rows ?? []} />
+          <AlertSettingsPanel />
+        </>
+      )}
+      {tab === "changes" && <CostChanges />}
+      {tab === "projects" && (<>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "var(--space-3)" }}>
         <Kpi label="Revised contracts (RM)" value={q.data ? rmShort(k.revisedSen) : "—"} note={q.data ? `${rows.length} project${rows.length === 1 ? "" : "s"}` : undefined} />
         <Kpi label="Invoiced — the books (RM)" value={q.data ? rmShort(k.invoicedSen) : "—"} />
@@ -146,7 +183,7 @@ export function RenoProjects() {
         tableId="conts-reno-projects"
         exportName="renovation-projects"
         exportXlsx
-        columns={COLUMNS}
+        columns={columns}
         rows={q.data ? rows : null}
         loading={q.isLoading}
         error={q.isError ? "The projects did not load." : null}
@@ -158,6 +195,8 @@ export function RenoProjects() {
         Completion % = cost booked ÷ expected cost, at most 99% until handover. Earned = completion × revised contract.
         Old contracts need their cost before go-live (<Link to="/scm/ledger-setup">Ledger setup</Link>).
       </p>
+      </>)}
+      {changing && <ExpectedCostDialog row={changing} onClose={() => setChanging(null)} />}
     </div>
   );
 }
