@@ -12,3 +12,25 @@ export function upliftOver(channel: 'web' | BookingChannel, webSen: number, save
   if (channel === 'web' || channel === 'direct') return 0;
   return saved !== undefined ? saved : Math.round(webSen * (share ?? 0));
 }
+
+/** One channel's price per level (functions/_lib/channelPrice.ts LevelPrices). */
+export interface LevelPrices { base: number; weekend: number; holiday: number | null }
+/** How a channel is priced for a unit (functions/_lib/channelPrice.ts ChannelRule). */
+export interface ChannelRule { mode: 'default' | 'amount' | 'percent' | 'fixed'; uplift?: number | null; percent?: number | null; fixedBase?: number | null; fixedWeekend?: number | null; fixedHoliday?: number | null }
+
+/** A night with no custom price: holiday (when it is one and the channel has a holiday price), else weekend on Friday
+ *  and Saturday, else the nightly price. Same rule as functions/_lib/channelPrice.ts priceOn. */
+export function standardOn(lp: LevelPrices, date: string, holiday: boolean): number {
+  if (holiday && lp.holiday != null) return lp.holiday;
+  return isWeekendIso(date) ? lp.weekend : lp.base;
+}
+
+/** What a channel adds over a new direct price of a weekday night, by its rule (functions/_lib/channelPrice.ts
+ *  channelFromDirect): an amount, a percentage, the default share, or for a fixed channel the proportion of its
+ *  nightly price to the unit's nightly price. */
+export function channelOver(channel: 'web' | BookingChannel, webSen: number, rule: ChannelRule | undefined, saved: number | undefined, share: number | undefined, unitBase: number): number {
+  if (channel === 'web' || channel === 'direct') return 0;
+  if (rule?.mode === 'percent') return Math.round(webSen * Number(rule.percent ?? 0) / 100);
+  if (rule?.mode === 'fixed') return unitBase > 0 && rule.fixedBase ? Math.round(webSen * rule.fixedBase / unitBase) - webSen : 0;
+  return upliftOver(channel, webSen, rule?.mode === 'amount' ? Number(rule.uplift ?? 0) : saved, share);
+}

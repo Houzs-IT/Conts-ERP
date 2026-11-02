@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
@@ -7,8 +7,6 @@ import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
 import { Field } from '../../components/Field';
-import { Select } from '../../components/Select';
-import { DateField } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, notifyFailure } from '../../lib/api';
@@ -17,7 +15,11 @@ import { useSession } from '../../lib/session';
 import { date, todayMyt } from '../../lib/format';
 import type { LeavesPayload, LeavePerson } from '../../../functions/api/leaves/index';
 import type { LeaveView } from '../../../functions/_lib/leave';
-import { LEAVE_TYPE_LABEL, type AllowanceType, type PublicHoliday } from '../../../functions/_lib/leaveRules';
+import { LEAVE_TYPE_LABEL, type AllowanceType } from '../../../functions/_lib/leaveRules';
+import { TableSkeleton } from '../../components/DataState';
+// Loaded when shown: imported directly by both Pricing and HR it became a chunk every page's preload list names
+// (scripts/checks/entry-bundle.mjs).
+const HolidayList = lazy(() => import('../../components/HolidayList').then(m => ({ default: m.HolidayList })));
 
 /* ------------------------------------------------------------------ *
  * HR > Workers > Leave: requests waiting for a decision, each person's
@@ -168,7 +170,7 @@ export default function LeaveTab() {
       </div>
 
       {deciding && <DecideModal {...deciding} onClose={() => setDeciding(null)} onDone={() => { setDeciding(null); reload(); }} />}
-      {editingHolidays && data && <HolidaysModal holidays={data.holidays} onClose={() => setEditingHolidays(false)} onDone={() => { setEditingHolidays(false); reload(); }} />}
+      {editingHolidays && data && <HolidaysModal onDone={() => { setEditingHolidays(false); reload(); }} />}
     </>
   );
 }
@@ -208,56 +210,12 @@ function DecideModal({ leave, decision, onClose, onDone }: { leave: Request; dec
   );
 }
 
-function HolidaysModal({ holidays, onClose, onDone }: { holidays: PublicHoliday[]; onClose: () => void; onDone: () => void }) {
-  const toast = useToast();
-  const [list, setList] = useState<PublicHoliday[]>(holidays);
-  const [draft, setDraft] = useState<PublicHoliday>({ date: '', name: '' });
-  const [busy, setBusy] = useState(false);
-  const thisYear = todayMyt().slice(0, 4);
-  const years = [...new Set([thisYear, ...list.map(h => h.date.slice(0, 4))])].sort();
-  const [shownYear, setShownYear] = useState(thisYear);
-  const add = () => {
-    if (!draft.date || !draft.name.trim()) return;
-    setList(l => [...l.filter(h => h.date !== draft.date), { date: draft.date, name: draft.name.trim() }].sort((a, b) => a.date.localeCompare(b.date)));
-    setShownYear(draft.date.slice(0, 4));
-    setDraft({ date: '', name: '' });
-  };
-
-  async function save() {
-    setBusy(true);
-    try {
-      await api.put('/leaves/holidays', list);
-      toast({ tone: 'success', title: 'Public holidays saved.', body: 'Balances now leave these days out.' });
-      onDone();
-    } catch (e) { notifyFailure(e); }
-    finally { setBusy(false); }
-  }
-
+/** The company's one public holiday list (shared with Pricing): leave balances leave out the ones marked Staff day off. */
+function HolidaysModal({ onDone }: { onDone: () => void }) {
   return (
-    <Modal title="Public holidays" sub="Add each holiday your staff get off, with its date for the year." onClose={onClose} width={560}
-      footer={<>
-        <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save list'}</Button>
-      </>}>
-      <div className="flex flex-col gap-4">
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-[160px_1fr_auto] items-end">
-          <DateField label="Date" value={draft.date} onChange={v => setDraft(d => ({ ...d, date: v }))} />
-          <Field label="Name" value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="Hari Merdeka" />
-          <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} disabled={!draft.date || !draft.name.trim()} onClick={add}>Add</Button>
-        </div>
-        <Select label="Year" showLabel size="sm" className="max-w-[160px]" value={shownYear} onChange={setShownYear} options={years.map(y => ({ value: y, label: y }))} />
-        <div className="flex flex-col">
-          {list.filter(h => h.date.startsWith(`${shownYear}-`)).length === 0 && <span className="text-copy text-muted-ink">None for {shownYear} yet.</span>}
-          {list.filter(h => h.date.startsWith(`${shownYear}-`)).map(h => (
-            <span key={h.date} className="flex items-center justify-between gap-3 min-h-10 text-copy [border-bottom:1px_solid_var(--color-line-soft)]">
-              <span>{h.name}</span>
-              <span className="flex items-center gap-2"><span className="text-muted-ink tabular-nums">{dayText(h.date)}</span>
-                <Button size="sm" variant="tertiary" aria-label={`Remove ${h.name}`} icon={<Icon name="X" size="sm" />} onClick={() => setList(l => l.filter(x => x.date !== h.date))}>Remove</Button>
-              </span>
-            </span>
-          ))}
-        </div>
-      </div>
+    <Modal title="Public holidays" sub="One list for the whole company, kept here and on Pricing. Balances leave out the ones marked Staff day off." onClose={onDone} width={720}
+      footer={<Button size="sm" variant="primary" onClick={onDone}>Done</Button>}>
+      <Suspense fallback={<TableSkeleton rows={4} cols={3} />}><HolidayList compact /></Suspense>
     </Modal>
   );
 }
