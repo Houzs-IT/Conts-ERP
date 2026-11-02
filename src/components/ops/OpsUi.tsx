@@ -246,6 +246,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   const office = !!user && !FIELD.includes(user.role) && user.role !== 'owner';
   const [f, setF] = useState({ unitId: unit?.id ?? '', skuId: '', title: '', category: '', jobType: 'normal' as 'normal' | 'urgent' | 'pass_key', severity: 'minor' as 'minor' | 'major', dueOn: '', needsParts: false, detail: '', assignee: '', from: '', to: '', windowNote: '' });
   const [lines, setLines] = useState<DraftLine[]>([]);
+  const [cats, setCats] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; window?: string; form?: string }>({});
@@ -255,6 +256,8 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   const catalog = useApi<{ data: CatalogItem[] }>(office ? '/maintenance/skus?active=1' : null);
   const items = (catalog.data?.data ?? []).filter(s => s.active);
   const fromClean = !!taskId;
+  // A cleaner's damage report can name several kinds of problem at once; each becomes its own job (Conts field app, Nov 2026).
+  const multi = fromClean && !office;
   const set = (p: Partial<typeof f>) => setF(x => ({ ...x, ...p }));
 
   /** The items picked (owner, 17 Oct 2026): the first one fills the kind of problem and, when nothing is written yet,
@@ -270,37 +273,45 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   /** A window's end three hours after its start, the same day, when the start is picked first. */
   const endFor = (start: string) => `${start.slice(0, 11)}${String(Math.min(23, Number(start.slice(11, 13)) + 3)).padStart(2, '0')}${start.slice(13)}`;
   async function submit() {
-    const bad = { unitId: f.unitId ? undefined : 'Pick the unit.', title: f.title.trim() ? undefined : 'Say what is wrong.', category: f.category ? undefined : 'Pick the kind of problem.',
+    const kinds = multi ? cats : f.category ? [f.category] : [];
+    const bad = { unitId: f.unitId ? undefined : 'Pick the unit.', title: f.title.trim() ? undefined : 'Say what is wrong.', category: kinds.length ? undefined : 'Pick the kind of problem.',
       window: (f.from || f.to) && !(f.from && f.to) ? 'Give the window a start and an end, or leave both empty.' : f.from && f.to && f.to <= f.from ? 'The window must end after it starts.' : undefined };
     if (bad.unitId || bad.title || bad.category || bad.window) { setError(bad); return; }
     setBusy(true); setError({});
-    let id: string, overlaps = 0;
+    const ids: string[] = [];
+    let overlaps = 0;
     try {
-      const r = await api.post<{ id: string; overlaps?: unknown[] }>('/maintenance/issues', {
-        unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category,
-        // Job type (staff comment sheet): the office has Pass key too; a cleaner reporting damage says Normal or Urgent.
-        ...(office ? { jobType: f.jobType, severity: f.severity, ...(f.dueOn ? { dueOn: f.dueOn } : {}), ...(f.needsParts ? { needsParts: true } : {}) } : { urgency: f.jobType === 'urgent' ? 'urgent' : 'normal' }),
-        reportSource: fromClean ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web',
-        ...(office && lines.some(l => l.itemId) ? { items: linesPayload(lines), ...(lines.find(l => l.itemId && l.itemId !== 'other') ? { skuId: lines.find(l => l.itemId && l.itemId !== 'other')!.itemId } : {}) } : {}),
-        ...(office && f.assignee.trim() ? { assigneeName: f.assignee.trim() } : {}),
-        ...(office && f.from && f.to ? { window: { startsAt: f.from, endsAt: f.to, note: f.windowNote.trim() || undefined } } : {}),
-      });
-      id = r.id; overlaps = r.overlaps?.length ?? 0;
+      for (const category of kinds) {
+        const r = await api.post<{ id: string; overlaps?: unknown[] }>('/maintenance/issues', {
+          unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category,
+          // Job type (staff comment sheet): the office has Pass key too; a cleaner reporting damage says Normal or Urgent.
+          ...(office ? { jobType: f.jobType, severity: f.severity, ...(f.dueOn ? { dueOn: f.dueOn } : {}), ...(f.needsParts ? { needsParts: true } : {}) } : { urgency: f.jobType === 'urgent' ? 'urgent' : 'normal' }),
+          reportSource: fromClean ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web',
+          ...(office && lines.some(l => l.itemId) ? { items: linesPayload(lines), ...(lines.find(l => l.itemId && l.itemId !== 'other') ? { skuId: lines.find(l => l.itemId && l.itemId !== 'other')!.itemId } : {}) } : {}),
+          ...(office && f.assignee.trim() ? { assigneeName: f.assignee.trim() } : {}),
+          ...(office && f.from && f.to ? { window: { startsAt: f.from, endsAt: f.to, note: f.windowNote.trim() || undefined } } : {}),
+        });
+        ids.push(r.id); overlaps = r.overlaps?.length ?? 0;
+      }
     } catch (e) {
-      const fields = e instanceof ApiFailure ? e.fields ?? {} : {};
-      const win = fields.windowStartsAt || fields.windowEndsAt;
-      setError({ unitId: fields.unitId, title: fields.title, category: fields.category, window: win,
-        form: fields.unitId || fields.title || fields.category || win ? undefined : errorMessage(e, 'Not saved. Try again.') });
-      setBusy(false); return;
+      // Jobs already saved stay saved: name the kinds that were not, rather than lose the ones that were.
+      if (ids.length) toast({ tone: 'warning', title: `${ids.length} of ${kinds.length} jobs added.`, body: `Not added: ${kinds.slice(ids.length).map(k => CATEGORY[k] ?? k).join(', ')}. ${errorMessage(e, 'Try again.')}` });
+      else {
+        const fields = e instanceof ApiFailure ? e.fields ?? {} : {};
+        const win = fields.windowStartsAt || fields.windowEndsAt;
+        setError({ unitId: fields.unitId, title: fields.title, category: fields.category, window: win,
+          form: fields.unitId || fields.title || fields.category || win ? undefined : errorMessage(e, 'Not saved. Try again.') });
+        setBusy(false); return;
+      }
     }
     if (overlaps) toast({ tone: 'warning', title: 'The repair window overlaps a reservation.', body: `It overlaps ${overlaps} ${overlaps === 1 ? 'reservation' : 'reservations'}. Make sure the guest agreed.` });
     // The job is saved; a photo that fails is named, not a reason to undo it.
     if (picked.files.length) {
       setSending(true);
-      const failed = await picked.send(id);
+      const failed = await picked.send(...ids);
       if (failed.length) toast({ tone: 'warning', title: 'Job added, but some photos were not.', body: `Not added: ${failed.join(', ')}. Add them in the job's photos, under The problem.` });
     }
-    onDone(id);
+    onDone(ids[0]);
   }
   const label = fromClean ? 'Report damage' : 'Add maintenance job';
   return (
@@ -317,13 +328,30 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
           <LinesEditor lines={lines} catalog={items} onChange={pickLines} money={false} />
         </FormRow>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        <FormRow label="Problem category" error={error.category}>
-          <select className={INPUT} value={f.category} onChange={e => { set({ category: e.target.value }); setError(x => ({ ...x, category: undefined })); }}>
-            <option value="" disabled>Pick one</option>
-            {Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
+      {multi && (
+        <FormRow label="Problem category" error={error.category} hint={cats.length > 1 ? `${cats.length} jobs will open, one for each, with the same photos.` : 'Pick one or more.'}>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(CATEGORY).map(([v, l]) => {
+              const on = cats.includes(v);
+              return (
+                <button key={v} type="button" aria-pressed={on} onClick={() => { setCats(cs => (on ? cs.filter(c => c !== v) : [...cs, v])); setError(x => ({ ...x, category: undefined })); }}
+                  className={cx('inline-flex items-center gap-1.5 h-11 px-3.5 rounded-pill border border-solid cursor-pointer font-sans text-copy font-medium', on ? 'bg-gold-tint border-[var(--color-gold)] text-ink' : 'bg-card border-line text-ink hover:bg-page')}>
+                  {on && <Icon name="Check" size="sm" />}{l}
+                </button>
+              );
+            })}
+          </div>
         </FormRow>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        {!multi && (
+          <FormRow label="Problem category" error={error.category}>
+            <select className={INPUT} value={f.category} onChange={e => { set({ category: e.target.value }); setError(x => ({ ...x, category: undefined })); }}>
+              <option value="" disabled>Pick one</option>
+              {Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </FormRow>
+        )}
         <FormRow label={office ? 'Job type' : 'Urgency'} hint={f.jobType === 'urgent' ? 'Affects the next guest; done first.' : f.jobType === 'pass_key' ? 'Hand over or collect a key.' : office ? 'Done in date order.' : undefined}>
           <select className={INPUT} value={f.jobType} onChange={e => set({ jobType: e.target.value as 'normal' | 'urgent' | 'pass_key' })}>
             <option value="normal">Normal</option><option value="urgent">Urgent</option>
@@ -400,15 +428,15 @@ export function usePickedMedia() {
     return Array.from(list).length - media.length;
   };
   const remove = (key: string) => setFiles(fs => { const f = fs.find(x => x.key === key); if (f?.preview) URL.revokeObjectURL(f.preview); return fs.filter(x => x.key !== key); });
-  /** Sends every picked file as a Before photo of the job, one request each, in order. Returns the names that failed;
-   *  the job itself is already saved, so a failed photo never undoes it. */
-  async function send(issueId: string): Promise<string[]> {
+  /** Sends every picked file as a Before photo of each job, one request each, in order. Returns the names that failed;
+   *  the jobs themselves are already saved, so a failed photo never undoes them. */
+  async function send(...issueIds: string[]): Promise<string[]> {
     const failed: string[] = [];
     for (const f of live.current) {
       if (f.state === 'done') continue;
       setFiles(fs => fs.map(x => (x.key === f.key ? { ...x, state: 'uploading' } : x)));
       try {
-        await uploadTo(`/maintenance/issues/${issueId}/photos`, { kind: 'before' })(f.file);
+        for (const issueId of issueIds) await uploadTo(`/maintenance/issues/${issueId}/photos`, { kind: 'before' })(f.file);
         setFiles(fs => fs.map(x => (x.key === f.key ? { ...x, state: 'done' } : x)));
       } catch (e) {
         failed.push(f.file.name);

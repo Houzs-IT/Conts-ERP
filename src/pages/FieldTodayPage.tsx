@@ -197,20 +197,6 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
     if (ok === null) return;
     void act('remove', () => api.del(`/tasks/${j.id}/photos/${m.id}`), m.kind === 'video' ? t.jobs.videoRemoved : t.jobs.photoRemoved);
   }
-  // Proof in is the last step of the job (owner, 27 Oct 2026): once photos went up the job is marked complete without
-  // another tap. If that call fails the error shows and the Mark complete button is still there.
-  async function afterUpload(uploaded: number) {
-    detail.reload(); onChanged();
-    if (uploaded === 0 || j.done) return;
-    setBusy('done');
-    try {
-      const d = await api.get<Detail>(`/housekeeping/tasks/${j.id}`);
-      await api.post(`/tasks/${j.id}/complete`, { photoIds: d.media.map(m => m.id) });
-      toast({ tone: 'success', title: t.jobs.doneThanks(j.unit.unitNumber) });
-      onChanged(); detail.reload();
-    } catch (e) { toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(e, t.jobs.checkSignal) }); }
-    finally { setBusy(null); }
-  }
   // Door codes stay with the office (housekeeping/tasks/[id].ts never sends them to field staff): only the instructions show.
   const access = detail.data?.access.length ? detail.data.access : j.accessInstruction ? [{ id: 'a', label: t.jobs.access, instruction: j.accessInstruction }] : [];
   const address = j.external?.address ?? j.addressLine;
@@ -298,7 +284,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
               phase === 'started' ? <StatusBadge tone="warning">{t.jobs.proofRequired}</StatusBadge>
                 : phase === 'proof' ? <StatusBadge tone="success"><span className="inline-flex items-center gap-1">{t.jobs.proofAttached}<Icon name="Check" size="sm" style={{ width: 13, height: 13 }} /></span></StatusBadge>
                 : undefined} />
-            {detail.data ? <MediaGallery items={detail.data.media} upload={j.done ? undefined : uploadTo(`/tasks/${j.id}/photos`)} onDone={n => void afterUpload(n)} repeat={false}
+            {detail.data ? <MediaGallery items={detail.data.media} upload={j.done ? undefined : uploadTo(`/tasks/${j.id}/photos`)} onDone={() => { detail.reload(); onChanged(); }}
               onRemove={j.done ? undefined : m => void remove(m)} addLabel={t.jobs.addPhoto} emptyText={t.jobs.noPhotos} />
               : <Skeleton height={84} />}
           </section>
