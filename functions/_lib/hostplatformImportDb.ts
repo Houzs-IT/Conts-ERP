@@ -200,11 +200,17 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
   // and digits, and only one such unit: it is that unit.
   const looseKey = (building: string, code: string) => unitKey(building, code.replace(/[^a-z0-9]/gi, ''));
   const loose = new Map<string, string | null>();
+  // A building renamed here (Agile to AGILE BUKIT BINTANG) keeps the id the listing import gave it, hp-prop-<slug of
+  // HostPlatform's name>; matching on the name alone refused every new booking there (C13-13A, 2 Nov 2026).
+  const pidOf = (building: string) => `id:hp-prop-${slug(building)}`;
   for (const u of snap.units) {
-    const k = looseKey(u.propertyName, u.unitNumber);
-    loose.set(k, loose.has(k) && loose.get(k) !== u.id ? null : u.id);
+    for (const k of [looseKey(u.propertyName, u.unitNumber), looseKey(`id:${u.propertyId}`, u.unitNumber)]) {
+      loose.set(k, loose.has(k) && loose.get(k) !== u.id ? null : u.id);
+    }
+    unitOf.set(unitKey(`id:${u.propertyId}`, u.unitNumber), u.id);
   }
-  const unitIdFor = (building: string, code: string): string | undefined => unitOf.get(unitKey(building, code)) ?? loose.get(looseKey(building, code)) ?? undefined;
+  const unitIdFor = (building: string, code: string): string | undefined => unitOf.get(unitKey(building, code)) ?? unitOf.get(unitKey(pidOf(building), code))
+    ?? loose.get(looseKey(building, code)) ?? loose.get(looseKey(pidOf(building), code)) ?? undefined;
 
   const ids = plan.reservations.map(r => r.id), refs = plan.reservations.map(r => r.externalRef);
   const existing = plan.reservations.length ? await db.all<{ id: string; external_ref: string | null; unit_id: string; state: string; check_out: string }>(`
