@@ -549,7 +549,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - [ ] Owner mockup (artifact 1vwc4QNboJAH4MN7eRF5Rk) could not be read by the agent; compare Drawings against it by eye.
 
 ## In-house SO import, The Conts brand (feat/inhouse-so-seed, no migration, 2 Nov 2026, docs/so-import/inhouse/)
-- Skyline Embassy: 18 SOs (one per quotation sheet, dated 31 Oct 2026, AutoCount 302-/481- accounts reused) and a renovation project per Owner Data unit; run by the one-off workflow so-inhouse-import.yml, remove it after.
+- Skyline Embassy written on production 2 Nov: TC-SO-2610-007..024 (18 SOs, RM 579,770.00, dated 31 Oct, AutoCount 302-/481- accounts reused) and 22 projects RN-2610-008..029 (Embassy + Other tab). The one-off workflow so-inhouse-import.yml stays for the KL 48 run; remove it after.
 - KL 48: 44 units ready (19 Type A, 25 Type B) but not written: the Owner Data holds no per-unit selling price; waiting for the owner. B-17-09, B-25-08, B-35-13A have no AutoCount customer / advance account.
 
 ## Notion SO import (feat/so-notion-import, no migration, 26 Oct 2026, docs/so-import/)
