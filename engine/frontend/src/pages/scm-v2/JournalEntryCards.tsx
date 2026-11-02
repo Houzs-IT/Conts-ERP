@@ -19,6 +19,7 @@
 
 import { useMemo, useState } from 'react';
 import { DEPARTMENT_OPTIONS, DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
+import { ProjectPicker, UnitPicker } from '../../conts/Pickers';
 import {
   useJournalEntryDetail, useCreateJournalEntry, usePostJournalEntry, useAccounts, leafAccounts,
   type JournalEntry, type JournalEntryLine, type JeLineIn,
@@ -76,12 +77,16 @@ export type DraftLine = {
   accountCode: string; debit: string; credit: string; notes: string;
   /* Conts: the line's department (spec 3.5), required before saving; a copy and an edit carry it. */
   department: Department | '';
+  /* Conts (chew 2 Nov 2026): the project or unit the line belongs to (a unit only on a Rental line). */
+  projectId?: number | null; unitId?: string | null;
   /* Carried by an EDIT only — the form has no party boxes, and a copy drops
      the party on purpose; an edit must not lose it. */
   partyType?: string | null; partyCode?: string | null; partyName?: string | null;
 };
-const EMPTY_LINE: DraftLine = { accountCode: '', debit: '', credit: '', notes: '', department: '' };
+const EMPTY_LINE: DraftLine = { accountCode: '', debit: '', credit: '', notes: '', department: '', projectId: null, unitId: null };
 const departmentOf = (d: string | null | undefined): Department | '' => (DEPARTMENT_OPTIONS.some((o) => o.value === d) ? (d as Department) : '');
+/** A line's project and unit, only when it has them (chew 2 Nov 2026). */
+const tagsOf = (l: JournalEntryLine): Pick<DraftLine, 'projectId' | 'unitId'> => ({ ...(l.project_id != null ? { projectId: l.project_id } : {}), ...(l.unit_id ? { unitId: l.unit_id } : {}) });
 
 /** What a copy carries into the draft form: the narration and the lines,
     never the date (a copy is a new month's) nor the party (the person on a
@@ -90,7 +95,7 @@ export type DraftSeed = { narration: string; lines: DraftLine[] };
 
 export const seedFromEntry = (je: JournalEntry, lines: JournalEntryLine[]): DraftSeed => ({
   narration: je.narration ?? '',
-  lines: lines.map((l) => ({ accountCode: l.account_code, debit: senToRm(l.debit_sen), credit: senToRm(l.credit_sen), notes: l.notes ?? '', department: departmentOf(l.department) })),
+  lines: lines.map((l) => ({ accountCode: l.account_code, debit: senToRm(l.debit_sen), credit: senToRm(l.credit_sen), notes: l.notes ?? '', department: departmentOf(l.department), ...tagsOf(l) })),
 });
 
 /** What an EDIT opens the form with: the entry itself (its number decides the
@@ -107,7 +112,7 @@ export const editSeedFromEntry = (je: JournalEntry, lines: JournalEntryLine[]): 
   lines: lines.map((l) => ({
     accountCode: l.account_code, debit: senToRm(l.debit_sen), credit: senToRm(l.credit_sen), notes: l.notes ?? '',
     partyType: l.party_type, partyCode: l.party_code, partyName: l.party_name,
-    department: departmentOf(l.department),
+    department: departmentOf(l.department), ...tagsOf(l),
   })),
 });
 
@@ -175,6 +180,8 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
           creditSen: rmToSen(l.credit) ?? 0,
           notes: l.notes.trim() || null,
           department: l.department || null,
+          ...(l.projectId != null ? { projectId: l.projectId } : {}),
+          ...(l.department === 'rental' && l.unitId ? { unitId: l.unitId } : {}),
           ...(l.partyType || l.partyCode || l.partyName
             ? { partyType: l.partyType ?? null, partyCode: l.partyCode ?? null, partyName: l.partyName ?? null }
             : {}),
@@ -224,7 +231,15 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
           <input style={{ ...fieldStyle, flex: 1, minWidth: 160 }} placeholder="Line note" aria-label={`Line ${i + 1} note`}
             value={l.notes} onChange={(e) => setLine(i, { notes: e.target.value })} />
           <DepartmentSelect style={{ ...fieldStyle, width: 140 }} label={`Line ${i + 1} department`} blank="Department…"
-            value={l.department} onChange={(d) => setLine(i, { department: d })} />
+            value={l.department} onChange={(d) => setLine(i, { department: d, unitId: d === 'rental' ? l.unitId ?? null : null })} />
+          <span style={{ width: 220 }}>
+            <ProjectPicker value={l.projectId ?? null} onChange={(id) => setLine(i, { projectId: id })} placeholder="No project" ariaLabel={`Line ${i + 1} project`} inputClass="" />
+          </span>
+          {l.department === 'rental' && (
+            <span style={{ width: 180 }}>
+              <UnitPicker value={l.unitId ?? null} onChange={(u) => setLine(i, { unitId: u })} ariaLabel={`Line ${i + 1} unit`} inputClass="" />
+            </span>
+          )}
           {lines.length > 2 && (
             <button type="button" style={btnStyle()} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</button>
           )}

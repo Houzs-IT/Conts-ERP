@@ -27,6 +27,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DEPARTMENT_OPTIONS, DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
+import { ProjectPicker, UnitPicker } from '../../conts/Pickers';
 import { Link } from 'react-router-dom';
 import { Ban, Pencil, Plus } from 'lucide-react';
 import { Button } from '@2990s/design-system';
@@ -165,7 +166,11 @@ const buildReceiptColumns = (h: {
 ];
 
 /* Conts: each line's department (finance phase 1, spec 3.5), required. */
-type Line = { rid: number; id?: string; description: string; creditAccountCode: string; amountSen: number; department: Department | '' };
+type Line = {
+  rid: number; id?: string; description: string; creditAccountCode: string; amountSen: number; department: Department | '';
+  /* Conts (chew 2 Nov 2026): the project or unit the money is for, e.g. a building deposit coming back. */
+  projectId: number | null; unitId: string | null;
+};
 const departmentOf = (d: unknown): Department | '' => (DEPARTMENT_OPTIONS.some((o) => o.value === d) ? (d as Department) : '');
 
 export const Receipts = () => {
@@ -211,7 +216,7 @@ export const Receipts = () => {
      last week's series. Blank is refused by the button, never defaulted here
      and sent as nothing. */
   const [receiptDate, setReceiptDate] = useState<string>(() => todayMyt());
-  const [lines, setLines] = useState<Line[]>([{ rid: 1, description: '', creditAccountCode: '', amountSen: 0, department: '' }]);
+  const [lines, setLines] = useState<Line[]>([{ rid: 1, description: '', creditAccountCode: '', amountSen: 0, department: '', projectId: null, unitId: null }]);
   const total = lines.reduce((s, l) => s + (l.amountSen > 0 ? l.amountSen : 0), 0);
   /* Editing a POSTED general receipt (owner 2026-09-07: 收钱的日期错了 → 做 b):
      the same form, seeded from the receipt, saved through PATCH — the server
@@ -230,14 +235,14 @@ export const Receipts = () => {
     setBank(receipt.bank_account_code);
     setReceiptDate(String(receipt.receipt_date).slice(0, 10));
     setLines(rows.length > 0
-      ? rows.map((l, i) => ({ rid: i + 1, id: l.id, description: l.description ?? '', creditAccountCode: l.credit_account_code, amountSen: Number(l.amount_sen), department: departmentOf((l as { department?: unknown }).department) }))
-      : [{ rid: 1, description: '', creditAccountCode: '', amountSen: 0, department: '' }]);
+      ? rows.map((l, i) => ({ rid: i + 1, id: l.id, description: l.description ?? '', creditAccountCode: l.credit_account_code, amountSen: Number(l.amount_sen), department: departmentOf((l as { department?: unknown }).department), projectId: (l as { project_id?: number | null }).project_id ?? null, unitId: (l as { unit_id?: string | null }).unit_id ?? null }))
+      : [{ rid: 1, description: '', creditAccountCode: '', amountSen: 0, department: '', projectId: null, unitId: null }]);
     setAdding(true);
   }, [editing, detailQ.data]);
   const closeForm = () => {
     setAdding(false); setEditing(null); seededFor.current = null;
     setPayer(''); setBank(''); setReceiptDate(todayMyt());
-    setLines([{ rid: 1, description: '', creditAccountCode: '', amountSen: 0, department: '' }]);
+    setLines([{ rid: 1, description: '', creditAccountCode: '', amountSen: 0, department: '', projectId: null, unitId: null }]);
     setKind('GENERAL'); setDebtorId(''); setDebtorAllocs({});
   };
   const patchLine = (rid: number, patch: Partial<Line>) =>
@@ -246,7 +251,7 @@ export const Receipts = () => {
   const save = async () => {
     const sendLines = lines
       .filter((l) => l.creditAccountCode && l.amountSen > 0)
-      .map((l) => ({ ...(l.description.trim() ? { description: l.description.trim() } : {}), creditAccountCode: l.creditAccountCode, amountSen: l.amountSen, department: l.department || undefined }));
+      .map((l) => ({ ...(l.description.trim() ? { description: l.description.trim() } : {}), creditAccountCode: l.creditAccountCode, amountSen: l.amountSen, department: l.department || undefined, ...(l.projectId != null ? { projectId: l.projectId } : {}), ...(l.department === 'rental' && l.unitId ? { unitId: l.unitId } : {}) }));
     try {
       if (!editing && kind === 'DEBTOR') {
         const res = await createDebtorReceipt.mutateAsync({
@@ -431,7 +436,7 @@ export const Receipts = () => {
               )
             )}
             {!debtorMode && lines.map((l) => (
-              <div key={l.rid} style={{ display: 'grid', gridTemplateColumns: `minmax(200px, 1fr) minmax(240px, 1fr) 160px 150px${editing ? ' auto' : ''}`, gap: 'var(--space-2)', alignItems: 'center' }}>
+              <div key={l.rid} style={{ display: 'grid', gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 'var(--space-2)', alignItems: 'center' }}>
                 <input placeholder="Description" value={l.description} className={styles.fieldInput}
                   onChange={(e) => patchLine(l.rid, { description: e.target.value })} />
                 <AccountSelect accounts={accounts} value={l.creditAccountCode} className={styles.fieldInput}
@@ -440,13 +445,19 @@ export const Receipts = () => {
                   aria-label={`line ${l.rid} amount`} inputClassName={styles.fieldInput}
                   onCommit={(sen) => patchLine(l.rid, { amountSen: sen ?? 0 })} />
                 <DepartmentSelect className={styles.fieldInput} label={`Line ${l.rid} department`} blank="Department…"
-                  value={l.department} onChange={(d) => patchLine(l.rid, { department: d })} />
+                  value={l.department} onChange={(d) => patchLine(l.rid, { department: d, unitId: d === 'rental' ? l.unitId : null })} />
+                <span style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                  <ProjectPicker value={l.projectId} onChange={(id) => patchLine(l.rid, { projectId: id })} placeholder="No project" ariaLabel={`Line ${l.rid} project`} inputClass={styles.fieldInput} />
+                  {l.department === 'rental' && (
+                    <UnitPicker value={l.unitId} onChange={(u) => patchLine(l.rid, { unitId: u })} ariaLabel={`Line ${l.rid} unit`} inputClass={styles.fieldInput} />
+                  )}
+                </span>
                 {editing && (l.id ? <LineFilesButton docType="receipt" docId={editing.id} lineId={l.id} canEdit={canEdit} /> : <span />)}
               </div>
             ))}
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
               {!debtorMode && (
-                <Button variant="ghost" size="sm" onClick={() => setLines((p) => [...p, { rid: Math.max(...p.map((x) => x.rid)) + 1, description: '', creditAccountCode: '', amountSen: 0, department: nextLineDepartment(p) }])}>
+                <Button variant="ghost" size="sm" onClick={() => setLines((p) => [...p, { rid: Math.max(...p.map((x) => x.rid)) + 1, description: '', creditAccountCode: '', amountSen: 0, department: nextLineDepartment(p), projectId: null, unitId: null }])}>
                   <Plus {...ICON} /> Line
                 </Button>
               )}

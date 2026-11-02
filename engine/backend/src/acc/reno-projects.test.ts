@@ -139,3 +139,76 @@ describe('GET /reno-projects', () => {
     expect((await a.request('/reno-projects?asOf=30/11/2026')).status).toBe(400);
   });
 });
+
+/* The close-out check on a handed-over project (SOP 4.2.2; plan 2026-11-02-renovation-close-out Task 3). */
+describe('close-out', () => {
+  const handedOver = (extraJes: Row[] = [], extraLines: Row[] = []) => {
+    const w = world();
+    w.tables.projects[0]!.handed_over_at = '2026-11-28T04:00:00Z';
+    w.tables.journal_entries.push(...extraJes);
+    w.tables.journal_entry_lines.push(...extraLines);
+    return w;
+  };
+  const dep = (id: string, je: string, dr: number, cr: number) => ({ id, company_id: CO, journal_entry_id: je, account_code: '330-0040', debit_sen: dr, credit_sen: cr, project_id: 7 });
+
+  it('is null before handover', async () => {
+    expect((await renoProjectRows(world(), CO, '2026-11-30'))[0]!.closeOut).toBeNull();
+  });
+
+  it('a deposit paid, part returned and the rest kept as cost clears; without the journal it shows', async () => {
+    const jes = [
+      { id: 'dp', company_id: CO, entry_date: '2026-11-04', posted: true },
+      { id: 'dr', company_id: CO, entry_date: '2026-11-29', posted: true },
+      { id: 'dk', company_id: CO, entry_date: '2026-11-29', posted: true },
+    ];
+    const paidAndPart = [dep('d1', 'dp', 100_000, 0), dep('d2', 'dr', 0, 80_000)];
+    const open = (await renoProjectRows(handedOver(jes.slice(0, 2), paidAndPart), CO, '2026-11-30'))[0]!.closeOut!;
+    expect(open.checks.find((c) => c.key === 'deposit')).toEqual({ key: 'deposit', ok: false, text: 'RM 200.00 deposit not returned' });
+    const cleared = (await renoProjectRows(handedOver(jes, [...paidAndPart, dep('d3', 'dk', 0, 20_000)]), CO, '2026-11-30'))[0]!.closeOut!;
+    expect(cleared.checks.find((c) => c.key === 'deposit')!.ok).toBe(true);
+  });
+
+  it('says what is still open on the example contract', async () => {
+    const r = (await renoProjectRows(handedOver(), CO, '2026-11-30'))[0]!.closeOut!;
+    expect(r.closed).toBe(false);
+    expect(r.checks.map((c) => c.ok)).toEqual([false, false, true, false]);
+    expect(r.checks[0]!.text).toContain('not yet received');
+  });
+
+  it('a contract signed before go-live: the deposit is unknown until the opening deposits are in', async () => {
+    const w = handedOver();
+    w.tables.reno_so_contracts[0]!.doc_date = '2026-08-01';
+    expect((await renoProjectRows(w, CO, '2026-11-30'))[0]!.closeOut!.checks[2]!.ok).toBeNull();
+    w.tables.journal_entries.push({ id: 'od', company_id: CO, source_type: 'OPENING_DEPOSITS', entry_date: '2026-10-31', posted: true });
+    expect((await renoProjectRows(w, CO, '2026-11-30'))[0]!.closeOut!.checks[2]!.ok).toBe(true);
+  });
+});
+
+/* Review fixes (2 Nov 2026): a contract signed before go-live counts what AutoCount collected, its opening invoices'
+   payments, and its AutoCount billing; a deposit is known when the opening balances carry none on 330-0040. */
+describe('close-out of a contract signed before go-live', () => {
+  const old = () => {
+    const w = world();
+    w.tables.projects[0]!.handed_over_at = '2026-11-28T04:00:00Z';
+    Object.assign(w.tables.reno_so_contracts[0]!, { doc_date: '2026-08-01', billed_before_golive_sen: 5_000_000 });
+    /* AutoCount invoiced RM 50,000; RM 10,000 of it was still open at go-live: an opening invoice of the project's customer. */
+    w.tables.sales_invoices.push({ id: 'op1', company_id: CO, so_doc_no: null, debtor_code: '301-M002', opening_balance: true, invoice_date: '2026-09-30', total_sen: 1_000_000, status: 'SENT' });
+    w.tables.sales_invoice_payments.push({ id: 'p9', company_id: CO, sales_invoice_id: 'op1', paid_at: '2026-11-15T02:00:00Z', amount_sen: 1_000_000 });
+    w.tables.acc_official_receipts.push({ company_id: CO, payment_source: 'SIPAY', payment_id: 'p9', status: 'FORMAL' });
+    return w;
+  };
+
+  it('counts AutoCount collection and the opening invoice paid since', async () => {
+    const r = (await renoProjectRows(old(), CO, '2026-11-30'))[0]!;
+    /* RM 40,000 before go-live + RM 10,000 on the opening invoice + RM 20,000 confirmed since on the new invoices. */
+    expect(r.receivedSen).toBe(7_000_000);
+  });
+
+  it('a deposit is known when the opening balances carry none on 330-0040', async () => {
+    const w = old();
+    expect((await renoProjectRows(w, CO, '2026-11-30'))[0]!.closeOut!.checks[2]!.ok).toBeNull();
+    w.tables.journal_entries.push({ id: 'op', company_id: CO, source_type: 'OPENING', entry_date: '2026-10-31', posted: true });
+    w.tables.journal_entry_lines.push({ id: 'o1', company_id: CO, journal_entry_id: 'op', account_code: '310-0001', debit_sen: 100, credit_sen: 0 });
+    expect((await renoProjectRows(w, CO, '2026-11-30'))[0]!.closeOut!.checks[2]!.ok).toBe(true);
+  });
+});

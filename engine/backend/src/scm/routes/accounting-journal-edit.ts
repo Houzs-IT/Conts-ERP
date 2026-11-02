@@ -33,6 +33,7 @@ import { dateOrNull } from '../lib/date-coerce';
 import { postJournal, reverseJournal, validateJournal, type EngineLine } from '../../acc/engine';
 import { ledgerDatesRefusal } from '../../acc/ledger-settings';
 import { DEFAULT_DEPARTMENT, type Department } from '../../acc/rules';
+import { readLineTags, unknownTags } from '../../conts/line-tags';
 
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -45,6 +46,8 @@ type LineIn = {
   partyName?: unknown;
   notes?: unknown;
   department?: unknown;
+  projectId?: unknown;
+  unitId?: unknown;
 };
 
 type Header = {
@@ -108,6 +111,16 @@ export const journalEntryEdit = async (c: Ctx) => {
   const entryDate = dateOrNull(body.entryDate) ?? String(je.entry_date).slice(0, 10);
   const narration = body.narration === undefined ? je.narration : text(body.narration);
   const lines = linesOf(body.lines);
+  /* Conts (chew 2 Nov 2026): each line's project or unit, checked as on a voucher line. */
+  const raw = Array.isArray(body.lines) ? (body.lines as LineIn[]) : [];
+  for (const [i, l] of lines.entries()) {
+    const t = readLineTags(raw[i] ?? {}, String(l.department ?? DEFAULT_DEPARTMENT), i + 1);
+    if ('error' in t) return c.json(t, 400);
+    l.projectId = t.projectId;
+    l.unitId = t.unitId;
+  }
+  const badTag = await unknownTags(sb, co.companyId, lines.map((l) => ({ projectId: l.projectId ?? null, unitId: l.unitId ?? null })));
+  if (badTag) return c.json(badTag, badTag.error === 'load_failed' ? 500 : 400);
   const draft = { companyId: co.companyId, entryDate, sourceType: 'MANUAL', sourceDocNo: null, narration, lines };
 
   /* 1 — validated before a single write: a bad edit reverses nothing. */
@@ -129,7 +142,7 @@ export const journalEntryEdit = async (c: Ctx) => {
   /* A draft has booked nothing: rewrite it in place, same number. */
   if (je.posted !== true) {
     const { data: oldLines, error: oldErr } = await sb.from('journal_entry_lines')
-      .select('journal_entry_id, line_no, account_code, debit_sen, credit_sen, party_type, party_code, party_name, notes, company_id, department')
+      .select('journal_entry_id, line_no, account_code, debit_sen, credit_sen, party_type, party_code, party_name, notes, company_id, department, project_id, unit_id')
       .eq('journal_entry_id', je.id);
     if (oldErr) return c.json({ error: 'load_failed', reason: oldErr.message }, 500);
     const { error: headErr } = await scopeToCompanyId(
@@ -151,6 +164,8 @@ export const journalEntryEdit = async (c: Ctx) => {
       party_name: l.partyName ?? null,
       notes: l.notes ?? null,
       department: l.department ?? DEFAULT_DEPARTMENT,
+      project_id: l.projectId ?? null,
+      ...(l.unitId ? { unit_id: l.unitId } : {}),
     })));
     if (insErr) {
       /* The old lines go back so the draft is never a header alone. */

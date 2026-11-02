@@ -107,6 +107,9 @@ export type JournalEntry = {
   created_at: string;
 };
 export type JournalEntryLine = {
+  /* Conts (chew 2 Nov 2026): the project or unit the line belongs to. */
+  project_id?: number | null;
+  unit_id?: string | null;
   id: string;
   journal_entry_id: string;
   line_no: number;
@@ -151,6 +154,9 @@ export type JeLineIn = {
   partyName?: string | null;
   notes?: string | null;
   department?: Department | null;
+  /* Conts (chew 2 Nov 2026): the project or unit the line belongs to. */
+  projectId?: number | null;
+  unitId?: string | null;
 };
 export const useCreateJournalEntry = () => {
   const qc = useQueryClient();

@@ -14,9 +14,10 @@ import { useAuth } from "../auth/AuthContext";
 import { useProjectLimit } from "./projectLimitQueries";
 import { alertsOf, kpisOf, useRenoProjects, type RenoProjectRow } from "./renoProjectsQueries";
 import { AlertSettingsPanel, CostChanges, ExpectedCostDialog, NeedsReview } from "./RenoCostReview";
+import { RenoCloseOut } from "./RenoCloseOut";
 import { CHANGE_KEY, useCostAlerts } from "./renoCostReviewQueries";
 
-type Tab = "projects" | "review" | "changes";
+type Tab = "projects" | "review" | "changes" | "closeout";
 
 const BAD = "var(--c-error, #b3261e)";
 const GOOD = "var(--c-success, #2F5D4F)";
@@ -161,6 +162,7 @@ export function RenoProjects() {
           { value: "projects", label: "Projects" },
           { value: "review", label: "Needs review", count: alerts.data?.alerts.length || undefined },
           { value: "changes", label: "Changes" },
+          { value: "closeout", label: "Close-out", count: (now.data?.rows ?? []).filter((r) => r.closeOut && !r.closeOut.closed).length || undefined },
         ]}
       />
       {tab === "review" && (
@@ -170,6 +172,7 @@ export function RenoProjects() {
         </>
       )}
       {tab === "changes" && <CostChanges />}
+      {tab === "closeout" && <RenoCloseOut rows={now.data?.rows ?? []} loading={now.isLoading} error={now.isError} />}
       {tab === "projects" && (<>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "var(--space-3)" }}>
         <Kpi label="Revised contracts (RM)" value={q.data ? rmShort(k.revisedSen) : "—"} note={q.data ? `${rows.length} project${rows.length === 1 ? "" : "s"}` : undefined} />
