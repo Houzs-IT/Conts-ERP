@@ -1,51 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { applyFor, forOfLines, nextLineUnit, whatSwitchingDrops } from "./voucherPurpose";
+import { TAG, departmentOf, lineForOf, nextLine, switchLine } from "./voucherPurpose";
 
-// Who a payment voucher is for (chew 2 Nov 2026; SOP 3.2; plan 2026-11-02-voucher-purpose Task 3): Rental, Renovation
-// or Company sets every line's department; Mixed keeps them per line. A new line takes the unit of the line above
-// unless changed by hand.
-const L = (department: "" | "rental" | "supply" | "shared", unitId: string | null = null) => ({ department, unitId });
+// Each payment voucher line says what it is for (chew 2 Nov 2026; plan 2026-11-02-voucher-line-purpose Task 2): a unit
+// (Rental), a project (its department follows the project) or the company. There is no voucher-wide For any more.
+const L = (department: "" | "rental" | "supply" | "shared", unitId: string | null = null, projectId: number | null = null) => ({ department, unitId, projectId });
+const customer = { funding: "customer", internalDepartment: null };
+const ownRental = { funding: "internal", internalDepartment: "rental" };
+const ownShowroom = { funding: "internal", internalDepartment: "supply" };
 
-describe("voucher purpose", () => {
-  it("reads the purpose from the lines", () => {
-    expect(forOfLines([L("rental"), L("rental")])).toBe("rental");
-    expect(forOfLines([L("supply")])).toBe("renovation");
-    expect(forOfLines([L("shared")])).toBe("company");
-    expect(forOfLines([L("rental"), L("shared")])).toBe("mixed");
-    expect(forOfLines([L(""), L("")])).toBe("");
-    expect(forOfLines([L("rental"), L("")])).toBe("mixed");
+describe("each line's For", () => {
+  it("the department follows the For and the project", () => {
+    expect(departmentOf("unit")).toBe("rental");
+    expect(departmentOf("company")).toBe("shared");
+    expect(departmentOf("project", customer)).toBe("supply");
+    expect(departmentOf("project", ownRental)).toBe("rental");
+    expect(departmentOf("project", ownShowroom)).toBe("supply");
+    expect(departmentOf("project", null)).toBe("supply");
   });
 
-  it("sets every line's department, and drops units off Rental", () => {
-    expect(applyFor([L("rental", "u1"), L("")], "rental")).toEqual([L("rental", "u1"), L("rental")]);
-    expect(applyFor([L("rental", "u1")], "company")).toEqual([L("shared")]);
-    expect(applyFor([L("rental", "u1")], "renovation")).toEqual([L("supply")]);
-    expect(applyFor([L("rental", "u1"), L("shared")], "mixed")).toEqual([L("rental", "u1"), L("shared")]);
+  it("an older voucher's line reads as Unit, Project or Company", () => {
+    expect(lineForOf(L("rental", "u1"))).toBe("unit");
+    expect(lineForOf(L("supply", null, 7))).toBe("project");
+    expect(lineForOf(L("rental", null, 8))).toBe("project");
+    expect(lineForOf(L("shared"))).toBe("company");
+    expect(lineForOf(L("rental"))).toBe("unit");
+    expect(lineForOf(L("supply"))).toBe("project");
   });
 
-  it("says what a switch would drop, so the screen can ask first", () => {
-    expect(whatSwitchingDrops([L("rental", "u1")], 7, "company")).toEqual(["the units", "the project"]);
-    expect(whatSwitchingDrops([L("rental", "u1")], null, "renovation")).toEqual(["the units"]);
-    expect(whatSwitchingDrops([L("supply")], 7, "rental")).toEqual(["the project"]);
-    expect(whatSwitchingDrops([L("supply")], 7, "renovation")).toEqual([]);
-    expect(whatSwitchingDrops([L("rental", "u1")], null, "rental")).toEqual([]);
+  it("switching drops what no longer applies", () => {
+    expect(switchLine({ ...L("rental", "u1"), note: "x" }, "project")).toEqual({ ...L("rental"), note: "x" });
+    expect(switchLine(L("supply", null, 7), "company")).toEqual(L("supply"));
+    expect(switchLine(L("supply", null, 7), "unit")).toEqual(L("supply"));
+    expect(switchLine(L("rental", "u1"), "unit")).toEqual(L("rental", "u1"));
   });
 
-  it("a new line takes the unit of the nearest line above that has one", () => {
-    expect(nextLineUnit([L("rental", "u1"), L("rental")])).toBe("u1");
-    expect(nextLineUnit([L("rental", "u1"), L("rental", "u2")])).toBe("u2");
-    expect(nextLineUnit([L("shared")])).toBeNull();
+  it("a new line copies the line above; the first starts on Company", () => {
+    expect(nextLine([])).toEqual({ for: "company", unitId: null, projectId: null });
+    expect(nextLine([L("rental", "u1")])).toEqual({ for: "unit", unitId: "u1", projectId: null });
+    expect(nextLine([L("rental", "u1"), L("supply", null, 7)])).toEqual({ for: "project", unitId: null, projectId: 7 });
   });
-});
 
-describe("the project a save sends (review 2)", () => {
-  it("only when the field is on screen: an AP payment, Renovation or Mixed", async () => {
-    const { projectShown } = await import("./voucherPurpose");
-    expect(projectShown("renovation", false)).toBe(true);
-    expect(projectShown("mixed", false)).toBe(true);
-    expect(projectShown("rental", true)).toBe(true);
-    expect(projectShown("rental", false)).toBe(false);
-    expect(projectShown("company", false)).toBe(false);
-    expect(projectShown("", false)).toBe(false);
+  it("tags read Rental, Renovation, Company", () => {
+    expect([TAG.rental, TAG.supply, TAG.shared]).toEqual(["Rental", "Renovation", "Company"]);
   });
 });

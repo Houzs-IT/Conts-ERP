@@ -1,56 +1,48 @@
-// Conts only: who a payment voucher is for (chew 2 Nov 2026; SOP 3.2; plan 2026-11-02-voucher-purpose-unit-project-
-// pickers.md Task 3). Rental, Renovation or Company sets every line's department (rental / supply / shared); Mixed
-// keeps them per line, as older vouchers and split bills have them. Only a Rental line names a unit; a new line takes
-// the unit of the line above unless it is changed by hand.
+// Conts only: what each payment voucher line is for (chew 2 Nov 2026; SOP 3.2; plan 2026-11-02-voucher-line-purpose).
+// A line names a unit (Rental), a project (Renovation, or the side the company's own project was made for) or the
+// company. There is no voucher-wide For: the department follows each line's choice, and every line can name its own
+// project. The server works out the same department (engine/backend payment-vouchers lineProjects).
 import type { Department } from "./department";
 
-export type VoucherFor = "rental" | "renovation" | "company" | "mixed";
-export const VOUCHER_FOR: ReadonlyArray<{ value: VoucherFor; label: string }> = [
-  { value: "rental", label: "Rental" },
-  { value: "renovation", label: "Renovation" },
+export type LineFor = "unit" | "project" | "company";
+export const LINE_FOR: ReadonlyArray<{ value: LineFor; label: string }> = [
+  { value: "unit", label: "Unit" },
+  { value: "project", label: "Project" },
   { value: "company", label: "Company" },
-  { value: "mixed", label: "Mixed" },
 ];
-const DEPARTMENT_OF: Record<Exclude<VoucherFor, "mixed">, Department> = { rental: "rental", renovation: "supply", company: "shared" };
-const FOR_OF: Record<Department, VoucherFor> = { rental: "rental", supply: "renovation", shared: "company" };
+/** The words on a line's department tag. */
+export const TAG: Record<Department, string> = { rental: "Rental", supply: "Renovation", shared: "Company" };
 
-type PurposeLine = { department: Department | ""; unitId: string | null };
+export type ProjectSide = { funding: string | null; internalDepartment: string | null };
+type PurposeLine = { department: Department | ""; unitId: string | null; projectId: number | null };
 
-/** The purpose the lines already have: "" when none is chosen yet. */
-export function forOfLines(lines: ReadonlyArray<PurposeLine>): VoucherFor | "" {
-  const set = new Set(lines.map((l) => l.department).filter(Boolean) as Department[]);
-  if (set.size === 0) return "";
-  /* Some lines chosen and some not is still being filled line by line: keep each line's own choice open. */
-  if (set.size > 1 || lines.some((l) => !l.department)) return "mixed";
-  return FOR_OF[[...set][0]!];
+/** A line's department: a unit is Rental, the company is Company; a project is Renovation unless it is the company's own
+    project made for a unit to rent out. */
+export function departmentOf(f: LineFor, project?: ProjectSide | null): Department {
+  if (f === "unit") return "rental";
+  if (f === "company") return "shared";
+  return project?.funding === "internal" && project.internalDepartment === "rental" ? "rental" : "supply";
 }
 
-/** Every line in the purpose's department; a line no longer Rental drops its unit. Mixed leaves the lines alone. */
-export function applyFor<T extends PurposeLine>(lines: ReadonlyArray<T>, f: VoucherFor): T[] {
-  if (f === "mixed") return [...lines];
-  const department = DEPARTMENT_OF[f];
-  return lines.map((l) => ({ ...l, department, unitId: department === "rental" ? l.unitId : null }));
+/** What a saved line is for: its unit, its project, else its department (an older voucher's Rental line with no unit is
+    a Unit line still to be filled in; a Renovation line with no project is a Project line still to be filled in). */
+export function lineForOf(l: PurposeLine): LineFor {
+  if (l.unitId) return "unit";
+  if (l.projectId != null) return "project";
+  if (l.department === "rental") return "unit";
+  if (l.department === "supply") return "project";
+  return "company";
 }
 
-/** What switching to `f` would throw away, in words, so the screen asks before it does. */
-export function whatSwitchingDrops(lines: ReadonlyArray<PurposeLine>, projectId: number | null, f: VoucherFor): string[] {
-  if (f === "mixed") return [];
-  const out: string[] = [];
-  if (f !== "rental" && lines.some((l) => l.unitId)) out.push("the units");
-  if (f !== "renovation" && projectId != null) out.push("the project");
-  return out;
+/** A line switched to another For keeps only what still applies. */
+export function switchLine<T extends { unitId: string | null; projectId: number | null }>(l: T, f: LineFor): T {
+  return { ...l, unitId: f === "unit" ? l.unitId : null, projectId: f === "project" ? l.projectId : null };
 }
 
-/** Whether the voucher's project field is on screen, and so whether a save sends the project: an AP payment (its bills
-    may name one), Renovation, or Mixed. Hidden, nothing is sent (a new voucher) or it is cleared (an edit), so a
-    project chosen earlier never rides along unseen. */
-export const projectShown = (f: VoucherFor | "", isApPayment: boolean): boolean => isApPayment || f === "renovation" || f === "mixed";
-
-/** The department a purpose puts on a new line ("" for Mixed or none chosen). */
-export const departmentFor = (f: VoucherFor | ""): Department | "" => (f && f !== "mixed" ? DEPARTMENT_OF[f] : "");
-
-/** A new line's unit: the nearest line above that has one (chew: 自动用回上一次的 unit, 除非手动更改). */
-export function nextLineUnit(lines: ReadonlyArray<PurposeLine>): string | null {
-  for (let i = lines.length - 1; i >= 0; i -= 1) if (lines[i]!.unitId) return lines[i]!.unitId;
-  return null;
+/** A new line: the For, unit and project of the line above (chew: the last unit is used again unless changed by hand); Company first. */
+export function nextLine(lines: ReadonlyArray<PurposeLine>): { for: LineFor; unitId: string | null; projectId: number | null } {
+  const above = lines[lines.length - 1];
+  if (!above) return { for: "company", unitId: null, projectId: null };
+  const f = lineForOf(above);
+  return { for: f, unitId: f === "unit" ? above.unitId : null, projectId: f === "project" ? above.projectId : null };
 }

@@ -5,6 +5,8 @@ import { authedFetch } from "../vendor/scm/lib/authed-fetch";
 
 export type ProjectOption = {
   id: number; code: string | null; name: string; funding: "customer" | "internal";
+  /* An internal project's side (rental: a unit to rent out; supply: the showroom), for a voucher line's tag. */
+  internal_department?: string | null;
   /* For the voucher's project picker (chew 2 Nov 2026): the customer, the contract's status, the handover, done. */
   customer_name: string | null; contract_status: string | null; planned_handover_date: string | null; handed_over_at: string | null;
   created_at: string | null; done: boolean;

@@ -7,7 +7,7 @@
    The server-side halves (money-account refusal, the roles window) are
    backend/src/scm/routes/accountRoles.test.ts. */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, test, vi } from 'vitest';
 
@@ -30,6 +30,14 @@ vi.mock('../../conts/ProjectLimitField', () => ({
 vi.mock('../../vendor/scm/components/ConfirmDialog', () => ({ useConfirm: () => vi.fn(async () => true) }));
 vi.mock('../../conts/Pickers', () => ({
   UnitPicker: ({ value, onChange, ariaLabel }: { value: string | null; onChange: (v: string | null) => void; ariaLabel: string }) => <input aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value || null)} />,
+  ProjectPicker: ({ value, onChange, ariaLabel }: { value: number | null; onChange: (v: number | null) => void; ariaLabel: string }) => <input aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)} />,
+}));
+/* The projects a line can name: 7 a customer's, 8 the company's own, made for a unit to rent out. */
+vi.mock('../../conts/projectLimitQueries', () => ({
+  useProjectOptions: () => ({ data: { projects: [
+    { id: 7, code: 'RN-7', name: 'ASTER HILL A-08-11', funding: 'customer', internal_department: null },
+    { id: 8, code: 'RN-8', name: 'OWN UNIT B-2-3', funding: 'internal', internal_department: 'rental' },
+  ] } }),
 }));
 vi.mock('../../vendor/scm/lib/payment-voucher-queries', () => ({
   useCreatePaymentVoucher: () => ({ mutateAsync, isPending: false }),
@@ -380,7 +388,7 @@ describe('the plain Payment Voucher (/new)', () => {
     expect(screen.getByText(/2 scanned file\(s\) will be attached/)).toBeTruthy();
     expect(screen.getByText(/tnb-page-1\.pdf, tnb-page-2\.jpg/)).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 'rental' } });
+    /* The line starts on Company: nothing more to choose before it saves. */
     fireEvent.click(screen.getByText('Create Voucher'));
     await waitFor(() => expect(uploadPvAsync).toHaveBeenCalledTimes(2));
     /* AFTER the create, onto ITS id, in scan order — sort_no is print order. */
@@ -438,7 +446,7 @@ describe('the plain Payment Voucher (/new)', () => {
       }]}><PaymentVoucherNew /></MemoryRouter>,
     );
     expect(screen.getByText('F3 saves')).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 'rental' } });
+    /* The line starts on Company: nothing more to choose before it saves. */
     const f3 = new KeyboardEvent('keydown', { key: 'F3', cancelable: true, bubbles: true });
     window.dispatchEvent(f3);
     expect(f3.defaultPrevented).toBe(true);
@@ -560,87 +568,154 @@ describe('the Customer Refund (?type=refund, §14)', () => {
   });
 });
 
-/* The department on each line (Conts, finance phase 1, spec 3.5): an expense voucher waits for one on every line,
-   a line added takes the one above's, a copy carries them, and the save sends them. */
-describe('departments on a plain voucher', () => {
-  const scanned = () => render(
+/* Each line says what it is for (chew 2 Nov 2026; plan 2026-11-02-voucher-line-purpose Task 3): no voucher-wide For;
+   a line picks Unit, Project or Company, its picker sits beside it, the department tag follows, and the save sends
+   each line's department with its unit or its project, never one the line no longer shows. */
+describe('each line says what it is for', () => {
+  const scanned = (lines: Array<{ description: string; amountSen: number }> = []) => render(
     <MemoryRouter initialEntries={[{
       pathname: '/scm/payment-vouchers/new',
       state: { billPrefill: {
         extraction: {
           vendorName: 'TENAGA NASIONAL BERHAD', vendorRegNo: null, documentKind: 'bill' as const,
           invoiceNumber: 'INV-77', invoiceDate: '2026-09-01', dueDate: null,
-          currency: 'MYR', totalSen: 15000, sstSen: null, lines: [],
+          currency: 'MYR', totalSen: 15000, sstSen: null, lines,
         },
         memory: { payeeName: 'TNB', debitAccountCode: '900-A002', purpose: 'OTHER', timesSeen: 3 },
       } },
     }]}><PaymentVoucherNew /></MemoryRouter>,
   );
+  const forOf = (n: number) => screen.getByRole('radiogroup', { name: `Line ${n} for` });
+  const setFor = (n: number, label: 'Unit' | 'Project' | 'Company') => fireEvent.click(within(forOf(n)).getByRole('radio', { name: label }));
+  const checked = (n: number) => within(forOf(n)).getAllByRole('radio').find((r) => r.getAttribute('aria-checked') === 'true')?.textContent;
+  const tag = (n: number) => screen.getByLabelText(`Line ${n} department`).textContent;
+  const save = () => fireEvent.click(screen.getByText('Create Voucher').closest('button')!);
+  const sent = () => mutateAsync.mock.calls[0]![0] as { lines: Array<Record<string, unknown>> } & Record<string, unknown>;
 
-  test('Create Voucher waits for the department, and the save sends it', async () => {
+  test('there is no For switch on the voucher; a line starts on Company and saves Shared with no unit or project', async () => {
     mutateAsync.mockClear();
     scanned();
-    const create = screen.getByText('Create Voucher').closest('button') as HTMLButtonElement;
-    expect(create.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 'rental' } });
-    expect(create.disabled).toBe(false);
-    fireEvent.click(create);
+    expect(screen.queryByText('For *')).toBeNull();
+    expect(screen.queryByRole('radio', { name: 'Rental' })).toBeNull();
+    expect(screen.queryByRole('radio', { name: 'Mixed' })).toBeNull();
+    expect(screen.getByLabelText('Line 1 department').tagName).not.toBe('SELECT');
+    expect(checked(1)).toBe('Company');
+    expect(tag(1)).toBe('Company');
+    save();
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
-    const payload = mutateAsync.mock.calls[0]![0] as { lines: Array<{ department?: string }> };
-    expect(payload.lines.map((l) => l.department)).toEqual(['rental']);
+    expect(sent().lines).toEqual([expect.objectContaining({ department: 'shared', unitId: null, projectId: null })]);
+    expect('projectId' in sent()).toBe(false);
   });
 
-  test('a copy carries each line\'s department', async () => {
+  test('a Unit line with its unit saves Rental and the unit', async () => {
+    mutateAsync.mockClear();
+    scanned();
+    setFor(1, 'Unit');
+    expect(tag(1)).toBe('Rental');
+    fireEvent.change(screen.getByLabelText('Line 1 unit'), { target: { value: 'u-a31' } });
+    save();
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    expect(sent().lines).toEqual([expect.objectContaining({ department: 'rental', unitId: 'u-a31', projectId: null })]);
+  });
+
+  test('saving a Unit line with no unit says "Pick the unit" and saves nothing', async () => {
+    mutateAsync.mockClear();
+    scanned();
+    setFor(1, 'Unit');
+    save();
+    expect(await screen.findByText('Pick the unit')).toBeTruthy();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  test('saving a Project line with no project says "Pick the project"', async () => {
+    mutateAsync.mockClear();
+    scanned();
+    setFor(1, 'Project');
+    save();
+    expect(await screen.findByText('Pick the project')).toBeTruthy();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  test('two lines on two projects save both: a customer project is Renovation, an internal rental project is Rental', async () => {
+    mutateAsync.mockClear();
+    scanned([{ description: 'TILES', amountSen: 10000 }, { description: 'PAINT', amountSen: 5000 }]);
+    setFor(1, 'Project');
+    expect(tag(1)).toBe('Renovation');
+    fireEvent.change(screen.getByLabelText('Line 1 project'), { target: { value: '7' } });
+    expect(tag(1)).toBe('Renovation');
+    setFor(2, 'Project');
+    fireEvent.change(screen.getByLabelText('Line 2 project'), { target: { value: '8' } });
+    expect(tag(2)).toBe('Rental');
+    save();
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    expect(sent().lines).toEqual([
+      expect.objectContaining({ description: 'TILES', projectId: 7, department: 'supply', unitId: null }),
+      expect.objectContaining({ description: 'PAINT', projectId: 8, department: 'rental', unitId: null }),
+    ]);
+    expect('projectId' in sent()).toBe(false);
+  });
+
+  test('switching a line drops what no longer applies; a new line copies the line above', async () => {
+    mutateAsync.mockClear();
+    scanned();
+    setFor(1, 'Unit');
+    fireEvent.change(screen.getByLabelText('Line 1 unit'), { target: { value: 'u-a31' } });
+    /* A new line takes Unit and the same unit. */
+    fireEvent.keyDown(screen.getByLabelText('line 1 amount'), { key: 'Insert' });
+    expect(checked(2)).toBe('Unit');
+    expect((screen.getByLabelText('Line 2 unit') as HTMLInputElement).value).toBe('u-a31');
+    /* Project, then back to Unit: the unit is gone. */
+    setFor(1, 'Project');
+    expect(screen.queryByLabelText('Line 1 unit')).toBeNull();
+    setFor(1, 'Unit');
+    expect((screen.getByLabelText('Line 1 unit') as HTMLInputElement).value).toBe('');
+    setFor(1, 'Company');
+    save();
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    /* Line 2 has no account or amount, so only line 1 goes. */
+    expect(sent().lines).toEqual([expect.objectContaining({ department: 'shared', unitId: null, projectId: null })]);
+  });
+
+  test('a copy carries each line\'s unit and project', async () => {
+    mutateAsync.mockClear();
     copySourceDetail = {
       paymentVoucher: {
         id: 'pv-9', pv_number: 'PV-2608-009', payee_name: 'TNB', voucher_date: '2026-08-01',
         credit_account_code: '320-1000', notes: null, currency: 'MYR', exchange_rate: 1, purpose: 'OTHER',
       },
-      lines: [{ description: 'Electricity Aug', debit_account_code: '900-A002', amount_sen: 45000, department: 'shared' }],
+      lines: [
+        { description: 'Aircon', debit_account_code: '900-A002', amount_sen: 45000, department: 'rental', unit_id: 'u-a31', project_id: null },
+        { description: 'Tiles', debit_account_code: '900-A002', amount_sen: 20000, department: 'supply', unit_id: null, project_id: 7 },
+        { description: 'Electricity', debit_account_code: '900-A002', amount_sen: 5000, department: 'shared', unit_id: null, project_id: null },
+      ],
       allocations: [],
     };
     try {
       draw('/scm/payment-vouchers/new?copyFrom=pv-9');
-      await waitFor(() => expect(screen.getByDisplayValue('Electricity Aug')).toBeTruthy());
-      /* A copy's lines all Shared: the voucher reads as for the Company (chew 2 Nov 2026). */
-      expect(screen.getByRole('radio', { name: 'Company' }).getAttribute('aria-checked')).toBe('true');
+      await waitFor(() => expect(screen.getByDisplayValue('Aircon')).toBeTruthy());
+      expect([checked(1), checked(2), checked(3)]).toEqual(['Unit', 'Project', 'Company']);
+      save();
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+      expect(sent().lines).toEqual([
+        expect.objectContaining({ department: 'rental', unitId: 'u-a31', projectId: null }),
+        expect.objectContaining({ department: 'supply', unitId: null, projectId: 7 }),
+        expect.objectContaining({ department: 'shared', unitId: null, projectId: null }),
+      ]);
     } finally {
       copySourceDetail = undefined;
     }
   });
 
-  /* Who it is for (chew 2 Nov 2026; plan 2026-11-02-voucher-purpose Task 3). */
-  test('Rental sets the department, offers a unit per line, and the save sends it', async () => {
+  test('an AP payment keeps its one project for the voucher, and no line For', async () => {
     mutateAsync.mockClear();
-    scanned();
-    fireEvent.click(screen.getByRole('radio', { name: 'Rental' }));
-    expect(screen.queryByLabelText('Line 1 department')).toBeNull();
-    fireEvent.change(screen.getByLabelText('Line 1 unit'), { target: { value: 'u-a31' } });
-    fireEvent.click(screen.getByText('Create Voucher').closest('button')!);
+    draw('/scm/payment-vouchers/new?type=ap');
+    expect(screen.queryByRole('radiogroup', { name: 'Line 1 for' })).toBeNull();
+    fireEvent.focus(screen.getByLabelText(/Supplier \*/));
+    fireEvent.mouseDown(screen.getByText('S001 · Foshan Chairs'));
+    fireEvent.click(screen.getByLabelText('Pay 2990-PI-2609-001 in full'));
+    fireEvent.click(screen.getByText('pick project 7'));
+    fireEvent.click(screen.getByText('Create AP Payment'));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
-    const payload = mutateAsync.mock.calls[0]![0] as { lines: Array<{ department?: string; unitId?: string | null }> };
-    expect(payload.lines).toMatchObject([{ department: 'rental', unitId: 'u-a31' }]);
-  });
-
-  test('Renovation needs the project before it saves', async () => {
-    mutateAsync.mockClear();
-    scanned();
-    fireEvent.click(screen.getByRole('radio', { name: 'Renovation' }));
-    expect(screen.queryByLabelText('Line 1 unit')).toBeNull();
-    fireEvent.click(screen.getByText('Create Voucher').closest('button')!);
-    await waitFor(() => expect(screen.getByText('Choose the project this renovation cost belongs to.')).toBeTruthy());
-    expect(mutateAsync).not.toHaveBeenCalled();
-  });
-
-  test('Company sends Shared with no unit', async () => {
-    mutateAsync.mockClear();
-    scanned();
-    fireEvent.click(screen.getByRole('radio', { name: 'Rental' }));
-    fireEvent.change(screen.getByLabelText('Line 1 unit'), { target: { value: 'u-a31' } });
-    fireEvent.click(screen.getByRole('radio', { name: 'Company' }));
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'Company' }).getAttribute('aria-checked')).toBe('true'));
-    fireEvent.click(screen.getByText('Create Voucher').closest('button')!);
-    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
-    expect((mutateAsync.mock.calls[0]![0] as { lines: unknown[] }).lines).toMatchObject([{ department: 'shared', unitId: null }]);
+    expect(sent().projectId).toBe(7);
   });
 });

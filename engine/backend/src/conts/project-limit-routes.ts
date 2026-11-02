@@ -114,7 +114,7 @@ export const listProjectsHandler = async (c: Ctx): Promise<Response> => {
   /* The voucher's project picker (chew 2 Nov 2026) sorts and labels by these: the customer, the contract's status (its
      sales order: the project's own status column is not kept up), the handover, and whether it is done. */
   const { data, error } = await sb.schema('public').from('projects')
-    .select('id, code, name, funding, customer_name, planned_handover_date, handed_over_at, closed_at, created_at')
+    .select('id, code, name, funding, internal_department, customer_name, planned_handover_date, handed_over_at, closed_at, created_at')
     .eq('company_id', co.companyId).order('id', { ascending: false }).limit(2000);
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   const rows = (data ?? []) as Array<Record<string, any>>;

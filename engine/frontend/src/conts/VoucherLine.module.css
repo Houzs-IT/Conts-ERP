@@ -1,0 +1,93 @@
+/* Conts only: one payment voucher line, left to right: For · Unit or Project · Account · Description · Amount · tag ·
+   remove (plan 2026-11-02-voucher-line-purpose Task 3). The columns are the same on every line, so they line up; a
+   narrow card wraps the line into rows. */
+.lines {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: max-content minmax(130px, 1.1fr) minmax(160px, 1.4fr) minmax(130px, 1.6fr) minmax(110px, 0.8fr) 96px 28px;
+  gap: var(--space-3);
+  align-items: end;
+  background: var(--c-paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line, rgba(34, 31, 32, 0.2));
+  border-radius: 8px;
+  overflow: hidden;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.segment {
+  padding: 6px 10px;
+  border: none;
+  border-left: 1px solid var(--line, rgba(34, 31, 32, 0.2));
+  background: transparent;
+  color: inherit;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.segment:first-child { border-left: none; }
+.segment[data-on="true"] {
+  background: var(--c-ink, #221f20);
+  color: var(--c-paper, #fff);
+  font-weight: 700;
+}
+.segment:disabled { cursor: default; }
+
+.none {
+  font-size: var(--fs-12);
+  color: var(--fg-muted);
+  padding: 6px 0;
+}
+
+.tag {
+  display: inline-block;
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line, rgba(34, 31, 32, 0.2));
+  font-size: var(--fs-11);
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+/* In the line's grid the tag sits level with the inputs beside it. */
+.row .tag { margin-bottom: 6px; }
+
+/* A narrower card: For on its own row, then three columns. */
+@container (max-width: 1040px) {
+  .row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .forCell { grid-column: 1 / -1; }
+}
+
+/* A phone: two columns. */
+@container (max-width: 560px) {
+  .row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
