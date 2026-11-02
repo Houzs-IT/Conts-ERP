@@ -6,6 +6,7 @@ import { unitLayoutSql, unitMattressesSql, unitLayout } from '../../_lib/unitLay
 import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, standardItems, windowsOnDay, mytToday, isDay, ensureTurnovers } from '../../_lib/cleaning';
 import { hasCleanPrices, priceBook, layoutKey } from '../../_lib/cleaningPrices';
 import { nextCheckIn } from '../../../src/lib/cleanOverdue';
+import { cleaningCheckoutSql } from '../../_lib/lateCheckout';
 
 /** GET /api/housekeeping/board?date=YYYY-MM-DD — the Cleaning screen for one day, one row per clean.
  *  Each row carries the guest leaving (check-out time, name, whether they have left) and the guest arriving
@@ -13,7 +14,10 @@ import { nextCheckIn } from '../../../src/lib/cleanOverdue';
  *  default times. Today also shows cleans left over from earlier days. `departures` are guests leaving that
  *  day with no clean planned yet; `repairs` are repair windows on that day. Grouping by building is the
  *  screen's job: every row carries its building. A guest is out only once staff tick it (or the booking is
- *  Checked out): past the checkout time the board shows the row red until they do (26 Oct 2026). Each clean carries its amount and cleaner pay; `external` lists cleans at outside addresses. */
+ *  Checked out): past the checkout time the board shows the row red until they do (26 Oct 2026). The checkout time is
+ *  the late checkout's once one is requested, paid or not (lib/lateCheckout cleaningCheckoutSql, 2 Nov 2026). With
+ *  nobody arriving that day, `nextLater` is the unit's next arrival on a later day, which the screen's order needs
+ *  (src/lib/cleanOrder.ts). Each clean carries its amount and cleaner pay; `external` lists cleans at outside addresses. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -30,9 +34,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (date > sixtyDaysOut) await ensureTurnovers(env, { from: today, to: date }, 50);
   if (date >= today) await ensureTurnovers(env, { from: today, to: sixtyDaysOut }, 50);
 
-  const [defaults, ready, layoutSql, priced, mattressSql] = await Promise.all([
+  const [defaults, ready, layoutSql, priced, mattressSql, prevOut, depOut] = await Promise.all([
     all<{ key: string; value: string }>(env, `SELECT key, value FROM settings WHERE key IN ('operations.checkIn','operations.checkOut','ops.check_in','ops.check_out')`),
-    taskCleanersReady(env), unitLayoutSql(env), hasCleanPrices(env), unitMattressesSql(env),
+    taskCleanersReady(env), unitLayoutSql(env), hasCleanPrices(env), unitMattressesSql(env), cleaningCheckoutSql(env, 'prev'), cleaningCheckoutSql(env, 'r'),
   ]);
   const pick = (a: string, b: string, d: string) => defaults.find(x => x.key === a)?.value ?? defaults.find(x => x.key === b)?.value ?? d;
   const stdIn = pick('operations.checkIn', 'ops.check_in', '15:00');
@@ -44,12 +48,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            t.assignee_id, t.cleaner_id, t.unit_id, t.reservation_id, ${when} AS day,
            u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
            COALESCE(cl.full_name, a.full_name) AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner, ${cleanerListSql(ready)} AS cleaner_list, ${rosterIdSql()} AS roster_id,
-           prev.id AS prev_id, prev.state AS prev_state, prev.check_out_time AS prev_time, prev.channel AS prev_channel,
+           prev.id AS prev_id, prev.state AS prev_state, ${prevOut.time} AS prev_time, prev.check_out_time AS prev_booked_time, ${prevOut.requested} AS prev_late_requested, prev.channel AS prev_channel,
            COALESCE(NULLIF(pg.full_name, ''), CASE WHEN prev.id IS NOT NULL THEN 'Guest' END) AS prev_guest,
            (SELECT l.occurred_at FROM audit_log l WHERE prev.state = 'checked_out' AND l.entity_table = 'reservations' AND l.entity_id = prev.id
               AND l.action = 'reservation.status' AND l.after_state LIKE '%"checked_out"%' ORDER BY l.occurred_at DESC LIMIT 1) AS prev_out_at,
            nxt.id AS next_id, nxt.check_in_time AS next_time, nxt.guests_count AS next_guests, nxt.channel AS next_channel,
            COALESCE(NULLIF(ng.full_name, ''), CASE WHEN nxt.id IS NOT NULL THEN 'Guest' END) AS next_guest,
+           later.check_in AS later_day, later.check_in_time AS later_time,
            (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id AND d.kind = 'photo') AS photos,
            (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id AND d.kind = 'video') AS videos,
            (SELECT COUNT(*)::int FROM task_checklist_items c WHERE c.task_id = t.id AND c.done_at IS NOT NULL) AS ticks,
@@ -71,6 +76,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       ORDER BY r.check_in_time LIMIT 1
     ) nxt ON TRUE
     LEFT JOIN guests ng ON ng.id = nxt.guest_id
+    LEFT JOIN LATERAL (${LATER_ARRIVAL_SQL('t.unit_id', when)}) later ON nxt.id IS NULL
     WHERE t.kind IN ${CLEAN_KINDS_SQL}
       AND (${when} = ? OR (? = ? AND ${when} < ? AND t.state != 'resolved'))
     ORDER BY p.name, u.unit_number`, date, date, today, date);
@@ -90,12 +96,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // Guests leaving that day with no clean on the unit: the gap the board must not hide.
   const departures = await all<any>(env, `
-    SELECT r.id, r.state, r.check_out_time, r.channel, u.id AS unit_id, u.unit_number, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
+    SELECT r.id, r.state, ${depOut.time} AS check_out_time, ${depOut.requested} AS late_requested, r.channel, u.id AS unit_id, u.unit_number, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
            COALESCE(NULLIF(g.full_name, ''), 'Guest') AS guest_name,
            (SELECT n.check_in_time FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_time,
            (SELECT n.id FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_id,
            (SELECT COALESCE(NULLIF(ng.full_name, ''), 'Guest') FROM reservations n LEFT JOIN guests ng ON ng.id = n.guest_id
-              WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_guest
+              WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_guest,
+           (SELECT x.check_in FROM (${LATER_ARRIVAL_SQL('r.unit_id', 'r.check_out')}) x) AS later_day,
+           (SELECT x.check_in_time FROM (${LATER_ARRIVAL_SQL('r.unit_id', 'r.check_out')}) x) AS later_time
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
     WHERE r.check_out = ? AND ${LIVE_STAY_SQL('r')} AND r.channel != 'owner_stay'
       AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.kind IN ${CLEAN_KINDS_SQL} AND (t.reservation_id = r.id OR (t.unit_id = r.unit_id AND ${when} = r.check_out)))
@@ -112,8 +120,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     generatedAt: nowIso(), date, today, defaults: { checkIn: stdIn, checkOut: stdOut },
     defaultPrices: { standard: Number(prices?.std ?? 8000), deep: Number(prices?.deep ?? 13800) },
     rows: rows.map(r => {
-      // The guest is out when the booking is Checked out or someone pressed "Guest left" on the clean.
-      const leftAt: string | null = r.guest_left_at ?? r.prev_out_at ?? (r.prev_state === 'checked_out' ? r.day + 'T' + (r.prev_time || stdOut) + ':00+08:00' : null);
+      // The guest is out when the booking is Checked out or someone pressed "Guest left" on the clean. When nobody recorded
+      // the moment (an import or a sync checked the booking out), there is no time to show: the checkout time is not one.
+      const leftAt: string | null = r.guest_left_at ?? r.prev_out_at ?? null;
       const guestOut = !!r.guest_left_at || r.prev_state === 'checked_out';
       const p = price(r.unit_id, r.kind, layoutKey(r.layout_type, r.bedrooms), r.day);
       // The next guest's real check-in (src/lib/cleanOverdue.ts): the card, time left, the order and overdue all read it.
@@ -134,13 +143,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         unit: unitLayout(r),
         previous: r.prev_id ? {
           reservationId: r.prev_id, guestName: r.prev_guest, state: r.prev_state, channel: r.prev_channel,
-          checkOutTime: r.prev_time || stdOut, lateCheckOut: !!r.prev_time && r.prev_time > stdOut,
+          checkOutTime: r.prev_time || stdOut, lateCheckOut: !!r.prev_time && r.prev_time > stdOut, lateCheckOutUnpaid: !!r.prev_late_requested,
         } : null,
         next: r.next_id ? {
           reservationId: r.next_id, guestName: r.next_guest, guests: Number(r.next_guests ?? 0), channel: r.next_channel,
           checkInTime: cin!, earlyCheckIn: cin! < stdIn, checkInAt: at(r.day, cin, stdIn),
         } : null,
-        guestOut, guestLeftAt: leftAt, guestLeftAuto: (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_time || stdOut}:00+08:00`),
+        nextLater: !r.next_id && r.later_day ? { day: r.later_day, checkInTime: r.later_time || stdIn } : null,
+        guestOut, guestLeftAt: leftAt, guestLeftAuto: (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_booked_time || stdOut}:00+08:00`),
         // What the clean is charged (external) and what the cleaner is paid (internal): the job's own, else the price table.
         amount: r.amount ?? p.external, cleanerPay: r.cleaner_pay ?? p.internal, priceSource: r.amount != null ? 'job' : p.source, external: null,
         startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
@@ -150,9 +160,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }),
     departures: departures.map(d => ({
       reservationId: d.id, state: d.state, channel: d.channel, guestName: d.guest_name,
-      checkOutTime: d.check_out_time || stdOut, lateCheckOut: !!d.check_out_time && d.check_out_time > stdOut,
+      checkOutTime: d.check_out_time || stdOut, lateCheckOut: !!d.check_out_time && d.check_out_time > stdOut, lateCheckOutUnpaid: !!d.late_requested,
       unitId: d.unit_id, unitNumber: d.unit_number, buildingId: d.property_id, propertyName: d.property_name, unit: unitLayout(d),
       next: d.next_time ? { reservationId: d.next_id, guestName: d.next_guest, checkInTime: d.next_time, checkInAt: at(date, d.next_time, stdIn), earlyCheckIn: d.next_time < stdIn } : null,
+      nextLater: !d.next_time && d.later_day ? { day: d.later_day, checkInTime: d.later_time || stdIn } : null,
     })),
     repairs,
     externalEnabled: priced,
@@ -163,7 +174,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       assigneeId: r.assignee_id, cleanerId: r.cleaner_id ?? null,
       cleaners: parseCleaners(r.cleaner_list, { cleanerId: r.roster_id ?? null, userId: r.assignee_id ?? null, name: r.assignee_name ?? null }),
       assigneeName: parseCleaners(r.cleaner_list).map(c => c.name).join(', ') || r.assignee_name || null,
-      unit: { bedrooms: null, bathrooms: null, size: null, layout: null }, previous: null, next: null,
+      unit: { bedrooms: null, bathrooms: null, size: null, layout: null }, previous: null, next: null, nextLater: null,
       guestOut: false, guestLeftAt: null, guestLeftAuto: false, startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
       photoCount: Number(r.photos), videoCount: Number(r.videos), checklist: { done: 0, total: 0 },
       amount: r.amount, cleanerPay: r.cleaner_pay, priceSource: 'job',
@@ -171,5 +182,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     })),
   });
 };
+
+/** The unit's next guest arriving after `day` (a stay still to come), soonest first: for the order of the day's jobs. */
+const LATER_ARRIVAL_SQL = (unit: string, day: string) => `SELECT r.check_in, r.check_in_time FROM reservations r
+  WHERE r.unit_id = ${unit} AND r.check_in > ${day} AND ${LIVE_STAY_SQL('r')} AND r.state NOT IN ('checked_in','checked_out')
+  ORDER BY r.check_in, r.check_in_time LIMIT 1`;
 
 const plusDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
