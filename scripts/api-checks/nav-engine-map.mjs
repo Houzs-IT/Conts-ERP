@@ -139,5 +139,17 @@ check('the engine Beta Calendar keeps its own entry highlighted', M.menuPathFor(
 const betaItems = M.navFor('management', true).flatMap((g) => g.items).filter((i) => i.path?.startsWith('/beta/'));
 check('the Beta menu says Project list and has no Home', betaItems.map((i) => i.label).join(', ') === 'Project list, Calendar', betaItems.map((i) => i.label).join(', '));
 
+// Finance in eight groups (chew, 2 Nov 2026), the same in both sidebars; every engine finance screen is on it once.
+for (const ws of ['rental', 'supply']) {
+  const fin = M.navFor('management', true).filter((g) => g.workspace === ws && g.label.startsWith('FINANCE'));
+  check(`${ws}: Finance is eight groups, in order`, fin.map((g) => g.label).join('|') === 'FINANCE · TO APPROVE|FINANCE · SUPPLIERS|FINANCE · RENTAL BILLS|FINANCE · BILLING|FINANCE · COLLECTIONS|FINANCE · BANK|FINANCE · REPORTS|FINANCE · SETUP', fin.map((g) => g.label).join('|'));
+  const prefix = ws === 'rental' ? '/finance' : '/supply/finance';
+  const onMenu = fin.flatMap((g) => g.items.map((i) => i.path));
+  const missing = M.LEDGER_SCREENS.filter((s) => onMenu.filter((p) => p === `${prefix}/${s.slug}`).length !== 1).map((s) => s.slug);
+  check(`${ws}: every ledger screen is on the Finance menu exactly once`, missing.length === 0, missing.join(' '));
+  check(`${ws}: Payment requests opens the engine's payment requests`, M.ENGINE_PATH[`${prefix}/payment-requests`] === '/scm/payment-requests', String(M.ENGINE_PATH[`${prefix}/payment-requests`]));
+}
+check('operations staff see no Finance group', !M.navFor('operations_staff', true).some((g) => g.label.startsWith('FINANCE')));
+
 console.log(fails ? `\n${fails} failed` : '\nall passed');
 process.exit(fails ? 1 : 0);

@@ -16,6 +16,25 @@ export const LEDGER_SCREENS: readonly LedgerScreen[] = [
   { slug: 'item-group-accounts', label: 'Item group accounts', enginePath: '/scm/accounting?tab=groups' },
   // The day the books start and the fiscal year end (finance phase 1, PR 6).
   { slug: 'ledger-setup', label: 'Ledger setup', enginePath: '/scm/ledger-setup' },
+  // Every other finance screen in the engine (chew, 2 Nov 2026: Payment requests could not be found; the menu lacked them).
+  { slug: 'payment-requests', label: 'Payment requests', enginePath: '/scm/payment-requests' },
+  { slug: 'limit-requests', label: 'Limit requests', enginePath: '/scm/limit-requests' },
+  { slug: 'petty-cash', label: 'Petty cash', enginePath: '/scm/petty-cash' },
+  { slug: 'ap-invoices', label: 'AP invoices', enginePath: '/scm/ap-invoices' },
+  { slug: 'supplier-ledger', label: 'Supplier ledger', enginePath: '/scm/party-ledger?kind=creditor' },
+  { slug: 'deposit-invoices', label: 'Deposit invoices', enginePath: '/scm/deposit-invoices' },
+  { slug: 'other-debtors', label: 'Other debtors', enginePath: '/scm/other-debtors' },
+  { slug: 'credit-debit-notes', label: 'Credit / debit notes', enginePath: '/scm/credit-notes' },
+  { slug: 'not-yet-billed', label: 'Not yet billed', enginePath: '/scm/unbilled-deliveries' },
+  { slug: 'e-invoice', label: 'E-invoice', enginePath: '/scm/einvoice' },
+  { slug: 'official-receipts', label: 'Official receipts', enginePath: '/scm/official-receipts' },
+  { slug: 'debtors', label: 'Debtors', enginePath: '/scm/debtors' },
+  { slug: 'customer-ledger', label: 'Customer ledger', enginePath: '/scm/party-ledger?kind=debtor' },
+  { slug: 'outstanding', label: 'Outstanding', enginePath: '/scm/outstanding' },
+  { slug: 'daily-bank', label: 'Daily bank', enginePath: '/scm/daily-bank' },
+  { slug: 'merchant-recon', label: 'Merchant recon', enginePath: '/scm/merchant-recon' },
+  { slug: 'rental-unit-costs', label: 'Rental unit costs', enginePath: '/scm/rental-unit-costs' },
+  { slug: 'renovation-projects', label: 'Renovation projects', enginePath: '/scm/reno-projects' },
 ];
 
 function ledgerPaths(prefix: string): Record<string, string> {

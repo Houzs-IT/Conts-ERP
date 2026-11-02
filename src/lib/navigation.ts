@@ -30,7 +30,9 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
 /** The Dream Crafter group that holds IT Support and Category access. It shares its label with the Rental System group,
  *  so anything keyed by group label must also use the workspace. */
 const SUPPLY_SYSTEM = 'SYSTEM';
-const SUPPLY_FINANCE = 'FINANCE';
+/** Finance is eight groups in both sidebars (chew, 2 Nov 2026: one long Finance list was hard to read). */
+const FINANCE_PREFIX = 'FINANCE';
+const isFinanceGroup = (label: string): boolean => label === FINANCE_PREFIX || label.startsWith(`${FINANCE_PREFIX} · `);
 
 export type SettingsSectionKey = 'company' | 'operations' | 'locale' | 'report' | 'agreement' | 'approvals' | 'services' | 'security';
 
@@ -54,23 +56,42 @@ const LEDGER_ICON: Record<string, string> = {
   'journal-entries': 'notebook-pen', 'general-ledger': 'book-open-text', 'trial-balance': 'scale',
   'profit-and-loss': 'chart-line', 'balance-sheet': 'columns-2', 'debtor-ageing': 'user-round-check',
   'creditor-ageing': 'truck', 'chart-of-accounts': 'list-tree', 'item-group-accounts': 'boxes', 'ledger-setup': 'settings',
+  'payment-requests': 'file-input', 'limit-requests': 'gauge', 'petty-cash': 'piggy-bank', 'ap-invoices': 'file-text',
+  'supplier-ledger': 'book-user', 'deposit-invoices': 'file-plus', 'other-debtors': 'users', 'credit-debit-notes': 'file-minus',
+  'not-yet-billed': 'hourglass', 'e-invoice': 'badge-check', 'official-receipts': 'receipt-text', 'debtors': 'contact',
+  'customer-ledger': 'book-user', 'outstanding': 'clock', 'daily-bank': 'calendar-days', 'merchant-recon': 'credit-card',
+  'rental-unit-costs': 'building-2', 'renovation-projects': 'hammer',
 };
 
-/** The Finance group, in both sidebars: finance's own desk screens (area Finance) and the company ledger's screens
- *  in the engine (area Ledger, finance phase 1). `prefix` is where the side keeps them; `keySuffix` keeps the menu
- *  keys unique across the two sides. */
-export function financeItems(prefix: '/finance' | '/supply/finance', keySuffix: '' | 'Supply'): NavItem[] {
-  return [
-    { key: `payables${keySuffix}`, label: 'Accounts payable', icon: 'wallet', path: `${prefix}/payables`, area: 'finance' },
+/** The Finance groups, in order, each by its screens: finance's own desk screens by key, the ledger's by slug
+ *  (chew, 2 Nov 2026). Every ledger screen is in exactly one group. */
+const FINANCE_LAYOUT: Array<[group: string, entries: string[]]> = [
+  ['TO APPROVE', ['desk:approvals', 'payment-requests', 'limit-requests', 'petty-cash']],
+  ['SUPPLIERS', ['ap-invoices', 'payment-vouchers', 'supplier-ledger', 'creditor-ageing']],
+  ['RENTAL BILLS', ['desk:payables', 'desk:utilityBills']],
+  ['BILLING', ['deposit-invoices', 'other-debtors', 'credit-debit-notes', 'not-yet-billed', 'e-invoice']],
+  ['COLLECTIONS', ['money-received', 'official-receipts', 'debtors', 'customer-ledger', 'outstanding', 'debtor-ageing']],
+  ['BANK', ['daily-bank', 'bank-reconciliation', 'merchant-recon']],
+  ['REPORTS', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'renovation-projects']],
+  ['SETUP', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup']],
+];
+
+export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix: '' | 'Supply', workspace: Workspace): NavGroup[] {
+  const desk: Record<string, NavItem> = {
+    payables: { key: `payables${keySuffix}`, label: 'Accounts payable', icon: 'wallet', path: `${prefix}/payables`, area: 'finance' },
     // Staff could not find where utilities go (comment sheet, Oct 2026): the month's bills of every unit, on Accounts payable.
-    { key: `utilityBills${keySuffix}`, label: 'Utility bills', icon: 'zap', path: `${prefix}/utility-bills`, area: 'finance' },
+    utilityBills: { key: `utilityBills${keySuffix}`, label: 'Utility bills', icon: 'zap', path: `${prefix}/utility-bills`, area: 'finance' },
     // What each unit earned and spent, in two layers (chew, 28 Oct 2026: it belongs in Finance).
-    { key: `unitPnl${keySuffix}`, label: 'Unit P&L', icon: 'chart-column', path: `${prefix}/unit-pnl`, area: 'finance' },
-    { key: `approvals${keySuffix}`, label: 'Approvals', icon: 'stamp', path: `${prefix}/approvals`, area: 'finance', badge: 'approvals' },
-    ...LEDGER_SCREENS.map(s => ({
-      key: `ledger_${s.slug}${keySuffix}`, label: s.label, icon: LEDGER_ICON[s.slug] ?? 'book-open', path: `${prefix}/${s.slug}`, area: 'ledger',
-    })),
-  ];
+    unitPnl: { key: `unitPnl${keySuffix}`, label: 'Unit P&L', icon: 'chart-column', path: `${prefix}/unit-pnl`, area: 'finance' },
+    approvals: { key: `approvals${keySuffix}`, label: 'Approvals', icon: 'stamp', path: `${prefix}/approvals`, area: 'finance', badge: 'approvals' },
+  };
+  const ledger = new Map(LEDGER_SCREENS.map(s => [s.slug, {
+    key: `ledger_${s.slug}${keySuffix}`, label: s.label, icon: LEDGER_ICON[s.slug] ?? 'book-open', path: `${prefix}/${s.slug}`, area: 'ledger',
+  } as NavItem]));
+  return FINANCE_LAYOUT.map(([group, entries]) => ({
+    label: `${FINANCE_PREFIX} · ${group}`, workspace, phone: false,
+    items: entries.map(e => (e.startsWith('desk:') ? desk[e.slice(5)] : ledger.get(e))).filter((i): i is NavItem => !!i),
+  }));
 }
 
 export const NAV: NavGroup[] = [
@@ -120,7 +141,7 @@ export const NAV: NavGroup[] = [
     { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'owners' },
   ] },
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
-  { label: 'FINANCE', workspace: 'rental', phone: false, items: financeItems('/finance', '') },
+  ...financeGroups('/finance', '', 'rental'),
   { label: 'GROWTH', workspace: 'rental', items: [
     { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'pricing', full: true },
     { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'pricing' },
@@ -216,7 +237,7 @@ export const NAV: NavGroup[] = [
   ] },
   // The same Finance as in Rental (finance phase 1): one set of company books for both sides, so the supply chain
   // sidebar stays put while finance works.
-  { label: SUPPLY_FINANCE, workspace: 'supply', phone: false, items: financeItems('/supply/finance', 'Supply') },
+  ...financeGroups('/supply/finance', 'Supply', 'supply'),
   // The same IT Support screen as under System, at its own address so the supply chain sidebar stays put.
   // A Property OS screen, not an engine one: the engine must not call a Houzs address (CLAUDE.md).
   // Category access sets, per person, which product categories the renovation beta screens show (management only, so Full on Users and roles).
@@ -295,7 +316,7 @@ export function navFor(role: UserRole, engine = false, access?: Record<string, A
   const groups = navGroups(role, engine, access);
   // IT Support and Finance are in the supply chain sidebar only so it stays put; alone they must not open the
   // supply chain workspace to someone with no supply chain screens (Finance is then in Rental only).
-  const shared = (g: NavGroup) => g.workspace === 'supply' && (g.label === SUPPLY_SYSTEM || g.label === SUPPLY_FINANCE);
+  const shared = (g: NavGroup) => g.workspace === 'supply' && (g.label === SUPPLY_SYSTEM || isFinanceGroup(g.label));
   const supplyWork = groups.some(g => g.workspace === 'supply' && !shared(g));
   return supplyWork ? groups : groups.filter(g => !shared(g));
 }
