@@ -34,7 +34,7 @@ export default function ViewAsOwnerPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div role="status" className="sticky top-0 z-10 flex items-center gap-3 flex-wrap rounded-card bg-black text-white px-4 py-3">
+      <div role="status" className="md:sticky md:top-0 md:z-10 flex items-center gap-3 flex-wrap rounded-card bg-black text-white px-4 py-3">
         <Icon name="Eye" size="sm" color="var(--color-gold)" />
         <span className="flex flex-col gap-px min-w-0 flex-1">
           <span className="text-copy font-semibold [overflow-wrap:anywhere]">Viewing as {name}</span>
@@ -42,7 +42,7 @@ export default function ViewAsOwnerPage() {
         </span>
         <Button size="sm" variant="secondary" icon={<Icon name="X" size="sm" />} onClick={exit}>Exit</Button>
       </div>
-      <OwnerPortalPage viewAs={{ ownerId: owner.id, ownerName: name }} />
+      <OwnerPortalPage source={{ kind: 'viewAs', ownerId: owner.id, ownerName: name }} />
     </div>
   );
 }

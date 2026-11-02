@@ -106,7 +106,7 @@ export const dateShort = (iso: string) => {
   return `${p.d} ${MONTHS[p.m]}`;
 };
 
-/** Sunday, 25 October 2026 — the Owner Showcase's headline date. */
+/** Sunday, 25 October 2026: a long weekday date. */
 export const dateLong = (iso: string) => {
   const p = mytParts(iso);
   const day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()];

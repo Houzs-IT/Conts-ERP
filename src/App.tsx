@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { readDevice } from './lib/deviceClass';
 import { CrashScreen } from './components/CrashScreen';
 import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -19,13 +19,12 @@ import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
-const OwnerShowcasePage = lazy(() => import('./pages/showcase/OwnerShowcasePage'));
 // Staging only (it renders nothing elsewhere), so it stays out of the entry script.
 const ViewAs = lazy(() => import('./components/ViewAs'));
 const OwnerBPage = lazy(() => import('./pages/ownerB/OwnerBPage'));
 const OwnerBProfile = lazy(() => import('./pages/ownerB/OwnerBProfile'));
 const ViewAsOwnerPage = lazy(() => import('./pages/ownerB/ViewAsOwnerPage'));
-const OwnerPortalDemoPage = lazy(() => import('./pages/showcase/OwnerPortalPage'));
+const SampleOwnerPortalPage = lazy(() => import('./pages/ownerB/SampleOwnerPortalPage'));
 const OwnerOverallReportPage = lazy(() => import('./pages/OwnerOverallReportPage'));
 const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const BookingsPage = lazy(() => import('./pages/BookingsPage'));
@@ -128,13 +127,6 @@ function SettingsHome() {
 const Fallback = () => <PageSkeleton />;
 
 /** Desktop shell as a layout route; the matched page renders into <Outlet />. */
-/** The Owner Showcase and its sample owner portal have no app shell around them, so they apply the Owner Showcase
- *  screen's access themselves: Owner B's, which took its menu place (owner, 2 Nov 2026). */
-function ShowcaseRoute({ children }: { children: ReactNode }) {
-  const { user } = useSession();
-  if (screenClosed('/owner-b', user?.access)) return <Navigate to={user ? homeFor(user) : '/'} replace />;
-  return <Suspense fallback={<Fallback />}>{children}</Suspense>;
-}
 
 function AppLayout() {
   const location = useLocation();
@@ -272,9 +264,6 @@ function Routed() {
       {/* The Owner Income Report prints on its own: no app shell around it. */}
       <Route path="/finance/statements/:id/report" element={<Suspense fallback={<Fallback />}><OwnerIncomeReportPage /></Suspense>} />
       <Route path="/finance/statements/print" element={<Suspense fallback={<Fallback />}><StatementsPrintPage /></Suspense>} />
-      {/* Sales staff present it to a prospective owner: full screen, no menu (CONTS-0006). */}
-      <Route path="/performance/showcase" element={<ShowcaseRoute><OwnerShowcasePage /></ShowcaseRoute>} />
-      <Route path="/performance/showcase/owner" element={<ShowcaseRoute><OwnerPortalDemoPage /></ShowcaseRoute>} />
       <Route element={<AppLayout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
@@ -355,6 +344,9 @@ function Routed() {
         <Route path="/performance" element={<Navigate to="/performance/analytics" replace />} />
         {/* Showcase control was removed (owner, 2 Nov 2026); old links open Owner B, which took the showcase's place. */}
         <Route path="/performance/showcase-control" element={<Moved to="/owner-b" />} />
+        {/* The Owner Showcase became Owner B's sample owner portal, on the real portal screens (owner, 2 Nov 2026). */}
+        <Route path="/performance/showcase" element={<Moved to="/owner-b" add={{ view: 'sample' }} />} />
+        <Route path="/performance/showcase/owner" element={<Moved to="/owner-b" add={{ view: 'sample' }} />} />
         {/* Owner statements and owner payouts moved onto the owner; Expenses is Accounts payable (owner, 11 Oct 2026). */}
         <Route path="/finance/payables" element={<ExpensesPage />} />
         <Route path="/finance/utility-bills" element={<ExpensesPage utilities />} />
@@ -378,6 +370,7 @@ function Routed() {
         <Route path="/owner-b" element={<OwnerBPage />} />
         <Route path="/owner-b/:id" element={<OwnerBProfile />} />
         <Route path="/owner-b/:id/portal" element={<ViewAsOwnerPage />} />
+        <Route path="/owner-b/sample/:id" element={<SampleOwnerPortalPage />} />
         <Route path="/properties/agent-to-let" element={<LettingsPage />} />
         <Route path="/properties/scheduled-changes" element={<ScheduledChangesPage />} />
         <Route path="/owners/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />

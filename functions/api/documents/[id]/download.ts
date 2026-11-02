@@ -41,7 +41,7 @@ async function mayOpen(env: Env, s: Actor, d: Doc, id: string): Promise<boolean>
   const lv = await levelsFor(env, s);
   if (d.unit_id || d.task_id || d.maintenance_id) {
     if (lv.properties !== 'none' || lv.operations !== 'none') return true;
-    // A listed unit's photo is its card on the Owner Showcase, which sales staff open under Performance.
+    // A listed unit's photo stays readable with Performance, which sales staff have (it was the Owner Showcase's card).
     return lv.performance !== 'none' && !!d.unit_id && !d.task_id && !d.maintenance_id && d.mime_type.startsWith('image/')
       && !!(await one(env, "SELECT 1 AS x FROM documents WHERE id = ? AND kind = 'photo'", id));
   }

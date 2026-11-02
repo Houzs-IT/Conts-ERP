@@ -50,6 +50,8 @@ interface Summary {
   };
   grossToNet: GrossToNetLine[];
   stats: { occupancy: number; adr: number; bookings: number; rating: number | null; reviews: number };
+  /** Set on every answer of the sample owner portal: the screen then carries the Sample data mark. */
+  sample?: boolean;
 }
 interface TrendPoint { period: string; netPayout: number }
 interface Trend { months: number; unitLabel: string; points: TrendPoint[] }
@@ -147,30 +149,33 @@ const DOC_ICON: Record<OwnerDoc['type'], string> = {
   statement: 'FileText', contract: 'FileSignature', invoice: 'ReceiptText', report: 'FileBarChart',
 };
 
-/** Staff opening one owner's real portal from Owner B: every read names the owner (?ownerId=, finance and management
- *  only, functions/_lib/ownerScope.ts), nothing can be changed, and the summary read records the view on the owner's History. */
-export interface ViewAs { ownerId: string; ownerName: string }
+/** Who the portal is opened for besides the owner themself. 'viewAs': staff opening one owner's real portal from Owner
+ *  B; every read names the owner (?ownerId=, finance and management only, functions/_lib/ownerScope.ts) and the summary
+ *  read records the view on the owner's History. 'sample': Owner B's sample portal, the same screens fed from Demo mode
+ *  for a sample owner (/api/demo/portal, functions/_lib/demoPortal.ts); its answers carry sample: true. Both read-only. */
+export interface PortalSource { kind: 'viewAs' | 'sample'; ownerId: string; ownerName: string }
 
-/** The same API path, for the owner themself or for staff viewing as one. */
-const pathFor = (path: string, viewAs?: ViewAs, first = false) => {
-  if (!viewAs) return path;
-  const q = `ownerId=${encodeURIComponent(viewAs.ownerId)}${first ? '&viewAs=1' : ''}`;
-  return `${path}${path.includes('?') ? '&' : '?'}${q}`;
+/** The same API path for the owner themself, for staff viewing as one, or for a sample owner. */
+const pathFor = (path: string, source?: PortalSource, first = false) => {
+  if (!source) return path;
+  const base = source.kind === 'sample' ? path.replace(/^\/owner\//, '/demo/portal/') : path;
+  const q = `ownerId=${encodeURIComponent(source.ownerId)}${first && source.kind === 'viewAs' ? '&viewAs=1' : ''}`;
+  return `${base}${base.includes('?') ? '&' : '?'}${q}`;
 };
 
-export default function OwnerPortalPage({ viewAs }: { viewAs?: ViewAs } = {}) {
-  const readOnly = !!viewAs;
-  const summary = useApi<Summary>(pathFor('/owner/summary', viewAs, true), viewAs ? undefined : SUMMARY);
-  const trend = useApi<Trend>(pathFor('/owner/trend?months=8', viewAs), viewAs ? undefined : TREND);
-  const health = useApi<{ issues: HealthIssue[] }>(pathFor('/owner/property-health', viewAs), viewAs ? undefined : HEALTH);
-  const docs = useApi<{ data: OwnerDoc[] }>(pathFor('/owner/documents', viewAs), viewAs ? undefined : DOCS);
+export default function OwnerPortalPage({ source }: { source?: PortalSource } = {}) {
+  const readOnly = !!source;
+  const summary = useApi<Summary>(pathFor('/owner/summary', source, true), source ? undefined : SUMMARY);
+  const trend = useApi<Trend>(pathFor('/owner/trend?months=8', source), source ? undefined : TREND);
+  const health = useApi<{ issues: HealthIssue[] }>(pathFor('/owner/property-health', source), source ? undefined : HEALTH);
+  const docs = useApi<{ data: OwnerDoc[] }>(pathFor('/owner/documents', source), source ? undefined : DOCS);
   const toast = useToast();
 
   const [approved, setApproved] = useState<Record<string, true>>({});
   const [approve, setApprove] = useState<HealthIssue | null>(null);
   const [showAllDone, setShowAllDone] = useState(false);
 
-  const st = summary.data ?? (import.meta.env.DEV && !viewAs ? SUMMARY : null);
+  const st = summary.data ?? (import.meta.env.DEV && !source ? SUMMARY : null);
   const points = trend.data?.points ?? [];
   const issues = health.data?.issues ?? [];
   const documents = docs.data?.data ?? [];
@@ -214,7 +219,7 @@ export default function OwnerPortalPage({ viewAs }: { viewAs?: ViewAs } = {}) {
   }
 
   function downloadStatement(id: string) {
-    window.open(`/api${pathFor(`/owner/statements/${encodeURIComponent(id)}/pdf`, viewAs)}`, '_blank', 'noopener');
+    window.open(`/api${pathFor(`/owner/statements/${encodeURIComponent(id)}/pdf`, source)}`, '_blank', 'noopener');
   }
   async function downloadDoc(d: OwnerDoc) {
     if (d.type === 'statement') { downloadStatement(d.refId ?? d.id); return; }
@@ -241,13 +246,20 @@ export default function OwnerPortalPage({ viewAs }: { viewAs?: ViewAs } = {}) {
 
   return (
     <div className="flex flex-col gap-5">
+      {st.sample && (
+        <div role="note" data-sample-mark className="flex items-center gap-2 flex-wrap rounded-card border border-solid border-info-line bg-info-bg px-4 py-2.5 text-meta text-ink">
+          <Icon name="FlaskConical" size="sm" />
+          <b>Sample data</b>
+          <span className="text-muted-ink">A sample owner and sample reservations from Demo mode. Not a real owner, statement or payout.</span>
+        </div>
+      )}
       <PageHeader
         title="Your units"
         sub={st.units.length
           ? st.units.map((u, i) => (
               <span key={u.id}>
                 {i > 0 && ' · '}
-                <Link to={`/properties/units/${encodeURIComponent(u.id)}`} className="no-underline text-inherit!">{u.label}</Link>
+                {st.sample ? u.label : <Link to={`/properties/units/${encodeURIComponent(u.id)}`} className="no-underline text-inherit!">{u.label}</Link>}
               </span>
             ))
           : 'No units are on your account yet.'}
@@ -291,7 +303,7 @@ export default function OwnerPortalPage({ viewAs }: { viewAs?: ViewAs } = {}) {
       </section>
 
       {/* Report drill-down — combined statement → per-unit → per-line */}
-      {st.statementId && <StatementBreakdown statementId={st.statementId} viewAs={viewAs} />}
+      {st.statementId && <StatementBreakdown statementId={st.statementId} source={source} />}
 
       {/* Performance stats */}
       <StatRow cols={4}>
@@ -391,8 +403,8 @@ export default function OwnerPortalPage({ viewAs }: { viewAs?: ViewAs } = {}) {
  * line. Single-unit owners see their one unit expanded; multi-unit owners tap a unit to
  * open it. A vertical stack, so it reads the same on a phone as on the desktop.
  */
-function StatementBreakdown({ statementId, viewAs }: { statementId: string; viewAs?: ViewAs }) {
-  const { data } = useApi<StatementDetail>(pathFor(`/owner/statements/${encodeURIComponent(statementId)}`, viewAs), viewAs ? undefined : BREAKDOWN);
+function StatementBreakdown({ statementId, source }: { statementId: string; source?: PortalSource }) {
+  const { data } = useApi<StatementDetail>(pathFor(`/owner/statements/${encodeURIComponent(statementId)}`, source), source ? undefined : BREAKDOWN);
   const [openUnit, setOpenUnit] = useState<string | null>(null);
   if (!data || data.units.length === 0) return null;
   const multi = data.units.length > 1;

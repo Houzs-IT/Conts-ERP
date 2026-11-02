@@ -154,7 +154,7 @@ export const NAV: NavGroup[] = [
     { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'owners' },
     // Owner B (owner, 2 Nov 2026): the new owners module, built beside Owners (A) so the two can be compared; it took
     // the Owner Showcase's menu place and permission (Performance), which is what sales staff open, and its sample
-    // owner portal replaces the showcase. Its Owners, Statements and Payouts tabs follow their own areas.
+    // owner portal replaced the showcase. Its Owners, Statements and Payouts tabs follow their own areas.
     { key: 'ownerB', label: 'Owner B', icon: 'contact', path: '/owner-b', area: 'performance', fresh: true },
   ] },
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
@@ -411,7 +411,7 @@ export const homeFor = (who: Pick<SessionUser, 'role' | 'side' | 'department'>):
 /** Pages below a menu entry, for the third breadcrumb ("Units / Owners / Owner statement"). */
 const SUB_PAGES: [RegExp, string][] = [
   [/^\/owners\/statements\/[^/]+$/, 'Owner statement'],
-  [/^\/owner-b\/sample$/, 'Owner portal (sample)'],
+  [/^\/owner-b\/sample\/[^/]+$/, 'Owner portal (sample)'],
   [/^\/owner-b\/[^/]+\/portal$/, 'View as owner'],
   [/^\/owner-b\/(?!sample$)[^/]+$/, 'Owner profile'],
   [/^\/owners\/(?!contracts$|statements$)[^/]+$/, 'Owner profile'],
