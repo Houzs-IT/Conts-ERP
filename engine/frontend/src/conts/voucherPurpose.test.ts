@@ -25,6 +25,9 @@ describe("each line's For", () => {
     expect(lineForOf(L("shared"))).toBe("company");
     expect(lineForOf(L("rental"))).toBe("unit");
     expect(lineForOf(L("supply"))).toBe("project");
+    /* An older voucher stamped its one project on every line: the department saved wins, so nothing changes side. */
+    expect(lineForOf(L("shared", null, 7))).toBe("company");
+    expect(lineForOf(L("rental", "u1", 7))).toBe("unit");
   });
 
   it("switching drops what no longer applies", () => {

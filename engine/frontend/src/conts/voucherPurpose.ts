@@ -24,10 +24,12 @@ export function departmentOf(f: LineFor, project?: ProjectSide | null): Departme
   return project?.funding === "internal" && project.internalDepartment === "rental" ? "rental" : "supply";
 }
 
-/** What a saved line is for: its unit, its project, else its department (an older voucher's Rental line with no unit is
+/** What a saved line is for: its unit, a Company department, its project, else its department (an older voucher's Rental line with no unit is
     a Unit line still to be filled in; a Renovation line with no project is a Project line still to be filled in). */
 export function lineForOf(l: PurposeLine): LineFor {
   if (l.unitId) return "unit";
+  /* The department saved wins over a project an older voucher stamped on every line: a Company line stays Company. */
+  if (l.department === "shared") return "company";
   if (l.projectId != null) return "project";
   if (l.department === "rental") return "unit";
   if (l.department === "supply") return "project";
