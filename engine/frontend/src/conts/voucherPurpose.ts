@@ -41,6 +41,11 @@ export function whatSwitchingDrops(lines: ReadonlyArray<PurposeLine>, projectId:
   return out;
 }
 
+/** Whether the voucher's project field is on screen, and so whether a save sends the project: an AP payment (its bills
+    may name one), Renovation, or Mixed. Hidden, nothing is sent (a new voucher) or it is cleared (an edit), so a
+    project chosen earlier never rides along unseen. */
+export const projectShown = (f: VoucherFor | "", isApPayment: boolean): boolean => isApPayment || f === "renovation" || f === "mixed";
+
 /** The department a purpose puts on a new line ("" for Mixed or none chosen). */
 export const departmentFor = (f: VoucherFor | ""): Department | "" => (f && f !== "mixed" ? DEPARTMENT_OF[f] : "");
 

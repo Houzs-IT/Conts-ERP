@@ -69,7 +69,7 @@ import { fmtMoneySen } from '../../vendor/shared/format';
 import { ProjectLimitField } from '../../conts/ProjectLimitField';
 import { UnitName, UnitPicker } from '../../conts/Pickers';
 import { VoucherForSwitch } from '../../conts/VoucherForSwitch';
-import { applyFor, departmentFor, forOfLines, nextLineUnit, whatSwitchingDrops, type VoucherFor } from '../../conts/voucherPurpose';
+import { applyFor, departmentFor, forOfLines, nextLineUnit, projectShown, whatSwitchingDrops, type VoucherFor } from '../../conts/voucherPurpose';
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
 
@@ -486,7 +486,7 @@ export const PaymentVoucherDetail = () => {
         creditAccountCode,
         voucherDate,
         notes:             notes || null,
-        ...(isRefundPv ? {} : { projectId: editProjectId }),
+        ...(isRefundPv ? {} : { projectId: projectShown(effFor, apEdit) ? editProjectId : null }),
         // Multi-currency (Phase 1-A) — resolved currency + rate. MYR forces 1
         // (server enforces too); a blank/invalid foreign rate → 1.
         currency:          editCurrency,
@@ -788,7 +788,7 @@ export const PaymentVoucherDetail = () => {
                   <VoucherForSwitch value={effFor} onChange={(f) => void chooseFor(f)} labelClass={styles.fieldLabel} />
                 </div>
               )}
-              {!isRefundPv && (apEdit || effFor === 'renovation' || effFor === 'mixed') && (
+              {!isRefundPv && projectShown(effFor, apEdit) && (
                 <ProjectLimitField projectId={editProjectId} onChange={setEditProjectId} amountSen={viewTotalSen} exceptPvId={id} required={effFor === 'renovation'}
                   fieldClass={styles.field} labelClass={styles.fieldLabel} inputClass={styles.fieldInput} />
               )}

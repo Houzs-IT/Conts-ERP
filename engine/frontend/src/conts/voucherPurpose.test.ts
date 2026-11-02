@@ -37,3 +37,15 @@ describe("voucher purpose", () => {
     expect(nextLineUnit([L("shared")])).toBeNull();
   });
 });
+
+describe("the project a save sends (review 2)", () => {
+  it("only when the field is on screen: an AP payment, Renovation or Mixed", async () => {
+    const { projectShown } = await import("./voucherPurpose");
+    expect(projectShown("renovation", false)).toBe(true);
+    expect(projectShown("mixed", false)).toBe(true);
+    expect(projectShown("rental", true)).toBe(true);
+    expect(projectShown("rental", false)).toBe(false);
+    expect(projectShown("company", false)).toBe(false);
+    expect(projectShown("", false)).toBe(false);
+  });
+});

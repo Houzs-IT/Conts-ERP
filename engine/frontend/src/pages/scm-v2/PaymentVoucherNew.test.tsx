@@ -24,7 +24,9 @@ let reservations: { byPi: Record<string, number>; byApInvoice: Record<string, nu
 /* The document a Customer Refund names (§14) — set by the refund test. */
 let refundSource: Record<string, unknown> | undefined;
 /* Conts (finance phase 1.5): the project field reads its own queries; this page's tests are about the voucher. */
-vi.mock('../../conts/ProjectLimitField', () => ({ ProjectLimitField: () => null }));
+vi.mock('../../conts/ProjectLimitField', () => ({
+  ProjectLimitField: ({ onChange }: { onChange: (id: number | null) => void }) => <button type="button" onClick={() => onChange(7)}>pick project 7</button>,
+}));
 vi.mock('../../vendor/scm/components/ConfirmDialog', () => ({ useConfirm: () => vi.fn(async () => true) }));
 vi.mock('../../conts/Pickers', () => ({
   UnitPicker: ({ value, onChange, ariaLabel }: { value: string | null; onChange: (v: string | null) => void; ariaLabel: string }) => <input aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value || null)} />,
