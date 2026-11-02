@@ -16,7 +16,7 @@ import { PhoneJobCard, PhoneJobList, PhoneStayTime } from '../components/ops/Pho
 import { CleanProof, stageCounts } from '../components/ops/CleanProof';
 import { StatusBadge } from '../components/StatusBadge';
 import { sizeLine } from '../lib/unitSize';
-import { sortForCleaner, sortGroupsForCleaner, type CleanOrderInput } from '../lib/cleanOrder';
+import { sortForCleaner, sortBuildings, type CleanOrderInput } from '../lib/cleanOrder';
 import { isCleanOverdue, daysPast } from '../lib/cleanOverdue';
 import { cleanRowTone } from '../lib/cleanRowTone';
 import { usePortalText, usePortalDates, wordFor, type PortalStrings } from '../lib/portalI18n';
@@ -43,18 +43,19 @@ interface Detail { media: MediaItem[]; access: { id: string; label: string; inst
 /** The cleaner's order (lib/cleanOrder), the same as the office's board: the arrival on the job's day, else the next one. */
 const jobOrder = (j: Job): CleanOrderInput => ({
   checkIn: j.next?.checkInTime ?? j.nextLater?.checkInTime ?? null, checkInDay: j.next ? j.day : j.nextLater?.day ?? null, day: j.day,
+  guestIn: !!j.previous && !j.guestOut && !j.done && j.state !== 'in_progress', checkOut: j.previous?.checkOutTime ?? null,
   done: j.done, building: j.unit.propertyName, unit: j.unit.unitNumber,
 });
 /** Overdue by the one rule (lib/cleanOverdue): not done at the next guest's check-in, or by the end of its day. */
 const jobOverdue = (j: Job, now: number) => isCleanOverdue({ day: j.day, checkIn: j.next?.checkInTime ?? null, done: j.done }, now);
 interface Group { id: string; name: string; jobs: Job[] }
-/** One group per building, the building with the most urgent job first (external jobs last), each in the cleaner's order
- *  (owner, 2 Nov 2026). Recomputed from every answer, so a changed time re-sorts on the next refresh. */
+/** One group per building, always A to Z (external jobs last) so the cleaner learns where each building is, each in the
+ *  cleaner's order (owner, 2 Nov 2026). Recomputed from every answer, so a changed time re-sorts on the next refresh. */
 function byBuilding(jobs: Job[]): Group[] {
   const m = new Map<string, Group>();
   for (const j of jobs) { const g = m.get(j.buildingId) ?? { id: j.buildingId, name: j.unit.propertyName, jobs: [] }; g.jobs.push(j); m.set(j.buildingId, g); }
   for (const g of m.values()) g.jobs = sortForCleaner(g.jobs, jobOrder);
-  return sortGroupsForCleaner([...m.values()], g => g.jobs.map(jobOrder), g => g.name, g => g.id === 'external');
+  return sortBuildings([...m.values()], g => g.name, g => g.id === 'external');
 }
 
 /** The cleaner's phone: the same list as the Cleaning page on a phone (components/ops/PhoneJobCard), with only their own

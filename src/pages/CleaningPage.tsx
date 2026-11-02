@@ -41,7 +41,7 @@ import { cleanRowTone, type CleanRowTone } from '../lib/cleanRowTone';
 import { StatusBadge } from '../components/StatusBadge';
 import { PhoneJobCard, PhoneJobList, PhoneStayTime } from '../components/ops/PhoneJobCard';
 import { CleanProof, stageCounts, stageOf } from '../components/ops/CleanProof';
-import { sortForCleaner, sortGroupsForCleaner, type CleanOrderInput } from '../lib/cleanOrder';
+import { sortForCleaner, sortBuildings, type CleanOrderInput } from '../lib/cleanOrder';
 import { isCleanOverdue } from '../lib/cleanOverdue';
 
 /* ---------- what the board endpoint answers (functions/api/housekeeping/board.ts) ---------- */
@@ -200,21 +200,22 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const isOverdue = (r: Row) => isCleanOverdue({ day: r.day, checkIn: r.next?.checkInTime ?? null, done: r.status === 'done' }, now);
   const overdueRows = visible.filter(isOverdue);
   const oldestOverdue = overdueRows.reduce<string | null>((o, r) => (!o || r.day < o ? r.day : o), null);
-  // One card per building, the building with the most urgent job first; each lists its cleans, then guests leaving with no
-  // clean yet. Recomputed from every board answer (the 30-second refresh included), so a changed time re-sorts at once.
+  // One card per building, A to Z; each lists its cleans, then guests leaving with no clean yet. Recomputed from every board
+  // answer (the 30-second refresh included), so a changed time or a guest marked out re-sorts at once.
   const toGroups = (rs: Row[], deps: Departure[], reps: RepairOnDay[], tag: string) => {
     const m = new Map<string, { id: string; key: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }>();
     const get = (id: string, name: string) => m.get(id) ?? (m.set(id, { id, key: `${tag}${id}`, name, rows: [], departures: [], repairs: [] }), m.get(id)!);
     for (const r of rs) get(r.buildingId, r.propertyName).rows.push(r);
     for (const d of deps) get(d.buildingId, d.propertyName).departures.push(d);
     for (const w of reps) if (m.has(w.buildingId)) m.get(w.buildingId)!.repairs.push(w);
-    // Inside each building, the cleaner's order (lib/cleanOrder): soonest check-in first, then none, then very late (owner, 2 Nov 2026).
+    // Inside each building, the cleaner's order (lib/cleanOrder): units ready to clean by next check-in, then guests still
+    // in by checkout time, then done. The buildings themselves always A to Z (owner, 2 Nov 2026).
     const depOrder = (d: Departure) => departureOrder(d, date);
     for (const g of m.values()) {
       g.rows = sortForCleaner(g.rows, rowOrder);
       g.departures = sortForCleaner(g.departures, depOrder);
     }
-    return sortGroupsForCleaner([...m.values()], g => [...g.rows.map(rowOrder), ...g.departures.map(depOrder)], g => g.name, g => g.id === 'external');
+    return sortBuildings([...m.values()], g => g.name, g => g.id === 'external');
   };
   const groups = useMemo(() => toGroups(visible.filter(r => !isOverdue(r)), visibleDepartures, repairs, ''), [visible, visibleDepartures, repairs, now, date]); // eslint-disable-line react-hooks/exhaustive-deps
   const overdueGroups = useMemo(() => toGroups(overdueRows, [], [], 'overdue-'), [visible, now]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -727,7 +728,7 @@ function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSele
           {rowT === 'overdue' && <div className={cx(CARD_NOTE, 'text-danger font-medium')}>Checkout time passed.</div>}
           {r.guestOut && (
             <div className={cx(CARD_NOTE, 'text-muted-ink')}>
-              {!r.guestLeftAt ? 'Guest out' : r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}
+              {!r.guestLeftAt ? 'Guest out' : r.guestLeftAuto ? `Guest out · ${autoLabel(r)}` : `Left at ${hm(r.guestLeftAt)}`}
               {mayTick && <> · <button type="button" disabled={busy} onClick={stop(onUndoLeft)} onKeyDown={e => e.stopPropagation()}
                 className="p-0 bg-transparent border-0 underline cursor-pointer text-muted-ink [font-family:inherit] [font-size:inherit] disabled:opacity-50">Undo</button></>}
             </div>
@@ -798,15 +799,20 @@ const PHONE_STATUS: Record<string, string> = { ready: 'Ready to clean', done: 'D
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('');
 
-/** The cleaner's order (lib/cleanOrder): the arrival on the job's day, else the next one on a later day. */
+/** The cleaner's order (lib/cleanOrder): the arrival on the job's day, else the next one on a later day; a guest not out
+ *  yet (and no cleaner started) waits below, by the checkout time. */
 const rowOrder = (r: Row): CleanOrderInput => ({
   checkIn: r.next?.checkInTime ?? r.nextLater?.checkInTime ?? null, checkInDay: r.next ? r.day : r.nextLater?.day ?? null, day: r.day,
+  guestIn: !!r.previous && !r.guestOut && r.status !== 'cleaning' && r.status !== 'done', checkOut: r.previous?.checkOutTime ?? null,
   done: r.status === 'done', building: r.propertyName, unit: r.unitNumber,
 });
 const departureOrder = (d: Departure, day: string): CleanOrderInput => ({
   checkIn: d.next?.checkInTime ?? d.nextLater?.checkInTime ?? null, checkInDay: d.next ? day : d.nextLater?.day ?? null, day,
+  guestIn: d.state !== 'checked_out', checkOut: d.checkOutTime,
   building: d.propertyName, unit: d.unitNumber,
 });
+/** "Auto at 11:00" or "Auto at 13:00 (late checkout)": the system marked the guest out at the checkout time (lib/guestLeft). */
+const autoLabel = (r: Row) => `Auto at ${hm(r.guestLeftAt)}${r.previous?.lateCheckOut ? ' (late checkout)' : ''}`;
 /** "4 Nov" from a day. */
 const shortDay = (day: string) => dayLabel(day).replace(/^\w+\s/, '');
 
@@ -859,7 +865,7 @@ function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLef
       </span>}
       out={r.external ? undefined : r.previous
         ? <PhoneStayTime label="Out" time={left ?? r.previous.checkOutTime} actual={r.guestOut && !mayTick}
-            actualLabel={r.guestLeftAuto ? 'Out at the checkout time (automatic)' : 'Guest has left'}
+            actualLabel={r.guestLeftAuto ? autoLabel(r) : 'Guest has left'}
             aside={r.previous.lateCheckOut && <span className="text-meta text-warning font-medium whitespace-nowrap" title="Late checkout">Late</span>} />
         : <PhoneStayTime label="No guest leaving" />}
       arrive={r.external ? undefined : r.next
@@ -1031,7 +1037,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
           <span className="text-meta text-muted-ink">Leaving</span>
           {row.previous ? <><b className="[font-variant-numeric:tabular-nums]">{row.previous.checkOutTime}</b><GuestName name={row.previous.guestName} />
             {row.previous.lateCheckOut && <span className="text-meta text-warning">{row.previous.lateCheckOutUnpaid ? 'Late checkout, not paid yet' : 'Late checkout'}</span>}
-            {row.guestOut ? <span className="text-meta text-gold-ink font-medium">Guest out{row.guestLeftAt ? ` at ${hm(row.guestLeftAt)}` : ''}{row.guestLeftAuto ? ' (automatic, at the checkout time)' : ''}</span>
+            {row.guestOut ? <span className="text-meta text-gold-ink font-medium">{row.guestLeftAuto ? `Guest out · ${autoLabel(row)}` : `Guest out${row.guestLeftAt ? ` at ${hm(row.guestLeftAt)}` : ''}`}</span>
               : !done && row.day <= mytDay(0) && <Button size="sm" variant="secondary" className="mt-1 self-start" onClick={onGuestLeft}>Guest left</Button>}</>
             : <span className="text-muted-ink">No departing guest</span>}
         </div>

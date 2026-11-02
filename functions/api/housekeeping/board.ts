@@ -13,8 +13,9 @@ import { cleaningCheckoutSql } from '../../_lib/lateCheckout';
  *  (check-in time, name), from the bookings: a late check-out or early check-in on the booking replaces the
  *  default times. Today also shows cleans left over from earlier days. `departures` are guests leaving that
  *  day with no clean planned yet; `repairs` are repair windows on that day. Grouping by building is the
- *  screen's job: every row carries its building. A guest is out only once staff tick it (or the booking is
- *  Checked out): past the checkout time the board shows the row red until they do (26 Oct 2026). The checkout time is
+ *  screen's job: every row carries its building. A guest is out once staff tick it, the booking is Checked out, or the
+ *  checkout time passes: the cron marks it then, by itself (lib/guestLeft autoGuestLeft, owner 2 Nov 2026); until that
+ *  runs the row shows red past the checkout time. `guestLeftAuto` tells the automatic mark from a tap. The checkout time is
  *  the late checkout's once one is requested, paid or not (lib/lateCheckout cleaningCheckoutSql, 2 Nov 2026). With
  *  nobody arriving that day, `nextLater` is the unit's next arrival on a later day, which the screen's order needs
  *  (src/lib/cleanOrder.ts). Each clean carries its amount and cleaner pay; `external` lists cleans at outside addresses. */
@@ -48,7 +49,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            t.assignee_id, t.cleaner_id, t.unit_id, t.reservation_id, ${when} AS day,
            u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
            COALESCE(cl.full_name, a.full_name) AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner, ${cleanerListSql(ready)} AS cleaner_list, ${rosterIdSql()} AS roster_id,
-           prev.id AS prev_id, prev.state AS prev_state, ${prevOut.time} AS prev_time, prev.check_out_time AS prev_booked_time, ${prevOut.requested} AS prev_late_requested, prev.channel AS prev_channel,
+           prev.id AS prev_id, prev.state AS prev_state, ${prevOut.time} AS prev_time, ${prevOut.requested} AS prev_late_requested, prev.channel AS prev_channel,
            COALESCE(NULLIF(pg.full_name, ''), CASE WHEN prev.id IS NOT NULL THEN 'Guest' END) AS prev_guest,
            (SELECT l.occurred_at FROM audit_log l WHERE prev.state = 'checked_out' AND l.entity_table = 'reservations' AND l.entity_id = prev.id
               AND l.action = 'reservation.status' AND l.after_state LIKE '%"checked_out"%' ORDER BY l.occurred_at DESC LIMIT 1) AS prev_out_at,
@@ -150,7 +151,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           checkInTime: cin!, earlyCheckIn: cin! < stdIn, checkInAt: at(r.day, cin, stdIn),
         } : null,
         nextLater: !r.next_id && r.later_day ? { day: r.later_day, checkInTime: r.later_time || stdIn } : null,
-        guestOut, guestLeftAt: leftAt, guestLeftAuto: (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_booked_time || stdOut}:00+08:00`),
+        guestOut, guestLeftAt: leftAt, // The automatic mark records the checkout time in +08:00 form (lib/guestLeft); a staff tap is always a UTC instant.
+        guestLeftAuto: !!r.guest_left_at && r.guest_left_at.endsWith('+08:00'),
         // What the clean is charged (external) and what the cleaner is paid (internal): the job's own, else the price table.
         amount: r.amount ?? p.external, cleanerPay: r.cleaner_pay ?? p.internal, priceSource: r.amount != null ? 'job' : p.source, external: null,
         startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,

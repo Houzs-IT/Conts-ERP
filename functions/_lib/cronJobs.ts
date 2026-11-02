@@ -13,6 +13,7 @@ import { cleaningNotice, repairNotice } from './notices';
 import { releaseRepairBlocks } from './repairBlocks';
 import { hasAttendance } from './attendance';
 import { FORGOTTEN_AFTER_HOURS } from './attendanceCalc';
+import { dueDepartures, markGuestLeft } from './guestLeft';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -270,6 +271,29 @@ export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobRep
   return { job: 'overdue-sweep', summary: `Marked ${plural(tasks.length, 'task')} Overdue; announced ${recentCleans.length} cleaning jobs, ${repairs.length} maintenance jobs, ${stale.length} unsent owner statements.`, items };
 }
 
+/** Every 5 minutes: "Guest has left" by itself at the checkout time (owner, 2 Nov 2026, reversing the 26 Oct manual-only
+ *  rule): 11:00 (the standard checkout) or the late checkout's time when one is requested, e.g. 13:00. The same action
+ *  and audit as a staff tap, by System; the moment recorded is the checkout time itself, in +08:00 form, which is how
+ *  the board says "Auto at 13:00". Only today's checkouts not marked yet, never one staff undid (lib/guestLeft
+ *  dueDepartures); a repeat run finds nothing left to do. At most 40 per run. */
+export async function autoGuestLeft(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const now = o.now ?? new Date();
+  const due = await dueDepartures(env, now.getTime());
+  const day = mytParts(now).day;
+  const items = due.map(d => `${d.id}: checkout ${d.out_at}${d.late ? ' (late checkout)' : ''}${d.task_id ? '' : ', no cleaning job yet: one is created'}`);
+  if (o.dryRun) return { job: 'auto-guest-left', summary: `Would mark ${plural(due.length, 'guest')} as left at their checkout time.`, items };
+  let marked = 0;
+  for (const d of due) {
+    const task = d.task_id ? await one<any>(env, `SELECT t.id, t.unit_id, t.state, t.kind, t.reservation_id, t.assignee_id, t.guest_left_at, ? AS day FROM tasks t WHERE t.id = ?`, d.check_out, d.task_id) : null;
+    const done = await markGuestLeft(env, {
+      task, reservation: { id: d.id, unit_id: d.unit_id, state: d.state, check_out: d.check_out, check_out_time: d.check_out_time },
+      actor: { id: null, label: 'System', source: 'system' }, leftAt: `${day}T${d.out_at}:00+08:00`, auto: true,
+    });
+    if (done) marked++;
+  }
+  return { job: 'auto-guest-left', summary: `Marked ${plural(marked, 'guest')} as left at their checkout time.`, items };
+}
+
 /** Hourly: a punch left open longer than FORGOTTEN_AFTER_HOURS is marked a forgotten clock-out, so the desk and the
  *  phone stop counting it up and payroll pays it as a normal shift. No clock-out time is made up: the office keys the real
  *  one on Attendance. The phone's next clock-in or clock-out does the same; this catches the people who do neither. */
@@ -339,7 +363,7 @@ export const CRON = {
 /** What each trigger runs, in order. */
 export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<JobReport>)[]> = {
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
-  [CRON.fiveMinutes]: [hostplatformPull],
+  [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft],
   [CRON.quarterHour]: [drainOutbox, repairBlockSweep],
   [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep],
   [CRON.daily]: [dailyDigest],

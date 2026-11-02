@@ -41,7 +41,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video') AND ${AFTER_FILE_SQL('d')}) AS after_count,
            (SELECT COUNT(*)::int FROM task_checklist_items c WHERE c.task_id = t.id AND c.done_at IS NOT NULL) AS ticks,
            (SELECT COUNT(*)::int FROM task_checklist_items c WHERE c.task_id = t.id AND c.item_key LIKE 'c-%') AS custom_items,
-           prev.id AS prev_id, prev.state AS prev_state, ${prevOut.time} AS prev_time, prev.check_out_time AS prev_booked_time, COALESCE(NULLIF(pg.full_name, ''), CASE WHEN prev.id IS NOT NULL THEN 'Guest' END) AS prev_guest,
+           prev.id AS prev_id, prev.state AS prev_state, ${prevOut.time} AS prev_time, COALESCE(NULLIF(pg.full_name, ''), CASE WHEN prev.id IS NOT NULL THEN 'Guest' END) AS prev_guest,
            nxt.check_in_time AS next_time, COALESCE(NULLIF(ng.full_name, ''), CASE WHEN nxt.id IS NOT NULL THEN 'Guest' END) AS next_guest,
            later.check_in AS later_day, later.check_in_time AS later_time
     FROM tasks t LEFT JOIN units u ON u.id = t.unit_id LEFT JOIN properties p ON p.id = u.property_id
@@ -88,7 +88,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         readiness: r.readiness, done: r.state === 'resolved', flag: sameDay ? 'Same-day turnaround' : null,
         requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count), afterCount: Number(r.after_count),
         checklist: { done: Number(r.ticks), total: standardItems(r.kind).length + Number(r.custom_items) },
-        guestOut, guestLeftAt: r.guest_left_at ?? null, guestLeftAuto: (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_booked_time || defaultOut}:00+08:00`), previous: r.prev_guest ? { guestName: r.prev_guest, checkOutTime: r.prev_time || defaultOut, state: r.prev_state } : null,
+        guestOut, guestLeftAt: r.guest_left_at ?? null, guestLeftAuto: !!r.guest_left_at && r.guest_left_at.endsWith('+08:00'), previous: r.prev_guest ? { guestName: r.prev_guest, checkOutTime: r.prev_time || defaultOut, state: r.prev_state } : null,
         next: cin ? { guestName: r.next_guest, checkInTime: cin, checkInAt: `${r.day}T${cin}:00+08:00` } : null,
         nextLater: !cin && r.later_day ? { day: r.later_day, checkInTime: r.later_time || stdIn } : null,
         sync: r.state === 'resolved' ? 'synced' : r.sync === 'synced' ? null : r.sync,
