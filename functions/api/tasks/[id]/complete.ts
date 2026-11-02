@@ -4,9 +4,10 @@ import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { chargeClean } from '../../../_lib/cleaning';
 import { cleaningNotice } from '../../../_lib/notices';
 import { noOpenBlockerSql } from '../../../_lib/maintenance';
+import { AFTER_FILE_SQL } from '../../../_lib/media';
 
 /** POST /api/tasks/:id/complete { photoIds, note } — a finished turnover, deep clean or inspection flips the unit to Ready.
- *  A task that needs proof is refused without at least one photo or video, unless storage is not set up yet (then the
+ *  A task that needs proof is refused without at least one After photo or video, unless storage is not set up yet (then the
  *  waiver is audited). A finished clean is charged to its unit once (functions/_lib/cleaning.ts chargeClean). */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -16,17 +17,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const b = await request.json<any>().catch(() => ({}));
   const t = await one<any>(env, `
     SELECT t.id, t.state, t.kind, t.title, t.unit_id, t.requires_photo, t.assignee_id,
-           (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video')) AS photos
+           (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video') AND ${AFTER_FILE_SQL('d')}) AS photos
     FROM tasks t WHERE t.id = ?`, id);
   if (!t) return fail('NOT_FOUND', 'That task no longer exists. Refresh the list.', 404);
   if (isFieldRole(session.role) && !(await isOnTask(env, t.id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
   if (t.state === 'resolved') return json({ ok: true });
 
-  // A clean always needs proof (owner rule, 10 Oct 2026); other tasks only when they say so.
+  // A clean always needs proof (owner rule, 10 Oct 2026); other tasks only when they say so. Only After files are proof:
+  // a Before photo shows how the unit was found, not the finished work (owner, 2 Nov 2026).
   const isClean = ['turnover', 'deep_clean', 'light_clean'].includes(t.kind);
   let photoWaived = false;
   if ((t.requires_photo || isClean) && Number(t.photos) === 0) {
-    if (env.MEDIA) return fail('PHOTO_REQUIRED', 'Add at least one photo or video before marking this clean complete.', 422);
+    if (env.MEDIA) return fail('PHOTO_REQUIRED', 'Add at least one After photo or video before marking this clean complete.', 422);
     photoWaived = true;
   }
 
