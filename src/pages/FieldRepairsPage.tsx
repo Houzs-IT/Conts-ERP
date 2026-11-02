@@ -6,6 +6,7 @@ import { EmptyState, Skeleton } from '../components/States';
 import { AttachmentLabel, MediaGallery, FileList, type MediaItem } from '../components/Attachments';
 import { StatusBadge } from '../components/StatusBadge';
 import { useToast } from '../components/Toast';
+import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
@@ -148,6 +149,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
   const [purchase, setPurchase] = useState<{ id: string; file: File; amountSen: number | null; spendDate: string | null } | null>(null);
   const [note, setNote] = useState('');
   const [doneNote, setDoneNote] = useState('');
+  const [confirm, ask] = useConfirm();
   const j = d.data?.job;
   const mine = !!d.data?.mine;
   const closed = j?.state === 'resolved';
@@ -170,6 +172,11 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
     try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); return true; }
     catch (e) { toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(e, t.jobs.checkSignal) }); refresh(); return false; }
     finally { setBusy(null); }
+  }
+  async function removePhoto(m: MediaItem) {
+    const ok = await ask({ title: m.kind === 'video' ? t.jobs.removeVideo : t.jobs.removePhoto, body: t.jobs.removeBody, confirmLabel: t.jobs.remove, cancelLabel: t.jobs.keep, danger: true });
+    if (ok === null) return;
+    void act('remove', () => api.del(`/maintenance/issues/${id}/photos/${m.id}`), m.kind === 'video' ? t.jobs.videoRemoved : t.jobs.photoRemoved);
   }
   async function pickPurchase(list: FileList) {
     const file = list[0];
@@ -293,7 +300,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
                   { value: 'after', label: <>{tr.after} <span className="text-muted-ink tabular-nums">{counts.after}</span></> },
                 ]} />
                 <MediaGallery key={stage} items={media.filter(m => m.stage === stage)} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: stage }, `${j.propertyName} ${j.unitNumber}`) : undefined}
-                  onDone={refresh} addLabel={stage === 'before' ? tr.addBefore : tr.addAfter}
+                  onDone={refresh} onRemove={working ? m => void removePhoto(m) : undefined} addLabel={stage === 'before' ? tr.addBefore : tr.addAfter}
                   emptyText={stage === 'before' ? tr.noBefore : tr.noAfter} />
               </section>
 
@@ -353,6 +360,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
           <div className="max-w-[560px] mx-auto">{footer}</div>
         </footer>
       )}
+      {confirm}
     </div>
   );
 }
