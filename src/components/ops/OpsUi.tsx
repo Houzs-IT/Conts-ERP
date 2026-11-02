@@ -7,6 +7,7 @@ import { cx } from '../../lib/design-tokens';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { SearchSelect } from '../Select';
 import { time, weekdayDate, dateTimeShort } from '../../lib/format';
+import { stampPhoto } from '../../lib/photoStamp';
 import { useToast } from '../Toast';
 import { useApi } from '../../lib/useApi';
 import { useSession } from '../../lib/session';
@@ -133,11 +134,12 @@ export { CloseButton } from '../CloseButton';
 
 export type { MediaItem } from '../Attachments';
 
-/** Uploads one file to an endpoint as multipart `file` plus extra fields. */
-export function uploadTo(path: string, extra: Record<string, string> = {}) {
-  return (file: File) => {
+/** Uploads one file to an endpoint as multipart `file` plus extra fields. With `stamp` (the unit), a photo first gets
+ *  the unit and the date and time burnt into its corner (lib/photoStamp.ts). */
+export function uploadTo(path: string, extra: Record<string, string> = {}, stamp?: string) {
+  return async (file: File) => {
     const fd = new FormData();
-    fd.append('file', file);
+    fd.append('file', stamp !== undefined ? await stampPhoto(file, stamp) : file);
     Object.entries(extra).forEach(([k, v]) => fd.append(k, v));
     return api.post(path, fd);
   };
@@ -308,7 +310,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
     // The job is saved; a photo that fails is named, not a reason to undo it.
     if (picked.files.length) {
       setSending(true);
-      const failed = await picked.send(...ids);
+      const failed = await picked.send(unit?.label ?? (units ?? []).filter(u => u.id === f.unitId).map(u => `${u.propertyName} ${u.unitNumber}`)[0] ?? '', ...ids);
       if (failed.length) toast({ tone: 'warning', title: 'Job added, but some photos were not.', body: `Not added: ${failed.join(', ')}. Add them in the job's photos, under The problem.` });
     }
     onDone(ids[0]);
@@ -430,13 +432,13 @@ export function usePickedMedia() {
   const remove = (key: string) => setFiles(fs => { const f = fs.find(x => x.key === key); if (f?.preview) URL.revokeObjectURL(f.preview); return fs.filter(x => x.key !== key); });
   /** Sends every picked file as a Before photo of each job, one request each, in order. Returns the names that failed;
    *  the jobs themselves are already saved, so a failed photo never undoes them. */
-  async function send(...issueIds: string[]): Promise<string[]> {
+  async function send(unitLabel: string, ...issueIds: string[]): Promise<string[]> {
     const failed: string[] = [];
     for (const f of live.current) {
       if (f.state === 'done') continue;
       setFiles(fs => fs.map(x => (x.key === f.key ? { ...x, state: 'uploading' } : x)));
       try {
-        for (const issueId of issueIds) await uploadTo(`/maintenance/issues/${issueId}/photos`, { kind: 'before' })(f.file);
+        for (const issueId of issueIds) await uploadTo(`/maintenance/issues/${issueId}/photos`, { kind: 'before' }, unitLabel)(f.file);
         setFiles(fs => fs.map(x => (x.key === f.key ? { ...x, state: 'done' } : x)));
       } catch (e) {
         failed.push(f.file.name);

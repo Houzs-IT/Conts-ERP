@@ -616,7 +616,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         ]} />
         <span className="text-meta text-muted-ink">{stage === 'before' ? 'What was wrong, as reported.' : 'Proof the job is settled. Needed before the job can be marked done.'}</span>
         {files.loading && !files.data ? <Skeleton height={96} /> : (
-          <MediaGallery key={stage} items={shownMedia} upload={done ? undefined : uploadTo(`/maintenance/issues/${i.id}/photos`, { kind: stage })} onDone={refresh}
+          <MediaGallery key={stage} items={shownMedia} upload={done ? undefined : uploadTo(`/maintenance/issues/${i.id}/photos`, { kind: stage }, jobLabel(i))} onDone={refresh}
             addLabel={stage === 'before' ? 'Add photo of the problem' : 'Add proof it is fixed'} emptyText={stage === 'before' ? 'No photo of the problem yet.' : 'No proof yet. Add one when the job is settled.'} />
         )}
       </section>
