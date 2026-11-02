@@ -21,6 +21,8 @@
 // ----------------------------------------------------------------------------
 
 import { useMemo, useState, useEffect, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
+import { useUpdateTrip } from '../lib/trips-queries';
 import { buildVariantSummary, fmtSen, fmtDate, fmtDateOrDash, fmtDateTime } from '@2990s/shared';
 import { formatPhone } from '@2990s/shared/phone';
 import { DataGridCompat, type GridColumn, type GridContextMenuItem } from '../../../components/DataGridCompat';
@@ -82,6 +84,36 @@ function SubstatusPill({ value }: { value: string | null }) {
 }
 /* A datetime-or-dash cell (TIMESTAMPTZ columns). */
 const dtOrDash = (iso: string | null): string => (iso ? fmtDateTime(iso) : '—');
+
+/* POD (proof of delivery) cell. SO rows only. A real driver POD left a photo or
+   a GPS fix (has_pod) → a green "POD" chip linking to the DO detail where the
+   signature/photo/GPS are shown. A DELIVERED order with no evidence (office
+   advance / QR scan) → an amber "No POD" chip (the thing dispatchers chase).
+   Not-yet-delivered rows render a muted dash. */
+function PodCell({ o }: { o: PlanningOrder }) {
+  if (o.row_type !== 'so') return <NotApplicable />;
+  if (o.has_pod) {
+    const doId = o.delivery_orders[o.delivery_orders.length - 1]?.id;
+    const chip = (
+      <span style={{
+        display: 'inline-block', padding: '1px 8px', borderRadius: 999,
+        border: '1px solid #2e7d32', color: '#2e7d32', fontSize: 'var(--fs-10)',
+        fontWeight: 600, whiteSpace: 'nowrap',
+      }}>✓ POD</span>
+    );
+    return doId ? <Link to={`/scm/delivery-orders/${doId}`} title="View proof of delivery">{chip}</Link> : chip;
+  }
+  if (o.delivery_state === 'DELIVERED') {
+    return (
+      <span style={{
+        display: 'inline-block', padding: '1px 8px', borderRadius: 999,
+        border: '1px solid #b26a00', color: '#b26a00', fontSize: 'var(--fs-10)',
+        fontWeight: 600, whiteSpace: 'nowrap',
+      }}>No POD</span>
+    );
+  }
+  return <NotApplicable />;
+}
 
 /* Company badge for the SHARED cross-company queue — a small code chip
    (HOUZS / 2990). null (e.g. ASSR rows / unresolved) renders a muted dash. */
@@ -309,7 +341,7 @@ function DeliveryDateEditCell({ order, sched }: { order: PlanningOrder; sched: S
 /* Amend Reason inline editor (owner 2026-09-22) — pick a preset reason or keep a
    free-text one. SO rows only; writes amend_reason via useUpdateDeliveryFields. */
 function AmendReasonEditCell({ order, updateFields }: { order: PlanningOrder; updateFields: UpdateFieldsMutation }) {
-  if (isAssr(order) || isDp(order) || isProject(order)) return <NotApplicable />;
+  if (isAssr(order) || (isDp(order) && !order.trip_id) || isProject(order)) return <NotApplicable />;
   const current = order.amend_reason ?? '';
   return (
     <select
@@ -383,7 +415,7 @@ function DriverPickCell({ order, drivers, sched, writeSeat, pending }: {
   const chosen = crewComboValue(items, currentName);
   const [val, setVal] = useState(chosen);
   useEffect(() => { setVal(chosen); }, [chosen]);
-  if (isDp(order)) return <NotApplicable />;
+  if (isDp(order) && !order.trip_id) return <NotApplicable />;
   if (isProject(order)) return <span style={{ color: '#767b6e' }}>{order.crew?.driver_1_name || '—'}</span>;
   const assrLeg = isAssr(order);
   return (
@@ -418,8 +450,8 @@ function LorryPickCell({ order, lorries, sched, writeSeat, pending }: {
   const chosen = crewComboValue(items, currentPlate);
   const [val, setVal] = useState(chosen);
   useEffect(() => { setVal(chosen); }, [chosen]);
-  if (isDp(order)) return <NotApplicable />;
-  if (isProject(order)) return <span style={{ color: '#767b6e' }}>{order.crew?.lorry_plate || '—'}</span>;
+  if (isDp(order) && !order.trip_id) return <NotApplicable />;
+  if (isProject(order) || isDp(order)) return <span style={{ color: '#767b6e' }}>{order.crew?.lorry_plate || '—'}</span>;
   const assrLeg = isAssr(order);
   return (
     <span {...stopRow} style={{ display: 'inline-flex', minWidth: 150 }}>
@@ -753,10 +785,18 @@ export function DeliveryPlanningBoard({
      the store the board reads and the one that captures the driver's IC/contact.
      Helpers are fetched here (like updateFields) rather than threaded as a prop. */
   const assignCrew = useAssignDoCrew();
+  const updateTrip = useUpdateTrip();
   const helpers = useHelpers().data ?? [];
   /* One inline pick → one seat on the row's latest DO; the backend keeps the
      other seats. No DO yet → nothing to write, so say so and leave the picker. */
   const writeCrewSeat: CrewSeatWrite = (order, seat) => {
+    /* A DP job has no DO: its crew IS its run's crew (the server copies it to
+       the run's DOs, and the driver's phone follows the run). */
+    if (isDp(order) && order.trip_id) {
+      updateTrip.mutate({ id: order.trip_id, ...(seat.driver1Id !== undefined ? { driverId: seat.driver1Id } : {}),
+        ...(seat.helper1Id !== undefined ? { helper1Id: seat.helper1Id } : {}), ...(seat.helper2Id !== undefined ? { helper2Id: seat.helper2Id } : {}) });
+      return true;
+    }
     const doId = latestDoId(order.delivery_orders);
     if (!doId) {
       void notify({ title: 'Create a delivery order first', body: 'This order has no delivery order yet, so crew cannot be saved. Create a DO first.' });
@@ -765,7 +805,7 @@ export function DeliveryPlanningBoard({
     assignCrew.mutate({ doId, ...seat });
     return true;
   };
-  const crewPending = assignCrew.isPending || sched.isPending;
+  const crewPending = assignCrew.isPending || sched.isPending || updateTrip.isPending;
   /* Manual colour marks (owner 2026-09-26): a Map<rowKey, colour token>, painted
      from the row context menu on the main page and tinted onto the row below. */
   const rowMarks = useDeliveryRowMarks().data;
@@ -917,11 +957,12 @@ export function DeliveryPlanningBoard({
       'bs_delivery_date', 'esb_remarks', 'bs_remarks', 'ctn',
       // Crew — assigned later, default-hidden
       'trip_no', 'lorry', 'driver', 'driver_ic', 'driver_contact', 'driver_2', 'helper_1', 'helper_2',
-      // Admin remark, document date
-      'dp_remark', 'do_date',
-      // Send status, then the message sub-status (delivery_state / arrangement_stage
-      // are no longer board columns — still derived server-side for the top tabs).
-      'wa_message', 'delivery_substatus',
+      // Admin remark, document date, real delivered time (default-hidden)
+      'dp_remark', 'do_date', 'delivered_at',
+      // Send status, POD evidence, then the message sub-status (delivery_state /
+      // arrangement_stage are no longer board columns — still derived server-side
+      // for the top tabs).
+      'wa_message', 'pod', 'delivery_substatus',
     ];
     const pos = new Map(DP_DEFAULT_ORDER.map((k, i) => [k, i] as const));
     const cols: GridColumn<PlanningOrder>[] = [
@@ -1019,6 +1060,25 @@ export function DeliveryPlanningBoard({
         const s = msgStatuses?.[o.so_doc_no];
         return s && !s.success ? 'Failed' : 'Done All';
       },
+    },
+    {
+      /* POD — did the driver leave proof (photo/GPS)? A DELIVERED order with no
+         evidence shows "No POD" so dispatch can chase it. Links to the DO. */
+      key: 'pod', label: 'POD', width: 110, groupable: true,
+      accessor: (o) => <PodCell o={o} />,
+      groupValue: (o) => (o.row_type !== 'so' ? '(n/a)' : o.has_pod ? 'POD' : o.delivery_state === 'DELIVERED' ? 'No POD' : '—'),
+      searchValue: (o) => (o.has_pod ? 'POD proof of delivery' : o.delivery_state === 'DELIVERED' ? 'No POD' : ''),
+      exportValue: (o) => (o.has_pod ? 'POD' : o.delivery_state === 'DELIVERED' ? 'No POD' : ''),
+    },
+    {
+      /* The real delivered instant (delivery_orders.delivered_at), stamped when
+         POD completes — distinct from the manually-typed customer delivered
+         date. Default-hidden; add via the Columns panel. */
+      key: 'delivered_at', label: 'Delivered At', width: 150, sortable: true, defaultHidden: true,
+      accessor: (o) => (o.row_type !== 'so' ? <NotApplicable /> : detail(dtOrDash(o.delivered_at ?? null))),
+      searchValue: (o) => o.delivered_at ?? '',
+      exportValue: (o) => (o.delivered_at ? fmtDateTime(o.delivered_at) : ''),
+      sortFn: (a, b) => String(a.delivered_at ?? '').localeCompare(String(b.delivered_at ?? '')),
     },
     {
       /* Default-SHOWN again per the owner's 2026-09-22 column pass (it had been

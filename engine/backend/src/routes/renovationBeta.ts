@@ -42,7 +42,7 @@ import {
 import { projectDocSql } from "../services/renovation/documents";
 import { plainEntry, readProjectTimeline, sortTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineEntry } from "../services/renovation/timeline";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
-import { POD_FILE_ID, attachmentsReady, listFilesFor, podFile, type DocFile } from "../scm/lib/doc-attachments";
+import { attachmentsReady, listFilesFor, podFiles, type DocFile } from "../scm/lib/doc-attachments";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -912,8 +912,9 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
   for (const d of dos) {
     const id = String(d.id);
     const photos: SitePhoto[] = [];
-    const pod = await podFile(db(c), id).catch(() => null);
-    if (pod) photos.push({ id: `pod-${id}`, path: docPath("delivery_order", id, POD_FILE_ID), name: "Proof of delivery", image: true, kind: "image", area: null, at: pod.at || null, source: "pod" });
+    for (const pod of await podFiles(db(c), id).catch(() => [])) {
+      photos.push({ id: `${pod.id}-${id}`, path: docPath("delivery_order", id, pod.id), name: "Proof of delivery", image: true, kind: "image", area: null, at: pod.at || null, source: "pod" });
+    }
     photos.push(...uploads("delivery_order", id));
     out.push({
       type: "delivery_order", id, no: String(d.no), at: str(d.at) ?? str(d.made_on), status: String(d.status), from: str(d.so_doc_no), poNumber: null, poIds: [],

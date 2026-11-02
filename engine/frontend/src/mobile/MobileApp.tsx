@@ -150,7 +150,7 @@ type Screen =
   | { t: "service"; startNew?: boolean }
   /* Conts: quotations and the other renovation sales documents; the address picks the screen inside it. */
   | { t: "renovation-docs" }
-  | { t: "delivery-planning" }
+  | { t: "delivery-planning"; completedDoNumber?: string | null }
   | { t: "pms"; projectId?: number; view?: "monitor" }
   | { t: "mail" }
   | { t: "roles" }
@@ -1057,15 +1057,16 @@ function MobileAppInner() {
     overlay = <MobileDoHeaderEdit id={String(screen.row.id)} onBack={backToDoc} onSaved={backToDoc} />;
   }
   else if (screen.t === "pod") {
-    const leavePod = screen.from === "delivery-planning"
-      ? () => setScreen({ t: "delivery-planning" })
-      : back;
-    overlay = <MobilePOD docNo={screen.docNo} onBack={leavePod} onDone={leavePod} />;
+    const fromSheet = screen.from === "delivery-planning";
+    const leavePod = fromSheet ? () => setScreen({ t: "delivery-planning", completedDoNumber: null }) : back;
+    // Confirmed from the run-sheet: go back to it and on to the next stop.
+    const donePod = fromSheet ? () => setScreen({ t: "delivery-planning", completedDoNumber: screen.docNo }) : back;
+    overlay = <MobilePOD docNo={screen.docNo} onBack={leavePod} onDone={donePod} />;
   }
   else if (screen.t === "mileage-capture") overlay = <MobileMileageCapture onBack={back} />;
   else if (screen.t === "renovation-docs") overlay = <MobileRenovationDocs onBack={back} />;
   else if (screen.t === "service") overlay = <MobileServiceCase onBack={back} startNew={screen.startNew} />;
-  else if (screen.t === "delivery-planning") overlay = <MobileDeliveryPlanning onBack={back} onOpen={(doc) => setScreen({ t: "so-detail", docNo: doc })} onPod={(doNumber) => setScreen({ t: "pod", docNo: doNumber, from: "delivery-planning" })} />;
+  else if (screen.t === "delivery-planning") overlay = <MobileDeliveryPlanning onBack={back} completedDoNumber={screen.completedDoNumber ?? null} onOpen={(doc) => setScreen({ t: "so-detail", docNo: doc })} onPod={(doNumber) => setScreen({ t: "pod", docNo: doNumber, from: "delivery-planning" })} />;
   else if (screen.t === "pms") overlay = <MobileProjectsEntry onBack={back} initialProjectId={screen.projectId} initialView={screen.view} exhibition={() => <MobilePMS onBack={back} initialProjectId={screen.projectId} />} />;
   else if (screen.t === "mail") overlay = <MobileMailCenter onBack={back} />;
   else if (screen.t === "roles") overlay = can("roles.read") ? <MobileRoles onBack={back} /> : <TabLocked title="Roles" />;

@@ -373,16 +373,27 @@ export async function carriedFiles(db: Db, doc: DocRef, lines: DocLine[]): Promi
 }
 
 /** A delivery order's proof-of-delivery photo as a read-only file, or null when the driver took none. */
-export async function podFile(db: Db, doId: string): Promise<(DocFile & { key: string }) | null> {
+/** Every proof-of-delivery photo on a delivery (pod_photo_keys; a delivery closed before several photos has just
+ *  pod_r2_key). The first answers as "pod", the rest as "pod-1", "pod-2", ... */
+export async function podFiles(db: Db, doId: string): Promise<Array<DocFile & { key: string }>> {
   const r = await db.prepare(
-    `SELECT pod_r2_key, coalesce(delivered_at, updated_at) AS at FROM scm.delivery_orders WHERE id = ?::uuid`,
-  ).bind(doId).first<{ pod_r2_key: string | null; at: string | null }>();
-  if (!r?.pod_r2_key) return null;
-  return {
-    id: POD_FILE_ID, key: r.pod_r2_key, name: "Proof of delivery photo", mime: "image/jpeg", kind: "image", size: 0,
-    caption: "Taken by the driver at delivery", source: "pod", by: null, at: r.at ? new Date(r.at).toISOString() : "",
+    `SELECT pod_r2_key, pod_photo_keys, coalesce(delivered_at, updated_at) AS at FROM scm.delivery_orders WHERE id = ?::uuid`,
+  ).bind(doId).first<{ pod_r2_key: string | null; pod_photo_keys: unknown; at: string | null }>();
+  if (!r) return [];
+  const listed = Array.isArray(r.pod_photo_keys) ? r.pod_photo_keys.filter((k): k is string => typeof k === "string" && !!k) : [];
+  const keys = listed.length ? listed : r.pod_r2_key ? [r.pod_r2_key] : [];
+  const at = r.at ? new Date(r.at).toISOString() : "";
+  return keys.map((key, n) => ({
+    id: n === 0 ? POD_FILE_ID : `${POD_FILE_ID}-${n}`, key, name: keys.length > 1 ? `Proof of delivery photo ${n + 1}` : "Proof of delivery photo",
+    mime: "image/jpeg", kind: "image" as const, size: 0, caption: "Taken by the driver at delivery", source: "pod" as const, by: null, at,
     lineId: null, readOnly: true,
-  };
+  }));
+}
+
+export const isPodFileId = (fileId: string): boolean => fileId === POD_FILE_ID || /^pod-\d+$/.test(fileId);
+
+export async function podFileById(db: Db, doId: string, fileId: string): Promise<(DocFile & { key: string }) | null> {
+  return (await podFiles(db, doId)).find((f) => f.id === fileId) ?? null;
 }
 
 /** One of the document's own stored files (either level), with its R2 key (never sent to the browser). */
