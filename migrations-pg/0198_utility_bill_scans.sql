@@ -5,7 +5,8 @@
 --   utility_account_marks  what each account's bills look like, learnt on every recorded scan (masked number, deposit,
 --                          building, owner name, last meter reading), so next month's page matches by itself;
 --   utility_bill_scans     one row per page read: what was read, by which model, the unit proposed, the colour, and the
---                          expense it became (audit, and the accuracy count);
+--                          expense it became, whether the owner paid it and the bill as recorded (so the payment
+--                          request to finance lists exactly what was recorded), for audit and the accuracy count;
 --   expenses.period_from / period_to   the period printed on the bill (YYYY-MM-DD), which the split by contract days uses
 --                          (FINANCE-SOP §3.10);
 --   owner_adjustments.expense_id      the scanned bill an owner line came from (owner paid it: O2 back; days outside the
@@ -36,6 +37,10 @@ create table if not exists pos.utility_bill_scans (
   proposed_account_id text references pos.unit_utility_accounts(id) on delete set null,
   colour text not null check (colour in ('green', 'amber', 'red')),
   expense_id text references pos.expenses(id) on delete set null,
+  owner_paid boolean not null default false,
+  bill_sen integer,
+  provider text,
+  account_no text,
   created_by text not null,
   created_at text not null
 );

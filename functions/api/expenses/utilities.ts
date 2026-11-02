@@ -1,4 +1,4 @@
-import { type Env, all, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { CHARGE_TO, finalMonthsFor } from '../../_lib/expenses';
 import { firstOpenMonth } from '../../../src/lib/deductMonth';
@@ -170,8 +170,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const missing = Object.fromEntries([...rowsOut, ...looseOut].filter(x => receiptRequired(x.kind, x.charge_to) && !x.receipt).map(x => [x.accountId, RECEIPT_REQUIRED]));
   const nMissing = Object.keys(missing).length;
   if (nMissing) return fail('RECEIPT_REQUIRED', `${nMissing === 1 ? 'A bill the owner pays has' : `${nMissing} bills the owner pays have`} no receipt. Attach each one and save again.`, 422, missing);
+  const replaced = JSON.stringify(rowsOut.map(b => ({ unit_id: b.unit_id, kind: b.kind, account_no: b.account_no })));
+  const replacedSql = `SELECT e.id FROM expenses e JOIN jsonb_to_recordset(?::text::jsonb) AS x(unit_id text, kind text, account_no text)
+    ON e.unit_id = x.unit_id AND e.reference = x.account_no AND e.category = x.kind WHERE e.incurred_on >= ? AND e.incurred_on < ?`;
+  // A scanned bill carries its owner lines (days outside the contract, paid by the owner): replacing the bill takes its
+  // open lines with it; once one is on a statement the bill is not replaced here (plan 2026-11-02-utility-bill-scan).
+  if (rowsOut.length && await one(env, `SELECT 1 AS x FROM owner_adjustments WHERE state <> 'open' AND expense_id IN (${replacedSql})`, replaced, from, to)) {
+    return fail('LOCKED', 'A bill being replaced has an owner line already on a statement. Change it from the owner statement instead.', 409);
+  }
   await transaction(env, async tx => {
     if (rowsOut.length) {
+      await run(tx, `DELETE FROM owner_adjustments WHERE state = 'open' AND expense_id IN (${replacedSql})`, replaced, from, to);
       await run(tx, `DELETE FROM expenses e USING jsonb_to_recordset(?::text::jsonb) AS x(unit_id text, kind text, account_no text)
         WHERE e.unit_id = x.unit_id AND e.reference = x.account_no AND e.category = x.kind AND e.incurred_on >= ? AND e.incurred_on < ?`,
         JSON.stringify(rowsOut.map(b => ({ unit_id: b.unit_id, kind: b.kind, account_no: b.account_no }))), from, to);

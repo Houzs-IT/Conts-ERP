@@ -29,6 +29,9 @@ jobs:
         run: npx vite build
       - name: Standards checks
         run: npm run check
+      # Recording scanned utility bills on a throwaway PGlite database (no server needed).
+      - name: Scanned utility bills (utility-scan)
+        run: node scripts/api-checks/utility-scan.mjs
 
   # Who may call what: every API handler as every role (rbac-matrix.mjs against rbac-matrix.expected.json) and the
   # editable permissions chart (role-access.mjs), against a real server on a throwaway Postgres built from
