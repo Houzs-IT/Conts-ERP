@@ -15,6 +15,7 @@
 --                                       an empty weekend or holiday falls back to the level below).
 --                      uplift becomes nullable for the two new modes.
 -- Numbered 0202: 0199 (demo store), 0200 and 0201 (messages and reviews) are the last on main.
+-- Ends with demo.sync(): it adds columns to pos.units, one of the demo store tables (migration 0199).
 -- APPLY: by hand, in one transaction with its public.pos_migrations row (local, then staging, then production).
 
 set local search_path = pos, public;
@@ -59,3 +60,5 @@ ALTER TABLE channel_uplifts ADD CONSTRAINT channel_uplifts_mode_check CHECK (
   (mode = 'amount'  AND uplift IS NOT NULL) OR
   (mode = 'percent' AND percent IS NOT NULL AND percent BETWEEN 0 AND 300) OR
   (mode = 'fixed'   AND fixed_base > 0 AND (fixed_weekend IS NULL OR fixed_weekend > 0) AND (fixed_holiday IS NULL OR fixed_holiday > 0)));
+
+select demo.sync();
