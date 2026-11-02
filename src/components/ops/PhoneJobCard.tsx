@@ -43,7 +43,8 @@ export function PhoneJobCard({ title, building, lead, badges, status, right, out
             {right && <span className="flex-none ml-auto flex items-center">{right}</span>}
           </div>
         )}
-        {(out || arrive) && <div className="flex items-center flex-wrap gap-x-4 gap-y-1 min-w-0">{out}{arrive}</div>}
+        {/* Two fixed columns, so every card's "In" starts at the same place down the list. */}
+        {(out || arrive) && <div className="grid grid-cols-[minmax(0,6.75rem)_minmax(0,1fr)] items-center gap-x-3 min-w-0">{out ?? <span />}{arrive}</div>}
         {note}
       </div>
     </div>
@@ -56,7 +57,7 @@ export function PhoneJobCard({ title, building, lead, badges, status, right, out
  */
 export function PhoneStayTime({ label, time, actual, actualLabel, aside }: { label: string; time?: string; actual?: boolean; actualLabel?: string; aside?: ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1.5 min-h-6 min-w-0">
+    <span className="inline-flex items-center flex-wrap gap-x-1.5 min-h-6 min-w-0">
       <span className="text-muted-ink">{label}</span>
       {time && <b className="tabular-nums text-ink">{time}</b>}
       {actual && <span className="flex-none text-gold-ink inline-flex" title={actualLabel}><Icon name="Check" size="sm" /><span className="sr-only">{actualLabel}</span></span>}

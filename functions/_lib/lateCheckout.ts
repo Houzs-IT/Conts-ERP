@@ -37,3 +37,13 @@ export const lateRefusal = (r: LateBooking | null): Response | null => !r ? fail
   : r.channel === 'maintenance_block' || r.channel === 'owner_stay' ? fail('VALIDATION', 'Blocks and owner stays have no checkout to extend.', 422)
   : DONE.includes(r.state) ? fail('CONFLICT', 'A past, cancelled or no-show reservation cannot get a late checkout.', 409)
   : null;
+
+/** SQL for the checkout time cleaning goes by, for the reservation aliased `r`: a late checkout request still waiting
+ *  for payment already holds the unit until its time (owner, 2 Nov 2026: "Request late checkout" 14:00 means the
+ *  cleaning job says "Checkout by 14:00" and turns red only after 14:00); a paid one has already moved
+ *  check_out_time. Null when neither is set: the caller falls back to the standard checkout. */
+export async function cleaningCheckoutSql(env: Env, r: string): Promise<{ time: string; requested: string }> {
+  if (!(await lateCheckoutReady(env))) return { time: `${r}.check_out_time`, requested: 'FALSE' };
+  const open = `(SELECT l.checkout_time FROM late_checkout_requests l WHERE l.reservation_id = ${r}.id AND l.status = 'requested' LIMIT 1)`;
+  return { time: `COALESCE(${open}, ${r}.check_out_time)`, requested: `(${open} IS NOT NULL)` };
+}
