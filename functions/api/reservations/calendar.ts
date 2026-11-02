@@ -31,7 +31,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const rental = await rentalOnly(env);
   const [allUnits, onChannel, connected] = await Promise.all([
     all<any>(env, `
-      SELECT u.id, u.unit_number, u.base_rate, u.weekend_rate, u.property_id, p.name AS property_name
+      SELECT u.id, u.unit_number, u.base_rate, u.weekend_rate, u.property_id, u.channex_property_id, p.name AS property_name
       FROM units u JOIN properties p ON p.id = u.property_id
       WHERE 1 = 1${rental}
       ORDER BY p.name, u.unit_number`),
@@ -88,7 +88,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     generatedAt: new Date().toISOString(),
     // channels: the booking sites the unit is on, in a fixed order. The direct (web) rate is always shown.
     buildings: [...buildingMap.values()],
-    units: units.map(u => ({ id: u.id, unitNumber: u.unit_number, propertyId: u.property_id, propertyName: u.property_name, channels: channelsOf(u.id), linked: OTA_CHANNELS.filter(ch => connectedSet.has(`${u.id}:${ch}`)) })),
+    units: units.map(u => ({ id: u.id, unitNumber: u.unit_number, propertyId: u.property_id, propertyName: u.property_name, channels: channelsOf(u.id), linked: OTA_CHANNELS.filter(ch => connectedSet.has(`${u.id}:${ch}`)),
+      // The dot beside the unit (owner, 2 Nov 2026): a live Channex channel, a Channex property with no channel left (it was
+      // disconnected), or never set up.
+      channex: OTA_CHANNELS.some(ch => connectedSet.has(`${u.id}:${ch}`)) ? 'connected' : u.channex_property_id ? 'disconnected' : 'none' })),
     baseRate: Object.fromEntries(units.map(u => [u.id, Number(u.base_rate)])),
     // What a night costs on a channel when it has no price of its own: the night's web price (weekendRate on
     // Friday and Saturday when the unit has one, else baseRate) plus that channel's uplift. A default uplift is a
