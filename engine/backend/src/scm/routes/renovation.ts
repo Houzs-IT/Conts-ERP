@@ -24,7 +24,7 @@ import {
 import { convertQuotationToSo, patchContract, readContract, setContractStatus, type RenoSoStatus } from '../lib/renovation-so';
 import { previewPoSplit, raisePos } from '../lib/renovation-po-split';
 import { billingView, billInstalment, creditContract } from '../lib/renovation-billing';
-import { applyVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, setVoStatus } from '../lib/renovation-vo';
+import { applyVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
 import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule } from '../lib/renovation-po-schedule';
 import { listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
@@ -466,12 +466,24 @@ renovation.post('/sales-orders/:docNo/line-edits', handle(PERM.voApply, async (c
     })).max(200).default([]),
   }).safeParse(b);
   if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
-  const actor = actorOf(c);
-  const out = await tx((db) => quickVo(db, actor, param(c, 'docNo'), s.data.edits, s.data.adds, s.data.title ?? 'Changed on the order'));
-  await onRenovationSoLinesChanged(out.soDocNo, sqlRead);
-  const posting = await postContractAfterCommit(c, actor, out.soDocNo, out.docDate);
-  return c.json({ voNo: out.voNo, netSen: out.netSen, revisedContractSen: out.revisedContractSen, flags: out.flags, posting });
+  return c.json(await runQuickVo(c, { tx, sqlRead }, param(c, 'docNo'), s.data.edits, s.data.adds, s.data.title ?? 'Changed on the order'));
 }));
+
+async function runQuickVo(
+  c: C, ctx: { sqlRead: RenoDb; tx: <T>(f: (db: RenoDb) => Promise<T>) => Promise<T> }, docNo: string, edits: QuickLineEdit[], adds: QuickLineAdd[], title: string,
+) {
+  const actor = actorOf(c);
+  const out = await ctx.tx((db) => quickVo(db, actor, docNo, edits, adds, title));
+  await onRenovationSoLinesChanged(out.soDocNo, ctx.sqlRead);
+  const posting = await postContractAfterCommit(c, actor, out.soDocNo, out.docDate);
+  return { voNo: out.voNo, netSen: out.netSen, revisedContractSen: out.revisedContractSen, flags: out.flags, posting };
+}
+
+/** The same contract VO for another route (the line options route, renovation-so-info.ts: a line a live PO buys
+    changes its options by VO, owner 2 Nov 2026), with this route's permission, transaction, hooks and posting. */
+export function lineEditsVo(c: C, docNo: string, edits: QuickLineEdit[], title: string): Promise<Response> {
+  return handle(PERM.voApply, async (cc, ctx) => cc.json({ ok: true, changed: true, ...(await runQuickVo(cc, ctx, docNo, edits, [], title)) }))(c);
+}
 
 renovation.get('/sales-orders/:docNo/po-flags', handle(null, async (c, { sqlRead }) => c.json({ flags: await listPoFlags(sqlRead, param(c, 'docNo')) })));
 
