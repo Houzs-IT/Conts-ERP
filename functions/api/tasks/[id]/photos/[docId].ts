@@ -1,17 +1,19 @@
 import { type Env, one, run, json, fail, audit } from '../../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
+import { isOnTask } from '../../../../_lib/taskCleaners';
 
 /** DELETE /api/tasks/:id/photos/:docId — take back a proof-of-work photo or video before the job is complete.
- *  A finished job's proof is locked. A field account removes only what it uploaded itself, on its own job. */
+ *  A finished job's proof is locked. A field account removes only what it uploaded itself, on a job it is on. */
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
 
   const id = String(params.id);
-  const t = await one<{ state: string; assignee_id: string | null }>(env, 'SELECT state, assignee_id FROM tasks WHERE id = ?', id);
+  const t = await one<{ state: string }>(env, 'SELECT state FROM tasks WHERE id = ?', id);
   if (!t) return fail('NOT_FOUND', 'That task no longer exists. Refresh the list.', 404);
   const field = isFieldRole(session.role);
-  if (field && t.assignee_id !== session.userId) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
+  // Same test as the upload (tasks/[id]/photos.ts): any cleaner on the job, not only the first assignee.
+  if (field && !(await isOnTask(env, id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
   if (t.state === 'resolved') return fail('CONFLICT', 'This job is complete, so its proof of work can no longer change.', 409);
 
   const d = await one<{ id: string; kind: string; file_name: string; storage_key: string; uploaded_by: string | null }>(env,
