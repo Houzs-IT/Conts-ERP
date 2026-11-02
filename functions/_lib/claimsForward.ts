@@ -29,7 +29,9 @@ export async function forwardClaims(env: Env, session: Session, method: 'GET' | 
   const data = await res.json<Record<string, unknown>>().catch(() => null);
   if (!res.ok) {
     const message = String(data?.message ?? data?.error ?? `The finance system refused this (${res.status}).`);
-    return fail(String(data?.error ?? 'ENGINE_REFUSED').toUpperCase(), message, res.status >= 500 ? 502 : res.status);
+    /* An engine 5xx goes out as 424, not 502: on erp.theconts.com Cloudflare replaced a 502 with its own HTML error page
+       (2 Nov 2026), so the engine's own words (e.g. "Bill scanning isn't set up yet.") never reached the screen. */
+    return fail(String(data?.error ?? 'ENGINE_REFUSED').toUpperCase(), message, res.status >= 500 ? 424 : res.status);
   }
   return json(data ?? {}, res.status);
 }
