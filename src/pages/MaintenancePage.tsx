@@ -389,6 +389,11 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); return false; }
     finally { setBusy(null); }
   }
+  async function removeFile(f: FileItem) {
+    const ok = await ask({ title: 'Remove this file?', body: 'It is deleted from the job for everyone.', confirmLabel: 'Remove', danger: true });
+    if (ok === null) return;
+    void act('remove', () => api.del(`/maintenance/issues/${i.id}/documents/${f.id}`), 'File removed.');
+  }
   async function removePhoto(m: MediaItem) {
     const ok = await ask({ title: `Remove this ${m.kind === 'video' ? 'video' : 'photo'}?`, body: 'It is deleted from the job for everyone.', confirmLabel: 'Remove', danger: true });
     if (ok === null) return;
@@ -629,7 +634,9 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       {money && (
         <section className="flex flex-col gap-2">
           <AttachmentLabel title="Claims, invoices and receipts" count={docs.length} hint="The technician's or contractor's claim, the bill to the payer, payment receipts. Accounts pay from these." />
-          <FileList files={docs.map(d => ({ id: d.id, name: d.fileName, href: d.url, size: d.byteSize ?? null, label: `${DOC_KIND[d.kind] ?? 'File'} · ${dateShort(d.uploadedAt)}` }))} />
+          <FileList files={docs.map(d => ({ id: d.id, name: d.fileName, href: d.url, size: d.byteSize ?? null, label: `${DOC_KIND[d.kind] ?? 'File'} · ${dateShort(d.uploadedAt)}`,
+            // A purchase was also handed in to finance as a receipt: it is cancelled there, not here.
+            onRemove: done || d.kind === 'purchase' ? undefined : () => void removeFile(d) }))} />
           <div className="flex gap-2 items-start flex-wrap">
             <Select label="Kind of file" value={docKind} onChange={setDocKind} size="md" className="w-[230px] max-sm:w-full"
               options={['claim', 'invoice', 'receipt', 'pod'].map(k => ({ value: k, label: DOC_KIND[k] }))} />

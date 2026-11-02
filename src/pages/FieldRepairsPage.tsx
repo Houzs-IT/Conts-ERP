@@ -178,6 +178,11 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
     if (ok === null) return;
     void act('remove', () => api.del(`/maintenance/issues/${id}/photos/${m.id}`), m.kind === 'video' ? t.jobs.videoRemoved : t.jobs.photoRemoved);
   }
+  async function removeFile(f: FileDoc) {
+    const ok = await ask({ title: tr.removeFile, body: tr.removeFileBody, confirmLabel: t.jobs.remove, cancelLabel: t.jobs.keep, danger: true });
+    if (ok === null) return;
+    void act('remove', () => api.del(`/maintenance/issues/${id}/documents/${f.id}`), tr.fileRemoved);
+  }
   async function pickPurchase(list: FileList) {
     const file = list[0];
     if (!file) return;
@@ -325,7 +330,9 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
                       </span>
                     </div>
                   )}
-                  <FileList files={d.data!.files.map(f => ({ id: f.id, name: f.fileName, href: f.url, size: f.byteSize, label: `${f.kind in tr.fileKind ? wordFor(tr.fileKind, f.kind) : tr.fileKind.other} · ${short(f.uploadedAt.slice(0, 10))}` }))}
+                  <FileList files={d.data!.files.map(f => ({ id: f.id, name: f.fileName, href: f.url, size: f.byteSize, label: `${f.kind in tr.fileKind ? wordFor(tr.fileKind, f.kind) : tr.fileKind.other} · ${short(f.uploadedAt.slice(0, 10))}`,
+                    // A purchase was also handed in to finance as a receipt: it is cancelled there, not here.
+                    onRemove: working && f.kind !== 'purchase' ? () => void removeFile(f) : undefined, removeLabel: `${t.jobs.remove} ${f.fileName}` }))}
                     add={working && !purchase ? (fileKind === 'purchase'
                       ? { label: busy === 'reading' ? tr.reading : tr.addFile, hint: tr.purchaseHint, accept: 'image/*,application/pdf', multiple: false, busy: busy === 'reading', onPick: fl => void pickPurchase(fl) }
                       : { label: tr.addFile, hint: tr.addFileHint, accept: 'image/*,application/pdf', multiple: true, busy: busy === 'files', onPick: fl => void uploadFiles(fl) }) : undefined} />
