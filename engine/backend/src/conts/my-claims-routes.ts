@@ -14,6 +14,7 @@
 //   GET  /units                    units to name on a receipt
 //   GET  /accounts, /projects       what a cost is, and the project it is on
 //   GET  /suppliers?q=, /purchase-orders?q=   who finance pays (office staff)
+import { paginateAll } from '../scm/lib/paginate-all';
 import { Hono } from 'hono';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { todayMyt } from '../scm/lib/my-time';
@@ -261,11 +262,16 @@ export const suppliersHandler = async (c: Ctx): Promise<Response> => {
   if (!co.ok) return c.json(co.refusal, 409);
   if (staffOf(c).field) return c.json({ suppliers: [] });
   const q = String(c.req.query('q') ?? '').trim().replace(/[%,()]/g, '');
-  let query = c.get('supabase').from('suppliers').select('id, code, name').eq('company_id', co.companyId);
-  if (q) query = query.or(`name.ilike.%${q}%,code.ilike.%${q}%`);
-  const { data, error } = await query.order('name').limit(50);
-  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  return c.json({ suppliers: ((data ?? []) as Array<{ id: string; code: string; name: string }>).map(s => ({ id: s.id, code: s.code, name: s.name })) });
+  /* Typed: the first 50 that match. Nothing typed: every supplier of the company (up to 5,000), for the picker's table
+     to filter in the browser (chew, 2 Nov 2026: the list showed nothing until two letters were typed elsewhere). */
+  const read = await paginateAll<{ id: string; code: string; name: string }>((f, t) => {
+    let query = c.get('supabase').from('suppliers').select('id, code, name').eq('company_id', co.companyId);
+    if (q) query = query.or(`name.ilike.%${q}%,code.ilike.%${q}%`);
+    return query.order('name').order('id').range(f, q ? Math.min(t, 49) : t);
+  });
+  if (read.error) return c.json({ error: 'load_failed', reason: String((read.error as { message?: string }).message ?? read.error) }, 500);
+  const rows = (read.data ?? []).slice(0, q ? 50 : 5000);
+  return c.json({ suppliers: rows.map(s => ({ id: s.id, code: s.code, name: s.name })) });
 };
 export const purchaseOrdersHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
