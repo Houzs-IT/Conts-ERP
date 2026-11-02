@@ -21,9 +21,10 @@ export interface PaymentRequest {
 }
 export interface Me { userId: string; name: string; field: boolean; lineDepartment: LineDepartment; route: 'float' | 'finance'; keepsFloat: boolean }
 export interface MyFloat { float: { id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested: boolean }; receipts: Receipt[] }
-export interface NewLine { department: LineDepartment; unitId?: string; maintenanceIssueId?: string; projectId?: number; accountCode?: string; amountSen: number; description?: string }
+/** A line as staff send it: the engine sets the department from the person and finance sets the account (2 Nov 2026). */
+export interface NewLine { unitId?: string; maintenanceIssueId?: string; projectId?: number; amountSen: number; description?: string }
 
-export const DEPARTMENT: Record<LineDepartment, string> = { rental: 'Rental', supply: 'Supply chain', shared: 'Shared' };
+export const DEPARTMENT: Record<LineDepartment, string> = { rental: 'Rental', supply: 'Renovation', shared: 'Shared' };
 export const RECEIPT_STATUS: Record<ReceiptStatus, string> = {
   HANDED_IN: 'Waiting for a check', CHECKED: 'Checked', TOPPED_UP: 'Paid back', PAID_BACK: 'Paid back',
   REJECTED: 'Rejected', REPAID: 'Repaid', WRITTEN_OFF: 'Written off', REPLACED: 'Replaced',
