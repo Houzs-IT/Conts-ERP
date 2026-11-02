@@ -1,10 +1,10 @@
 /** A PDF's pages as JPEGs, in the browser, for "Scan bills" (plan docs/superpowers/plans/2026-11-02-utility-bill-scan.md
  *  Task 5): each page is read on its own, so a 40-page TNB PDF becomes 40 images of about 2,000 px on the long edge.
- *  pdf.js loads only when a PDF is picked, so it never weighs on the rest of the app. A photo passes through as it is. */
+ *  Pages are handed out one by one as they are drawn. pdf.js loads only when a PDF is picked, so it never weighs on the
+ *  rest of the app. */
 export async function* pdfToJpegs(file: File, longEdge = 2000, quality = 0.85): AsyncGenerator<Blob> {
   const pdfjs = await import('pdfjs-dist');
-  const worker = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
-  pdfjs.GlobalWorkerOptions.workerSrc = worker;
+  pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
   const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
   const doc = await task.promise;
   try {

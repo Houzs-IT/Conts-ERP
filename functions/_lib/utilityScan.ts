@@ -182,6 +182,8 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
           meter, r.billMonth, now);
         await run(tx, `UPDATE utility_bill_scans SET expense_id = ?, owner_paid = ?, bill_sen = ?, provider = ?, account_no = ? WHERE id = ?`,
           expenseId, !!r.ownerPaid, r.amountSen, provider ?? KIND_LABEL[r.kind], account.account_no, r.scanId);
+        /* The page was uploaded before anyone knew its unit; it is that unit's receipt now. */
+        await run(tx, 'UPDATE documents SET unit_id = ? WHERE id = ? AND unit_id IS NULL', r.unitId, scan.document_id);
       }
       await audit(tx, { actorId: session.userId, actorLabel: session.fullName ?? '', action: 'expense.utility_scan', entityTable: 'expenses', entityId: batchId,
         after: { batchId, recorded: rows.length, rolled: rolled.length, ownerLines, notSplit } });

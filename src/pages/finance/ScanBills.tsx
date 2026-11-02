@@ -110,17 +110,18 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
     const files = Array.from(list);
     setSplitting(n => n + files.length);
     for (const file of files) {
-      try {
-        const pages: Blob[] = [];
-        if (file.type === 'application/pdf') { for await (const p of pdfToJpegs(file)) pages.push(p); }
-        else pages.push(file);
-        const made: Row[] = pages.map((b, i) => ({
-          key: crypto.randomUUID(), file, fileName: file.name, pageNo: i + 1, thumb: URL.createObjectURL(b), state: 'waiting',
+      /* Each page joins the queue as soon as it is drawn, so reading starts while the rest of the PDF is still drawn. */
+      const add = (b: Blob, pageNo: number) => {
+        rowsRef.current = [...rowsRef.current, {
+          key: crypto.randomUUID(), file, fileName: file.name, pageNo, thumb: URL.createObjectURL(b), state: 'waiting',
           kind: '', billMonth: '', periodFrom: '', periodTo: '', amountSen: null, unitId: '', ownerPaid: false, tick: false,
-        }));
-        rowsRef.current = [...rowsRef.current, ...made];
+        }];
         setRows(rowsRef.current);
         pump();
+      };
+      try {
+        if (file.type === 'application/pdf') { let n = 0; for await (const p of pdfToJpegs(file)) add(p, ++n); }
+        else add(file, 1);
       } catch (e) {
         setProblem(`${file.name} could not be opened: ${errorMessage(e)}`);
       } finally {
@@ -172,9 +173,11 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
     for (const g of groups) {
       const sources = [...new Set(saved.filter(r => !r.ownerPaid && (r.scan!.read.provider ?? KIND_LABEL[r.kind]) === g.provider).map(r => r.file))];
       const size = sources.reduce((s, f) => s + f.size, 0);
-      const files = sources.length <= 8 && size <= 20 * 1024 * 1024 ? await Promise.all(sources.map(toUpload)) : [];
+      const form = new FormData();
+      form.set('data', JSON.stringify({ batchId, part: n, scanIds, provider: g.provider }));
+      if (sources.length <= 8 && size <= 20 * 1024 * 1024) for (const f of sources) form.append('file', f);
       try {
-        const made = await api.post<{ requestNo: string }>('/expenses/utilities/scan/payment-requests', { batchId, part: n, scanIds, provider: g.provider, files });
+        const made = await api.post<{ requestNo: string }>('/expenses/utilities/scan/payment-requests', form);
         out.push({ ...g, requestNo: made.requestNo });
       } catch (e) {
         out.push({ ...g, failed: errorMessage(e) });
@@ -243,9 +246,9 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                         </a>
                         <div className="mt-1 max-w-[7rem] truncate text-[var(--color-text-muted)]" title={r.fileName}>p. {r.pageNo}</div>
                       </td>
-                      <td className={cell}><Select label="Kind" value={r.kind} onChange={v => patch(r.key, { kind: v as Kind })} options={KINDS} placeholder="Kind" disabled={!editable} /></td>
+                      <td className={cell}><Select label="Kind" value={r.kind} onChange={v => patch(r.key, { kind: v as Kind })} options={KINDS} placeholder="Kind" disabled={!editable} className="w-36" /></td>
                       <td className={cell}>
-                        <Select label="Bill month" value={r.billMonth} onChange={v => patch(r.key, { billMonth: v })} options={monthOptions(r.billMonth)} placeholder="Month" disabled={!editable} />
+                        <Select label="Bill month" value={r.billMonth} onChange={v => patch(r.key, { billMonth: v })} options={monthOptions(r.billMonth)} placeholder="Month" disabled={!editable} className="w-32" />
                       </td>
                       <td className={`${cell} min-w-[12rem]`}>
                         <div className="flex flex-col gap-1">
@@ -254,7 +257,7 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                           {split && <span className="text-[var(--color-text-muted)]">{split}</span>}
                         </div>
                       </td>
-                      <td className={`${cell} w-32`}><MoneyInput aria-label="Amount" valueSen={r.amountSen} onChangeSen={v => patch(r.key, { amountSen: v })} disabled={!editable} /></td>
+                      <td className={`${cell} min-w-[8rem]`}><MoneyInput aria-label="Amount" valueSen={r.amountSen} onChangeSen={v => patch(r.key, { amountSen: v })} disabled={!editable} /></td>
                       <td className={`${cell} min-w-[14rem]`}>
                         <UnitPicker label="Unit" units={roster} value={r.unitId} onChange={id => patch(r.key, { unitId: id, tick: r.tick || !!id })} disabled={!editable} />
                       </td>
@@ -306,9 +309,3 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
   );
 }
 
-async function toUpload(f: File): Promise<{ name: string; mime: string; dataBase64: string }> {
-  const bytes = new Uint8Array(await f.arrayBuffer());
-  let bin = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return { name: f.name.slice(0, 200), mime: f.type || 'application/pdf', dataBase64: btoa(bin) };
-}

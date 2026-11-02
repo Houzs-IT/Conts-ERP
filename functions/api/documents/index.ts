@@ -21,11 +21,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const ownerId = form?.get('ownerId') ? String(form.get('ownerId')) : null;
 
   // A unit's files come from the Units screen (Properties) or an expense receipt (Owners, Finance); an owner's
-  // papers from Owners or Finance. Housekeepers, technicians and owners never reach this (session middleware).
+  // papers from Owners or Finance. A scanned utility bill page is a receipt with neither until it is read and recorded
+  // (Scan bills, functions/_lib/utilityScan.ts, which then puts the page on its unit): Finance only.
+  // Housekeepers, technicians and owners never reach this (session middleware).
   if (session.role !== 'management') {
     const lv = await levelsFor(env, session);
     const can = (...areas: string[]) => areas.some(a => lv[a] === 'edit' || lv[a] === 'full');
-    if (!(unitId ? can('properties', 'owners', 'finance') : ownerId ? can('owners', 'finance') : false)) {
+    if (!(unitId ? can('properties', 'owners', 'finance') : ownerId ? can('owners', 'finance') : kind === 'receipt' ? can('finance') : false)) {
       return fail('FORBIDDEN', 'Your access does not include adding files here.', 403);
     }
   }

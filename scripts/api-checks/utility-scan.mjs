@@ -70,6 +70,8 @@ check('the save lists what finance pays: TNB, one bill at RM 310 (the owner-paid
 const [e1] = await sql`select e.* from expenses e join utility_bill_scans s on s.expense_id = e.id where s.id = ${s1}`;
 check('split: the expense keeps the 4 days inside the contract (RM 40)', e1?.amount === 4000 && !e1.record_only, e1);
 check('the expense keeps its period and its page as the receipt', e1?.period_from === '2027-08-15' && e1?.period_to === '2027-09-14' && !!e1?.receipt_document_id, e1);
+const [doc1] = await sql`select unit_id from documents where id = ${e1?.receipt_document_id ?? ''}`;
+check('the page, uploaded with no unit, becomes the receipt of its unit once recorded', doc1?.unit_id === A.id, doc1);
 check('the deduction month is the bill month (nothing final)', e1?.deduct_month === '2027-09', e1?.deduct_month);
 const adj1 = await sql`select * from owner_adjustments where expense_id = ${e1?.id}`;
 check("split: RM 270 the owner's alone, as an open O2 charge on the bill's month", adj1.length === 1 && adj1[0].amount === -27000 && adj1[0].kind === 'charge' && adj1[0].state === 'open' && adj1[0].owner_id === A.owner_id && adj1[0].occurred_on === '2027-09-01', adj1);
