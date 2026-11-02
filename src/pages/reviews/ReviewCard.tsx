@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from 'react';
+import { DemoReviewActions, useDemoOn } from '../../components/demo/DemoRecords';
+import { SampleMark } from '../../components/DemoMode';
 import { Link } from 'react-router-dom';
 import ChannelMark, { channelLabel } from '../../components/ChannelMark';
 import Icon from '../../components/Icon';
@@ -13,6 +15,8 @@ import type { BookingChannel } from '../../lib/types';
 
 /** A guest review as /api/reviews and the reservation detail send it (functions/_lib/reviews.ts reviewOut). */
 export interface Review {
+  /** Demo mode: a sample review, or a real one changed in Demo mode. */
+  sample?: 'demo' | 'shadow';
   id: string; channel: BookingChannel; rating: number; comment: string | null; reviewedAt: string;
   guestName: string; unitId: string | null; unitNumber: string | null; propertyId: string | null; propertyName: string | null;
   reservationId: string | null; checkIn: string | null; checkOut: string | null; bookingRef: string | null;
@@ -60,6 +64,8 @@ export function ReviewCard({ review, canReply, onChanged, compact }: {
   review: Review; canReply: boolean; onChanged?: () => void; compact?: boolean;
 }) {
   const toast = useToast();
+  const demoOn = useDemoOn();
+  if (demoOn) canReply = false;
   const [local, setLocal] = useState<Pick<Review, 'reply' | 'repliedAt' | 'replyPost'> | null>(null);
   const r = local ? { ...review, ...local } : review;
   const [composing, setComposing] = useState(false);
@@ -101,7 +107,7 @@ export function ReviewCard({ review, canReply, onChanged, compact }: {
         <div className="flex items-start gap-3 min-w-0">
           <ChannelMark ch={r.channel} size={22} />
           <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-copy font-semibold">{r.guestName}</span>
+            <span className="flex items-center gap-1.5 min-w-0"><span className="text-copy font-semibold">{r.guestName}</span><SampleMark kind={r.sample} /></span>
             {!compact && (
               <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">
                 {unit || 'Unit not known'}{stay ? ` · ${stay}` : ''}
@@ -156,6 +162,8 @@ export function ReviewCard({ review, canReply, onChanged, compact }: {
         </div>
       )}
 
+      {/* Demo mode: changed as sample data only, never answered on the channel. */}
+      {demoOn && <DemoReviewActions review={r} onChanged={() => onChanged?.()} />}
       {canReply && !replied && !composing && (
         <Button size="sm" variant="brand" onClick={() => { setComposing(true); setDraft(''); }} className="self-start">Write a reply</Button>
       )}

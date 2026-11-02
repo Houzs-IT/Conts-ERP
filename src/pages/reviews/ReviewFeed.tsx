@@ -109,7 +109,7 @@ export function ReviewFeed({ bad, canReply }: { bad: boolean; canReply: boolean 
       ) : (
         <div className="relative flex flex-col gap-3">
           <BusyBar on={busy} />
-          {rows.map(r => <Card key={r.id}><ReviewCard review={r} canReply={canReply} /></Card>)}
+          {rows.map(r => <Card key={r.id}><ReviewCard review={r} canReply={canReply} onChanged={() => void load(1)} /></Card>)}
           <div ref={end} />
           {more && <Button variant="secondary" className="self-center" loading={busy} onClick={() => load(page + 1)}>Show more ({count((meta?.total ?? 0) - rows.length)} left)</Button>}
         </div>

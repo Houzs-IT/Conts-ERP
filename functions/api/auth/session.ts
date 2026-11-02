@@ -5,6 +5,7 @@ import { twoStepSetupDue } from '../../_lib/signIn';
 import { levelsFor } from '../../_lib/access';
 import { placeOf } from '../../_lib/userSide';
 import { employeeIdOfUser } from '../../_lib/fieldPin';
+import { demoAllowed, demoAsked } from '../../_lib/demo';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const s = await readSession(env.SESSION_SECRET, readCookie(request));
@@ -18,12 +19,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Read live, like the middleware does, so a move to another department shows on the next screen load.
   const place = await placeOf(env, user.id);
   const { side, departmentId, positionId, kind } = place;
+  // Demo mode (functions/_lib/demo.ts): whether the person may use the switch, and whether it is on in this browser.
+  const demoMay = await demoAllowed(env, { role: user.role, departmentId });
   return json({
     user: {
       id: user.id, fullName: user.full_name, email: user.email, role: user.role, side,
       departmentId, department: place.department, positionId, kind,
       mustChangePassword: !!user.must_change_password, locale: user.locale, employeeId: await employeeIdOfUser(env, user.id),
       twoStepSetupRequired: await twoStepSetupDue(env, await securitySettings(env), { role: user.role, departmentId }, !!user.totp_enabled_at),
+      demo: { allowed: demoMay, on: demoMay && demoAsked(request) },
       access: await levelsFor(env, { userId: user.id, role: user.role, side, departmentId, positionId, kind }),
     },
   });
