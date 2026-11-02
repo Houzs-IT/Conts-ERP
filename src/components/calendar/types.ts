@@ -8,7 +8,9 @@ export interface CalendarUnit { id: string; unitNumber: string; propertyId?: str
 
 export interface CalendarBlock {
   id: string; unitId: string; channel: BookingChannel; state: ReservationState;
-  guestName: string; checkIn: string; checkOut: string; grossBookingValue: number; ref: string | null; reason: string | null;
+  guestName: string; checkIn: string; checkOut: string; grossBookingValue: number;
+  /** The booking site's fee, sen; the bar shows the host payout, gross less this. */
+  channelFee?: number; ref: string | null; reason: string | null;
   /** Why dates are held: maintenance, owner_stay or other (blocks made from the calendar since migration 0092). */
   blockReason?: string | null;
 }
