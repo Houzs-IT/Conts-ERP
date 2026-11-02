@@ -88,6 +88,8 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
   const [edits, setEdits] = useState<Record<string, LineEdit>>({});
   const [picking, setPicking] = useState<ManagedLine | null>(null);
+  /* The variants dialog of one line, at the tab's level like the SKU picker: inside the table row a cell clips it. */
+  const [varying, setVarying] = useState<ManagedLine | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refusals, setRefusals] = useState<Record<string, string>>({});
@@ -238,7 +240,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const cell = (l: ManagedLine): RowCtx => ({
     l, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
-    setEdit: (patch) => setEdit(l.id, patch), pick: () => setPicking(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
+    setEdit: (patch) => setEdit(l.id, patch), pick: () => setPicking(l), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
     grDocs: lineDocs(l.id, deliveries, "goods_received"), doDocs: lineDocs(l.id, deliveries, "delivery_order"), openDoc,
   });
 
@@ -445,6 +447,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         <PhotoUploadDialog projectId={p.projectId} initial={uploading} areas={site.data?.areas ?? []} docs={photos.data.docs} tasks={photos.data.tasks}
           onClose={() => setUploading(null)} onDone={(t) => { setUploading(null); p.onDone(t); photos.reload(); q.reload(); }} />
       )}
+      {varying && <VariantDialog {...cell(varying)} onClose={() => setVarying(null)} />}
       {picking && (
         <BetaSkuPicker
           current={picking.itemCode}
@@ -534,6 +537,7 @@ interface RowCtx {
   pending: PendingPoChange[];
   setEdit: (patch: Partial<LineEdit>) => void;
   pick: () => void;
+  pickVariants: () => void;
   saveDate: (which: DateField, value: string) => void;
   setNoPo: (v: boolean) => void;
   grDocs: LineDoc[];
@@ -610,7 +614,6 @@ function DescCell(r: RowCtx): ReactElement {
    variant options has nothing to pick and uses its remark. A renovation contract saves them on the line (a line a live
    PO buys is replaced by a contract VO); any other order raises its VO. */
 function VariantCell(r: RowCtx): ReactElement {
-  const [open, setOpen] = useState(false);
   const e = changed(r);
   const cat = r.l.variantCategory ?? "";
   const shown = e?.variants ? buildVariantSummary(cat, variantsAfter(r.l, e.variants)) || r.l.variantText || "" : r.l.variantText ?? "";
@@ -618,13 +621,10 @@ function VariantCell(r: RowCtx): ReactElement {
     return shown ? <span title={shown} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{shown}</span> : <span style={metaStyle}>-</span>;
   }
   return (
-    <>
-      <button type="button" onClick={() => setOpen(true)} aria-label={`Change variants of ${r.l.itemCode}`} title={shown ? `${shown} (click to change)` : "Pick variants"}
+    <button type="button" onClick={r.pickVariants} aria-label={`Change variants of ${r.l.itemCode}`} title={shown ? `${shown} (click to change)` : "Pick variants"}
         style={{ ...editInput, width: "100%", display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 12, fontWeight: e?.variants ? 700 : 400, color: shown ? undefined : BETA.muted }}>
         <span style={{ flex: 1, textAlign: "left", ...ellipsis }}>{shown || "Pick variants"}</span><ChevronDown size={11} aria-hidden="true" style={{ flexShrink: 0 }} />
-      </button>
-      {open && <VariantDialog {...r} onClose={() => setOpen(false)} />}
-    </>
+    </button>
   );
 }
 
