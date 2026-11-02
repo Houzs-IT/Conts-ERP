@@ -502,6 +502,12 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
             </div>
           ))}
         </div>
+        {rental && (
+          // The unit's reviews in one click (Reviews, owner 2 Nov 2026).
+          <Link to={`/performance/reviews?tab=all&unitId=${encodeURIComponent(u.id)}`} className="-mt-2 mb-4 mx-5 sm:mx-6 block w-fit text-meta text-ink-2 underline">
+            {p.reviewCount ? `See its ${p.reviewCount === 1 ? 'review' : `${p.reviewCount} reviews`}` : 'No reviews yet'}
+          </Link>
+        )}
 
         <div ref={tabsRef} role="tablist" aria-label="Unit record" className="max-md:hidden flex flex-nowrap px-5 sm:px-6 [border-top:1px_solid_var(--color-line)] overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {tabs.map(([k, label, full]) => (

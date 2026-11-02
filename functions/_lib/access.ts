@@ -54,7 +54,6 @@ export const AREAS: Area[] = [
   { key: 'reports', label: 'Reports', group: 'Reports', api: [], managed: true, strictRead: true },
   // Reservations arrive from the channels through the API; finance reads them but does not create or change them (owner, 11 Oct 2026).
   { key: 'reservations', label: 'Reservations', group: 'Reservations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
-  { key: 'comms', label: 'Messages', group: 'Reservations', api: ['messages'] },
   { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'] },
   // Field staff's HR record: IC, bank, salary and statutory (PLAN-hr-employees.md). Its own group so Operations staff do
   // not see pay by default. The cleaner and technician rosters themselves stay under Operations.
@@ -75,6 +74,8 @@ export const AREAS: Area[] = [
   // Operations managers read the rest of Finance but never the company books.
   { key: 'ledger', label: 'Ledger', group: 'Finance', api: [], managed: true, strictRead: true },
   { key: 'pricing', label: 'Pricing and reviews', group: 'Growth', api: ['pricing', 'rates', 'reviews'] },
+  // Messages sat under Reservations from 30 Oct to 2 Nov 2026; migration 0199 pinned its stored levels when it moved here.
+  { key: 'comms', label: 'Messages', group: 'Growth', api: ['messages'] },
   { key: 'automations', label: 'Automations', group: 'Growth', api: ['automations'] },
   // The user list is read by management and operations managers only (functions/api/users), so finance admins start at none.
   { key: 'users', label: 'Users and roles', group: 'System', api: ['users', 'departments'], managed: true },

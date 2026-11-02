@@ -1,263 +1,43 @@
-import { useMemo, useState, type FormEvent } from 'react';
-import { color } from '../theme';
-import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
-import { EmptyState } from '../components/States';
-import ChannelMark from '../components/ChannelMark';
-import Icon from '../components/Icon';
-import { StatusBadge } from '../components/StatusBadge';
-import { Button } from '../components/Button';
-import { StaleBanner, TableSkeleton } from '../components/DataState';
-import { useToast } from '../components/Toast';
-import { useApi } from '../lib/useApi';
-import { api, errorMessage } from '../lib/api';
-import { rating as fmtRating, date as fmtDate, todayMyt, count, plural } from '../lib/format';
-import type { BookingChannel } from '../lib/types';
-import { FilterBar } from '../components/FilterBar';
-import { TONE, cx } from '../lib/design-tokens';
-import { PageControls } from '../components/PageControls';
-import { go } from '../lib/go';
+import { TabBar, panelId } from '../components/TabBar';
+import { useSession } from '../lib/session';
+import { mayWork } from '../lib/areaAccess';
+import { useUrlState } from './finance/listKit';
+import { ReviewsOverview } from './reviews/ReviewsOverview';
+import { ReviewFeed } from './reviews/ReviewFeed';
+import { OutstandingStays } from './reviews/OutstandingStays';
+import { BAD_REVIEW_MAX } from '../lib/reviewRules';
 
-/** A guest review pulled in from a channel. `reply`/`repliedAt` are set once the
- *  host has responded; a null `reply` is the "needs reply" state. */
-interface Review {
-  id: string; guestName: string; unitNumber: string; propertyName: string;
-  channel: BookingChannel; rating: number; comment: string | null; reviewedAt: string;
-  reply: string | null; repliedAt: string | null;
-}
-interface Payload {
-  data: Review[]; average: number | null; generatedAt: string;
-  summary?: { total: number; replied: number }; page?: number; pageSize?: number; total?: number;
-}
+type Tab = 'overview' | 'all' | 'bad' | 'outstanding';
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'all', label: 'All reviews' },
+  { key: 'bad', label: 'Bad reviews' },
+  { key: 'outstanding', label: 'Outstanding' },
+];
 
-const FALLBACK: Payload = {
-  average: 4.6, generatedAt: '',
-  data: [
-    { id: 'r1', guestName: 'Nadia A.', unitNumber: '#A-12-03', propertyName: 'Vista Jaya One', channel: 'airbnb', rating: 5, comment: 'Spotless and exactly as described. Check-in instructions were clear.', reviewedAt: '2026-09-14', reply: null, repliedAt: null },
-    { id: 'r2', guestName: 'Jonathan T.', unitNumber: '#B-08-11', propertyName: 'Arcoris', channel: 'airbnb', rating: 5, comment: 'Great location, quick responses from the host.', reviewedAt: '2026-09-12', reply: 'Thank you Jonathan — glad the stay went smoothly. You are welcome back any time.', repliedAt: '2026-09-12' },
-    { id: 'r3', guestName: 'Marcus W.', unitNumber: '#2207', propertyName: 'Tribeca', channel: 'booking_com', rating: 5, comment: 'Best value in Bukit Bintang. Would stay again.', reviewedAt: '2026-09-10', reply: null, repliedAt: null },
-    { id: 'r4', guestName: 'Chen Y.', unitNumber: '#15-06', propertyName: 'Scarletz', channel: 'agoda', rating: 4, comment: 'Comfortable, but the aircon was a little loud at night.', reviewedAt: '2026-09-05', reply: null, repliedAt: null },
-    { id: 'r5', guestName: 'Priya S.', unitNumber: '#12-08', propertyName: 'Scarletz', channel: 'booking_com', rating: 3, comment: 'Nice unit but the kitchen was missing some basics. Otherwise fine.', reviewedAt: '2026-08-30', reply: 'Thanks for flagging this, Priya. We have restocked the kitchen inventory for the unit.', repliedAt: '2026-08-31' },
-    { id: 'r6', guestName: 'Daniel O.', unitNumber: '#A-05-01', propertyName: 'Vista Jaya One', channel: 'agoda', rating: 2, comment: 'Check-in took a while and the WiFi kept dropping during my stay.', reviewedAt: '2026-08-22', reply: null, repliedAt: null },
-  ],
-};
-
-type ReplyState = 'all' | 'needs_reply' | 'replied';
-type RatingFilter = 'all' | 5 | 4 | 3 | 2 | 1;
-
-function Stars({ n }: { n: number }) {
-  return (
-    <span className="flex gap-0.5" role="img" aria-label={`${n} out of 5`}>
-      {[1, 2, 3, 4, 5].map(i => <Icon key={i} name="Star" size="sm" color={i <= n ? color.gold : color.border} />)}
-    </span>
-  );
-}
-
-const PAGE_SIZE = 50;
-
+/** Reviews (owner, 2 Nov 2026): the overall picture with a switch to see it by building or by unit; every review; every
+ *  bad review (BAD_REVIEW_MAX stars or fewer); and the finished reservations that have not left a review yet. The tab
+ *  and every filter live in the address, so a link (from a unit page, a row in Overview) opens the same view. */
 export default function ReviewsPage() {
-  const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
-  const [replyFilter, setReplyFilter] = useState<ReplyState>('all');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGE_SIZE);
-  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-  if (ratingFilter !== 'all') query.set('rating', String(ratingFilter));
-  if (replyFilter !== 'all') query.set('reply', replyFilter);
-  const { data, loading, error, reload } = useApi<Payload>(`/reviews?${query}`, FALLBACK);
-  const toast = useToast();
-
-  // Optimistic overlay — there is no backend in dev. A local reply marks the
-  // review "replied" the moment it is posted, before any round-trip resolves.
-  const [replies, setReplies] = useState<Record<string, { reply: string; repliedAt: string }>>({});
-  const [composingId, setComposingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
-
-  const rows = useMemo<Review[]>(() => {
-    const base = data?.data ?? [];
-    return base.map(r => {
-      const local = replies[r.id];
-      return local ? { ...r, reply: local.reply, repliedAt: local.repliedAt } : r;
-    });
-  }, [data, replies]);
-
-  // Summary is over every review (the server counts it), not the filtered page.
-  const total = data?.summary?.total ?? rows.length;
-  const repliedCount = data?.summary?.replied ?? rows.filter(r => r.reply != null).length;
-  const needsReplyCount = total - repliedCount;
-  const average = data?.average ?? (rows.length > 0 ? rows.reduce((s, r) => s + r.rating, 0) / rows.length : null);
-  const pctReplied = total > 0 ? Math.round((repliedCount / total) * 100) : 0;
-
-  // The development fallback is not filtered by a server, so filter it here too; a server page is already filtered.
-  const visible = data?.summary ? rows : rows.filter(r => {
-    if (ratingFilter !== 'all' && r.rating !== ratingFilter) return false;
-    if (replyFilter === 'replied' && r.reply == null) return false;
-    if (replyFilter === 'needs_reply' && r.reply != null) return false;
-    return true;
-  });
-  const matching = data?.total ?? visible.length;
-
-  const filtered = ratingFilter !== 'all' || replyFilter !== 'all';
-  function rate(f: RatingFilter) { setRatingFilter(f); setPage(1); }
-  function replyState(f: ReplyState) { setReplyFilter(f); setPage(1); }
-  function clearFilters() { rate('all'); replyState('all'); }
-
-  function startReply(id: string) { setComposingId(id); setDraft(''); }
-  function cancelReply() { setComposingId(null); setDraft(''); }
-
-  async function postReply(e: FormEvent, review: Review) {
-    e.preventDefault();
-    const body = draft.trim();
-    if (!body) return;
-    const repliedAt = todayMyt();
-
-    try {
-      await api.post(`/reviews/${review.id}/reply`, { body });
-      setReplies(m => ({ ...m, [review.id]: { reply: body, repliedAt } }));
-      setComposingId(null);
-      setDraft('');
-      toast({ tone: 'success', title: 'Reply saved.', body: 'Kept on the review. Posting it to the channel is not connected yet.' });
-      reload();
-    } catch (err) {
-      toast({ tone: 'critical', title: 'Reply was not saved.', body: errorMessage(err, 'Try again in a moment.') });
-    }
-  }
+  const url = useUrlState();
+  const { user } = useSession();
+  const canReply = mayWork(user, 'pricing');
+  const raw = url.get('tab');
+  const tab: Tab = (TABS.some(t => t.key === raw) ? raw : 'overview') as Tab;
 
   return (
     <>
-      <PageHeader
-        title="Reviews"
-        sub={total > 0
-          ? `${fmtRating(average ?? 0)} average across ${plural(total, 'review')} · ${pctReplied}% replied`
-          : 'Guest reviews across every channel'}
-      />
-
-      {error && <StaleBanner message={`Showing the last reviews we have. ${error}`} onRetry={reload} />}
-
-      {/* Summary: the average as the dark statement tile, how the stars spread, and the reply backlog. */}
-      <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,1fr)_minmax(0,1.6fr)_minmax(200px,1fr)] gap-3 sm:gap-4">
-        <div className="relative rounded-card bg-black text-white p-5 flex flex-col gap-2 overflow-hidden">
-          <span aria-hidden className="absolute left-5 top-0 h-[2px] w-8 bg-gold" />
-          <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">Average rating</span>
-          <span className="text-[40px] leading-none font-semibold tabular-nums text-gold">{average != null ? fmtRating(average) : '—'}</span>
-          {average != null && <Stars n={Math.round(average)} />}
-          <span className="text-meta text-on-dark">{data ? `across ${plural(total, 'review')}` : 'Loading…'}</span>
-        </div>
-        <Card>
-          <div className="px-5 py-4 flex flex-col gap-2">
-            <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">How guests rate</span>
-            {([5, 4, 3, 2, 1] as const).map(n => {
-              const k = rows.filter(r => Math.round(r.rating) === n).length;
-              const pct = rows.length ? Math.round((k / rows.length) * 100) : 0;
-              return (
-                <button key={n} type="button" onClick={() => rate(ratingFilter === n ? 'all' : n as RatingFilter)}
-                  className={cx('flex items-center gap-3 bg-transparent border-none p-0 cursor-pointer text-left [font-family:inherit]', ratingFilter === n ? 'text-ink' : 'text-ink-2')}>
-                  <span className="w-10 text-meta tabular-nums">{n} ★</span>
-                  <span className="flex-1 h-2 rounded-full bg-muted overflow-hidden"><span className="block h-full rounded-full bg-gold" style={{ width: `${pct}%` }} /></span>
-                  <span className="w-10 text-right text-meta tabular-nums text-muted-ink">{k}</span>
-                </button>
-              );
-            })}
-          </div>
-        </Card>
-        <div className="grid grid-cols-2 md:grid-cols-1 gap-3 sm:gap-4">
-          <button type="button" onClick={() => replyState('needs_reply')}
-            className={cx('rounded-card border border-solid p-4 flex flex-col gap-1.5 text-left cursor-pointer [font-family:inherit]', needsReplyCount ? cx('border-warning-line', TONE.warning.bg) : 'border-line bg-card')}>
-            <span className={cx('text-[11px] font-semibold tracking-[0.12em] uppercase', needsReplyCount ? TONE.warning.text : 'text-muted-ink')}>Needs reply</span>
-            <span className={cx('text-[26px] leading-none font-semibold tabular-nums', needsReplyCount ? TONE.warning.text : 'text-ink')}>{data ? count(needsReplyCount) : '—'}</span>
-          </button>
-          <div className="rounded-card border border-solid border-line bg-card p-4 flex flex-col gap-1.5">
-            <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">Replied</span>
-            <span className="text-[26px] leading-none font-semibold tabular-nums">{data ? `${pctReplied}%` : '—'}</span>
-          </div>
-        </div>
+      <PageHeader title="Reviews" sub={`Guest reviews from every channel · a bad review is ${BAD_REVIEW_MAX} stars or fewer`} />
+      <TabBar id="reviews" label="Reviews views" tabs={TABS} value={tab}
+        // Drill-down filters carry across tabs (a unit picked in Overview stays picked); the list's own ones do not.
+        onChange={k => url.set({ tab: k === 'overview' ? null : k, page: null, rating: null, reply: null, window: null, from: null, to: null, q: null, matched: null })} />
+      <div id={panelId('reviews')} role="tabpanel" className="flex flex-col gap-4 min-w-0">
+        {tab === 'overview' && <ReviewsOverview />}
+        {tab === 'all' && <ReviewFeed bad={false} canReply={canReply} />}
+        {tab === 'bad' && <ReviewFeed bad canReply={canReply} />}
+        {tab === 'outstanding' && <OutstandingStays />}
       </div>
-
-      {/* Reply state is the main view; a star rating narrows it from the Filter menu. */}
-      <FilterBar<ReplyState> label="Filter by reply state" value={replyFilter} onChange={replyState}
-        views={[
-          { key: 'all', label: 'All' },
-          { key: 'needs_reply', label: 'Needs reply', count: needsReplyCount || undefined },
-          { key: 'replied', label: 'Replied' },
-        ]}
-        tags={{
-          single: true, active: ratingFilter === 'all' ? [] : [String(ratingFilter)],
-          items: ([5, 4, 3, 2, 1] as const).map(n => ({ key: String(n), label: `${n} ${n === 1 ? 'star' : 'stars'}` })),
-          onToggle: k => rate(String(ratingFilter) === k ? 'all' : Number(k) as RatingFilter), onClear: () => rate('all'),
-        }} />
-
-      {/* List */}
-      {loading && rows.length === 0 ? (
-        <Card><TableSkeleton rows={4} cols={3} /></Card>
-      ) : visible.length === 0 ? (
-        filtered
-          ? <EmptyState kind="filtered" title="No reviews match these filters." action={{ label: 'Clear filters', onClick: clearFilters }} />
-          : <EmptyState icon="Star" title="No reviews yet"
-              body="Reviews arrive from Airbnb and Booking.com once units are connected through Channex. Connect a unit from its Channels card, or see Integrations."
-              action={{ label: 'Open Integrations', onClick: () => { go('/system/integrations'); } }} />
-      ) : (
-        visible.map(r => {
-          const replied = r.reply != null;
-          const composing = composingId === r.id;
-          return (
-            <Card key={r.id}>
-              <div className="flex flex-col gap-3 px-5 py-4">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <ChannelMark ch={r.channel} size={22} />
-                    <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-copy font-semibold">{r.guestName}</span>
-                      <span className="text-meta text-muted-ink">{r.propertyName} {r.unitNumber} · {fmtDate(r.reviewedAt)}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Stars n={r.rating} />
-                    <StatusBadge tone={replied ? 'success' : 'warning'} label={replied ? 'Replied' : 'Needs reply'} size="sm" />
-                  </div>
-                </div>
-
-                {r.comment && <p className="m-0 text-copy leading-[1.55] [text-wrap:pretty]">{r.comment}</p>}
-
-                {/* Existing / just-posted reply */}
-                {replied && r.reply && (
-                  <div className="flex flex-col gap-1 bg-muted rounded-control px-3 py-2.5">
-                    <span className="text-caption font-semibold text-muted-ink uppercase tracking-[0.06em]">
-                      Your reply{r.repliedAt ? ` · ${fmtDate(r.repliedAt)}` : ''}
-                    </span>
-                    <p className="m-0 text-copy leading-[1.55] [text-wrap:pretty]">{r.reply}</p>
-                  </div>
-                )}
-
-                {/* Inline compose */}
-                {!replied && !composing && (
-                  <Button size="sm" variant="brand" onClick={() => startReply(r.id)} className="self-start">
-                    Write a reply
-                  </Button>
-                )}
-                {!replied && composing && (
-                  <form onSubmit={e => postReply(e, r)} className="flex flex-col gap-2">
-                    <textarea value={draft} onChange={e => setDraft(e.target.value)} autoFocus rows={3}
-                      aria-label={`Reply to ${r.guestName}`}
-                      placeholder={`Reply to ${r.guestName} on ${r.propertyName} ${r.unitNumber}`}
-                      className="w-full box-border px-3 py-2.5 [font-family:inherit] text-copy text-ink border border-solid border-line rounded-control outline-none resize-y" />
-                    <div className="flex gap-2 justify-end">
-                      <Button type="button" size="sm" variant="secondary" onClick={cancelReply}>Cancel</Button>
-                      <Button type="submit" size="sm" variant="primary" disabled={!draft.trim()} disabledReason="Write a reply first.">
-                        Post reply
-                      </Button>
-                    </div>
-                  </form>
-                )}
-              </div>
-            </Card>
-          );
-        })
-      )}
-      {matching > 25 && (
-        <Card>
-          <PageControls page={page} pageSize={pageSize} total={matching} onPage={setPage}
-            onSize={s => { setPageSize(s); setPage(1); }} noun="reviews" />
-        </Card>
-      )}
     </>
   );
 }

@@ -109,3 +109,16 @@ test('the seeded rules give the levels of the old role chart', () => {
     for (const a of AREAS) assert.equal(resolveFor(r, staff, a).level, seeded[role][a.key], `${role} ${a.key}`);
   }
 });
+
+test('Messages sits in Growth beside Pricing and reviews and Automations (owner, 2 Nov 2026; migration 0199)', () => {
+  const growth = AREAS.filter(a => a.group === 'Growth').map(a => a.key);
+  assert.deepEqual(growth, ['pricing', 'comms', 'automations']);
+  assert.ok(!AREAS.some(a => a.group === 'Reservations' && a.key === 'comms'));
+});
+
+test('a Growth baseline does not reach Messages where migration 0199 pinned it', () => {
+  // A department whose Reservations baseline gave Messages Edit and whose Growth baseline is View: 0199 stores comms Edit.
+  const r = rules({ department: { 'group:Reservations': 'edit', 'group:Growth': 'view', comms: 'edit' } });
+  assert.equal(resolveFor(r, staff, AREAS.find(a => a.key === 'comms')).level, 'edit');
+  assert.equal(resolveFor(r, staff, AREAS.find(a => a.key === 'pricing')).level, 'view');
+});
