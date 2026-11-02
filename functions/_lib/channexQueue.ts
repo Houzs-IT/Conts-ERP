@@ -1,7 +1,8 @@
 import { type Env, one, all, run, audit, nowIso } from './db';
 import { channexConfigured, channexSendAri } from './channex';
 import { channexMappingFor } from './channexSync';
-import { standardRate, type SalesChannel } from './channelPrice';
+import type { SalesChannel } from './channelPrice';
+import { loadPricing, standardPrice } from './unitPricing';
 import { rentalOnly } from './unitPurpose';
 
 /**
@@ -253,8 +254,8 @@ export async function queueFullSync(env: Env, unitIds?: string[], opts: { prices
     WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND state IN ('pending','confirmed','checked_in') AND check_out > ? AND check_in <= ?`, JSON.stringify(ids), today, last);
   const rates = await all<{ unit_id: string; channel: string; rate_date: string; rate: number }>(env, `
     SELECT unit_id, channel, rate_date, rate FROM channel_rates WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND rate_date BETWEEN ? AND ?`, JSON.stringify(ids), today, last);
-  const uplifts = await all<{ unit_id: string; channel: string; uplift: number }>(env, `
-    SELECT unit_id, channel, uplift FROM channel_uplifts WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(ids));
+  // Levels, each channel's rule and the holidays that apply to each unit (channelPrice.ts has the rule).
+  const pricing = await loadPricing(env, ids, today, last);
   const restr = await all<{ unit_id: string; rate_date: string; min_stay: number | null; stop_sell: boolean }>(env, `
     SELECT unit_id, rate_date, min_stay, stop_sell FROM unit_restrictions WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND rate_date BETWEEN ? AND ?`, JSON.stringify(ids), today, last);
 
@@ -274,8 +275,8 @@ export async function queueFullSync(env: Env, unitIds?: string[], opts: { prices
     for (const [channel, planId] of plans) {
       if (!planId) continue;
       const rateOn = new Map(rates.filter(r => r.unit_id === u.id && r.channel === channel).map(r => [r.rate_date, Number(r.rate)]));
-      const savedUplift = uplifts.find(x => x.unit_id === u.id && x.channel === channel)?.uplift;
-      const night = (d: string) => ({ rate: rateOn.get(d) ?? standardRate(channel, Number(u.base_rate), u.weekend_rate, savedUplift, d), minStay: resOn.get(d)?.min_stay ?? 1, stopSell: !!resOn.get(d)?.stop_sell });
+      const p = pricing.get(u.id);
+      const night = (d: string) => ({ rate: rateOn.get(d) ?? (p ? standardPrice(p, channel, d) : Number(u.base_rate)), minStay: resOn.get(d)?.min_stay ?? 1, stopSell: !!resOn.get(d)?.stop_sell });
       for (const r of runs(dates, night, (x, y) => x.rate === y.rate && x.minStay === y.minStay && x.stopSell === y.stopSell)) {
         restrictions.push({ id: crypto.randomUUID(), unit_id: u.id, property_id: u.channex_property_id, rate_plan_id: planId, date_from: r.from, date_to: r.to, rate: r.value.rate > 0 ? r.value.rate / 100 : null, min_stay: r.value.minStay, stop_sell: r.value.stopSell });   // never a zero price: Channex discards it
       }
@@ -289,4 +290,41 @@ export async function queueFullSync(env: Env, unitIds?: string[], opts: { prices
     SELECT id, 'restrictions', unit_id, property_id, rate_plan_id, date_from, date_to, rate, min_stay, stop_sell, ?, ?
     FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, property_id text, rate_plan_id text, date_from text, date_to text, rate numeric, min_stay int, stop_sell boolean)`, now, now, JSON.stringify(restrictions));
   return { units: units.length };
+}
+
+/**
+ * Re-queues the prices of chosen nights for chosen units, on every rate plan they have, at what the price rule now
+ * says (a night's custom price still wins). Used when a public holiday is added, moved or removed: only those nights
+ * (and the nights before them, for units that price holiday eves) change, so a full 500-day sync is not needed.
+ * Each unit is wrapped on its own: a queue problem is audited and never fails the save that triggered it.
+ */
+export async function queueNights(env: Env, unitIds: string[], dates: string[]): Promise<{ units: number; ranges: number }> {
+  const out = { units: 0, ranges: 0 };
+  if (!channexConfigured(env) || !unitIds.length || !dates.length) return out;
+  const today = (await one<{ d: string }>(env, `SELECT to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS d`))!.d;
+  const last = addDays(today, FULL_SYNC_DAYS - 1);
+  const rental = await rentalOnly(env, 'units');
+  const units = await all<{ id: string }>(env, `
+    SELECT id FROM units WHERE channex_property_id IS NOT NULL AND channex_room_type_id IS NOT NULL AND channex_rate_plan_id IS NOT NULL${rental}
+      AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(unitIds));
+  if (!units.length) return out;
+  const ids = units.map(u => u.id);
+  const pricing = await loadPricing(env, ids, today, last);
+  const custom = await all<{ unit_id: string; channel: string; rate_date: string; rate: number }>(env, `
+    SELECT unit_id, channel, rate_date, rate FROM channel_rates WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+      AND rate_date IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(ids), JSON.stringify([...new Set(dates.flatMap(d => [d, addDays(d, -1)]))]));
+  for (const id of ids) {
+    const p = pricing.get(id);
+    if (!p) continue;
+    // The holiday itself, and the night before it when this unit prices holiday eves.
+    const nights = [...new Set(dates.flatMap(d => (p.levels.holidayEve ? [addDays(d, -1), d] : [d])))].filter(d => d >= today && d <= last).sort();
+    if (!nights.length) continue;
+    const items = (['web', 'airbnb', 'booking_com', 'agoda'] as SalesChannel[]).flatMap(channel => nights.map(d => ({
+      dateFrom: d, dateTo: d, channel,
+      r: { rateSen: Number(custom.find(c => c.unit_id === id && c.channel === channel && c.rate_date === d)?.rate ?? standardPrice(p, channel, d)) },
+    })));
+    await enqueueRestrictionsMany(env, id, items);
+    out.units++; out.ranges += items.length;
+  }
+  return out;
 }

@@ -8,7 +8,7 @@ import { Select } from '../Select';
 import Icon from '../Icon';
 import { UnitPicker } from '../booking/UnitPicker';
 import { CHANNEL } from '../../lib/vocabulary';
-import { COMMISSION, upliftOver } from '../../lib/pricing';
+import { COMMISSION, channelOver, type ChannelRule } from '../../lib/pricing';
 import type { BookingChannel } from '../../lib/types';
 import { type CalendarUnit } from './types';
 import { runBulk, type BulkBody, type BulkResult } from './bulkRates';
@@ -105,6 +105,7 @@ export interface RatePricing {
   weekendRate?: Record<string, number | null>;
   savedUplifts?: Record<string, number>;
   upliftShares?: Record<string, number>;
+  channelRules?: Record<string, ChannelRule>;
 }
 export type RateUpdateValue = BulkBody;
 interface Range { from: string; to: string }
@@ -197,7 +198,7 @@ export function RateUpdate({ units, pricing, initial, onClose, onDone, building,
   };
   const rowFor = (ch: typeof PRICE_CHANNELS[number]) => {
     const us = ch === 'web' ? chosen : chosen.filter(u => u.linked?.includes(ch as BookingChannel));
-    const ups = us.map(u => upliftOver(ch, exampleWeb(u), pricing.savedUplifts?.[`${u.id}:${ch}`], pricing.upliftShares?.[ch]));
+    const ups = us.map(u => channelOver(ch, exampleWeb(u), pricing.channelRules?.[`${u.id}:${ch}`], pricing.savedUplifts?.[`${u.id}:${ch}`], pricing.upliftShares?.[ch], pricing.baseRate[u.id] ?? 0));
     const guest = us.map((u, i) => exampleWeb(u) + ups[i]);
     const keep = ch === 'web' ? guest : guest.map(g => Math.round(g * (1 - COMMISSION[ch as 'airbnb'] / 100)));
     return { n: us.length, ups, guest, keep };

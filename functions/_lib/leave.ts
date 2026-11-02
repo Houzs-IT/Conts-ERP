@@ -1,5 +1,6 @@
 import { type Env, all, one } from './db';
 import { hasColumn } from './auth';
+import { staffHolidays } from './holidays';
 import type { Employee } from './hrFields';
 import { ALLOWANCE_TYPES, balance, chargeableDays, parseHolidays, type Balance, type LeaveStatus, type LeaveType, type PublicHoliday } from './leaveRules';
 
@@ -9,7 +10,11 @@ export const hasLeaves = (env: Env): Promise<boolean> => hasColumn(env, 'leaves'
 export const NOT_MIGRATED = 'Leave needs a database update (migration 0167) that has not been applied yet.';
 export const HOLIDAYS_KEY = 'hr.public_holidays';
 
+/** The public holidays leave and payroll count: the company's shared list (migration 0202, functions/_lib/holidays.ts),
+ *  entries marked as a staff day off, one per date. Before 0202, HR's own list in settings. */
 export async function readHolidays(env: Env): Promise<PublicHoliday[]> {
+  const shared = await staffHolidays(env);
+  if (shared) return shared;
   const row = await one<{ value: string }>(env, 'SELECT value FROM settings WHERE key = ?', HOLIDAYS_KEY);
   return parseHolidays(row?.value);
 }

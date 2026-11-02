@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type MutableRefObject } from 'react';
+import { standardOn, type LevelPrices, type ChannelRule } from '../lib/pricing';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/States';
 import { usePhone } from './finance/listKit';
@@ -63,6 +64,11 @@ interface Payload {
   /** Each booking site's uplift on a weekday night, and on a weekend night (a default uplift is a share of the night's web price). */
   uplifts?: Record<string, number>; weekendUplifts?: Record<string, number>;
   savedUplifts?: Record<string, number>; upliftShares?: Record<string, number>;
+  /** Each channel's price per level, keyed "unitId:channel" (functions/_lib/channelPrice.ts), and each unit's holiday
+   *  nights in the window. Missing (an older backend): the weekend and uplift fields above are used. */
+  levelPrices?: Record<string, LevelPrices>; holidayNights?: Record<string, string[]>;
+  channelRules?: Record<string, ChannelRule>;
+  holidays?: { date: string; name: string; state: string | null }[];
   restrictions?: Record<string, { minStay: number; stopSell: boolean }>;
   /** Whether this person may change prices. Missing (an older backend): assume yes and let the server refuse. */
   canSetRates?: boolean;
@@ -325,6 +331,7 @@ function CalendarBoard() {
   const lastSync = otaRows.map(r => r.lastSyncedAt).filter((x): x is string => !!x).sort().pop() ?? null;
   const syncTrouble = otaRows.some(r => r.state === 'degraded' || r.state === 'failed' || r.state === 'expired');
 
+  const holidayNights = useMemo(() => new Map(Object.entries(data?.holidayNights ?? {}).map(([u, d]) => [u, new Set(d)])), [data?.holidayNights]);
   /** A unit's web price on a weekday and on a Friday or Saturday night. */
   const webRates = (unitId: string) => {
     const base = data?.baseRate[unitId] ?? 0;
@@ -335,6 +342,9 @@ function CalendarBoard() {
     if (rateEdits[key] != null) return rateEdits[key];
     const saved = data?.rates?.[key];
     if (saved != null) return saved;
+    // Custom price, else holiday, else weekend, else nightly (functions/_lib/channelPrice.ts).
+    const lp = data?.levelPrices?.[`${unitId}:${channel}`];
+    if (lp) return standardOn(lp, dayIso(i), !!holidayNights.get(unitId)?.has(dayIso(i)));
     // Same rule as the Pricing page and Channex (functions/_lib/channelPrice.ts): the night's web price (the
     // weekend rate on Fri/Sat) plus the channel's uplift on that night.
     const weekend = isWeekendNight(addDays(gridStart, i));
@@ -898,7 +908,7 @@ function CalendarBoard() {
       {rateUpdate && <RateUpdate units={rateSource?.units ?? allUnits} initial={rateUpdate} onClose={() => setRateUpdate(false)}
         loadingAll={property !== 'all' && !everyUnit.data} building={property !== 'all' ? property : undefined}
         preselect={!rateUpdate.unitIds && property !== 'all' && units.length <= 12 ? units.map(u => u.id) : undefined}
-        pricing={{ baseRate: { ...(rateSource?.baseRate ?? {}), ...(data?.baseRate ?? {}) }, weekendRate: { ...(rateSource?.weekendRate ?? {}), ...(data?.weekendRate ?? {}) }, savedUplifts: { ...(rateSource?.savedUplifts ?? {}), ...(data?.savedUplifts ?? {}) }, upliftShares: data?.upliftShares ?? rateSource?.upliftShares }}
+        pricing={{ baseRate: { ...(rateSource?.baseRate ?? {}), ...(data?.baseRate ?? {}) }, weekendRate: { ...(rateSource?.weekendRate ?? {}), ...(data?.weekendRate ?? {}) }, savedUplifts: { ...(rateSource?.savedUplifts ?? {}), ...(data?.savedUplifts ?? {}) }, upliftShares: data?.upliftShares ?? rateSource?.upliftShares, channelRules: { ...(rateSource?.channelRules ?? {}), ...(data?.channelRules ?? {}) } }}
         onDone={(v, res) => {
           setRateUpdate(false);
           const ranges = v.lines.length === 1 ? dateRange(v.lines[0].from, v.lines[0].to) : plural(v.lines.length, 'date range');

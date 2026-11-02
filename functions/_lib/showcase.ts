@@ -2,7 +2,7 @@ import { type Env, all, one } from './db';
 import { COUNTED_STAY, nightsBetween, stayMonths, metrics, monthEndExclusive, daysInMonth } from './revenue';
 import { rentalOnly } from './unitPurpose';
 import { monthsBack, todayMyt } from './ops';
-import { standardRate } from './channelPrice';
+import { loadPricing, standardPrice } from './unitPricing';
 
 /** Owner Showcase (CONTS-0006): the figures sales staff show a prospective owner, and the ones Showcase control may
  *  replace. Overrides apply to the portfolio ("All properties") only; a single property always shows its own figures.
@@ -231,19 +231,18 @@ export async function calendar(env: Env, units: ShowcaseUnit[], from: string, da
   const end = addDays(from, days), last = addDays(from, days - 1), today = todayMyt();
   const ids = JSON.stringify(units.map(u => u.id));
   const IN = `IN (SELECT jsonb_array_elements_text(?::text::jsonb))`;
-  const [stays, base, rates, uplifts] = await Promise.all([
+  const [stays, base, rates, pricing] = await Promise.all([
     all<any>(env, `
       SELECT r.id, r.unit_id, r.external_ref, r.check_in, r.check_out, r.guests_count, r.gross_booking_value, g.full_name
       FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id
       WHERE ${COUNTED_STAY} AND r.unit_id ${IN} AND r.check_in < ? AND r.check_out > ? ORDER BY r.check_in`, ids, end, from),
     all<{ id: string; base_rate: number; weekend_rate: number | null }>(env, `SELECT id, base_rate, weekend_rate FROM units WHERE id ${IN}`, ids),
     all<{ unit_id: string; rate_date: string; rate: number }>(env, `SELECT unit_id, rate_date, rate FROM channel_rates WHERE channel = 'airbnb' AND unit_id ${IN} AND rate_date BETWEEN ? AND ?`, ids, from, last),
-    all<{ unit_id: string; uplift: number }>(env, `SELECT unit_id, uplift FROM channel_uplifts WHERE channel = 'airbnb' AND unit_id ${IN}`, ids),
+    loadPricing(env, units.map(u => u.id), from, last),
   ]);
   const dates = Array.from({ length: days }, (_, i) => addDays(from, i));
   const set = new Map(rates.map(r => [`${r.unit_id}|${r.rate_date}`, Number(r.rate)]));
-  const upl = new Map(uplifts.map(u => [u.unit_id, Number(u.uplift)]));
-  const priced = new Map(base.map(b => [b.id, dates.map(d => set.get(`${b.id}|${d}`) ?? standardRate('airbnb', Number(b.base_rate), b.weekend_rate, upl.get(b.id), d))]));
+  const priced = new Map(base.map(b => [b.id, dates.map(d => { const p = pricing.get(b.id); return set.get(`${b.id}|${d}`) ?? (p ? standardPrice(p, 'airbnb', d) : Number(b.base_rate)); })]));
   return {
     from, days, today, dates,
     rates: Object.fromEntries(units.map(u => [u.id, priced.get(u.id) ?? dates.map(() => 0)])),
