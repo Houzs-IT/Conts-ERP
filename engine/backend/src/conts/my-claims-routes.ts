@@ -14,6 +14,7 @@
 //   GET  /units                    units to name on a receipt
 //   GET  /accounts, /projects       what a cost is, and the project it is on
 //   GET  /suppliers?q=, /purchase-orders?q=   who finance pays (office staff)
+//   POST /utility-bills/*          scanned utility bills from Property OS (utility-bill-routes.ts; office staff)
 import { paginateAll } from '../scm/lib/paginate-all';
 import { Hono } from 'hono';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
@@ -27,6 +28,7 @@ import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, rec
 import type { Staff } from './staff-identity';
 import { buildLines } from './claims-lines';
 import { myRequestRoutes } from './payment-request-routes';
+import { utilityBillRoutes } from './utility-bill-routes';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 type Ctx = any;
@@ -304,5 +306,6 @@ export function myClaimsRouter(source: 'session' | 'forward') {
   r.get('/suppliers', suppliersHandler);
   r.get('/purchase-orders', purchaseOrdersHandler);
   myRequestRoutes(r);
+  utilityBillRoutes(r);
   return r;
 }
