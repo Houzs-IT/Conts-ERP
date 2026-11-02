@@ -618,13 +618,13 @@ describe('each line says what it is for', () => {
     expect(sent().lines).toEqual([expect.objectContaining({ department: 'rental', unitId: 'u-a31', projectId: null })]);
   });
 
-  test('saving a Unit line with no unit says "Pick the unit" and saves nothing', async () => {
+  test('a Unit line with no unit saves as a Rental general cost (SOP 3.2)', async () => {
     mutateAsync.mockClear();
     scanned();
     setFor(1, 'Unit');
     save();
-    expect(await screen.findByText('Pick the unit')).toBeTruthy();
-    expect(mutateAsync).not.toHaveBeenCalled();
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    expect(sent().lines).toEqual([expect.objectContaining({ department: 'rental', unitId: null, projectId: null })]);
   });
 
   test('saving a Project line with no project says "Pick the project"', async () => {

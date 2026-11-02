@@ -72,11 +72,11 @@ export function purposePayload(l: PurposeDraft, side: ProjectSide | null): { dep
   };
 }
 
-/** The first line still missing its unit or project, as the save's sentence. */
+/** The first line still missing its project, as the save's sentence. A Unit line may leave the unit empty: it is then a
+    Rental general cost (FINANCE-SOP 3.2: a Rental line may name a unit or not). */
 export function missingTarget(lines: ReadonlyArray<PurposeDraft & { n: number }>): { title: string; body: string } | null {
   for (const l of lines) {
     if (l.saved) continue; // as it was saved: a header edit never forces a choice on an older line
-    if (l.lineFor === "unit" && !l.unitId) return { title: "Pick the unit", body: `Line ${l.n} is for a unit. Pick which one, or set the line to Project or Company.` };
     if (l.lineFor === "project" && l.projectId == null) return { title: "Pick the project", body: `Line ${l.n} is for a project. Pick which one, or set the line to Unit or Company.` };
   }
   return null;

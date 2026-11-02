@@ -241,7 +241,7 @@ describe('a plain voucher: each line says what it is for', () => {
     }
   });
 
-  test('a Unit line left without its unit says "Pick the unit"', async () => {
+  test('a Unit line may leave its unit empty: a Rental general cost (SOP 3.2)', async () => {
     shown.detail = MIXED;
     updateAsync.mockClear();
     try {
@@ -249,8 +249,9 @@ describe('a plain voucher: each line says what it is for', () => {
       await waitFor(() => expect(screen.getByLabelText('Line 1 unit')).toBeTruthy());
       fireEvent.change(screen.getByLabelText('Line 1 unit'), { target: { value: '' } });
       fireEvent.click(screen.getByText('Save'));
-      await waitFor(() => expect(notifyMock).toHaveBeenCalledWith(expect.objectContaining({ title: 'Pick the unit' })));
-      expect(updateAsync).not.toHaveBeenCalled();
+      await waitFor(() => expect(updateAsync).toHaveBeenCalledTimes(1));
+      const body = updateAsync.mock.calls[0]![0] as { lines: Array<Record<string, unknown>> };
+      expect(body.lines[0]).toEqual(expect.objectContaining({ department: 'rental', unitId: null, projectId: null }));
     } finally {
       shown.detail = DETAIL;
     }
