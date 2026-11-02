@@ -188,6 +188,11 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Not built: per-listing page views; a setting to show full guest names (always first name + initial).
 - PR 2 (feat/owner-showcase-portal, no migration): sample owner portal at /performance/showcase/owner (7 desktop tabs, iOS + Android phones) and the Switch curtain both ways. All its figures are made-up examples in src/pages/showcase/sampleOwner.ts, generated around today; it never reads a real owner. Download PDF on a sample statement is switched off.
 
+## Owner Hub (owner, 2 Nov 2026; plan docs/mockups/owner-hub-plan.html)
+- Step 1 (feat/owner-b-menu): Showcase control removed (menu, page, route, /api/showcase/overrides); "Owner Showcase" menu item is now Owner B (/owner-b, area Performance), a Beta beside Owners (A), which is unchanged. View as owner opens an owner's real portal read-only (?ownerId=, Finance only) and records owner.view_as on the owner's History.
+- Drop pos.showcase_overrides (migration 0164) one release after Showcase control's removal; nothing reads it now.
+- Owners (A) is replaced by Owner B only after the owner approves B. Until then Owner B edits nothing: editing stays on Owners.
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.

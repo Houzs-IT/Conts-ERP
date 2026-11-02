@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApi } from '../../lib/useApi';
 import { date, dateShort, time, todayMyt, count } from '../../lib/format';
-import { resolve, activeCount, addDays, LEAD_KEYS, type FigureKey, type Insights, type Live, type ShowcaseData } from './model';
-import { useOverrides } from './useOverrides';
-import { FigureContext, FigureEditor, PropertyDropdown, DateRangePicker } from './parts';
+import { resolve, addDays, LEAD_KEYS, type FigureKey, type Insights, type Live, type ShowcaseData } from './model';
+import { FigureContext, PropertyDropdown, DateRangePicker } from './parts';
 import { CalendarScreen } from './CalendarScreen';
 import { TodayScreen, ListingsScreen, ReviewsScreen, OccupancyScreen, LeadScreen, ViewsScreen } from './screens';
 import { useSwitch, useExit, SwitchButton, CurtainLayer } from './Switch';
@@ -18,11 +17,9 @@ const RANGES = [['30', 'Last 30 days'], ['90', 'Last 90 days'], ['365', 'Last 12
 const FONT_ID = 'sc-manrope';
 
 /** Owner Showcase (CONTS-0006): a full-screen presentation sales staff open in front of a prospective owner, with
- *  live figures from the reservations, reviews and listings, and any figure Showcase control has replaced.
- *  ?edit=1 is the control panel's visual editor: every replaceable figure is underlined and editable in place. */
+ *  live figures from the reservations, reviews and listings. Showcase control was removed (owner, 2 Nov 2026). */
 export default function OwnerShowcasePage() {
   const [params, setParams] = useSearchParams();
-  const edit = params.get('edit') === '1';
   const page = (PAGES.some(p => p[0] === params.get('page')) ? params.get('page') : 'today') as Page;
   const setPage = (p: Page) => setParams(prev => { const n = new URLSearchParams(prev); n.set('page', p); return n; }, { replace: true });
 
@@ -34,13 +31,11 @@ export default function OwnerShowcasePage() {
   const [to, setTo] = useState(addDays(today, -1));
   const [showPrice, setShowPrice] = useState(true);
   const [month, setMonth] = useState(today.slice(0, 7));
-  const [editor, setEditor] = useState<{ k: FigureKey; x: number; y: number; mode: 'edit' | 'menu' } | null>(null);
 
   const main = useApi<ShowcaseData>('/showcase');
   const data = main.data;
   const one = prop !== 'all';
   const ins = useApi<Insights>(FILTERED.includes(page) ? `/showcase/insights?from=${from}&to=${to}${one ? `&unitId=${prop}` : ''}` : null);
-  const ovs = useOverrides(data?.overrides);
   const { reload } = main;
   const sw = useSwitch('/performance/showcase/owner', { from: 'Portfolio', to: 'Owner', sub: 'Tan Wei Ming · 3 units' });
 
@@ -57,7 +52,7 @@ export default function OwnerShowcasePage() {
 
   const exit = useExit();
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !editor && !edit && !document.querySelector('.sc-popover')) exit(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('.sc-popover')) exit(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
@@ -74,19 +69,18 @@ export default function OwnerShowcasePage() {
       lead_avg: i.lead.avg, ...Object.fromEntries(LEAD_KEYS.map((k, n) => [k, i.lead.buckets[n]])),
     } as Live;
   }, [data, ins.data, one]);
-  const g = (k: FigureKey) => (live ? resolve(k, live, ovs.ov) : null);
-  const viewsShown = edit || g('views_pv') !== null || g('views_imp') !== null;
+  const g = (k: FigureKey) => (live ? resolve(k, live, {}) : null);
+  const viewsShown = g('views_pv') !== null || g('views_imp') !== null;
   const pages = PAGES.filter(p => p[0] !== 'views' || viewsShown);
   const shownPage: Page = page === 'views' && !viewsShown ? 'today' : page;
 
-  const open = (k: FigureKey, e: MouseEvent, m: 'edit' | 'menu') => setEditor({ k, mode: m, x: Math.max(8, Math.min(e.clientX, window.innerWidth - 290)), y: Math.max(8, Math.min(e.clientY + 14, window.innerHeight - 260)) });
   const listings = data?.listings ?? [];
   const unit = one ? listings.find(l => l.id === prop) ?? null : null;
   const totalLabel = data ? count(data.listings.length) : '';
   const applyRange = (k: string) => { const n = Number(k); setRange(k); setFrom(addDays(today, -n)); setTo(addDays(today, -1)); };
 
   return (
-    <FigureContext.Provider value={{ edit, live: live ?? ({} as Live), ov: ovs.ov, open }}>
+    <FigureContext.Provider value={{ edit: false, live: live ?? ({} as Live), ov: {}, open: () => {} }}>
       <div className="sc sc-enter">
         <header className="sc-header">
           <div className="sc-logo"><div className="sc-logo-tile">TC</div><div className="sc-logo-word">The Conts</div></div>
@@ -99,9 +93,8 @@ export default function OwnerShowcasePage() {
           </nav>
           <div className="sc-head-right">
             {data && <div className="sc-sync"><span className="sc-dot" />Synced with Airbnb · {time(data.generatedAt)}</div>}
-            {edit && <span className="sc-edit-pill">Edit mode · {activeCount(ovs.ov)} {activeCount(ovs.ov) === 1 ? 'override' : 'overrides'}</span>}
-            {!edit && <SwitchButton current="Portfolio" next="Owner" rolled={sw.rolled} onClick={sw.go} />}
-            {!edit && <button type="button" className="sc-exit" onClick={exit} aria-label="Exit the showcase">✕ Exit</button>}
+            <SwitchButton current="Portfolio" next="Owner" rolled={sw.rolled} onClick={sw.go} />
+            <button type="button" className="sc-exit" onClick={exit} aria-label="Exit the showcase">✕ Exit</button>
           </div>
         </header>
 
@@ -136,13 +129,6 @@ export default function OwnerShowcasePage() {
           )}
         </main>
 
-        {editor && live && (
-          <FigureEditor {...editor} live={live} ov={ovs.ov} onClose={() => setEditor(null)}
-            onApply={v => { void ovs.apply(editor.k, v); setEditor(null); }}
-            onUseStored={() => { void ovs.setActive(editor.k, true); setEditor(null); }}
-            onLive={() => { if (ovs.ov[editor.k]) void ovs.setActive(editor.k, false); setEditor(null); }}
-            onEdit={() => setEditor({ ...editor, mode: 'edit' })} />
-        )}
         <CurtainLayer curtain={sw.curtain} />
       </div>
     </FigureContext.Provider>

@@ -21,7 +21,9 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
 const OwnerShowcasePage = lazy(() => import('./pages/showcase/OwnerShowcasePage'));
-const ShowcaseControlPage = lazy(() => import('./pages/showcase/ShowcaseControlPage'));
+const OwnerBPage = lazy(() => import('./pages/ownerB/OwnerBPage'));
+const OwnerBProfile = lazy(() => import('./pages/ownerB/OwnerBProfile'));
+const ViewAsOwnerPage = lazy(() => import('./pages/ownerB/ViewAsOwnerPage'));
 const OwnerPortalDemoPage = lazy(() => import('./pages/showcase/OwnerPortalPage'));
 const OwnerOverallReportPage = lazy(() => import('./pages/OwnerOverallReportPage'));
 const CalendarPage = lazy(() => import('./pages/CalendarPage'));
@@ -126,10 +128,10 @@ const Fallback = () => <PageSkeleton />;
 
 /** Desktop shell as a layout route; the matched page renders into <Outlet />. */
 /** The Owner Showcase and its sample owner portal have no app shell around them, so they apply the Owner Showcase
- *  screen's access themselves. */
+ *  screen's access themselves: Owner B's, which took its menu place (owner, 2 Nov 2026). */
 function ShowcaseRoute({ children }: { children: ReactNode }) {
   const { user } = useSession();
-  if (screenClosed('/performance/showcase', user?.access)) return <Navigate to={user ? homeFor(user) : '/'} replace />;
+  if (screenClosed('/owner-b', user?.access)) return <Navigate to={user ? homeFor(user) : '/'} replace />;
   return <Suspense fallback={<Fallback />}>{children}</Suspense>;
 }
 
@@ -350,7 +352,8 @@ function Routed() {
         {/* Revenue was the same screen as Performance > Analytics (UI audit); one route, the old address redirects. */}
         <Route path="/finance/revenue" element={<Navigate to="/performance/analytics" replace />} />
         <Route path="/performance" element={<Navigate to="/performance/analytics" replace />} />
-        <Route path="/performance/showcase-control" element={<ShowcaseControlPage />} />
+        {/* Showcase control was removed (owner, 2 Nov 2026); old links open Owner B, which took the showcase's place. */}
+        <Route path="/performance/showcase-control" element={<Moved to="/owner-b" />} />
         {/* Owner statements and owner payouts moved onto the owner; Expenses is Accounts payable (owner, 11 Oct 2026). */}
         <Route path="/finance/payables" element={<ExpensesPage />} />
         <Route path="/finance/utility-bills" element={<ExpensesPage utilities />} />
@@ -371,6 +374,9 @@ function Routed() {
         <Route path="/owners" element={<OwnersPage />} />
         <Route path="/owners/:id" element={<OwnerProfileRoute />} />
         <Route path="/owners/contracts" element={<ContractsPage />} />
+        <Route path="/owner-b" element={<OwnerBPage />} />
+        <Route path="/owner-b/:id" element={<OwnerBProfile />} />
+        <Route path="/owner-b/:id/portal" element={<ViewAsOwnerPage />} />
         <Route path="/properties/agent-to-let" element={<LettingsPage />} />
         <Route path="/properties/scheduled-changes" element={<ScheduledChangesPage />} />
         <Route path="/owners/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />

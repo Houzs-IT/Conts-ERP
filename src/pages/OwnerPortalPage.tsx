@@ -147,18 +147,30 @@ const DOC_ICON: Record<OwnerDoc['type'], string> = {
   statement: 'FileText', contract: 'FileSignature', invoice: 'ReceiptText', report: 'FileBarChart',
 };
 
-export default function OwnerPortalPage() {
-  const summary = useApi<Summary>('/owner/summary', SUMMARY);
-  const trend = useApi<Trend>('/owner/trend?months=8', TREND);
-  const health = useApi<{ issues: HealthIssue[] }>('/owner/property-health', HEALTH);
-  const docs = useApi<{ data: OwnerDoc[] }>('/owner/documents', DOCS);
+/** Staff opening one owner's real portal from Owner B: every read names the owner (?ownerId=, finance and management
+ *  only, functions/_lib/ownerScope.ts), nothing can be changed, and the summary read records the view on the owner's History. */
+export interface ViewAs { ownerId: string; ownerName: string }
+
+/** The same API path, for the owner themself or for staff viewing as one. */
+const pathFor = (path: string, viewAs?: ViewAs, first = false) => {
+  if (!viewAs) return path;
+  const q = `ownerId=${encodeURIComponent(viewAs.ownerId)}${first ? '&viewAs=1' : ''}`;
+  return `${path}${path.includes('?') ? '&' : '?'}${q}`;
+};
+
+export default function OwnerPortalPage({ viewAs }: { viewAs?: ViewAs } = {}) {
+  const readOnly = !!viewAs;
+  const summary = useApi<Summary>(pathFor('/owner/summary', viewAs, true), viewAs ? undefined : SUMMARY);
+  const trend = useApi<Trend>(pathFor('/owner/trend?months=8', viewAs), viewAs ? undefined : TREND);
+  const health = useApi<{ issues: HealthIssue[] }>(pathFor('/owner/property-health', viewAs), viewAs ? undefined : HEALTH);
+  const docs = useApi<{ data: OwnerDoc[] }>(pathFor('/owner/documents', viewAs), viewAs ? undefined : DOCS);
   const toast = useToast();
 
   const [approved, setApproved] = useState<Record<string, true>>({});
   const [approve, setApprove] = useState<HealthIssue | null>(null);
   const [showAllDone, setShowAllDone] = useState(false);
 
-  const st = summary.data ?? (import.meta.env.DEV ? SUMMARY : null);
+  const st = summary.data ?? (import.meta.env.DEV && !viewAs ? SUMMARY : null);
   const points = trend.data?.points ?? [];
   const issues = health.data?.issues ?? [];
   const documents = docs.data?.data ?? [];
@@ -202,7 +214,7 @@ export default function OwnerPortalPage() {
   }
 
   function downloadStatement(id: string) {
-    window.open(`/api/owner/statements/${encodeURIComponent(id)}/pdf`, '_blank', 'noopener');
+    window.open(`/api${pathFor(`/owner/statements/${encodeURIComponent(id)}/pdf`, viewAs)}`, '_blank', 'noopener');
   }
   async function downloadDoc(d: OwnerDoc) {
     if (d.type === 'statement') { downloadStatement(d.refId ?? d.id); return; }
@@ -279,7 +291,7 @@ export default function OwnerPortalPage() {
       </section>
 
       {/* Report drill-down — combined statement → per-unit → per-line */}
-      {st.statementId && <StatementBreakdown statementId={st.statementId} />}
+      {st.statementId && <StatementBreakdown statementId={st.statementId} viewAs={viewAs} />}
 
       {/* Performance stats */}
       <StatRow cols={4}>
@@ -312,7 +324,7 @@ export default function OwnerPortalPage() {
                   <span className="text-copy font-medium">{i.title}</span>
                 </div>
                 <span className="text-meta text-muted-ink text-pretty">{issueLine(i, multiUnit)}</span>
-                {waiting && (
+                {waiting && !readOnly && (
                   <Button variant="brand" size="md" className="self-start mt-1" onClick={() => setApprove(i)}>
                     Approve quote
                   </Button>
@@ -379,8 +391,8 @@ export default function OwnerPortalPage() {
  * line. Single-unit owners see their one unit expanded; multi-unit owners tap a unit to
  * open it. A vertical stack, so it reads the same on a phone as on the desktop.
  */
-function StatementBreakdown({ statementId }: { statementId: string }) {
-  const { data } = useApi<StatementDetail>(`/owner/statements/${encodeURIComponent(statementId)}`, BREAKDOWN);
+function StatementBreakdown({ statementId, viewAs }: { statementId: string; viewAs?: ViewAs }) {
+  const { data } = useApi<StatementDetail>(pathFor(`/owner/statements/${encodeURIComponent(statementId)}`, viewAs), viewAs ? undefined : BREAKDOWN);
   const [openUnit, setOpenUnit] = useState<string | null>(null);
   if (!data || data.units.length === 0) return null;
   const multi = data.units.length > 1;

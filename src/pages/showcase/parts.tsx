@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { date, monthLabel } from '../../lib/format';
-import { META, fmtFigure, photoUrl, daysBetween, type FigureKey, type Live, type Overrides, type Listing } from './model';
+import { META, photoUrl, daysBetween, type FigureKey, type Live, type Overrides, type Listing } from './model';
 
 /** What every overridable figure needs: whether the page is the control panel's visual editor, and the figures. */
 export interface FigureCtx {
@@ -22,47 +22,6 @@ export function Fig({ k, children, portfolio = true }: { k: FigureKey; children:
   );
 }
 
-/** The popover behind a figure in the visual editor. */
-export function FigureEditor({ k, x, y, mode, live, ov, onApply, onUseStored, onLive, onClose, onEdit }: {
-  k: FigureKey; x: number; y: number; mode: 'edit' | 'menu'; live: Live; ov: Overrides;
-  onApply: (v: number) => void; onUseStored: () => void; onLive: () => void; onClose: () => void; onEdit: () => void;
-}) {
-  const stored = ov[k];
-  const [val, setVal] = useState(String(stored?.value ?? live[k] ?? ''));
-  const [err, setErr] = useState('');
-  const apply = () => {
-    const n = Number(val.replace(/,/g, '').trim());
-    if (!val.trim() || !Number.isFinite(n) || n < 0) { setErr('Enter a number of zero or more.'); return; }
-    onApply(n);
-  };
-  return (
-    <>
-      <div onClick={onClose} onContextMenu={e => { e.preventDefault(); onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 80 }} />
-      <div className="sc-editor sc-pop" style={{ left: x, top: y }} role="dialog" aria-label={META[k].label}>
-        <div style={{ fontWeight: 800 }}>{META[k].label}</div>
-        <div className="sc-editor-row"><span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span className="sc-dot" style={{ width: 6, height: 6 }} />Live from Airbnb</span><b style={{ color: 'var(--sc-ink)' }}>{fmtFigure(k, live[k])}</b></div>
-        {stored && <div className="sc-editor-row"><span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span className="sc-dot" style={{ width: 6, height: 6, background: 'var(--sc-star)' }} />Override</span><b style={{ color: 'var(--sc-amber-ink)' }}>{fmtFigure(k, stored.value)}</b></div>}
-        {mode === 'edit' ? (
-          <>
-            <input className="sc-editor-input num" autoFocus inputMode="decimal" aria-label={`${META[k].label}, override value`} value={val}
-              onChange={e => { setVal(e.target.value); setErr(''); }}
-              onKeyDown={e => { if (e.key === 'Enter') apply(); if (e.key === 'Escape') onClose(); }} />
-            {err && <div className="sc-editor-error">{err}</div>}
-            <button type="button" className="sc-editor-btn primary" onClick={apply}>Apply override</button>
-          </>
-        ) : (
-          <>
-            {stored && <button type="button" className="sc-editor-btn" onClick={onUseStored}>Apply override · {fmtFigure(k, stored.value)}</button>}
-            <button type="button" className="sc-editor-btn" onClick={onEdit}>Edit value...</button>
-          </>
-        )}
-        <button type="button" className="sc-editor-btn live" onClick={onLive}>↺ Back to live</button>
-      </div>
-    </>
-  );
-}
-
-/** A listing photo, or the striped placeholder until the unit has one (Units screen, cover photo). */
 export function Photo({ id, style, className = '', fine, children, label }: { id?: string | null; style?: CSSProperties; className?: string; fine?: boolean; children?: ReactNode; label?: string }) {
   const url = photoUrl(id);
   const [broken, setBroken] = useState(false);
