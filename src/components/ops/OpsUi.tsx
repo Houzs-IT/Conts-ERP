@@ -275,7 +275,8 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   /** A window's end three hours after its start, the same day, when the start is picked first. */
   const endFor = (start: string) => `${start.slice(0, 11)}${String(Math.min(23, Number(start.slice(11, 13)) + 3)).padStart(2, '0')}${start.slice(13)}`;
   async function submit() {
-    const kinds = multi ? cats : f.category ? [f.category] : [];
+    // A damage report may leave the kind empty when the cleaner is not sure: it goes in as Other for the office to sort.
+    const kinds = multi ? (cats.length ? cats : ['other']) : f.category ? [f.category] : fromClean ? ['other'] : [];
     const bad = { unitId: f.unitId ? undefined : 'Pick the unit.', title: f.title.trim() ? undefined : 'Say what is wrong.', category: kinds.length ? undefined : 'Pick the kind of problem.',
       window: (f.from || f.to) && !(f.from && f.to) ? 'Give the window a start and an end, or leave both empty.' : f.from && f.to && f.to <= f.from ? 'The window must end after it starts.' : undefined };
     if (bad.unitId || bad.title || bad.category || bad.window) { setError(bad); return; }
@@ -331,7 +332,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
         </FormRow>
       )}
       {multi && (
-        <FormRow label="Problem category" error={error.category} hint={cats.length > 1 ? `${cats.length} jobs will open, one for each, with the same photos.` : 'Pick one or more.'}>
+        <FormRow label="Problem category (optional)" error={error.category} hint={cats.length > 1 ? `${cats.length} jobs will open, one for each, with the same photos.` : 'Pick one or more. Not sure? Leave it empty: it goes in as Other.'}>
           <div className="flex flex-wrap gap-2">
             {Object.entries(CATEGORY).map(([v, l]) => {
               const on = cats.includes(v);
@@ -347,9 +348,9 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
       )}
       <div className="grid grid-cols-2 gap-3">
         {!multi && (
-          <FormRow label="Problem category" error={error.category}>
+          <FormRow label={fromClean ? 'Problem category (optional)' : 'Problem category'} error={error.category}>
             <select className={INPUT} value={f.category} onChange={e => { set({ category: e.target.value }); setError(x => ({ ...x, category: undefined })); }}>
-              <option value="" disabled>Pick one</option>
+              <option value="" disabled={!fromClean}>{fromClean ? 'Not sure' : 'Pick one'}</option>
               {Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </FormRow>
