@@ -276,12 +276,16 @@ function CalendarBoard() {
   const dayIso = (i: number) => iso(addDays(gridStart, i));
   const todayIdx = dayIndex(iso(today));
   const days = Array.from({ length: span }, (_, i) => addDays(gridStart, i));
-  const months = days.reduce<{ label: string; count: number }[]>((acc, d) => {
+  const months = days.reduce<{ label: string; short: string; count: number }[]>((acc, d) => {
     const label = monthLabel(iso(d), { long: true });
     if (acc.length && acc[acc.length - 1].label === label) acc[acc.length - 1].count++;
-    else acc.push({ label, count: 1 });
+    else acc.push({ label, short: monthLabel(iso(d)), count: 1 });
     return acc;
   }, []);
+  // A month with only a day or two in the window gets the name that fits its columns: "October 2026" over one column ran
+  // into November's label (owner, 2 Nov 2026).
+  const monthText = (m: { label: string; short: string; count: number }) =>
+    m.count * COL >= 150 ? m.label : m.count * COL >= 90 ? m.short : m.short.split(' ')[0];
   const colBg = (i: number) => (i === todayIdx ? BG_TODAY : isWeekendNight(days[i]) ? BG_WEEKEND : 'bg-card');
   const todayEdge = (i: number) => (i === todayIdx ? TODAY_EDGES : '');
 
@@ -537,7 +541,8 @@ function CalendarBoard() {
                 <div className="flex h-7">
                   {months.map((m, k) => (
                     <div key={m.label} className={`flex-none box-border flex items-center ${k ? '[border-left:1px_solid_var(--color-line)]' : ''}`} style={{ width: m.count * COL }}>
-                      <span className="sticky left-[calc(var(--unit-col)+10px)] px-2.5 text-meta font-semibold text-ink whitespace-nowrap">{m.label}</span>
+                      <span title={m.label} className="sticky left-[calc(var(--unit-col)+10px)] px-2.5 text-meta font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis"
+                        style={{ maxWidth: m.count * COL }}>{monthText(m)}</span>
                     </div>
                   ))}
                 </div>

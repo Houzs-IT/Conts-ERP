@@ -69,7 +69,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const scopeArgs = property ? [property] : [];
 
   const blocks = await all<any>(env, `
-    SELECT r.id, r.unit_id, r.channel, r.state, r.check_in, r.check_out, r.gross_booking_value,
+    SELECT r.id, r.unit_id, r.channel, r.state, r.check_in, r.check_out, r.gross_booking_value, r.channel_fee,
            r.external_ref, r.notes, r.block_reason, COALESCE(g.full_name, '') AS guest_name
     FROM reservations r
     LEFT JOIN guests g ON g.id = r.guest_id
@@ -117,7 +117,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       id: b.id, unitId: b.unit_id, channel: b.channel, state: b.state,
       guestName: b.guest_name || (b.channel === 'maintenance_block' ? (b.notes ?? 'Blocked') : ''),
       checkIn: b.check_in, checkOut: b.check_out,
-      grossBookingValue: Number(b.gross_booking_value), ref: b.external_ref,
+      grossBookingValue: Number(b.gross_booking_value), channelFee: Number(b.channel_fee ?? 0), ref: b.external_ref,
       // The note is already the block's name when there is no guest; sending it twice doubles the payload.
       reason: b.guest_name || b.channel !== 'maintenance_block' ? b.notes : null,
       blockReason: b.block_reason ?? null,
