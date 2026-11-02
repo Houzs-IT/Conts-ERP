@@ -1,4 +1,4 @@
-import { type Env, one, run, json, fail, nowIso } from '../../../_lib/db';
+import { type Env, one, run, json, fail, nowIso, audit } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { forwardClaims } from '../../../_lib/claimsForward';
 import { recentBills, scanContext } from '../../../_lib/utilityScan';
@@ -41,6 +41,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const scanId = crypto.randomUUID();
   await run(env, `INSERT INTO utility_bill_scans (id, batch_id, document_id, model, read, proposed_account_id, colour, created_by, created_at)
     VALUES (?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?)`, scanId, batchId, documentId, model, JSON.stringify(read), match.accountId, match.colour, session.userId, nowIso());
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.utility_scan_read', entityTable: 'utility_bill_scans', entityId: scanId,
+    after: { batchId, documentId, model, colour: match.colour, proposedAccountId: match.accountId } });
   const account = match.accountId ? accounts.find(a => a.accountId === match.accountId) : null;
   return json({ scanId, model, read, match, unitId: account?.unitId ?? null, candidates: match.candidates.map(c => ({ ...c, unitId: accounts.find(a => a.accountId === c.accountId)?.unitId ?? null })) });
 };

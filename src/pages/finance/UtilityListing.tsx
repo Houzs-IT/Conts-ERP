@@ -24,6 +24,7 @@ import {
 
 const UtilitiesModal = lazy(() => import('../owners/ExpenseEntry').then(m => ({ default: m.UtilitiesModal })));
 const AddUtilityBill = lazy(() => import('../../components/AddUtilityBill').then(m => ({ default: m.AddUtilityBill })));
+const ScanBills = lazy(() => import('./ScanBills'));
 
 /** Finance > Utility bills (plan docs/superpowers/plans/2026-10-28-utility-listing.md): every unit's electricity, water,
  *  internet and Indah Water bills month by month, newest month first, coloured by whether the owner has been charged;
@@ -51,6 +52,7 @@ export default function UtilityListing() {
   const to = todayMyt().slice(0, 7), from = shiftMonth(to, -(range - 1));
   const { data, loading, error, reload } = useApi<Listing>(`/expenses/utility-listing?from=${from}&to=${to}`);
   const [entry, setEntry] = useState<null | 'month' | 'one'>(null);
+  const [scanning, setScanning] = useState(false);
   const [open, setOpen] = useState<{ unit: Unit; month: string; kind: UtilityKind | 'total'; cell: Cell } | null>(null);
 
   const cells = useMemo(() => buildCells(data?.bills ?? []), [data]);
@@ -64,7 +66,10 @@ export default function UtilityListing() {
 
   const header = (
     <PageHeader title="Utility bills" sub="Every unit's electricity, water, internet and Indah Water bills, month by month."
-      actions={<Button size="sm" variant="secondary" onClick={() => setEntry('one')}>Add utility bill</Button>}
+      actions={<>
+        <Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />} onClick={() => setScanning(true)}>Scan bills</Button>
+        <Button size="sm" variant="secondary" onClick={() => setEntry('one')}>Add utility bill</Button>
+      </>}
       primary={<Button size="sm" variant="primary" icon={<Icon name="Zap" size="sm" />} onClick={() => setEntry('month')}>Enter this month's bills</Button>} />
   );
   const modals = (
@@ -90,6 +95,7 @@ export default function UtilityListing() {
     </div>
   );
 
+  if (scanning) return <Suspense fallback={<TableSkeleton rows={4} cols={8} />}><ScanBills onBack={() => setScanning(false)} onRecorded={reload} /></Suspense>;
   if (focus) return (
     <>
       {header}

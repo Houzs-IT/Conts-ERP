@@ -70,7 +70,7 @@ export type RecordRow = {
   periodFrom?: string | null; periodTo?: string | null; amountSen: number; chargeTo?: string; ownerPaid?: boolean;
 };
 export type RecordResult =
-  | { ok: true; recorded: number; rolled: { scanId: string; deductMonth: string }[]; ownerLines: number; notSplit: string[] }
+  | { ok: true; recorded: number; rolled: { scanId: string; deductMonth: string }[]; ownerLines: number; notSplit: string[]; toPay: { provider: string; count: number; amountSen: number }[] }
   | { ok: false; status: number; code: string; message: string; fields?: Record<string, string> };
 
 type ScanRow = { id: string; batch_id: string; document_id: string; read: Record<string, unknown>; expense_id: string | null };
@@ -190,16 +190,18 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
     if (e instanceof Refused) return { ok: false, status: 409, code: e.message === 'Already recorded' ? 'ALREADY_RECORDED' : 'REFUSED', message: e.message, fields: { [e.scanId]: e.message } };
     throw e;
   }
-  return { ok: true, recorded: rows.length, rolled, ownerLines, notSplit };
+  const toPay = (await billsToPay(env, batchId, rows.map(r => r.scanId))).map(g => ({ provider: g.provider, count: g.bills.length, amountSen: g.bills.reduce((n, x) => n + x.amountSen, 0) }));
+  return { ok: true, recorded: rows.length, rolled, ownerLines, notSplit, toPay };
 }
 
 class Refused extends Error { constructor(public scanId: string, message: string) { super(message); } }
 
-/** The bills of a scan the company pays (not ticked "Owner paid"), for one provider's payment request. */
-export async function billsToPay(env: Env, batchId: string, provider?: string): Promise<{ provider: string; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }[]> {
+/** The bills of one save (`scanIds`) the company pays (not ticked "Owner paid"), by provider, for the payment requests. */
+export async function billsToPay(env: Env, batchId: string, scanIds: string[], provider?: string): Promise<{ provider: string; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }[]> {
   const rows = await all<{ provider: string; unit_id: string; category: string; incurred_on: string; account_no: string | null; bill_sen: number }>(env, `
     SELECT s.provider, e.unit_id, e.category, e.incurred_on, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
-    WHERE s.batch_id = ? AND NOT s.owner_paid ORDER BY s.provider, e.incurred_on, e.unit_id`, batchId);
+    WHERE s.batch_id = ? AND NOT s.owner_paid AND s.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+    ORDER BY s.provider, e.incurred_on, e.unit_id`, batchId, JSON.stringify(scanIds));
   const out = new Map<string, { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[]>();
   for (const r of rows) {
     if (provider && r.provider !== provider) continue;

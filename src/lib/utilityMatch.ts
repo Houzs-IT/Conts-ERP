@@ -44,7 +44,7 @@ export function matchBill(read: BillReadLite, accounts: AccountMark[], recent: R
     else if (read.accountNoVisible && a.accountNo && accountNoMatches(read.accountNoVisible, a.accountNo)) {
       (read.accountNoVisible.toUpperCase().includes('X') ? strong : decisive).push(`account ${read.accountNoVisible}`);
     }
-    if (read.depositSen != null && a.depositSen != null && read.depositSen === a.depositSen) strong.push(`deposit RM ${(a.depositSen / 100).toFixed(2)}`);
+    if (read.depositSen != null && a.depositSen != null && read.depositSen === a.depositSen) strong.push(`deposit ${(a.depositSen / 100).toFixed(2)}`) /* no format.ts here: node --test loads this file on its own */;
     if (read.meterPrevious != null && a.lastMeterReading != null && read.meterPrevious === a.lastMeterReading) strong.push(`meter reading ${read.meterPrevious}`);
     if (nameMatches(read.buildingName, a.building)) supporting.push('building');
     if (nameMatches(read.ownerName, a.ownerName)) supporting.push('owner name');

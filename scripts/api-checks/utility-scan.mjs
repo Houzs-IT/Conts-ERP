@@ -65,6 +65,7 @@ const r = await M.recordScannedBills(env, session, BATCH, [
   { scanId: s2, unitId: B.id, kind: 'electricity', billMonth: '2027-09', amountSen: 4510, ownerPaid: true },
 ]);
 check('two pages recorded', r.ok && r.recorded === 2 && r.ownerLines === 2, r);
+check('the save lists what finance pays: TNB, one bill at RM 310 (the owner-paid one is not there)', r.ok && r.toPay.length === 1 && r.toPay[0].provider === 'TNB' && r.toPay[0].count === 1 && r.toPay[0].amountSen === 31000, r.toPay);
 
 const [e1] = await sql`select e.* from expenses e join utility_bill_scans s on s.expense_id = e.id where s.id = ${s1}`;
 check('split: the expense keeps the 4 days inside the contract (RM 40)', e1?.amount === 4000 && !e1.record_only, e1);
@@ -105,7 +106,7 @@ const adj4 = await sql`select amount from owner_adjustments where expense_id = $
 check('wholly before the contract: record-only, the whole RM 90 an O2 charge', r4.ok && e4?.record_only === true && adj4.length === 1 && adj4[0].amount === -9000, { r4, e4, adj4 });
 
 // The payment request: only the bills the company pays, at the full bill.
-const pay = await M.billsToPay(env, BATCH);
+const pay = await M.billsToPay(env, BATCH, [s1, s2, s4]);
 check('to pay: TNB, the split bill at its full RM 310 and the August one; not the one the owner paid', pay.length === 1 && pay[0].provider === 'TNB' && pay[0].bills.map(b => b.amountSen).sort().join() === '31000,9000' && pay[0].bills.every(b => b.unitId === A.id), pay);
 
 await sql.end();
