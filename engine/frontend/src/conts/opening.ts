@@ -174,7 +174,7 @@ export const useReverseOpening = () => {
   });
 };
 
-function invalidateOpening(qc: ReturnType<typeof useQueryClient>): void {
+export function invalidateOpening(qc: ReturnType<typeof useQueryClient>): void {
   for (const key of [CHECK_KEY, ["account-balances"], ["report-bs"], ["report-pnl"], ["finance-dashboard"], ["ar-aging"], ["ap-aging"],
     ["control-check"], ["journal-entries"], ["gl-entries"], ["gl-ledger"], ["sales-invoices"], ["purchase-invoices"]]) {
     void qc.invalidateQueries({ queryKey: key });

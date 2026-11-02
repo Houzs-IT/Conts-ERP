@@ -17,6 +17,7 @@ import {
 import { OpeningBalances } from "./OpeningBalances";
 import { EverydayExpense } from "./EverydayExpense";
 import { RenovationOpening } from "./RenovationOpening";
+import { OpeningDeposits } from "./OpeningDeposits";
 
 const isClearingCode = (code: string): boolean => /^32[67]-/.test(code);
 const rm = (sen: number): string => (sen / 100).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -102,6 +103,7 @@ export function LedgerSetup() {
       {q.isSuccess && <OpeningBalances canSave={canSave} ledgerStartDate={q.data.ledgerStartDate} />}
       {/* Renovation contracts signed before the books start: their accounts and what AutoCount invoiced (plan Task 8). */}
       {q.isSuccess && <RenovationOpening canSave={canSave} ledgerStartDate={q.data.ledgerStartDate} />}
+      {q.isSuccess && <OpeningDeposits canSave={canSave} ledgerStartDate={q.data.ledgerStartDate} />}
       {/* Conts (finance phase 1.5; SOP 3.4): the expense accounts outside a project limit. */}
       <EverydayExpense canSave={canSave} />
     </div>

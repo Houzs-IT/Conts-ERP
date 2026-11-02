@@ -78,6 +78,9 @@ export type PostJournalErr = {
 };
 export type PostJournalResult = PostJournalOk | PostJournalErr;
 
+/** Journals that sit on the opening day, before the ledger start: the OPENING journal from AutoCount's trial balance,
+    and the opening deposits tagged by project or unit (acc/opening-deposits; chew 2 Nov 2026). */
+const OPENING_SOURCES: ReadonlySet<string> = new Set(['OPENING', 'OPENING_DEPOSITS']);
 const isIntSen = (n: unknown): boolean => typeof n === 'number' && Number.isInteger(n) && n >= 0;
 
 /**
@@ -201,7 +204,7 @@ export async function postJournal(sb: any, input: PostJournalInput): Promise<Pos
   // 0 — the ledger start (Conts): anything dated before it is already in the
   // AutoCount opening balances. Only the OPENING journal may sit before it.
   // A failed read refuses: "no start date" is exactly what lets one through.
-  if (sourceType !== 'OPENING') {
+  if (!OPENING_SOURCES.has(sourceType)) {
     const ls = await loadLedgerSettings(sb, companyId ?? null);
     if (!ls.ok) return { ok: false, status: 'ledger_settings_failed', reason: 'The ledger settings could not be read.' };
     if (isBeforeLedgerStart(entryDate, ls.settings)) {
@@ -368,7 +371,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
     return { ok: false, status: 'reversal_read_failed', reason: 'reverseJournal needs sourceDocNo or jeId' };
   }
 
-  const sourceDate = input.sourceType === 'OPENING' ? null : dateOrNull(input.sourceDate);
+  const sourceDate = OPENING_SOURCES.has(input.sourceType) ? null : dateOrNull(input.sourceDate);
   if (sourceDate) {
     const ls = await loadLedgerSettings(sb, input.companyId ?? null);
     if (!ls.ok) return { ok: false, status: 'reversal_read_failed', reason: 'The ledger settings could not be read.' };
@@ -402,7 +405,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
   // Nothing is written dated before the ledger start, a contra included (an
   // edited manual journal reverses the old one on its own day); and an entry
   // dated before it belongs to the opening balances, so it is never contra'd.
-  if (input.sourceType !== 'OPENING') {
+  if (!OPENING_SOURCES.has(input.sourceType)) {
     const ls = await loadLedgerSettings(sb, orig.company_id ?? input.companyId ?? null);
     if (!ls.ok) return { ok: false, status: 'reversal_read_failed', reason: 'The ledger settings could not be read.' };
     if (isBeforeLedgerStart(dateOrNull(input.entryDate) ?? todayMyt(), ls.settings)) return { ok: true, status: 'before_ledger_start' };

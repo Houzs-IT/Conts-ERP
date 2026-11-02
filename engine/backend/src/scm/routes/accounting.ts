@@ -78,6 +78,7 @@ import { renoOpeningApply, renoOpeningPreview } from './accounting-reno-opening'
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
 import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
+import { importOpeningDeposits, reverseOpeningDeposits } from '../../acc/opening-deposits';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
 import { partyLedgerHandler } from '../../conts/party-ledger';
 import { approveLimitRequestHandler, createLimitRequestHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler } from '../../conts/project-limit-routes';
@@ -584,6 +585,24 @@ export const openingCheckHandler = async (c: AccCtx): Promise<Response> => {
   return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
 };
 accounting.get('/opening/check', openingCheckHandler);
+/* Opening deposits by project or unit (chew 2 Nov 2026) — acc/opening-deposits.ts. { rows, dryRun? } previews or posts. */
+export const openingDepositsHandler = async (c: AccCtx): Promise<Response> => {
+  const b = await openingBody(c, 'rows');
+  if (!b.ok) return b.res;
+  let dryRun = false;
+  try { dryRun = (await c.req.json() as { dryRun?: unknown }).dryRun === true; } catch { /* read once above */ }
+  const r = await importOpeningDeposits(c.get('supabase'), b.companyId, b.items, actorName(c), { dryRun });
+  return r.ok ? c.json(r) : c.json(r, 409);
+};
+accounting.post('/opening/deposits', openingDepositsHandler);
+export const openingDepositsReverseHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const r = await reverseOpeningDeposits(c.get('supabase'), co.companyId);
+  return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
+};
+accounting.post('/opening/deposits/reverse', openingDepositsReverseHandler);
 /* Renovation contracts signed before the ledger start, seeded at go-live (accounting-reno-opening.ts; posts nothing). */
 accounting.post('/renovation-opening/preview', renoOpeningPreview);
 accounting.post('/renovation-opening/apply', renoOpeningApply);
