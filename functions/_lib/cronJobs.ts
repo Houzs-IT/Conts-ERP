@@ -1,5 +1,7 @@
 import { type Env, all, one, run, audit, nowIso } from './db';
-import { ensureTurnovers, replanTurnover } from './cleaning';
+import { ensureTurnovers, replanTurnover, CLEAN_KINDS_SQL } from './cleaning';
+import { overdueCleans } from './cleanOverdue';
+import { cleanDeadline } from '../../src/lib/cleanOverdue';
 import { hostplatformConfigured, hostplatformProperties, hostplatformReservationPage, type HpReservation } from './hostplatform';
 import { mapApiReservations } from './hostplatformImport';
 import { type Db, importReservations } from './hostplatformImportDb';
@@ -214,17 +216,25 @@ async function hostplatformWrite(env: Env, job: string, startedAt: Date, w: { up
   return { dryRun: false as const, pulled: pulled.length, created: result?.created ?? 0, updated: result?.updated ?? 0, items: [...items, ...problems.slice(0, 20)] };
 }
 
-/** Hourly: work past its time. A clean past its due time becomes Overdue and its cleaner and the operations managers
- *  are told once; a repair job left open too long (urgent: a day, otherwise a week) is flagged once; finalised owner
- *  statements unsent for three days are flagged to finance. Only work due in the last 7 days is announced, so the first
- *  run on old imported data does not flood anyone. */
+/** Hourly: work past its time. A cleaning job becomes Overdue by the one rule (src/lib/cleanOverdue.ts: still not done at
+ *  the next guest's check-in, or after midnight at the end of its day with no check-in), and its cleaner and the
+ *  operations managers are told once; other tasks (an inspection) when past their due time. A repair job left open too
+ *  long (urgent: a day, otherwise a week) is flagged once; finalised owner statements unsent for three days are flagged
+ *  to finance. Only work that fell due in the last 7 days is announced, so old imported data does not flood anyone. */
 export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobReport> {
   const now = (o.now ?? new Date()).toISOString();
-  const weekAgo = new Date(Date.parse(now) - 7 * 864e5).toISOString();
-  const tasks = await all<{ id: string; due_at: string; kind: string; state: string }>(env, `
+  const weekAgo = Date.parse(now) - 7 * 864e5;
+  const OPEN = ['open', 'assigned', 'in_progress', 'reopened'];
+  const cleans = (await overdueCleans(env, Date.parse(now))).filter(t => OPEN.includes(t.state));
+  const others = await all<{ id: string; due_at: string; kind: string; state: string }>(env, `
     SELECT id, due_at, kind, state FROM tasks
-    WHERE state IN ('open','assigned','in_progress','reopened') AND due_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' AND due_at::timestamptz < ?::timestamptz`, now);
-  const recentCleans = tasks.filter(t => Date.parse(t.due_at) >= Date.parse(weekAgo) && /^(turnover|deep_clean|light_clean|inspection)$/.test(t.kind));
+    WHERE state IN ('open','assigned','in_progress','reopened') AND kind NOT IN ${CLEAN_KINDS_SQL}
+      AND due_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' AND due_at::timestamptz < ?::timestamptz`, now);
+  const tasks = [...cleans.map(t => ({ id: t.id, kind: t.kind, state: t.state })), ...others];
+  const recentCleans = [
+    ...cleans.filter(t => cleanDeadline(t.day, t.checkIn) >= weekAgo),
+    ...others.filter(t => t.kind === 'inspection' && Date.parse(t.due_at) >= weekAgo),
+  ];
   const repairs = await all<{ id: string; urgency: string; reported_at: string }>(env, `
     SELECT id, urgency, reported_at FROM maintenance_issues
     WHERE state IN ('open','assigned','in_progress','reopened') AND reported_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'

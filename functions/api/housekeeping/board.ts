@@ -5,6 +5,7 @@ import { taskCleanersReady, cleanerListSql, parseCleaners, rosterIdSql } from '.
 import { unitLayoutSql, unitMattressesSql, unitLayout } from '../../_lib/unitLayout';
 import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, standardItems, windowsOnDay, mytToday, isDay, ensureTurnovers } from '../../_lib/cleaning';
 import { hasCleanPrices, priceBook, layoutKey } from '../../_lib/cleaningPrices';
+import { nextCheckIn } from '../../../src/lib/cleanOverdue';
 
 /** GET /api/housekeeping/board?date=YYYY-MM-DD — the Cleaning screen for one day, one row per clean.
  *  Each row carries the guest leaving (check-out time, name, whether they have left) and the guest arriving
@@ -39,7 +40,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const money = priced ? 't.amount, t.cleaner_pay,' : 'NULL::int AS amount, NULL::int AS cleaner_pay,';
   const rows = await all<any>(env, `
-    SELECT ${money} t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.started_at, t.completed_at, t.guest_left_at,
+    SELECT ${money} t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.started_at, t.completed_at, t.guest_left_at, t.next_guest_at,
            t.assignee_id, t.cleaner_id, t.unit_id, t.reservation_id, ${when} AS day,
            u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
            COALESCE(cl.full_name, a.full_name) AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner, ${cleanerListSql(ready)} AS cleaner_list, ${rosterIdSql()} AS roster_id,
@@ -115,6 +116,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const leftAt: string | null = r.guest_left_at ?? r.prev_out_at ?? (r.prev_state === 'checked_out' ? r.day + 'T' + (r.prev_time || stdOut) + ':00+08:00' : null);
       const guestOut = !!r.guest_left_at || r.prev_state === 'checked_out';
       const p = price(r.unit_id, r.kind, layoutKey(r.layout_type, r.bedrooms), r.day);
+      // The next guest's real check-in (src/lib/cleanOverdue.ts): the card, time left, the order and overdue all read it.
+      const cin = r.next_id ? nextCheckIn({ day: r.day, reservationTime: r.next_time ?? '', taskNextGuestAt: r.next_guest_at, standard: stdIn }) : null;
       const status = r.state === 'resolved' ? 'done'
         : r.state === 'in_progress' ? 'cleaning'
         : guestOut ? 'ready'
@@ -135,8 +138,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         } : null,
         next: r.next_id ? {
           reservationId: r.next_id, guestName: r.next_guest, guests: Number(r.next_guests ?? 0), channel: r.next_channel,
-          checkInTime: r.next_time || stdIn, earlyCheckIn: !!r.next_time && r.next_time < stdIn,
-          checkInAt: at(r.day, r.next_time, stdIn),
+          checkInTime: cin!, earlyCheckIn: cin! < stdIn, checkInAt: at(r.day, cin, stdIn),
         } : null,
         guestOut, guestLeftAt: leftAt, guestLeftAuto: (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_time || stdOut}:00+08:00`),
         // What the clean is charged (external) and what the cleaner is paid (internal): the job's own, else the price table.

@@ -1,7 +1,8 @@
 import { type Env, all, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
-import { CLEAN_KINDS_SQL, chargeClean, mytToday } from '../../_lib/cleaning';
+import { CLEAN_KINDS_SQL, chargeClean } from '../../_lib/cleaning';
+import { overdueCleans } from '../../_lib/cleanOverdue';
 import { noOpenBlockerSql } from '../../_lib/maintenance';
 import { hasJobInvoices } from '../../_lib/jobProfit';
 
@@ -13,7 +14,8 @@ const NOTE = 'closed in bulk';
  *          same rule as a finished clean (chargeClean), dated on the job's own day. The unit turns Ready only when no other clean is still open on it.
  *  cancel: the job is removed with its reason in the audit trail and nothing is charged. A job someone started, with a
  *          photo or video, damage reported from it, or any money on it is refused, so nothing real is thrown away.
- *  Only jobs dated before today (Malaysia) and still open are touched; anything else comes back in `skipped`. */
+ *  Only jobs still open and overdue by the one rule (src/lib/cleanOverdue.ts: past the next guest's check-in, or past the
+ *  end of their day) are touched; anything else comes back in `skipped`. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -28,7 +30,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const reason = typeof b?.reason === 'string' ? b.reason.trim().slice(0, 500) : '';
   if (action === 'cancel' && !reason) return fail('VALIDATION', 'Give a reason for cancelling.', 422, { reason: 'Say why these jobs are cancelled.' });
 
-  const today = mytToday();
+  // Overdue by the one rule (src/lib/cleanOverdue.ts): past the next guest's check-in, or past the end of its day.
+  const overdueIds = new Set((await overdueCleans(env, Date.now(), { ids })).map(t => t.id));
   const invoiced = (await hasJobInvoices(env)) ? ' OR e.invoice_task_id = t.id' : '';
   const day = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const tasks = await all<any>(env, `
@@ -49,7 +52,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const eligible: any[] = [];
   for (const id of ids) {
     const t = byId.get(id);
-    const why = !t ? 'not a cleaning job any more' : t.state === 'resolved' ? 'already done' : !(t.day < today) ? 'not overdue'
+    const why = !t ? 'not a cleaning job any more' : t.state === 'resolved' ? 'already done' : !overdueIds.has(t.id) ? 'not overdue'
       : action === 'done' ? null
       : t.started_at || t.state === 'in_progress' ? 'a cleaner started it; mark it done instead'
       : Number(t.files) > 0 ? 'it has photos or videos; mark it done instead'
