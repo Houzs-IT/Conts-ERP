@@ -8,7 +8,7 @@ import Icon from '../components/Icon';
 import { Select, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { EmptyState, Skeleton } from '../components/States';
-import { AttachmentLabel, MediaGallery } from '../components/Attachments';
+import { AttachmentLabel, MediaGallery, PhotosPdfButton } from '../components/Attachments';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { CleanerChecklist, CleanerChips, cleanerHint } from '../components/CleanerPicks';
@@ -1026,7 +1026,8 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
       {!row.external && row.previous && !done && <LateCheckoutBlock reservationId={row.previous.reservationId} onChanged={onChanged} />}
 
       <section className="flex flex-col gap-2">
-        <AttachmentLabel title="Proof of work" count={files} hint={!done && files === 0 ? 'At least 1 photo or video to complete' : undefined} />
+        <AttachmentLabel title="Proof of work" count={files} hint={!done && files === 0 ? 'At least 1 photo or video to complete'
+          : data ? <PhotosPdfButton items={data.media} title={unitLabel} sub={`Cleaning (${KIND_LABEL[row.kind] ?? row.kind}) for ${dayLabel(row.day)}`} fileStem={unitLabel} /> : undefined} />
         {data ? <MediaGallery items={data.media} upload={done ? undefined : uploadTo(`/tasks/${row.id}/photos`)} onDone={refresh} addLabel="Add photos or videos" emptyText="No photos were added." openAddRef={openAdd} />
           : <Skeleton height={84} />}
         {done && row.completedAt && (
