@@ -90,7 +90,9 @@ export function BarContent({ b, visible, width, nights }: { b: Block; visible: n
   const parts = hold
     ? [visible >= 3 && b.reason ? b.reason : '', visible >= 3 ? nightsLabel(nights) : ''].filter(Boolean)
     : [price, nightsLabel(nights)].filter(Boolean);
-  const line2 = fitWords(parts.join(' · '), room) ?? (parts[0] && textWidth(parts[0]) <= room ? parts[0] : '');
+  // Whole parts only: cutting the joined text by words left a dangling separator ("RM 334.37 ·").
+  const both = parts.join(' · ');
+  const line2 = textWidth(both) <= room ? both : parts[0] && textWidth(parts[0]) <= room ? parts[0] : (fitWords(parts[0] ?? '', room) ?? '');
   return (
     <>
       <ChannelMark ch={b.channel} size={16} />
