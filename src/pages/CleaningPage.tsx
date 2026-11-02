@@ -146,6 +146,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [assignFor, setAssignFor] = useState<{ buildingId: string; name: string } | null>(null);
+  // Overdue jobs span several days, so a building there is assigned by its jobs, not by one day (assign-building).
+  const [assignJobs, setAssignJobs] = useState<{ ids: string[]; clear?: () => void } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const { user } = useSession();
   // Closing overdue jobs in bulk is management's (functions/api/housekeeping/overdue.ts); cleaners never see it.
@@ -296,6 +298,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
                 <span className="text-copy font-medium">{picks.size} selected</span>
                 <Button size="sm" variant="tertiary" onClick={() => setPicks(new Set())} className="mr-auto">Clear</Button>
                 <span className="flex gap-2 max-md:w-full">
+                  <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => setAssignJobs({ ids: [...picks], clear: () => setPicks(new Set()) })} className="max-md:flex-1">Assign</Button>
                   <Button size="sm" variant="primary" icon={<Icon name="Check" size="sm" />} onClick={() => setBulk('done')} className="max-md:flex-1">Mark done</Button>
                   <Button size="sm" variant="secondary" onClick={() => setBulk('cancel')} className="max-md:flex-1">Cancel job</Button>
                 </span>
@@ -306,6 +309,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
                 {overdueGroups.map(g => (
                   <BuildingCard key={g.key} group={g} now={now} future={false} selected={selected} busy={busy}
                     onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan} cleaners={cleaners} onAssignOne={assignOne}
+                    onAssign={() => setAssignJobs({ ids: g.rows.filter(r => r.status !== 'done').map(r => r.id) })}
                     picks={mayBulk ? { has: id => picks.has(id), toggle: togglePicks } : undefined} />
                 ))}
               </div>
@@ -381,6 +385,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
           onDone={(title, body) => { setBulk(null); setPicks(new Set()); toast({ tone: 'success', title, body }); reload(); }} />
       )}
       {creating && <NewCleanModal date={date} onClose={() => setCreating(false)} onDone={() => { setCreating(false); reload(); }} />}
+      {assignJobs && <BulkAssignCleaner taskIds={assignJobs.ids} onClose={() => setAssignJobs(null)}
+        onDone={() => { assignJobs.clear?.(); setAssignJobs(null); reload(); }} />}
       {assignFor && (
         <AssignBuildingModal building={assignFor} date={date} onClose={() => setAssignFor(null)}
           onDone={(n, who) => { setAssignFor(null); toast({ tone: 'success', title: `${n} ${n === 1 ? 'cleaning job' : 'cleaning jobs'} in ${assignFor.name} given to ${who}.` }); reload(); }} />
