@@ -5,7 +5,6 @@ import { CLEAN_KINDS_SQL, LIVE_STAY_SQL } from '../../_lib/cleaning';
 import { overdueCleans } from '../../_lib/cleanOverdue';
 import { waitingCount, approvalsEnabled } from '../../_lib/approvals';
 import { levelsFor } from '../../_lib/access';
-import { showcaseReady } from '../../_lib/showcase';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-MY')} ${n === 1 ? one : many}`;
 
@@ -61,15 +60,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   add(money && n.payouts_pending > 0, { key: 'payouts_pending', tone: 'info', count: n.payouts_pending, title: `${plural(n.payouts_pending, 'owner payout')} waiting for a payout run`, body: 'Start a run once the transfers are made at the bank.', target: '/owners?view=payouts&state=pending' });
   add(inbox > 0, { key: 'inbox', tone: 'info', count: inbox, title: `${plural(inbox, 'unread conversation')}`, body: 'Guest messages waiting for a reply.', target: '/communication/inbox' });
 
-  // Showcase control's menu entry carries how many figures the Owner Showcase is showing in place of live ones.
-  const showcase = sees('performance') && (await showcaseReady(env))
-    ? Number((await one<{ n: number }>(env, 'SELECT count(*)::int AS n FROM showcase_overrides WHERE active = 1'))?.n ?? 0) : 0;
 
   // Today counts the day's check-ins and checkouts; Cleaning counts the open clean jobs up to today (carried-over ones included).
   return json({
     channels, today: ops ? n.today : 0, cleaning: ops ? n.cleaning : 0, maintenance: ops ? n.maintenance : 0, inbox,
     // What the maintenance count is made of, for the menu's tooltip: the same split as the Maintenance header.
     maintenanceAwaiting: ops ? n.maintenance_awaiting : 0,
-    statements: money ? n.statements : 0, approvals, approvalsOn, alerts, showcase,
+    statements: money ? n.statements : 0, approvals, approvalsOn, alerts,
   });
 };

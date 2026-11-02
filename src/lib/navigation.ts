@@ -2,7 +2,7 @@ import type { UserRole, AccessLevel, SessionUser } from './types';
 import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
-export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport' | 'showcase';
+export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport';
 /** The sidebar shows one workspace at a time. Rental (The Conts) is the daily work; supply chain (Dream Crafter) sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
@@ -117,9 +117,6 @@ export const NAV: NavGroup[] = [
     { key: 'portfolio', label: 'Portfolio', icon: 'layers', path: '/portfolio', area: 'portfolio' },
     { key: 'unitReport', label: 'Overall unit report', icon: 'file-spreadsheet', path: '/portfolio/owner-report', area: 'portfolio', full: true },
     { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance', full: true },
-    // Sales staff open it in front of a prospective owner (CONTS-0006); it opens full screen, without the menu.
-    { key: 'showcase', label: 'Owner Showcase', icon: 'presentation', path: '/performance/showcase', area: 'performance', fresh: true },
-    { key: 'showcaseControl', label: 'Showcase control', icon: 'sliders-horizontal', path: '/performance/showcase-control', area: 'performance', badge: 'showcase', fresh: true },
   ] },
   // Reports sit under Home (owner, 29 Oct 2026), with their own permission area since 30 Oct 2026.
   { label: 'REPORTS', workspace: 'rental', phone: false, items: [
@@ -155,6 +152,10 @@ export const NAV: NavGroup[] = [
     // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
     { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners', badge: 'statements' },
     { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'owners' },
+    // Owner B (owner, 2 Nov 2026): the new owners module, built beside Owners (A) so the two can be compared; it took
+    // the Owner Showcase's menu place and permission (Performance), which is what sales staff open, and its sample
+    // owner portal replaces the showcase. Its Owners, Statements and Payouts tabs follow their own areas.
+    { key: 'ownerB', label: 'Owner B', icon: 'contact', path: '/owner-b', area: 'performance', fresh: true },
   ] },
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
   ...financeGroups('/finance', '', 'rental'),
@@ -410,6 +411,9 @@ export const homeFor = (who: Pick<SessionUser, 'role' | 'side' | 'department'>):
 /** Pages below a menu entry, for the third breadcrumb ("Units / Owners / Owner statement"). */
 const SUB_PAGES: [RegExp, string][] = [
   [/^\/owners\/statements\/[^/]+$/, 'Owner statement'],
+  [/^\/owner-b\/sample$/, 'Owner portal (sample)'],
+  [/^\/owner-b\/[^/]+\/portal$/, 'View as owner'],
+  [/^\/owner-b\/(?!sample$)[^/]+$/, 'Owner profile'],
   [/^\/owners\/(?!contracts$|statements$)[^/]+$/, 'Owner profile'],
   [/^\/properties\/units\/[^/]+$/, 'Unit'],
   [/^\/system\/integrations\/hostplatform$/, 'HostPlatform import'],

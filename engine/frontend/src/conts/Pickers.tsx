@@ -50,6 +50,14 @@ function PickerModal({ title, query, setQuery, onClose, placeholder, children }:
 /** The project label everywhere it shows: the name without "SO - ", then the code. */
 export const projectLabel = (p: Pick<ProjectOption, "name" | "code">): string => `${cleanProjectName(p.name)}${p.code ? ` · ${p.code}` : ""}`;
 
+/** A project's name and code, on a voucher line on screen (nothing when none). */
+export function ProjectName({ id }: { id: number | null | undefined }) {
+  const q = useProjectOptions();
+  if (id == null) return null;
+  const p = (q.data?.projects ?? []).find((x) => x.id === id);
+  return <>{p ? projectLabel(p) : `Project ${id}`}</>;
+}
+
 export function ProjectPicker({ value, onChange, disabled, inputClass, placeholder = "Choose a project…", ariaLabel = "Project" }: {
   value: number | null; onChange: (id: number | null) => void; disabled?: boolean; inputClass?: string; placeholder?: string; ariaLabel?: string;
 }) {
@@ -105,8 +113,8 @@ export function UnitName({ id }: { id: string | null | undefined }) {
   return <>{u ? unitLabel(u) : "Unit"}</>;
 }
 
-export function UnitPicker({ value, onChange, disabled, inputClass, ariaLabel = "Unit" }: {
-  value: string | null; onChange: (id: string | null) => void; disabled?: boolean; inputClass?: string; ariaLabel?: string;
+export function UnitPicker({ value, onChange, disabled, inputClass, ariaLabel = "Unit", placeholder = "No unit" }: {
+  value: string | null; onChange: (id: string | null) => void; disabled?: boolean; inputClass?: string; ariaLabel?: string; placeholder?: string;
 }) {
   const q = useUnitOptions();
   const [open, setOpen] = useState(false);
@@ -117,7 +125,7 @@ export function UnitPicker({ value, onChange, disabled, inputClass, ariaLabel = 
   const pick = (id: string) => { onChange(id); setOpen(false); setQuery(""); };
   return (
     <>
-      <PickerButton ariaLabel={ariaLabel} label={chosen ? unitLabel(chosen) : value ? "Unit" : null} placeholder="No unit"
+      <PickerButton ariaLabel={ariaLabel} label={chosen ? unitLabel(chosen) : value ? "Unit" : null} placeholder={placeholder}
         disabled={disabled} inputClass={inputClass} onOpen={() => setOpen(true)} onClear={() => onChange(null)} />
       {open && (
         <PickerModal title="Choose a unit" query={query} setQuery={setQuery} onClose={() => setOpen(false)} placeholder="Building or unit, e.g. A-3-1">

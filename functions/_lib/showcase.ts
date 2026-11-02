@@ -17,7 +17,6 @@ export type ShowcaseKey = typeof SHOWCASE_KEYS[number];
 export const isShowcaseKey = (k: unknown): k is ShowcaseKey => typeof k === 'string' && (SHOWCASE_KEYS as readonly string[]).includes(k);
 
 export type Live = Record<ShowcaseKey, number | null>;
-export interface Override { value: number; active: boolean }
 
 const DAY = 864e5;
 export const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
@@ -30,24 +29,6 @@ export function maskGuest(full: string | null | undefined): string {
   const parts = String(full ?? '').trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return 'Guest';
   return parts.length === 1 ? parts[0] : `${parts[0]} ${parts[parts.length - 1].charAt(0).toUpperCase()}.`;
-}
-
-/** Whether migration 0164 is applied. Remembered once it is. */
-let seen = false;
-export async function showcaseReady(env: Env): Promise<boolean> {
-  if (seen) return true;
-  const r = await one<{ n: number }>(env, `SELECT COUNT(*) AS n FROM information_schema.tables
-    WHERE table_name = 'showcase_overrides' AND table_schema = ANY(current_schemas(false))`);
-  seen = Number(r?.n ?? 0) === 1;
-  return seen;
-}
-
-export async function readOverrides(env: Env): Promise<Partial<Record<ShowcaseKey, Override>>> {
-  if (!(await showcaseReady(env))) return {};
-  const rows = await all<{ key: string; value: number; active: number }>(env, 'SELECT key, value, active FROM showcase_overrides');
-  const out: Partial<Record<ShowcaseKey, Override>> = {};
-  for (const r of rows) if (isShowcaseKey(r.key)) out[r.key] = { value: Number(r.value), active: Number(r.active) === 1 };
-  return out;
 }
 
 export interface ShowcaseUnit {

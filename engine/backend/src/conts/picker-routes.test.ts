@@ -13,7 +13,7 @@ const world = () => publicTablesOnly(fakeSb({
   projects: [
     { id: 7, company_id: CO, code: 'RN-2607-003', name: 'ASTER HILL A-08-11 MS AMANDA', customer_name: 'MS AMANDA', funding: 'customer', planned_handover_date: '2026-11-25', handed_over_at: null, closed_at: null, created_at: '2026-07-03T02:00:00Z' },
     { id: 8, company_id: CO, code: 'RN-2608-003', name: 'BARON C-20-08 MR ALBERT', customer_name: 'MR ALBERT', funding: 'customer', planned_handover_date: '2026-10-20', handed_over_at: '2026-10-20T04:00:00Z', closed_at: null, created_at: '2026-08-03T02:00:00Z' },
-    { id: 9, company_id: CO, code: 'RN-2610-007', name: 'SO - THE HIPSTER C10-05 MS IRIS', customer_name: null, funding: 'customer', planned_handover_date: null, handed_over_at: null, closed_at: null, created_at: '2026-10-07T02:00:00Z' },
+    { id: 9, company_id: CO, code: 'RN-2610-007', name: 'SO - THE HIPSTER C10-05 MS IRIS', customer_name: null, funding: 'internal', internal_department: 'rental', planned_handover_date: null, handed_over_at: null, closed_at: null, created_at: '2026-10-07T02:00:00Z' },
     { id: 10, company_id: 9, code: 'X', name: 'OTHER COMPANY', funding: 'customer', created_at: '2026-10-07T02:00:00Z' },
   ],
   mfg_sales_orders: [
@@ -36,7 +36,7 @@ describe('picker lists', () => {
     expect(body.projects.map((p) => p.id).sort()).toEqual([7, 8, 9]);
     expect(body.projects.find((p) => p.id === 7)).toMatchObject({ customer_name: 'MS AMANDA', contract_status: 'RENO_IN_PROGRESS', planned_handover_date: '2026-11-25', done: false });
     expect(body.projects.find((p) => p.id === 8)).toMatchObject({ contract_status: 'RENO_COMPLETED', done: true });
-    expect(body.projects.find((p) => p.id === 9)).toMatchObject({ contract_status: null, done: false });
+    expect(body.projects.find((p) => p.id === 9)).toMatchObject({ contract_status: null, done: false, funding: 'internal', internal_department: 'rental' });
   });
 
   test('units are building and number', async () => {

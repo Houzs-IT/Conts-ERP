@@ -193,6 +193,13 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Not built: per-listing page views; a setting to show full guest names (always first name + initial).
 - PR 2 (feat/owner-showcase-portal, no migration): sample owner portal at /performance/showcase/owner (7 desktop tabs, iOS + Android phones) and the Switch curtain both ways. All its figures are made-up examples in src/pages/showcase/sampleOwner.ts, generated around today; it never reads a real owner. Download PDF on a sample statement is switched off.
 
+## Owner Hub (owner, 2 Nov 2026; plan docs/mockups/owner-hub-plan.html)
+- Step 1 (feat/owner-b-menu): Showcase control removed (menu, page, route, /api/showcase/overrides); "Owner Showcase" menu item is now Owner B (/owner-b, area Performance), a Beta beside Owners (A), which is unchanged. View as owner opens an owner's real portal read-only (?ownerId=, Finance only) and records owner.view_as on the owner's History.
+- Step 2 (feat/demo-store, migration 0199): schema demo (reservations, reviews, units, owners, guests, ids demo-), views demo.v_* (real rows live + demo rows + shadows), demo.shadow(), demo.clear(), and the rule pos.refuse_demo_ids on the five tables and the money and channel tables. A migration that drops or retypes a column of those five pos tables must run `select demo.drop_views();` before and `select demo.sync();` after; one that adds a column runs `select demo.sync();`.
+- Staging still has three old seed reviews with demo-review- ids in pos.reviews (from scripts/demo-data-2.sql, renamed seed-review- since). The rule leaves them alone; delete them with scripts/delete-demo-data-2.sql when convenient.
+- Drop pos.showcase_overrides (migration 0164) one release after Showcase control's removal; nothing reads it now.
+- Owners (A) is replaced by Owner B only after the owner approves B. Until then Owner B edits nothing: editing stays on Owners.
+
 ## Later
 - Packages (8 Oct, chore/update-packages): Property OS has 0 flagged packages (wrangler 4.148, source-map-js, and an override pinning sharp to 0.35.5 inside wrangler's local emulator; all build/dev tools, none ran in production). Engine: the non-breaking fixes are in (hono on the server, dompurify on the screens, and build tools). Left in engine/, each needing a breaking upgrade of Houzs's code or tools: react-router 6 (moderate), wrangler's sharp and undici, esbuild, vitest, braces. Take them with the next Houzs copy.
 - Email delivery: needs MAIL_API_KEY on the preview environment too; production has it.
@@ -545,6 +552,10 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - [ ] 2D sheets: no way yet to remove a sheet from the set or rename one after upload (only replace or add).
 - [ ] Beta is not reachable on a phone browser (the mobile shell has no /beta route); the 375px layout was checked in a desktop frame.
 - [ ] Owner mockup (artifact 1vwc4QNboJAH4MN7eRF5Rk) could not be read by the agent; compare Drawings against it by eye.
+
+## In-house SO import, The Conts brand (feat/inhouse-so-seed, no migration, 2 Nov 2026, docs/so-import/inhouse/)
+- Skyline Embassy: 18 SOs (one per quotation sheet, dated 31 Oct 2026, AutoCount 302-/481- accounts reused) and a renovation project per Owner Data unit; run by the one-off workflow so-inhouse-import.yml, remove it after.
+- KL 48: 44 units ready (19 Type A, 25 Type B) but not written: the Owner Data holds no per-unit selling price; waiting for the owner. B-17-09, B-25-08, B-35-13A have no AutoCount customer / advance account.
 
 ## Notion SO import (feat/so-notion-import, no migration, 26 Oct 2026, docs/so-import/)
 - Re-imported on production 30 Oct (docs/so-import/README.md "Re-import"): 79 SOs (all linked), 27 VOs, RM 3,688,221.24; one-off workflow removed.

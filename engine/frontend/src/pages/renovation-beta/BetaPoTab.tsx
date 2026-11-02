@@ -31,8 +31,11 @@ import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos
 import {
   amountAfter, byAreaBlocks, byCategory, livePo, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
   linesApi, linesCsv, postVo, refusalText,
-  contractLineEdits, postContractLines, voBatches, type LineEdit, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
+  contractLineEdits, postContractLines, variantsAfter, voBatches,
+  type LineEdit, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
+import { buildVariantSummary } from "../../vendor/shared/variant-summary";
+import { RenovationVariantPicker, hasVariantPickers } from "../../vendor/scm/components/renovationVariantPicker";
 import { BetaLoading } from "./BetaLoading";
 
 /** One colour per category band, in the mockup's spirit: [bar, band background, text]. */
@@ -121,7 +124,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   /* Renovation contracts: a SKU or qty change raises one contract VO per contract (approved for you); options and
      remarks save on the line with no VO. */
   const contractSo = new Set(d.sos.filter((s) => s.renovation).map((s) => s.docNo));
-  const raisesVo = (b: VoBatch): boolean => !contractSo.has(b.docNo) || contractLineEdits(b).length > 0;
+  const raisesVo = (b: VoBatch): boolean => !contractSo.has(b.docNo) || contractLineEdits(b).length > 0 || b.poOptionIds.length > 0;
   const voBatchesShown = batches.filter((b) => !contractSo.has(b.docNo));
   const batchTitle = (b: VoBatch): string => {
     if (!contractSo.has(b.docNo)) return `${voLabel(voBatchesShown.indexOf(b))} on ${b.docNo}`;
@@ -421,11 +424,13 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                       {d.finance && after !== null && l.amountSen !== null && after !== l.amountSen && (
                         <span style={{ color: WS.text2 }}> · amount {money(l.amountSen)} {"->"} {money(after)}</span>
                       )}
-                      {l.pos.some((x) => x.poStatus !== "CANCELLED") && (e.qty !== undefined || e.itemCode || e.colour !== undefined) && (
+                      {l.pos.some((x) => x.poStatus !== "CANCELLED") && (e.qty !== undefined || e.itemCode || e.colour !== undefined || e.variants !== undefined) && (
                         <div style={{ ...metaStyle, color: WS.amber }}>
-                          {contractSo.has(l.soDocNo)
-                            ? "On a PO: the PO line is flagged for purchasing to change; the PO itself does not change by itself."
-                            : "On a PO: the PO itself changes only after the PO change is approved."}
+                          {!contractSo.has(l.soDocNo)
+                            ? "On a PO: the PO itself changes only after the PO change is approved."
+                            : e.variants !== undefined
+                              ? "On a PO: a contract VO is raised. The line is replaced with the new variants in the same room, its PO line is flagged for purchasing to cancel, and the new line is ordered as it now is."
+                              : "On a PO: the PO line is flagged for purchasing to change; the PO itself does not change by itself."}
                         </div>
                       )}
                     </li>
@@ -600,10 +605,48 @@ function DescCell(r: RowCtx): ReactElement {
   );
 }
 
-/* The variants the SO line carries, as the SKU picked on the SO defines them (a bedframe's colour, leg and gap; most
-   SKUs have none and use the remark). Changed on the SO, not here (owner, 1 Nov 2026). */
+/* The variants the SO line carries. In Edit mode a sofa's or bedframe's are picked with the SO line's own dropdowns,
+   from the Maintenance master lists and the SKU's allowed options (owner, 2 Nov 2026); a line whose category has no
+   variant options has nothing to pick and uses its remark. A renovation contract saves them on the line (a line a live
+   PO buys is replaced by a contract VO); any other order raises its VO. */
 function VariantCell(r: RowCtx): ReactElement {
-  return r.l.variantText ? <span title={r.l.variantText} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{r.l.variantText}</span> : <span style={metaStyle}>-</span>;
+  const [open, setOpen] = useState(false);
+  const e = changed(r);
+  const cat = r.l.variantCategory ?? "";
+  const shown = e?.variants ? buildVariantSummary(cat, variantsAfter(r.l, e.variants)) || r.l.variantText || "" : r.l.variantText ?? "";
+  if (!r.editable || !hasVariantPickers(cat)) {
+    return shown ? <span title={shown} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{shown}</span> : <span style={metaStyle}>-</span>;
+  }
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} aria-label={`Change variants of ${r.l.itemCode}`} title={shown ? `${shown} (click to change)` : "Pick variants"}
+        style={{ ...editInput, width: "100%", display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 12, fontWeight: e?.variants ? 700 : 400, color: shown ? undefined : BETA.muted }}>
+        <span style={{ flex: 1, textAlign: "left", ...ellipsis }}>{shown || "Pick variants"}</span><ChevronDown size={11} aria-hidden="true" style={{ flexShrink: 0 }} />
+      </button>
+      {open && <VariantDialog {...r} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/** The SO line's variant pickers for this line; each pick goes into the line's edit, Done closes. */
+function VariantDialog(r: RowCtx & { onClose: () => void }): ReactElement {
+  const onPo = livePo(r.l);
+  return (
+    <WsDialog title={`Variants: ${r.l.itemCode}`} sub={r.l.description} onClose={r.onClose} wide
+      footer={<button type="button" style={btnStyle("teal")} onClick={r.onClose}>Done</button>}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <RenovationVariantPicker category={r.l.variantCategory ?? ""} itemCode={r.l.itemCode} variants={variantsAfter(r.l, r.edit?.variants)}
+          onPatch={(p) => r.setEdit({ variants: { ...r.edit?.variants, ...p } })} />
+        {onPo && (
+          <p style={{ margin: 0, fontSize: 13, color: WS.amber }}>
+            {r.contract
+              ? `${onPo.poNumber} already buys this line. Saving new variants raises a contract VO: the line is replaced with them, and the PO line is flagged for purchasing.`
+              : `${onPo.poNumber} already buys this line. The PO changes only after the PO change from the VO is approved.`}
+          </p>
+        )}
+      </div>
+    </WsDialog>
+  );
 }
 
 function QtyCell(r: RowCtx): ReactElement {
@@ -779,6 +822,11 @@ function SaveResult({ posted, onClose }: { posted: PostedVo[]; onClose: () => vo
             {x.applied
               ? <span style={{ color: WS.green }}><b>Saved.</b> {x.docNo} changed{x.amendmentNo ? ` (${x.amendmentNo}); the VO is in the VO tab.` : "."}</span>
               : <span style={{ color: WS.red }}><b>{x.docNo} not changed.</b> {x.refusal}</span>}
+            {x.amendmentNo && (x.poFlags ?? 0) > 0 && (
+              <div style={{ color: WS.amber }}>
+                {x.amendmentNo} raised: the PO line{x.poFlags === 1 ? " is" : "s are"} flagged for purchasing.
+              </div>
+            )}
             {x.followUps.length > 0 && (
               <div style={{ color: WS.amber }}>
                 PO change waiting for approval (the PO has not changed yet): {x.followUps.map((f) => `${f.poNumber} (${f.amendmentNo})`).join(", ")}.

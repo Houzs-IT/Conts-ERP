@@ -117,6 +117,11 @@ jobs:
         env:
           API_BASE: http://localhost:8788
           DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Demo mode guards (demo-mode)
+        run: node scripts/api-checks/demo-mode.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
       - name: Server log
         if: failure()
         run: tail -n 200 wrangler.log

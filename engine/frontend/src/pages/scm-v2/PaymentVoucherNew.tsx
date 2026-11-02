@@ -20,7 +20,7 @@
 // ----------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DEPARTMENT_OPTIONS, DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
+import { departmentOf } from '../../conts/department';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Save, Trash2, X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
@@ -50,10 +50,10 @@ import { resolveFxRate, deriveRateFromMyrPaid } from './fx-rate';
 
 import { fmtMoneySen } from '../../vendor/shared/format';
 import { ProjectLimitField } from '../../conts/ProjectLimitField';
-import { UnitPicker } from '../../conts/Pickers';
-import { VoucherForSwitch } from '../../conts/VoucherForSwitch';
-import { applyFor, departmentFor, forOfLines, nextLineUnit, projectShown, whatSwitchingDrops, type VoucherFor } from '../../conts/voucherPurpose';
-import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
+import {
+  DepartmentTag, LineForSwitch, LineTarget, lineDepartment, missingTarget, purposeOfNew, purposeOfSaved, purposePayload,
+  repurpose, useProjectSides, voucherLineCss, type PurposeDraft,
+} from '../../conts/VoucherLineFor';
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
 
@@ -67,26 +67,22 @@ const fmtRm = (centi: number | null | undefined, currency = 'MYR'): string => {
    FREIGHT / OTHER are plain cash-out vouchers (lines only, no settlement). */
 type PvPurpose = 'SUPPLIER_PAYMENT' | 'FREIGHT' | 'OTHER' | 'CUSTOMER_REFUND';
 
-type DraftLine = {
+/* Conts (chew 2 Nov 2026; plan 2026-11-02-voucher-line-purpose): each line says what it is for (Unit, Project or
+   Company), names its unit or project, and carries the department that follows (conts/VoucherLineFor.tsx). */
+type DraftLine = PurposeDraft & {
   rid:              string;
   description:      string;
   debitAccountCode: string;
   amountSen:      number;
-  /* Conts: the line's department (spec 3.5), required on an expense line. */
-  department:       Department | '';
-  /* Conts (chew 2 Nov 2026): a Rental line's unit, finance only. */
-  unitId:           string | null;
 };
 
-const newLine = (department: Department | '' = '', unitId: string | null = null): DraftLine => ({
+const newLine = (purpose: PurposeDraft = purposeOfNew([])): DraftLine => ({
   rid:              `l${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   description:      '',
   debitAccountCode: '',
   amountSen:      0,
-  department,
-  unitId:           department === 'rental' ? unitId : null,
+  ...purpose,
 });
-const departmentOf = (d: unknown): Department | '' => (DEPARTMENT_OPTIONS.some((o) => o.value === d) ? (d as Department) : '');
 
 /* One outstanding-PI row in the "Apply to PI" picker, with the amount the
    operator chooses to apply (centi, MYR). */
@@ -160,7 +156,7 @@ export const PaymentVoucherNew = () => {
   }, [rolesQ.data, moneyAccounts]);
   const [voucherDate, setVoucherDate]             = useState<string>(() => todayMyt());
   const [notes, setNotes]                         = useState<string>('');
-  // Conts (finance phase 1.5; SOP 3.4): the project this voucher pays, for its limit.
+  // Conts (finance phase 1.5; SOP 3.4): an AP payment's one project (from its bills), for its limit.
   const [projectId, setProjectId]                 = useState<number | null>(null);
 
   /* Internal transfer INSIDE the PV (GL redesign item 10, owner: 不能直接在
@@ -214,15 +210,16 @@ export const PaymentVoucherNew = () => {
        person picks it. */
     const rememberedAccount = extras?.memory?.debitAccountCode ?? '';
     const srcLines = extras?.lines ?? ex.lines;
+    /* Read lines are for what the last line was for (a fresh voucher: the Company). */
+    const purpose = purposeOfNew(lines);
     const drafts = srcLines
       .filter((l) => l.amountSen != null && l.amountSen > 0)
-      .map((l) => ({ ...newLine(), description: upperFill(l.description) ?? '', amountSen: l.amountSen!, debitAccountCode: rememberedAccount }));
+      .map((l) => ({ ...newLine(purpose), description: upperFill(l.description) ?? '', amountSen: l.amountSen!, debitAccountCode: rememberedAccount }));
     /* A bill with no readable lines still carries its total — one line. */
     if (drafts.length === 0 && ex.totalSen != null && ex.totalSen > 0) {
-      drafts.push({ ...newLine(), description: upperFill(ex.invoiceNumber ? `Bill ${ex.invoiceNumber}` : 'As per bill') ?? '', amountSen: ex.totalSen, debitAccountCode: rememberedAccount });
+      drafts.push({ ...newLine(purpose), description: upperFill(ex.invoiceNumber ? `Bill ${ex.invoiceNumber}` : 'As per bill') ?? '', amountSen: ex.totalSen, debitAccountCode: rememberedAccount });
     }
-    /* Read lines take the department the voucher is for (chew 2 Nov 2026). */
-    if (drafts.length > 0) setLines(effFor ? applyFor(drafts, effFor) : drafts);
+    if (drafts.length > 0) setLines(drafts);
   };
   /* The batch screen's hand-off. Its files come via the module stash, not
      location.state (a big PDF would blow the history-entry size cap — see
@@ -284,11 +281,8 @@ export const PaymentVoucherNew = () => {
      supplier's currency (below). */
   const [currencyOverride, setCurrencyOverride]   = useState<string | null>(null);
   const [lines, setLines]                         = useState<DraftLine[]>([newLine()]);
-  /* Conts (chew 2 Nov 2026): who the voucher is for; it sets every line's department. */
-  const [voucherFor, setVoucherFor]               = useState<VoucherFor | ''>('');
-  /* Chosen, or else what the lines already say (each line's department picked by hand). */
-  const effFor: VoucherFor | '' = voucherFor || forOfLines(lines);
-  const askConfirm = useConfirm();
+  /* Each Project line's project: its funding and side set the line's tag before the save. */
+  const sideOf = useProjectSides();
   const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string } | null>(null);
   /* ── Customer Refund state (§14). refundDocNo is the COMMITTED number (blur /
      Enter on the input); the source is read from the server by that number. */
@@ -337,16 +331,19 @@ export const PaymentVoucherNew = () => {
       const rate = v.exchange_rate == null ? '' : String(v.exchange_rate);
       if (rate) { setExchangeRate(rate); setRateSource('rate'); }
     }
-    const copied = copyQ.data.lines
+    /* Each line keeps what it was for: its unit, its project, or the company. */
+    const copied = (copyQ.data.lines as Array<Record<string, unknown>>)
       .map((l) => ({
-        ...newLine(),
-        description: String((l as Record<string, unknown>).description ?? ''),
-        amountSen: Number((l as Record<string, unknown>).amount_sen ?? 0),
-        debitAccountCode: String((l as Record<string, unknown>).debit_account_code ?? ''),
-        department: departmentOf((l as Record<string, unknown>).department),
-        unitId: departmentOf((l as Record<string, unknown>).department) === 'rental' && (l as Record<string, unknown>).unit_id ? String((l as Record<string, unknown>).unit_id) : null,
+        ...newLine(purposeOfSaved({
+          department: departmentOf(l.department),
+          unitId: l.unit_id ? String(l.unit_id) : null,
+          projectId: l.project_id == null ? null : Number(l.project_id),
+        })),
+        description: String(l.description ?? ''),
+        amountSen: Number(l.amount_sen ?? 0),
+        debitAccountCode: String(l.debit_account_code ?? ''),
       }));
-    if (copied.length > 0) { setLines(copied); setVoucherFor(forOfLines(copied)); }
+    if (copied.length > 0) setLines(copied);
     setScanNote(`Copied from ${String(v.pv_number ?? 'voucher')} — new number, today's date, approvals restart; nothing is applied to bills yet.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [copyFrom, copyQ.data]);
@@ -379,20 +376,11 @@ export const PaymentVoucherNew = () => {
   const setLine  = (rid: string, patch: Partial<DraftLine>) =>
     setLines((prev) => prev.map((l) => (l.rid === rid ? { ...l, ...patch } : l)));
   const dropLine = (rid: string) => setLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.rid !== rid)));
-  const lineDepartment = (prev: DraftLine[]) => departmentFor(effFor) || nextLineDepartment(prev);
-  const addLine  = () => setLines((prev) => [...prev, newLine(lineDepartment(prev), nextLineUnit(prev))]);
-  /* Switching who it is for re-sets every line's department; it asks first when units or the project would go. */
-  const chooseFor = async (f: VoucherFor) => {
-    const drops = whatSwitchingDrops(lines, projectId, f);
-    if (drops.length > 0 && !(await askConfirm({
-      title: `Switch to ${f === 'rental' ? 'Rental' : f === 'renovation' ? 'Renovation' : 'Company'}?`,
-      body: `This clears ${drops.join(' and ')} already chosen.`,
-      confirmLabel: 'Switch',
-    }))) return;
-    setVoucherFor(f);
-    setLines((prev) => applyFor(prev, f));
-    if (f === 'rental' || f === 'company') setProjectId(null);
-  };
+  /* A line's For, unit or project changed: what no longer applies goes, and the department follows. */
+  const setPurpose = (rid: string, patch: Partial<Pick<PurposeDraft, 'lineFor' | 'unitId' | 'projectId'>>) =>
+    setLines((prev) => prev.map((l) => (l.rid === rid ? repurpose(l, patch, sideOf) : l)));
+  /* A new line is for what the line above was for. */
+  const addLine  = () => setLines((prev) => [...prev, newLine(purposeOfNew(prev))]);
   /* Insert adds a line and LANDS on its account (owner 2026-09-06: 按 Ins 直接
      加然后直接跳到那一行去输入资料 — the AP invoice's manners, here too);
      Enter on an amount hops to the next line's account, adding one when
@@ -404,7 +392,7 @@ export const PaymentVoucherNew = () => {
     setLandOn(null);
   }, [landOn, lines]);
   const addLineAndLand = () => {
-    const l = newLine(lineDepartment(lines), nextLineUnit(lines));
+    const l = newLine(purposeOfNew(lines));
     setLines((prev) => [...prev, l]);
     setLandOn(l.rid);
   };
@@ -558,7 +546,7 @@ export const PaymentVoucherNew = () => {
     ? !!payeeName.trim() && !!supplierId && !!creditAccountCode && totalSen > 0 && !!apAccountCode
     : isTransfer
       ? !!creditAccountCode && !!toAccountCode && toAccountCode !== creditAccountCode && transferSen > 0
-      : !!payeeName.trim() && !!creditAccountCode && realLines.length > 0 && realLines.every((l) => !!l.department);
+      : !!payeeName.trim() && !!creditAccountCode && realLines.length > 0;
 
   const transferMode = !isAp && isTransfer;
   const transferPayee = toAccount ? `Internal transfer to ${toAccount.account_code} ${toAccount.account_name}` : '';
@@ -580,9 +568,11 @@ export const PaymentVoucherNew = () => {
     if (isAp && !supplierId) { setDialog({ title: 'Pick a supplier', body: 'An AP Payment settles a supplier — choose whose invoices this pays.' }); return; }
     if (isAp && totalSen === 0) { setDialog({ title: 'Nothing to pay yet', body: 'Tick an invoice, type a partial amount, or enter a prepay figure.' }); return; }
     if (!isAp && realLines.length === 0) { setDialog({ title: 'Add at least one line', body: 'Each line needs a debit account and an amount > 0.' }); return; }
-    if (!isAp && !effFor) { setDialog({ title: 'Choose who this is for', body: 'Rental, Renovation or Company — it sets each line’s department.' }); return; }
-    if (!isAp && effFor === 'renovation' && projectId == null) { setDialog({ title: 'Choose the project', body: 'Choose the project this renovation cost belongs to.' }); return; }
-    if (!isAp && realLines.some((l) => !l.department)) { setDialog({ title: 'Choose each line’s department', body: 'Rental, Renovation or Shared — the reports by department read it.' }); return; }
+    if (!isAp) {
+      /* A Unit line names its unit, a Project line its project. */
+      const missing = missingTarget(lines.map((l, i) => ({ ...l, n: i + 1 })).filter((l) => l.debitAccountCode && l.amountSen > 0));
+      if (missing) { setDialog(missing); return; }
+    }
     }
 
     /* AP Payment: the ONE GL line is written here — Dr the AP control account
@@ -604,8 +594,7 @@ export const PaymentVoucherNew = () => {
         description:      l.description || undefined,
         debitAccountCode: l.debitAccountCode,
         amountSen:      l.amountSen,
-        department:     l.department || undefined,
-        unitId:         l.department === 'rental' ? l.unitId : null,
+        ...purposePayload(l, sideOf(l.projectId)),
       }));
     const sendAllocations = applyToPi
       ? allocations.filter((a) => a.amountSen > 0).map((a) => (
@@ -623,7 +612,8 @@ export const PaymentVoucherNew = () => {
         creditAccountCode,
         voucherDate,
         notes:             notes || undefined,
-        ...(projectId != null && projectShown(effFor, isAp) ? { projectId } : {}),
+        /* Only an AP payment names one project for the voucher; a plain voucher's projects ride on its lines. */
+        ...(isAp && projectId != null ? { projectId } : {}),
         // Multi-currency (Phase 1-A) — resolved currency + rate. MYR forces 1
         // (server enforces too); a blank/invalid foreign rate → 1.
         currency,
@@ -759,13 +749,8 @@ export const PaymentVoucherNew = () => {
                 placeholder={accountsQ.isLoading ? 'Loading accounts…' : '— Bank / cash —'}
               />
             </label>
-            {!transferMode && !isRefund && !isAp && (
-              <div className={styles.field}>
-                <VoucherForSwitch value={effFor} onChange={(f) => void chooseFor(f)} labelClass={styles.fieldLabel} />
-              </div>
-            )}
-            {!transferMode && !isRefund && projectShown(effFor, isAp) && (
-              <ProjectLimitField projectId={projectId} onChange={setProjectId} amountSen={totalSen} required={effFor === 'renovation'}
+            {isAp && (
+              <ProjectLimitField projectId={projectId} onChange={setProjectId} amountSen={totalSen}
                 fieldClass={styles.field} labelClass={styles.fieldLabel} inputClass={styles.fieldInput} />
             )}
             <label className={styles.field}>
@@ -949,72 +934,60 @@ export const PaymentVoucherNew = () => {
               {pendingFiles.map((f) => f.name).join(', ')}
             </div>
           )}
+          {/* One row per line, left to right: For · Unit or Project · Account ·
+              Description · Amount · tag. Account, then description, then
+              amount stays the owner's typing order (2026-09-08), the same the
+              AP invoice and Other Debtor bill keep; Tab follows the DOM. */}
+          <div className={voucherLineCss.lines}>
           {lines.map((l, idx) => (
-            <div key={l.rid} data-line={l.rid}
-              onKeyDown={(e) => { if (e.key === 'Insert') { e.preventDefault(); addLineAndLand(); } }}
-              style={{
-                background: 'var(--c-paper)', border: '1px solid var(--line)',
-                borderRadius: 'var(--radius-lg)', padding: 'var(--space-4)',
-                display: 'flex', flexDirection: 'column', gap: 'var(--space-3)',
-              }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
-                <span style={{ fontFamily: 'var(--font-button)', fontSize: 'var(--fs-12)', fontWeight: 700, letterSpacing: '0.10em', color: 'var(--fg-muted)' }}>LINE {idx + 1}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                  <span className={styles.previewPrice}>{fmtRm(l.amountSen)}</span>
-                  {lines.length > 1 && (
-                    <button type="button" onClick={() => dropLine(l.rid)} title="Remove line"
-                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--c-festive-b, #B8331F)', padding: 4, display: 'inline-flex' }}>
-                      <Trash2 {...SM_ICON} />
-                    </button>
-                  )}
-                </div>
+            <div key={l.rid} data-line={l.rid} className={voucherLineCss.row}
+              onKeyDown={(e) => { if (e.key === 'Insert') { e.preventDefault(); addLineAndLand(); } }}>
+              <div className={`${voucherLineCss.cell} ${voucherLineCss.forCell}`}>
+                <span className={styles.fieldLabel}>Line {idx + 1} · For</span>
+                <LineForSwitch n={idx + 1} value={l.lineFor} onChange={(f) => setPurpose(l.rid, { lineFor: f })} />
               </div>
-
-              {/* The owner's typing order (2026-09-08: 先 account, 再 description,
-                  再 amount) — the same order the AP invoice and Other Debtor
-                  bill already keep; Tab follows the DOM. */}
-              <div className={styles.formGrid2}>
-                <label className={styles.field}>
-                  <span className={styles.fieldLabel}>Account (Debit) *</span>
-                  <AccountSelect
-                    accounts={accounts}
-                    value={l.debitAccountCode}
-                    onChange={(v) => setLine(l.rid, { debitAccountCode: v })}
-                    className={styles.fieldInput}
-                    placeholder={accountsQ.isLoading ? 'Loading accounts…' : '— Expense / charge account —'}
-                  />
-                </label>
-                <label className={styles.field}>
-                  <span className={styles.fieldLabel}>Description</span>
-                  <input type="text" value={l.description} onChange={(e) => setLine(l.rid, { description: e.target.value })}
-                    placeholder="e.g. Sea freight — Shenzhen → Klang" className={styles.fieldInput} />
-                </label>
+              <div className={voucherLineCss.cell}>
+                <span className={styles.fieldLabel}>{l.lineFor === 'unit' ? 'Unit *' : l.lineFor === 'project' ? 'Project *' : 'Paid for'}</span>
+                <LineTarget n={idx + 1} line={l} inputClass={styles.fieldInput}
+                  onUnit={(u) => setPurpose(l.rid, { unitId: u })} onProject={(p) => setPurpose(l.rid, { projectId: p })} />
               </div>
-
-              <div className={styles.formGrid4} style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                <label className={styles.field}>
-                  <span className={styles.fieldLabel}>Amount (MYR)</span>
-                  <MoneyInput bare valueSen={l.amountSen} aria-label={`line ${idx + 1} amount`}
-                    onCommit={(sen) => setLine(l.rid, { amountSen: sen ?? 0 })}
-                    onKeyDown={(e) => { if (e.key === 'Enter') hopFrom(l.rid); }}
-                    inputClassName={styles.fieldInput} selectOnFocus />
-                </label>
-                {effFor === 'mixed' || effFor === '' ? (
-                  <label className={styles.field}>
-                    <span className={styles.fieldLabel}>Department *</span>
-                    <DepartmentSelect className={styles.fieldInput} label={`Line ${idx + 1} department`} blank="Choose…"
-                      value={l.department} onChange={(d) => setLine(l.rid, { department: d, unitId: d === 'rental' ? l.unitId : null })} />
-                  </label>
-                ) : l.department === 'rental' ? null : <span />}
-                {l.department === 'rental' && (
-                  <div className={styles.field}>
-                    <span className={styles.fieldLabel}>Unit</span>
-                    <UnitPicker value={l.unitId} onChange={(u) => setLine(l.rid, { unitId: u })} inputClass={styles.fieldInput} ariaLabel={`Line ${idx + 1} unit`} />
-                  </div>
+              <label className={voucherLineCss.cell}>
+                <span className={styles.fieldLabel}>Account (Debit) *</span>
+                <AccountSelect
+                  accounts={accounts}
+                  value={l.debitAccountCode}
+                  onChange={(v) => setLine(l.rid, { debitAccountCode: v })}
+                  className={styles.fieldInput}
+                  placeholder={accountsQ.isLoading ? 'Loading accounts…' : '— Expense / charge account —'}
+                />
+              </label>
+              <label className={voucherLineCss.cell}>
+                <span className={styles.fieldLabel}>Description</span>
+                <input type="text" value={l.description} onChange={(e) => setLine(l.rid, { description: e.target.value })}
+                  placeholder="e.g. Sea freight — Shenzhen → Klang" className={styles.fieldInput} />
+              </label>
+              <label className={voucherLineCss.cell}>
+                <span className={styles.fieldLabel}>Amount (MYR)</span>
+                <MoneyInput bare valueSen={l.amountSen} aria-label={`line ${idx + 1} amount`}
+                  onCommit={(sen) => setLine(l.rid, { amountSen: sen ?? 0 })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') hopFrom(l.rid); }}
+                  inputClassName={styles.fieldInput} selectOnFocus />
+              </label>
+              <div className={voucherLineCss.cell}>
+                <span className={styles.fieldLabel}>Department</span>
+                <DepartmentTag n={idx + 1} department={lineDepartment(l, sideOf(l.projectId))} />
+              </div>
+              <div className={voucherLineCss.remove}>
+                {lines.length > 1 && (
+                  <button type="button" onClick={() => dropLine(l.rid)} title="Remove line" aria-label={`Remove line ${idx + 1}`}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--c-festive-b, #B8331F)', padding: 4, display: 'inline-flex' }}>
+                    <Trash2 {...SM_ICON} />
+                  </button>
                 )}
               </div>
             </div>
           ))}
+          </div>
 
           <AddLineButton variant="block" onClick={addLine} />
         </div>

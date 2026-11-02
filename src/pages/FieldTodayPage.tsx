@@ -16,7 +16,7 @@ import { PhoneJobCard, PhoneJobList, PhoneStayTime } from '../components/ops/Pho
 import { CleanProof, stageCounts } from '../components/ops/CleanProof';
 import { StatusBadge } from '../components/StatusBadge';
 import { sizeLine } from '../lib/unitSize';
-import { sortForCleaner } from '../lib/cleanOrder';
+import { sortForCleaner, sortGroupsForCleaner, type CleanOrderInput } from '../lib/cleanOrder';
 import { isCleanOverdue, daysPast } from '../lib/cleanOverdue';
 import { cleanRowTone } from '../lib/cleanRowTone';
 import { usePortalText, usePortalDates, wordFor, type PortalStrings } from '../lib/portalI18n';
@@ -35,19 +35,26 @@ interface Job {
   external?: { address: string; clientName: string | null; clientPhone: string | null } | null;
   previous: { guestName: string; checkOutTime: string; state: string } | null;
   next: { guestName: string; checkInTime: string; checkInAt: string } | null;
+  /** Nobody arrives on the job's day: the unit's next arrival on a later day. */
+  nextLater?: { day: string; checkInTime: string } | null;
 }
 interface Detail { media: MediaItem[]; access: { id: string; label: string; instruction: string }[]; parking?: string | null }
 
-const jobOrder = (j: Job) => ({ checkIn: j.next?.checkInTime ?? null, done: j.done, building: j.unit.propertyName, unit: j.unit.unitNumber });
+/** The cleaner's order (lib/cleanOrder), the same as the office's board: the arrival on the job's day, else the next one. */
+const jobOrder = (j: Job): CleanOrderInput => ({
+  checkIn: j.next?.checkInTime ?? j.nextLater?.checkInTime ?? null, checkInDay: j.next ? j.day : j.nextLater?.day ?? null, day: j.day,
+  done: j.done, building: j.unit.propertyName, unit: j.unit.unitNumber,
+});
 /** Overdue by the one rule (lib/cleanOverdue): not done at the next guest's check-in, or by the end of its day. */
 const jobOverdue = (j: Job, now: number) => isCleanOverdue({ day: j.day, checkIn: j.next?.checkInTime ?? null, done: j.done }, now);
 interface Group { id: string; name: string; jobs: Job[] }
-/** One group per building in name order (external jobs last), each in the cleaner's order (owner, 2 Nov 2026). */
+/** One group per building, the building with the most urgent job first (external jobs last), each in the cleaner's order
+ *  (owner, 2 Nov 2026). Recomputed from every answer, so a changed time re-sorts on the next refresh. */
 function byBuilding(jobs: Job[]): Group[] {
   const m = new Map<string, Group>();
   for (const j of jobs) { const g = m.get(j.buildingId) ?? { id: j.buildingId, name: j.unit.propertyName, jobs: [] }; g.jobs.push(j); m.set(j.buildingId, g); }
   for (const g of m.values()) g.jobs = sortForCleaner(g.jobs, jobOrder);
-  return [...m.values()].sort((a, b) => (a.id === 'external' ? 1 : 0) - (b.id === 'external' ? 1 : 0) || a.name.localeCompare(b.name));
+  return sortGroupsForCleaner([...m.values()], g => g.jobs.map(jobOrder), g => g.name, g => g.id === 'external');
 }
 
 /** The cleaner's phone: the same list as the Cleaning page on a phone (components/ops/PhoneJobCard), with only their own
@@ -64,10 +71,11 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   const { data, loading, error, reload } = useApi<{ rows: Job[]; date?: string }>(`/field/tasks?date=${date}`);
   // A new notice, or the phone coming back to the app, reloads the list now; a job that just arrived carries a New mark.
   useFieldRefresh(reload);
-  // The office ticks the guest out on its board: the list catches up every minute and when the phone comes back to the app.
+  // The office ticks the guest out or changes a time on its board: the list catches up every 30 seconds, as the board does,
+  // and when the phone comes back to the app.
   useEffect(() => {
     const tick = () => { if (document.visibilityState === 'visible') reload(); };
-    const t = window.setInterval(tick, 60_000);
+    const t = window.setInterval(tick, 30_000);
     document.addEventListener('visibilitychange', tick);
     return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', tick); };
   }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -168,6 +176,7 @@ const outTime = (j: Job) => (j.guestOut && j.guestLeftAt ? hm(j.guestLeftAt) : j
  *  tap while scrolling the list can never start a job by mistake. */
 function TaskCard({ job: j, now, fresh, active, onOpen }: { job: Job; now: number; fresh: boolean; active: boolean; onOpen: () => void }) {
   const t = usePortalText();
+  const { short } = usePortalDates();
   const lateBy = j.done ? 0 : daysLate(j.day);
   const tone = cleanRowTone({ day: j.day, status: j.done ? 'done' : j.state === 'in_progress' ? 'cleaning' : 'waiting', guestOut: j.guestOut, checkOutTime: j.previous?.checkOutTime ?? null }, now);
   return (
@@ -180,6 +189,7 @@ function TaskCard({ job: j, now, fresh, active, onOpen }: { job: Job; now: numbe
         : <PhoneStayTime label={t.jobs.noGuestLeaving} />}
       arrive={j.external ? undefined : j.next
         ? <PhoneStayTime label={t.jobs.in} time={j.next.checkInTime} aside={!j.done && <span className="text-meta whitespace-nowrap"><TimeLeft at={j.next.checkInAt} now={now} /></span>} />
+        : j.nextLater ? <PhoneStayTime label={t.jobs.in} time={`${short(j.nextLater.day)} ${j.nextLater.checkInTime}`} />
         : <PhoneStayTime label={t.jobs.noCheckIn} />}
       note={j.instructions && (
         <div className="flex items-start gap-2 rounded-control bg-warning-bg text-ink px-2.5 py-1.5 text-meta">
