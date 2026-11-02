@@ -61,6 +61,8 @@ const { employeeId, pin: firstPin } = r.json;
 const number = employeeId.slice(4);
 const [u] = await db(`SELECT u.id, u.email, u.role, u.employee_id, u.must_change_password, u.phone FROM cleaners c JOIN users u ON u.id = c.user_id WHERE c.id = $1`, cleanerId);
 check('new cleaner login: housekeeper, employee ID, placeholder email, must change, phone kept as contact', u && u.role === 'housekeeper' && u.employee_id === employeeId && u.email.endsWith('@no-email.invalid') && u.must_change_password === 1 && u.phone === '+60 12-345 6789', u);
+const [placed] = await db(`SELECT d.kind FROM users u JOIN departments d ON d.id = u.department_id WHERE u.id = $1`, u.id);
+check('the new cleaner login is in the Cleaning department (petty cash follows it)', placed?.kind === 'cleaning', placed);
 const audits = await db(`SELECT after_state FROM audit_log WHERE entity_id = $1 AND action = 'housekeeping.cleaner_app_access'`, cleanerId);
 check('audited, without the PIN', audits.length === 1 && !audits[0].after_state.includes(firstPin), audits);
 
