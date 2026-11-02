@@ -27,21 +27,24 @@ type Read = {
   kind: string; provider: string | null; billMonth: string | null; periodFrom: string | null; periodTo: string | null;
   amountDueSen: number | null; accountNoVisible: string | null; accountNoFull: string | null; confidenceNotes: string | null;
 };
-type Match = { colour: 'green' | 'amber' | 'red'; alreadyRecorded: boolean; reasons: string[] };
+type Match = { colour: 'green' | 'amber' | 'red'; accountId: string | null; alreadyRecorded: boolean; reasons: string[] };
 type ScanAnswer = { scanId: string; read: Read; match: Match; unitId: string | null; candidates: { accountId: string; unitId: string | null; clues: string[] }[] };
 type Row = {
   key: string; file: File; fileName: string; pageNo: number; thumb: string;
   state: 'waiting' | 'reading' | 'done' | 'failed' | 'recorded'; problem?: string;
   scan?: ScanAnswer;
   kind: Kind | ''; billMonth: string; periodFrom: string; periodTo: string; amountSen: number | null; unitId: string;
+  /** The account the page matched, kept while its unit is the one proposed (a unit can have two meters of a kind). */
+  accountId: string | null;
   ownerPaid: boolean; tick: boolean;
 };
+type Group = { provider: string; count: number; amountSen: number; scanIds: string[] };
+type Sent = Group & { part: number; requestNo?: string; failed?: string };
 type ScanUnit = { id: string; label: string; contracts: SplitContract[] };
 
 const KINDS: { value: Kind; label: string }[] = [
   { value: 'electricity', label: 'Electricity' }, { value: 'water', label: 'Water' }, { value: 'internet', label: 'Internet' }, { value: 'sewerage', label: 'Indah Water' },
 ];
-const KIND_LABEL: Record<string, string> = Object.fromEntries(KINDS.map(k => [k.value, k.label]));
 const AT_ONCE = 3;
 const COLOUR: Record<Match['colour'], { tone: 'success' | 'warning' | 'danger'; label: string }> = {
   green: { tone: 'success', label: 'Matched' }, amber: { tone: 'warning', label: 'Check' }, red: { tone: 'danger', label: 'Pick the unit' },
@@ -65,15 +68,16 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
   const [splitting, setSplitting] = useState(0);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [toPay, setToPay] = useState<{ provider: string; count: number; amountSen: number; requestNo?: string; failed?: string }[]>([]);
+  const [toPay, setToPay] = useState<Sent[]>([]);
   const stopped = useRef(false);
   const running = useRef(0);
   const part = useRef(0);
+  /* The rows live here and every change goes through it first, so a page added while others are being read never
+     overwrites their results (the screen state is only a copy for drawing). */
   const rowsRef = useRef<Row[]>([]);
-  rowsRef.current = rows;
   useEffect(() => () => rowsRef.current.forEach(r => URL.revokeObjectURL(r.thumb)), []);
-
-  const patch = (key: string, p: Partial<Row>) => setRows(rs => rs.map(r => (r.key === key ? { ...r, ...p } : r)));
+  const commit = (next: Row[]) => { rowsRef.current = next; setRows(next); };
+  const patch = (key: string, p: Partial<Row>) => commit(rowsRef.current.map(r => (r.key === key ? { ...r, ...p } : r)));
 
   /* Three pages at a time; a slow page holds up only its own slot. */
   function pump() {
@@ -81,7 +85,6 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
       const next = rowsRef.current.find(r => r.state === 'waiting');
       if (!next) return;
       running.current++;
-      next.state = 'reading';
       patch(next.key, { state: 'reading' });
       void readOne(next).finally(() => { running.current--; pump(); });
     }
@@ -97,7 +100,8 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
       const kind = (KINDS.some(k => k.value === s.read.kind) ? s.read.kind : '') as Kind | '';
       patch(row.key, {
         state: 'done', scan: s, kind, billMonth: s.read.billMonth ?? '', periodFrom: s.read.periodFrom ?? '', periodTo: s.read.periodTo ?? '',
-        amountSen: s.read.amountDueSen, unitId: s.unitId ?? '', tick: s.match.colour === 'green' && !s.match.alreadyRecorded,
+        amountSen: s.read.amountDueSen, unitId: s.unitId ?? '', accountId: s.unitId ? s.match.accountId : null,
+        tick: s.match.colour === 'green' && !s.match.alreadyRecorded,
       });
     } catch (e) {
       patch(row.key, { state: 'failed', problem: errorMessage(e) });
@@ -112,27 +116,35 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
     for (const file of files) {
       /* Each page joins the queue as soon as it is drawn, so reading starts while the rest of the PDF is still drawn. */
       const add = (b: Blob, pageNo: number) => {
-        rowsRef.current = [...rowsRef.current, {
+        commit([...rowsRef.current, {
           key: crypto.randomUUID(), file, fileName: file.name, pageNo, thumb: URL.createObjectURL(b), state: 'waiting',
-          kind: '', billMonth: '', periodFrom: '', periodTo: '', amountSen: null, unitId: '', ownerPaid: false, tick: false,
-        }];
-        setRows(rowsRef.current);
+          kind: '', billMonth: '', periodFrom: '', periodTo: '', amountSen: null, unitId: '', accountId: null, ownerPaid: false, tick: false,
+        }]);
         pump();
       };
       try {
-        if (file.type === 'application/pdf') { let n = 0; for await (const p of pdfToJpegs(file)) add(p, ++n); }
-        else add(file, 1);
+        if (file.type === 'application/pdf') {
+          let n = 0;
+          for await (const p of pdfToJpegs(file)) { if (stopped.current) break; add(p, ++n); }
+        } else if (!stopped.current) add(file, 1);
       } catch (e) {
         setProblem(`${file.name} could not be opened: ${errorMessage(e)}`);
       } finally {
         setSplitting(n => n - 1);
       }
+      if (stopped.current) break;
     }
   }
 
+  /* Stop: no more pages are drawn or read; the pages being read finish. Each stopped or failed page can be read again. */
   function stop() {
     stopped.current = true;
-    setRows(rs => rs.map(r => (r.state === 'waiting' ? { ...r, state: 'failed', problem: 'Stopped' } : r)));
+    commit(rowsRef.current.map(r => (r.state === 'waiting' ? { ...r, state: 'failed', problem: 'Stopped' } : r)));
+  }
+  function readAgain(key: string) {
+    stopped.current = false;
+    patch(key, { state: 'waiting', problem: undefined });
+    pump();
   }
 
   const ready = (r: Row) => r.state === 'done' && r.tick && !!r.kind && /^\d{4}-\d{2}$/.test(r.billMonth) && (r.amountSen ?? 0) > 0 && !!r.unitId;
@@ -140,25 +152,28 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
   const recordable = chosen.filter(ready);
   const total = rows.length, finished = rows.filter(r => r.state !== 'waiting' && r.state !== 'reading').length;
 
+  /* A save whose answer never came back can simply be pressed again: pages already recorded are skipped, and the
+     answer still lists what finance pays, so the payment requests go out (functions/_lib/utilityScan.ts). */
   async function record() {
     setProblem(null);
     if (chosen.length !== recordable.length) return setProblem('Every ticked row needs its kind, month, amount and unit.');
     setSaving(true);
     try {
-      const res = await api.post<{ recorded: number; rolled: unknown[]; ownerLines: number; notSplit: string[]; toPay: { provider: string; count: number; amountSen: number }[] }>(
+      const res = await api.post<{ recorded: number; alreadyDone: number; rolled: unknown[]; ownerLines: number; notSplit: string[]; toPay: Group[] }>(
         '/expenses/utilities/scan/record', {
           batchId, rows: recordable.map(r => ({
-            scanId: r.scan!.scanId, unitId: r.unitId, kind: r.kind, billMonth: r.billMonth, amountSen: r.amountSen,
+            scanId: r.scan!.scanId, unitId: r.unitId, accountId: r.accountId, kind: r.kind, billMonth: r.billMonth, amountSen: r.amountSen,
             periodFrom: r.periodFrom || null, periodTo: r.periodTo || null, ownerPaid: r.ownerPaid,
           })),
         });
       const done = new Set(recordable.map(r => r.key));
-      setRows(rs => rs.map(r => (done.has(r.key) ? { ...r, state: 'recorded', tick: false } : r)));
-      toast({ tone: 'success', title: `${res.recorded} bill${res.recorded === 1 ? '' : 's'} recorded`,
+      commit(rowsRef.current.map(r => (done.has(r.key) ? { ...r, state: 'recorded', tick: false } : r)));
+      const n = res.recorded + res.alreadyDone;
+      toast({ tone: 'success', title: `${n} bill${n === 1 ? '' : 's'} recorded`,
         body: [res.rolled.length ? `${res.rolled.length} go on a later statement (late bill).` : '', res.ownerLines ? `${res.ownerLines} owner line${res.ownerLines === 1 ? '' : 's'} added.` : ''].filter(Boolean).join(' ') || undefined });
       onRecorded();
       part.current += 1;
-      await sendToFinance(res.toPay, recordable, part.current);
+      await sendToFinance(res.toPay, part.current);
     } catch (e) {
       setProblem(errorMessage(e));
     } finally {
@@ -166,34 +181,30 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
     }
   }
 
-  /* One payment request per provider; the PDFs and photos those bills came from go with it when they are small enough. */
-  async function sendToFinance(groups: { provider: string; count: number; amountSen: number }[], saved: Row[], n: number) {
-    const scanIds = saved.filter(r => !r.ownerPaid).map(r => r.scan!.scanId);
-    const out: typeof toPay = [];
+  /* One payment request per provider and save; the PDFs and photos its bills came from go with it when small enough. */
+  async function sendToFinance(groups: Group[], n: number) {
+    const out: Sent[] = [];
     for (const g of groups) {
-      const sources = [...new Set(saved.filter(r => !r.ownerPaid && (r.scan!.read.provider ?? KIND_LABEL[r.kind]) === g.provider).map(r => r.file))];
+      const ids = new Set(g.scanIds);
+      const sources = [...new Set(rowsRef.current.filter(r => r.scan && ids.has(r.scan.scanId)).map(r => r.file))];
       const size = sources.reduce((s, f) => s + f.size, 0);
       const form = new FormData();
-      form.set('data', JSON.stringify({ batchId, part: n, scanIds, provider: g.provider }));
+      form.set('data', JSON.stringify({ batchId, part: n, scanIds: g.scanIds, provider: g.provider }));
       if (sources.length <= 8 && size <= 20 * 1024 * 1024) for (const f of sources) form.append('file', f);
       try {
         const made = await api.post<{ requestNo: string }>('/expenses/utilities/scan/payment-requests', form);
-        out.push({ ...g, requestNo: made.requestNo });
+        out.push({ ...g, part: n, requestNo: made.requestNo });
       } catch (e) {
-        out.push({ ...g, failed: errorMessage(e) });
+        out.push({ ...g, part: n, failed: errorMessage(e) });
       }
     }
     setToPay(prev => [...prev, ...out]);
-    (sentFor.current ??= new Map()).set(n, { groups, saved });
   }
-  const sentFor = useRef<Map<number, { groups: { provider: string; count: number; amountSen: number }[]; saved: Row[] }>>();
+  /* Only the requests that failed, each with its own save number (so one that went through is never sent again). */
   async function sendAgain() {
     const failed = toPay.filter(t => t.failed);
     setToPay(prev => prev.filter(t => !t.failed));
-    for (const [n, { groups, saved }] of sentFor.current ?? []) {
-      const again = groups.filter(g => failed.some(f => f.provider === g.provider));
-      if (again.length) await sendToFinance(again, saved, n);
-    }
+    for (const f of failed) await sendToFinance([f], f.part);
   }
 
   const splitText = (r: Row) => {
@@ -259,7 +270,8 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                       </td>
                       <td className={`${cell} min-w-[8rem]`}><MoneyInput aria-label="Amount" valueSen={r.amountSen} onChangeSen={v => patch(r.key, { amountSen: v })} disabled={!editable} /></td>
                       <td className={`${cell} min-w-[14rem]`}>
-                        <UnitPicker label="Unit" units={roster} value={r.unitId} onChange={id => patch(r.key, { unitId: id, tick: r.tick || !!id })} disabled={!editable} />
+                        <UnitPicker label="Unit" units={roster} value={r.unitId} disabled={!editable}
+                          onChange={id => patch(r.key, { unitId: id, accountId: id && id === r.scan?.unitId ? r.scan.match.accountId : null, tick: r.tick || !!id })} />
                       </td>
                       <td className={cell}>
                         <input type="checkbox" aria-label="Owner paid this bill" checked={r.ownerPaid} disabled={!editable} onChange={e => patch(r.key, { ownerPaid: e.target.checked })} />
@@ -267,7 +279,12 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                       <td className={`${cell} min-w-[14rem]`}>
                         {r.state === 'waiting' && <span className="text-[var(--color-text-muted)]">Waiting</span>}
                         {r.state === 'reading' && <span className="text-[var(--color-text-muted)]">Reading…</span>}
-                        {r.state === 'failed' && <span className="text-danger">{r.problem}</span>}
+                        {r.state === 'failed' && (
+                          <div className="flex flex-col items-start gap-1">
+                            <span className="text-danger">{r.problem}</span>
+                            <Button size="sm" variant="ghost" onClick={() => readAgain(r.key)}>Read again</Button>
+                          </div>
+                        )}
                         {r.state === 'recorded' && <span>Recorded</span>}
                         {c && r.state === 'done' && (
                           <div className="flex flex-col gap-1">

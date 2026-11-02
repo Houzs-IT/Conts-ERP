@@ -70,7 +70,8 @@ export type RecordRow = {
   periodFrom?: string | null; periodTo?: string | null; amountSen: number; chargeTo?: string; ownerPaid?: boolean;
 };
 export type RecordResult =
-  | { ok: true; recorded: number; rolled: { scanId: string; deductMonth: string }[]; ownerLines: number; notSplit: string[]; toPay: { provider: string; count: number; amountSen: number }[] }
+  | { ok: true; recorded: number; alreadyDone: number; rolled: { scanId: string; deductMonth: string }[]; ownerLines: number; notSplit: string[];
+      toPay: { provider: string; count: number; amountSen: number; scanIds: string[] }[] }
   | { ok: false; status: number; code: string; message: string; fields?: Record<string, string> };
 
 type ScanRow = { id: string; batch_id: string; document_id: string; read: Record<string, unknown>; expense_id: string | null };
@@ -89,9 +90,10 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
     if (r.chargeTo !== undefined && !CHARGE_TO.includes(r.chargeTo)) return bad(r.scanId, 'Choose who pays the bill.');
   }
   if (new Set(rows.map(r => r.scanId)).size !== rows.length) return { ok: false, status: 422, code: 'VALIDATION', message: 'A page is in the list twice.' };
-  const keyOf = (r: RecordRow) => `${r.unitId}|${r.kind}|${r.billMonth}`;
+  /* One bill per account and month; a unit with two meters of a kind has an account for each (pages name theirs). */
+  const keyOf = (r: RecordRow) => `${r.unitId}|${r.kind}|${r.billMonth}|${r.accountId ?? ''}`;
   const dup = rows.find((r, i) => rows.findIndex(x => keyOf(x) === keyOf(r)) !== i);
-  if (dup) return bad(dup.scanId, 'Two pages are the same unit, kind and month.');
+  if (dup) return bad(dup.scanId, 'Two pages are the same account and month.');
 
   const ctx = await scanContext(env);
   const unitOf = new Map(ctx.units.map(u => [u.id, u]));
@@ -100,7 +102,7 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
   const finals = await finalMonthsFor(env, [...new Set(rows.map(r => r.unitId))], rows.map(r => r.billMonth).sort()[0]);
   const now = nowIso();
   const rolled: { scanId: string; deductMonth: string }[] = [], notSplit: string[] = [];
-  let ownerLines = 0;
+  let ownerLines = 0, alreadyDone = 0;
 
   try {
     await transaction(env, async tx => {
@@ -110,20 +112,27 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
       for (const r of rows) {
         const scan = scanOf.get(r.scanId);
         if (!scan) throw new Refused(r.scanId, 'This page was not found in the scan. Scan it again.');
-        if (scan.expense_id) throw new Refused(r.scanId, 'Already recorded');
+        /* Recorded by an earlier press whose answer never came back: nothing is written again, and the save still
+           lists it for finance (toPay), so the payment request can go out. */
+        if (scan.expense_id) { alreadyDone++; continue; }
         const read = (typeof scan.read === 'string' ? JSON.parse(scan.read) : scan.read) as Record<string, unknown>;
-        /* Two people recording the same bill at once: the second waits here and then sees the first one's bill. */
-        await run(tx, 'SELECT pg_advisory_xact_lock(hashtext(?))', `utility-bill|${keyOf(r)}`);
-        const there = await one(tx, `SELECT 1 AS x FROM expenses WHERE unit_id = ? AND category = ? AND incurred_on >= ? AND incurred_on <= ?`,
-          r.unitId, r.kind, `${r.billMonth}-01`, lastDay(r.billMonth));
-        if (there) throw new Refused(r.scanId, 'Already recorded');
 
         /* The account: the one picked, else the unit's account of this kind, else a new one named from the page. */
         let account = r.accountId
           ? await one<{ id: string; account_no: string; provider: string | null }>(tx, 'SELECT id, account_no, provider FROM unit_utility_accounts WHERE id = ? AND unit_id = ? AND kind = ?', r.accountId, r.unitId, r.kind)
           : await one<{ id: string; account_no: string; provider: string | null }>(tx, 'SELECT id, account_no, provider FROM unit_utility_accounts WHERE unit_id = ? AND kind = ? ORDER BY created_at LIMIT 1', r.unitId, r.kind);
         if (r.accountId && !account) throw new Refused(r.scanId, "That account is not this unit's.");
-        const provider = (typeof read.provider === 'string' && read.provider) || account?.provider || null;
+        /* Two people recording the same bill at once: the second waits here and then sees the first one's bill. A named
+           account is checked on its own number, so a unit's second meter takes its own bill for the month. */
+        await run(tx, 'SELECT pg_advisory_xact_lock(hashtext(?))', `utility-bill|${r.unitId}|${r.kind}|${r.billMonth}`);
+        const there = r.accountId
+          ? await one(tx, `SELECT 1 AS x FROM expenses WHERE unit_id = ? AND category = ? AND reference = ? AND incurred_on >= ? AND incurred_on <= ?`,
+            r.unitId, r.kind, account!.account_no, `${r.billMonth}-01`, lastDay(r.billMonth))
+          : await one(tx, `SELECT 1 AS x FROM expenses WHERE unit_id = ? AND category = ? AND incurred_on >= ? AND incurred_on <= ?`,
+            r.unitId, r.kind, `${r.billMonth}-01`, lastDay(r.billMonth));
+        if (there) throw new Refused(r.scanId, 'Already recorded');
+        /* The provider the page names only when the kind was not corrected by hand; else the account's, else the kind. */
+        const provider = (read.kind === r.kind && typeof read.provider === 'string' && read.provider.trim()) || account?.provider || KIND_LABEL[r.kind];
         if (!account) {
           const code = (await one<{ code: string }>(tx, `SELECT coalesce(nullif(u.unit_code, ''), u.unit_number) AS code FROM units u WHERE u.id = ?`, r.unitId))?.code ?? r.unitId.slice(0, 8);
           const printed = (typeof read.accountNoFull === 'string' && read.accountNoFull) || (typeof read.accountNoVisible === 'string' && read.accountNoVisible) || '';
@@ -151,7 +160,8 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
           inside > 0 ? inside : r.amountSen, lastDay(r.billMonth), deductMonth, deductMonth !== r.billMonth, inside <= 0,
           account.account_no, r.chargeTo ?? 'owner', scan.document_id, r.periodFrom ?? null, r.periodTo ?? null, session.userId, now);
 
-        const owner = split.kind === 'split' ? split.ownerId : unit.ownerId;
+        /* The owner lines go on the unit's owner: the same owner whose statement carries the bill. */
+        const owner = unit.ownerId ?? (split.kind === 'split' ? split.ownerId : null);
         /* source stays 'manual' (its CHECK allows manual or owner_workbook, and production SQL never drops a constraint);
            expense_id is what marks a line as a scanned bill's. */
         const adjust = async (amount: number, description: string) => {
@@ -181,35 +191,37 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
           typeof read.depositSen === 'number' ? read.depositSen : null, (read.buildingName as string | null) ?? null, (read.ownerName as string | null) ?? null,
           meter, r.billMonth, now);
         await run(tx, `UPDATE utility_bill_scans SET expense_id = ?, owner_paid = ?, bill_sen = ?, provider = ?, account_no = ? WHERE id = ?`,
-          expenseId, !!r.ownerPaid, r.amountSen, provider ?? KIND_LABEL[r.kind], account.account_no, r.scanId);
+          expenseId, !!r.ownerPaid, r.amountSen, provider, account.account_no, r.scanId);
         /* The page was uploaded before anyone knew its unit; it is that unit's receipt now. */
         await run(tx, 'UPDATE documents SET unit_id = ? WHERE id = ? AND unit_id IS NULL', r.unitId, scan.document_id);
       }
       await audit(tx, { actorId: session.userId, actorLabel: session.fullName ?? '', action: 'expense.utility_scan', entityTable: 'expenses', entityId: batchId,
-        after: { batchId, recorded: rows.length, rolled: rolled.length, ownerLines, notSplit } });
+        after: { batchId, recorded: rows.length - alreadyDone, alreadyDone, rolled: rolled.length, ownerLines, notSplit } });
     });
   } catch (e) {
     if (e instanceof Refused) return { ok: false, status: 409, code: e.message === 'Already recorded' ? 'ALREADY_RECORDED' : 'REFUSED', message: e.message, fields: { [e.scanId]: e.message } };
     throw e;
   }
-  const toPay = (await billsToPay(env, batchId, rows.map(r => r.scanId))).map(g => ({ provider: g.provider, count: g.bills.length, amountSen: g.bills.reduce((n, x) => n + x.amountSen, 0) }));
-  return { ok: true, recorded: rows.length, rolled, ownerLines, notSplit, toPay };
+  const toPay = (await billsToPay(env, batchId, rows.map(r => r.scanId)))
+    .map(g => ({ provider: g.provider, count: g.bills.length, amountSen: g.bills.reduce((n, x) => n + x.amountSen, 0), scanIds: g.scanIds }));
+  return { ok: true, recorded: rows.length - alreadyDone, alreadyDone, rolled, ownerLines, notSplit, toPay };
 }
 
 class Refused extends Error { constructor(public scanId: string, message: string) { super(message); } }
 
 /** The bills of one save (`scanIds`) the company pays (not ticked "Owner paid"), by provider, for the payment requests. */
-export async function billsToPay(env: Env, batchId: string, scanIds: string[], provider?: string): Promise<{ provider: string; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }[]> {
-  const rows = await all<{ provider: string; unit_id: string; category: string; incurred_on: string; account_no: string | null; bill_sen: number }>(env, `
-    SELECT s.provider, e.unit_id, e.category, e.incurred_on, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
+export async function billsToPay(env: Env, batchId: string, scanIds: string[], provider?: string): Promise<{ provider: string; scanIds: string[]; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }[]> {
+  const rows = await all<{ id: string; provider: string; unit_id: string; category: string; incurred_on: string; account_no: string | null; bill_sen: number }>(env, `
+    SELECT s.id, s.provider, e.unit_id, e.category, e.incurred_on, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
     WHERE s.batch_id = ? AND NOT s.owner_paid AND s.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
     ORDER BY s.provider, e.incurred_on, e.unit_id`, batchId, JSON.stringify(scanIds));
-  const out = new Map<string, { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[]>();
+  const out = new Map<string, { scanIds: string[]; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }>();
   for (const r of rows) {
     if (provider && r.provider !== provider) continue;
-    const l = out.get(r.provider) ?? [];
-    l.push({ unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), accountNo: r.account_no, amountSen: Number(r.bill_sen) });
-    out.set(r.provider, l);
+    const g = out.get(r.provider) ?? { scanIds: [], bills: [] };
+    g.scanIds.push(r.id);
+    g.bills.push({ unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), accountNo: r.account_no, amountSen: Number(r.bill_sen) });
+    out.set(r.provider, g);
   }
-  return [...out].map(([p, bills]) => ({ provider: p, bills }));
+  return [...out].map(([p, g]) => ({ provider: p, ...g }));
 }

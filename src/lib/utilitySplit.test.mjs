@@ -26,6 +26,10 @@ test('a period wholly before the contract is all the owner\'s', () => {
   const r = contractSplit({ from: '2026-08-01', to: '2026-08-31' }, 9000, [C('2026-09-11')]);
   assert.deepEqual([r.kind, r.insideSen, r.outsideSen, r.insideDays], ['split', 0, 9000, 0]);
 });
+test("a period wholly after the last contract ended is all the owner's, with that contract's owner", () => {
+  const r = contractSplit({ from: '2026-10-01', to: '2026-10-31' }, 9000, [C('2025-01-01', '2026-09-20', 'O7')]);
+  assert.deepEqual([r.kind, r.ownerId, r.insideSen, r.outsideSen], ['split', 'O7', 0, 9000]);
+});
 test('two contracts touching the period are left to split by hand', () =>
   assert.deepEqual(contractSplit({ from: '2026-09-01', to: '2026-09-30' }, 30000, [C('2025-01-01', '2026-09-10', 'O1'), C('2026-09-11', null, 'O2')]), { kind: 'two-contracts' }));
 test('rounding: the owner-alone part is rounded, the shared part is the rest', () => {

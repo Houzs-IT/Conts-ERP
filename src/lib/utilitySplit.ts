@@ -18,10 +18,13 @@ export const daysBetween = (from: string, to: string): number => Math.round((t(t
 export function contractSplit(period: { from: string | null; to: string | null }, amountSen: number, contracts: SplitContract[]): ContractSplit {
   const { from, to } = period;
   if (!from || !to || !ISO.test(from) || !ISO.test(to) || t(to) < t(from)) return { kind: 'none' };
-  /* The contracts that touch the period, or begin after it ends (a bill wholly before the contract starts). */
+  /* The contract that touches the period; else the next one to start (a bill wholly before it), else the last one to
+     have ended (a bill wholly after it): either way every day is outside a contract and the owner's alone. */
   const touching = contracts.filter(c => t(c.startsOn) <= t(to) && (!c.endsOn || t(c.endsOn) >= t(from)));
   if (touching.length > 1) return { kind: 'two-contracts' };
-  const c = touching[0] ?? contracts.filter(x => t(x.startsOn) > t(to)).sort((a, b) => t(a.startsOn) - t(b.startsOn))[0];
+  const c = touching[0]
+    ?? contracts.filter(x => t(x.startsOn) > t(to)).sort((a, b) => t(a.startsOn) - t(b.startsOn))[0]
+    ?? contracts.filter(x => x.endsOn && t(x.endsOn) < t(from)).sort((a, b) => t(b.endsOn!) - t(a.endsOn!))[0];
   if (!c) return { kind: 'none' };
   const totalDays = daysBetween(from, to);
   const inFrom = Math.max(t(from), t(c.startsOn));

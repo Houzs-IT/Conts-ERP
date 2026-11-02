@@ -91,9 +91,13 @@ const { matchBill } = await import(pathToFileURL(join(root, 'src/lib/utilityMatc
 const m2 = matchBill({ ...READ, billMonth: '2027-10', amountDueSen: 30000, meterPrevious: 4410 }, accounts, []);
 check("next month's page matches unit A green from what it learnt", m2.colour === 'green' && accounts.find(a => a.accountId === m2.accountId)?.unitId === A.id, m2);
 
-// Refusals: the same page again; another page for the same unit, kind and month.
-const again = await M.recordScannedBills(env, session, BATCH, [{ scanId: s1, unitId: A.id, kind: 'electricity', billMonth: '2027-09', amountSen: 31000 }]);
-check('the same page again is refused: Already recorded', !again.ok && again.code === 'ALREADY_RECORDED', again);
+// The same save again (its answer was lost): nothing is written twice, and it still says what finance pays.
+const again = await M.recordScannedBills(env, session, BATCH, [
+  { scanId: s1, unitId: A.id, kind: 'electricity', billMonth: '2027-09', periodFrom: '2027-08-15', periodTo: '2027-09-14', amountSen: 31000 },
+  { scanId: s2, unitId: B.id, kind: 'electricity', billMonth: '2027-09', amountSen: 4510, ownerPaid: true },
+]);
+const counts = await sql`select (select count(*)::int from expenses e join utility_bill_scans s on s.expense_id = e.id where s.batch_id = ${BATCH}) e, (select count(*)::int from owner_adjustments where expense_id is not null) a`;
+check('the same save again records nothing twice and still lists what finance pays', again.ok && again.recorded === 0 && again.alreadyDone === 2 && again.toPay.length === 1 && again.toPay[0].amountSen === 31000 && counts[0].e === 2 && counts[0].a === 2, { again, counts });
 const s3 = await scan(READ);
 const twin = await M.recordScannedBills(env, session, BATCH, [{ scanId: s3, unitId: A.id, kind: 'electricity', billMonth: '2027-09', amountSen: 31000 }]);
 check('another page for the same unit, kind and month is refused', !twin.ok && twin.code === 'ALREADY_RECORDED', twin);
@@ -109,7 +113,28 @@ check('wholly before the contract: record-only, the whole RM 90 an O2 charge', r
 
 // The payment request: only the bills the company pays, at the full bill.
 const pay = await M.billsToPay(env, BATCH, [s1, s2, s4]);
-check('to pay: TNB, the split bill at its full RM 310 and the August one; not the one the owner paid', pay.length === 1 && pay[0].provider === 'TNB' && pay[0].bills.map(b => b.amountSen).sort().join() === '31000,9000' && pay[0].bills.every(b => b.unitId === A.id), pay);
+check('to pay: TNB, the split bill at its full RM 310 and the August one; not the one the owner paid', pay.length === 1 && pay[0].provider === 'TNB' && pay[0].bills.map(b => b.amountSen).sort().join() === '31000,9000' && pay[0].bills.every(b => b.unitId === A.id) && pay[0].scanIds.sort().join() === [s1, s4].sort().join(), pay);
+
+// A unit with two meters of one kind: each page names its account, and both bills of the month go in.
+const [meter1, meter2] = [randomUUID(), randomUUID()];
+await sql`insert into unit_utility_accounts (id, unit_id, kind, account_no, provider, created_at, updated_at) values
+  (${meter1}, ${B.id}, 'electricity', '220011889911', 'TNB', ${now}, ${now}), (${meter2}, ${B.id}, 'electricity', '220011889922', 'TNB', ${now}, ${now})`;
+const [t1, t2] = [await scan({ ...READ, billMonth: '2027-10' }), await scan({ ...READ, billMonth: '2027-10' })];
+const two = await M.recordScannedBills(env, session, BATCH, [
+  { scanId: t1, unitId: B.id, accountId: meter1, kind: 'electricity', billMonth: '2027-10', amountSen: 1000 },
+  { scanId: t2, unitId: B.id, accountId: meter2, kind: 'electricity', billMonth: '2027-10', amountSen: 2000 },
+]);
+const refs = await sql`select reference from expenses where unit_id = ${B.id} and category = 'electricity' and incurred_on like '2027-10%' order by reference`;
+check('two meters on one unit: both bills of the month are recorded, each on its account', two.ok && refs.map(r => r.reference).join() === '220011889911,220011889922', { two, refs });
+
+// The kind corrected by hand: a page read as a TNB electricity bill but recorded as water is not a TNB bill.
+const w = await scan({ ...READ, billMonth: '2027-11' });
+const rw = await M.recordScannedBills(env, session, BATCH, [{ scanId: w, unitId: B.id, kind: 'water', billMonth: '2027-11', amountSen: 3000 }]);
+check('a kind corrected by hand: the provider is not taken from the misread page', rw.ok && rw.toPay.length === 1 && rw.toPay[0].provider !== 'TNB', rw);
+
+// The owner lines go on the unit's owner, the same owner whose statement carries the bill.
+const adjOwners = await sql`select distinct a.owner_id from owner_adjustments a join expenses e on e.id = a.expense_id where e.unit_id = ${A.id}`;
+check("owner lines are on the unit's owner", adjOwners.length === 1 && adjOwners[0].owner_id === A.owner_id, adjOwners);
 
 await sql.end();
 db.kill();
