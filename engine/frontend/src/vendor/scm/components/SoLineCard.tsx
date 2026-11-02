@@ -1469,7 +1469,7 @@ export const SoLineCard = memo(SoLineCardInner);
    VariantSelect — uniform <select> with label + optional "+RM x.xx" suffix
    ────────────────────────────────────────────────────────────────────── */
 
-const VariantSelect = ({
+export const VariantSelect = ({
   label, options, value, onChange, disabled = false, required = false,
 }: {
   label:    string;
@@ -1540,7 +1540,7 @@ const VariantSelect = ({
    blanked.
    ────────────────────────────────────────────────────────────────────── */
 
-const FabricColourCombobox = ({
+export const FabricColourCombobox = ({
   label, value, onSelect, disabled = false, required = false, pool, inactiveCodes, itemCode,
 }: {
   label:    string;
