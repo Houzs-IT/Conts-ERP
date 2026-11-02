@@ -52,6 +52,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            COALESCE(SUM(r.check_out::date - r.check_in::date) FILTER (WHERE ${current}), 0) AS nights,
            COALESCE(SUM(r.gross_booking_value) FILTER (WHERE ${current}), 0) AS gross,
            COALESCE(SUM(r.channel_fee) FILTER (WHERE ${current}), 0) AS fees,
+           COALESCE(SUM(${m.expected}) FILTER (WHERE ${current} AND r.state NOT IN ('cancelled','no_show')), 0) AS payout,
            COALESCE(SUM(${m.outstanding}) FILTER (WHERE ${current} AND r.state NOT IN ('cancelled','no_show')), 0) AS outstanding
     ${fromSql(schema)} WHERE ${q.where}`, ...q.args),
     pageRows(q.page), facetsRead,
@@ -69,7 +70,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     generatedAt: nowIso(), today: q.today, view: q.view, todo: q.todo, filters: q.filters, page, pageSize: q.pageSize, total,
     counts: Object.fromEntries(VIEWS.map(v => [v, Number(sums?.[`v_${v}`] ?? 0)])),
     todos: Object.fromEntries(TODOS.map(t => [t, { count: Number(sums?.[`t_${t}`] ?? 0), outstanding: Number(sums?.[`o_${t}`] ?? 0) }])),
-    totals: { bookings: total, nights: Number(sums?.nights ?? 0), gross: Number(sums?.gross ?? 0), fees: Number(sums?.fees ?? 0), outstanding: Number(sums?.outstanding ?? 0) },
+    totals: { bookings: total, nights: Number(sums?.nights ?? 0), gross: Number(sums?.gross ?? 0), fees: Number(sums?.fees ?? 0), payout: Number(sums?.payout ?? 0), outstanding: Number(sums?.outstanding ?? 0) },
     paymentsReady: schema.payments,
     buildings,
     facets,

@@ -36,6 +36,7 @@ interface Row {
   state: ReservationState; checkIn: string; checkOut: string; checkInTime: string; checkOutTime: string;
   nights: number; grossBookingValue: number; channelFee: number; collectedRevenue: number;
   expectedPayout: number; received: number; outstanding: number; createdAt: string;
+  roomRevenue?: number | null; cleaningFee?: number | null; extraFees?: number | null; sst?: number | null; tourismTax?: number | null; otaTax?: number | null; deposit?: number | null;
   /** Where the guest is from: the nationality on record, else the country of their phone number. */
   country: { code: string; name: string; from: 'nationality' | 'phone' } | null;
 }
@@ -63,7 +64,7 @@ interface Payload {
   data: Row[]; total: number; page: number; pageSize: number; generatedAt: string; today: string; view: ViewKey; todo: TodoKey | null;
   counts: Record<ViewKey, number>;
   todos: Record<TodoKey, { count: number; outstanding: number }>;
-  totals: { bookings: number; nights: number; gross: number; fees: number; outstanding: number };
+  totals: { bookings: number; nights: number; gross: number; fees: number; payout?: number; outstanding: number };
   buildings: { id: string; name: string }[];
   paymentsReady: boolean;
   /** Each filter's choices with how many reservations each would show under everything else on screen. */
@@ -328,10 +329,19 @@ export default function BookingsPage() {
     { key: 'gross', label: 'Guest total', type: 'money', value: r => (r.grossBookingValue > 0 ? r.grossBookingValue : null), sortKey: 'gross', width: 120,
       title: 'What the guest paid: accommodation, fees and the taxes we collect. Tax a channel keeps is not included.',
       filter: { kind: 'number', params: ['grossMin', 'grossMax'] },
-      render: b => <span className="font-medium tabular-nums whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>,
+      render: b => <span className="font-medium tabular-nums whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue) : '—'}</span>,
       sub: b => (moneyTodo && b.outstanding > 0 ? <span className="text-warning tabular-nums">{rm(b.outstanding, { cents: false })} owed</span> : null) },
-    { key: 'fee', label: 'Service fee', type: 'money', value: r => r.channelFee, hidden: true, sortKey: 'fee', filter: false },
-    { key: 'expected', label: 'Expected to receive', type: 'money', value: r => r.expectedPayout, hidden: true, filter: false },
+    { key: 'fee', label: 'Service fee', type: 'money', value: r => r.channelFee, sortKey: 'fee', filter: false, width: 110 },
+    // Every value the reservation carries (owner, 2 Nov 2026); the payout shows by default, the breakdown under Columns.
+    { key: 'expected', label: 'Host payout', type: 'money', value: r => r.expectedPayout, filter: false, width: 120,
+      title: 'What the channel pays us: the guest total less its service fee and any tax it keeps.' },
+    { key: 'room', label: 'Room revenue', type: 'money', value: r => r.roomRevenue ?? null, hidden: true, filter: false },
+    { key: 'cleaning', label: 'Cleaning fee', type: 'money', value: r => r.cleaningFee ?? null, hidden: true, filter: false },
+    { key: 'extras', label: 'Extra fees', type: 'money', value: r => r.extraFees ?? null, hidden: true, filter: false },
+    { key: 'sst', label: 'SST', type: 'money', value: r => r.sst ?? null, hidden: true, filter: false },
+    { key: 'tourism', label: 'Tourism tax', type: 'money', value: r => r.tourismTax ?? null, hidden: true, filter: false },
+    { key: 'otaTax', label: 'Tax kept by the channel', type: 'money', value: r => r.otaTax ?? null, hidden: true, filter: false },
+    { key: 'deposit', label: 'Deposit', type: 'money', value: r => r.deposit ?? null, hidden: true, filter: false },
     { key: 'received', label: 'Received', type: 'money', value: r => r.received, hidden: true, filter: false },
     { key: 'outstanding', label: 'Outstanding', type: 'money', value: r => (['cancelled', 'no_show'].includes(r.state) ? 0 : r.outstanding), hidden: true, filter: false },
     { key: 'status', label: 'Status', type: 'status', value: r => stayPhase(r), text: r => statusLabel('stay', stayPhase(r)), sortKey: 'status', width: 130,
@@ -433,8 +443,9 @@ export default function BookingsPage() {
             {todoMeta && <span className="font-semibold text-ink">{todoMeta.label}</span>}
             <Total label="Reservations" value={num(totals.bookings)} />
             <Total label="Nights" value={num(totals.nights)} />
-            <Total label="Guest total" value={rm(totals.gross, { cents: false })} />
-            <Total label="Service fee" value={rm(totals.fees, { cents: false })} />
+            <Total label="Guest total" value={rm(totals.gross)} />
+            <Total label="Service fee" value={rm(totals.fees)} />
+            {totals.payout !== undefined && <Total label="Host payout" value={rm(totals.payout)} />}
             {todoMeta?.money && <Total label={todo === 'unpaid' ? 'Owed by guests' : 'Owed by channels'} value={rm(totals.outstanding, { cents: false })}
               title={todo === 'unpaid' ? 'Guest total less what has been received, for these direct reservations.' : 'The host payout expected less what has arrived, for these past reservations.'} />}
             {todo === 'payout' && canMoney && <span className="text-muted-ink">Tick the reservations the channel has paid out, then mark them received.</span>}

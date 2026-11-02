@@ -66,6 +66,8 @@ export const columnsSql = (s: Schema) => {
   r.gross_booking_value, r.channel_fee, r.collected_revenue, r.created_at, u.property_id,
   COALESCE(g.full_name, '') AS guest_name, g.phone AS guest_phone, g.country_code AS guest_country,
   ${s.payoutCols ? 'r.guest_nationality' : 'NULL::text'} AS guest_nationality,
+  ${['room_revenue', 'guest_cleaning_fee', 'extra_fees', 'sst_amount', 'tourism_tax', 'ota_tax', 'deposit_collected']
+    .map(c => `${s.payoutCols ? `r.${c}` : 'NULL::bigint'} AS ${c}`).join(', ')},
   u.unit_number, p.name AS property_name, gc.iso AS country_iso, gc.src AS country_src,
   ${m.expected} AS expected_payout, ${m.received} AS received, ${m.outstanding} AS outstanding`;
 };
@@ -275,6 +277,8 @@ export function parseListQuery(url: URL, opts: { cancelledAt?: boolean } = {}): 
 
 const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
 
+const numOrNull = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+
 export function toRow(r: any) {
   return {
     id: r.id, externalRef: r.external_ref, guestName: r.guest_name, guestsCount: r.guests_count,
@@ -287,5 +291,8 @@ export function toRow(r: any) {
     channelFee: Number(r.channel_fee), collectedRevenue: Number(r.collected_revenue),
     expectedPayout: Number(r.expected_payout ?? 0), received: Number(r.received ?? 0), outstanding: Number(r.outstanding ?? 0),
     createdAt: r.created_at,
+    // The money breakdown (migration 0052); null where the source left it blank.
+    roomRevenue: numOrNull(r.room_revenue), cleaningFee: numOrNull(r.guest_cleaning_fee), extraFees: numOrNull(r.extra_fees),
+    sst: numOrNull(r.sst_amount), tourismTax: numOrNull(r.tourism_tax), otaTax: numOrNull(r.ota_tax), deposit: numOrNull(r.deposit_collected),
   };
 }
