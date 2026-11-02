@@ -61,6 +61,8 @@ export interface ContractCompletion extends Completion {
   revisedContractSen: number; expectedCostSen: number; costToDateSen: number; invoicedSen: number;
   /** The live lines' cost alone, before any change to the expected cost. */
   lineCostSen: number;
+  /** Handed over (or closed by cancellation) by the date: the expected cost no longer matters. */
+  handedOver: boolean;
   differenceSen: number;
   goliveCostMissing: boolean;
 }
@@ -230,7 +232,7 @@ export function completionsAt(d: RenovationData, asOf: string): ContractCompleti
     const signedBefore = !!d.ledgerStart && !!c.signedOn && c.signedOn < d.ledgerStart;
     out.push({
       soDocNo: c.soDocNo, projectId: c.projectId, asOf, status: closed ? 'CANCELLED' : isCancelled ? 'RENO_IN_PROGRESS' : c.status,
-      revisedContractSen, expectedCostSen, costToDateSen, invoicedSen, lineCostSen,
+      revisedContractSen, expectedCostSen, costToDateSen, invoicedSen, lineCostSen, handedOver,
       ...comp, differenceSen: invoicedSen - comp.earnedSen, goliveCostMissing: signedBefore && c.goliveCostSen == null,
     });
   }

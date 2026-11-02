@@ -29,7 +29,7 @@ export const WORK_AHEAD_BP = 2000;
 export interface RenoProjectRow {
   soDocNo: string; projectId: number | null; projectName: string; customerCode: string | null; customerName: string;
   salesperson: string | null; brand: string | null; kind: 'RENOVATION' | 'INHOUSE_RENOVATION'; status: string; stage: string | null;
-  handoverDate: string | null; delayed: boolean;
+  handoverDate: string | null; delayed: boolean; handedOver: boolean;
   contractSen: number; voSen: number; revisedContractSen: number;
   receivedSen: number; outstandingSen: number; collectedBp: number | null;
   nextInstalment: { seq: number; label: string; amountSen: number; trigger: string } | null;
@@ -211,7 +211,7 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
       salesperson: p?.salesperson_name ?? o.agent ?? null, brand: BRAND_OF_PARENT[parent] ?? null,
       kind: String(o.debtor_code ?? '').startsWith('302-') ? 'INHOUSE_RENOVATION' : 'RENOVATION',
       status: c.status, stage: p?.reno_stage ?? null,
-      handoverDate: handover, delayed: !!handover && handover < asOf && c.status !== 'RENO_COMPLETED',
+      handoverDate: handover, delayed: !!handover && handover < asOf && c.status !== 'RENO_COMPLETED', handedOver: c.handedOver,
       contractSen, voSen: c.revisedContractSen - contractSen, revisedContractSen: c.revisedContractSen,
       receivedSen, outstandingSen: c.revisedContractSen - receivedSen, collectedBp,
       nextInstalment,

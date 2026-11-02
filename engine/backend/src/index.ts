@@ -133,7 +133,8 @@ import renovation from "./routes/renovation";
 // Beta project workspace.
 import renovationBeta from "./routes/renovationBeta";
 import renovationBetaSheets from "./routes/renovationBetaSheets";
-import { drainEmailOutbox } from "./services/email";
+import { drainEmailOutbox, sendEmail } from "./services/email";
+import { sweepAllCostAlerts } from "./acc/reno-cost-alerts";
 import { runClientErrorDigest } from "./services/clientErrors";
 import { runSlaEscalation } from "./services/assrEscalation";
 import { runAssrAlerts, runAssrDailyDigest } from "./services/assrAlerts";
@@ -828,6 +829,18 @@ export default {
             if (r.requeued) console.warn(`[cron vp-reconcile] requeued=${r.requeued}`);
           })
           .catch((e) => console.error("[cron vp-reconcile]", e))
+      );
+      /* Renovation cost alerts (SOP 4.2.1; acc/reno-cost-alerts): finance's
+         "Needs review" list and the sidebar count read what this keeps. The
+         HOD email inside it is off until a company switches it on. */
+      ctx.waitUntil(
+        sweepAllCostAlerts(getSupabaseService(env), async (m) =>
+          (await sendEmail(env, { to: m.to, subject: m.subject, html: m.html, purpose: "reno_cost_alert" })).status !== "skipped")
+          .then((r) => {
+            const busy = r.filter((x) => "error" in x || x.raised || x.cleared || x.mailed);
+            if (busy.length) console.log(`[cron reno-cost-alerts] ${JSON.stringify(busy)}`);
+          })
+          .catch((e) => console.error("[cron reno-cost-alerts]", e))
       );
       // ASSR/QMS v3.1 — per-stage alert scanner (half / approaching / breach).
       // Cheap: one query over open stage_history rows, idempotent via the
