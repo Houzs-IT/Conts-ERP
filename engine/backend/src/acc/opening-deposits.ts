@@ -18,6 +18,7 @@ import { postJournal, reverseJournal } from './engine';
 import { loadLedgerSettings } from './ledger-settings';
 import { dayBefore } from './opening';
 import type { Department } from './rules';
+import { fmtSen } from '../scm/shared/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
 type Db = any;
@@ -103,7 +104,7 @@ export async function importOpeningDeposits(
   for (const l of lines) byAccount.set(l.accountCode, (byAccount.get(l.accountCode) ?? 0) + l.sen);
   for (const [code, sum] of byAccount) {
     const open = openingOf.get(code) ?? 0;
-    if (sum > open) problems.push({ row: 0, problem: `${code}: the deposits come to RM ${(sum / 100).toFixed(2)}, more than its opening balance of RM ${(open / 100).toFixed(2)}.` });
+    if (sum > open) problems.push({ row: 0, problem: `${code}: the deposits come to ${fmtSen(sum)}, more than its opening balance of ${fmtSen(open)}.` });
   }
   if (problems.length > 0) return { ok: false, problems };
   const totalSen = lines.reduce((s, l) => s + l.sen, 0);
