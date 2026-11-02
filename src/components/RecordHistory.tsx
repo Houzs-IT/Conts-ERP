@@ -41,7 +41,7 @@ const ACTION: Record<string, string> = {
   'unit.create': 'added this unit', 'unit.update': 'edited the unit', 'unit.block': 'blocked the unit', 'unit.readiness_change': 'changed readiness',
   'unit.channex_map': 'linked the unit to Channex', 'unit.channex_unmap': 'unlinked the unit from Channex', 'unit.channex_setup': 'set the unit up on Channex',
   'channel.connect': 'connected a channel', 'channel.disconnect': 'disconnected a channel', 'channex.enqueue_failed': 'could not send an update to the channels',
-  'owner.create': 'added this owner', 'owner.update': 'edited the owner', 'owner.invite': 'invited the owner to the portal', 'owner.notify': 'messaged the owner', 'owner.delete': 'deleted the owner',
+  'owner.create': 'added this owner', 'owner.update': 'edited the owner', 'owner.invite': 'invited the owner to the portal', 'owner.notify': 'messaged the owner', 'owner.delete': 'deleted the owner', 'owner.view_as': 'opened the owner portal as this owner',
   'contract.create': 'created the contract', 'contract.update': 'edited the contract',
   'statement.generate': 'generated the statement', 'statement.finalise': 'marked the statement final', 'statement.send': 'sent the statement', 'statement.adjust': 'adjusted the statement',
   'payout.create': 'created the owner payout', 'payout.run': 'started an owner payout run', 'payout.processing': 'marked it processing', 'payout.paid': 'marked it paid', 'payout.failed': 'marked it failed',
