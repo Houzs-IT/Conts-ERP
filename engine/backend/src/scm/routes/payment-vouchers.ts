@@ -76,7 +76,7 @@ import { requireLeafAccount } from './accounting-chart';
 import { planPvRateAdoption, isRateRetainedFromPv, roundRate6 } from '../lib/pv-rate-adoption';
 import { recostFromGrn } from '../lib/recost';
 import { fmtSen } from '../shared/format';
-import { checkVoucherLimit, overLimitBody, resolveVoucherProject } from '../../conts/project-limit';
+import { checkVoucherLimit, lineDepartmentOfProject, overLimitBody, resolveVoucherProject } from '../../conts/project-limit';
 
 export const paymentVouchers = new Hono<{ Bindings: Env; Variables: Variables }>();
 paymentVouchers.use('*', supabaseAuth);
@@ -233,7 +233,7 @@ async function settledDepartmentLegs<L extends DebitLeg>(
 }
 
 /* ── Normalise + validate the incoming lines, recompute the header total ──── */
-type PvLineRow = { line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department: Department; unit_id?: string | null };
+type PvLineRow = { line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department: Department; unit_id?: string | null; project_id?: number | null };
 
 /** The units the lines name that are not Property OS units (public.conts_units). */
 export async function unknownUnits(sb: any, rows: Array<{ unit_id?: string | null }>): Promise<string[] | { error: string }> {
@@ -243,6 +243,19 @@ export async function unknownUnits(sb: any, rows: Array<{ unit_id?: string | nul
   if (error) return { error: error.message };
   const known = new Set(((data ?? []) as Array<{ id: string }>).map((u) => String(u.id)));
   return ids.filter((u) => !known.has(u));
+}
+
+/** The projects the lines name: each must be the company's, and sets its line's department (lineDepartmentOfProject). */
+export async function lineProjects(sb: any, companyId: number, rows: Array<PvLineRow>): Promise<{ ok: true } | { ok: false; status: 400 | 500; body: Record<string, unknown> }> {
+  const ids = [...new Set(rows.map((r) => r.project_id).filter((x): x is number => x != null))];
+  if (ids.length === 0) return { ok: true };
+  const { data, error } = await sb.schema('public').from('projects').select('id, funding, internal_department').eq('company_id', companyId).in('id', ids);
+  if (error) return { ok: false, status: 500, body: { error: 'load_failed', reason: error.message } };
+  const byId = new Map(((data ?? []) as Array<{ id: number; funding: string | null; internal_department: string | null }>).map((p) => [Number(p.id), p]));
+  const missing = ids.find((id) => !byId.has(id));
+  if (missing != null) return { ok: false, status: 400, body: { error: 'project_invalid', message: `Project ${missing} is not this company's.` } };
+  for (const r of rows) if (r.project_id != null) r.department = lineDepartmentOfProject(byId.get(r.project_id)!);
+  return { ok: true };
 }
 
 export function buildLines(
@@ -258,17 +271,23 @@ export function buildLines(
     if (amount === null) return { error: 'line_amount_invalid' };
     // Conts: the line's department (spec 3.5); none is Supply chain.
     if (line.department != null && !isDepartment(line.department)) return { error: 'department_invalid' };
-    /* Conts (chew 2 Nov 2026): a Rental line may name the unit it was paid for. Absent = unchanged on an edit. */
+    /* Conts (chew 2 Nov 2026; plan 2026-11-02-voucher-line-purpose): each line says what it is for — a unit (Rental),
+       a project (its department is set from the project by lineProjects) or neither (the department sent). Absent =
+       unchanged on an edit. */
     const unitRaw = line.unitId;
     const unitId = unitRaw === undefined ? undefined : unitRaw === null || String(unitRaw).trim() === '' ? null : String(unitRaw).trim();
-    if (unitId && line.department !== 'rental') return { error: 'unit_not_rental' };
+    const projectRaw = line.projectId;
+    const projectId = projectRaw === undefined ? undefined : projectRaw === null || projectRaw === '' ? null : Number(projectRaw);
+    if (projectId != null && (!Number.isInteger(projectId) || projectId <= 0)) return { error: 'project_invalid' };
+    if (unitId && projectId) return { error: 'unit_and_project' };
     rows.push({
       line_no: i + 1,
       description: (line.description as string | undefined)?.trim() || null,
       debit_account_code: debit ?? '',
       amount_sen: amount,
-      department: isDepartment(line.department) ? line.department : DEFAULT_DEPARTMENT,
+      department: unitId ? 'rental' : isDepartment(line.department) ? line.department : DEFAULT_DEPARTMENT,
       ...(unitId !== undefined ? { unit_id: unitId } : {}),
+      ...(projectId !== undefined ? { project_id: projectId } : {}),
     });
     total += amount;
   }
@@ -664,6 +683,8 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
     const bad = await unknownUnits(c.get('supabase'), built.rows as Array<{ unit_id?: string | null }>);
     if (!Array.isArray(bad)) return c.json({ error: 'load_failed', reason: bad.error }, 500);
     if (bad.length > 0) return c.json({ error: 'unit_unknown', message: 'Choose the unit from the list.' }, 400);
+    const lp = await lineProjects(c.get('supabase'), activeCompanyId(c) ?? 0, built.rows as Array<PvLineRow>);
+    if (!lp.ok) return c.json(lp.body, lp.status);
   }
   /* A line debiting the SAME account the voucher pays from would post money
      into itself — meaningless for an expense and a self-transfer for the
@@ -779,7 +800,13 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
     return coId == null ? del : scopeToCompanyId(del, coId);
   };
 
-  const rowsWithId = built.rows.map((r) => ({ ...r, pv_id: h.id, project_id: voucherProject }));
+  /* A voucher paying bills pays one project, on every line. A plain voucher's lines keep the project each names; the
+     header's (an older caller) fills the lines that name neither a unit nor a project. */
+  const paysBills = allocBuilt.rows.length > 0;
+  const rowsWithId = built.rows.map((r) => ({ ...r, pv_id: h.id,
+    project_id: paysBills ? voucherProject
+      : (r as Partial<PvLineRow>).project_id != null ? (r as Partial<PvLineRow>).project_id
+      : (r as Partial<PvLineRow>).unit_id ? null : voucherProject }));
   const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(rowsWithId, c));
   if (lErr) { await rollbackHeader(); return c.json({ error: 'lines_insert_failed', reason: lErr.message }, 500); }
 
@@ -865,6 +892,9 @@ export const updatePaymentVoucherHandler = async (c: any) => {
   /* Conts (finance phase 1.5; SOP 3.4): the project it pays, settled before anything is written — named in this edit,
      else the one it named before, checked against the bills it will pay. */
   let voucherProject: number | null | undefined;
+  /* A voucher paying bills pays one project on every line; a plain voucher's lines each keep their own
+     (plan 2026-11-02-voucher-line-purpose). */
+  let paysBills = false;
   if (body.projectId !== undefined || body.allocations !== undefined || body.lines !== undefined) {
     const { data: was } = await sb.from('payment_voucher_lines').select('project_id').eq('company_id', co.companyId).eq('pv_id', id).limit(1);
     const before0 = ((was ?? []) as Array<{ project_id: number | null }>)[0]?.project_id ?? null;
@@ -881,6 +911,7 @@ export const updatePaymentVoucherHandler = async (c: any) => {
     const vp = await resolveVoucherProject(sb, co.companyId, body.projectId !== undefined ? body.projectId : before0, bills);
     if (!vp.ok) return c.json(vp.body, vp.status);
     voucherProject = vp.projectId;
+    paysBills = bills.piIds.length + bills.apInvoiceIds.length > 0;
   }
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -954,6 +985,8 @@ export const updatePaymentVoucherHandler = async (c: any) => {
       const bad = await unknownUnits(sb, built.rows);
       if (!Array.isArray(bad)) return c.json({ error: 'load_failed', reason: bad.error }, 500);
       if (bad.length > 0) return c.json({ error: 'unit_unknown', message: 'Choose the unit from the list.' }, 400);
+      const lp = await lineProjects(sb, co.companyId, built.rows);
+      if (!lp.ok) return c.json(lp.body, lp.status);
     }
     /* Same self-debit door as the create path, against the EFFECTIVE Paid
        From (the incoming one when this edit changes it, else the stored). */
@@ -979,12 +1012,22 @@ export const updatePaymentVoucherHandler = async (c: any) => {
       const leafErr = await requireLeafAccount(c, co.companyId, dCode);
       if (leafErr) return leafErr;
     }
-    /* A line the edit does not name a unit for keeps the one it had (by line number), unless it is no longer Rental. */
-    const { data: hadLines } = await sb.from('payment_voucher_lines').select('line_no, unit_id').eq('pv_id', id);
-    const hadUnit = new Map(((hadLines ?? []) as Array<{ line_no: number; unit_id: string | null }>).map((l) => [Number(l.line_no), l.unit_id ?? null]));
-    const keptRows = built.rows.map((r) => ({ ...r, unit_id: r.unit_id !== undefined ? r.unit_id : r.department === 'rental' ? hadUnit.get(r.line_no) ?? null : null }));
+    /* A line the edit does not name a unit or a project for keeps the one it had (by line number): the unit unless it
+       is no longer Rental, the project unless it now names a unit. A voucher paying bills pays its one project on every
+       line; on a plain voucher a project named in the header (an older caller) fills only lines naming neither. */
+    const { data: hadLines } = await sb.from('payment_voucher_lines').select('line_no, unit_id, project_id').eq('pv_id', id);
+    const had = new Map(((hadLines ?? []) as Array<{ line_no: number; unit_id: string | null; project_id: number | null }>).map((l) => [Number(l.line_no), l]));
+    const keptRows = built.rows.map((r) => {
+      const unit_id = r.unit_id !== undefined ? r.unit_id : r.department === 'rental' ? had.get(r.line_no)?.unit_id ?? null : null;
+      const project_id = paysBills ? voucherProject ?? null
+        : r.project_id !== undefined ? r.project_id
+        : unit_id ? null
+        : body.projectId !== undefined ? voucherProject ?? null
+        : had.get(r.line_no)?.project_id ?? null;
+      return { ...r, unit_id, project_id };
+    });
     await sb.from('payment_voucher_lines').delete().eq('pv_id', id);
-    const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(keptRows.map((r) => ({ ...r, pv_id: id, ...(voucherProject !== undefined ? { project_id: voucherProject } : {}) })), c));
+    const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(keptRows.map((r) => ({ ...r, pv_id: id })), c));
     if (lErr) return c.json({ error: 'lines_update_failed', reason: lErr.message }, 500);
     updates.total_sen = built.total;
     newTotal = built.total;
@@ -1026,8 +1069,13 @@ export const updatePaymentVoucherHandler = async (c: any) => {
 
   const { data, error } = await sb.from('payment_vouchers').update(updates).eq('id', id).select(HEADER).single();
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
-  if (voucherProject !== undefined) {
-    const { error: pErr } = await sb.from('payment_voucher_lines').update({ project_id: voucherProject }).eq('company_id', co.companyId).eq('pv_id', id);
+  /* The header's project on lines the edit did not rewrite: every line of a voucher paying bills; on a plain voucher
+     only when the header names one, and only lines naming neither a unit nor a project (a voucher made from a payment
+     request or a receipt keeps its lines' own projects). */
+  if (voucherProject !== undefined && body.lines === undefined && (paysBills || body.projectId !== undefined)) {
+    let q = sb.from('payment_voucher_lines').update({ project_id: voucherProject }).eq('company_id', co.companyId).eq('pv_id', id);
+    if (!paysBills) q = q.is('unit_id', null).is('project_id', null);
+    const { error: pErr } = await q;
     if (pErr) return c.json({ error: 'update_failed', reason: pErr.message }, 500);
   }
 
