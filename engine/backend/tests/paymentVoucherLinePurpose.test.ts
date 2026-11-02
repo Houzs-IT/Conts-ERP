@@ -15,7 +15,7 @@ const CO = 2;
 const DRAFT: Row = {
   id: 'pv-1', pv_number: '2990-Draft-2612-001', company_id: CO, voucher_date: '2026-12-03',
   payee_name: 'Carpenter', credit_account_code: '310-0010', total_sen: 30_000, currency: 'MYR', exchange_rate: 1,
-  status: 'DRAFT', purpose: 'GENERAL_EXPENSE', supplier_id: null, notes: null, payment_request_id: null, staff_receipt_id: null, petty_cash_float_id: null,
+  status: 'DRAFT', purpose: 'OTHER', supplier_id: null, notes: null, payment_request_id: null, staff_receipt_id: null, petty_cash_float_id: null,
   submitted_at: null, submitted_by: null, checked_at: null, checked_by: null, approved_at: null, approved_by: null,
 };
 const PROJECTS: Row[] = [
@@ -139,5 +139,29 @@ describe('the project limit on a voucher with two projects', () => {
     const body = await res.json() as { error: string; over: Array<{ projectId: number }> };
     expect(body.error).toBe('over_project_limit');
     expect(body.over.map((o) => o.projectId)).toEqual([8]);
+  });
+});
+
+describe('review fixes (2 Nov 2026)', () => {
+  test('an older line saved unchanged keeps its department, though its project would now say otherwise', async () => {
+    const old: Row[] = [{ id: 'l1', pv_id: 'pv-1', company_id: CO, line_no: 1, description: 'A', debit_account_code: '601-0001', amount_sen: 10_000, department: 'supply', unit_id: null, project_id: 8 }];
+    const { app, sb } = harness(old, { ...DRAFT, total_sen: 10_000 });
+    expect((await send(app, 'PATCH', '/payment-vouchers/pv-1', { lines: [line({ description: 'A', department: 'supply', unitId: null, projectId: 8 })] })).status).toBe(200);
+    expect(sb.tables.payment_voucher_lines.map((l) => [l.department, l.project_id])).toEqual([['supply', 8]]);
+  });
+  test('a line moved onto a project takes that project’s side, and drops a unit it had', async () => {
+    const old: Row[] = [{ id: 'l1', pv_id: 'pv-1', company_id: CO, line_no: 1, description: 'A', debit_account_code: '601-0001', amount_sen: 10_000, department: 'rental', unit_id: 'u-a31', project_id: null }];
+    const { app, sb } = harness(old, { ...DRAFT, total_sen: 10_000 });
+    expect((await send(app, 'PATCH', '/payment-vouchers/pv-1', { lines: [line({ description: 'A', department: 'rental', projectId: 8 })] })).status).toBe(200);
+    expect(sb.tables.payment_voucher_lines.map((l) => [l.department, l.unit_id, l.project_id])).toEqual([['rental', null, 8]]);
+  });
+  test('a voucher that stopped being a supplier payment keeps its lines’ own projects (old bill links ignored)', async () => {
+    const old: Row[] = [{ id: 'l1', pv_id: 'pv-1', company_id: CO, line_no: 1, description: 'A', debit_account_code: '601-0001', amount_sen: 10_000, department: 'supply', unit_id: null, project_id: 7 }];
+    const { app, sb } = harness(old, { ...DRAFT, total_sen: 10_000, purpose: 'SUPPLIER_PAYMENT' });
+    sb.tables.pv_allocations.push({ id: 'al1', company_id: CO, pv_id: 'pv-1', pi_id: null, ap_invoice_id: 'api-1', amount_sen: 10_000 });
+    sb.tables.ap_invoice_lines.push({ id: 'ail1', invoice_id: 'api-1', project_id: 7 });
+    const res = await send(app, 'PATCH', '/payment-vouchers/pv-1', { purpose: 'OTHER', lines: [line({ description: 'A', projectId: 9 })] });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(sb.tables.payment_voucher_lines.map((l) => l.project_id)).toEqual([9]);
   });
 });

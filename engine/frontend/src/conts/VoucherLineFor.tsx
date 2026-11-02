@@ -11,8 +11,11 @@ import css from "./VoucherLine.module.css";
 
 export { css as voucherLineCss };
 
+/** What a saved line held, kept until the line is changed: an untouched line is sent back exactly as it was, so opening
+    and saving an older voucher (one project stamped on every line, a Rental line with no unit) changes nothing. */
+export type SavedPurpose = { department: Department; unitId: string | null; projectId: number | null };
 /** What a draft line holds about its purpose. */
-export type PurposeDraft = { lineFor: LineFor; unitId: string | null; projectId: number | null; department: Department };
+export type PurposeDraft = { lineFor: LineFor; unitId: string | null; projectId: number | null; department: Department; saved?: SavedPurpose };
 export type SideOf = (projectId: number | null) => ProjectSide | null;
 
 /** A project's funding and internal department, from the list the project picker reads (null until it has loaded). */
@@ -26,6 +29,7 @@ export function useProjectSides(): SideOf {
 
 /** The department a line carries. A Project line whose project has not loaded keeps the department it had. */
 export function lineDepartment(l: Omit<PurposeDraft, "department"> & { department: Department | "" }, side: ProjectSide | null): Department {
+  if (l.saved) return l.saved.department;
   if (l.lineFor !== "project") return departmentOf(l.lineFor);
   if (side) return departmentOf("project", side);
   return l.department === "rental" ? "rental" : "supply";
@@ -33,7 +37,7 @@ export function lineDepartment(l: Omit<PurposeDraft, "department"> & { departmen
 
 /** A line changed to another For, unit or project: what no longer applies is dropped and the department follows. */
 export function repurpose<T extends PurposeDraft>(l: T, patch: Partial<Pick<PurposeDraft, "lineFor" | "unitId" | "projectId">>, sideOf: SideOf): T {
-  const merged = { ...l, ...patch };
+  const merged = { ...l, ...patch, saved: undefined };
   const cleaned = switchLine(merged, merged.lineFor);
   return { ...cleaned, department: lineDepartment(cleaned, sideOf(cleaned.projectId)) };
 }
@@ -41,11 +45,13 @@ export function repurpose<T extends PurposeDraft>(l: T, patch: Partial<Pick<Purp
 /** A saved line's purpose (an older voucher's included: see lineForOf). */
 export function purposeOfSaved(saved: { department: Department | ""; unitId: string | null; projectId: number | null }): PurposeDraft {
   const lineFor = lineForOf(saved);
+  const department = saved.department || lineDepartment({ lineFor, unitId: null, projectId: null, department: "" }, null);
   return {
     lineFor,
     unitId: lineFor === "unit" ? saved.unitId : null,
     projectId: lineFor === "project" ? saved.projectId : null,
-    department: lineDepartment({ lineFor, unitId: null, projectId: null, department: saved.department }, null),
+    department,
+    saved: { department, unitId: saved.unitId, projectId: saved.projectId },
   };
 }
 
@@ -58,6 +64,7 @@ export function purposeOfNew(lines: ReadonlyArray<PurposeDraft>): PurposeDraft {
 
 /** What a line sends: its department, and its unit or its project (never a hidden one). */
 export function purposePayload(l: PurposeDraft, side: ProjectSide | null): { department: Department; unitId: string | null; projectId: number | null } {
+  if (l.saved) return { ...l.saved };
   return {
     department: lineDepartment(l, side),
     unitId: l.lineFor === "unit" ? l.unitId : null,
@@ -68,6 +75,7 @@ export function purposePayload(l: PurposeDraft, side: ProjectSide | null): { dep
 /** The first line still missing its unit or project, as the save's sentence. */
 export function missingTarget(lines: ReadonlyArray<PurposeDraft & { n: number }>): { title: string; body: string } | null {
   for (const l of lines) {
+    if (l.saved) continue; // as it was saved: a header edit never forces a choice on an older line
     if (l.lineFor === "unit" && !l.unitId) return { title: "Pick the unit", body: `Line ${l.n} is for a unit. Pick which one, or set the line to Project or Company.` };
     if (l.lineFor === "project" && l.projectId == null) return { title: "Pick the project", body: `Line ${l.n} is for a project. Pick which one, or set the line to Unit or Company.` };
   }

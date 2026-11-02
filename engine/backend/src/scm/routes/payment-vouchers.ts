@@ -245,8 +245,10 @@ export async function unknownUnits(sb: any, rows: Array<{ unit_id?: string | nul
   return ids.filter((u) => !known.has(u));
 }
 
-/** The projects the lines name: each must be the company's, and sets its line's department (lineDepartmentOfProject). */
-export async function lineProjects(sb: any, companyId: number, rows: Array<PvLineRow>): Promise<{ ok: true } | { ok: false; status: 400 | 500; body: Record<string, unknown> }> {
+/** The projects the lines name: each must be the company's, and sets its line's department (lineDepartmentOfProject) —
+    except on a line whose project is the one it already had (`savedDepartment` gives that line's saved department), which keeps it,
+    so opening and saving an older voucher moves nothing between departments. */
+export async function lineProjects(sb: any, companyId: number, rows: Array<PvLineRow>, savedDepartment: (r: PvLineRow) => Department | null = () => null): Promise<{ ok: true } | { ok: false; status: 400 | 500; body: Record<string, unknown> }> {
   const ids = [...new Set(rows.map((r) => r.project_id).filter((x): x is number => x != null))];
   if (ids.length === 0) return { ok: true };
   const { data, error } = await sb.schema('public').from('projects').select('id, funding, internal_department').eq('company_id', companyId).in('id', ids);
@@ -254,7 +256,7 @@ export async function lineProjects(sb: any, companyId: number, rows: Array<PvLin
   const byId = new Map(((data ?? []) as Array<{ id: number; funding: string | null; internal_department: string | null }>).map((p) => [Number(p.id), p]));
   const missing = ids.find((id) => !byId.has(id));
   if (missing != null) return { ok: false, status: 400, body: { error: 'project_invalid', message: `Project ${missing} is not this company's.` } };
-  for (const r of rows) if (r.project_id != null) r.department = lineDepartmentOfProject(byId.get(r.project_id)!);
+  for (const r of rows) if (r.project_id != null) r.department = savedDepartment(r) ?? lineDepartmentOfProject(byId.get(r.project_id)!);
   return { ok: true };
 }
 
@@ -911,7 +913,9 @@ export const updatePaymentVoucherHandler = async (c: any) => {
     const vp = await resolveVoucherProject(sb, co.companyId, body.projectId !== undefined ? body.projectId : before0, bills);
     if (!vp.ok) return c.json(vp.body, vp.status);
     voucherProject = vp.projectId;
-    paysBills = bills.piIds.length + bills.apInvoiceIds.length > 0;
+    /* Bills linked while it was a supplier payment no longer decide its lines once it is something else. */
+    const purposeNow = normalizePurpose(body.purpose !== undefined ? body.purpose : before.purpose);
+    paysBills = purposeNow === 'SUPPLIER_PAYMENT' && bills.piIds.length + bills.apInvoiceIds.length > 0;
   }
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -985,7 +989,9 @@ export const updatePaymentVoucherHandler = async (c: any) => {
       const bad = await unknownUnits(sb, built.rows);
       if (!Array.isArray(bad)) return c.json({ error: 'load_failed', reason: bad.error }, 500);
       if (bad.length > 0) return c.json({ error: 'unit_unknown', message: 'Choose the unit from the list.' }, 400);
-      const lp = await lineProjects(sb, co.companyId, built.rows);
+      const { data: oldLines } = await sb.from('payment_voucher_lines').select('line_no, project_id, department').eq('pv_id', id);
+      const old = new Map(((oldLines ?? []) as Array<{ line_no: number; project_id: number | null; department: Department }>).map((l) => [Number(l.line_no), l]));
+      const lp = await lineProjects(sb, co.companyId, built.rows, (r) => { const o = old.get(r.line_no); return o && o.project_id === r.project_id ? o.department : null; });
       if (!lp.ok) return c.json(lp.body, lp.status);
     }
     /* Same self-debit door as the create path, against the EFFECTIVE Paid
@@ -1018,7 +1024,7 @@ export const updatePaymentVoucherHandler = async (c: any) => {
     const { data: hadLines } = await sb.from('payment_voucher_lines').select('line_no, unit_id, project_id').eq('pv_id', id);
     const had = new Map(((hadLines ?? []) as Array<{ line_no: number; unit_id: string | null; project_id: number | null }>).map((l) => [Number(l.line_no), l]));
     const keptRows = built.rows.map((r) => {
-      const unit_id = r.unit_id !== undefined ? r.unit_id : r.department === 'rental' ? had.get(r.line_no)?.unit_id ?? null : null;
+      const unit_id = r.unit_id !== undefined ? r.unit_id : r.department === 'rental' && r.project_id == null ? had.get(r.line_no)?.unit_id ?? null : null;
       const project_id = paysBills ? voucherProject ?? null
         : r.project_id !== undefined ? r.project_id
         : unit_id ? null

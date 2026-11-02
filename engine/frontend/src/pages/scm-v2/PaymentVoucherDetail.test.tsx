@@ -215,6 +215,32 @@ describe('a plain voucher: each line says what it is for', () => {
     }
   });
 
+  /* Review 2 Nov 2026: before this change a voucher's one project was stamped on every line, and a Rental line's unit
+     was optional. Such a voucher opened and saved without touching its lines must send every line back as it was. */
+  test('an older voucher with its project on every line saves every line unchanged; no unit or project is asked for', async () => {
+    shown.detail = { ...MIXED, lines: [
+      { id: 's1', line_no: 1, description: 'Aircon service', debit_account_code: '900-A002', amount_sen: 20000, department: 'rental', unit_id: 'u-a31', project_id: 7 },
+      { id: 's2', line_no: 2, description: 'Paint', debit_account_code: '900-A002', amount_sen: 10000, department: 'rental', unit_id: null, project_id: 7 },
+      { id: 's3', line_no: 3, description: 'Stationery', debit_account_code: '900-A002', amount_sen: 3000, department: 'shared', unit_id: null, project_id: 7 },
+      { id: 's4', line_no: 4, description: 'Tiles', debit_account_code: '900-A002', amount_sen: 2000, department: 'supply', unit_id: null, project_id: null },
+    ] };
+    updateAsync.mockClear();
+    try {
+      draw();
+      await waitFor(() => expect(screen.getByRole('radiogroup', { name: 'Line 1 for' })).toBeTruthy());
+      expect(['Line 1 department', 'Line 2 department', 'Line 3 department', 'Line 4 department'].map((l) => screen.getByLabelText(l).textContent))
+        .toEqual(['Rental', 'Rental', 'Company', 'Renovation']);
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(updateAsync).toHaveBeenCalledTimes(1));
+      const body = updateAsync.mock.calls[0]![0] as { lines: Array<Record<string, unknown>> };
+      expect(body.lines.map((l) => [l.department, l.unitId, l.projectId])).toEqual([
+        ['rental', 'u-a31', 7], ['rental', null, 7], ['shared', null, 7], ['supply', null, null],
+      ]);
+    } finally {
+      shown.detail = DETAIL;
+    }
+  });
+
   test('a Unit line left without its unit says "Pick the unit"', async () => {
     shown.detail = MIXED;
     updateAsync.mockClear();
