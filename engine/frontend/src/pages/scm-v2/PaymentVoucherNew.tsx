@@ -553,7 +553,7 @@ export const PaymentVoucherNew = () => {
     if (isAp && !supplierId) { setDialog({ title: 'Pick a supplier', body: 'An AP Payment settles a supplier — choose whose invoices this pays.' }); return; }
     if (isAp && totalSen === 0) { setDialog({ title: 'Nothing to pay yet', body: 'Tick an invoice, type a partial amount, or enter a prepay figure.' }); return; }
     if (!isAp && realLines.length === 0) { setDialog({ title: 'Add at least one line', body: 'Each line needs a debit account and an amount > 0.' }); return; }
-    if (!isAp && realLines.some((l) => !l.department)) { setDialog({ title: 'Choose each line’s department', body: 'Rental, Supply chain or Shared — the reports by department read it.' }); return; }
+    if (!isAp && realLines.some((l) => !l.department)) { setDialog({ title: 'Choose each line’s department', body: 'Rental, Renovation or Shared — the reports by department read it.' }); return; }
     }
 
     /* AP Payment: the ONE GL line is written here — Dr the AP control account
