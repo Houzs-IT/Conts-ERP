@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import { Button } from '../components/Button';
 import { StatTile, StatRow, Segmented, Eyebrow } from '../components/Metric';
 import { Select } from '../components/Select';
 import { NumberInput } from '../components/inputs';
@@ -11,6 +12,7 @@ import { TableSkeleton } from '../components/DataState';
 import { SearchBox } from './finance/listKit';
 import { useApi } from '../lib/useApi';
 import { useMedia } from '../lib/useMedia';
+import { saveBlob, toXlsx, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { count, monthLabel, percent, plural, rmShort, todayMyt } from '../lib/format';
 import { overallFigures, overallTotals, type OverallInput, type OverallTotals } from '../lib/ownerOverall';
@@ -60,6 +62,14 @@ const inSen = (c: Col) => c.kind === 'money' || c.kind === 'gl';
 type Contract = 'all' | 'LT' | 'PS';
 type Quick = 'losing' | 'gaining' | 'vacant' | null;
 type Sort = { key: Key | 'code'; dir: 1 | -1 } | null;
+
+/** The file always carries every column, whatever level is on screen. Occupancy keeps one decimal, as shown. */
+const EXPORT_COLS: ExportColumn[] = [
+  { label: 'Unit', kind: 'text' }, { label: 'Building', kind: 'text' }, { label: 'Owner', kind: 'text' }, { label: 'Contract', kind: 'text' },
+  ...COLS.map(c => ({ label: c.kind === 'occ' || c.kind === 'ownpct' ? `${c.label} (%)` : c.label, kind: inSen(c) ? 'money' as const : 'number' as const })),
+];
+const exportFigures = (r: OverallTotals | ReportRow, total: boolean): ExportCell[] =>
+  COLS.map(c => (c.key === 'ownerPct' ? (total ? null : (r as ReportRow).ownerPct) : c.kind === 'occ' ? Math.round(r.occupancy * 10) / 10 : r[c.key]));
 
 const LEVEL_KEY = 'ownerOverall.level';
 function readLevel(): Level {
@@ -224,6 +234,18 @@ export default function OwnerOverallReportPage() {
     </tr>
   );
 
+  function exportExcel() {
+    const rows: ExportCell[][] = [];
+    for (const g of groups) {
+      for (const r of g.rows) rows.push([r.code, r.building, r.ownerName, contractName(r.contract), ...exportFigures(r, false)]);
+      rows.push([`${contractName(g.contract)} total`, null, null, null, ...exportFigures(overallTotals(g.rows), true)]);
+    }
+    if (groups.length > 1) rows.push(['Grand total', null, null, null, ...exportFigures(totals, true)]);
+    // Named for the report month only: the usual export name adds today's date, and two dates read as a range.
+    saveBlob(toXlsx(EXPORT_COLS, rows, monthLabel(month, { long: true })) as BlobPart, `overall-unit-report-${month}.xlsx`,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  }
+
   const ltCount = all.filter(r => r.contract === 'LT').length;
   const detail = row && (
     <OwnerOverallDetail row={row} all={all} level={level} onLevel={setLevel} onClose={() => setSelected(null)}
@@ -321,8 +343,13 @@ export default function OwnerOverallReportPage() {
           {/* The definition gets its own line, so it never wraps into the counts. */}
           <span className="block text-meta">Gain/Loss = GP − owner base (LT, or the higher of O1 and GRR), before O2</span>
         </> : 'Every unit\'s month, as on the owner statements'}
-        actions={<Select label="Month" value={month} options={MONTHS} className="w-[180px]"
-          onChange={v => setParams(p => { const n = new URLSearchParams(p); if (v === MONTHS[1].value) n.delete('month'); else n.set('month', v); return n; }, { replace: true })} />}
+        actions={<>
+          <Button variant="secondary" icon={<Icon name="FileSpreadsheet" size="sm" />} onClick={exportExcel}
+            title="The units shown, with these filters and this sort, every column, and the totals."
+            disabled={!filtered.length} disabledReason="No units to export for this month and these filters.">Export Excel</Button>
+          <Select label="Month" value={month} options={MONTHS} className="w-[180px]"
+            onChange={v => setParams(p => { const n = new URLSearchParams(p); if (v === MONTHS[1].value) n.delete('month'); else n.set('month', v); return n; }, { replace: true })} />
+        </>}
       />
 
       <StatRow cols={5}>
