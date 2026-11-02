@@ -1,6 +1,7 @@
 import { type Env, all, one, json, fail } from '../../../../_lib/db';
 import { isOnTask } from '../../../../_lib/taskCleaners';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
+import { cleanStage } from '../../../../_lib/media';
 
 /** GET /api/housekeeping/tasks/:id/photos — the proof-of-delivery gallery for one
  *  clean. Lists the photos and videos uploaded through POST /api/tasks/:id/photos (R2, binding
@@ -33,6 +34,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       byteSize: Number(r.byte_size),
       capturedAt: r.captured_at ?? r.created_at,
       uploader: r.uploader || null,
+      stage: cleanStage(r.file_name),
     })),
   });
 };

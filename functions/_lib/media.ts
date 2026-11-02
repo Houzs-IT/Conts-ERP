@@ -9,3 +9,11 @@ export function mediaKind(file: File): { kind: 'photo' | 'video' } | { error: st
   if (type.startsWith('video/')) return file.size > VIDEO_MAX ? { error: 'That video is too large (50 MB limit). Record a shorter clip.' } : { kind: 'video' };
   return { error: 'Only photos and videos can be attached.' };
 }
+
+/** A cleaning job's photo or video is Before (how the unit was found, optional) or After (proof of work, needed to
+ *  complete). The stage is kept in the file name, as maintenance does; a file with no prefix predates stages and is
+ *  After, since it was uploaded as proof. */
+export type CleanStage = 'before' | 'after';
+export const cleanStage = (fileName: string | null | undefined): CleanStage => (String(fileName ?? '').startsWith('before-') ? 'before' : 'after');
+/** SQL condition: the document `d` is an After (proof) file. */
+export const AFTER_FILE_SQL = (d = 'd') => `${d}.file_name NOT LIKE 'before-%'`;
