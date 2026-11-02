@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { DemoReservationBar, useDemoOn } from '../demo/DemoRecords';
 import { createPortal } from 'react-dom';
 import { Drawer } from '../Dialog';
 import { Button } from '../Button';
@@ -59,6 +60,8 @@ interface Ledger {
   disagree: string | null; sources: { label: string; amount: number | null; from: string }[];
 }
 interface Detail extends Required<Omit<BookingSummary, 'guestPhone'>> {
+  /** Demo mode: 'demo' for a sample reservation, 'shadow' for a real one changed in Demo mode. */
+  sample?: 'demo' | 'shadow';
   guestPhone: string | null; guestEmail: string | null; guestId: string | null; nationality: string | null;
   country: { code: string; name: string; from: 'nationality' | 'phone' } | null;
   unitId: string; notes: string | null; staffNotes: string | null; createdAt: string;
@@ -775,6 +778,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   id: string; summary: BookingSummary | null; onClose: () => void; onChanged?: (id: string) => void; onDuplicated?: (newId: string) => void;
 }) {
   const toast = useToast();
+  const demoOn = useDemoOn();
   const { data, error, reload } = useApi<Detail>(`/reservations/${id}`);
   const d = data && data.id === id ? data : null;
   const [busy, setBusy] = useState(false);
@@ -882,6 +886,12 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
           {s.externalRef && <span className="font-mono">{s.externalRef}</span>}
         </div>
       </div>
+
+      {demoOn && !block && d && (
+        <DemoReservationBar id={id} sample={d.sample}
+          values={{ unitId: d.unitId, guestName: d.guestName, channel: d.channel, checkIn: d.checkIn, checkOut: d.checkOut, guestsCount: d.guestsCount, grossBookingValue: d.grossBookingValue, state: d.state, notes: d.notes ?? '' }}
+          onChanged={() => { reload(); onChanged?.(id); }} onRemoved={() => { onChanged?.(id); onClose(); }} />
+      )}
 
       <div className="p-5 flex flex-col gap-5 flex-1">
         {!block && (

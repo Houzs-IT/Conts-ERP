@@ -7,6 +7,7 @@ import { closePastStaysSometimes } from '../_lib/autoCheckout';
 import { twoStepSetupDue } from '../_lib/signIn';
 import { overLimit } from '../_lib/textLimits';
 import { once } from '../_lib/idempotency';
+import { demoAsked, demoAllowed } from '../_lib/demo';
 
 /**
  * Runs before every /api endpoint. Most endpoints only check that someone is signed
@@ -38,6 +39,9 @@ const OWNER_ALLOWED: [string, RegExp][] = [
  * a signed-in user (units, search, portfolio revenue, owner documents) is never theirs by accident. Each
  * handler below still checks the job is assigned to them.
  */
+/** The writes Demo mode still lets through (see the Demo mode check below). */
+const DEMO_WRITES = /^\/api\/(demo|auth|account|notifications|table-layouts)(\/|$)/;
+
 const FIELD_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/auth\/session$/],
   ['POST', /^\/api\/auth\/logout$/],
@@ -165,6 +169,11 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   if (refused) return fail('FORBIDDEN', refused, 403);
   if (MONEY_ONLY.test(path) && access.level === 'none') {
     return fail('FORBIDDEN', 'Only finance and management can see invoices and payments.', 403);
+  }
+  // Demo mode promises nothing reaches owners or channels: while it is on, the only writes are sample data through
+  // /api/demo (and the person's own sign-in, account, notices and table views). Real work needs it switched off.
+  if (request.method !== 'GET' && request.method !== 'HEAD' && !DEMO_WRITES.test(path) && demoAsked(request) && await demoAllowed(env, session)) {
+    return fail('DEMO_MODE', 'Demo mode is on, so nothing real can be changed. Add or edit sample data instead, or turn Demo mode off.', 409);
   }
 
   if (request.method !== 'GET' && (request.headers.get('content-type') ?? '').includes('application/json')) {

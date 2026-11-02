@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { LOOKS, sidebarLookKey, useDarkTheme } from './Sidebar';
 import { color, radius, text, shell, motion, shadow } from '../theme';
@@ -12,8 +12,11 @@ import Icon from './Icon';
 import ChannelMark from './ChannelMark';
 import NotificationBell from './NotificationBell';
 import { ThemeButton } from './ThemeToggle';
-import ViewAs from './ViewAs';
+import { DemoButton } from './DemoMode';
 import { Link } from 'react-router-dom';
+
+// Staging only (it renders nothing elsewhere), so it stays out of the entry script.
+const ViewAs = lazy(() => import('./ViewAs'));
 
 /* ------------------------------------------------------------------ *
  * Application shell top bar (BUTTONS.md §2).
@@ -179,7 +182,8 @@ export default function TopBar({
           </Link>
         )}
 
-        <ViewAs docked />
+        <Suspense fallback={null}><ViewAs docked /></Suspense>
+        <DemoButton size={ctl} iconOnly={compact} />
         <ThemeButton size={ctl} />
         <NotificationBell path={path} navigate={go} size={ctl} glass={dc ? glassPanel : undefined} />
 

@@ -5,6 +5,8 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { BookingDrawer, MessageGuestModal, CentreModal, ModalActions } from '../components/booking/BookingDrawer';
+import { DemoReservationModal, useDemoOn } from '../components/demo/DemoRecords';
+import { SampleMark } from '../components/DemoMode';
 import { UnitPicker } from '../components/booking/UnitPicker';
 import { channelNote, stayPhase, stayWho } from '../lib/bookingStatus';
 import { Button } from '../components/Button';
@@ -30,7 +32,9 @@ import type { BookingChannel, ReservationState } from '../lib/types';
 import { statusOptions, statusLabel } from '../lib/status';
 
 interface Row {
-  id: string; externalRef: string | null; guestName: string; guestsCount: number;
+  id: string; externalRef: string | null;
+  /** Demo mode: a sample reservation, or a real one changed in Demo mode. */
+  sample?: 'demo' | 'shadow'; guestName: string; guestsCount: number;
   guestPhone: string | null; guestCountry: string | null; guestNationality: string | null;
   unitNumber: string; propertyName: string; channel: BookingChannel;
   state: ReservationState; checkIn: string; checkOut: string; checkInTime: string; checkOutTime: string;
@@ -155,6 +159,8 @@ export default function BookingsPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [creating, setCreating] = useState(false);
+  const demoOn = useDemoOn();
+  const [addingSample, setAddingSample] = useState(false);
   // Guests' "Book a stay" passes the guest in router state (kept out of the URL); the Calendar passes the unit and
   // nights it was opened from (?forUnit=&checkIn=&checkOut=). Captured when the form opens, because stripping the
   // flags below replaces the location and drops the state.
@@ -308,7 +314,7 @@ export default function BookingsPage() {
         </span>
       ) },
     { key: 'guest', label: 'Guest', value: r => r.guestName, sortKey: 'guest', width: 170, filter: { kind: 'text', param: 'guest' },
-      render: b => { const w = stayWho(b); return <span className={cx('font-medium whitespace-nowrap overflow-hidden text-ellipsis block', w.missing && 'text-muted-ink')} title={w.name}>{w.name}</span>; },
+      render: b => { const w = stayWho(b); return <span className="flex items-center gap-1.5 min-w-0"><span className={cx('font-medium whitespace-nowrap overflow-hidden text-ellipsis block', w.missing && 'text-muted-ink')} title={w.name}>{w.name}</span><SampleMark kind={b.sample} /></span>; },
       sub: b => [stayWho(b).missing ? 'No guest name' : null, b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, countryOf(b)].filter(Boolean).join(' · ') || null },
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, sortKey: 'unit', width: 140,
       filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => b.propertyName },
@@ -375,7 +381,9 @@ export default function BookingsPage() {
             title="Every reservation under these filters with the full money breakdown and each payment, as CSV."
             disabled={!data || total === 0} disabledReason="Nothing to export for this tab and these filters.">Money CSV</Button>
         </>}
-        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => { setPrefill(null); setCreating(true); }}>Create reservation</Button>} />
+        primary={demoOn
+          ? <Button size="sm" variant="primary" icon={<Icon name="FlaskConical" size="sm" />} onClick={() => setAddingSample(true)}>Sample reservation</Button>
+          : <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => { setPrefill(null); setCreating(true); }}>Create reservation</Button>} />
 
       <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onImportFile} className="hidden" aria-hidden />
 
@@ -456,7 +464,7 @@ export default function BookingsPage() {
             <ChannelMark ch={b.channel} size={22} />
             <span className="flex flex-col gap-[3px] min-w-0 flex-1">
               <span className="flex items-center justify-between gap-2">
-                <span className={cx('text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis', stayWho(b).missing && 'text-muted-ink')}>{stayWho(b).name}</span>
+                <span className="flex items-center gap-1.5 min-w-0"><span className={cx('text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis', stayWho(b).missing && 'text-muted-ink')}>{stayWho(b).name}</span><SampleMark kind={b.sample} /></span>
                 <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
               </span>
               <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? (stayWho(b).missing ? 'No guest name, no reference' : 'No reference')} · {b.unitNumber} · {b.propertyName}</span>
@@ -470,6 +478,7 @@ export default function BookingsPage() {
         )}
       />
 
+      {addingSample && <DemoReservationModal onClose={() => setAddingSample(false)} onSaved={newId => { setAddingSample(false); reload(); setOpenId(newId); }} />}
       <BookingDrawer id={openId} summary={onPage} onClose={() => setOpenId(null)} onChanged={reload} onDuplicated={newId => setOpenId(newId)} />
 
       {creating && <CreateReservationModal units={UNITS} prefill={prefill} onClose={() => setCreating(false)} onCreate={createReservation} />}

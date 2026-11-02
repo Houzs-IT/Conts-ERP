@@ -17,11 +17,15 @@ import { FilterBar } from '../components/FilterBar';
 import { TONE, cx } from '../lib/design-tokens';
 import { PageControls } from '../components/PageControls';
 import { go } from '../lib/go';
+import { DemoReviewModal, useDemoOn, useDemoRemove } from '../components/demo/DemoRecords';
+import { SampleMark } from '../components/DemoMode';
 
 /** A guest review pulled in from a channel. `reply`/`repliedAt` are set once the
  *  host has responded; a null `reply` is the "needs reply" state. */
 interface Review {
-  id: string; guestName: string; unitNumber: string; propertyName: string;
+  id: string; guestName: string;
+  /** Demo mode: a sample review, or a real one changed in Demo mode; its unit, for editing it there. */
+  sample?: 'demo' | 'shadow'; unitId?: string; unitNumber: string; propertyName: string;
   channel: BookingChannel; rating: number; comment: string | null; reviewedAt: string;
   reply: string | null; repliedAt: string | null;
 }
@@ -64,6 +68,9 @@ export default function ReviewsPage() {
   if (ratingFilter !== 'all') query.set('rating', String(ratingFilter));
   if (replyFilter !== 'all') query.set('reply', replyFilter);
   const { data, loading, error, reload } = useApi<Payload>(`/reviews?${query}`, FALLBACK);
+  const demoOn = useDemoOn();
+  const [demoEdit, setDemoEdit] = useState<Review | 'new' | null>(null);
+  const demoRemove = useDemoRemove('reviews', () => reload());
   const toast = useToast();
 
   // Optimistic overlay — there is no backend in dev. A local reply marks the
@@ -129,6 +136,7 @@ export default function ReviewsPage() {
         sub={total > 0
           ? `${fmtRating(average ?? 0)} average across ${plural(total, 'review')} · ${pctReplied}% replied`
           : 'Guest reviews across every channel'}
+        primary={demoOn ? <Button size="sm" variant="primary" icon={<Icon name="FlaskConical" size="sm" />} onClick={() => setDemoEdit('new')}>Sample review</Button> : undefined}
       />
 
       {error && <StaleBanner message={`Showing the last reviews we have. ${error}`} onRetry={reload} />}
@@ -205,7 +213,7 @@ export default function ReviewsPage() {
                   <div className="flex items-center gap-3 min-w-0">
                     <ChannelMark ch={r.channel} size={22} />
                     <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-copy font-semibold">{r.guestName}</span>
+                      <span className="flex items-center gap-1.5 min-w-0"><span className="text-copy font-semibold">{r.guestName}</span><SampleMark kind={r.sample} /></span>
                       <span className="text-meta text-muted-ink">{r.propertyName} {r.unitNumber} · {fmtDate(r.reviewedAt)}</span>
                     </div>
                   </div>
@@ -227,13 +235,20 @@ export default function ReviewsPage() {
                   </div>
                 )}
 
+                {/* Demo mode: a review is changed as sample data only, never answered on the channel. */}
+                {demoOn && (
+                  <span className="flex gap-2 flex-wrap">
+                    <Button size="sm" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setDemoEdit(r)}>{r.sample === 'demo' ? 'Edit sample' : 'Edit in Demo mode'}</Button>
+                    {r.sample && <Button size="sm" variant="tertiary" onClick={() => demoRemove.ask(r.id, r.sample!)}>{r.sample === 'demo' ? 'Remove sample' : 'Undo Demo mode changes'}</Button>}
+                  </span>
+                )}
                 {/* Inline compose */}
-                {!replied && !composing && (
+                {!demoOn && !replied && !composing && (
                   <Button size="sm" variant="brand" onClick={() => startReply(r.id)} className="self-start">
                     Write a reply
                   </Button>
                 )}
-                {!replied && composing && (
+                {!demoOn && !replied && composing && (
                   <form onSubmit={e => postReply(e, r)} className="flex flex-col gap-2">
                     <textarea value={draft} onChange={e => setDraft(e.target.value)} autoFocus rows={3}
                       aria-label={`Reply to ${r.guestName}`}
@@ -252,6 +267,12 @@ export default function ReviewsPage() {
           );
         })
       )}
+      {demoEdit && (
+        <DemoReviewModal id={demoEdit === 'new' ? undefined : demoEdit.id}
+          initial={demoEdit === 'new' ? undefined : { unitId: demoEdit.unitId ?? '', channel: demoEdit.channel, rating: demoEdit.rating, comment: demoEdit.comment ?? '', reply: demoEdit.reply ?? '', reviewedAt: demoEdit.reviewedAt }}
+          onClose={() => setDemoEdit(null)} onSaved={() => { setDemoEdit(null); reload(); }} />
+      )}
+      {demoRemove.dialog}
       {matching > 25 && (
         <Card>
           <PageControls page={page} pageSize={pageSize} total={matching} onPage={setPage}

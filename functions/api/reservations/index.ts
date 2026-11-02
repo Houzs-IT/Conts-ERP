@@ -8,6 +8,7 @@ import { countryName } from '../../_lib/guestCountry';
 import { moneySchema, moneySql } from '../../_lib/bookingMoney';
 import { checkSen, checkInt, checkDate, checkPhone, invalid, type Fields } from '../../_lib/validate';
 import { bookingNotice } from '../../_lib/notices';
+import { demoOn, tablesFor } from '../../_lib/demo';
 
 /** GET /api/reservations?view=&todo=&ch=&building=&st=&country=&from=&to=&nightsMin=&nightsMax=&page=&size=&sort=&q=&ref=&guest=&unit=&stay=&gross=&status=
  *  One page of the Bookings list; each tab's count and each to-do card's count and amount under the same searches
@@ -20,6 +21,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const q = parseListQuery(new URL(request.url), { cancelledAt: await hasColumn(env, 'reservations', 'cancelled_at') });
   const schema = await moneySchema(env);
   const m = moneySql(schema);
+  const demo = await demoOn(env, request, session);
+  const t = tablesFor(demo);
   const todo = q.todo ? todoWhere(q.todo, q.today, schema) : 'TRUE';
   const current = `${viewWhere(q.view, q.today)} AND ${todo}`;
   // What each filter can pick from, with how many bookings each choice would show under everything else on screen
@@ -37,12 +40,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const facetMap = Object.fromEntries(FACETS.map(f => [f, [] as { value: string; count: number; label?: string }[]]));
   const facetsRead = Promise.all([...groups.values()].map(async ({ w, keys }) => {
     const rows = await all<Record<string, unknown>>(env, `SELECT ${keys.map(k => `${FACET_SQL[k]} AS "v_${k}", GROUPING(${FACET_SQL[k]}) AS "g_${k}"`).join(', ')}, COUNT(*) AS n
-      ${fromSql(schema, needsMoney)} WHERE ${w.where} AND ${current}
+      ${fromSql(schema, needsMoney, t)} WHERE ${w.where} AND ${current}
       GROUP BY GROUPING SETS (${keys.map(k => `(${FACET_SQL[k]})`).join(', ')})`, ...w.args);
     for (const r of rows) for (const k of keys) if (Number(r[`g_${k}`]) === 0) facetMap[k].push({ value: (r[`v_${k}`] as string | null) ?? 'none', count: Number(r.n) });
   }));
   const pageRows = (page: number) => all<any>(env, `
-    SELECT ${columnsSql(schema)} ${fromSql(schema)} WHERE ${q.where} AND ${current}
+    SELECT ${columnsSql(schema, demo)} ${fromSql(schema, true, t)} WHERE ${q.where} AND ${current}
     ORDER BY ${q.orderBy} LIMIT ${q.pageSize} OFFSET ${(page - 1) * q.pageSize}`, ...q.args);
   const [sums, requestedRows, , buildings] = await Promise.all([
     one<Record<string, number>>(env, `
@@ -54,7 +57,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            COALESCE(SUM(r.channel_fee) FILTER (WHERE ${current}), 0) AS fees,
            COALESCE(SUM(${m.expected}) FILTER (WHERE ${current} AND r.state NOT IN ('cancelled','no_show')), 0) AS payout,
            COALESCE(SUM(${m.outstanding}) FILTER (WHERE ${current} AND r.state NOT IN ('cancelled','no_show')), 0) AS outstanding
-    ${fromSql(schema)} WHERE ${q.where}`, ...q.args),
+    ${fromSql(schema, true, t)} WHERE ${q.where}`, ...q.args),
     pageRows(q.page), facetsRead,
     all<{ id: string; name: string }>(env, 'SELECT id, name FROM properties ORDER BY name'),
   ]);
@@ -67,7 +70,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const facets = Object.fromEntries(FACETS.map(f => [f, facetMap[f].sort((a, b) => b.count - a.count).slice(0, 300)]));
   facets.country = facets.country.map(c => ({ ...c, label: c.value === 'none' ? 'Not known' : countryName(c.value) ?? c.value }));
   return json({
-    generatedAt: nowIso(), today: q.today, view: q.view, todo: q.todo, filters: q.filters, page, pageSize: q.pageSize, total,
+    generatedAt: nowIso(), demo, today: q.today, view: q.view, todo: q.todo, filters: q.filters, page, pageSize: q.pageSize, total,
     counts: Object.fromEntries(VIEWS.map(v => [v, Number(sums?.[`v_${v}`] ?? 0)])),
     todos: Object.fromEntries(TODOS.map(t => [t, { count: Number(sums?.[`t_${t}`] ?? 0), outstanding: Number(sums?.[`o_${t}`] ?? 0) }])),
     totals: { bookings: total, nights: Number(sums?.nights ?? 0), gross: Number(sums?.gross ?? 0), fees: Number(sums?.fees ?? 0), payout: Number(sums?.payout ?? 0), outstanding: Number(sums?.outstanding ?? 0) },

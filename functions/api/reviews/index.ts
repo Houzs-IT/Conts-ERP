@@ -1,5 +1,6 @@
 import { type Env, all, one, json, fail } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
+import { demoOn, tablesFor, sourceSql, sampleOf } from '../../_lib/demo';
 
 /** GET /api/reviews — guest reviews across every channel, with the host's reply where there is one.
  *    ?page=1&pageSize=50       newest first
@@ -21,32 +22,34 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (reply === 'needs_reply') where.push('v.reply IS NULL');
   else if (reply === 'replied') where.push('v.reply IS NOT NULL');
   const cond = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const demo = await demoOn(env, request, session);
+  const t = tablesFor(demo);
 
   const [rows, filtered, sum] = await Promise.all([
     all<any>(env, `
-      SELECT v.*, u.unit_number, p.name AS property_name, COALESCE(g.full_name, 'Guest') AS guest_name
-      FROM reviews v
-      JOIN units u ON u.id = v.unit_id
+      SELECT v.*, ${sourceSql(demo, 'v')} AS demo_source, u.unit_number, p.name AS property_name, COALESCE(g.full_name, 'Guest') AS guest_name
+      FROM ${t.reviews} v
+      JOIN ${t.units} u ON u.id = v.unit_id
       JOIN properties p ON p.id = u.property_id
-      LEFT JOIN reservations r ON r.id = v.reservation_id
-      LEFT JOIN guests g ON g.id = r.guest_id
+      LEFT JOIN ${t.reservations} r ON r.id = v.reservation_id
+      LEFT JOIN ${t.guests} g ON g.id = r.guest_id
       ${cond}
       ORDER BY v.reviewed_at DESC, v.id DESC
       LIMIT ? OFFSET ?`, ...args, pageSize, (page - 1) * pageSize),
-    one<{ n: number }>(env, `SELECT count(*)::int AS n FROM reviews v JOIN units u ON u.id = v.unit_id ${cond}`, ...args),
+    one<{ n: number }>(env, `SELECT count(*)::int AS n FROM ${t.reviews} v JOIN ${t.units} u ON u.id = v.unit_id ${cond}`, ...args),
     one<{ n: number; replied: number; a: number | null }>(env, `
       SELECT count(*)::int AS n, count(*) FILTER (WHERE v.reply IS NOT NULL)::int AS replied, ROUND(AVG(v.rating)::numeric, 2) AS a
-      FROM reviews v JOIN units u ON u.id = v.unit_id`),
+      FROM ${t.reviews} v JOIN ${t.units} u ON u.id = v.unit_id`),
   ]);
   const avg = sum?.a;
 
   return json({
-    generatedAt: new Date().toISOString(),
+    generatedAt: new Date().toISOString(), demo,
     average: avg === null || avg === undefined ? null : Number(avg),
     summary: { total: sum?.n ?? 0, replied: sum?.replied ?? 0 },
     page, pageSize, total: filtered?.n ?? 0,
     data: rows.map(r => ({
-      id: r.id, unitNumber: r.unit_number, propertyName: r.property_name, guestName: r.guest_name,
+      id: r.id, ...(sampleOf(r.demo_source) ? { sample: sampleOf(r.demo_source) } : {}), unitId: r.unit_id, reservationId: r.reservation_id ?? null, unitNumber: r.unit_number, propertyName: r.property_name, guestName: r.guest_name,
       channel: r.channel, rating: Number(r.rating), comment: r.comment, reviewedAt: String(r.reviewed_at).slice(0, 10),
       reply: r.reply ?? null, repliedAt: r.replied_at ? String(r.replied_at).slice(0, 10) : null,
     })),
