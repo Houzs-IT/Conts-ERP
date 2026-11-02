@@ -1,0 +1,56 @@
+# One-off (owner, 2 Nov 2026): the in-house renovation orders of The Conts brand become engine contracts, each under its
+# own renovation project (engine/backend/scripts/so-inhouse-import.mts, docs/so-import/inhouse). The production database is
+# reachable only through the PROD_DB_URL secret. Manual only. "dry-run" builds everything in one transaction and rolls it
+# back; "apply" writes it in one transaction and needs the production project ref typed into confirm_ref. Safe to run
+# again: imported projects and orders are skipped. Delete this file once the import is done.
+name: In-house SO import (one-off)
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: dry-run or apply
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, apply]
+      groups:
+        description: groups to import (EMBASSY, KL48, OTHER)
+        required: true
+        default: EMBASSY,OTHER
+      so_date:
+        description: SO date (YYYY-MM-DD)
+        required: true
+        default: '2026-10-31'
+      confirm_ref:
+        description: production project ref, required for apply
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency: so-inhouse-import
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: engine/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: Run the import
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DB_URL }}
+          MODE: ${{ inputs.mode }}
+          GROUPS: ${{ inputs.groups }}
+          SO_DATE: ${{ inputs.so_date }}
+          CONFIRM_REF: ${{ inputs.confirm_ref }}
+        run: |
+          if [ "$MODE" = "apply" ]; then
+            npx tsx scripts/so-inhouse-import.mts --so-date="$SO_DATE" --groups="$GROUPS" --confirm-ref="$CONFIRM_REF"
+          else
+            npx tsx scripts/so-inhouse-import.mts --so-date="$SO_DATE" --groups="$GROUPS" --dry-run
+          fi
