@@ -68,6 +68,8 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['DELETE', /^\/api\/tasks\/[^/]+\/photos\/[^/]+$/],
   ['POST', /^\/api\/maintenance\/issues$/],
   ['POST', /^\/api\/maintenance\/issues\/[^/]+\/(photos|documents|start|end)$/],
+  // Taking back a photo or file they added on a repair (the handler checks it is theirs and the job is open).
+  ['DELETE', /^\/api\/maintenance\/issues\/[^/]+\/(photos|documents)\/[^/]+$/],
   ['GET', /^\/api\/documents\/[^/]+\/download$/],
   // The history of their own cleans and repairs (functions/api/audit/index.ts limits it to those).
   ['GET', /^\/api\/audit$/],
