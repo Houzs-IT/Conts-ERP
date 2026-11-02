@@ -33,6 +33,7 @@ import { hasHouzsPerm } from '../lib/houzs-perms';
 import { einvoiceOutboxGet, einvoiceOutboxList, einvoiceRefresh, einvoiceSettingsGet, einvoiceSettingsPut } from '../../acc/einvoice-routes';
 import { renoProjectsHandler } from '../../acc/reno-projects';
 import { listUnitsHandler } from '../../conts/units-route';
+import { rentalUnitCostsHandler } from '../../acc/rental-unit-costs';
 import {
   changeExpectedCostHandler, expectedCostLogHandler, getAlertSettingsHandler, keepCostAlertHandler, listCostAlertsHandler,
   pendingCostAlertsHandler, putAlertSettingsHandler,
@@ -236,6 +237,8 @@ accounting.get('/party-ledger', partyLedgerHandler);
 /* Conts: a project's limit and extra limit (conts/project-limit-routes.ts; SOP 3.4). */
 accounting.get('/projects', listProjectsHandler);
 accounting.get('/units', listUnitsHandler);
+/* Rental costs by unit (chew 2 Nov 2026; finance only) — acc/rental-unit-costs.ts. */
+accounting.get('/rental-unit-costs', rentalUnitCostsHandler);
 accounting.get('/everyday-expense', listEverydayExpenseHandler);
 accounting.put('/everyday-expense', setEverydayExpenseHandler);
 accounting.get('/projects/:id/limit', projectLimitHandler);
