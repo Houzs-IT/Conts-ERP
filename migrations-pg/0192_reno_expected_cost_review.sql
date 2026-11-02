@@ -27,6 +27,7 @@ create table if not exists scm.reno_expected_cost_changes (
   adjustment_sen bigint not null,
   reason text not null check (length(trim(reason)) > 0),
   changed_by bigint,
+  changed_by_name text,
   created_at timestamptz not null default now()
 );
 create index if not exists reno_expected_cost_changes_doc on scm.reno_expected_cost_changes (company_id, so_doc_no, effective_on);
@@ -48,6 +49,7 @@ create table if not exists scm.reno_cost_alerts (
   raised_at timestamptz not null default now(),
   resolved_at timestamptz,
   resolved_by bigint,
+  resolved_by_name text,
   note text,
   change_id uuid references scm.reno_expected_cost_changes (id),
   hod_notified_at timestamptz
