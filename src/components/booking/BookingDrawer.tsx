@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Drawer } from '../Dialog';
 import { Button } from '../Button';
@@ -25,6 +25,9 @@ import { isStaged, stagedToast, useApprovalsOn, type Approval } from '../../lib/
 import { CloseButton } from '../CloseButton';
 import { moneyStatus, lastPaidOn, isOtaChannel } from '../../lib/payoutStatus';
 import { Link } from 'react-router-dom';
+import type { Review } from '../../pages/reviews/ReviewCard';
+// Loaded on its own: the drawer is in the first bundle every page loads, which has no room to spare.
+const ReservationReview = lazy(() => import('../../pages/reviews/ReservationReview'));
 
 /* ------------------------------------------------------------------ */
 /* Shapes (GET /api/reservations/:id)                                  */
@@ -64,6 +67,7 @@ interface Detail extends Required<Omit<BookingSummary, 'guestPhone'>> {
   unitId: string; notes: string | null; staffNotes: string | null; createdAt: string;
   money: Money; ledger: Ledger; timeline: TimelineEvent[]; moves: Move[];
   documents?: GuestDocument[]; approvals?: Approval[];
+  review?: Review | null; threadId?: string | null;
   can: { changeDates: boolean; changeDatesReason: string | null; recordPayment: boolean; editDetails: boolean; paymentsReady: boolean; issueDocuments?: boolean; invoiceReason?: string | null };
 }
 
@@ -931,6 +935,8 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             {d.guestId && <Link to={`/reservations/guests?g=${encodeURIComponent(d.guestId)}`} className="self-start mt-1 text-meta text-ink underline">Open guest profile</Link>}
           </div>
         )}
+
+        {!block && d && <Suspense fallback={null}><ReservationReview review={d.review ?? null} threadId={d.threadId ?? null} checkOut={d.checkOut} state={d.state} channel={d.channel} /></Suspense>}
 
         {block ? (
           <div className="text-copy text-muted-ink">
