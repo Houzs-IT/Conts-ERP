@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
@@ -17,7 +17,10 @@ import { date, time, todayMyt } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import type { HoursPayload, HoursPerson, HoursPunch } from '../../../functions/api/working-hours/index';
 import { DEPARTMENTS, DEPARTMENT_LABEL, type Department } from '../../../functions/_lib/hrFields';
-import type { PublicHoliday } from '../../../functions/_lib/leaveRules';
+import { TableSkeleton } from '../../components/DataState';
+// Loaded when shown: imported directly by both Pricing and HR it became a chunk every page's preload list names
+// (scripts/checks/entry-bundle.mjs).
+const HolidayList = lazy(() => import('../../components/HolidayList').then(m => ({ default: m.HolidayList })));
 
 /* ------------------------------------------------------------------ *
  * HR > Employees > Working Hours: Hookka's Working Hours tab. The hours
@@ -160,7 +163,7 @@ export default function WorkingHoursTab() {
     <div className="flex flex-col gap-5">
       {confirmDialog}
       {error && <StaleBanner message={`Showing the last hours we have. ${error}`} onRetry={reload} />}
-      <PublicHolidays holidays={data?.holidays ?? []} mayEdit={mayEdit} onChange={reload} year={to.slice(0, 4)} />
+      <PublicHolidays onChange={reload} />
 
       <section className="bg-card rounded-card border border-solid border-line">
         <div className="pt-5 pb-3 px-5 flex flex-col gap-3 [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -282,53 +285,16 @@ function HoursRow({ row: r, multiDay, people, person, punch, total, from, to, ma
   );
 }
 
-/** Hookka's Public Holidays card: "Mark dates so workers aren't deducted for not working that day." Saved straight away,
- *  through the one holiday list leave and payroll share (PUT /api/leaves/holidays). */
-function PublicHolidays({ holidays, mayEdit, onChange, year }: { holidays: PublicHoliday[]; mayEdit: boolean; onChange: () => void; year: string }) {
-  const toast = useToast();
-  const [day, setDay] = useState('');
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const shown = holidays.filter(h => h.date.startsWith(`${year}-`));
-  async function save(list: PublicHoliday[], done: string) {
-    setBusy(true);
-    try { await api.put('/leaves/holidays', list); toast({ tone: 'success', title: done, body: 'Payroll and leave use the list from now.' }); onChange(); }
-    catch (e) { notifyFailure(e); }
-    finally { setBusy(false); }
-  }
-  const add = () => {
-    if (!day) return;
-    void save([...holidays.filter(h => h.date !== day), { date: day, name: name.trim() || 'Public holiday' }], `${dayText(day)} added.`);
-    setDay(''); setName('');
-  };
+/** Hookka's Public Holidays card: "Mark dates so workers aren't deducted for not working that day." The company's one
+ *  holiday list, shared with Pricing (functions/_lib/holidays.ts); payroll counts the entries marked Staff day off. */
+function PublicHolidays({ onChange }: { onChange: () => void }) {
   return (
     <section className="bg-card rounded-card border border-solid border-line px-5 py-4 flex flex-col gap-3">
       <span className="flex flex-col gap-0.5">
         <span className="text-[16px] font-semibold tracking-[-0.01em]">Public Holidays</span>
-        <span className="text-meta text-muted-ink">Mark dates so workers aren't deducted for not working that day.</span>
+        <span className="text-meta text-muted-ink">Mark dates so workers aren't deducted for not working that day. The same list Pricing uses; payroll counts the ones marked Staff day off.</span>
       </span>
-      {mayEdit && (
-        <span className="flex items-end gap-2 flex-wrap">
-          <div className="w-[170px] flex-none"><DateField label="Date" value={day} onChange={setDay} /></div>
-          <Field label="Name (optional)" value={name} onChange={e => setName(e.target.value)} placeholder="Hari Merdeka" />
-          <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} disabled={!day || busy} onClick={add}>Add</Button>
-        </span>
-      )}
-      <span className="flex gap-1.5 flex-wrap">
-        {shown.length === 0 && <span className="text-meta text-muted-ink">None for {year} yet.</span>}
-        {shown.map(h => (
-          <span key={h.date} className="inline-flex items-center gap-1.5 h-8 pl-3 pr-1.5 rounded-pill bg-page border border-solid border-line text-meta">
-            <span className="tabular-nums">{dayText(h.date)}</span><span className="text-muted-ink">{h.name}</span>
-            {mayEdit && (
-              <button type="button" aria-label={`Remove ${h.name}`} disabled={busy}
-                onClick={() => void save(holidays.filter(x => x.date !== h.date), `${dayText(h.date)} removed.`)}
-                className="size-6 grid place-items-center rounded-pill bg-transparent border-0 cursor-pointer text-muted-ink hover:text-ink">
-                <Icon name="X" size="sm" />
-              </button>
-            )}
-          </span>
-        ))}
-      </span>
+      <Suspense fallback={<TableSkeleton rows={4} cols={3} />}><HolidayList compact onChanged={onChange} /></Suspense>
     </section>
   );
 }

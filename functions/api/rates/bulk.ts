@@ -3,7 +3,8 @@ import { rentalOnly } from '../../_lib/unitPurpose';
 import { requireSession } from '../../_lib/auth';
 import { checkDate, invalid, type Fields } from '../../_lib/validate';
 import { enqueueRestrictionsMany } from '../../_lib/channexQueue';
-import { standardRate, upliftFor, webRate, type SalesChannel } from '../../_lib/channelPrice';
+import { channelFromDirect, levelPrices, priceOn, DEFAULT_RULE, type OtaChannel, type SalesChannel } from '../../_lib/channelPrice';
+import { loadPricing, standardPrice, holidayNight } from '../../_lib/unitPricing';
 
 const CHANNELS = ['web', 'airbnb', 'booking_com', 'agoda'];
 const MAX_LINES = 20;
@@ -17,6 +18,7 @@ type Change = { unitId: string; channel: string; nights: number; oldMin: number;
 
 const addDay = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) + 864e5).toISOString().slice(0, 10);
 const weekdayOf = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay();
+const isWeekend = (d: string) => weekdayOf(d) === 5 || weekdayOf(d) === 6;
 
 /** Consecutive nights grouped into runs, so a Channex update is one range per run instead of one per night. */
 function runsOf(days: string[]): string[][] {
@@ -32,8 +34,9 @@ function runsOf(days: string[]): string[][] {
  *  (or one range given at the top level: { unitIds, from, to, baseRate?, ... }).
  *  - weekdays: 0 (Sunday) to 6 (Saturday); only those nights of each range are changed. All nights if omitted.
  *  - baseRate (sen) sets the night's web (direct) price; adjustPct (-90 to 300) moves the night's current web
- *    price by that percentage, rounded to the ringgit. Every booking site then gets that web price plus the
- *    unit's own uplift for the site (the saved one, else the default share), so the sites keep their markup.
+ *    price by that percentage, rounded to the ringgit. Every channel then follows that web price by its own rule
+ *    (channelPrice.ts channelFromDirect: amount or percent above it, the default share, or for a fixed channel the
+ *    proportion it has to the direct price on that night's level), so the channels keep their markup.
  *  - channels: which of web / airbnb / booking_com / agoda to price (all if omitted). A booking site is only
  *    written for a unit that is connected to it (channex_channels); the others are skipped and reported.
  *  - uplifts (the Pricing screen's push, values ignored): the range is priced at the standard rule, so Friday and
@@ -103,14 +106,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const idsJson = JSON.stringify(unitIds);
-  const [units, savedUplifts, connected] = await Promise.all([
+  const allNights = nightsOf.flat().sort();
+  const [units, connected] = await Promise.all([
     all<{ id: string; base_rate: number; weekend_rate: number | null }>(env, `SELECT id, base_rate, weekend_rate FROM units WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))${await rentalOnly(env, 'units')}`, idsJson),
-    all<{ unit_id: string; channel: string; uplift: number }>(env, 'SELECT unit_id, channel, uplift FROM channel_uplifts WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', idsJson),
     all<{ unit_id: string; ota: string }>(env, 'SELECT unit_id, ota FROM channex_channels WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', idsJson),
   ]);
   if (units.length !== unitIds.length) return fail('NOT_FOUND', 'One of those units does not exist, or is a showroom or warehouse (not priced).', 404);
+  // Each unit's levels, channel rules and holidays over the nights asked for (channelPrice.ts has the rule).
+  const pricing = allNights.length ? await loadPricing(env, unitIds, allNights[0], allNights[allNights.length - 1]) : new Map();
   const anyPrice = lines.some(l => (l.baseRate ?? l.adjustPct) != null);
-  const allNights = nightsOf.flat().sort();
   // The nights' own prices: a percentage moves the current web price, which may be one set by hand for that night,
   // and every change is reported (and audited) as old -> new.
   const setBefore = anyPrice && allNights.length ? new Map((await all<{ unit_id: string; channel: string; rate_date: string; rate: number }>(env,
@@ -127,7 +131,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const linked = new Set(connected.filter(c => c.unit_id === u.id).map(c => c.ota));
     const mine = channels.filter(c => c === 'web' || linked.has(c));
     for (const c of channels) if (c !== 'web' && !linked.has(c)) skipped[c] = (skipped[c] ?? 0) + 1;
-    const saved = (c: string) => savedUplifts.find(x => x.unit_id === u.id && x.channel === c)?.uplift;
+    const p = pricing.get(u.id)!;
+    const ruleOf = (c: string) => (c === 'web' ? DEFAULT_RULE : p.rules[c as OtaChannel] ?? DEFAULT_RULE);
     const toSync: { channel: string; date: string; rate: number }[] = [];
     const restrictions: { days: string[]; minStay?: number | null; stopSell?: boolean }[] = [];
 
@@ -139,22 +144,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if ((hasRate || hasPct) && mine.length) {
         const webOn = (date: string) => {
           if (hasPct) {
-            const current = setBefore.get(`${u.id}:web:${date}`) ?? webRate(Number(u.base_rate), u.weekend_rate, date);
+            const current = setBefore.get(`${u.id}:web:${date}`) ?? standardPrice(p, 'web', date);
             return Math.max(100, Math.round(current * (1 + l.adjustPct! / 100) / 100) * 100);
           }
-          if (l.weekendRate != null) return webRate(l.baseRate!, l.weekendRate, date);
-          return standard ? webRate(l.baseRate!, u.weekend_rate, date) : l.baseRate!;
+          if (l.weekendRate != null) return isWeekend(date) ? l.weekendRate : l.baseRate!;
+          // The Pricing screen's push: the standard rule with this nightly price (weekend and holiday levels kept).
+          return standard ? priceOn(levelPrices('web', { ...p.levels, base: l.baseRate! }), date, holidayNight(p, date)) : l.baseRate!;
         };
+        // Each channel follows the new direct price by its own rule (channelFromDirect).
         const rows = mine.flatMap(channel => days.map(date => {
           const web = webOn(date);
-          return { channel, date, rate: web + upliftFor(channel, web, saved(channel)) };
+          return { channel, date, rate: channelFromDirect(channel, web, ruleOf(channel), { channel: standardPrice(p, channel, date), direct: standardPrice(p, 'web', date) }) };
         }));
         for (const channel of mine) {
           const mineRows = rows.filter(r => r.channel === channel);
           let c = changes.find(x => x.unitId === u.id && x.channel === channel);
           if (!c) { c = { unitId: u.id, channel, nights: 0, oldMin: Infinity, oldMax: -Infinity, newMin: Infinity, newMax: -Infinity }; changes.push(c); }
           for (const r of mineRows) {
-            const old = setBefore.get(`${u.id}:${channel}:${r.date}`) ?? standardRate(channel, Number(u.base_rate), u.weekend_rate, saved(channel), r.date);
+            const old = setBefore.get(`${u.id}:${channel}:${r.date}`) ?? standardPrice(p, channel, r.date);
             c.nights++;
             c.oldMin = Math.min(c.oldMin, old); c.oldMax = Math.max(c.oldMax, old);
             c.newMin = Math.min(c.newMin, r.rate); c.newMax = Math.max(c.newMax, r.rate);

@@ -570,3 +570,5 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Health warnings (CONTS-0005, owner 26 Oct): management is emailed when a System health card turns red or a channel is reported down on status.channex.io, and when it clears. Email only for now; a WhatsApp copy is the owner's later call. Runs on the 5-minute health report, so production only (the cron worker); staging shows the new Channel status card but sends no warnings.
 
 - Flow run 1 Nov, not yet run: DO from the contract, POD upload, PO PDF and send; native date boxes could not be driven remotely (dates set in the DB for the TEST lines).
+
+- Pricing holidays (PR feat/pricing-holidays): apply migration 0202 local, staging, then production; the owner checks the loaded 2026/2027 Malaysia holiday dates against the gazette (Islamic and lunar dates marked "Check date").

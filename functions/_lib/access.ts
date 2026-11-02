@@ -187,6 +187,9 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; w
   { method: 'POST', path: /^\/api\/maintenance\/issues\/[^/]+\/approve$/, area: 'finance', why: 'Recording an owner\'s approval of a repair quote is a money decision.' },
   { method: 'GET', path: /^\/api\/audit$/, area: null, why: 'The History panel on every record: the handler applies the area of the record asked for; the whole trail stays management and finance only.' },
   { method: 'GET', path: /^\/api\/(warehouses|suppliers|drivers|vehicles|threepl-companies)$/, area: null, why: 'Supply chain reference lists that every supply chain screen picks from.' },
+  // One public holiday list for the whole company (migration 0202), kept from Pricing and from HR: the handlers let in
+  // Pricing (Full to change) or Employees (edit to change), whichever the person has (functions/_lib/holidays.ts).
+  ...(['GET', 'POST', 'PUT', 'DELETE'] as const).map(method => ({ method, path: /^\/api\/holidays(\/[^/]+)?$/, area: null, why: 'The public holiday list is shared by Pricing and HR; its handlers check either area.' })),
 ];
 
 function routeArea(method: string, path: string): Area | null {
