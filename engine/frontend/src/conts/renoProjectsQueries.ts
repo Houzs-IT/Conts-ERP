@@ -6,7 +6,7 @@ import { authedFetch } from "../vendor/scm/lib/authed-fetch";
 export type RenoProjectRow = {
   soDocNo: string; projectId: number | null; projectName: string; customerCode: string | null; customerName: string;
   salesperson: string | null; brand: string | null; kind: "RENOVATION" | "INHOUSE_RENOVATION"; status: string; stage: string | null;
-  handoverDate: string | null; delayed: boolean;
+  handoverDate: string | null; delayed: boolean; handedOver: boolean;
   contractSen: number; voSen: number; revisedContractSen: number;
   receivedSen: number; outstandingSen: number; collectedBp: number | null;
   nextInstalment: { seq: number; label: string; amountSen: number; trigger: string } | null;
