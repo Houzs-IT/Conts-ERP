@@ -40,6 +40,7 @@
 // ----------------------------------------------------------------------------
 
 import { useMemo, useState } from 'react';
+import { JobDetailPanel, panelTargetOf, rowDocumentPath, type JobPanelTarget } from '../../components/scm-v2/JobDetailPanel';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Printer, Truck, Users, Wand2, CalendarCheck, Map as MapIcon } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
@@ -96,6 +97,10 @@ import { AssignSelect, OverflowSection } from './delivery-propose-ui';
 import { PackingListsSection } from '../../vendor/scm/components/PackingListsSection';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import { DateField } from "../../vendor/scm/components/DateField";
+import { stopStatusByRef } from '../../vendor/scm/lib/delivery-stop-status';
+import { useJobProgressMap } from '../../vendor/scm/lib/job-progress-queries';
+import { jobRefOf, jobKey } from '../../vendor/scm/lib/delivery-job';
+import { useVehiclePositions } from '../../vendor/scm/lib/vehicle-positions';
 
 function driverLine(t: FleetDayTrip): string {
   const parts = [t.driver?.name, ...(t.helpers.map((h) => h.name))].filter(Boolean);
@@ -114,6 +119,8 @@ type CrewPick = {
 
 export function FleetDay() {
   const navigate = useNavigate();
+  // Single click opens the job panel; double click goes to the document.
+  const [jobPanel, setJobPanel] = useState<JobPanelTarget | null>(null);
   const [params, setParams] = useSearchParams();
 
   // URL is state (repo rule): date + depot warehouse + focused trip live in the URL.
@@ -249,6 +256,16 @@ export function FleetDay() {
       .map((o) => o.so_doc_no);
     return { routeId: focusedId, refs };
   }, [focusedId, boardOrders, date]);
+  /* Map status colours (owner 2026-10-07): delivered / on its way / late, from
+     the DO and the job's On the way / Arrived / POD. Lorries: where each run is
+     now (the crew's phone today, a GPS feed later — vehicle-positions.ts). */
+  const progressMap = useJobProgressMap(mapOpen);
+  const statusByRef = useMemo(() => stopStatusByRef(
+    boardOrders.filter((o) => lastMileSideOf(o, date) != null),
+    (o) => { const j = jobRefOf(o); return j ? progressMap.get(jobKey(j)) ?? null : null; },
+    date, new Date(),
+  ), [boardOrders, date, progressMap]);
+  const vehicles = useVehiclePositions(trips, mapOpen);
   const toggleTripFocus = (routeId: string) => setParam('trip', focusedId === routeId ? null : routeId);
   /* Two-way linkage (same shape as the sibling pages). */
   const [selectedPin, setSelectedPin] = useState<string | null>(null);
@@ -486,6 +503,21 @@ export function FleetDay() {
                 <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
                   {t.warehouse?.name ? `${t.warehouse.name} · ` : ''}{t.total_drops} drops · {fmtSen(t.total_revenue_sen)}
                 </span>
+                {t.total_drops > 0 && (
+                  <span
+                    title={`${t.total_delivered} of ${t.total_drops} drops delivered; ${t.total_with_pod} with real POD evidence`}
+                    style={{
+                      fontSize: 'var(--fs-11)', fontWeight: 600,
+                      color: t.total_with_pod === t.total_drops
+                        ? 'var(--c-success, #16a34a)'
+                        : t.total_delivered > t.total_with_pod
+                          ? 'var(--c-warning, #b45309)'
+                          : 'var(--fg-muted)',
+                    }}
+                  >
+                    {t.total_delivered}/{t.total_drops} delivered · {t.total_with_pod} POD
+                  </span>
+                )}
                 {suggestions && !suggestions.has(t.id) && crewAssign && (
                   <span style={{ fontSize: 'var(--fs-11)', color: 'var(--fg-muted)' }}>no engine suggestion — assign by hand</span>
                 )}
@@ -604,6 +636,7 @@ export function FleetDay() {
         )}
       </div>
 
+      <JobDetailPanel target={jobPanel} onClose={() => setJobPanel(null)} />
       <DeliveryPlanningBoard
         orders={boardRowsShown}
         counts={board.data?.counts ?? {}}
@@ -635,11 +668,11 @@ export function FleetDay() {
            Columns-panel choice turns it off) + two-way linkage (Option B). */
         visibleColumnsOverride={mapOpen && mapCompact ? MAP_ESSENTIAL_COLUMNS_LAST_MILE : null}
         onUserAdjustColumns={() => { if (mapOpen && mapCompact) setMapCompact(false); }}
-        onRowClick={(o) => { if (mapOpen && o.row_type === 'so') setSelectedPin(o.so_doc_no); }}
+        onRowClick={(o) => { if (mapOpen && o.row_type === 'so') setSelectedPin(o.so_doc_no); setJobPanel(panelTargetOf(o)); }}
         scrollToRow={scrollTo}
         defaultSort={arrangementQueueCompare}
         emptyMessage="No time-arranged orders for this day — arrange times in Delivery Time Arrangement."
-        onRowDoubleClick={(o) => { if (o.row_type === 'so') navigate('/scm/sales-orders/' + o.so_doc_no); }}
+        onRowDoubleClick={(o) => { const to = rowDocumentPath(o); if (to) navigate(to); else setJobPanel(panelTargetOf(o)); }}
         contextMenu={(row) => (row.row_type === 'so'
           ? [{ label: 'Open Sales Order', onClick: () => navigate('/scm/sales-orders/' + row.so_doc_no) }]
           : [])}
@@ -712,6 +745,9 @@ export function FleetDay() {
           ungeocoded={geo.data?.ungeocoded ?? []}
           serverConfigured={geo.data?.configured ?? true}
           isLoading={geo.isLoading || query.isLoading}
+          statusByRef={statusByRef}
+          vehicles={vehicles}
+          onVehicleClick={(v) => { if (v.lorryId) navigate(`/fleet-health/${v.lorryId}`); }}
         >
           {crewSection}
         </DeliveryMapPanel>

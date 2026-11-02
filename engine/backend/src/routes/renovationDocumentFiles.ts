@@ -17,7 +17,7 @@ import type { Db } from "../services/renovation/load";
 import { expand, readProjectDocuments, GRS, POS, SOS } from "../services/renovation/documents";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
 import {
-  DOC_TYPES, POD_FILE_ID, attachmentsReady, evidenceFiles, fileRow, isDocType, listFilesFor, listLines, podFile, type DocFile, type DocType,
+  DOC_TYPES, attachmentsReady, evidenceFiles, fileRow, isDocType, listFilesFor, listLines, podFileById, podFiles, isPodFileId, type DocFile, type DocType,
 } from "../scm/lib/doc-attachments";
 import { streamObject } from "../scm/routes/doc-attachments";
 
@@ -94,8 +94,8 @@ app.get("/:id/document-files", requirePageAccess("projects.list"), async (c) => 
       /* A line rewritten since its files were added: its files stay with the document (see readDocFiles). */
       const list = all.filter((f) => !f.lineId || !lineIds.has(f.lineId)).map((f) => (f.lineId ? { ...f, from: "a line since changed" } : f));
       if (d.type === "delivery_order") {
-        const pod = await podFile(db(c), d.id).catch(() => null);
-        if (pod) { const { key: _key, ...shown } = pod; list.unshift(shown); }
+        const pods = await podFiles(db(c), d.id).catch(() => []);
+        list.unshift(...pods.map(({ key: _key, ...shown }) => shown));
       }
       const ev = await evidenceFiles(db(c), { type: d.type, id: d.id, no: d.no, companyId }).catch(() => []);
       list.unshift(...ev.map(({ key: _key, ...f }) => f));
@@ -128,8 +128,8 @@ app.get("/:id/document-files/:type/:docId/:fileId", requirePageAccess("projects.
   const doc = docs.find((d) => d.type === type && d.id === docId);
   if (!doc) return c.json({ error: "not_found" }, 404);
   const range = c.req.header("range");
-  if (type === "delivery_order" && fileId === POD_FILE_ID) {
-    const pod = await podFile(db(c), doc.id);
+  if (type === "delivery_order" && isPodFileId(fileId)) {
+    const pod = await podFileById(db(c), doc.id, fileId);
     const res = pod && ((await streamObject(c.env.SLIPS, pod.key, pod.mime, pod.name, range)) ?? (await streamObject(c.env.POD_BUCKET, pod.key, pod.mime, pod.name, range)));
     return res ?? c.json({ error: "not_found" }, 404);
   }
