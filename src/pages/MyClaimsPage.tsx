@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -183,31 +183,41 @@ function HandInForm({ me, onDone }: { me: Me; onDone: () => void }) {
   /* Claim to me */
   const [reading, setReading] = useState(false);
   const [spendDate, setSpendDate] = useState(todayMyt());
-  const [dateTouched, setDateTouched] = useState(false);
   const [vendorName, setVendorName] = useState('');
   /* Direct pay */
   const [type, setType] = useState<'PAYMENT' | 'DEPOSIT'>('PAYMENT');
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [poSearch, setPoSearch] = useState('');
-  const [poId, setPoId] = useState('');
+  const [po, setPo] = useState<{ id: string; label: string } | null>(null);
+  const poId = po?.id ?? '';
   const [payeeName, setPayeeName] = useState('');
   const [wantedOn, setWantedOn] = useState('');
   const pq = poSearch.trim();
   const pos = useApi<{ purchaseOrders: { id: string; poNumber: string; status: string; totalSen: number }[] }>(kind === 'direct' && pq.length >= 2 ? `/claims/purchase-orders?q=${encodeURIComponent(pq)}` : null);
 
+  const found = (pos.data?.purchaseOrders ?? []).map(p => ({ value: p.id, label: `${p.poNumber} · ${rm(p.totalSen)}` }));
+  const poOptions = po && !found.some(o => o.value === po.id) ? [{ value: po.id, label: po.label }, ...found] : found;
+
   /* The receipt and the bill are different papers: switching drops the files; amount, lines and note stay. */
-  const switchKind = (k: Kind) => { if (k !== kind) { setKind(k); setFiles([]); setProblem(null); } };
+  /* A receipt read still running when the kind is switched (or the files are picked again) must not land: each read
+     carries the number it started with, and only the latest one, still on Claim to me, fills anything. */
+  const readNo = useRef(0);
+  const dateTyped = useRef(false);
+  const switchKind = (k: Kind) => { if (k !== kind) { readNo.current++; setReading(false); setKind(k); setFiles([]); setProblem(null); } };
 
   async function pick(list: FileList) {
     const chosen = [...files, ...Array.from(list)].slice(0, 8);
     setFiles(chosen);
     if (kind !== 'claim') return;
+    const mine = ++readNo.current;
     setReading(true);
     const read = await readReceipt(chosen);
+    if (mine !== readNo.current) return;
     setReading(false);
-    if (read.amountSen != null && amountSen == null) setAmountSen(read.amountSen);
-    if (read.date && read.date <= todayMyt() && !dateTouched) setSpendDate(read.date);
-    if (read.vendorName && !vendorName) setVendorName(read.vendorName);
+    /* Only what is still empty when the read comes back: a figure typed while it was reading stays. */
+    if (read.amountSen != null) setAmountSen(a => a ?? read.amountSen);
+    if (read.date && read.date <= todayMyt() && !dateTyped.current) setSpendDate(read.date);
+    if (read.vendorName) setVendorName(v => v || read.vendorName || '');
   }
 
   async function send() {
@@ -248,7 +258,7 @@ function HandInForm({ me, onDone }: { me: Me; onDone: () => void }) {
           <FileDropRow label="Add the receipt" hint="Photos or a PDF. The amount is read from it; check it before you send." accept="image/*,application/pdf" multiple
             onPick={l => void pick(l)} busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-            <DateField label="Date on the receipt" value={spendDate} onChange={v => { setSpendDate(v); setDateTouched(true); }} max={todayMyt()} />
+            <DateField label="Date on the receipt" value={spendDate} onChange={v => { setSpendDate(v); dateTyped.current = true; }} max={todayMyt()} />
             <MoneyInput label="Amount" valueSen={amountSen} onChangeSen={setAmountSen} />
             <Field label="Shop (optional)" value={vendorName} onChange={e => setVendorName(e.target.value)} maxLength={200} />
           </div>
@@ -262,8 +272,10 @@ function HandInForm({ me, onDone }: { me: Me; onDone: () => void }) {
           </span>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, alignItems: 'end' }}>
             <Field label="Find a PO (optional)" value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="PO number" />
-            <Select label="Purchase order" showLabel value={poId} onChange={v => { setPoId(v); if (v) setSupplier(null); }} placeholder="Not against a PO"
-              options={[{ value: '', label: 'Not against a PO' }, ...(pos.data?.purchaseOrders ?? []).map(p => ({ value: p.id, label: `${p.poNumber} · ${rm(p.totalSen)}` }))]} />
+            {/* The chosen PO stays an option when a new search no longer finds it, so the box never shows "Not against a
+                PO" while one is still chosen. */}
+            <Select label="Purchase order" showLabel value={poId} onChange={v => { const o = poOptions.find(x => x.value === v); setPo(o ? { id: o.value, label: o.label } : null); if (o) setSupplier(null); }}
+              options={[{ value: '', label: 'Not against a PO' }, ...poOptions]} />
             {!poId && <SupplierPicker value={supplier} onChange={setSupplier} allowNotListed={type === 'PAYMENT'} />}
             {!poId && !supplier && type === 'PAYMENT' && <Field label="Pay to (not on the list)" value={payeeName} onChange={e => setPayeeName(e.target.value)} maxLength={200} help="Finance checks the payee before paying." />}
           </div>
