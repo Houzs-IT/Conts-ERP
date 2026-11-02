@@ -616,7 +616,7 @@ function CalendarBoard() {
                   // grey never linked.
                   const link = u.channex === 'connected' ? { label: 'Connected to the channels', dot: TONE.success.line }
                     : u.channex === 'disconnected' ? { label: 'Disconnected from the channels', dot: TONE.critical.line }
-                    : u.channex === 'hostplatform' ? { label: 'On HostPlatform: bookings come in here, prices are changed on HostPlatform', dot: TONE.info.line }
+                    : u.channex === 'hostplatform' ? { label: 'On HostPlatform: reservations come in here, prices are changed on HostPlatform', dot: TONE.info.line }
                     : { label: 'Not connected to the channels', dot: TONE.neutral.line };
                   return (
                     <div key={u.id} className="relative z-[1] [border-bottom:1px_solid_var(--color-line)] [content-visibility:auto] [contain-intrinsic-size:auto_64px]">
