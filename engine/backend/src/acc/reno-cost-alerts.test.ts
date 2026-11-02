@@ -92,7 +92,7 @@ describe('sweepCostAlerts', () => {
   it('raises one line alert and leaves it open on the next sweep', async () => {
     const sb = world();
     expect(await sweepCostAlerts(sb, CO, { today: TODAY })).toMatchObject({ raised: 1 });
-    expect(await sweepCostAlerts(sb, CO, { today: TODAY })).toMatchObject({ raised: 0, updated: 1 });
+    expect(await sweepCostAlerts(sb, CO, { today: TODAY })).toMatchObject({ raised: 0, updated: 0, cleared: 0 });
     expect(sb.tables.reno_cost_alerts).toMatchObject([{ so_doc_no: SO, kind: 'LINE_OVER', so_item_id: 'k', status: 'OPEN', committed_sen: 950_000, gap_sen: 150_000 }]);
   });
 
@@ -104,6 +104,68 @@ describe('sweepCostAlerts', () => {
     sb.tables.purchase_order_items[0]!.line_total_sen = 1_010_000;
     expect(await sweepCostAlerts(sb, CO, { today: TODAY })).toMatchObject({ raised: 1 });
     expect(sb.tables.reno_cost_alerts.filter((a) => a.status === 'OPEN')).toHaveLength(1);
+  });
+
+  it('a kept alert does not come back when the committed figure falls (review 1)', async () => {
+    const sb = world();
+    await sweepCostAlerts(sb, CO, { today: TODAY });
+    Object.assign(sb.tables.reno_cost_alerts[0]!, { status: 'KEPT', resolved_at: '2026-11-20T05:00:00Z' });
+    /* Down from 950,000 to 880,000: still over the line by 80,000 (> 50,000) but less than when finance kept it. */
+    sb.tables.purchase_order_items[0]!.line_total_sen = 880_000;
+    expect(await sweepCostAlerts(sb, CO, { today: TODAY })).toMatchObject({ raised: 0 });
+  });
+
+  it('a decision made while the sweep runs is not overwritten (review 2)', async () => {
+    const sb = world();
+    await sweepCostAlerts(sb, CO, { today: TODAY });
+    sb.tables.purchase_orders[0]!.status = 'CANCELLED';
+    /* The user keeps it after the sweep read it as OPEN: the sweep's clear must not touch a row that is no longer OPEN. */
+    const realFrom = sb.from.bind(sb);
+    (sb as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      const q = realFrom(t) as { update: (...a: unknown[]) => unknown };
+      if (t === 'reno_cost_alerts') {
+        const upd = q.update.bind(q);
+        /* The Keep lands between the sweep's read and its write. */
+        q.update = (...a: unknown[]) => { Object.assign(sb.tables.reno_cost_alerts[0]!, { status: 'KEPT', note: 'x' }); return upd(...a); };
+      }
+      return q;
+    };
+    await sweepCostAlerts(sb, CO, { today: TODAY });
+    expect(sb.tables.reno_cost_alerts[0]!.status).toBe('KEPT');
+  });
+
+  it('an alert already open that the sweep did not see does not stop the sweep (review 3)', async () => {
+    const sb = world({
+      mfg_sales_order_items: [
+        { id: 'k', doc_no: SO, company_id: CO, qty: 1, total_sen: 0, line_cost_sen: 800_000, cancelled: false, description: 'Kitchen cabinet', created_at: '2026-11-03T03:00:00Z' },
+        { id: 'w', doc_no: SO, company_id: CO, qty: 1, total_sen: 0, line_cost_sen: 5_700_000, cancelled: false, description: 'Wet works', created_at: '2026-11-03T03:00:00Z' },
+        { id: 'b', doc_no: SO, company_id: CO, qty: 1, total_sen: 0, line_cost_sen: 100_000, cancelled: false, description: 'Basin', created_at: '2026-11-03T03:00:00Z' },
+      ],
+      purchase_order_items: [
+        { id: 'i1', company_id: CO, purchase_order_id: 'p1', so_item_id: 'k', qty: 1, line_total_sen: 950_000 },
+        { id: 'i2', company_id: CO, purchase_order_id: 'p1', so_item_id: 'b', qty: 1, line_total_sen: 300_000 },
+      ],
+    });
+    const realFrom = sb.from.bind(sb);
+    (sb as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      const q = realFrom(t) as Record<string, unknown>;
+      if (t !== 'reno_cost_alerts') return q;
+      const ins = (q.insert as (r: Row) => { select: () => { single: () => Promise<unknown> } }).bind(q);
+      q.insert = (r: Row) => (r.so_item_id === 'k'
+        ? { select: () => ({ single: async () => ({ data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "reno_cost_alerts_one_open"' } }) }) }
+        : ins(r));
+      return q;
+    };
+    expect(await sweepCostAlerts(sb, CO, { today: TODAY })).toMatchObject({ raised: 1 });
+    expect(sb.tables.reno_cost_alerts.map((a) => a.so_item_id)).toEqual(['b']);
+  });
+
+  it('an unchanged open alert is not rewritten', async () => {
+    const sb = world();
+    await sweepCostAlerts(sb, CO, { today: TODAY });
+    expect(await sweepCostAlerts(sb, CO, { today: TODAY })).toMatchObject({ updated: 0 });
+    sb.tables.purchase_order_items[0]!.line_total_sen = 990_000;
+    expect(await sweepCostAlerts(sb, CO, { today: TODAY })).toMatchObject({ updated: 1 });
   });
 
   it('a gone condition clears', async () => {

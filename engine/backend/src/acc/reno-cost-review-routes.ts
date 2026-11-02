@@ -113,6 +113,9 @@ export const changeExpectedCostHandler = async (c: Ctx): Promise<Response> => {
     return c.json({ error: 'bad_amount', message: 'Enter the new expected cost as an amount above zero.' }, 400);
   }
   if (!reason) return c.json({ error: 'reason_required', message: 'Say why the expected cost changes.' }, 400);
+  /* The expected cost the user saw: a change is made against it, so two saves at once never add up twice. */
+  const sawSen = body.expectedOldSen;
+  if (typeof sawSen !== 'number' || !Number.isInteger(sawSen)) return c.json({ error: 'bad_amount', message: 'Reload the page and try again.' }, 400);
   const soDocNo = String(c.req.param('soDocNo') ?? '');
   const sb = c.get('supabase');
   const today = todayMyt();
@@ -126,6 +129,8 @@ export const changeExpectedCostHandler = async (c: Ctx): Promise<Response> => {
   if (comp.handedOver || comp.status === 'CANCELLED') {
     return c.json({ error: 'closed', message: 'This project is handed over or cancelled; its expected cost can no longer change.' }, 409);
   }
+  const stale = () => c.json({ error: 'stale', message: 'The expected cost has changed since you opened this. Reload the page and look again.' }, 409);
+  if (comp.expectedCostSen !== sawSen) return stale();
   const by = who(c);
   /* Kept as an adjustment on top of the lines, so a later VO still moves it: new − (lines + the changes so far). */
   const adjustment = newSen - comp.expectedCostSen;
@@ -134,6 +139,8 @@ export const changeExpectedCostHandler = async (c: Ctx): Promise<Response> => {
     old_expected_sen: comp.expectedCostSen, new_expected_sen: newSen, adjustment_sen: adjustment,
     reason, changed_by: by.id, changed_by_name: by.name,
   }).select('*').single();
+  /* reno_expected_cost_changes_once: the same save already went through. */
+  if (error && (error as { code?: string }).code === '23505') return stale();
   if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
   const { error: aErr } = await sb.from('reno_cost_alerts').update({
     status: 'CHANGED', resolved_at: new Date().toISOString(), resolved_by: by.id, resolved_by_name: by.name, change_id: (change as Row).id,
@@ -153,14 +160,18 @@ export const keepCostAlertHandler = async (c: Ctx): Promise<Response> => {
   const sb = c.get('supabase');
   const id = String(c.req.param('id') ?? '');
   const { data: alert, error } = await sb.from('reno_cost_alerts').select('id, status').eq('company_id', co.companyId).eq('id', id).maybeSingle();
+  /* 22P02: not a uuid at all, so no such alert. */
+  if (error && (error as { code?: string }).code === '22P02') return c.json({ error: 'not_found' }, 404);
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   if (!alert) return c.json({ error: 'not_found' }, 404);
   if ((alert as Row).status !== 'OPEN') return c.json({ error: 'not_open', message: 'This alert has been dealt with already.' }, 409);
   const by = who(c);
-  const { error: uErr } = await sb.from('reno_cost_alerts').update({
+  const { data: kept, error: uErr } = await sb.from('reno_cost_alerts').update({
     status: 'KEPT', note, resolved_at: new Date().toISOString(), resolved_by: by.id, resolved_by_name: by.name,
-  }).eq('company_id', co.companyId).eq('id', id).eq('status', 'OPEN');
+  }).eq('company_id', co.companyId).eq('id', id).eq('status', 'OPEN').select('id').maybeSingle();
   if (uErr) return c.json({ error: 'update_failed', reason: uErr.message }, 500);
+  /* Cleared or answered by someone else since the check: nothing was kept. */
+  if (!kept) return c.json({ error: 'not_open', message: 'This alert has been dealt with already.' }, 409);
   return c.json({ ok: true });
 };
 

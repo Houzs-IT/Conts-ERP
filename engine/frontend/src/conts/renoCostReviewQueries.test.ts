@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { belowSpent, kindWord, pctFromBp, senFromRm } from "./renoCostReviewQueries";
+import { belowSpent, kindWord, mytDay, pctFromBp, senFromRm } from "./renoCostReviewQueries";
 
 // The expected-cost review on Renovation Projects (SOP 4.2.1; plan 2026-11-02 Task 4): the amounts typed in RM, the
 // warning below the cost spent, and the alert kinds in words.
@@ -27,5 +27,12 @@ describe("expected-cost review helpers", () => {
     expect(kindWord("LINE_OVER")).toBe("Line over budget");
     expect(kindWord("LINE_UNDER")).toBe("Line under budget");
     expect(kindWord("PROJECT_OVER")).toBe("Project over expected cost");
+  });
+});
+
+describe("mytDay", () => {
+  it("is the day in Malaysia", () => {
+    expect(mytDay("2026-11-19T23:30:00Z")).toBe("2026-11-20");
+    expect(mytDay("2026-11-20T15:59:00Z")).toBe("2026-11-20");
   });
 });

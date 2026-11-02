@@ -56,7 +56,7 @@ describe('change the expected cost', () => {
   test('stores the change as an adjustment, answers the open alerts and shows in the log', async () => {
     const sb = world();
     const a = app(sb, FIN);
-    const r = await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 7_500_000, reason: 'Kitchen upgrade, HOD confirmed' });
+    const r = await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 7_500_000, expectedOldSen: 6_500_000, reason: 'Kitchen upgrade, HOD confirmed' });
     expect(r.status).toBe(201);
     expect(sb.tables.reno_expected_cost_changes).toMatchObject([{ so_doc_no: SO, old_expected_sen: 6_500_000, new_expected_sen: 7_500_000, adjustment_sen: 1_000_000, changed_by: 5, changed_by_name: 'Chew' }]);
     expect(sb.tables.reno_cost_alerts.filter((x) => x.company_id === CO).map((x) => x.status)).toEqual(['CHANGED', 'CHANGED']);
@@ -74,8 +74,8 @@ describe('change the expected cost', () => {
   test('a second change is an adjustment on the first', async () => {
     const sb = world();
     const a = app(sb, FIN);
-    await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 7_500_000, reason: 'Up' });
-    await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 7_000_000, reason: 'Down a bit' });
+    await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 7_500_000, expectedOldSen: 6_500_000, reason: 'Up' });
+    await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 7_000_000, expectedOldSen: 7_500_000, reason: 'Down a bit' });
     expect(sb.tables.reno_expected_cost_changes.map((x) => x.adjustment_sen)).toEqual([1_000_000, -500_000]);
     expect(sb.tables.reno_expected_cost_changes[1]!.old_expected_sen).toBe(7_500_000);
   });
@@ -87,16 +87,63 @@ describe('change the expected cost', () => {
     expect((await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 7_500_000, reason: ' ' })).status).toBe(400);
     expect((await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 0, reason: 'x' })).status).toBe(400);
     expect((await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 'abc', reason: 'x' })).status).toBe(400);
-    expect((await send(a, 'POST', '/reno-projects/SO-NONE/expected-cost', { newExpectedSen: 1, reason: 'x' })).status).toBe(404);
+    expect((await send(a, 'POST', '/reno-projects/SO-NONE/expected-cost', { newExpectedSen: 1, expectedOldSen: 1, reason: 'x' })).status).toBe(404);
     const done = world({ mfg_sales_orders: [{ doc_no: SO, company_id: CO, status: 'RENO_COMPLETED', project_id: 7 }] });
-    const r = await send(app(done, FIN), 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 7_500_000, reason: 'x' });
+    const r = await send(app(done, FIN), 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 7_500_000, expectedOldSen: 6_500_000, reason: 'x' });
     expect(r.status).toBe(409);
     expect(await r.json()).toMatchObject({ error: 'closed' });
     expect(sb.tables.reno_expected_cost_changes).toEqual([]);
   });
 });
 
+describe('two saves at once (review 4)', () => {
+  test('a save from a figure that has moved on is refused, and so is the same save twice', async () => {
+    const sb = world();
+    const a = app(sb, FIN);
+    const body = { newExpectedSen: 7_500_000, expectedOldSen: 6_500_000, reason: 'Up' };
+    expect((await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, body)).status).toBe(201);
+    /* The second user still saw RM 65,000. */
+    const r = await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, body);
+    expect(r.status).toBe(409);
+    expect(await r.json()).toMatchObject({ error: 'stale' });
+    expect(sb.tables.reno_expected_cost_changes).toHaveLength(1);
+    /* Without the figure the user saw, nothing is saved. */
+    expect((await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 7_000_000, reason: 'x' })).status).toBe(400);
+  });
+
+  test('the database refusing a duplicate reads as stale', async () => {
+    const sb = world();
+    const realFrom = sb.from.bind(sb);
+    (sb as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      const q = realFrom(t) as Record<string, unknown>;
+      if (t === 'reno_expected_cost_changes') q.insert = () => ({ select: () => ({ single: async () => ({ data: null, error: { code: '23505', message: 'duplicate' } }) }) });
+      return q;
+    };
+    const r = await send(app(sb, FIN), 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 7_500_000, expectedOldSen: 6_500_000, reason: 'Up' });
+    expect(r.status).toBe(409);
+    expect(sb.tables.reno_cost_alerts.filter((x) => x.company_id === CO).map((x) => x.status)).toEqual(['OPEN', 'OPEN']);
+  });
+});
+
 describe('keep, the list and the count', () => {
+  test('keep says so only when it was kept; a bad id is not found (review 6)', async () => {
+    const sb = world();
+    const realFrom = sb.from.bind(sb);
+    (sb as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      const q = realFrom(t) as { update: (...a: unknown[]) => unknown };
+      if (t === 'reno_cost_alerts') {
+        const upd = q.update.bind(q);
+        /* The sweep clears it between the check and the write. */
+        q.update = (...a: unknown[]) => { sb.tables.reno_cost_alerts[0]!.status = 'CLEARED'; return upd(...a); };
+      }
+      return q;
+    };
+    const r = await send(app(sb, FIN), 'POST', '/reno-cost-alerts/a1/keep', { note: 'Offset' });
+    expect(r.status).toBe(409);
+    expect(sb.tables.reno_cost_alerts[0]!.status).toBe('CLEARED');
+    expect((await send(app(world(), FIN), 'POST', '/reno-cost-alerts/not-a-uuid/keep', { note: 'x' })).status).toBe(404);
+  });
+
   test('keep once only, with a reason, and it shows in the log', async () => {
     const sb = world();
     const a = app(sb, FIN);

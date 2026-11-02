@@ -119,7 +119,8 @@ export async function sweepCostAlerts(sb: Db, companyId: number, opts: { today?:
   const today = opts.today ?? todayMyt();
   const settings = await loadAlertSettings(sb, companyId);
   const rows = await renoProjectRows(sb, companyId, today);
-  const docs = rows.map((r) => r.soDocNo);
+  /* A handed-over contract raises nothing: its lines are not read. */
+  const docs = rows.filter((r) => !r.handedOver).map((r) => r.soDocNo);
   const nameOf = new Map(rows.map((r) => [r.soDocNo, r.projectName]));
 
   const items = await inChunks(docs, (b, f, t) => sb.from('mfg_sales_order_items').select('id, doc_no, qty, line_cost_sen, cancelled, description')
@@ -141,8 +142,10 @@ export async function sweepCostAlerts(sb: Db, companyId: number, opts: { today?:
     }),
   }, settings);
 
+  /* Open rows and answered ones only: CLEARED rows are history and never decide anything, so the read does not grow with them. */
   const existing = await paginateAll((f: number, t: number) => sb.from('reno_cost_alerts')
-    .select('id, so_doc_no, kind, so_item_id, status, committed_sen, budget_sen, resolved_at').eq('company_id', companyId).order('id').range(f, t));
+    .select('id, so_doc_no, kind, so_item_id, status, committed_sen, budget_sen, gap_sen, resolved_at').eq('company_id', companyId)
+    .in('status', ['OPEN', 'CHANGED', 'KEPT']).order('id').range(f, t));
   if (existing.error) fail('alerts', existing.error as { message?: string });
   const all = (existing.data ?? []) as Row[];
   const open = new Map(all.filter((a) => a.status === 'OPEN').map((a) => [keyOf(a), a]));
@@ -165,23 +168,32 @@ export async function sweepCostAlerts(sb: Db, companyId: number, opts: { today?:
     const figures = { budget_sen: c.budgetSen, committed_sen: c.committedSen, gap_sen: c.gapSen };
     const o = open.get(k);
     if (o) {
-      const { error } = await sb.from('reno_cost_alerts').update(figures).eq('company_id', companyId).eq('id', o.id);
+      if (Number(o.budget_sen) === c.budgetSen && Number(o.committed_sen) === c.committedSen && Number(o.gap_sen) === c.gapSen) continue;
+      /* Only while still OPEN: a decision made since the read keeps its figures (the baseline for raising it again). */
+      const { error } = await sb.from('reno_cost_alerts').update(figures).eq('company_id', companyId).eq('id', o.id).eq('status', 'OPEN');
       if (error) fail('update', error);
       result.updated += 1;
       continue;
     }
+    /* Raised again only when it got worse by another threshold since finance answered it: further over for an
+       over-budget alert, further under for a saving. Moving back towards the budget is not news. */
     const was = answered.get(k);
-    if (was && Math.abs(c.committedSen - Number(was.committed_sen ?? 0)) <= thresholdSen(c.budgetSen, settings)) continue;
+    if (was) {
+      const worse = c.kind === 'LINE_UNDER' ? Number(was.committed_sen ?? 0) - c.committedSen : c.committedSen - Number(was.committed_sen ?? 0);
+      if (worse <= thresholdSen(c.budgetSen, settings)) continue;
+    }
     const { data, error } = await sb.from('reno_cost_alerts').insert({
       company_id: companyId, so_doc_no: c.soDocNo, kind: c.kind, so_item_id: c.soItemId, ...figures, status: 'OPEN', raised_at: now,
     }).select('id').single();
+    /* Already open (another run raised it since the read): nothing to add, and the rest of the sweep goes on. */
+    if (error && (error as { code?: string }).code === '23505') continue;
     if (error) fail('insert', error);
     fresh.push({ ...c, id: String((data as Row).id) });
     result.raised += 1;
   }
   for (const [k, o] of open) {
     if (seen.has(k)) continue;
-    const { error } = await sb.from('reno_cost_alerts').update({ status: 'CLEARED', resolved_at: now }).eq('company_id', companyId).eq('id', o.id);
+    const { error } = await sb.from('reno_cost_alerts').update({ status: 'CLEARED', resolved_at: now }).eq('company_id', companyId).eq('id', o.id).eq('status', 'OPEN');
     if (error) fail('clear', error);
     result.cleared += 1;
   }

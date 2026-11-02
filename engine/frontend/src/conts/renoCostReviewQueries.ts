@@ -26,6 +26,8 @@ export function senFromRm(text: string): number | null {
   if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
   return Math.round(Number(t) * 100);
 }
+/** A timestamp's day in Malaysia (UTC+8): an alert raised at 07:00 MYT is that day, not the UTC day before. */
+export const mytDay = (ts: string): string => { const t = Date.parse(ts); return Number.isFinite(t) ? new Date(t + 8 * 3_600_000).toISOString().slice(0, 10) : ""; };
 export const belowSpent = (newSen: number, spentSen: number): boolean => newSen < spentSen;
 export const pctFromBp = (bp: number): string => String(bp / 100);
 export function kindWord(k: AlertKind): string {
@@ -60,9 +62,9 @@ function useInvalidateReview() {
 export function useChangeExpectedCost() {
   const done = useInvalidateReview();
   return useMutation({
-    mutationFn: (v: { soDocNo: string; newExpectedSen: number; reason: string }) => authedFetch(
+    mutationFn: (v: { soDocNo: string; newExpectedSen: number; expectedOldSen: number; reason: string }) => authedFetch(
       `/accounting/reno-projects/${encodeURIComponent(v.soDocNo)}/expected-cost`,
-      { method: "POST", body: JSON.stringify({ newExpectedSen: v.newExpectedSen, reason: v.reason }) },
+      { method: "POST", body: JSON.stringify({ newExpectedSen: v.newExpectedSen, expectedOldSen: v.expectedOldSen, reason: v.reason }) },
     ),
     onSuccess: done,
   });

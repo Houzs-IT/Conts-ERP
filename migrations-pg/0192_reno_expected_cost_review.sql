@@ -31,6 +31,9 @@ create table if not exists scm.reno_expected_cost_changes (
   created_at timestamptz not null default now()
 );
 create index if not exists reno_expected_cost_changes_doc on scm.reno_expected_cost_changes (company_id, so_doc_no, effective_on);
+-- Two saves of the same change at once (two people, a retry) would add the adjustment twice: the second is refused.
+create unique index if not exists reno_expected_cost_changes_once
+  on scm.reno_expected_cost_changes (company_id, so_doc_no, effective_on, old_expected_sen, new_expected_sen);
 alter table scm.reno_expected_cost_changes owner to scm_engine;
 alter table scm.reno_expected_cost_changes enable row level security;
 revoke all on scm.reno_expected_cost_changes from anon, authenticated;

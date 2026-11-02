@@ -9,7 +9,7 @@ import { DateField } from "../vendor/scm/components/DateField";
 import { useAuth } from "../auth/AuthContext";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
 import {
-  belowSpent, CHANGE_KEY, pctFromBp, senFromRm, useAlertSettings, useChangeExpectedCost, useCostAlerts, useCostLog, useKeepAlert,
+  belowSpent, CHANGE_KEY, mytDay, pctFromBp, senFromRm, useAlertSettings, useChangeExpectedCost, useCostAlerts, useCostLog, useKeepAlert,
   useSaveAlertSettings, type CostAlert, type CostLogRow,
 } from "./renoCostReviewQueries";
 import type { RenoProjectRow } from "./renoProjectsQueries";
@@ -34,7 +34,7 @@ export function ExpectedCostDialog({ row, onClose }: { row: Pick<RenoProjectRow,
     setNote(null);
     if (sen == null || sen <= 0) { setNote("Enter the new expected cost in RM."); return; }
     if (!reason.trim()) { setNote("Say why the expected cost changes."); return; }
-    try { await save.mutateAsync({ soDocNo: row.soDocNo, newExpectedSen: sen, reason: reason.trim() }); onClose(); } catch (e) { setNote(errText(e)); }
+    try { await save.mutateAsync({ soDocNo: row.soDocNo, newExpectedSen: sen, expectedOldSen: row.expectedCostSen, reason: reason.trim() }); onClose(); } catch (e) { setNote(errText(e)); }
   };
   return (
     <Modal title="Change expected cost" ariaLabel="Change expected cost" onClose={onClose} width="min(520px, 100%)">
@@ -123,7 +123,7 @@ export function NeedsReview({ rows }: { rows: RenoProjectRow[] }) {
       render: (a) => <span style={{ ...num, color: a.kind === "LINE_UNDER" ? undefined : BAD }}>{a.kind === "LINE_UNDER" ? "−" : "+"}{rm(a.gap_sen)}</span>,
       getValue: (a) => a.gap_sen, exportValue: (a) => (a.kind === "LINE_UNDER" ? -a.gap_sen : a.gap_sen) / 100, exportFormat: "money",
     },
-    { key: "raised", label: "Raised", render: (a) => a.raised_at.slice(0, 10), getValue: (a) => a.raised_at },
+    { key: "raised", label: "Raised", render: (a) => mytDay(a.raised_at), getValue: (a) => a.raised_at },
     {
       key: "act", label: "",
       render: (a) => (canAct ? (
