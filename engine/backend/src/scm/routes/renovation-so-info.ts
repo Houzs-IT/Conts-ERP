@@ -38,6 +38,7 @@ import { cleanRoomName, cleanRoomSections, readPropertyInput, renoSoRequiredProb
 import { canonicalizeVariants } from '../shared/so-variant-rule';
 import { buildVariantSummary } from '../shared/variant-summary';
 import { variantCategoryOf } from '../lib/renovation-flow-rules';
+import { checkAllowedOptions, loadProductAndModel, variantCheckUnavailableResponse } from '../lib/allowed-options-check';
 import { lineEditsVo } from './renovation';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
@@ -283,6 +284,14 @@ renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
   const remark = typeof body.remark === 'string' ? body.remark.trim().slice(0, 500) : (line.remark ?? '');
   const sameOptions = JSON.stringify(canonicalizeVariants(group, (before ?? {}) as Record<string, unknown>)) === JSON.stringify(variants);
   if (sameOptions && remark === (line.remark ?? '')) return c.json({ ok: true, changed: false });
+  /* The pickers offer only the Maintenance master's options for the SKU's model; the server holds the same line as the
+     SO save does, so a value from anywhere else is refused (owner, 3 Nov 2026). A failed catalog read refuses too. */
+  if (!sameOptions) {
+    const { product, model, lookupError } = await loadProductAndModel(c.get('supabase'), line.item_code, line.company_id);
+    if (lookupError) return c.json(variantCheckUnavailableResponse(lookupError), 409);
+    const bad = checkAllowedOptions(product, model, variants as Parameters<typeof checkAllowedOptions>[2]);
+    if (bad) return c.json({ ...bad, itemCode: line.item_code }, 400);
+  }
   if (po && !sameOptions) {
     if (line.contract) {
       return lineEditsVo(c, docNo, [{ soItemId: itemId, variants, remark }], `Options of ${line.item_code} changed (on ${po.po_number})`);
