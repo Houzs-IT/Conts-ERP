@@ -65,15 +65,15 @@ const LEDGER_ICON: Record<string, string> = {
 
 /** The Finance groups, in order, each by its screens: finance's own desk screens by key, the ledger's by slug
  *  (chew, 2 Nov 2026). Every ledger screen is in exactly one group. */
-const FINANCE_LAYOUT: Array<[group: string, entries: string[]]> = [
-  ['TO APPROVE', ['desk:approvals', 'payment-requests', 'limit-requests', 'petty-cash']],
-  ['SUPPLIERS', ['ap-invoices', 'payment-vouchers', 'supplier-ledger', 'creditor-ageing']],
-  ['RENTAL BILLS', ['desk:payables', 'desk:utilityBills']],
-  ['BILLING', ['deposit-invoices', 'other-debtors', 'credit-debit-notes', 'not-yet-billed', 'e-invoice']],
-  ['COLLECTIONS', ['money-received', 'official-receipts', 'debtors', 'customer-ledger', 'outstanding', 'debtor-ageing']],
-  ['BANK', ['daily-bank', 'bank-reconciliation', 'merchant-recon']],
-  ['REPORTS', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'renovation-projects']],
-  ['SETUP', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup']],
+const FINANCE_LAYOUT: Array<[part: string, entries: string[]]> = [
+  ['To approve', ['desk:approvals', 'payment-requests', 'limit-requests', 'petty-cash']],
+  ['Suppliers', ['ap-invoices', 'payment-vouchers', 'supplier-ledger', 'creditor-ageing']],
+  ['Rental bills', ['desk:payables', 'desk:utilityBills']],
+  ['Billing', ['deposit-invoices', 'other-debtors', 'credit-debit-notes', 'not-yet-billed', 'e-invoice']],
+  ['Collections', ['money-received', 'official-receipts', 'debtors', 'customer-ledger', 'outstanding', 'debtor-ageing']],
+  ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon']],
+  ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'renovation-projects']],
+  ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup']],
 ];
 
 export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix: '' | 'Supply', workspace: Workspace): NavGroup[] {
@@ -88,11 +88,22 @@ export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix:
   const ledger = new Map(LEDGER_SCREENS.map(s => [s.slug, {
     key: `ledger_${s.slug}${keySuffix}`, label: s.label, icon: LEDGER_ICON[s.slug] ?? 'book-open', path: `${prefix}/${s.slug}`, area: 'ledger',
   } as NavItem]));
-  return FINANCE_LAYOUT.map(([group, entries]) => ({
-    label: `${FINANCE_PREFIX} · ${group}`, workspace, phone: false,
-    items: entries.map(e => (e.startsWith('desk:') ? desk[e.slice(5)] : ledger.get(e))).filter((i): i is NavItem => !!i),
-  }));
+  /* One FINANCE group (chew, 2 Nov 2026: one Finance category with its parts inside): each part opens to its screens. */
+  return [{
+    label: FINANCE_PREFIX, workspace, phone: false,
+    items: FINANCE_LAYOUT.map(([part, entries]): NavItem => ({
+      key: `finance_${part.toLowerCase().replace(/\s+/g, '_')}${keySuffix}`, label: part, icon: FINANCE_PART_ICON[part] ?? 'folder',
+      children: entries.map(e => (e.startsWith('desk:') ? desk[e.slice(5)] : ledger.get(e))).filter((i): i is NavItem => !!i)
+        .map(i => ({ key: i.key, label: i.label, path: i.path!, area: i.area, badge: i.badge, icon: i.icon })),
+    })),
+  }];
 }
+
+/** The icon each Finance part shows in the desktop menu. */
+const FINANCE_PART_ICON: Record<string, string> = {
+  'To approve': 'stamp', Suppliers: 'truck', 'Rental bills': 'zap', Billing: 'file-text',
+  Collections: 'hand-coins', Bank: 'landmark', Reports: 'chart-line', Setup: 'settings',
+};
 
 export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
@@ -251,7 +262,10 @@ export const NAV: NavGroup[] = [
 /** Approvals are off unless Settings turns them on (owner, 11 Oct 2026); the page stays reachable by its address.
  *  Both Finance groups carry it (keys approvals and approvalsSupply), so it is matched by its badge. */
 export const withoutOffItems = (groups: NavGroup[], approvalsOn: boolean) =>
-  groups.map(g => ({ ...g, items: g.items.filter(it => it.badge !== 'approvals' || approvalsOn) }));
+  groups.map(g => ({ ...g, items: g.items
+    .filter(it => it.badge !== 'approvals' || approvalsOn)
+    .map(it => (it.children ? { ...it, children: it.children.filter(c => c.badge !== 'approvals' || approvalsOn) } : it))
+    .filter(it => !it.children || it.children.length > 0) }));
 
 export const WORKSPACE_LABEL: Record<Workspace, string> ={ rental: 'The Conts', supply: 'Dream Crafter' };
 
