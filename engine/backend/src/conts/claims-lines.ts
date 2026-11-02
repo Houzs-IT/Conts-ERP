@@ -7,7 +7,7 @@ import { receiptAccountProblem } from './petty-cash-routes';
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in the routes it serves */
 export type LineRow = { department: string; unit_id: string | null; maintenance_issue_id: string | null; project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number };
 
-/** The lines a person sends, made safe: their own department by default, a maintenance job's unit and Rental, and only
+/** The lines a person sends, made safe: their own department, a maintenance job's unit and Rental, no account, and only
  *  jobs they may name. Returns a message when something is wrong. */
 export async function buildLines(sb: any, staff: Staff, raw: unknown, amountSen: number, companyId: number): Promise<{ ok: true; lines: LineRow[] } | { ok: false; message: string }> {
   const list = Array.isArray(raw) && raw.length ? (raw as Array<Record<string, unknown>>) : [{ amountSen }];
@@ -26,13 +26,15 @@ export async function buildLines(sb: any, staff: Staff, raw: unknown, amountSen:
     const job = jobId ? jobs.get(jobId) : undefined;
     if (jobId && !job) return { ok: false, message: 'That maintenance job was not found.' };
     if (job && staff.field && (job.assignee_user_id !== staff.userId || job.state === 'resolved')) return { ok: false, message: 'Put the receipt on one of your own open jobs.' };
-    const dept = job ? 'rental' : ['rental', 'supply', 'shared'].includes(String(l.department)) ? String(l.department) : lineDepartment(staff.side);
+    /* The person's department, whatever is sent (chew, 2 Nov 2026: the department follows the user); a job is Rental.
+       Finance corrects it while checking when a cost belongs elsewhere. */
+    const dept = job ? 'rental' : lineDepartment(staff.side);
     const project = l.projectId == null || l.projectId === '' ? null : Number(l.projectId);
     if (project != null && !(Number.isInteger(project) && project > 0)) return { ok: false, message: 'Pick the project again.' };
     out.push({
       department: dept, unit_id: job ? job.unit_id : l.unitId ? String(l.unitId) : null, maintenance_issue_id: jobId, project_id: project,
-      /* Field staff choose no account: finance sets it while checking. */
-      account_code: !staff.field && l.accountCode ? String(l.accountCode).trim() : null,
+      /* Nobody who hands in chooses the account (chew, 2 Nov 2026): finance sets it while checking. */
+      account_code: null,
       amount_sen: amount, description: l.description ? String(l.description).slice(0, 300) : null, sort: i,
     });
   }
