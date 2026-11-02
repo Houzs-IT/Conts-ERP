@@ -48,3 +48,12 @@ opened, all rolled back. Write (EMBASSY, OTHER; run 41473106495), one transactio
 Not written: KL 48 (44 units: 19 Type A, 25 Type B) until the per-unit price is given; B-17-09, B-25-08 and B-35-13A
 have no AutoCount accounts. The Other tab's two rows whose unit number is a date (Puchong Savile D'Lake, M Astra) have
 no project.
+
+## Catalog SKUs for the three unmatched items (owner, 3 Nov 2026)
+
+`docs/catalog-import/batch3/batch3-inhouse-skus.sql` opens FUR-GEN-DINTABLE (Dining table, Furniture / Dining),
+FUR-GEN-WORKTABLE (Working / study table, Furniture / Tables) and RN-INSTALLATION (Service - Installation, new
+sub-category Service / Installation), in the shape of sku-batch2. `repoint-skus.sql` then moves the 46 Embassy lines
+that sat on RN-PROJECT_MGMT (18 dining table, 10 working table, 18 installation) to them, on the SO items and their
+contract lines, with one audit row per SO; prices, quantities, rooms and totals are unchanged (RM 579,770.00). Both ran
+in one transaction on production, after a dry run that rolled back. The quotations keep their codes (frozen revisions).
