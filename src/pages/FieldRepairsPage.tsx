@@ -292,7 +292,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
                   { value: 'before', label: <>{tr.before} <span className="text-muted-ink tabular-nums">{counts.before}</span></> },
                   { value: 'after', label: <>{tr.after} <span className="text-muted-ink tabular-nums">{counts.after}</span></> },
                 ]} />
-                <MediaGallery key={stage} items={media.filter(m => m.stage === stage)} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: stage }) : undefined}
+                <MediaGallery key={stage} items={media.filter(m => m.stage === stage)} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: stage }, `${j.propertyName} ${j.unitNumber}`) : undefined}
                   onDone={refresh} addLabel={stage === 'before' ? tr.addBefore : tr.addAfter}
                   emptyText={stage === 'before' ? tr.noBefore : tr.noAfter} />
               </section>
@@ -401,7 +401,7 @@ function ReportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
     }
     if (picked.files.length) {
       setSending(true);
-      const failed = await picked.send(id);
+      const failed = await picked.send(inBuilding.filter(u => u.id === f.unitId).map(u => `${u.propertyName} ${u.unitNumber}`)[0] ?? '', id);
       if (failed.length) toast({ tone: 'warning', title: tf.someNotAdded, body: tf.notAdded(failed.join(', ')) });
     }
     onDone();

@@ -17,8 +17,8 @@ export interface CleanProofWords {
  * After (proof of work, at least one needed to complete). Several files picked at once go up one request each, with
  * progress and the names of any that failed (MediaGallery). Uploading never completes the job (owner, 2 Nov 2026).
  */
-export function CleanProof({ taskId, media, done, words, hint, onUploaded, onRemove, openAddRef }: {
-  taskId: string; media: MediaItem[]; done: boolean; words: CleanProofWords; hint?: ReactNode;
+export function CleanProof({ taskId, unitLabel, media, done, words, hint, onUploaded, onRemove, openAddRef }: {
+  taskId: string; unitLabel: string; media: MediaItem[]; done: boolean; words: CleanProofWords; hint?: ReactNode;
   onUploaded: () => void; onRemove?: (m: MediaItem) => void; openAddRef?: { current: (() => void) | null };
 }) {
   const [stage, setStage] = useState<CleanStage>('after');
@@ -37,7 +37,7 @@ export function CleanProof({ taskId, media, done, words, hint, onUploaded, onRem
         { value: 'after', label: <>{words.after} <span className="text-muted-ink tabular-nums">{counts.after}</span></> },
       ]} />
       {/* Keyed by stage so a batch still uploading is not shown under the other stage. */}
-      <MediaGallery key={stage} items={shown} upload={done ? undefined : uploadTo(`/tasks/${taskId}/photos`, { stage })} onDone={() => onUploaded()}
+      <MediaGallery key={stage} items={shown} upload={done ? undefined : uploadTo(`/tasks/${taskId}/photos`, { stage }, unitLabel)} onDone={() => onUploaded()}
         onRemove={done ? undefined : onRemove} addLabel={stage === 'before' ? words.addBefore : words.addAfter}
         emptyText={stage === 'before' ? words.noBefore : words.noAfter} openAddRef={inner} />
     </section>

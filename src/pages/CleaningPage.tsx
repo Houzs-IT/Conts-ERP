@@ -1001,7 +1001,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
       {!row.external && row.previous && !done && <LateCheckoutBlock reservationId={row.previous.reservationId} onChanged={onChanged} />}
 
       <div className="flex flex-col gap-2">
-        {data ? <CleanProof taskId={row.id} media={data.media} done={done} onUploaded={refresh} openAddRef={openAdd}
+        {data ? <CleanProof taskId={row.id} unitLabel={unitLabel} media={data.media} done={done} onUploaded={refresh} openAddRef={openAdd}
             hint={!done && files === 0 ? 'At least 1 After photo or video to complete'
               : <PhotosPdfButton items={[...data.media].sort((a, b) => Number(stageOf(a) === 'after') - Number(stageOf(b) === 'after'))} title={unitLabel}
                 sub={`Cleaning (${KIND_LABEL[row.kind] ?? row.kind}) for ${dayLabel(row.day)}`} fileStem={unitLabel} label={m => (stageOf(m) === 'before' ? 'Before' : 'After')} />}

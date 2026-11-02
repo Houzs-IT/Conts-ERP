@@ -275,7 +275,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
         {/* Photos only once the job is started: photos taken before the start would not prove the finished work. Uploading
             never completes the job; Mark complete in the bar below is its own tap (owner, 2 Nov 2026). */}
         {phase !== 'todo' && (detail.data
-          ? <CleanProof taskId={j.id} media={detail.data.media} done={j.done} onUploaded={() => { detail.reload(); onChanged(); }}
+          ? <CleanProof taskId={j.id} unitLabel={`${j.unit.propertyName} ${j.unit.unitNumber}`} media={detail.data.media} done={j.done} onUploaded={() => { detail.reload(); onChanged(); }}
               onRemove={m => void remove(m)}
               hint={phase === 'started' ? <StatusBadge tone="warning">{t.jobs.proofRequired}</StatusBadge>
                 : phase === 'proof' ? <StatusBadge tone="success"><span className="inline-flex items-center gap-1">{t.jobs.proofAttached}<Icon name="Check" size="sm" style={{ width: 13, height: 13 }} /></span></StatusBadge>
