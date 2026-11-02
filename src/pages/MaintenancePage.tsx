@@ -162,7 +162,7 @@ export default function MaintenancePage() {
   );
 
   return (
-    <div className="flex flex-col gap-4 flex-1 min-h-0">
+    <div className="flex flex-col gap-4 flex-1 lg:min-h-0">
       <PageHeader title="Maintenance" sub={sub}
         actions={<>
           <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/hr/employees?tab=employee-master')}>Technicians</Button>
