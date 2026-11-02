@@ -335,7 +335,7 @@ export default function BookingsPage() {
     // Every value the reservation carries (owner, 2 Nov 2026); the payout shows by default, the breakdown under Columns.
     { key: 'expected', label: 'Host payout', type: 'money', value: r => r.expectedPayout, filter: false, width: 120,
       title: 'What the channel pays us: the guest total less its service fee and any tax it keeps.' },
-    { key: 'room', label: 'Room revenue', type: 'money', value: r => r.roomRevenue ?? null, hidden: true, filter: false },
+    { key: 'room', label: 'Accommodation', type: 'money', value: r => r.roomRevenue ?? null, hidden: true, filter: false },
     { key: 'cleaning', label: 'Cleaning fee', type: 'money', value: r => r.cleaningFee ?? null, hidden: true, filter: false },
     { key: 'extras', label: 'Extra fees', type: 'money', value: r => r.extraFees ?? null, hidden: true, filter: false },
     { key: 'sst', label: 'SST', type: 'money', value: r => r.sst ?? null, hidden: true, filter: false },
