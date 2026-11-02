@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { sortForCleaner, sortGroupsForCleaner, checkInBucket, compareForCleaner, VERY_LATE_CHECK_IN } = await import('./cleanOrder.ts');
+const { sortForCleaner, sortBuildings, checkInBucket, compareForCleaner, VERY_LATE_CHECK_IN } = await import('./cleanOrder.ts');
 
 const units = rows => sortForCleaner(rows, r => r).map(r => r.unit);
 
@@ -92,22 +92,34 @@ test('the input is not changed and the comparison is symmetric', () => {
   assert.equal(Math.sign(compareForCleaner(rows[0], rows[1])), -Math.sign(compareForCleaner(rows[1], rows[0])));
 });
 
-test('buildings sort by their most urgent open job; external last; all-done buildings sink', () => {
-  const g = (name, jobs, ext = false) => ({ name, jobs, ext });
-  const order = sortGroupsForCleaner([
-    g('Alpha', [{ checkIn: null }, { checkIn: '21:00' }]),
-    g('External', [{ checkIn: null }], true),
-    g('Bravo', [{ checkIn: '16:00' }, { checkIn: null }]),
-    g('Charlie', [{ checkIn: '12:00', done: true }]),
-    g('Delta', [{ checkIn: '13:00' }]),
-  ], x => x.jobs, x => x.name, x => x.ext).map(x => x.name);
-  assert.deepEqual(order, ['Delta', 'Bravo', 'Alpha', 'Charlie', 'External']);
+test('a guest still in the unit goes below every unit that can be cleaned now, whatever its check-in', () => {
+  assert.deepEqual(units([
+    { unit: 'in-soon', checkIn: '13:00', guestIn: true, checkOut: '11:00' },
+    { unit: 'free-late', checkIn: '22:00' },
+    { unit: 'free-none', checkIn: null },
+    { unit: 'free-soon', checkIn: '15:00' },
+  ]), ['free-soon', 'free-none', 'free-late', 'in-soon']);
 });
 
-test('buildings whose lead jobs tie fall back to name order', () => {
-  const order = sortGroupsForCleaner([
-    { name: 'Zeta', jobs: [{ checkIn: '15:00', unit: 'A-1' }] },
-    { name: 'Eta', jobs: [{ checkIn: '15:00', unit: 'Z-9' }] },
-  ], x => x.jobs, x => x.name).map(x => x.name);
-  assert.deepEqual(order, ['Eta', 'Zeta']);
+test('guests still in: the earliest due out first (11:00 before a 13:00 late checkout), done jobs still last', () => {
+  assert.deepEqual(units([
+    { unit: 'late-13', checkIn: '15:00', guestIn: true, checkOut: '13:00' },
+    { unit: 'done', checkIn: '12:00', done: true },
+    { unit: 'std-11', checkIn: null, guestIn: true, checkOut: '11:00' },
+    { unit: 'free', checkIn: null },
+  ]), ['free', 'std-11', 'late-13', 'done']);
+});
+
+test('guests due out at the same time fall back to the check-in rule', () => {
+  assert.deepEqual(units([
+    { unit: 'b', checkIn: null, guestIn: true, checkOut: '11:00' },
+    { unit: 'a', checkIn: '14:00', guestIn: true, checkOut: '11:00' },
+  ]), ['a', 'b']);
+});
+
+test('buildings: always A to Z, external last, never by urgency', () => {
+  const order = sortBuildings([
+    { name: 'Trion KL' }, { name: 'External', ext: true }, { name: 'arte Mont Kiara' }, { name: 'Skyline KL' }, { name: 'Continew' },
+  ], x => x.name, x => !!x.ext).map(x => x.name);
+  assert.deepEqual(order, ['arte Mont Kiara', 'Continew', 'Skyline KL', 'Trion KL', 'External']);
 });

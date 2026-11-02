@@ -26,7 +26,7 @@ id = "e0781ccdee9046919161c28cb95694c0"
 [triggers]
 crons = [
   "* * * * *",      # Channex outbox: retries and anything the request-time flush missed
-  "*/5 * * * *",    # HostPlatform: pull the reservations it changed since the last run (its webhook slot is StreamHost's)
+  "*/5 * * * *",    # HostPlatform: pull the reservations it changed since the last run (its webhook slot is StreamHost's); "Guest has left" by itself at the checkout time
   "*/15 * * * *",   # email / WhatsApp outbox (quiet hours, retries); release calendar blocks of finished repair jobs
   "0 * * * *",      # overdue cleans and repairs; statements finalised but unsent; punches open over 16 h marked forgotten
   "0 0 * * *",      # 08:00 Malaysia: the "today" digest for operations
