@@ -70,8 +70,10 @@ describe('carryToAddedLine (quickVo, the line a VO adds)', () => {
   it('same SKU with new options: the new line takes the options given, not the old line options', async () => {
     const db = recordingDb();
     await carryToAddedLine(db, { ...base, respec: true, variants: { fabricCode: 'PC1461-03', colourId: 'PC1461-03', fabricId: 'PC1461', divanHeight: '6"', legHeight: '1"', gap: '4"', totalHeight: '11"', remark: 'x' } }, 'NEW', 'bedframe');
-    const [upd, plan] = db.calls;
-    expect(db.calls).toHaveLength(2);
+    const [upd, room, plan] = db.calls;
+    expect(db.calls).toHaveLength(3);
+    expect(room.text).toMatch(/set room = coalesce/);
+    expect(room.params).toEqual(['NEW', 'OLD']);
     expect(upd.text).toMatch(/set variants = \$2::text::jsonb, description2 = \$3/);
     expect(upd.text).not.toMatch(/variants = o\.variants/);
     expect(JSON.parse(String(upd.params[1]))).toEqual({ fabricCode: 'PC1461-03', colourId: 'PC1461-03', fabricId: 'PC1461', divanHeight: '6"', legHeight: '1"', gap: '4"', totalHeight: '11"' });
@@ -89,6 +91,7 @@ describe('carryToAddedLine (quickVo, the line a VO adds)', () => {
   it('same SKU, no new options: copies the old line as before', async () => {
     const db = recordingDb();
     await carryToAddedLine(db, { ...base, respec: false }, 'NEW', 'bedframe');
-    expect(db.calls[0].text).toMatch(/variants = o\.variants/);
+    expect(db.calls.map((c) => c.text).join('\n')).toMatch(/variants = o\.variants/);
+    expect(db.calls.map((c) => c.text).join('\n')).toMatch(/set room = coalesce/);
   });
 });

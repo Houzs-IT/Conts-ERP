@@ -454,6 +454,13 @@ export async function carryToAddedLine(db: RenoDb, a: QuickAdd, to: string, grou
     }
   }
   if (!a.fromSoItemId) return;
+  /* The replacement stands in the same room: the VO section carries the room's heading, but the SO line's own room
+     (migration 0112, what the PO tab groups and prints by) was left empty on every replaced line. */
+  await db.q(
+    `update scm.mfg_sales_order_items n set room = coalesce(nullif(trim(n.room), ''), o.room), location = coalesce(nullif(trim(n.location), ''), o.location)
+       from scm.mfg_sales_order_items o where n.id = $1 and o.id = $2`,
+    [to, a.fromSoItemId],
+  );
   if (a.sameSku && !a.respec) {
     await db.q(
       `update scm.mfg_sales_order_items n set variants = o.variants, description2 = coalesce(o.description2, n.description2), remark = o.remark
