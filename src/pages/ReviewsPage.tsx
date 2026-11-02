@@ -7,6 +7,10 @@ import { ReviewsOverview } from './reviews/ReviewsOverview';
 import { ReviewFeed } from './reviews/ReviewFeed';
 import { OutstandingStays } from './reviews/OutstandingStays';
 import { BAD_REVIEW_MAX } from '../lib/reviewRules';
+import { useState } from 'react';
+import { Button } from '../components/Button';
+import Icon from '../components/Icon';
+import { DemoReviewModal, useDemoOn } from '../components/demo/DemoRecords';
 
 type Tab = 'overview' | 'all' | 'bad' | 'outstanding';
 const TABS: { key: Tab; label: string }[] = [
@@ -25,14 +29,20 @@ export default function ReviewsPage() {
   const canReply = mayWork(user, 'pricing');
   const raw = url.get('tab');
   const tab: Tab = (TABS.some(t => t.key === raw) ? raw : 'overview') as Tab;
+  const demoOn = useDemoOn();
+  const [adding, setAdding] = useState(false);
+  // A new sample review shows on the next read of the list.
+  const [round, setRound] = useState(0);
 
   return (
     <>
-      <PageHeader title="Reviews" sub={`Guest reviews from every channel · a bad review is ${BAD_REVIEW_MAX} stars or fewer`} />
+      <PageHeader title="Reviews" sub={`Guest reviews from every channel · a bad review is ${BAD_REVIEW_MAX} stars or fewer`}
+        primary={demoOn ? <Button size="sm" variant="primary" icon={<Icon name="FlaskConical" size="sm" />} onClick={() => setAdding(true)}>Sample review</Button> : undefined} />
+      {adding && <DemoReviewModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); setRound(n => n + 1); url.set({ tab: 'all' }); }} />}
       <TabBar id="reviews" label="Reviews views" tabs={TABS} value={tab}
         // Drill-down filters carry across tabs (a unit picked in Overview stays picked); the list's own ones do not.
         onChange={k => url.set({ tab: k === 'overview' ? null : k, page: null, rating: null, reply: null, window: null, from: null, to: null, q: null, matched: null })} />
-      <div id={panelId('reviews')} role="tabpanel" className="flex flex-col gap-4 min-w-0">
+      <div key={round} id={panelId('reviews')} role="tabpanel" className="flex flex-col gap-4 min-w-0">
         {tab === 'overview' && <ReviewsOverview />}
         {tab === 'all' && <ReviewFeed bad={false} canReply={canReply} />}
         {tab === 'bad' && <ReviewFeed bad canReply={canReply} />}

@@ -13,6 +13,8 @@ export interface CalendarBlock {
   channelFee?: number; ref: string | null; reason: string | null;
   /** Why dates are held: maintenance, owner_stay or other (blocks made from the calendar since migration 0092). */
   blockReason?: string | null;
+  /** Demo mode: a sample reservation, or a real one changed in Demo mode. */
+  sample?: 'demo' | 'shadow';
 }
 
 /** Shared select styling for the calendar's filter row and modals. */

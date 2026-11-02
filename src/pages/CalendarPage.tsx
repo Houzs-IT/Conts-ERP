@@ -9,6 +9,7 @@ import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { BookingDrawer } from '../components/booking/BookingDrawer';
+import { DemoReservationModal, useDemoOn } from '../components/demo/DemoRecords';
 import { channelNote, type ChannelSync } from '../lib/bookingStatus';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
@@ -180,6 +181,8 @@ function CalendarBoard() {
   const setProperty = (b: string) => setParam('b', b === 'all' ? null : b);
   const from = startParam ?? addDaysIso(todayIso, -LEAD_DAYS), to = addDaysIso(from, wantSpan - 1);
   // One building asks the server for just that building: a few KB instead of about 150.
+  const demoOn = useDemoOn();
+  const [addingSample, setAddingSample] = useState(false);
   const { data, loading, error, reload } = useApi<Payload>(`/reservations/calendar?from=${from}&to=${to}${property !== 'all' ? `&property=${encodeURIComponent(property)}` : ''}`, FALLBACK);
   const { user } = useSession();
   const [folded, setFolded] = useFolded(user?.id);
@@ -466,11 +469,13 @@ function CalendarBoard() {
           // Phones: icon-only 42px squares, each with its own label for screen readers.
           <div className="flex items-center gap-2">
             {canSetRates && <button type="button" className={toolBtn} onClick={() => setRateUpdate({})} aria-label="Update prices" title="Update prices"><Icon name="Tag" size="sm" /></button>}
+            {demoOn && <button type="button" className={toolBtn} onClick={() => setAddingSample(true)} aria-label="Sample reservation" title="Sample reservation"><Icon name="FlaskConical" size="sm" /></button>}
             <button type="button" className={toolBtn} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} aria-label="Block nights" title="Block nights"><Icon name="Ban" size="sm" /></button>
             <button type="button" className={toolBtn} onClick={refresh} disabled={syncing} aria-label="Refresh" title="Get new reservations from the channels">{refreshIcon}</button>
           </div>
         ) : (
           <>
+            {demoOn && <Button size="sm" variant="primary" icon={<Icon name="FlaskConical" size="sm" />} onClick={() => setAddingSample(true)}>Sample reservation</Button>}
             {canSetRates && <Button size="sm" variant="secondary" icon={<Icon name="Tag" size="sm" />} onClick={() => setRateUpdate({})}>Update prices</Button>}
             <Button size="sm" variant="secondary" icon={<Icon name="Ban" size="sm" />} onClick={() => { setBlockPrefill({}); setBlockWizard(true); }} title="Block nights">Block nights</Button>
             <Button size="sm" variant="secondary" icon={refreshIcon} onClick={refresh} disabled={syncing} disabledReason="Getting new reservations from the channels" title="Get new reservations from the channels">Refresh</Button>
@@ -848,6 +853,7 @@ function CalendarBoard() {
         </div>
       </div>
 
+      {addingSample && <DemoReservationModal onClose={() => setAddingSample(false)} onSaved={() => { setAddingSample(false); reload(); }} />}
       {/* One booking drawer for reservations and blocks, the same one the Bookings list uses. */}
       <BookingDrawer id={openBlock?.id ?? null} onClose={() => setOpenBlock(null)} onChanged={() => reload()}
         summary={openBlock ? (() => { const u = allUnits.find(x => x.id === openBlock.unitId); return {

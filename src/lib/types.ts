@@ -50,6 +50,8 @@ export interface SessionUser {
   twoStepSetupRequired?: boolean;
   /** EMP-001: signs in with this employee ID and a PIN (a cleaner or technician given app access), so new secrets are 6-digit PINs. */
   employeeId?: string | null;
+  /** Demo mode (src/components/DemoMode.tsx): whether this person may use the switch, and whether it is on in this browser. */
+  demo?: { allowed: boolean; on: boolean };
 }
 
 export type AccessLevel = 'none' | 'view' | 'edit' | 'full';

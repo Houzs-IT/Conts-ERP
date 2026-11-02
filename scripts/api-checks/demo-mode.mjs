@@ -3,12 +3,16 @@
 //      while the real row stays as it was; Clear demo removes demo rows and shadows
 //   2. the database rule: a demo- id is refused in pos.reservations, reviews, units, owners and guests, and in the
 //      money and channel tables' references (statement lines, payouts, the Channex outbox)
+//   3. with API_BASE (a local server on the same database): the Demo switch is for management and sales staff only;
+//      a sample reservation shows in Demo mode and nowhere else: never in the owner portal API (/api/owner/*), an
+//      owner statement or the reservations export; editing a real reservation in Demo mode leaves pos unchanged;
+//      every real write is refused while Demo mode is on; Clear demo empties the store
 //
 // Run against a throwaway database (scripts/ci-api-db.mjs, or scripts/dev-pglite.mjs) as its owner:
-//   DB_URL=postgres://postgres@127.0.0.1:5432/ci node scripts/api-checks/demo-mode.mjs
+//   DB_URL=postgres://postgres@127.0.0.1:5432/ci [API_BASE=http://localhost:8788] node scripts/api-checks/demo-mode.mjs
 // It adds demo rows and clears them again; real rows are only read.
 import postgres from 'postgres';
-import { check, done } from './harness.mjs';
+import { check, done, cookieFor } from './harness.mjs';
 
 const DB_URL = process.env.DB_URL;
 if (!DB_URL || !/@(127\.0\.0\.1|localhost)[:/]/.test(DB_URL)) { console.error('Set DB_URL to a local database.'); process.exit(2); }
@@ -78,5 +82,92 @@ check('a demo table refuses an id without demo-', /check constraint/.test(e), e)
 const cleared = (await sql`select demo.clear() as c`)[0].c;
 check('Clear demo removes demo rows and shadows', cleared.reservations === 2 && cleared.guests === 1, JSON.stringify(cleared));
 check('...and Demo mode shows the real reservations only', await count('demo.v_reservations') === real);
+
+if (process.env.API_BASE) await apiChecks(process.env.API_BASE);
+check('no demo- id reached pos.reservations, reviews, units, owners or guests', Number((await sql`select
+    (select count(*) from reservations where id like 'demo-%') + (select count(*) from reviews where id like 'demo-%' and id not like 'demo-review-%')
+    + (select count(*) from units where id like 'demo-%') + (select count(*) from owners where id like 'demo-%') + (select count(*) from guests where id like 'demo-%') as n`)[0].n) === 0);
 await sql.end();
 done();
+
+async function apiChecks(BASE) {
+  const send = async (role, method, path, body, demo = true) => {
+    const r = await fetch(BASE + path, { method, headers: { cookie: `${cookieFor(role)}${demo ? '; tc_demo=1' : ''}`, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}
+    return { status: r.status, json: j, text: t, cookie: r.headers.get('set-cookie') ?? '' };
+  };
+  const strip = (j) => JSON.stringify(j, (k, v) => (k === 'generatedAt' ? undefined : v));
+
+  let r = await send('management', 'POST', '/api/demo', { on: true }, false);
+  check('API: management may turn Demo mode on (the cookie is set)', r.status === 200 && /tc_demo=1/.test(r.cookie), `${r.status} ${r.text}`);
+  for (const role of ['operations_staff', 'finance_admin', 'housekeeper']) {
+    r = await send(role, 'POST', '/api/demo', { on: true }, false);
+    check(`API: ${role} may not turn Demo mode on`, r.status === 403, `${r.status} ${r.text}`);
+  }
+  // Sales staff may (owner, 2 Nov 2026): the same operations account, moved into the Sales department for a moment.
+  const opsId = '11111111-1111-4111-8111-000000000004';
+  const [placed] = await sql`select department_id, position_id, department, position, side from users where id = ${opsId}`;
+  const [sales] = await sql`select d.id, d.name, d.side, p.id as position_id, p.name as position from departments d join positions p on p.department_id = d.id where d.name = 'Sales' order by p.name limit 1`;
+  if (placed && sales) {
+    await sql`update users set department_id = ${sales.id}, position_id = ${sales.position_id}, department = ${sales.name}, position = ${sales.position}, side = 'both' where id = ${opsId}`;
+    r = await send('operations_staff', 'POST', '/api/demo', { on: true }, false);
+    check('API: a desk account in the Sales department may turn Demo mode on', r.status === 200, `${r.status} ${r.text}`);
+    await sql`update users set department_id = ${placed.department_id}, position_id = ${placed.position_id}, department = ${placed.department}, position = ${placed.position}, side = ${placed.side} where id = ${opsId}`;
+  }
+
+  // An owner with a final statement, one of their units, and a free night in that statement's month.
+  const [st] = await sql`select s.id, s.owner_id, substr(s.period_start, 1, 7) as period from owner_statements s
+    where s.state in ('finalised','sent','paid') and exists (select 1 from units u where u.owner_id = s.owner_id) order by s.period_start desc limit 1`;
+  const [u] = await sql`select id from units where owner_id = ${st.owner_id} order by id limit 1`;
+  const ownerQs = `ownerId=${encodeURIComponent(st.owner_id)}`;
+  const sumBefore = await send('management', 'GET', `/api/owner/summary?${ownerQs}&period=${st.period}`, undefined, false);
+  const stBefore = await send('management', 'GET', `/api/owner/statements/${st.id}?${ownerQs}`, undefined, false);
+  const exportBefore = await send('management', 'GET', '/api/reservations/export?view=all', undefined, false);
+  let made = null;
+  for (let d = 1; d <= 27 && !made; d++) {
+    const ci = `${st.period}-${String(d).padStart(2, '0')}`, co = `${st.period}-${String(d + 1).padStart(2, '0')}`;
+    r = await send('management', 'POST', '/api/demo/reservations', { unitId: u.id, guestName: 'Demo Check Guest', channel: 'direct', checkIn: ci, checkOut: co, guestsCount: 2, grossBookingValue: 777700 });
+    if (r.status === 201) made = r.json.id;
+  }
+  check('API: a sample reservation is created in Demo mode', !!made && made.startsWith('demo-r-'), r.text);
+  r = await send('management', 'POST', '/api/demo/reservations', { unitId: u.id }, false);
+  check('API: sample data needs Demo mode on (409 without it)', r.status === 409, `${r.status}`);
+
+  const listOn = await send('management', 'GET', '/api/reservations?view=all&q=Demo%20Check%20Guest');
+  check('API: Demo mode lists the sample reservation, marked sample', !!listOn.json?.data?.some(x => x.id === made && x.sample === 'demo'), listOn.text.slice(0, 300));
+  const listOff = await send('management', 'GET', '/api/reservations?view=all&q=Demo%20Check%20Guest', undefined, false);
+  check('API: live mode does not list it', listOff.status === 200 && !listOff.json?.data?.some(x => x.id === made), listOff.text.slice(0, 300));
+  const notAllowed = await send('operations_staff', 'GET', '/api/reservations?view=all&q=Demo%20Check%20Guest');
+  check('API: the Demo cookie means nothing for someone who may not use it', notAllowed.status === 200 && !notAllowed.json?.data?.some(x => x.id === made), `${notAllowed.status}`);
+
+  const sumAfter = await send('management', 'GET', `/api/owner/summary?${ownerQs}&period=${st.period}`);
+  const stAfter = await send('management', 'GET', `/api/owner/statements/${st.id}?${ownerQs}`);
+  const exportAfter = await send('management', 'GET', '/api/reservations/export?view=all');
+  check('API: the owner portal summary is the same in Demo mode (no sample reservation in /api/owner/*)', sumAfter.status === 200 && strip(sumAfter.json) === strip(sumBefore.json), `${sumAfter.status} ${strip(sumAfter.json).slice(0, 200)}`);
+  check('API: the owner statement is the same in Demo mode', stAfter.status === stBefore.status && strip(stAfter.json) === strip(stBefore.json), `${stAfter.status}`);
+  check('API: the reservations export never carries a sample reservation', exportAfter.status === 200 && !exportAfter.text.includes('Demo Check Guest') && exportAfter.text.length === exportBefore.text.length, `${exportAfter.status}`);
+
+  // Editing a real reservation in Demo mode: a shadow, pos unchanged.
+  const [realRes] = await sql`select id, guests_count, notes from reservations where state not in ('cancelled','no_show') and channel not in ('maintenance_block','owner_stay') order by id limit 1`;
+  r = await send('management', 'PATCH', `/api/demo/reservations/${realRes.id}`, { notes: 'Edited in demo check', guestsCount: 9 });
+  check('API: editing a real reservation in Demo mode saves', r.status === 200 && r.json?.shadow === true, `${r.status} ${r.text}`);
+  const [after] = await sql`select guests_count, notes from reservations where id = ${realRes.id}`;
+  check('API: ...and the real reservation is unchanged', Number(after.guests_count) === Number(realRes.guests_count) && after.notes === realRes.notes);
+  const detail = await send('management', 'GET', `/api/reservations/${realRes.id}`);
+  check('API: Demo mode shows the edited copy, marked', detail.json?.notes === 'Edited in demo check' && detail.json?.sample === 'shadow', detail.text.slice(0, 200));
+  const detailLive = await send('management', 'GET', `/api/reservations/${realRes.id}`, undefined, false);
+  check('API: live mode shows the real reservation', detailLive.json?.notes === realRes.notes && !detailLive.json?.sample);
+
+  r = await send('management', 'PATCH', `/api/reservations/${realRes.id}`, { state: 'cancelled', reason: 'demo check' });
+  check('API: a real write is refused while Demo mode is on', r.status === 409 && r.json?.error?.code === 'DEMO_MODE', `${r.status} ${r.text}`);
+  r = await send('management', 'POST', '/api/demo/reviews', { unitId: u.id, channel: 'airbnb', rating: 5, comment: 'Demo check review', reviewedAt: `${st.period}-15` });
+  check('API: a sample review is created', r.status === 201, r.text);
+  const reviews = await send('management', 'GET', '/api/reviews');
+  check('API: Demo mode shows the sample review, marked', !!reviews.json?.data?.some(x => x.comment === 'Demo check review' && x.sample === 'demo'));
+  const reviewsLive = await send('management', 'GET', '/api/reviews', undefined, false);
+  check('API: live mode does not', !reviewsLive.json?.data?.some(x => x.comment === 'Demo check review'));
+
+  r = await send('management', 'DELETE', '/api/demo');
+  check('API: Clear demo', r.status === 200 && r.json?.cleared?.reservations >= 2, r.text);
+  check('API: the store is empty afterwards', Number((await sql`select (select count(*) from demo.reservations) + (select count(*) from demo.reviews) + (select count(*) from demo.guests) as n`)[0].n) === 0);
+}

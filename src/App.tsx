@@ -4,7 +4,6 @@ import { CrashScreen } from './components/CrashScreen';
 import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { SessionProvider, useSession } from './lib/session';
 import { ToastProvider } from './components/Toast';
-import ViewAs from './components/ViewAs';
 import TwoStepPrompt from './components/TwoStepPrompt';
 import AppShell from './components/AppShell';
 import UpdateNotice from './components/UpdateNotice';
@@ -21,6 +20,8 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
 const OwnerShowcasePage = lazy(() => import('./pages/showcase/OwnerShowcasePage'));
+// Staging only (it renders nothing elsewhere), so it stays out of the entry script.
+const ViewAs = lazy(() => import('./components/ViewAs'));
 const OwnerBPage = lazy(() => import('./pages/ownerB/OwnerBPage'));
 const OwnerBProfile = lazy(() => import('./pages/ownerB/OwnerBProfile'));
 const ViewAsOwnerPage = lazy(() => import('./pages/ownerB/ViewAsOwnerPage'));
@@ -417,7 +418,7 @@ export default function App() {
       <ToastProvider>
         <Routed />
         <UpdateNotice />
-        <ViewAs />
+        <Suspense fallback={null}><ViewAs /></Suspense>
         <TwoStepPrompt />
       </ToastProvider>
     </SessionProvider>

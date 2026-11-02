@@ -5,6 +5,7 @@ import { type Env, all, json, fail } from '../../_lib/db';
 import { rentalOnly } from '../../_lib/unitPurpose';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { accessFor, canManage, refusalFor } from '../../_lib/access';
+import { demoOn, tablesFor, sourceSql, sampleOf } from '../../_lib/demo';
 
 /** A unit counts as on a booking site if it had a booking from it within this many days. */
 const CHANNEL_LOOKBACK_DAYS = 180;
@@ -31,10 +32,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // Showroom and warehouse units take no reservations (0125).
   const rental = await rentalOnly(env);
+  // Demo mode shows the sample units and stays with the real ones; which booking sites a unit is on stays real.
+  const demo = await demoOn(env, request, session);
+  const t = tablesFor(demo);
   const [allUnits, onChannel, connected, onHostPlatform] = await Promise.all([
     all<any>(env, `
       SELECT u.id, u.unit_number, u.base_rate, u.weekend_rate, u.property_id, u.channex_property_id, p.name AS property_name
-      FROM units u JOIN properties p ON p.id = u.property_id
+      FROM ${t.units} u JOIN properties p ON p.id = u.property_id
       WHERE 1 = 1${rental}
       ORDER BY p.name, u.unit_number`),
     // Which booking sites each unit is on, so the board shows a rate row only for those. A connection made
@@ -67,14 +71,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     b.units++; buildingMap.set(u.property_id, b);
   }
   const units = property ? allUnits.filter(u => u.property_id === property) : allUnits;
-  const scoped = (col: string) => (property ? ` AND ${col} IN (SELECT id FROM units WHERE property_id = ?)` : '');
+  const scoped = (col: string) => (property ? ` AND ${col} IN (SELECT id FROM ${t.units} WHERE property_id = ?)` : '');
   const scopeArgs = property ? [property] : [];
 
   const blocks = await all<any>(env, `
     SELECT r.id, r.unit_id, r.channel, r.state, r.check_in, r.check_out, r.gross_booking_value, r.channel_fee,
-           r.external_ref, r.notes, r.block_reason, COALESCE(g.full_name, '') AS guest_name
-    FROM reservations r
-    LEFT JOIN guests g ON g.id = r.guest_id
+           r.external_ref, r.notes, r.block_reason, COALESCE(g.full_name, '') AS guest_name, ${sourceSql(demo, 'r')} AS demo_source
+    FROM ${t.reservations} r
+    LEFT JOIN ${t.guests} g ON g.id = r.guest_id
     WHERE r.check_out > ? AND r.check_in < ? AND r.state NOT IN ('cancelled', 'no_show')${scoped('r.unit_id')}
     ORDER BY r.check_in`, from, to, ...scopeArgs);
 
@@ -99,7 +103,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const weekendOf = (u: any) => (u.weekend_rate == null ? null : Number(u.weekend_rate));
 
   return json({
-    from, to, property,
+    from, to, property, demo,
     generatedAt: new Date().toISOString(),
     // channels: the booking sites the unit is on, in a fixed order. The direct (web) rate is always shown.
     buildings: [...buildingMap.values()],
@@ -132,7 +136,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // Nights with a minimum stay above one or closed for sale, keyed "unitId:date".
     restrictions: Object.fromEntries(restr.map(r => [`${r.unit_id}:${r.rate_date}`, { minStay: r.min_stay ?? 1, stopSell: !!r.stop_sell }])),
     blocks: blocks.map(b => ({
-      id: b.id, unitId: b.unit_id, channel: b.channel, state: b.state,
+      id: b.id, ...(sampleOf(b.demo_source) ? { sample: sampleOf(b.demo_source) } : {}), unitId: b.unit_id, channel: b.channel, state: b.state,
       guestName: b.guest_name || (b.channel === 'maintenance_block' ? (b.notes ?? 'Blocked') : ''),
       checkIn: b.check_in, checkOut: b.check_out,
       grossBookingValue: Number(b.gross_booking_value), channelFee: Number(b.channel_fee ?? 0), ref: b.external_ref,
