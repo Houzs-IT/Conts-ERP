@@ -22,7 +22,7 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  * one screen. The supply chain moved behind the workspace switch at the top of the sidebar.
  * Merged duplicates keep their old addresses as redirects (App.tsx):
  *  - Finance > Revenue was the same page as Growth > Analytics: one "Performance" entry.
- *  - Owners moved from Finance to Properties; Inbox from Growth to Reservations.
+ *  - Owners moved from Finance to Properties; Inbox from Growth to Reservations, and back to Growth as Messages (2 Nov 2026).
  *  - The Fit-out register and Guest documents screens were retired (owner, 14 Oct 2026); guest invoices and receipts are issued from a reservation.
  *  - Projects > Calendar is "Schedule"; Service / Project maintenance are "Case settings" / "Project settings",
  *    so no two menu entries share a name.
@@ -126,7 +126,6 @@ export const NAV: NavGroup[] = [
     { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'reservations' },
     { key: 'bookings', label: 'Reservations', icon: 'book-open', path: '/reservations/bookings', area: 'reservations' },
     { key: 'guests', label: 'Guests', icon: 'users', path: '/reservations/guests', area: 'reservations' },
-    { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
     // Invoices and receipts issued to guests: guest invoicing, so it sits with reservations. Still money work, so
     // its permission area stays Finance (who can open it does not change).
   ] },
@@ -163,6 +162,9 @@ export const NAV: NavGroup[] = [
   { label: 'GROWTH', workspace: 'rental', items: [
     { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'pricing', full: true },
     { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'pricing' },
+    // Guest messages from Airbnb, Booking.com and WhatsApp, below Reviews (owner, 2 Nov 2026; migration 0200 moved the
+    // permission area with it, so nobody's access changed).
+    { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
     { key: 'automations', label: 'Automations', icon: 'workflow', path: '/communication/automations', area: 'automations' },
   ] },
   { label: 'SYSTEM', workspace: 'rental', items: [

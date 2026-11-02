@@ -8,8 +8,10 @@ import zlib from 'node:zlib';
 import { runCheck, runIfMain, ROOT } from './_lib.mjs';
 
 /** Gzipped KB the entry script may weigh. 152 KB on 11 Oct 2026, 173 KB by 21 Oct (the phone library had crept
- *  in through format.ts), 129 KB once it moved out; raise it only with a reason in the PR. */
-export const BUDGET_KB = 150;
+ *  in through format.ts), 129 KB once it moved out; raise it only with a reason in the PR. 151 on 2 Nov 2026: main was
+ *  at 149.98 KB and the reservation drawer (in this script) needs a lazy hook for its Review section (150.02 KB); the
+ *  section itself loads on its own (src/pages/reviews/ReservationReview.tsx). */
+export const BUDGET_KB = 151;
 
 const SAMPLE = { 'assets/index-fat.js': 283 * 1024, 'assets/index-slim.js': 150 * 1024 };
 const gzipKB = (src, rel) => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { quickVoLines } from './renovation-vo';
+import { carryToAddedLine, quickVoLines } from './renovation-vo';
+import type { RenoDb } from './renovation-db';
 import type { DocLineOut } from './renovation-doc-lines';
 
 const t = {
@@ -44,5 +45,50 @@ describe('quickVoLines', () => {
     const r = quickVoLines({ ...t, measureMilli: 5000 }, { soItemId: 'I1', qty: 1 }, false, null)!;
     expect(r.omit).toMatchObject({ omitQty: null });
     expect(r.add).toMatchObject({ qty: 1, measureMilli: 5000 });
+  });
+  it('same SKU with new options (a PO line re-specified): omits whole, adds it again at the same qty and price', () => {
+    const r = quickVoLines(t, { soItemId: 'I1', variants: { fabricCode: 'Client fabric 7' } }, true, null)!;
+    expect(r.sameSku).toBe(true);
+    expect(r.omit).toMatchObject({ voChange: 'OMIT', omitTargetLineId: 'L1', omitQty: null });
+    expect(r.add).toMatchObject({ voChange: 'ADD', itemCode: 'SOF-1', qty: 2, unitPriceSen: 100000, room: 'Living', supplierId: 'S1' });
+  });
+  it('same SKU, new options and fewer: still one whole replacement at the new qty, never a partial omit', () => {
+    const r = quickVoLines(t, { soItemId: 'I1', qty: 1, variants: { fabricCode: 'X' } }, true, null)!;
+    expect(r.omit).toMatchObject({ omitQty: null });
+    expect(r.add).toMatchObject({ qty: 1 });
+  });
+});
+
+/** Records every statement, answers none. */
+function recordingDb(): RenoDb & { calls: Array<{ text: string; params: readonly unknown[] }> } {
+  const calls: Array<{ text: string; params: readonly unknown[] }> = [];
+  return { calls, q: async (text: string, params: readonly unknown[] = []) => { calls.push({ text, params }); return []; } } as never;
+}
+
+describe('carryToAddedLine (quickVo, the line a VO adds)', () => {
+  const base = { lineId: 'V1', fromSoItemId: 'OLD', sameSku: true, itemCode: 'BED-1' };
+  it('same SKU with new options: the new line takes the options given, not the old line options', async () => {
+    const db = recordingDb();
+    await carryToAddedLine(db, { ...base, respec: true, variants: { fabricCode: 'PC1461-03', colourId: 'PC1461-03', fabricId: 'PC1461', divanHeight: '6"', legHeight: '1"', gap: '4"', totalHeight: '11"', remark: 'x' } }, 'NEW', 'bedframe');
+    const [upd, plan] = db.calls;
+    expect(db.calls).toHaveLength(2);
+    expect(upd.text).toMatch(/set variants = \$2::text::jsonb, description2 = \$3/);
+    expect(upd.text).not.toMatch(/variants = o\.variants/);
+    expect(JSON.parse(String(upd.params[1]))).toEqual({ fabricCode: 'PC1461-03', colourId: 'PC1461-03', fabricId: 'PC1461', divanHeight: '6"', legHeight: '1"', gap: '4"', totalHeight: '11"' });
+    expect(upd.params[2]).toBe('PC1461-03 / DIVAN 6" + LEG 1" / GAP 4" / T.Heights 11"');
+    expect(upd.params[3]).toBeNull();
+    expect(upd.params[4]).toBe('OLD');
+    expect(plan.text).toMatch(/reno_beta_line_plans/);
+  });
+  it('same SKU with new options and a remark: the remark given is written', async () => {
+    const db = recordingDb();
+    await carryToAddedLine(db, { ...base, respec: true, variants: { seatHeight: '28' }, remark: ' Fit by 5 Nov ' }, 'NEW', 'sofa');
+    expect(db.calls[0].params[2]).toBe('SEAT 28');
+    expect(db.calls[0].params[3]).toBe('Fit by 5 Nov');
+  });
+  it('same SKU, no new options: copies the old line as before', async () => {
+    const db = recordingDb();
+    await carryToAddedLine(db, { ...base, respec: false }, 'NEW', 'bedframe');
+    expect(db.calls[0].text).toMatch(/variants = o\.variants/);
   });
 });

@@ -182,3 +182,24 @@ export function DemoReservationBar({ id, sample, values, onChanged, onRemoved }:
     </div>
   );
 }
+
+/** A review's Demo mode actions: edit it as sample data (a real review gets a demo copy), remove a sample, or undo. */
+export function DemoReviewActions({ review, onChanged }: {
+  review: { id: string; sample?: 'demo' | 'shadow'; unitId: string | null; channel: string; rating: number; comment: string | null; reply: string | null; reviewedAt: string };
+  onChanged: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const remove = useDemoRemove('reviews', onChanged);
+  const r = review;
+  return (
+    <span className="flex gap-2 flex-wrap">
+      <Button size="sm" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setEditing(true)}>{r.sample === 'demo' ? 'Edit sample' : 'Edit in Demo mode'}</Button>
+      {r.sample && <Button size="sm" variant="tertiary" onClick={() => remove.ask(r.id, r.sample!)}>{r.sample === 'demo' ? 'Remove sample' : 'Undo Demo mode changes'}</Button>}
+      {editing && (
+        <DemoReviewModal id={r.id} initial={{ unitId: r.unitId ?? '', channel: r.channel, rating: Math.round(r.rating), comment: r.comment ?? '', reply: r.reply ?? '', reviewedAt: r.reviewedAt }}
+          onClose={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} />
+      )}
+      {remove.dialog}
+    </span>
+  );
+}
