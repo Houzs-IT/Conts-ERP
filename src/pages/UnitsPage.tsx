@@ -395,7 +395,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   const tabsRef = useRef<HTMLDivElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  // The newest photo is the unit's cover (also its card on the Owner Showcase).
+  // The newest photo is the unit's cover.
   const cover = d.coverPhotoId ?? null;
   useEffect(() => { setPhoto(cover ? `/api/documents/${cover}/download` : null); }, [d.unit.id, cover]);
 

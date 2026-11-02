@@ -167,6 +167,38 @@ async function apiChecks(BASE) {
   const reviewsLive = await send('management', 'GET', '/api/reviews', undefined, false);
   check('API: live mode does not', !reviewsLive.json?.data?.some(x => x.comment === 'Demo check review'));
 
+  // The sample owner portal: sample owners only, every answer marked sample, nothing reaching the real portal.
+  const unitsBefore = Number((await sql`select count(*)::int n from units`)[0].n);
+  r = await send('management', 'POST', '/api/demo/owners', { name: 'Check Sample Owner', unitIds: [u.id], fill: true }, false);
+  check('API: a sample owner is made with sample reservations', r.status === 201 && r.json?.id?.startsWith('demo-o-') && r.json.reservations > 0, `${r.status} ${r.text}`);
+  const sampleOwner = r.json?.id;
+  r = await send('operations_staff', 'POST', '/api/demo/owners', { name: 'X', unitIds: [u.id] }, false);
+  check('API: someone not allowed cannot make a sample owner', r.status === 403, `${r.status}`);
+  check('API: real units are untouched by a sample owner', Number((await sql`select count(*)::int n from units`)[0].n) === unitsBefore
+    && Number((await sql`select count(*)::int n from units where owner_id = ${sampleOwner}`)[0].n) === 0);
+  const q = `ownerId=${encodeURIComponent(sampleOwner)}`;
+  const portal = {};
+  for (const ep of ['summary', 'trend?months=8', 'property-health', 'documents']) {
+    portal[ep] = await send('management', 'GET', `/api/demo/portal/${ep}${ep.includes('?') ? '&' : '?'}${q}`, undefined, false);
+    check(`API: sample portal ${ep.split('?')[0]} answers with sample: true`, portal[ep].status === 200 && portal[ep].json?.sample === true, `${portal[ep].status} ${portal[ep].text.slice(0, 200)}`);
+  }
+  check('API: the sample summary lists only the sample owner units', portal.summary.json?.units?.every(x => x.id.startsWith('demo-u-') && / \(sample\)$/.test(x.label)), JSON.stringify(portal.summary.json?.units));
+  const sid = portal.summary.json?.statementId || portal.documents.json?.data?.[0]?.refId;
+  r = await send('management', 'GET', `/api/demo/portal/statements/${encodeURIComponent(sid)}?${q}`, undefined, false);
+  check('API: a sample statement answers with sample: true', r.status === 200 && r.json?.sample === true && r.json.units?.length === 1, `${r.status} ${r.text.slice(0, 200)}`);
+  r = await send('management', 'GET', `/api/demo/portal/statements/${encodeURIComponent(sid)}/pdf?${q}`, undefined, false);
+  check('API: the sample statement PDF carries SAMPLE DATA', r.status === 200 && r.text.includes('SAMPLE DATA') && r.text.includes('Sample data'), `${r.status}`);
+  r = await send('management', 'GET', `/api/demo/portal/summary?ownerId=${encodeURIComponent(st.owner_id)}`, undefined, false);
+  check('API: the sample portal never serves a real owner', r.status === 422, `${r.status} ${r.text.slice(0, 120)}`);
+  r = await send('operations_staff', 'GET', `/api/demo/portal/summary?${q}`, undefined, false);
+  check('API: the sample portal is refused to someone not allowed', r.status === 403, `${r.status}`);
+  const sumWithSample = await send('management', 'GET', `/api/owner/summary?${ownerQs}&period=${st.period}`, undefined, false);
+  check('API: the real owner portal is unchanged by a sample owner on a copy of their unit', strip(sumWithSample.json) === strip(sumBefore.json));
+  r = await send('management', 'DELETE', `/api/demo/owners/${encodeURIComponent(sampleOwner)}`, undefined, false);
+  check('API: a sample owner can be removed', r.status === 200, r.text);
+  check('API: ...with their sample units and reservations', Number((await sql`select (select count(*) from demo.units where owner_id = ${sampleOwner})
+    + (select count(*) from demo.owners where id = ${sampleOwner}) as n`)[0].n) === 0);
+
   r = await send('management', 'DELETE', '/api/demo');
   check('API: Clear demo', r.status === 200 && r.json?.cleared?.reservations >= 2, r.text);
   check('API: the store is empty afterwards', Number((await sql`select (select count(*) from demo.reservations) + (select count(*) from demo.reviews) + (select count(*) from demo.guests) as n`)[0].n) === 0);
