@@ -1,8 +1,9 @@
 // Local test only: catalog (first import + batch2), stub suppliers, and the projects the import names, by id.
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-const W = 'C:/Users/User/Desktop/Conts-ERP-worktrees/so-notion-import';
-const require = createRequire(W + '/package.json');
+import { fileURLToPath } from 'node:url';
+const W = fileURLToPath(new URL('../../..', import.meta.url)).replace(/[\/]$/, '');
+const require = createRequire(W + '/engine/backend/package.json');
 const postgres = require('postgres');
 const sql = postgres(process.argv[2], { max: 1, prepare: false, onnotice: () => {} });
 const co = await sql`select id from public.companies where code = 'HOUZS'`;

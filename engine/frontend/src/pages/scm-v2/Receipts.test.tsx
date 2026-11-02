@@ -24,6 +24,7 @@ const LIST = { month: null, receipts: [
   { kind: 'DEBTOR', id: 'dr1', number: 'HC-ODR-2609-001', date: '2026-09-02', payer: 'AHMAD BIN ALI', moneyAccount: '310-0010', totalSen: 20000, status: 'POSTED', debtorId: 'd1' },
   { kind: 'CUSTOMER', id: 'p1', number: 'HC-SO-2609-004', date: '2026-09-01', payer: 'Customer deposit', moneyAccount: 'EDC', totalSen: 350000, status: 'RECEIVED' },
 ] };
+vi.mock("../../conts/Pickers", () => ({ ProjectPicker: () => null, UnitPicker: () => null }));
 vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
 vi.mock('../../vendor/scm/lib/accounting-queries', async (importOriginal) => ({
   /* The real pure helpers stay (postableAccounts — docs/bugs/0693); only the hooks are stubbed. */
@@ -101,7 +102,7 @@ describe('the unified money-in list', () => {
     draw();
     fireEvent.click(screen.getByText('New receipt'));
     fireEvent.click(screen.getByRole('radio', { name: 'Other Debtor' }));
-    expect(screen.getByText('New receipt — Other Debtor — 录入即过账')).toBeTruthy();
+    expect(screen.getByText('New receipt — Other Debtor — posts when saved')).toBeTruthy();
     expect(screen.getByText('Pick the debtor to list what they still owe.')).toBeTruthy();
     /* The registry: active debtors only, what each still owes beside the name. */
     const debtor = screen.getByLabelText('Debtor') as HTMLSelectElement;
@@ -122,7 +123,7 @@ describe('the unified money-in list', () => {
     });
     expect(createAsync).not.toHaveBeenCalled();
     /* The pop-out closes on the post. */
-    await waitFor(() => expect(screen.queryByText(/录入即过账/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/posts when saved/)).toBeNull());
   });
 
   test('a general receipt raises with its own date, typed payer, picked bank and free-pick lines', async () => {
@@ -196,7 +197,7 @@ describe('edit a posted receipt and re-post (owner 2026-09-07: 收钱的日期�
     draw();
     expect(screen.getAllByLabelText(/^Edit /)).toHaveLength(1);
     fireEvent.click(screen.getByLabelText('Edit HC-OR-2609-001'));
-    await waitFor(() => expect(screen.getByText('Edit HC-OR-2609-001 — 改了会重新过账')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Edit HC-OR-2609-001 — saving re-posts it')).toBeTruthy());
     expect((screen.getByLabelText(/Received from/) as HTMLInputElement).value).toBe('ALLIANZ INSURANCE');
     const date = screen.getByLabelText('Receipt date') as HTMLInputElement;
     expect(date.value).toBe('2026/09/03');
@@ -213,6 +214,6 @@ describe('edit a posted receipt and re-post (owner 2026-09-07: 收钱的日期�
       lines: [{ description: '车险赔偿', creditAccountCode: '700-0000', amountSen: 88800, department: 'shared' }],
     }));
     /* The form closes and the next New starts clean. */
-    await waitFor(() => expect(screen.queryByText(/改了会重新过账/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/saving re-posts it/)).toBeNull());
   });
 });

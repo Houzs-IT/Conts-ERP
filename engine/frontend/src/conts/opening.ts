@@ -50,7 +50,8 @@ export function toDay(v: unknown): string | null {
 const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
 
 /** The sheet's rows keyed by the template's column names, from the row that carries them all. */
-function readGrid(grid: unknown[][], columns: readonly string[]): { rows: { line: number; cells: Record<string, unknown> }[]; error: string | null } {
+/** `optional` columns are read when the sheet has them and left undefined when it does not. */
+export function readGrid(grid: unknown[][], columns: readonly string[], optional: readonly string[] = []): { rows: { line: number; cells: Record<string, unknown> }[]; error: string | null } {
   const want = columns.map(norm);
   const headerAt = grid.findIndex((r) => want.every((c) => r.some((x) => norm(x) === c)));
   if (headerAt < 0) return { rows: [], error: `The sheet needs the columns ${columns.join(", ")}.` };
@@ -61,6 +62,7 @@ function readGrid(grid: unknown[][], columns: readonly string[]): { rows: { line
     if (!r.some((x) => String(x ?? "").trim() !== "")) return;
     const cells: Record<string, unknown> = {};
     columns.forEach((c, k) => { cells[c] = r[idx[k]]; });
+    optional.forEach((c) => { const at = header.indexOf(norm(c)); if (at >= 0) cells[c] = r[at]; });
     rows.push({ line: headerAt + i + 2, cells });
   });
   return { rows, error: null };
@@ -172,7 +174,7 @@ export const useReverseOpening = () => {
   });
 };
 
-function invalidateOpening(qc: ReturnType<typeof useQueryClient>): void {
+export function invalidateOpening(qc: ReturnType<typeof useQueryClient>): void {
   for (const key of [CHECK_KEY, ["account-balances"], ["report-bs"], ["report-pnl"], ["finance-dashboard"], ["ar-aging"], ["ap-aging"],
     ["control-check"], ["journal-entries"], ["gl-entries"], ["gl-ledger"], ["sales-invoices"], ["purchase-invoices"]]) {
     void qc.invalidateQueries({ queryKey: key });

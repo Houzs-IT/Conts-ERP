@@ -255,3 +255,45 @@ describe('departments on a new manual journal', () => {
     expect((sb.tables.journal_entry_lines as Row[]).map((l) => l.department)).toEqual(['rental', 'shared', 'shared']);
   });
 });
+
+/* A journal line can name its project or unit (chew 2 Nov 2026; plan 2026-11-02-renovation-close-out Task 1): the
+   part of a building deposit kept by the building moves to the project's cost on the same project. */
+describe('a manual journal line names its project or unit', () => {
+  const tagged = (jes?: Row[]) => {
+    const w = world({ jes });
+    Object.assign(w.sb.tables, {
+      projects: [{ id: 7, company_id: CO, name: 'SKYLINE D-25-13' }],
+      conts_units: [{ id: 'u-a31', building: 'ASTER HILL', unit_number: 'A-3-1' }],
+    });
+    return w;
+  };
+  const kept = {
+    entryDate: '2026-06-30', narration: 'Deposit kept by the building',
+    lines: [
+      { accountCode: '900-S100', debitSen: 20000, creditSen: 0, department: 'supply', projectId: 7 },
+      { accountCode: '410-0010', debitSen: 0, creditSen: 20000, department: 'supply', projectId: 7 },
+    ],
+  };
+
+  test('a posted entry edited: the corrected lines carry the project', async () => {
+    const { app, sb } = tagged();
+    expect((await put(app, 'je-163', kept)).status).toBe(200);
+    const fresh = (sb.tables.journal_entries as Row[]).find((j) => j.posted && !j.reversed && j.id !== 'je-163' && !String(j.narration ?? '').startsWith('Reversal'))!;
+    expect((sb.tables.journal_entry_lines as Row[]).filter((l) => l.journal_entry_id === fresh.id).map((l) => l.project_id)).toEqual([7, 7]);
+  });
+
+  test('a draft rewritten in place keeps the project', async () => {
+    const { app, sb } = tagged([{ ...posted()[0], posted: false }]);
+    expect((await put(app, 'je-163', kept)).status).toBe(200);
+    expect((sb.tables.journal_entry_lines as Row[]).filter((l) => l.journal_entry_id === 'je-163').map((l) => l.project_id)).toEqual([7, 7]);
+  });
+
+  test('a unit on a line that is not Rental, or a project not ours, is refused before anything moves', async () => {
+    const { app, sb } = tagged();
+    const r = await put(app, 'je-163', { ...kept, lines: [{ ...kept.lines[0], unitId: 'u-a31' }, kept.lines[1]] });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toMatchObject({ error: 'unit_not_rental' });
+    expect(await (await put(app, 'je-163', { ...kept, lines: [{ ...kept.lines[0], projectId: 99 }, kept.lines[1]] })).json()).toMatchObject({ error: 'project_unknown' });
+    expect((sb.tables.journal_entries as Row[])).toHaveLength(1);
+  });
+});

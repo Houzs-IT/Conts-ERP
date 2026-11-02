@@ -64,6 +64,8 @@ export interface SoSubmitFacts {
   /** Always-required identity fields. */
   customerName: string;
   phone: string;
+  /** An edit of an order saved without a phone: a blank phone is not a problem (the PATCH refuses only blanking one). */
+  phoneOptional?: boolean;
   /** True when at least one line has a product picked AND qty > 0. */
   hasNamedLine: boolean;
   /** Save-as-draft: a draft needs none of the confirm-only fields (venue,
@@ -137,7 +139,7 @@ export function collectSoSubmitProblems(facts: SoSubmitFacts): SaveProblem[] {
   if (facts.customerName.trim() === '' && !gateWillRestateCustomer) {
     out.push(requiredFieldProblem('Customer name'));
   }
-  if (facts.phone.trim() === '') out.push(requiredFieldProblem('Phone number'));
+  if (facts.phone.trim() === '' && !facts.phoneOptional) out.push(requiredFieldProblem('Phone number'));
   if (!facts.hasNamedLine) out.push(requiredFieldProblem('At least one line item with a product'));
   if (!facts.asDraft && facts.renovation) {
     if (!facts.hasSalesperson) out.push(requiredFieldProblem('Salesperson'));

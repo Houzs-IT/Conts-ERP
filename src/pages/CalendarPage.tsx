@@ -276,12 +276,16 @@ function CalendarBoard() {
   const dayIso = (i: number) => iso(addDays(gridStart, i));
   const todayIdx = dayIndex(iso(today));
   const days = Array.from({ length: span }, (_, i) => addDays(gridStart, i));
-  const months = days.reduce<{ label: string; count: number }[]>((acc, d) => {
+  const months = days.reduce<{ label: string; short: string; count: number }[]>((acc, d) => {
     const label = monthLabel(iso(d), { long: true });
     if (acc.length && acc[acc.length - 1].label === label) acc[acc.length - 1].count++;
-    else acc.push({ label, count: 1 });
+    else acc.push({ label, short: monthLabel(iso(d)), count: 1 });
     return acc;
   }, []);
+  // A month with only a day or two in the window gets the name that fits its columns: "October 2026" over one column ran
+  // into November's label (owner, 2 Nov 2026).
+  const monthText = (m: { label: string; short: string; count: number }) =>
+    m.count * COL >= 150 ? m.label : m.count * COL >= 90 ? m.short : m.short.split(' ')[0];
   const colBg = (i: number) => (i === todayIdx ? BG_TODAY : isWeekendNight(days[i]) ? BG_WEEKEND : 'bg-card');
   const todayEdge = (i: number) => (i === todayIdx ? TODAY_EDGES : '');
 
@@ -537,7 +541,8 @@ function CalendarBoard() {
                 <div className="flex h-7">
                   {months.map((m, k) => (
                     <div key={m.label} className={`flex-none box-border flex items-center ${k ? '[border-left:1px_solid_var(--color-line)]' : ''}`} style={{ width: m.count * COL }}>
-                      <span className="sticky left-[calc(var(--unit-col)+10px)] px-2.5 text-meta font-semibold text-ink whitespace-nowrap">{m.label}</span>
+                      <span title={m.label} className="sticky left-[calc(var(--unit-col)+10px)] px-2.5 text-meta font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis"
+                        style={{ maxWidth: m.count * COL }}>{monthText(m)}</span>
                     </div>
                   ))}
                 </div>
@@ -608,10 +613,16 @@ function CalendarBoard() {
                   const rowOpen = unitOpen[u.id] ?? expanded;
                   const now = todayIdx >= 0 && todayIdx < span ? cells[todayIdx] : undefined;
                   const readiness = now === undefined ? null
-                    : !now ? { label: 'Available today', dot: TONE.neutral.line }
-                    : now.channel === 'maintenance_block' ? { label: 'Blocked today', dot: TONE.critical.line }
-                    : now.channel === 'owner_stay' ? { label: 'Owner stay', dot: TONE.neutral.line }
-                    : { label: 'Occupied', dot: TONE.success.line };
+                    : !now ? { label: 'Available today' }
+                    : now.channel === 'maintenance_block' ? { label: 'Blocked today' }
+                    : now.channel === 'owner_stay' ? { label: 'Owner stay' }
+                    : { label: 'Occupied' };
+                  // The dot is the channel connection (owner, 2 Nov 2026): green connected, red disconnected, blue still on HostPlatform,
+                  // grey never linked.
+                  const link = u.channex === 'connected' ? { label: 'Connected to the channels', dot: TONE.success.line }
+                    : u.channex === 'disconnected' ? { label: 'Disconnected from the channels', dot: TONE.critical.line }
+                    : u.channex === 'hostplatform' ? { label: 'On HostPlatform: reservations come in here, prices are changed on HostPlatform', dot: TONE.info.line }
+                    : { label: 'Not connected to the channels', dot: TONE.neutral.line };
                   return (
                     <div key={u.id} className="relative z-[1] [border-bottom:1px_solid_var(--color-line)] [content-visibility:auto] [contain-intrinsic-size:auto_64px]">
                       {/* Unit row with booking bars */}
@@ -625,14 +636,14 @@ function CalendarBoard() {
                             </label>
                           )}
                           <button type="button" aria-expanded={rowOpen} onClick={() => setUnitOpen(o => ({ ...o, [u.id]: !rowOpen }))}
-                            title={`${u.unitNumber} · ${u.propertyName}${readiness ? ' · ' + readiness.label : ''} · ${rowOpen ? 'hide' : 'show'} rates`}
+                            title={`${u.unitNumber} · ${u.propertyName} · ${link.label}${readiness ? ' · ' + readiness.label : ''} · ${rowOpen ? 'hide' : 'show'} rates`}
                             className={`flex-1 min-w-0 flex items-center gap-1 pl-2 ${selectable ? 'md:pl-0' : 'md:pl-1.5'} pr-2 md:pr-3 py-0 m-0 border-none bg-transparent hover:bg-muted/60 cursor-pointer text-left font-sans`}>
                             <span className="hidden md:grid w-6 h-6 flex-none place-items-center text-muted-ink">
                               <Icon name={rowOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" />
                             </span>
                             <span className="min-w-0 flex flex-col gap-px">
                               <span className="flex items-center gap-[5px] min-w-0">
-                                {readiness && <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: readiness.dot }} title={readiness.label} aria-label={readiness.label} />}
+                                <span className={`w-1.5 h-1.5 rounded-full flex-none ${u.channex === 'connected' ? 'motion-safe:animate-pulse' : ''}`} style={{ background: link.dot }} title={link.label} aria-label={link.label} />
                                 <span className="text-copy font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
                               </span>
                               {/* The building is the group header above, so the lines under the number are its prices: one per

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { color, channel as CH } from '../theme';
 import { cx } from '../lib/design-tokens';
@@ -18,6 +19,7 @@ import { RecordSkeleton, TreeSkeleton } from './units/UnitsSkeleton';
 import { UnitList } from './units/UnitList';
 import { exportUnits } from './units/unitExport';
 import { useApi } from '../lib/useApi';
+import { useLeaveGuard } from '../lib/useLeaveGuard';
 import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
 import { useConfirm } from '../components/ConfirmDialog';
 import { PurposeBadge, CodeBadge } from './units/UnitExtras';
@@ -79,6 +81,8 @@ const TABS = [
 type Tab = typeof TABS[number][0];
 /** The Reservations and Jobs tabs' filters and paging in the address. */
 const TAB_PARAMS = ['fmonth', 'when', 'from', 'to', 'page', 'size', 'jfrom', 'jto', 'clean', 'repair'];
+/** A change to these moves away from the form on the same page; the tree search and a tab's filters do not. */
+const LEAVE_PARAMS = ['tab', 'view'];
 const isTab = (t: string | null): t is Tab => TABS.some(([k]) => k === t);
 
 type Modal = null | { kind: 'building' } | { kind: 'editBuilding'; building: Building } | { kind: 'unit'; buildingId: string } | { kind: 'subunit'; buildingId: string; parent: Unit };
@@ -100,7 +104,6 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const [modal, setModal] = useState<Modal>(null);
   const [treeOpen, setTreeOpen] = useState(!unitId);
   const [saving, setSaving] = useState(false);
-  const [saveFailed, setSaveFailed] = useState(false);
   const inFlight = useRef(false);
   const [dialog, ask] = useConfirm();
   // The open tab lives in the address (?tab=), so a link or a reload lands on the same tab.
@@ -144,9 +147,19 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
 
   function patch(id: string, p: Partial<Unit>) { setEdits(e => ({ ...e, [id]: { ...e[id], ...p } })); }
   const dirty = !!form && !!edits[form.id];
+  const dropEdits = (id: string) => setEdits(e => { const n = { ...e }; delete n[id]; return n; });
+
+  // The Details tab saves only on Save (owner, 30 Oct 2026), so going to another tab, unit or page asks first.
+  useLeaveGuard(dirty, async () => {
+    const left = await ask({ title: 'Save your changes first?', body: `You changed ${form?.unitCode || form?.listingName || 'this unit'} and have not saved it. Leaving now throws those changes away.`,
+      confirmLabel: 'Leave without saving', cancelLabel: 'Stay and save', danger: true });
+    if (left === null) return false;
+    if (form) dropEdits(form.id);
+    return true;
+  }, LEAVE_PARAMS);
 
   // Every write waits for the server; a refused save leaves the edits in place to correct and save again.
-  async function save(quiet = false): Promise<void> {
+  async function save(): Promise<void> {
     if (!form || inFlight.current) return;
     const sent = edits[form.id];
     const before = original.find(u => u.id === form.id);
@@ -169,32 +182,15 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     setSaving(true); inFlight.current = true;
     try {
       await api.patch(`/units/${form.id}`, body);
-      if (!quiet) toast({ tone: 'success', title: 'Changes saved.', body: `${form.listingName || form.unitCode} updated.` });
+      toast({ tone: 'success', title: 'Changes saved.', body: `${form.listingName || form.unitCode} updated.` });
       // Only what was sent is cleared: a box changed while this save was on its way stays, to be saved next.
       setEdits(e => { if (e[form.id] !== sent) return e; const n = { ...e }; delete n[form.id]; return n; });
-      setSaveFailed(false);
       reloadAll();
     } catch (e) {
-      setSaveFailed(true);
       notifyFailure(e);
     }
     finally { setSaving(false); inFlight.current = false; }
   }
-  // Moving the unit to another owner or building is never saved by leaving a box: it waits for Save, so a slip in a
-  // list cannot move a unit (its contract stays with the previous owner).
-  const kept = form ? original.find(u => u.id === form.id) : undefined;
-  const moving = !!form && !!kept && ((!!form.ownerId && form.ownerId !== kept.ownerId) || form.buildingId !== kept.buildingId);
-  // The Details tab saves itself when a box is left (staff sheet UNIT, 26 Oct 2026). A car park bay with no lot number
-  // waits until it has one; a refused save waits for Save again, so the same error is not shown on every box.
-  function autoSave() {
-    if (!form || !dirty || inFlight.current || saveFailed || moving) return;
-    if ((form.parkingBays ?? []).some(b => !b.lotNumber.trim())) return;
-    void save(true);
-  }
-  // A box changed while a save was on its way is saved as soon as that save is back.
-  useEffect(() => { if (!saving) autoSave(); }, [saving]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Another unit starts clean.
-  useEffect(() => setSaveFailed(false), [openId]);
   // Delete only a unit added by mistake; anything with history is refused and offered Blocked instead.
   async function deleteUnit() {
     if (!form) return;
@@ -204,7 +200,8 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     try {
       await api.del(`/units/${encodeURIComponent(form.id)}`);
       toast({ tone: 'success', title: 'Unit deleted.', body: `${name} is gone from the list.` });
-      setEdits(e => { const n = { ...e }; delete n[form.id]; return n; });
+      // Right away: there is nothing left to save, so the move below must not ask.
+      flushSync(() => dropEdits(form.id));
       navigate('/properties/units');
       reloadAll();
     } catch (e) {
@@ -366,7 +363,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
             detail.error ? <Card><div className="p-10 text-center text-muted-ink text-copy">{detail.error}</div></Card> : <RecordSkeleton />
           ) : (
             <UnitRecord d={d} form={form} buildings={buildings} building={building} unitLabel={unitLabel}
-              tab={tab} setTab={setTab} canEdit={canEdit} dirty={dirty} saving={saving} saveFailed={saveFailed} moving={moving} onSave={() => { setSaveFailed(false); void save(); }} onAutoSave={autoSave} onDelete={() => void deleteUnit()}
+              tab={tab} setTab={setTab} canEdit={canEdit} dirty={dirty} saving={saving} onSave={() => void save()} onDelete={() => void deleteUnit()}
               onChange={p => form && patch(form.id, p)} reload={reloadAll} reloadDetail={detail.reload}
               readiness={readiness[d.unit.id] ?? d.unit.readiness}
               setReadiness={(id, r) => setReadinessEdits(m => { const n = { ...m }; if (r) n[id] = r; else delete n[id]; return n; })} />
@@ -381,12 +378,12 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
 
 interface RecordProps {
   d: UnitDetail; form: Unit | null; buildings: Building[]; building: Building | undefined; unitLabel: string;
-  tab: Tab; setTab: (t: Tab) => void; canEdit: boolean; dirty: boolean; saving: boolean; saveFailed: boolean; moving: boolean; onSave: () => void; onAutoSave: () => void; onDelete: () => void;
+  tab: Tab; setTab: (t: Tab) => void; canEdit: boolean; dirty: boolean; saving: boolean; onSave: () => void; onDelete: () => void;
   onChange: (p: Partial<Unit>) => void; reload: () => void; reloadDetail: () => void;
   readiness: UnitReadiness; setReadiness: (id: string, r: UnitReadiness | null) => void;
 }
 
-function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, saveFailed, moving, onSave, onAutoSave, onDelete, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
+function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, onSave, onDelete, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
   const toast = useToast();
   const { user } = useSession();
   // Same people as edit the unit's master data (the server's channex-setup / channex-connect).
@@ -550,11 +547,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       {on('details') && (form ? (
         <Card>
           <SaveBar title="Details & owner" sub="Four steps: listing, space, owner, then cleaning prices and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
-            auto failed={saveFailed} hold={moving ? 'Moving this unit: press Save to confirm.' : undefined}
             extra={canEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Trash2" size="sm" />} onClick={onDelete}>Delete unit</Button> : undefined} />
-          <div onBlur={onAutoSave}>
-            <DetailsForm u={form} owner={u.owner} buildings={buildings} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
-          </div>
+          <DetailsForm u={form} owner={u.owner} buildings={buildings} canEdit={canEdit} onChange={onChange} onOpenContract={() => setTab('contract')} />
         </Card>
       ) : needsForm)}
 

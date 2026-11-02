@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'rea
 import Icon from './Icon';
 import { cx } from '../lib/design-tokens';
 import { errorMessage } from '../lib/api';
+import { Button } from './Button';
+import { useToast } from './Toast';
 
 /* One look for every upload in the app: a quiet label with a count, then either a thumbnail grid whose last tile
    adds more (photos and videos), or a list of file rows ending in an "Add file" row (invoices, receipts, CSVs). */
@@ -17,6 +19,35 @@ export function AttachmentLabel({ title, count, hint, sub }: { title: string; co
       {count !== undefined && <span className={cx('text-muted-ink tabular-nums', sub ? 'text-meta' : 'text-copy')}>· {count}</span>}
       {hint && <span className="ml-auto text-meta text-muted-ink">{hint}</span>}
     </div>
+  );
+}
+
+/** Every photo on a job as one PDF, two to a page with the unit and the day and time each was added (Conts, Nov 2026).
+ *  Shown once there is at least one photo; videos are left out and counted on the first page. */
+export function PhotosPdfButton({ items, title, sub, fileStem, label }: {
+  items: (MediaItem & { uploadedAt?: string | null })[]; title: string; sub: string; fileStem: string;
+  /** A word printed beside each photo's time, e.g. "The problem" or "Fixed". */
+  label?: (item: MediaItem) => string | null;
+}) {
+  const toast = useToast();
+  const [progress, setProgress] = useState<string | null>(null);
+  if (!items.some(m => m.kind !== 'video')) return null;
+  async function make() {
+    setProgress('');
+    try {
+      const { downloadPhotosPdf } = await import('../lib/photosPdf');
+      await downloadPhotosPdf({ title, sub, fileStem, onProgress: (done, total) => setProgress(`${done} of ${total}`),
+        photos: items.map(m => ({ url: m.url, kind: m.kind, at: m.uploadedAt ?? null, label: label?.(m) ?? null })) });
+    } catch (e) {
+      toast({ tone: 'critical', title: 'PDF not made.', body: errorMessage(e, 'Try again.') });
+    } finally {
+      setProgress(null);
+    }
+  }
+  return (
+    <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} loading={progress !== null} onClick={() => void make()}>
+      {progress ? `Making PDF ${progress}` : 'Download PDF'}
+    </Button>
   );
 }
 
@@ -53,11 +84,9 @@ interface Pending { key: string; name: string; preview: string | null; video: bo
 /** Thumbnails of the photos and videos already attached, then an "Add photo" tile. With `upload`, files picked or
  *  dropped go up one at a time (the caller's `upload` sends one file) and show on the grid while they do; refused
  *  files stay as a red tile saying why. Without `upload` the grid is read-only. */
-export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', capture, emptyText, showStage, onRemove, openAddRef, repeat = true }: {
+export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', capture, emptyText, showStage, onRemove, openAddRef }: {
   /** `onDone` runs after each batch with how many files went up (0 when every one failed). */
   items: MediaItem[]; upload?: (file: File) => Promise<unknown>; onDone?: (uploaded: number) => void; addLabel?: string;
-  /** After a camera shot, offer "Take another" (the standard). False for a screen where the shot ends the step. */
-  repeat?: boolean;
   capture?: boolean; emptyText?: string; showStage?: boolean;
   /** Puts an X on each saved tile. The caller confirms and deletes. */
   onRemove?: (item: MediaItem) => void;
@@ -200,9 +229,9 @@ export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', ca
             onChange={e => { if (e.target.files?.length) void send(e.target.files); e.target.value = ''; }} />
           {/* Camera: one shot per open (the OS camera returns one file), then "Take another" re-opens it. */}
           <input ref={cameraPhoto} type="file" accept="image/*" capture="environment" className="hidden"
-            onChange={e => { if (e.target.files?.length) { void send(e.target.files); setLastKind('photo'); setSource(repeat ? 'again' : null); } e.target.value = ''; }} />
+            onChange={e => { if (e.target.files?.length) { void send(e.target.files); setLastKind('photo'); setSource('again'); } e.target.value = ''; }} />
           <input ref={cameraVideo} type="file" accept="video/*" capture="environment" className="hidden"
-            onChange={e => { if (e.target.files?.length) { void send(e.target.files); setLastKind('video'); setSource(repeat ? 'again' : null); } e.target.value = ''; }} />
+            onChange={e => { if (e.target.files?.length) { void send(e.target.files); setLastKind('video'); setSource('again'); } e.target.value = ''; }} />
         </>
       )}
       {source && (

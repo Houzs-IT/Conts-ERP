@@ -22,7 +22,7 @@ r = await call('PATCH', `/api/units/${id}`, { parkingBays: [{ lotNumber: ' ' }] 
 check('a bay with no lot number is refused', r.status === 422, r.text);
 let u = (await call('GET', '/api/properties')).json.units.find(x => x.id === id);
 check('beds read back as "1 King · 2 Single"', u.bedsLabel === '1 King · 2 Single', u.bedsLabel);
-check('bays read back with count and lots', u.parkingLabel === '3 bays: L2-105 (P2), L2-106, B1-7', u.parkingLabel);
+check('bays read back with count and lots', u.parkingLabel === '3 bays: LEVEL P2-LOT-L2-105, L2-106, B1-7', u.parkingLabel);
 check('purpose defaults to rental', u.purpose === 'rental', u.purpose);
 
 // --- contract codes are the same for every purpose: showroom and warehouse is only a label (migration 0181) ---

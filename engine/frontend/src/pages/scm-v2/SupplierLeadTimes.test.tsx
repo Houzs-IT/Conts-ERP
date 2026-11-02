@@ -8,6 +8,8 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 const authedFetch = vi.fn();
 vi.mock('../../vendor/scm/lib/authed-fetch', () => ({ authedFetch: (...a: unknown[]) => authedFetch(...a) }));
 vi.mock('../../vendor/scm/lib/mutation-error', () => ({ writeFailed: () => {} }));
+// The MRP tabs follow the product catalog when the server sends one; these tests run the Houzs tabs (no catalog).
+vi.mock('../../vendor/scm/lib/renovation-catalog-queries', () => ({ useRenovationCatalog: () => ({ query: { data: undefined }, groups: [] }) }));
 vi.mock('../../vendor/scm/lib/mrp-queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../vendor/scm/lib/mrp-queries')>()),
   // Base defaults so the rows can show "(default N)".

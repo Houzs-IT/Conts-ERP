@@ -96,7 +96,8 @@ const fromDetail = (d: Detail, copy: boolean): ApFormValues => ({
   invoiceDate: copy ? myt() : d.invoice.invoice_date,
   dueDate: copy ? '' : (d.invoice.due_date ?? ''),
   description: d.invoice.notes ?? '',
-  lines: d.lines.map((l, i) => ({ rid: i + 1, description: l.description ?? '', debitAccountCode: l.debit_account_code, amountSen: l.amount_sen, department: departmentOf((l as { department?: unknown }).department) })),
+  lines: d.lines.map((l, i) => ({ rid: i + 1, description: l.description ?? '', debitAccountCode: l.debit_account_code, amountSen: l.amount_sen, department: departmentOf((l as { department?: unknown }).department),
+    projectId: (l as { project_id?: number | null }).project_id ?? null })),
 });
 
 type FormState = {
@@ -292,7 +293,7 @@ export const ApInvoices = () => {
 
   const formTitle = form?.mode === 'edit'
     ? `Edit ${form.invoiceNumber ?? 'AP invoice'}`
-    : form?.mode === 'copy' ? `New AP invoice — copied from ${form.invoiceNumber ?? 'a bill'}` : 'New AP invoice — 非库存的供应商账单';
+    : form?.mode === 'copy' ? `New AP invoice — copied from ${form.invoiceNumber ?? 'a bill'}` : 'New AP invoice — a supplier bill not for stock';
 
   return (
     <div className="space-y-4">

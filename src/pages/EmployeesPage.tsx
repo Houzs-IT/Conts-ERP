@@ -7,9 +7,11 @@ import { TabBar, tabId, panelId } from '../components/TabBar';
 import { Button } from '../components/Button';
 import { useApi } from '../lib/useApi';
 import type { AttendanceLine } from '../../functions/api/attendance/index';
+import type { DcEmployee } from '../../functions/_lib/hrFields';
 
 const WorkingHoursTab = lazy(() => import('./workers/WorkingHoursTab'));
 const AttendanceTab = lazy(() => import('./workers/AttendanceTab'));
+const PunchSitesTab = lazy(() => import('./workers/PunchSitesTab'));
 const PayrollTab = lazy(() => import('./workers/PayrollTab'));
 const AdvancesTab = lazy(() => import('./workers/AdvancesTab'));
 const EmployeesTab = lazy(() => import('./workers/EmployeesTab'));
@@ -18,12 +20,17 @@ const LeaveTab = lazy(() => import('./workers/LeaveTab'));
 const PenaltiesTab = lazy(() => import('./workers/PenaltiesTab'));
 const LaborCostTab = lazy(() => import('./workers/LaborCostTab'));
 const DepartmentLaborTab = lazy(() => import('./workers/DepartmentLaborTab'));
+const EmployeePerformanceTab = lazy(() => import('./workers/EmployeePerformanceTab'));
+const DcEmployeesTab = lazy(() => import('./workers/DcEmployeesTab'));
+const DcEmployeePerformanceTab = lazy(() => import('./workers/DcEmployeePerformanceTab'));
+const DcHrEmptyTab = lazy(() => import('./workers/DcHrEmptyTab'));
 
 /* ------------------------------------------------------------------ *
  * HR > Employees: Hookka's Employees page (erp.hookka.com /employees),
  * its eleven tabs in its order with its labels and icons (owner, 26 Oct
  * 2026: follow Hookka's tabs), plus Outside Companies: the cleaning and
- * repair companies, which have no HR record (Operations > Workers is gone).
+ * repair companies, which have no HR record (Operations > Workers is gone),
+ * and Punch Sites: where a phone punch counts as on site (27 Oct 2026).
  * Leave is off the bar, as on Hookka ("hidden until rollout"), and still
  * opens from its notices at ?tab=leave.
  * ------------------------------------------------------------------ */
@@ -31,6 +38,7 @@ const DepartmentLaborTab = lazy(() => import('./workers/DepartmentLaborTab'));
 const TABS = [
   { key: 'working-hours', label: 'Working Hours', icon: 'Clock' },
   { key: 'attendance', label: 'Attendance', icon: 'UserCheck' },
+  { key: 'punch-sites', label: 'Punch Sites', icon: 'MapPin' },
   { key: 'labor-cost', label: 'Labor Cost', icon: 'DollarSign' },
   { key: 'efficiency', label: 'Efficiency Overview', icon: 'Activity' },
   { key: 'department-labor', label: 'Department Labor', icon: 'DollarSign' },
@@ -48,7 +56,7 @@ const isTab = (v: string | null): v is TabKey => v === 'leave' || TABS.some(t =>
 /** Twelve tabs do not fit in one row, so the bar shows three sections and the second row shows the pages in the
  *  chosen section (owner, 27 Oct 2026). Hookka's order is kept inside each section. */
 const SECTIONS = [
-  { key: 'hours', label: 'Hours', tabs: ['working-hours', 'attendance', 'efficiency', 'detail', 'department-performance'] },
+  { key: 'hours', label: 'Hours', tabs: ['working-hours', 'attendance', 'punch-sites', 'efficiency', 'detail', 'department-performance'] },
   { key: 'staff', label: 'Staff', tabs: ['employee-master', 'outside'] },
   { key: 'pay', label: 'Pay', tabs: ['payroll', 'advances', 'penalties', 'labor-cost', 'department-labor'] },
 ] as const satisfies readonly { key: string; label: string; tabs: readonly TabKey[] }[];
@@ -59,27 +67,43 @@ const tabsIn = (section: (typeof SECTIONS)[number]): typeof TABS[number][] =>
   section.tabs.flatMap(k => TABS.filter(t => t.key === k));
 
 /** Tabs Hookka measures from factory job cards. The Conts has not decided what production time is for cleaning and
- *  repair jobs (owner, 26 Oct 2026), so they stay empty rather than show a made-up figure. */
+ *  repair jobs (owner, 26 Oct 2026), so they stay empty rather than show a made-up figure. Employee Performance
+ *  already counts each cleaner's Basic and Deep cleans, at 0 minutes a job until the times are decided. */
 const UNDECIDED: Partial<Record<TabKey, string>> = {
   efficiency: 'Each person\'s production time against the hours they clocked.',
-  detail: 'One person\'s production hours, jobs and efficiency over a period.',
   'department-performance': 'Each department\'s production hours and efficiency, day by day.',
 };
 
-export default function EmployeesPage() {
+/** Dream Crafter > HR > Employees has the same layout as The Conts' (owner, 30 Oct 2026). Its people are its own
+ *  (migration 0185); clock-in and pay are not built for them yet, so it opens on Employee Master, the tab that works. */
+export interface EmployeesPageProps { dreamCrafter?: boolean }
+
+export default function EmployeesPage({ dreamCrafter = false }: EmployeesPageProps) {
   const [params, setParams] = useSearchParams();
   const asked = params.get('tab');
-  const tab: TabKey = isTab(asked) ? asked : 'working-hours';
+  const tab: TabKey = isTab(asked) ? asked : dreamCrafter ? 'employee-master' : 'working-hours';
   const setTab = (t: TabKey) => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); n.delete('month'); n.delete('day'); n.delete('year'); return n; }, { replace: true });
   const section = sectionOf(tab);
-  const today = useApi<{ data: AttendanceLine[] }>('/attendance');
+  const today = useApi<{ data: AttendanceLine[] }>(dreamCrafter ? null : '/attendance');
+  const dcStaff = useApi<{ data: DcEmployee[] }>(dreamCrafter ? '/employees/dream-crafter' : null);
   const lines = today.data?.data ?? [];
   const present = lines.filter(l => l.punch).length;
   const minutes = lines.reduce((n, l) => n + (l.punch?.minutes ?? 0), 0);
 
+  const workers = dreamCrafter ? dcStaff.data?.data.filter(e => e.status === 'active').length : today.data ? lines.length : undefined;
+  const workersLoading = dreamCrafter ? dcStaff.loading && !dcStaff.data : today.loading && !today.data;
+
   let body: ReactNode;
-  if (tab === 'working-hours') body = <WorkingHoursTab />;
+  if (dreamCrafter && tab === 'employee-master') body = <DcEmployeesTab onChanged={dcStaff.reload} />;
+  else if (dreamCrafter && tab === 'detail') body = <DcEmployeePerformanceTab />;
+  else if (dreamCrafter && (tab === 'attendance' || tab === 'punch-sites')) body = <DcHrEmptyTab page={tab} />;
+  else if (dreamCrafter) {
+    body = <EmptyState icon="Users" title="Not set up for Dream Crafter yet"
+      body="Dream Crafter clock-in and payroll are not built yet, so this is empty for now. Add staff on Staff > Employee Master." />;
+  }
+  else if (tab === 'working-hours') body = <WorkingHoursTab />;
   else if (tab === 'attendance') body = <AttendanceTab />;
+  else if (tab === 'punch-sites') body = <PunchSitesTab />;
   else if (tab === 'payroll') body = <PayrollTab />;
   else if (tab === 'advances') body = <AdvancesTab />;
   else if (tab === 'employee-master') body = <EmployeesTab />;
@@ -88,6 +112,7 @@ export default function EmployeesPage() {
   else if (tab === 'penalties') body = <PenaltiesTab />;
   else if (tab === 'labor-cost') body = <LaborCostTab />;
   else if (tab === 'department-labor') body = <DepartmentLaborTab />;
+  else if (tab === 'detail') body = <EmployeePerformanceTab />;
   else {
     body = <EmptyState icon="Activity" title="Production time is not decided yet"
       body={`${UNDECIDED[tab] ?? ''} On Hookka this comes from factory job cards. It stays empty until The Conts decides what counts as production time for cleaning and repair jobs.`} />;
@@ -99,9 +124,9 @@ export default function EmployeesPage() {
       {/* The two lists are for finding a person on a phone: today's attendance figures would push them off the screen. */}
       <div className={tab === 'employee-master' || tab === 'outside' ? 'hidden md:block' : undefined}>
         <StatRow cols={4}>
-          <StatTile label="Total Workers" value={today.data ? String(lines.length) : undefined} loading={today.loading && !today.data} />
-          <StatTile label="Present" value={today.data ? String(present) : undefined} hint="Clocked in today" loading={today.loading && !today.data} />
-          <StatTile label="Working Hours" value={today.data ? `${(minutes / 60).toFixed(1)} h` : undefined} hint="Today so far" loading={today.loading && !today.data} />
+          <StatTile label="Total Workers" value={workers === undefined ? undefined : String(workers)} loading={workersLoading} />
+          <StatTile label="Present" value={dreamCrafter ? '—' : today.data ? String(present) : undefined} hint={dreamCrafter ? 'Clock-in not set up' : 'Clocked in today'} loading={today.loading && !today.data} />
+          <StatTile label="Working Hours" value={dreamCrafter ? '—' : today.data ? `${(minutes / 60).toFixed(1)} h` : undefined} hint={dreamCrafter ? 'Clock-in not set up' : 'Today so far'} loading={today.loading && !today.data} />
           <StatTile label="Avg Efficiency" value="—" hint="Production time not decided" />
         </StatRow>
       </div>

@@ -11,9 +11,10 @@ import { Button } from '../../components/Button';
 import { useAuth } from '../../auth/AuthContext';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { useDialog } from '../../hooks/useDialog';
+import { useToast } from '../../hooks/useToast';
 import {
-  instalmentsForSave, refusalOf, renoSend, sectionsForSave, useBrands, useQuotation, useRenoMutation, useTerms,
-  type DocHeader, type DocSection, type Instalment,
+  contractPostingWarning, instalmentsForSave, refusalOf, renoSend, sectionsForSave, useBrands, useQuotation, useRenoMutation, useTerms,
+  type ContractPosting, type DocHeader, type DocSection, type Instalment,
 } from '../../lib/renovation/api';
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { DocEditor, type RoomLayout } from './DocEditor';
@@ -33,6 +34,7 @@ export function QuotationEditor() {
   const brands = useBrands();
   const terms = useTerms();
   const navigate = useNavigate();
+  const toast = useToast();
   const { can } = useAuth();
   const dialog = useDialog();
   const canQuote = can('scm.renovation.quote');
@@ -107,7 +109,9 @@ export function QuotationEditor() {
     if (!(await serviceConfirm({ title: 'Convert to the sales order?', body: `Every line of ${revision.docNo} becomes the contract of this project, and the quotation locks.`, confirmLabel: 'Convert' }))) return;
     setError(null);
     try {
-      const r = await run.mutateAsync(() => renoSend<{ docNo: string }>(`/quotations/${quotation.id}/convert`, 'POST', { version, soDate: todayIso() })) as { docNo: string };
+      const r = await run.mutateAsync(() => renoSend<{ docNo: string; posting?: ContractPosting }>(`/quotations/${quotation.id}/convert`, 'POST', { version, soDate: todayIso() })) as { docNo: string; posting?: ContractPosting };
+      const warning = contractPostingWarning(r.posting);
+      if (warning) toast.warning(warning);
       navigate(`/scm/renovation/contracts/${encodeURIComponent(r.docNo)}`);
     } catch (e) { setError(refusalOf(e).message); }
   };

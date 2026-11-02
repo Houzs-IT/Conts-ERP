@@ -76,7 +76,7 @@ export const StockCloseTab = () => {
         <div style={{ ...cardStyle, minWidth: 220 }}>
           <div style={softText}>Live stock value (now)</div>
           <div style={{ fontSize: 'var(--fs-20, 20px)', fontWeight: 700 }}>{fmtSen(q.data.liveValueSen)}</div>
-          <div style={softText}>月底当晚系统自动抓这个数进 ledger;之后每天检查上月有没有补单,有变自动重过。</div>
+          <div style={softText}>On the night of month end the system takes this figure into the ledger; after that it checks the last month daily for late documents and re-posts when anything changed.</div>
         </div>
         <div style={{ ...cardStyle, minWidth: 220 }}>
           <div style={softText}>Run a close now</div>

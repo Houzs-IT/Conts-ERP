@@ -22,6 +22,9 @@ import { creditNoteLines, debitNoteLines, supplierCreditNoteLines, resolveRoles,
 import { resolveDebtorRoles } from '../conts/parties';
 import { docMonthTag, mintMonthlyDocNo } from '../scm/lib/doc-no';
 import { todayMyt } from '../scm/lib/my-time';
+import { postRenovationCredit, releaseRenovationCredit, renovationCreditKind } from './reno-ledger';
+import { cancelAfterReversal, prepareAfterPosting } from './einvoice-outbox';
+import { projectOfPurchaseInvoice } from '../conts/project-limit';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
 type Db = any;
@@ -111,6 +114,20 @@ export async function postCreditNote(
 ): Promise<{ ok: true; jeNo: string; status: 'posted' | 'already_posted' } | { ok: false; status: string; reason: string }> {
   const note = p.note;
   if (note.status === 'CANCELLED') return { ok: false, status: 'cancelled', reason: `${note.note_number} is cancelled.` };
+  /* A renovation credit (a contract credit or a negative instalment) posts by the waterfall: Dr revenue given back
+     from the last tier / Cr the customer or the advance (acc/reno-ledger). */
+  if (String(note.kind) === 'CN' && note.so_doc_no) {
+    const rk = await renovationCreditKind(sb, p.companyId, String(note.id));
+    if (!rk.ok) return { ok: false, status: 'load_failed', reason: rk.reason };
+    if (rk.kind) {
+      const r = await postRenovationCredit(sb, { companyId: p.companyId, kind: rk.kind, note: note as never });
+      if (!r.ok) return { ok: false, status: r.status, reason: r.reason };
+      const marked = await markPosted(sb, p, r.jeNo, r.status);
+      /* Its e-invoice record waits in the outbox (acc/einvoice-outbox); never blocks the posting. */
+      if (marked.ok) await prepareAfterPosting(sb, p.companyId, 'CREDIT_NOTE', String(note.id));
+      return marked;
+    }
+  }
   const { data: lineRows, error: lErr } = await sb.from('acc_credit_note_lines')
     .select(CREDIT_NOTE_LINE).eq('company_id', p.companyId).eq('note_id', note.id).order('line_no');
   if (lErr) return { ok: false, status: 'load_failed', reason: lErr.message };
@@ -134,7 +151,7 @@ export async function postCreditNote(
   }
   const ruleLines = kind === 'CN' ? creditNoteLines(roles, { note_number: String(note.note_number) }, party, lines)
     : kind === 'DN' ? debitNoteLines(roles, { note_number: String(note.note_number) }, party, lines)
-    : supplierCreditNoteLines(roles, { note_number: String(note.note_number) }, party, lines);
+    : supplierCreditNoteLines(roles, { note_number: String(note.note_number) }, party, lines, kind === 'SCN' ? await scnProject(sb, p.companyId, note) : null);
   const je = await postJournal(sb, {
     companyId: p.companyId,
     entryDate: String(note.note_date),
@@ -144,13 +161,35 @@ export async function postCreditNote(
     lines: ruleLines,
   });
   if (!je.ok) return { ok: false, status: je.status, reason: (je as { reason?: string }).reason ?? je.status };
-  if (note.status === 'DRAFT') {
+  return markPosted(sb, p, je.jeNo, je.status === 'already_posted' ? 'already_posted' : 'posted');
+}
+
+/** The project a supplier credit note gives cost back to: its purchase invoice's (through the PO or GRN), or its AP
+    invoice's when that bill's lines name one project. */
+async function scnProject(sb: Db, companyId: number, note: Row): Promise<number | null> {
+  if (note.ap_invoice_id) {
+    const { data, error } = await sb.from('ap_invoice_lines').select('project_id').eq('company_id', companyId).eq('invoice_id', note.ap_invoice_id);
+    if (error) return null;
+    const ids = [...new Set(((data ?? []) as Array<{ project_id: number | null }>).map((l) => l.project_id).filter((p) => p != null))];
+    return ids.length === 1 ? Number(ids[0]) : null;
+  }
+  if (!note.purchase_invoice_id) return null;
+  const { data, error } = await sb.from('purchase_invoices').select('purchase_order_id, grn_id').eq('company_id', companyId).eq('id', note.purchase_invoice_id).maybeSingle();
+  if (error || !data) return null;
+  return projectOfPurchaseInvoice(sb, companyId, data as { purchase_order_id?: string | null; grn_id?: string | null });
+}
+
+/** A DRAFT note whose journal is posted becomes POSTED. */
+async function markPosted(
+  sb: Db, p: { companyId: number; note: Row; actor: string | null }, jeNo: string, status: 'posted' | 'already_posted',
+): Promise<{ ok: true; jeNo: string; status: 'posted' | 'already_posted' } | { ok: false; status: string; reason: string }> {
+  if (p.note.status === 'DRAFT') {
     const { error: upErr } = await sb.from('acc_credit_notes').update({
-      status: 'POSTED', je_no: je.jeNo, posted_at: new Date().toISOString(), posted_by: p.actor, updated_at: new Date().toISOString(),
-    }).eq('company_id', p.companyId).eq('id', note.id);
+      status: 'POSTED', je_no: jeNo, posted_at: new Date().toISOString(), posted_by: p.actor, updated_at: new Date().toISOString(),
+    }).eq('company_id', p.companyId).eq('id', p.note.id);
     if (upErr) return { ok: false, status: 'save_failed', reason: upErr.message };
   }
-  return { ok: true, jeNo: je.jeNo, status: je.status === 'already_posted' ? 'already_posted' : 'posted' };
+  return { ok: true, jeNo, status };
 }
 
 /** Cancel one note: the contra for a posted one (dated the day of the
@@ -173,6 +212,11 @@ export async function cancelCreditNote(
     });
     if (!rev.ok) return { ok: false, status: rev.status, reason: (rev as { reason?: string }).reason ?? rev.status };
     contraJeNo = rev.status === 'reversed' ? rev.jeNo : null;
+  }
+  /* A renovation credit gives its revenue allocation back, and a contract credit its amount to the contract. */
+  if (String(note.kind) === 'CN' && note.so_doc_no) {
+    await releaseRenovationCredit(sb, { companyId: p.companyId, noteId: String(note.id), noteNumber: String(note.note_number), soDocNo: String(note.so_doc_no) });
+    await cancelAfterReversal(sb, p.companyId, 'CREDIT_NOTE', String(note.note_number));
   }
   const { error: upErr } = await sb.from('acc_credit_notes').update({
     status: 'CANCELLED', cancelled_at: new Date().toISOString(), cancelled_by: p.actor, updated_at: new Date().toISOString(),

@@ -361,7 +361,7 @@ const ReconcileTab = () => {
         <b>{`Card payments no merchant report has reported yet (${waiting.length})`}</b>
         <div style={softText}>
           Keyed in by the sales team; the merchant has not put them on a report. {fmt(waitingSen)} in total.
-          {untagged > 0 && ` ${untagged} keyed in without a bank (未标): shown once here, offered to each merchant's report, and named by the one that confirms it.`}
+          {untagged > 0 && ` ${untagged} keyed in without a bank (untagged): shown once here, offered to each merchant's report, and named by the one that confirms it.`}
         </div>
         <DataTable<WaitingCard>
           tableId="merchant-recon-waiting"
@@ -381,7 +381,7 @@ const ReconcileTab = () => {
 
 type WaitingCard = Watchlist['recordedNotArrived'][number];
 const WAITING_COLUMNS: Column<WaitingCard>[] = [
-  { key: 'merchant', label: 'Merchant', render: (p) => <span className={styles.codeChip}>{p.acquirerCode ?? '未标'}</span>, getValue: (p) => p.acquirerCode ?? '未标' },
+  { key: 'merchant', label: 'Merchant', render: (p) => <span className={styles.codeChip}>{p.acquirerCode ?? 'Untagged'}</span>, getValue: (p) => p.acquirerCode ?? 'Untagged' },
   { key: 'document', label: 'Document', render: (p) => p.docNo, getValue: (p) => p.docNo },
   { key: 'salesperson', label: 'Salesperson', render: (p) => p.salespersonName ?? '—', getValue: (p) => p.salespersonName ?? '' },
   { key: 'paidOn', label: 'Customer paid on', render: (p) => fmtDate(p.paidOn), getValue: (p) => p.paidOn, exportFormat: 'date' },
@@ -1066,7 +1066,7 @@ const FindTheSale = ({ rowId, grossSen, picked, shown, onToggle }: {
                   {p.docNo}
                   {p.possible && <span className={styles.codeChip} style={{ marginLeft: 6 }}>possible</span>}
                   {p.merchantProvider === null && (
-                    <span style={{ marginLeft: 6, fontSize: 'var(--fs-12)', color: 'var(--text-soft, #8a8578)' }}>未标 merchant</span>
+                    <span style={{ marginLeft: 6, fontSize: 'var(--fs-12)', color: 'var(--text-soft, #8a8578)' }}>Untagged merchant</span>
                   )}
                 </td>
                 <td style={cell}>{p.customerName ?? '—'}</td>
@@ -1183,7 +1183,7 @@ const SettlementLine = ({ row }: { row: SettlementRow }) => {
                         Strictly null: a candidate WITHOUT the field (an older
                         cached response) is unknown, not untagged. */}
                     {p.merchantProvider === null && (
-                      <span style={{ marginLeft: 6, fontSize: 'var(--fs-12)', color: 'var(--text-soft, #8a8578)' }}>未标 merchant</span>
+                      <span style={{ marginLeft: 6, fontSize: 'var(--fs-12)', color: 'var(--text-soft, #8a8578)' }}>Untagged merchant</span>
                     )}
                   </td>
                   <td style={cell}>{p.paidOn}</td>

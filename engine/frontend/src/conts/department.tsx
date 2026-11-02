@@ -1,5 +1,5 @@
 // Conts only (not part of Houzs's code): the department on each ledger line (finance phase 1, spec 3.5).
-// Rental, Supply chain or Shared (the company's own costs). The server's list is backend/src/acc/rules.ts DEPARTMENTS;
+// Rental, Renovation (stored as `supply`: Supply chain is the renovation business, chew 2 Nov 2026) or Shared (the company's own costs). The server's list is backend/src/acc/rules.ts DEPARTMENTS;
 // a line that names none is Supply chain there.
 import type { CSSProperties } from "react";
 
@@ -7,7 +7,7 @@ export type Department = "rental" | "supply" | "shared";
 
 export const DEPARTMENT_OPTIONS: ReadonlyArray<{ value: Department; label: string }> = [
   { value: "rental", label: "Rental" },
-  { value: "supply", label: "Supply chain" },
+  { value: "supply", label: "Renovation" },
   { value: "shared", label: "Shared" },
 ];
 
@@ -15,7 +15,7 @@ export const DEPARTMENT_OPTIONS: ReadonlyArray<{ value: Department; label: strin
 export const departmentOf = (d: unknown): Department | "" => (DEPARTMENT_OPTIONS.some((o) => o.value === d) ? (d as Department) : "");
 
 export const departmentLabel = (d: string | null | undefined): string =>
-  DEPARTMENT_OPTIONS.find((o) => o.value === d)?.label ?? "Supply chain";
+  DEPARTMENT_OPTIONS.find((o) => o.value === d)?.label ?? "Renovation";
 
 /** A new line starts with the department of the nearest line above that has one; the first line starts empty. */
 export function nextLineDepartment(lines: ReadonlyArray<{ department: Department | "" }>): Department | "" {

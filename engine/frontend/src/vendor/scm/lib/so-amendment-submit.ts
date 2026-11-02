@@ -145,6 +145,11 @@ export const VO_MODE_BANNER =
   'This sales order is confirmed, so every change is recorded as a VO (VO-01, VO-02, ...). Edit the lines '
   + 'as usual and press Record VO: the change applies straight away, no approval needed.';
 
+/** A renovation contract: lines change by a contract VO on the contract page; options and remarks save here. */
+export const CONTRACT_MODE_BANNER =
+  'This is a renovation contract. Edit the lines here and press Save: options and remarks save on the line, and adding '
+  + 'or removing a line or changing its SKU, qty or price raises a contract VO for you. The customer and address are changed on the project.';
+
 export const AMENDMENT_MODE_BANNER =
   'This order is already ordered from the supplier. Edit the lines, dates, delivery '
   + 'address or customer name, phone and email as usual — your request goes to the '

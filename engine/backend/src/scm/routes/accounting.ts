@@ -30,12 +30,21 @@ import { paginateAll } from '../lib/paginate-all';
 import { safeRate, toMyrSen } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { hasHouzsPerm } from '../lib/houzs-perms';
+import { einvoiceOutboxGet, einvoiceOutboxList, einvoiceRefresh, einvoiceSettingsGet, einvoiceSettingsPut } from '../../acc/einvoice-routes';
+import { renoProjectsHandler } from '../../acc/reno-projects';
+import { listUnitsHandler } from '../../conts/units-route';
+import { rentalUnitCostsHandler } from '../../acc/rental-unit-costs';
+import {
+  changeExpectedCostHandler, expectedCostLogHandler, getAlertSettingsHandler, keepCostAlertHandler, listCostAlertsHandler,
+  pendingCostAlertsHandler, putAlertSettingsHandler,
+} from '../../acc/reno-cost-review-routes';
 import { postJournal, reverseJournal } from '../../acc/engine';
 import { beforeLedgerStartMessage, isBeforeLedgerStart, ledgerDatesRefusal, loadLedgerSettings, saveLedgerSettings } from '../../acc/ledger-settings';
 import { backfillSoPayments, paymentEntryDisagreements, unbookedPayments } from '../../acc/payments';
 import { computeDailyBank } from '../../acc/daily-bank';
 import { systemTakings, postCashOverShort } from '../../acc/daily-close';
-import { resolveRoles, piLines, DEFAULT_ROLE_CODES, BAD_DEPARTMENT, departmentQuery, type AccountRole, type Department } from '../../acc/rules';
+import { resolveRoles, piLines, DEFAULT_ROLE_CODES, BAD_DEPARTMENT, DEFAULT_DEPARTMENT, departmentQuery, type AccountRole, type Department } from '../../acc/rules';
+import { readLineTags, unknownTags, type LineTags } from '../../conts/line-tags';
 import { ledgerSetupStatus, OPEN_BALANCE_ROLES, roleProblem } from '../../conts/ledger-setup-status';
 import { splitByItemGroup } from '../../acc/item-group-split';
 import { classifyJournal } from '../../acc/journal-class';
@@ -63,14 +72,17 @@ import {
   chartUnionHandler, chartTickHandler, chartImportHandler, chartImportMatchHandler,
   chartRenameHandler, chartUpdateHandler, chartDeleteHandler, chartCreateHandler,
 } from './accounting-chart';
-import { itemGroupsList, itemGroupCreate, itemGroupBind, itemGroupPatch } from './accounting-item-groups';
+import { itemGroupsList, itemGroupCreate, itemGroupBind, itemGroupPatch, subCategoryBind } from './accounting-item-groups';
 import { piPeriodicBackfill } from './accounting-pi-backfill';
+import { renoOpeningApply, renoOpeningPreview } from './accounting-reno-opening';
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
 import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
+import { importOpeningDeposits, reverseOpeningDeposits } from '../../acc/opening-deposits';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
 import { partyLedgerHandler } from '../../conts/party-ledger';
 import { approveLimitRequestHandler, createLimitRequestHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler } from '../../conts/project-limit-routes';
+import { projectOfPurchaseInvoice } from '../../conts/project-limit';
 import * as pettyCash from '../../conts/petty-cash-routes';
 import * as paymentRequests from '../../conts/payment-request-routes';
 import { assertAuditWritable, auditUnavailableBody, compactChanges, fieldChange, recordEntityAudit, type AuditActor } from '../lib/entity-audit';
@@ -215,6 +227,7 @@ accounting.post('/receipts/:id/formalise', receiptFormalise);
 accounting.post('/item-groups', itemGroupCreate);
 accounting.put('/item-groups/:code/accounts', itemGroupBind);
 accounting.patch('/item-groups/:code', itemGroupPatch);
+accounting.put('/item-groups/sub-categories/:code', subCategoryBind);
 accounting.get('/chart', chartUnionHandler);
 accounting.put('/chart/tick', chartTickHandler);
 accounting.post('/chart/import', chartImportHandler);
@@ -225,6 +238,9 @@ accounting.get('/debtors', listDebtorsHandler);
 accounting.get('/party-ledger', partyLedgerHandler);
 /* Conts: a project's limit and extra limit (conts/project-limit-routes.ts; SOP 3.4). */
 accounting.get('/projects', listProjectsHandler);
+accounting.get('/units', listUnitsHandler);
+/* Rental costs by unit (chew 2 Nov 2026; finance only) — acc/rental-unit-costs.ts. */
+accounting.get('/rental-unit-costs', rentalUnitCostsHandler);
 accounting.get('/everyday-expense', listEverydayExpenseHandler);
 accounting.put('/everyday-expense', setEverydayExpenseHandler);
 accounting.get('/projects/:id/limit', projectLimitHandler);
@@ -315,6 +331,9 @@ type JeLineIn = {
   notes?: string | null;
   /** Conts: Rental, Supply chain or Shared (spec 3.5); the engine refuses one it does not know. */
   department?: Department | null;
+  /** Conts (chew 2 Nov 2026): the project or unit the line belongs to, e.g. a deposit kept by the building. */
+  projectId?: number | string | null;
+  unitId?: string | null;
 };
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -490,6 +509,24 @@ export const ledgerSettingsPut = async (c: AccCtx): Promise<Response> => {
 };
 accounting.put('/settings/ledger', ledgerSettingsPut);
 
+/* ── E-invoice settings and outbox (renovation; nothing is sent) — acc/einvoice-routes.ts ── */
+accounting.get('/einvoice/settings', einvoiceSettingsGet);
+accounting.put('/einvoice/settings', einvoiceSettingsPut);
+accounting.get('/einvoice/outbox', einvoiceOutboxList);
+accounting.post('/einvoice/outbox/refresh', einvoiceRefresh);
+accounting.get('/einvoice/outbox/:id', einvoiceOutboxGet);
+
+/* ── Renovation project status (SOP 4.2.3; management only) — acc/reno-projects.ts ── */
+accounting.get('/reno-projects', renoProjectsHandler);
+/* The expected-cost review (SOP 4.2.1) — acc/reno-cost-review-routes.ts. Changing or keeping needs scm.reno_estimate.change. */
+accounting.get('/reno-cost-alerts', listCostAlertsHandler);
+accounting.get('/reno-cost-alerts/pending-count', pendingCostAlertsHandler);
+accounting.post('/reno-cost-alerts/:id/keep', keepCostAlertHandler);
+accounting.post('/reno-projects/:soDocNo/expected-cost', changeExpectedCostHandler);
+accounting.get('/reno-expected-cost-log', expectedCostLogHandler);
+accounting.get('/reno-alert-settings', getAlertSettingsHandler);
+accounting.put('/reno-alert-settings', putAlertSettingsHandler);
+
 /* ── Opening balances (Conts, spec 3.8) — acc/opening.ts. Writing them needs the post key; the check is read by
    the same people (it shows control and bank balances). ── */
 const OPENING_MAX_ROWS = 5000;
@@ -548,6 +585,27 @@ export const openingCheckHandler = async (c: AccCtx): Promise<Response> => {
   return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
 };
 accounting.get('/opening/check', openingCheckHandler);
+/* Opening deposits by project or unit (chew 2 Nov 2026) — acc/opening-deposits.ts. { rows, dryRun? } previews or posts. */
+export const openingDepositsHandler = async (c: AccCtx): Promise<Response> => {
+  const b = await openingBody(c, 'rows');
+  if (!b.ok) return b.res;
+  let dryRun = false;
+  try { dryRun = (await c.req.json() as { dryRun?: unknown }).dryRun === true; } catch { /* read once above */ }
+  const r = await importOpeningDeposits(c.get('supabase'), b.companyId, b.items, actorName(c), { dryRun });
+  return r.ok ? c.json(r) : c.json(r, 409);
+};
+accounting.post('/opening/deposits', openingDepositsHandler);
+export const openingDepositsReverseHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const r = await reverseOpeningDeposits(c.get('supabase'), co.companyId);
+  return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
+};
+accounting.post('/opening/deposits/reverse', openingDepositsReverseHandler);
+/* Renovation contracts signed before the ledger start, seeded at go-live (accounting-reno-opening.ts; posts nothing). */
+accounting.post('/renovation-opening/preview', renoOpeningPreview);
+accounting.post('/renovation-opening/apply', renoOpeningApply);
 
 /* ════════════════════════════════════════════════════════════════════════
    Journal Entries
@@ -684,6 +742,16 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
   const sb = c.get('supabase');
   const jeCompanyId = activeCompanyId(c);
 
+  /* Conts: each line's project or unit, checked as on a voucher line. */
+  const tags: LineTags[] = [];
+  for (const [i, l] of lines.entries()) {
+    const t = readLineTags(l, String(l.department ?? DEFAULT_DEPARTMENT), i + 1);
+    if ('error' in t) return c.json(t, 400);
+    tags.push(t);
+  }
+  const badTag = await unknownTags(sb, jeCompanyId ?? 0, tags);
+  if (badTag) return c.json(badTag, badTag.error === 'load_failed' ? 500 : 400);
+
   /* Through the ONE gate (acc/engine), as a DRAFT — posting stays a separate,
      gated step. The engine additionally validates the chart, which this route
      never did: an account code the company does not have (or a parent header,
@@ -695,7 +763,7 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
     sourceType,
     sourceDocNo,
     narration,
-    lines: lines.map((l) => ({
+    lines: lines.map((l, i) => ({
       accountCode: l.accountCode,
       debitSen: Number(l.debitSen ?? 0),
       creditSen: Number(l.creditSen ?? 0),
@@ -704,6 +772,8 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
       partyName: l.partyName ?? null,
       notes: l.notes ?? null,
       department: l.department ?? null,
+      projectId: tags[i]!.projectId,
+      unitId: tags[i]!.unitId,
     })),
     postNow: false,
   });
@@ -878,7 +948,7 @@ export type PostPiResult =
 export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<PostPiResult> {
   const { data: piRaw, error } = await sb
     .from('purchase_invoices')
-    .select('id, invoice_number, invoice_date, supplier_id, total_sen, currency, exchange_rate, company_id, migrated_no_stock, opening_balance, suppliers(code, name, control_account)')
+    .select('id, invoice_number, invoice_date, supplier_id, total_sen, currency, exchange_rate, company_id, migrated_no_stock, opening_balance, purchase_order_id, grn_id, suppliers(code, name, control_account)')
     .eq('invoice_number', invoiceNumber)
     .single();
   if (error || !piRaw) return { ok: false, status: 'invoice_not_found' };
@@ -945,13 +1015,13 @@ export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<
      shares. */
   const { data: itemsRaw, error: itemsErr } = await sb
     .from('purchase_invoice_items')
-    .select('item_group, line_total_sen')
+    .select('item_code, item_group, line_total_sen')
     .eq('purchase_invoice_id', pi.id);
   if (itemsErr) return { ok: false, status: 'post_failed', reason: `PI lines: ${itemsErr.message}` };
   const split = await splitByItemGroup(sb, {
     companyId,
     docNo: pi.invoice_number,
-    items: (itemsRaw ?? []) as Array<{ item_group: string | null; line_total_sen: number | null }>,
+    items: (itemsRaw ?? []) as Array<{ item_code: string | null; item_group: string | null; line_total_sen: number | null }>,
     account: 'purchase_account',
     myrSen: (sen) => toMyrSen(sen, pi.exchange_rate),
     totalSen,
@@ -963,6 +1033,10 @@ export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<
      (fails closed on a read blip — a blip must never book a SECOND payable),
      the je_no mint, and the write sequence; this function owns the PI
      specifics: the fetch, the migrated guard, FX, and the rule's lines. */
+  /* The project the purchase was for (its PO, else its GRN): the renovation completion % reads booked cost by it. */
+  const projectId = companyId != null
+    ? await projectOfPurchaseInvoice(sb, companyId, piRaw as { purchase_order_id?: string | null; grn_id?: string | null })
+    : null;
   const roles = await resolveRoles(sb, companyId);
   const r = await postJournal(sb, {
     companyId,
@@ -970,7 +1044,7 @@ export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<
     sourceType: 'PI',
     sourceDocNo: pi.invoice_number,
     narration: `Purchase invoice ${pi.invoice_number} — ${supplier.name ?? ''}`,
-    lines: piLines(roles, pi, supplier, groupDebits),
+    lines: piLines(roles, pi, supplier, groupDebits, projectId),
   });
   if (r.ok) {
     if (r.status === 'already_posted') return { ok: true, status: 'already_posted', jeNo: r.jeNo, jeId: r.jeId };
@@ -1720,7 +1794,7 @@ export const dailyBankHandler = async (c: any) => {
      money the board cannot see is money nobody chases. Named 未标银行 so the
      line reads as what it is, not as a machine. */
   const genericTransit = (await resolveRoles(sb, co.companyId)).TRANSIT_EDC;
-  if (!transitByAccount.has(genericTransit)) transitByAccount.set(genericTransit, '未标银行');
+  if (!transitByAccount.has(genericTransit)) transitByAccount.set(genericTransit, 'Untagged bank');
   const transitCodes = [...transitByAccount.keys()];
   const { data: transitNamesRaw, error: tErr } = await sb.from('accounts')
     .select('account_code, account_name')

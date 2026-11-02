@@ -195,6 +195,22 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
   res.errors.push(...plan.errors);
   const snap = await snapshot(db);
   const unitOf = new Map(snap.units.map(u => [unitKey(u.propertyName, u.unitNumber), u.id]));
+  // The owner's workbook wrote some codes without the dash or space HostPlatform uses (A3105 for A31-05, B17-05 (A) for
+  // B17-05(A)), and every booking of those units was left out (owner report, 2 Nov 2026). Same building, same letters
+  // and digits, and only one such unit: it is that unit.
+  const looseKey = (building: string, code: string) => unitKey(building, code.replace(/[^a-z0-9]/gi, ''));
+  const loose = new Map<string, string | null>();
+  // A building renamed here (Agile to AGILE BUKIT BINTANG) keeps the id the listing import gave it, hp-prop-<slug of
+  // HostPlatform's name>; matching on the name alone refused every new booking there (C13-13A, 2 Nov 2026).
+  const pidOf = (building: string) => `id:hp-prop-${slug(building)}`;
+  for (const u of snap.units) {
+    for (const k of [looseKey(u.propertyName, u.unitNumber), looseKey(`id:${u.propertyId}`, u.unitNumber)]) {
+      loose.set(k, loose.has(k) && loose.get(k) !== u.id ? null : u.id);
+    }
+    unitOf.set(unitKey(`id:${u.propertyId}`, u.unitNumber), u.id);
+  }
+  const unitIdFor = (building: string, code: string): string | undefined => unitOf.get(unitKey(building, code)) ?? unitOf.get(unitKey(pidOf(building), code))
+    ?? loose.get(looseKey(building, code)) ?? loose.get(looseKey(pidOf(building), code)) ?? undefined;
 
   const ids = plan.reservations.map(r => r.id), refs = plan.reservations.map(r => r.externalRef);
   const existing = plan.reservations.length ? await db.all<{ id: string; external_ref: string | null; unit_id: string; state: string; check_out: string }>(`
@@ -203,7 +219,7 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
     JSON.stringify(ids), JSON.stringify(refs)) : [];
   const byId = new Set(existing.map(e => e.id));
   // A booking the workbook step created first (run out of order) is taken over, by reference or by unit and dates.
-  const keyed = plan.reservations.map(r => ({ unit_id: unitOf.get(unitKey(r.building, r.unitNumber)) ?? '', check_in: r.checkIn, check_out: r.checkOut }));
+  const keyed = plan.reservations.map(r => ({ unit_id: unitIdFor(r.building, r.unitNumber) ?? '', check_in: r.checkIn, check_out: r.checkOut }));
   const workbookStays = plan.reservations.length ? await db.all<{ id: string; unit_id: string; check_in: string; check_out: string; channel: string }>(`
     SELECT r.id, r.unit_id, r.check_in, r.check_out, r.channel FROM reservations r
     JOIN jsonb_to_recordset(?::text::jsonb) AS x(unit_id text, check_in text, check_out text)
@@ -216,14 +232,14 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
     SELECT x.id AS incoming, r.id FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, check_in text, check_out text)
     JOIN reservations r ON r.unit_id = x.unit_id AND r.check_in < x.check_out AND r.check_out > x.check_in
     WHERE r.id NOT LIKE 'hp-res-%' AND r.state NOT IN ('cancelled','no_show','inquiry') AND r.channel != 'maintenance_block'`,
-    JSON.stringify(fresh.map(r => ({ id: r.id, unit_id: unitOf.get(unitKey(r.building, r.unitNumber)) ?? '', check_in: r.checkIn, check_out: r.checkOut })))) : [];
+    JSON.stringify(fresh.map(r => ({ id: r.id, unit_id: unitIdFor(r.building, r.unitNumber) ?? '', check_in: r.checkIn, check_out: r.checkOut })))) : [];
   const clashOf = new Map(clashes.map(c => [c.incoming, c.id]));
   const prevOf = new Map(existing.map(e => [e.id, e]));
   const effects: ReservationEffects = { live: [], cancelled: [], checkoutMoved: [] };
 
   const keep: Record<string, unknown>[] = [], usedGuests = new Set<string>(), unitFacts = new Map<string, { max: number | null; size: number | null; at: string }>();
   for (const r of plan.reservations) {
-    const unitId = unitOf.get(unitKey(r.building, r.unitNumber));
+    const unitId = unitIdFor(r.building, r.unitNumber);
     if (!unitId) { res.errors.push({ row: r.row, reason: `${r.building} ${r.unitNumber} is not in Property OS. Import the HostPlatform listing first.` }); continue; }
     const clash = clashOf.get(r.id);
     if (clash) { res.skippedRows.push({ row: r.code, reason: `${r.code} overlaps reservation ${clash}, made in Property OS on the same unit; left out so the stay is not counted twice.` }); continue; }
@@ -398,7 +414,7 @@ export async function importWorkbookUnits(db: Db, units: WorkbookUnitIn[], now: 
       const id = `wb-uacct-${slug(unitId)}-${a.kind}`;
       if (accountIds.has(id)) continue;
       accountIds.add(id);
-      accounts.push({ id, unit_id: unitId, kind: a.kind, account_no: a.accountNo, provider: a.provider, note: 'From owner workbook (Unit资料)', created_at: now, updated_at: now });
+      accounts.push({ id, unit_id: unitId, kind: a.kind, account_no: a.accountNo, provider: a.provider, note: 'From owner workbook (units sheet)', created_at: now, updated_at: now });
     }
     for (const m of w.poolMonths) {
       const id = `wb-pool-${slug(unitId)}-${m.month.replace('-', '')}`;

@@ -26,7 +26,7 @@ import {
   readProjectShared,
   readPropertyLists,
 } from "../services/renovation/customerProperty";
-import { parseCount, readPropertyInput, soOpenForProjectSync } from "../scm/shared/renovation-property";
+import { parseCount, readPropertyInput } from "../scm/shared/renovation-property";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -140,7 +140,7 @@ async function linkedSos(c: Ctx, id: number) {
             processing_date::text AS processing_date, proceeded_at::text AS proceeded_at
        FROM scm.mfg_sales_orders WHERE project_id = ? AND status::text <> 'CANCELLED' ORDER BY so_date DESC NULLS LAST, doc_no DESC`,
   ).bind(id).all<{ doc_no: string; so_kind: string; status: string; so_date: string | null; processing_date: string | null; proceeded_at: string | null }>();
-  return (res.results ?? []).map((s) => ({ docNo: s.doc_no, kind: s.so_kind, status: s.status, soDate: s.so_date, followsProject: soOpenForProjectSync(s) }));
+  return (res.results ?? []).map((s) => ({ docNo: s.doc_no, kind: s.so_kind, status: s.status, soDate: s.so_date, followsProject: String(s.status).toUpperCase() !== "CANCELLED" }));
 }
 
 app.get("/:id/customer-info", requirePageAccess("projects.list"), async (c) => {

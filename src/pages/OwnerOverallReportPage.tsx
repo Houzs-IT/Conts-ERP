@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import { Button } from '../components/Button';
 import { StatTile, StatRow, Segmented, Eyebrow } from '../components/Metric';
 import { Select } from '../components/Select';
 import { NumberInput } from '../components/inputs';
@@ -11,17 +12,18 @@ import { TableSkeleton } from '../components/DataState';
 import { SearchBox } from './finance/listKit';
 import { useApi } from '../lib/useApi';
 import { useMedia } from '../lib/useMedia';
+import { saveBlob, toXlsx, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { count, monthLabel, percent, plural, rmShort, todayMyt } from '../lib/format';
-import { overallFigures, overallTotals, type OverallInput, type OverallTotals } from '../lib/ownerOverall';
-import { GainLoss, LEVELS, OwnerOverallDetail, contractName, money, unitStatus, type Level, type ReportRow } from './OwnerOverallDetail';
+import { overallFigures, overallTotals, GROUP_NAME, REPORT_GROUPS, type OverallInput, type OverallTotals, type ReportGroup } from '../lib/ownerOverall';
+import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, type Level, type ReportRow } from './OwnerOverallDetail';
 
-/** /portfolio/owner-report — the overall owner report (the owner workbook's overall report sheet) for one month: every LT and PS
+/** /portfolio/owner-report — the overall owner report (the owner workbook's overall report sheet) for one month: every
  *  unit's revenue, deductions, owner payout and the company's gain or loss on it, from GET /api/portfolio/owner-report.
  *  The whole month is about a row per unit, so search, filters and sorting happen here. */
 
-interface ApiRow extends OverallInput { unitId: string; code: string; building: string; ownerName: string }
-interface Payload { month: string; excluded: number; rows: ApiRow[]; generatedAt: string }
+interface ApiRow extends OverallInput { unitId: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null }
+interface Payload { month: string; rows: ApiRow[]; generatedAt: string }
 
 type Group = 'inc' | 'ded' | 'pro' | 'pay' | 'res';
 type Kind = 'money' | 'occ' | 'int' | 'ownpct' | 'gl';
@@ -57,9 +59,17 @@ const colOf = (key: string) => COLS.find(c => c.key === key) ?? COLS[0];
 /** Money is typed in ringgit; everything else as it is shown (percent, nights). */
 const inSen = (c: Col) => c.kind === 'money' || c.kind === 'gl';
 
-type Contract = 'all' | 'LT' | 'PS';
+type Contract = 'all' | ReportGroup;
 type Quick = 'losing' | 'gaining' | 'vacant' | null;
 type Sort = { key: Key | 'code'; dir: 1 | -1 } | null;
+
+/** The file always carries every column, whatever level is on screen. Occupancy keeps one decimal, as shown. */
+const EXPORT_COLS: ExportColumn[] = [
+  { label: 'Unit', kind: 'text' }, { label: 'Building', kind: 'text' }, { label: 'Owner', kind: 'text' }, { label: 'Contract', kind: 'text' },
+  ...COLS.map(c => ({ label: c.kind === 'occ' || c.kind === 'ownpct' ? `${c.label} (%)` : c.label, kind: inSen(c) ? 'money' as const : 'number' as const })),
+];
+const exportFigures = (r: OverallTotals | ReportRow, total: boolean): ExportCell[] =>
+  COLS.map(c => (c.key === 'ownerPct' ? (total ? null : (r as ReportRow).ownerPct) : c.kind === 'occ' ? Math.round(r.occupancy * 10) / 10 : r[c.key]));
 
 const LEVEL_KEY = 'ownerOverall.level';
 function readLevel(): Level {
@@ -135,8 +145,8 @@ export default function OwnerOverallReportPage() {
     try { localStorage.setItem(LEVEL_KEY, String(l)); } catch { /* private window: the level just isn't remembered */ }
   }, []);
 
-  const all = useMemo<ReportRow[]>(() => (data?.rows ?? []).map(({ unitId, code, building, ownerName, ...input }) =>
-    ({ ...overallFigures(input), unitId, code, building, ownerName })), [data]);
+  const all = useMemo<ReportRow[]>(() => (data?.rows ?? []).map(({ unitId, code, building, ownerName, group, contractCode, ...input }) =>
+    ({ ...overallFigures(input), unitId, code, building, ownerName, group, contractCode })), [data]);
 
   const range = colOf(rangeKey);
   const shownValue = (r: ReportRow) => (inSen(range) ? r[range.key] / 100 : r[range.key]);
@@ -148,18 +158,18 @@ export default function OwnerOverallReportPage() {
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const list = all.filter(r => (contract === 'all' || r.contract === contract)
+    const list = all.filter(r => (contract === 'all' || r.group === contract)
       && (!needle || r.code.toLowerCase().includes(needle) || r.building.toLowerCase().includes(needle))
       && (lo === null || shownValue(r) >= lo) && (hi === null || shownValue(r) <= hi)
-      && (quick !== 'losing' || r.gainLoss < 0) && (quick !== 'gaining' || r.gainLoss >= 0) && (quick !== 'vacant' || r.nights === 0));
+      && (quick !== 'losing' || r.gainLoss < 0) && (quick !== 'gaining' || r.gainLoss >= 0) && (quick !== 'vacant' || (r.nights === 0 && r.days > 0)));
     const byCode = (a: ReportRow, b: ReportRow) => a.code.localeCompare(b.code, 'en', { numeric: true });
     if (!sort) return list.sort(byCode);
     const { key, dir } = sort;
     return list.sort((a, b) => (key === 'code' ? byCode(a, b) : a[key] - b[key] || byCode(a, b)) * dir);
   }, [all, q, contract, lo, hi, quick, sort, rangeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const groups = (['LT', 'PS'] as const).map(c => ({ contract: c, rows: filtered.filter(r => r.contract === c) })).filter(g => g.rows.length);
-  // Previous / next follow the table as shown: long term first, then profit sharing, each in the current sort.
+  const groups = REPORT_GROUPS.map(g => ({ group: g, rows: filtered.filter(r => r.group === g) })).filter(g => g.rows.length);
+  // Previous / next follow the table as shown: group by group, each in the current sort.
   const order = groups.flatMap(g => g.rows);
   const at = order.findIndex(r => r.unitId === selected);
   const row = at >= 0 ? order[at] : null;
@@ -224,7 +234,19 @@ export default function OwnerOverallReportPage() {
     </tr>
   );
 
-  const ltCount = all.filter(r => r.contract === 'LT').length;
+  function exportExcel() {
+    const rows: ExportCell[][] = [];
+    for (const g of groups) {
+      for (const r of g.rows) rows.push([r.code, r.building, r.ownerName, r.contractCode ?? GROUP_NAME[r.group], ...exportFigures(r, false)]);
+      rows.push([`${GROUP_NAME[g.group]} total`, null, null, null, ...exportFigures(overallTotals(g.rows), true)]);
+    }
+    if (groups.length > 1) rows.push(['Grand total', null, null, null, ...exportFigures(totals, true)]);
+    // Named for the report month only: the usual export name adds today's date, and two dates read as a range.
+    saveBlob(toXlsx(EXPORT_COLS, rows, monthLabel(month, { long: true })) as BlobPart, `overall-unit-report-${month}.xlsx`,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  }
+
+  const present = REPORT_GROUPS.map(g => ({ group: g, n: all.filter(r => r.group === g).length })).filter(g => g.n);
   const detail = row && (
     <OwnerOverallDetail row={row} all={all} level={level} onLevel={setLevel} onClose={() => setSelected(null)}
       onStep={step} position={at + 1} total={order.length} />
@@ -246,7 +268,7 @@ export default function OwnerOverallReportPage() {
   if (!data && loading) body = <TableSkeleton rows={10} cols={6} />;
   else if (!data && error) body = <EmptyState title="The report could not load." body={error} action={{ label: 'Try again', onClick: reload }} icon="AlertTriangle" />;
   else if (!all.length) body = <EmptyState title={`No unit figures for ${monthLabel(month, { long: true })}.`} icon="BarChart3"
-    body="Long-term and profit-sharing units appear here once they have reservations, costs or a fixed rent in the month." />;
+    body="Units appear here once they have reservations, costs or a fixed rent in the month." />;
   else if (!filtered.length) body = <EmptyState kind="filtered" title="No units match these filters." body="Widen the range or clear the search." action={{ label: 'Reset filters', onClick: reset }} />;
   else body = (
     <table className="w-max min-w-full border-separate border-spacing-0 text-copy">
@@ -272,11 +294,11 @@ export default function OwnerOverallReportPage() {
       </thead>
       <tbody>
         {groups.map((g, gi) => (
-          <Fragment key={g.contract}>
+          <Fragment key={g.group}>
             <tr>
               <td colSpan={cols.length + 1} className={cx('px-3 py-1.5 bg-sunken', gi > 0 && '[border-top:1px_solid_var(--color-line)]')}>
                 <span className="sticky left-3 text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink">
-                  {contractName(g.contract)}<span className="ml-2 normal-case tracking-normal font-normal">{plural(g.rows.length, 'unit')}</span>
+                  {GROUP_NAME[g.group]}<span className="ml-2 normal-case tracking-normal font-normal">{plural(g.rows.length, 'unit')}</span>
                 </span>
               </td>
             </tr>
@@ -302,7 +324,7 @@ export default function OwnerOverallReportPage() {
                 </tr>
               );
             })}
-            {totalRow(`${phone ? g.contract : contractName(g.contract)} total`, overallTotals(g.rows), false)}
+            {totalRow(`${phone && g.group !== 'NONE' ? g.group : GROUP_NAME[g.group]} total`, overallTotals(g.rows), false)}
           </Fragment>
         ))}
         {groups.length > 1 && totalRow('Grand total', totals, true)}
@@ -315,14 +337,18 @@ export default function OwnerOverallReportPage() {
       <PageHeader
         title="Overall unit report"
         sub={data ? <>
-          {[plural(all.length, 'unit'), `${count(ltCount)} long term`, `${count(all.length - ltCount)} profit sharing`,
-            ...(data.excluded ? [`${plural(data.excluded, 'long-term let or master lease', 'long-term lets and master leases')} not listed`] : []), 'amounts in RM']
+          {[plural(all.length, 'unit'), ...present.map(g => `${count(g.n)} ${GROUP_NAME[g.group].toLowerCase()}`), 'amounts in RM']
             .map((part, n) => <span key={n}>{n > 0 && ' · '}<span className="inline-block">{part}</span></span>)}
           {/* The definition gets its own line, so it never wraps into the counts. */}
-          <span className="block text-meta">Gain/Loss = GP − owner base (LT, or the higher of O1 and GRR), before O2</span>
+          <span className="block text-meta">Gain/Loss = GP − owner base (the owner's part of the rent, the fixed rent, or the higher of O1 and GRR), before O2</span>
         </> : 'Every unit\'s month, as on the owner statements'}
-        actions={<Select label="Month" value={month} options={MONTHS} className="w-[180px]"
-          onChange={v => setParams(p => { const n = new URLSearchParams(p); if (v === MONTHS[1].value) n.delete('month'); else n.set('month', v); return n; }, { replace: true })} />}
+        actions={<>
+          <Button variant="secondary" icon={<Icon name="FileSpreadsheet" size="sm" />} onClick={exportExcel}
+            title="The units shown, with these filters and this sort, every column, and the totals."
+            disabled={!filtered.length} disabledReason="No units to export for this month and these filters.">Export Excel</Button>
+          <Select label="Month" value={month} options={MONTHS} className="w-[180px]"
+            onChange={v => setParams(p => { const n = new URLSearchParams(p); if (v === MONTHS[1].value) n.delete('month'); else n.set('month', v); return n; }, { replace: true })} />
+        </>}
       />
 
       <StatRow cols={5}>
@@ -333,7 +359,7 @@ export default function OwnerOverallReportPage() {
           hint={totals.revenue ? `${percent((totals.deductions / totals.revenue) * 100)} of revenue` : '—'} />
         <StatTile label="Gross profit" value={data ? rmShort(totals.gp) : undefined} loading={loading && !data}
           hint={totals.revenue ? `${percent(totals.margin)} margin` : '—'} />
-        <StatTile label="Owner payout" value={data ? rmShort(totals.payout) : undefined} loading={loading && !data} hint="LT, GRR and shares, with O2" />
+        <StatTile label="Owner payout" value={data ? rmShort(totals.payout) : undefined} loading={loading && !data} hint="Every income model, with O2" />
         <StatTile label="Gain / Loss" value={data ? rmShort(totals.gainLoss) : undefined} loading={loading && !data}
           tone={totals.gainLoss < 0 ? 'critical' : 'success'} hint={`${count(totals.losing)} of ${plural(totals.units, 'unit')} losing`} />
       </StatRow>
@@ -346,7 +372,7 @@ export default function OwnerOverallReportPage() {
         <div className="flex flex-col gap-1">
           <Eyebrow>Contract</Eyebrow>
           <Segmented label="Contract" value={contract} onChange={setContract}
-            options={[{ key: 'all', label: 'All' }, { key: 'LT', label: 'Long term' }, { key: 'PS', label: 'Profit sharing' }]} />
+            options={[{ key: 'all' as Contract, label: 'All' }, ...present.map(g => ({ key: g.group as Contract, label: GROUP_NAME[g.group] }))]} />
         </div>
         <div className="flex flex-col gap-1">
           <Eyebrow>Detail level</Eyebrow>
@@ -369,7 +395,7 @@ export default function OwnerOverallReportPage() {
           <div className="flex flex-wrap gap-1.5">
             {chip('losing', 'Losing', all.filter(r => r.gainLoss < 0).length)}
             {chip('gaining', 'Gaining', all.filter(r => r.gainLoss >= 0).length)}
-            {chip('vacant', '0% occupancy', all.filter(r => r.nights === 0).length)}
+            {chip('vacant', '0% occupancy', all.filter(r => r.nights === 0 && r.days > 0).length)}
             <button type="button" onClick={reset} className="h-8 px-3 rounded-full border-none bg-transparent text-meta text-muted-ink cursor-pointer hover:text-ink">Reset</button>
           </div>
         </div>

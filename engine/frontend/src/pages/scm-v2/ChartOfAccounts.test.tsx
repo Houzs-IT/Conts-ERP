@@ -366,7 +366,7 @@ describe('fold / edit / delete — the owner points 1, 2 and 4', () => {
     fireEvent.change(codeInput, { target: { value: '311-0010' } });
     fireEvent.click(screen.getByText('Save'));
     await waitFor(() => expect(confirmFn).toHaveBeenCalled());
-    expect(JSON.stringify(confirmFn.mock.calls[0]![0])).toMatch(/改码全账跟/);
+    expect(JSON.stringify(confirmFn.mock.calls[0]![0])).toMatch(/whole ledger follows the new code/);
     await waitFor(() => expect(renameAsync).toHaveBeenCalledWith({ oldCode: '310-0010', newCode: '311-0010' }));
   });
 
@@ -435,7 +435,7 @@ describe('fold / edit / delete — the owner points 1, 2 and 4', () => {
     fireEvent.dragOver(target);
     fireEvent.drop(target);
     await waitFor(() => expect(updateAsync).toHaveBeenCalledWith({ code: '900-A002', parentCode: '310-0000' }));
-    expect(JSON.stringify(confirmFn.mock.calls[0]![0])).toMatch(/挂到 310-0000 下/);
+    expect(JSON.stringify(confirmFn.mock.calls[0]![0])).toMatch(/under 310-0000\?/);
   });
 
   test('the edit panel moves an account under a parent (and 留空 = root)', async () => {

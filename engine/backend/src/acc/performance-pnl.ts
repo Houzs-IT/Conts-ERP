@@ -23,6 +23,10 @@
 //     sections, as booked, by journal date) — owner 2026-09-12: performance
 //     GL 要放 other income — so net = gross profit + other income − operating
 //     expense − other expenses.
+//   • RENOVATION (Conts, chew 30 Oct 2026; SOP 4.2.1) is shown by completion, never by order date or invoice:
+//     renovation orders leave the sales-order side; the block's revenue is what the work earned in the period
+//     (acc/reno-completion) and its cost is the period's booked cost on the contracts' projects, taken out of the
+//     expenses as booked. What was invoiced (the books) and the difference are memo lines. Never posted.
 // The rate and the account live on scm.acc_company_settings; the figures are
 // computed live on every read and stored nowhere. The building is pure
 // (buildPerformanceReport) so the contract test feeds it worlds directly.
@@ -102,7 +106,15 @@ export function performanceGroupOf(line: { item_group: string | null; item_code:
 
 /* ── The report ──────────────────────────────────────────────────────────── */
 
-export type PerfOrder = { doc_no: string; so_date: string; status: string; delivery_fee_sen: number | null };
+export type PerfOrder = { doc_no: string; so_date: string; status: string; delivery_fee_sen: number | null; so_kind?: string | null };
+/** Renovation for the period (acc/reno-completion renovationForPeriod). */
+export const RENOVATION_GROUP_LABEL = 'Renovation (by completion — not in the books)';
+export type PerfRenovationInput = { earnedSen: number; invoicedSen: number; contracts: number; costByAccount: Record<string, number> };
+export type PerfRenovation = {
+  earnedSen: number; costSen: number; gpSen: number; gpPct: number | null;
+  /** Memo: what the books show for the same contracts, and invoiced − earned. */
+  invoicedSen: number; differenceSen: number; contracts: number;
+};
 export type PerfLine = {
   doc_no: string; item_group: string | null; item_code: string | null; qty: number | null;
   total_sen: number | null; unit_cost_sen: number | null; line_cost_sen: number | null; cancelled: boolean | null;
@@ -111,7 +123,9 @@ export type PerfLine = {
     account's debit, or an other-income section's credit. */
 export type PerfExpense = { code: string; name: string; amountSen: number };
 
-export type PerformanceGroup = { key: PerformanceGroupKey; label: string; lines: number; salesSen: number; cogsSen: number; gpSen: number; gpPct: number | null };
+/** 'renovation' (Conts): the renovation block as a row, so every view of the report (screen, PDF, Excel, by month)
+    adds up from the same groups; `lines` is its contract count. */
+export type PerformanceGroup = { key: PerformanceGroupKey | 'renovation'; label: string; lines: number; salesSen: number; cogsSen: number; gpSen: number; gpPct: number | null };
 export type PerformanceReport = {
   from: string; to: string;
   orders: { counted: number; notDelivered: number; excludedDraft: number; excludedCancelled: number };
@@ -132,6 +146,8 @@ export type PerformanceReport = {
   otherExpensesSen: number;
   netSen: number; netPct: number | null;
   settings: PerformanceSettings;
+  /** Null when the company has no renovation figures for the period's report (no source). */
+  renovation: PerfRenovation | null;
 };
 
 const pct = (part: number, whole: number): number | null => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : null);
@@ -144,10 +160,11 @@ export function buildPerformanceReport(p: {
   settings: PerformanceSettings;
   /** The named account as the chart has it, or null when the chart does not. */
   account: { code: string; name: string } | null;
+  renovation?: PerfRenovationInput | null;
 }): PerformanceReport {
   const excludedDraft = p.orders.filter((o) => String(o.status) === 'DRAFT').length;
   const excludedCancelled = p.orders.filter((o) => String(o.status) === 'CANCELLED').length;
-  const live = p.orders.filter((o) => !SO_NOT_AN_ORDER.has(String(o.status)));
+  const live = p.orders.filter((o) => !SO_NOT_AN_ORDER.has(String(o.status)) && o.so_kind !== 'RENOVATION');
   const liveDocs = new Set(live.map((o) => o.doc_no));
 
   const at = new Map<PerformanceGroupKey, { lines: number; salesSen: number; cogsSen: number }>(
@@ -180,11 +197,25 @@ export function buildPerformanceReport(p: {
     })
     .filter((g) => g.key !== 'others' || g.lines > 0 || g.salesSen !== 0 || g.cogsSen !== 0);
 
+  /* No renovation contract and no renovation cost: no block (a company without renovation reads as before). */
+  const ren = p.renovation && (p.renovation.contracts > 0 || Object.values(p.renovation.costByAccount).some((v) => v !== 0)) ? p.renovation : null;
+  const renCostSen = ren ? Object.values(ren.costByAccount).reduce((s, v) => s + v, 0) : 0;
+  const renovation: PerfRenovation | null = ren ? {
+    earnedSen: ren.earnedSen, costSen: renCostSen, gpSen: ren.earnedSen - renCostSen, gpPct: pct(ren.earnedSen - renCostSen, ren.earnedSen),
+    invoicedSen: ren.invoicedSen, differenceSen: ren.invoicedSen - ren.earnedSen, contracts: ren.contracts,
+  } : null;
+  if (renovation) {
+    groups.push({
+      key: 'renovation', label: RENOVATION_GROUP_LABEL, lines: renovation.contracts,
+      salesSen: renovation.earnedSen, cogsSen: renovation.costSen, gpSen: renovation.gpSen, gpPct: renovation.gpPct,
+    });
+  }
   const salesSen = groups.reduce((s, g) => s + g.salesSen, 0);
   const cogsSen = groups.reduce((s, g) => s + g.cogsSen, 0);
   const gpSen = salesSen - cogsSen;
   const serviceSalesSen = at.get('service')!.salesSen;
-  const salesExServiceSen = salesSen - serviceSalesSen;
+  /* The operating-expense rate is a share of goods sold: renovation earned revenue is not in its base. */
+  const salesExServiceSen = salesSen - serviceSalesSen - (renovation?.earnedSen ?? 0);
 
   const opexSen = Math.round((salesExServiceSen * p.settings.rateBp) / 10000);
   const code = p.settings.account;
@@ -193,7 +224,9 @@ export function buildPerformanceReport(p: {
   /* Only the named account is replaced — and only when the chart carries
      it; a code the chart does not know replaces nothing, and the report
      says so rather than quietly dropping a booked expense. */
-  const otherExpenses = (accountFound ? p.expenses.filter((e) => e.code !== code) : p.expenses)
+  /* The renovation projects' booked cost is the block's cost: it leaves the expenses as booked. */
+  const asBooked = ren ? p.expenses.map((e) => ({ ...e, amountSen: e.amountSen - (ren.costByAccount[e.code] ?? 0) })) : p.expenses;
+  const otherExpenses = (accountFound ? asBooked.filter((e) => e.code !== code) : asBooked)
     .filter((e) => e.amountSen !== 0)
     .sort((a, b) => a.code.localeCompare(b.code));
   const otherExpensesSen = otherExpenses.reduce((s, e) => s + e.amountSen, 0);
@@ -219,6 +252,7 @@ export function buildPerformanceReport(p: {
     otherExpenses, otherExpensesSen,
     netSen, netPct: pct(netSen, salesSen),
     settings: p.settings,
+    renovation,
   };
 }
 

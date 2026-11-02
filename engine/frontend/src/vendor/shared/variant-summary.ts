@@ -217,6 +217,8 @@ function noteOnlyRestates(note: string, printed: string): boolean {
  *  - All present segments joined with ` / `. Empty segments omitted.
  *  - Returns '' when nothing is present.
  */
+const str0 = (v: unknown): string => (typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '');
+
 export function buildVariantSummary(
   itemGroup: string | null | undefined,
   variants: Record<string, unknown> | null | undefined,
@@ -230,7 +232,10 @@ export function buildVariantSummary(
   const segments: string[] = [];
 
   const group = (itemGroup ?? '').toLowerCase();
-  const isBedframe = group.includes('bedframe');
+  /* A renovation contract line keeps item_group RENOVATION for accounting, so its shape is read off the options it
+     carries: a divan or gap is a bedframe's (owner run, 1 Nov 2026: the PO and GRN dropped DIVAN and GAP). */
+  const isBedframe = group.includes('bedframe')
+    || (group === 'renovation' && (str0(variants.divanHeight) !== '' || str0(variants.gap) !== ''));
 
   // Fabric segment — fabricCode + colorCode joined by a space. BEDFRAME and
   // SOFA both append the chosen colour NAME (variants.colourLabel, e.g.

@@ -26,6 +26,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { COST_ALERTS_BADGE_KEY } from "../conts/renoCostReviewQueries";
 
 /** Shared keys so every reader hits one fetch, and any writer can invalidate. */
 export const AMENDMENT_APPROVALS_KEY = ["scm", "amendment-approvals"] as const;
@@ -35,8 +36,8 @@ interface PendingCountResponse {
   count: number;
 }
 
-/** The two badge sources a nav entry can name. Mirrored by NavTab["badge"]. */
-export type ApprovalBadgeSource = "amendment-approvals" | "po-amendment-approvals";
+/** The badge sources a nav entry can name. Mirrored by NavTab["badge"]. */
+export type ApprovalBadgeSource = "amendment-approvals" | "po-amendment-approvals" | "reno-cost-alerts";
 
 /**
  * One poll per source. Returns 0 while loading and 0 on any failure — a
@@ -47,13 +48,14 @@ function usePendingCount(
   queryKey: readonly string[],
   path: string,
   enabled: boolean,
+  everyMs = 60_000,
 ): number {
   const { data } = useQuery({
     queryKey,
     queryFn: () => api.get<PendingCountResponse>(path),
     enabled,
-    staleTime: 60_000,
-    refetchInterval: 60_000,
+    staleTime: everyMs,
+    refetchInterval: everyMs,
     refetchOnWindowFocus: true,
     // Silent by design: a failed poll leaves `data` undefined, which reads as
     // "no badge", not "0 waiting". The sidebar says nothing rather than lying.
@@ -70,7 +72,7 @@ function usePendingCount(
  * the renderer does not need to know how many sources exist.
  */
 export function useApprovalBadgeCounts(): Record<ApprovalBadgeSource, number> {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const enabled = !!user?.id;
   return {
     "amendment-approvals": usePendingCount(
@@ -82,6 +84,14 @@ export function useApprovalBadgeCounts(): Record<ApprovalBadgeSource, number> {
       PO_AMENDMENT_APPROVALS_KEY,
       "/api/scm/po-amendments/pending-count",
       enabled,
+    ),
+    /* Conts (SOP 4.2.1): renovation cost alerts waiting for finance. Behind the Ledger, so only its users ask; the
+       sweep runs every 30 minutes, so a 5-minute poll is plenty (a decision on the review screen drops it at once). */
+    "reno-cost-alerts": usePendingCount(
+      COST_ALERTS_BADGE_KEY,
+      "/api/scm/accounting/reno-cost-alerts/pending-count",
+      enabled && can("scm.ledger.use"),
+      300_000,
     ),
   };
 }

@@ -1,7 +1,7 @@
 import sys, json, collections, re
 sys.path.insert(0, '.')
 import so_rules as m
-W = r"C:/Users/User/Desktop/Conts-ERP-worktrees/so-notion-import/docs/catalog-import/batch2/batch2-data.json"
+W = r"C:/Users/User/Desktop/Conts-ERP-worktrees/so-reimport/docs/catalog-import/batch2/batch2-data.json"
 b2 = json.load(open(W, encoding='utf-8'))
 LIVE = set(m.cat) | {x['code'] for x in b2['balance']} | {x['code'] for x in b2['so_codes']}
 R = json.load(open('so_parsed.json', encoding='utf-8'))

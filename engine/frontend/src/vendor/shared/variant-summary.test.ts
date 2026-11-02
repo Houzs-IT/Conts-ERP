@@ -145,3 +145,14 @@ describe("the two copies of variant-summary.ts are identical", () => {
     expect(here).toBe(there);
   });
 });
+
+describe("renovation contract lines", () => {
+  test("a RENOVATION line with a divan and gap reads as a bedframe", () => {
+    const s = buildVariantSummary("RENOVATION", { fabricCode: "PC1461-01", divanHeight: '4"', legHeight: '1"', gap: '4"', totalHeight: '9"' });
+    expect(s).toContain('DIVAN 4"');
+    expect(s).toContain('GAP 4"');
+  });
+  test("a RENOVATION sofa line still reads seat and leg", () => {
+    expect(buildVariantSummary("RENOVATION", { fabricCode: "PC1461-02", seatHeight: "24", legHeight: "DEFAULT" })).toContain("SEAT 24");
+  });
+});

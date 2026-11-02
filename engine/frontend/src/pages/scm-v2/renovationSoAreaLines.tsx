@@ -5,7 +5,7 @@
 import type { ReactElement, ReactNode } from "react";
 import { roomGroups, type SoPrintRooms } from "../../vendor/scm/lib/so-print-rooms";
 
-export type SoLinesView = "item" | "area";
+export type SoLinesView = "item" | "area" | "category";
 
 export function SoLinesViewToggle({ view, onChange }: { view: SoLinesView; onChange: (v: SoLinesView) => void }): ReactElement {
   const btn = (v: SoLinesView, label: string) => (
@@ -25,6 +25,7 @@ export function SoLinesViewToggle({ view, onChange }: { view: SoLinesView; onCha
     <div role="group" aria-label="Show lines" className="inline-flex overflow-hidden rounded-md border border-border">
       {btn("item", "By item")}
       {btn("area", "By area")}
+      {btn("category", "By category")}
     </div>
   );
 }

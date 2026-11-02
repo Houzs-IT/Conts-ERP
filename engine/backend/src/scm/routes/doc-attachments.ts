@@ -27,9 +27,9 @@ import { hasHouzsPerm } from '../lib/houzs-perms';
 import type { Env, Variables } from '../env';
 import type { Db } from '../../services/renovation/load';
 import {
-  DOC_TYPES, MAX_FILE_BYTES, MAX_VIDEO_BYTES, POD_FILE_ID, adoptLegacySoAttachments, attachmentKey, attachmentsReady,
+  DOC_TYPES, MAX_FILE_BYTES, MAX_VIDEO_BYTES, adoptLegacySoAttachments, attachmentKey, attachmentsReady,
   carriedFileRow, carriedFiles, cleanName, evidenceFiles, fileKind, fileRow, findDocsByNumber, isDocType, lineBelongs, listFiles, listLines,
-  loadDoc, podFile, textArray, type DocFile, type DocLine, type DocRef, type DocType,
+  loadDoc, podFileById, podFiles, isPodFileId, textArray, type DocFile, type DocLine, type DocRef, type DocType,
 } from '../lib/doc-attachments';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
@@ -97,8 +97,8 @@ export async function readDocFiles(db: Db, doc: DocRef): Promise<{ files: DocFil
   const docFiles = own.filter((f) => !f.lineId || !lineIds.has(f.lineId))
     .map((f) => (f.lineId ? { ...f, from: 'a line since changed' } : f));
   if (doc.type === 'delivery_order') {
-    const pod = await podFile(db, doc.id).catch(() => null);
-    if (pod) { const { key: _key, ...shown } = pod; docFiles.unshift(shown); }
+    const pods = await podFiles(db, doc.id).catch(() => []);
+    docFiles.unshift(...pods.map(({ key: _key, ...shown }) => shown));
   }
   const evidence = await evidenceFiles(db, doc).catch((e) => { console.error('[doc-attachments] evidence files', e); return []; });
   docFiles.unshift(...evidence.map(({ key: _key, ...f }) => f));
@@ -162,7 +162,9 @@ function router(type: DocType, sub = '') {
     if (size > cap) return c.json({ error: 'too_large', message: `The file is over ${cap / 1024 / 1024} MB.` }, 413);
     const sha = (c.req.query('sha256') ?? '').toLowerCase();
     const sha256 = SHA.test(sha) ? sha : null;
-    const source = c.req.query('source') === 'import' ? 'import' : 'upload';
+    const asked = c.req.query('source');
+    // 'pod' only on a goods receipt: its proof-of-receipt photos. A delivery's POD comes from the driver's phone.
+    const source = asked === 'import' ? 'import' : asked === 'pod' && type === 'goods_received' ? 'pod' : 'upload';
     const caption = (c.req.query('caption') ?? '').trim().slice(0, 500);
     const name = cleanName(c.req.query('name') ?? '', mime);
     const where = lineId ? `that line of ${doc.no}` : doc.no;
@@ -211,7 +213,7 @@ function router(type: DocType, sub = '') {
     const doc = await docOr404(c, type);
     if (doc instanceof Response) return doc;
     const fileId = c.req.param('fileId') ?? '';
-    if (fileId === POD_FILE_ID) return c.json({ error: 'pod_kept', message: 'The proof-of-delivery photo stays with the delivery.' }, 409);
+    if (isPodFileId(fileId)) return c.json({ error: 'pod_kept', message: 'The proof-of-delivery photo stays with the delivery.' }, 409);
     if (fileId.startsWith('ev-')) return c.json({ error: 'evidence_kept', message: "Remove the bill in the voucher's own Files panel." }, 409);
     if (!(await fileRow(dbOf(c), doc, fileId))) {
       return c.json({ error: 'not_found', message: 'That file is not kept on this document; remove it where it was added.' }, 404);
@@ -228,8 +230,8 @@ function router(type: DocType, sub = '') {
     if (doc instanceof Response) return doc;
     const fileId = c.req.param('fileId') ?? '';
     const range = c.req.header('range');
-    if (type === 'delivery_order' && fileId === POD_FILE_ID) {
-      const pod = await podFile(dbOf(c), doc.id);
+    if (type === 'delivery_order' && isPodFileId(fileId)) {
+      const pod = await podFileById(dbOf(c), doc.id, fileId);
       const res = pod && ((await streamObject(c.env.SLIPS, pod.key, pod.mime, pod.name, range)) ?? (await streamObject(c.env.POD_BUCKET, pod.key, pod.mime, pod.name, range)));
       return res ?? c.json({ error: 'not_found' }, 404);
     }

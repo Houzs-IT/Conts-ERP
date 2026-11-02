@@ -51,7 +51,12 @@ export interface SplitPreview {
   blocked: SplitLine[];
   skipped: SplitLine[];
   alreadyOrdered: SplitLine[];
+  /* Goods (furniture, lighting, appliances, soft furnishing) with no supplier: not ordered, and said so, where they
+     used to sit silently under "need no PO" as in-house work (owner run, 1 Nov 2026). Does not block the raise. */
+  unsupplied: SplitLine[];
 }
+
+const GOODS_GROUPS: ReadonlySet<string> = new Set(['FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT']);
 
 interface CandidateRow {
   line_id: string; so_item_id: string; kind: 'ITEM' | 'CHILD'; item_code: string; description: string; qty: number; measure: string | null;
@@ -63,22 +68,21 @@ interface CandidateRow {
 /** Whether a contract line is meant to get a PO at all (the same rules groupForPo applies, before quantity).
     A line with a cost but no supplier still needs one: the split blocks until a supplier is picked. Lines that
     never get one (system rows, owner-supplied goods, in-house work) also never get a proof of delivery. */
-/** Customer-supplied items (owner, 22 Oct 2026): the CUS-* placeholder SKUs, linked to supplier CUSTOMER at cost 0.
-    The customer buys the item and The Conts only manages it, so nothing is ordered from anyone: no PO, not even a
-    zero one. A CUS-* line someone re-priced and pointed at a real supplier is ordered as usual. */
+/** Customer-supplied items (owner, 22 Oct 2026; 1 Nov 2026 the supplier alone decides): the line's supplier, else
+    the SKU's, is CUSTOMER. The customer buys the item and The Conts only manages it, so nothing is ordered from
+    anyone: no PO, not even a zero one. */
 export function isCustomerSupplied(l: { itemCode: string | null; supplierCode?: string | null; unitCostSen: number }): boolean {
-  if (l.supplierCode != null) return l.supplierCode === 'CUSTOMER';
-  return String(l.itemCode ?? '').startsWith('CUS-') && Number(l.unitCostSen) === 0;
+  return l.supplierCode === 'CUSTOMER';
 }
 
 /** May the PO "Transfer from Sales Order" picker offer this SO line? (owner, 24 Oct 2026) Not a line whose SKU the
-    customer supplies (main supplier CUSTOMER, or a CUS-* placeholder with no supplier), and not a service or site
+    customer supplies (main supplier CUSTOMER), and not a service or site
     works line with no supplier to buy it from. A line with a real supplier is offered as before. */
 export function poPickerOffers(l: { itemCode: string | null; itemGroup: string | null; mainSupplierCode: string | null }): boolean {
   const code = String(l.itemCode ?? '').toUpperCase();
   if (l.mainSupplierCode === 'CUSTOMER') return false;
   if (l.mainSupplierCode) return true;
-  if (code.startsWith('CUS-') || code.startsWith('RENO-') || code.startsWith('SVC-')) return false;
+  if (code.startsWith('RENO-') || code.startsWith('SVC-')) return false;
   const group = categoryGroupOf(l.itemGroup);
   if (group === 'WORKS' || group === 'SERVICE') return false;
   return !String(l.itemGroup ?? '').toUpperCase().includes('SERVICE');
@@ -87,7 +91,7 @@ export function poPickerOffers(l: { itemCode: string | null; itemGroup: string |
 /** Where a VO line goes (owner, 24 Oct 2026): the client buys it (Client PO), we buy it (PO), or it is our own works /
     service with no supplier to buy it from. Same rule as poPickerOffers. */
 export function voGoesTo(l: { itemCode: string | null; itemGroup: string | null; mainSupplierCode: string | null }): 'po' | 'client' | 'works' {
-  if (l.mainSupplierCode === 'CUSTOMER' || (!l.mainSupplierCode && String(l.itemCode ?? '').toUpperCase().startsWith('CUS-'))) return 'client';
+  if (l.mainSupplierCode === 'CUSTOMER') return 'client';
   return poPickerOffers(l) ? 'po' : 'works';
 }
 
@@ -101,7 +105,7 @@ export function needsPurchaseOrder(l: { itemCode: string | null; supplyByOwner: 
 
 /** Pure grouping, exported for tests. */
 export function groupForPo(rows: CandidateRow[]): SplitPreview {
-  const out: SplitPreview = { groups: [], blocked: [], skipped: [], alreadyOrdered: [] };
+  const out: SplitPreview = { groups: [], blocked: [], skipped: [], alreadyOrdered: [], unsupplied: [] };
   const groups = new Map<string, SplitGroup>();
   for (const r of rows) {
     const measureMilli = r.measure === null ? null : parseMeasureMilli(String(Number(r.measure)));
@@ -124,7 +128,8 @@ export function groupForPo(rows: CandidateRow[]): SplitPreview {
       out.skipped.push({ ...line, reason: 'Customer-supplied: the customer orders it, no purchase order' }); continue;
     }
     if (!r.supplier_id) {
-      if (Number(r.unit_cost_sen) === 0) out.skipped.push({ ...line, reason: 'No supplier and no cost: done in house' });
+      if (Number(r.unit_cost_sen) === 0 && GOODS_GROUPS.has(group ?? '')) out.unsupplied.push({ ...line, reason: 'No supplier: pick one on the contract line to order it' });
+      else if (Number(r.unit_cost_sen) === 0) out.skipped.push({ ...line, reason: 'No supplier and no cost: done in house' });
       else out.blocked.push({ ...line, reason: 'Has a cost but no supplier' });
       continue;
     }
@@ -193,12 +198,16 @@ export async function raisePos(
       [poNumber, g.supplierId, poDate, body.expectedAt ?? null, g.totalSen, `Renovation contract ${docNo}`, actor.staffId, actor.companyId],
     );
     await db.q(
+      /* The SO line's options and its planned delivery date (the PO tab's line plan) ride to the supplier's line: a PO
+         raised here came out with neither (owner run, 1 Nov 2026). */
       `insert into scm.purchase_order_items (purchase_order_id, material_kind, item_code, material_name, qty, unit_price_sen, line_total_sen,
-          item_group, description, description2, uom, unit_cost_sen, so_item_id, line_no, company_id)
+          item_group, description, description2, uom, unit_cost_sen, so_item_id, line_no, company_id, variants, delivery_date)
        select $2, 'mfg_product', x.item_code, x.description, x.qty, x.unit_cost_sen, x.amount_sen, 'RENOVATION', x.description, x.description2,
-              x.uom, x.unit_cost_sen, x.so_item_id, x.line_no, $3
+              x.uom, x.unit_cost_sen, x.so_item_id, x.line_no, $3, si.variants, lp.deliver_on
          from jsonb_to_recordset($1::text::jsonb) as x(item_code text, description text, qty int, unit_cost_sen int, amount_sen int,
-              description2 text, uom text, so_item_id uuid, line_no int)`,
+              description2 text, uom text, so_item_id uuid, line_no int)
+         left join scm.mfg_sales_order_items si on si.id = x.so_item_id
+         left join scm.reno_beta_line_plans lp on lp.so_item_id = x.so_item_id`,
       [JSON.stringify(g.lines.map((l, i) => ({ item_code: l.itemCode, description: l.description, qty: l.qty, unit_cost_sen: l.unitCostSen,
         amount_sen: l.amountSen, description2: l.description2, uom: l.uom, so_item_id: l.soItemId, line_no: i + 1 }))), po.id, actor.companyId],
     );

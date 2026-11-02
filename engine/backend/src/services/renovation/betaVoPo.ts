@@ -7,8 +7,8 @@
    because the VO carries the add / omit lines with their room and amounts.
    PO: every purchase order stamped with the project (purchase_orders.project_id, 0116) or holding a line bought for
    one of the project's SO lines (purchase_order_items.so_item_id).
-   Client PO: SO lines the client buys: supplied by the owner, or a customer-supplied SKU (supplier CUSTOMER, the
-   CUS-* placeholders; isCustomerSupplied in renovation-po-split.ts). */
+   Client PO: SO lines the client buys: supplied by the owner, or a customer-supplied SKU (supplier CUSTOMER;
+   isCustomerSupplied in renovation-po-split.ts). */
 
 import { readVo } from "../../scm/lib/renovation-vo";
 import { isCustomerSupplied, poPickerOffers, voGoesTo } from "../../scm/lib/renovation-po-split";
@@ -596,7 +596,7 @@ export function photoList(v: unknown): string[] {
    first left every Client PO line without an area while the PO tab showed them (live run, 24 Oct 2026). */
 export const CLIENT_LINE_ROOM = `coalesce(nullif(trim(d.room), ''), nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim(i.location), ''))`;
 
-/** SO lines the client buys: supplier CUSTOMER (the line's, else the SKU's main supplier), a CUS-* SKU at cost 0, or supplied by the owner. */
+/** SO lines the client buys: supplier CUSTOMER (the line's, else the SKU's main supplier), or supplied by the owner. */
 export async function loadClientItems(
   db: Db, projectId: number, companyId: number, pendingVos: readonly VoRow[] = [], scope: CategoryScope | null = null,
 ): Promise<ClientAnswer> {

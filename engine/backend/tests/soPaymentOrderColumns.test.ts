@@ -28,11 +28,13 @@ function realColumns(): Set<string> {
   const block = dump.slice(start, end);
   const cols = new Set<string>();
   for (const m of block.matchAll(/^\s*"([a-z_][a-z0-9_]*)"\s/gm)) cols.add(m[1]!);
-  const migDir = path.resolve(root, 'src/db/migrations-pg');
-  for (const f of readdirSync(migDir)) {
-    if (!f.endsWith('.sql')) continue;
-    const sql = readFileSync(path.join(migDir, f), 'utf8');
-    for (const m of sql.matchAll(/alter\s+table\s+(?:(?:scm|"scm")\.)?"?mfg_sales_orders"?\s+add\s+column\s+(?:if\s+not\s+exists\s+)?"?([a-z_][a-z0-9_]*)"?/gi)) cols.add(m[1]!);
+  /* The engine's own migrations and the repo-root ones (Conts: so_kind came in 0069_reno_so_contracts). */
+  for (const migDir of [path.resolve(root, 'src/db/migrations-pg'), path.resolve(root, '../../migrations-pg')]) {
+    for (const f of readdirSync(migDir)) {
+      if (!f.endsWith('.sql')) continue;
+      const sql = readFileSync(path.join(migDir, f), 'utf8');
+      for (const m of sql.matchAll(/alter\s+table\s+(?:(?:scm|"scm")\.)?"?mfg_sales_orders"?\s+add\s+column\s+(?:if\s+not\s+exists\s+)?"?([a-z_][a-z0-9_]*)"?/gi)) cols.add(m[1]!);
+    }
   }
   return cols;
 }

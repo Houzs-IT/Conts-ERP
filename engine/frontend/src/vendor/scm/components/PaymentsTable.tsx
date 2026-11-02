@@ -450,6 +450,11 @@ type SavedModeProps = {
    *  money is confirmed. Deliberately available while `locked`: printing
    *  changes nothing, and the counter is exactly where it happens. */
   receiptFor?: ReceiptSource;
+  /** Conts renovation (owner, 1 Nov 2026): what a new row should collect, given everything paid and in flight —
+   *  the next instalment's remainder instead of the whole balance. Omit for the balance. */
+  nextAmountSen?: (paidSen: number) => number;
+  /** Rendered at the top of the card body, above the payment rows (the renovation instalment schedule). */
+  aboveRows?: ReactNode;
 };
 
 type DraftModeProps = {
@@ -741,7 +746,8 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
        negative — an already-over-collected order defaults the next row to 0,
        not to minus the credit. `amountSen` is `.nonnegative()` server-side. */
     const outstanding = Math.max(0, grandTotal - paidNow);
-    const d = { ...newPaymentDraft(defaultStaffId), amountSen: outstanding };
+    const next = isSaved ? (props as SavedModeProps).nextAmountSen : undefined;
+    const d = { ...newPaymentDraft(defaultStaffId), amountSen: next ? Math.min(outstanding, Math.max(0, next(paidNow))) : outstanding };
     if (isSaved) {
       setSavedDrafts((prev) => [...prev, d]);
     } else {
@@ -1251,6 +1257,7 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
         {props.headerAction}
       </header>
       <div className={detailStyles.cardBody}>
+        {isSaved && (props as SavedModeProps).aboveRows}
         <div className={paymentsStyles.section}>
           {/* Top bar with + Add Payment trigger ─────────────────────── */}
           <div className={paymentsStyles.head}>

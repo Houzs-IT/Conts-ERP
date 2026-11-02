@@ -25,17 +25,25 @@ export const CUSTOMER_GOODS_NO_STOCK = true as boolean;
 export const PO_VARIANTS_FOLLOW_SO = true as boolean;
 export const DO_FROM_RENOVATION_SO = true as boolean;
 
+/** The category that picks a SKU's variant fields (fabric, leg, gap ...) on the SO line. Houzs files a sofa or
+ *  bedframe under its own category; the renovation catalog files it as FURNITURE with sub-category SOFA or BEDFRAME,
+ *  so the sub-category decides there (owner, 1 Nov 2026: the SO shows what the picked SKU has). */
+export function variantCategoryOf(category: string | null, subCategory: string | null): string | null {
+  const sub = String(subCategory ?? '').toUpperCase();
+  if (String(category ?? '').toUpperCase() === 'FURNITURE' && (sub === 'SOFA' || sub === 'BEDFRAME')) return sub;
+  return category;
+}
+
 /** The supplier code that marks client-supplied goods (supplier CUSTOMER, renovation-po-split.ts). */
 export const CUSTOMER_SUPPLIER_CODE = 'CUSTOMER';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the request's PostgREST client, untyped like its siblings
 type Sb = any;
 
-/** Customer-supplied, from the SKU's main supplier: supplier CUSTOMER, or no supplier at all on a CUS-* placeholder
-    (the same rule as voGoesTo in renovation-po-split.ts). Pure, for tests. */
-export function isCustomerGoods(itemCode: string, mainSupplierCode: string | null): boolean {
-  if (mainSupplierCode) return mainSupplierCode.toUpperCase() === CUSTOMER_SUPPLIER_CODE;
-  return itemCode.trim().toUpperCase().startsWith('CUS-');
+/** Customer-supplied: the SKU's main supplier is CUSTOMER (owner, 1 Nov 2026: the SKU's supplier decides, not a
+    CUS- code). The same rule as voGoesTo in renovation-po-split.ts. Pure, for tests. */
+export function isCustomerGoods(_itemCode: string, mainSupplierCode: string | null): boolean {
+  return (mainSupplierCode ?? '').toUpperCase() === CUSTOMER_SUPPLIER_CODE;
 }
 
 /** The item codes among `codes` that are customer-supplied. Empty when the switch is off. A failed read answers

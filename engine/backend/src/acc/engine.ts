@@ -78,6 +78,9 @@ export type PostJournalErr = {
 };
 export type PostJournalResult = PostJournalOk | PostJournalErr;
 
+/** Journals that sit on the opening day, before the ledger start: the OPENING journal from AutoCount's trial balance,
+    and the opening deposits tagged by project or unit (acc/opening-deposits; chew 2 Nov 2026). */
+const OPENING_SOURCES: ReadonlySet<string> = new Set(['OPENING', 'OPENING_DEPOSITS']);
 const isIntSen = (n: unknown): boolean => typeof n === 'number' && Number.isInteger(n) && n >= 0;
 
 /**
@@ -146,6 +149,9 @@ export async function validateJournal(sb: any, input: PostJournalInput): Promise
     if (l.department != null && !isDepartment(l.department)) {
       return { ok: false, status: 'bad_line', reason: `line on ${l.accountCode} names an unknown department` };
     }
+    if (l.projectId != null && !Number.isSafeInteger(l.projectId)) {
+      return { ok: false, status: 'bad_line', reason: `line on ${l.accountCode} names a project that is not a whole number` };
+    }
     dr += l.debitSen ?? 0;
     cr += l.creditSen ?? 0;
   }
@@ -198,7 +204,7 @@ export async function postJournal(sb: any, input: PostJournalInput): Promise<Pos
   // 0 — the ledger start (Conts): anything dated before it is already in the
   // AutoCount opening balances. Only the OPENING journal may sit before it.
   // A failed read refuses: "no start date" is exactly what lets one through.
-  if (sourceType !== 'OPENING') {
+  if (!OPENING_SOURCES.has(sourceType)) {
     const ls = await loadLedgerSettings(sb, companyId ?? null);
     if (!ls.ok) return { ok: false, status: 'ledger_settings_failed', reason: 'The ledger settings could not be read.' };
     if (isBeforeLedgerStart(entryDate, ls.settings)) {
@@ -308,6 +314,8 @@ export async function postJournal(sb: any, input: PostJournalInput): Promise<Pos
     party_name: l.partyName ?? null,
     notes: l.notes ?? null,
     department: l.department ?? DEFAULT_DEPARTMENT,
+    project_id: l.projectId ?? null,
+    ...(l.unitId ? { unit_id: l.unitId } : {}),
   }));
   const { error: linesErr } = await sb.from('journal_entry_lines').insert(lineRows);
   if (linesErr) {
@@ -363,7 +371,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
     return { ok: false, status: 'reversal_read_failed', reason: 'reverseJournal needs sourceDocNo or jeId' };
   }
 
-  const sourceDate = input.sourceType === 'OPENING' ? null : dateOrNull(input.sourceDate);
+  const sourceDate = OPENING_SOURCES.has(input.sourceType) ? null : dateOrNull(input.sourceDate);
   if (sourceDate) {
     const ls = await loadLedgerSettings(sb, input.companyId ?? null);
     if (!ls.ok) return { ok: false, status: 'reversal_read_failed', reason: 'The ledger settings could not be read.' };
@@ -397,7 +405,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
   // Nothing is written dated before the ledger start, a contra included (an
   // edited manual journal reverses the old one on its own day); and an entry
   // dated before it belongs to the opening balances, so it is never contra'd.
-  if (input.sourceType !== 'OPENING') {
+  if (!OPENING_SOURCES.has(input.sourceType)) {
     const ls = await loadLedgerSettings(sb, orig.company_id ?? input.companyId ?? null);
     if (!ls.ok) return { ok: false, status: 'reversal_read_failed', reason: 'The ledger settings could not be read.' };
     if (isBeforeLedgerStart(dateOrNull(input.entryDate) ?? todayMyt(), ls.settings)) return { ok: true, status: 'before_ledger_start' };
@@ -432,7 +440,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
   // accounts instead of the real ones.
   const { data: origLines, error: origLinesErr } = await sb
     .from('journal_entry_lines')
-    .select('account_code, debit_sen, credit_sen, party_type, party_code, party_name, notes, department')
+    .select('account_code, debit_sen, credit_sen, party_type, party_code, party_name, notes, department, project_id, unit_id')
     .eq('journal_entry_id', orig.id)
     .order('line_no');
   if (origLinesErr) return { ok: false, status: 'reversal_read_failed', reason: `origLines: ${origLinesErr.message}` };
@@ -445,6 +453,8 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
     party_name: string | null;
     notes: string | null;
     department?: string | null;
+    project_id?: number | null;
+    unit_id?: string | null;
   }>;
 
   const companyId = orig.company_id ?? null;
@@ -500,6 +510,10 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
           notes: `Reversal — ${l.notes ?? ''}`.trim(),
           // The contra sits in the original's department, so that department nets to nothing.
           department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT,
+          // And on the original's project, so the project's booked cost nets to nothing.
+          project_id: l.project_id ?? null,
+          // And on the original's unit, so the unit's cost nets to nothing.
+          ...(l.unit_id ? { unit_id: l.unit_id } : {}),
         }))
       : (input.fallbackLines ? input.fallbackLines(totalSen) : []).map((l, i) => ({
           ...companyCol,
@@ -513,6 +527,7 @@ export async function reverseJournal(sb: any, input: ReverseJournalInput): Promi
           party_name: l.partyName ?? null,
           notes: l.notes ?? null,
           department: l.department ?? DEFAULT_DEPARTMENT,
+          project_id: l.projectId ?? null,
         }));
   if (swapped.length === 0) {
     await sb.from('journal_entries').delete().eq('id', revJe.id);

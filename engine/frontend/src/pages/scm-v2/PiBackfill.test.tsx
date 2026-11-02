@@ -26,13 +26,13 @@ describe('the backfill card', () => {
   test('dry run shows the classified counts and arms the write button', async () => {
     fetchMock.mockReset().mockResolvedValueOnce(DRY);
     render(<PiBackfillCard />);
-    const writeBtn = screen.getByText('执行写入') as HTMLButtonElement;
+    const writeBtn = screen.getByText('Write') as HTMLButtonElement;
     expect(writeBtn.disabled).toBe(true);
     fireEvent.click(screen.getByText('Dry run'));
     await waitFor(() => expect(screen.getByText(/already current/)).toBeTruthy());
     expect(screen.getByText('PI-001')).toBeTruthy();
     expect(screen.getByText('PI-002')).toBeTruthy();
-    expect((screen.getByText('执行写入 (2)') as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByText('Write (2)') as HTMLButtonElement).disabled).toBe(false);
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/accounting/backfill/pi-periodic?dryRun=1');
   });
 
@@ -44,10 +44,10 @@ describe('the backfill card', () => {
       .mockResolvedValueOnce({ dryRun: true, missing: [], reshape: [], current: 5 });
     render(<PiBackfillCard />);
     fireEvent.click(screen.getByText('Dry run'));
-    await waitFor(() => expect(screen.getByText('执行写入 (2)')).toBeTruthy());
-    fireEvent.click(screen.getByText('执行写入 (2)'));
-    await waitFor(() => expect(screen.getByText(/账已齐/)).toBeTruthy());
-    expect(screen.getByText(/写入结果/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Write (2)')).toBeTruthy());
+    fireEvent.click(screen.getByText('Write (2)'));
+    await waitFor(() => expect(screen.getByText(/Up to date/)).toBeTruthy());
+    expect(screen.getByText(/Result:/)).toBeTruthy();
     /* dry + two write passes + the refresh. */
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(fetchMock.mock.calls[1]?.[0]).toBe('/accounting/backfill/pi-periodic?limit=25');
@@ -60,8 +60,8 @@ describe('the backfill card', () => {
       .mockResolvedValueOnce({ dryRun: true, missing: [{ invoiceNumber: 'PI-001', totalSen: 100000, kind: 'missing' }], reshape: [], current: 4 });
     render(<PiBackfillCard />);
     fireEvent.click(screen.getByText('Dry run'));
-    await waitFor(() => expect(screen.getByText('执行写入 (2)')).toBeTruthy());
-    fireEvent.click(screen.getByText('执行写入 (2)'));
+    await waitFor(() => expect(screen.getByText('Write (2)')).toBeTruthy());
+    fireEvent.click(screen.getByText('Write (2)'));
     await waitFor(() => expect(screen.getByText(/1 failed/)).toBeTruthy());
     expect(screen.getByText(/group_unbound: SOFA/)).toBeTruthy();
     /* dry + ONE write pass (stall guard) + the refresh — never a second write. */

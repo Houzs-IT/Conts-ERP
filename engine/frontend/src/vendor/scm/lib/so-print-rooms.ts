@@ -36,3 +36,32 @@ export function roomGroups<T extends { id: string; total_sen?: number | null }>(
   }
   return out;
 }
+
+/* "By category" (owner, 31 Oct 2026): the same grouping keyed on each line's catalog category and sub-category,
+   named and ordered as Products > SKU Master keeps them (product_category_groups, product_sub_categories), shown as
+   "Works · Plaster ceiling" like the renovation lists. A line whose code is not in the catalog (the renovation system
+   rows: document discount, lump sums) prints under "Other items". Pure. */
+export interface CatalogNames {
+  groups: ReadonlyArray<{ code: string; label: string }>;
+  subs: ReadonlyArray<{ group: string; code: string; label: string; sort: number; legacy?: readonly string[] }>;
+}
+export function categoryRooms(
+  items: ReadonlyArray<{ id: string; item_code?: string | null }>,
+  productOf: (code: string) => { group?: string | null; sub?: string | null } | undefined,
+  names: CatalogNames,
+): SoPrintRooms {
+  const byItem: Record<string, string> = {};
+  const rank = new Map<string, number>();
+  for (const it of items) {
+    const p = it.item_code ? productOf(it.item_code) : undefined;
+    const gi = names.groups.findIndex((g) => g.code === p?.group);
+    if (!p || gi < 0) continue;
+    const subs = names.subs.filter((s) => s.group === p.group);
+    const sub = p.sub ? subs.find((s) => s.code === p.sub || s.legacy?.includes(p.sub!)) : undefined;
+    const label = sub ? `${names.groups[gi]!.label} · ${sub.label}` : names.groups[gi]!.label;
+    byItem[it.id] = label;
+    rank.set(label, gi * 100000 + (sub ? sub.sort : 99999));
+  }
+  const order = [...rank.keys()].sort((a, b) => rank.get(a)! - rank.get(b)! || a.localeCompare(b));
+  return { order, byItem };
+}

@@ -27,6 +27,9 @@ export type PerformanceReport = {
   otherExpensesSen: number;
   netSen: number; netPct: number | null;
   settings: PerformanceSettings;
+  /** Renovation by completion (Conts; acc/reno-completion): its row is in `groups` (key 'renovation'); these are its
+      memo figures — what the books show and invoiced − earned. Null without renovation. Never posted. */
+  renovation?: { earnedSen: number; costSen: number; gpSen: number; gpPct: number | null; invoicedSen: number; differenceSen: number; contracts: number } | null;
   /** The account part on the report's layout (docs/bugs/0912): the other
       income and the expenses as trees, the computed operating expense
       standing where the account it replaces sits, % of sales on every line. */

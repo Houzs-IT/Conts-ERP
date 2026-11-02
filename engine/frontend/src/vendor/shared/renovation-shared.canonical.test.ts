@@ -18,7 +18,7 @@ describe('the browser copies of the renovation modules are the backend files', (
   }
 
   test('both copies carry real data', () => {
-    expect(RENOVATION_GROUPS.length).toBe(8);
+    expect(RENOVATION_GROUPS.length).toBe(9);
     expect(RENO_STAGES[0]).toBe('design');
     expect(roomSectionHeadings(1, 1)).toEqual(['Living hall', 'Bedroom 1', 'Bathroom 1', 'Common area']);
     expect(nextInstalmentAmount({ instalments: [{ seq: 1, pctBp: 10000 }], seq: 1, revisedContractSen: 5, billedSen: 0 }).amountSen).toBe(5);

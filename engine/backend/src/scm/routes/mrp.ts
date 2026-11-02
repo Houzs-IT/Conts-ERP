@@ -173,7 +173,10 @@ const MRP_READ_CONCURRENCY = 6;
    closed order in history. */
 const sqlNotInList = (statuses: Iterable<string>): string =>
   `(${[...statuses].map((s) => `"${s}"`).join(',')})`;
-const SO_DONE_SQL = sqlNotInList(SO_DONE);
+/* A running renovation contract (owner, 1 Nov 2026) is read too, but only its lines the project's PO tab has
+   released with a processing date reach the plan (the line-plan rule below). RENO_COMPLETED stays done. */
+const RENO_RUNNING = new Set(['RENO_CONFIRMED', 'RENO_IN_PROGRESS']);
+const MRP_DEMAND_DONE_SQL = sqlNotInList(new Set([...SO_DONE].filter((st) => !RENO_RUNNING.has(st))));
 const PO_DEAD_SQL = sqlNotInList(PO_DEAD);
 
 type DemandRow = {
@@ -215,6 +218,8 @@ type DemandRow = {
        "when to order" is orderByDate below, derived from the delivery date and
        the category lead time. NOT a production date: there is no production. */
     customer_state: string | null;       // staff #8 — show the customer's state (info-only)
+    /* Conts: the project the order belongs to. A project's lines are released by the PO tab's line plan below. */
+    project_id?: number | null;
     sales_location: string | null;       // the SO's OWN warehouse of record (lib/so-warehouse.ts)
   } | null;
 };
@@ -635,10 +640,10 @@ export async function computeMrp(
     .from('mfg_sales_order_items')
     .select(`
       id, doc_no, item_code, description, item_group, variants, qty, warehouse_id, line_delivery_date, line_delivery_date_overridden, line_no, created_at, cancelled, allocated_batch_no,
-      so:mfg_sales_orders!inner ( debtor_name, status, so_date, customer_delivery_date, amended_delivery_date, processing_date, customer_state, sales_location )
+      so:mfg_sales_orders!inner ( debtor_name, status, so_date, customer_delivery_date, amended_delivery_date, processing_date, customer_state, sales_location, project_id )
     `)
     .eq('cancelled', false)
-    .not('so.status', 'in', SO_DONE_SQL))
+    .not('so.status', 'in', MRP_DEMAND_DONE_SQL))
     .order('id')
     .range(from, to));
   if (demandErr) throw new Error(`mrp_load_failed: ${demandErr.message}`);
@@ -657,9 +662,29 @@ export async function computeMrp(
      take supply from a dated line and every dated line's coverage is IDENTICAL
      under both flag values. `includeUndated` only controls whether undated
      rows appear in the RESULT (visibility, not math). */
-  const demandActive = ((demandRaw ?? []) as unknown as DemandRow[]).filter(
-    (r) => r.item_code && r.so && !SO_DONE.has(r.so.status) && r.qty > 0,
+  const demandOpen = ((demandRaw ?? []) as unknown as DemandRow[]).filter(
+    (r) => r.item_code && r.so && (!SO_DONE.has(r.so.status) || (RENO_RUNNING.has(r.so.status) && r.so.project_id != null)) && r.qty > 0,
   );
+  /* Conts projects (owner, 1 Nov 2026: "只要一有 Processing Date，它就会跳去 MRP 让我开 order"). A line of an order
+     that belongs to a project is demand only once the project's PO tab gives it a processing date
+     (scm.reno_beta_line_plans.order_on) and does not mark it "No PO"; its delivery date is the one set there. Orders
+     with no project keep the rule above. */
+  const projectLineIds = demandOpen.filter((r) => r.so?.project_id != null).map((r) => r.id);
+  const { data: planRows, error: planErr } = await chunkIn<{ so_item_id: string; order_on: string | null; deliver_on: string | null; no_po: boolean }>(
+    projectLineIds,
+    (batch, from, to) => scoped(sb.from('reno_beta_line_plans').select('so_item_id, order_on, deliver_on, no_po').in('so_item_id', batch))
+      .order('so_item_id').range(from, to),
+  );
+  if (planErr) throw new Error(`mrp_load_failed: ${planErr.message}`);
+  const planOf = new Map(planRows.map((p) => [p.so_item_id, p]));
+  const demandActive = demandOpen.flatMap((r): DemandRow[] => {
+    if (r.so?.project_id == null) return [r];
+    const plan = planOf.get(r.id);
+    if (!plan?.order_on || plan.no_po) return [];
+    /* The line's own processing date stands in for the order's (MRP's Processing Date column and date basis). */
+    const so = r.so ? { ...r.so, processing_date: plan.order_on } : r.so;
+    return [plan.deliver_on ? { ...r, so, line_delivery_date: plan.deliver_on, line_delivery_date_overridden: true } : { ...r, so }];
+  });
   const isDatedLine = (r: DemandRow): boolean => deliveryOf(r) !== null;
 
   // A partially-delivered SO keeps its header status active (the header only
@@ -1857,7 +1882,15 @@ mrp.get('/', async (c) => {
        `computedAt` let the page show "as of <time>". */
     if (isDefaultMrpView(catFilter, whFilter, includeUndated)) {
       const snap = await readMrpSnapshot(sb, companyId);
-      if (snap) return c.json({ ...snap.result, computedAt: snap.computedAt, stored: true });
+      /* Conts runs no scheduled jobs (engine rule), so nothing refreshes the snapshot every 15 minutes: an older one
+         is recomputed and stored on open, or new orders showed only after Regenerate (owner run, 1 Nov 2026). */
+      if (snap && Date.now() - Date.parse(snap.computedAt) < MRP_SNAPSHOT_FRESH_MS) {
+        return c.json({ ...snap.result, computedAt: snap.computedAt, stored: true });
+      }
+      if (companyId != null) {
+        const fresh = await refreshMrpSnapshot(sb, companyId, await loadLeadBuffers(c.env.DB), new Date().toISOString());
+        return c.json({ ...fresh.result, computedAt: fresh.computedAt, stored: true });
+      }
     }
     const result = await computeMrp(sb, { catFilter, whFilter, includeUndated, companyId, leadBuffers: await loadLeadBuffers(c.env.DB) });
     return c.json({ ...result, computedAt: new Date().toISOString(), stored: false });
@@ -1865,6 +1898,9 @@ mrp.get('/', async (c) => {
     return c.json({ error: 'load_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
+
+/* Short: Conts's plan is small and fast to compute; the snapshot only saves recomputing on quick reopens. */
+const MRP_SNAPSHOT_FRESH_MS = 60 * 1000;
 
 /* Manual "Regenerate" — recompute the default-view MRP for the active company
    and store it, then return it fresh. POST is gated 'edit' on scm.procurement.mrp

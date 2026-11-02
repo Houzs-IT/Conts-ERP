@@ -7,7 +7,8 @@ import { useMedia } from '../lib/useMedia';
  * over the right of the screen (full width on a phone), like the sales order quick view. A panel beside the list
  * squeezed it into narrow cards that were hard to read.
  * On a wide screen the list scrolls on its own, so the page that uses it must be a flex column that fills the content
- * area (`flex-1 min-h-0`); below 1024px it scrolls with the page.
+ * area (`flex-1 lg:min-h-0`); below 1024px it scrolls with the page. A plain min-h-0 there pins the page to the content
+ * area's height, the list spills past it, and the shell's bottom padding no longer clears the phone's tab bar.
  */
 export default function SplitPane(props: {
   list: ReactNode;

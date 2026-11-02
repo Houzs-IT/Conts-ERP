@@ -29,9 +29,9 @@ import { BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
-  amountAfter, byAreaBlocks, byCategory, livePo, colourEditable, colourOf, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
+  amountAfter, byAreaBlocks, byCategory, livePo, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
   linesApi, linesCsv, postVo, refusalText,
-  voBatches, type LineEdit, type ManagedLine, type PendingPoChange, type PostedVo,
+  contractLineEdits, postContractLines, voBatches, type LineEdit, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
 import { BetaLoading } from "./BetaLoading";
 
@@ -118,10 +118,23 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const needPo = buy.filter((l) => !l.plan.noPo && !l.pos.some((x) => x.poStatus !== "CANCELLED"));
   const canConfirmPo = can("scm.po_amendment.approve");
 
+  /* Renovation contracts: a SKU or qty change raises one contract VO per contract (approved for you); options and
+     remarks save on the line with no VO. */
+  const contractSo = new Set(d.sos.filter((s) => s.renovation).map((s) => s.docNo));
+  const raisesVo = (b: VoBatch): boolean => !contractSo.has(b.docNo) || contractLineEdits(b).length > 0;
+  const voBatchesShown = batches.filter((b) => !contractSo.has(b.docNo));
+  const batchTitle = (b: VoBatch): string => {
+    if (!contractSo.has(b.docNo)) return `${voLabel(voBatchesShown.indexOf(b))} on ${b.docNo}`;
+    return raisesVo(b) ? `New contract VO on ${b.docNo}` : `${b.docNo}: saved on the lines, no VO (nothing the customer pays for changes)`;
+  };
+  const anyVo = batches.some(raisesVo);
+  const saveLabel = anyVo ? "Save & post to VO" : "Save";
   const save = async (): Promise<void> => {
     setSaving(true);
     const posted: PostedVo[] = [];
-    for (const b of batches) posted.push(await postVo(b, `beta-lines-${p.projectId}-${b.docNo}-${Date.now()}`));
+    for (const b of batches) {
+      posted.push(contractSo.has(b.docNo) ? await postContractLines(b) : await postVo(b, `beta-lines-${p.projectId}-${b.docNo}-${Date.now()}`));
+    }
     setSaving(false);
     setConfirming(false);
     const refused: Record<string, string> = {};
@@ -220,7 +233,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
 
   const deliveries = site.data?.deliveries ?? [];
   const cell = (l: ManagedLine): RowCtx => ({
-    l, edit: edits[l.id], editable: editable && l.voLocked, finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
+    l, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
     setEdit: (patch) => setEdit(l.id, patch), pick: () => setPicking(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
     grDocs: lineDocs(l.id, deliveries, "goods_received"), doDocs: lineDocs(l.id, deliveries, "delivery_order"), openDoc,
@@ -376,27 +389,27 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
             ? <button type="button" style={btnStyle("outline", "md")} onClick={() => { setEdits({}); setRefusals({}); setEditing(false); }}>Discard</button>
             : <button type="button" style={btnStyle("outline", "md")} onClick={() => { setRefusals({}); setEditing(false); }}>Done</button>}
           <button type="button" style={btnStyle("teal", "md")} disabled={problems.length > 0 || changedCount === 0} onClick={() => setConfirming(true)}>
-            Save & post to VO{batches.length > 0 ? ` (${batches.map((_, i) => voLabel(i)).join(", ")})` : ""}
+            {saveLabel}{voBatchesShown.length > 0 ? ` (${voBatchesShown.map((_, i) => voLabel(i)).join(", ")})` : ""}
           </button>
         </div>
       )}
 
       {confirming && (
         <WsDialog
-          title="Save & post to VO"
-          sub="These changes apply to the sales order now. No approval is needed; the VO keeps the record."
+          title={saveLabel}
+          sub={anyVo ? "These changes apply to the sales order now. No approval is needed; the VO keeps the record." : "These changes save on the order's lines now."}
           onClose={() => { if (!saving) setConfirming(false); }}
           wide
           footer={(
             <>
               <button type="button" style={btnStyle("outline")} disabled={saving} onClick={() => setConfirming(false)}>Back</button>
-              <button type="button" style={btnStyle("teal")} disabled={saving} onClick={() => void save()}>{saving ? "Saving..." : "Save & post to VO"}</button>
+              <button type="button" style={btnStyle("teal")} disabled={saving} onClick={() => void save()}>{saving ? "Saving..." : saveLabel}</button>
             </>
           )}
         >
-          {batches.map((b, i) => (
+          {batches.map((b) => (
             <div key={b.docNo} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontWeight: 700 }}>{voLabel(i)} on {b.docNo}</div>
+              <div style={{ fontWeight: 700 }}>{batchTitle(b)}</div>
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, display: "flex", flexDirection: "column", gap: 4 }}>
                 {lines.filter((l) => l.soDocNo === b.docNo).map((l) => {
                   const e = effectiveEdit(l, edits[l.id]);
@@ -409,7 +422,11 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                         <span style={{ color: WS.text2 }}> · amount {money(l.amountSen)} {"->"} {money(after)}</span>
                       )}
                       {l.pos.some((x) => x.poStatus !== "CANCELLED") && (e.qty !== undefined || e.itemCode || e.colour !== undefined) && (
-                        <div style={{ ...metaStyle, color: WS.amber }}>On a PO: the PO itself changes only after the PO change is approved.</div>
+                        <div style={{ ...metaStyle, color: WS.amber }}>
+                          {contractSo.has(l.soDocNo)
+                            ? "On a PO: the PO line is flagged for purchasing to change; the PO itself does not change by itself."
+                            : "On a PO: the PO itself changes only after the PO change is approved."}
+                        </div>
                       )}
                     </li>
                   );
@@ -427,7 +444,11 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         <BetaSkuPicker
           current={picking.itemCode}
           onClose={() => setPicking(null)}
-          onPick={(code, name, priceSen) => { setEdit(picking.id, { itemCode: code, pickedName: name, pickedPriceSen: priceSen }); setPicking(null); }}
+          onPick={(code, name, priceSen) => {
+            // A contract line keeps its contract price when the SKU changes (the VO re-adds it at that price).
+            setEdit(picking.id, contractSo.has(picking.soDocNo) ? { itemCode: code, pickedName: name } : { itemCode: code, pickedName: name, pickedPriceSen: priceSen });
+            setPicking(null);
+          }}
         />
       )}
     </>
@@ -498,6 +519,8 @@ interface RowCtx {
   l: ManagedLine;
   edit: LineEdit | undefined;
   editable: boolean;
+  /** A renovation contract's line: a SKU or qty change raises a contract VO, and keeps the line's price. */
+  contract: boolean;
   finance: boolean;
   today: string;
   plansReady: boolean;
@@ -520,7 +543,10 @@ function changed(r: RowCtx): LineEdit | null {
 function SkuCell(r: RowCtx): ReactElement {
   const e = changed(r);
   const code = e?.itemCode ?? r.l.itemCode;
-  if (!r.editable) return <span title={code} style={{ display: "block", fontFamily: "ui-monospace, monospace", fontSize: 12, ...ellipsis }}>{code}</span>;
+  if (!r.editable) {
+    return <span title={code}
+      style={{ display: "block", fontFamily: "ui-monospace, monospace", fontSize: 12, ...ellipsis }}>{code}</span>;
+  }
   return (
     <button type="button" onClick={r.pick} aria-label={`Change SKU ${r.l.itemCode}`} title={e?.itemCode ? `${code} (was ${r.l.itemCode})` : `${code}: change SKU`}
       style={{ ...editInput, width: "100%", display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontFamily: "ui-monospace, monospace", fontSize: 12, fontWeight: e?.itemCode ? 700 : 400 }}>
@@ -574,11 +600,9 @@ function DescCell(r: RowCtx): ReactElement {
   );
 }
 
+/* The variants the SO line carries, as the SKU picked on the SO defines them (a bedframe's colour, leg and gap; most
+   SKUs have none and use the remark). Changed on the SO, not here (owner, 1 Nov 2026). */
 function VariantCell(r: RowCtx): ReactElement {
-  if (r.editable && colourEditable(r.l)) {
-    return <input aria-label={`Colour for ${r.l.itemCode}`} placeholder="Colour / code" title={r.l.variantText ?? undefined} style={{ ...editInput, width: "100%" }}
-      value={r.edit?.colour ?? colourOf(r.l)} onChange={(ev) => r.setEdit({ colour: ev.target.value })} />;
-  }
   return r.l.variantText ? <span title={r.l.variantText} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{r.l.variantText}</span> : <span style={metaStyle}>-</span>;
 }
 
@@ -753,7 +777,7 @@ function SaveResult({ posted, onClose }: { posted: PostedVo[]; onClose: () => vo
         {posted.map((x) => (
           <div key={x.docNo}>
             {x.applied
-              ? <span style={{ color: WS.green }}><b>Saved.</b> {x.docNo} changed{x.amendmentNo ? ` (${x.amendmentNo})` : ""}; the VO is in the VO tab.</span>
+              ? <span style={{ color: WS.green }}><b>Saved.</b> {x.docNo} changed{x.amendmentNo ? ` (${x.amendmentNo}); the VO is in the VO tab.` : "."}</span>
               : <span style={{ color: WS.red }}><b>{x.docNo} not changed.</b> {x.refusal}</span>}
             {x.followUps.length > 0 && (
               <div style={{ color: WS.amber }}>

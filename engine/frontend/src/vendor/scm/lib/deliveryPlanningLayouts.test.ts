@@ -13,7 +13,7 @@ const BOARD_COLUMNS = [
   "processing_date", "customer_delivery_date", "delivery_substatus",
   "amended_delivery_date", "amend_date_from_customer", "amend_reason",
   "house_type", "replacement_disposal", "disposal_request", "po_nos",
-  "address", "postcode", "dp_remark", "do_date", "wa_message", "venue",
+  "address", "postcode", "dp_remark", "do_date", "delivered_at", "wa_message", "pod", "venue",
   "warehouse", "time_range", "time_confirmed", "departure_at", "arrival_at",
   "trip_no", "lorry", "driver", "driver_ic", "driver_contact", "driver_2",
   "helper_1", "helper_2", "shipout_date", "eta_arriving_port",
@@ -25,12 +25,13 @@ const BOARD_COLUMNS = [
 /** Columns the owner deleted — must not reappear in any preset. */
 const DROPPED = ["delivery_state", "arrangement_stage", "em_delivered_date", "days_left", "attention"];
 
-/** Owner's four tabs, in order, with the visible-column count he arranged. */
+/** Owner's four tabs, in order, with the visible-column count he arranged
+ *  (+1 on every tab since the POD column, Houzs 2026-10-19; "Delivered At" is added hidden). */
 const EXPECTED = [
-  { id: "delivery-date", label: "Delivery Date", visible: 28 },
-  { id: "delivery-details", label: "Delivery Details", visible: 41 },
-  { id: "sg-order", label: "SG Order", visible: 29 },
-  { id: "em-order", label: "EM Order", visible: 34 },
+  { id: "delivery-date", label: "Delivery Date", visible: 29 },
+  { id: "delivery-details", label: "Delivery Details", visible: 42 },
+  { id: "sg-order", label: "SG Order", visible: 30 },
+  { id: "em-order", label: "EM Order", visible: 35 },
 ];
 
 describe("Delivery Planning layout presets", () => {

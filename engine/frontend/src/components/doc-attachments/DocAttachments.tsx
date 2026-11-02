@@ -264,7 +264,7 @@ export function DocAttachments({ docType, docId, lineId, canEdit = true, title, 
                   <FileThumb url={`${filesBaseUrl(docType, id)}/${f.id}`} file={f} className="aspect-square w-full" />
                   <span className="block truncate px-1.5 pt-1 text-[11px] font-medium text-ink">{f.caption || f.name}</span>
                   <span className="block truncate px-1.5 pb-1 text-[10px] text-ink-muted">
-                    {f.source === 'pod' ? 'Proof of delivery' : f.from ? `From ${f.from}` : [f.by, formatWhen(f.at).split(',')[0]].filter(Boolean).join(' · ')}
+                    {f.source === 'pod' ? (docType === 'goods_received' ? 'Proof of receipt' : 'Proof of delivery') : f.from ? `From ${f.from}` : [f.by, formatWhen(f.at).split(',')[0]].filter(Boolean).join(' · ')}
                   </span>
                 </button>
                 {editable && !f.readOnly && (

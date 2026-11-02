@@ -110,6 +110,26 @@ check('not on HostPlatform: only the live reservation in the window is listed', 
 check('not on HostPlatform: nothing removed', (await db.all(`SELECT state FROM reservations WHERE id = 'hp-res-GONE00001'`))[0].state, 'confirmed');
 check('not on HostPlatform: other units not checked', (await M.notOnSource(db, ['u2'], '2026-08-01', '2028-04-27', sent)).length, 0);
 
+// A unit the owner's workbook wrote without HostPlatform's dash (A3105 for A31-05) still takes its bookings (owner
+// report, 2 Nov 2026: every A31-05 booking was left out). Two units that read alike are never guessed between.
+await db.run(`insert into units (id, property_id, owner_id, unit_number, base_rate, is_listed, created_at, updated_at) values
+  ('u-loose', 'p-agile', 'o1', 'A3105', 0, 1, '${t}', '${t}'), ('u-twin1', 'p-agile', 'o1', 'B1203', 0, 1, '${t}', '${t}'), ('u-twin2', 'p-agile', 'o1', 'B12 03', 0, 1, '${t}', '${t}')`);
+const loose = await M.importReservations(db, M.mapApiReservations([
+  row('LOOSE0001', { source_id: 'HMLOOSE', unit: 'A31-05 2B1B', check_in_date: '2026-11-20', check_out_date: '2026-11-22' }),
+  row('TWIN00001', { source_id: 'HMTWIN', unit: 'B12-03 2B1B', check_in_date: '2026-11-20', check_out_date: '2026-11-22' }),
+], '2026-10-27'), now, { source: 'api' });
+check('loose unit code: A31-05 lands on A3105', (await get('hp-res-LOOSE0001'))?.unit_id, 'u-loose');
+check('loose unit code: two look-alike units are refused, not guessed', [await get('hp-res-TWIN00001'), loose.errors.length], [undefined, 1]);
+
+// A building renamed here keeps its listing-import id (hp-prop-<slug>); its bookings still land (Agile renamed to
+// AGILE BUKIT BINTANG refused every new C13-13A booking, 2 Nov 2026).
+await db.run(`insert into properties (id, name, address_line, city, state, created_at, updated_at) values ('hp-prop-renamed', 'RENAMED BUKIT BINTANG', 'x', 'Kuala Lumpur', 'WP', '${t}', '${t}');
+  insert into units (id, property_id, owner_id, unit_number, base_rate, is_listed, created_at, updated_at) values ('u-ren', 'hp-prop-renamed', 'o1', 'R10-01', 0, 1, '${t}', '${t}')`);
+await M.importReservations(db, M.mapApiReservations([
+  row('RENAME001', { source_id: 'HMREN', unit: 'R10-01 2B1B', property: 'Renamed The Conts', check_in_date: '2026-11-20', check_out_date: '2026-11-22' }),
+], '2026-10-27'), now, { source: 'api' });
+check('renamed building: booking lands on its unit', (await get('hp-res-RENAME001'))?.unit_id, 'u-ren');
+
 await wire.end();
 await server.stop();
 console.log(fails ? `\n${fails} FAILED` : '\nall ok'); process.exit(fails ? 1 : 0);

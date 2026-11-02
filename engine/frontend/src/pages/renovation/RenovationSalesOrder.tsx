@@ -11,13 +11,14 @@ import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
 import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapModal';
 import { useAuth } from '../../auth/AuthContext';
+import { useToast } from '../../hooks/useToast';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
 import { STAGE_LABEL, RENO_STAGES, type StageKey } from '../../vendor/shared/renovation-stages';
 import { qtyLabel } from '../../vendor/shared/renovation-money';
 import {
-  refusalOf, renoSend, useBrands, useContract, usePoFlags, usePoSplit, useRenoMutation,
-  type BillingInstalment, type ContractView, type DocLine,
+  CONTRACT_NEXT_STATUS, contractPostingWarning, refusalOf, renoSend, useBrands, useContract, useContractPosting, usePoFlags, usePoSplit, useRenoMutation,
+  type BillingInstalment, type ContractPosting, type ContractView, type DocLine,
 } from '../../lib/renovation/api';
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { PrintDialog } from './PrintDialog';
@@ -25,12 +26,6 @@ import { ContractProjectCard } from './ContractProjectCard';
 import { DocAttachments, LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 import { Card, ErrorBanner, Field, fmtDate, inputCls, MoneyInput, pctLabel, rm, Stat, StatusPill, todayIso } from './shared';
 import { cn } from '../../lib/utils';
-
-const NEXT_STATUS: Record<string, Array<{ to: string; label: string; danger?: boolean }>> = {
-  RENO_CONFIRMED: [{ to: 'RENO_IN_PROGRESS', label: 'Works started' }, { to: 'CANCELLED', label: 'Cancel contract', danger: true }],
-  RENO_IN_PROGRESS: [{ to: 'RENO_COMPLETED', label: 'Works completed' }],
-  RENO_COMPLETED: [{ to: 'CLOSED', label: 'Close contract' }],
-};
 
 function lineQty(l: DocLine): string {
   const m = l.measureMilli ?? null;
@@ -43,10 +38,11 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  const [einvoice, setEinvoice] = useState<string | null>(null);
   const qc = useQueryClient();
-  const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ kind: string; invoiceNumber?: string; noteNumber?: string; amountSen: number; posting: { status: string; reason?: string } }>(
+  const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ kind: string; invoiceNumber?: string; noteNumber?: string; amountSen: number; posting: { status: string; reason?: string }; einvoiceWarning?: string | null }>(
     `/sales-orders/${encodeURIComponent(c.docNo)}/instalments/${inst!.id}/bill`, 'POST', body));
-  useEffect(() => { setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); }, [inst]);
+  useEffect(() => { setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst]);
   if (!inst) return null;
   const negative = amount < 0;
   const submit = async (confirmCreditNote = false) => {
@@ -56,6 +52,7 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
       const doc = r.kind === 'INVOICE' ? `Sales invoice ${r.invoiceNumber}` : r.kind === 'CREDIT_NOTE' ? `Credit note ${r.noteNumber}` : 'Nothing to bill: instalment closed';
       const posted = r.posting.status === 'posted' || r.posting.status === 'already_posted' ? 'journal posted' : r.posting.status === 'not_needed' ? '' : `journal not posted yet (${r.posting.reason ?? r.posting.status})`;
       setNote(null);
+      setEinvoice(r.einvoiceWarning ?? null);
       setResult([doc, rm(r.amountSen), posted].filter(Boolean).join(' · '));
     } catch (e) {
       const f = refusalOf(e);
@@ -86,6 +83,66 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
         {note && <div className="rounded bg-warning-bg px-3 py-2 text-warning-text">{note}</div>}
         {!result && <Field label={negative ? 'Credit note date' : 'Invoice date'}><input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Field>}
         {result && <div className="rounded bg-synced-bg px-3 py-2 font-semibold text-synced">{result}</div>}
+        {einvoice && <div className="rounded bg-warning-bg px-3 py-2 text-warning-text">{einvoice}</div>}
+        <ErrorBanner error={error} />
+      </div>
+    </ModalOverlay>
+  );
+}
+
+/** Finance: a credit note that lowers the contract (a special discount, less work, a refund). Never more than is
+    invoiced so far; later instalments are worked out on the lower contract. */
+function CreditDialog({ c, open, onClose }: { c: ContractView; open: boolean; onClose: () => void }) {
+  const [date, setDate] = useState(todayIso());
+  const [amount, setAmount] = useState<number | null>(null);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const [einvoice, setEinvoice] = useState<string | null>(null);
+  const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ noteNumber: string; amountSen: number; posting: { status: string; reason?: string }; einvoiceWarning?: string | null }>(
+    `/sales-orders/${encodeURIComponent(c.docNo)}/credit`, 'POST', body));
+  useEffect(() => { if (open) { setDate(todayIso()); setAmount(null); setReason(''); setError(null); setResult(null); setEinvoice(null); } }, [open]);
+  if (!open) return null;
+  const billed = c.billing.billedSen;
+  const tooMuch = amount !== null && amount > billed;
+  const submit = async () => {
+    setError(null);
+    try {
+      const r = await run.mutateAsync({ amountSen: amount, reason, noteDate: date });
+      const posted = r.posting.status === 'posted' || r.posting.status === 'already_posted' ? 'journal posted' : `journal not posted yet (${r.posting.reason ?? r.posting.status})`;
+      setEinvoice(r.einvoiceWarning ?? null);
+      setResult([`Credit note ${r.noteNumber}`, rm(r.amountSen), posted].join(' · '));
+    } catch (e) { setError(refusalOf(e).message); }
+  };
+  return (
+    <ModalOverlay open onClose={onClose} title="Credit note" icon={<ReceiptText size={16} />}
+      footer={result
+        ? <div className="flex w-full justify-end"><Button onClick={onClose}>Done</Button></div>
+        : (
+          <div className="flex w-full justify-end gap-2">
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button variant="danger" disabled={run.isPending || !amount || amount <= 0 || tooMuch || !reason.trim()} onClick={submit}>
+              {run.isPending ? 'Raising…' : `Raise credit note${amount ? ` ${rm(amount)}` : ''}`}
+            </Button>
+          </div>
+        )}>
+      <div className="space-y-3 text-[13px]">
+        <div className="rounded-lg bg-surface-2 p-3">
+          <div className="flex justify-between"><span className="text-ink-secondary">Revised contract</span><span className="tabular-nums">{rm(c.billing.revisedContractSen)}</span></div>
+          <div className="flex justify-between"><span className="text-ink-secondary">Invoiced so far (net)</span><span className="font-semibold tabular-nums">{rm(billed)}</span></div>
+        </div>
+        <p className="text-ink-secondary">The credit lowers revenue, what the customer owes and the contract. Later instalments are worked out on the lower contract.</p>
+        {!result && (
+          <>
+            <Field label="Amount (RM)" hint={tooMuch ? `No more than ${rm(billed)}: only what is invoiced can be credited.` : undefined}>
+              <MoneyInput nullable value={amount} onChange={setAmount} className={inputCls} ariaLabel="Credit amount" />
+            </Field>
+            <Field label="Reason"><input className={inputCls} value={reason} maxLength={200} placeholder="e.g. Special discount, deposit refund" onChange={(e) => setReason(e.target.value)} /></Field>
+            <Field label="Credit note date"><input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+          </>
+        )}
+        {result && <div className="rounded bg-synced-bg px-3 py-2 font-semibold text-synced">{result}</div>}
+        {einvoice && <div className="rounded bg-warning-bg px-3 py-2 text-warning-text">{einvoice}</div>}
         <ErrorBanner error={error} />
       </div>
     </ModalOverlay>
@@ -118,6 +175,13 @@ function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
             <div className="rounded-lg border border-err/30 bg-err-bg p-2.5 text-[12.5px] text-err">
               <div className="font-semibold">Pick a supplier first ({p.blocked.length}):</div>
               <ul className="list-disc pl-5">{p.blocked.map((l) => <li key={l.lineId}>{l.description}</li>)}</ul>
+            </div>
+          )}
+          {(p.unsupplied ?? []).length > 0 && (
+            <div className="rounded-lg border border-warning-text/30 bg-warning-bg p-2.5 text-[12.5px] text-warning-text">
+              <div className="font-semibold">Not ordered: no supplier ({(p.unsupplied ?? []).length})</div>
+              <ul className="list-disc pl-5">{(p.unsupplied ?? []).map((l) => <li key={l.lineId}>{l.description}</li>)}</ul>
+              <div>Pick a supplier on the line (Edit), or leave it if it is bought another way.</div>
             </div>
           )}
           {(p.skipped.length > 0 || p.alreadyOrdered.length > 0) && (
@@ -228,6 +292,34 @@ function SectionRows({ section, canEdit, edits, setEdits, suppliers, supplierNam
   );
 }
 
+/** Finance: when the ledger does not carry the contract as it stands (a post after convert or a VO was refused),
+    say so and offer to post it again. Nothing shows for anyone else, or when it is in step. */
+function ContractPostingAction({ docNo }: { docNo: string }) {
+  const { can } = useAuth();
+  const toast = useToast();
+  const finance = can('scm.payment_voucher.post');
+  const state = useContractPosting(docNo, finance);
+  const run = useRenoMutation(() => renoSend<ContractPosting>(`/sales-orders/${encodeURIComponent(docNo)}/post-contract`, 'POST', {}));
+  const s = state.data;
+  if (!finance || !s || s.status === 'in_step' || s.status === 'before_ledger_start') return null;
+  const post = async () => {
+    try {
+      const r = await run.mutateAsync(undefined);
+      const warning = contractPostingWarning(r);
+      if (warning) toast.warning(warning); else toast.success('Contract posted.');
+    } catch (e) { toast.warning(contractPostingWarning({ status: 'post_failed', reason: refusalOf(e).message }) ?? refusalOf(e).message); }
+  };
+  const gap = !('contractSen' in s) ? `Not posted: ${s.reason}`
+    : s.uncleared ? `Cancelled: ${rm(s.uncleared)} of advance not cleared`
+    : `Ledger ${rm(s.postedSen)} of ${rm(s.contractSen)}`;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[12px] text-warning-text">{gap}</span>
+      <Button variant="secondary" className="h-8" disabled={run.isPending} onClick={post}>{run.isPending ? 'Posting…' : 'Post contract'}</Button>
+    </div>
+  );
+}
+
 export function RenovationSalesOrder() {
   const { docNo } = useParams();
   const c = useContract(docNo);
@@ -237,6 +329,7 @@ export function RenovationSalesOrder() {
   const { can } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [billing, setBilling] = useState<BillingInstalment | null>(null);
+  const [crediting, setCrediting] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
   if (c.isLoading || !c.data) return <div className="p-8 text-center text-[13px] text-ink-muted">{c.error ? refusalOf(c.error).message : 'Loading contract…'}</div>;
@@ -248,7 +341,11 @@ export function RenovationSalesOrder() {
   const setStatus = async (to: string, label: string, danger?: boolean) => {
     if (!(await serviceConfirm({ title: `${label}?`, danger }))) return;
     setError(null);
-    try { await run.mutateAsync(() => renoSend(`/sales-orders/${encodeURIComponent(k.docNo)}/status`, 'POST', { status: to })); } catch (e) { setError(refusalOf(e).message); }
+    try {
+      const r = await run.mutateAsync(() => renoSend<{ status: string; posting?: ContractPosting }>(`/sales-orders/${encodeURIComponent(k.docNo)}/status`, 'POST', { status: to })) as { posting?: ContractPosting };
+      const warning = contractPostingWarning(r.posting);
+      if (warning) setError(warning);
+    } catch (e) { setError(refusalOf(e).message); }
   };
   const newVo = async () => {
     setError(null);
@@ -273,7 +370,7 @@ export function RenovationSalesOrder() {
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status={k.status} />
             <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Print</Button>
-            {can('scm.renovation.quote') && (NEXT_STATUS[k.status] ?? []).map((n) => (
+            {can('scm.renovation.quote') && (CONTRACT_NEXT_STATUS[k.status] ?? []).map((n) => (
               <Button key={n.to} variant={n.danger ? 'danger' : 'secondary'} onClick={() => setStatus(n.to, n.label, n.danger)}>{n.label}</Button>
             ))}
           </div>
@@ -289,7 +386,14 @@ export function RenovationSalesOrder() {
         <Stat label="Received" value={rm(b.receivedSen)} tone="ok" />
         <Stat label="To bill" value={rm(b.revisedContractSen - b.billedSen)} />
       </div>
-      <Card title="Progress billing" dense>
+      <Card title="Progress billing" dense actions={(
+        <div className="flex flex-wrap items-center gap-2">
+          <ContractPostingAction docNo={k.docNo} />
+          {live && can('scm.renovation.bill') && can('scm.payment_voucher.post') && b.billedSen > 0 && (
+            <Button variant="secondary" className="h-8" icon={<ReceiptText size={14} />} onClick={() => setCrediting(true)}>Credit note</Button>
+          )}
+        </div>
+      )}>
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[720px] text-left text-[12.5px]">
             <thead className="bg-surface-2 text-[10.5px] uppercase tracking-wide text-ink-muted">
@@ -301,7 +405,7 @@ export function RenovationSalesOrder() {
                   <td className="px-3 py-2"><div className="font-semibold">{i.label || `Instalment ${i.seq}`}</div><div className="max-w-[340px] text-[11.5px] text-ink-muted">{i.description}</div></td>
                   <td className="py-2 text-right tabular-nums">{pctLabel(i.pctBp)}<div className="text-[11px] text-ink-muted">cum. {pctLabel(i.cumBp)}</div></td>
                   <td className="py-2 pl-2 text-ink-secondary">{i.stageCode ? STAGE_LABEL[i.stageCode as StageKey] : '—'}</td>
-                  <td className={cn('py-2 text-right font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{rm(i.amountSen)}{!i.bill && !i.isNext ? <div className="text-[10.5px] font-normal">projected</div> : null}</td>
+                  <td className={cn('py-2 text-right font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{i.billedBeforeGoLive ? <span className="text-[11px]">Billed before go-live</span> : <>{rm(i.amountSen)}{!i.bill && !i.isNext ? <div className="text-[10.5px] font-normal">projected</div> : null}</>}</td>
                   <td className="py-2 pl-4">
                     {i.bill?.invoiceNumber && <Link className="font-semibold text-primary" to={`/scm/sales-invoices/${i.bill.salesInvoiceId}`}>{i.bill.invoiceNumber}</Link>}
                     {i.bill?.noteNumber && <Link className="font-semibold text-primary" to="/scm/credit-notes">{i.bill.noteNumber}</Link>}
@@ -320,14 +424,31 @@ export function RenovationSalesOrder() {
             <li key={i.id} className={cn('px-3 py-2.5 text-[12.5px]', i.isNext && 'bg-primary-soft/40')}>
               <div className="flex items-start justify-between gap-2">
                 <span className="font-semibold">{i.label || `Instalment ${i.seq}`} · {pctLabel(i.pctBp)}</span>
-                <span className={cn('font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{rm(i.amountSen)}</span>
+                <span className={cn('font-semibold tabular-nums', i.amountSen < 0 && 'text-err', !i.bill && !i.isNext && 'font-normal text-ink-muted')}>{i.billedBeforeGoLive ? 'Billed before go-live' : rm(i.amountSen)}</span>
               </div>
-              <div className="text-[11.5px] text-ink-muted">{i.stageCode ? STAGE_LABEL[i.stageCode as StageKey] : 'No stage'} · cum. {pctLabel(i.cumBp)}{!i.bill && !i.isNext ? ' · projected' : ''}</div>
+              <div className="text-[11.5px] text-ink-muted">{i.stageCode ? STAGE_LABEL[i.stageCode as StageKey] : 'No stage'} · cum. {pctLabel(i.cumBp)}{!i.bill && !i.isNext && !i.billedBeforeGoLive ? ' · projected' : ''}</div>
               {i.bill && <div className="mt-0.5 text-[12px]">{i.bill.invoiceNumber ?? i.bill.noteNumber ?? 'Closed, nothing to bill'} · {fmtDate(i.bill.invoiceDate)}{i.bill.kind === 'INVOICE' ? ` · received ${rm(i.bill.paidSen)}` : ''}</div>}
               {i.isNext && live && can('scm.renovation.bill') && <Button className="mt-2 h-8 w-full" onClick={() => setBilling(i)}>Bill this instalment</Button>}
             </li>
           ))}
         </ul>
+        {b.credits.length > 0 && (
+          <div className="border-t border-border-subtle px-3 py-2 text-[12.5px]">
+            <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted">Credit notes on the contract · {rm(b.creditedSen)}</div>
+            <ul className="divide-y divide-border-subtle">
+              {b.credits.map((cr, i) => (
+                <li key={cr.creditNoteId ?? i} className="flex items-start justify-between gap-3 py-1.5">
+                  <span className="min-w-0">
+                    <Link className="font-semibold text-primary" to="/scm/credit-notes">{cr.noteNumber ?? 'Credit note'}</Link>
+                    <span className="text-ink-secondary"> · {cr.noteDate ? fmtDate(cr.noteDate) : ''}{cr.reason ? ` · ${cr.reason}` : ''}</span>
+                    {cr.noteStatus === 'DRAFT' && <span className="ml-1 text-warning-text">(not posted yet)</span>}
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums text-err">−{rm(cr.amountSen)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </Card>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card title="Variation orders" actions={live && can('scm.renovation.quote') ? <Button variant="secondary" icon={<FilePlus2 size={15} />} onClick={newVo}>New VO</Button> : null}>
@@ -359,6 +480,7 @@ export function RenovationSalesOrder() {
       <LinesCard c={k} canEdit={live && can('scm.renovation.po_split')} filesEditable={k.status !== 'CANCELLED'} />
       <DocAttachments docType="sales_order" docId={k.docNo} canEdit={k.status !== 'CANCELLED'} />
       <BillDialog c={k} inst={billing} onClose={() => setBilling(null)} />
+      <CreditDialog c={k} open={crediting} onClose={() => setCrediting(false)} />
       <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="sales order" docNo={k.docNo} defaultFormat={k.header.printFormat}
         build={(format) => buildPrintDoc({ kind: 'SALES_ORDER', docNo: k.docNo, format, brand, header: { ...k.header, customerName: k.header.customerName || k.debtorName, docDate: k.header.docDate ?? k.soDate /* eslint-disable-line @typescript-eslint/no-unnecessary-condition -- doc_date may be null on older SOs; fall back to the SO date */ }, sections: k.sections, instalments: k.instalments })} />
     </div>

@@ -6,6 +6,7 @@ import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { cleanPrice } from '../../../_lib/cleaning';
 import { hasCleanPrices, cleanAmounts } from '../../../_lib/cleaningPrices';
 import { mayEditCredentials, usedBySql } from '../../../_lib/credentials';
+import { cleanStage } from '../../../_lib/media';
 
 /** GET /api/housekeeping/tasks/:id — what the clean's detail panel needs in one answer: the proof
  *  photos and videos, the unit's access (masked; the code itself is a separate audited reveal, for the roles that
@@ -45,7 +46,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     id, kind: t.kind, state: t.state, unitId: t.unit_id, unitNumber: t.unit_number ?? t.external_address, propertyName: t.property_name ?? 'External',
     instructions: t.instructions ?? null, startedAt: t.started_at ?? null, completedAt: t.completed_at ?? null, guestLeftAt: t.guest_left_at ?? null,
     completedBy: t.completed_by_name ?? null, createdAt: t.created_at ?? null, reservationId: t.reservation_id ?? null,
-    media: media.map(m => ({ id: m.id, kind: m.kind, url: `/api/documents/${m.id}/download`, fileName: m.file_name, mimeType: m.mime_type, byteSize: Number(m.byte_size), uploadedAt: m.created_at, uploader: m.uploader ?? null })),
+    media: media.map(m => ({ id: m.id, kind: m.kind, url: `/api/documents/${m.id}/download`, fileName: m.file_name, mimeType: m.mime_type, byteSize: Number(m.byte_size), uploadedAt: m.created_at, uploader: m.uploader ?? null, stage: cleanStage(m.file_name) })),
     // Field staff get the instruction only, not even the masked tail (same rule as /api/access-credentials).
     access: creds.map(c => ({ id: c.id, kind: c.kind, label: c.label, instruction: c.instruction, masked: field ? '' : mask(c.secret), hasCode: !!c.secret })),
     mayReveal: mayEditCredentials(session),

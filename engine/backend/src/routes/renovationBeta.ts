@@ -42,7 +42,7 @@ import {
 import { projectDocSql } from "../services/renovation/documents";
 import { plainEntry, readProjectTimeline, sortTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineEntry } from "../services/renovation/timeline";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
-import { POD_FILE_ID, attachmentsReady, listFilesFor, podFile, type DocFile } from "../scm/lib/doc-attachments";
+import { attachmentsReady, listFilesFor, podFiles, type DocFile } from "../scm/lib/doc-attachments";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -858,8 +858,10 @@ async function rowsOf(c: Ctx, q: { text: string; args: unknown[] }): Promise<Row
   return (await db(c).prepare(q.text).bind(...q.args).all<Row>()).results ?? [];
 }
 
-/* The room of a sales order line: the renovation line's room, else the line's own room (Conts rooms, mig 0112), else its location. */
-const LINE_AREA = `coalesce(nullif(trim((SELECT to_jsonb(l)->>'room' FROM scm.reno_doc_lines l WHERE to_jsonb(l)->>'so_item_id' = i.id::text LIMIT 1)), ''), nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim(i.location), ''))`;
+/* The room of a sales order line: the renovation line's room, else the line's own room (Conts rooms, mig 0112), else its location.
+   Real columns, not to_jsonb(l): the jsonb form cannot use idx_reno_doc_lines_so_item and read the whole table per line
+   (2 to 9 s per Site & photos load on production, 1 Nov 2026). */
+const LINE_AREA = `coalesce(nullif(trim((SELECT l.room FROM scm.reno_doc_lines l WHERE l.so_item_id = i.id LIMIT 1)), ''), nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim(i.location), ''))`;
 
 /** Every DO and goods receipt of the project (the same sets as its Procurement details), each with the rooms of the
     lines it carries and every photo on it: the driver's POD, the site team's receipt photos and files added to it. */
@@ -910,8 +912,9 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
   for (const d of dos) {
     const id = String(d.id);
     const photos: SitePhoto[] = [];
-    const pod = await podFile(db(c), id).catch(() => null);
-    if (pod) photos.push({ id: `pod-${id}`, path: docPath("delivery_order", id, POD_FILE_ID), name: "Proof of delivery", image: true, kind: "image", area: null, at: pod.at || null, source: "pod" });
+    for (const pod of await podFiles(db(c), id).catch(() => [])) {
+      photos.push({ id: `${pod.id}-${id}`, path: docPath("delivery_order", id, pod.id), name: "Proof of delivery", image: true, kind: "image", area: null, at: pod.at || null, source: "pod" });
+    }
     photos.push(...uploads("delivery_order", id));
     out.push({
       type: "delivery_order", id, no: String(d.no), at: str(d.at) ?? str(d.made_on), status: String(d.status), from: str(d.so_doc_no), poNumber: null, poIds: [],

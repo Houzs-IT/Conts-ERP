@@ -17,7 +17,7 @@ const LADDER: Record<ContsLevel, string[]> = {
   full: [
     LEDGER_KEY, "scm.payment_voucher.create", "scm.payment_voucher.write",
     "scm.payment_voucher.check", "scm.payment_voucher.approve", "scm.payment_voucher.post", "scm.payment_voucher.cancel",
-    "scm.project_limit.approve",
+    "scm.project_limit.approve", "scm.reno_estimate.change",
   ],
 };
 

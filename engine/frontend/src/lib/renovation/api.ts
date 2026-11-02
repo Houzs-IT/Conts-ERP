@@ -137,11 +137,20 @@ export interface BillRow {
 
 export interface BillingInstalment extends Instalment {
   id: string; cumBp: number; bill: BillRow | null; isNext: boolean; amountSen: number;
+  /** Covered by what AutoCount invoiced before go-live: never billed here. */
+  billedBeforeGoLive?: boolean;
+}
+
+/** A credit note that lowered the contract. */
+export interface ContractCredit {
+  creditNoteId: string | null; noteNumber: string | null; amountSen: number; noteDate: string | null; reason: string | null; noteStatus: string | null;
 }
 
 export interface BillingView {
   soDocNo: string; status: string; originalContractSen: number; revisedContractSen: number; voTotalSen: number;
-  billedSen: number; receivedSen: number; nextSeq: number | null; instalments: BillingInstalment[];
+  /** Net of contract credit notes, what AutoCount invoiced before go-live included. */
+  billedSen: number; billedBeforeGoLiveSen?: number; creditedSen: number; credits: ContractCredit[];
+  receivedSen: number; nextSeq: number | null; instalments: BillingInstalment[];
 }
 
 export type ContractStatus = 'RENO_CONFIRMED' | 'RENO_IN_PROGRESS' | 'RENO_COMPLETED' | 'CLOSED' | 'CANCELLED';
@@ -173,6 +182,8 @@ export interface SplitPreview {
   /* One PO per supplier and category group (mig 0116). */
   groups: Array<{ categoryGroup?: string; supplierId: string; supplierCode: string; supplierName: string; lines: SplitLine[]; totalSen: number }>;
   blocked: SplitLine[]; skipped: SplitLine[]; alreadyOrdered: SplitLine[];
+  /* Goods with no supplier: not ordered by this raise (older servers do not send it). */
+  unsupplied?: SplitLine[];
 }
 
 export interface PoFlag {
@@ -269,6 +280,30 @@ export function usePoSplit(docNo: string | undefined, enabled: boolean) {
   return useQuery({ queryKey: qk.poSplit(docNo ?? ''), queryFn: () => renoGet<SplitPreview>(`/sales-orders/${encodeURIComponent(docNo!)}/po-split`), enabled: Boolean(docNo) && enabled });
 }
 
+/** How a contract change was posted to the project's accounts, as convert / VO approve / post-contract answer it. */
+export type ContractPosting = { ok?: boolean; status: string; reason?: string };
+
+/** The warning to show when a saved change did not post (null when it posted, had nothing to post, or the contract
+    predates the ledger start). */
+export function contractPostingWarning(p: ContractPosting | undefined): string | null {
+  if (!p || ['posted', 'already_posted', 'nothing', 'before_ledger_start'].includes(p.status)) return null;
+  return `The contract was saved but not posted: ${p.reason ?? p.status}. Finance can post it again from the contract.`;
+}
+
+export type ContractPostingState =
+  | { ok: true; status: 'before_ledger_start'; reason: string }
+  | { ok: true; status: 'in_step' | 'under_posted'; contractSen: number; postedSen: number; uncleared?: number }
+  | { ok: false; status: string; reason: string };
+
+/** Finance only: whether the ledger carries the contract as it stands. */
+export function useContractPosting(docNo: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['reno', 'contract-posting', docNo ?? ''] as const,
+    queryFn: () => renoGet<ContractPostingState>(`/sales-orders/${encodeURIComponent(docNo!)}/contract-posting`),
+    enabled: Boolean(docNo) && enabled,
+  });
+}
+
 export function usePoFlags(docNo: string | undefined) {
   return useQuery({ queryKey: qk.poFlags(docNo ?? ''), queryFn: () => renoGet<{ flags: PoFlag[] }>(`/sales-orders/${encodeURIComponent(docNo!)}/po-flags`), enabled: Boolean(docNo) });
 }
@@ -323,6 +358,14 @@ export function sectionsForSave(sections: DocSection[]): unknown[] {
 export function instalmentsForSave(rows: Instalment[]): unknown[] {
   return rows.map((r) => ({ seq: r.seq, label: r.label, pctBp: r.pctBp, description: r.description, stageCode: r.stageCode, trigger: r.trigger }));
 }
+
+/** The status moves the contract page offers. Cancel contract from Confirmed or In progress (chew, 30 Oct 2026); the
+    server holds it until the contract and its documents are posted (acc/reno-ledger cancelGate). */
+export const CONTRACT_NEXT_STATUS: Record<string, Array<{ to: string; label: string; danger?: boolean }>> = {
+  RENO_CONFIRMED: [{ to: 'RENO_IN_PROGRESS', label: 'Works started' }, { to: 'CANCELLED', label: 'Cancel contract', danger: true }],
+  RENO_IN_PROGRESS: [{ to: 'RENO_COMPLETED', label: 'Works completed' }, { to: 'CANCELLED', label: 'Cancel contract', danger: true }],
+  RENO_COMPLETED: [{ to: 'CLOSED', label: 'Close contract' }],
+};
 
 export const STATUS_LABEL: Record<string, string> = {
   DRAFT: 'Draft', SENT: 'Sent', ACCEPTED: 'Accepted', REJECTED: 'Rejected', EXPIRED: 'Expired', APPROVED: 'Approved', CANCELLED: 'Cancelled',

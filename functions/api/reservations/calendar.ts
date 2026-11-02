@@ -29,9 +29,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // Showroom and warehouse units take no reservations (0125).
   const rental = await rentalOnly(env);
-  const [allUnits, onChannel, connected] = await Promise.all([
+  const [allUnits, onChannel, connected, onHostPlatform] = await Promise.all([
     all<any>(env, `
-      SELECT u.id, u.unit_number, u.base_rate, u.weekend_rate, u.property_id, p.name AS property_name
+      SELECT u.id, u.unit_number, u.base_rate, u.weekend_rate, u.property_id, u.channex_property_id, p.name AS property_name
       FROM units u JOIN properties p ON p.id = u.property_id
       WHERE 1 = 1${rental}
       ORDER BY p.name, u.unit_number`),
@@ -49,7 +49,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       new Date(Date.now() - CHANNEL_LOOKBACK_DAYS * 864e5).toISOString().slice(0, 10)),
     // The booking sites the unit is actually connected to: only these get a price sent, so only these show one.
     all<{ unit_id: string; ota: string }>(env, 'SELECT unit_id, ota FROM channex_channels'),
+    // Units HostPlatform still manages: a booking pulled from it (hp-res-) recently or ahead. Their bookings come in,
+    // but prices and closures are not sent from here.
+    all<{ unit_id: string }>(env, `SELECT DISTINCT unit_id FROM reservations WHERE id LIKE 'hp-res-%' AND check_out >= ?`,
+      new Date(Date.now() - CHANNEL_LOOKBACK_DAYS * 864e5).toISOString().slice(0, 10)),
   ]);
+  const hostPlatformSet = new Set(onHostPlatform.map(r => r.unit_id));
   const connectedSet = new Set(connected.map(r => `${r.unit_id}:${r.ota}`));
   const onChannelSet = new Set(onChannel.map(r => `${r.unit_id}:${r.channel}`));
   const channelsOf = (unitId: string) => OTA_CHANNELS.filter(ch => onChannelSet.has(`${unitId}:${ch}`));
@@ -64,7 +69,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const scopeArgs = property ? [property] : [];
 
   const blocks = await all<any>(env, `
-    SELECT r.id, r.unit_id, r.channel, r.state, r.check_in, r.check_out, r.gross_booking_value,
+    SELECT r.id, r.unit_id, r.channel, r.state, r.check_in, r.check_out, r.gross_booking_value, r.channel_fee,
            r.external_ref, r.notes, r.block_reason, COALESCE(g.full_name, '') AS guest_name
     FROM reservations r
     LEFT JOIN guests g ON g.id = r.guest_id
@@ -88,7 +93,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     generatedAt: new Date().toISOString(),
     // channels: the booking sites the unit is on, in a fixed order. The direct (web) rate is always shown.
     buildings: [...buildingMap.values()],
-    units: units.map(u => ({ id: u.id, unitNumber: u.unit_number, propertyId: u.property_id, propertyName: u.property_name, channels: channelsOf(u.id), linked: OTA_CHANNELS.filter(ch => connectedSet.has(`${u.id}:${ch}`)) })),
+    units: units.map(u => ({ id: u.id, unitNumber: u.unit_number, propertyId: u.property_id, propertyName: u.property_name, channels: channelsOf(u.id), linked: OTA_CHANNELS.filter(ch => connectedSet.has(`${u.id}:${ch}`)),
+      // The dot beside the unit (owner, 2 Nov 2026): a live Channex channel, a Channex property with no channel left (it was
+      // disconnected), or never set up.
+      channex: OTA_CHANNELS.some(ch => connectedSet.has(`${u.id}:${ch}`)) ? 'connected' : u.channex_property_id ? 'disconnected' : hostPlatformSet.has(u.id) ? 'hostplatform' : 'none' })),
     baseRate: Object.fromEntries(units.map(u => [u.id, Number(u.base_rate)])),
     // What a night costs on a channel when it has no price of its own: the night's web price (weekendRate on
     // Friday and Saturday when the unit has one, else baseRate) plus that channel's uplift. A default uplift is a
@@ -109,7 +117,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       id: b.id, unitId: b.unit_id, channel: b.channel, state: b.state,
       guestName: b.guest_name || (b.channel === 'maintenance_block' ? (b.notes ?? 'Blocked') : ''),
       checkIn: b.check_in, checkOut: b.check_out,
-      grossBookingValue: Number(b.gross_booking_value), ref: b.external_ref,
+      grossBookingValue: Number(b.gross_booking_value), channelFee: Number(b.channel_fee ?? 0), ref: b.external_ref,
       // The note is already the block's name when there is no guest; sending it twice doubles the payload.
       reason: b.guest_name || b.channel !== 'maintenance_block' ? b.notes : null,
       blockReason: b.block_reason ?? null,

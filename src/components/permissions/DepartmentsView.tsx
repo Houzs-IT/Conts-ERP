@@ -152,7 +152,8 @@ export default function DepartmentsView({ onDirty }: { onDirty: (pending: number
           <label htmlFor="permissions-department" className="text-meta text-muted-ink">Department</label>
           <select id="permissions-department" value={selected.id} onChange={e => setDeptId(e.target.value)}
             className={cx(SELECT, 'max-w-[280px] font-semibold border-line')}>
-            {departments.map(d => <option key={d.id} value={d.id}>{d.name} · {sideLabel(d.side)}</option>)}
+            {/* A company filter names that company even on a shared department; only All says Both. */}
+            {departments.map(d => <option key={d.id} value={d.id}>{d.name} · {sideLabel(filter === 'all' ? d.side : filter)}</option>)}
           </select>
           {pending > 0 && <span className="text-caption text-muted-ink">{pending} unsaved {pending === 1 ? 'change' : 'changes'} across all departments.</span>}
         </div>

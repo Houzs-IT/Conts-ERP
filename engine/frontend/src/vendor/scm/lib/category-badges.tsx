@@ -53,6 +53,9 @@ export const CATEGORY_BADGE: Record<string, CategoryBadgeSpec> = {
   lighting:  { bg: 'rgba(199, 127, 62, 0.16)', fg: 'var(--c-festive-a, #C77F3E)',    label: MFG_CATEGORY_LABELS.LIGHTING.toUpperCase() },
   appliance: { bg: 'rgba(52, 84, 122, 0.12)',  fg: '#34547a',                         label: MFG_CATEGORY_LABELS.APPLIANCE.toUpperCase() },
   soft:      { bg: 'rgba(166, 71, 30, 0.10)',  fg: 'var(--c-burnt)',                 label: MFG_CATEGORY_LABELS.SOFT.toUpperCase() },
+  /* A renovation contract's lines (and the PO / GRN lines that buy them) keep item_group RENOVATION for accounting;
+     they showed as OTHERS (owner run, 1 Nov 2026). */
+  renovation: { bg: 'rgba(138, 106, 47, 0.14)', fg: '#6b5223',                        label: 'RENOVATION' },
 };
 
 /** Resolve a badge spec for any item_group string, case-insensitively.

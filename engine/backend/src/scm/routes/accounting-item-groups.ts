@@ -75,7 +75,18 @@ async function verifyBinding(
   companyId: number,
   binding: GroupBinding,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  const codes = [...new Set(Object.values(binding))];
+  return verifyAccounts(sb, companyId, (Object.keys(SLOT_LABEL) as Array<keyof GroupBinding>)
+    .map((slot) => ({ label: SLOT_LABEL[slot], code: binding[slot] })));
+}
+
+/** The checks behind every binding on this screen — group or sub-category — one slot at a time, in order. */
+async function verifyAccounts(
+  sb: any,
+  companyId: number,
+  slots: Array<{ label: string; code: string }>,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (slots.length === 0) return { ok: true };
+  const codes = [...new Set(slots.map((s) => s.code))];
   const [{ data, error }, children, roles] = await Promise.all([
     sb.from('accounts').select('account_code, is_active').eq('company_id', companyId).in('account_code', codes),
     sb.from('accounts').select('parent_code').eq('company_id', companyId).in('parent_code', codes),
@@ -89,26 +100,29 @@ async function verifyBinding(
   const headers = new Set(((children.data ?? []) as Array<{ parent_code: string }>).map((r) => r.parent_code));
   const found = new Map(((data ?? []) as Array<{ account_code: string; is_active: boolean }>)
     .map((r) => [r.account_code, r.is_active]));
-  for (const slot of Object.keys(SLOT_LABEL) as Array<keyof GroupBinding>) {
-    const code = binding[slot];
+  for (const { label, code } of slots) {
     const active = found.get(code);
     if (active === undefined) {
-      return { ok: false, message: `${SLOT_LABEL[slot]} account ${code} is not in this company's chart.` };
+      return { ok: false, message: `${label} account ${code} is not in this company's chart.` };
     }
     if (active !== true) {
-      return { ok: false, message: `${SLOT_LABEL[slot]} account ${code} is switched off for this company — tick it on the chart first.` };
+      return { ok: false, message: `${label} account ${code} is switched off for this company — tick it on the chart first.` };
     }
     if (controls.has(code)) {
-      return { ok: false, message: `${SLOT_LABEL[slot]} account ${code} is a control account — the documents keep it; choose another.` };
+      return { ok: false, message: `${label} account ${code} is a control account — the documents keep it; choose another.` };
     }
     if (headers.has(code)) {
-      return { ok: false, message: `${SLOT_LABEL[slot]} account ${code} has accounts under it — choose one of those.` };
+      return { ok: false, message: `${label} account ${code} has accounts under it — choose one of those.` };
     }
   }
   return { ok: true };
 }
 
 type GroupRow = { code: string; name: string; is_active: boolean };
+type SubCategoryRow = { group_code: string; code: string; label: string };
+type SubBindingRow = { company_id: number; sub_category_code: string; sales_account: string | null; purchase_account: string | null };
+/** A sub-category's own accounts for one company; null = that side uses the group's account. */
+export type SubCategoryBinding = { salesAccount: string | null; purchaseAccount: string | null };
 type BindingRow = {
   company_id: number; group_code: string;
   purchase_account: string; sales_account: string;
@@ -122,14 +136,27 @@ export const itemGroupsList = async (c: any): Promise<Response> => {
   if (ids.length === 0) return c.json({ error: 'no_companies', message: 'No company grants resolve for this session.' }, 409);
   const sb = c.get('supabase');
 
-  const [groupsRes, bindsRes] = await Promise.all([
+  const [groupsRes, bindsRes, subsRes, subBindsRes] = await Promise.all([
     sb.from('acc_item_groups').select('code, name, is_active').order('code'),
     sb.from('acc_item_group_accounts')
       .select('company_id, group_code, purchase_account, sales_account, sales_return_account, purchase_return_account')
       .in('company_id', ids),
+    sb.from('product_sub_categories').select('group_code, code, label').eq('active', true)
+      .order('group_code').order('sort_order').order('code'),
+    sb.from('acc_sub_category_accounts')
+      .select('company_id, sub_category_code, sales_account, purchase_account')
+      .in('company_id', ids),
   ]);
-  if (groupsRes.error) return c.json({ error: 'load_failed', reason: groupsRes.error.message }, 500);
-  if (bindsRes.error) return c.json({ error: 'load_failed', reason: bindsRes.error.message }, 500);
+  for (const r of [groupsRes, bindsRes, subsRes, subBindsRes]) {
+    if (r.error) return c.json({ error: 'load_failed', reason: r.error.message }, 500);
+  }
+
+  const bySub = new Map<string, Record<number, SubCategoryBinding>>();
+  for (const b of (subBindsRes.data ?? []) as SubBindingRow[]) {
+    const at = bySub.get(b.sub_category_code) ?? {};
+    at[b.company_id] = { salesAccount: b.sales_account ?? null, purchaseAccount: b.purchase_account ?? null };
+    bySub.set(b.sub_category_code, at);
+  }
 
   const byGroup = new Map<string, Record<number, GroupBinding>>();
   for (const b of (bindsRes.data ?? []) as BindingRow[]) {
@@ -154,6 +181,13 @@ export const itemGroupsList = async (c: any): Promise<Response> => {
       name: g.name,
       isActive: g.is_active,
       bindings: byGroup.get(g.code) ?? {},
+    })),
+    /* Renovation revenue (spec 2.4): per sub-category, its own sales / purchase account; absent = the group's. */
+    subCategories: ((subsRes.data ?? []) as SubCategoryRow[]).map((s) => ({
+      code: s.code,
+      label: s.label,
+      groupCode: s.group_code,
+      bindings: bySub.get(s.code) ?? {},
     })),
   });
 };
@@ -267,5 +301,56 @@ export const itemGroupPatch = async (c: any): Promise<Response> => {
 
   const { error } = await sb.from('acc_item_groups').update(patch).eq('code', code);
   if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  return c.json({ ok: true });
+};
+
+/* ── PUT /accounting/item-groups/sub-categories/:code — a sub-category's own accounts ─
+   Renovation revenue (spec 2.4): sales and purchase accounts per product sub-category, for one company. A null (or
+   blank) side clears it, and that side uses the group's account; both cleared removes the row. The same account checks
+   as a group binding (in the chart, active, not a control, not a header). */
+export const subCategoryBind = async (c: any): Promise<Response> => {
+  if (!requirePerm(c)) return c.json(NO_PERM, 403);
+  const code = String(c.req.param('code') ?? '').trim().toUpperCase();
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const companyId = Number(body.companyId);
+  const ids = allowedIds(c);
+  if (!Number.isInteger(companyId) || !ids.includes(companyId)) {
+    return c.json({ error: 'company_not_yours', message: 'That company is not in your grants.' }, 403);
+  }
+  const side = (v: unknown): string | null => {
+    const s = String(v ?? '').trim();
+    return s === '' ? null : s;
+  };
+  const sales = side(body.salesAccount);
+  const purchase = side(body.purchaseAccount);
+
+  const sb = c.get('supabase');
+  const { data: sub, error: subErr } = await sb.from('product_sub_categories').select('code').eq('code', code).maybeSingle();
+  if (subErr) return c.json({ error: 'load_failed', reason: subErr.message }, 500);
+  if (!sub) return c.json({ error: 'sub_category_unknown', message: `${code} is not a product sub-category.` }, 404);
+
+  const slots: Array<{ label: string; code: string }> = [];
+  if (sales) slots.push({ label: 'Sales', code: sales });
+  if (purchase) slots.push({ label: 'Purchase', code: purchase });
+  const ver = await verifyAccounts(sb, companyId, slots);
+  if (!ver.ok) return c.json({ error: 'bad_account', message: ver.message }, 400);
+
+  if (!sales && !purchase) {
+    const { error } = await sb.from('acc_sub_category_accounts').delete()
+      .eq('company_id', companyId).eq('sub_category_code', code);
+    if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+    return c.json({ ok: true });
+  }
+  const user = (c.get('houzsUser') as { name?: string } | undefined)?.name ?? null;
+  const { error: upErr } = await sb.from('acc_sub_category_accounts').upsert({
+    company_id: companyId,
+    sub_category_code: code,
+    sales_account: sales,
+    purchase_account: purchase,
+    updated_at: new Date().toISOString(),
+    updated_by: user,
+  }, { onConflict: 'company_id,sub_category_code' });
+  if (upErr) return c.json({ error: 'save_failed', reason: upErr.message }, 500);
   return c.json({ ok: true });
 };

@@ -189,7 +189,7 @@ export const OtherDebtors = () => {
 
   const runReceipt = async (r: DebtorReceipt, action: 'submit' | 'withdraw' | 'check' | 'reject' | 'approve') => {
     if (action === 'reject') {
-      const ok = await askConfirm({ title: `Reject ${r.receipt_number}?`, body: '一律退回 Draft — every mark clears and it starts again.', confirmLabel: 'Reject', danger: true });
+      const ok = await askConfirm({ title: `Reject ${r.receipt_number}?`, body: 'Back to Draft — every mark clears and it starts again.', confirmLabel: 'Reject', danger: true });
       if (!ok) return;
     }
     if (action === 'approve') {
@@ -217,7 +217,7 @@ export const OtherDebtors = () => {
   const detail = detailQ.data;
   const billFormTitle = billForm?.mode === 'edit'
     ? `Edit ${billForm.billNumber ?? 'bill'} — ${detail?.debtor.name ?? ''}`
-    : billForm?.mode === 'copy' ? `New bill — copied from ${billForm.billNumber ?? 'a bill'}` : `New bill — ${detail?.debtor.name ?? ''} · 明细行自由选户口`;
+    : billForm?.mode === 'copy' ? `New bill — copied from ${billForm.billNumber ?? 'a bill'}` : `New bill — ${detail?.debtor.name ?? ''} · each line can use any account`;
 
   return (
     <div className="space-y-4">
@@ -236,7 +236,7 @@ export const OtherDebtors = () => {
         <div className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>Debtors</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
-            资料在这里维护 — the chart keeps only the 305-0000 control
+            Details are kept here — the chart keeps only the 305-0000 control
           </span>
         </div>
         <div className={styles.cardBody} style={{ overflowX: 'auto' }}>

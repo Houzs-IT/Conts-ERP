@@ -175,6 +175,8 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "scm.ledger.use", resource: "Supply Chain", verb: "manage", label: "Use the ledger", description: "Accounts, payment vouchers, receipts and bank reconciliation. Never implied by *." },
   // Conts (finance phase 1.5; SOP 3.4): extra limit for a project, approved by someone other than who asked.
   { key: "scm.project_limit.approve", resource: "Supply Chain", verb: "manage", label: "Approve extra project limit", description: "Approve or reject a request for more limit (an amount, a higher percentage) or more budget on a project; never one's own request" },
+  // Conts (SOP 4.2.1, chew 2 Nov 2026): finance, and HOD when given it, set a new expected total cost on a renovation contract.
+  { key: "scm.reno_estimate.change", resource: "Supply Chain", verb: "manage", label: "Change a renovation project's expected cost", description: "Set a new expected total cost on a renovation contract, or keep it, when a cost alert comes up; every decision is logged with its reason" },
   { key: "scm.payment_voucher.approve", resource: "Supply Chain", verb: "manage", label: "Approve payment voucher", description: "The second yes: approve a checked Payment Voucher — approval posts the GL entry in the same breath; an approver may also reject back to draft" },
 
   // Correcting a customer payment after the day it was keyed (owner +

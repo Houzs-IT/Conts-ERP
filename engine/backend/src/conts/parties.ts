@@ -285,35 +285,40 @@ export async function ensureDebtor(
 
 /** ensureDebtor inside a renovation transaction (lib/renovation-db: the engine's own database connection, not REST):
     the same finding, mapping and coding, in SQL. The insert skips a code taken a moment ago and the next one is
-    tried, so the transaction never aborts on a clash. */
+    tried, so the transaction never aborts on a clash.
+    `perProject` (a renovation contract; spec 2.5, chew 30 Oct 2026: 一个项目一个客户户口): never reuses — always the
+    next code under the mapped control, named "<customer> (<building> <unit>)" as AutoCount names them. */
 export async function ensureDebtorSql(
   db: { q<T = Record<string, unknown>>(text: string, params?: readonly unknown[]): Promise<T[]> },
   companyId: number,
-  input: { name: string; phone: string | null; email?: string | null; customerId: string | null; orderKind: OrderKind },
+  input: { name: string; phone: string | null; email?: string | null; customerId: string | null; orderKind: OrderKind; perProject?: boolean; unitLabel?: string | null },
 ): Promise<string | null> {
-  const name = input.name.trim();
+  const unit = input.perProject ? (input.unitLabel ?? '').trim() : '';
+  const name = unit ? `${input.name.trim()} (${unit})` : input.name.trim();
   const phone = input.phone?.trim() || null;
   const [mapped] = await db.q<{ control_account: string }>(
     'select control_account from scm.acc_debtor_control_map where company_id = $1 and order_kind = $2', [companyId, input.orderKind]);
   /* As ensureDebtor: a kind with no control mapped opens nothing; finance chooses the account. */
   if (!mapped) return null;
   const control = mapped.control_account;
-  /* As ensureDebtor: one debtor per customer per control, so only this control's debtors are looked at. */
-  if (input.customerId) {
-    const [byCustomer] = await db.q<{ code: string }>(
-      'select code from scm.debtors where company_id = $1 and customer_id = $2 and control_account = $3 order by code limit 1', [companyId, input.customerId, control]);
-    if (byCustomer) return byCustomer.code;
-  }
-  /* As ensureDebtor: by name only with a phone, and never a debtor already tied to another customer. */
-  const [byName] = phone ? await db.q<{ code: string }>(
-    `select code from scm.debtors where company_id = $1 and upper(btrim(name)) = upper(btrim($2))
-        and btrim(phone) = $3 and (customer_id is null or $4::text is null or customer_id::text = $4::text)
-        and control_account = $5 order by code limit 1`, [companyId, name, phone, input.customerId, control]) : [];
-  if (byName) {
+  if (!input.perProject) {
+    /* As ensureDebtor: one debtor per customer per control, so only this control's debtors are looked at. */
     if (input.customerId) {
-      await db.q('update scm.debtors set customer_id = $3 where company_id = $1 and code = $2 and customer_id is null', [companyId, byName.code, input.customerId]);
+      const [byCustomer] = await db.q<{ code: string }>(
+        'select code from scm.debtors where company_id = $1 and customer_id = $2 and control_account = $3 order by code limit 1', [companyId, input.customerId, control]);
+      if (byCustomer) return byCustomer.code;
     }
-    return byName.code;
+    /* As ensureDebtor: by name only with a phone, and never a debtor already tied to another customer. */
+    const [byName] = phone ? await db.q<{ code: string }>(
+      `select code from scm.debtors where company_id = $1 and upper(btrim(name)) = upper(btrim($2))
+          and btrim(phone) = $3 and (customer_id is null or $4::text is null or customer_id::text = $4::text)
+          and control_account = $5 order by code limit 1`, [companyId, name, phone, input.customerId, control]) : [];
+    if (byName) {
+      if (input.customerId) {
+        await db.q('update scm.debtors set customer_id = $3 where company_id = $1 and code = $2 and customer_id is null', [companyId, byName.code, input.customerId]);
+      }
+      return byName.code;
+    }
   }
   const letter = debtorLetter(name);
   const series = `${control.slice(0, 3)}-${letter}`;

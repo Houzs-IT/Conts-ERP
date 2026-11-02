@@ -55,6 +55,7 @@ import { ADD_LINE_LABEL, addLineHref } from "../../vendor/scm/lib/add-line-hando
 import { SiteReceiptPanel } from "../projects/renovation/SiteReceiptPanel";
 import { RenovationDocBlock, renoLineColumns, useRenoDocInfo } from "./RenovationDocInfo";
 import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
+import { GrnProofOfReceiptCard } from "../../conts/GrnProofOfReceiptCard";
 type GrnStatus = "DRAFT" | "POSTED" | "CANCELLED" | string;
 
 type GrnHeader = HoldFields & {
@@ -769,6 +770,7 @@ function GoodsReceivedDetailV2ReadOnly() {
                 emptyLabel="No line items"
               />
             </Section>
+            <GrnProofOfReceiptCard grn={grn} canEdit={!isCancelled} />
             <DocAttachments
               docType="goods_received"
               docId={grn.id}

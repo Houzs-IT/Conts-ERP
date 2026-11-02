@@ -18,12 +18,26 @@
 // mis-classification the registry exists to end; and the header total is
 // the LAW: per-group rounding must sum to exactly what the document posts,
 // so any remainder lands on the largest group.
+//
+// Purchases by sub-category (renovation revenue plan Task 9, chew 30 Oct 2026):
+// a RENOVATION purchase line (item_group RENOVATION, from a renovation PO) that
+// carries a product (item_code → scm.mfg_products, the
+// ACTIVE row first) books to its product's sub-category purchase account, else
+// its product's category group's (acc/reno-accounts resolveLineAccounts — the
+// rule the renovation revenue side reads). A line with no product keeps its
+// own item_group as before, and so does every other purchase line. The sales
+// side is unchanged.
 // ----------------------------------------------------------------------------
 
+import { resolveLineAccounts, type LineAccountKey } from './reno-accounts';
+
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
+
+/** A renovation purchase line (from a renovation PO): the only kind that books by its product's sub-category. */
+const isRenovation = (it: GroupSplitLine): boolean => String(it.item_group ?? '').trim().toUpperCase() === 'RENOVATION';
 type Db = any;
 
-export type GroupSplitLine = { item_group: string | null; line_total_sen: number | null };
+export type GroupSplitLine = { item_group: string | null; line_total_sen: number | null; item_code?: string | null };
 export type GroupAmount = { groupCode: string; accountCode: string; myrSen: number };
 export type GroupSplitResult =
   | { ok: true; groups: GroupAmount[] }
@@ -48,27 +62,59 @@ export async function splitByItemGroup(
   if (p.items.length === 0) {
     return { ok: false, status: 'no_lines', reason: `${p.docNo} has no lines — a ${noun} cannot be classified without them.` };
   }
+  /* Purchases: each line's product, when it has one, decides its key (group / sub-category). */
+  const productOf = new Map<string, LineAccountKey>();
+  if (p.account === 'purchase_account') {
+    const codes = [...new Set(p.items.filter(isRenovation).map((it) => String(it.item_code ?? '').trim()).filter(Boolean))];
+    if (codes.length > 0) {
+      const { data, error } = await sb.from('mfg_products').select('code, category_group, sub_category, status')
+        .eq('company_id', p.companyId).in('code', codes);
+      if (error) return { ok: false, status: 'post_failed', reason: `products: ${error.message}` };
+      const rows = ((data ?? []) as Array<{ code: string; category_group: string | null; sub_category: string | null; status: string | null }>)
+        .sort((a, b) => Number(b.status === 'ACTIVE') - Number(a.status === 'ACTIVE'));
+      for (const r of rows) {
+        const group = String(r.category_group ?? '').trim().toUpperCase();
+        if (!productOf.has(r.code) && group) {
+          productOf.set(r.code, { group, subCategory: r.sub_category ? String(r.sub_category).trim().toUpperCase() : null });
+        }
+      }
+    }
+  }
+  /* A line's key: "GROUP" (its own group, or its product's with no sub-category) or "GROUP / SUB". */
+  const keyOf = new Map<string, LineAccountKey>();
   const foreignByGroup = new Map<string, number>();
   for (const it of p.items) {
-    const g = String(it.item_group ?? '').trim().toUpperCase();
+    const prod = isRenovation(it) ? productOf.get(String(it.item_code ?? '').trim()) : undefined;
+    const g = prod?.group ?? String(it.item_group ?? '').trim().toUpperCase();
     if (!g) {
       return { ok: false, status: 'line_ungrouped', reason: `${p.docNo} has a line with no product group — fix the line, then post.` };
     }
-    foreignByGroup.set(g, (foreignByGroup.get(g) ?? 0) + Number(it.line_total_sen ?? 0));
+    const label = prod?.subCategory ? `${g} / ${prod.subCategory}` : g;
+    if (prod?.subCategory && !keyOf.has(label)) keyOf.set(label, prod);
+    foreignByGroup.set(label, (foreignByGroup.get(label) ?? 0) + Number(it.line_total_sen ?? 0));
   }
   const groupCodes = [...foreignByGroup.keys()];
-  const { data: bindsRaw, error: bindsErr } = await sb
-    .from('acc_item_group_accounts')
-    .select(`group_code, ${p.account}`)
-    .eq('company_id', p.companyId)
-    .in('group_code', groupCodes);
-  if (bindsErr) return { ok: false, status: 'post_failed', reason: `group bindings: ${bindsErr.message}` };
   const accountOf = new Map<string, string>();
-  for (const b of (bindsRaw ?? []) as Array<Record<string, unknown>>) {
-    const code = String(b[p.account] ?? '').trim();
-    if (code) accountOf.set(String(b.group_code), code);
+  const subKeys = groupCodes.filter((k) => keyOf.has(k));
+  if (subKeys.length > 0) {
+    const res = await resolveLineAccounts(sb, p.companyId as number, subKeys.map((k) => keyOf.get(k) as LineAccountKey), p.account);
+    if (!res.ok) return { ok: false, status: res.status, reason: `${p.docNo}: ${res.reason}` };
+    for (const k of subKeys) accountOf.set(k, res.accountOf(keyOf.get(k) as LineAccountKey));
   }
-  const unbound = groupCodes.filter((g) => !accountOf.get(g));
+  const plainCodes = groupCodes.filter((k) => !keyOf.has(k));
+  if (plainCodes.length > 0) {
+    const { data: bindsRaw, error: bindsErr } = await sb
+      .from('acc_item_group_accounts')
+      .select(`group_code, ${p.account}`)
+      .eq('company_id', p.companyId)
+      .in('group_code', plainCodes);
+    if (bindsErr) return { ok: false, status: 'post_failed', reason: `group bindings: ${bindsErr.message}` };
+    for (const b of (bindsRaw ?? []) as Array<Record<string, unknown>>) {
+      const code = String(b[p.account] ?? '').trim();
+      if (code) accountOf.set(String(b.group_code), code);
+    }
+  }
+  const unbound = plainCodes.filter((g) => !accountOf.get(g));
   if (unbound.length > 0) {
     return {
       ok: false,

@@ -49,7 +49,7 @@ const { fetchMock, pdfMock, check, perms, chooseMock, notifyMock } = vi.hoisted(
     }),
     pdfMock: vi.fn(async (_r: unknown, _o: unknown) => {}),
     check,
-    perms: { finance: true },
+    perms: { finance: true, bill: true },
     chooseMock: vi.fn(async (_o: { title: string; options: Array<{ value: string; label: string }> }) => '310-0020' as string | null),
     notifyMock: vi.fn(async (_o: { title: string; body?: unknown }) => {}),
   };
@@ -57,7 +57,7 @@ const { fetchMock, pdfMock, check, perms, chooseMock, notifyMock } = vi.hoisted(
 vi.mock('../../vendor/scm/lib/authed-fetch', () => ({
   authedFetch: (path: string, init?: RequestInit) => fetchMock(path, init),
 }));
-vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ can: (p: string) => p === 'scm.payment_voucher.post' && perms.finance }) }));
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ can: (p: string) => (p === 'scm.payment_voucher.post' && perms.finance) || (p === 'scm.renovation.bill' && perms.bill) }) }));
 vi.mock('../../vendor/scm/components/ChoiceDialog', () => ({ useChoice: () => chooseMock }));
 vi.mock('../../vendor/scm/components/NotifyDialog', () => ({ useNotify: () => notifyMock }));
 vi.mock('../../vendor/scm/lib/receipt-pdf', () => ({ generateReceiptPdf: pdfMock }));
@@ -131,6 +131,71 @@ describe('the OR book', () => {
     expect(said.title).toBe('Payment confirmed');
     expect(String(said.body)).toContain('HCMOR-2609-001');
     expect(String(said.body)).toContain('HC-JV-2609-014');
+  });
+
+  /* Payment before its invoice (renovation, spec 7.6): more confirmed than invoiced offers the next instalment. */
+  test('a confirm that offers the next instalment bills it at the offered amount on "now", and nothing on "Later"', async () => {
+    const offer = { soDocNo: 'HC-SO-2611-009', instalmentId: 'inst-2', seq: 2, label: 'Carpentry', amountSen: 400000, receivedSen: 400000, billedSen: 300000 };
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith('/formalise')) return { ok: true, orNumber: 'HCMOR-2609-001', already: false, posting: { status: 'posted', jeNo: 'HC-JV-2609-014' }, billNext: offer };
+      if (path.includes('/instalments/')) return { kind: 'INVOICE', invoiceNumber: 'HC-SI-2611-002', amountSen: 400000, posting: { status: 'posted' } };
+      return base(path, init);
+    });
+    try {
+      for (const pick of ['later', 'now'] as const) {
+        fetchMock.mockClear();
+        chooseMock.mockReset();
+        chooseMock.mockImplementationOnce(async () => '310-0020').mockImplementationOnce(async () => pick);
+        notifyMock.mockClear();
+        const view = draw();
+        await waitFor(() => expect(screen.getByText('Confirm received')).toBeTruthy());
+        fireEvent.click(screen.getByText('Confirm received'));
+        await waitFor(() => expect(chooseMock).toHaveBeenCalledTimes(2));
+        const asked = chooseMock.mock.calls[1]![0];
+        expect(asked.options.map((o) => o.label)).toEqual(['Bill the next instalment now', 'Later']);
+        const bill = () => fetchMock.mock.calls.find(([p]) => String(p).includes('/instalments/'));
+        if (pick === 'now') {
+          await waitFor(() => expect(bill()).toBeTruthy());
+          expect(bill()![0]).toBe('/renovation/sales-orders/HC-SO-2611-009/instalments/inst-2/bill');
+          expect(JSON.parse(String(bill()![1]!.body))).toMatchObject({ expectedAmountSen: 400000 });
+          await waitFor(() => expect(notifyMock).toHaveBeenCalled());
+          expect(String(notifyMock.mock.calls.at(-1)![0].body)).toContain('HC-SI-2611-002');
+        } else {
+          /* The choice itself said the payment is confirmed: Later bills nothing and says nothing more. */
+          await new Promise((r) => setTimeout(r, 20));
+          expect(bill()).toBeUndefined();
+          expect(notifyMock).not.toHaveBeenCalled();
+        }
+        view.unmount();
+      }
+    } finally {
+      fetchMock.mockImplementation(base);
+      chooseMock.mockReset();
+      chooseMock.mockImplementation(async () => '310-0020');
+    }
+  });
+
+  test('without the bill permission the offer is not made: the confirm only says what it did', async () => {
+    const offer = { soDocNo: 'HC-SO-2611-009', instalmentId: 'inst-2', seq: 2, label: 'Carpentry', amountSen: 400000, receivedSen: 400000, billedSen: 300000 };
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (path: string, init?: RequestInit) => (path.endsWith('/formalise')
+      ? { ok: true, orNumber: 'HCMOR-2609-001', already: false, posting: { status: 'posted', jeNo: 'HC-JV-2609-014' }, billNext: offer }
+      : base(path, init)));
+    perms.bill = false;
+    try {
+      chooseMock.mockClear();
+      notifyMock.mockClear();
+      draw();
+      await waitFor(() => expect(screen.getByText('Confirm received')).toBeTruthy());
+      fireEvent.click(screen.getByText('Confirm received'));
+      await waitFor(() => expect(notifyMock).toHaveBeenCalledTimes(1));
+      expect(chooseMock).toHaveBeenCalledTimes(1);
+      expect(notifyMock.mock.calls[0]![0].title).toBe('Payment confirmed');
+    } finally {
+      perms.bill = true;
+      fetchMock.mockImplementation(base);
+    }
   });
 
   test('cancelling the bank choice confirms nothing', async () => {

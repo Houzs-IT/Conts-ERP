@@ -47,8 +47,8 @@ export const AccountLinesRow = ({ code, from, to, department = '', colSpan }: { 
             <tfoot>
               <tr>
                 <td colSpan={5} style={{ ...td, borderBottom: 0, fontWeight: 600 }}>
-                  共 {lines.length} 笔
-                  <Link to={ledgerHref([code], from, to, department)} style={{ marginLeft: 12, fontWeight: 400, color: 'var(--c-orange)' }}>在 GL 打开</Link>
+                  {lines.length} entries
+                  <Link to={ledgerHref([code], from, to, department)} style={{ marginLeft: 12, fontWeight: 400, color: 'var(--c-orange)' }}>Open in GL</Link>
                 </td>
                 <td style={{ ...num, borderBottom: 0, fontWeight: 700 }}>{fmtLedger(block?.debitSen ?? 0)}</td>
                 <td style={{ ...num, borderBottom: 0, fontWeight: 700 }}>{fmtLedger(block?.creditSen ?? 0)}</td>

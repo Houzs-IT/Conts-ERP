@@ -62,3 +62,27 @@ Their quotations keep the numbers minted on the import day (e.g. QT-2610-009 for
 TC-SO-2606-001 (D'VINE 31-31): four "PAGE OF [PAGES]" lines (RM 10, page footers read as items) were removed
 from the SO and its quotation, and the document discount went from RM 10.20 to RM 0.20; the total is unchanged
 at RM 23,012.00.
+## Re-import (owner, 29-30 Oct 2026)
+
+This replaces the numbering above: the orders were deleted and imported again, so their numbers were minted afresh.
+
+The owner found three things on the SO screen; nothing had used the imported orders yet, so the first import was
+deleted (`delete-first-import.sql`, checked: no payment, DO, invoice, bill, PO line or receipt pointed at them) and
+the import ran again:
+
+- Item showed the PDF wording, so the SKU picker found nothing. Item now shows the line's catalog product (the SKU
+  it was always bound to) and the PDF wording and sizes are in Remarks. The contract and its print keep the PDF
+  wording.
+- A heading printed with an amount ("WIRING WORKS (ESTIMATE) 7000") was read as an item, so the lines under it
+  landed in the previous section. Such a heading is now a lump-sum section when nothing under it has its own amount
+  (the printed figures under it are rates, kept in the text); otherwise it stays a priced line. "- BEDROOM 2" lines
+  under an item now carry the item's name ("ROLLER BLINDS / ZEBRA BLINDS - BEDROOM 2"). A page whose printed total
+  equals the sum of all its lines no longer loses its last line as a "subtotal" (USJ TYGER lost RM 7,500 of painting
+  that way; BANGSAR HILLPARK its RM 2,000 project management fee). Versions needing a "Package price" line: 22 -> 17.
+- Address and property: `project-addresses.sql` fills blank project fields only: address from building and unit,
+  the area, city and state where they are certain, property type (Condo / Landed) from the unit number. Layout,
+  built-up area and the remaining postcodes are not on the PDFs: staff fill them (sheet sent to the owner).
+
+Rooms stay the contract's sections, as every quotation converts: these SOs are laid out by trade, and only 931 of
+3,752 lines name a room. SO numbers are minted again in SO-date order, so each month starts at 001 (October after
+the two test orders). MS IRIS is linked to project 100, made by the team on 29 Oct.

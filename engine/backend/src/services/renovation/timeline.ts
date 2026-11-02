@@ -148,7 +148,7 @@ export function activityText(a: Row): { title: string; body: string | null } {
     case "restored": return { title: "Project restored", body: null };
     case "note": return { title: "Note", body: note };
     /* The importer writes from_value 'notion' as its source, not a value that changed ("notion to -" on screen). */
-    case "notion_import": return { title: "Notion import", body: note };
+    case "notion_import": return { title: "Data import", body: note };
     case "beta_defect_reported": return { title: "Defect reported", body: [to, note].filter(Boolean).join(" · ") || null };
     case "beta_defect_fixed": return { title: "Defect fixed, waiting for check", body: to };
     case "beta_defect_redo": return { title: "Defect sent back to fix", body: [to, note].filter(Boolean).join(" · ") || null };

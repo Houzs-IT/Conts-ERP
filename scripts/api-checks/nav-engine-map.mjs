@@ -139,5 +139,26 @@ check('the engine Beta Calendar keeps its own entry highlighted', M.menuPathFor(
 const betaItems = M.navFor('management', true).flatMap((g) => g.items).filter((i) => i.path?.startsWith('/beta/'));
 check('the Beta menu says Project list and has no Home', betaItems.map((i) => i.label).join(', ') === 'Project list, Calendar', betaItems.map((i) => i.label).join(', '));
 
+// Finance as one group, its eight parts opening to their screens (chew, 2 Nov 2026), the same in both sidebars;
+// every engine finance screen is in it once.
+for (const ws of ['rental', 'supply']) {
+  const fin = M.navFor('management', true).filter((g) => g.workspace === ws && g.label.startsWith('FINANCE'));
+  check(`${ws}: Finance is one group`, fin.length === 1 && fin[0].label === 'FINANCE', fin.map((g) => g.label).join('|'));
+  const parts = fin[0]?.items ?? [];
+  check(`${ws}: its eight parts, in order`, parts.map((i) => i.label).join('|') === 'To approve|Suppliers|Rental bills|Billing|Collections|Bank|Reports|Setup', parts.map((i) => i.label).join('|'));
+  const prefix = ws === 'rental' ? '/finance' : '/supply/finance';
+  const onMenu = parts.flatMap((i) => (i.children ?? []).map((c) => c.path));
+  const missing = M.LEDGER_SCREENS.filter((s) => onMenu.filter((p) => p === `${prefix}/${s.slug}`).length !== 1).map((s) => s.slug);
+  check(`${ws}: every ledger screen is in Finance exactly once`, missing.length === 0, missing.join(' '));
+  check(`${ws}: Payment requests is under To approve and opens the engine's payment requests`,
+    parts[0]?.children?.some((c) => c.path === `${prefix}/payment-requests`) && M.ENGINE_PATH[`${prefix}/payment-requests`] === '/scm/payment-requests');
+}
+check('operations staff see no Finance group', !M.navFor('operations_staff', true).some((g) => g.label.startsWith('FINANCE')));
+check('Approvals switched off leaves To approve with its other screens', (() => {
+  const g = M.withoutOffItems(M.navFor('management', true), false).find((x) => x.label === 'FINANCE' && x.workspace === 'rental');
+  const part = g?.items.find((i) => i.label === 'To approve');
+  return !!part && !part.children.some((c) => c.badge === 'approvals') && part.children.length === 3;
+})());
+
 console.log(fails ? `\n${fails} failed` : '\nall passed');
 process.exit(fails ? 1 : 0);

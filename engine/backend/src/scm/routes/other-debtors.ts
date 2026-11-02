@@ -213,7 +213,7 @@ function buildBillLines(raw: unknown): { lines: BillLine[]; total: number } | { 
       return { error: 'bad_line', message: `Line ${i + 1}: amountSen must be a positive integer (got ${String(l?.amountSen)}).` };
     }
     if (l?.department != null && !isDepartment(l.department)) {
-      return { error: 'bad_line', message: `Line ${i + 1}: the department must be Rental, Supply chain or Shared.` };
+      return { error: 'bad_line', message: `Line ${i + 1}: the department must be Rental, Renovation or Shared.` };
     }
     lines.push({ description: description || null, code, amountSen: amount, department: isDepartment(l?.department) ? l.department : DEFAULT_DEPARTMENT });
   }

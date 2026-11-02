@@ -62,6 +62,8 @@ export const initials = (name: string) => {
   return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : '')).toUpperCase();
 };
 
+export const payoutOf = (b: Block) => Math.max(0, b.grossBookingValue - (b.channelFee ?? 0));
+
 export function displayName(b: Block) {
   if (b.channel === 'owner_stay' || b.channel === 'maintenance_block') return b.guestName && b.channel === 'owner_stay' ? b.guestName : holdName(b);
   return b.guestName || `${CHANNEL[b.channel].label} guest`;
@@ -71,7 +73,8 @@ export function displayName(b: Block) {
 export function BarContent({ b, visible, width, nights }: { b: Block; visible: number; width: number; nights: number }) {
   const hold = b.channel === 'owner_stay' || b.channel === 'maintenance_block';
   const name = displayName(b);
-  const price = !hold && b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '';
+  // The host payout to the sen, as the booking drawer's Host payout total shows it (owner, 2 Nov 2026: RM 623.61, not RM 740).
+  const price = !hold && b.grossBookingValue > 0 ? rm(payoutOf(b)) : '';
   const markW = width >= 30 ? 20 : 0;
   const room = width - 12 - markW;
   if (visible <= 1 || width < 70) {
@@ -86,7 +89,7 @@ export function BarContent({ b, visible, width, nights }: { b: Block; visible: n
   const line1 = visible <= 2 && !hold ? (fitWords(name.split(/\s+/)[0] ?? '', room) ?? initials(name)) : (fitWords(name, room) ?? initials(name));
   const parts = hold
     ? [visible >= 3 && b.reason ? b.reason : '', visible >= 3 ? nightsLabel(nights) : ''].filter(Boolean)
-    : visible <= 2 ? [nightsLabel(nights)] : visible <= 5 ? [price || nightsLabel(nights)] : [price, nightsLabel(nights)].filter(Boolean);
+    : [price, nightsLabel(nights)].filter(Boolean);
   const line2 = fitWords(parts.join(' · '), room) ?? (parts[0] && textWidth(parts[0]) <= room ? parts[0] : '');
   return (
     <>
@@ -145,7 +148,7 @@ export function BarHoverCard({ b, phase, unit, x, y }: { b: Block; phase: StayPh
       </div>
       <div className="text-meta text-muted-ink">{hold ? holdName(b) : ch.label} · {PHASE_LABEL[phase]}</div>
       <div className="[font-variant-numeric:tabular-nums]">{dateRange(b.checkIn, b.checkOut)} · {nightsLabel(n)}</div>
-      {!hold && b.grossBookingValue > 0 && <div className="[font-variant-numeric:tabular-nums]">{rm(b.grossBookingValue, { cents: false })}</div>}
+      {!hold && b.grossBookingValue > 0 && <div className="[font-variant-numeric:tabular-nums]">Host payout {rm(payoutOf(b))}</div>}
       {b.reason && <div className="text-meta text-muted-ink">{b.reason}</div>}
       <div className="text-meta text-muted-ink">{unit}{b.ref ? ` · ${b.ref}` : ''}</div>
     </div>

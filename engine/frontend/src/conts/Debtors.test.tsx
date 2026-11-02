@@ -11,7 +11,8 @@ vi.mock("./debtorQueries", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./debtorQueries")>()),
   useDebtors: () => ({ isLoading: false, isError: false, data: { controls: [
     { code: "301-0000", name: "RENOVATION CUSTOMER", debtors: [
-      { id: "d1", code: "301-M001", name: "MS LEE", control_account: "301-0000", customer_id: null, phone: "012", email: null, address: null, notes: null, is_active: true },
+      { id: "d1", code: "301-M001", name: "MS LEE", control_account: "301-0000", customer_id: null, phone: "012", email: null, address: null, notes: null, is_active: true,
+        tin: null, id_type: null, id_number: null, sst_no: null, city: null, postcode: null, state: null, country: null },
     ] },
     { code: "302-0000", name: "INHOUSE RENOVATION CUSTOMER", debtors: [] },
   ] } }),
@@ -72,5 +73,48 @@ describe("Debtors", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(confirmFn).toHaveBeenCalled());
     expect(saveAsync).not.toHaveBeenCalled();
+  });
+
+  it("edit form shows the e-invoice fields and saves them", async () => {
+    saveAsync.mockReset();
+    saveAsync.mockResolvedValue({ debtor: {} });
+    render(<MemoryRouter><Debtors /></MemoryRouter>);
+    fireEvent.click(screen.getByText(/301-M001 MS LEE/));
+    fireEvent.change(screen.getByLabelText("Tax ID (TIN)"), { target: { value: "IG12345678901" } });
+    fireEvent.change(screen.getByLabelText("ID type"), { target: { value: "NRIC" } });
+    fireEvent.change(screen.getByLabelText("ID number"), { target: { value: "900101-14-5678" } });
+    fireEvent.change(screen.getByLabelText("SST registration no."), { target: { value: "W10-1808-31000001" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAsync).toHaveBeenCalledTimes(1));
+    expect(saveAsync.mock.calls[0][0]).toMatchObject({ id: "d1", body: { tin: "IG12345678901", idType: "NRIC", idNumber: "900101-14-5678", sstNo: "W10-1808-31000001" } });
+  });
+});
+
+describe("Debtors: only changed tax fields are sent", () => {
+  it("a rename sends no tax fields", async () => {
+    saveAsync.mockReset();
+    saveAsync.mockResolvedValue({ debtor: {} });
+    render(<MemoryRouter><Debtors /></MemoryRouter>);
+    fireEvent.click(screen.getByText(/301-M001 MS LEE/));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "MS LEE AH" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAsync).toHaveBeenCalledTimes(1));
+    const body = saveAsync.mock.calls[0][0].body as Record<string, unknown>;
+    expect(["tin", "idType", "idNumber", "sstNo"].filter((k) => k in body)).toEqual([]);
+  });
+});
+
+describe("Debtors: address for the e-invoice", () => {
+  it("saves city, postcode and state", async () => {
+    saveAsync.mockReset();
+    saveAsync.mockResolvedValue({ debtor: {} });
+    render(<MemoryRouter><Debtors /></MemoryRouter>);
+    fireEvent.click(screen.getByText(/301-M001 MS LEE/));
+    fireEvent.change(screen.getByLabelText("City"), { target: { value: "Kuala Lumpur" } });
+    fireEvent.change(screen.getByLabelText("Postcode"), { target: { value: "50450" } });
+    fireEvent.change(screen.getByLabelText("State"), { target: { value: "Kuala Lumpur" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAsync).toHaveBeenCalledTimes(1));
+    expect(saveAsync.mock.calls[0][0]).toMatchObject({ body: { city: "Kuala Lumpur", postcode: "50450", state: "Kuala Lumpur" } });
   });
 });

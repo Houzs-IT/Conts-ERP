@@ -34,6 +34,7 @@ import { todayMyt } from '../lib/my-time';
 import { baseKeyOf, deleteThumbFor, putOptionalThumb } from '../../services/photoThumbs';
 import type { Env, Variables } from '../env';
 import { pgrestIn } from '../lib/pgrest-in-list';
+import { variantCategoryOf } from '../lib/renovation-flow-rules';
 import { categorySwapAllowed } from '../shared/category-swap';
 import { moveModelCategory } from '../lib/model-category-move';
 import { MFG_PRODUCT_CATEGORIES } from './mfg-products';
@@ -250,7 +251,7 @@ productModels.get('/by-code/:code', async (c) => {
   // service client may camelCase / array-wrap inconsistently).
   const { data: sku, error: skuErr } = await supabase
     .from('mfg_products')
-    .select('model_id, category')
+    .select('model_id, category, sub_category')
     .eq('code', code)
     .eq('company_id', activeCompanyId(c))
     .limit(1)
@@ -263,9 +264,11 @@ productModels.get('/by-code/:code', async (c) => {
   // recognise a sofa/bedframe line whose persisted itemGroup came in generic
   // (scan/backdoor drafts) and render the right configurator + require its
   // variants (owner 2026-07-13). Null for legacy/unknown codes.
-  const category = (sku as Record<string, unknown> | null)?.category != null
-    ? String((sku as Record<string, unknown>).category)
-    : null;
+  const skuRow = sku as Record<string, unknown> | null;
+  const category = variantCategoryOf(
+    skuRow?.category != null ? String(skuRow.category) : null,
+    (skuRow?.subCategory ?? skuRow?.sub_category) != null ? String(skuRow?.subCategory ?? skuRow?.sub_category) : null,
+  );
   // Dual-read camelCase ?? snake_case for the FK column.
   const modelId = (sku as Record<string, unknown> | null)?.modelId
     ?? (sku as Record<string, unknown> | null)?.model_id
@@ -334,7 +337,7 @@ productModels.get('/by-code-batch', async (c) => {
 
   const { data: skus, error: skuErr } = await pgrestIn(supabase
     .from('mfg_products')
-    .select('code, model_id, category'), 'code', codes)
+    .select('code, model_id, category, sub_category'), 'code', codes)
     .eq('company_id', activeCompanyId(c));
   if (skuErr) {
     // Parity with the single route: a missing relation degrades to "no Model"
@@ -354,7 +357,10 @@ productModels.get('/by-code-batch', async (c) => {
     const modelId = r.modelId ?? r.model_id ?? null;
     skuByCode.set(String(r.code), {
       modelId: modelId != null ? String(modelId) : null,
-      category: r.category != null ? String(r.category) : null,
+      category: variantCategoryOf(
+        r.category != null ? String(r.category) : null,
+        (r.subCategory ?? r.sub_category) != null ? String(r.subCategory ?? r.sub_category) : null,
+      ),
     });
   }
 

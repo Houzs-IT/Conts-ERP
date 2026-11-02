@@ -9,6 +9,8 @@ import { flushWhenQuiet } from './channexQueue';
 import { channexConfigured } from './channex';
 import { cleaningNotice, repairNotice } from './notices';
 import { releaseRepairBlocks } from './repairBlocks';
+import { hasAttendance } from './attendance';
+import { FORGOTTEN_AFTER_HOURS } from './attendanceCalc';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -126,8 +128,13 @@ export async function repairBlockSweep(env: Env, o: RunOptions = {}): Promise<Jo
 const HP_SYNCED_KEY = 'hostplatform.synced_at';
 /** A first run, with no earlier one on record, looks back this far; each run overlaps the last by a few minutes. */
 const HP_FIRST_LOOKBACK_MS = 2 * 86400e3;
-const HP_OVERLAP_MS = 5 * 60e3;
+/* Wide on purpose: a booking can reach HostPlatform's list after the time it is stamped with, and a narrower overlap lost
+   it for good (67DQQOTZA, owner report 2 Nov 2026). Writing a booking twice changes nothing. */
+const HP_OVERLAP_MS = 60 * 60e3;
 const HP_MAX_PAGES = 40;
+/** The hourly sweep reads every stay from this many days back to this many ahead, whatever its change time. */
+const HP_SWEEP_BACK_DAYS = 3;
+const HP_SWEEP_AHEAD_DAYS = 180;
 
 /** Every 5 minutes: pull what HostPlatform changed since the last good run, for every building. This is how HostPlatform
  *  reaches us: its webhook has one slot and StreamHost holds it. It is the Pull button's work (importReservations, source
@@ -140,24 +147,51 @@ export async function hostplatformPull(env: Env, o: RunOptions = {}): Promise<Jo
   const startedAt = o.now ?? new Date();
   const last = Date.parse((await one<{ value: string }>(env, 'SELECT value FROM settings WHERE key = ?', HP_SYNCED_KEY))?.value ?? '');
   const since = new Date((Number.isNaN(last) ? startedAt.getTime() - HP_FIRST_LOOKBACK_MS : last) - HP_OVERLAP_MS).toISOString();
+  const out = await hostplatformWrite(env, job, startedAt, { updatedAfter: since }, o);
+  if (out.dryRun) return { job, summary: `Would write ${plural(out.pulled, 'reservation')} HostPlatform changed since ${since}.`, items: out.items };
+  await run(env, `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
+    HP_SYNCED_KEY, startedAt.toISOString(), nowIso());
+  return {
+    job, summary: out.pulled ? `Wrote ${plural(out.pulled, 'reservation')} HostPlatform changed since ${since}: ${out.created} new, ${out.updated} changed.` : `HostPlatform changed nothing since ${since}.`,
+    items: out.items,
+  };
+}
+
+/** Hourly: every stay HostPlatform holds from a few days back to six months ahead, whatever its change time, so a booking
+ *  the 5-minute pull missed is still brought in within the hour. Same write as the pull; reads HostPlatform only. */
+export async function hostplatformSweep(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const job = 'hostplatform-sweep';
+  if (!hostplatformConfigured(env)) return { job, summary: 'HostPlatform is not configured here: nothing swept.' };
+  const startedAt = o.now ?? new Date();
+  const day = (n: number) => new Date(startedAt.getTime() + n * 864e5).toISOString().slice(0, 10);
+  const from = day(-HP_SWEEP_BACK_DAYS), to = day(HP_SWEEP_AHEAD_DAYS);
+  const out = await hostplatformWrite(env, job, startedAt, { from, to }, o);
+  if (out.dryRun) return { job, summary: `Would check ${plural(out.pulled, 'reservation')} staying ${from} to ${to}.`, items: out.items };
+  return { job, summary: `Checked ${plural(out.pulled, 'reservation')} staying ${from} to ${to}: ${out.created} new, ${out.updated} changed.`, items: out.items };
+}
+
+/** Read every building's reservations (changed since `updatedAfter`, or staying from .. to) and write them as the Pull
+ *  button does. Throws before writing anything if a building cannot be read whole. */
+async function hostplatformWrite(env: Env, job: string, startedAt: Date, w: { updatedAfter?: string; from?: string; to?: string }, o: RunOptions) {
   const buildings = await hostplatformProperties(env);
   if (!buildings.ok || !buildings.body) throw new Error(`HostPlatform did not return its buildings (status ${buildings.status}).`);
-
   const pulled: HpReservation[] = [];
   let malformed = 0;
   for (const { id: propertyId } of buildings.body) {
     let cursor: string | null = null, pages = 0;
     do {
-      const page = await hostplatformReservationPage(env, { propertyId, from: since.slice(0, 10), to: since.slice(0, 10), updatedAfter: since, cursor });
+      const page = await hostplatformReservationPage(env, w.updatedAfter
+        ? { propertyId, from: w.updatedAfter.slice(0, 10), to: w.updatedAfter.slice(0, 10), updatedAfter: w.updatedAfter, cursor }
+        : { propertyId, from: w.from!, to: w.to!, cursor });
       if (!page.ok || !page.body) throw new Error(`HostPlatform refused the reservation list for ${propertyId} (status ${page.status}).`);
       pulled.push(...page.body.reservations);
       malformed += page.body.malformed;
       cursor = page.body.nextCursor;
     } while (cursor && ++pages < HP_MAX_PAGES);
-    if (cursor) throw new Error(`${propertyId} has more than ${HP_MAX_PAGES * 50} changes since ${since}; nothing was saved. Use the Pull button.`);
+    if (cursor) throw new Error(`${propertyId} has more than ${HP_MAX_PAGES * 50} reservations to read; nothing was saved. Use the Pull button.`);
   }
   const items = malformed ? [`${malformed} reservation(s) were missing their code, dates or unit and were left out.`] : [];
-  if (o.dryRun) return { job, summary: `Would write ${plural(pulled.length, 'reservation')} HostPlatform changed since ${since}.`, items };
+  if (o.dryRun) return { dryRun: true as const, pulled: pulled.length, created: 0, updated: 0, items };
 
   const db: Db = { all: (sql, ...args) => all(env, sql, ...args) as never, run: (sql, ...args) => run(env, sql, ...args) };
   const result = pulled.length ? await importReservations(db, mapApiReservations(pulled, mytParts(startedAt).day), nowIso(), { source: 'api' }) : null;
@@ -167,20 +201,17 @@ export async function hostplatformPull(env: Env, o: RunOptions = {}): Promise<Jo
     for (const id of effects.checkoutMoved) await replanTurnover(env, id, true);
     await ensureTurnovers(env, { reservationIds: effects.live });
   }
-  await run(env, `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
-    HP_SYNCED_KEY, startedAt.toISOString(), nowIso());
   const problems = result ? [...result.errors, ...result.skippedRows].map(e => e.reason) : [];
-  // Only a run that changed something leaves a line in History: this runs every 5 minutes.
-  if (result && (result.created || result.updated || effects?.cancelled.length)) {
+  // Only a run that changed something, or could not place a booking, leaves a line in History: these run all day. A
+  // booking left out used to leave no trace at all (owner report, 2 Nov 2026).
+  if (result && (result.created || result.updated || effects?.cancelled.length || result.errors.length)) {
     await audit(env, {
-      actorId: null, actorLabel: 'Scheduled job', action: 'import.hostplatform.scheduled', entityTable: 'import', entityId: 'hostplatform',
-      after: { since, pulled: pulled.length, created: result.created, updated: result.updated, cancelled: effects?.cancelled.length ?? 0, problems: problems.length },
+      actorId: null, actorLabel: 'Scheduled job', action: job === 'hostplatform-pull' ? 'import.hostplatform.scheduled' : 'import.hostplatform.sweep',
+      entityTable: 'import', entityId: 'hostplatform',
+      after: { ...w, pulled: pulled.length, created: result.created, updated: result.updated, cancelled: effects?.cancelled.length ?? 0, problems: problems.length, firstProblems: problems.slice(0, 5) },
     }).catch(() => {});
   }
-  return {
-    job, summary: pulled.length ? `Wrote ${plural(pulled.length, 'reservation')} HostPlatform changed since ${since}: ${result?.created ?? 0} new, ${result?.updated ?? 0} changed.` : `HostPlatform changed nothing since ${since}.`,
-    items: [...items, ...problems.slice(0, 20)],
-  };
+  return { dryRun: false as const, pulled: pulled.length, created: result?.created ?? 0, updated: result?.updated ?? 0, items: [...items, ...problems.slice(0, 20)] };
 }
 
 /** Hourly: work past its time. A clean past its due time becomes Overdue and its cleaner and the operations managers
@@ -227,6 +258,27 @@ export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobRep
     });
   }
   return { job: 'overdue-sweep', summary: `Marked ${plural(tasks.length, 'task')} Overdue; announced ${recentCleans.length} cleaning jobs, ${repairs.length} maintenance jobs, ${stale.length} unsent owner statements.`, items };
+}
+
+/** Hourly: a punch left open longer than FORGOTTEN_AFTER_HOURS is marked a forgotten clock-out, so the desk and the
+ *  phone stop counting it up and payroll pays it as a normal shift. No clock-out time is made up: the office keys the real
+ *  one on Attendance. The phone's next clock-in or clock-out does the same; this catches the people who do neither. */
+export async function forgottenClockOuts(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  if (!(await hasAttendance(env))) return { job: 'forgotten-clock-outs', summary: 'Attendance is not set up on this database (migration 0166).' };
+  const cutoff = new Date((o.now ?? new Date()).getTime() - FORGOTTEN_AFTER_HOURS * 3600e3).toISOString();
+  const open = await all<{ id: string; employee_id: string; work_date: string; clock_in_at: string }>(env, `
+    SELECT id, employee_id, work_date, clock_in_at FROM attendance WHERE clock_out_at IS NULL AND forgot_out = 0 AND clock_in_at < ?`, cutoff);
+  const items = open.map(r => `${r.work_date}: employee ${r.employee_id}, in at ${r.clock_in_at}`);
+  if (o.dryRun || !open.length) {
+    return { job: 'forgotten-clock-outs', summary: open.length ? `Would mark ${plural(open.length, 'punch', 'punches')} as a forgotten clock-out.` : `No punch open longer than ${FORGOTTEN_AFTER_HOURS} hours.`, items };
+  }
+  const ids = JSON.stringify(open.map(r => r.id));
+  await run(env, `UPDATE attendance SET forgot_out = 1, updated_at = ? WHERE clock_out_at IS NULL AND forgot_out = 0 AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, nowIso(), ids);
+  await run(env, `
+    INSERT INTO audit_log (actor_id, actor_label, action, entity_table, entity_id, before_state, after_state, source, occurred_at)
+    SELECT NULL, 'Scheduled job', 'attendance.forgot_out', 'attendance', x, '{"forgotOut":false}', '{"forgotOut":true}', 'system', ?
+    FROM jsonb_array_elements_text(?::text::jsonb) AS x`, nowIso(), ids);
+  return { job: 'forgotten-clock-outs', summary: `Marked ${plural(open.length, 'punch', 'punches')} open longer than ${FORGOTTEN_AFTER_HOURS} hours as a forgotten clock-out.`, items };
 }
 
 /** Daily at 08:00 MYT: one "today" notice for operations: arrivals, departures, cleans (and how many have nobody),
@@ -279,7 +331,7 @@ export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<Job
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
   [CRON.fiveMinutes]: [hostplatformPull],
   [CRON.quarterHour]: [drainOutbox, repairBlockSweep],
-  [CRON.hourly]: [overdueSweep],
+  [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep],
   [CRON.daily]: [dailyDigest],
 };
 

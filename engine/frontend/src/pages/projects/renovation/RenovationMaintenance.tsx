@@ -78,7 +78,7 @@ function CrewRow({ p, work, onSave }: { p: Person; work: CrewAssignment[]; onSav
       <div className="min-w-0 text-sm font-medium text-ink">
         {p.name}
         {!p.active && <span className="ml-1 text-[11px] font-normal text-ink-secondary">switched off</span>}
-        {p.source === "import" && <span className="ml-1 text-[11px] font-normal text-ink-secondary" title="Came over with the Notion import">from Notion</span>}
+        {p.source === "import" && <span className="ml-1 text-[11px] font-normal text-ink-secondary" title="Came over with the data import">imported</span>}
       </div>
       <div className="flex gap-2">
         <Button variant="ghost" onClick={() => setEditing(true)} aria-label={`Rename ${p.name}`}>Rename</Button>
@@ -188,7 +188,7 @@ export function TaskCategoriesManager() {
   }
 
   return (
-    <Box title="Site task categories" hint="The task names used on site (from the Notion task board). A category switched off is no longer offered when adding a task; existing tasks keep it.">
+    <Box title="Site task categories" hint="The task names used on site (from the old task board). A category switched off is no longer offered when adding a task; existing tasks keep it.">
       {error && <p role="alert" className="mb-2 text-sm text-err">{error}</p>}
       <button type="button" className="text-sm text-primary" onClick={() => setOpen((x) => !x)} aria-expanded={open}>{open ? "Hide" : `Show all ${cats.length}`} categories</button>
       {open && (

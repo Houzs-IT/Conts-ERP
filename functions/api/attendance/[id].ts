@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { mayWork } from '../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { hasAttendance, NOT_MIGRATED, toView, ROW_COLS, type AttendanceRow } from '../../_lib/attendance';
+import { hasAttendance, NOT_MIGRATED, payslipLocked, toView, ROW_COLS, type AttendanceRow } from '../../_lib/attendance';
 import { mytInstant } from '../../_lib/attendanceCalc';
 
 const MANAGE = ['management']; // everyone else follows their level in HR (functions/_lib/access.ts)
@@ -67,13 +67,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   const parsed = removal.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return fail('VALIDATION', 'Some fields need a fix.', 422, { note: parsed.error.issues[0]?.message ?? 'Say why the clock-out is removed.' });
 
-  // A payslip already approved or paid was worked out from this day: reopen it first. Before payroll exists there is none.
-  const locked = await one<{ x: number }>(env, `SELECT 1 AS x FROM payslips WHERE employee_id = ? AND period = ? AND status <> 'draft' LIMIT 1`,
-    before.employee_id, before.work_date.slice(0, 7)).catch((e: unknown) => {
-    if (/payslips/.test(e instanceof Error ? e.message : String(e))) return null;
-    throw e;
-  });
-  if (locked) return fail('CONFLICT', `The payslip for ${before.work_date.slice(0, 7)} is already approved or paid. Reopen it before changing attendance.`, 409);
+  if (await payslipLocked(env, before.employee_id, before.work_date)) return fail('CONFLICT', `The payslip for ${before.work_date.slice(0, 7)} is already approved or paid. Reopen it before changing attendance.`, 409);
 
   await run(env, `
     UPDATE attendance SET clock_out_at = NULL, out_lat = NULL, out_lng = NULL, out_accuracy_m = NULL, out_photo_id = NULL, forgot_out = 0,

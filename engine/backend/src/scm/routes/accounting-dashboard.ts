@@ -49,6 +49,7 @@ import { allowedIds, resolveLayout, type ResolvedLayout } from './accounting-rep
 import { buildBalanceSheet, buildPnl, loadAccounts, sectionResolver, sumGlRows, type AccountRow, type PnlReport, type ReportLine, type ReportSources, type SumRow } from './accounting-reports';
 import { buildReceiptsPayments, rpDbSources, supplierVouchersOf, type RpGlLine, type RpSources, type RpSplit, type RpTotals } from './accounting-rp';
 import { buildPerformance, perfDbSources, type PerfSources, type PerformancePayload } from './accounting-performance';
+import { loadRenovationData, periodOf } from '../../acc/reno-completion';
 import { loadForecastAccounts, loadGrid } from './accounting-forecast';
 import {
   COMPARE_GROUPS, COST_GROUPS, MONTH_RE, STAFF_COST_CATEGORY_ID, addFigures, compareAccountsOf, compareGroupOfPerformance, compareGroupOfPurchaseAccount, compareGroupOfSalesAccount,
@@ -149,7 +150,7 @@ type Preload = {
   /** The compare groups' sales and purchase accounts, from the same bindings. */
   compareAccounts: CompareAccounts;
   /** The Performance P&L's own inputs, read once for the window: the sales orders and their lines, the rate and account, the rate's account row. */
-  perf: { settings: PerformanceSettings; orders: PerfOrder[]; lines: PerfLine[]; rateAccount: { code: string; name: string } | null };
+  perf: { settings: PerformanceSettings; orders: PerfOrder[]; lines: PerfLine[]; rateAccount: { code: string; name: string } | null; renovation?: PerfSources['renovation'] };
   /** The Cash Flow's own inputs, read once: the money accounts and what the window's supplier-payment vouchers settled. */
   rp: { moneyAccounts: Array<{ code: string; name: string }>; splits: Map<string, RpSplit[]>; acquirerTransits: string[] };
 };
@@ -244,13 +245,17 @@ async function preload(sb: Sb, companyId: number, layoutIds: number[], windowSta
   const apControls = new Set([roles.AP, roles.AP_OTHER].filter(Boolean) as string[]);
   const moneySet = new Set(money.accounts.map((a) => a.code));
   const vouchers = supplierVouchersOf(glRows.filter((r) => r.entry_date >= windowStart && r.entry_date <= windowEnd), moneySet, apControls);
-  const [lines, prods, rateAccount, splits] = await Promise.all([
+  /* Renovation by completion: its data read once here, every period worked out from it (acc/reno-completion). */
+  const [lines, prods, rateAccount, splits, reno] = await Promise.all([
     perfDb.lines(liveDocs),
     chunkIn<{ code: string; category: string | null }>(itemCodes, (batch, f, t) =>
       sb.from('mfg_products').select('code, category').eq('company_id', companyId).in('code', batch).range(f, t)),
     perfDb.rateAccount(settings.settings.account),
     rpDb.splits(vouchers, controlCodes),
+    loadRenovationData(sb, companyId, undefined, ledger.settings.ledgerStartDate).then((data) => ({ ok: true as const, data }), (e: unknown) => ({ ok: false as const, reason: failed(e) })),
   ]);
+  if (!reno.ok) return { ok: false, reason: `renovation: ${reno.reason}` };
+  const renoData = reno.data;
   if (!lines.ok) return { ok: false, reason: `order lines: ${lines.reason}` };
   if (prods.error) return { ok: false, reason: `products: ${prods.error.message}` };
   if (!rateAccount.ok) return { ok: false, reason: `rate account: ${rateAccount.reason}` };
@@ -263,7 +268,8 @@ async function preload(sb: Sb, companyId: number, layoutIds: number[], windowSta
       gl: glRows,
       moves: moves.rows, bucketOf: wh.of, accounts: accs.accounts, roles, closingBooked: closings.closingBooked, ledger: ledger.settings, layouts,
       forecast: { grid, accounts: fAccounts.accounts }, purchaseAccountsOf: bindings.purchaseAccountsOf, categoryOfItem, compareAccounts: bindings.compareAccounts,
-      perf: { settings: settings.settings, orders: orders.orders, lines: lines.lines, rateAccount: rateAccount.account },
+      perf: { settings: settings.settings, orders: orders.orders, lines: lines.lines, rateAccount: rateAccount.account,
+        renovation: async (from: string, to: string) => ({ ok: true as const, renovation: periodOf(renoData, from, to) }) },
       rp: { moneyAccounts: money.accounts, splits: splits.byPv, acquirerTransits: acquirers.codes },
     },
   };
@@ -319,6 +325,7 @@ function sourcesOf(pre: Preload): { report: ReportSources; rp: RpSources; perf: 
       return { ok: true as const, lines: pre.perf.lines.filter((l) => want.has(l.doc_no)) };
     },
     rateAccount: async () => ({ ok: true as const, account: pre.perf.rateAccount }),
+    renovation: pre.perf.renovation,
   };
   return { report, rp, perf };
 }

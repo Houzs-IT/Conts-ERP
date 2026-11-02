@@ -20,8 +20,9 @@ import { loadAccounts, loadSums, sectionResolver, type AccountRow, type SumRow }
 import { allowedIds, resolveLayout, type ResolvedLayout } from './accounting-report-layouts';
 import {
   buildPerformanceReport, loadPerformanceSettings, performanceLayout, savePerformanceSettings,
-  type PerfExpense, type PerfLine, type PerfOrder, type PerformanceLayout, type PerformanceReport, type PerformanceSettings,
+  type PerfExpense, type PerfLine, type PerfOrder, type PerfRenovationInput, type PerformanceLayout, type PerformanceReport, type PerformanceSettings,
 } from '../../acc/performance-pnl';
+import { renovationForPeriod } from '../../acc/reno-completion';
 
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 const requirePerm = (c: Ctx): boolean => hasHouzsPerm(c, 'scm.payment_voucher.post');
@@ -46,6 +47,8 @@ export type PerfSources = {
   lines: (docNos: string[]) => Promise<{ ok: true; lines: PerfLine[] } | { ok: false; reason: string }>;
   /** The account the rate stands in for, as the chart names it; null when the chart has no such code. */
   rateAccount: (code: string) => Promise<{ ok: true; account: { code: string; name: string } | null } | { ok: false; reason: string }>;
+  /** Renovation by completion for the period (Conts). Absent = no renovation block. */
+  renovation?: (from: string, to: string) => Promise<{ ok: true; renovation: PerfRenovationInput } | { ok: false; reason: string }>;
 };
 /** The database, as the route reads it. Every read the report needs is a
     source, so the Dashboard can answer all of them from one preloaded window
@@ -61,7 +64,7 @@ export const perfDbSources = (sb: Sb, companyId: number, layoutIds: number[]): P
        cannot be trusted to compare; the DRAFT/CANCELLED filter is in code. */
     const sos = await paginateAll<PerfOrder>((f, t) =>
       sb.from('mfg_sales_orders')
-        .select('doc_no, so_date, status, delivery_fee_sen')
+        .select('doc_no, so_date, status, delivery_fee_sen, so_kind')
         .eq('company_id', companyId).gte('so_date', from).lte('so_date', to)
         .order('so_date').order('doc_no').range(f, t));
     if (sos.error) return { ok: false, reason: failed(sos.error) };
@@ -86,6 +89,9 @@ export const perfDbSources = (sb: Sb, companyId: number, layoutIds: number[]): P
     const row = acct as { account_code: string; account_name?: string | null } | null;
     return { ok: true, account: row ? { code: String(row.account_code), name: String(row.account_name ?? '') } : null };
   },
+  renovation: async (from, to) => {
+    try { return { ok: true, renovation: await renovationForPeriod(sb, companyId, from, to) }; } catch (e) { return { ok: false, reason: failed(e) }; }
+  },
 });
 export type PerformancePayload = PerformanceReport & { layout: PerformanceLayout };
 
@@ -97,7 +103,7 @@ export async function buildPerformance(companyId: number, from: string, to: stri
   const sos = await src.orders(from, to);
   if (!sos.ok) return { ok: false, reason: sos.reason };
   const orders = sos.orders;
-  const liveDocs = orders.filter((o) => !SO_NOT_AN_ORDER.has(String(o.status))).map((o) => o.doc_no);
+  const liveDocs = orders.filter((o) => !SO_NOT_AN_ORDER.has(String(o.status)) && o.so_kind !== 'RENOVATION').map((o) => o.doc_no);
   const its = await src.lines(liveDocs);
   if (!its.ok) return { ok: false, reason: its.reason };
   const lines = its.lines;
@@ -123,7 +129,14 @@ export async function buildPerformance(companyId: number, from: string, to: stri
   /* The account part on the report's own layout (docs/bugs/0912). */
   const laid = await src.layout();
   if (!laid.ok) return { ok: false, reason: laid.reason };
-  const report = buildPerformanceReport({ from, to, orders, lines, expenses, otherIncome, settings: st.settings, account: acct.account });
+  /* Renovation by completion (acc/reno-completion), when the sources carry it. */
+  let renovation: PerfRenovationInput | null = null;
+  if (src.renovation) {
+    const ren = await src.renovation(from, to);
+    if (!ren.ok) return { ok: false, reason: ren.reason };
+    renovation = ren.renovation;
+  }
+  const report = buildPerformanceReport({ from, to, orders, lines, expenses, otherIncome, settings: st.settings, account: acct.account, renovation });
   return { ok: true, report: { ...report, layout: performanceLayout(report, laid.layout, companyId, laid.stored) } };
 }
 

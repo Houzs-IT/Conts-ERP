@@ -56,6 +56,8 @@ export interface UnitRow {
   revenue_model?: string | null; tenant_name?: string | null; agent_fee_pct?: number | null;
   /** PS YGRR (0125): the guarantee for each contract year, sen. */
   minimum_guarantee_annual?: number | null;
+  /** The staff's code for the current contract (0125), null on older rows. */
+  contract_code?: string | null;
   /** PS YGRR: the owner's shares for the earlier months of the contract year, filled by withYearToDate. Absent: the
    *  true-up is not worked out (the statement says so). */
   year_shares_before?: number;
@@ -411,7 +413,7 @@ export const UNIT_SQL = `
          u.package, u.term, u.split_kind, u.split_value, u.misc_charges AS unit_misc,
          c.id AS contract_id, c.model, c.management_fee_pct, c.grr_amount, c.starts_on, c.ends_on,
          c.minimum_guarantee, c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges AS contract_misc,
-         c.revenue_model, c.tenant_name, c.agent_fee_pct, c.minimum_guarantee_annual
+         c.revenue_model, c.tenant_name, c.agent_fee_pct, c.minimum_guarantee_annual, c.contract_code
   FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
   LEFT JOIN owner_contracts c ON c.id = u.contract_id`;
 

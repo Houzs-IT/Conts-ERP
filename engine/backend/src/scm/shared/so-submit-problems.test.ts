@@ -34,6 +34,11 @@ describe('collectSoSubmitProblems', () => {
     expect(collectSoSubmitProblems(OK)).toEqual([]);
   });
 
+  it('an edit of an order saved without a phone is not blocked for it', () => {
+    expect(codes({ ...OK, phone: '', phoneOptional: true })).toEqual([]);
+    expect(messages({ ...OK, phone: '' })).toContain('Phone number is required.');
+  });
+
   it('names every missing always-required identity field at once', () => {
     const ps = collectSoSubmitProblems({
       ...OK,

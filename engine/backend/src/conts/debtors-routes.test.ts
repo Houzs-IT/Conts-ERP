@@ -108,3 +108,79 @@ describe('Debtors', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('Debtors: e-invoice tax identity', () => {
+  test('patch stores tin, id type and number, sst no', async () => {
+    const sb = world();
+    const res = await send(app(sb), 'PATCH', '/debtors/d1', { tin: 'ig12345678901', idType: 'NRIC', idNumber: '900101-14-5678', sstNo: '' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ debtor: { tin: 'IG12345678901', id_type: 'NRIC', id_number: '900101145678', sst_no: null } });
+  });
+
+  test('NRIC must be 12 digits', async () => {
+    const res = await send(app(world()), 'PATCH', '/debtors/d1', { idType: 'NRIC', idNumber: '12345' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_id_number' });
+  });
+
+  test('BRN accepts the 12-digit new format and the old one', async () => {
+    expect((await send(app(world()), 'PATCH', '/debtors/d1', { idType: 'BRN', idNumber: '202001012345' })).status).toBe(200);
+    expect((await send(app(world()), 'PATCH', '/debtors/d1', { idType: 'BRN', idNumber: '1234567-X' })).status).toBe(200);
+  });
+
+  test('unknown id type refused', async () => {
+    const res = await send(app(world()), 'PATCH', '/debtors/d1', { idType: 'LICENCE', idNumber: 'A1' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_id_type' });
+  });
+
+  test('an ID number needs its type', async () => {
+    const res = await send(app(world()), 'PATCH', '/debtors/d1', { idNumber: '900101145678' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_id_type' });
+  });
+
+  test('a TIN that does not look like one is refused', async () => {
+    const res = await send(app(world()), 'PATCH', '/debtors/d1', { tin: '12345' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_tin' });
+  });
+
+  test('a new customer can carry its tax identity', async () => {
+    const res = await send(app(world()), 'POST', '/debtors', { name: 'MS ONG', controlAccount: '301-0000', idType: 'PASSPORT', idNumber: 'a1234567' });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ debtor: { id_type: 'PASSPORT', id_number: 'A1234567' } });
+  });
+});
+
+describe('Debtors: real-world numbers (review)', () => {
+  test('old and printed registration numbers are accepted', async () => {
+    for (const n of ['001234567-K', 'JM0123456-X', 'LLP0012345-LGN']) {
+      expect((await send(app(world()), 'PATCH', '/debtors/d1', { idType: 'BRN', idNumber: n })).status).toBe(200);
+    }
+    const res = await send(app(world()), 'PATCH', '/debtors/d1', { idType: 'BRN', idNumber: '201901000005 (1312525-A)' });
+    expect(await res.json()).toMatchObject({ debtor: { id_number: '201901000005' } });
+  });
+
+  test('older and general TIN prefixes are accepted', async () => {
+    for (const tin of ['SG10234567020', 'EI00000000010', 'TJ12345678']) {
+      expect((await send(app(world()), 'PATCH', '/debtors/d1', { tin })).status).toBe(200);
+    }
+  });
+
+  test('changing only the ID type re-checks the stored number', async () => {
+    const sb = world({ debtors: [{ id: 'd1', company_id: CO, code: '301-M001', name: 'MS LEE', control_account: '301-0000', is_active: true, id_type: 'PASSPORT', id_number: 'A1234567' }] });
+    const res = await send(app(sb), 'PATCH', '/debtors/d1', { idType: 'NRIC' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_id_number' });
+  });
+});
+
+describe('Debtors: the address an e-invoice needs', () => {
+  test('patch and create store city, postcode, state and country', async () => {
+    const res = await send(app(world()), 'PATCH', '/debtors/d1', { city: 'Kuala Lumpur', postcode: '50450', state: 'Kuala Lumpur', country: '' });
+    expect(await res.json()).toMatchObject({ debtor: { city: 'Kuala Lumpur', postcode: '50450', state: 'Kuala Lumpur', country: null } });
+    const made = await send(app(world()), 'POST', '/debtors', { name: 'MS ONG', controlAccount: '301-0000', city: 'Shah Alam', state: 'Selangor' });
+    expect(await made.json()).toMatchObject({ debtor: { city: 'Shah Alam', state: 'Selangor' } });
+  });
+});

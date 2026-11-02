@@ -97,6 +97,6 @@ test('levelAt and mayIn read one area for another request path', async () => {
   assert.equal(await levelAt(env, staff(), 'finance'), 'view');
   assert.equal(await mayIn(env, staff(), 'finance', 'view'), true);
   assert.equal(await mayIn(env, staff(), 'finance', 'edit'), false);
-  assert.equal(await mayIn(env, staff(), 'owners', 'edit'), true);
+  assert.equal(await mayIn(env, staff(), 'ledger', 'edit'), true);
   assert.equal(await mayIn(env, { userId: 'm', role: 'management', side: 'conts' }, 'finance', 'full'), true);
 });

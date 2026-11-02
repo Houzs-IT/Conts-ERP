@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { amendmentLine, amountAfter, byAreaBlocks, dateSettable, editProblem, effectiveEdit, groupDate, groupDateTargets, lineDates, lineLate, linesCsv, refusalText, voBatches, type ManagedLine } from "./renovationBetaLines";
+import { amendmentLine, amountAfter, byAreaBlocks, contractLineEdits, dateSettable, editProblem, effectiveEdit, groupDate, groupDateTargets, lineDates, lineLate, linesCsv, refusalText, voBatches, type ManagedLine } from "./renovationBetaLines";
 
 const line = (over: Partial<ManagedLine> = {}): ManagedLine => ({
   id: "i1", soDocNo: "TC-SO-1", soStatus: "CONFIRMED", voLocked: true, lineNo: 1, itemCode: "PNT-5L", description: "Paint 5L", variantText: null,
@@ -111,5 +111,15 @@ describe("line photos", () => {
     expect(photoCount(set)).toBe(5);
     expect(photoSlots(set, 3)).toEqual({ so: 2, po: [1], sku: 0 });
     expect(photoSlots({ so: null, po: [], sku: set.sku }, 3)).toEqual({ so: 0, po: [], sku: 1 });
+  });
+});
+
+describe("contractLineEdits", () => {
+  it("sends only the lines whose SKU or qty moved, with only what moved", () => {
+    const l = line();
+    const b = voBatches([l, line({ id: "i2", itemCode: "LT-1", qty: 3 })], { i1: { qty: 4 }, i2: { remark: "white" } });
+    expect(contractLineEdits(b[0])).toEqual([{ soItemId: "i1", qty: 4 }]);
+    const sku = voBatches([l], { i1: { itemCode: "PNT-10L" } });
+    expect(contractLineEdits(sku[0])).toEqual([{ soItemId: "i1", itemCode: "PNT-10L" }]);
   });
 });

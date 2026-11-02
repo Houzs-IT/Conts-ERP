@@ -135,7 +135,7 @@ export interface UploadResult { ok: true; duplicate: boolean; id?: string; messa
    body (no base64, no multipart), so the server streams them straight into storage. */
 export async function uploadDocFile(
   type: DocType, id: string, file: File,
-  opts: { caption?: string; source?: 'upload' | 'import'; sha256?: string; lineId?: string | null; onProgress?: (fraction: number) => void } = {},
+  opts: { caption?: string; source?: 'upload' | 'import' | 'pod'; sha256?: string; lineId?: string | null; onProgress?: (fraction: number) => void } = {},
 ): Promise<UploadResult> {
   const sha256 = opts.sha256 ?? (await sha256Of(file));
   const mime = mimeOf(file);

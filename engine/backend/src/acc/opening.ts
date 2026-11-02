@@ -81,6 +81,11 @@ export async function reverseOpeningJournal(sb: Db, companyId: number): Promise<
   const existing = await activeOpening(sb, companyId);
   if (!existing.ok) return { ok: false, error: `The journal could not be read: ${existing.error}` };
   if (!existing.je) return { ok: false, error: 'There is no opening journal to reverse.' };
+  const { data: deps, error: dErr } = await sb.from('journal_entries').select('id, reversed').eq('company_id', companyId).eq('source_type', 'OPENING_DEPOSITS');
+  if (dErr) return { ok: false, error: `The journal could not be read: ${dErr.message}` };
+  if (((deps ?? []) as Array<{ reversed: boolean | null }>).some((d) => !d.reversed)) {
+    return { ok: false, error: 'The opening deposits are tagged on these balances: reverse the opening deposits first.' };
+  }
   const r = await reverseJournal(sb, {
     sourceType: 'OPENING',
     jeId: existing.je.id,

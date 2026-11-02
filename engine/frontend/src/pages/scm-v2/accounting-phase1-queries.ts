@@ -288,9 +288,24 @@ export type ItemGroup = {
   bindings: Record<string, ItemGroupBinding>;
 };
 
+/** A sub-category's own accounts for one company (renovation revenue, spec 2.4); null = that side uses the group's. */
+export type SubCategoryBinding = { salesAccount: string | null; purchaseAccount: string | null };
+
+export type ItemSubCategory = {
+  code: string;
+  label: string;
+  groupCode: string;
+  /** companyId → its own accounts; a missing key means both sides use the group's. */
+  bindings: Record<string, SubCategoryBinding>;
+};
+
 export const useItemGroups = () => useQuery({
   queryKey: ['item-groups'],
-  queryFn: () => authedFetch<{ companies: Array<{ id: number; code: string }>; groups: ItemGroup[] }>(`/accounting/item-groups`),
+  queryFn: () => authedFetch<{
+    companies: Array<{ id: number; code: string }>;
+    groups: ItemGroup[];
+    subCategories?: ItemSubCategory[];
+  }>(`/accounting/item-groups`),
   staleTime: 15_000,
   retry: retryUnlessClientError,
   retryDelay: 800,
@@ -313,6 +328,16 @@ export const useBindItemGroup = () => {
       authedFetch<{ ok: boolean }>(`/accounting/item-groups/${encodeURIComponent(code)}/accounts`, { method: 'PUT', body: JSON.stringify(body) }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['item-groups'] }); void qc.invalidateQueries({ queryKey: ['ledger-setup-status'] }); },
     onError: writeFailedAs('Binding not saved'),
+  });
+};
+
+export const useBindSubCategory = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ code, ...body }: { code: string; companyId: number } & SubCategoryBinding) =>
+      authedFetch<{ ok: boolean }>(`/accounting/item-groups/sub-categories/${encodeURIComponent(code)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['item-groups'] }); },
+    onError: writeFailedAs('Sub-category binding not saved'),
   });
 };
 

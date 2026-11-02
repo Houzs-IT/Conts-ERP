@@ -4,6 +4,7 @@ import { twoStepPrompt } from './twoStepPrompt';
 import { invalidateCachePrefix } from './cached-fetch';
 import type { SessionUser } from './types';
 import { go } from './go';
+import { confirmLeaving } from './useLeaveGuard';
 
 /** The password was right and the account has two-step sign-in on: the code is asked for next. */
 export interface TwoStep { challenge: string; backupOnly: boolean }
@@ -91,6 +92,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     finish(await api.post<SignInAnswer>('/auth/login-2fa', { challenge, code }));
 
   const logout = async () => {
+    // Asked here, not on the move below: clearing the user removes the form that would ask.
+    if (!await confirmLeaving()) return;
     // Cleaners and technicians go back to their own door (/portal opens the PIN sign-in), the office to /.
     const worker = user?.role === 'housekeeper' || user?.role === 'technician';
     try { await api.post('/auth/logout'); } catch (e) { if (!(e instanceof ApiFailure)) throw e; }

@@ -6,7 +6,8 @@ import { hasAttendance, NOT_MIGRATED, readPunch, clockIn, clockOut, toView, ROW_
 const NOT_ON_LIST = 'Clocking in is for the company\'s own cleaners and technicians. Ask the office to add you.';
 
 /** GET /api/field/clock?month=YYYY-MM — the signed-in person's punch today and their days in the month (this month by
- *  default), for the portal's Clock screen. */
+ *  default), for the portal's Clock screen. After midnight a punch from yesterday still going stands in for today, so the
+ *  screen offers its clock-out. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -17,14 +18,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const today = mytToday();
   const asked = new URL(request.url).searchParams.get('month');
   const month = asked && /^\d{4}-(0[1-9]|1[0-2])$/.test(asked) ? asked : today.slice(0, 7);
+  const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
   const rows = me.id
-    ? await all<AttendanceRow>(env, `SELECT ${ROW_COLS} FROM attendance WHERE employee_id = ? AND (work_date LIKE ? OR work_date = ?) ORDER BY work_date DESC`,
-      me.id, `${month}-%`, today)
+    ? await all<AttendanceRow>(env, `SELECT ${ROW_COLS} FROM attendance WHERE employee_id = ? AND (work_date LIKE ? OR work_date IN (?, ?)) ORDER BY work_date DESC`,
+      me.id, `${month}-%`, today, yesterday)
     : [];
-  const days = rows.map(r => toView(r, today));
+  const days = rows.map(r => toView(r));
+  const going = days.find(d => d.date === yesterday && !d.clockOutAt && !d.forgotOut) ?? null;
   const inMonth = days.filter(d => d.date.startsWith(month));
   return json({
-    name: me.name, employeeId: me.employeeId, today: days.find(d => d.date === today) ?? null, month,
+    name: me.name, employeeId: me.employeeId, today: days.find(d => d.date === today) ?? going, month,
     days: inMonth, totals: { days: inMonth.length, minutes: inMonth.reduce((n, d) => n + d.minutes, 0), forgotten: inMonth.filter(d => d.forgotOut).length },
   });
 };

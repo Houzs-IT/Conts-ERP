@@ -40,10 +40,8 @@ const SUBS = [['listing', 'Listing'], ['space', 'Space'], ['owner', 'Owner'], ['
 type Sub = typeof SUBS[number][0];
 type Doc = UnitDetail['documents'][number];
 
-/** The bar above an editable tab: what is pending, and the one Save for the whole unit. `auto`: the tab saves itself
- *  when a box is left, so the bar only says where that stands, with Save again after a refused save. `hold`: a change
- *  that waits for Save even so (moving the unit), and why. */
-export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra, auto, failed, hold }: { title: string; sub?: string; dirty: boolean; saving: boolean; canEdit: boolean; onSave: () => void; extra?: ReactNode; auto?: boolean; failed?: boolean; hold?: string }) {
+/** The bar above an editable tab: what is pending, and the one Save for the whole unit. */
+export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra }: { title: string; sub?: string; dirty: boolean; saving: boolean; canEdit: boolean; onSave: () => void; extra?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
       <div className="flex flex-col gap-1 min-w-0">
@@ -52,13 +50,7 @@ export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra, aut
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {extra}
-        {canEdit && auto && <>
-          <span role="status" className={failed ? 'text-meta text-critical' : dirty && !saving ? 'text-meta text-warning' : 'text-meta text-muted-ink'}>
-            {saving ? 'Saving…' : failed ? 'Not saved' : hold && dirty ? hold : dirty ? 'Unsaved changes' : 'Saved. Changes save when you leave a box.'}
-          </span>
-          {(failed || hold) && dirty && !saving && <Button variant="primary" size="sm" onClick={onSave}>{failed ? 'Save again' : 'Save'}</Button>}
-        </>}
-        {canEdit && !auto && <>
+        {canEdit && <>
           {dirty && <span className="text-meta text-warning">Unsaved changes</span>}
           <Button variant="primary" size="sm" loading={saving} disabled={!dirty} disabledReason="Nothing has changed" onClick={onSave}>Save changes</Button>
         </>}

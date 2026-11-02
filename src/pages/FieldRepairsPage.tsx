@@ -6,6 +6,7 @@ import { EmptyState, Skeleton } from '../components/States';
 import { AttachmentLabel, MediaGallery, FileList, type MediaItem } from '../components/Attachments';
 import { StatusBadge } from '../components/StatusBadge';
 import { useToast } from '../components/Toast';
+import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
@@ -53,10 +54,10 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
     const t = window.setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 60_000);
     return () => window.clearInterval(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const [tab, setTab] = useState<'mine' | 'open'>('mine');
+  const [tab, setTab] = useState<'all' | 'mine' | 'open'>('all');
   const [open, setOpen] = useState<string | null>(null);
   // A notice tapped in the bell: open that repair (the sheet loads it by id and says so if it is not theirs).
-  useEffect(() => { if (linkRepair) { setTab('mine'); setOpen(linkRepair); onLinked?.(); } }, [linkRepair]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (linkRepair) { setTab('all'); setOpen(linkRepair); onLinked?.(); } }, [linkRepair]); // eslint-disable-line react-hooks/exhaustive-deps
   const [reporting, setReporting] = useState(false);
   const toast = useToast();
   const t = usePortalText();
@@ -65,7 +66,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const todo = mine.filter(r => r.state !== 'resolved' && !r.endedAt);
   const finished = mine.filter(r => r.state === 'resolved' || r.endedAt);
   const pool = data?.open ?? [];
-  const rows = tab === 'mine' ? todo : pool;
+  const rows = tab === 'all' ? [...todo, ...pool] : tab === 'mine' ? todo : pool;
   const fresh = useFreshIds([...mine, ...pool].map(r => r.id), 'repairs', !!data);
 
   return (
@@ -78,6 +79,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
         </div>
         {data?.mayPick && (
           <Segmented label={tr.which} className="[&>button]:h-11" value={tab} onChange={setTab} options={[
+            { value: 'all', label: <>{tr.all} <span className="text-muted-ink tabular-nums">{todo.length + pool.length}</span></> },
             { value: 'mine', label: <>{tr.mine} <span className="text-muted-ink tabular-nums">{todo.length}</span></> },
             { value: 'open', label: <>{tr.open} <span className="text-muted-ink tabular-nums">{pool.length}</span></> },
           ]} />
@@ -91,8 +93,8 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
             body={tab === 'open' ? tr.noOpenBody : data?.mayPick ? tr.noMineBodyPick : tr.noMineBody} />
           : (
             <div className="flex flex-col gap-2.5">
-              {rows.map(r => <RepairCard key={r.id} r={r} offer={tab === 'open'} fresh={fresh.has(r.id)} onOpen={() => setOpen(r.id)} />)}
-              {tab === 'mine' && finished.length > 0 && (
+              {rows.map(r => <RepairCard key={r.id} r={r} offer={pool.includes(r)} fresh={fresh.has(r.id)} onOpen={() => setOpen(r.id)} />)}
+              {tab !== 'open' && finished.length > 0 && (
                 <>
                   <h2 className="m-0 mt-2 text-[16px] font-semibold">{tr.finished}</h2>
                   {finished.map(r => <RepairCard key={r.id} r={r} onOpen={() => setOpen(r.id)} />)}
@@ -148,6 +150,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
   const [purchase, setPurchase] = useState<{ id: string; file: File; amountSen: number | null; spendDate: string | null } | null>(null);
   const [note, setNote] = useState('');
   const [doneNote, setDoneNote] = useState('');
+  const [confirm, ask] = useConfirm();
   const j = d.data?.job;
   const mine = !!d.data?.mine;
   const closed = j?.state === 'resolved';
@@ -170,6 +173,16 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
     try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); return true; }
     catch (e) { toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(e, t.jobs.checkSignal) }); refresh(); return false; }
     finally { setBusy(null); }
+  }
+  async function removePhoto(m: MediaItem) {
+    const ok = await ask({ title: m.kind === 'video' ? t.jobs.removeVideo : t.jobs.removePhoto, body: t.jobs.removeBody, confirmLabel: t.jobs.remove, cancelLabel: t.jobs.keep, danger: true });
+    if (ok === null) return;
+    void act('remove', () => api.del(`/maintenance/issues/${id}/photos/${m.id}`), m.kind === 'video' ? t.jobs.videoRemoved : t.jobs.photoRemoved);
+  }
+  async function removeFile(f: FileDoc) {
+    const ok = await ask({ title: tr.removeFile, body: tr.removeFileBody, confirmLabel: t.jobs.remove, cancelLabel: t.jobs.keep, danger: true });
+    if (ok === null) return;
+    void act('remove', () => api.del(`/maintenance/issues/${id}/documents/${f.id}`), tr.fileRemoved);
   }
   async function pickPurchase(list: FileList) {
     const file = list[0];
@@ -292,8 +305,8 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
                   { value: 'before', label: <>{tr.before} <span className="text-muted-ink tabular-nums">{counts.before}</span></> },
                   { value: 'after', label: <>{tr.after} <span className="text-muted-ink tabular-nums">{counts.after}</span></> },
                 ]} />
-                <MediaGallery key={stage} items={media.filter(m => m.stage === stage)} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: stage }) : undefined}
-                  onDone={refresh} addLabel={stage === 'before' ? tr.addBefore : tr.addAfter}
+                <MediaGallery key={stage} items={media.filter(m => m.stage === stage)} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: stage }, `${j.propertyName} ${j.unitNumber}`) : undefined}
+                  onDone={refresh} onRemove={working ? m => void removePhoto(m) : undefined} addLabel={stage === 'before' ? tr.addBefore : tr.addAfter}
                   emptyText={stage === 'before' ? tr.noBefore : tr.noAfter} />
               </section>
 
@@ -318,7 +331,9 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
                       </span>
                     </div>
                   )}
-                  <FileList files={d.data!.files.map(f => ({ id: f.id, name: f.fileName, href: f.url, size: f.byteSize, label: `${f.kind in tr.fileKind ? wordFor(tr.fileKind, f.kind) : tr.fileKind.other} · ${short(f.uploadedAt.slice(0, 10))}` }))}
+                  <FileList files={d.data!.files.map(f => ({ id: f.id, name: f.fileName, href: f.url, size: f.byteSize, label: `${f.kind in tr.fileKind ? wordFor(tr.fileKind, f.kind) : tr.fileKind.other} · ${short(f.uploadedAt.slice(0, 10))}`,
+                    // A purchase was also handed in to finance as a receipt: it is cancelled there, not here.
+                    onRemove: working && f.kind !== 'purchase' ? () => void removeFile(f) : undefined, removeLabel: `${t.jobs.remove} ${f.fileName}` }))}
                     add={working && !purchase ? (fileKind === 'purchase'
                       ? { label: busy === 'reading' ? tr.reading : tr.addFile, hint: tr.purchaseHint, accept: 'image/*,application/pdf', multiple: false, busy: busy === 'reading', onPick: fl => void pickPurchase(fl) }
                       : { label: tr.addFile, hint: tr.addFileHint, accept: 'image/*,application/pdf', multiple: true, busy: busy === 'files', onPick: fl => void uploadFiles(fl) }) : undefined} />
@@ -353,6 +368,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
           <div className="max-w-[560px] mx-auto">{footer}</div>
         </footer>
       )}
+      {confirm}
     </div>
   );
 }
@@ -401,7 +417,7 @@ function ReportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
     }
     if (picked.files.length) {
       setSending(true);
-      const failed = await picked.send(id);
+      const failed = await picked.send(inBuilding.filter(u => u.id === f.unitId).map(u => `${u.propertyName} ${u.unitNumber}`)[0] ?? '', id);
       if (failed.length) toast({ tone: 'warning', title: tf.someNotAdded, body: tf.notAdded(failed.join(', ')) });
     }
     onDone();

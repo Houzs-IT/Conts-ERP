@@ -22,7 +22,7 @@ describe("migrations 0061 and 0163 seed the same tree as renovation-catalog.ts",
 
   // 0061 also seeds a photo flag; migration 0130 switched it off (photos are optional).
   test("groups: code, label, lower-case stage key", () => {
-    const rows = tuples(sql + "\n" + read("0163_airbnb_supplies_group.sql"), /^\s+\('([A-Z]+)', '([^']+)', '([a-z_]+)', (?:true|false), \d+\)[,;]$/gm);
+    const rows = tuples(sql + "\n" + read("0163_airbnb_supplies_group.sql") + "\n" + read("0190_raw_material_group_inhouse_supplier.sql"), /^\s+\('([A-Z]+)', '([^']+)', '([a-z_]+)', (?:true|false), \d+\)[,;]$/gm);
     expect(rows.map(([code, label, stage]) => ({ code, label, stage }))).toEqual(
       RENOVATION_GROUPS.map((g) => ({ code: g.code, label: g.label, stage: g.stage })),
     );
@@ -36,7 +36,7 @@ describe("migrations 0061 and 0163 seed the same tree as renovation-catalog.ts",
 
   test("sub-categories: group, code, label, sort, legacy list (0061, the Notion trades of 0085, Eye ball of 0141, Airbnb of 0163)", () => {
     const byCode = (a: { code: string }, b: { code: string }) => a.code.localeCompare(b.code);
-    const both = sql + "\n" + read("0085_renovation_works_subs_notion.sql") + "\n" + read("0141_service_site_trades.sql") + "\n" + read("0163_airbnb_supplies_group.sql");
+    const both = sql + "\n" + read("0085_renovation_works_subs_notion.sql") + "\n" + read("0141_service_site_trades.sql") + "\n" + read("0163_airbnb_supplies_group.sql") + "\n" + read("0190_raw_material_group_inhouse_supplier.sql");
     const rows = tuples(both, /^\s+\('([A-Z]+)', '([A-Z_]+)', '([^']+)', (\d+), (?:'\{\}'|array\[([^\]]*)\])::text\[\]\)[,;]?$/gm);
     expect(
       rows.map(([group, code, label, sort, legacy]) => ({

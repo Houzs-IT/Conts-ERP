@@ -62,6 +62,7 @@ import fleet from "./routes/fleet";
 // fleet.read/fleet.write permission alone; it uses the SCM supabase client via
 // supabaseAuth. Distinct from routes/fleet.ts (the crew picker).
 import fleetMaintenance from "./scm/routes/fleet-maintenance";
+import { fleetWorkOrderPhotos } from "./scm/routes/fleet-work-order-photos";
 // `routes/lorries.ts` removed 2026-06-28 — old Houzs Fleet lorries CRUD retired
 // in favour of scm.lorries (mounted at /api/scm/lorries). public.lorries data
 // was migrated by mig 0055 then the dead table dropped. /api/fleet/staff stays
@@ -133,7 +134,8 @@ import renovation from "./routes/renovation";
 // Beta project workspace.
 import renovationBeta from "./routes/renovationBeta";
 import renovationBetaSheets from "./routes/renovationBetaSheets";
-import { drainEmailOutbox } from "./services/email";
+import { drainEmailOutbox, sendEmail } from "./services/email";
+import { sweepAllCostAlerts } from "./acc/reno-cost-alerts";
 import { runClientErrorDigest } from "./services/clientErrors";
 import { runSlaEscalation } from "./services/assrEscalation";
 import { runAssrAlerts, runAssrDailyDigest } from "./services/assrAlerts";
@@ -493,6 +495,7 @@ app.route("/api/sales", sales);
 app.route("/api/finance", finance);
 app.route("/api/stockitems", stockItems);
 app.route("/api/fleet", fleet);
+app.route("/api/fleet-maintenance", fleetWorkOrderPhotos);
 app.route("/api/fleet-maintenance", fleetMaintenance);
 app.route("/api/settings", settings);
 app.route("/api/branding", branding);
@@ -828,6 +831,18 @@ export default {
             if (r.requeued) console.warn(`[cron vp-reconcile] requeued=${r.requeued}`);
           })
           .catch((e) => console.error("[cron vp-reconcile]", e))
+      );
+      /* Renovation cost alerts (SOP 4.2.1; acc/reno-cost-alerts): finance's
+         "Needs review" list and the sidebar count read what this keeps. The
+         HOD email inside it is off until a company switches it on. */
+      ctx.waitUntil(
+        sweepAllCostAlerts(getSupabaseService(env), async (m) =>
+          (await sendEmail(env, { to: m.to, subject: m.subject, html: m.html, purpose: "reno_cost_alert" })).status !== "skipped")
+          .then((r) => {
+            const busy = r.filter((x) => "error" in x || x.raised || x.cleared || x.mailed);
+            if (busy.length) console.log(`[cron reno-cost-alerts] ${JSON.stringify(busy)}`);
+          })
+          .catch((e) => console.error("[cron reno-cost-alerts]", e))
       );
       // ASSR/QMS v3.1 — per-stage alert scanner (half / approaching / breach).
       // Cheap: one query over open stage_history rows, idempotent via the
