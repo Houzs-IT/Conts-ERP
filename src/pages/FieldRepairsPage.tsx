@@ -54,10 +54,10 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
     const t = window.setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 60_000);
     return () => window.clearInterval(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const [tab, setTab] = useState<'mine' | 'open'>('mine');
+  const [tab, setTab] = useState<'all' | 'mine' | 'open'>('all');
   const [open, setOpen] = useState<string | null>(null);
   // A notice tapped in the bell: open that repair (the sheet loads it by id and says so if it is not theirs).
-  useEffect(() => { if (linkRepair) { setTab('mine'); setOpen(linkRepair); onLinked?.(); } }, [linkRepair]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (linkRepair) { setTab('all'); setOpen(linkRepair); onLinked?.(); } }, [linkRepair]); // eslint-disable-line react-hooks/exhaustive-deps
   const [reporting, setReporting] = useState(false);
   const toast = useToast();
   const t = usePortalText();
@@ -66,7 +66,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const todo = mine.filter(r => r.state !== 'resolved' && !r.endedAt);
   const finished = mine.filter(r => r.state === 'resolved' || r.endedAt);
   const pool = data?.open ?? [];
-  const rows = tab === 'mine' ? todo : pool;
+  const rows = tab === 'all' ? [...todo, ...pool] : tab === 'mine' ? todo : pool;
   const fresh = useFreshIds([...mine, ...pool].map(r => r.id), 'repairs', !!data);
 
   return (
@@ -79,6 +79,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
         </div>
         {data?.mayPick && (
           <Segmented label={tr.which} className="[&>button]:h-11" value={tab} onChange={setTab} options={[
+            { value: 'all', label: <>{tr.all} <span className="text-muted-ink tabular-nums">{todo.length + pool.length}</span></> },
             { value: 'mine', label: <>{tr.mine} <span className="text-muted-ink tabular-nums">{todo.length}</span></> },
             { value: 'open', label: <>{tr.open} <span className="text-muted-ink tabular-nums">{pool.length}</span></> },
           ]} />
@@ -92,8 +93,8 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
             body={tab === 'open' ? tr.noOpenBody : data?.mayPick ? tr.noMineBodyPick : tr.noMineBody} />
           : (
             <div className="flex flex-col gap-2.5">
-              {rows.map(r => <RepairCard key={r.id} r={r} offer={tab === 'open'} fresh={fresh.has(r.id)} onOpen={() => setOpen(r.id)} />)}
-              {tab === 'mine' && finished.length > 0 && (
+              {rows.map(r => <RepairCard key={r.id} r={r} offer={pool.includes(r)} fresh={fresh.has(r.id)} onOpen={() => setOpen(r.id)} />)}
+              {tab !== 'open' && finished.length > 0 && (
                 <>
                   <h2 className="m-0 mt-2 text-[16px] font-semibold">{tr.finished}</h2>
                   {finished.map(r => <RepairCard key={r.id} r={r} onOpen={() => setOpen(r.id)} />)}
