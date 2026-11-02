@@ -47,6 +47,7 @@ export const allow = {
   'functions/_lib/history.ts': 'Writes in parts of 1,000 rows per INSERT; the loop is over parts, not rows.',
   'functions/api/statements/generate.ts': 'Writes statement lines in parts of 2,000 rows per INSERT; the loop is over parts.',
   'functions/api/rates/bulk.ts': 'One INSERT per unit and date range (at most 20 ranges), then one queue insert per unit (channexQueue.enqueueRestrictionsMany).',
+  'functions/_lib/utilityScan.ts': 'One save of scanned utility bills (at most 300 pages, about 40 a month per provider); each bill takes its own lock and duplicate check before it is written, so two people recording the same bill cannot both save it.',
   'functions/api/reservations/import.ts': 'At most 100 rows per request (the screen sends 50); each row must be checked against the bookings before it.',
   // Background work: the cron worker and the queue flush, not a person waiting on a request.
   'functions/_lib/channexQueue.ts': 'Queue flush: one Channex call per property and kind, at most 10 per minute each (their rate limit).',
