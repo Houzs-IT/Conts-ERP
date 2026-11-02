@@ -12,6 +12,8 @@
  "DELETE /api/fabrics/[id]": "AFFFFFFU",
  "DELETE /api/fleet-health/[id]": "AFFFFFFU",
  "DELETE /api/housekeeping/unit-prices": "AAFFFFFU",
+ "DELETE /api/maintenance/issues/[id]/documents/[docId]": "AAAFAAFU",
+ "DELETE /api/maintenance/issues/[id]/photos/[docId]": "AAAFAAFU",
  "DELETE /api/maintenance/issues/[id]/windows/[wid]": "AAAFFFFU",
  "DELETE /api/operations/job-invoices/[id]": "AAFFFFFU",
  "DELETE /api/owners/[id]/accounts/[accountId]": "AFFAFFFU",
