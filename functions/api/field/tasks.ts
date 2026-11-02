@@ -6,6 +6,7 @@ import { unitLayoutSql, unitMattressesSql, unitLayout } from '../../_lib/unitLay
 import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners } from '../../_lib/taskCleaners';
 import { LIVE_STAY_SQL, mytToday, isDay, standardItems } from '../../_lib/cleaning';
 import { hasCleanPrices } from '../../_lib/cleaningPrices';
+import { AFTER_FILE_SQL } from '../../_lib/media';
 
 /** GET /api/field/tasks?date=today — the signed-in person's own jobs for the day (plus, for today, anything left over from earlier),
  *  with the guest leaving and the guest arriving on each unit, so a cleaner on the phone sees what the office sees.
@@ -32,6 +33,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name, p.address_line,
            (SELECT c.instruction FROM access_credentials c WHERE c.unit_id = u.id${usedBy} ORDER BY c.updated_at DESC LIMIT 1) AS access_instruction,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video')) AS photo_count,
+           (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video') AND ${AFTER_FILE_SQL('d')}) AS after_count,
            (SELECT COUNT(*)::int FROM task_checklist_items c WHERE c.task_id = t.id AND c.done_at IS NOT NULL) AS ticks,
            (SELECT COUNT(*)::int FROM task_checklist_items c WHERE c.task_id = t.id AND c.item_key LIKE 'c-%') AS custom_items,
            prev.id AS prev_id, prev.state AS prev_state, prev.check_out_time AS prev_time, COALESCE(NULLIF(pg.full_name, ''), CASE WHEN prev.id IS NOT NULL THEN 'Guest' END) AS prev_guest,
@@ -70,9 +72,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         // Who else is on the job with this cleaner (owner, 11 Oct 2026: several cleaners per clean).
         team: parseCleaners(r.cleaner_list).filter(c => c.userId !== session.userId).map(c => c.name),
         readiness: r.readiness, done: r.state === 'resolved', flag: sameDay ? 'Same-day turnaround' : null,
-        requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count),
+        requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count), afterCount: Number(r.after_count),
         checklist: { done: Number(r.ticks), total: standardItems(r.kind).length + Number(r.custom_items) },
-        guestOut, guestLeftAuto: (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_time || defaultOut}:00+08:00`), previous: r.prev_guest ? { guestName: r.prev_guest, checkOutTime: r.prev_time || '11:00', state: r.prev_state } : null,
+        guestOut, guestLeftAt: r.guest_left_at ?? null, guestLeftAuto: (!!r.guest_left_at && r.guest_left_at === `${r.day}T${r.prev_time || defaultOut}:00+08:00`), previous: r.prev_guest ? { guestName: r.prev_guest, checkOutTime: r.prev_time || '11:00', state: r.prev_state } : null,
         next: r.next_guest ? { guestName: r.next_guest, checkInTime: r.next_time || '15:00', checkInAt: `${r.day}T${r.next_time || '15:00'}:00+08:00` } : null,
         sync: r.state === 'resolved' ? 'synced' : r.sync === 'synced' ? null : r.sync,
         syncedAt: r.state === 'resolved' ? r.updated_at : null,
