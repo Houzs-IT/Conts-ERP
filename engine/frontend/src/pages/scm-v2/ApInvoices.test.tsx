@@ -158,7 +158,8 @@ describe('raising an AP invoice', () => {
     expect((within(d).getByText('Save as draft').closest('button') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 'rental' } });
     /* Conts: the project a cost belongs to (renovation completion %, plan 2026-10-31 Task 2) — blank means none. */
-    fireEvent.change(within(d).getByLabelText('line 1 project'), { target: { value: '7' } });
+    fireEvent.click(within(d).getByRole('button', { name: 'line 1 project' }));
+    fireEvent.click(screen.getByText('SKYLINE D-25-13'));
     fireEvent.click(within(d).getByText('Save as draft'));
     await waitFor(() => expect(createAsync).toHaveBeenCalled());
     expect(createAsync.mock.calls[0]![0]).toMatchObject({

@@ -25,6 +25,10 @@ let reservations: { byPi: Record<string, number>; byApInvoice: Record<string, nu
 let refundSource: Record<string, unknown> | undefined;
 /* Conts (finance phase 1.5): the project field reads its own queries; this page's tests are about the voucher. */
 vi.mock('../../conts/ProjectLimitField', () => ({ ProjectLimitField: () => null }));
+vi.mock('../../vendor/scm/components/ConfirmDialog', () => ({ useConfirm: () => vi.fn(async () => true) }));
+vi.mock('../../conts/Pickers', () => ({
+  UnitPicker: ({ value, onChange, ariaLabel }: { value: string | null; onChange: (v: string | null) => void; ariaLabel: string }) => <input aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value || null)} />,
+}));
 vi.mock('../../vendor/scm/lib/payment-voucher-queries', () => ({
   useCreatePaymentVoucher: () => ({ mutateAsync, isPending: false }),
   usePvReservations: () => ({ data: reservations, isLoading: false }),
@@ -596,9 +600,45 @@ describe('departments on a plain voucher', () => {
     try {
       draw('/scm/payment-vouchers/new?copyFrom=pv-9');
       await waitFor(() => expect(screen.getByDisplayValue('Electricity Aug')).toBeTruthy());
-      expect((screen.getByLabelText('Line 1 department') as HTMLSelectElement).value).toBe('shared');
+      /* A copy's lines all Shared: the voucher reads as for the Company (chew 2 Nov 2026). */
+      expect(screen.getByRole('radio', { name: 'Company' }).getAttribute('aria-checked')).toBe('true');
     } finally {
       copySourceDetail = undefined;
     }
+  });
+
+  /* Who it is for (chew 2 Nov 2026; plan 2026-11-02-voucher-purpose Task 3). */
+  test('Rental sets the department, offers a unit per line, and the save sends it', async () => {
+    mutateAsync.mockClear();
+    scanned();
+    fireEvent.click(screen.getByRole('radio', { name: 'Rental' }));
+    expect(screen.queryByLabelText('Line 1 department')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Line 1 unit'), { target: { value: 'u-a31' } });
+    fireEvent.click(screen.getByText('Create Voucher').closest('button')!);
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    const payload = mutateAsync.mock.calls[0]![0] as { lines: Array<{ department?: string; unitId?: string | null }> };
+    expect(payload.lines).toMatchObject([{ department: 'rental', unitId: 'u-a31' }]);
+  });
+
+  test('Renovation needs the project before it saves', async () => {
+    mutateAsync.mockClear();
+    scanned();
+    fireEvent.click(screen.getByRole('radio', { name: 'Renovation' }));
+    expect(screen.queryByLabelText('Line 1 unit')).toBeNull();
+    fireEvent.click(screen.getByText('Create Voucher').closest('button')!);
+    await waitFor(() => expect(screen.getByText('Choose the project this renovation cost belongs to.')).toBeTruthy());
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  test('Company sends Shared with no unit', async () => {
+    mutateAsync.mockClear();
+    scanned();
+    fireEvent.click(screen.getByRole('radio', { name: 'Rental' }));
+    fireEvent.change(screen.getByLabelText('Line 1 unit'), { target: { value: 'u-a31' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Company' }));
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Company' }).getAttribute('aria-checked')).toBe('true'));
+    fireEvent.click(screen.getByText('Create Voucher').closest('button')!);
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    expect((mutateAsync.mock.calls[0]![0] as { lines: unknown[] }).lines).toMatchObject([{ department: 'shared', unitId: null }]);
   });
 });

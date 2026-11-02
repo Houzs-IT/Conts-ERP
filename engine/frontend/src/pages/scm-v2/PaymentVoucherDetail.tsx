@@ -67,6 +67,9 @@ import { useUnsavedWork } from '../../lib/unsavedWork';
 
 import { fmtMoneySen } from '../../vendor/shared/format';
 import { ProjectLimitField } from '../../conts/ProjectLimitField';
+import { UnitName, UnitPicker } from '../../conts/Pickers';
+import { VoucherForSwitch } from '../../conts/VoucherForSwitch';
+import { applyFor, departmentFor, forOfLines, nextLineUnit, whatSwitchingDrops, type VoucherFor } from '../../conts/voucherPurpose';
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
 
@@ -97,14 +100,17 @@ type EditLine = {
   amountSen:      number;
   /* Conts: the line's department (spec 3.5), required on an expense line. */
   department:       Department | '';
+  /* Conts (chew 2 Nov 2026): a Rental line's unit, finance only. */
+  unitId:           string | null;
 };
 
-const newLine = (department: Department | '' = ''): EditLine => ({
+const newLine = (department: Department | '' = '', unitId: string | null = null): EditLine => ({
   rid:              `l${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   description:      '',
   debitAccountCode: '',
   amountSen:      0,
   department,
+  unitId:           department === 'rental' ? unitId : null,
 });
 const departmentOf = (d: unknown): Department | '' => (DEPARTMENT_OPTIONS.some((o) => o.value === d) ? (d as Department) : '');
 
@@ -240,6 +246,10 @@ export const PaymentVoucherDetail = () => {
      editable as the fallback. Mirrors PaymentVoucherNew. */
   const [myrPaidSen, setMyrPaidSen]               = useState<number | null>(null);
   const [editLines, setEditLines]                 = useState<EditLine[]>([]);
+  /* Conts (chew 2 Nov 2026): who the voucher is for; it sets every line's department. */
+  const [voucherFor, setVoucherFor]               = useState<VoucherFor | ''>('');
+  /* Chosen, or else what the lines already say (each line's department picked by hand). */
+  const effFor: VoucherFor | '' = voucherFor || forOfLines(editLines);
   /* A Customer Refund (§14) has ONE line the system writes; an edit moves the
      amount and the server re-composes it (refundAmountSen), never the lines. */
   const isRefundPv = isRefundPurpose(pv?.purpose);
@@ -282,24 +292,37 @@ export const PaymentVoucherDetail = () => {
     setEditAdvanceSen(pvTypeOf(pv.purpose) === 'SUPPLIER_PAYMENT'
       ? Math.max(0, Number(pv.total_sen ?? 0) - applied.reduce((s, [, v]) => s + v, 0))
       : 0);
-    setEditLines(
-      lines.length > 0
-        ? lines.map((l) => ({
-            rid:              `l${l.id}`,
-            description:      l.description ?? '',
-            debitAccountCode: l.debit_account_code ?? '',
-            amountSen:      Number(l.amount_sen ?? 0),
-            department:     departmentOf(l.department),
-          }))
-        : [newLine()],
-    );
+    const loaded: EditLine[] = lines.length > 0
+      ? lines.map((l) => ({
+          rid:              `l${l.id}`,
+          description:      l.description ?? '',
+          debitAccountCode: l.debit_account_code ?? '',
+          amountSen:      Number(l.amount_sen ?? 0),
+          department:     departmentOf(l.department),
+          unitId:         departmentOf(l.department) === 'rental' && (l as { unit_id?: string | null }).unit_id ? String((l as { unit_id?: string | null }).unit_id) : null,
+        }))
+      : [newLine()];
+    setEditLines(loaded);
+    setVoucherFor(forOfLines(loaded));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing, pv?.id]);
 
   const setLine  = (rid: string, patch: Partial<EditLine>) =>
     setEditLines((prev) => prev.map((l) => (l.rid === rid ? { ...l, ...patch } : l)));
   const dropLine = (rid: string) => setEditLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.rid !== rid)));
-  const addLine  = () => setEditLines((prev) => [...prev, newLine(nextLineDepartment(prev))]);
+  const addLine  = () => setEditLines((prev) => [...prev, newLine(departmentFor(effFor) || nextLineDepartment(prev), nextLineUnit(prev))]);
+  /* Switching who it is for re-sets every line's department; it asks first when units or the project would go. */
+  const chooseFor = async (f: VoucherFor) => {
+    const drops = whatSwitchingDrops(editLines, editProjectId, f);
+    if (drops.length > 0 && !(await askConfirm({
+      title: `Switch to ${f === 'rental' ? 'Rental' : f === 'renovation' ? 'Renovation' : 'Company'}?`,
+      body: `This clears ${drops.join(' and ')} already chosen.`,
+      confirmLabel: 'Switch',
+    }))) return;
+    setVoucherFor(f);
+    setEditLines((prev) => applyFor(prev, f));
+    if (f === 'rental' || f === 'company') setEditProjectId(null);
+  };
 
   const editLinesTotalSen = useMemo(() => editLines.reduce((s, l) => s + l.amountSen, 0), [editLines]);
   const viewTotalSen = Number(pv?.total_sen ?? 0);
@@ -426,6 +449,8 @@ export const PaymentVoucherDetail = () => {
     if (apEdit && !apAccountCode) { void notify({ title: 'No AP control account', body: 'The AP / Other Creditor role has no account yet — set it on Accounting.', tone: 'error' }); return; }
     if (apEdit && editTotalSen <= 0) { void notify({ title: 'Nothing to pay yet', body: 'Tick an invoice, type a partial amount, or enter a prepay figure.', tone: 'error' }); return; }
     if (!isRefundPv && !apEdit && realLines.length === 0) { notify({ title: 'Add at least one line', body: 'Each line needs a debit account and an amount > 0.', tone: 'error' }); return; }
+    if (!isRefundPv && !apEdit && !effFor) { void notify({ title: 'Choose who this is for', body: 'Rental, Renovation or Company — it sets each line’s department.', tone: 'error' }); return; }
+    if (!isRefundPv && !apEdit && effFor === 'renovation' && editProjectId == null) { void notify({ title: 'Choose the project', body: 'Choose the project this renovation cost belongs to.', tone: 'error' }); return; }
     if (!isRefundPv && !apEdit && realLines.some((l) => !l.department)) { void notify({ title: 'Choose each line’s department', body: 'Rental, Renovation or Shared — the reports by department read it.', tone: 'error' }); return; }
     if (editOverAllocated) {
       notify({ title: 'Applied more than the voucher total', body: `You've applied ${fmtRm(editAllocatedSen)} to PIs but the voucher total is only ${fmtRm(editTotalSen)}.`, tone: 'error' });
@@ -477,6 +502,7 @@ export const PaymentVoucherDetail = () => {
               debitAccountCode: l.debitAccountCode,
               amountSen:      l.amountSen,
               department:     l.department || undefined,
+              unitId:         l.department === 'rental' ? l.unitId : null,
             })) }),
         // Always send allocations for a SUPPLIER_PAYMENT edit (empty clears
         // them); FREIGHT/OTHER omit the key so the server leaves them untouched.
@@ -757,8 +783,13 @@ export const PaymentVoucherDetail = () => {
                 <span className={styles.fieldLabel}>Notes</span>
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className={styles.fieldInput} rows={2} style={{ resize: 'vertical', minHeight: 60 }} />
               </label>
-              {!isRefundPv && (
-                <ProjectLimitField projectId={editProjectId} onChange={setEditProjectId} amountSen={viewTotalSen} exceptPvId={id}
+              {!isRefundPv && !apEdit && (
+                <div className={styles.field}>
+                  <VoucherForSwitch value={effFor} onChange={(f) => void chooseFor(f)} labelClass={styles.fieldLabel} />
+                </div>
+              )}
+              {!isRefundPv && (apEdit || effFor === 'renovation' || effFor === 'mixed') && (
+                <ProjectLimitField projectId={editProjectId} onChange={setEditProjectId} amountSen={viewTotalSen} exceptPvId={id} required={effFor === 'renovation'}
                   fieldClass={styles.field} labelClass={styles.fieldLabel} inputClass={styles.fieldInput} />
               )}
             </div>
@@ -808,7 +839,10 @@ export const PaymentVoucherDetail = () => {
                           <LineFilesButton docType="payment_voucher" docId={String(pv.id)} lineId={String(l.id)} canEdit={pv.status !== 'CANCELLED'} />
                         </div>
                       </td>
-                      <td style={{ padding: '6px 8px' }}>{departmentLabel(l.department as string | null | undefined)}</td>
+                      <td style={{ padding: '6px 8px' }}>
+                        {departmentLabel(l.department as string | null | undefined)}
+                        {(l as { unit_id?: string | null }).unit_id ? <span style={{ color: 'var(--fg-muted)' }}> · <UnitName id={(l as { unit_id?: string | null }).unit_id} /></span> : null}
+                      </td>
                       <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtRm(Number(l.amount_sen ?? 0), currency)}</td>
                     </tr>
                   ))}
@@ -854,11 +888,19 @@ export const PaymentVoucherDetail = () => {
                         onCommit={(sen) => setLine(l.rid, { amountSen: sen ?? 0 })}
                         inputClassName={styles.fieldInput} selectOnFocus />
                     </label>
-                    <label className={styles.field}>
-                      <span className={styles.fieldLabel}>Department *</span>
-                      <DepartmentSelect className={styles.fieldInput} label={`Line ${idx + 1} department`} blank="Choose…"
-                        value={l.department} onChange={(d) => setLine(l.rid, { department: d })} />
-                    </label>
+                    {effFor === 'mixed' || effFor === '' ? (
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Department *</span>
+                        <DepartmentSelect className={styles.fieldInput} label={`Line ${idx + 1} department`} blank="Choose…"
+                          value={l.department} onChange={(d) => setLine(l.rid, { department: d, unitId: d === 'rental' ? l.unitId : null })} />
+                      </label>
+                    ) : l.department === 'rental' ? null : <span />}
+                    {l.department === 'rental' && (
+                      <div className={styles.field}>
+                        <span className={styles.fieldLabel}>Unit</span>
+                        <UnitPicker value={l.unitId} onChange={(u) => setLine(l.rid, { unitId: u })} inputClass={styles.fieldInput} ariaLabel={`Line ${idx + 1} unit`} />
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

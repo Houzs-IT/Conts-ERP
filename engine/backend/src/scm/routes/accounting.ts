@@ -32,6 +32,7 @@ import { todayMyt } from '../lib/my-time';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { einvoiceOutboxGet, einvoiceOutboxList, einvoiceRefresh, einvoiceSettingsGet, einvoiceSettingsPut } from '../../acc/einvoice-routes';
 import { renoProjectsHandler } from '../../acc/reno-projects';
+import { listUnitsHandler } from '../../conts/units-route';
 import {
   changeExpectedCostHandler, expectedCostLogHandler, getAlertSettingsHandler, keepCostAlertHandler, listCostAlertsHandler,
   pendingCostAlertsHandler, putAlertSettingsHandler,
@@ -234,6 +235,7 @@ accounting.get('/debtors', listDebtorsHandler);
 accounting.get('/party-ledger', partyLedgerHandler);
 /* Conts: a project's limit and extra limit (conts/project-limit-routes.ts; SOP 3.4). */
 accounting.get('/projects', listProjectsHandler);
+accounting.get('/units', listUnitsHandler);
 accounting.get('/everyday-expense', listEverydayExpenseHandler);
 accounting.put('/everyday-expense', setEverydayExpenseHandler);
 accounting.get('/projects/:id/limit', projectLimitHandler);
