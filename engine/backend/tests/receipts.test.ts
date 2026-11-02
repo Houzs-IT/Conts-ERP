@@ -397,3 +397,36 @@ describe('departments on a receipt', () => {
     expect(linesOf(tables, made.receiptNumber)).toEqual([['310-0010', 500, 0, 'shared'], ['700-0000', 0, 500, 'shared']]);
   });
 });
+
+/* A receipt line can name its project or unit (chew 2 Nov 2026; plan 2026-11-02-renovation-close-out Task 1): a
+   building deposit coming back is credited to its project, so the project's deposit balance clears. */
+describe('a receipt line names its project or unit', () => {
+  const tagged = (): Record<string, Row[]> => ({
+    ...baseTables(),
+    accounts: [...baseTables().accounts, { company_id: CO, account_code: '330-0040', account_name: 'DEPOSIT - RENOVATION', acc_money: false, is_active: true }],
+    projects: [{ id: 7, company_id: CO, name: 'SKYLINE D-25-13' }],
+    conts_units: [{ id: 'u-a31', building: 'ASTER HILL', unit_number: 'A-3-1' }],
+  });
+  const body = (line: Row) => ({ payerName: 'SKYLINE MC', receiptDate: `${thisMonth}-05`, bankAccountCode: '310-0010', lines: [{ creditAccountCode: '330-0040', amountSen: 100000, ...line }] });
+
+  test('the project rides to the credit line; the bank line carries none', async () => {
+    const tables = tagged();
+    const res = await post(harness(tables), '/', body({ department: 'supply', projectId: 7 }));
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(tables.acc_receipt_lines[0]).toMatchObject({ project_id: 7, unit_id: null });
+    const cr = tables.journal_entry_lines.find((l) => l.account_code === '330-0040')!;
+    const dr = tables.journal_entry_lines.find((l) => l.account_code === '310-0010')!;
+    expect([cr.project_id, dr.project_id ?? null]).toEqual([7, null]);
+  });
+
+  test('a unit on a Rental line rides too; refused on another department, and when unknown', async () => {
+    const tables = tagged();
+    expect((await post(harness(tables), '/', body({ department: 'rental', unitId: 'u-a31' }))).status).toBe(201);
+    expect(tables.journal_entry_lines.find((l) => l.account_code === '330-0040')!.unit_id).toBe('u-a31');
+    const shared = await post(harness(tagged()), '/', body({ department: 'shared', unitId: 'u-a31' }));
+    expect(shared.status).toBe(400);
+    expect(await shared.json()).toMatchObject({ error: 'unit_not_rental' });
+    expect(await (await post(harness(tagged()), '/', body({ department: 'rental', unitId: 'nope' }))).json()).toMatchObject({ error: 'unit_unknown' });
+    expect(await (await post(harness(tagged()), '/', body({ department: 'supply', projectId: 99 }))).json()).toMatchObject({ error: 'project_unknown' });
+  });
+});

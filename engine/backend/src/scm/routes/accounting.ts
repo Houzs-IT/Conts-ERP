@@ -43,7 +43,8 @@ import { beforeLedgerStartMessage, isBeforeLedgerStart, ledgerDatesRefusal, load
 import { backfillSoPayments, paymentEntryDisagreements, unbookedPayments } from '../../acc/payments';
 import { computeDailyBank } from '../../acc/daily-bank';
 import { systemTakings, postCashOverShort } from '../../acc/daily-close';
-import { resolveRoles, piLines, DEFAULT_ROLE_CODES, BAD_DEPARTMENT, departmentQuery, type AccountRole, type Department } from '../../acc/rules';
+import { resolveRoles, piLines, DEFAULT_ROLE_CODES, BAD_DEPARTMENT, DEFAULT_DEPARTMENT, departmentQuery, type AccountRole, type Department } from '../../acc/rules';
+import { readLineTags, unknownTags, type LineTags } from '../../conts/line-tags';
 import { ledgerSetupStatus, OPEN_BALANCE_ROLES, roleProblem } from '../../conts/ledger-setup-status';
 import { splitByItemGroup } from '../../acc/item-group-split';
 import { classifyJournal } from '../../acc/journal-class';
@@ -329,6 +330,9 @@ type JeLineIn = {
   notes?: string | null;
   /** Conts: Rental, Supply chain or Shared (spec 3.5); the engine refuses one it does not know. */
   department?: Department | null;
+  /** Conts (chew 2 Nov 2026): the project or unit the line belongs to, e.g. a deposit kept by the building. */
+  projectId?: number | string | null;
+  unitId?: string | null;
 };
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -719,6 +723,16 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
   const sb = c.get('supabase');
   const jeCompanyId = activeCompanyId(c);
 
+  /* Conts: each line's project or unit, checked as on a voucher line. */
+  const tags: LineTags[] = [];
+  for (const [i, l] of lines.entries()) {
+    const t = readLineTags(l, String(l.department ?? DEFAULT_DEPARTMENT), i + 1);
+    if ('error' in t) return c.json(t, 400);
+    tags.push(t);
+  }
+  const badTag = await unknownTags(sb, jeCompanyId ?? 0, tags);
+  if (badTag) return c.json(badTag, badTag.error === 'load_failed' ? 500 : 400);
+
   /* Through the ONE gate (acc/engine), as a DRAFT — posting stays a separate,
      gated step. The engine additionally validates the chart, which this route
      never did: an account code the company does not have (or a parent header,
@@ -730,7 +744,7 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
     sourceType,
     sourceDocNo,
     narration,
-    lines: lines.map((l) => ({
+    lines: lines.map((l, i) => ({
       accountCode: l.accountCode,
       debitSen: Number(l.debitSen ?? 0),
       creditSen: Number(l.creditSen ?? 0),
@@ -739,6 +753,8 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
       partyName: l.partyName ?? null,
       notes: l.notes ?? null,
       department: l.department ?? null,
+      projectId: tags[i]!.projectId,
+      unitId: tags[i]!.unitId,
     })),
     postNow: false,
   });

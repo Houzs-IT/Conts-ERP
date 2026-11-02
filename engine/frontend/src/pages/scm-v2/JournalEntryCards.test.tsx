@@ -33,6 +33,7 @@ const reverseMutate = vi.fn();
 const editMutate = vi.fn();
 let detail: { journalEntry: JournalEntry; lines: JournalEntryLine[] } = { journalEntry: JE, lines: LINES };
 
+vi.mock("../../conts/Pickers", () => ({ ProjectPicker: () => null, UnitPicker: () => null }));
 vi.mock('../../vendor/scm/lib/accounting-queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../vendor/scm/lib/accounting-queries')>()),
   useAccounts: () => ({ data: { accounts: ACCOUNTS }, isLoading: false }),
