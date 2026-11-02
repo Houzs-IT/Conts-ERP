@@ -636,7 +636,7 @@ function CalendarBoard() {
                             </span>
                             <span className="min-w-0 flex flex-col gap-px">
                               <span className="flex items-center gap-[5px] min-w-0">
-                                <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: link.dot }} title={link.label} aria-label={link.label} />
+                                <span className={`w-1.5 h-1.5 rounded-full flex-none ${u.channex === 'connected' ? 'motion-safe:animate-pulse' : ''}`} style={{ background: link.dot }} title={link.label} aria-label={link.label} />
                                 <span className="text-copy font-semibold text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
                               </span>
                               {/* The building is the group header above, so the lines under the number are its prices: one per
