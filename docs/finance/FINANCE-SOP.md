@@ -120,11 +120,14 @@
   - 业主的 unit 在做装修：选装修项目，不是选 unit。
 - 公司共用：按公司费用分摊比例（默认 Rental 50% / Supply chain 50%），也可以选全部算一边。
 - **付款单（财务确认，2026-11-02）**：
-  - 最上面先选「For」：Rental / Renovation / Company，每一行的部门自动带出。
-    - Rental：每一行可以选 unit，也可以不选（不选就算 Rental 的一般费用）。新加的一行自动带上一行的 unit，修改时保留原本的 unit，除非手动改。
-    - Renovation：一定要选项目。
-    - Company：算公司共用。
-  - 旧的、部门混在一起的付款单显示「Mixed」，照旧一行一行选。
+  - **每一行自己选「For」**（财务确认，2026-11-02，取代原本整张单先选 Rental / Renovation / Company / Mixed）：
+    - **Unit**：算 Rental。可以选 unit，也可以不选（不选就算 Rental 的一般费用）。
+    - **Project**：一定要选项目。客户项目算 Renovation；公司自己的项目照开项目时选的部门（Rental 或 Renovation）。Rental 的费用也可以选公司自己的项目（2026-11-02）。
+    - **Company**：算公司共用。
+    - 部门由系统自动带出，每一行旁边标出 Rental / Renovation / Company。一张付款单可以有几个 unit、几个项目，每个项目的额度分开检查。
+    - 新加的一行自动沿用上一行的选择，可以手动改。
+  - 旧的付款单照旧打开，没改的行保存时保持原样（部门、unit、项目都不变）。
+  - 付供应商账单的付款单不变：项目跟账单走，一张付款单一个项目。
   - 项目和 unit 都用可以搜索的表格选。没完成的项目排前面，已完成的在下面，一样可以选。
   - unit 只记在财务这边：记进总账，在「Rental Unit Costs」报表看每个 unit 付了多少，**不会扣业主**。扣业主照旧在 Property OS 处理。
   - Supply chain 就是装修：部门的名字显示成「Renovation」，系统名称「Supply Chain」不变。

@@ -1,7 +1,7 @@
 /* A payment voucher line's Rental unit (chew 2 Nov 2026; SOP 3.2; plan docs/superpowers/plans/2026-11-02-voucher-
    purpose-unit-project-pickers.md Task 2). Pinned:
      · a Rental line carries its unit to the ledger; a non-Rental line and a leg settling bills never do;
-     · a unit on a non-Rental line, or one that is not a Property OS unit, is refused;
+     · a unit makes its line Rental (plan 2026-11-02-voucher-line-purpose); one that is not a Property OS unit is refused;
      · editing a voucher keeps each line's unit unless the edit names another or clears it. */
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
@@ -24,8 +24,9 @@ describe('pvLines', () => {
 });
 
 describe('buildLines', () => {
-  test('a unit only on a Rental line; no unitId means unchanged', () => {
-    expect(buildLines([{ debitAccountCode: '620-0010', amountSen: 100, department: 'shared', unitId: 'u-a31' }])).toEqual({ error: 'unit_not_rental' });
+  test('a unit makes the line Rental; no unitId means unchanged', () => {
+    const r = buildLines([{ debitAccountCode: '620-0010', amountSen: 100, department: 'shared', unitId: 'u-a31' }]);
+    expect('rows' in r && r.rows[0]!.department).toBe('rental');
     const ok = buildLines([{ debitAccountCode: '620-0010', amountSen: 100, department: 'rental', unitId: 'u-a31' }, { debitAccountCode: '620-0010', amountSen: 100, department: 'rental' }]);
     expect('rows' in ok && ok.rows.map((r) => r.unit_id)).toEqual(['u-a31', undefined]);
   });
@@ -91,12 +92,13 @@ describe('editing a voucher', () => {
     expect(sb.tables.payment_voucher_lines[0]!.unit_id ?? null).toBeNull();
   });
 
-  test('refuses a unit that is not a Property OS unit, and a unit on a non-Rental line', async () => {
+  test('refuses a unit that is not a Property OS unit; a unit on a line sent as another department makes it Rental', async () => {
     const { app, sb } = harness();
     const r = await patch(app, { lines: [line({ unitId: 'nope' })] });
     expect(r.status).toBe(400);
     expect(await r.json()).toMatchObject({ error: 'unit_unknown' });
-    expect((await patch(app, { lines: [line({ department: 'shared', unitId: 'u-a31' })] })).status).toBe(400);
     expect(sb.tables.payment_voucher_lines[0]!.unit_id).toBe('u-a31');
+    expect((await patch(app, { lines: [line({ department: 'shared', unitId: 'u-a31' })] })).status).toBe(200);
+    expect(sb.tables.payment_voucher_lines.map((l) => [l.department, l.unit_id])).toEqual([['rental', 'u-a31']]);
   });
 });

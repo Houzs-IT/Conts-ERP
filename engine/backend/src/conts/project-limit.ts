@@ -251,6 +251,13 @@ export async function projectOfPurchaseInvoice(sb: Db, companyId: number, pi: { 
   return null;
 }
 
+/** The department of a voucher line that names a project (chew 2 Nov 2026; plan 2026-11-02-voucher-line-purpose): a
+    customer's project is Renovation (supply); the company's own project counts to the side it was made for
+    (internal_department: rental for a unit to rent out, supply for the showroom), Renovation when that is not set. */
+export function lineDepartmentOfProject(p: { funding: string | null; internal_department: string | null }): 'rental' | 'supply' {
+  return p.funding === 'internal' && p.internal_department === 'rental' ? 'rental' : 'supply';
+}
+
 /** The project a voucher pays (SOP 3.4): the one named on it, else the one its bills belong to. A name that differs
     from the bills', or bills of two projects, is refused — one voucher pays one project. */
 export async function resolveVoucherProject(
