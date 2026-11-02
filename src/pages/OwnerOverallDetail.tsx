@@ -6,13 +6,13 @@ import { Segmented } from '../components/Metric';
 import { CloseButton } from '../components/CloseButton';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
-import { overallTotals, type OverallFigures } from '../lib/ownerOverall';
+import { overallTotals, GROUP_NAME, OWNER_BASE_NAME, type OverallFigures, type ReportGroup } from '../lib/ownerOverall';
 
 /** The overall owner report's unit drawer: L1 breakdown, L2 full detail. Every figure comes from
  *  ownerOverall.ts; this file only lays them out. */
 
 export type Level = 1 | 2;
-export interface ReportRow extends OverallFigures { unitId: string; code: string; building: string; ownerName: string }
+export interface ReportRow extends OverallFigures { unitId: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null }
 
 export const LEVELS: { key: `${Level}`; label: string }[] = [
   { key: '1', label: 'L1 Breakdown' }, { key: '2', label: 'L2 Full detail' },
@@ -21,7 +21,6 @@ export const LEVELS: { key: `${Level}`; label: string }[] = [
 /** 1,234.56 with a real minus sign; `cents: false` gives 1,235. */
 export const money = (sen: number, cents = true) => (sen < 0 ? `−${amount(-sen, { cents })}` : amount(sen, { cents }));
 export const signed = (sen: number, cents = true) => (sen < 0 ? `−${amount(-sen, { cents })}` : `+${amount(sen, { cents })}`);
-export const contractName = (c: 'LT' | 'PS') => (c === 'LT' ? 'Long term' : 'Profit sharing');
 
 export function GainLoss({ sen, size = 'sm', cents = true }: { sen: number; size?: 'sm' | 'md'; cents?: boolean }) {
   return (
@@ -34,7 +33,8 @@ export function GainLoss({ sen, size = 'sm', cents = true }: { sen: number; size
 }
 
 export function unitStatus(r: OverallFigures): { label: string; tone: 'success' | 'critical' | 'neutral' } {
-  if (r.nights === 0) return { label: 'Vacant', tone: 'neutral' };
+  // A long-term let has no nights (days 0): it is let, not vacant.
+  if (r.nights === 0 && r.days > 0) return { label: 'Vacant', tone: 'neutral' };
   return r.gainLoss < 0 ? { label: 'Losing', tone: 'critical' } : { label: 'Gaining', tone: 'success' };
 }
 
@@ -84,7 +84,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
   const scale = Math.max(r.revenue, r.deductions + r.ownerBase, 1);
   const width = (v: number) => `${(Math.max(v, 0) / scale) * 100}%`;
 
-  const peers = all.filter(x => x.contract === r.contract);
+  const peers = all.filter(x => x.group === r.group);
   const rank = [...peers].sort((a, b) => b.gainLoss - a.gainLoss).findIndex(x => x.unitId === r.unitId) + 1;
   const building = all.filter(x => x.building === r.building);
   const peerTotals = overallTotals(peers);
@@ -97,7 +97,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
       <header className="sticky top-0 z-[1] bg-card px-5 pt-4 pb-3 [border-bottom:1px_solid_var(--color-line)]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink">{contractName(r.contract)}</div>
+            <div className="text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink">{GROUP_NAME[r.group]}{r.contractCode && ` · ${r.contractCode}`}</div>
             <h2 id="owner-overall-unit" className="text-title font-semibold truncate">{r.code}</h2>
             <div className="text-meta text-muted-ink truncate">{r.building} · {r.ownerName}</div>
             <div className="mt-1.5"><StatusBadge size="sm" tone={st.tone} label={st.label} /></div>
@@ -115,8 +115,10 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
               <div className="mt-1"><GainLoss sen={r.gainLoss} size="md" /></div>
             </div>
             <div className="text-right text-meta text-muted-ink">
-              <div>{percent(r.occupancy)} occupancy</div>
-              <div><span className="tabular-nums text-ink">{r.nights}</span> of {r.days} nights booked</div>
+              {r.days ? <>
+                <div>{percent(r.occupancy)} occupancy</div>
+                <div><span className="tabular-nums text-ink">{r.nights}</span> of {r.days} nights booked</div>
+              </> : <div>Let by the month</div>}
             </div>
           </div>
           <div className="mt-3 flex h-2.5 w-full overflow-hidden rounded-full bg-muted" role="img"
@@ -158,8 +160,8 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
           </div>
         </Section>
         <Section title="Owner payout split" level={1}>
-          <Line label="Owner %" value={lt ? '—' : `${r.ownerPct}%`} note={lt ? 'not used on long term' : 'of GP'} tone={lt ? 'text-faint' : undefined} />
-          <Line label={lt ? 'LT (fixed rent)' : 'GRR (guaranteed minimum)'} value={r.ltGrr ? money(r.ltGrr) : '—'} tone={r.ltGrr ? undefined : 'text-faint'} />
+          <Line label="Owner %" value={lt ? '—' : `${r.ownerPct}%`} note={lt ? `not used on ${GROUP_NAME[r.group].toLowerCase()}` : 'of GP'} tone={lt ? 'text-faint' : undefined} />
+          <Line label={OWNER_BASE_NAME[r.group]} value={r.ltGrr ? money(r.ltGrr) : '—'} tone={r.ltGrr ? undefined : 'text-faint'} />
           <Line label="O1" value={r.o1 ? money(r.o1) : '—'} note={lt ? undefined : 'GP × owner %'} tone={r.o1 ? undefined : 'text-faint'} />
           <Line label="O2" value={r.o2 ? money(r.o2) : '—'} note="adjustments" tone={r.o2 < 0 ? 'text-danger' : r.o2 ? undefined : 'text-faint'} />
           <div className="mt-2 flex items-baseline justify-between rounded-control bg-muted px-3 py-2 font-semibold">
@@ -174,7 +176,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
               ...deductionItems.map(([label, v]): LedgerRow => ['−', label, money(v)]),
               ['=', 'Gross profit (GP)', money(r.gp), true],
               ...(lt ? [] : [['×', `Owner share ${r.ownerPct}% gives O1`, money(r.o1)] as LedgerRow]),
-              ['−', lt ? 'Owner base = LT fixed rent' : r.o1 >= r.ltGrr ? `Owner base = O1 (GRR is ${money(r.ltGrr)})` : `Owner base = GRR (O1 is ${money(r.o1)})`, money(r.ownerBase)],
+              ['−', lt ? `Owner base = ${OWNER_BASE_NAME[r.group].toLowerCase()}` : r.o1 >= r.ltGrr ? `Owner base = O1 (GRR is ${money(r.ltGrr)})` : `Owner base = GRR (O1 is ${money(r.o1)})`, money(r.ownerBase)],
               ['=', 'Gain / Loss', signed(r.gainLoss), true],
             ]} />
             <p className="mt-3 rounded-control px-3 py-2 text-meta text-muted-ink [border:1px_dashed_var(--color-line)]">
@@ -182,20 +184,20 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
               O2 is passed to the owner and does not change gain / loss.
             </p>
           </Section>
-          <Section title="Nights and unit economics" level={2}>
+          {r.days > 0 && <Section title="Nights and unit economics" level={2}>
             <Line label="Nights booked" value={`${r.nights} / ${r.days}`} note={percent(r.occupancy)} />
             <Line label="Revenue per booked night" value={r.nights ? money(r.revPerNight) : '—'} />
             <Line label="Cleaning per booked night" value={r.nights ? money(Math.round(r.cleaning / r.nights)) : '—'} />
             <Line label="Utilities per day" value={money(Math.round(r.utilities / r.days))} note={`all ${r.days} days`} />
             <Line label="Deductions / revenue" value={r.revenue ? percent((r.deductions / r.revenue) * 100) : '—'} />
-          </Section>
+          </Section>}
           <Section title="Compared with other units" level={2}>
-            <p className="mb-1 text-meta text-muted-ink">Against the {plural(peers.length, `${contractName(r.contract).toLowerCase()} unit`)}</p>
+            <p className="mb-1 text-meta text-muted-ink">Against the {plural(peers.length, `${GROUP_NAME[r.group].toLowerCase()} unit`)}</p>
             <Line label="Gain / Loss rank" value={`#${rank} of ${peers.length}`} />
-            <div className="flex items-baseline justify-between gap-3 py-1.5">
+            {r.days > 0 && <div className="flex items-baseline justify-between gap-3 py-1.5">
               <span className="text-muted-ink">Occupancy vs average<span className="ml-1.5 text-meta text-faint">{percent(peerTotals.occupancy)}</span></span>
               {delta(r.occupancy, peerTotals.occupancy, `${r.occupancy - peerTotals.occupancy < 0 ? '−' : '+'}${Math.abs(r.occupancy - peerTotals.occupancy).toFixed(1)} pts`)}
-            </div>
+            </div>}
             <div className="flex items-baseline justify-between gap-3 py-1.5">
               <span className="text-muted-ink">Revenue vs average<span className="ml-1.5 text-meta text-faint">{money(Math.round(avg(peers, x => x.revenue)))}</span></span>
               {delta(r.revenue, avg(peers, x => x.revenue), signed(Math.round(r.revenue - avg(peers, x => x.revenue))))}
