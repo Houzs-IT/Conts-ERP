@@ -21,6 +21,7 @@ export const allow = {
   'functions/api/[[path]].ts': 'Catch-all 404 for unknown /api paths; it returns no data.',
   'functions/api/auth/login.ts': 'Public: signing in is how a session is made.',
   'functions/api/auth/login-2fa.ts': 'Public: second sign-in step; the short-lived challenge from login is the credential.',
+  'functions/api/connect/verify-login.ts': 'Server to server for Houzs Connect; gated on CONNECT_LOGIN_KEY before anything about an account is said.',
   'functions/api/auth/login-pin.ts': 'Public: the field app signs in with phone number and PIN here.',
   'functions/api/auth/forgot-password.ts': 'Public: answers the same whether or not the email exists.',
   'functions/api/auth/reset-password.ts': 'Public: the emailed one-time token is the credential.',
