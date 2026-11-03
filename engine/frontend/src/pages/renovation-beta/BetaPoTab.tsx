@@ -5,14 +5,19 @@
    The tab reads as plain text until Edit is pressed (owner, 24 Oct 2026). In edit mode the pale yellow fields change
    the line, and "Save & post to VO" applies every change to the sales order at once and keeps it as one VO per order
    (no approval: renovationBetaLines.ts postVo). The dates are not VOs and save as they are set: on a line a PO holds
-   they change the PO itself; before that they are the plan. A category or sub-category band sets the date of every
-   line in it through the same per-line paths. A PO a VO changed is flagged until purchasing confirms the PO change. */
+   they change the PO itself; before that they are the plan. A category band sets the date of every line in it through
+   the same per-line paths, and the lines show the new date at once (owner, 3 Nov 2026: a band date seemed not to reach
+   its lines); a line whose date cannot move from here says why. The lines sit straight under their category: no
+   sub-category bands (owner, 3 Nov 2026). In Edit mode a line still waiting for its PO picks its supplier from the
+   SKU's bound suppliers, main starred, which Create PO then groups by. A PO a VO changed is flagged until purchasing
+   confirms the PO change. */
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Calculator, Camera, ChevronDown, ChevronRight, Download, FilePlus2, Pencil, Search } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
-import { useQuery } from "../../hooks/useQuery";
+import { buildQueryKey, useQuery } from "../../hooks/useQuery";
+import { useQueryClient } from "@tanstack/react-query";
 import { money } from "../projects/renovation/renovationModel";
 import { WS, WsBadge, WsDialog, WsEmpty, WsFilterPill, WsPageHead, TONE_QUIET, TONE_WAIT, btnStyle, inputStyle } from "./BetaWsUi";
 import { WsStat, WsStats, metaStyle, thStyle } from "./BetaVoPoUi";
@@ -29,10 +34,10 @@ import { BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
-  amountAfter, byAreaBlocks, byCategory, livePo, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
-  linesApi, linesCsv, postVo, refusalText,
+  amountAfter, byAreaBlocks, byCategory, livePo, dateFixedReason, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
+  linesApi, linesCsv, picksSupplier, postVo, refusalText, withDate,
   contractLineEdits, postContractLines, variantsAfter, voBatches,
-  type LineEdit, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
+  type LineEdit, type LinesAnswer, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
 import { buildVariantSummary } from "../../vendor/shared/variant-summary";
 import { RenovationVariantPicker, hasVariantPickers } from "../../vendor/scm/components/renovationVariantPicker";
@@ -79,6 +84,13 @@ type PlanDate = "orderOn" | "deliverOn";
 
 export function BetaPoTab(p: BetaTabProps): ReactElement {
   const q = useQuery(["renovation-beta", "lines", p.projectId], () => linesApi.lines(p.projectId), [p.projectId]);
+  const queryClient = useQueryClient();
+  /* A saved date or supplier shows on its lines at once, before the reload answers: under load the reload can be slow,
+     and the band then looked as if it had not reached its lines. */
+  const patchLines = (ids: ReadonlySet<string>, fn: (l: ManagedLine) => ManagedLine): void => {
+    queryClient.setQueryData<LinesAnswer>(buildQueryKey(["renovation-beta", "lines", p.projectId], [p.projectId]),
+      (old) => (old ? { ...old, lines: old.lines.map((l) => (ids.has(l.id) ? fn(l) : l)) } : old));
+  };
   const vo = useQuery(["renovation-beta", "vo", p.projectId], () => voPoApi.vo(p.projectId), [p.projectId]);
   const site = useQuery(["renovation-beta", "site", p.projectId], () => betaSiteApi.site(p.projectId), [p.projectId]);
   const openDoc = useOpenDoc();
@@ -115,7 +127,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const d = q.data;
   const editable = p.canWrite && editing;
   const toggle = (key: string): void => setClosed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  const allKeys = tree.flatMap((c) => [c.key, ...c.subs.map((s) => s.key)]);
+  const allKeys = tree.map((c) => c.key);
   const setEdit = (id: string, patch: Partial<LineEdit>): void => setEdits((e) => ({ ...e, [id]: { ...e[id], ...patch } }));
   const nextVo = (vo.data?.vos.length ?? 0) + 1;
   const voLabel = (i: number): string => `VO-${String(nextVo + i).padStart(2, "0")}`;
@@ -164,8 +176,10 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         await linesApi.setPoDate(dates.fromPo.poId, v);
       } else if (which === "deliverOn" && dates.fromPo) {
         await linesApi.setPoLineDelivery(dates.fromPo.poId, dates.fromPo.poLineId, v);
+        patchLines(new Set([l.id]), (x) => withDate(x, which, v));
       } else {
         await linesApi.savePlan(p.projectId, l.id, { [which]: v });
+        patchLines(new Set([l.id]), (x) => withDate(x, which, v));
       }
       q.reload();
     } catch (e) {
@@ -179,9 +193,17 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const saveGroupDate = async (key: string, label: string, group: readonly ManagedLine[], which: PlanDate, value: string): Promise<void> => {
     const v = value || null;
     const targets = groupDateTargets(group, which, v, d.plansReady);
-    if (targets.length === 0) return;
+    // Lines whose date cannot move from here, and differ from the new one: named in the result with the reason.
+    const fixed = group.filter((l) => !dateSettable(l, which, d.plansReady) && (lineDates(l)[which] ?? null) !== v);
+    const what = which === "orderOn" ? "Processing date" : "Delivery date";
+    const fixedText = fixed.length ? ` Not changed here: ${fixed.map((l) => `${l.itemCode} (${dateFixedReason(l, which, d.plansReady)})`).join("; ")}.` : "";
+    if (targets.length === 0) {
+      if (fixed.length) p.onError(`${what} of ${label} not changed.${fixedText}`);
+      return;
+    }
     setBusyKey(`group:${key}:${which}`);
     const refusedLines: string[] = [];
+    const saved = new Set<string>();
     let firstReason: string | null = null;
     const queue = [...targets];
     const worker = async (): Promise<void> => {
@@ -190,20 +212,39 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         try {
           if (which === "deliverOn" && po) await linesApi.setPoLineDelivery(po.poId, po.poLineId, v);
           else await linesApi.savePlan(p.projectId, l.id, { [which]: v });
+          saved.add(l.id);
         } catch (e) {
           refusedLines.push(l.itemCode);
           firstReason ??= refusalText(e);
         }
       }
     };
-    // A few at a time: each line is its own request, and a long band should not wait on them one by one.
-    await Promise.all([worker(), worker(), worker(), worker()]);
+    // Two at a time: each line is its own request, and the database pool is small (3 Nov 2026).
+    await Promise.all([worker(), worker()]);
+    patchLines(saved, (x) => withDate(x, which, v));
     setBusyKey(null);
-    q.reload();
-    const what = which === "orderOn" ? "Processing date" : "Delivery date";
-    const done = targets.length - refusedLines.length;
-    if (refusedLines.length === 0) p.onDone(`${what} ${v ? dayMonthYear(v) : "cleared"} on ${done} line${done === 1 ? "" : "s"} of ${label}.`);
-    else p.onError(`${what} set on ${done} of ${targets.length} lines of ${label}. Not set on ${refusedLines.join(", ")}: ${firstReason}`);
+    const done = saved.size;
+    // onDone refreshes every Beta query, this list included.
+    if (refusedLines.length === 0 && fixed.length === 0) p.onDone(`${what} ${v ? dayMonthYear(v) : "cleared"} on ${done} line${done === 1 ? "" : "s"} of ${label}.`);
+    else {
+      q.reload();
+      const refusedText = refusedLines.length ? ` Not set on ${refusedLines.join(", ")}: ${firstReason}` : "";
+      p.onError(`${what} ${v ? dayMonthYear(v) : "cleared"} on ${done} of ${group.length} lines of ${label}.${refusedText}${fixedText}`);
+    }
+  };
+
+  const saveSupplier = async (l: ManagedLine, supplierId: string): Promise<void> => {
+    if (!supplierId || supplierId === l.supplierId) return;
+    setBusyKey(`${l.id}:supplier`);
+    try {
+      const r = await linesApi.saveSupplier(p.projectId, l.id, supplierId);
+      patchLines(new Set([l.id]), (x) => ({ ...x, supplierId: r.supplierId, supplierName: r.supplierName }));
+      q.reload();
+    } catch (e) {
+      p.onError(refusalText(e));
+    } finally {
+      setBusyKey(null);
+    }
   };
 
   const setNoPo = async (l: ManagedLine, noPo: boolean): Promise<void> => {
@@ -241,6 +282,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     l, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
     setEdit: (patch) => setEdit(l.id, patch), pick: () => setPicking(l), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
+    saveSupplier: (id) => void saveSupplier(l, id),
     grDocs: lineDocs(l.id, deliveries, "goods_received"), doDocs: lineDocs(l.id, deliveries, "delivery_order"), openDoc,
   });
 
@@ -251,7 +293,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       <WsPageHead
         title="PO"
         sub={editing
-          ? "Editing. Change a yellow field, then Save & post to VO: the order changes at once and the VO keeps the record. Dates save as you set them."
+          ? "Editing. Change a yellow field, then Save & post to VO: the order changes at once and the VO keeps the record. Dates and suppliers save as you set them."
           : "Every line of the sales order, after VOs."}
         right={(
           <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -336,17 +378,9 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                     const band = BANDS[ci % BANDS.length];
                     const catLines = c.subs.flatMap((s) => s.items);
                     return [
-                      <Band key={c.key} band={band} level="cat" label={c.label} hint={catHint(catLines, d.finance)} open={open} onToggle={() => toggle(c.key)} finance={d.finance}
+                      <Band key={c.key} band={band} label={c.label} hint={catHint(catLines, d.finance)} open={open} onToggle={() => toggle(c.key)} finance={d.finance}
                         dates={bandDates(c.key, c.label, catLines)} />,
-                      ...(open ? c.subs.flatMap((s) => {
-                        if (!s.label) return s.items.map((l) => <LineRow key={l.id} {...cell(l)} />);
-                        const subOpen = !closed.has(s.key);
-                        return [
-                          <Band key={s.key} band={band} level="sub" label={s.label} hint={`${s.items.length} line${s.items.length === 1 ? "" : "s"}`} open={subOpen} onToggle={() => toggle(s.key)} finance={d.finance}
-                            dates={bandDates(s.key, `${c.label} / ${s.label}`, s.items)} />,
-                          ...(subOpen ? s.items.map((l) => <LineRow key={l.id} {...cell(l)} />) : []),
-                        ];
-                      }) : []),
+                      ...(open ? catLines.map((l) => <LineRow key={l.id} {...cell(l)} />) : []),
                     ];
                   })}
                 </tbody>
@@ -498,18 +532,17 @@ function GroupDate({ g, which }: { g: BandDates; which: PlanDate }): ReactElemen
   return <span title={v === "mixed" ? spanTitle : `${what}: every line`} style={{ display: "block", fontSize: 12, fontWeight: 600, color: v === "mixed" ? BETA.muted : WS.text2, ...ellipsis }}>{v === "mixed" ? spanText : dayMonthYear(v)}</span>;
 }
 
-function Band({ band, level, label, hint, open, onToggle, finance, dates }: { band: readonly [string, string, string]; level: "cat" | "sub"; label: string; hint: string; open: boolean; onToggle: () => void; finance: boolean; dates: BandDates }): ReactElement {
+function Band({ band, label, hint, open, onToggle, finance, dates }: { band: readonly [string, string, string]; label: string; hint: string; open: boolean; onToggle: () => void; finance: boolean; dates: BandDates }): ReactElement {
   const Icon = open ? ChevronDown : ChevronRight;
-  const bg = level === "cat" ? band[1] : WS.tealSoft;
-  const td: CSSProperties = { padding: "0 6px", background: bg, borderBottom: `1px solid ${BETA.line}`, verticalAlign: "middle", overflow: "hidden" };
+  const td: CSSProperties = { padding: "0 6px", background: band[1], borderBottom: `1px solid ${BETA.line}`, verticalAlign: "middle", overflow: "hidden" };
   return (
     <tr>
       <td colSpan={finance ? 5 : 4} style={{ ...td, padding: 0 }}>
         <button type="button" aria-expanded={open} onClick={onToggle}
           style={{
-            display: "flex", alignItems: "center", gap: 8, width: "100%", minHeight: level === "cat" ? 38 : 32, overflow: "hidden", padding: `0 12px 0 ${level === "cat" ? 8 : 28}px`, border: 0,
-            borderLeft: `4px solid ${level === "cat" ? band[0] : `${band[0]}66`}`, background: "transparent", color: level === "cat" ? band[2] : WS.text2, font: "inherit",
-            fontSize: level === "cat" ? 15 : 13, fontWeight: level === "cat" ? 700 : 600, cursor: "pointer", textAlign: "left",
+            display: "flex", alignItems: "center", gap: 8, width: "100%", minHeight: 38, overflow: "hidden", padding: "0 12px 0 8px", border: 0,
+            borderLeft: `4px solid ${band[0]}`, background: "transparent", color: band[2], font: "inherit",
+            fontSize: 15, fontWeight: 700, cursor: "pointer", textAlign: "left",
           }}>
           <Icon size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
           <span style={{ flex: "1 1 auto", ...ellipsis }}>{label}</span>
@@ -540,6 +573,7 @@ interface RowCtx {
   pickVariants: () => void;
   saveDate: (which: DateField, value: string) => void;
   setNoPo: (v: boolean) => void;
+  saveSupplier: (supplierId: string) => void;
   grDocs: LineDoc[];
   doDocs: LineDoc[];
   openDoc: (tab: DocTab, no: string) => void;
@@ -712,7 +746,8 @@ function DateText({ value, late, title }: { value: string | null; late: boolean;
 function ProcessingCell({ r }: { r: RowCtx }): ReactElement {
   const d = lineDates(r.l);
   const late = lineLate(r.l, r.today) === "order";
-  return r.editable && dateSettable(r.l, "orderOn", r.plansReady) ? <DateButton r={r} which="orderOn" value={d.orderOn} label="Processing date" late={late} /> : <DateText value={d.orderOn} late={late} />;
+  if (r.editable && dateSettable(r.l, "orderOn", r.plansReady)) return <DateButton r={r} which="orderOn" value={d.orderOn} label="Processing date" late={late} />;
+  return <FixedDate r={r} which="orderOn" value={d.orderOn} late={late} />;
 }
 
 /** When to deliver: the PO line's effective delivery date once a PO holds the line (changed on the PO), else the
@@ -721,9 +756,22 @@ function DeliveryCell({ r }: { r: RowCtx }): ReactElement {
   const d = lineDates(r.l);
   const late = lineLate(r.l, r.today) === "deliver";
   const revised = d.fromPo?.supplierRevised ? `Supplier's revised date on ${d.fromPo.poNumber}; change it on the PO` : undefined;
-  return r.editable && dateSettable(r.l, "deliverOn", r.plansReady)
-    ? <DateButton r={r} which="deliverOn" value={d.deliverOn} label={d.fromPo ? `Delivery date on ${d.fromPo.poNumber}` : "Delivery date"} late={late} />
-    : <DateText value={d.deliverOn} late={late} title={revised ?? (d.fromPo ? `Delivery date on ${d.fromPo.poNumber}` : undefined)} />;
+  if (r.editable && dateSettable(r.l, "deliverOn", r.plansReady)) {
+    return <DateButton r={r} which="deliverOn" value={d.deliverOn} label={d.fromPo ? `Delivery date on ${d.fromPo.poNumber}` : "Delivery date"} late={late} />;
+  }
+  return <FixedDate r={r} which="deliverOn" value={d.deliverOn} late={late} title={revised ?? (d.fromPo ? `Delivery date on ${d.fromPo.poNumber}` : undefined)} />;
+}
+
+/** A date that cannot be set here. In Edit mode it says why under the date, so a band that skipped it is understood. */
+function FixedDate({ r, which, value, late, title }: { r: RowCtx; which: PlanDate; value: string | null; late: boolean; title?: string }): ReactElement {
+  const why = r.editable ? dateFixedReason(r.l, which, r.plansReady) : null;
+  if (!why) return <DateText value={value} late={late} title={title} />;
+  return (
+    <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }} title={`Not set here: ${why}`}>
+      <DateText value={value} late={late} />
+      <span style={{ ...metaStyle, fontSize: 11, ...ellipsis }}>{why.split(":")[0]}</span>
+    </span>
+  );
 }
 
 /** One line: the PO number and its PO date ("TC-PO-2610-006 · 24 Oct"); the date is a small control in edit mode.
@@ -744,12 +792,34 @@ function PoCell({ r }: { r: RowCtx }): ReactElement {
   if (r.l.goesTo !== "po") return <span style={metaStyle}>-</span>;
   if (r.editable && r.plansReady) {
     return (
-      <label title="This line needs no PO" style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12, color: WS.text2, ...ellipsis }}>
-        <input type="checkbox" checked={r.l.plan.noPo} disabled={r.busyKey === `${r.l.id}:noPo`} onChange={(ev) => r.setNoPo(ev.target.checked)} style={{ margin: 0, flexShrink: 0 }} />No PO
-      </label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+        {picksSupplier(r.l) && <SupplierPick r={r} />}
+        <label title="This line needs no PO" style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12, color: WS.text2, ...ellipsis }}>
+          <input type="checkbox" checked={r.l.plan.noPo} disabled={r.busyKey === `${r.l.id}:noPo`} onChange={(ev) => r.setNoPo(ev.target.checked)} style={{ margin: 0, flexShrink: 0 }} />No PO
+        </label>
+      </div>
     );
   }
   return <span style={metaStyle}>{r.l.plan.noPo ? "No PO" : "-"}</span>;
+}
+
+/** Who the line is bought from, before Create PO: only the suppliers the SKU is bound to, main first and starred
+    (owner, 3 Nov 2026). A SKU with none bound has nothing to pick and says where to add one. */
+function SupplierPick({ r }: { r: RowCtx }): ReactElement {
+  const choices = r.l.supplierChoices ?? [];
+  if (choices.length === 0) {
+    return <span role="note" title="No supplier bound to this SKU: add one in the SKU's suppliers" style={{ fontSize: 11.5, color: WS.amber, lineHeight: 1.25 }}>No supplier bound to this SKU: add one in the SKU's suppliers</span>;
+  }
+  const busy = r.busyKey === `${r.l.id}:supplier`;
+  const picked = choices.some((c) => c.id === r.l.supplierId) ? r.l.supplierId ?? "" : "";
+  return (
+    <select aria-label={`Supplier for ${r.l.itemCode}`} value={picked} disabled={busy} onChange={(ev) => r.saveSupplier(ev.target.value)}
+      title={picked ? undefined : "No supplier on this line yet: Create PO leaves it out until one is picked"}
+      style={{ ...editInput, width: "100%", height: 26, minHeight: 26, fontSize: 12, color: picked ? undefined : WS.amber }}>
+      {!picked && <option value="">{busy ? "Saving..." : "Pick a supplier"}</option>}
+      {choices.map((c) => <option key={c.id} value={c.id}>{c.main ? "\u2605 " : ""}{c.name}{c.main ? " (main)" : ""}</option>)}
+    </select>
+  );
 }
 
 function linePhotoSet(l: ManagedLine): LinePhotoSet {

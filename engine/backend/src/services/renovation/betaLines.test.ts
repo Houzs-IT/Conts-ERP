@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { cleanLinePlan, grOf, markOf, mergePlan, planOrderRefusal, type LinePo } from "./betaLines";
+import { choicesOf, cleanLinePlan, grOf, markOf, mergePlan, planOrderRefusal, type LinePo } from "./betaLines";
+
+describe("supplier choices (owner, 3 Nov 2026)", () => {
+  it("reads the SKU's bound suppliers in the order given, main first", () => {
+    const raw = JSON.stringify([{ id: "a", code: "M", name: "Main", main: true, priceSen: 500 }, { id: "b", code: "O", name: "Other", main: false, priceSen: null }]);
+    expect(choicesOf(raw)).toEqual([
+      { id: "a", code: "M", name: "Main", main: true, priceSen: 500 },
+      { id: "b", code: "O", name: "Other", main: false, priceSen: null },
+    ]);
+  });
+  it("reads nothing from a missing or broken list", () => {
+    expect(choicesOf(null)).toEqual([]);
+    expect(choicesOf("not json")).toEqual([]);
+  });
+});
 import { amendmentLineChange, lineChangeWords, type AmendmentLineRow } from "./betaVoPo";
 
 const po = (over: Partial<LinePo>): LinePo => ({ photoKeys: [],

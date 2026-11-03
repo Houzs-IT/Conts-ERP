@@ -25,6 +25,8 @@ export interface LinePo {
   photoKeys: string[];
 }
 
+export interface SupplierChoice { id: string; code: string; name: string; main: boolean; priceSen: number | null }
+
 export interface PendingPoChange { id: string; amendmentNo: string; poId: string; poNumber: string; voLabel: string | null }
 
 export interface LinePlan { orderOn: string | null; deliverOn: string | null; noPo: boolean }
@@ -47,7 +49,13 @@ export interface ManagedLine {
   amountSen: number | null;
   area: string | null;
   remark: string | null;
+  /** The supplier the line is bought from: the contract line's, else the SKU's main supplier. */
   supplierName: string | null;
+  supplierId?: string | null;
+  /** The renovation contract line behind it, where a supplier picked here is kept (null: not a contract line). */
+  contractLineId?: string | null;
+  /** The suppliers the SKU can be ordered from (its bindings), main first. */
+  supplierChoices?: SupplierChoice[];
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none). */
   categoryCode: string | null;
@@ -82,6 +90,9 @@ export const linesApi = {
   lines: (projectId: number): Promise<LinesAnswer> => api.get<LinesAnswer>(`${B}/projects/${projectId}/lines`),
   savePlan: (projectId: number, itemId: string, b: Partial<LinePlan>): Promise<{ ok: true; plan: LinePlan }> =>
     api.put<{ ok: true; plan: LinePlan }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/plan`, b),
+  /** The supplier of a contract line, from the SKU's bound suppliers (backend renovationBeta.ts PUT .../supplier). */
+  saveSupplier: (projectId: number, itemId: string, supplierId: string): Promise<{ ok: true; supplierId: string; supplierName: string }> =>
+    api.put<{ ok: true; supplierId: string; supplierName: string }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/supplier`, { supplierId }),
   /** The PO date, through the PO's own header update (scm mfg-purchase-orders PATCH /:id). */
   setPoDate: (poId: string, poDate: string): Promise<unknown> =>
     authedFetch(`/mfg-purchase-orders/${encodeURIComponent(poId)}`, { method: "PATCH", body: JSON.stringify({ poDate }) }),
@@ -397,6 +408,29 @@ export function dateSettable(l: ManagedLine, which: "orderOn" | "deliverOn", pla
   const po = livePo(l);
   if (which === "deliverOn" && po) return !po.supplierRevised;
   return plansReady;
+}
+
+/** Why a line's date cannot be set from here (null: it can). Said on the line and in a band's result. */
+export function dateFixedReason(l: ManagedLine, which: "orderOn" | "deliverOn", plansReady: boolean): string | null {
+  if (dateSettable(l, which, plansReady)) return null;
+  if (!l.voLocked) return "draft order: change it on the order";
+  const po = livePo(l);
+  if (which === "deliverOn" && po?.supplierRevised) return `supplier's revised date on ${po.poNumber}: change it on the PO`;
+  return "planned dates are not switched on yet";
+}
+
+/** Whether the line still waits for a PO, so its supplier can be picked here. */
+export function picksSupplier(l: ManagedLine): boolean {
+  return l.goesTo === "po" && !l.plan.noPo && !livePo(l) && !!l.contractLineId;
+}
+
+/** A line after a date saved from here: the PO line's delivery date once a PO holds it, else the plan. */
+export function withDate(l: ManagedLine, which: "orderOn" | "deliverOn", value: string | null): ManagedLine {
+  const po = livePo(l);
+  if (which === "deliverOn" && po) {
+    return { ...l, pos: l.pos.map((x) => (x.poLineId === po.poLineId ? { ...x, deliveryDate: value } : x)) };
+  }
+  return { ...l, plan: { ...l.plan, [which]: value } };
 }
 
 /** A category's or sub-category's date: the one date every line shares, "mixed" when they differ (a line with no

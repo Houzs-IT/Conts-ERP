@@ -5,18 +5,22 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const h = vi.hoisted(() => ({ puts: [] as Array<[string, unknown]>, patches: [] as Array<[string, unknown]>, furniture: false }));
+const h = vi.hoisted(() => ({ puts: [] as Array<[string, unknown]>, patches: [] as Array<[string, unknown]>, furniture: false, supplier: false }));
 
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
   const get = async (path: string): Promise<unknown> => {
-    if (path.endsWith("/lines")) return h.furniture ? FURNITURE : LINES;
+    if (path.endsWith("/lines")) return h.furniture ? FURNITURE : h.supplier ? SUPPLIER : LINES;
     if (path.endsWith("/vo")) return { vos: [] };
     if (path.endsWith("/site")) return SITE;
     if (path.endsWith("/photos")) return { photos: [], areas: [], docs: { dos: [], grs: [], pos: [] }, tasks: [] };
     throw new Error(`no mock for ${path}`);
   };
-  const put = async (path: string, body: unknown): Promise<unknown> => { h.puts.push([path, body]); return { ok: true, plan: {} }; };
+  const put = async (path: string, body: unknown): Promise<unknown> => {
+    h.puts.push([path, body]);
+    if (path.endsWith("/supplier")) { SUPPLIER.lines[1].supplierId = "s2"; return { ok: true, supplierId: "s2", supplierName: "Other Co" }; }
+    return { ok: true, plan: {} };
+  };
   return { ...actual, api: { ...actual.api, get, put } };
 });
 vi.mock("../../vendor/scm/lib/authed-fetch", async (importOriginal) => {
@@ -77,6 +81,16 @@ const FURNITURE = {
   ],
 };
 
+const CHOICES = [{ id: "s1", code: "MAIN", name: "Main Co", main: true, priceSen: 500 }, { id: "s2", code: "OTH", name: "Other Co", main: false, priceSen: 450 }];
+const SUPPLIER = {
+  ...LINES,
+  lines: [
+    { ...LINES.lines[0], contractLineId: "cl-a", supplierId: "s1", supplierChoices: CHOICES },
+    { ...LINES.lines[1], contractLineId: "cl-b", supplierId: "s1", supplierChoices: CHOICES },
+    { ...base, id: "c", itemCode: "LT-3", description: "Downlight C", plan: { orderOn: null, deliverOn: null, noPo: false }, pos: [], contractLineId: "cl-c", supplierId: null, supplierChoices: [] },
+  ],
+};
+
 const SITE = {
   ready: true, areas: ["Kitchen"],
   deliveries: [{ type: "delivery_order", id: "d1", no: "TC-DO-2610-003", at: "2026-10-24T06:31:00Z", status: "DELIVERED", from: "TC-SO-1", poNumber: null, poIds: [], areas: ["Kitchen"],
@@ -99,9 +113,11 @@ describe("PO tab", () => {
     // One line PO cell: number and short date.
     expect(within(region).getByText("TC-PO-2610-006")).toBeTruthy();
     expect(within(region).getAllByText("24 Oct").length).toBeGreaterThan(0);
-    // The band: processing differs between the lines (their span), delivery is set on the PO line only.
-    expect(within(region).getAllByText("1 Nov - 2 Nov").length).toBe(2);
-    expect(within(region).getAllByText("10 Nov, 1 not set").length).toBe(2);
+    // One band per category, no sub-category band: processing differs between the lines (their span), delivery is set
+    // on the PO line only.
+    expect(within(region).queryByText("Downlights")).toBeNull();
+    expect(within(region).getAllByText("1 Nov - 2 Nov").length).toBe(1);
+    expect(within(region).getAllByText("10 Nov, 1 not set").length).toBe(1);
     // DO: the delivery order that carried line a, a link to it; line b has none yet.
     expect(await within(region).findByText("TC-DO-2610-003")).toBeTruthy();
     expect(within(region).getAllByText("Not yet").length).toBeGreaterThan(0);
@@ -117,6 +133,9 @@ describe("PO tab", () => {
     await waitFor(() => expect(h.patches.length + h.puts.length).toBe(2));
     expect(h.patches).toEqual([["/mfg-purchase-orders/po1/items/pl1", { deliveryDate: "2026-11-20" }]]);
     expect(h.puts).toEqual([["/api/beta/projects/7/lines/b/plan", { deliverOn: "2026-11-20" }]]);
+    // Both lines show the band's date at once, before any reload answers.
+    await waitFor(() => expect(within(region).getByLabelText("Delivery date for LT-2")).toHaveProperty("value", "2026-11-20"));
+    expect(within(region).getByLabelText("Delivery date on TC-PO-2610-006 for LT-1")).toHaveProperty("value", "2026-11-20");
 
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(within(region).queryAllByRole("textbox")).toHaveLength(0);
@@ -154,5 +173,23 @@ describe("PO tab", () => {
       ["/renovation-so-info/TC-SO-1/lines/bed/spec", { variants: { fabricCode: "PC1461-01", divanHeight: '6"', legHeight: '1"', gap: '4"', totalHeight: '11"' } }],
     ]);
     h.furniture = false;
+  });
+
+  it("picks a waiting line's supplier from the SKU's bound suppliers, main starred; a SKU with none says where to add one", async () => {
+    h.supplier = true;
+    h.puts.length = 0;
+    renderTab();
+    const region = await screen.findByRole("region", { name: "Sales order lines" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const pick = within(region).getByLabelText("Supplier for LT-2") as HTMLSelectElement;
+    expect([...pick.options].map((o) => o.textContent)).toEqual(["★ Main Co (main)", "Other Co"]);
+    expect(pick.value).toBe("s1");
+    // The line on a PO has no pick; the SKU with no binding says so.
+    expect(within(region).queryByLabelText("Supplier for LT-1")).toBeNull();
+    expect(within(region).getByText("No supplier bound to this SKU: add one in the SKU's suppliers")).toBeTruthy();
+    fireEvent.change(pick, { target: { value: "s2" } });
+    await waitFor(() => expect(h.puts).toEqual([["/api/beta/projects/7/lines/b/supplier", { supplierId: "s2" }]]));
+    await waitFor(() => expect((within(region).getByLabelText("Supplier for LT-2") as HTMLSelectElement).value).toBe("s2"));
+    h.supplier = false;
   });
 });
