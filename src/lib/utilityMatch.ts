@@ -5,7 +5,7 @@
  *    supporting  the building or the owner's name.
  *  Green: one account with a decisive clue, or two strong ones, and no other account with a strong clue. Amber: any
  *  other clue (a building or owner name alone is never green). Red: nothing, or a page with no current charges or month.
- *  The amount is Caj Semasa, this period's charges (chew, 3 Nov 2026), never the amount due; a 0 is never green. */
+ *  The amount is Caj Semasa, this period's charges (chew, 3 Nov 2026), never the amount due; 0 or a credit is never green. */
 export type BillReadLite = {
   kind: string; billMonth: string | null; currentChargesSen: number | null; accountNoVisible: string | null; accountNoFull: string | null;
   depositSen: number | null; buildingName: string | null; ownerName: string | null; meterPrevious: number | null;
@@ -66,7 +66,7 @@ export function matchBill(read: BillReadLite, accounts: AccountMark[], recent: R
   if (pick) reasons.unshift(`${pick.clues.join(' + ')} match`);
 
   if (read.currentChargesSen == null || read.billMonth == null) { colour = 'red'; reasons.push('The current charges or the month could not be read'); }
-  else if (read.currentChargesSen === 0) { reasons.push('Current charges read as 0: check the bill'); if (colour === 'green') colour = 'amber'; }
+  else if (read.currentChargesSen <= 0) { reasons.push('Current charges read as 0 or a credit: check the bill'); if (colour === 'green') colour = 'amber'; }
 
   let alreadyRecorded = false;
   if (pick && read.billMonth) {

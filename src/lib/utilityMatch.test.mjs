@@ -68,3 +68,7 @@ test('an amount due without current charges -> red', () => {
   const m = matchBill(read({ accountNoFull: '210401094502', currentChargesSen: null, amountDueSen: 52735 }), [A], []);
   assert.equal(m.colour, 'red');
 });
+test('a credit (current charges below 0) -> amber, never green', () => {
+  const m = matchBill(read({ accountNoFull: '210401094502', currentChargesSen: -1230 }), [A], []);
+  assert.equal(m.colour, 'amber'); assert.match(m.reasons.join(' '), /0 or a credit/i);
+});
