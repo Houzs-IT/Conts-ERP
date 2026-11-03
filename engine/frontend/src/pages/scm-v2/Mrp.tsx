@@ -36,7 +36,7 @@ import { newIdempotencyKey } from '../../lib/idempotency';
 import { mrpViews, mrpCategoryOf, mrpGroupViews } from './mrp-views';
 import { useRenovationCatalog } from '../../vendor/scm/lib/renovation-catalog-queries';
 import {
-  type ModelGroup, type MrpFilters, rowKey, computeTabModels, lineInWindow, groupEarliestDate,
+  type ModelGroup, type MrpFilters, mrpProjectLabel, groupDistinct, rowKey, computeTabModels, lineInWindow, groupEarliestDate,
 } from './mrp-model-pipeline';
 import { exportMrpWorkbook } from './mrp-export-workbook';
 import { fmtDate, fmtDateTime, fmtQty } from '../../vendor/shared/format';
@@ -769,6 +769,24 @@ export const Mrp = () => {
           },
         }] satisfies Column<ModelGroup>[]
       : []),
+    /* Owner, 3 Nov 2026: every row names its project and customer, searchable (the toolbar search) and filterable
+       (the column funnel). A row serving several orders shows the first and "+N"; the drilldown lists each. */
+    {
+      key: 'project', label: 'Project', width: '230px', className: 'whitespace-normal break-words align-top',
+      getValue: (g) => groupDistinct(g, mrpProjectLabel).join(', '),
+      render: (g) => {
+        const ps = groupDistinct(g, mrpProjectLabel);
+        return ps.length === 0 ? <span className={styles.whNone}>—</span> : <span>{ps[0]}{ps.length > 1 ? ` +${ps.length - 1}` : ''}</span>;
+      },
+    },
+    {
+      key: 'customer', label: 'Customer', width: '180px', className: 'whitespace-normal break-words align-top',
+      getValue: (g) => groupDistinct(g, (l) => l.debtorName ?? '').join(', '),
+      render: (g) => {
+        const cs = groupDistinct(g, (l) => l.debtorName ?? '');
+        return cs.length === 0 ? <span className={styles.whNone}>—</span> : <span>{cs[0]}{cs.length > 1 ? ` +${cs.length - 1}` : ''}</span>;
+      },
+    },
     {
       key: 'description', label: 'Description',
       // Bounded + wrapping: bedframe variant specs (fabric / divan / gap / seat
@@ -1344,6 +1362,7 @@ const OrderLines = ({ sku, selected, onToggleLine, lineSupplier, onLineSupplierC
       <tr>
         <th className={styles.colSelect} />
         <th>SO No</th>
+        <th>Project</th>
         <th>Warehouse</th>
         <th>Customer</th>
         <th>State</th>
@@ -1396,6 +1415,7 @@ const ChildLine = ({ ln, suppliers, whCode, whName, selected, onToggleLine, chos
         )}
       </td>
       <td className={styles.codeCell}>{ln.soDocNo}</td>
+      <td>{mrpProjectLabel(ln) || '—'}</td>
       <td className={styles.whCell}>
         {whCode
           ? <span className={styles.whTag} title={whName ?? undefined}>{whCode}</span>
@@ -1463,6 +1483,7 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
       <tr>
         <th className={styles.colSelect} />
         <th>SO No</th>
+        <th>Project</th>
         <th>Warehouse</th>
         <th>Module</th>
         <th>Customer</th>
@@ -1490,6 +1511,7 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
               )}
             </td>
             <td className={styles.codeCell}>{ln.soDocNo}</td>
+            <td>{mrpProjectLabel(ln) || '—'}</td>
             <td className={styles.whCell}>
               {v.warehouseCode
                 ? <span className={styles.whTag} title={v.warehouseName ?? undefined}>{v.warehouseCode}</span>
@@ -1532,7 +1554,7 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
       {accessoryRiders.length > 0 && (
         <tr className={styles.detailRow}>
           <td />
-          <td colSpan={10} className="py-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+          <td colSpan={11} className="py-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
             {poMode === 'combined'
               ? 'Accessories on this order (cover / pillow) — ride on the sofa PO when a supplier matches, else their own PO'
               : 'Accessories on this order (cover / pillow) — ordered on their own PO (Per-SO); switch to Combined to ride on the sofa PO'}
@@ -1549,6 +1571,7 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
               <span className={styles.variantBranch}>↳</span>
             </td>
             <td className={styles.codeCell}>{line.soDocNo}</td>
+            <td>{mrpProjectLabel(line) || '—'}</td>
             <td className={styles.whCell}>
               {sku.warehouseCode
                 ? <span className={styles.whTag} title={sku.warehouseName ?? undefined}>{sku.warehouseCode}</span>

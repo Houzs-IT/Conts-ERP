@@ -112,6 +112,7 @@ export function sofaSetsToSkus(sets: SofaSet[]): MrpSku[] {
       // an SO's module rows LHF → NA → RHF (same order as the SO PDF/detail).
       lineNo: s.lineNo, createdAt: s.createdAt,
       debtorName: s.debtorName,
+      projectId: s.projectId ?? null, projectCode: s.projectCode ?? null, projectName: s.projectName ?? null,
       customerState: s.customerState,
       soDate: s.soDate, deliveryDate: s.deliveryDate, processingDate: s.processingDate,
       orderByDate: s.orderByDate, qty: s.qty,
@@ -240,6 +241,14 @@ export type MrpFilters = {
   search: string;
 };
 
+/** "RN-2611-001 · TESTING T-02-01", or '' for an order with no project (owner, 3 Nov 2026). */
+export const mrpProjectLabel = (l: Pick<MrpLine, 'projectCode' | 'projectName'>): string =>
+  [l.projectCode, l.projectName].filter((x): x is string => Boolean(x && x.trim())).join(' · ');
+
+/** The distinct values a Model row's SO lines carry for one field, first seen first (blank values left out). */
+export const groupDistinct = (g: ModelGroup, pick: (l: MrpLine) => string): string[] =>
+  [...new Set(g.variants.flatMap((v) => v.lines.map(pick)).filter((x) => x.trim() !== ''))];
+
 export const lineDateOf = (l: MrpLine, dateBasis: DateBasis): string | null =>
   dateBasis === 'processing' ? l.processingDate
   : dateBasis === 'soDate' ? l.soDate
@@ -349,10 +358,10 @@ export function computeTabModels(
     const hay: string[] = [g.itemCode, g.description ?? ''];
     for (const v of g.variants) {
       hay.push(v.variantLabel ?? '', v.itemCode);
-      for (const l of v.lines) hay.push(l.soDocNo, l.debtorName ?? '');
+      for (const l of v.lines) hay.push(l.soDocNo, l.debtorName ?? '', mrpProjectLabel(l));
     }
     for (const { sku, line } of accessoryBySoDoc.get(g.itemCode) ?? []) {
-      hay.push(sku.itemCode, sku.description ?? '', line.debtorName ?? '');
+      hay.push(sku.itemCode, sku.description ?? '', line.debtorName ?? '', mrpProjectLabel(line));
     }
     return hay.some((h) => h.toLowerCase().includes(searchQ));
   };
