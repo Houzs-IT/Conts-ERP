@@ -1,11 +1,12 @@
-import type { Env } from './db';
+import { type Env, inDemo } from './db';
 
 /** Channex server for this environment, from wrangler.toml: staging.channex.io on preview, app.channex.io
  *  on production. Falls back to staging so a missing setting can never touch real listings. */
 export const channexServer = (env: Env) => (env.CHANNEX_BASE_URL || 'https://staging.channex.io').replace(/\/+$/, '');
 
 async function channexFetch<T = unknown>(env: Env, path: string, init?: RequestInit): Promise<{ ok: boolean; status: number; body: T | null }> {
-  if (!env.CHANNEX_API_KEY) return { ok: false, status: 0, body: null };
+  // Demo mode never calls Channex: the change stays in the demo store ("Demo: not sent").
+  if (!env.CHANNEX_API_KEY || inDemo()) return { ok: false, status: 0, body: null };
   const res = await fetch(channexServer(env) + '/api/v1' + path, {
     ...init,
     headers: { 'user-api-key': env.CHANNEX_API_KEY, accept: 'application/json', 'content-type': 'application/json', ...(init?.headers ?? {}) },
@@ -16,7 +17,7 @@ async function channexFetch<T = unknown>(env: Env, path: string, init?: RequestI
   return { ok: res.ok, status: res.status, body };
 }
 
-export const channexConfigured = (env: Env) => !!env.CHANNEX_API_KEY;
+export const channexConfigured = (env: Env) => !!env.CHANNEX_API_KEY && !inDemo();
 
 /** Only OTAs the owner has actually connected map to a channel. Bookings, messages and reviews
  *  each spell the OTA's name differently ("Airbnb" vs "AirBNB" vs "BookingCom"), so this

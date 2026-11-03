@@ -6,7 +6,12 @@
 //   3. with API_BASE (a local server on the same database): the Demo switch is for management and sales staff only;
 //      a sample reservation shows in Demo mode and nowhere else: never in the owner portal API (/api/owner/*), an
 //      owner statement or the reservations export; editing a real reservation in Demo mode leaves pos unchanged;
-//      every real write is refused while Demo mode is on; Clear demo empties the store
+//      Clear demo empties the store
+//   4. the whole system (migration 0203): demo_pos has every pos table and column; writes through it land in the
+//      store; with API_BASE, the normal screens' actions (add owner, unit, reservation, maintenance job, cancel a real
+//      reservation) work in Demo and reach nothing in pos; Owners, Units, Reservations, Guests, Maintenance, Calendar
+//      show the demo rows and live does not; Dashboard, Analytics and Performance count them; real-only actions
+//      (finalise, send, payouts, Channex sync, users) are refused; the owner portal API and the units export are unchanged
 //
 // Run against a throwaway database (scripts/ci-api-db.mjs, or scripts/dev-pglite.mjs) as its owner:
 //   DB_URL=postgres://postgres@127.0.0.1:5432/ci [API_BASE=http://localhost:8788] node scripts/api-checks/demo-mode.mjs
@@ -50,10 +55,10 @@ check('a new real reservation shows in Demo mode at once', await count('demo.v_r
 await sql`delete from reservations where id = 'check-live-1'`;
 
 const shadowId = (await sql`select demo.shadow('reservations', ${res.id}, 'demo-mode check') as id`)[0].id;
-check('editing a real reservation in Demo mode makes a shadow', shadowId === `demo-s-${res.id}`, shadowId);
+check('editing a real reservation in Demo mode makes a shadow under the real id', shadowId === res.id, shadowId);
 await sql`update demo.reservations set notes = 'changed in demo', gross_booking_value = 1 where id = ${shadowId}`;
 const [seen] = await sql`select notes, gross_booking_value, demo_source, demo_id from demo.v_reservations where id = ${res.id}`;
-check('Demo mode shows the shadow under the real id', seen?.notes === 'changed in demo' && seen.demo_source === 'shadow' && seen.demo_id === shadowId, JSON.stringify(seen));
+check('Demo mode shows the shadow under the real id', seen?.notes === 'changed in demo' && seen.demo_source === 'shadow' && seen.demo_id === res.id, JSON.stringify(seen));
 const [live] = await sql`select notes, gross_booking_value from reservations where id = ${res.id}`;
 check('live is unchanged', live.notes === res.notes && Number(live.gross_booking_value) === Number(res.gross_booking_value));
 check('the reservation appears once in Demo mode', (await sql`select count(*)::int n from demo.v_reservations where id = ${res.id}`)[0].n === 1);
@@ -76,8 +81,38 @@ e = await refused(`update statement_lines set reservation_id = 'demo-r-check' wh
 check('statement lines refuse a demo reservation', RULE.test(e) || !(await sql`select 1 from statement_lines limit 1`).length, e);
 e = await refused(`update payouts set owner_id = 'demo-o-x' where id = (select id from payouts limit 1)`);
 check('payouts refuse a demo owner', RULE.test(e) || !(await sql`select 1 from payouts limit 1`).length, e);
-e = await refused(`insert into demo.reviews (id, unit_id, channel, rating, reviewed_at) values ('no-prefix', $1, 'airbnb', 5, '2026-11-01')`, unit.id);
-check('a demo table refuses an id without demo-', /check constraint/.test(e), e);
+// The whole-system overlay (migration 0203): demo_pos has every pos table, with every pos column, so a Demo mode
+// request's unqualified SQL lands there. A migration that forgot `select demo.sync()` fails here.
+const missing = await sql`select t.tablename from pg_tables t where t.schemaname = 'pos'
+  and not exists (select 1 from pg_views v where v.schemaname = 'demo_pos' and v.viewname = t.tablename)`;
+check('demo_pos has a view for every pos table', missing.length === 0, missing.map(x => x.tablename).join(', '));
+const stale = await sql`select c.table_name, c.column_name from information_schema.columns c where c.table_schema = 'pos'
+  and c.table_name in (select tablename from pg_tables where schemaname = 'pos')
+  and not exists (select 1 from information_schema.columns d where d.table_schema = 'demo_pos' and d.table_name = c.table_name and d.column_name = c.column_name)`;
+check('every demo_pos view has every column of its pos table (demo.sync ran after the last migration)', stale.length === 0, stale.slice(0, 5).map(x => `${x.table_name}.${x.column_name}`).join(', '));
+
+// Writing through demo_pos: insert, update and delete land in the store; pos stays as it was.
+const [task] = await sql`select id, title from tasks order by id limit 1`;
+const [own] = await sql`select id, display_name from owners order by id limit 1`;
+const overlay = await sql.begin(async (tx) => {
+  await tx`set local search_path = demo_pos, pos`;
+  await tx`update owners set display_name = 'Owner renamed in demo' where id = ${own.id}`;
+  await tx`insert into audit_log (actor_label, action, entity_table, entity_id, occurred_at) values ('demo-mode check', 'demo.check', 'owners', ${own.id}, ${stamp})`;
+  if (task) await tx`delete from tasks where id = ${task.id}`;
+  const [o] = await tx`select display_name, demo_source from owners where id = ${own.id}`;
+  const [t] = task ? await tx`select count(*)::int n from tasks where id = ${task.id}` : [{ n: 0 }];
+  const [a] = await tx`select count(*)::int n from audit_log where action = 'demo.check'`;
+  let refusedLive = '';
+  await tx.savepoint((sp) => sp`update payouts set id = id`).catch((err) => { refusedLive = err.message; });
+  return { o, t: t.n, a: a.n, refusedLive };
+});
+check('demo_pos: a real owner edited in Demo shows the change, marked shadow', overlay.o?.display_name === 'Owner renamed in demo' && overlay.o.demo_source === 'shadow', JSON.stringify(overlay.o));
+check('demo_pos: a real task removed in Demo is gone there', overlay.t === 0);
+check('demo_pos: History written in Demo shows there', overlay.a === 1);
+check('demo_pos: a live-only table (payouts) refuses a change in Demo', /^Demo: /.test(overlay.refusedLive) || !(await sql`select 1 from payouts limit 1`).length, overlay.refusedLive);
+check('pos is unchanged: the owner, the task and History', (await sql`select display_name from owners where id = ${own.id}`)[0].display_name === own.display_name
+  && (!task || (await sql`select count(*)::int n from tasks where id = ${task.id}`)[0].n === 1)
+  && (await sql`select count(*)::int n from audit_log where action = 'demo.check'`)[0].n === 0);
 
 const cleared = (await sql`select demo.clear() as c`)[0].c;
 check('Clear demo removes demo rows and shadows', cleared.reservations === 2 && cleared.guests === 1, JSON.stringify(cleared));
@@ -89,6 +124,87 @@ check('no demo- id reached pos.reservations, reviews, units, owners or guests', 
     + (select count(*) from units where id like 'demo-%') + (select count(*) from owners where id like 'demo-%') + (select count(*) from guests where id like 'demo-%') as n`)[0].n) === 0);
 await sql.end();
 done();
+
+/** The whole system in Demo mode (owner, 3 Nov 2026; migration 0203): every screen's endpoint shows the demo rows and
+ *  live does not; the normal screens' own actions work in Demo and write only to the store; real-only actions are
+ *  refused; the guarded paths (owner portal, exports, outbox, messages out) never see or send demo data. */
+async function wholeSystem(send, strip, unitId, realOwnerId) {
+  const posCounts = async () => (await sql`select (select count(*) from reservations) r, (select count(*) from owners) o, (select count(*) from units) u,
+    (select count(*) from guests) g, (select count(*) from tasks) t, (select count(*) from maintenance_issues) m, (select count(*) from owner_statements) s,
+    (select count(*) from audit_log where action <> 'owner.view_as') a, (select count(*) from channex_outbox) x, (select count(*) from notification_log) n`)[0];
+  const sumBefore = await send('management', 'GET', `/api/owner/summary?ownerId=${encodeURIComponent(realOwnerId)}`, undefined, false);
+  const exportBefore = await send('management', 'GET', '/api/units/export', undefined, false);
+  const before = await posCounts();
+
+  // Actions on the normal screens, Demo on.
+  let r = await send('management', 'POST', '/api/owners', { displayName: 'Whole System Demo Owner', email: 'whole.demo@example.com', phone: '+60123450001' });
+  const ownerId = r.json?.id;
+  check('Demo: Owners > Add owner works and makes a demo- id', r.status === 201 && ownerId?.startsWith('demo-'), `${r.status} ${r.text.slice(0, 200)}`);
+  const [building] = await sql`select id from properties order by id limit 1`;
+  r = await send('management', 'POST', '/api/units', { buildingId: building.id, ownerId, unitCode: 'WS-DEMO-1' });
+  const newUnit = r.json?.id;
+  check('Demo: Units > Add unit for the demo owner works', r.status === 201 && String(newUnit).startsWith('demo-'), `${r.status} ${r.text.slice(0, 200)}`);
+  r = await send('management', 'PATCH', `/api/units/${unitId}`, { listingName: 'Whole system demo listing' });
+  check('Demo: editing a real unit works', r.status === 200, `${r.status} ${r.text.slice(0, 200)}`);
+  // A stay that has started (yesterday to tomorrow), so this month's KPIs and charts count it.
+  const day = (n) => new Date(Date.now() + 8 * 3600e3 + n * 864e5).toISOString().slice(0, 10);
+  let resId = null;
+  for (const [ci, co] of [[day(-1), day(1)], [day(-3), day(-1)], [day(1), day(3)]]) {
+    for (const x of await sql`select id from units where purpose = 'rental' order by id`) {
+      r = await send('management', 'POST', '/api/reservations', { unitId: x.id, channel: 'direct', checkIn: ci, checkOut: co, guestsCount: 2, grossBookingValue: 4321000, guest: { fullName: 'Whole System Guest' } });
+      if (r.status === 201) { resId = r.json.id; break; }
+    }
+    if (resId) break;
+  }
+  check('Demo: Reservations > New reservation works and makes a demo- id', !!resId && resId.startsWith('demo-'), `${r.status} ${r.text.slice(0, 200)}`);
+  r = await send('management', 'POST', '/api/maintenance/issues', { unitId, title: 'Whole system demo leak', category: 'plumbing', urgency: 'normal', source: 'staff' });
+  const jobId = r.json?.id;
+  check('Demo: Maintenance > Add job works', r.status === 201 && jobId?.startsWith('demo-'), `${r.status} ${r.text.slice(0, 200)}`);
+  const [realRes] = await sql`select id, state from reservations where state = 'confirmed' and channel not in ('maintenance_block','owner_stay') order by id limit 1`;
+  if (realRes) {
+    r = await send('management', 'PATCH', `/api/reservations/${realRes.id}`, { state: 'cancelled', reason: 'whole system demo' });
+    check('Demo: cancelling a real reservation works in Demo', r.status === 200, `${r.status} ${r.text.slice(0, 200)}`);
+    check('...and the real reservation is still confirmed', (await sql`select state from reservations where id = ${realRes.id}`)[0].state === 'confirmed');
+  }
+
+  // Every covered screen: Demo shows the demo rows, live does not.
+  const both = async (path) => [await send('management', 'GET', path), await send('management', 'GET', path, undefined, false)];
+  const shows = async (label, path, needle) => {
+    const [on, off] = await both(path);
+    check(`Demo: ${label} shows the demo row; live does not`, on.status === 200 && off.status === 200 && on.text.includes(needle) && !off.text.includes(needle), `${on.status}/${off.status}`);
+  };
+  await shows('Owners (A) list', '/api/owners?pageSize=500', ownerId);
+  const [pOn, pOff] = await both(`/api/owners/${encodeURIComponent(ownerId)}/pnl`);
+  check('Demo: the demo owner profile (P&L tab) opens in Demo, not live', pOn.status === 200 && pOff.status !== 200, `${pOn.status}/${pOff.status} ${pOn.text.slice(0, 120)}`);
+  await shows('Unit profile', `/api/units/detail?unitId=${unitId}`, 'Whole system demo listing');
+  await shows('Reservations', '/api/reservations?view=all&q=Whole%20System%20Guest', resId);
+  await shows('Guests', '/api/guests?q=Whole%20System', 'Whole System Guest');
+  await shows('Maintenance', '/api/maintenance/issues', jobId);
+  await shows('Calendar', `/api/reservations/calendar?from=${day(-5)}&to=${day(5)}`, resId);
+  const differs = async (label, path) => {
+    const [on, off] = await both(path);
+    check(`Demo: ${label} counts the demo reservation (Demo and live differ)`, on.status === 200 && off.status === 200 && strip(on.json) !== strip(off.json), `${on.status}/${off.status}`);
+  };
+  await differs('Dashboard KPIs', '/api/dashboard/kpis');
+  await differs('Analytics', '/api/analytics');
+  await differs('Performance', '/api/portfolio/performance');
+  await shows('Units list', '/api/units', 'WS-DEMO-1');
+
+  // Real-only actions are refused in Demo; the guarded paths never see demo data.
+  for (const [m, path] of [['POST', '/api/statements/finalise'], ['POST', '/api/statements/send'], ['POST', '/api/payouts/run'], ['POST', '/api/integrations/channex/full-sync'], ['POST', '/api/users']]) {
+    r = await send('management', m, path, {});
+    check(`Demo: ${path} is refused (real-only)`, r.status === 409 && r.json?.error?.code === 'DEMO_MODE', `${r.status} ${r.text.slice(0, 120)}`);
+  }
+  const after = await posCounts();
+  const sumAfter = await send('management', 'GET', `/api/owner/summary?ownerId=${encodeURIComponent(realOwnerId)}`);
+  check('Guard: the owner portal API is the same with Demo on', sumAfter.status === 200 && strip(sumAfter.json) === strip(sumBefore.json));
+  const exportAfter = await send('management', 'GET', '/api/units/export');
+  check('Guard: the units export is the same with Demo on (no demo note)', exportAfter.status === 200 && exportAfter.text === exportBefore.text);
+  check('Guard: nothing reached pos (reservations, owners, units, guests, tasks, jobs, statements, History, Channex outbox, messages)',
+    JSON.stringify(after) === JSON.stringify(before), `${JSON.stringify(before)} -> ${JSON.stringify(after)}`);
+  check('Guard: the demo store holds the work', Number((await sql`select (select count(*) from demo.owners where id = ${ownerId}) + (select count(*) from demo.maintenance_issues where id = ${jobId})
+    + (select count(*) from demo.audit_log) as n`)[0].n) >= 3);
+}
 
 async function apiChecks(BASE) {
   const send = async (role, method, path, body, demo = true) => {
@@ -158,8 +274,7 @@ async function apiChecks(BASE) {
   const detailLive = await send('management', 'GET', `/api/reservations/${realRes.id}`, undefined, false);
   check('API: live mode shows the real reservation', detailLive.json?.notes === realRes.notes && !detailLive.json?.sample);
 
-  r = await send('management', 'PATCH', `/api/reservations/${realRes.id}`, { state: 'cancelled', reason: 'demo check' });
-  check('API: a real write is refused while Demo mode is on', r.status === 409 && r.json?.error?.code === 'DEMO_MODE', `${r.status} ${r.text}`);
+  await wholeSystem(send, strip, u.id, st.owner_id);
   r = await send('management', 'POST', '/api/demo/reviews', { unitId: u.id, channel: 'airbnb', rating: 5, comment: 'Demo check review', reviewedAt: `${st.period}-15` });
   check('API: a sample review is created', r.status === 201, r.text);
   const reviews = await send('management', 'GET', '/api/reviews');

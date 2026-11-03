@@ -105,7 +105,7 @@ async function onOwnConnection<T>(work: (db: postgres.Sql) => Promise<T>, env: E
 
 /** One client per request, opened on its first statement and closed once the response is ready. A Worker may not use a socket opened by another request, so a client is
  *  never shared across requests: each request gets its own store through `withRequestDb` (functions/api/_middleware.ts). */
-interface RequestDb { db?: postgres.Sql; closed: boolean }
+interface RequestDb { db?: postgres.Sql; demoDb?: postgres.Sql; closed: boolean }
 interface Store<T> { run<R>(store: T, fn: () => R): R; getStore(): T | undefined }
 const requestDb: Store<RequestDb> = new ALS();
 
@@ -117,30 +117,101 @@ export async function withRequestDb<T>(fn: () => Promise<T>, waitUntil: (p: Prom
     // Marked closed first, so a statement from work queued with waitUntil that starts later opens its own client;
     // one already running on this client is let finish (up to 10 s) before the sockets close.
     store.closed = true;
-    const db = store.db;
+    const db = store.db, ddb = store.demoDb;
     store.db = undefined;
+    store.demoDb = undefined;
     if (db) waitUntil(db.end({ timeout: 10 }).catch(() => {}));
+    if (ddb) waitUntil(ddb.end({ timeout: 10 }).catch(() => {}));
   }
 }
 
-/** The role `pos_app` has search_path = pos, so table names stay unqualified. */
+/** The role `pos_app` has search_path = pos, so table names stay unqualified. In Demo mode each statement runs in a
+ *  transaction of its own that puts demo_pos ahead of pos (SET LOCAL, which a pooled connection allows), so the same
+ *  SQL reads real plus demo rows and writes only into the demo store (migration 0203). */
 async function query<T>(env: Env, sql: string, args: unknown[]): Promise<T[]> {
+  const demo = inDemo();
+  if (demo) sql = await demoSql(env, sql);
   if (env.TX) return (await env.TX.unsafe(numbered(sql), args as never[])) as unknown as T[];
   const store = requestDb.getStore();
   if (!store || store.closed) {
-    return onOwnConnection(async db => (await db.unsafe(numbered(sql), args as never[])) as unknown as T[], env);
+    return onOwnConnection(async db => (demo ? demoStatement<T>(db, sql, args) : (await db.unsafe(numbered(sql), args as never[])) as unknown as T[]), env);
+  }
+  if (demo) {
+    const ddb = store.demoDb ??= open(env, PER_REQUEST);
+    return retryPoolFull(() => demoStatement<T>(ddb, sql, args));
   }
   const db = store.db ??= open(env, PER_REQUEST);
   return retryPoolFull(async () => (await db.unsafe(numbered(sql), args as never[])) as unknown as T[]);
 }
 
+/* ------------------------------------------------------------------ *
+ * Demo mode (migration 0203). A request the session middleware runs through runDemo() reads and writes demo_pos:
+ * real rows live plus the demo store, every change landing in the store. Which requests do is written in the
+ * middleware (DEMO_LIVE, DEMO_REFUSED), never chosen by a screen.
+ * ------------------------------------------------------------------ */
+const DEMO_PATH = 'demo_pos, pos';
+const demoScope: Store<{ demo: true }> = new ALS();
+
+/** Whether this request (or work it started) is in Demo mode. */
+export const inDemo = (): boolean => demoScope.getStore()?.demo === true;
+
+/** Runs `fn` in Demo mode: every statement it makes is demo, and every id it makes with crypto.randomUUID starts
+ *  demo-. Only the session middleware calls this. */
+export const runDemo = <T>(fn: () => Promise<T>): Promise<T> => demoScope.run({ demo: true }, fn);
+
+/** Ids made in Demo mode start demo-: easy to tell apart, and 0199's rule on the money and channel tables
+ *  (pos.refuse_demo_ids) would refuse one that ever reached them. */
+const plainUuid = crypto.randomUUID.bind(crypto);
+try {
+  Object.defineProperty(crypto, 'randomUUID', {
+    configurable: true, writable: true,
+    value: () => (inDemo() ? `demo-${plainUuid()}` : plainUuid()) as ReturnType<Crypto['randomUUID']>,
+  });
+} catch { /* a runtime that refuses keeps plain ids; the overlay still keeps every Demo mode write out of pos */ }
+
+/** Tables Demo mode reads live and never writes (demo.live_only() in migration 0203). */
+const DEMO_LIVE_ONLY = new Set(['payouts', 'user_sessions', 'password_reset_tokens', 'user_backup_codes', 'login_events']);
+/** Running numbers: Demo mode copies the real ones into the store before its first upsert, so a demo booking or
+ *  document number carries on from the real one instead of starting again at 1. */
+const DEMO_SEED_FIRST = new Set(['booking_ref_counters', 'document_counters']);
+
+/** The two things a view cannot do: lock rows (FOR UPDATE over a UNION) and be an ON CONFLICT target (it has no
+ *  unique index). In Demo mode the lock is dropped and an upsert goes straight into the table's demo store, which
+ *  carries the pos table's unique indexes. A key only the real table has is then written as a new demo row that
+ *  stands in for the real one. */
+async function demoSql(env: Env, sql: string): Promise<string> {
+  let out = sql.replace(/\s+FOR\s+(?:NO\s+KEY\s+)?(?:UPDATE|SHARE)(?:\s+OF\s+[a-z_]\w*(?:\s*,\s*[a-z_]\w*)*)?(?:\s+(?:NOWAIT|SKIP\s+LOCKED))?/gi, '');
+  if (/\bON\s+CONFLICT\b/i.test(out)) {
+    const seed: string[] = [];
+    out = out.replace(/\bINSERT\s+INTO\s+([a-z_][a-z0-9_]*)\b(?!\s*\.)/gi, (m, t: string) => {
+      const name = t.toLowerCase();
+      if (name === 'demo' || DEMO_LIVE_ONLY.has(name)) return m;
+      if (DEMO_SEED_FIRST.has(name)) seed.push(name);
+      return `INSERT INTO demo.${name}`;
+    });
+    for (const t of seed) await query(env, 'SELECT demo.shadow_all(?) AS x', [t]);
+  }
+  return out;
+}
+
+/** One Demo mode statement in a transaction of its own: demo_pos first on the search path, then the statement, the
+ *  two sent together. */
+async function demoStatement<T>(db: postgres.Sql, sql: string, args: unknown[]): Promise<T[]> {
+  const [, rows] = await db.begin(tx => [tx.unsafe(`set local search_path = ${DEMO_PATH}`), tx.unsafe(numbered(sql), args as never[])]);
+  return rows as unknown as T[];
+}
+
 /** Runs `fn` in one database transaction: every all/one/run/audit given the env it receives commits together, or
  *  none of them does if it throws. Used where a money action and its approval must land as one. It takes a connection
  *  of its own rather than one of the request's: a statement inside `fn` that was given the outer env would otherwise
- *  wait for the very connection the transaction holds. */
+ *  wait for the very connection the transaction holds. In Demo mode the transaction reads and writes demo_pos. */
 export async function transaction<T>(env: Env, fn: (tx: Env) => Promise<T>): Promise<T> {
   if (env.TX) return fn(env);
-  return onOwnConnection(async db => (await db.begin(sql => fn({ ...env, TX: sql }))) as T, env);
+  const demo = inDemo();
+  return onOwnConnection(async db => (await db.begin(async sql => {
+    if (demo) await sql.unsafe(`set local search_path = ${DEMO_PATH}`);
+    return fn({ ...env, TX: sql });
+  })) as T, env);
 }
 
 export async function all<T = Record<string, unknown>>(env: Env, sql: string, ...args: unknown[]) {
