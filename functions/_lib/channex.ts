@@ -97,6 +97,17 @@ export function channexReplyToReview(env: Env, reviewId: string, reply: string) 
   return channexFetch(env, `/reviews/${reviewId}/reply`, { method: 'POST', body: JSON.stringify({ reply: { reply } }) });
 }
 
+/** The host's review of the guest (Airbnb only), on the guest's review of that stay. Ratings 1-5; tags are
+ *  host_review_guest_* codes. Body as Channex's reviews collection gives it (3 Nov 2026). */
+export function channexGuestReview(env: Env, reviewId: string, p: {
+  scores: { category: string; rating: number }[]; publicReview: string; privateReview: string; recommend: boolean; tags: string[];
+}) {
+  return channexFetch(env, `/reviews/${reviewId}/guest_review`, {
+    method: 'POST',
+    body: JSON.stringify({ review: { scores: p.scores, private_review: p.privateReview, public_review: p.publicReview, is_reviewee_recommended: p.recommend, tags: p.tags } }),
+  });
+}
+
 /** Whole-currency-unit rate (e.g. 150.00), not sen — confirmed against the demo property. */
 /** One ARI call carrying every value in the batch — the only way the outbox (channexQueue.ts) talks to Channex. */
 export function channexSendAri(env: Env, kind: 'availability' | 'restrictions', values: Record<string, unknown>[]) {

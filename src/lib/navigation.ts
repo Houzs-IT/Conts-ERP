@@ -2,7 +2,7 @@ import type { UserRole, AccessLevel, SessionUser } from './types';
 import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
-export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport';
+export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews' | 'statements' | 'approvals' | 'itSupport';
 /** The sidebar shows one workspace at a time. Rental (The Conts) is the daily work; supply chain (Dream Crafter) sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
@@ -161,7 +161,7 @@ export const NAV: NavGroup[] = [
   ...financeGroups('/finance', '', 'rental'),
   { label: 'GROWTH', workspace: 'rental', items: [
     { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'pricing', full: true },
-    { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'pricing' },
+    { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'pricing', badge: 'reviews' },
     // Guest messages from Airbnb, Booking.com and WhatsApp, below Reviews (owner, 2 Nov 2026; migration 0200 moved the
     // permission area with it, so nobody's access changed).
     { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },

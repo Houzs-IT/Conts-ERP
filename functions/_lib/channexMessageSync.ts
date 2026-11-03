@@ -1,4 +1,7 @@
-import { type Env, all, one, run, audit, nowIso } from './db';
+import { type Env, all, one, run, audit, nowIso, inDemo } from './db';
+import { categoryKey, isBadReview, nativeOverall, scaleText } from '../../src/lib/reviewRules';
+import { notifyUsers } from './notify';
+import { peopleWithAccess } from './access';
 import { CHANNEX_PAGE, channexConfigured, channexChannelFor, channexMessageThreads, channexThreadMessages, channexReviews, channexSendMessage, channexReplyToReview } from './channex';
 
 export interface ChannexDelivery { state: 'sent' | 'failed' | 'not_linked'; reason?: string }
@@ -41,6 +44,7 @@ export async function pushReviewReplyIfLinked(env: Env, reviewId: string, reply:
   try {
     const review = await one<{ channex_review_id: string | null }>(env, 'SELECT channex_review_id FROM reviews WHERE id = ?', reviewId);
     if (!review?.channex_review_id) return null;
+    if (inDemo()) return { state: 'failed', reason: 'Demo: saved in the demo store, not posted to the channel.' };
     if (!channexConfigured(env)) return { state: 'failed', reason: 'Channex is not connected on this system.' };
     const res = await channexReplyToReview(env, review.channex_review_id, reply);
     if (res.ok) return { state: 'sent' };
@@ -214,10 +218,12 @@ function reviewText(a: any): string | null {
   return parts.length ? parts.join('\n') : null;
 }
 
-/** Category scores (Booking.com: cleanliness, location, staff ...), each out of 10 as Channex gives them. */
+/** Category scores, each out of 10 as Channex gives them, under our names (src/lib/reviewRules.ts categoryKey:
+ *  Channex's "clean" is cleanliness). Airbnb: cleanliness, accuracy, communication, check-in, location, value;
+ *  Booking.com: staff, facilities, cleanliness, comfort, value, location. */
 function scoresOf(a: any): { category: string; score: number }[] | null {
   const list = Array.isArray(a.scores) ? a.scores : [];
-  const out = list.map((s: any) => ({ category: String(s.category ?? '').replace(/_/g, ' ').trim(), score: Number(s.score) }))
+  const out = list.map((s: any) => ({ category: categoryKey(String(s.category ?? '')), score: Number(s.score) }))
     .filter((s: { category: string; score: number }) => s.category && Number.isFinite(s.score));
   return out.length ? out : null;
 }
@@ -255,6 +261,7 @@ async function pullReviews(env: Env, budget: Budget): Promise<number> {
       unit_id: r?.unit_id ?? unit.get(propertyOf(review) ?? '') ?? null, reservation_id: r?.id ?? null, channel,
       rating: Math.max(0, Math.min(5, Number(a.overall_score ?? 0) / 2)), // Channex scores out of 10, we keep 0-5
       comment: reviewText(a), guest_name: a.guest_name ?? null, scores: scoresOf(a),
+      is_hidden: a.is_hidden === true ? 1 : 0, tags: Array.isArray(a.tags) && a.tags.length ? a.tags.map((x: unknown) => String(x)).slice(0, 60) : null,
       channel_reply: reply, channel_replied_at: reply ? (a.replied_at ?? a.updated_at ?? nowIso()) : null,
       reviewed_at: a.received_at ?? a.inserted_at ?? nowIso(), channex_updated_at: a.updated_at ?? null,
     });
@@ -263,19 +270,58 @@ async function pullReviews(env: Env, budget: Budget): Promise<number> {
   // One write for new and changed reviews. A reply typed here is never overwritten; a reply written on the channel's
   // site fills an empty one, and the channel showing our reply marks a failed post as sent.
   await run(env, `
-    INSERT INTO reviews (id, channex_review_id, unit_id, reservation_id, channel, rating, comment, guest_name, scores, channel_reply, channel_replied_at, reply, replied_at, reviewed_at, channex_updated_at)
-    SELECT x.id, x.channex_review_id, x.unit_id, x.reservation_id, x.channel, x.rating, x.comment, x.guest_name, x.scores, x.channel_reply, x.channel_replied_at, x.channel_reply, x.channel_replied_at, x.reviewed_at, x.channex_updated_at
-    FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, channex_review_id text, unit_id text, reservation_id text, channel text, rating double precision, comment text, guest_name text, scores jsonb, channel_reply text, channel_replied_at text, reviewed_at text, channex_updated_at text)
+    INSERT INTO reviews (id, channex_review_id, unit_id, reservation_id, channel, rating, comment, guest_name, scores, is_hidden, tags, channel_reply, channel_replied_at, reply, replied_at, reviewed_at, channex_updated_at)
+    SELECT x.id, x.channex_review_id, x.unit_id, x.reservation_id, x.channel, x.rating, x.comment, x.guest_name, x.scores, x.is_hidden, x.tags, x.channel_reply, x.channel_replied_at, x.channel_reply, x.channel_replied_at, x.reviewed_at, x.channex_updated_at
+    FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, channex_review_id text, unit_id text, reservation_id text, channel text, rating double precision, comment text, guest_name text, scores jsonb, is_hidden int, tags jsonb, channel_reply text, channel_replied_at text, reviewed_at text, channex_updated_at text)
     ON CONFLICT (id) DO UPDATE SET
       unit_id = COALESCE(reviews.unit_id, EXCLUDED.unit_id), reservation_id = COALESCE(reviews.reservation_id, EXCLUDED.reservation_id),
       rating = EXCLUDED.rating, comment = EXCLUDED.comment, guest_name = EXCLUDED.guest_name, scores = EXCLUDED.scores,
+      is_hidden = EXCLUDED.is_hidden, tags = EXCLUDED.tags,
       channel_reply = EXCLUDED.channel_reply, channel_replied_at = EXCLUDED.channel_replied_at, channex_updated_at = EXCLUDED.channex_updated_at,
       reply = COALESCE(reviews.reply, EXCLUDED.channel_reply), replied_at = COALESCE(reviews.replied_at, EXCLUDED.channel_replied_at),
       reply_push_state = CASE WHEN reviews.reply_push_state = 'failed' AND EXCLUDED.channel_reply IS NOT NULL AND EXCLUDED.channel_reply = reviews.reply THEN 'sent' ELSE reviews.reply_push_state END,
       reply_push_error = CASE WHEN reviews.reply_push_state = 'failed' AND EXCLUDED.channel_reply IS NOT NULL AND EXCLUDED.channel_reply = reviews.reply THEN NULL ELSE reviews.reply_push_error END`,
     JSON.stringify(rows));
-  await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.reviews_pulled', entityTable: 'reviews', entityId: 'sync', after: { created: rows.filter(x => !known.has(String(x.channex_review_id))).length, updated: rows.filter(x => known.has(String(x.channex_review_id))).length } });
+  const created = rows.filter(x => !known.has(String(x.channex_review_id)));
+  await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.reviews_pulled', entityTable: 'reviews', entityId: 'sync', after: { created: created.length, updated: rows.length - created.length } });
+  await alertNewReviews(env, created);
   return rows.length;
+}
+
+/** A notice to everyone who works on Reviews for each new review (owner, 3 Nov 2026), loud for a bad one. One notice
+ *  per review and person (dedupe key), so a pull that runs again does not repeat it. More than BULK new reviews at
+ *  once (the first pull of an account) become one notice. Never throws: notifyUsers records its own failures. */
+const BULK = 5;
+async function alertNewReviews(env: Env, created: Record<string, unknown>[]) {
+  if (!created.length) return;
+  try {
+    const people = (await peopleWithAccess(env, 'pricing', 'edit')).map(p => p.id);
+    if (!people.length) return;
+    const name = (ch: unknown) => (ch === 'booking_com' ? 'Booking.com' : ch === 'airbnb' ? 'Airbnb' : String(ch));
+    if (created.length > BULK) {
+      const bad = created.filter(x => isBadReview(Number(x.rating))).length;
+      await notifyUsers(env, people, {
+        kind: 'review.new', title: `${created.length} new reviews${bad ? `, ${bad} bad` : ''}`, body: 'Open Reviews to read them and reply.',
+        link: bad ? '/performance/reviews?tab=bad' : '/performance/reviews?tab=all&reply=needs_reply', entityTable: 'reviews', entityId: 'sync',
+        dedupeKey: `review.new.bulk:${created.map(x => x.id).sort()[0]}`,
+      });
+      return;
+    }
+    await Promise.all(created.map(x => {
+      const bad = isBadReview(Number(x.rating));
+      const score = scaleText(nativeOverall(String(x.channel), Number(x.rating)));
+      const guest = String(x.guest_name ?? 'A guest');
+      return notifyUsers(env, people, {
+        kind: bad ? 'review.bad' : 'review.new',
+        title: bad ? `Bad review: ${score} from ${guest} on ${name(x.channel)}` : `New review: ${score} from ${guest} on ${name(x.channel)}`,
+        body: x.comment ? String(x.comment).slice(0, 240) : (x.is_hidden ? 'Hidden until you review the guest.' : null),
+        link: `/performance/reviews?tab=${bad ? 'bad' : 'all'}&q=${encodeURIComponent(guest)}`, entityTable: 'reviews', entityId: String(x.id),
+        dedupeKey: `review.new:${x.id}`, email: bad,
+      });
+    }));
+  } catch (e) {
+    await auditFail(env, 'review.alert_failed', e);
+  }
 }
 
 async function auditSkip(env: Env, kind: 'message_thread' | 'review', channexId: string, reason: string, details: unknown) {
