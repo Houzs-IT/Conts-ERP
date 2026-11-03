@@ -331,8 +331,8 @@ Lower density, simpler language, no internal shorthand (guide 15).
 
 | Value | Format | Example |
 | --- | --- | --- |
-| Currency, cents matter | `RM #,##0.00` | RM 12,450.00 |
-| Currency, KPI card | `RM #,##0` | RM 12,450 |
+| Currency (every amount, owner 3 Nov 2026) | `RM #,##0.00` | RM 12,450.00 |
+| Nightly rate on the calendar and pricing grids, chart axis | `RM #,##0` | RM 231 |
 | Percent | one decimal, with sign | 82.4% |
 | Rating, detail view | `0.00 / 5` | 4.91 / 5 |
 | Date, compact | `D MMM YYYY` | 16 Sep 2026 |

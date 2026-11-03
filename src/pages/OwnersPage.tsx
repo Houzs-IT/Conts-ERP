@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
 import { saveBlob, zipStore } from '../lib/export';
 import type { Report } from './OwnerIncomeReportPage';
-import { rmShort, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
+import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { phone as formatPhone } from '../lib/phone';
 import { MoneyText } from '../components/MoneyText';
 import { Select } from '../components/Select';
@@ -328,7 +328,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
         <div className="col-span-2 lg:col-span-1 relative rounded-card bg-black text-white p-5 flex flex-col gap-2 overflow-hidden">
           <span aria-hidden className="absolute left-5 top-0 h-[2px] w-8 bg-gold" />
           <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">To pay owners</span>
-          <span className="text-[34px] leading-none font-semibold tabular-nums text-gold">{data ? rmShort(portfolioNet) : '—'}</span>
+          <span className="text-[28px] sm:text-[34px] leading-none font-semibold tabular-nums text-gold">{data ? rm(portfolioNet) : '—'}</span>
           <span className="text-meta text-on-dark">{data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')}` : 'Loading…'}</span>
         </div>
         {([
@@ -338,7 +338,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
         ] as const).map(([label, v, hint]) => (
           <div key={label} className="rounded-card border border-solid border-line bg-card p-4 sm:p-5 flex flex-col gap-2 min-w-0">
             <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">{label}</span>
-            <span className="text-[24px] leading-none font-semibold tabular-nums">{data ? rmShort(v) : '—'}</span>
+            <span className="text-[16px] sm:text-[24px] leading-none font-semibold tabular-nums whitespace-nowrap">{data ? rm(v) : '—'}</span>
             <span className="text-meta text-muted-ink truncate">{hint}</span>
           </div>
         ))}

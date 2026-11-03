@@ -68,7 +68,7 @@ export default function CustomersPage() {
     { key: 'contact', label: 'Contact', value: c => c.contactPerson },
     { key: 'phone', label: 'Phone', type: 'phone', value: c => c.phone },
     { key: 'terms', label: 'Terms', value: c => c.paymentTerms },
-    { key: 'credit', label: 'Credit limit', type: 'money', value: c => c.creditLimitSen, render: c => c.creditLimitSen ? <span className="tabular-nums">{rm(c.creditLimitSen, { cents: false })}</span> : <span className="text-muted-ink">—</span> },
+    { key: 'credit', label: 'Credit limit', type: 'money', value: c => c.creditLimitSen, render: c => c.creditLimitSen ? <span className="tabular-nums">{rm(c.creditLimitSen)}</span> : <span className="text-muted-ink">—</span> },
     { key: 'status', label: 'Status', type: 'status', value: c => c.status, entity: 'customer' },
   ], []);
 

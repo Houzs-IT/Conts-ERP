@@ -135,7 +135,7 @@ export default function MaintenancePage() {
   const historySpend = tab === 'history' ? rows.reduce((s, i) => s + (i.finalAmount ?? 0), 0) : 0;
 
   const sub = data
-    ? `${openTab.length} open · ${urgent} urgent · ${approval.length} awaiting owner approval${money ? ` · this month ${rm(monthCost, { cents: false })}` : ''}`
+    ? `${openTab.length} open · ${urgent} urgent · ${approval.length} awaiting owner approval${money ? ` · this month ${rm(monthCost)}` : ''}`
     : 'Maintenance jobs on every unit';
 
   async function createSku(input: CatalogInput) {
@@ -260,7 +260,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     { key: 'approval', label: 'Owner approval', type: 'status', value: i => i.approvalStatus ?? 'not_needed',
       status: i => { const a = APPROVAL[i.approvalStatus ?? 'not_needed']; return { label: a.label, tone: a.tone === 'gold' ? 'neutral' : a.tone }; }, width: 150 },
     ...(money ? [{ key: 'cost', label: 'Cost', type: 'money' as const, value: (i: Issue) => i.finalAmount ?? i.quotedAmount, width: 110, title: 'The final cost, or the quote while the job is open.',
-      render: (i: Issue) => { const c = i.finalAmount ?? i.quotedAmount; return c == null ? <span className="text-faint">—</span> : <span className="tabular-nums whitespace-nowrap">{rm(c, { cents: false })}{i.finalAmount == null && <span className="text-muted-ink text-meta"> quote</span>}</span>; } }] : []),
+      render: (i: Issue) => { const c = i.finalAmount ?? i.quotedAmount; return c == null ? <span className="text-faint">—</span> : <span className="tabular-nums whitespace-nowrap">{rm(c)}{i.finalAmount == null && <span className="text-muted-ink text-meta"> quote</span>}</span>; } }] : []),
     ...(money ? [
       { key: 'billing', label: 'Billing date', type: 'date' as const, value: (i: Issue) => i.billingDate, hidden: true, width: 130 },
       { key: 'collected', label: 'Collected', value: (i: Issue) => i.collectedAt, hidden: true, width: 130, title: 'When the money from the payer came in.',
@@ -307,7 +307,7 @@ function JobCard({ i, money }: { i: Issue; money: boolean }) {
     <span className="flex flex-col gap-1 min-w-0">
       <span className="flex items-baseline justify-between gap-2">
         <span className="min-w-0 truncate"><b className="text-copy text-ink">{i.unitNumber}</b><span className="text-meta text-muted-ink"> · {i.propertyName}</span></span>
-        {money && cost != null && <span className="text-copy font-medium tabular-nums whitespace-nowrap">{rm(cost, { cents: false })}{i.finalAmount == null && <span className="text-meta text-muted-ink font-normal"> quote</span>}</span>}
+        {money && cost != null && <span className="text-copy font-medium tabular-nums whitespace-nowrap">{rm(cost)}{i.finalAmount == null && <span className="text-meta text-muted-ink font-normal"> quote</span>}</span>}
       </span>
       <span className="text-copy text-ink [overflow-wrap:anywhere]">{i.title}</span>
       <span className="text-meta text-muted-ink">

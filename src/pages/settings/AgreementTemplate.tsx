@@ -85,7 +85,7 @@ export default function AgreementTemplateSettings({ readOnly }: { readOnly: bool
         {!readOnly && (
           <div className="flex items-center justify-end gap-2 flex-wrap px-5 py-3 bg-muted [border-top:1px_solid_var(--color-line-soft)]">
             {dirty && <StatusBadge tone="warning" label="Unsaved changes" size="sm" />}
-            {dirty && <Button variant="tertiary" size="sm" onClick={() => { setTitle(data.current!.title); setBody(data.current!.body); setFields({}); }} disabled={busy}>Discard</Button>}
+            {dirty && <Button variant="secondary" size="sm" onClick={() => { setTitle(data.current!.title); setBody(data.current!.body); setFields({}); }} disabled={busy}>Discard</Button>}
             <Button variant="primary" size="sm" onClick={() => void save()} loading={busy} disabled={!dirty} disabledReason="No changes to save.">Save as new version</Button>
           </div>
         )}

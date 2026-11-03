@@ -216,7 +216,7 @@ function PnlByMonth({ months, byMonth, total, mLabel }: { months: string[]; byMo
   };
   return (
     <Section title="Two-layer P&L by month (RM, % of guest total)"
-      right={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel}>Export to Excel</Button>}>
+      right={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel}>Export</Button>}>
       <div className="overflow-x-auto -mx-4 sm:-mx-5">
         <table className="w-full border-collapse text-copy">
           <thead>

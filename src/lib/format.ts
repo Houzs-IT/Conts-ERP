@@ -17,7 +17,7 @@ export const rm = (sen: number, opts?: { cents?: boolean }) => {
   });
 };
 
-/** KPI cards drop the cents. RM 12,450 */
+/** Whole ringgit, for nightly rates in the calendar and pricing grids only. Every other amount keeps its sen (owner, 3 Nov 2026). RM 231 */
 export const rmShort = (sen: number) => rm(sen, { cents: false });
 
 /** Deductions carry a real minus sign, not a hyphen. − RM 2,315.00 */

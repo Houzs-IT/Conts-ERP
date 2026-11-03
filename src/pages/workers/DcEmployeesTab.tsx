@@ -57,10 +57,10 @@ export default function DcEmployeesTab({ onChanged }: { onChanged: () => void })
               <span className="text-[16px] font-semibold tracking-[-0.01em]">Employee Master</span>
               <span className="text-meta text-muted-ink">The people who work for Dream Crafter. Open a person to change their details.</span>
             </span>
-            {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={add}>Add Employee</Button>}
+            {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={add}>Add employee</Button>}
           </div>
         }
-        empty={{ title: 'No Dream Crafter employees yet.', body: 'Add the first person who works for Dream Crafter.', icon: 'Users', action: mayEdit ? { label: 'Add Employee', onClick: add } : undefined }}
+        empty={{ title: 'No Dream Crafter employees yet.', body: 'Add the first person who works for Dream Crafter.', icon: 'Users', action: mayEdit ? { label: 'Add employee', onClick: add } : undefined }}
       />
 
       {form && <DcEmployeeForm person={form.person} onClose={() => setForm(null)} onSaved={() => { setForm(null); reload(); onChanged(); }} />}
@@ -101,10 +101,10 @@ function DcEmployeeForm({ person, onClose, onSaved }: { person: DcEmployee | nul
   }
 
   return (
-    <Modal title={creating ? 'Add Employee' : d.name || 'Employee'} sub="Someone who works for Dream Crafter." onClose={onClose} width={560}
+    <Modal title={creating ? 'Add employee' : d.name || 'Employee'} sub="Someone who works for Dream Crafter." onClose={onClose} width={560}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : creating ? 'Add Employee' : 'Save'}</Button>
+        <Button size="sm" variant="primary" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : creating ? 'Add employee' : 'Save'}</Button>
       </>}>
       <div className="grid gap-x-4 gap-y-3 grid-cols-1 sm:grid-cols-2">
         <Field label="Name" value={d.name} onChange={e => set('name', e.target.value)} placeholder="Ahmad Firdaus" error={errors.name} />

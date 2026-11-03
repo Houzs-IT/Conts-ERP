@@ -108,7 +108,7 @@ function OccupancyRing({ pct }: { pct: number }) {
 
 function kpiValue(k: Kpi) {
   if (k.unit === 'percent') return `${k.value}%`;
-  if (k.currency) return rm(Number(k.value), { cents: false });
+  if (k.currency) return rm(Number(k.value));
   return String(k.value);
 }
 
@@ -330,9 +330,9 @@ const TOP_COLUMNS: Column<PortfolioRow>[] = [
     hideable: false, width: 190, sub: u => u.propertyName,
     render: u => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block">{u.unitNumber}</span> },
   { key: 'occupancy', label: 'Occupancy', type: 'number', value: u => u.occupancy, width: 90, render: u => <span className={NUM}>{u.occupancy.toFixed(1)}%</span> },
-  { key: 'adr', label: 'Avg nightly price', type: 'money', value: u => u.adr, width: 90, render: u => <span className={NUM}>{rm(u.adr, { cents: false })}</span> },
-  { key: 'revpar', label: 'Earnings per night (all nights)', type: 'money', value: u => u.revpar, width: 90, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
-  { key: 'revenue', label: 'Earnings', type: 'money', value: u => u.revenue, width: 100, render: u => <span className={`${NUM} font-medium`}>{rm(u.revenue, { cents: false })}</span> },
+  { key: 'adr', label: 'Avg nightly price', type: 'money', value: u => u.adr, width: 90, render: u => <span className={NUM}>{rm(u.adr)}</span> },
+  { key: 'revpar', label: 'Earnings per night (all nights)', type: 'money', value: u => u.revpar, width: 90, render: u => <span className={NUM}>{rm(u.revpar)}</span> },
+  { key: 'revenue', label: 'Earnings', type: 'money', value: u => u.revenue, width: 100, render: u => <span className={`${NUM} font-medium`}>{rm(u.revenue)}</span> },
   { key: 'exception', label: 'Exception', type: 'status', value: u => u.exception?.label ?? null, status: u => u.exception, width: 130, align: 'right',
     render: u => (u.exception ? <StatusBadge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>) },
 ];
@@ -358,7 +358,7 @@ export default function DashboardPage() {
   // keeps the previous payload. Fall back to the local dataset for the active
   // range whenever the live read is not available, so the toggle visibly moves.
   const tp = (trend.error ? null : trend.data) ?? (import.meta.env.DEV ? TREND[range] : EMPTY_TREND);
-  const money = (sen: number) => tp === EMPTY_TREND ? '—' : rm(sen, { cents: false });
+  const money = (sen: number) => tp === EMPTY_TREND ? '—' : rm(sen);
 
   const today = useApi<TodayPayload>('/dashboard/today', TODAY_FALLBACK);
   const exc = useApi<ExceptionPayload>('/dashboard/exceptions', EXCEPTION_FALLBACK);
@@ -515,7 +515,7 @@ export default function DashboardPage() {
                 value: s.revenue,
                 display: s.revenue > 0 ? rmCompact(s.revenue).replace('RM ', '') : '',
                 // vocab-ok: s.revenue is a field name, the visible text has no such word
-                title: `${monthLabel(s.period)} · ${rm(s.revenue, { cents: false })} · ${percent(s.occupancy)} occupancy`,
+                title: `${monthLabel(s.period)} · ${rm(s.revenue)} · ${percent(s.occupancy)} occupancy`,
                 current: s.isCurrent,
                 lineDisplay: `${s.occupancy.toFixed(0)}%`,
               }))} />
@@ -603,7 +603,7 @@ export default function DashboardPage() {
                     {c.label}
                     {c.key === 'direct' && <span className="text-meta text-muted-ink"> · no service fee</span>}
                   </span>
-                  <span className="text-meta text-muted-ink tabular-nums">{rm(c.revenue, { cents: false })}</span>
+                  <span className="text-meta text-muted-ink tabular-nums">{rm(c.revenue)}</span>
                   <span className="text-copy font-semibold tabular-nums w-[42px] text-right">{c.share}%</span>
                 </div>
               ))}
@@ -649,9 +649,9 @@ export default function DashboardPage() {
             <span className="flex items-center justify-between gap-3">
               <span className="flex flex-col gap-px min-w-0">
                 <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber} <span className="font-normal text-meta text-muted-ink">· {u.propertyName}</span></span>
-                <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{u.occupancy.toFixed(1)}% occupied · Avg nightly price {rm(u.adr, { cents: false })}</span>
+                <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{u.occupancy.toFixed(1)}% occupied · Avg nightly price {rm(u.adr)}</span>
               </span>
-              <span className="flex-none text-copy font-semibold [font-variant-numeric:tabular-nums]">{rm(u.revenue, { cents: false })}</span>
+              <span className="flex-none text-copy font-semibold [font-variant-numeric:tabular-nums]">{rm(u.revenue)}</span>
             </span>
           )} />
       </Card>}

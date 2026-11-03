@@ -201,9 +201,9 @@ function NewRequest({ from, onSent, onCancel }: { from: string; onSent: (code: s
           <Files files={files} onChange={setFiles} />
         </div>
         {error && title.trim() && <div className="text-copy text-danger" role="alert">{error}</div>}
-        <div className="flex gap-3 pt-2">
-          <Button type="submit" variant="primary" loading={busy}>Send</Button>
+        <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="secondary" onClick={onCancel} disabled={busy} disabledReason="Sending">Cancel</Button>
+          <Button type="submit" variant="primary" loading={busy}>Send</Button>
         </div>
       </form>
     </Card>

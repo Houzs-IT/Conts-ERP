@@ -171,7 +171,7 @@ function AllBills({ units, months, kinds, cells, nights, loading, filtered, onUn
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Legend />
-        <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel}>Export to Excel</Button>
+        <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel}>Export</Button>
       </div>
       <div className="overflow-auto max-h-[calc(100vh-260px)] border border-solid border-line rounded-card bg-card">
         <table className="border-separate border-spacing-0 text-copy min-w-full">

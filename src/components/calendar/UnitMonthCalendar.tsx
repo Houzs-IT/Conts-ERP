@@ -10,7 +10,7 @@ import { useApi } from '../../lib/useApi';
 import { useToast } from '../Toast';
 import { api, errorMessage } from '../../lib/api';
 import { channelNote, type ChannelSync } from '../../lib/bookingStatus';
-import { todayMyt, monthLabel, plural, rmShort, dateRange, count } from '../../lib/format';
+import { todayMyt, monthLabel, plural, rm, rmShort, dateRange, count } from '../../lib/format';
 import { CHANNEL } from '../../lib/vocabulary';
 import { BlockWizard } from './CalendarModals';
 import { SelectionPopover, type NightSelection } from './SelectionPopover';
@@ -315,8 +315,8 @@ function MonthView({ unit, data, ym, first, next, nights, today, error, reload, 
       {/* The month at a glance, fixed above the tab bar. */}
       <div className="fixed left-0 right-0 z-30 bottom-[calc(92px+env(safe-area-inset-bottom))] mx-3 rounded-card bg-card border border-solid border-line shadow-[var(--shadow-raised)] px-4 py-2.5 grid grid-cols-4 gap-2">
         <Stat label="Occupancy" value={`${Math.round(stats.occupancy * 100)}%`} gold={stats.occupancy >= 0.9} />
-        <Stat label="Earnings" value={rmShort(stats.revenue)} />
-        <Stat label="Avg nightly price" value={stats.adr ? rmShort(stats.adr) : '—'} />
+        <Stat label="Earnings" value={rm(stats.revenue)} />
+        <Stat label="Avg nightly price" value={stats.adr ? rm(stats.adr) : '—'} />
         <Stat label="Nights" value={`${count(stats.booked)}/${count(stats.available)}`} />
       </div>
 

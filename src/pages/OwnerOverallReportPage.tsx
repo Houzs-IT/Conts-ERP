@@ -14,7 +14,7 @@ import { useApi } from '../lib/useApi';
 import { useMedia } from '../lib/useMedia';
 import { saveBlob, toXlsx, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
-import { count, monthLabel, percent, plural, rmShort, todayMyt } from '../lib/format';
+import { count, monthLabel, percent, plural, rm, todayMyt } from '../lib/format';
 import { overallFigures, overallTotals, GROUP_NAME, REPORT_GROUPS, type OverallInput, type OverallTotals, type ReportGroup } from '../lib/ownerOverall';
 import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, type Level, type ReportRow } from './OwnerOverallDetail';
 
@@ -343,9 +343,9 @@ export default function OwnerOverallReportPage() {
           <span className="block text-meta">Gain/Loss = GP − owner base (the owner's part of the rent, the fixed rent, or the higher of O1 and GRR), before O2</span>
         </> : 'Every unit\'s month, as on the owner statements'}
         actions={<>
-          <Button variant="secondary" icon={<Icon name="FileSpreadsheet" size="sm" />} onClick={exportExcel}
+          <Button variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel}
             title="The units shown, with these filters and this sort, every column, and the totals."
-            disabled={!filtered.length} disabledReason="No units to export for this month and these filters.">Export Excel</Button>
+            disabled={!filtered.length} disabledReason="No units to export for this month and these filters.">Export</Button>
           <Select label="Month" value={month} options={MONTHS} className="w-[180px]"
             onChange={v => setParams(p => { const n = new URLSearchParams(p); if (v === MONTHS[1].value) n.delete('month'); else n.set('month', v); return n; }, { replace: true })} />
         </>}
@@ -353,14 +353,14 @@ export default function OwnerOverallReportPage() {
 
       <StatRow cols={5}>
         {/* Full width until the five tiles share one row, so the two-column grid has no tile left alone. */}
-        <StatTile hero className="col-span-2 xl:col-span-1" label="Total revenue" value={data ? rmShort(totals.revenue) : undefined} loading={loading && !data}
+        <StatTile hero className="col-span-2 xl:col-span-1" label="Total revenue" value={data ? rm(totals.revenue) : undefined} loading={loading && !data}
           hint={`${plural(totals.units, 'unit')} · ${percent(totals.occupancy)} occupancy`} />
-        <StatTile label="Total deduction" value={data ? rmShort(totals.deductions) : undefined} loading={loading && !data}
+        <StatTile label="Total deduction" value={data ? rm(totals.deductions) : undefined} loading={loading && !data}
           hint={totals.revenue ? `${percent((totals.deductions / totals.revenue) * 100)} of revenue` : '—'} />
-        <StatTile label="Gross profit" value={data ? rmShort(totals.gp) : undefined} loading={loading && !data}
+        <StatTile label="Gross profit" value={data ? rm(totals.gp) : undefined} loading={loading && !data}
           hint={totals.revenue ? `${percent(totals.margin)} margin` : '—'} />
-        <StatTile label="Owner payout" value={data ? rmShort(totals.payout) : undefined} loading={loading && !data} hint="Every income model, with O2" />
-        <StatTile label="Gain / Loss" value={data ? rmShort(totals.gainLoss) : undefined} loading={loading && !data}
+        <StatTile label="Owner payout" value={data ? rm(totals.payout) : undefined} loading={loading && !data} hint="Every income model, with O2" />
+        <StatTile label="Gain / Loss" value={data ? rm(totals.gainLoss) : undefined} loading={loading && !data}
           tone={totals.gainLoss < 0 ? 'critical' : 'success'} hint={`${count(totals.losing)} of ${plural(totals.units, 'unit')} losing`} />
       </StatRow>
 

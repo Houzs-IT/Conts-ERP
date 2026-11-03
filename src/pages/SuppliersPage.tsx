@@ -90,7 +90,7 @@ export default function SuppliersPage() {
     { key: 'phone', label: 'Phone', type: 'phone', value: s => s.phone, width: 140 },
     { key: 'category', label: 'Category', value: s => s.category },
     { key: 'terms', label: 'Terms', value: s => s.paymentTerms, width: 110 },
-    { key: 'credit', label: 'Credit limit', type: 'money', value: s => s.creditLimitSen, render: s => s.creditLimitSen ? <span className="tabular-nums whitespace-nowrap">{rm(s.creditLimitSen, { cents: false })}</span> : <span className="text-muted-ink">—</span> },
+    { key: 'credit', label: 'Credit limit', type: 'money', value: s => s.creditLimitSen, render: s => s.creditLimitSen ? <span className="tabular-nums whitespace-nowrap">{rm(s.creditLimitSen)}</span> : <span className="text-muted-ink">—</span> },
     { key: 'status', label: 'Status', type: 'status', value: s => s.status, entity: 'supplier' },
   ], []);
 

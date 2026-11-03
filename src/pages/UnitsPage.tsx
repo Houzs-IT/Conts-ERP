@@ -471,7 +471,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                 <Select label="Status" className="w-[150px]" value={readiness} onChange={v => changeReadiness(v as UnitReadiness)}
                   options={READINESS_OPTIONS.map(r => ({ value: r, label: statusLabel('readiness', r), color: TONE_STYLE[statusOf('readiness', r).tone].fg }))} />
               </span>
-              {form?.parentUnitId && <StatusBadge tone="warning" label="Sub-unit" />}
+              {form?.parentUnitId && <StatusBadge tone="neutral" label="Sub-unit" />}
               <PurposeBadge purpose={u.purpose} />
               <CodeBadge code={u.contractCode} />
               {u.revenueModel && (rental || u.contractCode) && <span title={`Income model: ${u.revenueModelLabel}. Change it on the Contract tab.`}><ModelChip model={u.revenueModel} label={u.termsLabel ?? u.revenueModelLabel} /></span>}
@@ -493,7 +493,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
         <div className="grid grid-cols-3 sm:grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-x-4 gap-y-5 pt-5 px-5 sm:px-6 pb-5 [border-top:1px_solid_var(--color-line-soft)]">
           {(rental ? [
-            ['Occupancy', `${p.occupancy}%`], ['Avg nightly price', rm(p.adr, { cents: false })], ['Earnings per night (all nights)', rm(p.revpar, { cents: false })],
+            ['Occupancy', `${p.occupancy}%`], ['Avg nightly price', rm(p.adr)], ['Earnings per night (all nights)', rm(p.revpar)],
             ['Rating', p.rating != null ? p.rating.toFixed(2) : '—'], ['Open maintenance jobs', String(openIssues)],
           ] : [['Purpose', u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom'], ['Car park bays', form?.parkingBays?.length ? String(form.parkingBays.length) : '—'], ['Open maintenance jobs', String(openIssues)]]).map(([label, value]) => (
             <div key={label} className="flex flex-col gap-2 min-w-0">

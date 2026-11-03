@@ -255,7 +255,7 @@ export default function CategoryAccessEditor({ subject, catalog, onClose, onSave
             {!saveError && nothingTicked && <span className="text-meta text-muted-ink">Tick at least one category, or switch All categories back on.</span>}
             {!saveError && !nothingTicked && dirty && <span className="text-meta text-muted-ink">You have unsaved changes.</span>}
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" disabled={!dirty || busy} disabledReason="Nothing has changed." onClick={() => { if (base) show(base); setSaveError(null); }}>Discard</Button>
+              <Button variant="secondary" size="sm" disabled={!dirty || busy} disabledReason="Nothing has changed." onClick={() => { if (base) show(base); setSaveError(null); }}>Discard</Button>
               <Button variant="primary" size="sm" loading={busy} disabled={!dirty || nothingTicked}
                 disabledReason={nothingTicked ? 'Tick at least one category first.' : 'Nothing has changed.'} onClick={save}>
                 Save

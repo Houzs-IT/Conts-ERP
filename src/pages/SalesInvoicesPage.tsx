@@ -86,7 +86,7 @@ export default function SalesInvoicesPage() {
 
   return (
     <>
-      <PageHeader title="Sales invoices" sub={data ? `${all.length} ${all.length === 1 ? 'invoice' : 'invoices'} · ${rm(outstanding, { cents: false })} outstanding` : '\u00a0'}
+      <PageHeader title="Sales invoices" sub={data ? `${all.length} ${all.length === 1 ? 'invoice' : 'invoices'} · ${rm(outstanding)} outstanding` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New invoice</Button> : undefined} />
       <DataTable<Si>
         id="scm.sales-invoices" columns={columns} rows={data ? rows : null} rowKey={r => r.id}

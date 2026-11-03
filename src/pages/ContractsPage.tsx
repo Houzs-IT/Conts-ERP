@@ -77,7 +77,7 @@ const stateOf = (c: Contract): ContractState => {
   return 'Active';
 };
 const feeLabel = (c: Contract) => c.termsLabel ?? (
-  c.model === 'grr' ? `GRR ${rm(c.grrAmount, { cents: false })}/mo` : `${c.managementFeePct}% operator share`);
+  c.model === 'grr' ? `GRR ${rm(c.grrAmount)}/mo` : `${c.managementFeePct}% operator share`);
 const inDays = (d: number) => d === 0 ? 'ends today' : d > 0 ? `in ${d} ${d === 1 ? 'day' : 'days'}` : `${-d} ${d === -1 ? 'day' : 'days'} ago`;
 
 type FilterKey = 'all' | 'soon' | 'active' | 'ended';
