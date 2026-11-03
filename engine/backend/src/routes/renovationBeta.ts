@@ -5,6 +5,7 @@
    (Home, Projects and Calendar) adds the board read and the design, appointment and calendar entry writes at the end. */
 
 import { Hono, type Context } from "hono";
+import { TRANSIENT_CONN_RE } from "../db/d1-compat";
 import type { Env } from "../types";
 import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
@@ -192,7 +193,7 @@ app.get("/projects/:id/workspace", requirePageAccess("projects.list"), async (c)
     });
   } catch (e) {
     console.error("[renovation-beta] workspace read failed", e);
-    return c.json({ error: "renovation_read_failed", message: "The workspace could not be read. Try again.", detail: readDetail(e) }, 409);
+    return c.json({ error: "renovation_read_failed", message: "The workspace could not be read. Try again.", detail: readDetail(e) }, readStatus(e));
   }
 });
 
@@ -557,7 +558,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
     });
   } catch (e) {
     console.error("[renovation-beta] board read failed", e);
-    return c.json({ error: "renovation_read_failed", message: "The board could not be read. Try again.", detail: readDetail(e) }, 409);
+    return c.json({ error: "renovation_read_failed", message: "The board could not be read. Try again.", detail: readDetail(e) }, readStatus(e));
   }
 });
 
@@ -759,6 +760,8 @@ app.delete("/events/:id", requirePermission("projects.write"), async (c) => {
 /** A read of the project's documents; a database without the renovation tables yet reads as empty. */
 /** A failed read's cause, short, for the 409 body. */
 const readDetail = (e: unknown): string => String((e as Error)?.message ?? e).slice(0, 200);
+/** 503 when the database was only briefly out of reach (the screens retry a 503 once), else 409. */
+const readStatus = (e: unknown): 409 | 503 => (TRANSIENT_CONN_RE.test(String((e as Error)?.message ?? e)) ? 503 : 409);
 
 async function readOr<T>(c: Ctx, what: string, fn: () => Promise<T>): Promise<Response> {
   try {
@@ -767,7 +770,7 @@ async function readOr<T>(c: Ctx, what: string, fn: () => Promise<T>): Promise<Re
     console.error(`[renovation-beta] ${what} read failed`, e);
     /* The cause rides along (staff only, behind sign-in): the owner saw "could not be read" on busy workspaces and the
        worker's own log is not reachable from where the screens are checked (3 Nov 2026). */
-    return c.json({ error: "renovation_read_failed", message: `The ${what} could not be read. Try again.`, detail: readDetail(e) }, 409);
+    return c.json({ error: "renovation_read_failed", message: `The ${what} could not be read. Try again.`, detail: readDetail(e) }, readStatus(e));
   }
 }
 
@@ -953,7 +956,7 @@ app.get("/projects/:id/site", requirePageAccess("projects.list"), async (c) => {
     return c.json({ ready: true, ...(await siteDeliveries(c, id, co)) });
   } catch (e) {
     console.error("[renovation-beta] site read failed", e);
-    return c.json({ error: "renovation_read_failed", message: "The deliveries and their photos could not be read. Try again.", detail: readDetail(e) }, 409);
+    return c.json({ error: "renovation_read_failed", message: "The deliveries and their photos could not be read. Try again.", detail: readDetail(e) }, readStatus(e));
   }
 });
 
@@ -990,7 +993,7 @@ app.get("/projects/:id/defects", requirePageAccess("projects.list"), async (c) =
     });
   } catch (e) {
     console.error("[renovation-beta] defects read failed", e);
-    return c.json({ error: "renovation_read_failed", message: "The defects could not be read. Try again.", detail: readDetail(e) }, 409);
+    return c.json({ error: "renovation_read_failed", message: "The defects could not be read. Try again.", detail: readDetail(e) }, readStatus(e));
   }
 });
 
@@ -1098,7 +1101,7 @@ app.get("/projects/:id/timeline", requirePageAccess("projects.list"), async (c) 
     return c.json({ entries });
   } catch (e) {
     console.error("[renovation-beta] timeline read failed", e);
-    return c.json({ error: "renovation_read_failed", message: "The project's timeline could not be read. Try again.", detail: readDetail(e) }, 409);
+    return c.json({ error: "renovation_read_failed", message: "The project's timeline could not be read. Try again.", detail: readDetail(e) }, readStatus(e));
   }
 });
 
@@ -1254,7 +1257,7 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
     });
   } catch (e) {
     console.error("[renovation-beta] photos read failed", e);
-    return c.json({ error: "renovation_read_failed", message: "The project's photos could not be read. Try again.", detail: readDetail(e) }, 409);
+    return c.json({ error: "renovation_read_failed", message: "The project's photos could not be read. Try again.", detail: readDetail(e) }, readStatus(e));
   }
 });
 

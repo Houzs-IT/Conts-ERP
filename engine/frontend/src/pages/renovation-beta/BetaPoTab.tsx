@@ -110,7 +110,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     return m;
   }, [q.data]);
 
-  if (q.error) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The sales order lines could not be loaded: {q.error}</p>;
+  if (q.error && !q.data) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The sales order lines could not be loaded: {q.error}</p>;
   if (!q.data) return <BetaLoading label="Loading PO" />;
   const d = q.data;
   const editable = p.canWrite && editing;
