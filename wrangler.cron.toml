@@ -12,6 +12,8 @@
 #   WHATSAPP_TOKEN, WHATSAPP_PHONE_ID   optional: WhatsApp copies
 #   IT_HUB_API_KEY       optional: the same key the Pages project uses for IT Support; with it, the worker asks
 #                        the website to send its health report to the Houzs IT Hub every 5 minutes
+#   CONTS_CRON_SECRET    optional: the same value as the engine's CONTS_CRON_SECRET; with it, the worker asks the
+#                        engine every 5 minutes to retry Mail Center emails whose first send failed
 
 name = "theconts-cron"
 main = "worker/scheduled.ts"
@@ -26,7 +28,7 @@ id = "e0781ccdee9046919161c28cb95694c0"
 [triggers]
 crons = [
   "* * * * *",      # Channex outbox: retries and anything the request-time flush missed
-  "*/5 * * * *",    # HostPlatform: pull the reservations it changed since the last run (its webhook slot is StreamHost's); "Guest has left" by itself at the checkout time
+  "*/5 * * * *",    # HostPlatform: pull the reservations it changed since the last run (its webhook slot is StreamHost's); "Guest has left" by itself at the checkout time; Mail Center email retries in the engine
   "*/15 * * * *",   # email / WhatsApp outbox (quiet hours, retries); release calendar blocks of finished repair jobs
   "0 * * * *",      # overdue cleans and repairs; statements finalised but unsent; punches open over 16 h marked forgotten
   "0 0 * * *",      # 08:00 Malaysia: the "today" digest for operations
@@ -43,3 +45,6 @@ HOSTPLATFORM_BASE_URL = "https://nebulapi-asg.hostplatform.com"
 # The website the worker asks to send its health report to the Houzs IT Hub (hubHealthReport in
 # functions/_lib/cronJobs.ts): the address staff use, which the Channex callback is registered against.
 APP_ORIGIN = "https://erp.theconts.com"
+# The production supply chain engine (scripts/engine-production.mjs), whose Mail Center email retries the worker
+# runs every 5 minutes (engineMailOutbox in functions/_lib/cronJobs.ts) once CONTS_CRON_SECRET is set.
+SCM_ENGINE_API = "https://conts-scm-engine.conts-erp.workers.dev"

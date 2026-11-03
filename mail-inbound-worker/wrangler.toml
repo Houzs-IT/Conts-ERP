@@ -1,0 +1,19 @@
+# conts-mail-inbound: Cloudflare Email Worker for theconts.com (CONTS-0004). Copied from Hookka's
+# mail-inbound-worker (Houzs-IT/hookka-erp-testing), pointed at the Conts supply chain engine.
+#
+# Cloudflare Email Routing hands it each email sent to a theconts.com address routed to it; it posts the email
+# to the engine's Mail Center (POST /api/mail-center/inbound), which files it under the mailbox it was sent to.
+# Deploy from this folder while wrangler is signed in to the Conts ERP account (it@houzscentury.com), the one
+# that holds the theconts.com zone and the conts-scm-engine worker. Steps: README.md.
+#
+# Secrets (typed at the prompt, never written here):
+#   MAIL_INBOUND_SECRET  the same value as the engine's MAIL_INBOUND_SECRET, at least 16 characters
+#   FORWARD_TO           optional: a verified Email Routing destination that gets a copy of every email
+
+name = "conts-mail-inbound"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ERP_INBOUND_URL = "https://conts-scm-engine.conts-erp.workers.dev/api/mail-center/inbound"
