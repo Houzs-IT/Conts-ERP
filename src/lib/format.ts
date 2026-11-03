@@ -1,20 +1,24 @@
 /**
  * Formatting rules from copy.md section 13. Money is integer sen everywhere in
  * transport and state; it only becomes a string at the edge, here.
+ *
+ * ONE implementation for the whole system (owner, 3 Nov 2026: "one change applies everywhere"). The date, time and
+ * sen-money shapes are not written here: they come from the supply-chain engine's canonical module,
+ * engine/frontend/src/vendor/shared/format.ts (fmtDate, fmtDateTime, fmtDayMonth, fmtTime, fmtSen), which the engine's
+ * own screens and PDFs use and its tests pin. The server (functions/_lib/dates.ts) imports the same file. Change a
+ * date or money shape there and Property OS, the server and the engine all follow.
  */
+import { fmtDate, fmtDateTime, fmtDayMonth, fmtTime, fmtSen } from '../../engine/frontend/src/vendor/shared/format';
 
 
 const MYT = 'Asia/Kuala_Lumpur';
 
 
 export const rm = (sen: number, opts?: { cents?: boolean }) => {
-  const showCents = opts?.cents ?? true;
   // A negated zero, or a fraction of a sen below zero, would print as "-0.00".
-  const v = Number((sen / 100).toFixed(showCents ? 2 : 0)) || 0;
-  return 'RM ' + v.toLocaleString('en-MY', {
-    minimumFractionDigits: showCents ? 2 : 0,
-    maximumFractionDigits: showCents ? 2 : 0,
-  });
+  if (opts?.cents ?? true) return fmtSen(Math.round(sen) || 0);
+  const v = Math.round(sen / 100) || 0;
+  return 'RM ' + v.toLocaleString('en-MY', { maximumFractionDigits: 0 });
 };
 
 /** Whole ringgit, for nightly rates in the calendar and pricing grids only. Every other amount keeps its sen (owner, 3 Nov 2026). RM 231 */
@@ -50,15 +54,11 @@ const mytParts = (iso: string) => {
   return { y, m: m - 1, d };
 };
 
-const two = (n: number) => String(n).padStart(2, '0');
-/** 09/16: month and day, no year, the engine's short form. */
-const md = (p: { m: number; d: number }) => `${two(p.m + 1)}/${two(p.d)}`;
+/** 09/16: month and day, no year (the engine's fmtDayMonth). */
+const md = (iso: string) => fmtDayMonth(iso);
 
 /** 2026/09/16: year first, numeric (owner, 3 Nov 2026; the engine's rule). */
-export const date = (iso: string) => {
-  const p = mytParts(iso);
-  return `${p.y}/${md(p)}`;
-};
+export const date = (iso: string) => fmtDate(iso);
 
 /** A YYYY-MM-DD day (or YYYY-MM-15 for a month) in another language, for the portal (src/lib/portalI18n.ts). */
 export const dateIn = (locale: string, day: string, opts: Intl.DateTimeFormatOptions) =>
@@ -68,8 +68,7 @@ export const dateIn = (locale: string, day: string, opts: Intl.DateTimeFormatOpt
 export const dateRange = (fromIso: string, toIso: string) => `${date(fromIso)} – ${date(toIso)}`;
 
 /** 15:00 — 24-hour, MYT */
-export const time = (iso: string) =>
-  new Date(iso).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: MYT });
+export const time = (iso: string) => fmtTime(iso);
 
 /** 14:06 MYT — when cross-channel timing matters */
 export const timeWithZone = (iso: string) => `${time(iso)} MYT`;
@@ -99,16 +98,16 @@ export const monthLabel = (iso: string, opts?: { long?: boolean }) => {
 export const year = (iso: string) => String(mytParts(iso).y);
 
 /** 2026/09/16 14:06 */
-export const dateTime = (iso: string) => `${date(iso)} ${time(iso)}`;
+export const dateTime = (iso: string) => fmtDateTime(iso);
 
 /** 09/16: month and day, no year, where the year is plain from the page. */
-export const dateShort = (iso: string) => md(mytParts(iso));
+export const dateShort = (iso: string) => md(iso);
 
 /** Sunday, 2026/10/25: the weekday spelled out, the date numeric. */
 export const dateLong = (iso: string) => {
   const p = mytParts(iso);
   const day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()];
-  return `${day}, ${p.y}/${md(p)}`;
+  return `${day}, ${date(iso)}`;
 };
 
 /** Wed — short weekday alone. */
@@ -172,7 +171,7 @@ export const titleCase = (name: string) => {
 /** Sat 10/10: short weekday, then month/day, for day headers on Cleaning, Today and the field app. */
 export const weekdayDate = (iso: string) => {
   const p = mytParts(iso);
-  return `${WEEKDAYS[new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()]} ${md(p)}`;
+  return `${WEEKDAYS[new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()]} ${md(iso)}`;
 };
 
 /** 10/10 14:00: month/day and time, no year, for stamps inside one job's history. */

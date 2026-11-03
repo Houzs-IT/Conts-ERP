@@ -1,5 +1,5 @@
 import { type Env, one, all } from './db';
-import { numericDate } from './dates';
+import { numericDate } from './format';
 import { firstOpenMonth } from '../../src/lib/deductMonth';
 
 export const EXPENSE_CATEGORIES = ['internet', 'electricity', 'water', 'sewerage', 'cleaning', 'housekeeping', 'maintenance', 'utilities', 'consumables', 'furniture', 'management_fee', 'channel_fee', 'other'];

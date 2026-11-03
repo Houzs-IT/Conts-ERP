@@ -1,4 +1,5 @@
 import { mayWork } from '../lib/areaAccess';
+import { Meta } from '../components/Card';
 import { useMemo, useState } from 'react';
 import { Search, Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -256,6 +257,3 @@ function ViewDrawer({ pv, canWrite, onClose, onCancel }: { pv: Pv; canWrite: boo
   );
 }
 
-function Meta({ label, value }: { label: string; value: string }) {
-  return <div className="flex flex-col gap-0.5"><span className="text-[11px] uppercase tracking-[0.08em] text-muted-ink">{label}</span><span className="text-[13.5px]">{value}</span></div>;
-}

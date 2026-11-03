@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { DialogFrame } from '../../components/Modal';
+import { FormModal } from '../../components/Modal';
 import { StaleBanner } from '../../components/DataState';
-import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { MoneyInput, PercentInput, PhoneInput, DateField, phoneProblem } from '../../components/inputs';
 import { useApi } from '../../lib/useApi';
@@ -251,22 +250,7 @@ export function StatementHistory({ o }: { o: Owner }) {
 export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, children }: {
   title: string; sub?: string; onClose: () => void; onSubmit: () => void; submitLabel: string; canSubmit: boolean; children: ReactNode;
 }) {
-  return (
-    <DialogFrame label={title} onClose={onClose} panelClassName="relative w-full max-w-[480px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
-        <form onSubmit={e => { e.preventDefault(); if (canSubmit) onSubmit(); }}>
-          <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
-            <h2 className="m-0 text-title font-semibold">{title}</h2>
-            {sub && <p className="m-0 text-copy text-muted-ink">{sub}</p>}
-          </div>
-          <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
-          {/* Pinned to the bottom so Cancel and the action stay in view when the form is taller than a phone screen. */}
-          <div className="sticky bottom-0 py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
-            <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Fill the required fields first">{submitLabel}</Button>
-          </div>
-        </form>
-      </DialogFrame>
-  );
+  return <FormModal title={title} sub={sub} onClose={onClose} onSubmit={onSubmit} submitLabel={submitLabel} canSubmit={canSubmit}>{children}</FormModal>;
 }
 
 export function AddOwnerModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract' | 'defaultManagementFeePct'>) => void }) {

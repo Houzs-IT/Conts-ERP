@@ -1,10 +1,11 @@
 import { type Env, all, one, run, json, fail, audit, nowIso, transaction } from '../../../../_lib/db';
+import { rmText } from '../../../../_lib/format';
 import { can } from '../../../../_lib/access';
 import { requireSession } from '../../../../_lib/auth';
 import { validatePayment, clean } from '../../../../_lib/bookingPayments';
 import { lateCheckoutReady, openLateCheckout, lateBooking, lateRefusal } from '../../../../_lib/lateCheckout';
 
-const rm = (sen: number) => `RM ${(sen / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const rm = (sen: number) => rmText(sen);
 
 /** POST /api/reservations/:id/late-checkout/paid { receivedOn, method?, reference? }
  *  The guest paid for their late checkout: keeps the payment on the request and moves the booking's checkout time,

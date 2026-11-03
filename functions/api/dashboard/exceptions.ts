@@ -1,5 +1,5 @@
 import { type Env, all, one, json } from '../../_lib/db';
-import { numericDate } from '../../_lib/dates';
+import { numericDate } from '../../_lib/format';
 import { requireSession } from '../../_lib/auth';
 import { can } from '../../_lib/access';
 

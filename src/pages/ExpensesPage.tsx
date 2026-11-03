@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { DialogFrame } from '../components/Modal';
+import { Modal as SharedModal } from '../components/Modal';
 import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
@@ -584,21 +584,8 @@ function TreeRow({ depth, kind, label, sub, amount, tone, count, expanded, onTog
 
 // ---- Local modal shell -----------------------------------------------------
 
-function Modal({ title, sub, onClose, footer, children, width = 520 }: {
-  title: string; sub?: string; onClose: () => void; footer: ReactNode; children: ReactNode; width?: number;
-}) {
-  return (
-    <DialogFrame label={title} onClose={onClose} panelClassName="relative w-full max-h-[90vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)] [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]" panelStyle={{ maxWidth: width }}>
-        <div className="pt-[22px] px-[22px] pb-[18px] flex flex-col gap-1">
-          <h2 className="m-0 text-title leading-[1.3] font-semibold [text-wrap:pretty]">{title}</h2>
-          {sub && <p className="m-0 text-copy leading-[1.55] text-muted-ink [text-wrap:pretty]">{sub}</p>}
-        </div>
-        <div className="px-[22px] pb-5 flex flex-col gap-[14px]">{children}</div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
-          {footer}
-        </div>
-      </DialogFrame>
-  );
+function Modal(p: Parameters<typeof SharedModal>[0]) {
+  return <SharedModal width={520} {...p} />;
 }
 
 function LabeledField({ label, children }: { label: string; children: ReactNode }) {

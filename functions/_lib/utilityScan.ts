@@ -1,5 +1,5 @@
 import { type Env, all, one, run, audit, nowIso, transaction } from './db';
-import { numericDay } from './dates';
+import { numericDay } from './format';
 import { CHARGE_TO, finalMonthsFor } from './expenses';
 import { firstOpenMonth } from '../../src/lib/deductMonth';
 import { contractSplit, type SplitContract } from '../../src/lib/utilitySplit';

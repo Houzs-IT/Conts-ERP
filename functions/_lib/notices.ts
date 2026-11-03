@@ -1,5 +1,5 @@
 import { type Env, one } from './db';
-import { numericDay } from './dates';
+import { numericDay, rmText } from './format';
 import { peopleWithAccess } from './access';
 import { notifyUsers, taskPeople, technicianFor } from './notify';
 import { fieldVisibleSql, hasJobType } from './maintenance';
@@ -142,7 +142,7 @@ export async function repairNotice(env: Env, id: string, event: RepairEvent, by:
     case 'approval_requested': {
       await notifyUsers(env, 'managers', { ...base, kind: 'approval.requested', title: `Owner approval requested: ${m.unit}`, body: `${m.title}${detail ? `. ${detail}` : ''}.` });
       // The owner decides on their portal; the notice (and an email copy where mail is set up) takes them there.
-      const quote = m.quoted_amount != null ? `RM ${(Number(m.quoted_amount) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null;
+      const quote = m.quoted_amount != null ? `${rmText(Number(m.quoted_amount))}` : null;
       if (m.owner_user) await notifyUsers(env, [m.owner_user], { ...base, link: '/', except: null, email: true, kind: 'maintenance.owner_approval',
         title: `Repair quote to approve: ${m.unit}`, body: `${m.title}${quote ? `. Quote ${quote}` : ''}. Open your owner portal to approve it.` });
       break;

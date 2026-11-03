@@ -1,4 +1,5 @@
 import { type Env, all, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
+import { rmText } from '../../_lib/format';
 import { auditMany } from '../../_lib/history';
 import { requireSession } from '../../_lib/auth';
 import { notify, notifyUsers } from '../../_lib/notify';
@@ -177,7 +178,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
     });
   }
   if (owner && (state === 'paid' || state === 'failed')) {
-    const amount = `RM ${(owner.amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}`;
+    const amount = `${rmText(owner.amount)}`;
     await notify(env, {
       template: state === 'paid' ? 'owner.payout_paid' : 'owner.payout_failed',
       recipient: owner.email,
