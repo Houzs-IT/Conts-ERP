@@ -40,6 +40,33 @@ export async function channexOutbox(env: Env, o: RunOptions = {}): Promise<JobRe
   return { job: 'channex-outbox', summary: due.length ? `Sent or rescheduled ${plural(due.reduce((n, d) => n + d.n, 0), 'due row')}.` : 'Nothing due.', items };
 }
 
+/** Every 5 minutes: retry the Mail Center emails whose first send failed (CONTS-0004). The supply chain engine runs
+ *  no schedule of its own (engine/backend/wrangler.production.toml), so this knocks on its retry route with
+ *  CONTS_CRON_SECRET (engine/backend/src/conts/mail-cron.ts). Off until both the address and the secret are set. */
+export async function engineMailOutbox(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const key = (env.CONTS_CRON_SECRET ?? '').trim();
+  const api = (env.SCM_ENGINE_API ?? '').trim().replace(/\/+$/, '');
+  if (!key || !api) return { job: 'engine-mail-outbox', summary: 'Not connected here (SCM_ENGINE_API or CONTS_CRON_SECRET not set): nothing retried.' };
+  if (o.dryRun) return { job: 'engine-mail-outbox', summary: `Would ask ${api} to retry its failed emails.` };
+  try {
+    const res = await fetch(`${api}/api/conts-cron/mail-outbox`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(25_000),
+    });
+    const body = await res.json().catch(() => null) as { processed?: number; sent?: number; failed?: number } | null;
+    if (!res.ok || !body) {
+      console.error('Engine email retry refused', res.status);
+      return { job: 'engine-mail-outbox', summary: `Engine email retry refused (${res.status}).` };
+    }
+    return { job: 'engine-mail-outbox', summary: body.processed ? `Retried ${plural(body.processed ?? 0, 'email')}: ${body.sent ?? 0} sent, ${body.failed ?? 0} given up.` : 'Nothing to retry.' };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    console.error('Engine email retry not run', error);
+    return { job: 'engine-mail-outbox', summary: 'Engine email retry not run.', error };
+  }
+}
+
 /** Every 5 minutes (from the every-minute trigger): ask the website to send the Houzs IT Hub the same health
  *  report its System health page shows (POST /api/system/health/hub-report). The website measures it, since
  *  it holds the mail key and Channex secret the checks look for; this worker only knocks, with Conts's IT Hub
@@ -363,7 +390,7 @@ export const CRON = {
 /** What each trigger runs, in order. */
 export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<JobReport>)[]> = {
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
-  [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft],
+  [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox],
   [CRON.quarterHour]: [drainOutbox, repairBlockSweep],
   [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep],
   [CRON.daily]: [dailyDigest],

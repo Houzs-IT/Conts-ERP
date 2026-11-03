@@ -49,4 +49,9 @@ describe("Conts switched-off modules", () => {
     expect(links.filter((l) => isContsHiddenPath(l))).toEqual([]);
     expect(links).toContain("/scm/credit-notes");
   });
+
+  it("keeps Mail Center (CONTS-0004)", async () => {
+    const { NAV_TABS } = await import("../components/Sidebar");
+    expect(NAV_TABS.find((t) => t.label === "Mail Center")?.to).toBe("/mail-center");
+  });
 });

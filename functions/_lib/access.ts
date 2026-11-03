@@ -77,6 +77,9 @@ export const AREAS: Area[] = [
   // Messages sat under Reservations from 30 Oct to 2 Nov 2026; migration 0200 pinned its stored levels when it moved here.
   { key: 'comms', label: 'Messages', group: 'Growth', api: ['messages'] },
   { key: 'automations', label: 'Automations', group: 'Growth', api: ['automations'] },
+  // The shared email inbox (CONTS-0004): engine screens only, sent to the engine at sign-on like the Ledger. Its own
+  // category, so no existing baseline opens it: management has it, everyone else waits until they are given it.
+  { key: 'mail', label: 'Mail Center', group: 'Mail', api: [] },
   // The user list is read by management and operations managers only (functions/api/users), so finance admins start at none.
   { key: 'users', label: 'Users and roles', group: 'System', api: ['users', 'departments'], managed: true },
   { key: 'integrations', label: 'Integrations', group: 'System', api: ['integrations'], managed: true },

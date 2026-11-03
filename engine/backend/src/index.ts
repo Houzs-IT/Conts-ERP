@@ -27,6 +27,7 @@ import clientErrors from "./routes/clientErrors";
 import udf from "./routes/udf";
 import authRoutes from "./routes/auth";
 import contsSso from "./conts/sso";
+import contsMailCron from "./conts/mail-cron";
 import { myClaimsRouter } from "./conts/my-claims-routes";
 import { claimsClient, staffFromAssertion, staffFromSession } from "./conts/staff-identity";
 import totpRoutes from "./routes/totp";
@@ -298,6 +299,8 @@ app.get("/health", (c) => {
 app.route("/api/auth", authRoutes);
 // Conts: sign-on from Property OS, server to server, proven by a shared secret (src/conts/sso.ts).
 app.route("/api/conts-sso", contsSso);
+// Conts: the email retries Houzs runs on its own schedule, called by Property OS's cron worker (src/conts/mail-cron.ts).
+app.route("/api/conts-cron", contsMailCron);
 
 // Public customer survey — unauthenticated, token-based. Lives under
 // /api/survey (not /survey) so it doesn't collide with the SPA route

@@ -167,6 +167,12 @@ export const NAV: NavGroup[] = [
     { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
     { key: 'automations', label: 'Automations', icon: 'workflow', path: '/communication/automations', area: 'automations' },
   ] },
+  // The shared email inbox on theconts.com addresses (CONTS-0004): the engine's Mail Center, as in Houzs and Hookka.
+  // Mailboxes (who reads which address) is for Full only, as the engine asks mail_center.manage for it.
+  { label: 'MAIL', workspace: 'rental', items: [
+    { key: 'mailCenter', label: 'Mail Center', icon: 'mail', path: '/mail', area: 'mail' },
+    { key: 'mailboxes', label: 'Mailboxes', icon: 'at-sign', path: '/mail/mailboxes', area: 'mail', full: true },
+  ] },
   { label: 'SYSTEM', workspace: 'rental', items: [
     { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
     { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', area: 'integrations' },
@@ -284,7 +290,7 @@ export const WORKSPACE_LABEL: Record<Workspace, string> ={ rental: 'The Conts', 
  *  functions/api/system/health (management, finance, operations managers): keep the two in sync. */
 const DENY: Partial<Record<UserRole, string[]>> = {
   // scInvoices matches MONEY_ONLY in functions/api/_middleware.ts.
-  operations_staff: ['finance', 'reports', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'scInvoices', 'ledger'],
+  operations_staff: ['finance', 'reports', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'scInvoices', 'ledger', 'mail'],
   housekeeper: ['*'],
   technician: ['*'],
   owner: ['*'],
@@ -298,7 +304,7 @@ export function switchedOff(path: string): boolean {
 }
 
 /** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
-const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger'];
+const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger', 'mail'];
 const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
 
 /** Areas (and menu keys) closed to a role: from its permission levels where the session carries them, else the built-in list. */

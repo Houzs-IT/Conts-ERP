@@ -34,6 +34,11 @@ export type ContsAccess = Record<string, ContsLevel>;
  *  everywhere, and a sign-on without it (Property OS before the area existed) reads as none. */
 export const LEDGER_AREA = "ledger";
 
+/** Mail Center (CONTS-0004): like the Ledger, outside the eight above and none when a sign-on leaves it out.
+ *  View or Edit opens the inbox (what each person reads is still set per mailbox); Full also manages mailboxes. */
+export const MAIL_AREA = "mail";
+const OPTIONAL_AREAS = [LEDGER_AREA, MAIL_AREA];
+
 /** Reads the levels out of a sign-on, refusing anything that is not a known area and level. */
 export function parseContsAccess(raw: unknown): ContsAccess | null {
   if (!raw || typeof raw !== "object") return null;
@@ -43,15 +48,19 @@ export function parseContsAccess(raw: unknown): ContsAccess | null {
     if (typeof level !== "string" || !LEVELS.includes(level as ContsLevel)) return null;
     out[area] = level as ContsLevel;
   }
-  const ledger = (raw as Record<string, unknown>)[LEDGER_AREA];
-  if (ledger !== undefined && (typeof ledger !== "string" || !LEVELS.includes(ledger as ContsLevel))) return null;
-  out[LEDGER_AREA] = (ledger as ContsLevel | undefined) ?? "none";
+  for (const area of OPTIONAL_AREAS) {
+    const level = (raw as Record<string, unknown>)[area];
+    if (level !== undefined && (typeof level !== "string" || !LEVELS.includes(level as ContsLevel))) return null;
+    out[area] = (level as ContsLevel | undefined) ?? "none";
+  }
   return out;
 }
 
 const ledgerOf = (a: ContsAccess): ContsLevel => a[LEDGER_AREA] ?? "none";
+const mailOf = (a: ContsAccess): ContsLevel => a[MAIL_AREA] ?? "none";
 export const isFullEverywhere = (a: ContsAccess) => CONTS_AREAS.every((k) => a[k] === "full");
-export const hasAnyAccess = (a: ContsAccess) => CONTS_AREAS.some((k) => a[k] !== "none") || ledgerOf(a) !== "none";
+export const hasAnyAccess = (a: ContsAccess) =>
+  CONTS_AREAS.some((k) => a[k] !== "none") || OPTIONAL_AREAS.some((k) => (a[k] ?? "none") !== "none");
 
 /** The engine's page access for those levels. Every page is stated, so nothing is left to inherit. */
 export function contsPageAccess(a: ContsAccess): Record<string, AccessLevel> {
@@ -89,6 +98,7 @@ export function contsPermissions(a: ContsAccess): string[] {
   keys.push(...ladder(a.scProcurement, [], ["scm.renovation.po_split"], []));
   keys.push(...ladder(a.scInvoices, [], ["scm.renovation.bill"], []));
   keys.push(...ledgerPermissions(ledgerOf(a)));
+  keys.push(...ladder(mailOf(a), ["mail_center.read"], [], ["mail_center.manage"]));
   return keys;
 }
 

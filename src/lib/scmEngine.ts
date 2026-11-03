@@ -91,6 +91,8 @@ export const ENGINE_PATH: Record<string, string> = {
   '/procurement/stock-transfers': '/scm/stock-transfers',
   '/procurement/stock-takes': '/scm/stock-takes',
   '/accounting/credit-notes': '/scm/credit-notes',
+  '/mail': '/mail-center',
+  '/mail/mailboxes': '/team?tab=mail2',
   ...ledgerPaths('/finance'),
   ...ledgerPaths('/supply/finance'),
 };
