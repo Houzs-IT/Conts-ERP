@@ -65,7 +65,7 @@ import {
   History,
   Wand2,
   CalendarOff,
-  type LucideIcon, Landmark, CreditCard, Banknote, Receipt, FlaskConical, House, CalendarDays } from "lucide-react";
+  type LucideIcon, Landmark, CreditCard, Banknote, Receipt } from "lucide-react";
 import { cn } from "../lib/utils";
 import { booleanRecordPreference, useIdentityPreference } from "../hooks/useIdentityPreference";
 import { useAuth } from "../auth/AuthContext";
@@ -342,19 +342,21 @@ export const ALL_NAV_TABS: NavTab[] = [
     icon: FolderKanban,
     groupId: "projects",
     to: "/projects?view=hub",
-    pageAccess: "projects",
+    // Project list access alone opens the group too, as it opened the Beta group it replaced (3 Nov 2026).
+    anyAccess: ["projects", "projects.list"],
     children: [
+      // The renovation list and calendar (Beta until 3 Nov 2026) replaced the old Project List and Calendar.
       {
-        to: "/projects?view=list",
-        label: "Project List",
+        to: "/beta/projects",
+        label: "Projects",
         icon: ClipboardList,
         pageAccess: "projects.list",
       },
       {
-        to: "/projects?view=calendar",
+        to: "/beta/calendar",
         label: "Calendar",
         icon: Calendar,
-        pageAccess: "projects.calendar",
+        pageAccess: "projects.list",
       },
       {
         to: "/projects?view=finances",
@@ -368,29 +370,6 @@ export const ALL_NAV_TABS: NavTab[] = [
         label: "Project Maintenance",
         icon: Wrench,
         pageAccessFull: "projects.maintenance",
-      },
-    ],
-  },
-
-  // ── Beta — the new project screens (owner, 23 Oct 2026), shown to everyone with project list access.
-  {
-    section: "operations",
-    label: "Beta",
-    icon: FlaskConical,
-    groupId: "beta",
-    pageAccess: "projects.list",
-    children: [
-      {
-        to: "/beta/projects",
-        label: "Home",
-        icon: House,
-        pageAccess: "projects.list",
-      },
-      {
-        to: "/beta/calendar",
-        label: "Calendar",
-        icon: CalendarDays,
-        pageAccess: "projects.list",
       },
     ],
   },

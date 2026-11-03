@@ -362,8 +362,12 @@ function Routed() {
         <Route path="/supply/finance/utility-bills" element={<ExpensesPage utilities />} />
         <Route path="/supply/finance/unit-pnl" element={<UnitPnlPage />} />
         <Route path="/supply/finance/approvals" element={<ApprovalsPage />} />
-        {/* Project monitor was dropped (owner, 11 Oct 2026): old links open the Schedule. */}
+        {/* Project monitor was dropped (owner, 11 Oct 2026): old links open the project Calendar. */}
         <Route path="/projects/monitor" element={<Moved to="/projects/calendar" />} />
+        {/* The Beta group became the Projects pages (owner, 3 Nov 2026); its old addresses open them. */}
+        <Route path="/beta/home" element={<Moved to="/projects/list" />} />
+        <Route path="/beta/projects" element={<Moved to="/projects/list" />} />
+        <Route path="/beta/calendar" element={<Moved to="/projects/calendar" />} />
         <Route path="/owners" element={<OwnersPage />} />
         <Route path="/owners/:id" element={<OwnerProfileRoute />} />
         <Route path="/owners/contracts" element={<ContractsPage />} />
