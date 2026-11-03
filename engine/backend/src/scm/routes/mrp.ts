@@ -273,6 +273,10 @@ export type MrpLine = {
   soItemId: string;    // mfg_sales_order_items.id — lets the UI one-click PO this line
   soDocNo: string;
   debtorName: string | null;
+  /* Conts (owner, 3 Nov 2026): the SO's project (scm.mfg_sales_orders.project_id -> public.projects). */
+  projectId: number | null;
+  projectCode: string | null;
+  projectName: string | null;
   customerState: string | null;  // staff #8 — info-only, from the SO's customer_state
   soDate: string | null;
   deliveryDate: string | null;
@@ -339,6 +343,10 @@ type SofaSet = {
   lineNo: number | null;
   createdAt: string | null;
   debtorName: string | null;
+  /* Conts (owner, 3 Nov 2026): the SO's project, as on MrpLine. */
+  projectId: number | null;
+  projectCode: string | null;
+  projectName: string | null;
   customerState: string | null;  // staff #8 — info-only, from the SO's customer_state
   soDate: string | null;
   deliveryDate: string | null;
@@ -686,6 +694,22 @@ export async function computeMrp(
     return [plan.deliver_on ? { ...r, so, line_delivery_date: plan.deliver_on, line_delivery_date_overridden: true } : { ...r, so }];
   });
   const isDatedLine = (r: DemandRow): boolean => deliveryOf(r) !== null;
+  /* Conts (owner, 3 Nov 2026): every MRP row names its project (code and name), so a line can be found and filtered
+     by project. Projects live in public.projects. */
+  const projectIds = [...new Set(demandActive.map((r) => r.so?.project_id).filter((x): x is number => x != null))];
+  const projectById = new Map<number, { code: string | null; name: string | null }>();
+  if (projectIds.length > 0) {
+    let projQ = sb.schema('public').from('projects').select('id, code, name').in('id', projectIds);
+    if (companyId != null) projQ = projQ.eq('company_id', companyId);
+    const { data: projRows, error: projErr } = await projQ;
+    if (projErr) throw new Error(`mrp_load_failed: ${projErr.message}`);
+    for (const p of (projRows ?? []) as Array<{ id: number; code: string | null; name: string | null }>) projectById.set(Number(p.id), { code: p.code, name: p.name });
+  }
+  const projectOf = (r: DemandRow): { projectId: number | null; projectCode: string | null; projectName: string | null } => {
+    const id = r.so?.project_id ?? null;
+    const p = id == null ? undefined : projectById.get(Number(id));
+    return { projectId: id == null ? null : Number(id), projectCode: p?.code ?? null, projectName: p?.name ?? null };
+  };
 
   // A partially-delivered SO keeps its header status active (the header only
   // flips to DELIVERED once EVERY line is fully covered), so already-delivered
@@ -1349,6 +1373,7 @@ export async function computeMrp(
         soItemId: r.id,
         soDocNo: r.doc_no,
         debtorName: r.so?.debtor_name ?? null,
+        ...projectOf(r),
         customerState: r.so?.customer_state ?? null,
         soDate: r.so?.so_date ?? null,
         deliveryDate: lineDelivery,
@@ -1551,6 +1576,7 @@ export async function computeMrp(
         lineNo: d.line_no ?? null,
         createdAt: d.created_at ?? null,
         debtorName: d.so?.debtor_name ?? null,
+        ...projectOf(d),
         customerState: d.so?.customer_state ?? null,
         soDate: d.so?.so_date ?? null,
         deliveryDate: setDelivery,
