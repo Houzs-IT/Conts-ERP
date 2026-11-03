@@ -38,6 +38,8 @@ export interface LinePo {
   photoKeys: string[];
 }
 
+export interface SupplierChoice { id: string; code: string; name: string; main: boolean; priceSen: number | null }
+
 /** A PO change raised by a VO that purchasing has not confirmed yet: the PO still shows the old line. */
 export interface PendingPoChange {
   id: string;
@@ -68,7 +70,14 @@ export interface ManagedLine {
   amountSen: number | null;
   area: string | null;
   remark: string | null;
+  /** The supplier the line is bought from: the contract line's (pre-filled from the SKU's binding, changed on the PO
+      tab or the contract), else the SKU's main supplier. */
   supplierName: string | null;
+  supplierId: string | null;
+  /** The renovation contract line behind this SO line, where the supplier choice is kept (null: not a contract line). */
+  contractLineId: string | null;
+  /** The suppliers this SKU can be ordered from (its supplier bindings), main first (owner, 3 Nov 2026: only these). */
+  supplierChoices: SupplierChoice[];
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none), for the role's category access. */
   categoryCode: string | null;
@@ -183,6 +192,17 @@ interface LineRow {
   variants: unknown; item_group: string | null; uom: string | null; qty: number; unit_price_sen: number | null; discount_sen: number | null; total_sen: number | null;
   area: string | null; remark: string | null; supplier_name: string | null; supplier_code: string | null; cat_label: string | null; cat_sort: number | null;
   sub_label: string | null; sub_sort: number | null; cat_code: string | null; sub_code: string | null; prod_category: string | null; prod_sub: string | null; pos: unknown; delivered: number | null; photo_urls: unknown; sku_photos: unknown;
+  supplier_id: string | null; contract_line_id: string | null; contract_supplier_id: string | null; contract_supplier_name: string | null; supplier_choices: unknown;
+}
+
+export function choicesOf(v: unknown): SupplierChoice[] {
+  let list: unknown = v;
+  if (typeof v === "string") { try { list = JSON.parse(v); } catch { list = []; } }
+  if (!Array.isArray(list)) return [];
+  return (list as Array<Record<string, unknown>>).map((c) => ({
+    id: String(c.id), code: String(c.code ?? ""), name: String(c.name ?? c.code ?? ""), main: Boolean(c.main),
+    priceSen: c.priceSen === null || c.priceSen === undefined ? null : Number(c.priceSen),
+  }));
 }
 
 async function readPlans(db: Db, ids: readonly string[]): Promise<{ ready: boolean; byId: Map<string, ManagedLine["plan"]> }> {
@@ -214,7 +234,12 @@ export async function loadProjectLines(
     `SELECT i.id::text AS id, i.doc_no, so.status::text AS so_status, i.line_no, i.item_code, i.description, i.description2, i.variants, i.item_group,
             i.uom, i.qty, i.unit_price_sen, i.discount_sen::bigint AS discount_sen, i.total_sen::bigint AS total_sen, i.remark,
             coalesce(nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim((SELECT l.room FROM scm.reno_doc_lines l WHERE l.so_item_id = i.id LIMIT 1)), ''), nullif(trim(i.location), '')) AS area,
-            sup.name AS supplier_name, sup.code AS supplier_code,
+            sup.name AS supplier_name, sup.code AS supplier_code, sup.id AS supplier_id,
+            cl.id AS contract_line_id, cl.supplier_id AS contract_supplier_id, cl.supplier_name AS contract_supplier_name,
+            (SELECT coalesce(json_agg(json_build_object('id', s2.id::text, 'code', s2.code, 'name', s2.name, 'main', coalesce(b2.is_main_supplier, false), 'priceSen', b2.unit_price_sen)
+                                      ORDER BY b2.is_main_supplier DESC NULLS LAST, s2.name), '[]'::json)::text
+               FROM scm.supplier_material_bindings b2 JOIN scm.suppliers s2 ON s2.id = b2.supplier_id
+              WHERE b2.material_kind = 'mfg_product' AND b2.item_code = i.item_code AND b2.company_id = so.company_id) AS supplier_choices,
             cg.label AS cat_label, cg.sort_order AS cat_sort, sc.label AS sub_label, sc.sort_order AS sub_sort,
             cg.code AS cat_code, sc.code AS sub_code, prod.category AS prod_category, prod.sub_category AS prod_sub,
             (SELECT coalesce(jsonb_agg(jsonb_build_object(
@@ -234,9 +259,12 @@ export async function loadProjectLines(
               WHERE mp.code = i.item_code AND mp.company_id = so.company_id) AS sku_photos
        FROM scm.mfg_sales_order_items i
        JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
-       LEFT JOIN LATERAL (SELECT s.name, s.code FROM scm.supplier_material_bindings b JOIN scm.suppliers s ON s.id = b.supplier_id
+       LEFT JOIN LATERAL (SELECT s.id::text AS id, s.name, s.code FROM scm.supplier_material_bindings b JOIN scm.suppliers s ON s.id = b.supplier_id
                            WHERE b.material_kind = 'mfg_product' AND b.item_code = i.item_code AND b.company_id = so.company_id
                            ORDER BY b.is_main_supplier DESC LIMIT 1) sup ON true
+       LEFT JOIN LATERAL (SELECT l.id::text AS id, l.supplier_id::text AS supplier_id, ls.name AS supplier_name
+                            FROM scm.reno_doc_lines l LEFT JOIN scm.suppliers ls ON ls.id = l.supplier_id
+                           WHERE l.so_item_id = i.id AND l.kind IN ('ITEM', 'CHILD') AND l.omitted_by_vo_id IS NULL LIMIT 1) cl ON true
        LEFT JOIN LATERAL (SELECT p.category_group, p.sub_category, p.category::text AS category FROM scm.mfg_products p
                            WHERE p.code = i.item_code AND p.company_id = so.company_id ORDER BY (p.status::text = 'ACTIVE') DESC LIMIT 1) prod ON true
        LEFT JOIN scm.product_category_groups cg ON cg.code = prod.category_group
@@ -256,7 +284,10 @@ export async function loadProjectLines(
       variants: variantsOf(x.variants), itemGroup: x.item_group, uom: x.uom ?? "UNIT", qty,
       unitPriceSen: finance ? Number(x.unit_price_sen ?? 0) : null, discountSen: finance ? Number(x.discount_sen ?? 0) : null,
       amountSen: finance ? Number(x.total_sen ?? 0) : null,
-      area: x.area, remark: x.remark?.trim() || null, supplierName: x.supplier_name,
+      area: x.area, remark: x.remark?.trim() || null,
+      supplierName: x.contract_line_id ? x.contract_supplier_name : x.supplier_name,
+      supplierId: x.contract_line_id ? x.contract_supplier_id : x.supplier_id,
+      contractLineId: x.contract_line_id, supplierChoices: choicesOf(x.supplier_choices),
       goesTo: voGoesTo({ itemCode: x.item_code, itemGroup: x.item_group, mainSupplierCode: x.supplier_code }),
       categoryCode: x.cat_code ?? null, subCode: x.sub_code ?? null,
       variantCategory: x.prod_category ? variantCategoryOf(x.prod_category, x.prod_sub) : null,
@@ -316,4 +347,30 @@ export async function saveLinePlan(db: Db, soItemId: string, companyId: number, 
        updated_by = excluded.updated_by, updated_at = now()`,
   ).bind(soItemId, companyId, next.orderOn, next.deliverOn, next.noPo, userId).run();
   return next;
+}
+
+/* ---------- supplier per line (owner, 3 Nov 2026) ---------- */
+
+/** The renovation contract line behind an SO line, with what the supplier change needs. */
+export async function contractLineOf(db: Db, soItemId: string): Promise<{ lineId: string; docNo: string; itemCode: string; version: number } | null> {
+  const r = await db.prepare(
+    `SELECT l.id::text AS line_id, s.so_doc_no AS doc_no, i.item_code, k.version
+       FROM scm.reno_doc_lines l JOIN scm.reno_doc_sections s ON s.id = l.section_id
+       JOIN scm.mfg_sales_order_items i ON i.id = l.so_item_id
+       JOIN scm.reno_so_contracts k ON k.so_doc_no = s.so_doc_no
+      WHERE l.so_item_id::text = ? AND l.kind IN ('ITEM', 'CHILD') AND l.omitted_by_vo_id IS NULL
+      LIMIT 1`,
+  ).bind(soItemId).first<{ line_id: string; doc_no: string; item_code: string | null; version: number }>();
+  return r ? { lineId: r.line_id, docNo: r.doc_no, itemCode: r.item_code ?? "", version: Number(r.version) } : null;
+}
+
+/** The SKU's binding to this supplier: only a bound supplier can be picked (its price becomes the line's cost). */
+export async function supplierBinding(db: Db, itemCode: string, companyId: number, supplierId: string): Promise<{ name: string; priceSen: number } | null> {
+  const r = await db.prepare(
+    `SELECT s.name, coalesce(b.unit_price_sen, 0) AS price_sen
+       FROM scm.supplier_material_bindings b JOIN scm.suppliers s ON s.id = b.supplier_id
+      WHERE b.material_kind = 'mfg_product' AND b.item_code = ? AND b.company_id = ? AND b.supplier_id::text = ?
+      LIMIT 1`,
+  ).bind(itemCode, companyId, supplierId).first<{ name: string; price_sen: number }>();
+  return r ? { name: r.name, priceSen: Number(r.price_sen) } : null;
 }
