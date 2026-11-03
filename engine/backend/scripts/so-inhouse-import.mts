@@ -18,7 +18,12 @@
      npx tsx scripts/so-inhouse-import.mts --so-date=2026-10-31 --dry-run [--groups=EMBASSY,KL48,OTHER]
      npx tsx scripts/so-inhouse-import.mts --so-date=2026-10-31 --confirm-ref=<ref> [--groups=EMBASSY,OTHER]
 
-   An order whose price is a placeholder (KL 48 until Accounts give the price) is dry-run only: a write refuses it.
+   An order whose price is a placeholder is dry-run only: a write refuses it. An order marked "hold" in the data is
+   skipped unless its key is in --release.
+   --new-accounts=<key>,...   (owner, 3 Nov 2026) these units have no AutoCount accounts: the contract keeps the 302- customer
+                              and 481- advance account the conversion opens, as the screens do. Refused if AutoCount has them.
+   --account-alias=<key>:<unit>  look the AutoCount accounts up under another unit number (KL48 B-17-09:B-17-19).
+   A package priced as a whole is one lump-sum section (the engine's own): its price on the section, its lines unpriced.
    RE-RUN: safe. A project is found by its source_ref, an order by its note row (scm.app_config) or its project's
    live contract; both are skipped. Only the Conts databases (production, staging) or localhost are accepted. */
 import { readFileSync } from 'node:fs';
@@ -38,6 +43,10 @@ const arg = (n: string) => process.argv.find((a) => a.startsWith(`--${n}=`))?.sl
 const DRY = process.argv.includes('--dry-run');
 const GROUPS = new Set((arg('groups') ?? 'EMBASSY,OTHER').split(',').map((g) => g.trim().toUpperCase()).filter(Boolean));
 const SO_DATE = arg('so-date') ?? '';
+const list = (n: string) => new Set((arg(n) ?? '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean));
+const RELEASE = list('release');
+const NEW_ACCOUNTS = list('new-accounts');
+const ALIAS = new Map([...list('account-alias')].map((x) => { const [k, u] = x.split(':'); return [k.trim(), (u ?? '').trim()] as [string, string]; }));
 const CONTS_REFS: Record<string, string> = { cweomoenhsjvsxfsmiiw: 'PRODUCTION', ecgyrmblqfxvbfjlqkdq: 'staging' };
 const NOTE = 'note:so-inhouse-import:';
 const SRC = 'owner-data:';
@@ -45,10 +54,10 @@ const SYSTEM_STAFF = '00000000-0000-4000-8000-000000000001';
 const THE_CONTS_BRAND = 'The Conts';
 const AIRBNB_PACKAGE_TYPE = 'Airbnb package';
 
-interface DataLine { kind: 'ITEM'; itemCode: string; description: string; qty: number; unitPriceSen: number; discountBp?: number; netSen: number }
+interface DataLine { kind: 'ITEM' | 'TEXT'; itemCode?: string; description: string; qty?: number; unitPriceSen?: number; discountBp?: number; netSen?: number }
 interface Order {
   group: string; key: string; unit: string; building: string; owner: string; email: string; layout: string; preparedBy: string; source: string;
-  payableSen: number; linesSen: number; pricePlaceholder: boolean; type?: string; sections: Array<{ heading: string; lines: DataLine[] }>;
+  payableSen: number; linesSen: number; pricePlaceholder: boolean; type?: string; hold?: string; sections: Array<{ heading: string; lumpSumSen?: number; lines: DataLine[] }>;
 }
 interface Project { key: string; group: string; building: string; unit: string; owner: string; email: string; layout: string }
 
@@ -61,7 +70,9 @@ const host = new URL(url.replace(/^postgres(ql)?:/, 'http:')).hostname;
 const ref = Object.keys(CONTS_REFS).find((r) => url.includes(r));
 if (!ref && !['127.0.0.1', 'localhost'].includes(host)) throw new Error(`Refusing ${host}: not a Conts database.`);
 if (ref === 'cweomoenhsjvsxfsmiiw' && !DRY && arg('confirm-ref') !== ref) throw new Error('Production: pass --confirm-ref=cweomoenhsjvsxfsmiiw to write.');
-const orders = data.orders.filter((o) => GROUPS.has(o.group));
+const held = data.orders.filter((o) => GROUPS.has(o.group) && o.hold && !RELEASE.has(o.key.toUpperCase()));
+const orders = data.orders.filter((o) => GROUPS.has(o.group) && !held.includes(o));
+for (const k of [...NEW_ACCOUNTS, ...ALIAS.keys()]) if (!orders.some((o) => o.key.toUpperCase() === k)) throw new Error(`${k} is not an order of this run.`);
 const placeholders = orders.filter((o) => o.pricePlaceholder);
 if (!DRY && placeholders.length) throw new Error(`${placeholders.length} order(s) have a placeholder price (${placeholders[0].key}, ...): dry-run only.`);
 const projects = data.projects.filter((p) => GROUPS.has(p.group));
@@ -75,14 +86,17 @@ const keyOf = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
 const acUnit = (building: string, unit: string) => keyOf(`${building} ${unit}`);
 
 function lineInput(l: DataLine) {
-  const out: Record<string, unknown> = { kind: 'ITEM', itemCode: l.itemCode, description: l.description, qty: l.qty, unitPriceSen: l.unitPriceSen, discountBp: l.discountBp ?? 0 };
-  const net = lineAmounts({ kind: 'ITEM', qty: l.qty, measureMilli: null, unitPriceSen: l.unitPriceSen, discountBp: l.discountBp ?? 0, amountOverrideSen: null, isFoc: false }).netSen;
-  if (net !== l.netSen) out.amountOverrideSen = l.netSen;
+  if (l.kind === 'TEXT') return { kind: 'TEXT', description: l.description };
+  const qty = l.qty ?? 1;
+  const price = l.unitPriceSen ?? 0;
+  const out: Record<string, unknown> = { kind: 'ITEM', itemCode: l.itemCode, description: l.description, qty, unitPriceSen: price, discountBp: l.discountBp ?? 0 };
+  const net = lineAmounts({ kind: 'ITEM', qty, measureMilli: null, unitPriceSen: price, discountBp: l.discountBp ?? 0, amountOverrideSen: null, isFoc: false }).netSen;
+  if (net !== (l.netSen ?? 0)) out.amountOverrideSen = l.netSen ?? 0;
   return out;
 }
 function mainCode(o: Order): string {
   const n = new Map<string, number>();
-  for (const s of o.sections) for (const l of s.lines) n.set(l.itemCode, (n.get(l.itemCode) ?? 0) + 1);
+  for (const s of o.sections) for (const l of s.lines) if (l.itemCode) n.set(l.itemCode, (n.get(l.itemCode) ?? 0) + 1);
   return [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'RN-PROJECT_MGMT';
 }
 function norm(input: unknown): NormSection[] {
@@ -119,7 +133,7 @@ async function ensureProject(db: RenoDb, tx: Sql, p: Project, companyId: number,
    ambiguous: the order is not imported and is reported. */
 type Accounts = { ok: true; debtor: string; advance: string; how: string } | { ok: false; why: string };
 async function findAccounts(db: RenoDb, companyId: number, o: Order): Promise<Accounts> {
-  const unitKey = acUnit(o.building, o.unit);
+  const unitKey = acUnit(o.building, ALIAS.get(o.key.toUpperCase()) || o.unit);
   const all = await db.q<{ code: string; name: string }>(`select code, name from scm.debtors where company_id = $1 and control_account = '302-0000'`, [companyId]);
   const tagged = all.filter((d) => keyOf(d.name.match(/\(([^()]*)\)\s*$/)?.[1] ?? '') === unitKey);
   let debtors = tagged;
@@ -158,8 +172,9 @@ async function useAccounts(db: RenoDb, companyId: number, docNo: string, acc: { 
   }
 }
 
-async function importOrder(db: RenoDb, actor: RenoActor, brandId: number, o: Order, projectId: number, acc: { debtor: string; advance: string }) {
-  const sections: Array<{ heading: string; lines: Record<string, unknown>[] }> = o.sections.map((s) => ({ heading: s.heading, lines: s.lines.map(lineInput) }));
+async function importOrder(db: RenoDb, actor: RenoActor, brandId: number, o: Order, projectId: number, acc: { debtor: string; advance: string } | null) {
+  const sections: Array<{ heading: string; lumpSumSen?: number; lines: Record<string, unknown>[] }> =
+    o.sections.map((s) => ({ heading: s.heading, ...(s.lumpSumSen != null ? { lumpSumSen: s.lumpSumSen } : {}), lines: s.lines.map(lineInput) }));
   const docDiscountSen = o.linesSen > o.payableSen ? o.linesSen - o.payableSen : 0;
   if (o.payableSen > o.linesSen) {
     const gap = o.payableSen - o.linesSen;
@@ -180,8 +195,10 @@ async function importOrder(db: RenoDb, actor: RenoActor, brandId: number, o: Ord
   if (contractSen !== o.payableSen) throw new Error(`${docNo} (${o.key}): contract ${contractSen} but the source says ${o.payableSen}`);
   await db.q('update scm.mfg_sales_orders set note = $2 where doc_no = $1', [docNo, `Imported 2 Nov 2026 from ${o.source}`]);
   await soScreenFields(db, docNo, projectId, actor.companyId);
-  await useAccounts(db, actor.companyId, docNo, acc);
-  return { docNo, contractSen };
+  if (acc) await useAccounts(db, actor.companyId, docNo, acc);
+  const [opened] = await db.q<{ debtor_code: string; advance_account_code: string }>(
+    'select o.debtor_code, c.advance_account_code from scm.mfg_sales_orders o join scm.reno_so_contracts c on c.so_doc_no = o.doc_no where o.doc_no = $1', [docNo]);
+  return { docNo, contractSen, debtor: opened.debtor_code, advance: opened.advance_account_code };
 }
 
 /* As the Dream Crafter import: Item shows the catalog product, the quoted wording moves to Remarks; rooms by the
@@ -252,7 +269,7 @@ try {
   if (!brand || brand.finance_kind !== 'INHOUSE_RENOVATION') throw new Error(`Brand "${THE_CONTS_BRAND}" is missing or not inhouse renovation.`);
   const [ptype] = await sql`select id from public.project_types where company_id = ${companyId} and name = ${AIRBNB_PACKAGE_TYPE} and active`;
   if (!ptype) throw new Error(`Project type "${AIRBNB_PACKAGE_TYPE}" not found.`);
-  const codes = [...new Set(orders.flatMap((o) => o.sections.flatMap((s) => s.lines.map((l) => l.itemCode))))];
+  const codes = [...new Set(orders.flatMap((o) => o.sections.flatMap((s) => s.lines.map((l) => l.itemCode).filter((c): c is string => !!c))))];
   const known = new Set((await sql`select distinct code from scm.mfg_products where company_id = ${companyId} and code = any(${codes})`).map((r) => r.code as string));
   const missing = codes.filter((c) => !known.has(c));
   console.log(`${codes.length} SKU codes used, ${missing.length} missing${missing.length ? `: ${missing.join(', ')}` : ''}`);
@@ -261,7 +278,8 @@ try {
   const before = (await sql`select (select count(*) from public.projects)::int projects, (select count(*) from scm.mfg_sales_orders where so_kind = 'RENOVATION')::int sos,
     (select count(*) from scm.debtors where code like '302-%')::int d302, (select count(*) from scm.accounts where account_code like '481-%')::int a481`)[0];
   const done: string[] = [];
-  const notSeeded: string[] = [];
+  const notSeeded: string[] = held.map((o) => `${o.key}: ${o.hold}`);
+  const opened: string[] = [];
   try {
     await sql.begin(async (tx) => {
       const db = renoDbOf(tx as unknown as UnsafeRunner);
@@ -281,13 +299,18 @@ try {
         const existing = await liveContractOfProject(db, proj.id);
         if (note || existing) { console.log(`skip  ${o.key}: ${existing ? `already has ${existing}` : `imported earlier (${note!.value})`}`); continue; }
         const acc = await findAccounts(db, companyId, o);
-        if (!acc.ok) { notSeeded.push(`${o.key}: ${acc.why}`); console.log(`hold  ${o.key}: ${acc.why}`); continue; }
-        const r = await importOrder(db, actor, Number(brand.id), o, proj.id, acc);
+        const openNew = NEW_ACCOUNTS.has(o.key.toUpperCase());
+        if (openNew && (acc.ok || !/no 302- customer/.test(acc.why) || !/no 481- advance/.test(acc.why))) {
+          throw new Error(`${o.key}: --new-accounts given but AutoCount has an account for it (${acc.ok ? `${acc.debtor} / ${acc.advance}` : acc.why})`);
+        }
+        if (!acc.ok && !openNew) { notSeeded.push(`${o.key}: ${acc.why}`); console.log(`hold  ${o.key}: ${acc.why}`); continue; }
+        const r = await importOrder(db, actor, Number(brand.id), o, proj.id, acc.ok ? acc : null);
+        if (openNew) opened.push(`${o.key}: ${r.debtor} / ${r.advance}`);
         await db.q('insert into scm.app_config (key, value, description, company_id) values ($1, $2, $3, $4)',
           [NOTE + o.key, r.docNo, `In-house SO import (2 Nov 2026): ${r.docNo} for ${o.key}`, companyId]);
         total += r.contractSen;
         done.push(r.docNo);
-        console.log(`order ${r.docNo} ${o.key} ${o.owner} project ${proj.code} ${rm(r.contractSen)}${o.pricePlaceholder ? ' (PLACEHOLDER price)' : ''} | ${acc.debtor} / ${acc.advance} (${acc.how})`);
+        console.log(`order ${r.docNo} ${o.key} ${o.owner} project ${proj.code} ${rm(r.contractSen)}${o.pricePlaceholder ? ' (PLACEHOLDER price)' : ''} | ${r.debtor} / ${r.advance} (${acc.ok ? acc.how : 'NEW accounts opened'})`);
       }
       const after = (await tx`select (select count(*) from public.projects)::int projects, (select count(*) from scm.mfg_sales_orders where so_kind = 'RENOVATION')::int sos,
         (select count(*) from scm.debtors where code like '302-%')::int d302, (select count(*) from scm.accounts where account_code like '481-%')::int a481,
@@ -301,10 +324,12 @@ try {
       if (DRY) throw new Rollback('dry run');
     });
     console.log(`${done.length} orders written.`);
+    if (opened.length) console.log(`NEW accounts opened (${opened.length}):\n  ${opened.join('\n  ')}`);
     if (notSeeded.length) console.log(`NOT imported (${notSeeded.length}):\n  ${notSeeded.join('\n  ')}`);
   } catch (e) {
     if (e instanceof Rollback) {
       console.log(`DRY RUN: ${done.length} orders built and rolled back; nothing was written.`);
+      if (opened.length) console.log(`would open NEW accounts (${opened.length}):\n  ${opened.join('\n  ')}`);
       if (notSeeded.length) console.log(`would NOT be imported (${notSeeded.length}):\n  ${notSeeded.join('\n  ')}`);
     }
     else throw e;

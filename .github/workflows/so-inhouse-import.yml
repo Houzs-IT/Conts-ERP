@@ -21,6 +21,18 @@ on:
         description: SO date (YYYY-MM-DD)
         required: true
         default: '2026-10-31'
+      new_accounts:
+        description: orders that open new 302-/481- accounts (no AutoCount ones), comma separated
+        required: false
+        default: ''
+      account_alias:
+        description: look AutoCount accounts up under another unit, e.g. KL48 B-17-09:B-17-19
+        required: false
+        default: ''
+      release:
+        description: held orders to import, comma separated
+        required: false
+        default: ''
       confirm_ref:
         description: production project ref, required for apply
         required: false
@@ -48,9 +60,13 @@ jobs:
           GROUPS: ${{ inputs.groups }}
           SO_DATE: ${{ inputs.so_date }}
           CONFIRM_REF: ${{ inputs.confirm_ref }}
+          NEW_ACCOUNTS: ${{ inputs.new_accounts }}
+          ACCOUNT_ALIAS: ${{ inputs.account_alias }}
+          RELEASE: ${{ inputs.release }}
         run: |
+          set -- --so-date="$SO_DATE" --groups="$GROUPS" --new-accounts="$NEW_ACCOUNTS" --account-alias="$ACCOUNT_ALIAS" --release="$RELEASE"
           if [ "$MODE" = "apply" ]; then
-            npx tsx scripts/so-inhouse-import.mts --so-date="$SO_DATE" --groups="$GROUPS" --confirm-ref="$CONFIRM_REF"
+            npx tsx scripts/so-inhouse-import.mts "$@" --confirm-ref="$CONFIRM_REF"
           else
-            npx tsx scripts/so-inhouse-import.mts --so-date="$SO_DATE" --groups="$GROUPS" --dry-run
+            npx tsx scripts/so-inhouse-import.mts "$@" --dry-run
           fi

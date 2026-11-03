@@ -31,9 +31,14 @@ Decisions (owner and coordinator, 2 Nov 2026):
 - SKUs: the Dream Crafter rules (`docs/so-import/build/so_rules.py`), with the quotation's section deciding painting,
   feature wall and built-in lines. Dining table, working table and installation have no catalog product and take
   RN-PROJECT_MGMT with their own wording, as 20 Dream Crafter lines did.
-- KL 48: Type A / Type B picks the PDF lines. The Owner Data holds no per-unit selling price (its "Business Model"
-  column is the rental arrangement, to be ignored), so the KL 48 orders carry the PDF package total as a PLACEHOLDER:
-  the importer dry-runs them and refuses to write them until the price source is given.
+- KL 48 (owner, 3 Nov 2026): Type A / Type B picks the PDF lines, and the selling price is the PDF package price, the
+  same for every unit: Type A RM 13,000, Type B RM 14,200 ("all the same"; the "WITH AGRR RM 30000/36000" figures and
+  B-16-13's "-500" note are not prices). A-26-11 ("TYPE B ADD FAN") carries a ceiling-fan line at RM 0 inside the Type B
+  price. Each order is one lump-sum section, the engine's own: the package price on the section (the SO's RENO-ADJUST
+  row, which finance spreads over the section's lines), the PDF's lines under it unpriced as printed, its headings kept
+  as text. B-25-08 and B-35-13A have no AutoCount accounts and open new ones as the screens do (--new-accounts).
+  B-17-09 is held until the owner says whether AutoCount's "KL48 B-17-19" is its account: --release with
+  --account-alias="KL48 B-17-09:B-17-19" (302-M060 / 481-K027) or --new-accounts writes it either way.
 
 ## Result on production (2 Nov 2026)
 

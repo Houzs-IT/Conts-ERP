@@ -156,7 +156,21 @@ for ws in qwb.worksheets:
                    'source': (f'the sheet labelled {sheet_unit} of FOR IT USE QUOTATIION EMBASSY.xlsx: the C-35-03 and C-39-08 sheet labels are swapped, this order is unit {unit}' if swapped else f'sheet {ws.title} of FOR IT USE QUOTATIION EMBASSY.xlsx'), 'payableSen': sen(final), 'linesSen': lines_sen,
                    'pricePlaceholder': False, 'sections': sections})
 
-# ---------- KL 48 (package lines from the PDFs; no per-unit price in the Owner Data) ----------
+# ---------- KL 48 (owner, 3 Nov 2026: the PDF package price, the same for every unit of a type) ----------
+# One lump-sum section per order: the package price on the section, the PDF's lines under it unpriced (as printed), the
+# PDF's headings kept as text lines. B-17-09 is held: whether AutoCount's "KL48 B-17-19" is its account is the owner's call.
+KL48_HOLD = {'B-17-09': 'held (owner, 3 Nov 2026): is AutoCount\'s KL48 B-17-19 this unit\'s account? Release with --release, '
+                        'and --account-alias (B-17-19) or --new-accounts.'}
+
+
+def lump(t, secs, total):
+    lines = []
+    for s in secs:
+        lines.append({'kind': 'TEXT', 'description': s['heading']})
+        lines.extend(s['lines'])
+    return [{'heading': f'KL 48 AMENITIES PACKAGE - TYPE {t}', 'lumpSumSen': total, 'lines': lines}]
+
+
 def pkg(linens):
     z = {'unitPriceSen': 0, 'discountBp': 0, 'netSen': 0}
     return [
@@ -192,9 +206,12 @@ for o in kl_owner:
         continue
     if o['layout'].strip().upper() != lay:
         flags.append(('KL48', o['unit'], f'layout written "{o["layout"].strip()}", read as Type {t}'))
+    hold = KL48_HOLD.get(o['unit'])
+    if hold:
+        flags.append(('KL48', o['unit'], hold))
     orders.append({'group': 'KL48', 'key': f'KL48 {o["unit"]}', 'unit': o['unit'], 'building': 'KL 48', 'owner': o['owner'], 'email': '',
-                   'layout': f'TYPE {t}', 'type': t, 'preparedBy': '', 'source': PKG[t][2], 'payableSen': PKG[t][0], 'linesSen': 0,
-                   'pricePlaceholder': True, 'sections': secs})
+                   'layout': f'TYPE {t}', 'type': t, 'preparedBy': '', 'source': PKG[t][2], 'payableSen': PKG[t][0], 'linesSen': PKG[t][0],
+                   'pricePlaceholder': False, **({'hold': hold} if hold else {}), 'sections': lump(t, secs, PKG[t][0])})
 
 # ---------- projects: one per Owner Data unit ----------
 projects = []
