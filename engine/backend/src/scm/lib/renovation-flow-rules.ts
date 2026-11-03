@@ -145,10 +145,25 @@ export async function doBrandingFromLines(
   try {
     const soIds = [...new Set(lines.map((l) => l.soItemId).filter((v): v is string => !!v))];
     const soBrand = new Map<string, string | null>();
+    const docNos = new Set<string>();
     if (soIds.length > 0) {
-      const { data, error } = await pgrestIn(sb.from('mfg_sales_order_items').select('id, branding'), 'id', soIds);
+      const { data, error } = await pgrestIn(sb.from('mfg_sales_order_items').select('id, branding, doc_no'), 'id', soIds);
       if (error) return undefined;
-      for (const r of (data ?? []) as Array<{ id: string; branding: string | null }>) soBrand.set(r.id, r.branding);
+      for (const r of (data ?? []) as Array<{ id: string; branding: string | null; doc_no?: string | null }>) {
+        soBrand.set(r.id, r.branding);
+        if (r.doc_no) docNos.add(r.doc_no);
+      }
+    }
+    /* A renovation contract's delivery carries the contract's brand (Dream Crafter, The Conts), not the maker's
+       on the goods (owner, 3 Nov 2026: a Hookka bedframe on a Dream Crafter contract printed HOOKKA). */
+    if (docNos.size > 0) {
+      const { data, error } = await pgrestIn(sb.from('mfg_sales_orders').select('doc_no, so_kind, branding'), 'doc_no', [...docNos]);
+      if (error) return undefined;
+      const heads = (data ?? []) as Array<{ doc_no: string; so_kind: string | null; branding: string | null }>;
+      if (heads.length > 0 && heads.every((h) => h.so_kind === 'RENOVATION')) {
+        const contract = brandingFromLineBrands(heads.map((h) => h.branding));
+        if (contract) return contract;
+      }
     }
     const codes = [...new Set(lines.map((l) => l.itemCode.trim()).filter(Boolean))];
     const skuBrand = new Map<string, string | null>();
