@@ -16,7 +16,39 @@ describe('coerceUtilityRead', () => {
     expect(r.amountDueSen).toBeNull();
     expect(r.kind).toBe('other');
     expect(readFailed(r)).toBe(true);
-    expect(readFailed(coerceUtilityRead({ amountDue: '10.00', billMonth: '2026-10' }))).toBe(false);
+    expect(readFailed(coerceUtilityRead({ currentCharges: '10.00', billMonth: '2026-10' }))).toBe(false);
+  });
+});
+
+/* chew 3 Nov 2026, after the September TNB run: a bill goes to the month its period ENDS (06/08-05/09 is September),
+   and what is recorded is Caj Semasa (this period's charges), never Jumlah Perlu Dibayar or Baki Terdahulu. */
+describe('the month and the amount finance records', () => {
+  test('the bill month is the month the printed period ends, whatever the model said', () => {
+    expect(coerceUtilityRead({ billMonth: '2026-08', periodFrom: '2026-08-06', periodTo: '2026-09-05', currentCharges: '377.50' }).billMonth).toBe('2026-09');
+    expect(coerceUtilityRead({ billMonth: '2026-10', periodFrom: '', periodTo: '', currentCharges: '1.00' }).billMonth).toBe('2026-10');
+  });
+
+  test('without Caj Semasa the page cannot be recorded as it is, even with an amount due', () => {
+    const r = coerceUtilityRead({ billMonth: '2026-09', amountDue: '527.35', currentCharges: '' });
+    expect(r.currentChargesSen).toBeNull();
+    expect(readFailed(r)).toBe(true);
+  });
+
+  test('the prompt says Caj Semasa is the charge and Baki Terdahulu never is', async () => {
+    let sent: any = null;
+    await readUtilityPage('k', PAGE, (async (_u: string, init: RequestInit) => { sent = JSON.parse(String(init.body)); return answer({ kind: 'electricity' }); }) as typeof fetch);
+    const prompt = sent.messages[0].content[1].text as string;
+    expect(prompt).toMatch(/Caj Semasa/);
+    expect(prompt).toMatch(/Baki Terdahulu/);
+    expect(prompt).toMatch(/month the period ends/);
+  });
+});
+
+/* 24 of the 104 September pages came back with zero-width spaces inside the account number, which breaks matching. */
+describe('invisible characters', () => {
+  test('are taken out of every text field', () => {
+    const r = coerceUtilityRead({ accountNoVisible: '21040241\u200b60XX', invoiceNo: '0009467266\u200b80', provider: '\ufeffTNB' });
+    expect(r).toMatchObject({ accountNoVisible: '2104024160XX', invoiceNo: '000946726680', provider: 'TNB' });
   });
 });
 
