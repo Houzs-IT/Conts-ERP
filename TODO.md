@@ -569,7 +569,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## In-house SO import, The Conts brand (feat/inhouse-so-seed, no migration, 2 Nov 2026, docs/so-import/inhouse/)
 - Skyline Embassy written on production 2 Nov: TC-SO-2610-007..024 (18 SOs, RM 579,770.00, dated 31 Oct, AutoCount 302-/481- accounts reused) and 22 projects RN-2610-008..029 (Embassy + Other tab). The one-off workflow so-inhouse-import.yml stays for the KL 48 run; remove it after.
-- KL 48: 44 units ready (19 Type A, 25 Type B) but not written: the owner will send a price list (chose B, 3 Nov); nothing until then. B-17-09, B-25-08, B-35-13A have no AutoCount customer / advance account.
+- KL 48: 43 units at the PDF package price (Type A RM 13,000, Type B RM 14,200; owner, 3 Nov). B-17-09 held: is AutoCount's KL48 B-17-19 its account? Write it with --release plus --account-alias or --new-accounts, then remove so-inhouse-import.yml.
 
 ## Notion SO import (feat/so-notion-import, no migration, 26 Oct 2026, docs/so-import/)
 - Re-imported on production 30 Oct (docs/so-import/README.md "Re-import"): 79 SOs (all linked), 27 VOs, RM 3,688,221.24; one-off workflow removed.
