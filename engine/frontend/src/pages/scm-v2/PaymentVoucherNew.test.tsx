@@ -7,8 +7,8 @@
    The server-side halves (money-account refusal, the roles window) are
    backend/src/scm/routes/accountRoles.test.ts. */
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { describe, expect, test, vi } from 'vitest';
 
 const mutateAsync = vi.fn(async (_body: Record<string, unknown>) => ({ id: 'pv-1', pvNumber: 'PV-2609-001' }));
@@ -28,9 +28,10 @@ vi.mock('../../conts/ProjectLimitField', () => ({
   ProjectLimitField: ({ onChange }: { onChange: (id: number | null) => void }) => <button type="button" onClick={() => onChange(7)}>pick project 7</button>,
 }));
 vi.mock('../../vendor/scm/components/ConfirmDialog', () => ({ useConfirm: () => vi.fn(async () => true) }));
+/* The pickers' field is a combobox input, like the real one (it comes before the account on a line). */
 vi.mock('../../conts/Pickers', () => ({
-  UnitPicker: ({ value, onChange, ariaLabel }: { value: string | null; onChange: (v: string | null) => void; ariaLabel: string }) => <input aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value || null)} />,
-  ProjectPicker: ({ value, onChange, ariaLabel }: { value: number | null; onChange: (v: number | null) => void; ariaLabel: string }) => <input aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)} />,
+  UnitPicker: ({ value, onChange, ariaLabel }: { value: string | null; onChange: (v: string | null) => void; ariaLabel: string }) => <input role="combobox" aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value || null)} />,
+  ProjectPicker: ({ value, onChange, ariaLabel }: { value: number | null; onChange: (v: number | null) => void; ariaLabel: string }) => <input role="combobox" aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)} />,
 }));
 /* The projects a line can name: 7 a customer's, 8 the company's own, made for a unit to rent out. */
 vi.mock('../../conts/projectLimitQueries', () => ({
@@ -317,6 +318,25 @@ describe('the plain Payment Voucher (/new)', () => {
     expect(screen.getByText('320-1000 · Cash in hand')).toBeTruthy();
     expect(screen.queryByText(/900-A002/)).toBeNull();
     expect(screen.queryByText(/400-0000/)).toBeNull();
+  });
+
+  /* chew 3 Nov 2026: "开pv 的时候就是直接在key payee 那边" — a new voucher opens with the cursor in Payee. */
+  test('a new voucher opens ready to type the payee', () => {
+    render(<MemoryRouter initialEntries={['/scm/payment-vouchers/new']}><PaymentVoucherNew /></MemoryRouter>);
+    expect(document.activeElement).toBe(screen.getByLabelText(/Payee/));
+  });
+
+  /* chew 3 Nov 2026: "如果是ap payment 就是直接在找supplier 那边" — on opening, and on switching to an AP Payment. */
+  test('an AP Payment opens ready to type the supplier, also when switched to from a plain voucher', () => {
+    const view = render(<MemoryRouter initialEntries={['/scm/payment-vouchers/new?type=ap']}><PaymentVoucherNew /></MemoryRouter>);
+    expect(document.activeElement).toBe(screen.getByLabelText(/Supplier */));
+    view.unmount();
+    let go: (to: string) => void = () => undefined;
+    const Nav = () => { const n = useNavigate(); go = n; return null; };
+    render(<MemoryRouter initialEntries={['/scm/payment-vouchers/new']}><Nav /><Routes><Route path="/scm/payment-vouchers/new" element={<PaymentVoucherNew />} /></Routes></MemoryRouter>);
+    expect(document.activeElement).toBe(screen.getByLabelText(/Payee/));
+    act(() => go('/scm/payment-vouchers/new?type=ap'));
+    expect(document.activeElement).toBe(screen.getByLabelText(/Supplier */));
   });
 
   test('a scanned bill with vendor memory pre-fills payee AND account — 记忆自动帮我填', () => {
@@ -664,6 +684,9 @@ describe('each line says what it is for', () => {
     fireEvent.keyDown(screen.getByLabelText('line 1 amount'), { key: 'Insert' });
     expect(checked(2)).toBe('Unit');
     expect((screen.getByLabelText('Line 2 unit') as HTMLInputElement).value).toBe('u-a31');
+    /* Insert still lands on the new line's account, not its unit field (that comes first on the line). */
+    expect((document.activeElement as HTMLElement | null)?.getAttribute('aria-label')).not.toBe('Line 2 unit');
+    expect((document.activeElement as HTMLElement | null)?.closest('[data-land]')).not.toBeNull();
     /* Project, then back to Unit: the unit is gone. */
     setFor(1, 'Project');
     expect(screen.queryByLabelText('Line 1 unit')).toBeNull();
