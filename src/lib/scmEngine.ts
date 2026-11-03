@@ -49,14 +49,12 @@ export const ENGINE_PATH: Record<string, string> = {
   '/service/metrics': '/assr?view=metrics',
   '/service/maintenance': '/assr?view=settings',
   '/service/my-cases': '/my-cases',
-  '/projects/list': '/projects?view=list',
-  // Project monitor was dropped (owner, 11 Oct 2026: the Schedule covers it); old links move to the Schedule (App.tsx).
-  '/projects/calendar': '/projects?view=calendar',
+  // The renovation project list and calendar (Beta's Home and Calendar until 3 Nov 2026) at the old Project list and
+  // Schedule addresses, so old links open them. Project monitor's old links move to the Calendar (App.tsx).
+  '/projects/list': '/beta/projects',
+  '/projects/calendar': '/beta/calendar',
   '/projects/finances': '/projects?view=finances',
   '/projects/maintenance': '/projects?view=maintenance',
-  '/beta/home': '/beta/home',
-  '/beta/projects': '/beta/projects',
-  '/beta/calendar': '/beta/calendar',
   '/sales/quotations': '/scm/renovation/quotations',
   '/sales/orders': '/scm/sales-orders',
   '/sales/amendments': '/scm/amendments',

@@ -24,8 +24,7 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  *  - Finance > Revenue was the same page as Growth > Analytics: one "Performance" entry.
  *  - Owners moved from Finance to Properties; Inbox from Growth to Reservations, and back to Growth as Messages (2 Nov 2026).
  *  - The Fit-out register and Guest documents screens were retired (owner, 14 Oct 2026); guest invoices and receipts are issued from a reservation.
- *  - Projects > Calendar is "Schedule"; Service / Project maintenance are "Case settings" / "Project settings",
- *    so no two menu entries share a name.
+ *  - Service / Project maintenance are "Case settings" / "Project settings", so no two menu entries share a name.
  */
 /** The Dream Crafter group that holds IT Support and Category access. It shares its label with the Rental System group,
  *  so anything keyed by group label must also use the workspace. */
@@ -201,16 +200,13 @@ export const NAV: NavGroup[] = [
     { key: 'serviceMaintenance', label: 'Case settings', icon: 'settings', path: '/service/maintenance', area: 'serviceCases', full: true },
     { key: 'myCases', label: 'My cases', icon: 'inbox', path: '/service/my-cases', area: 'serviceCases' },
   ] },
+  /* The engine's renovation screens are the Projects pages (owner, 3 Nov 2026): Beta's Home and Calendar replaced the
+     old Project list and Schedule, keeping those addresses (scmEngine.ts), and the Beta group is gone. */
   { label: 'PROJECTS', workspace: 'supply', items: [
-    { key: 'projectList', label: 'Project list', icon: 'folder-kanban', path: '/projects/list', area: 'projects' },
-    { key: 'projectCalendar', label: 'Schedule', icon: 'calendar-days', path: '/projects/calendar', area: 'projects' },
+    { key: 'projectList', label: 'Projects', icon: 'folder-kanban', path: '/projects/list', area: 'projects' },
+    { key: 'projectCalendar', label: 'Calendar', icon: 'calendar-days', path: '/projects/calendar', area: 'projects' },
     { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projects', full: true },
     { key: 'projectMaintenance', label: 'Project settings', icon: 'settings', path: '/projects/maintenance', area: 'projects', full: true },
-  ] },
-  // The engine's new project screens (owner, 23 Oct 2026). Their Projects area is engine-only, like Projects.
-  { label: 'BETA', workspace: 'supply', items: [
-    { key: 'betaProjects', label: 'Home', icon: 'house', path: '/beta/projects', area: 'projects' },
-    { key: 'betaCalendar', label: 'Calendar', icon: 'calendar-days', path: '/beta/calendar', area: 'projects' },
   ] },
   { label: 'SUPPLY CHAIN', workspace: 'supply', items: [
     { key: 'scSales', label: 'Sales order', icon: 'shopping-cart', area: 'scSales', children: [
