@@ -15,6 +15,10 @@ import { isCustomerSupplied, poPickerOffers, voGoesTo } from "../../scm/lib/reno
 import { renoDbFromD1 } from "./dbBridge";
 import { isMissingRelation, type Db } from "./load";
 import { lineVisible, type CategoryScope } from "../categoryAccess";
+import {
+  amendmentChanges, asObject, describeChange, facetLabel, pairOmitAdd, variantsAsOf, voTopic,
+  type ChangeFacet, type ChangeSide, type PairItem,
+} from "./renovationVoChanges";
 
 async function rows<T>(db: Db, sql: string, ...args: unknown[]): Promise<T[]> {
   const res = await db.prepare(sql).bind(...args).all<T>();
@@ -52,6 +56,10 @@ export interface VoLine {
   /** What a change to an existing line moved, in words ("Colour: White -> Grey", "Remark: ..."), so a change that
       costs nothing (a colour or a remark) still reads as a record. Empty for an added or removed line. */
   changes?: string[];
+  /** What kind of change the line is (renovationVoChanges.ts), headline first: added, removed, sku, qty, price, options. */
+  facets?: ChangeFacet[];
+  /** The facets in words for this caller ("Qty changed 1 → 2"); a price's figures only when finance is shown. */
+  changeLabels?: string[];
 }
 
 export interface VoRow {
@@ -62,6 +70,8 @@ export interface VoRow {
   no: string;
   soDocNo: string;
   title: string | null;
+  /** One line saying what the VO does: the title staff typed, else "2 changed, 1 added: SOFA 3S qty 1 → 2; ...". */
+  topic?: string;
   status: string;
   statusLabel: string;
   bucket: VoBucket;
@@ -275,8 +285,17 @@ export function scopeVos<T extends VoRow>(vos: readonly T[], scope: CategoryScop
   });
 }
 
+/** The line's change in words, and the VO's topic, for a caller who does or does not see money. */
+export function withWords<T extends VoRow>(v: T, money: boolean): T {
+  const lines = v.lines.map((l) => ({ ...l, changeLabels: (l.facets ?? []).map((f) => facetLabel(f, money)) }));
+  return { ...v, lines, topic: voTopic(v.title, lines.map((l) => ({ description: l.description, itemCode: l.itemCode, facets: l.facets ?? [] })), money) };
+}
+
 function hideMoney(v: VoRow): VoRow {
-  return { ...v, netSen: null, lines: v.lines.map((l) => ({ ...l, amountSen: null })) };
+  return {
+    ...v, netSen: null,
+    lines: v.lines.map((l) => ({ ...l, amountSen: null, facets: l.facets?.map((f) => (f.kind === "price" ? { ...f, from: null, to: null } : f)) })),
+  };
 }
 
 /* ---------- reads ---------- */
@@ -324,7 +343,8 @@ async function amendmentVos(db: Db, projectId: number, companyId: number): Promi
   const byId = new Map<string, VoLine[]>();
   for (const l of lines) {
     const list = byId.get(l.amendment_id) ?? [];
-    list.push(amendmentLineChange(l));
+    const [c] = amendmentChanges([{ ...l, id: l.amendment_id, cur_unit_price_sen: null, cur_variants: null }]);
+    list.push({ ...amendmentLineChange(l), facets: c?.facets ?? [] });
     byId.set(l.amendment_id, list);
   }
   return heads.map((h) => {
@@ -347,10 +367,13 @@ async function renovationVos(db: Db, projectId: number, companyId: number, custo
     projectId, companyId);
   const reno = renoDbFromD1(db);
   const out: VoRow[] = [];
-  for (const h of heads) {
-    const v = await readVo(reno, h.id, companyId);
+  const vos = [];
+  for (const h of heads) vos.push(await readVo(reno, h.id, companyId));
+  const sides = await renoVoSides(db, vos);
+  for (const [vi, h] of heads.entries()) {
+    const v = vos[vi];
     const [statusLabel, bucket] = renoVoStatus(v.status);
-    const lines: VoLine[] = [];
+    const items: Array<PairItem<RenoVoDraftLine>> = [];
     for (const s of v.sections) {
       for (const l of s.lines) {
         if (l.kind !== "ITEM" && l.kind !== "CHILD") continue;
@@ -358,16 +381,20 @@ async function renovationVos(db: Db, projectId: number, companyId: number, custo
         const client = l.supplyByOwner
           || isCustomerSupplied({ itemCode: l.itemCode, supplierCode: l.supplierId ? (customerIds.has(l.supplierId) ? "CUSTOMER" : "OTHER") : null, unitCostSen: l.unitCostSen });
         const measured = l.measureMilli !== null && l.measure !== null;
-        lines.push({
+        const line: VoLine = {
           itemCode: l.itemCode, description: l.description, room: l.room || null,
           qty: measured ? (omit ? -1 : 1) : omit ? -l.qty : l.qty,
           measure: measured ? `${Number(l.measure)} ${l.measureUom ?? ""}`.trim() : null,
           lineQty: omit ? 0 : measured ? 1 : l.qty,
           amountSen: l.netSen, change: omit ? "deduct" : "add", fromItemCode: null, categoryCode: null, subCode: null,
           goesTo: client ? "client" : !l.supplierId && !poPickerOffers({ itemCode: l.itemCode, itemGroup: null, mainSupplierCode: null }) ? "works" : "po",
-        });
+        };
+        const side = omit ? renoOldSide(l, sides.targets.get(l.omitTargetLineId ?? ""), v.status === "APPROVED") : renoNewSide(l, sides.added.get(`${v.id}|${l.id}`));
+        line.room = side.room;
+        items.push({ side: omit ? "omit" : "add", group: s.id, room: side.room, itemCode: l.itemCode, payload: { line, side, partial: omit ? partialQty(l, sides.targets.get(l.omitTargetLineId ?? ""), v.status === "APPROVED") : null } });
       }
     }
+    const lines = pairOmitAdd(items).map((p) => mergeRenoPair(p.omit, p.add));
     out.push({
       key: `v:${v.id}`, label: "", source: "renovation", no: v.voNo, soDocNo: v.soDocNo, title: v.title || null, status: v.status, statusLabel, bucket,
       date: v.docDate, raisedBy: h.created_by, recorded: false, approvedBy: bucket === "approved" ? v.approvedBy : null, approvedAt: bucket === "approved" ? v.approvedAt : null,
@@ -385,6 +412,111 @@ async function renovationVos(db: Db, projectId: number, companyId: number, custo
     }
   }
   return out;
+}
+
+/* ---------- what each renovation VO line changed ---------- */
+
+type RenoVoOut = Awaited<ReturnType<typeof readVo>>;
+type RenoVoDocLine = RenoVoOut["sections"][number]["lines"][number];
+
+/** A VO line before pairing: the tab's line, the side it stands for, and for an omit of part of a line its qty before and after. */
+export interface RenoVoDraftLine { line: VoLine; side: ChangeSide; partial: { from: number; to: number } | null }
+
+interface TargetRow { id: string; qty: number | null; unit_price_sen: number | null; room: string | null; variants: unknown; remark: string | null }
+interface AddedRow { variants: unknown; room: string | null }
+
+/** The contract line an omit names (its SO line's options and room), and the SO line each approved add became, with
+    its options as they stood when the VO was approved: an option edited afterwards on that line (an SO audit UPDATE
+    of its variants) is undone from the edit's "from", so VO-01's qty change does not read as a later colour change. */
+async function renoVoSides(db: Db, vos: readonly RenoVoOut[]): Promise<{ targets: Map<string, TargetRow>; added: Map<string, AddedRow> }> {
+  const targets = new Map<string, TargetRow>();
+  const added = new Map<string, AddedRow>();
+  const targetIds = [...new Set(vos.flatMap((v) => v.sections.flatMap((s) => s.lines.flatMap((l) => (l.voChange === "OMIT" && l.omitTargetLineId ? [l.omitTargetLineId] : [])))))];
+  if (targetIds.length) {
+    const r = await rows<TargetRow>(db,
+      `SELECT t.id::text AS id, t.qty, t.unit_price_sen, i.variants, i.remark,
+              coalesce(nullif(trim(t.room), ''), nullif(trim(i.room), ''), nullif(trim(i.location), '')) AS room
+         FROM scm.reno_doc_lines t LEFT JOIN scm.mfg_sales_order_items i ON i.id = t.so_item_id
+        WHERE t.id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
+      JSON.stringify(targetIds));
+    for (const x of r) targets.set(x.id, x);
+  }
+  const approved = vos.filter((v) => v.status === "APPROVED");
+  if (approved.length === 0) return { targets, added };
+  const contract = await rows<{ vo_id: string; item_code: string | null; qty: number | null; variants: unknown; room: string | null }>(db,
+    `SELECT s.added_by_vo_id::text AS vo_id, l.item_code, l.qty, i.variants,
+            coalesce(nullif(trim(i.room), ''), nullif(trim(i.location), ''), nullif(trim(l.room), '')) AS room
+       FROM scm.reno_doc_sections s JOIN scm.reno_doc_lines l ON l.section_id = s.id
+       LEFT JOIN scm.mfg_sales_order_items i ON i.id = l.so_item_id
+      WHERE s.added_by_vo_id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+      ORDER BY s.sort_order, l.sort_order`,
+    JSON.stringify(approved.map((v) => v.id)));
+  const edits = await rows<{ so_doc_no: string; note: string | null; field_changes: unknown; at: string }>(db,
+    `SELECT so_doc_no, note, field_changes, ${TS("created_at")} AS at FROM scm.mfg_so_audit_log
+      WHERE so_doc_no IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND action = 'UPDATE' ORDER BY created_at`,
+    JSON.stringify([...new Set(approved.map((v) => v.soDocNo))]));
+  for (const v of approved) {
+    const pool = contract.filter((c) => c.vo_id === v.id);
+    const used = new Set<number>();
+    const soEdits = edits.filter((e) => e.so_doc_no === v.soDocNo);
+    for (const s of v.sections) {
+      for (const l of s.lines) {
+        if (l.voChange === "OMIT" || (l.kind !== "ITEM" && l.kind !== "CHILD")) continue;
+        let k = pool.findIndex((c, i) => !used.has(i) && c.item_code === l.itemCode && Number(c.qty) === l.qty);
+        if (k < 0) k = pool.findIndex((c, i) => !used.has(i) && c.item_code === l.itemCode);
+        if (k < 0) continue;
+        used.add(k);
+        added.set(`${v.id}|${l.id}`, { variants: variantsAsOf(l.itemCode, pool[k].variants, soEdits, v.approvedAt), room: pool[k].room });
+      }
+    }
+  }
+  return { targets, added };
+}
+
+/* An approved VO has already cut the contract line it omitted part of: the line held its qty plus the omitted part. */
+function partialQty(l: RenoVoDocLine, t: TargetRow | undefined, approved: boolean): { from: number; to: number } | null {
+  if (l.omitQty === null || !t || t.qty === null || l.measureMilli !== null) return null;
+  const now = Number(t.qty);
+  if (approved) return now > 0 ? { from: now + l.omitQty, to: now } : null;
+  return l.omitQty < now ? { from: now, to: now - l.omitQty } : null;
+}
+
+function renoOldSide(l: RenoVoDocLine, t: TargetRow | undefined, approved: boolean): ChangeSide {
+  const p = partialQty(l, t, approved);
+  return {
+    itemCode: l.itemCode, description: l.description, room: (l.room || "").trim() || t?.room || null,
+    qty: p ? p.from : l.qty, unitPriceSen: l.unitPriceSen, variants: asObject(t?.variants), remark: t?.remark ?? null,
+  };
+}
+
+function renoNewSide(l: RenoVoDocLine, a: AddedRow | undefined): ChangeSide {
+  return { itemCode: l.itemCode, description: l.description, room: (l.room || "").trim() || a?.room || null, qty: l.qty, unitPriceSen: l.unitPriceSen, variants: asObject(a?.variants) };
+}
+
+/** One VO line from an omit, an add, or the omit and add that replace one contract line. */
+export function mergeRenoPair(omit: RenoVoDraftLine | null, add: RenoVoDraftLine | null): VoLine {
+  if (omit && !add) {
+    if (omit.partial) {
+      const facets = describeChange({ ...omit.side, qty: omit.partial.from }, { ...omit.side, qty: omit.partial.to });
+      return { ...omit.line, lineQty: omit.partial.to, facets };
+    }
+    return { ...omit.line, facets: describeChange(omit.side, null) };
+  }
+  if (!omit) return { ...add!.line, facets: describeChange(null, add!.side) };
+  const a = add!.line;
+  const o = omit.line;
+  const qty = a.measure || o.measure ? 0 : a.qty + o.qty;
+  return {
+    ...a,
+    qty,
+    measure: a.measure && o.measure && a.measure !== o.measure ? a.measure : null,
+    lineQty: a.lineQty,
+    amountSen: a.amountSen === null || o.amountSen === null ? null : a.amountSen + o.amountSen,
+    change: qty > 0 ? "add" : qty < 0 ? "deduct" : "change",
+    fromItemCode: o.itemCode && a.itemCode && o.itemCode !== a.itemCode ? o.itemCode : null,
+    room: a.room ?? o.room,
+    facets: describeChange(omit.side, add!.side),
+  };
 }
 
 /** The catalog group and sub-category codes of SKUs, by item code (the active product first when a code repeats). */
@@ -419,10 +551,11 @@ export async function loadProjectVos(db: Db, projectId: number, companyId: numbe
        FROM scm.mfg_sales_orders so WHERE ${PROJECT_SO}
       ORDER BY so.so_date DESC NULLS LAST, so.doc_no DESC LIMIT 1`,
     projectId, companyId);
+  const worded = all.map((v) => withWords(v, finance));
   return {
     so: so ? { docNo: so.doc_no, renovation: Boolean(so.renovation) } : null,
     finance,
-    vos: finance ? all : all.map(hideMoney),
+    vos: finance ? worded : worded.map(hideMoney),
     counts: voCounts(all),
     totals: finance ? voTotals(all) : null,
     categoryRestricted: scope !== null,

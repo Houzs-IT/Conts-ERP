@@ -61,6 +61,7 @@ import {
   useApproveSo,
   useRejectAmendment,
   useWithdrawAmendment,
+  type AmendmentChanges,
   type AmendmentLine,
 } from "../../vendor/scm/lib/so-amendment-queries";
 import { humanApiError } from "../../vendor/scm/lib/authed-fetch";
@@ -506,6 +507,23 @@ export function AmendmentDetailV2() {
      non-zero but `lines` is empty, every recorded line is a no-op — say so
      rather than showing nothing (a legacy pre-fix amendment reads this way). */
   const recordedLineCount = (data?.lines ?? []).length;
+  /* Conts (owner, 3 Nov 2026): one card per change, named in words. A renovation VO's omit and re-add of one line
+     (stored as REMOVE + ADD) is one card; without the server's rows every line keeps its own card. */
+  const changes = (data as { changes?: AmendmentChanges | null } | undefined)?.changes ?? null;
+  const cards = useMemo(() => {
+    const rowOf = new Map((changes?.rows ?? []).flatMap((r) => r.lineIds.map((id) => [id, r] as const)));
+    const seen = new Set<string>();
+    const out: Array<{ key: string; line: AmendmentLine; labels?: string[] }> = [];
+    for (const l of lines) {
+      const r = rowOf.get(l.id);
+      if (!r) { out.push({ key: l.id, line: l }); continue; }
+      const key = r.lineIds.join("+");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ key, line: r.line, labels: r.labels });
+    }
+    return out;
+  }, [lines, changes]);
   const salesOrder = data?.salesOrder ?? null;
   const boundPo = data?.purchaseOrders?.[0] ?? null;
 
@@ -522,7 +540,7 @@ export function AmendmentDetailV2() {
     [amendment],
   );
 
-  const changeCount = headerDiffs.length + lines.length;
+  const changeCount = headerDiffs.length + cards.length;
 
   /* Every routable atom this amendment moves — lines + header — for the type
      badge(s) and the department-routing block. */
@@ -569,13 +587,13 @@ export function AmendmentDetailV2() {
       amendment: {
         amendment_no: amendmentNo,
         status,
-        reason,
+        reason: changes?.topic || reason,
         created_at: asStr(amendment.created_at) || null,
         requested_by_name: actorNameOf(asStr(amendment.requested_by)),
         so_approved_by_name: amendment.so_approved_by ? actorNameOf(asStr(amendment.so_approved_by)) : null,
         so_approved_at: asStr(amendment.so_approved_at) || null,
       },
-      lines: (data?.lines ?? []) as never,
+      lines: (changes ? cards.map((c) => c.line) : data?.lines ?? []) as never,
       salesOrder: salesOrder as never,
       customerName: (salesOrder as { customer_name?: string | null } | null)?.customer_name ?? null,
     });
@@ -848,6 +866,9 @@ export function AmendmentDetailV2() {
                   </>
                 )}
               </div>
+              {changes?.topic && (
+                <p className="mt-1.5 text-[13.5px] font-medium text-ink">{changes.topic}</p>
+              )}
               <AmendmentTypeBadges kinds={allFieldKinds} className="mt-2" />
             </div>
           </div>
@@ -909,7 +930,7 @@ export function AmendmentDetailV2() {
               </Section>
             )}
 
-            <Section title={`Requested changes · ${lines.length}`}>
+            <Section title={`Requested changes · ${cards.length}`}>
               {lines.length === 0 ? (
                 <div className="text-[12px] text-ink-muted">
                   {headerDiffs.length > 0
@@ -926,8 +947,8 @@ export function AmendmentDetailV2() {
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {lines.map((l) => (
-                    <DiffCard key={l.id} line={l} />
+                  {cards.map((c) => (
+                    <DiffCard key={c.key} line={c.line} labels={c.labels} />
                   ))}
                 </div>
               )}

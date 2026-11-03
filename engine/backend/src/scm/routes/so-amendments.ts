@@ -26,6 +26,7 @@ import {
 } from '../shared';
 import { applySoAmendment, reviseBoundPo, ReceivedFloorError } from '../lib/so-revision';
 import { chunkIn } from '../lib/paginate-all';
+import { renovationAmendmentChanges } from '../../services/renovation/renovationVoChangeRead';
 import { raisePoFollowUps } from '../lib/amendment-po-followup';
 import { DESK, judgeLaneHandover, judgeLaneMove } from '../lib/amendment-lane-handover';
 import { countCancelRequestsAwaitingSigner } from '../lib/cancel-pending-count';
@@ -612,7 +613,16 @@ soAmendments.get('/:id', async (c) => {
     poFollowUps = (fuRows ?? []) as Array<Record<string, unknown>>;
   }
 
-  return c.json({ amendment, lines, salesOrder, purchaseOrders, poFollowUps });
+  /* Conts (owner, 3 Nov 2026): what kind of change each line is, a VO's omit and re-add of one line joined into one
+     change, and the VO's one-line topic. Never blocks the page. */
+  let changes: Awaited<ReturnType<typeof renovationAmendmentChanges>> = null;
+  try {
+    changes = await renovationAmendmentChanges(sb, amendment as never, lines as never);
+  } catch (e) {
+    console.warn('[so-amendments] change labels skipped', e instanceof Error ? e.message : e);
+  }
+
+  return c.json({ amendment, lines, salesOrder, purchaseOrders, poFollowUps, changes });
 });
 
 /* ── PATCH /:id/supplier-confirm ───────────────────────────────────────────

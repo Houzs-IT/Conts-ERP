@@ -15,12 +15,35 @@ import { WsNarrow, WsNarrowStyle, WsStat, WsStats, WsTable, metaStyle, narrowIte
 import type { BetaTabProps } from "./betaShared";
 import { dayMonthYear, mytDay } from "./renovationBetaModel";
 import { BETA, type BetaTone } from "./renovationBetaTheme";
-import { signedQty, voPoApi, type VoAnswer, type VoLine, type VoRow } from "./renovationBetaVoPo";
+import { signedQty, voChangeKind, voChangeLabels, voPoApi, type VoAnswer, type VoChangeKind, type VoLine, type VoRow } from "./renovationBetaVoPo";
 import { BetaLoading } from "./BetaLoading";
 
 /* Where a line goes: we buy it (PO), the client buys it (Client PO), or it is our own works with no supplier. */
 const GOES_TO_LABEL: Record<VoLine["goesTo"], string> = { po: "PO", client: "Client PO", works: "Our works" };
 const goesToTone = (l: VoLine): BetaTone => (l.goesTo === "client" ? TONE_ACCENT : l.goesTo === "po" && l.change === "deduct" ? TONE_ALERT : TONE_QUIET);
+
+/* Owner, 3 Nov 2026: every VO line says what kind of change it is. */
+const KIND_WORD: Record<VoChangeKind, string> = {
+  added: "Added", removed: "Removed", sku: "SKU changed", qty: "Qty changed", price: "Price changed", options: "Options changed", remark: "Remark changed", changed: "Changed",
+};
+const kindTone = (k: VoChangeKind): BetaTone => (k === "added" ? TONE_DONE : k === "removed" ? TONE_ALERT : TONE_WAIT);
+
+/** The change cell: the headline kind as a badge, then what moved ("1 → 2"), one line per facet. */
+function ChangeCell({ l }: { l: VoLine }): ReactElement {
+  const k = voChangeKind(l);
+  const details = voChangeLabels(l).map((t) => {
+    const w = Object.values(KIND_WORD).find((x) => t.startsWith(x));
+    return w ? t.slice(w.length).replace(/^:?\s*/, "") : t;
+  });
+  const extra = voChangeLabels(l).slice(1);
+  return (
+    <span style={{ display: "inline-flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+      <WsBadge tone={kindTone(k)} size={12}>{KIND_WORD[k]}</WsBadge>
+      {details[0] && <span style={{ fontSize: 12.5, color: WS.text2 }}>{details[0]}</span>}
+      {extra.map((t) => <span key={t} style={{ fontSize: 12.5, color: WS.text2 }}>{t}</span>)}
+    </span>
+  );
+}
 
 const bucketTone = (v: VoRow): BetaTone => (v.bucket === "approved" ? TONE_DONE : v.bucket === "closed" ? TONE_QUIET : TONE_WAIT);
 
@@ -114,7 +137,7 @@ function VoCard({ v, finance }: { v: VoRow; finance: boolean }): ReactElement {
   ].filter(Boolean).join(" · ");
   return (
     <WsCard
-      title={`${v.label}${v.title ? ` · ${v.title}` : ""}`}
+      title={`${v.label}${v.topic ? ` · ${v.topic}` : v.title ? ` · ${v.title}` : ""}`}
       sub={<span style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}><span>{v.no}</span><WsBadge tone={bucketTone(v)}>{v.statusLabel}</WsBadge><span>{facts}</span></span>}
       right={
         <span style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -132,15 +155,17 @@ function VoCard({ v, finance }: { v: VoRow; finance: boolean }): ReactElement {
 
 function LineTable({ lines, finance, withVo = false }: { lines: Array<{ l: VoLine; vo: VoRow }>; finance: boolean; withVo?: boolean }): ReactElement {
   if (lines.length === 0) return <p style={metaStyle}>No line changes.</p>;
-  const added = lines.filter(({ l }) => l.change === "add").length;
-  const deducted = lines.filter(({ l }) => l.change === "deduct").length;
+  const added = lines.filter(({ l }) => voChangeKind(l) === "added").length;
+  const removed = lines.filter(({ l }) => voChangeKind(l) === "removed").length;
+  const changed = lines.length - added - removed;
   return (
     <>
-      <p style={metaStyle}>{added} added · {deducted} deducted{lines.length - added - deducted ? ` · ${lines.length - added - deducted} changed` : ""}</p>
-      <WsTable minWidth={withVo ? 760 : 680} label="VO lines">
+      <p style={metaStyle}>{[changed && `${changed} changed`, added && `${added} added`, removed && `${removed} removed`].filter(Boolean).join(" · ")}</p>
+      <WsTable minWidth={withVo ? 880 : 800} label="VO lines">
         <thead>
           <tr>
             {withVo && <th style={thStyle}>VO</th>}
+            <th style={thStyle}>Change</th>
             <th style={thStyle}>SKU</th>
             <th style={thStyle}>Item</th>
             <th style={thStyle}>Area</th>
@@ -155,11 +180,12 @@ function LineTable({ lines, finance, withVo = false }: { lines: Array<{ l: VoLin
             return (
               <tr key={`${vo.key}:${i}`}>
                 {withVo && <td style={{ ...tdStyle, whiteSpace: "nowrap", fontWeight: 600 }}>{vo.label}</td>}
+                <td style={tdStyle}><ChangeCell l={l} /></td>
                 <td style={{ ...tdStyle, whiteSpace: "nowrap", fontFamily: "ui-monospace, monospace", fontSize: 13 }}>{l.itemCode ?? "-"}</td>
                 <td style={tdStyle}>
                   {l.description || "-"}
-                  {l.fromItemCode && <div style={metaStyle}>Was {l.fromItemCode}</div>}
-                  {(l.changes ?? []).map((w) => <div key={w} style={metaStyle}>{w}</div>)}
+                  {!l.facets && l.fromItemCode && <div style={metaStyle}>Was {l.fromItemCode}</div>}
+                  {!l.facets && (l.changes ?? []).map((w) => <div key={w} style={metaStyle}>{w}</div>)}
                 </td>
                 <td style={tdStyle}>{l.room ?? "-"}</td>
                 <td style={{ ...numStyle, color: tone, fontWeight: 700 }}>{signedQty(l)}</td>
@@ -186,8 +212,9 @@ function LineTable({ lines, finance, withVo = false }: { lines: Array<{ l: VoLin
                 {finance && l.amountSen != null && <span style={{ color: tone, fontWeight: 600 }}>{money(l.amountSen)}</span>}
                 <WsBadge tone={goesToTone(l)} size={11}>{GOES_TO_LABEL[l.goesTo]}</WsBadge>
               </div>
-              {l.fromItemCode && <div style={metaStyle}>Was {l.fromItemCode}</div>}
-              {(l.changes ?? []).map((w) => <div key={w} style={metaStyle}>{w}</div>)}
+              <div style={{ marginTop: 6 }}><ChangeCell l={l} /></div>
+              {!l.facets && l.fromItemCode && <div style={metaStyle}>Was {l.fromItemCode}</div>}
+              {!l.facets && (l.changes ?? []).map((w) => <div key={w} style={metaStyle}>{w}</div>)}
             </li>
           );
         })}
