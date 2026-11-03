@@ -49,7 +49,7 @@ const bucketTone = (v: VoRow): BetaTone => (v.bucket === "approved" ? TONE_DONE 
 
 export function BetaVoTab(p: BetaTabProps): ReactElement {
   const q = useQuery(["renovation-beta", "vo", p.projectId], () => voPoApi.vo(p.projectId), [p.projectId]);
-  if (q.error) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The VO list could not be loaded: {q.error}</p>;
+  if (q.error && !q.data) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The VO list could not be loaded: {q.error}</p>;
   if (!q.data) return <BetaLoading label="Loading VO" />;
   return <VoBody p={p} d={q.data} />;
 }

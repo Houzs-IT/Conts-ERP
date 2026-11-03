@@ -81,7 +81,7 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
     ? byCategory(items).map((c) => ({ key: c.key, label: c.label, subs: c.subs }))
     : byArea(items).map((a) => ({ key: a.key, label: a.label, subs: [{ key: `${a.key}/all`, label: "", items: a.items }] }))), [items, view]);
 
-  if (q.error) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The client items could not be loaded: {q.error}</p>;
+  if (q.error && !q.data) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The client items could not be loaded: {q.error}</p>;
   if (!q.data) return <BetaLoading label="Loading Client PO" />;
 
   const dated = [...rows.values()].filter((r) => r.orderOn && r.deliverOn).length;

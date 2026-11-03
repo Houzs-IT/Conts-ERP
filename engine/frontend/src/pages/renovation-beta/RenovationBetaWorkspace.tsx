@@ -91,17 +91,20 @@ function WorkspaceScreen(): ReactElement {
 
   if (!valid) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>This project address is not valid.</p>;
   if (q.loading && !d) return <BetaLoading label="Loading project" size="page" />;
-  if (q.error || !d) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>The project could not be loaded: {q.error ?? "not found"}</p>;
+  if (!d) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>The project could not be loaded: {q.error ?? "not found"}</p>;
   if (bq.loading && !bq.data) return <BetaLoading label="Loading project" size="page" />;
   const raw = bq.data?.projects.find((x) => x.id === id);
-  if (bq.error || !view || !raw) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>The project could not be loaded: {bq.error ?? "not found"}</p>;
+  if (!view || !raw) return <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>The project could not be loaded: {bq.error ?? "not found"}</p>;
   const board: BoardView = { ...view, raw };
 
   const today = mytDay(new Date().toISOString());
   const { project: p } = d;
   const current = BETA_TABS.find((t) => t.key === tab) ?? BETA_TABS[0];
   // Home and Calendar read the same board, so every write refreshes all of Beta, not only this page.
-  const reloadAll = (): void => { q.reload(); ws.reload(); rec.reload(); bq.reload(); void invalidateBeta(queryClient); };
+  /* One refresh of every Beta query (detail, board, workspace, records and the open tab's are all under
+     "renovation-beta"). Reloading them one by one as well sent each read twice in the same instant, and the burst filled
+     the database pool (3 Nov 2026: "The board could not be read"). */
+  const reloadAll = (): void => { void invalidateBeta(queryClient); };
   const openTab = (key: BetaTabKey): void => setParams((prev) => { const next = new URLSearchParams(prev); next.set("tab", key); return next; }, { replace: true });
   const onDone = (text: string): void => { setNotice({ tone: "ok", text }); reloadAll(); };
   const onError = (text: string): void => setNotice({ tone: "err", text });
@@ -146,6 +149,12 @@ function WorkspaceScreen(): ReactElement {
       </label>
 
       <div aria-live="polite">{notice && <WsNotice tone={notice.tone}>{notice.text}</WsNotice>}</div>
+      {/* A refresh that failed keeps what was already shown, and says so, rather than replacing the page with an error. */}
+      {(q.error || bq.error) && !q.fetching && !bq.fetching && (
+        <WsNotice tone="err">The latest changes could not be read just now; this page shows what it last read. {" "}
+          <button type="button" onClick={reloadAll} style={{ border: 0, padding: 0, background: "transparent", font: "inherit", color: "inherit", textDecoration: "underline", cursor: "pointer" }}>Try again</button>
+        </WsNotice>
+      )}
 
       {ws.error || rec.error ? (
         <p role="alert" style={{ padding: "24px 0", fontSize: 14, color: WS.red }}>This section could not be loaded: {ws.error ?? rec.error}</p>

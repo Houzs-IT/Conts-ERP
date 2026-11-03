@@ -230,8 +230,13 @@ const FIRST_ATTEMPT_TIMEOUT_MARKER =
 // (the query never reached the server), so re-running is safe — no double-write.
 // NEVER add a real SQL/logic error (constraint/syntax/column does not exist) —
 // those must stay non-retryable so genuine bugs surface immediately.
+// "(EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15": the Supabase
+// session pooler behind Hyperdrive refusing a new connection while a burst of reads holds all 15 (3 Nov 2026: a
+// project workspace's ten parallel reads failed this way about one in five times). Refused before it ran: safe to retry.
 export const TRANSIENT_CONN_RE =
-  /CONNECTION_CLOSED|Network connection lost|ECONNRESET|ECONNREFUSED|connection closed|terminating connection|server closed the connection|EPIPE|Timed out .*pool|d1-compat first attempt timed out|Cannot perform I\/O on behalf of a different request|too many clients already|remaining connection slots are reserved|Connection terminated|ETIMEDOUT|fetch failed|socket hang up|MaxClientsInSessionMode/i;
+  /CONNECTION_CLOSED|Network connection lost|ECONNRESET|ECONNREFUSED|connection closed|terminating connection|server closed the connection|EPIPE|Timed out .*pool|d1-compat first attempt timed out|Cannot perform I\/O on behalf of a different request|too many clients already|remaining connection slots are reserved|Connection terminated|ETIMEDOUT|fetch failed|socket hang up|MaxClientsInSessionMode|EMAXCONNSESSION|max clients reached/i;
+
+const POOL_FULL_RE = /EMAXCONNSESSION|max clients reached|MaxClientsInSessionMode/i;
 
 function isDeadConnError(e: unknown): boolean {
   const m = String((e as Error)?.message ?? e ?? "");
@@ -423,6 +428,9 @@ class PreparedStatement {
       let lastErr: unknown = e;
       for (let i = 0; i < RETRIES && ok === undefined; i++) {
         console.warn(`[db-retry ${i + 1}/${RETRIES}] ${String((lastErr as Error)?.message ?? lastErr).slice(0, 70)}`);
+        // A full pool frees up as the burst's other reads finish: wait a moment (spread out, so the waiting requests do
+        // not all come back at once) instead of asking again straight away.
+        if (i === 0 && POOL_FULL_RE.test(String((lastErr as Error)?.message ?? lastErr))) await new Promise((r) => setTimeout(r, 150 + Math.random() * 250));
         try {
           ok = (await this.makeSql().unsafe(text, this.args as never[])) as unknown as T[] & { count?: number };
         } catch (e2) {
