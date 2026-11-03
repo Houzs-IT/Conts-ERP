@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { DialogFrame } from '../components/Modal';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -379,15 +380,8 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
     : initialPeriod;
   const [period, setPeriod] = useState(firstOpen);
   const [busy, setBusy] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   const locked = lockedPeriods.has(period);
 
-  useEffect(() => {
-    ref.current?.querySelector<HTMLElement>('select')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [busy, onClose]);
 
   async function confirm() {
     if (locked) return;
@@ -397,10 +391,7 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Generate statements"
-      className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
-      <div ref={ref} className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
+    <DialogFrame label="Generate statements" onClose={onClose} busy={busy} panelClassName="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
         <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-3">
           <h2 className="m-0 text-title font-semibold">Generate statements</h2>
           <p className="m-0 text-[13px] leading-[1.55] text-muted-ink">
@@ -418,7 +409,6 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
             Generate
           </Button>
         </div>
-      </div>
-    </div>
+      </DialogFrame>
   );
 }

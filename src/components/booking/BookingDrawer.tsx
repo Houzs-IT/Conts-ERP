@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { DialogFrame } from '../Modal';
 import { DemoReservationBar, useDemoOn } from '../demo/DemoRecords';
 import { createPortal } from 'react-dom';
 import { Drawer } from '../Dialog';
@@ -282,25 +283,18 @@ function Timeline({ events }: { events: TimelineEvent[] }) {
 /* ------------------------------------------------------------------ */
 
 export function CentreModal({ title, sub, onClose, children, maxWidth = 460 }: { title: string; sub?: string; onClose: () => void; children: ReactNode; maxWidth?: number }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
   // Portalled to the body: inside the drawer (which animates with a transform) a fixed overlay would be
   // trapped in the drawer's box instead of covering the screen.
   return createPortal(
-    <div role="dialog" aria-modal="true" aria-label={title}
-      className="fixed inset-0 z-[70] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div style={{ maxWidth }} className="relative w-full bg-card rounded-card shadow-[var(--shadow-overlay)] max-h-[90dvh] flex flex-col overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
-        <div className="px-[22px] pt-[22px] pb-1 flex-none">
-          <h2 className="m-0 text-title font-semibold">{title}</h2>
-          {sub && <p className="mt-[6px] mx-0 mb-0 text-copy text-muted-ink">{sub}</p>}
-        </div>
-        {children}
+    <DialogFrame label={title} onClose={onClose}
+      className="fixed inset-0 z-[70] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]"
+      panelStyle={{ maxWidth }} panelClassName="relative w-full bg-card rounded-card shadow-[var(--shadow-overlay)] max-h-[90dvh] flex flex-col overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
+      <div className="px-[22px] pt-[22px] pb-1 flex-none">
+        <h2 className="m-0 text-title font-semibold">{title}</h2>
+        {sub && <p className="mt-[6px] mx-0 mb-0 text-copy text-muted-ink">{sub}</p>}
       </div>
-    </div>,
+      {children}
+    </DialogFrame>,
     document.body,
   );
 }

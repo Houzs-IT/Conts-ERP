@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { DialogFrame } from '../components/Modal';
 import { TileSkeleton } from '../components/Loading';
 import { BarTrend, Eyebrow, Figure, Segmented, StatTile, TotalsRow } from '../components/Metric';
 import { Card, CardHeader, LinkAction } from '../components/Card';
@@ -707,19 +708,9 @@ export default function DashboardPage() {
 function Modal({ title, sub, onClose, children, footer }: {
   title: string; sub?: string; onClose: () => void; children: ReactNode; footer: ReactNode;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.querySelector<HTMLElement>('select, textarea, input, button')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={title}
-      className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div ref={ref} className="relative w-full max-w-[460px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden animate-dialog">
+    <DialogFrame label={title} onClose={onClose} panelClassName="relative w-full max-w-[460px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden animate-dialog">
         <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[9px]">
           <h2 className="m-0 text-title leading-[1.3] font-semibold text-pretty">{title}</h2>
           {sub && <p className="m-0 text-copy leading-[1.55] text-muted-ink text-pretty">{sub}</p>}
@@ -728,7 +719,6 @@ function Modal({ title, sub, onClose, children, footer }: {
         <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
           {footer}
         </div>
-      </div>
-    </div>
+      </DialogFrame>
   );
 }

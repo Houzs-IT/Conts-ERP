@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { DialogFrame } from '../../components/Modal';
 import { Card } from '../../components/Card';
 import { FileRow, FileDropRow } from '../../components/Attachments';
 import { Button } from '../../components/Button';
@@ -150,9 +151,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
 
   const already = picked?.expenseId && picked.amount != null ? picked : null;
   return (
-    <div role="dialog" aria-modal="true" aria-label="Add a bill" className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div className="relative w-full max-w-[520px] max-h-[calc(100vh-32px)] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)]">
+    <DialogFrame label="Add a bill" onClose={onClose} panelClassName="relative w-full max-w-[520px] max-h-[calc(100vh-32px)] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)]">
         <div className="pt-[22px] px-[22px] pb-1 flex-none">
           <h2 className="m-0 text-title font-semibold">Add a bill</h2>
           <p className="mt-[5px] mb-0 text-copy text-muted-ink">{fee
@@ -195,8 +194,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason={needsReceipt && !receipt && amount && validDay ? 'Attach the receipt: the owner pays this bill' : 'Pick the bill and enter the amount and bill date'} onClick={() => void save()}>Add bill</Button>
         </div>
-      </div>
-    </div>
+      </DialogFrame>
   );
 }
 

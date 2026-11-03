@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { DialogFrame } from '../Modal';
 import { Button } from '../Button';
 import { Field } from '../Field';
 import { DateField, MoneyInput, PercentInput } from '../inputs';
@@ -16,9 +17,7 @@ import { errorMessage } from '../../lib/api';
 
 function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, disabledReason = 'Fill the fields first', children }: { title: string; sub?: string; onClose: () => void; onSave: () => void; saveLabel: string; canSave: boolean; disabledReason?: string; children: ReactNode }) {
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)]">
+    <DialogFrame label={title} onClose={onClose} panelClassName="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (canSave) onSave(); }}>
           <div className="pt-[22px] px-[22px] pb-1"><h2 className="m-0 text-title font-semibold">{title}</h2>{sub && <p className="mt-[5px] mx-0 mb-0 text-copy text-muted-ink">{sub}</p>}</div>
           <div className="px-[22px] py-4 flex flex-col gap-[14px]">{children}</div>
@@ -27,8 +26,7 @@ function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, disabled
             <Button size="sm" variant="primary" type="submit" disabled={!canSave} disabledReason={disabledReason}>{saveLabel}</Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogFrame>
   );
 }
 
@@ -153,11 +151,6 @@ export function RateUpdate({ units, pricing, initial, onClose, onDone, building,
   const [minStay, setMinStay] = useState('');
   const [stop, setStop] = useState<'same' | 'close' | 'open'>('same');
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [busy, onClose]);
 
   const groups = useMemo(() => {
     const m = new Map<string, { name: string; units: CalendarUnit[] }>();
@@ -276,9 +269,7 @@ export function RateUpdate({ units, pricing, initial, onClose, onDone, building,
   );
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Update prices" className="fixed inset-0 z-[60] grid place-items-center p-0 sm:p-6 bg-[var(--color-surface-scrim)]">
-      <div onClick={() => { if (!busy) onClose(); }} className="absolute inset-0" />
-      <div className="relative w-full h-full sm:h-auto sm:max-h-[min(860px,92vh)] max-w-[980px] flex flex-col bg-card sm:rounded-card shadow-[var(--shadow-overlay)] overflow-hidden">
+    <DialogFrame label="Update prices" onClose={() => { if (!busy) onClose(); }} className="fixed inset-0 z-[60] grid place-items-center p-0 sm:p-6 bg-[var(--color-surface-scrim)]" panelClassName="relative w-full h-full sm:h-auto sm:max-h-[min(860px,92vh)] max-w-[980px] flex flex-col bg-card sm:rounded-card shadow-[var(--shadow-overlay)] overflow-hidden">
         <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 flex flex-wrap items-start justify-between gap-3 [border-bottom:1px_solid_var(--color-line)]">
           <div className="min-w-0">
             <h2 className="m-0 text-title font-semibold">Update prices</h2>
@@ -469,8 +460,7 @@ export function RateUpdate({ units, pricing, initial, onClose, onDone, building,
                       onClick={() => void save()}>{review?.state === 'failed' ? (saved.size ? 'Save the rest' : 'Try again') : saveLabel}</Button>}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogFrame>
   );
 }
 

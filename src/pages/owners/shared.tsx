@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { DialogFrame } from '../../components/Modal';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { MoneyInput, PercentInput, PhoneInput, DateField, phoneProblem } from '../../components/inputs';
@@ -249,17 +250,8 @@ export function StatementHistory({ o }: { o: Owner }) {
 export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, children }: {
   title: string; sub?: string; onClose: () => void; onSubmit: () => void; submitLabel: string; canSubmit: boolean; children: ReactNode;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.querySelector<HTMLInputElement>('input,select')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div ref={ref} className="relative w-full max-w-[480px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
+    <DialogFrame label={title} onClose={onClose} panelClassName="relative w-full max-w-[480px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (canSubmit) onSubmit(); }}>
           <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
             <h2 className="m-0 text-title font-semibold">{title}</h2>
@@ -272,8 +264,7 @@ export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, c
             <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Fill the required fields first">{submitLabel}</Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogFrame>
   );
 }
 
