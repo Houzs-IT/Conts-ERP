@@ -355,6 +355,7 @@
  "POST /api/auth/view-as": "AAAAAAAA",
  "POST /api/blocks": "AAAFFFFU",
  "POST /api/categories": "AFFFFFFU",
+ "POST /api/connect/verify-login": "UUUUUUUU",
  "POST /api/consignment-notes": "AFFFFFFU",
  "POST /api/contracts": "AFFAFFFU",
  "POST /api/credit-notes": "AFFAFFFU",
