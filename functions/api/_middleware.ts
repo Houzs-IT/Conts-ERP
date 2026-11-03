@@ -1,4 +1,4 @@
-import { type Env, fail, withRequestDb } from '../_lib/db';
+import { type Env, fail, withRequestDb, runDemo } from '../_lib/db';
 import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, sessionState, isFieldRole } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
@@ -39,8 +39,18 @@ const OWNER_ALLOWED: [string, RegExp][] = [
  * a signed-in user (units, search, portfolio revenue, owner documents) is never theirs by accident. Each
  * handler below still checks the job is assigned to them.
  */
-/** The writes Demo mode still lets through (see the Demo mode check below). */
-const DEMO_WRITES = /^\/api\/(demo|auth|account|notifications|table-layouts)(\/|$)/;
+/** Demo mode (owner, 3 Nov 2026; migration 0203): a staff member with it on uses the whole system as normal, and every
+ *  request below runs through runDemo(), which reads real plus demo rows and writes only into the demo store. Written
+ *  here, never chosen by a screen:
+ *  DEMO_LIVE     always real, read and written live even with Demo mode on: sign-in and their own account, the owner
+ *                portal API, the Demo switch and Clear demo, their own table layouts, and the exports that leave the
+ *                system.
+ *  DEMO_REFUSED  real-only actions, refused while Demo mode is on and read live: finalising and sending owner
+ *                statements, payouts, accounting and the supply chain (the engine), channel and HostPlatform
+ *                connections and imports, receipts and claims (the engine), IT support (the IT Hub), system health,
+ *                and user accounts and permissions. */
+const DEMO_LIVE = /^\/api\/(auth|account|owner|table-layouts)(\/|$)|^\/api\/demo$|^\/api\/(reservations|units|payouts|operations\/service-prices)\/export$/;
+const DEMO_REFUSED = /^\/api\/(statements\/(finalise|send)|payouts|integrations|import|claims|supply-chain|it-support|system|users|accounting|units\/[^/]+\/channex-setup)(\/|$)/;
 
 const FIELD_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/auth\/session$/],
@@ -170,11 +180,14 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   if (MONEY_ONLY.test(path) && access.level === 'none') {
     return fail('FORBIDDEN', 'Only finance and management can see invoices and payments.', 403);
   }
-  // Demo mode promises nothing reaches owners or channels: while it is on, the only writes are sample data through
-  // /api/demo (and the person's own sign-in, account, notices and table views). Real work needs it switched off.
-  if (request.method !== 'GET' && request.method !== 'HEAD' && !DEMO_WRITES.test(path) && demoAsked(request) && await demoAllowed(env, session)) {
-    return fail('DEMO_MODE', 'Demo mode is on, so nothing real can be changed. Add or edit sample data instead, or turn Demo mode off.', 409);
+  // Demo mode promises nothing reaches owners or channels: real-only actions are refused, everything else runs on the
+  // demo store (below).
+  const demo = demoAsked(request) && await demoAllowed(env, session);
+  const write = request.method !== 'GET' && request.method !== 'HEAD';
+  if (demo && write && (DEMO_REFUSED.test(path) || SUPPLY_CHAIN.test(path))) {
+    return fail('DEMO_MODE', 'Demo: this is real-only (money paid out, statements sent, accounts, connections to other systems). Turn Demo mode off to do it.', 409);
   }
+  const demoRun = demo && !DEMO_LIVE.test(path) && !DEMO_REFUSED.test(path) && !SUPPLY_CHAIN.test(path);
 
   if (request.method !== 'GET' && (request.headers.get('content-type') ?? '').includes('application/json')) {
     const body = await forward.clone().json().catch(() => undefined);
@@ -183,7 +196,9 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   }
 
   // A money or document write sent again with the same Idempotency-Key gets the first answer back (functions/_lib/idempotency.ts).
-  const response = await once(env, forward, session.userId, () => next(forward));
+  const response = demoRun
+    ? await runDemo(() => once(env, forward, session.userId, () => next(forward)))
+    : await once(env, forward, session.userId, () => next(forward));
   closePastStaysSometimes(env, waitUntil);
   // Any write may have queued Channex updates; send them once the burst of edits has gone quiet.
   if (request.method !== 'GET' && response.status < 400) {
@@ -207,6 +222,9 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
   try {
     return await withRequestDb(async () => handle(ctx), p => ctx.waitUntil(p));
   } catch (e) {
+    // The demo store's own refusal (migration 0203, demo.refuse_write): a real-only table changed in Demo mode.
+    const msg = e instanceof Error ? e.message : '';
+    if (msg.startsWith('Demo: ')) return fail('DEMO_MODE', msg, 409);
     console.error('Unhandled error', ctx.request.method, new URL(ctx.request.url).pathname, e);
     // A write may have saved part of its work before it failed, so it does not claim "nothing was saved" (a person who
     // believes that and presses again can make a second copy). A read saved nothing.

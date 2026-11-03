@@ -1,10 +1,10 @@
 import { type Env, one } from './db';
 import type { Session } from './auth';
 
-/** Demo mode (Owner Hub plan, owner, 2 Nov 2026; migration 0199). A staff member's own switch: while it is on, the
- *  screens that read through tablesFor() show the real rows (read live) together with the sample rows in schema demo,
- *  and their changes to reservations and reviews save as sample data. The owner portal API, statements, payouts,
- *  accounting, exports and the channel outbox never call tablesFor(): they name the pos tables in their own SQL. */
+/** Demo mode (Owner Hub plan, owner, 2 Nov 2026; migrations 0199, 0203). A staff member's own switch: while it is on,
+ *  the session middleware runs the request in Demo (db.ts runDemo), so every screen shows the real rows (read live)
+ *  together with the demo store, and every change saves into the store. Which routes stay live or are refused is
+ *  written in the middleware (DEMO_LIVE, DEMO_REFUSED). tablesFor() below predates that and names the same views. */
 
 export const DEMO_COOKIE = 'tc_demo';
 

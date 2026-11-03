@@ -1,4 +1,4 @@
-import { type Env, all, one, run, nowIso } from './db';
+import { type Env, all, one, run, nowIso, inDemo } from './db';
 import { peopleWithAccess, type Level } from './access';
 import { hasColumn } from './auth';
 import { hasRealEmail } from './fieldPin';
@@ -74,6 +74,9 @@ export async function notify(env: Env, s: Send): Promise<{ state: 'sent' | 'queu
     INSERT INTO notification_log (id, template, recipient, channel, entity_table, entity_id, idempotency_key, state, queued_at, subject, body${lease ? ', sending_until' : ''})
     VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?${lease ? ', ?' : ''})`,
     id, s.template, s.recipient, s.channel, s.entityTable ?? null, s.entityId ?? null, idem, nowIso(), s.subject ?? null, s.body, ...(lease ? [sendLeaseUntil()] : []));
+
+  // Demo mode records the message (in the demo store) and never sends it: nothing leaves for a guest or owner.
+  if (inDemo() && s.channel !== 'in_app' && s.channel !== 'push') return { state: 'queued', reason: 'Demo: not sent' };
 
   if (queued) {
     // The scheduled Worker (worker/scheduled.ts) actually sends these at 08:00 using the

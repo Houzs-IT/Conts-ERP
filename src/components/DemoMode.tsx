@@ -60,11 +60,11 @@ export function DemoBand() {
   return (
     <div role="status" data-demo-band style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 16px', background: DEMO_BG, color: 'white', fontSize: 12, fontWeight: 500, lineHeight: 1.4 }}>
       <Icon name="FlaskConical" size="sm" />
-      <span style={{ flex: '1 1 220px', minWidth: 0 }}><b>Demo mode</b> · sample data mixed with real data. Nothing here reaches owners or channels.</span>
+      <span style={{ flex: '1 1 220px', minWidth: 0 }}><b>Demo mode</b> · real data plus your demo changes. Use everything as normal: it all stays in demo and nothing reaches owners, guests or channels.</span>
       <span data-print-hide style={{ display: 'inline-flex', gap: 8 }}>
         <button type="button" style={btn} onClick={() => setConfirm({
           title: 'Clear all demo data?',
-          body: 'Every sample reservation, review, unit and owner goes, and every change made to a real record in Demo mode is undone. Real records are not touched.',
+          body: 'Everything added in Demo mode goes, and every change made to a real record in Demo mode is undone. Real records are not touched.',
           confirmLabel: 'Clear demo', busyLabel: 'Clearing…', danger: true, onConfirm: () => void clear(),
         })}>Clear demo</button>
         <button type="button" style={btn} onClick={() => void setDemo(false)}>Turn off</button>

@@ -1,4 +1,4 @@
-import type { Env } from './db';
+import { type Env, inDemo } from './db';
 
 /** HostPlatform External API (the Postman collection "HostPlatform External API (Aug2026)", payload version 2).
  *  Every call goes through hpGet: the one place that knows the server, the access token, the timeout, the pause
@@ -11,7 +11,7 @@ const MIN_GAP_MS = 250;
 const MAX_TRIES = 3;
 const PAGE_SIZE = 50;
 
-export const hostplatformConfigured = (env: Env): boolean => !!env.HOSTPLATFORM_BASE_URL && !!env.HOSTPLATFORM_ACCESS_TOKEN;
+export const hostplatformConfigured = (env: Env): boolean => !!env.HOSTPLATFORM_BASE_URL && !!env.HOSTPLATFORM_ACCESS_TOKEN && !inDemo();
 
 export interface HpResult<T> { ok: boolean; status: number; body: T | null }
 
@@ -22,7 +22,7 @@ let lastCallAt = 0;
 
 async function hpGet(env: Env, path: string): Promise<HpResult<unknown>> {
   const { HOSTPLATFORM_BASE_URL: base, HOSTPLATFORM_ACCESS_TOKEN: token } = env;
-  if (!base || !token) return { ok: false, status: 0, body: null };
+  if (!base || !token || inDemo()) return { ok: false, status: 0, body: null };
   for (let attempt = 1; ; attempt++) {
     const wait = lastCallAt + MIN_GAP_MS - Date.now();
     if (wait > 0) await sleep(wait);
