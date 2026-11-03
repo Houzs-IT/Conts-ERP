@@ -2,7 +2,8 @@
    renovationVoChanges.ts. A renovation VO's amendment stores an edited line as a REMOVE and an ADD; here they come
    back as one card ("Qty changed 1 → 2"), built as a MODIFY line so the page's Was / Requesting card shows it whole. */
 
-import { amendmentChanges, facetLabel, variantsAsOf, voTopic, type AmendmentChangeInput, type ChangeFacet, type OptionEdit } from "./renovationVoChanges";
+import { variantCategoryOf } from "../../scm/lib/renovation-flow-rules";
+import { amendmentChanges, asObject, facetLabel, variantsAsOf, voTopic, type AmendmentChangeInput, type ChangeFacet, type OptionEdit } from "./renovationVoChanges";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = { from: (table: string) => any };
@@ -67,6 +68,38 @@ export async function renovationAmendmentChanges(
       cur_room: room(c),
     };
   });
+  /* The card reads old_snapshot in the engine's own shape (itemCode, unitPriceSen, itemGroup ...) and formats options by
+     the line's variant group. A renovation VO's REMOVE stored the raw SO row (item_code, unit_price_sen, item_group
+     RENOVATION), so its card showed no SKU and warned about options it could not show. */
+  const codes = [...new Set(inputs.flatMap((l) => [l.new_item_code, l.cur_item_code, (asObject(l.old_snapshot)?.item_code as string | undefined) ?? null]).filter((x): x is string => !!x))];
+  const groupOf = new Map<string, string>();
+  if (codes.length) {
+    const { data } = await sb.from("mfg_products").select("code, category, sub_category").in("code", codes);
+    for (const p of (data ?? []) as Array<{ code: string; category: string | null; sub_category: string | null }>) {
+      const g = (variantCategoryOf(p.category, p.sub_category) ?? "").toLowerCase();
+      if (g && !groupOf.has(p.code)) groupOf.set(p.code, g);
+    }
+  }
+  /* The card's summary of a sofa shows its colour from fabricCode / colourId; a colourLabel saying the same thing is
+     reported as an option it "cannot display". Only a bedframe's summary reads colourLabel. */
+  const tidy = (v: unknown, code: string | null): unknown => {
+    const o = asObject(v);
+    if (!o || o.colourLabel == null || (code && groupOf.get(code) === "bedframe")) return v;
+    if (o.colourLabel !== o.fabricCode && o.colourLabel !== o.colourId) return v;
+    const { colourLabel: _c, ...rest } = o;
+    return rest;
+  };
+  const engineSnapshot = (raw: unknown, code: string | null): unknown => {
+    const o = asObject(raw);
+    if (!o || o.itemCode !== undefined) return raw;
+    const group = (code && groupOf.get(code)) || String(o.item_group ?? "");
+    return {
+      itemCode: o.item_code ?? undefined, qty: o.qty == null ? undefined : Number(o.qty),
+      unitPriceSen: o.unit_price_sen == null ? undefined : Number(o.unit_price_sen), description2: o.description2 ?? null,
+      variants: tidy(o.variants ?? null, code), itemGroup: group || null, remark: o.remark ?? null, discountSen: o.discount_sen == null ? null : Number(o.discount_sen),
+      description: o.description ?? null, room: o.room ?? null,
+    };
+  };
   const byId = new Map(lines.map((l) => [l.id, l]));
   const order = new Map(lines.map((l, i) => [l.id, i]));
   const first = (ids: string[]): number => Math.min(...ids.map((x) => order.get(x) ?? 0));
@@ -81,14 +114,20 @@ export async function renovationAmendmentChanges(
         lineIds: ch.lineIds, facets: ch.facets, labels,
         line: {
           id: `${rid}+${aid}`, amendment_id: add.amendment_id, sales_order_item_id: add.sales_order_item_id, change_type: "MODIFY",
-          new_item_code: ch.neu?.itemCode ?? add.new_item_code, new_variants: ch.neu?.variants ?? null, new_qty: ch.neu?.qty ?? add.new_qty,
-          new_unit_price_sen: ch.neu?.unitPriceSen ?? add.new_unit_price_sen, new_remark: null, new_discount_sen: null, old_snapshot: rem.old_snapshot,
+          new_item_code: ch.neu?.itemCode ?? add.new_item_code, new_variants: tidy(ch.neu?.variants ?? null, ch.neu?.itemCode ?? null), new_qty: ch.neu?.qty ?? add.new_qty,
+          new_unit_price_sen: ch.neu?.unitPriceSen ?? add.new_unit_price_sen, new_remark: null, new_discount_sen: null,
+          old_snapshot: engineSnapshot(rem.old_snapshot, ch.old?.itemCode ?? null),
         },
       };
     }
     const l = byId.get(ch.lineIds[0])!;
     const isAdd = String(l.change_type).toUpperCase() === "ADD";
-    return { lineIds: ch.lineIds, facets: ch.facets, labels, line: isAdd && ch.neu?.variants && l.new_variants == null ? { ...l, new_variants: ch.neu.variants } : l };
+    const code = ch.neu?.itemCode ?? ch.old?.itemCode ?? null;
+    const group = code ? groupOf.get(code) ?? null : null;
+    const line = isAdd
+      ? { ...l, new_variants: l.new_variants ?? tidy(ch.neu?.variants ?? null, code), old_snapshot: l.old_snapshot ?? (group ? { itemGroup: group } : null) }
+      : { ...l, old_snapshot: engineSnapshot(l.old_snapshot, ch.old?.itemCode ?? null) };
+    return { lineIds: ch.lineIds, facets: ch.facets, labels, line };
   });
   const topic = voTopic(amendment.reason ?? null, changes.map((ch) => ({
     description: ch.neu?.description || ch.old?.description || "", itemCode: ch.neu?.itemCode ?? ch.old?.itemCode ?? null, facets: ch.facets,
