@@ -179,7 +179,7 @@ check('a review is linked to its reservation and unit', booked?.reservation_id =
 const byListing = await call('GET', `/api/reviews?unitId=${UID}&q=${encodeURIComponent(`Listing guest ${tag}`)}`);
 const lr = byListing.json?.data?.[0];
 check('a review with no reservation is kept, tied to the unit by its listing', lr && lr.reservationId === null && lr.unitId === UID, JSON.stringify(lr));
-check('Booking.com category scores come through', lr?.scores?.length === 2 && lr.scores[1].category === 'value for money', JSON.stringify(lr?.scores));
+check('Booking.com category scores come through (under our names: value for money is Value)', lr?.scores?.length === 2 && lr.scores[1].category === 'Value', JSON.stringify(lr?.scores));
 const unmatched = await call('GET', `/api/reviews?matched=no&q=${encodeURIComponent(`Guest cx-r-${tag}-5`)}`);
 check('reviews with no unit at all are kept too', unmatched.json?.data?.some(x => x.unitId === null), JSON.stringify(unmatched.json?.data?.[0]));
 

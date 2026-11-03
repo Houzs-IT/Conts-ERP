@@ -5,6 +5,8 @@ import { CLEAN_KINDS_SQL, LIVE_STAY_SQL } from '../../_lib/cleaning';
 import { overdueCleans } from '../../_lib/cleanOverdue';
 import { waitingCount, approvalsEnabled } from '../../_lib/approvals';
 import { levelsFor } from '../../_lib/access';
+import { STAY_SQL } from '../../_lib/reviewStays';
+import { GUEST_REVIEW_WINDOW_DAYS } from '../../../src/lib/reviewRules';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-MY')} ${n === 1 ? one : many}`;
 
@@ -14,10 +16,10 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role)) return json({ today: 0, cleaning: 0, maintenance: 0, inbox: 0, statements: 0, channels: { units: 0, lastSentAt: null, failed: 0 }, alerts: [] });
+  if (isFieldRole(session.role)) return json({ today: 0, cleaning: 0, maintenance: 0, inbox: 0, reviews: 0, statements: 0, channels: { units: 0, lastSentAt: null, failed: 0 }, alerts: [] });
 
   // Every menu load and every open tab once a minute asks this: the four reads go out together, not one after another.
-  const [c, ch, approvals, approvalsOn, lv] = await Promise.all([one<{ today: number; cleaning: number; overdue: number; maintenance: number; maintenance_awaiting: number; inbox: number; statements: number; payouts_failed: number; payouts_pending: number; mail_failed: number }>(env, `
+  const [c, ch, approvals, approvalsOn, lv, rv] = await Promise.all([one<{ today: number; cleaning: number; overdue: number; maintenance: number; maintenance_awaiting: number; inbox: number; statements: number; payouts_failed: number; payouts_pending: number; mail_failed: number }>(env, `
     SELECT
       (SELECT count(*)::int FROM reservations r WHERE ${LIVE_STAY_SQL('r')} AND r.check_in = to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD'))
         + (SELECT count(*)::int FROM reservations r WHERE ${LIVE_STAY_SQL('r')} AND r.check_out = to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')) AS today,
@@ -37,7 +39,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT (SELECT count(DISTINCT unit_id)::int FROM channex_channels) AS units,
            (SELECT max(called_at) FROM channex_calls WHERE status BETWEEN 200 AND 299) AS last_sent,
            (SELECT count(*)::int FROM channex_outbox o WHERE o.status = 'failed' AND o.unit_id IN (SELECT unit_id FROM channex_channels)) AS failed`),
-    waitingCount(env, session), approvalsEnabled(env), levelsFor(env, session)]);
+    waitingCount(env, session), approvalsEnabled(env), levelsFor(env, session),
+    // Its own read, so a database without migration 0203 (guest_reviews) still gets every other count.
+    one<{ reviews_reply: number; reviews_due: number }>(env, `SELECT
+      (SELECT count(*)::int FROM reviews WHERE reply IS NULL) AS reviews_reply,
+      (SELECT count(*)::int FROM reservations r WHERE r.channel = 'airbnb' AND ${STAY_SQL}
+         AND r.check_out <= to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')
+         AND r.check_out >= to_char((now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date - ${GUEST_REVIEW_WINDOW_DAYS}, 'YYYY-MM-DD')
+         AND NOT EXISTS (SELECT 1 FROM guest_reviews gr WHERE gr.reservation_id = r.id AND gr.state = 'sent')) AS reviews_due`).catch(() => null)]);
   // Cleaning jobs follow the one overdue rule (src/lib/cleanOverdue.ts), not their due time or a stored state.
   const overdueCleanCount = (await overdueCleans(env, Date.now())).length;
   const channels = { units: ch?.units ?? 0, lastSentAt: ch?.last_sent ?? null, failed: ch?.failed ?? 0 };
@@ -47,6 +56,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sees = (area: string) => session.role === 'management' || lv[area] !== 'none';
   const money = sees('finance');
   const ops = sees('operations'), inbox = sees('comms') ? n.inbox : 0, sync = sees('integrations');
+  // Reviews: reviews waiting for a reply plus Airbnb guests still to be reviewed inside the window.
+  const reviewsOn = sees('pricing'), rr = rv?.reviews_reply ?? 0, rd = rv?.reviews_due ?? 0, reviews = reviewsOn ? rr + rd : 0;
 
   type Alert = { key: string; title: string; body: string; target: string; tone: 'critical' | 'warning' | 'info'; count: number };
   const alerts: Alert[] = [];
@@ -58,12 +69,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   add(money && n.mail_failed > 0, { key: 'mail_failed', tone: 'warning', count: n.mail_failed, title: `${plural(n.mail_failed, 'message')} failed to send this week`, body: 'Emails or WhatsApp messages the provider refused.', target: '/system/health' });
   add(money && n.statements > 0, { key: 'statements', tone: 'warning', count: n.statements, title: `${plural(n.statements, 'statement')} final, not sent`, body: 'Owners cannot see them until they are sent.', target: '/owners?view=statements&state=finalised' });
   add(money && n.payouts_pending > 0, { key: 'payouts_pending', tone: 'info', count: n.payouts_pending, title: `${plural(n.payouts_pending, 'owner payout')} waiting for a payout run`, body: 'Start a run once the transfers are made at the bank.', target: '/owners?view=payouts&state=pending' });
+  add(reviewsOn && rd > 0, { key: 'reviews_due', tone: 'info', count: rd, title: `${plural(rd, 'Airbnb guest')} to review`, body: `Airbnb closes the review ${GUEST_REVIEW_WINDOW_DAYS} days after checkout.`, target: '/performance/reviews?tab=guests' });
+  add(reviewsOn && rr > 0, { key: 'reviews_reply', tone: 'info', count: rr, title: `${plural(rr, 'review')} waiting for a reply`, body: 'Guests and future guests read your replies.', target: '/performance/reviews?tab=all&reply=needs_reply' });
   add(inbox > 0, { key: 'inbox', tone: 'info', count: inbox, title: `${plural(inbox, 'unread conversation')}`, body: 'Guest messages waiting for a reply.', target: '/communication/inbox' });
 
 
   // Today counts the day's check-ins and checkouts; Cleaning counts the open clean jobs up to today (carried-over ones included).
   return json({
-    channels, today: ops ? n.today : 0, cleaning: ops ? n.cleaning : 0, maintenance: ops ? n.maintenance : 0, inbox,
+    channels, today: ops ? n.today : 0, reviews, cleaning: ops ? n.cleaning : 0, maintenance: ops ? n.maintenance : 0, inbox,
     // What the maintenance count is made of, for the menu's tooltip: the same split as the Maintenance header.
     maintenanceAwaiting: ops ? n.maintenance_awaiting : 0,
     statements: money ? n.statements : 0, approvals, approvalsOn, alerts,

@@ -7,59 +7,42 @@ import Icon from '../../components/Icon';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import { useToast } from '../../components/Toast';
-import { api, errorMessage } from '../../lib/api';
-import { date as fmtDate, dateRange, todayMyt } from '../../lib/format';
+import { api, errorMessage, ApiFailure } from '../../lib/api';
+import { date as fmtDate, todayMyt } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
-import { isBadReview } from '../../lib/reviewRules';
+import { isBadReview, scaleText, type Scale } from '../../lib/reviewRules';
 import type { BookingChannel } from '../../lib/types';
+import { Avatar, Clamp, NativeScore, Notice, TagChips, CategoryRow, splitBooking, stayLine } from './reviewUi';
+
+export { Stars } from './reviewUi';
+
+export interface CleanJob { taskId: string; kind: string; state: string; day: string; cleaners: { id: string; name: string }[] }
 
 /** A guest review as /api/reviews and the reservation detail send it (functions/_lib/reviews.ts reviewOut). */
 export interface Review {
   /** Demo mode: a sample review, or a real one changed in Demo mode. */
   sample?: 'demo' | 'shadow';
   id: string; channel: BookingChannel; rating: number; comment: string | null; reviewedAt: string;
+  /** The score on the channel's own scale: Airbnb 1-5 stars, Booking.com out of 10. */
+  native: Scale;
   guestName: string; unitId: string | null; unitNumber: string | null; propertyId: string | null; propertyName: string | null;
   reservationId: string | null; checkIn: string | null; checkOut: string | null; bookingRef: string | null;
   reply: string | null; repliedAt: string | null; channelReply: string | null;
   scores: { category: string; score: number }[];
+  categories: { key: string; label: string; score10: number; native: Scale; outOf5: number }[];
+  tags: { code: string; label: string; tone: 'positive' | 'negative' | 'other' }[];
+  hidden: boolean;
+  lowCleanliness: boolean;
+  cleanJobs: CleanJob[] | null;
   linked: boolean;
   replyPost: { state: 'sent' | 'failed'; reason: string | null } | null;
 }
 
-export function Stars({ n, size = 'sm' }: { n: number; size?: 'sm' | 'base' }) {
-  const whole = Math.round(n);
-  return (
-    <span className={cx('inline-flex gap-px leading-none', size === 'sm' ? 'text-[15px]' : 'text-[19px]')} role="img" aria-label={`${n} out of 5`}>
-      {[1, 2, 3, 4, 5].map(i => <span key={i} aria-hidden className={i <= whole ? 'text-gold' : 'text-line'}>★</span>)}
-    </span>
-  );
-}
+const KIND: Record<string, string> = { turnover: 'Cleaning job', deep_clean: 'Deep clean', light_clean: 'Light clean' };
 
-const channelName = (ch: BookingChannel) => channelLabel(ch);
-const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
-/** Category scores out of 10 (Booking.com): a short bar each, red at 6 and under. */
-function Scores({ scores }: { scores: Review['scores'] }) {
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-5 gap-y-2">
-      {scores.map(s => (
-        <div key={s.category} className="flex flex-col gap-1 min-w-0">
-          <div className="flex justify-between gap-2 text-meta">
-            <span className="text-muted-ink truncate">{capital(s.category)}</span>
-            <span className="tabular-nums font-medium">{Number.isInteger(s.score) ? s.score : s.score.toFixed(1)}</span>
-          </div>
-          <span className="h-1.5 rounded-full bg-muted overflow-hidden">
-            <span className={cx('block h-full rounded-full', s.score <= 6 ? 'bg-danger-line' : 'bg-gold')} style={{ width: `${Math.max(0, Math.min(10, s.score)) * 10}%` }} />
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** One review: who, which unit and reservation, the stars and text, sub-scores, and the reply. Replying happens on
- *  the card; a reply that did not reach the channel says so with a Retry. `compact` is the reservation drawer's
- *  version: no unit line (the drawer is already about that reservation). */
+/** One review laid out like Airbnb's: the guest's initials, name and stay, the stars (Booking.com: its score out of
+ *  10, and Liked / Disliked), the text with Show more, category scores, tags, then the host's response. Low cleanliness
+ *  shows the clean before the stay and who did it. Replying happens on the card, with an AI draft when set up. */
 export function ReviewCard({ review, canReply, onChanged, compact }: {
   review: Review; canReply: boolean; onChanged?: () => void; compact?: boolean;
 }) {
@@ -71,9 +54,15 @@ export function ReviewCard({ review, canReply, onChanged, compact }: {
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [aiNote, setAiNote] = useState<string | null>(null);
+  const [showCats, setShowCats] = useState(false);
   const replied = r.reply != null;
   const bad = isBadReview(r.rating);
   const failed = r.replyPost?.state === 'failed';
+  const booking = r.channel === 'booking_com';
+  const parts = booking ? splitBooking(r.comment) : null;
+  const name = channelLabel(r.channel);
 
   async function post(body: string, retry = false) {
     setBusy(true);
@@ -84,9 +73,9 @@ export function ReviewCard({ review, canReply, onChanged, compact }: {
       setComposing(false);
       setDraft('');
       if (replyPost?.state === 'failed') {
-        toast({ tone: 'warning', title: 'Reply saved here, not posted.', body: `${channelName(r.channel)} did not take it: ${replyPost.reason ?? 'no reason given'}. Use Retry on the review.` });
+        toast({ tone: 'warning', title: 'Reply saved here, not posted.', body: `${name} did not take it: ${replyPost.reason ?? 'no reason given'}. Use Retry on the review.` });
       } else if (replyPost?.state === 'sent') {
-        toast({ tone: 'success', title: retry ? `Reply posted to ${channelName(r.channel)}.` : `Reply posted to ${channelName(r.channel)}.` });
+        toast({ tone: 'success', title: retry ? `Reply posted to ${name} on retry.` : `Reply posted to ${name}.` });
       } else {
         toast({ tone: 'success', title: 'Reply saved.', body: 'This review is not linked to a channel, so the reply is kept here.' });
       }
@@ -96,33 +85,87 @@ export function ReviewCard({ review, canReply, onChanged, compact }: {
     } finally { setBusy(false); }
   }
 
+  async function aiDraft() {
+    setDrafting(true);
+    setAiNote(null);
+    try {
+      const res = await api.post<{ draft: string }>(`/reviews/${r.id}/draft`, {});
+      setDraft(res.draft);
+      setAiNote('AI draft. Read it and change anything before you post.');
+    } catch (e) {
+      const code = e instanceof ApiFailure ? e.code : undefined;
+      setAiNote(code === 'NOT_CONFIGURED' ? 'AI drafting is not set up. Write the reply yourself.' : errorMessage(e, 'No draft this time. Write the reply yourself.'));
+    } finally { setDrafting(false); }
+  }
+
   function submit(e: FormEvent) { e.preventDefault(); const body = draft.trim(); if (body) void post(body); }
 
   const unit = [r.propertyName, r.unitNumber].filter(Boolean).join(' ');
-  const stay = r.checkIn && r.checkOut ? dateRange(r.checkIn, r.checkOut) : null;
+  const stay = stayLine(r.checkIn, r.checkOut);
+  const cleaners = [...new Map((r.cleanJobs ?? []).flatMap(j => j.cleaners).map(c => [c.id, c])).values()];
+  const cleanliness = r.categories.find(c => c.key === 'cleanliness');
 
   return (
-    <div className={cx('flex flex-col gap-3', compact ? '' : 'px-4 sm:px-5 py-4')}>
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex items-start gap-3 min-w-0">
-          <ChannelMark ch={r.channel} size={22} />
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="flex items-center gap-1.5 min-w-0"><span className="text-copy font-semibold">{r.guestName}</span><SampleMark kind={r.sample} /></span>
-            {!compact && (
-              <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">
-                {unit || 'Unit not known'}{stay ? ` · ${stay}` : ''}
-              </span>
-            )}
-            <span className="text-meta text-muted-ink">{channelName(r.channel)} · reviewed {fmtDate(r.reviewedAt)}</span>
+    <div className={cx('flex flex-col gap-3.5', compact ? '' : 'px-4 sm:px-6 py-5')}>
+      {/* Who and when: Airbnb's avatar, name and stay line. */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <Avatar name={r.guestName} size={compact ? 36 : 44} />
+          <div className="flex flex-col min-w-0">
+            <span className="flex items-center gap-1.5 min-w-0"><span className="text-copy font-semibold truncate">{r.guestName}</span><SampleMark kind={r.sample} /></span>
+            <span className="text-meta text-muted-ink">{stay ?? `Reviewed ${fmtDate(r.reviewedAt)}`}</span>
+            {!compact && unit && <span className="text-meta text-muted-ink truncate">{unit}</span>}
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Stars n={r.rating} />
-          <span className="text-meta tabular-nums text-muted-ink">{r.rating.toFixed(1)}</span>
-          {bad && <StatusBadge tone="critical" label="Bad review" size="sm" />}
-          <StatusBadge tone={replied ? (failed ? 'warning' : 'success') : 'warning'} label={replied ? (failed ? 'Not posted' : 'Replied') : 'Needs reply'} size="sm" />
-        </div>
+        <span className="flex items-center gap-1.5 shrink-0 text-meta text-muted-ink"><ChannelMark ch={r.channel} size={18} /><span className="hidden sm:inline">{name}</span></span>
       </div>
+
+      <div className="flex items-center gap-x-3 gap-y-1.5 flex-wrap">
+        <NativeScore s={r.native} />
+        <span className="text-meta text-muted-ink">· {fmtDate(r.reviewedAt)}</span>
+        {bad && <StatusBadge entity="review" value="bad" size="sm" />}
+        {r.hidden && <StatusBadge entity="review" value="hidden" size="sm" />}
+        <StatusBadge entity="review" value={replied ? (failed ? 'not_posted' : 'replied') : 'needs_reply'} size="sm" />
+      </div>
+
+      {r.hidden && (
+        <Notice icon="EyeOff" title="Hidden until you review the guest" tone="info">
+          Airbnb shows this review, to you and on the listing, once you have reviewed {r.guestName.split(' ')[0]}. Review guests on the Review guests tab.
+        </Notice>
+      )}
+
+      {booking && parts ? (
+        <div className="flex flex-col gap-2">
+          {parts.headline && <Clamp text={parts.headline} />}
+          {parts.liked && <p className="m-0 text-copy leading-[1.55] flex gap-2"><span className="text-success shrink-0"><Icon name="Plus" size="sm" /></span><span><span className="sr-only">Liked: </span>{parts.liked}</span></p>}
+          {parts.disliked && <p className="m-0 text-copy leading-[1.55] flex gap-2"><span className="text-critical shrink-0"><Icon name="Minus" size="sm" /></span><span><span className="sr-only">Disliked: </span>{parts.disliked}</span></p>}
+        </div>
+      ) : r.comment ? <Clamp text={r.comment} /> : <p className="m-0 text-copy text-muted-ink">No written review, score only.</p>}
+
+      {r.categories.length > 0 && (
+        <div className="flex flex-col">
+          <button type="button" onClick={() => setShowCats(v => !v)} aria-expanded={showCats}
+            className="self-start bg-transparent border-none p-0 cursor-pointer [font-family:inherit] text-meta font-semibold text-ink underline underline-offset-2">
+            {showCats ? 'Hide ratings by category' : `Ratings by category${cleanliness ? ` · Cleanliness ${scaleText(cleanliness.native)}` : ''}`}
+          </button>
+          {showCats && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 mt-1.5">
+              {r.categories.map(c => <CategoryRow key={c.key} k={c.key} score={c.native.value} max={c.native.max} flagKey={c.native.max === 5} />)}
+            </div>
+          )}
+        </div>
+      )}
+      <TagChips tags={r.tags} />
+
+      {r.lowCleanliness && !compact && (
+        <Notice icon="Sparkles" tone="warning" title={`Low cleanliness${cleanliness ? ` (${scaleText(cleanliness.native)})` : ''}`}
+          action={cleaners.length === 1 ? <Link to={`/performance/reviews?tab=cleaners&cleaner=${encodeURIComponent(cleaners[0].id)}`} className="text-meta text-ink-2 whitespace-nowrap">Their reviews</Link> : undefined}>
+          {r.cleanJobs?.length
+            ? <>Cleaned before this reservation: {r.cleanJobs.map(j => `${KIND[j.kind] ?? j.kind} on ${fmtDate(j.day)}${j.state === 'resolved' ? '' : ' (not marked done)'}`).join('; ')}
+                {' · '}{cleaners.length ? `by ${cleaners.map(c => c.name).join(', ')}` : 'no cleaner assigned'}</>
+            : 'No clean job was recorded on this unit before the stay.'}
+        </Notice>
+      )}
 
       {!compact && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-meta">
@@ -131,54 +174,54 @@ export function ReviewCard({ review, canReply, onChanged, compact }: {
                 <Icon name="BookOpen" size="sm" /> Reservation{r.bookingRef ? ` ${r.bookingRef}` : ''}
               </Link>
             : <span className="inline-flex items-center gap-1 text-muted-ink"><Icon name="CircleHelp" size="sm" /> No reservation matched</span>}
-          {r.unitId && <Link to={`/performance/reviews?tab=all&unitId=${encodeURIComponent(r.unitId)}`} className="text-ink-2">All reviews of this unit</Link>}
+          {r.unitId && <Link to={`/performance/reviews?tab=health&unitId=${encodeURIComponent(r.unitId)}`} className="text-ink-2">Unit health</Link>}
         </div>
       )}
 
-      {r.comment && <p className="m-0 text-copy leading-[1.55] [text-wrap:pretty] whitespace-pre-line">{r.comment}</p>}
-      {r.scores.length > 0 && <Scores scores={r.scores} />}
-
+      {/* The host's response, under the review as on Airbnb. */}
       {replied && r.reply && (
-        <div className="flex flex-col gap-1 bg-muted rounded-control px-3 py-2.5">
-          <span className="text-caption font-semibold text-muted-ink uppercase tracking-[0.06em]">
-            Your reply{r.repliedAt ? ` · ${fmtDate(r.repliedAt)}` : ''}
-          </span>
-          <p className="m-0 text-copy leading-[1.55] [text-wrap:pretty] whitespace-pre-line">{r.reply}</p>
+        <div className="flex gap-3 pl-3 sm:pl-4 [border-left:2px_solid_var(--color-line)]">
+          <div className="flex flex-col gap-1 min-w-0">
+            <span className="text-meta font-semibold">Response from you{r.repliedAt ? <span className="font-normal text-muted-ink"> · {fmtDate(r.repliedAt)}</span> : null}</span>
+            <Clamp text={r.reply} lines={3} />
+          </div>
         </div>
       )}
       {r.channelReply && (
-        <div className="flex flex-col gap-1 border border-solid border-line rounded-control px-3 py-2.5">
-          <span className="text-caption font-semibold text-muted-ink uppercase tracking-[0.06em]">Reply on {channelName(r.channel)}</span>
-          <p className="m-0 text-copy leading-[1.55] whitespace-pre-line">{r.channelReply}</p>
+        <div className="flex flex-col gap-1 pl-3 sm:pl-4 [border-left:2px_solid_var(--color-line)]">
+          <span className="text-meta font-semibold">Response on {name}</span>
+          <Clamp text={r.channelReply} lines={3} />
         </div>
       )}
       {failed && (
-        <div role="status" className="flex items-start gap-3 flex-wrap justify-between rounded-control border border-solid border-warning-line bg-warning-bg px-3 py-2.5">
-          <span className="text-copy text-warning flex items-start gap-2 min-w-0">
-            <Icon name="TriangleAlert" size="sm" />
-            <span className="[overflow-wrap:anywhere]">Saved here, not posted to {channelName(r.channel)}: {r.replyPost?.reason ?? 'the channel did not take it.'}</span>
-          </span>
-          {canReply && r.reply && <Button size="sm" variant="secondary" loading={busy} onClick={() => post(r.reply!, true)}>Retry</Button>}
-        </div>
+        <Notice icon="TriangleAlert" tone="warning" title={`Saved here, not posted to ${name}`}
+          action={canReply && r.reply ? <Button size="sm" variant="secondary" loading={busy} onClick={() => post(r.reply!, true)}>Retry</Button> : undefined}>
+          {r.replyPost?.reason ?? 'The channel did not take it.'}
+        </Notice>
       )}
 
       {/* Demo mode: changed as sample data only, never answered on the channel. */}
       {demoOn && <DemoReviewActions review={r} onChanged={() => onChanged?.()} />}
       {canReply && !replied && !composing && (
-        <Button size="sm" variant="brand" onClick={() => { setComposing(true); setDraft(''); }} className="self-start">Write a reply</Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button size="sm" variant="brand" onClick={() => { setComposing(true); setDraft(''); setAiNote(null); }}>Respond</Button>
+          <Button size="sm" variant="secondary" icon={<Icon name="Sparkles" size="sm" />} loading={drafting} onClick={() => { setComposing(true); void aiDraft(); }}>Draft reply</Button>
+        </div>
       )}
       {canReply && !replied && composing && (
         <form onSubmit={submit} className="flex flex-col gap-2">
-          <textarea value={draft} onChange={e => setDraft(e.target.value)} autoFocus rows={3} maxLength={1500}
-            aria-label={`Reply to ${r.guestName}`}
-            placeholder={r.linked ? `Reply to ${r.guestName}. It is posted on ${channelName(r.channel)}.` : `Reply to ${r.guestName}`}
+          <textarea value={draft} onChange={e => setDraft(e.target.value)} autoFocus rows={4} maxLength={1500}
+            aria-label={`Response to ${r.guestName}`}
+            placeholder={r.linked ? `Write a public response to ${r.guestName}. It is posted on ${name}.` : `Response to ${r.guestName}`}
             className="w-full box-border px-3 py-2.5 [font-family:inherit] text-copy text-ink bg-card border border-solid border-line rounded-control outline-none resize-y" />
+          {aiNote && <span className="text-caption text-muted-ink flex items-center gap-1.5"><Icon name="Sparkles" size="sm" />{aiNote}</span>}
           <div className="flex gap-2 justify-between items-center flex-wrap">
             <span className="text-caption text-muted-ink tabular-nums">{draft.length} / 1,500</span>
-            <div className="flex gap-2">
-              <Button type="button" size="sm" variant="secondary" onClick={() => setComposing(false)}>Cancel</Button>
-              <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!draft.trim()} disabledReason="Write a reply first.">
-                {r.linked ? `Post to ${channelName(r.channel)}` : 'Save reply'}
+            <div className="flex gap-2 flex-wrap">
+              <Button type="button" size="sm" variant="secondary" icon={<Icon name="Sparkles" size="sm" />} loading={drafting} onClick={() => void aiDraft()}>{draft ? 'Draft again' : 'Draft reply'}</Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => setComposing(false)}>Back</Button>
+              <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!draft.trim()} disabledReason="Write a response first.">
+                {r.linked ? `Post to ${name}` : 'Save response'}
               </Button>
             </div>
           </div>

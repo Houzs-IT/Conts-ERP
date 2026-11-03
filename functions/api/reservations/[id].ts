@@ -1,5 +1,5 @@
 import { type Env, one, all, json, fail } from '../../_lib/db';
-import { REVIEW_COLUMNS, REVIEW_FROM, reviewOut } from '../../_lib/reviews';
+import { REVIEW_COLUMNS, REVIEW_FROM, reviewOut, cleanColumn } from '../../_lib/reviews';
 import { can } from '../../_lib/access';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { fromSql, columnsSql, toRow } from '../../_lib/bookingList';
@@ -121,7 +121,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     all<any>(env, `SELECT template, channel, state, queued_at, sent_at FROM notification_log
       WHERE entity_table = 'reservations' AND entity_id = ? ORDER BY queued_at LIMIT 50`, id),
     // The review this stay left, shown in the drawer (Reviews, owner 2 Nov 2026).
-    one<any>(env, `SELECT ${REVIEW_COLUMNS} ${REVIEW_FROM} WHERE v.reservation_id = ? ORDER BY v.reviewed_at DESC LIMIT 1`, id),
+    one<any>(env, `SELECT ${REVIEW_COLUMNS}, ${cleanColumn()} ${REVIEW_FROM} WHERE v.reservation_id = ? ORDER BY v.reviewed_at DESC LIMIT 1`, id),
     one<{ id: string }>(env, 'SELECT id FROM message_threads WHERE reservation_id = ? ORDER BY last_message_at DESC LIMIT 1', id),
   ]);
 

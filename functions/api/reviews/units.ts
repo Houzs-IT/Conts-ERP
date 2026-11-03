@@ -1,20 +1,25 @@
 import { type Env, all, json, fail, mytToday } from '../../_lib/db';
+import { categoryAverages, tagCounts } from '../../_lib/reviewStats';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { STAY_SQL } from '../../_lib/reviewStays';
-import { BAD_REVIEW_MAX } from '../../../src/lib/reviewRules';
+import { BAD_REVIEW_MAX, AIRBNB_CATEGORIES, CATEGORY_FLAG_BELOW, categoryFlagged } from '../../../src/lib/reviewRules';
 
 /** GET /api/reviews/units?by=unit|building — the Reviews overview by unit (default) or by building: review count,
  *  average rating, last review date, bad reviews (BAD_REVIEW_MAX stars or fewer), reviews waiting for a reply, and
  *  how many finished stays left a review and how many have not. Every unit with a review or a finished stay is listed,
- *  so a unit whose guests never review shows up too. Sorted on the screen. A review with no unit is in no row. */
+ *  so a unit whose guests never review shows up too. Sorted on the screen. A review with no unit is in no row.
+ *  Each row also has the average of every category guests scored (out of 5, Airbnb and Booking.com together), the
+ *  categories under CATEGORY_FLAG_BELOW, reviews Airbnb hides until the guest is reviewed, and the most common
+ *  complaint tag. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role) || session.role === 'owner') return fail('FORBIDDEN', 'Reviews are visible to operations, finance and management.', 403);
   const byBuilding = new URL(request.url).searchParams.get('by') === 'building';
-  const rows = await all<any>(env, `
+  const [rows, cats, tags] = await Promise.all([all<any>(env, `
     WITH rv AS (
       SELECT COALESCE(v.unit_id, r.unit_id) AS unit_id, count(*)::int AS n, sum(v.rating) AS rating_sum, max(v.reviewed_at) AS last_at,
+        count(*) FILTER (WHERE v.is_hidden = 1)::int AS hidden,
         count(*) FILTER (WHERE v.rating <= ?)::int AS bad, count(*) FILTER (WHERE v.reply IS NULL)::int AS needs_reply
       FROM reviews v LEFT JOIN reservations r ON r.id = v.reservation_id
       GROUP BY 1
@@ -25,24 +30,31 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       GROUP BY 1
     ), per_unit AS (
       SELECT u.id AS unit_id, COALESCE(rv.n, 0) AS n, rv.rating_sum, rv.last_at, COALESCE(rv.bad, 0) AS bad,
-        COALESCE(rv.needs_reply, 0) AS needs_reply, COALESCE(st.stays, 0) AS stays, COALESCE(st.reviewed, 0) AS reviewed
+        COALESCE(rv.needs_reply, 0) AS needs_reply, COALESCE(rv.hidden, 0) AS hidden, COALESCE(st.stays, 0) AS stays, COALESCE(st.reviewed, 0) AS reviewed
       FROM units u LEFT JOIN rv ON rv.unit_id = u.id LEFT JOIN st ON st.unit_id = u.id
     )
     SELECT ${byBuilding
       ? `p.id, NULL AS unit_number, p.id AS property_id, p.name AS property_name, count(*)::int AS units,
          sum(x.n)::int AS n, sum(x.rating_sum) AS rating_sum, max(x.last_at) AS last_at, sum(x.bad)::int AS bad,
-         sum(x.needs_reply)::int AS needs_reply, sum(x.stays)::int AS stays, sum(x.reviewed)::int AS reviewed`
+         sum(x.needs_reply)::int AS needs_reply, sum(x.hidden)::int AS hidden, sum(x.stays)::int AS stays, sum(x.reviewed)::int AS reviewed`
       : `u.id, u.unit_number, p.id AS property_id, p.name AS property_name, 1 AS units,
-         x.n, x.rating_sum, x.last_at, x.bad, x.needs_reply, x.stays, x.reviewed`}
+         x.n, x.rating_sum, x.last_at, x.bad, x.needs_reply, x.hidden, x.stays, x.reviewed`}
     FROM per_unit x JOIN units u ON u.id = x.unit_id LEFT JOIN properties p ON p.id = u.property_id
     WHERE x.n > 0 OR x.stays > 0
     ${byBuilding ? 'GROUP BY p.id, p.name' : ''}
-    ORDER BY 6 DESC, 4, 2`, BAD_REVIEW_MAX, mytToday());
+    ORDER BY 6 DESC, 4, 2`, BAD_REVIEW_MAX, mytToday()),
+    categoryAverages(env, byBuilding ? 'building' : 'unit'),
+    tagCounts(env, byBuilding ? 'building' : 'unit'),
+  ]);
   return json({
     generatedAt: new Date().toISOString(),
     by: byBuilding ? 'building' : 'unit',
     badMax: BAD_REVIEW_MAX,
+    categoryKeys: AIRBNB_CATEGORIES, flagBelow: CATEGORY_FLAG_BELOW,
     data: rows.map(r => {
+      const c = cats.get(String(r.id ?? 'none')) ?? {};
+      const flagged = Object.entries(c).filter(([k, v]) => categoryFlagged(k, v.average)).map(([k]) => k);
+      const topComplaint = tags.get(String(r.id ?? 'none'))?.negative[0] ?? null;
       const n = Number(r.n ?? 0), stays = Number(r.stays ?? 0), reviewed = Number(r.reviewed ?? 0);
       return {
         id: r.id ?? 'none', unitId: byBuilding ? null : r.id, unitNumber: r.unit_number ?? null,
@@ -50,6 +62,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         reviews: n, average: n ? Math.round((Number(r.rating_sum) / n) * 100) / 100 : null,
         lastReviewAt: r.last_at ? String(r.last_at).slice(0, 10) : null, bad: Number(r.bad ?? 0), needsReply: Number(r.needs_reply ?? 0),
         staysCheckedOut: stays, staysReviewed: reviewed, staysWithoutReview: stays - reviewed,
+        hidden: Number(r.hidden ?? 0), categories: c, flagged, topComplaint,
       };
     }),
   });

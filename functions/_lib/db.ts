@@ -46,6 +46,9 @@ export interface Env {
   /** Encrypts each person's two-step sign-in secret at rest (functions/_lib/twoFactor.ts). Without it, setting up
    *  two-step sign-in is refused with a plain message; signing in with a password still works. */
   TOTP_ENC_KEY?: string;
+  /** Anthropic API key for AI draft replies to reviews (functions/_lib/aiDraft.ts), a Pages secret. Unset: the
+   *  Draft reply button says AI drafting is not set up. Same name as the engine's own key; set separately. */
+  ANTHROPIC_API_KEY?: string;
   /** Local dev only (.dev.vars): local Hyperdrive drops search_path from the connection string. */
   DB_SEARCH_PATH?: string;
   /** Set only on the copy of env that transaction() hands its callback: every query through that copy runs on the

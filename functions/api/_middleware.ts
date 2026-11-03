@@ -21,7 +21,7 @@ const OWNER_ALLOWED: [string, RegExp][] = [
   // My account: their own password, two-step sign-in, recent sign-ins, signing out other devices.
   ['GET', /^\/api\/account$/],
   ['POST', /^\/api\/account\/[a-z0-9/-]+$/],
-  ['GET', /^\/api\/owner\/(summary|trend|property-health|documents)$/],
+  ['GET', /^\/api\/owner\/(summary|trend|property-health|documents|reviews)$/],
   ['GET', /^\/api\/owner\/statements\/[^/]+(\/pdf)?$/],
   // The Owner Income Report: the handler resolves the owner from the session (ownerFor) and shows only their final statements.
   ['GET', /^\/api\/statements\/[^/]+\/report$/],

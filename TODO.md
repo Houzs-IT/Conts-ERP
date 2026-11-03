@@ -23,6 +23,11 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - No scheduled pull for messages and reviews (owner, 2 Nov 2026: screens first); they come in on the Channex webhook and the Sync button only.
 - Booking.com's review window is kept at the owner's 14 days in src/lib/reviewRules.ts; Booking.com publishes 28, change it there if stays are shown closed too early.
 - A pull reads at most 5 pages (500) of Channex reviews; a guest edit to an older review than that is not picked up.
+- Reviews, Airbnb's way (feat/reviews-airbnb, migration 0204): native scales, Airbnb categories and tags, hidden reviews, Review guests (form, templates, auto rules, Bad guest hold to day 13), new-review notices, Unit health, Cleanliness by cleaner, owner reviews API, AI draft replies. Needs 0204 on staging, then production, before merge.
+- AI draft replies need the Pages secret ANTHROPIC_API_KEY (owner sets it: `npx wrangler pages secret put ANTHROPIC_API_KEY`, add `--env preview` for staging), then Reviews > Review guests > Settings > AI draft replies on. Until then Draft reply says "AI drafting is not set up".
+- The host-reviews-guest call (POST /reviews/:id/guest_review) is built from Channex's documentation and tested against a pretend Channex only; check the first real one on a live Airbnb stay. The guest review is sent on the guest's Channex review of the stay, so it waits ("Waiting for Airbnb") until Airbnb opens that review in Channex.
+- Guest reviews are sent by the scheduled worker every 15 minutes (theconts-cron, needs CHANNEX_API_KEY) and by "Run rules now"; redeploy the cron worker after merge.
+- Cleanliness under 4.7 out of 5 is flagged for both channels, so a Booking.com 9/10 (4.5) counts as low; change CATEGORY_FLAG_BELOW / LOW_CLEANLINESS_BELOW in src/lib/reviewRules.ts if Booking.com should have its own line.
 
 ## Supply Chain as a copy of Houzs (decision: option B, resumed 7 Oct)
 - Plan: copy Houzs's supply chain screens and server code into Conts, re-coloured gold and black, instead of re-drawing each screen. Rental side untouched. Houzs's code is on this machine at C:\dev\Houzs-ERP (reference only).

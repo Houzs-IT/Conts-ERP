@@ -14,6 +14,7 @@ import { releaseRepairBlocks } from './repairBlocks';
 import { hasAttendance } from './attendance';
 import { FORGOTTEN_AFTER_HOURS } from './attendanceCalc';
 import { dueDepartures, markGuestLeft } from './guestLeft';
+import { runGuestReviews } from './guestReviews';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -391,10 +392,23 @@ export const CRON = {
 export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<JobReport>)[]> = {
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
   [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox],
-  [CRON.quarterHour]: [drainOutbox, repairBlockSweep],
+  [CRON.quarterHour]: [drainOutbox, repairBlockSweep, guestReviewSweep],
   [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep],
   [CRON.daily]: [dailyDigest],
 };
+
+/** Every 15 minutes: Airbnb guest reviews (functions/_lib/guestReviews.ts). The auto rules write reviews for stays
+ *  that checked out, then every review that is due goes to Airbnb: approved and auto ones, a Bad guest's on day 13,
+ *  and failed ones tried again. With dryRun nothing is written or sent. */
+export async function guestReviewSweep(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const r = await runGuestReviews(env, { now: o.now, dryRun: o.dryRun });
+  const did = o.dryRun ? 'Would write' : 'Wrote';
+  return {
+    job: 'guest-reviews',
+    summary: `${did} ${plural(r.written + r.approval, 'guest review')} (${r.approval} for approval); sent ${r.sent}, ${r.waiting} waiting for Airbnb, ${r.failed} failed.`,
+    items: r.items,
+  };
+}
 
 export async function runJobs(env: Env, jobs: ((env: Env, o?: RunOptions) => Promise<JobReport>)[], o: RunOptions = {}): Promise<JobReport[]> {
   const out: JobReport[] = [];
