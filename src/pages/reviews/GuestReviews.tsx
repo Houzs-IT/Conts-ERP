@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Switch } from '../../components/Switch';
 import { Link } from 'react-router-dom';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -562,10 +563,7 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
             <span className="text-copy font-semibold">AI draft replies</span>
             <span className="text-meta text-muted-ink">Draft reply on a review writes a suggestion into the reply box. It is never posted by itself: someone reads it and presses Post.</span>
           </div>
-          <button type="button" role="switch" aria-checked={!!data?.aiDrafts} aria-label="AI draft replies" disabled={!data?.aiConfigured || busy} onClick={flip}
-            className={cx('relative w-11 h-6 shrink-0 rounded-full border-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50', data?.aiDrafts ? 'bg-ink' : 'bg-line-strong')}>
-            <span className={cx('absolute top-0.5 w-5 h-5 rounded-full bg-card transition-[left]', data?.aiDrafts ? 'left-[22px]' : 'left-0.5')} />
-          </button>
+          <Switch checked={!!data?.aiDrafts} label="AI draft replies" disabled={!data?.aiConfigured || busy} onChange={() => flip()} />
         </div>
         {data && !data.aiConfigured && (
           <Notice icon="Lock" tone="warning" title="AI drafting is not set up">

@@ -28,7 +28,7 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
    `owners/shared`, `StatementsPage`, `units/shared`.
 2. **fixed (#593).** The approval and void-document reason boxes were `bg-white` (`ApprovalBanner.tsx`,
    `GuestDocuments.tsx`); now the card surface like every other field.
-3. **open.** The field app's full-screen repair sheets (`FieldRepairsPage.tsx`) and the photo viewers
+3. **kept on purpose.** The field app's full-screen repair sheets (`FieldRepairsPage.tsx`) and the photo viewers
    (`Attachments.tsx`, `ItSupportPage.tsx`) keep their own frames: they are full-screen views, not forms.
 
 ## Buttons
@@ -107,6 +107,14 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
 
 ## Phone (375px)
 
-21. No screen scrolls sideways. **open:** controls under 32px tall on the Units tree (row edit / add icons,
+21. No screen scrolls sideways. **fixed (batch 5):** controls under 32px tall on the Units tree (row edit / add icons,
     `UnitsPage.tsx`), the Reviews star filter (`reviews/ReviewsOverview.tsx`), Automations wanted / not wanted toggles
     (`AutomationsPage.tsx`) and the Dashboard "Open operations →" links.
+    Now: `.hit-target` (`src/styles/tokens.css`) gives a small control a 44px tap area on touch phones without changing
+    its look; used by `LinkAction` (every "… →" card link), the Units tree buttons, the calendar popover's Close, the
+    status filter's clear, the check-in time save and the report's Reset. The star filter rows are 36px tall on phones
+    (a 44px area would overlap the next row).
+22. **fixed (batch 5).** Four private on/off switches looked different for the same meaning: Automations green, the
+    rest black, and in dark mode the white knob disappeared on the light "on" track. Now one `Switch`
+    (`src/components/Switch.tsx`): ink when on, card-coloured knob, 44px tap area on phones. Used by Automations,
+    Settings, Category access and Reviews (AI draft replies).

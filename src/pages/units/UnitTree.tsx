@@ -123,7 +123,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
           </span>
           {!needle && buildings.length > 1 && (
             <button type="button" onClick={() => setAll(!anyOpen)}
-              className="bg-transparent [border:none] p-0 cursor-pointer [font-family:inherit] text-meta font-medium text-gold-ink whitespace-nowrap">
+              className="hit-target bg-transparent [border:none] p-0 cursor-pointer [font-family:inherit] text-meta font-medium text-gold-ink whitespace-nowrap">
               {anyOpen ? 'Collapse all' : 'Expand all'}
             </button>
           )}
@@ -156,9 +156,9 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                     </button>
                     {canEdit && <>
                       <button onClick={() => onEditBuilding(b)} aria-label={`Edit ${b.name}`} title="Edit building"
-                        className="w-[26px] h-[26px] flex-none grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted"><Icon name="Pencil" size="sm" /></button>
+                        className="hit-target w-[26px] h-[26px] flex-none grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted"><Icon name="Pencil" size="sm" /></button>
                       <button onClick={() => onAddUnit(b.id)} aria-label={`Add a unit to ${b.name}`} title="Add unit"
-                        className="w-[26px] h-[26px] flex-none grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-muted-ink"><Icon name="Plus" size="sm" /></button>
+                        className="hit-target w-[26px] h-[26px] flex-none grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-muted-ink"><Icon name="Plus" size="sm" /></button>
                     </>}
                   </div>
                   {open && us.map(u => {
@@ -178,7 +178,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                           </button>
                           {canEdit && (
                             <button onClick={() => onAddSubUnit(b.id, u)} aria-label={`Add a sub-unit under ${u.unitCode || 'this unit'}`} title="Add sub-unit"
-                              className="w-[24px] h-[24px] flex-none grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-muted-ink"><Icon name="Plus" size="sm" /></button>
+                              className="hit-target w-[24px] h-[24px] flex-none grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-muted-ink"><Icon name="Plus" size="sm" /></button>
                           )}
                         </div>
                         {kids.filter(k => !needle || buildingHit(b) || hit(u) || hit(k)).map(su => {

@@ -926,7 +926,7 @@ function CheckInTime({ time, saving, onSave }: { time: string; saving: boolean; 
   return (
     <span onClick={e => e.stopPropagation()} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') save(); if (e.key === 'Escape') { setV(time); setEditing(false); } }} className="inline-flex items-center gap-1 align-middle">
       <TimeField aria-label="Next check-in time" autoFocus value={v} onChange={setV} className={cx(INPUT, 'h-8 w-[110px] px-2')} />
-      <button type="button" onClick={save} aria-label="Save the check-in time" className="h-8 w-8 grid place-items-center rounded-control border border-solid border-black bg-black text-white cursor-pointer"><Icon name="Check" size="sm" /></button>
+      <button type="button" onClick={save} aria-label="Save the check-in time" className="hit-target h-8 w-8 grid place-items-center rounded-control border border-solid border-black bg-black text-white cursor-pointer"><Icon name="Check" size="sm" /></button>
     </span>
   );
 }

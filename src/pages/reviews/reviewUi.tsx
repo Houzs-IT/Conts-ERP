@@ -87,7 +87,7 @@ export function Distribution({ stars, total, onPick }: { stars: Record<string, n
         return (
           <Tag key={n} type={onPick ? 'button' : undefined} onClick={onPick ? () => onPick(n) : undefined}
             aria-label={onPick ? `${n} stars: ${k} reviews. Show them.` : undefined}
-            className={cx('flex items-center gap-2.5 bg-transparent border-none p-0 text-left [font-family:inherit] text-ink-2', onPick && 'cursor-pointer')}>
+            className={cx('flex items-center gap-2.5 bg-transparent border-none p-0 text-left [font-family:inherit] text-ink-2', onPick && 'cursor-pointer max-md:min-h-[36px]')}>
             <span className="w-3 text-meta tabular-nums">{n}</span>
             <span className="flex-1 h-[4px] rounded-full bg-line overflow-hidden"><span className="block h-full rounded-full bg-ink" style={{ width: `${pct}%` }} /></span>
             <span className="w-8 text-right text-caption tabular-nums text-muted-ink">{k}</span>

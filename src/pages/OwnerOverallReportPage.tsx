@@ -396,7 +396,7 @@ export default function OwnerOverallReportPage() {
             {chip('losing', 'Losing', all.filter(r => r.gainLoss < 0).length)}
             {chip('gaining', 'Gaining', all.filter(r => r.gainLoss >= 0).length)}
             {chip('vacant', '0% occupancy', all.filter(r => r.nights === 0 && r.days > 0).length)}
-            <button type="button" onClick={reset} className="h-8 px-3 rounded-full border-none bg-transparent text-meta text-muted-ink cursor-pointer hover:text-ink">Reset</button>
+            <button type="button" onClick={reset} className="hit-target h-8 px-3 rounded-full border-none bg-transparent text-meta text-muted-ink cursor-pointer hover:text-ink">Reset</button>
           </div>
         </div>
         <span className="ml-auto self-center text-meta text-muted-ink tabular-nums">Showing {count(filtered.length)} of {count(all.length)}</span>

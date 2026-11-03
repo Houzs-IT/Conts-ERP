@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { Switch as SharedSwitch } from './Switch';
 import { StaleBanner } from './DataState';
 import { Button } from './Button';
 import { CloseButton } from './CloseButton';
 import Icon from './Icon';
 import { useToast } from './Toast';
 import { api, errorMessage } from '../lib/api';
-import { cx } from '../lib/design-tokens';
 
 export interface CategoryTreeSub { code: string; label: string }
 export interface CategoryTreeGroup { code: string; label: string; subs: CategoryTreeSub[] }
@@ -51,13 +51,7 @@ function Tick({ state, label, onChange }: { state: BoxState; label: string; onCh
 }
 
 function Switch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)}
-      className={cx('flex-none w-[42px] h-6 rounded-full border-none p-0.5 cursor-pointer flex items-center',
-        '[transition:background_var(--motion-fast)_var(--ease-out)]', checked ? 'bg-ink justify-end' : 'bg-line-strong justify-start')}>
-      <span className="w-5 h-5 rounded-full bg-white [box-shadow:0_1px_2px_rgba(21,21,21,0.25)]" />
-    </button>
-  );
+  return <SharedSwitch checked={checked} label={label} onChange={onChange} />;
 }
 
 /**
