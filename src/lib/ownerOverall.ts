@@ -7,9 +7,23 @@
  *    PS: O1 = GP x owner %, owner base = the higher of O1 and GRR
  *    LT: owner base = LT (owner % and O1 unused)
  *    owner payout    = owner base + O2
- *    gain/loss       = GP - owner base (O2 is passed straight to the owner and does not change it) */
+ *    gain/loss       = GP - owner base (O2 is passed straight to the owner and does not change it)
+ *
+ *  `contract` picks the formula: PS for a share, LT for a fixed owner base (a long-term let's part of the rent, a GRR
+ *  or master lease rent). The report groups rows by income model, ReportGroup. */
 
 export type Contract = 'LT' | 'PS';
+
+/** PS: Package A, B and D. LT: Package C. NONE: no contract record yet (the unit's own split is used). */
+export type ReportGroup = 'PS' | 'LT' | 'RTR' | 'MANAGE' | 'GRR' | 'NONE';
+export const REPORT_GROUPS: readonly ReportGroup[] = ['PS', 'LT', 'RTR', 'MANAGE', 'GRR', 'NONE'];
+export const GROUP_NAME: Record<ReportGroup, string> = {
+  PS: 'Profit sharing', LT: 'Long term', RTR: 'Rent to rent', MANAGE: 'Listing management', GRR: 'Guaranteed rent', NONE: 'No contract',
+};
+/** What the LT / GRR column holds for the group. */
+export const OWNER_BASE_NAME: Record<ReportGroup, string> = {
+  PS: 'GRR (guaranteed minimum)', LT: "Owner's part of the rent", RTR: 'Rent to owner', MANAGE: 'GRR (guaranteed minimum)', GRR: 'GRR (fixed rent)', NONE: 'Fixed rent',
+};
 
 export interface OverallInput {
   contract: Contract;
