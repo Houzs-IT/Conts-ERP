@@ -213,7 +213,7 @@ things.
 7. **Numbers with what they are out of:** "3 of 12 units", "29 of 30 nights".
 8. **Money** always through `src/lib/format.ts`: "RM 1,826.39"; a deduction is shown with a minus sign or in
    brackets on the PDF, as the report does.
-9. **Dates** always through `format.ts`: "30 Sep 2026", ranges "16 Sep – 29 Sep 2026", time 24-hour "15:00".
+9. **Dates** always through `format.ts`: "2026/09/30", ranges "2026/09/16 – 2026/09/29", time 24-hour "15:00" (owner, 3 Nov 2026: year-first numeric, as the engine).
    Months alone as the report does: "SEP 2026" on PDFs, "Sep 2026" on screens.
 10. **English, Malaysian/British spelling** (finalise, colour, cancelled), except Airbnb's one-word "checkout".
 11. **Name the channel** when it matters ("Airbnb listing"), otherwise say "channel".

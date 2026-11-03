@@ -1,4 +1,5 @@
 import { type Env, all, one, run, audit, nowIso, transaction } from './db';
+import { numericDay } from './dates';
 import { CHARGE_TO, finalMonthsFor } from './expenses';
 import { firstOpenMonth } from '../../src/lib/deductMonth';
 import { contractSplit, type SplitContract } from '../../src/lib/utilitySplit';
@@ -22,7 +23,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const monthName = (ym: string) => `${MONTH_NAMES[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
 const lastDay = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
-const shortDate = (d: string) => `${Number(d.slice(8, 10))} ${MONTH_NAMES[Number(d.slice(5, 7)) - 1]}`;
+const shortDate = (d: string) => numericDay(d.slice(0, 10));
 const addMonths = (ym: string, n: number) => { const t = Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1 + n; return `${Math.floor(t / 12)}-${String(t % 12 + 1).padStart(2, '0')}`; };
 
 export type ScanUnit = { id: string; label: string; ownerId: string | null; contracts: SplitContract[] };

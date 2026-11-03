@@ -36,8 +36,8 @@ export const percent = (n: number) => `${n.toFixed(1)}%`;
 export const rating = (n: number, detail = false) =>
   detail ? `${n.toFixed(2)} / 5` : n.toFixed(2);
 
-/** Month names are fixed here, not taken from Intl: the en-MY locale prints "Sept", which
- *  docs/DATE-FORMAT.md does not allow. */
+/** Month names, for whole-month labels only (Nov 2026, November 2026). A full date is numeric (owner, 3 Nov 2026):
+ *  2026/11/03, the engine's rule, see docs/DATE-FORMAT.md. Fixed here, not taken from Intl (en-MY prints "Sept"). */
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
@@ -50,21 +50,22 @@ const mytParts = (iso: string) => {
   return { y, m: m - 1, d };
 };
 
-/** 16 Sep 2026 */
+const two = (n: number) => String(n).padStart(2, '0');
+/** 09/16: month and day, no year, the engine's short form. */
+const md = (p: { m: number; d: number }) => `${two(p.m + 1)}/${two(p.d)}`;
+
+/** 2026/09/16: year first, numeric (owner, 3 Nov 2026; the engine's rule). */
 export const date = (iso: string) => {
   const p = mytParts(iso);
-  return `${p.d} ${MONTHS[p.m]} ${p.y}`;
+  return `${p.y}/${md(p)}`;
 };
 
 /** A YYYY-MM-DD day (or YYYY-MM-15 for a month) in another language, for the portal (src/lib/portalI18n.ts). */
 export const dateIn = (locale: string, day: string, opts: Intl.DateTimeFormatOptions) =>
   new Intl.DateTimeFormat(locale, { ...opts, timeZone: MYT }).format(new Date(`${day.slice(0, 10)}T12:00:00+08:00`));
 
-/** 16 Sep – 29 Sep 2026. Always disambiguated across months. */
-export const dateRange = (fromIso: string, toIso: string) => {
-  const f = mytParts(fromIso), t = mytParts(toIso);
-  return `${f.d} ${MONTHS[f.m]}${f.y === t.y ? '' : ` ${f.y}`} – ${t.d} ${MONTHS[t.m]} ${t.y}`;
-};
+/** 2026/09/16 – 2026/09/29: both ends in full, so neither can be misread. */
+export const dateRange = (fromIso: string, toIso: string) => `${date(fromIso)} – ${date(toIso)}`;
 
 /** 15:00 — 24-hour, MYT */
 export const time = (iso: string) =>
@@ -97,20 +98,17 @@ export const monthLabel = (iso: string, opts?: { long?: boolean }) => {
 /** 2026 */
 export const year = (iso: string) => String(mytParts(iso).y);
 
-/** 16 Sep 2026 14:06 */
+/** 2026/09/16 14:06 */
 export const dateTime = (iso: string) => `${date(iso)} ${time(iso)}`;
 
-/** 16 Sep — day and short month, no year. */
-export const dateShort = (iso: string) => {
-  const p = mytParts(iso);
-  return `${p.d} ${MONTHS[p.m]}`;
-};
+/** 09/16: month and day, no year, where the year is plain from the page. */
+export const dateShort = (iso: string) => md(mytParts(iso));
 
-/** Sunday, 25 October 2026: a long weekday date. */
+/** Sunday, 2026/10/25: the weekday spelled out, the date numeric. */
 export const dateLong = (iso: string) => {
   const p = mytParts(iso);
   const day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()];
-  return `${day}, ${p.d} ${MONTHS_LONG[p.m]} ${p.y}`;
+  return `${day}, ${p.y}/${md(p)}`;
 };
 
 /** Wed — short weekday alone. */
@@ -171,13 +169,13 @@ export const titleCase = (name: string) => {
     : w.toLowerCase().replace(/(^|[-'(/])([a-z])/g, (_, a: string, b: string) => a + b.toUpperCase())).join('');
 };
 
-/** Sat 10 Oct: short weekday, day and month, for day headers on Cleaning, Today and the field app. */
+/** Sat 10/10: short weekday, then month/day, for day headers on Cleaning, Today and the field app. */
 export const weekdayDate = (iso: string) => {
   const p = mytParts(iso);
-  return `${WEEKDAYS[new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()]} ${p.d} ${MONTHS[p.m]}`;
+  return `${WEEKDAYS[new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()]} ${md(p)}`;
 };
 
-/** 10 Oct 14:00: day, month and time, no year, for stamps inside one job's history. */
+/** 10/10 14:00: month/day and time, no year, for stamps inside one job's history. */
 export const dateTimeShort = (iso: string) => `${dateShort(iso)} ${time(iso)}`;
 
 /** RM 1,250 for whole ringgit (calendar cells, rate chips); RM 1,250–1,400 for a range. */

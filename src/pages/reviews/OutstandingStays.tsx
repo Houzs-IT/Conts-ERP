@@ -60,7 +60,7 @@ export function OutstandingStays() {
       sub: r => r.bookingRef ?? '' },
     { key: 'unit', label: 'Unit', value: r => `${r.propertyName ?? ''} ${r.unitNumber}`.trim(), render: r => r.unitNumber, sub: r => r.propertyName ?? '', width: 150 },
     { key: 'channel', label: 'Channel', type: 'channel', value: r => r.channel, width: 110 },
-    { key: 'stay', label: 'Stay', type: 'date', value: r => r.checkOut, render: r => dateRange(r.checkIn, r.checkOut), width: 150 },
+    { key: 'stay', label: 'Stay', type: 'date', value: r => r.checkOut, render: r => dateRange(r.checkIn, r.checkOut), width: 200 },
     { key: 'days', label: 'Since checkout', type: 'number', value: r => r.daysSinceCheckout, align: 'right', width: 110, phone: 'right',
       render: r => <span className="tabular-nums">{plural(r.daysSinceCheckout, 'day')}</span> },
     { key: 'window', label: 'Review window', type: 'status', width: 130, phone: 'badge',

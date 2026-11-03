@@ -33,27 +33,27 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
 
 ## Buttons
 
-4. **fixed (batch 3).** New IT request form puts Send left of Cancel and on the left (`ItSupportPage.tsx`); everywhere else it is
+4. **fixed (#603).** New IT request form puts Send left of Cancel and on the left (`ItSupportPage.tsx`); everywhere else it is
    Cancel then the main action, on the right.
-5. **fixed (batch 3).** Advance row edit shows Save before Cancel (`workers/AdvancesTab.tsx`).
-6. **fixed (batch 3).** Export says five different things: "Export" (every table toolbar), "Export to Excel"
+5. **fixed (#603).** Advance row edit shows Save before Cancel (`workers/AdvancesTab.tsx`).
+6. **fixed (#603).** Export says five different things: "Export" (every table toolbar), "Export to Excel"
    (`finance/UtilityListing.tsx`, `UnitPnlPage.tsx`, `YearlyReportPage.tsx`), "Export Excel"
    (`OwnerOverallReportPage.tsx`), "Download CSV" (`ExpensesPage.tsx`), "Export all units" (`UnitsPage.tsx`).
    All page buttons now say "Export" with the download icon. "Download CSV" stays: it is the action button inside the
    expense report dialog, where naming the file is the point. "Export all units" on Units stays too: the list view also
    has the table's own Export (the rows shown), and the header one (every unit, every field) must not read the same.
-7. **fixed (batch 3).** Title Case where the rest is sentence case: "Add Employee" (`workers/EmployeesTab.tsx`,
+7. **fixed (#603).** Title Case where the rest is sentence case: "Add Employee" (`workers/EmployeesTab.tsx`,
    `workers/DcEmployeesTab.tsx`), the "IT Support" page title (`ItSupportPage.tsx`). "Add employee" fixed; "IT Support"
    kept on purpose: it is the module's name, the same in the menu and in the sister systems (Hookka, Houzs Century).
-8. **fixed (batch 3).** "Discard" (throw away unsaved edits) is a different button style on each of 14 screens (tertiary,
+8. **fixed (#603).** "Discard" (throw away unsaved edits) is a different button style on each of 14 screens (tertiary,
    secondary, ghost, plain): `CleaningSetup`, `MaintenancePage`, `ServicePrices`, `SettingsPage`, `units/UnitCleaning`,
    `settings/AgreementTemplate`, `GuestsPage`, `BookingDrawer`, `CategoryAccessEditor`, `permissions/*`.
 
 ## Money and numbers
 
-9. **fixed (batch 3).** Service price ranges print the upper end without the thousands comma: "RM 1,000.00 – 1500.00"
+9. **fixed (#603).** Service price ranges print the upper end without the thousands comma: "RM 1,000.00 – 1500.00"
    (`ServicePrices.tsx`).
-10. **fixed (batch 3).** Headline money tiles drop the sen ("RM 12,450") on Owners (`OwnersPage.tsx`) and the Overall unit
+10. **fixed (#603).** Headline money tiles drop the sen ("RM 12,450") on Owners (`OwnersPage.tsx`) and the Overall unit
     report (`OwnerOverallReportPage.tsx`), while the engine shows every amount in full. Owner's request: RM with sen
     wherever money is shown. Nightly prices on the calendar stay whole ringgit (they are set in whole ringgit).
     The same rule was dropping sen in 66 more places (`rm(x, { cents: false })`: Dashboard, Portfolio, Analytics,
@@ -65,10 +65,17 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
 
 ## Dates
 
-12. **decision.** The engine prints dates as `2026/11/03` (`engine/frontend/src/vendor/shared/format.ts`, Houzs's
+12. **fixed (batch 4), owner decided 3 Nov 2026: numeric `2026/11/03` everywhere.** The engine prints dates as `2026/11/03` (`engine/frontend/src/vendor/shared/format.ts`, Houzs's
     numeric-date rule of 25 Sep 2026, also on its PDFs); Property OS prints `3 Nov 2026` (`src/lib/format.ts`,
     `docs/DATE-FORMAT.md`). One helper changes it either way, but it reverses a recorded ruling, so it is the owner's
     pick. Times already match (24-hour, Malaysian time).
+    Done: `src/lib/format.ts` (`date` 2026/09/16, `dateRange` with both ends in full, `dateShort` 09/16, `dateTime`,
+    `weekdayDate` Sat 10/10, `dateLong`), `functions/_lib/dates.ts` for server text (notices, digests, reservation,
+    expense and utility messages, unit P&L notes, the printed letterhead), and the owner statement PDF's DATE field.
+    Whole-month labels stay words (Nov 2026; the calendar header November 2026). `docs/DATE-FORMAT.md`,
+    `docs/VOCABULARY.md`, `docs/UI-STANDARDS.md` and `copy.md` updated; `scripts/checks/formatting.mjs` now also fails a
+    hand-built "day + month name" date. Left: the owner portal's translated dates (`src/lib/portalI18n.ts`) and the
+    demo endpoints (`functions/api/demo/`), which other sessions own.
 
 ## Empty, loading and error states
 
@@ -87,7 +94,7 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
 
 ## Status badges
 
-18. **fixed (batch 3).** "Sub-unit" is shown in the warning colour (`UnitsPage.tsx`); it is a fact about the unit, not a
+18. **fixed (#603).** "Sub-unit" is shown in the warning colour (`UnitsPage.tsx`); it is a fact about the unit, not a
     problem, so neutral.
 19. Engine screens keep their own badge component (`engine/frontend/src/components/Badge.tsx`); its colours follow the
     same meanings but not the same tokens. Left: replacing it touches hundreds of engine files.

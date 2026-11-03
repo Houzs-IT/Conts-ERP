@@ -1,4 +1,5 @@
 import { type Env, all } from './db';
+import { numericDay } from './dates';
 import { monthEndExclusive } from './revenue';
 import { loadInputs, withYearToDate, computeMonth, statementSettings, fmtPct, classifyCost, DEDUCTIONS, type Query } from './ownerStatement';
 import { unitExample } from './unitContract';
@@ -15,8 +16,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   electricity: 'Electricity', water: 'Water', internet: 'Internet', sewerage: 'Indah Water', cleaning: 'Cleaning', housekeeping: 'Cleaning',
   maintenance: 'Maintenance', utilities: 'Utilities', other: 'Misc', consumables: 'Consumables', furniture: 'Furniture',
 };
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const dm = (iso: string) => `${Number(iso.slice(8, 10))} ${MON[Number(iso.slice(5, 7)) - 1]}`;
+const dm = (iso: string) => numericDay(iso.slice(0, 10));
 const CHANNEL: Record<string, string> = { airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda', direct: 'Direct' };
 /** A row's amount, never a negative zero (it would print as "- RM 0.00"). */
 const neg = (n: number) => (n ? -n : 0);
