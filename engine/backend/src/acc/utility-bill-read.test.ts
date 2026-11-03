@@ -1,7 +1,7 @@
 /* Reading one utility bill page (plan docs/superpowers/plans/2026-11-02-utility-bill-scan.md Task 1). Pinned: money in
    sen from what is printed, masks kept, nothing invented (an unreadable amount is null, never 0), Sonnet 5.5 only. */
 import { describe, expect, test } from 'vitest';
-import { UTILITY_READ_MODEL, coerceUtilityRead, readFailed, readUtilityPage } from './utility-bill-read';
+import { UTILITY_READ_MODEL, UTILITY_READ_SCHEMA, coerceUtilityRead, readFailed, readUtilityPage } from './utility-bill-read';
 
 const answer = (json: unknown, extra: Record<string, unknown> = {}) => new Response(JSON.stringify({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '…' }, { type: 'text', text: JSON.stringify(json) }], ...extra }), { status: 200, headers: { 'content-type': 'application/json' } });
 const PAGE = { mime: 'image/jpeg', dataBase64: btoa('jpeg') };
@@ -17,6 +17,21 @@ describe('coerceUtilityRead', () => {
     expect(r.kind).toBe('other');
     expect(readFailed(r)).toBe(true);
     expect(readFailed(coerceUtilityRead({ amountDue: '10.00', billMonth: '2026-10' }))).toBe(false);
+  });
+});
+
+/* The API refused the first schema on the live run (3 Nov 2026): "Schemas contains too many parameters with union
+   types (17 parameters with type arrays or anyOf)". Every field is a plain type; "" means not printed. */
+describe('the schema', () => {
+  test('no field is a union type', () => {
+    const props = UTILITY_READ_SCHEMA.properties as Record<string, { type?: unknown; anyOf?: unknown }>;
+    expect(Object.entries(props).filter(([, v]) => Array.isArray(v.type) || v.anyOf).map(([k]) => k)).toEqual([]);
+  });
+
+  test('an empty string is read as not printed: null, never 0', () => {
+    const r = coerceUtilityRead({ kind: 'water', billMonth: '', periodFrom: '', amountDue: '', deposit: '', accountNoVisible: '', meterPrevious: '', meterCurrent: '1,234', confidenceNotes: '' });
+    expect(r).toMatchObject({ billMonth: null, periodFrom: null, amountDueSen: null, depositSen: null, accountNoVisible: null, meterPrevious: null, meterCurrent: 1234, confidenceNotes: null });
+    expect(readFailed(r)).toBe(true);
   });
 });
 

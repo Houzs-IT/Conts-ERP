@@ -33,26 +33,28 @@ export type UtilityRead = {
   confidenceNotes: string | null;
 };
 
-const str = { type: ['string', 'null'] };
-const num = { type: ['number', 'null'] };
-/* Money and readings are read as printed text and coerced here: the model copies "1,311.18", we do the arithmetic. */
+/* Every field is a plain string, "" when it is not printed: the API refuses a schema with more than a few nullable
+   (union) fields ("too many parameters with union types", live run 3 Nov 2026). Money and readings are read as printed
+   text and coerced here: the model copies "1,311.18", we do the arithmetic, and "" becomes null, never 0. */
+const str = { type: 'string' };
 const FIELDS: Record<string, unknown> = {
   kind: { type: 'string', enum: [...UTILITY_KINDS] }, provider: str, billMonth: str, periodFrom: str, periodTo: str,
   amountDue: str, currentCharges: str, accountNoVisible: str, accountNoFull: str, deposit: str, invoiceNo: str,
-  premiseAddress: str, buildingName: str, unitText: str, ownerName: str, meterPrevious: num, meterCurrent: num, confidenceNotes: str,
+  premiseAddress: str, buildingName: str, unitText: str, ownerName: str, meterPrevious: str, meterCurrent: str, confidenceNotes: str,
 };
 export const UTILITY_READ_SCHEMA = { type: 'object', properties: FIELDS, required: Object.keys(FIELDS), additionalProperties: false };
 
 const PROMPT = `You are reading ONE page of a Malaysian utility bill for a property manager's finance clerk. Copy what is printed; never guess.
 - kind: electricity (TNB), water (Air Selangor, SYABAS, or a building management water bill), sewerage (Indah Water), internet (TIME, Maxis, Unifi, U Mobile…), other.
 - billMonth: YYYY-MM of the bill. When a period is printed, the month the period starts in. periodFrom / periodTo: YYYY-MM-DD as printed ("Tempoh Bil", "Billing period").
-- amountDue: the amount to pay now ("Jumlah Perlu Dibayar", "Amount due"), as printed, e.g. "1,311.18". currentCharges: this period's charges ("Caj Semasa"). Use null when not printed; never 0 for a figure you cannot read.
+- amountDue: the amount to pay now ("Jumlah Perlu Dibayar", "Amount due"), as printed, e.g. "1,311.18". currentCharges: this period's charges ("Caj Semasa"). Use "" when not printed; never 0 for a figure you cannot read.
 - accountNoVisible: the account number exactly as printed, masked digits as X (TNB prints e.g. 2104010945XX02). accountNoFull: only when the whole number is printed somewhere (barcode text, Indah Water, Maxis).
 - deposit: the security deposit ("Deposit", "Cagaran") when printed.
 - premiseAddress, buildingName, unitText (e.g. "C-37-13A"), ownerName (the account holder) as printed.
-- meterPrevious / meterCurrent: the meter readings as numbers when printed (management water bills carry these and no account number).
+- meterPrevious / meterCurrent: the meter readings as printed (management water bills carry these and no account number).
 - TNB pages are often rotated 90 degrees: read them turned.
-- confidenceNotes: one short line on anything unclear, else null.`;
+- confidenceNotes: one short line on anything unclear.
+- Any field that is not printed on this page: "" (an empty string).`;
 
 const rmToSen = (v: unknown): number | null => {
   if (typeof v === 'number') return Number.isFinite(v) ? Math.round(v * 100) : null;
