@@ -4,9 +4,10 @@
  *    strong    the visible digits of a masked number, the deposit, the previous meter reading = the account's last one;
  *    supporting  the building or the owner's name.
  *  Green: one account with a decisive clue, or two strong ones, and no other account with a strong clue. Amber: any
- *  other clue (a building or owner name alone is never green). Red: nothing, or a page with no amount or month. */
+ *  other clue (a building or owner name alone is never green). Red: nothing, or a page with no current charges or month.
+ *  The amount is Caj Semasa, this period's charges (chew, 3 Nov 2026), never the amount due; a 0 is never green. */
 export type BillReadLite = {
-  kind: string; billMonth: string | null; amountDueSen: number | null; accountNoVisible: string | null; accountNoFull: string | null;
+  kind: string; billMonth: string | null; currentChargesSen: number | null; accountNoVisible: string | null; accountNoFull: string | null;
   depositSen: number | null; buildingName: string | null; ownerName: string | null; meterPrevious: number | null;
 };
 export type AccountMark = {
@@ -64,17 +65,18 @@ export function matchBill(read: BillReadLite, accounts: AccountMark[], recent: R
   else { colour = 'red'; reasons.push('No unit matched'); }
   if (pick) reasons.unshift(`${pick.clues.join(' + ')} match`);
 
-  if (read.amountDueSen == null || read.billMonth == null) { colour = 'red'; reasons.push('The amount or the month could not be read'); }
+  if (read.currentChargesSen == null || read.billMonth == null) { colour = 'red'; reasons.push('The current charges or the month could not be read'); }
+  else if (read.currentChargesSen === 0) { reasons.push('Current charges read as 0: check the bill'); if (colour === 'green') colour = 'amber'; }
 
   let alreadyRecorded = false;
   if (pick && read.billMonth) {
     const unitBills = recent.filter(r => r.unitId === pick!.a.unitId && r.kind === read.kind);
     if (unitBills.some(r => r.billMonth === read.billMonth)) { alreadyRecorded = true; reasons.push('Already recorded'); }
     const before = unitBills.filter(r => r.billMonth < read.billMonth!).sort((x, y) => (x.billMonth < y.billMonth ? 1 : -1)).slice(0, 3);
-    if (read.amountDueSen != null && before.length) {
+    if (read.currentChargesSen != null && before.length) {
       const usual = before.reduce((n, r) => n + r.amountSen, 0) / before.length;
-      if (usual > 0 && read.amountDueSen > usual * 1.5) { reasons.push('Much higher than usual'); if (colour === 'green') colour = 'amber'; }
-      else if (usual > 0 && read.amountDueSen < usual * 0.5) { reasons.push('Much lower than usual'); if (colour === 'green') colour = 'amber'; }
+      if (usual > 0 && read.currentChargesSen > usual * 1.5) { reasons.push('Much higher than usual'); if (colour === 'green') colour = 'amber'; }
+      else if (usual > 0 && read.currentChargesSen < usual * 0.5) { reasons.push('Much lower than usual'); if (colour === 'green') colour = 'amber'; }
     }
   }
   return {

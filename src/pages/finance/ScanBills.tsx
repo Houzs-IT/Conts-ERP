@@ -26,7 +26,7 @@ import { pageFileName } from '../../lib/scanPage';
 type Kind = 'electricity' | 'water' | 'internet' | 'sewerage';
 type Read = {
   kind: string; provider: string | null; billMonth: string | null; periodFrom: string | null; periodTo: string | null;
-  amountDueSen: number | null; accountNoVisible: string | null; accountNoFull: string | null; confidenceNotes: string | null;
+  amountDueSen: number | null; currentChargesSen: number | null; accountNoVisible: string | null; accountNoFull: string | null; confidenceNotes: string | null;
 };
 type Match = { colour: 'green' | 'amber' | 'red'; accountId: string | null; alreadyRecorded: boolean; reasons: string[] };
 type ScanAnswer = { scanId: string; read: Read; match: Match; unitId: string | null; candidates: { accountId: string; unitId: string | null; clues: string[] }[] };
@@ -104,7 +104,7 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
       const kind = (KINDS.some(k => k.value === s.read.kind) ? s.read.kind : '') as Kind | '';
       patch(row.key, {
         state: 'done', scan: s, kind, billMonth: s.read.billMonth ?? '', periodFrom: s.read.periodFrom ?? '', periodTo: s.read.periodTo ?? '',
-        amountSen: s.read.amountDueSen, unitId: s.unitId ?? '', accountId: s.unitId ? s.match.accountId : null,
+        amountSen: s.read.currentChargesSen, unitId: s.unitId ?? '', accountId: s.unitId ? s.match.accountId : null,
         tick: s.match.colour === 'green' && !s.match.alreadyRecorded,
       });
     } catch (e) {

@@ -88,7 +88,7 @@ check('a unit with no account of the kind gets one, never with an empty number',
 // Next month's page for unit A matches green from the marks alone.
 const { accounts } = await M.scanContext(env);
 const { matchBill } = await import(pathToFileURL(join(root, 'src/lib/utilityMatch.ts')).href);
-const m2 = matchBill({ ...READ, billMonth: '2027-10', amountDueSen: 30000, meterPrevious: 4410 }, accounts, []);
+const m2 = matchBill({ ...READ, billMonth: '2027-10', currentChargesSen: 30000, meterPrevious: 4410 }, accounts, []);
 check("next month's page matches unit A green from what it learnt", m2.colour === 'green' && accounts.find(a => a.accountId === m2.accountId)?.unitId === A.id, m2);
 
 // The same save again (its answer was lost): nothing is written twice, and it still says what finance pays.
