@@ -16,13 +16,14 @@ import { PhoneJobCard, PhoneJobList, PhoneStayTime } from '../components/ops/Pho
 import { CleanProof, stageCounts } from '../components/ops/CleanProof';
 import { StatusBadge } from '../components/StatusBadge';
 import { sizeLine } from '../lib/unitSize';
-import { sortForCleaner } from '../lib/cleanOrder';
+import { sortForCleaner, sortBuildings, type CleanOrderInput } from '../lib/cleanOrder';
+import { isCleanOverdue, daysPast } from '../lib/cleanOverdue';
 import { cleanRowTone } from '../lib/cleanRowTone';
 import { usePortalText, usePortalDates, wordFor, type PortalStrings } from '../lib/portalI18n';
 import { useFieldRefresh, useFreshIds } from '../lib/fieldLive';
 
 /** Days a job is past its day, 0 when it is today's or later. */
-const daysLate = (day: string) => Math.max(0, Math.round((Date.parse(mytDay(0)) - Date.parse(day)) / 864e5));
+const daysLate = (day: string) => daysPast(day, Date.now());
 /** Google Maps search for an address, for the drive there. */
 const mapsLink = (address: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 
@@ -34,10 +35,28 @@ interface Job {
   external?: { address: string; clientName: string | null; clientPhone: string | null } | null;
   previous: { guestName: string; checkOutTime: string; state: string } | null;
   next: { guestName: string; checkInTime: string; checkInAt: string } | null;
+  /** Nobody arrives on the job's day: the unit's next arrival on a later day. */
+  nextLater?: { day: string; checkInTime: string } | null;
 }
 interface Detail { media: MediaItem[]; access: { id: string; label: string; instruction: string }[]; parking?: string | null }
 
-const jobOrder = (j: Job) => ({ checkIn: j.next?.checkInTime ?? null, done: j.done, building: j.unit.propertyName, unit: j.unit.unitNumber });
+/** The cleaner's order (lib/cleanOrder), the same as the office's board: the arrival on the job's day, else the next one. */
+const jobOrder = (j: Job): CleanOrderInput => ({
+  checkIn: j.next?.checkInTime ?? j.nextLater?.checkInTime ?? null, checkInDay: j.next ? j.day : j.nextLater?.day ?? null, day: j.day,
+  guestIn: !!j.previous && !j.guestOut && !j.done && j.state !== 'in_progress', checkOut: j.previous?.checkOutTime ?? null,
+  done: j.done, building: j.unit.propertyName, unit: j.unit.unitNumber,
+});
+/** Overdue by the one rule (lib/cleanOverdue): not done at the next guest's check-in, or by the end of its day. */
+const jobOverdue = (j: Job, now: number) => isCleanOverdue({ day: j.day, checkIn: j.next?.checkInTime ?? null, done: j.done }, now);
+interface Group { id: string; name: string; jobs: Job[] }
+/** One group per building, always A to Z (external jobs last) so the cleaner learns where each building is, each in the
+ *  cleaner's order (owner, 2 Nov 2026). Recomputed from every answer, so a changed time re-sorts on the next refresh. */
+function byBuilding(jobs: Job[]): Group[] {
+  const m = new Map<string, Group>();
+  for (const j of jobs) { const g = m.get(j.buildingId) ?? { id: j.buildingId, name: j.unit.propertyName, jobs: [] }; g.jobs.push(j); m.set(j.buildingId, g); }
+  for (const g of m.values()) g.jobs = sortForCleaner(g.jobs, jobOrder);
+  return sortBuildings([...m.values()], g => g.name, g => g.id === 'external');
+}
 
 /** The cleaner's phone: the same list as the Cleaning page on a phone (components/ops/PhoneJobCard), with only their own
  *  jobs and none of the office's tabs or actions. One list in the cleaner's order (lib/cleanOrder), jobs left over from
@@ -53,10 +72,11 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   const { data, loading, error, reload } = useApi<{ rows: Job[]; date?: string }>(`/field/tasks?date=${date}`);
   // A new notice, or the phone coming back to the app, reloads the list now; a job that just arrived carries a New mark.
   useFieldRefresh(reload);
-  // The office ticks the guest out on its board: the list catches up every minute and when the phone comes back to the app.
+  // The office ticks the guest out or changes a time on its board: the list catches up every 30 seconds, as the board does,
+  // and when the phone comes back to the app.
   useEffect(() => {
     const tick = () => { if (document.visibilityState === 'visible') reload(); };
-    const t = window.setInterval(tick, 60_000);
+    const t = window.setInterval(tick, 30_000);
     document.addEventListener('visibilitychange', tick);
     return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', tick); };
   }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -75,11 +95,17 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
       .finally(() => { if (live) onLinked?.(); });
     return () => { live = false; };
   }, [linkTask]); // eslint-disable-line react-hooks/exhaustive-deps
-  const late = (j: Job) => !j.done && daysLate(j.day) > 0;
-  const overdue = useMemo(() => sortForCleaner(jobs.filter(late), jobOrder), [jobs]); // eslint-disable-line react-hooks/exhaustive-deps
-  const day = useMemo(() => sortForCleaner(jobs.filter(j => !late(j)), jobOrder), [jobs]); // eslint-disable-line react-hooks/exhaustive-deps
+  const overdue = useMemo(() => byBuilding(jobs.filter(j => jobOverdue(j, now))), [jobs, now]);
+  const day = useMemo(() => byBuilding(jobs.filter(j => !jobOverdue(j, now))), [jobs, now]);
+  const overdueCount = overdue.reduce((n, g) => n + g.jobs.length, 0);
   const left = jobs.filter(j => !j.done).length;
   const card = (j: Job) => <TaskCard key={j.id} job={j} now={now} fresh={fresh.has(j.id)} active={j.id === open} onOpen={() => setOpen(j.id)} />;
+  const buildings = (gs: Group[]) => gs.map(g => (
+    <section key={g.id} className="flex flex-col gap-2">
+      <h2 className="m-0 px-1 text-[16px] font-semibold tracking-[-0.01em] flex items-baseline gap-2">{g.name}<span className="text-meta text-muted-ink font-normal tabular-nums">{t.jobs.groupDone(g.jobs.filter(j => j.done).length, g.jobs.length)}</span></h2>
+      <PhoneJobList label={g.name}>{g.jobs.map(card)}</PhoneJobList>
+    </section>
+  ));
 
   return (
     <>
@@ -94,20 +120,20 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
       {loading && !data ? <><Skeleton height={84} /><Skeleton height={84} /></>
         : jobs.length === 0 ? <EmptyState icon="Sparkles" title={t.jobs.none(weekday(date))} body={t.jobs.noneBody} />
         : <>
-          {overdue.length > 0 && (
+          {overdueCount > 0 && (
             <section aria-label={t.jobs.overdueTitle} className="flex-none rounded-card border border-solid border-danger-line bg-danger-bg flex flex-col">
               <header className="flex items-center gap-2 flex-wrap px-4 py-3">
                 <h2 className="m-0 text-heading font-semibold text-critical">{t.jobs.overdueTitle}</h2>
-                <StatusBadge tone="critical">{overdue.length}</StatusBadge>
-                <span className="text-meta text-muted-ink">{t.jobs.overdueSub(overdue.length)}</span>
+                <StatusBadge tone="critical">{overdueCount}</StatusBadge>
+                <span className="text-meta text-muted-ink">{t.jobs.overdueSub(overdueCount)}</span>
               </header>
-              <div className="px-3 pb-3"><PhoneJobList label={t.jobs.overdueTitle}>{overdue.map(card)}</PhoneJobList></div>
+              <div className="px-3 pb-3 flex flex-col gap-3">{buildings(overdue)}</div>
             </section>
           )}
           {day.length > 0 && (
             <>
-              {overdue.length > 0 && <h2 className="m-0 px-1 mt-1 text-heading font-semibold">{pick === 'today' ? t.jobs.today : t.jobs.tomorrow}</h2>}
-              <PhoneJobList label={weekday(date)}>{day.map(card)}</PhoneJobList>
+              {overdueCount > 0 && <h2 className="m-0 px-1 mt-1 text-heading font-semibold">{pick === 'today' ? t.jobs.today : t.jobs.tomorrow}</h2>}
+              {buildings(day)}
             </>
           )}
         </>}
@@ -151,11 +177,12 @@ const outTime = (j: Job) => (j.guestOut && j.guestLeftAt ? hm(j.guestLeftAt) : j
  *  tap while scrolling the list can never start a job by mistake. */
 function TaskCard({ job: j, now, fresh, active, onOpen }: { job: Job; now: number; fresh: boolean; active: boolean; onOpen: () => void }) {
   const t = usePortalText();
+  const { short } = usePortalDates();
   const lateBy = j.done ? 0 : daysLate(j.day);
   const tone = cleanRowTone({ day: j.day, status: j.done ? 'done' : j.state === 'in_progress' ? 'cleaning' : 'waiting', guestOut: j.guestOut, checkOutTime: j.previous?.checkOutTime ?? null }, now);
   return (
     <PhoneJobCard title={j.unit.unitNumber} active={active} tone={tone} onSelect={onOpen}
-      building={j.external ? [j.unit.propertyName, j.external.clientName].filter(Boolean).join(' · ') : j.unit.propertyName}
+      building={j.external ? [j.external.clientName, j.external.clientPhone].filter(Boolean).join(' · ') || undefined : undefined}
       badges={<>{fresh && <StatusBadge tone="info" size="sm" label={t.jobs.newJob} />}{lateBy > 0 && <StatusBadge tone="critical" size="sm">{t.jobs.overdue(t.common.days(lateBy))}</StatusBadge>}</>}
       status={<JobStatus job={j} />}
       out={j.external ? undefined : j.previous
@@ -163,6 +190,7 @@ function TaskCard({ job: j, now, fresh, active, onOpen }: { job: Job; now: numbe
         : <PhoneStayTime label={t.jobs.noGuestLeaving} />}
       arrive={j.external ? undefined : j.next
         ? <PhoneStayTime label={t.jobs.in} time={j.next.checkInTime} aside={!j.done && <span className="text-meta whitespace-nowrap"><TimeLeft at={j.next.checkInAt} now={now} /></span>} />
+        : j.nextLater ? <PhoneStayTime label={t.jobs.in} time={`${short(j.nextLater.day)} ${j.nextLater.checkInTime}`} />
         : <PhoneStayTime label={t.jobs.noCheckIn} />}
       note={j.instructions && (
         <div className="flex items-start gap-2 rounded-control bg-warning-bg text-ink px-2.5 py-1.5 text-meta">
@@ -218,7 +246,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
           {size && <div className="text-meta text-on-dark">{size}</div>}
           <div className="mt-1 flex items-center gap-2 flex-wrap">
             <JobStatus job={j} />
-            {!j.done && daysLate(j.day) > 0 && <StatusBadge tone="critical" size="sm">{t.jobs.overdue(t.common.days(daysLate(j.day)))}</StatusBadge>}
+            {jobOverdue(j, now) && <StatusBadge tone="critical" size="sm">{daysLate(j.day) > 0 ? t.jobs.overdue(t.common.days(daysLate(j.day))) : t.jobs.overdueTitle}</StatusBadge>}
             {j.startedAt && phase !== 'done' && <span className="text-meta text-on-dark">{t.jobs.startedLine(hm(j.startedAt))}</span>}
           </div>
         </div>

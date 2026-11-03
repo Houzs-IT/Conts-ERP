@@ -75,9 +75,9 @@ test('cleaning and maintenance have no desk areas, whatever is stored', () => {
 // before departments: Operations staff, Operations manager and Finance admin columns). HR came later (migration 0165)
 // and nobody is seeded into it: pay and bank details stay hidden until management grants HR.
 const seeded = {
-  operations_staff: { dashboard: 'none', portfolio: 'none', reservations: 'edit', operations: 'edit', properties: 'edit', hr: 'none', serviceCases: 'edit', projects: 'edit', scSales: 'edit', scInvoices: 'none', scConsignment: 'edit', scProcurement: 'edit', scTransportPlan: 'edit', scWarehouse: 'edit', finance: 'none', owners: 'none', ledger: 'none', performance: 'edit', comms: 'edit', reports: 'none', pricing: 'edit', automations: 'edit', users: 'none', integrations: 'none', settings: 'none', health: 'none' },
-  operations_manager: { dashboard: 'full', portfolio: 'full', reservations: 'full', operations: 'full', properties: 'full', hr: 'none', serviceCases: 'full', projects: 'full', scSales: 'full', scInvoices: 'view', scConsignment: 'full', scProcurement: 'full', scTransportPlan: 'full', scWarehouse: 'full', finance: 'view', owners: 'view', ledger: 'none', performance: 'full', comms: 'full', reports: 'view', pricing: 'full', automations: 'full', users: 'full', integrations: 'full', settings: 'full', health: 'full' },
-  finance_admin: { dashboard: 'view', portfolio: 'view', reservations: 'view', operations: 'view', properties: 'view', hr: 'none', serviceCases: 'view', projects: 'view', scSales: 'view', scInvoices: 'full', scConsignment: 'view', scProcurement: 'view', scTransportPlan: 'view', scWarehouse: 'view', finance: 'full', owners: 'full', ledger: 'full', performance: 'full', comms: 'none', reports: 'full', pricing: 'full', automations: 'none', users: 'none', integrations: 'full', settings: 'full', health: 'full' },
+  operations_staff: { dashboard: 'none', portfolio: 'none', reservations: 'edit', operations: 'edit', properties: 'edit', hr: 'none', serviceCases: 'edit', projects: 'edit', scSales: 'edit', scInvoices: 'none', scConsignment: 'edit', scProcurement: 'edit', scTransportPlan: 'edit', scWarehouse: 'edit', finance: 'none', owners: 'none', ledger: 'none', performance: 'edit', comms: 'edit', reports: 'none', pricing: 'edit', automations: 'edit', mail: 'none', users: 'none', integrations: 'none', settings: 'none', health: 'none' },
+  operations_manager: { dashboard: 'full', portfolio: 'full', reservations: 'full', operations: 'full', properties: 'full', hr: 'none', serviceCases: 'full', projects: 'full', scSales: 'full', scInvoices: 'view', scConsignment: 'full', scProcurement: 'full', scTransportPlan: 'full', scWarehouse: 'full', finance: 'view', owners: 'view', ledger: 'none', performance: 'full', comms: 'full', reports: 'view', pricing: 'full', automations: 'full', mail: 'none', users: 'full', integrations: 'full', settings: 'full', health: 'full' },
+  finance_admin: { dashboard: 'view', portfolio: 'view', reservations: 'view', operations: 'view', properties: 'view', hr: 'none', serviceCases: 'view', projects: 'view', scSales: 'view', scInvoices: 'full', scConsignment: 'view', scProcurement: 'view', scTransportPlan: 'view', scWarehouse: 'view', finance: 'full', owners: 'full', ledger: 'full', performance: 'full', comms: 'none', reports: 'full', pricing: 'full', automations: 'none', mail: 'none', users: 'none', integrations: 'full', settings: 'full', health: 'full' },
 };
 
 test('the seeded rules give the levels of the old role chart', () => {
@@ -108,4 +108,17 @@ test('the seeded rules give the levels of the old role chart', () => {
     assert.equal(Object.keys(seeded[role]).length, AREAS.length, `${role} lists every area`);
     for (const a of AREAS) assert.equal(resolveFor(r, staff, a).level, seeded[role][a.key], `${role} ${a.key}`);
   }
+});
+
+test('Messages sits in Growth beside Pricing and reviews and Automations (owner, 2 Nov 2026; migration 0200)', () => {
+  const growth = AREAS.filter(a => a.group === 'Growth').map(a => a.key);
+  assert.deepEqual(growth, ['pricing', 'comms', 'automations']);
+  assert.ok(!AREAS.some(a => a.group === 'Reservations' && a.key === 'comms'));
+});
+
+test('a Growth baseline does not reach Messages where migration 0200 pinned it', () => {
+  // A department whose Reservations baseline gave Messages Edit and whose Growth baseline is View: 0200 stores comms Edit.
+  const r = rules({ department: { 'group:Reservations': 'edit', 'group:Growth': 'view', comms: 'edit' } });
+  assert.equal(resolveFor(r, staff, AREAS.find(a => a.key === 'comms')).level, 'edit');
+  assert.equal(resolveFor(r, staff, AREAS.find(a => a.key === 'pricing')).level, 'view');
 });

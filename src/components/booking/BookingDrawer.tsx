@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { DemoReservationBar, useDemoOn } from '../demo/DemoRecords';
 import { createPortal } from 'react-dom';
 import { Drawer } from '../Dialog';
 import { Button } from '../Button';
 import { Field } from '../Field';
 import { Select } from '../Select';
-import { DateField, TimeField, MoneyInput } from '../inputs';
+import { DateField, TimeField, MoneyInput, PhoneInput, phoneProblem } from '../inputs';
 import Icon from '../Icon';
 import ChannelMark from '../ChannelMark';
 import { PhoneText } from '../PhoneText';
@@ -25,6 +26,9 @@ import { isStaged, stagedToast, useApprovalsOn, type Approval } from '../../lib/
 import { CloseButton } from '../CloseButton';
 import { moneyStatus, lastPaidOn, isOtaChannel } from '../../lib/payoutStatus';
 import { Link } from 'react-router-dom';
+import type { Review } from '../../pages/reviews/ReviewCard';
+// Loaded on its own: the drawer is in the first bundle every page loads, which has no room to spare.
+const ReservationReview = lazy(() => import('../../pages/reviews/ReservationReview'));
 
 /* ------------------------------------------------------------------ */
 /* Shapes (GET /api/reservations/:id)                                  */
@@ -59,11 +63,14 @@ interface Ledger {
   disagree: string | null; sources: { label: string; amount: number | null; from: string }[];
 }
 interface Detail extends Required<Omit<BookingSummary, 'guestPhone'>> {
+  /** Demo mode: 'demo' for a sample reservation, 'shadow' for a real one changed in Demo mode. */
+  sample?: 'demo' | 'shadow';
   guestPhone: string | null; guestEmail: string | null; guestId: string | null; nationality: string | null;
   country: { code: string; name: string; from: 'nationality' | 'phone' } | null;
   unitId: string; notes: string | null; staffNotes: string | null; createdAt: string;
   money: Money; ledger: Ledger; timeline: TimelineEvent[]; moves: Move[];
   documents?: GuestDocument[]; approvals?: Approval[];
+  review?: Review | null; threadId?: string | null;
   can: { changeDates: boolean; changeDatesReason: string | null; recordPayment: boolean; editDetails: boolean; paymentsReady: boolean; issueDocuments?: boolean; invoiceReason?: string | null };
 }
 
@@ -709,6 +716,51 @@ export function LateCheckoutBlock({ reservationId, onChanged }: { reservationId:
  * allowed status moves come from the server), makes every change through the API, and only reports what the
  * server says happened. `onChanged` lets the page refresh its list or board.
  */
+/** The guest's phone, editable here (owner, 2 Nov 2026: Airbnb no longer shares it, staff get it on WhatsApp). It is saved
+ *  on the guest, so every reservation of that guest and the guest's profile show the same number. */
+function GuestPhoneRow({ guestId, phone, onSaved }: { guestId: string; phone: string | null; onSaved: () => void }) {
+  const toast = useToast();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(phone ?? '');
+  const [error, setError] = useState<string | undefined>();
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (!editing) setValue(phone ?? ''); }, [phone, editing]);
+  async function save() {
+    const problem = value.trim() ? phoneProblem(value) : undefined;
+    if (problem) { setError(problem); return; }
+    setBusy(true);
+    try {
+      await api.patch(`/guests/${encodeURIComponent(guestId)}`, { phone: value.trim() || null });
+      toast({ tone: 'success', title: value.trim() ? 'Phone saved on the guest.' : 'Phone removed from the guest.' });
+      setEditing(false);
+      onSaved();
+    } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); }
+    setBusy(false);
+  }
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-2 py-1">
+        <PhoneInput label="Phone" value={value} onChange={v => { setValue(v); setError(undefined); }} error={error} help="Saved on the guest: their profile and every reservation of theirs show it." />
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="secondary" onClick={() => setEditing(false)} disabled={busy}>Cancel</Button>
+          <Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Save</Button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex justify-between items-center gap-3">
+      <span className="text-muted-ink">Phone</span>
+      <span className="flex items-center gap-2 min-w-0">
+        <span className="text-right break-all"><PhoneText value={phone} className="text-ink" /></span>
+        <button type="button" onClick={() => setEditing(true)} className="p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer whitespace-nowrap">
+          {phone ? 'Edit' : 'Add phone'}
+        </button>
+      </span>
+    </div>
+  );
+}
+
 export function BookingDrawer({ id, summary, onClose, onChanged, onDuplicated }: {
   id: string | null; summary?: BookingSummary | null; onClose: () => void;
   onChanged?: (id: string) => void; onDuplicated?: (newId: string) => void;
@@ -730,6 +782,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   id: string; summary: BookingSummary | null; onClose: () => void; onChanged?: (id: string) => void; onDuplicated?: (newId: string) => void;
 }) {
   const toast = useToast();
+  const demoOn = useDemoOn();
   const { data, error, reload } = useApi<Detail>(`/reservations/${id}`);
   const d = data && data.id === id ? data : null;
   const [busy, setBusy] = useState(false);
@@ -838,6 +891,12 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         </div>
       </div>
 
+      {demoOn && !block && d && (
+        <DemoReservationBar id={id} sample={d.sample}
+          values={{ unitId: d.unitId, guestName: d.guestName, channel: d.channel, checkIn: d.checkIn, checkOut: d.checkOut, guestsCount: d.guestsCount, grossBookingValue: d.grossBookingValue, state: d.state, notes: d.notes ?? '' }}
+          onChanged={() => { reload(); onChanged?.(id); }} onRemoved={() => { onChanged?.(id); onClose(); }} />
+      )}
+
       <div className="p-5 flex flex-col gap-5 flex-1">
         {!block && (
           <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -870,7 +929,9 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         {!block && d && (
           <div className="flex flex-col gap-1 text-copy">
             <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-1">Guest</div>
-            <div className="flex justify-between gap-3"><span className="text-muted-ink">Phone</span><span className="text-right break-all"><PhoneText value={d.guestPhone} className="text-ink" /></span></div>
+            {d.guestId
+              ? <GuestPhoneRow guestId={d.guestId} phone={d.guestPhone} onSaved={() => { reload(); onChanged?.(id); }} />
+              : <div className="flex justify-between gap-3"><span className="text-muted-ink">Phone</span><span className="text-right break-all"><PhoneText value={d.guestPhone} className="text-ink" /></span></div>}
             {d.guestEmail && <div className="flex justify-between gap-3"><span className="text-muted-ink">Email</span><span className="text-right break-all">{d.guestEmail}</span></div>}
             {nationality || !d.country ? (
               <div className="flex justify-between gap-3"><span className="text-muted-ink">Nationality</span>
@@ -884,6 +945,8 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             {d.guestId && <Link to={`/reservations/guests?g=${encodeURIComponent(d.guestId)}`} className="self-start mt-1 text-meta text-ink underline">Open guest profile</Link>}
           </div>
         )}
+
+        {!block && d && <Suspense fallback={null}><ReservationReview review={d.review ?? null} threadId={d.threadId ?? null} checkOut={d.checkOut} state={d.state} channel={d.channel} /></Suspense>}
 
         {block ? (
           <div className="text-copy text-muted-ink">

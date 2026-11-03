@@ -49,12 +49,11 @@ const offSide = (kind: DepartmentKind, side: Side, area: Area): boolean => close
 export const AREAS: Area[] = [
   { key: 'dashboard', label: 'Dashboard', group: 'Home', api: ['dashboard'] },
   { key: 'portfolio', label: 'Portfolio', group: 'Home', api: ['portfolio'], managed: true, strictRead: true },
-  { key: 'performance', label: 'Performance', group: 'Home', api: ['analytics', 'showcase'] },
+  { key: 'performance', label: 'Performance', group: 'Home', api: ['analytics'] },
   // The yearly unit report. Its figures are Finance's, so it stays management-only like Finance.
   { key: 'reports', label: 'Reports', group: 'Reports', api: [], managed: true, strictRead: true },
   // Reservations arrive from the channels through the API; finance reads them but does not create or change them (owner, 11 Oct 2026).
   { key: 'reservations', label: 'Reservations', group: 'Reservations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
-  { key: 'comms', label: 'Messages', group: 'Reservations', api: ['messages'] },
   { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'] },
   // Field staff's HR record: IC, bank, salary and statutory (PLAN-hr-employees.md). Its own group so Operations staff do
   // not see pay by default. The cleaner and technician rosters themselves stay under Operations.
@@ -75,7 +74,12 @@ export const AREAS: Area[] = [
   // Operations managers read the rest of Finance but never the company books.
   { key: 'ledger', label: 'Ledger', group: 'Finance', api: [], managed: true, strictRead: true },
   { key: 'pricing', label: 'Pricing and reviews', group: 'Growth', api: ['pricing', 'rates', 'reviews'] },
+  // Messages sat under Reservations from 30 Oct to 2 Nov 2026; migration 0200 pinned its stored levels when it moved here.
+  { key: 'comms', label: 'Messages', group: 'Growth', api: ['messages'] },
   { key: 'automations', label: 'Automations', group: 'Growth', api: ['automations'] },
+  // The shared email inbox (CONTS-0004): engine screens only, sent to the engine at sign-on like the Ledger. Its own
+  // category, so no existing baseline opens it: management has it, everyone else waits until they are given it.
+  { key: 'mail', label: 'Mail Center', group: 'Mail', api: [] },
   // The user list is read by management and operations managers only (functions/api/users), so finance admins start at none.
   { key: 'users', label: 'Users and roles', group: 'System', api: ['users', 'departments'], managed: true },
   { key: 'integrations', label: 'Integrations', group: 'System', api: ['integrations'], managed: true },
@@ -186,6 +190,9 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; w
   { method: 'POST', path: /^\/api\/maintenance\/issues\/[^/]+\/approve$/, area: 'finance', why: 'Recording an owner\'s approval of a repair quote is a money decision.' },
   { method: 'GET', path: /^\/api\/audit$/, area: null, why: 'The History panel on every record: the handler applies the area of the record asked for; the whole trail stays management and finance only.' },
   { method: 'GET', path: /^\/api\/(warehouses|suppliers|drivers|vehicles|threepl-companies)$/, area: null, why: 'Supply chain reference lists that every supply chain screen picks from.' },
+  // One public holiday list for the whole company (migration 0202), kept from Pricing and from HR: the handlers let in
+  // Pricing (Full to change) or Employees (edit to change), whichever the person has (functions/_lib/holidays.ts).
+  ...(['GET', 'POST', 'PUT', 'DELETE'] as const).map(method => ({ method, path: /^\/api\/holidays(\/[^/]+)?$/, area: null, why: 'The public holiday list is shared by Pricing and HR; its handlers check either area.' })),
 ];
 
 function routeArea(method: string, path: string): Area | null {

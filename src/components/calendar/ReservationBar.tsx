@@ -90,7 +90,9 @@ export function BarContent({ b, visible, width, nights }: { b: Block; visible: n
   const parts = hold
     ? [visible >= 3 && b.reason ? b.reason : '', visible >= 3 ? nightsLabel(nights) : ''].filter(Boolean)
     : [price, nightsLabel(nights)].filter(Boolean);
-  const line2 = fitWords(parts.join(' · '), room) ?? (parts[0] && textWidth(parts[0]) <= room ? parts[0] : '');
+  // Whole parts only: cutting the joined text by words left a dangling separator ("RM 334.37 ·").
+  const both = parts.join(' · ');
+  const line2 = textWidth(both) <= room ? both : parts[0] && textWidth(parts[0]) <= room ? parts[0] : (fitWords(parts[0] ?? '', room) ?? '');
   return (
     <>
       <ChannelMark ch={b.channel} size={16} />
@@ -102,8 +104,15 @@ export function BarContent({ b, visible, width, nights }: { b: Block; visible: n
   );
 }
 
-/** The bar's look: a quiet card with the channel colour as a 3px left edge; status sets the shade. */
+/** The bar's look: a quiet card with the channel colour as a 3px left edge; status sets the shade. In Demo mode a
+ *  sample stay, or a real one changed in Demo mode, has a dashed blue outline. */
 export function barStyle(b: Block, phase: StayPhase, clipL: boolean, clipR: boolean): CSSProperties {
+  const look = stayLook(b, phase, clipL, clipR);
+  return b.sample ? { ...look, borderTop: SAMPLE_LINE, borderRight: clipR ? look.borderRight : SAMPLE_LINE, borderBottom: SAMPLE_LINE } : look;
+}
+const SAMPLE_LINE = '1.5px dashed var(--color-info-line)';
+
+function stayLook(b: Block, phase: StayPhase, clipL: boolean, clipR: boolean): CSSProperties {
   const ch = CHANNEL[b.channel];
   const r = (on: boolean) => (on ? 0 : 6);
   const radius = `${r(clipL)}px ${r(clipR)}px ${r(clipR)}px ${r(clipL)}px`;
@@ -150,6 +159,7 @@ export function BarHoverCard({ b, phase, unit, x, y }: { b: Block; phase: StayPh
       <div className="[font-variant-numeric:tabular-nums]">{dateRange(b.checkIn, b.checkOut)} · {nightsLabel(n)}</div>
       {!hold && b.grossBookingValue > 0 && <div className="[font-variant-numeric:tabular-nums]">Host payout {rm(payoutOf(b))}</div>}
       {b.reason && <div className="text-meta text-muted-ink">{b.reason}</div>}
+      {b.sample && <div className="text-meta font-semibold text-info">{b.sample === 'demo' ? 'Sample data, Demo mode only' : 'Changed in Demo mode only'}</div>}
       <div className="text-meta text-muted-ink">{unit}{b.ref ? ` · ${b.ref}` : ''}</div>
     </div>
   );

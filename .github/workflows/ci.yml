@@ -29,6 +29,9 @@ jobs:
         run: npx vite build
       - name: Standards checks
         run: npm run check
+      # Recording scanned utility bills on a throwaway PGlite database (no server needed).
+      - name: Scanned utility bills (utility-scan)
+        run: node scripts/api-checks/utility-scan.mjs
 
   # Who may call what: every API handler as every role (rbac-matrix.mjs against rbac-matrix.expected.json) and the
   # editable permissions chart (role-access.mjs), against a real server on a throwaway Postgres built from
@@ -111,6 +114,11 @@ jobs:
           DB_URL: postgres://postgres@127.0.0.1:5432/ci
       - name: Yearly unit report (yearly-report)
         run: node scripts/api-checks/yearly-report.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Demo mode guards (demo-mode)
+        run: node scripts/api-checks/demo-mode.mjs
         env:
           API_BASE: http://localhost:8788
           DB_URL: postgres://postgres@127.0.0.1:5432/ci

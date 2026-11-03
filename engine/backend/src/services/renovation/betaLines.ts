@@ -8,6 +8,7 @@
 
 import { isMissingRelation, type Db } from "./load";
 import { voGoesTo } from "../../scm/lib/renovation-po-split";
+import { variantCategoryOf } from "../../scm/lib/renovation-flow-rules";
 import { photoList, skuPhotoList, type SkuPhoto } from "./betaVoPo";
 import { keepVisiblePos, lineVisible, type CategoryScope } from "../categoryAccess";
 
@@ -72,6 +73,9 @@ export interface ManagedLine {
   /** The catalog group and sub-category codes (null: the product has none), for the role's category access. */
   categoryCode: string | null;
   subCode: string | null;
+  /** The category that picks the line's variant fields, by the SO line's rule (renovation-flow-rules.ts
+      variantCategoryOf: a FURNITURE sofa or bedframe is SOFA or BEDFRAME); null when the product is not in the catalog. */
+  variantCategory: string | null;
   categoryLabel: string;
   categorySort: number;
   subLabel: string;
@@ -178,7 +182,7 @@ interface LineRow {
   id: string; doc_no: string; so_status: string; line_no: number | null; item_code: string | null; description: string | null; description2: string | null;
   variants: unknown; item_group: string | null; uom: string | null; qty: number; unit_price_sen: number | null; discount_sen: number | null; total_sen: number | null;
   area: string | null; remark: string | null; supplier_name: string | null; supplier_code: string | null; cat_label: string | null; cat_sort: number | null;
-  sub_label: string | null; sub_sort: number | null; cat_code: string | null; sub_code: string | null; pos: unknown; delivered: number | null; photo_urls: unknown; sku_photos: unknown;
+  sub_label: string | null; sub_sort: number | null; cat_code: string | null; sub_code: string | null; prod_category: string | null; prod_sub: string | null; pos: unknown; delivered: number | null; photo_urls: unknown; sku_photos: unknown;
 }
 
 async function readPlans(db: Db, ids: readonly string[]): Promise<{ ready: boolean; byId: Map<string, ManagedLine["plan"]> }> {
@@ -212,7 +216,7 @@ export async function loadProjectLines(
             coalesce(nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim((SELECT l.room FROM scm.reno_doc_lines l WHERE l.so_item_id = i.id LIMIT 1)), ''), nullif(trim(i.location), '')) AS area,
             sup.name AS supplier_name, sup.code AS supplier_code,
             cg.label AS cat_label, cg.sort_order AS cat_sort, sc.label AS sub_label, sc.sort_order AS sub_sort,
-            cg.code AS cat_code, sc.code AS sub_code,
+            cg.code AS cat_code, sc.code AS sub_code, prod.category AS prod_category, prod.sub_category AS prod_sub,
             (SELECT coalesce(jsonb_agg(jsonb_build_object(
                       'po_id', po.id::text, 'po_number', po.po_number, 'po_status', po.status::text, 'po_line_id', pi.id::text,
                       'po_date', po.po_date::text, 'delivery_date', coalesce(greatest(pi.delivery_date, pi.supplier_delivery_date_2, pi.supplier_delivery_date_3, pi.supplier_delivery_date_4),
@@ -233,7 +237,7 @@ export async function loadProjectLines(
        LEFT JOIN LATERAL (SELECT s.name, s.code FROM scm.supplier_material_bindings b JOIN scm.suppliers s ON s.id = b.supplier_id
                            WHERE b.material_kind = 'mfg_product' AND b.item_code = i.item_code AND b.company_id = so.company_id
                            ORDER BY b.is_main_supplier DESC LIMIT 1) sup ON true
-       LEFT JOIN LATERAL (SELECT p.category_group, p.sub_category FROM scm.mfg_products p
+       LEFT JOIN LATERAL (SELECT p.category_group, p.sub_category, p.category::text AS category FROM scm.mfg_products p
                            WHERE p.code = i.item_code AND p.company_id = so.company_id ORDER BY (p.status::text = 'ACTIVE') DESC LIMIT 1) prod ON true
        LEFT JOIN scm.product_category_groups cg ON cg.code = prod.category_group
        LEFT JOIN scm.product_sub_categories sc ON sc.group_code = cg.code AND sc.code = prod.sub_category
@@ -255,6 +259,7 @@ export async function loadProjectLines(
       area: x.area, remark: x.remark?.trim() || null, supplierName: x.supplier_name,
       goesTo: voGoesTo({ itemCode: x.item_code, itemGroup: x.item_group, mainSupplierCode: x.supplier_code }),
       categoryCode: x.cat_code ?? null, subCode: x.sub_code ?? null,
+      variantCategory: x.prod_category ? variantCategoryOf(x.prod_category, x.prod_sub) : null,
       categoryLabel: x.cat_label ?? "Other", categorySort: x.cat_sort ?? 999, subLabel: x.sub_label ?? "General", subSort: x.sub_sort ?? 999,
       pos, photoKeys: photoList(x.photo_urls), skuPhotos: skuPhotoList(x.sku_photos), gr: grOf(pos), do: markOf(qty, Number(x.delivered ?? 0)),
       plan: plans.byId.get(x.id) ?? { orderOn: null, deliverOn: null, noPo: false },

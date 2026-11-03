@@ -1,12 +1,12 @@
 // The Conts instance of this engine is the supply chain, with service cases and projects (owner, 7 Oct).
-// The rental side of the business runs in Property OS, and the other Houzs areas (HR, mail,
-// announcements) are not used.
+// The rental side of the business runs in Property OS, and the other Houzs areas (HR, announcements)
+// are not used. Mail Center came back for CONTS-0004 (3 Nov 2026), opened by the Mail area in Property OS.
 // Everything that builds a menu reads the one registry in components/Sidebar.tsx, so trimming that
 // registry here keeps the desktop rail, the mobile menu and the hub pages in agreement.
 
 /** Top-level menu entries kept, by their label in the registry. Team and Settings stay so an
  *  administrator can add people and set the company details; each is still gated by its own permission. */
-const KEEP = new Set(["Sales Orders", "Service Cases", "Projects", "Beta", "Supply Chain", "Finance", "Team", "Settings"]);
+const KEEP = new Set(["Sales Orders", "Service Cases", "Projects", "Beta", "Supply Chain", "Finance", "Mail Center", "Team", "Settings"]);
 
 /** Houzs modules Conts does not use (owner decision C7, 11 Oct 2026): forecasting, the finance
  *  dashboard, consignment, HR commission and the AutoCount sync page. Switched off, not deleted: their

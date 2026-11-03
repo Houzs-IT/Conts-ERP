@@ -3,6 +3,7 @@ import { useScrollMemory } from '../lib/useScrollMemory';
 import { useDevice } from '../lib/deviceClass';
 import Sidebar, { useDarkTheme } from './Sidebar';
 import TopBar from './TopBar';
+import { DemoBand } from './DemoMode';
 import { Logo } from './Logo';
 import { RefreshLine } from './Loading';
 import MobileTabBar, { TAB_BAR_HEIGHT } from './MobileTabBar';
@@ -68,6 +69,7 @@ export default function AppShell({
 
       <div data-print-root style={{ position: 'relative', flex: 1, minWidth: 0, height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: betaBackdrop, backgroundAttachment: betaBackdrop ? 'fixed' : undefined }}>
         <RefreshLine />
+        <DemoBand />
         {isNarrow && (
           // One row on phones: menu, logo, then search / bell / page action. The desk top bar's crumbs are
           // dropped here because each page's own title sits right below.

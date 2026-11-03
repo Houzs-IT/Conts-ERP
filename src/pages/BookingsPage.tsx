@@ -5,6 +5,8 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { BookingDrawer, MessageGuestModal, CentreModal, ModalActions } from '../components/booking/BookingDrawer';
+import { DemoReservationModal, useDemoOn } from '../components/demo/DemoRecords';
+import { SampleMark } from '../components/DemoMode';
 import { UnitPicker } from '../components/booking/UnitPicker';
 import { channelNote, stayPhase, stayWho } from '../lib/bookingStatus';
 import { Button } from '../components/Button';
@@ -30,12 +32,15 @@ import type { BookingChannel, ReservationState } from '../lib/types';
 import { statusOptions, statusLabel } from '../lib/status';
 
 interface Row {
-  id: string; externalRef: string | null; guestName: string; guestsCount: number;
+  id: string; externalRef: string | null;
+  /** Demo mode: a sample reservation, or a real one changed in Demo mode. */
+  sample?: 'demo' | 'shadow'; guestName: string; guestsCount: number;
   guestPhone: string | null; guestCountry: string | null; guestNationality: string | null;
   unitNumber: string; propertyName: string; channel: BookingChannel;
   state: ReservationState; checkIn: string; checkOut: string; checkInTime: string; checkOutTime: string;
   nights: number; grossBookingValue: number; channelFee: number; collectedRevenue: number;
   expectedPayout: number; received: number; outstanding: number; createdAt: string;
+  roomRevenue?: number | null; cleaningFee?: number | null; extraFees?: number | null; sst?: number | null; tourismTax?: number | null; otaTax?: number | null; deposit?: number | null;
   /** Where the guest is from: the nationality on record, else the country of their phone number. */
   country: { code: string; name: string; from: 'nationality' | 'phone' } | null;
 }
@@ -63,7 +68,7 @@ interface Payload {
   data: Row[]; total: number; page: number; pageSize: number; generatedAt: string; today: string; view: ViewKey; todo: TodoKey | null;
   counts: Record<ViewKey, number>;
   todos: Record<TodoKey, { count: number; outstanding: number }>;
-  totals: { bookings: number; nights: number; gross: number; fees: number; outstanding: number };
+  totals: { bookings: number; nights: number; gross: number; fees: number; payout?: number; outstanding: number };
   buildings: { id: string; name: string }[];
   paymentsReady: boolean;
   /** Each filter's choices with how many reservations each would show under everything else on screen. */
@@ -154,6 +159,8 @@ export default function BookingsPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [creating, setCreating] = useState(false);
+  const demoOn = useDemoOn();
+  const [addingSample, setAddingSample] = useState(false);
   // Guests' "Book a stay" passes the guest in router state (kept out of the URL); the Calendar passes the unit and
   // nights it was opened from (?forUnit=&checkIn=&checkOut=). Captured when the form opens, because stripping the
   // flags below replaces the location and drops the state.
@@ -307,7 +314,7 @@ export default function BookingsPage() {
         </span>
       ) },
     { key: 'guest', label: 'Guest', value: r => r.guestName, sortKey: 'guest', width: 170, filter: { kind: 'text', param: 'guest' },
-      render: b => { const w = stayWho(b); return <span className={cx('font-medium whitespace-nowrap overflow-hidden text-ellipsis block', w.missing && 'text-muted-ink')} title={w.name}>{w.name}</span>; },
+      render: b => { const w = stayWho(b); return <span className="flex items-center gap-1.5 min-w-0"><span className={cx('font-medium whitespace-nowrap overflow-hidden text-ellipsis block', w.missing && 'text-muted-ink')} title={w.name}>{w.name}</span><SampleMark kind={b.sample} /></span>; },
       sub: b => [stayWho(b).missing ? 'No guest name' : null, b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, countryOf(b)].filter(Boolean).join(' · ') || null },
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, sortKey: 'unit', width: 140,
       filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => b.propertyName },
@@ -328,10 +335,19 @@ export default function BookingsPage() {
     { key: 'gross', label: 'Guest total', type: 'money', value: r => (r.grossBookingValue > 0 ? r.grossBookingValue : null), sortKey: 'gross', width: 120,
       title: 'What the guest paid: accommodation, fees and the taxes we collect. Tax a channel keeps is not included.',
       filter: { kind: 'number', params: ['grossMin', 'grossMax'] },
-      render: b => <span className="font-medium tabular-nums whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>,
+      render: b => <span className="font-medium tabular-nums whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue) : '—'}</span>,
       sub: b => (moneyTodo && b.outstanding > 0 ? <span className="text-warning tabular-nums">{rm(b.outstanding, { cents: false })} owed</span> : null) },
-    { key: 'fee', label: 'Service fee', type: 'money', value: r => r.channelFee, hidden: true, sortKey: 'fee', filter: false },
-    { key: 'expected', label: 'Expected to receive', type: 'money', value: r => r.expectedPayout, hidden: true, filter: false },
+    { key: 'fee', label: 'Service fee', type: 'money', value: r => r.channelFee, sortKey: 'fee', filter: false, width: 110 },
+    // Every value the reservation carries (owner, 2 Nov 2026); the payout shows by default, the breakdown under Columns.
+    { key: 'expected', label: 'Host payout', type: 'money', value: r => r.expectedPayout, filter: false, width: 120,
+      title: 'What the channel pays us: the guest total less its service fee and any tax it keeps.' },
+    { key: 'room', label: 'Accommodation', type: 'money', value: r => r.roomRevenue ?? null, hidden: true, filter: false },
+    { key: 'cleaning', label: 'Cleaning fee', type: 'money', value: r => r.cleaningFee ?? null, hidden: true, filter: false },
+    { key: 'extras', label: 'Extra fees', type: 'money', value: r => r.extraFees ?? null, hidden: true, filter: false },
+    { key: 'sst', label: 'SST', type: 'money', value: r => r.sst ?? null, hidden: true, filter: false },
+    { key: 'tourism', label: 'Tourism tax', type: 'money', value: r => r.tourismTax ?? null, hidden: true, filter: false },
+    { key: 'otaTax', label: 'Tax kept by the channel', type: 'money', value: r => r.otaTax ?? null, hidden: true, filter: false },
+    { key: 'deposit', label: 'Deposit', type: 'money', value: r => r.deposit ?? null, hidden: true, filter: false },
     { key: 'received', label: 'Received', type: 'money', value: r => r.received, hidden: true, filter: false },
     { key: 'outstanding', label: 'Outstanding', type: 'money', value: r => (['cancelled', 'no_show'].includes(r.state) ? 0 : r.outstanding), hidden: true, filter: false },
     { key: 'status', label: 'Status', type: 'status', value: r => stayPhase(r), text: r => statusLabel('stay', stayPhase(r)), sortKey: 'status', width: 130,
@@ -365,7 +381,9 @@ export default function BookingsPage() {
             title="Every reservation under these filters with the full money breakdown and each payment, as CSV."
             disabled={!data || total === 0} disabledReason="Nothing to export for this tab and these filters.">Money CSV</Button>
         </>}
-        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => { setPrefill(null); setCreating(true); }}>Create reservation</Button>} />
+        primary={demoOn
+          ? <Button size="sm" variant="primary" icon={<Icon name="FlaskConical" size="sm" />} onClick={() => setAddingSample(true)}>Sample reservation</Button>
+          : <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => { setPrefill(null); setCreating(true); }}>Create reservation</Button>} />
 
       <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onImportFile} className="hidden" aria-hidden />
 
@@ -433,8 +451,9 @@ export default function BookingsPage() {
             {todoMeta && <span className="font-semibold text-ink">{todoMeta.label}</span>}
             <Total label="Reservations" value={num(totals.bookings)} />
             <Total label="Nights" value={num(totals.nights)} />
-            <Total label="Guest total" value={rm(totals.gross, { cents: false })} />
-            <Total label="Service fee" value={rm(totals.fees, { cents: false })} />
+            <Total label="Guest total" value={rm(totals.gross)} />
+            <Total label="Service fee" value={rm(totals.fees)} />
+            {totals.payout !== undefined && <Total label="Host payout" value={rm(totals.payout)} />}
             {todoMeta?.money && <Total label={todo === 'unpaid' ? 'Owed by guests' : 'Owed by channels'} value={rm(totals.outstanding, { cents: false })}
               title={todo === 'unpaid' ? 'Guest total less what has been received, for these direct reservations.' : 'The host payout expected less what has arrived, for these past reservations.'} />}
             {todo === 'payout' && canMoney && <span className="text-muted-ink">Tick the reservations the channel has paid out, then mark them received.</span>}
@@ -445,7 +464,7 @@ export default function BookingsPage() {
             <ChannelMark ch={b.channel} size={22} />
             <span className="flex flex-col gap-[3px] min-w-0 flex-1">
               <span className="flex items-center justify-between gap-2">
-                <span className={cx('text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis', stayWho(b).missing && 'text-muted-ink')}>{stayWho(b).name}</span>
+                <span className="flex items-center gap-1.5 min-w-0"><span className={cx('text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis', stayWho(b).missing && 'text-muted-ink')}>{stayWho(b).name}</span><SampleMark kind={b.sample} /></span>
                 <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
               </span>
               <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? (stayWho(b).missing ? 'No guest name, no reference' : 'No reference')} · {b.unitNumber} · {b.propertyName}</span>
@@ -459,6 +478,7 @@ export default function BookingsPage() {
         )}
       />
 
+      {addingSample && <DemoReservationModal onClose={() => setAddingSample(false)} onSaved={newId => { setAddingSample(false); reload(); setOpenId(newId); }} />}
       <BookingDrawer id={openId} summary={onPage} onClose={() => setOpenId(null)} onChanged={reload} onDuplicated={newId => setOpenId(newId)} />
 
       {creating && <CreateReservationModal units={UNITS} prefill={prefill} onClose={() => setCreating(false)} onCreate={createReservation} />}

@@ -1,5 +1,7 @@
 import { type Env, all, one, run, audit, nowIso } from './db';
-import { ensureTurnovers, replanTurnover } from './cleaning';
+import { ensureTurnovers, replanTurnover, CLEAN_KINDS_SQL } from './cleaning';
+import { overdueCleans } from './cleanOverdue';
+import { cleanDeadline } from '../../src/lib/cleanOverdue';
 import { hostplatformConfigured, hostplatformProperties, hostplatformReservationPage, type HpReservation } from './hostplatform';
 import { mapApiReservations } from './hostplatformImport';
 import { type Db, importReservations } from './hostplatformImportDb';
@@ -11,6 +13,7 @@ import { cleaningNotice, repairNotice } from './notices';
 import { releaseRepairBlocks } from './repairBlocks';
 import { hasAttendance } from './attendance';
 import { FORGOTTEN_AFTER_HOURS } from './attendanceCalc';
+import { dueDepartures, markGuestLeft } from './guestLeft';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -35,6 +38,33 @@ export async function channexOutbox(env: Env, o: RunOptions = {}): Promise<JobRe
   if (o.dryRun) return { job: 'channex-outbox', summary: due.length ? `Would send ${plural(due.reduce((n, d) => n + d.n, 0), 'due row')}.` : 'Nothing due.', items };
   await flushWhenQuiet(env);
   return { job: 'channex-outbox', summary: due.length ? `Sent or rescheduled ${plural(due.reduce((n, d) => n + d.n, 0), 'due row')}.` : 'Nothing due.', items };
+}
+
+/** Every 5 minutes: retry the Mail Center emails whose first send failed (CONTS-0004). The supply chain engine runs
+ *  no schedule of its own (engine/backend/wrangler.production.toml), so this knocks on its retry route with
+ *  CONTS_CRON_SECRET (engine/backend/src/conts/mail-cron.ts). Off until both the address and the secret are set. */
+export async function engineMailOutbox(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const key = (env.CONTS_CRON_SECRET ?? '').trim();
+  const api = (env.SCM_ENGINE_API ?? '').trim().replace(/\/+$/, '');
+  if (!key || !api) return { job: 'engine-mail-outbox', summary: 'Not connected here (SCM_ENGINE_API or CONTS_CRON_SECRET not set): nothing retried.' };
+  if (o.dryRun) return { job: 'engine-mail-outbox', summary: `Would ask ${api} to retry its failed emails.` };
+  try {
+    const res = await fetch(`${api}/api/conts-cron/mail-outbox`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(25_000),
+    });
+    const body = await res.json().catch(() => null) as { processed?: number; sent?: number; failed?: number } | null;
+    if (!res.ok || !body) {
+      console.error('Engine email retry refused', res.status);
+      return { job: 'engine-mail-outbox', summary: `Engine email retry refused (${res.status}).` };
+    }
+    return { job: 'engine-mail-outbox', summary: body.processed ? `Retried ${plural(body.processed ?? 0, 'email')}: ${body.sent ?? 0} sent, ${body.failed ?? 0} given up.` : 'Nothing to retry.' };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    console.error('Engine email retry not run', error);
+    return { job: 'engine-mail-outbox', summary: 'Engine email retry not run.', error };
+  }
 }
 
 /** Every 5 minutes (from the every-minute trigger): ask the website to send the Houzs IT Hub the same health
@@ -214,17 +244,25 @@ async function hostplatformWrite(env: Env, job: string, startedAt: Date, w: { up
   return { dryRun: false as const, pulled: pulled.length, created: result?.created ?? 0, updated: result?.updated ?? 0, items: [...items, ...problems.slice(0, 20)] };
 }
 
-/** Hourly: work past its time. A clean past its due time becomes Overdue and its cleaner and the operations managers
- *  are told once; a repair job left open too long (urgent: a day, otherwise a week) is flagged once; finalised owner
- *  statements unsent for three days are flagged to finance. Only work due in the last 7 days is announced, so the first
- *  run on old imported data does not flood anyone. */
+/** Hourly: work past its time. A cleaning job becomes Overdue by the one rule (src/lib/cleanOverdue.ts: still not done at
+ *  the next guest's check-in, or after midnight at the end of its day with no check-in), and its cleaner and the
+ *  operations managers are told once; other tasks (an inspection) when past their due time. A repair job left open too
+ *  long (urgent: a day, otherwise a week) is flagged once; finalised owner statements unsent for three days are flagged
+ *  to finance. Only work that fell due in the last 7 days is announced, so old imported data does not flood anyone. */
 export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobReport> {
   const now = (o.now ?? new Date()).toISOString();
-  const weekAgo = new Date(Date.parse(now) - 7 * 864e5).toISOString();
-  const tasks = await all<{ id: string; due_at: string; kind: string; state: string }>(env, `
+  const weekAgo = Date.parse(now) - 7 * 864e5;
+  const OPEN = ['open', 'assigned', 'in_progress', 'reopened'];
+  const cleans = (await overdueCleans(env, Date.parse(now))).filter(t => OPEN.includes(t.state));
+  const others = await all<{ id: string; due_at: string; kind: string; state: string }>(env, `
     SELECT id, due_at, kind, state FROM tasks
-    WHERE state IN ('open','assigned','in_progress','reopened') AND due_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' AND due_at::timestamptz < ?::timestamptz`, now);
-  const recentCleans = tasks.filter(t => Date.parse(t.due_at) >= Date.parse(weekAgo) && /^(turnover|deep_clean|light_clean|inspection)$/.test(t.kind));
+    WHERE state IN ('open','assigned','in_progress','reopened') AND kind NOT IN ${CLEAN_KINDS_SQL}
+      AND due_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' AND due_at::timestamptz < ?::timestamptz`, now);
+  const tasks = [...cleans.map(t => ({ id: t.id, kind: t.kind, state: t.state })), ...others];
+  const recentCleans = [
+    ...cleans.filter(t => cleanDeadline(t.day, t.checkIn) >= weekAgo),
+    ...others.filter(t => t.kind === 'inspection' && Date.parse(t.due_at) >= weekAgo),
+  ];
   const repairs = await all<{ id: string; urgency: string; reported_at: string }>(env, `
     SELECT id, urgency, reported_at FROM maintenance_issues
     WHERE state IN ('open','assigned','in_progress','reopened') AND reported_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
@@ -258,6 +296,29 @@ export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobRep
     });
   }
   return { job: 'overdue-sweep', summary: `Marked ${plural(tasks.length, 'task')} Overdue; announced ${recentCleans.length} cleaning jobs, ${repairs.length} maintenance jobs, ${stale.length} unsent owner statements.`, items };
+}
+
+/** Every 5 minutes: "Guest has left" by itself at the checkout time (owner, 2 Nov 2026, reversing the 26 Oct manual-only
+ *  rule): 11:00 (the standard checkout) or the late checkout's time when one is requested, e.g. 13:00. The same action
+ *  and audit as a staff tap, by System; the moment recorded is the checkout time itself, in +08:00 form, which is how
+ *  the board says "Auto at 13:00". Only today's checkouts not marked yet, never one staff undid (lib/guestLeft
+ *  dueDepartures); a repeat run finds nothing left to do. At most 40 per run. */
+export async function autoGuestLeft(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const now = o.now ?? new Date();
+  const due = await dueDepartures(env, now.getTime());
+  const day = mytParts(now).day;
+  const items = due.map(d => `${d.id}: checkout ${d.out_at}${d.late ? ' (late checkout)' : ''}${d.task_id ? '' : ', no cleaning job yet: one is created'}`);
+  if (o.dryRun) return { job: 'auto-guest-left', summary: `Would mark ${plural(due.length, 'guest')} as left at their checkout time.`, items };
+  let marked = 0;
+  for (const d of due) {
+    const task = d.task_id ? await one<any>(env, `SELECT t.id, t.unit_id, t.state, t.kind, t.reservation_id, t.assignee_id, t.guest_left_at, ? AS day FROM tasks t WHERE t.id = ?`, d.check_out, d.task_id) : null;
+    const done = await markGuestLeft(env, {
+      task, reservation: { id: d.id, unit_id: d.unit_id, state: d.state, check_out: d.check_out, check_out_time: d.check_out_time },
+      actor: { id: null, label: 'System', source: 'system' }, leftAt: `${day}T${d.out_at}:00+08:00`, auto: true,
+    });
+    if (done) marked++;
+  }
+  return { job: 'auto-guest-left', summary: `Marked ${plural(marked, 'guest')} as left at their checkout time.`, items };
 }
 
 /** Hourly: a punch left open longer than FORGOTTEN_AFTER_HOURS is marked a forgotten clock-out, so the desk and the
@@ -329,7 +390,7 @@ export const CRON = {
 /** What each trigger runs, in order. */
 export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<JobReport>)[]> = {
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
-  [CRON.fiveMinutes]: [hostplatformPull],
+  [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox],
   [CRON.quarterHour]: [drainOutbox, repairBlockSweep],
   [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep],
   [CRON.daily]: [dailyDigest],

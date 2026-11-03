@@ -77,8 +77,11 @@ export function channexUpdateWebhookMask(env: Env, webhookId: string, p: { callb
 
 /** Airbnb, Booking.com and Expedia only — Channex has no Messages API for Agoda, so an Agoda
  *  thread stays local-only (its replies just never leave this app). */
-export const channexMessageThreads = (env: Env) => channexFetch<{ data: any[] }>(env, '/message_threads');
-export const channexThreadMessages = (env: Env, threadId: string) => channexFetch<{ data: any[] }>(env, `/message_threads/${threadId}/messages`);
+/** One page of Channex's list endpoints. Channex answers 10 per page unless asked; 100 is its largest page. */
+export const CHANNEX_PAGE = 100;
+const paged = (page: number) => `pagination[page]=${page}&pagination[limit]=${CHANNEX_PAGE}`;
+export const channexMessageThreads = (env: Env, page = 1) => channexFetch<{ data: any[] }>(env, `/message_threads?${paged(page)}`);
+export const channexThreadMessages = (env: Env, threadId: string) => channexFetch<{ data: any[] }>(env, `/message_threads/${threadId}/messages?${paged(1)}`);
 export function channexSendMessage(env: Env, threadId: string, body: string) {
   return channexFetch<{ data: { id: string } }>(env, `/message_threads/${threadId}/messages`, {
     method: 'POST',
@@ -88,7 +91,7 @@ export function channexSendMessage(env: Env, threadId: string, body: string) {
 
 /** Reviews Application: same three OTAs as messages. Scores are out of 10 — divide by 2 for our
  *  0-5 scale. */
-export const channexReviews = (env: Env) => channexFetch<{ data: any[] }>(env, '/reviews');
+export const channexReviews = (env: Env, page = 1) => channexFetch<{ data: any[] }>(env, `/reviews?${paged(page)}`);
 export function channexReplyToReview(env: Env, reviewId: string, reply: string) {
   return channexFetch(env, `/reviews/${reviewId}/reply`, { method: 'POST', body: JSON.stringify({ reply: { reply } }) });
 }

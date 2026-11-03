@@ -208,12 +208,40 @@ describe('nothing paid twice, nothing half-saved', () => {
     expect(sb.tables.staff_receipts[0].status).toBe('REJECTED');
   });
 
-  test('a cost on a money or control account, or a project that is not the company\'s, is refused', async () => {
+  test('a project that is not the company\'s is refused', async () => {
     const sb = world();
-    sb.tables.accounts.push({ company_id: CO, account_code: '310-0010', account_name: 'Bank', account_type: 'ASSET', is_active: true, acc_money: true, parent_code: null, special_type: null });
     const a = appFor(sb, OPS, 'session');
-    expect((await handIn(a, { lines: [{ amountSen: 4500, department: 'shared', accountCode: '310-0010' }] })).status).toBe(422);
     expect((await handIn(a, { lines: [{ amountSen: 4500, department: 'shared', projectId: 999 }] })).status).toBe(422);
+  });
+
+  /* One form (chew, 2 Nov 2026): staff choose no account, and a line's department is the person's, whatever is sent. */
+  test('the department comes from the person and no account is kept, whatever the client sends', async () => {
+    const sb = world();
+    const conts: Staff = { ...OPS, userId: 'u-pm', departmentId: 'pm', side: 'conts' };
+    expect((await handIn(appFor(sb, conts, 'session'), { lines: [{ amountSen: 4500, department: 'supply', accountCode: '601-0001' }] })).status).toBe(201);
+    expect((await handIn(appFor(sb, OPS, 'session'), { lines: [{ amountSen: 4500, department: 'rental', accountCode: '310-0010' }] })).status).toBe(201);
+    expect(sb.tables.staff_receipt_lines.map(l => [l.department, l.account_code])).toEqual([['rental', null], ['shared', null]]);
+  });
+
+  test('a job line is Rental even from a Dream Crafter person', async () => {
+    const sb = world();
+    const dc: Staff = { ...OPS, userId: 'u-dc', departmentId: 'reno', side: 'dream_crafter' };
+    expect((await handIn(appFor(sb, dc, 'session'), { lines: [{ amountSen: 4500, maintenanceIssueId: 'M1', department: 'supply' }] })).status).toBe(201);
+    expect(sb.tables.staff_receipt_lines[0]).toMatchObject({ department: 'rental', unit_id: 'UNIT-A01' });
+  });
+
+  test('a payment request keeps no account and takes the person\'s department', async () => {
+    const sb = world();
+    const r = await post(appFor(sb, OPS, 'session'), '/requests', { type: 'PAYMENT', payeeName: 'Plumber Lim', amountSen: 3_000, files: [PNG], lines: [{ amountSen: 3_000, department: 'rental', accountCode: '601-0001' }] });
+    expect(r.status, await r.clone().text()).toBe(201);
+    expect(sb.tables.payment_request_lines.map(l => [l.department, l.account_code])).toEqual([['shared', null]]);
+  });
+
+  test('suppliers: every one of the company\'s when nothing is typed, none of another company\'s', async () => {
+    const sb = world();
+    sb.tables.suppliers.push({ id: 'S2', company_id: CO, code: '400-B001', name: 'BEST PAINT' }, { id: 'S9', company_id: 9, code: '400-Z001', name: 'OTHER CO' });
+    const body = await (await get(appFor(sb, OPS, 'session'), '/suppliers')).json() as { suppliers: Array<{ id: string }> };
+    expect(body.suppliers.map(s => s.id)).toEqual(['S1', 'S2']);
   });
 });
 

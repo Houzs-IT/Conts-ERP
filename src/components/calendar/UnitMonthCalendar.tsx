@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { standardOn, type LevelPrices } from '../../lib/pricing';
 import { useSearchParams } from 'react-router-dom';
 import Icon from '../Icon';
 import ChannelMark from '../ChannelMark';
@@ -29,6 +30,7 @@ import { go } from '../../lib/go';
 interface Payload {
   from: string; to: string; units: Unit[]; blocks: Block[];
   baseRate: Record<string, number>; weekendRate?: Record<string, number | null>; rates?: Record<string, number>;
+  levelPrices?: Record<string, LevelPrices>; holidayNights?: Record<string, string[]>;
   canSetRates?: boolean; generatedAt: string;
 }
 
@@ -197,6 +199,8 @@ function MonthView({ unit, data, ym, first, next, nights, today, error, reload, 
   const priceOn = (iso: string) => {
     const saved = data.rates?.[`${unit.id}:web:${iso}`];
     if (saved != null) return saved;
+    const lp = data.levelPrices?.[`${unit.id}:web`];
+    if (lp) return standardOn(lp, iso, !!data.holidayNights?.[unit.id]?.includes(iso));
     const base = data.baseRate[unit.id] ?? 0;
     const dow = new Date(parse(iso)).getUTCDay();
     return dow === 5 || dow === 6 ? data.weekendRate?.[unit.id] ?? base : base;

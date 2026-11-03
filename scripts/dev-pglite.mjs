@@ -75,5 +75,8 @@ await new Promise((resolve, reject) => {
   spawn(process.execPath, ['scripts/local-demo-setup.mjs'], { cwd: root, stdio: 'inherit', env: { ...process.env, DATABASE_URL: url } })
     .on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`local-demo-setup exited ${code}`))));
 });
+// Reviews and Messages examples for looking at those screens (local only, never loaded anywhere else).
+try { await pg.exec(readFileSync(join(root, 'scripts', 'demo-reviews-messages.sql'), 'utf8')); console.log('reviews and messages demo loaded'); }
+catch (e) { console.log(`reviews and messages demo not loaded: ${e.message}`); }
 await pg.exec('set search_path = pos, public');
 console.log(`ready: ${url}`);

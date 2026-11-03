@@ -50,7 +50,7 @@ import { useSuppliers, useSupplierDetail } from '../../vendor/scm/lib/suppliers-
 import { sortByText } from '../../vendor/scm/lib/sort-options';
 import { useAuth as useHouzsAuth } from '../../auth/AuthContext';
 import { canUseLedger } from '../../conts/ledger';
-import { DEPARTMENT_OPTIONS, DepartmentSelect, departmentLabel, nextLineDepartment, type Department } from '../../conts/department';
+import { departmentOf } from '../../conts/department';
 import { MoneyInput } from '../../vendor/scm/components/MoneyInput';
 import { DateField } from '../../vendor/scm/components/DateField';
 import { AccountSelect } from '../../vendor/scm/components/AccountSelect';
@@ -67,9 +67,11 @@ import { useUnsavedWork } from '../../lib/unsavedWork';
 
 import { fmtMoneySen } from '../../vendor/shared/format';
 import { ProjectLimitField } from '../../conts/ProjectLimitField';
-import { UnitName, UnitPicker } from '../../conts/Pickers';
-import { VoucherForSwitch } from '../../conts/VoucherForSwitch';
-import { applyFor, departmentFor, forOfLines, nextLineUnit, projectShown, whatSwitchingDrops, type VoucherFor } from '../../conts/voucherPurpose';
+import { ProjectName, UnitName } from '../../conts/Pickers';
+import {
+  DepartmentTag, LineForSwitch, LineTarget, lineDepartment, missingTarget, purposeOfNew, purposeOfSaved, purposePayload,
+  repurpose, useProjectSides, voucherLineCss, type PurposeDraft,
+} from '../../conts/VoucherLineFor';
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
 
@@ -93,26 +95,22 @@ type EditAllocRow = {
 const allocKeyOf = (a: Record<string, unknown>): string =>
   String(a.apInvoiceId ?? a.ap_invoice_id ?? a.piId ?? a.pi_id ?? '');
 
-type EditLine = {
+/* Conts (chew 2 Nov 2026; plan 2026-11-02-voucher-line-purpose): each line says what it is for (Unit, Project or
+   Company), names its unit or project, and carries the department that follows (conts/VoucherLineFor.tsx). */
+type EditLine = PurposeDraft & {
   rid:              string;
   description:      string;
   debitAccountCode: string;
   amountSen:      number;
-  /* Conts: the line's department (spec 3.5), required on an expense line. */
-  department:       Department | '';
-  /* Conts (chew 2 Nov 2026): a Rental line's unit, finance only. */
-  unitId:           string | null;
 };
 
-const newLine = (department: Department | '' = '', unitId: string | null = null): EditLine => ({
+const newLine = (purpose: PurposeDraft = purposeOfNew([])): EditLine => ({
   rid:              `l${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   description:      '',
   debitAccountCode: '',
   amountSen:      0,
-  department,
-  unitId:           department === 'rental' ? unitId : null,
+  ...purpose,
 });
-const departmentOf = (d: unknown): Department | '' => (DEPARTMENT_OPTIONS.some((o) => o.value === d) ? (d as Department) : '');
 
 function InfoCell({ label, value }: { label: string; value: string | null | undefined }) {
   return (
@@ -236,7 +234,7 @@ export const PaymentVoucherDetail = () => {
   const [creditAccountCode, setCreditAccountCode] = useState('');
   const [voucherDate, setVoucherDate]             = useState('');
   const [notes, setNotes]                         = useState('');
-  // Conts (finance phase 1.5; SOP 3.4): the project this voucher pays (on its lines), for its limit.
+  // Conts (finance phase 1.5; SOP 3.4): an AP payment's one project (on its lines), for its limit.
   const [editProjectId, setEditProjectId]         = useState<number | null>(null);
   /* Multi-currency (Phase 1-A) — MYR per 1 unit of the PV currency, string-typed.
      Seeded from the voucher on enter-edit; shown only for a foreign currency. */
@@ -246,10 +244,8 @@ export const PaymentVoucherDetail = () => {
      editable as the fallback. Mirrors PaymentVoucherNew. */
   const [myrPaidSen, setMyrPaidSen]               = useState<number | null>(null);
   const [editLines, setEditLines]                 = useState<EditLine[]>([]);
-  /* Conts (chew 2 Nov 2026): who the voucher is for; it sets every line's department. */
-  const [voucherFor, setVoucherFor]               = useState<VoucherFor | ''>('');
-  /* Chosen, or else what the lines already say (each line's department picked by hand). */
-  const effFor: VoucherFor | '' = voucherFor || forOfLines(editLines);
+  /* Each Project line's project: its funding and side set the line's tag before the save. */
+  const sideOf = useProjectSides();
   /* A Customer Refund (§14) has ONE line the system writes; an edit moves the
      amount and the server re-composes it (refundAmountSen), never the lines. */
   const isRefundPv = isRefundPurpose(pv?.purpose);
@@ -292,37 +288,36 @@ export const PaymentVoucherDetail = () => {
     setEditAdvanceSen(pvTypeOf(pv.purpose) === 'SUPPLIER_PAYMENT'
       ? Math.max(0, Number(pv.total_sen ?? 0) - applied.reduce((s, [, v]) => s + v, 0))
       : 0);
+    /* Each line opens as what it was for: its unit, its project, or else its department (an older voucher's
+       Rental line with no unit is a Unit line still to be filled in; see lineForOf). */
     const loaded: EditLine[] = lines.length > 0
-      ? lines.map((l) => ({
-          rid:              `l${l.id}`,
-          description:      l.description ?? '',
-          debitAccountCode: l.debit_account_code ?? '',
-          amountSen:      Number(l.amount_sen ?? 0),
-          department:     departmentOf(l.department),
-          unitId:         departmentOf(l.department) === 'rental' && (l as { unit_id?: string | null }).unit_id ? String((l as { unit_id?: string | null }).unit_id) : null,
-        }))
+      ? lines.map((l) => {
+          const saved = l as { unit_id?: string | null; project_id?: number | null };
+          return {
+            rid:              `l${l.id}`,
+            description:      l.description ?? '',
+            debitAccountCode: l.debit_account_code ?? '',
+            amountSen:      Number(l.amount_sen ?? 0),
+            ...purposeOfSaved({
+              department: departmentOf(l.department),
+              unitId:     saved.unit_id ? String(saved.unit_id) : null,
+              projectId:  saved.project_id == null ? null : Number(saved.project_id),
+            }),
+          };
+        })
       : [newLine()];
     setEditLines(loaded);
-    setVoucherFor(forOfLines(loaded));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing, pv?.id]);
 
   const setLine  = (rid: string, patch: Partial<EditLine>) =>
     setEditLines((prev) => prev.map((l) => (l.rid === rid ? { ...l, ...patch } : l)));
   const dropLine = (rid: string) => setEditLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.rid !== rid)));
-  const addLine  = () => setEditLines((prev) => [...prev, newLine(departmentFor(effFor) || nextLineDepartment(prev), nextLineUnit(prev))]);
-  /* Switching who it is for re-sets every line's department; it asks first when units or the project would go. */
-  const chooseFor = async (f: VoucherFor) => {
-    const drops = whatSwitchingDrops(editLines, editProjectId, f);
-    if (drops.length > 0 && !(await askConfirm({
-      title: `Switch to ${f === 'rental' ? 'Rental' : f === 'renovation' ? 'Renovation' : 'Company'}?`,
-      body: `This clears ${drops.join(' and ')} already chosen.`,
-      confirmLabel: 'Switch',
-    }))) return;
-    setVoucherFor(f);
-    setEditLines((prev) => applyFor(prev, f));
-    if (f === 'rental' || f === 'company') setEditProjectId(null);
-  };
+  /* A new line is for what the line above was for. */
+  const addLine  = () => setEditLines((prev) => [...prev, newLine(purposeOfNew(prev))]);
+  /* A line's For, unit or project changed: what no longer applies goes, and the department follows. */
+  const setLinePurpose = (rid: string, patch: Partial<Pick<PurposeDraft, 'lineFor' | 'unitId' | 'projectId'>>) =>
+    setEditLines((prev) => prev.map((l) => (l.rid === rid ? repurpose(l, patch, sideOf) : l)));
 
   const editLinesTotalSen = useMemo(() => editLines.reduce((s, l) => s + l.amountSen, 0), [editLines]);
   const viewTotalSen = Number(pv?.total_sen ?? 0);
@@ -449,9 +444,11 @@ export const PaymentVoucherDetail = () => {
     if (apEdit && !apAccountCode) { void notify({ title: 'No AP control account', body: 'The AP / Other Creditor role has no account yet — set it on Accounting.', tone: 'error' }); return; }
     if (apEdit && editTotalSen <= 0) { void notify({ title: 'Nothing to pay yet', body: 'Tick an invoice, type a partial amount, or enter a prepay figure.', tone: 'error' }); return; }
     if (!isRefundPv && !apEdit && realLines.length === 0) { notify({ title: 'Add at least one line', body: 'Each line needs a debit account and an amount > 0.', tone: 'error' }); return; }
-    if (!isRefundPv && !apEdit && !effFor) { void notify({ title: 'Choose who this is for', body: 'Rental, Renovation or Company — it sets each line’s department.', tone: 'error' }); return; }
-    if (!isRefundPv && !apEdit && effFor === 'renovation' && editProjectId == null) { void notify({ title: 'Choose the project', body: 'Choose the project this renovation cost belongs to.', tone: 'error' }); return; }
-    if (!isRefundPv && !apEdit && realLines.some((l) => !l.department)) { void notify({ title: 'Choose each line’s department', body: 'Rental, Renovation or Shared — the reports by department read it.', tone: 'error' }); return; }
+    if (!isRefundPv && !apEdit) {
+      /* A Unit line names its unit, a Project line its project. */
+      const missing = missingTarget(editLines.map((l, i) => ({ ...l, n: i + 1 })).filter((l) => l.debitAccountCode && l.amountSen > 0));
+      if (missing) { void notify({ ...missing, tone: 'error' }); return; }
+    }
     if (editOverAllocated) {
       notify({ title: 'Applied more than the voucher total', body: `You've applied ${fmtRm(editAllocatedSen)} to PIs but the voucher total is only ${fmtRm(editTotalSen)}.`, tone: 'error' });
       return;
@@ -486,7 +483,8 @@ export const PaymentVoucherDetail = () => {
         creditAccountCode,
         voucherDate,
         notes:             notes || null,
-        ...(isRefundPv ? {} : { projectId: projectShown(effFor, apEdit) ? editProjectId : null }),
+        /* Only an AP payment names one project for the voucher; a plain voucher's projects ride on its lines. */
+        ...(apEdit ? { projectId: editProjectId } : {}),
         // Multi-currency (Phase 1-A) — resolved currency + rate. MYR forces 1
         // (server enforces too); a blank/invalid foreign rate → 1.
         currency:          editCurrency,
@@ -501,8 +499,7 @@ export const PaymentVoucherDetail = () => {
               description:      l.description || undefined,
               debitAccountCode: l.debitAccountCode,
               amountSen:      l.amountSen,
-              department:     l.department || undefined,
-              unitId:         l.department === 'rental' ? l.unitId : null,
+              ...purposePayload(l, sideOf(l.projectId)),
             })) }),
         // Always send allocations for a SUPPLIER_PAYMENT edit (empty clears
         // them); FREIGHT/OTHER omit the key so the server leaves them untouched.
@@ -704,7 +701,8 @@ export const PaymentVoucherDetail = () => {
               <InfoCell label="Currency" value={viewCurrency} />
               {viewCurrency !== 'MYR' && <InfoCell label="Exchange Rate" value={`${pv.exchange_rate} (MYR per 1 ${viewCurrency})`} />}
               <InfoCell label="Notes" value={pv.notes ?? null} />
-              {!isRefundPv && lines.some((l) => l.project_id != null) && (
+              {/* An AP payment's one project, from its bills; a plain voucher shows each line's own below. */}
+              {!isRefundPv && pvTypeOf(pv.purpose) === 'SUPPLIER_PAYMENT' && lines.some((l) => l.project_id != null) && (
                 <ProjectLimitField projectId={lines.find((l) => l.project_id != null)?.project_id ?? null} onChange={() => undefined} amountSen={isDraft && !pv.submitted_at ? viewTotalSen : 0} disabled
                   fieldClass={styles.field} labelClass={styles.fieldLabel} inputClass={styles.fieldInput} />
               )}
@@ -783,13 +781,8 @@ export const PaymentVoucherDetail = () => {
                 <span className={styles.fieldLabel}>Notes</span>
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className={styles.fieldInput} rows={2} style={{ resize: 'vertical', minHeight: 60 }} />
               </label>
-              {!isRefundPv && !apEdit && (
-                <div className={styles.field}>
-                  <VoucherForSwitch value={effFor} onChange={(f) => void chooseFor(f)} labelClass={styles.fieldLabel} />
-                </div>
-              )}
-              {!isRefundPv && projectShown(effFor, apEdit) && (
-                <ProjectLimitField projectId={editProjectId} onChange={setEditProjectId} amountSen={viewTotalSen} exceptPvId={id} required={effFor === 'renovation'}
+              {apEdit && (
+                <ProjectLimitField projectId={editProjectId} onChange={setEditProjectId} amountSen={viewTotalSen} exceptPvId={id}
                   fieldClass={styles.field} labelClass={styles.fieldLabel} inputClass={styles.fieldInput} />
               )}
             </div>
@@ -821,7 +814,7 @@ export const PaymentVoucherDetail = () => {
                     <th style={{ padding: '6px 8px' }}>#</th>
                     <th style={{ padding: '6px 8px' }}>Account (Debit)</th>
                     <th style={{ padding: '6px 8px' }}>Description</th>
-                    <th style={{ padding: '6px 8px' }}>Department</th>
+                    <th style={{ padding: '6px 8px' }}>For</th>
                     <th style={{ padding: '6px 8px', textAlign: 'right' }}>Amount</th>
                   </tr>
                 </thead>
@@ -840,8 +833,15 @@ export const PaymentVoucherDetail = () => {
                         </div>
                       </td>
                       <td style={{ padding: '6px 8px' }}>
-                        {departmentLabel(l.department as string | null | undefined)}
-                        {(l as { unit_id?: string | null }).unit_id ? <span style={{ color: 'var(--fg-muted)' }}> · <UnitName id={(l as { unit_id?: string | null }).unit_id} /></span> : null}
+                        {/* The line's tag, and its unit or its project. */}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <DepartmentTag department={departmentOf(l.department) || 'supply'} />
+                          {(l as { unit_id?: string | null }).unit_id
+                            ? <span style={{ color: 'var(--fg-muted)' }}><UnitName id={(l as { unit_id?: string | null }).unit_id} /></span>
+                            : (l as { project_id?: number | null }).project_id != null
+                              ? <span style={{ color: 'var(--fg-muted)' }}><ProjectName id={(l as { project_id?: number | null }).project_id} /></span>
+                              : null}
+                        </span>
                       </td>
                       <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtRm(Number(l.amount_sen ?? 0), currency)}</td>
                     </tr>
@@ -851,59 +851,49 @@ export const PaymentVoucherDetail = () => {
             )
           ) : (
             <>
+              {/* One row per line, left to right: For · Unit or Project ·
+                  Account · Description · Amount · tag, as on PV New. */}
+              <div className={voucherLineCss.lines}>
               {editLines.map((l, idx) => (
-                <div key={l.rid} style={{
-                  background: 'var(--c-paper)', border: '1px solid var(--line)',
-                  borderRadius: 'var(--radius-lg)', padding: 'var(--space-4)',
-                  display: 'flex', flexDirection: 'column', gap: 'var(--space-3)',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontFamily: 'var(--font-button)', fontSize: 'var(--fs-12)', fontWeight: 700, letterSpacing: '0.10em', color: 'var(--fg-muted)' }}>LINE {idx + 1}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                      <span className={styles.previewPrice}>{fmtRm(l.amountSen, currency)}</span>
-                      {editLines.length > 1 && (
-                        <button type="button" onClick={() => dropLine(l.rid)} title="Remove line"
-                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--c-festive-b, #B8331F)', padding: 4, display: 'inline-flex' }}>
-                          <Trash2 {...SM_ICON} />
-                        </button>
-                      )}
-                    </div>
+                <div key={l.rid} className={voucherLineCss.row}>
+                  <div className={`${voucherLineCss.cell} ${voucherLineCss.forCell}`}>
+                    <span className={styles.fieldLabel}>Line {idx + 1} · For</span>
+                    <LineForSwitch n={idx + 1} value={l.lineFor} onChange={(f) => setLinePurpose(l.rid, { lineFor: f })} />
                   </div>
-                  {/* Account first, then description, then amount — the owner's
-                      typing order (2026-09-08), as on PV New. */}
-                  <div className={styles.formGrid2}>
-                    <label className={styles.field}>
-                      <span className={styles.fieldLabel}>Account (Debit) *</span>
-                      <AccountSelect accounts={accounts} value={l.debitAccountCode} onChange={(v) => setLine(l.rid, { debitAccountCode: v })} className={styles.fieldInput} />
-                    </label>
-                    <label className={styles.field}>
-                      <span className={styles.fieldLabel}>Description</span>
-                      <input type="text" value={l.description} onChange={(e) => setLine(l.rid, { description: e.target.value })} className={styles.fieldInput} />
-                    </label>
+                  <div className={voucherLineCss.cell}>
+                    <span className={styles.fieldLabel}>{l.lineFor === 'unit' ? 'Unit *' : l.lineFor === 'project' ? 'Project *' : 'Paid for'}</span>
+                    <LineTarget n={idx + 1} line={l} inputClass={styles.fieldInput}
+                      onUnit={(u) => setLinePurpose(l.rid, { unitId: u })} onProject={(p) => setLinePurpose(l.rid, { projectId: p })} />
                   </div>
-                  <div className={styles.formGrid4} style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                    <label className={styles.field}>
-                      <span className={styles.fieldLabel}>Amount (MYR)</span>
-                      <MoneyInput bare valueSen={l.amountSen}
-                        onCommit={(sen) => setLine(l.rid, { amountSen: sen ?? 0 })}
-                        inputClassName={styles.fieldInput} selectOnFocus />
-                    </label>
-                    {effFor === 'mixed' || effFor === '' ? (
-                      <label className={styles.field}>
-                        <span className={styles.fieldLabel}>Department *</span>
-                        <DepartmentSelect className={styles.fieldInput} label={`Line ${idx + 1} department`} blank="Choose…"
-                          value={l.department} onChange={(d) => setLine(l.rid, { department: d, unitId: d === 'rental' ? l.unitId : null })} />
-                      </label>
-                    ) : l.department === 'rental' ? null : <span />}
-                    {l.department === 'rental' && (
-                      <div className={styles.field}>
-                        <span className={styles.fieldLabel}>Unit</span>
-                        <UnitPicker value={l.unitId} onChange={(u) => setLine(l.rid, { unitId: u })} inputClass={styles.fieldInput} ariaLabel={`Line ${idx + 1} unit`} />
-                      </div>
+                  <label className={voucherLineCss.cell}>
+                    <span className={styles.fieldLabel}>Account (Debit) *</span>
+                    <AccountSelect accounts={accounts} value={l.debitAccountCode} onChange={(v) => setLine(l.rid, { debitAccountCode: v })} className={styles.fieldInput} />
+                  </label>
+                  <label className={voucherLineCss.cell}>
+                    <span className={styles.fieldLabel}>Description</span>
+                    <input type="text" value={l.description} onChange={(e) => setLine(l.rid, { description: e.target.value })} className={styles.fieldInput} />
+                  </label>
+                  <label className={voucherLineCss.cell}>
+                    <span className={styles.fieldLabel}>Amount (MYR)</span>
+                    <MoneyInput bare valueSen={l.amountSen} aria-label={`line ${idx + 1} amount`}
+                      onCommit={(sen) => setLine(l.rid, { amountSen: sen ?? 0 })}
+                      inputClassName={styles.fieldInput} selectOnFocus />
+                  </label>
+                  <div className={voucherLineCss.cell}>
+                    <span className={styles.fieldLabel}>Department</span>
+                    <DepartmentTag n={idx + 1} department={lineDepartment(l, sideOf(l.projectId))} />
+                  </div>
+                  <div className={voucherLineCss.remove}>
+                    {editLines.length > 1 && (
+                      <button type="button" onClick={() => dropLine(l.rid)} title="Remove line" aria-label={`Remove line ${idx + 1}`}
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--c-festive-b, #B8331F)', padding: 4, display: 'inline-flex' }}>
+                        <Trash2 {...SM_ICON} />
+                      </button>
                     )}
                   </div>
                 </div>
               ))}
+              </div>
               <button type="button" onClick={addLine}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '12px 14px', border: '1px dashed var(--c-orange)', borderRadius: 'var(--radius-md)', background: 'transparent', color: 'var(--c-orange)', fontFamily: 'var(--font-sans)', fontSize: 'var(--fs-13)', fontWeight: 600, cursor: 'pointer' }}>
                 <Plus {...SM_ICON} /> Add another line

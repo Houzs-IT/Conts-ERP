@@ -160,5 +160,14 @@ check('Approvals switched off leaves To approve with its other screens', (() => 
   return !!part && !part.children.some((c) => c.badge === 'approvals') && part.children.length === 3;
 })());
 
+// My claims at the top of both sidebars (chew, 2 Nov 2026).
+{
+  const all = M.navFor('management', true);
+  const rentalFirst = all.find((g) => g.workspace === 'rental');
+  const supplyFirst = all.find((g) => g.workspace === 'supply');
+  check('My claims is in the first Rental group, after Dashboard', rentalFirst?.items[1]?.path === '/my-claims', JSON.stringify(rentalFirst?.items.map((x) => x.path)));
+  check('My claims is the first Dream Crafter group', supplyFirst?.items[0]?.path === '/supply/my-claims', JSON.stringify(supplyFirst));
+  check('My claims is on no other group', all.flatMap((g) => g.items.map((x) => x.path)).filter((p) => p === '/my-claims' || p === '/supply/my-claims').length === 2);
+}
 console.log(fails ? `\n${fails} failed` : '\nall passed');
 process.exit(fails ? 1 : 0);

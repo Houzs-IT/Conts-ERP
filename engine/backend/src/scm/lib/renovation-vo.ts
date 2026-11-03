@@ -314,7 +314,10 @@ export async function applyVo(
 }
 
 /** One line's edit from the SO page or the project PO tab. Absent = unchanged. `remove` omits the line whole;
-    variants and remark apply to the line that replaces it when the SKU changes. */
+    variants and remark apply to the line that replaces it when the SKU changes. Variants sent with the same SKU are a
+    re-specification (owner, 2 Nov 2026: a line a PO already buys changes its options by VO): the line is omitted and
+    added again, in the same room, carrying the new options, so its PO line is flagged CANCEL and the new one is
+    ordered as it now is. */
 export interface QuickLineEdit { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string }
 /** A line added on the SO page, in a room. */
 export interface QuickLineAdd { room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string }
@@ -336,13 +339,14 @@ export function quickVoLines(t: DocLineOut, e: QuickLineEdit, onPo: boolean, pro
   const base: NormLine = { ...line, parentId: null, kind: t.kind === 'CHILD' ? 'ITEM' : t.kind, soItemId: null };
   const omit = (n: number | null): NormLine => ({ ...base, id: crypto.randomUUID(), voChange: 'OMIT', omitTargetLineId: t.id, omitQty: n });
   if (e.remove) return { omit: omit(null), add: null, sameSku: true };
-  if (code === t.itemCode && qty === t.qty && price === t.unitPriceSen) return null;
   const sameSku = code === t.itemCode;
+  const respec = sameSku && e.variants !== undefined;
+  if (!respec && sameSku && qty === t.qty && price === t.unitPriceSen) return null;
   const add = (n: number): NormLine => ({
     ...base, id: crypto.randomUUID(), voChange: 'ADD', omitTargetLineId: null, omitQty: null, amountOverrideSen: null, qty: n, unitPriceSen: price,
     ...(sameSku || !product ? {} : { itemCode: code, description: product.name, unitCostSen: product.costSen, supplierId: product.supplierId, uom: product.uom ?? base.uom, stageCode: null }),
   });
-  if (sameSku && price === t.unitPriceSen && t.measureMilli === null) {
+  if (sameSku && !respec && price === t.unitPriceSen && t.measureMilli === null) {
     if (qty < t.qty) return { omit: omit(t.qty - qty), add: null, sameSku };
     if (onPo) return { omit: null, add: add(qty - t.qty), sameSku };
   }
@@ -354,7 +358,9 @@ export function quickVoLines(t: DocLineOut, e: QuickLineEdit, onPo: boolean, pro
 export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edits: QuickLineEdit[], newLines: QuickLineAdd[], title: string): Promise<Awaited<ReturnType<typeof applyVo>>> {
   const targets = await contractTargets(db, soDocNo);
   const bySoItem = new Map([...targets.values()].filter((t) => t.soItemId).map((t) => [t.soItemId!, t]));
-  const codes = [...new Set([...edits.map((e) => e.itemCode?.trim()), ...newLines.map((a) => a.itemCode.trim())].filter((c): c is string => !!c))];
+  /* A same-SKU re-specification needs its own product's group, to canonicalize and print the new options. */
+  const editCode = (e: QuickLineEdit): string | undefined => e.itemCode?.trim() || (e.variants !== undefined ? bySoItem.get(e.soItemId)?.itemCode ?? undefined : undefined);
+  const codes = [...new Set([...edits.map(editCode), ...newLines.map((a) => a.itemCode.trim())].filter((c): c is string => !!c))];
   const products = new Map<string, QuickProduct>();
   if (codes.length) {
     const rows = await db.q(
@@ -373,7 +379,7 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
     if (missing.length) throw refuse(422, 'unknown_products', `Products not in the catalog: ${missing.join(', ')}.`, { codes: missing });
   }
   const sections = new Map<string, NormSection>();
-  const adds: Array<{ lineId: string; fromSoItemId: string | null; sameSku: boolean; itemCode: string; variants?: Record<string, unknown>; remark?: string }> = [];
+  const adds: QuickAdd[] = [];
   const put = (heading: string, l: NormLine) => {
     const s = sections.get(heading) ?? { id: crypto.randomUUID(), heading, bandColor: null, sortOrder: sections.size + 1, lumpSumSen: null, pageBreakBefore: false, lines: [] };
     s.lines.push({ ...l, sortOrder: s.lines.length + 1 });
@@ -395,7 +401,7 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
     if (out.omit) put(t.sectionHeading, out.omit);
     if (out.add) {
       put(t.sectionHeading, out.add);
-      adds.push({ lineId: out.add.id, fromSoItemId: t.soItemId!, sameSku: out.sameSku, itemCode: out.add.itemCode!, variants: e.variants, remark: e.remark });
+      adds.push({ lineId: out.add.id, fromSoItemId: t.soItemId!, sameSku: out.sameSku, respec: out.sameSku && e.variants !== undefined, itemCode: out.add.itemCode!, variants: e.variants, remark: e.remark });
     }
   }
   for (const a of newLines) {
@@ -408,7 +414,7 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
       pageBreakBefore: false, voChange: 'ADD', omitTargetLineId: null, omitQty: null,
     };
     put(room || 'Additional works', line);
-    adds.push({ lineId: line.id, fromSoItemId: null, sameSku: false, itemCode: line.itemCode!, variants: a.variants, remark: a.remark });
+    adds.push({ lineId: line.id, fromSoItemId: null, sameSku: false, respec: false, itemCode: line.itemCode!, variants: a.variants, remark: a.remark });
   }
   if (sections.size === 0) throw refuse(422, 'nothing_changed', 'Nothing on the contract changed.');
   const vo = await createVo(db, actor, soDocNo, { title });
@@ -416,33 +422,58 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
   const out = await applyVo(db, actor, vo.id, { version: saved.version });
   for (const a of adds) {
     const to = out.added.find((x) => x.voLineId === a.lineId)?.soItemId;
-    if (!to) continue;
-    if (!a.sameSku && (a.variants || a.remark)) {
-      const group = products.get(a.itemCode)?.group ?? '';
-      const raw = { ...(a.variants ?? {}) };
-      delete raw.remark;
-      const variants = canonicalizeVariants(group, raw);
-      await db.q(
-        `update scm.mfg_sales_order_items set variants = $2::text::jsonb, description2 = coalesce($3, description2), remark = nullif($4, '') where id = $1`,
-        [to, JSON.stringify(variants), buildVariantSummary(group, variants) || null, (a.remark ?? '').trim().slice(0, 500)],
-      );
-    }
-    if (!a.fromSoItemId) continue;
-    if (a.sameSku) {
-      await db.q(
-        `update scm.mfg_sales_order_items n set variants = o.variants, description2 = coalesce(o.description2, n.description2), remark = o.remark
-           from scm.mfg_sales_order_items o where n.id = $1 and o.id = $2`,
-        [to, a.fromSoItemId],
-      );
-    }
-    await db.q(
-      `insert into scm.reno_beta_line_plans (so_item_id, company_id, order_on, deliver_on, no_po, updated_by, updated_at)
-       select $1, company_id, order_on, deliver_on, no_po and $3, updated_by, now() from scm.reno_beta_line_plans where so_item_id = $2
-       on conflict (so_item_id) do nothing`,
-      [to, a.fromSoItemId, a.sameSku],
-    );
+    if (to) await carryToAddedLine(db, a, to, products.get(a.itemCode)?.group ?? '');
   }
   return out;
+}
+
+/** What a VO-added line of quickVo takes on: a line added for a re-specification (same SKU, new options) gets the
+    options as given, the remark given else the replaced line's, and the new options' summary as description2; a line of another SKU gets the
+    options and remark sent with it; a plain same-SKU replacement copies the old line's. Every replacement keeps the
+    replaced line's dates. */
+export interface QuickAdd { lineId: string; fromSoItemId: string | null; sameSku: boolean; respec: boolean; itemCode: string; variants?: Record<string, unknown>; remark?: string }
+
+export async function carryToAddedLine(db: RenoDb, a: QuickAdd, to: string, group: string): Promise<void> {
+  if (a.respec || (!a.sameSku && (a.variants || a.remark))) {
+    const raw = { ...(a.variants ?? {}) };
+    delete raw.remark;
+    const variants = canonicalizeVariants(group, raw);
+    const summary = buildVariantSummary(group, variants) || null;
+    if (a.respec) {
+      await db.q(
+        `update scm.mfg_sales_order_items n set variants = $2::text::jsonb, description2 = $3,
+            remark = case when $4::text is null then o.remark else nullif($4, '') end
+           from scm.mfg_sales_order_items o where n.id = $1 and o.id = $5`,
+        [to, JSON.stringify(variants), summary, a.remark === undefined ? null : a.remark.trim().slice(0, 500), a.fromSoItemId],
+      );
+    } else {
+      await db.q(
+        `update scm.mfg_sales_order_items set variants = $2::text::jsonb, description2 = coalesce($3, description2), remark = nullif($4, '') where id = $1`,
+        [to, JSON.stringify(variants), summary, (a.remark ?? '').trim().slice(0, 500)],
+      );
+    }
+  }
+  if (!a.fromSoItemId) return;
+  /* The replacement stands in the same room: the VO section carries the room's heading, but the SO line's own room
+     (migration 0112, what the PO tab groups and prints by) was left empty on every replaced line. */
+  await db.q(
+    `update scm.mfg_sales_order_items n set room = coalesce(nullif(trim(n.room), ''), o.room), location = coalesce(nullif(trim(n.location), ''), o.location)
+       from scm.mfg_sales_order_items o where n.id = $1 and o.id = $2`,
+    [to, a.fromSoItemId],
+  );
+  if (a.sameSku && !a.respec) {
+    await db.q(
+      `update scm.mfg_sales_order_items n set variants = o.variants, description2 = coalesce(o.description2, n.description2), remark = o.remark
+         from scm.mfg_sales_order_items o where n.id = $1 and o.id = $2`,
+      [to, a.fromSoItemId],
+    );
+  }
+  await db.q(
+    `insert into scm.reno_beta_line_plans (so_item_id, company_id, order_on, deliver_on, no_po, updated_by, updated_at)
+     select $1, company_id, order_on, deliver_on, no_po and $3, updated_by, now() from scm.reno_beta_line_plans where so_item_id = $2
+     on conflict (so_item_id) do nothing`,
+    [to, a.fromSoItemId, a.sameSku],
+  );
 }
 
 export async function listPoFlags(db: RenoDb, soDocNo: string) {

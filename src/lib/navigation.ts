@@ -2,7 +2,7 @@ import type { UserRole, AccessLevel, SessionUser } from './types';
 import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
-export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport' | 'showcase';
+export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport';
 /** The sidebar shows one workspace at a time. Rental (The Conts) is the daily work; supply chain (Dream Crafter) sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
@@ -22,7 +22,7 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  * one screen. The supply chain moved behind the workspace switch at the top of the sidebar.
  * Merged duplicates keep their old addresses as redirects (App.tsx):
  *  - Finance > Revenue was the same page as Growth > Analytics: one "Performance" entry.
- *  - Owners moved from Finance to Properties; Inbox from Growth to Reservations.
+ *  - Owners moved from Finance to Properties; Inbox from Growth to Reservations, and back to Growth as Messages (2 Nov 2026).
  *  - The Fit-out register and Guest documents screens were retired (owner, 14 Oct 2026); guest invoices and receipts are issued from a reservation.
  *  - Projects > Calendar is "Schedule"; Service / Project maintenance are "Case settings" / "Project settings",
  *    so no two menu entries share a name.
@@ -30,6 +30,8 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
 /** The Dream Crafter group that holds IT Support and Category access. It shares its label with the Rental System group,
  *  so anything keyed by group label must also use the workspace. */
 const SUPPLY_SYSTEM = 'SYSTEM';
+/** The Dream Crafter group at the top that holds My claims; it shares its label with the Rental Home group. */
+const SUPPLY_HOME = 'HOME';
 /** Finance is eight groups in both sidebars (chew, 2 Nov 2026: one long Finance list was hard to read). */
 const FINANCE_PREFIX = 'FINANCE';
 const isFinanceGroup = (label: string): boolean => label === FINANCE_PREFIX || label.startsWith(`${FINANCE_PREFIX} · `);
@@ -108,12 +110,13 @@ const FINANCE_PART_ICON: Record<string, string> = {
 export const NAV: NavGroup[] = [
   { label: 'HOME', workspace: 'rental', items: [
     { key: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard', path: '/', area: 'dashboard' },
+    // Every desk role (finance, 29 Oct 2026): hand in receipts and ask finance to pay. At the top (chew, 2 Nov 2026: it
+    // was hard to find under System). No permission area: the engine answers each person with their own only
+    // (functions/api/claims/[[path]].ts).
+    { key: 'myClaims', label: 'My claims', icon: 'receipt', path: '/my-claims' },
     { key: 'portfolio', label: 'Portfolio', icon: 'layers', path: '/portfolio', area: 'portfolio' },
     { key: 'unitReport', label: 'Overall unit report', icon: 'file-spreadsheet', path: '/portfolio/owner-report', area: 'portfolio', full: true },
     { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance', full: true },
-    // Sales staff open it in front of a prospective owner (CONTS-0006); it opens full screen, without the menu.
-    { key: 'showcase', label: 'Owner Showcase', icon: 'presentation', path: '/performance/showcase', area: 'performance', fresh: true },
-    { key: 'showcaseControl', label: 'Showcase control', icon: 'sliders-horizontal', path: '/performance/showcase-control', area: 'performance', badge: 'showcase', fresh: true },
   ] },
   // Reports sit under Home (owner, 29 Oct 2026), with their own permission area since 30 Oct 2026.
   { label: 'REPORTS', workspace: 'rental', phone: false, items: [
@@ -123,7 +126,6 @@ export const NAV: NavGroup[] = [
     { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'reservations' },
     { key: 'bookings', label: 'Reservations', icon: 'book-open', path: '/reservations/bookings', area: 'reservations' },
     { key: 'guests', label: 'Guests', icon: 'users', path: '/reservations/guests', area: 'reservations' },
-    { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
     // Invoices and receipts issued to guests: guest invoicing, so it sits with reservations. Still money work, so
     // its permission area stays Finance (who can open it does not change).
   ] },
@@ -150,13 +152,26 @@ export const NAV: NavGroup[] = [
     // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
     { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners', badge: 'statements' },
     { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'owners' },
+    // Owner B (owner, 2 Nov 2026): the new owners module, built beside Owners (A) so the two can be compared; it took
+    // the Owner Showcase's menu place and permission (Performance), which is what sales staff open, and its sample
+    // owner portal replaced the showcase. Its Owners, Statements and Payouts tabs follow their own areas.
+    { key: 'ownerB', label: 'Owner B', icon: 'contact', path: '/owner-b', area: 'performance', fresh: true },
   ] },
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
   ...financeGroups('/finance', '', 'rental'),
   { label: 'GROWTH', workspace: 'rental', items: [
     { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'pricing', full: true },
     { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'pricing' },
+    // Guest messages from Airbnb, Booking.com and WhatsApp, below Reviews (owner, 2 Nov 2026; migration 0200 moved the
+    // permission area with it, so nobody's access changed).
+    { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
     { key: 'automations', label: 'Automations', icon: 'workflow', path: '/communication/automations', area: 'automations' },
+  ] },
+  // The shared email inbox on theconts.com addresses (CONTS-0004): the engine's Mail Center, as in Houzs and Hookka.
+  // Mailboxes (who reads which address) is for Full only, as the engine asks mail_center.manage for it.
+  { label: 'MAIL', workspace: 'rental', items: [
+    { key: 'mailCenter', label: 'Mail Center', icon: 'mail', path: '/mail', area: 'mail' },
+    { key: 'mailboxes', label: 'Mailboxes', icon: 'at-sign', path: '/mail/mailboxes', area: 'mail', full: true },
   ] },
   { label: 'SYSTEM', workspace: 'rental', items: [
     { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
@@ -171,13 +186,15 @@ export const NAV: NavGroup[] = [
     // Every desk role: report a problem with the system to IT and follow it. No permission area, since a person
     // only ever reads their own requests (functions/_lib/itHub.ts). Its count comes from lib/itSupport.ts.
     { key: 'itSupport', label: 'IT Support', icon: 'life-buoy', path: '/system/it-support', badge: 'itSupport' },
-    // Every desk role (finance, 29 Oct 2026): hand in receipts and ask finance to pay. No permission area: the engine
-    // answers each person with their own only (functions/api/claims/[[path]].ts).
-    { key: 'myClaims', label: 'My claims', icon: 'receipt', path: '/my-claims' },
   ] },
 
   // Supply chain workspace. Mirrors Houzs's hierarchy: section -> collapsible area -> page.
   // Service cases and Projects come from the supply chain engine only (ENGINE_ONLY below).
+  /* My claims at the top of the supply chain sidebar too (chew, 2 Nov 2026). Like System and Finance it is there so the
+     sidebar stays put: alone it does not open the supply chain workspace (navFor). */
+  { label: SUPPLY_HOME, workspace: 'supply', items: [
+    { key: 'myClaimsSupply', label: 'My claims', icon: 'receipt', path: '/supply/my-claims' },
+  ] },
   { label: 'SERVICE CASES', workspace: 'supply', items: [
     { key: 'serviceCaseList', label: 'Service cases', icon: 'zap', path: '/service/cases', area: 'serviceCases' },
     { key: 'serviceMetrics', label: 'Quality metrics', icon: 'trending-up', path: '/service/metrics', area: 'serviceCases' },
@@ -255,7 +272,6 @@ export const NAV: NavGroup[] = [
   { label: SUPPLY_SYSTEM, workspace: 'supply', items: [
     { key: 'categoryAccess', label: 'Category access', icon: 'tags', path: '/system/category-access', area: 'users', full: true },
     { key: 'itSupportSupply', label: 'IT Support', icon: 'life-buoy', path: '/supply/it-support', area: 'itSupport', badge: 'itSupport' },
-    { key: 'myClaimsSupply', label: 'My claims', icon: 'receipt', path: '/supply/my-claims' },
   ] },
 ];
 
@@ -274,7 +290,7 @@ export const WORKSPACE_LABEL: Record<Workspace, string> ={ rental: 'The Conts', 
  *  functions/api/system/health (management, finance, operations managers): keep the two in sync. */
 const DENY: Partial<Record<UserRole, string[]>> = {
   // scInvoices matches MONEY_ONLY in functions/api/_middleware.ts.
-  operations_staff: ['finance', 'reports', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'scInvoices', 'ledger'],
+  operations_staff: ['finance', 'reports', 'owners', 'users', 'integrations', 'settings', 'portfolio', 'health', 'scInvoices', 'ledger', 'mail'],
   housekeeper: ['*'],
   technician: ['*'],
   owner: ['*'],
@@ -288,7 +304,7 @@ export function switchedOff(path: string): boolean {
 }
 
 /** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
-const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger'];
+const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger', 'mail'];
 const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
 
 /** Areas (and menu keys) closed to a role: from its permission levels where the session carries them, else the built-in list. */
@@ -330,7 +346,7 @@ export function navFor(role: UserRole, engine = false, access?: Record<string, A
   const groups = navGroups(role, engine, access);
   // IT Support and Finance are in the supply chain sidebar only so it stays put; alone they must not open the
   // supply chain workspace to someone with no supply chain screens (Finance is then in Rental only).
-  const shared = (g: NavGroup) => g.workspace === 'supply' && (g.label === SUPPLY_SYSTEM || isFinanceGroup(g.label));
+  const shared = (g: NavGroup) => g.workspace === 'supply' && (g.label === SUPPLY_SYSTEM || g.label === SUPPLY_HOME || isFinanceGroup(g.label));
   const supplyWork = groups.some(g => g.workspace === 'supply' && !shared(g));
   return supplyWork ? groups : groups.filter(g => !shared(g));
 }
@@ -401,6 +417,9 @@ export const homeFor = (who: Pick<SessionUser, 'role' | 'side' | 'department'>):
 /** Pages below a menu entry, for the third breadcrumb ("Units / Owners / Owner statement"). */
 const SUB_PAGES: [RegExp, string][] = [
   [/^\/owners\/statements\/[^/]+$/, 'Owner statement'],
+  [/^\/owner-b\/sample\/[^/]+$/, 'Owner portal (sample)'],
+  [/^\/owner-b\/[^/]+\/portal$/, 'View as owner'],
+  [/^\/owner-b\/(?!sample$)[^/]+$/, 'Owner profile'],
   [/^\/owners\/(?!contracts$|statements$)[^/]+$/, 'Owner profile'],
   [/^\/properties\/units\/[^/]+$/, 'Unit'],
   [/^\/system\/integrations\/hostplatform$/, 'HostPlatform import'],

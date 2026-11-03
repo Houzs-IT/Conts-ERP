@@ -8,13 +8,13 @@
    invoice kinds with the knock-off prefilled, a prepay box, the total
    following ticks + prepay, and the one AP-control line written on save. */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, test, vi } from 'vitest';
 
 /* Hoisted with the mocks that read them (vi.mock factories run before the
    file's own consts exist). */
-const { updateAsync, idle, DETAIL } = vi.hoisted(() => {
+const { updateAsync, idle, DETAIL, shown, notifyMock } = vi.hoisted(() => {
   const updateAsync = vi.fn(async (_b: Record<string, unknown>) => ({ ok: true }));
   const idle = () => ({ mutateAsync: vi.fn(async () => ({ ok: true })), isPending: false });
   /* The rejected voucher as prod holds it: its formal number kept, every mark
@@ -30,14 +30,33 @@ const { updateAsync, idle, DETAIL } = vi.hoisted(() => {
     lines: [{ id: 'l1', line_no: 1, description: 'Settle 1 invoice(s) — META PLATFORM IRELAND LIMITED', debit_account_code: '405-0000', amount_sen: 1007742 }],
     allocations: [{ id: 'a1', kind: 'API', apInvoiceId: 'api-meta', invoiceNumber: '2990-API-2609-004', supplierInvoiceRef: 'META-SEP', invoiceDate: '2026-09-01', amountSen: 1007742, status: 'POSTED' }],
   };
-  return { updateAsync, idle, DETAIL };
+  /* What the page loads: the AP payment above unless a test swaps it. */
+  const shown: { detail: Record<string, unknown> } = { detail: DETAIL };
+  const notifyMock = vi.fn();
+  return { updateAsync, idle, DETAIL, shown, notifyMock };
 });
-/* Conts (finance phase 1.5): the project field reads its own queries; this page's tests are about the voucher. */
-vi.mock('../../conts/ProjectLimitField', () => ({ ProjectLimitField: () => null }));
+/* Conts (finance phase 1.5): the project field reads its own queries; it says here which project it shows and whether
+   it can be changed. */
+vi.mock('../../conts/ProjectLimitField', () => ({
+  ProjectLimitField: ({ projectId, disabled }: { projectId: number | null; disabled?: boolean }) => <span>{`Voucher project ${projectId ?? 'none'}${disabled ? ' (read-only)' : ''}`}</span>,
+}));
+vi.mock('../../conts/Pickers', () => ({
+  UnitPicker: ({ value, onChange, ariaLabel }: { value: string | null; onChange: (v: string | null) => void; ariaLabel: string }) => <input aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value || null)} />,
+  ProjectPicker: ({ value, onChange, ariaLabel }: { value: number | null; onChange: (v: number | null) => void; ariaLabel: string }) => <input aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)} />,
+  UnitName: ({ id }: { id: string | null }) => <>{id ? `unit ${id}` : null}</>,
+  ProjectName: ({ id }: { id: number | null }) => <>{id != null ? `project ${id}` : null}</>,
+}));
+vi.mock('../../conts/projectLimitQueries', () => ({
+  useProjectOptions: () => ({ data: { projects: [
+    { id: 7, code: 'RN-7', name: 'ASTER HILL A-08-11', funding: 'customer', internal_department: null },
+    { id: 8, code: 'RN-8', name: 'OWN UNIT B-2-3', funding: 'internal', internal_department: 'rental' },
+  ] } }),
+}));
+vi.mock('../../components/doc-attachments/DocAttachments', () => ({ LineFilesButton: () => null, DocAttachments: () => null }));
 vi.mock('../../vendor/scm/lib/payment-voucher-queries', async (importOriginal) => ({
   /* The real constants stay (PV_FILE_ACCEPT for the files card); only the hooks are stubbed. */
   ...(await importOriginal<typeof import('../../vendor/scm/lib/payment-voucher-queries')>()),
-  usePaymentVoucherDetail: () => ({ data: DETAIL, isLoading: false }),
+  usePaymentVoucherDetail: () => ({ data: shown.detail, isLoading: false }),
   useUpdatePaymentVoucher: () => ({ mutateAsync: updateAsync, isPending: false }),
   useCancelPaymentVoucher: idle, useSubmitPaymentVoucher: idle, useWithdrawPaymentVoucher: idle,
   useCheckPaymentVoucher: idle, useApprovePaymentVoucher: idle, usePostNowPaymentVoucher: idle, useRejectPaymentVoucher: idle,
@@ -75,7 +94,7 @@ vi.mock('../../vendor/scm/lib/accounting-queries', async (importOriginal) => ({
 }));
 vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ can: () => true }) }));
 vi.mock('../../vendor/scm/components/ConfirmDialog', () => ({ useConfirm: () => vi.fn(async () => true) }));
-vi.mock('../../vendor/scm/components/NotifyDialog', () => ({ useNotify: () => vi.fn() }));
+vi.mock('../../vendor/scm/components/NotifyDialog', () => ({ useNotify: () => notifyMock }));
 vi.mock('./EntityHistoryPanel', () => ({ EntityHistoryPanel: () => null }));
 vi.mock('../../components/scm-v2/PrintPreviewModal', () => ({
   PrintPreviewModal: () => null,
@@ -85,8 +104,8 @@ vi.mock('../../components/scm-v2/PrintPreviewModal', () => ({
 
 import { PaymentVoucherDetail } from './PaymentVoucherDetail';
 
-const draw = () => render(
-  <MemoryRouter initialEntries={['/scm/payment-vouchers/pv-9?edit=1']}>
+const draw = (url = '/scm/payment-vouchers/pv-9?edit=1') => render(
+  <MemoryRouter initialEntries={[url]}>
     <Routes><Route path="/scm/payment-vouchers/:id" element={<PaymentVoucherDetail />} /></Routes>
   </MemoryRouter>,
 );
@@ -143,5 +162,126 @@ describe('Edit on a DRAFT AP Payment is the AP form, not the plain voucher\'s', 
       lines: [{ debitAccountCode: '405-0000', amountSen: 250000, description: 'prepay 2500.00 — META PLATFORM IRELAND LIMITED' }],
       allocations: [],
     });
+  });
+});
+
+/* Each line says what it is for (chew 2 Nov 2026; plan 2026-11-02-voucher-line-purpose Task 3). An older Mixed voucher
+   (made with the voucher-wide For) opens line by line as Unit, Project or Company and, saved untouched, sends back each
+   line's department, unit and project; the read-only view shows each line's tag and its unit or project. */
+describe('a plain voucher: each line says what it is for', () => {
+  const MIXED = {
+    paymentVoucher: {
+      id: 'pv-9', pv_number: '2990-HPV-2610-021', status: 'DRAFT', purpose: 'OTHER',
+      supplier_id: null, payee_name: 'ACE HARDWARE', credit_account_code: '310-0020',
+      voucher_date: '2026-10-21', total_sen: 35000, currency: 'MYR', exchange_rate: 1, notes: null,
+      submitted_at: null, checked_at: null, approved_at: null, company_id: 2,
+    },
+    lines: [
+      { id: 'm1', line_no: 1, description: 'Aircon service', debit_account_code: '900-A002', amount_sen: 20000, department: 'rental', unit_id: 'u-a31', project_id: null },
+      { id: 'm2', line_no: 2, description: 'Tiles', debit_account_code: '900-A002', amount_sen: 10000, department: 'supply', unit_id: null, project_id: 7 },
+      { id: 'm3', line_no: 3, description: 'Stationery', debit_account_code: '900-A002', amount_sen: 5000, department: 'shared', unit_id: null, project_id: null },
+    ],
+    allocations: [],
+  };
+  const forOf = (n: number) => screen.getByRole('radiogroup', { name: `Line ${n} for` });
+  const checked = (n: number) => within(forOf(n)).getAllByRole('radio').find((r) => r.getAttribute('aria-checked') === 'true')?.textContent;
+
+  test('there is no For switch; the lines load as Unit, Project and Company and save unchanged', async () => {
+    shown.detail = MIXED;
+    updateAsync.mockClear();
+    try {
+      draw();
+      await waitFor(() => expect(screen.getByRole('radiogroup', { name: 'Line 1 for' })).toBeTruthy());
+      expect(screen.queryByText('For *')).toBeNull();
+      expect(screen.queryByRole('radio', { name: 'Mixed' })).toBeNull();
+      expect([checked(1), checked(2), checked(3)]).toEqual(['Unit', 'Project', 'Company']);
+      expect((screen.getByLabelText('Line 1 unit') as HTMLInputElement).value).toBe('u-a31');
+      expect((screen.getByLabelText('Line 2 project') as HTMLInputElement).value).toBe('7');
+      expect(['Line 1 department', 'Line 2 department', 'Line 3 department'].map((l) => screen.getByLabelText(l).textContent))
+        .toEqual(['Rental', 'Renovation', 'Company']);
+      /* No voucher-wide project on a plain voucher. */
+      expect(screen.queryByText(/Voucher project/)).toBeNull();
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(updateAsync).toHaveBeenCalledTimes(1));
+      const body = updateAsync.mock.calls[0]![0] as { lines: Array<Record<string, unknown>> } & Record<string, unknown>;
+      expect(body.lines).toEqual([
+        expect.objectContaining({ description: 'Aircon service', department: 'rental', unitId: 'u-a31', projectId: null }),
+        expect.objectContaining({ description: 'Tiles', department: 'supply', unitId: null, projectId: 7 }),
+        expect.objectContaining({ description: 'Stationery', department: 'shared', unitId: null, projectId: null }),
+      ]);
+      expect('projectId' in body).toBe(false);
+    } finally {
+      shown.detail = DETAIL;
+    }
+  });
+
+  /* Review 2 Nov 2026: before this change a voucher's one project was stamped on every line, and a Rental line's unit
+     was optional. Such a voucher opened and saved without touching its lines must send every line back as it was. */
+  test('an older voucher with its project on every line saves every line unchanged; no unit or project is asked for', async () => {
+    shown.detail = { ...MIXED, lines: [
+      { id: 's1', line_no: 1, description: 'Aircon service', debit_account_code: '900-A002', amount_sen: 20000, department: 'rental', unit_id: 'u-a31', project_id: 7 },
+      { id: 's2', line_no: 2, description: 'Paint', debit_account_code: '900-A002', amount_sen: 10000, department: 'rental', unit_id: null, project_id: 7 },
+      { id: 's3', line_no: 3, description: 'Stationery', debit_account_code: '900-A002', amount_sen: 3000, department: 'shared', unit_id: null, project_id: 7 },
+      { id: 's4', line_no: 4, description: 'Tiles', debit_account_code: '900-A002', amount_sen: 2000, department: 'supply', unit_id: null, project_id: null },
+    ] };
+    updateAsync.mockClear();
+    try {
+      draw();
+      await waitFor(() => expect(screen.getByRole('radiogroup', { name: 'Line 1 for' })).toBeTruthy());
+      expect(['Line 1 department', 'Line 2 department', 'Line 3 department', 'Line 4 department'].map((l) => screen.getByLabelText(l).textContent))
+        .toEqual(['Rental', 'Rental', 'Company', 'Renovation']);
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(updateAsync).toHaveBeenCalledTimes(1));
+      const body = updateAsync.mock.calls[0]![0] as { lines: Array<Record<string, unknown>> };
+      expect(body.lines.map((l) => [l.department, l.unitId, l.projectId])).toEqual([
+        ['rental', 'u-a31', 7], ['rental', null, 7], ['shared', null, 7], ['supply', null, null],
+      ]);
+    } finally {
+      shown.detail = DETAIL;
+    }
+  });
+
+  test('a Unit line may leave its unit empty: a Rental general cost (SOP 3.2)', async () => {
+    shown.detail = MIXED;
+    updateAsync.mockClear();
+    try {
+      draw();
+      await waitFor(() => expect(screen.getByLabelText('Line 1 unit')).toBeTruthy());
+      fireEvent.change(screen.getByLabelText('Line 1 unit'), { target: { value: '' } });
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(updateAsync).toHaveBeenCalledTimes(1));
+      const body = updateAsync.mock.calls[0]![0] as { lines: Array<Record<string, unknown>> };
+      expect(body.lines[0]).toEqual(expect.objectContaining({ department: 'rental', unitId: null, projectId: null }));
+    } finally {
+      shown.detail = DETAIL;
+    }
+  });
+
+  test('the read-only view shows each line\'s tag and its unit or project', async () => {
+    shown.detail = MIXED;
+    try {
+      draw('/scm/payment-vouchers/pv-9');
+      await waitFor(() => expect(screen.getByText('Aircon service')).toBeTruthy());
+      const row = (text: string) => screen.getByText(text).closest('tr')!.textContent ?? '';
+      expect(row('Aircon service')).toContain('Rental');
+      expect(row('Aircon service')).toContain('unit u-a31');
+      expect(row('Tiles')).toContain('Renovation');
+      expect(row('Tiles')).toContain('project 7');
+      expect(row('Stationery')).toContain('Company');
+      expect(screen.queryByText(/Voucher project/)).toBeNull();
+    } finally {
+      shown.detail = DETAIL;
+    }
+  });
+
+  test('an AP payment still shows its one project, read-only', async () => {
+    shown.detail = { ...DETAIL, lines: DETAIL.lines.map((l) => ({ ...l, department: 'supply', project_id: 7 })) };
+    try {
+      draw('/scm/payment-vouchers/pv-9');
+      await waitFor(() => expect(screen.getByText('Voucher project 7 (read-only)')).toBeTruthy());
+      expect(screen.queryByRole('radiogroup', { name: 'Line 1 for' })).toBeNull();
+    } finally {
+      shown.detail = DETAIL;
+    }
   });
 });

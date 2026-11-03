@@ -28,6 +28,9 @@ export interface Env {
   SCM_ENGINE_API?: string;
   SCM_ENGINE_SITE?: string;
   SCM_ENGINE_SSO_SECRET?: string;
+  /** The cron worker's key for the engine's email retries (engineMailOutbox in cronJobs.ts); the same value is the
+   *  engine's CONTS_CRON_SECRET. Unset: failed Mail Center emails are not retried. */
+  CONTS_CRON_SECRET?: string;
   /** IT Support (functions/_lib/itHub.ts): the Houzs IT Hub's address and Conts's key for it. IT requests are kept
    *  there, not here. With either unset the IT Support screen says it is not connected. */
   IT_HUB_URL?: string;

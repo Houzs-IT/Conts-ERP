@@ -1,4 +1,5 @@
 import { moneySql } from './bookingMoney';
+import { tablesFor, sourceSql, sampleOf, type Tables } from './demo';
 import { countryJoin, countryWhere, parseCountries, countryName, countryNameSql, countriesNamed } from './guestCountry';
 
 /** The Bookings list: one place that turns the screen's URL (tab, to-do card, filters, searches, sort)
@@ -52,20 +53,24 @@ export const STATES = ['inquiry', 'pending', 'confirmed', 'checked_in', 'checked
 
 export interface Schema { payoutCols: boolean; payments: boolean }
 
-/** FROM with the money join (left out only for counts that read no money) and the guest's country. */
-export const fromSql = (s: Schema, money = true) => `FROM reservations r
-  LEFT JOIN guests g ON g.id = r.guest_id
-  JOIN units u ON u.id = r.unit_id
+/** FROM with the money join (left out only for counts that read no money) and the guest's country. `t` is where the
+ *  reservations, guests and units are read from: the pos tables, or in Demo mode the combined views (functions/_lib/demo.ts).
+ *  Exports never pass it. */
+export const fromSql = (s: Schema, money = true, t: Pick<Tables, 'reservations' | 'guests' | 'units'> = tablesFor(false)) => `FROM ${t.reservations} r
+  LEFT JOIN ${t.guests} g ON g.id = r.guest_id
+  JOIN ${t.units} u ON u.id = r.unit_id
   JOIN properties p ON p.id = u.property_id
   ${money ? moneySql(s).join : ''}
   ${countryJoin('gc', { guest: 'g', nationalityName: s.payoutCols ? 'r.guest_nationality' : null })}`;
 
-export const columnsSql = (s: Schema) => {
+export const columnsSql = (s: Schema, demo = false) => {
   const m = moneySql(s);
-  return `r.id, r.external_ref, r.guests_count, r.channel, r.state, r.check_in, r.check_out, r.check_in_time, r.check_out_time,
+  return `r.id, ${sourceSql(demo, 'r')} AS demo_source, r.external_ref, r.guests_count, r.channel, r.state, r.check_in, r.check_out, r.check_in_time, r.check_out_time,
   r.gross_booking_value, r.channel_fee, r.collected_revenue, r.created_at, u.property_id,
   COALESCE(g.full_name, '') AS guest_name, g.phone AS guest_phone, g.country_code AS guest_country,
   ${s.payoutCols ? 'r.guest_nationality' : 'NULL::text'} AS guest_nationality,
+  ${['room_revenue', 'guest_cleaning_fee', 'extra_fees', 'sst_amount', 'tourism_tax', 'ota_tax', 'deposit_collected']
+    .map(c => `${s.payoutCols ? `r.${c}` : 'NULL::bigint'} AS ${c}`).join(', ')},
   u.unit_number, p.name AS property_name, gc.iso AS country_iso, gc.src AS country_src,
   ${m.expected} AS expected_payout, ${m.received} AS received, ${m.outstanding} AS outstanding`;
 };
@@ -275,9 +280,11 @@ export function parseListQuery(url: URL, opts: { cancelledAt?: boolean } = {}): 
 
 const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 864e5));
 
+const numOrNull = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+
 export function toRow(r: any) {
   return {
-    id: r.id, externalRef: r.external_ref, guestName: r.guest_name, guestsCount: r.guests_count,
+    id: r.id, ...(sampleOf(r.demo_source) ? { sample: sampleOf(r.demo_source) } : {}), externalRef: r.external_ref, guestName: r.guest_name, guestsCount: r.guests_count,
     guestPhone: r.guest_phone, guestCountry: r.guest_country ?? null, guestNationality: r.guest_nationality ?? null,
     country: r.country_iso ? { code: r.country_iso as string, name: countryName(r.country_iso), from: r.country_src as 'nationality' | 'phone' } : null,
     unitNumber: r.unit_number, propertyName: r.property_name, propertyId: r.property_id,
@@ -287,5 +294,8 @@ export function toRow(r: any) {
     channelFee: Number(r.channel_fee), collectedRevenue: Number(r.collected_revenue),
     expectedPayout: Number(r.expected_payout ?? 0), received: Number(r.received ?? 0), outstanding: Number(r.outstanding ?? 0),
     createdAt: r.created_at,
+    // The money breakdown (migration 0052); null where the source left it blank.
+    roomRevenue: numOrNull(r.room_revenue), cleaningFee: numOrNull(r.guest_cleaning_fee), extraFees: numOrNull(r.extra_fees),
+    sst: numOrNull(r.sst_amount), tourismTax: numOrNull(r.tourism_tax), otaTax: numOrNull(r.ota_tax), deposit: numOrNull(r.deposit_collected),
   };
 }

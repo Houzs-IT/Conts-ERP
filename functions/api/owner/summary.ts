@@ -1,4 +1,4 @@
-import { type Env, all, one, json } from '../../_lib/db';
+import { type Env, all, one, json, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { ownerFor, VISIBLE } from '../../_lib/ownerScope';
 import { daysIn, todayMyt } from '../../_lib/ops';
@@ -12,6 +12,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const url = new URL(request.url);
   const owner = await ownerFor(env, session, url);
   if (owner instanceof Response) return owner;
+  // View as owner (Owner B): staff opening an owner's portal is recorded on that owner's History, once per opening.
+  if (session.role !== 'owner' && url.searchParams.get('viewAs') === '1') {
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner.view_as', entityTable: 'owners', entityId: owner.id, after: { viewedAs: owner.display_name } });
+  }
 
   const units = await all<any>(env, `
     SELECT u.id, u.unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id

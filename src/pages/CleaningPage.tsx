@@ -41,7 +41,8 @@ import { cleanRowTone, type CleanRowTone } from '../lib/cleanRowTone';
 import { StatusBadge } from '../components/StatusBadge';
 import { PhoneJobCard, PhoneJobList, PhoneStayTime } from '../components/ops/PhoneJobCard';
 import { CleanProof, stageCounts, stageOf } from '../components/ops/CleanProof';
-import { sortForCleaner, type CleanOrderInput } from '../lib/cleanOrder';
+import { sortForCleaner, sortBuildings, type CleanOrderInput } from '../lib/cleanOrder';
+import { isCleanOverdue } from '../lib/cleanOverdue';
 
 /* ---------- what the board endpoint answers (functions/api/housekeeping/board.ts) ---------- */
 
@@ -53,18 +54,23 @@ interface Row {
   id: string; kind: string; state: string; status: Exclude<CleanStatus, 'unplanned'>; title: string; instructions: string | null;
   day: string; carriedOver: boolean; unitId: string; unitNumber: string; readiness: string; buildingId: string; propertyName: string;
   assigneeId: string | null; cleanerId: string | null; assigneeName: string | null; cleaners: TaskCleaner[]; unit: UnitSize;
-  previous: (Guest & { state: string; checkOutTime: string; lateCheckOut: boolean }) | null;
+  /** checkOutTime is the late checkout's once one is requested (lateCheckOutUnpaid: not paid yet). */
+  previous: (Guest & { state: string; checkOutTime: string; lateCheckOut: boolean; lateCheckOutUnpaid?: boolean }) | null;
   next: (Guest & { guests: number; checkInTime: string; earlyCheckIn: boolean; checkInAt: string }) | null;
+  /** Nobody arrives on the job's day: the unit's next arrival on a later day, if any. */
+  nextLater?: LaterArrival | null;
   guestOut: boolean; guestLeftAt: string | null; guestLeftAuto?: boolean; startedAt: string | null; completedAt: string | null;
   photoCount: number; videoCount: number; checklist: { done: number; total: number };
   /** What the clean is charged and what the cleaner is paid, in sen; null = price not set. */
   amount?: number | null; cleanerPay?: number | null; priceSource?: 'job' | 'unit' | 'table' | null;
   external?: { address: string; clientName: string | null; clientPhone: string | null } | null;
 }
+interface LaterArrival { day: string; checkInTime: string }
 interface Departure {
-  reservationId: string; state: string; channel: string; guestName: string; checkOutTime: string; lateCheckOut: boolean;
+  reservationId: string; state: string; channel: string; guestName: string; checkOutTime: string; lateCheckOut: boolean; lateCheckOutUnpaid?: boolean;
   unitId: string; unitNumber: string; buildingId: string; propertyName: string; unit?: UnitSize;
   next: { reservationId?: string; guestName: string; checkInTime: string; checkInAt: string; earlyCheckIn: boolean } | null;
+  nextLater?: LaterArrival | null;
 }
 export interface RepairOnDay {
   id: string; issueId: string; startsAt: string; endsAt: string; note: string | null; title: string; state: string; urgency: string; category: string;
@@ -100,8 +106,6 @@ function CleanTypeOptions({ current }: { current?: string }) {
   </>;
 }
 const COST_SOURCE: Record<string, string> = { unit: "the unit's own price", history: 'last charged on this unit', default: 'standard rate', job: 'set on this job', table: 'price table' };
-/** Board order (staff comment sheet): units ready to check in at the top, then being cleaned, then guest out, then the rest. */
-const BOARD_ORDER: Record<string, number> = { done: 0, cleaning: 1, ready: 2, waiting: 3, guest_in: 4, unassigned: 5 };
 
 export default function CleaningPage() {
   const [params, setParams] = useSearchParams();
@@ -191,30 +195,30 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const visible = filteredRows.filter(r => phase === 'all' || phaseOf(r) === phase);
   const visibleDepartures = phase !== 'todo' && phase !== 'all' ? [] : departures.filter(d => (!building || d.buildingId === building) && (!cleaner || cleaner === 'none'));
 
-  // Open jobs from an earlier day sit in their own Overdue group above the day's work, so the day reads as the day.
-  const isOverdue = (r: Row) => r.carriedOver && r.status !== 'done';
+  // Overdue by the one rule (src/lib/cleanOverdue.ts, owner 2 Nov 2026): still not done at the next guest's check-in, or,
+  // with no check-in, after midnight at the end of its day. Those sit in their own Overdue group above the day's work.
+  const isOverdue = (r: Row) => isCleanOverdue({ day: r.day, checkIn: r.next?.checkInTime ?? null, done: r.status === 'done' }, now);
   const overdueRows = visible.filter(isOverdue);
   const oldestOverdue = overdueRows.reduce<string | null>((o, r) => (!o || r.day < o ? r.day : o), null);
-  // One card per building, in name order; each lists its cleans, then guests leaving with no clean yet.
+  // One card per building, A to Z; each lists its cleans, then guests leaving with no clean yet. Recomputed from every board
+  // answer (the 30-second refresh included), so a changed time or a guest marked out re-sorts at once.
   const toGroups = (rs: Row[], deps: Departure[], reps: RepairOnDay[], tag: string) => {
     const m = new Map<string, { id: string; key: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }>();
     const get = (id: string, name: string) => m.get(id) ?? (m.set(id, { id, key: `${tag}${id}`, name, rows: [], departures: [], repairs: [] }), m.get(id)!);
     for (const r of rs) get(r.buildingId, r.propertyName).rows.push(r);
     for (const d of deps) get(d.buildingId, d.propertyName).departures.push(d);
     for (const w of reps) if (m.has(w.buildingId)) m.get(w.buildingId)!.repairs.push(w);
-    for (const g of m.values()) g.rows.sort((a, b) => (tag ? a.day.localeCompare(b.day) : 0) || BOARD_ORDER[a.status] - BOARD_ORDER[b.status] || a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true }));
-    return [...m.values()].sort((a, b) => (a.id === 'external' ? 1 : 0) - (b.id === 'external' ? 1 : 0) || a.name.localeCompare(b.name));
+    // Inside each building, the cleaner's order (lib/cleanOrder): units ready to clean by next check-in, then guests still
+    // in by checkout time, then done. The buildings themselves always A to Z (owner, 2 Nov 2026).
+    const depOrder = (d: Departure) => departureOrder(d, date);
+    for (const g of m.values()) {
+      g.rows = sortForCleaner(g.rows, rowOrder);
+      g.departures = sortForCleaner(g.departures, depOrder);
+    }
+    return sortBuildings([...m.values()], g => g.name, g => g.id === 'external');
   };
-  const groups = useMemo(() => toGroups(visible.filter(r => !isOverdue(r)), visibleDepartures, repairs, ''), [visible, visibleDepartures, repairs]); // eslint-disable-line react-hooks/exhaustive-deps
-  const overdueGroups = useMemo(() => toGroups(overdueRows, [], [], 'overdue-'), [visible]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Phones: one list in the cleaner's order, no building groups (owner, 2 Nov 2026); tablet and up keep the buildings.
-  const phone = useMedia('(max-width: 767.98px)');
-  const phoneOverdue = useMemo(() => sortForCleaner(overdueRows, rowOrder), [visible]); // eslint-disable-line react-hooks/exhaustive-deps
-  const phoneDay = useMemo(() => sortForCleaner<Row | Departure>([...visible.filter(r => !isOverdue(r)), ...visibleDepartures],
-    x => ('id' in x ? rowOrder(x) : { checkIn: x.next?.checkInTime ?? null, building: x.propertyName, unit: x.unitNumber })), [visible, visibleDepartures]); // eslint-disable-line react-hooks/exhaustive-deps
-  const phoneRepairs = useMemo(() => groups.flatMap(g => g.repairs), [groups]);
-  const filteredBuilding = building ? buildingOptions.find(o => o.value === building) : undefined;
-  const openInBuilding = building ? visible.filter(r => !isOverdue(r) && r.status !== 'done' && r.buildingId === building).length : 0;
+  const groups = useMemo(() => toGroups(visible.filter(r => !isOverdue(r)), visibleDepartures, repairs, ''), [visible, visibleDepartures, repairs, now, date]); // eslint-disable-line react-hooks/exhaustive-deps
+  const overdueGroups = useMemo(() => toGroups(overdueRows, [], [], 'overdue-'), [visible, now]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The header speaks of the day; overdue jobs are counted on their own, so day + overdue = the All tab.
   const dayRows = rows.filter(r => !isOverdue(r));
@@ -269,7 +273,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 
   const subtitle = data
     // vocab-ok: departures is the API field name; the words on screen say checkouts
-    ? `${dayLabel(date)} · ${total} ${total === 1 ? 'cleaning job' : 'cleaning jobs'} · ${done} done · ${ready} ready to clean${unassigned ? ` · ${unassigned} unassigned` : ''}${departures.length ? ` · ${departures.length} checkouts with no cleaning job` : ''}${overdueAll ? ` · ${overdueAll} overdue from earlier days` : ''}`
+    ? `${dayLabel(date)} · ${total} ${total === 1 ? 'cleaning job' : 'cleaning jobs'} · ${done} done · ${ready} ready to clean${unassigned ? ` · ${unassigned} unassigned` : ''}${departures.length ? ` · ${departures.length} checkouts with no cleaning job` : ''}${overdueAll ? ` · ${overdueAll} overdue` : ''}`
     : dayLabel(date);
 
   const list = (
@@ -292,7 +296,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
                 <h2 className="m-0 text-heading font-semibold text-critical">Overdue</h2>
                 <StatusBadge tone="critical">{overdueRows.length}</StatusBadge>
                 <span className="text-meta text-muted-ink">
-                  open {overdueRows.length === 1 ? 'cleaning job' : 'cleaning jobs'} from earlier days{oldestOverdue ? ` · oldest ${dayLabel(oldestOverdue)}` : ''}
+                  {overdueRows.length === 1 ? 'cleaning job' : 'cleaning jobs'} not done by the next check-in, or by the end of the day{oldestOverdue ? ` · oldest ${dayLabel(oldestOverdue)}` : ''}
                 </span>
               </button>
               {mayBulk && overdueOpen && (
@@ -315,16 +319,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
                 </span>
               </div>
             )}
-            {overdueOpen && phone && (
-              <div className="px-3 pb-3">
-                <PhoneJobList label="Overdue cleaning jobs">
-                  {phoneOverdue.map(r => <PhoneCleanCard key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`}
-                    picked={mayBulk ? picks.has(r.id) : undefined} onPick={mayBulk ? on => togglePicks([r.id], on) : undefined}
-                    onSelect={() => setSelected(r.id)} onGuestLeft={() => void guestLeft({ taskId: r.id }, r.unitNumber)} onUndoLeft={() => void undoLeft(r.id, r.unitNumber)} />)}
-                </PhoneJobList>
-              </div>
-            )}
-            {overdueOpen && !phone && (
+            {overdueOpen && (
               <div className="px-3 pb-3 flex flex-col gap-3">
                 {overdueGroups.map(g => (
                   <BuildingCard key={g.key} group={g} now={now} future={false} selected={selected} busy={busy}
@@ -342,34 +337,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
             <span className="text-meta text-muted-ink">{groups.length === 0 ? 'Nothing else on this day.' : `${total} ${total === 1 ? 'cleaning job' : 'cleaning jobs'}`}</span>
           </div>
         )}
-        {phone ? <>
-          {/* With no building groups on a phone, giving out a whole building goes through the Building filter. */}
-          {filteredBuilding && openInBuilding > 0 && (
-            <Button size="sm" variant="primary" icon={<Icon name="Users" size="sm" />} className="self-start"
-              onClick={() => setAssignFor({ buildingId: building, name: String(filteredBuilding.label) })}>Assign all {openInBuilding} in {String(filteredBuilding.label)}</Button>
-          )}
-          {phoneDay.length > 0 && (
-            <PhoneJobList label={`Cleaning jobs, ${dayLabel(date)}`}>
-              {phoneDay.map(x => ('id' in x
-                ? <PhoneCleanCard key={x.id} r={x} now={now} active={x.id === selected} busy={busy === `left-${x.id}`}
-                    onSelect={() => setSelected(x.id)} onGuestLeft={() => void guestLeft({ taskId: x.id }, x.unitNumber)} onUndoLeft={() => void undoLeft(x.id, x.unitNumber)} />
-                : <PhoneDepartureCard key={x.reservationId} d={x} now={now} future={date > mytDay(0)}
-                    busy={{ left: busy === `left-${x.reservationId}`, plan: busy === `plan-${x.reservationId}` }}
-                    onGuestLeft={() => void guestLeft({ reservationId: x.reservationId }, x.unitNumber)} onPlan={() => void plan(x)} />))}
-            </PhoneJobList>
-          )}
-          {phoneRepairs.length > 0 && (
-            <section aria-label="Repairs on this day" className="flex-none rounded-card border border-solid border-line bg-page px-3 py-2 flex flex-col gap-1">
-              {phoneRepairs.map(w => (
-                <div key={w.id} className="flex items-center gap-2 text-meta min-w-0">
-                  <Icon name="Wrench" size="sm" color="var(--color-gold-ink)" />
-                  <span className="min-w-0 truncate"><b>{w.unitNumber}</b> {w.propertyName} · repair {hm(w.startsAt)}–{hm(w.endsAt)}: {w.title}</span>
-                  {w.overlaps.length > 0 && <span className="flex-none"><StatusBadge tone="critical" size="sm">Overlaps</StatusBadge></span>}
-                </div>
-              ))}
-            </section>
-          )}
-        </> : groups.map(g => (
+        {groups.map(g => (
           <BuildingCard key={g.key} group={g} now={now} future={date > mytDay(0)} selected={selected} busy={busy}
             onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan} cleaners={cleaners} onAssignOne={assignOne}
             onAssign={() => setAssignFor({ buildingId: g.id, name: g.name })} />
@@ -377,6 +345,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         {/* Room under the last job for the bar pinned to the bottom of a phone. */}
         {mayBulk && overdueOpen && picks.size > 0 && <div aria-hidden className="md:hidden h-20 flex-none" />}
       </>}
+      <PhoneMoreLinks onTab={onTab} onCleaners={() => navigate('/hr/employees?tab=employee-master')} />
     </>
   );
 
@@ -384,12 +353,10 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
     <div className="flex flex-col gap-4 flex-1 lg:min-h-0">
       <PageHeader title="Cleaning" sub={subtitle}
         actions={<>
-          {/* Phones: Cleaners sits behind one "..." so the header is View + Add (owner, Oct 2026), and the "..." shares the
-              tabs' row instead of wrapping to one of its own; the tabs scroll sideways if they run out of room. No auto-assign:
-              cleans are given by building or one by one (staff comment sheet, 16 Oct 2026). */}
-          <span className="flex items-center gap-2 min-w-0 max-md:w-full">
-            <TabSwitch tab="board" onTab={onTab} className="max-md:flex-initial max-md:min-w-0" />
-            <CleaningMore onCleaners={() => navigate('/hr/employees?tab=employee-master')} />
+          {/* Phones show the board only: no tab strip (owner, 2 Nov 2026); History, Prices, Pay, Profit and Cleaners are
+              links under the jobs. No auto-assign: cleans are given by building or one by one (staff comment sheet, 16 Oct 2026). */}
+          <span className="contents max-md:hidden">
+            <TabSwitch tab="board" onTab={onTab} />
           </span>
           <span className="contents max-md:hidden">
             <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/hr/employees?tab=employee-master')}>Cleaners</Button>
@@ -521,6 +488,55 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   const ids = group.rows.map(r => r.id);
   const allPicked = !!picks && ids.length > 0 && ids.every(id => picks.has(id));
   const somePicked = !!picks && ids.some(id => picks.has(id));
+  // Phones keep the building groups (owner, 2 Nov 2026), each job as the short phone card the cleaners' portal shows.
+  const phone = useMedia('(max-width: 767.98px)');
+  if (phone) {
+    return (
+      <section className="bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
+        <header className="flex items-center gap-2 pl-3 pr-2 py-1.5 min-h-11">
+          {picks && (
+            <input type="checkbox" checked={allPicked} ref={el => { if (el) el.indeterminate = somePicked && !allPicked; }} onChange={e => picks.toggle(ids, e.target.checked)}
+              aria-label={`Select every overdue job in ${group.name}`} className="flex-none w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
+          )}
+          <button type="button" onClick={() => setShut(v => !v)} aria-expanded={!shut}
+            className="min-w-0 flex-1 flex items-center gap-1.5 bg-transparent border-none p-0 min-h-9 cursor-pointer text-left text-ink [font-family:inherit]">
+            <Icon name={shut ? 'ChevronRight' : 'ChevronDown'} size="sm" color="var(--color-muted-ink)" />
+            <span className="min-w-0 truncate text-copy font-semibold">{group.name}</span>
+            <span className="flex-none text-meta text-muted-ink tabular-nums">{group.rows.length} · {doneN} done</span>
+          </button>
+          {group.departures.length > 0 && <span className="flex-none"><StatusBadge tone="critical" size="sm">{group.departures.length} to plan</StatusBadge></span>}
+          {unassigned > 0 && <span className="flex-none text-meta text-danger font-medium tabular-nums">{unassigned} unassigned</span>}
+          {open.length > 0 && onAssign && (
+            <button type="button" onClick={onAssign} aria-label={external ? 'Assign external jobs' : 'Assign whole building'} title={external ? 'Assign external jobs' : 'Assign whole building'}
+              className="flex-none h-9 min-w-9 px-2 sm:px-3 inline-flex items-center justify-center gap-1.5 rounded-control border-0 bg-black text-white cursor-pointer text-meta font-medium [font-family:inherit]">
+              <Icon name="Users" size="sm" /><span className="max-sm:hidden">{external ? 'Assign external jobs' : 'Assign whole building'}</span>
+            </button>
+          )}
+        </header>
+        {!shut && <>
+          <PhoneJobList label={`Cleaning jobs in ${group.name}`} className="rounded-none border-x-0 border-b-0">
+            {group.rows.map(r => <PhoneCleanCard key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`}
+              picked={picks ? picks.has(r.id) : undefined} onPick={picks ? on => picks.toggle([r.id], on) : undefined}
+              onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} onUndoLeft={() => onUndoLeft(r.id, r.unitNumber)} />)}
+            {group.departures.map(d => <PhoneDepartureCard key={d.reservationId} d={d} now={now} future={future}
+              busy={{ left: busy === `left-${d.reservationId}`, plan: busy === `plan-${d.reservationId}` }}
+              onGuestLeft={() => onGuestLeft({ reservationId: d.reservationId }, d.unitNumber)} onPlan={() => onPlan(d)} />)}
+          </PhoneJobList>
+          {group.repairs.length > 0 && (
+            <div className="px-3 py-2 [border-top:1px_solid_var(--color-line-soft)] bg-page flex flex-col gap-1">
+              {group.repairs.map(w => (
+                <div key={w.id} className="flex items-center gap-2 text-meta min-w-0">
+                  <Icon name="Wrench" size="sm" color="var(--color-gold-ink)" />
+                  <span className="min-w-0 truncate"><b>{w.unitNumber}</b> repair {hm(w.startsAt)}–{hm(w.endsAt)}: {w.title}</span>
+                  {w.overlaps.length > 0 && <span className="flex-none"><StatusBadge tone="critical" size="sm">Overlaps</StatusBadge></span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </>}
+      </section>
+    );
+  }
   return (
     <section className="@container bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
       <header className="flex items-center justify-between gap-3 flex-wrap px-4 @4xl:px-5 py-3">
@@ -704,15 +720,15 @@ function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSele
         <div className="flex flex-col gap-0.5 min-w-0">
           <CardLine icon="Users" className="text-muted-ink">
             {r.previous ? <>
-              <span className="text-ink">{r.previous.guestName}</span>
-              <span>Checkout by <b className="text-ink [font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b></span>
-              {r.previous.lateCheckOut && <StatusBadge tone="warning" size="sm">Late checkout</StatusBadge>}
+              <GuestName name={r.previous.guestName} />
+              <span className="whitespace-nowrap">Checkout by <b className="text-ink [font-variant-numeric:tabular-nums]">{r.previous.checkOutTime}</b></span>
+              {r.previous.lateCheckOut && <LateBadge unpaid={r.previous.lateCheckOutUnpaid} />}
             </> : <span>No guest leaving</span>}
           </CardLine>
           {rowT === 'overdue' && <div className={cx(CARD_NOTE, 'text-danger font-medium')}>Checkout time passed.</div>}
-          {r.guestOut && r.guestLeftAt && (
+          {r.guestOut && (
             <div className={cx(CARD_NOTE, 'text-muted-ink')}>
-              {r.guestLeftAuto ? `Out at checkout ${hm(r.guestLeftAt)} (automatic)` : `Left at ${hm(r.guestLeftAt)}`}
+              {!r.guestLeftAt ? 'Guest out' : r.guestLeftAuto ? `Guest out · ${autoLabel(r)}` : `Left at ${hm(r.guestLeftAt)}`}
               {mayTick && <> · <button type="button" disabled={busy} onClick={stop(onUndoLeft)} onKeyDown={e => e.stopPropagation()}
                 className="p-0 bg-transparent border-0 underline cursor-pointer text-muted-ink [font-family:inherit] [font-size:inherit] disabled:opacity-50">Undo</button></>}
             </div>
@@ -723,7 +739,7 @@ function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSele
             <span>Next guest arrives {arrives} <CheckInTime time={r.next.checkInTime} saving={savingIn} onSave={r.next.reservationId && r.status !== 'done' ? onCheckIn : undefined} /></span>
             {r.next.earlyCheckIn && <StatusBadge tone="warning" size="sm">Early check-in</StatusBadge>}
             <span className="text-meta font-normal whitespace-nowrap"><TimeLeft at={r.next.checkInAt} now={now} done={r.status === 'done'} /></span>
-          </> : <span>No check-in {arrives}</span>}
+          </> : <span>No check-in {arrives}<LaterNote later={r.nextLater} /></span>}
         </CardLine>
       </>}
 
@@ -732,9 +748,12 @@ function CleanCard({ r, now, active, busy, assigning, savingIn, cleaners, onSele
         {meta && <span className="ml-auto min-w-0 truncate text-meta text-muted-ink">{meta}</span>}
       </div>
 
-      {r.status === 'done'
-        ? <div className="text-meta text-muted-ink">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</div>
-        : mayTick && !r.guestOut && <Button size="sm" variant="danger" className="w-full" loading={busy} onClick={stop(onGuestLeft)}>Guest has left</Button>}
+      {/* One slot of the same height on every card, button or not, so the cleaner rows of a grid row line up. */}
+      <div className="min-h-[var(--control-height-sm)] flex items-center">
+        {r.status === 'done'
+          ? <span className="text-meta text-muted-ink">{r.completedAt ? `Done ${hm(r.completedAt)}` : 'Done'}{files > 0 ? ` · ${files} ${files === 1 ? 'photo' : 'photos'}` : ''}</span>
+          : mayTick && !r.guestOut && <Button size="sm" variant="danger" className="w-full" loading={busy} onClick={stop(onGuestLeft)}>Guest has left</Button>}
+      </div>
     </div>
   );
 }
@@ -751,16 +770,16 @@ function DepartureCard({ d, now, future, busy, savingIn, onGuestLeft, onCheckIn,
         <span className="flex-none"><StatusBadge tone="critical" size="sm">No cleaning job</StatusBadge></span>
       </div>
       <CardLine icon="Users" className="text-muted-ink">
-        <span className="text-ink">{d.guestName}</span>
-        <span>Checkout by <b className="text-ink [font-variant-numeric:tabular-nums]">{d.checkOutTime}</b></span>
-        {d.lateCheckOut && <StatusBadge tone="warning" size="sm">Late checkout</StatusBadge>}
+        <GuestName name={d.guestName} />
+        <span className="whitespace-nowrap">Checkout by <b className="text-ink [font-variant-numeric:tabular-nums]">{d.checkOutTime}</b></span>
+        {d.lateCheckOut && <LateBadge unpaid={d.lateCheckOutUnpaid} />}
         {d.state === 'checked_out' && <StatusBadge tone="gold" size="sm">Out</StatusBadge>}
       </CardLine>
       <CardLine icon="LogIn" className={d.next ? 'text-danger font-medium' : 'text-muted-ink'}>
         {d.next ? <>
           <span>Next guest arrives today <CheckInTime time={d.next.checkInTime} saving={savingIn} onSave={d.next.reservationId ? onCheckIn : undefined} /></span>
           <span className="text-meta font-normal whitespace-nowrap"><TimeLeft at={d.next.checkInAt} now={now} /></span>
-        </> : <span>No check-in today</span>}
+        </> : <span>No check-in today<LaterNote later={d.nextLater} /></span>}
       </CardLine>
       <div className="mt-auto pt-0.5 flex items-center gap-2">
         <Button size="sm" variant="primary" className="flex-1" loading={busy.plan} onClick={onPlan}>Plan cleaning</Button>
@@ -780,7 +799,36 @@ const PHONE_STATUS: Record<string, string> = { ready: 'Ready to clean', done: 'D
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('');
 
-const rowOrder = (r: Row): CleanOrderInput => ({ checkIn: r.next?.checkInTime ?? null, done: r.status === 'done', building: r.propertyName, unit: r.unitNumber });
+/** The cleaner's order (lib/cleanOrder): the arrival on the job's day, else the next one on a later day; a guest not out
+ *  yet (and no cleaner started) waits below, by the checkout time. */
+const rowOrder = (r: Row): CleanOrderInput => ({
+  checkIn: r.next?.checkInTime ?? r.nextLater?.checkInTime ?? null, checkInDay: r.next ? r.day : r.nextLater?.day ?? null, day: r.day,
+  guestIn: !!r.previous && !r.guestOut && r.status !== 'cleaning' && r.status !== 'done', checkOut: r.previous?.checkOutTime ?? null,
+  done: r.status === 'done', building: r.propertyName, unit: r.unitNumber,
+});
+const departureOrder = (d: Departure, day: string): CleanOrderInput => ({
+  checkIn: d.next?.checkInTime ?? d.nextLater?.checkInTime ?? null, checkInDay: d.next ? day : d.nextLater?.day ?? null, day,
+  guestIn: d.state !== 'checked_out', checkOut: d.checkOutTime,
+  building: d.propertyName, unit: d.unitNumber,
+});
+/** "Auto at 11:00" or "Auto at 13:00 (late checkout)": the system marked the guest out at the checkout time (lib/guestLeft). */
+const autoLabel = (r: Row) => `Auto at ${hm(r.guestLeftAt)}${r.previous?.lateCheckOut ? ' (late checkout)' : ''}`;
+/** "4 Nov" from a day. */
+const shortDay = (day: string) => dayLabel(day).replace(/^\w+\s/, '');
+
+/** A guest's name on one line, cut short with the full name on hover, so long names no longer break the card's lines. */
+function GuestName({ name, className }: { name: string; className?: string }) {
+  return <span dir="auto" title={name} className={cx('min-w-0 max-w-full truncate text-ink', className)}>{name}</span>;
+}
+/** The late checkout badge; a request not yet paid says so on hover. */
+function LateBadge({ unpaid }: { unpaid?: boolean }) {
+  return <span className="flex-none" title={unpaid ? 'Requested, not paid yet. The cleaning job already goes by this time.' : undefined}><StatusBadge tone="warning" size="sm">Late checkout</StatusBadge></span>;
+}
+/** " · next guest 4 Nov 15:00" after "No check-in today". */
+function LaterNote({ later }: { later?: LaterArrival | null }) {
+  if (!later) return null;
+  return <span className="font-normal"> · next guest <span className="whitespace-nowrap">{shortDay(later.day)} <b className="[font-variant-numeric:tabular-nums]">{later.checkInTime}</b></span></span>;
+}
 
 /** One job on a phone (components/ops/PhoneJobCard, the same card the cleaners' portal shows): unit and status, the
  *  building and its cleaner, then the checkout and check-in times. The checkout shows when the guest really left. */
@@ -795,12 +843,14 @@ function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLef
   const left = r.guestOut && r.guestLeftAt ? hm(r.guestLeftAt) : null;
   return (
     <PhoneJobCard title={r.external ? r.external.address : r.unitNumber} active={active} tone={tone} onSelect={onSelect}
-      building={r.external ? ['External', r.external.clientName, r.external.clientPhone].filter(Boolean).join(' · ') : r.propertyName}
+      building={r.external ? [r.external.clientName, r.external.clientPhone].filter(Boolean).join(' · ') || 'No client name' : undefined}
       lead={onPick && (
         <input type="checkbox" checked={!!picked} onChange={e => onPick(e.target.checked)} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
           aria-label={`Select ${r.unitNumber}, ${dayLabel(r.day)}`} className="flex-none w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
       )}
-      badges={r.carriedOver && <span className="min-w-0 flex"><StatusBadge tone="warning" size="sm" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge></span>}
+      badges={<>
+        {r.carriedOver && <span className="min-w-0 flex"><StatusBadge tone="warning" size="sm" title={`Carried over from ${dayLabel(r.day)}`}>{dayLabel(r.day).replace(/^\w+\s/, '')}</StatusBadge></span>}
+      </>}
       status={<><StatusBadge tone={st.tone} size="sm">{PHONE_STATUS[r.status] ?? st.label}</StatusBadge>
         {mayTick && <GuestOutTick out={r.guestOut} busy={busy} onTick={r.guestOut ? onUndoLeft : onGuestLeft} small />}</>}
       right={<span className="flex items-center" title={names.join(', ') || undefined}>
@@ -811,14 +861,16 @@ function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLef
           {names.length > 2 && <span aria-hidden className="ml-1 font-semibold">+{names.length - 2}</span>}
           {names.length === 1 && <span aria-hidden className="ml-1.5 max-w-[96px] truncate text-ink">{names[0]!.split(/\s+/)[0]}</span>}
           <span className="sr-only">{names.join(', ')}</span>
-        </> : <span className="text-danger font-medium">Unassigned</span>}
+        </> : r.status !== 'unassigned' && <span className="text-danger font-medium">Unassigned</span>}
       </span>}
       out={r.external ? undefined : r.previous
         ? <PhoneStayTime label="Out" time={left ?? r.previous.checkOutTime} actual={r.guestOut && !mayTick}
-            actualLabel={r.guestLeftAuto ? 'Out at the checkout time (automatic)' : 'Guest has left'} />
+            actualLabel={r.guestLeftAuto ? autoLabel(r) : 'Guest has left'}
+            aside={r.previous.lateCheckOut && <span className="text-meta text-warning font-medium whitespace-nowrap" title="Late checkout">Late</span>} />
         : <PhoneStayTime label="No guest leaving" />}
       arrive={r.external ? undefined : r.next
         ? <PhoneStayTime label="In" time={r.next.checkInTime} aside={r.status !== 'done' && <span className="text-meta whitespace-nowrap"><TimeLeft at={r.next.checkInAt} now={now} /></span>} />
+        : r.nextLater ? <PhoneStayTime label="Next in" time={`${shortDay(r.nextLater.day)} ${r.nextLater.checkInTime}`} />
         : <PhoneStayTime label="No check-in" />}
       note={tone === 'overdue' ? <span className="text-meta text-danger font-medium">{OVERDUE_NOTE}</span> : undefined} />
   );
@@ -830,10 +882,11 @@ function PhoneDepartureCard({ d, now, future, busy, onGuestLeft, onPlan }: {
 }) {
   const out = d.state === 'checked_out';
   return (
-    <PhoneJobCard title={d.unitNumber} building={d.propertyName}
+    <PhoneJobCard title={d.unitNumber}
       status={<StatusBadge tone="critical" size="sm">No cleaning job</StatusBadge>}
       out={<PhoneStayTime label="Out" time={d.checkOutTime} actual={out} actualLabel="Guest has left" />}
       arrive={d.next ? <PhoneStayTime label="In" time={d.next.checkInTime} aside={<span className="text-meta whitespace-nowrap"><TimeLeft at={d.next.checkInAt} now={now} /></span>} />
+        : d.nextLater ? <PhoneStayTime label="Next in" time={`${shortDay(d.nextLater.day)} ${d.nextLater.checkInTime}`} />
         : <PhoneStayTime label="No check-in" />}
       note={<div className="flex items-center justify-end gap-2 pt-0.5">
         {!out && !future && <Button size="sm" variant="secondary" loading={busy.left} onClick={onGuestLeft}>Guest left</Button>}
@@ -980,20 +1033,22 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
         </div>
       ) : (
       <div className="grid grid-cols-2 gap-2.5">
-        <div className="rounded-control bg-muted p-2.5 flex flex-col gap-0.5">
+        <div className="rounded-control bg-muted p-2.5 flex flex-col gap-0.5 min-w-0">
           <span className="text-meta text-muted-ink">Leaving</span>
-          {row.previous ? <><span><b>{row.previous.checkOutTime}</b> {row.previous.guestName}</span>
-            {row.previous.lateCheckOut && <span className="text-meta text-warning">Late checkout</span>}
-            {row.guestOut ? <span className="text-meta text-gold-ink font-medium">Guest out{row.guestLeftAt ? ` at ${hm(row.guestLeftAt)}` : ''}{row.guestLeftAuto ? ' (automatic, at the checkout time)' : ''}</span>
+          {row.previous ? <><b className="[font-variant-numeric:tabular-nums]">{row.previous.checkOutTime}</b><GuestName name={row.previous.guestName} />
+            {row.previous.lateCheckOut && <span className="text-meta text-warning">{row.previous.lateCheckOutUnpaid ? 'Late checkout, not paid yet' : 'Late checkout'}</span>}
+            {row.guestOut ? <span className="text-meta text-gold-ink font-medium">{row.guestLeftAuto ? `Guest out · ${autoLabel(row)}` : `Guest out${row.guestLeftAt ? ` at ${hm(row.guestLeftAt)}` : ''}`}</span>
               : !done && row.day <= mytDay(0) && <Button size="sm" variant="secondary" className="mt-1 self-start" onClick={onGuestLeft}>Guest left</Button>}</>
             : <span className="text-muted-ink">No departing guest</span>}
         </div>
-        <div className="rounded-control bg-gold-tint p-2.5 flex flex-col gap-0.5">
+        <div className="rounded-control bg-gold-tint p-2.5 flex flex-col gap-0.5 min-w-0">
           <span className="text-meta text-muted-ink">Arriving</span>
-          {row.next ? <><span><CheckInTime time={row.next.checkInTime} saving={savingIn} onSave={row.next.reservationId && !done ? onCheckIn : undefined} /> {row.next.guestName}{row.next.guests ? ` · ${row.next.guests} ${row.next.guests === 1 ? 'guest' : 'guests'}` : ''}</span>
+          {row.next ? <><span><CheckInTime time={row.next.checkInTime} saving={savingIn} onSave={row.next.reservationId && !done ? onCheckIn : undefined} /></span>
+            <GuestName name={row.next.guestName} />
+            {row.next.guests > 0 && <span className="text-meta text-muted-ink">{row.next.guests} {row.next.guests === 1 ? 'guest' : 'guests'}</span>}
             {row.next.earlyCheckIn && <span className="text-meta text-warning">Early check-in</span>}
             <span className="text-meta">Time left <TimeLeft at={row.next.checkInAt} now={now} done={done} /></span></>
-            : <span className="text-muted-ink">No check-in</span>}
+            : <span className="text-muted-ink">No check-in{row.nextLater ? <><br />Next guest {shortDay(row.nextLater.day)} <b className="text-ink">{row.nextLater.checkInTime}</b></> : null}</span>}
         </div>
       </div>
       )}
@@ -1430,25 +1485,18 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
   );
 }
 
-/** Phones only: the less-used Cleaning header actions in a bottom sheet. */
-function CleaningMore({ onCleaners }: { onCleaners: () => void }) {
-  const [open, setOpen] = useState(false);
-  const row = 'min-h-12 flex items-center gap-3 px-1 border-0 [border-bottom:1px_solid_var(--color-line-soft)] bg-transparent cursor-pointer text-left text-copy text-ink';
+/** Phones only: the other Cleaning views as small links under the board, in place of the tab strip (owner, 2 Nov 2026). */
+function PhoneMoreLinks({ onTab, onCleaners }: { onTab: (t: Tab) => void; onCleaners: () => void }) {
+  const { user } = useSession();
+  const link = 'min-h-11 px-1 bg-transparent border-0 cursor-pointer text-copy text-gold-ink underline-offset-2 hover:underline [font-family:inherit]';
   return (
-    <span className="md:hidden">
-      <button type="button" onClick={() => setOpen(true)} aria-label="More cleaning actions" aria-haspopup="menu"
-        className="h-9 w-9 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer">
-        <Icon name="Ellipsis" size="sm" />
-      </button>
-      {open && (
-        <div role="dialog" aria-modal aria-label="Cleaning actions" className="fixed inset-0 z-[70] flex flex-col justify-end">
-          <div onClick={() => setOpen(false)} className="absolute inset-0 bg-[var(--color-surface-scrim)]" />
-          <div role="menu" className="relative bg-card rounded-t-[20px] pt-2.5 pb-[calc(16px+env(safe-area-inset-bottom))] px-4 flex flex-col">
-            <span aria-hidden className="w-[38px] h-1 rounded-full bg-line self-center mb-3" />
-            <button type="button" role="menuitem" className={row} onClick={() => { setOpen(false); onCleaners(); }}><Icon name="Users" size="sm" /><span className="flex-1">Cleaners</span></button>
-          </div>
-        </div>
-      )}
-    </span>
+    <nav aria-label="More cleaning views" className="md:hidden flex-none flex items-center flex-wrap gap-x-3 px-1 text-meta text-muted-ink">
+      <span>More:</span>
+      <button type="button" className={link} onClick={() => onTab('history')}>History</button>
+      <button type="button" className={link} onClick={() => onTab('prices')}>Prices</button>
+      <button type="button" className={link} onClick={() => onTab('pay')}>Pay</button>
+      {maySee(user, 'finance') && <button type="button" className={link} onClick={() => onTab('profit')}>Profit</button>}
+      <button type="button" className={link} onClick={onCleaners}>Cleaners</button>
+    </nav>
   );
 }

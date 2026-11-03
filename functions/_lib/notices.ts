@@ -86,7 +86,7 @@ export async function cleaningNotice(env: Env, id: string, event: 'assigned' | '
     await notifyUsers(env, 'ops', { ...base, kind: 'cleaning.completed', title: `Cleaning job done: ${t.unit}`, body: `${t.title} is finished; the unit is ready.`, dedupeKey: `clean-done-${id}` });
   } else {
     const people = await taskPeople(env, id);
-    await notifyUsers(env, { roles: ['ops_managers'], userIds: people }, { ...base, kind: 'cleaning.overdue', title: `Cleaning job overdue: ${t.unit}`, body: `${t.title} was due${t.due_at ? ` by ${day(t.due_at)}` : ''} and is not finished.`, dedupeKey: `clean-overdue-${id}`, except: null });
+    await notifyUsers(env, { roles: ['ops_managers'], userIds: people }, { ...base, kind: 'cleaning.overdue', title: `Cleaning job overdue: ${t.unit}`, body: `${t.title}${when} is not finished: the next guest's check-in time has passed, or, with no check-in, its day is over.`, dedupeKey: `clean-overdue-${id}`, except: null });
   }
 }
 

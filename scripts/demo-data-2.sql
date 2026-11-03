@@ -23,9 +23,9 @@ INSERT INTO reservations (id, unit_id, guest_id, channel, external_ref, state, c
  ('77777777-0000-4000-8000-000000000004','55555555-5555-4555-8555-000000000003','66666666-6666-4666-8666-000000000004','agoda','AGD-330912','confirmed','2026-09-11','2026-09-16',2,159000,19800,139200,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z');
 
 INSERT INTO reviews (id, unit_id, reservation_id, channel, rating, comment, reviewed_at) VALUES
- ('demo-review-001','55555555-5555-4555-8555-000000000001',NULL,'airbnb',5,'Spotless and exactly as described. Check-in instructions were clear.','2026-09-14T00:00:00Z'),
- ('demo-review-002','55555555-5555-4555-8555-000000000002',NULL,'booking_com',5,'Great location, quick responses from the host.','2026-09-12T00:00:00Z'),
- ('demo-review-003','55555555-5555-4555-8555-000000000003',NULL,'agoda',5,'Best value in the city. Would stay again.','2026-09-10T00:00:00Z');
+ ('seed-review-001','55555555-5555-4555-8555-000000000001',NULL,'airbnb',5,'Spotless and exactly as described. Check-in instructions were clear.','2026-09-14T00:00:00Z'),
+ ('seed-review-002','55555555-5555-4555-8555-000000000002',NULL,'booking_com',5,'Great location, quick responses from the host.','2026-09-12T00:00:00Z'),
+ ('seed-review-003','55555555-5555-4555-8555-000000000003',NULL,'agoda',5,'Best value in the city. Would stay again.','2026-09-10T00:00:00Z');
 
 INSERT INTO tasks (id, unit_id, reservation_id, kind, state, title, instructions, assignee_id, scheduled_for, due_at, next_guest_at, started_at, completed_at, completed_by, requires_photo, sync, created_at, updated_at) VALUES
  ('demo-task-001','55555555-5555-4555-8555-000000000001',NULL,'turnover','in_progress','Turnover, 2BR','Late check-out to 13:00.','11111111-1111-4111-8111-000000000005','2026-09-18','2026-09-18T14:30:00Z','2026-09-18T15:00:00Z',NULL,NULL,NULL,1,'synced','2026-09-18T06:00:00Z','2026-09-18T06:00:00Z'),

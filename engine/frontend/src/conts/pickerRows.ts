@@ -5,7 +5,7 @@
 export type PickProject = {
   id: number; code: string | null; name: string; customer_name: string | null; contract_status: string | null;
   planned_handover_date: string | null; handed_over_at: string | null; created_at: string | null; done: boolean;
-  funding?: string | null;
+  funding?: string | null; internal_department?: string | null;
 };
 export type PickUnit = { id: string; building: string; unitNumber: string };
 

@@ -6,8 +6,8 @@ import { NO_EMAIL_DOMAIN, PIN_ROLES, employeeIdFor, hasEmployeeIds, tempPin } fr
 
 /** The two rosters on HR > Employees: cleaners sign in as housekeepers, technicians as technicians. */
 const LISTS = {
-  cleaners: { role: 'housekeeper', noun: 'cleaner', action: 'housekeeping.cleaner' },
-  technicians: { role: 'technician', noun: 'technician', action: 'maintenance.technician' },
+  cleaners: { role: 'housekeeper', noun: 'cleaner', action: 'housekeeping.cleaner', kind: 'cleaning' },
+  technicians: { role: 'technician', noun: 'technician', action: 'maintenance.technician', kind: 'maintenance' },
 } as const;
 export type WorkerList = keyof typeof LISTS;
 
@@ -19,7 +19,7 @@ export type WorkerList = keyof typeof LISTS;
  * earlier sign-in on that account ends. Run it again to give a forgotten PIN; the ID stays the same.
  */
 export async function giveFieldAccess(env: Env, session: Session, list: WorkerList, id: string): Promise<Response> {
-  const { role, noun, action } = LISTS[list];
+  const { role, noun, action, kind } = LISTS[list];
   // Creating a login is a management decision; Full on Operations (the Operations Manager position) may make field
   // ones too, and only from here.
   if (!can(session, 'operations', 'full')) return fail('FORBIDDEN', 'Only management and operations managers can give app access.', 403);
@@ -57,6 +57,12 @@ export async function giveFieldAccess(env: Env, session: Session, list: WorkerLi
       userId, `${userId}${NO_EMAIL_DOMAIN}`, w.full_name, w.phone, hash, role, employeeId, now, now);
     await run(env, `UPDATE ${list} SET user_id = ?, updated_at = ? WHERE id = ?`, userId, now, id);
   }
+
+  /* The login takes its roster's department (Maintenance for a technician, Cleaning for a cleaner) when it has none:
+     petty cash follows a person's department, so a technician's receipt comes off the Maintenance float (chew, 2 Nov 2026).
+     A department already set stays: a person on both rosters keeps the first. */
+  await run(env, `UPDATE users SET department_id = (SELECT id FROM departments WHERE kind = ? ORDER BY sort, name LIMIT 1), updated_at = ?
+    WHERE id = ? AND department_id IS NULL`, kind, now, userId);
 
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: w.user_id ? `${action}_new_pin` : `${action}_app_access`,
