@@ -1,15 +1,14 @@
 /* Delivery order > "Mark delivered" for office staff (Conts, owner run 24 Oct 2026). Houzs closes a delivery on the
    driver's Proof-of-Delivery phone screen; Conts has no driver app, so every DO stayed "Ready to dispatch". This
    runs the SAME delivered transition (PATCH /delivery-orders-mfg/:id/status DELIVERED) with the day it arrived and
-   optional photos: the first photo is the proof of delivery (the phone POD's upload and column), any more go on
-   the DO's files with the caption "Proof of delivery". */
+   optional photos, all saved as the proof of delivery (the phone POD's upload and columns). */
 import { useState, type ReactElement } from "react";
 import { PackageCheck } from "lucide-react";
 import { Button } from "../../components/Button";
 import { ModalOverlay } from "../../components/scm-v2/DocumentRelationshipMapModal";
 import { uploadSlipFull } from "../../vendor/scm/lib/slip";
 import { useUpdateMfgDeliveryOrderStatus } from "../../vendor/scm/lib/delivery-order-queries";
-import { refusal, uploadDocFile } from "../../components/doc-attachments/docAttachmentsApi";
+import { refusal } from "../../components/doc-attachments/docAttachmentsApi";
 import { useQueryClient } from "@tanstack/react-query";
 
 /** Conts switch: office staff may mark a delivery done. */
@@ -72,15 +71,12 @@ function MarkDeliveredDialog({ doId, doNumber, onClose }: { doId: string; doNumb
     try {
       /* The photo is stored BEFORE the status flips, the phone POD's order: a delivery is never marked done on a
          photo that did not save. */
-      let podKey: string | undefined;
-      if (files[0]) podKey = (await uploadSlipFull({ file: files[0] })).r2Key;
-      await update.mutateAsync({ id: doId, status: "DELIVERED", evidence: { podKey, deliveredOn: day } });
-      const failed: string[] = [];
-      for (const f of files.slice(1)) {
-        try { await uploadDocFile("delivery_order", doId, f, { caption: "Proof of delivery" }); } catch { failed.push(f.name); }
-      }
+      /* Every photo is a POD photo (delivery_orders.pod_photo_keys, the phone's multi-photo POD), so the Proof of
+         delivery card shows them all; it showed only the first (owner run, 3 Nov 2026). */
+      const podKeys: string[] = [];
+      for (const f of files) podKeys.push((await uploadSlipFull({ file: f })).r2Key);
+      await update.mutateAsync({ id: doId, status: "DELIVERED", evidence: { podKey: podKeys[0], podKeys, deliveredOn: day } });
       void qc.invalidateQueries({ queryKey: ["doc-attachments", "delivery_order", doId] });
-      if (failed.length) { setError(`Marked delivered. These photos did not upload: ${failed.join(", ")}. Add them under Files.`); setBusy(false); return; }
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not mark it delivered. Please try again.");
