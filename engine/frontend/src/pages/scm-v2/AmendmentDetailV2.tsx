@@ -1268,12 +1268,11 @@ export function AmendmentDetailV2() {
         rows={[
           { label: "Against SO", value: soDocNo || "—" },
           { label: "Status", value: amendmentPrintedStatus(status) },
+          ...(changes?.topic && changes.topic !== reason ? [{ label: "Topic", value: changes.topic }] : []),
           { label: "Reason", value: reason || "—" },
           {
             label: "Changes",
-            value: `${lines.length + headerDiffs.length} change${
-              lines.length + headerDiffs.length === 1 ? "" : "s"
-            }`,
+            value: `${changeCount} change${changeCount === 1 ? "" : "s"}`,
           },
         ]}
         {...print.handlers}
