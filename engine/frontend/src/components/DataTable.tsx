@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { VisibleWidth } from "../conts/VisibleWidth";
+import { TableLoadError } from "../conts/TableLoadError";
 import {
   Download,
   Upload,
@@ -2632,8 +2633,7 @@ function DataTableInner<T, L>({
                     className="px-3 py-14 text-center text-sm text-err"
                   >
                     <VisibleWidth scrollRef={scrollWrapRef}>
-                      <div className="font-semibold">Failed to load</div>
-                      <div className="mt-1 text-xs text-ink-muted">{error}</div>
+                      <TableLoadError error={String(error)} />
                     </VisibleWidth>
                   </td>
                 </tr>
@@ -3040,8 +3040,7 @@ function DataTableInner<T, L>({
         )}
         {!effectiveLoading && error && (
           <div className="rounded-lg border border-err/40 bg-err/5 p-4 text-center text-sm text-err">
-            <div className="font-semibold">Failed to load</div>
-            <div className="mt-1 text-xs text-ink-muted">{error}</div>
+            <TableLoadError error={String(error)} />
           </div>
         )}
         {!effectiveLoading && !error && sortedRows && sortedRows.length === 0 && (

@@ -9,6 +9,7 @@ import { useSession } from '../lib/session';
 import { announceFieldChanged } from '../lib/fieldLive';
 import { useToast } from './Toast';
 import Icon from './Icon';
+import { StaleBanner } from './DataState';
 
 /* ------------------------------------------------------------------ *
  * The bell in the top bar. The badge is the signed-in person's unread notices
@@ -134,6 +135,7 @@ function Bell({ navigate, target, size, alerts, dark = false, glass, live = fals
   const { unread, setUnread, refresh } = useUnreadNotices(live ? { pollMs: LIVE_POLL_MS, onArrive: arrived } : {});
   const [list, setList] = useState<Notice[] | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const attention = alerts.filter(a => a.tone !== 'info').length;
 
   useEffect(() => {
@@ -145,7 +147,7 @@ function Bell({ navigate, target, size, alerts, dark = false, glass, live = fals
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     document.addEventListener('keydown', onKey);
     return () => { live = false; document.removeEventListener('keydown', onKey); };
-  }, [open, setUnread]);
+  }, [open, setUnread, attempt]);
 
   const go = (target: string) => { setOpen(false); navigate(target); };
   const openNotice = (n: Notice) => {
@@ -208,8 +210,8 @@ function Bell({ navigate, target, size, alerts, dark = false, glass, live = fals
                 </button>
               ))}
               {alerts.length > 0 && <div style={{ padding: '8px 16px 4px', fontSize: text.caption, fontWeight: 600, letterSpacing: '0.06em', color: color.textMuted }}>FOR YOU</div>}
-              {list === null && !loadError && <div style={{ padding: '18px 16px', fontSize: text.small, color: color.textMuted }}>Loading...</div>}
-              {loadError && <div style={{ padding: '18px 16px', fontSize: text.small, color: color.textMuted }}>Your notifications could not load. Try again in a moment.</div>}
+              {list === null && !loadError && <div style={{ padding: '18px 16px', fontSize: text.small, color: color.textMuted }}>Loading…</div>}
+              {loadError && <div style={{ padding: '12px 16px' }}><StaleBanner message="Your notifications could not load." onRetry={() => { setLoadError(false); setAttempt(n => n + 1); }} /></div>}
               {list?.map(n => <NoticeRow key={n.id} n={n} onOpen={openNotice} />)}
               {list && list.length === 0 && <div style={{ padding: '18px 16px', fontSize: text.small, color: color.textMuted }}>No notifications yet. New reservations, cleaning jobs and maintenance jobs that concern you appear here.</div>}
             </div>

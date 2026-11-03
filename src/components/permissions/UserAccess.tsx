@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '../Button';
 import { ConfirmDialog, type ConfirmSpec } from '../ConfirmDialog';
 import Icon from '../Icon';
+import { StaleBanner } from '../DataState';
 import { useToast } from '../Toast';
 import { api, errorMessage } from '../../lib/api';
 import { cx } from '../../lib/design-tokens';
@@ -21,6 +22,7 @@ export default function UserAccess({ userId }: { userId: string }) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<PersonAccess | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   // area -> the level picked but not yet saved; null puts the area back on the position default
   const [draft, setDraft] = useState<Record<string, AccessLevel | null>>({});
   const [busy, setBusy] = useState(false);
@@ -33,7 +35,7 @@ export default function UserAccess({ userId }: { userId: string }) {
       .then(res => { if (live) { setData(res); setError(null); } })
       .catch(e => { if (live) setError(errorMessage(e, 'Their access could not be loaded.')); });
     return () => { live = false; };
-  }, [open, data, userId]);
+  }, [open, data, userId, attempt]);
 
   const pending = Object.keys(draft).length;
 
@@ -81,7 +83,7 @@ export default function UserAccess({ userId }: { userId: string }) {
       </summary>
       {open && (
         <div className="[border-top:1px_solid_var(--color-line-soft)] flex flex-col">
-          {error && <div className="p-4 text-copy text-muted-ink">{error}</div>}
+          {error && <div className="p-4"><StaleBanner message={error} onRetry={() => { setError(null); setAttempt(n => n + 1); }} /></div>}
           {!data && !error && <div className="p-4 text-copy text-muted-ink">Loading their access…</div>}
           {data && fixed && (
             <div className="p-4 text-copy text-muted-ink">

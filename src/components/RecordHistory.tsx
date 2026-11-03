@@ -3,6 +3,7 @@ import { api, errorMessage } from '../lib/api';
 import { rm, date, dateTime, humanize, titleCase, monthLabel, count, plural } from '../lib/format';
 import { ROLE_LABEL, CHANNEL } from '../lib/vocabulary';
 import { Skeleton } from './States';
+import { StaleBanner } from './DataState';
 import Icon from './Icon';
 import { Drawer } from './Dialog';
 import { CATEGORY as REPAIR_CATEGORY } from './ops/OpsUi';
@@ -282,6 +283,7 @@ export function RecordHistory({ entity, id, also, alsoActions, title = 'History'
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const alsoParam = (also ?? []).map(([t, i]) => `${t}:${i}`).join(',');
   const actionsParam = (alsoActions ?? []).join(',');
 
@@ -299,7 +301,7 @@ export function RecordHistory({ entity, id, also, alsoActions, title = 'History'
       .catch(e => { if (live) setError(errorMessage(e, 'The history could not load. Check your connection and try again.')); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [entity, id, alsoParam, actionsParam, page, pageSize, refreshKey]);
+  }, [entity, id, alsoParam, actionsParam, page, pageSize, refreshKey, attempt]);
 
   const first = loading && page === 1 && rows.length === 0;
   const done = rows.length >= total;
@@ -316,7 +318,7 @@ export function RecordHistory({ entity, id, also, alsoActions, title = 'History'
         </div>
       )}
       {first && <div className="py-4 px-5 flex flex-col gap-3" aria-busy="true">{[0, 1, 2].map(i => <Skeleton key={i} height={34} />)}</div>}
-      {error && <div className="py-4 px-5 text-copy text-danger" role="alert">{error}</div>}
+      {error && <div className="py-4 px-5"><StaleBanner message={error} onRetry={() => setAttempt(n => n + 1)} /></div>}
       {!first && !error && rows.length === 0 && !origin && <div className="py-4 px-5 text-copy text-muted-ink">No changes recorded yet. Every edit from now on shows here, with who made it.</div>}
       {(runs.length > 0 || showOrigin) && (
         <ul className="list-none m-0 py-1 px-0">
@@ -337,7 +339,7 @@ export function RecordHistory({ entity, id, also, alsoActions, title = 'History'
           <span className="text-meta text-muted-ink">Showing {count(rows.length)} of {count(total)}</span>
           <button type="button" onClick={() => setPage(p => p + 1)} disabled={loading}
             className="h-9 px-3 rounded-control border border-solid border-line bg-card text-copy text-ink cursor-pointer hover:bg-muted disabled:opacity-60 disabled:cursor-default">
-            {loading ? 'Loading...' : 'Show older'}
+            {loading ? 'Loading…' : 'Show older'}
           </button>
         </div>
       )}
