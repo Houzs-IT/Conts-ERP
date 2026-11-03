@@ -24,7 +24,13 @@ export interface VoLine {
   fromItemCode: string | null;
   /** What a change to an existing line moved, in words ("Colour: White -> Grey", "Remark: ..."). */
   changes?: string[];
+  /** What kind of change the line is, headline first (absent from an older server). */
+  facets?: Array<{ kind: VoChangeKind; from: string | null; to: string | null }>;
+  /** The facets in words: "Added", "Qty changed 1 → 2", "Options changed Divan 4" → Divan 5"". */
+  changeLabels?: string[];
 }
+
+export type VoChangeKind = "added" | "removed" | "sku" | "qty" | "price" | "options" | "remark" | "changed";
 
 export interface VoRow {
   key: string;
@@ -33,6 +39,8 @@ export interface VoRow {
   no: string;
   soDocNo: string;
   title: string | null;
+  /** One line saying what the VO does (absent from an older server). */
+  topic?: string;
   status: string;
   statusLabel: string;
   bucket: VoBucket;
@@ -186,6 +194,18 @@ export function byArea<T extends { area: string | null }>(items: readonly T[]): 
   return [...m.entries()]
     .sort((a, b) => (a[0] === "" ? 1 : b[0] === "" ? -1 : a[0].localeCompare(b[0])))
     .map(([k, items]) => ({ key: k || "-", label: k || "No area", items }));
+}
+
+/** The line's headline kind: the server's, else what its quantity says (an older server). */
+export function voChangeKind(l: Pick<VoLine, "facets" | "change">): VoChangeKind {
+  return l.facets?.[0]?.kind ?? (l.change === "add" ? "added" : l.change === "deduct" ? "removed" : "changed");
+}
+
+/** The line's change in words, headline first. */
+export function voChangeLabels(l: Pick<VoLine, "changeLabels" | "facets" | "change">): string[] {
+  if (l.changeLabels?.length) return l.changeLabels;
+  const k = voChangeKind(l);
+  return [k === "added" ? "Added" : k === "removed" ? "Removed" : "Changed"];
 }
 
 /** The quantity a VO line moves, signed: "+2", "-1", "+12.5 sqft". */

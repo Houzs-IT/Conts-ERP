@@ -47,7 +47,9 @@ const wasCls = (changed: boolean, base: string): string =>
 const nowCls = (changed: boolean, base: string): string =>
   cn(base, changed ? "font-semibold text-err" : "text-ink-muted");
 
-export function SoAmendmentDiffCard({ line }: { line: AmendmentLine }) {
+/* Conts (owner, 3 Nov 2026): `labels` names the change in words ("Qty changed 1 → 2", "Options changed ..."), from
+   the server's change rows; a renovation VO's omit and re-add of one line arrive as one MODIFY card. */
+export function SoAmendmentDiffCard({ line, labels }: { line: AmendmentLine; labels?: string[] }) {
   const old = oldOf(line);
   const { to: newSummary, from: oldSummary } = amendmentVariantSummaries(line);
   const changed = amendmentLineChangedFields(line);
@@ -63,9 +65,17 @@ export function SoAmendmentDiffCard({ line }: { line: AmendmentLine }) {
   return (
     <div className="overflow-hidden rounded-md border border-border">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-subtle bg-surface-2 px-3 py-1.5">
-        <span className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-secondary">
-          {changeTypeLabel(line.change_type)}
-        </span>
+        {labels && labels.length > 0 ? (
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {labels.map((t, i) => (
+              <span key={t} className={cn("text-[12px]", i === 0 ? "font-semibold text-ink" : "text-ink-secondary")}>{t}</span>
+            ))}
+          </span>
+        ) : (
+          <span className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-secondary">
+            {changeTypeLabel(line.change_type)}
+          </span>
+        )}
         <RowRoutingChips kinds={amendmentLineFieldKinds(line)} />
       </div>
       <div className="grid grid-cols-2 divide-x divide-border-subtle">
