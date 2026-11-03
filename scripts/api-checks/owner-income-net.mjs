@@ -54,6 +54,10 @@ check('Oct ignores the instalment lines', income('2026-10', [instal]) === 150000
 check('Oct without a host payout figure falls back to the recorded payout', income('2026-10', [stay('e', '2026-10-01', '2026-10-03', 20000, undefined)]) === 20000,
   String(income('2026-10', [stay('e', '2026-10-01', '2026-10-03', 20000, undefined)])));
 
+// 6b. October: a stay with no booking value (a direct booking paid by hand) keeps its recorded money.
+const handPaid = stay('g', '2026-10-05', '2026-10-07', 0, 0, [{ check_in: '2026-10-05', check_out: '2026-10-07', amount: 30000 }]);
+check('Oct: no booking value keeps the money recorded by hand', income('2026-10', [handPaid]) === 30000, String(income('2026-10', [handPaid])));
+
 // 7. October: no "no host payout recorded" warning for a stay that has a host payout.
 const w = S.computeUnitMonth('2026-10', unit, terms, [stay('f', '2026-10-18', '2026-10-30', 0, 80278)], [], [], 10000).warnings;
 check('Oct: no missing-payout warning when the host payout is known', !w.some(x => /no host payout recorded/.test(x)), w.join(' | '));

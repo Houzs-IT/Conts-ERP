@@ -222,9 +222,10 @@ const partsOf = (s: StayRow): StayPart[] => s.parts ?? [{ check_in: s.check_in, 
  *  payout, so they still agree with the owner workbook. */
 export const NET_INCOME_FROM = '2026-10';
 
-/** The pieces a stay's income in `month` is worked out from. */
+/** The pieces a stay's income in `month` is worked out from. A stay with no host payout (no booking value, e.g. a direct
+ *  booking paid by hand) keeps the money recorded against it, as the calendar has nothing to show for it either. */
 const stayIncomeParts = (s: StayRow, month: string): StayPart[] =>
-  month >= NET_INCOME_FROM && s.host_payout != null
+  month >= NET_INCOME_FROM && Number(s.host_payout) > 0
     ? [{ check_in: s.check_in, check_out: s.check_out, amount: Number(s.host_payout) }]
     : partsOf(s);
 
