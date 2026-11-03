@@ -145,6 +145,13 @@ export const PaymentVoucherNew = () => {
   /* Fixed by the document type — AP Payment settles PIs, Payment Voucher is
      plain cash-out. The old three-way dropdown is gone with the split. */
   const purpose: PvPurpose = isRefund ? 'CUSTOMER_REFUND' : isAp ? 'SUPPLIER_PAYMENT' : 'OTHER';
+  /* Where the cursor starts (chew 3 Nov 2026): "开pv 的时候就是直接在key payee 那边", and "如果是ap payment 就是直接在找
+     supplier 那边" — on opening, and again on switching between the two (the page stays mounted then). */
+  const payeeRef = useRef<HTMLInputElement>(null);
+  const supplierRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    (isAp ? supplierRef.current?.querySelector('input') : payeeRef.current)?.focus();
+  }, [isAp]);
   const [creditAccountCode, setCreditAccountCode] = useState<string>('');
   /* Pre-fill Paid From with the company's own default bank (BANK_DEFAULT —
      the role the owner maintains in Recon Setup). Only while untouched. */
@@ -388,7 +395,8 @@ export const PaymentVoucherNew = () => {
   const [landOn, setLandOn] = useState<string | null>(null);
   useEffect(() => {
     if (landOn == null) return;
-    document.querySelector<HTMLInputElement>(`[data-line="${landOn}"] input[role="combobox"]`)?.focus();
+    /* The account cell (data-land), not the line's unit / project field, which is a combobox too and comes first. */
+    document.querySelector<HTMLInputElement>(`[data-line="${landOn}"] [data-land] input[role="combobox"]`)?.focus();
     setLandOn(null);
   }, [landOn, lines]);
   const addLineAndLand = () => {
@@ -709,7 +717,7 @@ export const PaymentVoucherNew = () => {
             ) : (
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Payee *</span>
-              <input type="text" value={payeeName} onChange={(e) => setPayeeName(e.target.value)}
+              <input ref={payeeRef} type="text" value={payeeName} onChange={(e) => setPayeeName(e.target.value)}
                 placeholder="Who are we paying? (e.g. ABC Freight Forwarding)" className={styles.fieldInput} required />
             </label>
             )}
@@ -725,6 +733,7 @@ export const PaymentVoucherNew = () => {
             {isAp && (
               <label className={styles.field}>
                 <span className={styles.fieldLabel}>Supplier *</span>
+                <span ref={supplierRef} style={{ display: 'contents' }}>
                 <SearchCombo
                   options={sortByText(suppliersQ.data ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))}
                   value={supplierId}
@@ -732,6 +741,7 @@ export const PaymentVoucherNew = () => {
                   className={styles.fieldInput}
                   placeholder={suppliersQ.isLoading ? 'Loading suppliers…' : 'Type to find the supplier this pays'}
                 />
+                </span>
               </label>
             )}
             <label className={styles.field}>
@@ -951,7 +961,7 @@ export const PaymentVoucherNew = () => {
                 <LineTarget n={idx + 1} line={l} inputClass={styles.fieldInput}
                   onUnit={(u) => setPurpose(l.rid, { unitId: u })} onProject={(p) => setPurpose(l.rid, { projectId: p })} />
               </div>
-              <label className={voucherLineCss.cell}>
+              <label className={voucherLineCss.cell} data-land>
                 <span className={styles.fieldLabel}>Account (Debit) *</span>
                 <AccountSelect
                   accounts={accounts}
