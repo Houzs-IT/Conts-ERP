@@ -1,4 +1,5 @@
 import { type Env, one, json, fail, audit, nowIso } from '../../../../_lib/db';
+import { rmText } from '../../../../_lib/format';
 import { requireSession } from '../../../../_lib/auth';
 import { mayChangeAdjustments } from '../../../../_lib/ownerScope';
 import { approvalsEnabled, submit } from '../../../../_lib/approvals';
@@ -66,7 +67,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       const amount = Math.abs(Number(row?.amount ?? 0));
       return submit(env, session, {
         kind: 'debt_write_off', entity: 'owners', entityId: ownerId, amount, reason: note,
-        summary: `Write off RM ${(amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} held for ${row?.display_name ?? 'owner'}: ${row?.description ?? ''}`.trim(),
+        summary: `Write off ${rmText(amount)} held for ${row?.display_name ?? 'owner'}: ${row?.description ?? ''}`.trim(),
         payload: { ownerId, adjustmentId: id, note },
       }, () => json({ ok: true, state: 'settled', regenerate }));
     }

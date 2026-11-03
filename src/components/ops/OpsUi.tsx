@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { DialogFrame } from '../Modal';
-import { createPortal } from 'react-dom';
+import { Modal } from '../Modal';
 import { Button } from '../Button';
 import Icon from '../Icon';
 import { MediaSourceSheet } from '../Attachments';
@@ -89,19 +88,7 @@ export function PillTabs<T extends string>({ value, tabs, onChange }: { value: T
 export function OpsModal({ title, sub, children, footer, onClose, busy, width = 480 }: {
   title: string; sub?: ReactNode; children: ReactNode; footer: ReactNode; onClose: () => void; busy?: boolean; width?: number;
 }) {
-  // Portaled: opened from inside a drawer, a transformed ancestor would otherwise pin "fixed" to the drawer, not the screen.
-  return createPortal(
-    <DialogFrame label={title} onClose={onClose} busy={busy}
-      panelStyle={{ maxWidth: width }} panelClassName="relative w-full max-h-[calc(100dvh-32px)] flex flex-col bg-card rounded-card overflow-hidden shadow-[var(--shadow-overlay)]">
-      <div className="px-[22px] pt-5 pb-3 flex flex-col gap-1">
-        <h2 className="m-0 text-title font-semibold">{title}</h2>
-        {sub && <div className="text-copy text-muted-ink">{sub}</div>}
-      </div>
-      <div className="px-[22px] pb-4 overflow-y-auto flex flex-col gap-3.5">{children}</div>
-      <div className="px-[22px] py-3.5 [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-2 flex-wrap">{footer}</div>
-    </DialogFrame>,
-    document.body,
-  );
+  return <Modal title={title} sub={sub} onClose={onClose} busy={busy} width={width} footer={footer}>{children}</Modal>;
 }
 
 /** Label above a control, error under it. */

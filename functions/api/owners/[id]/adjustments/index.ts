@@ -1,4 +1,5 @@
 import { type Env, all, one, json, fail, nowIso } from '../../../../_lib/db';
+import { rmText } from '../../../../_lib/format';
 import { submit } from '../../../../_lib/approvals';
 import { requireSession } from '../../../../_lib/auth';
 import { can } from '../../../../_lib/access';
@@ -72,7 +73,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const reason = String(b?.reason ?? '').trim() || description;
   return submit(env, session, {
     kind: 'owner_adjustment', entity: 'owners', entityId: ownerId, amount, reason,
-    summary: `${kind === 'credit' ? 'Credit' : 'Charge'} RM ${(amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} ${kind === 'credit' ? 'to' : 'against'} ${owner?.display_name ?? 'owner'}: ${description}`,
+    summary: `${kind === 'credit' ? 'Credit' : 'Charge'} ${rmText(amount)} ${kind === 'credit' ? 'to' : 'against'} ${owner?.display_name ?? 'owner'}: ${description}`,
     payload: { ownerId, unitId, kind, amount: signed, description, occurredOn, reference },
   }, r => json({ id: r.adjustmentId, state: 'open' }, 201));
 };

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { DialogFrame } from '../Modal';
+import { DialogFrame, FormModal } from '../Modal';
 import { Button } from '../Button';
 import { Field } from '../Field';
 import { DateField, MoneyInput, PercentInput } from '../inputs';
@@ -16,18 +16,7 @@ import { runBulk, type BulkBody, type BulkResult } from './bulkRates';
 import { errorMessage } from '../../lib/api';
 
 function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, disabledReason = 'Fill the fields first', children }: { title: string; sub?: string; onClose: () => void; onSave: () => void; saveLabel: string; canSave: boolean; disabledReason?: string; children: ReactNode }) {
-  return (
-    <DialogFrame label={title} onClose={onClose} panelClassName="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)]">
-        <form onSubmit={e => { e.preventDefault(); if (canSave) onSave(); }}>
-          <div className="pt-[22px] px-[22px] pb-1"><h2 className="m-0 text-title font-semibold">{title}</h2>{sub && <p className="mt-[5px] mx-0 mb-0 text-copy text-muted-ink">{sub}</p>}</div>
-          <div className="px-[22px] py-4 flex flex-col gap-[14px]">{children}</div>
-          <div className="px-[22px] py-[14px] [border-top:1px_solid_var(--color-line)] bg-page rounded-b-card flex justify-end gap-[9px]">
-            <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button size="sm" variant="primary" type="submit" disabled={!canSave} disabledReason={disabledReason}>{saveLabel}</Button>
-          </div>
-        </form>
-      </DialogFrame>
-  );
+  return <FormModal title={title} sub={sub} onClose={onClose} width={440} onSubmit={onSave} submitLabel={saveLabel} canSubmit={canSave} disabledReason={disabledReason}>{children}</FormModal>;
 }
 
 export function SetPriceModal({ m, onClose, onSave }: { m: { unit: CalendarUnit; channel: string; dayIso: string; current: number }; onClose: () => void; onSave: (rm: number) => void }) {

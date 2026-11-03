@@ -1,4 +1,5 @@
 import { type Env, all, json, fail, mytToday } from '../../_lib/db';
+import { rmText } from '../../_lib/format';
 import { requireSession } from '../../_lib/auth';
 import { approvalsEnabled, submit } from '../../_lib/approvals';
 
@@ -38,7 +39,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const runRef = `RUN-${mytToday().replace(/-/g, '')}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
   const total = chosen.reduce((n, r) => n + Number(r.amount), 0);
   const owners = new Set(chosen.map(r => r.owner_id)).size;
-  const amount = `RM ${(total / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}`;
+  const amount = `${rmText(total)}`;
   return submit(env, session, {
     kind: 'payout_run', entity: 'payouts', entityId: runRef, amount: total,
     summary: `Payout run ${runRef}: ${chosen.length} ${chosen.length === 1 ? 'payout' : 'payouts'} to ${owners} ${owners === 1 ? 'owner' : 'owners'}, ${amount}`,

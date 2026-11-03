@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { DialogFrame } from '../components/Modal';
+import { FormModal } from '../components/Modal';
 import { useNavigate } from 'react-router-dom';
 import { color } from '../theme';
 import PageHeader from '../components/PageHeader';
@@ -314,21 +314,7 @@ export default function ContractsPage() {
 function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, children }: {
   title: string; sub?: string; onClose: () => void; onSubmit: () => void; submitLabel: string; canSubmit: boolean; children: ReactNode;
 }) {
-  return (
-    <DialogFrame label={title} onClose={onClose} panelClassName="relative w-full max-w-[480px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
-        <form onSubmit={e => { e.preventDefault(); if (canSubmit) onSubmit(); }}>
-          <div className="pt-[22px] px-[22px] pb-[4px] flex flex-col gap-[5px]">
-            <h2 className="m-0 text-title font-semibold">{title}</h2>
-            {sub && <p className="m-0 text-copy text-muted-ink">{sub}</p>}
-          </div>
-          <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
-          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
-            <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Fill the required fields first">{submitLabel}</Button>
-          </div>
-        </form>
-      </DialogFrame>
-  );
+  return <FormModal title={title} sub={sub} onClose={onClose} onSubmit={onSubmit} submitLabel={submitLabel} canSubmit={canSubmit}>{children}</FormModal>;
 }
 
 /** Placeholder upload — records the chosen filename locally; the real upload lands with the backend. */

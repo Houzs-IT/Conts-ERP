@@ -1,4 +1,5 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { rmText } from '../../_lib/format';
 import { requireSession } from '../../_lib/auth';
 import { isIsoDate } from '../../_lib/validate';
 import { resolveUnit } from '../../_lib/ops';
@@ -42,7 +43,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const staged = await stage(env, session, {
       kind: 'expense', entity: 'units', entityId: unit.id, amount: b.amount,
       reason: String(b.reason ?? '').trim() || String(b.description ?? '').trim() || `${expenseCategoryLabel(b.category)} expense`,
-      summary: `Expense RM ${(b.amount / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })} on ${label?.name ?? 'unit'} (${expenseCategoryLabel(b.category)}, ${expenseDayLabel(b.incurredOn)})${b.description ? `: ${String(b.description).slice(0, 120)}` : ''}`,
+      summary: `Expense ${rmText(b.amount)} on ${label?.name ?? 'unit'} (${expenseCategoryLabel(b.category)}, ${expenseDayLabel(b.incurredOn)})${b.description ? `: ${String(b.description).slice(0, 120)}` : ''}`,
       payload: { op: 'create', unitId: unit.id, category: b.category, description: String(b.description ?? '').slice(0, 300), amount: b.amount, incurredOn: b.incurredOn,
         reference: b.reference ?? null, chargeTo: b.chargeTo ?? 'owner', receiptDocumentId: b.receiptDocumentId ?? null,
         maintenanceId: b.maintenanceId ?? null, taskId: b.taskId ?? null, parentExpenseId: b.parentExpenseId ?? null },

@@ -1,5 +1,5 @@
 import { type Env, all } from './db';
-import { numericDay } from './dates';
+import { numericDay } from './format';
 import { monthEndExclusive } from './revenue';
 import { loadInputs, withYearToDate, computeMonth, statementSettings, fmtPct, classifyCost, DEDUCTIONS, type Query } from './ownerStatement';
 import { unitExample } from './unitContract';

@@ -1,4 +1,5 @@
-import { useMemo, type ReactNode } from 'react';
+import { useMemo } from 'react';
+import { SectionCard } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -33,14 +34,7 @@ function Cell({ sen, strong }: { sen: number | null; strong?: boolean }) {
   return <span className={cx('tabular-nums', b.negative && 'text-danger', strong && 'font-semibold')}>{b.text}</span>;
 }
 
-function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
-  return (
-    <section className="rounded-card border border-solid border-line bg-card p-4 sm:p-5 flex flex-col gap-3 min-w-0">
-      <div className="flex flex-col gap-1"><h2 className="m-0 text-[15px] font-semibold">{title}</h2>{note && <p className="m-0 text-meta text-muted-ink">{note}</p>}</div>
-      {children}
-    </section>
-  );
-}
+const Section = SectionCard;
 
 function Grid({ grid, units, months, toDate }: { grid: BlockGrid; units: Unit[]; months: string[]; toDate: string | null }) {
   const listed = units.filter(u => grid.units[u.id]);

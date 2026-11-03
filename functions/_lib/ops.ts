@@ -1,5 +1,5 @@
 import { type Env, one, all, run, json, fail, audit, nowIso } from './db';
-import { numericDay } from './dates';
+import { numericDay } from './format';
 import type { Session } from './auth';
 import { notify } from './notify';
 import { cleaningNotice } from './notices';

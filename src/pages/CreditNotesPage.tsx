@@ -1,4 +1,5 @@
 import { mayWork } from '../lib/areaAccess';
+import { Meta } from '../components/Card';
 import { useMemo, useState } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -304,6 +305,3 @@ function ViewNoteDrawer({ id, canWrite, onClose, onDone }: { id: string; canWrit
   );
 }
 
-function Meta({ label, value }: { label: string; value: string }) {
-  return <div className="flex flex-col gap-1 min-w-0"><Eyebrow>{label}</Eyebrow><span className="text-copy break-words">{value}</span></div>;
-}

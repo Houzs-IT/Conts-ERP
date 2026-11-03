@@ -1,4 +1,5 @@
 import { type Env, one, all, json, fail } from '../../_lib/db';
+import { rmText } from '../../_lib/format';
 import { REVIEW_COLUMNS, REVIEW_FROM, reviewOut, cleanColumn } from '../../_lib/reviews';
 import { can } from '../../_lib/access';
 import { requireSession, isFieldRole } from '../../_lib/auth';
@@ -42,7 +43,7 @@ const STATE_LABEL: Record<string, string> = {
 
 interface TimelineEvent { at: string; label: string; detail?: string; actor?: string; upcoming?: boolean }
 
-const ringgit = (sen: number) => `RM ${(sen / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const ringgit = (sen: number) => rmText(sen);
 const parse = (s: string | null) => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
 
 /** One audit row in words. Rows the drawer has nothing to say about return null. */

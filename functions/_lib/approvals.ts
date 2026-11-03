@@ -1,3 +1,4 @@
+import { rmText } from './format';
 /** Maker-checker for money leaving the company (owner, 10 Oct 2026; migration 0096).
  *
  *  Switched off unless Settings > Approvals turns it on (setting approvals.enabled): on 11 Oct 2026 the owner
@@ -94,7 +95,7 @@ export function decisionRule(session: Pick<Session, 'userId' | 'role' | 'levels'
   if (can(session, 'finance', 'full')) {
     if (own) return { refusal: 'You asked for this, so someone else must approve it.', self: false };
     if (Number(r.amount) < ctx.settings.financeAdminLimit) return { refusal: null, self: false };
-    return { refusal: `People with Full Finance access approve amounts below RM ${(ctx.settings.financeAdminLimit / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}. Management must approve this one.`, self: false };
+    return { refusal: `People with Full Finance access approve amounts below ${rmText(ctx.settings.financeAdminLimit)}. Management must approve this one.`, self: false };
   }
   return { refusal: 'Only management and people with Full Finance access approve money requests.', self: false };
 }

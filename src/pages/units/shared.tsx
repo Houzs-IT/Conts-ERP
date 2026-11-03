@@ -1,5 +1,5 @@
 import { mayRun } from '../../lib/areaAccess';
-import { DialogFrame } from '../../components/Modal';
+import { Modal } from '../../components/Modal';
 import type { SessionUser } from '../../lib/types';
 import { type ReactNode } from 'react';
 import { cx } from '../../lib/design-tokens';
@@ -154,11 +154,5 @@ export function ReadOnly({ children }: { children: ReactNode }) {
 }
 
 export function CentreModal({ title, sub, onClose, footer, children }: { title: string; sub?: string; onClose: () => void; footer: ReactNode; children: ReactNode }) {
-  return (
-    <DialogFrame label={title} onClose={onClose} panelClassName="relative w-full max-w-[460px] max-h-[calc(100vh-32px)] overflow-y-auto bg-card rounded-card shadow-[var(--shadow-overlay)]">
-        <div className="pt-[22px] px-[22px] pb-1"><h2 className="m-0 text-title font-semibold">{title}</h2>{sub && <p className="mt-[5px] mb-0 text-copy text-muted-ink">{sub}</p>}</div>
-        <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end flex-wrap gap-[9px]">{footer}</div>
-      </DialogFrame>
-  );
+  return <Modal title={title} sub={sub} onClose={onClose} footer={footer}>{children}</Modal>;
 }

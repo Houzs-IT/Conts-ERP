@@ -1,5 +1,6 @@
 import { mayRun } from '../lib/areaAccess';
-import { useMemo, useState, type ReactNode } from 'react';
+import { FormSection } from '../components/Card';
+import { useMemo, useState } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -130,6 +131,4 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
     </Drawer>
   );
 }
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return <div className="flex flex-col gap-2.5"><div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">{title}</div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">{children}</div></div>;
-}
+const Section = FormSection;

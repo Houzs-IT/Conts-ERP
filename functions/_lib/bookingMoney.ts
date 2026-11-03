@@ -1,4 +1,5 @@
 import { type Env, one } from './db';
+import { rmText } from './format';
 
 /** A booking's money in three parts that must add up (owner-approved design, 10 Oct 2026):
  *    (1) what the guest paid   room + cleaning + other fees + SST + tourism tax = guest total
@@ -90,7 +91,7 @@ export interface Ledger {
 /** Values a source writes when it has nothing to say. 'others' is HostPlatform's default for every Airbnb booking. */
 const MEANINGLESS_METHOD = /^(others?|other|n\/?a|none|-|unknown)$/i;
 
-const ringgit = (sen: number) => `RM ${(sen / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const ringgit = (sen: number) => rmText(sen);
 
 export function ledger(m: MoneyIn, payments: PaymentRow[], site: string): Ledger {
   const v = (x: number | null) => (x == null ? 0 : x);

@@ -65,7 +65,7 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
 
 ## Dates
 
-12. **fixed (batch 4), owner decided 3 Nov 2026: numeric `2026/11/03` everywhere.** The engine prints dates as `2026/11/03` (`engine/frontend/src/vendor/shared/format.ts`, Houzs's
+12. **fixed (#607), owner decided 3 Nov 2026: numeric `2026/11/03` everywhere.** The engine prints dates as `2026/11/03` (`engine/frontend/src/vendor/shared/format.ts`, Houzs's
     numeric-date rule of 25 Sep 2026, also on its PDFs); Property OS prints `3 Nov 2026` (`src/lib/format.ts`,
     `docs/DATE-FORMAT.md`). One helper changes it either way, but it reverses a recorded ruling, so it is the owner's
     pick. Times already match (24-hour, Malaysian time).
@@ -107,14 +107,52 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
 
 ## Phone (375px)
 
-21. No screen scrolls sideways. **fixed (batch 5):** controls under 32px tall on the Units tree (row edit / add icons,
+21. No screen scrolls sideways. **fixed (#609):** controls under 32px tall on the Units tree (row edit / add icons,
     `UnitsPage.tsx`), the Reviews star filter (`reviews/ReviewsOverview.tsx`), Automations wanted / not wanted toggles
     (`AutomationsPage.tsx`) and the Dashboard "Open operations →" links.
     Now: `.hit-target` (`src/styles/tokens.css`) gives a small control a 44px tap area on touch phones without changing
     its look; used by `LinkAction` (every "… →" card link), the Units tree buttons, the calendar popover's Close, the
     status filter's clear, the check-in time save and the report's Reset. The star filter rows are 36px tall on phones
     (a 44px area would overlap the next row).
-22. **fixed (batch 5).** Four private on/off switches looked different for the same meaning: Automations green, the
+22. **fixed (#609).** Four private on/off switches looked different for the same meaning: Automations green, the
     rest black, and in dark mode the white knob disappeared on the light "on" track. Now one `Switch`
     (`src/components/Switch.tsx`): ink when on, card-coloured knob, 44px tap area on phones. Used by Automations,
     Settings, Category access and Reviews (AI draft replies).
+
+## One copy, not three (owner, 3 Nov 2026: "one change applies everywhere")
+
+Property OS (`src/`, `functions/`) and the supply-chain engine (`engine/frontend`) are two separate builds; the engine
+is shown inside Property OS in a frame. What now has ONE implementation that every place imports:
+
+| What | The one copy | Who uses it |
+| --- | --- | --- |
+| Date and time shapes (2026/11/03, 11/03, 2026/11/03 14:06, 14:06) | `engine/frontend/src/vendor/shared/format.ts` (`fmtDate`, `fmtDayMonth`, `fmtDateTime`, `fmtTime`), pinned by the engine's `format.date.canonical.test.ts` | engine screens and PDFs; Property OS screens through `src/lib/format.ts`; the server through `functions/_lib/format.ts` |
+| Money with sen (RM 1,234.56) | same file (`fmtSen`) | engine; `src/lib/format.ts` `rm()`; `functions/_lib/format.ts` `rmText()`, which replaced 15 hand-typed `RM ${(x / 100).toLocaleString(...)}` strings in audit summaries, notices, payout and refund messages, the letterhead and booking money |
+| Form dialog frame (focus, Escape, backdrop, keep-open when dirty) | `DialogFrame` in `src/components/Modal.tsx` (#593) | every Property OS form dialog |
+| Form dialog layout (title, sub line, scrolling body, pinned Cancel / action footer) | `Modal` and `FormModal` in `src/components/Modal.tsx` | 34 direct users plus the ten local shells that used to draw their own: Expenses, Maintenance catalog, Dashboard, Contracts, owners (form), units (CentreModal), owner expense entry, calendar (price / block), OpsModal (maintenance, cleaning) |
+| Couldn't load / Retry | `StaleBanner` (`src/components/DataState.tsx`, #594); engine lists: `engine/frontend/src/conts/TableLoadError.tsx` | 60+ Property OS screens; every engine list |
+| On/off switch | `Switch` (`src/components/Switch.tsx`, #609) | Automations, Settings, Category access, Reviews |
+| Record header field ("DO NUMBER / DO-2611-004") | `Meta` (`src/components/Card.tsx`) | the 10 document pages that each had their own copy |
+| Form field group (small caps title over a 2-column grid) | `FormSection` (`src/components/Card.tsx`) | Customers, Suppliers, 3PL companies |
+| Report block on a card | `SectionCard` (`src/components/Card.tsx`) | Unit P&L, Yearly report |
+
+Still twice, and why:
+
+- **Buttons, badges, tables and toolbars, empty states, page headers between Property OS and the engine.** The engine's
+  are Houzs's components on Houzs's Tailwind design system (`engine/frontend/src/components/*`, `vendor/design-system`);
+  Property OS's are on its own tokens (`tokens.css`). Merging them means rewriting about a thousand engine files and
+  would end the engine's ability to take Houzs fixes file by file (CLAUDE.md). What is shared instead: the formats above,
+  the theme (the engine follows Property OS's light/dark through `engine/frontend/src/conts/embed.ts`), and the same
+  wording and order rules (this audit). Within each build there is one copy of each.
+- **Two `Segmented` controls in Property OS** (`components/Metric.tsx`, `components/ops/OpsUi.tsx`): not a duplicate.
+  The first picks a value (and turns into a picker on phones); the second is a tab strip that swaps the whole view.
+- **The booking drawer's `CentreModal`** (`components/booking/BookingDrawer.tsx`): its children carry their own body and
+  footer (`CentreFooter`), a different contract from `Modal`. It already shares `DialogFrame`; folding it in needs its
+  nine callers changed, left for a later pass.
+- **Employees' form section** (`workers/EmployeesTab.tsx`): a ruled heading with a note, a different look from
+  `FormSection` on purpose.
+- **Owner statement PDF dates** (`src/lib/statementPdf.ts`): runs under `node --test`, which cannot import the
+  extensionless format module; it prints the same shape (2026/09/30) with its own one-liner.
+- **Print preview / PDF modals** and the **SO edit vs Submit VO** screens: another session is unifying them.
+- **Owner portal and Owner B** (`OwnerPortalPage.tsx`, `ownerB/`, `functions/api/owner/`, `src/lib/portalI18n.ts`) and
+  the demo endpoints (`functions/api/demo/`): other sessions own them; they still format some dates and money themselves.

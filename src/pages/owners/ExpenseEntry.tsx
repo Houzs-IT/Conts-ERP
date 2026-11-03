@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { DialogFrame } from '../../components/Modal';
+import { Modal } from '../../components/Modal';
 import { Button } from '../../components/Button';
 import { Select } from '../../components/Select';
 import { MoneyInput, DateField } from '../../components/inputs';
@@ -23,13 +23,7 @@ export interface UnitChoice { id: string; label: string }
 const lastDayOf = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
 
 function Sheet({ title, sub, onClose, footer, children, wide }: { title: string; sub?: string; onClose: () => void; footer: ReactNode; children: ReactNode; wide?: boolean }) {
-  return (
-    <DialogFrame label={title} onClose={onClose} panelClassName={cx('relative w-full max-h-[calc(100vh-32px)] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)]', wide ? 'max-w-[720px]' : 'max-w-[500px]')}>
-        <div className="pt-[22px] px-[22px] pb-1 flex-none"><h2 className="m-0 text-title font-semibold">{title}</h2>{sub && <p className="mt-[5px] mb-0 text-copy text-muted-ink">{sub}</p>}</div>
-        <div className="py-4 px-[22px] flex flex-col gap-[14px] overflow-y-auto min-h-0">{children}</div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end flex-wrap gap-[9px] flex-none">{footer}</div>
-      </DialogFrame>
-  );
+  return <Modal title={title} sub={sub} onClose={onClose} footer={footer} width={wide ? 720 : 500}>{children}</Modal>;
 }
 
 interface UtilityRow {

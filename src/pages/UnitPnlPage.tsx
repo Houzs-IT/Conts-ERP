@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
+import { SectionCard } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -176,14 +177,7 @@ function Overview({ rows, months, units, toDate, focus, flags, holes, excluded, 
   );
 }
 
-function Section({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
-  return (
-    <section className="rounded-card border border-solid border-line bg-card p-4 sm:p-5 flex flex-col gap-3 min-w-0">
-      <div className="flex items-center justify-between gap-3"><h2 className="m-0 text-[15px] font-semibold">{title}</h2>{right}</div>
-      {children}
-    </section>
-  );
-}
+const Section = SectionCard;
 
 const ROWS: { key: LineKey; kind: 'income' | 'cost' | 'sub' | 'line' | 'result' }[] = [
   { key: 'guestPaid', kind: 'income' },
