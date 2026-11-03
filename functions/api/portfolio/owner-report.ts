@@ -35,7 +35,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return fail('VALIDATION', 'Month must look like 2026-09.', 422);
 
   const q: Query = (sql, ...args) => all(env, sql, ...args);
-  const [settings, loaded] = await Promise.all([statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month))]);
+  const start = `${month}-01`, endEx = monthEndExclusive(month);
+  // Nights someone slept in the unit (staff, 3 Nov 2026): paid stays plus offline ones (HostPlatform free stays and
+  // owner stays, held as owner_stay). Only the report's nights: the statement's own nights, and so its money, are unchanged.
+  const occupiedSql = `
+    SELECT r.unit_id, SUM(LEAST(r.check_out::date, ?::date) - GREATEST(r.check_in::date, ?::date))::int AS nights
+    FROM reservations r
+    WHERE r.state IN ('confirmed','checked_in','checked_out') AND r.channel <> 'maintenance_block' AND r.check_in < ? AND r.check_out > ?
+    GROUP BY r.unit_id`;
+  const [settings, loaded, occupiedRows] = await Promise.all([
+    statementSettings(q), loadInputs(q, start, endEx),
+    all<{ unit_id: string; nights: number }>(env, occupiedSql, endEx, start, endEx, start),
+  ]);
+  const occupied = new Map(occupiedRows.map(r => [r.unit_id, Number(r.nights)]));
   const inputs = await withYearToDate(q, loaded, month, settings);
   const months = computeMonth(month, inputs, settings, 'dated');
   const unitOf = new Map(inputs.units.map(u => [u.id, u]));
@@ -69,7 +81,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       // A long-term let's owner base is the owner's part of the rent; GRR and master lease, the fixed rent.
       ltGrr: tenancy ? f.ownerShare : !share ? f.fixedRent : f.terms.model === 'management_guarantee' ? f.guarantee : 0,
       // A tenancy is let by the month, not by the night, so it stays out of occupancy.
-      o2: m.adjustmentsTotal, nights: f.nights, days: tenancy ? 0 : f.days,
+      o2: m.adjustmentsTotal, nights: tenancy ? f.nights : occupied.get(m.unitId) ?? 0, days: tenancy ? 0 : f.days,
     }];
   });
   return json({ generatedAt: nowIso(), month, rows });
