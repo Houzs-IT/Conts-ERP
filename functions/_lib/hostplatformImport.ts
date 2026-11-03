@@ -369,8 +369,10 @@ export function mapReservations(rows: Row[], today: string): ReservationPlan {
     const cancelled = /cancel/i.test(str(r['Booking Status']));
     const state: State = cancelled ? 'cancelled' : stayState(checkIn, checkOut, today);
     const total = sen(r['Total Price']) ?? 0, platformFee = Math.max(0, sen(r['Platform Fee']) ?? 0);
-    // Airbnb's Total Price is the host payout; the fee comes on top (same rule as channexAmounts.ts).
-    const gross = channel === 'airbnb' ? total + platformFee : total;
+    // Airbnb's Total Price is the host payout; the fee comes on top (same rule as channexAmounts.ts). Booking.com's is
+    // too: 5135519056 came as 431.15 (Room Rate 398.03 + SST 33.12) with Platform Fee 95.97, and 431.15 is what
+    // Booking.com transferred; the extranet's commissionable amount is 494.00 = 398.03 + 95.97 (3 Nov 2026).
+    const gross = channel === 'airbnb' || channel === 'booking_com' ? total + platformFee : total;
     const block = str(r['Booking Type']).toLowerCase() === 'blocked';
     let gid: string | null = null;
     if (!block) {
@@ -416,7 +418,8 @@ export const apiBuildingName = (property: unknown) => buildingName(property).rep
  *  importReservations writes both. The API has no booking type: a HostPlatform booking without guest details is a
  *  block (an owner stay when its remarks say so), any other is direct. Money is only used for bookings Property OS
  *  does not have yet (importReservations with source 'api' leaves existing money alone): the API carries no taxes,
- *  deposits or payment received. Airbnb's room amount is the host payout, so its fee goes on top (as mapReservations). */
+ *  deposits or payment received. Airbnb's and Booking.com's room amount is net of the site's fee, so the fee goes on top
+ *  (as mapReservations). */
 export function mapApiReservations(list: HpReservation[], today: string): ReservationPlan {
   const errors: RowError[] = [], guests = new Map<string, GuestIn>(), reservations: ReservationIn[] = [], codes = new Set<string>();
   list.forEach((r, i) => {
@@ -446,7 +449,7 @@ export function mapApiReservations(list: HpReservation[], today: string): Reserv
     const remarks = opt(r.remarks);
     reservations.push({
       id: `hp-res-${code}`, row: i + 1, code, building, unitNumber, channel, state, externalRef: ota ?? code, checkIn, checkOut,
-      guestsCount: Math.max(1, Math.round(num(g?.number_of_pax) ?? 1)), gross: channel === 'airbnb' ? base + fee : base, fee, collected: 0,
+      guestsCount: Math.max(1, Math.round(num(g?.number_of_pax) ?? 1)), gross: channel === 'airbnb' || channel === 'booking_com' ? base + fee : base, fee, collected: 0,
       currency: (opt(price.currency) ?? 'MYR').toUpperCase().slice(0, 3),
       notes: `Imported from the HostPlatform API (${code})${remarks && channel !== 'airbnb' && channel !== 'booking_com' && channel !== 'agoda' ? ` · ${remarks.slice(0, 200)}` : ''}`,
       createdAt: opt(r.created_at) && !Number.isNaN(Date.parse(String(r.created_at))) ? new Date(String(r.created_at)).toISOString() : null,
