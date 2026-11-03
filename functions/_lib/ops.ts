@@ -1,4 +1,5 @@
 import { type Env, one, all, run, json, fail, audit, nowIso } from './db';
+import { numericDay } from './dates';
 import type { Session } from './auth';
 import { notify } from './notify';
 import { cleaningNotice } from './notices';
@@ -185,20 +186,20 @@ export async function resolveUnit(env: Env, ref: unknown, propertyName?: unknown
   return rows.length === 1 ? rows[0] : rows.length > 1 ? 'ambiguous' : null;
 }
 
-/** Short display date, e.g. "14 Sep", in Malaysia time. */
+/** Short display date, e.g. "09/14" (month/day), in Malaysia time. */
 export function shortDate(iso: string | null): string | null {
   if (!iso) return null;
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' });
+  return numericDay(iso);
 }
 
 /** A short human reference for a record id, e.g. INS-3F9A21. Ids themselves stay opaque. */
 export const refOf = (prefix: string, id: string) => `${prefix}-${id.replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase()}`;
 
-/** "15 Sep 16:10" in Malaysia time. */
+/** "09/15 16:10" in Malaysia time. */
 export function stampMyt(iso: string | null): string | null {
   if (!iso) return null;
   const d = new Date(iso);
-  const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' });
+  const date = numericDay(d.toISOString());
   return `${date} ${hhmm(iso)}`;
 }
 

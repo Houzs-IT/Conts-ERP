@@ -335,8 +335,8 @@ Lower density, simpler language, no internal shorthand (guide 15).
 | Nightly rate on the calendar and pricing grids, chart axis | `RM #,##0` | RM 231 |
 | Percent | one decimal, with sign | 82.4% |
 | Rating, detail view | `0.00 / 5` | 4.91 / 5 |
-| Date, compact | `D MMM YYYY` | 16 Sep 2026 |
-| Date range | always disambiguated | 16 Sep – 29 Sep 2026 |
+| Date (owner, 3 Nov 2026: year first, numeric, as the engine) | `YYYY/MM/DD` | 2026/09/16 |
+| Date range | both ends in full | 2026/09/16 – 2026/09/29 |
 | Time | 24-hour, MYT where cross-channel | 15:00 · 14:06 MYT |
 | Negative deduction | minus sign, semantic colour only when it is a problem | − RM 2,315.00 |
 | Unit reference | `{Building} {#unit}` | Vista Jaya One #A-12-03 |

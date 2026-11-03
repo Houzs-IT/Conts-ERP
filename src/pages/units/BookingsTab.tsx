@@ -91,7 +91,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
     { key: 'guest', label: 'Guest', value: s => stayWho(s).name, width: 170,
       render: s => { const w = stayWho(s); return <span className={cx('whitespace-nowrap overflow-hidden text-ellipsis block', w.missing || w.hold ? 'text-muted-ink' : 'font-medium')} title={w.name}>{w.name}</span>; },
       sub: s => stayWho(s).hold ? null : [stayWho(s).missing ? 'No guest name' : null, `${s.guestsCount} ${s.guestsCount === 1 ? 'guest' : 'guests'}`].filter(Boolean).join(' · ') },
-    { key: 'stay', label: 'Dates', type: 'date', value: s => s.checkIn, width: 160,
+    { key: 'stay', label: 'Dates', type: 'date', value: s => s.checkIn, width: 200,
       render: s => <span className="whitespace-nowrap">{dateRange(s.checkIn, s.checkOut)}</span>,
       exportKind: 'text', exportValue: s => `${s.checkIn} to ${s.checkOut}` },
     { key: 'nights', label: 'Nights', type: 'number', value: s => nightsOf(s), width: 70 },

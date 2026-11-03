@@ -1,4 +1,5 @@
 import { type Env, one } from './db';
+import { numericDay } from './dates';
 import { peopleWithAccess } from './access';
 import { notifyUsers, taskPeople, technicianFor } from './notify';
 import { fieldVisibleSql, hasJobType } from './maintenance';
@@ -7,9 +8,8 @@ import { fieldVisibleSql, hasJobType } from './maintenance';
  *  is safe to await inside a handler: notifyUsers never throws, and the lookups are wrapped the same way. */
 
 const CHANNEL: Record<string, string> = { airbnb: 'Airbnb', booking_com: 'Booking.com', agoda: 'Agoda', direct: 'Direct', owner_stay: 'Owner stay', maintenance_block: 'Block' };
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "13 Sep" from 2026-09-13. Notice text is stored, so it is written out here in the app's date style. */
-export const day = (d: string) => { const [, m, dd] = d.slice(0, 10).split('-').map(Number); return `${dd} ${MON[m - 1]}`; };
+export const day = (d: string) => numericDay(d.slice(0, 10));
 /** "13 Oct 14:00" in Malaysian time, from any ISO instant. */
 export const when = (iso: string) => { const t = new Date(Date.parse(iso) + 8 * 3600e3).toISOString(); return `${day(t)} ${t.slice(11, 16)}`; };
 const stay = (a: string, b: string) => `${day(a)} – ${day(b)} ${b.slice(0, 4)}`;

@@ -1,4 +1,5 @@
 import { type Env, all, one, run, audit, nowIso } from './db';
+import { numericDate } from './dates';
 import { ensureTurnovers, replanTurnover, CLEAN_KINDS_SQL } from './cleaning';
 import { overdueCleans } from './cleanOverdue';
 import { cleanDeadline } from '../../src/lib/cleanOverdue';
@@ -373,7 +374,7 @@ export async function dailyDigest(env: Env, o: RunOptions = {}): Promise<JobRepo
   const items = [`To ${plural(recipients, 'person', 'people')} (management and operations): ${body}`];
   if (o.dryRun) return { job: 'daily-digest', summary: `Would send the ${day} digest.`, items };
   const r = await notifyUsers(env, { userIds: (await peopleWithAccess(env, 'operations', 'edit')).map(p => p.id) }, {
-    kind: 'digest.today', title: `Today, ${Number(day.slice(8, 10))} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(day.slice(5, 7)) - 1]}`,
+    kind: 'digest.today', title: `Today, ${numericDate(day)}`,
     body, link: '/operations/today', entityTable: 'digest', entityId: day, dedupeKey: `digest-${day}`,
   });
   return { job: 'daily-digest', summary: `Sent the ${day} digest to ${plural(r.created, 'person', 'people')}.`, items };

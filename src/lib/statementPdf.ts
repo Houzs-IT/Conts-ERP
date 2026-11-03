@@ -23,7 +23,6 @@ const LEFT = 14 * MM, RIGHT = PAGE_W - 14 * MM, WIDTH = RIGHT - LEFT;
 const BLACK = rgb(0, 0, 0), HEAD_FILL = rgb(0xdc / 255, 0xe9 / 255, 0xf5 / 255), DRAFT = rgb(0.6, 0.35, 0.05);
 
 const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-const MON_TITLE = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MODEL_NAME: Record<string, string> = {
   management: 'Profit share', management_guarantee: 'Profit share, minimum guarantee', management_yearly_guarantee: 'Profit share, yearly guarantee', grr: 'Guaranteed rent', master_lease: 'Master lease', long_term: 'Long-term let',
 };
@@ -35,7 +34,8 @@ const money = (sen: number | null, opts: { brackets?: boolean; dash?: boolean } 
   return sen < 0 || opts.brackets ? `(${v})` : v;
 };
 const pct = (n: number) => `${Number(n.toFixed(2))}%`;
-const dayMonYear = (iso: string) => `${iso.slice(8, 10)}-${MON_TITLE[Number(iso.slice(5, 7)) - 1]}-${iso.slice(0, 4)}`;
+/** 2026/09/30, the one date rule (owner, 3 Nov 2026). */
+const dayMonYear = (iso: string) => `${iso.slice(0, 4)}/${iso.slice(5, 7)}/${iso.slice(8, 10)}`;
 
 // ponytail: the built-in Times font only has Western European letters, so a Chinese name prints as "?". Embed a
 // Unicode TTF through @pdf-lib/fontkit when an owner's name or the company address needs other scripts.

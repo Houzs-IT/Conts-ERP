@@ -321,7 +321,7 @@ export default function BookingsPage() {
     { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150, filter: false },
     { key: 'channel', label: 'Channel', type: 'channel', value: r => r.channel, sortKey: 'channel', hidden: true, width: 130,
       filter: { kind: 'select', param: 'ch', multi: false, options: CHANNEL_CHOICES.map(c => ({ value: c, label: CHANNEL_META[c].label })) } },
-    { key: 'stay', label: 'Check-in to checkout', type: 'date', value: r => r.checkIn, sortKey: 'stay', width: 160,
+    { key: 'stay', label: 'Check-in to checkout', type: 'date', value: r => r.checkIn, sortKey: 'stay', width: 200,
       filter: { kind: 'date', params: ['from', 'to'], hint: 'Reservations that touch these dates' },
       render: b => <span className="whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span>, sub: b => fmtNights(b.nights),
       exportKind: 'text', exportValue: r => `${r.checkIn} to ${r.checkOut}` },
