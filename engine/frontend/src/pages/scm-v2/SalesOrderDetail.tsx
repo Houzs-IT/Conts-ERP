@@ -27,7 +27,8 @@ import {
 } from 'lucide-react';
 import { Button } from '../../components/Button';
 import { PageHeader } from '../../components/Layout';
-import { PrintPreviewModal, usePrintPreview } from '../../components/scm-v2/PrintPreviewModal';
+import { usePrintPreview } from '../../components/scm-v2/PrintPreviewModal';
+import { SoPrintPreview, useSoPrintLayout } from './soPrintPreview';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { SoSourceChips } from '../../components/SoSourceChips';
 import { useSetBreadcrumbs } from '../../hooks/useBreadcrumbs';
@@ -60,6 +61,7 @@ import {
   isLocked as isSoLocked,
   procLockActive as soProcLockActive,
   amendmentEligible as soAmendmentEligible, migratedReadonly as soMigratedReadonly, migratedReadonlyReason as soMigratedReason, soDownstreamHardLocked, soItemFrozen,
+  deriveBalance as soDeriveBalance,
 } from '../../vendor/scm/lib/so-detail-gates';
 import { soDateGuardError, soErrorText } from '../../vendor/scm/lib/so-form-validate';
 import { FROZEN_LINE_LABEL, FROZEN_LINE_LABEL_STYLE, FROZEN_LINE_STYLE } from '../../vendor/scm/lib/so-frozen-line-style';
@@ -718,6 +720,12 @@ export const SalesOrderDetail = () => {
   const deliverPrintPdfRef = useRef<(action: PdfAction) => void | Promise<void>>(() => {});
   const print = usePrintPreview(
     useCallback((action: PdfAction) => deliverPrintPdfRef.current(action), []),
+  );
+  /* The read page's PDF layout picker and room order, from the same hook (soPrintPreview.tsx): the editor and Submit
+     VO print exactly as the read page does (owner, 3 Nov 2026). */
+  const printLayoutState = useSoPrintLayout(
+    docNo,
+    useMemo(() => (((detail.data as { items?: Array<{ id: string; item_code: string; cancelled?: boolean }> } | undefined)?.items) ?? []).filter((l) => !l.cancelled), [detail.data]),
   );
 
   /* Payments edit mode — the money's OWN toggle (owner 2026-08-07). Declared up
@@ -1919,7 +1927,7 @@ export const SalesOrderDetail = () => {
     /* `pwpCodes` rides on the same GET /:docNo payload — vouchers this SO's
        trigger items issued, so the printed PDF can mark the trigger lines. */
     const pwpCodes = ((detail.data as { pwpCodes?: unknown[] } | undefined)?.pwpCodes ?? []) as never;
-    return generateSalesOrderPdf(header, items, payments, action, pwpCodes).catch((e) => {
+    return generateSalesOrderPdf(header, items, payments, action, pwpCodes, printLayoutState.pdfOpts).catch((e) => {
       // eslint-disable-next-line no-console
       console.error('PDF generation failed:', e);
       notify({
@@ -2118,16 +2126,18 @@ export const SalesOrderDetail = () => {
               <Printer {...ICON} />
               <span>Print</span>
             </Button>
-            <PrintPreviewModal
+            <SoPrintPreview
               open={print.open}
               onClose={print.close}
-              docTitle="Sales Order"
               docNo={header.doc_no}
+              layout={printLayoutState}
               rows={[
                 { label: 'Customer', value: header.debtor_name || '—' },
                 { label: 'Order date', value: fmtDateOrDash(header.so_date) },
                 { label: 'Items', value: `${header.line_count} line${header.line_count === 1 ? '' : 's'}` },
                 { label: 'Order total', value: fmtRm(header.local_total_sen, header.currency) },
+                /* The same Balance row as the read page's card, through the same shared gate. */
+                { label: 'Balance', value: fmtRm(soDeriveBalance(header as never, printPaymentsQ.data), header.currency) },
               ]}
               {...print.handlers}
             />
