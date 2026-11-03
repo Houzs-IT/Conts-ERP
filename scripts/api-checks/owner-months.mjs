@@ -160,7 +160,8 @@ async function sixQueries(from, toExclusive, scope = {}) {
   const units = await q(`${M.UNIT_SQL} ${unitWhere} ORDER BY p.name, u.unit_number`, ...unitArg);
   const ids = JSON.stringify(units.map(u => u.id));
   const list = '(SELECT jsonb_array_elements_text(?::text::jsonb))';
-  const stays = await q(`SELECT r.id, r.unit_id, r.check_in, r.check_out, r.collected_revenue, r.channel, r.external_ref, g.full_name AS guest_name
+  const stays = await q(`SELECT r.id, r.unit_id, r.check_in, r.check_out, r.collected_revenue, r.channel, r.external_ref, g.full_name AS guest_name,
+    GREATEST(0, r.gross_booking_value - COALESCE(r.channel_fee, 0)) AS host_payout
     FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id WHERE r.state IN ('confirmed','checked_in','checked_out')
     AND r.channel NOT IN ('maintenance_block','owner_stay') AND r.check_in < ? AND r.check_out > ? AND r.unit_id IN ${list}`, toExclusive, from, ids);
   const costs = await q(`SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.deduct_month, e.rolled, e.reference, t.kind AS task_kind
@@ -178,7 +179,7 @@ async function sixQueries(from, toExclusive, scope = {}) {
     units: units.map(u => (historyOf.get(u.id) ? { ...u, history: historyOf.get(u.id) } : { ...u })),
     // The new statement lists stays by check-in, then id (the old one in whatever order the database read them).
     stays: stays.map(s => {
-      const row = { ...s, check_in: s.check_in.slice(0, 10), check_out: s.check_out.slice(0, 10), collected_revenue: Number(s.collected_revenue) };
+      const row = { ...s, check_in: s.check_in.slice(0, 10), check_out: s.check_out.slice(0, 10), collected_revenue: Number(s.collected_revenue), host_payout: Number(s.host_payout) };
       const parts = M.stayParts(row, piecesOf.get(s.id) ?? []);
       return parts ? { ...row, parts } : row;
     }).sort((a, b) => a.check_in.localeCompare(b.check_in) || (a.id < b.id ? -1 : 1)),
