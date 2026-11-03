@@ -336,7 +336,7 @@ export default function BookingsPage() {
       title: 'What the guest paid: accommodation, fees and the taxes we collect. Tax a channel keeps is not included.',
       filter: { kind: 'number', params: ['grossMin', 'grossMax'] },
       render: b => <span className="font-medium tabular-nums whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue) : '—'}</span>,
-      sub: b => (moneyTodo && b.outstanding > 0 ? <span className="text-warning tabular-nums">{rm(b.outstanding, { cents: false })} owed</span> : null) },
+      sub: b => (moneyTodo && b.outstanding > 0 ? <span className="text-warning tabular-nums">{rm(b.outstanding)} owed</span> : null) },
     { key: 'fee', label: 'Service fee', type: 'money', value: r => r.channelFee, sortKey: 'fee', filter: false, width: 110 },
     // Every value the reservation carries (owner, 2 Nov 2026); the payout shows by default, the breakdown under Columns.
     { key: 'expected', label: 'Host payout', type: 'money', value: r => r.expectedPayout, filter: false, width: 120,
@@ -395,7 +395,7 @@ export default function BookingsPage() {
             const warn = t.money && (c?.count ?? 0) > 0;
             return (
               <StatTile key={t.key} label={t.label} onClick={() => setTodo(t.key)} active={todo === t.key} tone={warn ? 'warning' : undefined}
-                value={c ? `${num(c.count)}${t.money && c.count > 0 ? ` · ${rm(c.outstanding, { cents: false })}` : ''}` : '–'} loading={loading && !data} />
+                value={c ? `${num(c.count)}${t.money && c.count > 0 ? ` · ${rm(c.outstanding)}` : ''}` : '–'} loading={loading && !data} />
             );
           })}
         </StatRow>
@@ -454,7 +454,7 @@ export default function BookingsPage() {
             <Total label="Guest total" value={rm(totals.gross)} />
             <Total label="Service fee" value={rm(totals.fees)} />
             {totals.payout !== undefined && <Total label="Host payout" value={rm(totals.payout)} />}
-            {todoMeta?.money && <Total label={todo === 'unpaid' ? 'Owed by guests' : 'Owed by channels'} value={rm(totals.outstanding, { cents: false })}
+            {todoMeta?.money && <Total label={todo === 'unpaid' ? 'Owed by guests' : 'Owed by channels'} value={rm(totals.outstanding)}
               title={todo === 'unpaid' ? 'Guest total less what has been received, for these direct reservations.' : 'The host payout expected less what has arrived, for these past reservations.'} />}
             {todo === 'payout' && canMoney && <span className="text-muted-ink">Tick the reservations the channel has paid out, then mark them received.</span>}
           </dl>
@@ -465,7 +465,7 @@ export default function BookingsPage() {
             <span className="flex flex-col gap-[3px] min-w-0 flex-1">
               <span className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 min-w-0"><span className={cx('text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis', stayWho(b).missing && 'text-muted-ink')}>{stayWho(b).name}</span><SampleMark kind={b.sample} /></span>
-                <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue, { cents: false }) : '—'}</span>
+                <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue) : '—'}</span>
               </span>
               <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? (stayWho(b).missing ? 'No guest name, no reference' : 'No reference')} · {b.unitNumber} · {b.propertyName}</span>
               <span className="flex items-center justify-between gap-2 pt-[2px]">
@@ -846,7 +846,7 @@ function ImportPreviewModal({ rows, onClose, onConfirm }: { rows: ParsedRow[]; o
             <div className="flex flex-col gap-px min-w-0 flex-1">
               <span className="text-copy font-medium">{r.line ? `Line ${r.line} · ` : ''}{r.label}</span>
               {r.row
-                ? <span className="text-meta text-muted-ink">{CHANNEL_META[r.row.channel].label} · {dateRange(r.row.checkIn, r.row.checkOut)} · {r.row.grossBookingValue > 0 ? rm(r.row.grossBookingValue, { cents: false }) : 'no guest total'}</span>
+                ? <span className="text-meta text-muted-ink">{CHANNEL_META[r.row.channel].label} · {dateRange(r.row.checkIn, r.row.checkOut)} · {r.row.grossBookingValue > 0 ? rm(r.row.grossBookingValue) : 'no guest total'}</span>
                 : <span className="text-meta text-danger">{r.error}</span>}
             </div>
           </div>

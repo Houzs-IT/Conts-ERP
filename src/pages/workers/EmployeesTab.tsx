@@ -24,7 +24,7 @@ import {
 /* ------------------------------------------------------------------ *
  * HR > Employees > Employee Master: Hookka's Employee Master for the
  * in-house cleaners and technicians (owner, 26 Oct 2026): its columns,
- * Add Employee and its employee form, in The Conts' own look. No IC or
+ * Add employee and its employee form, in The Conts' own look. No IC or
  * passport number is asked for. A person's department is the roster they
  * are on (Cleaning, Maintenance); adding one here puts them on it.
  * ------------------------------------------------------------------ */
@@ -129,10 +129,10 @@ export default function EmployeesTab() {
               <span className="text-[16px] font-semibold tracking-[-0.01em]">Employee Master</span>
               <span className="text-meta text-muted-ink">The company's own cleaners and technicians. Open a person for their pay, bank and statutory details.</span>
             </span>
-            {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setForm({ person: null })}>Add Employee</Button>}
+            {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setForm({ person: null })}>Add employee</Button>}
           </div>
         }
-        empty={{ title: 'No employees yet.', body: 'Add the first cleaner or technician.', action: mayEdit ? { label: 'Add Employee', onClick: () => setForm({ person: null }) } : undefined }}
+        empty={{ title: 'No employees yet.', body: 'Add the first cleaner or technician.', action: mayEdit ? { label: 'Add employee', onClick: () => setForm({ person: null }) } : undefined }}
         renderCard={e => (
           <span className="flex flex-col gap-1 min-w-0">
             <span className="flex items-center justify-between gap-3">
@@ -262,11 +262,11 @@ function EmployeeForm({ person, onClose, onSaved }: {
   }
 
   return (
-    <Modal title={creating ? 'Add Employee' : name || 'Employee'} sub={creating ? 'A cleaner or technician on the company payroll.' : [person.employeeId, departmentsOf(person), POSITION_LABEL[d.position]].filter(Boolean).join(' · ')}
+    <Modal title={creating ? 'Add employee' : name || 'Employee'} sub={creating ? 'A cleaner or technician on the company payroll.' : [person.employeeId, departmentsOf(person), POSITION_LABEL[d.position]].filter(Boolean).join(' · ')}
       onClose={onClose} width={640}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button size="sm" variant="primary" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : creating ? 'Add Employee' : 'Save'}</Button>
+        <Button size="sm" variant="primary" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : creating ? 'Add employee' : 'Save'}</Button>
       </>}>
       <div className="flex flex-col gap-6">
         <Section title="Details">

@@ -196,11 +196,11 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
     { key: 'units', label: 'Units', value: r => r.unitsLabel, hidden: true, width: 220 },
     { key: 'period', label: 'Period', value: r => r.period ?? null, text: r => (r.period ? periodLabel(r.period) : ''), hidden: true, width: 110 },
     { key: 'gross', label: 'Gross Income', type: 'money', value: r => r.grossBookingValue, width: 140,
-      render: r => <span className="tabular-nums whitespace-nowrap">{rm(r.grossBookingValue, { cents: false })}</span> },
+      render: r => <span className="tabular-nums whitespace-nowrap">{rm(r.grossBookingValue)}</span> },
     { key: 'fee', label: 'To Operator', type: 'money', value: r => r.managementFee, width: 120,
-      render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.managementFee, { cents: false })}</span> },
+      render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.managementFee)}</span> },
     { key: 'expenses', label: 'Deductions', type: 'money', value: r => r.expensesTotal, width: 120,
-      render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.expensesTotal, { cents: false })}</span> },
+      render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.expensesTotal)}</span> },
     { key: 'net', label: 'Net Payout to Owner', type: 'money', value: r => r.netPayout, width: 130,
       render: r => <span className={cx('tabular-nums whitespace-nowrap font-semibold', r.netPayout < 0 ? TONE.critical.text : '')}>{rm(r.netPayout)}</span> },
     { key: 'status', label: 'Status', type: 'status', value: r => r.state, width: 120,
@@ -300,10 +300,10 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
               <span className="flex flex-col gap-[3px] min-w-0 flex-1">
                 <span className="text-[13.5px] font-medium truncate">{s.ownerName}</span>
                 <span className="text-[12px] text-muted-ink truncate">{s.unitsLabel}</span>
-                <span className="text-[11.5px] text-muted-ink tabular-nums">Income {rm(s.grossBookingValue, { cents: false })} · operator share {rm(s.managementFee, { cents: false })} · deductions {rm(s.expensesTotal, { cents: false })}</span>
+                <span className="text-[11.5px] text-muted-ink tabular-nums">Income {rm(s.grossBookingValue)} · operator share {rm(s.managementFee)} · deductions {rm(s.expensesTotal)}</span>
               </span>
               <span className="flex flex-col items-end gap-[5px] shrink-0">
-                <span className="text-[13.5px] font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
+                <span className="text-[13.5px] font-semibold tabular-nums">{rm(s.netPayout)}</span>
                 <StatusBadge entity="statement" value={s.state} size="sm" />
               </span>
             </span>
@@ -315,9 +315,9 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
                 <span className="text-meta text-muted-ink">Every deduction carries a category, date and amount.</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
-                <Sum label="Gross Income" value={rm(totals.gross, { cents: false })} />
-                <Sum label="To Operator" value={rm(totals.fee, { cents: false })} minus />
-                <Sum label="Deductions" value={rm(totals.expenses, { cents: false })} minus />
+                <Sum label="Gross Income" value={rm(totals.gross)} />
+                <Sum label="To Operator" value={rm(totals.fee)} minus />
+                <Sum label="Deductions" value={rm(totals.expenses)} minus />
                 <Sum label="Net Payout to Owner" value={rm(totals.net)} strong />
               </div>
             </div>

@@ -96,7 +96,7 @@ export default function PurchaseInvoicesPage() {
 
   return (
     <>
-      <PageHeader title="Purchase invoices" sub={data ? `${all.length} ${all.length === 1 ? 'invoice' : 'invoices'} · ${rm(totalOutstanding, { cents: false })} outstanding` : '\u00a0'}
+      <PageHeader title="Purchase invoices" sub={data ? `${all.length} ${all.length === 1 ? 'invoice' : 'invoices'} · ${rm(totalOutstanding)} outstanding` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New invoice</Button> : undefined} />
 
       <DataTable<Pi>

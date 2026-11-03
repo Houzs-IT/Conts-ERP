@@ -67,9 +67,9 @@ export default function AccountingPage() {
       <PageHeader title="Accounting" sub="Payables and receivables · outstanding" />
 
       <StatRow cols={3}>
-        <StatTile label="Payables (AP)" value={fig(rm(d.apTotalSen, { cents: false }))} hint="Owed to suppliers" hintTone="warning" />
-        <StatTile label="Receivables (AR)" value={fig(rm(d.arTotalSen, { cents: false }))} hint="Owed by customers" hintTone="info" />
-        <StatTile className="col-span-2 sm:col-span-1" label="Net position" value={fig(rm(net, { cents: false }))}
+        <StatTile label="Payables (AP)" value={fig(rm(d.apTotalSen))} hint="Owed to suppliers" hintTone="warning" />
+        <StatTile label="Receivables (AR)" value={fig(rm(d.arTotalSen))} hint="Owed by customers" hintTone="info" />
+        <StatTile className="col-span-2 sm:col-span-1" label="Net position" value={fig(rm(net))}
           hint={!data ? 'Receivables less payables' : net >= 0 ? 'Receivables exceed payables' : 'Payables exceed receivables'}
           tone={!data || net >= 0 ? 'success' : 'critical'} />
       </StatRow>

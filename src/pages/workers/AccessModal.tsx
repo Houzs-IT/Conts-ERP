@@ -13,7 +13,7 @@ export function AccessModal({ target, given0, onClose, onDone }: {
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  // given0: the sign-in was just made by Add Employee, so the PIN is shown straight away.
+  // given0: the sign-in was just made by Add employee, so the PIN is shown straight away.
   const [given, setGiven] = useState<{ employeeId: string; pin: string } | null>(given0 ?? null);
   const toast = useToast();
   const link = `${window.location.origin}/portal`;

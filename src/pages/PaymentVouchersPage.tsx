@@ -87,7 +87,7 @@ export default function PaymentVouchersPage() {
 
   return (
     <>
-      <PageHeader title="Payment vouchers" sub={data ? `${all.length} ${all.length === 1 ? 'voucher' : 'vouchers'} · ${rm(paidTotal, { cents: false })} paid` : '\u00a0'}
+      <PageHeader title="Payment vouchers" sub={data ? `${all.length} ${all.length === 1 ? 'voucher' : 'vouchers'} · ${rm(paidTotal)} paid` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>Record payment</Button> : undefined} />
 
       <DataTable<Pv>

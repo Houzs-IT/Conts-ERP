@@ -555,7 +555,7 @@ function NotesBox({ d, onSaved }: { d: Detail; onSaved: () => void }) {
         className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
       {dirty && (
         <div className="flex justify-end gap-2">
-          <Button size="sm" variant="tertiary" onClick={() => setText(d.staffNotes ?? '')} disabled={busy}>Discard</Button>
+          <Button size="sm" variant="secondary" onClick={() => setText(d.staffNotes ?? '')} disabled={busy}>Discard</Button>
           <Button size="sm" variant="primary" onClick={save} loading={busy}>Save notes</Button>
         </div>
       )}

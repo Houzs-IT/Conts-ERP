@@ -120,7 +120,7 @@ export default function YearlyReportPage() {
   return (
     <>
       <PageHeader title="Yearly unit report" sub="Each unit month by month across the year: earnings, profit, owner payout, bills and cleaning."
-        right={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel} disabled={!rows.length}>Export to Excel</Button>} />
+        right={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel} disabled={!rows.length}>Export</Button>} />
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2">
           <Select label="Year" value={year} onChange={v => url.set({ year: v === String(thisYear) ? null : v })} className="w-[130px]" options={years.map(y => ({ value: y, label: y }))} />

@@ -33,25 +33,33 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
 
 ## Buttons
 
-4. **open.** New IT request form puts Send left of Cancel and on the left (`ItSupportPage.tsx`); everywhere else it is
+4. **fixed (batch 3).** New IT request form puts Send left of Cancel and on the left (`ItSupportPage.tsx`); everywhere else it is
    Cancel then the main action, on the right.
-5. **open.** Advance row edit shows Save before Cancel (`workers/AdvancesTab.tsx`).
-6. **open.** Export says five different things: "Export" (every table toolbar), "Export to Excel"
+5. **fixed (batch 3).** Advance row edit shows Save before Cancel (`workers/AdvancesTab.tsx`).
+6. **fixed (batch 3).** Export says five different things: "Export" (every table toolbar), "Export to Excel"
    (`finance/UtilityListing.tsx`, `UnitPnlPage.tsx`, `YearlyReportPage.tsx`), "Export Excel"
    (`OwnerOverallReportPage.tsx`), "Download CSV" (`ExpensesPage.tsx`), "Export all units" (`UnitsPage.tsx`).
-7. **open.** Title Case where the rest is sentence case: "Add Employee" (`workers/EmployeesTab.tsx`,
-   `workers/DcEmployeesTab.tsx`), the "IT Support" page title (`ItSupportPage.tsx`).
-8. **open.** "Discard" (throw away unsaved edits) is a different button style on each of 14 screens (tertiary,
+   All page buttons now say "Export" with the download icon. "Download CSV" stays: it is the action button inside the
+   expense report dialog, where naming the file is the point. "Export all units" on Units stays too: the list view also
+   has the table's own Export (the rows shown), and the header one (every unit, every field) must not read the same.
+7. **fixed (batch 3).** Title Case where the rest is sentence case: "Add Employee" (`workers/EmployeesTab.tsx`,
+   `workers/DcEmployeesTab.tsx`), the "IT Support" page title (`ItSupportPage.tsx`). "Add employee" fixed; "IT Support"
+   kept on purpose: it is the module's name, the same in the menu and in the sister systems (Hookka, Houzs Century).
+8. **fixed (batch 3).** "Discard" (throw away unsaved edits) is a different button style on each of 14 screens (tertiary,
    secondary, ghost, plain): `CleaningSetup`, `MaintenancePage`, `ServicePrices`, `SettingsPage`, `units/UnitCleaning`,
    `settings/AgreementTemplate`, `GuestsPage`, `BookingDrawer`, `CategoryAccessEditor`, `permissions/*`.
 
 ## Money and numbers
 
-9. **open.** Service price ranges print the upper end without the thousands comma: "RM 1,000.00 – 1500.00"
+9. **fixed (batch 3).** Service price ranges print the upper end without the thousands comma: "RM 1,000.00 – 1500.00"
    (`ServicePrices.tsx`).
-10. **open.** Headline money tiles drop the sen ("RM 12,450") on Owners (`OwnersPage.tsx`) and the Overall unit
+10. **fixed (batch 3).** Headline money tiles drop the sen ("RM 12,450") on Owners (`OwnersPage.tsx`) and the Overall unit
     report (`OwnerOverallReportPage.tsx`), while the engine shows every amount in full. Owner's request: RM with sen
     wherever money is shown. Nightly prices on the calendar stay whole ringgit (they are set in whole ringgit).
+    The same rule was dropping sen in 66 more places (`rm(x, { cents: false })`: Dashboard, Portfolio, Analytics,
+    Statements, Reservations, Accounting, Guests, Maintenance, Cleaning, Contracts, supplier and customer credit limits,
+    invoice and order totals). All now show sen; copy.md's money table and `MoneyText`'s default say so. Whole ringgit is
+    kept only for nightly rates in the calendar and pricing grids, and compact amounts only on chart axes.
 11. Not changed on purpose: payroll and advance exports (`workers/PayrollTab.tsx`, `workers/AdvancesTab.tsx`) write
     plain `1234.50` so Excel reads them as numbers.
 
@@ -64,22 +72,22 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
 
 ## Empty, loading and error states
 
-13. **fixed (batch 2).** Engine tables show "Failed to load" plus the raw error text and no way to try again
+13. **fixed (#594).** Engine tables show "Failed to load" plus the raw error text and no way to try again
     (`engine/frontend/src/components/DataTable.tsx`); Property OS says what could not load and offers Retry
     (`StaleBanner`).
-14. **fixed (batch 2).** The retry button for a failed load says "Retry" (StaleBanner, 53 screens) or "Try again"
+14. **fixed (#594).** The retry button for a failed load says "Retry" (StaleBanner, 53 screens) or "Try again"
     (`AirbnbListingPicker.tsx`, `CategoryAccessEditor.tsx`, `SupplyChainEngine.tsx`) or is an inline link
     (`owners/shared.tsx`, `units/UnitCleaning.tsx`). ("Try again" on a failed payout is a different action and stays.)
-15. **fixed (batch 2).** Load errors with no retry at all: Notifications list (`NotificationsPage.tsx`), record history
+15. **fixed (#594).** Load errors with no retry at all: Notifications list (`NotificationsPage.tsx`), record history
     (`RecordHistory.tsx`), a user's access (`permissions/UserAccess.tsx`).
-16. **fixed (batch 2).** "Loading..." with three dots in `NotificationBell.tsx`, `RecordHistory.tsx`, `StatementDetailPage.tsx`;
+16. **fixed (#594).** "Loading..." with three dots in `NotificationBell.tsx`, `RecordHistory.tsx`, `StatementDetailPage.tsx`;
     everywhere else "Loading…".
-17. **fixed (batch 2).** StaleBanner's Retry is a hand-made 30px button (`DataState.tsx`), below the touch size and unlike every
+17. **fixed (#594).** StaleBanner's Retry is a hand-made 30px button (`DataState.tsx`), below the touch size and unlike every
     other button.
 
 ## Status badges
 
-18. **open.** "Sub-unit" is shown in the warning colour (`UnitsPage.tsx`); it is a fact about the unit, not a
+18. **fixed (batch 3).** "Sub-unit" is shown in the warning colour (`UnitsPage.tsx`); it is a fact about the unit, not a
     problem, so neutral.
 19. Engine screens keep their own badge component (`engine/frontend/src/components/Badge.tsx`); its colours follow the
     same meanings but not the same tokens. Left: replacing it touches hundreds of engine files.
