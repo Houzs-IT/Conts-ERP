@@ -350,10 +350,9 @@ async function persistReceiptAsSlip(
   try { bindings = slipBindings(c.env); }
   catch { return null; }
 
-  // pending_slip_uploads.showroom_id is NOT NULL (FK → scm.showrooms). Houzs
-  // has no showroom concept, so stamp the first active showroom (same fallback
-  // as /slips/init). No showroom seeded → skip the slip (OCR still returns).
-  // Multi-company (mig 0089): pick the ACTIVE company's showroom.
+  // Stamp the company's first active showroom when it has one (same fallback
+  // as /slips/init); a company with none (Conts) keeps the slip with no
+  // showroom (nullable since Conts migration 0205) instead of dropping it.
   let roomQ = sb
     .from('showrooms')
     .select('id')
@@ -363,7 +362,6 @@ async function persistReceiptAsSlip(
   if (companyId != null) roomQ = roomQ.eq('company_id', companyId);
   const { data: defaultRoom } = await roomQ.maybeSingle();
   const showroomId = (defaultRoom as { id?: string } | null)?.id ?? null;
-  if (!showroomId) return null;
 
   const sessionId = crypto.randomUUID();
   const slipKey = buildSlipKey(sessionId, mime);
