@@ -28,6 +28,12 @@ describe('the month and the amount finance records', () => {
     expect(coerceUtilityRead({ billMonth: '2026-10', periodFrom: '', periodTo: '', currentCharges: '1.00' }).billMonth).toBe('2026-10');
   });
 
+  test('a period that makes no sense (reversed, or longer than about three months) leaves the month the model read', () => {
+    expect(coerceUtilityRead({ billMonth: '2026-09', periodFrom: '2026-08-06', periodTo: '2026-05-09' }).billMonth).toBe('2026-09');
+    expect(coerceUtilityRead({ billMonth: '2026-09', periodFrom: '2025-08-06', periodTo: '2026-12-05' }).billMonth).toBe('2026-09');
+    expect(coerceUtilityRead({ billMonth: '2026-08', periodFrom: '2026-06-07', periodTo: '2026-09-06' }).billMonth).toBe('2026-09');
+  });
+
   test('without Caj Semasa the page cannot be recorded as it is, even with an amount due', () => {
     const r = coerceUtilityRead({ billMonth: '2026-09', amountDue: '527.35', currentCharges: '' });
     expect(r.currentChargesSen).toBeNull();

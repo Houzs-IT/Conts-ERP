@@ -64,7 +64,7 @@ const rmToSen = (v: unknown): number | null => {
   return m ? Math.round(Number(m[0]) * 100) : null;
 };
 /* Zero-width spaces and the like came back inside account numbers (24 of 104 September pages) and broke matching. */
-const INVISIBLE = /[​-‏⁠﻿]/g;
+const INVISIBLE = /[\u200b-\u200f\u2060\ufeff]/g;
 const text = (v: unknown, max = 300): string | null => {
   const t = typeof v === 'string' ? v.replace(INVISIBLE, '').trim() : '';
   return t ? t.slice(0, max) : null;
@@ -76,13 +76,15 @@ const reading = (v: unknown): number | null => (typeof v === 'number' && Number.
 export function coerceUtilityRead(raw: unknown): UtilityRead {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const kind = UTILITY_KINDS.includes(o.kind as UtilityKind) ? (o.kind as UtilityKind) : 'other';
-  /* The month the printed period ends wins over what the model said (chew, 3 Nov 2026: 06/08-05/09 is September). */
-  const periodTo = isoDate(o.periodTo);
+  /* The month the printed period ends wins over what the model said (chew, 3 Nov 2026: 06/08-05/09 is September),
+     unless the period makes no sense as read: reversed, or longer than about three months (a misread date). */
+  const periodFrom = isoDate(o.periodFrom), periodTo = isoDate(o.periodTo);
   const said = typeof o.billMonth === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(o.billMonth) ? o.billMonth : null;
-  const month = periodTo ? periodTo.slice(0, 7) : said;
+  const days = periodFrom && periodTo ? (Date.parse(periodTo) - Date.parse(periodFrom)) / 86_400_000 : 0;
+  const month = periodTo && days >= 0 && days <= 100 ? periodTo.slice(0, 7) : said;
   const mask = (v: unknown) => text(v, 40)?.replace(/[*x•]/g, 'X') ?? null;
   return {
-    kind, provider: text(o.provider, 100), billMonth: month, periodFrom: isoDate(o.periodFrom), periodTo,
+    kind, provider: text(o.provider, 100), billMonth: month, periodFrom, periodTo,
     amountDueSen: rmToSen(o.amountDue), currentChargesSen: rmToSen(o.currentCharges),
     accountNoVisible: mask(o.accountNoVisible), accountNoFull: text(o.accountNoFull, 40), depositSen: rmToSen(o.deposit),
     invoiceNo: text(o.invoiceNo, 60), premiseAddress: text(o.premiseAddress), buildingName: text(o.buildingName, 120),
