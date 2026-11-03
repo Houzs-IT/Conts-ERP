@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { DialogFrame } from '../../components/Modal';
+import { StaleBanner } from '../../components/DataState';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { MoneyInput, PercentInput, PhoneInput, DateField, phoneProblem } from '../../components/inputs';
@@ -220,7 +221,7 @@ export function StatementHistory({ o }: { o: Owner }) {
     <Section title="Statement history">
       <div className="border border-solid border-line rounded-card overflow-hidden">
         {error && !data ? (
-          <div className="p-4 text-copy text-critical flex items-center gap-3">{error}<button type="button" onClick={reload} className="bg-transparent border-none p-0 text-gold-ink cursor-pointer [font-family:inherit] text-copy">Retry</button></div>
+          <div className="p-4"><StaleBanner message={error} onRetry={reload} /></div>
         ) : loading && !data ? <div className="p-4"><div className="skeleton h-16" /></div>
         : rows.length === 0 ? <div className="p-4 text-copy text-muted-ink">No owner statements yet. History appears here once a month is generated for this owner.</div>
         : rows.map(s => {

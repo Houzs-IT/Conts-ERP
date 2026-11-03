@@ -5,6 +5,7 @@ import { Button } from '../components/Button';
 import { ListPager } from '../components/ListPager';
 import { Segmented } from '../components/Metric';
 import { SkeletonRows } from '../components/States';
+import { StaleBanner } from '../components/DataState';
 import { NoticeRow, announceNoticesChanged, type Notice, type NoticePage } from '../components/NotificationBell';
 import { api, errorMessage } from '../lib/api';
 import { plural } from '../lib/format';
@@ -56,7 +57,7 @@ export default function NotificationsPage() {
       </div>
       <section aria-label="Notifications" className="bg-card border border-solid border-line rounded-card overflow-hidden flex-none">
         {loading && !data && <SkeletonRows rows={6} height={56} />}
-        {error && <div className="py-4 px-5 text-copy text-danger" role="alert">{error}</div>}
+        {error && <div className="py-4 px-5"><StaleBanner message={error} onRetry={() => setNonce(x => x + 1)} /></div>}
         {data && !error && data.data.length === 0 && (
           <div className="py-8 px-5 text-copy text-muted-ink text-center">
             {show === 'unread' ? 'Nothing unread.' : 'No notifications yet. New reservations, cancellations, cleaning jobs and maintenance jobs that concern you appear here.'}

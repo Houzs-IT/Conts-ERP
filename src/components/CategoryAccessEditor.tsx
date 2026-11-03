@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { StaleBanner } from './DataState';
 import { Button } from './Button';
 import { CloseButton } from './CloseButton';
 import Icon from './Icon';
@@ -189,10 +190,7 @@ export default function CategoryAccessEditor({ subject, catalog, onClose, onSave
       </div>
 
       {error && (
-        <div className="p-5 flex flex-col gap-3 items-start">
-          <span className="text-copy text-ink" role="alert">{error}</span>
-          <Button size="sm" onClick={() => setAttempt(n => n + 1)}>Try again</Button>
-        </div>
+        <div className="p-5"><StaleBanner message={error} onRetry={() => setAttempt(n => n + 1)} /></div>
       )}
       {!loaded && !error && <div className="p-5 text-copy text-muted-ink" role="status">Loading the category access…</div>}
 

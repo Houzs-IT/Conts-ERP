@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { StaleBanner } from './DataState';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Button } from './Button';
 import { api, errorMessage } from '../lib/api';
 import { menuPathFor } from '../lib/scmEngine';
 import { useSession } from '../lib/session';
@@ -119,10 +119,7 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
 
   if (error) {
     return (
-      <div style={{ padding: '24px 28px', display: 'flex', alignItems: 'center', gap: 12, fontSize: 13.5 }}>
-        <span style={{ color: 'var(--color-critical-fg)' }}>{error}</span>
-        <Button size="sm" variant="secondary" onClick={() => setAttempt(n => n + 1)}>Try again</Button>
-      </div>
+      <div style={{ padding: '24px 28px' }}><StaleBanner message={error} onRetry={() => setAttempt(n => n + 1)} /></div>
     );
   }
   const opening = <div style={{ padding: '24px 28px', fontSize: 13.5, color: color.textMuted }}>Opening supply chain…</div>;

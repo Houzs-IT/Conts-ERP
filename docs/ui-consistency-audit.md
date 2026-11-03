@@ -16,7 +16,7 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
 
 ## Dialogs
 
-1. **fixed (batch 1).** 19 form dialogs each built their own frame, so Escape, the backdrop and focus behaved
+1. **fixed (#593).** 19 form dialogs each built their own frame, so Escape, the backdrop and focus behaved
    differently from one to the next. Five ignored Escape entirely: Add / edit expense (`ExpensesPage.tsx`), catalog
    item (`MaintenanceCatalog.tsx`), Owner default operator share (`OwnerProfilePage.tsx`), Add a bill
    (`owners/Costs.tsx`), Start payout run (`PayoutsPage.tsx`). The shared `Modal` (34 dialogs) did not move focus in
@@ -26,7 +26,7 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
    changes?" first. Also used by `AddUtilityBill`, `ApprovalBanner`, `BookingDrawer` (CentreModal), `GuestDocuments`,
    `CalendarModals`, `OpsUi` (OpsModal), `ContractsPage`, `DashboardPage`, `owners/ExpenseEntry`, `owners/OwnerMoney`,
    `owners/shared`, `StatementsPage`, `units/shared`.
-2. **fixed (batch 1).** The approval and void-document reason boxes were `bg-white` (`ApprovalBanner.tsx`,
+2. **fixed (#593).** The approval and void-document reason boxes were `bg-white` (`ApprovalBanner.tsx`,
    `GuestDocuments.tsx`); now the card surface like every other field.
 3. **open.** The field app's full-screen repair sheets (`FieldRepairsPage.tsx`) and the photo viewers
    (`Attachments.tsx`, `ItSupportPage.tsx`) keep their own frames: they are full-screen views, not forms.
@@ -64,17 +64,17 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
 
 ## Empty, loading and error states
 
-13. **open.** Engine tables show "Failed to load" plus the raw error text and no way to try again
+13. **fixed (batch 2).** Engine tables show "Failed to load" plus the raw error text and no way to try again
     (`engine/frontend/src/components/DataTable.tsx`); Property OS says what could not load and offers Retry
     (`StaleBanner`).
-14. **open.** The retry button for a failed load says "Retry" (StaleBanner, 53 screens) or "Try again"
+14. **fixed (batch 2).** The retry button for a failed load says "Retry" (StaleBanner, 53 screens) or "Try again"
     (`AirbnbListingPicker.tsx`, `CategoryAccessEditor.tsx`, `SupplyChainEngine.tsx`) or is an inline link
     (`owners/shared.tsx`, `units/UnitCleaning.tsx`). ("Try again" on a failed payout is a different action and stays.)
-15. **open.** Load errors with no retry at all: Notifications list (`NotificationsPage.tsx`), record history
+15. **fixed (batch 2).** Load errors with no retry at all: Notifications list (`NotificationsPage.tsx`), record history
     (`RecordHistory.tsx`), a user's access (`permissions/UserAccess.tsx`).
-16. **open.** "Loading..." with three dots in `NotificationBell.tsx`, `RecordHistory.tsx`, `StatementDetailPage.tsx`;
+16. **fixed (batch 2).** "Loading..." with three dots in `NotificationBell.tsx`, `RecordHistory.tsx`, `StatementDetailPage.tsx`;
     everywhere else "Loading…".
-17. **open.** StaleBanner's Retry is a hand-made 30px button (`DataState.tsx`), below the touch size and unlike every
+17. **fixed (batch 2).** StaleBanner's Retry is a hand-made 30px button (`DataState.tsx`), below the touch size and unlike every
     other button.
 
 ## Status badges
