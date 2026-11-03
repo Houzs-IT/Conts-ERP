@@ -66,7 +66,7 @@ export function SelectionPopover({ sel, phone, canSetRates, onBook, onBlock, onP
           <div className="text-heading font-semibold text-ink">{sel.unitNumber} · {rangeLabel(sel.first, sel.last)} · {plural(sel.nights, 'night')}</div>
           <div className="text-meta text-muted-ink">{summary}</div>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close" className="flex-none w-8 h-8 -mr-1 -mt-1 grid place-items-center rounded-control bg-transparent border-none cursor-pointer text-muted-ink hover:bg-muted">
+        <button type="button" onClick={onClose} aria-label="Close" className="hit-target flex-none w-8 h-8 -mr-1 -mt-1 grid place-items-center rounded-control bg-transparent border-none cursor-pointer text-muted-ink hover:bg-muted">
           <Icon name="X" size="sm" />
         </button>
       </div>

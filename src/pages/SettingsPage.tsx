@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Switch as SharedSwitch } from '../components/Switch';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -102,22 +103,7 @@ const ABSOLUTE = [
 
 /** Accessible switch. On-state is neutral ink, never a status tone. */
 function Switch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cx(
-        'flex-none w-[42px] h-6 rounded-full border-none p-0.5 cursor-pointer flex items-center',
-        '[transition:background_var(--motion-fast)_var(--ease-out)]',
-        checked ? 'bg-ink justify-end' : 'bg-line-strong justify-start',
-      )}
-    >
-      <span className="w-5 h-5 rounded-full bg-white [box-shadow:0_1px_2px_rgba(21,21,21,0.25)]" />
-    </button>
-  );
+  return <SharedSwitch checked={checked} label={label} onChange={onChange} />;
 }
 
 /** One setting: what it is and what it affects on the left third, its control on the right two thirds.
