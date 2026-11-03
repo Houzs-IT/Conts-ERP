@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
+import { DialogFrame } from '../Modal';
 import { createPortal } from 'react-dom';
 import { Button } from '../Button';
 import Icon from '../Icon';
@@ -93,11 +94,6 @@ export function VoidDocumentDialog({ doc, onClose, onDone }: { doc: GuestDocumen
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [busy, onClose]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -114,9 +110,8 @@ export function VoidDocumentDialog({ doc, onClose, onDone }: { doc: GuestDocumen
   }
 
   return createPortal(
-    <div role="dialog" aria-modal="true" aria-label={`Void ${doc.docNo}`} className="fixed inset-0 z-[80] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]">
-      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
-      <form onSubmit={submit} className="relative w-full max-w-[460px] bg-card rounded-card shadow-[var(--shadow-overlay)] flex flex-col">
+    <DialogFrame label={`Void ${doc.docNo}`} onClose={onClose} busy={busy} className="fixed inset-0 z-[80] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]" panelClassName="relative w-full max-w-[460px]">
+      <form onSubmit={submit} className="w-full bg-card rounded-card shadow-[var(--shadow-overlay)] flex flex-col">
         <div className="px-[22px] pt-[22px] pb-2 flex flex-col gap-[6px]">
           <h2 className="m-0 text-title font-semibold">Void {doc.typeLabel.toLowerCase()} {doc.docNo}?</h2>
           <p className="m-0 text-copy text-muted-ink text-pretty">It stays on record marked void, with your reason. The number is never issued again. Tell the guest if they already have it.</p>
@@ -127,7 +122,7 @@ export function VoidDocumentDialog({ doc, onClose, onDone }: { doc: GuestDocumen
             <label htmlFor="void-reason" className="text-meta font-medium text-muted-ink">Reason (required)</label>
             <textarea id="void-reason" autoFocus required value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={500}
               placeholder="e.g. Wrong guest name; reissued"
-              className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
+              className="block w-full box-border text-ink bg-card border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
           </div>
           {error && <p role="alert" className="m-0 text-meta text-danger">{error}</p>}
         </div>
@@ -136,7 +131,7 @@ export function VoidDocumentDialog({ doc, onClose, onDone }: { doc: GuestDocumen
           <Button type="submit" size="sm" variant="danger" loading={busy} disabled={!reason.trim()} disabledReason="Write the reason first.">Void document</Button>
         </div>
       </form>
-    </div>,
+    </DialogFrame>,
     document.body,
   );
 }

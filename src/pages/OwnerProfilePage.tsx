@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { DialogFrame } from '../components/Modal';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -408,9 +409,7 @@ function DefaultFeeModal({ current, owner, onClose, onSubmit }: { current: numbe
   const [busy, setBusy] = useState(false);
   const valid = parsed == null || (parsed >= 0 && parsed <= 100);
   return (
-    <div role="dialog" aria-modal="true" aria-label="Owner default fee" className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div className="relative w-full max-w-[440px] bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
+    <DialogFrame label="Owner default fee" onClose={onClose} panelClassName="relative w-full max-w-[440px] bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
         <form onSubmit={e => { e.preventDefault(); if (valid && !busy) { setBusy(true); onSubmit(parsed); } }}>
           <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
             <h2 className="m-0 text-title font-semibold">Owner default operator share</h2>
@@ -427,8 +426,7 @@ function DefaultFeeModal({ current, owner, onClose, onSubmit }: { current: numbe
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogFrame>
   );
 }
 

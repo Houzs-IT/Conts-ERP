@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { DialogFrame } from '../components/Modal';
 import { Card } from '../components/Card';
 import { StatusBadge } from '../components/StatusBadge';
 import { SectionHead, PayoutBadge, payoutDestination, payoutStatus, type PayoutRow } from './owners/OwnerMoney';
@@ -343,10 +344,7 @@ function RunDialog({ onClose, onDone }: { onClose: () => void; onDone: () => voi
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Start payout run"
-      className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]">
-      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
-      <div className="relative w-full max-w-[560px] max-h-[88vh] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden">
+    <DialogFrame label="Start payout run" onClose={onClose} busy={busy} panelClassName="relative w-full max-w-[560px] max-h-[88vh] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden">
         <div className="px-[22px] pt-[22px] pb-3 flex flex-col gap-2">
           <h2 className="m-0 text-title font-semibold">Start payout run</h2>
           <p className="m-0 text-copy text-muted-ink text-pretty">
@@ -380,7 +378,6 @@ function RunDialog({ onClose, onDone }: { onClose: () => void; onDone: () => voi
             <Button size="sm" variant="primary" loading={busy} onClick={start} disabled={chosen.length === 0} disabledReason="Tick at least one payout with a bank account.">{approvalsOn ? 'Send run for approval' : 'Start payout run'}</Button>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogFrame>
   );
 }

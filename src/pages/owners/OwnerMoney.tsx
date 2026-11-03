@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { DialogFrame } from '../../components/Modal';
 import PageHeader from '../../components/PageHeader';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
@@ -202,24 +203,14 @@ export function AdjustDialog({ target, busy, onClose, onSubmit }: {
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState<number | null>(null);
   const [direction, setDirection] = useState<'deduct' | 'add'>('deduct');
-  const ref = useRef<HTMLDivElement>(null);
 
   const sen = (amount ?? 0) * (direction === 'deduct' ? -1 : 1);
   const valid = label.trim() !== '' && sen !== 0;
   const preview = valid ? target.netPayout + sen : target.netPayout;
 
-  useEffect(() => {
-    ref.current?.querySelector<HTMLInputElement>('input')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [busy, onClose]);
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Adjust statement"
-      className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
-      <div ref={ref} className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
+    <DialogFrame label="Adjust statement" onClose={onClose} busy={busy} panelClassName="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
         <form onSubmit={e => { e.preventDefault(); if (valid && !busy) onSubmit(label.trim(), sen); }}>
           <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-3">
             <h2 className="m-0 text-title font-semibold">Adjust statement</h2>
@@ -245,7 +236,6 @@ export function AdjustDialog({ target, busy, onClose, onSubmit }: {
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogFrame>
   );
 }
