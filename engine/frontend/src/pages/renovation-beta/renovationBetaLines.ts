@@ -23,6 +23,7 @@ export interface LinePo {
   supplierRevised: boolean;
   qty: number; received: number;
   photoKeys: string[];
+  supplierName?: string | null;
 }
 
 export interface SupplierChoice { id: string; code: string; name: string; main: boolean; priceSen: number | null }
@@ -49,12 +50,12 @@ export interface ManagedLine {
   amountSen: number | null;
   area: string | null;
   remark: string | null;
-  /** The supplier the line is bought from: the contract line's, else the SKU's main supplier. */
+  /** The supplier the line is to be bought from: the one picked here, else the contract line's, else the SKU's main supplier. */
   supplierName: string | null;
   supplierId?: string | null;
   /** The renovation contract line behind it, where a supplier picked here is kept (null: not a contract line). */
   contractLineId?: string | null;
-  /** The suppliers the SKU can be ordered from (its bindings), main first. */
+  /** The suppliers the SKU can be ordered from (its bindings), main first. LinesAnswer.suppliers has the rest. */
   supplierChoices?: SupplierChoice[];
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none). */
@@ -95,12 +96,9 @@ export const linesApi = {
   /** One date on many lines in one request: a band's date, which each line's own request made slow (owner, 4 Nov 2026). */
   savePlans: (projectId: number, itemIds: readonly string[], b: Partial<LinePlan>): Promise<{ ok: true; saved: string[]; refused: { itemCode: string; reason: string }[] }> =>
     api.put<{ ok: true; saved: string[]; refused: { itemCode: string; reason: string }[] }>(`${B}/projects/${projectId}/line-plans`, { itemIds, ...b }),
-  /** The supplier of a contract line, from the SKU's bound suppliers (backend renovationBeta.ts PUT .../supplier). */
+  /** The supplier of a line with no PO yet (backend renovationBeta.ts PUT .../supplier). */
   saveSupplier: (projectId: number, itemId: string, supplierId: string): Promise<{ ok: true; supplierId: string; supplierName: string }> =>
     api.put<{ ok: true; supplierId: string; supplierName: string }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/supplier`, { supplierId }),
-  /** The PO date, through the PO's own header update (scm mfg-purchase-orders PATCH /:id). */
-  setPoDate: (poId: string, poDate: string): Promise<unknown> =>
-    authedFetch(`/mfg-purchase-orders/${encodeURIComponent(poId)}`, { method: "PATCH", body: JSON.stringify({ poDate }) }),
   /** A PO line's delivery date, through the PO's own line update (PATCH /:id/items/:itemId). */
   setPoLineDelivery: (poId: string, poLineId: string, deliveryDate: string | null): Promise<unknown> =>
     authedFetch(`/mfg-purchase-orders/${encodeURIComponent(poId)}/items/${encodeURIComponent(poLineId)}`, { method: "PATCH", body: JSON.stringify({ deliveryDate }) }),
@@ -431,7 +429,12 @@ export function dateFixedReason(l: ManagedLine, which: "orderOn" | "deliverOn", 
 
 /** Whether the line still waits for a PO, so its supplier can be picked here. */
 export function picksSupplier(l: ManagedLine): boolean {
-  return l.goesTo === "po" && !l.plan.noPo && !livePo(l) && !!l.contractLineId;
+  return !l.plan.noPo && !livePo(l);
+}
+
+/** Who the line is bought from: the live PO's supplier once a PO holds it, else the one picked or defaulted. */
+export function supplierOf(l: ManagedLine): string | null {
+  return livePo(l)?.supplierName ?? l.supplierName;
 }
 
 /** A line after a date saved from here: the PO line's delivery date once a PO holds it, else the plan. */
@@ -480,13 +483,13 @@ const csvCell = (v: unknown): string => {
 
 export function linesCsv(lines: readonly ManagedLine[], finance: boolean): string {
   const head = ["SO", "Category", "Sub-category", "SKU", "Description", "Variants", "Colour", "Area", "Remark", "UOM", "Qty",
-    ...(finance ? ["Amount (RM)"] : []), "Processing date", "Delivery date", "PO", "PO date", "GR", "DO"];
+    ...(finance ? ["Amount (RM)"] : []), "Processing date", "Delivery date", "Supplier", "PO", "PO date", "GR", "DO"];
   const out = [head];
   for (const l of lines) {
     const d = lineDates(l);
     out.push([l.soDocNo, l.categoryLabel, l.subLabel, l.itemCode, l.description, l.variantText ?? "", colourOf(l), l.area ?? "", l.remark ?? "", l.uom, String(l.qty),
       ...(finance ? [l.amountSen === null ? "" : (l.amountSen / 100).toFixed(2)] : []),
-      d.orderOn ?? "", d.deliverOn ?? "", l.pos.filter((p) => p.poStatus !== "CANCELLED").map((p) => p.poNumber).join(" "), d.fromPo?.poDate ?? "",
+      d.orderOn ?? "", d.deliverOn ?? "", supplierOf(l) ?? "", l.pos.filter((p) => p.poStatus !== "CANCELLED").map((p) => p.poNumber).join(" "), d.fromPo?.poDate ?? "",
       l.goesTo === "po" || l.pos.length ? l.gr : "", l.do]);
   }
   return out.map((r) => r.map(csvCell).join(",")).join("\r\n");

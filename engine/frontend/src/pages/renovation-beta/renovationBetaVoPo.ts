@@ -120,7 +120,9 @@ export interface ClientItem {
   /** The client link's photos, by reference (public answer only). */
   photos?: Array<{ ref: string; from: "line" | "sku" }>;
   voNo?: string | null;
-  pending: boolean;
+  /** The Client PO that holds the line (staff answer only). */
+  poId?: string;
+  poNumber?: string;
   /** The PO tab's processing (buy by) and delivery dates of the line (absent from an older server). */
   orderOn?: string | null;
   deliverOn?: string | null;

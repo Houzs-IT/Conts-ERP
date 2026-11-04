@@ -18,7 +18,7 @@ describe("moveColumn", () => {
 
 describe("bandParts", () => {
   it("the usual order: label, the two dates, then blank", () => {
-    expect(bandParts(PO_COLUMNS)).toEqual([{ kind: "label", span: 5 }, { kind: "orderOn", span: 1 }, { kind: "deliverOn", span: 1 }, { kind: "blank", span: 4 }]);
+    expect(bandParts(PO_COLUMNS)).toEqual([{ kind: "label", span: 5 }, { kind: "orderOn", span: 1 }, { kind: "deliverOn", span: 1 }, { kind: "blank", span: 5 }]);
   });
   it("dates stay under their columns wherever they move, and the cells add up", () => {
     const parts = bandParts(["orderOn", "sku", "desc", "deliverOn", "qty"]);

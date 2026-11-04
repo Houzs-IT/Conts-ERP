@@ -69,8 +69,8 @@ interface CandidateRow {
     A line with a cost but no supplier still needs one: the split blocks until a supplier is picked. Lines that
     never get one (system rows, owner-supplied goods, in-house work) also never get a proof of delivery. */
 /** Customer-supplied items (owner, 22 Oct 2026; 1 Nov 2026 the supplier alone decides): the line's supplier, else
-    the SKU's, is CUSTOMER. The customer buys the item and The Conts only manages it, so nothing is ordered from
-    anyone: no PO, not even a zero one. */
+    the SKU's, is CUSTOMER. The customer buys the item and The Conts only manages it, so this split orders
+    nothing. Its Client PO is opened in MRP, to the supplier CUSTOMER (owner, 4 Nov 2026). */
 export function isCustomerSupplied(l: { itemCode: string | null; supplierCode?: string | null; unitCostSen: number }): boolean {
   return l.supplierCode === 'CUSTOMER';
 }

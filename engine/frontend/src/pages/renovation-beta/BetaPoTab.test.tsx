@@ -92,6 +92,7 @@ const SUPPLIER = {
     { ...LINES.lines[1], contractLineId: "cl-b", supplierId: "s1", supplierChoices: CHOICES },
     { ...base, id: "c", itemCode: "LT-3", description: "Downlight C", plan: { orderOn: null, deliverOn: null, noPo: false }, pos: [], contractLineId: "cl-c", supplierId: null, supplierChoices: [] },
   ],
+  suppliers: [{ id: "s9", name: "In-house" }],
 };
 
 const SITE = {
@@ -129,7 +130,9 @@ describe("PO tab", () => {
     // A renovation contract's SKU and qty open too (saving raises a contract VO for you), with the remark and dates.
     expect(within(region).getAllByLabelText(/^Qty for/)).toHaveLength(2);
     expect(within(region).getAllByRole("button", { name: /Add a remark to/ }).length).toBe(2);
-    expect(within(region).getByLabelText("PO date of TC-PO-2610-006")).toBeTruthy();
+    // The PO's own date is changed in the PO: the number opens its editor.
+    expect(within(region).queryByLabelText("PO date of TC-PO-2610-006")).toBeNull();
+    expect(within(region).getByRole("link", { name: "TC-PO-2610-006" }).getAttribute("href")).toBe("/scm/purchase-orders/po1?edit=1");
 
     const all = within(region).getByLabelText("Delivery date for every line of Lighting");
     fireEvent.change(all, { target: { value: "2026-11-20" } });
@@ -215,18 +218,18 @@ describe("PO tab", () => {
     h.furniture = false;
   });
 
-  it("picks a waiting line's supplier from the SKU's bound suppliers, main starred; a SKU with none says where to add one", async () => {
+  it("picks a waiting line's supplier from the SKU's bound suppliers, main starred; any other supplier follows", async () => {
     h.supplier = true;
     h.puts.length = 0;
     renderTab();
     const region = await screen.findByRole("region", { name: "Sales order lines" });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     const pick = within(region).getByLabelText("Supplier for LT-2") as HTMLSelectElement;
-    expect([...pick.options].map((o) => o.textContent)).toEqual(["★ Main Co (main)", "Other Co"]);
+    expect([...pick.options].map((o) => o.textContent)).toEqual(["★ Main Co (main)", "Other Co", "In-house"]);
     expect(pick.value).toBe("s1");
-    // The line on a PO has no pick; the SKU with no binding says so.
+    // The line on a PO has no pick; a SKU with no binding offers every supplier.
     expect(within(region).queryByLabelText("Supplier for LT-1")).toBeNull();
-    expect(within(region).getByText("No supplier bound to this SKU: add one in the SKU's suppliers")).toBeTruthy();
+    expect([...(within(region).getByLabelText("Supplier for LT-3") as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(["Pick a supplier", "In-house"]);
     fireEvent.change(pick, { target: { value: "s2" } });
     await waitFor(() => expect(h.puts).toEqual([["/api/beta/projects/7/lines/b/supplier", { supplierId: "s2" }]]));
     await waitFor(() => expect((within(region).getByLabelText("Supplier for LT-2") as HTMLSelectElement).value).toBe("s2"));

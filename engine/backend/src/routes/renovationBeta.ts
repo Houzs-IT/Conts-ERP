@@ -30,7 +30,7 @@ import {
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
-import { bindSupplier, cleanLinePlan, contractLineOf, loadProjectLines, projectLine, saveLinePlan, saveLinePlans, supplierBinding } from "../services/renovation/betaLines";
+import { bindSupplier, cleanLinePlan, contractLineOf, lineSupplierState, loadProjectLines, projectLine, saveLinePlan, saveLinePlans, saveLineSupplier, supplierBinding } from "../services/renovation/betaLines";
 import { patchContract } from "../scm/lib/renovation-so";
 import { inRenoTx, RenoError, sqlFor } from "../scm/lib/renovation-db";
 import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
@@ -799,8 +799,7 @@ app.get("/projects/:id/client-po", requirePageAccess("projects.list"), async (c)
   if (co == null) return c.json({ error: "not_found" }, 404);
   return readOr(c, "client item", async () => {
     const scope = await categoryScope(c);
-    const vo = await loadProjectVos(db(c), id, co, false, scope);
-    return loadClientItems(db(c), id, co, vo.vos, scope);
+    return loadClientItems(db(c), id, co, scope);
   });
 });
 
@@ -866,10 +865,11 @@ app.put("/projects/:id/line-plans", requirePermission("projects.write"), async (
   }
 });
 
-/* The supplier a contract line is bought from, picked on the PO tab before Create PO (owner, 3 Nov 2026), like MRP's
-   per-line pick. Only a supplier the SKU is bound to (scm.supplier_material_bindings); its price becomes the line's cost.
-   Saved on the contract line, which the PO split reads (renovation-po-split.ts), through the contract's own line edit
-   (patchContract), so a line already on a live PO is refused the same way there. */
+/* The supplier a line is to be bought from, picked on the SO tab before its PO (owner, 3 and 4 Nov 2026), like MRP's
+   per-line pick, on any line. A bound supplier's price (scm.supplier_material_bindings) becomes a contract line's cost;
+   any other supplier is bound to the SKU by the pick, with no price. Kept on the line's plan, which MRP starts from. A contract
+   line also keeps it on the line the PO split reads (renovation-po-split.ts), through the contract's own line edit
+   (patchContract). */
 app.put("/projects/:id/lines/:itemId/supplier", requirePermission("projects.write"), async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
@@ -880,20 +880,24 @@ app.put("/projects/:id/lines/:itemId/supplier", requirePermission("projects.writ
   if (!supplierId) return c.json({ error: "invalid_supplier", message: "Pick a supplier." }, 400);
   const line = await projectLine(db(c), id, co, c.req.param("itemId"), await categoryScope(c));
   if (!line) return c.json({ error: "not_found" }, 404);
-  const cl = await contractLineOf(db(c), line.id);
-  if (!cl) return c.json({ error: "not_contract_line", message: "This line is not on a renovation contract: pick its supplier when the PO is made." }, 409);
-  const bound = await supplierBinding(db(c), cl.itemCode, co, supplierId) ?? await bindSupplier(db(c), cl.itemCode, co, supplierId);
+  const state = await lineSupplierState(db(c), line.id);
+  if (state.poNumber) return c.json({ error: "line_on_po", message: `${state.poNumber} already buys ${state.itemCode}: its supplier stays on the PO.` }, 409);
+  const bound = await supplierBinding(db(c), state.itemCode, co, supplierId) ?? await bindSupplier(db(c), state.itemCode, co, supplierId);
   if (!bound) return c.json({ error: "supplier_not_found", message: "That supplier could not be found." }, 400);
+  const cl = await contractLineOf(db(c), line.id);
   const user = c.get("user") as { name?: string | null; email?: string | null } | undefined;
   const sql = sqlFor(c.env);
   if (!sql) return c.json({ error: "supplier_save_failed", message: "The supplier could not be saved. Try again." }, 503);
   try {
     /* In one real transaction on postgres.js, as the contract's own route runs it (the row lock in patchContract needs
        one, and the line and its costs change together). */
-    await inRenoTx(sql, (tx) => patchContract(tx, { name: user?.name ?? user?.email ?? null, staffId: String(userId(c)), companyId: co, docPrefix: "" }, cl.docNo, {
-      version: cl.version, lines: [{ id: cl.lineId, supplierId, ...(bound.priceSen > 0 ? { unitCostSen: bound.priceSen } : {}) }],
-    }));
-    await activityStmt(c, id, co, "beta_line_supplier", null, line.doc_no, `${cl.itemCode}: supplier ${bound.name}`).run();
+    if (cl) {
+      await inRenoTx(sql, (tx) => patchContract(tx, { name: user?.name ?? user?.email ?? null, staffId: String(userId(c)), companyId: co, docPrefix: "" }, cl.docNo, {
+        version: cl.version, lines: [{ id: cl.lineId, supplierId, ...(bound.priceSen > 0 ? { unitCostSen: bound.priceSen } : {}) }],
+      }));
+    }
+    await saveLineSupplier(db(c), line.id, co, userId(c), supplierId);
+    await activityStmt(c, id, co, "beta_line_supplier", null, line.doc_no, `${state.itemCode}: supplier ${bound.name}`).run();
   } catch (e) {
     if (e instanceof RenoError) return c.json({ error: e.code, message: e.message }, e.status === 503 ? 409 : e.status);
     console.error("[renovation-beta] line supplier save failed", e);

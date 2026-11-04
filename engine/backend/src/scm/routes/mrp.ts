@@ -325,6 +325,8 @@ export type MrpLine = {
   projectId: number | null;
   projectCode: string | null;
   projectName: string | null;
+  /* Conts (owner, 4 Nov 2026): the supplier picked for this line on the project's SO tab; the line starts on it. */
+  plannedSupplier?: { supplierId: string; code: string; name: string } | null;
   customerState: string | null;  // staff #8 — info-only, from the SO's customer_state
   soDate: string | null;
   deliveryDate: string | null;
@@ -395,6 +397,7 @@ type SofaSet = {
   projectId: number | null;
   projectCode: string | null;
   projectName: string | null;
+  plannedSupplier?: { supplierId: string; code: string; name: string } | null;
   customerState: string | null;  // staff #8 — info-only, from the SO's customer_state
   soDate: string | null;
   deliveryDate: string | null;
@@ -739,13 +742,21 @@ export async function computeMrp(
      marks it "No PO". A processing date alone stays undated: counted, and shown only under Show no-date. Orders with
      no project keep the rule above. */
   const projectLineIds = demandOpen.filter((r) => r.so?.project_id != null).map((r) => r.id);
-  const { data: planRows, error: planErr } = await chunkIn<{ so_item_id: string; order_on: string | null; deliver_on: string | null; no_po: boolean }>(
+  const { data: planRows, error: planErr } = await chunkIn<{ so_item_id: string; order_on: string | null; deliver_on: string | null; no_po: boolean; supplier_id: string | null }>(
     projectLineIds,
-    (batch, from, to) => scoped(sb.from('reno_beta_line_plans').select('so_item_id, order_on, deliver_on, no_po').in('so_item_id', batch))
+    (batch, from, to) => scoped(sb.from('reno_beta_line_plans').select('so_item_id, order_on, deliver_on, no_po, supplier_id').in('so_item_id', batch))
       .order('so_item_id').range(from, to),
   );
   if (planErr) throw new Error(`mrp_load_failed: ${planErr.message}`);
   const planOf = new Map(planRows.map((p) => [p.so_item_id, p]));
+  const plannedIds = [...new Set(planRows.flatMap((p) => (p.supplier_id ? [p.supplier_id] : [])))];
+  const plannedById = new Map<string, { supplierId: string; code: string; name: string }>();
+  if (plannedIds.length > 0) {
+    const { data: plannedRows, error: plannedErr } = await sb.from('suppliers').select('id, code, name').in('id', plannedIds);
+    if (plannedErr) throw new Error(`mrp_load_failed: ${plannedErr.message}`);
+    for (const s of (plannedRows ?? []) as Array<{ id: string; code: string; name: string }>) plannedById.set(s.id, { supplierId: s.id, code: s.code, name: s.name });
+  }
+  const plannedSupplierOf = (soItemId: string) => plannedById.get(planOf.get(soItemId)?.supplier_id ?? '') ?? null;
   const demandPlanned = demandOpen.flatMap((r): DemandRow[] => {
     if (r.so?.project_id == null) return [r];
     return projectDemandLine(r, planOf.get(r.id));
@@ -1437,6 +1448,7 @@ export async function computeMrp(
         soDocNo: r.doc_no,
         debtorName: r.so?.debtor_name ?? null,
         ...projectOf(r),
+        plannedSupplier: plannedSupplierOf(r.id),
         customerState: r.so?.customer_state ?? null,
         soDate: r.so?.so_date ?? null,
         deliveryDate: lineDelivery,
@@ -1640,6 +1652,7 @@ export async function computeMrp(
         createdAt: d.created_at ?? null,
         debtorName: d.so?.debtor_name ?? null,
         ...projectOf(d),
+        plannedSupplier: plannedSupplierOf(d.id),
         customerState: d.so?.customer_state ?? null,
         soDate: d.so?.so_date ?? null,
         deliveryDate: setDelivery,
