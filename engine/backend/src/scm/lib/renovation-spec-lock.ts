@@ -57,3 +57,23 @@ export async function receivedSpecRefusal(sb: any, docNo: string, lines: Amended
   }
   return null;
 }
+
+/** What is received on each SO line across its live POs, so the SO page can show the lock before the server refuses.
+    A failed read reports nothing received: the refusals above stay the gate. */
+export async function soLineReceivedQty(sb: any, soItemIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (soItemIds.length === 0) return out;
+  try {
+    const { data: rows, error } = await sb.from('purchase_order_items')
+      .select('so_item_id, purchase_order_id, received_qty').in('so_item_id', soItemIds).gt('received_qty', 0);
+    if (error || !rows?.length) return out;
+    const { data: pos, error: poErr } = await sb.from('purchase_orders')
+      .select('id').in('id', [...new Set((rows as Array<{ purchase_order_id: string }>).map((r) => r.purchase_order_id))]).neq('status', 'CANCELLED');
+    if (poErr) return out;
+    const live = new Set((pos ?? []).map((p: { id: string }) => p.id));
+    for (const r of rows as Array<{ so_item_id: string; purchase_order_id: string; received_qty: number }>) {
+      if (live.has(r.purchase_order_id)) out.set(r.so_item_id, (out.get(r.so_item_id) ?? 0) + Number(r.received_qty));
+    }
+  } catch { /* silent-write-ok: a display hint on a read */ }
+  return out;
+}

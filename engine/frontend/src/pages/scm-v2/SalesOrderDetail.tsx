@@ -46,8 +46,9 @@ import { RenovationSoOrderInfo } from './RenovationSoOrderInfo';
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from './renovationSoAreaLines';
 import { SoInstalments, instalmentRows, nextInstalmentSen, paymentSlots, useSoInstalments } from './renovationSoInstalments';
 import { ContractSections } from '../renovation/RenovationSalesOrder';
+import { SPEC_LOCKED_NOTE } from '../renovation-beta/renovationBetaLines';
 import {
-  Field, SoAddressFields, SoCustomerFields, SoDetailAsideCards, SoDetailHeader, SoEmergencyFields, SoOrderInfoFields,
+  Field, SoAddressFields, SoCustomerFields, SoDetailAsideCards, SoDetailHeader, SoEmergencyFields, SoOrderInfoFields, SoRecentActivityCard,
   displayStatusFor, fmtMoney, refOf, soLineColumns,
 } from './soDetailParts';
 import { SoPrintPreview, useSoPrintLayout } from './soPrintPreview';
@@ -467,6 +468,8 @@ type SoItem = {
   deliveries?: { doNumber: string; qty: number; status: string }[];
   delivered_qty?: number;
   remaining_qty?: number;
+  /* Received on this line's live POs. Above 0 its SKU, options and price are locked (renovation-spec-lock.ts). */
+  received_qty?: number;
   /* Incoming-stock coverage — the PO this line's goods were raised into +
      earliest ETA, shown while the line is still on the way. null when no PO. */
   coverage_po?: string | null;
@@ -1836,8 +1839,11 @@ export const SalesOrderDetail = () => {
      server (price override) rather than through the amendment diff — those must
      stay disabled on a locked SO or they render-then-409. */
   const overrideLocked = isLocked || procLockActive;
+  /* The rows Edit shows: a cancelled line (a VO replaced it) is not on the order. Its draft stays and never moves, so
+     the save sees what it always saw. */
+  const liveItems = items.filter((it) => !it.cancelled);
   const visibleLines = visibleLineCounts({
-    isEditing, itemIds: items.map((it) => it.id),
+    isEditing, itemIds: liveItems.map((it) => it.id),
     editingDraftIds: Object.keys(editingDrafts), stagedAdds: addingDrafts.length,
   });
   // Houzs perm gates (mirror the server-side scm.amendment.* keys): the server
@@ -2027,7 +2033,7 @@ export const SalesOrderDetail = () => {
               // A freshly-deleted row drops its draft (removeEditingLine) but
               // lingers in `items` until the re-fetch — skip rendering it.
               if (!editDraft) return null;
-              const cb = rowCallbacks.get(it.id), frozen = soItemFrozen(it);
+              const cb = rowCallbacks.get(it.id), frozen = soItemFrozen(it), goodsIn = Number(it.received_qty ?? 0) > 0;
               return (
                 <div key={it.id} style={frozen ? FROZEN_LINE_STYLE : undefined} data-frozen={frozen || undefined}>
                   {/* Per-line action — Override price ($). Removal is handled
@@ -2045,8 +2051,8 @@ export const SalesOrderDetail = () => {
                         which carries newUnitPriceSen. Off, not render-then-deny. */}
                     {frozen && <span style={FROZEN_LINE_LABEL_STYLE}>{FROZEN_LINE_LABEL}</span>}
                     <button type="button" className={styles.iconBtn} title="Override price"
-                      disabled={overrideLocked || frozen}
-                      onClick={() => !overrideLocked && !frozen && setOverriding(it)}>
+                      disabled={overrideLocked || frozen || goodsIn}
+                      onClick={() => !overrideLocked && !frozen && !goodsIn && setOverriding(it)}>
                       <DollarSign {...SM_ICON} />
                     </button>
                   </div>}
@@ -2054,14 +2060,15 @@ export const SalesOrderDetail = () => {
                     compact={renoLines}
                     actions={renoLines ? <>
                       <button type="button" className={renovationLineStyles.iconBtn} title="Override price" aria-label="Override price"
-                        disabled={overrideLocked || frozen}
-                        onClick={() => !overrideLocked && !frozen && setOverriding(it)}>
+                        disabled={overrideLocked || frozen || goodsIn}
+                        onClick={() => !overrideLocked && !frozen && !goodsIn && setOverriding(it)}>
                         <DollarSign {...SM_ICON} />
                       </button>
                       {!frozen && move}
                     </> : undefined}
                     index={idx}
                     draft={editDraft}
+                    specLockedNote={goodsIn ? SPEC_LOCKED_NOTE : undefined}
                     onChange={cb?.onChange ?? ((patch) => patchEditingDraft(it.id, patch))}
                     onRemove={cb?.onRemove ?? (() => removeEditingLine(it.id))}
                     canRemove={!linesLocked && !frozen}
@@ -2455,6 +2462,7 @@ export const SalesOrderDetail = () => {
                 onDeliveryDateChange={cascadeDeliveryDateToLines}
                 onRenoLayout={setRenoLayout}
               />
+              <SoRecentActivityCard header={header} auditEntries={auditQ.data ?? []} lineCount={lineRows.length} />
             </DetailMain>
             <DetailAside>
               {/* Hidden on phone (the Order total above stands in). */}
@@ -2464,9 +2472,7 @@ export const SalesOrderDetail = () => {
                 discountSen={discountSen}
                 totalSen={totalSen}
                 slipImageKey={slipImageKey}
-                auditEntries={auditQ.data ?? []}
                 renoMode={renoMode}
-                lineCount={lineRows.length}
                 nameOf={salespersonNameOf}
               />
             </DetailAside>
@@ -2506,7 +2512,7 @@ export const SalesOrderDetail = () => {
                       if (rename) setRenoRowRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
                     }}
                     rows={[
-                      ...items.filter((it) => it.id in editingDrafts).map((it) => ({
+                      ...liveItems.filter((it) => it.id in editingDrafts).map((it) => ({
                         key: it.id, room: renoRowRoom[it.id] ?? '', group: soItemFrozen(it) ? FROZEN_LINE_LABEL : undefined,
                         render: (n: number, move?: ReactNode) => renderEditLine(it, n, move),
                       })),
@@ -2520,13 +2526,13 @@ export const SalesOrderDetail = () => {
                   />
                 ) : (
                   <>
-                    {items.map((it, idx) => renderEditLine(it, idx))}
+                    {liveItems.map((it, idx) => renderEditLine(it, idx))}
                     {/* New lines — as many as the operator asks for, each with its own ADD idempotency key. The caption
                         is the "visibly staged" half of the count fix: the row number continues the table. */}
                     {addingDrafts.map((staged, i) => renderStagedLine(staged, i))}
                   </>
                 )}
-                {items.length === 0 && addingDrafts.length === 0 && (
+                {liveItems.length === 0 && addingDrafts.length === 0 && (
                   <p className={styles.emptyRow} style={{ padding: 'var(--space-3)' }}>
                     No items yet — click "Add line" above to begin.
                   </p>

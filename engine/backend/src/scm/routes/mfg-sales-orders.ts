@@ -168,7 +168,7 @@ import { recordSoAudit, diffFields, type FieldChange } from '../lib/so-audit';
    module header for the 2990-SO-2608-017 edit this existed to catch and did not). */
 import { soLineFieldChanges } from '../lib/so-line-audit-diff';
 import { buildAmendmentLineRows, LINE_BUILD_ERRORS } from '../lib/amendment-lines';
-import { receivedSpecRefusal, SPEC_LOCKED_ERROR, specLockedMessage } from '../lib/renovation-spec-lock';
+import { receivedSpecRefusal, soLineReceivedQty, SPEC_LOCKED_ERROR, specLockedMessage } from '../lib/renovation-spec-lock';
 import { resolveAmendmentLaneSplit } from '../lib/amendment-lane-resolve';
 import { dropNoopAmendmentLines } from '../lib/amendment-noop-lines';
 // OCR self-learning: a DRAFT confirm is the review event the background scan
@@ -1898,7 +1898,7 @@ mfgSalesOrders.get('/:docNo', async (c) => {
      stands as the verdict, and the client fetches the live coverage from
      `GET /:docNo/coverage` after the doc renders. The computation is UNCHANGED,
      just moved off the critical path — see that endpoint below. */
-  const [remainingMap, deliveriesMap, shippedTraceMap, nonSellingWh, boundPoMap] = await Promise.all([
+  const [remainingMap, deliveriesMap, shippedTraceMap, nonSellingWh, boundPoMap, receivedMap] = await Promise.all([
     soDeliverableRemaining(sb, [docNo]),
     soLineDeliveries(sb, itemRows.map((it) => it.id)),
     /* Traceability — the source PO(s) each line's SHIPPED goods came from,
@@ -1915,6 +1915,8 @@ mfgSalesOrders.get('/:docNo', async (c) => {
        FIFO batch its goods happened to ship from (another order's PO on shared
        stock). Same cheap batched link, scoped to the company. */
     soLineBoundPoNumbers(sb, itemRows.map((it) => it.id), activeCompanyId(c) ?? null),
+    /* Goods received on the line: the editor shows its spec locked before the save would be refused. */
+    soLineReceivedQty(sb, itemRows.map((it) => it.id)),
   ]);
   const orderProcessed = !!(h.data as { processing_date?: string | null }).processing_date;
   const items = itemRows.map((it) => {
@@ -1938,6 +1940,7 @@ mfgSalesOrders.get('/:docNo', async (c) => {
       deliveries,
       delivered_qty: rem?.delivered ?? deliveredQty,
       remaining_qty: rem?.remaining ?? Number(it.qty ?? 0),
+      received_qty: receivedMap.get(it.id) ?? 0,
       /* Live allocation outcome. Without the inline MRP run it is 'stock' for a
          service line and null (unknown) otherwise; GET /:docNo/coverage fills the
          real value in a beat later. */

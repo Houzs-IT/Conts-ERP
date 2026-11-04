@@ -594,15 +594,13 @@ export function soLineColumns<T extends SoDisplayLine>({ docNo, docId, currency,
 // ─── Aside ─────────────────────────────────────────────────────────────────
 
 /** The right-hand cards, the same in view and in edit. */
-export function SoDetailAsideCards({ header, subtotalSen, discountSen, totalSen, slipImageKey, auditEntries, renoMode, lineCount, nameOf }: {
+export function SoDetailAsideCards({ header, subtotalSen, discountSen, totalSen, slipImageKey, renoMode, nameOf }: {
   header: SoAsideHeader;
   subtotalSen: number;
   discountSen: number;
   totalSen: number;
   slipImageKey: string | null;
-  auditEntries: ReadonlyArray<{ id: string | number; action: string; created_at: string; actor_name_snapshot?: string | null }>;
   renoMode: boolean;
-  lineCount: number;
   nameOf: (agent: string | null | undefined, salespersonId: string | null | undefined, fallback: string) => string;
 }) {
   return (
@@ -694,62 +692,6 @@ export function SoDetailAsideCards({ header, subtotalSen, discountSen, totalSen,
               tone="accent"
             />
           </AsideCard>
-
-          {/* Owner 2026-08-13: "recent activity 加上时间".
-              It could not show one. All three rows read `so_date`, which is
-              a DATE column with no time in it — so every entry restated the
-              same day, and two of the three ("Lines added", the status row)
-              were guesses at events nobody had recorded here anyway.
-
-              The audit log has what the card was pretending to have: real
-              events, real actors, real timestamps. Same source as the
-              History drawer this header now opens, so the summary and the
-              full trail cannot tell different stories. The synthesized rows
-              remain as the fallback for an order with no audit entries yet
-              (pre-audit history, or the log still loading) — losing the
-              card entirely would be a worse answer than a dateless one. */}
-          <AsideCard title="Recent activity">
-            {auditEntries.length > 0 ? (
-              auditEntries.slice(0, 4).map((e, i, shown) => (
-                <ActivityRow
-                  key={e.id}
-                  title={SO_AUDIT_LABELS.actions[e.action] ?? e.action.replace(/_/g, " ")}
-                  meta={`${fmtDateTime(e.created_at)}${
-                    e.actor_name_snapshot ? ` · ${e.actor_name_snapshot}` : ""
-                  }`}
-                  dot={i === 0 ? "success" : i === shown.length - 1 ? "muted" : "primary"}
-                  isLast={i === shown.length - 1}
-                />
-              ))
-            ) : (
-              <>
-                <ActivityRow
-                  title={`Order ${statusFor(header.status).label.toLowerCase()}`}
-                  meta={fmtDate(header.so_date)}
-                  dot={
-                    statusFor(header.status).tone === "success"
-                      ? "success"
-                      : "primary"
-                  }
-                />
-                <ActivityRow
-                  title={`Lines added (${lineCount})`}
-                  meta={fmtDate(header.so_date)}
-                  dot="primary"
-                />
-                <ActivityRow
-                  title="Created"
-                  meta={`${fmtDate(header.so_date)}${
-                    header.customer_type
-                      ? ` · ${header.customer_type}`
-                      : ""
-                  }`}
-                  dot="muted"
-                  isLast
-                />
-              </>
-            )}
-          </AsideCard>
         </div>
   );
 }
@@ -759,6 +701,74 @@ export function Divider() {
     <span className="inline-flex items-center text-border-strong">
       <CircleDot size={4} className="mx-0.5 opacity-40" />
     </span>
+  );
+}
+
+/** Under the sections, not in the aside: it is what runs longest, and in the aside it left a gap under the sections
+    above the full-width line items. Hidden on phone. */
+export function SoRecentActivityCard({ header, auditEntries, lineCount }: {
+  header: SoTotalHeader & { so_date: string; customer_type?: string | null };
+  auditEntries: ReadonlyArray<{ id: string | number; action: string; created_at: string; actor_name_snapshot?: string | null }>;
+  lineCount: number;
+}) {
+  return (
+    <div className="hidden md:block">
+        {/* Owner 2026-08-13: "recent activity 加上时间".
+            It could not show one. All three rows read `so_date`, which is
+            a DATE column with no time in it — so every entry restated the
+            same day, and two of the three ("Lines added", the status row)
+            were guesses at events nobody had recorded here anyway.
+
+            The audit log has what the card was pretending to have: real
+            events, real actors, real timestamps. Same source as the
+            History drawer this header now opens, so the summary and the
+            full trail cannot tell different stories. The synthesized rows
+            remain as the fallback for an order with no audit entries yet
+            (pre-audit history, or the log still loading) — losing the
+            card entirely would be a worse answer than a dateless one. */}
+        <AsideCard title="Recent activity">
+          {auditEntries.length > 0 ? (
+            auditEntries.slice(0, 4).map((e, i, shown) => (
+              <ActivityRow
+                key={e.id}
+                title={SO_AUDIT_LABELS.actions[e.action] ?? e.action.replace(/_/g, " ")}
+                meta={`${fmtDateTime(e.created_at)}${
+                  e.actor_name_snapshot ? ` · ${e.actor_name_snapshot}` : ""
+                }`}
+                dot={i === 0 ? "success" : i === shown.length - 1 ? "muted" : "primary"}
+                isLast={i === shown.length - 1}
+              />
+            ))
+          ) : (
+            <>
+              <ActivityRow
+                title={`Order ${statusFor(header.status).label.toLowerCase()}`}
+                meta={fmtDate(header.so_date)}
+                dot={
+                  statusFor(header.status).tone === "success"
+                    ? "success"
+                    : "primary"
+                }
+              />
+              <ActivityRow
+                title={`Lines added (${lineCount})`}
+                meta={fmtDate(header.so_date)}
+                dot="primary"
+              />
+              <ActivityRow
+                title="Created"
+                meta={`${fmtDate(header.so_date)}${
+                  header.customer_type
+                    ? ` · ${header.customer_type}`
+                    : ""
+                }`}
+                dot="muted"
+                isLast
+              />
+            </>
+          )}
+        </AsideCard>
+    </div>
   );
 }
 
