@@ -176,6 +176,20 @@ describe("PO tab", () => {
     h.furniture = false;
   });
 
+  it("moves a column by dragging its header, and Reset columns puts it back", async () => {
+    renderTab();
+    const region = await screen.findByRole("region", { name: "Sales order lines" });
+    const heads = (): (string | null)[] => within(region).getAllByRole("columnheader").map((h) => h.textContent);
+    expect(heads()[0]).toBe("SKU");
+    fireEvent.pointerDown(within(region).getByRole("columnheader", { name: "PO" }));
+    const sku = within(region).getByRole("columnheader", { name: "SKU" });
+    fireEvent.pointerEnter(sku);
+    fireEvent.pointerUp(sku);
+    expect(heads()[0]).toBe("PO");
+    fireEvent.click(screen.getByRole("button", { name: "Reset columns" }));
+    expect(heads()[0]).toBe("SKU");
+  });
+
   it("locks the SKU and variants of a line with goods received; the qty stays editable", async () => {
     h.furniture = true;
     PO.received = 1;
