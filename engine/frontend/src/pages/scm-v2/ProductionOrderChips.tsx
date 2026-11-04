@@ -8,7 +8,7 @@ import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 
 type Linked = { id: string; po_number: string; status: string };
 
-export function ProductionOrderChips({ poId, soDocNo }: { poId?: string; soDocNo?: string }) {
+export function ProductionOrderChips({ poId, soDocNo, label }: { poId?: string; soDocNo?: string; label?: string }) {
   const qs = poId ? `poId=${encodeURIComponent(poId)}` : `soDocNo=${encodeURIComponent(soDocNo ?? "")}`;
   const q = useQuery({
     queryKey: ["production-order-links", qs],
@@ -20,6 +20,7 @@ export function ProductionOrderChips({ poId, soDocNo }: { poId?: string; soDocNo
   if (!q.data?.length) return null;
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
+      {label && <span className="text-[12px] font-semibold text-ink-secondary">{label}</span>}
       {q.data.map((o) => (
         <Link
           key={o.id}

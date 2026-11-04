@@ -14,6 +14,7 @@
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { Link } from "react-router-dom";
+import { ProductionOrderChips } from "../scm-v2/ProductionOrderChips";
 import { AlertTriangle, Calculator, Camera, ChevronDown, ChevronRight, Download, FilePlus2, Pencil, Search } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { buildQueryKey, useQuery } from "../../hooks/useQuery";
@@ -333,6 +334,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         )}
       />
       {d.categoryRestricted && <p style={{ margin: 0, fontSize: 13, color: BETA.muted }}>Some categories are hidden for your role.</p>}
+      {d.sos.map((s) => <ProductionOrderChips key={s.docNo} soDocNo={s.docNo} label="Production orders" />)}
       {lines.length > 0 && (
         <div role="group" aria-label="Group the lines" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <WsFilterPill on={view === "category"} onClick={() => setView("category")}>By category</WsFilterPill>
