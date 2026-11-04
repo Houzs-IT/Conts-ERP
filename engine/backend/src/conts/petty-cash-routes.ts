@@ -178,7 +178,7 @@ async function receiptViews(sb: any, companyId: number, rows: ReceiptRow[]) {
   const over = new Set<number>();
   for (const p of projects) {
     const lim = await projectLimit(sb, companyId, Number(p));
-    if (lim.ok && lim.leftSen < 0) over.add(Number(p));
+    if (lim.ok && lim.checked && lim.leftSen < 0) over.add(Number(p));
   }
   return rows.map(r => {
     const ls = lines.get(r.id) ?? [];

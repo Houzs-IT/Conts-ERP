@@ -4,9 +4,11 @@
 //   POST /accounting/projects/:id/limit-requests        ask for more: { kind: amount|pct|budget, amountSen?, pctBp?, reason }
 //   GET  /accounting/limit-requests?status=PENDING      the requests, newest first
 //   POST /accounting/limit-requests/:id/approve|reject  { note? } — needs scm.project_limit.approve, never one's own
+//   GET  /accounting/project-limit-settings             is the limit checked; the company's share (default 70%)
+//   PUT  /accounting/project-limit-settings             { checked, pctBp } — needs scm.project_limit.approve
 import { hasHouzsPerm } from '../scm/lib/houzs-perms';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
-import { projectLimit } from './project-limit';
+import { limitSettings, projectLimit } from './project-limit';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 type Ctx = any;
@@ -163,4 +165,31 @@ export const setEverydayExpenseHandler = async (c: Ctx): Promise<Response> => {
   if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
   if (!data) return c.json({ error: 'not_found', message: `${code} is not an expense account of this company.` }, 404);
   return c.json({ account: data });
+};
+
+/** GET /accounting/project-limit-settings — is the limit checked, and the company's share of what a customer paid. */
+export const getLimitSettingsHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const st = await limitSettings(c.get('supabase'), co.companyId);
+  if (!st.ok) return c.json({ error: 'load_failed', reason: st.error }, 500);
+  return c.json({ checked: st.checked, pctBp: st.pctBp });
+};
+
+/** PUT /accounting/project-limit-settings { checked, pctBp } — finance keeps the limit (chew 4 Nov 2026): switched off
+    while customer payments are not all in; the share every customer project without its own uses. */
+export const setLimitSettingsHandler = async (c: Ctx): Promise<Response> => {
+  /* It changes every project's limit at once: the limit's own key. */
+  if (!hasHouzsPerm(c, APPROVE_KEY)) return c.json({ error: "You don't have permission to change the project limit." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown>;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const pct = Number(body.pctBp);
+  if (typeof body.checked !== 'boolean') return c.json({ error: 'checked_invalid', message: 'Say whether the limit is checked.' }, 400);
+  if (!(Number.isInteger(pct) && pct >= 0 && pct <= 10_000)) return c.json({ error: 'pct_invalid', message: 'The share is between 0% and 100%.' }, 400);
+  const { error } = await c.get('supabase').from('acc_company_settings')
+    .upsert({ company_id: co.companyId, project_limit_check: body.checked, project_limit_pct_bp: pct }, { onConflict: 'company_id' });
+  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  return c.json({ checked: body.checked, pctBp: pct });
 };

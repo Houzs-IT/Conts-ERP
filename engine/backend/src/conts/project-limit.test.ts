@@ -52,6 +52,18 @@ describe('a project’s limit', () => {
     expect(await checkVoucherLimit(sb, CO, 'C')).toEqual({ ok: true });
   });
 
+  /* chew 4 Nov 2026: customer payments are not all in yet, so the limit can be switched off; the figures still show. */
+  test('switched off, a voucher over the limit goes through, and the limit left still shows', async () => {
+    const sb = world({
+      acc_company_settings: [{ company_id: CO, project_limit_pct_bp: 7000, project_limit_check: false }],
+      payment_vouchers: pv('C', 900_000), payment_voucher_lines: [line('C', 900_000)],
+    });
+    expect(await projectLimit(sb, CO, 7)).toMatchObject({ checked: false, limitSen: 700_000, leftSen: 700_000 });
+    expect(await checkVoucherLimit(sb, CO, 'C')).toEqual({ ok: true });
+    sb.tables.acc_company_settings[0].project_limit_check = true;
+    expect(await checkVoucherLimit(sb, CO, 'C')).toMatchObject({ ok: false });
+  });
+
   test('a voucher already submitted is not counted against itself; a posted one is used, a cancelled one nothing', async () => {
     const sb = world({
       payment_vouchers: [...pv('A', 600_000, { submitted_at: '2026-11-01T00:00:00Z' }), ...pv('P', 50_000, { status: 'POSTED' }), ...pv('X', 900_000, { status: 'CANCELLED', submitted_at: '2026-11-01T00:00:00Z' })],

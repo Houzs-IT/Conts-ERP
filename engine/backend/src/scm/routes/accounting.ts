@@ -81,7 +81,7 @@ import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, 
 import { importOpeningDeposits, reverseOpeningDeposits } from '../../acc/opening-deposits';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
 import { partyLedgerHandler } from '../../conts/party-ledger';
-import { approveLimitRequestHandler, createLimitRequestHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler } from '../../conts/project-limit-routes';
+import { approveLimitRequestHandler, createLimitRequestHandler, getLimitSettingsHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler, setLimitSettingsHandler } from '../../conts/project-limit-routes';
 import { projectOfPurchaseInvoice } from '../../conts/project-limit';
 import * as pettyCash from '../../conts/petty-cash-routes';
 import * as paymentRequests from '../../conts/payment-request-routes';
@@ -243,6 +243,8 @@ accounting.get('/units', listUnitsHandler);
 accounting.get('/rental-unit-costs', rentalUnitCostsHandler);
 accounting.get('/everyday-expense', listEverydayExpenseHandler);
 accounting.put('/everyday-expense', setEverydayExpenseHandler);
+accounting.get('/project-limit-settings', getLimitSettingsHandler);
+accounting.put('/project-limit-settings', setLimitSettingsHandler);
 accounting.get('/projects/:id/limit', projectLimitHandler);
 accounting.post('/projects/:id/limit-requests', createLimitRequestHandler);
 accounting.get('/limit-requests', listLimitRequestsHandler);

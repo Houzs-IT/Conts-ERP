@@ -5,7 +5,7 @@
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
-import { approveLimitRequestHandler, createLimitRequestHandler, rejectLimitRequestHandler } from './project-limit-routes';
+import { approveLimitRequestHandler, createLimitRequestHandler, getLimitSettingsHandler, rejectLimitRequestHandler, setLimitSettingsHandler } from './project-limit-routes';
 
 const CO = 1;
 const world = () => publicTablesOnly(fakeSb({
@@ -25,6 +25,8 @@ const app = (sb: ReturnType<typeof world>, name: string, perms: string[]) => {
   a.post('/projects/:id/limit-requests', createLimitRequestHandler as never);
   a.post('/limit-requests/:id/approve', approveLimitRequestHandler as never);
   a.post('/limit-requests/:id/reject', rejectLimitRequestHandler as never);
+  a.get('/project-limit-settings', getLimitSettingsHandler as never);
+  a.put('/project-limit-settings', setLimitSettingsHandler as never);
   return a;
 };
 const post = (a: Hono, path: string, body: unknown = {}) => a.request(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
@@ -54,5 +56,31 @@ describe('extra limit', () => {
     const asker = app(sb, 'Alvin', ['scm.payment_voucher.create']);
     const made = await (await post(asker, '/projects/7/limit-requests', { kind: 'amount', amountSen: 1000, reason: 'x' })).json() as { request: { id: string } };
     expect((await post(app(sb, 'Bob', []), `/limit-requests/${made.request.id}/approve`)).status).toBe(403);
+  });
+});
+
+describe('the limit settings (chew 4 Nov 2026)', () => {
+  const put = (a: Hono, body: unknown) => a.request('/project-limit-settings', { method: 'PUT', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
+
+  test('checked at 70% until finance changes it', async () => {
+    const sb = world();
+    expect(await (await app(sb, 'Alvin', []).request('/project-limit-settings')).json()).toEqual({ checked: true, pctBp: 7000 });
+  });
+
+  test('the key switches it off and sets the share; without the key nothing changes', async () => {
+    const sb = world();
+    expect((await put(app(sb, 'Alvin', ['scm.payment_voucher.create']), { checked: false, pctBp: 8000 })).status).toBe(403);
+    expect(sb.tables.acc_company_settings[0]).toMatchObject({ project_limit_pct_bp: 7000 });
+    const boss = app(sb, 'Chew', ['scm.project_limit.approve']);
+    expect((await put(boss, { checked: false, pctBp: 8000 })).status).toBe(200);
+    expect(sb.tables.acc_company_settings[0]).toMatchObject({ project_limit_check: false, project_limit_pct_bp: 8000 });
+    expect(await (await boss.request('/project-limit-settings')).json()).toEqual({ checked: false, pctBp: 8000 });
+  });
+
+  test('a share outside 0–100%, or no on/off, is refused', async () => {
+    const boss = app(world(), 'Chew', ['scm.project_limit.approve']);
+    expect((await put(boss, { checked: true, pctBp: 10_001 })).status).toBe(400);
+    expect((await put(boss, { checked: true, pctBp: 70.5 })).status).toBe(400);
+    expect((await put(boss, { pctBp: 7000 })).status).toBe(400);
   });
 });

@@ -99,7 +99,7 @@ async function overLimit(sb: any, companyId: number, lines: Array<{ project_id: 
   for (const [projectId, sen] of byProject) {
     const lim = await projectLimit(sb, companyId, projectId);
     if (!lim.ok) return { error: lim.error };
-    if (sen > lim.leftSen) over.push({ projectId, projectName: lim.projectName, leftSen: lim.leftSen, overSen: sen - lim.leftSen });
+    if (lim.checked && sen > lim.leftSen) over.push({ projectId, projectName: lim.projectName, leftSen: lim.leftSen, overSen: sen - lim.leftSen });
   }
   return { over };
 }

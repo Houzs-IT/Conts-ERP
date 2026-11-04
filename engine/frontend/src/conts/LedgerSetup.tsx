@@ -16,6 +16,7 @@ import {
 } from "./ledgerSettings";
 import { OpeningBalances } from "./OpeningBalances";
 import { EverydayExpense } from "./EverydayExpense";
+import { ProjectLimitSettings } from "./ProjectLimitSettings";
 import { RenovationOpening } from "./RenovationOpening";
 import { OpeningDeposits } from "./OpeningDeposits";
 
@@ -27,7 +28,9 @@ export function LedgerSetup() {
   const save = useSaveLedgerSettings();
   const askConfirm = useConfirm();
   // Saving needs the ledger's post key (PUT /accounting/settings/ledger); everyone with the Ledger may read.
-  const canSave = useAuth().can("scm.payment_voucher.post");
+  const { can } = useAuth();
+  const canSave = can("scm.payment_voucher.post");
+  const canApproveLimit = can("scm.project_limit.approve");
   const [start, setStart] = useState("");
   const [fyEnd, setFyEnd] = useState(8);
   const [note, setNote] = useState<string | null>(null);
@@ -104,6 +107,8 @@ export function LedgerSetup() {
       {/* Renovation contracts signed before the books start: their accounts and what AutoCount invoiced (plan Task 8). */}
       {q.isSuccess && <RenovationOpening canSave={canSave} ledgerStartDate={q.data.ledgerStartDate} />}
       {q.isSuccess && <OpeningDeposits canSave={canSave} ledgerStartDate={q.data.ledgerStartDate} />}
+      {/* Conts (SOP 3.4; chew 4 Nov 2026): the limit on or off, and the company's share — the limit's own key. */}
+      <ProjectLimitSettings canSave={canApproveLimit} />
       {/* Conts (finance phase 1.5; SOP 3.4): the expense accounts outside a project limit. */}
       <EverydayExpense canSave={canSave} />
     </div>
