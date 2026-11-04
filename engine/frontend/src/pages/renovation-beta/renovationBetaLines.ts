@@ -79,6 +79,8 @@ export interface LinesAnswer {
   plansReady: boolean;
   sos: Array<{ docNo: string; status: string; voLocked: boolean; renovation: boolean }>;
   lines: ManagedLine[];
+  /** Every active supplier: picking one the SKU has no binding to binds it. */
+  suppliers?: Array<{ id: string; name: string }>;
   pendingPoChanges: PendingPoChange[];
   /** The caller's role sees only some product categories: lines of the others are left out by the server. */
   categoryRestricted: boolean;

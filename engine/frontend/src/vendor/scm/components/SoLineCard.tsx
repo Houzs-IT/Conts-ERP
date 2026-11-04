@@ -194,6 +194,7 @@ const SoLineCardInner = ({
   docNo,
   itemId,
   isEditing = true,
+  remarkOpen = false,
   specLockedNote,
   variantsRequired,
   seedSofaLegDefault,
@@ -219,6 +220,8 @@ const SoLineCardInner = ({
   /** Set when goods are received on this line: its SKU, options and price read only, with this as the reason. Qty, remark
       and dates stay open, as the server has it (renovation-spec-lock.ts). */
   specLockedNote?: string;
+  /** The remark stays editable on a line otherwise read only: every SO line takes a remark (owner, 4 Nov 2026). */
+  remarkOpen?: boolean;
   /* Whether the category-mandatory variants (fabric / seat / divan / leg / gap)
      are REQUIRED on this line — drives the ` *` marker + red invalid ring.
 
@@ -1087,7 +1090,7 @@ const SoLineCardInner = ({
           className={styles.input}
           placeholder="Type remarks…"
           value={draft.remark}
-          disabled={!isEditing}
+          disabled={!isEditing && !remarkOpen}
           onChange={(e) => onChange({ remark: e.target.value })}
         />
 

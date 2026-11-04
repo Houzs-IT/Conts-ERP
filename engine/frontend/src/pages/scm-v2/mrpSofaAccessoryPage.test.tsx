@@ -35,6 +35,8 @@ vi.mock('../../vendor/scm/lib/auth', () => ({
   isAdminLevel: () => true,
 }));
 vi.mock('../../vendor/scm/lib/suppliers-queries', () => ({
+  useSuppliers: () => ({ data: [] }),
+  useCreateBinding: () => ({ mutateAsync: async () => ({}), isPending: false }),
   useCreatePosFromSoItems: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
 }));
 

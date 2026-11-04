@@ -30,7 +30,7 @@ import {
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
-import { cleanLinePlan, contractLineOf, loadProjectLines, projectLine, saveLinePlan, saveLinePlans, supplierBinding } from "../services/renovation/betaLines";
+import { bindSupplier, cleanLinePlan, contractLineOf, loadProjectLines, projectLine, saveLinePlan, saveLinePlans, supplierBinding } from "../services/renovation/betaLines";
 import { patchContract } from "../scm/lib/renovation-so";
 import { inRenoTx, RenoError, sqlFor } from "../scm/lib/renovation-db";
 import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
@@ -882,8 +882,8 @@ app.put("/projects/:id/lines/:itemId/supplier", requirePermission("projects.writ
   if (!line) return c.json({ error: "not_found" }, 404);
   const cl = await contractLineOf(db(c), line.id);
   if (!cl) return c.json({ error: "not_contract_line", message: "This line is not on a renovation contract: pick its supplier when the PO is made." }, 409);
-  const bound = await supplierBinding(db(c), cl.itemCode, co, supplierId);
-  if (!bound) return c.json({ error: "supplier_not_bound", message: `That supplier is not bound to ${cl.itemCode}: add it in the SKU's suppliers first.` }, 400);
+  const bound = await supplierBinding(db(c), cl.itemCode, co, supplierId) ?? await bindSupplier(db(c), cl.itemCode, co, supplierId);
+  if (!bound) return c.json({ error: "supplier_not_found", message: "That supplier could not be found." }, 400);
   const user = c.get("user") as { name?: string | null; email?: string | null } | undefined;
   const sql = sqlFor(c.env);
   if (!sql) return c.json({ error: "supplier_save_failed", message: "The supplier could not be saved. Try again." }, 503);

@@ -104,6 +104,7 @@ export interface LinesAnswer {
   /** False until migration 0155 is applied: planned dates cannot be saved yet. */
   plansReady: boolean;
   sos: Array<{ docNo: string; status: string; voLocked: boolean; renovation: boolean }>;
+  suppliers: Array<{ id: string; name: string }>;
   lines: ManagedLine[];
   pendingPoChanges: PendingPoChange[];
   /** True when the caller's role sees only some categories: lines of the others are left out. */
@@ -303,12 +304,16 @@ export async function loadProjectLines(
       WHERE ${PROJECT_SO} AND a.status::text = 'REQUESTED'
       ORDER BY a.created_at`,
     projectId, companyId);
+  const { results: supplierRows } = await db.prepare(
+    `SELECT s.id::text AS id, s.name FROM scm.suppliers s WHERE s.company_id = ? AND s.status::text = 'ACTIVE' ORDER BY s.name`,
+  ).bind(companyId).all<{ id: string; name: string }>();
   // A PO change shows only while the caller sees a line of that PO.
   const shownPending = keepVisiblePos(pending, (p) => p.po_id, lines.flatMap((l) => l.pos.map((p) => p.poId)), scope);
   return {
     finance, plansReady: plans.ready, categoryRestricted: scope !== null,
     sos: sos.map((s) => ({ docNo: s.doc_no, status: s.status, voLocked: String(s.status).toUpperCase() !== "DRAFT", renovation: Boolean(s.renovation) })),
     lines,
+    suppliers: supplierRows ?? [],
     pendingPoChanges: shownPending.map((p) => ({
       id: p.id, amendmentNo: p.amendment_no, poId: p.po_id, poNumber: p.po_number, voLabel: p.source ? voLabels.get(p.source) ?? null : null,
     })),
@@ -406,6 +411,19 @@ export async function contractLineOf(db: Db, soItemId: string): Promise<{ lineId
 }
 
 /** The SKU's binding to this supplier: only a bound supplier can be picked (its price becomes the line's cost). */
+/** Bind a supplier to a SKU from the line that needs it (owner, 4 Nov 2026: pick from the suppliers we have). No price
+    yet; the SKU's first supplier becomes its main one. Null when the supplier is not this company's. */
+export async function bindSupplier(db: Db, itemCode: string, companyId: number, supplierId: string): Promise<{ name: string; priceSen: number } | null> {
+  const r = await db.prepare(
+    `INSERT INTO scm.supplier_material_bindings (supplier_id, material_kind, item_code, material_name, supplier_sku, is_main_supplier, company_id)
+     SELECT s.id, 'mfg_product', ?, coalesce((SELECT p.name FROM scm.mfg_products p WHERE p.code = ? AND p.company_id = s.company_id LIMIT 1), ?), ?,
+            NOT EXISTS (SELECT 1 FROM scm.supplier_material_bindings b WHERE b.item_code = ? AND b.company_id = ?), ?
+       FROM scm.suppliers s WHERE s.id::text = ? AND s.company_id = ?
+     RETURNING (SELECT name FROM scm.suppliers WHERE id = supplier_id) AS name`,
+  ).bind(itemCode, itemCode, itemCode, itemCode, itemCode, companyId, companyId, supplierId, companyId).first<{ name: string }>();
+  return r ? { name: r.name, priceSen: 0 } : null;
+}
+
 export async function supplierBinding(db: Db, itemCode: string, companyId: number, supplierId: string): Promise<{ name: string; priceSen: number } | null> {
   const r = await db.prepare(
     `SELECT s.name, coalesce(b.unit_price_sen, 0) AS price_sen

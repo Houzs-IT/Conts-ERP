@@ -7,6 +7,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Search, X } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
+import { useAuth } from "../../auth/AuthContext";
+import { CreateRenovationPanel } from "../projects/renovation/CreateRenovationPanel";
 import { money } from "../projects/renovation/renovationModel";
 import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type ConditionWord, type HomeRow, type HomeTab } from "./renovationBetaBoard";
@@ -122,6 +124,8 @@ function HomeScreen(): ReactElement {
   const phone = useIsPhone();
   const today = mytDay(new Date().toISOString());
   const [tab, setTab] = useState<HomeTab>("all");
+  const { can } = useAuth();
+  const [creating, setCreating] = useState(false);
   const [params, setParams] = useSearchParams();
   const query = params.get("q") ?? "";
   const sort = sortFromParam(params.get("sort"));
@@ -166,14 +170,21 @@ function HomeScreen(): ReactElement {
   return (
     <BetaMotion>
     <div style={{ display: "flex", flexDirection: "column", gap: 16, color: BETA.ink }}>
-      <section>
+      <section style={{ position: "relative" }}>
         <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: "-.02em" }}>All projects</h1>
+        {can("projects.write") && (
+          <button type="button" onClick={() => setCreating(true)}
+            style={{ position: "absolute", top: 0, right: 0, minHeight: 40, padding: "0 16px", border: 0, borderRadius: 999, background: BETA.ink, color: "#fff", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
+            + New project
+          </button>
+        )}
         <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 8, fontSize: 14 }}>
           <span style={{ color: INK_SOFT }}>{m.projects.length} projects</span>
           {counts.late > 0 && <span style={{ padding: "2px 10px", borderRadius: 999, background: TONES.red.soft, color: TONES.red.ink, fontWeight: 600 }}>{counts.late} late</span>}
           {counts.week > 0 && <span style={{ padding: "2px 10px", borderRadius: 999, background: TONES.amber.soft, color: TONES.amber.ink, fontWeight: 600 }}>{counts.week} due this week</span>}
         </div>
       </section>
+      {creating && <CreateRenovationPanel onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); open(id); }} />}
 
       {q.error && <ErrorBanner text={`The projects could not be refreshed: ${q.error}`} onRetry={q.reload} />}
 

@@ -1291,7 +1291,8 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
               horizontally INSIDE the overflow:hidden card instead of being
               clipped at the right edge. overflow lives on the wrapper, the
               min-width on the inner .grid (must be different elements). */}
-          <div className={paymentsStyles.gridScroll}>
+          <div className={paymentsStyles.gridScroll}
+            style={(!isSaved || !paymentsQ.isLoading) && persistedPayments.length === 0 && drafts.length === 0 ? { display: 'none' } : undefined}>
           <div className={paymentsStyles.grid} style={gridStyle}>
             {/* Header row */}
             <span className={paymentsStyles.headerCell}>
