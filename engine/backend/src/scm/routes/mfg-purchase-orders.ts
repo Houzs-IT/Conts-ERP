@@ -56,7 +56,7 @@ import { readStatusCounts } from '../lib/status-counts';
 import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
   requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../lib/companyScope';
 import { enrichLinesWithFabricSupplierCode } from '../lib/fabric-supplier-code';
-import { loadSoWarehouseMasters, type SoWarehouseMasters, type SoWarehouseSource } from '../lib/so-warehouse';
+import { loadSoWarehouseMasters, resolveLineWarehouseId, type SoWarehouseMasters, type SoWarehouseSource } from '../lib/so-warehouse';
 import { computeSoDrift, type DriftLine } from '../lib/so-po-drift';
 import {
   loadLeadTimeBase,
@@ -1415,20 +1415,7 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
          'per-so'             = one PO per (supplier × SO) — good for sofa /
                                  bedframe where 1 SO → 1 PO.
 
-       SUPERSEDED FOR THE THREE RULED CATEGORIES (owner 2026-07-17). The note
-       above was always a description of WHICH MODE TO PICK for which category —
-       so the operator had to know the rule and choose correctly, and a mixed
-       pick could only ever get one behaviour. The rule is now applied
-       automatically per category in scm/lib/po-grouping.ts:
-         sofa, bedframe -> per-SO      (as the note says; sofa also for dye lot)
-         mattress       -> merged, but bounded by a delivery-date WINDOW
-       The window is the 07-17 refinement of the note's unbounded "dozens of SOs
-       -> 1 PO": merging a mattress due next quarter into this week's PO lands
-       stock three months early, which is the opposite of the turnover the merge
-       exists to improve.
-
-       `mode` still decides the categories he has NOT ruled on (accessory,
-       service, anything else item_group carries). */
+       Applied to every line alike since 4 Nov 2026 (scm/lib/po-grouping.ts). */
     mode?: 'combined' | 'per-so';
     /* Commander 2026-05-29 — per-SKU supplier override. The MRP lets the user
        switch an item to an alternate supplier in-place; { itemCode: supplierId }
@@ -1508,13 +1495,9 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
   const expectedAtOverride = body.expectedAt;
   const purchaseLocationOverride = body.purchaseLocationId;
 
-  // Preload the warehouses list ONCE for the sales_location text → id match.
-  const { data: whRows } = await scopeToCompany(
-    supabase.from('warehouses').select('id, code, name'),
-    c,
-  );
-  type Wh = { id: string; code: string | null; name: string | null };
-  const warehouses = (whRows ?? []) as Wh[];
+  // The one warehouse rule, the same masters MRP resolved the row with, so a line
+  // MRP shows under a warehouse lands on a PO for that warehouse (lib/so-warehouse.ts).
+  const whMasters = await loadSoWarehouseMasters(supabase, (q) => scopeToCompany(q, c));
 
   // Commander 2026-06-18 — per-category MRP lead days. A PO line's delivery date
   // is pulled this many days EARLIER than the customer/SO delivery date so the
@@ -1547,16 +1530,6 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
      the effective supplier is known. */
   const leadBuffers = await loadLeadBuffers(c.env.DB);
 
-  const resolveWarehouseId = (salesLocation: string | null | undefined): string | null => {
-    const needle = (salesLocation ?? '').trim().toLowerCase();
-    if (!needle) return null;
-    const hit = warehouses.find(
-      (w) => (w.name ?? '').trim().toLowerCase() === needle
-          || (w.code ?? '').trim().toLowerCase() === needle,
-    );
-    return hit?.id ?? null;
-  };
-
   // ── Resolve picks → SO item rows ─────────────────────────────────
   // Commander 2026-05-28 — also load line_delivery_date + the parent SO's
   // sales_location + customer_delivery_date so we can derive per-line warehouse
@@ -1581,13 +1554,13 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
     /* Owner 2026-08-10 (migration 0274) — the SO line's photos ride along to the
        PO line. R2 keys, not bytes: the PO points at the SAME objects. */
     photo_urls: string[] | null;
-    so: { sales_location: string | null; customer_delivery_date: string | null } | null;
+    so: { sales_location: string | null; customer_state: string | null; customer_delivery_date: string | null } | null;
   };
   const SO_ITEM_SELECT =
     'id, doc_no, line_no, item_code, description, item_group, variants, qty, po_qty_picked, unit_price_sen, line_delivery_date, warehouse_id, photo_urls, cancelled, ' +
     /* No company_id on this embed: both source reads below are SCOPED, so a
        cross-company line is never returned and there is nothing to compare. */
-    'so:mfg_sales_orders!inner ( sales_location, customer_delivery_date )';
+    'so:mfg_sales_orders!inner ( sales_location, customer_state, customer_delivery_date )';
   // supabase-js returns the embedded parent as an object OR a 1-element array
   // depending on the relationship — normalise to a single object.
   const normSo = (r: { so: unknown }): SoItem['so'] => {
@@ -1599,9 +1572,18 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
   // (MRP) through to effectiveSupplierId / the PO grouping key. null on the
   // legacy soItems path and the general picker (those have no per-pick supplier).
   const pickedItems: Array<{ row: SoItem; qty: number; pickSupplierId: string | null }> = [];
+  /* Conts: the delivery date set on the project's PO tab, the date MRP plans a project line on. */
+  const planDeliveryByLine = new Map<string, string>();
 
   if (body.picks && body.picks.length > 0) {
     const ids = body.picks.map((p) => p.soItemId);
+    const { data: planRows } = await scopeToCompany(supabase
+      .from('reno_beta_line_plans')
+      .select('so_item_id, deliver_on')
+      .in('so_item_id', ids), c);
+    for (const r of (planRows ?? []) as Array<{ so_item_id: string; deliver_on: string | null }>) {
+      if (r.deliver_on) planDeliveryByLine.set(r.so_item_id, r.deliver_on);
+    }
     /* SOURCE LOAD, SCOPED — the caller's soItemIds enter this core here, so this
        read decides what the conversion can see: another company's line resolves
        to NO ROW and falls out at the per-pick `item_not_found` below. THE COST is
@@ -1710,14 +1692,13 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
     // Commander 2026-05-31 (warehouse-flow bug) — per-line warehouse precedence:
     //   1. explicit caller override (purchaseLocationId) — defense-in-depth,
     //   2. the SO LINE's OWN warehouse_id (migration 0118) — AUTHORITATIVE,
-    //   3. the SO header sales_location resolved to a warehouse id — last-resort
-    //      fallback (legacy soItems path / SO lines that predate per-line wh).
+    //   3. the SO's warehouse, resolveLineWarehouseId's chain: Location, State,
+    //      then the company's default warehouse.
     // This is the fix: previously (2) was ignored, so a KL SO line's PO could
     // land stock in PG. The SO line's warehouse now flows straight to the PO.
     const lineWarehouseId =
       (purchaseLocationOverride as string | undefined)
-      ?? row.warehouse_id
-      ?? resolveWarehouseId(row.so?.sales_location);
+      ?? resolveLineWarehouseId(row.warehouse_id, row.so, whMasters);
     // The CUSTOMER's date — SO LINE's own, falling back to the SO header.
     // The supplier's date is derived from it below, in the grouping loop.
     //
@@ -1728,7 +1709,8 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
     // a say first. Computing the date here would silently apply the buffer of a
     // supplier we had not chosen yet, or none at all.
     const rawDeliveryDate =
-      row.line_delivery_date
+      planDeliveryByLine.get(row.id)
+      ?? row.line_delivery_date
       ?? row.so?.customer_delivery_date
       ?? null;
     return {
@@ -2083,15 +2065,6 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
     lines: Line[]; soDocNos: Set<string>;
   };
   const byGroup = new Map<string, Bucket>();
-  /* Owner 2026-09-11 — under 'combined', a sofa order's accessories (pillow /
-     皮套) ride onto the sofa's PO. That is BATCH context: an accessory line rides
-     with the sofa only if its SO carries a sofa line in this convert. Compute
-     the set once, pass it to every groupKeyFor call below. */
-  const sofaSoDocNos = new Set(
-    soItems
-      .filter((it) => (it.itemGroup ?? '').trim().toLowerCase() === 'sofa')
-      .map((it) => it.soDocNo),
-  );
   for (const it of soItems) {
     const b = effectiveBindingFor(it)!;
     const effectiveSupplierId = b.supplier_id;
@@ -2121,28 +2094,12 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
       (expectedAtOverride as string | undefined)
       ?? subtractCalendarDays(it.rawDeliveryDate, lead.total);
 
-    // The split is per-CATEGORY (owner 2026-07-17) — see scm/lib/po-grouping.ts
-    // for the rule and its reasoning. Every key still starts (warehouse,
-    // supplier), which is what keeps each emitted PO single-warehouse.
-    //
-    // This was a single global toggle with one hardcoded exception (SOFA), so a
-    // mixed pick could only ever get ONE behaviour. It now gets all three in one
-    // convert: bedframe + sofa per-SO, mattress merged within a delivery-date
-    // window, everything he did not rule on still following `poMode`.
-    //
-    // The window is passed the SUPPLIER's date, not the customer's — the bucket
-    // must reflect when the goods actually land in the warehouse, which is what
-    // the turnover rule is about.
+    // Combined = one PO per supplier, Per SO = one per SO and supplier (owner,
+    // 4 Nov 2026; scm/lib/po-grouping.ts). Every key starts (warehouse, supplier),
+    // which is what keeps each emitted PO single-warehouse.
     const groupKey = groupKeyFor(
-      {
-        warehouseId: lineWarehouseId,
-        supplierId: effectiveSupplierId,
-        soDocNo: it.soDocNo,
-        itemGroup: it.itemGroup,
-        deliveryDate: lineDeliveryDate,
-      },
+      { warehouseId: lineWarehouseId, supplierId: effectiveSupplierId, soDocNo: it.soDocNo },
       poMode,
-      { sofaSoDocNos },
     );
     const bucket = byGroup.get(groupKey)
       ?? { supplierId: effectiveSupplierId, warehouseId: lineWarehouseId, currency: b.currency, lines: [], soDocNos: new Set<string>() };

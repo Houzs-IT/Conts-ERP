@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { groupEarliestDate } from './mrp-model-pipeline';
+import { groupByModel, groupByVariant, groupEarliestDate } from './mrp-model-pipeline';
 import type { ModelGroup } from './mrp-model-pipeline';
 import type { MrpLine, MrpSku } from '../../vendor/scm/lib/mrp-queries';
 
@@ -26,6 +26,28 @@ const group = (variants: MrpSku[]): ModelGroup => ({
   groupKey: 'g', warehouseId: null, warehouseCode: null, warehouseName: null,
   itemCode: 'X', description: null, category: null,
   variants, qtyNeeded: 0, stock: 0, poOutstanding: 0, shortage: 0,
+});
+
+describe('the table opens in delivery order (owner, 4 Nov 2026)', () => {
+  const row = (itemCode: string, deliveryDate: string | null, shortage: number): MrpSku =>
+    ({ ...sku([line({ deliveryDate })]), itemCode, shortage });
+
+  test('earliest delivery first and undated last, whatever is short', () => {
+    const skus = [row('C', null, 1), row('A', '2026-12-01', 1), row('B', '2026-11-13', 0)];
+    expect(groupByModel(skus).map((g) => g.itemCode)).toEqual(['B', 'A', 'C']);
+    expect(groupByVariant(skus).map((g) => g.itemCode)).toEqual(['B', 'A', 'C']);
+  });
+
+  test('within one delivery date the shortages stay on top', () => {
+    const skus = [row('A', '2026-11-13', 0), row('B', '2026-11-13', 1)];
+    expect(groupByModel(skus).map((g) => g.itemCode)).toEqual(['B', 'A']);
+  });
+
+  test('the drilldown lists its variants in delivery order', () => {
+    const late = { ...row('X', '2026-12-01', 1), variantLabel: 'A late', variantKey: 'a' };
+    const early = { ...row('X', '2026-11-13', 1), variantLabel: 'B early', variantKey: 'b' };
+    expect(groupByModel([late, early])[0]!.variants.map((v) => v.variantLabel)).toEqual(['B early', 'A late']);
+  });
 });
 
 describe('groupEarliestDate', () => {
