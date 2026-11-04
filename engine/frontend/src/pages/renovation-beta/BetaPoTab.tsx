@@ -370,7 +370,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         <p style={{ margin: 0, fontSize: 13, color: WS.text2 }}>A draft order's lines are changed on the order itself; they show here read only until it is confirmed.</p>
       )}
 
-      {moved && width >= TABLE_MIN && (
+      {moved && (width === 0 || width >= TABLE_MIN) && (
         <button type="button" onClick={() => setOrder(null)} style={{ ...btnStyle("outline", "sm"), alignSelf: "flex-end" }}>Reset columns</button>
       )}
 
@@ -378,17 +378,16 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         {tree.length === 0 ? <WsEmpty>{d.categoryRestricted ? "No lines you can see for this project." : "No sales order lines for this project yet. Link a sales order to see its lines here."}</WsEmpty>
           : width === 0 || width >= TABLE_MIN ? (
             <div role="region" aria-label="Sales order lines" style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
-              <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
+              <table onPointerLeave={() => { setDragging(null); setDropOn(null); }} style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
                 <colgroup>{columns.map((c) => <col key={c} style={{ width: `${columnWidth(c, d.finance)}%` }} />)}</colgroup>
                 <thead>
                   <tr>
                     {columns.map((c) => (
-                      <th key={c} draggable title={`${COLUMN_HEAD[c].title ?? COLUMN_HEAD[c].label} (drag to move)`}
-                        onDragStart={(ev) => { setDragging(c); ev.dataTransfer.effectAllowed = "move"; ev.dataTransfer.setData("text/plain", c); }}
-                        onDragOver={(ev) => { if (dragging) { ev.preventDefault(); setDropOn(c); } }}
-                        onDragEnd={() => { setDragging(null); setDropOn(null); }}
-                        onDrop={(ev) => { ev.preventDefault(); if (dragging) setOrder(moveColumn(order, dragging, c)); setDragging(null); setDropOn(null); }}
-                        style={{ ...headStyle, textAlign: COLUMN_HEAD[c].right ? "right" : undefined, cursor: "grab", boxShadow: dropOn === c && dragging !== c ? `inset 2px 0 0 ${WS.tealLine}` : undefined, opacity: dragging === c ? 0.5 : 1 }}>
+                      <th key={c} title={`${COLUMN_HEAD[c].title ?? COLUMN_HEAD[c].label} (drag to move)`}
+                        onPointerDown={(ev) => { ev.preventDefault(); setDragging(c); }}
+                        onPointerEnter={() => { if (dragging) setDropOn(c); }}
+                        onPointerUp={() => { if (dragging) setOrder(moveColumn(order, dragging, c)); setDragging(null); setDropOn(null); }}
+                        style={{ ...headStyle, ...(COLUMN_HEAD[c].right ? { textAlign: "right" as const } : {}), cursor: dragging ? "grabbing" : "grab", userSelect: "none", touchAction: "none", boxShadow: dropOn === c && dragging !== c ? `inset 2px 0 0 ${WS.tealLine}` : undefined, opacity: dragging === c ? 0.5 : 1 }}>
                         {COLUMN_HEAD[c].label}
                       </th>
                     ))}
