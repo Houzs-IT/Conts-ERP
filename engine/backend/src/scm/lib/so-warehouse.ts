@@ -18,6 +18,11 @@
 // in that order — the recorded value first, the derivation only as a fallback
 // for an SO whose sales_location was never filled.
 //
+// THE LAST RESORT IS THE COMPANY'S DEFAULT WAREHOUSE (owner, 4 Nov 2026: "我们的
+// warehouse 本来就都没有空的，怎么可能会有空呢？"). A renovation contract is
+// converted from a quotation and carries neither a Location nor, often, a State,
+// so every line of it resolved to no warehouse at all.
+//
 // WHAT THIS IS *NOT*. It is NOT a fallback to a SIBLING LINE's warehouse. A
 // NULL warehouse_id and a real one are different buckets on purpose: MRP,
 // inventory balances and auto-allocation are strictly per-warehouse, and the
@@ -34,7 +39,7 @@
 
 import { scopeToCompanyId } from './companyScope';
 
-export type WarehouseRow = { id: string; code?: string | null; name?: string | null };
+export type WarehouseRow = { id: string; code?: string | null; name?: string | null; is_default?: boolean | null };
 export type StateWarehouseMappingRow = { state?: string | null; warehouse_id?: string | null };
 
 /** The SO header fields that carry the order's warehouse. */
@@ -99,7 +104,8 @@ export function warehouseIdFromState(
 }
 
 /** The Sales Order's own warehouse: what the header records, else how it would
- *  have been derived. Null when the SO carries neither. */
+ *  have been derived, else the company's default warehouse. Null only with no
+ *  header, or a company with no default flagged. */
 export function resolveSoWarehouseId(
   so: SoWarehouseSource | null | undefined,
   masters: SoWarehouseMasters,
@@ -107,7 +113,9 @@ export function resolveSoWarehouseId(
   if (!so) return null;
   return (
     warehouseIdFromSalesLocation(so.sales_location, masters.warehouses) ??
-    warehouseIdFromState(so.customer_state, masters.stateMappings)
+    warehouseIdFromState(so.customer_state, masters.stateMappings) ??
+    (masters.warehouses ?? []).find((w) => w.is_default)?.id ??
+    null
   );
 }
 
@@ -187,7 +195,7 @@ export async function loadSoWarehouseMasters(
   sb: any,
   scope: Scope,
 ): Promise<SoWarehouseMasters> {
-  const { data: warehouses } = await scope(sb.from('warehouses').select('id, code, name'));
+  const { data: warehouses } = await scope(sb.from('warehouses').select('id, code, name, is_default'));
   const { data: stateMappings } = await scope(
     sb.from('state_warehouse_mappings').select('state, warehouse_id'),
   );

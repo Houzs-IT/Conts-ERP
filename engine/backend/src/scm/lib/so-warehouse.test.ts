@@ -41,7 +41,14 @@ describe('resolveSoWarehouseId — the order header carries the warehouse', () =
     expect(resolveSoWarehouseId({ sales_location: null, customer_state: 'Selangor' }, masters)).toBe('pj');
   });
 
-  test('null when the header carries neither', () => {
+  test("an order carrying neither falls to the company's default warehouse (owner, 4 Nov 2026)", () => {
+    const masters = { warehouses: [{ id: 'A', code: 'A' }, { id: 'D', code: 'D', is_default: true }], stateMappings: [] };
+    expect(resolveSoWarehouseId({ sales_location: null, customer_state: null }, masters)).toBe('D');
+    expect(resolveLineWarehouseId(null, { sales_location: null, customer_state: null }, masters)).toBe('D');
+    expect(resolveSoWarehouseId({ sales_location: 'A', customer_state: null }, masters)).toBe('A');
+  });
+
+  test('null when the header carries neither and no default is flagged', () => {
     expect(resolveSoWarehouseId({ sales_location: null, customer_state: null }, masters)).toBeNull();
   });
 });

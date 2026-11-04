@@ -34,6 +34,7 @@ import { useAuth, isAdminLevel } from '../../vendor/scm/lib/auth';
 import { useCreatePosFromSoItems } from '../../vendor/scm/lib/suppliers-queries';
 import { newIdempotencyKey } from '../../lib/idempotency';
 import { mrpViews, mrpCategoryOf, mrpGroupViews } from './mrp-views';
+import { poRequestBatches } from './mrp-po-batches';
 import { useRenovationCatalog } from '../../vendor/scm/lib/renovation-catalog-queries';
 import {
   type ModelGroup, type MrpFilters, mrpProjectLabel, groupDistinct, suppliersMainFirst, rowKey, computeTabModels, lineInWindow, groupEarliestDate,
@@ -355,7 +356,10 @@ export const Mrp = () => {
      — the 4G case — where the selection is still on screen, "Order failed" invites
      the re-press, and fromMrp means the server has NO qty backstop to stop it
      duplicate-ordering the whole shortage. That is the bug this exists for. */
-  const runKeyRef = useRef<string | null>(null);
+  /* Since 4 Nov 2026 one run may be several requests (mrp-po-batches.ts), so the run holds one key per request, found by
+     the request's content. A re-press after a failure mid-way replays the requests that landed; after the refresh those
+     lines are gone from the selection, which only leaves requests that have not landed. */
+  const runKeysRef = useRef(new Map<string, string>());
 
   /* Four category tabs (Commander 2026-06-15): Sofa is fed from the per-SO sofa
      SETS; the other three filter the SKU payload to their own category so a
@@ -453,15 +457,23 @@ export const Mrp = () => {
        (warehouse, supplier); 'per-so' splits further by source SO doc so each
        SO gets its own PO. fromMrp tags every PO line as reference-only so it
        never locks the source SO line (infinite-convert). */
-    const body = { picks, mode: poMode, fromMrp: true, ...(expectedAt ? { expectedAt } : {}) };
-    const runKey = runKeyRef.current ?? newIdempotencyKey();
-    runKeyRef.current = runKey;
-    createPos.mutate({ ...body, idempotencyKey: runKey }, {
-      onSuccess: (res) => {
+    const soDocOf = new Map([...(data?.skus ?? []), ...viewSkus].flatMap((s) => s.lines.map((l) => [l.soItemId, l.soDocNo] as const)));
+    const batches = poRequestBatches(picks, (id) => soDocOf.get(id), poMode);
+    const body = { mode: poMode, fromMrp: true, ...(expectedAt ? { expectedAt } : {}) };
+    const created: Array<{ poNumber: string }> = [];
+    void (async () => {
+      try {
+        for (const batch of batches) {
+          const contentKey = JSON.stringify([batch, body]);
+          const runKey = runKeysRef.current.get(contentKey) ?? newIdempotencyKey();
+          runKeysRef.current.set(contentKey, runKey);
+          const res = await createPos.mutateAsync({ ...body, picks: batch, idempotencyKey: runKey });
+          created.push(...(res.created ?? []));
+        }
         // The run landed (either branch below) — end it, so the next Proceed is a
-        // new run with a new key. See runKeyRef for why this is mandatory.
-        runKeyRef.current = null;
-        if (!res.total) {
+        // new run with new keys. See runKeysRef for why this is mandatory.
+        runKeysRef.current.clear();
+        if (created.length === 0) {
           setDialog({
             kind: 'info',
             title: 'No POs created',
@@ -475,12 +487,15 @@ export const Mrp = () => {
         void q.refetch();
         setDialog({
           kind: 'created',
-          title: `Successfully created ${res.total} PO${res.total === 1 ? '' : 's'}`,
-          body: (res.created ?? []).map((p) => p.poNumber).join(', '),
+          title: `Successfully created ${created.length} PO${created.length === 1 ? '' : 's'}`,
+          body: created.map((p) => p.poNumber).join(', '),
         });
-      },
-      onError: (err) => {
+      } catch (err) {
         const raw = err instanceof Error ? err.message : 'Something went wrong.';
+        const partly = created.length > 0
+          ? `\n\nAlready created before this stopped: ${created.map((p) => p.poNumber).join(', ')}. Proceed again for the rest.`
+          : '';
+        if (created.length > 0) void q.refetch();
         let codes: string[] = [];
         let errCode = '';
         try {
@@ -500,15 +515,15 @@ export const Mrp = () => {
           setDialog({
             kind: 'info',
             title: 'Already ordered',
-            body: 'Some of these lines were already put on a PO. The list has been refreshed — review what still needs ordering and proceed again.',
+            body: `Some of these lines were already put on a PO. The list has been refreshed — review what still needs ordering and proceed again.${partly}`,
           });
           return;
         }
         setDialog(codes.length > 0
-          ? { kind: 'info', title: "SKUs not bound to a supplier", body: 'Assign these to a supplier first, then proceed:\n' + codes.map((c) => `• ${c}`).join('\n') }
-          : { kind: 'info', title: 'Order failed', body: raw });
-      },
-    });
+          ? { kind: 'info', title: "SKUs not bound to a supplier", body: 'Assign these to a supplier first, then proceed:\n' + codes.map((c) => `• ${c}`).join('\n') + partly }
+          : { kind: 'info', title: 'Order failed', body: raw + partly });
+      }
+    })();
   };
 
   /* General — picks (+ codes + unit count) from SHORTAGE order-lines. When a
@@ -721,7 +736,9 @@ export const Mrp = () => {
       ),
       render: (g) => {
         const ids = g.variants.flatMap(shortageLineIdsOf);
-        if (ids.length === 0) return null;
+        /* An empty element, not null: DataTable prints a dash for null, which read as a blank warehouse beside the
+           Warehouse column on every covered row. */
+        if (ids.length === 0) return <span />;
         const sel = ids.filter((id) => selected.has(id));
         const all = sel.length === ids.length;
         const some = sel.length > 0 && !all;
@@ -743,6 +760,13 @@ export const Mrp = () => {
       render: (g) => (g.warehouseCode
         ? <span className={styles.whTag} title={g.warehouseName ?? undefined}>{g.warehouseCode}</span>
         : <span className={styles.whNone}>—</span>),
+    },
+    /* Shown by default since the table opens in this order (owner, 4 Nov 2026). */
+    {
+      key: 'deliveryDate', label: 'Delivery Date', group: 'Logistics',
+      width: '140px', exportFormat: 'date',
+      getValue: (g) => groupEarliestDate(g, 'delivery') ?? '',
+      render: (g) => fmtDate(groupEarliestDate(g, 'delivery')),
     },
     {
       key: 'itemCode', label: isSofa ? 'Sales Order' : 'Item Code', width: '160px',
@@ -834,12 +858,6 @@ export const Mrp = () => {
       getValue: (g) => groupEarliestDate(g, 'soDate') ?? '',
       render: (g) => fmtDate(groupEarliestDate(g, 'soDate')),
     },
-    {
-      key: 'deliveryDate', label: 'Delivery Date', group: 'Logistics',
-      width: '140px', defaultHidden: true, exportFormat: 'date',
-      getValue: (g) => groupEarliestDate(g, 'delivery') ?? '',
-      render: (g) => fmtDate(groupEarliestDate(g, 'delivery')),
-    },
   ];
 
   /* A non-empty search force-opens every shown model so the match is visible
@@ -867,7 +885,7 @@ export const Mrp = () => {
             >
               {([
                 { mode: 'combined' as const, label: 'Combined', title: 'One PO per supplier' },
-                { mode: 'per-so' as const, label: 'Per SO', title: 'One PO per SO (sofa / bedframe)' },
+                { mode: 'per-so' as const, label: 'Per SO', title: 'One PO per SO, for each supplier' },
               ]).map(({ mode, label, title }) => (
                 <button
                   key={mode}
@@ -1090,7 +1108,6 @@ export const Mrp = () => {
               flatModules={isSofa}
               variantAtL1={view === 'bedframe'}
               accessoryRiders={isSofa ? (accessoryBySoDoc.get(g.itemCode) ?? []) : []}
-              poMode={poMode}
             />
           ),
         }}
@@ -1112,7 +1129,7 @@ export const Mrp = () => {
             <p className={styles.dialogBody}>
               Generate purchase orders for {dialog.count} {dialog.count === 1 ? 'line' : 'lines'}
               {' '}({dialog.units} {dialog.units === 1 ? 'unit' : 'units'}) in{' '}
-              {poMode === 'combined' ? 'Combined (one PO per supplier)' : 'Per SO (one PO per SO)'} mode.
+              {poMode === 'combined' ? 'Combined (one PO per supplier)' : 'Per SO (one PO per SO, for each supplier)'} mode.
             </p>
             <label className={styles.dialogField}>
               <span className={styles.filterLabel}>Expected Delivery (optional — leave blank to use each SO's own date)</span>
@@ -1217,7 +1234,7 @@ type AccessoryRider = { sku: MrpSku; line: MrpLine };
 const ModelDrilldown = ({
   group, expandedVariants, onToggleVariant, forceOpen,
   selected, onToggleLine, onSetLinesSelected, lineSupplier, onLineSupplierChange,
-  flatModules, variantAtL1, accessoryRiders, poMode,
+  flatModules, variantAtL1, accessoryRiders,
 }: {
   group: ModelGroup;
   expandedVariants: Set<string>;
@@ -1237,7 +1254,6 @@ const ModelDrilldown = ({
   /* Sofa only — the cover / pillow shortage lines on this SO, shown under the
      sofa modules so the operator sees them ride onto the order (empty otherwise). */
   accessoryRiders?: AccessoryRider[];
-  poMode?: 'combined' | 'per-so';
 }) => {
   // Sofa (M-S1): one table per SO, module + its order-line detail on one row.
   if (flatModules) {
@@ -1245,7 +1261,7 @@ const ModelDrilldown = ({
       <div className={styles.drilldown}>
         <SofaSoTable group={group} selected={selected} onToggleLine={onToggleLine}
           lineSupplier={lineSupplier} onLineSupplierChange={onLineSupplierChange}
-          accessoryRiders={accessoryRiders ?? []} poMode={poMode ?? 'combined'} />
+          accessoryRiders={accessoryRiders ?? []} />
       </div>
     );
   }
@@ -1458,7 +1474,7 @@ const ChildLine = ({ ln, suppliers, whCode, whName, selected, onToggleLine, chos
    SAME row — instead of the module → order-line two-level drill. Each sofa module
    has exactly one SO line; selection + supplier reuse the per-line handlers, so
    ordering (Proceed PO) is unchanged. */
-const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSupplierChange, accessoryRiders, poMode }: {
+const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSupplierChange, accessoryRiders }: {
   group: ModelGroup;
   selected: Set<string>;
   onToggleLine: (soItemId: string) => void;
@@ -1469,7 +1485,6 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
      the sofa set is proceeded (gatherSofa), so they follow the sofa's selection
      rather than carrying their own checkbox. */
   accessoryRiders: AccessoryRider[];
-  poMode: 'combined' | 'per-so';
 }) => (
   <table className={styles.childTable}>
     <thead>
@@ -1543,14 +1558,12 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
       {/* Cover / pillow riders (owner 2026-09-11). These ACCESSORY shortage lines
           belong to this SO and are pulled onto the order when the sofa set is
           proceeded. Read-along: no checkbox, because they follow the sofa's
-          selection. The caption states where they land in the current mode. */}
+          selection. */}
       {accessoryRiders.length > 0 && (
         <tr className={styles.detailRow}>
           <td />
           <td colSpan={11} className="py-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-            {poMode === 'combined'
-              ? 'Accessories on this order (cover / pillow) — ride on the sofa PO when a supplier matches, else their own PO'
-              : 'Accessories on this order (cover / pillow) — ordered on their own PO (Per-SO); switch to Combined to ride on the sofa PO'}
+            Accessories on this order (cover / pillow) — ride on the sofa PO when a supplier matches, else their own PO
           </td>
         </tr>
       )}

@@ -179,7 +179,7 @@ const RENO_RUNNING = new Set(['RENO_CONFIRMED', 'RENO_IN_PROGRESS']);
 const MRP_DEMAND_DONE_SQL = sqlNotInList(new Set([...SO_DONE].filter((st) => !RENO_RUNNING.has(st))));
 const PO_DEAD_SQL = sqlNotInList(PO_DEAD);
 
-type DemandRow = {
+export type DemandRow = {
   id: string;
   doc_no: string;
   item_code: string;
@@ -390,6 +390,18 @@ const deliveryOf = (r: DemandRow): string | null => effectiveSoDelivery({
   amended_delivery_date: r.so?.amended_delivery_date,
   customer_delivery_date: r.so?.customer_delivery_date,
 });
+
+/* A project line with its PO-tab plan applied, or nothing if it is not demand (the rule at the call in computeMrp). */
+export function projectDemandLine(
+  r: DemandRow,
+  plan: { order_on: string | null; deliver_on: string | null; no_po: boolean } | undefined,
+): DemandRow[] {
+  if (plan?.no_po) return [];
+  /* The line's own processing date stands in for the order's (MRP's Processing Date column and date basis). */
+  const so = r.so && plan?.order_on ? { ...r.so, processing_date: plan.order_on } : r.so;
+  const line = plan?.deliver_on ? { ...r, so, line_delivery_date: plan.deliver_on, line_delivery_date_overridden: true } : { ...r, so };
+  return plan?.order_on || deliveryOf(line) !== null ? [line] : [];
+}
 
 /* Earliest-first comparator that pushes NULL dates to the end. */
 function byDateAsc(a: string | null, b: string | null): number {
@@ -673,10 +685,11 @@ export async function computeMrp(
   const demandOpen = ((demandRaw ?? []) as unknown as DemandRow[]).filter(
     (r) => r.item_code && r.so && (!SO_DONE.has(r.so.status) || (RENO_RUNNING.has(r.so.status) && r.so.project_id != null)) && r.qty > 0,
   );
-  /* Conts projects (owner, 1 Nov 2026: "只要一有 Processing Date，它就会跳去 MRP 让我开 order"). A line of an order
-     that belongs to a project is demand only once the project's PO tab gives it a processing date
-     (scm.reno_beta_line_plans.order_on) and does not mark it "No PO"; its delivery date is the one set there. Orders
-     with no project keep the rule above. */
+  /* Conts projects (owner, 4 Nov 2026: "只要一有 delivery date，它就会排着出来"; widens 1 Nov's processing-date rule).
+     A line of an order that belongs to a project is demand once it has a delivery date (the one set on the project's
+     PO tab, scm.reno_beta_line_plans.deliver_on, else the order's) or a processing date (order_on), unless the PO tab
+     marks it "No PO". A processing date alone stays undated: counted, and shown only under Show no-date. Orders with
+     no project keep the rule above. */
   const projectLineIds = demandOpen.filter((r) => r.so?.project_id != null).map((r) => r.id);
   const { data: planRows, error: planErr } = await chunkIn<{ so_item_id: string; order_on: string | null; deliver_on: string | null; no_po: boolean }>(
     projectLineIds,
@@ -687,11 +700,7 @@ export async function computeMrp(
   const planOf = new Map(planRows.map((p) => [p.so_item_id, p]));
   const demandActive = demandOpen.flatMap((r): DemandRow[] => {
     if (r.so?.project_id == null) return [r];
-    const plan = planOf.get(r.id);
-    if (!plan?.order_on || plan.no_po) return [];
-    /* The line's own processing date stands in for the order's (MRP's Processing Date column and date basis). */
-    const so = r.so ? { ...r.so, processing_date: plan.order_on } : r.so;
-    return [plan.deliver_on ? { ...r, so, line_delivery_date: plan.deliver_on, line_delivery_date_overridden: true } : { ...r, so }];
+    return projectDemandLine(r, planOf.get(r.id));
   });
   const isDatedLine = (r: DemandRow): boolean => deliveryOf(r) !== null;
   /* Conts (owner, 3 Nov 2026): every MRP row names its project (code and name), so a line can be found and filtered
@@ -834,7 +843,7 @@ export async function computeMrp(
 
   const { data: warehouses } = await scoped(sb
     .from('warehouses')
-    .select('id, code, name')
+    .select('id, code, name, is_default')
     .eq('is_active', true))
     .order('code');
   const whById = new Map<string, { code: string; name: string }>();
@@ -862,7 +871,7 @@ export async function computeMrp(
      already loaded above; only the small state-mapping table is new, and it is
      read ONCE for the whole computation, not per line. */
   const soWarehouseMasters: SoWarehouseMasters = {
-    warehouses: (warehouses ?? []) as Array<{ id: string; code: string; name: string }>,
+    warehouses: (warehouses ?? []) as Array<{ id: string; code: string; name: string; is_default: boolean | null }>,
     stateMappings: ((await scoped(
       sb.from('state_warehouse_mappings').select('state, warehouse_id'),
     )).data ?? []) as Array<{ state: string | null; warehouse_id: string | null }>,

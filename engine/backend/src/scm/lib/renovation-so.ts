@@ -76,10 +76,10 @@ export async function insertSoItems(db: RenoDb, docNo: string, rows: SoItemInser
   if (rows.length === 0) return;
   await db.q(
     `insert into scm.mfg_sales_order_items (id, doc_no, line_date, debtor_name, item_group, item_code, description, description2, uom, location,
-        qty, unit_price_sen, discount_sen, total_sen, total_inc_sen, balance_sen, unit_cost_sen, line_cost_sen, line_margin_sen, line_no, company_id)
+        qty, unit_price_sen, discount_sen, total_sen, total_inc_sen, balance_sen, unit_cost_sen, line_cost_sen, line_margin_sen, line_no, company_id, warehouse_id)
      select x.id, $2, $3::date, $4, 'RENOVATION', x.item_code, x.description, x.description2, x.uom, x.location,
         x.qty, x.unit_price_sen, x.discount_sen, x.total_sen, x.total_sen, x.total_sen, x.unit_cost_sen, x.line_cost_sen, x.total_sen - x.line_cost_sen,
-        x.line_no, $5
+        x.line_no, $5, (select w.id from scm.warehouses w where w.company_id = $5 and w.is_default and w.is_active order by w.code limit 1)
        from jsonb_to_recordset($1::text::jsonb) as x(id uuid, line_no int, item_code text, description text, description2 text, uom text,
         location text, qty int, unit_price_sen int, discount_sen int, total_sen int, unit_cost_sen int, line_cost_sen int)`,
     [JSON.stringify(rows), docNo, p.lineDate, p.debtorName, p.companyId],
@@ -191,8 +191,9 @@ export async function convertQuotationToSo(
   });
   await db.q(
     `insert into scm.mfg_sales_orders (doc_no, so_date, so_kind, status, debtor_name, debtor_code, customer_id, project_id, branding, ref, phone, email,
-        address1, address2, note, created_by, company_id)
-     values ($1, $2::date, 'RENOVATION', 'RENO_CONFIRMED', $3, $14, $15, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        address1, address2, note, created_by, company_id, sales_location)
+     values ($1, $2::date, 'RENOVATION', 'RENO_CONFIRMED', $3, $14, $15, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+        (select w.code from scm.warehouses w where w.company_id = $13 and w.is_default and w.is_active order by w.code limit 1))`,
     [docNo, soDate, debtorName, q.projectId, brand?.name ?? null, rev.docNo, h.customerPhone || null, h.customerEmail || null,
       h.building || null, h.unitNo || null, `Renovation contract from quotation ${rev.docNo}`, actor.staffId, actor.companyId, debtorCode, customerId],
   );
