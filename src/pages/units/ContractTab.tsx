@@ -14,6 +14,7 @@ import { ExtendContractModal, GenerateAgreement } from './ContractExtras';
 import { CodeBadge } from './UnitExtras';
 import { DataTable, type Column } from '../../components/DataTable';
 import { RecordHistory } from '../../components/RecordHistory';
+import { isPlaceholderOwner } from './addUnitRules';
 import { ContractFields, ModelChip, draftOf, bodyOf, problems, pctText, type ContractView, type Draft } from './contractForm';
 
 export { ModelChip };
@@ -90,6 +91,10 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
     return () => clearTimeout(t);
   }, [d, dirty, unitId, data?.month, startNew]);
 
+  // A unit still under the stand-in owner has no one to make a contract with.
+  if (isPlaceholderOwner(data?.unit.ownerName)) {
+    return <Card><div className="p-8 text-center text-copy text-muted-ink">Pick the owner on the Details tab first. A contract is made with the owner, so this unit has none until then.</div></Card>;
+  }
   if (!d || !current) {
     return <Card><div className="p-8 text-center text-copy text-muted-ink">{loading ? 'Loading the contract…' : error ?? 'The contract could not be loaded.'}</div></Card>;
   }

@@ -37,6 +37,7 @@ import SupplyChainEngine, { signInToEngineEarly } from './components/SupplyChain
 import { ENGINE_PATH } from './lib/scmEngine';
 import { useApi } from './lib/useApi';
 const UnitsPage = lazy(() => import('./pages/UnitsPage'));
+const AddUnitPage = lazy(() => import('./pages/units/AddUnitPage'));
 const ProductsPage = lazy(() => import('./pages/ProductsPage'));
 const SuppliersPage = lazy(() => import('./pages/SuppliersPage'));
 const ProductModelsPage = lazy(() => import('./pages/ProductModelsPage'));
@@ -286,6 +287,8 @@ function Routed() {
         <Route path="/operations/tasks" element={<ToTaskHistory />} />
         <Route path="/properties" element={<ToUnits />} />
         <Route path="/properties/units" element={<UnitsPage unitId="" />} />
+        {/* Above :id, or "new" would be read as a unit id. */}
+        <Route path="/properties/units/new" element={<AddUnitPage />} />
         <Route path="/properties/units/:id" element={<UnitsRoute />} />
         <Route path="/properties/access" element={<ToUnits tab="access" />} />
         <Route path="/procurement/products" element={<ProductsPage />} />

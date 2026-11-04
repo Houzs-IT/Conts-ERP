@@ -19,6 +19,7 @@ import { masked as maskTail } from '../../lib/format';
 import { MODEL, codeName, codeLabel, PURPOSES, USED_BY } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
 import { BedsEditor, BaysEditor, bedsText, baysText } from './UnitExtras';
+import { isPlaceholderOwner } from './addUnitRules';
 import { UnitCleaning, missingCleanPrice, type UnitPriceData } from './UnitCleaning';
 import { cx } from '../../lib/design-tokens';
 import { Link } from 'react-router-dom';
@@ -71,6 +72,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
   const bank = shown ? shown.bankName ?? '' : moved ? '' : u.bankName;
   const account = shown ? (shown.bankAccountLast4 ? maskTail(shown.bankAccountLast4) : '') : moved ? '' : u.bankAccount;
   const holder = shown ? shown.accountHolder ?? '' : moved ? '' : u.accountHolder;
+  const waitingForOwner = isPlaceholderOwner(shown?.displayName ?? (moved ? '' : owner.name));
   const suggested = !u.layoutType ? layoutFromBedrooms(u.bedrooms) : null;
   const layout = u.layoutType ?? suggested;
   const types = useLayoutTypes();
@@ -79,7 +81,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
   const prices = useApi<UnitPriceData>(`/housekeeping/unit-prices?unitId=${encodeURIComponent(u.id)}`);
   // A dot on a step says something in it still needs filling.
   const needs: Record<Sub, boolean> = {
-    listing: false, owner: false,
+    listing: false, owner: waitingForOwner,
     space: !layout || (u.parkingBays ?? []).some(b => !b.lotNumber.trim()),
     cleaning: missingCleanPrice(prices.data),
   };
@@ -179,7 +181,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
       {sub === 'owner' && <>
       <SectionHead>Owner</SectionHead>
       <Grid3>
-        <Labeled label="Owner" help={moved ? 'Saving moves this unit to this owner. Its current contract stays with the previous owner.' : 'Picked from the owner profiles.'}>
+        <Labeled label="Owner" help={moved ? 'Saving moves this unit to this owner. Its current contract stays with the previous owner.' : waitingForOwner ? 'No owner yet. Pick one, then add the contract on the Contract tab.' : 'Picked from the owner profiles.'}>
           {canEdit && owners ? (
             <SearchSelect label="Owner" size="md" value={ownerId} placeholder="Search owners"
               onChange={v => onChange({ ownerId: v })}
@@ -305,22 +307,6 @@ export function ConfirmAdd({ title, sub, body, confirm, onClose, onConfirm }: { 
     <CentreModal title={title} sub={sub} onClose={onClose}
       footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" onClick={onConfirm}>{confirm}</Button></>}>
       <p className="m-0 text-copy text-muted-ink">{body}</p>
-    </CentreModal>
-  );
-}
-
-/** Adds a unit to a building: the owner is picked from the owner profiles first (a unit always has one). */
-export function AddUnitModal({ buildingName, onClose, onConfirm }: { buildingName: string; onClose: () => void; onConfirm: (ownerId: string) => void }) {
-  const { owners, loading } = useOwnerOptions();
-  const [ownerId, setOwnerId] = useState('');
-  return (
-    <CentreModal title={`Add a unit to ${buildingName}`} sub="A blank unit opens for you to fill in." onClose={onClose}
-      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!ownerId} disabledReason="Pick the owner" onClick={() => onConfirm(ownerId)}>Add unit</Button></>}>
-      <Labeled label="Owner" help={owners && owners.length === 0 ? 'No owner profiles yet. Add the owner on the Owners page first.' : 'Not listed? Add the owner on the Owners page first.'}>
-        <SearchSelect label="Owner" size="md" value={ownerId} onChange={setOwnerId} placeholder={loading ? 'Loading owners' : 'Search owners'}
-          options={(owners ?? []).map(o => ({ value: o.id, label: titleCase(o.displayName) }))} />
-      </Labeled>
-      <p className="m-0 text-copy text-muted-ink">You will set the listing name, code, layout, package and contract on its Details tab.</p>
     </CentreModal>
   );
 }
