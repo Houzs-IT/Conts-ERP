@@ -31,6 +31,7 @@
 // bill here as it does on a voucher.
 // ----------------------------------------------------------------------------
 
+import { resolveLinesSub } from '../../conts/sub-departments';
 import { Hono } from 'hono';
 import { ledgerEditSide } from '../../acc/ledger-settings';
 import { hasHouzsPerm } from '../lib/houzs-perms';
@@ -56,7 +57,7 @@ const HEADER = 'id, company_id, invoice_number, supplier_id, supplier_invoice_re
 const LINE = 'id, line_no, description, debit_account_code, amount_sen, department, project_id, sub_department_id';
 
 /* Conts: each line's department (finance phase 1, spec 3.5); none is Supply chain. */
-type CleanLine = { description: string | null; code: string; amountSen: number; department: Department; projectId: number | null };
+type CleanLine = { description: string | null; code: string; amountSen: number; department: Department; projectId: number | null; subDepartmentId: string | null };
 
 /** 1–50 lines, each with a leaf account and a positive integer sen. */
 function buildLines(raw: unknown): { lines: CleanLine[]; total: number } | { error: string; message: string } {
@@ -78,10 +79,19 @@ function buildLines(raw: unknown): { lines: CleanLine[]; total: number } | { err
     if (project != null && !Number.isSafeInteger(project)) return { error: 'bad_line', message: `Line ${i + 1}: choose the project from the list.` };
     lines.push({
       description: l?.description ? String(l.description).trim() : null, code, amountSen: amount,
-      department: isDepartment(l?.department) ? l.department : DEFAULT_DEPARTMENT, projectId: project,
+      department: isDepartment(l?.department) ? l.department : DEFAULT_DEPARTMENT, projectId: project, subDepartmentId: null,
     });
   }
   return { lines, total: lines.reduce((s, l) => s + l.amountSen, 0) };
+}
+
+/** Each line's sub-department (SOP 1.1; chew 4 Nov 2026): a named one sets the line's department. `saved`: each
+    line's own (by position), kept even after it was retired. Null = all good; else the refusal. */
+async function subRefusal(c: any, companyId: number, lines: CleanLine[], raw: unknown, saved: ReadonlyArray<string | null> = []): Promise<Response | null> {
+  const r = await resolveLinesSub(c.get('supabase'), companyId, Array.isArray(raw) ? raw : [], saved);
+  if (!r.ok) return c.json({ error: r.error, message: r.message }, r.status);
+  r.lines.forEach((s, i) => { if (s && lines[i]) { lines[i]!.department = s.department; lines[i]!.subDepartmentId = s.subDepartmentId; } });
+  return null;
 }
 
 /** Every project the lines name must be one of the company's (public.projects): a cost must never sit on a project
@@ -201,6 +211,8 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
   }
   const built = buildLines(body.lines);
   if ('error' in built) return c.json({ error: built.error, message: built.message }, 400);
+  const badSub = await subRefusal(c, co.companyId, built.lines, body.lines);
+  if (badSub) return badSub;
   const badProject = await projectRefusal(c, co.companyId, built.lines);
   if (badProject) return badProject;
   const invoiceDate = dateOrNull(body.invoiceDate) ?? todayMyt();
@@ -243,6 +255,7 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
     amount_sen: l.amountSen,
     department: l.department,
     project_id: l.projectId,
+    ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
   })));
   if (lineErr) {
     await sb.from('ap_invoices').delete().eq('company_id', co.companyId).eq('id', (inv as Row).id);
@@ -315,6 +328,9 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   if (body.lines !== undefined) {
     const built = buildLines(body.lines);
     if ('error' in built) return c.json({ error: built.error, message: built.message }, 400);
+    const { data: hadSubs } = await sb.from('ap_invoice_lines').select('line_no, sub_department_id').eq('company_id', co.companyId).eq('invoice_id', inv.id).order('line_no');
+    const badSub = await subRefusal(c, co.companyId, built.lines, body.lines, ((hadSubs ?? []) as Array<{ sub_department_id?: string | null }>).map((h) => h.sub_department_id ?? null));
+    if (badSub) return badSub;
     const badProject = await projectRefusal(c, co.companyId, built.lines);
     if (badProject) return badProject;
     if (built.total < paid) {
@@ -328,6 +344,7 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
     const { error: lineErr } = await sb.from('ap_invoice_lines').insert(built.lines.map((l, i) => ({
       company_id: co.companyId, invoice_id: inv.id, line_no: i + 1,
       description: l.description, debit_account_code: l.code, amount_sen: l.amountSen, department: l.department, project_id: l.projectId,
+      ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
     })));
     if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
     patch.total_sen = built.total;

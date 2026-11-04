@@ -85,3 +85,23 @@ export function subForStaffDepartment(list: readonly SubDepartment[], staffDepar
   const mapped = staffDepartmentId ? list.find((s) => s.active && s.staffDepartmentId === staffDepartmentId) : undefined;
   return mapped ?? defaultSubDepartment(list, fallback);
 }
+
+type LinesSub = { ok: true; lines: Array<{ department: Department; subDepartmentId: string } | null> }
+  | { ok: false; status: 400 | 500; error: string; message: string };
+
+/** The sub-departments a document's lines name (SOP 1.1): each named one gives its line's department; a line naming
+    none keeps the department sent (null here). `saved[i]`: line i's own, kept even after it was retired. */
+export async function resolveLinesSub(sb: Db, companyId: number, raws: ReadonlyArray<{ subDepartmentId?: unknown } | undefined>, saved: ReadonlyArray<string | null> = []): Promise<LinesSub> {
+  const named = (r: { subDepartmentId?: unknown } | undefined) => r?.subDepartmentId != null && String(r.subDepartmentId).trim() !== '';
+  if (!raws.some(named)) return { ok: true, lines: raws.map(() => null) };
+  const loaded = await loadSubDepartments(sb, companyId);
+  if (!loaded.ok) return { ok: false, status: 500, error: 'load_failed', message: loaded.error };
+  const lines: Array<{ department: Department; subDepartmentId: string } | null> = [];
+  for (const [i, r] of raws.entries()) {
+    if (!named(r)) { lines.push(null); continue; }
+    const s = resolveLineSub(loaded.list, { subDepartmentId: String(r!.subDepartmentId).trim() }, { saved: saved[i] ?? null });
+    if (!s.ok) return { ok: false, status: 400, error: s.error, message: `Line ${i + 1}: ${s.message}` };
+    lines.push({ department: s.department, subDepartmentId: s.subDepartmentId! });
+  }
+  return { ok: true, lines };
+}

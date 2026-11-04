@@ -6,7 +6,7 @@
      · a staff department nobody mapped falls back to the department's built-in row. */
 import { describe, expect, test } from 'vitest';
 import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
-import { defaultSubDepartment, loadSubDepartments, projectRenoKind, resolveLineSub, subForStaffDepartment, type SubDepartment } from './sub-departments';
+import { defaultSubDepartment, loadSubDepartments, projectRenoKind, resolveLineSub, resolveLinesSub, subForStaffDepartment, type SubDepartment } from './sub-departments';
 
 const CO = 1;
 const row = (id: string, department: string, name: string, over: Record<string, unknown> = {}) =>
@@ -88,5 +88,14 @@ describe('sub-departments', () => {
     expect(subForStaffDepartment(l, 'dept-inh', 'shared').fixedKey).toBe('theconts');
     expect(subForStaffDepartment(l, 'dept-unmapped', 'rental').fixedKey).toBe('rental_general');
     expect(subForStaffDepartment(l, null, 'supply').fixedKey).toBe('dreamcrafter');
+  });
+
+  test('a document’s lines: each named one sets its department; none named stays as sent; a bad one names its line', async () => {
+    const sb = world();
+    expect(await resolveLinesSub(sb, CO, [{ subDepartmentId: 's-cln' }, {}, { subDepartmentId: '' }])).toEqual({
+      ok: true, lines: [{ department: 'rental', subDepartmentId: 's-cln' }, null, null],
+    });
+    expect(await resolveLinesSub(sb, CO, [{}, { subDepartmentId: 'nope' }])).toMatchObject({ ok: false, status: 400, error: 'sub_department_invalid', message: 'Line 2: Choose a department from the list.' });
+    expect(await resolveLinesSub(sb, CO, [{ subDepartmentId: 's-old' }], ['s-old'])).toMatchObject({ ok: true });
   });
 });

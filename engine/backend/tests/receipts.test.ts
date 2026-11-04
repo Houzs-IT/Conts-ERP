@@ -430,3 +430,23 @@ describe('a receipt line names its project or unit', () => {
     expect(await (await post(harness(tagged()), '/', body({ department: 'supply', projectId: 99 }))).json()).toMatchObject({ error: 'project_unknown' });
   });
 });
+
+/* Each line's sub-department (SOP 1.1; chew 4 Nov 2026). */
+describe('sub-departments on a receipt', () => {
+  test('a line saves its sub-department and its department, and the journal carries it', async () => {
+    const tables = { ...baseTables(), acc_sub_departments: [
+      { id: 's-gen', company_id: CO, department: 'rental', name: 'Rental (general)', fixed_key: 'rental_general', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-mnt', company_id: CO, department: 'rental', name: 'Maintenance', fixed_key: null, staff_department_id: null, active: true, sort: 20 },
+      { id: 's-dc', company_id: CO, department: 'supply', name: 'Renovation (Dream Crafter)', fixed_key: 'dreamcrafter', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-co', company_id: CO, department: 'shared', name: 'Company', fixed_key: 'company', staff_department_id: null, active: true, sort: 10 },
+    ] };
+    const app = harness(tables);
+    const res = await post(app, '/', {
+      payerName: 'TENANT', receiptDate: `${thisMonth}-03`, bankAccountCode: '310-0010',
+      lines: [{ description: 'Scrap', creditAccountCode: '700-0000', amountSen: 2000, department: 'shared', subDepartmentId: 's-dc' }],
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(tables.acc_receipt_lines.map((l) => [l.department, l.sub_department_id])).toEqual([['supply', 's-dc']]);
+    expect(tables.journal_entry_lines.find((l) => l.account_code === '700-0000')).toMatchObject({ department: 'supply', sub_department_id: 's-dc' });
+  });
+});

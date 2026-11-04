@@ -34,6 +34,7 @@ import { postJournal, reverseJournal, validateJournal, type EngineLine } from '.
 import { ledgerDatesRefusal } from '../../acc/ledger-settings';
 import { DEFAULT_DEPARTMENT, type Department } from '../../acc/rules';
 import { readLineTags, unknownTags } from '../../conts/line-tags';
+import { resolveLinesSub } from '../../conts/sub-departments';
 
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -48,6 +49,7 @@ type LineIn = {
   department?: unknown;
   projectId?: unknown;
   unitId?: unknown;
+  subDepartmentId?: unknown;
 };
 
 type Header = {
@@ -113,6 +115,12 @@ export const journalEntryEdit = async (c: Ctx) => {
   const lines = linesOf(body.lines);
   /* Conts (chew 2 Nov 2026): each line's project or unit, checked as on a voucher line. */
   const raw = Array.isArray(body.lines) ? (body.lines as LineIn[]) : [];
+  /* Conts (SOP 1.1; chew 4 Nov 2026): each line's sub-department sets its department; one the entry already had is
+     kept even after it was retired. */
+  const { data: hadSubs } = await sb.from('journal_entry_lines').select('line_no, sub_department_id').eq('journal_entry_id', je.id).order('line_no');
+  const subs = await resolveLinesSub(sb, co.companyId, raw, ((hadSubs ?? []) as Array<{ sub_department_id?: string | null }>).map((h) => h.sub_department_id ?? null));
+  if (!subs.ok) return c.json({ error: subs.error, message: subs.message }, subs.status);
+  subs.lines.forEach((s, i) => { if (s && lines[i]) { lines[i]!.department = s.department; lines[i]!.subDepartmentId = s.subDepartmentId; } });
   for (const [i, l] of lines.entries()) {
     const t = readLineTags(raw[i] ?? {}, String(l.department ?? DEFAULT_DEPARTMENT), i + 1);
     if ('error' in t) return c.json(t, 400);
@@ -166,6 +174,7 @@ export const journalEntryEdit = async (c: Ctx) => {
       department: l.department ?? DEFAULT_DEPARTMENT,
       project_id: l.projectId ?? null,
       ...(l.unitId ? { unit_id: l.unitId } : {}),
+      ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
     })));
     if (insErr) {
       /* The old lines go back so the draft is never a header alone. */

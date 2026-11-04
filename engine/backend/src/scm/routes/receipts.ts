@@ -27,9 +27,19 @@ import { todayMyt } from '../lib/my-time';
 import { postJournal, reverseJournal } from '../../acc/engine';
 import { DEFAULT_DEPARTMENT, isDepartment, splitByDepartment, type Department, type RuleLine } from '../../acc/rules';
 import { readLineTags, unknownTags } from '../../conts/line-tags';
+import { resolveLinesSub } from '../../conts/sub-departments';
 
 /** One receipt line as the form sends it; a refusal names the line. Conts: the department (spec 3.5), none is Supply chain. */
-type ReceiptLine = { description: string | null; code: string; amountSen: number; department: Department; projectId: number | null; unitId: string | null };
+type ReceiptLine = { description: string | null; code: string; amountSen: number; department: Department; projectId: number | null; unitId: string | null; subDepartmentId?: string | null };
+
+/** The lines with each named sub-department's department set (SOP 1.1; chew 4 Nov 2026), ready for parseReceiptLine;
+    `saved`: each line's own sub-department by position, kept even after it was retired. */
+async function withSubs(sb: any, companyId: number, rawLines: unknown[], saved: ReadonlyArray<string | null> = []):
+  Promise<{ ok: true; raws: unknown[]; subs: Array<string | null> } | { ok: false; status: 400 | 500; body: { error: string; message: string } }> {
+  const r = await resolveLinesSub(sb, companyId, rawLines as Array<{ subDepartmentId?: unknown }>, saved);
+  if (!r.ok) return { ok: false, status: r.status, body: { error: r.error, message: r.message } };
+  return { ok: true, raws: rawLines.map((l, i) => (r.lines[i] ? { ...(l as object), department: r.lines[i]!.department } : l)), subs: r.lines.map((x) => x?.subDepartmentId ?? null) };
+}
 function parseReceiptLine(raw: unknown, i: number): ReceiptLine | { error: string; message: string } {
   const l = (raw ?? {}) as { creditAccountCode?: unknown; amountSen?: unknown; description?: unknown; department?: unknown; projectId?: unknown; unitId?: unknown };
   const code = String(l?.creditAccountCode ?? '').trim();
@@ -60,7 +70,7 @@ function receiptRuleLines(bank: string, payer: string, receiptNumber: string, li
     ...lines.map((l) => ({
       accountCode: l.code, debitSen: 0, creditSen: l.amountSen,
       partyType: null, partyCode: null, partyName: null,
-      notes: l.description ?? receiptNumber, department: l.department, projectId: l.projectId, unitId: l.unitId,
+      notes: l.description ?? receiptNumber, department: l.department, projectId: l.projectId, unitId: l.unitId, subDepartmentId: l.subDepartmentId ?? null,
     })),
   ];
 }
@@ -170,11 +180,13 @@ export const createReceiptHandler = async (c: any): Promise<Response> => {
   if (rawLines.length === 0 || rawLines.length > 50) {
     return c.json({ error: 'lines_required', message: 'A receipt takes 1 to 50 lines.' }, 400);
   }
+  const ws = await withSubs(c.get('supabase'), coId, rawLines);
+  if (!ws.ok) return c.json(ws.body, ws.status);
   const lines: ReceiptLine[] = [];
-  for (const [i, l] of rawLines.entries()) {
+  for (const [i, l] of ws.raws.entries()) {
     const parsed = parseReceiptLine(l, i);
     if ('error' in parsed) return c.json(parsed, 400);
-    lines.push(parsed);
+    lines.push({ ...parsed, subDepartmentId: ws.subs[i] ?? null });
   }
   const badTag = await unknownTags(sb, coId, lines);
   if (badTag) return c.json(badTag, badTag.error === 'load_failed' ? 500 : 400);
@@ -211,6 +223,7 @@ export const createReceiptHandler = async (c: any): Promise<Response> => {
     department: l.department,
     ...(l.projectId != null ? { project_id: l.projectId } : {}),
     ...(l.unitId ? { unit_id: l.unitId } : {}),
+    ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
   })));
   if (lineErr) {
     await sb.from('acc_receipts').delete().eq('company_id', coId).eq('id', receipt.id);
@@ -331,11 +344,14 @@ export const updateReceiptHandler = async (c: any): Promise<Response> => {
     if (rawLines.length === 0 || rawLines.length > 50) {
       return c.json({ error: 'lines_required', message: 'A receipt takes 1 to 50 lines.' }, 400);
     }
+    const { data: hadSubs } = await sb.from('acc_receipt_lines').select('line_no, sub_department_id').eq('company_id', coId).eq('receipt_id', receipt.id).order('line_no');
+    const ws = await withSubs(sb, coId, rawLines, ((hadSubs ?? []) as Array<{ sub_department_id?: string | null }>).map((h) => h.sub_department_id ?? null));
+    if (!ws.ok) return c.json(ws.body, ws.status);
     lines = [];
-    for (const [i, l] of rawLines.entries()) {
+    for (const [i, l] of ws.raws.entries()) {
       const parsed = parseReceiptLine(l, i);
       if ('error' in parsed) return c.json(parsed, 400);
-      lines.push(parsed);
+      lines.push({ ...parsed, subDepartmentId: ws.subs[i] ?? null });
     }
     const badTag = await unknownTags(sb, coId, lines);
     if (badTag) return c.json(badTag, badTag.error === 'load_failed' ? 500 : 400);
@@ -345,14 +361,14 @@ export const updateReceiptHandler = async (c: any): Promise<Response> => {
     }
   } else {
     const { data: old, error: oldErr } = await scopeToCompany(
-      sb.from('acc_receipt_lines').select('description, credit_account_code, amount_sen, department, project_id, unit_id').eq('receipt_id', receipt.id), c,
+      sb.from('acc_receipt_lines').select('description, credit_account_code, amount_sen, department, project_id, unit_id, sub_department_id').eq('receipt_id', receipt.id), c,
     ).order('line_no');
     if (oldErr) return c.json({ error: 'load_failed', reason: oldErr.message }, 500);
-    lines = ((old ?? []) as Array<{ description: string | null; credit_account_code: string; amount_sen: number; department?: string | null; project_id?: number | null; unit_id?: string | null }>)
+    lines = ((old ?? []) as Array<{ description: string | null; credit_account_code: string; amount_sen: number; department?: string | null; project_id?: number | null; unit_id?: string | null; sub_department_id?: string | null }>)
       .map((l) => ({
         description: l.description ?? null, code: l.credit_account_code, amountSen: Number(l.amount_sen),
         department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT,
-        projectId: l.project_id == null ? null : Number(l.project_id), unitId: l.unit_id ?? null,
+        projectId: l.project_id == null ? null : Number(l.project_id), unitId: l.unit_id ?? null, subDepartmentId: l.sub_department_id ?? null,
       }));
     if (lines.length === 0) return c.json({ error: 'lines_required', message: `${receipt.receipt_number} has no lines to re-post.` }, 409);
   }
@@ -375,6 +391,7 @@ export const updateReceiptHandler = async (c: any): Promise<Response> => {
       description: l.description, credit_account_code: l.code, amount_sen: l.amountSen, department: l.department,
       ...(l.projectId != null ? { project_id: l.projectId } : {}),
       ...(l.unitId ? { unit_id: l.unitId } : {}),
+      ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
     })));
     if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
   }

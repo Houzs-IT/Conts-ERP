@@ -297,3 +297,33 @@ describe('a manual journal line names its project or unit', () => {
     expect((sb.tables.journal_entries as Row[])).toHaveLength(1);
   });
 });
+
+/* Each line's sub-department (SOP 1.1; chew 4 Nov 2026), on a new and on an edited manual journal. */
+describe('sub-departments on a manual journal', () => {
+  const subs = () => [
+      { id: 's-gen', company_id: CO, department: 'rental', name: 'Rental (general)', fixed_key: 'rental_general', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-mnt', company_id: CO, department: 'rental', name: 'Maintenance', fixed_key: null, staff_department_id: null, active: true, sort: 20 },
+      { id: 's-dc', company_id: CO, department: 'supply', name: 'Renovation (Dream Crafter)', fixed_key: 'dreamcrafter', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-co', company_id: CO, department: 'shared', name: 'Company', fixed_key: 'company', staff_department_id: null, active: true, sort: 10 },
+    ];
+  test('a new journal: each named one sets its line; an unknown one is a 400 and nothing is written', async () => {
+    const { journalEntryCreateHandler } = await import('../src/scm/routes/accounting');
+    const { app, sb } = world({ jes: [], lines: [] });
+    Object.assign(sb.tables, { acc_sub_departments: subs() });
+    app.post('/journal-entries', journalEntryCreateHandler as never);
+    const send = (body: unknown) => app.request('/journal-entries', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    expect((await send({ ...corrected, lines: corrected.lines.map((l) => ({ ...l, subDepartmentId: 'nope' })) })).status).toBe(400);
+    expect(sb.tables.journal_entries).toHaveLength(0);
+    const ok = await send({ ...corrected, lines: corrected.lines.map((l, i) => ({ ...l, department: 'supply', subDepartmentId: i === 0 ? 's-mnt' : null })) });
+    expect(ok.status, await ok.clone().text()).toBe(201);
+    expect((sb.tables.journal_entry_lines as Row[]).map((l) => [l.department, l.sub_department_id ?? null])).toEqual([['rental', 's-mnt'], ['supply', null], ['supply', null]]);
+  });
+
+  test('a draft rewritten in place keeps each line\'s sub-department', async () => {
+    const { app, sb } = world({ jes: [{ ...posted()[0]!, posted: false }] });
+    Object.assign(sb.tables, { acc_sub_departments: subs() });
+    const res = await put(app, 'je-163', { ...corrected, lines: corrected.lines.map((l, i) => ({ ...l, subDepartmentId: i === 0 ? 's-co' : undefined })) });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect((sb.tables.journal_entry_lines as Row[]).map((l) => l.sub_department_id ?? null)).toEqual(['s-co', null, null]);
+  });
+});

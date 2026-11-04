@@ -45,6 +45,7 @@ import { computeDailyBank } from '../../acc/daily-bank';
 import { systemTakings, postCashOverShort } from '../../acc/daily-close';
 import { resolveRoles, piLines, DEFAULT_ROLE_CODES, BAD_DEPARTMENT, DEFAULT_DEPARTMENT, departmentQuery, type AccountRole, type Department } from '../../acc/rules';
 import { readLineTags, unknownTags, type LineTags } from '../../conts/line-tags';
+import { resolveLinesSub } from '../../conts/sub-departments';
 import { ledgerSetupStatus, OPEN_BALANCE_ROLES, roleProblem } from '../../conts/ledger-setup-status';
 import { splitByItemGroup } from '../../acc/item-group-split';
 import { classifyJournal } from '../../acc/journal-class';
@@ -342,6 +343,8 @@ type JeLineIn = {
   /** Conts (chew 2 Nov 2026): the project or unit the line belongs to, e.g. a deposit kept by the building. */
   projectId?: number | string | null;
   unitId?: string | null;
+  /** Conts (SOP 1.1; chew 4 Nov 2026): the line's sub-department; it sets the department. */
+  subDepartmentId?: string | null;
 };
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -750,6 +753,11 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
   const sb = c.get('supabase');
   const jeCompanyId = activeCompanyId(c);
 
+  /* Conts (SOP 1.1): each line's sub-department sets its department, before the unit is checked against it. */
+  const subs = await resolveLinesSub(sb, jeCompanyId ?? 0, lines);
+  if (!subs.ok) return c.json({ error: subs.error, message: subs.message }, subs.status);
+  subs.lines.forEach((s, i) => { if (s) lines[i]!.department = s.department; });
+
   /* Conts: each line's project or unit, checked as on a voucher line. */
   const tags: LineTags[] = [];
   for (const [i, l] of lines.entries()) {
@@ -782,6 +790,7 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
       department: l.department ?? null,
       projectId: tags[i]!.projectId,
       unitId: tags[i]!.unitId,
+      subDepartmentId: subs.lines[i]?.subDepartmentId ?? null,
     })),
     postNow: false,
   });
