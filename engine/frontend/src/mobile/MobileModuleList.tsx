@@ -24,6 +24,8 @@ import { MobileVirtualList } from "./MobileVirtualList";
 import { warehouseLabel } from "../vendor/scm/lib/warehouse-label";
 import { mfgCategoryLabel } from "../vendor/shared/product-categories";
 import "./mobile.css";
+import { categoryOptionsNow, useRenovationCatalog } from "../vendor/scm/lib/renovation-catalog-queries";
+import { categoryMatches } from "../vendor/shared/renovation-catalog";
 
 // ---------------------------------------------------------------------------
 // MobileModuleList — ONE generic, config-driven mobile list screen that backs
@@ -465,6 +467,9 @@ export function MobileModuleList({
     () => (data?.pages ?? []).flatMap((pg) => pickList(pg, config.listKey)),
     [data, config.listKey],
   );
+
+  // Re-renders the Products chips (a getter on the config) once the category master list arrives.
+  useRenovationCatalog();
 
   // Did the server actually paginate? (first page carries a numeric `total`).
   // Drives whether search is server-side and how the record count is shown.
@@ -1889,13 +1894,16 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
       [(r) => rmField(pick(r, "costPriceSen", "cost_price_sen")), "Cost Price", "cost"],
       [(r) => humanize(pick(r, "status")) || "—", "Status"],
     ],
-    chips: [
-      { key: "all", label: "All", match: () => true },
-      { key: "sofa", label: "Sofa", match: (r) => /sofa/i.test(String(pick(r, "category") ?? "")) },
-      { key: "bedframe", label: "Bedframe", match: (r) => /bed\s*frame|bedframe/i.test(String(pick(r, "category") ?? "")) },
-      { key: "mattress", label: "Mattress", match: (r) => /mattress/i.test(String(pick(r, "category") ?? "")) },
-      { key: "parts", label: "Parts", match: (r) => /part|accessor/i.test(String(pick(r, "category") ?? "")) },
-    ],
+    get chips() {
+      return [
+        { key: "all", label: "All", match: () => true },
+        ...categoryOptionsNow().map((c): ChipDef => ({
+          key: c.value,
+          label: c.label,
+          match: (r) => categoryMatches(pick(r, "category") as string | null | undefined, c.value),
+        })),
+      ];
+    },
     sorts: [
       { key: "name", label: "Name", cmp: (a, b) => byStr(a.name, b.name) },
       { key: "price", label: "Price", cmp: (a, b) => byNum(pick(a, "basePriceSen", "base_price_sen"), pick(b, "basePriceSen", "base_price_sen")) },

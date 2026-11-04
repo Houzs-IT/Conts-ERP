@@ -45,6 +45,8 @@ import { PageHeader } from '../../components/Layout';
 import { fmtDate, fmtMoneySen, fmtQty } from '@2990s/shared';
 import { DateField } from "../../vendor/scm/components/DateField";
 import { warehouseLabel } from "../../vendor/scm/lib/warehouse-label";
+import { useCategoryOptions, withRowCategories } from '../../vendor/scm/lib/renovation-catalog-queries';
+import { categoryMatches } from '../../vendor/shared/renovation-catalog';
 
 /* The picker rows carry the PO line's warehouse as two FLAT columns, not a
    nested object, so the ONE display rule is reached through this adapter rather
@@ -72,16 +74,6 @@ const FILTER_INPUT: CSSProperties = {
   background: 'var(--c-paper)',
   color: 'var(--c-ink)',
 };
-
-/** Category filter options — same set as Create-PO-from-SO. */
-const CATEGORY_OPTIONS = [
-  { value: 'all',       label: 'All categories' },
-  { value: 'sofa',      label: 'Sofa' },
-  { value: 'bedframe',  label: 'Bedframe' },
-  { value: 'mattress',  label: 'Mattress' },
-  { value: 'accessory', label: 'Accessory' },
-  { value: 'service',   label: 'Service' },
-] as const;
 
 /** Which date field the range filter targets (PO has PO Date + Expected). */
 const DATE_FIELD_OPTIONS = [
@@ -143,6 +135,7 @@ export const GrnFromPo = () => {
 
   // Toolbar filters — identical to Create-PO-from-SO.
   const [category, setCategory]   = useState<string>('all');
+  const categoryOptions = useCategoryOptions();
   const [dateField, setDateField] = useState<DateField>('poDate');
   const [dateFrom, setDateFrom]   = useState<string>('');
   const [dateTo, setDateTo]       = useState<string>('');
@@ -200,7 +193,7 @@ export const GrnFromPo = () => {
   const rows = useMemo(() => {
     return scopedRows.filter((r) => {
       if (effRemaining(r) <= 0) return false;
-      if (category !== 'all' && (r.itemGroup ?? '').toLowerCase() !== category) return false;
+      if (category !== 'all' && !categoryMatches(r.itemGroup, category)) return false;
       if (dateFrom || dateTo) {
         const d = rowDateFor(r, dateField);
         if (!d) return false;
@@ -534,7 +527,7 @@ export const GrnFromPo = () => {
         style={FILTER_INPUT}
         aria-label="Category filter"
       >
-        {sortByText(CATEGORY_OPTIONS).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {[{ value: 'all', label: 'All categories' }, ...sortByText(withRowCategories(categoryOptions, scopedRows.map((r) => r.itemGroup)))].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
 
       {/* Date-range filter */}

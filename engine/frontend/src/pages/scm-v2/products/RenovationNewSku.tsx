@@ -37,7 +37,8 @@ export function RenovationNewSku({
   const [uom, setUom] = useState(defaultUom(initialSub));
   const [uomTouched, setUomTouched] = useState(false);
   // A trade's default unit may have been hidden under Units; a new SKU then starts on UNIT.
-  const pickable = useRenovationCatalog().pickableUoms(null);
+  const catalog = useRenovationCatalog();
+  const pickable = catalog.pickableUoms(null);
   const unit = pickable.some((u) => u.code === uom) ? uom : 'UNIT';
   const [error, setError] = useState<string | null>(null);
 
@@ -45,13 +46,13 @@ export function RenovationNewSku({
     setError(null);
     if (!code.trim()) return setError('Code is required.');
     if (!name.trim()) return setError('Name is required.');
-    if (!sub) return setError(group === 'WORKS' ? 'Choose the trade.' : 'Choose the sub-category.');
+    if (!sub && catalog.pickable(group).length > 0) return setError(group === 'WORKS' ? 'Choose the trade.' : 'Choose the sub-category.');
     create.mutate(
       {
         code: code.trim(),
         name: name.trim(),
         category: group as MfgCategory,
-        subCategory: sub,
+        subCategory: sub ?? undefined,
         uom: unit,
         description: description.trim() || undefined,
       },

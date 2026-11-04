@@ -127,6 +127,7 @@ export function RenovationSkuMaster({
 
 export function RenovationSkuDrawer({ row, onClose, onOpenSuppliers }: { row: MfgProductRow; onClose: () => void; onOpenSuppliers: () => void }) {
   const notify = useNotify();
+  const catalog = useRenovationCatalog();
   const save = useUpdateMfgProductCatalog();
   const derived = row.category_group ?? categoryGroupOf(row.category) ?? 'WORKS';
   const storedGroup: CatalogGroup = isCatalogGroup(derived) ? derived : 'WORKS';
@@ -148,7 +149,7 @@ export function RenovationSkuDrawer({ row, onClose, onOpenSuppliers }: { row: Mf
   };
   const saveDetails = () => {
     if (!name.trim()) return setError('Name is required.');
-    if (!sub && group !== 'SERVICE') return setError(group === 'WORKS' ? 'Choose the trade.' : 'Choose the sub-category.');
+    if (!sub && group !== 'SERVICE' && catalog.pickable(group).length > 0) return setError(group === 'WORKS' ? 'Choose the trade.' : 'Choose the sub-category.');
     run(
       {
         id: row.id,

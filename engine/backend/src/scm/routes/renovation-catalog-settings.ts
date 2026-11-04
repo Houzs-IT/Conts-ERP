@@ -2,9 +2,9 @@
 // /api/scm/renovation-catalog — the renovation catalog's sub-categories, edited
 // from Products > SKU Master > Sub-categories (Conts, 2026-10-15).
 //
-// Reads the two tables of migration 0061. Groups are read-only: each is a value
-// of the product category enum and carries a project stage and photo rule, so a
-// group change is a migration. Sub-categories can be added, renamed, reordered
+// Reads the two tables of migration 0061. Groups are not edited here: a new one is
+// born under Accounting > Item Groups (accounting-item-groups.ts), which extends the
+// category enum and adds it to this list. Sub-categories can be added, renamed, reordered
 // and hidden, never deleted: SKUs, PO/GRN lines and procurement dates store the
 // code. WORKS sub-categories are the site trades and stay fixed too
 // (FIXED_SUB_GROUPS), as do the site-trade services under SERVICE
@@ -47,6 +47,13 @@ const toDef = (r: SubRow): SubCategoryDef => ({
   legacy: r.legacy_categories ?? [],
   active: r.active,
 });
+
+/** The master list of categories (groups). */
+export async function loadCategoryGroups(sb: Sb): Promise<Array<{ code: string; label: string }>> {
+  const { data, error } = await sb.from('product_category_groups').select('code, label').order('sort_order');
+  if (error) throw new Error(`categories could not be read: ${error.message}`);
+  return (data ?? []) as Array<{ code: string; label: string }>;
+}
 
 /** Every sub-category in the database, hidden ones included (a SKU may still carry one). */
 export async function loadSubCategories(sb: Sb): Promise<SubCategoryDef[]> {
@@ -119,16 +126,18 @@ renovationCatalogSettings.post('/sub-categories', async (c) => {
   const b = await body(c);
   if (!b) return refuse(c, 400, 'invalid_json', 'The request body is not valid JSON.');
   const group = String(b.group ?? '').toUpperCase();
-  if (!isCatalogGroup(group)) return refuse(c, 400, 'invalid_group', 'Pick a group.');
-  if (FIXED_SUB_GROUPS.includes(group)) return refuse(c, 400, 'group_fixed', 'Works trades follow the site stage order and cannot be changed here.');
+  const sb = c.get('supabase');
+  let groups: Array<{ code: string; label: string }>;
+  try { groups = await loadCategoryGroups(sb); } catch (e) { return c.json({ error: 'load_failed', message: (e as Error).message }, 500); }
+  if (!isCatalogGroup(group) && !groups.some((g) => g.code === group)) return refuse(c, 400, 'invalid_group', 'Pick a group.');
+  if ((FIXED_SUB_GROUPS as readonly string[]).includes(group)) return refuse(c, 400, 'group_fixed', 'Works trades follow the site stage order and cannot be changed here.');
   const label = cleanLabel(b.label);
   if (!label) return refuse(c, 400, 'invalid_label', 'Type a name of up to 60 characters.');
   const code = subCategoryCodeOf(label);
   if (code.length < 2 || !/^[A-Z]/.test(code)) return refuse(c, 400, 'invalid_label', 'The name needs to start with a letter.');
   /* A code that is also a category (SOFA, SERVICE, ...) would read as a legacy category on import. */
-  if ((CATALOG_GROUPS as readonly string[]).includes(code)) return refuse(c, 409, 'code_taken', `"${label}" is already a group name.`);
+  if ((CATALOG_GROUPS as readonly string[]).includes(code) || groups.some((g) => g.code === code)) return refuse(c, 409, 'code_taken', `"${label}" is already a group name.`);
 
-  const sb = c.get('supabase');
   let all: SubCategoryDef[];
   try { all = await loadSubCategories(sb); } catch (e) { return c.json({ error: 'load_failed', message: (e as Error).message }, 500); }
   const lower = label.toLowerCase();

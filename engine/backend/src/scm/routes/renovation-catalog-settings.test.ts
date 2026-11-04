@@ -74,6 +74,17 @@ describe('sub-category settings', () => {
     expect(parseSubCategory('curtain install', list)).toBe('CURTAIN_INSTALL');
   });
 
+  it('adds a sub-category under a group staff created, and refuses a group nobody created', async () => {
+    sb.tables.product_category_groups.push({ code: 'CURT', label: 'Curtains', sort_order: 100 });
+    const res = await app().request('/sub-categories', { method: 'POST', body: JSON.stringify({ group: 'CURT', label: 'Roman blinds' }) });
+    expect(res.status).toBe(201);
+    expect(sb.tables.product_sub_categories.find((r) => r.code === 'ROMAN_BLINDS')).toMatchObject({ group_code: 'CURT' });
+    const none = await app().request('/sub-categories', { method: 'POST', body: JSON.stringify({ group: 'NOPE', label: 'Thing' }) });
+    expect(none.status).toBe(400);
+    sb.tables.product_category_groups.pop();
+    sb.tables.product_sub_categories = sb.tables.product_sub_categories.filter((r) => r.code !== 'ROMAN_BLINDS');
+  });
+
   it('refuses a name that already exists, and anything under Works', async () => {
     expect((await send('POST', '/sub-categories', { group: 'SERVICE', label: 'delivery' })).status).toBe(409);
     expect((await send('POST', '/sub-categories', { group: 'SERVICE', label: 'Sofa' })).status).toBe(409);

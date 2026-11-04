@@ -13,7 +13,7 @@
 // ----------------------------------------------------------------------------
 
 import type { CSSProperties, ReactNode } from 'react';
-import { MFG_CATEGORY_LABELS } from '../../shared/product-categories';
+import { MFG_CATEGORY_LABELS, mfgCategoryLabel } from '../../shared/product-categories';
 
 export type CategoryBadgeSpec = {
   bg: string;
@@ -59,12 +59,12 @@ export const CATEGORY_BADGE: Record<string, CategoryBadgeSpec> = {
 };
 
 /** Resolve a badge spec for any item_group string, case-insensitively.
- *  Returns the OTHERS swatch for unknown groups so the UI never crashes
- *  on dirty legacy data. */
+ *  A group with no colour of its own (one staff added, Raw material) takes the
+ *  muted OTHERS swatch under its own name, so it never reads as OTHERS. */
 export const badgeFor = (group: string | null | undefined): CategoryBadgeSpec => {
   if (!group) return OTHERS_BADGE;
   const key = group.toLowerCase();
-  return CATEGORY_BADGE[key] ?? OTHERS_BADGE;
+  return CATEGORY_BADGE[key] ?? { ...OTHERS_BADGE, label: mfgCategoryLabel(group).toUpperCase() };
 };
 
 const PILL_STYLE_BASE: CSSProperties = {

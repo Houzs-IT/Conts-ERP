@@ -40,6 +40,7 @@ import {
 import styles from './SalesOrderDetail.module.css';
 import { PageHeader } from '../../components/Layout';
 import { DateField } from "../../vendor/scm/components/DateField";
+import { useCategoryOptions } from '../../vendor/scm/lib/renovation-catalog-queries';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -49,16 +50,9 @@ const todayISO = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
-const CATEGORIES: Array<{ value: string; label: string }> = [
-  { value: 'BEDFRAME',  label: 'Bedframe'  },
-  { value: 'MATTRESS',  label: 'Mattress'  },
-  { value: 'SOFA',      label: 'Sofa'      },
-  { value: 'ACCESSORY', label: 'Accessory' },
-  { value: 'SERVICE',   label: 'Service'   },
-];
-
 export const StockTakeNew = () => {
   const navigate = useNavigate();
+  const categoryOptions = useCategoryOptions();
   const create   = useCreateStockTake();
   /* One key for the one take this page is open to raise (lib/idempotency.ts).
      Route-level form, navigates to the take detail on success, so the MOUNT is
@@ -254,7 +248,7 @@ export const StockTakeNew = () => {
                   className={styles.fieldSelect}
                 >
                   <option value="">— Pick category —</option>
-                  {sortByText(CATEGORIES).map((c) => (
+                  {sortByText(categoryOptions).map((c) => (
                     <option key={c.value} value={c.value}>{c.label}</option>
                   ))}
                 </select>

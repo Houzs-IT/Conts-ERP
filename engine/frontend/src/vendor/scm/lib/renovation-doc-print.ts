@@ -2,7 +2,8 @@
    order or goods receipt carries from its sales order, for the page and the print. Read from
    GET <document>/:id/renovation-info (engine/backend/src/scm/routes/renovation-doc-flow.ts). Pure. */
 
-import { RENOVATION_GROUPS, SUB_CATEGORIES } from '../../shared/renovation-catalog';
+import { subCategoryLabelOf } from '../../shared/renovation-catalog';
+import { mfgCategoryLabel } from '../../shared/product-categories';
 
 export interface RenoDocLine { room: string; categoryGroup: string; subCategory: string }
 export interface RenoDocInfo {
@@ -32,10 +33,8 @@ export function renoProjectLabel(d: RenoDocInfo | null | undefined): string | nu
 /** "Works / Electrical" label of a line's category (the catalog's names), '' when none. */
 export function renoCategoryLabel(l: RenoDocLine | undefined): string {
   if (!l) return '';
-  const group = RENOVATION_GROUPS.find((g) => g.code === l.categoryGroup)?.label ?? l.categoryGroup;
-  // ponytail: built-in names only; a sub-category added in settings prints from its code ("CURTAIN INSTALL"),
-  // a renamed one keeps its built-in name. Send the label from renovation-doc-flow.ts if prints need the edit.
-  const sub = SUB_CATEGORIES.find((s) => s.group === l.categoryGroup && s.code === l.subCategory)?.label ?? l.subCategory.replace(/_/g, ' ');
+  const group = mfgCategoryLabel(l.categoryGroup);
+  const sub = subCategoryLabelOf(l.categoryGroup, l.subCategory);
   return [group, sub].filter(Boolean).join(' / ');
 }
 

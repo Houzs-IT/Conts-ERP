@@ -14,14 +14,14 @@ export function groupOfRow(r: Pick<PickRow, "category" | "category_group">): Cat
 }
 
 /** The groups that have at least one offered SKU, in the catalog's own order, with counts. */
-export function pickGroups(rows: readonly PickRow[], current: string): Array<{ code: CatalogGroup; label: string; count: number }> {
+export function pickGroups(rows: readonly PickRow[], current: string, groups: ReadonlyArray<{ code: string; label: string }> = RENOVATION_GROUPS): Array<{ code: CatalogGroup; label: string; count: number }> {
   const n = new Map<CatalogGroup, number>();
   for (const r of rows) {
     if (!offered(r, current)) continue;
     const g = groupOfRow(r);
     if (g) n.set(g, (n.get(g) ?? 0) + 1);
   }
-  return RENOVATION_GROUPS.filter((g) => n.has(g.code)).map((g) => ({ code: g.code, label: g.label, count: n.get(g.code) ?? 0 }));
+  return groups.filter((g) => n.has(g.code as CatalogGroup)).map((g) => ({ code: g.code as CatalogGroup, label: g.label, count: n.get(g.code as CatalogGroup) ?? 0 }));
 }
 
 function offered(r: PickRow, current: string): boolean {
