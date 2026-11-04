@@ -606,10 +606,12 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Not yet seen live: the received-lock note on the SO edit page (needs a line received with no DO; the only one on a test order is cancelled). Project SO tab at phone width: tab switch is a native select that automation cannot drive.
 
 ## Engine click-through (4-5 Nov 2026)
-- Done on live: instalment bill no longer freezes lines, VO keeps the room, SO PDF brand and terms, line photo on the PDF, 9 project tabs without errors, VO requester names the person.
-- Not yet clicked on screen: PO to GR to DO flow and their PDFs, Contract PDF after the VO, Credit note, New project to quotation to contract, Production raw material form, DO refusal for a bound line, phone widths, the new Applied directly label. Needs the signed-in test tab in a visible Chrome window.
-- A supplier pick binds the SKU in the catalog, so PO flow tests need a SKU already bound or a TESTING SKU, not a real one.
-- TC-SO-2611-008 keeps one line with no room (Designer hanging lamp, added before the fix). Test data only.
-- Slow, not fixed: coverage about 3 s, line-edits 3-4 s. The 504 on SO detail was not reproduced; one Postgres statement timeout on 4 Nov 11:35.
+- Walked live on test data, no console errors: project RN-2611-012, quotation QT-2611-002, contract TC-SO-2611-012, VO, invoice TC-SI-2611-002, credit note TC-CN-2611-001, production order TC-PRO-2611-010 with raw material, goods receipt TC-GRN-2611-010, DOs TC-DO-2611-010 and 011, Works started, all their PDFs. Bound line with no PO refused with short_stock.
+- Run in a hidden tab, read from page text, PDF text and the database: no one has looked at these screens on a real phone or by eye since the tab went hidden. Horizontal overflow at 375px was scanned on 10 pages (0 found, but that scan ignores anything inside a clipped container).
+- The real supplier PO TC-PO-2611-014 was cancelled, never sent. TESTING-RAW-1 is a test SKU left in the catalog.
+- Journals do not post for SERVICE / DESIGN and other categories: no sales account bound for the company. Owner to bind under Accounting before billing for real.
+- A supplier pick binds the SKU in the catalog, so a PO flow test needs a TESTING SKU, not a real one.
+- TC-SO-2611-008 keeps one line with no room (added before the fix). Test data only.
+- Slow, not changed: coverage about 3 s because each SO view works out the whole company's MRP; line-edits 3-4 s. The 504 on SO detail was not reproduced; the only trace is one Postgres statement timeout on 4 Nov 11:35 with no query text.
 - The 33 contract VOs from before 5 Nov read Requested by The Conts ERP: the real person was never stored.
-- Privacy page has no postal address until the owner confirms the current one.
+- Privacy page has no postal address until the owner confirms the current one; production and delivery PDFs still print C-41-06 Jaya One from Settings while contract letterheads print E-28-02.
