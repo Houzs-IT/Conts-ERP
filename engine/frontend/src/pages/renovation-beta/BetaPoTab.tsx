@@ -42,6 +42,7 @@ import {
 import { buildVariantSummary } from "../../vendor/shared/variant-summary";
 import { RenovationVariantPicker, hasVariantPickers } from "../../vendor/scm/components/renovationVariantPicker";
 import { BetaLoading } from "./BetaLoading";
+import { bandParts, columnWidth, moveColumn, usePoColumns, type PoColumn } from "./renovationPoColumns";
 
 /** One colour per category band, in the mockup's spirit: [bar, band background, text]. */
 const BAND_BARS = ["#1A6B66", "#B4540A", "#1F4E8C", "#7A3E9D", "#2E7D32", "#A12622"] as const;
@@ -60,10 +61,11 @@ const ellipsis: CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", 
 const cellStyle: CSSProperties = { padding: "6px 6px", fontSize: 13, borderBottom: `1px solid ${WS.rowLine}`, verticalAlign: "middle", overflow: "hidden" };
 const headStyle: CSSProperties = { ...thStyle, padding: "8px 6px", fontSize: 11.5, ...ellipsis };
 
-/** Column widths (percent of the table), with and without the Amount column. */
-function colWidths(finance: boolean): number[] {
-  return finance ? [11, 17, 9, 5, 8, 8.5, 8.5, 13, 10, 10] : [12, 22, 10, 5, 0, 9, 9, 13, 10, 10];
-}
+const COLUMN_HEAD: Record<PoColumn, { label: string; title?: string; right?: boolean }> = {
+  sku: { label: "SKU" }, desc: { label: "Description" }, variants: { label: "Variants" }, qty: { label: "Qty", right: true }, amount: { label: "Amount", right: true },
+  orderOn: { label: "Processing", title: "Processing date: when to place the order" }, deliverOn: { label: "Delivery", title: "Delivery date" },
+  po: { label: "PO" }, gr: { label: "GR" }, do: { label: "DO" },
+};
 
 /** The tab's own width, so the layout follows the space it has (inside Property OS it is not the window's). */
 function useWidth(): [(el: HTMLDivElement | null) => void, number] {
@@ -96,6 +98,9 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const openDoc = useOpenDoc();
   const photos = useQuery(["renovation-beta", "photos", p.projectId], () => betaMediaApi.photos(p.projectId), [p.projectId]);
   const [uploading, setUploading] = useState<UploadTarget | null>(null);
+  const { order, moved, setOrder } = usePoColumns();
+  const [dragging, setDragging] = useState<PoColumn | null>(null);
+  const [dropOn, setDropOn] = useState<PoColumn | null>(null);
   const { can } = useAuth();
   const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
   const [edits, setEdits] = useState<Record<string, LineEdit>>({});
@@ -126,6 +131,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   if (!q.data) return <BetaLoading label="Loading PO" />;
   const d = q.data;
   const editable = p.canWrite && editing;
+  const columns = d.finance ? order : order.filter((c) => c !== "amount");
   const toggle = (key: string): void => setClosed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const allKeys = tree.map((c) => c.key);
   const setEdit = (id: string, patch: Partial<LineEdit>): void => setEdits((e) => ({ ...e, [id]: { ...e[id], ...patch } }));
@@ -352,24 +358,28 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         <p style={{ margin: 0, fontSize: 13, color: WS.text2 }}>A draft order's lines are changed on the order itself; they show here read only until it is confirmed.</p>
       )}
 
+      {moved && width >= TABLE_MIN && (
+        <button type="button" onClick={() => setOrder(null)} style={{ ...btnStyle("outline", "sm"), alignSelf: "flex-end" }}>Reset columns</button>
+      )}
+
       <div ref={wrapRef} style={{ width: "100%", minWidth: 0 }}>
         {tree.length === 0 ? <WsEmpty>{d.categoryRestricted ? "No lines you can see for this project." : "No sales order lines for this project yet. Link a sales order to see its lines here."}</WsEmpty>
           : width === 0 || width >= TABLE_MIN ? (
             <div role="region" aria-label="Sales order lines" style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
               <table style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
-                <colgroup>{colWidths(d.finance).map((w, k) => (w > 0 ? <col key={k} style={{ width: `${w}%` }} /> : null))}</colgroup>
+                <colgroup>{columns.map((c) => <col key={c} style={{ width: `${columnWidth(c, d.finance)}%` }} />)}</colgroup>
                 <thead>
                   <tr>
-                    <th style={headStyle}>SKU</th>
-                    <th style={headStyle}>Description</th>
-                    <th style={headStyle}>Variants</th>
-                    <th style={{ ...headStyle, textAlign: "right" }}>Qty</th>
-                    {d.finance && <th style={{ ...headStyle, textAlign: "right" }}>Amount</th>}
-                    <th style={headStyle} title="Processing date: when to place the order">Processing</th>
-                    <th style={headStyle} title="Delivery date">Delivery</th>
-                    <th style={headStyle}>PO</th>
-                    <th style={headStyle}>GR</th>
-                    <th style={headStyle}>DO</th>
+                    {columns.map((c) => (
+                      <th key={c} draggable title={`${COLUMN_HEAD[c].title ?? COLUMN_HEAD[c].label} (drag to move)`}
+                        onDragStart={(ev) => { setDragging(c); ev.dataTransfer.effectAllowed = "move"; ev.dataTransfer.setData("text/plain", c); }}
+                        onDragOver={(ev) => { if (dragging) { ev.preventDefault(); setDropOn(c); } }}
+                        onDragEnd={() => { setDragging(null); setDropOn(null); }}
+                        onDrop={(ev) => { ev.preventDefault(); if (dragging) setOrder(moveColumn(order, dragging, c)); setDragging(null); setDropOn(null); }}
+                        style={{ ...headStyle, textAlign: COLUMN_HEAD[c].right ? "right" : undefined, cursor: "grab", boxShadow: dropOn === c && dragging !== c ? `inset 2px 0 0 ${WS.tealLine}` : undefined, opacity: dragging === c ? 0.5 : 1 }}>
+                        {COLUMN_HEAD[c].label}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="stag">
@@ -378,9 +388,9 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                     const band = BANDS[ci % BANDS.length];
                     const catLines = c.subs.flatMap((s) => s.items);
                     return [
-                      <Band key={c.key} band={band} label={c.label} hint={catHint(catLines, d.finance)} open={open} onToggle={() => toggle(c.key)} finance={d.finance}
+                      <Band key={c.key} band={band} label={c.label} hint={catHint(catLines, d.finance)} open={open} onToggle={() => toggle(c.key)} columns={columns}
                         dates={bandDates(c.key, c.label, catLines)} />,
-                      ...(open ? catLines.map((l) => <LineRow key={l.id} {...cell(l)} />) : []),
+                      ...(open ? catLines.map((l) => <LineRow key={l.id} {...cell(l)} columns={columns} />) : []),
                     ];
                   })}
                 </tbody>
@@ -532,12 +542,15 @@ function GroupDate({ g, which }: { g: BandDates; which: PlanDate }): ReactElemen
   return <span title={v === "mixed" ? spanTitle : `${what}: every line`} style={{ display: "block", fontSize: 12, fontWeight: 600, color: v === "mixed" ? BETA.muted : WS.text2, ...ellipsis }}>{v === "mixed" ? spanText : dayMonthYear(v)}</span>;
 }
 
-function Band({ band, label, hint, open, onToggle, finance, dates }: { band: readonly [string, string, string]; label: string; hint: string; open: boolean; onToggle: () => void; finance: boolean; dates: BandDates }): ReactElement {
+function Band({ band, label, hint, open, onToggle, columns, dates }: { band: readonly [string, string, string]; label: string; hint: string; open: boolean; onToggle: () => void; columns: readonly PoColumn[]; dates: BandDates }): ReactElement {
   const Icon = open ? ChevronDown : ChevronRight;
   const td: CSSProperties = { padding: "0 6px", background: band[1], borderBottom: `1px solid ${BETA.line}`, verticalAlign: "middle", overflow: "hidden" };
   return (
     <tr>
-      <td colSpan={finance ? 5 : 4} style={{ ...td, padding: 0 }}>
+      {bandParts(columns).map((p, i) => p.kind === "orderOn" || p.kind === "deliverOn"
+        ? <td key={i} style={td}><GroupDate g={dates} which={p.kind} /></td>
+        : p.kind === "blank" ? <td key={i} colSpan={p.span} style={td} /> : (
+      <td key={i} colSpan={p.span} style={{ ...td, padding: 0 }}>
         <button type="button" aria-expanded={open} onClick={onToggle}
           style={{
             display: "flex", alignItems: "center", gap: 8, width: "100%", minHeight: 38, overflow: "hidden", padding: "0 12px 0 8px", border: 0,
@@ -549,9 +562,7 @@ function Band({ band, label, hint, open, onToggle, finance, dates }: { band: rea
           <span style={{ flex: "0 1 auto", fontSize: 12, fontWeight: 500, color: WS.text2, ...ellipsis }}>{hint}</span>
         </button>
       </td>
-      <td style={td}><GroupDate g={dates} which="orderOn" /></td>
-      <td style={td}><GroupDate g={dates} which="deliverOn" /></td>
-      <td colSpan={3} style={td} />
+      ))}
     </tr>
   );
 }
@@ -834,20 +845,19 @@ function grState(l: ManagedLine): "yes" | "part" | "no" | null {
   return l.goesTo !== "po" && l.pos.length === 0 ? null : l.gr;
 }
 
-function LineRow(r: RowCtx): ReactElement {
+const LINE_CELLS: Record<PoColumn, (r: RowCtx) => ReactElement> = {
+  sku: (r) => <SkuCell {...r} />, desc: (r) => <DescCell {...r} />, variants: (r) => <VariantCell {...r} />, qty: (r) => <QtyCell {...r} />, amount: (r) => <AmountCell {...r} />,
+  orderOn: (r) => <ProcessingCell r={r} />, deliverOn: (r) => <DeliveryCell r={r} />, po: (r) => <PoCell r={r} />,
+  gr: (r) => <DocCell docs={r.grDocs} state={grState(r.l)} tab="gr" open={r.openDoc} />, do: (r) => <DocCell docs={r.doDocs} state={r.l.do} tab="do" open={r.openDoc} />,
+};
+
+function LineRow(r: RowCtx & { columns: readonly PoColumn[] }): ReactElement {
   const touched = changed(r) !== null;
   return (
     <tr style={{ opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? TONES.amber.soft : undefined }}>
-      <td style={{ ...cellStyle, paddingLeft: 12 }}><SkuCell {...r} /></td>
-      <td style={cellStyle}><DescCell {...r} /></td>
-      <td style={cellStyle}><VariantCell {...r} /></td>
-      <td style={{ ...cellStyle, textAlign: "right" }}><QtyCell {...r} /></td>
-      {r.finance && <td style={{ ...cellStyle, textAlign: "right" }}><AmountCell {...r} /></td>}
-      <td style={cellStyle}><ProcessingCell r={r} /></td>
-      <td style={cellStyle}><DeliveryCell r={r} /></td>
-      <td style={cellStyle}><PoCell r={r} /></td>
-      <td style={cellStyle}><DocCell docs={r.grDocs} state={grState(r.l)} tab="gr" open={r.openDoc} /></td>
-      <td style={cellStyle}><DocCell docs={r.doDocs} state={r.l.do} tab="do" open={r.openDoc} /></td>
+      {r.columns.map((c, i) => (
+        <td key={c} style={{ ...cellStyle, paddingLeft: i === 0 ? 12 : cellStyle.paddingLeft, textAlign: COLUMN_HEAD[c].right ? "right" : undefined }}>{LINE_CELLS[c](r)}</td>
+      ))}
     </tr>
   );
 }
