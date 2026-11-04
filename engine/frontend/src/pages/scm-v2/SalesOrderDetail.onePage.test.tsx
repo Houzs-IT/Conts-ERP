@@ -17,7 +17,7 @@ vi.mock("../../vendor/scm/lib/sales-order-queries", async (orig) => ({
 }));
 vi.mock("../../vendor/scm/components/SoLineCard", async (orig) => ({
   ...(await orig<typeof import("../../vendor/scm/components/SoLineCard")>()),
-  SoLineCard: (p: { itemId?: string }) => <div data-testid={`card-${p.itemId ?? "new"}`} />,
+  SoLineCard: (p: { itemId?: string; specLockedNote?: string }) => <div data-testid={`card-${p.itemId ?? "new"}`} data-note={p.specLockedNote ?? ""} />,
 }));
 vi.mock("../../hooks/useBreadcrumbs", () => ({ useSetBreadcrumbs: () => undefined }));
 vi.mock("../../vendor/scm/components/NotifyDialog", () => ({ useNotify: () => vi.fn() }));
@@ -68,6 +68,7 @@ function Probe() {
 }
 
 let posts: string[];
+let detailItems: unknown[] = [line];
 
 beforeEach(() => {
   posts = [];
@@ -79,7 +80,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const mount = (entry = `/scm/sales-orders/${DOC}`, so: Record<string, unknown> = header) => {
-  detail.mockReturnValue({ data: { salesOrder: so, items: [line] }, isLoading: false, isPending: false, isError: false, error: null, refetch: vi.fn() });
+  detail.mockReturnValue({ data: { salesOrder: so, items: detailItems }, isLoading: false, isPending: false, isError: false, error: null, refetch: vi.fn() });
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter initialEntries={[entry]}>
@@ -139,6 +140,23 @@ describe("one Sales Order page", () => {
     expect(screen.queryByTestId("card-new")).toBeNull();
     fireEvent.click(button(/^add line$/i));
     expect(screen.getByTestId("card-new")).toBeTruthy();
+  });
+
+  it("Edit shows the live lines only: a line a VO replaced is not on the order", () => {
+    detailItems = [line, { ...line, id: "line-gone", cancelled: true }];
+    mount(`/scm/sales-orders/${DOC}?edit=1`);
+    expect(screen.getByTestId("card-line-1")).toBeTruthy();
+    expect(screen.queryByTestId("card-line-gone")).toBeNull();
+    expect(screen.getByText("Line items · 1")).toBeTruthy();
+    detailItems = [line];
+  });
+
+  it("goods received lock the line's spec on the edit page, and only that line", () => {
+    detailItems = [{ ...line, received_qty: 1 }, { ...line, id: "line-2", received_qty: 0 }];
+    mount(`/scm/sales-orders/${DOC}?edit=1`);
+    expect(screen.getByTestId("card-line-1").dataset.note).toBe("Goods received: the SKU, options and price are locked.");
+    expect(screen.getByTestId("card-line-2").dataset.note).toBe("");
+    detailItems = [line];
   });
 
   it("offers Submit VO on a processing-locked order and keeps its amendment banner to Edit", () => {
