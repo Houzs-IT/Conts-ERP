@@ -337,7 +337,7 @@ export function useRenoMutation<TVars, TResult = unknown>(fn: (v: TVars) => Prom
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['reno'] }); },
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['reno'] }); void qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail'] }); },
   });
 }
 

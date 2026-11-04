@@ -642,7 +642,8 @@ const createProductionOrder = async (c: any) => {
     production_time_days: productionTime(body.productionTimeDays),
     notes: (body.notes as string | undefined) ?? null, subtotal_sen: subtotal, tax_sen: 0, total_sen: subtotal, created_by: user.id, purchase_location_id: purchaseLocationId,
   };
-  if (body.poDate) headerInsert.po_date = body.poDate;
+  /* The column's default is the database's UTC date, a day behind in Malaysia until 8am. */
+  headerInsert.po_date = body.poDate || todayMyt();
   let poNumber = '';
   const { data: headerData, error: hErr } = await insertWithDocNoRetry(
     async () => { poNumber = await mintMonthlyDocNo(supabase, 'production_orders', 'po_number', series); return poNumber; },

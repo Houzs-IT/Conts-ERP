@@ -76,7 +76,7 @@ import { isAttachmentKey, loadDocPdfPhotos } from './pdf-doc-photos';
 import { authedFetch } from './authed-fetch';
 
 type ProductionPdfSo = { doc_no: string; debtor_name?: string | null; phone?: string | null; email?: string | null; address1?: string | null; address2?: string | null; city?: string | null; postcode?: string | null };
-type ProductionPdfMaterial = { item_code: string; description: string | null; uom: string | null; qty_needed: number | string; processing_date: string | null; delivery_date: string | null };
+type ProductionPdfMaterial = { item_code: string; description: string | null; uom: string | null; qty_needed: number | string; processing_date: string | null; delivery_date: string | null; notes?: string | null };
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
 
 type PoHeader = {
@@ -502,7 +502,8 @@ async function renderProductionOrderInto(
     ].filter(Boolean) as string[];
     return [
       (it.so_doc_no ?? '').trim() || singleSourceSo || '—',
-      supplierCodeFor(it, skuMap),
+      /* Our own team works from our code: there is no supplier's code on an in-house job. */
+      supplierCodeFor(it, skuMap).replace(/^—$/, '') || it.item_code || '—',
       // Dedupe consecutive identical segments (description2 often equals the
       // live specs line) so the cell doesn't read the same string twice.
       [...new Set(descParts)].join('\n'),
@@ -806,7 +807,7 @@ async function renderProductionOrderInto(
     autoTable(doc, {
       startY: lastY + 4,
       head: [['Material', 'Description', 'UOM', 'Qty', 'Processing date', 'Delivery date']],
-      body: materials.map((m) => [m.item_code, m.description ?? '', m.uom ?? '', String(Number(m.qty_needed)), m.processing_date ? fmtDocDate(m.processing_date) : '', m.delivery_date ? fmtDocDate(m.delivery_date) : '']),
+      body: materials.map((m) => [m.item_code, [m.description ?? '', (m.notes ?? '').trim() ? `Remark: ${(m.notes ?? '').trim()}` : ''].filter(Boolean).join('\n'), m.uom ?? '', String(Number(m.qty_needed)), m.processing_date ? fmtDocDate(m.processing_date) : '', m.delivery_date ? fmtDocDate(m.delivery_date) : '']),
       theme: 'plain',
       styles: { fontSize: 8.5, cellPadding: 1.5 },
       headStyles: { fontStyle: 'bold' },
