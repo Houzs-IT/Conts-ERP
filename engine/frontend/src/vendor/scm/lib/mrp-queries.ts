@@ -41,6 +41,8 @@ export type MrpLine = {
   poNumber: string | null;
   poEta: string | null;
   shortageQty: number;
+  /* Conts: the supplier picked for this line on the project's SO tab; the line starts on it. */
+  plannedSupplier?: { supplierId: string; code: string; name: string } | null;
   /* Commander 2026-05-31 — when source==='po', the covering PO's supplier so a
      covered line shows it READ-ONLY (a raised PO's supplier can't change).
      NULL on stock / shortage lines. */
@@ -101,6 +103,7 @@ export type SofaSet = {
   qty: number;
   orderedQty: number;
   shortageQty: number;
+  plannedSupplier?: { supplierId: string; code: string; name: string } | null;
   poNumber: string | null; // PO(s) this set's units were raised into
   poEta: string | null;    // earliest PO-line delivery date (when goods arrive)
   poSupplierId: string | null;   // covering PO's supplier (read-only on covered sets)

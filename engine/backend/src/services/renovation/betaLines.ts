@@ -36,6 +36,8 @@ export interface LinePo {
   received: number;
   /** Photos uploaded on the PO line itself (po-items/...); the SO line's own photos ride ManagedLine.photoKeys. */
   photoKeys: string[];
+  /** The supplier on the PO. */
+  supplierName?: string | null;
 }
 
 export interface SupplierChoice { id: string; code: string; name: string; main: boolean; priceSen: number | null }
@@ -70,13 +72,14 @@ export interface ManagedLine {
   amountSen: number | null;
   area: string | null;
   remark: string | null;
-  /** The supplier the line is bought from: the contract line's (pre-filled from the SKU's binding, changed on the PO
-      tab or the contract), else the SKU's main supplier. */
+  /** The supplier the line is to be bought from: the one picked on the SO tab, else the contract line's (pre-filled
+      from the SKU's binding), else the SKU's main supplier. */
   supplierName: string | null;
   supplierId: string | null;
   /** The renovation contract line behind this SO line, where the supplier choice is kept (null: not a contract line). */
   contractLineId: string | null;
-  /** The suppliers this SKU can be ordered from (its supplier bindings), main first (owner, 3 Nov 2026: only these). */
+  /** The suppliers this SKU can be ordered from (its supplier bindings), main first (owner, 3 Nov 2026: only these).
+      Empty for a SKU with none bound: LinesAnswer.allSuppliers applies. */
   supplierChoices: SupplierChoice[];
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none), for the role's category access. */
@@ -105,6 +108,8 @@ export interface LinesAnswer {
   plansReady: boolean;
   sos: Array<{ docNo: string; status: string; voLocked: boolean; renovation: boolean }>;
   lines: ManagedLine[];
+  /** Every active supplier, for a line whose SKU has none bound (works and services mostly); empty when no line needs it. */
+  allSuppliers: SupplierChoice[];
   pendingPoChanges: PendingPoChange[];
   /** True when the caller's role sees only some categories: lines of the others are left out. */
   categoryRestricted: boolean;
@@ -177,7 +182,7 @@ function posOf(v: unknown): LinePo[] {
   const list = Array.isArray(v) ? v : typeof v === "string" ? (JSON.parse(v) as unknown[]) : [];
   return (list as Array<Record<string, unknown>>).map((p) => ({
     poId: String(p.po_id), poNumber: String(p.po_number), poStatus: String(p.po_status), poLineId: String(p.po_line_id),
-    poDate: (p.po_date as string | null) ?? null, deliveryDate: (p.delivery_date as string | null) ?? null, supplierRevised: Boolean(p.supplier_revised),
+    poDate: (p.po_date as string | null) ?? null, deliveryDate: (p.delivery_date as string | null) ?? null, supplierRevised: Boolean(p.supplier_revised), supplierName: (p.supplier_name as string | null) ?? null,
     qty: Number(p.qty ?? 0), received: Number(p.received ?? 0),
     photoKeys: photoList(p.photo_urls).filter((k) => k.startsWith("po-items/")),
   }));
@@ -205,18 +210,26 @@ export function choicesOf(v: unknown): SupplierChoice[] {
   }));
 }
 
-async function readPlans(db: Db, ids: readonly string[]): Promise<{ ready: boolean; byId: Map<string, ManagedLine["plan"]> }> {
+interface PickedSupplier { id: string; name: string; code: string }
+
+async function readPlans(db: Db, ids: readonly string[]): Promise<{ ready: boolean; byId: Map<string, ManagedLine["plan"]>; picked: Map<string, PickedSupplier> }> {
   const byId = new Map<string, ManagedLine["plan"]>();
-  if (ids.length === 0) return { ready: true, byId };
+  const picked = new Map<string, PickedSupplier>();
+  if (ids.length === 0) return { ready: true, byId, picked };
   try {
-    const r = await rows<{ so_item_id: string; order_on: string | null; deliver_on: string | null; no_po: boolean }>(db,
-      `SELECT so_item_id::text AS so_item_id, order_on::text AS order_on, deliver_on::text AS deliver_on, no_po
-         FROM scm.reno_beta_line_plans WHERE so_item_id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
+    const r = await rows<{ so_item_id: string; order_on: string | null; deliver_on: string | null; no_po: boolean; supplier_id: string | null; supplier_name: string | null; supplier_code: string | null }>(db,
+      `SELECT p.so_item_id::text AS so_item_id, p.order_on::text AS order_on, p.deliver_on::text AS deliver_on, p.no_po,
+              s.id::text AS supplier_id, s.name AS supplier_name, s.code AS supplier_code
+         FROM scm.reno_beta_line_plans p LEFT JOIN scm.suppliers s ON s.id = p.supplier_id
+        WHERE p.so_item_id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
       JSON.stringify(ids));
-    for (const p of r) byId.set(p.so_item_id, { orderOn: p.order_on, deliverOn: p.deliver_on, noPo: Boolean(p.no_po) });
-    return { ready: true, byId };
+    for (const p of r) {
+      byId.set(p.so_item_id, { orderOn: p.order_on, deliverOn: p.deliver_on, noPo: Boolean(p.no_po) });
+      if (p.supplier_id) picked.set(p.so_item_id, { id: p.supplier_id, name: p.supplier_name ?? p.supplier_code ?? "", code: p.supplier_code ?? "" });
+    }
+    return { ready: true, byId, picked };
   } catch (e) {
-    if (isMissingRelation(e)) return { ready: false, byId };
+    if (isMissingRelation(e)) return { ready: false, byId, picked };
     throw e;
   }
 }
@@ -247,8 +260,9 @@ export async function loadProjectLines(
                       'po_date', po.po_date::text, 'delivery_date', coalesce(greatest(pi.delivery_date, pi.supplier_delivery_date_2, pi.supplier_delivery_date_3, pi.supplier_delivery_date_4),
                                                 greatest(po.expected_at, po.supplier_delivery_date_2, po.supplier_delivery_date_3, po.supplier_delivery_date_4))::text,
                       'supplier_revised', coalesce(pi.supplier_delivery_date_2, pi.supplier_delivery_date_3, pi.supplier_delivery_date_4) IS NOT NULL,
-                      'qty', pi.qty, 'received', pi.received_qty, 'photo_urls', to_jsonb(pi.photo_urls)) ORDER BY po.po_date, po.po_number), '[]'::jsonb)
+                      'qty', pi.qty, 'received', pi.received_qty, 'photo_urls', to_jsonb(pi.photo_urls), 'supplier_name', ps.name) ORDER BY po.po_date, po.po_number), '[]'::jsonb)
                FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
+               LEFT JOIN scm.suppliers ps ON ps.id = po.supplier_id
               WHERE pi.so_item_id = i.id) AS pos,
             (SELECT coalesce(sum(doi.qty), 0)::int FROM scm.delivery_order_items doi JOIN scm.delivery_orders dd ON dd.id = doi.delivery_order_id
               WHERE doi.so_item_id = i.id AND dd.status::text NOT IN ('CANCELLED', 'DRAFT')) AS delivered,
@@ -278,6 +292,7 @@ export async function loadProjectLines(
     const pos = posOf(x.pos);
     const status = String(x.so_status ?? "").toUpperCase();
     const qty = Number(x.qty);
+    const picked = plans.picked.get(x.id);
     return {
       id: x.id, soDocNo: x.doc_no, soStatus: status, voLocked: status !== "DRAFT", lineNo: x.line_no,
       itemCode: x.item_code ?? "", description: (x.description ?? "").trim() || (x.item_code ?? ""), variantText: x.description2?.trim() || null,
@@ -285,10 +300,10 @@ export async function loadProjectLines(
       unitPriceSen: finance ? Number(x.unit_price_sen ?? 0) : null, discountSen: finance ? Number(x.discount_sen ?? 0) : null,
       amountSen: finance ? Number(x.total_sen ?? 0) : null,
       area: x.area, remark: x.remark?.trim() || null,
-      supplierName: x.contract_line_id ? x.contract_supplier_name : x.supplier_name,
-      supplierId: x.contract_line_id ? x.contract_supplier_id : x.supplier_id,
+      supplierName: picked?.name ?? (x.contract_line_id ? x.contract_supplier_name : x.supplier_name),
+      supplierId: picked?.id ?? (x.contract_line_id ? x.contract_supplier_id : x.supplier_id),
       contractLineId: x.contract_line_id, supplierChoices: choicesOf(x.supplier_choices),
-      goesTo: voGoesTo({ itemCode: x.item_code, itemGroup: x.item_group, mainSupplierCode: x.supplier_code }),
+      goesTo: voGoesTo({ itemCode: x.item_code, itemGroup: x.item_group, mainSupplierCode: picked?.code ?? x.supplier_code }),
       categoryCode: x.cat_code ?? null, subCode: x.sub_code ?? null,
       variantCategory: x.prod_category ? variantCategoryOf(x.prod_category, x.prod_sub) : null,
       categoryLabel: x.cat_label ?? "Other", categorySort: x.cat_sort ?? 999, subLabel: x.sub_label ?? "General", subSort: x.sub_sort ?? 999,
@@ -296,6 +311,10 @@ export async function loadProjectLines(
       plan: plans.byId.get(x.id) ?? { orderOn: null, deliverOn: null, noPo: false },
     };
   });
+  const allSuppliers = lines.some((l) => l.supplierChoices.length === 0)
+    ? await rows<{ id: string; code: string; name: string }>(db,
+      `SELECT id::text AS id, code, name FROM scm.suppliers WHERE company_id = ? AND status::text = 'ACTIVE' ORDER BY name`, companyId)
+    : [];
   const pending = await rows<{ id: string; amendment_no: string; po_id: string; po_number: string; source: string | null }>(db,
     `SELECT a.id::text AS id, a.amendment_no, a.po_id::text AS po_id, a.po_number, a.source_so_amendment_id::text AS source
        FROM scm.po_amendments a JOIN scm.so_amendments sa ON sa.id = a.source_so_amendment_id
@@ -309,6 +328,7 @@ export async function loadProjectLines(
     finance, plansReady: plans.ready, categoryRestricted: scope !== null,
     sos: sos.map((s) => ({ docNo: s.doc_no, status: s.status, voLocked: String(s.status).toUpperCase() !== "DRAFT", renovation: Boolean(s.renovation) })),
     lines,
+    allSuppliers: allSuppliers.map((s) => ({ ...s, main: false, priceSen: null })),
     pendingPoChanges: shownPending.map((p) => ({
       id: p.id, amendmentNo: p.amendment_no, poId: p.po_id, poNumber: p.po_number, voLabel: p.source ? voLabels.get(p.source) ?? null : null,
     })),
@@ -405,13 +425,37 @@ export async function contractLineOf(db: Db, soItemId: string): Promise<{ lineId
   return r ? { lineId: r.line_id, docNo: r.doc_no, itemCode: r.item_code ?? "", version: Number(r.version) } : null;
 }
 
-/** The SKU's binding to this supplier: only a bound supplier can be picked (its price becomes the line's cost). */
+/** Whether a supplier can be picked for this SKU: one it is bound to (its price becomes the line's cost), or, for a SKU
+    with none bound, any active supplier (no price). Null: not allowed. */
 export async function supplierBinding(db: Db, itemCode: string, companyId: number, supplierId: string): Promise<{ name: string; priceSen: number } | null> {
   const r = await db.prepare(
-    `SELECT s.name, coalesce(b.unit_price_sen, 0) AS price_sen
-       FROM scm.supplier_material_bindings b JOIN scm.suppliers s ON s.id = b.supplier_id
-      WHERE b.material_kind = 'mfg_product' AND b.item_code = ? AND b.company_id = ? AND b.supplier_id::text = ?
+    `SELECT s.name, coalesce(b.unit_price_sen, 0) AS price_sen, s.status::text AS status, b.supplier_id IS NOT NULL AS bound,
+            EXISTS (SELECT 1 FROM scm.supplier_material_bindings x WHERE x.material_kind = 'mfg_product' AND x.item_code = ? AND x.company_id = s.company_id) AS any_bound
+       FROM scm.suppliers s
+       LEFT JOIN scm.supplier_material_bindings b ON b.supplier_id = s.id AND b.material_kind = 'mfg_product' AND b.item_code = ? AND b.company_id = s.company_id
+      WHERE s.id::text = ? AND s.company_id = ?
       LIMIT 1`,
-  ).bind(itemCode, companyId, supplierId).first<{ name: string; price_sen: number }>();
-  return r ? { name: r.name, priceSen: Number(r.price_sen) } : null;
+  ).bind(itemCode, itemCode, supplierId, companyId).first<{ name: string; price_sen: number; status: string; bound: boolean; any_bound: boolean }>();
+  if (!r) return null;
+  if (r.bound) return { name: r.name, priceSen: Number(r.price_sen) };
+  return !r.any_bound && r.status === "ACTIVE" ? { name: r.name, priceSen: 0 } : null;
+}
+
+/** The line's item code and the live PO that holds it, if one does: a raised PO keeps its supplier, as in MRP. */
+export async function lineSupplierState(db: Db, soItemId: string): Promise<{ itemCode: string; poNumber: string | null }> {
+  const r = await db.prepare(
+    `SELECT i.item_code, (SELECT po.po_number FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
+                           WHERE pi.so_item_id = i.id AND po.status::text <> 'CANCELLED' LIMIT 1) AS po_number
+       FROM scm.mfg_sales_order_items i WHERE i.id::text = ?`,
+  ).bind(soItemId).first<{ item_code: string | null; po_number: string | null }>();
+  return { itemCode: r?.item_code ?? "", poNumber: r?.po_number ?? null };
+}
+
+/** Keeps the pick on the line's plan, leaving its dates as they are. */
+export async function saveLineSupplier(db: Db, soItemId: string, companyId: number, userId: number, supplierId: string): Promise<void> {
+  await db.prepare(
+    `INSERT INTO scm.reno_beta_line_plans (so_item_id, company_id, supplier_id, updated_by, updated_at)
+     VALUES (?::uuid, ?, ?::uuid, ?, now())
+     ON CONFLICT (so_item_id) DO UPDATE SET supplier_id = excluded.supplier_id, updated_by = excluded.updated_by, updated_at = now()`,
+  ).bind(soItemId, companyId, supplierId, userId).run();
 }

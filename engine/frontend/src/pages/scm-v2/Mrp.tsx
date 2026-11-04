@@ -562,7 +562,7 @@ export const Mrp = () => {
       const def = skuDefaultSupplierId(s);
       for (const l of shortageLinesOf(s)) {
         if (onlySelected && !selected.has(l.soItemId)) continue;
-        picks.push({ soItemId: l.soItemId, qty: l.shortageQty, supplierId: lineSupplier[l.soItemId] ?? def });
+        picks.push({ soItemId: l.soItemId, qty: l.shortageQty, supplierId: lineSupplier[l.soItemId] ?? l.plannedSupplier?.supplierId ?? def });
         orderedCodes.add(s.itemCode);
         units += l.shortageQty;
       }
@@ -600,7 +600,7 @@ export const Mrp = () => {
     const already = new Set(picks.map((p) => p.soItemId));
     const accessoryLines = (data?.skus ?? [])
       .filter((s) => (s.category ?? '').toUpperCase() === 'ACCESSORY')
-      .flatMap((s) => s.lines.map((l) => ({ line: l, itemCode: s.itemCode, supplierId: lineSupplier[l.soItemId] ?? skuDefaultSupplierId(s) })))
+      .flatMap((s) => s.lines.map((l) => ({ line: l, itemCode: s.itemCode, supplierId: lineSupplier[l.soItemId] ?? l.plannedSupplier?.supplierId ?? skuDefaultSupplierId(s) })))
       .filter(({ line }) =>
         line.source === 'shortage' && line.shortageQty > 0 && line.soItemId
         && setDocs.has(line.soDocNo) && (!hasWindow || lineInWindow(line, filters)));
@@ -1218,12 +1218,15 @@ export const Mrp = () => {
    line picks its own supplier, defaulting to the SKU's main supplier; different
    lines of the same SKU MAY differ. Unbound SKU → "— none —" (can't be ordered
    until a supplier is assigned). */
-const LineSupplierCell = ({ suppliers, chosenSupplierId, onSupplierChange }: {
+const LineSupplierCell = ({ suppliers: bound, planned, chosenSupplierId, onSupplierChange }: {
   suppliers: MrpSku['suppliers']; chosenSupplierId: string | null;
+  /* The supplier picked on the project's SO tab: the line starts on it, bound to the SKU or not. */
+  planned?: MrpSku['lines'][number]['plannedSupplier'];
   onSupplierChange: (supplierId: string) => void;
 }) => {
+  const suppliers = planned && !bound.some((s) => s.supplierId === planned.supplierId) ? [...bound, { ...planned, isMain: false }] : bound;
   if (suppliers.length === 0) return <span className={styles.noSupplier}>— none —</span>;
-  const defaultSupplierId = suppliers.find((s) => s.isMain)?.supplierId ?? suppliers[0]!.supplierId;
+  const defaultSupplierId = planned?.supplierId ?? suppliers.find((s) => s.isMain)?.supplierId ?? suppliers[0]!.supplierId;
   return (
     <select
       className={styles.supplierSelect}
@@ -1480,7 +1483,7 @@ const ChildLine = ({ ln, suppliers, whCode, whName, selected, onToggleLine, chos
       <td className={styles.supplierCell}>
         {short
           /* Shortage line → editable per-line supplier dropdown. */
-          ? <LineSupplierCell suppliers={suppliers} chosenSupplierId={chosenSupplierId} onSupplierChange={onSupplierChange} />
+          ? <LineSupplierCell suppliers={suppliers} planned={ln.plannedSupplier} chosenSupplierId={chosenSupplierId} onSupplierChange={onSupplierChange} />
           /* Covered / already-PO'd line → the PO's supplier, READ-ONLY (a raised
              PO's supplier can't change). Stock lines show a dash. */
           : ln.source === 'po'
@@ -1571,7 +1574,7 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
             </td>
             <td className={styles.supplierCell}>
               {short
-                ? <LineSupplierCell suppliers={v.suppliers} chosenSupplierId={lineSupplier[ln.soItemId] ?? null} onSupplierChange={(sid) => onLineSupplierChange(ln.soItemId, sid)} />
+                ? <LineSupplierCell suppliers={v.suppliers} planned={ln.plannedSupplier} chosenSupplierId={lineSupplier[ln.soItemId] ?? null} onSupplierChange={(sid) => onLineSupplierChange(ln.soItemId, sid)} />
                 : ln.source === 'po'
                   ? <span className={styles.poSupplierRO} title="This PO covers the line in the current allocation. Supplier is read-only because the PO is already raised."><Truck {...ICON} /> {ln.poSupplierName ?? '—'}</span>
                   : <span className={styles.whNone}>—</span>}

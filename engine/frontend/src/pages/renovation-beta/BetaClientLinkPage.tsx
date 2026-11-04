@@ -87,7 +87,7 @@ export function BetaClientLinkPage(): ReactElement {
                       ...(s.label ? [<tr key={s.key}><td colSpan={7} style={{ padding: "6px 10px 6px 24px", background: BETA.tealSoft, fontWeight: 600 }}>{s.label}</td></tr>] : []),
                       ...s.items.map((i) => (
                         <tr key={i.key}>
-                          <td style={{ ...tdStyle, paddingLeft: 32 }}>{i.description || "-"}{i.pending && <div style={metaStyle}>Not confirmed yet</div>}</td>
+                          <td style={{ ...tdStyle, paddingLeft: 32 }}>{i.description || "-"}</td>
                           <td style={{ ...tdStyle, fontFamily: "ui-monospace, monospace", fontSize: 13 }}>{i.itemCode ?? "-"}</td>
                           <td style={tdStyle}>{view === "category" ? (i.area ?? "-") : `${i.categoryLabel} · ${i.subLabel}`}</td>
                           <td style={numStyle}>{i.measure ?? `${i.qty}${i.uom ? ` ${i.uom}` : ""}`}</td>
@@ -119,7 +119,6 @@ export function BetaClientLinkPage(): ReactElement {
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, ...metaStyle }}>
                           <span style={{ fontFamily: "ui-monospace, monospace" }}>{i.itemCode ?? "-"}</span>
                           <span>{view === "category" ? (i.area ?? "No area") : `${i.categoryLabel} · ${i.subLabel}`}</span>
-                          {i.pending && <span>Not confirmed yet</span>}
                         </div>
                         {(i.orderOn || i.deliverOn) && (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 13 }}>

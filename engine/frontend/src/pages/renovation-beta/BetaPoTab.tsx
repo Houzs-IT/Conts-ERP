@@ -8,9 +8,11 @@
    they change the PO itself; before that they are the plan. A category band sets the date of every line in it through
    the same per-line paths, and the lines show the new date at once (owner, 3 Nov 2026: a band date seemed not to reach
    its lines); a line whose date cannot move from here says why. The lines sit straight under their category: no
-   sub-category bands (owner, 3 Nov 2026). In Edit mode a line still waiting for its PO picks its supplier from the
-   SKU's bound suppliers, main starred, which Create PO then groups by. A PO a VO changed is flagged until purchasing
-   confirms the PO change. */
+   sub-category bands (owner, 3 Nov 2026). In Edit mode a line still waiting for its PO picks its supplier as in MRP
+   (owner, 4 Nov 2026): the SKU's bound suppliers, main starred, or any supplier for a SKU with none bound. MRP and
+   Create PO start from that pick. A document's own fields are changed in its editor, not here: the PO number opens the
+   PO and the GR and DO links their tabs (owner, 4 Nov 2026). A PO a VO changed is flagged until purchasing confirms the
+   PO change. */
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { Link } from "react-router-dom";
@@ -36,9 +38,9 @@ import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
   amountAfter, byAreaBlocks, byCategory, livePo, specLocked, SPEC_LOCKED_NOTE, dateFixedReason, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
-  linesApi, linesCsv, picksSupplier, postVo, refusalText, withDate,
+  linesApi, linesCsv, picksSupplier, postVo, refusalText, supplierOf, withDate,
   contractLineEdits, postContractLines, variantsAfter, voBatches,
-  type LineEdit, type LinesAnswer, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
+  type LineEdit, type LinesAnswer, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo, type SupplierChoice,
 } from "./renovationBetaLines";
 import { buildVariantSummary } from "../../vendor/shared/variant-summary";
 import { RenovationVariantPicker, hasVariantPickers } from "../../vendor/scm/components/renovationVariantPicker";
@@ -57,7 +59,7 @@ const EDIT_LINE = TONES.amber.line;
 const editInput: CSSProperties = { ...inputStyle, minHeight: 30, height: 30, fontSize: 12.5, background: EDIT_BG, borderColor: EDIT_LINE, padding: "0 6px" };
 /* Below this width of the tab the table becomes stacked row cards: every column fits from here up (1280-1600px
    screens, 80% zoom included), and nothing is ever hidden or scrolled sideways. */
-const TABLE_MIN = 900;
+const TABLE_MIN = 1040;
 const ellipsis: CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 };
 const cellStyle: CSSProperties = { padding: "6px 6px", fontSize: 13, borderBottom: `1px solid ${WS.rowLine}`, verticalAlign: "middle", overflow: "hidden" };
 const headStyle: CSSProperties = { ...thStyle, padding: "8px 6px", fontSize: 11.5, ...ellipsis };
@@ -65,7 +67,7 @@ const headStyle: CSSProperties = { ...thStyle, padding: "8px 6px", fontSize: 11.
 const COLUMN_HEAD: Record<PoColumn, { label: string; title?: string; right?: boolean }> = {
   sku: { label: "SKU" }, desc: { label: "Description" }, variants: { label: "Variants" }, qty: { label: "Qty", right: true }, amount: { label: "Amount", right: true },
   orderOn: { label: "Processing", title: "Processing date: when to place the order" }, deliverOn: { label: "Delivery", title: "Delivery date" },
-  po: { label: "PO" }, gr: { label: "GR" }, do: { label: "DO" },
+  supplier: { label: "Supplier", title: "Who the line is bought from" }, po: { label: "PO" }, gr: { label: "GR" }, do: { label: "DO" },
 };
 
 /** The tab's own width, so the layout follows the space it has (inside Property OS it is not the window's). */
@@ -82,7 +84,6 @@ function useWidth(): [(el: HTMLDivElement | null) => void, number] {
   return [ref, w];
 }
 
-type DateField = "orderOn" | "deliverOn" | "poDate";
 type PlanDate = "orderOn" | "deliverOn";
 
 export function BetaPoTab(p: BetaTabProps): ReactElement {
@@ -172,16 +173,12 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     vo.reload();
   };
 
-  const saveDate = async (l: ManagedLine, which: DateField, value: string): Promise<void> => {
+  const saveDate = async (l: ManagedLine, which: PlanDate, value: string): Promise<void> => {
     const dates = lineDates(l);
     const v = value || null;
     setBusyKey(`${l.id}:${which}`);
     try {
-      if (which === "poDate") {
-        if (!dates.fromPo) return;
-        if (!v) throw new Error("A PO always has a PO date.");
-        await linesApi.setPoDate(dates.fromPo.poId, v);
-      } else if (which === "deliverOn" && dates.fromPo) {
+      if (which === "deliverOn" && dates.fromPo) {
         await linesApi.setPoLineDelivery(dates.fromPo.poId, dates.fromPo.poLineId, v);
         patchLines(new Set([l.id]), (x) => withDate(x, which, v));
       } else {
@@ -301,7 +298,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     l, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
     setEdit: (patch) => setEdit(l.id, patch), pick: () => setPicking(l), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
-    saveSupplier: (id) => void saveSupplier(l, id),
+    saveSupplier: (id) => void saveSupplier(l, id), allSuppliers: d.allSuppliers ?? [],
     grDocs: lineDocs(l.id, deliveries, "goods_received"), doDocs: lineDocs(l.id, deliveries, "delivery_order"), openDoc,
   });
 
@@ -312,7 +309,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       <WsPageHead
         title="SO"
         sub={editing
-          ? "Editing. Change a yellow field, then Save & post to VO: the order changes at once and the VO keeps the record. Dates and suppliers save as you set them."
+          ? "Editing. Change a yellow field, then Save & post to VO: the order changes at once and the VO keeps the record. Dates and suppliers save as you set them. A PO's own date is changed in the PO: click its number."
           : "Every line of the sales order, after VOs."}
         right={(
           <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -595,9 +592,10 @@ interface RowCtx {
   setEdit: (patch: Partial<LineEdit>) => void;
   pick: () => void;
   pickVariants: () => void;
-  saveDate: (which: DateField, value: string) => void;
+  saveDate: (which: PlanDate, value: string) => void;
   setNoPo: (v: boolean) => void;
   saveSupplier: (supplierId: string) => void;
+  allSuppliers: readonly SupplierChoice[];
   grDocs: LineDoc[];
   doDocs: LineDoc[];
   openDoc: (tab: DocTab, no: string) => void;
@@ -611,8 +609,12 @@ function SkuCell(r: RowCtx): ReactElement {
   const e = changed(r);
   const code = e?.itemCode ?? r.l.itemCode;
   if (!r.editable || specLocked(r.l)) {
-    return <span title={r.editable ? SPEC_LOCKED_NOTE : code}
-      style={{ display: "block", fontFamily: "ui-monospace, monospace", fontSize: 12, ...ellipsis }}>{code}</span>;
+    return (
+      <span title={r.editable ? SPEC_LOCKED_NOTE : code} style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, ...ellipsis }}>{code}</span>
+        {r.editable && <span style={{ ...metaStyle, fontSize: 11, ...ellipsis }}>Received: locked</span>}
+      </span>
+    );
   }
   return (
     <button type="button" onClick={r.pick} aria-label={`Change SKU ${r.l.itemCode}`} title={e?.itemCode ? `${code} (was ${r.l.itemCode})` : `${code}: change SKU`}
@@ -644,7 +646,7 @@ function RemarkControl(r: RowCtx): ReactElement | null {
 function DescCell(r: RowCtx): ReactElement {
   const e = changed(r);
   const name = e?.pickedName ?? r.l.description;
-  const meta = [r.l.supplierName, r.l.area].filter(Boolean).join(" · ");
+  const meta = r.l.area ?? "";
   const photos = linePhotoSet(r.l);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
@@ -737,17 +739,14 @@ const DATE_CSS = `.bpo-date::-webkit-calendar-picker-indicator{position:absolute
 /** A whole calendar date (a typed year is complete only at four digits starting 19 or 20). */
 const fullDate = (v: string): boolean => /^(19|20)\d\d-\d\d-\d\d$/.test(v);
 
-/** A date as compact text; clicking it opens the browser's date picker, and picking or clearing saves it.
-    "box" is the yellow edit field; "inline" is small muted text for the PO date beside the PO number. */
-function DateControl({ value, label, title, placeholder = "Set date", busy, late = false, inline = false, onSave }: {
-  value: string | null; label: string; title?: string; placeholder?: string; busy: boolean; late?: boolean; inline?: boolean; onSave: (v: string) => void;
+/** A date as compact text in a yellow edit field; clicking it opens the browser's date picker, and picking or clearing saves it. */
+function DateControl({ value, label, title, placeholder = "Set date", busy, late = false, onSave }: {
+  value: string | null; label: string; title?: string; placeholder?: string; busy: boolean; late?: boolean; onSave: (v: string) => void;
 }): ReactElement {
-  const face: CSSProperties = inline
-    ? { display: "inline-flex", alignItems: "center", fontSize: 12, color: BETA.muted, borderBottom: `1px dashed ${EDIT_LINE}`, background: EDIT_BG, padding: "0 3px", borderRadius: 3, whiteSpace: "nowrap" }
-    : { ...editInput, display: "flex", alignItems: "center", width: "100%", fontSize: 12, height: 26, minHeight: 26, ...(late ? { borderColor: WS.red, color: WS.red, fontWeight: 600 } : value ? {} : { color: BETA.muted }), ...ellipsis };
+  const face: CSSProperties = { ...editInput, display: "flex", alignItems: "center", width: "100%", fontSize: 12, height: 26, minHeight: 26, ...(late ? { borderColor: WS.red, color: WS.red, fontWeight: 600 } : value ? {} : { color: BETA.muted }), ...ellipsis };
   return (
-    <span style={{ position: "relative", display: inline ? "inline-block" : "block", minWidth: 0, flexShrink: 0 }} title={title ?? (late ? `${label}: late` : label)}>
-      <span aria-hidden="true" style={face}>{busy ? "Saving..." : value ? (inline ? dayMonth(value) : dayMonthYear(value)) : placeholder}</span>
+    <span style={{ position: "relative", display: "block", minWidth: 0, flexShrink: 0 }} title={title ?? (late ? `${label}: late` : label)}>
+      <span aria-hidden="true" style={face}>{busy ? "Saving..." : value ? dayMonthYear(value) : placeholder}</span>
       <input type="date" className="bpo-date" aria-label={label} disabled={busy} defaultValue={value ?? ""} key={value ?? ""}
         onChange={(ev) => {
           const v = ev.target.value;
@@ -758,7 +757,7 @@ function DateControl({ value, label, title, placeholder = "Set date", busy, late
   );
 }
 
-function DateButton({ r, which, value, label, late }: { r: RowCtx; which: DateField; value: string | null; label: string; late: boolean }): ReactElement {
+function DateButton({ r, which, value, label, late }: { r: RowCtx; which: PlanDate; value: string | null; label: string; late: boolean }): ReactElement {
   return <DateControl value={value} label={`${label} for ${r.l.itemCode}`} busy={r.busyKey === `${r.l.id}:${which}`} late={late} onSave={(v) => r.saveDate(which, v)} />;
 }
 
@@ -798,47 +797,46 @@ function FixedDate({ r, which, value, late, title }: { r: RowCtx; which: PlanDat
   );
 }
 
-/** One line: the PO number and its PO date ("TC-PO-2610-006 · 24 Oct"); the date is a small control in edit mode.
-    No PO yet: "-" (and, for a line we buy in edit mode, whether it needs one). */
+/** One line: the PO number and its PO date ("TC-PO-2610-006 · 24 Oct"), changed in the PO's own editor, which the number
+    opens from Edit mode. No PO yet: "-" (and, in edit mode, whether the line needs one). */
 function PoCell({ r }: { r: RowCtx }): ReactElement {
   const po = livePo(r.l);
   if (po) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, whiteSpace: "nowrap" }} title={`${po.poNumber}${po.poDate ? `, PO date ${dayMonthYear(po.poDate)}` : ""}`}>
-        <Link to={`/scm/purchase-orders/${po.poId}`} style={{ fontSize: 12.5, fontWeight: 600, flex: "0 1 auto", ...ellipsis }}>{po.poNumber}</Link>
+        <Link to={`/scm/purchase-orders/${po.poId}${r.editable ? "?edit=1" : ""}`} style={{ fontSize: 12.5, fontWeight: 600, flex: "0 1 auto", ...ellipsis }}>{po.poNumber}</Link>
         <span aria-hidden="true" style={{ ...metaStyle, flexShrink: 0 }}>·</span>
-        {r.editable
-          ? <DateControl inline value={po.poDate} label={`PO date of ${po.poNumber}`} busy={r.busyKey === `${r.l.id}:poDate`} onSave={(v) => r.saveDate("poDate", v)} />
-          : <span style={{ ...metaStyle, flexShrink: 0 }}>{dayMonth(po.poDate)}</span>}
+        <span style={{ ...metaStyle, flexShrink: 0 }}>{dayMonth(po.poDate)}</span>
       </div>
     );
   }
-  if (r.l.goesTo !== "po") return <span style={metaStyle}>-</span>;
   if (r.editable && r.plansReady) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-        {picksSupplier(r.l) && <SupplierPick r={r} />}
-        <label title="This line needs no PO" style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12, color: WS.text2, ...ellipsis }}>
-          <input type="checkbox" checked={r.l.plan.noPo} disabled={r.busyKey === `${r.l.id}:noPo`} onChange={(ev) => r.setNoPo(ev.target.checked)} style={{ margin: 0, flexShrink: 0 }} />No PO
-        </label>
-      </div>
+      <label title="This line needs no PO" style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12, color: WS.text2, ...ellipsis }}>
+        <input type="checkbox" checked={r.l.plan.noPo} disabled={r.busyKey === `${r.l.id}:noPo`} onChange={(ev) => r.setNoPo(ev.target.checked)} style={{ margin: 0, flexShrink: 0 }} />No PO
+      </label>
     );
   }
   return <span style={metaStyle}>{r.l.plan.noPo ? "No PO" : "-"}</span>;
 }
 
-/** Who the line is bought from, before Create PO: only the suppliers the SKU is bound to, main first and starred
-    (owner, 3 Nov 2026). A SKU with none bound has nothing to pick and says where to add one. */
+/** Who the line is bought from: in Edit mode a dropdown until a PO holds the line, then the PO's supplier as text. */
+function SupplierCell({ r }: { r: RowCtx }): ReactElement {
+  if (r.editable && r.plansReady && picksSupplier(r.l)) return <SupplierPick r={r} />;
+  const name = supplierOf(r.l);
+  return name ? <span title={name} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{name}</span> : <span style={metaStyle}>-</span>;
+}
+
+/** The pick, as in MRP: the suppliers the SKU is bound to, main first and starred (owner, 3 Nov 2026); a SKU with none
+    bound, a works or service line mostly, takes any supplier. */
 function SupplierPick({ r }: { r: RowCtx }): ReactElement {
-  const choices = r.l.supplierChoices ?? [];
-  if (choices.length === 0) {
-    return <span role="note" title="No supplier bound to this SKU: add one in the SKU's suppliers" style={{ fontSize: 11.5, color: WS.amber, lineHeight: 1.25 }}>No supplier bound to this SKU: add one in the SKU's suppliers</span>;
-  }
+  const bound = r.l.supplierChoices ?? [];
+  const choices = bound.length > 0 ? bound : r.allSuppliers;
   const busy = r.busyKey === `${r.l.id}:supplier`;
   const picked = choices.some((c) => c.id === r.l.supplierId) ? r.l.supplierId ?? "" : "";
   return (
     <select aria-label={`Supplier for ${r.l.itemCode}`} value={picked} disabled={busy} onChange={(ev) => r.saveSupplier(ev.target.value)}
-      title={picked ? undefined : "No supplier on this line yet: Create PO leaves it out until one is picked"}
+      title={picked ? undefined : "No supplier on this line yet"}
       style={{ ...editInput, width: "100%", height: 26, minHeight: 26, fontSize: 12, color: picked ? undefined : WS.amber }}>
       {!picked && <option value="">{busy ? "Saving..." : "Pick a supplier"}</option>}
       {choices.map((c) => <option key={c.id} value={c.id}>{c.main ? "\u2605 " : ""}{c.name}{c.main ? " (main)" : ""}</option>)}
@@ -860,7 +858,7 @@ function grState(l: ManagedLine): "yes" | "part" | "no" | null {
 
 const LINE_CELLS: Record<PoColumn, (r: RowCtx) => ReactElement> = {
   sku: (r) => <SkuCell {...r} />, desc: (r) => <DescCell {...r} />, variants: (r) => <VariantCell {...r} />, qty: (r) => <QtyCell {...r} />, amount: (r) => <AmountCell {...r} />,
-  orderOn: (r) => <ProcessingCell r={r} />, deliverOn: (r) => <DeliveryCell r={r} />, po: (r) => <PoCell r={r} />,
+  orderOn: (r) => <ProcessingCell r={r} />, deliverOn: (r) => <DeliveryCell r={r} />, supplier: (r) => <SupplierCell r={r} />, po: (r) => <PoCell r={r} />,
   gr: (r) => <DocCell docs={r.grDocs} state={grState(r.l)} tab="gr" open={r.openDoc} />, do: (r) => <DocCell docs={r.doDocs} state={r.l.do} tab="do" open={r.openDoc} />,
 };
 
@@ -895,9 +893,10 @@ function LineCard(r: RowCtx): ReactElement {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
         {field("Processing", <ProcessingCell r={r} />)}
         {field("Delivery", <DeliveryCell r={r} />)}
-        {field("PO", <PoCell r={r} />)}
+        {field("Supplier", <SupplierCell r={r} />)}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+        {field("PO", <PoCell r={r} />)}
         {field("GR", <DocCell docs={r.grDocs} state={grState(r.l)} tab="gr" open={r.openDoc} />)}
         {field("DO", <DocCell docs={r.doDocs} state={r.l.do} tab="do" open={r.openDoc} />)}
       </div>

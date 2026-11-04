@@ -7,8 +7,8 @@
    because the VO carries the add / omit lines with their room and amounts.
    PO: every purchase order stamped with the project (purchase_orders.project_id, 0116) or holding a line bought for
    one of the project's SO lines (purchase_order_items.so_item_id).
-   Client PO: SO lines the client buys: supplied by the owner, or a customer-supplied SKU (supplier CUSTOMER;
-   isCustomerSupplied in renovation-po-split.ts). */
+   Client PO: the SO lines a live PO to the supplier CUSTOMER buys. It starts empty: a line comes here once MRP opens
+   that PO (owner, 4 Nov 2026). */
 
 import { readVo } from "../../scm/lib/renovation-vo";
 import { isCustomerSupplied, poPickerOffers, voGoesTo } from "../../scm/lib/renovation-po-split";
@@ -671,8 +671,8 @@ export async function loadProjectPoLines(db: Db, projectId: number, companyId: n
 export interface ClientItem {
   key: string;
   soDocNo: string;
-  /** The SO line id, for its photos; null for a VO line not on the SO yet. */
-  soItemId: string | null;
+  /** The SO line id, for its photos. */
+  soItemId: string;
   itemCode: string | null;
   description: string;
   /** The catalog group and sub-category codes (null: none), for the role's category access. */
@@ -691,8 +691,9 @@ export interface ClientItem {
   skuPhotos: SkuPhoto[];
   /** The VO that added it, when one did. */
   voNo: string | null;
-  /** A VO not approved yet: the item is not on the SO until it is. */
-  pending: boolean;
+  /** The Client PO that holds the line: a PO to the supplier CUSTOMER. */
+  poId: string;
+  poNumber: string;
   /** The line's processing (buy by) and delivery dates, the plan the PO tab sets (scm.reno_beta_line_plans). */
   orderOn: string | null;
   deliverOn: string | null;
@@ -729,32 +730,34 @@ export function photoList(v: unknown): string[] {
    first left every Client PO line without an area while the PO tab showed them (live run, 24 Oct 2026). */
 export const CLIENT_LINE_ROOM = `coalesce(nullif(trim(d.room), ''), nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim(i.location), ''))`;
 
-/** SO lines the client buys: supplier CUSTOMER (the line's, else the SKU's main supplier), or supplied by the owner. */
-export async function loadClientItems(
-  db: Db, projectId: number, companyId: number, pendingVos: readonly VoRow[] = [], scope: CategoryScope | null = null,
-): Promise<ClientAnswer> {
+/** SO lines on a live PO to the supplier CUSTOMER, which MRP opens (owner, 4 Nov 2026: nothing shows before that PO). */
+export async function loadClientItems(db: Db, projectId: number, companyId: number, scope: CategoryScope | null = null): Promise<ClientAnswer> {
   const r = await rows<{
-    id: string; doc_no: string; item_code: string | null; description: string | null; qty: number; uom: string | null; unit_cost_sen: number; photo_urls: unknown;
-    room: string | null; supply_by_owner: boolean | null; line_supplier_code: string | null; main_supplier_code: string | null; measure: string | null;
+    id: string; doc_no: string; item_code: string | null; description: string | null; qty: number; uom: string | null; photo_urls: unknown;
+    room: string | null; measure: string | null; po_id: string; po_number: string;
     measure_uom: string | null; vo_no: string | null; cat_label: string | null; cat_sort: number | null; sub_label: string | null; sub_sort: number | null;
     cat_code: string | null; sub_code: string | null; sku_photos: unknown;
   }>(db,
-    `SELECT i.id::text AS id, i.doc_no, i.item_code, i.description, i.qty, i.uom, i.unit_cost_sen, i.photo_urls,
-            ${CLIENT_LINE_ROOM} AS room, d.supply_by_owner, d.line_supplier_code, d.measure, d.measure_uom, d.vo_no,
+    `SELECT i.id::text AS id, i.doc_no, i.item_code, i.description, i.qty, i.uom, i.photo_urls,
+            ${CLIENT_LINE_ROOM} AS room, d.measure, d.measure_uom, d.vo_no, cpo.po_id, cpo.po_number,
             cg.label AS cat_label, cg.sort_order AS cat_sort, sc.label AS sub_label, sc.sort_order AS sub_sort, cg.code AS cat_code, sc.code AS sub_code,
-            (SELECT sp.code FROM scm.supplier_material_bindings b JOIN scm.suppliers sp ON sp.id = b.supplier_id
-              WHERE b.item_code = i.item_code AND b.company_id = so.company_id AND b.is_main_supplier LIMIT 1) AS main_supplier_code,
             (SELECT coalesce(json_agg(json_build_object('productId', ph.product_id, 'key', ph.r2_key, 'thumbKey', ph.thumb_key)
                                       ORDER BY ph.is_primary DESC, ph.sort_order, ph.created_at), '[]'::json)::text
                FROM scm.mfg_products mp JOIN scm.mfg_product_photos ph ON ph.product_id = mp.id AND ph.company_id = mp.company_id
               WHERE mp.code = i.item_code AND mp.company_id = so.company_id) AS sku_photos
        FROM scm.mfg_sales_order_items i
        JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
+       JOIN LATERAL (
+         SELECT po.id::text AS po_id, po.po_number
+           FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
+           JOIN scm.suppliers sp ON sp.id = po.supplier_id
+          WHERE pi.so_item_id = i.id AND sp.code = 'CUSTOMER' AND po.company_id = so.company_id AND po.status::text <> 'CANCELLED'
+          ORDER BY po.po_date DESC, po.po_number DESC
+          LIMIT 1) cpo ON true
        LEFT JOIN LATERAL (
-         SELECT l.room, l.supply_by_owner, ls.code AS line_supplier_code, l.measure::text AS measure, l.measure_uom,
+         SELECT l.room, l.measure::text AS measure, l.measure_uom,
                 (SELECT v.vo_no FROM scm.reno_variation_orders v WHERE v.id = coalesce(l.vo_id, s.added_by_vo_id)) AS vo_no
            FROM scm.reno_doc_lines l JOIN scm.reno_doc_sections s ON s.id = l.section_id
-           LEFT JOIN scm.suppliers ls ON ls.id = l.supplier_id
           WHERE l.so_item_id = i.id AND s.so_doc_no = i.doc_no
           LIMIT 1) d ON true
        ${CATEGORY_SQL("i.item_code", "NULL::text", "NULL::text", "so.company_id")}
@@ -764,31 +767,14 @@ export async function loadClientItems(
   const plans = await clientPlans(db, r.map((x) => x.id));
   const items: ClientItem[] = [];
   for (const x of r) {
-    const owner = Boolean(x.supply_by_owner);
-    const sku = isCustomerSupplied({ itemCode: x.item_code, supplierCode: x.line_supplier_code ?? x.main_supplier_code ?? null, unitCostSen: Number(x.unit_cost_sen) });
-    if (!owner && !sku) continue;
     if (!lineVisible(scope, x.cat_code ?? null, x.sub_code ?? null)) continue;
     items.push({
       key: `so:${x.id}`, soDocNo: x.doc_no, soItemId: x.id, itemCode: x.item_code, description: x.description ?? "",
       categoryCode: x.cat_code ?? null, subCode: x.sub_code ?? null,
       categoryLabel: x.cat_label ?? "Other", categorySort: x.cat_sort ?? 999, subLabel: x.sub_label ?? "General", subSort: x.sub_sort ?? 999,
       area: x.room || null, qty: Number(x.qty), measure: x.measure ? `${Number(x.measure)} ${x.measure_uom ?? ""}`.trim() : null, uom: x.uom,
-      photoKeys: photoList(x.photo_urls), skuPhotos: skuPhotoList(x.sku_photos), voNo: x.vo_no, pending: false,
+      photoKeys: photoList(x.photo_urls), skuPhotos: skuPhotoList(x.sku_photos), voNo: x.vo_no, poId: x.po_id, poNumber: x.po_number,
       orderOn: plans.get(x.id)?.order_on ?? null, deliverOn: plans.get(x.id)?.deliver_on ?? null,
-    });
-  }
-  // A VO not on the SO yet that adds a client item: listed so the client can be asked early, marked as such.
-  for (const v of pendingVos) {
-    if (v.bucket !== "pending") continue;
-    v.lines.forEach((l, i) => {
-      if (l.goesTo !== "client" || l.change !== "add") return;
-      if (!lineVisible(scope, l.categoryCode, l.subCode)) return;
-      items.push({
-        key: `${v.key}:${i}`, soDocNo: v.soDocNo, soItemId: null, itemCode: l.itemCode, description: l.description,
-        categoryCode: l.categoryCode, subCode: l.subCode,
-        categoryLabel: "Other", categorySort: 999, subLabel: "General", subSort: 999, area: l.room, qty: l.qty, measure: l.measure, uom: null,
-        photoKeys: [], skuPhotos: [], voNo: v.label, pending: true, orderOn: null, deliverOn: null,
-      });
     });
   }
   return { items, categoryRestricted: scope !== null };
@@ -813,7 +799,7 @@ async function clientPlans(db: Db, ids: readonly string[]): Promise<Map<string, 
 /** One photo on the client's link: an opaque reference the link's photo route resolves again, never the storage key. */
 export interface ClientPublicPhoto { ref: string; from: "line" | "sku" }
 
-export type ClientPublicItem = Pick<ClientItem, "key" | "itemCode" | "description" | "categoryLabel" | "subLabel" | "area" | "qty" | "measure" | "uom" | "pending" | "orderOn" | "deliverOn">
+export type ClientPublicItem = Pick<ClientItem, "key" | "itemCode" | "description" | "categoryLabel" | "subLabel" | "area" | "qty" | "measure" | "uom" | "orderOn" | "deliverOn">
   & { photos: ClientPublicPhoto[] };
 
 /** A storage key's reference on the client link: 24 hex of its SHA-256, so the link names no key and no document
@@ -839,7 +825,7 @@ export async function clientPhotoIndex(items: readonly ClientItem[]): Promise<Ma
 export async function clientView(items: readonly ClientItem[]): Promise<ClientPublicItem[]> {
   return Promise.all(items.map(async (i) => ({
     key: i.key, itemCode: i.itemCode, description: i.description, categoryLabel: i.categoryLabel, subLabel: i.subLabel, area: i.area, qty: i.qty,
-    measure: i.measure, uom: i.uom, pending: i.pending, orderOn: i.orderOn, deliverOn: i.deliverOn,
+    measure: i.measure, uom: i.uom, orderOn: i.orderOn, deliverOn: i.deliverOn,
     photos: [
       ...(await Promise.all(i.photoKeys.map(async (k) => ({ ref: await photoRef(k), from: "line" as const })))),
       ...(await Promise.all(i.skuPhotos.map(async (ph) => ({ ref: await photoRef(ph.key), from: "sku" as const })))),

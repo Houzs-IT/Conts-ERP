@@ -53,8 +53,8 @@ describe("Client PO area", () => {
           bind: () => ({
             all: async () => ({
               results: [{
-                id: "l1", doc_no: "TC-SO-2610-002", item_code: "CUS-DINING", description: "Dining set", qty: 1, uom: "SET", unit_cost_sen: 0, photo_urls: null,
-                room: "Living hall", supply_by_owner: null, line_supplier_code: null, main_supplier_code: "CUSTOMER", measure: null, measure_uom: null, vo_no: null,
+                id: "l1", doc_no: "TC-SO-2610-002", item_code: "CUS-DINING", description: "Dining set", qty: 1, uom: "SET", photo_urls: null,
+                room: "Living hall", po_id: "p1", po_number: "TC-PO-1", measure: null, measure_uom: null, vo_no: null,
                 cat_label: null, cat_sort: null, sub_label: null, sub_sort: null, sku_photos: "[]",
               }],
             }),
@@ -64,6 +64,10 @@ describe("Client PO area", () => {
     } as unknown as Db;
     const r = await loadClientItems(db, 99, 1);
     expect(sql).toContain(CLIENT_LINE_ROOM);
+    // Only a line a live PO to the supplier CUSTOMER holds (owner, 4 Nov 2026), so a line with no such PO never shows.
+    expect(sql).toMatch(/JOIN LATERAL \(\s+SELECT po\.id::text AS po_id/);
+    expect(sql).toContain("sp.code = 'CUSTOMER'");
+    expect(r.items[0]?.poNumber).toBe("TC-PO-1");
     expect(CLIENT_LINE_ROOM).toMatch(/to_jsonb\(i\)->>'room'/);
     expect(CLIENT_LINE_ROOM).toMatch(/i\.location/);
     expect(r.items[0]?.area).toBe("Living hall");
