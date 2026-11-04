@@ -587,7 +587,7 @@ export const GrnFromPo = () => {
                 ? 'Adding…'
                 : pickedCount === 0
                   ? 'Pick at least 1 line'
-                  : `Add ${pickedCount} line${pickedCount === 1 ? '' : 's'} to GRN`}
+                  : `Add ${pickedCount} line${pickedCount === 1 ? '' : 's'} to Goods Receipt`}
             </Button>
           </div>
         }

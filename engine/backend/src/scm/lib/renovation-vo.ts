@@ -53,8 +53,8 @@ export async function createVo(db: RenoDb, actor: RenoActor, soDocNo: string, bo
   const seq = Number(m.n) + 1;
   const voNo = voNoFor(soDocNo, seq);
   const [v] = await db.q<{ id: string }>(
-    `insert into scm.reno_variation_orders (company_id, vo_no, so_doc_no, seq, title, created_by) values ($1, $2, $3, $4, $5, $6) returning id`,
-    [actor.companyId, voNo, soDocNo, seq, body.title ?? '', actor.name],
+    `insert into scm.reno_variation_orders (company_id, vo_no, so_doc_no, seq, title, created_by, doc_date) values ($1, $2, $3, $4, $5, $6, $7::date) returning id`,
+    [actor.companyId, voNo, soDocNo, seq, body.title ?? '', actor.name, todayKl()],
   );
   await auditSo(db, { companyId: actor.companyId, docNo: soDocNo, action: 'VO_CREATE', actorName: actor.name, note: voNo });
   return { id: v.id, voNo };
