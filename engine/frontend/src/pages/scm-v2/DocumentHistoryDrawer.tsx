@@ -57,7 +57,7 @@ export type HistoryDocType = Extract<
 
 export const DOCS: Record<HistoryDocType, DocSpec> = {
   PURCHASE_ORDER:   { entityName: 'Purchase order',   labels: PURCHASE_ORDER_AUDIT_LABELS,   statusDocType: 'po' },
-  PRODUCTION_ORDER: { entityName: 'Production order',   labels: PRODUCTION_ORDER_AUDIT_LABELS,   statusDocType: 'po' },
+  PRODUCTION_ORDER: { entityName: 'Production order',   labels: PRODUCTION_ORDER_AUDIT_LABELS,   statusDocType: 'production' },
   PURCHASE_INVOICE: { entityName: 'Purchase invoice', labels: PURCHASE_INVOICE_AUDIT_LABELS, statusDocType: 'pi' },
   SALES_INVOICE:    { entityName: 'Invoice',          labels: SALES_INVOICE_AUDIT_LABELS,    statusDocType: 'si' },
   DELIVERY_ORDER:   { entityName: 'Delivery order',   labels: DELIVERY_ORDER_AUDIT_LABELS,   statusDocType: 'do' },
