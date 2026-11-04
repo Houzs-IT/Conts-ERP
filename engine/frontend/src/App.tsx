@@ -194,7 +194,7 @@ const ScmSalesOrderNewGuidedV2 = lazy(() => import("./pages/scm-v2/SalesOrderNew
 const ScmSalesOrderNewFromProductsV2 = lazy(() => import("./pages/scm-v2/SalesOrderNewFromProducts").then((m) => ({ default: m.SalesOrderNewFromProducts })));
 const ScmCategoriesV2 = lazy(() => import("./pages/scm-v2/Categories").then((m) => ({ default: m.Categories })));
 const ScmSoFromProductsV2 = lazy(() => import("./pages/scm-v2/SoFromProducts").then((m) => ({ default: m.SoFromProducts })));
-const ScmSalesOrderDetailV2 = lazy(() => import("./pages/scm-v2/SalesOrderDetailV2").then((m) => ({ default: m.SalesOrderDetailV2 })));
+const ScmSalesOrderDetail = lazy(() => import("./pages/scm-v2/SalesOrderDetail").then((m) => ({ default: m.SalesOrderDetail })));
 const ScmDocumentFilesImport = lazy(() => import("./pages/scm-v2/DocumentFilesImport").then((m) => ({ default: m.DocumentFilesImport })));
 // Renovation sales documents (Conts, 2026-10-09): quotations, package templates, the contract, VOs, terms.
 const RenoQuotationsList = lazy(() => import("./pages/renovation/QuotationsList").then((m) => ({ default: m.QuotationsList })));
@@ -903,7 +903,7 @@ export default function App() {
         <Route path="/scm/sales-orders/new/guided" element={<ScmGuard area="scm.sales.orders" allowSales><Scm2990Shell><ScmSalesOrderNewGuidedV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/sales-orders/new/from-products" element={<ScmGuard area="scm.sales.orders" allowSales><Scm2990Shell><ScmSalesOrderNewFromProductsV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/sales-orders/generate" element={<ScmGuard area="scm.sales.orders" allowSales><Scm2990Shell><ScmSoFromProductsV2 /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/sales-orders/:docNo" element={<ScmGuard area="scm.sales.orders" allowSales><Scm2990Shell><ScmSalesOrderDetailV2 /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/sales-orders/:docNo" element={<ScmGuard area="scm.sales.orders" allowSales><Scm2990Shell><ScmSalesOrderDetail /></Scm2990Shell></ScmGuard>} />
         {/* Renovation sales documents (Conts, 2026-10-09). Sales Orders area; writes check scm.renovation.* on the server. */}
         <Route path="/scm/renovation/quotations" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationsList /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/quotations/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationEditor /></Scm2990Shell></ScmGuard>} />

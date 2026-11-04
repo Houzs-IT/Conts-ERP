@@ -18,7 +18,7 @@
  * The frontend then produced that answer anyway, one layer up.
  *
  * It is also the third time this file's own host pages have paid for the same
- * `?? []`: SalesOrderDetail.tsx:1749 and SalesOrderDetailV2.tsx:757 both carry
+ * `?? []`: SalesOrderDetail.tsx carries
  * a comment about a FAILED payments read leaving `isLoading` false and `data`
  * undefined, so the guard fell through and painted an empty panel. The audit
  * drawer never got that lesson.
@@ -136,6 +136,6 @@ describe('every binding passes the error through', () => {
       (n, path) => n + [...readFileSync(path, 'utf8').matchAll(/<AuditHistoryPanel\b/g)].length,
       0,
     );
-    expect(total).toBeGreaterThanOrEqual(3);
+    expect(total).toBeGreaterThanOrEqual(2);
   });
 });

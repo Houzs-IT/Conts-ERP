@@ -26,7 +26,8 @@ const { detail, auditLog, relatedAuditLog, payments, updateStatus } = vi.hoisted
 }));
 
 vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
-vi.mock("../../vendor/scm/lib/sales-order-queries", () => ({
+vi.mock("../../vendor/scm/lib/sales-order-queries", async (orig) => ({
+  ...(await orig<typeof import("../../vendor/scm/lib/sales-order-queries")>()),
   useMfgSalesOrderDetail: detail,
   useSalesOrderAuditLog: auditLog,
   useSalesOrderRelatedAuditLog: relatedAuditLog,
@@ -36,7 +37,11 @@ vi.mock("../../vendor/scm/lib/sales-order-queries", () => ({
 }));
 vi.mock("../../hooks/useBreadcrumbs", () => ({ useSetBreadcrumbs: () => undefined }));
 // Renovation mode (mig 0112) is off here: the Houzs detail page as before.
-vi.mock("../projects/renovation/customerPropertyApi", () => ({ useSoInfoLists: () => ({ data: undefined }), useSoRooms: () => ({ data: undefined }) }));
+vi.mock("../projects/renovation/customerPropertyApi", async (orig) => ({
+  ...(await orig<typeof import("../projects/renovation/customerPropertyApi")>()),
+  useSoInfoLists: () => ({ data: undefined }),
+  useSoRooms: () => ({ data: undefined }),
+}));
 vi.mock("../../hooks/useStaffLookup", () => ({
   useStaffLookup: () => ({ nameOf: () => "Kris" }),
 }));
@@ -46,7 +51,8 @@ vi.mock("../../hooks/useStaffLookup", () => ({
    these tests mount the page with every other data hook faked for the same
    reason. Empty roster: none of the three assertions is about sharing, and an
    unshared order is what they were written against. */
-vi.mock("../../vendor/scm/lib/admin-queries", () => ({
+vi.mock("../../vendor/scm/lib/admin-queries", async (orig) => ({
+  ...(await orig<typeof import("../../vendor/scm/lib/admin-queries")>()),
   useStaff: () => ({
     data: [
       { id: "s-1", name: "Stanley" },
@@ -84,9 +90,14 @@ vi.mock("../../vendor/scm/components/PaymentsTable", () => ({ PaymentsTable: () 
    decides whether Edit opens on a DO/SI-locked order so its salesperson can be
    changed), and `useAuth` throws outside its provider. Faked as a caller WITHOUT
    it, so these tests keep exercising the behaviour they were written for. */
-vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => false }) }));
+vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ user: { id: 1, name: "Rep" }, can: () => false, pageAccess: () => "none" }) }));
+vi.mock("../../vendor/scm/lib/auth", async (orig) => ({
+  ...(await orig<typeof import("../../vendor/scm/lib/auth")>()),
+  useAuth: () => ({ staff: null, user: null }),
+}));
 
-import SalesOrderDetailV2 from "./SalesOrderDetailV2";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SalesOrderDetail } from "./SalesOrderDetail";
 
 afterEach(() => {
   cleanup();
@@ -133,12 +144,14 @@ const mountPage = (so: Record<string, unknown> = header) => {
   if (!relatedAuditLog.getMockImplementation()) relatedAuditLog.mockReturnValue(loaded([]));
   updateStatus.mockReturnValue({ mutate: vi.fn(), isPending: false });
   return render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MemoryRouter initialEntries={[`/scm/sales-orders/${DOC}`]}>
       <LocationProbe />
       <Routes>
-        <Route path="/scm/sales-orders/:docNo" element={<SalesOrderDetailV2 />} />
+        <Route path="/scm/sales-orders/:docNo" element={<SalesOrderDetail />} />
       </Routes>
     </MemoryRouter>
+    </QueryClientProvider>
   );
 };
 
@@ -184,7 +197,7 @@ describe("SO V2 History related documents", () => {
     mountPage();
 
     /* Not fetched until the drawer opens. */
-    expect(relatedAuditLog).toHaveBeenLastCalledWith(null);
+    expect(relatedAuditLog).not.toHaveBeenCalledWith(DOC);
     fireEvent.click(screen.getByRole("button", { name: /^history$/i }));
     expect(relatedAuditLog).toHaveBeenLastCalledWith(DOC);
 

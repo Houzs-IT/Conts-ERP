@@ -20,8 +20,7 @@ import {
   isLocked,
 } from './so-detail-gates';
 
-import rawDetailV2 from '../../../pages/scm-v2/SalesOrderDetailV2.tsx?raw';
-import rawDetailEditor from '../../../pages/scm-v2/SalesOrderDetail.tsx?raw';
+import rawDetail from '../../../pages/scm-v2/SalesOrderDetail.tsx?raw';
 import rawMobileDetail from '../../../mobile/MobileSODetail.tsx?raw';
 import rawMobileNewSo from '../../../mobile/MobileNewSO.tsx?raw';
 import rawRowMenus from '../../../pages/scm-v2/row-menus.ts?raw';
@@ -80,8 +79,7 @@ describe('it is NOT part of isLocked', () => {
 
 describe('every SO write surface consults the gate', () => {
   const surfaces: ReadonlyArray<readonly [string, string]> = [
-    ['SalesOrderDetailV2 (desktop read page)', rawDetailV2],
-    ['SalesOrderDetail (desktop editor)', rawDetailEditor],
+    ['SalesOrderDetail (the one desktop page)', rawDetail],
     ['MobileSODetail (mobile read page)', rawMobileDetail],
     ['MobileNewSO (mobile editor)', rawMobileNewSo],
   ];
@@ -148,9 +146,10 @@ describe('every SO write surface consults the gate', () => {
      of a greyed control, which is the thing this whole change exists to avoid.
      Pinned here because the header bar is a different place from the gates the
      tests above cover, and nothing pointed at it. */
-  test('the desktop read page gates the header bar, not only Edit', () => {
-    expect(rawDetailV2).toContain('{!migratedLocked && !["cancelled", "draft"].includes(');
-    const cancelBtn = rawDetailV2.slice(rawDetailV2.indexOf('onClick={doCancel}'));
-    expect(cancelBtn.slice(0, 200)).toContain('disabled={migratedLocked}');
+  test('the desktop page gates the header bar, not only Edit', () => {
+    expect(rawDetail).toContain('const canOfferPayEdit  = !migratedLocked && ');
+    expect(rawDetail).toContain('{canOfferPayEdit && (');
+    const cancelBtn = rawDetail.slice(rawDetail.indexOf('onClick={handleCancelSo}'));
+    expect(cancelBtn.slice(0, 200)).toContain('disabled={migratedLocked || updateStatus.isPending}');
   });
 });

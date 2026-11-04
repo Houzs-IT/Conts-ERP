@@ -770,17 +770,12 @@
       "no-restricted-syntax": 5
     },
     "src/pages/scm-v2/SalesOrderDetail.tsx": {
-      "@typescript-eslint/no-floating-promises": 12,
+      "@typescript-eslint/no-floating-promises": 11,
       "@typescript-eslint/no-unnecessary-condition": 35,
       "no-restricted-syntax": 1
     },
     "src/pages/scm-v2/SalesOrderDetailListing.tsx": {
       "@typescript-eslint/no-unnecessary-condition": 55
-    },
-    "src/pages/scm-v2/SalesOrderDetailV2.tsx": {
-      "@typescript-eslint/no-floating-promises": 2,
-      "@typescript-eslint/no-unnecessary-condition": 8,
-      "no-restricted-syntax": 4
     },
     "src/pages/scm-v2/SalesOrderMaintenance.tsx": {
       "@typescript-eslint/no-floating-promises": 7,

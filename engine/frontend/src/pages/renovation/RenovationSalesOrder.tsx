@@ -4,7 +4,7 @@
 // asked procurement to amend or cancel.
 //
 // One sales order, one page (owner, 3 Nov 2026): on a computer these are sections of the order's own page
-// (SalesOrderDetailV2), and /scm/renovation/contracts/:docNo redirects there. The stand-alone page stays for the
+// (SalesOrderDetail), and /scm/renovation/contracts/:docNo redirects there. The stand-alone page stays for the
 // phone's renovation documents (mobile/MobileRenovationDocs.tsx).
 
 import { useEffect, useMemo, useState } from 'react';

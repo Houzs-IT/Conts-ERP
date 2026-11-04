@@ -37,9 +37,10 @@ export interface LocalityRow {
    endpoint returns [], so distinctStates/citiesInState below collapse to [] and
    the StateSelect falls back to a free-text State input (the verbatim no-data
    behaviour). Seed real MY data with seed-my-localities.mjs. */
-export const useLocalities = () =>
+export const useLocalities = (opts?: { enabled?: boolean }) =>
   useQuery({
     queryKey: ['my_localities'],
+    enabled: opts?.enabled ?? true,
     staleTime: 24 * 60 * 60 * 1000,
     gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false,
