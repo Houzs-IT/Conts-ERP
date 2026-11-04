@@ -15,6 +15,8 @@ export interface RenoActor {
   name: string | null;
   /** scm.staff id stamped on engine documents (created_by). */
   staffId: string;
+  /** The signed-in user, whose own scm.staff row names them on a VO; staffId is one shared system row. */
+  userId?: number | null;
   companyId: number;
   /** The company's document prefix, e.g. "HC-" (companyDocPrefix). */
   docPrefix: string;

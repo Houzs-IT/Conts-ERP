@@ -111,7 +111,8 @@ export const amendmentQueueRowOf = (a: AmendmentRow, reference: string): Amendme
   reference,
   numberLabel: String(a.amendment_no ?? '').trim() || '—',
   approverKey: soAmendmentApprover(a.lane),
-  approverLabel: AMENDMENT_APPROVER_LABEL[soAmendmentApprover(a.lane)],
+  /* A renovation contract's VO applies on the spot and waits on nobody; it has no lane, which read as Legacy. */
+  approverLabel: a.resolution === 'RENOVATION_VO' ? 'Applied directly' : AMENDMENT_APPROVER_LABEL[soAmendmentApprover(a.lane)],
   approverTone: AMENDMENT_APPROVER_TONE[soAmendmentApprover(a.lane)],
   requestedByStaffId: a.requested_by ?? null,
   requestedByName: null,
