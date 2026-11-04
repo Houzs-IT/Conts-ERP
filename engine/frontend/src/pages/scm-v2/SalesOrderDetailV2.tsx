@@ -109,12 +109,15 @@ import { roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
 import { CONTS_LINES_BY_NAME, contsLineIdentity } from "../../conts/flowRules";
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from "./renovationSoAreaLines";
 import { SoPrintPreview, useSoPrintLayout } from "./soPrintPreview";
+import { ContractSections } from "../renovation/RenovationSalesOrder";
 import { SoInstalments, instalmentRows, nextInstalmentSen, paymentSlots, useSoInstalments } from "./renovationSoInstalments";
 import { soStatusDisplay } from "../../vendor/scm/lib/so-status";
 import { soRowStatus } from "./so-list-status";
 // ─── Row types (subset — see MfgSalesOrdersList.tsx for the full SoRow) ────
 
 type SoHeader = {
+  /* RENOVATION: a contract, which adds its own sections to this page. */
+  so_kind?: string | null;
   doc_no: string;
   /* POS handover payment slip (migration 0143) — passed to PaymentsTable's
      optional Slip column; absent on non-POS orders. */
@@ -697,7 +700,8 @@ function SalesOrderDetailV2ReadOnly() {
      this door leads to exactly one dropdown. Without it, handing a delivered
      order to a resigning rep's replacement meant Override — which unlocks the
      whole order, addresses and lines included. */
-  const canAttributeOther = useHouzsAuth().can("scm.so.attribute_other");
+  const houzsAuth = useHouzsAuth();
+  const canAttributeOther = houzsAuth.can("scm.so.attribute_other");
   /* CUTOVER: an order carried across from AutoCount is view-only (owner
      2026-09-08). It out-ranks the salesperson door above — `canAttributeOther`
      exists so a hard-locked order can still change hands, and re-attributing a
@@ -1328,6 +1332,16 @@ function SalesOrderDetailV2ReadOnly() {
         </div>
         <DetailGrid>
           <DetailMain>
+            {/* A renovation order reads Order information, Customer, Delivery address, the order of its edit screen
+                and of the New SO form (owner, 3 Nov 2026). */}
+            {renoMode && (
+              <Section title="Order information">
+                <RenovationSoOrderInfo
+                  docNo={salesOrder.doc_no}
+                  payment={salesOrder.payment_methods_summary || salesOrder.payment_method || null}
+                />
+              </Section>
+            )}
             {/* Customer */}
             <Section title="Customer">
               <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-3">
@@ -1384,14 +1398,6 @@ function SalesOrderDetailV2ReadOnly() {
               </div>
             </Section>
 
-            {renoMode && (
-              <Section title="Order information">
-                <RenovationSoOrderInfo
-                  docNo={salesOrder.doc_no}
-                  payment={salesOrder.payment_methods_summary || salesOrder.payment_method || null}
-                />
-              </Section>
-            )}
             {/* Order info + optional amber Note callout */}
             {!renoMode && (
             <Section title="Order info">
@@ -1598,6 +1604,13 @@ function SalesOrderDetailV2ReadOnly() {
                 </div>
               );
             })()}
+
+            {/* One sales order, one page (owner, 3 Nov 2026): a renovation contract's billing, VOs, PO split and line
+                costs sit here, not on a second page. Only for those who could open that page: a sales rep reaches this
+                route by allowSales, and these sections carry costs. */}
+            {salesOrder.so_kind === "RENOVATION" && (houzsAuth.can("scm.access") || houzsAuth.pageAccess("scm.sales.orders") !== "none") && (
+              <ContractSections docNo={salesOrder.doc_no} embedded />
+            )}
           </DetailMain>
 
           <DetailAside>

@@ -192,9 +192,12 @@ renovationSoInfo.get('/so/:docNo', async (c: C) => {
     ...rooms,
     info: {
       projectId: project ? project.id : null, customerName: t(r.debtor_name), customerPhone: t(r.phone), customerEmail: t(r.email),
-      siteAddress: [t(r.address1), t(r.address2)].filter(Boolean).join('\n'), building: t(r.building), unitNo: t(r.unit_no),
-      propertyType: t(r.property_type), layoutLabel: t(r.layout_label), bedrooms: t(r.bedrooms), bathrooms: t(r.bathrooms),
-      builtUpSqft: t(r.built_up_sqft),
+      siteAddress: [t(r.address1), t(r.address2)].filter(Boolean).join('\n'),
+      /* The project is the master record: what the order lacks comes from it, so its edit form opens filled in. */
+      building: t(r.building) || t(project?.building), unitNo: t(r.unit_no) || t(project?.unitNo),
+      propertyType: t(r.property_type) || t(project?.propertyType), layoutLabel: t(r.layout_label) || t(project?.layoutLabel),
+      bedrooms: t(r.bedrooms) || t(project?.bedrooms), bathrooms: t(r.bathrooms) || t(project?.bathrooms),
+      builtUpSqft: t(r.built_up_sqft) || t(project?.builtUpSqft),
     },
     project,
   });
