@@ -263,7 +263,8 @@ export default function AddUnitPage(): ReactElement {
                   </Labeled>
                   <p className="basis-full m-0 -mt-1 text-caption text-muted-ink">Bedrooms or bathrooms left blank save as 1.</p>
                 </NumberRow>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
+                <div className="@container">
+                <div className="grid grid-cols-1 @2xl:grid-cols-2 gap-x-8 gap-y-4">
                   <div className="flex flex-col gap-2 min-w-0">
                     <SectionHead noMargin>Beds and mattresses</SectionHead>
                     <BedsEditor beds={form.beds} onChange={beds => edit({ beds })} />
@@ -274,6 +275,7 @@ export default function AddUnitPage(): ReactElement {
                     <BaysEditor bays={form.parkingBays} onChange={parkingBays => edit({ parkingBays })} />
                     {fieldError('parkingBays')}
                   </div>
+                </div>
                 </div>
               </>}
             </fieldset>

@@ -15,8 +15,8 @@ export const PURPOSE_LABEL: Record<Purpose, string> = { rental: 'Rental', showro
 export const USED_BY = ['the_conts', 'dream_crafter', 'inhouse_reno'] as const;
 export type UsedBy = typeof USED_BY[number];
 
-export const BED_SIZES = ['king', 'queen', 'super_single', 'single', 'sofa_bed', 'single_floor_mattress', 'double_decker'] as const;
-export type BedSize = typeof BED_SIZES[number];
+/** A bed size key from the bed size list (functions/_lib/bedSizes.ts, kept on Unit settings). */
+export type BedSize = string;
 export interface Bed { size: BedSize; quantity: number }
 
 /** True once migration 0125 is on this database. */
@@ -34,13 +34,14 @@ export async function purposeOf(env: Env, unitId: string): Promise<Purpose | nul
 }
 export const NOT_ON_CHANNELS = 'Showroom and warehouse units are not connected to the channels.';
 
-/** Problems with a beds list, or null. Sizes from BED_SIZES, 1 to 20 of each, one row per size. */
+/** Problems with a beds list's shape, or null: 1 to 20 of each, one row per size. Whether each size is on the bed size
+ *  list is checked against the database (invalidBedSizes in functions/_lib/bedSizes.ts). */
 export function invalidBeds(v: unknown): string | null {
   if (!Array.isArray(v)) return 'Beds must be a list.';
-  if (v.length > BED_SIZES.length) return 'One line per bed size.';
+  if (v.length > 30) return 'At most 30 bed sizes on a unit.';
   const seen = new Set<string>();
   for (const b of v) {
-    if (!b || typeof b !== 'object' || !(BED_SIZES as readonly string[]).includes((b as Bed).size)) return 'Pick a bed size.';
+    if (!b || typeof b !== 'object' || typeof (b as Bed).size !== 'string' || !(b as Bed).size) return 'Pick a bed size.';
     if (seen.has((b as Bed).size)) return 'Each bed size once; change its quantity instead.';
     seen.add((b as Bed).size);
     const q = (b as Bed).quantity;
@@ -101,10 +102,9 @@ export async function extrasFor(env: Env, ids: string[] | null): Promise<Map<str
   return out;
 }
 
-/** "1 King · 2 Single". */
-export function bedsLabel(beds: Bed[]): string {
-  const name: Record<BedSize, string> = { king: 'King', queen: 'Queen', super_single: 'Super single', single: 'Single', sofa_bed: 'Sofa bed', single_floor_mattress: 'Single floor mattress', double_decker: 'Double decker' };
-  return beds.map(b => `${b.quantity} ${name[b.size] ?? b.size}`).join(' · ');
+/** "1 King · 2 Single", with the names from the bed size list. */
+export function bedsLabel(beds: Bed[], sizes: readonly { key: string; label: string }[]): string {
+  return beds.map(b => `${b.quantity} ${sizes.find(s => s.key === b.size)?.label ?? b.size}`).join(' · ');
 }
 /** "LEVEL 5-LOT-100 (Tandem)": level first, then the lot, then the note (staff sheet UNIT, 23 Oct 2026). A level typed
  *  as "L5" or "Level 5" is not doubled up. */

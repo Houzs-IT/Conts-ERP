@@ -6,6 +6,7 @@ import { statementSettings } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
 import { contractTypes } from '../../_lib/contractTypes';
 import { extrasFor, purposeReady, bedsLabel, baysLabel } from '../../_lib/unitPurpose';
+import { bedSizes } from '../../_lib/bedSizes';
 
 const area = (city: string, postcode: string | null) => (postcode ? `${city}, ${postcode}` : city);
 
@@ -19,7 +20,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // full_access_card is migration 0161.
   const card = (await hasColumn(env, 'properties', 'full_access_card').catch(() => false)) ? 'full_access_card' : 'false AS full_access_card';
-  const [buildings, units, expenses, docs, { defaultFeePct }, extras, types] = await Promise.all([
+  const [buildings, units, expenses, docs, { defaultFeePct }, extras, types, sizes] = await Promise.all([
     all<any>(env, `SELECT id, name, city, state, postcode, ${card} FROM properties ORDER BY state, name`),
     purposeReady(env).then(ready => all<any>(env, `
     SELECT u.id, u.property_id, u.parent_unit_id, u.unit_number, u.bedrooms, u.bathrooms, u.size_sqft, u.layout_type, u.owner_id, u.base_rate, u.listing_name, u.unit_code, u.address, u.package, u.term, u.split_kind, u.split_value, u.guarantee_period,
@@ -38,6 +39,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     statementSettings((sql, ...args) => all(env, sql, ...args)),
     extrasFor(env, null),
     contractTypes(env),
+    bedSizes(env),
   ]);
 
   return json({
@@ -55,7 +57,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       // The revenue model and its short terms ("Share 75/20/5", "GRR RM 3,000/mo"); the figures only for roles that see money.
       ...(() => { const v = contractView(u.c_id ? { ...u, id: u.c_id, minimum_guarantee_annual: u.c_annual } : null, u, defaultFeePct, 0, types); return { revenueModel: v.revenueModel, contractCode: u.c_id ? v.contractCode : null, termsLabel: banking ? v.termsLabel : null }; })(),
       // Migration 0125: what the unit is for, its beds and its car park bays.
-      ...(() => { const x = extras.get(u.id); return { purpose: x?.purpose ?? 'rental', usedBy: x?.usedBy ?? null, beds: x?.beds ?? [], bedsLabel: bedsLabel(x?.beds ?? []), parkingBays: x?.parkingBays ?? [], parkingLabel: baysLabel(x?.parkingBays ?? []) }; })(),
+      ...(() => { const x = extras.get(u.id); return { purpose: x?.purpose ?? 'rental', usedBy: x?.usedBy ?? null, beds: x?.beds ?? [], bedsLabel: bedsLabel(x?.beds ?? [], sizes), parkingBays: x?.parkingBays ?? [], parkingLabel: baysLabel(x?.parkingBays ?? []) }; })(),
       bedrooms: u.bedrooms, bathrooms: u.bathrooms, sizeSqft: u.size_sqft ?? null, layoutType: u.layout_type ?? null, ...(banking ? { baseRate: Number(u.base_rate), cleaningPrice: u.cleaning_price == null ? null : Number(u.cleaning_price), deepCleaningPrice: u.deep_cleaning_price == null ? null : Number(u.deep_cleaning_price) } : {}),
       expenses: expenses.filter(e => e.unit_id === u.id).map(e => ({ id: e.id, category: e.category, amount: Number(e.amount), note: e.note })),
       contract: {

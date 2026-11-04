@@ -101,6 +101,7 @@ export const PURPOSE_LABEL: Record<UnitPurpose, string> = { rental: 'Rental', sh
 export const USED_BY: { value: string; label: string }[] = [
   { value: 'the_conts', label: 'The Conts' }, { value: 'dream_crafter', label: 'Dream Crafter' }, { value: 'inhouse_reno', label: 'Inhouse Reno' },
 ];
+/** The bed sizes before migration 0210. Since then staff keep the list on Unit settings (GET /api/unit-bed-sizes). */
 export const BED_SIZES: { value: string; label: string }[] = [
   { value: 'king', label: 'King' }, { value: 'queen', label: 'Queen' }, { value: 'super_single', label: 'Super single' }, { value: 'single', label: 'Single' }, { value: 'sofa_bed', label: 'Sofa bed' },
   { value: 'single_floor_mattress', label: 'Single floor mattress' }, { value: 'double_decker', label: 'Double decker' },
