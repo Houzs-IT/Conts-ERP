@@ -1647,6 +1647,7 @@ function PurchaseOrderDetailV2ReadOnly() {
         rowLabels={{ primary: "Purchase chain", secondary: "After goods receipt" }}
         amendmentsLabel="Related amendments (Sales Order & this PO)"
         pairing={chainPairing}
+        extra={<ProductionOrderChips poId={purchaseOrder.id} label="Production order" />}
       />
       {/* A chain slot standing for several documents opens this chooser instead
           of a notice that only named them. The picked one opens in its own tab of the

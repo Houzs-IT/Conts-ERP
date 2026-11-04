@@ -2724,6 +2724,7 @@ export const SalesOrderDetail = () => {
           if (onChainAmendmentClick(a)) setRelMapOpen(false);
         }}
         pairing={chainPairing}
+        extra={<ProductionOrderChips soDocNo={header.doc_no} label="Production orders" />}
       />
       {/* A chain slot standing for several documents opens this chooser instead
           of a notice that only named them. The picked one opens in its own tab of the

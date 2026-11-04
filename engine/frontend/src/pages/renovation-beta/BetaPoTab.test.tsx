@@ -36,6 +36,7 @@ vi.mock("../../vendor/scm/lib/authed-fetch", async (importOriginal) => {
     },
   };
 });
+vi.mock("../scm-v2/ProductionOrderChips", () => ({ ProductionOrderChips: () => null }));
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
 /* The SO line's pickers have their own test (renovationVariantPicker.test.tsx); here a pick is one button. */
 vi.mock("../../vendor/scm/components/renovationVariantPicker", async (importOriginal) => {

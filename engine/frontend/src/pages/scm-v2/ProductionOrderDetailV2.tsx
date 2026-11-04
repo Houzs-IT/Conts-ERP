@@ -26,7 +26,6 @@ import {
   Mail,
   XCircle,
   Edit3,
-  Phone as PhoneIcon,
   MoreHorizontal,
   CheckCircle2,
   RotateCcw,
@@ -39,7 +38,6 @@ import {
 } from "lucide-react";
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
-import { NextStepNote } from "../../components/NextStepNote";
 import {
   poConfirmBlockReason,
 } from "../../vendor/scm/lib/po-next-step";
@@ -783,11 +781,6 @@ function ProductionOrderDetailV2ReadOnly() {
     );
   }
 
-  const goCall = () => {
-    if (!purchaseOrder?.supplier?.phone) return;
-    window.location.href = `tel:${purchaseOrder.supplier.phone.replace(/\s+/g, "")}`;
-  };
-
   const rawStatus = (purchaseOrder.status || "").toUpperCase();
   /* Both status questions now come from vendor/scm/lib/po-next-step.ts, which
      also records why the old pair was wrong: `canSubmit` gated a DRAFT onto
@@ -795,8 +788,7 @@ function ProductionOrderDetailV2ReadOnly() {
      `canConfirm` gated /confirm — the endpoint that actually performs the
      DRAFT → SUBMITTED write — onto SUBMITTED, where it is an explicit no-op.
      The predicates were inverted relative to their endpoints. */
-  const confirmReason = poConfirmBlockReason(purchaseOrder.status)?.replace(/purchase order/g, "production order") ?? null;
-  const canConfirm = confirmReason === null;
+  const canConfirm = poConfirmBlockReason(purchaseOrder.status) === null;
   const canCancel = rawStatus !== "CANCELLED" && rawStatus !== "RECEIVED";
   const canReopen = rawStatus === "CANCELLED" || rawStatus === "RECEIVED";
   const canComplete = rawStatus === "SUBMITTED" && !purchaseOrder.on_hold;
@@ -811,7 +803,7 @@ function ProductionOrderDetailV2ReadOnly() {
       title: completionStopped ? `Finish completing ${purchaseOrder.po_number}?` : `Complete ${purchaseOrder.po_number}?`,
       body: [
         orderMeta.source_po ? `A goods receipt is raised for what is left on ${orderMeta.source_po.po_number}.` : "There is no purchase order to receive.",
-        soLineCount > 0 ? `A delivery order is raised for ${soLineCount} sales order line${soLineCount === 1 ? "" : "s"} and marked delivered.` : "There is no sales order line to deliver.",
+        soLineCount > 0 ? `A delivery order is raised for what is left of ${soLineCount} sales order line${soLineCount === 1 ? "" : "s"} and marked delivered.` : "There is no sales order line to deliver.",
         "Stock moves in, then out. The photos on this order become their proof of receipt and proof of delivery. Lines already received or delivered are skipped.",
       ].join(" "),
       confirmLabel: completionStopped ? "Retry" : "Complete",
@@ -1085,20 +1077,19 @@ function ProductionOrderDetailV2ReadOnly() {
           stops impersonating them. The reasons render as TEXT because a `title`
           tooltip cannot be summoned on a touch screen. */}
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface/95 px-3 pb-6 pt-2.5 shadow-slab backdrop-blur-sm md:hidden">
-        <div className="mb-1.5 flex flex-col gap-0.5">
-          <NextStepNote id="po-confirm-reason-phone" reason={confirmReason} />
-        </div>
-        <div className="mb-2 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={doConfirm}
-            disabled={!canConfirm}
-            aria-describedby={confirmReason ? "po-confirm-reason-phone" : undefined}
-            className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface text-[13.5px] font-bold text-ink hover:bg-surface-dim disabled:opacity-40"
-          >
-            <CheckCircle2 size={16} /> Confirm Production Order
-          </button>
-        </div>
+        {(canConfirm || canComplete || canReopen) && (
+          <div className="mb-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={canConfirm ? doConfirm : canComplete ? () => void doComplete() : doReopen}
+              disabled={completing !== null}
+              className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface text-[13.5px] font-bold text-ink hover:bg-surface-dim disabled:opacity-40"
+            >
+              {canReopen ? <RotateCcw size={16} /> : <CheckCircle2 size={16} />}
+              {canConfirm ? "Confirm Production Order" : canComplete ? (completing ?? (completionStopped ? "Retry Complete" : "Complete")) : "Reopen"}
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -1114,19 +1105,6 @@ function ProductionOrderDetailV2ReadOnly() {
             aria-label="Print PDF"
           >
             <Printer size={17} />
-          </button>
-          <button
-            type="button"
-            onClick={goCall}
-            disabled={!purchaseOrder.supplier?.phone}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-surface-2 text-primary-ink hover:bg-primary-soft disabled:opacity-40"
-            aria-label={
-              purchaseOrder.supplier?.phone
-                ? `Call ${purchaseOrder.supplier.phone}`
-                : "No phone on file"
-            }
-          >
-            <PhoneIcon size={17} />
           </button>
         </div>
       </div>

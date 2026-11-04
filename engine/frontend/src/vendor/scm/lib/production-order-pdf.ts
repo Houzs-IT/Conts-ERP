@@ -411,7 +411,7 @@ async function renderProductionOrderInto(
       ] : [['Sales order', 'None linked']],
     },
     {
-      title: 'Production Order DETAILS',
+      title: 'PRODUCTION ORDER DETAILS',
       rows: [
         // _R suffix (owner 2026-07-27) — the printed number shows the revision.
         ['Production Order No', poDisplayNumber(header.po_number, header.revision)],
