@@ -7,6 +7,7 @@ import type { UnitReadiness } from '../../lib/types';
 import { titleCase } from '../../lib/format';
 import type { Building, Unit } from './shared';
 import { MODEL, codeName } from '../../lib/revenueModel';
+import { useContractTypes } from '../../lib/useContractTypes';
 import { statusLabel, statusOf, TONE_STYLE } from '../../lib/status';
 
 interface Props {
@@ -43,6 +44,7 @@ export function firstUnitId(buildings: Building[], units: Unit[]): string | unde
  *  unit, so 20-odd buildings read as a short list. A search (kept in the address as ?q=) opens every
  *  building with a hit and keeps a building whose name matches, or the units in it that do. */
 export default function UnitTree({ buildings, units, selectedId, readiness, canEdit, onSelect, onEditBuilding, onAddUnit, onAddSubUnit, fill }: Props) {
+  const types = useContractTypes();
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
   const setQ = (v: string) => setParams(p => { const n = new URLSearchParams(p); if (v) n.set('q', v); else n.delete('q'); return n; }, { replace: true });
@@ -174,7 +176,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                               <span className={cx('block text-copy whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</span>
                               <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName ? titleCase(u.ownerName) : 'No owner yet'}{kids.length ? ` · ${kids.length} sub-unit${kids.length > 1 ? 's' : ''}` : ''}</span>
                             </span>
-                            <span className="text-caption font-bold text-gold-ink flex-none" title={u.termsLabel ?? (u.revenueModel ? MODEL[u.revenueModel].label : u.pkg)}>{[u.purpose && u.purpose !== 'rental' ? (u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom') : null, (u.contractCode ? codeName(u.contractCode) : null) ?? (u.revenueModel ? MODEL[u.revenueModel].short : u.pkg.replace('Package ', 'Pkg '))].filter(Boolean).join(' · ')}</span>
+                            <span className="text-caption font-bold text-gold-ink flex-none" title={u.termsLabel ?? (u.revenueModel ? MODEL[u.revenueModel].label : u.pkg)}>{[u.purpose && u.purpose !== 'rental' ? (u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom') : null, (u.contractCode ? codeName(types, u.contractCode) : null) ?? (u.revenueModel ? MODEL[u.revenueModel].short : u.pkg.replace('Package ', 'Pkg '))].filter(Boolean).join(' · ')}</span>
                           </button>
                           {canEdit && (
                             <button onClick={() => onAddSubUnit(b.id, u)} aria-label={`Add a sub-unit under ${u.unitCode || 'this unit'}`} title="Add sub-unit"

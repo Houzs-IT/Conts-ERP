@@ -4,7 +4,8 @@ import { loadInputs, withYearToDate, computeMonth, statementSettings, termsFor, 
 import { modelOf, isRevenueModel, termsLabel, draftColumns, isShare, isTenancy, RENT_TO_RENT, RENT_TO_RENT_KEYS, type RevenueModel, type ContractDraft, type RentToRentKey } from './revenueModel';
 import { monthEndExclusive } from './revenue';
 import { shiftMonth } from './expenses';
-import { codeOf, isContractCode, type ContractCode } from './unitPurpose';
+import { codeOf, type ContractCode } from './unitPurpose';
+import { BUILT_IN_CONTRACT_TYPES, type ContractTypeRow } from './contractTypes';
 
 export interface ContractView {
   id: string | null; revenueModel: RevenueModel; termsLabel: string;
@@ -34,14 +35,14 @@ const rentToRentOf = (c: Record<string, unknown>): Record<RentToRentKey, number 
   Object.fromEntries(RENT_TO_RENT_KEYS.map(k => [k, c[RENT_TO_RENT[k]] == null ? null : Number(c[RENT_TO_RENT[k]])])) as Record<RentToRentKey, number | null>;
 
 /** A contract row (or, with no contract, the unit's own split) as the screen shows it. */
-export function contractView(c: any | null, unit: { split_kind?: string | null; split_value?: number | null; package?: string | null; misc_charges?: number | null }, defaultFeePct: number, sharedWith = 0): ContractView {
+export function contractView(c: any | null, unit: { split_kind?: string | null; split_value?: number | null; package?: string | null; misc_charges?: number | null }, defaultFeePct: number, sharedWith = 0, types: readonly ContractTypeRow[] = BUILT_IN_CONTRACT_TYPES): ContractView {
   if (!c) {
     const model = modelOf({ contract_id: null, split_kind: unit.split_kind, split_value: unit.split_value });
     const ownerPct = model === 'management' ? (/profit share/i.test(unit.split_kind ?? '') && unit.split_value != null ? Number(unit.split_value) : 100 - defaultFeePct) : null;
     const rent = model === 'grr' ? Number(unit.split_value ?? 0) : 0;
     return {
       id: null, revenueModel: model, termsLabel: termsLabel(model, { ownerPct, rent }), ownerPct, managementPct: ownerPct == null ? null : 100 - ownerPct, agentPct: null, agentName: null,
-      minimumGuarantee: 0, guaranteeStartsOn: null, guaranteeEndsOn: null, yearlyGuarantee: 0, contractCode: codeOf(model), typeStored: false, agreementDocumentId: null, monthlyRent: rent, deposit: null, tenantName: null, ownerAmount: null,
+      minimumGuarantee: 0, guaranteeStartsOn: null, guaranteeEndsOn: null, yearlyGuarantee: 0, contractCode: codeOf(types, model), typeStored: false, agreementDocumentId: null, monthlyRent: rent, deposit: null, tenantName: null, ownerAmount: null,
       startsOn: null, endsOn: null, renewsOn: null, miscCharges: Number(unit.misc_charges ?? 0) === 1, rentToRent: noRentToRent(), sharedWith: 0, createdAt: null,
     };
   }
@@ -49,14 +50,14 @@ export function contractView(c: any | null, unit: { split_kind?: string | null; 
   const fee = Number(c.management_fee_pct ?? defaultFeePct), agent = c.agent_fee_pct == null ? null : Number(c.agent_fee_pct);
   const share = isShare(model);
   const ownerPct = share ? 100 - fee : null;
-  const code = codeOf(model, c.contract_code);
+  const code = codeOf(types, model, c.contract_code);
   return {
     id: c.id, revenueModel: model,
     termsLabel: termsLabel(model, { ownerPct, agentPct: agent, rent: Number(c.grr_amount ?? 0), guarantee: Number(model === 'management_yearly_guarantee' ? c.minimum_guarantee_annual ?? 0 : c.minimum_guarantee ?? 0) }),
     ownerPct, managementPct: share ? fee - (agent ?? 0) : isTenancy(model) ? fee : null, agentPct: share ? agent : null, agentName: c.agent_name ?? null,
     minimumGuarantee: model === 'management_guarantee' ? Number(c.minimum_guarantee ?? 0) : 0,
     yearlyGuarantee: model === 'management_yearly_guarantee' ? Number(c.minimum_guarantee_annual ?? 0) : 0,
-    contractCode: codeOf(model, c.contract_code), typeStored: isContractCode(c.contract_code) || isRevenueModel(c.revenue_model), agreementDocumentId: c.agreement_document_id ?? null,
+    contractCode: code, typeStored: types.some(t => t.code === c.contract_code) || isRevenueModel(c.revenue_model), agreementDocumentId: c.agreement_document_id ?? null,
     guaranteeStartsOn: c.guarantee_starts_on ?? null, guaranteeEndsOn: c.guarantee_ends_on ?? null,
     ownerAmount: code === 'MANAGE' ? Number(c.grr_amount ?? 0) : null,
     monthlyRent: share ? 0 : Number(c.grr_amount ?? 0), deposit: c.deposit_amount == null ? null : Number(c.deposit_amount), tenantName: c.tenant_name ?? null,

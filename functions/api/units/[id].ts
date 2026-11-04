@@ -18,11 +18,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!b || typeof b !== 'object') return fail('VALIDATION', 'Nothing to save.', 422);
   const ownerField = ownerFieldIn(b);
   if (ownerField) return fail('VALIDATION', "The owner's name, IC and bank details are edited on the owner's page, not on the unit.", 422, { [ownerField]: "Edit this on the owner's page." });
-  const bad = invalidUnit(b);
-  if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
 
-  const cur = await one<any>(env, 'SELECT id, property_id, parent_unit_id, owner_id, unit_number, unit_code FROM units WHERE id = ?', id);
+  const cur = await one<any>(env, 'SELECT id, property_id, parent_unit_id, owner_id, unit_number, unit_code, split_kind FROM units WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
+  const bad = invalidUnit(b, cur.split_kind);
+  if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
 
   const target = typeof b.buildingId === 'string' && b.buildingId && b.buildingId !== cur.property_id ? b.buildingId : null;
   if (target) {

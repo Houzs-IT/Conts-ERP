@@ -20,7 +20,8 @@ import { TONE, cx } from '../lib/design-tokens';
 import { useUrlState, usePhone, SearchBox } from './finance/listKit';
 import { FilterBar } from '../components/FilterBar';
 import { statusOf } from '../lib/status';
-import { CODES, CODE, codeName, PURPOSES, PURPOSE_LABEL, type ContractCode, type UnitPurpose } from '../lib/revenueModel';
+import { typeOptions, codeName, codeLabel, PURPOSES, PURPOSE_LABEL, type ContractCode, type UnitPurpose } from '../lib/revenueModel';
+import { useContractTypes } from '../lib/useContractTypes';
 import { CodeBadge } from './units/UnitExtras';
 import { ExtendContractModal } from './units/ContractExtras';
 import { CentreModal, Labeled, Select as FormSelect, mayEditUnits } from './units/shared';
@@ -45,7 +46,7 @@ interface Contract {
   renewsOn: string | null;
   endsOn?: string | null;
   offerLetter: string | null;
-  /** The staff's short code (PS, PS GRR, WH, ...) and the units this record is in force on (0125). */
+  /** The staff's short code (PS, PS GRR, ...) and the units this record is in force on (0125). */
   contractCode?: ContractCode; units?: { id: string; label: string; purpose?: UnitPurpose }[]; termsLabel?: string;
 }
 interface Payload { data: Contract[]; generatedAt: string }
@@ -103,6 +104,7 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 
 export default function ContractsPage() {
   const { data, loading, error, reload } = useApi<Payload>('/contracts', FALLBACK);
+  const types = useContractTypes();
   const toast = useToast();
   const navigate = useNavigate();
   const phone = usePhone();
@@ -240,8 +242,8 @@ export default function ContractsPage() {
         </span>
       ) },
     { key: 'units', label: 'Units', value: r => r.unitsLabel, width: 200 },
-    { key: 'code', label: 'Code', value: r => r.contractCode ?? null, width: 96, title: 'The contract type: PS, PS GRR, PS YGRR, LT, RTR, MANAGE, WH.',
-      render: r => <CodeBadge code={r.contractCode} size="sm" />, filter: { kind: 'select', options: CODES.map(c => ({ value: c.code, label: `${codeName(c.code)} · ${c.label}` })) } },
+    { key: 'code', label: 'Code', value: r => r.contractCode ?? null, width: 96, title: 'The contract type, from Units > Unit settings.',
+      render: r => <CodeBadge code={r.contractCode} types={types} size="sm" />, filter: { kind: 'select', options: typeOptions(types) } },
     { key: 'fee', label: 'Income model', value: r => feeLabel(r), width: 140, render: r => <span className="text-copy font-medium truncate block" title={feeLabel(r)}>{feeLabel(r)}</span> },
     { key: 'model', label: 'Model', value: r => (r.model === 'grr' ? 'Guaranteed rent' : 'Operator share'), hidden: true, width: 140, filter: { kind: 'select' } },
     { key: 'feePct', label: 'Operator share %', type: 'number', value: r => (r.model === 'management' ? r.managementFeePct : null), hidden: true, width: 120 },
@@ -329,7 +331,7 @@ export default function ContractsPage() {
         toolbar={<>
           <SearchBox className="flex-1 min-w-[200px]" label="Search contracts" placeholder="Search owner or unit" value={url.get('q')} onChange={v => url.set({ q: v || null, page: null })} />
           <Select className="flex-[1_1_160px] sm:flex-[0_1_180px]" label="Income model" value={model} onChange={v => url.set({ model: v || null, page: null })}
-            options={[{ value: '', label: 'All contract types' }, ...CODES.map(c => ({ value: c.code, label: `${codeName(c.code)} · ${c.label}` }))]} />
+            options={[{ value: '', label: 'All contract types' }, ...typeOptions(types)]} />
           {phone && (
             <Select className="flex-[1_1_160px]" label="Sort by" value={url.get('sort')} onChange={v => url.set({ sort: v || null, page: null })}
               options={[{ value: '', label: 'Sort: ending soonest' }, { value: 'owner:asc', label: 'Sort: owner A-Z' }, { value: 'started:desc', label: 'Sort: newest first' }]} />
@@ -347,7 +349,7 @@ export default function ContractsPage() {
               </span>
               <span className="text-meta text-muted-ink truncate w-full" title={r.unitsLabel}>{r.unitsLabel}</span>
               <span className="flex items-center justify-between gap-2 w-full flex-wrap">
-                <span className="text-meta font-medium inline-flex items-center gap-1.5"><CodeBadge code={r.contractCode} size="sm" />{feeLabel(r)}</span>
+                <span className="text-meta font-medium inline-flex items-center gap-1.5"><CodeBadge code={r.contractCode} types={types} size="sm" />{feeLabel(r)}</span>
                 <EndsCell r={r} />
               </span>
               {/* Phones have no Purpose column or pencil: the same two actions, on the card. */}
@@ -438,7 +440,7 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
         <Field label="Unit" placeholder="e.g. Vista Jaya One #A-12-03" value={unitsLabel} onChange={e => setUnitsLabel(e.target.value)} help="For multiple units, name the primary one; link the rest on the owner." />
       </>)}
       <Select showLabel size="md" label="Income model" value={model} onChange={v => setModel(v as FeeModel)}
-        options={[{ value: 'management', label: 'Operator share (% of income)' }, { value: 'grr', label: 'GRR — guaranteed monthly rent' }]} />
+        options={[{ value: 'management', label: 'Operator share (% of income)' }, ...(existing?.model === 'grr' ? [{ value: 'grr', label: 'GRR (no longer offered)' }] : [])]} />
       {model === 'management'
         ? <PercentInput label="Operator share %" value={feePct} onChange={setFeePct} help="The Conts keeps this share; the owner receives the rest." />
         : <MoneyInput label="Guaranteed rent (RM / month)" placeholder="e.g. 3,500.00" valueSen={grrSen} onChangeSen={setGrrSen} help="The owner is paid this fixed amount regardless of occupancy." />}
@@ -481,6 +483,7 @@ function ContractDrawer({ contract, canEdit, onClose, onSaved }: { contract: Con
 
 /** Extend from the Contracts list: the unit is picked first when the contract (or the page) covers several. */
 function ExtendFromList({ contract, rows, onClose, onSaved }: { contract: Contract | null; rows: Contract[]; onClose: () => void; onSaved: () => void }) {
+  const types = useContractTypes();
   const choices = (contract ? [contract] : rows).flatMap(c => (c.units ?? []).map(u => ({ unit: u, c })));
   const [picked, setPicked] = useState(choices.length === 1 ? choices[0].unit.id : '');
   const [go, setGo] = useState(choices.length === 1);
@@ -495,9 +498,9 @@ function ExtendFromList({ contract, rows, onClose, onSaved }: { contract: Contra
       footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!chosen} disabledReason="Pick the unit" onClick={() => setGo(true)}>Next</Button></>}>
       <Labeled label="Unit">
         <FormSelect label="Unit" value={picked} onChange={setPicked}
-          options={[{ value: '', label: choices.length ? 'Pick a unit' : 'No unit has a contract in force' }, ...choices.map(x => ({ value: x.unit.id, label: `${x.unit.label} · ${x.c.contractCode ? codeName(x.c.contractCode) : ''} · ${titleCase(x.c.ownerName)}` }))]} />
+          options={[{ value: '', label: choices.length ? 'Pick a unit' : 'No unit has a contract in force' }, ...choices.map(x => ({ value: x.unit.id, label: `${x.unit.label} · ${x.c.contractCode ? codeName(types, x.c.contractCode) : ''} · ${titleCase(x.c.ownerName)}` }))]} />
       </Labeled>
-      {chosen && <p className="m-0 text-meta text-muted-ink">{CODE[chosen.c.contractCode ?? 'PS']?.label}: {feeLabel(chosen.c)}{chosen.c.endsOn ? `, ends ${date(chosen.c.endsOn)}` : ''}.</p>}
+      {chosen && <p className="m-0 text-meta text-muted-ink">{codeLabel(types, chosen.c.contractCode ?? 'PS')}: {feeLabel(chosen.c)}{chosen.c.endsOn ? `, ends ${date(chosen.c.endsOn)}` : ''}.</p>}
     </CentreModal>
   );
 }

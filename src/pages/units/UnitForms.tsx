@@ -16,7 +16,8 @@ import { addressLines, type OwnerAddress, type Owner } from '../owners/shared';
 import { SearchSelect } from '../../components/Select';
 import { useApi } from '../../lib/useApi';
 import { masked as maskTail } from '../../lib/format';
-import { MODEL, CODE, codeName, PURPOSES, USED_BY } from '../../lib/revenueModel';
+import { MODEL, codeName, codeLabel, PURPOSES, USED_BY } from '../../lib/revenueModel';
+import { useContractTypes } from '../../lib/useContractTypes';
 import { BedsEditor, BaysEditor, bedsText, baysText } from './UnitExtras';
 import { UnitCleaning, missingCleanPrice, type UnitPriceData } from './UnitCleaning';
 import { cx } from '../../lib/design-tokens';
@@ -24,7 +25,7 @@ import { Link } from 'react-router-dom';
 import {
   STATES, cap, layoutFromBedrooms, useLayoutTypes,
   SectionHead, Grid3, Labeled, Select, ReadOnly, CentreModal,
-  type Unit, type Building, type UnitDetail, type LayoutTypeOption,
+  type Unit, type Building, type UnitDetail,
 } from './shared';
 
 /** Every owner profile, for the owner pickers (GET /api/owners, management roles). */
@@ -73,7 +74,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
   const suggested = !u.layoutType ? layoutFromBedrooms(u.bedrooms) : null;
   const layout = u.layoutType ?? suggested;
   const types = useLayoutTypes();
-  const [editingTypes, setEditingTypes] = useState(false);
+  const contractTypes = useContractTypes();
   const [sub, setSub] = useState<Sub>('listing');
   const prices = useApi<UnitPriceData>(`/housekeeping/unit-prices?unitId=${encodeURIComponent(u.id)}`);
   // A dot on a step says something in it still needs filling.
@@ -111,7 +112,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
         </Labeled>
         <Labeled label="Building" help={u.parentUnitId ? 'A sub-unit stays in its parent unit\'s building.' : 'Moving a unit takes its sub-units with it.'}>
           <Select label="Building" value={u.buildingId} disabled={!!u.parentUnitId} onChange={v => onChange({ buildingId: v, state: buildings.find(b => b.id === v)?.state ?? u.state })}
-            options={buildings.map(b => ({ value: b.id, label: b.name }))} />
+            options={[...buildings].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })).map(b => ({ value: b.id, label: b.name }))} />
         </Labeled>
         <Labeled label="State" help="Set on the building. Edit the building to change it.">
           <ReadOnly>{building?.state ?? u.state}</ReadOnly>
@@ -143,7 +144,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
           <Select label="Type" value={layout ?? ''} onChange={v => onChange({ layoutType: v || null })}
             options={[...(layout ? [] : [{ value: '', label: 'Not set' }]), ...typeOptions.map(t => ({ value: t.key, label: t.isActive ? t.label : `${t.label} (hidden)` }))]} />
           {types.data?.ready && types.data.mayEdit && (
-            <button type="button" onClick={() => setEditingTypes(true)} className="self-start p-0 bg-transparent border-none cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink">Edit the Type list</button>
+            <Link to="/properties/settings?tab=types" className="self-start text-meta font-semibold text-gold-ink no-underline">Edit the Type list</Link>
           )}
         </Labeled>
         <Labeled label="Bedrooms" help="0 for a studio">
@@ -215,58 +216,14 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
 
       <SectionHead>Income model</SectionHead>
       <div className="flex flex-wrap items-center gap-3 mb-[6px]">
-        <span className="text-copy">{u.contractCode ? `${codeName(u.contractCode)} · ${CODE[u.contractCode].label}${u.termsLabel ? ` · ${u.termsLabel}` : ''}` : u.revenueModel ? (u.termsLabel ?? MODEL[u.revenueModel].label) : u.pkg}</span>
+        <span className="text-copy">{u.contractCode ? `${codeName(contractTypes, u.contractCode)} · ${codeLabel(contractTypes, u.contractCode)}${u.termsLabel ? ` · ${u.termsLabel}` : ''}` : u.revenueModel ? (u.termsLabel ?? MODEL[u.revenueModel].label) : u.pkg}</span>
         {onOpenContract && <button type="button" onClick={onOpenContract} className="p-0 bg-transparent border-none cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink">Change on the Contract tab</button>}
       </div>
       <details className="m-0 text-meta text-muted-ink [&>summary]:cursor-pointer"><summary className="w-fit list-none inline-flex items-center gap-1 text-muted-ink"><span aria-hidden className="inline-grid place-items-center w-4 h-4 rounded-full border border-solid border-line text-[10px] font-semibold">?</span> How this works</summary><p className="m-0 mt-1.5">One income model per contract decides how the owner statement is worked out. Package {u.pkg.replace('Package ', '')} is kept from the owner workbook for reference.</p></details>
       </>}
       </div>
     </fieldset>
-    {editingTypes && <LayoutTypesModal types={types.data?.data ?? []} onClose={() => setEditingTypes(false)} onChanged={types.reload} />}
     </>
-  );
-}
-
-/** Staff keep the unit Type list here: add a Type, rename one, or hide one that is no longer used. Every Type has a row
- *  in the cleaning price grid (Service prices), so a new one is priced there. */
-function LayoutTypesModal({ types, onClose, onChanged }: { types: LayoutTypeOption[]; onClose: () => void; onChanged: () => void }) {
-  const toast = useToast();
-  const [names, setNames] = useState<Record<string, string>>(() => Object.fromEntries(types.map(t => [t.key, t.label])));
-  const [added, setAdded] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
-  async function run(key: string, call: () => Promise<unknown>, done: string) {
-    setBusy(key);
-    try { await call(); toast({ tone: 'success', title: done }); onChanged(); }
-    catch (e) { notifyFailure(e); }
-    finally { setBusy(null); }
-  }
-  return (
-    <CentreModal title="Unit Types" sub="The Type list on every unit. A hidden Type stays on the units that have it." onClose={onClose}
-      footer={<Button size="sm" variant="secondary" onClick={onClose}>Done</Button>}>
-      <div className="flex flex-col gap-2">
-        {types.map(t => {
-          const name = names[t.key] ?? t.label, renamed = name.trim() !== t.label;
-          return (
-            <div key={t.key} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
-              <Field aria-label={`Name of ${t.label}`} value={name} maxLength={60} onChange={e => setNames(n => ({ ...n, [t.key]: e.target.value }))} />
-              {renamed
-                ? <Button size="sm" variant="primary" loading={busy === t.key} disabled={!name.trim()} disabledReason="Enter a name"
-                    onClick={() => void run(t.key, () => api.patch(`/unit-layout-types/${encodeURIComponent(t.key)}`, { label: name.trim() }), 'Type renamed.')}>Save</Button>
-                : <span />}
-              <Button size="sm" variant="tertiary" loading={busy === `${t.key}:active`}
-                onClick={() => void run(`${t.key}:active`, () => api.patch(`/unit-layout-types/${encodeURIComponent(t.key)}`, { isActive: !t.isActive }), t.isActive ? 'Type hidden.' : 'Type shown again.')}>
-                {t.isActive ? 'Hide' : 'Show'}
-              </Button>
-            </div>
-          );
-        })}
-      </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
-        <Field label="Add a Type" placeholder="e.g. Loft" value={added} maxLength={60} onChange={e => setAdded(e.target.value)} />
-        <Button size="sm" variant="secondary" loading={busy === 'new'} disabled={!added.trim()} disabledReason="Enter a name"
-          onClick={() => void run('new', async () => { await api.post('/unit-layout-types', { label: added.trim() }); setAdded(''); }, 'Type added. Set its cleaning price in Service prices.')}>Add</Button>
-      </div>
-    </CentreModal>
   );
 }
 

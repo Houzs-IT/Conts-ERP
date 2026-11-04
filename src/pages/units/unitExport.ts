@@ -1,6 +1,6 @@
 import { api, notifyFailure } from '../../lib/api';
 import { downloadTable, type ExportCell, type ExportColumn } from '../../lib/export';
-import { PURPOSE_LABEL, USED_BY, codeName, packageOf } from '../../lib/revenueModel';
+import { PURPOSE_LABEL, USED_BY, codeName, packageOf, type ContractType } from '../../lib/revenueModel';
 import { statusLabel } from '../../lib/status';
 import type { UnitReadiness } from '../../lib/types';
 import { layoutLabel, type Building, type Unit } from './shared';
@@ -29,7 +29,7 @@ export interface UnitExportExtras {
 }
 
 /** Every unit with every field the Units page holds, as rows for downloadTable. Nightly price is empty for roles that do not see money. */
-export function unitExportRows(units: Unit[], buildings: Building[], readiness: Record<string, UnitReadiness>, extras: Record<string, UnitExportExtras>): ExportCell[][] {
+export function unitExportRows(units: Unit[], buildings: Building[], readiness: Record<string, UnitReadiness>, extras: Record<string, UnitExportExtras>, types: readonly ContractType[]): ExportCell[][] {
   const building = new Map(buildings.map(b => [b.id, b]));
   const code = new Map(units.map(u => [u.id, u.unitCode]));
   const seen = new Set<string>();
@@ -43,7 +43,7 @@ export function unitExportRows(units: Unit[], buildings: Building[], readiness: 
       readiness[u.id] ? statusLabel('readiness', readiness[u.id]) : '', PURPOSE_LABEL[purpose], u.usedBy ? USED_BY_LABEL[u.usedBy] ?? u.usedBy : '',
       layoutLabel(u.layoutType) ?? u.layoutType, u.bedrooms, u.bathrooms, u.sizeSqft,
       u.bedsLabel,
-      u.ownerName, packageOf(u.contractCode), u.contractCode, u.contractCode ? codeName(u.contractCode) : '', u.termsLabel,
+      u.ownerName, packageOf(types, u.contractCode), u.contractCode, u.contractCode ? codeName(types, u.contractCode) : '', u.termsLabel,
       u.contract?.feePct, u.contract?.startedOn, u.contract?.renewsOn,
       purpose === 'rental' ? u.baseRate : null,
       x?.mainDoorPasscode, x?.mailboxPasscode2, x?.mailboxPasscode, x?.mailboxNo,
@@ -59,9 +59,9 @@ export function unitExportRows(units: Unit[], buildings: Building[], readiness: 
   });
 }
 
-export async function exportUnits(units: Unit[], buildings: Building[], readiness: Record<string, UnitReadiness>): Promise<void> {
+export async function exportUnits(units: Unit[], buildings: Building[], readiness: Record<string, UnitReadiness>, types: readonly ContractType[]): Promise<void> {
   try {
     const { data } = await api.get<{ data: Record<string, UnitExportExtras> }>('/units/export');
-    downloadTable('xlsx', 'units-all-details', 'Units', UNIT_EXPORT_COLUMNS, unitExportRows(units, buildings, readiness, data));
+    downloadTable('xlsx', 'units-all-details', 'Units', UNIT_EXPORT_COLUMNS, unitExportRows(units, buildings, readiness, data, types));
   } catch (e) { notifyFailure(e); } // no file rather than one with its codes silently empty
 }

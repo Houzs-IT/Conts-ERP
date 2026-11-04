@@ -5,6 +5,7 @@ import { type ContractInput, normalise, invalidContract } from '../../_lib/contr
 import { modelOf } from '../../_lib/revenueModel';
 import { codeOf, purposeReady } from '../../_lib/unitPurpose';
 import { contractView } from '../../_lib/unitContract';
+import { contractTypes } from '../../_lib/contractTypes';
 
 const READ_ROLES = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 
@@ -14,7 +15,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   const ownerScoped = session.role === 'owner';
   if (!maySee(session, READ_ROLES) && !ownerScoped) return fail('FORBIDDEN', 'Contracts are visible to operations, finance and management.', 403);
-  const ready = await purposeReady(env);
+  const [ready, types] = await Promise.all([purposeReady(env), contractTypes(env)]);
 
   const rows = await all<any>(env, `
     SELECT c.*, o.display_name,
@@ -36,8 +37,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       id: r.id, ownerId: r.owner_id, ownerName: r.display_name, unitsLabel: r.units_label ?? '—', unitCount: Number(r.unit_count), model: r.model,
       managementFeePct: Number(r.management_fee_pct), grrAmount: Number(r.grr_amount),
       startsOn: r.starts_on, renewsOn: r.renews_on, endsOn: r.ends_on, offerLetter: r.offer_letter,
-      termsLabel: contractView(r, { package: r.package }, 25).termsLabel,
-      revenueModel: modelOf({ ...r, contract_id: r.id }), contractCode: codeOf(modelOf({ ...r, contract_id: r.id }), r.contract_code),
+      termsLabel: contractView(r, { package: r.package }, 25, 0, types).termsLabel,
+      revenueModel: modelOf({ ...r, contract_id: r.id }), contractCode: codeOf(types, modelOf({ ...r, contract_id: r.id }), r.contract_code),
       units: (typeof r.in_force_units === 'string' ? JSON.parse(r.in_force_units) : r.in_force_units) ?? [],
     })),
   });

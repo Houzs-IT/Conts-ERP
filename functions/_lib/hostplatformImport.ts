@@ -547,11 +547,11 @@ export interface WorkbookUnitIn {
   row: number; workbookId: string; listingName: string | null; address: string | null;
   ownerName: string | null; ic: string | null; bankName: string | null; bankAccount: string | null; bankHolder: string | null;
   pkg: Package | null; packageD: boolean; term: 'Long term' | 'Short term' | null;
-  split: 'Profit share' | 'GRR — guaranteed rent' | null; splitValue: number | null;
+  split: 'Profit share' | null; splitValue: number | null;
   /** Unit资料 'Miscellaneous Charges', kept on the unit too: a row without a contract start date has no contract to hold it. */
   miscCharges: boolean;
   contract: {
-    model: 'management' | 'grr'; feePct: number; grrAmount: number; startsOn: string; endsOn: string | null;
+    model: 'management'; feePct: number; grrAmount: number; startsOn: string; endsOn: string | null;
     agentPct: number | null; minimumGuarantee: number; minimumGuaranteeAnnual: number | null;
     guaranteeStartsOn: string | null; guaranteeEndsOn: string | null; agreementFile: string | null; miscCharges: boolean;
   } | null;
@@ -600,7 +600,7 @@ function utilityAccount(kind: UtilityAccountIn['kind'], v: unknown): UtilityAcco
 /** One entry per workbook unit id. Duplicate ids keep the later row (reported). Pool months are only taken up
  *  to the month before `today` (later months are the sheet's projection, not history). */
 export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today = todayInKL()): { units: WorkbookUnitIn[]; errors: RowError[]; notes: string[] } {
-  const errors: RowError[] = [], byId = new Map<string, WorkbookUnitIn>();
+  const errors: RowError[] = [], byId = new Map<string, WorkbookUnitIn>(), grrRows = new Map<string, string>();
   const splitOf = new Map(splits.map(s => [str(s['UNIT']).toUpperCase(), s]));
   // Older callers send the guarantee table without `_section`. The first row of a unit wins.
   const poolOf = new Map<string, Row>();
@@ -642,7 +642,10 @@ export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today 
     const annual = pl ? sen(pl['全年租金（GRR）']) : isD ? grrFloor : null;
     const startsOn = toDate(r['合约开始日期']) ?? (pl ? toDate(pl['合约开始']) : null);
     const endsOn = toDate(r['合约结束日期']) ?? (pl ? toDate(pl['合约结束']) : null);
+    // A long-term row with a GRR amount was a guaranteed rent contract. GRR is gone (owner, 4 Nov 2026), so the unit comes in
+    // with no contract and no GRR split, and the notes list it for staff to set on its Contract tab.
     const isGrr = kind === 'LT' && !!grr;
+    if (isGrr) grrRows.set(workbookId, opt(r['Listing名称']) ?? workbookId);
     const feePct = isGrr ? 0 : ownerShare !== null ? Math.max(0, Math.min(100, 100 - ownerShare)) : 25;
     const miscCharges = r['Miscellaneous Charges'] === true || /^(true|yes|y|1)$/i.test(str(r['Miscellaneous Charges']));
     const ic = opt(r['IC'])?.replace(/\s*\n\s*|\s{2,}/g, ' / ') ?? null;
@@ -656,10 +659,10 @@ export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today 
       pkg: /^[ABCD]$/.test(pkgLetter) ? (`Package ${pkgLetter}` as Package) : null,
       packageD: pkgLetter === 'D',
       term: kind === 'LT' ? 'Long term' : kind === 'PS' || kind === 'MANAGE' ? 'Short term' : null,
-      split: isGrr ? 'GRR — guaranteed rent' : ownerShare !== null ? 'Profit share' : null,
-      splitValue: isGrr ? grr : ownerShare !== null ? Math.round(ownerShare) : null,
-      contract: startsOn ? {
-        model: isGrr ? 'grr' : 'management', feePct, grrAmount: isGrr ? grr! : 0, startsOn, endsOn,
+      split: isGrr ? null : ownerShare !== null ? 'Profit share' : null,
+      splitValue: isGrr ? null : ownerShare !== null ? Math.round(ownerShare) : null,
+      contract: startsOn && !isGrr ? {
+        model: 'management', feePct, grrAmount: 0, startsOn, endsOn,
         agentPct: agent !== null && agent > 0 ? Math.min(agent, feePct) : null,
         minimumGuarantee: Math.max(0, minimum ?? 0), minimumGuaranteeAnnual: annual !== null && annual > 0 ? annual : null,
         // Package D's floor applies from the contract start (prorated by day in its first month); another package's applies throughout.
@@ -683,10 +686,11 @@ export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today 
   if (debt.length) notes.push(`${debt.length} units carry a DEBT AMOUNT (RM ${(debt.reduce((n, u) => n + u.debt!, 0) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} in all). It is recorded against the owner but held: it is not deducted from a statement until someone releases it.`);
   const agents = units.filter(u => u.contract?.agentPct).length;
   if (agents) notes.push(`${agents} contracts have an agent share (分成 AGENT%).`);
-  const noContract = units.filter(u => !u.contract);
+  const noContract = units.filter(u => !u.contract && !grrRows.has(u.workbookId));
   if (noContract.length) notes.push(`${noContract.length} units have no contract start date. Their owner, package and split are set, but no contract is created: a contract needs a start date.`);
   const pm = units.reduce((n, u) => n + u.poolMonths.length, 0);
   if (pm) notes.push(`${pm} unit-months of the Package D guarantee pool (水池) are kept, up to last month.`);
+  if (grrRows.size) notes.push(`${grrRows.size} long-term units have a guaranteed rent (GRR) in the file: ${[...grrRows.values()].join(', ')}. GRR is no longer a contract type, so they came in with no contract. Set each one on its Contract tab.`);
   return { units, errors, notes };
 }
 

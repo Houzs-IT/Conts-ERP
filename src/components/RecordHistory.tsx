@@ -7,7 +7,8 @@ import { StaleBanner } from './DataState';
 import Icon from './Icon';
 import { Drawer } from './Dialog';
 import { CATEGORY as REPAIR_CATEGORY } from './ops/OpsUi';
-import { PAYER_LABEL, CATEGORY_LABEL, MODEL, CODE, codeName, type ContractCode } from '../lib/revenueModel';
+import { PAYER_LABEL, CATEGORY_LABEL, MODEL, typeOf, codeName, type ContractType } from '../lib/revenueModel';
+import { useContractTypes } from '../lib/useContractTypes';
 import { statusLabel, type StatusEntity } from '../lib/status';
 import { CloseButton } from './CloseButton';
 import { useMedia } from '../lib/useMedia';
@@ -88,7 +89,7 @@ const FIELD: Record<string, [string, Kind?]> = {
   blockFrom: ['From', 'date'], blockTo: ['Until', 'date'], copiedFrom: ['Copied from', 'name'], otaName: ['Channel'],
   type: ['Document', 'state'], docNo: ['Document number'], voided: ['Voided', 'bool'],
   // A contract's terms (contract.update / renew / extend).
-  contractCode: ['Package'], code: ['Package'], revenueModel: ['Income model'], agentPct: ['Agent share', 'pct'], agentName: ['Agent'],
+  contractCode: ['Contract type'], code: ['Code'], revenueModel: ['Income model'], agentPct: ['Agent share', 'pct'], agentName: ['Agent'],
   rent: ['Rent', 'money'], guarantee: ['Monthly minimum', 'money'], yearlyGuarantee: ['Yearly minimum', 'money'], tenantName: ['Tenant'],
   endsOn: ['Ends on', 'date'], agreement: ['Agreement'],
   countryCode: ['Nationality'], idType: ['ID type'], idNumber: ['ID number'], dateOfBirth: ['Date of birth'], language: ['Language'],
@@ -113,20 +114,20 @@ const ASSIGNEE_KIND: Record<string, string> = { in_house: 'In-house', contractor
 /** A cleaning job's kind in the words the Cleaning board uses. */
 const CLEAN_KIND: Record<string, string> = { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
 
-function known(k: string, v: string, table: string): string | null {
+function known(k: string, v: string, table: string, types: readonly ContractType[]): string | null {
   if (table === 'tasks' && k === 'kind' && CLEAN_KIND[v]) return CLEAN_KIND[v];
   if (table === 'tasks' && (k === 'state' || k === 'status') && v === 'resolved') return 'Done';
   if (k === 'chargeTo') return PAYER_LABEL[v] ?? null;
   if (k === 'category') return (table === 'expenses' ? CATEGORY_LABEL[v] : REPAIR_CATEGORY[v] ?? CATEGORY_LABEL[v]) ?? null;
   if (k === 'assigneeKind') return ASSIGNEE_KIND[v] ?? null;
   if (k === 'model' || k === 'revenueModel') return MODEL[v as keyof typeof MODEL]?.label ?? null;
-  if ((k === 'contractCode' || k === 'code') && CODE[v as ContractCode]) return codeName(v as ContractCode);
+  if ((k === 'contractCode' || (k === 'code' && table === 'owner_contracts')) && typeOf(types, v)) return codeName(types, v);
   if (k === 'readiness') return statusLabel('readiness', v);
   if (k === 'state' || k === 'status') return statusLabel(STATE_OF[table] ?? 'task', v);
   return null;
 }
 
-function show(k: string, v: unknown, names: Record<string, string>, table = ''): string {
+function show(k: string, v: unknown, names: Record<string, string>, types: readonly ContractType[], table = ''): string {
   if (v === null || v === undefined || v === '') return 'none';
   const kind = FIELD[k]?.[1] ?? (typeof v === 'number' && /(amount|total|payout|price|cost|deposit|rate)$/i.test(k) ? 'money' : 'text');
   if (k === 'countryCode' && typeof v === 'string' && /^[A-Z]{2}$/.test(v)) return countryLabel(v);
@@ -139,7 +140,7 @@ function show(k: string, v: unknown, names: Record<string, string>, table = ''):
   if (kind === 'role' && typeof v === 'string') return ROLE_LABEL[v] ?? humanize(v);
   if (k === 'source' && typeof v === 'string' && REPORTED_BY[v]) return REPORTED_BY[v];
   if (kind === 'channel' && typeof v === 'string') return CHANNEL[v as keyof typeof CHANNEL]?.label ?? humanize(v);
-  if (typeof v === 'string') { const word = known(k, v, table); if (word) return word; }
+  if (typeof v === 'string') { const word = known(k, v, table, types); if (word) return word; }
   if (kind === 'state' && typeof v === 'string') return humanize(v);
   if (typeof v === 'string') {
     if (/^\d{4}-\d{2}$/.test(v)) return monthLabel(v);
@@ -156,7 +157,7 @@ function show(k: string, v: unknown, names: Record<string, string>, table = ''):
 type Line = { key: string; label: string; from?: string; to: string };
 
 /** Field-by-field lines: a changed field shows old -> new; a field only in "after" shows its value. */
-export function historyLines(e: Pick<HistoryEntry, 'before' | 'after'> & { entityTable?: string }, names: Record<string, string> = {}): Line[] {
+export function historyLines(e: Pick<HistoryEntry, 'before' | 'after'> & { entityTable?: string }, names: Record<string, string> = {}, types: readonly ContractType[] = []): Line[] {
   const b = (e.before && typeof e.before === 'object' && !Array.isArray(e.before) ? e.before : {}) as Record<string, unknown>;
   const a = (e.after && typeof e.after === 'object' && !Array.isArray(e.after) ? e.after : {}) as Record<string, unknown>;
   const table = e.entityTable ?? '';
@@ -167,12 +168,12 @@ export function historyLines(e: Pick<HistoryEntry, 'before' | 'after'> & { entit
     const inBefore = k in b, inAfter = k in a;
     if (inBefore && inAfter) {
       if (JSON.stringify(b[k]) === JSON.stringify(a[k])) continue;
-      out.push({ key: k, label: labelOf(k), from: show(k, b[k], names, table), to: show(k, a[k], names, table) });
+      out.push({ key: k, label: labelOf(k), from: show(k, b[k], names, types, table), to: show(k, a[k], names, types, table) });
     } else if (inAfter) {
       if (a[k] === null || a[k] === undefined || a[k] === '' || a[k] === false) continue;
-      out.push({ key: k, label: labelOf(k), to: show(k, a[k], names, table) });
+      out.push({ key: k, label: labelOf(k), to: show(k, a[k], names, types, table) });
     } else {
-      out.push({ key: k, label: labelOf(k), from: show(k, b[k], names, table), to: 'removed' });
+      out.push({ key: k, label: labelOf(k), from: show(k, b[k], names, types, table), to: 'removed' });
     }
   }
   // An assignment records both the roster cleaner and the account behind it; one name is enough on screen.
@@ -241,10 +242,10 @@ function Changes({ lines }: { lines: Line[] }) {
 
 const capital = (s: string) => s.replace(/^./, c => c.toUpperCase());
 
-export function HistoryRun({ run, names }: { run: Run; names: Record<string, string>; last?: boolean }) {
+export function HistoryRun({ run, names, types }: { run: Run; names: Record<string, string>; types: readonly ContractType[]; last?: boolean }) {
   const [open, setOpen] = useState(false);
   const e = run.entries[0];
-  const lines = historyLines(e, names);
+  const lines = historyLines(e, names, types);
   const tag = tagOf(e);
   const who = e.actorKind === 'person' ? e.actorLabel : e.actorLabel || 'System';
   const role = e.actorKind === 'person' && e.actorRole ? ROLE_LABEL[e.actorRole] ?? humanize(e.actorRole) : null;
@@ -285,6 +286,7 @@ export function RecordHistory({ entity, id, also, alsoActions, title = 'History'
 }) {
   const [rows, setRows] = useState<HistoryEntry[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
+  const types = useContractTypes();
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -328,7 +330,7 @@ export function RecordHistory({ entity, id, also, alsoActions, title = 'History'
       {!first && !error && rows.length === 0 && !origin && <div className="py-4 px-5 text-copy text-muted-ink">No changes recorded yet. Every edit from now on shows here, with who made it.</div>}
       {(runs.length > 0 || showOrigin) && (
         <ul className="list-none m-0 py-1 px-0">
-          {runs.map(r => <HistoryRun key={r.key} run={r} names={names} />)}
+          {runs.map(r => <HistoryRun key={r.key} run={r} names={names} types={types} />)}
           {showOrigin && origin && (
             <li className="grid grid-cols-[28px_1fr] gap-x-2.5 px-4 py-3 [&+&]:[border-top:1px_solid_var(--color-line-soft)]">
               <Avatar kind="system" label="" />

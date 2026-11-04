@@ -93,6 +93,7 @@ const ContractsPage = lazy(() => import('./pages/ContractsPage'));
 const LettingsPage = lazy(() => import('./pages/LettingsPage'));
 const DeductionsPage = lazy(() => import('./pages/DeductionsPage'));
 const ScheduledChangesPage = lazy(() => import('./pages/ScheduledChangesPage'));
+const UnitSettingsPage = lazy(() => import('./pages/UnitSettingsPage'));
 const PricingPage = lazy(() => import('./pages/PricingPage'));
 const ReviewsPage = lazy(() => import('./pages/ReviewsPage'));
 const InboxPage = lazy(() => import('./pages/InboxPage'));
@@ -382,6 +383,7 @@ function Routed() {
         <Route path="/properties/agent-to-let" element={<LettingsPage />} />
         <Route path="/properties/deductions" element={<DeductionsPage />} />
         <Route path="/properties/scheduled-changes" element={<ScheduledChangesPage />} />
+        <Route path="/properties/settings" element={<UnitSettingsPage />} />
         <Route path="/owners/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
         <Route path="/owners/statements/:id" element={<StatementDetailPage />} />
         <Route path="/performance/analytics" element={<AnalyticsPage />} />

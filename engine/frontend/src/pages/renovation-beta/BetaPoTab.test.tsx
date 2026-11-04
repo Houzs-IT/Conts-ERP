@@ -67,7 +67,7 @@ const LINES = {
   ],
 };
 
-const PO = { poId: "po9", poNumber: "TC-PO-2611-001", poStatus: "RECEIVED", poLineId: "pl9", poDate: "2026-11-01", deliveryDate: "2026-11-05", supplierRevised: false, qty: 1, received: 1, photoKeys: [] };
+const PO = { poId: "po9", poNumber: "TC-PO-2611-001", poStatus: "RECEIVED", poLineId: "pl9", poDate: "2026-11-01", deliveryDate: "2026-11-05", supplierRevised: false, qty: 1, received: 0, photoKeys: [] };
 const FURNITURE = {
   ...LINES,
   lines: [
@@ -172,6 +172,20 @@ describe("PO tab", () => {
       ["/renovation-so-info/TC-SO-1/lines/sofa/spec", { variants: { colourId: "PC1461-03", fabricId: "PC1461", fabricCode: "PC1461-03", colourLabel: "PC1461-03", fabricLabel: "PC1461", seatHeight: "24", legHeight: "Default" } }],
       ["/renovation-so-info/TC-SO-1/lines/bed/spec", { variants: { fabricCode: "PC1461-01", divanHeight: '6"', legHeight: '1"', gap: '4"', totalHeight: '11"' } }],
     ]);
+    h.furniture = false;
+  });
+
+  it("locks the SKU and variants of a line with goods received; the qty stays editable", async () => {
+    h.furniture = true;
+    PO.received = 1;
+    renderTab();
+    const region = await screen.findByRole("region", { name: "Sales order lines" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(within(region).queryByRole("button", { name: "Change variants of BED-HKA-1003-(K)" })).toBeNull();
+    expect(within(region).queryByRole("button", { name: "Change SKU BED-HKA-1003-(K)" })).toBeNull();
+    expect(within(region).getByRole("button", { name: "Change variants of SOF-GEN-3S" })).toBeTruthy();
+    expect(within(region).getByLabelText("Qty for BED-HKA-1003-(K)")).toBeTruthy();
+    PO.received = 0;
     h.furniture = false;
   });
 

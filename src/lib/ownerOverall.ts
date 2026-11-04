@@ -12,17 +12,20 @@
  *  `contract` picks the formula: PS for a share, LT for a fixed owner base (a long-term let's part of the rent, a GRR
  *  or master lease rent). The report groups rows by income model, ReportGroup. */
 
+/** Occupancy to 2 decimals, as the miscellaneous charge is worked out (RM 100 x 74.19% = RM 74.19), so the two match. */
+export const occupancyLabel = (pct: number): string => `${pct.toFixed(2)}%`;
+
 export type Contract = 'LT' | 'PS';
 
 /** PS: Package A, B and D. LT: Package C. NONE: no contract record yet (the unit's own split is used). */
-export type ReportGroup = 'PS' | 'LT' | 'RTR' | 'MANAGE' | 'GRR' | 'NONE';
-export const REPORT_GROUPS: readonly ReportGroup[] = ['PS', 'LT', 'RTR', 'MANAGE', 'GRR', 'NONE'];
+export type ReportGroup = 'PS' | 'LT' | 'RTR' | 'MANAGE' | 'NONE';
+export const REPORT_GROUPS: readonly ReportGroup[] = ['PS', 'LT', 'RTR', 'MANAGE', 'NONE'];
 export const GROUP_NAME: Record<ReportGroup, string> = {
-  PS: 'Profit sharing', LT: 'Long term', RTR: 'Rent to rent', MANAGE: 'Listing management', GRR: 'Guaranteed rent', NONE: 'No contract',
+  PS: 'Profit sharing', LT: 'Long term', RTR: 'Rent to rent', MANAGE: 'Listing management', NONE: 'No contract',
 };
 /** What the LT / GRR column holds for the group. */
 export const OWNER_BASE_NAME: Record<ReportGroup, string> = {
-  PS: 'GRR (guaranteed minimum)', LT: "Owner's part of the rent", RTR: 'Rent to owner', MANAGE: 'GRR (guaranteed minimum)', GRR: 'GRR (fixed rent)', NONE: 'Fixed rent',
+  PS: 'GRR (guaranteed minimum)', LT: "Owner's part of the rent", RTR: 'Rent to owner', MANAGE: 'GRR (guaranteed minimum)', NONE: 'Fixed rent',
 };
 
 export interface OverallInput {
