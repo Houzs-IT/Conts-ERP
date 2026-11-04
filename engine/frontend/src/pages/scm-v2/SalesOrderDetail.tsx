@@ -1277,7 +1277,9 @@ export const SalesOrderDetail = () => {
     for (const l of lines) {
       const variants = (l.newVariants ?? undefined) as Record<string, unknown> | undefined;
       if (l.changeType === 'ADD') {
-        adds.push({ room: String((l.oldSnapshot as { room?: string } | undefined)?.room ?? ''), itemCode: l.newItemCode ?? '', qty: l.newQty ?? 1,
+        /* A line with no room shows under Common area on the form, so it is saved there (placeRows). */
+        const room = placeRows(renoRooms, [{ key: 'add', room: String((l.oldSnapshot as { room?: string } | undefined)?.room ?? '') }]).roomOf.add ?? '';
+        adds.push({ room, itemCode: l.newItemCode ?? '', qty: l.newQty ?? 1,
           unitPriceSen: Math.max(0, Math.round(l.newUnitPriceSen ?? 0)), variants, remark: l.newRemark });
         continue;
       }
@@ -2705,6 +2707,7 @@ export const SalesOrderDetail = () => {
         open={print.open}
         onClose={print.close}
         docNo={header.doc_no}
+        companyName={brandsQ.data?.brands.find((b) => b.brandId === contractQ.data?.header.brandId)?.name}
         layout={printLayoutState}
         rows={[
           { label: 'Customer', value: header.debtor_name || '—' },
