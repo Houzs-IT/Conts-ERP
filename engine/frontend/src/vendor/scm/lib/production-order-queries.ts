@@ -700,7 +700,7 @@ export function useRawSkus(enabled: boolean) {
 export function useAddProductionMaterial(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { itemCode: string; qtyNeeded: number; processingDate: string | null; deliveryDate: string | null }) =>
+    mutationFn: (body: { itemCode: string; qtyNeeded: number; processingDate: string | null; deliveryDate: string | null; notes?: string | null }) =>
       authedFetch<{ id: string }>(`/production-orders/${id}/materials`, { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: () => { for (const k of materialKeys(id)) void qc.invalidateQueries({ queryKey: k }); },
   });
@@ -708,7 +708,7 @@ export function useAddProductionMaterial(id: string) {
 export function useUpdateProductionMaterial(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id: materialId, ...body }: { id: string; qtyNeeded?: number; processingDate?: string | null; deliveryDate?: string | null }) =>
+    mutationFn: ({ id: materialId, ...body }: { id: string; qtyNeeded?: number; processingDate?: string | null; deliveryDate?: string | null; notes?: string | null }) =>
       authedFetch(`/production-orders/${id}/materials/${materialId}`, { method: 'PATCH', body: JSON.stringify(body) }),
     onSuccess: () => { for (const k of materialKeys(id)) void qc.invalidateQueries({ queryKey: k }); },
   });
