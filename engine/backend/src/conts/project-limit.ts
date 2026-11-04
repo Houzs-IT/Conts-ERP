@@ -309,13 +309,17 @@ export function overLimitBody(over: Array<{ projectId: number; projectName: stri
 
 /** A new project's funding, as the form sends it (SOP 3.4): a customer project (the default), or an internal one —
     the company's own money — with the department it counts to (rental: a unit to rent out; supply: the showroom) and
-    its budget. */
-export function fundingFrom(body: Record<string, unknown>): { ok: true; funding: 'customer' | 'internal'; department: 'rental' | 'supply' | null; budgetSen: number | null } | { ok: false; error: string } {
-  if (body.funding == null || body.funding === 'customer') return { ok: true, funding: 'customer', department: null, budgetSen: null };
+    its budget. An internal Renovation project also names its brand (SOP 1.1; chew 4 Nov 2026): Dream Crafter
+    (RENOVATION) or The Conts (INHOUSE_RENOVATION), stored as its finance_kind; an internal Rental one has none. */
+export function fundingFrom(body: Record<string, unknown>): { ok: true; funding: 'customer' | 'internal'; department: 'rental' | 'supply' | null; budgetSen: number | null; financeKind: 'RENOVATION' | 'INHOUSE_RENOVATION' | null } | { ok: false; error: string } {
+  if (body.funding == null || body.funding === 'customer') return { ok: true, funding: 'customer', department: null, budgetSen: null, financeKind: null };
   if (body.funding !== 'internal') return { ok: false, error: 'funding_invalid' };
   const department = body.internalDepartment;
   if (department !== 'rental' && department !== 'supply') return { ok: false, error: 'department_required' };
   const budget = Number(body.budgetSen);
   if (!Number.isInteger(budget) || budget <= 0) return { ok: false, error: 'budget_required' };
-  return { ok: true, funding: 'internal', department, budgetSen: budget };
+  if (department === 'rental') return { ok: true, funding: 'internal', department, budgetSen: budget, financeKind: null };
+  const kind = body.financeKind;
+  if (kind !== 'RENOVATION' && kind !== 'INHOUSE_RENOVATION') return { ok: false, error: 'brand_required' };
+  return { ok: true, funding: 'internal', department, budgetSen: budget, financeKind: kind };
 }

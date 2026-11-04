@@ -138,8 +138,12 @@ describe('the project a voucher pays', () => {
 describe('a new project’s funding', () => {
   test('customer by default; internal needs its department and budget', async () => {
     const { fundingFrom } = await import('./project-limit');
-    expect(fundingFrom({})).toEqual({ ok: true, funding: 'customer', department: null, budgetSen: null });
-    expect(fundingFrom({ funding: 'internal', internalDepartment: 'supply', budgetSen: 5_000_000 })).toEqual({ ok: true, funding: 'internal', department: 'supply', budgetSen: 5_000_000 });
+    expect(fundingFrom({})).toEqual({ ok: true, funding: 'customer', department: null, budgetSen: null, financeKind: null });
+    /* SOP 1.1 (chew 4 Nov 2026): an internal Renovation project names its brand; an internal Rental one has none. */
+    expect(fundingFrom({ funding: 'internal', internalDepartment: 'supply', budgetSen: 5_000_000 })).toEqual({ ok: false, error: 'brand_required' });
+    expect(fundingFrom({ funding: 'internal', internalDepartment: 'supply', budgetSen: 5_000_000, financeKind: 'INHOUSE_RENOVATION' })).toEqual({ ok: true, funding: 'internal', department: 'supply', budgetSen: 5_000_000, financeKind: 'INHOUSE_RENOVATION' });
+    expect(fundingFrom({ funding: 'internal', internalDepartment: 'supply', budgetSen: 5_000_000, financeKind: 'OTHER' })).toEqual({ ok: false, error: 'brand_required' });
+    expect(fundingFrom({ funding: 'internal', internalDepartment: 'rental', budgetSen: 5_000_000, financeKind: 'RENOVATION' })).toEqual({ ok: true, funding: 'internal', department: 'rental', budgetSen: 5_000_000, financeKind: null });
     expect(fundingFrom({ funding: 'internal', budgetSen: 5_000_000 })).toEqual({ ok: false, error: 'department_required' });
     expect(fundingFrom({ funding: 'internal', internalDepartment: 'rental' })).toEqual({ ok: false, error: 'budget_required' });
     expect(fundingFrom({ funding: 'owner' })).toEqual({ ok: false, error: 'funding_invalid' });
