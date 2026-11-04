@@ -47,7 +47,7 @@ import { RenovationSoOrderInfo } from './RenovationSoOrderInfo';
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from './renovationSoAreaLines';
 import { SoInstalments, instalmentRows, nextInstalmentSen, paymentSlots, useSoInstalments } from './renovationSoInstalments';
 import { ContractSections, InstalmentBillDialog } from '../renovation/RenovationSalesOrder';
-import { useContract } from '../../lib/renovation/api';
+import { useBrands, useContract } from '../../lib/renovation/api';
 import { SPEC_LOCKED_NOTE } from '../renovation-beta/renovationBetaLines';
 import {
   Field, SoAddressFields, SoCustomerFields, SoDetailAsideCards, SoDetailHeader, SoEmergencyFields, SoOrderInfoFields, SoRecentActivityCard,
@@ -769,7 +769,8 @@ export const SalesOrderDetail = () => {
   useOpenPrintPreviewFromUrl(print.openPreview, !!header);
   /* The renovation contract's four instalments (owner, 1 Nov 2026), as the project's payments strip shows them. */
   const instalmentsQ = useSoInstalments(docNo ?? null, printLayoutState.renoMode);
-  const contractQ = useContract(printLayoutState.renoMode ? docNo : undefined);
+  const contractQ = useContract(header?.so_kind === 'RENOVATION' ? docNo : undefined);
+  const brandsQ = useBrands();
   const [billingId, setBillingId] = useState<string | null>(null);
   const canBill = can('scm.renovation.bill') && ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'].includes(contractQ.data?.status ?? '');
   const instalments = useMemo(
@@ -2016,9 +2017,15 @@ export const SalesOrderDetail = () => {
     /* `pwpCodes` rides on the same GET /:docNo payload — vouchers this SO's
        trigger items issued, so the printed PDF can mark the trigger lines. */
     const pwpCodes = ((detail.data as { pwpCodes?: unknown[] } | undefined)?.pwpCodes ?? []) as never;
+    const contract = contractQ.data;
+    const brand = brandsQ.data?.brands.find((b) => b.brandId === contract?.header.brandId);
+    const pdfContract = contract && brand ? {
+      brandName: brand.name, letterhead: [...brand.companyLines, brand.contactLine].filter(Boolean), bankLine: brand.bankLine, termsLines: brand.termsLines,
+      instalments: contract.instalments.map((i) => ({ label: i.label, percent: `${i.pctBp / 100}%`, description: i.description })),
+    } : undefined;
     /* Loaded here, not at the top: the PDF library has no business on a page that may never print. */
     return import('../../vendor/scm/lib/sales-order-pdf')
-      .then(({ generateSalesOrderPdf }) => generateSalesOrderPdf(header, lineRows, payments, action, pwpCodes, printLayoutState.pdfOpts))
+      .then(({ generateSalesOrderPdf }) => generateSalesOrderPdf(header, lineRows, payments, action, pwpCodes, { ...printLayoutState.pdfOpts, contract: pdfContract }))
       .catch((e) => {
         // eslint-disable-next-line no-console
         console.error('PDF generation failed:', e);

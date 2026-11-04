@@ -486,15 +486,18 @@ export function drawHeader(
      *  the company logo. null/undefined → the company logo memo, then the
      *  company name in spaced capitals. */
     logo?: BrandingLogo | null;
+    /** A renovation contract's own brand letterhead: its name and lines, as its Contract PDF prints. */
+    name?: string;
+    lines?: string[];
   },
 ): number {
   /* Conts (owner, 24 Oct 2026): every document draws the letterhead of the owner's sample quotations, so a PO, DO,
      GRN or invoice reads as the same family as the quotation, SO and VO. */
   const y = drawDocLetterhead(doc, {
     title: opts.docTitle.toUpperCase(),
-    name: COMPANY.shortName,
-    logo: opts.logo ?? getBrandingLogoCache(),
-    lines: letterheadLines(),
+    name: opts.name ?? COMPANY.shortName,
+    logo: opts.logo ?? (opts.name ? null : getBrandingLogoCache()),
+    lines: opts.lines ?? letterheadLines(),
     meta: opts.rightMeta,
   });
   return y + 2;
