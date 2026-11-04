@@ -57,21 +57,26 @@ export function resolveLineSub(list: readonly SubDepartment[], line: { departmen
   return { ok: true, department: s.department, subDepartmentId: s.id };
 }
 
-/** Each project's brand (SOP 2.1): its own kind, else its brand's, else renovation (Dream Crafter). */
+const knownKind = (k: unknown): RenoKind | null => (k === 'RENOVATION' || k === 'INHOUSE_RENOVATION' ? k : null);
+
+/** The company's brands' kinds, by brand name (public.project_brands; SOP 2.1). */
+export async function loadBrandKinds(sb: Db, companyId: number): Promise<Map<string, RenoKind | null>> {
+  const { data } = await sb.schema('public').from('project_brands').select('name, finance_kind').eq('company_id', companyId);
+  return new Map(((data ?? []) as Array<{ name: string; finance_kind: string | null }>).map((b) => [b.name, knownKind(b.finance_kind)]));
+}
+
+/** A project's brand (SOP 2.1): its own kind, else its brand's, else renovation (Dream Crafter). */
+export const renoKindOf = (p: { finance_kind?: string | null; brand?: string | null }, brandKinds: ReadonlyMap<string, RenoKind | null>): RenoKind =>
+  knownKind(p.finance_kind) ?? (p.brand ? brandKinds.get(p.brand) ?? null : null) ?? 'RENOVATION';
+
+/** Each project's brand, for the projects named. */
 export async function projectRenoKind(sb: Db, companyId: number, projectIds: number[]): Promise<Map<number, RenoKind>> {
   const out = new Map<number, RenoKind>();
   const ids = [...new Set(projectIds)];
   if (ids.length === 0) return out;
-  const known = (k: unknown): RenoKind | null => (k === 'RENOVATION' || k === 'INHOUSE_RENOVATION' ? k : null);
   const { data } = await sb.schema('public').from('projects').select('id, finance_kind, brand').eq('company_id', companyId).in('id', ids);
-  const rows = (data ?? []) as Array<{ id: number; finance_kind: string | null; brand: string | null }>;
-  const names = [...new Set(rows.map((p) => p.brand).filter((b): b is string => !!b))];
-  const byName = new Map<string, RenoKind | null>();
-  if (names.length > 0) {
-    const { data: bs } = await sb.schema('public').from('project_brands').select('name, finance_kind').eq('company_id', companyId).in('name', names);
-    for (const b of (bs ?? []) as Array<{ name: string; finance_kind: string | null }>) byName.set(b.name, known(b.finance_kind));
-  }
-  for (const p of rows) out.set(Number(p.id), known(p.finance_kind) ?? (p.brand ? byName.get(p.brand) ?? null : null) ?? 'RENOVATION');
+  const brandKinds = await loadBrandKinds(sb, companyId);
+  for (const p of (data ?? []) as Array<{ id: number; finance_kind: string | null; brand: string | null }>) out.set(Number(p.id), renoKindOf(p, brandKinds));
   return out;
 }
 

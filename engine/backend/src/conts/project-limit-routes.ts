@@ -9,6 +9,7 @@
 import { hasHouzsPerm } from '../scm/lib/houzs-perms';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { limitSettings, projectLimit } from './project-limit';
+import { loadBrandKinds, renoKindOf } from './sub-departments';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 type Ctx = any;
@@ -116,7 +117,7 @@ export const listProjectsHandler = async (c: Ctx): Promise<Response> => {
   /* The voucher's project picker (chew 2 Nov 2026) sorts and labels by these: the customer, the contract's status (its
      sales order: the project's own status column is not kept up), the handover, and whether it is done. */
   const { data, error } = await sb.schema('public').from('projects')
-    .select('id, code, name, funding, internal_department, customer_name, planned_handover_date, handed_over_at, closed_at, created_at')
+    .select('id, code, name, funding, internal_department, customer_name, planned_handover_date, handed_over_at, closed_at, created_at, finance_kind, brand')
     .eq('company_id', co.companyId).order('id', { ascending: false }).limit(2000);
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   const rows = (data ?? []) as Array<Record<string, any>>;
@@ -132,10 +133,12 @@ export const listProjectsHandler = async (c: Ctx): Promise<Response> => {
       if (!was || /CANCEL/.test(was)) statusOf.set(Number(s.project_id), String(s.status));
     }
   }
+  /* Its brand (SOP 1.1): a renovation sub-department's picker lists its own brand's projects. */
+  const brandKinds = await loadBrandKinds(sb, co.companyId);
   return c.json({
     projects: rows.map((p) => {
       const status = statusOf.get(Number(p.id)) ?? null;
-      return { ...p, contract_status: status, done: !!p.handed_over_at || !!p.closed_at || status === 'RENO_COMPLETED' || status === 'CLOSED' || (status != null && /CANCEL/.test(status)) };
+      return { ...p, reno_kind: renoKindOf(p, brandKinds), contract_status: status, done: !!p.handed_over_at || !!p.closed_at || status === 'RENO_COMPLETED' || status === 'CLOSED' || (status != null && /CANCEL/.test(status)) };
     }),
   });
 };

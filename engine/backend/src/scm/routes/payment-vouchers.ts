@@ -77,6 +77,7 @@ import { planPvRateAdoption, isRateRetainedFromPv, roundRate6 } from '../lib/pv-
 import { recostFromGrn } from '../lib/recost';
 import { fmtSen } from '../shared/format';
 import { checkVoucherLimit, lineDepartmentOfProject, overLimitBody, resolveVoucherProject } from '../../conts/project-limit';
+import { loadSubDepartments, projectRenoKind, resolveLineSub, RENO_KIND_OF, type SubDepartment } from '../../conts/sub-departments';
 
 export const paymentVouchers = new Hono<{ Bindings: Env; Variables: Variables }>();
 paymentVouchers.use('*', supabaseAuth);
@@ -98,7 +99,7 @@ const PV_AUDIT_FIELDS: Array<[string, string]> = [
 const HEADER =
   'id, pv_number, voucher_date, payee_name, supplier_id, credit_account_code, currency, exchange_rate, purpose, notes, total_sen, status, posted_at, created_at, created_by, updated_at, company_id, submitted_at, submitted_by, checked_at, checked_by, approved_at, approved_by, refund_source_type, refund_source_doc_no, customer_id, debtor_code';
 
-const LINE = 'id, pv_id, line_no, description, debit_account_code, amount_sen, created_at, department, project_id, unit_id';
+const LINE = 'id, pv_id, line_no, description, debit_account_code, amount_sen, created_at, department, project_id, unit_id, sub_department_id';
 
 /* Migration 0202 — the PV purpose. Only SUPPLIER_PAYMENT settles AP (its
    allocations decrement the linked PIs' paid_sen); FREIGHT / OTHER post the GL
@@ -233,7 +234,25 @@ async function settledDepartmentLegs<L extends DebitLeg>(
 }
 
 /* ── Normalise + validate the incoming lines, recompute the header total ──── */
-type PvLineRow = { line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department: Department; unit_id?: string | null; project_id?: number | null };
+type PvLineRow = { line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department: Department; unit_id?: string | null; project_id?: number | null; sub_department_id?: string | null };
+
+const KIND_LABEL: Record<string, string> = { RENOVATION: 'a Dream Crafter', INHOUSE_RENOVATION: 'a The Conts' };
+
+/** The sub-departments the lines name (SOP 1.1; chew 4 Nov 2026): each sets its line's department; a retired one only
+    on the line that already had it (`savedSub`); a unit only on a Rental one. Returns the list for lineProjects. */
+export async function lineSubs(sb: any, companyId: number, rows: Array<PvLineRow>, savedSub: (r: PvLineRow) => string | null = () => null): Promise<{ ok: true; list: SubDepartment[] } | { ok: false; status: 400 | 500; body: Record<string, unknown> }> {
+  if (!rows.some((r) => r.sub_department_id)) return { ok: true, list: [] };
+  const loaded = await loadSubDepartments(sb, companyId);
+  if (!loaded.ok) return { ok: false, status: 500, body: { error: 'load_failed', reason: loaded.error } };
+  for (const r of rows) {
+    if (!r.sub_department_id) continue;
+    const s = resolveLineSub(loaded.list, { subDepartmentId: r.sub_department_id }, { saved: savedSub(r) });
+    if (!s.ok) return { ok: false, status: 400, body: { error: s.error, message: `Line ${r.line_no}: ${s.message}` } };
+    if (r.unit_id && s.department !== 'rental') return { ok: false, status: 400, body: { error: 'unit_needs_rental', message: `Line ${r.line_no}: a unit goes with a Rental department.` } };
+    r.department = s.department;
+  }
+  return { ok: true, list: loaded.list };
+}
 
 /** The units the lines name that are not Property OS units (public.conts_units). */
 export async function unknownUnits(sb: any, rows: Array<{ unit_id?: string | null }>): Promise<string[] | { error: string }> {
@@ -248,15 +267,32 @@ export async function unknownUnits(sb: any, rows: Array<{ unit_id?: string | nul
 /** The projects the lines name: each must be the company's, and sets its line's department (lineDepartmentOfProject) —
     except on a line whose project is the one it already had (`savedDepartment` gives that line's saved department), which keeps it,
     so opening and saving an older voucher moves nothing between departments. */
-export async function lineProjects(sb: any, companyId: number, rows: Array<PvLineRow>, savedDepartment: (r: PvLineRow) => Department | null = () => null): Promise<{ ok: true } | { ok: false; status: 400 | 500; body: Record<string, unknown> }> {
+export async function lineProjects(sb: any, companyId: number, rows: Array<PvLineRow>, savedDepartment: (r: PvLineRow) => Department | null = () => null, subs: readonly SubDepartment[] = []): Promise<{ ok: true } | { ok: false; status: 400 | 500; body: Record<string, unknown> }> {
   const ids = [...new Set(rows.map((r) => r.project_id).filter((x): x is number => x != null))];
   if (ids.length === 0) return { ok: true };
-  const { data, error } = await sb.schema('public').from('projects').select('id, funding, internal_department').eq('company_id', companyId).in('id', ids);
+  const { data, error } = await sb.schema('public').from('projects').select('id, name, funding, internal_department').eq('company_id', companyId).in('id', ids);
   if (error) return { ok: false, status: 500, body: { error: 'load_failed', reason: error.message } };
-  const byId = new Map(((data ?? []) as Array<{ id: number; funding: string | null; internal_department: string | null }>).map((p) => [Number(p.id), p]));
+  const byId = new Map(((data ?? []) as Array<{ id: number; name: string; funding: string | null; internal_department: string | null }>).map((p) => [Number(p.id), p]));
   const missing = ids.find((id) => !byId.has(id));
   if (missing != null) return { ok: false, status: 400, body: { error: 'project_invalid', message: `Project ${missing} is not this company's.` } };
-  for (const r of rows) if (r.project_id != null) r.department = savedDepartment(r) ?? lineDepartmentOfProject(byId.get(r.project_id)!);
+  const kinds = rows.some((r) => r.project_id != null && r.sub_department_id) ? await projectRenoKind(sb, companyId, ids) : new Map<number, string>();
+  const refuse = (message: string) => ({ ok: false as const, status: 400 as const, body: { error: 'project_mismatch', message } });
+  for (const r of rows) {
+    if (r.project_id == null) continue;
+    const p = byId.get(r.project_id)!;
+    /* A line naming its sub-department keeps the department that gives; the project must fit it (SOP 1.1). */
+    if (r.sub_department_id) {
+      const side = lineDepartmentOfProject(p);
+      if (r.department === 'shared') return refuse('A Company line names no project.');
+      if (r.department !== side) return refuse(`${p.name} is a ${side === 'rental' ? 'Rental' : 'Renovation'} project.`);
+      const fixed = subs.find((x) => x.id === r.sub_department_id)?.fixedKey;
+      const want = fixed ? RENO_KIND_OF[fixed] : undefined;
+      const kind = kinds.get(r.project_id);
+      if (want && side === 'supply' && kind && kind !== want) return refuse(`${p.name} is ${KIND_LABEL[kind]} project.`);
+      continue;
+    }
+    r.department = savedDepartment(r) ?? lineDepartmentOfProject(p);
+  }
   return { ok: true };
 }
 
@@ -282,6 +318,10 @@ export function buildLines(
     const projectId = projectRaw === undefined ? undefined : projectRaw === null || projectRaw === '' ? null : Number(projectRaw);
     if (projectId != null && (!Number.isInteger(projectId) || projectId <= 0)) return { error: 'project_invalid' };
     if (unitId && projectId) return { error: 'unit_and_project' };
+    /* SOP 1.1 (chew 4 Nov 2026): the line's sub-department; lineSubs checks it and sets the department. Absent =
+       unchanged on an edit. */
+    const subRaw = line.subDepartmentId;
+    const subId = subRaw === undefined ? undefined : subRaw === null || String(subRaw).trim() === '' ? null : String(subRaw).trim();
     rows.push({
       line_no: i + 1,
       description: (line.description as string | undefined)?.trim() || null,
@@ -290,6 +330,7 @@ export function buildLines(
       department: unitId ? 'rental' : isDepartment(line.department) ? line.department : DEFAULT_DEPARTMENT,
       ...(unitId !== undefined ? { unit_id: unitId } : {}),
       ...(projectId !== undefined ? { project_id: projectId } : {}),
+      ...(subId !== undefined ? { sub_department_id: subId } : {}),
     });
     total += amount;
   }
@@ -685,7 +726,9 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
     const bad = await unknownUnits(c.get('supabase'), built.rows as Array<{ unit_id?: string | null }>);
     if (!Array.isArray(bad)) return c.json({ error: 'load_failed', reason: bad.error }, 500);
     if (bad.length > 0) return c.json({ error: 'unit_unknown', message: 'Choose the unit from the list.' }, 400);
-    const lp = await lineProjects(c.get('supabase'), activeCompanyId(c) ?? 0, built.rows as Array<PvLineRow>);
+    const ls = await lineSubs(c.get('supabase'), activeCompanyId(c) ?? 0, built.rows as Array<PvLineRow>);
+    if (!ls.ok) return c.json(ls.body, ls.status);
+    const lp = await lineProjects(c.get('supabase'), activeCompanyId(c) ?? 0, built.rows as Array<PvLineRow>, () => null, ls.list);
     if (!lp.ok) return c.json(lp.body, lp.status);
   }
   /* A line debiting the SAME account the voucher pays from would post money
@@ -989,9 +1032,11 @@ export const updatePaymentVoucherHandler = async (c: any) => {
       const bad = await unknownUnits(sb, built.rows);
       if (!Array.isArray(bad)) return c.json({ error: 'load_failed', reason: bad.error }, 500);
       if (bad.length > 0) return c.json({ error: 'unit_unknown', message: 'Choose the unit from the list.' }, 400);
-      const { data: oldLines } = await sb.from('payment_voucher_lines').select('line_no, project_id, department').eq('pv_id', id);
-      const old = new Map(((oldLines ?? []) as Array<{ line_no: number; project_id: number | null; department: Department }>).map((l) => [Number(l.line_no), l]));
-      const lp = await lineProjects(sb, co.companyId, built.rows, (r) => { const o = old.get(r.line_no); return o && o.project_id === r.project_id ? o.department : null; });
+      const { data: oldLines } = await sb.from('payment_voucher_lines').select('line_no, project_id, department, sub_department_id').eq('pv_id', id);
+      const old = new Map(((oldLines ?? []) as Array<{ line_no: number; project_id: number | null; department: Department; sub_department_id?: string | null }>).map((l) => [Number(l.line_no), l]));
+      const ls = await lineSubs(sb, co.companyId, built.rows, (r) => old.get(r.line_no)?.sub_department_id ?? null);
+      if (!ls.ok) return c.json(ls.body, ls.status);
+      const lp = await lineProjects(sb, co.companyId, built.rows, (r) => { const o = old.get(r.line_no); return o && o.project_id === r.project_id ? o.department : null; }, ls.list);
       if (!lp.ok) return c.json(lp.body, lp.status);
     }
     /* Same self-debit door as the create path, against the EFFECTIVE Paid
@@ -1021,8 +1066,8 @@ export const updatePaymentVoucherHandler = async (c: any) => {
     /* A line the edit does not name a unit or a project for keeps the one it had (by line number): the unit unless it
        is no longer Rental, the project unless it now names a unit. A voucher paying bills pays its one project on every
        line; on a plain voucher a project named in the header (an older caller) fills only lines naming neither. */
-    const { data: hadLines } = await sb.from('payment_voucher_lines').select('line_no, unit_id, project_id').eq('pv_id', id);
-    const had = new Map(((hadLines ?? []) as Array<{ line_no: number; unit_id: string | null; project_id: number | null }>).map((l) => [Number(l.line_no), l]));
+    const { data: hadLines } = await sb.from('payment_voucher_lines').select('line_no, unit_id, project_id, department, sub_department_id').eq('pv_id', id);
+    const had = new Map(((hadLines ?? []) as Array<{ line_no: number; unit_id: string | null; project_id: number | null; department: Department; sub_department_id?: string | null }>).map((l) => [Number(l.line_no), l]));
     const keptRows = built.rows.map((r) => {
       const unit_id = r.unit_id !== undefined ? r.unit_id : r.department === 'rental' && r.project_id == null ? had.get(r.line_no)?.unit_id ?? null : null;
       const project_id = paysBills ? voucherProject ?? null
@@ -1030,7 +1075,10 @@ export const updatePaymentVoucherHandler = async (c: any) => {
         : unit_id ? null
         : body.projectId !== undefined ? voucherProject ?? null
         : had.get(r.line_no)?.project_id ?? null;
-      return { ...r, unit_id, project_id };
+      /* The sub-department too (SOP 1.1): kept when the edit names none and the line stays in its department. */
+      const h0 = had.get(r.line_no);
+      const sub_department_id = r.sub_department_id !== undefined ? r.sub_department_id : h0 && h0.department === r.department ? h0.sub_department_id ?? null : null;
+      return { ...r, unit_id, project_id, sub_department_id };
     });
     await sb.from('payment_voucher_lines').delete().eq('pv_id', id);
     const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(keptRows.map((r) => ({ ...r, pv_id: id })), c));
