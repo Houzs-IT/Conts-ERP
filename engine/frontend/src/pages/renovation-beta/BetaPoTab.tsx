@@ -146,7 +146,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   /* Renovation contracts: a SKU or qty change raises one contract VO per contract (approved for you); options and
      remarks save on the line with no VO. */
   const contractSo = new Set(d.sos.filter((s) => s.renovation).map((s) => s.docNo));
-  const raisesVo = (b: VoBatch): boolean => !contractSo.has(b.docNo) || contractLineEdits(b).length > 0 || b.poOptionIds.length > 0;
+  const raisesVo = (b: VoBatch): boolean => !contractSo.has(b.docNo) || contractLineEdits(b).length > 0;
   const voBatchesShown = batches.filter((b) => !contractSo.has(b.docNo));
   const batchTitle = (b: VoBatch): string => {
     if (!contractSo.has(b.docNo)) return `${voLabel(voBatchesShown.indexOf(b))} on ${b.docNo}`;
@@ -309,7 +309,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       <WsPageHead
         title="SO"
         sub={editing
-          ? "Editing. Change a yellow field, then Save & post to VO: the order changes at once and the VO keeps the record. Dates and suppliers save as you set them. A PO's own date is changed in the PO: click its number."
+          ? "Editing. Change a yellow field, then Save. A new amount or SKU is recorded as a VO; options and remarks just save. Dates and suppliers save as you set them. A PO's own date is changed in the PO: click its number."
           : "Every line of the sales order, after VOs."}
         right={(
           <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -485,7 +485,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                           {!contractSo.has(l.soDocNo)
                             ? "On a PO: the PO itself changes only after the PO change is approved."
                             : e.variants !== undefined
-                              ? "On a PO: a contract VO is raised. The line is replaced with the new variants in the same room, its PO line is flagged for purchasing to cancel, and the new line is ordered as it now is."
+                              ? "On a PO: the line saves with the new variants, no VO, and its PO line is flagged for purchasing to tell the supplier."
                               : "On a PO: the PO line is flagged for purchasing to change; the PO itself does not change by itself."}
                         </div>
                       )}
@@ -700,7 +700,7 @@ function VariantDialog(r: RowCtx & { onClose: () => void }): ReactElement {
         {onPo && (
           <p style={{ margin: 0, fontSize: 13, color: WS.amber }}>
             {r.contract
-              ? `${onPo.poNumber} already buys this line. Saving new variants raises a contract VO: the line is replaced with them, and the PO line is flagged for purchasing.`
+              ? `${onPo.poNumber} already buys this line. The new variants save on the line, and the PO line is flagged for purchasing to tell the supplier.`
               : `${onPo.poNumber} already buys this line. The PO changes only after the PO change from the VO is approved.`}
           </p>
         )}
@@ -914,9 +914,9 @@ function SaveResult({ posted, onClose }: { posted: PostedVo[]; onClose: () => vo
             {x.applied
               ? <span style={{ color: WS.green }}><b>Saved.</b> {x.docNo} changed{x.amendmentNo ? ` (${x.amendmentNo}); the VO is in the VO tab.` : "."}</span>
               : <span style={{ color: WS.red }}><b>{x.docNo} not changed.</b> {x.refusal}</span>}
-            {x.amendmentNo && (x.poFlags ?? 0) > 0 && (
+            {(x.poFlags ?? 0) > 0 && (
               <div style={{ color: WS.amber }}>
-                {x.amendmentNo} raised: the PO line{x.poFlags === 1 ? " is" : "s are"} flagged for purchasing.
+                {x.amendmentNo ? `${x.amendmentNo} raised: the` : "The"} PO line{x.poFlags === 1 ? " is" : "s are"} flagged for purchasing.
               </div>
             )}
             {x.followUps.length > 0 && (

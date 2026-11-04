@@ -39,7 +39,6 @@ import { canonicalizeVariants } from '../shared/so-variant-rule';
 import { buildVariantSummary } from '../shared/variant-summary';
 import { variantCategoryOf } from '../lib/renovation-flow-rules';
 import { checkAllowedOptions, loadProductAndModel, variantCheckUnavailableResponse } from '../lib/allowed-options-check';
-import { lineEditsVo } from './renovation';
 import { SPEC_LOCKED_ERROR, specLockedMessage } from '../lib/renovation-spec-lock';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
@@ -254,9 +253,8 @@ renovationSoInfo.put('/:docNo', async (c: C) => {
    A renovation contract changes lines only through a contract VO, which adds or omits lines and never touches the
    options, so this is the one place they are set (the SO page and the project PO tab, both with the SO line's own
    pickers). Money, quantity and SKU never move here. A line a live PO already buys keeps what the supplier was sent:
-   on a renovation contract a change of its options raises a contract VO instead (owner, 2 Nov 2026: the line is
-   omitted and added again with the new options, its PO line flagged CANCEL for purchasing; renovation-vo.ts quickVo,
-   approved at once); on any other order it goes through the PO amendment. */
+   on a renovation contract the options save on the line with no VO, the amount did not move (owner, 4 Nov 2026), and
+   each PO line is flagged so purchasing tells the supplier; on any other order it goes through the PO amendment. */
 renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
   const db = dbOf(c);
   const docNo = c.req.param('docNo') ?? '';
@@ -301,10 +299,7 @@ renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
     const bad = checkAllowedOptions(product, model, variants as Parameters<typeof checkAllowedOptions>[2]);
     if (bad) return c.json({ ...bad, itemCode: line.item_code }, 400);
   }
-  if (po && !sameOptions) {
-    if (line.contract) {
-      return lineEditsVo(c, docNo, [{ soItemId: itemId, variants, remark }], `Options of ${line.item_code} changed (on ${po.po_number})`);
-    }
+  if (po && !sameOptions && !line.contract) {
     return c.json({ error: 'line_on_po', message: `${po.po_number} already buys this line from the supplier. Change its options through that PO's amendment.` }, 409);
   }
   const summary = buildVariantSummary(group, variants) || null;
@@ -317,7 +312,18 @@ renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
      VALUES (?, ?, 'UPDATE', ?, ?::text::jsonb, ?, 'renovation', ?)`,
   ).bind(docNo, line.company_id, String(c.get('houzsUser')?.name ?? ''), JSON.stringify([{ field: 'variants', from: before ?? null, to: variants }]),
     line.status, `${line.item_code}: options ${summary ?? 'cleared'}${remark !== (line.remark ?? '') ? `; remark ${remark || 'cleared'}` : ''}`).run();
-  return c.json({ ok: true, changed: true, variants, summary });
+  let flags = 0;
+  if (po && !sameOptions) {
+    const flagged = await db.prepare(
+      `INSERT INTO scm.reno_po_line_flags (company_id, purchase_order_item_id, so_item_id, action, new_qty, note)
+       SELECT ?, pi.id, pi.so_item_id, 'AMEND', pi.qty, ?
+         FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
+        WHERE pi.so_item_id::text = ? AND po.status::text NOT IN ('CANCELLED', 'DRAFT')
+       RETURNING id`,
+    ).bind(line.company_id, `${line.item_code}: options now ${summary ?? 'cleared'}. Tell the supplier.`, itemId).all();
+    flags = (flagged.results ?? []).length;
+  }
+  return c.json({ ok: true, changed: true, variants, summary, flags });
 });
 
 /* ── Attachments on the whole order (owner, 14 Oct 2026; mig 0115 scm.mfg_sales_orders.attachments) ──

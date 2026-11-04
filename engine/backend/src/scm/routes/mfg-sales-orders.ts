@@ -10192,11 +10192,15 @@ export const postSoPaymentHandler = async (c: any) => {
     if (!g.ok) return c.json({ error: g.error, message: g.message }, g.status);
     plan = g.plan;
   }
+  /* c.executionCtx throws where the runtime supplies none (tests): the steps then run inline. */
+  let executionCtx: { waitUntil?: (p: Promise<unknown>) => void } | undefined;
+  try { executionCtx = c.executionCtx; } catch { executionCtx = undefined; }
   /* Insert + ADD_PAYMENT audit — the factored recordSoPaymentRow core (shared
      with the background scan job). Same derivation, same insert, same audit
      shape as the pre-factoring inline code. */
   const { payment, errorMessage } = await recordSoPaymentRow(sb, {
     docNo,
+    ...(executionCtx?.waitUntil ? { defer: (work: Promise<unknown>) => executionCtx!.waitUntil!(work) } : {}),
     paidAt:            plan ? plan.paidAt : p.paidAt,
     method:            p.method,
     ...(plan ? { convertedFromDocNo: plan.fromDocNo } : {}),

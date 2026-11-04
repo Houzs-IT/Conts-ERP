@@ -302,9 +302,8 @@ export async function postContractLineEdits(docNo: string, edits: ContractLineEd
 }
 
 /** A renovation contract refuses the SO amendment route (its lines change by a contract VO, which only adds or omits).
-    Options and remarks are written to the line itself (renovation-so-info spec route): no VO when no PO buys the line
-    yet; on a line a live PO buys, new options make the server raise a contract VO that replaces the line and flags its
-    PO line for purchasing (owner, 2 Nov 2026). Qty and SKU changes then raise the contract VO; a line whose options
+    Options and remarks are written to the line itself (renovation-so-info spec route) with no VO; on a line a live PO
+    buys, the server flags its PO line for purchasing (owner, 4 Nov 2026). Qty and SKU changes then raise the contract VO; a line whose options
     and qty or SKU both moved sends its options with that edit, so it is replaced once, as it now is. */
 export async function postContractLines(b: VoBatch): Promise<PostedVo> {
   const vos: string[] = [];
@@ -320,10 +319,10 @@ export async function postContractLines(b: VoBatch): Promise<PostedVo> {
         continue;
       }
       if (l.changeType === "QTY") continue;
-      const r = await authedFetch<{ voNo?: string; flags?: number } | null>(`/renovation-so-info/${encodeURIComponent(b.docNo)}/lines/${encodeURIComponent(id)}/spec`, {
+      const r = await authedFetch<{ flags?: number } | null>(`/renovation-so-info/${encodeURIComponent(b.docNo)}/lines/${encodeURIComponent(id)}/spec`, {
         method: "PUT", body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
       });
-      if (r?.voNo) { vos.push(r.voNo); flags += r.flags ?? 0; }
+      flags += r?.flags ?? 0;
     }
     if (edits.length) {
       const r = await postContractLineEdits(b.docNo, edits, "Changed on the project PO tab");
