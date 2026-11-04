@@ -13,6 +13,7 @@ import { lazy, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { PoPaymentScheduleCard } from "../renovation/PoPaymentScheduleCard";
 import { LazySlot } from "../../components/LazySlot";
+import { ProductionOrderChips } from "./ProductionOrderChips";
 import { scmListReturnTo } from "../../lib/scmListReturn";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { formatPhone } from "@2990s/shared/phone";
@@ -1160,6 +1161,7 @@ function PurchaseOrderDetailV2ReadOnly() {
               </Badge>
               {/* mig 0324 — BESIDE the status, never instead of it. */}
               <HoldChip onHold={purchaseOrder.on_hold} reason={purchaseOrder.hold_reason} />
+                  <ProductionOrderChips poId={purchaseOrder.id} />
             </span>
           </div>
         </div>
@@ -1188,6 +1190,7 @@ function PurchaseOrderDetailV2ReadOnly() {
                   </Badge>
                   {/* mig 0324 — BESIDE the status, never instead of it. */}
                   <HoldChip onHold={purchaseOrder.on_hold} reason={purchaseOrder.hold_reason} />
+                  <ProductionOrderChips poId={purchaseOrder.id} />
                 </span>
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-secondary">
@@ -1224,7 +1227,7 @@ function PurchaseOrderDetailV2ReadOnly() {
             <Button variant="secondary" icon={<Printer size={14} />} onClick={print.openPreview}>
               Print PDF
             </Button>
-            {purchaseOrder.status !== "DRAFT" && purchaseOrder.status !== "CANCELLED" && (
+            {purchaseOrder.status !== "DRAFT" && purchaseOrder.status !== "CANCELLED" && purchaseOrder.supplier?.code !== "INHOUSE" && (
               <Button
                 variant="secondary"
                 icon={<Mail size={14} />}

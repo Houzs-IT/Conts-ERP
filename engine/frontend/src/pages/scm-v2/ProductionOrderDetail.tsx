@@ -140,6 +140,7 @@ type HeaderDraft = {
   currency: string;
   notes: string;
   purchaseLocationId: string;
+  productionTimeDays: string;
 };
 
 /* Whole-line edit (owner 2026-06-19) — Edit mode now drives one PoLineCard per
@@ -183,6 +184,7 @@ const headerSnapshot = (p: any): HeaderDraft => ({
   currency:              p.currency ?? 'MYR',
   notes:                 p.notes ?? '',
   purchaseLocationId:    p.purchase_location_id ?? '',
+  productionTimeDays:    p.production_time_days == null ? '' : String(p.production_time_days),
 });
 
 /* Map a persisted Production Order line → an editable PoLineCard draft. item_group is the
@@ -380,11 +382,7 @@ export const ProductionOrderDetail = () => {
      GRN stays editable for its own-stage fields, so children must NOT kick us
      back to View. */
   useEffect(() => {
-    if (hardLocked && isEditing) {
-      setIsEditing(false);
-      setHeaderDraft(null);
-      setEditLines([]);
-    }
+    if (hardLocked && isEditing) navigate(`/scm/production-orders/${id}`, { replace: true });
   }, [hardLocked, isEditing]);
 
   /* Seed/clear the whole-line drafts (owner 2026-06-19) — entering Edit
@@ -810,9 +808,8 @@ export const ProductionOrderDetail = () => {
           soItemId:       d.soItemId ?? null,
         });
       }
-      setIsEditing(false);
-      setHeaderDraft(null);
-      setEditLines([]);
+      /* One page reads an order (owner, 4 Nov 2026): saving goes back to it. */
+      navigate(`/scm/production-orders/${po.id}`);
     } catch (e) {
       const refusal = renoPoCategoryRefusal(e);
       if (savedNow.size > 0) {
@@ -1171,25 +1168,6 @@ export const ProductionOrderDetail = () => {
           )}
         </div>
       )}
-
-      {/* ── Tab strip (SO-amendment workflow) — Order vs Revisions ────────────
-          The Revisions tab lists prior Production Order snapshots read-only. Default is the
-          Order view so nothing changes for never-revised Production Orders. Mirrors the SO
-          detail tab strip. */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--line)' }}>
-        {(['order', 'revisions'] as const).map((t) => (
-          <button key={t} type="button" onClick={() => setActiveTab(t)}
-            style={{
-              padding: '8px 16px', border: 'none', background: 'none', cursor: 'pointer',
-              fontSize: 'var(--fs-13)', fontWeight: 600,
-              color: activeTab === t ? 'var(--c-burnt)' : 'var(--fg-muted)',
-              borderBottom: `2px solid ${activeTab === t ? 'var(--c-burnt)' : 'transparent'}`,
-              marginBottom: -1,
-            }}>
-            {t === 'order' ? 'Order' : 'Revisions'}
-          </button>
-        ))}
-      </div>
 
       {activeTab === 'revisions' ? (
         <PoRevisionsTab poId={po.id} currency={po.currency} />
@@ -1569,7 +1547,7 @@ const SupplierCard = ({
   return (
     <section className={styles.card}>
       <header className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>Supplier · Dates · Notes</h2>
+        <h2 className={styles.cardTitle}>Job · Dates · Notes</h2>
         {/* Commander 2026-05-29 — the card's own Save is gone; the single top
             "Save" commits the whole Production Order draft (header + line edits). */}
       </header>
@@ -1627,7 +1605,7 @@ const SupplierCard = ({
         )}
         <div className={styles.formGrid4}>
           <label className={styles.field} style={{ gridColumn: 'span 2' }}>
-            <span className={styles.fieldLabel}>Supplier *</span>
+            <span className={styles.fieldLabel}>Done by *</span>
             <span className={styles.selectWrap}>
               <SearchableSelect
                 className={styles.fieldSelect}
@@ -1672,7 +1650,7 @@ const SupplierCard = ({
             <DateField fullWidth className={styles.fieldInput} value={draft.poDate} disabled={locked} onChange={(iso) => onField('poDate', iso)}/>
           </label>
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>Expected Delivery</span>
+            <span className={styles.fieldLabel}>Completion date</span>
             {/* Commander 2026-05-29 — changing this cascades to every line's
                 Delivery Date (handled in the page's setHeaderField). */}
             <DateField
@@ -1688,44 +1666,13 @@ const SupplierCard = ({
               "Apply to all" (owner 2026-08-03) is the explicit overwrite for a
               supplier who revises a second time, when every line is already
               filled and the fan-down therefore moves nothing. */}
-          {SUPPLIER_DATE_KEYS.map((k) => (
-            <label className={styles.field} key={k}>
-              <span className={styles.fieldLabelRow}>
-                <span className={styles.fieldLabel}>{SUPPLIER_DATE_LABEL[k]}</span>
-                {/* "Apply to all" overwrites every LINE, which is locked once a
-                    GRN exists — hide it then, though the header date field stays
-                    editable (own-stage). */}
-                {!inheritedLocked && (
-                  appliedFlash?.key === k ? (
-                    <span className={styles.applyAllDone} role="status">
-                      Applied to {appliedFlash.count} {appliedFlash.count === 1 ? 'line' : 'lines'}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className={styles.applyAllBtn}
-                      disabled={!draft[k]}
-                      title={draft[k]
-                        ? `Overwrite ${SUPPLIER_DATE_LABEL[k]} on every line of this Production Order`
-                        : `Pick a ${SUPPLIER_DATE_LABEL[k]} first`}
-                      onClick={(e) => {
-                        e.preventDefault();          // never let the <label> re-target the click
-                        const n = onApplySupplierDateToAll(k);
-                        if (n > 0) setAppliedFlash({ key: k, count: n });
-                      }}
-                    >
-                      Apply to all
-                    </button>
-                  )
-                )}
-              </span>
-              <DateField fullWidth className={styles.fieldInput} value={draft[k]} disabled={locked} onChange={(iso) => onField(k, iso)}/>
-            </label>
-          ))}
-          {/* PR #77 — Purchase Location: default ship-to warehouse for
-              every line on this Production Order. */}
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>Purchase Location</span>
+            <span className={styles.fieldLabel}>Production Time (days)</span>
+            <input type="number" min="0" step="0.5" className={styles.fieldInput} value={draft.productionTimeDays} disabled={locked}
+              onChange={(e) => onField('productionTimeDays', e.target.value)} aria-label="Production Time in days" />
+          </label>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Ship-to warehouse</span>
             <span className={styles.selectWrap}>
               <SearchableSelect
                 className={styles.fieldSelect}
@@ -1749,39 +1696,6 @@ const SupplierCard = ({
         </>
         )}
 
-        {/* PR #75 — supplier-info auto-fill card. Read-only display sourced
-            from /suppliers/:id. */}
-        {supplier && (
-          <div
-            style={{
-              marginTop: 'var(--space-3)',
-              padding: 'var(--space-3) var(--space-4)',
-              background: 'var(--c-cream)',
-              border: '1px solid var(--line)',
-              borderRadius: 'var(--radius-md)',
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-              gap: 'var(--space-3) var(--space-4)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: 'var(--fs-13)',
-            }}
-          >
-            <InfoCell label="Supplier code" value={supplier.code} />
-            <InfoCell label="Contact"       value={supplier.contact_person ?? supplier.attention} />
-            <InfoCell label="Phone"         value={formatPhone(supplier.phone ?? supplier.mobile)} />
-            <InfoCell label="Payment terms" value={supplier.payment_terms} />
-            <InfoCell label="Email"         value={supplier.email} />
-            <InfoCell label="TIN"           value={supplier.tin_number} />
-            <InfoCell label="Country / state" value={[supplier.country, supplier.state].filter(Boolean).join(' / ') || null} />
-            <InfoCell label="Bindings count" value={String(supplierDetail.data?.bindings?.length ?? 0)} />
-            <div style={{ gridColumn: '1 / -1', color: 'var(--fg-muted)' }}>
-              <span style={{ fontSize: 'var(--fs-11)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Address ·
-              </span>{' '}
-              {[supplier.address, supplier.area, supplier.postcode].filter(Boolean).join(', ') || '—'}
-            </div>
-          </div>
-        )}
       </div>
     </section>
   );

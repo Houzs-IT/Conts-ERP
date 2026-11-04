@@ -427,6 +427,7 @@ export function useCreateProductionOrder() {
       /** Draft/Confirmed — opt-in DRAFT save (status DRAFT, no SO-quota advance,
           invisible to MRP supply). Omitted/false → SUBMITTED, as before. */
       asDraft?: boolean;
+      productionTimeDays?: string;
       /** Over-convert override (owner 2026-07-24). SO-sourced lines are capped at
           the source SO line's remaining qty (409 qty_exceeds_remaining); set this
           after the operator confirms to raise a Production Order beyond what the SO still needs.
@@ -455,6 +456,7 @@ export function useUpdateProductionOrderHeader() {
       supplierDeliveryDate4?: string | null;
       /** PR #77 — default ship-to warehouse for every line on this Production Order. */
       purchaseLocationId?: string | null;
+      productionTimeDays?: string | number | null;
     }) => authedFetch<{ purchaseOrder: PoHeaderRow }>(`/production-orders/${id}`, {
       method: 'PATCH', body: JSON.stringify(body),
     }),
@@ -661,3 +663,65 @@ export async function fetchProductionExportRows<T extends { id: string }>(
   if (body.truncated) throw new Error('Too many production orders to export at once. Narrow the list first.');
   return body.purchaseOrders ?? [];
 }
+
+/* Raw materials (owner, 4 Nov 2026). */
+export type MaterialRow = {
+  id: string; item_code: string; description: string | null; uom: string | null; qty_needed: number | string;
+  processing_date: string | null; delivery_date: string | null; notes: string | null;
+};
+export type MaterialStatus = {
+  state: 'received' | 'stock' | 'po' | 'short'; received: number; onOrder: number; shortQty: number | null;
+  poNumber: string | null; poId: string | null; eta: string | null;
+};
+const materialKeys = (id: string) => [['production-order-materials', id], ['production-order-material-status', id]];
+export function useProductionMaterials(id: string) {
+  return useQuery({
+    queryKey: ['production-order-materials', id],
+    queryFn: () => authedFetch<{ materials: MaterialRow[] }>(`/production-orders/${id}/materials`).then((r) => r.materials),
+    retry: retryUnlessClientError,
+  });
+}
+export function useMaterialStatus(id: string) {
+  return useQuery({
+    queryKey: ['production-order-material-status', id],
+    queryFn: () => authedFetch<{ statuses: Record<string, MaterialStatus> }>(`/production-orders/${id}/material-status`).then((r) => r.statuses),
+    retry: retryUnlessClientError,
+  });
+}
+export function useRawSkus(enabled: boolean) {
+  return useQuery({
+    queryKey: ['production-raw-skus'],
+    enabled,
+    queryFn: () => authedFetch<{ skus: Array<{ code: string; name: string | null; uom: string | null }> }>(`/production-orders/raw-skus`).then((r) => r.skus),
+    staleTime: 60_000,
+    retry: retryUnlessClientError,
+  });
+}
+export function useAddProductionMaterial(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { itemCode: string; qtyNeeded: number; processingDate: string | null; deliveryDate: string | null }) =>
+      authedFetch<{ id: string }>(`/production-orders/${id}/materials`, { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => { for (const k of materialKeys(id)) void qc.invalidateQueries({ queryKey: k }); },
+  });
+}
+export function useUpdateProductionMaterial(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id: materialId, ...body }: { id: string; qtyNeeded?: number; processingDate?: string | null; deliveryDate?: string | null }) =>
+      authedFetch(`/production-orders/${id}/materials/${materialId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => { for (const k of materialKeys(id)) void qc.invalidateQueries({ queryKey: k }); },
+  });
+}
+export function useDeleteProductionMaterial(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (materialId: string) => authedFetch(`/production-orders/${id}/materials/${materialId}`, { method: 'DELETE' }),
+    onSuccess: () => { for (const k of materialKeys(id)) void qc.invalidateQueries({ queryKey: k }); },
+  });
+}
+/** MRP's Proceed PO for raw materials. A repeat press finds nothing left to order and answers total 0. */
+export const createMaterialPos = ({ idempotencyKey, ...body }: {
+  idempotencyKey?: string; picks: Array<{ materialId: string; qty: number; supplierId: string | null }>; mode: 'combined' | 'per-so'; expectedAt?: string;
+}) => authedFetch<{ total: number; created: Array<{ id: string; poNumber: string }>; alreadyOrdered?: boolean }>(
+  `/production-orders/material-pos`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }));

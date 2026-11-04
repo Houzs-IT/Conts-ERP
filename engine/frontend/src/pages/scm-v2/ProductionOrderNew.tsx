@@ -158,6 +158,7 @@ export const ProductionOrderNew = () => {
   const [supplierDeliveryDate4, setSupplierDeliveryDate4] = useState<string>('');
   const [purchaseLocationId, setPurchaseLocationId] = useState<string>('');
   const [notes, setNotes]             = useState<string>('');
+  const [productionTimeDays, setProductionTimeDays] = useState<string>('');
 
   // ── Items state ─────────────────────────────────────────────────────
   const [lines, setLines] = useState<DraftLine[]>([newLine()]);
@@ -702,6 +703,7 @@ export const ProductionOrderNew = () => {
       supplierDeliveryDate3: supplierDeliveryDate3 || undefined,
       supplierDeliveryDate4: supplierDeliveryDate4 || undefined,
       notes: notes || undefined,
+      productionTimeDays: productionTimeDays || undefined,
       purchaseLocationId,
       items,
       asDraft,
@@ -804,7 +806,7 @@ export const ProductionOrderNew = () => {
           <div className={styles.formGrid2}>
             {/* LEFT column */}
             <label className={styles.field}>
-              <span className={`${styles.fieldLabel} ${styles.fieldLabelReq}`}>Creditor <span className={styles.req}>*</span></span>
+              <span className={`${styles.fieldLabel} ${styles.fieldLabelReq}`}>Done by <span className={styles.req}>*</span></span>
               <select
                 value={supplierId}
                 onChange={(e) => setSupplierId(e.target.value)}
@@ -835,7 +837,7 @@ export const ProductionOrderNew = () => {
                 type="text"
                 readOnly
                 value={supplier?.name ?? ''}
-                placeholder="(auto-filled when supplier selected)"
+                placeholder=""
                 className={styles.fieldInput}
                 style={{ background: 'var(--c-cream)', color: 'var(--fg-muted)' }}
               />
@@ -851,35 +853,24 @@ export const ProductionOrderNew = () => {
                 readOnly
                 value={[supplier?.address, supplier?.area, supplier?.postcode, supplier?.state, supplier?.country]
                   .filter(Boolean).join(', ')}
-                placeholder="(auto-filled when supplier selected)"
+                placeholder=""
                 className={styles.fieldInput}
                 style={{ background: 'var(--c-cream)', color: 'var(--fg-muted)', minHeight: 52, resize: 'vertical' }}
                 rows={3}
               />
             </label>
             <label className={styles.field}>
-              <span className={styles.fieldLabel}>Expected Delivery <span style={{ color: 'var(--fg-muted)', fontWeight: 400 }}>(defaults to today)</span></span>
+              <span className={styles.fieldLabel}>Completion date</span>
               <DateField fullWidth value={expectedAt} onChange={(iso) => setExpectedAt(iso)} className={styles.fieldInput}/>
             </label>
 
-            {/* Mig 0026 — supplier-revised header delivery dates. Optional; the
-                supplier pushes the delivery back. Fan down to lines that don't
-                carry their own revised date. */}
             <label className={styles.field}>
-              <span className={styles.fieldLabel}>Supplier Date 2</span>
-              <DateField fullWidth value={supplierDeliveryDate2} onChange={(iso) => setSupplierDeliveryDate2(iso)} className={styles.fieldInput}/>
-            </label>
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>Supplier Date 3</span>
-              <DateField fullWidth value={supplierDeliveryDate3} onChange={(iso) => setSupplierDeliveryDate3(iso)} className={styles.fieldInput}/>
-            </label>
-            <label className={styles.field}>
-              <span className={styles.fieldLabel}>Supplier Date 4</span>
-              <DateField fullWidth value={supplierDeliveryDate4} onChange={(iso) => setSupplierDeliveryDate4(iso)} className={styles.fieldInput}/>
+              <span className={styles.fieldLabel}>Production Time (days)</span>
+              <input type="number" min="0" step="0.5" value={productionTimeDays} onChange={(e) => setProductionTimeDays(e.target.value)} className={styles.fieldInput} aria-label="Production Time in days" />
             </label>
 
             <label className={styles.field}>
-              <span className={`${styles.fieldLabel} ${styles.fieldLabelReq}`}>Purchase Location <span className={styles.req}>*</span></span>
+              <span className={`${styles.fieldLabel} ${styles.fieldLabelReq}`}>Ship-to warehouse <span className={styles.req}>*</span></span>
               <select
                 value={purchaseLocationId}
                 onChange={(e) => setPurchaseLocationId(e.target.value)}
@@ -900,7 +891,7 @@ export const ProductionOrderNew = () => {
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Free text — supplier instructions, internal notes…"
+                placeholder="Free text: notes for the team"
                 className={styles.fieldInput}
                 rows={3}
                 style={{ minHeight: 52, resize: 'vertical' }}

@@ -144,9 +144,9 @@ const STATUS_TONE: Record<
   { tone: "success" | "warning" | "error" | "neutral"; label: string; bucket: StatusTab }
 > = {
   DRAFT:              { tone: "warning", label: "Draft",              bucket: "draft" },
-  SUBMITTED:          { tone: "warning", label: "Submitted",          bucket: "open" },
+  SUBMITTED:          { tone: "warning", label: "In production",          bucket: "open" },
   PARTIALLY_RECEIVED: { tone: "warning", label: "Partially received", bucket: "partial" },
-  RECEIVED:           { tone: "success", label: "Received",           bucket: "received" },
+  RECEIVED:           { tone: "success", label: "Complete",           bucket: "received" },
   CANCELLED:          { tone: "error",   label: "Cancelled",          bucket: "cancelled" },
   /* ON_HOLD (mig 0318, owner 2026-08-21) — the REVERSIBLE stop the purchase
      side never had. A held Production Order is not receivable: grns.ts filters receivable
@@ -583,17 +583,7 @@ function DetailDrawer({
 
               <div className="mt-4 rounded-lg border border-border bg-surface px-5 py-4">
                 <div className="flex items-center justify-between gap-3 border-b border-border-subtle pb-3">
-                  <QtyTotal label="Ordered" value={items.reduce((s, l) => s + l.qty, 0)} />
-                  <QtyTotal
-                    label="Received"
-                    value={items.reduce((s, l) => s + l.received_qty, 0)}
-                    tone="synced"
-                  />
-                  <QtyTotal
-                    label="Balance"
-                    value={items.reduce((s, l) => s + Math.max(0, l.qty - l.received_qty), 0)}
-                    tone="balance"
-                  />
+                  <QtyTotal label="Qty" value={items.reduce((s, l) => s + l.qty, 0)} />
                 </div>
                 <div className="pt-3">
                   <TotalRow k="Grand total" v={fmtRm(total)} strong />
@@ -1155,30 +1145,6 @@ export function ProductionOrdersListV2() {
       ),
     },
     lineCols.so_doc_no!,
-    {
-      key: "creditor_code",
-      label: PO_LINE_LABELS.creditorCode,
-      width: "120px",
-      disableSort: true,
-      getValue: (r) => r.supplier?.code ?? "",
-      filterCounts: facets?.creditor_code,
-      render: (r) => <span className="font-mono text-[11.5px] text-ink-secondary">{r.supplier?.code || "—"}</span>,
-    },
-    {
-      // Owner 2026-07-23: supplier NAME and CODE are separate columns, not a
-      // stacked cell — a purchaser filters/sorts by code, so it needs to be its
-      // own field.
-      key: "supplier",
-      label: PO_LINE_LABELS.creditorName,
-      disableSort: true,
-      getValue: (r) => supplierNameOf(r),
-      filterCounts: facets?.supplier,
-      render: (r) => (
-        <div className="min-w-0 truncate text-[13px] font-semibold text-ink">
-          {supplierNameOf(r)}
-        </div>
-      ),
-    },
     lineCols.item_code!,
     lineCols.item_description!,
     lineCols.item_description_2!,
@@ -1199,15 +1165,6 @@ export function ProductionOrdersListV2() {
     lineCols.estimate_delivery_date_1!,
     lineCols.estimate_delivery_date_2!,
     lineCols.estimate_delivery_date_3!,
-    {
-      key: "erp_doc_no",
-      label: PO_LINE_LABELS.erpDocNo,
-      width: "180px",
-      disableSort: true,
-      defaultHidden: true,
-      getValue: (r) => poDisplayNumber(r.po_number, r.revision),
-      render: (r) => <span className="font-docno text-[12.5px] text-ink-secondary">{poDisplayNumber(r.po_number, r.revision)}</span>,
-    },
     lineCols.erp_item_code!,
     lineCols.remarks!,
     lineCols.qty!,
@@ -1215,10 +1172,26 @@ export function ProductionOrdersListV2() {
     lineCols.unit_price!,
     lineCols.line_total!,
     {
+      key: "project",
+      label: "Project",
+      width: "200px",
+      getValue: (r) => (r as { project_label?: string | null }).project_label ?? "",
+      render: (r) => <span className="text-[12.5px] text-ink-secondary">{(r as { project_label?: string | null }).project_label ?? "—"}</span>,
+    },
+    {
+      key: "production_time",
+      label: "Production Time",
+      width: "120px",
+      getValue: (r) => Number((r as { production_time_days?: number | string | null }).production_time_days ?? 0),
+      render: (r) => {
+        const d = (r as { production_time_days?: number | string | null }).production_time_days;
+        return <span className="text-[12.5px] text-ink-secondary">{d == null ? "—" : `${Number(d)} day${Number(d) === 1 ? "" : "s"}`}</span>;
+      },
+    },
+    {
       key: "expected",
-      label: "Expected",
+      label: "Completion date",
       width: "128px",
-      defaultHidden: true,
       disableSort: true,
       getValue: (r) => r.expected_at ?? "",
       /* Owner 2026-09-15: in the file, each line's own delivery date. */
@@ -1238,7 +1211,7 @@ export function ProductionOrdersListV2() {
     {
       /* Owner 2026-08-05 — ship-to warehouse (list embed purchase_location). */
       key: "purchase_location",
-      label: "Purchase Location",
+      label: "Ship-to warehouse",
       width: "160px",
       defaultHidden: true,
       disableSort: true,
@@ -1261,63 +1234,6 @@ export function ProductionOrdersListV2() {
       filterCounts: facets?.currency,
       render: (r) => (
         <span className="text-[12.5px] text-ink-secondary">{r.currency ?? "MYR"}</span>
-      ),
-    },
-    {
-      // Owner 2026-07-31: the Sales Order(s) this Production Order's supply is assigned to, at
-      // a glance. Resolved server-side (one pass, same precedence as the drill-
-      // down); a dashed chip with "~" flags an MRP guess vs a stored link.
-      key: "assigned_so",
-      label: "Assigned SO",
-      width: "168px",
-      defaultHidden: true,
-      disableSort: true,
-      getValue: (r) => (r.assigned_sos ?? []).map((a) => a.soDocNo).join(", "),
-      /* Owner 2026-09-15: in the file, the SO each line was raised for. */
-      lineValue: (_r, l) => l.so_doc_no,
-      render: (r) => (
-        <AssignedSoCell
-          assignments={r.assigned_sos}
-          sourceLinked={r.assigned_so_linked}
-          provenance={r.assigned_so_provenance}
-          onOpenSo={(soDocNo) => navigate(`/scm/sales-orders/${encodeURIComponent(soDocNo)}`)}
-          emptyMeans="stock"
-        />
-      ),
-    },
-    {
-      // Owner 2026-07-31 — the RECEIPT side: which GRN(s) this Production Order actually
-      // landed in. Server-side, deduped, cancelled GRNs excluded. Sits before
-      // Delivered because that is the order the goods move: assigned to an SO,
-      // received on a GRN, then shipped out on a DO.
-      key: "grn_no",
-      label: "GRN No",
-      width: "150px",
-      defaultHidden: true,
-      disableSort: true,
-      getValue: (r) => grnRefsOf(r.transfer_to_grns).map((g) => g.grnNumber).join(", "),
-      render: (r) => (
-        <GrnNoCell
-          grns={r.transfer_to_grns}
-          onOpenGrn={(grnId) => navigate(`/scm/grns/${grnId}`)}
-        />
-      ),
-    },
-    {
-      // Owner 2026-07-31: what has been DELIVERED against this Production Order — the DO(s) that
-      // shipped its goods (batch_no = this Production Order) + qty per DO. EVERY DO renders
-      // (no collapse); "—" when nothing has shipped yet.
-      key: "delivered",
-      label: "Delivered",
-      width: "180px",
-      defaultHidden: true,
-      disableSort: true,
-      getValue: (r) => (r.delivered_dos ?? []).map((d) => d.doNo).join(", "),
-      render: (r) => (
-        <DeliveredCell
-          dos={r.delivered_dos}
-          onOpenDo={(doNo) => navigate(`/scm/delivery-orders?q=${encodeURIComponent(doNo)}`)}
-        />
       ),
     },
     {
@@ -1366,8 +1282,7 @@ export function ProductionOrdersListV2() {
     },
     { value: "draft", label: `Draft · ${counts.draft}` },
     { value: "open", label: `Submitted · ${counts.open}` },
-    { value: "partial", label: `Partial · ${counts.partial}` },
-    { value: "received", label: `Received · ${counts.received}` },
+    { value: "received", label: `Complete · ${counts.received}` },
     { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
     { value: "on_hold", label: `On Hold · ${counts.on_hold ?? 0}` },
   ];
@@ -1397,7 +1312,7 @@ export function ProductionOrdersListV2() {
           <PageHeader
             eyebrow="Production"
             title="Production Orders"
-            description="Every Production Order — Draft to Received. Click any row for the quick view; open the full page to edit or receive."
+            description="Works done by our own team. Click any row for the quick view; open the full page to edit."
             primaryAction={
               <div className="flex items-stretch gap-2">
                 <Button
@@ -1421,7 +1336,6 @@ export function ProductionOrdersListV2() {
               </div>
             }
             secondaryActions={[
-              { label: "Suppliers", icon: Users, onClick: goSuppliers },
             ]}
           />
         </div>
@@ -1443,29 +1357,29 @@ export function ProductionOrdersListV2() {
           />
           <StatCard
             pending={statsPending} {...statsFail}
-            label="Committed"
+            label="Order value"
             value={fmtRm(money.committed)}
             subtitle={visible.filtered ? "Filtered · sum shown below" : "Sum on this page"}
             rail="bg-accent"
           />
           <StatCard
             pending={statsPending} {...statsFail}
-            label="Outstanding"
+            label="In production"
             value={fmtRm(money.outstanding)}
             subtitle={
               visible.filtered
-                ? "Submitted + partial · filtered"
-                : "Submitted + partial · on this page"
+                ? "Filtered"
+                : "On this page"
             }
             tone="warning"
             rail="bg-accent-bright"
           />
           <StatCard
             pending={statsPending} {...statsFail}
-            label="Received"
+            label="Complete"
             value={fmtRm(money.received)}
             subtitle={
-              visible.filtered ? "Fully received · filtered" : "Fully received · on this page"
+              visible.filtered ? "Filtered" : "On this page"
             }
             tone="success"
             rail="bg-synced"

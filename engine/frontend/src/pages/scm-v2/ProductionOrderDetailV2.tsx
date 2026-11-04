@@ -10,8 +10,12 @@
 //       (vendored suppliers-queries slice).
 
 import { lazy, useMemo, useState, type ReactNode } from "react";
-import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LazySlot } from "../../components/LazySlot";
+import { useStaffLookup } from "../../hooks/useStaffLookup";
+import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
+import { ProductionMaterialsSection } from "./ProductionMaterialsSection";
+import { SoAddressFields, SoCustomerFields, SoDetailHeader, SoOrderInfoFields } from "./soDetailParts";
 import { scmListReturnTo } from "../../lib/scmListReturn";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { formatPhone } from "@2990s/shared/phone";
@@ -92,6 +96,15 @@ import { DocAttachments, LineFilesButton } from "../../components/doc-attachment
 
 const fmtMoney = (centi: number, currency = "MYR"): string => fmtMoneySen(centi, currency);
 
+/** The sales order behind the order, as the SO page's parts read it (backend loadLinkedSo). */
+type LinkedSo = {
+  doc_no: string; so_kind?: string | null; debtor_name?: string | null; phone?: string | null; email?: string | null; customer_type?: string | null;
+  agent?: string | null; salesperson_id?: string | null; ref?: string | null; po_doc_no?: string | null; customer_so_no?: string | null;
+  address1?: string | null; address2?: string | null; city?: string | null; postcode?: string | null; customer_state?: string | null;
+  customer_country?: string | null; sales_location?: string | null; building_type?: string | null; venue?: string | null; processing_date?: string | null;
+  customer_delivery_date?: string | null; branding?: string | null; payment_method?: string | null; payment_methods_summary?: string;
+};
+
 const supplierNameOf = (h: PoHeaderRow): string =>
   h.supplier?.name || h.supplier_id || "—";
 const supplierCodeOf = (h: PoHeaderRow): string => h.supplier?.code || "—";
@@ -130,22 +143,22 @@ const EFFECTIVE_TONE: Record<
   Effective,
   { tone: "success" | "warning" | "error" | "neutral"; label: string; blurb: string }
 > = {
-  draft: { tone: "warning", label: "Draft", blurb: "Draft · not yet sent to supplier" },
-  submitted: { tone: "warning", label: "Submitted", blurb: "Submitted · awaiting supplier delivery" },
+  draft: { tone: "warning", label: "Draft", blurb: "Draft · not started" },
+  submitted: { tone: "warning", label: "In production", blurb: "In production" },
   partial: { tone: "warning", label: "Partially received", blurb: "Partially received · balance still due" },
-  received: { tone: "success", label: "Received", blurb: "Received · loop closed" },
+  received: { tone: "success", label: "Complete", blurb: "Complete" },
   cancelled: { tone: "error", label: "Cancelled", blurb: "Cancelled · no further action" },
   /* ON_HOLD (mig 0318). A held Production Order is not receivable — grns.ts filters
      receivable Production Orders through an allow-list — and it is REVERSIBLE, which is
      the whole reason it exists beside CANCELLED. */
-  on_hold: { tone: "warning", label: "On Hold", blurb: "On hold · receiving paused, reversible" },
+  on_hold: { tone: "warning", label: "On Hold", blurb: "On hold · reversible" },
 };
 
 const STAGE_LABEL: Record<string, string> = {
   DRAFT: "Draft",
-  SUBMITTED: "Submitted",
+  SUBMITTED: "In production",
   PARTIALLY_RECEIVED: "Partially received",
-  RECEIVED: "Received",
+  RECEIVED: "Complete",
   CANCELLED: "Cancelled",
   /* A status with no label here renders as nothing, or as its raw slug. ASSR
      paid for that when `voided` reached the customer portal as the word
@@ -163,18 +176,6 @@ const initialsOf = (name: string | null | undefined): string => {
       .map((w) => w[0]?.toUpperCase())
       .join("") || "—"
   );
-};
-
-// Received-vs-ordered breakdown from live line items.
-const receivedOf = (items: PoItemRow[]): { orderedQty: number; receivedQty: number; pct: number } => {
-  let orderedQty = 0;
-  let receivedQty = 0;
-  for (const l of items) {
-    orderedQty += Number(l.qty ?? 0);
-    receivedQty += Number(l.received_qty ?? 0);
-  }
-  const pct = orderedQty > 0 ? Math.round((receivedQty / orderedQty) * 100) : 0;
-  return { orderedQty, receivedQty, pct };
 };
 
 // ─── Field cell ────────────────────────────────────────────────────────────
@@ -296,21 +297,14 @@ function ActivityRow({
 // success (green). Ordered + received qty ride as sub-lines so ops can see
 // how far the Production Order is through its receipt lifecycle without opening any line.
 
-function PoTotalHeroCard({
-  header,
-  items,
-}: {
-  header: PoHeaderRow;
-  items: PoItemRow[];
-}) {
+function PoTotalHeroCard({ header }: { header: PoHeaderRow }) {
   const eff = effectiveOf(header);
   const t = EFFECTIVE_TONE[eff];
   const total = totalOf(header);
-  const { orderedQty, receivedQty, pct } = receivedOf(items);
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
-        Production Order total
+        Production order value
       </div>
       <div className="mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight text-white">
         {fmtMoney(total, header.currency)}
@@ -334,24 +328,6 @@ function PoTotalHeroCard({
         <HeroLine k="Total" v={fmtMoney(total, header.currency)} strong />
       </div>
 
-      {/* Receipt progress — the Production Order's most operational signal. */}
-      <div className="mt-4 border-t border-white/10 pt-4">
-        <div className="flex items-center justify-between text-[12px] text-sidebar-ink-muted">
-          <span>Receipt progress</span>
-          <span className="font-money text-[13px] font-semibold text-sidebar-ink">
-            {receivedQty} / {orderedQty}
-          </span>
-        </div>
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-          <div
-            className={cn(
-              "h-full rounded-full transition-all",
-              pct >= 100 ? "bg-synced" : "bg-accent-bright"
-            )}
-            style={{ width: `${Math.min(100, pct)}%` }}
-          />
-        </div>
-      </div>
     </div>
   );
 }
@@ -425,6 +401,7 @@ function ProductionOrderDetailV2ReadOnly() {
   const confirmPo = useConfirmProductionOrder();
   const { cancelPo, isPending: cancelling } = usePoCancelAction();
   const reopenPo = useReopenProductionOrder();
+  const [completing, setCompleting] = useState<string | null>(null);
   const notify = useNotify();
   const confirm = useConfirm();
   const { can, pageAccess } = useHouzsAuth();
@@ -501,6 +478,13 @@ function ProductionOrderDetailV2ReadOnly() {
     () => ((detail.data as { items?: PoItemRow[] } | undefined)?.items ?? []),
     [detail.data]
   );
+  const linkedSo = (detail.data as { linkedSo?: LinkedSo | null } | undefined)?.linkedSo ?? null;
+  const completion = (detail.data as {
+    completion?: { grn: { id: string; grn_number: string } | null; deliveryOrder: { id: string; do_number: string } | null };
+  } | undefined)?.completion;
+  const productionDays = (purchaseOrder as { production_time_days?: number | string | null } | null)?.production_time_days == null
+    ? null : Number((purchaseOrder as unknown as { production_time_days: number | string }).production_time_days);
+  const { nameOf: salespersonNameOf } = useStaffLookup();
 
   useSetBreadcrumbs([
     { label: "Production Orders", to: "/scm/production-orders" },
@@ -616,10 +600,11 @@ function ProductionOrderDetailV2ReadOnly() {
   const doReopen = async () => {
     if (!purchaseOrder) return;
     if (await confirm({
-      title: `Reopen cancelled Production Order ${purchaseOrder.po_number}?`,
+      title: `Reopen Production Order ${purchaseOrder.po_number}?`,
+      ...((purchaseOrder.status || "").toUpperCase() === "RECEIVED" ? { body: "Its goods receipt and delivery order must be cancelled first." } : {}),
       confirmLabel: "Reopen",
     })) {
-      reopenPo.mutate(purchaseOrder.id);
+      reopenPo.mutate(purchaseOrder.id, { onError: (e) => notify({ title: "Not reopened", body: e instanceof Error ? e.message : "Something went wrong.", tone: "error" }) });
     }
   };
 
@@ -734,27 +719,6 @@ function ProductionOrderDetailV2ReadOnly() {
         );
       },
     },
-    {
-      /* Sits next to Item deliberately: the two codes for the same thing —
-         ours on the left, theirs on the right — read as a pair, which is how
-         the purchaser uses them when chasing a line with the supplier. */
-      key: "supplierSku",
-      label: "Supplier SKU",
-      width: "132px",
-      getValue: (l) => {
-        const code = supplierCodeFor(l, skuByMaterialCode);
-        // getValue feeds sort / search / export — an em dash is a RENDER
-        // fallback, not a value, so unknown sorts and exports as empty.
-        return code === "—" ? "" : code;
-      },
-      render: (l) => {
-        const code = supplierCodeFor(l, skuByMaterialCode);
-        if (code === "—") return <span className="text-ink-muted">—</span>;
-        return (
-          <span className="font-mono text-[12px] text-ink-secondary">{code}</span>
-        );
-      },
-    },
     /* Photos — the reference shots the SO line brought along (mig 0274 carry,
        plus the AutoCount importer's keys), through the SAME strip + state
        machine the SO detail renders (components/scm-v2/SoLinePhotoStrip with
@@ -775,15 +739,7 @@ function ProductionOrderDetailV2ReadOnly() {
             docId={purchaseOrder?.id ?? ""}
             itemId={l.id}
             photoKeys={l.photo_urls ?? []}
-            edit={
-              mayEditPoPhotos && purchaseOrder?.status !== "CANCELLED"
-                ? {
-                    onUpload: (file) => uploadLinePhoto(l.id, file),
-                    onDelete: (key) => deleteLinePhoto(l.id, key),
-                    canDeleteKey: isProductionOwnedPhotoKey,
-                  }
-                : null
-            }
+            edit={null}
           />
           <LineFilesButton
             docType="production_order"
@@ -796,7 +752,7 @@ function ProductionOrderDetailV2ReadOnly() {
     },
     {
       key: "qty",
-      label: "Ordered",
+      label: "Qty",
       width: "84px",
       align: "right",
       getValue: (l) => l.qty,
@@ -805,75 +761,6 @@ function ProductionOrderDetailV2ReadOnly() {
           {fmtQty(l.qty)} <span className="text-[10.5px] text-ink-muted">{l.uom || ""}</span>
         </span>
       ),
-    },
-    {
-      key: "received",
-      label: "Received",
-      width: "92px",
-      align: "right",
-      getValue: (l) => l.received_qty ?? 0,
-      render: (l) => {
-        const received = Number(l.received_qty ?? 0);
-        const ordered = Number(l.qty ?? 0);
-        const full = received >= ordered && ordered > 0;
-        return (
-          <span className={cn("font-money text-[13px] font-semibold", full ? "text-synced" : "text-ink")}>
-            {received}
-          </span>
-        );
-      },
-    },
-    {
-      key: "balance",
-      label: "Balance",
-      width: "84px",
-      align: "right",
-      getValue: (l) => (l.qty ?? 0) - (l.received_qty ?? 0),
-      render: (l) => {
-        const bal = (l.qty ?? 0) - (l.received_qty ?? 0);
-        if (bal === 0) return <span className="text-ink-muted">—</span>;
-        return (
-          <span className="font-money text-[13px] font-semibold text-accent-bright">
-            {bal}
-          </span>
-        );
-      },
-    },
-    {
-      key: "eta",
-      label: "ETA",
-      width: "96px",
-      align: "right",
-      getValue: (l) => l.delivery_date ?? "",
-      render: (l) => (
-        <span className="font-mono text-[12px] text-ink-secondary">
-          {l.delivery_date ? fmtDate(l.delivery_date) : "—"}
-        </span>
-      ),
-    },
-    {
-      /* Labelled "Transfer to" until 2026-08-17, which was the one place the
-         document-lineage words named a WAREHOUSE. Once every conversion button
-         says "Transfer to <Document>", that label meant two different things on
-         one screen — and `?edit=1` on this same route heads a table "Transfer To
-         (GRN)" meaning the downstream document. Now matches what
-         StockTransferNew/Detail already call it: "To Warehouse".
-         The `key` stays `transferTo`: it is persisted in the operator's saved
-         column layout, so renaming it would silently reset their columns. It is
-         listed for the identifier stage in docs/modules/document-conversion.md §9. */
-      key: "transferTo",
-      label: "To Warehouse",
-      width: "132px",
-      getValue: (l) => (l.warehouse_id ? warehouseNameById.get(l.warehouse_id) ?? "" : ""),
-      render: (l) => {
-        const label = l.warehouse_id ? warehouseNameById.get(l.warehouse_id) : null;
-        if (!label) return <span className="text-ink-muted">—</span>;
-        return (
-          <span className="inline-flex items-center gap-0.5 rounded bg-primary-soft px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-primary-ink">
-            {label}
-          </span>
-        );
-      },
     },
     {
       key: "unit",
@@ -943,142 +830,75 @@ function ProductionOrderDetailV2ReadOnly() {
   const confirmReason = poConfirmBlockReason(purchaseOrder.status)?.replace(/purchase order/g, "production order") ?? null;
   const canConfirm = confirmReason === null;
   const canCancel = rawStatus !== "CANCELLED" && rawStatus !== "RECEIVED";
-  const canReopen = rawStatus === "CANCELLED";
+  const canReopen = rawStatus === "CANCELLED" || rawStatus === "RECEIVED";
+  const canComplete = rawStatus === "SUBMITTED" && !purchaseOrder.on_hold;
+  const orderMeta = purchaseOrder as unknown as {
+    source_po?: { id: string; po_number: string } | null; completion_step?: string | null; completion_error?: string | null;
+  };
+  const completionStopped = rawStatus === "SUBMITTED" && Boolean(orderMeta.completion_step || orderMeta.completion_error);
+  const soLineCount = new Set(items.map((l) => l.so_item_id).filter(Boolean)).size;
+  const doComplete = async () => {
+    if (!id) return;
+    const ok = await confirm({
+      title: completionStopped ? `Finish completing ${purchaseOrder.po_number}?` : `Complete ${purchaseOrder.po_number}?`,
+      body: [
+        orderMeta.source_po ? `A goods receipt is raised for what is left on ${orderMeta.source_po.po_number}.` : "There is no purchase order to receive.",
+        soLineCount > 0 ? `A delivery order is raised for ${soLineCount} sales order line${soLineCount === 1 ? "" : "s"} and marked delivered.` : "There is no sales order line to deliver.",
+        "Stock moves in, then out. The photos on this order become their proof of receipt and proof of delivery. Lines already received or delivered are skipped.",
+      ].join(" "),
+      confirmLabel: completionStopped ? "Retry" : "Complete",
+    });
+    if (!ok) return;
+    const steps: Array<[string, string]> = [["grn", "Receiving…"], ["do", "Raising delivery…"], ["deliver", "Delivering…"]];
+    try {
+      for (const [step, label] of steps) {
+        setCompleting(label);
+        await authedFetch(`/production-orders/${id}/complete`, { method: "POST", body: JSON.stringify({ step }) });
+      }
+      notify({ title: `${purchaseOrder.po_number} complete` });
+    } catch (e) {
+      notify({ title: "Complete stopped", body: `${e instanceof Error ? e.message : "Something went wrong."} What was already raised stays; Retry carries on from there.`, tone: "error" });
+    } finally {
+      setCompleting(null);
+      void detail.refetch();
+    }
+  };
   const isCancelled = rawStatus === "CANCELLED";
 
   return (
     <div className="pb-56 md:pb-0">
-      {/* Mobile-only dark sticky header */}
-      <div className="sticky top-0 z-20 -mx-4 -mt-4 bg-sidebar text-sidebar-ink shadow-slab md:hidden">
-        <div className="flex items-center justify-between gap-3 px-4 pt-3">
-          <button
-            type="button"
-            onClick={goBack}
-            className="inline-flex items-center gap-1 text-[14px] font-semibold text-accent-bright"
-            aria-label="Back to Production Orders"
-          >
-            <ArrowLeft size={16} /> Production Orders
-          </button>
-          <span className="font-mono text-[12.5px] font-semibold text-sidebar-ink">
-            {purchaseOrder.po_number}
-          </span>
-          <button
-            type="button"
-            className="text-sidebar-ink-muted"
-            aria-label="More actions"
-          >
-            <MoreHorizontal size={18} />
-          </button>
-        </div>
-        <div className="px-4 pb-4 pt-3">
-          <h1 className="font-display text-[19px] font-bold leading-tight text-white">
-            {supplierNameOf(purchaseOrder)}
-          </h1>
-          <div className="mt-2">
-            <span className="inline-flex items-center gap-1.5">
-              <Badge tone={badgeTone} variant="solid" size="xs">
-                {stageLabel}
-              </Badge>
-              {/* mig 0324 — BESIDE the status, never instead of it. */}
-              <HoldChip onHold={purchaseOrder.on_hold} reason={purchaseOrder.hold_reason} />
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Desktop sticky header */}
-      <div className="sticky top-0 z-10 -mx-4 hidden border-b border-border bg-bg/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 md:block">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-start gap-3 min-w-0">
-            <button
-              type="button"
-              onClick={goBack}
-              aria-label="Back to Production Orders"
-              className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink-secondary hover:border-primary/50 hover:text-primary"
-            >
-              <ArrowLeft size={16} />
-            </button>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-                  {supplierNameOf(purchaseOrder)}
-                </h1>
-                <span className="inline-flex items-center gap-1.5">
-                  <Badge tone={badgeTone} size="sm">
-                    {stageLabel}
-                  </Badge>
-                  {/* mig 0324 — BESIDE the status, never instead of it. */}
-                  <HoldChip onHold={purchaseOrder.on_hold} reason={purchaseOrder.hold_reason} />
-                </span>
-              </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-secondary">
-                {/* _R suffix (owner 2026-07-27): a revised Production Order's number shows its
-                    revision marker everywhere it is read or printed. */}
-                <span className="font-mono font-semibold text-primary-ink">
-                  {poDisplayNumber(purchaseOrder.po_number, (purchaseOrder as unknown as { revision?: number | null }).revision)}
-                </span>
-                <Divider />
-                <span>Ordered {fmtDate(purchaseOrder.po_date)}</span>
-                {purchaseOrder.expected_at && (
-                  <>
-                    <Divider />
-                    <span>Expected {fmtDate(purchaseOrder.expected_at)}</span>
-                  </>
-                )}
-                <Divider />
-                <span>{items.length} line{items.length === 1 ? "" : "s"}</span>
-                <Divider />
-                <span className="font-mono font-semibold text-ink-secondary">
-                  {supplierCodeOf(purchaseOrder)}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-1.5">
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button variant="ghost" icon={<History size={14} />} onClick={() => setHistoryOpen(true)}>
-              History
-            </Button>
-            <Button variant="secondary" icon={<Printer size={14} />} onClick={print.openPreview}>
-              Print PDF
-            </Button>
+      <SoDetailHeader
+        title={linkedSo?.debtor_name || purchaseOrder.po_number}
+        docNo={purchaseOrder.po_number}
+        status={{ tone: badgeTone, label: stageLabel }}
+        meta={[
+          `Ordered ${fmtDate(purchaseOrder.po_date)}`,
+          ...(purchaseOrder.expected_at ? [`Complete by ${fmtDate(purchaseOrder.expected_at)}`] : []),
+          `${items.length} line${items.length === 1 ? "" : "s"}`,
+        ]}
+        onBack={goBack}
+        chips={<HoldChip onHold={purchaseOrder.on_hold} reason={purchaseOrder.hold_reason} />}
+        actions={
+          <>
+            <Button variant="ghost" icon={<History size={14} />} onClick={() => setHistoryOpen(true)}>History</Button>
+            <Button variant="secondary" icon={<Printer size={14} />} onClick={print.openPreview}>Print PDF</Button>
             {canCancel && (
-              <Button variant="danger" icon={<XCircle size={14} />} onClick={doCancel} disabled={cancelling}>
-                Cancel Production Order
+              <Button variant="danger" icon={<XCircle size={14} />} onClick={doCancel} disabled={cancelling}>Cancel Production Order</Button>
+            )}
+            {canComplete && (
+              <Button variant="primary" icon={<CheckCircle2 size={14} />} onClick={() => void doComplete()} disabled={completing !== null}>
+                {completing ?? (completionStopped ? "Retry Complete" : "Complete")}
               </Button>
             )}
-            {canReopen && (
-              <Button variant="secondary" icon={<RotateCcw size={14} />} onClick={doReopen}>
-                Reopen
-              </Button>
+            {canReopen && <Button variant="secondary" icon={<RotateCcw size={14} />} onClick={doReopen}>Reopen</Button>}
+            {canConfirm && (
+              <Button variant="secondary" icon={<CheckCircle2 size={14} />} onClick={doConfirm}>Confirm Production Order</Button>
             )}
-            {/* ── ALWAYS RENDERED, disabled with the reason. Two fixed slots:
-                "commit this document" and "produce the next document", each
-                keeping one meaning at every status, so the operator never has to
-                read the status badge to learn what a button will do. ── */}
-            <Button
-              variant="secondary"
-              icon={<CheckCircle2 size={14} />}
-              onClick={doConfirm}
-              disabled={!canConfirm}
-              title={confirmReason ?? undefined}
-              aria-describedby={confirmReason ? "po-confirm-reason" : undefined}
-            >
-              Confirm Production Order
-            </Button>
             <Button variant="secondary" icon={<Plus size={14} />} onClick={goAddLine}>{ADD_LINE_LABEL}</Button>
-            <Button variant="primary" icon={<Edit3 size={14} />} onClick={goEdit}>
-              Edit
-            </Button>
-          </div>
-          {/* The reasons as TEXT, not only as a `title` — a tooltip needs a
-              hover and says nothing on a touch screen. */}
-          <div className="flex max-w-[440px] flex-col items-end gap-0.5 text-right">
-            <NextStepNote id="po-confirm-reason" reason={confirmReason} />
-          </div>
-          </div>
-        </div>
-      </div>
+            <Button variant={canComplete ? "secondary" : "primary"} icon={<Edit3 size={14} />} onClick={goEdit}>Edit</Button>
+          </>
+        }
+      />
 
       {/* Detail body */}
       <div className="py-5">
@@ -1097,94 +917,78 @@ function ProductionOrderDetailV2ReadOnly() {
 
         <DetailGrid>
           <DetailMain>
-            {/* Supplier */}
-            <Section title="Supplier">
-              <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-3">
-                <Field label="Supplier" value={supplierNameOf(purchaseOrder)} />
-                <Field label="Supplier code" value={supplierCodeOf(purchaseOrder)} mono />
-                <Field
-                  label="Contact"
-                  value={purchaseOrder.supplier?.contact_person || "—"}
-                  muted={!purchaseOrder.supplier?.contact_person}
-                />
-                <Field
-                  label="Phone"
-                  value={formatPhone(purchaseOrder.supplier?.phone) || "Not provided"}
-                  muted={!purchaseOrder.supplier?.phone}
-                  mono={!!purchaseOrder.supplier?.phone}
-                />
-                <Field
-                  label="Email"
-                  value={purchaseOrder.supplier?.email || "Not provided"}
-                  muted={!purchaseOrder.supplier?.email}
-                />
-                <Field
-                  label="Address"
-                  value={purchaseOrder.supplier?.address || "—"}
-                  muted={!purchaseOrder.supplier?.address}
-                />
-              </div>
-            </Section>
-
-            {reno && (
-              <Section title="Project">
-                <RenovationDocBlock data={reno} kind="pro" />
+            {linkedSo ? (
+              <>
+                {linkedSo.so_kind === "RENOVATION" ? (
+                  <Section title="Order information">
+                    <RenovationSoOrderInfo docNo={linkedSo.doc_no} payment={linkedSo.payment_methods_summary || linkedSo.payment_method || null} />
+                  </Section>
+                ) : (
+                  <Section title="Order info"><SoOrderInfoFields header={linkedSo} /></Section>
+                )}
+                <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2 [&>section]:h-full">
+                  <Section title="Customer">
+                    <SoCustomerFields
+                      header={linkedSo}
+                      renoMode={linkedSo.so_kind === "RENOVATION"}
+                      salesperson={salespersonNameOf(linkedSo.agent ?? null, linkedSo.salesperson_id ?? null, "Unassigned")}
+                      sharedWith={null}
+                    />
+                  </Section>
+                  <Section title="Delivery address"><SoAddressFields header={linkedSo} /></Section>
+                </div>
+              </>
+            ) : (
+              <Section title="Customer">
+                <p className="text-[13px] text-ink-muted">No sales order is linked to this production order.</p>
               </Section>
             )}
 
-            {/* Production Order info */}
-            <Section title="Production Order info">
+            <Section title="Production">
               <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-4">
                 <Field label="Production Order date" value={fmtDate(purchaseOrder.po_date)} />
                 <Field
-                  label="Expected"
-                  value={
-                    purchaseOrder.expected_at
-                      ? fmtDate(purchaseOrder.expected_at)
-                      : "Not set"
-                  }
+                  label="Completion date"
+                  value={purchaseOrder.expected_at ? fmtDate(purchaseOrder.expected_at) : "Not set"}
                   muted={!purchaseOrder.expected_at}
                 />
-                <Field label="Currency" value={purchaseOrder.currency} />
+                <Field
+                  label="Production Time"
+                  value={productionDays != null ? `${fmtQty(productionDays)} day${productionDays === 1 ? "" : "s"}` : "Not set"}
+                  muted={productionDays == null}
+                />
                 <Field
                   label="Ship-to warehouse"
-                  value={
-                    purchaseOrder.purchase_location_id
-                      ? (warehouseNameById.get(purchaseOrder.purchase_location_id)
-                          ?? (warehousesQ.isLoading ? "Loading…" : "—"))
-                      : "—"
-                  }
+                  value={purchaseOrder.purchase_location_id
+                    ? (warehouseNameById.get(purchaseOrder.purchase_location_id) ?? (warehousesQ.isLoading ? "Loading…" : "—"))
+                    : "—"}
                   muted={!purchaseOrder.purchase_location_id}
                 />
-                {/* Owner 2026-08-06 — supplier-revised delivery dates (mig 0180
-                    lineage). Only render the slots the supplier actually pushed
-                    ("如果有更新 supplier delivery date 2"); the raw dates show so
-                    the desk sees each revision, not just the latest. */}
-                {purchaseOrder.supplier_delivery_date_2 && (
-                  <Field label="Supplier date 2" value={fmtDate(purchaseOrder.supplier_delivery_date_2)} />
-                )}
-                {purchaseOrder.supplier_delivery_date_3 && (
-                  <Field label="Supplier date 3" value={fmtDate(purchaseOrder.supplier_delivery_date_3)} />
-                )}
-                {purchaseOrder.supplier_delivery_date_4 && (
-                  <Field label="Supplier date 4" value={fmtDate(purchaseOrder.supplier_delivery_date_4)} />
-                )}
               </div>
-
+              <div className="mt-4 grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-4">
+                <Field label="Sales order" muted={!linkedSo} value={linkedSo ? <Link className="text-primary hover:underline" to={`/scm/sales-orders/${encodeURIComponent(linkedSo.doc_no)}`}>{linkedSo.doc_no}</Link> : "—"} />
+                <Field label="Purchase order" muted={!orderMeta.source_po} value={orderMeta.source_po ? <Link className="text-primary hover:underline" to={`/scm/purchase-orders/${orderMeta.source_po.id}`}>{orderMeta.source_po.po_number}</Link> : "—"} />
+                <Field label="Goods receipt" muted={!completion?.grn} value={completion?.grn ? <Link className="text-primary hover:underline" to={`/scm/grns/${completion.grn.id}`}>{completion.grn.grn_number}</Link> : "—"} />
+                <Field label="Delivery order" muted={!completion?.deliveryOrder} value={completion?.deliveryOrder ? <Link className="text-primary hover:underline" to={`/scm/delivery-orders/${completion.deliveryOrder.id}`}>{completion.deliveryOrder.do_number}</Link> : "—"} />
+              </div>
+              {completionStopped && (
+                <div role="alert" className="mt-4 rounded-lg border border-err/30 bg-surface px-4 py-3 text-[13px] text-ink">
+                  <strong>Complete stopped partway.</strong> {orderMeta.completion_error ?? "Press Retry Complete to carry on."}
+                </div>
+              )}
+              {rawStatus === "RECEIVED" && (
+                <p className="mt-4 text-[12.5px] text-ink-muted">To reopen this order, cancel its goods receipt and delivery order first.</p>
+              )}
               {purchaseOrder.notes && (
                 <div className="mt-4 rounded-lg border border-warning-text/25 bg-warning-bg px-4 py-3">
-                  <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-warning-text">
-                    Note
-                  </div>
-                  <p className="mt-1.5 text-[13px] leading-relaxed text-warning-text">
-                    {purchaseOrder.notes}
-                  </p>
+                  <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-warning-text">Note</div>
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-warning-text">{purchaseOrder.notes}</p>
                 </div>
               )}
             </Section>
 
             {/* Line items */}
-            <Section title={`Line items · ${items.length}`}>
+            <Section title={`Works · ${items.length}`}>
               {/* Revision-pending / SO-drift banner (owner 2026-07-27). A pending
                   SO amendment means this Production Order must be re-approved before the
                   supplier builds the new spec; surface it here (the editor
@@ -1227,40 +1031,26 @@ function ProductionOrderDetailV2ReadOnly() {
                 emptyLabel="No line items"
               />
             </Section>
+            <ProductionMaterialsSection orderId={purchaseOrder.id} canEdit={mayEditPoPhotos && !isCancelled} />
             <DocAttachments docType="production_order" docId={purchaseOrder.id} canEdit={!isCancelled} />
           </DetailMain>
 
           <DetailAside>
             <div className="hidden lg:sticky lg:top-[124px] space-y-3 md:block">
-              <PoTotalHeroCard header={purchaseOrder} items={items} />
+              <PoTotalHeroCard header={purchaseOrder} />
 
               <AsideCard title="Key dates">
                 <KeyDateRow k="Production Order date" v={fmtDate(purchaseOrder.po_date)} />
-                <KeyDateRow
-                  k="Expected"
-                  v={fmtDate(purchaseOrder.expected_at)}
-                  muted={!purchaseOrder.expected_at}
-                />
-                {/* Owner 2026-08-06 — supplier-revised dates, mirrored from the
-                    Production Order info card so the aside tells the same story. */}
-                {purchaseOrder.supplier_delivery_date_2 && (
-                  <KeyDateRow k="Supplier date 2" v={fmtDate(purchaseOrder.supplier_delivery_date_2)} />
-                )}
-                {purchaseOrder.supplier_delivery_date_3 && (
-                  <KeyDateRow k="Supplier date 3" v={fmtDate(purchaseOrder.supplier_delivery_date_3)} />
-                )}
-                {purchaseOrder.supplier_delivery_date_4 && (
-                  <KeyDateRow k="Supplier date 4" v={fmtDate(purchaseOrder.supplier_delivery_date_4)} />
-                )}
+                <KeyDateRow k="Completion date" v={fmtDate(purchaseOrder.expected_at)} muted={!purchaseOrder.expected_at} />
                 {purchaseOrder.submitted_at && (
                   <KeyDateRow
-                    k="Submitted"
+                    k="Issued"
                     v={fmtDate(purchaseOrder.submitted_at)}
                   />
                 )}
                 {purchaseOrder.received_at && (
                   <KeyDateRow
-                    k="Received"
+                    k="Completed"
                     v={fmtDate(purchaseOrder.received_at)}
                   />
                 )}
@@ -1276,14 +1066,14 @@ function ProductionOrderDetailV2ReadOnly() {
                 <PersonRow
                   initials={initialsOf(supplierNameOf(purchaseOrder))}
                   name={supplierNameOf(purchaseOrder)}
-                  role={`Supplier · ${supplierCodeOf(purchaseOrder)}`}
+                  role="Done by"
                   tone="accent"
                 />
-                {purchaseOrder.supplier?.contact_person && (
+                {linkedSo && (
                   <PersonRow
-                    initials={initialsOf(purchaseOrder.supplier.contact_person)}
-                    name={purchaseOrder.supplier.contact_person}
-                    role={formatPhone(purchaseOrder.supplier.phone) || "Contact"}
+                    initials={initialsOf(salespersonNameOf(linkedSo.agent ?? null, linkedSo.salesperson_id ?? null, "Unassigned"))}
+                    name={salespersonNameOf(linkedSo.agent ?? null, linkedSo.salesperson_id ?? null, "Unassigned")}
+                    role="Salesperson"
                     tone="neutral"
                   />
                 )}
@@ -1297,7 +1087,7 @@ function ProductionOrderDetailV2ReadOnly() {
                 />
                 {purchaseOrder.submitted_at && (
                   <ActivityRow
-                    title="Submitted to supplier"
+                    title="Issued"
                     meta={fmtDate(purchaseOrder.submitted_at)}
                     dot="primary"
                   />

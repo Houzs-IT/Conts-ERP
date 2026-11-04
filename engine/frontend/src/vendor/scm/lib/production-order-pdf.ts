@@ -72,9 +72,15 @@ import {
   type PhotoRegion,
 } from './pdf-item-photos';
 import { fetchProductionItemPhotoBlob } from './sales-order-queries';
+import { isAttachmentKey, loadDocPdfPhotos } from './pdf-doc-photos';
+import { authedFetch } from './authed-fetch';
+
+type ProductionPdfSo = { doc_no: string; debtor_name?: string | null; phone?: string | null; email?: string | null; address1?: string | null; address2?: string | null; city?: string | null; postcode?: string | null };
+type ProductionPdfMaterial = { item_code: string; description: string | null; uom: string | null; qty_needed: number | string; processing_date: string | null; delivery_date: string | null };
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
 
 type PoHeader = {
+  production_time_days?: number | string | null;
   po_number:     string;
   /** Production Order row id (uuid) — the per-line photo proxy routes are keyed by it
       (/production-orders/:id/items/:itemId/photos/…). Optional: the detail
@@ -301,10 +307,24 @@ async function renderProductionOrderInto(
      have no thumb; docs/bugs/0815), each photo best-effort: a key whose fetch
      or decode fails is skipped and the PDF renders without it. */
   const poId = (header.id ?? '').trim();
-  const photoGroups = buildPhotoGroups(orderedItems.map((it) => ({
-    code: supplierCodeFor(it, skuMap),
-    photoKeys: photoKeysOf(it.photo_urls),
-  })));
+  /* The job's own content (owner, 4 Nov 2026): the customer from the linked SO and the raw materials, read here so every
+     print path has them. A print still goes out if they cannot be read. */
+  const [job, materialsRes] = await Promise.all([
+    authedFetch<{ linkedSo?: ProductionPdfSo | null }>(`/production-orders/${poId}`).catch(() => null),
+    authedFetch<{ materials?: ProductionPdfMaterial[] }>(`/production-orders/${poId}/materials`).catch(() => null),
+  ]);
+  const so = job?.linkedSo ?? null;
+  const materials = materialsRes?.materials ?? [];
+  /* The line's and the order's attached photos print, and so do those of the PO line and SO line behind it. */
+  const attached = await loadDocPdfPhotos('production_order', poId);
+  const keysOf = (it: PoItem): string[] => [...photoKeysOf(it.photo_urls), ...attached.lineKeys(it.id)];
+  const photoGroups = [
+    ...buildPhotoGroups(orderedItems.map((it) => ({
+      code: it.item_code,
+      photoKeys: keysOf(it),
+    }))),
+    ...attached.documentGroups,
+  ];
   const photoOwners = photoKeyOwners(orderedItems.map((it) => ({
     id: it.id ?? null,
     photoKeys: photoKeysOf(it.photo_urls),
@@ -313,6 +333,7 @@ async function renderProductionOrderInto(
     ? await collectPhotoImages(
         photoGroups,
         (key) => {
+          if (isAttachmentKey(key)) return attached.fetch(key);
           const ownerId = photoOwners.get(key);
           if (!ownerId) return Promise.reject(new Error('photo_owner_missing'));
           return fetchLinePhotoForPdf((k) => fetchProductionItemPhotoBlob(poId, ownerId, k), key);
@@ -379,24 +400,16 @@ async function renderProductionOrderInto(
   const singleSourceSo = (!lineSoDocs.length && noteSoDocTokens.length === 1) ? noteSoDocTokens[0]! : '';
 
   y = drawInfoColumns(doc, y,
-    /* Canonical supplier block — Company, Code, Address, Tel, Fax, Email,
-       Attn, Terms — via the shared helper. formatPhone the tel like every
-       other document (this was the one generator printing a supplier phone
-       raw, so the same stored number read "+60123456789" on a Production Order and
-       "+60 12-345 6789" on the SO beside it). Terms migrates to the LEFT
-       column so every purchasing doc self-contains the negotiated credit
-       window; the RIGHT Production Order DETAILS column drops its Terms row to avoid the
-       duplication. */
-    supplierBlock({
-      name: s.name,
-      code: s.code,
-      address: supplierAddressLines.join(', '),
-      phone: formatPhone(s.phone ?? sFull.mobile ?? '') || (s.phone ?? sFull.mobile),
-      fax: sFull.fax,
-      email: s.email ?? sFull.email,
-      attention: sFull.attention ?? s.contact_person,
-      paymentTerms: sFull.payment_terms ?? header.supplier?.payment_terms ?? null,
-    }),
+    {
+      title: 'CUSTOMER',
+      rows: so ? [
+        ['Name', so.debtor_name],
+        ['Phone', formatPhone(so.phone ?? '') || so.phone],
+        ['Email', so.email],
+        ['Site', [so.address1, so.address2, [so.city, so.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', ')],
+        ['Sales order', so.doc_no],
+      ] : [['Sales order', 'None linked']],
+    },
     {
       title: 'Production Order DETAILS',
       rows: [
@@ -406,7 +419,8 @@ async function renderProductionOrderInto(
         ...renoDetailRows(opts?.renovation).slice(0, 2),
         ['Date', fmtDocDate(header.po_date)],
         /* Migration 0180 — print the EFFECTIVE (latest revised) delivery date. */
-        ['Delivery Date', (() => {
+        ['Production Time', header.production_time_days != null ? `${Number(header.production_time_days)} day(s)` : ''],
+        ['Completion date', (() => {
           const eff = effectiveDelivery(
             header.expected_at,
             header.supplier_delivery_date_2,
@@ -438,11 +452,6 @@ async function renderProductionOrderInto(
   }
   y += 2;
 
-  // Owner's rule — supplier acts on THEIR codes; ours stay printed alongside.
-  doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(80);
-  doc.text('Item codes shown are SUPPLIER codes; our model & reference appear in the Description.', margin, y + 2);
-  doc.setFont('helvetica', 'normal'); doc.setTextColor(0);
-  y += 6;
 
   // ── Items table ──────────────────────────────────────────────────
   // Supplier-facing layout (Commander 2026-06-16 — dropped the standalone "Our
@@ -520,7 +529,7 @@ async function renderProductionOrderInto(
   autoTable(doc, {
     startY: y,
     head: [[
-      'For SO', 'Supplier Code', 'Description', 'UOM', 'Qty',
+      'For SO', 'Item Code', 'Description', 'UOM', 'Qty',
       `U/Price ${header.currency}`, 'Disc.', `Total ${header.currency}`,
     ]],
     body: rows,
@@ -789,6 +798,23 @@ async function renderProductionOrderInto(
     }
   }
 
+  // ── Raw materials ─
+  if (materials.length > 0) {
+    if (lastY > 250) { doc.addPage(); drawPageHeader(doc.getNumberOfPages()); lastY = 20; }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+    doc.text('RAW MATERIALS', margin, lastY + 2);
+    autoTable(doc, {
+      startY: lastY + 4,
+      head: [['Material', 'Description', 'UOM', 'Qty', 'Processing date', 'Delivery date']],
+      body: materials.map((m) => [m.item_code, m.description ?? '', m.uom ?? '', String(Number(m.qty_needed)), m.processing_date ? fmtDocDate(m.processing_date) : '', m.delivery_date ? fmtDocDate(m.delivery_date) : '']),
+      theme: 'plain',
+      styles: { fontSize: 8.5, cellPadding: 1.5 },
+      headStyles: { fontStyle: 'bold' },
+      margin: { left: margin, right: margin },
+    });
+    lastY = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? lastY) + 6;
+  }
+
   // ── Signature block ──────────────────────────────────────────────
   if (lastY > 240) { doc.addPage(); drawPageHeader(doc.getNumberOfPages()); lastY = 20; }
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
@@ -797,7 +823,7 @@ async function renderProductionOrderInto(
   doc.rect(margin,            lastY, sigW, 24);
   doc.rect(margin + sigW + 8, lastY, sigW, 24);
   doc.text(`Authorised Signature (${COMPANY.name})`, margin + 2,            lastY + 21);
-  doc.text('Supplier Acknowledgement',               margin + sigW + 8 + 2, lastY + 21);
+  doc.text('Completed by',               margin + sigW + 8 + 2, lastY + 21);
   lastY += 28;
 
   return { supplierName: s.name ?? 'supplier' };

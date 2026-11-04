@@ -207,6 +207,9 @@ export type DemandRow = {
      carves those units out of the free pool so the date-greedy walk cannot
      promise them to an earlier-delivery SO the ship-gate would then refuse. */
   allocated_batch_no: string | null;
+  /* Conts (owner, 4 Nov 2026): a raw material of a production order, planned like an SO line. `id` is the material's. */
+  productionMaterialId?: string;
+  productionOrderId?: string;
   so: {
     debtor_name: string | null;
     status: string;
@@ -269,8 +272,52 @@ const variantKeyOf = (itemGroup: string | null | undefined, variants: unknown): 
    definition of "still committed", not two. Behaviour here is unchanged. */
 
 
+/* Raw materials of open production orders as demand (owner, 4 Nov 2026): under the rules of every other line, dated by
+   their own delivery date, for what has not been received yet. A draft, held or cancelled order orders nothing. */
+async function productionMaterialDemand(sb: any, scoped: <Q>(q: Q) => Q): Promise<DemandRow[]> {
+  type Row = {
+    id: string; item_code: string; description: string | null; qty_needed: number; processing_date: string | null; delivery_date: string | null; created_at: string | null;
+    order: { id: string; po_number: string; purchase_location_id: string | null; project_id: number | null; status: string; on_hold: boolean } | null;
+  };
+  const { data, error } = await paginateAll<Row>((from, to) => scoped(sb.from('production_order_materials')
+    .select('id, item_code, description, qty_needed, processing_date, delivery_date, created_at, order:production_orders!inner (id, po_number, purchase_location_id, project_id, status, on_hold)')
+    .eq('order.status', 'SUBMITTED')
+    .eq('order.on_hold', false))
+    .order('id')
+    .range(from, to));
+  if (error) throw new Error(`mrp_load_failed: ${error.message}`);
+  const rows = (data ?? []).filter((r) => r.order);
+  const { data: received, error: recErr } = await chunkIn<{ production_material_id: string; received_qty: number | null; po: { status: string } | null }>(
+    rows.map((r) => r.id),
+    (batch, from, to) => scoped(sb.from('purchase_order_items').select('production_material_id, received_qty, po:purchase_orders!inner (status)').in('production_material_id', batch))
+      .order('id').range(from, to),
+  );
+  if (recErr) throw new Error(`mrp_load_failed: ${recErr.message}`);
+  const receivedOf = new Map<string, number>();
+  for (const l of received) {
+    if (l.po?.status === 'CANCELLED') continue;
+    receivedOf.set(l.production_material_id, (receivedOf.get(l.production_material_id) ?? 0) + Number(l.received_qty ?? 0));
+  }
+  return rows.flatMap((r): DemandRow[] => {
+    const left = Number(r.qty_needed) - (receivedOf.get(r.id) ?? 0);
+    if (left <= 0) return [];
+    return [{
+      id: r.id, productionMaterialId: r.id, productionOrderId: r.order!.id, doc_no: r.order!.po_number, item_code: r.item_code, description: r.description,
+      item_group: 'RAW', variants: null, qty: left, warehouse_id: r.order!.purchase_location_id, line_delivery_date: r.delivery_date, line_delivery_date_overridden: true,
+      line_no: null, created_at: r.created_at, cancelled: false, allocated_batch_no: null,
+      so: {
+        debtor_name: null, status: 'SUBMITTED', so_date: null, customer_delivery_date: null, amended_delivery_date: null, processing_date: r.processing_date,
+        customer_state: null, project_id: r.order!.project_id, sales_location: null,
+      },
+    }];
+  });
+}
+
 export type MrpLine = {
   soItemId: string;    // mfg_sales_order_items.id — lets the UI one-click PO this line
+  /* Set on a production order's raw material: soItemId is then the material's id, soDocNo the production order's. */
+  productionMaterialId?: string;
+  productionOrderId?: string;
   soDocNo: string;
   debtorName: string | null;
   /* Conts (owner, 3 Nov 2026): the SO's project (scm.mfg_sales_orders.project_id -> public.projects). */
@@ -698,10 +745,11 @@ export async function computeMrp(
   );
   if (planErr) throw new Error(`mrp_load_failed: ${planErr.message}`);
   const planOf = new Map(planRows.map((p) => [p.so_item_id, p]));
-  const demandActive = demandOpen.flatMap((r): DemandRow[] => {
+  const demandPlanned = demandOpen.flatMap((r): DemandRow[] => {
     if (r.so?.project_id == null) return [r];
     return projectDemandLine(r, planOf.get(r.id));
   });
+  const demandActive = [...demandPlanned, ...await productionMaterialDemand(sb, scoped)];
   const isDatedLine = (r: DemandRow): boolean => deliveryOf(r) !== null;
   /* Conts (owner, 3 Nov 2026): every MRP row names its project (code and name), so a line can be found and filtered
      by project. Projects live in public.projects. */
@@ -762,7 +810,7 @@ export async function computeMrp(
      and an unbounded fan-out over every batch would trade latency for pool
      exhaustion. The bound is stated once, here, rather than defaulted inside the
      helper — see concurrency.ts on why it is a required argument. */
-  const demandDocNos = [...new Set(demandActive.map((d) => d.doc_no).filter(Boolean))];
+  const demandDocNos = [...new Set(demandPlanned.map((d) => d.doc_no).filter(Boolean))];
   const docBatches: string[][] = [];
   for (let i = 0; i < demandDocNos.length; i += 200) docBatches.push(demandDocNos.slice(i, i + 200));
   const deliverable: Awaited<ReturnType<typeof soDeliverableRemaining>> = new Map();
@@ -881,6 +929,8 @@ export async function computeMrp(
      warehouse filter and label reads one resolved value and they cannot drift. */
   for (const d of demand) {
     d.warehouse_id = resolveLineWarehouseId(d.warehouse_id, d.so, soWarehouseMasters);
+    /* A material's warehouse is its production order's, and never blank: an order raised from a contract may have none. */
+    if (d.productionMaterialId && !d.warehouse_id) d.warehouse_id = (warehouses ?? [])[0]?.id ?? null;
   }
 
   // ── 3. Stock on hand — inventory_balances keyed by (warehouse, code, variant) ──
@@ -1380,6 +1430,7 @@ export async function computeMrp(
       const lineDelivery = deliveryOf(r);
       lines.push({
         soItemId: r.id,
+        ...(r.productionMaterialId ? { productionMaterialId: r.productionMaterialId, productionOrderId: r.productionOrderId } : {}),
         soDocNo: r.doc_no,
         debtorName: r.so?.debtor_name ?? null,
         ...projectOf(r),
@@ -1790,7 +1841,7 @@ export function mrpReverseCoverage(result: MrpResult): Map<string, PoCoverageAss
   };
   for (const sku of result.skus) {
     for (const l of sku.lines) {
-      if (l.source !== 'po' || !l.poNumber) continue;
+      if (l.source !== 'po' || !l.poNumber || l.productionMaterialId) continue; // no SO line to name
       push(l.poNumber, {
         soItemId: l.soItemId,
         soDocNo: l.soDocNo,

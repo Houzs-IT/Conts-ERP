@@ -35,16 +35,38 @@ import { PO_LINE_AUDIT_FIELDS, PO_LINE_AUDIT_SELECT } from '../lib/entity-audit-
 import { eager } from '../lib/concurrency';
 import { skuCategoryResolver, lineIdentityFields } from '../lib/sku-category';
 import { readMfgProductBindings } from '../lib/supplier-bindings';
-import { VALID_STATUSES, parseBulkSupplierDateBody } from './mfg-purchase-orders';
+import { VALID_STATUSES, parseBulkSupplierDateBody, createMfgPurchaseOrderHandler } from './mfg-purchase-orders';
+import { computeMrp } from './mrp';
+import { postGrnAndRollup, recordGrnCreate } from './grns';
+import { createDoFromSoLinesHandler, patchDeliveryOrderStatusHandler, soDeliverableRemaining } from './delivery-orders-mfg';
+import { createDraftGrnsFromPoItemsCore, type GrnFromPoItemsContext } from '../lib/grn-from-po-core';
+import { loadLeadBuffers } from '../../services/agents/procurement-learning';
+import { paginateAll, chunkIn } from '../lib/paginate-all';
+import { pgrestInList } from '../lib/pgrest-in-list';
 
 export const productionOrders = new Hono<{ Bindings: Env; Variables: Variables }>();
 productionOrders.use('*', supabaseAuth);
 
+const RAW_CATEGORY = 'RAW';
+
+export type MaterialPick = { materialId: string; orderId: string; qty: number; supplierId: string; warehouseId: string; projectId: number | null };
+
+/* Combined: one PO per supplier and warehouse. Per SO: one per production order as well. */
+export function groupMaterialPicks<T extends MaterialPick>(picks: readonly T[], perOrder: boolean): T[][] {
+  const by = new Map<string, T[]>();
+  for (const p of picks) {
+    const k = `${p.supplierId}|${p.warehouseId}|${perOrder ? p.orderId : ''}`;
+    by.set(k, [...(by.get(k) ?? []), p]);
+  }
+  return [...by.values()];
+}
+
 const toProduction = (select: string): string => select.replace('items:purchase_order_items', 'items:production_order_items');
-const PRODUCTION_LIST_SELECT = toProduction(PO_LIST_SELECT);
-export const productionListSelect = (f: Parameters<typeof poListSelect>[0]): string => toProduction(poListSelect(f));
+const PRODUCTION_LIST_SELECT = `${toProduction(PO_LIST_SELECT)}, production_time_days`;
+export const productionListSelect = (f: Parameters<typeof poListSelect>[0]): string => `${toProduction(poListSelect(f))}, production_time_days`;
 
 const PO_AUDIT_FIELDS: Array<[string, string]> = [
+  ['productionTimeDays', 'production_time_days'],
   ['poDate', 'po_date'], ['expectedAt', 'expected_at'], ['currency', 'currency'],
   ['notes', 'notes'], ['supplierId', 'supplier_id'], ['purchaseLocationId', 'purchase_location_id'],
   ['supplierDeliveryDate2', 'supplier_delivery_date_2'], ['supplierDeliveryDate3', 'supplier_delivery_date_3'],
@@ -61,6 +83,13 @@ const ITEM_COLS = 'line_no, id, production_order_id, binding_id, material_kind, 
   'item_group, description, description2, uom, discount_sen, unit_cost_sen, gap_inches, divan_height_inches, divan_price_sen, leg_height_inches, leg_price_sen, ' +
   'custom_specials, line_suffix, special_order_price_sen, variants, delivery_date, warehouse_id, supplier_delivery_date_2, supplier_delivery_date_3, supplier_delivery_date_4, ' +
   'so_item_id, photo_urls, room, category_group, sub_category';
+
+/** His estimate in days: blank is no estimate. */
+const productionTime = (v: unknown): number | null => {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n < 100000 ? Math.round(n * 10) / 10 : null;
+};
 
 async function loadAuditMeta(sb: any, id: string): Promise<{ docNo: string | null; companyId: number | null; status: string | null }> {
   const { data } = await sb.from('production_orders').select('po_number, company_id, status').eq('id', id).maybeSingle();
@@ -206,6 +235,12 @@ productionOrders.get('/', async (c) => {
   /* Nothing is received against a production order: no downstream lock, no GRN column. */
   const stamped = { rows: ((data ?? []) as Array<{ id: string } & Record<string, unknown>>).map((r) => ({ ...r, has_children: false, transfer_to_grns: [] })) };
   if (paginate) {
+    const projectIds = [...new Set(stamped.rows.map((r) => Number((r as { project_id?: number | null }).project_id)).filter(Boolean))];
+    if (projectIds.length > 0) {
+      const { data: projects } = await supabase.schema('public').from('projects').select('id, code, name').in('id', projectIds);
+      const labels = new Map(((projects ?? []) as Array<{ id: number; code: string | null; name: string | null }>).map((x) => [Number(x.id), [x.code, x.name].filter(Boolean).join(' · ')]));
+      for (const r of stamped.rows) (r as Record<string, unknown>).project_label = labels.get(Number((r as { project_id?: number | null }).project_id)) ?? null;
+    }
     /* The page's lines, for the grid's line columns (Item Code, Qty, Delivery
        Date, ...) — the same read the export uses (lib/po-line-export.ts), so the
        screen and the file agree cell for cell. The legacy unpaged path does not
@@ -220,6 +255,30 @@ productionOrders.get('/', async (c) => {
 
 
 
+/* The sales order a production order belongs to, for the customer and site on its page: its lines' SO, else its
+   project's live one. The SO is read, never written. */
+const LINKED_SO_COLS = 'doc_no, status, debtor_name, phone, email, customer_type, agent, salesperson_id, ref, po_doc_no, customer_so_no, '
+  + 'address1, address2, city, postcode, customer_state, customer_country, sales_location, building_type, venue, processing_date, '
+  + 'customer_delivery_date, branding, payment_method, project_id, so_kind';
+async function loadLinkedSo(sb: any, c: any, items: Array<{ so_item_id?: string | null }>, projectId: number | null): Promise<Record<string, unknown> | null> {
+  const soItemId = items.map((i) => i.so_item_id).find(Boolean);
+  let docNo: string | null = null;
+  if (soItemId) {
+    const { data } = await scopeToCompany(sb.from('mfg_sales_order_items').select('doc_no').eq('id', soItemId), c).maybeSingle();
+    docNo = (data as { doc_no?: string } | null)?.doc_no ?? null;
+  }
+  if (!docNo && projectId != null) {
+    const { data } = await scopeToCompany(sb.from('mfg_sales_orders').select('doc_no').eq('project_id', projectId).neq('status', 'CANCELLED'), c).order('so_date').limit(1);
+    docNo = ((data ?? [])[0] as { doc_no?: string } | undefined)?.doc_no ?? null;
+  }
+  if (!docNo) return null;
+  const { data: so } = await scopeToCompany(sb.from('mfg_sales_orders').select(LINKED_SO_COLS).eq('doc_no', docNo), c).maybeSingle();
+  if (!so) return null;
+  const { data: pays } = await sb.from('mfg_sales_order_payments').select('method').eq('so_doc_no', docNo);
+  const methods = [...new Set(((pays ?? []) as Array<{ method: string | null }>).map((x) => x.method).filter(Boolean))].sort();
+  return { ...(so as Record<string, unknown>), payment_methods_summary: methods.join(' + ') };
+}
+
 productionOrders.get('/export/rows', async (c) => {
   const out = await buildPoExportRows(c.get('supabase'), c, readPoListFilters((k) => c.req.query(k)), VALID_STATUSES);
   if (out.error !== null) return c.json({ error: 'export_failed', reason: out.error }, 500);
@@ -232,12 +291,134 @@ productionOrders.get('/facets', async (c) => {
   return c.json(out);
 });
 
+/* The production orders behind a PO or a sales order, for those pages' links. */
+productionOrders.get('/links', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const poId = c.req.query('poId');
+  const soDocNo = c.req.query('soDocNo');
+  if (poId) {
+    const { data, error } = await scopeToCompanyId(sb.from('production_orders').select('id, po_number, status').eq('source_po_id', poId), co.companyId);
+    if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+    return c.json({ productionOrders: data ?? [] });
+  }
+  if (!soDocNo) return c.json({ productionOrders: [] });
+  const { data, error } = await sb.from('production_order_items').select('order:production_orders!inner (id, po_number, status, company_id), so:mfg_sales_order_items!inner (doc_no)')
+    .eq('so.doc_no', soDocNo).eq('order.company_id', co.companyId);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  const seen = new Map<string, unknown>();
+  for (const r of (data ?? []) as unknown as Array<{ order: { id: string; po_number: string; status: string } }>) seen.set(r.order.id, { id: r.order.id, po_number: r.order.po_number, status: r.order.status });
+  return c.json({ productionOrders: [...seen.values()] });
+});
+
+/* The raw material SKUs a material can be: the catalog's Raw material category. */
+productionOrders.get('/raw-skus', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const { data, error } = await paginateAll<{ code: string; name: string | null; uom: string | null }>((from, to) =>
+    scopeToCompanyId(c.get('supabase').from('mfg_products').select('code, name, uom').eq('category', RAW_CATEGORY).eq('status', 'ACTIVE'), co.companyId)
+      .order('code').range(from, to) as never);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  return c.json({ skus: data ?? [] });
+});
+
+/* ── MRP shortages -> raw-material POs ──
+   MRP's Proceed PO sends raw-material picks here; SO picks keep going to /mfg-purchase-orders/from-sos. Each PO goes
+   through createMfgPurchaseOrderHandler, the create a PO typed by hand goes through, and lands as MRP's POs do:
+   confirmed, not emailed. A pick is capped at what the material still has no PO for, so a repeat press orders nothing. */
+productionOrders.post('/material-pos', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const b = (await c.req.json().catch(() => ({}))) as { picks?: Array<{ materialId?: string; qty?: number; supplierId?: string | null }>; expectedAt?: string; mode?: string };
+  const picks = (b.picks ?? []).filter((p) => p.materialId && Number(p.qty) > 0);
+  if (picks.length === 0) return c.json({ error: 'validation', message: 'Nothing to order.' }, 422);
+  const ids = picks.map((p) => String(p.materialId));
+  type MaterialRow = { id: string; item_code: string; description: string | null; qty_needed: number; delivery_date: string | null; production_order_id: string;
+    order: { po_number: string; status: string; on_hold: boolean; purchase_location_id: string | null; project_id: number | null } | null };
+  const { data: mats, error: matErr } = await scopeToCompanyId(sb.from('production_order_materials')
+    .select('id, item_code, description, qty_needed, delivery_date, production_order_id, order:production_orders (po_number, status, on_hold, purchase_location_id, project_id)')
+    .in('id', ids), co.companyId);
+  if (matErr) return c.json({ error: 'load_failed', reason: matErr.message }, 500);
+  const byId = new Map(((mats ?? []) as unknown as MaterialRow[]).map((m) => [m.id, m]));
+  const { data: linked, error: linkErr } = await sb.from('purchase_order_items')
+    .select('production_material_id, qty, po:purchase_orders!inner (status)').in('production_material_id', ids);
+  if (linkErr) return c.json({ error: 'load_failed', reason: linkErr.message }, 500);
+  const onPo = new Map<string, number>();
+  for (const l of (linked ?? []) as unknown as Array<{ production_material_id: string; qty: number; po: { status: string } | null }>) {
+    if (l.po?.status === 'CANCELLED') continue;
+    onPo.set(l.production_material_id, (onPo.get(l.production_material_id) ?? 0) + Number(l.qty ?? 0));
+  }
+  const codes = [...new Set([...byId.values()].map((m) => m.item_code))];
+  const { data: binds, error: bindErr } = await readMfgProductBindings<{ item_code: string; supplier_id: string; unit_price_sen: number }>(sb, {
+    codes, companyId: co.companyId, select: 'item_code, supplier_id, unit_price_sen',
+  });
+  if (bindErr) return c.json({ error: 'load_failed', reason: bindErr.message }, 500);
+  const { data: inhouse } = await scopeToCompanyId(sb.from('suppliers').select('id').eq('code', 'INHOUSE'), co.companyId).maybeSingle();
+  const { data: wh } = await scopeToCompanyId(sb.from('warehouses').select('id').eq('is_active', true), co.companyId).order('code').limit(1);
+  const fallbackWh = ((wh ?? [])[0] as { id: string } | undefined)?.id ?? null;
+  const { data: prods } = await chunkIn<{ code: string; name: string | null; cost_price_sen: number | null }>(codes, (batch, from, to) =>
+    scopeToCompanyId(sb.from('mfg_products').select('code, name, cost_price_sen').filter('code', 'in', pgrestInList(batch)), co.companyId).order('id').range(from, to) as never);
+  const prodOf = new Map(prods.map((p) => [p.code, p]));
+
+  const resolved: Array<MaterialPick & { itemCode: string; name: string; unitPriceSen: number; deliveryDate: string | null }> = [];
+  const noSupplier: string[] = [];
+  for (const p of picks) {
+    const m = byId.get(String(p.materialId));
+    if (!m?.order) return c.json({ error: 'validation', message: 'A picked material no longer exists. Refresh MRP.' }, 409);
+    if (m.order.status !== 'SUBMITTED' || m.order.on_hold) return c.json({ error: 'validation', message: `${m.order.po_number} is not open for ordering.` }, 409);
+    const warehouseId = m.order.purchase_location_id ?? fallbackWh;
+    if (!warehouseId) return c.json({ error: 'validation', message: 'Add a warehouse first.' }, 409);
+    /* A PO line counts whole units; a material may need 2.5 bags. */
+    const qty = Math.min(Math.ceil(Number(p.qty)), Math.ceil(Number(m.qty_needed) - (onPo.get(m.id) ?? 0)));
+    if (qty <= 0) continue;
+    const own = binds.filter((x) => x.item_code === m.item_code);
+    const supplierId = p.supplierId ?? own[0]?.supplier_id ?? null;
+    if (!supplierId) { noSupplier.push(m.item_code); continue; }
+    if (supplierId === (inhouse as { id: string } | null)?.id) return c.json({ error: 'validation', message: `${m.item_code} is a raw material: buy it from an outside supplier.` }, 409);
+    resolved.push({
+      materialId: m.id, orderId: m.production_order_id, qty, supplierId, warehouseId, projectId: m.order.project_id == null ? null : Number(m.order.project_id),
+      itemCode: m.item_code, name: prodOf.get(m.item_code)?.name ?? m.description ?? m.item_code,
+      unitPriceSen: Number(own.find((x) => x.supplier_id === supplierId)?.unit_price_sen ?? prodOf.get(m.item_code)?.cost_price_sen ?? 0),
+      deliveryDate: dateOrNull(b.expectedAt) ?? m.delivery_date,
+    });
+  }
+  if (noSupplier.length > 0) return c.json({ error: 'missing_bindings', itemCodes: [...new Set(noSupplier)] }, 400);
+  if (resolved.length === 0) return c.json({ total: 0, created: [], alreadyOrdered: true }, 200);
+
+  const created: Array<{ id: string; poNumber: string }> = [];
+  for (const group of groupMaterialPicks(resolved, b.mode === 'per-so')) {
+    const first = group[0]!;
+    const projects = [...new Set(group.map((g) => g.projectId))];
+    const body = {
+      supplierId: first.supplierId, purchaseLocationId: first.warehouseId,
+      expectedAt: group.map((g) => g.deliveryDate).filter(Boolean).sort()[0] ?? null,
+      items: group.map((g) => ({
+        materialKind: 'mfg_product', itemCode: g.itemCode, materialName: g.name, description: g.name, qty: g.qty,
+        unitPriceSen: g.unitPriceSen, deliveryDate: g.deliveryDate, warehouseId: g.warehouseId,
+      })),
+    };
+    const out = await createMfgPurchaseOrderHandler({
+      req: { json: async () => body }, get: (k: string) => c.get(k as 'supabase'), set: (k: string, v: unknown) => c.set(k as 'supabase', v as never), env: c.env,
+      json: (j: unknown, status?: number) => ({ json: j, status: status ?? 200 }),
+    }) as unknown as { json: { id?: string; poNumber?: string } & Record<string, unknown>; status: number };
+    if (out.status >= 300 || !out.json.id) return c.json({ ...out.json, created }, out.status as 409);
+    const { error: rpcErr } = await sb.rpc('production_link_po', {
+      p_po: out.json.id, p_materials: group.map((g) => g.materialId), p_project: projects.length === 1 ? projects[0] : null,
+    });
+    if (rpcErr) return c.json({ error: 'link_failed', reason: rpcErr.message, created }, 500);
+    created.push({ id: out.json.id, poNumber: String(out.json.poNumber) });
+  }
+  return c.json({ total: created.length, created }, 201);
+});
+
 productionOrders.get('/:id', async (c) => {
   const id = c.req.param('id');
   const supabase = c.get('supabase');
   const [headerRes, itemsRes] = await Promise.all([
     scopeToCompany(supabase.from('production_orders')
-      .select(`${PO_HEADER_COLS}, source_po_id, supplier:suppliers(id, code, name, contact_person, phone, email, address)`)
+      .select(`${PO_HEADER_COLS}, source_po_id, production_time_days, completion_grn_id, completion_do_id, completion_step, completion_error, supplier:suppliers(id, code, name, contact_person, phone, email, address)`)
       .eq('id', id), c).maybeSingle(),
     supabase.from('production_order_items').select(ITEM_COLS).eq('production_order_id', id).order('line_no', { ascending: true }),
   ]);
@@ -251,6 +432,7 @@ productionOrders.get('/:id', async (c) => {
     sourcePo = (data as { id: string; po_number: string } | null) ?? null;
   }
   const purchaseOrder = { ...header, has_children: false, has_open_amendment: false, open_amendment: null, source_po: sourcePo };
+  const linkedSo = await loadLinkedSo(supabase, c, (itemsRes.data ?? []) as unknown as Array<{ so_item_id?: string | null }>, header.project_id as number | null);
   const itemRows = orderSofaModuleRowsWithinBuilds(sortSoLinesByGroupRank(
     sortLinesByStoredLineNo((itemsRes.data ?? []) as unknown as Array<Record<string, unknown> & { id: string; item_code: string }>),
     (r) => r.item_group as string | null | undefined,
@@ -266,10 +448,143 @@ productionOrders.get('/:id', async (c) => {
     ...it, receipts: [], allocations: [], so_doc_no: it.so_item_id ? soDocByItem.get(String(it.so_item_id)) ?? null : null, so_drift: null,
   }));
   await enrichLinesWithFabricSupplierCode(supabase, c, items);
-  return c.json({ purchaseOrder, items });
+  const [grn, dord] = await Promise.all([
+    header.completion_grn_id ? supabase.from('grns').select('id, grn_number, status').eq('id', String(header.completion_grn_id)).maybeSingle() : { data: null },
+    header.completion_do_id ? supabase.from('delivery_orders').select('id, do_number, status').eq('id', String(header.completion_do_id)).maybeSingle() : { data: null },
+  ]);
+  return c.json({ purchaseOrder, items, linkedSo, completion: { grn: grn.data ?? null, deliveryOrder: dord.data ?? null } });
 });
 
 productionOrders.get('/:id/revisions', (c) => c.json({ revisions: [] }));
+
+/* ── Raw materials ── */
+
+const loadOrderHead = async (sb: any, companyId: number, id: string) => {
+  const { data } = await scopeToCompanyId(sb.from('production_orders').select('id, status').eq('id', id), companyId).maybeSingle();
+  return data as { id: string; status: string } | null;
+};
+const rawSkuOf = async (sb: any, companyId: number, code: string) => {
+  const { data } = await scopeToCompanyId(sb.from('mfg_products').select('code, name, uom, category').eq('code', code), companyId).limit(1);
+  return ((data ?? [])[0] ?? null) as { name: string | null; uom: string | null; category: string } | null;
+};
+const positiveQty = (v: unknown): number | null => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 && n < 1e8 ? Math.round(n * 1000) / 1000 : null;
+};
+
+productionOrders.get('/:id/materials', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const { data, error } = await scopeToCompanyId(c.get('supabase').from('production_order_materials')
+    .select('id, item_code, description, uom, qty_needed, processing_date, delivery_date, notes').eq('production_order_id', c.req.param('id')), co.companyId).order('created_at');
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  return c.json({ materials: data ?? [] });
+});
+
+productionOrders.post('/:id/materials', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const order = await loadOrderHead(sb, co.companyId, c.req.param('id'));
+  if (!order) return c.json(NOT_THIS_COMPANY, 404);
+  if (order.status === 'CANCELLED') return c.json({ error: 'validation', message: 'This production order is cancelled.' }, 409);
+  const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const code = String(b.itemCode ?? '').trim();
+  const qty = positiveQty(b.qtyNeeded);
+  if (!code || qty == null) return c.json({ error: 'validation', message: 'Choose a raw material and give a quantity above zero.' }, 422);
+  const sku = await rawSkuOf(sb, co.companyId, code);
+  if (!sku || String(sku.category) !== RAW_CATEGORY) return c.json({ error: 'validation', message: `${code} is not a Raw material SKU.` }, 422);
+  const { data, error } = await sb.from('production_order_materials').insert({
+    production_order_id: order.id, company_id: co.companyId, item_code: code, description: sku.name, uom: sku.uom, qty_needed: qty,
+    processing_date: dateOrNull(b.processingDate), delivery_date: dateOrNull(b.deliveryDate), notes: b.notes ? String(b.notes) : null, updated_by: c.get('houzsUser')?.id ?? null,
+  }).select('id').single();
+  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  return c.json({ ok: true, id: (data as { id: string }).id }, 201);
+});
+
+const materialOf = async (sb: any, companyId: number, orderId: string, id: string) => {
+  const { data } = await scopeToCompanyId(sb.from('production_order_materials').select('id, item_code').eq('id', id).eq('production_order_id', orderId), companyId).maybeSingle();
+  return data as { id: string; item_code: string } | null;
+};
+
+productionOrders.patch('/:id/materials/:materialId', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const m = await materialOf(sb, co.companyId, c.req.param('id'), c.req.param('materialId'));
+  if (!m) return c.json(NOT_THIS_COMPANY, 404);
+  const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: c.get('houzsUser')?.id ?? null };
+  if (b.qtyNeeded !== undefined) {
+    const qty = positiveQty(b.qtyNeeded);
+    if (qty == null) return c.json({ error: 'validation', message: 'Give a quantity above zero.' }, 422);
+    updates.qty_needed = qty;
+  }
+  if (b.processingDate !== undefined) updates.processing_date = dateOrNull(b.processingDate);
+  if (b.deliveryDate !== undefined) updates.delivery_date = dateOrNull(b.deliveryDate);
+  if (b.notes !== undefined) updates.notes = b.notes ? String(b.notes) : null;
+  const { error } = await sb.from('production_order_materials').update(updates).eq('id', m.id);
+  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  return c.json({ ok: true });
+});
+
+productionOrders.delete('/:id/materials/:materialId', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const m = await materialOf(sb, co.companyId, c.req.param('id'), c.req.param('materialId'));
+  if (!m) return c.json(NOT_THIS_COMPANY, 404);
+  const { count, error: refErr } = await sb.from('purchase_order_items').select('id', { count: 'exact', head: true }).eq('production_material_id', m.id);
+  if (refErr) return c.json({ error: 'load_failed', reason: refErr.message }, 500);
+  if ((count ?? 0) > 0) return c.json({ error: 'validation', message: `${m.item_code} is on a purchase order, so it stays here.` }, 409);
+  const { error } = await sb.from('production_order_materials').delete().eq('id', m.id);
+  if (error) return c.json({ error: 'delete_failed', reason: error.message }, 500);
+  await recordEntityAudit(sb, {
+    entityType: 'PRODUCTION_ORDER', entityId: c.req.param('id'), action: 'UPDATE', actor: c.get('houzsUser'), companyId: co.companyId, note: `Material removed: ${m.item_code}`,
+    fieldChanges: [],
+  });
+  return c.json({ ok: true });
+});
+
+/* Each material's stock status, from the same allocation the MRP page shows, so the two cannot disagree. Received comes
+   first; what MRP no longer plans (a held or cancelled order) falls back to the material's own PO lines. */
+export type MaterialState = 'received' | 'stock' | 'po' | 'short';
+productionOrders.get('/:id/material-status', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const { data: mats, error } = await scopeToCompanyId(sb.from('production_order_materials').select('id, qty_needed').eq('production_order_id', c.req.param('id')), co.companyId);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  const rows = (mats ?? []) as Array<{ id: string; qty_needed: number }>;
+  if (rows.length === 0) return c.json({ statuses: {} });
+  const { data: linked, error: linkErr } = await sb.from('purchase_order_items')
+    .select('production_material_id, qty, received_qty, delivery_date, purchase_order_id, po:purchase_orders!inner (po_number, status, expected_at)')
+    .in('production_material_id', rows.map((r) => r.id));
+  if (linkErr) return c.json({ error: 'load_failed', reason: linkErr.message }, 500);
+  const poLines = ((linked ?? []) as unknown as Array<{ production_material_id: string; qty: number; received_qty: number | null; delivery_date: string | null; purchase_order_id: string; po: { po_number: string; status: string; expected_at: string | null } | null }>)
+    .filter((l) => l.po && l.po.status !== 'CANCELLED');
+  const mrp = await computeMrp(sb, { catFilter: RAW_CATEGORY, whFilter: null, includeUndated: true, companyId: co.companyId, leadBuffers: await loadLeadBuffers(c.env.DB) });
+  const lines = new Map(mrp.skus.flatMap((s) => s.lines).map((l) => [l.soItemId, l]));
+  const statuses: Record<string, unknown> = {};
+  for (const r of rows) {
+    const own = poLines.filter((l) => l.production_material_id === r.id);
+    const received = own.reduce((t, l) => t + Number(l.received_qty ?? 0), 0);
+    const onOrder = own.reduce((t, l) => t + Math.max(0, Number(l.qty ?? 0) - Number(l.received_qty ?? 0)), 0);
+    const line = lines.get(r.id);
+    const open = own.find((l) => Number(l.qty ?? 0) > Number(l.received_qty ?? 0));
+    let state: MaterialState;
+    if (received >= Number(r.qty_needed)) state = 'received';
+    else if (line) state = line.source === 'shortage' ? 'short' : line.source === 'stock' ? 'stock' : 'po';
+    else state = onOrder > 0 ? 'po' : 'short';
+    statuses[r.id] = {
+      state, received, onOrder, shortQty: line?.shortageQty ?? null,
+      poNumber: open?.po?.po_number ?? line?.poNumber ?? own[0]?.po?.po_number ?? null,
+      poId: (open ?? own[0])?.purchase_order_id ?? null,
+      eta: line?.poEta ?? open?.delivery_date ?? open?.po?.expected_at ?? null,
+    };
+  }
+  return c.json({ statuses });
+});
 
 const createProductionOrder = async (c: any) => {
   let body: Record<string, unknown>;
@@ -324,6 +639,7 @@ const createProductionOrder = async (c: any) => {
   const headerInsert: Record<string, unknown> = {
     company_id: activeCompanyId(c), supplier_id: supplierId, status: asDraft ? 'DRAFT' : 'SUBMITTED', submitted_at: asDraft ? null : new Date().toISOString(),
     currency, expected_at: expectedAt, supplier_delivery_date_2: headerD2, supplier_delivery_date_3: headerD3, supplier_delivery_date_4: headerD4,
+    production_time_days: productionTime(body.productionTimeDays),
     notes: (body.notes as string | undefined) ?? null, subtotal_sen: subtotal, tax_sen: 0, total_sen: subtotal, created_by: user.id, purchase_location_id: purchaseLocationId,
   };
   if (body.poDate) headerInsert.po_date = body.poDate;
@@ -440,6 +756,7 @@ productionOrders.patch('/:id', async (c) => {
   for (const [from, to] of PO_AUDIT_FIELDS) {
     if (body[from] !== undefined) updates[to] = body[from];
   }
+  if (updates.production_time_days !== undefined) updates.production_time_days = productionTime(updates.production_time_days);
   const { data, error } = await scopeToCompanyId(sb.from('production_orders').update(coerceEmptyDates(updates)).eq('id', id), co.companyId).select('*').single();
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
   const auditPatch: Record<string, unknown> = {};
@@ -729,6 +1046,171 @@ productionOrders.patch('/:id/cancel', async (c) => {
   return setStatus(c, ['DRAFT', 'SUBMITTED', 'ON_HOLD'], 'CANCELLED', { cancelled_at: new Date().toISOString() }, reason);
 });
 
-productionOrders.patch('/:id/reopen', (c) => setStatus(c, ['CANCELLED'], 'SUBMITTED', { cancelled_at: null }));
+/* A completed order reopens only once its GR and DO are undone: they are real documents with stock behind them. */
+productionOrders.patch('/:id/reopen', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const { data } = await scopeToCompanyId(sb.from('production_orders').select('status, completion_grn_id, completion_do_id').eq('id', c.req.param('id')), co.companyId).maybeSingle();
+  const o = data as { status: string; completion_grn_id: string | null; completion_do_id: string | null } | null;
+  if (o?.status === 'RECEIVED') {
+    const live = await liveCompletionDocs(sb, o);
+    if (live.length > 0) return c.json({ error: 'documents_live', message: `Cancel ${live.join(' and ')} first, then reopen this production order.` }, 409);
+    return setStatus(c, ['RECEIVED'], 'SUBMITTED', { received_at: null, completion_grn_id: null, completion_do_id: null, completion_step: null, completion_error: null });
+  }
+  return setStatus(c, ['CANCELLED'], 'SUBMITTED', { cancelled_at: null });
+});
+
+const liveCompletionDocs = async (sb: any, o: { completion_grn_id: string | null; completion_do_id: string | null }): Promise<string[]> => {
+  const [grn, dord] = await Promise.all([
+    o.completion_grn_id ? sb.from('grns').select('grn_number, status').eq('id', o.completion_grn_id).maybeSingle() : { data: null },
+    o.completion_do_id ? sb.from('delivery_orders').select('do_number, status').eq('id', o.completion_do_id).maybeSingle() : { data: null },
+  ]);
+  const out: string[] = [];
+  if (grn.data && grn.data.status !== 'CANCELLED') out.push(grn.data.grn_number);
+  if (dord.data && dord.data.status !== 'CANCELLED') out.push(dord.data.do_number);
+  return out;
+};
+
+/* ── Complete ──
+   Owner, 4 Nov 2026: a completed order receives its PO and delivers its SO lines. Three requests, driven by the screen,
+   each small enough for the Workers free plan and each safe to repeat: it looks at what already exists and does only
+   what is left. The order turns Complete only when the last one lands, so a stop midway leaves it open with Retry.
+   The GRN and DO come from the code those documents always use; the handlers run on this request's own session, so
+   their own gates (a user with no delivery rights, a frozen line) refuse here as they do on their own pages. */
+const callHandler = async (c: any, handler: (ctx: any) => Promise<Response>, body: unknown, param?: Record<string, string>) => {
+  const req = new Proxy(c.req, { get(t, k) {
+    if (k === 'json') return async () => body;
+    if (k === 'param' && param) return (n: string) => param[n];
+    const v = (t as any)[k];
+    return typeof v === 'function' ? v.bind(t) : v;
+  } });
+  const ctx = new Proxy(c, { get(t, k) {
+    if (k === 'req') return req;
+    const v = (t as any)[k];
+    return typeof v === 'function' ? v.bind(t) : v;
+  } });
+  const res = await handler(ctx);
+  return { status: res.status, json: (await res.clone().json().catch(() => ({}))) as Record<string, unknown> };
+};
+const words = (j: Record<string, unknown>, fallback: string): string => String(j.message ?? j.reason ?? j.error ?? fallback);
+
+type CompletionOrder = {
+  id: string; po_number: string; status: string; on_hold: boolean; source_po_id: string | null; purchase_location_id: string | null;
+  completion_grn_id: string | null; completion_do_id: string | null; completion_step: string | null;
+};
+
+async function completeGrnStep(c: any, sb: any, companyId: number, o: CompletionOrder): Promise<string | null> {
+  if (o.completion_grn_id) {
+    const { data: grn } = await sb.from('grns').select('status').eq('id', o.completion_grn_id).maybeSingle();
+    const status = (grn as { status?: string } | null)?.status;
+    if (status === 'POSTED') return null;
+    if (status && status !== 'CANCELLED') {
+      const posted = await postGrnAndRollup(sb, o.completion_grn_id, c.get('user').id, companyId);
+      return posted.ok ? null : `The goods receipt was raised but not posted: ${posted.reason}`;
+    }
+  }
+  if (!o.source_po_id) return null;
+  const { data: lines, error } = await sb.from('purchase_order_items').select('id, qty, received_qty').eq('purchase_order_id', o.source_po_id);
+  if (error) return error.message;
+  const picks = ((lines ?? []) as Array<{ id: string; qty: number; received_qty: number | null }>)
+    .map((l) => ({ poItemId: l.id, qty: Number(l.qty) - Number(l.received_qty ?? 0) })).filter((p) => p.qty > 0);
+  if (picks.length === 0) return null;   // already received by hand: nothing to double
+  const core = await createDraftGrnsFromPoItemsCore({
+    req: { json: async () => ({ picks, notes: `Completed from production order ${o.po_number}` }) },
+    get: ((key: string) => c.get(key as 'supabase')) as unknown as GrnFromPoItemsContext['get'],
+  });
+  if (!core.ok) return words(core.body, 'The goods receipt could not be raised.');
+  const draft = core.created[0];
+  if (!draft) return 'The goods receipt could not be raised.';
+  await sb.from('production_orders').update({ completion_grn_id: draft.id }).eq('id', o.id);
+  /* The team's own works carry no purchase cost until labour is costed, and the receipt says so. */
+  await sb.from('grn_items').update({ zero_cost_ack: true, zero_cost_reason: `In-house works, ${o.po_number}`, zero_cost_ack_by: c.get('user').id, zero_cost_ack_at: new Date().toISOString() })
+    .eq('grn_id', draft.id).eq('unit_price_sen', 0);
+  const posted = await postGrnAndRollup(sb, draft.id, c.get('user').id, draft.companyId);
+  if (!posted.ok) return `The goods receipt was raised but not posted: ${posted.reason}`;
+  await recordGrnCreate(sb, c.get('houzsUser'), companyId, draft.id, draft.lineCount, `Received from ${draft.poNumbers.join(', ')} on completing ${o.po_number}`);
+  if (posted.movementErrors?.length) return `The goods receipt posted but its stock did not move: ${posted.movementErrors.join('; ')}`;
+  return null;
+}
+
+async function completeDoStep(c: any, sb: any, o: CompletionOrder): Promise<string | null> {
+  if (o.completion_do_id) {
+    const { data: dord } = await sb.from('delivery_orders').select('status').eq('id', o.completion_do_id).maybeSingle();
+    if ((dord as { status?: string } | null)?.status && (dord as { status: string }).status !== 'CANCELLED') return null;
+  }
+  const { data: lines, error } = await sb.from('production_order_items').select('so_item_id, qty').eq('production_order_id', o.id).not('so_item_id', 'is', null);
+  if (error) return error.message;
+  const wanted = (lines ?? []) as Array<{ so_item_id: string; qty: number }>;
+  if (wanted.length === 0) return null;   // no SO behind it: nothing to deliver
+  const { data: soLines } = await sb.from('mfg_sales_order_items').select('id, doc_no').in('id', wanted.map((l) => l.so_item_id));
+  const docNos = [...new Set(((soLines ?? []) as Array<{ doc_no: string }>).map((l) => l.doc_no))];
+  const remaining = await soDeliverableRemaining(sb, docNos);
+  const picks = wanted.flatMap((l) => {
+    const left = Number(remaining.get(l.so_item_id)?.remaining ?? 0);
+    const qty = Math.min(left, Number(l.qty));
+    return qty > 0 ? [{ soItemId: l.so_item_id, qty }] : [];   // already delivered: skipped, not doubled
+  });
+  if (picks.length === 0) return null;
+  const out = await callHandler(c, createDoFromSoLinesHandler, { picks, confirmShortStock: true, warehouseId: o.purchase_location_id ?? undefined });
+  if (out.status >= 300 || !out.json.id) return words(out.json, 'The delivery order could not be raised.');
+  await sb.from('production_orders').update({ completion_do_id: out.json.id }).eq('id', o.id);
+  const moved = out.json.movementErrors as string[] | undefined;
+  return moved?.length ? `The delivery order was raised but its stock did not move: ${moved.join('; ')}` : null;
+}
+
+async function completeDeliverStep(c: any, sb: any, o: CompletionOrder): Promise<string | null> {
+  if (o.completion_do_id) {
+    const { data: dord } = await sb.from('delivery_orders').select('status').eq('id', o.completion_do_id).maybeSingle();
+    if ((dord as { status?: string } | null)?.status !== 'DELIVERED') {
+      const out = await callHandler(c, patchDeliveryOrderStatusHandler, { status: 'DELIVERED' }, { id: o.completion_do_id });
+      if (out.status >= 300) return words(out.json, 'The delivery order could not be marked delivered.');
+    }
+  }
+  const now = new Date().toISOString();
+  const { error } = await sb.from('production_orders').update({ status: 'RECEIVED', received_at: now, updated_at: now }).eq('id', o.id).eq('status', 'SUBMITTED');
+  if (error) return error.message;
+  await recordEntityAudit(sb, {
+    entityType: 'PRODUCTION_ORDER', entityId: o.id, entityDocNo: o.po_number, action: 'UPDATE', actor: c.get('houzsUser'), companyId: activeCompanyId(c),
+    statusSnapshot: 'RECEIVED', note: 'Completed', fieldChanges: compactChanges(statusChange('SUBMITTED', 'RECEIVED')),
+  });
+  return null;
+}
+
+productionOrders.post('/:id/complete', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const b = (await c.req.json().catch(() => ({}))) as { step?: string };
+  const step = b.step;
+  if (step !== 'grn' && step !== 'do' && step !== 'deliver') return c.json({ error: 'validation', message: 'Unknown step.' }, 400);
+  const cols = 'id, po_number, status, on_hold, source_po_id, purchase_location_id, completion_grn_id, completion_do_id, completion_step';
+  const { data } = await scopeToCompanyId(sb.from('production_orders').select(cols).eq('id', c.req.param('id')), co.companyId).maybeSingle();
+  const o = data as CompletionOrder | null;
+  if (!o) return c.json(NOT_THIS_COMPANY, 404);
+  if (o.status === 'RECEIVED') return c.json({ ok: true, done: true });
+  if (o.status !== 'SUBMITTED') return c.json({ error: 'validation', message: `Only an order in production can be completed (this one is ${o.status.toLowerCase()}).` }, 409);
+  if (o.on_hold) return c.json({ error: 'validation', message: 'This production order is on hold. Take it off hold first.' }, 409);
+  /* One step at a time: a second press, or a retry while the first still runs, finds the lock and stops. */
+  const stale = new Date(Date.now() - 120_000).toISOString();
+  const { data: locked } = await scopeToCompanyId(sb.from('production_orders').update({ completion_lock_at: new Date().toISOString() }).eq('id', o.id), co.companyId)
+    .or(`completion_lock_at.is.null,completion_lock_at.lt.${stale}`).select('id');
+  if (!(locked ?? []).length) return c.json({ error: 'already_running', message: 'This step is already running. Wait a moment, then look again.' }, 409);
+  let problem: string | null;
+  try {
+    problem = step === 'grn' ? await completeGrnStep(c, sb, co.companyId, o)
+      : step === 'do' ? await completeDoStep(c, sb, o)
+        : await completeDeliverStep(c, sb, o);
+  } catch (e) {
+    problem = e instanceof Error ? e.message : String(e);
+  }
+  await sb.from('production_orders').update({
+    completion_lock_at: null, completion_error: problem,
+    ...(problem ? {} : { completion_step: step === 'deliver' ? 'done' : step }),
+  }).eq('id', o.id);
+  if (problem) return c.json({ error: 'step_failed', step, message: problem }, 409);
+  return c.json({ ok: true, step });
+});
+
 
 productionOrders.patch('/:id/hold', makeHoldHandler({ table: 'production_orders', keyColumn: 'id', param: 'id', responseKey: 'purchaseOrder', echoColumns: 'po_number, status' }));
