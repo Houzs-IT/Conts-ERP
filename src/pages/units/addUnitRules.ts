@@ -2,12 +2,10 @@ import type { Bay, Bed } from './shared';
 
 /** What the Add unit page checks before each step's Next, kept apart from the page so it can be tested without a browser. */
 
-/** The name of the stand-in owner a unit sits under until its owner is picked (functions/_lib/placeholderOwner.ts). Matched by name, as the server does. */
-export const PLACEHOLDER_OWNER = 'Owner to be confirmed';
-export const isPlaceholderOwner = (name: string | null | undefined): boolean => (name ?? '').toLowerCase() === PLACEHOLDER_OWNER.toLowerCase();
-
 export const STEPS = ['Listing', 'Type and size', 'Contract'] as const;
 export type StepIndex = 0 | 1 | 2;
+/** The step nearest to n, so a step number worked out in code is always one of the three. */
+export const stepAt = (n: number): StepIndex => (n <= 0 ? 0 : n >= 2 ? 2 : 1);
 
 export interface AddUnitForm {
   ownerId: string; listingName: string; unitCode: string; buildingId: string; address: string;
@@ -45,7 +43,9 @@ export function layoutToSave(picked: string, suggested: string | null, offered: 
   return suggested && offered.includes(suggested) ? suggested : null;
 }
 
+const isFormKey = (k: string): k is keyof AddUnitForm => k in EMPTY_FORM;
+
 /** Whether the person has typed anything worth asking about before leaving (the building alone, often from the link, is not). */
 export function hasInput(f: AddUnitForm, contractTouched: boolean): boolean {
-  return contractTouched || (Object.keys(EMPTY_FORM) as (keyof AddUnitForm)[]).some(k => k !== 'buildingId' && JSON.stringify(f[k]) !== JSON.stringify(EMPTY_FORM[k]));
+  return contractTouched || Object.keys(EMPTY_FORM).some(k => isFormKey(k) && k !== 'buildingId' && JSON.stringify(f[k]) !== JSON.stringify(EMPTY_FORM[k]));
 }

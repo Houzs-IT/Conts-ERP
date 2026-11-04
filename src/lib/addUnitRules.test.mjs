@@ -1,7 +1,7 @@
 // node --test src/lib/addUnitRules.test.mjs (npm test). What the Add unit page checks before each step's Next.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EMPTY_FORM, stepProblems, stepOfField, layoutToSave, hasInput, isPlaceholderOwner } from '../pages/units/addUnitRules.ts';
+import { EMPTY_FORM, stepProblems, stepOfField, stepAt, layoutToSave, hasInput } from '../pages/units/addUnitRules.ts';
 
 const filled = { ...EMPTY_FORM, listingName: 'Studio at Arte', unitCode: 'A-12-03', buildingId: 'b1', purpose: 'rental' };
 
@@ -42,9 +42,10 @@ test('only typed input counts for the leave warning, not the building from the l
   assert.equal(hasInput(EMPTY_FORM, true), true);
 });
 
-test('the stand-in owner is found by name, any case', () => {
-  assert.equal(isPlaceholderOwner('Owner to be confirmed'), true);
-  assert.equal(isPlaceholderOwner('OWNER TO BE CONFIRMED'), true);
-  assert.equal(isPlaceholderOwner('Jane Tan'), false);
-  assert.equal(isPlaceholderOwner(undefined), false);
+test('a step number worked out in code is held to the three steps', () => {
+  assert.equal(stepAt(-1), 0);
+  assert.equal(stepAt(0), 0);
+  assert.equal(stepAt(1), 1);
+  assert.equal(stepAt(2), 2);
+  assert.equal(stepAt(3), 2);
 });

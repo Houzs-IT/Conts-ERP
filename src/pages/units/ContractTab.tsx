@@ -14,7 +14,7 @@ import { ExtendContractModal, GenerateAgreement } from './ContractExtras';
 import { CodeBadge } from './UnitExtras';
 import { DataTable, type Column } from '../../components/DataTable';
 import { RecordHistory } from '../../components/RecordHistory';
-import { isPlaceholderOwner } from './addUnitRules';
+import { isPlaceholderOwner } from './shared';
 import { ContractFields, ModelChip, draftOf, bodyOf, problems, pctText, type ContractView, type Draft } from './contractForm';
 
 export { ModelChip };

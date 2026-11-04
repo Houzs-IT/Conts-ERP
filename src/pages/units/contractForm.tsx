@@ -66,7 +66,15 @@ export function blankDraft(type?: ContractType): Draft {
     depositUtilities: null, depositCard: null, rentOutAmount: null, rentOutDeposit: null, rentOutDepositUtilities: null, rentOutDepositCard: null,
   };
 }
-export function bodyOf(d: Draft) {
+/** What PUT /api/units/:id/contract takes: only the boxes of the chosen model are present. */
+export interface ContractBody extends Partial<Record<RentToRentKey, number | null>> {
+  revenueModel: RevenueModel; contractCode: ContractCode;
+  yearlyGuarantee?: number; ownerPct?: number; managementPct?: number; agentPct?: number; agentName?: string | null; miscCharges?: boolean;
+  minimumGuarantee?: number; guaranteeStartsOn?: string | null; guaranteeEndsOn?: string | null;
+  monthlyRent?: number; ownerAmount?: number; deposit?: number | null; tenantName?: string;
+  startsOn: string; endsOn: string | null; renewsOn: string | null;
+}
+export function bodyOf(d: Draft): ContractBody {
   const m = d.revenueModel, share = isShare(m);
   return {
     revenueModel: m, contractCode: d.contractCode,

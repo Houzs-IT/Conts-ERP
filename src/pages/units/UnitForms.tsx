@@ -19,12 +19,11 @@ import { masked as maskTail } from '../../lib/format';
 import { MODEL, codeName, codeLabel, PURPOSES, USED_BY } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
 import { BedsEditor, BaysEditor, bedsText, baysText } from './UnitExtras';
-import { isPlaceholderOwner } from './addUnitRules';
 import { UnitCleaning, missingCleanPrice, type UnitPriceData } from './UnitCleaning';
 import { cx } from '../../lib/design-tokens';
 import { Link } from 'react-router-dom';
 import {
-  STATES, cap, layoutFromBedrooms, useLayoutTypes,
+  STATES, cap, layoutFromBedrooms, useLayoutTypes, isPlaceholderOwner,
   SectionHead, Grid3, Labeled, Select, ReadOnly, CentreModal,
   type Unit, type Building, type UnitDetail,
 } from './shared';
@@ -32,7 +31,7 @@ import {
 /** Every owner profile, for the owner pickers (GET /api/owners, management roles). */
 export function useOwnerOptions(on = true) {
   const r = useApi<{ data: Owner[] }>(on ? '/owners' : null);
-  return { owners: r.data?.data ?? null, loading: r.loading };
+  return { owners: r.data?.data ?? null, loading: r.loading, error: r.error, reload: r.reload };
 }
 
 type Change = (p: Partial<Unit>) => void;

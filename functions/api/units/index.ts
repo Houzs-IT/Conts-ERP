@@ -70,13 +70,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return fail('CONFLICT', 'That building already has a unit with this code.', 409, { unitCode: 'This code is already used in the building.' });
   }
 
-  // A sub-unit must hang off a real unit in the same building; a bad parent just makes a top-level unit.
+  // A sub-unit must hang off a real unit in the same building; a parent that is not there is refused, never turned into a loose unit.
   let parentUnitId: string | null = null, parentOwner: string | null = null;
   if (typeof b.parentUnitId === 'string' && b.parentUnitId) {
     const parent = await one<{ owner_id: string }>(env, 'SELECT owner_id FROM units WHERE id = ? AND property_id = ?', b.parentUnitId, b.buildingId);
-    if (parent) { parentUnitId = b.parentUnitId; parentOwner = parent.owner_id; }
+    if (!parent) return fail('VALIDATION', 'That parent unit no longer exists.', 422, { parentUnitId: 'That parent unit no longer exists.' });
+    parentUnitId = b.parentUnitId; parentOwner = parent.owner_id;
   }
-  // No owner and no parent: the unit waits under "Owner to be confirmed" until the real owner is set on its Details tab.
+  // A sub-unit takes its parent's owner. With no owner and no parent the unit waits under "Owner to be confirmed" until the real owner is set on its Details tab.
   const ownerId = typeof b.ownerId === 'string' && b.ownerId ? b.ownerId
     : parentOwner ?? await placeholderOwnerId({ all: (sql, ...args) => all(env, sql, ...args) as never, run: (sql, ...args) => run(env, sql, ...args) }, nowIso());
   if (!(await one(env, 'SELECT 1 AS x FROM owners WHERE id = ?', ownerId))) return fail('NOT_FOUND', 'That owner does not exist.', 404, { ownerId: 'Pick an owner.' });

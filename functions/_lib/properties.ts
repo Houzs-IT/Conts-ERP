@@ -11,7 +11,6 @@ export const GRR_SPLIT = 'GRR — guaranteed rent';
 export const SPLITS = ['Not set', 'Profit share', GRR_SPLIT];
 
 export const GUARANTEE_PERIODS = ['month', 'year'];
-export const LAYOUT_TYPES = ['studio', '1_bedroom', '2_bedroom', '3_bedroom', '4_plus_bedroom', 'duplex', 'dual_key', 'penthouse', 'other'];
 
 /** Owner identity and bank fields the unit endpoints once took. They belong to the owner profile (owners/[id]), so a unit
  *  request carrying one is refused rather than silently changing the owner of every unit they have. */
@@ -58,7 +57,6 @@ export function invalidUnit(b: UnitInput, currentSplit?: string | null): { field
   if (b.bedrooms !== undefined && (!Number.isInteger(b.bedrooms) || b.bedrooms < 0 || b.bedrooms > 20)) return { field: 'bedrooms', message: 'Bedrooms must be a whole number from 0 to 20.' };
   if (b.bathrooms !== undefined && (!Number.isInteger(b.bathrooms) || b.bathrooms < 0 || b.bathrooms > 20)) return { field: 'bathrooms', message: 'Bathrooms must be a whole number from 0 to 20.' };
   if (b.sizeSqft != null && (!Number.isInteger(b.sizeSqft) || b.sizeSqft < 1 || b.sizeSqft > 100000)) return { field: 'sizeSqft', message: 'Enter the size in whole square feet.' };
-  if (b.layoutType != null && !LAYOUT_TYPES.includes(b.layoutType)) return { field: 'layoutType', message: 'Pick a layout type.' };
   if (b.purpose !== undefined && !(PURPOSES as readonly string[]).includes(b.purpose)) return { field: 'purpose', message: 'Pick rental, showroom or warehouse.' };
   if (b.usedBy != null && !(USED_BY as readonly string[]).includes(b.usedBy)) return { field: 'usedBy', message: 'Pick who uses the unit.' };
   if (b.beds !== undefined) { const m = invalidBeds(b.beds); if (m) return { field: 'beds', message: m }; }

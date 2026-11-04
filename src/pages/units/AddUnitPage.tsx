@@ -22,8 +22,8 @@ import { BedsEditor, BaysEditor } from './UnitExtras';
 import { BuildingModal, useOwnerOptions } from './UnitForms';
 import { ContractFields, blankDraft, bodyOf, problems, type Draft } from './contractForm';
 import { PROPERTIES_FALLBACK } from './fallback';
-import { EMPTY_FORM, STEPS, hasInput, isPlaceholderOwner, layoutToSave, stepOfField, stepProblems, type AddUnitForm, type StepIndex } from './addUnitRules';
-import { mayEditUnits, layoutFromBedrooms, useLayoutTypes, SectionHead, Grid3, Labeled, Select, ReadOnly, type Building, type PropertiesPayload } from './shared';
+import { EMPTY_FORM, STEPS, hasInput, layoutToSave, stepAt, stepOfField, stepProblems, type AddUnitForm, type StepIndex } from './addUnitRules';
+import { mayEditUnits, isPlaceholderOwner, layoutFromBedrooms, useLayoutTypes, SectionHead, Grid3, Labeled, Select, ReadOnly, type Building, type PropertiesPayload } from './shared';
 
 interface NewUnitBody {
   buildingId: string; ownerId?: string; listingName: string; unitCode: string; address?: string;
@@ -61,13 +61,15 @@ export default function AddUnitPage(): ReactElement {
   const [params] = useSearchParams();
   const types = useContractTypes();
   const props = useApi<PropertiesPayload>('/properties', PROPERTIES_FALLBACK);
-  const { owners, loading: ownersLoading } = useOwnerOptions(canEdit);
+  const { owners, loading: ownersLoading, error: ownersError, reload: reloadOwners } = useOwnerOptions(canEdit);
   const layoutTypes = useLayoutTypes();
   const [dialog, ask] = useConfirm();
 
   const [form, setForm] = useState<AddUnitForm>(() => ({ ...EMPTY_FORM, buildingId: params.get('building') ?? '' }));
   const [draft, setDraft] = useState<Draft>(() => blankDraft());
   const [step, setStep] = useState<StepIndex>(0);
+  /** Steps where Next was pressed with something missing: their missing boxes are marked from then on. */
+  const [tried, setTried] = useState<readonly boolean[]>([false, false, false]);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
   const [contractErrors, setContractErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -106,14 +108,17 @@ export default function AddUnitPage(): ReactElement {
 
   const hasOwner = !!form.ownerId;
   const own = step === 2 ? (hasOwner ? contractProblems(draft) : {}) : stepProblems(step, form);
-  // Missing boxes are not flagged before they are touched; the Next button says what is missing.
-  const shownErrors = serverErrors;
+  // A step's missing boxes are marked after Next was pressed on it; the bar below always says what is missing.
+  // The contract step shows its own problems at once, as the Contract tab does.
+  const shownErrors = { ...(step < 2 && tried[step] ? own : {}), ...serverErrors };
   const blocked = Object.values(own)[0];
+  const markTried = (s: StepIndex): void => setTried(t => t.map((v, i) => v || i === s));
+  const fieldError = (k: string): ReactElement | false => !!shownErrors[k] && <span className="text-caption text-critical">{shownErrors[k]}</span>;
 
   async function submit(): Promise<void> {
     if (saving) return;
     const first = ([0, 1] as const).find(s => Object.keys(stepProblems(s, form)).length > 0);
-    if (!createdId && first !== undefined) { setStep(first); return; }
+    if (!createdId && first !== undefined) { markTried(first); setStep(first); return; }
     setSaving(true);
     try {
       let id = createdId;
@@ -125,7 +130,7 @@ export default function AddUnitPage(): ReactElement {
         } catch (e) {
           if (e instanceof ApiFailure && e.fields && Object.keys(e.fields).length > 0) {
             setServerErrors(e.fields);
-            setStep(Math.min(...Object.keys(e.fields).map(stepOfField)) as StepIndex);
+            setStep(stepAt(Math.min(...Object.keys(e.fields).map(stepOfField))));
           }
           notifyFailure(e);
           return;
@@ -164,16 +169,16 @@ export default function AddUnitPage(): ReactElement {
   const last = step === 2;
   const nextLabel = last ? (createdId ? 'Save contract' : 'Add unit') : 'Next';
   const tabs = (
-    <div role="tablist" aria-label="Add unit steps" className="flex gap-1.5 overflow-x-auto px-5 pt-5">
+    <nav aria-label="Add unit steps" className="flex gap-1.5 overflow-x-auto px-5 pt-5">
       {STEPS.map((label, i) => (
-        <button key={label} type="button" role="tab" id={`add-unit-step-${i}`} aria-selected={step === i} aria-controls="add-unit-panel" disabled={i > step}
-          onClick={() => setStep(i as StepIndex)}
+        <button key={label} type="button" aria-current={step === i ? 'step' : undefined} disabled={i > step}
+          onClick={() => setStep(stepAt(i))}
           className={cx('h-9 max-md:h-11 px-3 flex-none rounded-control border border-solid text-copy whitespace-nowrap inline-flex items-center gap-1.5 disabled:cursor-default disabled:text-muted-ink',
             i <= step && 'cursor-pointer', step === i ? 'bg-black text-white border-black' : 'bg-card text-ink border-line')}>
           {i + 1}. {label}
         </button>
       ))}
-    </div>
+    </nav>
   );
 
   return (
@@ -181,17 +186,24 @@ export default function AddUnitPage(): ReactElement {
       <PageHeader title="Add unit" sub="Fill in the unit and its contract. Nothing is saved until the last step." back={{ label: 'Units', onClick: () => navigate('/properties/units') }} />
       <Card>
         {tabs}
-        <div role="tabpanel" id="add-unit-panel" aria-labelledby={`add-unit-step-${step}`} className="p-5">
+        <div className="p-5">
           {createdId && <div className="mb-5 py-[10px] px-[14px] rounded-control bg-gold-tint text-copy">The unit is added. Only its contract is left to save.</div>}
           {step < 2 && (
             <fieldset disabled={!!createdId} className="m-0 p-0 border-0 min-w-0">
               {step === 0 && <>
+                {(props.error || ownersError) && (
+                  <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 py-[10px] px-[14px] rounded-control bg-critical-bg text-danger text-copy">
+                    <span>{props.error ? `The building list did not load. ${props.error}` : `The owner list did not load, so owners cannot be picked yet. ${ownersError}`}</span>
+                    <Button size="sm" variant="secondary" onClick={() => { if (props.error) props.reload(); if (ownersError) reloadOwners(); }}>Retry</Button>
+                  </div>
+                )}
                 <SectionHead>Listing</SectionHead>
                 <Grid3>
                   <Labeled label="Owner" help={hasOwner ? 'Picked from the owner profiles.' : 'Optional. Left empty, the unit waits under "Owner to be confirmed" until you pick one on its Details tab.'}>
                     <SearchSelect label="Owner" size="md" value={form.ownerId} onChange={v => edit({ ownerId: v })} allLabel="Leave empty: Owner to be confirmed"
                       placeholder={ownersLoading ? 'Loading owners' : 'Search owners'}
                       options={(owners ?? []).filter(o => !isPlaceholderOwner(o.displayName)).map(o => ({ value: o.id, label: titleCase(o.displayName), hint: o.units.length ? `${o.units.length} ${o.units.length === 1 ? 'unit' : 'units'}` : undefined }))} />
+                    {fieldError('ownerId')}
                   </Labeled>
                   <Labeled label="Listing name *" help="Exactly as published on the channels">
                     <Field label="" aria-label="Listing name" value={form.listingName} error={shownErrors.listingName} onChange={e => edit({ listingName: e.target.value })} />
@@ -202,7 +214,7 @@ export default function AddUnitPage(): ReactElement {
                   <Labeled label="Building *">
                     <Select label="Building" value={form.buildingId} onChange={v => edit({ buildingId: v })}
                       options={[...(form.buildingId ? [] : [{ value: '', label: props.loading ? 'Loading buildings' : 'Pick a building' }]), ...buildings.map(b => ({ value: b.id, label: b.name }))]} />
-                    {shownErrors.buildingId && <span className="text-caption text-critical">{shownErrors.buildingId}</span>}
+                    {fieldError('buildingId')}
                     <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                       <button type="button" onClick={() => setAddingBuilding(true)} className="p-0 bg-transparent border-none cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink max-md:min-h-11">Add building</button>
                       <a href="/properties/settings?tab=buildings" target="_blank" rel="noopener noreferrer" className="text-meta font-semibold text-gold-ink no-underline max-md:inline-flex max-md:items-center max-md:min-h-11">Edit the building list</a>
@@ -212,7 +224,7 @@ export default function AddUnitPage(): ReactElement {
                     <ReadOnly>{building?.state ?? 'Pick a building'}</ReadOnly>
                   </Labeled>
                   <Labeled label="Address" span2>
-                    <Field label="" aria-label="Address" placeholder={building?.city} value={form.address} onChange={e => edit({ address: e.target.value })} />
+                    <Field label="" aria-label="Address" placeholder={building?.city} value={form.address} error={shownErrors.address} onChange={e => edit({ address: e.target.value })} />
                   </Labeled>
                 </Grid3>
 
@@ -221,10 +233,11 @@ export default function AddUnitPage(): ReactElement {
                   <Labeled label="Purpose *" help={PURPOSES.find(p => p.value === form.purpose)?.help}>
                     <Select label="Purpose" value={form.purpose} onChange={v => edit({ purpose: v })}
                       options={[...(form.purpose ? [] : [{ value: '', label: 'Pick one' }]), ...PURPOSES.map(p => ({ value: p.value, label: p.label }))]} />
-                    {shownErrors.purpose && <span className="text-caption text-critical">{shownErrors.purpose}</span>}
+                    {fieldError('purpose')}
                   </Labeled>
                   <Labeled label="Used by" help="Optional: which business uses the unit.">
                     <Select label="Used by" value={form.usedBy} onChange={v => edit({ usedBy: v })} options={[{ value: '', label: 'Not set' }, ...USED_BY]} />
+                    {fieldError('usedBy')}
                   </Labeled>
                 </Grid3>
               </>}
@@ -235,12 +248,12 @@ export default function AddUnitPage(): ReactElement {
                   <Labeled label="Type" help={!form.layoutType && layout ? `Suggested from ${form.bedrooms === 0 ? 'no bedrooms' : `${form.bedrooms} ${form.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`}.` : undefined}>
                     <Select label="Type" value={layout ?? ''} onChange={v => edit({ layoutType: v })}
                       options={[...(layout ? [] : [{ value: '', label: 'Not set' }]), ...typeOptions.map(t => ({ value: t.key, label: t.label }))]} />
-                    {shownErrors.layoutType && <span className="text-caption text-critical">{shownErrors.layoutType}</span>}
+                    {fieldError('layoutType')}
                   </Labeled>
-                  <Labeled label="Bedrooms" help="0 for a studio">
+                  <Labeled label="Bedrooms" help="0 for a studio. Blank saves as 1.">
                     <NumberInput label="" aria-label="Bedrooms" min={0} max={20} value={form.bedrooms} onChange={n => edit({ bedrooms: n })} error={shownErrors.bedrooms} />
                   </Labeled>
-                  <Labeled label="Bathrooms">
+                  <Labeled label="Bathrooms" help="Blank saves as 1.">
                     <NumberInput label="" aria-label="Bathrooms" min={0} max={20} value={form.bathrooms} onChange={n => edit({ bathrooms: n })} error={shownErrors.bathrooms} />
                   </Labeled>
                   <Labeled label="Size (sq ft)" help="Built-up area">
@@ -251,12 +264,12 @@ export default function AddUnitPage(): ReactElement {
                   <div className="flex flex-col gap-2 min-w-0">
                     <SectionHead noMargin>Beds and mattresses</SectionHead>
                     <BedsEditor beds={form.beds} onChange={beds => edit({ beds })} />
-                    {shownErrors.beds && <span className="text-caption text-critical">{shownErrors.beds}</span>}
+                    {fieldError('beds')}
                   </div>
                   <div className="flex flex-col gap-2 min-w-0">
                     <SectionHead noMargin>Car park</SectionHead>
                     <BaysEditor bays={form.parkingBays} onChange={parkingBays => edit({ parkingBays })} />
-                    {(shownErrors.parkingBays ?? own.parkingBays) && <span className="text-caption text-critical">{shownErrors.parkingBays ?? own.parkingBays}</span>}
+                    {fieldError('parkingBays')}
                   </div>
                 </div>
               </>}
@@ -277,10 +290,11 @@ export default function AddUnitPage(): ReactElement {
         </div>
       </Card>
       {/* Outside the card: the card clips its content, which would stop the bar sticking to the bottom of a phone screen. */}
-      <div className="max-md:sticky max-md:bottom-0 z-[2] flex items-center justify-between gap-3 py-3 px-5 bg-card rounded-card [border:1px_solid_var(--color-line)] pb-[max(12px,env(safe-area-inset-bottom))] md:pb-3">
-        <Button size="md" variant="secondary" className="max-md:min-h-11" disabled={step === 0} disabledReason="This is the first step" onClick={() => setStep(s => (s - 1) as StepIndex)}>Back</Button>
-        <Button size="md" variant="primary" className="max-md:min-h-11" loading={saving} disabled={!!blocked} disabledReason={blocked}
-          onClick={() => (last ? void submit() : setStep(s => (s + 1) as StepIndex))}>{nextLabel}</Button>
+      <div className="max-md:sticky max-md:bottom-0 z-[2] flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-3 px-5 bg-card rounded-card [border:1px_solid_var(--color-line)] pb-[max(12px,env(safe-area-inset-bottom))] md:pb-3">
+        {blocked && <p role="status" className={cx('m-0 w-full text-meta', tried[step] ? 'text-critical' : 'text-muted-ink')}>{blocked}</p>}
+        <Button size="md" variant="secondary" className="max-md:min-h-11" disabled={step === 0} disabledReason="This is the first step" onClick={() => setStep(s => stepAt(s - 1))}>Back</Button>
+        <Button size="md" variant="primary" className="max-md:min-h-11" loading={saving}
+          onClick={() => { if (blocked) markTried(step); else if (last) void submit(); else setStep(s => stepAt(s + 1)); }}>{nextLabel}</Button>
       </div>
       {addingBuilding && <BuildingModal onClose={() => setAddingBuilding(false)} onSubmit={b => void addBuilding(b)} />}
       {dialog}
