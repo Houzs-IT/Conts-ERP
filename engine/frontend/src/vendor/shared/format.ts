@@ -1,3 +1,4 @@
+// probe
 // Pure formatting helpers. Lifted from prototype per PORT_DESIGN.md §11.2 Issue 8.
 // SOLE source of truth — no inline duplicates anywhere in client OR server.
 
