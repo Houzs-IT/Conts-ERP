@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupDistinct, mrpProjectLabel, type ModelGroup } from './mrp-model-pipeline';
+import { groupDistinct, mrpProjectLabel, suppliersMainFirst, type ModelGroup } from './mrp-model-pipeline';
 import type { MrpLine } from '../../vendor/scm/lib/mrp-queries';
 
 const line = (o: Partial<MrpLine>): MrpLine => ({
@@ -21,5 +21,16 @@ describe('MRP project and customer (owner, 3 Nov 2026)', () => {
     ] } as unknown as ModelGroup;
     expect(groupDistinct(g, mrpProjectLabel)).toEqual(['RN-1', 'RN-2']);
     expect(groupDistinct(g, (l) => l.debtorName ?? '')).toEqual(['Ali', 'Bob']);
+  });
+});
+
+describe('the MRP supplier dropdown (owner, 3 Nov 2026)', () => {
+  const s = (name: string, isMain: boolean) => ({ supplierId: name, code: name, name, isMain });
+  it('lists the main supplier first, however the names sort, then the rest alphabetically', () => {
+    expect(suppliersMainFirst([s('Alpha', false), s('Zeta', true), s('Beta', false)]).map((x) => x.name)).toEqual(['Zeta', 'Alpha', 'Beta']);
+  });
+  it('adds nothing to the SKU\'s bound suppliers', () => {
+    expect(suppliersMainFirst([s('Customer', true)]).map((x) => x.name)).toEqual(['Customer']);
+    expect(suppliersMainFirst([])).toEqual([]);
   });
 });
