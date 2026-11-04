@@ -12,6 +12,9 @@
  *  `contract` picks the formula: PS for a share, LT for a fixed owner base (a long-term let's part of the rent, a GRR
  *  or master lease rent). The report groups rows by income model, ReportGroup. */
 
+/** Occupancy to 2 decimals, as the miscellaneous charge is worked out (RM 100 x 74.19% = RM 74.19), so the two match. */
+export const occupancyLabel = (pct: number): string => `${pct.toFixed(2)}%`;
+
 export type Contract = 'LT' | 'PS';
 
 /** PS: Package A, B and D. LT: Package C. NONE: no contract record yet (the unit's own split is used). */

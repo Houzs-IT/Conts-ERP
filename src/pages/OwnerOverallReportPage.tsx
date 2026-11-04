@@ -15,7 +15,7 @@ import { useMedia } from '../lib/useMedia';
 import { saveBlob, toXlsx, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { count, monthLabel, percent, plural, rm, todayMyt } from '../lib/format';
-import { overallFigures, overallTotals, GROUP_NAME, REPORT_GROUPS, type OverallInput, type OverallTotals, type ReportGroup } from '../lib/ownerOverall';
+import { overallFigures, overallTotals, occupancyLabel, GROUP_NAME, REPORT_GROUPS, type OverallInput, type OverallTotals, type ReportGroup } from '../lib/ownerOverall';
 import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, type Level, type ReportRow } from './OwnerOverallDetail';
 
 /** /portfolio/owner-report — the overall owner report (the owner workbook's overall report sheet) for one month: every
@@ -110,7 +110,7 @@ function Value({ c, v }: { c: Col; v: number }) {
     case 'occ': return v ? (
       <span className="inline-flex items-center justify-center gap-2">
         <span aria-hidden className="h-1 w-10 rounded-full bg-muted overflow-hidden"><span className="block h-full bg-line-strong" style={{ width: `${Math.min(v, 100)}%` }} /></span>
-        <span className={cx('tabular-nums', tone)}>{percent(v)}</span>
+        <span className={cx('tabular-nums', tone)}>{occupancyLabel(v)}</span>
       </span>) : dash;
     case 'int': return v ? <span className={cx('tabular-nums', tone)}>{count(v)}</span> : dash;
     case 'ownpct': return v ? <span className={cx('tabular-nums', tone)}>{v}%</span> : dash;
@@ -354,7 +354,7 @@ export default function OwnerOverallReportPage() {
       <StatRow cols={5}>
         {/* Full width until the five tiles share one row, so the two-column grid has no tile left alone. */}
         <StatTile hero className="col-span-2 xl:col-span-1" label="Total revenue" value={data ? rm(totals.revenue) : undefined} loading={loading && !data}
-          hint={`${plural(totals.units, 'unit')} · ${percent(totals.occupancy)} occupancy`} />
+          hint={`${plural(totals.units, 'unit')} · ${occupancyLabel(totals.occupancy)} occupancy`} />
         <StatTile label="Total deduction" value={data ? rm(totals.deductions) : undefined} loading={loading && !data}
           hint={totals.revenue ? `${percent((totals.deductions / totals.revenue) * 100)} of revenue` : '—'} />
         <StatTile label="Gross profit" value={data ? rm(totals.gp) : undefined} loading={loading && !data}
