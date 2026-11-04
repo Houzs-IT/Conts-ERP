@@ -18,6 +18,7 @@ vi.mock("../../api/client", async (importOriginal) => {
   };
   const put = async (path: string, body: unknown): Promise<unknown> => {
     h.puts.push([path, body]);
+    if (path.endsWith("/line-plans")) return { ok: true, saved: (body as { itemIds: string[] }).itemIds, refused: [] };
     if (path.endsWith("/supplier")) { SUPPLIER.lines[1].supplierId = "s2"; return { ok: true, supplierId: "s2", supplierName: "Other Co" }; }
     return { ok: true, plan: {} };
   };
@@ -132,7 +133,7 @@ describe("PO tab", () => {
     fireEvent.change(all, { target: { value: "2026-11-20" } });
     await waitFor(() => expect(h.patches.length + h.puts.length).toBe(2));
     expect(h.patches).toEqual([["/mfg-purchase-orders/po1/items/pl1", { deliveryDate: "2026-11-20" }]]);
-    expect(h.puts).toEqual([["/api/beta/projects/7/lines/b/plan", { deliverOn: "2026-11-20" }]]);
+    expect(h.puts).toEqual([["/api/beta/projects/7/line-plans", { itemIds: ["b"], deliverOn: "2026-11-20" }]]);
     // Both lines show the band's date at once, before any reload answers.
     await waitFor(() => expect(within(region).getByLabelText("Delivery date for LT-2")).toHaveProperty("value", "2026-11-20"));
     expect(within(region).getByLabelText("Delivery date on TC-PO-2610-006 for LT-1")).toHaveProperty("value", "2026-11-20");

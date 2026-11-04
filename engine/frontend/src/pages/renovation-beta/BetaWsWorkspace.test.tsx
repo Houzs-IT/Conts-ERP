@@ -186,7 +186,7 @@ describe("Beta project workspace", () => {
     expect(within(steps).getByText(/Day 13 of 45/)).toBeTruthy();
     expect(within(steps).getAllByRole("listitem").find((li) => li.getAttribute("aria-current") === "step")?.textContent).toContain("Renovation");
     const tabs = screen.getByRole("navigation", { name: "Project sections" });
-    expect(within(tabs).getAllByRole("button").map((b) => b.textContent)).toEqual(["Overview", "Drawings", "VO", "PO", "Client PO", "DO", "GR", "Site & photos", "Defects", "Timeline"]);
+    expect(within(tabs).getAllByRole("button").map((b) => b.textContent)).toEqual(["Overview", "Drawings", "VO", "SO", "Client PO", "DO", "GR", "Site & photos", "Defects", "Timeline"]);
     expect(within(tabs).getByRole("button", { name: "Overview" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("link", { name: "Back to the project list" }).getAttribute("href")).toBe("/beta/projects");
     expect(localStorage.getItem("beta:lastProject")).toBe("7");

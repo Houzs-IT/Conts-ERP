@@ -349,6 +349,47 @@ export async function saveLinePlan(db: Db, soItemId: string, companyId: number, 
   return next;
 }
 
+/** One date on many lines in one read and one write: a band's date, which a request per line made slow (owner, 4 Nov
+    2026). A line that is not the project's, or that the plan's rule refuses, is left out and named. */
+export async function saveLinePlans(
+  db: Db, projectId: number, companyId: number, userId: number, itemIds: readonly string[], patch: LinePlanPatch, scope: CategoryScope | null,
+): Promise<{ saved: string[]; refused: { itemCode: string; reason: string }[]; docNos: string[] }> {
+  const { results } = await db.prepare(
+    `SELECT i.id::text AS id, i.doc_no, i.item_code, cg.code AS cat_code, sc.code AS sub_code,
+            pl.order_on::text AS order_on, pl.deliver_on::text AS deliver_on, pl.no_po
+       FROM scm.mfg_sales_order_items i JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
+       LEFT JOIN scm.reno_beta_line_plans pl ON pl.so_item_id = i.id
+       LEFT JOIN LATERAL (SELECT p.category_group, p.sub_category FROM scm.mfg_products p
+                           WHERE p.code = i.item_code AND p.company_id = so.company_id ORDER BY (p.status::text = 'ACTIVE') DESC LIMIT 1) prod ON true
+       LEFT JOIN scm.product_category_groups cg ON cg.code = prod.category_group
+       LEFT JOIN scm.product_sub_categories sc ON sc.group_code = cg.code AND sc.code = prod.sub_category
+      WHERE i.id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND ${PROJECT_SO}`,
+  ).bind(JSON.stringify(itemIds), projectId, companyId).all<{
+    id: string; doc_no: string; item_code: string; cat_code: string | null; sub_code: string | null; order_on: string | null; deliver_on: string | null; no_po: boolean | null;
+  }>();
+  const rows: { id: string; order_on: string | null; deliver_on: string | null; no_po: boolean }[] = [];
+  const refused: { itemCode: string; reason: string }[] = [];
+  const docNos = new Set<string>();
+  for (const r of results ?? []) {
+    if (!lineVisible(scope, r.cat_code, r.sub_code)) continue;
+    const next = mergePlan({ orderOn: r.order_on, deliverOn: r.deliver_on, noPo: Boolean(r.no_po) }, patch);
+    const refusal = planOrderRefusal(next);
+    if (refusal) { refused.push({ itemCode: r.item_code, reason: refusal }); continue; }
+    rows.push({ id: r.id, order_on: next.orderOn, deliver_on: next.deliverOn, no_po: next.noPo });
+    docNos.add(r.doc_no);
+  }
+  if (rows.length) {
+    await db.prepare(
+      `INSERT INTO scm.reno_beta_line_plans (so_item_id, company_id, order_on, deliver_on, no_po, updated_by, updated_at)
+       SELECT x.id, ?, x.order_on, x.deliver_on, x.no_po, ?, now()
+         FROM jsonb_to_recordset(?::text::jsonb) AS x(id uuid, order_on date, deliver_on date, no_po boolean)
+       ON CONFLICT (so_item_id) DO UPDATE SET order_on = excluded.order_on, deliver_on = excluded.deliver_on, no_po = excluded.no_po,
+         updated_by = excluded.updated_by, updated_at = now()`,
+    ).bind(companyId, userId, JSON.stringify(rows)).run();
+  }
+  return { saved: rows.map((r) => r.id), refused, docNos: [...docNos] };
+}
+
 /* ---------- supplier per line (owner, 3 Nov 2026) ---------- */
 
 /** The renovation contract line behind an SO line, with what the supplier change needs. */

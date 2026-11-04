@@ -12,7 +12,7 @@ const TABLE_KEY = "reno-po-tab";
 
 /** Column widths (percent of the table), with and without the Amount column. */
 const WIDTHS: Record<PoColumn, readonly [number, number]> = {
-  sku: [11, 12], desc: [17, 22], variants: [9, 10], qty: [5, 5], amount: [8, 0], orderOn: [8.5, 9], deliverOn: [8.5, 9], po: [13, 13], gr: [10, 10], do: [10, 10],
+  sku: [10, 12], desc: [15, 20], variants: [8, 9], qty: [4.5, 5], amount: [8, 0], orderOn: [8, 8.5], deliverOn: [8, 8.5], po: [13.5, 13], gr: [13, 12.5], do: [12.5, 11.5],
 };
 
 export const columnWidth = (c: PoColumn, finance: boolean): number => WIDTHS[c][finance ? 0 : 1];

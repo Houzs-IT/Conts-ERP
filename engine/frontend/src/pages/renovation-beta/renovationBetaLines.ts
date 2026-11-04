@@ -90,6 +90,9 @@ export const linesApi = {
   lines: (projectId: number): Promise<LinesAnswer> => api.get<LinesAnswer>(`${B}/projects/${projectId}/lines`),
   savePlan: (projectId: number, itemId: string, b: Partial<LinePlan>): Promise<{ ok: true; plan: LinePlan }> =>
     api.put<{ ok: true; plan: LinePlan }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/plan`, b),
+  /** One date on many lines in one request: a band's date, which each line's own request made slow (owner, 4 Nov 2026). */
+  savePlans: (projectId: number, itemIds: readonly string[], b: Partial<LinePlan>): Promise<{ ok: true; saved: string[]; refused: { itemCode: string; reason: string }[] }> =>
+    api.put<{ ok: true; saved: string[]; refused: { itemCode: string; reason: string }[] }>(`${B}/projects/${projectId}/line-plans`, { itemIds, ...b }),
   /** The supplier of a contract line, from the SKU's bound suppliers (backend renovationBeta.ts PUT .../supplier). */
   saveSupplier: (projectId: number, itemId: string, supplierId: string): Promise<{ ok: true; supplierId: string; supplierName: string }> =>
     api.put<{ ok: true; supplierId: string; supplierName: string }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/supplier`, { supplierId }),
