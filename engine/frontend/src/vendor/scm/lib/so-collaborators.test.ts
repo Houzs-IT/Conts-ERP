@@ -77,7 +77,7 @@ describe("collaboratorEntries", () => {
    other silently lacks. */
 describe("SO detail surfaces share one Shared-with editor", () => {
   const root = resolve(__dirname, "../../..");
-  for (const file of ["pages/scm-v2/SalesOrderDetailV2.tsx", "mobile/MobileSODetail.tsx"]) {
+  for (const file of ["pages/scm-v2/SalesOrderDetail.tsx", "mobile/MobileSODetail.tsx"]) {
     it(file, () => {
       expect(readFileSync(resolve(root, file), "utf8")).toMatch(/<SoSharedWith\b/);
     });

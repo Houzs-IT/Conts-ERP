@@ -101,7 +101,7 @@ const ROUTE_CHUNKS: Record<string, () => Promise<unknown>> = {
   "scm-2990-shell": () => import("../pages/scm-v2/Scm2990Shell"),
   // The SO list's own destination: every row opens this. Keyed by App.tsx's
   // route pattern since the real pathname carries a doc number.
-  "/scm/sales-orders/:docNo": () => import("../pages/scm-v2/SalesOrderDetailV2"),
+  "/scm/sales-orders/:docNo": () => import("../pages/scm-v2/SalesOrderDetail"),
   // ── Document CREATE forms. Every SCM list's most likely next click is its own
   //    "New" button, but each create form is its OWN lazy chunk that was NOT in
   //    this map — so that click cold-loaded the chunk and flashed <PageSkeleton>

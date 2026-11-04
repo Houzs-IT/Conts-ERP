@@ -2,7 +2,7 @@
    the line table's columns and the aside cards. Nothing here writes. */
 
 import type { ReactNode } from "react";
-import { CircleDot } from "lucide-react";
+import { ArrowLeft, CircleDot, Warehouse } from "lucide-react";
 import { Badge } from "../../components/Badge";
 import { SoSourceChips, SoStockPill } from "../../components/SoSourceChips";
 import type { Column } from "../../components/DataTable";
@@ -14,6 +14,9 @@ import { isFocLine } from "../../vendor/scm/lib/foc-line";
 import { soStatusDisplay } from "../../vendor/scm/lib/so-status";
 import { brandingLabel } from "../../vendor/shared/so-branding-label";
 import { fmtDateTime } from "../../vendor/shared/format";
+import { fairLabel } from "../../vendor/scm/lib/fair-options-queries";
+import { linkedEvent, type LinkedFair } from "../../components/fairPick";
+import { formatPhone } from "@2990s/shared/phone";
 import { buildVariantSummary, fmtDate, fmtMoneySen, fmtQty, orderLineIdentity } from "@2990s/shared";
 import { CONTS_LINES_BY_NAME, contsLineIdentity } from "../../conts/flowRules";
 import { getBrandingCompanyCode } from "../../lib/branding";
@@ -756,5 +759,211 @@ export function Divider() {
     <span className="inline-flex items-center text-border-strong">
       <CircleDot size={4} className="mx-0.5 opacity-40" />
     </span>
+  );
+}
+
+// ─── The header sections, read-only ────────────────────────────────────────
+/* Each is the view half of one section of the page; SalesOrderDetail's CustomerCard holds the edit half, inside the
+   same Section. */
+
+type SoCustomerHeader = SoRefHeader & {
+  debtor_name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  customer_type?: string | null;
+  agent?: string | null;
+  salesperson_id?: string | null;
+};
+
+export function SoCustomerFields({ header, renoMode, salesperson, sharedWith }: {
+  header: SoCustomerHeader;
+  renoMode: boolean;
+  salesperson: string;
+  sharedWith: ReactNode;
+}) {
+  return (
+    <div className={cn("grid grid-cols-1 gap-x-5 gap-y-4", renoMode ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
+      <Field label="Customer name" value={header.debtor_name || "—"} />
+      <Field label="Phone" value={formatPhone(header.phone ?? null) || "Not provided"} muted={!header.phone} mono={!!header.phone} />
+      <Field label="Email" value={header.email || "Not provided"} muted={!header.email} />
+      {!renoMode && <Field label="Customer type" value={header.customer_type || "—"} muted={!header.customer_type} />}
+      {!renoMode && <Field label="Ref No." value={refOf(header)} mono={refOf(header) !== "—"} muted={refOf(header) === "—"} />}
+      <Field label="Salesperson" value={salesperson} muted={!header.agent && !header.salesperson_id} />
+      {/* Who else may see and edit this order. Hidden from viewers when it is shared with nobody; editable in place
+          for scm.so.attribute_other. */}
+      {sharedWith}
+    </div>
+  );
+}
+
+export function SoOrderInfoFields({ header }: {
+  header: SoBrandHeader & {
+    building_type?: string | null;
+    venue?: string | null;
+    fair?: LinkedFair | null;
+    fair_date?: string | null;
+    processing_date?: string | null;
+    customer_delivery_date?: string | null;
+    payment_methods_summary?: string;
+    payment_method?: string | null;
+    note?: string | null;
+  };
+}) {
+  const payment = header.payment_methods_summary || header.payment_method;
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-4">
+        <Field label="Building type" value={header.building_type || "—"} muted={!header.building_type} />
+        {/* A recorded pick reads back as its event — venue, organizer and dates (owner 2026-09-24); shown only under
+            the order's own venue. */}
+        <Field
+          label="Fair"
+          value={header.fair && linkedEvent(header.venue ?? null, header.fair, null) ? fairLabel(header.fair) : header.venue || "—"}
+          muted={!header.venue}
+        />
+        {/* Which day of the fair (owner 2026-09-24) — only once one is recorded. */}
+        {header.fair_date && <Field label="Fair day" value={fmtDate(header.fair_date)} />}
+        <Field label="Processing Date" value={fmtDate(header.processing_date)} muted={!header.processing_date} />
+        <Field
+          label="Delivery Date"
+          value={header.customer_delivery_date ? fmtDate(header.customer_delivery_date) : "Not scheduled"}
+          muted={!header.customer_delivery_date}
+        />
+        <Field label="Branding" value={brandOf(header)} muted={brandOf(header) === "—"} />
+        <Field label="Payment" value={payment || "—"} muted={!payment} />
+      </div>
+      {header.note && (
+        <div className="mt-4 rounded-lg border border-warning-text/25 bg-warning-bg px-4 py-3">
+          <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-warning-text">Note</div>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-warning-text">{header.note}</p>
+        </div>
+      )}
+    </>
+  );
+}
+
+export function SoAddressFields({ header }: {
+  header: {
+    address1?: string | null;
+    address2?: string | null;
+    city?: string | null;
+    postcode?: string | null;
+    customer_state?: string | null;
+    customer_country?: string | null;
+    sales_location?: string | null;
+  };
+}) {
+  const lines = [
+    header.address1,
+    header.address2,
+    [header.city, header.postcode].filter(Boolean).join(" "),
+    [header.customer_state, header.customer_country].filter(Boolean).join(", "),
+  ].filter(Boolean);
+  return (
+    <>
+      <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">Ship to</div>
+      <div className="mt-1.5 text-[14px] font-semibold leading-relaxed text-ink">
+        {lines.map((line, i) => <div key={i}>{line}</div>)}
+        {!header.address1 && !header.city && <span className="text-ink-muted">Not provided</span>}
+      </div>
+      {header.sales_location && (
+        <div className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary-soft px-2.5 py-1 text-[11.5px] font-semibold text-primary-ink">
+          <Warehouse size={12} />
+          {header.sales_location}
+        </div>
+      )}
+    </>
+  );
+}
+
+export function SoEmergencyFields({ header }: {
+  header: {
+    emergency_contact_name?: string | null;
+    emergency_contact_phone?: string | null;
+    emergency_contact_relationship?: string | null;
+  };
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-3">
+      <Field label="Contact name" value={header.emergency_contact_name || "Not provided"} muted={!header.emergency_contact_name} />
+      <Field label="Relationship" value={header.emergency_contact_relationship || "—"} muted={!header.emergency_contact_relationship} />
+      <Field
+        label="Phone"
+        value={formatPhone(header.emergency_contact_phone ?? null) || "Not provided"}
+        muted={!header.emergency_contact_phone}
+        mono={!!header.emergency_contact_phone}
+      />
+    </div>
+  );
+}
+
+// ─── Page header ───────────────────────────────────────────────────────────
+
+/** The two sticky headers: the phone's dark one and the desktop's with the action bar. Both modes use them. */
+export function SoDetailHeader({ title, docNo, status, meta, onBack, actions, chips }: {
+  title: string;
+  docNo: string;
+  status: { tone: "success" | "warning" | "error" | "neutral"; label: string };
+  /** The line under the title, after the doc no. */
+  meta: ReactNode[];
+  onBack: () => void;
+  actions: ReactNode;
+  /** Beside the status, e.g. the On hold marker. */
+  chips?: ReactNode;
+}) {
+  return (
+    <>
+      <div className="sticky top-0 z-20 -mx-4 -mt-4 bg-sidebar text-sidebar-ink shadow-slab md:hidden">
+        <div className="flex items-center justify-between gap-3 px-4 pt-3">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-1 text-[14px] font-semibold text-accent-bright"
+            aria-label="Back to Sales Orders"
+          >
+            <ArrowLeft size={16} /> Orders
+          </button>
+          <span className="font-mono text-[12.5px] font-semibold text-sidebar-ink">{docNo}</span>
+          <span className="w-[18px]" />
+        </div>
+        <div className="px-4 pb-4 pt-3">
+          <h1 className="font-display text-[19px] font-bold leading-tight text-white">{title}</h1>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Badge tone={status.tone} variant="solid" size="xs">{status.label}</Badge>
+            {chips}
+          </div>
+        </div>
+      </div>
+
+      {/* Nick 2026-07-09 — pinned. TopNavbar sits sticky top-0 z-30 h-12 inside the SAME scrolling <main>, so a naive
+          top-0 here parks the title BEHIND it; z-20 stacks above the section cards and below the nav. At lg the chrome
+          is the single 52px bar. */}
+      <div className="sticky top-12 lg:top-[52px] z-20 -mx-4 hidden border-b border-border bg-bg/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 md:block">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Back to Sales Orders"
+              className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink-secondary hover:border-primary/50 hover:text-primary"
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">{title}</h1>
+                <Badge tone={status.tone} size="sm">{status.label}</Badge>
+                {chips}
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-secondary">
+                <span className="font-mono font-semibold text-primary-ink">{docNo}</span>
+                {meta.map((m, i) => <span key={i} className="inline-flex items-center gap-x-2"><Divider />{m}</span>)}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        </div>
+      </div>
+    </>
   );
 }

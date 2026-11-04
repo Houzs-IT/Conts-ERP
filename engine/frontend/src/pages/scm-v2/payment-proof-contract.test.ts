@@ -28,9 +28,8 @@ const detailSource = readFileSync(
 const tableSource = readFileSync(
   resolve(process.cwd(), 'src/vendor/scm/components/PaymentsTable.tsx'), 'utf8',
 );
-const readViewSource = readFileSync(
-  resolve(process.cwd(), 'src/pages/scm-v2/SalesOrderDetailV2.tsx'), 'utf8',
-);
+/* One page since 4 Nov 2026: the read view IS the editor. */
+const readViewSource = detailSource;
 
 /** The `<PaymentsTable …/>` element on the SO detail page. */
 const paymentsTableElement = (): string => {
@@ -107,23 +106,18 @@ describe('the door into the payments ledger', () => {
        is a fact about the MONEY, which is exactly what this test says the gate
        must be about — see docs/bugs/0687-*, where the button shipped live on a
        migrated order because nothing pointed at this bar. */
-    expect(readViewSource).toContain(
-      '{!migratedLocked && !["cancelled", "draft"].includes(salesOrder.status?.toLowerCase() ?? "") && (',
-    );
-    expect(readViewSource).not.toContain('{hardLocked && salesOrder.status');
+    expect(readViewSource).toContain('const canOfferPayEdit  = !migratedLocked && !isDraftSo && !isCancelled && !isEditing;');
+    expect(readViewSource).toContain('{canOfferPayEdit && (');
   });
 
-  test('collecting stays on the read page; only edit=1 swaps to the editor', () => {
+  test('collecting stays in the view; only edit=1 opens the page for editing', () => {
     /* 2026-08-09 (owner: "点选 collect payment … 全部 UI 都不一样") — the read
        page now hosts the shared PaymentsTable itself; `?payments=1` merely
        seeds its Edit toggle. Folding payments into `edit=1` would reopen the
-       whole form, so the fork must name edit alone. */
-    expect(readViewSource).toContain('if (params.get("edit") === "1") {');
-    expect(readViewSource).toContain('useState(params.get("payments") === "1")');
+       whole form, so the mode must name edit alone. */
+    expect(readViewSource).toContain("const isEditing = editSearchParams.get('edit') === '1';");
     expect(readViewSource).toContain('<PaymentsTable');
-    // The legacy editor keeps its own payments-only door for `edit=1` sessions.
     expect(detailSource).toContain("editSearchParams.get('payments') === '1'");
-    expect(detailSource).not.toMatch(/setIsEditing\([^)]*payments/);
   });
 });
 
@@ -194,7 +188,7 @@ describe('leaving with unbooked payment rows', () => {
   });
 
   test('back and the payments Done toggle both run the guard', () => {
-    expect(detailSource).toContain('<PageHeader back beforeBack={guardUnsavedPayments}');
+    expect(detailSource).toContain("if (await guardUnsavedPayments()) navigate(scmListReturnTo('/scm/sales-orders'));");
     expect(detailSource).toContain('if (payEditing && !(await guardUnsavedPayments())) return;');
     /* The guard names the MONEY, not "unsaved changes" — an operator told
        "1 payment row" can decide in one read. */
