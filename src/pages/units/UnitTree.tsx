@@ -6,7 +6,7 @@ import { cx } from '../../lib/design-tokens';
 import type { UnitReadiness } from '../../lib/types';
 import { titleCase } from '../../lib/format';
 import type { Building, Unit } from './shared';
-import { MODEL, codeName } from '../../lib/revenueModel';
+import { MODEL, PURPOSE_LABEL, codeName } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
 import { statusLabel, statusOf, TONE_STYLE } from '../../lib/status';
 
@@ -176,7 +176,10 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                               <span className={cx('block text-copy whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</span>
                               <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName ? titleCase(u.ownerName) : 'No owner yet'}{kids.length ? ` · ${kids.length} sub-unit${kids.length > 1 ? 's' : ''}` : ''}</span>
                             </span>
-                            <span className="text-caption font-bold text-gold-ink flex-none" title={u.termsLabel ?? (u.revenueModel ? MODEL[u.revenueModel].label : u.pkg)}>{[u.purpose && u.purpose !== 'rental' ? (u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom') : null, (u.contractCode ? codeName(types, u.contractCode) : null) ?? (u.revenueModel ? MODEL[u.revenueModel].short : u.pkg.replace('Package ', 'Pkg '))].filter(Boolean).join(' · ')}</span>
+                            <span className="flex flex-col items-end flex-none text-right">
+                              <span className="text-caption font-bold text-gold-ink" title={u.termsLabel ?? (u.revenueModel ? MODEL[u.revenueModel].label : u.pkg)}>{(u.contractCode ? codeName(types, u.contractCode) : null) ?? (u.revenueModel ? MODEL[u.revenueModel].short : u.pkg.replace('Package ', 'Pkg '))}</span>
+                              {u.purpose && <span className="text-caption text-muted-ink">{PURPOSE_LABEL[u.purpose]}</span>}
+                            </span>
                           </button>
                           {canEdit && (
                             <button onClick={() => onAddSubUnit(b.id, u)} aria-label={`Add a sub-unit under ${u.unitCode || 'this unit'}`} title="Add sub-unit"
