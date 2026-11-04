@@ -23,7 +23,7 @@ import { UnitCleaning, missingCleanPrice, type UnitPriceData } from './UnitClean
 import { cx } from '../../lib/design-tokens';
 import { Link } from 'react-router-dom';
 import {
-  STATES, cap, layoutFromBedrooms, useLayoutTypes, isPlaceholderOwner,
+  STATES, cap, layoutFromBedrooms, useLayoutTypes, useBedSizes, isPlaceholderOwner,
   SectionHead, Grid3, NumberRow, Labeled, Select, ReadOnly, CentreModal,
   type Unit, type Building, type UnitDetail,
 } from './shared';
@@ -75,6 +75,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
   const suggested = !u.layoutType ? layoutFromBedrooms(u.bedrooms) : null;
   const layout = u.layoutType ?? suggested;
   const types = useLayoutTypes();
+  const bedSizes = useBedSizes();
   const contractTypes = useContractTypes();
   const [sub, setSub] = useState<Sub>('listing');
   const prices = useApi<UnitPriceData>(`/housekeeping/unit-prices?unitId=${encodeURIComponent(u.id)}`);
@@ -167,7 +168,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4 mb-[22px]">
         <div className="flex flex-col gap-2 min-w-0">
           <SectionHead noMargin>Beds and mattresses</SectionHead>
-          {(u.beds?.length ?? 0) > 0 && <span className="text-copy font-medium">{bedsText(u.beds)}</span>}
+          {(u.beds?.length ?? 0) > 0 && <span className="text-copy font-medium">{bedsText(u.beds, bedSizes.data?.data ?? [])}</span>}
           <BedsEditor beds={u.beds ?? []} disabled={!canEdit} onChange={beds => onChange({ beds })} />
         </div>
         <div className="flex flex-col gap-2 min-w-0">

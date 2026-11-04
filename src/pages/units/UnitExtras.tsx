@@ -4,15 +4,15 @@ import { Field } from '../../components/Field';
 import { NumberInput } from '../../components/inputs';
 import Icon from '../../components/Icon';
 import { StatusBadge } from '../../components/StatusBadge';
-import { BED_SIZES, PURPOSE_LABEL, codeName, codeLabel, type ContractType, type UnitPurpose, type ContractCode } from '../../lib/revenueModel';
-import { Select, type Bed, type Bay } from './shared';
+import { PURPOSE_LABEL, codeName, codeLabel, type ContractType, type UnitPurpose, type ContractCode } from '../../lib/revenueModel';
+import { Select, useBedSizes, type Bed, type Bay, type LayoutTypeOption } from './shared';
 
 /** Staff sheet UNIT (17 Oct 2026): beds and mattresses, car park bays, and the badges for what a unit is for and its
  *  contract code. Saved with the unit (PATCH /api/units/:id, migration 0125). */
 
-const BED_LABEL = Object.fromEntries(BED_SIZES.map(b => [b.value, b.label]));
-/** "1 King · 2 Single", as the server writes it. */
-export const bedsText = (beds: Bed[] | undefined) => (beds ?? []).map(b => `${b.quantity} ${BED_LABEL[b.size] ?? b.size}`).join(' · ');
+const sizeLabel = (sizes: readonly LayoutTypeOption[], key: string): string => sizes.find(s => s.key === key)?.label ?? key;
+/** "1 King · 2 Single", as the server writes it (names from the bed size list on Unit settings). */
+export const bedsText = (beds: Bed[] | undefined, sizes: readonly LayoutTypeOption[]) => (beds ?? []).map(b => `${b.quantity} ${sizeLabel(sizes, b.size)}`).join(' · ');
 /** "LEVEL 5-LOT-100 (Tandem)", as the server writes it (bayLabel in functions/_lib/unitPurpose.ts). */
 const bayText = (b: Bay) => {
   const lot = b.lotNumber.trim(), level = b.level?.trim().replace(/^(level|lvl|l)\s*(?=\d)/i, ''), note = b.note?.trim();
@@ -28,9 +28,12 @@ const removeBtn = 'grid place-items-center w-9 h-9 max-md:w-11 max-md:h-11 flex-
 /** Column names over the rows: a placeholder is gone once something is typed. Screen readers get each box's own label. */
 const colHead = 'text-caption font-medium text-muted-ink';
 
-/** One line per bed size: size, how many, remove. A size already listed is not offered again. */
+/** One line per bed size: size, how many, remove. A size already listed is not offered again. Sizes come from the bed
+ *  size list on Unit settings; a hidden size is offered only on the line that already has it. */
 export function BedsEditor({ beds, onChange, disabled }: { beds: Bed[]; onChange: (b: Bed[]) => void; disabled?: boolean }) {
-  const free = BED_SIZES.filter(s => !beds.some(b => b.size === s.value));
+  const sizes = useBedSizes().data?.data ?? [];
+  const options = (keep?: string) => sizes.filter(s => s.key === keep || (s.isActive && !beds.some(b => b.size === s.key))).map(s => ({ value: s.key, label: s.isActive ? s.label : `${s.label} (hidden)` }));
+  const free = options();
   return (
     <div className="flex flex-col gap-2 min-w-0">
       {beds.length === 0 && <span className="text-copy text-muted-ink">No beds recorded yet.</span>}
@@ -46,13 +49,13 @@ export function BedsEditor({ beds, onChange, disabled }: { beds: Bed[]; onChange
           <div className="flex-1 min-w-0 max-w-[220px]">
             <Select label="Bed size" value={b.size} disabled={disabled}
               onChange={v => onChange(beds.map((x, j) => (j === i ? { ...x, size: v } : x)))}
-              options={BED_SIZES.filter(s => s.value === b.size || !beds.some(x => x.size === s.value))} />
+              options={options(b.size)} />
           </div>
           <div className="w-[96px] flex-none">
-            <NumberInput label="" aria-label={`How many ${BED_LABEL[b.size] ?? ''} beds`} min={1} max={20} value={b.quantity}
+            <NumberInput label="" aria-label={`How many ${sizeLabel(sizes, b.size)} beds`} min={1} max={20} value={b.quantity}
               onChange={n => onChange(beds.map((x, j) => (j === i ? { ...x, quantity: n ?? 1 } : x)))} />
           </div>
-          <button type="button" aria-label={`Remove ${BED_LABEL[b.size] ?? 'bed'}`} disabled={disabled} className={removeBtn}
+          <button type="button" aria-label={`Remove ${sizeLabel(sizes, b.size)}`} disabled={disabled} className={removeBtn}
             onClick={() => onChange(beds.filter((_, j) => j !== i))}><Icon name="X" size="sm" /></button>
         </div>
       ))}

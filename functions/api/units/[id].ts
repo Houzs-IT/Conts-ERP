@@ -2,6 +2,7 @@ import { type Env, one, all, run, json, fail, audit, nowIso } from '../../_lib/d
 import { changedFields } from '../../_lib/history';
 import { requireSession, hasColumn } from '../../_lib/auth';
 import { invalidUnit, invalidLayoutType, ownerFieldIn, saveExpenses, saveCleaningPrice, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { invalidBedSizes } from '../../_lib/bedSizes';
 import { purposeReady, saveBays, PURPOSE_LABEL, type Purpose } from '../../_lib/unitPurpose';
 
 /** PATCH /api/units/:id — the Units screen's Save. Sends the whole unit; only what is present is changed.
@@ -21,7 +22,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const cur = await one<any>(env, 'SELECT id, property_id, parent_unit_id, owner_id, unit_number, unit_code, split_kind, layout_type FROM units WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
-  const bad = invalidUnit(b, cur.split_kind) ?? await invalidLayoutType(env, b, cur.layout_type);
+  const bad = invalidUnit(b, cur.split_kind) ?? await invalidLayoutType(env, b, cur.layout_type) ?? await invalidBedSizes(env, b.beds, id);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
 
   const target = typeof b.buildingId === 'string' && b.buildingId && b.buildingId !== cur.property_id ? b.buildingId : null;

@@ -6,7 +6,7 @@ import { cx } from '../../lib/design-tokens';
 import { useApi } from '../../lib/useApi';
 import { Select as UiSelect } from '../../components/Select';
 import type { UnitReadiness, TaskState, BookingChannel, ReservationState } from '../../lib/types';
-import type { RevenueModel, ContractCode, UnitPurpose } from '../../lib/revenueModel';
+import { BED_SIZES, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
 import type { OwnerAddress } from '../owners/shared';
 import type { PnlRow } from './PnlTable';
 import { PLACEHOLDER_OWNER } from '../../../functions/_lib/hostplatformImport';
@@ -41,6 +41,12 @@ const LAYOUT_TYPES_FALLBACK: LayoutTypesPayload = {
 };
 /** The unit Type list, hidden types too (a unit may still have one). */
 export const useLayoutTypes = (on = true) => useApi<LayoutTypesPayload>(on ? '/unit-layout-types' : null, LAYOUT_TYPES_FALLBACK);
+/** The bed size list (King, Queen, ...), same shape as the Type list; staff keep it on Unit settings since 0210. */
+export type BedSizesPayload = LayoutTypesPayload;
+const BED_SIZES_FALLBACK: BedSizesPayload = {
+  ready: false, mayEdit: false, data: BED_SIZES.map(({ value, label }, n) => ({ key: value, label, sortOrder: (n + 1) * 10, isActive: true })),
+};
+export const useBedSizes = (on = true) => useApi<BedSizesPayload>(on ? '/unit-bed-sizes' : null, BED_SIZES_FALLBACK);
 /** The layout a unit with this many bedrooms most likely has, to pre-fill an empty Layout type. */
 export const layoutFromBedrooms = (n: number | null | undefined): LayoutType | null =>
   n == null ? null : n <= 0 ? 'studio' : n === 1 ? '1_bedroom' : n === 2 ? '2_bedroom' : n === 3 ? '3_bedroom' : '4_plus_bedroom';

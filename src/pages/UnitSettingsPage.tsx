@@ -19,13 +19,14 @@ import { useContractTypesPayload } from '../lib/useContractTypes';
 import { plural } from '../lib/format';
 import { BuildingModal } from './units/UnitForms';
 import { PROPERTIES_FALLBACK } from './units/fallback';
-import { mayEditUnits, useLayoutTypes, Labeled, Select as FormSelect, CentreModal, type Building, type PropertiesPayload } from './units/shared';
+import { mayEditUnits, useLayoutTypes, useBedSizes, Labeled, Select as FormSelect, CentreModal, type Building, type PropertiesPayload } from './units/shared';
 
 /** Units > Unit settings: the lists the unit screens pick from, kept by staff instead of in code (owner, 4 Nov 2026; PLAN-unit-settings.md). */
 
 const TABS = [
   { key: 'buildings', label: 'Buildings', icon: 'Building2' },
   { key: 'types', label: 'Unit types', icon: 'LayoutGrid' },
+  { key: 'beds', label: 'Bed sizes', icon: 'BedDouble' },
   { key: 'contracts', label: 'Contract types', icon: 'FileSignature' },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
@@ -53,6 +54,7 @@ export default function UnitSettingsPage() {
       <div role="tabpanel" id={panelId('unit-settings')} aria-labelledby={tabId('unit-settings', tab)}>
         {tab === 'buildings' && <BuildingsTab canEdit={canEdit} />}
         {tab === 'types' && <UnitTypesTab />}
+        {tab === 'beds' && <BedSizesTab />}
         {tab === 'contracts' && <ContractTypesTab />}
       </div>
     </>
@@ -132,8 +134,21 @@ function BuildingsTab({ canEdit }: { canEdit: boolean }) {
 /** Add a Type, rename one, or hide one that is no longer used. Every Type has a row in the cleaning price grid
  *  (Service prices), so a new one is priced there. */
 function UnitTypesTab() {
+  return <NameListTab list={useLayoutTypes()} path="/unit-layout-types" noun="Type" addLabel="Add a Type" placeholder="e.g. Loft"
+    intro="The Type list on every unit. A hidden Type stays on the units that have it." added="Type added. Set its cleaning price in Service prices." />;
+}
+
+/** The bed sizes a unit's Beds and mattresses pick from (owner, 4 Nov 2026). */
+function BedSizesTab() {
+  return <NameListTab list={useBedSizes()} path="/unit-bed-sizes" noun="Bed size" addLabel="Add a bed size" placeholder="e.g. Double"
+    intro="The bed sizes on every unit's Beds and mattresses. A hidden size stays on the units that have it." added="Bed size added." />;
+}
+
+/** A list of names staff add, rename and hide (never delete: units keep the key). */
+function NameListTab({ list: types, path, noun, addLabel, placeholder, intro, added: addedMsg }: {
+  list: ReturnType<typeof useLayoutTypes>; path: string; noun: string; addLabel: string; placeholder: string; intro: string; added: string;
+}) {
   const toast = useToast();
-  const types = useLayoutTypes();
   const list = types.data?.data ?? [];
   const canEdit = !!types.data?.ready && !!types.data.mayEdit;
   const [names, setNames] = useState<Record<string, string>>({});
@@ -147,8 +162,8 @@ function UnitTypesTab() {
   }
   return (
     <>
-      <p className="m-0 mb-3 text-copy text-muted-ink">The Type list on every unit. A hidden Type stays on the units that have it.</p>
-      {types.data && !types.data.ready && <p className="m-0 mb-3 text-meta text-warning">The Type list cannot be changed on this database yet.</p>}
+      <p className="m-0 mb-3 text-copy text-muted-ink">{intro}</p>
+      {types.data && !types.data.ready && <p className="m-0 mb-3 text-meta text-warning">The {noun} list cannot be changed on this database yet.</p>}
       {types.error && <StaleBanner message={types.data ? `Showing the last list we have. ${types.error}` : types.error} onRetry={types.reload} />}
       {types.loading && !types.data ? <SkeletonRows rows={6} /> : !types.data ? null : (
         <Card>
@@ -164,11 +179,11 @@ function UnitTypesTab() {
                   {!t.isActive && <span className="text-meta text-muted-ink">Hidden</span>}
                   {canEdit && renamed && (
                     <Button size="sm" variant="primary" className="max-md:min-h-11" loading={busy === t.key} disabled={!name.trim()} disabledReason="Enter a name"
-                      onClick={() => void run(t.key, () => api.patch(`/unit-layout-types/${encodeURIComponent(t.key)}`, { label: name.trim() }), 'Type renamed.')}>Save</Button>
+                      onClick={() => void run(t.key, () => api.patch(`${path}/${encodeURIComponent(t.key)}`, { label: name.trim() }), `${noun} renamed.`)}>Save</Button>
                   )}
                   {canEdit && (
                     <Button size="sm" variant="tertiary" className="max-md:min-h-11" loading={busy === `${t.key}:active`}
-                      onClick={() => void run(`${t.key}:active`, () => api.patch(`/unit-layout-types/${encodeURIComponent(t.key)}`, { isActive: !t.isActive }), t.isActive ? 'Type hidden.' : 'Type shown again.')}>
+                      onClick={() => void run(`${t.key}:active`, () => api.patch(`${path}/${encodeURIComponent(t.key)}`, { isActive: !t.isActive }), t.isActive ? `${noun} hidden.` : `${noun} shown again.`)}>
                       {t.isActive ? 'Hide' : 'Show'}
                     </Button>
                   )}
@@ -179,10 +194,10 @@ function UnitTypesTab() {
           {canEdit && (
             <div className="flex flex-wrap items-end gap-2 py-3 px-5 [border-top:1px_solid_var(--color-line-soft)]">
               <div className="flex-1 basis-[200px] min-w-0">
-                <Field label="Add a Type" placeholder="e.g. Loft" value={added} maxLength={60} style={{ minHeight: 44 }} onChange={e => setAdded(e.target.value)} />
+                <Field label={addLabel} placeholder={placeholder} value={added} maxLength={60} style={{ minHeight: 44 }} onChange={e => setAdded(e.target.value)} />
               </div>
               <Button size="sm" variant="secondary" className="max-md:min-h-11" loading={busy === 'new'} disabled={!added.trim()} disabledReason="Enter a name"
-                onClick={() => void run('new', async () => { await api.post('/unit-layout-types', { label: added.trim() }); setAdded(''); }, 'Type added. Set its cleaning price in Service prices.')}>Add</Button>
+                onClick={() => void run('new', async () => { await api.post(path, { label: added.trim() }); setAdded(''); }, addedMsg)}>Add</Button>
             </div>
           )}
         </Card>

@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { can } from '../../_lib/access';
 import { invalidUnit, invalidLayoutType, ownerFieldIn, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { invalidBedSizes } from '../../_lib/bedSizes';
 import { purposeReady, saveBays } from '../../_lib/unitPurpose';
 import { placeholderOwnerId } from '../../_lib/placeholderOwner';
 
@@ -60,7 +61,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const ownerField = b && typeof b === 'object' ? ownerFieldIn(b) : null;
   if (ownerField) return fail('VALIDATION', "The owner's name, IC and bank details are edited on the owner's page. Pick the owner instead.", 422, { [ownerField]: "Edit this on the owner's page." });
   if (!b?.buildingId) return fail('VALIDATION', 'Pick a building.', 422, { buildingId: 'Pick a building.' });
-  const bad = invalidUnit(b) ?? await invalidLayoutType(env, b);
+  const bad = invalidUnit(b) ?? await invalidLayoutType(env, b) ?? await invalidBedSizes(env, b.beds);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
   if (!(await one(env, 'SELECT 1 AS x FROM properties WHERE id = ?', b.buildingId))) return fail('NOT_FOUND', 'That building does not exist.', 404);
 
