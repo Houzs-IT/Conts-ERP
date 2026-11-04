@@ -12,11 +12,12 @@ import type { ReportGroup } from '../../../src/lib/ownerOverall';
 const UTILITIES = new Set(['electricity', 'water', 'internet', 'sewerage']);
 
 const GROUP_OF: Record<string, ReportGroup> = {
-  PS: 'PS', 'PS GRR': 'PS', 'PS YGRR': 'PS', LT: 'LT', RTR: 'RTR', MANAGE: 'MANAGE', GRR: 'GRR',
+  PS: 'PS', 'PS GRR': 'PS', 'PS YGRR': 'PS', LT: 'LT', RTR: 'RTR', MANAGE: 'MANAGE',
 };
-/** A type staff added on Units > Unit settings is grouped by its income model. */
+/** A type staff added on Units > Unit settings is grouped by its income model. GRR is no longer a contract type
+ *  (contractTypes.ts NO_GRR), so it has no group of its own. */
 const MODEL_GROUP: Record<RevenueModel, ReportGroup> = {
-  management: 'PS', management_guarantee: 'PS', management_yearly_guarantee: 'PS', long_term: 'LT', master_lease: 'RTR', grr: 'GRR',
+  management: 'PS', management_guarantee: 'PS', management_yearly_guarantee: 'PS', long_term: 'LT', master_lease: 'RTR', grr: 'NONE',
 };
 
 /** Reads a master lease as a GRR contract: the company trades the unit and pays the owner a fixed rent. */
