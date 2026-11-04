@@ -79,7 +79,8 @@ export async function insertSoItems(db: RenoDb, docNo: string, rows: SoItemInser
         qty, unit_price_sen, discount_sen, total_sen, total_inc_sen, balance_sen, unit_cost_sen, line_cost_sen, line_margin_sen, line_no, company_id, warehouse_id)
      select x.id, $2, $3::date, $4, 'RENOVATION', x.item_code, x.description, x.description2, x.uom, x.location,
         x.qty, x.unit_price_sen, x.discount_sen, x.total_sen, x.total_sen, x.total_sen, x.unit_cost_sen, x.line_cost_sen, x.total_sen - x.line_cost_sen,
-        x.line_no, $5, (select w.id from scm.warehouses w where w.company_id = $5 and w.is_default and w.is_active order by w.code limit 1)
+        x.line_no, $5, coalesce((select o.warehouse_id from scm.mfg_sales_orders o where o.doc_no = $2),
+          (select w.id from scm.warehouses w where w.company_id = $5 and w.is_default and w.is_active order by w.code limit 1))
        from jsonb_to_recordset($1::text::jsonb) as x(id uuid, line_no int, item_code text, description text, description2 text, uom text,
         location text, qty int, unit_price_sen int, discount_sen int, total_sen int, unit_cost_sen int, line_cost_sen int)`,
     [JSON.stringify(rows), docNo, p.lineDate, p.debtorName, p.companyId],
@@ -171,7 +172,7 @@ export async function convertQuotationToSo(
   /* Conts (finance phase 1.5; SOP 2.1): the contract's customer as a debtor under its control — renovation 301-0000
      or inhouse renovation 302-0000, by the project's kind else the brand's (contractOrderKind) — so its invoices and
      payments name the customer and post to its control. The project's customer, when it has one. */
-  const [proj] = q.projectId ? await db.q<{ customer_id: string | null; name: string | null }>(`select customer_id, name from public.projects where id = $1`, [q.projectId]) : [];
+  const [proj] = q.projectId ? await db.q<{ customer_id: string | null; name: string | null; state: string | null }>(`select customer_id, name, state from public.projects where id = $1`, [q.projectId]) : [];
   const customerId = proj?.customer_id ?? null;
   /* One customer account per project and its own advance sub-account (spec 2.5; chew 30 Oct 2026): never reused,
      and no guessing — a kind with no control mapped refuses the conversion until finance maps it. */
@@ -189,13 +190,23 @@ export async function convertQuotationToSo(
     kind: orderKind === 'INHOUSE_RENOVATION' ? 'INHOUSE_RENOVATION' : 'RENOVATION',
     projectName: (proj?.name ?? '').trim() || unitLabel || debtorName,
   });
+  /* The warehouse follows the address like any SO (state_warehouse_mappings), else the company's default; a contract
+     never skips it (owner, 4 Nov 2026: 地址那边就 set 好了). Its lines take the header's (insertSoItems). */
+  const state = proj?.state?.trim() || null;
+  const [wh] = await db.q<{ id: string; code: string }>(
+    `select w.id, w.code from scm.warehouses w
+       left join scm.state_warehouse_mappings m on m.warehouse_id = w.id and m.company_id = $1 and m.state::text = $2::text
+      where w.company_id = $1 and w.is_active and (m.warehouse_id is not null or w.is_default)
+      order by (m.warehouse_id is not null) desc, w.code limit 1`,
+    [actor.companyId, state],
+  );
   await db.q(
     `insert into scm.mfg_sales_orders (doc_no, so_date, so_kind, status, debtor_name, debtor_code, customer_id, project_id, branding, ref, phone, email,
-        address1, address2, note, created_by, company_id, sales_location)
-     values ($1, $2::date, 'RENOVATION', 'RENO_CONFIRMED', $3, $14, $15, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-        (select w.code from scm.warehouses w where w.company_id = $13 and w.is_default and w.is_active order by w.code limit 1))`,
+        address1, address2, note, created_by, company_id, sales_location, warehouse_id, customer_state)
+     values ($1, $2::date, 'RENOVATION', 'RENO_CONFIRMED', $3, $14, $15, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $16, $17, $18)`,
     [docNo, soDate, debtorName, q.projectId, brand?.name ?? null, rev.docNo, h.customerPhone || null, h.customerEmail || null,
-      h.building || null, h.unitNo || null, `Renovation contract from quotation ${rev.docNo}`, actor.staffId, actor.companyId, debtorCode, customerId],
+      h.building || null, h.unitNo || null, `Renovation contract from quotation ${rev.docNo}`, actor.staffId, actor.companyId, debtorCode, customerId,
+      wh?.code ?? null, wh?.id ?? null, state],
   );
   await insertSoItems(db, docNo, rows, { companyId: actor.companyId, debtorName, lineDate: soDate });
   const revised = await recomputeSoHeader(db, docNo);
