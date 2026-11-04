@@ -7,7 +7,7 @@ import { StaleBanner } from './DataState';
 import Icon from './Icon';
 import { Drawer } from './Dialog';
 import { CATEGORY as REPAIR_CATEGORY } from './ops/OpsUi';
-import { PAYER_LABEL, CATEGORY_LABEL, MODEL } from '../lib/revenueModel';
+import { PAYER_LABEL, CATEGORY_LABEL, MODEL, CODE, codeName, type ContractCode } from '../lib/revenueModel';
 import { statusLabel, type StatusEntity } from '../lib/status';
 import { CloseButton } from './CloseButton';
 import { useMedia } from '../lib/useMedia';
@@ -43,7 +43,7 @@ const ACTION: Record<string, string> = {
   'unit.channex_map': 'linked the unit to Channex', 'unit.channex_unmap': 'unlinked the unit from Channex', 'unit.channex_setup': 'set the unit up on Channex',
   'channel.connect': 'connected a channel', 'channel.disconnect': 'disconnected a channel', 'channex.enqueue_failed': 'could not send an update to the channels',
   'owner.create': 'added this owner', 'owner.update': 'edited the owner', 'owner.invite': 'invited the owner to the portal', 'owner.notify': 'messaged the owner', 'owner.delete': 'deleted the owner', 'owner.view_as': 'opened the owner portal as this owner',
-  'contract.create': 'created the contract', 'contract.update': 'edited the contract',
+  'contract.create': 'created the contract', 'contract.update': 'edited the contract', 'contract.renew': 'started a new contract', 'contract.extend': 'extended the contract',
   'statement.generate': 'generated the statement', 'statement.finalise': 'marked the statement final', 'statement.send': 'sent the statement', 'statement.adjust': 'adjusted the statement',
   'payout.create': 'created the owner payout', 'payout.run': 'started an owner payout run', 'payout.processing': 'marked it processing', 'payout.paid': 'marked it paid', 'payout.failed': 'marked it failed',
   'expense.create': 'recorded the expense', 'expense.update': 'edited the expense', 'expense.delete': 'deleted the expense',
@@ -87,12 +87,16 @@ const FIELD: Record<string, [string, Kind?]> = {
   employment: ['In-house or outsourced', 'state'], via: ['Through', 'state'], label: ['Item'], ownerApprovalRequired: ['Needs owner approval', 'bool'], released: ['Released', 'state'],
   blockFrom: ['From', 'date'], blockTo: ['Until', 'date'], copiedFrom: ['Copied from', 'name'], otaName: ['Channel'],
   type: ['Document', 'state'], docNo: ['Document number'], voided: ['Voided', 'bool'],
+  // A contract's terms (contract.update / renew / extend).
+  contractCode: ['Package'], code: ['Package'], revenueModel: ['Income model'], agentPct: ['Agent share', 'pct'], agentName: ['Agent'],
+  rent: ['Rent', 'money'], guarantee: ['Monthly minimum', 'money'], yearlyGuarantee: ['Yearly minimum', 'money'], tenantName: ['Tenant'],
+  endsOn: ['Ends on', 'date'], agreement: ['Agreement'],
   countryCode: ['Nationality'], idType: ['ID type'], idNumber: ['ID number'], dateOfBirth: ['Date of birth'], language: ['Language'],
 };
 const ID_TYPE: Record<string, string> = { mykad: 'MyKad', passport: 'Passport', other: 'Other ID' };
 const countryLabel = (code: string) => { try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; } };
 /** Kept in the record for the system's own use; nothing a person needs to read. */
-const HIDDEN = new Set(['moveId', 'documentId', 'windowId', 'channexBookingId', 'statementId', 'amountSource', 'sourceTaskId', 'reservationId', 'maintenanceIssueId', 'issueId', 'paymentId', 'otaBookingId', 'clashingReservationId', 'checked', 'created', 'fields', 'hasEmail', 'hasPhone', 'overlaps']);
+const HIDDEN = new Set(['moveId', 'documentId', 'windowId', 'channexBookingId', 'statementId', 'amountSource', 'sourceTaskId', 'reservationId', 'maintenanceIssueId', 'issueId', 'paymentId', 'otaBookingId', 'clashingReservationId', 'checked', 'created', 'fields', 'hasEmail', 'hasPhone', 'overlaps', 'splitFrom', 'previous', 'sharedPrevious']);
 
 /** Who reported a repair, in the words the Maintenance screen uses. */
 const REPORTED_BY: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
@@ -115,7 +119,8 @@ function known(k: string, v: string, table: string): string | null {
   if (k === 'chargeTo') return PAYER_LABEL[v] ?? null;
   if (k === 'category') return (table === 'expenses' ? CATEGORY_LABEL[v] : REPAIR_CATEGORY[v] ?? CATEGORY_LABEL[v]) ?? null;
   if (k === 'assigneeKind') return ASSIGNEE_KIND[v] ?? null;
-  if (k === 'model') return MODEL[v as keyof typeof MODEL]?.label ?? null;
+  if (k === 'model' || k === 'revenueModel') return MODEL[v as keyof typeof MODEL]?.label ?? null;
+  if ((k === 'contractCode' || k === 'code') && CODE[v as ContractCode]) return codeName(v as ContractCode);
   if (k === 'readiness') return statusLabel('readiness', v);
   if (k === 'state' || k === 'status') return statusLabel(STATE_OF[table] ?? 'task', v);
   return null;
@@ -157,7 +162,8 @@ export function historyLines(e: Pick<HistoryEntry, 'before' | 'after'> & { entit
   const table = e.entityTable ?? '';
   const out: Line[] = [];
   for (const k of new Set([...Object.keys(b), ...Object.keys(a)])) {
-    if (HIDDEN.has(k)) continue;
+    // Older contract entries carry the record's own id in "before"; it means nothing on screen.
+    if (HIDDEN.has(k) || (table === 'owner_contracts' && k === 'id')) continue;
     const inBefore = k in b, inAfter = k in a;
     if (inBefore && inAfter) {
       if (JSON.stringify(b[k]) === JSON.stringify(a[k])) continue;

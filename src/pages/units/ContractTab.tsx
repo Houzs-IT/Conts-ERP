@@ -16,6 +16,7 @@ import { ExtendContractModal, GenerateAgreement } from './ContractExtras';
 import { CodeBadge } from './UnitExtras';
 import { DataTable, type Column } from '../../components/DataTable';
 import { StatusBadge } from '../../components/StatusBadge';
+import { RecordHistory } from '../../components/RecordHistory';
 
 /** The Contract tab: pick ONE revenue model, then fill only that model's fields. Below, last month's statement for
  *  this unit worked out on the terms as they stand in the form (the statement engine, on the server), and the
@@ -364,6 +365,11 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
           <DataTable<ContractView> id="unit.contracts" urlPrefix="ct." bare noViews noToolbar pageSize={0} maxHeight="none"
             columns={HISTORY_COLUMNS} rows={data!.history} rowKey={h => h.id ?? `${h.startsOn}|${h.revenueModel}`} noun={['contract', 'contracts']} />
         </Card>
+      )}
+      {/* Who changed the terms and when, field by field: this contract and the unit's earlier ones (at most 10). */}
+      {current.id && (
+        <RecordHistory key={current.id} entity="owner_contracts" id={current.id} title="History of changes" refreshKey={data}
+          also={data!.history.flatMap(h => (h.id ? [['owner_contracts', h.id] as [string, string]] : [])).slice(0, 10)} />
       )}
       {footer}
     </>
