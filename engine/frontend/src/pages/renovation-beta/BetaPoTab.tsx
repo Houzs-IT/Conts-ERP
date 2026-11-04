@@ -43,6 +43,9 @@ import {
 import { buildVariantSummary } from "../../vendor/shared/variant-summary";
 import { RenovationVariantPicker, hasVariantPickers } from "../../vendor/scm/components/renovationVariantPicker";
 import { BetaLoading } from "./BetaLoading";
+import { SoStockPill } from "../../components/SoSourceChips";
+import type { SoLineCoverage } from "../../vendor/scm/lib/sales-order-queries";
+import { useProjectLineStock } from "./renovationBetaStock";
 import { bandParts, columnWidth, moveColumn, usePoColumns, type PoColumn } from "./renovationPoColumns";
 
 /** One colour per category band, in the mockup's spirit: [bar, band background, text]. */
@@ -65,7 +68,7 @@ const headStyle: CSSProperties = { ...thStyle, padding: "8px 6px", fontSize: 11.
 const COLUMN_HEAD: Record<PoColumn, { label: string; title?: string; right?: boolean }> = {
   sku: { label: "SKU" }, desc: { label: "Description" }, variants: { label: "Variants" }, qty: { label: "Qty", right: true }, amount: { label: "Amount", right: true },
   orderOn: { label: "Processing", title: "Processing date: when to place the order" }, deliverOn: { label: "Delivery", title: "Delivery date" },
-  po: { label: "PO" }, gr: { label: "GR" }, do: { label: "DO" },
+  stock: { label: "Stock", title: "Same verdict as the sales order page" }, po: { label: "PO" }, gr: { label: "GR" }, do: { label: "DO" },
 };
 
 /** The tab's own width, so the layout follows the space it has (inside Property OS it is not the window's). */
@@ -127,6 +130,8 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     for (const c of q.data?.pendingPoChanges ?? []) m.set(c.poId, [...(m.get(c.poId) ?? []), c]);
     return m;
   }, [q.data]);
+
+  const stockByLine = useProjectLineStock(q.data?.sos.map((x) => x.docNo) ?? []);
 
   if (q.error && !q.data) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The sales order lines could not be loaded: {q.error}</p>;
   if (!q.data) return <BetaLoading label="Loading PO" />;
@@ -301,7 +306,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     l, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
     setEdit: (patch) => setEdit(l.id, patch), pick: () => setPicking(l), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
-    saveSupplier: (id) => void saveSupplier(l, id), suppliers: d.suppliers ?? [],
+    saveSupplier: (id) => void saveSupplier(l, id), suppliers: d.suppliers ?? [], stock: stockByLine.get(l.id),
     grDocs: lineDocs(l.id, deliveries, "goods_received"), doDocs: lineDocs(l.id, deliveries, "delivery_order"), openDoc,
   });
 
@@ -598,6 +603,7 @@ interface RowCtx {
   saveDate: (which: DateField, value: string) => void;
   setNoPo: (v: boolean) => void;
   saveSupplier: (supplierId: string) => void;
+  stock: SoLineCoverage | undefined;
   suppliers: ReadonlyArray<{ id: string; name: string }>;
   grDocs: LineDoc[];
   doDocs: LineDoc[];
@@ -861,9 +867,21 @@ function grState(l: ManagedLine): "yes" | "part" | "no" | null {
   return l.goesTo !== "po" && l.pos.length === 0 ? null : l.gr;
 }
 
+/** The line's stock, from the same coverage and the same pill as the sales order page. */
+function StockCell({ r }: { r: RowCtx }): ReactElement {
+  const c = r.stock;
+  const inFull = r.l.do === "yes";
+  return (
+    <span title={c?.coverage_po ? `Incoming ${c.coverage_po}${c.coverage_eta ? `, ${c.coverage_eta}` : ""}` : undefined}>
+      <SoStockPill line={{ item_group: r.l.itemGroup, delivered_qty: inFull ? r.l.qty : 0, remaining_qty: inFull ? 0 : r.l.qty, stock_state: c?.stock_state ?? null,
+        stock_status_effective: (c?.stock_status_effective ?? null) as "READY" | "PARTIAL" | "PENDING" | null, non_selling_warehouse: c?.non_selling_warehouse ?? null }} />
+    </span>
+  );
+}
+
 const LINE_CELLS: Record<PoColumn, (r: RowCtx) => ReactElement> = {
   sku: (r) => <SkuCell {...r} />, desc: (r) => <DescCell {...r} />, variants: (r) => <VariantCell {...r} />, qty: (r) => <QtyCell {...r} />, amount: (r) => <AmountCell {...r} />,
-  orderOn: (r) => <ProcessingCell r={r} />, deliverOn: (r) => <DeliveryCell r={r} />, po: (r) => <PoCell r={r} />,
+  orderOn: (r) => <ProcessingCell r={r} />, deliverOn: (r) => <DeliveryCell r={r} />, stock: (r) => <StockCell r={r} />, po: (r) => <PoCell r={r} />,
   gr: (r) => <DocCell docs={r.grDocs} state={grState(r.l)} tab="gr" open={r.openDoc} />, do: (r) => <DocCell docs={r.doDocs} state={r.l.do} tab="do" open={r.openDoc} />,
 };
 

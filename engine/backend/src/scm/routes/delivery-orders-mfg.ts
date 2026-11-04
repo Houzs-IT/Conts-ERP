@@ -103,6 +103,8 @@ import { soRemainingByItemId } from '../lib/so-remaining-by-item';
 import { lineLinkItemMismatch, assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
 import { checkStockAvailability, shortStockResponse, stockCheckableLines, uncoveredStockCheckLines, type StockShortage } from '../lib/check-stock-availability';
 /* Conts switches: customer-supplied lines hold no stock; a renovation DO takes its site and brand from its own SO and lines. */
+import { HARD_BOUND_COMPANY_ID } from '../lib/so-stock-allocation';
+import { loadUnitBoundCodes, NO_UNIT_BOUND_CODES } from '../lib/unit-bound-sku';
 import { customerGoodsCodes, deliveredPatch, doBrandingFromLines, renovationDoSiteFields } from '../lib/renovation-flow-rules';
 import { findSofaLinesWithoutCompleteBatch, sofaNoCompleteBatchResponse, findIncompleteSofaSets, sofaIncompleteSetResponse, detectSofaSoItemIds } from '../lib/sofa-batch-guard';
 import { resolveExpectedBatchBySoItem, buildDropshipOffenders } from '../lib/dropship-batch';
@@ -1045,15 +1047,22 @@ async function checkDoStockAvailability(
   const lineWh = await resolveDoLineWarehouses(sb, shippable.map((l) => ({ id: l.lineRef, so_item_id: l.soItemId })), headerWarehouseId, companyId);
   const active = await uncoveredStockCheckLines(sb, shippable, lineWh, companyId);
   if (active.length === 0) return [];
+  /* Works and Built-in serve their own SO (owner, 4 Nov 2026: 就算有别的东西、有库存，它也不能用): a line its own PO has
+     not covered is short whatever the warehouse holds. */
+  const unitBound = companyId === HARD_BOUND_COMPANY_ID ? await loadUnitBoundCodes(sb, companyId, active.map((l) => l.itemCode)) : NO_UNIT_BOUND_CODES;
+  const shortages: StockShortage[] = [];
   const byWh = new Map<string, Array<{ itemCode: string; productName: string | null; variantKey: string; qty: number }>>();
   for (const l of active) {
     const wh = lineWh.get(l.lineRef) ?? null;
     if (!wh) continue;
+    if (unitBound.has(l.itemCode)) {
+      shortages.push({ itemCode: l.itemCode, productName: l.productName, variantKey: l.variantKey, warehouseId: wh, warehouseName: null, needed: Number(l.qty), available: 0, short: Number(l.qty), alternatives: [] });
+      continue;
+    }
     const arr = byWh.get(wh) ?? [];
     arr.push({ itemCode: l.itemCode, productName: l.productName, variantKey: l.variantKey, qty: Number(l.qty) });
     byWh.set(wh, arr);
   }
-  const shortages: StockShortage[] = [];
   for (const [wh, reqs] of byWh) shortages.push(...(await checkStockAvailability(sb, wh, reqs, companyId)));
   return shortages;
 }
@@ -2479,10 +2488,18 @@ export async function computeSoLifecycle(
       .in('so_doc_no', ids)
       .neq('status', 'CANCELLED'),
     sb.from('sales_invoices')
-      .select('so_doc_no, invoice_date, created_at, status')
+      .select('id, so_doc_no, invoice_date, created_at, status')
       .in('so_doc_no', ids)
       .neq('status', 'CANCELLED'),
   ]);
+  /* A contract's instalment bill is a progress bill, not the order being invoiced (owner run, 4 Nov 2026: the first of
+     four read INVOICED on the order). */
+  const siRows = (siRes.data ?? []) as Array<{ id?: string; so_doc_no: string | null; invoice_date: string | null; created_at: string | null }>;
+  const siIds = siRows.map((s) => s.id).filter((x): x is string => !!x);
+  const { data: billRows } = siIds.length
+    ? await sb.from('reno_instalment_bills').select('sales_invoice_id').in('sales_invoice_id', siIds)
+    : { data: [] };
+  const progressBills = new Set(((billRows ?? []) as Array<{ sales_invoice_id: string | null }>).map((b) => b.sales_invoice_id));
 
   // DO id → so_doc_no, so a Delivery Return (which carries delivery_order_id but
   // no so_doc_no) can be attributed back to its Sales Order.
@@ -2491,7 +2508,8 @@ export async function computeSoLifecycle(
     if (d.so_doc_no) doToSo.set(d.id, d.so_doc_no);
     push(d.so_doc_no, { date: d.do_date ?? d.created_at ?? '', createdAt: d.created_at ?? '', kind: 'delivered' });
   }
-  for (const s of (siRes.data ?? []) as Array<{ so_doc_no: string | null; invoice_date: string | null; created_at: string | null }>) {
+  for (const s of siRows) {
+    if (s.id && progressBills.has(s.id)) continue;
     push(s.so_doc_no, { date: s.invoice_date ?? s.created_at ?? '', createdAt: s.created_at ?? '', kind: 'invoiced' });
   }
 
