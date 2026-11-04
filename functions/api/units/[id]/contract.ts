@@ -3,10 +3,11 @@ import { requireSession, hasColumn } from '../../../_lib/auth';
 import { can } from '../../../_lib/access';
 import { todayMyt } from '../../../_lib/ops';
 import { statementSettings, type Query } from '../../../_lib/ownerStatement';
-import { invalidDraft, draftColumns, rentToRentColumns, modelOf, MODEL_LABEL, type ContractDraft } from '../../../_lib/revenueModel';
+import { invalidDraft, draftColumns, rentToRentColumns, modelOf, isRevenueModel, MODEL_LABEL, type ContractDraft } from '../../../_lib/revenueModel';
 import { contractView, unitExample, lastMonth } from '../../../_lib/unitContract';
 import { heldContract } from '../../../_lib/datedRows';
-import { purposeReady, codesFor, codeOf, isContractCode, CODE_MODEL, CODE_LABEL, type Purpose, type ContractCode } from '../../../_lib/unitPurpose';
+import { purposeReady, codeOf, offeredTypes, type Purpose } from '../../../_lib/unitPurpose';
+import { contractTypes, NO_GRR } from '../../../_lib/contractTypes';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -43,24 +44,24 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const month = MONTH.test(url.searchParams.get('month') ?? '') ? url.searchParams.get('month')! : lastMonth(todayMyt());
 
   const q: Query = (sql, ...args) => all(env, sql, ...args);
-  const [settings, rows, shared, example] = await Promise.all([
-    statementSettings(q),
+  const [settings, types, rows, shared, example] = await Promise.all([
+    statementSettings(q), contractTypes(env),
     all<any>(env, `SELECT * FROM owner_contracts WHERE unit_id = ? OR id = ? ORDER BY starts_on DESC, created_at DESC`, id, u.contract_id),
     u.contract_id ? one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM units WHERE contract_id = ? AND id <> ?', u.contract_id, id) : Promise.resolve(null),
     unitExample(q, id, month),
   ]);
   const current = rows.find(r => r.id === u.contract_id) ?? null;
-  const view = contractView(current, u, settings.defaultFeePct, Number(shared?.n ?? 0));
+  const view = contractView(current, u, settings.defaultFeePct, Number(shared?.n ?? 0), types);
   // A new contract set to start later: the unit is already on its record, so say which one applies until then.
   const before = heldContract(current, rows, todayMyt());
   return json({
     generatedAt: nowIso(), month,
     unit: { id, label: `${u.property_name} ${u.unit_number}`, ownerId: u.owner_id, ownerName: u.owner_name, purpose: u.purpose as Purpose },
-    // The income models this unit may take: the same for every purpose (migration 0181).
-    allowedCodes: codesFor(current ? view.contractCode : null),
+    // The contract types this unit may take: the active ones and its own, the same for every purpose (migration 0181).
+    allowedCodes: offeredTypes(types, current ? view.contractCode : null).map(t => t.code),
     current: view,
-    untilThen: before ? contractView(before, u, settings.defaultFeePct) : null,
-    history: rows.filter(r => r.id !== u.contract_id).map(r => contractView(r, u, settings.defaultFeePct)),
+    untilThen: before ? contractView(before, u, settings.defaultFeePct, 0, types) : null,
+    history: rows.filter(r => r.id !== u.contract_id).map(r => contractView(r, u, settings.defaultFeePct, 0, types)),
     example,
   });
 };
@@ -100,12 +101,18 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
 
   const cur = u.contract_id ? await one<any>(env, 'SELECT * FROM owner_contracts WHERE id = ?', u.contract_id) : null;
   // The staff's code decides the model; a request with only a model (older screens) takes that model's code.
-  const code: ContractCode = isContractCode(b.contractCode) ? b.contractCode : codeOf(b.revenueModel as never);
-  if (CODE_MODEL[code] !== b.revenueModel) return fail('VALIDATION', 'Check the contract details.', 422, { contractCode: `${code} is worked out as ${MODEL_LABEL[CODE_MODEL[code]]}, not ${MODEL_LABEL[b.revenueModel as keyof typeof MODEL_LABEL]}.` });
-  const curCode = cur ? codeOf(modelOf({ ...cur, contract_id: cur.id, package: u.package }), cur.contract_code) : null;
-  const allowed = codesFor(curCode);
-  if (!allowed.includes(code)) {
-    return fail('VALIDATION', `A unit can take ${allowed.join(', ')} only, not ${code} (${CODE_LABEL[code]}).`, 422, { contractCode: `Pick ${allowed.join(' or ')}.` });
+  const model = b.revenueModel;
+  if (!isRevenueModel(model)) return fail('VALIDATION', 'Check the contract details.', 422, { revenueModel: 'Pick one income model.' });
+  if (model === 'grr' || b.contractCode === 'GRR') return fail('VALIDATION', NO_GRR, 422, { contractCode: NO_GRR });
+  const types = await contractTypes(env);
+  const code = typeof b.contractCode === 'string' && b.contractCode ? b.contractCode : codeOf(types, model);
+  const type = types.find(t => t.code === code);
+  if (!type) return fail('VALIDATION', 'Check the contract details.', 422, { contractCode: `${code} is not a contract type.` });
+  if (type.revenueModel !== model) return fail('VALIDATION', 'Check the contract details.', 422, { contractCode: `${code} is worked out as ${MODEL_LABEL[type.revenueModel]}, not ${MODEL_LABEL[model]}.` });
+  const curCode = cur ? codeOf(types, modelOf({ ...cur, contract_id: cur.id, package: u.package }), cur.contract_code) : null;
+  if (!type.isActive && code !== curCode) {
+    const allowed = offeredTypes(types, curCode).map(t => t.code);
+    return fail('VALIDATION', `${code} (${type.label}) is hidden, so a contract cannot take it. A unit can take ${allowed.join(', ')}.`, 422, { contractCode: `Pick ${allowed.join(' or ')}.` });
   }
   const c = {
     ...draftColumns(b), ...((await purposeReady(env)) ? { contract_code: code } : {}),

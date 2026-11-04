@@ -3,15 +3,20 @@ import { requireSession } from '../../_lib/auth';
 import { todayMyt } from '../../_lib/ops';
 import { loadInputs, withYearToDate, computeMonth, statementSettings, hasActivity, unitForMonth, type Query, type UnitRow } from '../../_lib/ownerStatement';
 import { unitCode } from '../../_lib/ownerReport';
-import { isTenancy } from '../../_lib/revenueModel';
-import { codeOf, type ContractCode } from '../../_lib/unitPurpose';
+import { isTenancy, type RevenueModel } from '../../_lib/revenueModel';
+import { codeOf } from '../../_lib/unitPurpose';
+import { contractTypes } from '../../_lib/contractTypes';
 import { monthEndExclusive } from '../../_lib/revenue';
 import type { ReportGroup } from '../../../src/lib/ownerOverall';
 
 const UTILITIES = new Set(['electricity', 'water', 'internet', 'sewerage']);
 
-const GROUP_OF: Record<ContractCode, ReportGroup> = {
+const GROUP_OF: Record<string, ReportGroup> = {
   PS: 'PS', 'PS GRR': 'PS', 'PS YGRR': 'PS', LT: 'LT', RTR: 'RTR', MANAGE: 'MANAGE', GRR: 'GRR',
+};
+/** A type staff added on Units > Unit settings is grouped by its income model. */
+const MODEL_GROUP: Record<RevenueModel, ReportGroup> = {
+  management: 'PS', management_guarantee: 'PS', management_yearly_guarantee: 'PS', long_term: 'LT', master_lease: 'RTR', grr: 'GRR',
 };
 
 /** Reads a master lease as a GRR contract: the company trades the unit and pays the owner a fixed rent. */
@@ -43,9 +48,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     FROM reservations r
     WHERE r.state IN ('confirmed','checked_in','checked_out') AND r.channel <> 'maintenance_block' AND r.check_in < ? AND r.check_out > ?
     GROUP BY r.unit_id`;
-  const [settings, loaded, occupiedRows] = await Promise.all([
+  const [settings, loaded, occupiedRows, types] = await Promise.all([
     statementSettings(q), loadInputs(q, start, endEx),
-    all<{ unit_id: string; nights: number }>(env, occupiedSql, endEx, start, endEx, start),
+    all<{ unit_id: string; nights: number }>(env, occupiedSql, endEx, start, endEx, start), contractTypes(env),
   ]);
   const occupied = new Map(occupiedRows.map(r => [r.unit_id, Number(r.nights)]));
   const inputs = await withYearToDate(q, loaded, month, settings);
@@ -66,12 +71,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const share = f.terms.basis === 'share' && !tenancy;
     // The stored code belongs to the current contract; a month under an earlier one reads its code from that model.
     const stored = unitForMonth(u, month).contract_id === u.contract_id ? u.contract_code : null;
-    const group: ReportGroup = m.terms.source === 'contract' ? GROUP_OF[codeOf(m.terms.model, stored)] : 'NONE';
+    const code = m.terms.source === 'contract' ? codeOf(types, m.terms.model, stored) : null;
+    const group: ReportGroup = code === null ? 'NONE' : GROUP_OF[code] ?? MODEL_GROUP[m.terms.model];
     const sum = (pick: (category: string) => boolean) => f.deductionGroups.filter(g => pick(g.category)).reduce((n, g) => n + g.amount, 0);
     return [{
       unitId: m.unitId, // The workbook's code (SKYLINE-C2701): the unit's own code field holds only its number (C27-01).
       code: unitCode(u.property_name, u.unit_number), building: u.property_name, ownerName: u.owner_name,
-      group, contractCode: m.terms.source === 'contract' ? codeOf(m.terms.model, stored) : null,
+      group, contractCode: code,
       contract: share ? 'PS' : 'LT', revenue: f.gross,
       cleaning: sum(c => c.startsWith('cleaning')), utilities: sum(c => UTILITIES.has(c)),
       electricity: sum(c => c === 'electricity'), water: sum(c => c === 'water'), internet: sum(c => c === 'internet'), sewerage: sum(c => c === 'sewerage'),

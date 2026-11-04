@@ -8,7 +8,7 @@ import { type Env, one, all } from './db';
 import { contractView } from './unitContract';
 import { statementSettings, type Query } from './ownerStatement';
 import { MODEL_LABEL, isShare, isTenancy } from './revenueModel';
-import { CODE_LABEL } from './unitPurpose';
+import { contractTypes } from './contractTypes';
 import { unitLayout } from './unitLayout';
 import { companyDetails, longDate, ringgit, esc } from './letterhead';
 import { hasColumn } from './auth';
@@ -76,8 +76,8 @@ export async function agreementValues(env: Env, unitId: string, body: string): P
     FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
     LEFT JOIN owner_contracts c ON c.id = u.contract_id WHERE u.id = ?`, unitId);
   if (!u) return null;
-  const [company, settings] = await Promise.all([companyDetails(env), statementSettings(q)]);
-  const v = u.c_id ? contractView({ ...u, id: u.c_id, misc_charges: u.c_misc }, u, settings.defaultFeePct) : null;
+  const [company, settings, types] = await Promise.all([companyDetails(env), statementSettings(q), contractTypes(env)]);
+  const v = u.c_id ? contractView({ ...u, id: u.c_id, misc_charges: u.c_misc }, u, settings.defaultFeePct, 0, types) : null;
   const pct = (n: number | null | undefined) => (n == null ? '' : `${Number(Number(n).toFixed(2))}%`);
   const ownerAddress = [u.address_lines, [u.address_postcode, u.address_city].filter(Boolean).join(' '), [u.address_state, u.address_country].filter(Boolean).join(', ')]
     .map((x: string | null | undefined) => (x ?? '').trim()).filter(Boolean).join(', ');
@@ -91,7 +91,7 @@ export async function agreementValues(env: Env, unitId: string, body: string): P
     unit_code: (u.unit_code || u.unit_number || '').trim(), building: u.building ?? '',
     unit_address: (u.address || [u.unit_number, u.address_line, u.postcode, u.city, u.state].filter(Boolean).join(', ')).trim(),
     unit_layout: [layout.size, layout.layout].filter(Boolean).join(', '),
-    model_code: v ? v.contractCode : '', model_name: v ? CODE_LABEL[v.contractCode] ?? MODEL_LABEL[v.revenueModel] : '', terms: v ? v.termsLabel : '',
+    model_code: v ? v.contractCode : '', model_name: v ? types.find(t => t.code === v.contractCode)?.label ?? MODEL_LABEL[v.revenueModel] : '', terms: v ? v.termsLabel : '',
     owner_pct: v ? (share ? pct(v.ownerPct) : NOT_APPLICABLE) : '',
     management_pct: v ? (share || isTenancy(v.revenueModel) ? pct(v.managementPct) : NOT_APPLICABLE) : '',
     agent_pct: v ? (share && v.agentPct ? pct(v.agentPct) : NOT_APPLICABLE) : '',

@@ -7,6 +7,7 @@
 import { type Env, one, all, run, nowIso } from './db';
 import { hasColumn } from './auth';
 import type { RevenueModel } from './revenueModel';
+import type { ContractTypeRow } from './contractTypes';
 
 export const PURPOSES = ['rental', 'showroom', 'warehouse'] as const;
 export type Purpose = typeof PURPOSES[number];
@@ -64,32 +65,19 @@ export function invalidBays(v: unknown): string | null {
 
 /* ---- contract codes ---- */
 
-/** The staff's list (sheet UNIT): each code and the revenue model the statement works it out by. GRR is the older
- *  guaranteed-rent model, kept for the contracts that have it. */
-export const CONTRACT_CODES = ['PS', 'PS GRR', 'PS YGRR', 'LT', 'RTR', 'MANAGE', 'GRR'] as const;
-export type ContractCode = typeof CONTRACT_CODES[number];
-export const CODE_MODEL: Record<ContractCode, RevenueModel> = {
-  PS: 'management', 'PS GRR': 'management_guarantee', 'PS YGRR': 'management_yearly_guarantee', LT: 'long_term',
-  RTR: 'master_lease', MANAGE: 'management', GRR: 'grr',
-};
-export const CODE_LABEL: Record<ContractCode, string> = {
-  PS: 'Airbnb profit sharing', 'PS GRR': 'Profit sharing with monthly GRR', 'PS YGRR': 'Profit sharing with yearly GRR',
-  LT: 'Airbnb long term', RTR: 'Rent to rent', MANAGE: 'Listing management', GRR: 'Guaranteed rent',
-};
-export const isContractCode = (v: unknown): v is ContractCode => typeof v === 'string' && (CONTRACT_CODES as readonly string[]).includes(v);
+/** The staff's contract type code (PS, PS GRR, ...). The list is the contract_types table (functions/_lib/contractTypes.ts). */
+export type ContractCode = string;
 
-/** The code of a contract row: its own, else read from its model as the staff name them. */
-export function codeOf(revenueModel: RevenueModel, stored?: string | null): ContractCode {
-  if (isContractCode(stored)) return stored;
-  return ({ management: 'PS', management_guarantee: 'PS GRR', management_yearly_guarantee: 'PS YGRR', grr: 'GRR', master_lease: 'RTR', long_term: 'LT' } as const)[revenueModel];
+/** The code of a contract row: its own when it is a known type, else the default type of its model. */
+export function codeOf(types: readonly ContractTypeRow[], revenueModel: RevenueModel, stored?: string | null): ContractCode {
+  if (stored && types.some(t => t.code === stored)) return stored;
+  return (types.find(t => t.revenueModel === revenueModel && t.isDefaultForModel) ?? types.find(t => t.revenueModel === revenueModel))?.code ?? stored ?? '';
 }
 
-/** The codes a unit may take. Showroom and warehouse is only a label: those units follow the same SOP, Package A to D
- *  (staff, 29 Oct 2026; WH and WH LT dropped in migration 0181). A unit already on the older GRR keeps it. */
-export function codesFor(currentCode?: ContractCode | null): ContractCode[] {
-  const list: ContractCode[] = ['PS', 'PS GRR', 'PS YGRR', 'LT', 'RTR', 'MANAGE'];
-  return currentCode === 'GRR' ? [...list, 'GRR'] : list;
-}
+/** The types a unit may take: the active ones, and the unit's current type even when hidden. Showroom and warehouse is
+ *  only a label: those units follow the same SOP, Package A to D (staff, 29 Oct 2026). */
+export const offeredTypes = (types: readonly ContractTypeRow[], currentCode?: string | null): ContractTypeRow[] =>
+  types.filter(t => t.isActive || t.code === currentCode);
 
 /* ---- reading and saving a unit's purpose, beds and bays ---- */
 

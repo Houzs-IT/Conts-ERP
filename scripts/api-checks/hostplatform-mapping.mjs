@@ -71,7 +71,7 @@ const wu = M.mapWorkbookUnits([
   { 'Unit编号': 'UNO-807', 'LONGTERM/PROFIT SHARING': 'PS', PACKAGE: 'D' },
 ], [{ UNIT: 'AGILE-C1313A', 'OWNER%': 0.7, 'MANAGE PAYOUT%': 0.25, 'AGENT%': 0.05 }], [{ Unit: 'UNO-807', '每月最低拿到（保底）': 3100, '合约开始': 45658 }]);
 check('workbook unit: profit share from 分成 wins over the text split', [wu.units[0].split, wu.units[0].splitValue, wu.units[0].contract.feePct, wu.units[0].pkg], ['Profit share', 70, 30, 'Package B']);
-check('workbook unit: long term + GRR', [wu.units[1].split, wu.units[1].splitValue, wu.units[1].contract.model, wu.units[1].contract.grrAmount, wu.units[1].term], ['GRR — guaranteed rent', 250000, 'grr', 250000, 'Long term']);
+check('workbook unit: long term + GRR comes in with no GRR and no contract, and is listed', [wu.units[1].split, wu.units[1].splitValue, wu.units[1].contract, wu.units[1].term, wu.notes.some(n => n.includes('UNO-806') && n.includes('GRR'))], [null, null, null, 'Long term', true]);
 check('workbook unit: package D kept as a minimum on the contract', [wu.units[2].pkg, wu.units[2].packageD, wu.units[2].contract.grrAmount, wu.units[2].contract.model], [null, true, 310000, 'management']);
 check('workbook unit: contract dates from serials', [wu.units[0].contract.startsOn, wu.units[0].contract.endsOn], ['2025-01-01', '2027-12-31']);
 
