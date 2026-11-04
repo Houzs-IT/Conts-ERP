@@ -604,3 +604,12 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - State blank on 106 of 143 SOs, because their project has none. 21 can come from the Unit settings building list by exact name (Skyline Embassy 18, Maple 3); the other 85 are on 27 buildings not in that list (KL 48 is 43), so the state has to come from the owner. Warehouse is not affected: every state maps to CONTS-WH.
 - Engine screens tests: 34 of 6,726 fail. The ones read are stale guards, not screen faults: Houzs menus and routes removed, Chinese removed, category master list, the Production Order clone not added to the DataTable, coverage and storage lists. Worth a clean-up so a real failure stands out. Not read in full: MonthlyReport, ReportLayoutTree, renovationFlowFixes, mrp-views, convertScope. To fix: MobileRenovationDocs.tsx has no crash boundary of its own around its lazy pages.
 - Not yet seen live: the received-lock note on the SO edit page (needs a line received with no DO; the only one on a test order is cancelled). Project SO tab at phone width: tab switch is a native select that automation cannot drive.
+
+## Engine click-through (4-5 Nov 2026)
+- Done on live: instalment bill no longer freezes lines, VO keeps the room, SO PDF brand and terms, line photo on the PDF, 9 project tabs without errors, VO requester names the person.
+- Not yet clicked on screen: PO to GR to DO flow and their PDFs, Contract PDF after the VO, Credit note, New project to quotation to contract, Production raw material form, DO refusal for a bound line, phone widths, the new Applied directly label. Needs the signed-in test tab in a visible Chrome window.
+- A supplier pick binds the SKU in the catalog, so PO flow tests need a SKU already bound or a TESTING SKU, not a real one.
+- TC-SO-2611-008 keeps one line with no room (Designer hanging lamp, added before the fix). Test data only.
+- Slow, not fixed: coverage about 3 s, line-edits 3-4 s. The 504 on SO detail was not reproduced; one Postgres statement timeout on 4 Nov 11:35.
+- The 33 contract VOs from before 5 Nov read Requested by The Conts ERP: the real person was never stored.
+- Privacy page has no postal address until the owner confirms the current one.
