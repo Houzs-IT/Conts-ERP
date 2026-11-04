@@ -32,7 +32,7 @@ import {
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
 import { cleanLinePlan, contractLineOf, loadProjectLines, projectLine, saveLinePlan, supplierBinding } from "../services/renovation/betaLines";
 import { patchContract } from "../scm/lib/renovation-so";
-import { RenoError } from "../scm/lib/renovation-db";
+import { inRenoTx, RenoError, sqlFor } from "../scm/lib/renovation-db";
 import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
 import {
   betaCategory, cleanAssignee, cleanDefectPatch, defectPatchNote, isImageName, money, sortDeliveries, uniqueAreas,
@@ -860,15 +860,20 @@ app.put("/projects/:id/lines/:itemId/supplier", requirePermission("projects.writ
   const bound = await supplierBinding(db(c), cl.itemCode, co, supplierId);
   if (!bound) return c.json({ error: "supplier_not_bound", message: `That supplier is not bound to ${cl.itemCode}: add it in the SKU's suppliers first.` }, 400);
   const user = c.get("user") as { name?: string | null; email?: string | null } | undefined;
+  const sql = sqlFor(c.env);
+  if (!sql) return c.json({ error: "supplier_save_failed", message: "The supplier could not be saved. Try again." }, 503);
   try {
-    await patchContract(renoDbFromD1(db(c)), { name: user?.name ?? user?.email ?? null, staffId: String(userId(c)), companyId: co, docPrefix: "" }, cl.docNo, {
+    /* In one real transaction on postgres.js, as the contract's own route runs it (the row lock in patchContract needs
+       one, and the line and its costs change together). */
+    await inRenoTx(sql, (tx) => patchContract(tx, { name: user?.name ?? user?.email ?? null, staffId: String(userId(c)), companyId: co, docPrefix: "" }, cl.docNo, {
       version: cl.version, lines: [{ id: cl.lineId, supplierId, ...(bound.priceSen > 0 ? { unitCostSen: bound.priceSen } : {}) }],
-    });
+    }));
+    await activityStmt(c, id, co, "beta_line_supplier", null, line.doc_no, `${cl.itemCode}: supplier ${bound.name}`).run();
   } catch (e) {
     if (e instanceof RenoError) return c.json({ error: e.code, message: e.message }, e.status === 503 ? 409 : e.status);
-    throw e;
+    console.error("[renovation-beta] line supplier save failed", e);
+    return c.json({ error: "supplier_save_failed", message: "The supplier could not be saved. Try again.", detail: readDetail(e) }, 500);
   }
-  await activityStmt(c, id, co, "beta_line_supplier", null, line.doc_no, `${cl.itemCode}: supplier ${bound.name}`).run();
   return c.json({ ok: true, supplierId, supplierName: bound.name });
 });
 
