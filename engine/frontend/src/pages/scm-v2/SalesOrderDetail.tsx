@@ -46,7 +46,8 @@ import { addLineHref } from '../../vendor/scm/lib/add-line-handoff';
 import { RenovationSoOrderInfo } from './RenovationSoOrderInfo';
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from './renovationSoAreaLines';
 import { SoInstalments, instalmentRows, nextInstalmentSen, paymentSlots, useSoInstalments } from './renovationSoInstalments';
-import { ContractSections } from '../renovation/RenovationSalesOrder';
+import { ContractSections, InstalmentBillDialog } from '../renovation/RenovationSalesOrder';
+import { useContract } from '../../lib/renovation/api';
 import { SPEC_LOCKED_NOTE } from '../renovation-beta/renovationBetaLines';
 import {
   Field, SoAddressFields, SoCustomerFields, SoDetailAsideCards, SoDetailHeader, SoEmergencyFields, SoOrderInfoFields, SoRecentActivityCard,
@@ -768,6 +769,9 @@ export const SalesOrderDetail = () => {
   useOpenPrintPreviewFromUrl(print.openPreview, !!header);
   /* The renovation contract's four instalments (owner, 1 Nov 2026), as the project's payments strip shows them. */
   const instalmentsQ = useSoInstalments(docNo ?? null, printLayoutState.renoMode);
+  const contractQ = useContract(printLayoutState.renoMode ? docNo : undefined);
+  const [billingId, setBillingId] = useState<string | null>(null);
+  const canBill = can('scm.renovation.bill') && ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'].includes(contractQ.data?.status ?? '');
   const instalments = useMemo(
     () => instalmentRows(instalmentsQ.data, (printPaymentsQ.data ?? []).reduce((sum, p) => sum + (p.amount_sen || 0), 0)),
     [instalmentsQ.data, printPaymentsQ.data],
@@ -1292,10 +1296,12 @@ export const SalesOrderDetail = () => {
       await new Promise<void>((resolve, reject) => {
         handle.save({ onSuccess: () => resolve(), onError: (msg) => reject(new Error(msg)) }, { renoBlockOnly: true });
       });
+      let poFlags = 0;
       for (const l of specs) {
-        await authedFetch(`/renovation-so-info/${encodeURIComponent(header.doc_no)}/lines/${encodeURIComponent(l.salesOrderItemId ?? '')}/spec`, {
+        const r = await authedFetch<{ flags?: number }>(`/renovation-so-info/${encodeURIComponent(header.doc_no)}/lines/${encodeURIComponent(l.salesOrderItemId ?? '')}/spec`, {
           method: 'PUT', body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
         });
+        poFlags += r.flags ?? 0;
       }
       const vo = edits.length || adds.length
         ? await authedFetch<{ voNo: string; flags: number }>(`/renovation/sales-orders/${encodeURIComponent(header.doc_no)}/line-edits`, {
@@ -1310,7 +1316,7 @@ export const SalesOrderDetail = () => {
         title: 'Saved',
         body: vo
           ? `${vo.voNo} raised and applied: ${edits.length + adds.length} line change${edits.length + adds.length === 1 ? '' : 's'}.${vo.flags ? ` ${vo.flags} PO line${vo.flags === 1 ? '' : 's'} flagged for purchasing to change.` : ''}`
-          : lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.` : 'Order information saved.',
+          : lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.${poFlags ? ` ${poFlags} PO line${poFlags === 1 ? '' : 's'} flagged for purchasing to tell the supplier.` : ''}` : 'Order information saved.',
         tone: 'info',
       });
     } catch (e) {
@@ -1788,7 +1794,7 @@ export const SalesOrderDetail = () => {
     : isLocked && canAttributeOther
       ? 'This order is locked by a downstream Delivery Order / Sales Invoice — only the Salesperson can still be changed.'
       : 'This order is locked — it already has a downstream Delivery Order / Sales Invoice.';
-  const editLabel = canAmend ? (header.has_open_amendment ? 'View VO' : 'Submit VO') : 'Edit';
+  const editLabel = canAmend && header.has_open_amendment ? 'View VO' : 'Edit';
 
   /* Owner 2026-07-05 — SO PROCESS lock: once the SO has a Processing Date
      (which IS what being proceeded means — owner, pinned 2026-08-13) AND that
@@ -2137,8 +2143,14 @@ export const SalesOrderDetail = () => {
     ...(customerRef !== '—' ? [<>Ref <span className="font-mono font-semibold text-ink-secondary">{customerRef}</span></>] : []),
     ...(customerCreditSen > 0 ? [`Customer credit balance: ${fmtSen(customerCreditSen)}`] : []),
   ];
+  /* A VO is a change of amount or an added line (owner, 4 Nov 2026); options, remarks and dates only save. */
+  const raisesVo = amendmentMode && header.so_kind === 'RENOVATION' && buildAmendmentLines().some((l) => {
+    const it = items.find((x) => x.id === l.salesOrderItemId);
+    return !it || l.changeType === 'REMOVE' || (l.newItemCode ?? it.item_code) !== it.item_code
+      || (l.newQty ?? it.qty) !== it.qty || (l.newUnitPriceSen ?? it.unit_price_sen) !== it.unit_price_sen;
+  });
   const saveLabel = amendmentMode
-    ? (savingOrder || createAmendment.isPending ? 'Submitting…' : header.so_kind === 'RENOVATION' ? 'Save' : header.vo_locked ? 'Record VO' : 'Submit VO')
+    ? (savingOrder || createAmendment.isPending ? 'Submitting…' : header.so_kind === 'RENOVATION' ? (raisesVo ? 'Save as VO' : 'Save') : header.vo_locked ? 'Record VO' : 'Submit VO')
     : (updateHeader.isPending || savingOrder ? 'Saving…' : 'Save');
   const saveBusy = amendmentMode ? savingOrder || createAmendment.isPending : updateHeader.isPending || savingOrder;
   const saveNow = () => { void (amendmentMode ? submitAmendment : saveEdit)(); };
@@ -2191,7 +2203,7 @@ export const SalesOrderDetail = () => {
                 {/* Same gate as Edit: adding a line IS an edit. */}
                 <Button variant="secondary" icon={<Plus size={14} />} onClick={goAddLine} disabled={editDisabled}>{ADD_LINE_LABEL}</Button>
                 <Button variant="primary" icon={<Edit3 size={14} />} onClick={enterEdit} disabled={editDisabled}
-                  title={migratedLocked || isLocked ? lockedEditHint : canAmend ? 'This order is processing-locked — changes go through a VO.' : undefined}>
+                  title={migratedLocked || isLocked ? lockedEditHint : undefined}>
                   {editLabel}
                 </Button>
               </>
@@ -2612,7 +2624,8 @@ export const SalesOrderDetail = () => {
                 : undefined}
               aboveRows={<SoInstalments
                 rows={instalments.length > 0 ? instalments : instalmentsQ.data ? paymentSlots(printPaymentsQ.data ?? []) : []}
-                money={(sen) => fmtMoney(sen, header.currency)} />}
+                money={(sen) => fmtMoney(sen, header.currency)}
+                onBill={canBill ? setBillingId : undefined} />}
               headerAction={canOfferPayEdit ? (
                 <Button variant="secondary" onClick={() => { void togglePayEditing(); }} icon={<Wallet size={14} />}>
                   {payEditing ? 'Done' : 'Collect payment'}
@@ -2631,6 +2644,8 @@ export const SalesOrderDetail = () => {
               />
             </Section>
           )}
+
+          {billingId && <InstalmentBillDialog docNo={header.doc_no} instalmentId={billingId} onClose={() => { setBillingId(null); void instalmentsQ.refetch(); }} />}
 
           {/* One sales order, one page (owner, 3 Nov 2026): a renovation contract's billing, VOs, PO split and line costs
               sit here, not on a second page. Only for those who could open that page: a sales rep reaches this route by

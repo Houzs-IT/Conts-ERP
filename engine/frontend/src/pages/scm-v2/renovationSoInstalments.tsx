@@ -4,16 +4,21 @@
    paymentsOf): money on a bill counts for that instalment, money recorded on the order fills the rest in order.
    Conts only: an order with no instalment schedule shows nothing and Add Payment keeps the balance default. */
 import type { ReactElement } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Button } from "../../components/Button";
 import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 
 interface BillingInstalment {
-  id: string; seq: number; label: string; pctBp: number; amountSen: number;
-  bill: { kind: "INVOICE" | "CREDIT_NOTE" | "ZERO"; amountSen: number; paidSen: number } | null;
+  id: string; seq: number; label: string; pctBp: number; amountSen: number; isNext?: boolean;
+  bill: { kind: "INVOICE" | "CREDIT_NOTE" | "ZERO"; amountSen: number; paidSen: number; salesInvoiceId?: string | null; invoiceNumber?: string | null; noteNumber?: string | null } | null;
 }
 interface BillingView { receivedSen: number; revisedContractSen: number; instalments: BillingInstalment[] }
 
-export interface SoInstalmentRow { seq: number; label: string; pctBp: number; amountSen: number; paidSen: number; slot?: boolean }
+export interface SoInstalmentRow {
+  seq: number; label: string; pctBp: number; amountSen: number; paidSen: number; slot?: boolean;
+  id?: string; billable?: boolean; document?: { number: string; invoiceId: string | null };
+}
 
 export function useSoInstalments(docNo: string | null, enabled: boolean) {
   return useQuery({
@@ -37,7 +42,11 @@ export function instalmentRows(view: BillingView | undefined, recordedSen: numbe
       pool -= take;
       paidSen += take;
     }
-    return { seq: i.seq, label: i.label || `Instalment ${i.seq}`, pctBp: i.pctBp, amountSen, paidSen };
+    const number = i.bill?.invoiceNumber ?? i.bill?.noteNumber ?? null;
+    return {
+      seq: i.seq, label: i.label || `Instalment ${i.seq}`, pctBp: i.pctBp, amountSen, paidSen, id: i.id, billable: Boolean(i.isNext && !i.bill),
+      ...(number ? { document: { number, invoiceId: i.bill?.salesInvoiceId ?? null } } : {}),
+    };
   });
 }
 
@@ -64,7 +73,10 @@ export function nextInstalmentSen(rows: readonly SoInstalmentRow[], paidSen: num
   return 0;
 }
 
-export function SoInstalments({ rows, money }: { rows: readonly SoInstalmentRow[]; money: (sen: number) => string }): ReactElement | null {
+/** What is left to collect on an instalment: money over on an earlier one has already come off (owner, 4 Nov 2026). */
+export const toCollectSen = (r: Pick<SoInstalmentRow, "amountSen" | "paidSen">): number => Math.max(0, r.amountSen - r.paidSen);
+
+export function SoInstalments({ rows, money, onBill }: { rows: readonly SoInstalmentRow[]; money: (sen: number) => string; onBill?: (id: string) => void }): ReactElement | null {
   if (rows.length === 0) return null;
   return (
     <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -77,10 +89,14 @@ export function SoInstalments({ rows, money }: { rows: readonly SoInstalmentRow[
               <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-secondary">{r.label}</span>
               {!r.slot && <span className="text-[11px] text-ink-muted">{(r.pctBp / 100).toFixed(r.pctBp % 100 ? 1 : 0)}%</span>}
             </div>
-            <div className="mt-1 text-[14px] font-bold text-ink">{r.slot && r.amountSen === 0 ? "-" : money(r.amountSen)}</div>
+            <div className="mt-1 text-[14px] font-bold text-ink">{r.slot && r.amountSen === 0 ? "-" : money(part ? toCollectSen(r) : r.amountSen)}</div>
             <div className={`mt-0.5 text-[11.5px] ${paid ? "text-synced" : part ? "text-warning-text" : "text-ink-muted"}`}>
-              {paid ? (r.slot ? "Received" : "Paid") : part ? `Paid ${money(r.paidSen)}` : r.slot ? "Not received" : "Not paid"}
+              {paid ? (r.slot ? "Received" : "Paid") : part ? `To collect, ${money(r.paidSen)} of ${money(r.amountSen)} paid` : r.slot ? "Not received" : "Not paid"}
             </div>
+            {r.document && (r.document.invoiceId
+              ? <Link className="mt-1 block text-[11.5px] font-semibold text-primary" to={`/scm/sales-invoices/${r.document.invoiceId}`}>{r.document.number}</Link>
+              : <div className="mt-1 text-[11.5px] text-ink-secondary">{r.document.number}</div>)}
+            {r.billable && r.id && onBill && <Button variant="secondary" className="mt-1.5 h-7" onClick={() => onBill(r.id!)}>Bill</Button>}
           </div>
         );
       })}

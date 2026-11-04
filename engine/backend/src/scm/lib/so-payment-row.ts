@@ -104,6 +104,9 @@ export type SoPaymentRowInput = {
      another order, refund and move MIRRORS — carry the ORIGINAL money's date
      and are never keyed, so they skip the window by method, not by this flag. */
   allowOutOfWindowSlipDate?: boolean;
+  /** Runs the steps after the insert and audit once the caller has answered (owner, 4 Nov 2026: a saved payment took
+      1 to 5 seconds, most of it these steps, all best-effort). Absent: they run before this returns. */
+  defer?: (work: Promise<unknown>) => void;
 };
 
 /** Book an SO payment row through the one posting gate, best-effort — the
@@ -349,45 +352,54 @@ export async function recordSoPaymentRow(
     ],
   });
 
-  /* AutoCount's BALANCE UDF is what the order still owes, so a payment CHANGES
-     a value the account book holds — and no other path re-sends it. Without
-     this the figure in the book stays whatever it was at the last line or
-     header save, which for a fully-settled order reads as still outstanding.
+  const followUps = async (): Promise<void> => {
+    /* AutoCount's BALANCE UDF is what the order still owes, so a payment CHANGES
+       a value the account book holds — and no other path re-sends it. Without
+       this the figure in the book stays whatever it was at the last line or
+       header save, which for a fully-settled order reads as still outstanding.
 
-     Queued from the CORE and not from the HTTP route because scan-so.ts inserts
-     through here too, with no request context. A rule written into the route
-     would cover the payments a human typed and silently miss every receipt the
-     scan job books — this module's recurring shape.
+       Queued from the CORE and not from the HTTP route because scan-so.ts inserts
+       through here too, with no request context. A rule written into the route
+       would cover the payments a human typed and silently miss every receipt the
+       scan job books — this module's recurring shape.
 
-     HEADER-ONLY since 2026-09-14 (docs/bugs/0896): a payment moves BALANCE and
-     PAYEMENT and no line, and composing the lines is where an edit is refused.
-     It never throws and returns false when the write-back is off or the order
-     has no AutoCount counterpart, so the payment's own success does not depend
-     on it. */
-  await enqueueSoPaymentEdit(sb, {
-    companyId,
-    docNo: p.docNo,
-    /* p.createdBy is a Supabase auth uuid; the outbox's created_by is the
-       numeric houzs user id, and there is no mapping to hand here. Provenance
-       for this row lives in the ADD_PAYMENT audit entry above. */
-    createdBy: null,
-  });
+       HEADER-ONLY since 2026-09-14 (docs/bugs/0896): a payment moves BALANCE and
+       PAYEMENT and no line, and composing the lines is where an edit is refused.
+       It never throws and returns false when the write-back is off or the order
+       has no AutoCount counterpart, so the payment's own success does not depend
+       on it. */
+    await enqueueSoPaymentEdit(sb, {
+      companyId,
+      docNo: p.docNo,
+      /* p.createdBy is a Supabase auth uuid; the outbox's created_by is the
+         numeric houzs user id, and there is no mapping to hand here. Provenance
+         for this row lives in the ADD_PAYMENT audit entry above. */
+      createdBy: null,
+    });
 
-  /* Accounting-module hook (需求书 §6.3, owner approved 2026-08-16): book the
-     payment through the one posting gate. Best-effort like the enqueue above —
-     a booking failure never fails the operator's save; the accounting
-     backfill endpoint is the self-heal. */
-  await bookSoPaymentBestEffort(sb, data as Record<string, unknown>, 'payment');
+    /* Accounting-module hook (需求书 §6.3, owner approved 2026-08-16): book the
+       payment through the one posting gate. Best-effort like the enqueue above —
+       a booking failure never fails the operator's save; the accounting
+       backfill endpoint is the self-heal. */
+    await bookSoPaymentBestEffort(sb, data as Record<string, unknown>, 'payment');
 
-  /* The invoices raised off this order settle partly out of THIS money
-     (lib/si-order-deposit), so their status has to be re-rolled here. Without
-     it the invoice DETAIL would read correctly the moment you opened it while
-     the invoice LIST — which reads the persisted status — kept telling the
-     office to chase a customer who had just paid. Queued from the CORE for the
-     same reason the AutoCount enqueue above is: scan-so.ts books receipts
-     through here with no request context. Best-effort; a failure leaves a stale
-     status the next roll self-heals. */
-  await recomputeSiPaidForOrder(sb, p.docNo, companyId);
+    /* The invoices raised off this order settle partly out of THIS money
+       (lib/si-order-deposit), so their status has to be re-rolled here. Without
+       it the invoice DETAIL would read correctly the moment you opened it while
+       the invoice LIST — which reads the persisted status — kept telling the
+       office to chase a customer who had just paid. Queued from the CORE for the
+       same reason the AutoCount enqueue above is: scan-so.ts books receipts
+       through here with no request context. Best-effort; a failure leaves a stale
+       status the next roll self-heals. */
+    await recomputeSiPaidForOrder(sb, p.docNo, companyId);
+  };
+
+  if (p.defer) {
+    /* eslint-disable-next-line no-console */
+    p.defer(followUps().catch((e) => console.error('[payments] follow-up failed:', p.docNo, e)));
+  } else {
+    await followUps();
+  }
 
   return { payment: data as Record<string, unknown>, errorMessage: null };
 }
