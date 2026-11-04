@@ -97,6 +97,16 @@ export async function listDocFiles(type: DocType, id: string): Promise<DocFilesR
   }
 }
 
+/** One file's bytes, with the session (the PDFs read photos through this). */
+export async function fetchDocFileBlob(type: DocType, id: string, fileId: string): Promise<Blob> {
+  const pass = readAuthPass();
+  const res = await fetch(`${API_URL}${base(type, id)}/${encodeURIComponent(fileId)}`, {
+    headers: { authorization: `Bearer ${readAuthToken()}`, ...(pass ? { 'x-session-pass': pass } : {}), ...companyHeader() },
+  });
+  if (!res.ok) throw new Error(`attachment ${res.status}`);
+  return res.blob();
+}
+
 export const setCaption = (type: DocType, id: string, fileId: string, caption: string) =>
   authedFetch<{ ok: true }>(`${base(type, id)}/${encodeURIComponent(fileId)}`, { method: 'PATCH', body: JSON.stringify({ caption }) });
 

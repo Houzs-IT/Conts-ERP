@@ -65,12 +65,14 @@ import {
   collectPhotoImages,
   drawItemPhotosBlock,
   fetchLinePhotoForPdf,
+  PDF_EMAIL_THUMB_PX,
   PHOTO_MARKER,
   photoKeyOwners,
   photoKeysOf,
   type PdfPhotoImage,
   type PhotoRegion,
 } from './pdf-item-photos';
+import { isAttachmentKey, loadDocPdfPhotos } from './pdf-doc-photos';
 import { fetchPoItemPhotoBlob } from './sales-order-queries';
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
 
@@ -258,7 +260,7 @@ async function renderPurchaseOrderInto(
   header: PoHeader,
   items: PoItem[],
   /* renovation: the project and each line's room / category (mig 0116). */
-  opts?: { docTitle?: string; sofaPhotos?: Record<string, string>; renovation?: RenoDocInfo | null },
+  opts?: { docTitle?: string; sofaPhotos?: Record<string, string>; renovation?: RenoDocInfo | null; emailCopy?: boolean },
 ): Promise<{ supplierName: string }> {
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 10; // tighter left/right than the SO's 14 (owner 2026-06-19)
@@ -301,10 +303,17 @@ async function renderPurchaseOrderInto(
      have no thumb; docs/bugs/0815), each photo best-effort: a key whose fetch
      or decode fails is skipped and the PDF renders without it. */
   const poId = (header.id ?? '').trim();
-  const photoGroups = buildPhotoGroups(orderedItems.map((it) => ({
-    code: supplierCodeFor(it, skuMap),
-    photoKeys: photoKeysOf(it.photo_urls),
-  })));
+  /* The line's and the PO's attached photos print too (owner, 4 Nov 2026), and so do those of the SO line it came
+     from, which the line already shows on screen. */
+  const attached = await loadDocPdfPhotos('purchase_order', poId);
+  const keysOf = (it: PoItem): string[] => [...photoKeysOf(it.photo_urls), ...attached.lineKeys(it.id)];
+  const photoGroups = [
+    ...buildPhotoGroups(orderedItems.map((it) => ({
+      code: supplierCodeFor(it, skuMap),
+      photoKeys: keysOf(it),
+    }))),
+    ...attached.documentGroups,
+  ];
   const photoOwners = photoKeyOwners(orderedItems.map((it) => ({
     id: it.id ?? null,
     photoKeys: photoKeysOf(it.photo_urls),
@@ -313,11 +322,12 @@ async function renderPurchaseOrderInto(
     ? await collectPhotoImages(
         photoGroups,
         (key) => {
+          if (isAttachmentKey(key)) return attached.fetch(key);
           const ownerId = photoOwners.get(key);
           if (!ownerId) return Promise.reject(new Error('photo_owner_missing'));
           return fetchLinePhotoForPdf((k) => fetchPoItemPhotoBlob(poId, ownerId, k), key);
         },
-        blobToSquarePdfImage,
+        (blob) => blobToSquarePdfImage(blob, opts?.emailCopy ? PDF_EMAIL_THUMB_PX : undefined),
       )
     : new Map<string, PdfPhotoImage>();
 
@@ -485,7 +495,7 @@ async function renderPurchaseOrderInto(
     /* Owner spec: a row carries NO image — the " (photo)" marker on the first
        description line points the supplier at the ITEM PHOTOS block below. */
     const descParts = [
-      `${it.description ?? it.material_name}${photoKeysOf(it.photo_urls).length > 0 ? PHOTO_MARKER : ''}`,
+      `${it.description ?? it.material_name}${keysOf(it).length > 0 ? PHOTO_MARKER : ''}`,
       specs || null,
       (it.notes ?? '').trim() ? `Remark: ${(it.notes ?? '').trim()}` : null,
       lineEff ? `Delivery: ${fmtDocDate(lineEff)}` : null,
@@ -857,7 +867,7 @@ export async function purchaseOrderPdfBase64(
   const { jsPDF } = await import('jspdf');
   const autoTable = (await import('jspdf-autotable')).default;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  await renderPurchaseOrderInto(doc, autoTable, header, items, opts);
+  await renderPurchaseOrderInto(doc, autoTable, header, items, { ...opts, emailCopy: true });
   finalizePoPdf(doc);
   // 'datauristring' → "data:application/pdf;base64,XXXX"; keep the base64 tail.
   const uri = doc.output('datauristring');
