@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { DialogFrame } from '../components/Modal';
+import { Modal } from '../components/Modal';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -391,24 +391,19 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
   }
 
   return (
-    <DialogFrame label="Generate statements" onClose={onClose} busy={busy} panelClassName="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
-        <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-3">
-          <h2 className="m-0 text-title font-semibold">Generate statements</h2>
-          <p className="m-0 text-[13px] leading-[1.55] text-muted-ink">
-            Builds each owner's month by the owner workbook's rules: reservations split by night into the month, cleaning, bills and other deductions, the contract split, then Owner Adjustments. Owner statements land as Draft and must be reviewed before sending.
-          </p>
+    <Modal title="Generate statements" onClose={onClose} busy={busy} width={440}
+      sub="Builds each owner's month by the owner workbook's rules: reservations split by night into the month, cleaning, bills and other deductions, the contract split, then Owner Adjustments. Owner statements land as Draft and must be reviewed before sending."
+      footer={<>
+          <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button size="sm" variant="primary" loading={busy} disabled={locked} disabledReason="This period has already been sent." onClick={confirm}>
+            Generate
+          </Button>
+      </>}>
           <Select label="Period" showLabel size="md" value={period} onChange={setPeriod} disabled={busy}
             options={periods.map(p => ({ value: p, label: `${periodLabel(p)}${lockedPeriods.has(p) ? ' — already sent' : ''}`, disabled: lockedPeriods.has(p) }))} />
           <div className={`py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px] ${locked ? TONE.critical.text : 'text-muted-ink'}`}>
             {locked ? 'This period has already been sent and cannot be regenerated.' : 'A period that has already been sent cannot be regenerated.'}
           </div>
-        </div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
-          <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button size="sm" variant="primary" loading={busy} disabled={locked} disabledReason="This period has already been sent." onClick={confirm}>
-            Generate
-          </Button>
-        </div>
-      </DialogFrame>
+    </Modal>
   );
 }

@@ -1,6 +1,6 @@
 import { Card } from '../../components/Card';
 import { DataTable, type Column } from '../../components/DataTable';
-import { Segmented } from '../../components/Metric';
+import { Segmented, StatTile } from '../../components/Metric';
 import { EmptyState } from '../../components/States';
 import { StaleBanner } from '../../components/DataState';
 import { useApi } from '../../lib/useApi';
@@ -10,6 +10,7 @@ import { useUrlState } from '../finance/listKit';
 import { BAD_REVIEW_MAX, AIRBNB_CATEGORIES, CATEGORY_FLAG_BELOW, categoryLabel, categoryFlagged } from '../../lib/reviewRules';
 import { CategoryGrid, Distribution, TenBox } from './reviewUi';
 import type { CategoryAverages } from './ReviewHealth';
+const Tile = StatTile;
 
 interface Summary {
   average: number | null; stars: Record<string, number>; channexConnected: boolean;
@@ -23,19 +24,6 @@ export interface PlaceRow {
   hidden: number; categories: CategoryAverages; flagged: string[]; topComplaint: { code: string; label: string; count: number } | null;
 }
 interface GuestCounts { counts: { due: number; notWritten: number; needsApproval: number; failed: number; closingSoon: number } }
-
-function Tile({ label, value, hint, tone, onClick }: { label: string; value: string; hint?: string; tone?: 'warning' | 'critical' | 'info'; onClick?: () => void }) {
-  const Tag = onClick ? 'button' : 'div';
-  return (
-    <Tag type={onClick ? 'button' : undefined} onClick={onClick}
-      className={cx('rounded-card border border-solid p-4 flex flex-col gap-1.5 text-left [font-family:inherit] min-w-0',
-        onClick && 'cursor-pointer', tone ? cx(TONE[tone].border, TONE[tone].bg) : 'border-line bg-card')}>
-      <span className={cx('text-[11px] font-semibold tracking-[0.12em] uppercase', tone ? TONE[tone].text : 'text-muted-ink')}>{label}</span>
-      <span className={cx('text-[26px] leading-none font-semibold tabular-nums', tone ? TONE[tone].text : 'text-ink')}>{value}</span>
-      {hint && <span className="text-meta text-muted-ink">{hint}</span>}
-    </Tag>
-  );
-}
 
 /** Overview tab, laid out like Airbnb's host Reviews page: the overall rating big with its star and how many reviews,
  *  the six categories each with an icon and a thin bar, and the 5-to-1 spread; each channel on its own scale beside

@@ -81,6 +81,7 @@ every pull request.
 | `require-session.mjs` | an API handler that never checks the session |
 | `require-audit.mjs` | a POST / PUT / PATCH / DELETE handler that never writes the audit log |
 | `shared-paths.mjs` | an engine file imported by Property OS that CI or a deploy workflow does not watch |
+| `engine-palette.mjs` | an engine status colour in `engine/frontend/conts/palette.mjs` that differs from `tokens.json` |
 
 Each check first runs its matcher on a planted bad sample and a good sample, and fails if the bad one is not caught,
 so a broken pattern cannot report a clean codebase. Allow-lists are short and every entry states its reason; fix the

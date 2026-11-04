@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { DialogFrame } from '../components/Modal';
+import { Modal } from '../components/Modal';
 import { Card } from '../components/Card';
 import { StatusBadge } from '../components/StatusBadge';
 import { SectionHead, PayoutBadge, payoutDestination, payoutStatus, type PayoutRow } from './owners/OwnerMoney';
@@ -344,14 +344,14 @@ function RunDialog({ onClose, onDone }: { onClose: () => void; onDone: () => voi
   }
 
   return (
-    <DialogFrame label="Start payout run" onClose={onClose} busy={busy} panelClassName="relative w-full max-w-[560px] max-h-[88vh] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden">
-        <div className="px-[22px] pt-[22px] pb-3 flex flex-col gap-2">
-          <h2 className="m-0 text-title font-semibold">Start payout run</h2>
-          <p className="m-0 text-copy text-muted-ink text-pretty">
-            {approvalsOn ? 'The run is sent for approval first: once someone else approves it, the ticked payouts move to ' : 'The ticked payouts move to '}<strong className="text-ink font-semibold">Processing</strong>. That records that you are making these transfers; it does not send money. Make each transfer in the bank's own system, then mark it paid here.
-          </p>
-        </div>
-        <div className="flex-1 min-h-0 overflow-y-auto [border-top:1px_solid_var(--color-line-soft)]">
+    <Modal title="Start payout run" onClose={onClose} busy={busy} width={560} body="flush" dirty={false}
+      sub={<>{approvalsOn ? 'The run is sent for approval first: once someone else approves it, the ticked payouts move to ' : 'The ticked payouts move to '}<strong className="text-ink font-semibold">Processing</strong>. That records that you are making these transfers; it does not send money. Make each transfer in the bank's own system, then mark it paid here.</>}
+      footer={<>
+          <span className="mr-auto text-meta text-muted-ink">{plural(chosen.length, 'payout')} · <MoneyText sen={total} mode="exact" strong className="text-ink" /></span>
+            <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button size="sm" variant="primary" loading={busy} onClick={start} disabled={chosen.length === 0} disabledReason="Tick at least one payout with a bank account.">{approvalsOn ? 'Send run for approval' : 'Start payout run'}</Button>
+      </>}>
+      <div className="[border-top:1px_solid_var(--color-line-soft)]">
           {loading && !data ? <TableSkeleton rows={4} cols={3} />
             : error ? <div className="p-5 text-copy text-danger">{error}</div>
             : rows.length === 0 ? <div className="p-5 text-copy text-muted-ink">No payouts are waiting.</div>
@@ -365,19 +365,12 @@ function RunDialog({ onClose, onDone }: { onClose: () => void; onDone: () => voi
                 <MoneyText sen={p.amount} mode="exact" className="text-copy" />
               </label>
             ))}
-        </div>
+      </div>
         {approvalsOn && <div className="px-[22px] pt-3 pb-1 [border-top:1px_solid_var(--color-line)] flex flex-col gap-[6px]">
           <label htmlFor="run-reason" className="text-meta font-medium text-muted-ink">Note for the approver (optional)</label>
           <input id="run-reason" value={reason} onChange={e => setReason(e.target.value)} maxLength={500} placeholder="e.g. September 2026 owner payouts"
             className="block w-full box-border h-9 px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy" />
         </div>}
-        <div className={cx('py-[14px] px-[22px] bg-page flex items-center justify-between gap-3 flex-wrap', !approvalsOn && '[border-top:1px_solid_var(--color-line)]')}>
-          <span className="text-meta text-muted-ink">{plural(chosen.length, 'payout')} · <MoneyText sen={total} mode="exact" strong className="text-ink" /></span>
-          <div className="flex gap-2">
-            <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-            <Button size="sm" variant="primary" loading={busy} onClick={start} disabled={chosen.length === 0} disabledReason="Tick at least one payout with a bank account.">{approvalsOn ? 'Send run for approval' : 'Start payout run'}</Button>
-          </div>
-        </div>
-      </DialogFrame>
+    </Modal>
   );
 }

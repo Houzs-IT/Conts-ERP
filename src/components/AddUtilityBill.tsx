@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DialogFrame } from './Modal';
+import { Modal } from './Modal';
 import { Button } from './Button';
 import { UnitPicker } from './UnitPicker';
 import { useUnitRoster } from '../lib/useUnitRoster';
@@ -21,17 +21,9 @@ export function AddUtilityBill({ unitId: given, month, onClose, onSaved }: { uni
   }
   if (picked) return null; // the roster is still loading
   return (
-    <DialogFrame label="Add utility bill" onClose={onClose} panelClassName="relative w-full max-w-[460px] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)]">
-        <div className="pt-[22px] px-[22px] pb-1">
-          <h2 className="m-0 text-title font-semibold">Add utility bill</h2>
-          <p className="mt-[5px] mb-0 text-copy text-muted-ink">Wi-Fi, water, electricity, IndahWater, or an additional deduction (Other fees). Which unit is it for?</p>
-        </div>
-        <div className="py-4 px-[22px]">
-          <UnitPicker units={roster} value={unitId} onChange={id => { setUnitId(id); setPicked(true); }} autoFocus />
-        </div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px] rounded-b-card">
-          <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-        </div>
-      </DialogFrame>
+    <Modal title="Add utility bill" sub="Wi-Fi, water, electricity, IndahWater, or an additional deduction (Other fees). Which unit is it for?" onClose={onClose} width={460} dirty={false}
+      footer={<Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>}>
+      <UnitPicker units={roster} value={unitId} onChange={id => { setUnitId(id); setPicked(true); }} autoFocus />
+    </Modal>
   );
 }
