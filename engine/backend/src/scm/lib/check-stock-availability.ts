@@ -16,6 +16,7 @@
 
 import { isServiceLine } from '../shared';
 import { isHardBoundLine, HARD_BOUND_COMPANY_ID } from './so-stock-allocation';
+import { loadUnitBoundCodes, NO_UNIT_BOUND_CODES } from './unit-bound-sku';
 import { pgrestIn } from './pgrest-in-list';
 
 export type StockLineRequest = {
@@ -303,10 +304,17 @@ export async function dedicatedlyCoveredSoItemIds(
   companyId: number | undefined,
 ): Promise<Set<string>> {
   if (companyId !== HARD_BOUND_COMPANY_ID) return new Set();
+  let unitBound: ReadonlySet<string> = NO_UNIT_BOUND_CODES;
+  try {
+    unitBound = await loadUnitBoundCodes(sb, companyId, lines.map((l) => l.itemCode));
+  } catch (e) {
+    /* eslint-disable-next-line no-console */
+    console.warn('[do-stock] unit-bound read failed, those lines take the pooled check:', e);
+  }
   const needBySoItem = new Map<string, number>();
   for (const l of lines) {
     if (!l.soItemId) continue;
-    if (!isHardBoundLine(l.itemGroup ?? null, l.itemCode)) continue;
+    if (!isHardBoundLine(l.itemGroup ?? null, l.itemCode) && !unitBound.has(l.itemCode)) continue;
     needBySoItem.set(l.soItemId, (needBySoItem.get(l.soItemId) ?? 0) + Number(l.qty || 0));
   }
   if (needBySoItem.size === 0) return new Set();
