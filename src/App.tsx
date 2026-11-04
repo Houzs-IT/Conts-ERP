@@ -91,6 +91,7 @@ const OwnersPage = lazy(() => import('./pages/OwnersPage'));
 const OwnerProfilePage = lazy(() => import('./pages/OwnerProfilePage'));
 const ContractsPage = lazy(() => import('./pages/ContractsPage'));
 const LettingsPage = lazy(() => import('./pages/LettingsPage'));
+const DeductionsPage = lazy(() => import('./pages/DeductionsPage'));
 const ScheduledChangesPage = lazy(() => import('./pages/ScheduledChangesPage'));
 const PricingPage = lazy(() => import('./pages/PricingPage'));
 const ReviewsPage = lazy(() => import('./pages/ReviewsPage'));
@@ -376,6 +377,7 @@ function Routed() {
         <Route path="/owner-b/:id/portal" element={<ViewAsOwnerPage />} />
         <Route path="/owner-b/sample/:id" element={<SampleOwnerPortalPage />} />
         <Route path="/properties/agent-to-let" element={<LettingsPage />} />
+        <Route path="/properties/deductions" element={<DeductionsPage />} />
         <Route path="/properties/scheduled-changes" element={<ScheduledChangesPage />} />
         <Route path="/owners/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
         <Route path="/owners/statements/:id" element={<StatementDetailPage />} />
