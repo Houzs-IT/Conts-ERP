@@ -70,12 +70,12 @@ export function SoFilterValueEditor({
         <div style={{ display: "flex", gap: 8 }}>
           <label style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
             <span className={k.label}>From</span>
-            <input className={k.input} value={a} maxLength={40} placeholder="e.g. HC-SO-013000" aria-label="From order no."
+            <input className={k.input} value={a} maxLength={40} placeholder="e.g. TC-SO-013000" aria-label="From order no."
               onChange={(e) => onChange({ value: range(e.target.value, b) })} />
           </label>
           <label style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
             <span className={k.label}>To</span>
-            <input className={k.input} value={b} maxLength={40} placeholder="e.g. HC-SO-013100" aria-label="To order no."
+            <input className={k.input} value={b} maxLength={40} placeholder="e.g. TC-SO-013100" aria-label="To order no."
               onChange={(e) => onChange({ value: range(a, e.target.value) })} />
           </label>
         </div>

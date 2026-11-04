@@ -325,7 +325,7 @@ const NoteForm = ({ mode, id, initial, onClose, onSaved }: { mode: 'new' | 'edit
           ) : (
             <>
               <Field label="Sales order (the customer comes from it)">
-                <input value={v.soDocNo} onChange={(e) => setV({ ...v, soDocNo: e.target.value })} placeholder="2990-SO-2607-019" aria-label="Sales order" style={input} disabled={mode === 'edit'} />
+                <input value={v.soDocNo} onChange={(e) => setV({ ...v, soDocNo: e.target.value })} placeholder="TC-SO-2607-019" aria-label="Sales order" style={input} disabled={mode === 'edit'} />
               </Field>
               <Field label="or customer name">
                 <input value={v.partyName} onChange={(e) => setV({ ...v, partyName: e.target.value })} placeholder="when there is no order" aria-label="Customer name" style={input} disabled={mode === 'edit' || v.soDocNo.trim() !== ''} />

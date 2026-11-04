@@ -1613,7 +1613,7 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
                   {d.methodLabel === CONVERT_LABEL && !locked && (
                     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                       <input className={paymentsStyles.inlineSelect} style={{ fontSize: 'var(--fs-11)', minWidth: 170 }} value={morePicker.more}
-                        onChange={(e) => morePicker.setMore(e.target.value)} placeholder="Another order, e.g. 2990-SO-2607-024" aria-label="Another order"
+                        onChange={(e) => morePicker.setMore(e.target.value)} placeholder="Another order, e.g. TC-SO-2607-024" aria-label="Another order"
                         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addSourceTo(d.uid, d.amountSen); } }} />
                       <button type="button" disabled={morePicker.busy} onClick={() => void addSourceTo(d.uid, d.amountSen)}
                         style={{ fontSize: 'var(--fs-11)', padding: '2px 8px', border: '1px solid var(--c-line, rgba(34,31,32,0.2))', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}>Add</button>

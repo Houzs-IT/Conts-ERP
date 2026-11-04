@@ -980,7 +980,7 @@ export function GoodsReceivedListV2() {
       <div className={cn("transition-[padding] duration-200", selected ? "md:pr-[540px]" : "")}>
         <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
           <div className="min-w-0">
-            <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Goods Received</h1>
+            <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Goods Receipts</h1>
             <div className="mt-0.5 text-[12.5px] text-ink-muted">
               {total} GRN{total === 1 ? "" : "s"} · {fmtRm(money.received)}
             </div>

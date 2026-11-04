@@ -1217,7 +1217,7 @@ export function EntryPanel({
             </select>
           </Field>
           <Field label="Reference">
-            <input value={refNo} onChange={(e) => setRefNo(e.target.value)} placeholder="e.g. HC14087" className={inputCls + " font-mono"} />
+            <input value={refNo} onChange={(e) => setRefNo(e.target.value)} placeholder="e.g. TC14087" className={inputCls + " font-mono"} />
           </Field>
           <Field label="Source">
             <select value={source} onChange={(e) => setSource(e.target.value)} className={selectCls}>

@@ -106,7 +106,7 @@ export const DepositInvoices = () => {
           <option value="ISSUED">Issued</option>
           <option value="CANCELLED">Cancelled</option>
         </select>
-        <input value={so} onChange={(e) => setSo(e.target.value)} placeholder="sales order, e.g. 2990-SO-2609-001" aria-label="Sales order" style={input} />
+        <input value={so} onChange={(e) => setSo(e.target.value)} placeholder="sales order, e.g. TC-SO-2609-001" aria-label="Sales order" style={input} />
       </div>
 
       {ticked.size > 0 && (
