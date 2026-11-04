@@ -162,7 +162,7 @@ function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
   const raise = useRenoMutation(() => renoSend<{ created: Array<{ id: string; poNumber: string; totalSen: number }> }>(`/sales-orders/${encodeURIComponent(c.docNo)}/po-split`, 'POST', {}));
   const p = preview.data;
   return (
-    <Card title="Purchase orders (SO -> PO)" actions={!open ? <Button variant="secondary" icon={<ShoppingCart size={15} />} onClick={() => setOpen(true)}>Plan POs</Button> : null}>
+    <Card title="Purchase orders" actions={!open ? <Button variant="secondary" icon={<ShoppingCart size={15} />} onClick={() => setOpen(true)}>Plan POs</Button> : null}>
       {!open && <p className="text-[13px] text-ink-secondary">Lines group by their supplier: one PO each. Owner-supplied goods need no PO; their install labour still gets one.</p>}
       {open && preview.isLoading && <p className="text-[13px] text-ink-muted">Working out the POs…</p>}
       {open && p && (

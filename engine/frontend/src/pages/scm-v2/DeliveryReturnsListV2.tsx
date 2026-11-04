@@ -1496,9 +1496,9 @@ export function DeliveryReturnsListV2() {
       <div className="-mx-4 hidden pb-3 sm:-mx-6 md:block">
         <div className="px-4 sm:px-6">
           <PageHeader
-            eyebrow="Supply Chain"
+            eyebrow="Sales"
             title="Delivery Returns"
-            description="Goods returned by customers — Pending to Refunded. Click any row for the quick view; open the full page to edit."
+            description="Goods returned by customers — Open to Refunded. Click any row for the quick view; open the full page to edit."
             primaryAction={
               <div className="flex items-stretch gap-2">
                 <Button
@@ -1536,7 +1536,7 @@ export function DeliveryReturnsListV2() {
               pending={statsPending} {...statsFail}
               label="Total Returns"
               value={stats.total.toLocaleString("en-MY")}
-              subtitle="Scoped to current filter"
+              subtitle="All matching returns"
               rail="bg-primary"
               active
             />

@@ -24,6 +24,7 @@ import { customerRefOf } from "../../lib/customer-ref";
 import { cn } from "../../lib/utils";
 import { SO_AUDIT_LABELS } from "./so-audit-labels";
 import { soRowStatus } from "./so-list-status";
+import { simplifiedAmendmentPill } from "../../vendor/scm/lib/status-pill";
 
 // ─── The header and line fields these pieces read ───────────────────────────
 
@@ -907,6 +908,13 @@ export function SoEmergencyFields({ header }: {
   );
 }
 
+/** The header word on an amendment or VO page: the one word its list row shows (Requested, Approved, Rejected), in
+    the header badge every document uses. The page's status card keeps the exact stage. */
+export function AmendmentHeaderBadge({ status }: { status: string | null | undefined }) {
+  const { label, tone } = simplifiedAmendmentPill(status);
+  return <Badge tone={tone === "success" ? "success" : tone === "danger" ? "error" : "warning"} size="sm">{label}</Badge>;
+}
+
 // ─── Page header ───────────────────────────────────────────────────────────
 
 /** The two sticky headers: the phone's dark one and the desktop's with the action bar. Both modes use them. */
@@ -971,7 +979,7 @@ export function SoDetailHeader({ title, docNo, status, meta, onBack, actions, ch
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">{actions}</div>
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>
         </div>
       </div>
     </>

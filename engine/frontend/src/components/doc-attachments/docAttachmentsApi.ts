@@ -2,6 +2,7 @@
    server side is engine/backend/src/scm/routes/doc-attachments.ts: each document answers on its own prefix, so the
    document's own access rules decide who may look and who may add or remove. */
 
+import { fmtDateTime } from '@2990s/shared';
 import { authedFetch, API_URL } from '../../vendor/scm/lib/authed-fetch';
 import { readAuthPass, readAuthToken } from '../../lib/authToken';
 import { companyHeader } from '../../lib/activeCompany';
@@ -187,5 +188,5 @@ export function formatSize(bytes: number): string {
 
 export function formatWhen(iso: string): string {
   if (!iso) return '';
-  return new Date(iso).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return fmtDateTime(iso);
 }

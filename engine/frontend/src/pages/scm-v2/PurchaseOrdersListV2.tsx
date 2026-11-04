@@ -1442,9 +1442,8 @@ export function PurchaseOrdersListV2() {
         <div className="hidden md:block">
           <PageHeader
             eyebrow="Procurement"
-            eyebrowMeta={`${total.toLocaleString("en-MY")} orders`}
             title="Purchase Orders"
-            description="Every PO raised to a supplier — Draft through Received. Click any row for the quick view; open the full page to edit or receive."
+            description="Every PO raised to a supplier — Draft to Received. Click any row for the quick view; open the full page to edit or receive."
             primaryAction={
               <div className="flex items-stretch gap-2">
                 <Button
@@ -1469,7 +1468,7 @@ export function PurchaseOrdersListV2() {
             }
             secondaryActions={[
               { label: "Suppliers", icon: Users, onClick: goSuppliers },
-              { label: "Goods Received", icon: Package, onClick: goGrn },
+              { label: "Goods Receipts", icon: Package, onClick: goGrn },
             ]}
           />
         </div>
@@ -1483,9 +1482,9 @@ export function PurchaseOrdersListV2() {
               the page, at which point it contradicts the table underneath. */}
           <StatCard
             pending={statsPending} {...statsFail}
-            label="Total POs"
+            label="Total Orders"
             value={(visible.filtered ? visible.rows.length : total).toLocaleString("en-MY")}
-            subtitle={visible.filtered ? "Filtered · shown below" : "All matching POs"}
+            subtitle={visible.filtered ? "Filtered · shown below" : "All matching orders"}
             rail="bg-primary"
             active
           />

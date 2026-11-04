@@ -89,7 +89,7 @@ import {
 } from "../../components/scm-v2/PrintPreviewModal";
 import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
 import { cn } from "../../lib/utils";
-import { convertToLink, transferToLabel } from "../../lib/convertScope";
+import { convertToLink, transferFromColumnLabel, transferToLabel } from "../../lib/convertScope";
 import { buildVariantSummary, fmtDate, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { formatPhone } from "@2990s/shared/phone";
 import { useAuth } from "../../auth/AuthContext";
@@ -1093,7 +1093,7 @@ export function DeliveryOrderDetailV2() {
                 </span>
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-secondary">
-                <span className="font-mono font-semibold text-accent-ink">
+                <span className="font-mono font-semibold text-primary-ink">
                   {deliveryOrder.do_number}
                 </span>
                 <Divider />
@@ -1105,8 +1105,8 @@ export function DeliveryOrderDetailV2() {
                 {soNo && (
                   <>
                     <Divider />
-                    <span className="inline-flex items-center gap-1">
-                      ⇄ from{" "}
+                    <span>
+                      {transferFromColumnLabel('so')}{" "}
                       <span className="font-mono font-semibold text-ink-secondary">
                         {soNo}
                       </span>
@@ -1116,7 +1116,7 @@ export function DeliveryOrderDetailV2() {
               </div>
             </div>
           </div>
-          <div className="flex flex-shrink-0 flex-col items-end gap-1.5">
+          <div className="ml-auto flex flex-shrink-0 flex-col items-end gap-1.5">
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
               variant="ghost"
@@ -1261,7 +1261,7 @@ export function DeliveryOrderDetailV2() {
         <DetailGrid>
           <DetailMain>
             {/* Customer info — Customer SO No. first, per design */}
-            <Section title="Customer info">
+            <Section title="Customer">
               <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
                 <Field
                   label="Customer SO No."
