@@ -230,3 +230,7 @@ corrected in place; shared code took the fix where one exists (`soDetailParts.ts
 
 Production Order detail is being rebuilt in another session, so PO's detail fixes were not copied to it. Its list took the
 same changes as PO's list.
+
+Long line tables: after #647 a 40-line SO (TC-SO-2610-007) still showed about 5 rows in a 360px box, because a table with
+much of the page below it was always held at the minimum height. **fixed:** such a table now stays in the page and the
+page scrolls (`useFrozenTableHeader.ts`), on every document. Lists with little below them keep their frozen header.
