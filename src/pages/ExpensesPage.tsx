@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Modal as SharedModal } from '../components/Modal';
 import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
@@ -200,6 +200,16 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
   const [editing, setEditing] = useState<Expense | null>(null);
   const [reporting, setReporting] = useState(false);
   const [formFields, setFormFields] = useState<Record<string, string>>({});
+
+  // ?expense=<id> (from the top-bar search): open that expense over its month's list.
+  const linked = url.get('expense');
+  useEffect(() => {
+    if (!linked) return;
+    let live = true;
+    api.get<Expense>(`/expenses/${encodeURIComponent(linked)}`).then(e => { if (live) setEditing(e); }).catch(notifyFailure)
+      .finally(() => { if (live) url.set({ expense: null }); });
+    return () => { live = false; };
+  }, [linked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function createExpense({ receipt, ...input }: { unitId: string; category: Category; amount: number; incurredOn: string; reference: string; description: string; receipt: File | null }) {
     try {

@@ -49,6 +49,8 @@ export interface Env {
   /** Anthropic API key for AI draft replies to reviews (functions/_lib/aiDraft.ts), a Pages secret. Unset: the
    *  Draft reply button says AI drafting is not set up. Same name as the engine's own key; set separately. */
   ANTHROPIC_API_KEY?: string;
+  /** Local checks only: a pretend AI service instead of Anthropic's (scripts/api-checks/messages-ai-draft.mjs). */
+  ANTHROPIC_BASE_URL?: string;
   /** Local dev only (.dev.vars): local Hyperdrive drops search_path from the connection string. */
   DB_SEARCH_PATH?: string;
   /** Set only on the copy of env that transaction() hands its callback: every query through that copy runs on the

@@ -10,10 +10,11 @@ import ChannelMark from './ChannelMark';
 /* ------------------------------------------------------------------ *
  * The search box the top bar opens (`/`, Ctrl+K or Cmd+K, or the search button; on a phone the magnifier).
  * GET /api/search?q= finds rental records (bookings by Airbnb, Booking.com or Agoda reference, guest name, phone or
- * email; guests; units and buildings; owners; maintenance jobs) and, through the supply chain engine, projects,
- * customers, quotations, orders, deliveries, invoices, purchase orders, goods receipts, suppliers, products and
- * service cases. Each kind follows the person's access. Five of each are shown, grouped; "See all" lists up to 50 of
- * one kind. Loaded only when opened, so the entry script stays small.
+ * email; guests; units and buildings; owners; maintenance and cleaning jobs; expenses; utility bills) and, through the
+ * supply chain engine, projects, customers, quotations, orders, VOs, deliveries, delivery returns, invoices, purchase
+ * orders, goods receipts, suppliers, products, service cases and stock documents (consignment documents too, once that
+ * module is switched back on). Each kind follows the person's access. Five of each are shown, grouped; "See all" lists up to 50 of one kind. Loaded only when opened, so
+ * the entry script stays small.
  * ------------------------------------------------------------------ */
 
 interface SearchResult {
@@ -28,18 +29,32 @@ const KIND: Record<string, { icon: string; heading: string }> = {
   building: { icon: 'Building', heading: 'Buildings' },
   owner: { icon: 'UserRound', heading: 'Owners' },
   maintenance: { icon: 'Wrench', heading: 'Maintenance jobs' },
+  cleaning: { icon: 'Sparkles', heading: 'Cleaning jobs' },
+  expense: { icon: 'Wallet', heading: 'Expenses' },
+  bill: { icon: 'Lightbulb', heading: 'Utility bills' },
   project: { icon: 'FolderKanban', heading: 'Projects' },
   customer: { icon: 'Contact', heading: 'Customers' },
   quotation: { icon: 'FileText', heading: 'Quotations' },
   sales_order: { icon: 'ShoppingCart', heading: 'Sales orders' },
+  vo: { icon: 'FilePenLine', heading: 'VOs' },
   delivery_order: { icon: 'Truck', heading: 'Delivery orders' },
+  delivery_return: { icon: 'Undo2', heading: 'Delivery returns' },
   sales_invoice: { icon: 'Receipt', heading: 'Sales invoices' },
   service_case: { icon: 'Zap', heading: 'Service cases' },
+  consignment_order: { icon: 'Boxes', heading: 'Consignment orders' },
+  consignment_note: { icon: 'Boxes', heading: 'Consignment notes' },
+  consignment_return: { icon: 'Boxes', heading: 'Consignment returns' },
   purchase_order: { icon: 'ClipboardList', heading: 'Purchase orders' },
   grn: { icon: 'PackageCheck', heading: 'Goods receipts' },
   purchase_invoice: { icon: 'ReceiptText', heading: 'Purchase invoices' },
+  purchase_consignment_order: { icon: 'Boxes', heading: 'Purchase consignment orders' },
+  purchase_consignment_receive: { icon: 'Boxes', heading: 'Purchase consignment receives' },
+  purchase_consignment_return: { icon: 'Boxes', heading: 'Purchase consignment returns' },
   supplier: { icon: 'Factory', heading: 'Suppliers' },
   product: { icon: 'Package', heading: 'Products' },
+  stock_transfer: { icon: 'ArrowLeftRight', heading: 'Stock transfers' },
+  stock_take: { icon: 'ClipboardCheck', heading: 'Stock takes' },
+  stock_adjustment: { icon: 'SlidersHorizontal', heading: 'Stock adjustments' },
 };
 const KIND_ORDER = Object.keys(KIND);
 /** Shown per kind before "See all" (the server sends one more when there are more). */
@@ -53,6 +68,7 @@ function subline(r: SearchResult) {
   }
   if (r.kind === 'unit' && r.state) return `${r.sub} · ${stateLabel('readiness', r.state)}`;
   if (r.kind === 'maintenance' && r.state) return `${r.sub} · ${humanize(r.state)}`;
+  if (r.kind === 'cleaning' && r.state) return [r.sub, stateLabel('task', r.state), r.date ? date(r.date) : null].filter(Boolean).join(' · ');
   return [r.sub, r.date ? date(r.date) : null].filter(Boolean).join(' · ');
 }
 

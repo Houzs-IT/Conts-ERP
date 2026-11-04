@@ -88,7 +88,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         readiness: r.readiness, done: r.state === 'resolved', flag: sameDay ? 'Same-day turnaround' : null,
         requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count), afterCount: Number(r.after_count),
         checklist: { done: Number(r.ticks), total: standardItems(r.kind).length + Number(r.custom_items) },
-        guestOut, guestLeftAt: r.guest_left_at ?? null, guestLeftAuto: !!r.guest_left_at && r.guest_left_at.endsWith('+08:00'), previous: r.prev_guest ? { guestName: r.prev_guest, checkOutTime: r.prev_time || defaultOut, state: r.prev_state } : null,
+        guestOut, guestLeftAt: r.guest_left_at ?? null, guestLeftAuto: !!r.guest_left_at && r.guest_left_at.endsWith('+08:00'), previous: r.prev_guest ? { guestName: r.prev_guest, checkOutTime: r.prev_time || defaultOut, lateCheckOut: !!r.prev_time && r.prev_time > defaultOut, state: r.prev_state } : null,
         next: cin ? { guestName: r.next_guest, checkInTime: cin, checkInAt: `${r.day}T${cin}:00+08:00` } : null,
         nextLater: !cin && r.later_day ? { day: r.later_day, checkInTime: r.later_time || stdIn } : null,
         sync: r.state === 'resolved' ? 'synced' : r.sync === 'synced' ? null : r.sync,
