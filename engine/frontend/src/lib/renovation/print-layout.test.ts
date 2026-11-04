@@ -5,7 +5,7 @@
 //     37,215.52, each discounted line rounded to the sen); pages 2-8 as one line per page carrying that page's
 //     list and net totals (typed amount); last page TOTAL 137,866.56 / DISCOUNT 42,623.42 / FINAL 95,243.14.
 import { describe, expect, test } from 'vitest';
-import { layoutDocument, pageTotalSen, summaryRows } from './print-layout';
+import { closingHeight, layoutDocument, pageTotalSen, summaryRows } from './print-layout';
 import { buildRows, rmPlain } from './print-model';
 import { AVA, DC_REST, dclover, doc, item, kl48, RM, section, skyline } from './print-fixtures';
 
@@ -125,5 +125,14 @@ describe('the other formats', () => {
       if (p.rows.length) expect(p.rows.at(-1)!.type).not.toBe('band');
     }
     expect(layout.pages.reduce((s, p) => s + p.netSen, 0)).toBe(RM(800));
+  });
+});
+
+describe('closingHeight', () => {
+  test('leaves room for what the closing block draws', () => {
+    const wrap = () => ['one', 'two', 'three'];
+    const instalments = [1, 2, 3, 4].map((seq) => ({ seq, label: `${seq}`, pctBp: 2500, description: 'x' }));
+    const { height } = closingHeight({ promoLines: [], instalments, kind: 'SALES_ORDER' } as never, wrap);
+    expect(height).toBeCloseTo(6 + 10.5 + 4 * (3 * 3.9 + 1.2) + 4 + 34);
   });
 });

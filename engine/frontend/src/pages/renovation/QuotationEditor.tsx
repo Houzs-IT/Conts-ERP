@@ -193,7 +193,7 @@ export function QuotationEditor() {
           <div className="flex items-center justify-between gap-3"><span className="text-[13px] text-ink-secondary">Unsaved changes</span><Button icon={<Save size={15} />} disabled={run.isPending} onClick={save}>{run.isPending ? 'Saving…' : 'Save'}</Button></div>
         </div>
       )}
-      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="quotation" docNo={revision.docNo} defaultFormat={header.printFormat}
+      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="quotation" docNo={revision.docNo} brandName={brand?.name} defaultFormat={header.printFormat}
         build={(format) => buildPrintDoc({ kind: 'QUOTATION', docNo: revision.docNo, format, brand, header, sections, instalments })} />
     </div>
   );
