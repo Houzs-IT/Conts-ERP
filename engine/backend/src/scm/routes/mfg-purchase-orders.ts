@@ -1239,7 +1239,8 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
     purchase_location_id: purchaseLocationId,
   };
   // Optional poDate — if absent, the column default (now()) wins.
-  if (body.poDate) headerInsert.po_date = body.poDate;
+  /* The column's default is the database's UTC date, a day behind in Malaysia until 8am. */
+  headerInsert.po_date = body.poDate || todayMyt();
 
   /* Doc-no collision retry (2026-07-14): two buyers cutting a PO in the same
      company + YYMM both read the same max and mint the same po_number; without a
