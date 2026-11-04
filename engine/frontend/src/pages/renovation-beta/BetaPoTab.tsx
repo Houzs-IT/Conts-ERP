@@ -301,7 +301,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     l, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
     setEdit: (patch) => setEdit(l.id, patch), pick: () => setPicking(l), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
-    saveSupplier: (id) => void saveSupplier(l, id),
+    saveSupplier: (id) => void saveSupplier(l, id), suppliers: d.suppliers ?? [],
     grDocs: lineDocs(l.id, deliveries, "goods_received"), doDocs: lineDocs(l.id, deliveries, "delivery_order"), openDoc,
   });
 
@@ -598,6 +598,7 @@ interface RowCtx {
   saveDate: (which: DateField, value: string) => void;
   setNoPo: (v: boolean) => void;
   saveSupplier: (supplierId: string) => void;
+  suppliers: ReadonlyArray<{ id: string; name: string }>;
   grDocs: LineDoc[];
   doDocs: LineDoc[];
   openDoc: (tab: DocTab, no: string) => void;
@@ -827,21 +828,23 @@ function PoCell({ r }: { r: RowCtx }): ReactElement {
   return <span style={metaStyle}>{r.l.plan.noPo ? "No PO" : "-"}</span>;
 }
 
-/** Who the line is bought from, before Create PO: only the suppliers the SKU is bound to, main first and starred
-    (owner, 3 Nov 2026). A SKU with none bound has nothing to pick and says where to add one. */
+/** Who the line is bought from, before Create PO: the SKU's bound suppliers, main first and starred, then every other
+    supplier (owner, 4 Nov 2026). Picking one of those binds it to the SKU. */
 function SupplierPick({ r }: { r: RowCtx }): ReactElement {
   const choices = r.l.supplierChoices ?? [];
-  if (choices.length === 0) {
+  const others = r.suppliers.filter((s) => !choices.some((c) => c.id === s.id));
+  if (choices.length === 0 && others.length === 0) {
     return <span role="note" title="No supplier bound to this SKU: add one in the SKU's suppliers" style={{ fontSize: 11.5, color: WS.amber, lineHeight: 1.25 }}>No supplier bound to this SKU: add one in the SKU's suppliers</span>;
   }
   const busy = r.busyKey === `${r.l.id}:supplier`;
-  const picked = choices.some((c) => c.id === r.l.supplierId) ? r.l.supplierId ?? "" : "";
+  const picked = [...choices, ...others].some((c) => c.id === r.l.supplierId) ? r.l.supplierId ?? "" : "";
   return (
     <select aria-label={`Supplier for ${r.l.itemCode}`} value={picked} disabled={busy} onChange={(ev) => r.saveSupplier(ev.target.value)}
       title={picked ? undefined : "No supplier on this line yet: Create PO leaves it out until one is picked"}
       style={{ ...editInput, width: "100%", height: 26, minHeight: 26, fontSize: 12, color: picked ? undefined : WS.amber }}>
       {!picked && <option value="">{busy ? "Saving..." : "Pick a supplier"}</option>}
       {choices.map((c) => <option key={c.id} value={c.id}>{c.main ? "\u2605 " : ""}{c.name}{c.main ? " (main)" : ""}</option>)}
+      {others.length > 0 && <optgroup label="Other suppliers">{others.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>}
     </select>
   );
 }
