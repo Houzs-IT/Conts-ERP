@@ -1,4 +1,4 @@
--- REVERSAL: alter table scm.journal_entry_lines, scm.payment_voucher_lines, scm.acc_receipt_lines, scm.ap_invoice_lines, scm.acc_debtor_bill_lines, scm.staff_receipt_lines, scm.payment_request_lines drop column sub_department_id (each); drop table scm.acc_sub_departments;
+-- REVERSAL: recreate scm.v_gl_entries as in 0134 (without sub_department_id); alter table scm.journal_entry_lines, scm.payment_voucher_lines, scm.acc_receipt_lines, scm.ap_invoice_lines, scm.acc_debtor_bill_lines, scm.staff_receipt_lines, scm.payment_request_lines drop column sub_department_id (each); drop table scm.acc_sub_departments;
 -- Sub-departments (SOP 1.1; chew 4 Nov 2026; spec docs/superpowers/specs/2026-11-04-sub-departments-design.md). Each
 -- ledger line names a sub-department under its department: Rental (general) / Maintenance / Cleaning under Rental,
 -- Renovation (Dream Crafter) / In-house Reno (The Conts) under Renovation (`supply`), Company under Company (`shared`).
@@ -55,5 +55,36 @@ alter table scm.ap_invoice_lines      add column if not exists sub_department_id
 alter table scm.acc_debtor_bill_lines add column if not exists sub_department_id uuid references scm.acc_sub_departments(id);
 alter table scm.staff_receipt_lines   add column if not exists sub_department_id uuid references scm.acc_sub_departments(id);
 alter table scm.payment_request_lines add column if not exists sub_department_id uuid references scm.acc_sub_departments(id);
+
+-- The profit and loss reads the ledger through this view: it gains the column last; the rest is 0134's, unchanged
+-- (checked against production 4 Nov 2026). create or replace keeps its grants.
+create or replace view scm.v_gl_entries as
+ select l.id as line_id,
+    j.je_no,
+    j.entry_date,
+    j.source_type,
+    j.source_doc_no,
+    l.line_no,
+    l.account_code,
+    a.account_name,
+    a.account_type,
+    l.debit_sen,
+    l.credit_sen,
+    l.party_type,
+    l.party_code,
+    l.party_name,
+    l.notes,
+    j.posted,
+    j.posted_at,
+    j.company_id,
+    j.reversed,
+    j.reversed_by_je,
+    l.department,
+    l.sub_department_id
+   from scm.journal_entry_lines l
+     join scm.journal_entries j on j.id = l.journal_entry_id
+     join scm.accounts a on a.account_code = l.account_code and a.company_id = j.company_id
+  where j.posted = true
+  order by j.entry_date desc, j.je_no desc, l.line_no;
 
 notify pgrst, 'reload schema';

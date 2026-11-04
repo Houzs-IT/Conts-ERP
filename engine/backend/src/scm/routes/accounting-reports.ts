@@ -63,6 +63,7 @@
 // report.
 // ----------------------------------------------------------------------------
 
+import { loadSubDepartments } from '../../conts/sub-departments';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { paginateAll } from '../lib/paginate-all';
@@ -93,6 +94,8 @@ export async function loadSums(
   to: string | null,
   /** Conts (spec 3.5): only this department's lines; null = the whole company. */
   department: Department | null = null,
+  /** Conts (SOP 1.1): only this sub-department's lines; a built-in one also takes its department's lines naming none. */
+  sub: SubFilter | null = null,
 ): Promise<{ ok: true; sums: SumRow[] } | { ok: false; reason: string }> {
   const { data, error } = await paginateAll((f, t) => {
     let q = sb.from('v_gl_entries')
@@ -101,6 +104,7 @@ export async function loadSums(
     if (from) q = q.gte('entry_date', from);
     if (to) q = q.lte('entry_date', to);
     if (department) q = q.eq('department', department);
+    if (sub) q = sub.builtIn ? q.or(`sub_department_id.eq.${sub.id},sub_department_id.is.null`) : q.eq('sub_department_id', sub.id);
     return q.range(f, t);
   });
   if (error) return { ok: false, reason: (error as { message?: string }).message ?? String(error) };
@@ -174,9 +178,12 @@ export type ReportSources = {
   ledger: () => Promise<{ ok: true; settings: LedgerSettings } | Fail>;
 };
 
+/** One sub-department to read (SOP 1.1); `builtIn`: its department's lines naming none count as it. */
+export type SubFilter = { id: string; builtIn: boolean };
+
 /** The database, as the routes read it. */
-export const dbSources = (sb: Sb, companyId: number, layoutIds: number[], department: Department | null = null): ReportSources => ({
-  sums: (from, to) => loadSums(sb, companyId, from, to, department),
+export const dbSources = (sb: Sb, companyId: number, layoutIds: number[], department: Department | null = null, sub: SubFilter | null = null): ReportSources => ({
+  sums: (from, to) => loadSums(sb, companyId, from, to, department, sub),
   accounts: () => loadAccounts(sb, companyId),
   roles: () => resolveRoles(sb, companyId),
   /* Stock is the supply chain's (Conts, spec 3.5): Rental and Shared hold none, and their closing is never provisional. */
@@ -347,10 +354,21 @@ export const pnlReport = async (c: any): Promise<Response> => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
     return c.json({ error: 'bad_range', message: 'from and to must be YYYY-MM-DD.' }, 400);
   }
-  const department = departmentQuery(c.req.query('department'));
+  let department = departmentQuery(c.req.query('department'));
   if (department === false) return c.json(BAD_DEPARTMENT, 400);
   const sb = c.get('supabase');
-  const r = await buildPnl(dbSources(sb, co.companyId, allowedIds(c), department), co.companyId, from, to);
+  /* Conts (SOP 1.1): one sub-department's P&L; its department follows from it. */
+  let sub: SubFilter | null = null;
+  const subId = String(c.req.query('subDepartment') ?? '').trim();
+  if (subId) {
+    const list = await loadSubDepartments(sb, co.companyId);
+    if (!list.ok) return c.json({ error: 'load_failed', reason: list.error }, 500);
+    const s = list.list.find((x) => x.id === subId);
+    if (!s) return c.json({ error: 'bad_sub_department', message: 'Choose a department from the list.' }, 400);
+    department = s.department;
+    sub = { id: s.id, builtIn: s.fixedKey != null };
+  }
+  const r = await buildPnl(dbSources(sb, co.companyId, allowedIds(c), department, sub), co.companyId, from, to);
   if (!r.ok) return c.json({ error: 'load_failed', reason: r.reason }, 500);
   return c.json(r.report);
 };

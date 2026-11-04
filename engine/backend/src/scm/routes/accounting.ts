@@ -34,6 +34,7 @@ import { einvoiceOutboxGet, einvoiceOutboxList, einvoiceRefresh, einvoiceSetting
 import { renoProjectsHandler } from '../../acc/reno-projects';
 import { listUnitsHandler } from '../../conts/units-route';
 import { rentalUnitCostsHandler } from '../../acc/rental-unit-costs';
+import { noUnitCostsHandler, subDepartmentSpendHandler } from '../../acc/sub-department-spend';
 import {
   changeExpectedCostHandler, expectedCostLogHandler, getAlertSettingsHandler, keepCostAlertHandler, listCostAlertsHandler,
   pendingCostAlertsHandler, putAlertSettingsHandler,
@@ -243,6 +244,9 @@ accounting.get('/projects', listProjectsHandler);
 accounting.get('/units', listUnitsHandler);
 /* Rental costs by unit (chew 2 Nov 2026; finance only) — acc/rental-unit-costs.ts. */
 accounting.get('/rental-unit-costs', rentalUnitCostsHandler);
+/* Spending by sub-department, and a team's costs with no unit (SOP 1.1) — acc/sub-department-spend.ts. */
+accounting.get('/reports/sub-departments', subDepartmentSpendHandler);
+accounting.get('/no-unit-costs', noUnitCostsHandler);
 accounting.get('/everyday-expense', listEverydayExpenseHandler);
 accounting.put('/everyday-expense', setEverydayExpenseHandler);
 accounting.get('/project-limit-settings', getLimitSettingsHandler);

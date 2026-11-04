@@ -317,6 +317,42 @@ describe('the P&L by department', () => {
   });
 });
 
+/* By sub-department (SOP 1.1; chew 4 Nov 2026): one sub-department's P&L; a built-in one also counts its department's
+   lines that name none (they read as it). */
+describe('the P&L by sub-department', () => {
+  const ROWS: Row[] = [
+    gl('590-0000', 'INCOME', 0, 150_000, { department: 'rental' }),
+    gl('310-0010', 'ASSET', 150_000, 0, { department: 'rental' }),
+    gl('900-A001', 'EXPENSE', 5_000, 0, { department: 'rental', sub_department_id: 's-cln' }),
+    gl('900-A001', 'EXPENSE', 3_000, 0, { department: 'rental' }),
+    gl('310-0010', 'ASSET', 0, 8_000, { department: 'rental' }),
+  ];
+  const SUBS: Row[] = [
+    { id: 's-gen', company_id: CO, department: 'rental', name: 'Rental (general)', fixed_key: 'rental_general', staff_department_id: null, active: true, sort: 10 },
+    { id: 's-cln', company_id: CO, department: 'rental', name: 'Cleaning', fixed_key: null, staff_department_id: null, active: true, sort: 20 },
+  ];
+  type Pnl = { otherIncome: Line[]; expenses: Line[]; costOfSales: Line[] };
+  const pnl = async (app: Hono, q: string) => (await app.request(`/accounting/reports/pnl?from=2026-08-01&to=2026-08-31&${q}`));
+
+  test('Cleaning counts only its own lines; Rental (general) also those that name none', async () => {
+    const { app, sb } = harness(ROWS);
+    Object.assign(sb.tables, { acc_sub_departments: SUBS });
+    const cln = await (await pnl(app, 'subDepartment=s-cln')).json() as Pnl;
+    expect(cln.expenses.map((l) => [l.code, l.amountSen])).toEqual([['900-A001', 5_000]]);
+    expect(cln.otherIncome).toEqual([]);
+    expect(cln.costOfSales).toEqual([]);
+    const gen = await (await pnl(app, 'subDepartment=s-gen')).json() as Pnl;
+    expect(gen.expenses.map((l) => [l.code, l.amountSen])).toEqual([['900-A001', 3_000]]);
+    expect(gen.otherIncome.map((l) => [l.code, l.amountSen])).toEqual([['590-0000', 150_000]]);
+  });
+
+  test('an unknown sub-department is a 400', async () => {
+    const { app, sb } = harness(ROWS);
+    Object.assign(sb.tables, { acc_sub_departments: SUBS });
+    expect((await pnl(app, 'subDepartment=nope')).status).toBe(400);
+  });
+});
+
 /* The fiscal year on the balance sheet (spec 3.7): earnings split at the start of the fiscal year the date falls
    in — retained earnings before it, profit this year from it — and the two add up to the earnings, so the
    self-check still reads zero. Conts ends its year in August (the default). */
