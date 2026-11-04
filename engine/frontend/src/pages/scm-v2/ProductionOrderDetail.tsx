@@ -930,7 +930,7 @@ export const ProductionOrderDetail = () => {
                 <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
                   {po.supplier?.name ?? po.supplier?.code ?? po.po_number}
                 </h1>
-                <StatusPill docType="po" status={po.status} />
+                <StatusPill docType="production" status={po.status} />
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-secondary">
                 <span className="font-mono font-semibold text-primary-ink text-[15px]">

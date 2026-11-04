@@ -144,7 +144,7 @@ const STATUS_TONE: Record<
   { tone: "success" | "warning" | "error" | "neutral"; label: string; bucket: StatusTab }
 > = {
   DRAFT:              { tone: "warning", label: "Draft",              bucket: "draft" },
-  SUBMITTED:          { tone: "warning", label: "In production",          bucket: "open" },
+  SUBMITTED:          { tone: "warning", label: "Submitted",              bucket: "open" },
   PARTIALLY_RECEIVED: { tone: "warning", label: "Partially received", bucket: "partial" },
   RECEIVED:           { tone: "success", label: "Complete",           bucket: "received" },
   CANCELLED:          { tone: "error",   label: "Cancelled",          bucket: "cancelled" },
@@ -1364,7 +1364,7 @@ export function ProductionOrdersListV2() {
           />
           <StatCard
             pending={statsPending} {...statsFail}
-            label="In production"
+            label="Submitted"
             value={fmtRm(money.outstanding)}
             subtitle={
               visible.filtered

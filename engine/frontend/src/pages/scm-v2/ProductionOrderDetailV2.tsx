@@ -15,7 +15,7 @@ import { LazySlot } from "../../components/LazySlot";
 import { useStaffLookup } from "../../hooks/useStaffLookup";
 import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
 import { ProductionMaterialsSection } from "./ProductionMaterialsSection";
-import { SoAddressFields, SoCustomerFields, SoDetailHeader, SoOrderInfoFields } from "./soDetailParts";
+import { ActivityRow, SoAddressFields, SoCustomerFields, SoDetailHeader, SoOrderInfoFields } from "./soDetailParts";
 import { scmListReturnTo } from "../../lib/scmListReturn";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { formatPhone } from "@2990s/shared/phone";
@@ -26,7 +26,6 @@ import {
   Mail,
   XCircle,
   Edit3,
-  CircleDot,
   Phone as PhoneIcon,
   MoreHorizontal,
   CheckCircle2,
@@ -144,7 +143,7 @@ const EFFECTIVE_TONE: Record<
   { tone: "success" | "warning" | "error" | "neutral"; label: string; blurb: string }
 > = {
   draft: { tone: "warning", label: "Draft", blurb: "Draft · not started" },
-  submitted: { tone: "warning", label: "In production", blurb: "In production" },
+  submitted: { tone: "warning", label: "Submitted", blurb: "Submitted · in production" },
   partial: { tone: "warning", label: "Partially received", blurb: "Partially received · balance still due" },
   received: { tone: "success", label: "Complete", blurb: "Complete" },
   cancelled: { tone: "error", label: "Cancelled", blurb: "Cancelled · no further action" },
@@ -156,7 +155,7 @@ const EFFECTIVE_TONE: Record<
 
 const STAGE_LABEL: Record<string, string> = {
   DRAFT: "Draft",
-  SUBMITTED: "In production",
+  SUBMITTED: "Submitted",
   PARTIALLY_RECEIVED: "Partially received",
   RECEIVED: "Complete",
   CANCELLED: "Cancelled",
@@ -254,37 +253,6 @@ function PersonRow({
       <div className="min-w-0">
         <div className="truncate text-[13px] font-semibold text-ink">{name}</div>
         <div className="truncate text-[11.5px] text-ink-muted">{role}</div>
-      </div>
-    </div>
-  );
-}
-
-type ActivityDot = "success" | "primary" | "muted";
-const DOT_CLS: Record<ActivityDot, string> = {
-  success: "bg-synced",
-  primary: "bg-primary",
-  muted: "bg-border-strong",
-};
-function ActivityRow({
-  title,
-  meta,
-  dot,
-  isLast,
-}: {
-  title: string;
-  meta: string;
-  dot: ActivityDot;
-  isLast?: boolean;
-}) {
-  return (
-    <div className="flex gap-3 pb-3.5">
-      <div className="flex flex-col items-center">
-        <span className={cn("mt-1 h-2 w-2 rounded-full", DOT_CLS[dot])} />
-        {!isLast && <span className="mt-1 w-[2px] flex-1 bg-border-subtle" />}
-      </div>
-      <div className="min-w-0">
-        <div className="text-[12.5px] font-semibold text-ink">{title}</div>
-        <div className="mt-0.5 text-[11px] text-ink-muted">{meta}</div>
       </div>
     </div>
   );
@@ -872,8 +840,8 @@ function ProductionOrderDetailV2ReadOnly() {
         docNo={purchaseOrder.po_number}
         status={{ tone: badgeTone, label: stageLabel }}
         meta={[
-          `Ordered ${fmtDate(purchaseOrder.po_date)}`,
-          ...(purchaseOrder.expected_at ? [`Complete by ${fmtDate(purchaseOrder.expected_at)}`] : []),
+          `Production Order date ${fmtDate(purchaseOrder.po_date)}`,
+          ...(purchaseOrder.expected_at ? [`Completion date ${fmtDate(purchaseOrder.expected_at)}`] : []),
           `${items.length} line${items.length === 1 ? "" : "s"}`,
         ]}
         onBack={goBack}
@@ -960,8 +928,8 @@ function ProductionOrderDetailV2ReadOnly() {
                 <Field
                   label="Ship-to warehouse"
                   value={purchaseOrder.purchase_location_id
-                    ? (warehouseNameById.get(purchaseOrder.purchase_location_id) ?? (warehousesQ.isLoading ? "Loading…" : "—"))
-                    : "—"}
+                    ? (warehouseNameById.get(purchaseOrder.purchase_location_id) ?? (warehousesQ.isLoading ? "Loading…" : "Not set"))
+                    : "Not set"}
                   muted={!purchaseOrder.purchase_location_id}
                 />
               </div>
@@ -991,7 +959,7 @@ function ProductionOrderDetailV2ReadOnly() {
             <Section title={`Works · ${items.length}`}>
               {/* Revision-pending / SO-drift banner (owner 2026-07-27). A pending
                   SO amendment means this Production Order must be re-approved before the
-                  supplier builds the new spec; surface it here (the editor
+                  new spec is built; surface it here (the editor
                   already did) with a jump to the amendment. Shows when the Production Order
                   carries a pending amendment OR any line has drifted from its SO. */}
               {(openAmendment || driftCount > 0) && (
@@ -1001,12 +969,12 @@ function ProductionOrderDetailV2ReadOnly() {
                     {driftCount > 0 ? (
                       <>
                         <strong>{driftCount}</strong> line{driftCount === 1 ? "'s" : "s"} source SO changed after this
-                        Production Order was raised — check the red notes below, sync the specs, then <strong>re-send to the supplier</strong>.
+                        Production Order was raised — check the red notes below, then <strong>update the works</strong>.
                       </>
                     ) : (
                       <>
                         The source Sales Order has a pending revision — <strong>approve this Production Order</strong> to apply the
-                        supplier-confirmed changes before the factory builds.
+                        changes before the work goes ahead.
                       </>
                     )}
                   </span>
@@ -1041,7 +1009,7 @@ function ProductionOrderDetailV2ReadOnly() {
 
               <AsideCard title="Key dates">
                 <KeyDateRow k="Production Order date" v={fmtDate(purchaseOrder.po_date)} />
-                <KeyDateRow k="Completion date" v={fmtDate(purchaseOrder.expected_at)} muted={!purchaseOrder.expected_at} />
+                <KeyDateRow k="Completion date" v={purchaseOrder.expected_at ? fmtDate(purchaseOrder.expected_at) : "Not set"} muted={!purchaseOrder.expected_at} />
                 {purchaseOrder.submitted_at && (
                   <KeyDateRow
                     k="Issued"
@@ -1176,10 +1144,10 @@ function ProductionOrderDetailV2ReadOnly() {
           (purchaseOrder as unknown as { revision?: number | null }).revision
         )}
         rows={[
-          { label: "Supplier", value: supplierNameOf(purchaseOrder) },
+          { label: "Done by", value: supplierNameOf(purchaseOrder) },
           { label: "Production Order date", value: fmtDate(purchaseOrder.po_date) },
           {
-            label: "Expected",
+            label: "Completion date",
             value: purchaseOrder.expected_at ? fmtDate(purchaseOrder.expected_at) : "Not set",
           },
           { label: "Items", value: `${items.length} line${items.length === 1 ? "" : "s"}` },
@@ -1191,14 +1159,6 @@ function ProductionOrderDetailV2ReadOnly() {
         {...print.handlers}
       />
     </div>
-  );
-}
-
-function Divider() {
-  return (
-    <span className="inline-flex items-center text-border-strong">
-      <CircleDot size={4} className="mx-0.5 opacity-40" />
-    </span>
   );
 }
 

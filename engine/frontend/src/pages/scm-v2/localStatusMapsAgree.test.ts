@@ -281,6 +281,7 @@ describe('no page spells a status differently from status-pill.ts', () => {
  * instead of being skipped. */
 const STAGE_MAP_DOC: Record<string, StatusDocType> = {
   'pages/scm-v2/PurchaseOrderDetailV2.tsx': 'po',
+  'pages/scm-v2/ProductionOrderDetailV2.tsx': 'production',
   'pages/scm-v2/DeliveryOrderDetailV2.tsx': 'do',
   'pages/scm-v2/DeliveryReturnDetailV2.tsx': 'dr',
   'pages/scm-v2/GoodsReceivedDetailV2.tsx': 'grn',
