@@ -597,5 +597,5 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - One SO interface, still different: read page and editor are two components (same order and wording, not the same markup); phones keep MobileSODetail and the stand-alone contract page; the editor counts cancelled lines (Line Items 6 against 4 on TC-SO-2611-001).
 
 ## Messages access (owner, 4 Nov 2026)
-- Messages is for customer service, operation and management. Migration 0207 opens it for Property Management and its Customer Service position; Procurement stays closed. The Admin department (4 staff) is not opened: the owner confirms whether they count as operation.
+- Messages is for customer service, operation and management. Migration 0207 opens it for Property Management and its Customer Service position; Procurement stays closed. The Admin department (4 staff) counts as operation (owner, 4 Nov 2026): migration 0212 opens it.
 - Production orders started as a clone of the PO module (owner, 4 Nov 2026). Raw materials, MRP demand, Complete (GRN and delivered DO) and the photo flow are live. Actual vs budget is not built; branch wip/production-materials-mrp is superseded apart from that idea and can be dropped once the owner agrees.
