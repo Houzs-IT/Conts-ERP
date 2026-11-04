@@ -240,7 +240,7 @@ function Summary({
   reason: string | null | undefined;
   /** Option B (2026-09-15): the requester's doubt about the approver, SO rows only. */
   laneFlagNote?: string | null;
-  resolution: "REJECTED" | "WITHDRAWN" | null;
+  resolution: "REJECTED" | "WITHDRAWN" | "RENOVATION_VO" | null;
   rejectionReason: string | null;
   extra: { k: string; v: string } | null;
 }) {
