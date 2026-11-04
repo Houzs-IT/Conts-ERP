@@ -148,6 +148,23 @@ describe('the proof photos', () => {
   });
 });
 
+describe('the delivery order closing', () => {
+  it('shares its page with the last photos, never a page of its own', async () => {
+    const { renderDeliveryOrderInto } = await import('./delivery-order-pdf');
+    type A = Parameters<typeof renderDeliveryOrderInto>;
+    for (const count of [3, 6, 11]) {
+      listing = { ready: true, files: many('d', count), lines: [{ id: LINE, files: [] }] };
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      await renderDeliveryOrderInto(doc, autoTable as unknown as A[1],
+        { id: 'do-1', do_number: 'TC-DO-1', debtor_name: 'TEST', status: 'DRAFT' } as unknown as A[2], [item] as unknown as A[3]);
+      const pages = (doc as unknown as { internal: { pages: Array<string[] | null> } }).internal.pages;
+      const last = (pages.at(-1) ?? []).join(' ');
+      expect(last).toContain('Customer Acknowledged Receipt');
+      expect(last).toMatch(/\/I\d+ Do/);
+    }
+  });
+});
+
 describe('a document with no address of its own', () => {
   it('a consignment receive (no id) asks for no photos', async () => {
     const { loadDocPdfPhotos } = await import('./pdf-doc-photos');

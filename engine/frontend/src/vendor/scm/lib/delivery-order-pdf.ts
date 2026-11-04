@@ -656,7 +656,9 @@ export async function renderDeliveryOrderInto(
       margin: M,
       contentW: CONTENT_W,
       startY: finalY + 6,
-      pageBottom: FOOTER_RULE_Y - 6, // the items table's own bottom rail
+      /* Above the closing, so the last photos and the signature share a page: photos running past it left a page
+         holding only the signature. */
+      pageBottom: CLOSING_TOP,
       pageTop: M,
       side: null,
       onNewPage: null,
