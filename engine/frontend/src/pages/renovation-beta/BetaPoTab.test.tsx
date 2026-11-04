@@ -18,6 +18,7 @@ vi.mock("../../api/client", async (importOriginal) => {
   };
   const put = async (path: string, body: unknown): Promise<unknown> => {
     h.puts.push([path, body]);
+    if (path.endsWith("/line-plans")) return { ok: true, saved: (body as { itemIds: string[] }).itemIds, refused: [] };
     if (path.endsWith("/supplier")) { SUPPLIER.lines[1].supplierId = "s2"; return { ok: true, supplierId: "s2", supplierName: "Other Co" }; }
     return { ok: true, plan: {} };
   };
@@ -67,7 +68,7 @@ const LINES = {
   ],
 };
 
-const PO = { poId: "po9", poNumber: "TC-PO-2611-001", poStatus: "RECEIVED", poLineId: "pl9", poDate: "2026-11-01", deliveryDate: "2026-11-05", supplierRevised: false, qty: 1, received: 1, photoKeys: [] };
+const PO = { poId: "po9", poNumber: "TC-PO-2611-001", poStatus: "RECEIVED", poLineId: "pl9", poDate: "2026-11-01", deliveryDate: "2026-11-05", supplierRevised: false, qty: 1, received: 0, photoKeys: [] };
 const FURNITURE = {
   ...LINES,
   lines: [
@@ -132,7 +133,7 @@ describe("PO tab", () => {
     fireEvent.change(all, { target: { value: "2026-11-20" } });
     await waitFor(() => expect(h.patches.length + h.puts.length).toBe(2));
     expect(h.patches).toEqual([["/mfg-purchase-orders/po1/items/pl1", { deliveryDate: "2026-11-20" }]]);
-    expect(h.puts).toEqual([["/api/beta/projects/7/lines/b/plan", { deliverOn: "2026-11-20" }]]);
+    expect(h.puts).toEqual([["/api/beta/projects/7/line-plans", { itemIds: ["b"], deliverOn: "2026-11-20" }]]);
     // Both lines show the band's date at once, before any reload answers.
     await waitFor(() => expect(within(region).getByLabelText("Delivery date for LT-2")).toHaveProperty("value", "2026-11-20"));
     expect(within(region).getByLabelText("Delivery date on TC-PO-2610-006 for LT-1")).toHaveProperty("value", "2026-11-20");
@@ -172,6 +173,34 @@ describe("PO tab", () => {
       ["/renovation-so-info/TC-SO-1/lines/sofa/spec", { variants: { colourId: "PC1461-03", fabricId: "PC1461", fabricCode: "PC1461-03", colourLabel: "PC1461-03", fabricLabel: "PC1461", seatHeight: "24", legHeight: "Default" } }],
       ["/renovation-so-info/TC-SO-1/lines/bed/spec", { variants: { fabricCode: "PC1461-01", divanHeight: '6"', legHeight: '1"', gap: '4"', totalHeight: '11"' } }],
     ]);
+    h.furniture = false;
+  });
+
+  it("moves a column by dragging its header, and Reset columns puts it back", async () => {
+    renderTab();
+    const region = await screen.findByRole("region", { name: "Sales order lines" });
+    const heads = (): (string | null)[] => within(region).getAllByRole("columnheader").map((h) => h.textContent);
+    expect(heads()[0]).toBe("SKU");
+    fireEvent.pointerDown(within(region).getByRole("columnheader", { name: "PO" }));
+    const sku = within(region).getByRole("columnheader", { name: "SKU" });
+    fireEvent.pointerEnter(sku);
+    fireEvent.pointerUp(sku);
+    expect(heads()[0]).toBe("PO");
+    fireEvent.click(screen.getByRole("button", { name: "Reset columns" }));
+    expect(heads()[0]).toBe("SKU");
+  });
+
+  it("locks the SKU and variants of a line with goods received; the qty stays editable", async () => {
+    h.furniture = true;
+    PO.received = 1;
+    renderTab();
+    const region = await screen.findByRole("region", { name: "Sales order lines" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(within(region).queryByRole("button", { name: "Change variants of BED-HKA-1003-(K)" })).toBeNull();
+    expect(within(region).queryByRole("button", { name: "Change SKU BED-HKA-1003-(K)" })).toBeNull();
+    expect(within(region).getByRole("button", { name: "Change variants of SOF-GEN-3S" })).toBeTruthy();
+    expect(within(region).getByLabelText("Qty for BED-HKA-1003-(K)")).toBeTruthy();
+    PO.received = 0;
     h.furniture = false;
   });
 

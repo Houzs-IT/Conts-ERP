@@ -90,6 +90,9 @@ export const linesApi = {
   lines: (projectId: number): Promise<LinesAnswer> => api.get<LinesAnswer>(`${B}/projects/${projectId}/lines`),
   savePlan: (projectId: number, itemId: string, b: Partial<LinePlan>): Promise<{ ok: true; plan: LinePlan }> =>
     api.put<{ ok: true; plan: LinePlan }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/plan`, b),
+  /** One date on many lines in one request: a band's date, which each line's own request made slow (owner, 4 Nov 2026). */
+  savePlans: (projectId: number, itemIds: readonly string[], b: Partial<LinePlan>): Promise<{ ok: true; saved: string[]; refused: { itemCode: string; reason: string }[] }> =>
+    api.put<{ ok: true; saved: string[]; refused: { itemCode: string; reason: string }[] }>(`${B}/projects/${projectId}/line-plans`, { itemIds, ...b }),
   /** The supplier of a contract line, from the SKU's bound suppliers (backend renovationBeta.ts PUT .../supplier). */
   saveSupplier: (projectId: number, itemId: string, supplierId: string): Promise<{ ok: true; supplierId: string; supplierName: string }> =>
     api.put<{ ok: true; supplierId: string; supplierName: string }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/supplier`, { supplierId }),
@@ -393,6 +396,12 @@ export function byCategory(items: readonly ManagedLine[]): CategoryBlock[] {
 export function livePo(l: Pick<ManagedLine, "pos">): LinePo | null {
   return l.pos.find((p) => p.poStatus !== "CANCELLED") ?? null;
 }
+
+/** Goods received fix a line's SKU, options and price (owner, 4 Nov 2026); the server refuses too (renovation-spec-lock.ts). */
+export function specLocked(l: Pick<ManagedLine, "pos">): boolean {
+  return l.pos.some((p) => p.poStatus !== "CANCELLED" && p.received > 0);
+}
+export const SPEC_LOCKED_NOTE = "Goods received: the SKU, options and price are locked.";
 
 /** A line's dates. Processing (when to order) is always the line's own plan. Delivery is the PO line's once a PO
     holds it (changed on the PO), else the plan. */

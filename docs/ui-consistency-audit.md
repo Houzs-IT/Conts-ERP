@@ -164,3 +164,7 @@ Decision for the owner: a single button, badge and table across both builds. Opt
 2. **Share the small pieces only.** Badge and EmptyState (47 engine files) move to one component; Button and DataTable stay. Moderate; loses file-by-file Houzs updates for those two.
 3. **One component set.** Engine screens move to Property OS components (about 180 file-level imports, including the 78-table DataTable). Largest; ends Houzs updates for those screens.
 Recommendation: option 1, unless changes to button or table shape turn out to be frequent.
+
+## Decision (owner, 4 Nov 2026)
+
+Property OS and the engine keep two component sets (buttons, badges, tables, empty states, skeletons, page headers) with a shared look: colours, formats, wording and order come from one source. Merging them would rewrite engine screens that still take Houzs fixes file by file. A change to a button's shape is made twice; revisit if such changes become frequent.

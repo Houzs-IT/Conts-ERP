@@ -86,7 +86,7 @@ describe('every document that CAN add a line offers it from the page you start o
     'pages/scm-v2/GoodsReceivedDetailV2.tsx',
     'pages/scm-v2/PurchaseInvoiceDetailV2.tsx',
     'pages/scm-v2/PurchaseOrderDetailV2.tsx',
-    'pages/scm-v2/SalesOrderDetailV2.tsx',
+    'pages/scm-v2/SalesOrderDetail.tsx',
   ];
   const EDITORS = [
     'pages/scm-v2/GoodsReceivedDetail.tsx',
