@@ -702,9 +702,12 @@ function GuestPhoneRow({ guestId, phone, onSaved }: { guestId: string; phone: st
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(phone ?? '');
+  // What was just saved shows at once; the drawer's reload can answer with the row as it was a moment ago.
+  const [saved, setSaved] = useState<string | null | undefined>(undefined);
+  const shown = saved !== undefined ? saved : phone;
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (!editing) setValue(phone ?? ''); }, [phone, editing]);
+  useEffect(() => { if (!editing) setValue(shown ?? ''); }, [shown, editing]);
   async function save() {
     const problem = value.trim() ? phoneProblem(value) : undefined;
     if (problem) { setError(problem); return; }
@@ -712,6 +715,7 @@ function GuestPhoneRow({ guestId, phone, onSaved }: { guestId: string; phone: st
     try {
       await api.patch(`/guests/${encodeURIComponent(guestId)}`, { phone: value.trim() || null });
       toast({ tone: 'success', title: value.trim() ? 'Phone saved on the guest.' : 'Phone removed from the guest.' });
+      setSaved(value.trim() || null);
       setEditing(false);
       onSaved();
     } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); }
@@ -732,9 +736,9 @@ function GuestPhoneRow({ guestId, phone, onSaved }: { guestId: string; phone: st
     <div className="flex justify-between items-center gap-3">
       <span className="text-muted-ink">Phone</span>
       <span className="flex items-center gap-2 min-w-0">
-        <span className="text-right break-all"><PhoneText value={phone} className="text-ink" /></span>
+        <span className="text-right break-all"><PhoneText value={shown} className="text-ink" /></span>
         <button type="button" onClick={() => setEditing(true)} className="p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer whitespace-nowrap">
-          {phone ? 'Edit' : 'Add phone'}
+          {shown ? 'Edit' : 'Add phone'}
         </button>
       </span>
     </div>
