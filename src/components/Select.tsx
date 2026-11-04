@@ -87,7 +87,8 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
   useEffect(() => { setActive(0); }, [q]);
 
   const close = () => { setOpen(false); setQ(''); };
-  const choose = (o?: SelectOption) => { if (!o || o.disabled) return; onChange(o.value); close(); };
+  // The list floats outside any dialog, so a pick has to tell the dialog around the button that something changed.
+  const choose = (o?: SelectOption) => { if (!o || o.disabled) return; onChange(o.value); button.current?.dispatchEvent(new Event('change', { bubbles: true })); close(); };
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { e.preventDefault(); close(); button.current?.focus(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, shown.length - 1)); }

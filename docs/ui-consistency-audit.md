@@ -19,11 +19,12 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
 1. **fixed (#593).** 19 form dialogs each built their own frame, so Escape, the backdrop and focus behaved
    differently from one to the next. Five ignored Escape entirely: Add / edit expense (`ExpensesPage.tsx`), catalog
    item (`MaintenanceCatalog.tsx`), Owner default operator share (`OwnerProfilePage.tsx`), Add a bill
-   (`owners/Costs.tsx`), Start payout run (`PayoutsPage.tsx`). The shared `Modal` (34 dialogs) did not move focus in
+   (`owners/Costs.tsx`), Start payout run (`PayoutsPage.tsx`). The shared `Modal` did not move focus in
    or back. In every one, a stray click on the dimmed backdrop threw away a half-filled form.
    Now one frame, `DialogFrame` in `src/components/Modal.tsx`: focus goes to the first field and back on close, Tab
-   stays inside, Escape and the backdrop close it, and once something has been typed they ask "Discard your
-   changes?" first. Also used by `AddUtilityBill`, `ApprovalBanner`, `BookingDrawer` (CentreModal), `GuestDocuments`,
+   stays inside, Escape and the backdrop close it, and once a field has changed (typed, a native control, a pick in the
+   shared `Select`) they ask "Discard your changes?" first. A choice made with plain buttons is not seen; such a dialog
+   passes `dirty` itself. A pick in `Select` went undetected until batch 7. Also used by `AddUtilityBill`, `ApprovalBanner`, `BookingDrawer` (CentreModal), `GuestDocuments`,
    `CalendarModals`, `OpsUi` (OpsModal), `ContractsPage`, `DashboardPage`, `owners/ExpenseEntry`, `owners/OwnerMoney`,
    `owners/shared`, `StatementsPage`, `units/shared`.
 2. **fixed (#593).** The approval and void-document reason boxes were `bg-white` (`ApprovalBanner.tsx`,
@@ -129,30 +130,37 @@ is shown inside Property OS in a frame. What now has ONE implementation that eve
 | Date and time shapes (2026/11/03, 11/03, 2026/11/03 14:06, 14:06) | `engine/frontend/src/vendor/shared/format.ts` (`fmtDate`, `fmtDayMonth`, `fmtDateTime`, `fmtTime`), pinned by the engine's `format.date.canonical.test.ts` | engine screens and PDFs; Property OS screens through `src/lib/format.ts`; the server through `functions/_lib/format.ts` |
 | Money with sen (RM 1,234.56) | same file (`fmtSen`) | engine; `src/lib/format.ts` `rm()`; `functions/_lib/format.ts` `rmText()`, which replaced 15 hand-typed `RM ${(x / 100).toLocaleString(...)}` strings in audit summaries, notices, payout and refund messages, the letterhead and booking money |
 | Form dialog frame (focus, Escape, backdrop, keep-open when dirty) | `DialogFrame` in `src/components/Modal.tsx` (#593) | every Property OS form dialog |
-| Form dialog layout (title, sub line, scrolling body, pinned Cancel / action footer) | `Modal` and `FormModal` in `src/components/Modal.tsx` | 34 direct users plus the ten local shells that used to draw their own: Expenses, Maintenance catalog, Dashboard, Contracts, owners (form), units (CentreModal), owner expense entry, calendar (price / block), OpsModal (maintenance, cleaning) |
-| Couldn't load / Retry | `StaleBanner` (`src/components/DataState.tsx`, #594); engine lists: `engine/frontend/src/conts/TableLoadError.tsx` | 60+ Property OS screens; every engine list |
+| Form dialog layout (title, sub line, scrolling body, pinned Cancel / action footer) | `Modal` and `FormModal` in `src/components/Modal.tsx` | 24 files importing it, plus every local shell that used to draw its own: Expenses, Maintenance catalog, Dashboard, Contracts, owners (form), units, owner expense entry, calendar (price / block), OpsModal (maintenance, cleaning), the booking drawer's CentreModal, Add utility bill, Add a bill, Adjust statement, default operator share, Generate statements, Start payout run, approvals, void document |
+| Couldn't load / Retry | `StaleBanner` (`src/components/DataState.tsx`, #594); engine lists: `engine/frontend/src/conts/TableLoadError.tsx` | 65 Property OS files; every engine list |
+| Status colours (success, warning, critical) | `tokens.json` (Property OS), and the engine by `engine/frontend/conts/palette.mjs` at build time; `scripts/checks/engine-palette.mjs` keeps them equal | both builds |
+| Stat tiles on Reviews | `StatTile` (`components/Metric.tsx`) | Reviews overview, Outstanding stays |
+| Spreadsheet formula guard on CSV exports | `csvSafe` in `engine/frontend/src/vendor/shared/format.ts` (batch 7) | Property OS exports, server CSVs, and the engine's CSV, which had no guard at all before |
 | On/off switch | `Switch` (`src/components/Switch.tsx`, #609) | Automations, Settings, Category access, Reviews |
 | Record header field ("DO NUMBER / DO-2611-004") | `Meta` (`src/components/Card.tsx`) | the 10 document pages that each had their own copy |
 | Form field group (small caps title over a 2-column grid) | `FormSection` (`src/components/Card.tsx`) | Customers, Suppliers, 3PL companies |
 | Report block on a card | `SectionCard` (`src/components/Card.tsx`) | Unit P&L, Yearly report |
 
+A shared module only stays shared if a change to it reaches every build. Until batch 7 it did not: the Property OS,
+preview and scheduled-job deploys watched fixed path lists and CI skipped `engine/`, so an edit to the engine format
+module would have changed the engine alone. Those four workflows now watch it, and `scripts/checks/shared-paths.mjs`
+fails if Property OS imports any engine file they do not watch.
+
 Still twice, and why:
 
-- **Buttons, badges, tables and toolbars, empty states, page headers between Property OS and the engine.** The engine's
-  are Houzs's components on Houzs's Tailwind design system (`engine/frontend/src/components/*`, `vendor/design-system`);
-  Property OS's are on its own tokens (`tokens.css`). Merging them means rewriting about a thousand engine files and
-  would end the engine's ability to take Houzs fixes file by file (CLAUDE.md). What is shared instead: the formats above,
-  the theme (the engine follows Property OS's light/dark through `engine/frontend/src/conts/embed.ts`), and the same
-  wording and order rules (this audit). Within each build there is one copy of each.
-- **Two `Segmented` controls in Property OS** (`components/Metric.tsx`, `components/ops/OpsUi.tsx`): not a duplicate.
-  The first picks a value (and turns into a picker on phones); the second is a tab strip that swaps the whole view.
-- **The booking drawer's `CentreModal`** (`components/booking/BookingDrawer.tsx`): its children carry their own body and
-  footer (`CentreFooter`), a different contract from `Modal`. It already shares `DialogFrame`; folding it in needs its
-  nine callers changed, left for a later pass.
-- **Employees' form section** (`workers/EmployeesTab.tsx`): a ruled heading with a note, a different look from
-  `FormSection` on purpose.
-- **Owner statement PDF dates** (`src/lib/statementPdf.ts`): runs under `node --test`, which cannot import the
-  extensionless format module; it prints the same shape (2026/09/30) with its own one-liner.
-- **Print preview / PDF modals** and the **SO edit vs Submit VO** screens: another session is unifying them.
-- **Owner portal and Owner B** (`OwnerPortalPage.tsx`, `ownerB/`, `functions/api/owner/`, `src/lib/portalI18n.ts`) and
-  the demo endpoints (`functions/api/demo/`): other sessions own them; they still format some dates and money themselves.
+| What | Where | Why it stays |
+| --- | --- | --- |
+| **Buttons, badges, tables and toolbars, empty states, skeletons, page headers** | Property OS `src/components` vs engine `engine/frontend/src/components` and `vendor/design-system` | Two component sets on two styling systems (Property OS tokens and inline styles on Tailwind 4; Houzs's Tailwind 3 classes). Engine files importing them: Button 103, DataTable 78, Badge 37, Skeleton 25, EmptyState 10. One component means rewriting those screens and ends taking Houzs fixes file by file (CLAUDE.md). **Owner decision, see below.** Colours, formats, wording and order are already shared. |
+| **Phone display** | `src/lib/phone.ts` (libphonenumber) vs `engine/.../vendor/shared/phone.ts` | They agree on stored Malaysian and Singapore numbers. They differ on a local number (`0189800069` stays as typed in the engine, Property OS shows +60 18-980 0069) and on foreign grouping (+44 7700 900123 vs +44 770 090 0123). Merging adds libphonenumber to the engine or loses every-country support in Property OS. |
+| **Money typing** | `src/components/inputs/numberText.ts` vs `engine/.../lib/money.ts` | Different jobs: the first cleans each keystroke, the second refuses an ambiguous value on save. |
+| **Local `Segmented` pair** | `components/Metric.tsx`, `components/ops/OpsUi.tsx` | Not a duplicate: a value picker that becomes a list on phones, and a tab strip that swaps the whole view. |
+| **Calendar "Update prices"** | `components/calendar/CalendarModals.tsx` | On `DialogFrame`, not `Modal`: on a phone it fills the screen edge to edge. |
+| **Employees form section, owner report section, TextArea (2), Spinner (2), Stat (2)** | `workers/EmployeesTab.tsx`, `OwnerOverallDetail.tsx`, `OwnerDetails.tsx`, `SettingsPage.tsx`, `Attachments.tsx`, `GuestsPage.tsx`, `calendar/UnitMonthCalendar.tsx` | Small, and different in look or size on purpose or by habit. Worth folding in when one of those screens is next changed; not worth a risky sweep. |
+| **Statement PDF date** | `src/lib/statementPdf.ts` | Prints the same 2026/09/30 with a one-liner. Its test has never run under `npm test`: the file imports `./revenueModel` without an extension, so `statementPdf.test.mjs` fails to load (bundled, it passes 3 of 3). Left for the session that owns PDFs. |
+| **Print preview / PDF modals, SO edit vs Submit VO** | | Another session owns them. |
+| **Owner portal, Owner B, demo endpoints** | `OwnerPortalPage.tsx`, `ownerB/`, `functions/api/owner/`, `src/lib/portalI18n.ts`, `functions/api/demo/` | Other sessions own them. They still format some dates and money themselves, so they do not all read 2026/11/03 yet. |
+
+Decision for the owner: a single button, badge and table across both builds. Options, cheapest first:
+1. **Keep two sets, shared look (current).** Colours, formats, wording and order are shared; a change to a button's shape is made twice. No further cost.
+2. **Share the small pieces only.** Badge and EmptyState (47 engine files) move to one component; Button and DataTable stay. Moderate; loses file-by-file Houzs updates for those two.
+3. **One component set.** Engine screens move to Property OS components (about 180 file-level imports, including the 78-table DataTable). Largest; ends Houzs updates for those screens.
+Recommendation: option 1, unless changes to button or table shape turn out to be frequent.

@@ -25,7 +25,7 @@ async function optionalColumns(env: Env): Promise<{ column_name: string }[]> {
   if (optionalSeen) return optionalSeen;
   const wanted = [...Object.keys(OPTIONAL_MONEY), 'staff_notes'];
   const rows = await all<{ column_name: string }>(env, `
-    SELECT column_name FROM information_schema.columns
+    SELECT DISTINCT column_name FROM information_schema.columns
     WHERE table_name = 'reservations' AND table_schema = ANY(current_schemas(false))
       AND column_name IN (${wanted.map(c => `'${c}'`).join(', ')})`);
   if (rows.length === wanted.length) optionalSeen = rows;

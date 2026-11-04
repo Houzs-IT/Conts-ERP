@@ -589,3 +589,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - OPEN, any time (not needed before merge): apply migration 0206 (trigram indexes for the search) on staging, then production. The search works without it, only slower on large tables.
 - Not searched yet: cleaning jobs, expenses and bills (no screen opens one record from a link), delivery returns, consignment and stock documents, VOs.
 - Check: scripts/api-checks/global-search.mjs.
+
+- Engine database pool (owner, needs the Supabase or Cloudflare dashboard): the session pooler behind Hyperdrive allows 15 connections, the real ceiling behind the 504s; raise the pool size or point Hyperdrive at the transaction pooler (port 6543). #610 retries through bursts (0 of 96 reads failed, was 19 of 96) but does not raise the limit.
+
+- Engine deploy gap: a queued "Deploy engine to production" run is cancelled by a newer merge (#613's was) and the newer run publishes only what its own merge changed, so a server or screens change can be left unpublished. Make the run diff against the last successful deploy.
+
+- One SO interface, still different: read page and editor are two components (same order and wording, not the same markup); phones keep MobileSODetail and the stand-alone contract page; the editor counts cancelled lines (Line Items 6 against 4 on TC-SO-2611-001).

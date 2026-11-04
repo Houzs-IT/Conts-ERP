@@ -247,7 +247,8 @@ export function PrintPreviewModal({
             {docNo}
           </div>
         </div>
-        <div className="space-y-2 px-5 py-4 text-[12.5px] leading-relaxed text-ink">
+        {/* A fixed minimum, so the card is the same size whichever document or line count it summarises. */}
+        <div className="min-h-[150px] space-y-2 px-5 py-4 text-[12.5px] leading-relaxed text-ink">
           {rows.map((row, i) => (
             <div key={i} className={row.label ? undefined : "text-ink-secondary"}>
               {row.label && (

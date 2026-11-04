@@ -27,7 +27,8 @@ import {
 } from 'lucide-react';
 import { Button } from '../../components/Button';
 import { PageHeader } from '../../components/Layout';
-import { PrintPreviewModal, usePrintPreview } from '../../components/scm-v2/PrintPreviewModal';
+import { usePrintPreview } from '../../components/scm-v2/PrintPreviewModal';
+import { SoPrintPreview, useSoPrintLayout } from './soPrintPreview';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { SoSourceChips } from '../../components/SoSourceChips';
 import { useSetBreadcrumbs } from '../../hooks/useBreadcrumbs';
@@ -60,6 +61,7 @@ import {
   isLocked as isSoLocked,
   procLockActive as soProcLockActive,
   amendmentEligible as soAmendmentEligible, migratedReadonly as soMigratedReadonly, migratedReadonlyReason as soMigratedReason, soDownstreamHardLocked, soItemFrozen,
+  deriveBalance as soDeriveBalance,
 } from '../../vendor/scm/lib/so-detail-gates';
 import { soDateGuardError, soErrorText } from '../../vendor/scm/lib/so-form-validate';
 import { FROZEN_LINE_LABEL, FROZEN_LINE_LABEL_STYLE, FROZEN_LINE_STYLE } from '../../vendor/scm/lib/so-frozen-line-style';
@@ -719,6 +721,12 @@ export const SalesOrderDetail = () => {
   const print = usePrintPreview(
     useCallback((action: PdfAction) => deliverPrintPdfRef.current(action), []),
   );
+  /* The read page's PDF layout picker and room order, from the same hook (soPrintPreview.tsx): the editor and Submit
+     VO print exactly as the read page does (owner, 3 Nov 2026). */
+  const printLayoutState = useSoPrintLayout(
+    docNo,
+    useMemo(() => (((detail.data as { items?: Array<{ id: string; item_code: string; cancelled?: boolean }> } | undefined)?.items) ?? []).filter((l) => !l.cancelled), [detail.data]),
+  );
 
   /* Payments edit mode — the money's OWN toggle (owner 2026-08-07). Declared up
      here with the other page state, NOT beside the `canEditPayments` derivation
@@ -869,7 +877,9 @@ export const SalesOrderDetail = () => {
     };
   }, [editedDraftGroups, header, items]);
   const liveEditDraft = useMemo(() => buildEditValidateDraft(), [buildEditValidateDraft]);
-  const { problems: editBackendProblems } = useSoValidate(liveEditDraft, !!header);
+  /* Not until the lines are in the draft: for the first moment of Edit the form is still filling, and "Can't save" over
+     a blank form read as a broken order (owner, 3 Nov 2026). */
+  const { problems: editBackendProblems } = useSoValidate(liveEditDraft, !!header && (items.length === 0 || editedDraftGroups.length > 0));
   const editClientExtras = useMemo<SaveProblem[]>(() => {
     const blankAdd = firstBlankStagedAdd(addingDrafts);
     const blankLine = Object.values(editingDrafts).some((d) => !d.itemCode.trim());
@@ -1919,7 +1929,7 @@ export const SalesOrderDetail = () => {
     /* `pwpCodes` rides on the same GET /:docNo payload — vouchers this SO's
        trigger items issued, so the printed PDF can mark the trigger lines. */
     const pwpCodes = ((detail.data as { pwpCodes?: unknown[] } | undefined)?.pwpCodes ?? []) as never;
-    return generateSalesOrderPdf(header, items, payments, action, pwpCodes).catch((e) => {
+    return generateSalesOrderPdf(header, items, payments, action, pwpCodes, printLayoutState.pdfOpts).catch((e) => {
       // eslint-disable-next-line no-console
       console.error('PDF generation failed:', e);
       notify({
@@ -2027,17 +2037,16 @@ export const SalesOrderDetail = () => {
       {/* ── Header (shared PageHeader — full-bleed, design-system) ── */}
       <PageHeader back beforeBack={guardUnsavedPayments}
         eyebrow="Sales Order"
-        /* Owner 2026-07-16 — 17px document title (see PageHeader.titleSize).
-           Scoped to this page; every other page keeps the default h1. */
-        titleSize="sm"
-        title={`${header.doc_no} — ${header.debtor_name}`}
+        /* The customer as the title and the doc no first in the meta line, as on the read page: Edit, Submit VO and
+           the read page are one sales order (owner, 3 Nov 2026). */
+        title={header.debtor_name || header.doc_no}
         /* Owner 2026-07-16 — one meta line, no redundancy: the bare date (the
            "SO date" label said nothing the date didn't), and the "Current
            SO-…" echo only when the SO actually HAS been superseded by a
            different doc no — when it equals this SO it just repeated the
            title. */
         description={
-          `${fmtDateOrDash(header.so_date)} · ${header.line_count} ${header.line_count === 1 ? 'line' : 'lines'}`
+          `${header.doc_no} · SO date ${fmtDateOrDash(header.so_date)} · ${header.line_count} ${header.line_count === 1 ? 'line' : 'lines'}`
           + (currentDocNo && currentDocNo !== header.doc_no ? ` · Current ${currentDocNo}` : '')
           + (header.po_doc_no ? ` · Customer PO ${header.po_doc_no}` : '')
           + (header.customer_so_no ? ` · Ref ${header.customer_so_no}` : '')
@@ -2118,16 +2127,18 @@ export const SalesOrderDetail = () => {
               <Printer {...ICON} />
               <span>Print</span>
             </Button>
-            <PrintPreviewModal
+            <SoPrintPreview
               open={print.open}
               onClose={print.close}
-              docTitle="Sales Order"
               docNo={header.doc_no}
+              layout={printLayoutState}
               rows={[
                 { label: 'Customer', value: header.debtor_name || '—' },
                 { label: 'Order date', value: fmtDateOrDash(header.so_date) },
                 { label: 'Items', value: `${header.line_count} line${header.line_count === 1 ? '' : 's'}` },
                 { label: 'Order total', value: fmtRm(header.local_total_sen, header.currency) },
+                /* The same Balance row as the read page's card, through the same shared gate. */
+                { label: 'Balance', value: fmtRm(soDeriveBalance(header as never, printPaymentsQ.data), header.currency) },
               ]}
               {...print.handlers}
             />
@@ -3151,7 +3162,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
   const reno = renoListsQ.data?.ready === true;
   const [renoInfo, setRenoInfo] = useState<CustomerPropertyValue>(EMPTY_CUSTOMER_PROPERTY);
   const [renoProject, setRenoProject] = useState<ProjectShared | null>(null);
-  const [renoInfoLoading, setRenoInfoLoading] = useState(false);
+  const [renoInfoLoading, setRenoInfoLoading] = useState(true);
   const [renoLoadError, setRenoLoadError] = useState<string | null>(null);
   const [renoTried, setRenoTried] = useState(false);
   const renoLoaded = useRef('');
@@ -3499,7 +3510,8 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
     setRenoTried(true);
     /* Checked only when the block is being written: the imported contracts came without a layout or size, and a VO on
        their lines alone must not ask for them. */
-    const miss = renoChanged() ? missingFields(blockValue) : new Set<string>();
+    /* Nor on an order with a project: those fields are the project's, and the order only follows them. */
+    const miss = renoChanged() && !renoProject ? missingFields(blockValue) : new Set<string>();
     if (miss.size > 0) {
       const msg = `Fill in: ${[...miss].join(', ')}.`;
       if (cb?.onError) cb.onError(msg);
@@ -3686,7 +3698,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       {/* ── ORDER INFO (venue / dates / note) ─────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Order Info</h2>
+          <h2 className={styles.cardTitle}>Order info</h2>
         </header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
@@ -3791,7 +3803,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       {/* ── EMERGENCY CONTACT ─────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Emergency Contact</h2>
+          <h2 className={styles.cardTitle}>Emergency contact</h2>
           <span style={EMERGENCY_HEADER_NOTE_STYLE}>
             Used only if we cannot reach the customer on delivery day
           </span>
@@ -3855,7 +3867,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       {/* ── DELIVERY ADDRESS ──────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Delivery Address</h2>
+          <h2 className={styles.cardTitle}>Delivery address</h2>
         </header>
         <div className={styles.cardBody}>
           <div className={reno ? styles.renoGrid : styles.formGrid4}>
@@ -3980,6 +3992,9 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
         /* Renovation mode (Conts, 14 Oct 2026): the same compact layout as New SO. */
         renoLoadError ? (
           <p role="alert" style={{ color: 'var(--c-festive-b, #B8331F)', fontSize: 13 }}>{renoLoadError}</p>
+        ) : renoInfoLoading ? (
+          /* Blank fields while it loads looked like an order with no information. */
+          <p role="status" style={{ color: 'var(--c-ink-muted, #6b6b6b)', fontSize: 13 }}>Loading the order information...</p>
         ) : (
           <CustomerBlock
             mode="so"

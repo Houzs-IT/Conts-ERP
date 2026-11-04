@@ -9,6 +9,7 @@ import type { MrpSku, MrpLine, MrpResponse, SofaSet } from '../../vendor/scm/lib
 import { allocSourceOf } from '../../vendor/shared/mrp-alloc-source';
 import { rowBelongsToView, type MrpView } from './mrp-views';
 import { sofaAccessoryRowsPerSo } from './mrp-sofa-accessory';
+import { sortByText } from '../../vendor/scm/lib/sort-options';
 
 export type ModelGroup = {
   /* Commander 2026-05-31 — a Model is now scoped to ONE warehouse. The same
@@ -248,6 +249,13 @@ export const mrpProjectLabel = (l: Pick<MrpLine, 'projectCode' | 'projectName'>)
 /** The distinct values a Model row's SO lines carry for one field, first seen first (blank values left out). */
 export const groupDistinct = (g: ModelGroup, pick: (l: MrpLine) => string): string[] =>
   [...new Set(g.variants.flatMap((v) => v.lines.map(pick)).filter((x) => x.trim() !== ''))];
+
+/** The supplier dropdown's order (owner, 3 Nov 2026): the SKU's main supplier first, its other bound suppliers
+    alphabetically. Only bound suppliers are ever offered; a SKU with none has no dropdown. */
+export const suppliersMainFirst = <T extends { isMain: boolean }>(suppliers: readonly T[]): T[] => [
+  ...sortByText(suppliers.filter((s) => s.isMain)),
+  ...sortByText(suppliers.filter((s) => !s.isMain)),
+];
 
 export const lineDateOf = (l: MrpLine, dateBasis: DateBasis): string | null =>
   dateBasis === 'processing' ? l.processingDate

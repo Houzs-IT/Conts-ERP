@@ -307,7 +307,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
             {lines.length > 0 && <button type="button" style={btnStyle("outline", "sm")} onClick={exportCsv}><Download size={14} aria-hidden="true" />Export</button>}
             <button type="button" style={btnStyle("outline", "sm")} onClick={() => setHelping(true)}><Calculator size={14} aria-hidden="true" />Quantity helper</button>
             {needPo.length > 0 && d.sos.map((s) => (
-              <Link key={s.docNo} to={s.renovation ? `/scm/renovation/contracts/${encodeURIComponent(s.docNo)}` : "/scm/purchase-orders/from-so"} style={btnStyle("teal", "sm")}>
+              <Link key={s.docNo} to={s.renovation ? `/scm/sales-orders/${encodeURIComponent(s.docNo)}#po-split` : "/scm/purchase-orders/from-so"} style={btnStyle("teal", "sm")}>
                 <FilePlus2 size={14} aria-hidden="true" />Create PO{d.sos.length > 1 ? ` (${s.docNo})` : ""}
               </Link>
             ))}

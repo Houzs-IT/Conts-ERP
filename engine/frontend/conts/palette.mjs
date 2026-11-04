@@ -33,6 +33,14 @@ export const PALETTE = {
   '1d2519': '1e1e1e',
   '141b13': '151515',
   '0c110b': '0d0d0d',
+  // status colours: the same meaning reads the same in both builds. scripts/checks/engine-palette.mjs keeps these equal
+  // to tokens.json (success, critical, warning: text, then tint).
+  '2f8a5b': '11694a',
+  'e2f0e9': 'e9f5ef',
+  'b23a3a': 'a8352f',
+  'f8eaea': 'fceceb',
+  '6e4d12': '8a5a12',
+  'f6efd9': 'fff4d8',
 };
 
 const rgb = (hex) => [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));

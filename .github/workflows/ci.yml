@@ -3,12 +3,15 @@
 name: CI
 on:
   pull_request:
-    paths-ignore:
-      - 'backend/**'
-      - 'frontend/**'
-      - 'engine/**'
-      - 'docs/**'
-      - '**/*.md'
+    # Order matters: the engine is skipped except the module Property OS imports (scripts/checks/shared-paths.mjs).
+    paths:
+      - '**'
+      - '!backend/**'
+      - '!frontend/**'
+      - '!engine/**'
+      - '!docs/**'
+      - '!**/*.md'
+      - 'engine/frontend/src/vendor/shared/format.ts'
 concurrency:
   group: ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true

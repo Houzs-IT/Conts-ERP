@@ -2,8 +2,13 @@
 // lines (supplier and cost editable until a line is on a PO), progress billing
 // by instalment, variation orders, the SO -> PO split and the PO lines a VO
 // asked procurement to amend or cancel.
+//
+// One sales order, one page (owner, 3 Nov 2026): on a computer these are sections of the order's own page
+// (SalesOrderDetailV2), and /scm/renovation/contracts/:docNo redirects there. The stand-alone page stays for the
+// phone's renovation documents (mobile/MobileRenovationDocs.tsx).
 
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { FilePlus2, Printer, ReceiptText, ShoppingCart } from 'lucide-react';
@@ -322,6 +327,12 @@ function ContractPostingAction({ docNo }: { docNo: string }) {
 
 export function RenovationSalesOrder() {
   const { docNo } = useParams();
+  return <ContractSections docNo={docNo} />;
+}
+
+/** The contract's own sections. `embedded`: inside the sales order's page, which already shows the customer, the
+    project, the order's lines, its payments and its files; here come only the action row and what is the contract's. */
+export function ContractSections({ docNo, embedded = false }: { docNo: string | undefined; embedded?: boolean }) {
   const c = useContract(docNo);
   const flags = usePoFlags(docNo);
   const brands = useBrands();
@@ -332,6 +343,12 @@ export function RenovationSalesOrder() {
   const [crediting, setCrediting] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
+  /* An old contract link lands here with where it was going (Create PO: #po-split). */
+  const { hash } = useLocation();
+  const loaded = !!c.data;
+  useEffect(() => {
+    if (loaded && hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'start' });
+  }, [loaded, hash]);
   if (c.isLoading || !c.data) return <div className="p-8 text-center text-[13px] text-ink-muted">{c.error ? refusalOf(c.error).message : 'Loading contract…'}</div>;
   const k = c.data;
   const live = ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'].includes(k.status);
@@ -359,25 +376,41 @@ export function RenovationSalesOrder() {
     try { await run.mutateAsync(() => renoSend(`/po-flags/${id}/resolve`, 'POST', {})); } catch (e) { setError(refusalOf(e).message); }
   };
 
+  const contractActions = can('scm.renovation.quote') && (CONTRACT_NEXT_STATUS[k.status] ?? []).map((n) => (
+    <Button key={n.to} variant={n.danger ? 'danger' : 'secondary'} onClick={() => setStatus(n.to, n.label, n.danger)}>{n.label}</Button>
+  ));
+
   return (
-    <div className="space-y-4">
-      <PageHeader
-        back="/scm/renovation/quotations"
-        eyebrow={`Renovation contract${k.header.quoteDocNo ? ` · from ${k.header.quoteDocNo}` : ''}`}
-        title={k.docNo}
-        description={`${k.debtorName}${k.header.building ? ` · ${k.header.building} ${k.header.unitNo}` : ''} · ${fmtDate(k.soDate)}`}
-        actions={(
+    <div id="contract" className="space-y-4">
+      {embedded ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-bold text-ink">Renovation contract</h2>
+            {k.header.quoteDocNo && <p className="text-[12.5px] text-ink-secondary">From quotation {k.header.quoteDocNo}</p>}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status={k.status} />
-            <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Print</Button>
-            {can('scm.renovation.quote') && (CONTRACT_NEXT_STATUS[k.status] ?? []).map((n) => (
-              <Button key={n.to} variant={n.danger ? 'danger' : 'secondary'} onClick={() => setStatus(n.to, n.label, n.danger)}>{n.label}</Button>
-            ))}
+            <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Contract PDF</Button>
+            {contractActions}
           </div>
-        )}
-      />
+        </div>
+      ) : (
+        <PageHeader
+          back="/scm/renovation/quotations"
+          eyebrow={`Renovation contract${k.header.quoteDocNo ? ` · from ${k.header.quoteDocNo}` : ''}`}
+          title={k.docNo}
+          description={`${k.debtorName}${k.header.building ? ` · ${k.header.building} ${k.header.unitNo}` : ''} · ${fmtDate(k.soDate)}`}
+          actions={(
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusPill status={k.status} />
+              <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Print</Button>
+              {contractActions}
+            </div>
+          )}
+        />
+      )}
       <ErrorBanner error={error} onClose={() => setError(null)} />
-      <ContractProjectCard docNo={k.docNo} projectId={k.projectId} canWrite={can('projects.write')} />
+      {(!embedded || k.projectId === null) && <ContractProjectCard docNo={k.docNo} projectId={k.projectId} canWrite={can('projects.write')} />}
       <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
         <Stat label="Original contract" value={rm(k.totals.originalContractSen)} />
         <Stat label="Variation orders" value={rm(k.totals.voTotalSen)} tone={k.totals.voTotalSen ? 'warn' : 'muted'} />
@@ -462,7 +495,7 @@ export function RenovationSalesOrder() {
             ))}
           </ul>
         </Card>
-        <PoSplitCard c={k} canSplit={live && can('scm.renovation.po_split')} />
+        <div id="po-split" className="scroll-mt-48"><PoSplitCard c={k} canSplit={live && can('scm.renovation.po_split')} /></div>
       </div>
       {(flags.data?.flags.length ?? 0) > 0 && (
         <Card title={`PO lines to amend or cancel (${flags.data!.flags.filter((f) => f.status === 'OPEN').length} open)`}>
@@ -478,10 +511,11 @@ export function RenovationSalesOrder() {
         </Card>
       )}
       <LinesCard c={k} canEdit={live && can('scm.renovation.po_split')} filesEditable={k.status !== 'CANCELLED'} />
-      <DocAttachments docType="sales_order" docId={k.docNo} canEdit={k.status !== 'CANCELLED'} />
+      {!embedded && <DocAttachments docType="sales_order" docId={k.docNo} canEdit={k.status !== 'CANCELLED'} />}
       <BillDialog c={k} inst={billing} onClose={() => setBilling(null)} />
       <CreditDialog c={k} open={crediting} onClose={() => setCrediting(false)} />
       <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="sales order" docNo={k.docNo} defaultFormat={k.header.printFormat}
+        rows={[{ label: "Customer", value: k.header.customerName || k.debtorName || "-" }]}
         build={(format) => buildPrintDoc({ kind: 'SALES_ORDER', docNo: k.docNo, format, brand, header: { ...k.header, customerName: k.header.customerName || k.debtorName, docDate: k.header.docDate ?? k.soDate /* eslint-disable-line @typescript-eslint/no-unnecessary-condition -- doc_date may be null on older SOs; fall back to the SO date */ }, sections: k.sections, instalments: k.instalments })} />
     </div>
   );

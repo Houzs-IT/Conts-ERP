@@ -74,7 +74,7 @@ import { useConfirm } from "../../vendor/scm/components/ConfirmDialog";
 import { CancelRequestPanel } from "../../vendor/scm/components/CancelRequestPanel";
 import { useCancelRequestAction } from "./use-cancel-request-action";
 import { DocumentRelationshipMapModal, DocumentChoiceDialog } from "../../components/scm-v2/DocumentRelationshipMapModal";
-import { PrintPreviewModal, useOpenPrintPreviewFromUrl, usePrintPreview } from "../../components/scm-v2/PrintPreviewModal";
+import { useOpenPrintPreviewFromUrl, usePrintPreview } from "../../components/scm-v2/PrintPreviewModal";
 import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
 import { useSoRelationshipMap } from "./so-relationship-map";
 import { PaymentsTable, type PaymentDraft } from "../../vendor/scm/components/PaymentsTable";
@@ -103,21 +103,21 @@ import { OrderSlipPhoto } from "../../vendor/scm/components/OrderSlipPhoto";
 import { ADD_LINE_LABEL, addLineHref } from "../../vendor/scm/lib/add-line-handoff";
 import { fairLabel } from "../../vendor/scm/lib/fair-options-queries";
 import { linkedEvent, type LinkedFair } from "../../components/fairPick";
-import { useSoInfoLists, useSoRooms } from "../projects/renovation/customerPropertyApi";
-import { projectDatesText } from "../projects/renovation/customerPropertyModel";
 import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
 import { DocAttachments, LineFilesButton } from "../../components/doc-attachments/DocAttachments";
-import { categoryRooms, roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
-import { useMfgProducts } from "../../vendor/scm/lib/mfg-products-queries";
-import { useRenovationCatalog } from "../../vendor/scm/lib/renovation-catalog-queries";
+import { roomOrdered } from "../../vendor/scm/lib/so-print-rooms";
 import { CONTS_LINES_BY_NAME, contsLineIdentity } from "../../conts/flowRules";
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from "./renovationSoAreaLines";
+import { SoPrintPreview, useSoPrintLayout } from "./soPrintPreview";
+import { ContractSections } from "../renovation/RenovationSalesOrder";
 import { SoInstalments, instalmentRows, nextInstalmentSen, paymentSlots, useSoInstalments } from "./renovationSoInstalments";
 import { soStatusDisplay } from "../../vendor/scm/lib/so-status";
 import { soRowStatus } from "./so-list-status";
 // ─── Row types (subset — see MfgSalesOrdersList.tsx for the full SoRow) ────
 
 type SoHeader = {
+  /* RENOVATION: a contract, which adds its own sections to this page. */
+  so_kind?: string | null;
   doc_no: string;
   /* POS handover payment slip (migration 0143) — passed to PaymentsTable's
      optional Slip column; absent on non-POS orders. */
@@ -616,23 +616,8 @@ function SalesOrderDetailV2ReadOnly() {
      the badge + source-PO chips upgrade in place when this arrives. */
   const coverage = useSoLineCoverage(docNo ?? null);
   const updateStatus = useUpdateMfgSalesOrderStatus();
-  /* Renovation mode (Conts, mig 0112): Order information replaces Houzs's Order
-     info, and the emergency contact half of the address card goes. */
-  const renoMode = useSoInfoLists().data?.ready === true;
-  /* Rooms (mig 0112): lines shown and printed room by room. */
-  const renoRooms = useSoRooms(docNo, renoMode).data ?? null;
   /* "By item" (the table) or "By area" (room headings with subtotals); offered when the order has rooms. */
   const [linesView, setLinesView] = useState<SoLinesView>("item");
-  /* The PDF's own layout, chosen in the Print preview (owner, 31 Oct 2026: "export PDF 应该都是 by default by area"). */
-  const [printLayout, setPrintLayout] = useState<SoLinesView>("area");
-  const printRooms = renoMode && renoRooms && renoRooms.roomSections.length > 0
-    ? { order: renoRooms.roomSections, byItem: renoRooms.itemRooms } : undefined;
-  /* The printed Start / End date are the linked project's (owner, 15 Oct 2026), from the same read as the rooms
-     and the Order information section, so the page and the print never disagree. */
-  const renoDates = renoMode && renoRooms ? projectDatesText(renoRooms.project, "so") : null;
-  /* The PDF's standard font has no em dash (it prints blank), so the print says "-" where the page says "—". */
-  const pdfText = (t: string) => t.replace(/—/g, "-");
-  const printProjectDates = renoDates ? { start: pdfText(renoDates.start), end: pdfText(renoDates.end) } : undefined;
   const requestCancel = useCancelRequestAction("so");
   const { nameOf: salespersonNameOf } = useStaffLookup();
   const staffRoster = useStaff();
@@ -641,12 +626,6 @@ function SalesOrderDetailV2ReadOnly() {
   // Followup #81 — the printed SO reads payments from the ledger, not the
   // deprecated header columns; fetch them for the Print PDF handler.
   const printPaymentsQ = useSalesOrderPayments(docNo ?? null);
-  /* The renovation contract's four instalments (owner, 1 Nov 2026), as the project's payments strip shows them. */
-  const instalmentsQ = useSoInstalments(docNo ?? null, renoMode);
-  const instalments = useMemo(
-    () => instalmentRows(instalmentsQ.data, (printPaymentsQ.data ?? []).reduce((s, p) => s + (p.amount_sen || 0), 0)),
-    [instalmentsQ.data, printPaymentsQ.data],
-  );
 
   // Replace the auto-derived "Scm" module crumb with the actual SO doc no.
   // Falls back to the raw route param while detail is loading so the top bar
@@ -669,18 +648,18 @@ function SalesOrderDetailV2ReadOnly() {
     ),
     [detail.data, coverage.data]
   );
-  /* "By category" (owner, 31 Oct 2026): the lines under their catalog category; the page and the print follow
-     whichever of By item / By area / By category is chosen (By item prints by area, as before). */
-  const catalogQ = useMfgProducts({ enabled: !!printRooms });
-  const catalogNames = useRenovationCatalog();
-  const categoryView = useMemo(() => {
-    if (!printRooms || !catalogQ.data) return undefined;
-    const products = new Map(catalogQ.data.map((p) => [p.code, { group: p.category_group || p.category, sub: p.sub_category }]));
-    return categoryRooms(items, (code) => products.get(code), { groups: catalogNames.groups, subs: catalogNames.all });
-  }, [printRooms, catalogQ.data, items, catalogNames.groups, catalogNames.all]);
+  /* Rooms, the lines by category and the PDF's own layout: the same hook the editor's Print preview reads
+     (soPrintPreview.tsx), so both screens print alike. Renovation mode (Conts, mig 0112): Order information replaces
+     Houzs's Order info, and the emergency contact half of the address card goes. */
+  const printLayoutState = useSoPrintLayout(docNo, items);
+  const { renoMode, renoDates, printRooms, categoryView } = printLayoutState;
   const shownRooms = linesView === "category" ? categoryView : printRooms;
-  /* "By item" prints the plain line list; until the catalog has loaded, "By category" prints by area. */
-  const pdfRooms = printLayout === "item" ? undefined : printLayout === "category" ? categoryView ?? printRooms : printRooms;
+  /* The renovation contract's four instalments (owner, 1 Nov 2026), as the project's payments strip shows them. */
+  const instalmentsQ = useSoInstalments(docNo ?? null, renoMode);
+  const instalments = useMemo(
+    () => instalmentRows(instalmentsQ.data, (printPaymentsQ.data ?? []).reduce((s, p) => s + (p.amount_sen || 0), 0)),
+    [instalmentsQ.data, printPaymentsQ.data],
+  );
 
   const st = salesOrder ? displayStatusFor(salesOrder) : null;
 
@@ -721,7 +700,8 @@ function SalesOrderDetailV2ReadOnly() {
      this door leads to exactly one dropdown. Without it, handing a delivered
      order to a resigning rep's replacement meant Override — which unlocks the
      whole order, addresses and lines included. */
-  const canAttributeOther = useHouzsAuth().can("scm.so.attribute_other");
+  const houzsAuth = useHouzsAuth();
+  const canAttributeOther = houzsAuth.can("scm.so.attribute_other");
   /* CUTOVER: an order carried across from AutoCount is view-only (owner
      2026-09-08). It out-ranks the salesperson door above — `canAttributeOther`
      exists so a hard-locked order can still change hands, and re-attributing a
@@ -871,7 +851,7 @@ function SalesOrderDetailV2ReadOnly() {
           payments as never,
           action,
           pwpCodes,
-          printRooms || printProjectDates ? { rooms: pdfRooms, projectDates: printProjectDates } : undefined
+          printLayoutState.pdfOpts
         )
       )
       .catch((e) =>
@@ -1039,17 +1019,21 @@ function SalesOrderDetailV2ReadOnly() {
     {
       key: "photos",
       label: "Photos",
-      width: "110px",
+      width: "130px",
       getValue: (l) => (l.photo_urls ?? []).length,
+      /* One clean strip (owner, 3 Nov 2026): a few thumbs and "+N" that opens the line's gallery, never a wrapped block. */
       render: (l) => (
-        <div className="flex items-center gap-1.5">
-          <SoLinePhotoStrip
-            source="so"
-            docId={docNo ?? ""}
-            itemId={l.id}
-            photoKeys={l.photo_urls ?? []}
-          />
-          <LineFilesButton docType="sales_order" docId={salesOrder?.doc_no} lineId={l.id} canEdit={salesOrder?.status.toLowerCase() !== "cancelled"} />
+        <div className="flex flex-nowrap items-center gap-1.5 overflow-hidden">
+          {(l.photo_urls ?? []).length > 0 && (
+            <SoLinePhotoStrip
+              source="so"
+              docId={docNo ?? ""}
+              itemId={l.id}
+              photoKeys={l.photo_urls ?? []}
+            />
+          )}
+          <LineFilesButton docType="sales_order" docId={salesOrder?.doc_no} lineId={l.id} canEdit={salesOrder?.status.toLowerCase() !== "cancelled"}
+            thumbs={(l.photo_urls ?? []).length > 0 ? 0 : 2} />
         </div>
       ),
     },
@@ -1348,6 +1332,16 @@ function SalesOrderDetailV2ReadOnly() {
         </div>
         <DetailGrid>
           <DetailMain>
+            {/* A renovation order reads Order information, Customer, Delivery address, the order of its edit screen
+                and of the New SO form (owner, 3 Nov 2026). */}
+            {renoMode && (
+              <Section title="Order information">
+                <RenovationSoOrderInfo
+                  docNo={salesOrder.doc_no}
+                  payment={salesOrder.payment_methods_summary || salesOrder.payment_method || null}
+                />
+              </Section>
+            )}
             {/* Customer */}
             <Section title="Customer">
               <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-3">
@@ -1404,14 +1398,6 @@ function SalesOrderDetailV2ReadOnly() {
               </div>
             </Section>
 
-            {renoMode && (
-              <Section title="Order information">
-                <RenovationSoOrderInfo
-                  docNo={salesOrder.doc_no}
-                  payment={salesOrder.payment_methods_summary || salesOrder.payment_method || null}
-                />
-              </Section>
-            )}
             {/* Order info + optional amber Note callout */}
             {!renoMode && (
             <Section title="Order info">
@@ -1618,6 +1604,13 @@ function SalesOrderDetailV2ReadOnly() {
                 </div>
               );
             })()}
+
+            {/* One sales order, one page (owner, 3 Nov 2026): a renovation contract's billing, VOs, PO split and line
+                costs sit here, not on a second page. Only for those who could open that page: a sales rep reaches this
+                route by allowSales, and these sections carry costs. */}
+            {salesOrder.so_kind === "RENOVATION" && (houzsAuth.can("scm.access") || houzsAuth.pageAccess("scm.sales.orders") !== "none") && (
+              <ContractSections docNo={salesOrder.doc_no} embedded />
+            )}
           </DetailMain>
 
           <DetailAside>
@@ -1845,11 +1838,11 @@ function SalesOrderDetailV2ReadOnly() {
         onClose={closeChainChoice}
         onPick={pickChainChoice}
       />
-      <PrintPreviewModal
+      <SoPrintPreview
         open={print.open}
         onClose={print.close}
-        docTitle="Sales Order"
         docNo={salesOrder.doc_no}
+        layout={printLayoutState}
         rows={[
           { label: "Customer", value: salesOrder.debtor_name || "—" },
           { label: "Order date", value: fmtDate(salesOrder.so_date) },
@@ -1875,12 +1868,6 @@ function SalesOrderDetailV2ReadOnly() {
             ),
           },
         ]}
-        options={printRooms ? (
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[12px] font-semibold text-ink-secondary">PDF layout</span>
-            <SoLinesViewToggle view={printLayout} onChange={setPrintLayout} />
-          </div>
-        ) : undefined}
         {...print.handlers}
       />
     </div>

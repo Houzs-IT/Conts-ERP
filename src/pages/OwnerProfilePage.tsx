@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DialogFrame } from '../components/Modal';
+import { Modal } from '../components/Modal';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -409,24 +409,17 @@ function DefaultFeeModal({ current, owner, onClose, onSubmit }: { current: numbe
   const [busy, setBusy] = useState(false);
   const valid = parsed == null || (parsed >= 0 && parsed <= 100);
   return (
-    <DialogFrame label="Owner default fee" onClose={onClose} panelClassName="relative w-full max-w-[440px] bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
-        <form onSubmit={e => { e.preventDefault(); if (valid && !busy) { setBusy(true); onSubmit(parsed); } }}>
-          <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
-            <h2 className="m-0 text-title font-semibold">Owner default operator share</h2>
-            <p className="m-0 text-copy text-muted-ink">Recorded for {titleCase(owner)} for reference. Leave blank to clear it.</p>
-          </div>
-          <div className="py-4 px-[22px]">
-            <PercentInput label="Default operator share %" value={parsed} placeholder="e.g. 22"
-              onChange={setParsed} help="A unit's own contract always decides its statement." />
-          </div>
-          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
-            <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
+    <Modal title="Owner default operator share" sub={<>Recorded for {titleCase(owner)} for reference. Leave blank to clear it.</>} onClose={onClose} width={440}
+      onSubmit={() => { if (valid && !busy) { setBusy(true); onSubmit(parsed); } }}
+      footer={<>
+        <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
             <Button size="sm" variant="primary" type="submit" disabled={!valid || busy} disabledReason="Enter a percentage between 0 and 100, or leave blank to clear.">
               {current != null && parsed == null ? 'Clear default' : 'Save default'}
             </Button>
-          </div>
-        </form>
-      </DialogFrame>
+      </>}>
+            <PercentInput label="Default operator share %" value={parsed} placeholder="e.g. 22"
+              onChange={setParsed} help="A unit's own contract always decides its statement." />
+    </Modal>
   );
 }
 

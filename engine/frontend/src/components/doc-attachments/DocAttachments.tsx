@@ -331,13 +331,16 @@ export function DocAttachments({ docType, docId, lineId, canEdit = true, title, 
 
 /** The paperclip on a document line: how many files the line has, and the line's panel in a dialog
     (a sheet from the bottom on a phone). Every button on a page reads the one list the document panel loads. */
-export function LineFilesButton({ docType, docId, lineId, canEdit = true, label }: {
+export function LineFilesButton({ docType, docId, lineId, canEdit = true, label, thumbs = 0 }: {
   docType: DocType;
   docId: string | null | undefined;
   lineId: string | null | undefined;
   canEdit?: boolean;
   /** Overrides "Line 2 · SKU description" in the dialog title. */
   label?: string;
+  /** Show the line's first few photos as small thumbs, then "+N" for the rest (owner, 3 Nov 2026: a line with six
+      photos made a cramped cell). 0: the paperclip and count only. */
+  thumbs?: number;
 }) {
   const id = docId ?? '';
   const q = useQuery({ queryKey: docFilesKey(docType, id), queryFn: () => listDocFiles(docType, id), enabled: !!docId, staleTime: 30_000 });
@@ -352,13 +355,25 @@ export function LineFilesButton({ docType, docId, lineId, canEdit = true, label 
   const line = q.data?.lines?.find((l) => l.id === lineId);
   const n = line?.files.length ?? 0;
   const title = label ?? (line ? lineLabel(line) : 'Line');
+  const shown = thumbs > 0 ? (line?.files ?? []).filter((f) => f.kind === 'image').slice(0, thumbs) : [];
   return (
     <>
+      {shown.length > 0 ? (
+        <button type="button" onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+          aria-label={`Photos and files for ${title} (${n})`} title="Photos and files for this line"
+          className="inline-flex shrink-0 flex-nowrap items-center gap-1 rounded-md">
+          {shown.map((f) => <FileThumb key={f.id} url={`${filesBaseUrl(docType, id)}/${f.id}`} file={f} className="h-8 w-8 shrink-0 rounded border border-black/10" />)}
+          {n > shown.length && (
+            <span className="inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded border border-border bg-surface-2 px-1 text-[11px] font-semibold text-ink-secondary">+{n - shown.length}</span>
+          )}
+        </button>
+      ) : (
       <button type="button" onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         aria-label={`Photos and files for ${title}${n ? ` (${n})` : ''}`} title="Photos and files for this line"
         className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11.5px] font-semibold ${n ? 'border-primary/40 bg-primary/5 text-primary' : 'border-border text-ink-muted hover:border-primary hover:text-primary'}`}>
         <Paperclip size={13} />{n > 0 && <span>{n}</span>}
       </button>
+      )}
       {open && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label={title}
           onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>

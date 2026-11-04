@@ -201,7 +201,6 @@ const RenoQuotationsList = lazy(() => import("./pages/renovation/QuotationsList"
 const RenoQuotationEditor = lazy(() => import("./pages/renovation/QuotationEditor").then((m) => ({ default: m.QuotationEditor })));
 const RenoQuotationTemplates = lazy(() => import("./pages/renovation/QuotationTemplates").then((m) => ({ default: m.QuotationTemplates })));
 const RenoQuotationTemplateEditor = lazy(() => import("./pages/renovation/QuotationTemplates").then((m) => ({ default: m.QuotationTemplateEditor })));
-const RenoSalesOrder = lazy(() => import("./pages/renovation/RenovationSalesOrder").then((m) => ({ default: m.RenovationSalesOrder })));
 const RenoVariationOrderEditor = lazy(() => import("./pages/renovation/VariationOrderEditor").then((m) => ({ default: m.VariationOrderEditor })));
 const RenoSettings = lazy(() => import("./pages/renovation/RenovationSettings").then((m) => ({ default: m.RenovationSettings })));
 const ScmAmendmentsV2 = lazy(() => import("./pages/scm-v2/Amendments").then((m) => ({ default: m.Amendments })));
@@ -344,6 +343,13 @@ function Guard({
  * from non-finance callers, so a salesperson sees the DO/SI generated from their
  * OWN Sales Orders — and nothing else. Safe: opens NO office/finance data.
  */
+/** A renovation contract's old address: the order's own page, keeping where the link was going (#po-split). */
+function ContractMoved() {
+  const { docNo = "" } = useParams();
+  const { hash } = useLocation();
+  return <Navigate replace to={`/scm/sales-orders/${encodeURIComponent(docNo)}${hash}`} />;
+}
+
 function ScmGuard({
   area,
   allowSales = false,
@@ -903,7 +909,8 @@ export default function App() {
         <Route path="/scm/renovation/quotations/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationEditor /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/templates" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationTemplates /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/templates/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationTemplateEditor /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/renovation/contracts/:docNo" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoSalesOrder /></Scm2990Shell></ScmGuard>} />
+        {/* One sales order, one page (owner, 3 Nov 2026): the contract's sections are on the order's page. */}
+        <Route path="/scm/renovation/contracts/:docNo" element={<ContractMoved />} />
         <Route path="/scm/renovation/variation-orders/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoVariationOrderEditor /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/settings" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoSettings /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/document-files/import" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><ScmDocumentFilesImport /></Scm2990Shell></ScmGuard>} />

@@ -27,6 +27,7 @@ import { PAYMENT_METHOD_CODES, PAYMENT_METHOD_DEFAULT_LABELS } from '../../vendo
 import { humaniseStatusKey } from '../../vendor/scm/lib/status-pill';
 import { DataTable, type Column } from '../../components/DataTable';
 import { generateReceiptPdf, type ReceiptPdfData } from '../../vendor/scm/lib/receipt-pdf';
+import { PrintPreviewModal } from '../../components/scm-v2/PrintPreviewModal';
 import { Modal } from '../../vendor/scm/components/Modal';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
@@ -103,6 +104,8 @@ export const OfficialReceipts = () => {
   /* '' = any month: the newest 100 receipts. */
   const [month, setMonth] = useState<string>(mytMonth());
   const [filesFor, setFilesFor] = useState<ReceiptRow | null>(null);
+  /* Print opens the app's one Print preview, as every other document does (owner, 3 Nov 2026). */
+  const [printFor, setPrintFor] = useState<ReceiptRow | null>(null);
   const listPath = `/accounting/receipts${[status ? `status=${status}` : '', month ? `month=${month}` : ''].filter(Boolean).map((p, i) => (i === 0 ? `?${p}` : `&${p}`)).join('')}`;
   const q = useQuery({
     queryKey: ['official-receipts', status, month],
@@ -187,7 +190,7 @@ export const OfficialReceipts = () => {
       key: 'actions', label: '', exportLabel: 'Actions', disableFilter: true,
       render: (r) => (
         <span style={{ whiteSpace: 'nowrap' }}>
-          <button type="button" style={btn()} onClick={() => { void generateReceiptPdf(r, { action: 'print' }); }}>Print</button>{' '}
+          <button type="button" style={btn()} onClick={() => setPrintFor(r)}>Print</button>{' '}
           <button type="button" style={btn()} onClick={() => setFilesFor(r)}>Files</button>{' '}
           {r.status !== 'FORMAL' && canConfirm && (
             <button type="button" style={btn(true, formalise.isPending)} disabled={formalise.isPending}
@@ -204,6 +207,18 @@ export const OfficialReceipts = () => {
 
   return (
     <div className="space-y-3">
+      {printFor && (
+        <PrintPreviewModal open onClose={() => setPrintFor(null)} docTitle="Official Receipt" docNo={printFor.or_number}
+          rows={[
+            { label: 'Customer', value: printFor.customer_name ?? '-' },
+            { label: 'Document', value: printFor.doc_no ?? '-' },
+            { label: 'Paid', value: fmtDateOrDash(printFor.paid_at) },
+            { label: 'Amount', value: fmtSen(printFor.amount_sen) },
+          ]}
+          onViewPdf={() => generateReceiptPdf(printFor, { action: 'preview' })}
+          onPrint={async () => { await generateReceiptPdf(printFor, { action: 'print' }); setPrintFor(null); }}
+          onDownload={async () => { await generateReceiptPdf(printFor, { action: 'save' }); setPrintFor(null); }} />
+      )}
       <PageHeader eyebrow="Finance" title="Official Receipts" />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {([['', 'All'], ['DRAFT', 'Waiting for confirmation'], ['FORMAL', 'Confirmed']] as const).map(([v, label]) => (

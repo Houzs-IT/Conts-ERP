@@ -10,6 +10,7 @@ on:
     paths:
       - 'src/**'
       - 'functions/**'
+      - 'engine/frontend/src/vendor/shared/format.ts'
       - 'public/**'
       - 'index.html'
       - 'vite.config.ts'
