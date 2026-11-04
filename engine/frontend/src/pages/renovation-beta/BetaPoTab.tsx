@@ -211,13 +211,26 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     const refusedLines: string[] = [];
     const saved = new Set<string>();
     let firstReason: string | null = null;
-    const queue = [...targets];
+    // The lines show the new date at once; a refused line comes back with the reload below.
+    patchLines(new Set(targets.map((l) => l.id)), (x) => withDate(x, which, v));
+    const onPo = which === "deliverOn" ? targets.filter((l) => lineDates(l).fromPo) : [];
+    const planned = targets.filter((l) => !onPo.includes(l));
+    if (planned.length) {
+      try {
+        const r = await linesApi.savePlans(p.projectId, planned.map((l) => l.id), { [which]: v });
+        r.saved.forEach((id) => saved.add(id));
+        for (const x of r.refused) { refusedLines.push(x.itemCode); firstReason ??= x.reason; }
+      } catch (e) {
+        refusedLines.push(...planned.map((l) => l.itemCode));
+        firstReason ??= refusalText(e);
+      }
+    }
+    const queue = [...onPo];
     const worker = async (): Promise<void> => {
       for (let l = queue.shift(); l; l = queue.shift()) {
-        const po = lineDates(l).fromPo;
+        const po = lineDates(l).fromPo!;
         try {
-          if (which === "deliverOn" && po) await linesApi.setPoLineDelivery(po.poId, po.poLineId, v);
-          else await linesApi.savePlan(p.projectId, l.id, { [which]: v });
+          await linesApi.setPoLineDelivery(po.poId, po.poLineId, v);
           saved.add(l.id);
         } catch (e) {
           refusedLines.push(l.itemCode);
@@ -225,9 +238,8 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         }
       }
     };
-    // Two at a time: each line is its own request, and the database pool is small (3 Nov 2026).
+    // Two at a time: each PO line is its own request, and the database pool is small (3 Nov 2026).
     await Promise.all([worker(), worker()]);
-    patchLines(saved, (x) => withDate(x, which, v));
     setBusyKey(null);
     const done = saved.size;
     // onDone refreshes every Beta query, this list included.
@@ -297,7 +309,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       <style>{DATE_CSS}</style>
       {helping && <BetaQuantityHelper onClose={() => setHelping(false)} />}
       <WsPageHead
-        title="PO"
+        title="SO"
         sub={editing
           ? "Editing. Change a yellow field, then Save & post to VO: the order changes at once and the VO keeps the record. Dates and suppliers save as you set them."
           : "Every line of the sales order, after VOs."}

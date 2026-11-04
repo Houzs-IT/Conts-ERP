@@ -30,7 +30,7 @@ import {
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
-import { cleanLinePlan, contractLineOf, loadProjectLines, projectLine, saveLinePlan, supplierBinding } from "../services/renovation/betaLines";
+import { cleanLinePlan, contractLineOf, loadProjectLines, projectLine, saveLinePlan, saveLinePlans, supplierBinding } from "../services/renovation/betaLines";
 import { patchContract } from "../scm/lib/renovation-so";
 import { inRenoTx, RenoError, sqlFor } from "../scm/lib/renovation-db";
 import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
@@ -835,6 +835,31 @@ app.put("/projects/:id/lines/:itemId/plan", requirePermission("projects.write"),
       .filter(Boolean).join(", ") || "plan cleared";
     await activityStmt(c, id, co, "beta_line_plan", null, line.doc_no, `Line plan: ${note}`).run();
     return c.json({ ok: true, plan: saved });
+  } catch (e) {
+    if (isMissingRelation(e)) return c.json({ error: "plans_not_ready", message: "Planned dates are not switched on yet on this server." }, 409);
+    throw e;
+  }
+});
+
+/* One date on a whole band of lines, in one read and one write (owner, 4 Nov 2026: a band's date was slow). */
+app.put("/projects/:id/line-plans", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const { itemIds, ...rest } = await body(c);
+  if (!Array.isArray(itemIds) || itemIds.length === 0 || itemIds.length > 500 || !itemIds.every((x) => typeof x === "string")) {
+    return c.json({ error: "invalid_plan", message: "Send the lines to change." }, 400);
+  }
+  const cleaned = cleanLinePlan(rest);
+  if (!cleaned.ok) return c.json({ error: "invalid_plan", message: cleaned.message }, 400);
+  try {
+    const out = await saveLinePlans(db(c), id, co, userId(c), itemIds as string[], cleaned.patch, await categoryScope(c));
+    if (out.saved.length) {
+      const note = [cleaned.patch.orderOn !== undefined ? `order ${cleaned.patch.orderOn ?? "cleared"}` : null, cleaned.patch.deliverOn !== undefined ? `deliver ${cleaned.patch.deliverOn ?? "cleared"}` : null].filter(Boolean).join(", ");
+      await activityStmt(c, id, co, "beta_line_plan", null, out.docNos[0] ?? null, `Line plan on ${out.saved.length} line(s): ${note}`).run();
+    }
+    return c.json({ ok: true, saved: out.saved, refused: out.refused });
   } catch (e) {
     if (isMissingRelation(e)) return c.json({ error: "plans_not_ready", message: "Planned dates are not switched on yet on this server." }, 409);
     throw e;
