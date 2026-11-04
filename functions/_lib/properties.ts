@@ -2,6 +2,7 @@ import { type Env, one, all, run, audit, nowIso } from './db';
 import type { Session } from './auth';
 import { PURPOSES, USED_BY, invalidBeds, invalidBays, type Bed, type BayInput } from './unitPurpose';
 import { NO_GRR } from './contractTypes';
+import { layoutTypes } from './layoutTypes';
 
 export const PACKAGES = ['Package A', 'Package B', 'Package C', 'Package D'];
 export const TERMS = ['Long term', 'Short term'];
@@ -73,6 +74,14 @@ export function invalidUnit(b: UnitInput, currentSplit?: string | null): { field
     if (!Number.isInteger(e.amount) || e.amount < 0) return { field: 'expenses', message: 'Expense amounts must be whole sen, zero or more.' };
   }
   return null;
+}
+
+/** The Type must be one on the Unit settings list: an active one, or the one the unit already has (a hidden type stays valid
+ *  on the units that carry it). Separate from invalidUnit, which has no database. */
+export async function invalidLayoutType(env: Env, b: UnitInput, currentType?: string | null): Promise<{ field: string; message: string } | null> {
+  if (b.layoutType == null || b.layoutType === currentType) return null;
+  const hit = (await layoutTypes(env)).find(t => t.key === b.layoutType);
+  return hit?.isActive ? null : { field: 'layoutType', message: 'Pick a layout type.' };
 }
 
 /** Sets the unit's standard or deep cleaning price: updates its first 'cleaning' or 'cleaning_deep' row in unit_expenses (the row cleanPrice() in

@@ -8,8 +8,11 @@ import { contractView, unitExample, lastMonth } from '../../../_lib/unitContract
 import { heldContract } from '../../../_lib/datedRows';
 import { purposeReady, codeOf, offeredTypes, type Purpose } from '../../../_lib/unitPurpose';
 import { contractTypes, NO_GRR } from '../../../_lib/contractTypes';
+import { isPlaceholderOwner } from '../../../_lib/placeholderOwner';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+/** A contract with the stand-in owner would be a contract with nobody. */
+const PICK_OWNER = 'Pick the owner on the Details tab first.';
 
 /** An owner_contracts row in the History panel's words (money in sen, dates as YYYY-MM-DD). */
 function termsOf(r: Record<string, unknown>): Record<string, unknown> {
@@ -76,7 +79,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!b) return fail('VALIDATION', 'Nothing to work out.', 422);
   const fields = invalidDraft({ ...b, startsOn: b.startsOn || '2000-01-01' });
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the contract details.', 422, fields);
-  if (!(await one(env, 'SELECT 1 AS x FROM units WHERE id = ?', id))) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
+  const u = await unitOf(env, id);
+  if (!u) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
+  if (isPlaceholderOwner(u.owner_name)) return fail('VALIDATION', PICK_OWNER, 422);
   const month = MONTH.test(b.month ?? '') ? b.month! : lastMonth(todayMyt());
   const example = await unitExample((sql, ...args) => all(env, sql, ...args), id, month, { ...b, startsOn: b.startsOn || '2000-01-01' });
   return json({ month, example });
@@ -98,6 +103,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the contract details.', 422, fields);
   const u = await unitOf(env, id);
   if (!u) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
+  if (isPlaceholderOwner(u.owner_name)) return fail('VALIDATION', PICK_OWNER, 422);
 
   const cur = u.contract_id ? await one<any>(env, 'SELECT * FROM owner_contracts WHERE id = ?', u.contract_id) : null;
   // The staff's code decides the model; a request with only a model (older screens) takes that model's code.
