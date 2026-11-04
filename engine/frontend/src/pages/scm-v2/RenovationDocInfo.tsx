@@ -10,11 +10,12 @@ import type { Column } from "../../components/dataTableTypes";
 import { cn } from "../../lib/utils";
 import { renoCategoryLabel, renoHasInfo, renoProjectLabel, type RenoDocInfo, type RenoDocLine } from "../../vendor/scm/lib/renovation-doc-print";
 
-export type RenoDocKind = "do" | "si" | "po" | "gr";
+export type RenoDocKind = "do" | "si" | "po" | "gr" | "pro";
 const PREFIX: Record<RenoDocKind, string> = {
   do: "/delivery-orders-mfg",
   si: "/sales-invoices",
   po: "/mfg-purchase-orders",
+  pro: "/production-orders",
   gr: "/grns",
 };
 
@@ -76,7 +77,7 @@ export function RenovationDocBlock({ data, kind }: { data: RenoDocInfo; kind: Re
         value={<DocLinks nos={i.soDocNos} to={(n) => `/scm/sales-orders/${encodeURIComponent(n)}`} />}
         muted={i.soDocNos.length === 0}
       />
-      {kind === "po" && i.categoryGroup && (
+      {(kind === "po" || kind === "pro") && i.categoryGroup && (
         <Cell label="Category" value={renoCategoryLabel({ room: "", categoryGroup: i.categoryGroup, subCategory: i.subCategory ?? "" })} />
       )}
       {kind === "gr" && (

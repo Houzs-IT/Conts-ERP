@@ -12,6 +12,8 @@ export const SCM_HANDOFF_KEYS = [
   "piFromGrnPicks",
   "poFromSoPicks",
   "poNewDraft",
+  "proFromSoPicks",
+  "proNewDraft",
   "siFromDoPicks",
   "siPaymentRetry",
   "soScanPrefill",

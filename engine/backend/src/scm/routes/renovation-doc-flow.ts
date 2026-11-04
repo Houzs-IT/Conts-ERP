@@ -21,7 +21,7 @@ import type { Db } from '../../services/renovation/load';
 import { renovationMode } from '../../services/renovation/customerProperty';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
-export type RenoDocKind = 'do' | 'si' | 'po' | 'gr';
+export type RenoDocKind = 'do' | 'si' | 'po' | 'gr' | 'pro';
 
 export interface RenoDocLine { room: string; categoryGroup: string; subCategory: string }
 export interface RenoDocInfo {
@@ -76,6 +76,12 @@ const SQL: Record<RenoDocKind, { head: (co: string) => string; lines: string; so
     head: (co) => `SELECT project_id::int AS project_id, NULL::text AS building, NULL::text AS unit_no, NULL::text AS so_doc_no, category_group, sub_category FROM scm.purchase_orders WHERE id = ?::uuid${co}`,
     lines: `SELECT id::text AS id, room, category_group, sub_category FROM scm.purchase_order_items WHERE purchase_order_id = ?::uuid`,
     so: `SELECT DISTINCT i.doc_no FROM scm.purchase_order_items x JOIN scm.mfg_sales_order_items i ON i.id = x.so_item_id WHERE x.purchase_order_id = ?::uuid`,
+    po: null,
+  },
+  pro: {
+    head: (co) => `SELECT project_id::int AS project_id, NULL::text AS building, NULL::text AS unit_no, NULL::text AS so_doc_no, category_group, sub_category FROM scm.production_orders WHERE id = ?::uuid${co}`,
+    lines: `SELECT id::text AS id, room, category_group, sub_category FROM scm.production_order_items WHERE production_order_id = ?::uuid`,
+    so: `SELECT DISTINCT i.doc_no FROM scm.production_order_items x JOIN scm.mfg_sales_order_items i ON i.id = x.so_item_id WHERE x.production_order_id = ?::uuid`,
     po: null,
   },
   gr: {
@@ -137,4 +143,5 @@ function router(kind: RenoDocKind) {
 export const renovationDoInfo = router('do');
 export const renovationSiInfo = router('si');
 export const renovationPoInfo = router('po');
+export const renovationProductionInfo = router('pro');
 export const renovationGrInfo = router('gr');

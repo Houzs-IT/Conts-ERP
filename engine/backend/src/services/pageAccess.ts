@@ -358,6 +358,14 @@ export const PAGES: PageDef[] = [
     backfill: (p) => (isOwner(p) ? "full" : "none"),
   },
   {
+    key: "scm.procurement.production",
+    parent: "scm.procurement",
+    label: "Production Orders",
+    partialMeaning: "View only; write gating is per-route (later).",
+    supportsPartial: true,
+    backfill: (p) => (isOwner(p) ? "full" : "none"),
+  },
+  {
     key: "scm.procurement.po",
     parent: "scm.procurement",
     label: "Purchase Orders",

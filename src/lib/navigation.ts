@@ -241,6 +241,9 @@ export const NAV: NavGroup[] = [
       { key: 'purchaseInvoices', label: 'Purchase invoices', icon: 'receipt-text', path: '/procurement/purchase-invoices', area: 'scInvoices' },
       { key: 'purchaseReturns', label: 'Purchase returns', icon: 'package-x', path: '/procurement/purchase-returns' },
     ] },
+    { key: 'scProduction', label: 'Production', icon: 'factory', area: 'scProcurement', children: [
+      { key: 'productionOrders', label: 'Production orders', icon: 'clipboard-list', path: '/production/production-orders' },
+    ] },
     { key: 'scTransportPlan', label: 'Transportation', icon: 'truck', area: 'scTransportPlan', children: [
       { key: 'deliveryPlanning', label: 'Delivery planning', icon: 'route', path: '/transport/planning' },
       { key: 'dpOrders', label: 'DP orders', icon: 'list-checks', path: '/transport/dp-orders' },

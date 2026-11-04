@@ -71,6 +71,7 @@ export const ENGINE_PATH: Record<string, string> = {
   '/procurement/suppliers': '/scm/suppliers',
   '/procurement/mrp': '/scm/mrp',
   '/procurement/purchase-orders': '/scm/purchase-orders',
+  '/production/production-orders': '/scm/production-orders',
   '/procurement/po-amendments': '/scm/po-amendments',
   '/procurement/cancellations': '/scm/cancel-requests',
   '/procurement/goods-received': '/scm/grns',
