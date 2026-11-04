@@ -99,6 +99,10 @@ export function QuotationEditor() {
   const status = async (to: string, confirm?: string) => {
     if (confirm && !(await serviceConfirm({ title: confirm }))) return;
     if (dirty) { setError('Save your changes first.'); return; }
+    /* Sending freezes the lines, and convert refuses a priced line with no product: say so while it can still be fixed. */
+    const noProduct = to === 'SENT' && quotation.status === 'DRAFT'
+      ? sections.flatMap((s) => s.lines).filter((l) => (l.kind === 'ITEM' || l.kind === 'CHILD') && !l.itemCode).length : 0;
+    if (noProduct) { setError(`${noProduct} priced line${noProduct === 1 ? ' has' : 's have'} no product picked. Pick one first (RN- for generic works).`); return; }
     await act(() => renoSend(`/quotations/${quotation.id}/status`, 'POST', { status: to, version })).catch(() => undefined);
   };
   const newRevision = async () => {

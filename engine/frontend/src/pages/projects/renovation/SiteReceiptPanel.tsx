@@ -10,7 +10,7 @@ import { AuthImage } from "./renovationUi";
 
 export function SiteReceiptPanel({ grnId }: { grnId: string | undefined }) {
   const q = useQuery(["renovation", "site-receipt", grnId ?? ""], () => renovationApi.siteReceiptDetail(grnId!), [grnId], { enabled: !!grnId });
-  if (!q.data) return null;
+  if (!q.data?.receipt) return null;
   const r = q.data.receipt as {
     project_id: number; site_received_at: string | null; site_lat: number | null; site_lng: number | null; site_accuracy_m: number | null;
     supervisor_name: string | null; customer_signer_name: string | null; supervisor_signature_r2_key: string | null; customer_signature_r2_key: string | null; site_notes: string | null;
