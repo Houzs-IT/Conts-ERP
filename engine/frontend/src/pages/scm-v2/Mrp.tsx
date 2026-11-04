@@ -36,7 +36,7 @@ import { newIdempotencyKey } from '../../lib/idempotency';
 import { mrpViews, mrpCategoryOf, mrpGroupViews } from './mrp-views';
 import { useRenovationCatalog } from '../../vendor/scm/lib/renovation-catalog-queries';
 import {
-  type ModelGroup, type MrpFilters, mrpProjectLabel, groupDistinct, rowKey, computeTabModels, lineInWindow, groupEarliestDate,
+  type ModelGroup, type MrpFilters, mrpProjectLabel, groupDistinct, suppliersMainFirst, rowKey, computeTabModels, lineInWindow, groupEarliestDate,
 } from './mrp-model-pipeline';
 import { exportMrpWorkbook } from './mrp-export-workbook';
 import { fmtDate, fmtDateTime, fmtQty } from '../../vendor/shared/format';
@@ -1198,7 +1198,7 @@ const LineSupplierCell = ({ suppliers, chosenSupplierId, onSupplierChange }: {
       onClick={(e) => e.stopPropagation()}
       title="Supplier for this SO line — defaults to the SKU's main supplier"
     >
-      {sortByText(suppliers).map((s) => (
+      {suppliersMainFirst(suppliers).map((s) => (
         <option key={s.supplierId} value={s.supplierId}>
           {s.name}{s.isMain ? ' ★' : ''} · {s.code}
         </option>
