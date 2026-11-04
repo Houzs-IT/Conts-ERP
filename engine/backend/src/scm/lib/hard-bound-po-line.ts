@@ -77,8 +77,8 @@ export function firstSoLinkCategoryMismatch(
   return null;
 }
 
-const bound = (companyId: number | null, line: { item_group: string | null; item_code: string | null }) =>
-  companyId === HARD_BOUND_COMPANY_ID && isHardBoundLine(line.item_group, line.item_code);
+const bound = (companyId: number | null, line: { item_group: string | null; item_code: string | null }, unitBound: ReadonlySet<string>) =>
+  companyId === HARD_BOUND_COMPANY_ID && (isHardBoundLine(line.item_group, line.item_code) || unitBound.has(line.item_code ?? ''));
 
 /**
  * Refuse clearing the link on a company-1 bound purchase line. Re-pointing it at
@@ -91,8 +91,9 @@ export function hardBoundUnlinkRefusal(
   line: { item_group: string | null; item_code: string | null },
   prevSoItemId: string | null,
   nextSoItemId: string | null,
+  unitBound: ReadonlySet<string>,
 ): { error: 'hard_bound_unlink_refused'; message: string } | null {
-  if (!prevSoItemId || nextSoItemId || !bound(companyId, line)) return null;
+  if (!prevSoItemId || nextSoItemId || !bound(companyId, line, unitBound)) return null;
   return {
     error: 'hard_bound_unlink_refused',
     message: 'This line is ordered for a customer\'s sales order and would count for no order unlinked. Pick the sales order line it is for, or remove the line.',
@@ -104,11 +105,12 @@ export function hardBoundUnlinkRefusal(
 export function hardBoundSplitRefusal(
   companyId: number | null,
   line: { item_group: string | null; item_code: string | null },
+  unitBound: ReadonlySet<string>,
 ): { error: 'hard_bound_line_not_splittable'; message: string } | null {
-  if (!bound(companyId, line)) return null;
+  if (!bound(companyId, line, unitBound)) return null;
   return {
     error: 'hard_bound_line_not_splittable',
-    message: 'A sofa, bedframe or Sofa Accessory line is bought for one sales order line and cannot be split. Add a line for each order instead.',
+    message: 'A sofa, bedframe, Sofa Accessory, Works or Built-in line is bought for one sales order line and cannot be split. Add a line for each order instead.',
   };
 }
 

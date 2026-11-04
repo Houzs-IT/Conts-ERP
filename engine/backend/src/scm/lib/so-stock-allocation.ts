@@ -62,6 +62,7 @@ import { SO_TERMINAL_STATES_PGREST } from '../shared/so-terminal-states';
 import { SO_PROCESSING_DATE_COLUMN } from '../shared/so-processing-date';
 import { loadNonSellingWarehouses, warehouseCanPromise } from './non-selling-warehouse';
 import { pgrestIn } from './pgrest-in-list';
+import { isUnitBoundCategory } from './unit-bound-sku';
 
 /* Only the variant-bearing categories run bound. Owner 2026-08-10:
    "SOFA 和 BEDFRAME 因为有变体的问题,所以要走 Convert to PO 的那个模式.
@@ -704,7 +705,9 @@ async function runSoStockAllocation(
        and accessories are common stock: pooling them is correct and is what
        the floor already expects, so they must NOT be diverted. */
     const dedicatedReady = new Map<string, number>();
-    const boundNeeds = needs.filter((n) => isHardBoundLine(n.group, n.item_code));
+    const boundNeed = (n: LineNeed): boolean => isHardBoundLine(n.group, n.item_code)
+      || (companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && isUnitBoundCategory(catByCode.get(n.item_code)));
+    const boundNeeds = needs.filter(boundNeed);
     /* Sofa lines were diverted into sofaLineRecs before `needs` was built, so
        for three months this read never saw them and the bound rule the comment
        above NAMES sofa into never fired for sofa — every migrated set with no
@@ -805,7 +808,7 @@ async function runSoStockAllocation(
          HC-SO-013253 JAGER-(Q) read READY with no PO against blank-variant
          migrated stock (census run 33287776781, owner report 2026-08-30).
          docs/bugs/0572. Company 2 (2990) keeps pooling past this guard. */
-      if (companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && isHardBoundLine(n.group, n.item_code)) {
+      if (companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && boundNeed(n)) {
         targetById.set(n.id, { status: 'PENDING', qtyReady: 0 });
         continue;
       }

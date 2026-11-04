@@ -94,6 +94,7 @@ import { SO_TERMINAL_STATES } from '../shared/so-terminal-states';
 import { isDefaultMrpView, readMrpSnapshot, refreshMrpSnapshot } from '../lib/mrp-snapshot';
 import { allocSourceOf, allocSourceCoveringPo, type AllocSource } from '../shared/mrp-alloc-source';
 import { isHardBoundLine, HARD_BOUND_COMPANY_ID } from '../lib/so-stock-allocation';
+import { isUnitBoundCategory } from '../lib/unit-bound-sku';
 
 export const mrp = new Hono<{ Bindings: Env; Variables: Variables }>();
 mrp.use('*', supabaseAuth);
@@ -876,12 +877,8 @@ export async function computeMrp(
     .range(from, to));
   if (prodErr) throw new Error(`mrp_load_failed: ${prodErr.message}`);
   for (const p of prods) prodByCode.set(p.code, p);
-  /* Works and Built-in are made for one unit (owner, 4 Nov 2026): a PO from an SO serves that unit only, as a sofa's does.
-     Renovation lines all carry item_group RENOVATION, so the SKU's category tells them apart. */
-  const unitBoundCategory = (code: string | null | undefined): boolean =>
-    ['WORKS', 'BUILTIN'].includes(String(prodByCode.get(code ?? '')?.category ?? '').toUpperCase());
   const boundLine = (group: string | null | undefined, code: string | null | undefined): boolean =>
-    isHardBoundLine(group, code) || unitBoundCategory(code);
+    isHardBoundLine(group, code) || isUnitBoundCategory(prodByCode.get(code ?? '')?.category);
 
   // The category dropdown lists every catalog category (a handful of enum
   // values), independent of current demand. The DISTINCT values are few, but
