@@ -1,31 +1,33 @@
-/* Goods received fix a line's spec (owner, 4 Nov 2026: "收货过后就不能更改规格"). The goods are in the warehouse as
-   ordered, so a new SKU or new options would deliver something other than what stock holds, and move stock between
-   variants. Partly received locks the whole line, as a partly delivered line freezes (shared/so-line-freeze.ts).
-   Qty, price, remark and dates are not spec and stay editable. */
+/* Goods received fix a line's spec and price (owner, 4 Nov 2026: "收货过后就不能更改规格"; of the price, "肯定锁").
+   The goods are in the warehouse as ordered, so a new SKU or new options would deliver something other than what stock
+   holds, and move stock between variants; a new price would replace the line, flag its PO line and order it again.
+   Partly received locks the whole line, as a partly delivered line freezes (shared/so-line-freeze.ts).
+   Qty, remark and dates stay editable. */
 import { canonicalizeVariants } from '../shared/so-variant-rule';
 import { variantsForCompare } from './amendment-noop-lines';
 
 export const SPEC_LOCKED_ERROR = 'line_received';
 
 export function specLockedMessage(itemCode: string, poNumber: string): string {
-  return `${itemCode} has goods received on ${poNumber}, so its SKU and options are locked.`;
+  return `${itemCode} has goods received on ${poNumber}, so its SKU, options and price are locked.`;
 }
 
-/** Does this edit move the line's SKU or options? An absent value means unchanged. */
+/** Does this edit move the line's SKU, options or price? An absent value means unchanged. */
 export function specMoved(
-  cur: { itemCode: string | null; group: string | null; variants: unknown },
-  next: { itemCode?: string | null; variants?: unknown },
+  cur: { itemCode: string | null; group: string | null; variants: unknown; unitPriceSen?: number | null },
+  next: { itemCode?: string | null; variants?: unknown; unitPriceSen?: number | null },
 ): boolean {
   const code = next.itemCode?.trim();
   if (code && code !== (cur.itemCode ?? '').trim()) return true;
+  if (next.unitPriceSen != null && Math.round(Number(next.unitPriceSen)) !== Math.round(Number(cur.unitPriceSen ?? 0))) return true;
   if (next.variants === undefined || next.variants === null) return false;
   const read = (v: unknown) => variantsForCompare(canonicalizeVariants(cur.group ?? '', (v ?? {}) as Record<string, unknown>));
   return read(cur.variants) !== read(next.variants);
 }
 
-export interface AmendedLine { salesOrderItemId?: string | null; changeType?: string; newItemCode?: string | null; newVariants?: unknown }
+export interface AmendedLine { salesOrderItemId?: string | null; changeType?: string; newItemCode?: string | null; newVariants?: unknown; newUnitPriceSen?: number | null }
 
-/** The first line of an SO amendment that would change the spec of received goods, or null. Only a SPEC line can. */
+/** The first line of an SO amendment that would change the spec or price of received goods, or null. Only a SPEC line can. */
 export async function receivedSpecRefusal(sb: any, docNo: string, lines: AmendedLine[]): Promise<{ itemCode: string; poNumber: string } | null> {
   const spec = lines.filter((l) => String(l.changeType ?? 'SPEC').toUpperCase() === 'SPEC' && l.salesOrderItemId);
   if (spec.length === 0) return null;
@@ -45,11 +47,11 @@ export async function receivedSpecRefusal(sb: any, docNo: string, lines: Amended
   }
   if (lockedBy.size === 0) return null;
   const { data: items, error: itemErr } = await sb.from('mfg_sales_order_items')
-    .select('id, item_code, item_group, variants').eq('doc_no', docNo).in('id', [...lockedBy.keys()]);
+    .select('id, item_code, item_group, variants, unit_price_sen').eq('doc_no', docNo).in('id', [...lockedBy.keys()]);
   if (itemErr) throw new Error(itemErr.message);
-  for (const it of (items ?? []) as Array<{ id: string; item_code: string; item_group: string | null; variants: unknown }>) {
+  for (const it of (items ?? []) as Array<{ id: string; item_code: string; item_group: string | null; variants: unknown; unit_price_sen: number | null }>) {
     const l = spec.find((x) => x.salesOrderItemId === it.id)!;
-    if (specMoved({ itemCode: it.item_code, group: it.item_group, variants: it.variants }, { itemCode: l.newItemCode, variants: l.newVariants })) {
+    if (specMoved({ itemCode: it.item_code, group: it.item_group, variants: it.variants, unitPriceSen: it.unit_price_sen }, { itemCode: l.newItemCode, variants: l.newVariants, unitPriceSen: l.newUnitPriceSen })) {
       return { itemCode: it.item_code, poNumber: lockedBy.get(it.id)! };
     }
   }

@@ -398,7 +398,7 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
     );
     const code = e.itemCode?.trim();
     const received = po.find((r) => Number(r.received_qty) > 0);
-    if (received && (e.variants !== undefined || (code && code !== t.itemCode))) throw refuse(409, SPEC_LOCKED_ERROR, specLockedMessage(t.itemCode ?? t.description, received.po_number));
+    if (received && (e.variants !== undefined || (code && code !== t.itemCode) || (e.unitPriceSen !== undefined && e.unitPriceSen !== t.unitPriceSen))) throw refuse(409, SPEC_LOCKED_ERROR, specLockedMessage(t.itemCode ?? t.description, received.po_number));
     const out = quickVoLines(t, e, po.length > 0, code ? products.get(code) ?? null : null);
     if (!out) continue;
     if (out.omit) put(t.sectionHeading, out.omit);

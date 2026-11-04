@@ -8,6 +8,8 @@ describe('specMoved', () => {
   it('new options move the spec', () => expect(specMoved(cur, { variants: { divanHeight: '4"', legHeight: '1"' } })).toBe(true));
   it('the same options in another key order do not', () => expect(specMoved(cur, { variants: { legHeight: '1"', divanHeight: '5"' } })).toBe(false));
   it('a remark inside the options does not', () => expect(specMoved(cur, { variants: { divanHeight: '5"', legHeight: '1"', remark: 'x' } })).toBe(false));
+  it('a new price moves it', () => expect(specMoved({ ...cur, unitPriceSen: 100 }, { unitPriceSen: 120 })).toBe(true));
+  it('the same price does not', () => expect(specMoved({ ...cur, unitPriceSen: 100 }, { unitPriceSen: 100 })).toBe(false));
   it('nothing sent does not', () => expect(specMoved(cur, { itemCode: 'BED-1' })).toBe(false));
 });
 
@@ -26,14 +28,17 @@ function fakeSb(rows: { received: unknown[]; pos: unknown[]; items: unknown[] })
 describe('receivedSpecRefusal', () => {
   const received = [{ so_item_id: 'I1', purchase_order_id: 'P1' }];
   const pos = [{ id: 'P1', po_number: 'TC-PO-1' }];
-  const items = [{ id: 'I1', item_code: 'BED-1', item_group: 'bedframe', variants: cur.variants }];
+  const items = [{ id: 'I1', item_code: 'BED-1', item_group: 'bedframe', variants: cur.variants, unit_price_sen: 100 }];
   const moved = { salesOrderItemId: 'I1', changeType: 'SPEC', newItemCode: 'BED-1', newVariants: { divanHeight: '4"', legHeight: '1"' } };
 
   it('refuses new options on a received line', async () => {
     expect(await receivedSpecRefusal(fakeSb({ received, pos, items }), 'SO-1', [moved])).toEqual({ itemCode: 'BED-1', poNumber: 'TC-PO-1' });
   });
-  it('lets a price change through: the options did not move', async () => {
-    expect(await receivedSpecRefusal(fakeSb({ received, pos, items }), 'SO-1', [{ ...moved, newVariants: cur.variants }])).toBeNull();
+  it('refuses a new price on a received line', async () => {
+    expect(await receivedSpecRefusal(fakeSb({ received, pos, items }), 'SO-1', [{ ...moved, newVariants: cur.variants, newUnitPriceSen: 120 }])).toEqual({ itemCode: 'BED-1', poNumber: 'TC-PO-1' });
+  });
+  it('lets a line through when neither options nor price moved', async () => {
+    expect(await receivedSpecRefusal(fakeSb({ received, pos, items }), 'SO-1', [{ ...moved, newVariants: cur.variants, newUnitPriceSen: 100 }])).toBeNull();
   });
   it('lets a qty change through', async () => {
     expect(await receivedSpecRefusal(fakeSb({ received, pos, items }), 'SO-1', [{ ...moved, changeType: 'QTY' }])).toBeNull();

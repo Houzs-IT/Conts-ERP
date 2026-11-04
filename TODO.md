@@ -595,3 +595,6 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Engine deploy gap: a queued "Deploy engine to production" run is cancelled by a newer merge (#613's was) and the newer run publishes only what its own merge changed, so a server or screens change can be left unpublished. Make the run diff against the last successful deploy.
 
 - One SO interface, still different: read page and editor are two components (same order and wording, not the same markup); phones keep MobileSODetail and the stand-alone contract page; the editor counts cancelled lines (Line Items 6 against 4 on TC-SO-2611-001).
+
+## Messages access (owner, 4 Nov 2026)
+- Messages is for customer service, operation and management. Migration 0207 opens it for Property Management and its Customer Service position; Procurement stays closed. The Admin department (4 staff) is not opened: the owner confirms whether they count as operation.
