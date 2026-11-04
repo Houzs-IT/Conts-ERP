@@ -39,7 +39,7 @@ import { serviceNotify } from './dialog-service';
 /** The five documents a hold marker lives on. The key decides the URL and which
  *  caches are dropped, so a new document type cannot be added by a caller
  *  passing a string — it has to be added here, beside its invalidations. */
-export type HoldDocType = 'so' | 'po' | 'grn' | 'pi' | 'do';
+export type HoldDocType = 'so' | 'po' | 'grn' | 'pi' | 'do' | 'pro';
 
 type HoldDocSpec = {
   /** The API path segment, e.g. `mfg-sales-orders`. */
@@ -53,6 +53,7 @@ type HoldDocSpec = {
 const DOCS: Record<HoldDocType, HoldDocSpec> = {
   so:  { base: 'mfg-sales-orders',   label: 'sales order',           invalidate: ['mfg-sales-orders', 'mfg-sales-order-detail', 'so-detail'] },
   po:  { base: 'purchase-orders',    label: 'purchase order',        invalidate: ['purchase-orders', 'purchase-order-detail'] },
+  pro: { base: 'production-orders', label: 'production order', invalidate: ['production-orders', 'production-order-detail'] },
   grn: { base: 'grns',               label: 'goods received note',   invalidate: ['grns', 'grn-detail'] },
   pi:  { base: 'purchase-invoices',  label: 'purchase invoice',      invalidate: ['purchase-invoices', 'purchase-invoice-detail'] },
   do:  { base: 'delivery-orders-mfg', label: 'delivery order',       invalidate: ['mfg-delivery-orders', 'mfg-delivery-order-detail'] },

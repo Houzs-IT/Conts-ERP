@@ -130,6 +130,7 @@ export const SCM_AREA_MOUNTS: ReadonlyArray<readonly [string, string]> = [
   ["/renovation/*", "scm.sales.orders"],
   ["/doc-attachments/*", "scm.sales.orders"],
   ["/renovation-so-info/*", "scm.sales.orders"],
+  ["/production-orders/*", "scm.procurement.production"],
 ] as const;
 
 /* Routers mounted with NO scmAreaGuard — the cross-area picklists and the
@@ -209,6 +210,7 @@ export const SCM_AREA_LABELS: Readonly<Record<string, string>> = {
   "scm.procurement.pi": "purchase invoices",
   "scm.procurement.pr": "purchase returns",
   "scm.procurement.mrp": "MRP",
+  "scm.procurement.production": "production orders",
   "scm.procurement.products": "product setup",
   "scm.procurement.suppliers": "suppliers",
   "scm.consignment.orders": "consignment orders",

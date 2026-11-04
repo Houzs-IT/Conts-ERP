@@ -14,6 +14,7 @@ function markOpenIntentOnPlainClick(e: { button?: number; metaKey: boolean; ctrl
 
 import {
   ClipboardList,
+  Factory,
   Zap,
   Settings as SettingsIcon,
   PanelLeftClose,
@@ -533,6 +534,18 @@ export const ALL_NAV_TABS: NavTab[] = [
           { to: "/scm/grns", label: "Goods Receipt", icon: PackageCheck, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.grn"], hideForSalesRep: true },
           { to: "/scm/purchase-invoices", label: "Purchase Invoices", icon: ReceiptText, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.pi"], hideForSalesRep: true },
           { to: "/scm/purchase-returns", label: "Purchase Returns", icon: Undo2, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.pr"], hideForSalesRep: true },
+        ],
+      },
+      {
+        label: "Production",
+        icon: Factory,
+        groupId: "scm-production",
+        to: "/scm/production-orders",
+        anyPerm: ["*", "scm.access"],
+        anyAccess: ["scm.procurement.production"],
+        hideForSalesRep: true,
+        children: [
+          { to: "/scm/production-orders", label: "Production Orders", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.production"], hideForSalesRep: true },
         ],
       },
       {

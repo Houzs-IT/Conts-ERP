@@ -11,7 +11,7 @@
 import type { Db } from "../../services/renovation/load";
 
 export type DocType =
-  | "quotation" | "sales_order" | "variation_order" | "purchase_order" | "delivery_order" | "goods_received"
+  | "quotation" | "sales_order" | "variation_order" | "purchase_order" | "production_order" | "delivery_order" | "goods_received"
   | "delivery_return" | "purchase_return" | "purchase_invoice" | "sales_invoice" | "receipt"
   | "credit_note" | "official_receipt" | "deposit_invoice" | "payment_voucher" | "ap_invoice";
 
@@ -79,6 +79,12 @@ export const DOC_TYPES: Record<DocType, DocTypeSpec> = {
     lines: item("purchase_order_items", "purchase_order_id", {
       order: "x.line_no, x.id", description: "coalesce(nullif(x.description, ''), nullif(x.material_name, ''), x.item_code)",
       parent: { type: "sales_order", col: "so_item_id" },
+    }),
+  },
+  production_order: {
+    label: "Production order", table: "scm.production_orders", idCol: "id", idKind: "uuid", noExpr: "d.po_number",
+    lines: item("production_order_items", "production_order_id", {
+      order: "x.line_no, x.id", description: "coalesce(nullif(x.description, ''), nullif(x.material_name, ''), x.item_code)",
     }),
   },
   delivery_order: {

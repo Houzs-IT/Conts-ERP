@@ -253,6 +253,7 @@ export const quotationAttachments = router('quotation', '/quotations');
 export const salesOrderAttachments = router('sales_order');
 export const variationOrderAttachments = router('variation_order', '/variation-orders');
 export const purchaseOrderAttachments = router('purchase_order');
+export const productionOrderAttachments = router('production_order');
 export const deliveryOrderAttachments = router('delivery_order');
 export const goodsReceivedAttachments = router('goods_received');
 export const deliveryReturnAttachments = router('delivery_return');

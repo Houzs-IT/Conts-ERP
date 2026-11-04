@@ -1044,4 +1044,17 @@ scm.route("/doc-attachments", docAttachmentsImport);
 scm.use("/renovation-so-info/*", scmAreaGuard("scm.sales.orders"));
 scm.route("/renovation-so-info", renovationSoInfo);
 
+// ── Production orders (mig 0208): the Purchase Order routes cloned onto their own tables ──
+import { productionOrders } from "./routes/production-orders";
+import { productionLineImport } from "./routes/production-line-import";
+import { productionOrderItemPhotos } from "./routes/production-order-item-photos";
+import { productionOrderAttachments } from "./routes/doc-attachments";
+import { renovationProductionInfo } from "./routes/renovation-doc-flow";
+scm.use("/production-orders/*", scmAreaGuard("scm.procurement.production"));
+scm.route("/production-orders", productionLineImport);
+scm.route("/production-orders", productionOrderAttachments);
+scm.route("/production-orders", renovationProductionInfo);
+scm.route("/production-orders", productionOrders);
+scm.route("/production-orders", productionOrderItemPhotos);
+
 export default scm;

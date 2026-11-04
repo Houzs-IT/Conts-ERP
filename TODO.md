@@ -598,3 +598,4 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Messages access (owner, 4 Nov 2026)
 - Messages is for customer service, operation and management. Migration 0207 opens it for Property Management and its Customer Service position; Procurement stays closed. The Admin department (4 staff) is not opened: the owner confirms whether they count as operation.
+- Production orders are a straight clone of the PO module (owner, 4 Nov 2026). Materials, MRP demand and actual vs budget are parked on branch wip/production-materials-mrp; they need rebuilding on the cloned tables (production_order_items, not production_order_lines) before they can merge.

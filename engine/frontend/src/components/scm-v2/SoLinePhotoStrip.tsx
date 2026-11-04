@@ -36,6 +36,7 @@ import { MediaLightbox } from "../MediaLightbox";
 import {
   photoContentType,
   poLinePhotoLightboxBase,
+  productionLinePhotoLightboxBase,
   soLinePhotoLightboxBase,
   useScmLinePhoto,
   type LinePhotoSource,
@@ -215,7 +216,9 @@ export function SoLinePhotoStrip({
           onChange={setOpenAt}
           onClose={() => setOpenAt(null)}
           baseUrl={
-            source === "po"
+            source === "pro"
+              ? productionLinePhotoLightboxBase(docId, itemId)
+              : source === "po"
               ? poLinePhotoLightboxBase(docId, itemId)
               : soLinePhotoLightboxBase(docId, itemId)
           }

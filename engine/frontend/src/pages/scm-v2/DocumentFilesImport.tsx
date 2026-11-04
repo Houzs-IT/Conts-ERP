@@ -15,7 +15,7 @@ import { DOC_LABEL, mimeOf, refusal, sha256Of, uploadDocFile, type DocType } fro
 
 /* Folder and CSV names for each document type; the type's own name works too ("purchase_order", "Purchase order"). */
 const ALIASES: Record<DocType, string[]> = {
-  quotation: ['QT', 'QUO', 'QUOTE', 'QUOTATION'], sales_order: ['SO'], variation_order: ['VO'], purchase_order: ['PO'],
+  quotation: ['QT', 'QUO', 'QUOTE', 'QUOTATION'], sales_order: ['SO'], variation_order: ['VO'], production_order: ['PRO'], purchase_order: ['PO'],
   delivery_order: ['DO'], goods_received: ['GR', 'GRN'], delivery_return: ['DR'], purchase_return: ['PR'],
   purchase_invoice: ['PI'], sales_invoice: ['SI', 'INV'], receipt: ['RC', 'RECEIPT'], credit_note: ['CN', 'DN'],
   official_receipt: ['OR'], deposit_invoice: ['DI'], payment_voucher: ['PV'], ap_invoice: ['AP', 'APINV'],
