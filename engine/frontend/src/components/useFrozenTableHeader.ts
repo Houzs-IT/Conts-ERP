@@ -64,7 +64,8 @@ export function useFrozenTableHeader(enabled: boolean) {
       return;
     }
     const BOTTOM_GAP = 12;
-    const MIN_FREEZE_H = 240;
+    /* Below this a frozen box shows about 3 rows of a long table (a 42-line SO): the page scrolls instead. */
+    const MIN_FREEZE_H = 360;
     const recompute = () => {
       const el = scrollWrapRef.current;
       const rootEl = freezeRootRef.current;
