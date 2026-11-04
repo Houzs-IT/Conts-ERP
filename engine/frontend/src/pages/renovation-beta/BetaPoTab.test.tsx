@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const h = vi.hoisted(() => ({ puts: [] as Array<[string, unknown]>, patches: [] as Array<[string, unknown]>, furniture: false, supplier: false }));
+const h = vi.hoisted(() => ({ coverage: [] as unknown[], puts: [] as Array<[string, unknown]>, patches: [] as Array<[string, unknown]>, furniture: false, supplier: false }));
 
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
@@ -29,6 +29,7 @@ vi.mock("../../vendor/scm/lib/authed-fetch", async (importOriginal) => {
   return {
     ...actual,
     authedFetch: async (path: string, init?: { body?: string }) => {
+      if (path.endsWith("/coverage")) return { coverage: h.coverage };
       h.patches.push([path, init?.body ? JSON.parse(init.body) : null]);
       // A line a live PO buys: the spec route saves it and flags the PO line.
       if (path.endsWith("/lines/bed/spec")) return { ok: true, changed: true, flags: 1 };
@@ -174,6 +175,15 @@ describe("PO tab", () => {
       ["/renovation-so-info/TC-SO-1/lines/sofa/spec", { variants: { colourId: "PC1461-03", fabricId: "PC1461", fabricCode: "PC1461-03", colourLabel: "PC1461-03", fabricLabel: "PC1461", seatHeight: "24", legHeight: "Default" } }],
       ["/renovation-so-info/TC-SO-1/lines/bed/spec", { variants: { fabricCode: "PC1461-01", divanHeight: '6"', legHeight: '1"', gap: '4"', totalHeight: '11"' } }],
     ]);
+    h.furniture = false;
+  });
+
+  it("shows each line's stock from the coverage the sales order page reads", async () => {
+    h.furniture = true;
+    h.coverage = [{ id: "sofa", stock_state: "stock", coverage_po: null, coverage_eta: null, ready_source_pos: [], stock_status_effective: "READY" }];
+    renderTab();
+    expect(await screen.findByText("READY")).toBeTruthy();
+    h.coverage = [];
     h.furniture = false;
   });
 
