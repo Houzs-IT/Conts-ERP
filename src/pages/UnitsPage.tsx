@@ -18,6 +18,7 @@ import { StaleBanner } from '../components/DataState';
 import { RecordSkeleton, TreeSkeleton } from './units/UnitsSkeleton';
 import { UnitList } from './units/UnitList';
 import { exportUnits } from './units/unitExport';
+import { useContractTypes } from '../lib/useContractTypes';
 import { useApi } from '../lib/useApi';
 import { useLeaveGuard } from '../lib/useLeaveGuard';
 import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
@@ -90,6 +91,7 @@ type Modal = null | { kind: 'building' } | { kind: 'editBuilding'; building: Bui
 /** Units: the building and unit tree on the left, the whole record of the chosen unit on the right.
  *  Replaces the separate Properties, Units and Access and keys screens (old addresses redirect here, App.tsx). */
 export default function UnitsPage({ unitId }: { unitId: string }) {
+  const types = useContractTypes();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const toast = useToast();
@@ -268,7 +270,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     <PageHeader title="Units" sub={props.data ? `${plural(units.length, 'unit')} · ${plural(buildings.length, 'building')}` : 'Loading units…'}
       actions={<>
         <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} disabled={units.length === 0} title="Download every unit with every field as an Excel file"
-          onClick={() => exportUnits(units, buildings, readiness)}>Export all units</Button>
+          onClick={() => exportUnits(units, buildings, readiness, types)}>Export all units</Button>
         <Button size="sm" variant="secondary" icon={<Icon name={listMode ? 'FolderTree' : 'Table2'} size="sm" />} onClick={() => setListMode(!listMode)}>{listMode ? 'Tree and record' : 'List of all units'}</Button>
       </>}
       primary={canEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button> : undefined} />
@@ -384,6 +386,7 @@ interface RecordProps {
 }
 
 function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, onSave, onDelete, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
+  const types = useContractTypes();
   const toast = useToast();
   const { user } = useSession();
   // Same people as edit the unit's master data (the server's channex-setup / channex-connect).
@@ -473,7 +476,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
               </span>
               {form?.parentUnitId && <StatusBadge tone="neutral" label="Sub-unit" />}
               <PurposeBadge purpose={u.purpose} />
-              <CodeBadge code={u.contractCode} />
+              <CodeBadge code={u.contractCode} types={types} />
               {u.revenueModel && (rental || u.contractCode) && <span title={`Income model: ${u.revenueModelLabel}. Change it on the Contract tab.`}><ModelChip model={u.revenueModel} label={u.termsLabel ?? u.revenueModelLabel} /></span>}
               {u.channels.length > 0 && (
                 <span className="inline-flex items-center gap-1.5" aria-label={`Sold on ${u.channels.map(c => CH[c].label).join(', ')}`}>

@@ -157,6 +157,8 @@ export const NAV: NavGroup[] = [
     // the Owner Showcase's menu place and permission (Performance), which is what sales staff open, and its sample
     // owner portal replaced the showcase. Its Owners, Statements and Payouts tabs follow their own areas.
     { key: 'ownerB', label: 'Owner B', icon: 'contact', path: '/owner-b', area: 'performance', fresh: true },
+    // The lists the unit screens pick from: buildings, unit types, contract types (owner, 4 Nov 2026).
+    { key: 'unitSettings', label: 'Unit settings', icon: 'settings', path: '/properties/settings', area: 'properties' },
   ] },
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
   ...financeGroups('/finance', '', 'rental'),

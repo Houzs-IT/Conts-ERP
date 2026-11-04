@@ -6,7 +6,7 @@ import { Segmented } from '../components/Metric';
 import { CloseButton } from '../components/CloseButton';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
-import { overallTotals, GROUP_NAME, OWNER_BASE_NAME, type OverallFigures, type ReportGroup } from '../lib/ownerOverall';
+import { overallTotals, occupancyLabel, GROUP_NAME, OWNER_BASE_NAME, type OverallFigures, type ReportGroup } from '../lib/ownerOverall';
 
 /** The overall owner report's unit drawer: L1 breakdown, L2 full detail. Every figure comes from
  *  ownerOverall.ts; this file only lays them out. */
@@ -116,7 +116,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
             </div>
             <div className="text-right text-meta text-muted-ink">
               {r.days ? <>
-                <div>{percent(r.occupancy)} occupancy</div>
+                <div>{occupancyLabel(r.occupancy)} occupancy</div>
                 <div><span className="tabular-nums text-ink">{r.nights}</span> of {r.days} nights booked</div>
               </> : <div>Let by the month</div>}
             </div>
@@ -185,7 +185,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
             </p>
           </Section>
           {r.days > 0 && <Section title="Nights and unit economics" level={2}>
-            <Line label="Nights booked" value={`${r.nights} / ${r.days}`} note={percent(r.occupancy)} />
+            <Line label="Nights booked" value={`${r.nights} / ${r.days}`} note={occupancyLabel(r.occupancy)} />
             <Line label="Revenue per booked night" value={r.nights ? money(r.revPerNight) : '—'} />
             <Line label="Cleaning per booked night" value={r.nights ? money(Math.round(r.cleaning / r.nights)) : '—'} />
             <Line label="Utilities per day" value={money(Math.round(r.utilities / r.days))} note={`all ${r.days} days`} />
@@ -195,8 +195,8 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
             <p className="mb-1 text-meta text-muted-ink">Against the {plural(peers.length, `${GROUP_NAME[r.group].toLowerCase()} unit`)}</p>
             <Line label="Gain / Loss rank" value={`#${rank} of ${peers.length}`} />
             {r.days > 0 && <div className="flex items-baseline justify-between gap-3 py-1.5">
-              <span className="text-muted-ink">Occupancy vs average<span className="ml-1.5 text-meta text-faint">{percent(peerTotals.occupancy)}</span></span>
-              {delta(r.occupancy, peerTotals.occupancy, `${r.occupancy - peerTotals.occupancy < 0 ? '−' : '+'}${Math.abs(r.occupancy - peerTotals.occupancy).toFixed(1)} pts`)}
+              <span className="text-muted-ink">Occupancy vs average<span className="ml-1.5 text-meta text-faint">{occupancyLabel(peerTotals.occupancy)}</span></span>
+              {delta(r.occupancy, peerTotals.occupancy, `${r.occupancy - peerTotals.occupancy < 0 ? '−' : '+'}${Math.abs(r.occupancy - peerTotals.occupancy).toFixed(2)} pts`)}
             </div>}
             <div className="flex items-baseline justify-between gap-3 py-1.5">
               <span className="text-muted-ink">Revenue vs average<span className="ml-1.5 text-meta text-faint">{money(Math.round(avg(peers, x => x.revenue)))}</span></span>

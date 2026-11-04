@@ -3,7 +3,8 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { type Building, type Unit } from './shared';
 import type { UnitReadiness } from '../../lib/types';
 import { statusOf } from '../../lib/status';
-import { PURPOSE_LABEL, USED_BY, CODES, codeName, packageOf } from '../../lib/revenueModel';
+import { PURPOSE_LABEL, USED_BY, typeOptions, packageOf } from '../../lib/revenueModel';
+import { useContractTypes } from '../../lib/useContractTypes';
 import { CodeBadge } from './UnitExtras';
 
 const USED_BY_LABEL = Object.fromEntries(USED_BY.map(u => [u.value, u.label]));
@@ -14,6 +15,7 @@ export function UnitList({ units, buildings, readiness, loading, error, onRetry,
   units: Unit[]; buildings: Building[]; readiness: Record<string, UnitReadiness>;
   loading: boolean; error: string | null; onRetry: () => void; onOpen: (id: string) => void;
 }) {
+  const types = useContractTypes();
   const byId = useMemo(() => new Map(buildings.map(b => [b.id, b])), [buildings]);
   const code = (u: Unit) => units.find(x => x.id === u.parentUnitId)?.unitCode;
   const columns = useMemo<Column<Unit>[]>(() => [
@@ -32,9 +34,9 @@ export function UnitList({ units, buildings, readiness, loading, error, onRetry,
     { key: 'city', label: 'City', value: u => byId.get(u.buildingId)?.city ?? '', hidden: true, width: 130 },
     { key: 'owner', label: 'Owner', type: 'person', value: u => u.ownerName, width: 170 },
     // From the contract's code, so it can never disagree with the Contract column (units.package is a stale import field).
-    { key: 'package', label: 'Package', value: u => packageOf(u.contractCode), width: 110, filter: { kind: 'select' } },
-    { key: 'code', label: 'Contract', value: u => u.contractCode ?? null, width: 96, render: u => <CodeBadge code={u.contractCode} size="sm" />,
-      filter: { kind: 'select', options: CODES.map(c => ({ value: c.code, label: `${codeName(c.code)} · ${c.label}` })) } },
+    { key: 'package', label: 'Package', value: u => packageOf(types, u.contractCode), width: 110, filter: { kind: 'select' } },
+    { key: 'code', label: 'Contract', value: u => u.contractCode ?? null, width: 96, render: u => <CodeBadge code={u.contractCode} types={types} size="sm" />,
+      filter: { kind: 'select', options: typeOptions(types) } },
     { key: 'terms', label: 'Terms', value: u => u.termsLabel ?? null, width: 150 },
     { key: 'term', label: 'Term', value: u => u.term, hidden: true, width: 110, filter: { kind: 'select' } },
     { key: 'bedrooms', label: 'Bedrooms', type: 'number', value: u => u.bedrooms ?? null, hidden: true, width: 90 },
@@ -47,7 +49,7 @@ export function UnitList({ units, buildings, readiness, loading, error, onRetry,
     { key: 'renews', label: 'Renews', type: 'date', value: u => u.contract?.renewsOn || null, hidden: true },
     { key: 'readiness', label: 'Today', type: 'status', value: u => readiness[u.id] ?? null, width: 120,
       status: u => (readiness[u.id] ? statusOf('readiness', readiness[u.id]) : null) },
-  ], [byId, buildings, readiness]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [byId, buildings, readiness, types]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <DataTable<Unit> id="units" columns={columns} rows={units.length || !loading ? units : null} rowKey={u => u.id}
       loading={loading} error={error} onRetry={onRetry} onRowClick={u => onOpen(u.id)} defaultSort="building:asc"

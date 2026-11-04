@@ -4,7 +4,7 @@ import { Field } from '../../components/Field';
 import { NumberInput } from '../../components/inputs';
 import Icon from '../../components/Icon';
 import { StatusBadge } from '../../components/StatusBadge';
-import { BED_SIZES, PURPOSE_LABEL, CODE, codeName, type UnitPurpose, type ContractCode } from '../../lib/revenueModel';
+import { BED_SIZES, PURPOSE_LABEL, codeName, codeLabel, type ContractType, type UnitPurpose, type ContractCode } from '../../lib/revenueModel';
 import { Select, type Bed, type Bay } from './shared';
 
 /** Staff sheet UNIT (17 Oct 2026): beds and mattresses, car park bays, and the badges for what a unit is for and its
@@ -91,7 +91,7 @@ export function PurposeBadge({ purpose }: { purpose?: UnitPurpose | null }) {
 }
 
 /** The contract's short code, e.g. "PS GRR", with its meaning on hover. */
-export function CodeBadge({ code, size }: { code?: ContractCode | null; size?: 'sm' }) {
+export function CodeBadge({ code, types, size }: { code?: ContractCode | null; types: readonly ContractType[]; size?: 'sm' }) {
   if (!code) return null;
-  return <span title={CODE[code]?.label}><StatusBadge tone="accent" label={codeName(code)} size={size} /></span>;
+  return <span title={codeLabel(types, code)}><StatusBadge tone="accent" label={codeName(types, code)} size={size} /></span>;
 }

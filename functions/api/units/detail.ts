@@ -6,6 +6,7 @@ import { stampMyt } from '../../_lib/ops';
 import { stayMonths, metrics, monthEndExclusive, daysInMonth as daysInMonthOf } from '../../_lib/revenue';
 import { statementSettings } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
+import { contractTypes } from '../../_lib/contractTypes';
 import { heldContract } from '../../_lib/datedRows';
 import { MODEL_LABEL } from '../../_lib/revenueModel';
 import { unitMonthPnl, cachedQuery } from '../../_lib/unitPnl';
@@ -128,7 +129,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const row = unit.c_id ? { ...unit, id: unit.c_id, misc_charges: unit.c_misc } : null;
   const later = row && String(row.starts_on ?? '').slice(0, 10) > mytToday()
     ? heldContract(row, await all<any>(env, 'SELECT * FROM owner_contracts WHERE unit_id = ?', unitId), mytToday()) : null;
-  const terms = contractView(later ?? row, unit, settings.defaultFeePct);
+  const terms = contractView(later ?? row, unit, settings.defaultFeePct, 0, await contractTypes(env));
 
   return json({
     generatedAt: new Date().toISOString(),

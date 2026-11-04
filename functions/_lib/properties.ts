@@ -1,10 +1,13 @@
 import { type Env, one, all, run, audit, nowIso } from './db';
 import type { Session } from './auth';
 import { PURPOSES, USED_BY, invalidBeds, invalidBays, type Bed, type BayInput } from './unitPurpose';
+import { NO_GRR } from './contractTypes';
 
 export const PACKAGES = ['Package A', 'Package B', 'Package C', 'Package D'];
 export const TERMS = ['Long term', 'Short term'];
-export const SPLITS = ['Not set', 'Profit share', 'GRR — guaranteed rent'];
+export const GRR_SPLIT = 'GRR — guaranteed rent';
+/** GRR_SPLIT stays readable on the units that already have it; no unit is given it again (see contractTypes.NO_GRR). */
+export const SPLITS = ['Not set', 'Profit share', GRR_SPLIT];
 
 export const GUARANTEE_PERIODS = ['month', 'year'];
 export const LAYOUT_TYPES = ['studio', '1_bedroom', '2_bedroom', '3_bedroom', '4_plus_bedroom', 'duplex', 'dual_key', 'penthouse', 'other'];
@@ -44,8 +47,9 @@ export const masked = (v: string | null | undefined) => {
 export const typed = (v: string | undefined) => (typeof v === 'string' && v.includes(MASK.charAt(0)) ? undefined : v);
 
 /** The first problem with the input, or null. Field name matches the form so the screen can mark it. */
-export function invalidUnit(b: UnitInput): { field: string; message: string } | null {
+export function invalidUnit(b: UnitInput, currentSplit?: string | null): { field: string; message: string } | null {
   if (b.pkg !== undefined && !PACKAGES.includes(b.pkg)) return { field: 'pkg', message: 'Pick a package.' };
+  if (b.split === GRR_SPLIT && currentSplit !== GRR_SPLIT) return { field: 'split', message: NO_GRR };
   if (b.term !== undefined && !TERMS.includes(b.term)) return { field: 'term', message: 'Pick a term.' };
   if (b.split !== undefined && !SPLITS.includes(b.split)) return { field: 'split', message: 'Pick a split.' };
   if (b.splitValue != null && (!Number.isInteger(b.splitValue) || b.splitValue < 0)) return { field: 'splitValue', message: 'Enter a whole number.' };

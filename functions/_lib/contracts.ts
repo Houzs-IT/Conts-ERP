@@ -1,4 +1,5 @@
 import { checkDate } from './validate';
+import { NO_GRR } from './contractTypes';
 
 export interface ContractInput {
   ownerId?: string; ownerName?: string; model?: string; managementFeePct?: number; feePct?: number; grrAmount?: number;
@@ -12,10 +13,12 @@ export function normalise(b: ContractInput) {
   return { model, fee, grr: b.grrAmount ?? 0, starts: b.startsOn ?? b.startedOn, renews: b.renewsOn || null, ends: b.endsOn || null };
 }
 
-/** Field-keyed problems, empty when fine. `requireAll` is true for a new contract, false for a partial change. */
-export function invalidContract(b: ContractInput, requireAll: boolean): Record<string, string> {
+/** Field-keyed problems, empty when fine. `requireAll` is true for a new contract, false for a partial change.
+ *  `currentModel` is the stored one: an old contract already on grr may be saved as it is, but nothing becomes grr. */
+export function invalidContract(b: ContractInput, requireAll: boolean, currentModel?: string | null): Record<string, string> {
   const n = normalise(b), f: Record<string, string> = {};
   if (!['management', 'grr'].includes(n.model)) f.model = 'Pick a fee model.';
+  else if (n.model === 'grr' && b.model !== undefined && currentModel !== 'grr') f.model = NO_GRR;
   if ((requireAll || n.fee !== undefined) && (typeof n.fee !== 'number' || n.fee < 0 || n.fee > 100)) f.managementFeePct = 'Enter a percentage between 0 and 100.';
   if (!Number.isInteger(n.grr) || n.grr < 0) f.grrAmount = 'Enter the monthly rent in whole sen.';
   if (n.model === 'grr' && n.grr <= 0) f.grrAmount = 'Enter the guaranteed monthly rent.';

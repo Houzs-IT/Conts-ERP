@@ -11,7 +11,8 @@ import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { date, monthLabel, rm, todayMyt } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
-import { MODEL, MODEL_TONE, CODES, CODE, codeName, codeFromModel, isTenancy, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
+import { MODEL, MODEL_TONE, typeOf, codeName, codeLabel, codeFromModel, isTenancy, type ContractType, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
+import { useContractTypes } from '../../lib/useContractTypes';
 import { ExtendContractModal, GenerateAgreement } from './ContractExtras';
 import { CodeBadge } from './UnitExtras';
 import { DataTable, type Column } from '../../components/DataTable';
@@ -70,9 +71,9 @@ const senOrEmpty = (sen: number | null | undefined) => (sen ? sen : null);
 const pctOf = (n: number | null | undefined) => (n == null ? null : Number(n.toFixed(2)));
 const pctText = (n: number | null | undefined) => (n == null ? '' : String(Number(n.toFixed(2))));
 
-function draftOf(c: ContractView): Draft {
+function draftOf(c: ContractView, types: readonly ContractType[]): Draft {
   return {
-    revenueModel: c.revenueModel, contractCode: c.contractCode ?? codeFromModel(c.revenueModel), yearlyGuarantee: senOrEmpty(c.yearlyGuarantee),
+    revenueModel: c.revenueModel, contractCode: c.contractCode ?? codeFromModel(types, c.revenueModel), yearlyGuarantee: senOrEmpty(c.yearlyGuarantee),
     ownerPct: pctOf(c.ownerPct ?? 75), managementPct: pctOf(c.managementPct != null && !isTenancy(c.revenueModel) ? c.managementPct : c.ownerPct != null ? 100 - c.ownerPct - (c.agentPct ?? 0) : 25),
     agentPct: pctOf(c.agentPct ?? 0), agentName: c.agentName ?? '',
     minimumGuarantee: senOrEmpty(c.minimumGuarantee), guaranteeStartsOn: c.guaranteeStartsOn ?? '', guaranteeEndsOn: c.guaranteeEndsOn ?? '',
@@ -121,9 +122,9 @@ function problems(d: Draft): Record<string, string> {
 const manageOwnerPct = (d: Draft) => Number((100 - (d.managementPct ?? 0) - (d.agentPct ?? 0)).toFixed(2));
 const isShare = (m: RevenueModel) => m === 'management' || m === 'management_guarantee' || m === 'management_yearly_guarantee';
 
-const HISTORY_COLUMNS: Column<ContractView>[] = [
-  { key: 'code', label: 'Code', value: h => h.contractCode ?? codeFromModel(h.revenueModel), width: 90, render: h => <CodeBadge code={h.contractCode ?? codeFromModel(h.revenueModel)} size="sm" /> },
-  { key: 'model', label: 'Contract type', value: h => CODE[h.contractCode ?? codeFromModel(h.revenueModel)].label, width: 190, render: h => <span><ModelChip model={h.revenueModel} label={CODE[h.contractCode ?? codeFromModel(h.revenueModel)].label} /></span> },
+const historyColumns = (types: readonly ContractType[]): Column<ContractView>[] => [
+  { key: 'code', label: 'Code', value: h => h.contractCode ?? codeFromModel(types, h.revenueModel), width: 90, render: h => <CodeBadge code={h.contractCode ?? codeFromModel(types, h.revenueModel)} types={types} size="sm" /> },
+  { key: 'model', label: 'Contract type', value: h => codeLabel(types, h.contractCode ?? codeFromModel(types, h.revenueModel)), width: 190, render: h => <span><ModelChip model={h.revenueModel} label={codeLabel(types, h.contractCode ?? codeFromModel(types, h.revenueModel))} /></span> },
   { key: 'terms', label: 'Terms', value: h => h.termsLabel, width: 200 },
   { key: 'starts', label: 'From', type: 'date', value: h => h.startsOn, width: 116, render: h => <span className="whitespace-nowrap">{h.startsOn ? date(h.startsOn) : 'No start'}</span> },
   { key: 'ends', label: 'To', type: 'date', value: h => h.endsOn, width: 116, render: h => <span className="whitespace-nowrap">{h.endsOn ? date(h.endsOn) : 'Open'}</span> },
@@ -136,6 +137,7 @@ export function ModelChip({ model, label }: { model: RevenueModel; label?: strin
 /** `startNew`: only the form for a new contract with a later start date, for the narrow Scheduled changes panel. */
 export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew }: { unitId: string; canEdit: boolean; onSaved: () => void; footer?: ReactNode; startNew?: boolean }) {
   const toast = useToast();
+  const types = useContractTypes();
   const { data, loading, error, reload } = useApi<Payload>(`/units/${encodeURIComponent(unitId)}/contract`);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [mode, setMode] = useState<'update' | 'new'>(startNew ? 'new' : 'update');
@@ -150,11 +152,11 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
   const allowedCodes = data?.allowedCodes;
   const original = useMemo(() => {
     if (!current) return null;
-    const o = draftOf(current);
+    const o = draftOf(current, types);
     // No contract yet on a unit whose own split is not a code it may take (a showroom): start from the first it may.
-    if (!current.id && allowedCodes?.length && !allowedCodes.includes(o.contractCode)) return { ...o, contractCode: allowedCodes[0], revenueModel: CODE[allowedCodes[0]].model };
+    if (!current.id && allowedCodes?.length && !allowedCodes.includes(o.contractCode)) return { ...o, contractCode: allowedCodes[0], revenueModel: typeOf(types, allowedCodes[0])?.revenueModel ?? o.revenueModel };
     return o;
-  }, [current, allowedCodes]);
+  }, [current, allowedCodes, types]);
   useEffect(() => { if (original) { setDraft(startNew ? { ...original, startsOn: '', endsOn: '', renewsOn: '' } : original); setMode(startNew ? 'new' : 'update'); setFields({}); setPreview(null); setPicked(false); } }, [original, startNew]);
   const d = draft ?? original;
   // A contract with no saved type is read from its terms; saving would lock that guess in, so the type is chosen first.
@@ -182,9 +184,9 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
   const m = d.revenueModel;
   const share = isShare(m);
   // The current code stays offered even if the list has moved on (an older GRR), so the form can show it.
-  const offered = CODES.filter(c => (data?.allowedCodes ?? CODES.filter(x => x.code !== 'GRR').map(x => x.code)).includes(c.code) || c.code === d.contractCode);
+  const offered = types.filter(t => (data?.allowedCodes ? data.allowedCodes.includes(t.code) : t.isActive) || t.code === d.contractCode);
   const example = preview ?? data?.example ?? null;
-  const guess = current.contractCode ?? codeFromModel(current.revenueModel);
+  const guess = current.contractCode ?? codeFromModel(types, current.revenueModel);
 
   async function save() {
     if (!d) return;
@@ -192,7 +194,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
     try {
       const r = await api.put<{ split: boolean }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d), mode });
       toast({ tone: 'success', title: startNew ? `Contract scheduled from ${date(d.startsOn)}.` : mode === 'new' ? 'New contract started.' : 'Contract saved.',
-        body: `${codeName(d.contractCode)}: ${CODE[d.contractCode].label}.${r.split ? ' This unit now has its own contract; the other units keep theirs.' : ''} Draft owner statements change when regenerated; final ones keep their figures.` });
+        body: `${codeName(types, d.contractCode)}: ${codeLabel(types, d.contractCode)}.${r.split ? ' This unit now has its own contract; the other units keep theirs.' : ''} Draft owner statements change when regenerated; final ones keep their figures.` });
       setMode('update'); reload(); onSaved();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);
@@ -224,7 +226,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
           <div className="flex flex-col gap-1 min-w-0">
             <span className="text-[16px] font-semibold tracking-[-0.01em]">Income model</span>
             <span className="text-meta text-muted-ink">
-              {current.id && current.contractCode && <><CodeBadge code={current.contractCode} size="sm" />{' '}</>}
+              {current.id && current.contractCode && <><CodeBadge code={current.contractCode} types={types} size="sm" />{' '}</>}
               {current.id && current.startsOn && current.startsOn.slice(0, 10) > todayMyt() ? <>Starts {date(current.startsOn)} · {current.termsLabel}{data!.untilThen ? <>. Until then: {data!.untilThen.termsLabel}</> : ''}</>
                 : current.id ? <>In force {current.startsOn ? `from ${date(current.startsOn)}` : ''}{current.endsOn ? ` to ${date(current.endsOn)}` : ''} · {current.termsLabel}</> : <>No contract record yet: the unit's own split is used ({current.termsLabel}). Saving creates its contract.</>}
               {!startNew && data!.history.length > 0 && <> · <a href="#contract-history" className="text-gold-ink">Contract history ({data!.history.length})</a></>}
@@ -246,25 +248,25 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
           {current.sharedWith > 0 && mode === 'update' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">This contract record also covers {current.sharedWith} other {current.sharedWith === 1 ? 'unit' : 'units'} of the owner. Saving here gives this unit its own copy; the others are not changed.</div>}
 
           <Select label="Income model" showLabel size="md" className="max-w-[560px]" value={d.contractCode}
-            options={offered.map(o => ({ value: o.code, label: `${o.code}${o.pkg && o.pkg !== '-' ? ` ${o.pkg}` : ''} - ${o.label}` }))}
-            onChange={v => { const o = CODE[v as ContractCode]; set({ contractCode: o.code, revenueModel: o.model }); setPicked(true); }} />
+            options={[...(typeOf(types, d.contractCode) ? [] : [{ value: d.contractCode, label: d.contractCode }]), ...offered.map(o => ({ value: o.code, label: `${codeName(types, o.code)} - ${o.label}` }))]}
+            onChange={v => { const o = typeOf(types, v); if (o) { set({ contractCode: o.code, revenueModel: o.revenueModel }); setPicked(true); } }} />
           {typeUnset && !picked && (
             <div className="flex flex-wrap items-center justify-between gap-3 py-[10px] px-[14px] rounded-control bg-gold-tint text-copy">
-              <span>Type not set. This contract has no saved type; it is being read as <b>{codeName(guess)}</b> from its terms. Choose the type above, or keep this one, before saving.</span>
+              <span>Type not set. This contract has no saved type; it is being read as <b>{codeName(types, guess)}</b> from its terms. Choose the type above, or keep this one, before saving.</span>
               <Button size="sm" variant="secondary" onClick={() => setPicked(true)}>Keep {guess}</Button>
             </div>
           )}
           {(() => {
-            const o = CODE[d.contractCode];
+            const o = typeOf(types, d.contractCode);
             return (
               <div aria-live="polite" className="flex flex-col gap-2 rounded-card [border:1px_solid_var(--color-line)] bg-page p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">Selected model</span>
-                  <ModelChip model={m} label={o.code} />
+                  <ModelChip model={m} label={d.contractCode} />
                 </div>
                 <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-copy">
-                  <dt className="text-muted-ink">Type</dt><dd className="m-0 font-medium text-ink">{o.label}{o.pkg && o.pkg !== '-' ? ` ${o.pkg}` : ''}</dd>
-                  <dt className="text-muted-ink">Terms</dt><dd className="m-0 text-ink [text-wrap:pretty]">{o.blurb}</dd>
+                  <dt className="text-muted-ink">Type</dt><dd className="m-0 font-medium text-ink">{o?.label ?? d.contractCode}{o?.package ? ` (${o.package})` : ''}</dd>
+                  <dt className="text-muted-ink">Terms</dt><dd className="m-0 text-ink [text-wrap:pretty]">{o?.blurb}</dd>
                   <dt className="text-muted-ink">Statement</dt><dd className="m-0 text-ink [text-wrap:pretty]">{MODEL[m].statement}</dd>
                 </dl>
               </div>
@@ -352,7 +354,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
       </Card>
 
       {extending && current.id && <ExtendContractModal unitId={unitId} unitLabel={data!.unit.label}
-        current={{ code: current.contractCode ?? codeFromModel(current.revenueModel), termsLabel: current.termsLabel, startsOn: current.startsOn, endsOn: current.endsOn }}
+        current={{ code: current.contractCode ?? codeFromModel(types, current.revenueModel), termsLabel: current.termsLabel, startsOn: current.startsOn, endsOn: current.endsOn }}
         onClose={() => setExtending(false)} onSaved={() => { setExtending(false); reload(); onSaved(); }} />}
       {!startNew && <StatementExample example={example} month={data!.month} draft={dirty && !!preview} busy={previewing} />}
 
@@ -363,7 +365,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
             <span className="text-meta text-muted-ink">Earlier contracts of this unit. A month before the current contract started is worked out on the one in force then.</span>
           </div>
           <DataTable<ContractView> id="unit.contracts" urlPrefix="ct." bare noViews noToolbar pageSize={0} maxHeight="none"
-            columns={HISTORY_COLUMNS} rows={data!.history} rowKey={h => h.id ?? `${h.startsOn}|${h.revenueModel}`} noun={['contract', 'contracts']} />
+            columns={historyColumns(types)} rows={data!.history} rowKey={h => h.id ?? `${h.startsOn}|${h.revenueModel}`} noun={['contract', 'contracts']} />
         </Card>
       )}
       {/* Who changed the terms and when, field by field: this contract and the unit's earlier ones (at most 10). */}
