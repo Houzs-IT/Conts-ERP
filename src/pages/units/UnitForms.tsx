@@ -165,7 +165,9 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
         </Labeled>
       </NumberRow>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4 mb-[22px]">
+      {/* Side by side only when the card is wide enough: next to the unit list a wide screen still leaves a narrow card. */}
+      <div className="@container mb-[22px]">
+      <div className="grid grid-cols-1 @2xl:grid-cols-2 gap-x-8 gap-y-4">
         <div className="flex flex-col gap-2 min-w-0">
           <SectionHead noMargin>Beds and mattresses</SectionHead>
           {(u.beds?.length ?? 0) > 0 && <span className="text-copy font-medium">{bedsText(u.beds, bedSizes.data?.data ?? [])}</span>}
@@ -176,6 +178,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
           {(u.parkingBays?.length ?? 0) > 0 && <span className="text-copy font-medium">{baysText(u.parkingBays)}</span>}
           <BaysEditor bays={u.parkingBays ?? []} disabled={!canEdit} onChange={parkingBays => onChange({ parkingBays })} />
         </div>
+      </div>
       </div>
 
       </>}
