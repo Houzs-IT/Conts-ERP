@@ -14,7 +14,9 @@ import { ErrorBanner } from './shared';
 
 const DOC_TITLE: Record<string, string> = { quotation: 'Quotation', 'sales order': 'Sales Order', 'variation order': 'Variation Order' };
 
-export function PrintDialog({ open, onClose, title, docNo, defaultFormat, build, rows }: {
+export function PrintDialog({ open, onClose, title, docNo, brandName, defaultFormat, build, rows }: {
+  /** The document's own brand, as its PDF prints it. */
+  brandName?: string;
   open: boolean; onClose: () => void; title: string; docNo: string; defaultFormat: PrintFormat;
   build: (format: PrintFormat) => Promise<PrintDoc>;
   /** The card's summary lines (customer, date, total); without them the card names the paper. */
@@ -39,6 +41,7 @@ export function PrintDialog({ open, onClose, title, docNo, defaultFormat, build,
       onClose={onClose}
       docTitle={DOC_TITLE[title] ?? title}
       docNo={docNo}
+      companyName={brandName}
       rows={[...(rows ?? []), { label: 'Format', value: PRINT_FORMATS[format].label }, { label: 'Paper', value: `A4 portrait${density === 'compact' ? ', compact rows' : ''}` }]}
       options={(
         <div className="space-y-2">
