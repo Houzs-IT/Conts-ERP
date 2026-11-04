@@ -599,3 +599,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 ## Messages access (owner, 4 Nov 2026)
 - Messages is for customer service, operation and management. Migration 0207 opens it for Property Management and its Customer Service position; Procurement stays closed. The Admin department (4 staff) counts as operation (owner, 4 Nov 2026): migration 0212 opens it.
 - Production orders started as a clone of the PO module (owner, 4 Nov 2026). Raw materials, MRP demand, Complete (GRN and delivered DO) and the photo flow are live. Actual vs budget is not built; branch wip/production-materials-mrp is superseded apart from that idea and can be dropped once the owner agrees.
+
+## After the 4 Nov 2026 re-check
+- State blank on 106 of 143 SOs, because their project has none. 21 can come from the Unit settings building list by exact name (Skyline Embassy 18, Maple 3); the other 85 are on 27 buildings not in that list (KL 48 is 43), so the state has to come from the owner. Warehouse is not affected: every state maps to CONTS-WH.
+- Engine screens tests: 34 of 6,726 fail. The ones read are stale guards, not screen faults: Houzs menus and routes removed, Chinese removed, category master list, the Production Order clone not added to the DataTable, coverage and storage lists. Worth a clean-up so a real failure stands out. Not read in full: MonthlyReport, ReportLayoutTree, renovationFlowFixes, mrp-views, convertScope. To fix: MobileRenovationDocs.tsx has no crash boundary of its own around its lazy pages.
+- Not yet seen live: the received-lock note on the SO edit page (needs a line received with no DO; the only one on a test order is cancelled). Project SO tab at phone width: tab switch is a native select that automation cannot drive.
