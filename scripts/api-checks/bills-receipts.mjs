@@ -28,7 +28,7 @@ const day = `${month}-20`;
 let r = await call('POST', '/api/expenses', { unitId: unit.id, category: 'water', amount: 4200, incurredOn: day, chargeTo: 'owner', description: 'Water, no receipt' });
 check('owner-paid water bill without a receipt is refused (422 RECEIPT_REQUIRED)', r.status === 422 && r.json?.error?.code === 'RECEIPT_REQUIRED' && !!r.json.error.fields?.receipt, r.text);
 r = await call('POST', '/api/expenses', { unitId: unit.id, category: 'other', amount: 4200, incurredOn: day, description: 'Deduction, no payer given' });
-check('an additional deduction with no payer given (owner by default) is refused too', r.status === 422 && r.json?.error?.code === 'RECEIPT_REQUIRED', r.text);
+check('an additional deduction (owner pays by default) needs no receipt', r.status === 201, r.text);
 r = await call('POST', '/api/expenses', { unitId: unit.id, category: 'internet', amount: 9900, incurredOn: day, chargeTo: 'the_conts', description: 'Wi-Fi, company pays' });
 check('a bill the company pays needs no receipt', r.status === 201, r.text);
 const companyBill = r.json?.id;
