@@ -17,6 +17,7 @@ import {
 import { OpeningBalances } from "./OpeningBalances";
 import { EverydayExpense } from "./EverydayExpense";
 import { ProjectLimitSettings } from "./ProjectLimitSettings";
+import { SubDepartments } from "./SubDepartments";
 import { RenovationOpening } from "./RenovationOpening";
 import { OpeningDeposits } from "./OpeningDeposits";
 
@@ -109,6 +110,8 @@ export function LedgerSetup() {
       {q.isSuccess && <OpeningDeposits canSave={canSave} ledgerStartDate={q.data.ledgerStartDate} />}
       {/* Conts (SOP 3.4; chew 4 Nov 2026): the limit on or off, and the company's share — the limit's own key. */}
       <ProjectLimitSettings canSave={canApproveLimit} />
+      {/* Conts (SOP 1.1; chew 4 Nov 2026): the sub-departments every line names — the ledger post key. */}
+      <SubDepartments canSave={canSave} />
       {/* Conts (finance phase 1.5; SOP 3.4): the expense accounts outside a project limit. */}
       <EverydayExpense canSave={canSave} />
     </div>

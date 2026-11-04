@@ -81,6 +81,7 @@ import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, 
 import { importOpeningDeposits, reverseOpeningDeposits } from '../../acc/opening-deposits';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
 import { partyLedgerHandler } from '../../conts/party-ledger';
+import { createSubDepartmentHandler, listStaffDepartmentsHandler, listSubDepartmentsHandler, updateSubDepartmentHandler } from '../../conts/sub-department-routes';
 import { approveLimitRequestHandler, createLimitRequestHandler, getLimitSettingsHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler, setLimitSettingsHandler } from '../../conts/project-limit-routes';
 import { projectOfPurchaseInvoice } from '../../conts/project-limit';
 import * as pettyCash from '../../conts/petty-cash-routes';
@@ -245,6 +246,11 @@ accounting.get('/everyday-expense', listEverydayExpenseHandler);
 accounting.put('/everyday-expense', setEverydayExpenseHandler);
 accounting.get('/project-limit-settings', getLimitSettingsHandler);
 accounting.put('/project-limit-settings', setLimitSettingsHandler);
+/* Sub-departments (SOP 1.1; chew 4 Nov 2026) — conts/sub-department-routes.ts. */
+accounting.get('/sub-departments', listSubDepartmentsHandler);
+accounting.post('/sub-departments', createSubDepartmentHandler);
+accounting.put('/sub-departments/:id', updateSubDepartmentHandler);
+accounting.get('/staff-departments', listStaffDepartmentsHandler);
 accounting.get('/projects/:id/limit', projectLimitHandler);
 accounting.post('/projects/:id/limit-requests', createLimitRequestHandler);
 accounting.get('/limit-requests', listLimitRequestsHandler);
