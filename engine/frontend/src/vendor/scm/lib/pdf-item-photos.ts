@@ -1,5 +1,6 @@
 // ----------------------------------------------------------------------------
-// pdf-item-photos — line photos on printed documents (SO + PO PDFs).
+// pdf-item-photos — line and document photos on printed documents (SO, PO, DO
+// and GR PDFs; pdf-doc-photos.ts loads the photos kept as attachments).
 //
 // Owner-approved mockup (2026-08) + his live-print QA (2026-08-28): a table
 // row carries NO image — a line that has photos appends " (photo)" to its
@@ -10,7 +11,9 @@
 // item/supplier code, and uniform ~52mm square thumbnails (max 3 per row,
 // then wrap). Groups flow left-to-right and wrap; a group NEVER splits across
 // pages — when it does not fit, the whole group moves to the next page under
-// a continued heading.
+// a continued heading. Only a group too tall for ANY page (13 or more photos on
+// one line) is broken, at a row of photos, into "Item 3" and "Item 3 (cont.)",
+// because it could not fit anywhere whole.
 //
 // EVERY generated string here is deliberately WinAnsi-only. The v1 heading
 // carried 「照片对照」 and the marker 「(图)」, and ensurePdfCjkFont's
@@ -52,6 +55,9 @@ export const PHOTO_MARKER = ' (photo)';
 
 export const ITEM_PHOTOS_HEADING = 'ITEM PHOTOS';
 export const ITEM_PHOTOS_HEADING_CONT = 'ITEM PHOTOS (cont.)';
+/* When every photo is on the whole document, not on an item. */
+export const DOC_PHOTOS_HEADING = 'PHOTOS';
+export const DOC_PHOTOS_HEADING_CONT = 'PHOTOS (cont.)';
 
 // Layout constants (mm). Owner live-print QA 2026-08-28: v1's 26mm tiles were
 // "太小了 我要大一倍" — 52mm squares now, so a row of THREE fills the 182mm
@@ -94,6 +100,8 @@ export type PhotoGroup = {
   chip: string;
   code: string;
   photoKeys: string[];
+  /** On the whole document, not on a printed row. */
+  document?: boolean;
 };
 
 const sameKeys = (a: readonly string[], b: readonly string[]): boolean =>
@@ -173,6 +181,22 @@ export function groupBoxSize(count: number): { w: number; h: number } {
   };
 }
 
+/**
+ * Break any group with more photos than `maxPhotos` (what a fresh page holds)
+ * into groups that fit, at a row of photos, later parts chipped "(cont.)".
+ */
+export function splitOversizeGroups(groups: readonly PhotoGroup[], maxPhotos: number): PhotoGroup[] {
+  const cap = Math.max(MAX_THUMBS_PER_ROW, maxPhotos - (maxPhotos % MAX_THUMBS_PER_ROW));
+  return groups.flatMap((g) => {
+    if (g.photoKeys.length <= cap) return [g];
+    const parts: PhotoGroup[] = [];
+    for (let i = 0; i < g.photoKeys.length; i += cap) {
+      parts.push({ ...g, chip: i === 0 ? g.chip : `${g.chip} (cont.)`, photoKeys: g.photoKeys.slice(i, i + cap) });
+    }
+    return parts;
+  });
+}
+
 export type PhotoRegion = { x: number; y: number; w: number; bottom: number };
 export type PhotoPlacement = { x: number; y: number; page: number };
 
@@ -207,9 +231,8 @@ export function layoutPhotoGroups(
       }
       const fits = curX + s.w <= region.w && rowTop + s.h <= region.bottom;
       /* A group bigger than a whole fresh page can never fit anywhere: place
-         it at the top of a fresh page rather than loop forever (needs ~60
-         photos on one line — not a real document, but not an infinite loop
-         either). */
+         it at the top of a fresh page rather than loop forever.
+         drawItemPhotosBlock breaks such groups first; this is the guard. */
       const lastResort = hops > regions.length && curX === 0 && rowTop === region.y;
       if (fits || lastResort) {
         placements.push({ x: region.x + curX, y: rowTop, page });
@@ -280,6 +303,10 @@ export function sniffImageMime(
  * they are printed. */
 export const PDF_THUMB_PX = 1536;
 
+/** The longest edge in a PO emailed to the supplier: the email refuses an attachment over 5 MB
+ *  (PO_ATTACHMENT_CAP_BYTES), and at PDF_THUMB_PX about ten photos reach that. Still sharp on paper at 52mm. */
+export const PDF_EMAIL_THUMB_PX = 800;
+
 /**
  * Decode any browser-displayable image blob and re-encode it as a JPEG data URL
  * for jsPDF. Returns null on ANY failure — undecodable bytes, no canvas in this
@@ -296,7 +323,7 @@ export const PDF_THUMB_PX = 1536;
  * grid layout is untouched and nothing below has to move. The returned aspect
  * ratio lets the caller size it — see drawPhotoTile.
  */
-export async function blobToSquarePdfImage(blob: Blob): Promise<PdfPhotoImage | null> {
+export async function blobToSquarePdfImage(blob: Blob, maxPx: number = PDF_THUMB_PX): Promise<PdfPhotoImage | null> {
   try {
     if (typeof document === 'undefined' || typeof createImageBitmap !== 'function') return null;
     const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -310,7 +337,7 @@ export async function blobToSquarePdfImage(blob: Blob): Promise<PdfPhotoImage | 
       if (!(longest > 0)) return null;
       /* NEVER UPSCALE. A 300px source re-encoded at 1536 is the same 300px of
          detail in nine times the bytes — bigger file, not a better photo. */
-      const scale = Math.min(1, PDF_THUMB_PX / longest);
+      const scale = Math.min(1, maxPx / longest);
       const cw = Math.max(1, Math.round(bitmap.width * scale));
       const ch = Math.max(1, Math.round(bitmap.height * scale));
       const canvas = document.createElement('canvas');
@@ -507,10 +534,23 @@ export function drawItemPhotosBlock(
   images: ReadonlyMap<string, PdfPhotoImage>,
   opts: DrawPhotoBlockOpts,
 ): { drew: boolean; endY: number; pagesAdded: number } {
-  const drawable = groups
-    .map((g) => ({ ...g, photoKeys: g.photoKeys.filter((k) => images.has(k)) }))
-    .filter((g) => g.photoKeys.length > 0);
+  const fresh = opts.pageBottom - (opts.pageTop + HEADING_MM + GROUP_HEADER_MM);
+  const rowsOnAPage = Math.max(1, Math.floor((fresh + THUMB_GAP_MM) / (THUMB_MM + THUMB_GAP_MM)));
+  const drawable = splitOversizeGroups(
+    groups
+      .map((g) => ({ ...g, photoKeys: g.photoKeys.filter((k) => images.has(k)) }))
+      .filter((g) => g.photoKeys.length > 0),
+    rowsOnAPage * MAX_THUMBS_PER_ROW,
+  );
   if (drawable.length === 0) return { drew: false, endY: opts.startY, pagesAdded: 0 };
+  /* Say so when a photo could not be read: the row still says (photo), and a supplier should not take what printed
+     for the whole set. Each photo counts once, however many groups list it. */
+  const printed = new Set(drawable.flatMap((g) => g.photoKeys));
+  const missing = new Set(groups.flatMap((g) => g.photoKeys).filter((k) => !printed.has(k))).size;
+  const documentOnly = drawable.every((g) => g.document);
+  const heading = (documentOnly ? DOC_PHOTOS_HEADING : ITEM_PHOTOS_HEADING)
+    + (missing > 0 ? ` (${missing} could not be printed)` : '');
+  const headingCont = documentOnly ? DOC_PHOTOS_HEADING_CONT : ITEM_PHOTOS_HEADING_CONT;
 
   const side = opts.side;
   const useSide =
@@ -533,12 +573,16 @@ export function drawItemPhotosBlock(
   const sizes = drawable.map((g) => groupBoxSize(g.photoKeys.length));
   const { placements, pagesAdded, endY } = layoutPhotoGroups(sizes, regions, pageRegion);
 
-  drawHeadingText(
-    doc,
-    ITEM_PHOTOS_HEADING,
-    useSide ? side.x : opts.margin,
-    useSide ? side.y : opts.startY,
-  );
+  /* No heading left alone at the foot of a page: when nothing fits under it here, it opens the next page. */
+  const startsLater = placements[0]!.page > 0;
+  if (!startsLater) {
+    drawHeadingText(
+      doc,
+      heading,
+      useSide ? side.x : opts.margin,
+      useSide ? side.y : opts.startY,
+    );
+  }
   let curPage = 0;
   drawable.forEach((group, gi) => {
     const p = placements[gi]!;
@@ -546,7 +590,7 @@ export function drawItemPhotosBlock(
       doc.addPage();
       curPage += 1;
       if (opts.onNewPage) opts.onNewPage();
-      drawHeadingText(doc, ITEM_PHOTOS_HEADING_CONT, opts.margin, opts.pageTop);
+      drawHeadingText(doc, startsLater && curPage === 1 ? heading : headingCont, opts.margin, opts.pageTop);
     }
     drawGroup(doc, group, images, p.x, p.y);
   });

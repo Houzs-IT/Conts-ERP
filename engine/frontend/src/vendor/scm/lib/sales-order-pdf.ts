@@ -38,10 +38,8 @@ import {
   photoKeysOf,
   type PdfPhotoImage,
 } from './pdf-item-photos';
+import { isAttachmentKey, loadDocPdfPhotos } from './pdf-doc-photos';
 import { fetchSoItemPhotoBlob } from './sales-order-queries';
-import { API_URL } from './authed-fetch';
-import { readAuthPass, readAuthToken } from '../../../lib/authToken';
-import { companyHeader } from '../../../lib/activeCompany';
 import {
   ensureBrandingLogoLoaded,
   ensureBrandLogoLoaded,
@@ -331,35 +329,6 @@ type AutoTableFn = (typeof import('jspdf-autotable'))['default'];
    The footer loop iterates ONLY this doc's pages (`startPage`…end), so the
    per-SO doc no / portal label / "Page p of N" line stays correct when several
    SOs are appended to one document. */
-/* A line attachment as a photo key of its own, so it joins the same ITEM PHOTOS groups as photo_urls. */
-const ATTACHMENT_KEY = 'attachment:';
-
-/** Each line's attached images (its Photos button), as attachment keys, by line id. Best effort: a document whose
-    attachments cannot be read prints without them. */
-async function lineAttachmentPhotoKeys(docNo: string): Promise<Map<string, string[]>> {
-  const out = new Map<string, string[]>();
-  try {
-    const { listDocFiles } = await import('../../../components/doc-attachments/docAttachmentsApi');
-    const r = await listDocFiles('sales_order', docNo);
-    for (const line of r.lines ?? []) {
-      const ids = line.files.filter((f) => f.kind === 'image' && f.lineId === line.id).map((f) => `${ATTACHMENT_KEY}${f.id}`);
-      if (ids.length) out.set(line.id, ids);
-    }
-  } catch {
-    /* printed without the attached photos */
-  }
-  return out;
-}
-
-async function fetchAttachmentBlob(docNo: string, fileId: string): Promise<Blob> {
-  const pass = readAuthPass();
-  const res = await fetch(`${API_URL}/mfg-sales-orders/${encodeURIComponent(docNo)}/attachments/${encodeURIComponent(fileId)}`, {
-    headers: { authorization: `Bearer ${readAuthToken()}`, ...(pass ? { 'X-Session-Pass': pass } : {}), ...companyHeader() },
-  });
-  if (!res.ok) throw new Error(`attachment ${res.status}`);
-  return res.blob();
-}
-
 export async function renderSalesOrderInto(
   doc: JsPdf,
   autoTable: AutoTableFn,
@@ -421,14 +390,17 @@ export async function renderSalesOrderInto(
      back to its original (fetchLinePhotoForPdf — the AutoCount cutover keys
      have no thumb; docs/bugs/0815), each photo best-effort: a key whose fetch
      or decode fails is skipped and the PDF renders without it. */
-  /* The photos people attach to a line with its Photos button (scm.doc_attachments, owner 16 Oct 2026) print too:
-     they are where every line photo now lives, and the PDF read only the older photo_urls (owner, 3 Nov 2026). */
-  const attached = await lineAttachmentPhotoKeys(header.doc_no);
-  const keysOf = (it: SoItem): string[] => [...photoKeysOf(it.photo_urls), ...(attached.get(it.id) ?? [])];
-  const photoGroups = buildPhotoGroups(orderedItems.map((it) => ({
-    code: it.item_code,
-    photoKeys: keysOf(it),
-  })));
+  /* The photos people attach with the Photos buttons (scm.doc_attachments, owner 16 Oct 2026) print too, the line's
+     and the whole order's (owner, 3 and 4 Nov 2026). */
+  const attached = await loadDocPdfPhotos('sales_order', header.doc_no);
+  const keysOf = (it: SoItem): string[] => [...photoKeysOf(it.photo_urls), ...attached.lineKeys(it.id)];
+  const photoGroups = [
+    ...buildPhotoGroups(orderedItems.map((it) => ({
+      code: it.item_code,
+      photoKeys: keysOf(it),
+    }))),
+    ...attached.documentGroups,
+  ];
   const photoOwners = photoKeyOwners(orderedItems.map((it) => ({
     id: it.id,
     photoKeys: photoKeysOf(it.photo_urls),
@@ -437,7 +409,7 @@ export async function renderSalesOrderInto(
     ? await collectPhotoImages(
         photoGroups,
         (key) => {
-          if (key.startsWith(ATTACHMENT_KEY)) return fetchAttachmentBlob(header.doc_no, key.slice(ATTACHMENT_KEY.length));
+          if (isAttachmentKey(key)) return attached.fetch(key);
           const ownerId = photoOwners.get(key);
           if (!ownerId) return Promise.reject(new Error('photo_owner_missing'));
           return fetchLinePhotoForPdf((k) => fetchSoItemPhotoBlob(header.doc_no, ownerId, k), key);

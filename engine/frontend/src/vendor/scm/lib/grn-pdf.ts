@@ -19,8 +19,19 @@ import { loadSupplierDocData, supplierCodeFor, docVariantLine } from './supplier
    docs/modules/document-status-vocabulary.md §1. */
 import { statusLabel } from './status-pill';
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
+import {
+  appendPhotoMarker,
+  blobToSquarePdfImage,
+  buildPhotoGroups,
+  collectPhotoImages,
+  drawItemPhotosBlock,
+  type PdfPhotoImage,
+} from './pdf-item-photos';
+import { loadDocPdfPhotos } from './pdf-doc-photos';
 
 type GrnHeader = {
+  /* Row id: the photos are read by it. A consignment receive has none and prints no photos. */
+  id?: string | null;
   grn_number: string; status: string;
   received_at: string; delivery_note_ref: string | null;
   notes: string | null; posted_at: string | null;
@@ -133,10 +144,25 @@ export async function renderGrnInto(
     ),
   ).map((r) => r.__row);
 
+  /* The goods-received photos, the same block as the SO, PO and DO (owner, 4 Nov 2026): each line's own and those of
+     the PO and SO lines it came from, the whole receipt's, and the proof-of-receipt photos. */
+  const attached = await loadDocPdfPhotos('goods_received', header.id);
+  const photoGroups = [
+    ...buildPhotoGroups(orderedItems.map((it) => ({
+      code: supplierCodeFor(it, skuMap),
+      photoKeys: attached.lineKeys(it.id),
+    }))),
+    ...attached.documentGroups,
+  ];
+  const photoImages: Map<string, PdfPhotoImage> = photoGroups.length > 0
+    ? await collectPhotoImages(photoGroups, attached.fetch, blobToSquarePdfImage)
+    : new Map<string, PdfPhotoImage>();
+
   const rows = orderedItems.map((it, idx) => {
     const specs = docVariantLine(it, fabricMap, fabricDescMap, { labelled: true });
     const reno = renoLineNote(opts?.renovation, it.id, true);
-    const desc = [it.description ?? it.material_name, reno].filter(Boolean).join('\n');
+    const descLines = [it.description ?? it.material_name, reno].filter((s): s is string => Boolean(s));
+    const desc = (attached.lineKeys(it.id).length > 0 ? appendPhotoMarker(descLines) : descLines).join('\n');
     return [
       String(idx + 1),
       supplierCodeFor(it, skuMap),
@@ -170,7 +196,20 @@ export async function renderGrnInto(
     },
     margin: { left: margin, right: margin },
   });
-  const lastY = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 6;
+  let lastY = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 6;
+
+  if (photoImages.size > 0) {
+    const photoRes = drawItemPhotosBlock(doc, photoGroups, photoImages, {
+      margin,
+      contentW: pageW - margin * 2,
+      startY: lastY,
+      pageBottom: 272,
+      pageTop: margin,
+      side: null,
+      onNewPage: null,
+    });
+    if (photoRes.drew) lastY = photoRes.endY + 6;
+  }
 
   drawSignatureBoxes(doc, lastY, 'Warehouse Received By', 'Supplier Driver Signature');
 
