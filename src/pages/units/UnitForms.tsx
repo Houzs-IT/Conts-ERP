@@ -24,7 +24,7 @@ import { cx } from '../../lib/design-tokens';
 import { Link } from 'react-router-dom';
 import {
   STATES, cap, layoutFromBedrooms, useLayoutTypes, isPlaceholderOwner,
-  SectionHead, Grid3, Labeled, Select, ReadOnly, CentreModal,
+  SectionHead, Grid3, NumberRow, Labeled, Select, ReadOnly, CentreModal,
   type Unit, type Building, type UnitDetail,
 } from './shared';
 
@@ -141,26 +141,28 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
       {sub === 'space' && <>
       <SectionHead>Type and size</SectionHead>
       <Grid3>
-        <Labeled label="Type" help={u.layoutType ? undefined : suggested ? `Suggested from ${u.bedrooms === 0 ? 'no bedrooms' : `${u.bedrooms} ${u.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`}. Saved with the next save.` : 'Pick one.'}>
+        <Labeled label="Type" className="sm:max-w-[320px]" help={u.layoutType ? undefined : suggested ? `Suggested from ${u.bedrooms === 0 ? 'no bedrooms' : `${u.bedrooms} ${u.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`}. Saved with the next save.` : 'Pick one.'}>
           <Select label="Type" value={layout ?? ''} onChange={v => onChange({ layoutType: v || null })}
             options={[...(layout ? [] : [{ value: '', label: 'Not set' }]), ...typeOptions.map(t => ({ value: t.key, label: t.isActive ? t.label : `${t.label} (hidden)` }))]} />
           {types.data?.ready && types.data.mayEdit && (
             <Link to="/properties/settings?tab=types" className="self-start text-meta font-semibold text-gold-ink no-underline">Edit the Type list</Link>
           )}
         </Labeled>
-        <Labeled label="Bedrooms" help="0 for a studio">
+      </Grid3>
+      <NumberRow>
+        <Labeled label="Bedrooms" help="0 = studio" className="w-24">
           <NumberInput label="" aria-label="Bedrooms" min={0} max={20} value={u.bedrooms ?? null}
             onChange={n => onChange({ bedrooms: n ?? undefined })} />
         </Labeled>
-        <Labeled label="Bathrooms">
+        <Labeled label="Bathrooms" className="w-24">
           <NumberInput label="" aria-label="Bathrooms" min={0} max={20} value={u.bathrooms ?? null}
             onChange={n => onChange({ bathrooms: n ?? undefined })} />
         </Labeled>
-        <Labeled label="Size (sq ft)" help="Built-up area">
+        <Labeled label="Size (sq ft)" help="Built-up area" className="w-28">
           <NumberInput label="" aria-label="Size in square feet" min={1} max={100000} value={u.sizeSqft ?? null}
             onChange={n => onChange({ sizeSqft: n ?? null })} />
         </Labeled>
-      </Grid3>
+      </NumberRow>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4 mb-[22px]">
         <div className="flex flex-col gap-2 min-w-0">

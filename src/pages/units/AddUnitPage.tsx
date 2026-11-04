@@ -23,7 +23,7 @@ import { BuildingModal, useOwnerOptions } from './UnitForms';
 import { ContractFields, blankDraft, bodyOf, problems, type Draft } from './contractForm';
 import { PROPERTIES_FALLBACK } from './fallback';
 import { EMPTY_FORM, STEPS, hasInput, layoutToSave, stepAt, stepOfField, stepProblems, type AddUnitForm, type StepIndex } from './addUnitRules';
-import { mayEditUnits, isPlaceholderOwner, layoutFromBedrooms, useLayoutTypes, SectionHead, Grid3, Labeled, Select, ReadOnly, type Building, type PropertiesPayload } from './shared';
+import { mayEditUnits, isPlaceholderOwner, layoutFromBedrooms, useLayoutTypes, SectionHead, Grid3, NumberRow, Labeled, Select, ReadOnly, type Building, type PropertiesPayload } from './shared';
 
 interface NewUnitBody {
   buildingId: string; ownerId?: string; listingName: string; unitCode: string; address?: string;
@@ -240,21 +240,24 @@ export default function AddUnitPage(): ReactElement {
               {step === 1 && <>
                 <SectionHead>Type and size</SectionHead>
                 <Grid3>
-                  <Labeled label="Type" help={!form.layoutType && layout ? `Suggested from ${form.bedrooms === 0 ? 'no bedrooms' : `${form.bedrooms} ${form.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`}.` : undefined}>
+                  <Labeled label="Type" className="sm:max-w-[320px]" help={!form.layoutType && layout ? `Suggested from ${form.bedrooms === 0 ? 'no bedrooms' : `${form.bedrooms} ${form.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`}.` : undefined}>
                     <Select label="Type" value={layout ?? ''} onChange={v => edit({ layoutType: v })}
                       options={[...(layout ? [] : [{ value: '', label: 'Not set' }]), ...typeOptions.map(t => ({ value: t.key, label: t.label }))]} />
                     {fieldError('layoutType')}
                   </Labeled>
-                  <Labeled label="Bedrooms" help="0 for a studio. Blank saves as 1.">
+                </Grid3>
+                <NumberRow>
+                  <Labeled label="Bedrooms" help="0 = studio" className="w-24">
                     <NumberInput label="" aria-label="Bedrooms" min={0} max={20} value={form.bedrooms} onChange={n => edit({ bedrooms: n })} error={shownErrors.bedrooms} />
                   </Labeled>
-                  <Labeled label="Bathrooms" help="Blank saves as 1.">
+                  <Labeled label="Bathrooms" className="w-24">
                     <NumberInput label="" aria-label="Bathrooms" min={0} max={20} value={form.bathrooms} onChange={n => edit({ bathrooms: n })} error={shownErrors.bathrooms} />
                   </Labeled>
-                  <Labeled label="Size (sq ft)" help="Built-up area">
+                  <Labeled label="Size (sq ft)" help="Built-up area" className="w-28">
                     <NumberInput label="" aria-label="Size in square feet" min={1} max={100000} value={form.sizeSqft} onChange={n => edit({ sizeSqft: n })} error={shownErrors.sizeSqft} />
                   </Labeled>
-                </Grid3>
+                  <p className="basis-full m-0 -mt-1 text-caption text-muted-ink">Bedrooms or bathrooms left blank save as 1.</p>
+                </NumberRow>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
                   <div className="flex flex-col gap-2 min-w-0">
                     <SectionHead noMargin>Beds and mattresses</SectionHead>
