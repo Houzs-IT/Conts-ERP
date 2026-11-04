@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { instalmentRows, nextInstalmentSen } from "./renovationSoInstalments";
+import { instalmentRows, nextInstalmentSen, toCollectSen } from "./renovationSoInstalments";
 
 const view = (receivedSen = 0) => ({
   receivedSen, revisedContractSen: 100_000,
@@ -9,6 +9,13 @@ const view = (receivedSen = 0) => ({
     { id: "c", seq: 3, label: "3RD PAYMENT", pctBp: 3500, amountSen: 35_000, bill: null },
     { id: "d", seq: 4, label: "4TH PAYMENT", pctBp: 500, amountSen: 5_000, bill: null },
   ],
+});
+
+describe("toCollectSen", () => {
+  it("takes what earlier overpayment already covered off the instalment", () => {
+    expect(toCollectSen({ amountSen: 248400, paidSen: 1600 })).toBe(246800);
+    expect(toCollectSen({ amountSen: 248400, paidSen: 300000 })).toBe(0);
+  });
 });
 
 describe("renovation SO instalments", () => {

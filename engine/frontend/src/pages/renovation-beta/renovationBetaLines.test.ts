@@ -4,7 +4,7 @@ const h = vi.hoisted(() => ({ calls: [] as Array<[string, unknown]> }));
 vi.mock("../../vendor/scm/lib/authed-fetch", () => ({
   authedFetch: async (path: string, init?: { body?: string }) => {
     h.calls.push([path, init?.body ? JSON.parse(init.body) : null]);
-    if (path.includes("/lines/b/spec")) return { ok: true, changed: true, voNo: "VO-TC-SO-1-02", flags: 1 };
+    if (path.includes("/lines/b/spec")) return { ok: true, changed: true, flags: 1 };
     if (path.endsWith("/line-edits")) return { voNo: "VO-TC-SO-1-03", flags: 0 };
     return { ok: true, changed: true };
   },
@@ -165,7 +165,7 @@ describe("picked variants (owner, 2 Nov 2026)", () => {
 });
 
 describe("postContractLines", () => {
-  it("variants alone go to the line's spec route (the server raises the VO for a PO line); with a qty change they ride the VO edit", async () => {
+  it("variants alone go to the line's spec route, no VO even on a PO line; with a qty change they ride the VO edit", async () => {
     h.calls.length = 0;
     const po = { poId: "p", poNumber: "TC-PO-1", poStatus: "RECEIVED", poLineId: "pl", poDate: null, deliveryDate: null, supplierRevised: false, qty: 1, received: 1, photoKeys: [] };
     const lines = [
@@ -178,6 +178,6 @@ describe("postContractLines", () => {
     expect(h.calls.map((c) => c[0])).toEqual(["/renovation-so-info/TC-SO-1/lines/a/spec", "/renovation-so-info/TC-SO-1/lines/b/spec", "/renovation/sales-orders/TC-SO-1/line-edits"]);
     expect(h.calls[0][1]).toEqual({ variants: { fabricCode: "F2", seatHeight: "24" } });
     expect((h.calls[2][1] as { edits: unknown[] }).edits).toEqual([{ soItemId: "c", qty: 5, variants: { fabricCode: "F1", seatHeight: "28" } }]);
-    expect(r).toMatchObject({ applied: true, amendmentNo: "VO-TC-SO-1-02, VO-TC-SO-1-03", poFlags: 1 });
+    expect(r).toMatchObject({ applied: true, amendmentNo: "VO-TC-SO-1-03", poFlags: 1 });
   });
 });

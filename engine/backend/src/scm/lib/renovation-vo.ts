@@ -484,10 +484,11 @@ export async function listPoFlags(db: RenoDb, soDocNo: string) {
     `select f.id, f.action, f.new_qty, f.status, f.note, f.created_at::text as created_at, f.resolved_at::text as resolved_at, v.vo_no,
             po.po_number, po.id as purchase_order_id, pi.item_code, pi.qty
        from scm.reno_po_line_flags f
-       join scm.reno_variation_orders v on v.id = f.vo_id
+       left join scm.reno_variation_orders v on v.id = f.vo_id
+       left join scm.mfg_sales_order_items si on si.id = f.so_item_id
        join scm.purchase_order_items pi on pi.id = f.purchase_order_item_id
        join scm.purchase_orders po on po.id = pi.purchase_order_id
-      where v.so_doc_no = $1 order by f.created_at`,
+      where coalesce(v.so_doc_no, si.doc_no) = $1 order by f.created_at`,
     [soDocNo],
   );
   return rows.map((r) => ({ id: r.id, action: r.action, newQty: r.new_qty === null ? null : Number(r.new_qty), status: r.status, note: r.note,

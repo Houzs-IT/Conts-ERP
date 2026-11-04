@@ -30,8 +30,8 @@ vi.mock("../../vendor/scm/lib/authed-fetch", async (importOriginal) => {
     ...actual,
     authedFetch: async (path: string, init?: { body?: string }) => {
       h.patches.push([path, init?.body ? JSON.parse(init.body) : null]);
-      // A line a live PO buys: the spec route raises the contract VO itself.
-      if (path.endsWith("/lines/bed/spec")) return { ok: true, changed: true, voNo: "VO-TC-SO-1-02", flags: 1 };
+      // A line a live PO buys: the spec route saves it and flags the PO line.
+      if (path.endsWith("/lines/bed/spec")) return { ok: true, changed: true, flags: 1 };
       return {};
     },
   };
@@ -143,7 +143,7 @@ describe("PO tab", () => {
     expect(within(region).queryAllByRole("textbox")).toHaveLength(0);
   });
 
-  it("picks a sofa's and a bedframe's variants; a line with no variant options has nothing to pick; the PO line's change raises a VO", async () => {
+  it("picks a sofa's and a bedframe's variants; a line with no variant options has nothing to pick; the PO line is flagged, no VO", async () => {
     h.furniture = true;
     h.patches.length = 0;
     renderTab();
@@ -163,13 +163,13 @@ describe("PO tab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Pick for BEDFRAME" }));
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Save & post to VO" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/Fabric PC1461-02 -> PC1461-03/)).toBeTruthy();
-    expect(within(dialog).getByText(/a contract VO is raised/)).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save & post to VO" }));
+    expect(within(dialog).getByText(/no VO, and its PO line is flagged/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByText("VO-TC-SO-1-02 raised: the PO line is flagged for purchasing.")).toBeTruthy();
+    expect(await screen.findByText("The PO line is flagged for purchasing.")).toBeTruthy();
     expect(h.patches).toEqual([
       ["/renovation-so-info/TC-SO-1/lines/sofa/spec", { variants: { colourId: "PC1461-03", fabricId: "PC1461", fabricCode: "PC1461-03", colourLabel: "PC1461-03", fabricLabel: "PC1461", seatHeight: "24", legHeight: "Default" } }],
       ["/renovation-so-info/TC-SO-1/lines/bed/spec", { variants: { fabricCode: "PC1461-01", divanHeight: '6"', legHeight: '1"', gap: '4"', totalHeight: '11"' } }],
