@@ -14,7 +14,7 @@ vi.mock("./subDepartmentQueries", () => ({
   ] } }),
 }));
 
-import { nextLineSub, SubDepartmentSelect } from "./SubDepartmentSelect";
+import { nextLineSub, SubDepartmentSelect, useLineDepartmentLabel } from "./SubDepartmentSelect";
 
 describe("the sub-department picker", () => {
   it("shows the three department headings, and picking one sets both", () => {
@@ -41,5 +41,15 @@ describe("the sub-department picker", () => {
   it("a new line takes the nearest line above's", () => {
     expect(nextLineSub([{ department: "rental", subDepartmentId: "s-mnt" }, { department: "", subDepartmentId: null }])).toEqual({ department: "rental", subDepartmentId: "s-mnt" });
     expect(nextLineSub([])).toEqual({ department: "", subDepartmentId: null });
+  });
+
+  it("a saved line reads as its sub-department; a team's line with no unit says so", () => {
+    let label: ReturnType<typeof useLineDepartmentLabel> = () => "";
+    function Probe() { label = useLineDepartmentLabel(); return null; }
+    render(<Probe />);
+    expect(label({ department: "rental", subDepartmentId: "s-mnt", unitId: null })).toBe("Maintenance · No unit");
+    expect(label({ department: "rental", subDepartmentId: "s-mnt", unitId: "u-a31" })).toBe("Maintenance");
+    expect(label({ department: "rental", subDepartmentId: "s-gen", unitId: null })).toBe("Rental (general)");
+    expect(label({ department: "supply", subDepartmentId: null })).toBe("Renovation");
   });
 });

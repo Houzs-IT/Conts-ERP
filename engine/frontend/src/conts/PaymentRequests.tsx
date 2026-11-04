@@ -11,16 +11,19 @@ import { usePrompt } from "../vendor/scm/components/PromptDialog";
 import { useChoice } from "../vendor/scm/components/ChoiceDialog";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
-import { DEPARTMENT, REQUEST_STATUS, requestFileUrl, requestsPath, useFinanceAction, usePaymentRequests, type PaymentRequest } from "./claimsQueries";
+import { REQUEST_STATUS, requestFileUrl, requestsPath, useFinanceAction, usePaymentRequests, type PaymentRequest } from "./claimsQueries";
 import { FileButtons, Money, useChooseBank, usePettyOptions } from "./ClaimsParts";
+import { useLineDepartmentLabel } from "./SubDepartmentSelect";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
 
-const lineSummary = (r: PaymentRequest) =>
-  r.lines.map((l) => [DEPARTMENT[l.department], l.accountCode, l.description].filter(Boolean).join(" · ")).join("; ");
+const lineSummaryWith = (label: (l: PaymentRequest["lines"][number]) => string) => (r: PaymentRequest) =>
+  r.lines.map((l) => [label(l), l.accountCode, l.description].filter(Boolean).join(" · ")).join("; ");
 
 export function PaymentRequests() {
   const [status, setStatus] = useState("SUBMITTED");
   const q = usePaymentRequests(status);
+  /* Each line's sub-department (SOP 1.1), "No unit" on a team's line without one. */
+  const lineSummary = lineSummaryWith(useLineDepartmentLabel());
   const opts = usePettyOptions();
   const act = useFinanceAction();
   const prompt = usePrompt();

@@ -257,3 +257,44 @@ describe('a receipt sent again', () => {
     expect((await handIn(appFor(sb, CLEAN), { id })).status).toBe(409);
   });
 });
+
+/* SOP 1.1 (chew 4 Nov 2026): a staff document starts on a sub-department, and a request's voucher keeps it. */
+describe('sub-departments on staff documents', () => {
+  const withSubs = () => {
+    const sb = world();
+    Object.assign(sb.tables, { acc_sub_departments: [
+      { id: 's-gen', company_id: CO, department: 'rental', name: 'Rental (general)', fixed_key: 'rental_general', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-mnt', company_id: CO, department: 'rental', name: 'Maintenance', fixed_key: null, staff_department_id: 'maint', active: true, sort: 20 },
+      { id: 's-dc', company_id: CO, department: 'supply', name: 'Renovation (Dream Crafter)', fixed_key: 'dreamcrafter', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-co', company_id: CO, department: 'shared', name: 'Company', fixed_key: 'company', staff_department_id: 'ops', active: true, sort: 10 },
+    ] });
+    return sb;
+  };
+  const realCreate = claimsDeps.createVoucher;
+  afterEach(() => { claimsDeps.createVoucher = realCreate; });
+
+  test('a receipt from the Maintenance float with no job and no unit is Maintenance', async () => {
+    const sb = withSubs();
+    expect((await handIn(appFor(sb, KEEPER), { lines: [{ amountSen: 4500 }] })).status).toBe(201);
+    expect(sb.tables.staff_receipt_lines[0]).toMatchObject({ department: 'rental', sub_department_id: 's-mnt', unit_id: null });
+  });
+
+  test("a request's voucher line keeps the request line's sub-department", async () => {
+    const sb = withSubs();
+    const a = appFor(sb, OPS, 'session');
+    const made = await (await post(a, '/requests', { type: 'PAYMENT', supplierId: 'S1', amountSen: 3_000, files: [PNG], lines: [{ amountSen: 3_000 }] })).json() as { id: string };
+    expect(sb.tables.payment_request_lines[0]).toMatchObject({ department: 'shared', sub_department_id: 's-co' });
+    claimsDeps.createVoucher = async () => {
+      sb.tables.payment_vouchers.push({ id: 'PV1', company_id: CO, status: 'DRAFT' });
+      sb.tables.payment_voucher_lines.push({ id: 'PVL1', pv_id: 'PV1', company_id: CO, line_no: 1, department: 'shared', amount_sen: 3_000, debit_account_code: '601-0001' });
+      return { ok: true, id: 'PV1', pvNumber: 'HCDraft-2611-002' };
+    };
+    sb.tables.payment_request_lines[0].account_code = '601-0001';
+    const fin = new Hono<{ Variables: Record<string, unknown> }>();
+    fin.use('*', async (c, next) => { c.set('supabase', sb); c.set('companyId', CO); c.set('houzsUser', { name: 'Chew', permissions_set: new Set([FULL_KEY]) }); await next(); });
+    fin.post('/r/:id/voucher', requestVoucherHandler);
+    const r = await post(fin, `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' });
+    expect(r.status, await r.clone().text()).toBe(201);
+    expect(sb.tables.payment_voucher_lines[0]).toMatchObject({ sub_department_id: 's-co' });
+  });
+});

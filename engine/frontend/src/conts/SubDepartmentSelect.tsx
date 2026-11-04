@@ -13,6 +13,19 @@ const GROUPS: ReadonlyArray<{ department: Department; label: string }> = [
   { department: "shared", label: "Company" },
 ];
 
+const DEPT_LABEL: Record<Department, string> = { rental: "Rental", supply: "Renovation", shared: "Company" };
+
+/** How a saved line's department reads on a list: its sub-department's name, else its department; a Rental line on a
+    team's sub-department (Maintenance, Cleaning…) with no unit says "No unit" (SOP 1.1). */
+export function useLineDepartmentLabel(): (l: { department: string; subDepartmentId?: string | null; unitId?: string | null }) => string {
+  const list = useSubDepartments().data?.subDepartments ?? [];
+  return (l) => {
+    const s = l.subDepartmentId ? list.find((x) => x.id === l.subDepartmentId) : undefined;
+    if (!s) return DEPT_LABEL[l.department as Department] ?? l.department;
+    return s.department === "rental" && !s.fixedKey && !l.unitId ? `${s.name} · No unit` : s.name;
+  };
+}
+
 /** A new line's: the nearest line above that has a department; none on the first. */
 export function nextLineSub(lines: ReadonlyArray<LineSub>): LineSub {
   for (let i = lines.length - 1; i >= 0; i -= 1) {

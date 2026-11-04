@@ -3,9 +3,38 @@
 import { lineDepartment } from './petty-cash';
 import type { Staff } from './staff-identity';
 import { receiptAccountProblem } from './petty-cash-routes';
+import { loadSubDepartments, subForStaffDepartment } from './sub-departments';
+import { isDepartment } from '../acc/rules';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in the routes it serves */
-export type LineRow = { department: string; unit_id: string | null; maintenance_issue_id: string | null; project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number };
+export type LineRow = { department: string; unit_id: string | null; maintenance_issue_id: string | null; project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number; sub_department_id?: string | null };
+
+/** The sub-department each line starts on (SOP 1.1; chew 4 Nov 2026): a maintenance job's line Maintenance; else the
+    float's department's when the receipt is paid from one, with or without a unit; else the person's own department's.
+    A staff department nobody mapped falls back to the line's department's built-in row. Finance changes it while
+    checking. Never refuses: with no list (not set up yet) the lines stay as they were. */
+export async function defaultLineSubs(sb: any, companyId: number, lines: LineRow[], from: { staffDepartmentId: string | null; floatId: string | null }): Promise<void> {
+  const loaded = await loadSubDepartments(sb, companyId);
+  if (!loaded.ok || loaded.list.length === 0) return;
+  let floatDept: string | null = null;
+  if (from.floatId) {
+    const { data } = await sb.from('petty_cash_floats').select('department_id').eq('company_id', companyId).eq('id', from.floatId).maybeSingle();
+    floatDept = (data as { department_id?: string } | null)?.department_id ?? null;
+  }
+  let maintenanceDept: string | null = null;
+  if (lines.some((l) => l.maintenance_issue_id)) {
+    const { data } = await sb.schema('public').from('conts_departments').select('id').eq('kind', 'maintenance').limit(1);
+    maintenanceDept = ((data ?? []) as Array<{ id: unknown }>)[0]?.id != null ? String((data as Array<{ id: unknown }>)[0]!.id) : null;
+  }
+  for (const l of lines) {
+    const fallback = isDepartment(l.department) ? l.department : 'shared';
+    try {
+      const s = subForStaffDepartment(loaded.list, l.maintenance_issue_id ? maintenanceDept : floatDept ?? from.staffDepartmentId, l.maintenance_issue_id ? 'rental' : fallback);
+      l.sub_department_id = s.id;
+      l.department = s.department;
+    } catch { /* a list without its built-in rows: leave the line as it was */ }
+  }
+}
 
 /** The lines a person sends, made safe: their own department, a maintenance job's unit and Rental, no account, and only
  *  jobs they may name. Returns a message when something is wrong. */

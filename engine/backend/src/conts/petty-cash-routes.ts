@@ -28,6 +28,7 @@ import { CONTROL_ROLES, resolveRoles } from '../acc/rules';
 import { projectLimit } from './project-limit';
 import { topUpAmount } from './petty-cash';
 import { postReceiptJournal, postWriteOffJournal } from './petty-cash-ledger';
+import { resolveLinesSub } from './sub-departments';
 import { fileResponse } from './claims-files';
 import {
   RECEIPT_COLS, allRows, departmentNames, filesOf, floatBalances, floatsOf, linesOf, monthRange, receiptView, staffNames,
@@ -348,7 +349,7 @@ export const financeReceiptFileHandler = async (c: Ctx): Promise<Response> => {
   return fileResponse(obj, f.file_name, f.mime);
 };
 
-type LineIn = { department?: unknown; unitId?: unknown; maintenanceIssueId?: unknown; projectId?: unknown; accountCode?: unknown; amountSen?: unknown; description?: unknown };
+type LineIn = { department?: unknown; unitId?: unknown; maintenanceIssueId?: unknown; projectId?: unknown; accountCode?: unknown; amountSen?: unknown; description?: unknown; subDepartmentId?: unknown };
 type NewLine = Omit<ReceiptLineRow, 'id' | 'receipt_id'>;
 const DEPTS = new Set(['rental', 'supply', 'shared']);
 /** Lines finance corrected while checking; null when any is malformed. */
@@ -364,6 +365,8 @@ export function parseLines(raw: unknown): NewLine[] | null {
       department: String(l.department), unit_id: l.unitId ? String(l.unitId) : null, maintenance_issue_id: l.maintenanceIssueId ? String(l.maintenanceIssueId) : null,
       project_id: project, account_code: l.accountCode ? String(l.accountCode).trim() : null, amount_sen: amount,
       description: l.description ? String(l.description).slice(0, 300) : null, sort: i,
+      /* SOP 1.1: finance's pick; checkOne resolves it and sets the line's department from it. */
+      ...(l.subDepartmentId ? { sub_department_id: String(l.subDepartmentId) } : {}),
     });
   }
   return out;
@@ -382,6 +385,10 @@ async function checkOne(c: Ctx, companyId: number, it: Record<string, unknown>):
   if (it.lines !== undefined) {
     const parsed = parseLines(it.lines);
     if (!parsed) return { id, ok: false, error: 'lines_invalid', message: `${r.receipt_no}: check the lines.` };
+    /* Each named sub-department sets its line's department; one the receipt already had is kept even if retired. */
+    const subs = await resolveLinesSub(sb, companyId, parsed.map((l) => ({ subDepartmentId: l.sub_department_id })), current.map((l) => l.sub_department_id ?? null));
+    if (!subs.ok) return { id, ok: false, error: subs.error, message: `${r.receipt_no}: ${subs.message}` };
+    subs.lines.forEach((s, i) => { if (s) parsed[i]!.department = s.department; });
     lines = parsed;
   } else if (it.amountSen !== undefined) {
     const v = Number(it.amountSen);
@@ -575,7 +582,7 @@ export const receiptVoucherHandler = async (c: Ctx): Promise<Response> => {
   const names = await staffNames(sb);
   const made = await claimsDeps.createVoucher(c, {
     payeeName: names.get(r.submitter_user_id) || 'Staff', creditAccountCode: bank, purpose: 'OTHER',
-    lines: lines.map(l => ({ debitAccountCode: l.account_code, amountSen: Number(l.amount_sen), description: l.description ?? `Receipt ${r.receipt_no}`, department: l.department })),
+    lines: lines.map(l => ({ debitAccountCode: l.account_code, amountSen: Number(l.amount_sen), description: l.description ?? `Receipt ${r.receipt_no}`, department: l.department, ...(l.sub_department_id ? { subDepartmentId: l.sub_department_id } : {}) })),
     notes: `Pays back receipt ${r.receipt_no}. Bank: ${details.bankName} ${details.accountNo}${details.accountName ? ` (${details.accountName})` : ''}`,
   });
   if (!made.ok) return c.json(made.body, made.status as 400);

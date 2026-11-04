@@ -19,6 +19,8 @@ const request: PaymentRequest = {
   createdAt: "2026-10-20T00:00:00Z", lines: [{ department: "supply", unitId: null, maintenanceIssueId: null, projectId: 7, accountCode: "601-0001", amountSen: 500000, description: "Cabinet deposit" }],
   files: [], vouchers: [],
 };
+/* The sub-departments a line names (SOP 1.1). */
+vi.mock("./subDepartmentQueries", () => ({ useSubDepartments: () => ({ data: { subDepartments: [] } }) }));
 vi.mock("./claimsQueries", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./claimsQueries")>()),
   useFloats: () => ({ data: { floats, totals: { floatSen: 150000, balanceSen: 13000, waitingCheckSen: 4500 } }, isLoading: false, isError: false, refetch: vi.fn() }),
