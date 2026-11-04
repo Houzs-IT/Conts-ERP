@@ -79,7 +79,7 @@ export interface ManagedLine {
   /** The renovation contract line behind this SO line, where the supplier choice is kept (null: not a contract line). */
   contractLineId: string | null;
   /** The suppliers this SKU can be ordered from (its supplier bindings), main first (owner, 3 Nov 2026: only these).
-      Empty for a SKU with none bound: LinesAnswer.allSuppliers applies. */
+      LinesAnswer.suppliers has the rest. */
   supplierChoices: SupplierChoice[];
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none), for the role's category access. */
@@ -107,9 +107,8 @@ export interface LinesAnswer {
   /** False until migration 0155 is applied: planned dates cannot be saved yet. */
   plansReady: boolean;
   sos: Array<{ docNo: string; status: string; voLocked: boolean; renovation: boolean }>;
+  suppliers: Array<{ id: string; name: string }>;
   lines: ManagedLine[];
-  /** Every active supplier, for a line whose SKU has none bound (works and services mostly); empty when no line needs it. */
-  allSuppliers: SupplierChoice[];
   pendingPoChanges: PendingPoChange[];
   /** True when the caller's role sees only some categories: lines of the others are left out. */
   categoryRestricted: boolean;
@@ -311,10 +310,6 @@ export async function loadProjectLines(
       plan: plans.byId.get(x.id) ?? { orderOn: null, deliverOn: null, noPo: false },
     };
   });
-  const allSuppliers = lines.some((l) => l.supplierChoices.length === 0)
-    ? await rows<{ id: string; code: string; name: string }>(db,
-      `SELECT id::text AS id, code, name FROM scm.suppliers WHERE company_id = ? AND status::text = 'ACTIVE' ORDER BY name`, companyId)
-    : [];
   const pending = await rows<{ id: string; amendment_no: string; po_id: string; po_number: string; source: string | null }>(db,
     `SELECT a.id::text AS id, a.amendment_no, a.po_id::text AS po_id, a.po_number, a.source_so_amendment_id::text AS source
        FROM scm.po_amendments a JOIN scm.so_amendments sa ON sa.id = a.source_so_amendment_id
@@ -322,13 +317,16 @@ export async function loadProjectLines(
       WHERE ${PROJECT_SO} AND a.status::text = 'REQUESTED'
       ORDER BY a.created_at`,
     projectId, companyId);
+  const { results: supplierRows } = await db.prepare(
+    `SELECT s.id::text AS id, s.name FROM scm.suppliers s WHERE s.company_id = ? AND s.status::text = 'ACTIVE' ORDER BY s.name`,
+  ).bind(companyId).all<{ id: string; name: string }>();
   // A PO change shows only while the caller sees a line of that PO.
   const shownPending = keepVisiblePos(pending, (p) => p.po_id, lines.flatMap((l) => l.pos.map((p) => p.poId)), scope);
   return {
     finance, plansReady: plans.ready, categoryRestricted: scope !== null,
     sos: sos.map((s) => ({ docNo: s.doc_no, status: s.status, voLocked: String(s.status).toUpperCase() !== "DRAFT", renovation: Boolean(s.renovation) })),
     lines,
-    allSuppliers: allSuppliers.map((s) => ({ ...s, main: false, priceSen: null })),
+    suppliers: supplierRows ?? [],
     pendingPoChanges: shownPending.map((p) => ({
       id: p.id, amendmentNo: p.amendment_no, poId: p.po_id, poNumber: p.po_number, voLabel: p.source ? voLabels.get(p.source) ?? null : null,
     })),
@@ -425,20 +423,28 @@ export async function contractLineOf(db: Db, soItemId: string): Promise<{ lineId
   return r ? { lineId: r.line_id, docNo: r.doc_no, itemCode: r.item_code ?? "", version: Number(r.version) } : null;
 }
 
-/** Whether a supplier can be picked for this SKU: one it is bound to (its price becomes the line's cost), or, for a SKU
-    with none bound, any active supplier (no price). Null: not allowed. */
+/** Bind a supplier to a SKU from the line that needs it (owner, 4 Nov 2026: pick from the suppliers we have). No price
+    yet; the SKU's first supplier becomes its main one. Null when the supplier is not this company's. */
+export async function bindSupplier(db: Db, itemCode: string, companyId: number, supplierId: string): Promise<{ name: string; priceSen: number } | null> {
+  const r = await db.prepare(
+    `INSERT INTO scm.supplier_material_bindings (supplier_id, material_kind, item_code, material_name, supplier_sku, is_main_supplier, company_id)
+     SELECT s.id, 'mfg_product', ?, coalesce((SELECT p.name FROM scm.mfg_products p WHERE p.code = ? AND p.company_id = s.company_id LIMIT 1), ?), ?,
+            NOT EXISTS (SELECT 1 FROM scm.supplier_material_bindings b WHERE b.item_code = ? AND b.company_id = ?), ?
+       FROM scm.suppliers s WHERE s.id::text = ? AND s.company_id = ?
+     RETURNING (SELECT name FROM scm.suppliers WHERE id = supplier_id) AS name`,
+  ).bind(itemCode, itemCode, itemCode, itemCode, itemCode, companyId, companyId, supplierId, companyId).first<{ name: string }>();
+  return r ? { name: r.name, priceSen: 0 } : null;
+}
+
+/** The SKU's binding to this supplier, whose price becomes a contract line's cost; null when it is not bound. */
 export async function supplierBinding(db: Db, itemCode: string, companyId: number, supplierId: string): Promise<{ name: string; priceSen: number } | null> {
   const r = await db.prepare(
-    `SELECT s.name, coalesce(b.unit_price_sen, 0) AS price_sen, s.status::text AS status, b.supplier_id IS NOT NULL AS bound,
-            EXISTS (SELECT 1 FROM scm.supplier_material_bindings x WHERE x.material_kind = 'mfg_product' AND x.item_code = ? AND x.company_id = s.company_id) AS any_bound
-       FROM scm.suppliers s
-       LEFT JOIN scm.supplier_material_bindings b ON b.supplier_id = s.id AND b.material_kind = 'mfg_product' AND b.item_code = ? AND b.company_id = s.company_id
-      WHERE s.id::text = ? AND s.company_id = ?
+    `SELECT s.name, coalesce(b.unit_price_sen, 0) AS price_sen
+       FROM scm.supplier_material_bindings b JOIN scm.suppliers s ON s.id = b.supplier_id
+      WHERE b.material_kind = 'mfg_product' AND b.item_code = ? AND b.company_id = ? AND b.supplier_id::text = ?
       LIMIT 1`,
-  ).bind(itemCode, itemCode, supplierId, companyId).first<{ name: string; price_sen: number; status: string; bound: boolean; any_bound: boolean }>();
-  if (!r) return null;
-  if (r.bound) return { name: r.name, priceSen: Number(r.price_sen) };
-  return !r.any_bound && r.status === "ACTIVE" ? { name: r.name, priceSen: 0 } : null;
+  ).bind(itemCode, companyId, supplierId).first<{ name: string; price_sen: number }>();
+  return r ? { name: r.name, priceSen: Number(r.price_sen) } : null;
 }
 
 /** The line's item code and the live PO that holds it, if one does: a raised PO keeps its supplier, as in MRP. */

@@ -31,7 +31,7 @@ import {
 } from '../../vendor/scm/lib/mrp-queries';
 import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import { useAuth, isAdminLevel } from '../../vendor/scm/lib/auth';
-import { useCreatePosFromSoItems } from '../../vendor/scm/lib/suppliers-queries';
+import { useCreateBinding, useCreatePosFromSoItems, useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
 import { createMaterialPos } from '../../vendor/scm/lib/production-order-queries';
 import { newIdempotencyKey } from '../../lib/idempotency';
 import { mrpViews, mrpCategoryOf, mrpGroupViews } from './mrp-views';
@@ -1216,31 +1216,51 @@ export const Mrp = () => {
 
 /* Per-shortage-line supplier dropdown (Commander 2026-05-31). Each shortage SO
    line picks its own supplier, defaulting to the SKU's main supplier; different
-   lines of the same SKU MAY differ. Unbound SKU → "— none —" (can't be ordered
-   until a supplier is assigned). */
-const LineSupplierCell = ({ suppliers: bound, planned, chosenSupplierId, onSupplierChange }: {
+   lines of the same SKU MAY differ. Every other active supplier follows; picking
+   one binds it to the SKU, so the PO can be raised (owner, 4 Nov 2026). */
+const LineSupplierCell = ({ suppliers, planned, chosenSupplierId, onSupplierChange, itemCode, description }: {
   suppliers: MrpSku['suppliers']; chosenSupplierId: string | null;
   /* The supplier picked on the project's SO tab: the line starts on it, bound to the SKU or not. */
   planned?: MrpSku['lines'][number]['plannedSupplier'];
   onSupplierChange: (supplierId: string) => void;
+  itemCode: string; description: string | null;
 }) => {
-  const suppliers = planned && !bound.some((s) => s.supplierId === planned.supplierId) ? [...bound, { ...planned, isMain: false }] : bound;
-  if (suppliers.length === 0) return <span className={styles.noSupplier}>— none —</span>;
-  const defaultSupplierId = planned?.supplierId ?? suppliers.find((s) => s.isMain)?.supplierId ?? suppliers[0]!.supplierId;
+  const all = useSuppliers({ status: 'ACTIVE' }).data ?? [];
+  const bind = useCreateBinding();
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const defaultSupplierId = planned?.supplierId ?? suppliers.find((s) => s.isMain)?.supplierId ?? suppliers[0]?.supplierId ?? '';
+  const others = all.filter((s) => !suppliers.some((b) => b.supplierId === s.id));
+  const pick = async (id: string): Promise<void> => {
+    setRefusal(null);
+    try {
+      if (others.some((s) => s.id === id)) {
+        await bind.mutateAsync({ supplierId: id, materialKind: 'mfg_product', itemCode, materialName: description || itemCode, supplierSku: itemCode, isMainSupplier: suppliers.length === 0 });
+      }
+      onSupplierChange(id);
+    } catch (e) {
+      setRefusal(e instanceof Error ? e.message : 'The supplier could not be bound.');
+    }
+  };
   return (
-    <select
-      className={styles.supplierSelect}
-      value={chosenSupplierId ?? defaultSupplierId}
-      onChange={(e) => onSupplierChange(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      title="Supplier for this SO line — defaults to the SKU's main supplier"
-    >
-      {suppliersMainFirst(suppliers).map((s) => (
-        <option key={s.supplierId} value={s.supplierId}>
-          {s.name}{s.isMain ? ' ★' : ''} · {s.code}
-        </option>
-      ))}
-    </select>
+    <>
+      <select
+        className={styles.supplierSelect}
+        value={chosenSupplierId ?? defaultSupplierId}
+        disabled={bind.isPending}
+        onChange={(e) => void pick(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        title="Supplier for this SO line — defaults to the SKU's main supplier"
+      >
+        {!defaultSupplierId && !chosenSupplierId && <option value="">Pick a supplier</option>}
+        {suppliersMainFirst(suppliers).map((s) => (
+          <option key={s.supplierId} value={s.supplierId}>
+            {s.name}{s.isMain ? ' ★' : ''} · {s.code}
+          </option>
+        ))}
+        {others.length > 0 && <optgroup label="Other suppliers">{others.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.code}</option>)}</optgroup>}
+      </select>
+      {refusal && <span role="alert" className={styles.noSupplier}>{refusal}</span>}
+    </>
   );
 };
 
@@ -1415,6 +1435,8 @@ const OrderLines = ({ sku, selected, onToggleLine, lineSupplier, onLineSupplierC
           key={`${ln.soDocNo}-${i}`}
           ln={ln}
           suppliers={sku.suppliers}
+          itemCode={sku.itemCode}
+          description={sku.description}
           whCode={sku.warehouseCode}
           whName={sku.warehouseName}
           selected={selected.has(ln.soItemId)}
@@ -1427,9 +1449,11 @@ const OrderLines = ({ sku, selected, onToggleLine, lineSupplier, onLineSupplierC
   </table>
 );
 
-const ChildLine = ({ ln, suppliers, whCode, whName, selected, onToggleLine, chosenSupplierId, onSupplierChange }: {
+const ChildLine = ({ ln, suppliers, itemCode, description, whCode, whName, selected, onToggleLine, chosenSupplierId, onSupplierChange }: {
   ln: MrpLine;
   suppliers: MrpSku['suppliers'];
+  itemCode: string;
+  description: string | null;
   whCode: string | null;
   whName: string | null;
   selected: boolean;
@@ -1483,7 +1507,7 @@ const ChildLine = ({ ln, suppliers, whCode, whName, selected, onToggleLine, chos
       <td className={styles.supplierCell}>
         {short
           /* Shortage line → editable per-line supplier dropdown. */
-          ? <LineSupplierCell suppliers={suppliers} planned={ln.plannedSupplier} chosenSupplierId={chosenSupplierId} onSupplierChange={onSupplierChange} />
+          ? <LineSupplierCell suppliers={suppliers} planned={ln.plannedSupplier} itemCode={itemCode} description={description} chosenSupplierId={chosenSupplierId} onSupplierChange={onSupplierChange} />
           /* Covered / already-PO'd line → the PO's supplier, READ-ONLY (a raised
              PO's supplier can't change). Stock lines show a dash. */
           : ln.source === 'po'
@@ -1574,7 +1598,7 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
             </td>
             <td className={styles.supplierCell}>
               {short
-                ? <LineSupplierCell suppliers={v.suppliers} planned={ln.plannedSupplier} chosenSupplierId={lineSupplier[ln.soItemId] ?? null} onSupplierChange={(sid) => onLineSupplierChange(ln.soItemId, sid)} />
+                ? <LineSupplierCell suppliers={v.suppliers} planned={ln.plannedSupplier} itemCode={v.itemCode} description={v.description} chosenSupplierId={lineSupplier[ln.soItemId] ?? null} onSupplierChange={(sid) => onLineSupplierChange(ln.soItemId, sid)} />
                 : ln.source === 'po'
                   ? <span className={styles.poSupplierRO} title="This PO covers the line in the current allocation. Supplier is read-only because the PO is already raised."><Truck {...ICON} /> {ln.poSupplierName ?? '—'}</span>
                   : <span className={styles.whNone}>—</span>}

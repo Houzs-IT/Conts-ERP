@@ -2085,6 +2085,7 @@ export const SalesOrderDetail = () => {
                     docNo={header.doc_no}
                     itemId={it.id}
                     isEditing={!linesLocked && !frozen}
+                    remarkOpen={!linesLocked && header.so_kind === 'RENOVATION'}
                     /* Variants are mandatory only once a Processing Date is set
                        (matches this page's Save gate + the backend), so the ` *`
                        marker + red ring stay off on a no-date draft (owner

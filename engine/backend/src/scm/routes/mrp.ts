@@ -887,6 +887,12 @@ export async function computeMrp(
     .range(from, to));
   if (prodErr) throw new Error(`mrp_load_failed: ${prodErr.message}`);
   for (const p of prods) prodByCode.set(p.code, p);
+  /* Works and Built-in are made for one unit (owner, 4 Nov 2026): a PO from an SO serves that unit only, as a sofa's does.
+     Renovation lines all carry item_group RENOVATION, so the SKU's category tells them apart. */
+  const unitBoundCategory = (code: string | null | undefined): boolean =>
+    ['WORKS', 'BUILTIN'].includes(String(prodByCode.get(code ?? '')?.category ?? '').toUpperCase());
+  const boundLine = (group: string | null | undefined, code: string | null | undefined): boolean =>
+    isHardBoundLine(group, code) || unitBoundCategory(code);
 
   // The category dropdown lists every catalog category (a handful of enum
   // values), independent of current demand. The DISTINCT values are few, but
@@ -1054,12 +1060,12 @@ export async function computeMrp(
      a bound sales line sat in a pool the line never reads. Every linked line now
      reads its own dedicated queue first (section 7), whichever side is bound. */
   const demandBoundById = new Set(
-    demandActive.filter((d) => isHardBoundLine(d.item_group, d.item_code)).map((d) => d.id),
+    demandActive.filter((d) => boundLine(d.item_group, d.item_code)).map((d) => d.id),
   );
   const isDedicated = (r: PoLineRow): boolean =>
     boundCompany
     && !!r.so_item_id
-    && (isHardBoundLine(r.item_group, r.item_code) || demandBoundById.has(String(r.so_item_id)));
+    && (boundLine(r.item_group, r.item_code) || demandBoundById.has(String(r.so_item_id)));
   for (const r of (poRaw ?? []) as unknown as PoLineRow[]) {
     if (!r.po || PO_DEAD.has(r.po.status)) continue;
     /* Migration 0180 — ETA is the EFFECTIVE (latest revised) delivery date: the
@@ -1392,7 +1398,7 @@ export async function computeMrp(
          What changes is only that it may no longer be named as THIS line's
          cover, so the line reads as the shortage it is. Company 2 is untouched —
          `boundCompany` gates the whole branch. */
-      const bound = boundCompany && isHardBoundLine(r.item_group, r.item_code);
+      const bound = boundCompany && boundLine(r.item_group, r.item_code);
       const fromStock = bound
         ? Math.min(need, dedicatedReceivedByLine.get(r.id) ?? 0)
         : drawBucketStock(bucketStock, batchClaims.qtyByLine.get(r.id) ?? 0, need);

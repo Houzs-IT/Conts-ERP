@@ -30,7 +30,7 @@ import {
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
-import { cleanLinePlan, contractLineOf, lineSupplierState, loadProjectLines, projectLine, saveLinePlan, saveLinePlans, saveLineSupplier, supplierBinding } from "../services/renovation/betaLines";
+import { bindSupplier, cleanLinePlan, contractLineOf, lineSupplierState, loadProjectLines, projectLine, saveLinePlan, saveLinePlans, saveLineSupplier, supplierBinding } from "../services/renovation/betaLines";
 import { patchContract } from "../scm/lib/renovation-so";
 import { inRenoTx, RenoError, sqlFor } from "../scm/lib/renovation-db";
 import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
@@ -866,8 +866,8 @@ app.put("/projects/:id/line-plans", requirePermission("projects.write"), async (
 });
 
 /* The supplier a line is to be bought from, picked on the SO tab before its PO (owner, 3 and 4 Nov 2026), like MRP's
-   per-line pick, on any line. A SKU's bound suppliers (scm.supplier_material_bindings), their price becoming a contract
-   line's cost; a SKU with none bound takes any active supplier. Kept on the line's plan, which MRP starts from. A contract
+   per-line pick, on any line. A bound supplier's price (scm.supplier_material_bindings) becomes a contract line's cost;
+   any other supplier is bound to the SKU by the pick, with no price. Kept on the line's plan, which MRP starts from. A contract
    line also keeps it on the line the PO split reads (renovation-po-split.ts), through the contract's own line edit
    (patchContract). */
 app.put("/projects/:id/lines/:itemId/supplier", requirePermission("projects.write"), async (c) => {
@@ -882,8 +882,8 @@ app.put("/projects/:id/lines/:itemId/supplier", requirePermission("projects.writ
   if (!line) return c.json({ error: "not_found" }, 404);
   const state = await lineSupplierState(db(c), line.id);
   if (state.poNumber) return c.json({ error: "line_on_po", message: `${state.poNumber} already buys ${state.itemCode}: its supplier stays on the PO.` }, 409);
-  const bound = await supplierBinding(db(c), state.itemCode, co, supplierId);
-  if (!bound) return c.json({ error: "supplier_not_bound", message: `That supplier is not bound to ${state.itemCode}: add it in the SKU's suppliers first.` }, 400);
+  const bound = await supplierBinding(db(c), state.itemCode, co, supplierId) ?? await bindSupplier(db(c), state.itemCode, co, supplierId);
+  if (!bound) return c.json({ error: "supplier_not_found", message: "That supplier could not be found." }, 400);
   const cl = await contractLineOf(db(c), line.id);
   const user = c.get("user") as { name?: string | null; email?: string | null } | undefined;
   const sql = sqlFor(c.env);

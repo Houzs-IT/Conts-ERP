@@ -91,7 +91,7 @@ const SUPPLIER = {
     { ...LINES.lines[1], contractLineId: "cl-b", supplierId: "s1", supplierChoices: CHOICES },
     { ...base, id: "c", itemCode: "LT-3", description: "Downlight C", plan: { orderOn: null, deliverOn: null, noPo: false }, pos: [], contractLineId: "cl-c", supplierId: null, supplierChoices: [] },
   ],
-  allSuppliers: [{ id: "s9", code: "INHOUSE", name: "In-house", main: false, priceSen: null }],
+  suppliers: [{ id: "s9", name: "In-house" }],
 };
 
 const SITE = {
@@ -208,16 +208,16 @@ describe("PO tab", () => {
     h.furniture = false;
   });
 
-  it("picks a waiting line's supplier from the SKU's bound suppliers, main starred; a SKU with none takes any supplier", async () => {
+  it("picks a waiting line's supplier from the SKU's bound suppliers, main starred; any other supplier follows", async () => {
     h.supplier = true;
     h.puts.length = 0;
     renderTab();
     const region = await screen.findByRole("region", { name: "Sales order lines" });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     const pick = within(region).getByLabelText("Supplier for LT-2") as HTMLSelectElement;
-    expect([...pick.options].map((o) => o.textContent)).toEqual(["★ Main Co (main)", "Other Co"]);
+    expect([...pick.options].map((o) => o.textContent)).toEqual(["★ Main Co (main)", "Other Co", "In-house"]);
     expect(pick.value).toBe("s1");
-    // The line on a PO has no pick; the SKU with no binding offers every supplier.
+    // The line on a PO has no pick; a SKU with no binding offers every supplier.
     expect(within(region).queryByLabelText("Supplier for LT-1")).toBeNull();
     expect([...(within(region).getByLabelText("Supplier for LT-3") as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(["Pick a supplier", "In-house"]);
     fireEvent.change(pick, { target: { value: "s2" } });

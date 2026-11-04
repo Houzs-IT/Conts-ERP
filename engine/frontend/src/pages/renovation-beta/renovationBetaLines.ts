@@ -55,7 +55,7 @@ export interface ManagedLine {
   supplierId?: string | null;
   /** The renovation contract line behind it, where a supplier picked here is kept (null: not a contract line). */
   contractLineId?: string | null;
-  /** The suppliers the SKU can be ordered from (its bindings), main first. Empty: LinesAnswer.allSuppliers applies. */
+  /** The suppliers the SKU can be ordered from (its bindings), main first. LinesAnswer.suppliers has the rest. */
   supplierChoices?: SupplierChoice[];
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none). */
@@ -80,8 +80,8 @@ export interface LinesAnswer {
   plansReady: boolean;
   sos: Array<{ docNo: string; status: string; voLocked: boolean; renovation: boolean }>;
   lines: ManagedLine[];
-  /** Every active supplier, for a line whose SKU has none bound. */
-  allSuppliers?: SupplierChoice[];
+  /** Every active supplier: picking one the SKU has no binding to binds it. */
+  suppliers?: Array<{ id: string; name: string }>;
   pendingPoChanges: PendingPoChange[];
   /** The caller's role sees only some product categories: lines of the others are left out by the server. */
   categoryRestricted: boolean;
