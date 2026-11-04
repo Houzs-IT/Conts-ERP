@@ -299,7 +299,7 @@ export function TeamInviteModal({
       })
     ) : (
       <span className="rounded-md border border-border bg-surface px-2.5 py-1">
-        {companies[0]?.name ?? "Houzs Century"}
+        {companies[0]?.name ?? "The Conts"}
       </span>
     );
 

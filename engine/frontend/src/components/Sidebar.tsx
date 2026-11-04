@@ -922,39 +922,6 @@ export const ALL_NAV_TABS: NavTab[] = [
     icon: Activity,
     pageAccess: "system_health",
   },
-  // Next to System Health because it answers the same shape of question — "is
-  // the thing that runs in the background still working" — and because the
-  // owner's is "did my sales order reach AutoCount". anyPerm mirrors the two
-  // keys GET /api/scm/autocount-outbox accepts; the server is still the
-  // boundary, this only decides whether the row is worth showing.
-  {
-    section: "system",
-    to: "/autocount-sync",
-    label: "AutoCount Sync",
-    icon: RefreshCw,
-    anyPerm: ["*", "scm.autocount.read", "settings.manage"],
-  },
-  // Beside AutoCount Sync because it is the same shape of question pointed at a
-  // different system: that one is "did my document reach the account book",
-  // this one is "did the Venture Portal get my sales orders" — and the portal
-  // works out Revenue Department commission from them, so an order it never
-  // received is money somebody is not paid. The row also carries the feed's
-  // SETTINGS (receiver address, shared secret, which companies, the start
-  // date), because the alternative the hand-off contract assumed was somebody
-  // pasting SQL into a database console. anyPerm mirrors the two keys the
-  // endpoint's READ half accepts; changing anything needs
-  // scm.venture_portal.manage, checked by the server per request.
-  {
-    section: "system",
-    to: "/venture-portal-feed",
-    label: "Venture Portal Feed",
-    icon: Send,
-    anyPerm: ["*", "scm.venture_portal.read", "settings.manage"],
-  },
-  // Beside AutoCount Sync because it answers the neighbouring question. That
-  // one is "did my document reach the account book"; this one is "who changed
-  // my document, and to what" — the supervision the owner asked for when he
-  // opened sales, delivery, purchase and receipt documents to staff.
   {
     section: "system",
     to: "/change-log",

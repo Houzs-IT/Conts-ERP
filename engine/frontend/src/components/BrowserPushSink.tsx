@@ -56,7 +56,7 @@ function fireNotification(a: NotificationItem) {
     const title =
       a.project_name ||
       (getBrandingCompanyCode() === HOUZS_COMPANY_CODE
-        ? "Houzs ERP"
+        ? "The Conts ERP"
         : `${shortCompanyName(getBrandingCache().companyName)} ERP`);
     const body = summarise(a);
     const tag = `houzs-${a.project_id}-${a.id}`;
