@@ -4061,7 +4061,7 @@ mfgPurchaseOrders.post('/:id/send-to-supplier', async (c) => {
 
   const { data: po, error } = await scopeToCompanyId(supabase
     .from('purchase_orders')
-    .select('id, po_number, status, total_sen, currency, po_date, company_id, po_email_sent_at, po_email_sent_to, supplier:suppliers(name, email)')
+    .select('id, po_number, status, total_sen, currency, po_date, company_id, po_email_sent_at, po_email_sent_to, supplier:suppliers(name, email, code)')
     .eq('id', id), co.companyId)
     .maybeSingle();
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
@@ -4072,6 +4072,11 @@ mfgPurchaseOrders.post('/:id/send-to-supplier', async (c) => {
     po_email_sent_at?: string | null;
     po_email_sent_to?: string | null;
   };
+
+  /* A PO to our own team never leaves the company (owner, 1 Nov 2026): it became a production order. */
+  if ((row.supplier as { code?: string | null } | null)?.code === 'INHOUSE') {
+    return c.json({ error: 'not_sendable', message: 'This PO is to the In-house Production Team: it is not sent to any supplier.' }, 409);
+  }
 
   /* Status. Bars DRAFT (uncommitted) and CANCELLED (telling a supplier to ship
      goods the company has decided not to buy) — see poSendRefusalForStatus. */

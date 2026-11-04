@@ -1,4 +1,4 @@
--- REVERSAL: refused while a production order exists. drop trigger trg_production_po on scm.purchase_orders; drop trigger trg_production_po_item on scm.purchase_order_items; drop trigger trg_no_inhouse_payable on scm.purchase_invoices; (same on scm.ap_invoices, scm.payment_requests, scm.payment_vouchers); alter table scm.purchase_order_items drop column production_material_id; drop table scm.production_order_materials, scm.production_order_lines, scm.production_orders, scm.production_material_lists; drop function scm.production_sync_po(uuid), scm.production_apply_list(uuid, uuid[]), scm.production_refresh_material(uuid), scm.production_po_changed(), scm.production_po_item_changed(), scm.refuse_inhouse_payable();
+-- REVERSAL: refused while a production order exists. drop trigger trg_production_po on scm.purchase_orders; drop trigger trg_production_po_item on scm.purchase_order_items; drop trigger trg_no_inhouse_payable on scm.purchase_invoices; (same on scm.ap_invoices, scm.payment_requests, scm.payment_vouchers); alter table scm.purchase_order_items drop column production_material_id; drop table scm.production_order_materials, scm.production_order_lines, scm.production_orders, scm.production_material_lists; drop function scm.production_sync_po(uuid), scm.production_apply_list(uuid, uuid[]), scm.production_link_po(uuid, uuid[], bigint), scm.production_refresh_material(uuid), scm.production_po_changed(), scm.production_po_item_changed(), scm.refuse_inhouse_payable();
 -- The production module (owner, 1 and 4 Nov 2026; docs/superpowers/specs/2026-11-01-dates-categories-production-design.md,
 -- "Phase 2" and "Owner answers"). Works given to our own team are ordered on a PO to supplier INHOUSE.
 --
@@ -130,6 +130,20 @@ begin
   on conflict (line_id, item_code) where line_id is not null do nothing;
   get diagnostics added = row_count;
   return added;
+end $$;
+
+-- Links a PO raised for materials: the Nth material is line N of the PO. The project is the production order's.
+create function scm.production_link_po(p_po uuid, p_materials uuid[], p_project bigint) returns void
+language plpgsql set search_path = scm, pg_temp as $$
+begin
+  update scm.purchase_order_items i
+     set production_material_id = x.m, uom = coalesce(i.uom, mm.uom), from_mrp = true
+    from unnest(p_materials) with ordinality as x(m, ord)
+    join scm.production_order_materials mm on mm.id = x.m
+   where i.purchase_order_id = p_po and i.line_no = x.ord;
+  if p_project is not null then
+    update scm.purchase_orders set project_id = p_project where id = p_po and project_id is null;
+  end if;
 end $$;
 
 -- What is on order and received for one material, from its live PO lines, and the order's actual cost: the received

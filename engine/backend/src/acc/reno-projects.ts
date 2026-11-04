@@ -79,7 +79,7 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     inChunks(docs, (b, f, t) => sb.from('reno_instalment_bills').select('so_doc_no, seq, kind, amount_sen, invoice_date').in('so_doc_no', b).order('so_doc_no').order('seq').range(f, t), 'bills'),
     inChunks(docs, (b, f, t) => sb.from('mfg_sales_order_payments').select('id, so_doc_no, paid_at, amount_sen').eq('company_id', companyId).in('so_doc_no', b).order('id').range(f, t), 'order payments'),
     inChunks(docs, (b, f, t) => sb.from('sales_invoices').select('id, so_doc_no, status').eq('company_id', companyId).in('so_doc_no', b).order('id').range(f, t), 'invoices'),
-    inChunks(projectIds, (b, f, t) => sb.from('purchase_orders').select('id, project_id, status, total_sen, po_date').eq('company_id', companyId).in('project_id', b).order('id').range(f, t), 'purchase orders'),
+    inChunks(projectIds, (b, f, t) => sb.from('purchase_orders').select('id, project_id, status, total_sen, po_date, supplier_id').eq('company_id', companyId).in('project_id', b).order('id').range(f, t), 'purchase orders'),
   ]);
 
   /* A contract signed before go-live: what AutoCount still had open on it came over as opening invoices of the project's

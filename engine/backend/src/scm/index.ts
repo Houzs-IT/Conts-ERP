@@ -1044,4 +1044,9 @@ scm.route("/doc-attachments", docAttachmentsImport);
 scm.use("/renovation-so-info/*", scmAreaGuard("scm.sales.orders"));
 scm.route("/renovation-so-info", renovationSoInfo);
 
+// ── Production orders (mig 0208) ──
+import { productionOrders } from "./routes/production-orders";
+scm.use("/production-orders/*", scmAreaGuard("scm.procurement.production"));
+scm.route("/production-orders", productionOrders);
+
 export default scm;
