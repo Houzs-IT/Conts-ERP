@@ -34,6 +34,8 @@ import { splitCategories } from "../lib/assrProductCategories";
 import { MobileAssrCategoryChips } from "./MobileAssrCategoryChips";
 import { LegOwnerToggle } from "./AssrLegOwnerToggle";
 import { type SoHit, SoSearchField, useSoSearch } from "./MobileAssrSoField";
+import { RenoMobileProjectCard, RenoMobileProjectLoading } from "./renovationMobileCaseProject";
+import { caseCategoryValue, useServiceCaseRenovation, type RenoCaseProject } from "../pages/renovationServiceCase";
 /* Pure row readers + formatters. Extracted so this screen could take the
    category picker and the survey-email field without growing past its recorded
    size ceiling, and so they became testable on their own. `prettyStage` went
@@ -1981,6 +1983,12 @@ function NewCaseSheet({ onClose, onOpen }: { onClose: () => void; onOpen: (id: n
   // Issue categories render by NAME; priority by SLUG. Fall back to the
   // hardcoded constants until the call returns so the form stays usable.
   const issueCatOptions = useLookupNames("issue-categories", ISSUE_CATEGORY_OPTIONS as readonly string[]);
+  /* Renovation mode (owner, 15 Oct and 3 Nov 2026): the case looks up the PROJECT, as on the desktop. null while unknown. */
+  const renoCtx = useServiceCaseRenovation();
+  const reno = renoCtx?.renovation === true;
+  const [project, setProject] = useState<RenoCaseProject | null>(null);
+  const [itemGroup, setItemGroup] = useState("");
+  const [itemSub, setItemSub] = useState("");
   const [docNo, setDocNo] = useState("");
   // SO picker (real search-so lookup, replacing free-text). `soQuery` is
   // what the user types; once they pick a hit we lock `docNo` and show the
@@ -2104,7 +2112,19 @@ function NewCaseSheet({ onClose, onOpen }: { onClose: () => void; onOpen: (id: n
       // string. Backend accepts both, but keeping the shape identical to
       // desktop guarantees a mobile-created case lands the same rows and
       // shows up on desktop (owner's acceptance test).
-      const res = await api.post<{ id: number; assr_no?: string }>("/api/assr", {
+      const renoCategory = reno ? caseCategoryValue(renoCtx.categories, itemGroup, itemSub) : null;
+      const res = await api.post<{ id: number; assr_no?: string }>("/api/assr", reno ? {
+        // The same body as the desktop's renovation create: the server attaches the project's SO, if any.
+        project_id: project!.id,
+        doc_no: "",
+        items: [],
+        complaint_issue: complaint.trim(),
+        issue_category: category.trim() || null,
+        ref_no: issueNo.trim() || null,
+        customer_email: customerEmail.trim() || null,
+        complained_date: complainedDate || null,
+        service_category: renoCategory ? [renoCategory] : null,
+      } : {
         doc_no: docNo.trim(),
         // Multi-item: every picked row lands as its own assr_items row with
         // its chosen qty — identical shape to desktop CreatePanel's submit.
@@ -2177,7 +2197,7 @@ function NewCaseSheet({ onClose, onOpen }: { onClose: () => void; onOpen: (id: n
   //
   // Items MAY be empty (owner 2026-07-22) — driver-damaged floor, lorry
   // problem etc. don't tie to a specific product. Dropped from the gate.
-  const valid = docNo.trim() && complaint.trim() && complainedDate.trim() && category.trim();
+  const valid = (reno ? !!project : !!docNo.trim()) && complaint.trim() && complainedDate.trim() && category.trim();
 
   // FIXED + z-index 40 (the .sheet-bd pattern) — NOT absolute/z20. When
   // Service is the active TAB this sheet renders inside the tab-content
@@ -2200,7 +2220,17 @@ function NewCaseSheet({ onClose, onOpen }: { onClose: () => void; onOpen: (id: n
         </header>
 
         <div className="scroll hz-scroll" style={{ padding: 14 }}>
-          {/* ── Sales Order card (.so-card) — SO lookup + affected product ── */}
+          {renoCtx === null ? <RenoMobileProjectLoading /> : reno ? (
+            <RenoMobileProjectCard
+              categories={renoCtx.categories}
+              project={project}
+              onProject={(p) => { setProject(p); setCustomerEmail(p?.customerEmail ?? ""); }}
+              group={itemGroup}
+              sub={itemSub}
+              onCategory={(g, sc) => { setItemGroup(g); setItemSub(sc); }}
+            />
+          ) : (
+          /* ── Sales Order card (.so-card) — SO lookup + affected product ── */
           <div className="so-card">
             <div className="so-hd"><h2 className="so-ti">Sales Order</h2></div>
             <div className="so-bd">
@@ -2374,6 +2404,7 @@ function NewCaseSheet({ onClose, onOpen }: { onClose: () => void; onOpen: (id: n
               </div>
             </div>
           </div>
+          )}
 
           {/* ── Issue card (.so-card) — description, category, priority ── */}
           <div className="so-card">
@@ -2467,7 +2498,7 @@ function NewCaseSheet({ onClose, onOpen }: { onClose: () => void; onOpen: (id: n
             </div>
           </div>
 
-          {create.isError && <div style={{ fontSize: 12, color: "var(--red)" }}>Couldn't create the case. Check the SO number and try again.</div>}
+          {create.isError && <div style={{ fontSize: 12, color: "var(--red)" }}>Couldn't create the case. {reno ? "Check the project" : "Check the SO number"} and try again.</div>}
         </div>
 
         {/* actbar (.actbar / .btn) */}

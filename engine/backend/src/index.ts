@@ -27,6 +27,7 @@ import clientErrors from "./routes/clientErrors";
 import udf from "./routes/udf";
 import authRoutes from "./routes/auth";
 import contsSso from "./conts/sso";
+import renovationGlobalSearch from "./routes/renovationGlobalSearch";
 import contsMailCron from "./conts/mail-cron";
 import { myClaimsRouter } from "./conts/my-claims-routes";
 import { claimsClient, staffFromAssertion, staffFromSession } from "./conts/staff-identity";
@@ -415,6 +416,9 @@ app.route("/api/public/beta-client", renovationBetaClientPublic);
 // sign-on secret, naming the person; every query is limited to them (conts/staff-identity.ts, conts/my-claims-routes.ts).
 app.use("/api/claims-forward/*", claimsClient, staffFromAssertion, companyContext);
 app.route("/api/claims-forward", myClaimsRouter("forward"));
+// Conts: the supply chain half of Property OS's top-bar search, server to server with a signed statement of who is asking
+// and what their role may open (routes/renovationGlobalSearch.ts). No engine session is made.
+app.route("/api/conts-search", renovationGlobalSearch);
 
 app.use("/api/*", auth);
 

@@ -5,10 +5,9 @@
    Stored in public.project_procurement_dates (migration 0111); sub_code '' is the
    category row. Pure: input rules and the view; the route reads and writes.
 
-   TODO(auto-PO): these effective dates are meant to drive automatic purchase
-   order creation later (raise the POs of a sub-category's SO lines on its
-   effective poDate, expected delivery = deliveryDate). Nothing creates a PO from
-   them yet. Read `effective` of each sub, never `stored`. */
+   No automatic purchase orders from these dates (owner ruling, 3 Nov 2026): POs
+   stay manual; the dates drive planning and the LATE flags only. Read
+   `effective` of each sub, never `stored`. */
 
 import type { Refusal } from "./records";
 
