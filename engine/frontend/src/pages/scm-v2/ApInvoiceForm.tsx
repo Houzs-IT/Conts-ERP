@@ -11,7 +11,8 @@
 // ----------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from 'react';
-import { DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
+import { type Department } from '../../conts/department';
+import { nextLineSub, SubDepartmentSelect } from '../../conts/SubDepartmentSelect';
 import { ProjectPicker } from '../../conts/Pickers';
 import { X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
@@ -33,7 +34,7 @@ import styles from './SalesOrderDetail.module.css';
 /* Conts: each line's department (finance phase 1, spec 3.5), required before saving. */
 /* Conts: and the project a cost belongs to (a renovation subcontractor's bill), blank for none — the renovation
    completion % reads booked cost by project. */
-export type ApFormLine = { rid: number; description: string; debitAccountCode: string; amountSen: number; department: Department | ''; projectId?: number | null };
+export type ApFormLine = { rid: number; description: string; debitAccountCode: string; amountSen: number; department: Department | ''; projectId?: number | null; subDepartmentId?: string | null };
 export type ApFormValues = { supplierId: string; supplierRef: string; invoiceDate: string; dueDate: string; description: string; lines: ApFormLine[] };
 export type ApFormMode = 'new' | 'edit' | 'copy';
 /** What the routes take — POST / for new and copy, PATCH /:id for edit. */
@@ -43,7 +44,7 @@ export type ApFormSubmit = {
 };
 
 const myt = (): string => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
-export const emptyLine = (rid: number, department: Department | '' = ''): ApFormLine => ({ rid, description: '', debitAccountCode: '', amountSen: 0, department });
+export const emptyLine = (rid: number, department: Department | '' = '', subDepartmentId: string | null = null): ApFormLine => ({ rid, description: '', debitAccountCode: '', amountSen: 0, department, subDepartmentId });
 export const emptyApForm = (): ApFormValues => ({ supplierId: '', supplierRef: '', invoiceDate: myt(), dueDate: '', description: '', lines: [emptyLine(1)] });
 
 export const toSubmit = (v: ApFormValues): ApFormSubmit => ({
@@ -57,6 +58,7 @@ export const toSubmit = (v: ApFormValues): ApFormSubmit => ({
     .map((l) => ({
       ...(l.description.trim() ? { description: l.description.trim() } : {}),
       debitAccountCode: l.debitAccountCode, amountSen: l.amountSen, ...(l.department ? { department: l.department } : {}),
+      ...(l.subDepartmentId ? { subDepartmentId: l.subDepartmentId } : {}),
       projectId: l.projectId ?? null,
     })),
 });
@@ -147,7 +149,8 @@ export const ApInvoiceForm = ({
     setV((prev) => {
       const rid = nextRid(prev.lines);
       if (land) setLandOn(rid);
-      return { ...prev, lines: [...prev.lines, emptyLine(rid, nextLineDepartment(prev.lines))] };
+      const above = nextLineSub(prev.lines.map((x) => ({ department: x.department, subDepartmentId: x.subDepartmentId ?? null })));
+      return { ...prev, lines: [...prev.lines, emptyLine(rid, above.department, above.subDepartmentId)] };
     });
   };
   const removeLine = (rid: number) => setV((prev) => (prev.lines.length > 1 ? { ...prev, lines: prev.lines.filter((l) => l.rid !== rid) } : prev));
@@ -296,8 +299,8 @@ export const ApInvoiceForm = ({
                   onKeyDown={(e) => { if (e.key === 'Enter') hopFrom(l.rid); }} />
               </td>
               <td style={td}>
-                <DepartmentSelect className={styles.fieldInput} style={{ width: '100%' }} label={`line ${l.rid} department`} blank="Choose…"
-                  value={l.department} onChange={(dep) => patchLine(l.rid, { department: dep })} />
+                <SubDepartmentSelect className={styles.fieldInput} style={{ width: '100%' }} label={`line ${l.rid} department`}
+                  value={{ department: l.department, subDepartmentId: l.subDepartmentId ?? null }} onChange={(v) => patchLine(l.rid, v)} />
               </td>
               <td style={td}>
                 <ProjectPicker inputClass={styles.fieldInput} ariaLabel={`line ${l.rid} project`} placeholder="No project"

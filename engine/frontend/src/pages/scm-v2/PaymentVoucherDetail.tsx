@@ -69,9 +69,10 @@ import { fmtMoneySen } from '../../vendor/shared/format';
 import { ProjectLimitField } from '../../conts/ProjectLimitField';
 import { ProjectName, UnitName } from '../../conts/Pickers';
 import {
-  DepartmentTag, LineForSwitch, LineTarget, lineDepartment, missingTarget, purposeOfNew, purposeOfSaved, purposePayload,
+  DepartmentTag, LineSubSelect, LineTarget, lineDepartment, missingTarget, purposeOfNew, purposeOfSaved, purposePayload,
   repurpose, useProjectSides, voucherLineCss, type PurposeDraft,
 } from '../../conts/VoucherLineFor';
+import { useSubDepartments } from '../../conts/subDepartmentQueries';
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
 
@@ -246,6 +247,8 @@ export const PaymentVoucherDetail = () => {
   const [editLines, setEditLines]                 = useState<EditLine[]>([]);
   /* Each Project line's project: its funding and side set the line's tag before the save. */
   const sideOf = useProjectSides();
+  /* Each line's sub-department (SOP 1.1; chew 4 Nov 2026). */
+  const subs = useSubDepartments().data?.subDepartments ?? [];
   /* A Customer Refund (§14) has ONE line the system writes; an edit moves the
      amount and the server re-composes it (refundAmountSen), never the lines. */
   const isRefundPv = isRefundPurpose(pv?.purpose);
@@ -292,7 +295,7 @@ export const PaymentVoucherDetail = () => {
        Rental line with no unit is a Unit line still to be filled in; see lineForOf). */
     const loaded: EditLine[] = lines.length > 0
       ? lines.map((l) => {
-          const saved = l as { unit_id?: string | null; project_id?: number | null };
+          const saved = l as { unit_id?: string | null; project_id?: number | null; sub_department_id?: string | null };
           return {
             rid:              `l${l.id}`,
             description:      l.description ?? '',
@@ -302,6 +305,7 @@ export const PaymentVoucherDetail = () => {
               department: departmentOf(l.department),
               unitId:     saved.unit_id ? String(saved.unit_id) : null,
               projectId:  saved.project_id == null ? null : Number(saved.project_id),
+              subDepartmentId: saved.sub_department_id ? String(saved.sub_department_id) : null,
             }),
           };
         })
@@ -316,8 +320,8 @@ export const PaymentVoucherDetail = () => {
   /* A new line is for what the line above was for. */
   const addLine  = () => setEditLines((prev) => [...prev, newLine(purposeOfNew(prev))]);
   /* A line's For, unit or project changed: what no longer applies goes, and the department follows. */
-  const setLinePurpose = (rid: string, patch: Partial<Pick<PurposeDraft, 'lineFor' | 'unitId' | 'projectId'>>) =>
-    setEditLines((prev) => prev.map((l) => (l.rid === rid ? repurpose(l, patch, sideOf) : l)));
+  const setLinePurpose = (rid: string, patch: Partial<Pick<PurposeDraft, 'lineFor' | 'unitId' | 'projectId' | 'subDepartmentId'>>) =>
+    setEditLines((prev) => prev.map((l) => (l.rid === rid ? repurpose(l, patch, sideOf, subs) : l)));
 
   const editLinesTotalSen = useMemo(() => editLines.reduce((s, l) => s + l.amountSen, 0), [editLines]);
   const viewTotalSen = Number(pv?.total_sen ?? 0);
@@ -857,12 +861,12 @@ export const PaymentVoucherDetail = () => {
               {editLines.map((l, idx) => (
                 <div key={l.rid} className={voucherLineCss.row}>
                   <div className={`${voucherLineCss.cell} ${voucherLineCss.forCell}`}>
-                    <span className={styles.fieldLabel}>Line {idx + 1} · For</span>
-                    <LineForSwitch n={idx + 1} value={l.lineFor} onChange={(f) => setLinePurpose(l.rid, { lineFor: f })} />
+                    <span className={styles.fieldLabel}>Line {idx + 1} · Department *</span>
+                    <LineSubSelect n={idx + 1} line={l} subs={subs} className={styles.fieldInput} onChange={(id) => setLinePurpose(l.rid, { subDepartmentId: id })} />
                   </div>
                   <div className={voucherLineCss.cell}>
-                    <span className={styles.fieldLabel}>{l.lineFor === 'unit' ? 'Unit *' : l.lineFor === 'project' ? 'Project *' : 'Paid for'}</span>
-                    <LineTarget n={idx + 1} line={l} inputClass={styles.fieldInput}
+                    <span className={styles.fieldLabel}>{l.department === 'shared' ? 'Paid for' : l.department === 'rental' ? 'Unit or project' : 'Project'}</span>
+                    <LineTarget n={idx + 1} line={l} subs={subs} inputClass={styles.fieldInput}
                       onUnit={(u) => setLinePurpose(l.rid, { unitId: u })} onProject={(p) => setLinePurpose(l.rid, { projectId: p })} />
                   </div>
                   <label className={voucherLineCss.cell}>

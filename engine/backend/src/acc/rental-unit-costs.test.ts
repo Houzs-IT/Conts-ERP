@@ -42,7 +42,7 @@ describe('rental costs by unit', () => {
     const r = await (await app().request('/rental-unit-costs?from=2026-11-01&to=2026-11-30')).json() as Record<string, unknown>;
     expect(r).toEqual({
       from: '2026-11-01', to: '2026-11-30',
-      rows: [{ unitId: 'u-a31', building: 'ASTER HILL', unitNumber: 'A-3-1', byAccount: { '620-0010': 35_000, '620-0020': 9_900 }, totalSen: 44_900 }],
+      rows: [{ unitId: 'u-a31', building: 'ASTER HILL', unitNumber: 'A-3-1', byAccount: { '620-0010': 35_000, '620-0020': 9_900 }, totalSen: 44_900, subDepartments: [] }],
       noUnitSen: 20_000,
       noUnitByAccount: { '620-0010': 20_000 },
       accounts: [{ code: '620-0010', name: 'REPAIRS' }, { code: '620-0020', name: 'INTERNET' }],

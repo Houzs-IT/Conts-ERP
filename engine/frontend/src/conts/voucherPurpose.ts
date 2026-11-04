@@ -13,7 +13,7 @@ export const LINE_FOR: ReadonlyArray<{ value: LineFor; label: string }> = [
 /** The words on a line's department tag. */
 export const TAG: Record<Department, string> = { rental: "Rental", supply: "Renovation", shared: "Company" };
 
-export type ProjectSide = { funding: string | null; internalDepartment: string | null };
+export type ProjectSide = { funding: string | null; internalDepartment: string | null; /** Its brand (SOP 1.1): RENOVATION or INHOUSE_RENOVATION. */ renoKind?: string | null };
 type PurposeLine = { department: Department | ""; unitId: string | null; projectId: number | null };
 
 /** A line's department: a unit is Rental, the company is Company; a project is Renovation unless it is the company's own

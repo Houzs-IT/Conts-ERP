@@ -16,6 +16,7 @@ import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { paginateAll } from '../scm/lib/paginate-all';
 import { inChunks } from './reno-completion';
 import { countsInTheBooks } from './reversal-pairs';
+import { loadSubDepartments } from '../conts/sub-departments';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped throughout the acc layer */
 type Ctx = any;
@@ -25,7 +26,9 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface RentalUnitCosts {
   from: string; to: string;
-  rows: Array<{ unitId: string; building: string; unitNumber: string; byAccount: Record<string, number>; totalSen: number }>;
+  rows: Array<{ unitId: string; building: string; unitNumber: string; byAccount: Record<string, number>; totalSen: number;
+    /** The sub-departments that spent on it (SOP 1.1: Cleaning, Maintenance…); the money is counted once, here and there. */
+    subDepartments: string[] }>;
   noUnitSen: number;
   noUnitByAccount: Record<string, number>;
   accounts: Array<{ code: string; name: string }>;
@@ -38,7 +41,7 @@ export async function rentalUnitCosts(sb: any, companyId: number, from: string, 
   if (jes.error) fail('journal entries', jes.error as { message?: string });
   const counted = ((jes.data ?? []) as Row[]).filter(countsInTheBooks).map((j) => String(j.id));
   const [lines, accounts] = await Promise.all([
-    inChunks(counted, (b, f, t) => sb.from('journal_entry_lines').select('id, journal_entry_id, account_code, debit_sen, credit_sen, unit_id')
+    inChunks(counted, (b, f, t) => sb.from('journal_entry_lines').select('id, journal_entry_id, account_code, debit_sen, credit_sen, unit_id, sub_department_id')
       .eq('company_id', companyId).eq('department', 'rental').in('journal_entry_id', b).order('id').range(f, t), 'lines'),
     paginateAll((f: number, t: number) => sb.from('accounts').select('account_code, account_name').eq('company_id', companyId).eq('account_type', 'EXPENSE')
       .order('account_code').range(f, t)),
@@ -46,6 +49,9 @@ export async function rentalUnitCosts(sb: any, companyId: number, from: string, 
   if (accounts.error) fail('accounts', accounts.error as { message?: string });
   const nameOf = new Map(((accounts.data ?? []) as Row[]).map((a) => [String(a.account_code), String(a.account_name ?? '')]));
 
+  const subs = await loadSubDepartments(sb, companyId);
+  const subName = new Map((subs.ok ? subs.list : []).map((s) => [s.id, s.name]));
+  const subsOfUnit = new Map<string, Set<string>>();
   const byUnit = new Map<string, Record<string, number>>();
   const noUnit: Record<string, number> = {};
   const used = new Set<string>();
@@ -55,7 +61,11 @@ export async function rentalUnitCosts(sb: any, companyId: number, from: string, 
     const sen = Number(l.debit_sen ?? 0) - Number(l.credit_sen ?? 0);
     const into = l.unit_id ? (byUnit.get(String(l.unit_id)) ?? {}) : noUnit;
     into[code] = (into[code] ?? 0) + sen;
-    if (l.unit_id) byUnit.set(String(l.unit_id), into);
+    if (l.unit_id) {
+      byUnit.set(String(l.unit_id), into);
+      const name = l.sub_department_id ? subName.get(String(l.sub_department_id)) : undefined;
+      if (name) subsOfUnit.set(String(l.unit_id), (subsOfUnit.get(String(l.unit_id)) ?? new Set()).add(name));
+    }
     used.add(code);
   }
   const clean = (m: Record<string, number>) => { for (const [k, v] of Object.entries(m)) if (v === 0) delete m[k]; return m; };
@@ -66,7 +76,8 @@ export async function rentalUnitCosts(sb: any, companyId: number, from: string, 
   const rows = unitIds.map((id) => {
     const byAccount = clean(byUnit.get(id)!);
     const u = unitOf.get(id);
-    return { unitId: id, building: String(u?.building ?? ''), unitNumber: String(u?.unit_number ?? id), byAccount, totalSen: Object.values(byAccount).reduce((s, v) => s + v, 0) };
+    return { unitId: id, building: String(u?.building ?? ''), unitNumber: String(u?.unit_number ?? id), byAccount, totalSen: Object.values(byAccount).reduce((s, v) => s + v, 0),
+      subDepartments: [...(subsOfUnit.get(id) ?? [])].sort() };
   }).filter((r) => Object.keys(r.byAccount).length > 0)
     .sort((a, b) => a.building.localeCompare(b.building) || a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true }));
   const noUnitByAccount = clean(noUnit);

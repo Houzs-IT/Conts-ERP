@@ -9,6 +9,8 @@
 // A voucher's project amount is its lines naming the project (payment_voucher_lines.project_id), less lines on an
 // everyday-expense account (rent, utilities: paid as usual, outside the limit). Reservation follows the voucher's
 // state, so a rejected or withdrawn voucher (submitted_at cleared) gives its reservation back by itself.
+// Finance can switch the check off (acc_company_settings.project_limit_check; chew 4 Nov 2026): nothing is then
+// refused or flagged over its limit, and the limit left still shows, for reference.
 import { paginateAll } from '../scm/lib/paginate-all';
 import { receiptCountsForLimit, type ReceiptStatus } from './petty-cash';
 import { requestReservation } from './payment-requests';
@@ -22,6 +24,8 @@ export const DEFAULT_LIMIT_PCT_BP = 7000;
 
 export type ProjectLimit = {
   ok: true; projectId: number; projectName: string; funding: 'customer' | 'internal';
+  /** The company checks project limits; off, the figures are for reference only. */
+  checked: boolean;
   pctBp: number | null; receivedSen: number | null; limitSen: number; usedSen: number; reservedSen: number; leftSen: number;
 };
 
@@ -148,6 +152,16 @@ async function projectReceived(sb: Db, companyId: number, projectId: number): Pr
   return { ok: true, sen };
 }
 
+export type LimitSettings = { ok: true; checked: boolean; pctBp: number };
+
+/** The company's limit settings: is the limit checked, and its share of what a customer paid (default 70%). */
+export async function limitSettings(sb: Db, companyId: number): Promise<LimitSettings | Fail> {
+  const { data, error } = await sb.from('acc_company_settings').select('project_limit_pct_bp, project_limit_check').eq('company_id', companyId).maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  const st = data as { project_limit_pct_bp?: number | null; project_limit_check?: boolean | null } | null;
+  return { ok: true, checked: st?.project_limit_check !== false, pctBp: st?.project_limit_pct_bp ?? DEFAULT_LIMIT_PCT_BP };
+}
+
 /** A project's limit, used, reserved and left. `exceptPvId`: a voucher left out of the reservation (checking itself). */
 export async function projectLimit(sb: Db, companyId: number, projectId: number, exceptPvId: string | null = null): Promise<ProjectLimit | Fail> {
   const { data: p, error } = await sb.schema('public').from('projects').select('id, name, funding, limit_pct_bp, budget_sen').eq('company_id', companyId).eq('id', projectId).maybeSingle();
@@ -158,6 +172,8 @@ export async function projectLimit(sb: Db, companyId: number, projectId: number,
   if (rErr) return { ok: false, error: rErr.message };
   const approved = (reqs ?? []) as Array<{ kind: string; amount_sen: number | null }>;
   const funding = proj.funding === 'internal' ? 'internal' : 'customer';
+  const st = await limitSettings(sb, companyId);
+  if (!st.ok) return st;
 
   let limitSen: number;
   let pctBp: number | null = null;
@@ -165,9 +181,7 @@ export async function projectLimit(sb: Db, companyId: number, projectId: number,
   if (funding === 'internal') {
     limitSen = Number(proj.budget_sen ?? 0) + approved.filter((r) => r.kind === 'budget').reduce((s, r) => s + Number(r.amount_sen ?? 0), 0);
   } else {
-    const { data: st, error: sErr } = await sb.from('acc_company_settings').select('project_limit_pct_bp').eq('company_id', companyId).maybeSingle();
-    if (sErr) return { ok: false, error: sErr.message };
-    pctBp = proj.limit_pct_bp ?? (st as { project_limit_pct_bp?: number | null } | null)?.project_limit_pct_bp ?? DEFAULT_LIMIT_PCT_BP;
+    pctBp = proj.limit_pct_bp ?? st.pctBp;
     const rec = await projectReceived(sb, companyId, projectId);
     if (!rec.ok) return rec;
     receivedSen = rec.sen;
@@ -186,7 +200,7 @@ export async function projectLimit(sb: Db, companyId: number, projectId: number,
   if (!claims.ok) return claims;
   usedSen += claims.usedSen;
   reservedSen += claims.reservedSen;
-  return { ok: true, projectId, projectName: proj.name, funding, pctBp, receivedSen, limitSen, usedSen, reservedSen, leftSen: limitSen - usedSen - reservedSen };
+  return { ok: true, projectId, projectName: proj.name, funding, checked: st.checked, pctBp, receivedSen, limitSen, usedSen, reservedSen, leftSen: limitSen - usedSen - reservedSen };
 }
 
 export type LimitCheck = { ok: true } | { ok: false; over: Array<{ projectId: number; projectName: string; leftSen: number; overSen: number }> } | Fail;
@@ -197,6 +211,9 @@ export async function checkVoucherLimit(sb: Db, companyId: number, pvId: string)
   const { data: head, error: hErr } = await sb.from('payment_vouchers').select('staff_receipt_id').eq('company_id', companyId).eq('id', pvId).maybeSingle();
   if (hErr) return { ok: false, error: hErr.message };
   if ((head as { staff_receipt_id?: string | null } | null)?.staff_receipt_id) return { ok: true };
+  const st = await limitSettings(sb, companyId);
+  if (!st.ok) return st;
+  if (!st.checked) return { ok: true };
   const { data: lines, error } = await sb.from('payment_voucher_lines').select('pv_id, project_id, amount_sen, debit_account_code').eq('company_id', companyId).eq('pv_id', pvId);
   if (error) return { ok: false, error: error.message };
   const mine = ((lines ?? []) as PvLine[]).filter((l) => l.project_id != null);
@@ -292,13 +309,17 @@ export function overLimitBody(over: Array<{ projectId: number; projectName: stri
 
 /** A new project's funding, as the form sends it (SOP 3.4): a customer project (the default), or an internal one —
     the company's own money — with the department it counts to (rental: a unit to rent out; supply: the showroom) and
-    its budget. */
-export function fundingFrom(body: Record<string, unknown>): { ok: true; funding: 'customer' | 'internal'; department: 'rental' | 'supply' | null; budgetSen: number | null } | { ok: false; error: string } {
-  if (body.funding == null || body.funding === 'customer') return { ok: true, funding: 'customer', department: null, budgetSen: null };
+    its budget. An internal Renovation project also names its brand (SOP 1.1; chew 4 Nov 2026): Dream Crafter
+    (RENOVATION) or The Conts (INHOUSE_RENOVATION), stored as its finance_kind; an internal Rental one has none. */
+export function fundingFrom(body: Record<string, unknown>): { ok: true; funding: 'customer' | 'internal'; department: 'rental' | 'supply' | null; budgetSen: number | null; financeKind: 'RENOVATION' | 'INHOUSE_RENOVATION' | null } | { ok: false; error: string } {
+  if (body.funding == null || body.funding === 'customer') return { ok: true, funding: 'customer', department: null, budgetSen: null, financeKind: null };
   if (body.funding !== 'internal') return { ok: false, error: 'funding_invalid' };
   const department = body.internalDepartment;
   if (department !== 'rental' && department !== 'supply') return { ok: false, error: 'department_required' };
   const budget = Number(body.budgetSen);
   if (!Number.isInteger(budget) || budget <= 0) return { ok: false, error: 'budget_required' };
-  return { ok: true, funding: 'internal', department, budgetSen: budget };
+  if (department === 'rental') return { ok: true, funding: 'internal', department, budgetSen: budget, financeKind: null };
+  const kind = body.financeKind;
+  if (kind !== 'RENOVATION' && kind !== 'INHOUSE_RENOVATION') return { ok: false, error: 'brand_required' };
+  return { ok: true, funding: 'internal', department, budgetSen: budget, financeKind: kind };
 }

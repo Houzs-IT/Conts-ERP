@@ -35,6 +35,8 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
   const [funding, setFunding] = useState<"customer" | "internal">("customer");
   const [department, setDepartment] = useState<"" | "rental" | "supply">("");
   const [budgetRm, setBudgetRm] = useState("");
+  /* SOP 1.1 (chew 4 Nov 2026): an internal Renovation project names its brand — either can have one. */
+  const [brand, setBrand] = useState<"" | "RENOVATION" | "INHOUSE_RENOVATION">("");
   const internal = funding === "internal";
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
   const activeTypes = (types.data?.data ?? []).filter((t) => t.active);
@@ -50,6 +52,7 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
     const budgetSen = Math.round(Number(budgetRm.replace(/,/g, "")) * 100);
     if (internal && !department) { setError("Choose the department this internal project counts to."); return; }
     if (internal && !(budgetSen > 0)) { setError("Enter the internal project's budget."); return; }
+    if (internal && department === "supply" && !brand) { setError("Choose the brand: Dream Crafter or The Conts."); return; }
     if (!internal && !cp.customerName.trim()) { setError("Enter the customer or owner name."); return; }
     if (!internal && propertyReady && missingFields(cp).size > 0) { setError(`Fill in: ${[...missingFields(cp)].join(", ")}.`); return; }
     if (!typeId) { setError("Pick a project type."); return; }
@@ -58,7 +61,7 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
     try {
       const r = await renovationApi.create({
         name: projectName || (internal ? `INTERNAL ${department.toUpperCase()}` : projectName), projectTypeId: Number(typeId), customerName: cp.customerName.trim() || (internal ? "INTERNAL" : ""),
-        ...(internal ? { funding: "internal", internalDepartment: department, budgetSen } : {}),
+        ...(internal ? { funding: "internal", internalDepartment: department, budgetSen, ...(department === "supply" ? { financeKind: brand } : {}) } : {}),
         customerPhone: cp.customerPhone || null, customerEmail: cp.customerEmail.trim() || null, building: cp.building.trim() || null,
         unitNo: cp.unitNo.trim() || null, plannedHandoverDate: f.plannedHandoverDate || null,
         renoPicPersonId: picPersonId, attendingPersonIds: attending.map((a) => a.id),
@@ -108,6 +111,15 @@ export function CreateRenovationPanel({ onClose, onCreated }: { onClose: () => v
                   <option value="">— Choose —</option>
                   <option value="rental">Rental (a unit to rent out)</option>
                   <option value="supply">Renovation (showroom)</option>
+                </select>
+              </Field>
+            )}
+            {internal && department === "supply" && (
+              <Field label="Brand">
+                <select aria-label="Brand" className={inputClass} value={brand} onChange={(e) => setBrand(e.target.value as "" | "RENOVATION" | "INHOUSE_RENOVATION")}>
+                  <option value="">— Choose —</option>
+                  <option value="RENOVATION">Dream Crafter</option>
+                  <option value="INHOUSE_RENOVATION">The Conts</option>
                 </select>
               </Field>
             )}

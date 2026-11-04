@@ -11,7 +11,8 @@
 // ----------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from 'react';
-import { DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
+import { type Department } from '../../conts/department';
+import { nextLineSub, SubDepartmentSelect } from '../../conts/SubDepartmentSelect';
 import { X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
@@ -24,13 +25,13 @@ import { fmtSen } from '../../vendor/shared/format';
 import styles from './SalesOrderDetail.module.css';
 
 /* Conts: each money line's department (finance phase 1, spec 3.5), required before saving; a text line has none. */
-export type BillFormLine = { rid: number; description: string; creditAccountCode: string; amountSen: number; department: Department | '' };
+export type BillFormLine = { rid: number; description: string; creditAccountCode: string; amountSen: number; department: Department | ''; subDepartmentId?: string | null };
 export type BillFormValues = { billDate: string; notes: string; lines: BillFormLine[] };
 export type BillFormMode = 'new' | 'edit' | 'copy';
 export type BillFormSubmit = { billDate: string; notes?: string; lines: Array<{ description?: string; creditAccountCode?: string; amountSen: number; department?: Department }> };
 
 const myt = (): string => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
-export const emptyBillLine = (rid: number, department: Department | '' = ''): BillFormLine => ({ rid, description: '', creditAccountCode: '', amountSen: 0, department });
+export const emptyBillLine = (rid: number, department: Department | '' = '', subDepartmentId: string | null = null): BillFormLine => ({ rid, description: '', creditAccountCode: '', amountSen: 0, department, subDepartmentId });
 export const emptyBillForm = (): BillFormValues => ({ billDate: myt(), notes: '', lines: [emptyBillLine(1)] });
 
 /** A description with neither account nor amount: text on the paper, nothing in the books. */
@@ -46,6 +47,7 @@ export const toBillSubmit = (v: BillFormValues): BillFormSubmit => ({
       : {
         ...(l.description.trim() ? { description: l.description.trim() } : {}),
         creditAccountCode: l.creditAccountCode, amountSen: l.amountSen, ...(l.department ? { department: l.department } : {}),
+        ...(l.subDepartmentId ? { subDepartmentId: l.subDepartmentId } : {}),
       })),
 });
 
@@ -84,7 +86,8 @@ export const DebtorBillForm = ({ mode, initial, accounts, receivedSen = 0, savin
     setV((prev) => {
       const rid = Math.max(0, ...prev.lines.map((x) => x.rid)) + 1;
       if (land) setLandOn(rid);
-      return { ...prev, lines: [...prev.lines, emptyBillLine(rid, nextLineDepartment(prev.lines))] };
+      const above = nextLineSub(prev.lines.map((x) => ({ department: x.department, subDepartmentId: x.subDepartmentId ?? null })));
+      return { ...prev, lines: [...prev.lines, emptyBillLine(rid, above.department, above.subDepartmentId)] };
     });
   };
   const removeLine = (rid: number) => setV((prev) => (prev.lines.length > 1 ? { ...prev, lines: prev.lines.filter((l) => l.rid !== rid) } : prev));
@@ -150,8 +153,8 @@ export const DebtorBillForm = ({ mode, initial, accounts, receivedSen = 0, savin
                   onKeyDown={(e) => { if (e.key === 'Enter') hopFrom(l.rid); }} />
               </td>
               <td style={td}>
-                <DepartmentSelect className={styles.fieldInput} style={{ width: '100%' }} label={`line ${l.rid} department`} blank="Choose…"
-                  value={l.department} onChange={(dep) => patchLine(l.rid, { department: dep })} />
+                <SubDepartmentSelect className={styles.fieldInput} style={{ width: '100%' }} label={`line ${l.rid} department`}
+                  value={{ department: l.department, subDepartmentId: l.subDepartmentId ?? null }} onChange={(v) => patchLine(l.rid, v)} />
               </td>
               <td style={td}>
                 {v.lines.length > 1 && (

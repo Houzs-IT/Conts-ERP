@@ -239,6 +239,20 @@ describe('money out', () => {
     expect(sb.tables.payment_vouchers[0].staff_receipt_id).toBe('R2');
     expect((await post(a, '/receipts/R1/voucher', { bankAccountCode: '310-0010' })).status).toBe(409);
   });
+
+  /* Final review: a sub-department retired since the receipt was checked still pays it back — the voucher line takes
+     the receipt line's own after it is made, as a request's does, never through the new-line check. */
+  test('a pay-back voucher line keeps the receipt line’s sub-department, even a retired one', async () => {
+    const sb = world();
+    fakeVoucher(sb);
+    sb.tables.staff_receipt_lines.find((l) => l.id === 'L2')!.sub_department_id = 's-retired';
+    sb.tables.staff_receipts.find((r) => r.id === 'R2')!.status = 'CHECKED';
+    sb.tables.staff_bank_details.push({ company_id: CO, user_id: 'u-ops', bank_name: 'Maybank', account_no: '1234567890', account_name: 'Wei Wen' });
+    sb.tables.payment_voucher_lines = [{ pv_id: 'PV1', line_no: 1, company_id: CO, department: 'shared', amount_sen: 3000 }];
+    expect((await post(app(sb, [FULL_KEY, EDIT_KEY]), '/receipts/R2/voucher', { bankAccountCode: '310-0010' })).status).toBe(201);
+    expect((made[0]!.lines as Array<Record<string, unknown>>)[0]).not.toHaveProperty('subDepartmentId');
+    expect(sb.tables.payment_voucher_lines[0]).toMatchObject({ sub_department_id: 's-retired' });
+  });
 });
 
 describe('what a receipt may book to', () => {

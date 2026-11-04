@@ -97,7 +97,7 @@ const fromDetail = (d: Detail, copy: boolean): ApFormValues => ({
   dueDate: copy ? '' : (d.invoice.due_date ?? ''),
   description: d.invoice.notes ?? '',
   lines: d.lines.map((l, i) => ({ rid: i + 1, description: l.description ?? '', debitAccountCode: l.debit_account_code, amountSen: l.amount_sen, department: departmentOf((l as { department?: unknown }).department),
-    projectId: (l as { project_id?: number | null }).project_id ?? null })),
+    projectId: (l as { project_id?: number | null }).project_id ?? null, subDepartmentId: (l as { sub_department_id?: string | null }).sub_department_id ?? null })),
 });
 
 type FormState = {

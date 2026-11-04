@@ -33,6 +33,14 @@ const reverseMutate = vi.fn();
 const editMutate = vi.fn();
 let detail: { journalEntry: JournalEntry; lines: JournalEntryLine[] } = { journalEntry: JE, lines: LINES };
 
+/* The sub-departments a line names (SOP 1.1; chew 4 Nov 2026): one built-in row per department. */
+vi.mock('../../conts/subDepartmentQueries', () => ({
+  useSubDepartments: () => ({ data: { subDepartments: [
+    { id: 's-gen', department: 'rental', name: 'Rental (general)', fixedKey: 'rental_general', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-dc', department: 'supply', name: 'Renovation (Dream Crafter)', fixedKey: 'dreamcrafter', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-co', department: 'shared', name: 'Company', fixedKey: 'company', staffDepartmentId: null, active: true, sort: 10 },
+  ] } }),
+}));
 vi.mock("../../conts/Pickers", () => ({ ProjectPicker: () => null, UnitPicker: () => null }));
 vi.mock('../../vendor/scm/lib/accounting-queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../vendor/scm/lib/accounting-queries')>()),
@@ -198,12 +206,12 @@ describe('departments on a manual journal', () => {
       { accountCode: '410-0010', debit: '', credit: '10.00', notes: '', department: '' },
     ] }} />);
     expect((screen.getByText('Save draft') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 'rental' } });
+    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 's-gen' } });
     expect((screen.getByText('Save draft') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Line 2 department'), { target: { value: 'shared' } });
+    fireEvent.change(screen.getByLabelText('Line 2 department'), { target: { value: 's-co' } });
     expect((screen.getByText('Save draft') as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByText('Add line'));
-    expect((screen.getByLabelText('Line 3 department') as HTMLSelectElement).value).toBe('shared');
+    expect((screen.getByLabelText('Line 3 department') as HTMLSelectElement).value).toBe('s-co');
     fireEvent.click(screen.getByText('Save draft'));
     const body = createMutate.mock.calls[0]![0] as { lines: Array<{ department: string }> };
     expect(body.lines.map((l) => l.department)).toEqual(['rental', 'shared']);

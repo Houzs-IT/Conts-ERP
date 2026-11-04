@@ -12,11 +12,11 @@ import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
 
 type Result = {
   from: string; to: string;
-  rows: Array<{ unitId: string; building: string; unitNumber: string; byAccount: Record<string, number>; totalSen: number }>;
+  rows: Array<{ unitId: string; building: string; unitNumber: string; byAccount: Record<string, number>; totalSen: number; subDepartments?: string[] }>;
   noUnitSen: number; noUnitByAccount: Record<string, number>;
   accounts: Array<{ code: string; name: string }>;
 };
-type Row = { key: string; building: string; unitNumber: string; byAccount: Record<string, number>; totalSen: number; noUnit?: boolean };
+type Row = { key: string; building: string; unitNumber: string; byAccount: Record<string, number>; totalSen: number; noUnit?: boolean; subDepartments: string[] };
 
 const MUTED = "var(--fg-muted)";
 const num: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
@@ -29,8 +29,8 @@ const rm = (sen: number): string => {
 
 /** The table's rows: one per unit, then Rental's cost that names no unit. Exported for the test. */
 export function costRows(r: Result): Row[] {
-  const rows: Row[] = r.rows.map((u) => ({ key: u.unitId, building: u.building, unitNumber: u.unitNumber, byAccount: u.byAccount, totalSen: u.totalSen }));
-  if (r.noUnitSen !== 0) rows.push({ key: "no-unit", building: "No unit", unitNumber: "Rental's general cost", byAccount: r.noUnitByAccount, totalSen: r.noUnitSen, noUnit: true });
+  const rows: Row[] = r.rows.map((u) => ({ key: u.unitId, building: u.building, unitNumber: u.unitNumber, byAccount: u.byAccount, totalSen: u.totalSen, subDepartments: u.subDepartments ?? [] }));
+  if (r.noUnitSen !== 0) rows.push({ key: "no-unit", building: "No unit", unitNumber: "Rental's general cost", byAccount: r.noUnitByAccount, totalSen: r.noUnitSen, noUnit: true, subDepartments: [] });
   return rows;
 }
 
@@ -48,6 +48,8 @@ export function RentalUnitCosts() {
   const columns = useMemo<Column<Row>[]>(() => [
     { key: "building", label: "Building", render: (r) => <span style={{ color: r.noUnit ? MUTED : undefined }}>{r.building}</span>, getValue: (r) => r.building },
     { key: "unit", label: "Unit", render: (r) => <span style={{ fontWeight: r.noUnit ? 400 : 600, color: r.noUnit ? MUTED : undefined }}>{r.unitNumber}</span>, getValue: (r) => r.unitNumber },
+    /* SOP 1.1: which sub-departments spent on the unit — the same money as Spending by department, seen by unit. */
+    { key: "subs", label: "Departments", render: (r) => (r.subDepartments.length ? r.subDepartments.join(", ") : <span style={{ color: MUTED }}>–</span>), getValue: (r) => r.subDepartments.join(", ") },
     ...(q.data?.accounts ?? []).map((a): Column<Row> => ({
       key: `acc-${a.code}`, label: `${a.name || a.code} (RM)`, align: "right",
       render: (r) => (r.byAccount[a.code] ? <span style={num}>{rm(r.byAccount[a.code]!)}</span> : <span style={{ color: MUTED }}>–</span>),

@@ -21,7 +21,7 @@ import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { docMonthTag, insertWithDocNoRetry, mintMonthlyDocNo } from '../scm/lib/doc-no';
 import { todayMyt } from '../scm/lib/my-time';
 import { apControlOf, resolveRoles } from '../acc/rules';
-import { buildLines } from './claims-lines';
+import { buildLines, defaultLineSubs } from './claims-lines';
 import { decodeFiles, fileResponse, removeFiles, storeFiles } from './claims-files';
 import { overLimitBody, projectLimit } from './project-limit';
 import { allRows, inChunks, staffNames } from './petty-cash-store';
@@ -45,7 +45,7 @@ type ReqRow = {
   purchase_order_id: string | null; wanted_on: string | null; owes_formal_invoice: boolean; note: string | null; amount_sen: number; status: string;
   reason: string | null; decided_by: string | null; decided_at: string | null; created_at: string;
 };
-type ReqLine = { id: string; request_id: string; department: string; unit_id: string | null; maintenance_issue_id: string | null; project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number };
+type ReqLine = { id: string; request_id: string; department: string; unit_id: string | null; maintenance_issue_id: string | null; project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number; sub_department_id?: string | null };
 
 /** Requests with their lines, files, vouchers and names, as the screens show them. Every list is read in full. */
 async function views(sb: any, companyId: number, rows: ReqRow[]) {
@@ -63,7 +63,7 @@ async function views(sb: any, companyId: number, rows: ReqRow[]) {
     wantedOn: r.wanted_on, owesFormalInvoice: r.owes_formal_invoice, note: r.note, amountSen: Number(r.amount_sen), status: r.status,
     reason: r.reason, decidedBy: r.decided_by, decidedAt: r.decided_at, createdAt: r.created_at,
     lines: lines.filter(l => l.request_id === r.id).sort((a, b) => a.sort - b.sort).map(l => ({
-      department: l.department, unitId: l.unit_id, maintenanceIssueId: l.maintenance_issue_id, projectId: l.project_id, accountCode: l.account_code,
+      department: l.department, subDepartmentId: l.sub_department_id ?? null, unitId: l.unit_id, maintenanceIssueId: l.maintenance_issue_id, projectId: l.project_id, accountCode: l.account_code,
       amountSen: Number(l.amount_sen), description: l.description })),
     files: files.filter(f => f.request_id === r.id).map(f => ({ id: f.id, fileName: f.file_name, mime: f.mime })),
     vouchers: pvs.filter(p => p.payment_request_id === r.id).map(p => ({ id: p.id, pvNumber: p.pv_number, status: p.status })),
@@ -99,7 +99,7 @@ async function overLimit(sb: any, companyId: number, lines: Array<{ project_id: 
   for (const [projectId, sen] of byProject) {
     const lim = await projectLimit(sb, companyId, projectId);
     if (!lim.ok) return { error: lim.error };
-    if (sen > lim.leftSen) over.push({ projectId, projectName: lim.projectName, leftSen: lim.leftSen, overSen: sen - lim.leftSen });
+    if (lim.checked && sen > lim.leftSen) over.push({ projectId, projectName: lim.projectName, leftSen: lim.leftSen, overSen: sen - lim.leftSen });
   }
   return { over };
 }
@@ -144,6 +144,8 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
     : b.lines;
   const built = await buildLines(sb, staff, rawLines, amountSen, co.companyId);
   if (!built.ok) return c.json({ error: 'validation', message: built.message }, 422);
+  /* SOP 1.1: each line starts on the person's own department's sub-department. */
+  await defaultLineSubs(sb, co.companyId, built.lines, { staffDepartmentId: staff.departmentId, floatId: null });
   /* SOP 3.2: a request over a project's limit cannot be submitted. */
   const lim = await overLimit(sb, co.companyId, built.lines);
   if ('error' in lim) return c.json({ error: 'limit_unavailable', message: 'The project limit could not be read. Try again.' }, 503);
@@ -286,7 +288,7 @@ export const requestVoucherHandler = async (c: Ctx): Promise<Response> => {
   const { data: ev } = codes.length ? await sb.from('accounts').select('account_code, everyday_expense').eq('company_id', co.companyId).in('account_code', codes) : { data: [] };
   const everyday = new Set(((ev ?? []) as Array<{ account_code: string; everyday_expense: boolean | null }>).filter(x => x.everyday_expense === true).map(x => x.account_code));
   for (const [i, l] of owed.entries()) {
-    const up = await sb.from('payment_voucher_lines').update({ project_id: l.account_code && everyday.has(l.account_code) ? null : l.project_id, unit_id: l.unit_id }).eq('pv_id', made.id).eq('line_no', i + 1);
+    const up = await sb.from('payment_voucher_lines').update({ project_id: l.account_code && everyday.has(l.account_code) ? null : l.project_id, unit_id: l.unit_id, sub_department_id: l.sub_department_id ?? null }).eq('pv_id', made.id).eq('line_no', i + 1);
     if (up.error) { await dropDraft(sb, made.id); return c.json({ error: 'update_failed', reason: up.error.message }, 500); }
   }
   /* Withdrawn, rejected or closed while the voucher was being made: the request wins and the draft goes. */

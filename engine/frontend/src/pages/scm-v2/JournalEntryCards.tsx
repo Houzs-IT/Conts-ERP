@@ -18,7 +18,8 @@
 // ----------------------------------------------------------------------------
 
 import { useMemo, useState } from 'react';
-import { DEPARTMENT_OPTIONS, DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
+import { DEPARTMENT_OPTIONS, type Department } from '../../conts/department';
+import { nextLineSub, SubDepartmentSelect } from '../../conts/SubDepartmentSelect';
 import { ProjectPicker, UnitPicker } from '../../conts/Pickers';
 import {
   useJournalEntryDetail, useCreateJournalEntry, usePostJournalEntry, useAccounts, leafAccounts,
@@ -77,6 +78,8 @@ export type DraftLine = {
   accountCode: string; debit: string; credit: string; notes: string;
   /* Conts: the line's department (spec 3.5), required before saving; a copy and an edit carry it. */
   department: Department | '';
+  /** Conts (SOP 1.1; chew 4 Nov 2026): the line's sub-department; it sets the department. */
+  subDepartmentId?: string | null;
   /* Conts (chew 2 Nov 2026): the project or unit the line belongs to (a unit only on a Rental line). */
   projectId?: number | null; unitId?: string | null;
   /* Carried by an EDIT only — the form has no party boxes, and a copy drops
@@ -93,9 +96,15 @@ const tagsOf = (l: JournalEntryLine): Pick<DraftLine, 'projectId' | 'unitId'> =>
     salary line changes with the month, the account does not). */
 export type DraftSeed = { narration: string; lines: DraftLine[] };
 
+/** A saved line's sub-department, when it has one (SOP 1.1). */
+const subOf = (l: JournalEntryLine): { subDepartmentId?: string } => {
+  const s = (l as { sub_department_id?: string | null }).sub_department_id ?? null;
+  return s ? { subDepartmentId: s } : {};
+};
+
 export const seedFromEntry = (je: JournalEntry, lines: JournalEntryLine[]): DraftSeed => ({
   narration: je.narration ?? '',
-  lines: lines.map((l) => ({ accountCode: l.account_code, debit: senToRm(l.debit_sen), credit: senToRm(l.credit_sen), notes: l.notes ?? '', department: departmentOf(l.department), ...tagsOf(l) })),
+  lines: lines.map((l) => ({ accountCode: l.account_code, debit: senToRm(l.debit_sen), credit: senToRm(l.credit_sen), notes: l.notes ?? '', department: departmentOf(l.department), ...subOf(l), ...tagsOf(l) })),
 });
 
 /** What an EDIT opens the form with: the entry itself (its number decides the
@@ -112,7 +121,7 @@ export const editSeedFromEntry = (je: JournalEntry, lines: JournalEntryLine[]): 
   lines: lines.map((l) => ({
     accountCode: l.account_code, debit: senToRm(l.debit_sen), credit: senToRm(l.credit_sen), notes: l.notes ?? '',
     partyType: l.party_type, partyCode: l.party_code, partyName: l.party_name,
-    department: departmentOf(l.department), ...tagsOf(l),
+    department: departmentOf(l.department), ...subOf(l), ...tagsOf(l),
   })),
 });
 
@@ -180,6 +189,7 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
           creditSen: rmToSen(l.credit) ?? 0,
           notes: l.notes.trim() || null,
           department: l.department || null,
+          ...(l.subDepartmentId ? { subDepartmentId: l.subDepartmentId } : {}),
           ...(l.projectId != null ? { projectId: l.projectId } : {}),
           ...(l.department === 'rental' && l.unitId ? { unitId: l.unitId } : {}),
           ...(l.partyType || l.partyCode || l.partyName
@@ -230,8 +240,8 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
             value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value, debit: e.target.value ? '' : l.debit })} />
           <input style={{ ...fieldStyle, flex: 1, minWidth: 160 }} placeholder="Line note" aria-label={`Line ${i + 1} note`}
             value={l.notes} onChange={(e) => setLine(i, { notes: e.target.value })} />
-          <DepartmentSelect style={{ ...fieldStyle, width: 140 }} label={`Line ${i + 1} department`} blank="Department…"
-            value={l.department} onChange={(d) => setLine(i, { department: d, unitId: d === 'rental' ? l.unitId ?? null : null })} />
+          <SubDepartmentSelect style={{ ...fieldStyle, width: 180 }} label={`Line ${i + 1} department`} blank="Department…"
+            value={{ department: l.department, subDepartmentId: l.subDepartmentId ?? null }} onChange={(v) => setLine(i, { ...v, unitId: v.department === 'rental' ? l.unitId ?? null : null })} />
           <span style={{ width: 220 }}>
             <ProjectPicker value={l.projectId ?? null} onChange={(id) => setLine(i, { projectId: id })} placeholder="No project" ariaLabel={`Line ${i + 1} project`} inputClass="" />
           </span>
@@ -247,7 +257,7 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
       ))}
 
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
-        <button type="button" style={btnStyle()} onClick={() => setLines((ls) => [...ls, { ...EMPTY_LINE, department: nextLineDepartment(ls) }])}>Add line</button>
+        <button type="button" style={btnStyle()} onClick={() => setLines((ls) => [...ls, { ...EMPTY_LINE, ...nextLineSub(ls.map((x) => ({ department: x.department, subDepartmentId: x.subDepartmentId ?? null }))) }])}>Add line</button>
         <span style={{ fontSize: 'var(--fs-13)' }}>
           Dr {fmt(totals.dr)} · Cr {fmt(totals.cr)} ·{' '}
           {totals.dr === totals.cr && totals.dr > 0 && !totals.bad

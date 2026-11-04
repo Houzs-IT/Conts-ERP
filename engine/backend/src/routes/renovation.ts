@@ -236,7 +236,8 @@ app.post("/", requirePermission("projects.write"), async (c) => {
   if (!created) return c.json({ error: "type_not_found" }, 400);
   if (info) await writeProjectShared(db(c), created.id, info.value);
   if (fund.funding === "internal") {
-    await db(c).prepare("UPDATE projects SET funding = 'internal', internal_department = ?, budget_sen = ? WHERE id = ?").bind(fund.department, fund.budgetSen, created.id).run();
+    /* Its brand too (SOP 1.1): an internal Renovation project's finance_kind; a Rental one keeps none. */
+    await db(c).prepare("UPDATE projects SET funding = 'internal', internal_department = ?, budget_sen = ?, finance_kind = COALESCE(?, finance_kind) WHERE id = ?").bind(fund.department, fund.budgetSen, fund.financeKind, created.id).run();
     /* Said, not assumed: an internal project saved as a customer one would have a limit of nothing. */
     const saved = await db(c).prepare("SELECT funding FROM projects WHERE id = ?").bind(created.id).first<{ funding: string }>();
     if (saved?.funding !== "internal") return c.json({ error: "funding_not_saved", message: `${created.code} was created, but not as an internal project: set it again on the project.`, ...created }, 500);

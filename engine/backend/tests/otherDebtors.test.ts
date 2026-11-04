@@ -592,3 +592,24 @@ describe('a receipt keeps the departments of the bills it settles', () => {
     expect([net('rental'), net('shared'), net('supply')]).toEqual([0, 0, 0]);
   });
 });
+
+/* Each line's sub-department (SOP 1.1; chew 4 Nov 2026). */
+describe('sub-departments on a debtor bill', () => {
+  test('a Maintenance line saves Rental and its sub-department, and the journal carries it', async () => {
+    const tables = { ...baseTables(), acc_sub_departments: [
+      { id: 's-gen', company_id: CO, department: 'rental', name: 'Rental (general)', fixed_key: 'rental_general', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-mnt', company_id: CO, department: 'rental', name: 'Maintenance', fixed_key: null, staff_department_id: null, active: true, sort: 20 },
+      { id: 's-dc', company_id: CO, department: 'supply', name: 'Renovation (Dream Crafter)', fixed_key: 'dreamcrafter', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-co', company_id: CO, department: 'shared', name: 'Company', fixed_key: 'company', staff_department_id: null, active: true, sort: 10 },
+    ] };
+    const app = harness(tables);
+    const res = await post(app, '/d1/bills', { billDate: '2026-09-03', lines: [
+      { description: 'Repair A-12-3', creditAccountCode: '700-0000', amountSen: 40000, subDepartmentId: 's-mnt' },
+    ] });
+    expect(res.status, await res.clone().text()).toBe(201);
+    expect(tables.acc_debtor_bill_lines.map((l) => [l.department, l.sub_department_id])).toEqual([['rental', 's-mnt']]);
+    const income = tables.journal_entry_lines.find((l) => l.account_code === '700-0000')!;
+    expect(income).toMatchObject({ department: 'rental', sub_department_id: 's-mnt' });
+    expect((await post(app, '/d1/bills', { lines: [{ creditAccountCode: '700-0000', amountSen: 100, subDepartmentId: 'nope' }] })).status).toBe(400);
+  });
+});
