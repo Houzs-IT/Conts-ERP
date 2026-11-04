@@ -207,6 +207,23 @@ export default function ContractsPage() {
     );
   };
 
+  // A tap or Enter on a control inside a row must not also open the owner (the row's own click).
+  const keepInRow = { onClick: (e: { stopPropagation: () => void }) => e.stopPropagation(), onKeyDown: (e: { stopPropagation: () => void }) => e.stopPropagation() };
+  const openTerms = (r: Contract) => setModal((r.units?.length ?? 0) > 0 ? { mode: 'terms', contract: r } : { mode: 'edit', id: r.id });
+  /** The purpose dropdown (plain text for those who cannot edit units); `md` on phone cards for a full-size tap target. */
+  const purposeControl = (r: Contract, size: 'sm' | 'md' = 'sm') => {
+    const p = purposeOf(r);
+    if (!p) return <span className="text-copy text-muted-ink">—</span>;
+    if (!canEditUnits) return <span className="text-copy">{purposeLabel(r)}</span>;
+    return (
+      <span {...keepInRow} className="block min-w-0">
+        <Select label={`Purpose of ${r.unitsLabel}`} size={size} value={p === 'mixed' ? '' : p} disabled={savingPurpose === r.id}
+          onChange={v => { if (v) void setPurpose(r, v as UnitPurpose); }}
+          options={[...(p === 'mixed' ? [{ value: '', label: 'Mixed' }] : []), ...PURPOSES.map(x => ({ value: x.value, label: x.label }))]} />
+      </span>
+    );
+  };
+
   const columns: Column<Contract>[] = [
     { key: 'owner', label: 'Owner', value: r => r.ownerName, hideable: false, width: 210,
       render: r => (
@@ -235,18 +252,7 @@ export default function ContractsPage() {
     // What the contract's units are for (staff, 4 Nov 2026: changed here, next to the package, not on the unit).
     { key: 'purpose', label: 'Purpose', value: r => purposeLabel(r), width: 140, title: 'Rental units are sold on the channels; showroom and warehouse units never are.',
       filter: { kind: 'select', options: [...PURPOSES.map(p => ({ value: p.label, label: p.label })), { value: 'Mixed', label: 'Mixed' }] },
-      render: r => {
-        const p = purposeOf(r);
-        if (!p) return <span className="text-copy text-muted-ink">—</span>;
-        if (!canEditUnits) return <span className="text-copy">{purposeLabel(r)}</span>;
-        return (
-          <span onClick={e => e.stopPropagation()} className="block">
-            <Select label={`Purpose of ${r.unitsLabel}`} value={p === 'mixed' ? '' : p} disabled={savingPurpose === r.id}
-              onChange={v => { if (v) void setPurpose(r, v as UnitPurpose); }}
-              options={[...(p === 'mixed' ? [{ value: '', label: 'Mixed' }] : []), ...PURPOSES.map(x => ({ value: x.value, label: x.label }))]} />
-          </span>
-        );
-      } },
+      render: r => purposeControl(r) },
     { key: 'endsOn', label: 'End date', type: 'date', value: r => r.endsOn ?? null, hidden: true },
     { key: 'renewsOn', label: 'Renews on', type: 'date', value: r => r.renewsOn, hidden: true },
     { key: 'offer', label: 'Offer letter', value: r => r.offerLetter, hidden: true, width: 180 },
@@ -263,7 +269,7 @@ export default function ContractsPage() {
         <button
           // A contract in force on units opens the unit's own contract editor (package, terms, dates); the older form is
           // left for records not on any unit.
-          onClick={e => { e.stopPropagation(); setModal((r.units?.length ?? 0) > 0 ? { mode: 'terms', contract: r } : { mode: 'edit', id: r.id }); }}
+          onClick={e => { e.stopPropagation(); openTerms(r); }}
           aria-label={`Edit contract for ${titleCase(r.ownerName)}`}
           className="grid place-items-center w-9 h-9 rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"
         >
@@ -344,6 +350,16 @@ export default function ContractsPage() {
                 <span className="text-meta font-medium inline-flex items-center gap-1.5"><CodeBadge code={r.contractCode} size="sm" />{feeLabel(r)}</span>
                 <EndsCell r={r} />
               </span>
+              {/* Phones have no Purpose column or pencil: the same two actions, on the card. */}
+              {purposeOf(r) && (
+                <span className="flex items-center gap-2 w-full pt-2">
+                  <span className="flex-1 min-w-0">{purposeControl(r, 'md')}</span>
+                  <span {...keepInRow} className="shrink-0">
+                    <Button size="md" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={() => openTerms(r)}
+                      aria-label={`Edit contract for ${titleCase(r.ownerName)}`}>Edit contract</Button>
+                  </span>
+                </span>
+              )}
             </span>
           );
         }}
