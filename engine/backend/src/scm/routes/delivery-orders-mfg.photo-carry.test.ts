@@ -35,7 +35,7 @@ type Row = Record<string, unknown>;
    this handler's read surface is far wider (remaining derivation, warehouse
    resolution, sofa guards, doc-no minting) — any unmodelled chained method
    filters nothing and resolves to the current row set. */
-function fakeSb(tables: Record<string, Row[]>, captured: Row[]) {
+function fakeSb(tables: Record<string, Row[]>, captured: Row[], heads: Row[] = []) {
   let minted = 0;
   const mk = (table: string) => {
     const state = { rows: [...(tables[table] ?? [])], single: false };
@@ -59,6 +59,7 @@ function fakeSb(tables: Record<string, Row[]>, captured: Row[]) {
         if (prop === 'insert') return (payload: Row | Row[]) => {
           const rows = Array.isArray(payload) ? payload : [payload];
           if (table === 'delivery_order_items') captured.push(...rows);
+          if (table === 'delivery_orders') heads.push(...rows);
           /* The DO header insert is chained `.select('id, do_number').single()`,
              so hand back a row carrying the id the line insert keys off. */
           state.rows = table === 'delivery_orders'
@@ -108,14 +109,14 @@ const soLine = (id: string, itemCode: string, photos: string[] | null): Row => (
 
 /** Runs the real /from-sos convert over the given SO lines; returns the
  *  captured delivery_order_items rows. */
-async function convertAndCapture(soLines: Row[]): Promise<Row[]> {
+async function convertAndCapture(soLines: Row[], soHead: Row = {}, heads: Row[] = []): Promise<Row[]> {
   const captured: Row[] = [];
   const sb = fakeSb({
     mfg_sales_order_items: soLines,
     // CONFIRMED — anything else is refused by firstUndeliverableSo before the map.
     mfg_sales_orders: [{
       doc_no: SO_DOC, company_id: 1, status: 'CONFIRMED', on_hold: false,
-      debtor_code: 'C001', debtor_name: 'Customer One',
+      debtor_code: 'C001', debtor_name: 'Customer One', ...soHead,
     }],
     delivery_orders: [],
     delivery_order_items: [],
@@ -125,7 +126,7 @@ async function convertAndCapture(soLines: Row[]): Promise<Row[]> {
     mfg_products: soLines.map((l) => ({ code: l.item_code, company_id: 1, status: 'ACTIVE' })), // Conts C6: codes must be in Products
     purchase_orders: [],
     purchase_order_items: [],
-  }, captured);
+  }, captured, heads);
 
   const responses: Array<{ status: number; body: Record<string, unknown> }> = [];
   const ctx = {
@@ -159,6 +160,20 @@ async function convertAndCapture(soLines: Row[]): Promise<Row[]> {
   }
   return captured;
 }
+
+describe('SO -> DO convert keeps a brand on the delivery', () => {
+  test('goods with no brand of their own keep the order brand (TC-DO-2611-004 printed none)', async () => {
+    const heads: Row[] = [];
+    await convertAndCapture([soLine('si-1', 'MATT-A', null)], { branding: 'AKEMI' }, heads);
+    expect(heads[0]!.branding).toBe('AKEMI');
+  });
+
+  test('a brand on the goods still wins over the order brand', async () => {
+    const heads: Row[] = [];
+    await convertAndCapture([{ ...soLine('si-1', 'MATT-A', null), branding: 'HOOKKA' }], { branding: 'AKEMI' }, heads);
+    expect(heads[0]!.branding).toBe('HOOKKA');
+  });
+});
 
 describe('SO -> DO convert carries the line photos (mig 20260828T0746)', () => {
   test('a converted DO line carries the source SO line photo keys', async () => {
