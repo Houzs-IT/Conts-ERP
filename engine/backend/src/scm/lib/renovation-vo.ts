@@ -227,10 +227,11 @@ export async function applyVo(
      on conflict do nothing`,
     [soDocNo, actor.staffId],
   );
+  const [requester] = actor.userId != null ? await db.q<{ id: string }>(`select id from scm.staff where user_id = $1`, [actor.userId]) : [];
   const [amd] = await db.q<{ id: string }>(
     `insert into scm.so_amendments (so_doc_no, amendment_no, status, reason, requested_by, so_approved_by, so_approved_at, sent_at, resolution, company_id)
      values ($1, $2, 'SENT', $3, $4, $4, now(), now(), 'RENOVATION_VO', $5) returning id`,
-    [soDocNo, v.vo_no, v.title || `Variation order ${v.vo_no}`, actor.staffId, actor.companyId],
+    [soDocNo, v.vo_no, v.title || `Variation order ${v.vo_no}`, requester?.id ?? actor.staffId, actor.companyId],
   );
   await db.q(`update scm.so_revisions set amendment_id = $3 where so_doc_no = $1 and revision = $2 and amendment_id is null`, [soDocNo, head.revision, amd.id]);
 

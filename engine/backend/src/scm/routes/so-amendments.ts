@@ -302,7 +302,7 @@ soAmendments.get('/', async (c) => {
   // scopeToCompany: isolate the list to the active company (mig 0080 company_id);
   // no-op pre-activation so single-company Houzs is unchanged.
   const { data, error } = await scopeToCompany(sb.from('so_amendments')
-    .select('id, so_doc_no, amendment_no, status, lane, reason, lane_flag_note, requested_by, created_at, updated_at'), c)
+    .select('id, so_doc_no, amendment_no, status, lane, reason, lane_flag_note, requested_by, resolution, created_at, updated_at'), c)
     .order('created_at', { ascending: false })
     .limit(500);
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);

@@ -54,6 +54,7 @@ function actorOf(c: C): RenoActor {
   return {
     name: hu?.name ?? hu?.email ?? null,
     staffId: c.get('user').id,
+    userId: hu?.id ?? null,
     companyId: activeCompanyId(c) ?? 1,
     docPrefix: companyDocPrefix(c),
   };

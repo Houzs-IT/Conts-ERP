@@ -168,7 +168,7 @@ function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
       {open && preview.isLoading && <p className="text-[13px] text-ink-muted">Working out the POs…</p>}
       {open && p && (
         <div className="space-y-3">
-          {p.groups.length === 0 && <p className="text-[13px] text-ink-secondary">Nothing left to order.</p>}
+          {p.groups.length === 0 && p.blocked.length === 0 && (p.unsupplied ?? []).length === 0 && <p className="text-[13px] text-ink-secondary">Nothing left to order.</p>}
           {p.groups.map((g) => (
             <div key={`${g.supplierId}:${g.categoryGroup ?? ''}`} className="rounded-lg border border-border-subtle">
               <div className="flex justify-between bg-surface-2 px-3 py-1.5 text-[13px] font-semibold"><span>{g.supplierCode} · {g.supplierName}{g.categoryGroup ? ` · ${g.categoryGroup}` : ''}</span><span className="tabular-nums">{rm(g.totalSen)}</span></div>
