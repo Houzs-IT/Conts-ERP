@@ -3347,7 +3347,7 @@ deliveryOrdersMfg.post('/', async (c) => {
 
   const phoneRaw = (body.phone as string | undefined) ?? null;
   const emPhoneRaw = (body.emergencyContactPhone as string | undefined) ?? null;
-  /* Conts: the brand on the delivery is the brand of the goods on it, not the SO header's. */
+  /* Conts: the brand on the delivery is the brand of the goods on it; goods with no brand keep the order's (TC-DO-2611-004). */
   const lineBranding = await doBrandingFromLines(sb, items.map((it) => ({
     itemCode: String(it.itemCode ?? ''), soItemId: (it.soItemId as string | null) ?? null,
   })), activeCompanyId(c) ?? null);
@@ -3385,7 +3385,7 @@ deliveryOrdersMfg.post('/', async (c) => {
     email: (body.email as string) ?? null,
     customer_type: (body.customerType as string) ?? null,
     building_type: (body.buildingType as string) ?? null,
-    branding: lineBranding !== undefined ? lineBranding : ((body.branding as string) ?? null),
+    branding: lineBranding ?? (body.branding as string) ?? null,
     venue: (body.venue as string) ?? null,
     venue_id: (body.venueId as string) ?? null,
     /* The Create-DO form sends the reference as customerSoNo only; without
@@ -3916,7 +3916,7 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
     email: (head.email as string | null) ?? null,
     customer_type: (head.customer_type as string | null) ?? null,
     building_type: renoSite.buildingType ?? (head.building_type as string | null) ?? null,
-    branding: lineBranding !== undefined ? lineBranding : ((head.branding as string | null) ?? null),
+    branding: lineBranding ?? (head.branding as string | null) ?? null,
     venue: renoSite.venue ?? (head.venue as string | null) ?? null,
     venue_id: (head.venue_id as string | null) ?? null,
     ref: docNos.length > 1
