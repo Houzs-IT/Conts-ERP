@@ -62,6 +62,13 @@ vi.mock('@tanstack/react-query', () => ({
   useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
+vi.mock('../../conts/subDepartmentQueries', () => ({
+  useSubDepartments: () => ({ data: { subDepartments: [
+    { id: 's-gen', department: 'rental', name: 'Rental (general)', fixedKey: 'rental_general', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-cln', department: 'rental', name: 'Cleaning', fixedKey: null, staffDepartmentId: null, active: true, sort: 20 },
+    { id: 's-dc', department: 'supply', name: 'Renovation (Dream Crafter)', fixedKey: 'dreamcrafter', staffDepartmentId: null, active: true, sort: 10 },
+  ] } }),
+}));
 vi.mock('../../vendor/scm/lib/authed-fetch', () => ({ authedFetch: vi.fn() }));
 vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ can: () => true }) }));
 /* A figure opens the General Ledger (docs/bugs/0924): the navigation is caught, not followed. */
@@ -267,6 +274,27 @@ describe('the P&L by department', () => {
     expect(pnl.queryKey).toContain('rental');
     void pnl.queryFn?.();
     expect(String((authedFetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.at(-1)![0])).toContain('&department=rental');
+  });
+});
+
+/* By sub-department (SOP 1.1; chew 4 Nov 2026): once a department is chosen, one of its sub-departments may be. */
+describe('the P&L by sub-department', () => {
+  test('only the chosen department’s sub-departments are offered; choosing one sends ?subDepartment=', async () => {
+    const { authedFetch } = await import('../../vendor/scm/lib/authed-fetch');
+    render(<PnLTab />);
+    expect(screen.queryByLabelText('P&L sub-department')).toBeNull();
+    fireEvent.change(screen.getByLabelText('P&L department'), { target: { value: 'rental' } });
+    const sub = screen.getByLabelText('P&L sub-department') as HTMLSelectElement;
+    expect([...sub.options].map((o) => o.textContent)).toEqual(['All of Rental', 'Rental (general)', 'Cleaning']);
+    seenQueries.length = 0;
+    fireEvent.change(sub, { target: { value: 's-cln' } });
+    const pnl = seenQueries.filter((o) => String(o.queryKey[0]) === 'report-pnl').at(-1)!;
+    expect(pnl.queryKey).toContain('s-cln');
+    void pnl.queryFn?.();
+    expect(String((authedFetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.at(-1)![0])).toContain('&subDepartment=s-cln');
+    /* Another department clears it. */
+    fireEvent.change(screen.getByLabelText('P&L department'), { target: { value: 'supply' } });
+    expect((screen.getByLabelText('P&L sub-department') as HTMLSelectElement).value).toBe('');
   });
 });
 

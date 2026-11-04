@@ -693,6 +693,7 @@ export const ALL_NAV_TABS: NavTab[] = [
           // Renovation projects (Conts, SOP 4.2.3) — completion % and the money per project; management only.
           { to: "/scm/reno-projects", label: "Renovation Projects", icon: AlertCircle, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"], badge: "reno-cost-alerts" },
           { to: "/scm/rental-unit-costs", label: "Rental Unit Costs", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/department-spend", label: "Spending by Department", icon: FileText, anyPerm: ["*", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/other-debtors", label: "Other Debtors", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/outstanding", label: "Outstanding", icon: AlertCircle, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.outstanding"] },
           { to: "/scm/unbilled-deliveries", label: "Not Yet Billed", icon: HandCoins, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.outstanding"] },

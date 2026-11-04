@@ -34,6 +34,7 @@ export const LEDGER_SCREENS: readonly LedgerScreen[] = [
   { slug: 'daily-bank', label: 'Daily bank', enginePath: '/scm/daily-bank' },
   { slug: 'merchant-recon', label: 'Merchant recon', enginePath: '/scm/merchant-recon' },
   { slug: 'rental-unit-costs', label: 'Rental unit costs', enginePath: '/scm/rental-unit-costs' },
+  { slug: 'department-spend', label: 'Spending by department', enginePath: '/scm/department-spend' },
   { slug: 'renovation-projects', label: 'Renovation projects', enginePath: '/scm/reno-projects' },
 ];
 
