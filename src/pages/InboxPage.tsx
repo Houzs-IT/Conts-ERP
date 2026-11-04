@@ -10,7 +10,7 @@ import { Segmented } from '../components/Metric';
 import Icon from '../components/Icon';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
-import { api, notifyFailure, errorMessage } from '../lib/api';
+import { api, notifyFailure, errorMessage, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { relative, time, date as fmtDate, dateRange, count, guests as fmtGuests } from '../lib/format';
 import { Button } from '../components/Button';
@@ -130,9 +130,36 @@ export default function InboxPage() {
   const saved = useSavedReplies();
   const [managing, setManaging] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => { setDraft(''); }, [activeId]);
+  /* An AI draft is only ever put in the box for a person to read, change and send. */
+  const [drafting, setDrafting] = useState(false);
+  const [aiNote, setAiNote] = useState<string | null>(null);
+  const lastDraft = useRef('');
+  // The conversation on screen, so a draft that comes back after the person moved on is dropped, not put in another guest's box.
+  const shown = useRef(activeId);
+  shown.current = activeId;
+  useEffect(() => { setDraft(''); setAiNote(null); setDrafting(false); lastDraft.current = ''; }, [activeId]);
 
   const messages: Message[] = open ? [...open.messages, ...(pending[open.id] ?? []).filter(p => !open.messages.some(m => m.id === p.id))] : [];
+
+  async function aiDraft() {
+    if (!open) return;
+    const at = open.id;
+    setDrafting(true);
+    setAiNote(null);
+    try {
+      const res = await api.post<{ draft: string }>(`/messages/threads/${at}/draft`, {});
+      if (shown.current !== at) return;
+      // A fresh draft replaces the last one; what the person typed themselves stays above it.
+      setDraft(d => (d.trim() && d !== lastDraft.current ? `${d.trimEnd()}\n\n${res.draft}` : res.draft));
+      lastDraft.current = res.draft;
+      setAiNote('AI draft. Read it and change anything before you send.');
+      requestAnimationFrame(() => box.current?.focus());
+    } catch (e) {
+      if (shown.current !== at) return;
+      const code = e instanceof ApiFailure ? e.code : null;
+      setAiNote(code === 'NOT_CONFIGURED' ? 'AI drafting is not set up. Write the reply yourself.' : errorMessage(e, 'No draft this time. Write the reply yourself.'));
+    } finally { if (shown.current === at) setDrafting(false); }
+  }
 
   async function send(e?: FormEvent) {
     e?.preventDefault();
@@ -142,6 +169,7 @@ export default function InboxPage() {
     const optimistic: Message = { id: tmp, direction: 'outbound', body, sentAt: new Date().toISOString(), isAutomated: false, senderName: user?.fullName ?? null, delivery: 'sending', deliveryReason: null, attachments: [] };
     setPending(s => ({ ...s, [open.id]: [...(s[open.id] ?? []), optimistic] }));
     setDraft('');
+    setAiNote(null);
     try {
       const res = await api.post<{ id: string; delivery: Delivery; reason?: string; sentAt: string }>('/messages', { threadId: open.id, body });
       setPending(s => ({ ...s, [open.id]: (s[open.id] ?? []).map(m => (m.id === tmp ? { ...m, id: res.id, delivery: res.delivery, deliveryReason: res.reason ?? null } : m)) }));
@@ -344,8 +372,12 @@ export default function InboxPage() {
                     <textarea ref={box} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={onKey} rows={phone ? 3 : 3} maxLength={2000}
                       placeholder={`Reply to ${open.guestName ?? 'the guest'} on ${where(open.channel)}`} aria-label="Reply"
                       className="w-full box-border px-3.5 py-2.5 [font-family:inherit] text-copy bg-card text-ink border border-solid border-line rounded-control outline-none resize-y min-h-[72px]" />
+                    {aiNote && <span role="status" className="text-meta text-muted-ink">{aiNote}</span>}
                     <div className="flex items-center gap-2 justify-between flex-wrap">
-                      <SavedRepliesMenu replies={saved.data?.data ?? []} onInsert={insert} onManage={() => setManaging(true)} canEdit={canSend} />
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <SavedRepliesMenu replies={saved.data?.data ?? []} onInsert={insert} onManage={() => setManaging(true)} canEdit={canSend} />
+                        <Button type="button" size="sm" variant="secondary" icon={<Icon name="Sparkles" size="sm" />} loading={drafting} onClick={() => void aiDraft()}>{lastDraft.current ? 'Draft again' : 'Draft reply'}</Button>
+                      </div>
                       <div className="flex items-center gap-3">
                         {!phone && <span className="text-caption text-muted-ink">Ctrl + Enter to send</span>}
                         <Button type="submit" variant="primary" size="md" disabled={!draft.trim()} disabledReason="Write a message first.">Send</Button>

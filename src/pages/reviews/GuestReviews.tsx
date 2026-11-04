@@ -561,7 +561,7 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
         <div className="flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
             <span className="text-copy font-semibold">AI draft replies</span>
-            <span className="text-meta text-muted-ink">Draft reply on a review writes a suggestion into the reply box. It is never posted by itself: someone reads it and presses Post.</span>
+            <span className="text-meta text-muted-ink">Draft reply on a review or a guest message writes a suggestion into the reply box. It is never posted or sent by itself: someone reads it and presses Post.</span>
           </div>
           <Switch checked={!!data?.aiDrafts} label="AI draft replies" disabled={!data?.aiConfigured || busy} onChange={() => flip()} />
         </div>
