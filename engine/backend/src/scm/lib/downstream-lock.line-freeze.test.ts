@@ -23,6 +23,23 @@ function fakeSb(tables: Record<string, Row[]>) {
 }
 
 describe('readSoLineFreeze', () => {
+  test('an instalment bill freezes nothing: it bills a share of the contract, not a line', async () => {
+    const lines = [{ id: 'a', doc_no: 'SO-1', cancelled: false, variants: {} }];
+    const invoice = { id: 'si-1', so_doc_no: 'SO-1', status: 'POSTED' };
+    const billLine = { so_item_id: null, do_item_id: null, sales_invoice_id: 'si-1' };
+    const billed = await readSoLineFreeze(fakeSb({
+      mfg_sales_order_items: lines, sales_invoices: [invoice], sales_invoice_items: [billLine],
+      reno_instalment_bills: [{ sales_invoice_id: 'si-1', so_doc_no: 'SO-1' }],
+    }), 'SO-1');
+    expect(soLineWriteRefusal(billed, ['a'])).toBeNull();
+    expect(billed.ok && billed.fullyFrozen).toBe(false);
+
+    const ordinary = await readSoLineFreeze(fakeSb({
+      mfg_sales_order_items: lines, sales_invoices: [invoice], sales_invoice_items: [billLine],
+    }), 'SO-1');
+    expect(soLineWriteRefusal(ordinary, ['a'])?.error).toBe('so_line_frozen');
+  });
+
   test('a delivery order raised against ANOTHER order still freezes the line it carries (a multi-order DO)', async () => {
     const sb = fakeSb({
       mfg_sales_order_items: [
