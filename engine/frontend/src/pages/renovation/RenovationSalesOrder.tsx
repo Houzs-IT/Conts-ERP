@@ -47,7 +47,8 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
   const qc = useQueryClient();
   const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ kind: string; invoiceNumber?: string; noteNumber?: string; amountSen: number; posting: { status: string; reason?: string }; einvoiceWarning?: string | null }>(
     `/sales-orders/${encodeURIComponent(c.docNo)}/instalments/${inst!.id}/bill`, 'POST', body));
-  useEffect(() => { setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst]);
+  /* By id: billing refetches the contract, and a new copy of this instalment must not wipe the result just shown. */
+  useEffect(() => { setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- amount is read only when another instalment opens
   if (!inst) return null;
   const negative = amount < 0;
   const submit = async (confirmCreditNote = false) => {
