@@ -368,8 +368,8 @@ export async function patchContract(
       if (row.so_item_id && l.unitCostSen !== undefined) {
         const cost = lineCostSen({ kind: upd.kind as 'ITEM', qty: Number(upd.qty), measureMilli: upd.measure === null ? null : Math.round(Number(upd.measure) * 1000), unitCostSen: Number(upd.unit_cost_sen) });
         await db.q(
-          `update scm.mfg_sales_order_items set line_cost_sen = $2, unit_cost_sen = case when qty > 0 then round($2::numeric / qty)::int else $2 end,
-              line_margin_sen = total_sen - $2 where id = $1`,
+          `update scm.mfg_sales_order_items set line_cost_sen = $2::int, unit_cost_sen = case when qty > 0 then round($2::int::numeric / qty)::int else $2::int end,
+              line_margin_sen = total_sen - $2::int where id = $1`,
           [row.so_item_id, cost],
         );
         await recomputeSoHeader(db, docNo);
