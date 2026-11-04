@@ -63,7 +63,7 @@
 // report.
 // ----------------------------------------------------------------------------
 
-import { loadSubDepartments } from '../../conts/sub-departments';
+import { isDepartmentDefault, loadSubDepartments } from '../../conts/sub-departments';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { paginateAll } from '../lib/paginate-all';
@@ -366,7 +366,7 @@ export const pnlReport = async (c: any): Promise<Response> => {
     const s = list.list.find((x) => x.id === subId);
     if (!s) return c.json({ error: 'bad_sub_department', message: 'Choose a department from the list.' }, 400);
     department = s.department;
-    sub = { id: s.id, builtIn: s.fixedKey != null };
+    sub = { id: s.id, builtIn: isDepartmentDefault(s) };
   }
   const r = await buildPnl(dbSources(sb, co.companyId, allowedIds(c), department, sub), co.companyId, from, to);
   if (!r.ok) return c.json({ error: 'load_failed', reason: r.reason }, 500);

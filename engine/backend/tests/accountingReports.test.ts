@@ -346,6 +346,23 @@ describe('the P&L by sub-department', () => {
     expect(gen.otherIncome.map((l) => [l.code, l.amountSen])).toEqual([['590-0000', 150_000]]);
   });
 
+  /* Final review: The Conts is built in but not its department's default — untagged Renovation reads as Dream Crafter. */
+  test('In-house Reno (The Conts) counts only its own lines; Dream Crafter takes the untagged Renovation ones', async () => {
+    const { app, sb } = harness([
+      gl('900-A001', 'EXPENSE', 7_000, 0, { department: 'supply', sub_department_id: 's-tc' }),
+      gl('900-A001', 'EXPENSE', 2_000, 0, { department: 'supply' }),
+      gl('310-0010', 'ASSET', 0, 9_000, { department: 'supply' }),
+    ]);
+    Object.assign(sb.tables, { acc_sub_departments: [
+      { id: 's-dc', company_id: CO, department: 'supply', name: 'Renovation (Dream Crafter)', fixed_key: 'dreamcrafter', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-tc', company_id: CO, department: 'supply', name: 'In-house Reno (The Conts)', fixed_key: 'theconts', staff_department_id: null, active: true, sort: 20 },
+    ] });
+    const tc = await (await pnl(app, 'subDepartment=s-tc')).json() as Pnl;
+    expect(tc.expenses.map((l) => [l.code, l.amountSen])).toEqual([['900-A001', 7_000]]);
+    const dc = await (await pnl(app, 'subDepartment=s-dc')).json() as Pnl;
+    expect(dc.expenses.map((l) => [l.code, l.amountSen])).toEqual([['900-A001', 2_000]]);
+  });
+
   test('an unknown sub-department is a 400', async () => {
     const { app, sb } = harness(ROWS);
     Object.assign(sb.tables, { acc_sub_departments: SUBS });

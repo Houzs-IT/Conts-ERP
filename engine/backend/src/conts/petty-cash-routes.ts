@@ -28,7 +28,7 @@ import { CONTROL_ROLES, resolveRoles } from '../acc/rules';
 import { projectLimit } from './project-limit';
 import { topUpAmount } from './petty-cash';
 import { postReceiptJournal, postWriteOffJournal } from './petty-cash-ledger';
-import { resolveLinesSub } from './sub-departments';
+import { checkProjectsFit, resolveLinesSub } from './sub-departments';
 import { fileResponse } from './claims-files';
 import {
   RECEIPT_COLS, allRows, departmentNames, filesOf, floatBalances, floatsOf, linesOf, monthRange, receiptView, staffNames,
@@ -389,6 +389,8 @@ async function checkOne(c: Ctx, companyId: number, it: Record<string, unknown>):
     const subs = await resolveLinesSub(sb, companyId, parsed.map((l) => ({ subDepartmentId: l.sub_department_id })), current.map((l) => l.sub_department_id ?? null));
     if (!subs.ok) return { id, ok: false, error: subs.error, message: `${r.receipt_no}: ${subs.message}` };
     subs.lines.forEach((s, i) => { if (s) parsed[i]!.department = s.department; });
+    const fit = await checkProjectsFit(sb, companyId, subs.list, parsed.map((l) => ({ subDepartmentId: l.sub_department_id ?? null, department: l.department, projectId: l.project_id })));
+    if (fit) return { id, ok: false, error: 'project_mismatch', message: `${r.receipt_no}: ${fit}` };
     lines = parsed;
   } else if (it.amountSen !== undefined) {
     const v = Number(it.amountSen);
@@ -582,7 +584,7 @@ export const receiptVoucherHandler = async (c: Ctx): Promise<Response> => {
   const names = await staffNames(sb);
   const made = await claimsDeps.createVoucher(c, {
     payeeName: names.get(r.submitter_user_id) || 'Staff', creditAccountCode: bank, purpose: 'OTHER',
-    lines: lines.map(l => ({ debitAccountCode: l.account_code, amountSen: Number(l.amount_sen), description: l.description ?? `Receipt ${r.receipt_no}`, department: l.department, ...(l.sub_department_id ? { subDepartmentId: l.sub_department_id } : {}) })),
+    lines: lines.map(l => ({ debitAccountCode: l.account_code, amountSen: Number(l.amount_sen), description: l.description ?? `Receipt ${r.receipt_no}`, department: l.department })),
     notes: `Pays back receipt ${r.receipt_no}. Bank: ${details.bankName} ${details.accountNo}${details.accountName ? ` (${details.accountName})` : ''}`,
   });
   if (!made.ok) return c.json(made.body, made.status as 400);
@@ -593,9 +595,10 @@ export const receiptVoucherHandler = async (c: Ctx): Promise<Response> => {
     if (isUniqueClash(link.error)) return c.json({ error: 'already_vouchered', message: 'A voucher already pays this receipt back.' }, 409);
     return c.json({ error: 'update_failed', reason: link.error.message }, 500);
   }
-  /* Each voucher line keeps its own receipt line's project and unit (the voucher's single project would blur them). */
+  /* Each voucher line keeps its own receipt line's project, unit and sub-department (SOP 1.1) — set here, not on the
+     new voucher, so one retired since the receipt was checked still pays it back. */
   for (const [i, l] of lines.entries()) {
-    await sb.from('payment_voucher_lines').update({ project_id: l.project_id, unit_id: l.unit_id }).eq('pv_id', made.id).eq('line_no', i + 1);
+    await sb.from('payment_voucher_lines').update({ project_id: l.project_id, unit_id: l.unit_id, sub_department_id: l.sub_department_id ?? null }).eq('pv_id', made.id).eq('line_no', i + 1);
   }
   const { data: won } = await sb.from('staff_receipts').update({ payback_pv_id: made.id, updated_at: now() }).eq('id', r.id).is('payback_pv_id', null).select('id').maybeSingle();
   if (!won) {

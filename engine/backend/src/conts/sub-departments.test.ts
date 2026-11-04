@@ -6,7 +6,7 @@
      · a staff department nobody mapped falls back to the department's built-in row. */
 import { describe, expect, test } from 'vitest';
 import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
-import { defaultSubDepartment, loadSubDepartments, projectRenoKind, resolveLineSub, resolveLinesSub, subForStaffDepartment, type SubDepartment } from './sub-departments';
+import { checkProjectsFit, defaultSubDepartment, loadSubDepartments, projectMismatch, projectRenoKind, resolveLineSub, resolveLinesSub, subForStaffDepartment, type SubDepartment } from './sub-departments';
 
 const CO = 1;
 const row = (id: string, department: string, name: string, over: Record<string, unknown> = {}) =>
@@ -92,10 +92,35 @@ describe('sub-departments', () => {
 
   test('a document’s lines: each named one sets its department; none named stays as sent; a bad one names its line', async () => {
     const sb = world();
-    expect(await resolveLinesSub(sb, CO, [{ subDepartmentId: 's-cln' }, {}, { subDepartmentId: '' }])).toEqual({
+    expect(await resolveLinesSub(sb, CO, [{ subDepartmentId: 's-cln' }, {}, { subDepartmentId: '' }])).toMatchObject({
       ok: true, lines: [{ department: 'rental', subDepartmentId: 's-cln' }, null, null],
     });
     expect(await resolveLinesSub(sb, CO, [{}, { subDepartmentId: 'nope' }])).toMatchObject({ ok: false, status: 400, error: 'sub_department_invalid', message: 'Line 2: Choose a department from the list.' });
     expect(await resolveLinesSub(sb, CO, [{ subDepartmentId: 's-old' }], ['s-old'])).toMatchObject({ ok: true });
+  });
+});
+
+/* Final review: the project must fit the sub-department on every document, not only on vouchers. */
+describe('a project fits its line', () => {
+  const S = (fixedKey: SubDepartment['fixedKey'], department: SubDepartment['department']): SubDepartment => ({ id: 'x', department, name: 'x', fixedKey, staffDepartmentId: null, active: true, sort: 0 });
+  const customer = { name: 'SKYLINE', funding: 'customer', internal_department: null };
+  const ownUnit = { name: 'A-3-1 FIT-OUT', funding: 'internal', internal_department: 'rental' };
+  test('the side, then the brand; Company names none; no sub-department checks nothing', () => {
+    expect(projectMismatch(S('theconts', 'supply'), 'supply', customer, 'INHOUSE_RENOVATION')).toBeNull();
+    expect(projectMismatch(S('theconts', 'supply'), 'supply', customer, 'RENOVATION')).toBe('SKYLINE is a Dream Crafter project.');
+    expect(projectMismatch(S('dreamcrafter', 'supply'), 'supply', customer, 'INHOUSE_RENOVATION')).toBe('SKYLINE is a The Conts project.');
+    expect(projectMismatch(S(null, 'rental'), 'rental', ownUnit, 'RENOVATION')).toBeNull();
+    expect(projectMismatch(S(null, 'rental'), 'rental', customer, 'RENOVATION')).toBe('SKYLINE is a Renovation project.');
+    expect(projectMismatch(S('dreamcrafter', 'supply'), 'supply', ownUnit, 'RENOVATION')).toBe('A-3-1 FIT-OUT is a Rental project.');
+    expect(projectMismatch(S('company', 'shared'), 'shared', customer, 'RENOVATION')).toBe('A Company line names no project.');
+    expect(projectMismatch(null, 'shared', customer, 'RENOVATION')).toBeNull();
+  });
+  test('a document’s lines: the first that does not fit, by line', async () => {
+    const sb = world();
+    sb.tables.projects.push({ id: 10, company_id: CO, name: 'SKYLINE', funding: 'customer', internal_department: null, finance_kind: 'RENOVATION', brand: null });
+    const l = await list();
+    expect(await checkProjectsFit(sb, CO, l, [{ subDepartmentId: 's-dc', department: 'supply', projectId: 10 }])).toBeNull();
+    expect(await checkProjectsFit(sb, CO, l, [{ subDepartmentId: null, department: 'supply', projectId: null }, { subDepartmentId: 's-tc', department: 'supply', projectId: 10 }]))
+      .toBe('Line 2: SKYLINE is a Dream Crafter project.');
   });
 });

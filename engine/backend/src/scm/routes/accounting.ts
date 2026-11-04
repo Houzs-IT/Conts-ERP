@@ -46,7 +46,7 @@ import { computeDailyBank } from '../../acc/daily-bank';
 import { systemTakings, postCashOverShort } from '../../acc/daily-close';
 import { resolveRoles, piLines, DEFAULT_ROLE_CODES, BAD_DEPARTMENT, DEFAULT_DEPARTMENT, departmentQuery, type AccountRole, type Department } from '../../acc/rules';
 import { readLineTags, unknownTags, type LineTags } from '../../conts/line-tags';
-import { resolveLinesSub } from '../../conts/sub-departments';
+import { checkProjectsFit, resolveLinesSub } from '../../conts/sub-departments';
 import { ledgerSetupStatus, OPEN_BALANCE_ROLES, roleProblem } from '../../conts/ledger-setup-status';
 import { splitByItemGroup } from '../../acc/item-group-split';
 import { classifyJournal } from '../../acc/journal-class';
@@ -771,6 +771,9 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
   }
   const badTag = await unknownTags(sb, jeCompanyId ?? 0, tags);
   if (badTag) return c.json(badTag, badTag.error === 'load_failed' ? 500 : 400);
+  /* Each named project fits its line's sub-department (SOP 1.1). */
+  const fit = await checkProjectsFit(sb, jeCompanyId ?? 0, subs.list, lines.map((l, i) => ({ subDepartmentId: subs.lines[i]?.subDepartmentId ?? null, department: String(l.department ?? DEFAULT_DEPARTMENT), projectId: tags[i]!.projectId })));
+  if (fit) return c.json({ error: 'project_mismatch', message: fit }, 400);
 
   /* Through the ONE gate (acc/engine), as a DRAFT — posting stays a separate,
      gated step. The engine additionally validates the chart, which this route

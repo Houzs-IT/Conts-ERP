@@ -32,6 +32,9 @@ export async function loadSubDepartments(sb: Db, companyId: number): Promise<{ o
   return { ok: true, list };
 }
 
+/** Is it the row a line naming no sub-department reads as (Rental (general), Renovation (Dream Crafter), Company)? */
+export const isDepartmentDefault = (s: Pick<SubDepartment, 'department' | 'fixedKey'>): boolean => s.fixedKey === DEFAULT_KEY[s.department];
+
 /** A department's built-in row. Seeded for every company (0207); its absence is a broken install, not a choice. */
 export function defaultSubDepartment(list: readonly SubDepartment[], department: Department): SubDepartment {
   const s = list.find((x) => x.fixedKey === DEFAULT_KEY[department]);
@@ -86,14 +89,14 @@ export function subForStaffDepartment(list: readonly SubDepartment[], staffDepar
   return mapped ?? defaultSubDepartment(list, fallback);
 }
 
-type LinesSub = { ok: true; lines: Array<{ department: Department; subDepartmentId: string } | null> }
+type LinesSub = { ok: true; lines: Array<{ department: Department; subDepartmentId: string } | null>; list: SubDepartment[] }
   | { ok: false; status: 400 | 500; error: string; message: string };
 
 /** The sub-departments a document's lines name (SOP 1.1): each named one gives its line's department; a line naming
     none keeps the department sent (null here). `saved[i]`: line i's own, kept even after it was retired. */
 export async function resolveLinesSub(sb: Db, companyId: number, raws: ReadonlyArray<{ subDepartmentId?: unknown } | undefined>, saved: ReadonlyArray<string | null> = []): Promise<LinesSub> {
   const named = (r: { subDepartmentId?: unknown } | undefined) => r?.subDepartmentId != null && String(r.subDepartmentId).trim() !== '';
-  if (!raws.some(named)) return { ok: true, lines: raws.map(() => null) };
+  if (!raws.some(named)) return { ok: true, lines: raws.map(() => null), list: [] };
   const loaded = await loadSubDepartments(sb, companyId);
   if (!loaded.ok) return { ok: false, status: 500, error: 'load_failed', message: loaded.error };
   const lines: Array<{ department: Department; subDepartmentId: string } | null> = [];
@@ -103,5 +106,42 @@ export async function resolveLinesSub(sb: Db, companyId: number, raws: ReadonlyA
     if (!s.ok) return { ok: false, status: 400, error: s.error, message: `Line ${i + 1}: ${s.message}` };
     lines.push({ department: s.department, subDepartmentId: s.subDepartmentId! });
   }
-  return { ok: true, lines };
+  return { ok: true, lines, list: loaded.list };
+}
+
+/** The side a project counts to: the company's own Rental project is Rental, every other one Renovation. */
+export const projectSide = (p: { funding?: string | null; internal_department?: string | null }): 'rental' | 'supply' =>
+  (p.funding === 'internal' && p.internal_department === 'rental' ? 'rental' : 'supply');
+
+const KIND_WORDS: Record<RenoKind, string> = { RENOVATION: 'a Dream Crafter', INHOUSE_RENOVATION: 'a The Conts' };
+
+/** Why a project does not fit a line's sub-department (SOP 1.1), or null when it does. Its side must be the line's
+    department, a renovation sub-department's brand the project's, and a Company line names none. A line naming no
+    sub-department (an older one) is not checked here. */
+export function projectMismatch(sub: SubDepartment | null, department: string, p: { name: string; funding?: string | null; internal_department?: string | null }, kind: RenoKind | undefined): string | null {
+  if (!sub) return null;
+  if (department === 'shared') return 'A Company line names no project.';
+  const side = projectSide(p);
+  if (department !== side) return `${p.name} is a ${side === 'rental' ? 'Rental' : 'Renovation'} project.`;
+  const want = sub.fixedKey ? RENO_KIND_OF[sub.fixedKey] : undefined;
+  if (want && side === 'supply' && kind && kind !== want) return `${p.name} is ${KIND_WORDS[kind]} project.`;
+  return null;
+}
+
+/** The first line of a document whose project does not fit its sub-department, as "Line N: …"; null when all fit. */
+export async function checkProjectsFit(sb: Db, companyId: number, list: readonly SubDepartment[],
+  lines: ReadonlyArray<{ subDepartmentId?: string | null; department: string; projectId?: number | null }>): Promise<string | null> {
+  const ids = [...new Set(lines.filter((l) => l.subDepartmentId && l.projectId != null).map((l) => Number(l.projectId)))];
+  if (ids.length === 0) return null;
+  const { data } = await sb.schema('public').from('projects').select('id, name, funding, internal_department').eq('company_id', companyId).in('id', ids);
+  const byId = new Map(((data ?? []) as Array<{ id: number; name: string; funding: string | null; internal_department: string | null }>).map((p) => [Number(p.id), p]));
+  const kinds = await projectRenoKind(sb, companyId, ids);
+  for (const [i, l] of lines.entries()) {
+    if (!l.subDepartmentId || l.projectId == null) continue;
+    const p = byId.get(Number(l.projectId));
+    if (!p) continue; // an unknown project is each route's own refusal
+    const why = projectMismatch(list.find((s) => s.id === l.subDepartmentId) ?? null, l.department, p, kinds.get(Number(l.projectId)));
+    if (why) return `Line ${i + 1}: ${why}`;
+  }
+  return null;
 }

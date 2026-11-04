@@ -34,7 +34,7 @@ import { postJournal, reverseJournal, validateJournal, type EngineLine } from '.
 import { ledgerDatesRefusal } from '../../acc/ledger-settings';
 import { DEFAULT_DEPARTMENT, type Department } from '../../acc/rules';
 import { readLineTags, unknownTags } from '../../conts/line-tags';
-import { resolveLinesSub } from '../../conts/sub-departments';
+import { checkProjectsFit, resolveLinesSub } from '../../conts/sub-departments';
 
 type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -129,6 +129,9 @@ export const journalEntryEdit = async (c: Ctx) => {
   }
   const badTag = await unknownTags(sb, co.companyId, lines.map((l) => ({ projectId: l.projectId ?? null, unitId: l.unitId ?? null })));
   if (badTag) return c.json(badTag, badTag.error === 'load_failed' ? 500 : 400);
+  /* Each named project fits its line's sub-department (SOP 1.1). */
+  const fit = await checkProjectsFit(sb, co.companyId, subs.list, lines.map((l) => ({ subDepartmentId: l.subDepartmentId ?? null, department: String(l.department ?? DEFAULT_DEPARTMENT), projectId: l.projectId ?? null })));
+  if (fit) return c.json({ error: 'project_mismatch', message: fit }, 400);
   const draft = { companyId: co.companyId, entryDate, sourceType: 'MANUAL', sourceDocNo: null, narration, lines };
 
   /* 1 — validated before a single write: a bad edit reverses nothing. */

@@ -27,7 +27,7 @@ import { todayMyt } from '../lib/my-time';
 import { postJournal, reverseJournal } from '../../acc/engine';
 import { DEFAULT_DEPARTMENT, isDepartment, splitByDepartment, type Department, type RuleLine } from '../../acc/rules';
 import { readLineTags, unknownTags } from '../../conts/line-tags';
-import { resolveLinesSub } from '../../conts/sub-departments';
+import { checkProjectsFit, resolveLinesSub, type SubDepartment } from '../../conts/sub-departments';
 
 /** One receipt line as the form sends it; a refusal names the line. Conts: the department (spec 3.5), none is Supply chain. */
 type ReceiptLine = { description: string | null; code: string; amountSen: number; department: Department; projectId: number | null; unitId: string | null; subDepartmentId?: string | null };
@@ -35,10 +35,10 @@ type ReceiptLine = { description: string | null; code: string; amountSen: number
 /** The lines with each named sub-department's department set (SOP 1.1; chew 4 Nov 2026), ready for parseReceiptLine;
     `saved`: each line's own sub-department by position, kept even after it was retired. */
 async function withSubs(sb: any, companyId: number, rawLines: unknown[], saved: ReadonlyArray<string | null> = []):
-  Promise<{ ok: true; raws: unknown[]; subs: Array<string | null> } | { ok: false; status: 400 | 500; body: { error: string; message: string } }> {
+  Promise<{ ok: true; raws: unknown[]; subs: Array<string | null>; list: SubDepartment[] } | { ok: false; status: 400 | 500; body: { error: string; message: string } }> {
   const r = await resolveLinesSub(sb, companyId, rawLines as Array<{ subDepartmentId?: unknown }>, saved);
   if (!r.ok) return { ok: false, status: r.status, body: { error: r.error, message: r.message } };
-  return { ok: true, raws: rawLines.map((l, i) => (r.lines[i] ? { ...(l as object), department: r.lines[i]!.department } : l)), subs: r.lines.map((x) => x?.subDepartmentId ?? null) };
+  return { ok: true, raws: rawLines.map((l, i) => (r.lines[i] ? { ...(l as object), department: r.lines[i]!.department } : l)), subs: r.lines.map((x) => x?.subDepartmentId ?? null), list: r.list };
 }
 function parseReceiptLine(raw: unknown, i: number): ReceiptLine | { error: string; message: string } {
   const l = (raw ?? {}) as { creditAccountCode?: unknown; amountSen?: unknown; description?: unknown; department?: unknown; projectId?: unknown; unitId?: unknown };
@@ -188,6 +188,9 @@ export const createReceiptHandler = async (c: any): Promise<Response> => {
     if ('error' in parsed) return c.json(parsed, 400);
     lines.push({ ...parsed, subDepartmentId: ws.subs[i] ?? null });
   }
+  /* Each named project fits its line's sub-department (SOP 1.1). */
+  const fit = await checkProjectsFit(c.get('supabase'), coId, ws.list, lines);
+  if (fit) return c.json({ error: 'project_mismatch', message: fit }, 400);
   const badTag = await unknownTags(sb, coId, lines);
   if (badTag) return c.json(badTag, badTag.error === 'load_failed' ? 500 : 400);
   /* Same doors as the Debtor Bill's lines: headers refuse (父户不记账),
@@ -353,6 +356,8 @@ export const updateReceiptHandler = async (c: any): Promise<Response> => {
       if ('error' in parsed) return c.json(parsed, 400);
       lines.push({ ...parsed, subDepartmentId: ws.subs[i] ?? null });
     }
+    const fit = await checkProjectsFit(sb, coId, ws.list, lines);
+    if (fit) return c.json({ error: 'project_mismatch', message: fit }, 400);
     const badTag = await unknownTags(sb, coId, lines);
     if (badTag) return c.json(badTag, badTag.error === 'load_failed' ? 500 : 400);
     for (const code of [...new Set(lines.map((l) => l.code))]) {

@@ -3,7 +3,7 @@
 import { lineDepartment } from './petty-cash';
 import type { Staff } from './staff-identity';
 import { receiptAccountProblem } from './petty-cash-routes';
-import { loadSubDepartments, subForStaffDepartment } from './sub-departments';
+import { defaultSubDepartment, loadSubDepartments, projectRenoKind, projectSide, RENO_KIND_OF, subForStaffDepartment } from './sub-departments';
 import { isDepartment } from '../acc/rules';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in the routes it serves */
@@ -26,10 +26,30 @@ export async function defaultLineSubs(sb: any, companyId: number, lines: LineRow
     const { data } = await sb.schema('public').from('conts_departments').select('id').eq('kind', 'maintenance').limit(1);
     maintenanceDept = ((data ?? []) as Array<{ id: unknown }>)[0]?.id != null ? String((data as Array<{ id: unknown }>)[0]!.id) : null;
   }
+  /* A line naming a project starts on the project's side and brand (SOP 1.1): the person's or float's own
+     sub-department only when it fits, else the brand's (Renovation) or Rental (general). */
+  const projectIds = [...new Set(lines.map((l) => l.project_id).filter((p): p is number => p != null))];
+  const projects = new Map<number, { funding: string | null; internal_department: string | null }>();
+  if (projectIds.length) {
+    const { data } = await sb.schema('public').from('projects').select('id, funding, internal_department').eq('company_id', companyId).in('id', projectIds);
+    for (const p of (data ?? []) as Array<{ id: number; funding: string | null; internal_department: string | null }>) projects.set(Number(p.id), p);
+  }
+  const kinds = projectIds.length ? await projectRenoKind(sb, companyId, projectIds) : new Map();
   for (const l of lines) {
     const fallback = isDepartment(l.department) ? l.department : 'shared';
     try {
-      const s = subForStaffDepartment(loaded.list, l.maintenance_issue_id ? maintenanceDept : floatDept ?? from.staffDepartmentId, l.maintenance_issue_id ? 'rental' : fallback);
+      let s = subForStaffDepartment(loaded.list, l.maintenance_issue_id ? maintenanceDept : floatDept ?? from.staffDepartmentId, l.maintenance_issue_id ? 'rental' : fallback);
+      const p = l.project_id != null ? projects.get(Number(l.project_id)) : undefined;
+      if (p) {
+        const side = projectSide(p);
+        const kind = kinds.get(Number(l.project_id));
+        const brandOk = side !== 'supply' || !s.fixedKey || !RENO_KIND_OF[s.fixedKey] || RENO_KIND_OF[s.fixedKey] === kind;
+        if (s.department !== side || !brandOk || (side === 'supply' && !(s.fixedKey && RENO_KIND_OF[s.fixedKey]))) {
+          s = side === 'supply'
+            ? loaded.list.find((x) => x.fixedKey === (kind === 'INHOUSE_RENOVATION' ? 'theconts' : 'dreamcrafter')) ?? defaultSubDepartment(loaded.list, 'supply')
+            : defaultSubDepartment(loaded.list, 'rental');
+        }
+      }
       l.sub_department_id = s.id;
       l.department = s.department;
     } catch { /* a list without its built-in rows: leave the line as it was */ }

@@ -31,7 +31,7 @@
 // bill here as it does on a voucher.
 // ----------------------------------------------------------------------------
 
-import { resolveLinesSub } from '../../conts/sub-departments';
+import { checkProjectsFit, resolveLinesSub } from '../../conts/sub-departments';
 import { Hono } from 'hono';
 import { ledgerEditSide } from '../../acc/ledger-settings';
 import { hasHouzsPerm } from '../lib/houzs-perms';
@@ -91,6 +91,9 @@ async function subRefusal(c: any, companyId: number, lines: CleanLine[], raw: un
   const r = await resolveLinesSub(c.get('supabase'), companyId, Array.isArray(raw) ? raw : [], saved);
   if (!r.ok) return c.json({ error: r.error, message: r.message }, r.status);
   r.lines.forEach((s, i) => { if (s && lines[i]) { lines[i]!.department = s.department; lines[i]!.subDepartmentId = s.subDepartmentId; } });
+  /* And each named project fits its line's sub-department (SOP 1.1): side and brand. */
+  const fit = await checkProjectsFit(c.get('supabase'), companyId, r.list, lines);
+  if (fit) return c.json({ error: 'project_mismatch', message: fit }, 400);
   return null;
 }
 

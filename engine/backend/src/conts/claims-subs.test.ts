@@ -25,7 +25,7 @@ const world = (subs = [
     { id: 'dept-cln', name: 'Cleaning', kind: 'cleaning', side: 'conts' },
     { id: 'dept-mnt', name: 'Maintenance', kind: 'maintenance', side: 'conts' },
   ],
-}), ['conts_departments']);
+}), ['conts_departments', 'projects', 'project_brands']);
 const line = (over: Partial<LineRow> = {}): LineRow => ({ department: 'rental', unit_id: null, maintenance_issue_id: null, project_id: null, account_code: null, amount_sen: 5000, description: null, sort: 0, ...over });
 
 describe('the sub-department a staff document starts on', () => {
@@ -66,5 +66,31 @@ describe('finance’s corrected lines', () => {
     expect(parseLines([{ department: 'rental', subDepartmentId: 's-cln', amountSen: 100, accountCode: '906-0000' }])).toEqual([
       expect.objectContaining({ department: 'rental', sub_department_id: 's-cln' }),
     ]);
+  });
+});
+
+/* Final review: a line naming a project starts on the project's side and brand, whatever the person's department. */
+describe('a staff line on a project', () => {
+  const withProjects = () => {
+    const sb = world();
+    Object.assign(sb.tables, { projects: [
+      { id: 7, company_id: CO, name: 'SKYLINE', funding: 'customer', internal_department: null, finance_kind: 'RENOVATION', brand: null },
+      { id: 8, company_id: CO, name: 'TROFI', funding: 'customer', internal_department: null, finance_kind: 'INHOUSE_RENOVATION', brand: null },
+      { id: 9, company_id: CO, name: 'A-3-1 FIT-OUT', funding: 'internal', internal_department: 'rental', finance_kind: null, brand: null },
+    ], project_brands: [] });
+    return sb;
+  };
+  test('an In-house person naming a Dream Crafter project is Dream Crafter', async () => {
+    const lines = [line({ department: 'supply', project_id: 7 })];
+    await defaultLineSubs(withProjects(), CO, lines, { staffDepartmentId: 'dept-inh', floatId: null });
+    expect(lines[0]).toMatchObject({ department: 'supply', sub_department_id: 's-dc' });
+  });
+  test('a Cleaning-float receipt on a The Conts project is The Conts; on the company’s own Rental project it stays Cleaning', async () => {
+    const a = [line({ project_id: 8 })];
+    await defaultLineSubs(withProjects(), CO, a, { staffDepartmentId: null, floatId: 'f-cln' });
+    expect(a[0]).toMatchObject({ department: 'supply', sub_department_id: 's-tc' });
+    const b = [line({ project_id: 9 })];
+    await defaultLineSubs(withProjects(), CO, b, { staffDepartmentId: null, floatId: 'f-cln' });
+    expect(b[0]).toMatchObject({ department: 'rental', sub_department_id: 's-cln' });
   });
 });
