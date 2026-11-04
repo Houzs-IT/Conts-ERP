@@ -186,8 +186,8 @@ export async function renderGrnInto(
     columnStyles: {
       0: { cellWidth: 8, halign: 'right' },
       1: { cellWidth: 24, fontStyle: 'bold' },
-      2: { cellWidth: 24 },
-      3: { cellWidth: 47 },
+      2: { cellWidth: 32 },
+      3: { cellWidth: 39 },
       4: { cellWidth: 11, halign: 'right' },
       5: { cellWidth: 11, halign: 'right' },
       6: { cellWidth: 11, halign: 'right' },
