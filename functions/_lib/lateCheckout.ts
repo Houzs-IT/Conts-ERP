@@ -14,7 +14,7 @@ export async function lateCheckoutReady(env: Env): Promise<boolean> {
   if (seen) return true;
   const r = await one<{ n: number }>(env, `SELECT COUNT(*) AS n FROM information_schema.tables
     WHERE table_name = 'late_checkout_requests' AND table_schema = ANY(current_schemas(false))`);
-  seen = Number(r?.n ?? 0) === 1;
+  seen = Number(r?.n ?? 0) >= 1; // at least: in Demo mode it counts in the overlay and in pos
   return seen;
 }
 

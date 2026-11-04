@@ -30,7 +30,8 @@ export async function moneySchema(env: Env): Promise<{ payoutCols: boolean; paym
     SELECT (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'reservations' AND table_schema = ANY(current_schemas(false))
               AND column_name IN ('payout_date', 'payout_amount', 'payment_processing_fee')) AS cols,
            (SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'booking_payments' AND table_schema = ANY(current_schemas(false))) AS payments`);
-  const found = { payoutCols: Number(r?.cols ?? 0) === 3, payments: Number(r?.payments ?? 0) === 1 };
+  // At least: in Demo mode current_schemas() holds the overlay and pos, so each one counts twice.
+  const found = { payoutCols: Number(r?.cols ?? 0) >= 3, payments: Number(r?.payments ?? 0) >= 1 };
   if (found.payoutCols && found.payments) moneySchemaSeen = found;
   return found;
 }
