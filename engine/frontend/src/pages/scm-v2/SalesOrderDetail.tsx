@@ -941,10 +941,10 @@ export const SalesOrderDetail = () => {
     /* Edit starts from what the server has now, as a fresh editor did. */
     void detail.refetch();
     void queryClient.invalidateQueries({ queryKey: ['reno', 'so-info', 'so', docNo] });
-    navigate(`/scm/sales-orders/${docNo}?edit=1`);
+    void navigate(`/scm/sales-orders/${docNo}?edit=1`);
   };
   /* "Add line" from the page you START on (docs/bugs/0853). */
-  const goAddLine = () => { if (docNo) { setActiveTab('order'); navigate(addLineHref(`/scm/sales-orders/${docNo}`)); } };
+  const goAddLine = () => { if (docNo) { setActiveTab('order'); void navigate(addLineHref(`/scm/sales-orders/${docNo}`)); } };
   const cancelEdit = () => {
     customerCardRef.current?.reset();
     clearSaveFeedback();
@@ -1759,7 +1759,7 @@ export const SalesOrderDetail = () => {
           {detail.error instanceof Error ? detail.error.message : 'The sales order was not found.'}
         </p>
         <div className="mt-4">
-          <Button variant="secondary" onClick={() => navigate(scmListReturnTo('/scm/sales-orders'))} icon={<ArrowLeft {...SM_ICON} />}>
+          <Button variant="secondary" onClick={() => void navigate(scmListReturnTo('/scm/sales-orders'))} icon={<ArrowLeft {...SM_ICON} />}>
             Back to Sales Orders
           </Button>
         </div>
@@ -1912,7 +1912,7 @@ export const SalesOrderDetail = () => {
 
   /* Back always returns to the Sales Orders list (owner 2026-07-24), which restores its own sticky filters. */
   const goBack = async () => {
-    if (await guardUnsavedPayments()) navigate(scmListReturnTo('/scm/sales-orders'));
+    if (await guardUnsavedPayments()) void navigate(scmListReturnTo('/scm/sales-orders'));
   };
   /* Collect payment unlocks the card and scrolls to it. */
   const goPayments = () => {
@@ -1982,9 +1982,9 @@ export const SalesOrderDetail = () => {
     const paymentRows = printPaymentsQ.data;
     if (!Array.isArray(paymentRows)) {
       if (printPaymentsQ.isFetching) {
-        notify({ title: 'Loading payments… please try again in a moment.' });
+        void notify({ title: 'Loading payments… please try again in a moment.' });
       } else {
-        notify({
+        void notify({
           title: 'Cannot print — payments could not be loaded',
           /* authedFetch already runs every non-ok response through humanApiError,
              so this arrives as a plain sentence. Re-mapping it here would be a
@@ -2005,7 +2005,7 @@ export const SalesOrderDetail = () => {
     const pwpCodes = ((detail.data as { pwpCodes?: unknown[] } | undefined)?.pwpCodes ?? []) as never;
     /* Loaded here, not at the top: the PDF library has no business on a page that may never print. */
     return import('../../vendor/scm/lib/sales-order-pdf')
-      .then(({ generateSalesOrderPdf }) => generateSalesOrderPdf(header as never, lineRows as never, payments as never, action, pwpCodes, printLayoutState.pdfOpts))
+      .then(({ generateSalesOrderPdf }) => generateSalesOrderPdf(header, lineRows, payments, action, pwpCodes, printLayoutState.pdfOpts))
       .catch((e) => {
         // eslint-disable-next-line no-console
         console.error('PDF generation failed:', e);
@@ -2111,14 +2111,14 @@ export const SalesOrderDetail = () => {
   const statusShown = displayStatusFor(header);
   const subtotalSen = lineRows.reduce((s, l) => s + l.total_sen + l.discount_sen, 0);
   const discountSen = header.discount_sen ?? lineRows.reduce((s, l) => s + l.discount_sen, 0);
-  const totalSen = header.local_total_sen ?? subtotalSen - discountSen;
+  const totalSen = header.local_total_sen;
   const focCount = lineRows.filter((l) => l.unit_price_sen === 0 && l.total_sen === 0).length;
   const { renoMode, printRooms, categoryView } = printLayoutState;
   const shownRooms = linesView === 'category' ? categoryView : printRooms;
   const lineColumns = soLineColumns<(typeof lineRows)[number]>({
     docNo: header.doc_no, docId: header.doc_no, currency: header.currency, status: header.status, coverage: coverageStateOf(coverage),
   });
-  const slipImageKey = (header as unknown as { slipImageKey?: string | null }).slipImageKey ?? header.slip_image_key ?? null;
+  const slipImageKey = (header as unknown as { slipImageKey?: string | null }).slipImageKey ?? header.slip_image_key;
   const customerCreditSen = Number((header as { customer_credit_sen?: number }).customer_credit_sen ?? 0);
   const customerRef = refOf(header);
   const headerMeta: ReactNode[] = [
@@ -2589,11 +2589,11 @@ export const SalesOrderDetail = () => {
             <PaymentsTable
               key={header.doc_no}
               docNo={header.doc_no}
-              grandTotalSen={header.local_total_sen ?? 0}
+              grandTotalSen={header.local_total_sen}
               currency={header.currency}
               locked={!canEditPayments}
               draftUnlocked={isDraftSo}
-              slip={{ slipKey: header.slip_key ?? null, fetcher: fetchSoSlipUrl }}
+              slip={{ slipKey: header.slip_key, fetcher: fetchSoSlipUrl }}
               defaultCollectedBy={selfStaffMatch?.id ?? ''}
               initialDrafts={paymentRetryDrafts}
               onDraftCommitted={paymentRetryCommitted}
@@ -2683,7 +2683,7 @@ export const SalesOrderDetail = () => {
           { label: 'Order total', value: fmtMoney(header.local_total_sen, header.currency) },
           /* Through the SHARED gate, not off `balance_sen`: reading the column directly put a 0 here for every
              AutoCount-imported order (see `deriveBalance`). */
-          { label: 'Balance', value: fmtMoney(soDeriveBalance(header as never, printPaymentsQ.data), header.currency) },
+          { label: 'Balance', value: fmtMoney(soDeriveBalance(header, printPaymentsQ.data), header.currency) },
         ]}
         {...print.handlers}
       />
