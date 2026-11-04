@@ -141,7 +141,7 @@ function SupplierPicker({ value, onChange, allowNotListed }: { value: Supplier |
         {value ? `${value.code} ${value.name}` : allowNotListed ? 'Choose the supplier, or not on the list…' : 'Choose the supplier…'}
       </Button>
       {open && (
-        <Modal title="Choose the supplier" onClose={() => setOpen(false)} width={640} footer={<Button variant="ghost" onClick={() => setOpen(false)}>Close</Button>}>
+        <Modal title="Choose the supplier" onClose={() => setOpen(false)} width={640} dirty={false} footer={<Button variant="ghost" onClick={() => setOpen(false)}>Close</Button>}>
           <Field label="Search" value={q} onChange={e => setQ(e.target.value)} placeholder="Name or code" autoFocus />
           <div style={{ maxHeight: '55vh', overflow: 'auto', marginTop: 12, border: '1px solid var(--color-border-muted)', borderRadius: 8 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>

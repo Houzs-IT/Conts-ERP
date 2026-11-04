@@ -7,6 +7,7 @@
    leaves". The rule itself lives beside fmtDate — export is the INVERSE of
    display, and both belong next to each other. */
 export { isoForExport } from "../vendor/shared/format";
+import { csvSafe } from "../vendor/shared/format";
 
 export interface CSVColumn<T> {
   key: string;
@@ -16,7 +17,7 @@ export interface CSVColumn<T> {
 
 function escapeField(value: unknown): string {
   if (value === null || value === undefined) return "";
-  let s = String(value);
+  let s = csvSafe(String(value));
   // Normalise newlines
   s = s.replace(/\r\n/g, "\n");
   if (/[",\n]/.test(s)) {

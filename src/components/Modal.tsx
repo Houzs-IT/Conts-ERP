@@ -10,10 +10,11 @@ const FIELD = 'input:not([disabled]):not([type=hidden]):not([type=checkbox]):not
  * The one way a dialog behaves, whatever it looks like (owner, 3 Nov 2026):
  *  - focus moves into it (the first field, else the dialog) and back to what opened it on close; Tab stays inside;
  *  - Escape and a click on the dimmed backdrop close it, unless it is busy;
- *  - once something has been typed or picked in it, Escape and the backdrop ask "Discard your changes?" instead of
- *    throwing the work away. Cancel (the footer button) still closes at once: it is a deliberate choice.
+ *  - once a field in it has changed (typed, a native checkbox or date, a pick in the shared Select), Escape and the
+ *    backdrop ask "Discard your changes?" instead of throwing the work away. Cancel (the footer button) still closes at
+ *    once: it is a deliberate choice. A choice made with plain buttons is not seen: pass `dirty` for those.
  * A dialog opened over this one (a confirmation, a picker) takes Escape first.
- * `dirty` overrides the typing-based guess when the caller knows better (false for a read-only dialog with a filter).
+ * `dirty` replaces the guess when the caller knows better: false for a picker whose only field is a search box.
  */
 export function DialogFrame({ label, onClose, busy, dirty, children, className, panelClassName, panelStyle, role = 'dialog', initialFocus = 'field' }: {
   label: string; onClose: () => void; busy?: boolean; dirty?: boolean; children: ReactNode;

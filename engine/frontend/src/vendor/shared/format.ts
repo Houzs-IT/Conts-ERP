@@ -290,3 +290,8 @@ export const fmtSenPlain = (centi: number | null | undefined): string => {
   const s = (Math.abs(n) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return n < 0 ? `(${s})` : s;
 };
+
+/** Conts: a text cell a spreadsheet would run as a formula (=, +, -, @, tab or carriage return first) gets a leading
+ *  apostrophe, so a name like =HYPERLINK(...) shows as text instead of running when the file is opened. Plain numbers and
+ *  phone numbers (+60 12-345 6789) are left alone. The one copy: the engine's CSV, Property OS's and the server's. */
+export const csvSafe = (v: string): string => (/^[=+\-@\t\r]/.test(v) && !/^[+-]?[\d\s().,-]+$/.test(v) ? `'${v}` : v);

@@ -19,11 +19,12 @@ Status: **fixed** = merged in the PR named; **open** = not done yet; **decision*
 1. **fixed (#593).** 19 form dialogs each built their own frame, so Escape, the backdrop and focus behaved
    differently from one to the next. Five ignored Escape entirely: Add / edit expense (`ExpensesPage.tsx`), catalog
    item (`MaintenanceCatalog.tsx`), Owner default operator share (`OwnerProfilePage.tsx`), Add a bill
-   (`owners/Costs.tsx`), Start payout run (`PayoutsPage.tsx`). The shared `Modal` (34 dialogs) did not move focus in
+   (`owners/Costs.tsx`), Start payout run (`PayoutsPage.tsx`). The shared `Modal` did not move focus in
    or back. In every one, a stray click on the dimmed backdrop threw away a half-filled form.
    Now one frame, `DialogFrame` in `src/components/Modal.tsx`: focus goes to the first field and back on close, Tab
-   stays inside, Escape and the backdrop close it, and once something has been typed they ask "Discard your
-   changes?" first. Also used by `AddUtilityBill`, `ApprovalBanner`, `BookingDrawer` (CentreModal), `GuestDocuments`,
+   stays inside, Escape and the backdrop close it, and once a field has changed (typed, a native control, a pick in the
+   shared `Select`) they ask "Discard your changes?" first. A choice made with plain buttons is not seen; such a dialog
+   passes `dirty` itself. A pick in `Select` went undetected until batch 7. Also used by `AddUtilityBill`, `ApprovalBanner`, `BookingDrawer` (CentreModal), `GuestDocuments`,
    `CalendarModals`, `OpsUi` (OpsModal), `ContractsPage`, `DashboardPage`, `owners/ExpenseEntry`, `owners/OwnerMoney`,
    `owners/shared`, `StatementsPage`, `units/shared`.
 2. **fixed (#593).** The approval and void-document reason boxes were `bg-white` (`ApprovalBanner.tsx`,
@@ -129,12 +130,18 @@ is shown inside Property OS in a frame. What now has ONE implementation that eve
 | Date and time shapes (2026/11/03, 11/03, 2026/11/03 14:06, 14:06) | `engine/frontend/src/vendor/shared/format.ts` (`fmtDate`, `fmtDayMonth`, `fmtDateTime`, `fmtTime`), pinned by the engine's `format.date.canonical.test.ts` | engine screens and PDFs; Property OS screens through `src/lib/format.ts`; the server through `functions/_lib/format.ts` |
 | Money with sen (RM 1,234.56) | same file (`fmtSen`) | engine; `src/lib/format.ts` `rm()`; `functions/_lib/format.ts` `rmText()`, which replaced 15 hand-typed `RM ${(x / 100).toLocaleString(...)}` strings in audit summaries, notices, payout and refund messages, the letterhead and booking money |
 | Form dialog frame (focus, Escape, backdrop, keep-open when dirty) | `DialogFrame` in `src/components/Modal.tsx` (#593) | every Property OS form dialog |
-| Form dialog layout (title, sub line, scrolling body, pinned Cancel / action footer) | `Modal` and `FormModal` in `src/components/Modal.tsx` | 34 direct users plus the ten local shells that used to draw their own: Expenses, Maintenance catalog, Dashboard, Contracts, owners (form), units (CentreModal), owner expense entry, calendar (price / block), OpsModal (maintenance, cleaning) |
-| Couldn't load / Retry | `StaleBanner` (`src/components/DataState.tsx`, #594); engine lists: `engine/frontend/src/conts/TableLoadError.tsx` | 60+ Property OS screens; every engine list |
+| Form dialog layout (title, sub line, scrolling body, pinned Cancel / action footer) | `Modal` and `FormModal` in `src/components/Modal.tsx` | 24 files importing it, plus the local shells that used to draw their own: Expenses, Maintenance catalog, Dashboard, Contracts, owners (form), units (CentreModal), owner expense entry, calendar (price / block), OpsModal (maintenance, cleaning) |
+| Couldn't load / Retry | `StaleBanner` (`src/components/DataState.tsx`, #594); engine lists: `engine/frontend/src/conts/TableLoadError.tsx` | 65 Property OS files; every engine list |
+| Spreadsheet formula guard on CSV exports | `csvSafe` in `engine/frontend/src/vendor/shared/format.ts` (batch 7) | Property OS exports, server CSVs, and the engine's CSV, which had no guard at all before |
 | On/off switch | `Switch` (`src/components/Switch.tsx`, #609) | Automations, Settings, Category access, Reviews |
 | Record header field ("DO NUMBER / DO-2611-004") | `Meta` (`src/components/Card.tsx`) | the 10 document pages that each had their own copy |
 | Form field group (small caps title over a 2-column grid) | `FormSection` (`src/components/Card.tsx`) | Customers, Suppliers, 3PL companies |
 | Report block on a card | `SectionCard` (`src/components/Card.tsx`) | Unit P&L, Yearly report |
+
+A shared module only stays shared if a change to it reaches every build. Until batch 7 it did not: the Property OS,
+preview and scheduled-job deploys watched fixed path lists and CI skipped `engine/`, so an edit to the engine format
+module would have changed the engine alone. Those four workflows now watch it, and `scripts/checks/shared-paths.mjs`
+fails if Property OS imports any engine file they do not watch.
 
 Still twice, and why:
 
