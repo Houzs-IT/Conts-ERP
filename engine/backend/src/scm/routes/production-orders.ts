@@ -257,7 +257,7 @@ productionOrders.get('/', async (c) => {
 
 /* The sales order a production order belongs to, for the customer and site on its page: its lines' SO, else its
    project's live one. The SO is read, never written. */
-const LINKED_SO_COLS = 'doc_no, status, debtor_name, phone, email, customer_type, agent, salesperson_id, ref, po_doc_no, customer_so_no, '
+const LINKED_SO_COLS = 'doc_no, status, debtor_name, phone, email, customer_type, agent, salesperson_id, ref, customer_so_no, '
   + 'address1, address2, city, postcode, customer_state, customer_country, sales_location, building_type, venue, processing_date, '
   + 'customer_delivery_date, branding, payment_method, project_id, so_kind';
 async function loadLinkedSo(sb: any, c: any, items: Array<{ so_item_id?: string | null }>, projectId: number | null): Promise<Record<string, unknown> | null> {
