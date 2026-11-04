@@ -419,6 +419,7 @@ const SUB_PAGES: [RegExp, string][] = [
   [/^\/owner-b\/[^/]+\/portal$/, 'View as owner'],
   [/^\/owner-b\/(?!sample$)[^/]+$/, 'Owner profile'],
   [/^\/owners\/(?!contracts$|statements$)[^/]+$/, 'Owner profile'],
+  [/^\/properties\/units\/new$/, 'Add unit'],
   [/^\/properties\/units\/[^/]+$/, 'Unit'],
   [/^\/system\/integrations\/hostplatform$/, 'HostPlatform import'],
 ];
