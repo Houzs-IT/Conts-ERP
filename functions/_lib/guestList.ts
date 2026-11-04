@@ -38,7 +38,8 @@ export async function hasGuestColumns(env: Env): Promise<boolean> {
   if (guestColumnsSeen) return true; // found once, there for good (see moneySchema)
   const r = await one<{ n: number }>(env, `SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_name = 'guests'
     AND table_schema = ANY(current_schemas(false)) AND column_name IN ('tags', 'id_type', 'id_number', 'date_of_birth', 'merged_into', 'notes', 'language')`);
-  guestColumnsSeen = Number(r?.n ?? 0) === 7;
+  // At least: in Demo mode current_schemas() holds the overlay and pos, so each column counts twice.
+  guestColumnsSeen = Number(r?.n ?? 0) >= 7;
   return guestColumnsSeen;
 }
 
