@@ -940,7 +940,7 @@ function ProductionOrderDetailV2ReadOnly() {
      `canConfirm` gated /confirm — the endpoint that actually performs the
      DRAFT → SUBMITTED write — onto SUBMITTED, where it is an explicit no-op.
      The predicates were inverted relative to their endpoints. */
-  const confirmReason = poConfirmBlockReason(purchaseOrder.status);
+  const confirmReason = poConfirmBlockReason(purchaseOrder.status)?.replace(/purchase order/g, "production order") ?? null;
   const canConfirm = confirmReason === null;
   const canCancel = rawStatus !== "CANCELLED" && rawStatus !== "RECEIVED";
   const canReopen = rawStatus === "CANCELLED";

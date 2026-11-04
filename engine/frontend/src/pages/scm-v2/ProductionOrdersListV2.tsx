@@ -773,7 +773,7 @@ export function ProductionOrdersListV2() {
   const view = (params.get("view") ?? "table") as "table" | "cards";
   const search = params.get("q") ?? "";
   const page = Math.max(0, parseInt(params.get("page") ?? "0", 10) || 0);
-  const [pageSize, setPageSize] = useLocalStorage<number>("scm:perpage:purchase-orders", 50);
+  const [pageSize, setPageSize] = useLocalStorage<number>("scm:perpage:production-orders", 50);
 
   const [selected, setSelected] = useState<PoHeaderRow | null>(null);
   const [sort, setSort] = useState<string | undefined>(undefined);
@@ -827,7 +827,7 @@ export function ProductionOrdersListV2() {
   // Conts: a failed load says so on the cards, with Retry, instead of "Loading…" for ever.
   const statsFail = { failed: Boolean(error), onRetry: () => void refetch() };
   const { cancelPo } = usePoCancelAction();
-  const holdAction = useHoldAction("po");
+  const holdAction = useHoldAction("pro");
 
   // Server already filtered + sorted this page — render verbatim. The MRP-derived
   // columns (Assigned SO / Delivered) arrive from the deferred enrichment endpoint
@@ -1395,10 +1395,10 @@ export function ProductionOrdersListV2() {
         {/* Desktop chrome */}
         <div className="hidden md:block">
           <PageHeader
-            eyebrow="Procurement"
+            eyebrow="Production"
             eyebrowMeta={`${total.toLocaleString("en-MY")} orders`}
             title="Production Orders"
-            description="Every Production Order raised to a supplier — Draft through Received. Click any row for the quick view; open the full page to edit or receive."
+            description="Every Production Order — Draft through Received. Click any row for the quick view; open the full page to edit or receive."
             primaryAction={
               <div className="flex items-stretch gap-2">
                 <Button
@@ -1578,7 +1578,7 @@ export function ProductionOrdersListV2() {
                   onToggleAll: toggleSelectAll,
                 }}
                 contextMenu={poContextMenu}
-                exportName="purchase-orders"
+                exportName="production-orders"
                 exportLines={exportLines}
                 serverSort
                 onSortChange={setSortAndReset}

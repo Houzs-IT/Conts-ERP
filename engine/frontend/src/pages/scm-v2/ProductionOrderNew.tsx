@@ -761,7 +761,7 @@ export const ProductionOrderNew = () => {
   return (
     <div className="space-y-4">
       <PageHeader back
-        eyebrow="Procurement"
+        eyebrow="Production"
         title="New Production Order"
         actions={
           <div className={styles.actions}>
@@ -819,7 +819,7 @@ export const ProductionOrderNew = () => {
 
             {/* RIGHT column */}
             <label className={styles.field}>
-              <span className={styles.fieldLabel}>P/O No</span>
+              <span className={styles.fieldLabel}>Production Order No</span>
               <input
                 type="text"
                 readOnly
