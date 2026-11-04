@@ -7,9 +7,6 @@ import { rm, todayMyt } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { MODEL, MODEL_TONE, typeOf, codeName, codeFromModel, isTenancy, offeredTypes, type ContractType, type RevenueModel, type ContractCode } from '../../lib/revenueModel';
 
-/** The contract terms form, shared by the Contract tab and the Add unit page: the draft, what it sends, what it checks
- *  before asking the server, and the boxes for the chosen package. */
-
 /** The rent-to-rent grid beyond the rent and deposit (0161): what else we pay the owner, and what we rent it out for. */
 export const RENT_TO_RENT_KEYS = ['depositUtilities', 'depositCard', 'rentOutAmount', 'rentOutDeposit', 'rentOutDepositUtilities', 'rentOutDepositCard'] as const;
 export type RentToRentKey = typeof RENT_TO_RENT_KEYS[number];
@@ -57,7 +54,6 @@ export function draftOf(c: ContractView, types: readonly ContractType[]): Draft 
     rentOutDepositUtilities: c.rentToRent?.rentOutDepositUtilities ?? null, rentOutDepositCard: c.rentToRent?.rentOutDepositCard ?? null,
   };
 }
-/** An empty draft for a unit with no contract yet. With no type the code is '' (nothing picked) and the form shows only the package select. */
 export function blankDraft(type?: ContractType): Draft {
   return {
     revenueModel: type?.revenueModel ?? 'management', contractCode: type?.code ?? '', yearlyGuarantee: null, ownerPct: 75, managementPct: 25, agentPct: 0, agentName: '',
@@ -66,7 +62,6 @@ export function blankDraft(type?: ContractType): Draft {
     depositUtilities: null, depositCard: null, rentOutAmount: null, rentOutDeposit: null, rentOutDepositUtilities: null, rentOutDepositCard: null,
   };
 }
-/** What PUT /api/units/:id/contract takes: only the boxes of the chosen model are present. */
 export interface ContractBody extends Partial<Record<RentToRentKey, number | null>> {
   revenueModel: RevenueModel; contractCode: ContractCode;
   yearlyGuarantee?: number; ownerPct?: number; managementPct?: number; agentPct?: number; agentName?: string | null; miscCharges?: boolean;
@@ -117,23 +112,18 @@ export function ModelChip({ model, label }: { model: RevenueModel; label?: strin
 
 export interface ContractFieldsProps {
   d: Draft; set: (p: Partial<Draft>) => void;
-  /** Problems by field name, from the form's own checks and the server's answer. */
   errors: Record<string, string>;
   types: readonly ContractType[];
-  /** The types the select offers. Default: the active ones and the draft's own. */
+  /** Default: the active types and the draft's own. */
   offered?: readonly ContractType[];
-  /** The label above the select. */
   label?: string;
   /** The narrow Scheduled changes panel: two columns, and a start date after today. */
   narrow?: boolean;
-  /** Shown between the select and the model card (the Contract tab's "type not set" notice). */
   afterSelect?: ReactNode;
-  /** Called when a type is picked in the select. */
   onPickType?: () => void;
 }
 
-/** The package select, the chosen model's card and only that model's boxes. Renders as direct children of its parent, which
- *  lays them out in a column. With no type picked yet (code '') only the select shows. */
+// Renders as direct children: the parent lays them out in a column.
 export function ContractFields({ d, set, errors, types, offered, label = 'Income model', narrow, afterSelect, onPickType }: ContractFieldsProps): ReactElement {
   const m = d.revenueModel;
   const share = isShare(m);

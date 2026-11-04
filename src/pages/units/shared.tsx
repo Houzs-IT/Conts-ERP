@@ -11,7 +11,7 @@ import type { OwnerAddress } from '../owners/shared';
 import type { PnlRow } from './PnlTable';
 import { PLACEHOLDER_OWNER } from '../../../functions/_lib/hostplatformImport';
 
-/** A unit still under the stand-in owner (functions/_lib/placeholderOwner.ts), matched by name as the server does. */
+// Matched by name, as functions/_lib/placeholderOwner.ts does.
 export const isPlaceholderOwner = (name: string | null | undefined): boolean => (name ?? '').toLowerCase() === PLACEHOLDER_OWNER.toLowerCase();
 
 export const BANKS = ['MBBE', 'PBBB', 'CIBB', 'RHBB', 'HLBB', 'AMBB', 'BIMB', 'UOVB', 'OCBC'];

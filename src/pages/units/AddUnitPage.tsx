@@ -32,7 +32,7 @@ interface NewUnitBody {
   beds: AddUnitForm['beds']; parkingBays: AddUnitForm['parkingBays'];
 }
 
-/** The unit's own boxes as the POST takes them: a blank number box is left out so the server's default applies. */
+// A blank number box is left out so the server's default applies.
 function bodyOfForm(f: AddUnitForm, layout: string | null): NewUnitBody {
   return {
     buildingId: f.buildingId, ...(f.ownerId ? { ownerId: f.ownerId } : {}),
@@ -43,7 +43,6 @@ function bodyOfForm(f: AddUnitForm, layout: string | null): NewUnitBody {
   };
 }
 
-/** The contract step's own checks: a package, its boxes, and the start date the server insists on. */
 function contractProblems(d: Draft): Record<string, string> {
   if (!d.contractCode) return { contractCode: 'Pick a package.' };
   const p = problems(d);
@@ -52,7 +51,6 @@ function contractProblems(d: Draft): Record<string, string> {
   return p;
 }
 
-/** Add unit: everything about the unit and its contract in three steps. Nothing is saved until the last button. */
 export default function AddUnitPage(): ReactElement {
   const navigate = useNavigate();
   const toast = useToast();
@@ -68,12 +66,10 @@ export default function AddUnitPage(): ReactElement {
   const [form, setForm] = useState<AddUnitForm>(() => ({ ...EMPTY_FORM, buildingId: params.get('building') ?? '' }));
   const [draft, setDraft] = useState<Draft>(() => blankDraft());
   const [step, setStep] = useState<StepIndex>(0);
-  /** Steps where Next was pressed with something missing: their missing boxes are marked from then on. */
   const [tried, setTried] = useState<readonly boolean[]>([false, false, false]);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
   const [contractErrors, setContractErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  /** Set once the unit exists; from then on only the contract can be saved again. */
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [finished, setFinished] = useState(false);
   const [addingBuilding, setAddingBuilding] = useState(false);
@@ -81,7 +77,7 @@ export default function AddUnitPage(): ReactElement {
 
   const buildings = useMemo(() => [...(props.data?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })), [props.data]);
   const building = buildings.find(b => b.id === form.buildingId);
-  // A ?building= that is not on the list (an old link) is dropped once, when the list first arrives.
+  // An old link can carry a ?building= that is no longer on the list.
   useEffect(() => {
     if (!props.data || props.loading || linkChecked.current) return;
     linkChecked.current = true;
@@ -108,8 +104,7 @@ export default function AddUnitPage(): ReactElement {
 
   const hasOwner = !!form.ownerId;
   const own = step === 2 ? (hasOwner ? contractProblems(draft) : {}) : stepProblems(step, form);
-  // A step's missing boxes are marked after Next was pressed on it; the bar below always says what is missing.
-  // The contract step shows its own problems at once, as the Contract tab does.
+  // The contract step shows its problems at once, as the Contract tab does.
   const shownErrors = { ...(step < 2 && tried[step] ? own : {}), ...serverErrors };
   const blocked = Object.values(own)[0];
   const markTried = (s: StepIndex): void => setTried(t => t.map((v, i) => v || i === s));
@@ -289,7 +284,7 @@ export default function AddUnitPage(): ReactElement {
           )}
         </div>
       </Card>
-      {/* Outside the card: the card clips its content, which would stop the bar sticking to the bottom of a phone screen. */}
+      {/* Outside the card: the card clips, which breaks sticky on phones. */}
       <div className="max-md:sticky max-md:bottom-0 z-[2] flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-3 px-5 bg-card rounded-card [border:1px_solid_var(--color-line)] pb-[max(12px,env(safe-area-inset-bottom))] md:pb-3">
         {blocked && <p role="status" className={cx('m-0 w-full text-meta', tried[step] ? 'text-critical' : 'text-muted-ink')}>{blocked}</p>}
         <Button size="md" variant="secondary" className="max-md:min-h-11" disabled={step === 0} disabledReason="This is the first step" onClick={() => setStep(s => stepAt(s - 1))}>Back</Button>

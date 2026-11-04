@@ -74,8 +74,7 @@ export function invalidUnit(b: UnitInput, currentSplit?: string | null): { field
   return null;
 }
 
-/** The Type must be one on the Unit settings list: an active one, or the one the unit already has (a hidden type stays valid
- *  on the units that carry it). Separate from invalidUnit, which has no database. */
+// A type hidden in Unit settings stays valid on the units that already carry it.
 export async function invalidLayoutType(env: Env, b: UnitInput, currentType?: string | null): Promise<{ field: string; message: string } | null> {
   if (b.layoutType == null || b.layoutType === currentType) return null;
   const hit = (await layoutTypes(env)).find(t => t.key === b.layoutType);

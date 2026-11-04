@@ -77,7 +77,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!parent) return fail('VALIDATION', 'That parent unit no longer exists.', 422, { parentUnitId: 'That parent unit no longer exists.' });
     parentUnitId = b.parentUnitId; parentOwner = parent.owner_id;
   }
-  // A sub-unit takes its parent's owner. With no owner and no parent the unit waits under "Owner to be confirmed" until the real owner is set on its Details tab.
   const ownerId = typeof b.ownerId === 'string' && b.ownerId ? b.ownerId
     : parentOwner ?? await placeholderOwnerId({ all: (sql, ...args) => all(env, sql, ...args) as never, run: (sql, ...args) => run(env, sql, ...args) }, nowIso());
   if (!(await one(env, 'SELECT 1 AS x FROM owners WHERE id = ?', ownerId))) return fail('NOT_FOUND', 'That owner does not exist.', 404, { ownerId: 'Pick an owner.' });

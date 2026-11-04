@@ -1,4 +1,4 @@
-// node --test src/lib/addUnitRules.test.mjs (npm test). What the Add unit page checks before each step's Next.
+// node --test src/lib/addUnitRules.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EMPTY_FORM, stepProblems, stepOfField, stepAt, layoutToSave, hasInput } from '../pages/units/addUnitRules.ts';
