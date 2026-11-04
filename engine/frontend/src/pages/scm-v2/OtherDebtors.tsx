@@ -84,7 +84,7 @@ const receiptStage = (r: DebtorReceipt): string => {
 const fromBill = (b: DebtorBill, copy: boolean): BillFormValues => ({
   billDate: copy ? myt() : b.bill_date,
   notes: b.notes ?? '',
-  lines: (b.lines ?? []).map((l, i) => ({ rid: i + 1, description: l.description ?? '', creditAccountCode: l.credit_account_code ?? '', amountSen: l.amount_sen, department: l.credit_account_code ? departmentOf((l as { department?: unknown }).department) : '' as const })),
+  lines: (b.lines ?? []).map((l, i) => ({ rid: i + 1, description: l.description ?? '', creditAccountCode: l.credit_account_code ?? '', amountSen: l.amount_sen, department: l.credit_account_code ? departmentOf((l as { department?: unknown }).department) : '' as const, subDepartmentId: (l as { sub_department_id?: string | null }).sub_department_id ?? null })),
 });
 type BillFormState = { mode: BillFormMode; initial: BillFormValues; billId?: string; billNumber?: string; receivedSen?: number };
 

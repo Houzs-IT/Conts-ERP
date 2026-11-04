@@ -26,7 +26,8 @@
 // ----------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DEPARTMENT_OPTIONS, DepartmentSelect, nextLineDepartment, type Department } from '../../conts/department';
+import { DEPARTMENT_OPTIONS, type Department } from '../../conts/department';
+import { nextLineSub, SubDepartmentSelect } from '../../conts/SubDepartmentSelect';
 import { ProjectPicker, UnitPicker } from '../../conts/Pickers';
 import { Link } from 'react-router-dom';
 import { Ban, Pencil, Plus } from 'lucide-react';
@@ -167,7 +168,7 @@ const buildReceiptColumns = (h: {
 
 /* Conts: each line's department (finance phase 1, spec 3.5), required. */
 type Line = {
-  rid: number; id?: string; description: string; creditAccountCode: string; amountSen: number; department: Department | '';
+  rid: number; id?: string; description: string; creditAccountCode: string; amountSen: number; department: Department | ''; subDepartmentId?: string | null;
   /* Conts (chew 2 Nov 2026): the project or unit the money is for, e.g. a building deposit coming back. */
   projectId: number | null; unitId: string | null;
 };
@@ -235,7 +236,7 @@ export const Receipts = () => {
     setBank(receipt.bank_account_code);
     setReceiptDate(String(receipt.receipt_date).slice(0, 10));
     setLines(rows.length > 0
-      ? rows.map((l, i) => ({ rid: i + 1, id: l.id, description: l.description ?? '', creditAccountCode: l.credit_account_code, amountSen: Number(l.amount_sen), department: departmentOf((l as { department?: unknown }).department), projectId: (l as { project_id?: number | null }).project_id ?? null, unitId: (l as { unit_id?: string | null }).unit_id ?? null }))
+      ? rows.map((l, i) => ({ rid: i + 1, id: l.id, description: l.description ?? '', creditAccountCode: l.credit_account_code, amountSen: Number(l.amount_sen), department: departmentOf((l as { department?: unknown }).department), projectId: (l as { project_id?: number | null }).project_id ?? null, unitId: (l as { unit_id?: string | null }).unit_id ?? null, subDepartmentId: (l as { sub_department_id?: string | null }).sub_department_id ?? null }))
       : [{ rid: 1, description: '', creditAccountCode: '', amountSen: 0, department: '', projectId: null, unitId: null }]);
     setAdding(true);
   }, [editing, detailQ.data]);
@@ -251,7 +252,7 @@ export const Receipts = () => {
   const save = async () => {
     const sendLines = lines
       .filter((l) => l.creditAccountCode && l.amountSen > 0)
-      .map((l) => ({ ...(l.description.trim() ? { description: l.description.trim() } : {}), creditAccountCode: l.creditAccountCode, amountSen: l.amountSen, department: l.department || undefined, ...(l.projectId != null ? { projectId: l.projectId } : {}), ...(l.department === 'rental' && l.unitId ? { unitId: l.unitId } : {}) }));
+      .map((l) => ({ ...(l.description.trim() ? { description: l.description.trim() } : {}), creditAccountCode: l.creditAccountCode, amountSen: l.amountSen, department: l.department || undefined, ...(l.subDepartmentId ? { subDepartmentId: l.subDepartmentId } : {}), ...(l.projectId != null ? { projectId: l.projectId } : {}), ...(l.department === 'rental' && l.unitId ? { unitId: l.unitId } : {}) }));
     try {
       if (!editing && kind === 'DEBTOR') {
         const res = await createDebtorReceipt.mutateAsync({
@@ -444,8 +445,8 @@ export const Receipts = () => {
                 <MoneyInput bare valueSen={l.amountSen > 0 ? l.amountSen : null} allowBlank placeholder="Amount (RM)"
                   aria-label={`line ${l.rid} amount`} inputClassName={styles.fieldInput}
                   onCommit={(sen) => patchLine(l.rid, { amountSen: sen ?? 0 })} />
-                <DepartmentSelect className={styles.fieldInput} label={`Line ${l.rid} department`} blank="Department…"
-                  value={l.department} onChange={(d) => patchLine(l.rid, { department: d, unitId: d === 'rental' ? l.unitId : null })} />
+                <SubDepartmentSelect className={styles.fieldInput} label={`Line ${l.rid} department`} blank="Department…"
+                  value={{ department: l.department, subDepartmentId: l.subDepartmentId ?? null }} onChange={(v) => patchLine(l.rid, { ...v, unitId: v.department === 'rental' ? l.unitId : null })} />
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
                   <ProjectPicker value={l.projectId} onChange={(id) => patchLine(l.rid, { projectId: id })} placeholder="No project" ariaLabel={`Line ${l.rid} project`} inputClass={styles.fieldInput} />
                   {l.department === 'rental' && (
@@ -457,7 +458,7 @@ export const Receipts = () => {
             ))}
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
               {!debtorMode && (
-                <Button variant="ghost" size="sm" onClick={() => setLines((p) => [...p, { rid: Math.max(...p.map((x) => x.rid)) + 1, description: '', creditAccountCode: '', amountSen: 0, department: nextLineDepartment(p), projectId: null, unitId: null }])}>
+                <Button variant="ghost" size="sm" onClick={() => setLines((p) => [...p, { rid: Math.max(...p.map((x) => x.rid)) + 1, description: '', creditAccountCode: '', amountSen: 0, ...nextLineSub(p.map((x) => ({ department: x.department, subDepartmentId: x.subDepartmentId ?? null }))), projectId: null, unitId: null }])}>
                   <Plus {...ICON} /> Line
                 </Button>
               )}
