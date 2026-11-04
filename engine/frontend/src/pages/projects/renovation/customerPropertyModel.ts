@@ -4,6 +4,7 @@
    stay strings while typed; the server reads and checks them
    (vendor/shared/renovation-property.ts, the same file the backend runs). */
 
+import { fmtDate } from "@2990s/shared";
 import { parseCount, parseSqft, renoSoRequiredProblems } from "../../../vendor/shared/renovation-property";
 
 export interface PropertyTypeOption { id: number; label: string; sort_order: number; active: boolean }
@@ -174,10 +175,8 @@ export function projectDatesText(project: Pick<ProjectShared, "startDate" | "end
   };
 }
 
-/** "14 Oct 2026" from an ISO date, "Not set" when blank. */
+/** "2026/10/14" from an ISO date, "Not set" when blank. */
 export function showDate(iso: string | null | undefined): string {
   if (!iso) return "Not set";
-  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  return fmtDate(iso.slice(0, 10));
 }

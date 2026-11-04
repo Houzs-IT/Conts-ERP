@@ -1453,7 +1453,7 @@ export function EntryPanel({
               {payments.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-3 py-4 text-center text-[11px] text-ink-muted">
-                    No payments recorded yet · click "Add Payment" to log a deposit
+                    No payments recorded yet
                   </td>
                 </tr>
               )}

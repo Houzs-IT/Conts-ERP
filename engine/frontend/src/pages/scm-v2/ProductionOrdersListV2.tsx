@@ -1396,9 +1396,8 @@ export function ProductionOrdersListV2() {
         <div className="hidden md:block">
           <PageHeader
             eyebrow="Production"
-            eyebrowMeta={`${total.toLocaleString("en-MY")} orders`}
             title="Production Orders"
-            description="Every Production Order — Draft through Received. Click any row for the quick view; open the full page to edit or receive."
+            description="Every Production Order — Draft to Received. Click any row for the quick view; open the full page to edit or receive."
             primaryAction={
               <div className="flex items-stretch gap-2">
                 <Button
@@ -1436,9 +1435,9 @@ export function ProductionOrdersListV2() {
               the page, at which point it contradicts the table underneath. */}
           <StatCard
             pending={statsPending} {...statsFail}
-            label="Total Production Orders"
+            label="Total Orders"
             value={(visible.filtered ? visible.rows.length : total).toLocaleString("en-MY")}
-            subtitle={visible.filtered ? "Filtered · shown below" : "All matching Production Orders"}
+            subtitle={visible.filtered ? "Filtered · shown below" : "All matching orders"}
             rail="bg-primary"
             active
           />

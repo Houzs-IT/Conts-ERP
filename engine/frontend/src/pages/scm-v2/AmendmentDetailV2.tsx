@@ -45,6 +45,7 @@ import {
 } from "../../components/DetailLayout";
 import { ModalOverlay } from "../../components/scm-v2/DocumentRelationshipMapModal";
 import { StatusPill } from "../../vendor/scm/components/StatusPill";
+import { AmendmentHeaderBadge, Divider } from "./soDetailParts";
 import { useStaffLookup } from "../../hooks/useStaffLookup";
 import {
   resolveStatusPill,
@@ -840,9 +841,9 @@ export function AmendmentDetailV2() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-                  VO{amendmentNo ? ` ${amendmentNo}` : ""}
+                  {amendmentNo?.startsWith("VO") ? amendmentNo : `VO${amendmentNo ? ` ${amendmentNo}` : ""}`}
                 </h1>
-                <StatusPill docType={lane ? "soAmendmentLane" : "soAmendment"} status={status} />
+                <AmendmentHeaderBadge status={status} />
                 {lane && (
                   <span className="rounded-full border border-border bg-surface-2 px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-ink-secondary">
                     {LANE_TITLE[lane]}
@@ -851,7 +852,7 @@ export function AmendmentDetailV2() {
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-secondary">
                 <span className="font-mono font-semibold text-primary-ink">{soDocNo}</span>
-                <span className="text-ink-muted/50">·</span>
+                <Divider />
                 {/* The honest total — header fields + genuinely-changed lines.
                     It used to count every RECORDED line, so an amendment whose
                     lines were all no-ops advertised "4 changes" and showed four
@@ -861,7 +862,7 @@ export function AmendmentDetailV2() {
                 </span>
                 {asStr(amendment.created_at) && (
                   <>
-                    <span className="text-ink-muted/50">·</span>
+                    <Divider />
                     <span>Raised {fmtDateTime(String(amendment.created_at))}</span>
                   </>
                 )}
@@ -872,7 +873,8 @@ export function AmendmentDetailV2() {
               <AmendmentTypeBadges kinds={allFieldKinds} className="mt-2" />
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" icon={<Printer size={14} />} onClick={print.openPreview}>Print PDF</Button>
             {/* Owner 2026-07-27: the header jump actions read as a UNIFORM
                 bordered pair (secondary) — the naked ghost next to a boxed
                 secondary looked like plain text + a stray box, off-theme. */}
@@ -891,10 +893,10 @@ export function AmendmentDetailV2() {
                     pending follow-up the jump goes to the PO Amendment job card,
                     and the label says so. */}
                 {poRevised
-                  ? "Open Revised bound PO"
+                  ? "Open revised PO"
                   : pendingFollowUp
                     ? "Open PO Amendment"
-                    : "Open bound PO"}
+                    : "Open PO"}
               </Button>
             )}
           </div>
@@ -1025,16 +1027,19 @@ export function AmendmentDetailV2() {
               </AsideCard>
             )}
 
-            <AsideCard title="Document">
-              <Button
-                variant="secondary"
-                className="w-full"
-                icon={<Printer size={14} />}
-                onClick={print.openPreview}
-              >
-                Print amendment
-              </Button>
-            </AsideCard>
+            {/* Phone only: the desktop header carries Print PDF, like every other document. */}
+            <div className="md:hidden">
+              <AsideCard title="Document">
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  icon={<Printer size={14} />}
+                  onClick={print.openPreview}
+                >
+                  Print PDF
+                </Button>
+              </AsideCard>
+            </div>
 
             {/* Two-lane rework — a lane row has ONE signature and, on the LINES
                 lane, the follow-up PO Amendment chips after it applies. */}

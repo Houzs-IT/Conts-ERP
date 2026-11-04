@@ -1,3 +1,4 @@
+import { fmtDateTime } from "@2990s/shared";
 import { PodPhotoAlbum } from "../../components/scm-v2/PodPhotoAlbum";
 import { DO_DELIVERED_STATUSES } from "../../vendor/scm/lib/delivery-stop-status";
 
@@ -21,9 +22,7 @@ export type DoPodFields = {
 };
 
 const when = (iso: string | null | undefined): string | null =>
-  iso
-    ? new Date(iso).toLocaleString("en-GB", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
-    : null;
+  iso ? fmtDateTime(iso) : null;
 
 /** True once the customer has the goods (the run-sheet's POD flips DELIVERED). */
 export const doIsDelivered = (h: DoPodFields): boolean =>

@@ -487,8 +487,7 @@ function OutstandingHeroCard({
       </div>
       <div
         className={cn(
-          "mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight",
-          isPaid ? "text-synced" : "text-err"
+          "mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight text-white"
         )}
       >
         {fmtMoney(isPaid ? total : outstanding, header.currency)}
@@ -1279,7 +1278,7 @@ export function SalesInvoiceDetailV2() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             <Button
               variant="ghost"
               icon={<History size={14} />}
@@ -1775,11 +1774,11 @@ export function SalesInvoiceDetailV2() {
 
               <AsideCard title="Key dates">
                 <KeyDateRow
-                  k="Invoice"
+                  k="Invoice date"
                   v={fmtDate(salesInvoice.invoice_date)}
                 />
                 <KeyDateRow
-                  k="Due"
+                  k="Due date"
                   v={fmtDate(salesInvoice.due_date)}
                   muted={!salesInvoice.due_date}
                   danger={isOverdue}

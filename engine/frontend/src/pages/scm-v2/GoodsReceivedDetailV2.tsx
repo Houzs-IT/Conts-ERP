@@ -26,6 +26,7 @@ import {
 import { Badge } from "../../components/Badge";
 import { Button } from "../../components/Button";
 import { DataTable, type Column } from "../../components/DataTable";
+import { ActivityRow } from "./soDetailParts";
 import { DATA_TABLE_LAYOUT_FAMILIES } from "../../components/dataTableLayoutFamilies";
 import { DetailGrid, DetailMain, DetailAside, Section } from "../../components/DetailLayout";
 import {
@@ -153,7 +154,7 @@ const effectiveOf = (h: GrnHeader): Effective => {
    drift docs/modules/document-status-vocabulary.md §1 exists to stop, so it is
    removed rather than repointed at status-pill.ts. */
 const EFFECTIVE_TONE: Record<Effective, { tone: "success" | "warning" | "error" | "neutral"; blurb: string }> = {
-  draft: { tone: "warning", blurb: "Draft · not yet posted" },
+  draft: { tone: "warning", blurb: "Draft · not yet submitted" },
   posted: { tone: "success", blurb: "Submitted · inventory received" },
   on_hold: { tone: "warning", blurb: "On hold · stock already received, billing paused" },
   cancelled: { tone: "error", blurb: "Cancelled · receipt reversed" },
@@ -227,7 +228,6 @@ function ReceivedHeroCard({ header, items }: { header: GrnHeader; items: GrnItem
   const t = EFFECTIVE_TONE[eff];
   const total = header.total_sen ?? 0;
   const { orderedQty, receivedQty } = receivedOf(items);
-  const isPosted = eff === "posted";
   // Multi-currency (Phase 1-A) — MYR-equivalent for a foreign receipt (no-op for MYR).
   const isForeign = String(header.currency ?? "MYR").toUpperCase() !== "MYR";
   const rate = resolveFxRate(header.exchange_rate);
@@ -236,7 +236,7 @@ function ReceivedHeroCard({ header, items }: { header: GrnHeader; items: GrnItem
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
         Received value
       </div>
-      <div className={cn("mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight", isPosted ? "text-synced" : "text-white")}>
+      <div className={cn("mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight", "text-white")}>
         {fmtMoney(total, header.currency)}
       </div>
       <div className="mt-3 flex items-center gap-2">
@@ -352,7 +352,7 @@ function GoodsReceivedDetailV2ReadOnly() {
   } = useGrnRelationshipMap(grn);
 
   useSetBreadcrumbs([
-    { label: "Goods Received", to: "/scm/grns" },
+    { label: "Goods Receipts", to: "/scm/grns" },
     { label: grn?.grn_number ?? id ?? "GRN" },
   ]);
 
@@ -411,9 +411,9 @@ function GoodsReceivedDetailV2ReadOnly() {
   const doPost = async () => {
     if (!grn) return;
     if (await askConfirm({
-      title: `Post GRN ${grn.grn_number}?`,
+      title: `Submit GRN ${grn.grn_number}?`,
       body: "Inventory will be received into the warehouse.",
-      confirmLabel: "Post GRN",
+      confirmLabel: "Submit GRN",
     })) {
       postGrn.mutate(grn.id);
     }
@@ -614,7 +614,7 @@ function GoodsReceivedDetailV2ReadOnly() {
         <p className="text-[13px] text-ink-muted">{(detail.error as Error | undefined)?.message ?? "The GRN was not found."}</p>
         <div className="mt-4">
           <Button variant="secondary" onClick={goBack} icon={<ArrowLeft size={14} />}>
-            Back to Goods Received
+            Back to Goods Receipts
           </Button>
         </div>
       </div>
@@ -637,7 +637,7 @@ function GoodsReceivedDetailV2ReadOnly() {
     <div className="pb-24 md:pb-0">
       <div className="sticky top-0 z-20 -mx-4 -mt-4 bg-sidebar text-sidebar-ink shadow-slab md:hidden">
         <div className="flex items-center justify-between gap-3 px-4 pt-3">
-          <button type="button" onClick={goBack} className="inline-flex items-center gap-1 text-[14px] font-semibold text-accent-bright" aria-label="Back to Goods Received">
+          <button type="button" onClick={goBack} className="inline-flex items-center gap-1 text-[14px] font-semibold text-accent-bright" aria-label="Back to Goods Receipts">
             <ArrowLeft size={16} /> GRNs
           </button>
           <span className="font-mono text-[12.5px] font-semibold text-sidebar-ink">{grn.grn_number}</span>
@@ -660,7 +660,7 @@ function GoodsReceivedDetailV2ReadOnly() {
       <div className="sticky top-0 z-10 -mx-4 hidden border-b border-border bg-bg/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 md:block">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
-            <button type="button" onClick={goBack} aria-label="Back to Goods Received" className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink-secondary hover:border-primary/50 hover:text-primary">
+            <button type="button" onClick={goBack} aria-label="Back to Goods Receipts" className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink-secondary hover:border-primary/50 hover:text-primary">
               <ArrowLeft size={16} />
             </button>
             <div className="min-w-0">
@@ -693,12 +693,12 @@ function GoodsReceivedDetailV2ReadOnly() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             <Button variant="ghost" icon={<History size={14} />} onClick={() => setHistoryOpen(true)}>History</Button>
             <Button variant="ghost" icon={<Share2 size={14} />} onClick={() => setRelMapOpen(true)}>Relationship Map</Button>
             <Button variant="secondary" icon={<Printer size={14} />} onClick={print.openPreview}>Print PDF</Button>
             {canCancel && <Button variant="danger" icon={<XCircle size={14} />} onClick={doCancel}>Cancel GRN</Button>}
-            {canPost && <Button variant="secondary" icon={<Send size={14} />} onClick={doPost}>Post</Button>}
+            {canPost && <Button variant="secondary" icon={<Send size={14} />} onClick={doPost}>Submit</Button>}
             {canConvertToPi && <Button variant="secondary" icon={<Receipt size={14} />} onClick={goConvertToPi}>{transferToLabel('pi')}</Button>}
             {canConvertToPr && <Button variant="secondary" icon={<RotateCcw size={14} />} onClick={goConvertToPr}>{transferToLabel('pr')}</Button>}
             <Button variant="secondary" icon={<Plus size={14} />} onClick={goAddLine}>{ADD_LINE_LABEL}</Button>
@@ -724,10 +724,10 @@ function GoodsReceivedDetailV2ReadOnly() {
               <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-3">
                 <Field label="Supplier" value={supplierNameOf(grn)} />
                 <Field label="Supplier code" value={supplierCodeOf(grn)} mono />
-                <Field label="Contact" value={grn.supplier?.contact_person || "—"} muted={!grn.supplier?.contact_person} />
+                <Field label="Contact" value={grn.supplier?.contact_person || "Not provided"} muted={!grn.supplier?.contact_person} />
                 <Field label="Phone" value={formatPhone(grn.supplier?.phone) || "Not provided"} muted={!grn.supplier?.phone} mono={!!grn.supplier?.phone} />
                 <Field label="Email" value={grn.supplier?.email || "Not provided"} muted={!grn.supplier?.email} />
-                <Field label="Address" value={grn.supplier?.address || "—"} muted={!grn.supplier?.address} />
+                <Field label="Address" value={grn.supplier?.address || "Not provided"} muted={!grn.supplier?.address} />
               </div>
             </Section>
 
@@ -787,7 +787,7 @@ function GoodsReceivedDetailV2ReadOnly() {
 
               <AsideCard title="Key dates">
                 <KeyDateRow k="Received" v={fmtDate(grn.received_at)} />
-                {grn.posted_at && <KeyDateRow k="Posted" v={fmtDate(grn.posted_at)} />}
+                {grn.posted_at && <KeyDateRow k="Submitted" v={fmtDate(grn.posted_at)} />}
                 {grn.cancelled_at && <KeyDateRow k="Cancelled" v={fmtDate(grn.cancelled_at)} />}
               </AsideCard>
 
@@ -796,6 +796,11 @@ function GoodsReceivedDetailV2ReadOnly() {
                 {grn.supplier?.contact_person && (
                   <PersonRow initials={initialsOf(grn.supplier.contact_person)} name={grn.supplier.contact_person} role={formatPhone(grn.supplier.phone) || "Contact"} tone="neutral" />
                 )}
+              </AsideCard>
+              <AsideCard title="Recent activity">
+                {grn.cancelled_at && <ActivityRow title="Cancelled" meta={fmtDate(grn.cancelled_at)} dot="primary" />}
+                {grn.posted_at && <ActivityRow title="Submitted" meta={fmtDate(grn.posted_at)} dot={grn.cancelled_at ? "primary" : "success"} />}
+                <ActivityRow title="Created" meta={fmtDate(grn.created_at ?? grn.received_at)} dot="muted" isLast />
               </AsideCard>
             </div>
           </DetailAside>

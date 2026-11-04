@@ -1972,7 +1972,7 @@ export function MfgSalesOrdersListV2() {
       <div className="-mx-4 hidden pb-3 sm:-mx-6 md:block">
         <div className="px-4 sm:px-6">
           <PageHeader
-            eyebrow="Supply Chain"
+            eyebrow="Sales"
             title="Sales Orders"
             description={`Every ${shortCompanyName(branding.companyName)} sales order — Draft to Delivered. Click any row for the quick view; open the full page to edit.`}
             primaryAction={

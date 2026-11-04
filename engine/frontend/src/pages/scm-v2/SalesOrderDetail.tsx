@@ -3846,7 +3846,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
         !isEditing ? (
           /* A renovation order reads Order information, Customer, Delivery address: the order of the block Edit opens. */
           <>
-            <Section title="Order information">
+            <Section title="Order info">
               <RenovationSoOrderInfo docNo={header.doc_no} payment={header.payment_methods_summary || header.payment_method || null} />
             </Section>
             <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2 [&>section]:h-full">

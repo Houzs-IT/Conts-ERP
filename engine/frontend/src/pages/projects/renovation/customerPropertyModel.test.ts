@@ -76,8 +76,8 @@ describe("what is sent and what is missing", () => {
     expect(missingFields(fromProject(PROJECT)).size).toBe(0);
   });
 
-  test("dates read as day month year", () => {
-    expect(showDate("2026-10-20")).toBe("20 Oct 2026");
+  test("dates read as the numeric year-first rule", () => {
+    expect(showDate("2026-10-20")).toBe("2026/10/20");
     expect(showDate(null)).toBe("Not set");
   });
 });
@@ -118,7 +118,7 @@ describe("Start date / End date are read-only and come from the project (owner, 
     expect(projectDatesText(null, "project")).toMatchObject({ start: "Set when saved", end: "Set when Closed" });
   });
   test("a linked project: its created day, and its Closed day once it has one", () => {
-    expect(projectDatesText({ startDate: "2026-10-01", endDate: null }, "so")).toEqual({ start: "1 Oct 2026", end: "Set when Closed", startSet: true, endSet: false });
-    expect(projectDatesText({ startDate: "2026-10-01", endDate: "2026-10-15" }, "project")).toEqual({ start: "1 Oct 2026", end: "15 Oct 2026", startSet: true, endSet: true });
+    expect(projectDatesText({ startDate: "2026-10-01", endDate: null }, "so")).toEqual({ start: "2026/10/01", end: "Set when Closed", startSet: true, endSet: false });
+    expect(projectDatesText({ startDate: "2026-10-01", endDate: "2026-10-15" }, "project")).toEqual({ start: "2026/10/01", end: "2026/10/15", startSet: true, endSet: true });
   });
 });
