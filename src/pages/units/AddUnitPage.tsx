@@ -164,15 +164,20 @@ export default function AddUnitPage(): ReactElement {
   const last = step === 2;
   const nextLabel = last ? (createdId ? 'Save contract' : 'Add unit') : 'Next';
   const tabs = (
-    <nav aria-label="Add unit steps" className="flex gap-1.5 overflow-x-auto px-5 pt-5">
-      {STEPS.map((label, i) => (
-        <button key={label} type="button" aria-current={step === i ? 'step' : undefined} disabled={i > step}
-          onClick={() => setStep(stepAt(i))}
-          className={cx('h-9 max-md:h-11 px-3 flex-none rounded-control border border-solid text-copy whitespace-nowrap inline-flex items-center gap-1.5 disabled:cursor-default disabled:text-muted-ink',
-            i <= step && 'cursor-pointer', step === i ? 'bg-black text-white border-black' : 'bg-card text-ink border-line')}>
-          {i + 1}. {label}
-        </button>
-      ))}
+    <nav aria-label="Add unit steps" className="px-5 pt-5">
+      <p className="m-0 mb-2 text-meta text-muted-ink">Step {step + 1} of {STEPS.length}</p>
+      <ol className="m-0 p-0 list-none grid grid-cols-3 gap-2">
+        {STEPS.map((label, i) => (
+          <li key={label} className="min-w-0">
+            {/* A done step can be opened again; a later one only through Next, so its checks run. */}
+            <button type="button" aria-current={step === i ? 'step' : undefined} disabled={i > step} onClick={() => setStep(stepAt(i))}
+              className="w-full min-h-11 md:min-h-9 p-0 bg-transparent border-none text-left flex flex-col gap-1.5 enabled:cursor-pointer disabled:cursor-default">
+              <span aria-hidden className={cx('block h-1.5 w-full rounded-full', i <= step ? 'bg-ink' : 'bg-line')} />
+              <span className={cx('block truncate text-meta', step === i ? 'font-semibold text-ink' : i < step ? 'text-ink' : 'text-muted-ink')}>{label}</span>
+            </button>
+          </li>
+        ))}
+      </ol>
     </nav>
   );
 
@@ -287,8 +292,8 @@ export default function AddUnitPage(): ReactElement {
           )}
         </div>
       </Card>
-      {/* Outside the card: the card clips, which breaks sticky on phones. */}
-      <div className="max-md:sticky max-md:bottom-0 z-[2] flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-3 px-5 bg-card rounded-card [border:1px_solid_var(--color-line)] pb-[max(12px,env(safe-area-inset-bottom))] md:pb-3">
+      {/* In the flow, not sticky: a sticky bar floated over the boxes being filled on a phone. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-3 px-5 bg-card rounded-card [border:1px_solid_var(--color-line)]">
         {blocked && <p role="status" className={cx('m-0 w-full text-meta', tried[step] ? 'text-critical' : 'text-muted-ink')}>{blocked}</p>}
         <Button size="md" variant="secondary" className="max-md:min-h-11" disabled={step === 0} disabledReason="This is the first step" onClick={() => setStep(s => stepAt(s - 1))}>Back</Button>
         <Button size="md" variant="primary" className="max-md:min-h-11" loading={saving}
