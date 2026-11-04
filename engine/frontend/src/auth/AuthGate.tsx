@@ -45,7 +45,7 @@ function AuthSplash() {
     <div className="paper-grain flex min-h-screen items-center justify-center">
       <div className="font-display text-[12px] uppercase tracking-brand text-ink-muted">
         {hostDefaultCompanyCode() === HOUZS_COMPANY_CODE
-          ? "Houzs Century"
+          ? "The Conts"
           : shortCompanyName(
               defaultBrandingForCompany(hostDefaultCompanyCode()).companyName,
             )}{" "}

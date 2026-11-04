@@ -11,7 +11,7 @@ import {
  *  IS the case's company. HOUZS keeps its historic literal. */
 function surveyCompanyName(): string {
   return hostDefaultCompanyCode() === HOUZS_COMPANY_CODE
-    ? "Houzs Century Sdn. Bhd."
+    ? "The Conts Sdn Bhd"
     : defaultBrandingForCompany(hostDefaultCompanyCode()).companyName;
 }
 import { Star, CheckCircle2 } from "lucide-react";

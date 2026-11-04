@@ -31,11 +31,11 @@ export function PortalFrame({ children }: { children: ReactNode }) {
           <Link
             to="/track"
             className="flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 rounded"
-            aria-label="Houzs Century — service case tracking"
+            aria-label="The Conts — service case tracking"
           >
             <img
               src={LOGO_WORDMARK}
-              alt="Houzs Century"
+              alt="The Conts"
               className="h-8 w-auto max-w-[140px] object-contain sm:h-10 sm:max-w-[180px]"
               draggable={false}
             />

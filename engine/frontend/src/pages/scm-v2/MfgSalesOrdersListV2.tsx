@@ -1903,8 +1903,8 @@ export function MfgSalesOrdersListV2() {
          admin saved from the Columns panel still takes this seed's place. */
       {
         id: "so-houzs",
-        label: "Houzs Layout",
-        hint: "AutoCount: SALES ORDER DETAILS-SALES",
+        label: "Standard Layout",
+        hint: "One row per order line",
         companyCode: "HOUZS",
         isDefault: !is2990,
         columns: SO_AUTOCOUNT_KEYS,

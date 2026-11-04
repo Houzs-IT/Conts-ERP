@@ -421,7 +421,7 @@ export function PortalSupplierCasePage() {
       <section className="mt-5 rounded-lg border border-border bg-surface p-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-[13px] font-bold text-ink">Job progress</h2>
-          <span className="font-mono text-[10px] text-ink-muted">read-only · set by Houzs</span>
+          <span className="font-mono text-[10px] text-ink-muted">read-only · set by The Conts</span>
         </div>
         <div className="flex items-start">
           {SUPPLIER_STEPS.map((label, i) => {
@@ -563,11 +563,11 @@ export function PortalSupplierCasePage() {
       {/* Goods Returned Note — read-only, from Houzs */}
       <section className="mt-5 rounded-lg border border-border bg-surface p-5">
         <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
-          Goods Returned Note <span className="ml-1 normal-case tracking-normal text-ink-muted/70">from Houzs</span>
+          Goods Returned Note <span className="ml-1 normal-case tracking-normal text-ink-muted/70">from The Conts</span>
         </h2>
         <div className="whitespace-pre-line text-sm">
           {cs.goods_returned_note?.trim() || (
-            <span className="text-ink-muted">Houzs hasn't attached a send-out note for this job yet.</span>
+            <span className="text-ink-muted">The Conts hasn't attached a send-out note for this job yet.</span>
           )}
         </div>
       </section>
@@ -644,7 +644,7 @@ export function PortalSupplierCasePage() {
           value={remark}
           onChange={(e) => setRemark(e.target.value)}
           rows={3}
-          placeholder="One-off message sent to Houzs Operations on submit."
+          placeholder="One-off message sent to The Conts Operations on submit."
           className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
           maxLength={2000}
         />
@@ -668,7 +668,7 @@ export function PortalSupplierCasePage() {
       <section className="mt-5 flex items-center gap-3 rounded-lg border border-border bg-bg/60 p-4 print:hidden">
         <span className="shrink-0 text-[15px] text-ink-muted" aria-hidden>ⓘ</span>
         <p className="text-[12.5px] leading-relaxed text-ink-secondary">
-          The <b>stage is advanced by Houzs</b>, not the supplier. Your job here is to{" "}
+          The <b>stage is advanced by The Conts</b>, not the supplier. Your job here is to{" "}
           <b>upload photos</b> and <b>update the service note</b> — Houzs moves the case
           forward and verifies completion.
         </p>

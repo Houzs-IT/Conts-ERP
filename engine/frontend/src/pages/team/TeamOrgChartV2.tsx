@@ -76,7 +76,7 @@ export function TeamOrgChartV2() {
   const companies: CompanyOpt[] =
     companiesQ.data?.companies.length
       ? companiesQ.data.companies
-      : [{ id: 1, code: "HOUZS", name: "Houzs Century" }];
+      : [{ id: 1, code: "HOUZS", name: "The Conts" }];
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);

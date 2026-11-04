@@ -6995,7 +6995,7 @@ type PrintVariant = keyof typeof PRINT_VARIANTS;
    retail entity) for the cases where the difference matters. Applies to all
    three copies — customer, supplier and office. */
 const PRINT_ENTITIES = {
-  houzs: "Houzs",
+  houzs: "The Conts",
   "2990": "2990",
   both: "Both",
 } as const;

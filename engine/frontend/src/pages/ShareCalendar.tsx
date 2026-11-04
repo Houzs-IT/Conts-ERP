@@ -285,7 +285,7 @@ export function ShareCalendar({ mode }: { mode: ShareMode }) {
           if (!silent) {
             setError(
               res.status === 404
-                ? "This link is not valid. Please ask Houzs for a current link."
+                ? "This link is not valid. Please ask The Conts for a current link."
                 : "Could not load the schedule just now. Please try again in a moment.",
             );
           }
@@ -498,7 +498,7 @@ export function ShareCalendar({ mode }: { mode: ShareMode }) {
     return (
       <div className="flex min-h-screen items-center justify-center px-6">
         <div className="max-w-sm text-center">
-          <div className="text-lg font-semibold text-gray-800">Houzs Event Schedule</div>
+          <div className="text-lg font-semibold text-gray-800">The Conts Event Schedule</div>
           <p className="mt-2 text-sm text-gray-500">{error}</p>
         </div>
       </div>
@@ -517,7 +517,7 @@ export function ShareCalendar({ mode }: { mode: ShareMode }) {
     <div className="min-h-screen bg-[#0F766E]/5 text-gray-900">
       <div className="mx-auto max-w-5xl px-3 py-4 sm:px-5 sm:py-6">
         <div className="mb-4 min-w-0">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-[#0F766E]">Houzs Event Schedule</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-[#0F766E]">The Conts Event Schedule</div>
           <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">{party}</h1>
           <p className="mt-0.5 text-[12px] text-gray-500">
             {mode === "brand" ? "Confirmed events for your brand" : "Confirmed events you are in charge of"} · {eventCount} total · view-only
