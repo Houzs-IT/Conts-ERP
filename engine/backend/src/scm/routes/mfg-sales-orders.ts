@@ -168,6 +168,7 @@ import { recordSoAudit, diffFields, type FieldChange } from '../lib/so-audit';
    module header for the 2990-SO-2608-017 edit this existed to catch and did not). */
 import { soLineFieldChanges } from '../lib/so-line-audit-diff';
 import { buildAmendmentLineRows, LINE_BUILD_ERRORS } from '../lib/amendment-lines';
+import { receivedSpecRefusal, SPEC_LOCKED_ERROR, specLockedMessage } from '../lib/renovation-spec-lock';
 import { resolveAmendmentLaneSplit } from '../lib/amendment-lane-resolve';
 import { dropNoopAmendmentLines } from '../lib/amendment-noop-lines';
 // OCR self-learning: a DRAFT confirm is the review event the background scan
@@ -11198,6 +11199,10 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
      class as the salesperson_id stamp at ~2738). Fall back to the system row
      when the sync row is missing so the FK stays valid. */
   const requesterStaffId = (await resolveCallerStaffId(sb, c.get('houzsUser')?.id)) ?? user.id;
+
+  const specRefusal = await receivedSpecRefusal(sb, docNo, split.lanes.flatMap((k) => split.perLane[k].lines)).catch(() => undefined);
+  if (specRefusal === undefined) return c.json(LINE_BUILD_ERRORS.unreadable, 500);
+  if (specRefusal) return c.json({ error: SPEC_LOCKED_ERROR, reason: specLockedMessage(specRefusal.itemCode, specRefusal.poNumber) }, 409);
 
   /* One insert per lane present. Numbering stays a single /A{n} sequence per SO
      (a mixed submission mints /A3 and /A4). Everything is rolled back together

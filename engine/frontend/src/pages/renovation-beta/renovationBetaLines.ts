@@ -394,6 +394,12 @@ export function livePo(l: Pick<ManagedLine, "pos">): LinePo | null {
   return l.pos.find((p) => p.poStatus !== "CANCELLED") ?? null;
 }
 
+/** Goods received fix a line's SKU and options (owner, 4 Nov 2026); the server refuses too (renovation-spec-lock.ts). */
+export function specLocked(l: Pick<ManagedLine, "pos">): boolean {
+  return l.pos.some((p) => p.poStatus !== "CANCELLED" && p.received > 0);
+}
+export const SPEC_LOCKED_NOTE = "Goods received: the SKU and options are locked.";
+
 /** A line's dates. Processing (when to order) is always the line's own plan. Delivery is the PO line's once a PO
     holds it (changed on the PO), else the plan. */
 export function lineDates(l: ManagedLine): { orderOn: string | null; deliverOn: string | null; fromPo: LinePo | null } {

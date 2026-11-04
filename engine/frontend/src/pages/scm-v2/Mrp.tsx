@@ -669,14 +669,13 @@ export const Mrp = () => {
     }
   };
 
-  /* Proceed PO — gather the selected shortage lines (or all visible shortage
-     lines if none selected) and open the confirm dialog so the operator can
-     OPTIONALLY pick one Expected Delivery date for the whole batch. */
+  /* Proceed PO — gather the selected shortage lines and open the confirm dialog
+     so the operator can OPTIONALLY pick one Expected Delivery date for the whole
+     batch. Nothing ticked orders nothing (owner, 4 Nov 2026). */
   const onProceed = () => {
-    const onlySelected = selectedShortCount > 0;
     const { picks, orderedCodes, units } = view === 'sofa'
-      ? gatherSofa(shortageSkus, onlySelected)
-      : gatherShortages(shortageSkus, onlySelected);
+      ? gatherSofa(shortageSkus, true)
+      : gatherShortages(shortageSkus, true);
     if (picks.length === 0) {
       setDialog({ kind: 'info', title: 'Nothing to order', body: 'No uncovered (shortage) lines in the current selection / window.' });
       return;
@@ -939,21 +938,15 @@ export const Mrp = () => {
             type="button"
             variant="primary"
             icon={<ShoppingCart {...ICON} />}
-            disabled={createPos.isPending || shortCount === 0}
+            disabled={createPos.isPending || selectedShortCount === 0}
             onClick={onProceed}
             title={
-              selectedShortCount > 0 ? 'Order the selected SKUs'
-              : hasWindow ? `Order everything in ${windowLabel} as one batch`
-              : view === 'sofa' ? 'Order all sofa sets still to order' : 'Order all shortage SKUs'
+              selectedShortCount > 0 ? 'Order the selected SKUs' : 'Tick the lines to order first'
             }
           >
             {createPos.isPending
               ? 'Processing…'
-              : selectedShortCount > 0
-                ? `Proceed PO (${selectedShortCount})`
-                : hasWindow
-                  ? `Proceed PO · window (${shortCount})`
-                  : `Proceed PO (${shortCount})`}
+              : `Proceed PO (${selectedShortCount})`}
           </Button>
         }
       />

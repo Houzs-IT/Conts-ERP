@@ -34,7 +34,7 @@ import { BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
-  amountAfter, byAreaBlocks, byCategory, livePo, dateFixedReason, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
+  amountAfter, byAreaBlocks, byCategory, livePo, specLocked, SPEC_LOCKED_NOTE, dateFixedReason, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
   linesApi, linesCsv, picksSupplier, postVo, refusalText, withDate,
   contractLineEdits, postContractLines, variantsAfter, voBatches,
   type LineEdit, type LinesAnswer, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
@@ -586,8 +586,8 @@ function changed(r: RowCtx): LineEdit | null {
 function SkuCell(r: RowCtx): ReactElement {
   const e = changed(r);
   const code = e?.itemCode ?? r.l.itemCode;
-  if (!r.editable) {
-    return <span title={code}
+  if (!r.editable || specLocked(r.l)) {
+    return <span title={r.editable ? SPEC_LOCKED_NOTE : code}
       style={{ display: "block", fontFamily: "ui-monospace, monospace", fontSize: 12, ...ellipsis }}>{code}</span>;
   }
   return (
@@ -651,8 +651,8 @@ function VariantCell(r: RowCtx): ReactElement {
   const e = changed(r);
   const cat = r.l.variantCategory ?? "";
   const shown = e?.variants ? buildVariantSummary(cat, variantsAfter(r.l, e.variants)) || r.l.variantText || "" : r.l.variantText ?? "";
-  if (!r.editable || !hasVariantPickers(cat)) {
-    return shown ? <span title={shown} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{shown}</span> : <span style={metaStyle}>-</span>;
+  if (!r.editable || !hasVariantPickers(cat) || specLocked(r.l)) {
+    return shown ? <span title={r.editable && specLocked(r.l) ? SPEC_LOCKED_NOTE : shown} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{shown}</span> : <span style={metaStyle}>-</span>;
   }
   return (
     <button type="button" onClick={r.pickVariants} aria-label={`Change variants of ${r.l.itemCode}`} title={shown ? `${shown} (click to change)` : "Pick variants"}

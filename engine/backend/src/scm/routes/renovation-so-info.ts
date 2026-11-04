@@ -40,6 +40,7 @@ import { buildVariantSummary } from '../shared/variant-summary';
 import { variantCategoryOf } from '../lib/renovation-flow-rules';
 import { checkAllowedOptions, loadProductAndModel, variantCheckUnavailableResponse } from '../lib/allowed-options-check';
 import { lineEditsVo } from './renovation';
+import { SPEC_LOCKED_ERROR, specLockedMessage } from '../lib/renovation-spec-lock';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -290,6 +291,11 @@ renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
   /* The pickers offer only the Maintenance master's options for the SKU's model; the server holds the same line as the
      SO save does, so a value from anywhere else is refused (owner, 3 Nov 2026). A failed catalog read refuses too. */
   if (!sameOptions) {
+    const received = await db.prepare(
+      `SELECT po.po_number FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
+        WHERE pi.so_item_id::text = ? AND pi.received_qty > 0 AND po.status::text <> 'CANCELLED' LIMIT 1`,
+    ).bind(itemId).first<{ po_number: string }>();
+    if (received) return c.json({ error: SPEC_LOCKED_ERROR, message: specLockedMessage(line.item_code, received.po_number) }, 409);
     const { product, model, lookupError } = await loadProductAndModel(c.get('supabase'), line.item_code, line.company_id);
     if (lookupError) return c.json(variantCheckUnavailableResponse(lookupError), 409);
     const bad = checkAllowedOptions(product, model, variants as Parameters<typeof checkAllowedOptions>[2]);

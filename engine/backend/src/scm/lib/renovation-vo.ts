@@ -27,6 +27,7 @@ import { fmtSen } from '../shared/format';
 import { canonicalizeVariants } from '../shared/so-variant-rule';
 import { buildVariantSummary } from '../shared/variant-summary';
 import { variantCategoryOf } from './renovation-flow-rules';
+import { SPEC_LOCKED_ERROR, specLockedMessage } from './renovation-spec-lock';
 
 export type VoStatus = 'DRAFT' | 'SENT' | 'APPROVED' | 'CANCELLED';
 
@@ -391,11 +392,13 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
     if (e.qty !== undefined && (!Number.isInteger(e.qty) || e.qty < 1)) throw refuse(422, 'bad_qty', `"${t.description}": qty must be a whole number, 1 or more.`);
     if (e.unitPriceSen !== undefined && (!Number.isInteger(e.unitPriceSen) || e.unitPriceSen < 0)) throw refuse(422, 'bad_price', `"${t.description}": the price cannot be negative.`);
     const po = await db.q(
-      `select 1 from scm.purchase_order_items pi join scm.purchase_orders po on po.id = pi.purchase_order_id
-        where pi.so_item_id = $1 and po.status::text <> 'CANCELLED' limit 1`,
+      `select po.po_number, pi.received_qty from scm.purchase_order_items pi join scm.purchase_orders po on po.id = pi.purchase_order_id
+        where pi.so_item_id = $1 and po.status::text <> 'CANCELLED'`,
       [t.soItemId],
     );
     const code = e.itemCode?.trim();
+    const received = po.find((r) => Number(r.received_qty) > 0);
+    if (received && (e.variants !== undefined || (code && code !== t.itemCode))) throw refuse(409, SPEC_LOCKED_ERROR, specLockedMessage(t.itemCode ?? t.description, received.po_number));
     const out = quickVoLines(t, e, po.length > 0, code ? products.get(code) ?? null : null);
     if (!out) continue;
     if (out.omit) put(t.sectionHeading, out.omit);
