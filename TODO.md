@@ -581,3 +581,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Flow run 1 Nov, not yet run: DO from the contract, POD upload, PO PDF and send; native date boxes could not be driven remotely (dates set in the DB for the TEST lines).
 
 - Pricing holidays (PR feat/pricing-holidays): apply migration 0202 local, staging, then production; the owner checks the loaded 2026/2027 Malaysia holiday dates against the gazette (Islamic and lunar dates marked "Check date").
+
+- Engine database pool (owner, needs the Supabase or Cloudflare dashboard): the session pooler behind Hyperdrive allows 15 connections, the real ceiling behind the 504s; raise the pool size or point Hyperdrive at the transaction pooler (port 6543). #610 retries through bursts (0 of 96 reads failed, was 19 of 96) but does not raise the limit.
+
+- Engine deploy gap: a queued "Deploy engine to production" run is cancelled by a newer merge (#613's was) and the newer run publishes only what its own merge changed, so a server or screens change can be left unpublished. Make the run diff against the last successful deploy.
+
+- One SO interface, still different: read page and editor are two components (same order and wording, not the same markup); phones keep MobileSODetail and the stand-alone contract page; the editor counts cancelled lines (Line Items 6 against 4 on TC-SO-2611-001).

@@ -495,7 +495,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
             ))}
           </ul>
         </Card>
-        <div id="po-split" className="scroll-mt-20"><PoSplitCard c={k} canSplit={live && can('scm.renovation.po_split')} /></div>
+        <div id="po-split" className="scroll-mt-48"><PoSplitCard c={k} canSplit={live && can('scm.renovation.po_split')} /></div>
       </div>
       {(flags.data?.flags.length ?? 0) > 0 && (
         <Card title={`PO lines to amend or cancel (${flags.data!.flags.filter((f) => f.status === 'OPEN').length} open)`}>
