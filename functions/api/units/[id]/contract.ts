@@ -10,6 +10,18 @@ import { purposeReady, codesFor, codeOf, isContractCode, CODE_MODEL, CODE_LABEL,
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
+/** An owner_contracts row in the History panel's words (money in sen, dates as YYYY-MM-DD). */
+function termsOf(r: Record<string, unknown>): Record<string, unknown> {
+  const num = (v: unknown): number | null => (v === null || v === undefined || v === '' ? null : Number(v));
+  const day = (v: unknown): string | null => (v ? String(v).slice(0, 10) : null);
+  return {
+    contractCode: r.contract_code ?? null, revenueModel: r.revenue_model ?? null,
+    fee: num(r.management_fee_pct), agentPct: num(r.agent_fee_pct), agentName: r.agent_name ?? null,
+    rent: num(r.grr_amount), guarantee: num(r.minimum_guarantee), yearlyGuarantee: num(r.minimum_guarantee_annual),
+    tenantName: r.tenant_name ?? null, startsOn: day(r.starts_on), endsOn: day(r.ends_on), renewsOn: day(r.renews_on),
+  };
+}
+
 async function unitOf(env: Env, id: string) {
   const ready = await purposeReady(env);
   return one<any>(env, `
@@ -126,8 +138,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   }
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: mode === 'new' ? 'contract.renew' : 'contract.update', entityTable: 'owner_contracts', entityId: contractId,
-    before: cur ? { id: cur.id, revenueModel: cur.revenue_model, model: cur.model, fee: cur.management_fee_pct, rent: cur.grr_amount, guarantee: cur.minimum_guarantee } : null,
-    after: { unitId: id, revenueModel: c.revenue_model, fee: c.management_fee_pct, rent: c.grr_amount, guarantee: c.minimum_guarantee, startsOn: c.starts_on, splitFrom: shared ? cur?.id : undefined },
+    // The terms as the History panel reads them, before and after; an update keeps what the request left out.
+    before: cur ? termsOf(cur) : null,
+    after: { unitId: id, ...termsOf(cur && mode === 'update' ? { ...cur, ...c } : c), splitFrom: shared ? cur?.id : undefined },
   });
   return json({ id: contractId, revenueModel: c.revenue_model, label: MODEL_LABEL[c.revenue_model], split: !!(cur && shared && mode === 'update') });
 };

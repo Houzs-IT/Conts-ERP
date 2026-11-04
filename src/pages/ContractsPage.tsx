@@ -20,10 +20,14 @@ import { TONE, cx } from '../lib/design-tokens';
 import { useUrlState, usePhone, SearchBox } from './finance/listKit';
 import { FilterBar } from '../components/FilterBar';
 import { statusOf } from '../lib/status';
-import { CODES, CODE, codeName, type ContractCode } from '../lib/revenueModel';
+import { CODES, CODE, codeName, PURPOSES, PURPOSE_LABEL, type ContractCode, type UnitPurpose } from '../lib/revenueModel';
 import { CodeBadge } from './units/UnitExtras';
 import { ExtendContractModal } from './units/ContractExtras';
-import { CentreModal, Labeled, Select as FormSelect } from './units/shared';
+import { CentreModal, Labeled, Select as FormSelect, mayEditUnits } from './units/shared';
+import { useSession } from '../lib/session';
+import { Drawer } from '../components/Dialog';
+import { CloseButton } from '../components/CloseButton';
+import ContractTab from './units/ContractTab';
 
 type FeeModel = 'management' | 'grr';
 type ContractState = 'Active' | 'Ending soon' | 'Ended';
@@ -42,7 +46,7 @@ interface Contract {
   endsOn?: string | null;
   offerLetter: string | null;
   /** The staff's short code (PS, PS GRR, WH, ...) and the units this record is in force on (0125). */
-  contractCode?: ContractCode; units?: { id: string; label: string }[]; termsLabel?: string;
+  contractCode?: ContractCode; units?: { id: string; label: string; purpose?: UnitPurpose }[]; termsLabel?: string;
 }
 interface Payload { data: Contract[]; generatedAt: string }
 
@@ -78,6 +82,15 @@ const stateOf = (c: Contract): ContractState => {
 };
 const feeLabel = (c: Contract) => c.termsLabel ?? (
   c.model === 'grr' ? `GRR ${rm(c.grrAmount)}/mo` : `${c.managementFeePct}% operator share`);
+/** The purpose of the units the contract is in force on: one word when they agree, "Mixed" when not, null when none. */
+const purposeOf = (c: Contract): UnitPurpose | 'mixed' | null => {
+  const set = new Set((c.units ?? []).map(u => u.purpose ?? 'rental'));
+  return set.size === 0 ? null : set.size > 1 ? 'mixed' : [...set][0];
+};
+const purposeLabel = (c: Contract): string | null => {
+  const p = purposeOf(c);
+  return p === 'mixed' ? 'Mixed' : p ? PURPOSE_LABEL[p] : null;
+};
 const inDays = (d: number) => d === 0 ? 'ends today' : d > 0 ? `in ${d} ${d === 1 ? 'day' : 'days'}` : `${-d} ${d === -1 ? 'day' : 'days'} ago`;
 
 type FilterKey = 'all' | 'soon' | 'active' | 'ended';
@@ -95,7 +108,23 @@ export default function ContractsPage() {
   const phone = usePhone();
   const url = useUrlState();
   const [edits, setEdits] = useState<Record<string, Partial<Contract>>>({});
-  const [modal, setModal] = useState<null | { mode: 'add' } | { mode: 'edit'; id: string } | { mode: 'extend'; contract: Contract | null }>(null);
+  const [modal, setModal] = useState<null | { mode: 'add' } | { mode: 'edit'; id: string } | { mode: 'extend'; contract: Contract | null } | { mode: 'terms'; contract: Contract }>(null);
+  const { user } = useSession();
+  const canEditUnits = mayEditUnits(user);
+  const [savingPurpose, setSavingPurpose] = useState<string | null>(null);
+
+  /** Sets the purpose of every unit the contract is in force on. A unit on the channels is refused by the server. */
+  async function setPurpose(c: Contract, purpose: UnitPurpose): Promise<void> {
+    const todo = (c.units ?? []).filter(u => (u.purpose ?? 'rental') !== purpose);
+    if (!todo.length) return;
+    setSavingPurpose(c.id);
+    const results = await Promise.allSettled(todo.map(u => api.patch(`/units/${u.id}`, { purpose })));
+    setSavingPurpose(null);
+    const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [`${todo[i].label}: ${errorMessage(r.reason)}`] : []));
+    if (failed.length < todo.length) toast({ tone: 'success', title: `${plural(todo.length - failed.length, 'unit')} now ${PURPOSE_LABEL[purpose].toLowerCase()}.`, body: titleCase(c.ownerName) });
+    if (failed.length) toast({ tone: 'critical', title: 'Purpose not changed.', body: failed.join(' · ') });
+    reload();
+  }
 
   const filter: FilterKey = (['soon', 'active', 'ended'].includes(url.get('state')) ? url.get('state') : 'all') as FilterKey;
   const model = url.get('model');
@@ -178,6 +207,23 @@ export default function ContractsPage() {
     );
   };
 
+  // A tap or Enter on a control inside a row must not also open the owner (the row's own click).
+  const keepInRow = { onClick: (e: { stopPropagation: () => void }) => e.stopPropagation(), onKeyDown: (e: { stopPropagation: () => void }) => e.stopPropagation() };
+  const openTerms = (r: Contract) => setModal((r.units?.length ?? 0) > 0 ? { mode: 'terms', contract: r } : { mode: 'edit', id: r.id });
+  /** The purpose dropdown (plain text for those who cannot edit units); `md` on phone cards for a full-size tap target. */
+  const purposeControl = (r: Contract, size: 'sm' | 'md' = 'sm') => {
+    const p = purposeOf(r);
+    if (!p) return <span className="text-copy text-muted-ink">—</span>;
+    if (!canEditUnits) return <span className="text-copy">{purposeLabel(r)}</span>;
+    return (
+      <span {...keepInRow} className="block min-w-0">
+        <Select label={`Purpose of ${r.unitsLabel}`} size={size} value={p === 'mixed' ? '' : p} disabled={savingPurpose === r.id}
+          onChange={v => { if (v) void setPurpose(r, v as UnitPurpose); }}
+          options={[...(p === 'mixed' ? [{ value: '', label: 'Mixed' }] : []), ...PURPOSES.map(x => ({ value: x.value, label: x.label }))]} />
+      </span>
+    );
+  };
+
   const columns: Column<Contract>[] = [
     { key: 'owner', label: 'Owner', value: r => r.ownerName, hideable: false, width: 210,
       render: r => (
@@ -203,6 +249,10 @@ export default function ContractsPage() {
     { key: 'started', label: 'Started', type: 'date', value: r => r.startsOn, width: 110 },
     { key: 'ends', label: 'Ends', type: 'date', value: r => expiryOf(r), width: 140, title: 'The end date, or the renewal date when no end date is recorded.',
       render: r => <EndsCell r={r} /> },
+    // What the contract's units are for (staff, 4 Nov 2026: changed here, next to the package, not on the unit).
+    { key: 'purpose', label: 'Purpose', value: r => purposeLabel(r), width: 140, title: 'Rental units are sold on the channels; showroom and warehouse units never are.',
+      filter: { kind: 'select', options: [...PURPOSES.map(p => ({ value: p.label, label: p.label })), { value: 'Mixed', label: 'Mixed' }] },
+      render: r => purposeControl(r) },
     { key: 'endsOn', label: 'End date', type: 'date', value: r => r.endsOn ?? null, hidden: true },
     { key: 'renewsOn', label: 'Renews on', type: 'date', value: r => r.renewsOn, hidden: true },
     { key: 'offer', label: 'Offer letter', value: r => r.offerLetter, hidden: true, width: 180 },
@@ -217,7 +267,9 @@ export default function ContractsPage() {
           </button>
         )}
         <button
-          onClick={e => { e.stopPropagation(); setModal({ mode: 'edit', id: r.id }); }}
+          // A contract in force on units opens the unit's own contract editor (package, terms, dates); the older form is
+          // left for records not on any unit.
+          onClick={e => { e.stopPropagation(); openTerms(r); }}
           aria-label={`Edit contract for ${titleCase(r.ownerName)}`}
           className="grid place-items-center w-9 h-9 rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"
         >
@@ -298,6 +350,16 @@ export default function ContractsPage() {
                 <span className="text-meta font-medium inline-flex items-center gap-1.5"><CodeBadge code={r.contractCode} size="sm" />{feeLabel(r)}</span>
                 <EndsCell r={r} />
               </span>
+              {/* Phones have no Purpose column or pencil: the same two actions, on the card. */}
+              {purposeOf(r) && (
+                <span className="flex items-center gap-2 w-full pt-2">
+                  <span className="flex-1 min-w-0">{purposeControl(r, 'md')}</span>
+                  <span {...keepInRow} className="shrink-0">
+                    <Button size="md" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={() => openTerms(r)}
+                      aria-label={`Edit contract for ${titleCase(r.ownerName)}`}>Edit contract</Button>
+                  </span>
+                </span>
+              )}
             </span>
           );
         }}
@@ -306,6 +368,7 @@ export default function ContractsPage() {
       {modal?.mode === 'add' && <ContractModal onClose={() => setModal(null)} onSubmit={addContract} />}
       {modal?.mode === 'extend' && <ExtendFromList contract={modal.contract} rows={rows} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />}
       {modal?.mode === 'edit' && editing && <ContractModal existing={editing} onClose={() => setModal(null)} onSubmit={input => saveEdit(editing.id, input)} />}
+      {modal?.mode === 'terms' && <ContractDrawer contract={modal.contract} canEdit={canEditUnits} onClose={() => setModal(null)} onSaved={reload} />}
     </>
   );
 }
@@ -387,6 +450,32 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
       <OfferLetterField value={offerLetter} onChange={setOfferLetter} />
       {existing && <HistoryDisclosure entity="owner_contracts" id={existing.id} />}
     </Modal>
+  );
+}
+
+/** The unit's Contract tab in a side drawer, so the package and terms are changed from the Contracts list. A contract
+ *  in force on several units is changed one unit at a time, as on the unit (the server gives that unit its own copy). */
+function ContractDrawer({ contract, canEdit, onClose, onSaved }: { contract: Contract; canEdit: boolean; onClose: () => void; onSaved: () => void }) {
+  const units = contract.units ?? [];
+  const [unitId, setUnitId] = useState(units[0]?.id ?? '');
+  return (
+    <Drawer open onClose={onClose} width={920} labelledBy="contract-drawer-title">
+      <div className="flex items-start justify-between gap-3 px-6 pt-[22px] pb-3.5">
+        <div className="flex flex-col gap-1 min-w-0">
+          <h2 id="contract-drawer-title" className="m-0 text-[19px] font-semibold">Contract · {titleCase(contract.ownerName)}</h2>
+          {units.length === 1 && <span className="text-meta text-muted-ink">{units[0].label}</span>}
+        </div>
+        <CloseButton onClick={onClose} />
+      </div>
+      {units.length > 1 && (
+        <div className="px-6 pb-3 max-w-[420px]">
+          <Labeled label="Unit"><FormSelect label="Unit" value={unitId} onChange={setUnitId} options={units.map(u => ({ value: u.id, label: u.label }))} /></Labeled>
+        </div>
+      )}
+      <div className="px-6 pb-6 flex flex-col gap-4">
+        {unitId && <ContractTab key={unitId} unitId={unitId} canEdit={canEdit} onSaved={onSaved} />}
+      </div>
+    </Drawer>
   );
 }
 

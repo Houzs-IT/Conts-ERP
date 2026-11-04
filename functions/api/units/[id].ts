@@ -68,12 +68,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   await run(env, `
     UPDATE units SET property_id = ?, unit_number = ?, unit_code = COALESCE(?, unit_code), listing_name = COALESCE(?, listing_name), address = COALESCE(?, address),
-                     package = COALESCE(?, package), term = COALESCE(?, term), split_kind = COALESCE(?, split_kind), split_value = ?,
+                     package = COALESCE(?, package), term = COALESCE(?, term), split_kind = COALESCE(?, split_kind), split_value = CASE WHEN ? THEN ? ELSE split_value END,
                      guarantee_period = COALESCE(?, guarantee_period), bedrooms = COALESCE(?, bedrooms), bathrooms = COALESCE(?, bathrooms),
                      size_sqft = CASE WHEN ? THEN ? ELSE size_sqft END, layout_type = CASE WHEN ? THEN ? ELSE layout_type END, updated_at = ?
     WHERE id = ?`,
     propertyId, number, code ?? null, b.listingName ?? null, b.address ?? null, b.pkg ?? null, b.term ?? null, b.split ?? null,
-    b.splitValue === undefined ? null : b.splitValue, b.guaranteePeriod ?? null, b.bedrooms ?? null, b.bathrooms ?? null,
+    b.splitValue !== undefined, b.splitValue ?? null, b.guaranteePeriod ?? null, b.bedrooms ?? null, b.bathrooms ?? null,
     b.sizeSqft !== undefined, b.sizeSqft ?? null, b.layoutType !== undefined, b.layoutType ?? null, now, id);
   if (target) await run(env, 'UPDATE units SET property_id = ?, updated_at = ? WHERE parent_unit_id = ?', propertyId, now, id);
   if (ready && (purpose || b.usedBy !== undefined || b.beds !== undefined)) {

@@ -3,7 +3,7 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/d
 import { requireSession } from '../../_lib/auth';
 import { type ContractInput, normalise, invalidContract } from '../../_lib/contracts';
 import { modelOf } from '../../_lib/revenueModel';
-import { codeOf } from '../../_lib/unitPurpose';
+import { codeOf, purposeReady } from '../../_lib/unitPurpose';
 import { contractView } from '../../_lib/unitContract';
 
 const READ_ROLES = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
@@ -14,6 +14,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   const ownerScoped = session.role === 'owner';
   if (!maySee(session, READ_ROLES) && !ownerScoped) return fail('FORBIDDEN', 'Contracts are visible to operations, finance and management.', 403);
+  const ready = await purposeReady(env);
 
   const rows = await all<any>(env, `
     SELECT c.*, o.display_name,
@@ -22,7 +23,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
             WHERE u.contract_id = c.id OR (u.owner_id = c.owner_id AND u.contract_id IS NULL)) AS units_label,
            (SELECT COUNT(*) FROM units u WHERE u.contract_id = c.id OR (u.owner_id = c.owner_id AND u.contract_id IS NULL)) AS unit_count,
            -- The units this record is in force on, for Extend (a renewal is per unit).
-           (SELECT json_agg(json_build_object('id', u.id, 'label', p.name || ' ' || u.unit_number) ORDER BY p.name, u.unit_number)
+           (SELECT json_agg(json_build_object('id', u.id, 'label', p.name || ' ' || u.unit_number, 'purpose', ${ready ? 'u.purpose' : "'rental'"}) ORDER BY p.name, u.unit_number)
             FROM units u JOIN properties p ON p.id = u.property_id WHERE u.contract_id = c.id) AS in_force_units,
            (SELECT MIN(u.package) FROM units u WHERE u.contract_id = c.id) AS package
     FROM owner_contracts c JOIN owners o ON o.id = c.owner_id
