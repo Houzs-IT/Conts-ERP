@@ -7,7 +7,8 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactEle
 import { ImageOff, Search } from "lucide-react";
 import { resolveApiAssetUrl } from "../../components/scm-v2/PhotoGallery";
 import { useRenovationSkus } from "../../vendor/scm/lib/mfg-products-queries";
-import { RENOVATION_GROUPS, type CatalogGroup } from "../../vendor/shared/renovation-catalog";
+import type { CatalogGroup } from "../../vendor/shared/renovation-catalog";
+import { mfgCategoryLabel } from "../../vendor/shared/product-categories";
 import { useRenovationCatalog } from "../../vendor/scm/lib/renovation-catalog-queries";
 import { money } from "../projects/renovation/renovationModel";
 import { WS, WsDialog, WsFilterPill, inputStyle } from "./BetaWsUi";
@@ -28,7 +29,7 @@ export function BetaSkuPicker({ current, onPick, onClose }: { current: string; o
   const q = useRenovationSkus({});
   const catalog = useRenovationCatalog();
   const all = useMemo(() => (q.data ?? []) as PickRow[], [q.data]);
-  const groups = useMemo(() => pickGroups(all, current), [all, current]);
+  const groups = useMemo(() => pickGroups(all, current, catalog.groups), [all, current, catalog.groups]);
   const [search, setSearch] = useState("");
   const [group, setGroup] = useState<CatalogGroup | null | undefined>(undefined);
   const [active, setActive] = useState(0);
@@ -53,7 +54,7 @@ export function BetaSkuPicker({ current, onPick, onClose }: { current: string; o
   };
   const groupLabel = (r: PickRow): string => {
     const g = groupOfRow(r);
-    return [g ? RENOVATION_GROUPS.find((d) => d.code === g)?.label : null, catalog.label(r.sub_category ?? null) || null].filter(Boolean).join(" · ");
+    return [g ? mfgCategoryLabel(g) : null, catalog.label(r.sub_category ?? null) || null].filter(Boolean).join(" · ");
   };
 
   return (

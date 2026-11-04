@@ -32,6 +32,7 @@ import { adjustmentReasonLabel, fmtSen, fmtDate, fmtDateTime, fmtQty, formatVari
 import { DataTable, type Column } from '../../components/DataTable';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import { mfgCategoryLabel } from '../../vendor/shared/product-categories';
+import { useCategoryOptions } from '../../vendor/scm/lib/renovation-catalog-queries';
 import {
   useWarehouses,
   useInventoryProductTotals,
@@ -91,16 +92,7 @@ const BANNER_ERR =
   'rounded-lg border border-err/40 bg-err/10 px-4 py-3 text-[13px] text-err';
 
 type Tab = 'balances' | 'batches' | 'reservations' | 'warehouses' | 'analytics';
-type Category = 'all' | 'ACCESSORY' | 'BEDFRAME' | 'SOFA' | 'MATTRESS' | 'SERVICE';
-
-const CATEGORIES: { value: Category; label: string }[] = [
-  { value: 'all',       label: 'All' },
-  { value: 'ACCESSORY', label: 'Accessory' },
-  { value: 'BEDFRAME',  label: 'Bedframe' },
-  { value: 'SOFA',      label: 'Sofa' },
-  { value: 'MATTRESS',  label: 'Mattress' },
-  { value: 'SERVICE',   label: 'Service' },
-];
+type Category = string; // 'all', or a code of the master list
 
 const fmtRm = (sen: number | null | undefined): string => fmtSen(sen);
 
@@ -137,6 +129,7 @@ export const Inventory = () => {
   const [tab, setTab] = useState<Tab>('balances');
   const [warehouseId, setWarehouseId] = useState<string | null>(null);
   const [category, setCategory] = useState<Category>('all');
+  const categoryOptions = useCategoryOptions();
   const [search, setSearch] = useState('');
 
   const warehouses = useWarehouses();
@@ -184,7 +177,7 @@ export const Inventory = () => {
       {/* Category chips — only for Balances tab */}
       {tab === 'balances' && (
         <div className={styles.warehouseChips}>
-          {CATEGORIES.map((cat) => (
+          {[{ value: 'all', label: 'All' }, ...categoryOptions].map((cat) => (
             <button key={cat.value} type="button" className={styles.chip}
               data-active={category === cat.value} onClick={() => setCategory(cat.value)}>
               {cat.label}

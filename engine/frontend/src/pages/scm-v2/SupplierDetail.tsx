@@ -99,6 +99,7 @@ import { statusLabel } from '../../vendor/scm/lib/status-pill';
 import { DateField } from '../../vendor/scm/components/DateField';
 import { SupplierControl } from '../../conts/SupplierControl';
 import { scmListReturnTo } from '../../lib/scmListReturn';
+import { useCategoryOptions } from '../../vendor/scm/lib/renovation-catalog-queries';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
@@ -2567,15 +2568,6 @@ const PhoneEditField = ({
    where one Model genuinely needs different supplier codes per size variant.
    ════════════════════════════════════════════════════════════════════════ */
 
-const MODEL_CATEGORY_CHIPS: { value: 'all' | MfgCategory; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'BEDFRAME', label: 'Bedframe' },
-  { value: 'SOFA', label: 'Sofa' },
-  { value: 'MATTRESS', label: 'Mattress' },
-  { value: 'ACCESSORY', label: 'Accessory' },
-  { value: 'SERVICE', label: 'Service' },
-];
-
 type ModelDraft = {
   modelId: string;
   modelCode: string;
@@ -2629,9 +2621,10 @@ const ModelSkuPickerDialog = ({
   // PR #208 — seed the category chip from the supplier's category. Commander
   // can still flip to "All" if they need to bind a Model from another category
   // (rare — flagged by the chip row staying visible).
-  const initialCategory: 'all' | MfgCategory =
+  const categoryOptions = useCategoryOptions();
+  const initialCategory: string =
     mfgCategoryFromSupplierCategory(supplierCategory) ?? 'all';
-  const [category, setCategory] = useState<'all' | MfgCategory>(initialCategory);
+  const [category, setCategory] = useState<string>(initialCategory);
   const [search, setSearch] = useState('');
   const [advanced, setAdvanced] = useState(false);
 
@@ -2640,10 +2633,10 @@ const ModelSkuPickerDialog = ({
   // per Model without N round-trips). Both queries are short-listed —
   // 2990's catalogue has < a few hundred Models / SKUs.
   const modelsQ = useProductModels(
-    category === 'all' ? undefined : { category },
+    category === 'all' ? undefined : { category: category as MfgCategory },
   );
   const productsQ = useMfgProducts(
-    category === 'all' ? undefined : { category },
+    category === 'all' ? undefined : { category: category as MfgCategory },
   );
 
   /* Index SKUs by model_id so we can compute count + already-bound per Model
@@ -2859,7 +2852,7 @@ const ModelSkuPickerDialog = ({
           <>
             <div className={styles.modalBody} style={{ paddingBottom: 'var(--space-3)' }}>
               <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
-                {MODEL_CATEGORY_CHIPS.map((c) => (
+                {[{ value: 'all', label: 'All' }, ...categoryOptions].map((c) => (
                   <button
                     key={c.value}
                     type="button"
@@ -3185,15 +3178,6 @@ type MultiDraft = {
   isMainSupplier: boolean;
 };
 
-const CATEGORY_CHIPS: { value: 'all' | MfgCategory; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'BEDFRAME', label: 'Bedframe' },
-  { value: 'SOFA', label: 'Sofa' },
-  { value: 'MATTRESS', label: 'Mattress' },
-  { value: 'ACCESSORY', label: 'Accessory' },
-  { value: 'SERVICE', label: 'Service' },
-];
-
 /* Perf cap (parity with MobileSkuPicker / SalesOrderNewFromProducts #342) —
    never paint more than this many catalogue rows at once; the full active
    catalogue (~1141 SKUs) as clickable <tr> froze the modal on open + per
@@ -3212,7 +3196,8 @@ const MultiSkuPickerDialog = ({
   const batch = useCreateBindingsBatch();
   const notify = useNotify();
   const [step, setStep] = useState<1 | 2>(1);
-  const [category, setCategory] = useState<'all' | MfgCategory>('all');
+  const categoryOptions = useCategoryOptions();
+  const [category, setCategory] = useState<string>('all');
   const [search, setSearch] = useState('');
   /* Perf (parity with MobileSkuPicker / #342) — DEBOUNCE the search before it
      drives the server query, so a fast typist doesn't fire one
@@ -3226,7 +3211,7 @@ const MultiSkuPickerDialog = ({
   const trimmedSearch = debouncedSearch.trim();
   const gateOpen = trimmedSearch.length >= 2 || category !== 'all';
   const products = useMfgProducts({
-    category: category === 'all' ? undefined : category,
+    category: category === 'all' ? undefined : (category as MfgCategory),
     search: trimmedSearch || undefined,
     enabled: gateOpen,
   });
@@ -3314,7 +3299,7 @@ const MultiSkuPickerDialog = ({
           <>
             <div className={styles.modalBody} style={{ paddingBottom: 'var(--space-3)' }}>
               <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
-                {CATEGORY_CHIPS.map((c) => (
+                {[{ value: 'all', label: 'All' }, ...categoryOptions].map((c) => (
                   <button
                     key={c.value}
                     type="button"

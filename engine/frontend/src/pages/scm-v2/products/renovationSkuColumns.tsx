@@ -5,12 +5,13 @@ import { ImageOff } from 'lucide-react';
 import type { Column } from '../../../components/DataTable';
 import { resolveApiAssetUrl } from '../../../components/scm-v2/PhotoGallery';
 import type { MfgProductRow } from '../../../vendor/scm/lib/mfg-products-queries';
-import { RENOVATION_GROUPS, categoryGroupOf } from '../../../vendor/shared/renovation-catalog';
+import { categoryGroupOf } from '../../../vendor/shared/renovation-catalog';
+import { mfgCategoryLabel } from '../../../vendor/shared/product-categories';
 import { fmtSen } from '../../../vendor/shared/format';
 
 export const groupLabel = (row: Pick<MfgProductRow, 'category' | 'category_group'>): string => {
   const g = row.category_group ?? categoryGroupOf(row.category);
-  return RENOVATION_GROUPS.find((d) => d.code === g)?.label ?? String((row.category as string | null | undefined) ?? '');
+  return mfgCategoryLabel(g ?? (row.category as string | null | undefined));
 };
 
 export function SkuStatusBadge({ row }: { row: MfgProductRow }) {

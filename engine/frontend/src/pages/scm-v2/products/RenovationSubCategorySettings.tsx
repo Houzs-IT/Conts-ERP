@@ -9,7 +9,7 @@
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, X } from 'lucide-react';
 import { Button } from '../../../components/Button';
-import { FIXED_SUB_GROUPS, RENOVATION_GROUPS, isFixedSub, subCategoriesOf, type CatalogGroup, type SubCategoryDef } from '../../../vendor/shared/renovation-catalog';
+import { FIXED_SUB_GROUPS, isFixedSub, subCategoriesOf, type CatalogGroup, type SubCategoryDef } from '../../../vendor/shared/renovation-catalog';
 import { useAddSubCategory, useRenovationCatalog, useUpdateSubCategory } from '../../../vendor/scm/lib/renovation-catalog-queries';
 import styles from '../Products.module.css';
 
@@ -73,7 +73,7 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
               value={group}
               onChange={(e) => { setGroup(e.target.value as CatalogGroup); setError(null); }}
             >
-              {RENOVATION_GROUPS.map((g) => <option key={g.code} value={g.code}>{g.label}</option>)}
+              {catalog.groups.map((g) => <option key={g.code} value={g.code}>{g.label}</option>)}
             </select>
           </label>
 
@@ -81,7 +81,7 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
             {fixed
               ? 'Works trades follow the site stage order, so they cannot be changed here.'
               : catalog.canEdit
-                ? 'Hidden sub-categories stay on the SKUs that already have them, but cannot be picked for new ones. The groups themselves are fixed.'
+                ? 'Hidden sub-categories stay on the SKUs that already have them, but cannot be picked for new ones. A new group is added under Accounting > Item Groups.'
                 : 'You can view this list. Changing it needs permission to edit products.'}
           </p>
           {catalog.query.error && (
@@ -90,7 +90,7 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
             </p>
           )}
 
-          <ul className="divide-y divide-border rounded-md border border-border" aria-label={`${RENOVATION_GROUPS.find((g) => g.code === group)?.label} sub-categories`}>
+          <ul className="divide-y divide-border rounded-md border border-border" aria-label={`${catalog.groups.find((g) => g.code === group)?.label} sub-categories`}>
             {subs.map((s, i) => {
               const hidden = s.active === false;
               const rowEditable = editable && !isFixedSub(group, s.code);

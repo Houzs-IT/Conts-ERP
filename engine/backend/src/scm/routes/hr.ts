@@ -741,7 +741,7 @@ hr.get('/pickers', async (c) => {
      not a column — same three-state contract as GET /staff/pickable: no
      companies master -> degrade to the full roster; master but no active
      company -> fail closed to []. */
-  const [staffRes, showroomRes, productRes, fabricRes, specialRes] = await Promise.all([
+  const [staffRes, showroomRes, productRes, fabricRes, specialRes, categoryGroupRes] = await Promise.all([
     /* user_id is selected for the SCOPING, not for the response — it is the
        link scopeStaffRowsToActiveCompany derives the company from. Omit it and
        every row reads as UNLINKED, which the rule attributes to the 2990 mirror
@@ -756,8 +756,10 @@ hr.get('/pickers', async (c) => {
       sb.from('fabric_library').select('id, label').eq('company_id', co.companyId).order('label').range(from, to)),
     paginateAll<{ code: string; label: string }>((from, to) =>
       sb.from('special_addons').select('code, label').eq('company_id', co.companyId).order('label').range(from, to)),
+    paginateAll<{ code: string }>((from, to) =>
+      sb.from('product_category_groups').select('code').order('sort_order').range(from, to)),
   ]);
-  const firstErr = staffRes.error || showroomRes.error || productRes.error || fabricRes.error || specialRes.error;
+  const firstErr = staffRes.error || showroomRes.error || productRes.error || fabricRes.error || specialRes.error || categoryGroupRes.error;
   if (firstErr) return c.json({ error: 'fetch_failed', reason: firstErr.message }, 500);
 
   const { scoped: scopedStaff } = await scopeStaffRowsToActiveCompany(
@@ -772,8 +774,9 @@ hr.get('/pickers', async (c) => {
     /* Categories are the mfg_product_category ENUM, not a table — there is no
        row to read and no company scoping to apply. Imported from mfg-products so
        the picker cannot offer a value mfg_products.category could not hold; a
-       category rule is matched against exactly that column (kpi-units.ts). */
-    categories: MFG_PRODUCT_CATEGORIES.map((code) => ({ ref: code, label: code })),
+       category rule is matched against exactly that column (kpi-units.ts). A group
+       staff added at run time extended the enum too, so it comes from the master list. */
+    categories: [...new Set<string>([...MFG_PRODUCT_CATEGORIES, ...((categoryGroupRes.data ?? []) as Array<{ code: string }>).map((g) => g.code)])].map((code) => ({ ref: code, label: code })),
     fabrics: (fabricRes.data ?? []).map((f) => ({ ref: f.id, label: f.label })),
     specials: (specialRes.data ?? []).map((s) => ({ ref: s.code, label: s.label })),
   });

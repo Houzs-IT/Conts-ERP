@@ -1,7 +1,7 @@
 /* Group and sub-category chips for the renovation SKU Master (spec 2026-10-09
-   section 3). One row of the seven groups, and, once a group is picked, a row of
+   section 3). One row of the groups, and, once a group is picked, a row of
    its sub-categories. Same pill look as the Houzs category chips. */
-import { RENOVATION_GROUPS, type CatalogGroup } from '../../../vendor/shared/renovation-catalog';
+import type { CatalogGroup } from '../../../vendor/shared/renovation-catalog';
 import { useRenovationCatalog } from '../../../vendor/scm/lib/renovation-catalog-queries';
 
 /* Phone: one row that scrolls sideways, the cut-off chip at the edge showing there is more,
@@ -36,13 +36,13 @@ export function CatalogChips({
         <button type="button" className={chipClass(group === null)} aria-pressed={group === null} onClick={() => { onGroup(null); onSub(null); }}>
           All
         </button>
-        {RENOVATION_GROUPS.map((g) => (
+        {catalog.groups.map((g) => (
           <button
             key={g.code}
             type="button"
             className={chipClass(group === g.code)}
             aria-pressed={group === g.code}
-            onClick={() => { onGroup(g.code); onSub(null); }}
+            onClick={() => { onGroup(g.code as CatalogGroup); onSub(null); }}
           >
             {g.label}
           </button>
@@ -51,7 +51,7 @@ export function CatalogChips({
       {group && (
         <div role="group" aria-label="Sub-category" className={`${rowClass} border-l-2 border-primary/30 pl-2`}>
           <button type="button" className={chipClass(sub === null, true)} aria-pressed={sub === null} onClick={() => onSub(null)}>
-            All {RENOVATION_GROUPS.find((g) => g.code === group)?.label.toLowerCase()}
+            All {catalog.groups.find((g) => g.code === group)?.label.toLowerCase()}
           </button>
           {subs.map((s) => (
             <button key={s.code} type="button" className={chipClass(sub === s.code, true)} aria-pressed={sub === s.code} onClick={() => onSub(s.code)}>

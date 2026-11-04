@@ -4,10 +4,12 @@
    (shared/renovation-catalog.ts SUB_CATEGORIES), which is what the database
    starts with; the settings drawer shows the load error. Units (migration
    0118) arrive in the same response and fall back to UOMS the same way. */
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
-import { RENOVATION_GROUPS, SUB_CATEGORIES, UOMS, subCategoriesOf, uomPrintLabel, type CatalogGroup, type SubCategoryDef, type UomDef } from '../../shared/renovation-catalog';
+import { RENOVATION_GROUPS, SUB_CATEGORIES, UOMS, categoryMatches, rememberSubCategories, subCategoriesOf, uomPrintLabel, type CatalogGroup, type SubCategoryDef, type UomDef } from '../../shared/renovation-catalog';
+import { MFG_PRODUCT_CATEGORIES, liveCategoryRows, mfgCategoryLabel, rememberCategories } from '../../shared/product-categories';
+import { CONTS_RENOVATION_CATALOG } from '../../../conts/catalog';
 
 type CatalogResponse = { groups?: Array<{ code: string; label: string; sort_order: number }>; subCategories: SubCategoryDef[]; uoms?: UomDef[]; canEdit: boolean };
 
@@ -23,6 +25,11 @@ export function useRenovationCatalog() {
   const uoms: readonly UomDef[] = q.data?.uoms ?? UOMS;
   /** The category groups with their names, in their order (product_category_groups). */
   const groups: ReadonlyArray<{ code: string; label: string }> = q.data?.groups ?? RENOVATION_GROUPS;
+  /* Pure label and group lookups have no hook of their own; they read what was last loaded here. */
+  useEffect(() => {
+    if (q.data?.groups) rememberCategories(q.data.groups);
+    if (q.data?.subCategories) rememberSubCategories(q.data.subCategories);
+  }, [q.data]);
   const read = useMemo(() => ({
     /** What a picker offers: the group's shown sub-categories, plus `keep` when a SKU already carries a hidden one. */
     pickable: (group: CatalogGroup, keep?: string | null) =>
@@ -33,6 +40,45 @@ export function useRenovationCatalog() {
     uomPrint: (code: string | null | undefined): string => uomPrintLabel(code, uoms),
   }), [all, uoms]);
   return { query: q, all, uoms, groups, canEdit: q.data?.canEdit ?? false, ...read };
+}
+
+/** The categories a filter or picker offers: the master list, or on a Houzs build the enum list.
+    A stored legacy category (SOFA) falls under its group, so pair a client filter with categoryMatches. */
+export function useCategoryOptions(): Array<{ value: string; label: string }> {
+  const { groups } = useRenovationCatalog();
+  return useMemo(
+    () => (CONTS_RENOVATION_CATALOG
+      ? groups.map((g) => ({ value: g.code, label: g.label }))
+      : MFG_PRODUCT_CATEGORIES.map((c) => ({ value: c as string, label: mfgCategoryLabel(c) }))),
+    [groups],
+  );
+}
+
+/** The same list without a hook, for a static screen config; a caller that needs the fresh list also mounts useRenovationCatalog. */
+export function categoryOptionsNow(): Array<{ value: string; label: string }> {
+  if (!CONTS_RENOVATION_CATALOG) return MFG_PRODUCT_CATEGORIES.map((c) => ({ value: c as string, label: mfgCategoryLabel(c) }));
+  const live = liveCategoryRows();
+  return (live.length > 0 ? live : RENOVATION_GROUPS).map((g) => ({ value: g.code, label: g.label }));
+}
+
+/** Filter options plus any value the rows carry that no option covers (a renovation line's item group RENOVATION),
+    so a row can always be reached. Pair with categoryMatches. */
+export function withRowCategories(
+  options: ReadonlyArray<{ value: string; label: string }>,
+  stored: ReadonlyArray<string | null | undefined>,
+): Array<{ value: string; label: string }> {
+  const out = [...options];
+  for (const raw of stored) {
+    const v = String(raw ?? '').trim();
+    if (v && !out.some((o) => categoryMatches(v, o.value))) out.push({ value: v, label: mfgCategoryLabel(v) });
+  }
+  return out;
+}
+
+/** Mounted once in the SCM shell so plain label lookups know the master list on every screen. Renders nothing. */
+export function CategoryMasterSync() {
+  useRenovationCatalog();
+  return null;
 }
 
 export function useAddSubCategory() {

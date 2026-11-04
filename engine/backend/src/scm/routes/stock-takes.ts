@@ -51,6 +51,7 @@ import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
 import { assertWarehouseInCompany } from '../lib/ref-in-company';
 import { recordEntityAudit, compactChanges, fieldChange, statusChange, assertAuditWritable, auditUnavailableBody, type FieldChange } from '../lib/entity-audit';
 import { resolveForcedUnitCostSen, type LotCostRow } from '../shared';
+import { categoriesInGroup } from '../shared/renovation-catalog';
 import {
   parseVarianceThresholds, findVarianceBreaches, formatVarianceRefusal,
   type VarianceLine,
@@ -158,7 +159,7 @@ const fetchScopedSkus = async (
     .select('item_code, product_name, category')
     .eq('warehouse_id', warehouseId), c);
   if (scopeType === 'CATEGORY' && scopeValue) {
-    q = q.eq('category', scopeValue);
+    q = q.in('category', categoriesInGroup(scopeValue));
   } else if (scopeType === 'CODE_PREFIX' && scopeValue) {
     q = q.ilike('item_code', `${scopeValue}%`);
   }
