@@ -180,12 +180,15 @@ export function ProjectName({ id }: { id: number | null | undefined }) {
   return <>{p ? projectLabel(p) : `Project ${id}`}</>;
 }
 
-export function ProjectPicker({ value, onChange, disabled, inputClass, placeholder = "Choose a project…", ariaLabel = "Project" }: {
+export function ProjectPicker({ value, onChange, disabled, inputClass, placeholder = "Choose a project…", ariaLabel = "Project", filter }: {
   value: number | null; onChange: (id: number | null) => void; disabled?: boolean; inputClass?: string; placeholder?: string; ariaLabel?: string;
+  /** Only the projects that fit (a renovation sub-department's own brand, SOP 1.1); the chosen one always shows. */
+  filter?: (p: ProjectOption) => boolean;
 }) {
   const q = useProjectOptions();
   const anchorRef = useRef<HTMLSpanElement>(null);
-  const all = (q.data?.projects ?? []) as PickProject[] & ProjectOption[];
+  const every = (q.data?.projects ?? []) as PickProject[] & ProjectOption[];
+  const all = useMemo(() => (filter ? every.filter((p) => p.id === value || filter(p as ProjectOption)) : every) as PickProject[] & ProjectOption[], [every, filter, value]);
   const chosen = value == null ? null : all.find((p) => p.id === value) ?? null;
   const [query, setQuery] = useState("");
   const groups = useMemo(() => projectRows(all, query), [all, query]);

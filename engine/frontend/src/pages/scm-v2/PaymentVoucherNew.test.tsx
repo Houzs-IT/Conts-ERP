@@ -29,6 +29,16 @@ vi.mock('../../conts/ProjectLimitField', () => ({
 }));
 vi.mock('../../vendor/scm/components/ConfirmDialog', () => ({ useConfirm: () => vi.fn(async () => true) }));
 /* The pickers' field is a combobox input, like the real one (it comes before the account on a line). */
+/* The sub-departments a line names (SOP 1.1; chew 4 Nov 2026). */
+vi.mock('../../conts/subDepartmentQueries', () => ({
+  useSubDepartments: () => ({ data: { subDepartments: [
+    { id: 's-gen', department: 'rental', name: 'Rental (general)', fixedKey: 'rental_general', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-cln', department: 'rental', name: 'Cleaning', fixedKey: null, staffDepartmentId: null, active: true, sort: 30 },
+    { id: 's-dc', department: 'supply', name: 'Renovation (Dream Crafter)', fixedKey: 'dreamcrafter', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-tc', department: 'supply', name: 'In-house Reno (The Conts)', fixedKey: 'theconts', staffDepartmentId: null, active: true, sort: 20 },
+    { id: 's-co', department: 'shared', name: 'Company', fixedKey: 'company', staffDepartmentId: null, active: true, sort: 10 },
+  ] } }),
+}));
 vi.mock('../../conts/Pickers', () => ({
   UnitPicker: ({ value, onChange, ariaLabel }: { value: string | null; onChange: (v: string | null) => void; ariaLabel: string }) => <input role="combobox" aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value || null)} />,
   ProjectPicker: ({ value, onChange, ariaLabel }: { value: number | null; onChange: (v: number | null) => void; ariaLabel: string }) => <input role="combobox" aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)} />,
@@ -408,7 +418,8 @@ describe('the plain Payment Voucher (/new)', () => {
     expect(screen.getByText(/2 scanned file\(s\) will be attached/)).toBeTruthy();
     expect(screen.getByText(/tnb-page-1\.pdf, tnb-page-2\.jpg/)).toBeTruthy();
 
-    /* The line starts on Company: nothing more to choose before it saves. */
+    /* The line names its department, then it saves. */
+    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 's-co' } });
     fireEvent.click(screen.getByText('Create Voucher'));
     await waitFor(() => expect(uploadPvAsync).toHaveBeenCalledTimes(2));
     /* AFTER the create, onto ITS id, in scan order — sort_no is print order. */
@@ -466,7 +477,8 @@ describe('the plain Payment Voucher (/new)', () => {
       }]}><PaymentVoucherNew /></MemoryRouter>,
     );
     expect(screen.getByText('F3 saves')).toBeTruthy();
-    /* The line starts on Company: nothing more to choose before it saves. */
+    /* The line names its department, then F3 saves. */
+    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 's-co' } });
     const f3 = new KeyboardEvent('keydown', { key: 'F3', cancelable: true, bubbles: true });
     window.dispatchEvent(f3);
     expect(f3.defaultPrevented).toBe(true);
@@ -605,98 +617,98 @@ describe('each line says what it is for', () => {
       } },
     }]}><PaymentVoucherNew /></MemoryRouter>,
   );
-  const forOf = (n: number) => screen.getByRole('radiogroup', { name: `Line ${n} for` });
-  const setFor = (n: number, label: 'Unit' | 'Project' | 'Company') => fireEvent.click(within(forOf(n)).getByRole('radio', { name: label }));
-  const checked = (n: number) => within(forOf(n)).getAllByRole('radio').find((r) => r.getAttribute('aria-checked') === 'true')?.textContent;
-  const tag = (n: number) => screen.getByLabelText(`Line ${n} department`).textContent;
+  /* SOP 1.1 (chew 4 Nov 2026): each line picks its sub-department; a renovation one may name its brand's project or none. */
+  const deptOf = (n: number) => screen.getByLabelText(`Line ${n} department`) as HTMLSelectElement;
+  const setDept = (n: number, id: string) => fireEvent.change(deptOf(n), { target: { value: id } });
+  const tag = (n: number) => screen.getByLabelText(`Line ${n} department tag`).textContent;
   const save = () => fireEvent.click(screen.getByText('Create Voucher').closest('button')!);
   const sent = () => mutateAsync.mock.calls[0]![0] as { lines: Array<Record<string, unknown>> } & Record<string, unknown>;
 
-  test('there is no For switch on the voucher; a line starts on Company and saves Shared with no unit or project', async () => {
+  test('there is no For switch; a line starts with no department and the save asks for one', async () => {
     mutateAsync.mockClear();
     scanned();
     expect(screen.queryByText('For *')).toBeNull();
-    expect(screen.queryByRole('radio', { name: 'Rental' })).toBeNull();
-    expect(screen.queryByRole('radio', { name: 'Mixed' })).toBeNull();
-    expect(screen.getByLabelText('Line 1 department').tagName).not.toBe('SELECT');
-    expect(checked(1)).toBe('Company');
+    expect(screen.queryByRole('radiogroup', { name: 'Line 1 for' })).toBeNull();
+    expect(deptOf(1).value).toBe('');
+    save();
+    expect(await screen.findByText('Pick the department')).toBeTruthy();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  test('Company saves Shared with no unit or project', async () => {
+    mutateAsync.mockClear();
+    scanned();
+    setDept(1, 's-co');
     expect(tag(1)).toBe('Company');
     save();
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
-    expect(sent().lines).toEqual([expect.objectContaining({ department: 'shared', unitId: null, projectId: null })]);
+    expect(sent().lines).toEqual([expect.objectContaining({ department: 'shared', subDepartmentId: 's-co', unitId: null, projectId: null })]);
     expect('projectId' in sent()).toBe(false);
   });
 
-  test('a Unit line with its unit saves Rental and the unit', async () => {
+  test('a Cleaning line with its unit saves Rental, the sub-department and the unit; without a unit it still saves', async () => {
     mutateAsync.mockClear();
     scanned();
-    setFor(1, 'Unit');
+    setDept(1, 's-cln');
     expect(tag(1)).toBe('Rental');
     fireEvent.change(screen.getByLabelText('Line 1 unit'), { target: { value: 'u-a31' } });
     save();
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
-    expect(sent().lines).toEqual([expect.objectContaining({ department: 'rental', unitId: 'u-a31', projectId: null })]);
-  });
-
-  test('a Unit line with no unit saves as a Rental general cost (SOP 3.2)', async () => {
+    expect(sent().lines).toEqual([expect.objectContaining({ department: 'rental', subDepartmentId: 's-cln', unitId: 'u-a31', projectId: null })]);
     mutateAsync.mockClear();
-    scanned();
-    setFor(1, 'Unit');
+    fireEvent.change(screen.getByLabelText('Line 1 unit'), { target: { value: '' } });
     save();
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
-    expect(sent().lines).toEqual([expect.objectContaining({ department: 'rental', unitId: null, projectId: null })]);
+    expect(sent().lines).toEqual([expect.objectContaining({ department: 'rental', subDepartmentId: 's-cln', unitId: null, projectId: null })]);
   });
 
-  test('saving a Project line with no project says "Pick the project"', async () => {
+  test('In-house Reno with no project saves: the brand\'s own cost', async () => {
     mutateAsync.mockClear();
     scanned();
-    setFor(1, 'Project');
+    setDept(1, 's-tc');
+    expect(tag(1)).toBe('Renovation');
     save();
-    expect(await screen.findByText('Pick the project')).toBeTruthy();
-    expect(mutateAsync).not.toHaveBeenCalled();
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    expect(sent().lines).toEqual([expect.objectContaining({ department: 'supply', subDepartmentId: 's-tc', unitId: null, projectId: null })]);
   });
 
-  test('two lines on two projects save both: a customer project is Renovation, an internal rental project is Rental', async () => {
+  test('two lines on two projects: a Dream Crafter project, and the company\'s own Rental project', async () => {
     mutateAsync.mockClear();
     scanned([{ description: 'TILES', amountSen: 10000 }, { description: 'PAINT', amountSen: 5000 }]);
-    setFor(1, 'Project');
-    expect(tag(1)).toBe('Renovation');
+    setDept(1, 's-dc');
     fireEvent.change(screen.getByLabelText('Line 1 project'), { target: { value: '7' } });
-    expect(tag(1)).toBe('Renovation');
-    setFor(2, 'Project');
+    setDept(2, 's-gen');
     fireEvent.change(screen.getByLabelText('Line 2 project'), { target: { value: '8' } });
     expect(tag(2)).toBe('Rental');
     save();
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
     expect(sent().lines).toEqual([
-      expect.objectContaining({ description: 'TILES', projectId: 7, department: 'supply', unitId: null }),
-      expect.objectContaining({ description: 'PAINT', projectId: 8, department: 'rental', unitId: null }),
+      expect.objectContaining({ description: 'TILES', subDepartmentId: 's-dc', projectId: 7, department: 'supply', unitId: null }),
+      expect.objectContaining({ description: 'PAINT', subDepartmentId: 's-gen', projectId: 8, department: 'rental', unitId: null }),
     ]);
     expect('projectId' in sent()).toBe(false);
   });
 
-  test('switching a line drops what no longer applies; a new line copies the line above', async () => {
+  test('a new line copies the line above; switching drops what no longer fits', async () => {
     mutateAsync.mockClear();
     scanned();
-    setFor(1, 'Unit');
+    setDept(1, 's-cln');
     fireEvent.change(screen.getByLabelText('Line 1 unit'), { target: { value: 'u-a31' } });
-    /* A new line takes Unit and the same unit. */
+    /* A new line takes Cleaning and the same unit. */
     fireEvent.keyDown(screen.getByLabelText('line 1 amount'), { key: 'Insert' });
-    expect(checked(2)).toBe('Unit');
+    expect(deptOf(2).value).toBe('s-cln');
     expect((screen.getByLabelText('Line 2 unit') as HTMLInputElement).value).toBe('u-a31');
     /* Insert still lands on the new line's account, not its unit field (that comes first on the line). */
     expect((document.activeElement as HTMLElement | null)?.getAttribute('aria-label')).not.toBe('Line 2 unit');
     expect((document.activeElement as HTMLElement | null)?.closest('[data-land]')).not.toBeNull();
-    /* Project, then back to Unit: the unit is gone. */
-    setFor(1, 'Project');
+    /* Renovation: the unit goes. */
+    setDept(1, 's-tc');
     expect(screen.queryByLabelText('Line 1 unit')).toBeNull();
-    setFor(1, 'Unit');
-    expect((screen.getByLabelText('Line 1 unit') as HTMLInputElement).value).toBe('');
-    setFor(1, 'Company');
+    setDept(1, 's-co');
     save();
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
     /* Line 2 has no account or amount, so only line 1 goes. */
-    expect(sent().lines).toEqual([expect.objectContaining({ department: 'shared', unitId: null, projectId: null })]);
+    expect(sent().lines).toEqual([expect.objectContaining({ department: 'shared', subDepartmentId: 's-co', unitId: null, projectId: null })]);
   });
 
   test('a copy carries each line\'s unit and project', async () => {
@@ -716,7 +728,6 @@ describe('each line says what it is for', () => {
     try {
       draw('/scm/payment-vouchers/new?copyFrom=pv-9');
       await waitFor(() => expect(screen.getByDisplayValue('Aircon')).toBeTruthy());
-      expect([checked(1), checked(2), checked(3)]).toEqual(['Unit', 'Project', 'Company']);
       save();
       await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
       expect(sent().lines).toEqual([
