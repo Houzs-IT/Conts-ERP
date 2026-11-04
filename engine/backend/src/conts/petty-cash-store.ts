@@ -22,7 +22,7 @@ export interface ReceiptRow {
   created_at: string;
 }
 export interface ReceiptLineRow {
-  id: string; receipt_id: string; department: string; unit_id: string | null; maintenance_issue_id: string | null;
+  id: string; receipt_id: string; department: string; unit_id: string | null; maintenance_issue_id: string | null; sub_department_id?: string | null;
   project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number;
 }
 

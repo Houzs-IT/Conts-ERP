@@ -53,7 +53,7 @@ type Row = Record<string, any>;
 const NO_PERM = (what: string) => ({ error: `You don't have permission to ${what}.` });
 
 const HEADER = 'id, company_id, invoice_number, supplier_id, supplier_invoice_ref, invoice_date, due_date, currency, exchange_rate, total_sen, paid_sen, status, notes, created_at, created_by, posted_at, posted_by, cancelled_at, cancelled_by';
-const LINE = 'id, line_no, description, debit_account_code, amount_sen, department, project_id';
+const LINE = 'id, line_no, description, debit_account_code, amount_sen, department, project_id, sub_department_id';
 
 /* Conts: each line's department (finance phase 1, spec 3.5); none is Supply chain. */
 type CleanLine = { description: string | null; code: string; amountSen: number; department: Department; projectId: number | null };
@@ -358,7 +358,7 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   if ('resp' in sup) return sup.resp;
   const { data: lineRows, error: lErr } = await scopeToCompany(sb.from('ap_invoice_lines').select(LINE).eq('invoice_id', inv.id), c).order('line_no');
   if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
-  const lines = (lineRows ?? []) as Array<{ description: string | null; debit_account_code: string; amount_sen: number; department?: string | null; project_id?: number | null }>;
+  const lines = (lineRows ?? []) as Array<{ description: string | null; debit_account_code: string; amount_sen: number; department?: string | null; project_id?: number | null; sub_department_id?: string | null }>;
   const roles = await resolveRoles(sb, co.companyId);
   const je = await postJournal(sb, {
     companyId: co.companyId,
@@ -367,7 +367,7 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
     sourceDocNo: String(inv.invoice_number),
     narration: `AP invoice ${inv.invoice_number} — ${sup.supplier.name ?? sup.supplier.code ?? 'supplier'}${after.supplier_invoice_ref ? ` (${after.supplier_invoice_ref})` : ''} — edited`,
     lines: apInvoiceLines(roles, { invoice_number: String(inv.invoice_number) }, sup.supplier,
-      lines.map((l) => ({ accountCode: l.debit_account_code, myrSen: Number(l.amount_sen), description: l.description, department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, projectId: l.project_id ?? null }))),
+      lines.map((l) => ({ accountCode: l.debit_account_code, myrSen: Number(l.amount_sen), description: l.description, department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, projectId: l.project_id ?? null, subDepartmentId: l.sub_department_id ?? null }))),
   });
   if (!je.ok) return c.json({ error: 'post_failed', status: je.status, reason: (je as { reason?: string }).reason ?? je.status }, 500);
   return c.json({ ok: true, invoice: after, reposted: true, jeNo: je.jeNo });
@@ -385,7 +385,7 @@ export const postApInvoiceHandler = async (c: any): Promise<Response> => {
   const sb = c.get('supabase');
   const { data: lineRows, error: lErr } = await scopeToCompany(sb.from('ap_invoice_lines').select(LINE).eq('invoice_id', inv.id), c).order('line_no');
   if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
-  const lines = (lineRows ?? []) as Array<{ description: string | null; debit_account_code: string; amount_sen: number; department?: string | null; project_id?: number | null }>;
+  const lines = (lineRows ?? []) as Array<{ description: string | null; debit_account_code: string; amount_sen: number; department?: string | null; project_id?: number | null; sub_department_id?: string | null }>;
   if (lines.length === 0) return c.json({ error: 'lines_required', message: 'This bill has no lines to post.' }, 400);
   const sup = await loadSupplier(c, String(inv.supplier_id));
   if ('resp' in sup) return sup.resp;
@@ -398,7 +398,7 @@ export const postApInvoiceHandler = async (c: any): Promise<Response> => {
     sourceDocNo: String(inv.invoice_number),
     narration: `AP invoice ${inv.invoice_number} — ${sup.supplier.name ?? sup.supplier.code ?? 'supplier'}${inv.supplier_invoice_ref ? ` (${inv.supplier_invoice_ref})` : ''}`,
     lines: apInvoiceLines(roles, { invoice_number: String(inv.invoice_number) }, sup.supplier,
-      lines.map((l) => ({ accountCode: l.debit_account_code, myrSen: Number(l.amount_sen), description: l.description, department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, projectId: l.project_id ?? null }))),
+      lines.map((l) => ({ accountCode: l.debit_account_code, myrSen: Number(l.amount_sen), description: l.description, department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, projectId: l.project_id ?? null, subDepartmentId: l.sub_department_id ?? null }))),
   });
   if (!je.ok) return c.json({ error: 'post_failed', status: je.status, reason: (je as { reason?: string }).reason ?? je.status }, 500);
 
