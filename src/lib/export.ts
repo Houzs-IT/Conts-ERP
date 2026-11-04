@@ -1,3 +1,4 @@
+import { csvSafe } from '../../engine/frontend/src/vendor/shared/format';
 /**
  * Table exports: CSV and Excel (.xlsx) written in the browser, no library. The .xlsx is the smallest file
  * Excel, Numbers and Google Sheets all open: one sheet, a bold frozen header with filter arrows, money as
@@ -10,10 +11,8 @@ export interface ExportColumn { label: string; kind: ExportKind }
 /** One cell: text, a number (money in sen), or an ISO date / timestamp string, matching the column kind. */
 export type ExportCell = string | number | null | undefined;
 
-/** A text cell a spreadsheet would run as a formula (=, +, -, @, tab or carriage return first) gets a leading apostrophe,
- *  so a guest named =HYPERLINK(...) shows as text instead of running when the file is opened. Plain numbers and phone
- *  numbers (+60 12-345 6789) are left alone. The .xlsx writer needs no guard: its text cells are never formulas. */
-export const csvSafe = (v: string) => (/^[=+\-@\t\r]/.test(v) && !/^[+-]?[\d\s().,-]+$/.test(v) ? `'${v}` : v);
+/** The formula guard is the engine's shared one. The .xlsx writer needs no guard: its text cells are never formulas. */
+export { csvSafe };
 
 const csvEsc = (v: string) => (/[",\r\n]/.test(v) || /^\s|\s$/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 

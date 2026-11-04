@@ -11,6 +11,7 @@ on:
     paths:
       - 'worker/**'
       - 'functions/_lib/**'
+      - 'engine/frontend/src/vendor/shared/format.ts'
       - 'wrangler.cron.toml'
       - 'scripts/cron-deploy.mjs'
       - 'package-lock.json'
