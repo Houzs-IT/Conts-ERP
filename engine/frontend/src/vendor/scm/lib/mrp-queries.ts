@@ -16,6 +16,9 @@ export type MrpAllocSource = 'stock' | 'po' | 'shortage';
 
 export type MrpLine = {
   soItemId: string;
+  /* A production order's raw material: soItemId is the material's id, soDocNo the production order's number. */
+  productionMaterialId?: string;
+  productionOrderId?: string;
   soDocNo: string;
   /* Canonical stored listing order within the SO (migration 0165) — the Sofa
      tab orders an SO's module rows by this so they read LHF → NA → RHF exactly

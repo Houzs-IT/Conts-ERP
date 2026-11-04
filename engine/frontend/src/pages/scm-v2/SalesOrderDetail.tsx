@@ -32,6 +32,7 @@ import { Button } from '../../components/Button';
 import { DataTable } from '../../components/DataTable';
 import { DATA_TABLE_LAYOUT_FAMILIES } from '../../components/dataTableLayoutFamilies';
 import { DetailAside, DetailGrid, DetailMain, Section } from '../../components/DetailLayout';
+import { ProductionOrderChips } from './ProductionOrderChips';
 import { coverageStateOf } from '../../components/coverage-state';
 import { useOpenPrintPreviewFromUrl, usePrintPreview } from '../../components/scm-v2/PrintPreviewModal';
 import { scmListReturnTo } from '../../lib/scmListReturn';
@@ -2151,7 +2152,7 @@ export const SalesOrderDetail = () => {
         meta={headerMeta}
         onBack={() => { void goBack(); }}
         /* mig 0324 — the hold marker sits BESIDE the status, never instead of it. */
-        chips={<HoldChip onHold={(header as { on_hold?: boolean | null }).on_hold} reason={(header as { hold_reason?: string | null }).hold_reason} />}
+        chips={<><HoldChip onHold={(header as { on_hold?: boolean | null }).on_hold} reason={(header as { hold_reason?: string | null }).hold_reason} /><ProductionOrderChips soDocNo={header.doc_no} /></>}
         actions={
           <>
             <Button variant="ghost" icon={<History size={14} />} onClick={() => setHistoryOpen(true)}>History</Button>

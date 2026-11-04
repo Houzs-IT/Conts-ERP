@@ -29,7 +29,7 @@ import { supabaseAuth } from '../middleware/auth';
 import { statusCapabilityRefusal, POD_STATES } from '../lib/do-status-capability';
 import { resolveDeliveryScope, scopeMatchesAssignment } from '../lib/deliveryScope';
 import { resolveCrewSeats } from '../lib/crew-seats';
-import { fetchDoCrewAssignment, doPodPhotoHandler } from './delivery-pod-context';
+import { fetchDoCrewAssignment, doPodPhotoHandler, productionProofKeys } from './delivery-pod-context';
 import { startTripIfPlanned } from './delivery-job-progress';
 import { claimPodPhotos } from '../lib/pod-photo-claim';
 import { revertDeliveryOrderHandler } from './delivery-order-revert';
@@ -2929,6 +2929,14 @@ deliveryOrdersMfg.get('/:id', async (c) => {
     const sp = (h.data as { salesperson_id?: number | string | null }).salesperson_id;
     if (await salesDocOutOfScope(sb, c.env, c.get('houzsUser')?.id, canViewAllSales(c), sp)) {
       return c.json({ error: 'not_found' }, 404);
+    }
+  }
+  /* The production order this DO came from: its progress photos are this DO's proof of delivery (owner, 4 Nov 2026). */
+  {
+    const proof = await productionProofKeys(sb, id);
+    if (proof.length) {
+      const head = h.data as unknown as { pod_photo_keys?: string[] | null; pod_r2_key?: string | null };
+      head.pod_photo_keys = [...(head.pod_photo_keys?.length ? head.pod_photo_keys : head.pod_r2_key ? [head.pod_r2_key] : []), ...proof];
     }
   }
   /* Tier 2 downstream-lock — stamp has_children so the DO Detail page can lock

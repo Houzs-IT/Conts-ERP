@@ -32,6 +32,7 @@ import {
 import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import { useAuth, isAdminLevel } from '../../vendor/scm/lib/auth';
 import { useCreatePosFromSoItems } from '../../vendor/scm/lib/suppliers-queries';
+import { createMaterialPos } from '../../vendor/scm/lib/production-order-queries';
 import { newIdempotencyKey } from '../../lib/idempotency';
 import { mrpViews, mrpCategoryOf, mrpGroupViews } from './mrp-views';
 import { poRequestBatches } from './mrp-po-batches';
@@ -449,6 +450,29 @@ export const Mrp = () => {
   ) => {
     if (picks.length === 0) {
       setDialog({ kind: 'info', title: 'Nothing to order', body: 'No uncovered (shortage) lines in the current selection / window.' });
+      return;
+    }
+    /* A production order's raw materials have no SO line, so they go to their own convert. It shares the run key rule. */
+    const materialIds = new Set((q.data?.skus ?? []).flatMap((s) => s.lines).filter((l) => l.productionMaterialId).map((l) => l.soItemId));
+    const materialPicks = picks.filter((p) => materialIds.has(p.soItemId));
+    if (materialPicks.length > 0) {
+      /* Safe to re-key on a retry: the server orders only what a material has no PO for yet. */
+      void createMaterialPos({
+        idempotencyKey: newIdempotencyKey(), mode: poMode, ...(expectedAt ? { expectedAt } : {}),
+        picks: materialPicks.map((p) => ({ materialId: p.soItemId, qty: p.qty, supplierId: p.supplierId })),
+      }).then((res) => {
+        setSelected(new Set());
+        /* The page reads a stored plan: regenerate it, or the lines just ordered still read short. */
+        regenerate.mutate(undefined, { onSettled: () => { void q.refetch(); } });
+        setDialog(res.total > 0
+          ? { kind: 'created', title: `Successfully created ${res.total} PO${res.total === 1 ? '' : 's'}`, body: res.created.map((p) => p.poNumber).join(', ') }
+          : { kind: 'info', title: 'Already ordered', body: 'These materials are already on a PO. The list has been refreshed.' });
+      }).catch((err: unknown) => {
+        const raw = err instanceof Error ? err.message : 'Something went wrong.';
+        setDialog(raw.includes('missing_bindings')
+          ? { kind: 'info', title: 'SKUs not bound to a supplier', body: 'Assign these raw materials a supplier first, then proceed.' }
+          : { kind: 'info', title: 'Order failed', body: raw });
+      });
       return;
     }
     /* Commander 2026-05-31 — supplier now travels PER PICK (the per-line
