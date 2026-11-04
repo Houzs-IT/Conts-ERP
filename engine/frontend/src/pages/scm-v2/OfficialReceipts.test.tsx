@@ -99,11 +99,14 @@ describe('the OR book', () => {
     await waitFor(() => expect(listPaths()).toContain(`/accounting/receipts?status=DRAFT&month=${mytMonth()}`));
   });
 
-  test('Print hands the ROW to the pdf (draft prints the watermark side)', async () => {
+  test('Print opens the shared preview, then hands the ROW to the pdf (draft prints the watermark side)', async () => {
     pdfMock.mockClear();
     draw();
     await waitFor(() => expect(screen.getByText('HCDraftOR-2609-002')).toBeTruthy());
     fireEvent.click(screen.getAllByText('Print')[0]!);
+    expect(await screen.findByRole('dialog', { name: 'Print preview' })).toBeTruthy();
+    expect(pdfMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Print now' }));
     await waitFor(() => expect(pdfMock).toHaveBeenCalledTimes(1));
     const [r, opts] = pdfMock.mock.calls[0]!;
     expect((r as { or_number: string }).or_number).toBe('HCDraftOR-2609-002');

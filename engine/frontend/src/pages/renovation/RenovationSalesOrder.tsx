@@ -482,6 +482,7 @@ export function RenovationSalesOrder() {
       <BillDialog c={k} inst={billing} onClose={() => setBilling(null)} />
       <CreditDialog c={k} open={crediting} onClose={() => setCrediting(false)} />
       <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="sales order" docNo={k.docNo} defaultFormat={k.header.printFormat}
+        rows={[{ label: "Customer", value: k.header.customerName || k.debtorName || "-" }]}
         build={(format) => buildPrintDoc({ kind: 'SALES_ORDER', docNo: k.docNo, format, brand, header: { ...k.header, customerName: k.header.customerName || k.debtorName, docDate: k.header.docDate ?? k.soDate /* eslint-disable-line @typescript-eslint/no-unnecessary-condition -- doc_date may be null on older SOs; fall back to the SO date */ }, sections: k.sections, instalments: k.instalments })} />
     </div>
   );
