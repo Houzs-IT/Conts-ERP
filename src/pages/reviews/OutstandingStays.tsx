@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { StatTile } from '../../components/Metric';
 import { Card } from '../../components/Card';
 import { DataTable, type Column } from '../../components/DataTable';
 import { PageControls } from '../../components/PageControls';
@@ -7,11 +8,12 @@ import { DateField } from '../../components/inputs/DateField';
 import { StaleBanner } from '../../components/DataState';
 import { useApi } from '../../lib/useApi';
 import { count, dateRange, plural } from '../../lib/format';
-import { cx, TONE } from '../../lib/design-tokens';
+import { cx } from '../../lib/design-tokens';
 import { channelLabel } from '../../components/ChannelMark';
 import { useUrlState, FilterSelect } from '../finance/listKit';
 import type { BookingChannel } from '../../lib/types';
 import type { PlaceRow } from './ReviewsOverview';
+const Tile = StatTile;
 
 interface Stay {
   reservationId: string; channel: BookingChannel; guestName: string; checkIn: string; checkOut: string; bookingRef: string | null;
@@ -26,16 +28,6 @@ interface Payload {
   data: Stay[];
 }
 const CHANNELS = [{ value: 'airbnb', label: 'Airbnb' }, { value: 'booking_com', label: 'Booking.com' }, { value: 'agoda', label: 'Agoda' }, { value: 'direct', label: 'Direct' }];
-
-function Tile({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: 'warning' }) {
-  return (
-    <div className={cx('rounded-card border border-solid p-4 flex flex-col gap-1.5 min-w-0', tone ? cx(TONE[tone].border, TONE[tone].bg) : 'border-line bg-card')}>
-      <span className={cx('text-[11px] font-semibold tracking-[0.12em] uppercase', tone ? TONE[tone].text : 'text-muted-ink')}>{label}</span>
-      <span className={cx('text-[26px] leading-none font-semibold tabular-nums', tone ? TONE[tone].text : 'text-ink')}>{value}</span>
-      {hint && <span className="text-meta text-muted-ink">{hint}</span>}
-    </div>
-  );
-}
 
 /** Outstanding tab: finished reservations that have not left a review, newest checkout first, with how many days
  *  ago the guest left. Past the channel's review window (src/lib/reviewRules.ts) a stay is "Window closed": it can

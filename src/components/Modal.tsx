@@ -93,11 +93,14 @@ export function DialogFrame({ label, onClose, busy, dirty, children, className, 
  * change everywhere (owner, 3 Nov 2026). Behaviour (focus, Escape, backdrop, keep-open when dirty) comes from DialogFrame.
  * The header and footer stay put and the body scrolls when the form is taller than the screen. Pass `onSubmit` to make
  * Enter submit: the body and footer then sit in one form, and a submit button in the footer triggers it.
+ * `body="flush"` drops the body padding for a list that runs edge to edge; `body="raw"` hands the space below the title
+ * to the children, who then bring their own form and footer. `layer="over"` sits above other dialogs (a decision opened
+ * from a dialog or the drawer).
  * ConfirmDialog is for yes/no confirmations; Drawer for side panels.
  */
-export function Modal({ title, sub, onClose, children, footer, width = 460, busy, dirty, onSubmit }: {
-  title: string; sub?: ReactNode; onClose: () => void; children: ReactNode; footer: ReactNode; width?: number;
-  busy?: boolean; dirty?: boolean; onSubmit?: () => void;
+export function Modal({ title, sub, onClose, children, footer, width = 460, busy, dirty, onSubmit, body = 'padded', layer }: {
+  title: string; sub?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; width?: number;
+  busy?: boolean; dirty?: boolean; onSubmit?: () => void; body?: 'padded' | 'flush' | 'raw'; layer?: 'over';
 }) {
   const inner = (
     <>
@@ -105,14 +108,15 @@ export function Modal({ title, sub, onClose, children, footer, width = 460, busy
         <h2 className="m-0 text-title leading-[1.3] font-semibold [text-wrap:pretty]">{title}</h2>
         {sub && <div className="m-0 text-copy leading-[1.5] text-muted-ink [text-wrap:pretty]">{sub}</div>}
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
-      <div className="flex-none py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">{footer}</div>
+      {body === 'raw' ? children : <div className={`flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col${body === 'flush' ? ' mt-3' : ' py-4 px-[22px] gap-[14px]'}`}>{children}</div>}
+      {footer != null && <div className="flex-none py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">{footer}</div>}
     </>
   );
   // Portalled to the page body: opened inside a drawer (which animates with a transform), a fixed overlay would
   // otherwise be pinned to the drawer instead of covering the screen.
   return createPortal(
     <DialogFrame label={title} onClose={onClose} busy={busy} dirty={dirty}
+      className={layer === 'over' ? 'fixed inset-0 z-[80] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]' : undefined}
       panelClassName="relative w-full max-h-[calc(100dvh-32px)] flex flex-col bg-card rounded-card overflow-hidden [box-shadow:var(--shadow-overlay)] [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]"
       panelStyle={{ maxWidth: width }}>
       {onSubmit

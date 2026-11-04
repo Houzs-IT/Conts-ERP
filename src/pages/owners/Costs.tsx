@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { DialogFrame } from '../../components/Modal';
+import { Modal } from '../../components/Modal';
 import { Card } from '../../components/Card';
 import { FileRow, FileDropRow } from '../../components/Attachments';
 import { Button } from '../../components/Button';
@@ -151,14 +151,14 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
 
   const already = picked?.expenseId && picked.amount != null ? picked : null;
   return (
-    <DialogFrame label="Add a bill" onClose={onClose} panelClassName="relative w-full max-w-[520px] max-h-[calc(100vh-32px)] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)]">
-        <div className="pt-[22px] px-[22px] pb-1 flex-none">
-          <h2 className="m-0 text-title font-semibold">Add a bill</h2>
-          <p className="mt-[5px] mb-0 text-copy text-muted-ink">{fee
+    <Modal title="Add a bill" width={520} onClose={onClose}
+      sub={fee
             ? 'The condo\'s maintenance fee, paid for the owner. The owner statement deducts it after the operator\'s share.'
-            : 'A bill or cost on the unit. The bill date decides its month; a utility bill for a month whose statement is already final goes on the next open statement.'}</p>
-        </div>
-        <div className="py-4 px-[22px] flex flex-col gap-[14px] overflow-y-auto min-h-0">
+            : 'A bill or cost on the unit. The bill date decides its month; a utility bill for a month whose statement is already final goes on the next open statement.'}
+      footer={<>
+          <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason={needsReceipt && !receipt && amount && validDay ? 'Attach the receipt: the owner pays this bill' : 'Pick the bill and enter the amount and bill date'} onClick={() => void save()}>Add bill</Button>
+      </>}>
           {units.length > 1 && <Select showLabel size="md" label="Unit" value={unitId} onChange={v => { setUnitId(v); setAccount(null); }} options={units.map(u => ({ value: u.id, label: titleCase(u.label) }))} />}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Select showLabel size="md" label="Bill" value={category} onChange={v => { setCategory(v); setAccount(null); }} options={kinds} />
@@ -189,12 +189,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
             {fields.receipt ? <span className="text-meta text-critical">{fields.receipt}</span>
               : needsReceipt && !receipt && <span className="text-meta text-muted-ink">The owner pays this bill, so its receipt goes with it.</span>}
           </div>}
-        </div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end flex-wrap gap-[9px] flex-none">
-          <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason={needsReceipt && !receipt && amount && validDay ? 'Attach the receipt: the owner pays this bill' : 'Pick the bill and enter the amount and bill date'} onClick={() => void save()}>Add bill</Button>
-        </div>
-      </DialogFrame>
+    </Modal>
   );
 }
 

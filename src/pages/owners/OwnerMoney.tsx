@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { DialogFrame } from '../../components/Modal';
+import { Modal } from '../../components/Modal';
 import PageHeader from '../../components/PageHeader';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
@@ -210,13 +210,14 @@ export function AdjustDialog({ target, busy, onClose, onSubmit }: {
 
 
   return (
-    <DialogFrame label="Adjust statement" onClose={onClose} busy={busy} panelClassName="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
-        <form onSubmit={e => { e.preventDefault(); if (valid && !busy) onSubmit(label.trim(), sen); }}>
-          <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-3">
-            <h2 className="m-0 text-title font-semibold">Adjust statement</h2>
-            <p className="m-0 text-[13px] leading-[1.55] text-muted-ink">
-              {target.ownerName} · {target.unitsLabel}. Adds a labelled line to the statement and rebalances the net payout. The gross, fee and expenses are unchanged.
-            </p>
+    <Modal title="Adjust statement" onClose={onClose} busy={busy} width={440} onSubmit={() => { if (valid && !busy) onSubmit(label.trim(), sen); }}
+      sub={<>{target.ownerName} · {target.unitsLabel}. Adds a labelled line to the statement and rebalances the net payout. The gross, fee and expenses are unchanged.</>}
+      footer={<>
+            <Button size="sm" variant="secondary" type="button" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button size="sm" variant="primary" type="submit" loading={busy} disabled={!valid} disabledReason="Add a description and a non-zero amount.">
+              Record adjustment
+            </Button>
+      </>}>
             <Field label="What is this adjustment for?" placeholder="e.g. Goodwill credit, prior-month correction" value={label} onChange={e => setLabel(e.target.value)} />
             <div className="flex flex-col gap-[7px]">
               <span className="text-[12px] font-medium text-muted-ink" aria-hidden>Direction</span>
@@ -228,14 +229,6 @@ export function AdjustDialog({ target, busy, onClose, onSubmit }: {
               <span className="text-muted-ink">Net Payout to Owner after adjustment</span>
               <span className="font-semibold tabular-nums">{rm(preview)}</span>
             </div>
-          </div>
-          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
-            <Button size="sm" variant="secondary" type="button" onClick={onClose} disabled={busy}>Cancel</Button>
-            <Button size="sm" variant="primary" type="submit" loading={busy} disabled={!valid} disabledReason="Add a description and a non-zero amount.">
-              Record adjustment
-            </Button>
-          </div>
-        </form>
-      </DialogFrame>
+    </Modal>
   );
 }
