@@ -71,7 +71,7 @@ export function ConvertSourceField({ sources: listed, value, onChange }: {
         {opts.map((s) => <option key={s.docNo} value={s.docNo}>{s.docNo} · {fmtSen(s.movableSen)} {s.keepSen > 0 ? 'can move' : 'left'}</option>)}
       </select>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
-        <input className="fld-i" value={picker.more} onChange={(e) => picker.setMore(e.target.value)} placeholder="Another order, e.g. 2990-SO-2607-024" aria-label="Another order"
+        <input className="fld-i" value={picker.more} onChange={(e) => picker.setMore(e.target.value)} placeholder="Another order, e.g. TC-SO-2607-024" aria-label="Another order"
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addAnother(); } }} />
         <button type="button" className="btn" disabled={picker.busy} onClick={() => void addAnother()}>Add</button>
       </div>

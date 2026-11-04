@@ -8421,7 +8421,7 @@ function ProjectSalesEntriesSection({
             <input
               value={qlRefNo}
               onChange={(ev) => setQlRefNo(ev.target.value)}
-              placeholder="Ref No (e.g. HC1234)"
+              placeholder="Ref No (e.g. TC1234)"
               className="rounded-md border border-amber-500/40 bg-surface px-2.5 py-1.5 font-mono text-[11.5px] outline-none focus:border-amber-500"
               onKeyDown={(ev) => {
                 if (ev.key === "Enter") saveQuickLog();

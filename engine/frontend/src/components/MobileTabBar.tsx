@@ -370,7 +370,7 @@ function MenuModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-2 border-t border-border bg-bg/40 px-4 py-2.5">
           <ShieldCheck size={11} className="text-accent" />
           <span className="font-mono text-[9.5px] uppercase tracking-brand text-ink-muted">
-            Houzs ERP
+            The Conts ERP
           </span>
         </div>
       </div>

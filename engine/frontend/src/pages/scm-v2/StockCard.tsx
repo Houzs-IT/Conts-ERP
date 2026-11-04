@@ -526,7 +526,7 @@ export const StockCard = () => {
                   <input
                     type="search"
                     className={styles.searchInput}
-                    placeholder="e.g. HC-DO-"
+                    placeholder="e.g. TC-DO-"
                     aria-label="Filter by source document"
                     value={movementFilter.sourceDoc}
                     onChange={(e) => setMovementFilter((f) => ({ ...f, sourceDoc: e.target.value }))}

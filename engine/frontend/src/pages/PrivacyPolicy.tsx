@@ -1,6 +1,6 @@
 /**
  * The privacy policy — the live URL the iOS App Store submission points at
- * (https://erp.houzscentury.com/privacy).
+ * (https://erp.theconts.com/privacy).
  *
  * A PUBLIC SPA surface, not a static file, and that is a lesson, not a
  * preference: Cloudflare Pages 308-canonicalises every `*.html` asset to its
@@ -58,14 +58,14 @@ export function PrivacyPolicy() {
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px 64px" }}>
         <h1 style={{ fontSize: 26, margin: "18px 0 4px" }}>Privacy Policy</h1>
         <p style={meta}>
-          Houzs ERP &middot; Houzs Century Sdn. Bhd. (202201031135 / 1476832-W) &middot; Last updated 6 August 2026
+          The Conts ERP &middot; The Conts Sdn Bhd (202301027399 / 1521322-V) &middot; Last updated 5 November 2026
         </p>
 
         <p style={p}>
-          Houzs ERP is an internal business application for the staff of Houzs Century Sdn. Bhd. and its
+          The Conts ERP is an internal business application for the staff of The Conts Sdn Bhd and its
           authorised partners (delivery carriers and dealers). It is not a consumer product. This page explains
           what personal data the application handles, why, and who can see it. It applies to the web application
-          at erp.houzscentury.com and to the Houzs ERP iOS application, which are the same system.
+          at erp.theconts.com and to the The Conts ERP iOS application, which are the same system.
         </p>
 
         <h2 style={h2}>What we collect and why</h2>
@@ -113,7 +113,7 @@ export function PrivacyPolicy() {
         <h2 style={h2}>Your rights</h2>
         <p style={p}>
           Under the Personal Data Protection Act 2010 (Malaysia) you may request access to, or correction of,
-          your personal data. Write to <a href="mailto:hello@houzscentury.com" style={{ color: "#2f6f68" }}>hello@houzscentury.com</a> or
+          your personal data. Write to <a href="mailto:help@theconts.com" style={{ color: "#2f6f68" }}>help@theconts.com</a> or
           to the address below. Because this is a workplace system, some records (for example audit trails and
           business documents) are kept as required by law or by legitimate business need even after such a
           request.
@@ -121,13 +121,9 @@ export function PrivacyPolicy() {
 
         <h2 style={h2}>Contact</h2>
         <p style={p}>
-          Houzs Century Sdn. Bhd.
+          The Conts Sdn Bhd
           <br />
-          42-1, Jalan Prima 2, Pusat Niaga Metro Prima Kepong,
-          <br />
-          52100 Kuala Lumpur, Malaysia
-          <br />
-          <a href="mailto:hello@houzscentury.com" style={{ color: "#2f6f68" }}>hello@houzscentury.com</a>
+          <a href="mailto:help@theconts.com" style={{ color: "#2f6f68" }}>help@theconts.com</a>
         </p>
 
         <p style={meta}>
