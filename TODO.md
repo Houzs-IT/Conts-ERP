@@ -116,7 +116,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 ## Renovation project screens (feat/reno-project-ux, migration 0111, 14 Oct 2026)
 - Done (14 Oct): migration 0111 applied on staging and production (lead); PR #245 merged. It adds project_attendees (backfilled from sales_person_id / designer_person_id), project_procurement_dates, project_design_notes and two columns on project_design_files. The engine deploys on merge, so the migration must be on production first.
 - Done (14 Oct, owner ruling): renovation projects show on the original Calendar (desktop and phone) from created date to planned handover; else actual handover, else SLA due date (project_types.sla_days, not a column yet), else 45 days marked "end estimated". Computed when read (services/renovation/calendarSpan.ts). The old Task calendar is no longer reachable from any menu.
-- Later: procurement dates (Procurement details) are meant to raise purchase orders automatically; nothing does yet (TODO(auto-PO) in engine/backend/src/services/renovation/procurement.ts).
+- Ruled out (owner, 3 Nov 2026): purchase orders are NOT raised automatically from the procurement dates (Procurement details); POs stay manual. The dates drive planning and the LATE flags only. Do not build auto-PO.
 - The create form still asks for Sales and Designer; both become Attending. Wiring it to Project PIC / Attending waits for feat/reno-customer-info (migration 0112).
 
 ## Renovation Project List and Calendar week (feat/reno-list-calendar, no migration, 15 Oct 2026)
@@ -502,7 +502,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Renovation document flow (feat/reno-doc-flow, migration 0116, 14 Oct 2026)
 - OPEN, before merge: apply migration 0116 on staging, then production (lead). It adds the quotation's property block, project / building / unit / room on DO and SI, project + category on PO, room + category on PO and GR lines, the copy triggers and the one-category-per-renovation-PO rule. Until it is applied the engine reads as before (every new read checks the columns first).
-- Next: raise POs automatically from the procurement dates (per category / sub-category PO date; expected = the delivery date). Not built.
+- Ruled out (owner, 3 Nov 2026): no automatic POs from the procurement dates; purchase orders stay manual.
 - Later: carry the onsite / 3D / 2D design files onto the project's POs, GRs and DOs.
 - The Houzs PO "Add line" screen shows a refused mixed-category line as a failed save (500 insert_failed with the sentence); a friendlier 409 would mean editing Houzs's PO route.
 - Field-by-field list: docs/superpowers/plans/2026-10-14-reno-doc-flow-fields.md. Check: scripts/api-checks/reno-doc-flow.mjs (needs a local Postgres + PostgREST behind the engine's SUPABASE_URL).
@@ -518,8 +518,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Service case looks up the project (feat/reno-service-project, no migration, 15 Oct 2026)
 - Renovation mode: the desktop New Service Case form picks a PROJECT (code, name, building / unit, customer, phone), fills the customer, phone, email and site address from it, stores project_id (migration 0081) and the project's newest SO as doc_no without asking; no Ref No; Product category is the renovation Category / Sub-category. List, detail header and side panel show the project as a link. Houzs mode unchanged.
-- OPEN: the phone app's new-case screen (mobile/MobileServiceCase.tsx, MobileAssrSoField.tsx) still searches SOs; give it the same project picker (GET /api/assr/renovation/projects).
-- OPEN: the Service Cases list search does not match the project code or name yet (services/assr.ts listAssrCases); search by customer or phone meanwhile.
+- Done (feat/global-search, 3 Nov 2026): the phone app's New Service Case in renovation mode picks the project with the desktop's picker (project, customer, phone, building / unit) and sends the desktop's body (mobile/renovationMobileCaseProject.tsx).
+- Done (feat/global-search, 3 Nov 2026): in renovation mode the Service Cases list search (and its CSV export) also matches the case's project code, name, building, unit, customer and customer phone in any format (routes/renovationServiceCases.ts caseProjectSearch).
 - Check: scripts/api-checks/reno-service-project.mjs (34 checks, local engine + PostgREST).
 - Procurement details second version (feat/reno-sku-hub, 15 Oct): per sub-category Ordered -> Received -> Delivered with GR / DO links, Ready and LATE; no item, PO or SO rows. No migration. Check: scripts/api-checks/reno-doc-flow.mjs (65 checks).
 
@@ -581,3 +581,11 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Flow run 1 Nov, not yet run: DO from the contract, POD upload, PO PDF and send; native date boxes could not be driven remotely (dates set in the DB for the TEST lines).
 
 - Pricing holidays (PR feat/pricing-holidays): apply migration 0202 local, staging, then production; the owner checks the loaded 2026/2027 Malaysia holiday dates against the gazette (Islamic and lunar dates marked "Check date").
+
+## One search box for the whole system (feat/global-search, migration 0206, 3 Nov 2026)
+- Done: the top-bar search (/, Ctrl+K or Cmd+K, the magnifier on a phone) finds any keyword across both sides, grouped by kind, five each with See all (up to 50): bookings, guests, units, buildings, owners, maintenance jobs, and through the engine projects, customers, quotations, sales orders, delivery orders, sales invoices, service cases, purchase orders, goods receipts, purchase invoices, suppliers and products. Phone numbers and document numbers match with or without spaces and dashes. Each kind follows the person's level in its area; field and owner accounts have no search.
+- How: functions/api/search asks the engine server to server (POST /api/conts-search, signed with the sign-on secret, aud "search", carrying the person's levels; routes/renovationGlobalSearch.ts, services/renovation/renovationSearch.ts). A person who never opened Supply chain is signed on once first. An engine that is down or slow (6 s) shows "Some supply chain records could not be searched just now", never an empty result.
+- A result opens its record inside the engine frame through ?engine=<engine screen> on the menu address (src/App.tsx).
+- OPEN, any time (not needed before merge): apply migration 0206 (trigram indexes for the search) on staging, then production. The search works without it, only slower on large tables.
+- Not searched yet: cleaning jobs, expenses and bills (no screen opens one record from a link), delivery returns, consignment and stock documents, VOs.
+- Check: scripts/api-checks/global-search.mjs.

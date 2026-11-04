@@ -132,7 +132,10 @@ function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   // Supply chain destinations open the engine's screens where it is set up, the built-in ones elsewhere.
-  const enginePath = ENGINE_PATH[location.pathname];
+  // ?engine=<engine screen> opens one record inside the frame (the top-bar search's results, functions/api/search).
+  const deepEngine = new URLSearchParams(location.search).get('engine');
+  const enginePath = ENGINE_PATH[location.pathname] && deepEngine && deepEngine.startsWith('/') && !deepEngine.startsWith('//')
+    ? deepEngine : ENGINE_PATH[location.pathname];
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
   const viaEngine = !!enginePath && !!engine.data?.enabled;
   const lastEnginePath = useRef<string | null>(null);
