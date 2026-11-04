@@ -7,7 +7,7 @@ import { LOCKED_SQL } from '../../_lib/expenses';
 import { classifyCost } from '../../_lib/ownerStatement';
 import { mayChangeAdjustments } from '../../_lib/ownerScope';
 
-/** GET /api/finance/deductions?month=YYYY-MM — Units > Deductions (PLAN-deduction-panel.md): the workbook's 杂费扣款
+/** GET /api/finance/deductions?month=YYYY-MM — Units > Deductions (PLAN-deduction-panel.md): the workbook's misc deductions
  *  sheet for one month, read from where the statement takes it.
  *    additional  owner-paid expenses the statement puts under "Additional Deduction" (before the split), by the
  *                month whose statement deducts them

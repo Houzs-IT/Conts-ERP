@@ -151,7 +151,7 @@ export const NAV: NavGroup[] = [
     // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
     { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners', badge: 'statements' },
     { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'owners' },
-    // The workbook's 杂费扣款 sheet: additional deductions and O2 by month (owner, 4 Nov 2026). Money, so the Finance area.
+    // The workbook's misc deductions sheet: additional deductions and O2 by month (owner, 4 Nov 2026). Money, so the Finance area.
     { key: 'deductions', label: 'Deductions', icon: 'receipt', path: '/properties/deductions', area: 'finance', fresh: true },
     // Owner B (owner, 2 Nov 2026): the new owners module, built beside Owners (A) so the two can be compared; it took
     // the Owner Showcase's menu place and permission (Performance), which is what sales staff open, and its sample

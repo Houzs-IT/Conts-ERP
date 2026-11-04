@@ -10,12 +10,13 @@ import { FilterBar } from '../components/FilterBar';
 import { StatTile, StatRow } from '../components/Metric';
 import { useApi } from '../lib/useApi';
 import { monthLabel, rm, titleCase, todayMyt } from '../lib/format';
+import { statusOf, statusLabel } from '../lib/status';
 import { useUrlState, SearchBox, MonthStepper, shiftMonth } from './finance/listKit';
 import { DeductionPanel, type DeductionType } from './units/DeductionPanel';
 
-/** Units > Deductions (PLAN-deduction-panel.md): the owner workbook's 杂费扣款 sheet for one month. Additional
+/** Units > Deductions (PLAN-deduction-panel.md): the owner workbook's misc deductions sheet for one month. Additional
  *  deductions (owner-paid costs before the operator's share) and owner adjustments (O2, after it), as the statement
- *  takes them (GET /api/finance/deductions). "Add deduction" opens the side panel. */
+ *  takes them (GET /api/finance/deductions). "Add deduction" opens the side panel. Pill words: src/lib/status.ts. */
 
 type Status = 'open' | 'held' | 'settled' | 'final';
 export interface DeductionLine {
@@ -25,16 +26,6 @@ export interface DeductionLine {
 interface Payload { month: string; canAdd: boolean; canAddO2: boolean; data: DeductionLine[] }
 type Filter = 'all' | DeductionType;
 
-const TYPE: Record<DeductionType, { label: string; tone: 'info' | 'warning' }> = {
-  additional: { label: 'Additional deduction', tone: 'info' },
-  o2: { label: 'O2', tone: 'warning' },
-};
-const STATUS: Record<Status, { label: string; tone: 'neutral' | 'warning' | 'success' }> = {
-  open: { label: 'Open', tone: 'neutral' },
-  held: { label: 'Held', tone: 'warning' },
-  settled: { label: 'Settled outside', tone: 'neutral' },
-  final: { label: 'On final statement', tone: 'success' },
-};
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const sum = (rows: DeductionLine[]): number => rows.reduce((n, r) => n + r.amount, 0);
 const isType = (v: string): v is DeductionType => v === 'additional' || v === 'o2';
@@ -60,12 +51,12 @@ export default function DeductionsPage(): JSX.Element {
   const columns: Column<DeductionLine>[] = [
     { key: 'date', label: 'Date', type: 'date', value: r => r.date, width: 120 },
     { key: 'unit', label: 'Unit', value: r => r.unitLabel ?? 'No unit', hideable: false, width: 180, render: r => <span className="font-medium truncate block" title={r.unitLabel ?? undefined}>{r.unitLabel ?? '—'}</span> },
-    { key: 'type', label: 'Type', type: 'status', value: r => TYPE[r.type].label, status: r => TYPE[r.type], width: 170, filter: { kind: 'select' } },
+    { key: 'type', label: 'Type', type: 'status', value: r => statusLabel('deduction_type', r.type), status: r => statusOf('deduction_type', r.type), width: 170, filter: { kind: 'select' } },
     { key: 'total', label: 'Total', type: 'money', value: r => r.amount, width: 130,
       render: r => <MoneyText sen={r.amount} mode="exact" className="tabular-nums whitespace-nowrap" /> },
     { key: 'remarks', label: 'Remarks', value: r => r.remarks, width: 240, render: r => <span className="truncate block" title={r.remarks}>{r.remarks || '—'}</span> },
     { key: 'owner', label: 'Owner', type: 'person', value: r => (r.ownerName ? titleCase(r.ownerName) : null), width: 160 },
-    { key: 'status', label: 'Status', type: 'status', value: r => STATUS[r.status].label, status: r => STATUS[r.status], width: 160, filter: { kind: 'select' } },
+    { key: 'status', label: 'Status', type: 'status', value: r => statusLabel('deduction', r.status), status: r => statusOf('deduction', r.status), width: 160, filter: { kind: 'select' } },
   ];
 
   return (
@@ -99,8 +90,8 @@ export default function DeductionsPage(): JSX.Element {
             </span>
             <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{r.remarks || '—'}</span>
             <span className="flex flex-wrap items-center gap-1.5">
-              <StatusBadge tone={TYPE[r.type].tone} label={TYPE[r.type].label} size="sm" />
-              <StatusBadge tone={STATUS[r.status].tone} label={STATUS[r.status].label} size="sm" />
+              <StatusBadge entity="deduction_type" value={r.type} size="sm" />
+              <StatusBadge entity="deduction" value={r.status} size="sm" />
             </span>
           </span>
         )}

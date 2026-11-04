@@ -14,9 +14,9 @@ import { isStaged, stagedToast } from '../../lib/approvals';
 import { refreshNavCounts } from '../../lib/navBadges';
 import { monthLabel, rm, todayMyt } from '../../lib/format';
 
-/** "Add deduction" (PLAN-deduction-panel.md): one line of the owner workbook's 杂费扣款 sheet typed in by hand.
+/** "Add deduction" (PLAN-deduction-panel.md): one line of the owner workbook's misc deductions sheet typed in by hand.
  *    Additional deduction  an owner-paid cost taken off before the operator's share: POST /api/expenses, category
- *                          'other', with its receipt (the owner pays it, src/lib/receipts.ts)
+ *                          'other'; the receipt is optional (owner, 4 Nov 2026; src/lib/receipts.ts)
  *    Owner adjustment (O2) money off or back to the owner after the operator's share: POST /api/owners/:id/adjustments
  *  Both keep their own approval and locked-month rules; the panel shows what the server says. */
 
@@ -53,9 +53,9 @@ export function DeductionPanel({ month, canAddO2, onClose, onSaved }: DeductionP
   const o2 = type === 'o2';
   const validDay = ISO_DAY.test(day);
   const noOwner = o2 && !!unit && !unit.ownerId;
-  const ok = !!unit && !noOwner && validDay && !!remarks.trim() && amount != null && amount > 0 && (o2 || !!receipt);
+  const ok = !!unit && !noOwner && validDay && !!remarks.trim() && amount != null && amount > 0;
   const why = !unit ? 'Pick the unit' : noOwner ? 'This unit has no owner on file' : !remarks.trim() ? 'Write the remarks'
-    : amount == null || amount <= 0 ? 'Enter the total' : !validDay ? 'Enter the date' : 'Attach the receipt: the owner pays this';
+    : amount == null || amount <= 0 ? 'Enter the total' : 'Enter the date';
 
   async function save(): Promise<void> {
     if (!ok || busy || !unit) return;
@@ -66,10 +66,13 @@ export function DeductionPanel({ month, canAddO2, onClose, onSaved }: DeductionP
         res = await api.post<unknown>(`/owners/${encodeURIComponent(unit.ownerId ?? '')}/adjustments`, {
           kind: direction, amount, occurredOn: day, unitId: unit.id, description: remarks.trim(),
         });
-      } else if (receipt) {
-        const fd = new FormData();
-        fd.append('file', receipt); fd.append('unitId', unit.id); fd.append('kind', 'receipt');
-        const { id: receiptDocumentId } = await api.post<{ id: string }>('/documents', fd);
+      } else {
+        let receiptDocumentId: string | null = null;
+        if (receipt) {
+          const fd = new FormData();
+          fd.append('file', receipt); fd.append('unitId', unit.id); fd.append('kind', 'receipt');
+          ({ id: receiptDocumentId } = await api.post<{ id: string }>('/documents', fd));
+        }
         res = await api.post<unknown>('/expenses', {
           unitId: unit.id, category: 'other', amount, incurredOn: day, chargeTo: 'owner', description: remarks.trim(), receiptDocumentId,
         });
@@ -116,11 +119,11 @@ export function DeductionPanel({ month, canAddO2, onClose, onSaved }: DeductionP
           value={remarks} onChange={e => setRemarks(e.target.value)} error={fields.description} />
         {!o2 && (
           <div className="flex flex-col gap-1.5">
-            <span className="text-meta font-medium text-muted-ink">Receipt</span>
+            <span className="text-meta font-medium text-muted-ink">Receipt (optional)</span>
             {receipt
               ? <FileRow file={{ id: 'receipt', name: receipt.name, size: receipt.size, onRemove: () => setReceipt(null), removeLabel: 'Remove receipt' }} />
               : <FileDropRow label="Add receipt" hint="Photo or PDF" accept="image/*,application/pdf" onPick={fl => setReceipt(fl.item(0))} />}
-            <span className={fields.receipt ? 'text-meta text-critical' : 'text-meta text-muted-ink'}>{fields.receipt ?? 'The owner pays this, so its receipt goes with it.'}</span>
+            {fields.receipt && <span className="text-meta text-critical">{fields.receipt}</span>}
           </div>
         )}
       </div>
