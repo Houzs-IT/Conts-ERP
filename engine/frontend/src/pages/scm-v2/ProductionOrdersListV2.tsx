@@ -735,7 +735,7 @@ function PoLinesExpansion({ id }: { id: string }) {
     <div className="flex flex-col gap-2">
       <DocumentLinesExpansion
         isLoading={detailQ.isLoading}
-        coverage={coverageStateOf({ isLoading: false })}
+        coverage="ready"
         isError={Boolean(detailQ.error)}
         errorMessage={detailQ.error instanceof Error ? detailQ.error.message : null}
         lines={lines}

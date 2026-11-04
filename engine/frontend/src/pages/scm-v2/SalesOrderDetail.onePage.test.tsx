@@ -159,9 +159,9 @@ describe("one Sales Order page", () => {
     detailItems = [line];
   });
 
-  it("offers Submit VO on a processing-locked order and keeps its amendment banner to Edit", () => {
+  it("offers Edit on a processing-locked order and keeps its amendment banner to Edit", () => {
     mount(`/scm/sales-orders/${DOC}`, { ...header, amendment_eligible: true, vo_locked: true, processing_date: "2026-10-02", customer_delivery_date: "2026-10-30" });
-    expect(screen.getAllByRole("button", { name: /submit vo/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /^edit$/i }).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /record vo/i })).toBeNull();
   });
 });

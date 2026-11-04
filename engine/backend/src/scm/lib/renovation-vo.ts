@@ -227,10 +227,11 @@ export async function applyVo(
      on conflict do nothing`,
     [soDocNo, actor.staffId],
   );
+  const [requester] = actor.userId != null ? await db.q<{ id: string }>(`select id from scm.staff where user_id = $1`, [actor.userId]) : [];
   const [amd] = await db.q<{ id: string }>(
     `insert into scm.so_amendments (so_doc_no, amendment_no, status, reason, requested_by, so_approved_by, so_approved_at, sent_at, resolution, company_id)
      values ($1, $2, 'SENT', $3, $4, $4, now(), now(), 'RENOVATION_VO', $5) returning id`,
-    [soDocNo, v.vo_no, v.title || `Variation order ${v.vo_no}`, actor.staffId, actor.companyId],
+    [soDocNo, v.vo_no, v.title || `Variation order ${v.vo_no}`, requester?.id ?? actor.staffId, actor.companyId],
   );
   await db.q(`update scm.so_revisions set amendment_id = $3 where so_doc_no = $1 and revision = $2 and amendment_id is null`, [soDocNo, head.revision, amd.id]);
 
@@ -417,7 +418,7 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
       pageBreakBefore: false, voChange: 'ADD', omitTargetLineId: null, omitQty: null,
     };
     put(room || 'Additional works', line);
-    adds.push({ lineId: line.id, fromSoItemId: null, sameSku: false, respec: false, itemCode: line.itemCode!, variants: a.variants, remark: a.remark });
+    adds.push({ lineId: line.id, fromSoItemId: null, sameSku: false, respec: false, itemCode: line.itemCode!, variants: a.variants, remark: a.remark, room });
   }
   if (sections.size === 0) throw refuse(422, 'nothing_changed', 'Nothing on the contract changed.');
   const vo = await createVo(db, actor, soDocNo, { title });
@@ -434,7 +435,7 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
     options as given, the remark given else the replaced line's, and the new options' summary as description2; a line of another SKU gets the
     options and remark sent with it; a plain same-SKU replacement copies the old line's. Every replacement keeps the
     replaced line's dates. */
-export interface QuickAdd { lineId: string; fromSoItemId: string | null; sameSku: boolean; respec: boolean; itemCode: string; variants?: Record<string, unknown>; remark?: string }
+export interface QuickAdd { lineId: string; fromSoItemId: string | null; sameSku: boolean; respec: boolean; itemCode: string; variants?: Record<string, unknown>; remark?: string; room?: string }
 
 export async function carryToAddedLine(db: RenoDb, a: QuickAdd, to: string, group: string): Promise<void> {
   if (a.respec || (!a.sameSku && (a.variants || a.remark))) {
@@ -456,7 +457,12 @@ export async function carryToAddedLine(db: RenoDb, a: QuickAdd, to: string, grou
       );
     }
   }
-  if (!a.fromSoItemId) return;
+  if (!a.fromSoItemId) {
+    /* The VO section carries the room's heading only: without this the line printed under Other items, out of the
+       room it was added to (live run, 4 Nov 2026). */
+    if (a.room) await db.q(`update scm.mfg_sales_order_items set room = $2 where id = $1`, [to, a.room]);
+    return;
+  }
   /* The replacement stands in the same room: the VO section carries the room's heading, but the SO line's own room
      (migration 0112, what the PO tab groups and prints by) was left empty on every replaced line. */
   await db.q(

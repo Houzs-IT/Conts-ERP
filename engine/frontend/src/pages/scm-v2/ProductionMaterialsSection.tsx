@@ -1,7 +1,8 @@
 /* Raw materials on a production order (owner, 4 Nov 2026): what the job needs, each with when to order it and when it
    must arrive. A material with a delivery date shows in MRP's Raw material tab; its status here reads the same plan. */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { fmtDate, fmtQty } from "@2990s/shared";
@@ -12,6 +13,8 @@ import { DateField } from "../../vendor/scm/components/DateField";
 import { SearchableSelect } from "../../vendor/scm/components/SearchableSelect";
 import { useConfirm } from "../../vendor/scm/components/ConfirmDialog";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
+import { useToast } from "../../hooks/useToast";
+import { useCreateMfgProduct, type NewMfgProductInput } from "../../vendor/scm/lib/mfg-products-queries";
 import {
   useAddProductionMaterial, useDeleteProductionMaterial, useMaterialStatus, useProductionMaterials, useRawSkus, useUpdateProductionMaterial,
   type MaterialRow, type MaterialStatus,
@@ -32,8 +35,15 @@ function StatusChip({ status, needed, uom }: { status: MaterialStatus | undefine
       </span>
     );
   }
-  return <Badge tone="error" size="xs">Short {fmtQty(status.shortQty ?? needed)} {uom}</Badge>;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <Badge tone="error" size="xs">Short {fmtQty(status.shortQty ?? needed)} {uom}</Badge>
+      <Link to="/scm/mrp" className="text-[11.5px] font-semibold text-primary hover:underline">Order in MRP</Link>
+    </span>
+  );
 }
+
+const FIELD_LABEL = "mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted";
 
 export function ProductionMaterialsSection({ orderId, canEdit }: { orderId: string; canEdit: boolean }) {
   const materials = useProductionMaterials(orderId);
@@ -44,30 +54,75 @@ export function ProductionMaterialsSection({ orderId, canEdit }: { orderId: stri
   const remove = useDeleteProductionMaterial(orderId);
   const confirm = useConfirm();
   const notify = useNotify();
+  const toast = useToast();
   const [code, setCode] = useState("");
   const [qty, setQty] = useState("1");
   const [processingDate, setProcessingDate] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
+  const [remark, setRemark] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [newSku, setNewSku] = useState<{ code: string; name: string; uom: string } | null>(null);
+  /* The picker keeps its own search text, so a cleared value alone left the added material showing, as if Add did nothing. */
+  const [pickerKey, setPickerKey] = useState(0);
 
+  const createSku = useCreateMfgProduct();
+  const qc = useQueryClient();
   const rows = materials.data ?? [];
+  const empty = materials.isSuccess && rows.length === 0;
+  /* An order with no materials opens the form: there is nothing else to do here yet. */
+  useEffect(() => { if (empty && canEdit) setAdding(true); }, [empty, canEdit]);
   const noSkus = canEdit && skus.isSuccess && skus.data.length === 0;
   const refused = (title: string) => (e: unknown) => notify({ title, body: e instanceof Error ? e.message : "Something went wrong.", tone: "error" });
 
+  const skuName = (c: string) => (skus.data ?? []).find((x) => x.code === c)?.name || c;
+  const clearForm = () => { setCode(""); setQty("1"); setProcessingDate(""); setDeliveryDate(""); setRemark(""); setPickerKey((k) => k + 1); };
   const addOne = () => {
-    if (!code) return;
-    add.mutate({ itemCode: code, qtyNeeded: Number(qty), processingDate: processingDate || null, deliveryDate: deliveryDate || null }, {
-      onSuccess: () => { setCode(""); setQty("1"); setProcessingDate(""); setDeliveryDate(""); },
+    if (!code || !(Number(qty) > 0) || add.isPending) return;
+    const name = skuName(code);
+    /* The same material for the same dates adds to its line, so the job does not list one material twice. */
+    const same = remark.trim() ? undefined : rows.find((m) => m.item_code === code && (m.processing_date ?? "") === processingDate && (m.delivery_date ?? "") === deliveryDate);
+    if (same) {
+      const total = Number(same.qty_needed) + Number(qty);
+      update.mutate({ id: same.id, qtyNeeded: total }, {
+        onSuccess: () => { clearForm(); toast.success(`${name}: quantity is now ${fmtQty(total)}`); },
+        onError: refused("Material not added"),
+      });
+      return;
+    }
+    add.mutate({ itemCode: code, qtyNeeded: Number(qty), processingDate: processingDate || null, deliveryDate: deliveryDate || null, notes: remark.trim() || null }, {
+      onSuccess: () => { clearForm(); toast.success(`${name} added`); },
       onError: refused("Material not added"),
     });
   };
-  const save = (m: MaterialRow, patch: { qtyNeeded?: number; processingDate?: string | null; deliveryDate?: string | null }) =>
+  const makeSku = () => {
+    if (!newSku) return;
+    const body = { code: newSku.code.trim().toUpperCase(), name: newSku.name.trim(), category: "RAW", subCategory: "OTHER_RAW", uom: newSku.uom.trim().toUpperCase() } as unknown as NewMfgProductInput;
+    createSku.mutate(body, {
+      onSuccess: (r) => {
+        void qc.invalidateQueries({ queryKey: ["production-raw-skus"] });
+        setCode(r.code);
+        setPickerKey((k) => k + 1);
+        setNewSku(null);
+        toast.success(`${r.code} created`);
+      },
+      onError: refused("Material not created"),
+    });
+  };
+  const save = (m: MaterialRow, patch: { qtyNeeded?: number; processingDate?: string | null; deliveryDate?: string | null; notes?: string | null }) =>
     update.mutate({ id: m.id, ...patch }, { onError: refused("Not saved") });
   const drop = async (m: MaterialRow) => {
     if (await confirm({ title: `Remove ${m.item_code}?`, confirmLabel: "Remove" })) remove.mutate(m.id, { onError: refused("Not removed") });
   };
 
   return (
-    <Section title={`Raw materials · ${rows.length}`}>
+    <Section
+      title={`Raw materials · ${rows.length}`}
+      actions={canEdit && !noSkus ? (
+        <Button variant={adding ? "secondary" : "primary"} icon={adding ? undefined : <Plus size={14} />} onClick={() => setAdding((v) => !v)}>
+          {adding ? "Close" : "Raw material"}
+        </Button>
+      ) : null}
+    >
       {materials.error ? (
         <p role="alert" className="text-[13px] text-err">The raw materials could not be loaded.</p>
       ) : rows.length === 0 && !materials.isLoading ? (
@@ -91,6 +146,13 @@ export function ProductionMaterialsSection({ orderId, canEdit }: { orderId: stri
                   <td className="px-1 py-2">
                     <div className="font-semibold text-ink">{m.description || m.item_code}</div>
                     <div className="font-mono text-[11px] text-ink-muted">{m.item_code}</div>
+                    {canEdit ? (
+                      <input
+                        key={m.notes ?? ""} defaultValue={m.notes ?? ""} placeholder="Add a remark" aria-label={`Remark for ${m.item_code}`}
+                        className="mt-1 h-7 w-full max-w-[260px] rounded border border-transparent bg-transparent px-1 text-[12px] text-ink-secondary hover:border-border focus:border-border focus:bg-surface"
+                        onBlur={(e) => { const v = e.target.value.trim(); if (v !== (m.notes ?? "")) save(m, { notes: v || null }); }}
+                      />
+                    ) : m.notes ? <div className="mt-0.5 text-[12px] text-ink-secondary">{m.notes}</div> : null}
                   </td>
                   <td className="px-1 py-2 text-right">
                     {canEdit ? (
@@ -112,7 +174,10 @@ export function ProductionMaterialsSection({ orderId, canEdit }: { orderId: stri
                       ? <DateField value={m.delivery_date ?? ""} onChange={(iso) => save(m, { deliveryDate: iso || null })} aria-label={`Delivery date of ${m.item_code}`} />
                       : fmtDate(m.delivery_date)}
                   </td>
-                  <td className="px-1 py-2"><StatusChip status={statuses.data?.[m.id]} needed={Number(m.qty_needed)} uom={m.uom ?? ""} /></td>
+                  <td className="px-1 py-2">
+                    <StatusChip status={statuses.data?.[m.id]} needed={Number(m.qty_needed)} uom={m.uom ?? ""} />
+                    {!m.delivery_date && <div className="mt-0.5 text-[11px] text-warning-text">Add a delivery date to show it in MRP</div>}
+                  </td>
                   <td className="px-1 py-2 text-right">
                     {canEdit && (
                       <button type="button" aria-label={`Remove ${m.item_code}`} onClick={() => void drop(m)} className="text-ink-muted hover:text-err">
@@ -132,19 +197,57 @@ export function ProductionMaterialsSection({ orderId, canEdit }: { orderId: stri
           There are no raw material SKUs yet. Add them in{" "}
           <Link to="/scm/products" className="font-semibold text-primary hover:underline">Procurement &gt; Products</Link>, category Raw material.
         </p>
-      ) : canEdit && (
-        <div className="mt-3 grid grid-cols-1 items-end gap-2 sm:grid-cols-[minmax(0,1fr)_88px_150px_150px_auto]">
-          <SearchableSelect
-            value={code}
-            onChange={setCode}
-            options={(skus.data ?? []).map((s) => ({ value: s.code, label: s.name ? `${s.code} · ${s.name}` : s.code }))}
-            placeholder="Pick a raw material"
-            ariaLabel="Raw material"
-          />
-          <input type="number" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} aria-label="Quantity" className="h-9 w-full rounded-md border border-border bg-surface px-2 text-right text-[13px]" />
-          <DateField value={processingDate} onChange={setProcessingDate} aria-label="Processing date" title="Processing date: when to order it" />
-          <DateField value={deliveryDate} onChange={setDeliveryDate} aria-label="Delivery date" title="Delivery date: when it must arrive" />
-          <Button variant="secondary" icon={<Plus size={14} />} onClick={addOne} disabled={!code || !(Number(qty) > 0) || add.isPending}>Add</Button>
+      ) : canEdit && adding && (
+        <div className="mt-3 rounded-md border border-border-subtle bg-surface-dim p-3">
+          <div
+            className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[minmax(0,1fr)_88px_150px_150px_auto]"
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && (e.target as HTMLInputElement).type === "number") addOne(); }}
+          >
+            <div className="min-w-0">
+              <span className={FIELD_LABEL}>Add a material</span>
+              <SearchableSelect
+                key={pickerKey}
+                value={code}
+                onChange={setCode}
+                options={(skus.data ?? []).map((s) => ({ value: s.code, label: s.name ? `${s.code} · ${s.name}` : s.code }))}
+                placeholder="Search raw materials"
+                ariaLabel="Raw material"
+              />
+            </div>
+            <label className="block">
+              <span className={FIELD_LABEL}>Qty</span>
+              <input type="number" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} aria-label="Quantity" className="h-9 w-full rounded-md border border-border bg-surface px-2 text-right text-[13px]" />
+            </label>
+            <div>
+              <span className={FIELD_LABEL}>Order by</span>
+              <DateField value={processingDate} onChange={setProcessingDate} aria-label="Processing date" title="Processing date: when to order it" />
+            </div>
+            <div>
+              <span className={FIELD_LABEL}>Needed by</span>
+              <DateField value={deliveryDate} onChange={setDeliveryDate} aria-label="Delivery date" title="Delivery date: when it must arrive" />
+            </div>
+            <Button variant="primary" icon={<Plus size={14} />} onClick={addOne} disabled={!code || !(Number(qty) > 0) || add.isPending || update.isPending}>
+              {add.isPending ? "Adding…" : "Add"}
+            </Button>
+          </div>
+          <input value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="Remark (optional)" aria-label="Remark" className="mt-2 h-9 w-full rounded-md border border-border bg-surface px-2 text-[13px]" />
+          {newSku ? (
+            <div className="mt-2 grid grid-cols-1 items-end gap-2 border-t border-border-subtle pt-2 sm:grid-cols-[160px_minmax(0,1fr)_88px_auto_auto]">
+              <label className="block"><span className={FIELD_LABEL}>New SKU code</span>
+                <input value={newSku.code} onChange={(e) => setNewSku({ ...newSku, code: e.target.value })} className="h-9 w-full rounded-md border border-border bg-surface px-2 text-[13px]" /></label>
+              <label className="block"><span className={FIELD_LABEL}>Name</span>
+                <input value={newSku.name} onChange={(e) => setNewSku({ ...newSku, name: e.target.value })} className="h-9 w-full rounded-md border border-border bg-surface px-2 text-[13px]" /></label>
+              <label className="block"><span className={FIELD_LABEL}>Unit</span>
+                <input value={newSku.uom} onChange={(e) => setNewSku({ ...newSku, uom: e.target.value })} className="h-9 w-full rounded-md border border-border bg-surface px-2 text-[13px]" /></label>
+              <Button onClick={makeSku} disabled={!newSku.code.trim() || !newSku.name.trim() || createSku.isPending}>{createSku.isPending ? "Creating…" : "Create"}</Button>
+              <Button variant="secondary" onClick={() => setNewSku(null)}>Cancel</Button>
+            </div>
+          ) : (
+            <p className="mt-2 text-[11.5px] text-ink-muted">
+              Needed by puts it in MRP&apos;s Raw material tab. Not on the list?{" "}
+              <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setNewSku({ code: "", name: "", uom: "PCS" })}>Create a new raw material</button>
+            </p>
+          )}
         </div>
       )}
     </Section>

@@ -4,15 +4,15 @@ import { useCallback, useState } from "react";
 import { getActiveCompanyId } from "../../lib/activeCompany";
 import { EMPTY_LAYOUT, layoutIdKey, saveMyLayout } from "../../lib/tableLayouts";
 
-export type PoColumn = "sku" | "desc" | "variants" | "qty" | "amount" | "orderOn" | "deliverOn" | "supplier" | "po" | "gr" | "do";
+export type PoColumn = "sku" | "desc" | "variants" | "qty" | "amount" | "orderOn" | "deliverOn" | "supplier" | "stock" | "po" | "gr" | "do";
 
-export const PO_COLUMNS: readonly PoColumn[] = ["sku", "desc", "variants", "qty", "amount", "orderOn", "deliverOn", "supplier", "po", "gr", "do"];
+export const PO_COLUMNS: readonly PoColumn[] = ["sku", "desc", "variants", "qty", "amount", "orderOn", "deliverOn", "supplier", "stock", "po", "gr", "do"];
 
 const TABLE_KEY = "reno-po-tab";
 
 /** Column widths (percent of the table), with and without the Amount column. */
 const WIDTHS: Record<PoColumn, readonly [number, number]> = {
-  sku: [9, 11], desc: [14, 18], variants: [6.5, 8], qty: [4, 4.5], amount: [7.5, 0], orderOn: [7.5, 8], deliverOn: [7.5, 8], supplier: [11, 11], po: [11.5, 12], gr: [11, 10.5], do: [10.5, 9],
+  sku: [9, 10.5], desc: [13, 15.5], variants: [6, 7], qty: [4, 4.5], amount: [7.5, 0], orderOn: [7, 7.5], deliverOn: [7, 7.5], supplier: [10, 10], stock: [6.5, 6.5], po: [11, 11.5], gr: [10, 10.5], do: [9, 9],
 };
 
 export const columnWidth = (c: PoColumn, finance: boolean): number => WIDTHS[c][finance ? 0 : 1];

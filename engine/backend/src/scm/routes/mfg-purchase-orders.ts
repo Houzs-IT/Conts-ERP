@@ -102,6 +102,7 @@ import { eager } from '../lib/concurrency';
 import { provenanceNote } from '../shared/transfer-vocabulary';
 import type { Env, Variables } from '../env';
 import { skuCategoryResolver, lineIdentityFields } from '../lib/sku-category';
+import { loadUnitBoundCodes, NO_UNIT_BOUND_CODES } from '../lib/unit-bound-sku';
 import { firstSoLinkCategoryMismatch, soLinkCategoryMismatch, hardBoundUnlinkRefusal, hardBoundSplitRefusal, editedLineGroup } from '../lib/hard-bound-po-line';
 import { pgrestIn } from '../lib/pgrest-in-list';
 import { withSoRefPoIds } from '../lib/so-ref-search';
@@ -1077,7 +1078,9 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
     if (lineSoItemIds.length > 0) {
       // Company scope (2026-08-19) — service-role bypasses RLS: scope the SO-item read and refuse a foreign soItemId BEFORE it is linked / photo-copied / po_qty_picked-rolled (mirrors soLinkTargetRefusal).
       const { data: lineSoRows } = await scopeToCompany(supabase.from('mfg_sales_order_items').select('id, doc_no, item_code, item_group, qty, po_qty_picked'), c).in('id', lineSoItemIds);
-      const boundOrdered = await loadBoundOrderedQty(supabase, activeCompanyId(c) ?? null, (lineSoRows ?? []) as Array<SoSourceLine & { item_group: string | null }>);
+      const lineSoSources = (lineSoRows ?? []) as Array<SoSourceLine & { item_group: string | null }>;
+      const unitBound = await loadUnitBoundCodes(supabase, activeCompanyId(c) ?? null, lineSoSources.map((r) => r.item_code));
+      const boundOrdered = await loadBoundOrderedQty(supabase, activeCompanyId(c) ?? null, lineSoSources, unitBound);
       const soRows = ((lineSoRows ?? []) as Array<SoSourceLine & { item_group: string | null }>).map((r) => ({ ...r, po_qty_picked: boundAwarePicked(r, boundOrdered) }));
       const foreignSoItemId = lineSoItemIds.find((id) => !new Set(soRows.map((r) => r.id)).has(id));
       if (foreignSoItemId) return c.json({ error: 'so_line_not_found', reason: 'That Sales Order line does not exist on this company.', soItemId: foreignSoItemId }, 404);
@@ -1601,7 +1604,8 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
     if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
     const byId = new Map<string, SoItem>();
     for (const r of (rows ?? []) as unknown as SoItem[]) byId.set(r.id, { ...r, so: normSo(r) });
-    const boundOrdered = await loadBoundOrderedQty(supabase, activeCompanyId(c) ?? null, [...byId.values()]);
+    const unitBound = await loadUnitBoundCodes(supabase, activeCompanyId(c) ?? null, [...byId.values()].map((r) => r.item_code));
+    const boundOrdered = await loadBoundOrderedQty(supabase, activeCompanyId(c) ?? null, [...byId.values()], unitBound);
     for (const p of body.picks) {
       const row = byId.get(p.soItemId);
       if (!row) return c.json({ error: 'item_not_found', soItemId: p.soItemId }, 400);
@@ -1624,7 +1628,7 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
       // Commander 2026-05-31 — an MRP-origin convert skips the cap on a POOLED line (the
       // pooled picker decides). A company-1 BOUND line is capped on every path against
       // every live PO on it, MRP-origin included (owner 2026-09-14; lib/bound-line-ordered.ts).
-      if ((!fromMrp || isBoundForCompany(activeCompanyId(c) ?? null, row)) && p.qty > remaining)
+      if ((!fromMrp || isBoundForCompany(activeCompanyId(c) ?? null, row, unitBound)) && p.qty > remaining)
         return c.json({ error: 'qty_exceeds_remaining', soItemId: p.soItemId, requested: p.qty, remaining }, 409);
       pickedItems.push({ row, qty: p.qty, pickSupplierId: p.supplierId ?? null });
     }
@@ -3107,7 +3111,8 @@ mfgPurchaseOrders.patch('/:id/items/:itemId', async (c) => {
     if (refusal) return c.json(refusal.body, refusal.status);
     if (soItemKeySent) updates['so_item_id'] = nextSoItemId;
   }
-  const unlinkRefusal = hardBoundUnlinkRefusal(co.companyId ?? null, { item_group: effGroup, item_code: effCode }, prevSoItemId, nextSoItemId);
+  const unlinkUnitBound = prevSoItemId && !nextSoItemId ? await loadUnitBoundCodes(sb, co.companyId ?? null, [effCode]) : NO_UNIT_BOUND_CODES;
+  const unlinkRefusal = hardBoundUnlinkRefusal(co.companyId ?? null, { item_group: effGroup, item_code: effCode }, prevSoItemId, nextSoItemId, unlinkUnitBound);
   if (unlinkRefusal) return c.json(unlinkRefusal, 409);
 
   /* Remaining-qty cap — runs even when the bind key is ABSENT, because raising
@@ -3360,7 +3365,7 @@ mfgPurchaseOrders.post('/:id/items/:itemId/allocations', async (c) => {
   const user = c.get('user');
   const parent = await resolveAllocationParent(sb, c, poId, itemId);
   if (!parent.ok) return c.json(parent.body, parent.status);
-  const splitRefusal = hardBoundSplitRefusal(parent.companyId, parent.item);
+  const splitRefusal = hardBoundSplitRefusal(parent.companyId, parent.item, await loadUnitBoundCodes(sb, parent.companyId, [parent.item.item_code]));
   if (splitRefusal) return c.json(splitRefusal, 409);
 
   const soItemId = (((body.soItemId ?? body.so_item_id) as string | null | undefined) || null);
@@ -3414,7 +3419,7 @@ mfgPurchaseOrders.patch('/:id/items/:itemId/allocations/:allocationId', async (c
   const sb = c.get('supabase');
   const parent = await resolveAllocationParent(sb, c, poId, itemId);
   if (!parent.ok) return c.json(parent.body, parent.status);
-  const splitRefusal = hardBoundSplitRefusal(parent.companyId, parent.item);
+  const splitRefusal = hardBoundSplitRefusal(parent.companyId, parent.item, await loadUnitBoundCodes(sb, parent.companyId, [parent.item.item_code]));
   if (splitRefusal) return c.json(splitRefusal, 409);
 
   const existing = await currentAllocations(sb, itemId);
