@@ -2,6 +2,7 @@ import { type Env, one, all, run, audit, nowIso } from './db';
 import type { Session } from './auth';
 import { PURPOSES, USED_BY, invalidBeds, invalidBays, type Bed, type BayInput } from './unitPurpose';
 import { NO_GRR } from './contractTypes';
+import { layoutTypes } from './layoutTypes';
 
 export const PACKAGES = ['Package A', 'Package B', 'Package C', 'Package D'];
 export const TERMS = ['Long term', 'Short term'];
@@ -10,7 +11,6 @@ export const GRR_SPLIT = 'GRR — guaranteed rent';
 export const SPLITS = ['Not set', 'Profit share', GRR_SPLIT];
 
 export const GUARANTEE_PERIODS = ['month', 'year'];
-export const LAYOUT_TYPES = ['studio', '1_bedroom', '2_bedroom', '3_bedroom', '4_plus_bedroom', 'duplex', 'dual_key', 'penthouse', 'other'];
 
 /** Owner identity and bank fields the unit endpoints once took. They belong to the owner profile (owners/[id]), so a unit
  *  request carrying one is refused rather than silently changing the owner of every unit they have. */
@@ -57,7 +57,6 @@ export function invalidUnit(b: UnitInput, currentSplit?: string | null): { field
   if (b.bedrooms !== undefined && (!Number.isInteger(b.bedrooms) || b.bedrooms < 0 || b.bedrooms > 20)) return { field: 'bedrooms', message: 'Bedrooms must be a whole number from 0 to 20.' };
   if (b.bathrooms !== undefined && (!Number.isInteger(b.bathrooms) || b.bathrooms < 0 || b.bathrooms > 20)) return { field: 'bathrooms', message: 'Bathrooms must be a whole number from 0 to 20.' };
   if (b.sizeSqft != null && (!Number.isInteger(b.sizeSqft) || b.sizeSqft < 1 || b.sizeSqft > 100000)) return { field: 'sizeSqft', message: 'Enter the size in whole square feet.' };
-  if (b.layoutType != null && !LAYOUT_TYPES.includes(b.layoutType)) return { field: 'layoutType', message: 'Pick a layout type.' };
   if (b.purpose !== undefined && !(PURPOSES as readonly string[]).includes(b.purpose)) return { field: 'purpose', message: 'Pick rental, showroom or warehouse.' };
   if (b.usedBy != null && !(USED_BY as readonly string[]).includes(b.usedBy)) return { field: 'usedBy', message: 'Pick who uses the unit.' };
   if (b.beds !== undefined) { const m = invalidBeds(b.beds); if (m) return { field: 'beds', message: m }; }
@@ -73,6 +72,13 @@ export function invalidUnit(b: UnitInput, currentSplit?: string | null): { field
     if (!Number.isInteger(e.amount) || e.amount < 0) return { field: 'expenses', message: 'Expense amounts must be whole sen, zero or more.' };
   }
   return null;
+}
+
+// A type hidden in Unit settings stays valid on the units that already carry it.
+export async function invalidLayoutType(env: Env, b: UnitInput, currentType?: string | null): Promise<{ field: string; message: string } | null> {
+  if (b.layoutType == null || b.layoutType === currentType) return null;
+  const hit = (await layoutTypes(env)).find(t => t.key === b.layoutType);
+  return hit?.isActive ? null : { field: 'layoutType', message: 'Pick a layout type.' };
 }
 
 /** Sets the unit's standard or deep cleaning price: updates its first 'cleaning' or 'cleaning_deep' row in unit_expenses (the row cleanPrice() in

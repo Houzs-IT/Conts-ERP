@@ -23,15 +23,15 @@ import { UnitCleaning, missingCleanPrice, type UnitPriceData } from './UnitClean
 import { cx } from '../../lib/design-tokens';
 import { Link } from 'react-router-dom';
 import {
-  STATES, cap, layoutFromBedrooms, useLayoutTypes,
-  SectionHead, Grid3, Labeled, Select, ReadOnly, CentreModal,
+  STATES, cap, layoutFromBedrooms, useLayoutTypes, isPlaceholderOwner,
+  SectionHead, Grid3, NumberRow, Labeled, Select, ReadOnly, CentreModal,
   type Unit, type Building, type UnitDetail,
 } from './shared';
 
 /** Every owner profile, for the owner pickers (GET /api/owners, management roles). */
 export function useOwnerOptions(on = true) {
   const r = useApi<{ data: Owner[] }>(on ? '/owners' : null);
-  return { owners: r.data?.data ?? null, loading: r.loading };
+  return { owners: r.data?.data ?? null, loading: r.loading, error: r.error, reload: r.reload };
 }
 
 type Change = (p: Partial<Unit>) => void;
@@ -71,6 +71,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
   const bank = shown ? shown.bankName ?? '' : moved ? '' : u.bankName;
   const account = shown ? (shown.bankAccountLast4 ? maskTail(shown.bankAccountLast4) : '') : moved ? '' : u.bankAccount;
   const holder = shown ? shown.accountHolder ?? '' : moved ? '' : u.accountHolder;
+  const waitingForOwner = isPlaceholderOwner(shown?.displayName ?? (moved ? '' : owner.name));
   const suggested = !u.layoutType ? layoutFromBedrooms(u.bedrooms) : null;
   const layout = u.layoutType ?? suggested;
   const types = useLayoutTypes();
@@ -79,7 +80,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
   const prices = useApi<UnitPriceData>(`/housekeeping/unit-prices?unitId=${encodeURIComponent(u.id)}`);
   // A dot on a step says something in it still needs filling.
   const needs: Record<Sub, boolean> = {
-    listing: false, owner: false,
+    listing: false, owner: waitingForOwner,
     space: !layout || (u.parkingBays ?? []).some(b => !b.lotNumber.trim()),
     cleaning: missingCleanPrice(prices.data),
   };
@@ -140,26 +141,28 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
       {sub === 'space' && <>
       <SectionHead>Type and size</SectionHead>
       <Grid3>
-        <Labeled label="Type" help={u.layoutType ? undefined : suggested ? `Suggested from ${u.bedrooms === 0 ? 'no bedrooms' : `${u.bedrooms} ${u.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`}. Saved with the next save.` : 'Pick one.'}>
+        <Labeled label="Type" className="sm:max-w-[320px]" help={u.layoutType ? undefined : suggested ? `Suggested from ${u.bedrooms === 0 ? 'no bedrooms' : `${u.bedrooms} ${u.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`}. Saved with the next save.` : 'Pick one.'}>
           <Select label="Type" value={layout ?? ''} onChange={v => onChange({ layoutType: v || null })}
             options={[...(layout ? [] : [{ value: '', label: 'Not set' }]), ...typeOptions.map(t => ({ value: t.key, label: t.isActive ? t.label : `${t.label} (hidden)` }))]} />
           {types.data?.ready && types.data.mayEdit && (
             <Link to="/properties/settings?tab=types" className="self-start text-meta font-semibold text-gold-ink no-underline">Edit the Type list</Link>
           )}
         </Labeled>
-        <Labeled label="Bedrooms" help="0 for a studio">
+      </Grid3>
+      <NumberRow>
+        <Labeled label="Bedrooms" help="0 = studio" className="w-24">
           <NumberInput label="" aria-label="Bedrooms" min={0} max={20} value={u.bedrooms ?? null}
             onChange={n => onChange({ bedrooms: n ?? undefined })} />
         </Labeled>
-        <Labeled label="Bathrooms">
+        <Labeled label="Bathrooms" className="w-24">
           <NumberInput label="" aria-label="Bathrooms" min={0} max={20} value={u.bathrooms ?? null}
             onChange={n => onChange({ bathrooms: n ?? undefined })} />
         </Labeled>
-        <Labeled label="Size (sq ft)" help="Built-up area">
+        <Labeled label="Size (sq ft)" help="Built-up area" className="w-28">
           <NumberInput label="" aria-label="Size in square feet" min={1} max={100000} value={u.sizeSqft ?? null}
             onChange={n => onChange({ sizeSqft: n ?? null })} />
         </Labeled>
-      </Grid3>
+      </NumberRow>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4 mb-[22px]">
         <div className="flex flex-col gap-2 min-w-0">
@@ -179,7 +182,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
       {sub === 'owner' && <>
       <SectionHead>Owner</SectionHead>
       <Grid3>
-        <Labeled label="Owner" help={moved ? 'Saving moves this unit to this owner. Its current contract stays with the previous owner.' : 'Picked from the owner profiles.'}>
+        <Labeled label="Owner" help={moved ? 'Saving moves this unit to this owner. Its current contract stays with the previous owner.' : waitingForOwner ? 'No owner yet. Pick one, then add the contract on the Contract tab.' : 'Picked from the owner profiles.'}>
           {canEdit && owners ? (
             <SearchSelect label="Owner" size="md" value={ownerId} placeholder="Search owners"
               onChange={v => onChange({ ownerId: v })}
@@ -305,22 +308,6 @@ export function ConfirmAdd({ title, sub, body, confirm, onClose, onConfirm }: { 
     <CentreModal title={title} sub={sub} onClose={onClose}
       footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" onClick={onConfirm}>{confirm}</Button></>}>
       <p className="m-0 text-copy text-muted-ink">{body}</p>
-    </CentreModal>
-  );
-}
-
-/** Adds a unit to a building: the owner is picked from the owner profiles first (a unit always has one). */
-export function AddUnitModal({ buildingName, onClose, onConfirm }: { buildingName: string; onClose: () => void; onConfirm: (ownerId: string) => void }) {
-  const { owners, loading } = useOwnerOptions();
-  const [ownerId, setOwnerId] = useState('');
-  return (
-    <CentreModal title={`Add a unit to ${buildingName}`} sub="A blank unit opens for you to fill in." onClose={onClose}
-      footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!ownerId} disabledReason="Pick the owner" onClick={() => onConfirm(ownerId)}>Add unit</Button></>}>
-      <Labeled label="Owner" help={owners && owners.length === 0 ? 'No owner profiles yet. Add the owner on the Owners page first.' : 'Not listed? Add the owner on the Owners page first.'}>
-        <SearchSelect label="Owner" size="md" value={ownerId} onChange={setOwnerId} placeholder={loading ? 'Loading owners' : 'Search owners'}
-          options={(owners ?? []).map(o => ({ value: o.id, label: titleCase(o.displayName) }))} />
-      </Labeled>
-      <p className="m-0 text-copy text-muted-ink">You will set the listing name, code, layout, package and contract on its Details tab.</p>
     </CentreModal>
   );
 }
