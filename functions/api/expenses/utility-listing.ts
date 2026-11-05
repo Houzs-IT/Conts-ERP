@@ -45,7 +45,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
              to_char(r.created_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM') AS request_month,
              coalesce(sc.bill_sen, e.amount) AS request_sen
       FROM expenses e JOIN units u ON u.id = e.unit_id
-      LEFT JOIN scm.payment_requests r ON r.id::text = e.payment_request_id
+      LEFT JOIN utility_payment_requests() r ON r.id = e.payment_request_id -- migration 0220: pos_app cannot read scm.payment_requests directly (RLS)
       LEFT JOIN utility_bill_scans sc ON sc.expense_id = e.id
       WHERE e.category IN ('electricity','water','internet','sewerage') ${byRequest
         ? `AND r.created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur') AND r.created_at < ($2::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')`
