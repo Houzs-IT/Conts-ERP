@@ -78,6 +78,7 @@ import { authedFetch } from './authed-fetch';
 type ProductionPdfSo = { doc_no: string; debtor_name?: string | null; phone?: string | null; email?: string | null; address1?: string | null; address2?: string | null; city?: string | null; postcode?: string | null };
 type ProductionPdfMaterial = { item_code: string; description: string | null; uom: string | null; qty_needed: number | string; processing_date: string | null; delivery_date: string | null; notes?: string | null };
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
+import { deliverToAddress } from './warehouse-print';
 
 type PoHeader = {
   production_time_days?: number | string | null;
@@ -438,7 +439,7 @@ async function renderProductionOrderInto(
      full-width so the supplier sees exactly where to ship (owner 2026-06-19;
      the address is the warehouse `location` field). */
   const deliverToName = (header.purchase_location_name ?? '').trim();
-  const deliverToAddr = (header.delivery_address ?? '').trim();
+  const deliverToAddr = deliverToAddress(deliverToName, (header.delivery_address ?? '').trim(), opts?.renovation);
   if (deliverToName || deliverToAddr) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(110);
     doc.text('DELIVER TO', margin, y); doc.setTextColor(0);
