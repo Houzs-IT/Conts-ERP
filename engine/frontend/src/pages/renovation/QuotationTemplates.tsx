@@ -2,7 +2,7 @@
 // sections, lines and payment terms that a new quotation is cloned from.
 
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Plus, Save } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
@@ -17,7 +17,13 @@ import { DocEditor } from './DocEditor';
 import { InstalmentEditor, totalsOfSections, TotalsCard } from './DocParts';
 import { Card, ErrorBanner, Field, fmtDate, inputCls, MoneyInput } from './shared';
 
+/** The old address of the list. */
 export function QuotationTemplates() {
+  return <Navigate to="/scm/sales-orders/maintenance?open=package-templates#package-templates" replace />;
+}
+
+/** Package templates, in SO Maintenance. */
+export function PackageTemplatesSection() {
   const list = useTemplates();
   const navigate = useNavigate();
   const { can } = useAuth();
@@ -27,13 +33,12 @@ export function QuotationTemplates() {
   const rows = list.data?.templates ?? [];
   return (
     <div className="space-y-4">
-      <PageHeader back="/scm/renovation/quotations" eyebrow="Renovation" title="Package templates" description="Ready-made quotations a new quotation can start from."
-        actions={can('scm.renovation.quote') ? <Button icon={<Plus size={15} />} onClick={async () => {
+      <div className="flex justify-end">{can('scm.renovation.quote') ? <Button icon={<Plus size={15} />} onClick={async () => {
           const name = await dialog.prompt('Template name (e.g. Skyline Embassy Type A Classic)');
           if (!name) return;
           setError(null);
           try { const r = await create.mutateAsync(name); navigate(`/scm/renovation/templates/${r.id}`); } catch (e) { setError(refusalOf(e).message); }
-        }}>New template</Button> : undefined} />
+        }}>New template</Button> : undefined}</div>
       <ErrorBanner error={error} />
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {rows.map((t) => (

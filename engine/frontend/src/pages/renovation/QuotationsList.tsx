@@ -5,7 +5,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Edit3, ExternalLink, FileCog, FileText, LayoutTemplate, Plus, X } from 'lucide-react';
+import { Edit3, ExternalLink, FileText, Plus, Wrench, X } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
 import { DataTable } from '../../components/DataTable';
@@ -259,8 +259,7 @@ export function QuotationsList() {
         description="Quotations for renovation projects. An accepted revision converts to the sales order in one step."
         primaryAction={canQuote ? <Button variant="primary" icon={<Plus size={14} />} onClick={() => setNewOpen(true)}>New Quotation</Button> : undefined}
         secondaryActions={[
-          { label: 'Package Templates', icon: LayoutTemplate, onClick: () => navigate('/scm/renovation/templates') },
-          { label: 'Terms & Letterheads', icon: FileCog, onClick: () => navigate('/scm/renovation/settings') },
+          { label: 'SO Maintenance', icon: Wrench, onClick: () => navigate('/scm/sales-orders/maintenance') },
         ]}
       />
 
