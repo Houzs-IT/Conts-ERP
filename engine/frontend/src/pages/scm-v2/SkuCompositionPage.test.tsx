@@ -18,6 +18,18 @@ vi.mock("../../vendor/scm/lib/production-order-queries", () => ({
   useUpdateComposition: () => ({ mutate: vi.fn() }),
   useDeleteComposition: () => ({ mutate: vi.fn() }),
 }));
+vi.mock("../../components/DataTable", () => ({
+  DataTable: ({ rows, onRowClick }: { rows: Array<{ code: string }>; onRowClick: (r: unknown) => void }) => (
+    <div>{rows.map((r) => <button key={r.code} type="button" onClick={() => onRowClick(r)}>{`Open ${r.code}`}</button>)}</div>
+  ),
+}));
+vi.mock("../../components/FilterPills", () => ({
+  FilterPills: ({ options }: { options: Array<{ label: string; count?: number }> }) => <div>{options.map((o) => <span key={o.label}>{`${o.label} ${o.count}`}</span>)}</div>,
+}));
+vi.mock("../../components/StatCard", () => ({ StatCard: ({ label }: { label: string }) => <div>{label}</div> }));
+vi.mock("../../components/ResizableDetailDrawer", () => ({
+  ResizableDetailDrawer: ({ open, children }: { open: boolean; children: React.ReactNode }) => (open ? <div>{children}</div> : null),
+}));
 vi.mock("../../components/Layout", () => ({
   PageHeader: ({ title, primaryAction }: { title: string; primaryAction?: React.ReactNode }) => <div><h1>{title}</h1>{primaryAction}</div>,
 }));
@@ -33,39 +45,35 @@ vi.mock("../../vendor/scm/components/SearchableSelect", () => ({
 }));
 
 describe("SKU Composition", () => {
-  it("opens a bound SKU and offers only the materials it does not have yet", () => {
+  it("opens a bound SKU in the drawer and offers only the materials it does not have yet", () => {
     render(<SkuCompositionPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Edit RN-PLASTER_CEILING" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open RN-PLASTER_CEILING" }));
     expect(screen.getByLabelText("Quantity of PLC-KNK-001")).toBeTruthy();
     expect(screen.queryByLabelText("PLC-KNK-001 · Plaster Board")).toBeNull();
     expect(screen.getByLabelText("PTN-KNK-001 · Gypsum")).toBeTruthy();
   });
 
-  it("lists every SKU's composition", () => {
+  it("lists the SKUs with a composition, and counts those without", () => {
     render(<SkuCompositionPage />);
-    expect(screen.getByText("SKUs with a composition (2)")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Delete RN-FEATURE_WALL" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open RN-FEATURE_WALL" })).toBeTruthy();
+    expect(screen.getByText("With composition 2")).toBeTruthy();
   });
 
-  it("copies another SKU's materials with their quantities, before saving", () => {
+  it("copies another SKU's materials with their quantities, before saving", async () => {
     added.mockClear();
     render(<SkuCompositionPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Edit RN-PLASTER_CEILING" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open RN-PLASTER_CEILING" }));
     fireEvent.change(screen.getByLabelText("Copy from another SKU"), { target: { value: "RN-FEATURE_WALL" } });
-    expect((screen.getByLabelText("New quantity of PTN-KNK-002") as HTMLInputElement).value).toBe("4");
+    await waitFor(() => expect((screen.getByLabelText("New quantity of PTN-KNK-002") as HTMLInputElement).value).toBe("4"));
     expect(added).not.toHaveBeenCalled();
   });
 
-  it("makes a new composition with several materials at once", async () => {
+  it("adds every ticked material with its quantity", async () => {
     added.mockClear();
     render(<SkuCompositionPage />);
-    fireEvent.click(screen.getByRole("button", { name: "New composition" }));
-    fireEvent.change(screen.getByLabelText("SKU"), { target: { value: "RN-PAINTING" } });
+    fireEvent.click(screen.getByRole("button", { name: "Open RN-PLASTER_CEILING" }));
     fireEvent.click(screen.getByLabelText("PTN-KNK-001 · Gypsum"));
-    fireEvent.click(screen.getByLabelText("PTN-KNK-002 · Primer"));
-    fireEvent.change(screen.getByLabelText("New quantity of PTN-KNK-002"), { target: { value: "3" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add 2 raw materials" }));
-    await waitFor(() => expect(added).toHaveBeenCalledTimes(2));
-    expect(added.mock.calls[1][0]).toEqual({ skuCode: "RN-PAINTING", materialCode: "PTN-KNK-002", qty: 3 });
+    fireEvent.click(screen.getByRole("button", { name: "Add raw material" }));
+    await waitFor(() => expect(added).toHaveBeenCalledWith({ skuCode: "RN-PLASTER_CEILING", materialCode: "PTN-KNK-001", qty: 1 }));
   });
 });
