@@ -24,3 +24,15 @@ describe('sheetLayout', () => {
     expect(s.imgX).toBeCloseTo((A4.w - s.imgW) / 2);
   });
 });
+
+describe('a sheet on a document in millimetres', () => {
+  it('sets an A4 page, not one the same number of millimetres as points', async () => {
+    const { jsPDF } = await import('jspdf');
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const s = sheetLayout(2400, 1700, true, A4);
+    const u = 1 / doc.internal.scaleFactor;
+    doc.addPage([s.pageW * u, s.pageH * u], 'landscape');
+    expect(doc.internal.pageSize.getWidth()).toBeCloseTo(297, 0);
+    expect(doc.internal.pageSize.getHeight()).toBeCloseTo(210, 0);
+  });
+});

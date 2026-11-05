@@ -39,6 +39,7 @@ const IMAGE = /\.(jpe?g|png|webp)$/i;
 const PDF = /\.pdf$/i;
 /** Render scale for PDF pages: sharp enough to read dimensions on an A3 sheet, small enough to stay a few MB a page. */
 const PDF_SCALE = 2;
+const A4_LONG_SIDE_PX = 2400;
 
 async function blobOf(projectId: number, key: string): Promise<Blob> {
   const url = await api.fetchBlobUrl(simpleApi.fileUrl(projectId, key));
@@ -101,31 +102,36 @@ async function drawParts(into: JsPdfDoc | null, projectId: number, parts: PdfPar
   const addPage = (canvas: HTMLCanvasElement, block?: TitleBlock, page = { n: 1, of: 1 }): void => {
     // A page the size of the picture in points (72 per inch at 150 dpi), turned the way the picture is, plus the band.
     const sheet = sheetLayout((canvas.width * 72) / 150, (canvas.height * 72) / 150, !!block, paper);
-    const { pageW: w, pageH: total, band } = sheet;
+    const { band: bandPt } = sheet;
+    // The layout is in points; a PO's document is in millimetres. Type sizes stay in points whatever the document uses.
+    const u = doc ? 1 / (doc as JsPdfDoc).internal.scaleFactor : 1;
+    const w = sheet.pageW * u;
+    const total = sheet.pageH * u;
+    const band = bandPt * u;
     const h = total - band;
     const orientation = w > total ? "landscape" : "portrait";
     if (!doc) doc = new jsPDF({ orientation, unit: "pt", format: [w, total], compress: true });
     else doc.addPage([w, total], orientation);
     const d = doc as InstanceType<typeof jsPDF>;
-    d.addImage(canvas.toDataURL("image/jpeg", 0.85), "JPEG", sheet.imgX, sheet.imgY, sheet.imgW, sheet.imgH);
+    d.addImage(canvas.toDataURL("image/jpeg", 0.85), "JPEG", sheet.imgX * u, sheet.imgY * u, sheet.imgW * u, sheet.imgH * u);
     if (!block) return;
     const pad = band * 0.14;
-    const line = Math.max(0.75, band / 60);
+    const line = Math.max(0.75, bandPt / 60) * u;
     d.setDrawColor(23, 32, 31);
     d.setLineWidth(line);
     d.setFillColor(255, 255, 255);
     d.rect(pad, h + pad * 0.5, w - pad * 2, band - pad, "FD");
     let x = pad;
     const inner = w - pad * 2;
-    const labelSize = band * 0.13;
-    const valueSize = band * 0.2;
+    const labelSize = bandPt * 0.13;
+    const valueSize = bandPt * 0.2;
     titleBlockCells(block, page).forEach((cell, i) => {
       const cw = inner * cell.share;
       if (i > 0) d.line(x, h + pad * 0.5, x, h + band - pad * 0.5);
       d.setFont("helvetica", "normal");
       d.setFontSize(labelSize);
       d.setTextColor(85, 96, 94);
-      d.text(cell.label.toUpperCase(), x + pad * 0.6, h + pad * 0.5 + labelSize * 1.25);
+      d.text(cell.label.toUpperCase(), x + pad * 0.6, h + pad * 0.5 + labelSize * 1.25 * u);
       d.setFont("helvetica", "bold");
       d.setFontSize(valueSize);
       // An approved set's status prints in the accent teal, everything else in ink.
@@ -136,8 +142,8 @@ async function drawParts(into: JsPdfDoc | null, projectId: number, parts: PdfPar
       let size = valueSize;
       while (size > valueSize * 0.7 && d.getTextWidth(cell.value) > room) d.setFontSize((size *= 0.92));
       const lines = (d.splitTextToSize(cell.value, room) as string[]).slice(0, 2);
-      const top = h + pad * 0.5 + labelSize * 1.25 + size * 1.15;
-      lines.forEach((t, n) => d.text(t, x + pad * 0.6, top + n * size * 1.1));
+      const top = h + pad * 0.5 + (labelSize * 1.25 + size * 1.15) * u;
+      lines.forEach((t, n) => d.text(t, x + pad * 0.6, top + n * size * 1.1 * u));
       x += cw;
     });
   };
@@ -154,7 +160,9 @@ async function drawParts(into: JsPdfDoc | null, projectId: number, parts: PdfPar
       try {
         for (let n = 1; n <= pdf.numPages; n += 1) {
           const page = await pdf.getPage(n);
-          const vp = page.getViewport({ scale: PDF_SCALE });
+          const natural = page.getViewport({ scale: 1 });
+          // On A4 a sheet needs no more pixels than the paper can show, and a big drawing then draws in a fraction of the time.
+          const vp = page.getViewport({ scale: paper ? Math.min(PDF_SCALE, A4_LONG_SIDE_PX / Math.max(natural.width, natural.height)) : PDF_SCALE });
           const canvas = document.createElement("canvas");
           canvas.width = Math.ceil(vp.width);
           canvas.height = Math.ceil(vp.height);
