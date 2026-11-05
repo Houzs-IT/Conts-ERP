@@ -10,6 +10,7 @@ import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { PRINT_FORMAT_LIST, PRINT_FORMATS, type PrintFormat } from '../../lib/renovation/print-formats';
 import type { PrintDoc } from '../../lib/renovation/print-model';
 import type { Density } from '../../lib/renovation/print-layout';
+import { isStaleChunkError } from '../../lib/staleBuild';
 import { ErrorBanner } from './shared';
 
 const DOC_TITLE: Record<string, string> = { quotation: 'Quotation', 'sales order': 'Sales Order', 'variation order': 'Variation Order' };
@@ -32,7 +33,7 @@ export function PrintDialog({ open, onClose, title, docNo, brandName, defaultFor
       await printRenovationDoc(doc, { action, density });
       if (action !== 'preview') onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The document could not be drawn.');
+      setError(isStaleChunkError(e) ? 'This page is on an older version. Refresh it, then try again.' : e instanceof Error ? e.message : 'The document could not be drawn.');
     }
   };
   return (
