@@ -154,12 +154,12 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
         const label = `${KIND_LABEL[r.kind]} ${monthName(r.billMonth)}${provider ? ` (${provider})` : ''}`;
         const expenseId = crypto.randomUUID();
         await run(tx, `INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, deduct_month, rolled, record_only, reference, charge_to,
-            receipt_document_id, period_from, period_to, created_by, created_at)
-          VALUES (?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            receipt_document_id, period_from, period_to, created_by, created_at, owner_paid)
+          VALUES (?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           expenseId, r.unitId, r.kind,
           split.kind === 'split' && inside > 0 ? `${label}, ${split.insideDays} of ${split.totalDays} days in the contract` : label,
           inside > 0 ? inside : r.amountSen, lastDay(r.billMonth), deductMonth, deductMonth !== r.billMonth, inside <= 0,
-          account.account_no, r.chargeTo ?? 'owner', scan.document_id, r.periodFrom ?? null, r.periodTo ?? null, session.userId, now);
+          account.account_no, r.chargeTo ?? 'owner', scan.document_id, r.periodFrom ?? null, r.periodTo ?? null, session.userId, now, !!r.ownerPaid);
 
         /* The owner lines go on the unit's owner: the same owner whose statement carries the bill. */
         const owner = unit.ownerId ?? (split.kind === 'split' ? split.ownerId : null);
@@ -211,16 +211,17 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
 class Refused extends Error { constructor(public scanId: string, message: string) { super(message); } }
 
 /** The bills of one save (`scanIds`) the company pays (not ticked "Owner paid"), by provider, for the payment requests. */
-export async function billsToPay(env: Env, batchId: string, scanIds: string[], provider?: string): Promise<{ provider: string; scanIds: string[]; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }[]> {
-  const rows = await all<{ id: string; provider: string; unit_id: string; category: string; incurred_on: string; account_no: string | null; bill_sen: number }>(env, `
-    SELECT s.id, s.provider, e.unit_id, e.category, e.incurred_on, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
+export async function billsToPay(env: Env, batchId: string, scanIds: string[], provider?: string): Promise<{ provider: string; scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }[]> {
+  const rows = await all<{ id: string; expense_id: string; provider: string; unit_id: string; category: string; incurred_on: string; account_no: string | null; bill_sen: number }>(env, `
+    SELECT s.id, s.expense_id, s.provider, e.unit_id, e.category, e.incurred_on, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
     WHERE s.batch_id = ? AND NOT s.owner_paid AND s.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
     ORDER BY s.provider, e.incurred_on, e.unit_id`, batchId, JSON.stringify(scanIds));
-  const out = new Map<string, { scanIds: string[]; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }>();
+  const out = new Map<string, { scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }>();
   for (const r of rows) {
     if (provider && r.provider !== provider) continue;
-    const g = out.get(r.provider) ?? { scanIds: [], bills: [] };
+    const g = out.get(r.provider) ?? { scanIds: [], expenseIds: [], bills: [] };
     g.scanIds.push(r.id);
+    g.expenseIds.push(r.expense_id);
     g.bills.push({ unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), accountNo: r.account_no, amountSen: Number(r.bill_sen) });
     out.set(r.provider, g);
   }

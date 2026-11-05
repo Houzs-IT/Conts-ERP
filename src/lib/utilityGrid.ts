@@ -17,7 +17,21 @@ export interface GridBill {
   /** The deduction month's owner statement is final (finalised, sent or paid). */
   final: boolean;
   receiptId: string | null; reference: string | null; rolled: boolean;
+  /** The payment request the bill went out on: its number, engine status, the month (MYT) it was made, and what it asks
+   *  for the bill (the whole printed bill, also when the expense keeps only the days inside the contract). */
+  request?: { id: string; no: string | null; status: string; month: string; amount?: number } | null;
 }
+
+/** The "By payment request" view (chew, 5 Nov 2026; SOP 3.10): waiting for payment, part paid, paid. A rejected or
+ *  withdrawn request no longer asks for the money, so its bills are not shown. Words and colours: STATUS_VOCAB.utility_request. */
+export type RequestState = 'waiting' | 'part_paid' | 'paid';
+export function requestState(status: string): RequestState | null {
+  if (status === 'SUBMITTED') return 'waiting';
+  if (status === 'PART_PAID') return 'part_paid';
+  if (status === 'PAID' || status === 'CLOSED') return 'paid';
+  return null;
+}
+const REQUEST_ORDER: RequestState[] = ['waiting', 'part_paid', 'paid'];
 
 export function billState(b: GridBill): BillState {
   if (b.recordOnly) return 'record';
@@ -28,22 +42,37 @@ export function billState(b: GridBill): BillState {
 /** A cell holding several bills shows the state that most needs attention. */
 const ORDER: BillState[] = ['pending', 'charged', 'record', 'company'];
 
-export interface Cell { amount: number; state: BillState | null; bills: GridBill[] }
+export interface Cell { amount: number; state: BillState | RequestState | null; bills: GridBill[] }
 
-/** Cells keyed `${unitId}|${kind}|${month}`, and `${unitId}|total|${month}` (no state). A bill sits in its bill month. */
-export function buildCells(bills: GridBill[]): Map<string, Cell> {
+/** Cells keyed `${unitId}|${kind}|${month}`, and `${unitId}|total|${month}` (no state). */
+function cellsBy<S extends BillState | RequestState>(bills: GridBill[], month: (b: GridBill) => string | null, state: (b: GridBill) => S | null, order: S[],
+  amount: (b: GridBill) => number = b => b.amount): Map<string, Cell> {
   const cells = new Map<string, Cell>();
-  const add = (key: string, b: GridBill, state: BillState | null) => {
-    const c = cells.get(key) ?? { amount: 0, state, bills: [] };
-    c.amount += b.amount; c.bills.push(b);
-    if (state && c.state && ORDER.indexOf(state) < ORDER.indexOf(c.state)) c.state = state;
+  const add = (key: string, b: GridBill, s: S | null) => {
+    const c: Cell = cells.get(key) ?? { amount: 0, state: s, bills: [] };
+    c.amount += amount(b); c.bills.push(b);
+    if (s && c.state && order.indexOf(s) < order.indexOf(c.state as S)) c.state = s;
     cells.set(key, c);
   };
   for (const b of bills) {
-    add(`${b.unitId}|${b.kind}|${b.billMonth}`, b, billState(b));
-    add(`${b.unitId}|total|${b.billMonth}`, b, null);
+    const m = month(b);
+    if (!m) continue;
+    add(`${b.unitId}|${b.kind}|${m}`, b, state(b));
+    add(`${b.unitId}|total|${m}`, b, null);
   }
   return cells;
+}
+
+/** By bill month: a bill sits in its bill month, coloured by whether the owner has been charged. */
+export function buildCells(bills: GridBill[]): Map<string, Cell> {
+  return cellsBy(bills, b => b.billMonth, billState, ORDER);
+}
+
+/** By payment request: a bill sits in the month its request was made, coloured by the request; bills with no request,
+ *  or on a rejected or withdrawn one, are left out. */
+export function buildRequestCells(bills: GridBill[]): Map<string, Cell> {
+  const live = (b: GridBill) => (b.request ? requestState(b.request.status) : null);
+  return cellsBy(bills, b => (live(b) ? b.request!.month : null), live, REQUEST_ORDER, b => b.request?.amount ?? b.amount);
 }
 
 const shift = (m: string, by: number) => {

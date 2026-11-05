@@ -216,6 +216,12 @@ export const STATUS_VOCAB = {
     record: { label: 'Record only', tone: 'info' },
     company: { label: 'Company pays', tone: 'neutral' },
   },
+  /* A utility bill's payment request, on Utility bills "By payment request" (src/lib/utilityGrid.ts requestState). */
+  utility_request: {
+    waiting: { label: 'Waiting for payment', tone: 'warning' },
+    part_paid: { label: 'Part paid', tone: 'info' },
+    paid: { label: 'Paid', tone: 'success' },
+  },
 
   // Units > Deductions (src/pages/DeductionsPage.tsx): which side of the operator's share a line comes off.
   deduction_type: {
