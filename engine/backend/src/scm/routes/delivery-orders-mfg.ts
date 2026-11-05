@@ -3376,6 +3376,7 @@ deliveryOrdersMfg.post('/', async (c) => {
   const { data: header, error: hErr } = await insertWithDocNoRetry<{ id: string; do_number: string }>(
     () => nextNum(sb, c),
     (doNumber) => sb.from('delivery_orders').insert({
+      warehouse_id: headerWarehouseId,
     company_id: activeCompanyId(c), // multi-company: stamp the active company
     do_number: doNumber,
     so_doc_no: (body.soDocNo as string) ?? null,
@@ -3908,6 +3909,7 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
   const { data: doHeader, error: hErr } = await insertWithDocNoRetry<{ id: string; do_number: string }>(
     () => nextNum(sb, c, srcPrefix),
     (doNumber) => sb.from('delivery_orders').insert({
+      warehouse_id: headerWarehouseId,
     /* multi-company: INHERIT the source SO's company (doCompanyId), which on this
        route can differ from the active one — a 2990 order converted while
        browsing as Houzs stays a 2990 delivery order on 2990's books, drawing
