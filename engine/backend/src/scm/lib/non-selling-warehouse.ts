@@ -92,6 +92,12 @@ export async function loadNonSellingWarehouses(
   return out;
 }
 
+/** The set a sales LINE is judged by. On-site holds no stock to count, but a line sent there is still deliverable:
+ *  Works and Built-in default to it (owner, 5 Nov 2026) and are ready when their own PO is received. */
+export function exceptOnSite(all: ReadonlyMap<string, NonSellingWarehouse>): Map<string, NonSellingWarehouse> {
+  return new Map([...all].filter(([, w]) => !isOnSiteWarehouse(w.code)));
+}
+
 /**
  * May a line bound to `warehouseId` be promised goods from it?
  *
