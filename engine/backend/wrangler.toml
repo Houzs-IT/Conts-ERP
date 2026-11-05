@@ -7,10 +7,6 @@ main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Run beside the database (Singapore): an MRP read makes about 100 trips to it, each one paid from Kuala Lumpur otherwise.
-[placement]
-mode = "smart"
-
 [vars]
 AUTOCOUNT_API_URL = "https://autocount.invalid/"
 AUTOCOUNT_SYNC_DISABLED = "true"

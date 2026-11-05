@@ -12,10 +12,6 @@ compatibility_date = "2026-09-17"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "dist"
 
-# Run beside the database (Singapore): an MRP read makes about 100 trips to it, each one paid from Kuala Lumpur otherwise.
-[placement]
-mode = "smart"
-
 # ---------------------------------------------------------------------------
 # Production
 # ---------------------------------------------------------------------------
