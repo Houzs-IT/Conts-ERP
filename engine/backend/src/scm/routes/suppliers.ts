@@ -759,6 +759,12 @@ export const createSupplierBindingHandler = async (c: any) => {
   };
   if (priceMatrix !== undefined) row.price_matrix = priceMatrix;
 
+  // Every line of a SKU can ask to bind the same supplier before the list reloads: the second ask finds the first.
+  const { data: same } = await supabase.from('supplier_material_bindings').select(BINDING_COLS)
+    .eq('supplier_id', supplierId).eq('material_kind', kind).eq('item_code', body.itemCode as string)
+    .eq('company_id', activeCompanyId(c)).limit(1).maybeSingle();
+  if (same) return c.json({ binding: same }, 200);
+
   // The first binding of a SKU is its main supplier. A failed read leaves the
   // request as sent (not main): this is a default, not a gate.
   if (!row.is_main_supplier) {
