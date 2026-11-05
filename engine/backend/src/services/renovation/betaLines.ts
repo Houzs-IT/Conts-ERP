@@ -288,7 +288,7 @@ export async function loadProjectLines(
                            WHERE p.code = i.item_code AND p.company_id = so.company_id ORDER BY (p.status::text = 'ACTIVE') DESC LIMIT 1) prod ON true
        LEFT JOIN scm.product_category_groups cg ON cg.code = prod.category_group
        LEFT JOIN scm.product_sub_categories sc ON sc.group_code = cg.code AND sc.code = prod.sub_category
-      WHERE ${PROJECT_SO} AND NOT coalesce(i.cancelled, false)
+      WHERE ${PROJECT_SO} AND NOT coalesce(i.cancelled, false) AND i.item_code IS DISTINCT FROM 'RENO-CREDIT'
       ORDER BY so.so_date NULLS LAST, i.doc_no, i.line_no NULLS LAST`,
     projectId, companyId);
   const r = all.filter((x) => lineVisible(scope, x.cat_code ?? null, x.sub_code ?? null));

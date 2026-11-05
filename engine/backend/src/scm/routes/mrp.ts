@@ -738,7 +738,7 @@ export async function computeMrp(
      under both flag values. `includeUndated` only controls whether undated
      rows appear in the RESULT (visibility, not math). */
   const demandOpen = ((demandRaw ?? []) as unknown as DemandRow[]).filter(
-    (r) => r.item_code && r.so && (!SO_DONE.has(r.so.status) || (RENO_RUNNING.has(r.so.status) && r.so.project_id != null)) && r.qty > 0,
+    (r) => r.item_code && r.item_code !== 'RENO-CREDIT' && r.so && (!SO_DONE.has(r.so.status) || (RENO_RUNNING.has(r.so.status) && r.so.project_id != null)) && r.qty > 0,
   );
   /* Conts projects (owner, 4 Nov 2026: "只要一有 delivery date，它就会排着出来"; widens 1 Nov's processing-date rule).
      A line of an order that belongs to a project is demand once it has a delivery date (the one set on the project's
