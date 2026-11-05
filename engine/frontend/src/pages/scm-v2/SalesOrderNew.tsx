@@ -40,7 +40,7 @@ import {
 //   • Navigation repointed to /scm/sales-orders/*.
 // ----------------------------------------------------------------------------
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery as useTanstackQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Camera, ChevronDown, Save, X } from 'lucide-react';
@@ -1823,7 +1823,7 @@ export const SalesOrderNew = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the layout is the trigger
   }, [reno, renoLayoutKey]);
 
-  const renderNewLine = (line: DraftLine, idx: number) => {
+  const renderNewLine = (line: DraftLine, idx: number, move?: ReactNode) => {
             /* fromScan — the slip rawText still feeds the SKU picker's placeholder
                hint for a no-match line (searchHint below). The per-line
                "scanned · NN%" review chip was REMOVED: owner — it is scan-review
@@ -1834,6 +1834,8 @@ export const SalesOrderNew = () => {
             return (
               <div key={line.rid} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                 <SoLineCard
+                  compact={reno}
+                  actions={reno ? move : undefined}
                   index={idx}
                   draft={line}
                   onChange={(patch) => updateLine(line.rid, patch)}
@@ -2421,7 +2423,7 @@ export const SalesOrderNew = () => {
               setRenoRooms(next);
               if (rename) setRenoLineRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
             }}
-            rows={lines.map((line) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', render: (n: number) => renderNewLine(line, n) }))}
+            rows={lines.map((line) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', render: (n: number, move?: ReactNode) => renderNewLine(line, n, move) }))}
             onRowRoom={(rid, room) => setRenoLineRoom((m) => ({ ...m, [rid]: room }))}
             onAddLine={(room) => {
               const l = newLine(deliveryDate || null);
@@ -2429,6 +2431,7 @@ export const SalesOrderNew = () => {
               if (room) setRenoLineRoom((m) => ({ ...m, [l.rid]: room }));
             }}
             layout={roomLayoutOf(renoInfo)}
+            compact
           />
           <section className={styles.card}>
             <div className={styles.cardBody} style={{ ...subtotalStyle, flexDirection: 'row' }}>Subtotal: {fmtRm(subtotalSen)}</div>
