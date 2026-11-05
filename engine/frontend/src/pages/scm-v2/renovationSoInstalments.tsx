@@ -84,20 +84,25 @@ export function SoInstalments({ rows, money, onBill }: { rows: readonly SoInstal
       {rows.map((r) => {
         const paid = r.amountSen > 0 && r.paidSen >= r.amountSen;
         const part = !paid && r.paidSen > 0;
+        const due = !paid && Boolean(r.billable);
         return (
-          <div key={r.seq} className="rounded-lg border border-border-subtle px-3 py-2">
+          <div key={r.seq} className={`flex min-w-0 flex-col gap-1 rounded-lg border p-3 ${paid ? "border-synced/30 bg-synced-bg/40" : due || part ? "border-warning-text/40" : "border-border-subtle"}`}>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-secondary">{r.label}</span>
               {!r.slot && <span className="text-[11px] text-ink-muted">{(r.pctBp / 100).toFixed(r.pctBp % 100 ? 1 : 0)}%</span>}
             </div>
-            <div className="mt-1 text-[14px] font-bold text-ink">{r.slot && r.amountSen === 0 ? "-" : money(part ? toCollectSen(r) : r.amountSen)}</div>
-            <div className={`mt-0.5 text-[11.5px] ${paid ? "text-synced" : part ? "text-warning-text" : "text-ink-muted"}`}>
+            <div className="text-[17px] font-bold tabular-nums text-ink">{r.slot && r.amountSen === 0 ? "-" : money(part ? toCollectSen(r) : r.amountSen)}</div>
+            <div className={`text-[12px] font-semibold ${paid ? "text-synced" : part || due ? "text-warning-text" : "text-ink-muted"}`}>
               {paid ? (r.slot ? "Received" : "Paid") : part ? `To collect, ${money(r.paidSen)} of ${money(r.amountSen)} paid` : r.slot ? "Not received" : "Not paid"}
             </div>
-            {r.document && (r.document.invoiceId
-              ? <Link className="mt-1 block text-[11.5px] font-semibold text-primary" to={`/scm/sales-invoices/${r.document.invoiceId}`}>{r.document.number}</Link>
-              : <div className="mt-1 text-[11.5px] text-ink-secondary">{r.document.number}</div>)}
-            {r.billable && r.id && onBill && <Button variant="secondary" className="mt-1.5 h-7" onClick={() => onBill(r.id!)}>Bill</Button>}
+            {(r.document || (r.billable && r.id && onBill)) && (
+              <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+                {r.document ? (r.document.invoiceId
+                  ? <Link className="truncate text-[11.5px] font-semibold text-primary" to={`/scm/sales-invoices/${r.document.invoiceId}`}>{r.document.number}</Link>
+                  : <span className="truncate text-[11.5px] text-ink-secondary">{r.document.number}</span>) : <span />}
+                {r.billable && r.id && onBill && <Button variant="secondary" className="h-7" onClick={() => onBill(r.id!)}>Bill</Button>}
+              </div>
+            )}
           </div>
         );
       })}

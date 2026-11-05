@@ -355,7 +355,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
       )}
       <ErrorBanner error={error} onClose={() => setError(null)} />
       {(!embedded || k.projectId === null) && <ContractProjectCard docNo={k.docNo} projectId={k.projectId} canWrite={can('projects.write')} />}
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+      <div className={embedded ? "grid grid-cols-1 gap-2 sm:grid-cols-3" : "grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6"}>
         <Stat label="Original contract" value={rm(k.totals.originalContractSen)} />
         <Stat label="VOs and credit notes" value={rm(k.totals.voTotalSen)} tone={k.totals.voTotalSen ? 'warn' : 'muted'} />
         <Stat label="Revised contract" value={rm(k.totals.revisedContractSen)} />
