@@ -96,6 +96,7 @@ import { allocSourceOf, allocSourceCoveringPo, type AllocSource } from '../share
 import { isHardBoundLine, HARD_BOUND_COMPANY_ID } from '../lib/so-stock-allocation';
 import { isUnitBoundCategory } from '../lib/unit-bound-sku';
 import { customizedKey, isCustomizedLine } from '../lib/so-line-customized';
+import { isOnSiteWarehouse } from '../lib/non-selling-warehouse';
 
 export const mrp = new Hono<{ Bindings: Env; Variables: Variables }>();
 mrp.use('*', supabaseAuth);
@@ -364,6 +365,7 @@ export type MrpSku = {
   warehouseName: string | null;
   itemCode: string;
   variantKey: string;
+  stockWhere?: Array<{ code: string; qty: number }>;
   variantLabel: string | null;
   description: string | null;
   category: string | null;
@@ -964,10 +966,21 @@ export async function computeMrp(
   const { data: balances, error: balErr } = (await balancesProm)();
   if (balErr) throw new Error(`mrp_load_failed: ${balErr.message}`);
   const stockByKey = new Map<string, number>();
+  /* Planning counts every warehouse together, and the page still says where the goods are. */
+  const stockWhereByKey = new Map<string, Map<string, number>>();
   for (const b of balances ?? []) {
+    const whCode = b.warehouse_id ? whById.get(b.warehouse_id)?.code ?? null : null;
+    if (isOnSiteWarehouse(whCode)) continue;
     const k = composite(b.warehouse_id ?? null, b.item_code, b.variant_key ?? '');
     stockByKey.set(k, (stockByKey.get(k) ?? 0) + (b.qty ?? 0));
+    if (whCode && (b.qty ?? 0) !== 0) {
+      const where = stockWhereByKey.get(k) ?? new Map<string, number>();
+      where.set(whCode, (where.get(whCode) ?? 0) + (b.qty ?? 0));
+      stockWhereByKey.set(k, where);
+    }
   }
+  const stockWhereOf = (k: string): Array<{ code: string; qty: number }> =>
+    [...(stockWhereByKey.get(k) ?? new Map<string, number>())].filter(([, qty]) => qty > 0).map(([code, qty]) => ({ code, qty }));
 
   // ── 4. Outstanding PO supply — open PO lines with ETA, keyed by (warehouse, code, variant) ──
   // Each PO line's ship-to warehouse = line warehouse_id, falling back to the PO
@@ -1263,7 +1276,6 @@ export async function computeMrp(
     if (isServiceLine({ itemGroup: d.item_group, itemCode: d.item_code, category: cat })) continue;
     if (catFilter && cat !== catFilter) continue;
     if (cat === 'SOFA') continue;
-    if (whFilter && (d.warehouse_id ?? null) !== whFilter) continue;
     const whId = d.warehouse_id ?? null;
     /* A remark makes the line customized: its own row here, so it draws no stock and no pooled PO (those are keyed
        on SKU and variants alone) and reads only what was ordered for it (`bound` in section 7). */
@@ -1494,6 +1506,7 @@ export async function computeMrp(
       warehouseName: wh?.name ?? null,
       itemCode: code,
       variantKey: bucket.vkey,
+      stockWhere: stockWhereOf(k),
       variantLabel: vlabel || null,
       description: prod?.name ?? rows[0]?.description ?? null,
       /* THE SAME EXPRESSION THE FILTER USED, and it has to be — §6 keeps a line
@@ -1556,7 +1569,6 @@ export async function computeMrp(
        item_group, or it shows on NO MRP tab and never gets a PO. */
     const sofaCat = prodByCode.get(d.item_code)?.category ?? catFromGroup(d.item_group);
     if (sofaCat !== 'SOFA') continue;
-    if (whFilter && (d.warehouse_id ?? null) !== whFilter) continue;
     const whId = d.warehouse_id ?? null;
     const vkey = variantKeyOf(d.item_group, d.variants);
     const k = composite(whId, d.item_code, vkey);

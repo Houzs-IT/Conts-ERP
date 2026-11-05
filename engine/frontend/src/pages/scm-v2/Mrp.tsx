@@ -203,6 +203,13 @@ const skuDefaultSupplierId = (s: MrpSku): string | null =>
 /* Only SHORTAGE lines are selectable / orderable. */
 const shortageLinesOf = (s: MrpSku) => s.lines.filter((l) => l.source === 'shortage' && l.shortageQty > 0 && l.soItemId);
 
+
+/** Which warehouses hold these goods, largest first: BLK 3 · TRI 2. */
+const stockWhereText = (skus: ReadonlyArray<{ stockWhere?: Array<{ code: string; qty: number }> }>): string => {
+  const at = new Map<string, number>();
+  for (const s of skus) for (const w of s.stockWhere ?? []) at.set(w.code, (at.get(w.code) ?? 0) + w.qty);
+  return [...at].sort((a, b) => b[1] - a[1]).map(([code, qty]) => `${code} ${qty}`).join(' · ');
+};
 
 export const Mrp = () => {
   const navigate = useNavigate();
@@ -779,11 +786,13 @@ export const Mrp = () => {
       },
     },
     {
-      key: 'warehouse', label: 'Warehouse', width: '150px',
-      getValue: (g) => g.warehouseCode ?? g.warehouseName ?? '',
-      render: (g) => (g.warehouseCode
-        ? <span className={styles.whTag} title={g.warehouseName ?? undefined}>{g.warehouseCode}</span>
-        : <span className={styles.whNone}>—</span>),
+      /* Where the goods are, not where the order sits: an order is not tied to a warehouse (owner, 5 Nov 2026). */
+      key: 'warehouse', label: 'In stock at', width: '170px',
+      getValue: (g) => stockWhereText(g.variants),
+      render: (g) => {
+        const text = stockWhereText(g.variants);
+        return text ? <span className={styles.whTag}>{text}</span> : <span className={styles.whNone}>—</span>;
+      },
     },
     /* Shown by default since the table opens in this order (owner, 4 Nov 2026). */
     {
@@ -1572,8 +1581,8 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
             <td className={styles.codeCell}>{ln.soDocNo}</td>
             <td>{mrpProjectLabel(ln) || '—'}</td>
             <td className={styles.whCell}>
-              {v.warehouseCode
-                ? <span className={styles.whTag} title={v.warehouseName ?? undefined}>{v.warehouseCode}</span>
+              {stockWhereText([v])
+                ? <span className={styles.whTag}>{stockWhereText([v])}</span>
                 : <span className={styles.whNone}>—</span>}
             </td>
             <td><span className={styles.variantTag}>{v.variantLabel ?? v.itemCode}</span></td>

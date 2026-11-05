@@ -604,7 +604,8 @@ async function runSoStockAllocation(
         });
         continue;
       }
-      const bucket = `${whId ?? WH_NONE}::${l.item_code}::${variant_key}`;
+      /* Every warehouse counts together (owner, 5 Nov 2026): goods leave from wherever they are. */
+      const bucket = `${WH_NONE}::${l.item_code}::${variant_key}`;
       needs.push({
         id: l.id, doc_no: l.doc_no, bucket, whId,
         need: remaining, current: l.stock_status,
@@ -679,7 +680,7 @@ async function runSoStockAllocation(
       if (!warehouseCanPromise(r.warehouse_id, nonSellingIds)) continue;
       const v = r.variant_key ?? '';
       const qty = Number(r.qty ?? 0);
-      const whKey = `${r.warehouse_id}::${r.item_code}::${v}`;
+      const whKey = `${WH_NONE}::${r.item_code}::${v}`;
       onHandByBucket.set(whKey, (onHandByBucket.get(whKey) ?? 0) + qty);
     }
 
@@ -778,7 +779,7 @@ async function runSoStockAllocation(
         : { status: 'PARTIAL', qtyReady: fill });
       // take the units out of the pool: exact bucket first, then blank-variant
       let left = fill;
-      for (const key of [n.bucket, `${n.whId ?? WH_NONE}::${n.bucket.split('::')[1]}::`]) {
+      for (const key of [n.bucket, `${WH_NONE}::${n.bucket.split('::')[1]}::`]) {
         if (left <= 0) break;
         const have = remaining.get(key) ?? 0;
         if (have <= 0) continue;
