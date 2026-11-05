@@ -15,3 +15,7 @@ $$;
 
 revoke all on function pos.utility_payment_requests() from public;
 grant execute on function pos.utility_payment_requests() to pos_app;
+
+-- Rebuild the Demo mode overlay (migration 0203) so demo_pos.expenses has the 0219 columns too.
+select demo.drop_views();
+select demo.sync();
