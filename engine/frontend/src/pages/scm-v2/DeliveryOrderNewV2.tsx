@@ -89,6 +89,7 @@ import { DateField } from "../../vendor/scm/components/DateField";
 import { fmtDate } from "../../vendor/shared/format";
 import { warehouseLabel } from "../../vendor/scm/lib/warehouse-label";
 import { buildDoHeaderBody, seedDoHeaderForm, DO_HEADER_LOCKED_NOTICE } from "../../vendor/scm/lib/do-header-form";
+import { useWarehouses } from "../../vendor/scm/lib/inventory-queries";
 import { doHeaderLocked, isDoHeaderKeyLocked } from "../../vendor/shared/do-header-lock";
 import {
   seedFollowerVariants,
@@ -598,6 +599,8 @@ export function DeliveryOrderNewV2() {
   const [driver, setDriver] = useState("");
   const [vehicle, setVehicle] = useState("");
   const [buildingType, setBuildingType] = useState("");
+  const [shipFrom, setShipFrom] = useState("");
+  const warehouses = useWarehouses();
   const [venue, setVenue] = useState("");
   /* Carried, never typed: the SO's brand rides onto the DO the way /from-sos
      carries it. The form had no field for it, so every DO raised here shipped
@@ -968,6 +971,7 @@ export function DeliveryOrderNewV2() {
   const buildBody = () => ({
     soDocNo: soDocNo || undefined,
     ...buildHeaderBody(),
+    warehouseId: shipFrom || undefined,
     items: validLines().map(toDoItemBody),
   });
 
@@ -1448,6 +1452,16 @@ export function DeliveryOrderNewV2() {
                 value={vehicle}
                 onChange={setVehicle}
                 placeholder="Lorry plate no."
+              />
+            </div>
+            <div>
+              <Label text="Ship from" />
+              <SelectInput
+                value={shipFrom}
+                onChange={setShipFrom}
+                disabled={!!editId}
+                placeholder="Default warehouse"
+                options={(warehouses.data ?? []).map((w) => ({ value: w.id, label: `${w.code} · ${w.name}` }))}
               />
             </div>
             <div>

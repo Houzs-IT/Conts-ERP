@@ -73,7 +73,8 @@ export async function resolveDoLineWarehouses(
   const fallback = headerWarehouseId ?? (await defaultWarehouseId(sb, companyId));
   for (const it of items) {
     const fromSo = it.so_item_id ? (soWh.get(it.so_item_id) ?? null) : null;
-    out.set(it.id, fromSo ?? fallback);
+    /* The warehouse picked on the delivery order is where the goods leave (owner, 5 Nov 2026): orders are not tied to one. */
+    out.set(it.id, headerWarehouseId ?? fromSo ?? fallback);
   }
   return out;
 }
