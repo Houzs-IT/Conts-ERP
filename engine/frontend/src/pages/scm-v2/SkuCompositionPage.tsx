@@ -59,7 +59,7 @@ export function SkuCompositionPage() {
 
       <div className="max-w-[640px]">
         <span className={FIELD_LABEL}>SKU</span>
-        <SearchableSelect value={sku} onChange={setSku} options={(skus.data ?? []).map(skuOption)} placeholder="Search SKUs" ariaLabel="SKU" />
+        <SearchableSelect className="h-9 w-full rounded-md border border-border bg-surface px-2 text-[13px]" value={sku} onChange={setSku} options={(skus.data ?? []).map(skuOption)} placeholder="Search SKUs" ariaLabel="SKU" />
       </div>
 
       {sku ? (
@@ -108,7 +108,7 @@ export function SkuCompositionPage() {
             <div className="min-w-0">
               <span className={FIELD_LABEL}>Add a raw material</span>
               <SearchableSelect
-                key={pickerKey} value={material} onChange={setMaterial} placeholder="Search raw materials" ariaLabel="Raw material"
+                className="h-9 w-full rounded-md border border-border bg-surface px-2 text-[13px]" key={pickerKey} value={material} onChange={setMaterial} placeholder="Search raw materials" ariaLabel="Raw material"
                 options={(materials.data ?? []).filter((m) => !taken.has(m.code)).map(skuOption)}
               />
             </div>

@@ -207,6 +207,7 @@ export function ProductionMaterialsSection({ orderId, canEdit }: { orderId: stri
               <span className={FIELD_LABEL}>Add a material</span>
               <SearchableSelect
                 key={pickerKey}
+                className="h-9 w-full rounded-md border border-border bg-surface px-2 text-[13px]"
                 value={code}
                 onChange={setCode}
                 options={(skus.data ?? []).map((s) => ({ value: s.code, label: s.name ? `${s.code} · ${s.name}` : s.code }))}
