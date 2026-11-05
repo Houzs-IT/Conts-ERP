@@ -616,6 +616,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Open: Incoming PO number on an SO line is not a link. Doc numbers cut off in the SO and Production lists at some widths. The SO status tab Delivered read 0 with a delivered order. The side panel offers Transfer to Delivery Order on a delivered order.
 - Open: a production order raised from Plan POs has no Location; the others show CONTS-WH.
 - Owner to decide: the stage bar reads Design approved and Ordering with no drawing approved. MRP lists no line without a Processing date, so a new order is invisible there until one is set. Needs attention keeps saying Order the main items after the POs are raised.
+- Owner to decide: the Contract PDF prints RM 3,200 after a RM 100 credit note, while the contract on screen reads RM 3,100. Prepared By prints blank because nothing fills it. The sales order PDF still says "submit our quotation".
 - Left over: test projects RN-2611-013 (now used by someone else), -014, -015; QT-2611-003 draft with no project.
 
 ## Engine click-through (4-5 Nov 2026)
