@@ -32,6 +32,9 @@ export interface PendingPoChange { id: string; amendmentNo: string; poId: string
 
 export interface LinePlan { orderOn: string | null; deliverOn: string | null; noPo: boolean }
 
+export interface LineMaterial { code: string; name: string | null; uom: string | null; qty: number }
+export interface RawMaterialSku { code: string; name: string | null; uom: string | null }
+
 export interface ManagedLine {
   id: string;
   soDocNo: string;
@@ -57,6 +60,8 @@ export interface ManagedLine {
   contractLineId?: string | null;
   /** The suppliers the SKU can be ordered from (its bindings), main first. LinesAnswer.suppliers has the rest. */
   supplierChoices?: SupplierChoice[];
+  /** Its raw materials: the list saved on the line, else the SKU's composition times the line's qty. */
+  materials?: LineMaterial[];
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none). */
   categoryCode: string | null;
@@ -90,6 +95,9 @@ export interface LinesAnswer {
 const B = "/api/beta";
 
 export const linesApi = {
+  rawMaterials: (): Promise<{ skus: RawMaterialSku[] }> => api.get<{ skus: RawMaterialSku[] }>(`${B}/raw-materials`),
+  saveMaterials: (projectId: number, itemId: string, materials: Array<{ code: string; qty: number }>): Promise<{ ok: true }> =>
+    api.put<{ ok: true }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/materials`, { materials }),
   lines: (projectId: number): Promise<LinesAnswer> => api.get<LinesAnswer>(`${B}/projects/${projectId}/lines`),
   savePlan: (projectId: number, itemId: string, b: Partial<LinePlan>): Promise<{ ok: true; plan: LinePlan }> =>
     api.put<{ ok: true; plan: LinePlan }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/plan`, b),

@@ -88,6 +88,7 @@ const ScmSuppliersV2 = lazy(() => import("./pages/scm-v2/SuppliersV2Route"));
 // Each list/detail page is a NAMED export wrapped at the route in <Scm2990Shell>
 // (the Notify/Confirm/dialog-service providers).
 const Scm2990Shell = lazy(() => import("./pages/scm-v2/Scm2990Shell"));
+const ScmSkuComposition = lazy(() => import("./pages/scm-v2/SkuCompositionPage").then((m) => ({ default: m.SkuCompositionPage })));
 const ScmProductionOrders = lazy(() => import("./pages/scm-v2/ProductionOrdersListV2").then((m) => ({ default: m.ProductionOrdersListV2 })));
 const ScmProductionOrderNew = lazy(() => import("./pages/scm-v2/ProductionOrderNew").then((m) => ({ default: m.ProductionOrderNew })));
 const ScmProductionOrderFromSo = lazy(() => import("./pages/scm-v2/ProductionOrderFromSo").then((m) => ({ default: m.ProductionOrderFromSo })));
@@ -733,6 +734,7 @@ export default function App() {
         {/* Vendored 2990's Purchase Order pages. /new + /from-so precede /:id so
             the literal segments match before the param route. Each page is wrapped
             in <Scm2990Shell> for the Notify/Confirm/dialog-service providers. */}
+        <Route path="/scm/sku-composition" element={<ScmGuard area="scm.procurement.production"><Scm2990Shell><ScmSkuComposition /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/production-orders" element={<ScmGuard area="scm.procurement.production"><Scm2990Shell><ScmProductionOrders /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/production-orders/new" element={<ScmGuard area="scm.procurement.production"><Scm2990Shell><ScmProductionOrderNew /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/production-orders/from-so" element={<ScmGuard area="scm.procurement.production"><Scm2990Shell><ScmProductionOrderFromSo /></Scm2990Shell></ScmGuard>} />

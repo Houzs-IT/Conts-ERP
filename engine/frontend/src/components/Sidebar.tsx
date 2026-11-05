@@ -546,6 +546,7 @@ export const ALL_NAV_TABS: NavTab[] = [
         hideForSalesRep: true,
         children: [
           { to: "/scm/production-orders", label: "Production Orders", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.production"], hideForSalesRep: true },
+          { to: "/scm/sku-composition", label: "SKU Composition", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.production"], hideForSalesRep: true },
         ],
       },
       {
