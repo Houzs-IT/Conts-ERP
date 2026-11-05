@@ -1220,6 +1220,8 @@ export async function computeMrp(
       const s = Array.isArray(b.supplier) ? b.supplier[0] : b.supplier;
       if (!s) continue; // orphaned binding (supplier deleted) — skip
       const arr = suppliersByCode.get(b.item_code) ?? [];
+      // One supplier can be bound twice (no unique index): main-first order keeps its main row.
+      if (arr.some((x) => x.supplierId === b.supplier_id)) continue;
       arr.push({ supplierId: b.supplier_id, code: s.code, name: s.name, isMain: b.is_main_supplier });
       suppliersByCode.set(b.item_code, arr);
       // First (is_main_supplier first via ORDER BY) wins as the default main.

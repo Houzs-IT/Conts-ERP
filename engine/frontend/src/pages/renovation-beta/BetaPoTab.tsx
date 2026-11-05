@@ -8,16 +8,15 @@
    they change the PO itself; before that they are the plan. A category band sets the date of every line in it through
    the same per-line paths, and the lines show the new date at once (owner, 3 Nov 2026: a band date seemed not to reach
    its lines); a line whose date cannot move from here says why. The lines sit straight under their category: no
-   sub-category bands (owner, 3 Nov 2026). In Edit mode a line still waiting for its PO picks its supplier as in MRP
-   (owner, 4 Nov 2026): the SKU's bound suppliers, main starred, then every other one, which the pick binds. MRP and
-   Create PO start from that pick. A document's own fields are changed in its editor, not here: the PO number opens the
+   sub-category bands (owner, 3 Nov 2026). The SKU and qty are read-only here, a VO changes them, and the supplier is
+   chosen in MRP (owner, 5 Nov 2026). A document's own fields are changed in its editor, not here: the PO number opens the
    PO and the GR and DO links their tabs (owner, 4 Nov 2026). A PO a VO changed is flagged until purchasing confirms the
    PO change. */
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { ProductionOrderChips } from "../scm-v2/ProductionOrderChips";
-import { AlertTriangle, Calculator, Camera, ChevronDown, ChevronRight, Download, FilePlus2, Pencil, Search } from "lucide-react";
+import { AlertTriangle, Calculator, Camera, ChevronDown, ChevronRight, Download, FilePlus2, Pencil } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { buildQueryKey, useQuery } from "../../hooks/useQuery";
 import { useQueryClient } from "@tanstack/react-query";
@@ -31,14 +30,13 @@ import { DocCell, useOpenDoc, type DocTab } from "./BetaLineDocs";
 import { betaSiteApi } from "./renovationBetaSiteApi";
 import { betaMediaApi } from "./renovationBetaMediaApi";
 import { PhotoUploadDialog, type UploadTarget } from "./BetaPhotoUpload";
-import { BetaSkuPicker } from "./BetaSkuPicker";
 import { BetaQuantityHelper } from "./BetaQuantityHelper";
 import { BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
   amountAfter, byAreaBlocks, byCategory, livePo, specLocked, SPEC_LOCKED_NOTE, dateFixedReason, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
-  linesApi, linesCsv, picksSupplier, postVo, refusalText, supplierOf, withDate,
+  linesApi, linesCsv, postVo, refusalText, withDate,
   contractLineEdits, postContractLines, variantsAfter, voBatches,
   type LineEdit, type LinesAnswer, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
@@ -62,7 +60,7 @@ const EDIT_LINE = TONES.amber.line;
 const editInput: CSSProperties = { ...inputStyle, minHeight: 30, height: 30, fontSize: 12.5, background: EDIT_BG, borderColor: EDIT_LINE, padding: "0 6px" };
 /* Below this width of the tab the table becomes stacked row cards: every column fits from here up (1280-1600px
    screens, 80% zoom included), and nothing is ever hidden or scrolled sideways. */
-const TABLE_MIN = 1120;
+const TABLE_MIN = 1040;
 const ellipsis: CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 };
 const cellStyle: CSSProperties = { padding: "6px 6px", fontSize: 13, borderBottom: `1px solid ${WS.rowLine}`, verticalAlign: "middle", overflow: "hidden" };
 const headStyle: CSSProperties = { ...thStyle, padding: "8px 6px", fontSize: 11.5, ...ellipsis };
@@ -70,7 +68,7 @@ const headStyle: CSSProperties = { ...thStyle, padding: "8px 6px", fontSize: 11.
 const COLUMN_HEAD: Record<PoColumn, { label: string; title?: string; right?: boolean }> = {
   sku: { label: "SKU" }, desc: { label: "Description" }, variants: { label: "Variants" }, qty: { label: "Qty", right: true }, amount: { label: "Amount", right: true },
   orderOn: { label: "Processing", title: "Processing date: when to place the order" }, deliverOn: { label: "Delivery", title: "Delivery date" },
-  supplier: { label: "Supplier", title: "Who the line is bought from" }, stock: { label: "Stock", title: "Same verdict as the sales order page" }, po: { label: "PO" }, gr: { label: "GR" }, do: { label: "DO" },
+  stock: { label: "Stock", title: "Same verdict as the sales order page" }, po: { label: "PO" }, gr: { label: "GR" }, do: { label: "DO" },
 };
 
 /** The tab's own width, so the layout follows the space it has (inside Property OS it is not the window's). */
@@ -109,7 +107,6 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const { can } = useAuth();
   const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
   const [edits, setEdits] = useState<Record<string, LineEdit>>({});
-  const [picking, setPicking] = useState<ManagedLine | null>(null);
   /* The variants dialog of one line, at the tab's level like the SKU picker: inside the table row a cell clips it. */
   const [varying, setVarying] = useState<ManagedLine | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -254,19 +251,6 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     }
   };
 
-  const saveSupplier = async (l: ManagedLine, supplierId: string): Promise<void> => {
-    if (!supplierId || supplierId === l.supplierId) return;
-    setBusyKey(`${l.id}:supplier`);
-    try {
-      const r = await linesApi.saveSupplier(p.projectId, l.id, supplierId);
-      patchLines(new Set([l.id]), (x) => ({ ...x, supplierId: r.supplierId, supplierName: r.supplierName }));
-      q.reload();
-    } catch (e) {
-      p.onError(refusalText(e));
-    } finally {
-      setBusyKey(null);
-    }
-  };
 
   const setNoPo = async (l: ManagedLine, noPo: boolean): Promise<void> => {
     setBusyKey(`${l.id}:noPo`);
@@ -302,8 +286,8 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const cell = (l: ManagedLine): RowCtx => ({
     l, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
-    setEdit: (patch) => setEdit(l.id, patch), pick: () => setPicking(l), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
-    saveSupplier: (id) => void saveSupplier(l, id), suppliers: d.suppliers ?? [], stock: stockByLine.get(l.id),
+    setEdit: (patch) => setEdit(l.id, patch), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
+    stock: stockByLine.get(l.id),
     grDocs: lineDocs(l.id, deliveries, "goods_received"), doDocs: lineDocs(l.id, deliveries, "delivery_order"), openDoc,
   });
 
@@ -314,7 +298,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       <WsPageHead
         title="SO"
         sub={editing
-          ? "Editing. Change a yellow field, then Save. A new amount or SKU is recorded as a VO; options and remarks just save. Dates and suppliers save as you set them. A PO's own date is changed in the PO: click its number."
+          ? "Editing. Change a yellow field, then Save. Options and remarks just save, and dates save as you set them. A SKU or qty changes through a VO. A PO's own date is changed in the PO: click its number."
           : "Every line of the sales order, after VOs."}
         right={(
           <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -507,17 +491,6 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
           onClose={() => setUploading(null)} onDone={(t) => { setUploading(null); p.onDone(t); photos.reload(); q.reload(); }} />
       )}
       {varying && <VariantDialog {...cell(varying)} onClose={() => setVarying(null)} />}
-      {picking && (
-        <BetaSkuPicker
-          current={picking.itemCode}
-          onClose={() => setPicking(null)}
-          onPick={(code, name, priceSen) => {
-            // A contract line keeps its contract price when the SKU changes (the VO re-adds it at that price).
-            setEdit(picking.id, contractSo.has(picking.soDocNo) ? { itemCode: code, pickedName: name } : { itemCode: code, pickedName: name, pickedPriceSen: priceSen });
-            setPicking(null);
-          }}
-        />
-      )}
     </>
   );
 }
@@ -595,13 +568,10 @@ interface RowCtx {
   refusal: string | null;
   pending: PendingPoChange[];
   setEdit: (patch: Partial<LineEdit>) => void;
-  pick: () => void;
   pickVariants: () => void;
   saveDate: (which: PlanDate, value: string) => void;
   setNoPo: (v: boolean) => void;
-  saveSupplier: (supplierId: string) => void;
   stock: SoLineCoverage | undefined;
-  suppliers: ReadonlyArray<{ id: string; name: string }>;
   grDocs: LineDoc[];
   doDocs: LineDoc[];
   openDoc: (tab: DocTab, no: string) => void;
@@ -612,22 +582,7 @@ function changed(r: RowCtx): LineEdit | null {
 }
 
 function SkuCell(r: RowCtx): ReactElement {
-  const e = changed(r);
-  const code = e?.itemCode ?? r.l.itemCode;
-  if (!r.editable || specLocked(r.l)) {
-    return (
-      <span title={r.editable ? SPEC_LOCKED_NOTE : code} style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, ...ellipsis }}>{code}</span>
-        {r.editable && <span style={{ ...metaStyle, fontSize: 11, ...ellipsis }}>Received: locked</span>}
-      </span>
-    );
-  }
-  return (
-    <button type="button" onClick={r.pick} aria-label={`Change SKU ${r.l.itemCode}`} title={e?.itemCode ? `${code} (was ${r.l.itemCode})` : `${code}: change SKU`}
-      style={{ ...editInput, width: "100%", display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontFamily: "ui-monospace, monospace", fontSize: 12, fontWeight: e?.itemCode ? 700 : 400 }}>
-      <span style={{ flex: 1, textAlign: "left", ...ellipsis }}>{code}</span><Search size={11} aria-hidden="true" style={{ flexShrink: 0 }} />
-    </button>
-  );
+  return <span title={r.l.itemCode} style={{ display: "block", fontFamily: "ui-monospace, monospace", fontSize: 12, ...ellipsis }}>{r.l.itemCode}</span>;
 }
 
 /** The remark as one line of text (click to edit), or "+ remark"; an input only while editing. */
@@ -716,12 +671,7 @@ function VariantDialog(r: RowCtx & { onClose: () => void }): ReactElement {
 }
 
 function QtyCell(r: RowCtx): ReactElement {
-  if (!r.editable) return <span>{r.l.qty}</span>;
-  return (
-    <input aria-label={`Qty for ${r.l.itemCode}`} type="text" inputMode="numeric" title={r.l.uom} style={{ ...editInput, width: "100%", maxWidth: 64, textAlign: "right" }}
-      value={r.edit?.qty === undefined ? String(r.l.qty) : Number.isNaN(r.edit.qty) ? "" : String(r.edit.qty)}
-      onChange={(ev) => { const t = ev.target.value.trim(); r.setEdit({ qty: t === "" ? Number.NaN : Number(t) }); }} />
-  );
+  return <span>{r.l.qty}</span>;
 }
 
 function AmountCell(r: RowCtx): ReactElement {
@@ -826,34 +776,6 @@ function PoCell({ r }: { r: RowCtx }): ReactElement {
   return <span style={metaStyle}>{r.l.plan.noPo ? "No PO" : "-"}</span>;
 }
 
-/** Who the line is bought from: in Edit mode a dropdown until a PO holds the line, then the PO's supplier as text. */
-function SupplierCell({ r }: { r: RowCtx }): ReactElement {
-  if (r.editable && r.plansReady && picksSupplier(r.l)) return <SupplierPick r={r} />;
-  const name = supplierOf(r.l);
-  return name ? <span title={name} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{name}</span> : <span style={metaStyle}>-</span>;
-}
-
-/** Who the line is bought from, before Create PO: the SKU's bound suppliers, main first and starred, then every other
-    supplier (owner, 4 Nov 2026). Picking one of those binds it to the SKU. */
-function SupplierPick({ r }: { r: RowCtx }): ReactElement {
-  const choices = r.l.supplierChoices ?? [];
-  const others = r.suppliers.filter((s) => !choices.some((c) => c.id === s.id));
-  if (choices.length === 0 && others.length === 0) {
-    return <span role="note" title="No supplier bound to this SKU: add one in the SKU's suppliers" style={{ fontSize: 11.5, color: WS.amber, lineHeight: 1.25 }}>No supplier bound to this SKU: add one in the SKU's suppliers</span>;
-  }
-  const busy = r.busyKey === `${r.l.id}:supplier`;
-  const picked = [...choices, ...others].some((c) => c.id === r.l.supplierId) ? r.l.supplierId ?? "" : "";
-  return (
-    <select aria-label={`Supplier for ${r.l.itemCode}`} value={picked} disabled={busy} onChange={(ev) => r.saveSupplier(ev.target.value)}
-      title={picked ? undefined : "No supplier on this line yet"}
-      style={{ ...editInput, width: "100%", height: 26, minHeight: 26, fontSize: 12, color: picked ? undefined : WS.amber }}>
-      {!picked && <option value="">{busy ? "Saving..." : "Pick a supplier"}</option>}
-      {choices.map((c) => <option key={c.id} value={c.id}>{c.main ? "\u2605 " : ""}{c.name}{c.main ? " (main)" : ""}</option>)}
-      {others.length > 0 && <optgroup label="Other suppliers">{others.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>}
-    </select>
-  );
-}
-
 function linePhotoSet(l: ManagedLine): LinePhotoSet {
   return {
     so: l.photoKeys.length ? { docNo: l.soDocNo, itemId: l.id, keys: l.photoKeys } : null,
@@ -880,7 +802,7 @@ function StockCell({ r }: { r: RowCtx }): ReactElement {
 
 const LINE_CELLS: Record<PoColumn, (r: RowCtx) => ReactElement> = {
   sku: (r) => <SkuCell {...r} />, desc: (r) => <DescCell {...r} />, variants: (r) => <VariantCell {...r} />, qty: (r) => <QtyCell {...r} />, amount: (r) => <AmountCell {...r} />,
-  orderOn: (r) => <ProcessingCell r={r} />, deliverOn: (r) => <DeliveryCell r={r} />, supplier: (r) => <SupplierCell r={r} />, stock: (r) => <StockCell r={r} />, po: (r) => <PoCell r={r} />,
+  orderOn: (r) => <ProcessingCell r={r} />, deliverOn: (r) => <DeliveryCell r={r} />, stock: (r) => <StockCell r={r} />, po: (r) => <PoCell r={r} />,
   gr: (r) => <DocCell docs={r.grDocs} state={grState(r.l)} tab="gr" open={r.openDoc} />, do: (r) => <DocCell docs={r.doDocs} state={r.l.do} tab="do" open={r.openDoc} />,
 };
 
@@ -912,10 +834,9 @@ function LineCard(r: RowCtx): ReactElement {
         {field("Variants", <VariantCell {...r} />)}
         {field(`Qty (${r.l.uom})`, <QtyCell {...r} />)}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
         {field("Processing", <ProcessingCell r={r} />)}
         {field("Delivery", <DeliveryCell r={r} />)}
-        {field("Supplier", <SupplierCell r={r} />)}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
         {field("PO", <PoCell r={r} />)}
