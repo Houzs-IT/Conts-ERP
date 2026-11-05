@@ -72,16 +72,16 @@ export function drawDocLetterheadAt(pdf: JsPdf, o: LetterheadOpts): { bottom: nu
   const scale = Math.min(t.logoMaxW / logo.width, t.logoMaxH / logo.height);
   const logoW = logo.width * scale;
   const logoH = logo.height * scale;
-  pdf.addImage(logo.dataUrl, logo.format, M + 2, t.logoTop, logoW, logoH);
+  pdf.addImage(logo.dataUrl, logo.format, M, t.logoTop, logoW, logoH);
 
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(t.blockPt);
-  const blockW = right - 2 - (M + 2 + logoW + 8);
+  const blockW = right - (M + logoW + 8);
   let blockY = t.logoTop + 2.5;
   for (const line of o.lines) {
     if (!line) continue;
     for (const l of wrapLine(pdf, line, blockW)) {
-      pdf.text(l, right - 2, blockY, { align: 'right' });
+      pdf.text(l, right, blockY, { align: 'right' });
       blockY += t.blockStep;
     }
   }
@@ -89,7 +89,7 @@ export function drawDocLetterheadAt(pdf: JsPdf, o: LetterheadOpts): { bottom: nu
   const ruleY = Math.max(t.ruleY, t.logoTop + logoH + 3, blockY);
   pdf.setDrawColor(0);
   pdf.setLineWidth(t.ruleWidth);
-  pdf.line(M + 2, ruleY, right - 2, ruleY);
+  pdf.line(M, ruleY, right, ruleY);
 
   // One "Label: value" text per row, right-aligned, as every engine document has always printed its number and dates.
   const meta = (o.meta ?? []).filter((m) => m.value).map((m) => `${m.label}${m.label.trim().endsWith(':') ? '' : ':'} ${m.value}`);
@@ -98,18 +98,18 @@ export function drawDocLetterheadAt(pdf: JsPdf, o: LetterheadOpts): { bottom: nu
   const metaW = Math.max(0, ...meta.map((m) => pdf.getTextWidth(m)));
   let metaY = ruleY + 6;
   for (const m of meta) {
-    pdf.text(m, right - 2, metaY, { align: 'right' });
+    pdf.text(m, right, metaY, { align: 'right' });
     metaY += t.metaStep;
   }
-  const columnLeft = right - 2 - metaW - (o.reserve ?? 0);
+  const columnLeft = right - metaW - (o.reserve ?? 0);
 
   // The title shrinks rather than run into the number column.
   pdf.setFont(t.titleFont, 'bold');
   let pt: number = t.titlePt;
   pdf.setFontSize(pt);
-  const room = columnLeft - 6 - (M + 2);
+  const room = columnLeft - 6 - M;
   while (pt > 12 && pdf.getTextWidth(o.title) > room) { pt -= 1; pdf.setFontSize(pt); }
   const y = ruleY + 9;
-  pdf.text(o.title, M + 2, y);
+  pdf.text(o.title, M, y);
   return { bottom: Math.max(y + 3, metaY) + 2, columnLeft };
 }
