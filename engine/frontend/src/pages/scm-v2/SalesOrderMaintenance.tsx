@@ -18,6 +18,8 @@
 
 import { SoTestDataClear } from './SoTestDataClear';
 import { SoBrandsSection } from './SoBrandsSection';
+import { LetterheadsSection, PaymentTermsSection } from '../renovation/RenovationSettings';
+import { PackageTemplatesSection } from '../renovation/QuotationTemplates';
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import { Link } from 'react-router-dom';
@@ -79,6 +81,9 @@ const SECTIONS = [
   { key: 'geo', label: 'Geo & Warehouses' },
   { key: 'dropdowns', label: 'Dropdowns' },
   { key: 'brands', label: 'Brands' },
+  { key: 'package-templates', label: 'Package templates' },
+  { key: 'payment-terms', label: 'Payment terms' },
+  { key: 'letterheads', label: 'Letterheads' },
   { key: 'test-data', label: 'Clear test data' },
 ] as const;
 const ALL_SECTION_KEYS = SECTIONS.map((s) => s.key);
@@ -1056,6 +1061,18 @@ const MaintenanceBody = ({ canEdit, open }: { canEdit: boolean; open: ReturnType
 
       <CollapsibleSection id="brands" title="Brands" open={open.isOpen('brands')} onToggle={() => open.toggle('brands')}>
         <SoBrandsSection />
+      </CollapsibleSection>
+
+      <CollapsibleSection id="package-templates" title="Package templates" open={open.isOpen('package-templates')} onToggle={() => open.toggle('package-templates')}>
+        <PackageTemplatesSection />
+      </CollapsibleSection>
+
+      <CollapsibleSection id="payment-terms" title="Payment terms" open={open.isOpen('payment-terms')} onToggle={() => open.toggle('payment-terms')}>
+        <PaymentTermsSection />
+      </CollapsibleSection>
+
+      <CollapsibleSection id="letterheads" title="Letterheads" open={open.isOpen('letterheads')} onToggle={() => open.toggle('letterheads')}>
+        <LetterheadsSection />
       </CollapsibleSection>
 
       <CollapsibleSection id="test-data" title="Clear test data" open={open.isOpen('test-data')} onToggle={() => open.toggle('test-data')}>

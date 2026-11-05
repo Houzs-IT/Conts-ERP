@@ -204,7 +204,7 @@ export interface PoSchedule {
 }
 
 export interface TermTemplate {
-  id: string; kind: 'CUSTOMER' | 'PO'; name: string; isDefault: boolean; active: boolean;
+  id: string; kind: 'CUSTOMER' | 'PO'; name: string; brandId: number | null; isDefault: boolean; active: boolean;
   lines: Array<{ seq: number; label: string; pctBp: number; description: string; stageCode: string | null; trigger: string; payableOn: string | null }>;
 }
 

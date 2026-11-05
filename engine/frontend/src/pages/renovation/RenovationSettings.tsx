@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { Plus, Save, Trash2 } from 'lucide-react';
-import { PageHeader } from '../../components/Layout';
+import { Navigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import { useAuth } from '../../auth/AuthContext';
 import { RENO_STAGES, STAGE_LABEL } from '../../vendor/shared/renovation-stages';
@@ -17,18 +17,25 @@ const PAYABLE: Array<{ value: string; label: string }> = [
   { value: 'ON_HANDOVER', label: 'after handover' }, { value: 'MANUAL', label: 'when released by hand' },
 ];
 
-function TermEditor({ tpl, onDone, canEdit }: { tpl: TermTemplate; onDone: () => void; canEdit: boolean }) {
+function TermEditor({ tpl, onDone, canEdit, brands }: { tpl: TermTemplate; onDone: () => void; canEdit: boolean; brands: BrandProfile[] }) {
   const [name, setName] = useState(tpl.name);
+  const [brandId, setBrandId] = useState<number | null>(tpl.brandId);
   const [isDefault, setIsDefault] = useState(tpl.isDefault);
   const [lines, setLines] = useState<TermLine[]>(tpl.lines);
   const [error, setError] = useState<string | null>(null);
-  const save = useRenoMutation(() => renoSend(tpl.id ? `/terms/${tpl.id}` : '/terms', tpl.id ? 'PUT' : 'POST', { kind: tpl.kind, name, isDefault, active: true, lines }));
+  const save = useRenoMutation(() => renoSend(tpl.id ? `/terms/${tpl.id}` : '/terms', tpl.id ? 'PUT' : 'POST', { brandId, kind: tpl.kind, name, isDefault, active: true, lines }));
   const sum = lines.reduce((s, l) => s + l.pctBp, 0);
   const set = (i: number, p: Partial<TermLine>) => setLines(lines.map((l, j) => (j === i ? { ...l, ...p } : l)));
   return (
     <div className="space-y-2 rounded-lg border border-border p-3">
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Name" className="min-w-[220px] flex-1"><input className={inputCls} disabled={!canEdit} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="Branding" className="min-w-[180px]">
+          <select className={inputCls} disabled={!canEdit} value={brandId ?? ''} onChange={(e) => setBrandId(e.target.value ? Number(e.target.value) : null)}>
+            <option value="">All brands</option>
+            {brands.filter((b) => b.active).map((b) => <option key={b.brandId} value={b.brandId}>{b.name}</option>)}
+          </select>
+        </Field>
         <label className="flex items-center gap-1.5 pb-2 text-[12.5px]"><input type="checkbox" disabled={!canEdit} checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} /> Default</label>
       </div>
       {lines.map((l, i) => (
@@ -92,36 +99,50 @@ function BrandEditor({ brand, canEdit }: { brand: BrandProfile; canEdit: boolean
   );
 }
 
-export function RenovationSettings() {
+/** Customer payment terms and PO payment schedules, in SO Maintenance. */
+export function PaymentTermsSection() {
   const terms = useTerms();
   const brands = useBrands();
   const { can } = useAuth();
   const canEdit = can('scm.renovation.terms');
   const [editing, setEditing] = useState<TermTemplate | null>(null);
   const list = terms.data?.templates ?? [];
-  const blank = (kind: 'CUSTOMER' | 'PO'): TermTemplate => ({ id: '', kind, name: '', isDefault: false, active: true, lines: [{ seq: 1, label: kind === 'PO' ? 'Mobilise' : '1ST PAYMENT', pctBp: 10000, description: '', stageCode: null, trigger: 'stage_start', payableOn: kind === 'PO' ? 'ON_CONFIRM' : null }] });
+  const brandList = brands.data?.brands ?? [];
+  const blank = (kind: 'CUSTOMER' | 'PO'): TermTemplate => ({ id: '', kind, name: '', brandId: null, isDefault: false, active: true, lines: [{ seq: 1, label: kind === 'PO' ? 'Mobilise' : '1ST PAYMENT', pctBp: 10000, description: '', stageCode: null, trigger: 'stage_start', payableOn: kind === 'PO' ? 'ON_CONFIRM' : null }] });
   return (
     <div className="space-y-4">
-      <PageHeader back="/scm/renovation/quotations" eyebrow="Renovation" title="Payment terms & letterheads" description="Instalment templates for contracts and POs, and what each brand prints on its documents." />
       {(['CUSTOMER', 'PO'] as const).map((kind) => (
         <Card key={kind} title={kind === 'CUSTOMER' ? 'Customer payment terms' : 'PO payment schedules'} actions={canEdit ? <Button variant="secondary" icon={<Plus size={15} />} onClick={() => setEditing(blank(kind))}>New template</Button> : null}>
           <div className="space-y-2">
-            {editing && editing.kind === kind && !editing.id && <TermEditor tpl={editing} canEdit={canEdit} onDone={() => setEditing(null)} />}
+            {editing && editing.kind === kind && !editing.id && <TermEditor tpl={editing} canEdit={canEdit} brands={brandList} onDone={() => setEditing(null)} />}
             {list.filter((t) => t.kind === kind).map((t) => (editing?.id === t.id
-              ? <TermEditor key={t.id} tpl={t} canEdit={canEdit} onDone={() => setEditing(null)} />
+              ? <TermEditor key={t.id} tpl={t} canEdit={canEdit} brands={brandList} onDone={() => setEditing(null)} />
               : (
                 <button key={t.id} type="button" onClick={() => setEditing(t)} className="flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-left hover:border-primary">
-                  <span className="font-semibold text-ink">{t.name}{t.isDefault && <span className="ml-2 rounded bg-primary-soft px-1.5 py-0.5 text-[11px] text-primary-ink">default</span>}</span>
+                  <span className="font-semibold text-ink">{t.name}<span className="ml-2 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-ink-secondary">{brandList.find((b) => b.brandId === t.brandId)?.name ?? 'All brands'}</span>{t.isDefault && <span className="ml-2 rounded bg-primary-soft px-1.5 py-0.5 text-[11px] text-primary-ink">default</span>}</span>
                   <span className="text-[12.5px] text-ink-secondary">{t.lines.map((l) => `${l.label} ${pctLabel(l.pctBp)}`).join(' · ')}</span>
                 </button>
               )))}
           </div>
         </Card>
       ))}
-      <h2 className="pt-2 text-[14px] font-semibold text-ink">Letterheads</h2>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {(brands.data?.brands ?? []).filter((b) => b.active).map((b) => <BrandEditor key={b.brandId} brand={b} canEdit={canEdit} />)}
-      </div>
     </div>
   );
+}
+
+/** The brands' letterheads, in SO Maintenance. */
+export function LetterheadsSection() {
+  const brands = useBrands();
+  const { can } = useAuth();
+  const canEdit = can('scm.renovation.terms');
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      {(brands.data?.brands ?? []).filter((b) => b.active).map((b) => <BrandEditor key={b.brandId} brand={b} canEdit={canEdit} />)}
+    </div>
+  );
+}
+
+/** The old address of these sections. */
+export function RenovationSettings() {
+  return <Navigate to="/scm/sales-orders/maintenance?open=payment-terms,letterheads#payment-terms" replace />;
 }

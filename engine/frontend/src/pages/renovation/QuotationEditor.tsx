@@ -184,7 +184,7 @@ export function QuotationEditor() {
             files={{ docType: 'quotation', docId: quotation.id, canEdit: canQuote }} />
           <DocAttachments docType="quotation" docId={quotation.id} canEdit={canQuote} />
           <Card title="Payment terms">
-            <InstalmentEditor rows={instalments} disabled={!editable} terms={terms.data?.templates ?? []} totalSen={totals.finalSen}
+            <InstalmentEditor rows={instalments} disabled={!editable} terms={(terms.data?.templates ?? []).filter((t) => t.brandId == null || t.brandId === brandId)} totalSen={totals.finalSen}
               onChange={(r) => { setInstalments(r); setDirty(true); }} />
           </Card>
         </div>
