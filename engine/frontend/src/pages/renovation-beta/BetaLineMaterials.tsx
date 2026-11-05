@@ -30,13 +30,11 @@ export function BetaLineMaterials({ projectId, line, canEdit, onClose, onSaved }
   }, [canEdit]);
 
   const label = (s: RawMaterialSku): string => (s.name ? `${s.code} · ${s.name}` : s.code);
-  const add = (text: string): void => {
-    setSearch(text);
-    const s = skus.find((x) => label(x) === text || x.code === text);
-    if (!s || rows.some((r) => r.code === s.code)) return;
-    setRows((x) => [...x, { code: s.code, name: s.name, uom: s.uom, qty: 1 }]);
-    setSearch("");
-  };
+  const toggle = (s: RawMaterialSku): void => setRows((x) => (x.some((r) => r.code === s.code)
+    ? x.filter((r) => r.code !== s.code)
+    : [...x, { code: s.code, name: s.name, uom: s.uom, qty: 1 }]));
+  const term = search.trim().toLowerCase();
+  const shown = skus.filter((s) => !term || label(s).toLowerCase().includes(term));
   const valid = rows.every((r) => r.qty > 0);
   const save = async (): Promise<void> => {
     setSaving(true);
@@ -82,13 +80,21 @@ export function BetaLineMaterials({ projectId, line, canEdit, onClose, onSaved }
         </div>
       ))}
       {canEdit && (
-        <label style={{ display: "block", marginTop: 10 }}>
-          <span style={metaStyle}>Add a raw material</span>
-          <input aria-label="Add a raw material" list={`line-materials-${line.id}`} value={search} placeholder="Search raw materials" style={{ ...inputStyle, width: "100%" }} onChange={(e) => add(e.target.value)} />
-          <datalist id={`line-materials-${line.id}`}>
-            {skus.filter((s) => !rows.some((r) => r.code === s.code)).map((s) => <option key={s.code} value={label(s)} />)}
-          </datalist>
-        </label>
+        <div style={{ marginTop: 10 }}>
+          <label style={{ display: "block" }}>
+            <span style={metaStyle}>Add raw materials: tick as many as you need</span>
+            <input aria-label="Search raw materials" value={search} placeholder="Search raw materials" style={{ ...inputStyle, width: "100%" }} onChange={(e) => setSearch(e.target.value)} />
+          </label>
+          <div role="group" aria-label="Raw materials" style={{ maxHeight: 220, overflowY: "auto", marginTop: 6, border: `1px solid ${WS.rowLine}`, borderRadius: 8 }}>
+            {shown.map((s) => (
+              <label key={s.code} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", cursor: "pointer", fontSize: 13 }}>
+                <input type="checkbox" checked={rows.some((r) => r.code === s.code)} onChange={() => toggle(s)} />
+                <span style={{ minWidth: 0 }}>{label(s)}</span>
+              </label>
+            ))}
+            {shown.length === 0 && <p style={{ ...metaStyle, margin: 0, padding: "6px 10px" }}>No raw material matches.</p>}
+          </div>
+        </div>
       )}
       {!canEdit && (line.materials ?? []).length > 0 && <p style={{ ...metaStyle, margin: "8px 0 0" }}>Change these on the production order.</p>}
       {error && <p role="alert" style={{ margin: "8px 0 0", fontSize: 13, color: WS.red }}>{error}</p>}

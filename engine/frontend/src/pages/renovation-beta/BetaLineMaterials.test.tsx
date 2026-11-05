@@ -19,9 +19,8 @@ describe("BetaLineMaterials", () => {
     const onSaved = vi.fn();
     render(<BetaLineMaterials projectId={7} line={line} canEdit onClose={vi.fn()} onSaved={onSaved} />);
     fireEvent.change(screen.getByLabelText("Quantity of PLC-KNK-001"), { target: { value: "5" } });
-    await screen.findByLabelText("Add a raw material");
-    await waitFor(() => expect(document.querySelectorAll("datalist option").length).toBe(1));
-    fireEvent.change(screen.getByLabelText("Add a raw material"), { target: { value: "PTN-KNK-001 · Gypsum" } });
+    fireEvent.click(await screen.findByLabelText("PTN-KNK-001 · Gypsum"));
+    expect(screen.getByLabelText("Quantity of PTN-KNK-001")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(save).toHaveBeenCalledWith(7, "a", [{ code: "PLC-KNK-001", qty: 5 }, { code: "PTN-KNK-001", qty: 1 }]);
