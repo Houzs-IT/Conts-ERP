@@ -628,3 +628,4 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - TC-SO-2611-008 keeps one line with no room (added before the fix). Test data only.
 - Slow, not changed: coverage about 3 s because each SO view works out the whole company's MRP; line-edits 3-4 s. The 504 on SO detail was not reproduced; the only trace is one Postgres statement timeout on 4 Nov 11:35 with no query text.
 - The 33 contract VOs from before 5 Nov read Requested by The Conts ERP: the real person was never stored.
+- After the owner runs Clear test data (SO Maintenance): remove route test-data-purge.ts, section SoTestDataClear.tsx, and drop scm.purge_test_data with a new migration. Migration 0226 is on production only, not staging.
