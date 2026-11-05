@@ -142,7 +142,9 @@ function HomeScreen(): ReactElement {
   const steps = useQuery(["renovation-beta", "step-sla"], () => simpleApi.boardRows(), []);
   const slaById = useMemo(() => new Map((steps.data?.data ?? []).map((r) => [r.id, r])), [steps.data]);
   const phone = useIsPhone();
-  const sos = useQuery(["renovation-beta", "project-sos"], () => fetchProjectSos(), [], { enabled: !phone });
+  /* Every order in the company, for columns that start hidden: read only once one of them is showing. */
+  const [soColumnsShown, setSoColumnsShown] = useState(false);
+  const sos = useQuery(["renovation-beta", "project-sos"], () => fetchProjectSos(), [], { enabled: !phone && soColumnsShown });
   const soByDoc = useMemo(() => new Map((sos.data ?? []).map((s) => [s.doc_no, s])), [sos.data]);
   const today = mytDay(new Date().toISOString());
   const [tab, setTab] = useState<HomeTab>("all");
@@ -276,6 +278,7 @@ function HomeScreen(): ReactElement {
         <div style={{ ...CARD, overflow: "hidden" }}>
           <DataTable<TableRow>
             tableId="projects-home"
+            onDisplayKeys={(keys) => setSoColumnsShown(keys.some((k) => k.startsWith("so_")))}
             documentLabel="Projects"
             rows={tableRows}
             columns={homeColumns(showPay)}

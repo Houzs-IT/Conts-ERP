@@ -147,6 +147,8 @@ export interface DataTableProps<T, L = never> {
   /** Stable identifier used for persisting column visibility, order, sort,
    *  and density per page (localStorage). */
   tableId?: string;
+  /** The keys of the columns showing, on first draw and whenever they change. */
+  onDisplayKeys?: (keys: string[]) => void;
   /**
    * Optional stable layout family shared by many instances of the same table
    * schema. Detail pages must use this instead of embedding a document id in
