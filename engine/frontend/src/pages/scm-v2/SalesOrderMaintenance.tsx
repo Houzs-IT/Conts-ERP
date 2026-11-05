@@ -16,7 +16,6 @@
 //   - Direct URL /mfg-sales-orders/maintenance
 // ----------------------------------------------------------------------------
 
-import { SoTestDataClear } from './SoTestDataClear';
 import { SoBrandsSection } from './SoBrandsSection';
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useSoInfoLists } from '../projects/renovation/customerPropertyApi';
@@ -79,7 +78,6 @@ const SECTIONS = [
   { key: 'geo', label: 'Geo & Warehouses' },
   { key: 'dropdowns', label: 'Dropdowns' },
   { key: 'brands', label: 'Brands' },
-  { key: 'test-data', label: 'Clear test data' },
 ] as const;
 const ALL_SECTION_KEYS = SECTIONS.map((s) => s.key);
 
@@ -1056,10 +1054,6 @@ const MaintenanceBody = ({ canEdit, open }: { canEdit: boolean; open: ReturnType
 
       <CollapsibleSection id="brands" title="Brands" open={open.isOpen('brands')} onToggle={() => open.toggle('brands')}>
         <SoBrandsSection />
-      </CollapsibleSection>
-
-      <CollapsibleSection id="test-data" title="Clear test data" open={open.isOpen('test-data')} onToggle={() => open.toggle('test-data')}>
-        <SoTestDataClear />
       </CollapsibleSection>
 
       <CollapsibleSection id="dropdowns" title="Dropdowns" open={open.isOpen('dropdowns')} onToggle={() => open.toggle('dropdowns')}>
