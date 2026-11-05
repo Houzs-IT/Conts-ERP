@@ -217,12 +217,10 @@ describe('RenovationSkuMaster', () => {
     h.patch.mockClear();
     h.rows = [sku({ id: 'a', code: 'HK-1', name: 'Hacking', category: 'WORKS', category_group: 'WORKS', sub_category: 'HACKING', uom: 'LOT' })];
     wrap(<RenovationSkuMaster onImport={() => {}} onOpenSuppliers={() => {}} />);
-    fireEvent.click(screen.getAllByTitle('Actions for HK-1')[0]);
-    fireEvent.click(screen.getByText('Deactivate'));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Deactivate HK-1' })[0]);
     expect(h.patch.mock.calls[0][0]).toEqual({ id: 'a', status: 'INACTIVE' });
     expect(screen.queryByRole('dialog', { name: 'SKU HK-1' })).toBeNull();
-    fireEvent.click(screen.getAllByTitle('Actions for HK-1')[0]);
-    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit HK-1' })[0]);
     expect(screen.getByRole('dialog', { name: 'SKU HK-1' })).toBeTruthy();
   });
 
