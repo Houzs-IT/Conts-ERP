@@ -111,5 +111,5 @@ export function drawDocLetterheadAt(pdf: JsPdf, o: LetterheadOpts): { bottom: nu
   while (pt > 12 && pdf.getTextWidth(o.title) > room) { pt -= 1; pdf.setFontSize(pt); }
   const y = ruleY + 9;
   pdf.text(o.title, M + 2, y);
-  return { bottom: Math.max(y, metaY) + 2, columnLeft };
+  return { bottom: Math.max(y + 3, metaY) + 2, columnLeft };
 }

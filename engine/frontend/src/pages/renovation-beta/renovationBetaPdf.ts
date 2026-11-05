@@ -66,10 +66,33 @@ type JsPdfDoc = import("jspdf").jsPDF;
 
 /** The same pages after the last page of a PDF already made (a PO). */
 export async function appendPartsToPdf(doc: JsPdfDoc, projectId: number, parts: PdfPart[]): Promise<{ skipped: string[] }> {
-  return { skipped: (await drawParts(doc, projectId, parts)).skipped };
+  return { skipped: (await drawParts(doc, projectId, parts, A4_PT)).skipped };
 }
 
-async function drawParts(into: JsPdfDoc | null, projectId: number, parts: PdfPart[]): Promise<{ doc: JsPdfDoc | null; skipped: string[] }> {
+/** Portrait; a wider drawing turns it. Sheets behind a PO stay the PO's paper size: PDF viewers zoom to the widest page,
+    so one full-size drawing shrank the PO on page 1 to under half its size (owner, 5 Nov 2026). */
+const A4_PT = { w: 595.28, h: 841.89 };
+
+export interface SheetLayout { pageW: number; pageH: number; band: number; imgX: number; imgY: number; imgW: number; imgH: number }
+
+/** Where a picture of w x h points goes: on a page its own size, or fitted and centred on `paper`, the band along the foot. */
+export function sheetLayout(w: number, h: number, hasBlock: boolean, paper?: { w: number; h: number }): SheetLayout {
+  const bandFor = (width: number) => (hasBlock ? Math.max(60, Math.min(width, 2400) * 0.075) : 0);
+  if (!paper) {
+    const band = bandFor(w);
+    return { pageW: w, pageH: h + band, band, imgX: 0, imgY: 0, imgW: w, imgH: h };
+  }
+  const wide = w > h;
+  const pageW = wide ? paper.h : paper.w;
+  const pageH = wide ? paper.w : paper.h;
+  const band = bandFor(pageW);
+  const scale = Math.min(pageW / w, (pageH - band) / h);
+  const imgW = w * scale;
+  const imgH = h * scale;
+  return { pageW, pageH, band, imgX: (pageW - imgW) / 2, imgY: (pageH - band - imgH) / 2, imgW, imgH };
+}
+
+async function drawParts(into: JsPdfDoc | null, projectId: number, parts: PdfPart[], paper?: { w: number; h: number }): Promise<{ doc: JsPdfDoc | null; skipped: string[] }> {
   const [{ jsPDF }, pdfjs, worker] = await Promise.all([import("jspdf"), import("pdfjs-dist"), import("pdfjs-dist/build/pdf.worker.min.mjs?url")]);
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
   let doc: JsPdfDoc | null = into;
@@ -77,15 +100,14 @@ async function drawParts(into: JsPdfDoc | null, projectId: number, parts: PdfPar
 
   const addPage = (canvas: HTMLCanvasElement, block?: TitleBlock, page = { n: 1, of: 1 }): void => {
     // A page the size of the picture in points (72 per inch at 150 dpi), turned the way the picture is, plus the band.
-    const w = (canvas.width * 72) / 150;
-    const h = (canvas.height * 72) / 150;
-    const band = block ? Math.max(60, Math.min(w, 2400) * 0.075) : 0;
-    const total = h + band;
+    const sheet = sheetLayout((canvas.width * 72) / 150, (canvas.height * 72) / 150, !!block, paper);
+    const { pageW: w, pageH: total, band } = sheet;
+    const h = total - band;
     const orientation = w > total ? "landscape" : "portrait";
     if (!doc) doc = new jsPDF({ orientation, unit: "pt", format: [w, total], compress: true });
     else doc.addPage([w, total], orientation);
     const d = doc as InstanceType<typeof jsPDF>;
-    d.addImage(canvas.toDataURL("image/jpeg", 0.85), "JPEG", 0, 0, w, h);
+    d.addImage(canvas.toDataURL("image/jpeg", 0.85), "JPEG", sheet.imgX, sheet.imgY, sheet.imgW, sheet.imgH);
     if (!block) return;
     const pad = band * 0.14;
     const line = Math.max(0.75, band / 60);
