@@ -14,7 +14,7 @@
    PO change. */
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { ProductionOrderChips } from "../scm-v2/ProductionOrderChips";
 import { AlertTriangle, Calculator, Camera, ChevronDown, ChevronRight, Download, FilePlus2, Pencil } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
@@ -89,6 +89,7 @@ function useWidth(): [(el: HTMLDivElement | null) => void, number] {
 type PlanDate = "orderOn" | "deliverOn";
 
 export function BetaPoTab(p: BetaTabProps): ReactElement {
+  const { pathname } = useLocation();
   const q = useQuery(["renovation-beta", "lines", p.projectId], () => linesApi.lines(p.projectId), [p.projectId]);
   const queryClient = useQueryClient();
   /* A saved date or supplier shows on its lines at once, before the reload answers: under load the reload can be slow,
@@ -314,7 +315,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
             {lines.length > 0 && <button type="button" style={btnStyle("outline", "sm")} onClick={exportCsv}><Download size={14} aria-hidden="true" />Export</button>}
             <button type="button" style={btnStyle("outline", "sm")} onClick={() => setHelping(true)}><Calculator size={14} aria-hidden="true" />Quantity helper</button>
             {needPo.length > 0 && d.sos.map((s) => (
-              <Link key={s.docNo} to={s.renovation ? `/scm/sales-orders/${encodeURIComponent(s.docNo)}#po-split` : "/scm/purchase-orders/from-so"} style={btnStyle("teal", "sm")}>
+              <Link key={s.docNo} to={s.renovation ? `/scm/sales-orders/${encodeURIComponent(s.docNo)}#po-split` : "/scm/purchase-orders/from-so"} state={{ backTo: pathname }} style={btnStyle("teal", "sm")}>
                 <FilePlus2 size={14} aria-hidden="true" />Create PO{d.sos.length > 1 ? ` (${s.docNo})` : ""}
               </Link>
             ))}
@@ -365,7 +366,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       )}
 
       <div ref={wrapRef} style={{ width: "100%", minWidth: 0 }}>
-        {tree.length === 0 ? <WsEmpty>{d.categoryRestricted ? "No lines you can see for this project." : "No sales order lines for this project yet. Link a sales order to see its lines here."}</WsEmpty>
+        {tree.length === 0 ? <WsEmpty>{d.categoryRestricted ? "No lines you can see for this project." : <>No sales order yet. Make a quotation for this project and convert it. <Link to="/scm/renovation/quotations">Open Quotations</Link></>}</WsEmpty>
           : width === 0 || width >= TABLE_MIN ? (
             <div role="region" aria-label="Sales order lines" style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
               <table onPointerLeave={() => { setDragging(null); setDropOn(null); }} style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>

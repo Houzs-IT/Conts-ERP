@@ -1928,7 +1928,9 @@ export const SalesOrderDetail = () => {
 
   /* Back always returns to the Sales Orders list (owner 2026-07-24), which restores its own sticky filters. */
   const goBack = async () => {
-    if (await guardUnsavedPayments()) void navigate(scmListReturnTo('/scm/sales-orders'));
+    /* Opened from a project: back returns there, not to the list of every order. */
+    const backTo = (location.state as { backTo?: string } | null)?.backTo;
+    if (await guardUnsavedPayments()) void navigate(backTo ?? scmListReturnTo('/scm/sales-orders'));
   };
   /* Collect payment unlocks the card and scrolls to it. */
   const goPayments = () => {

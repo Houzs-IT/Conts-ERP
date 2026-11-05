@@ -26,7 +26,8 @@ export function useSoInstalments(docNo: string | null, enabled: boolean) {
     queryFn: () => authedFetch<BillingView>(`/renovation/sales-orders/${encodeURIComponent(docNo ?? "")}/billing`),
     enabled: enabled && !!docNo,
     staleTime: 60_000,
-    retry: false,
+    /* One failed read left the payment cards and Bill missing until the page was reopened. */
+    retry: 2,
   });
 }
 
