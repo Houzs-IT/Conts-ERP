@@ -75,6 +75,7 @@ import {
 import { isAttachmentKey, loadDocPdfPhotos } from './pdf-doc-photos';
 import { fetchPoItemPhotoBlob } from './sales-order-queries';
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
+import { deliverToAddress } from './warehouse-print';
 
 type PoHeader = {
   po_number:     string;
@@ -434,7 +435,7 @@ async function renderPurchaseOrderInto(
      full-width so the supplier sees exactly where to ship (owner 2026-06-19;
      the address is the warehouse `location` field). */
   const deliverToName = (header.purchase_location_name ?? '').trim();
-  const deliverToAddr = (header.delivery_address ?? '').trim();
+  const deliverToAddr = deliverToAddress(deliverToName, (header.delivery_address ?? '').trim(), opts?.renovation);
   if (deliverToName || deliverToAddr) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(110);
     doc.text('DELIVER TO', margin, y); doc.setTextColor(0);
