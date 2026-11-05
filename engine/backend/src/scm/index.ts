@@ -1043,8 +1043,6 @@ scm.use("/doc-attachments/*", scmAreaGuard("scm.sales.orders", { writeLevel: "vi
 scm.route("/doc-attachments", docAttachmentsImport);
 scm.use("/renovation-so-info/*", scmAreaGuard("scm.sales.orders"));
 scm.route("/renovation-so-info", renovationSoInfo);
-import { testDataPurge } from "./routes/test-data-purge";
-scm.route("/test-data", testDataPurge);
 
 // ── Production orders (mig 0208): the Purchase Order routes cloned onto their own tables ──
 import { productionOrders } from "./routes/production-orders";

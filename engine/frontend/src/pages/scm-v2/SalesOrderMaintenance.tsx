@@ -16,7 +16,6 @@
 //   - Direct URL /mfg-sales-orders/maintenance
 // ----------------------------------------------------------------------------
 
-import { SoTestDataClear } from './SoTestDataClear';
 import { SoBrandsSection } from './SoBrandsSection';
 import { LetterheadsSection, PaymentTermsSection } from '../renovation/RenovationSettings';
 import { PackageTemplatesSection } from '../renovation/QuotationTemplates';
@@ -84,7 +83,6 @@ const SECTIONS = [
   { key: 'package-templates', label: 'Package templates' },
   { key: 'payment-terms', label: 'Payment terms' },
   { key: 'letterheads', label: 'Letterheads' },
-  { key: 'test-data', label: 'Clear test data' },
 ] as const;
 const ALL_SECTION_KEYS = SECTIONS.map((s) => s.key);
 
@@ -1073,10 +1071,6 @@ const MaintenanceBody = ({ canEdit, open }: { canEdit: boolean; open: ReturnType
 
       <CollapsibleSection id="letterheads" title="Letterheads" open={open.isOpen('letterheads')} onToggle={() => open.toggle('letterheads')}>
         <LetterheadsSection />
-      </CollapsibleSection>
-
-      <CollapsibleSection id="test-data" title="Clear test data" open={open.isOpen('test-data')} onToggle={() => open.toggle('test-data')}>
-        <SoTestDataClear />
       </CollapsibleSection>
 
       <CollapsibleSection id="dropdowns" title="Dropdowns" open={open.isOpen('dropdowns')} onToggle={() => open.toggle('dropdowns')}>
