@@ -144,6 +144,7 @@ export function DataTable<T, L = never>(props: Props<T, L>) {
 
 function DataTableInner<T, L>({
   tableId,
+  onDisplayKeys,
   layoutFamily,
   persistFilters = true,
   persistSort = true,
@@ -961,6 +962,9 @@ function DataTableInner<T, L>({
      the leading select/expand gutters plus every display column's resolved px
      width. Recomputes as a drag mutates `widths` (via resolveWidth), so the
      table grows live while a column is resized. undefined when the flag is off. */
+  const displayKeys = displayColumns.map((c) => c.key).join(",");
+  useEffect(() => { onDisplayKeys?.(displayKeys.split(",")); }, [displayKeys, onDisplayKeys]);
+
   const fixedTableWidth = useMemo(() => {
     if (!layoutFixed) return undefined;
     const lead = (selection ? 36 : 0) + (expandable ? 32 : 0);
