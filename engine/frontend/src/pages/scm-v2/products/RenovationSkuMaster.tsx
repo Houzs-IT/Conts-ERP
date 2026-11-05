@@ -7,7 +7,7 @@
    Clicking a row opens the SKU: name, group / sub-category, unit, active, photos,
    and the suppliers drawer the Houzs page already has. */
 import { useMemo, useState } from 'react';
-import { Ban, CheckCircle2, Pencil, Plus, Ruler, Search, Settings2, Truck, Upload, X } from 'lucide-react';
+import { Plus, Ruler, Search, Settings2, Truck, Upload, X } from 'lucide-react';
 import { Button } from '../../../components/Button';
 import { DataTable } from '../../../components/DataTable';
 import { RowActionsMenu } from '../../../components/RowActionsMenu';
@@ -62,20 +62,17 @@ export function RenovationSkuMaster({
   const columns = useMemo(() => [
     ...renovationSkuColumns({ showCost, subLabel, uomPrint }),
     {
-      key: 'actions', label: 'Actions', width: '76px', disableSort: true, disableFilter: true,
-      render: (r: MfgProductRow) => (
-        <span onClick={(e) => e.stopPropagation()}>
-          <RowActionsMenu
-            title={`Actions for ${r.code}`}
-            items={[
-              { icon: Pencil, label: 'Edit', onClick: () => setOpenId(r.id) },
-              r.status === 'ACTIVE'
-                ? { icon: Ban, label: 'Deactivate', onClick: () => setStatus(r, 'INACTIVE') }
-                : { icon: CheckCircle2, label: 'Activate', onClick: () => setStatus(r, 'ACTIVE') },
-            ]}
-          />
-        </span>
-      ),
+      key: 'actions', label: 'Actions', width: '160px', disableSort: true, disableFilter: true,
+      render: (r: MfgProductRow) => {
+        const active = r.status === 'ACTIVE';
+        return (
+          <span className="inline-flex items-center gap-3 whitespace-nowrap text-[12.5px] font-semibold" onClick={(e) => e.stopPropagation()}>
+            <button type="button" aria-label={`Edit ${r.code}`} className="text-primary hover:underline" onClick={() => setOpenId(r.id)}>Edit</button>
+            <button type="button" aria-label={`${active ? 'Deactivate' : 'Activate'} ${r.code}`} className={active ? 'text-err hover:underline' : 'text-primary hover:underline'}
+              onClick={() => setStatus(r, active ? 'INACTIVE' : 'ACTIVE')}>{active ? 'Deactivate' : 'Activate'}</button>
+          </span>
+        );
+      },
     },
   // eslint-disable-next-line react-hooks/exhaustive-deps -- setStatus only reads the stable mutate and notify
   ], [showCost, subLabel, uomPrint]);
