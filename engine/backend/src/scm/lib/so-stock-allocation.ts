@@ -63,6 +63,7 @@ import { SO_PROCESSING_DATE_COLUMN } from '../shared/so-processing-date';
 import { loadNonSellingWarehouses, warehouseCanPromise } from './non-selling-warehouse';
 import { pgrestIn } from './pgrest-in-list';
 import { isUnitBoundCategory } from './unit-bound-sku';
+import { isCustomizedLine } from './so-line-customized';
 
 /* Only the variant-bearing categories run bound. Owner 2026-08-10:
    "SOFA 和 BEDFRAME 因为有变体的问题,所以要走 Convert to PO 的那个模式.
@@ -381,7 +382,7 @@ async function runSoStockAllocation(
       .in('doc_no', batch)
       .eq('cancelled', false)
       .range(from, to));
-    const LINE_COLS = 'id, doc_no, item_code, item_group, variants, qty, warehouse_id, stock_status, stock_qty_ready, cancelled';
+    const LINE_COLS = 'id, doc_no, item_code, item_group, variants, remark, qty, warehouse_id, stock_status, stock_qty_ready, cancelled';
     const missingBatchCol = (m: string | undefined) => /allocated_batch_no|column .* does not exist/i.test(m ?? '');
     let { data: lineRows, error: lineError } = await readLines(`${LINE_COLS}, allocated_batch_no`);
     if (lineError && missingBatchCol(lineError.message)) {
@@ -389,7 +390,7 @@ async function runSoStockAllocation(
     }
     if (lineError) throw new Error(`allocation line load failed: ${lineError.message}`);
     const lines = (lineRows ?? []) as Array<{
-      id: string; doc_no: string; item_code: string; item_group: string | null;
+      id: string; doc_no: string; item_code: string; item_group: string | null; remark?: string | null;
       variants: VariantAttrs | null; qty: number; warehouse_id: string | null;
       stock_status: string; stock_qty_ready: number | null;
       allocated_batch_no?: string | null;
@@ -568,7 +569,7 @@ async function runSoStockAllocation(
           line's existing stock_qty_ready — used to compute "did the value
           change". */
     const WH_NONE = 'NOWH';
-    type LineNeed = { id: string; doc_no: string; bucket: string; whId: string | null; need: number; current: string; curReady: number; group: string; item_code: string };
+    type LineNeed = { id: string; doc_no: string; bucket: string; whId: string | null; need: number; current: string; curReady: number; group: string; item_code: string; remark: string | null };
     const needs: LineNeed[] = [];
     /* Sofa lines walk the batch-bound path instead of the per-line bucket
        fill. Keep the SKU + variant + remaining so we can check each module's
@@ -610,6 +611,7 @@ async function runSoStockAllocation(
         curReady: Number(l.stock_qty_ready ?? 0),
         group: (l.item_group ?? '').toLowerCase(),
         item_code: l.item_code,
+        remark: l.remark ?? null,
       });
     }
     if (needs.length === 0 && sofaLineRecs.length === 0) return { ok: true, linesFlipped: 0, ordersAdvanced: 0, ordersRegressed: 0 };
@@ -706,7 +708,7 @@ async function runSoStockAllocation(
        the floor already expects, so they must NOT be diverted. */
     const dedicatedReady = new Map<string, number>();
     const boundNeed = (n: LineNeed): boolean => isHardBoundLine(n.group, n.item_code)
-      || (companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && isUnitBoundCategory(catByCode.get(n.item_code)));
+      || (companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && (isUnitBoundCategory(catByCode.get(n.item_code)) || isCustomizedLine(n.remark)));
     const boundNeeds = needs.filter(boundNeed);
     /* Sofa lines were diverted into sofaLineRecs before `needs` was built, so
        for three months this read never saw them and the bound rule the comment

@@ -95,6 +95,7 @@ import { isDefaultMrpView, readMrpSnapshot, refreshMrpSnapshot } from '../lib/mr
 import { allocSourceOf, allocSourceCoveringPo, type AllocSource } from '../shared/mrp-alloc-source';
 import { isHardBoundLine, HARD_BOUND_COMPANY_ID } from '../lib/so-stock-allocation';
 import { isUnitBoundCategory } from '../lib/unit-bound-sku';
+import { customizedKey, isCustomizedLine } from '../lib/so-line-customized';
 
 export const mrp = new Hono<{ Bindings: Env; Variables: Variables }>();
 mrp.use('*', supabaseAuth);
@@ -187,6 +188,7 @@ export type DemandRow = {
   description: string | null;
   item_group: string | null;
   variants: Record<string, unknown> | null;
+  remark?: string | null;
   qty: number;
   /* SO line's ship-from warehouse (migration 0118). NULL on lines written by a
      path that never set it (amendment ADD lines, auto free gifts) and on old
@@ -710,7 +712,7 @@ export async function computeMrp(
   const { data: demandRaw, error: demandErr } = await paginateAll<DemandRow>((from, to) => scoped(sb
     .from('mfg_sales_order_items')
     .select(`
-      id, doc_no, item_code, description, item_group, variants, qty, warehouse_id, line_delivery_date, line_delivery_date_overridden, line_no, created_at, cancelled, allocated_batch_no,
+      id, doc_no, item_code, description, item_group, variants, remark, qty, warehouse_id, line_delivery_date, line_delivery_date_overridden, line_no, created_at, cancelled, allocated_batch_no,
       so:mfg_sales_orders!inner ( debtor_name, status, so_date, customer_delivery_date, amended_delivery_date, processing_date, customer_state, sales_location, project_id )
     `)
     .eq('cancelled', false)
@@ -1057,7 +1059,7 @@ export async function computeMrp(
      a bound sales line sat in a pool the line never reads. Every linked line now
      reads its own dedicated queue first (section 7), whichever side is bound. */
   const demandBoundById = new Set(
-    demandActive.filter((d) => boundLine(d.item_group, d.item_code)).map((d) => d.id),
+    demandActive.filter((d) => boundLine(d.item_group, d.item_code) || isCustomizedLine(d.remark)).map((d) => d.id),
   );
   const isDedicated = (r: PoLineRow): boolean =>
     boundCompany
@@ -1263,10 +1265,15 @@ export async function computeMrp(
     if (cat === 'SOFA') continue;
     if (whFilter && (d.warehouse_id ?? null) !== whFilter) continue;
     const whId = d.warehouse_id ?? null;
-    const vkey = variantKeyOf(d.item_group, d.variants);
+    /* A remark makes the line customized: its own row here, so it draws no stock and no pooled PO (those are keyed
+       on SKU and variants alone) and reads only what was ordered for it (`bound` in section 7). */
+    const remarkKey = customizedKey(d.remark);
+    const vkey = `${variantKeyOf(d.item_group, d.variants)}${remarkKey ? `|remark:${remarkKey}` : ''}`;
     const k = composite(whId, d.item_code, vkey);
+    const summary = buildVariantSummary(d.item_group, d.variants);
+    const vlabel = remarkKey ? [summary, `Customized: ${(d.remark ?? '').trim()}`].filter(Boolean).join(' · ') : summary;
     const bucket = demandByKey.get(k)
-      ?? { whId, code: d.item_code, vkey, vlabel: buildVariantSummary(d.item_group, d.variants), rows: [] };
+      ?? { whId, code: d.item_code, vkey, vlabel, rows: [] };
     bucket.rows.push(d);
     demandByKey.set(k, bucket);
   }
@@ -1397,7 +1404,7 @@ export async function computeMrp(
          What changes is only that it may no longer be named as THIS line's
          cover, so the line reads as the shortage it is. Company 2 is untouched —
          `boundCompany` gates the whole branch. */
-      const bound = boundCompany && boundLine(r.item_group, r.item_code);
+      const bound = boundCompany && (boundLine(r.item_group, r.item_code) || isCustomizedLine(r.remark));
       const fromStock = bound
         ? Math.min(need, dedicatedReceivedByLine.get(r.id) ?? 0)
         : drawBucketStock(bucketStock, batchClaims.qtyByLine.get(r.id) ?? 0, need);
