@@ -177,7 +177,7 @@ renovationSoInfo.get('/so/:docNo', async (c: C) => {
   const avail = await renovationSoAvailable(db);
   if (!avail.ok) return c.json(avail.body, avail.status);
   const r = await db.prepare(
-    `SELECT project_id::int AS project_id, debtor_name, phone, email, address1, address2, building, unit_no, property_type, layout_label,
+    `SELECT project_id::int AS project_id, branding, (SELECT k.brand_id::int FROM scm.reno_so_contracts k WHERE k.so_doc_no = doc_no) AS contract_brand_id, debtor_name, phone, email, address1, address2, building, unit_no, property_type, layout_label,
             bedrooms, bathrooms, built_up_sqft::float8 AS built_up_sqft
        FROM scm.mfg_sales_orders WHERE doc_no = ?${activeCompanySql(c)}`,
   ).bind(c.req.param('docNo') ?? '').first<Record<string, unknown>>();
@@ -190,6 +190,7 @@ renovationSoInfo.get('/so/:docNo', async (c: C) => {
   const rooms = await readSoRooms(db, c.req.param('docNo') ?? '');
   return c.json({
     ...rooms,
+    brand: { id: r.contract_brand_id == null ? null : Number(r.contract_brand_id), name: r.branding == null ? null : String(r.branding) },
     info: {
       projectId: project ? project.id : null, customerName: t(r.debtor_name), customerPhone: t(r.phone), customerEmail: t(r.email),
       siteAddress: [t(r.address1), t(r.address2)].filter(Boolean).join('\n'),
@@ -219,6 +220,25 @@ renovationSoInfo.put('/:docNo/rooms', async (c: C) => {
   const input = readRenovationBlock(body);
   await writeSoRooms(db, docNo, input.roomSections ?? [], input.itemRooms);
   return c.json({ ok: true, ...(await readSoRooms(db, docNo)) });
+});
+
+/* Which brand the order is under (owner, 5 Nov 2026). On a contract the brand also picks its letterhead, so both move. */
+renovationSoInfo.put('/:docNo/brand', async (c: C) => {
+  const db = dbOf(c);
+  const docNo = c.req.param('docNo') ?? '';
+  const body = (await c.req.json().catch(() => null)) as { brandId?: unknown } | null;
+  const brandId = Number(body?.brandId);
+  if (!Number.isInteger(brandId) || brandId <= 0) return c.json({ error: 'brand_required', message: 'Choose a brand.' }, 400);
+  const so = await db.prepare(`SELECT status::text AS status FROM scm.mfg_sales_orders WHERE doc_no = ?${activeCompanySql(c)}`).bind(docNo).first<{ status: string }>();
+  if (!so) return c.json({ error: 'so_not_found', message: `Sales order ${docNo} does not exist.` }, 404);
+  if (so.status === 'CANCELLED' || so.status === 'CLOSED') return c.json({ error: 'so_closed', message: `Sales order ${docNo} is ${so.status.toLowerCase()}.` }, 409);
+  const brand = await db.prepare(`SELECT name FROM public.project_brands WHERE id = ? AND active = 1${activeCompanySql(c)}`).bind(brandId).first<{ name: string }>();
+  if (!brand) return c.json({ error: 'brand_not_found', message: 'That brand is not available.' }, 404);
+  await db.prepare(
+    `WITH k AS (UPDATE scm.reno_so_contracts SET brand_id = ? WHERE so_doc_no = ?)
+     UPDATE scm.mfg_sales_orders SET branding = ?, updated_at = now() WHERE doc_no = ?`,
+  ).bind(brandId, docNo, brand.name, docNo).run();
+  return c.json({ ok: true, brandId, name: brand.name });
 });
 
 renovationSoInfo.put('/:docNo', async (c: C) => {

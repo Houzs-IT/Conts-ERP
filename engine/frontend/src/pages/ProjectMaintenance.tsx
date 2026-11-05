@@ -1579,7 +1579,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
 // tints by project status (mig 088), so brand colour is unused;
 // the column still exists in the DB for backward compatibility.
 
-interface BrandRow {
+export interface BrandRow {
   id: number;
   name: string;
   color: string;
@@ -1602,7 +1602,7 @@ const brandLogoKey = (b: BrandRow): string =>
 // because the serve endpoint needs the bearer so <img src> can't hit it
 // directly + in-app dialog.confirm for Remove). The uploaded logo prints
 // on SCM Sales Order PDFs when the SO resolves to this brand.
-function BrandLogoCell({
+export function BrandLogoCell({
   brand,
   onChanged,
 }: {
