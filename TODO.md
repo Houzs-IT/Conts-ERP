@@ -608,6 +608,16 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Engine screens tests: 34 of 6,726 fail. The ones read are stale guards, not screen faults: Houzs menus and routes removed, Chinese removed, category master list, the Production Order clone not added to the DataTable, coverage and storage lists. Worth a clean-up so a real failure stands out. Not read in full: MonthlyReport, ReportLayoutTree, renovationFlowFixes, mrp-views, convertScope. To fix: MobileRenovationDocs.tsx has no crash boundary of its own around its lazy pages.
 - Not yet seen live: the received-lock note on the SO edit page (needs a line received with no DO; the only one on a test order is cancelled). Project SO tab at phone width: tab switch is a native select that automation cannot drive.
 
+## End-user test with a real mouse (5 Nov 2026)
+- Walked on erp.theconts.com from the menu: RN-2611-014, QT-2611-009, TC-SO-2611-016, TC-PO-2611-020 and -021 (In-house), TC-PRO-2611-014, TC-GRN-2611-011, TC-DO-2611-012, TC-SI-2611-003, payment RM 900, VO-TC-SO-2611-016-01, TC-CN-2611-002, Works started.
+- Not walked by mouse: a PO to a real outside supplier, Goods Receipt by hand, Delivery Order by hand (the test uses In-house, which raises them on Complete), Works completed, closing a project.
+- Not checked at phone width: the browser window would not resize.
+- Payment cards and Bill were missing on TC-SO-2611-016 straight after Convert. Retry added (#693); the failing read was never captured and the fix is not proven.
+- Open: Incoming PO number on an SO line is not a link. Doc numbers cut off in the SO and Production lists at some widths. The SO status tab Delivered read 0 with a delivered order. The side panel offers Transfer to Delivery Order on a delivered order.
+- Open: a production order raised from Plan POs has no Location; the others show CONTS-WH.
+- Owner to decide: the stage bar reads Design approved and Ordering with no drawing approved. MRP lists no line without a Processing date, so a new order is invisible there until one is set. Needs attention keeps saying Order the main items after the POs are raised.
+- Left over: test projects RN-2611-013 (now used by someone else), -014, -015; QT-2611-003 draft with no project.
+
 ## Engine click-through (4-5 Nov 2026)
 - Walked live on test data, no console errors: project RN-2611-012, quotation QT-2611-002, contract TC-SO-2611-012, VO, invoice TC-SI-2611-002, credit note TC-CN-2611-001, production order TC-PRO-2611-010 with raw material, goods receipt TC-GRN-2611-010, DOs TC-DO-2611-010 and 011, Works started, all their PDFs. Bound line with no PO refused with short_stock.
 - Run in a hidden tab, read from page text, PDF text and the database: no one has looked at these screens on a real phone or by eye since the tab went hidden. Horizontal overflow at 375px was scanned on 10 pages (0 found, but that scan ignores anything inside a clipped container).
