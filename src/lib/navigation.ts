@@ -244,6 +244,7 @@ export const NAV: NavGroup[] = [
     ] },
     { key: 'scProduction', label: 'Production', icon: 'factory', area: 'scProcurement', children: [
       { key: 'productionOrders', label: 'Production orders', icon: 'clipboard-list', path: '/production/production-orders' },
+      { key: 'skuComposition', label: 'SKU Composition', icon: 'clipboard-list', path: '/production/sku-composition' },
     ] },
     { key: 'scTransportPlan', label: 'Transportation', icon: 'truck', area: 'scTransportPlan', children: [
       { key: 'deliveryPlanning', label: 'Delivery planning', icon: 'route', path: '/transport/planning' },

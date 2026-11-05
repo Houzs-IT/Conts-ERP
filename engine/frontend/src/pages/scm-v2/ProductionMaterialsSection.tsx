@@ -244,7 +244,7 @@ export function ProductionMaterialsSection({ orderId, canEdit }: { orderId: stri
             </div>
           ) : (
             <p className="mt-2 text-[11.5px] text-ink-muted">
-              Needed by puts it in MRP&apos;s Raw material tab. Not on the list?{" "}
+              Left blank, it is ordered 7 days and arrives 1 day before this order&apos;s date. Needed by puts it in MRP&apos;s Raw material tab. Not on the list?{" "}
               <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setNewSku({ code: "", name: "", uom: "PCS" })}>Create a new raw material</button>
             </p>
           )}

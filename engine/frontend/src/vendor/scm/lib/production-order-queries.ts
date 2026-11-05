@@ -720,6 +720,47 @@ export function useDeleteProductionMaterial(id: string) {
     onSuccess: () => { for (const k of materialKeys(id)) void qc.invalidateQueries({ queryKey: k }); },
   });
 }
+/** What raw materials one unit of a SKU uses (Production > SKU Composition). */
+export type CompositionRow = { id: string; sku_code: string; sku_name: string | null; material_code: string; material_name: string | null; uom: string | null; qty: number; notes: string | null };
+const COMPOSITION_KEY = ['sku-composition'];
+export function useSkuCompositions() {
+  return useQuery({
+    queryKey: COMPOSITION_KEY,
+    queryFn: () => authedFetch<{ rows: CompositionRow[] }>(`/production-orders/sku-composition`).then((r) => r.rows),
+    retry: retryUnlessClientError,
+  });
+}
+export function useCompositionSkus() {
+  return useQuery({
+    queryKey: ['sku-composition-skus'],
+    queryFn: () => authedFetch<{ skus: Array<{ code: string; name: string | null; uom: string | null }> }>(`/production-orders/sku-composition/skus`).then((r) => r.skus),
+    staleTime: 60_000,
+    retry: retryUnlessClientError,
+  });
+}
+export function useAddComposition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { skuCode: string; materialCode: string; qty: number; notes?: string | null }) =>
+      authedFetch<{ id: string }>(`/production-orders/sku-composition`, { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: COMPOSITION_KEY }); },
+  });
+}
+export function useUpdateComposition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; qty?: number; notes?: string | null }) =>
+      authedFetch(`/production-orders/sku-composition/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: COMPOSITION_KEY }); },
+  });
+}
+export function useDeleteComposition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => authedFetch(`/production-orders/sku-composition/${id}`, { method: 'DELETE' }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: COMPOSITION_KEY }); },
+  });
+}
 /** MRP's Proceed PO for raw materials. A repeat press finds nothing left to order and answers total 0. */
 export const createMaterialPos = ({ idempotencyKey, ...body }: {
   idempotencyKey?: string; picks: Array<{ materialId: string; qty: number; supplierId: string | null }>; mode: 'combined' | 'per-so'; expectedAt?: string;

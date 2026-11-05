@@ -31,6 +31,7 @@ import { betaSiteApi } from "./renovationBetaSiteApi";
 import { betaMediaApi } from "./renovationBetaMediaApi";
 import { PhotoUploadDialog, type UploadTarget } from "./BetaPhotoUpload";
 import { BetaQuantityHelper } from "./BetaQuantityHelper";
+import { BetaLineMaterials } from "./BetaLineMaterials";
 import { BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
@@ -115,6 +116,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const [result, setResult] = useState<PostedVo[] | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [materialsOf, setMaterialsOf] = useState<ManagedLine | null>(null);
   const [helping, setHelping] = useState(false);
   const [wrapRef, width] = useWidth();
 
@@ -286,7 +288,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const cell = (l: ManagedLine): RowCtx => ({
     l, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
-    setEdit: (patch) => setEdit(l.id, patch), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
+    setEdit: (patch) => setEdit(l.id, patch), openMaterials: () => setMaterialsOf(l), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
     stock: stockByLine.get(l.id),
     grDocs: lineDocs(l.id, deliveries, "goods_received"), doDocs: lineDocs(l.id, deliveries, "delivery_order"), openDoc,
   });
@@ -491,6 +493,10 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
           onClose={() => setUploading(null)} onDone={(t) => { setUploading(null); p.onDone(t); photos.reload(); q.reload(); }} />
       )}
       {varying && <VariantDialog {...cell(varying)} onClose={() => setVarying(null)} />}
+      {materialsOf && (
+        <BetaLineMaterials projectId={p.projectId} line={materialsOf} canEdit={editable && !livePo(materialsOf)} onClose={() => setMaterialsOf(null)}
+          onSaved={() => { setMaterialsOf(null); q.reload(); }} />
+      )}
     </>
   );
 }
@@ -568,6 +574,7 @@ interface RowCtx {
   refusal: string | null;
   pending: PendingPoChange[];
   setEdit: (patch: Partial<LineEdit>) => void;
+  openMaterials: () => void;
   pickVariants: () => void;
   saveDate: (which: PlanDate, value: string) => void;
   setNoPo: (v: boolean) => void;
@@ -619,6 +626,7 @@ function DescCell(r: RowCtx): ReactElement {
         {meta && <span title={meta} style={{ ...metaStyle, flex: "0 1 auto", ...ellipsis }}>{meta}</span>}
         <RemarkControl {...r} />
       </div>
+      <MaterialsLink r={r} />
       {photoCount(photos) > 0 && <LinePhotoThumbs photos={photos} label={r.l.description || r.l.itemCode} />}
       {r.refusal && <span role="alert" style={{ fontSize: 12, color: WS.red }}>Not saved: {r.refusal}</span>}
       {r.pending.map((c) => (
@@ -627,6 +635,18 @@ function DescCell(r: RowCtx): ReactElement {
         </Link>
       ))}
     </div>
+  );
+}
+
+/** The line's raw materials, opened from its row: how many it has, or a way to add some while editing. */
+function MaterialsLink({ r }: { r: RowCtx }): ReactElement | null {
+  const n = r.l.materials?.length ?? 0;
+  if (n === 0 && !(r.editable && !livePo(r.l))) return null;
+  return (
+    <button type="button" onClick={r.openMaterials} aria-label={`Raw materials of ${r.l.itemCode}`}
+      style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11.5, fontWeight: 600, color: BETA.accentInk }}>
+      {n > 0 ? `Raw materials · ${n}` : "+ raw materials"}
+    </button>
   );
 }
 

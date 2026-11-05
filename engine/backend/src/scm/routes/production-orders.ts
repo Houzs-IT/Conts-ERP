@@ -43,6 +43,7 @@ import { createDraftGrnsFromPoItemsCore, type GrnFromPoItemsContext } from '../l
 import { loadLeadBuffers } from '../../services/agents/procurement-learning';
 import { paginateAll, chunkIn } from '../lib/paginate-all';
 import { pgrestInList } from '../lib/pgrest-in-list';
+import { klToday, materialDates } from '../lib/production-material-dates';
 
 export const productionOrders = new Hono<{ Bindings: Env; Variables: Variables }>();
 productionOrders.use('*', supabaseAuth);
@@ -323,6 +324,93 @@ productionOrders.get('/raw-skus', async (c) => {
   return c.json({ skus: data ?? [] });
 });
 
+const rawSkuOf = async (sb: any, companyId: number, code: string) => {
+  const { data } = await scopeToCompanyId(sb.from('mfg_products').select('code, name, uom, category').eq('code', code), companyId).limit(1);
+  return ((data ?? [])[0] ?? null) as { name: string | null; uom: string | null; category: string } | null;
+};
+const positiveQty = (v: unknown): number | null => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 && n < 1e8 ? Math.round(n * 1000) / 1000 : null;
+};
+
+/* ── SKU Composition (owner, 5 Nov 2026) ──
+   Which raw materials one unit of a SKU uses. Read on its own screen; nothing fills a production order from it yet. */
+type ProductName = { code: string; name: string | null; uom: string | null };
+
+productionOrders.get('/sku-composition/skus', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const { data, error } = await paginateAll<ProductName>((from, to) =>
+    scopeToCompanyId(c.get('supabase').from('mfg_products').select('code, name, uom').neq('category', RAW_CATEGORY).eq('status', 'ACTIVE'), co.companyId)
+      .order('code').range(from, to) as never);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  return c.json({ skus: data ?? [] });
+});
+
+productionOrders.get('/sku-composition', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const { data, error } = await paginateAll<{ id: string; sku_code: string; material_code: string; qty: number; notes: string | null }>((from, to) =>
+    scopeToCompanyId(sb.from('sku_compositions').select('id, sku_code, material_code, qty, notes'), co.companyId).order('sku_code').order('created_at').range(from, to) as never);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  const rows = data ?? [];
+  const { data: names, error: nameErr } = await chunkIn<ProductName>([...new Set(rows.flatMap((r) => [r.sku_code, r.material_code]))], (batch, from, to) =>
+    scopeToCompanyId(sb.from('mfg_products').select('code, name, uom'), co.companyId).filter('code', 'in', pgrestInList(batch)).order('id').range(from, to));
+  if (nameErr) return c.json({ error: 'load_failed', reason: nameErr.message }, 500);
+  const byCode = new Map((names ?? []).map((p) => [p.code, p]));
+  return c.json({ rows: rows.map((r) => ({
+    ...r, sku_name: byCode.get(r.sku_code)?.name ?? null, material_name: byCode.get(r.material_code)?.name ?? null, uom: byCode.get(r.material_code)?.uom ?? null,
+  })) });
+});
+
+productionOrders.post('/sku-composition', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const skuCode = String(b.skuCode ?? '').trim();
+  const materialCode = String(b.materialCode ?? '').trim();
+  const qty = positiveQty(b.qty);
+  if (!skuCode || !materialCode || qty == null) return c.json({ error: 'validation', message: 'Choose a SKU and a raw material, and give a quantity above zero.' }, 422);
+  const sku = await rawSkuOf(sb, co.companyId, skuCode);
+  if (!sku || String(sku.category) === RAW_CATEGORY) return c.json({ error: 'validation', message: `${skuCode} is not a SKU that can have a composition.` }, 422);
+  const material = await rawSkuOf(sb, co.companyId, materialCode);
+  if (!material || String(material.category) !== RAW_CATEGORY) return c.json({ error: 'validation', message: `${materialCode} is not a Raw material SKU.` }, 422);
+  const { data, error } = await sb.from('sku_compositions').insert({
+    company_id: co.companyId, sku_code: skuCode, material_code: materialCode, qty, notes: b.notes ? String(b.notes) : null, updated_by: c.get('houzsUser')?.id ?? null,
+  }).select('id').single();
+  if (error?.code === '23505') return c.json({ error: 'validation', message: `${materialCode} is already in ${skuCode}: change its quantity instead.` }, 409);
+  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  return c.json({ ok: true, id: (data as { id: string }).id }, 201);
+});
+
+productionOrders.patch('/sku-composition/:rowId', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: c.get('houzsUser')?.id ?? null };
+  if (b.qty !== undefined) {
+    const qty = positiveQty(b.qty);
+    if (qty == null) return c.json({ error: 'validation', message: 'Give a quantity above zero.' }, 422);
+    updates.qty = qty;
+  }
+  if (b.notes !== undefined) updates.notes = b.notes ? String(b.notes) : null;
+  const { data, error } = await scopeToCompanyId(c.get('supabase').from('sku_compositions').update(updates).eq('id', c.req.param('rowId')), co.companyId).select('id').maybeSingle();
+  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  if (!data) return c.json(NOT_THIS_COMPANY, 404);
+  return c.json({ ok: true });
+});
+
+productionOrders.delete('/sku-composition/:rowId', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const { data, error } = await scopeToCompanyId(c.get('supabase').from('sku_compositions').delete().eq('id', c.req.param('rowId')), co.companyId).select('id').maybeSingle();
+  if (error) return c.json({ error: 'delete_failed', reason: error.message }, 500);
+  if (!data) return c.json(NOT_THIS_COMPANY, 404);
+  return c.json({ ok: true });
+});
+
 /* ── MRP shortages -> raw-material POs ──
    MRP's Proceed PO sends raw-material picks here; SO picks keep going to /mfg-purchase-orders/from-sos. Each PO goes
    through createMfgPurchaseOrderHandler, the create a PO typed by hand goes through, and lands as MRP's POs do:
@@ -460,18 +548,9 @@ productionOrders.get('/:id/revisions', (c) => c.json({ revisions: [] }));
 /* ── Raw materials ── */
 
 const loadOrderHead = async (sb: any, companyId: number, id: string) => {
-  const { data } = await scopeToCompanyId(sb.from('production_orders').select('id, status').eq('id', id), companyId).maybeSingle();
-  return data as { id: string; status: string } | null;
+  const { data } = await scopeToCompanyId(sb.from('production_orders').select('id, status, expected_at').eq('id', id), companyId).maybeSingle();
+  return data as { id: string; status: string; expected_at: string | null } | null;
 };
-const rawSkuOf = async (sb: any, companyId: number, code: string) => {
-  const { data } = await scopeToCompanyId(sb.from('mfg_products').select('code, name, uom, category').eq('code', code), companyId).limit(1);
-  return ((data ?? [])[0] ?? null) as { name: string | null; uom: string | null; category: string } | null;
-};
-const positiveQty = (v: unknown): number | null => {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 && n < 1e8 ? Math.round(n * 1000) / 1000 : null;
-};
-
 productionOrders.get('/:id/materials', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
@@ -494,9 +573,10 @@ productionOrders.post('/:id/materials', async (c) => {
   if (!code || qty == null) return c.json({ error: 'validation', message: 'Choose a raw material and give a quantity above zero.' }, 422);
   const sku = await rawSkuOf(sb, co.companyId, code);
   if (!sku || String(sku.category) !== RAW_CATEGORY) return c.json({ error: 'validation', message: `${code} is not a Raw material SKU.` }, 422);
+  const auto = materialDates(order.expected_at, klToday());
   const { data, error } = await sb.from('production_order_materials').insert({
     production_order_id: order.id, company_id: co.companyId, item_code: code, description: sku.name, uom: sku.uom, qty_needed: qty,
-    processing_date: dateOrNull(b.processingDate), delivery_date: dateOrNull(b.deliveryDate), notes: b.notes ? String(b.notes) : null, updated_by: c.get('houzsUser')?.id ?? null,
+    processing_date: dateOrNull(b.processingDate) ?? auto.processingDate, delivery_date: dateOrNull(b.deliveryDate) ?? auto.deliveryDate, notes: b.notes ? String(b.notes) : null, updated_by: c.get('houzsUser')?.id ?? null,
   }).select('id').single();
   if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
   return c.json({ ok: true, id: (data as { id: string }).id }, 201);

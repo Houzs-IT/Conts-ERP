@@ -30,7 +30,7 @@ import {
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
-import { bindSupplier, cleanLinePlan, contractLineOf, lineSupplierState, loadProjectLines, projectLine, saveLinePlan, saveLinePlans, saveLineSupplier, supplierBinding } from "../services/renovation/betaLines";
+import { bindSupplier, cleanLinePlan, contractLineOf, lineSupplierState, loadProjectLines, notRawMaterials, projectLine, saveLineMaterials, saveLinePlan, saveLinePlans, saveLineSupplier, supplierBinding } from "../services/renovation/betaLines";
 import { patchContract } from "../scm/lib/renovation-so";
 import { inRenoTx, RenoError, sqlFor } from "../scm/lib/renovation-db";
 import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
@@ -863,6 +863,47 @@ app.put("/projects/:id/line-plans", requirePermission("projects.write"), async (
     if (isMissingRelation(e)) return c.json({ error: "plans_not_ready", message: "Planned dates are not switched on yet on this server." }, 409);
     throw e;
   }
+});
+
+/* The Raw material SKUs a line's list can take. */
+app.get("/raw-materials", requirePageAccess("projects.list"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  return readOr(c, "raw material", async () => {
+    const { results } = await db(c).prepare(
+      `SELECT DISTINCT ON (code) code, name, uom FROM scm.mfg_products WHERE company_id = ? AND category::text = 'RAW' AND status::text = 'ACTIVE' ORDER BY code`,
+    ).bind(co.companyId).all<{ code: string; name: string | null; uom: string | null }>();
+    return { skus: results ?? [] };
+  });
+});
+
+/* A line's raw materials (owner, 5 Nov 2026): the whole list replaces what it had, and a production order made from the
+   line brings it along (migration 0223). A line on a live PO is past that point: its order holds the materials. */
+app.put("/projects/:id/lines/:itemId/materials", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const b = await body(c);
+  const raw = Array.isArray(b.materials) ? (b.materials as Array<Record<string, unknown>>) : null;
+  if (!raw) return c.json({ error: "invalid_materials", message: "Send the list of materials." }, 400);
+  const materials = raw.map((m) => ({ code: String(m.code ?? "").trim(), qty: Math.round(Number(m.qty) * 1000) / 1000 }));
+  if (materials.some((m) => !m.code || !(m.qty > 0) || m.qty >= 1e8)) return c.json({ error: "invalid_materials", message: "Every material needs a quantity above zero." }, 400);
+  if (new Set(materials.map((m) => m.code)).size !== materials.length) return c.json({ error: "invalid_materials", message: "A material is listed twice." }, 400);
+  const line = await projectLine(db(c), id, co, c.req.param("itemId"), await categoryScope(c));
+  if (!line) return c.json({ error: "not_found" }, 404);
+  const state = await lineSupplierState(db(c), line.id);
+  if (state.poNumber) return c.json({ error: "line_on_po", message: `${state.poNumber} already buys ${state.itemCode}: change its materials on the production order.` }, 409);
+  const wrong = await notRawMaterials(db(c), materials.map((m) => m.code), co);
+  if (wrong.length > 0) return c.json({ error: "invalid_materials", message: `${wrong[0]} is not a Raw material SKU.` }, 400);
+  try {
+    await saveLineMaterials(db(c), line.id, co, userId(c), materials);
+    await activityStmt(c, id, co, "beta_line_materials", null, line.doc_no, `${state.itemCode}: ${materials.length} raw material${materials.length === 1 ? "" : "s"}`).run();
+  } catch (e) {
+    console.error("[renovation-beta] line materials save failed", e);
+    return c.json({ error: "materials_save_failed", message: "The materials could not be saved. Try again.", detail: readDetail(e) }, 500);
+  }
+  return c.json({ ok: true });
 });
 
 /* The supplier a line is to be bought from, picked on the SO tab before its PO (owner, 3 and 4 Nov 2026), like MRP's
