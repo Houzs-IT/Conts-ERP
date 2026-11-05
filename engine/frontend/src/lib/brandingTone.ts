@@ -82,7 +82,7 @@ const SOFA_BRAND_WORDS = [houseSofaBrandName("HOUZS"), houseSofaBrandName("2990"
 export function brandingToneForLabel(label: string | null | undefined): BrandTone {
   const s = String(label ?? "").trim().toUpperCase();
   /* Conts sells under its brands, not product lines (owner, 5 Nov 2026): one brand, one colour on every row. */
-  if (s.includes("DREAM CRAFTER")) return "accent";
+  if (s.includes("DREAM CRAFTER")) return "neutral";
   if (s.includes("THE CONTS")) return "warning";
   if (!s || s === "—") return TONE_BY_BUCKET.OTHER;
   if (s.includes("MATTRES")) return TONE_BY_BUCKET.MATTRESS;
