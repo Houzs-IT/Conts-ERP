@@ -3,7 +3,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SkuCompositionPage } from "./SkuCompositionPage";
 
 const added = vi.hoisted(() => vi.fn());
-const ROWS = [{ id: "r1", sku_code: "RN-PLASTER_CEILING", sku_name: "Works - Plaster ceiling", material_code: "PLC-KNK-001", material_name: "Plaster Board", uom: "PCS", qty: 2, notes: null }];
+const ROWS = [
+  { id: "r1", sku_code: "RN-PLASTER_CEILING", sku_name: "Works - Plaster ceiling", material_code: "PLC-KNK-001", material_name: "Plaster Board", uom: "PCS", qty: 2, notes: null },
+  { id: "r2", sku_code: "RN-FEATURE_WALL", sku_name: "Works - Feature wall", material_code: "PTN-KNK-002", material_name: "Primer", uom: "PCS", qty: 4, notes: null },
+];
 
 vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }));
 vi.mock("../../vendor/scm/lib/mfg-products-queries", () => ({ useCreateMfgProduct: () => ({ mutate: vi.fn(), isPending: false }) }));
@@ -32,10 +35,25 @@ vi.mock("../../vendor/scm/components/SearchableSelect", () => ({
 describe("SKU Composition", () => {
   it("opens a bound SKU and offers only the materials it does not have yet", () => {
     render(<SkuCompositionPage />);
-    fireEvent.click(screen.getByRole("button", { name: /RN-PLASTER_CEILING/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit RN-PLASTER_CEILING" }));
     expect(screen.getByLabelText("Quantity of PLC-KNK-001")).toBeTruthy();
     expect(screen.queryByLabelText("PLC-KNK-001 · Plaster Board")).toBeNull();
     expect(screen.getByLabelText("PTN-KNK-001 · Gypsum")).toBeTruthy();
+  });
+
+  it("lists every SKU's composition", () => {
+    render(<SkuCompositionPage />);
+    expect(screen.getByText("SKUs with a composition (2)")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete RN-FEATURE_WALL" })).toBeTruthy();
+  });
+
+  it("copies another SKU's materials with their quantities, before saving", () => {
+    added.mockClear();
+    render(<SkuCompositionPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit RN-PLASTER_CEILING" }));
+    fireEvent.change(screen.getByLabelText("Copy from another SKU"), { target: { value: "RN-FEATURE_WALL" } });
+    expect((screen.getByLabelText("New quantity of PTN-KNK-002") as HTMLInputElement).value).toBe("4");
+    expect(added).not.toHaveBeenCalled();
   });
 
   it("makes a new composition with several materials at once", async () => {

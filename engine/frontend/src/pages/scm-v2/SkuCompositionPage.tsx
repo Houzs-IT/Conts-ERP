@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react";
 import { fmtQty } from "@2990s/shared";
 import { Button } from "../../components/Button";
 import { PageHeader } from "../../components/Layout";
@@ -102,6 +102,21 @@ export function SkuCompositionPage() {
       onError: refused("Raw material not created"),
     });
   };
+  /* Starts from what another SKU uses: the quantities stay editable before anything is saved. */
+  const copyFrom = (code: string) => {
+    const from = all.filter((r) => r.sku_code === code && !taken.has(r.material_code));
+    setPicked((p) => ({ ...p, ...Object.fromEntries(from.map((r) => [r.material_code, String(Number(r.qty))])) }));
+  };
+  const dropAll = async (code: string, count: number) => {
+    if (!(await confirm({ title: `Delete the composition of ${code}?`, body: `All ${count} raw material${count === 1 ? "" : "s"} leave it. Lines already saved on a project keep their own list.`, confirmLabel: "Delete" }))) return;
+    try {
+      for (const r of all.filter((x) => x.sku_code === code)) await remove.mutateAsync(r.id);
+      toast.success(`Composition of ${code} deleted`);
+      open(null);
+    } catch (e) {
+      refused("Composition not deleted")(e);
+    }
+  };
   const drop = async (r: CompositionRow) => {
     if (!(await confirm({ title: `Remove ${r.material_code}?`, body: `It leaves the composition of ${r.sku_code}.`, confirmLabel: "Remove" }))) return;
     remove.mutate(r.id, { onSuccess: () => toast.success(`${r.material_code} removed`), onError: refused("Material not removed") });
@@ -131,11 +146,13 @@ export function SkuCompositionPage() {
           ) : (
             <ul className="flex flex-col">
               {shownBound.map((b) => (
-                <li key={b.code} className="border-t border-border-subtle first:border-t-0">
-                  <button type="button" onClick={() => open(b.code)} className="flex w-full items-center justify-between gap-3 py-2 text-left hover:text-primary">
+                <li key={b.code} className="flex items-center gap-2 border-t border-border-subtle py-1.5 first:border-t-0">
+                  <button type="button" onClick={() => open(b.code)} className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left hover:text-primary">
                     <span className="min-w-0"><span className="font-mono text-[12px] font-semibold">{b.code}</span> <span className="text-[12.5px] text-ink-secondary">{b.name}</span></span>
                     <span className="shrink-0 text-[12px] text-ink-muted">{b.materials.length} material{b.materials.length === 1 ? "" : "s"}</span>
                   </button>
+                  <Button variant="secondary" icon={<Pencil size={14} />} onClick={() => open(b.code)} aria-label={`Edit ${b.code}`}>Edit</Button>
+                  <Button variant="secondary" icon={<Trash2 size={14} />} onClick={() => void dropAll(b.code, b.materials.length)} aria-label={`Delete ${b.code}`}>Delete</Button>
                 </li>
               ))}
             </ul>
@@ -157,6 +174,11 @@ export function SkuCompositionPage() {
           ) : (
             <>
               <div className="rounded-md border border-border-subtle bg-surface p-3">
+                {mine.length > 0 && (
+                  <div className="mb-2 flex justify-end">
+                    <Button variant="secondary" icon={<Trash2 size={14} />} onClick={() => void dropAll(sku, mine.length)}>Delete composition</Button>
+                  </div>
+                )}
                 {mine.length === 0 ? (
                   <p className="text-[13px] text-ink-muted">No raw material on {sku} yet.</p>
                 ) : (
@@ -202,6 +224,15 @@ export function SkuCompositionPage() {
               <div className="rounded-md border border-border-subtle bg-surface p-3">
                 <p className={FIELD_LABEL}>Add raw materials: tick one or as many as you need</p>
                 <input aria-label="Search raw materials" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search raw materials" className={INPUT} />
+                {bound.some((b) => b.code !== sku) && (
+                  <div className="mt-2 max-w-[420px]">
+                    <span className={FIELD_LABEL}>Or copy from another SKU</span>
+                    <SearchableSelect
+                      className={INPUT} value="" onChange={copyFrom} placeholder="Choose a SKU to copy" ariaLabel="Copy from another SKU"
+                      options={bound.filter((b) => b.code !== sku).map(skuOption)}
+                    />
+                  </div>
+                )}
                 <div role="group" aria-label="Raw materials" className="mt-2 max-h-[240px] overflow-y-auto rounded-md border border-border-subtle">
                   {shownRaw.map((m) => (
                     <label key={m.code} className="flex cursor-pointer items-center gap-2 px-2 py-1.5 text-[13px] hover:bg-accent/10">
@@ -245,7 +276,8 @@ export function SkuCompositionPage() {
                         <button type="button" aria-label={`Untick ${code}`} onClick={() => toggle(code)} className="text-ink-muted hover:text-err"><Trash2 size={14} /></button>
                       </div>
                     ))}
-                    <div className="mt-2">
+                    <div className="mt-2 flex items-center gap-2">
+                      <Button variant="secondary" onClick={() => setPicked({})} disabled={saving}>Cancel</Button>
                       <Button icon={<Plus size={14} />} onClick={() => void saveAll()} disabled={!pickedValid || saving}>
                         {saving ? "Adding…" : `Add ${pickedCodes.length} raw material${pickedCodes.length === 1 ? "" : "s"}`}
                       </Button>
