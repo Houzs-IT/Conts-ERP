@@ -47,6 +47,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     });
   }
   rows.sort((a, b) => a.building.localeCompare(b.building) || a.number.localeCompare(b.number, 'en', { numeric: true }));
-  const payload: YgrrPayload = { month, months, rows };
+  const calendarYear = Array.from({ length: 12 }, (_, i) => `${month.slice(0, 4)}-${String(i + 1).padStart(2, '0')}`);
+  const payload: YgrrPayload = { month, months: calendarYear, rows };
   return json(payload);
 };
