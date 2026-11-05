@@ -117,6 +117,7 @@ import {
 import { loadSofaBatchStock, sofaStockKey } from '../lib/sofa-set-coverage';
 import { buildDoReversalRows } from '../lib/do-reversal';
 import { resolveDoLineWarehouses } from '../lib/do-line-warehouses';
+import { isOnSiteWarehouse } from '../lib/non-selling-warehouse';
 import { isMigratedNoStock } from '../lib/migrated-no-stock';
 import { currentDocNoByKey, type CurrentEvent } from '../lib/current-doc';
 import { mintMonthlyDocNo, insertWithDocNoRetry } from '../lib/doc-no';
@@ -1047,6 +1048,8 @@ async function checkDoStockAvailability(
   const lineWh = await resolveDoLineWarehouses(sb, shippable.map((l) => ({ id: l.lineRef, so_item_id: l.soItemId })), headerWarehouseId, companyId);
   const active = await uncoveredStockCheckLines(sb, shippable, lineWh, companyId);
   if (active.length === 0) return [];
+  const onSite = new Set(((await sb.from('warehouses').select('id, code').in('id', [...new Set(lineWh.values())].filter(Boolean))).data ?? [])
+    .filter((w: { code: string | null }) => isOnSiteWarehouse(w.code)).map((w: { id: string }) => w.id));
   /* Works and Built-in serve their own SO (owner, 4 Nov 2026: 就算有别的东西、有库存，它也不能用): a line its own PO has
      not covered is short whatever the warehouse holds. */
   const unitBound = companyId === HARD_BOUND_COMPANY_ID ? await loadUnitBoundCodes(sb, companyId, active.map((l) => l.itemCode)) : NO_UNIT_BOUND_CODES;
@@ -1054,7 +1057,7 @@ async function checkDoStockAvailability(
   const byWh = new Map<string, Array<{ itemCode: string; productName: string | null; variantKey: string; qty: number }>>();
   for (const l of active) {
     const wh = lineWh.get(l.lineRef) ?? null;
-    if (!wh) continue;
+    if (!wh || onSite.has(wh)) continue;
     if (unitBound.has(l.itemCode)) {
       shortages.push({ itemCode: l.itemCode, productName: l.productName, variantKey: l.variantKey, warehouseId: wh, warehouseName: null, needed: Number(l.qty), available: 0, short: Number(l.qty), alternatives: [] });
       continue;

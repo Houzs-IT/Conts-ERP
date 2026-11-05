@@ -43,6 +43,10 @@ export const NON_SELLING_WAREHOUSE_TYPES: ReadonlySet<string> = new Set([
   'service',
 ]);
 
+/** On-site means straight to the project (owner, 5 Nov 2026): goods sent there are never stock to count or to check. */
+export const ON_SITE_WAREHOUSE_CODE = 'ONSITE';
+export const isOnSiteWarehouse = (code: string | null | undefined): boolean => String(code ?? '').trim().toUpperCase() === ON_SITE_WAREHOUSE_CODE;
+
 export function isNonSellingWarehouseType(type: string | null | undefined): boolean {
   return NON_SELLING_WAREHOUSE_TYPES.has(String(type ?? '').toLowerCase());
 }
@@ -75,7 +79,7 @@ export async function loadNonSellingWarehouses(
   const out = new Map<string, NonSellingWarehouse>();
   for (const w of (data ?? []) as Array<Record<string, unknown>>) {
     const type = (w.type ?? null) as string | null;
-    if (!isNonSellingWarehouseType(type)) continue;
+    if (!isNonSellingWarehouseType(type) && !isOnSiteWarehouse(w.code as string | null)) continue;
     const id = String(w.id ?? '');
     if (!id) continue;
     out.set(id, {

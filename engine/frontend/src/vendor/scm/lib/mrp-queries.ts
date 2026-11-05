@@ -59,6 +59,7 @@ export type MrpSku = {
   warehouseName: string | null;
   itemCode: string;
   variantKey: string;
+  stockWhere?: Array<{ code: string; qty: number }>;
   variantLabel: string | null;
   description: string | null;
   category: string | null;

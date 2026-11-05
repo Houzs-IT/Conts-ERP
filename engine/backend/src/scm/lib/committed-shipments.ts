@@ -26,8 +26,10 @@ import { chunkIn } from './paginate-all';
    same pair in PJ. NULL warehouse (unmapped state / pre-backfill line) gets its
    own WH_NONE bucket so it never silently shares another warehouse's stock. */
 export const WH_NONE = 'NOWH';
-export const composite = (whId: string | null, code: string, vkey: string): string =>
-  `${whId ?? WH_NONE}|${code}|${vkey}`;
+/* Stock is not tied to a warehouse (owner, 5 Nov 2026): goods go into any warehouse and leave from wherever they are,
+   so planning counts every warehouse together. The argument stays so the delivery side can still name where it ships. */
+export const composite = (_whId: string | null, code: string, vkey: string): string =>
+  `${WH_NONE}|${code}|${vkey}`;
 
 /* Load the ship-before-arrival commitments that are still outstanding against
    the given open PO numbers (= batch numbers, since a GRN stamps batch_no =
