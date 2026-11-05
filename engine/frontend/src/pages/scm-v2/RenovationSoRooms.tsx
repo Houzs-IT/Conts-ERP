@@ -115,6 +115,17 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
   const confirm = useConfirm();
   const placed = placeRows(rooms, rows);
   const shown = placed.rooms;
+  /* Choosing or changing the layout adds its rooms straight away (owner, 5 Nov 2026); rooms already here stay. */
+  const layoutKey = layout ? `${layout.bedrooms}|${layout.bathrooms}` : '';
+  const seenLayout = useRef(layoutKey);
+  useEffect(() => {
+    if (seenLayout.current === layoutKey) return;
+    seenLayout.current = layoutKey;
+    if (!layout || disabled) return;
+    const r = generateRooms(shown, layout.bedrooms, layout.bathrooms);
+    if (r.added.length > 0) onRoomsChange(r.rooms);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the layout is the trigger
+  }, [layoutKey]);
   /* Within a room, grouped lines (locked ones) come first, each group together; the rest keep their order. */
   const groups = shown.map((room) => {
     const inRoom = rows.filter((r) => placed.roomOf[r.key] === room);

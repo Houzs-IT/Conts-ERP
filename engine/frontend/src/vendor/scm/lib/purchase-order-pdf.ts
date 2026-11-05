@@ -414,7 +414,7 @@ async function renderPurchaseOrderInto(
         // _R suffix (owner 2026-07-27) — the printed number shows the revision.
         ['PO No', poDisplayNumber(header.po_number, header.revision)],
         ['Your Ref No', yourRef],
-        ...renoDetailRows(opts?.renovation).slice(0, 2),
+        ...renoDetailRows(opts?.renovation).slice(0, 3),
         ['Date', fmtDocDate(header.po_date)],
         /* Migration 0180 — print the EFFECTIVE (latest revised) delivery date. */
         ['Delivery Date', (() => {
@@ -521,10 +521,9 @@ async function renderPurchaseOrderInto(
   const totalPagesExp = '{total_pages}';
   const drawPageHeader = (pageNumber: number) => {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(80);
-    doc.text(
-      `${poDisplayNumber(header.po_number, header.revision)} · Page ${pageNumber} of ${totalPagesExp}`,
-      pageW - margin, 10, { align: 'right' },
-    );
+    /* Right edge measured on the printed text: aligning right on the {total_pages} placeholder leaves it short of the margin. */
+    const prefix = `${poDisplayNumber(header.po_number, header.revision)} · Page ${pageNumber} of `;
+    doc.text(`${prefix}${totalPagesExp}`, pageW - margin - doc.getTextWidth(`${prefix}1`), 10);
     doc.setTextColor(0);
   };
 

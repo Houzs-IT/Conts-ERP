@@ -178,7 +178,7 @@ renovationSoInfo.get('/so/:docNo', async (c: C) => {
   if (!avail.ok) return c.json(avail.body, avail.status);
   const r = await db.prepare(
     `SELECT project_id::int AS project_id, branding, (SELECT k.brand_id::int FROM scm.reno_so_contracts k WHERE k.so_doc_no = doc_no) AS contract_brand_id, debtor_name, phone, email, address1, address2, building, unit_no, property_type, layout_label,
-            bedrooms, bathrooms, built_up_sqft::float8 AS built_up_sqft
+            bedrooms, bathrooms, built_up_sqft::float8 AS built_up_sqft, land_area_sqft::float8 AS land_area_sqft, land_size
        FROM scm.mfg_sales_orders WHERE doc_no = ?${activeCompanySql(c)}`,
   ).bind(c.req.param('docNo') ?? '').first<Record<string, unknown>>();
   if (!r) return c.json({ error: 'so_not_found' }, 404);
@@ -199,6 +199,7 @@ renovationSoInfo.get('/so/:docNo', async (c: C) => {
       propertyType: t(r.property_type) || t(project?.propertyType), layoutLabel: t(r.layout_label) || t(project?.layoutLabel),
       bedrooms: t(r.bedrooms) || t(project?.bedrooms), bathrooms: t(r.bathrooms) || t(project?.bathrooms),
       builtUpSqft: t(r.built_up_sqft) || t(project?.builtUpSqft),
+      landAreaSqft: t(r.land_area_sqft) || t(project?.landAreaSqft), landSize: t(r.land_size) || t(project?.landSize),
     },
     project,
   });

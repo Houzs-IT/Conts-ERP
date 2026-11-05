@@ -41,7 +41,7 @@ describe('reading the property fields', () => {
 
   test('invalid values come back as problems and as null', () => {
     const r = readPropertyInput({ propertyType: ' Condo ', layoutLabel: '3 bed 2 bath', bedrooms: '3', bathrooms: 'x', builtUpSqft: '-5' });
-    expect(r.value).toEqual({ propertyType: 'Condo', layoutLabel: '3 bed 2 bath', bedrooms: 3, bathrooms: null, builtUpSqft: null });
+    expect(r.value).toEqual({ propertyType: 'Condo', layoutLabel: '3 bed 2 bath', bedrooms: 3, bathrooms: null, builtUpSqft: null, landAreaSqft: null, landSize: '' });
     expect(r.problems.map((p) => p.code)).toEqual(['bathrooms_invalid', 'sqft_invalid']);
   });
 });
@@ -144,7 +144,7 @@ describe('the SO and the project ask for the same fields (owner, 14 Oct 2026)', 
     expect(SHARED_FIELDS.map((f) => f.key)).toEqual([
       'customerName', 'customerPhone', 'customerEmail', 'salespersonId',
       'address1', 'address2', 'state', 'city', 'postcode', 'country', 'salesLocation',
-      'building', 'unitNo', 'propertyType', 'layoutLabel', 'bedrooms', 'bathrooms', 'builtUpSqft',
+      'building', 'unitNo', 'propertyType', 'layoutLabel', 'bedrooms', 'bathrooms', 'builtUpSqft', 'landAreaSqft', 'landSize',
     ]);
     expect(new Set(SHARED_FIELDS.map((f) => f.project)).size).toBe(SHARED_FIELDS.length);
     expect(new Set(SHARED_FIELDS.map((f) => f.so)).size).toBe(SHARED_FIELDS.length);

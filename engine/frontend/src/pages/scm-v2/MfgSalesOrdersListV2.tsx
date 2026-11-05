@@ -26,7 +26,7 @@ import { SoListStatusCell, soRowStatusOf } from "./SoListStatusCell";
 import { SoListFilterBar } from "./SoListFilterBar";
 import { useSoListFilters } from "../../vendor/scm/lib/so-list-filter-state";
 import { salesOrderRowMenu } from "./row-menus";
-import { brandingToneForCategory, type BrandTone } from "../../lib/brandingTone";
+import { brandingToneForCategory, brandingToneForLabel, type BrandTone } from "../../lib/brandingTone";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { CancelledMoneyActions } from "./CancelledMoneyActions";
 import {
@@ -249,7 +249,7 @@ const brandOf = (r: SoRow): string => (isPlaceholderBrandText(r.branding) ? "" :
 /* This surface carries the line's CATEGORY, so it uses the accurate entry
    point: colour and label then share one bucket rule and cannot disagree.
    ../../lib/brandingTone has the whole story. */
-const brandTone = (r: SoRow): BrandTone => brandingToneForCategory(r.first_item_category);
+const brandTone = (r: SoRow): BrandTone => (/dream crafter|the conts/i.test(r.branding ?? "") ? brandingToneForLabel(r.branding) : brandingToneForCategory(r.first_item_category));
 
 
 // ─── Salesperson dropdown / split-menu ──────────────────────────────────────
