@@ -12,7 +12,7 @@ import { useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
 import { useRenovationCatalog } from '../../vendor/scm/lib/renovation-catalog-queries';
 import { searchProducts, type DocLine, type DocSection, type ProductPick } from '../../lib/renovation/api';
 import { cn } from '../../lib/utils';
-import { cellBaseCls, cellInputCls, inputCls, MoneyInput, PercentInput, rm } from './shared';
+import { cellBaseCls, cellInputCls, inputCls, MoneyInput, PercentInput, rm, selectAllOnFocus } from './shared';
 import { insertRoomSections } from './roomSections';
 import { LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 import type { DocType } from '../../components/doc-attachments/docAttachmentsApi';
@@ -258,7 +258,7 @@ function LineRow(p: LineProps) {
           </div>
         </td>
         <td className="w-[112px] py-1">{priced && <ProductPicker value={line.itemCode} onPick={pick} disabled={disabled} />}</td>
-        <td className="w-[52px] py-1">{priced && <input aria-label="Qty" inputMode="numeric" className={cn(cellInputCls, 'text-center tabular-nums')} disabled={disabled || Boolean(line.measure)} value={line.qty} onChange={(e) => p.onChange({ qty: Math.max(0, Math.trunc(Number(e.target.value) || 0)) })} />}</td>
+        <td className="w-[52px] py-1">{priced && <input aria-label="Qty" inputMode="numeric" className={cn(cellInputCls, 'text-center tabular-nums')} disabled={disabled || Boolean(line.measure)} value={line.qty} onFocus={selectAllOnFocus} onChange={(e) => p.onChange({ qty: Math.max(0, Math.trunc(Number(e.target.value) || 0)) })} />}</td>
         <td className="w-[128px] py-1">{priced && <MeasureInput line={line} onChange={p.onChange} disabled={disabled} />}</td>
         <td className="w-[92px] py-1">{priced && !inLumpSum && <MoneyInput className={cellInputCls} ariaLabel="Unit price" value={line.unitPriceSen} disabled={disabled} onChange={(v) => p.onChange({ unitPriceSen: v ?? 0 })} />}</td>
         <td className="w-[56px] py-1">{priced && !inLumpSum && <PercentInput className={cellInputCls} ariaLabel="Discount %" value={line.discountBp} disabled={disabled} onChange={(bp) => p.onChange({ discountBp: bp })} />}</td>
@@ -310,7 +310,7 @@ function LineCard(p: LineProps) {
         <div className="mt-2 grid grid-cols-2 gap-2">
           <div className="col-span-2"><ProductPicker value={line.itemCode} onPick={pick} disabled={disabled} /></div>
           <label className="flex flex-col gap-0.5 text-[11px] text-ink-muted">Qty
-            <input inputMode="numeric" className={inputCls} disabled={disabled || Boolean(line.measure)} value={line.qty} onChange={(e) => p.onChange({ qty: Math.max(0, Math.trunc(Number(e.target.value) || 0)) })} />
+            <input inputMode="numeric" className={inputCls} disabled={disabled || Boolean(line.measure)} value={line.qty} onFocus={selectAllOnFocus} onChange={(e) => p.onChange({ qty: Math.max(0, Math.trunc(Number(e.target.value) || 0)) })} />
           </label>
           <label className="flex flex-col gap-0.5 text-[11px] text-ink-muted">Measure
             <MeasureInput line={line} onChange={p.onChange} disabled={disabled} />
