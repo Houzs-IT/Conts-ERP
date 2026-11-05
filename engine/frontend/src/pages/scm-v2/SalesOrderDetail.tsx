@@ -18,6 +18,7 @@
 // PATCH /:docNo/status, GET /debtors/search.
 // ----------------------------------------------------------------------------
 
+import { SoBrandPicker } from './SoBrandPicker';
 import {
   forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
   type CSSProperties, type ReactNode,
@@ -3900,6 +3901,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
             disabled={renoInfoLoading}
             lockedKeys={renoLocked}
             canChangeSalesperson={canChangeSalesperson}
+            orderInfoFooter={<SoBrandPicker docNo={header.doc_no} />}
           />
         )
       ) : (

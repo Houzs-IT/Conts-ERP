@@ -16,6 +16,7 @@
 //   - Direct URL /mfg-sales-orders/maintenance
 // ----------------------------------------------------------------------------
 
+import { SoBrandsSection } from './SoBrandsSection';
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import { Link } from 'react-router-dom';
@@ -76,6 +77,7 @@ const SECTIONS = [
   { key: 'venues', label: 'Venues' },
   { key: 'geo', label: 'Geo & Warehouses' },
   { key: 'dropdowns', label: 'Dropdowns' },
+  { key: 'brands', label: 'Brands' },
 ] as const;
 const ALL_SECTION_KEYS = SECTIONS.map((s) => s.key);
 
@@ -1048,6 +1050,10 @@ const MaintenanceBody = ({ canEdit, open }: { canEdit: boolean; open: ReturnType
           (migration 0081) — replaces the four hardcoded TS consts that
           used to drive customer type / building type / relationship /
           payment method dropdowns. */}
+      </CollapsibleSection>
+
+      <CollapsibleSection id="brands" title="Brands" open={open.isOpen('brands')} onToggle={() => open.toggle('brands')}>
+        <SoBrandsSection />
       </CollapsibleSection>
 
       <CollapsibleSection id="dropdowns" title="Dropdowns" open={open.isOpen('dropdowns')} onToggle={() => open.toggle('dropdowns')}>
