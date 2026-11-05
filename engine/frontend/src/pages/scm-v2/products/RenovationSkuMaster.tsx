@@ -7,7 +7,7 @@
    Clicking a row opens the SKU: name, group / sub-category, unit, active, photos,
    and the suppliers drawer the Houzs page already has. */
 import { useMemo, useState } from 'react';
-import { Plus, Ruler, Search, Settings2, Truck, Upload, X } from 'lucide-react';
+import { Ban, CheckCircle2, Pencil, Plus, Ruler, Search, Settings2, Truck, Upload, X } from 'lucide-react';
 import { Button } from '../../../components/Button';
 import { DataTable } from '../../../components/DataTable';
 import { RowActionsMenu } from '../../../components/RowActionsMenu';
@@ -52,7 +52,33 @@ export function RenovationSkuMaster({
   const rows = q.data ?? null;
   const showCost = useMemo(() => (rows ?? []).some((r) => 'mainCostSen' in r), [rows]);
   const { label: subLabel, uomPrint } = useRenovationCatalog();
-  const columns = useMemo(() => renovationSkuColumns({ showCost, subLabel, uomPrint }), [showCost, subLabel, uomPrint]);
+  const notify = useNotify();
+  const statusSave = useUpdateMfgProductCatalog();
+  const setStatus = (r: MfgProductRow, status: 'ACTIVE' | 'INACTIVE'): void => statusSave.mutate({ id: r.id, status }, {
+    onSuccess: () => void notify({ title: status === 'ACTIVE' ? `${r.code} is active.` : `${r.code} is inactive.` }),
+    onError: (e) => void notify({ title: 'Status not changed', body: e instanceof Error ? e.message : 'Could not save.', tone: 'error' }),
+  });
+  /* Edit and Deactivate on the row itself: behind the row click the owner could not find them (5 Nov 2026). */
+  const columns = useMemo(() => [
+    ...renovationSkuColumns({ showCost, subLabel, uomPrint }),
+    {
+      key: 'actions', label: 'Actions', width: '76px', disableSort: true, disableFilter: true,
+      render: (r: MfgProductRow) => (
+        <span onClick={(e) => e.stopPropagation()}>
+          <RowActionsMenu
+            title={`Actions for ${r.code}`}
+            items={[
+              { icon: Pencil, label: 'Edit', onClick: () => setOpenId(r.id) },
+              r.status === 'ACTIVE'
+                ? { icon: Ban, label: 'Deactivate', onClick: () => setStatus(r, 'INACTIVE') }
+                : { icon: CheckCircle2, label: 'Activate', onClick: () => setStatus(r, 'ACTIVE') },
+            ]}
+          />
+        </span>
+      ),
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- setStatus only reads the stable mutate and notify
+  ], [showCost, subLabel, uomPrint]);
   const openRow = openId ? (rows ?? []).find((r) => r.id === openId) ?? null : null;
   const count = rows ? `${rows.length} SKU${rows.length === 1 ? '' : 's'}` : 'Loading…';
 
