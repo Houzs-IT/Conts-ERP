@@ -60,7 +60,7 @@ import { advanceSoGeneration } from './so-generation';
 import { enqueueStockAllocationRecompute } from './stock-allocation-queue';
 import { SO_TERMINAL_STATES_PGREST } from '../shared/so-terminal-states';
 import { SO_PROCESSING_DATE_COLUMN } from '../shared/so-processing-date';
-import { loadNonSellingWarehouses, warehouseCanPromise } from './non-selling-warehouse';
+import { exceptOnSite, loadNonSellingWarehouses, warehouseCanPromise } from './non-selling-warehouse';
 import { pgrestIn } from './pgrest-in-list';
 import { isUnitBoundCategory } from './unit-bound-sku';
 import { isCustomizedLine } from './so-line-customized';
@@ -439,6 +439,7 @@ async function runSoStockAllocation(
        retry, which is the honest outcome. */
     const nonSellingWarehouses = await loadNonSellingWarehouses(sb);
     const nonSellingIds: ReadonlySet<string> = new Set(nonSellingWarehouses.keys());
+    const lineBlockedIds: ReadonlySet<string> = new Set(exceptOnSite(nonSellingWarehouses).keys());
     const batchedCodes = new Set<string>();
     /* P1 SO-SKU spec — SERVICE SKUs (delivery fee / dispose / lift) are not
        goods. Collect their codes here (same catalog pull) so the needs walk
@@ -770,7 +771,7 @@ async function runSoStockAllocation(
          repo keeps shipping. Falling through (rather than stamping PENDING
          here) hands the line to the pooled walk below, which stamps it once, in
          one place. */
-      if (!warehouseCanPromise(n.whId, nonSellingIds)) continue;
+      if (!warehouseCanPromise(n.whId, lineBlockedIds)) continue;
       const got = dedicatedReady.get(n.id) ?? 0;
       if (got <= 0) continue;
       const fill = Math.min(got, n.need);
@@ -800,7 +801,7 @@ async function runSoStockAllocation(
          is still possible, through a stock transfer into a selling warehouse;
          the operator is told so on both surfaces (the pill's
          `non_selling_warehouse` note). */
-      if (!warehouseCanPromise(n.whId, nonSellingIds)) {
+      if (!warehouseCanPromise(n.whId, lineBlockedIds)) {
         targetById.set(n.id, { status: 'PENDING', qtyReady: 0 });
         nonSellingBlockedDocs.add(n.doc_no);
         continue;
@@ -880,7 +881,7 @@ async function runSoStockAllocation(
            run 34177208009). That is a property of the migrated data, not of the
            rule: the first sofa RECEIVED into a display warehouse against its own
            PO would carry a batch and would have lit. */
-        if (!warehouseCanPromise(whId, nonSellingIds)) {
+        if (!warehouseCanPromise(whId, lineBlockedIds)) {
           for (const s of group) {
             batchTargetByLine.set(s.id, null);
             targetById.set(s.id, { status: 'PENDING', qtyReady: 0 });

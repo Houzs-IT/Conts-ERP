@@ -282,7 +282,7 @@ import { advanceSoGeneration } from '../lib/so-generation';
 import { creditFromCancelledSo, reverseCancelledSoCredit, getCustomerCreditBalance } from '../lib/customer-credits';
 import { summariseReadiness, type ReadinessLine } from '../lib/so-readiness';
 import { soLineStockVerdict, type LiveStockState, type SoLineStockVerdictRow } from '../lib/so-line-effective-stock';
-import { loadNonSellingWarehouses } from '../lib/non-selling-warehouse';
+import { exceptOnSite, loadNonSellingWarehouses } from '../lib/non-selling-warehouse';
 import { resolveLineCategories } from '../lib/so-readiness-category';
 import { deriveDisplayBrandingRowByDoc } from '../lib/so-display-branding';
 import { mintMonthlyDocNo, insertWithDocNoRetry, companyCodeById } from '../lib/doc-no';
@@ -1949,7 +1949,7 @@ mfgSalesOrders.get('/:docNo', async (c) => {
       /* What the PILL renders, and WHY when the reason is the warehouse — ONE
          home (soLineStockVerdict, §0.4). Live state `null`: the STORED verdict
          stands until GET /:docNo/coverage recomputes it. */
-      ...soLineStockVerdict(it as SoLineStockVerdictRow, null, orderProcessed, nonSellingWh),
+      ...soLineStockVerdict(it as SoLineStockVerdictRow, null, orderProcessed, exceptOnSite(nonSellingWh)),
       // coverage_po / coverage_eta are MRP-derived — unknown without the run.
       coverage_po: null,
       coverage_eta: null,
@@ -2107,7 +2107,7 @@ mfgSalesOrders.get('/:docNo/items', async (c) => {
       stock_state: stockState,
       // The pill's verdict + the warehouse refusal, through the same one home
       // as GET /:docNo. Gated (2026-08-30) + vetoed (2026-09-08) inside it.
-      ...soLineStockVerdict(it as SoLineStockVerdictRow, stockState as LiveStockState, orderProcessed, nonSellingWh),
+      ...soLineStockVerdict(it as SoLineStockVerdictRow, stockState as LiveStockState, orderProcessed, exceptOnSite(nonSellingWh)),
       coverage_po: covered ? cov?.po ?? null : null,
       coverage_eta: covered ? cov?.eta ?? null : null,
       shipped_source_pos: shippedPos,
