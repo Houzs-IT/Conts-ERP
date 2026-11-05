@@ -129,7 +129,7 @@ export function groupForPo(rows: CandidateRow[]): SplitPreview {
     }
     if (!r.supplier_id) {
       if (Number(r.unit_cost_sen) === 0 && GOODS_GROUPS.has(group ?? '')) out.unsupplied.push({ ...line, reason: 'No supplier: pick one on the contract line to order it' });
-      else if (Number(r.unit_cost_sen) === 0) out.skipped.push({ ...line, reason: 'No supplier and no cost: done in house' });
+      else if (Number(r.unit_cost_sen) === 0) out.skipped.push({ ...line, reason: 'No supplier and no cost: treated as in-house work. To buy it, pick a supplier in MRP' });
       else out.blocked.push({ ...line, reason: 'Has a cost but no supplier' });
       continue;
     }
