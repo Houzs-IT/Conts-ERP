@@ -1,19 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SkuCompositionPage } from "./SkuCompositionPage";
 
 const added = vi.hoisted(() => vi.fn());
 const ROWS = [{ id: "r1", sku_code: "RN-PLASTER_CEILING", sku_name: "Works - Plaster ceiling", material_code: "PLC-KNK-001", material_name: "Plaster Board", uom: "PCS", qty: 2, notes: null }];
 
+vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }));
+vi.mock("../../vendor/scm/lib/mfg-products-queries", () => ({ useCreateMfgProduct: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock("../../vendor/scm/lib/production-order-queries", () => ({
   useSkuCompositions: () => ({ data: ROWS, isLoading: false, error: null }),
-  useCompositionSkus: () => ({ data: [{ code: "RN-PLASTER_CEILING", name: "Works - Plaster ceiling", uom: "JOB" }] }),
-  useRawSkus: () => ({ data: [{ code: "PLC-KNK-001", name: "Plaster Board", uom: "PCS" }, { code: "PTN-KNK-001", name: "Gypsum", uom: "PCS" }] }),
-  useAddComposition: () => ({ mutate: added, isPending: false }),
+  useCompositionSkus: () => ({ data: [{ code: "RN-PLASTER_CEILING", name: "Works - Plaster ceiling", uom: "JOB" }, { code: "RN-PAINTING", name: "Works - Painting", uom: "JOB" }] }),
+  useRawSkus: () => ({ data: [{ code: "PLC-KNK-001", name: "Plaster Board", uom: "PCS" }, { code: "PTN-KNK-001", name: "Gypsum", uom: "PCS" }, { code: "PTN-KNK-002", name: "Primer", uom: "PCS" }] }),
+  useAddComposition: () => ({ mutateAsync: added, isPending: false }),
   useUpdateComposition: () => ({ mutate: vi.fn() }),
   useDeleteComposition: () => ({ mutate: vi.fn() }),
 }));
-vi.mock("../../components/Layout", () => ({ PageHeader: ({ title }: { title: string }) => <h1>{title}</h1> }));
+vi.mock("../../components/Layout", () => ({
+  PageHeader: ({ title, primaryAction }: { title: string; primaryAction?: React.ReactNode }) => <div><h1>{title}</h1>{primaryAction}</div>,
+}));
 vi.mock("../../vendor/scm/components/ConfirmDialog", () => ({ useConfirm: () => vi.fn() }));
 vi.mock("../../vendor/scm/components/NotifyDialog", () => ({ useNotify: () => vi.fn() }));
 vi.mock("../../hooks/useToast", () => ({ useToast: () => ({ success: vi.fn() }) }));
@@ -26,15 +30,24 @@ vi.mock("../../vendor/scm/components/SearchableSelect", () => ({
 }));
 
 describe("SKU Composition", () => {
-  it("lists a bound SKU, opens it, and adds only a material it does not have yet", () => {
+  it("opens a bound SKU and offers only the materials it does not have yet", () => {
     render(<SkuCompositionPage />);
     fireEvent.click(screen.getByRole("button", { name: /RN-PLASTER_CEILING/ }));
     expect(screen.getByLabelText("Quantity of PLC-KNK-001")).toBeTruthy();
-    const picker = screen.getByLabelText("Raw material") as HTMLSelectElement;
-    expect([...picker.options].map((o) => o.value)).toEqual(["", "PTN-KNK-001"]);
-    fireEvent.change(picker, { target: { value: "PTN-KNK-001" } });
-    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "3" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    expect(added.mock.calls[0][0]).toEqual({ skuCode: "RN-PLASTER_CEILING", materialCode: "PTN-KNK-001", qty: 3 });
+    expect(screen.queryByLabelText("PLC-KNK-001 · Plaster Board")).toBeNull();
+    expect(screen.getByLabelText("PTN-KNK-001 · Gypsum")).toBeTruthy();
+  });
+
+  it("makes a new composition with several materials at once", async () => {
+    added.mockClear();
+    render(<SkuCompositionPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New composition" }));
+    fireEvent.change(screen.getByLabelText("SKU"), { target: { value: "RN-PAINTING" } });
+    fireEvent.click(screen.getByLabelText("PTN-KNK-001 · Gypsum"));
+    fireEvent.click(screen.getByLabelText("PTN-KNK-002 · Primer"));
+    fireEvent.change(screen.getByLabelText("New quantity of PTN-KNK-002"), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add 2 raw materials" }));
+    await waitFor(() => expect(added).toHaveBeenCalledTimes(2));
+    expect(added.mock.calls[1][0]).toEqual({ skuCode: "RN-PAINTING", materialCode: "PTN-KNK-002", qty: 3 });
   });
 });
