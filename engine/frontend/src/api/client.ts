@@ -655,6 +655,7 @@ export const api = {
       } catch {}
       throw new HttpError(res.status, txt || res.statusText, requestIdFromResponse(res));
     }
+    invalidateForMutation(path);
     return consumeCorrelated(res, () => res.json() as Promise<T>);
   },
 

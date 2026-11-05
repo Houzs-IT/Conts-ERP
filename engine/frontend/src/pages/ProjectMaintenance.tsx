@@ -1605,9 +1605,12 @@ const brandLogoKey = (b: BrandRow): string =>
 export function BrandLogoCell({
   brand,
   onChanged,
+  large = false,
 }: {
   brand: BrandRow;
   onChanged: () => void;
+  /** A preview big enough to read, opening the full picture when clicked (SO Maintenance). */
+  large?: boolean;
 }) {
   const toast = useToast();
   const dialog = useDialog();
@@ -1688,11 +1691,13 @@ export function BrandLogoCell({
   return (
     <div className="flex shrink-0 items-center gap-1.5">
       {url ? (
-        <img
-          src={url}
-          alt={`${brand.name} logo`}
-          className="h-8 max-w-[80px] shrink-0 rounded-sm object-contain"
-        />
+        <a href={url} target="_blank" rel="noreferrer" title="Open the full logo">
+          <img
+            src={url}
+            alt={`${brand.name} logo`}
+            className={cn("shrink-0 rounded-sm object-contain", large ? "h-16 max-w-[260px]" : "h-8 max-w-[80px]")}
+          />
+        </a>
       ) : (
         <div
           className="grid h-8 w-10 shrink-0 place-items-center rounded-sm border border-dashed border-border text-ink-muted"

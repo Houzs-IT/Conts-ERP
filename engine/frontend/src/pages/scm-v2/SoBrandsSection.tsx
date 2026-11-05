@@ -14,7 +14,7 @@ export function SoBrandsSection() {
       {rows.map((b) => (
         <li key={b.id} className="flex items-center justify-between gap-4 border-t border-border-subtle py-2.5 first:border-t-0">
           <span className="text-[13px] font-semibold">{b.name}</span>
-          <BrandLogoCell brand={b} onChanged={q.reload} />
+          <BrandLogoCell brand={b} onChanged={q.reload} large />
         </li>
       ))}
       {rows.length === 0 && !q.loading && <li className="text-[13px] text-ink-muted">No brands yet.</li>}
