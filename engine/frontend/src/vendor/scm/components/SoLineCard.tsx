@@ -131,6 +131,8 @@ export type SoLineDraft = {
   /* PR-E — Per-item delivery date + cascade override flag. */
   lineDeliveryDate?:           string | null;
   lineDeliveryDateOverridden?: boolean;
+  /* Conts: when the line goes into production or is ordered (its plan's order_on). Shown on the compact row. */
+  lineProcessingDate?:         string | null;
   /* PR-F (Task #79) — Per-line photo R2 object keys (already-saved photos). */
   photoUrls?:                  string[];
   /* Line-card-redesign (Commander 2026-05-27) — Client-only pending File
@@ -1169,6 +1171,16 @@ const SoLineCardInner = ({
             onCommit={(sen) => onChange({ discountSen: sen ?? 0 })}
           />
         )}
+        {compact && (
+          <DateField
+            fullWidth
+            className={styles.input}
+            aria-label="Processing date"
+            value={draft.lineProcessingDate ?? ''}
+            disabled={!isEditing}
+            onChange={(iso) => onChange({ lineProcessingDate: iso || null })}
+          />
+        )}
         {/* 7. Delivery Date (2990 addition between Unit Price and Amount) */}
         <DateField
           fullWidth
@@ -1232,7 +1244,8 @@ const SoLineCardInner = ({
         <span className={compact ? compactStyles.label : styles.cellLabel}>Qty</span>
         <span className={compact ? compactStyles.label : styles.cellLabel}>Unit price</span>
         <span className={compact ? compactStyles.label : styles.cellLabel}>Discount</span>
-        <span className={compact ? compactStyles.label : styles.cellLabel}>{compact ? 'Date' : 'Delivery date'}</span>
+        {compact && <span className={compactStyles.label}>Processing</span>}
+        <span className={compact ? compactStyles.label : styles.cellLabel}>{compact ? 'Delivery' : 'Delivery date'}</span>
       </div>
 
       {isEditing && specLockedNote && (

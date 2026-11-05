@@ -45,6 +45,8 @@ type SoAsideHeader = SoTotalHeader & SoRefHeader & {
 /** A saved line as the read-only table shows it. */
 export type SoDisplayLine = {
   id: string;
+  line_processing_date?: string | null;
+  line_delivery_date?: string | null;
   item_code: string;
   description: string | null;
   description2: string | null;
@@ -77,7 +79,6 @@ export type SoDisplayLine = {
   remaining_qty?: number | null;
   /* The DOs this line went out on, and its own delivery date. */
   deliveries?: Array<{ doNumber: string; qty: number; status: string }>;
-  line_delivery_date?: string | null;
   line_delivery_date_overridden?: boolean;
 };
 
@@ -396,6 +397,8 @@ function TotalLine({
 
 // ─── Line item columns ─────────────────────────────────────────────────────
 
+const CONTS_LINE_DATES = [['processing', 'Processing', 'line_processing_date'], ['delivery', 'Delivery', 'line_delivery_date']] as const;
+
 /** The read-only line table's columns; the same set for By item and (narrowed) By area / By category. */
 export function soLineColumns<T extends SoDisplayLine>({ docNo, docId, currency, status, coverage }: {
   docNo: string;
@@ -503,6 +506,10 @@ export function soLineColumns<T extends SoDisplayLine>({ docNo, docId, currency,
         return <span className="text-ink-muted">—</span>;
       },
     },
+    ...CONTS_LINE_DATES.map(([key, label, field]): Column<SoDisplayLine> => ({
+      key, label, width: "104px", getValue: (l) => l[field] ?? "",
+      render: (l) => <span className="text-[12.5px] text-ink-secondary">{l[field] ? fmtDate(l[field]) : "—"}</span>,
+    })),
     {
       key: "total",
       label: "Amount",
