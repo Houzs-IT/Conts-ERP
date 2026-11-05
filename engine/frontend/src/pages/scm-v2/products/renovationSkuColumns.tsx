@@ -1,6 +1,7 @@
 /* Columns and small cells of the renovation SKU Master: photo, code, name,
    group, sub-category, unit, main supplier (the default PO party) and status.
    Photos are optional (owner, 20 Oct 2026): a SKU with none shows a blank thumb. */
+import { costMarker } from '../costMarker';
 import { ImageOff } from 'lucide-react';
 import type { Column } from '../../../components/DataTable';
 import { resolveApiAssetUrl } from '../../../components/scm-v2/PhotoGallery';
@@ -78,7 +79,13 @@ export function renovationSkuColumns(opts: {
       width: '110px',
       align: 'right',
       getValue: (r) => r.mainCostSen ?? null,
-      render: (r) => (r.mainCostSen != null ? fmtSen(r.mainCostSen) : <span className="text-ink-muted">—</span>),
+      render: (r) => (
+        <span className="whitespace-nowrap">
+          {r.mainCostSen != null ? fmtSen(r.mainCostSen) : <span className="text-ink-muted">—</span>}
+          {/* The main supplier's price is the cost: green when it is set. A client-supplied item costs us nothing. */}
+          {r.mainSupplierName !== 'Customer' && costMarker((r.mainCostSen ?? 0) > 0 ? 'ok' : 'empty')}
+        </span>
+      ),
     });
   }
   cols.push({

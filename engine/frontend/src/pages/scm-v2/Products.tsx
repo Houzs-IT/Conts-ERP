@@ -3810,10 +3810,11 @@ const ProductSuppliersDrawer = ({
         style={{
           background: '#f4f6f3',
           border: '1px solid #c2c6bd',
-          borderRadius: 'var(--radius-xl)',
+          borderTopLeftRadius: 'var(--radius-xl)',
+          borderBottomLeftRadius: 'var(--radius-xl)',
           boxShadow: 'var(--shadow-3)',
           width: 'min(820px, 95vw)',
-          maxHeight: '85vh',
+          height: '100%',
           display: 'flex',
           flexDirection: 'column',
           /* Clip to the panel so the scroll area (min-height:0 below) shrinks
