@@ -840,13 +840,14 @@ function finalizePoPdf(doc: JsPdf): void {
 export async function generatePurchaseOrderPdf(
   header: PoHeader,
   items: PoItem[],
-  opts?: { docTitle?: string; action?: PdfAction; sofaPhotos?: Record<string, string>; renovation?: RenoDocInfo | null },
+  opts?: { docTitle?: string; action?: PdfAction; sofaPhotos?: Record<string, string>; renovation?: RenoDocInfo | null; appendAfter?: ((doc: JsPdf) => Promise<void>) | null },
 ): Promise<void> {
   const { jsPDF } = await import('jspdf');
   const autoTable = (await import('jspdf-autotable')).default;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const { supplierName } = await renderPurchaseOrderInto(doc, autoTable, header, items, opts);
   finalizePoPdf(doc);
+  await opts?.appendAfter?.(doc);
   // Was a private copy of the old ASCII-only scrub — a China supplier's name is
   // exactly the case it destroyed, and the PO is the document that goes to them.
   deliverPdf(

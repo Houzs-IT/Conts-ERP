@@ -597,7 +597,8 @@ function PurchaseOrderDetailV2ReadOnly() {
       .then(async ({ generatePurchaseOrderPdf }) => {
         const { loadSofaCompartmentPhotos } = await import("../../vendor/scm/lib/sales-order-queries");
         const sofaPhotos = await loadSofaCompartmentPhotos(maintenanceQ.data?.data?.sofaCompartmentMeta);
-        return generatePurchaseOrderPdf(headerForPdf as never, items as never, { action, sofaPhotos, renovation: reno });
+        const { poDrawingsAppender } = await import("../renovation-beta/renovationBetaPoDrawings");
+        return generatePurchaseOrderPdf(headerForPdf as never, items as never, { action, sofaPhotos, renovation: reno, appendAfter: await poDrawingsAppender(purchaseOrder.id) });
       })
       .catch((e) =>
         notify({

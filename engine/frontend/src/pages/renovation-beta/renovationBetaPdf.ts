@@ -57,9 +57,22 @@ async function imageCanvas(blob: Blob): Promise<HTMLCanvasElement> {
 
 /** Builds and downloads the PDF. Answers the file names that could not go in (not a photo or PDF, or unreadable). */
 export async function downloadAsPdf(projectId: number, parts: PdfPart[], outName: string): Promise<{ skipped: string[] }> {
+  const { doc, skipped } = await drawParts(null, projectId, parts);
+  doc?.save(outName);
+  return { skipped };
+}
+
+type JsPdfDoc = import("jspdf").jsPDF;
+
+/** The same pages after the last page of a PDF already made (a PO). */
+export async function appendPartsToPdf(doc: JsPdfDoc, projectId: number, parts: PdfPart[]): Promise<{ skipped: string[] }> {
+  return { skipped: (await drawParts(doc, projectId, parts)).skipped };
+}
+
+async function drawParts(into: JsPdfDoc | null, projectId: number, parts: PdfPart[]): Promise<{ doc: JsPdfDoc | null; skipped: string[] }> {
   const [{ jsPDF }, pdfjs, worker] = await Promise.all([import("jspdf"), import("pdfjs-dist"), import("pdfjs-dist/build/pdf.worker.min.mjs?url")]);
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-  let doc: InstanceType<typeof jsPDF> | null = null;
+  let doc: JsPdfDoc | null = into;
   const skipped: string[] = [];
 
   const addPage = (canvas: HTMLCanvasElement, block?: TitleBlock, page = { n: 1, of: 1 }): void => {
@@ -137,8 +150,5 @@ export async function downloadAsPdf(projectId: number, parts: PdfPart[], outName
       skipped.push(name);
     }
   }
-  const done = doc as InstanceType<typeof jsPDF> | null;
-  if (!done) return { skipped };
-  done.save(outName);
-  return { skipped };
+  return { doc, skipped };
 }
