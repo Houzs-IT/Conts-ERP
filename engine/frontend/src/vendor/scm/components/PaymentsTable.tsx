@@ -1250,7 +1250,7 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
       }
     /* Without a Slip column (a new order) the same widths, and room for the slip and remove buttons at the row's end:
        the 32px the stylesheet gives that track pushed them off the card. */
-    : { gridTemplateColumns: `minmax(112px, 1fr) minmax(116px, 1fr) minmax(116px, 1fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) ${isSaved && !hasUnsavedRows ? '28px' : '76px'}` };
+    : { gridTemplateColumns: `minmax(112px, 1fr) minmax(116px, 1fr) minmax(116px, 1fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) ${isSaved && !hasUnsavedRows ? '28px' : '112px'}` };
 
   return (
     <section className={detailStyles.card}>
