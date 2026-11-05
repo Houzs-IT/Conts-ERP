@@ -1895,7 +1895,10 @@ function DataTableInner<T, L>({
       const w = th.getBoundingClientRect().width;
       // Not laid out (a hidden tab): measure on a later paint instead.
       if (w <= 0) return;
-      next[th.dataset.colKey!] = Math.max(MIN_COL_WIDTH, Math.round(w));
+      /* A wide list squeezes every column: the one naming the row keeps its declared width, or doc numbers cut off. */
+      const col = displayColumns.find((c) => c.key === th.dataset.colKey);
+      const floor = col?.alwaysVisible ? parsePxWidth(col.width) ?? 0 : 0;
+      next[th.dataset.colKey!] = Math.max(MIN_COL_WIDTH, floor, Math.round(w));
     }
     setMeasured({ idKey, widths: next });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scrollWrapRef is a ref

@@ -22,6 +22,7 @@
 // This is a DETAIL/DRILL surface — every chip renders (the "+N" ChipOverflow
 // rule applies to LIST header cells only).
 
+import { Link } from "react-router-dom";
 import { showDeliveredQty, sourcePoTitle, StockAdjChip } from "./DocumentLinesExpansion";
 import { type CoverageState, coveragePlaceholder } from "./coverage-state";
 import { cn, formatDate } from "../lib/utils";
@@ -213,13 +214,15 @@ export function SoSourceChips({
       ))}
       {anyAdj && <StockAdjChip />}
       {showIncoming && (
-        <span
-          title="Incoming — live MRP coverage for the un-arrived remainder, recomputed on every view; it moves as demand moves."
+        <Link
+          to={`/scm/purchase-orders?q=${encodeURIComponent(incomingPo ?? "")}`}
+          onClick={(e) => e.stopPropagation()}
+          title="Incoming — live MRP coverage for the un-arrived remainder, recomputed on every view; it moves as demand moves. Click to find this PO."
           className={cn(floatingChipBase, "whitespace-nowrap font-mono")}
         >
           {incomingPo}
           {line.coverage_eta ? ` · ETA ${formatDate(line.coverage_eta)}` : ""}
-        </span>
+        </Link>
       )}
     </span>
   );

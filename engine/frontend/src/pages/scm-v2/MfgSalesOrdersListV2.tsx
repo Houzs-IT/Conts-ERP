@@ -712,7 +712,8 @@ function DetailDrawer({
                     </Button>
                   );
                 }
-                if (soCanRaiseDo(row.status, row.on_hold ?? null)) {
+                /* Everything already went out: there is nothing left to transfer. */
+                if (soCanRaiseDo(row.status, row.on_hold ?? null) && row.delivery_state !== "full") {
                   // ABSENT, not disabled, for anyone who may not operate a DO.
                   if (!canDeliver) return null;
                   /* Renamed from "Deliver" 2026-08-17 — the SO already reports a
