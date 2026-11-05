@@ -36,6 +36,8 @@ export interface ProjectShared {
   bedrooms: number | null;
   bathrooms: number | null;
   builtUpSqft: number | null;
+  landAreaSqft: number | null;
+  landSize: string;
   startDate: string | null;
   endDate: string | null;
 }
@@ -61,19 +63,21 @@ export interface CustomerPropertyValue {
   bedrooms: string;
   bathrooms: string;
   builtUpSqft: string;
+  landAreaSqft: string;
+  landSize: string;
 }
 
 /** Order of the fields as every form shows them (customer, delivery address, order information). */
 export const BLOCK_STRING_KEYS = [
   "customerName", "customerPhone", "customerEmail", "salespersonId",
   "address1", "address2", "state", "city", "postcode", "country", "salesLocation",
-  "building", "unitNo", "propertyType", "layoutLabel", "bedrooms", "bathrooms", "builtUpSqft",
+  "building", "unitNo", "propertyType", "layoutLabel", "bedrooms", "bathrooms", "builtUpSqft", "landAreaSqft", "landSize",
 ] as const satisfies ReadonlyArray<keyof CustomerPropertyValue>;
 
 export const EMPTY_CUSTOMER_PROPERTY: CustomerPropertyValue = {
   projectId: null, customerName: "", customerPhone: "", customerEmail: "", salespersonId: "",
   address1: "", address2: "", state: "", city: "", postcode: "", country: "", salesLocation: "",
-  building: "", unitNo: "", propertyType: "", layoutLabel: "", bedrooms: "", bathrooms: "", builtUpSqft: "",
+  building: "", unitNo: "", propertyType: "", layoutLabel: "", bedrooms: "", bathrooms: "", builtUpSqft: "", landAreaSqft: "", landSize: "",
 };
 
 const numText = (n: number | null | undefined) => (n == null ? "" : String(n));
@@ -86,6 +90,7 @@ export function fromProject(p: ProjectShared): CustomerPropertyValue {
     postcode: p.postcode, country: p.country, salesLocation: p.salesLocation,
     building: p.building, unitNo: p.unitNo, propertyType: p.propertyType, layoutLabel: p.layoutLabel,
     bedrooms: numText(p.bedrooms), bathrooms: numText(p.bathrooms), builtUpSqft: numText(p.builtUpSqft),
+    landAreaSqft: numText(p.landAreaSqft), landSize: p.landSize ?? "",
   };
 }
 
@@ -129,6 +134,7 @@ export function toRenovationBlock(v: CustomerPropertyValue) {
   return {
     projectId: v.projectId, building: v.building.trim(), unitNo: v.unitNo.trim(), propertyType: v.propertyType,
     layoutLabel: v.layoutLabel, bedrooms: v.bedrooms.trim(), bathrooms: v.bathrooms.trim(), builtUpSqft: v.builtUpSqft.trim(),
+    landAreaSqft: v.landAreaSqft.trim(), landSize: v.landSize.trim(),
   };
 }
 
@@ -143,16 +149,19 @@ export function missingFields(v: CustomerPropertyValue): Set<string> {
   const bedrooms = parseCount(v.bedrooms);
   const bathrooms = parseCount(v.bathrooms);
   const sqft = parseSqft(v.builtUpSqft);
+  const land = parseSqft(v.landAreaSqft);
   const out = new Set(renoSoRequiredProblems({
     ...head,
     property: {
       propertyType: v.propertyType, layoutLabel: v.layoutLabel,
       bedrooms: Number.isNaN(bedrooms) ? null : bedrooms, bathrooms: Number.isNaN(bathrooms) ? null : bathrooms,
       builtUpSqft: Number.isNaN(sqft) ? null : sqft,
+      landAreaSqft: Number.isNaN(land) ? null : land, landSize: v.landSize,
     },
   }).map((p) => p.field));
   if (Number.isNaN(bedrooms) || Number.isNaN(bathrooms)) out.add("Layout");
   if (Number.isNaN(sqft)) out.add("Built-up sq ft");
+  if (Number.isNaN(land)) out.add("Land area sq ft");
   return out;
 }
 

@@ -27,7 +27,7 @@ const PROJECT: ProjectShared = {
   salespersonId: "00000000-0000-4000-8000-000000000001", salespersonName: "Aisyah", address1: "A-12-3 Skyline", address2: "Jalan Ampang",
   state: "Selangor", city: "Ampang", postcode: "68000", country: "Malaysia", salesLocation: "TESTWH",
   siteAddress: "A-12-3 Skyline\nJalan Ampang", building: "Skyline Residence", unitNo: "A-12-3", propertyType: "Condo",
-  layoutLabel: "3 bed 2 bath", bedrooms: 3, bathrooms: 2, builtUpSqft: 1100, startDate: "2026-10-20", endDate: null,
+  layoutLabel: "3 bed 2 bath", bedrooms: 3, bathrooms: 2, builtUpSqft: 1100, landAreaSqft: null, landSize: "", startDate: "2026-10-20", endDate: null,
 };
 
 describe("prefill from a project", () => {
@@ -66,7 +66,7 @@ describe("what is sent and what is missing", () => {
   test("the SO renovation block", () => {
     expect(toRenovationBlock({ ...fromProject(PROJECT), building: " Skyline " })).toEqual({
       projectId: 7, building: "Skyline", unitNo: "A-12-3", propertyType: "Condo", layoutLabel: "3 bed 2 bath",
-      bedrooms: "3", bathrooms: "2", builtUpSqft: "1100",
+      bedrooms: "3", bathrooms: "2", builtUpSqft: "1100", landAreaSqft: "", landSize: "",
     });
   });
 

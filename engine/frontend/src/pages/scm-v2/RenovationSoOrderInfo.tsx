@@ -4,6 +4,7 @@
    property type, layout and built-up area, read from
    /api/scm/renovation-so-info/so/:docNo. */
 
+import { isLanded } from "../../vendor/shared/renovation-property";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -49,6 +50,8 @@ export function RenovationSoOrderInfo({ docNo, payment }: { docNo: string; payme
       <Cell label="Property type" value={info.propertyType || "—"} muted={!info.propertyType} />
       <Cell label="Layout" span value={layout ? `${layout}${layoutCounts}` : "—"} muted={!layout} />
       <Cell label="Built-up" value={info.builtUpSqft ? `${Number(info.builtUpSqft).toLocaleString("en-MY")} sq ft` : "—"} muted={!info.builtUpSqft} />
+      {isLanded(info.propertyType) && <Cell label="Land area" value={info.landAreaSqft ? `${Number(info.landAreaSqft).toLocaleString("en-MY")} sq ft` : "—"} muted={!info.landAreaSqft} />}
+      {isLanded(info.propertyType) && <Cell label="Land size" value={info.landSize || "—"} muted={!info.landSize} />}
       <Cell label="Payment" value={payment || "—"} muted={!payment} />
     </div>
   );
