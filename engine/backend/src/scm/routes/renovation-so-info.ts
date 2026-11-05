@@ -90,6 +90,28 @@ export async function stampCreatedRooms(db: Db, docNo: string, sections: string[
   await writeSoRooms(db, docNo, sections ?? [], roomsForCreatedLines(inserted.results ?? [], sent));
 }
 
+/** After a create: the processing date the form sent for each line goes on that line's plan. */
+export async function stampCreatedProcessingDates(db: Db, docNo: string, companyId: number, bodyItems: unknown): Promise<void> {
+  const sent = (Array.isArray(bodyItems) ? bodyItems : []).map((it) => ({
+    itemCode: String((it as Record<string, unknown>)?.itemCode ?? ''),
+    date: String((it as Record<string, unknown>)?.lineProcessingDate ?? ''),
+  }));
+  if (!sent.some((s) => /^\d{4}-\d{2}-\d{2}$/.test(s.date))) return;
+  const inserted = await db.prepare(`SELECT id::text AS id, item_code FROM scm.mfg_sales_order_items WHERE doc_no = ? ORDER BY line_no, created_at`)
+    .bind(docNo).all<{ id: string; item_code: string | null }>();
+  const left = [...(inserted.results ?? [])];
+  for (const s of sent) {
+    const at = left.findIndex((r) => r.item_code === s.itemCode);
+    if (at < 0) continue;
+    const [row] = left.splice(at, 1);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s.date)) continue;
+    await db.prepare(
+      `INSERT INTO scm.reno_beta_line_plans (so_item_id, company_id, order_on) VALUES (?::uuid, ?, ?::date)
+       ON CONFLICT (so_item_id) DO UPDATE SET order_on = excluded.order_on, updated_at = now()`,
+    ).bind(row!.id, companyId, s.date).run();
+  }
+}
+
 /** Every reason a renovation SO cannot be saved: invalid values, then the required fields. */
 export function renovationSoProblems(input: RenovationSoInput, head: { customerName: string; phone: string; address1: string }): PropertyProblem[] {
   const invalid = new Set(input.problems.map((p) => p.field));

@@ -1744,6 +1744,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           /* PR-E — per-item delivery date + cascade override flag. */
           lineDeliveryDate:           l.lineDeliveryDate ?? null,
           lineDeliveryDateOverridden: l.lineDeliveryDateOverridden ?? false,
+          lineProcessingDate: l.lineProcessingDate ?? undefined,
           /* Every line belongs to a room: one without a room goes under Common area (placeRows). */
           ...(reno ? { room: renoPlaced.roomOf[l.rid] ?? '' } : {}),
         })),

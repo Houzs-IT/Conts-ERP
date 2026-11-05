@@ -466,6 +466,7 @@ type SoItem = {
      when the header date changes. */
   line_delivery_date: string | null;
   line_delivery_date_overridden: boolean;
+  line_processing_date?: string | null;
   /* Delivery breakdown stamped by the SO detail endpoint — which DO took how
      much off this line, plus the live balance still deliverable. */
   deliveries?: { doNumber: string; qty: number; status: string }[];
@@ -517,6 +518,7 @@ const draftFromItem = (it: SoItem): SoLineDraft => ({
   photoUrls:      it.photo_urls ?? [],
   lineDeliveryDate:           it.line_delivery_date ?? null,
   lineDeliveryDateOverridden: it.line_delivery_date_overridden ?? false,
+  lineProcessingDate:         it.line_processing_date ?? null,
 });
 
 /* Serialised signature of exactly the fields a line PATCH persists. Two drafts
@@ -972,6 +974,15 @@ export const SalesOrderDetail = () => {
      resolve; any failure surfaces inline and keeps the user in edit mode so
      nothing is silently lost. */
   const [savingOrder, setSavingOrder] = useState(false);
+  /* Never stops the save: the rest of the order is what the operator came to commit. */
+  const saveProcessingDates = async (dates: Record<string, string | null>) => {
+    try {
+      await authedFetch(`/mfg-sales-orders/${encodeURIComponent(header!.doc_no)}/line-processing-dates`, { method: 'PUT', body: JSON.stringify({ dates }) });
+    } catch {
+      void notify({ title: 'Processing dates did not save', body: 'The order saved. Open Edit and set the dates again.', tone: 'error' });
+    }
+  };
+
   const saveEdit = async () => {
     const handle = customerCardRef.current;
     if (!handle || !header) return;
@@ -1029,6 +1040,11 @@ export const SalesOrderDetail = () => {
       return true;
     });
     const deleteEntries = items.filter((it) => !(it.id in editingDrafts));
+    /* Processing dates save on their own: they live on the line's plan, not the line. */
+    const processingDates = Object.fromEntries(Object.entries(editingDrafts)
+      .filter(([id, d]) => (d.lineProcessingDate ?? null) !== (originalDraftsRef.current[id]?.lineProcessingDate ?? null))
+      .map(([id, d]) => [id, d.lineProcessingDate ?? null]));
+    if (Object.keys(processingDates).length > 0) await saveProcessingDates(processingDates);
     // Snapshot: the set that goes out must be the set the guards above passed.
     const pendingAdds = addingDrafts;
     // What the operator will read in a failure message.
@@ -1727,6 +1743,7 @@ export const SalesOrderDetail = () => {
        soft warning so the line can be re-attached. */
     const newItemId = (res.item as { id?: string } | null)?.id;
     if (newItemId) renoAddedIds.current[staged.key] = newItemId;
+    if (newItemId && d.lineProcessingDate) await saveProcessingDates({ [newItemId]: d.lineProcessingDate });
     if (newItemId && pendingFiles.length > 0) {
       let failed = 0;
       for (const f of pendingFiles) {
@@ -2568,7 +2585,7 @@ export const SalesOrderDetail = () => {
               <SoAreaLines<(typeof lineRows)[number]>
                 items={lineRows}
                 rooms={shownRooms}
-                columns={lineColumns.filter((col) => ['item', 'qty', 'unit', 'disc', 'total'].includes(col.key))}
+                columns={lineColumns.filter((col) => ['item', 'qty', 'unit', 'disc', 'processing', 'delivery', 'total'].includes(col.key))}
                 money={(sen) => fmtMoney(sen, header.currency)}
               />
             ) : (

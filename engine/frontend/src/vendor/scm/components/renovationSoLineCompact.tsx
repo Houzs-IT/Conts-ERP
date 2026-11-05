@@ -19,7 +19,8 @@ export function RenovationLineHead() {
       <span className={styles.right}>Qty</span>
       <span className={styles.right}>Unit price</span>
       <span className={styles.right}>Disc</span>
-      <span>Date</span>
+      <span>Processing</span>
+      <span>Delivery</span>
       <span className={styles.right}>Amount</span>
       <span className={styles.center}>Photos</span>
       <span />

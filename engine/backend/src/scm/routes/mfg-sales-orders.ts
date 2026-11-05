@@ -262,7 +262,7 @@ import {
   findFreeTextSoLines, freeTextSoLineResponse,
 } from '../lib/validate-item-codes';
 import { collectSoConfirmProblems, soConfirmProblemsForDoc } from '../lib/so-confirm-gate';
-import { applyRenovationSoInfo, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedRooms } from './renovation-so-info';
+import { applyRenovationSoInfo, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedProcessingDates, stampCreatedRooms } from './renovation-so-info';
 import type { Db as RenoInfoDb } from '../../services/renovation/load';
 import { companyRequiresStockLocation, soLocationProblem, soLocationProblemForDoc, fillSoLocationFromState } from '../lib/so-location-gate';
 import { collectSoSubmitProblems, soPaymentSubFieldGap } from '../shared/so-submit-problems';
@@ -2001,6 +2001,15 @@ mfgSalesOrders.get('/:docNo', async (c) => {
     pwpCodes = [];
   }
   gateSoFinance(c, salesOrder, items);
+  /* A line's processing date lives on its plan, the row MRP and the project's PO tab read. */
+  {
+    const ids = (items as Array<{ id?: string }>).map((l) => l.id).filter((x): x is string => !!x);
+    const { data: plans } = ids.length
+      ? await sb.from('reno_beta_line_plans').select('so_item_id, order_on').in('so_item_id', ids)
+      : { data: [] };
+    const orderOn = new Map(((plans ?? []) as Array<{ so_item_id: string; order_on: string | null }>).map((p) => [p.so_item_id, p.order_on]));
+    for (const l of items as Array<Record<string, unknown>>) l.line_processing_date = orderOn.get(String(l.id)) ?? null;
+  }
   // Stamp each line's supplier fabric code so the on-screen line reads
   // "BF-01 (PC151-01)" (owner 2026-07-24). ONE batched query; fail-soft.
   await enrichLinesWithFabricSupplierCode(sb, c, items);
@@ -4807,6 +4816,7 @@ mfgSalesOrders.post('/', async (c) => {
     }).then(async (r) => {
       /* Rooms: the room list and each line's room (body.items[i].room), matched to the inserted lines. */
       if (r.ok) await stampCreatedRooms(c.env.DB as unknown as RenoInfoDb, createdDocNo, renoBlock.roomSections, peek!.items);
+      if (r.ok) await stampCreatedProcessingDates(c.env.DB as unknown as RenoInfoDb, createdDocNo, activeCompanyId(c) ?? 1, peek!.items);
       return r;
     }).catch((e: unknown) => {
       /* The order is committed; a failed stamp must not read as a failed save. */
@@ -6940,6 +6950,27 @@ export async function recomputeTotals(sb: any, docNo: string, c: any) {
     console.error('[so-recompute] header update failed — totals left STALE:', docNo, updErr.message);
   }
 }
+
+/* The lines' processing dates (owner, 5 Nov 2026), written to the plan so the project's PO tab and MRP read the same date. */
+mfgSalesOrders.put('/:docNo/line-processing-dates', async (c) => {
+  const sb = c.get('supabase'); const docNo = c.req.param('docNo');
+  const body = await c.req.json().catch(() => null) as { dates?: Record<string, string | null> } | null;
+  const entries = Object.entries(body?.dates ?? {});
+  if (entries.some(([, d]) => d != null && !/^\d{4}-\d{2}-\d{2}$/.test(d))) return c.json({ error: 'invalid_date' }, 400);
+  const companyId = activeCompanyId(c);
+  if (entries.length === 0 || companyId == null) return c.json({ ok: true });
+  const { data: known, error } = await scopeToCompany(sb.from('mfg_sales_order_items').select('id').eq('doc_no', docNo), c);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  const mine = new Set(((known ?? []) as Array<{ id: string }>).map((r) => r.id));
+  const rows = entries.filter(([id]) => mine.has(id)).map(([id, d]) => ({
+    so_item_id: id, company_id: companyId, order_on: d, updated_at: new Date().toISOString(),
+  }));
+  if (rows.length) {
+    const { error: upErr } = await sb.from('reno_beta_line_plans').upsert(rows, { onConflict: 'so_item_id' });
+    if (upErr) return c.json({ error: 'save_failed', reason: upErr.message }, 500);
+  }
+  return c.json({ ok: true });
+});
 
 mfgSalesOrders.post('/:docNo/items', async (c) => {
   const sb = c.get('supabase'); const docNo = c.req.param('docNo'); const user = c.get('user');
