@@ -288,7 +288,7 @@ import { deriveDisplayBrandingRowByDoc } from '../lib/so-display-branding';
 import { mintMonthlyDocNo, insertWithDocNoRetry, companyCodeById } from '../lib/doc-no';
 import { soDeliverableRemaining, soLineDeliveries, computeSoLifecycle, soCurrentDocNo, soLineShippedSources } from './delivery-orders-mfg';
 import { soLineReadySourcePos } from '../lib/source-po-trace';
-import { soLineBoundPoNumbers } from '../lib/so-converted-po';
+import { poEtasByNumber, soLineBoundPoNumbers } from '../lib/so-converted-po';
 /* Shared 4-state delivery-planning derivation — the SO list emits planning_state
    (the mobile Orders-list card's status) from the SAME helper the Delivery
    Planning board uses, so the two can never drift. */
@@ -1918,6 +1918,7 @@ mfgSalesOrders.get('/:docNo', async (c) => {
     /* Goods received on the line: the editor shows its spec locked before the save would be refused. */
     soLineReceivedQty(sb, itemRows.map((it) => it.id)),
   ]);
+  const detailEtas = await poEtasByNumber(sb, [...boundPoMap.values()].flat(), activeCompanyId(c) ?? null);
   const orderProcessed = !!(h.data as { processing_date?: string | null }).processing_date;
   const items = itemRows.map((it) => {
     const rem = remainingMap.get(it.id);
@@ -1965,6 +1966,7 @@ mfgSalesOrders.get('/:docNo', async (c) => {
       /* The line's OWN incoming PO (raised against this so_item). The SO
          "Incoming PO" chip prefers this over the shipped-batch trace. */
       bound_source_pos: boundPoMap.get(it.id) ?? [],
+      bound_source_etas: detailEtas,
     };
   });
   const totalDelivered = items.reduce((s, it) => s + Number(it.delivered_qty ?? 0), 0);
@@ -2068,6 +2070,7 @@ mfgSalesOrders.get('/:docNo/items', async (c) => {
   const readyPosMap = await soLineReadySourcePos(sb, activeCompanyId(c) ?? null, cov.mrp, itemRows as Array<{ id: string; item_group?: string | null; qty?: number | null; stock_status?: string | null; allocated_batch_no?: string | null }>);
   // Owner 2026-09-22: the line's OWN incoming PO — see the /:docNo detail note.
   const boundPoMap = await soLineBoundPoNumbers(sb, itemRows.map((it) => it.id), activeCompanyId(c) ?? null);
+  const boundEtas = await poEtasByNumber(sb, [...boundPoMap.values()].flat(), activeCompanyId(c) ?? null);
   const orderProcessed = !!(h.data as { processing_date?: string | null }).processing_date;
   const items = itemRows.map((it) => {
     const rem = remainingMap.get(it.id);
@@ -2111,6 +2114,7 @@ mfgSalesOrders.get('/:docNo/items', async (c) => {
       shipped_source_adj: (shippedTrace?.adjQty ?? 0) > 0,
       ready_source_pos: readyPosMap.get(it.id) ?? [],
       bound_source_pos: boundPoMap.get(it.id) ?? [],
+      bound_source_etas: boundEtas,
     };
   });
   gateSoFinance(c, null, items);

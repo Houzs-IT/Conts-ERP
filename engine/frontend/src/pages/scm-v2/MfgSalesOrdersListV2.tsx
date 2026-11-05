@@ -931,7 +931,7 @@ function SoLinesExpansion({ docNo }: { docNo: string }) {
      and the covering incoming PO + ETA belong ON the line — the payload has
      carried them all along. Min-width + horizontal scroll keeps the grid
      honest on narrow desktop panes. */
-  const grid = "grid grid-cols-[92px_minmax(220px,1fr)_56px_100px_110px_96px_92px_190px] items-start gap-2";
+  const grid = "grid grid-cols-[92px_minmax(220px,340px)_56px_100px_110px_96px_92px_minmax(190px,1fr)] items-start gap-2";
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-surface">
       <div className="min-w-[880px]">

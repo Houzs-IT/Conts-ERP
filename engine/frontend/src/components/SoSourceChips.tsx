@@ -53,6 +53,8 @@ export type SoLineSourceFields = {
    *  (no PO raised for the line) falls through to the shipped/ready/coverage
    *  trace, so a stock-only line still shows where its goods came from. */
   bound_source_pos?: string[];
+  /** When each of those POs is due, by PO number; a received PO has none. */
+  bound_source_etas?: Record<string, string>;
   shipped_source_pos?: string[];
   shipped_source_adj?: boolean;
   ready_source_pos?: ReadySourceChip[];
@@ -162,6 +164,7 @@ export function SoSourceChips({
             className={chipBase}
           >
             {po}
+            {line.bound_source_etas?.[po] && (line.remaining_qty ?? 1) > 0 ? ` · ETA ${formatDate(line.bound_source_etas[po])}` : ""}
           </span>
         ))}
         {line.shipped_source_adj && <StockAdjChip />}
