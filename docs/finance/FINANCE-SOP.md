@@ -292,6 +292,12 @@
 - **扫描水电账单（Scan bills）**（财务确认，2026-11-02）：在 Utility bills 页面按「Scan bills」，选当月的 PDF 或照片。每一页用 Sonnet 读一次（约 RM 0.04 一页），自动配对单位：绿色（有把握，已勾选）、黄色（要确认）、红色（要选单位或手动填金额）。每一栏都可以手动改，按「Record」才入账。
   - **业主自己付了（Owner paid this bill）**：打勾的账单照常分成扣，同时用 O2 把全额还给业主。例：RM 100，分成 80/20，业主承担 RM 80，再还他 RM 100。
   - **公司付的账单**（没打勾）入账后自动送 payment request 给财务，每个供应商每次入账一张，附账单清单（单位、户口号码、金额）和扫描的 PDF。
+- **账单算哪个月**（财务确认，2026-11-03 / 11-05）：扫描的账单按**账单期间结束的月份**算（06.08–05.09 算 9 月），金额记 Caj Semasa（本期费用）；电费、水费、网络费、Indah Water 都一样。那个月的业主结算单已经定稿，就扣在还没结账的最早月份（标「late bill」）。
+- **手动录入也一样**（财务确认，2026-11-05）：「Enter this month's bills」和「Add utility bill」也有「Owner paid this bill」的勾，规则跟扫描一样：打勾的照常扣、再用 O2 全额还给业主，不送 payment request；没打勾的保存后自动送 payment request，每个供应商每次保存一张。已经送了 payment request 的账单不能再在这里替换。
+- **Utility bills 两张表**（财务确认，2026-11-05）：
+  - **By bill month**（原本的表）：账单放在它所属的月份，颜色看业主有没有扣。
+  - **By payment request**：账单放在它的 payment request 开出来的月份，颜色看 payment request 的状态（等付款、部分已付、已付）。退回或撤回的不算。没有 payment request 的账单（旧的手动录入）不在这张表。
+  - 两张表都分电、水、网络、Indah Water，都可以按单位用途筛选：Rental、Showroom、Warehouse（单位资料的「用途」栏）。
 
 ### 3.11 维修（Rental，业主承担）
 

@@ -1,7 +1,7 @@
 // node --test src/lib/utilityGrid.test.mjs (npm test). The utility listing's rules (plan 2026-10-28-utility-listing.md).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { billState, buildCells, months, unitAverages, unusual } from './utilityGrid.ts';
+import { billState, buildCells, buildRequestCells, months, requestState, unitAverages, unusual } from './utilityGrid.ts';
 
 let n = 0;
 const bill = (o) => ({ id: `b${++n}`, unitId: 'u1', kind: 'electricity', billMonth: '2026-09', deductMonth: o.billMonth ?? '2026-09', amount: 1000,
@@ -67,4 +67,37 @@ test('unusual rows are sorted by the size of the change', () => {
 test('the first month shown is compared with the three months before the range', () => {
   const rows = unusual(buildCells(steady(300)), ['u1'], months('2026-09', '2026-09'), {});
   assert.equal(rows.length, 1); assert.equal(rows[0].baseline, 100);
+});
+
+// The "By payment request" view (chew, 5 Nov 2026; SOP 3.10): a bill sits in the month its payment request was made.
+const req = (o, b = {}) => bill({ ...b, request: { id: 'r1', no: 'PRQ-2610-001', status: 'SUBMITTED', month: '2026-10', ...o } });
+test('a request is waiting, part paid or paid; rejected and withdrawn ones do not count', () => {
+  assert.equal(requestState('SUBMITTED'), 'waiting');
+  assert.equal(requestState('PART_PAID'), 'part_paid');
+  assert.equal(requestState('PAID'), 'paid');
+  assert.equal(requestState('CLOSED'), 'paid');
+  assert.equal(requestState('REJECTED'), null);
+  assert.equal(requestState('WITHDRAWN'), null);
+});
+test('a September bill requested in October sits in October, coloured by its request', () => {
+  const cells = buildRequestCells([req({ status: 'PART_PAID' })]);
+  assert.equal(cells.get('u1|electricity|2026-09'), undefined);
+  assert.equal(cells.get('u1|electricity|2026-10').state, 'part_paid');
+  assert.equal(cells.get('u1|electricity|2026-10').amount, 1000);
+  assert.equal(cells.get('u1|total|2026-10').amount, 1000);
+});
+test('bills with no request, or on a rejected or withdrawn one, are left out', () => {
+  const cells = buildRequestCells([bill({}), req({ status: 'REJECTED' }), req({ status: 'WITHDRAWN' })]);
+  assert.equal(cells.size, 0);
+});
+test('a cell with several requests shows the first of: waiting, part paid, paid', () => {
+  const cells = buildRequestCells([req({ status: 'PAID' }), req({ status: 'SUBMITTED', id: 'r2' }), req({ status: 'PAID' }, { kind: 'water' }), req({ status: 'PART_PAID' }, { kind: 'water' })]);
+  assert.equal(cells.get('u1|electricity|2026-10').state, 'waiting');
+  assert.equal(cells.get('u1|electricity|2026-10').amount, 2000);
+  assert.equal(cells.get('u1|water|2026-10').state, 'part_paid');
+});
+test('by payment request a cell shows what was asked for: the whole bill of a bill split at the contract start', () => {
+  const split = req({ amount: 31000 }, { amount: 4000 });
+  assert.equal(buildRequestCells([split]).get('u1|electricity|2026-10').amount, 31000);
+  assert.equal(buildCells([split]).get('u1|electricity|2026-09').amount, 4000);
 });

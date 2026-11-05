@@ -396,6 +396,7 @@
  "POST /api/expenses": "AFFAFFFU",
  "POST /api/expenses/clean-charges": "AFFAFFFU",
  "POST /api/expenses/utilities": "AFFAFFFU",
+ "POST /api/expenses/utilities/payment-requests": "AFFAFFFU",
  "POST /api/expenses/utilities/scan": "AFFAFFFU",
  "POST /api/expenses/utilities/scan/payment-requests": "AFFAFFFU",
  "POST /api/expenses/utilities/scan/record": "AFFAFFFU",

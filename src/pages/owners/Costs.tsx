@@ -22,11 +22,12 @@ import { refreshNavCounts } from '../../lib/navBadges';
 import { rm, monthLabel, date as fmtDate, todayMyt, titleCase, plural } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { PAYER_LABEL, PAYERS } from '../../lib/revenueModel';
-import { UtilitiesModal, type UnitChoice } from './ExpenseEntry';
+import { OwnerPaidTick, UtilitiesModal, type UnitChoice } from './ExpenseEntry';
 import { AdjustmentActions, ADJUSTMENT_KIND, ADJUSTMENT_STATE } from './Adjustments';
 import { ReceiptCell } from '../../components/ReceiptCell';
 import { receiptRequired, missingReceipt } from '../../lib/receipts';
 import { Link } from 'react-router-dom';
+import { requestsNote, sendUtilityRequests, type ToPay } from '../../lib/utilityRequests';
 
 /** A month's costs the way the owner reads them (GET /api/expenses/breakdown, functions/_lib/unitCosts.ts):
  *  Cleaning fees, Maintenance repair, Utilities (water, electricity, Wi-Fi, IndahWater), Maintenance fee (condo) and
@@ -103,6 +104,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
   const [reference, setReference] = useState('');
   const [description, setDescription] = useState('');
   const [receipt, setReceipt] = useState<File | null>(null);
+  const [ownerPaid, setOwnerPaid] = useState(false);
   const [busy, setBusy] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const validDay = ISO_DAY.test(incurredOn);
@@ -139,9 +141,13 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
       const text = description.trim() || `${kind} ${monthLabel(billMonth)}${picked?.provider ? ` (${picked.provider})` : ''}`;
       const res = await api.post<unknown>('/expenses', {
         unitId, category, amount, incurredOn, chargeTo, reference: picked?.accountNo || reference.trim() || null, description: text, receiptDocumentId,
+        ...(UTILITY.has(category) ? { ownerPaid } : {}),
       });
       if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); onSaved(); onClose(); return; }
-      toast({ tone: 'success', title: 'Bill recorded.', body: `${kind}, ${monthLabel(billMonth)}. ${chargeTo === 'owner' ? 'The owner statement deducts it before the operator\'s share.' : `${PAYER_LABEL[chargeTo] ?? chargeTo} pays: not on the owner statement.`}` });
+      // A utility bill the company pays goes to finance as a payment request (chew, 5 Nov 2026; SOP 3.10).
+      const requests = await sendUtilityRequests((res as { toPay?: ToPay[] } | null)?.toPay);
+      const sentNote = requestsNote(requests);
+      toast({ tone: requests.failed.length ? 'warning' : 'success', title: 'Bill recorded.', body: `${kind}, ${monthLabel(billMonth)}. ${chargeTo === 'owner' ? 'The owner statement deducts it before the operator\'s share.' : `${PAYER_LABEL[chargeTo] ?? chargeTo} pays: not on the owner statement.`}${ownerPaid && UTILITY.has(category) ? ' The owner paid it, so it goes back to them as O2.' : ''}${sentNote ? ` ${sentNote}` : ''}` });
       onSaved(); onClose();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);
@@ -171,6 +177,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
               : <Select showLabel size="md" label="Paid by" value={chargeTo} onChange={setChargeTo} options={PAYERS.map(p => ({ value: p.value, label: p.label }))} />}
           </div>
           {!fee && payer && <p className="m-0 -mt-1 text-meta text-muted-ink">{payer.help}</p>}
+          {UTILITY.has(category) && <OwnerPaidTick label={`${kind} ${monthLabel(billMonth)}`} checked={ownerPaid} onChange={setOwnerPaid} />}
           {UTILITY.has(category) && accounts.length > 0 && (
             <Select showLabel size="md" label="Account" value={picked?.accountId ?? ''} onChange={v => setAccount(v)}
               options={[...accounts.map(a => ({ value: a.accountId, label: `${a.accountNo}${a.provider ? ` · ${a.provider}` : ''}` })), { value: '', label: 'Another account (type the reference)' }]} />

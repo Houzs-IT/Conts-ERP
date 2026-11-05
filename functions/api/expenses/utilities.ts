@@ -3,6 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { CHARGE_TO, finalMonthsFor } from '../../_lib/expenses';
 import { firstOpenMonth } from '../../../src/lib/deductMonth';
 import { receiptRequired, RECEIPT_REQUIRED } from '../../../src/lib/receipts';
+import { billsToRequest, ownerPaidCredit } from '../../_lib/utilityRequests';
 
 /** Monthly utility bills by account number: one row per unit utility account (unit_utility_accounts), with what is
  *  already recorded for the month, so a month's TNB, water, Wi-Fi and Indah Water bills go in from one screen.
@@ -28,9 +29,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const ownerId = url.searchParams.get('ownerId'), unitId = url.searchParams.get('unitId');
 
   const rows = await all<any>(env, `
-    SELECT a.id, a.unit_id, a.kind, a.account_no, a.provider, u.unit_number, p.name AS property_name, e.id AS expense_id, e.amount, e.charge_to, e.reference AS e_ref, e.receipt_document_id, e.deduct_month, e.rolled, e.record_only
+    SELECT a.id, a.unit_id, a.kind, a.account_no, a.provider, u.unit_number, p.name AS property_name, e.id AS expense_id, e.amount, e.charge_to, e.reference AS e_ref, e.receipt_document_id, e.deduct_month, e.rolled, e.record_only,
+           e.owner_paid, e.payment_request_no
     FROM unit_utility_accounts a JOIN units u ON u.id = a.unit_id JOIN properties p ON p.id = u.property_id
-    LEFT JOIN LATERAL (SELECT x.id, x.amount, x.charge_to, x.reference, x.receipt_document_id, x.deduct_month, x.rolled, x.record_only FROM expenses x WHERE x.unit_id = a.unit_id AND x.category = a.kind
+    LEFT JOIN LATERAL (SELECT x.id, x.amount, x.charge_to, x.reference, x.receipt_document_id, x.deduct_month, x.rolled, x.record_only, x.owner_paid, x.payment_request_no FROM expenses x WHERE x.unit_id = a.unit_id AND x.category = a.kind
                        AND (x.reference = a.account_no OR x.reference IS NULL OR x.reference = '')
                        AND x.incurred_on >= ? AND x.incurred_on < ? ORDER BY (x.reference = a.account_no) DESC NULLS LAST, x.created_at DESC LIMIT 1) e ON true
     WHERE a.kind IN ('electricity','water','internet','sewerage') ${ownerId ? 'AND u.owner_id = ?' : ''} ${unitId ? 'AND u.id = ?' : ''}
@@ -62,6 +64,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       receiptDocumentId: r.receipt_document_id ?? null,
       // The statement that deducts it: a later month when the bill came after its own month was final.
       deductMonth: r.deduct_month ?? null, rolled: !!r.rolled, recordOnly: !!r.record_only,
+      // "Owner paid this bill", and the payment request the bill went out on (then it is not replaced here).
+      ownerPaid: !!r.owner_paid, paymentRequestNo: r.payment_request_no ?? null,
       // A bill recorded some other way (the owner workbook import, Accounts payable) is shown but not replaced here.
       recordedElsewhere: !!r.expense_id && r.e_ref !== r.account_no,
     })),
@@ -86,14 +90,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!MONTH.test(month)) return fail('VALIDATION', 'Month must look like 2026-09.', 422, { month: 'Pick a month.' });
   const last = new Date(Date.parse(`${nextMonth(month)}-01T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
   const date = typeof b.date === 'string' && b.date.startsWith(month) && /^\d{4}-\d{2}-\d{2}$/.test(b.date) ? b.date : last;
-  const rows: { accountId?: string; unitId?: string; kind?: string; amount: number; chargeTo?: string; receiptDocumentId?: string | null }[] = Array.isArray(b.rows) ? b.rows : [];
+  const rows: { accountId?: string; unitId?: string; kind?: string; amount: number; chargeTo?: string; receiptDocumentId?: string | null; ownerPaid?: boolean }[] = Array.isArray(b.rows) ? b.rows : [];
   const keyOf = (r: { accountId?: string; unitId?: string; kind?: string }) => r.accountId ?? `${r.unitId}:${r.kind}`;
   const bad = rows.find(r => r.amount != null && (!Number.isInteger(r.amount) || r.amount < 0));
   if (bad) return fail('VALIDATION', 'Amounts must be RM 0.00 or more.', 422, { [keyOf(bad)]: 'Check the amount.' });
   const entered = rows.filter(r => r.amount != null && r.amount > 0);
   if (entered.some(r => !r.accountId && (typeof r.unitId !== 'string' || !KINDS.includes(String(r.kind))))) return fail('VALIDATION', 'Pick the bill for each unit.', 422);
   const wanted = entered.filter(r => r.accountId);
-  const loose = entered.filter(r => !r.accountId) as { unitId: string; kind: string; amount: number; chargeTo?: string; receiptDocumentId?: string | null }[];
+  const loose = entered.filter(r => !r.accountId) as { unitId: string; kind: string; amount: number; chargeTo?: string; receiptDocumentId?: string | null; ownerPaid?: boolean }[];
   if (!entered.length) return fail('VALIDATION', 'Enter at least one bill.', 422);
   if (entered.some(r => r.chargeTo !== undefined && !CHARGE_TO.includes(r.chargeTo))) return fail('VALIDATION', 'Choose who pays each bill.', 422);
 
@@ -128,41 +132,45 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       SELECT DISTINCT unit_id, category FROM expenses WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
         AND incurred_on >= ? AND incurred_on < ?`, JSON.stringify(unitBills.map(r => r.unitId)), from, to) : Promise.resolve([]),
     // The bills this save would replace, and the statement each is deducted on.
-    picked.length ? all<{ unit_id: string; category: string; reference: string; deduct_month: string }>(env, `
-      SELECT unit_id, category, reference, deduct_month FROM expenses WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+    picked.length ? all<{ unit_id: string; category: string; reference: string; deduct_month: string; payment_request_no: string | null; requested: boolean }>(env, `
+      SELECT unit_id, category, reference, deduct_month, payment_request_no, payment_request_id IS NOT NULL AS requested FROM expenses WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
         AND incurred_on >= ? AND incurred_on < ?`, JSON.stringify(unitIds), from, to) : Promise.resolve([]),
   ]);
   const finalFor = (unitId: string) => finals.get(unitId) ?? new Set<string>();
   const deduction = (unitId: string) => { const deductMonth = firstOpenMonth(month, finalFor(unitId)); return { deduct_month: deductMonth, rolled: deductMonth !== month }; };
   const onFinal = new Set(current.filter(x => finalFor(x.unit_id).has(x.deduct_month)).map(x => `${x.unit_id}|${x.category}|${x.reference}`));
+  // A bill already sent for payment is not replaced here: a new entry would pay it twice (chew, 5 Nov 2026; SOP 3.10).
+  const onRequest = new Set(current.filter(x => x.requested).map(x => `${x.unit_id}|${x.category}|${x.reference}`));
   const keptReceipt = new Map(onFile.map(x => [`${x.unit_id}|${x.category}|${x.reference}`, x.receipt_document_id]));
   const knownReceipts = new Set(known.map(x => x.id));
   if (given.some(id => !knownReceipts.has(id))) return fail('VALIDATION', 'A receipt was not found. Upload it again.', 422);
 
   const blank = new Set(blankRows.map(x => `${x.unit_id}|${x.category}`));
-  const saved: string[] = [], locked: string[] = [], elsewhere: string[] = [], rolled: { key: string; deductMonth: string }[] = [], now = nowIso();
+  const saved: string[] = [], locked: string[] = [], elsewhere: string[] = [], requested: string[] = [], rolled: { key: string; deductMonth: string }[] = [], now = nowIso();
   // One bill per unit, kind and account number: a later row for the same account replaces an earlier one, as before.
-  const bills = new Map<string, { id: string; unit_id: string; kind: string; description: string; amount: number; account_no: string; charge_to: string; receipt: string | null; accountId: string; deduct_month: string; rolled: boolean }>();
+  const bills = new Map<string, { id: string; unit_id: string; kind: string; description: string; amount: number; account_no: string; charge_to: string; receipt: string | null; accountId: string; deduct_month: string; rolled: boolean; owner_paid: boolean }>();
   for (const { r, a } of picked) {
     if (onFinal.has(`${a.unit_id}|${a.kind}|${a.account_no}`)) { locked.push(a.account_no); continue; }
+    if (onRequest.has(`${a.unit_id}|${a.kind}|${a.account_no}`)) { requested.push(a.account_no); continue; }
     if (blank.has(`${a.unit_id}|${a.kind}`)) { elsewhere.push(a.account_no); continue; }
     const id = crypto.randomUUID();
     bills.set(`${a.unit_id}|${a.kind}|${a.account_no}`, {
       id, unit_id: a.unit_id, kind: a.kind, description: `${KIND_LABEL[a.kind]} ${monthName(month)}${a.provider ? ` (${a.provider})` : ''}`,
       amount: r.amount, account_no: a.account_no, charge_to: r.chargeTo ?? 'owner',
       receipt: r.receiptDocumentId || keptReceipt.get(`${a.unit_id}|${a.kind}|${a.account_no}`) || null, accountId: a.id, ...deduction(a.unit_id),
+      owner_paid: r.ownerPaid === true,
     });
     if (a.account_no === '') blank.add(`${a.unit_id}|${a.kind}`); // an empty account number reads as recorded elsewhere next time
     saved.push(id);
   }
   const already = new Set(anyRows.map(x => `${x.unit_id}:${x.category}`));
-  const unitOut = new Map<string, { id: string; unit_id: string; kind: string; description: string; amount: number; charge_to: string; receipt: string | null; accountId: string; deduct_month: string; rolled: boolean }>();
+  const unitOut = new Map<string, { id: string; unit_id: string; kind: string; description: string; amount: number; charge_to: string; receipt: string | null; accountId: string; deduct_month: string; rolled: boolean; owner_paid: boolean }>();
   for (const r of unitBills) {
     const key = `${r.unitId}:${r.kind}`;
     if (already.has(key)) { elsewhere.push(key); continue; }
     if (!unitOut.has(key)) saved.push(key);
     unitOut.set(key, { id: crypto.randomUUID(), unit_id: r.unitId, kind: r.kind, description: `${KIND_LABEL[r.kind]} ${monthName(month)}`,
-      amount: r.amount, charge_to: r.chargeTo ?? 'owner', receipt: r.receiptDocumentId || null, accountId: key, ...deduction(r.unitId) });
+      amount: r.amount, charge_to: r.chargeTo ?? 'owner', receipt: r.receiptDocumentId || null, accountId: key, ...deduction(r.unitId), owner_paid: r.ownerPaid === true });
   }
   const rowsOut = [...bills.values()];
   const looseOut = [...unitOut.values()];
@@ -170,6 +178,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const missing = Object.fromEntries([...rowsOut, ...looseOut].filter(x => receiptRequired(x.kind, x.charge_to) && !x.receipt).map(x => [x.accountId, RECEIPT_REQUIRED]));
   const nMissing = Object.keys(missing).length;
   if (nMissing) return fail('RECEIPT_REQUIRED', `${nMissing === 1 ? 'A bill the owner pays has' : `${nMissing} bills the owner pays have`} no receipt. Attach each one and save again.`, 422, missing);
+  // "Owner paid this bill" gives the full bill back to the unit's owner as an O2 credit, as on Scan bills.
+  const paidByOwner = [...rowsOut, ...looseOut].filter(x => x.owner_paid);
+  const ownerOf = new Map<string, string | null>(paidByOwner.length ? (await all<{ id: string; owner_id: string | null }>(env, `SELECT id, owner_id FROM units WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
+    JSON.stringify([...new Set(paidByOwner.map(x => x.unit_id))]))).map(u => [u.id, u.owner_id]) : []);
+  const noOwner = paidByOwner.filter(x => !ownerOf.get(x.unit_id));
+  if (noOwner.length) return fail('VALIDATION', 'A bill marked "Owner paid this bill" is on a unit with no owner.', 422, Object.fromEntries(noOwner.map(x => [x.accountId, 'This unit has no owner to give the bill back to.'])));
   const replaced = JSON.stringify(rowsOut.map(b => ({ unit_id: b.unit_id, kind: b.kind, account_no: b.account_no })));
   const replacedSql = `SELECT e.id FROM expenses e JOIN jsonb_to_recordset(?::text::jsonb) AS x(unit_id text, kind text, account_no text)
     ON e.unit_id = x.unit_id AND e.reference = x.account_no AND e.category = x.kind WHERE e.incurred_on >= ? AND e.incurred_on < ?`;
@@ -185,19 +199,26 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         WHERE e.unit_id = x.unit_id AND e.reference = x.account_no AND e.category = x.kind AND e.incurred_on >= ? AND e.incurred_on < ?`,
         JSON.stringify(rowsOut.map(b => ({ unit_id: b.unit_id, kind: b.kind, account_no: b.account_no }))), from, to);
       await run(tx, `
-        INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, deduct_month, rolled, reference, charge_to, receipt_document_id, created_by, created_at)
-        SELECT x.id, x.unit_id, x.kind, x.description, x.amount, 'MYR', ?, x.deduct_month, x.rolled, x.account_no, x.charge_to, x.receipt, ?, ?
-        FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, kind text, description text, amount bigint, account_no text, charge_to text, receipt text, deduct_month text, rolled boolean)`,
+        INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, deduct_month, rolled, reference, charge_to, receipt_document_id, created_by, created_at, owner_paid)
+        SELECT x.id, x.unit_id, x.kind, x.description, x.amount, 'MYR', ?, x.deduct_month, x.rolled, x.account_no, x.charge_to, x.receipt, ?, ?, x.owner_paid
+        FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, kind text, description text, amount bigint, account_no text, charge_to text, receipt text, deduct_month text, rolled boolean, owner_paid boolean)`,
         date, session.userId, now, JSON.stringify(rowsOut));
     }
     if (looseOut.length) {
       await run(tx, `
-        INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, deduct_month, rolled, reference, charge_to, receipt_document_id, created_by, created_at)
-        SELECT x.id, x.unit_id, x.kind, x.description, x.amount, 'MYR', ?, x.deduct_month, x.rolled, NULL, x.charge_to, x.receipt, ?, ?
-        FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, kind text, description text, amount bigint, charge_to text, receipt text, deduct_month text, rolled boolean)`,
+        INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, deduct_month, rolled, reference, charge_to, receipt_document_id, created_by, created_at, owner_paid)
+        SELECT x.id, x.unit_id, x.kind, x.description, x.amount, 'MYR', ?, x.deduct_month, x.rolled, NULL, x.charge_to, x.receipt, ?, ?, x.owner_paid
+        FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, kind text, description text, amount bigint, charge_to text, receipt text, deduct_month text, rolled boolean, owner_paid boolean)`,
         date, session.userId, now, JSON.stringify(looseOut));
     }
-    await audit(tx, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.utilities', entityTable: 'expenses', entityId: month, after: { month, saved: saved.length, locked: locked.length, recordedElsewhere: elsewhere.length, rolled } });
+    for (const x of paidByOwner) {
+      await ownerPaidCredit(tx, { expenseId: x.id, unitId: x.unit_id, ownerId: ownerOf.get(x.unit_id)!, kind: x.kind, label: x.description, amountSen: x.amount,
+        deductMonth: x.deduct_month, accountNo: (x as { account_no?: string }).account_no || null }, session.userId, now);
+    }
+    await audit(tx, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.utilities', entityTable: 'expenses', entityId: month, after: { month, saved: saved.length, locked: locked.length, recordedElsewhere: elsewhere.length, requested: requested.length, ownerPaid: paidByOwner.length, rolled } });
   });
-  return json({ saved: saved.length, locked, recordedElsewhere: elsewhere, rolled }, 201);
+  // What the company pays goes to finance next, one payment request per provider (POST .../utilities/payment-requests).
+  const toPay = (await billsToRequest(env, [...rowsOut, ...looseOut].map(x => x.id)))
+    .map(g => ({ provider: g.provider, count: g.bills.length, amountSen: g.bills.reduce((n, x) => n + x.amountSen, 0), expenseIds: g.bills.map(x => x.expenseId) }));
+  return json({ saved: saved.length, locked, recordedElsewhere: elsewhere, requested, rolled, toPay }, 201);
 };
