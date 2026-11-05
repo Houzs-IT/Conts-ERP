@@ -116,7 +116,13 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== site.current || e.source !== frame.current?.contentWindow) return;
       // The engine says when it has started, in case a menu click arrived before it was listening.
-      if (e.data?.type === 'conts:ready') { steer(); tellTheme(); }
+      if (e.data?.type === 'conts:ready') {
+        // The frame's own Refresh reloads it alone: it goes back to the record it was on, not to this menu's list.
+        const back = readLastEnginePath(here.current);
+        if (back) wanted.current = back;
+        steer();
+        tellTheme();
+      }
       if (e.data?.type === 'conts:shown') setStarted(true);
       // A link inside the frame moved it: the address and the menu follow, without a new history entry.
       if (e.data?.type === 'conts:location' && typeof e.data.path === 'string' && isActive.current) {
