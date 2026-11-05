@@ -11,6 +11,7 @@ import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
 import { billingViews } from "../scm/lib/renovation-billing";
 import { todayMyt } from "../scm/lib/my-time";
+import { builtinPosOf, poDrawings, recordDrawingAmendments } from "../services/renovation/betaBuiltinPo";
 import { financeHiddenForUser } from "../services/pmsAccess";
 import { keepVisiblePos, loadCategoryScope, type CategoryScope } from "../services/categoryAccess";
 import { setChecklistStatus } from "../services/projects";
@@ -362,7 +363,34 @@ app.post("/design-files/:fileId/approval", requirePermission("projects.write"), 
     ).bind(fileId, f.project_id, f.company_id, approvedOn, approvedByName, note, userId(c)),
     activityStmt(c, f.project_id, f.company_id, "beta_drawing_approved", approvedByName, designLabel(f.kind, f.version), [`On ${approvedOn}`, note].filter(Boolean).join(" · ")),
   ]);
-  return c.json({ ok: true });
+  /* The approval stands whatever happens here: a failure is kept on the project's activity, so a PO is not left unrecorded unseen. */
+  let amended: string[] = [];
+  if (f.kind === "2d") {
+    try {
+      amended = await recordDrawingAmendments(db(c), f.project_id, f.company_id, designLabel(f.kind, f.version), approvedOn);
+      if (amended.length > 0) await activityStmt(c, f.project_id, f.company_id, "beta_po_drawing_amended", null, designLabel(f.kind, f.version), amended.join(", ")).run();
+    } catch (e) {
+      console.error("[renovation-beta] PO amendment for drawings failed", e);
+      await activityStmt(c, f.project_id, f.company_id, "beta_po_drawing_amend_failed", null, designLabel(f.kind, f.version), "The PO amendment was not recorded.").run().catch(() => undefined);
+    }
+  }
+  return c.json({ ok: true, amended });
+});
+
+/* The Built-in POs of a project: the 2D tab downloads the latest of each. */
+app.get("/projects/:id/builtin-pos", requirePageAccess("projects.list"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  return readOr(c, "built-in PO", async () => ({ pos: await builtinPosOf(db(c), id, co) }));
+});
+
+/* The approved 2D set a Built-in PO's PDF carries. */
+app.get("/po-drawings/:poId", requirePageAccess("projects.list"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  return readOr(c, "PO drawing", async () => poDrawings(db(c), c.req.param("poId"), co.companyId));
 });
 
 app.delete("/design-files/:fileId/approval", requirePermission("projects.write"), async (c) => {

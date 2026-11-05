@@ -22,7 +22,26 @@ import { downloadAsPdf, type PdfPart, type TitleBlock } from "./renovationBetaPd
 import { changedAgainst, removedSheetsOf, sheetSetAt, sheetsApi, sizeText, versionWhat, type BetaSheet, type SetSheet } from "./renovationBetaSheets";
 import { CompareDialog, LinkCards, RemovedList, SheetGrid, type SheetGridEdit } from "./BetaDrawingSheets";
 import { getBrandingCache } from "../../lib/branding";
+import { builtinPos, type BuiltinPo } from "./renovationBetaPoDrawings";
+import { fetchPrintBundle, renderPrintBundle } from "../../lib/printDocumentPdf";
 import { BETA, TONES } from "./renovationBetaTheme";
+
+/** The Built-in PO as the carpenter gets it, with the approved 2D set behind it, without going to the PO page. */
+function LatestPoButton({ po, many, onError }: { po: BuiltinPo; many: boolean; onError: (m: string) => void }): ReactElement {
+  const [busy, setBusy] = useState(false);
+  const run = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const target = { doc: "po" as const, docNo: po.poNumber, key: po.id };
+      await renderPrintBundle(target, await fetchPrintBundle(target), "save");
+    } catch (e) {
+      onError(`The PO could not be made: ${errorText(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <WsBtn size="sm" disabled={busy} onClick={() => void run()}><Download size={14} aria-hidden="true" />{busy ? "Making PDF..." : many ? `Latest ${po.poNumber}` : "Download latest PO"}</WsBtn>;
+}
 
 type DrawPick = "m" | DesignKind;
 type View = "waiting" | "approved" | "history";
@@ -284,6 +303,8 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
   const dialog = useDialog();
   const { busy, run } = useGuarded();
   const { records, canWrite, projectId, detail } = p;
+  const posQ = useQuery(["renovation-beta", "builtin-pos", projectId], () => builtinPos(projectId), [projectId]);
+  const latestPos = kind === "2d" ? posQ.data?.pos ?? [] : [];
   const { approved, waiting } = set;
   const [picked, setView] = useState<View>(waiting ? "waiting" : approved ? "approved" : "history");
   const [comparing, setComparing] = useState(false);
@@ -504,6 +525,7 @@ function KindDetail({ kind, p, set, onEdit, onOpen, onUpload, sheets, sheetsRead
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             <WsBtn size="sm" onClick={shareSite}>Share with site team</WsBtn>
+            {latestPos.map((po) => <LatestPoButton key={po.id} po={po} many={latestPos.length > 1} onError={p.onError} />)}
             {partsOf(approved).length > 0 && <PdfButton projectId={projectId} parts={partsOf(approved)} outName={pdfName(approved)} label="Download" onError={p.onError} />}
           </div>
         </div>
