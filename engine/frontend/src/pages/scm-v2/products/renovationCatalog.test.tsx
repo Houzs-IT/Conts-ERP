@@ -206,11 +206,25 @@ describe('RenovationSkuMaster', () => {
     expect(screen.queryByText(/need a photo/)).toBeNull();
     expect(screen.queryByText('Needs photo')).toBeNull();
     expect(screen.getAllByText('Ah Seng Renovation').length).toBeGreaterThan(0);
-    fireEvent.click(screen.getAllByText('WR-1')[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit WR-1' })[0]);
     const drawer = screen.getByRole('dialog', { name: 'SKU WR-1' });
     expect(within(drawer).queryByText(/Add a photo to make this SKU active/)).toBeNull();
     fireEvent.click(within(drawer).getByText('Make active'));
     expect(h.patch.mock.calls[0][0]).toEqual({ id: 'b', status: 'ACTIVE' });
+  });
+
+  test('a row click opens the suppliers straight away, and the main cost shows green or Gap', () => {
+    h.rows = [
+      sku({ id: 'a', code: 'HK-1', mainSupplierName: 'Ah Seng', supplierCount: 1, mainCostSen: 500 }),
+      sku({ id: 'b', code: 'HK-2', mainSupplierName: 'Ah Seng', supplierCount: 1, mainCostSen: 0 }),
+      sku({ id: 'c', code: 'HK-3', mainSupplierName: 'Customer', supplierCount: 1, mainCostSen: 0 }),
+    ];
+    const open = vi.fn();
+    wrap(<RenovationSkuMaster onImport={() => {}} onOpenSuppliers={open} />);
+    fireEvent.click(screen.getAllByText('HK-1')[0]);
+    expect(open.mock.calls[0][0].id).toBe('a');
+    expect(screen.getAllByTitle('Cost derived from supplier').length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle('No supplier cost — fix in Binding')).toHaveLength(1);
   });
 
   test('each row offers Edit and Deactivate without opening the SKU first', () => {
@@ -227,7 +241,7 @@ describe('RenovationSkuMaster', () => {
   test('moving a SKU to another sub-category sends the pair', () => {
     h.rows = [sku({ id: 'a', code: 'HK-1', category: 'WORKS', category_group: 'WORKS', sub_category: 'HACKING', uom: 'LOT' })];
     wrap(<RenovationSkuMaster onImport={() => {}} onOpenSuppliers={() => {}} />);
-    fireEvent.click(screen.getAllByText('HK-1')[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit HK-1' })[0]);
     const drawer = screen.getByRole('dialog', { name: 'SKU HK-1' });
     fireEvent.change(within(drawer).getByLabelText('Trade *'), { target: { value: 'PLUMBING' } });
     fireEvent.click(within(drawer).getByText('Save'));
@@ -308,7 +322,7 @@ describe('units from SKU Master > Units', () => {
 
     h.rows = [sku({ id: 'a', code: 'EL-1', category: 'WORKS', category_group: 'WORKS', sub_category: 'ELECTRICAL', uom: 'POINT' })];
     wrap(<RenovationSkuMaster onImport={() => {}} onOpenSuppliers={() => {}} />);
-    fireEvent.click(screen.getAllByText('EL-1')[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit EL-1' })[0]);
     const drawer = screen.getByRole('dialog', { name: 'SKU EL-1' });
     expect(await within(drawer).findByRole('option', { name: 'Point (POINT) - hidden' })).toBeTruthy();
   });

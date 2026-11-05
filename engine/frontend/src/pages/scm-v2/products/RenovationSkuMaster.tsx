@@ -128,7 +128,7 @@ export function RenovationSkuMaster({
         emptyLabel={group || sub || debounced ? 'No SKUs match.' : 'No SKUs yet. Use New SKU or Import SKUs.'}
         getRowKey={(r) => r.id}
         columns={columns}
-        onRowClick={(r) => setOpenId(r.id)}
+        onRowClick={onOpenSuppliers}
       />
 
       {newOpen && (
