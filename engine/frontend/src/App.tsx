@@ -918,6 +918,7 @@ export default function App() {
         <Route path="/scm/sales-orders/:docNo" element={<ScmGuard area="scm.sales.orders" allowSales><Scm2990Shell><ScmSalesOrderDetail /></Scm2990Shell></ScmGuard>} />
         {/* Renovation sales documents (Conts, 2026-10-09). Sales Orders area; writes check scm.renovation.* on the server. */}
         <Route path="/scm/renovation/quotations" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationsList /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/renovation/quotations/new" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><ScmSalesOrderNewV2 asQuotation /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/quotations/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationEditor /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/templates" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationTemplates /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/templates/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationTemplateEditor /></Scm2990Shell></ScmGuard>} />

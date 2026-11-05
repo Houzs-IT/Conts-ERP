@@ -1,6 +1,6 @@
 // Renovation quotations: every quotation (newest first) with its current
 // revision, customer, building / unit, total and status; filter by status or
-// search; "New quotation" picks the project, or none yet (link it later), and optionally a package template.
+// search; "New Quotation" opens the New Sales Order page saving as a quotation.
 // ?newFor=<projectId> opens it for that project (the project page's "Create quotation").
 
 import { useEffect, useState, type ReactNode } from 'react';
@@ -12,95 +12,16 @@ import { DataTable } from '../../components/DataTable';
 import type { Column } from '../../components/dataTableTypes';
 import { FilterPills } from '../../components/FilterPills';
 import { StatCard } from '../../components/StatCard';
-import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapModal';
 import { ResizableDetailDrawer } from '../../components/ResizableDetailDrawer';
 import { useAuth } from '../../auth/AuthContext';
-import { refusalOf, renoSend, searchProjects, useBrands, useQuotation, useQuotations, useTemplates, type QuotationListRow } from '../../lib/renovation/api';
-import { ErrorBanner, Field, fmtDate, inputCls, rm, StatusPill } from './shared';
+import { refusalOf, useQuotation, useQuotations, type QuotationListRow } from '../../lib/renovation/api';
+import { fmtDate, rm, StatusPill } from './shared';
 import { cn } from '../../lib/utils';
 
 const FILTERS = [
   { value: '', label: 'All' }, { value: 'DRAFT', label: 'Draft' }, { value: 'SENT', label: 'Sent' },
   { value: 'ACCEPTED', label: 'Accepted' }, { value: 'REJECTED', label: 'Rejected' }, { value: 'EXPIRED', label: 'Expired' },
 ];
-
-function NewQuotationDialog({ open, onClose, initialProjectId = null }: { open: boolean; onClose: () => void; initialProjectId?: number | null }) {
-  const navigate = useNavigate();
-  const brands = useBrands();
-  const templates = useTemplates();
-  const [q, setQ] = useState('');
-  const [projects, setProjects] = useState<Array<{ id: number; code: string | null; name: string; contractDocNo: string | null }>>([]);
-  const [projectId, setProjectId] = useState<number | null>(initialProjectId);
-  const [noProject, setNoProject] = useState(false);
-  useEffect(() => { if (initialProjectId) { setProjectId(initialProjectId); setNoProject(false); } }, [initialProjectId]);
-  const [brandId, setBrandId] = useState<number | null>(null);
-  const [templateId, setTemplateId] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    let live = true;
-    const t = setTimeout(() => { searchProjects(q).then((r) => { if (live) setProjects(r.projects); }).catch(() => { if (live) setProjects([]); }); }, 200);
-    return () => { live = false; clearTimeout(t); };
-  }, [q, open]);
-  useEffect(() => {
-    if (brandId === null && brands.data?.brands.length) setBrandId(brands.data.brands.find((b) => b.hasProfile)?.brandId ?? null);
-  }, [brands.data, brandId]);
-  const create = async () => {
-    if (!projectId && !noProject) { setError('Pick the project this quotation is for, or choose "No project yet".'); return; }
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await renoSend<{ id: string }>('/quotations', 'POST', { projectId: noProject ? null : projectId, brandId, templateId: templateId || null });
-      onClose();
-      navigate(`/scm/renovation/quotations/${r.id}`);
-    } catch (e) {
-      setError(refusalOf(e).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <ModalOverlay open={open} onClose={onClose} title="New quotation" icon={<FileText size={16} />}
-      footer={<div className="flex w-full justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={busy || (!projectId && !noProject)} onClick={create}>{busy ? 'Creating…' : 'Create quotation'}</Button></div>}>
-      <div className="space-y-3">
-        <Field label="Project">
-          <input className={inputCls} placeholder="Search projects" value={q} onChange={(e) => setQ(e.target.value)} />
-        </Field>
-        <div className="max-h-56 space-y-1 overflow-auto">
-          <button type="button" onClick={() => { setNoProject(true); setProjectId(null); }}
-            className={cn('flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-[13px]', noProject ? 'border-primary bg-primary-soft' : 'border-border hover:border-border-strong')}>
-            <span className="font-semibold text-ink">No project yet</span>
-            <span className="text-[11.5px] text-ink-muted">link it from the sales order later</span>
-          </button>
-          {projects.length === 0 && <div className="px-1 py-2 text-[12.5px] text-ink-muted">No project matches.</div>}
-          {projects.map((p) => (
-            <button key={p.id} type="button" onClick={() => { setProjectId(p.id); setNoProject(false); }}
-              className={cn('flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-[13px]', projectId === p.id ? 'border-primary bg-primary-soft' : 'border-border hover:border-border-strong')}>
-              <span className="font-semibold text-ink">{p.name}{p.code ? <span className="ml-1 font-normal text-ink-muted">{p.code}</span> : null}</span>
-              {p.contractDocNo && <span className="text-[11.5px] text-ink-muted">contract {p.contractDocNo}</span>}
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Letterhead">
-            <select className={inputCls} value={brandId ?? ''} onChange={(e) => setBrandId(e.target.value ? Number(e.target.value) : null)}>
-              <option value="">— choose —</option>
-              {(brands.data?.brands ?? []).map((b) => <option key={b.brandId} value={b.brandId}>{b.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Package template (optional)">
-            <select className={inputCls} value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-              <option value="">Blank quotation</option>
-              {(templates.data?.templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </Field>
-        </div>
-        <ErrorBanner error={error} />
-      </div>
-    </ModalOverlay>
-  );
-}
 
 const COLUMNS: Column<QuotationListRow>[] = [
   { key: 'docNo', label: 'Quotation', alwaysVisible: true, getValue: (r) => r.docNo, disableFilter: true,
@@ -236,9 +157,9 @@ export function QuotationsList() {
   const navigate = useNavigate();
   const [status, setStatus] = useState('');
   const [q, setQ] = useState('');
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const newFor = Number(params.get('newFor')) || null;
-  const [newOpen, setNewOpen] = useState(!!newFor);
+  useEffect(() => { if (newFor) navigate(`/scm/renovation/quotations/new?projectId=${newFor}`, { replace: true }); }, [newFor, navigate]);
   const [selected, setSelected] = useState<QuotationListRow | null>(null);
   // Every status is loaded at once so the cards and pill counts stay whole; the pills filter on screen.
   // ponytail: the server returns the newest 200, move status to the server when a company outgrows that.
@@ -257,7 +178,7 @@ export function QuotationsList() {
         eyebrow="Renovation"
         title="Quotations"
         description="Quotations for renovation projects. An accepted revision converts to the sales order in one step."
-        primaryAction={canQuote ? <Button variant="primary" icon={<Plus size={14} />} onClick={() => setNewOpen(true)}>New Quotation</Button> : undefined}
+        primaryAction={canQuote ? <Button variant="primary" icon={<Plus size={14} />} onClick={() => navigate('/scm/renovation/quotations/new')}>New Quotation</Button> : undefined}
         secondaryActions={[
           { label: 'SO Maintenance', icon: Wrench, onClick: () => navigate('/scm/sales-orders/maintenance') },
         ]}
@@ -300,7 +221,6 @@ export function QuotationsList() {
         }}
       />
       <QuotationDrawer row={selected} onClose={() => setSelected(null)} />
-      <NewQuotationDialog open={newOpen} initialProjectId={newFor} onClose={() => { setNewOpen(false); if (newFor) setParams({}, { replace: true }); }} />
     </div>
   );
 }
