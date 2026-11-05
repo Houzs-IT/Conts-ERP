@@ -14,7 +14,7 @@ export interface RawPick { code: string; qty: number }
 
 const LABEL = "font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted";
 const INPUT = "h-8 w-full rounded-md border border-border bg-surface px-2 text-[13px]";
-const ROW = "grid grid-cols-[28px_minmax(96px,150px)_minmax(0,1fr)_52px_88px] items-center gap-2 px-2";
+const ROW = "grid grid-cols-[24px_minmax(0,1fr)_44px_84px] items-center gap-2 px-2";
 
 export function RawMaterialAddPanel({ skus, taken, qtyLabel = "Qty", seed, extra, footnote, onAdd, onCancel }: {
   skus: readonly RawSku[];
@@ -85,7 +85,7 @@ export function RawMaterialAddPanel({ skus, taken, qtyLabel = "Qty", seed, extra
       <input aria-label="Search raw materials" className={INPUT} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search raw materials by code or name" />
       <div className="overflow-hidden rounded-md border border-border">
         <div className={`${ROW} border-b border-border bg-surface-2 py-1.5`}>
-          <span /><span className={LABEL}>Code</span><span className={LABEL}>Name</span><span className={LABEL}>Unit</span><span className={`${LABEL} text-right`}>{qtyLabel}</span>
+          <span /><span className={LABEL}>Raw material</span><span className={LABEL}>Unit</span><span className={`${LABEL} text-right`}>{qtyLabel}</span>
         </div>
         <div role="group" aria-label="Raw materials" className="max-h-[260px] overflow-y-auto">
           {offered.map((s) => {
@@ -93,8 +93,10 @@ export function RawMaterialAddPanel({ skus, taken, qtyLabel = "Qty", seed, extra
             return (
               <label key={s.code} className={`${ROW} cursor-pointer border-b border-border-subtle py-1 last:border-b-0 ${on ? "bg-accent/10" : "hover:bg-surface-2"}`}>
                 <input type="checkbox" aria-label={s.name ? `${s.code} · ${s.name}` : s.code} checked={on} onChange={() => toggle(s.code)} />
-                <span className="truncate font-mono text-[12px] font-semibold text-ink">{s.code}</span>
-                <span className="truncate text-[12.5px] text-ink-secondary">{s.name}</span>
+                <span className="min-w-0">
+                  <span className="block break-words text-[12.5px] font-semibold text-ink">{s.name || s.code}</span>
+                  <span className="block font-mono text-[11px] text-ink-muted">{s.code}</span>
+                </span>
                 <span className="text-[12px] text-ink-muted">{s.uom ?? ""}</span>
                 {on ? (
                   <input

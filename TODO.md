@@ -608,6 +608,13 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Engine screens tests: 34 of 6,726 fail. The ones read are stale guards, not screen faults: Houzs menus and routes removed, Chinese removed, category master list, the Production Order clone not added to the DataTable, coverage and storage lists. Worth a clean-up so a real failure stands out. Not read in full: MonthlyReport, ReportLayoutTree, renovationFlowFixes, mrp-views, convertScope. To fix: MobileRenovationDocs.tsx has no crash boundary of its own around its lazy pages.
 - Not yet seen live: the received-lock note on the SO edit page (needs a line received with no DO; the only one on a test order is cancelled). Project SO tab at phone width: tab switch is a native select that automation cannot drive.
 
+## SO, quotation and raw material round (6 Nov 2026)
+- Quotation edit page still differs from the SO edit page: only New Quotation is the SO page. Land area and land size are not on the quotation.
+- New Sales Order shows no payment cards: the four cards exist only once a contract does.
+- A project with a live SO is hidden from the project picker only; the server does not refuse a second order on it.
+- Smart Placement was tried and reverted (#718, #722): every request got slower. First open after an idle worker still takes 1-2 s a request; a fix needs the owner's choice (paid plan or fewer MRP reads).
+- 16 DOs, 1 GRN, 4 POs got BLK and CONTS-WH sales locations became BLK by hand on production, owner's request.
+
 ## End-user test with a real mouse (5 Nov 2026)
 - Walked on erp.theconts.com from the menu: RN-2611-014, QT-2611-009, TC-SO-2611-016, TC-PO-2611-020 and -021 (In-house), TC-PRO-2611-014, TC-GRN-2611-011, TC-DO-2611-012, TC-SI-2611-003, payment RM 900, VO-TC-SO-2611-016-01, TC-CN-2611-002, Works started.
 - Not walked by mouse: a PO to a real outside supplier, Goods Receipt by hand, Delivery Order by hand (the test uses In-house, which raises them on Complete), Works completed, closing a project.

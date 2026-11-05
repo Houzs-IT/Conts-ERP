@@ -1248,6 +1248,12 @@ grns.get('/:id', async (c) => {
   ]);
   if (h.error) return c.json({ error: 'load_failed', reason: h.error.message }, 500);
   if (!h.data) return c.json({ error: 'not_found' }, 404);
+  /* The header's warehouse by its code: the screen's Warehouse field reads this. */
+  const headerWarehouseId = (h.data as unknown as { warehouse_id?: string | null }).warehouse_id;
+  if (headerWarehouseId) {
+    const { data: wh } = await sb.from('warehouses').select('code').eq('id', headerWarehouseId).maybeSingle();
+    (h.data as unknown as Record<string, unknown>).warehouse_code = (wh as { code?: string } | null)?.code ?? null;
+  }
   // Migration 0106 — surface the convert-eligibility / lock flags on the grn
   // object so the detail page can lock once a PI/PR draws from it.
   const itemRows = (i.data ?? []) as Array<{ qty_accepted?: number | null; invoiced_qty?: number | null; returned_qty?: number | null }>;
