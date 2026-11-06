@@ -167,3 +167,10 @@ describe('operator copy', () => {
     expect(AMENDMENT_NOTHING_TO_SUBMIT).toMatch(/date/i);
   });
 });
+
+describe('what is not a VO on a confirmed order', () => {
+  it('saves options and remarks directly', () => {
+    expect(plan({ hasSaveOnlyLineChanges: true })).toBe('DIRECT_ONLY');
+    expect(plan({ hasSaveOnlyLineChanges: true, hasLineChanges: true })).toBe('AMENDMENT');
+  });
+});

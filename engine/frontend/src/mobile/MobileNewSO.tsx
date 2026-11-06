@@ -2004,6 +2004,7 @@ export function MobileNewSO({
             hasFrozenHeaderChanges: hasAmendmentHeaderChanges(headerChanges),
             hasDirectHeaderChanges: directDirty,
             hasStagedPayments: pays.some((p) => toSen(p.amount) > 0),
+            hasSaveOnlyLineChanges: lines.some((l) => l.photoFiles.length > 0),
           });
           if (plan === "NOTHING") { setSubmitting(false); setError(AMENDMENT_NOTHING_TO_SUBMIT); return; }
           let amendCreatedRes: unknown = null;
