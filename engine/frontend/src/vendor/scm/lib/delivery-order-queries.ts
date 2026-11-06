@@ -268,9 +268,11 @@ export const useCreateMfgDeliveryOrder = () => {
         `/delivery-orders-mfg`,
         idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }),
       ),
-    onSuccess: () => {
+    onSuccess: (made, vars) => {
       qc.invalidateQueries({ queryKey: ['mfg-delivery-orders'] });
       releaseSoSideQueries(qc);
+      /* asDraft lands a plan; anything else is confirmed on create and raises its receipt. */
+      if (vars.asDraft !== true) afterOnsiteConfirm('do', made.id, () => { void qc.invalidateQueries({ queryKey: ['grns'] }); });
     },
   });
 };

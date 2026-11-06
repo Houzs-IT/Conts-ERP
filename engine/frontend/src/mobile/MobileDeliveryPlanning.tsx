@@ -4,6 +4,7 @@ import { orderLineIdentity } from "@2990s/shared";
 import { invalidateDoShared, invalidateInventoryShared, invalidateSoShared } from "./sharedInvalidate";
 import { authedFetch } from "../vendor/scm/lib/authed-fetch";
 import { useUpdateMfgDeliveryOrderStatus } from "../vendor/scm/lib/delivery-order-queries";
+import { afterOnsiteConfirm } from "../vendor/scm/lib/onsite-twin-queries";
 import { idempotentInit, useIdempotencyKey } from "../lib/idempotency";
 import { MobileVirtualList } from "./MobileVirtualList";
 import { useNotify } from "../vendor/scm/components/NotifyDialog";
@@ -1342,8 +1343,9 @@ function StopDetail({
         idempotentInit(idemKey, { method: "POST", body: JSON.stringify({ picks }) }),
       );
     },
-    onSuccess: async () => {
+    onSuccess: async (created) => {
       await invalidate();
+      afterOnsiteConfirm("do", created.id, () => { void invalidate(); });
     },
   });
 
