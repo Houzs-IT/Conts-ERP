@@ -670,6 +670,8 @@ export async function loadProjectPoLines(db: Db, projectId: number, companyId: n
 
 export interface ClientItem {
   key: string;
+  /** The supplier's own code for the item, from the PO line (staff answer only: the client link names no supplier). */
+  supplierCode: string | null;
   soDocNo: string;
   /** The SO line id, for its photos. */
   soItemId: string;
@@ -734,12 +736,12 @@ export const CLIENT_LINE_ROOM = `coalesce(nullif(trim(d.room), ''), nullif(trim(
 export async function loadClientItems(db: Db, projectId: number, companyId: number, scope: CategoryScope | null = null): Promise<ClientAnswer> {
   const r = await rows<{
     id: string; doc_no: string; item_code: string | null; description: string | null; qty: number; uom: string | null; photo_urls: unknown;
-    room: string | null; measure: string | null; po_id: string; po_number: string;
+    room: string | null; measure: string | null; po_id: string; po_number: string; supplier_code: string | null;
     measure_uom: string | null; vo_no: string | null; cat_label: string | null; cat_sort: number | null; sub_label: string | null; sub_sort: number | null;
     cat_code: string | null; sub_code: string | null; sku_photos: unknown;
   }>(db,
     `SELECT i.id::text AS id, i.doc_no, i.item_code, i.description, i.qty, i.uom, i.photo_urls,
-            ${CLIENT_LINE_ROOM} AS room, d.measure, d.measure_uom, d.vo_no, cpo.po_id, cpo.po_number,
+            ${CLIENT_LINE_ROOM} AS room, d.measure, d.measure_uom, d.vo_no, cpo.po_id, cpo.po_number, cpo.supplier_code,
             cg.label AS cat_label, cg.sort_order AS cat_sort, sc.label AS sub_label, sc.sort_order AS sub_sort, cg.code AS cat_code, sc.code AS sub_code,
             (SELECT coalesce(json_agg(json_build_object('productId', ph.product_id, 'key', ph.r2_key, 'thumbKey', ph.thumb_key)
                                       ORDER BY ph.is_primary DESC, ph.sort_order, ph.created_at), '[]'::json)::text
@@ -748,7 +750,7 @@ export async function loadClientItems(db: Db, projectId: number, companyId: numb
        FROM scm.mfg_sales_order_items i
        JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
        JOIN LATERAL (
-         SELECT po.id::text AS po_id, po.po_number
+         SELECT po.id::text AS po_id, po.po_number, nullif(trim(pi.supplier_sku), '') AS supplier_code
            FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
            JOIN scm.suppliers sp ON sp.id = po.supplier_id
           WHERE pi.so_item_id = i.id AND sp.code = 'CUSTOMER' AND po.company_id = so.company_id AND po.status::text <> 'CANCELLED'
@@ -773,7 +775,7 @@ export async function loadClientItems(db: Db, projectId: number, companyId: numb
       categoryCode: x.cat_code ?? null, subCode: x.sub_code ?? null,
       categoryLabel: x.cat_label ?? "Other", categorySort: x.cat_sort ?? 999, subLabel: x.sub_label ?? "General", subSort: x.sub_sort ?? 999,
       area: x.room || null, qty: Number(x.qty), measure: x.measure ? `${Number(x.measure)} ${x.measure_uom ?? ""}`.trim() : null, uom: x.uom,
-      photoKeys: photoList(x.photo_urls), skuPhotos: skuPhotoList(x.sku_photos), voNo: x.vo_no, poId: x.po_id, poNumber: x.po_number,
+      photoKeys: photoList(x.photo_urls), skuPhotos: skuPhotoList(x.sku_photos), voNo: x.vo_no, poId: x.po_id, poNumber: x.po_number, supplierCode: x.supplier_code ?? null,
       orderOn: plans.get(x.id)?.order_on ?? null, deliverOn: plans.get(x.id)?.deliver_on ?? null,
     });
   }

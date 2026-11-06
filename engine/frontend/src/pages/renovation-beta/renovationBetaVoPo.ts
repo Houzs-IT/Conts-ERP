@@ -122,6 +122,8 @@ export interface ClientItem {
   voNo?: string | null;
   /** The Client PO that holds the line (staff answer only). */
   poId?: string;
+  /** The supplier's own code for the item (staff answer only). */
+  supplierCode?: string | null;
   poNumber?: string;
   /** The PO tab's processing (buy by) and delivery dates of the line (absent from an older server). */
   orderOn?: string | null;
