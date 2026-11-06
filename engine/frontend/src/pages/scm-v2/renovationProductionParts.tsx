@@ -28,7 +28,7 @@ const FIELD = "mt-1 block h-10 w-full rounded-md border border-border bg-surface
 const message = (e: unknown): string => (e instanceof Error ? e.message : "Something went wrong.");
 
 /* A number typed over a leading zero reads 020 otherwise. */
-const wholeEntry = (v: string): string => v.replace(/^0+(?=d)/, "");
+const wholeEntry = (v: string): string => v.replace(/^0+(?=\d)/, "");
 
 export function useOrderFiles(orderId: string) {
   const q = useQuery({ queryKey: docFilesKey("production_order", orderId), queryFn: () => listDocFiles("production_order", orderId), staleTime: 30_000 });
