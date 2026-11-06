@@ -5,7 +5,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Edit3, ExternalLink, FileText, Plus, Wrench, X } from 'lucide-react';
+import { Edit3, ExternalLink, FileText, LayoutGrid, Plus, Table as TableIcon, Wrench, X } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
@@ -26,6 +26,52 @@ const FILTERS = [
 ];
 
 /* The same columns, names and order as the Sales Orders list (owner, 5 Nov 2026: "它就是 sales order 来的"). */
+/* Table or Cards, as on the sales order list (owner, 6 Nov 2026); remembered per browser. */
+type ListView = 'table' | 'cards';
+const VIEW_KEY = 'renovation-quotations-view';
+const readView = (): ListView => {
+  try { return localStorage.getItem(VIEW_KEY) === 'cards' ? 'cards' : 'table'; } catch { return 'table'; }
+};
+
+function ViewToggle({ value, onChange }: { value: ListView; onChange: (v: ListView) => void }) {
+  const btn = (which: ListView, label: string, Icon: typeof TableIcon) => (
+    <button type="button" onClick={() => onChange(which)} aria-pressed={value === which}
+      className={cn('inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors',
+        value === which ? 'bg-primary text-white shadow-sm' : 'text-ink-secondary hover:bg-primary-soft hover:text-primary')}>
+      <Icon size={13} />{label}
+    </button>
+  );
+  return <div className="inline-flex items-center gap-0.5 rounded-md border border-border bg-surface p-1 shadow-stone">{btn('table', 'Table', TableIcon)}{btn('cards', 'Cards', LayoutGrid)}</div>;
+}
+
+function QuotationCards({ rows, onOpen }: { rows: QuotationListRow[]; onOpen: (r: QuotationListRow) => void }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+      {rows.map((r) => (
+        <button key={r.id} type="button" onClick={() => onOpen(r)}
+          className="group relative overflow-hidden rounded-lg border border-border bg-surface px-4 py-4 text-left shadow-stone transition-all duration-200 hover:-translate-y-px hover:border-primary/40 hover:shadow-slab focus:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/30">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-docno text-[12.5px] font-semibold text-ink">{r.docNo}</span>
+            <StatusPill status={r.status} />
+          </div>
+          <div className="mt-2 truncate text-[15px] font-semibold text-ink">{r.customerName || '—'}</div>
+          <div className="mt-1 flex items-center gap-2">
+            {r.brandName && <Badge tone={brandingToneForLabel(r.brandName)} variant="soft" size="xs">{r.brandName}</Badge>}
+            <span className="text-[11.5px] text-ink-muted">{fmtDate(r.docDate)}</span>
+          </div>
+          <div className="mt-3.5 flex items-end justify-between border-t border-border-subtle pt-3">
+            <div className="min-w-0">
+              <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">Project</div>
+              <div className="mt-0.5 truncate font-mono text-[12px] font-semibold text-ink-secondary">{r.projectCode || '—'}</div>
+            </div>
+            <span className="font-money text-[15px] font-bold text-ink">{rm(r.totalSen)}</span>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const COLUMNS: Column<QuotationListRow>[] = [
   { key: 'docNo', label: 'Doc. No.', alwaysVisible: true, getValue: (r) => r.docNo, disableFilter: true,
     render: (r) => <span className="font-mono font-semibold text-primary">{r.docNo}</span> },
@@ -175,6 +221,11 @@ export function QuotationsList() {
   const all = list.data?.quotations ?? [];
   const rows = status ? all.filter((r) => r.status === status) : all;
   const of = (s: string) => all.filter((r) => r.status === s);
+  const [view, setView] = useState<ListView>(readView);
+  const changeView = (v: ListView) => {
+    setView(v);
+    try { localStorage.setItem(VIEW_KEY, v); } catch { /* remembered for this visit only */ }
+  };
   const pending = list.isLoading;
   const failed = { failed: Boolean(list.error), onRetry: () => void list.refetch() };
   return (
@@ -203,8 +254,16 @@ export function QuotationsList() {
           value={status}
           onChange={setStatus}
         />
+        <div className="flex-1" />
+        {view === 'cards' && <input aria-label="Search quotations" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search number, customer, building…" className="h-9 w-64 max-w-full rounded-md border border-border bg-surface px-3 text-[13px] text-ink focus:border-primary focus:outline-none" />}
+        <ViewToggle value={view} onChange={changeView} />
       </div>
 
+      {view === 'cards' ? (
+        rows.length === 0
+          ? <div className="rounded-lg border border-dashed border-border bg-surface px-6 py-16 text-center text-[13px] font-semibold text-ink shadow-stone">{q || status ? 'No quotations match.' : 'No quotations yet.'}</div>
+          : <QuotationCards rows={rows} onOpen={setSelected} />
+      ) : (
       <DataTable<QuotationListRow>
         tableId="renovation-quotations"
         documentLabel="Quotations"
@@ -226,6 +285,7 @@ export function QuotationsList() {
           countPending: list.isLoading,
         }}
       />
+      )}
       <QuotationDrawer row={selected} onClose={() => setSelected(null)} />
     </div>
   );

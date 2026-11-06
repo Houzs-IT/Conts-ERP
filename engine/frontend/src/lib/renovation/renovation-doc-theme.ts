@@ -77,7 +77,9 @@ export function drawDocLetterheadAt(pdf: JsPdf, o: LetterheadOpts): { bottom: nu
   const right = pdf.internal.pageSize.getWidth() - M;
   pdf.setTextColor(0);
 
-  const logo = o.logo ?? brandLogoFor(o.name);
+  /* The wide mark the owner chose in mockup B (6 Nov 2026): a square upload is too small to read at this height. */
+  const squareConts = o.logo != null && o.logo.width / o.logo.height < 1.6 && /the\s*conts/i.test(o.name);
+  const logo = o.logo && !squareConts ? o.logo : brandLogoFor(o.name);
   const scale = Math.min(t.logoMaxW / logo.width, t.logoMaxH / logo.height);
   const logoW = logo.width * scale;
   const logoH = logo.height * scale;
