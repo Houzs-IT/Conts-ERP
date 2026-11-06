@@ -498,6 +498,8 @@ const SoLineCardInner = ({
       itemCode:       p.code,
       itemGroup:      category,
       description:    p.name,
+      /* The line sells in the SKU's own unit (RN-PLASTER_CEILING by the SQFT); a SKU with no unit keeps the line's. */
+      ...(p.uom ? { uom: p.uom } : {}),
       /* SO-SKU spec P4 (D4, Loo 2026-06-05) — the SELLING unit price defaults
          from the SKU Master's sell_price_sen (POS Master / Main Account
          authored), replacing the manual-0 default (Commander 2026-05-29 — that

@@ -962,7 +962,7 @@ productionOrders.post('/from-sos', async (c) => {
     const rows = picks.map((p) => {
       const it = toItem(p, soById.get(p.soItemId)!);
       return { production_order_id: b.targetPoId, company_id: co.companyId, material_kind: 'mfg_product', item_code: it.itemCode, material_name: it.materialName, description: it.description,
-        qty: it.qty, unit_price_sen: it.unitPriceSen, line_total_sen: 0, variants: it.variants, item_group: it.itemGroup, delivery_date: it.deliveryDate, warehouse_id: it.warehouseId, so_item_id: it.soItemId };
+        qty: it.qty, unit_price_sen: it.unitPriceSen, line_total_sen: 0, variants: it.variants, item_group: it.itemGroup, delivery_date: it.deliveryDate, warehouse_id: it.warehouseId, so_item_id: it.soItemId, uom: it.uom ?? 'UNIT' };
     });
     const { error } = await sb.from('production_order_items').insert(stampPoLineNos(rows, start));
     if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);

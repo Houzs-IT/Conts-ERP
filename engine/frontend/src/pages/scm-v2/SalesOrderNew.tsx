@@ -838,6 +838,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           itemCode:       p.code,
           itemGroup:      category,
           description:    p.name,
+          ...(p.uom ? { uom: p.uom } : {}),
           unitPriceSen: p.sell_price_sen ?? 0,
           variants:       seedFollowerVariants(inheritVariantsByCategory[category]),
           overriddenKeys: [],
