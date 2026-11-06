@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { DocLine, DocSection } from '../../lib/renovation/api';
-import { blockFromQuote, partyFromBlock, sectionsFromForm, seedQuoteForm } from './renovationQuotationForm';
+import { blockFromQuote, partyFromBlock, quotationLines, sectionsFromForm, seedQuoteForm } from './renovationQuotationForm';
 
 const line = (p: Partial<DocLine> = {}): DocLine => ({
   kind: 'ITEM', room: '', itemCode: 'RN-DESIGN', description: 'Design fee', qty: 2, measure: null, measureUom: null, uom: 'UNIT', unitPriceSen: 10000, listPriceSen: 12000,
@@ -51,5 +51,14 @@ describe('a saved quotation on the sales order form', () => {
     const b = blockFromQuote({ customerName: 'A', siteAddress: 'Line 1\nLine 2\nLine 3', building: 'B', unitNo: 'U', bedrooms: 3, builtUpSqft: 1100 } as never, 5);
     expect(b).toMatchObject({ projectId: 5, address1: 'Line 1', address2: 'Line 2\nLine 3', bedrooms: '3', builtUpSqft: '1100' });
     expect(partyFromBlock(b).siteAddress).toBe('Line 1\nLine 2\nLine 3');
+  });
+});
+
+describe('a saved quotation on the sales order detail page', () => {
+  test('a lump sum is its own line and the lines under it show no amount', () => {
+    const { rows, rooms } = quotationLines([section('PACKAGE', [line({ id: 'a' })], { lumpSumSen: 500000 }), section('', [line({ id: 'b', netSen: 18000 })])]);
+    expect(rows.map((r) => [r.item_code, r.total_sen])).toEqual([['RENO-ADJUST', 500000], ['RN-DESIGN', 0], ['RN-DESIGN', 18000]]);
+    expect(rooms.order).toEqual(['PACKAGE', 'Common area']);
+    expect(rows[2].discount_sen).toBe(2000);
   });
 });

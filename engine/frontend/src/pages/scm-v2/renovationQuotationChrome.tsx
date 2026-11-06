@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Copy, FileCheck2, Printer, Save, Send } from 'lucide-react';
+import { Copy, FileCheck2, Pencil, Printer, Send } from 'lucide-react';
 import { Button } from '../../components/Button';
 import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
 import { useDialog } from '../../hooks/useDialog';
@@ -16,9 +16,9 @@ import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { HeaderForm, InstalmentEditor, totalsOfSections, TotalsCard } from '../renovation/DocParts';
 import { PrintDialog } from '../renovation/PrintDialog';
-import { Card, ErrorBanner, StatusPill, todayIso } from '../renovation/shared';
+import { Card, ErrorBanner, todayIso } from '../renovation/shared';
 
-export function QuotationActions({ view, canQuote, editable, sections, header, instalments, brandId, onSave, saving }: {
+export function QuotationActions({ view, canQuote, editable, sections, header, instalments, brandId, onEdit }: {
   view: QuotationView;
   canQuote: boolean;
   editable: boolean;
@@ -26,9 +26,7 @@ export function QuotationActions({ view, canQuote, editable, sections, header, i
   header: DocHeader;
   instalments: Instalment[];
   brandId: number | null;
-  /** Saves the form and gives the new version, null when it could not save. */
-  onSave: () => Promise<number | null>;
-  saving: boolean;
+  onEdit: () => void;
 }) {
   const { quotation, revision, revisions } = view;
   const navigate = useNavigate();
@@ -39,16 +37,12 @@ export function QuotationActions({ view, canQuote, editable, sections, header, i
   const [error, setError] = useState<string | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
-  const busy = run.isPending || saving;
+  const busy = run.isPending;
   const current = canQuote && !quotation.lockedAt && revision.revNo === quotation.currentRev;
 
-  /* A step acts on what the screen shows, so the form saves first. */
-  const savedVersion = async () => (editable ? onSave() : quotation.version);
   const act = async (fn: (version: number) => Promise<unknown>) => {
     setError(null);
-    const version = await savedVersion();
-    if (version === null) return null;
-    try { return await run.mutateAsync(() => fn(version)); } catch (e) { setError(refusalOf(e).message); return null; }
+    try { return await run.mutateAsync(() => fn(quotation.version)); } catch (e) { setError(refusalOf(e).message); return null; }
   };
   const status = async (to: string, confirm?: string) => {
     if (confirm && !(await serviceConfirm({ title: confirm }))) return;
@@ -78,7 +72,6 @@ export function QuotationActions({ view, canQuote, editable, sections, header, i
 
   return (
     <>
-      <StatusPill status={quotation.status} />
       {revisions.length > 1 && (
         <select aria-label="Revision" className="h-9 rounded-md border border-border bg-surface px-2 text-[13px]" value={revision.revNo}
           onChange={(e) => setParams(Number(e.target.value) === quotation.currentRev ? {} : { rev: e.target.value })}>
@@ -93,7 +86,7 @@ export function QuotationActions({ view, canQuote, editable, sections, header, i
       {current && quotation.status === 'ACCEPTED' && <Button variant="ghost" disabled={busy} onClick={() => status('SENT')}>Undo accept</Button>}
       {current && quotation.status !== 'ACCEPTED' && quotation.status !== 'DRAFT' && <Button variant="secondary" disabled={busy} onClick={newRevision}>New revision R{quotation.currentRev + 1}</Button>}
       {current && quotation.status === 'ACCEPTED' && <Button disabled={busy} onClick={convert}>Convert to sales order</Button>}
-      {editable && <Button icon={<Save size={15} />} disabled={busy} onClick={() => { void onSave(); }}>{saving ? 'Saving…' : 'Save'}</Button>}
+      {editable && <Button icon={<Pencil size={15} />} disabled={busy} onClick={onEdit}>Edit</Button>}
       {error && <div className="basis-full"><ErrorBanner error={error} onClose={() => setError(null)} /></div>}
       <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="quotation" docNo={revision.docNo} brandName={brand?.name} defaultFormat={header.printFormat}
         build={(format) => buildPrintDoc({ kind: 'QUOTATION', docNo: revision.docNo, format, brand, header, sections, instalments })} />
