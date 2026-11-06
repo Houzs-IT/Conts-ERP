@@ -921,9 +921,18 @@ productionOrders.post('/from-sos', async (c) => {
   const soById = new Map(((soRows ?? []) as unknown as SoLine[]).map((r) => [r.id, r]));
   const missingLine = picks.find((p) => !soById.has(p.soItemId));
   if (missingLine) return c.json({ error: 'so_line_not_found', message: 'A picked Sales Order line no longer exists. Refresh and try again.' }, 404);
+  const { data: binds, error: bindErr } = await readMfgProductBindings<{ item_code: string; supplier_id: string; unit_price_sen: number }>(sb, {
+    codes: [...soById.values()].map((r) => r.item_code), companyId: co.companyId, select: 'item_code, supplier_id, unit_price_sen',
+  });
+  if (bindErr) return c.json({ error: 'load_failed', reason: bindErr.message }, 500);
+  const notOurs = [...soById.values()].find((so) => {
+    const own = binds.filter((x) => x.item_code === so.item_code);
+    return own.length > 0 && !own.some((x) => x.supplier_id === inhouseId);
+  });
+  if (notOurs) return c.json({ error: 'not_inhouse', message: `${notOurs.item_code} is bought from an outside supplier. Raise a PO for it.` }, 409);
   const toItem = (p: { soItemId: string; qty: number }, so: SoLine) => ({
     materialKind: 'mfg_product', itemCode: so.item_code, materialName: so.description ?? so.item_code, description: so.description, qty: Math.floor(Number(p.qty)),
-    unitPriceSen: 0, variants: so.variants,
+    unitPriceSen: Number(binds.find((x) => x.item_code === so.item_code && x.supplier_id === inhouseId)?.unit_price_sen ?? 0), variants: so.variants,
     itemGroup: so.item_group, deliveryDate: b.expectedAt ?? so.line_delivery_date, warehouseId: b.purchaseLocationId ?? so.warehouse_id, soItemId: so.id,
   });
 
