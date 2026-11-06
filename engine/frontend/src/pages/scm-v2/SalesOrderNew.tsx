@@ -42,7 +42,7 @@ import {
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery as useTanstackQuery } from '@tanstack/react-query';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Camera, ChevronDown, Save, X } from 'lucide-react';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
 import { useAddLineHotkey } from '../../vendor/scm/lib/useAddLineHotkey';
@@ -128,7 +128,13 @@ import styles from './SalesOrderNew.module.css';
 import { CustomerBlock } from '../projects/renovation/CustomerBlock';
 import { RenovationSoRooms, roomLayoutOf } from './RenovationSoRooms';
 import { autoRoomsPlan, placeRows } from '../renovation/roomSections';
-import { refusalOf, renoSend, sectionsForSave, useBrands, useTemplates, useTerms, type DocLine } from '../../lib/renovation/api';
+import {
+  instalmentsForSave, refusalOf, renoSend, sectionsForSave, useBrands, useQuotation, useRenoMutation, useTemplates, useTerms,
+  type DocHeader, type DocLine, type Instalment,
+} from '../../lib/renovation/api';
+import { headerFromParty } from '../renovation/QuotationCustomerCard';
+import { QuotationActions, QuotationCards, QuotationNotices } from './renovationQuotationChrome';
+import { blockFromQuote, partyFromBlock, sectionsFromForm, seedQuoteForm, type QuoteSources } from './renovationQuotationForm';
 import { SoInstalments } from './renovationSoInstalments';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
@@ -156,6 +162,9 @@ const newLine = (deliveryDate: string | null = null): DraftLine => ({
 });
 
 const fmtRm = (centi: number, currency = 'MYR'): string => fmtMoneySen(centi, currency);
+
+/* A saved quotation stays on the project it was made for: the save has no way to move it. */
+const QUOTE_PROJECT_LOCKED: ReadonlySet<keyof CustomerPropertyValue> = new Set(['projectId']);
 
 const subtotalStyle = {
   display: 'flex',
@@ -310,6 +319,18 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
   const [quoteBrandId, setQuoteBrandId] = useState<number | null>(null);
   const [quoteTemplateId, setQuoteTemplateId] = useState('');
   const [quoteBusy, setQuoteBusy] = useState(false);
+  /* A saved quotation opens on this same page (owner, 6 Nov 2026). */
+  const { id: routeQuoteId } = useParams();
+  const quoteId = asQuotation ? routeQuoteId : undefined;
+  const quoteRev = searchParams.get('rev') ? Number(searchParams.get('rev')) : undefined;
+  const savedQuote = useQuotation(quoteId, quoteRev);
+  const quoteView = savedQuote.data;
+  const quoteSave = useRenoMutation((body: { version: number; payload: object }) => renoSend<{ version: number }>(`/quotations/${quoteId}`, 'PUT', { version: body.version, ...body.payload }));
+  const quoteSources = useRef<QuoteSources>({ lines: {}, openedDiscountSen: {}, rooms: {} });
+  const [quoteHeader, setQuoteHeader] = useState<DocHeader | null>(null);
+  const [quoteInstalments, setQuoteInstalments] = useState<Instalment[]>([]);
+  const canQuote = can('scm.renovation.quote');
+  const quoteEditable = Boolean(quoteView?.editable) && canQuote;
   useEffect(() => {
     if (quoteBrandId === null && quoteBrands.data?.brands.length) setQuoteBrandId(quoteBrands.data.brands.find((b) => b.hasProfile)?.brandId ?? null);
   }, [quoteBrands.data, quoteBrandId]);
@@ -418,6 +439,33 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     setCopySeeded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [copyFromDocNo, copySeeded, copySource.data]);
+
+  /* A saved quotation fills the form when it opens and after each save or revision switch; typing does not reach here. */
+  const quoteSeedKey = quoteView ? `${quoteView.revision.id}:${quoteView.quotation.version}` : '';
+  useEffect(() => {
+    if (!quoteView) return undefined;
+    const { revision, quotation } = quoteView;
+    const seed = seedQuoteForm(revision.sections, () => newLine().rid);
+    quoteSources.current = seed.sources;
+    setQuoteHeader(revision.header);
+    setQuoteInstalments(revision.instalments);
+    setQuoteBrandId(quotation.brandId);
+    setRenoRooms(seed.rooms);
+    setRenoLineRoom(seed.lineRoom);
+    setLines(seed.lines.map((l) => ({ ...newLine(), ...l, itemGroup: 'others', priceAuthored: true })));
+    const b = blockFromQuote(revision.header, quotation.projectId);
+    setRenoInfo(b);
+    setDebtorName(b.customerName);
+    setPhone(b.customerPhone);
+    setEmail(b.customerEmail);
+    setAddress1(b.address1);
+    setAddress2(b.address2);
+    if (quotation.projectId == null) return undefined;
+    let live = true;
+    soInfoApi.project(quotation.projectId).then((r) => { if (live) setRenoProject(r.project); }).catch(() => undefined);
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the key is the trigger
+  }, [quoteSeedKey]);
 
   /* Customer Type default (owner 2026-07-16: "customer type default new
      customer") — this page is CREATE-only, so a blank select just costs the
@@ -1528,6 +1576,26 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
      The two header buttons both call onSave; only the flag differs. When the
      form was opened from a scan (fromScan), "Save as Draft" is the primary
      button so scanned orders default to draft for operator review. */
+  const quoteSections = quoteView ? sectionsFromForm(renoRooms, lines, renoLineRoom, quoteSources.current) : [];
+  const quoteHeaderNow = (): { header: DocHeader | null; problems: string[] } => {
+    const { patch, problems } = headerFromParty(partyFromBlock(blockRef.current));
+    return { header: quoteHeader ? { ...quoteHeader, ...patch } : null, problems };
+  };
+  const saveSavedQuotation = async (): Promise<number | null> => {
+    const { header, problems } = quoteHeaderNow();
+    if (!quoteView || !header) return null;
+    if (problems.length) { void notify({ title: 'The quotation did not save', body: problems.join(' '), tone: 'error' }); return null; }
+    try {
+      const r = await quoteSave.mutateAsync({ version: quoteView.quotation.version, payload: {
+        header: { ...header, brandId: quoteBrandId }, sections: sectionsForSave(quoteSections), instalments: instalmentsForSave(quoteInstalments),
+      } });
+      return r.version;
+    } catch (e) {
+      void notify({ title: 'The quotation did not save', body: refusalOf(e).message, tone: 'error' });
+      return null;
+    }
+  };
+
   const saveQuotation = async () => {
     if (!quoteBrandId) {
       void notify({ title: 'Choose the letterhead', body: 'A quotation prints under one brand.', tone: 'error' });
@@ -1881,6 +1949,16 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
   }, [reno, renoLayoutKey]);
 
   const renderNewLine = (line: DraftLine, idx: number, move?: ReactNode) => {
+            /* A quotation's TEXT line is words only: it has no product, quantity or price. */
+            if (quoteSources.current.lines[line.rid]?.kind === 'TEXT') {
+              return (
+                <div key={line.rid} className="flex items-center gap-2 py-1">
+                  <input aria-label="Text line" className={styles.fieldInput} value={line.description} onChange={(e) => updateLine(line.rid, { description: e.target.value })} />
+                  {move}
+                  <Button variant="ghost" onClick={() => dropLine(line.rid)}><X {...ICON} /></Button>
+                </div>
+              );
+            }
             /* fromScan — the slip rawText still feeds the SKU picker's placeholder
                hint for a no-match line (searchHint below). The per-line
                "scanned · NN%" review chip was REMOVED: owner — it is scan-review
@@ -2368,14 +2446,19 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           fields are missing (only blocked while a save is in flight) — onSave
           validates and tells the operator EXACTLY what's missing. */}
       <PageHeader back
-        eyebrow={asQuotation ? 'Quotation' : 'Sales order'}
-        title={asQuotation ? 'New Quotation' : createdDocNo ? `Complete Sales Order ${createdDocNo}` : 'New Sales Order'}
-        description={asQuotation
+        eyebrow={asQuotation ? `Quotation${quoteView?.quotation.projectName ? ` · ${quoteView.quotation.projectName}` : ''}` : 'Sales order'}
+        title={quoteView ? quoteView.revision.docNo : asQuotation ? 'New Quotation' : createdDocNo ? `Complete Sales Order ${createdDocNo}` : 'New Sales Order'}
+        description={quoteView
+          ? `${debtorName || 'No customer yet'}${renoInfo.building ? ` · ${renoInfo.building} ${renoInfo.unitNo}` : ''}`
+          : asQuotation
           ? 'Customer, order info, delivery address and line items, the same as a sales order.'
           : createdDocNo
           ? 'The order already exists. Finish or remove the retained payment rows, then continue to its Detail page.'
           : 'Customer, order info, delivery address, line items and payments — saved as one order.'}
-        actions={
+        actions={quoteView && quoteHeader ? (
+          <QuotationActions view={quoteView} canQuote={canQuote} editable={quoteEditable} sections={quoteSections} header={quoteHeaderNow().header ?? quoteHeader}
+            instalments={quoteInstalments} brandId={quoteBrandId} onSave={saveSavedQuotation} saving={quoteSave.isPending} />
+        ) : (
           <>
             {/* h-9 = the <Button> height — this link shares the rail with
                 Cancel / Create Sales Order / Save as Draft. */}
@@ -2417,10 +2500,15 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
               </Button>
             )}
           </>
-        }
+        )}
       />
 
+      {quoteId && !quoteView ? (
+        <div className={styles.card}><div className={styles.cardBody} style={{ minHeight: 160 }} aria-busy={savedQuote.isLoading}>{savedQuote.error ? refusalOf(savedQuote.error).message : null}</div></div>
+      ) : (
+      <fieldset disabled={Boolean(quoteId) && !quoteEditable} className="m-0 min-w-0 border-0 p-0">
       <div className="space-y-3">
+      {quoteView && <QuotationNotices view={quoteView} editable={quoteEditable} />}
       {createdDocNo && (
         <div role="status" className="rounded-lg border border-warning-text/30 bg-warning-bg px-3 py-2 text-sm text-warning-text">
           Sales order {createdDocNo} already exists. This recovery view only keeps payment rows; customer, order and line-item fields are hidden so unsaved edits cannot be lost.
@@ -2460,6 +2548,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           onPickProject={pickRenoProject}
           missing={renoMissing}
           canChangeSalesperson={canChangeSalesperson}
+          lockedKeys={quoteId ? QUOTE_PROJECT_LOCKED : undefined}
           orderInfoFooter={asQuotation ? (
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className={styles.field}>
@@ -2469,6 +2558,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
                   {(quoteBrands.data?.brands ?? []).map((b) => <option key={b.brandId} value={b.brandId}>{b.name}</option>)}
                 </select>
               </label>
+              {!quoteId && (
               <label className={styles.field}>
                 <span className={styles.fieldLabel}>Package template</span>
                 <select className={styles.fieldSelect} value={quoteTemplateId} onChange={(e) => setQuoteTemplateId(e.target.value)}>
@@ -2476,6 +2566,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
                   {(quoteTemplates.data?.templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </label>
+              )}
             </div>
           ) : undefined}
         />
@@ -2513,9 +2604,11 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
             layout={roomLayoutOf(renoInfo)}
             compact
           />
+          {!quoteView && (
           <section className={styles.card}>
             <div className={styles.cardBody} style={{ ...subtotalStyle, flexDirection: 'row' }}>Subtotal: {fmtRm(subtotalSen)}</div>
           </section>
+          )}
         </>
       ) : (
       <section className={styles.card}>
@@ -2545,6 +2638,10 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           DRAFT mode it holds rows in local state; onSave (above) batches
           POST /:docNo/payments calls in parallel after the SO has been
           created and before navigating to the Detail page. */}
+      {quoteView && quoteHeader && (
+        <QuotationCards view={quoteView} canQuote={canQuote} editable={quoteEditable} sections={quoteSections} header={quoteHeaderNow().header ?? quoteHeader}
+          onHeader={(p) => setQuoteHeader((h) => (h ? { ...h, ...p } : h))} instalments={quoteInstalments} onInstalments={setQuoteInstalments} brandId={quoteBrandId} />
+      )}
       {!asQuotation && reno && defaultTerms && (
         <section className={styles.card}>
           <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Payment schedule</h2></header>
@@ -2568,6 +2665,8 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
         convertSources={cancelledForCustomer.data?.orders ?? []}
       />}
       </div>
+      </fieldset>
+      )}
     </div>
   );
 };
