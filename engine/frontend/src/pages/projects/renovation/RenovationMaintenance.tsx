@@ -12,7 +12,7 @@ import { cn, formatDate } from "../../../lib/utils";
 import { STAGE_LABEL } from "../../../vendor/shared/renovation-stages";
 import { simpleApi, type CrewAssignment, type FlowStepRow, type Person, type TaskCategoryRow } from "./simpleApi";
 import { errorText } from "./renovationModel";
-import { inputClass } from "./renovationUi";
+import { InUseToggle, inputClass } from "./renovationUi";
 
 function Box({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
   return (
@@ -26,7 +26,7 @@ function Box({ title, hint, children }: { title: string; hint: string; children:
 
 /* Site crew without a login (owner, 14 Oct 2026). Everyone else is a Property OS user account; site crew and
    contractors (ZAINAL, MONIR, ATUN TEAM ...) have no email, so they stay here: people not linked to an account, with the
-   site crew role. They are offered as site task crew only. Switch one off instead of deleting, so old tasks keep the name. */
+   site crew role. They are offered as site task crew only. Set one to Not in use instead of deleting, so old tasks keep the name. */
 export function CrewManager() {
   const q = useQuery(["renovation", "people", "all"], () => simpleApi.people());
   /* Which projects and tasks each crew member is on (owner, 16 Oct 2026). */
@@ -41,17 +41,17 @@ export function CrewManager() {
   }
 
   return (
-    <Box title="Crew (no login)" hint="Site crew and contractors without a user account. To put one on a project, open the project and press Crew on one of its site tasks (Site tasks and crew). Everyone with a login is managed in Property OS under Users and roles. Switch a name off instead of deleting it, so old tasks keep it.">
+    <Box title="Crew (no login)" hint="Site crew and contractors without a user account. To put one on a project, open the project and press Crew on one of its site tasks (Site tasks and crew). Everyone with a login is managed in Property OS under Users and roles. Add a new name at the bottom. Set a name to Not in use instead of deleting it, so old tasks keep it.">
       {error && <p role="alert" className="mb-2 text-sm text-err">{error}</p>}
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-        <input className={cn(inputClass, "max-w-md")} placeholder="Name, e.g. ZAINAL" value={name} onChange={(e) => setName(e.target.value)} aria-label="New crew name" />
-        <div className="shrink-0 whitespace-nowrap"><Button icon={<Plus size={14} />} disabled={!name.trim()} onClick={() => run(async () => { await simpleApi.createPerson({ name: name.trim(), roles: ["site_crew"] }); setName(""); })}>Add crew</Button></div>
-      </div>
       {q.loading && <p className="text-sm text-ink-secondary">Loading...</p>}
       <ul className="divide-y divide-border">
         {list.map((p) => <CrewRow key={p.id} p={p} work={(work.data?.data ?? []).filter((w) => Number(w.person_id) === p.id)} onSave={(b) => run(() => simpleApi.patchPerson(p.id, b))} />)}
         {!q.loading && list.length === 0 && <li className="py-2 text-sm text-ink-secondary">No crew without a login yet.</li>}
       </ul>
+      <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3 sm:flex-row">
+        <input className={cn(inputClass, "max-w-md")} placeholder="Name, e.g. ZAINAL" value={name} onChange={(e) => setName(e.target.value)} aria-label="New crew name" />
+        <div className="shrink-0 whitespace-nowrap"><Button icon={<Plus size={14} />} disabled={!name.trim()} onClick={() => run(async () => { await simpleApi.createPerson({ name: name.trim(), roles: ["site_crew"] }); setName(""); })}>Add crew</Button></div>
+      </div>
     </Box>
   );
 }
@@ -74,15 +74,14 @@ function CrewRow({ p, work, onSave }: { p: Person; work: CrewAssignment[]; onSav
     );
   }
   return (
-    <li className={cn("flex flex-wrap items-center justify-between gap-2 py-2", !p.active && "opacity-60")}>
+    <li className="flex flex-wrap items-center justify-between gap-2 py-2">
       <div className="min-w-0 text-sm font-medium text-ink">
         {p.name}
-        {!p.active && <span className="ml-1 text-[11px] font-normal text-ink-secondary">switched off</span>}
         {p.source === "import" && <span className="ml-1 text-[11px] font-normal text-ink-secondary" title="Came over with the data import">imported</span>}
       </div>
-      <div className="flex gap-2">
+      <div className="flex items-center gap-3">
         <Button variant="ghost" onClick={() => setEditing(true)} aria-label={`Rename ${p.name}`}>Rename</Button>
-        <Button variant="ghost" onClick={() => onSave({ active: !p.active })}>{p.active ? "Switch off" : "Switch on"}</Button>
+        <InUseToggle on={p.active} name={p.name} onChange={(active) => onSave({ active })} />
       </div>
       <div className="w-full text-[11px] text-ink-secondary">
         {work.length === 0 ? "Not on any site task yet." : (
