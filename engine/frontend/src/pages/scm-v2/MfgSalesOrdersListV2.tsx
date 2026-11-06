@@ -21,7 +21,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { shippedProgressColumn, ShippedProgressPill } from "./so-list-shipped-column";
-import { SO_STATUS_TABS, type StatusTab } from "./so-list-status";
+import { SO_STATUS_TABS, soStatusTabOf, type StatusTab } from "./so-list-status";
 import { SoListStatusCell, soRowStatusOf } from "./SoListStatusCell";
 import { SoListFilterBar } from "./SoListFilterBar";
 import { useSoListFilters } from "../../vendor/scm/lib/so-list-filter-state";
@@ -1040,7 +1040,7 @@ export function MfgSalesOrdersListV2() {
   // ONE gate, shared with every other DO/SI control on both platforms.
   const canDeliver = canOperateDeliveryOrders(user, can, pageAccess);
 
-  const status = (params.get("status") ?? "all") as StatusTab;
+  const status = soStatusTabOf(params.get("status"));
   // View toggle applies at md+; on phones we always render the card list
   // regardless of the URL param (a 9-col DataTable is unreadable on 360dpi).
   const view = (params.get("view") ?? "table") as "table" | "cards";
@@ -1914,7 +1914,7 @@ export function MfgSalesOrdersListV2() {
     ];
   }, [branding.companyCode]);
 
-  /* One pill per vocabulary status, each carrying its FULL-set count (see
+  /* One pill per stage, each carrying its FULL-set count (see
      SO_STATUS_TABS) via FilterPills' count badge — these are the SERVER's
      statusCounts, never a count of the loaded page. "Other" (legacy/unknown
      status spellings) appears only when the server reports a non-zero count

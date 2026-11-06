@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { SO_TAB_STATUSES, soStatusesForTab } from "./so-tab-statuses";
+import { SO_STAGE_TAB_STATUSES, SO_TAB_STATUSES, soStatusesForTab, soTabCounts } from "./so-tab-statuses";
 
 describe("SO_TAB_STATUSES", () => {
   /* THE RULING THIS FILE EXISTS FOR (owner, 2026-08-22):
@@ -65,5 +65,41 @@ describe("SO_TAB_STATUSES", () => {
   test("an unknown tab selects itself rather than widening to everything", () => {
     expect(soStatusesForTab("WAT")).toEqual(["WAT"]);
     expect(soStatusesForTab("WAT")).not.toHaveLength(0);
+  });
+
+  /* The desktop stage tabs (owner, 6 Nov 2026). */
+  test("the stage tabs select the statuses the owner listed", () => {
+    expect(soStatusesForTab("CONTRACT")).toEqual(["CONFIRMED", "RENO_CONFIRMED"]);
+    expect(soStatusesForTab("IN_PROGRESS")).toEqual(["RENO_IN_PROGRESS", "IN_PRODUCTION", "READY_TO_SHIP"]);
+    expect(soStatusesForTab("COMPLETED")).toEqual(["RENO_COMPLETED", "SHIPPED", "DELIVERED", "INVOICED"]);
+  });
+
+  test("the phone's exact-status filters still work", () => {
+    expect(soStatusesForTab("CONFIRMED")).toEqual(["CONFIRMED"]);
+    expect(soStatusesForTab("RENO_CONFIRMED")).toEqual(["RENO_CONFIRMED"]);
+  });
+
+  test("no status sits in two stage tabs", () => {
+    const flat = Object.values(SO_STAGE_TAB_STATUSES).flat();
+    expect(new Set(flat).size).toBe(flat.length);
+  });
+
+  test("the tabs add up to All, an unknown spelling included", () => {
+    const c = soTabCounts({
+      DRAFT: 1, CONFIRMED: 2, RENO_CONFIRMED: 3, RENO_IN_PROGRESS: 4, IN_PRODUCTION: 5, READY_TO_SHIP: 6,
+      RENO_COMPLETED: 7, SHIPPED: 8, DELIVERED: 9, INVOICED: 10, CLOSED: 11, ON_HOLD: 12, CANCELLED: 13, WAT: 14,
+    });
+    expect(c.all).toBe(105);
+    expect(c.contract).toBe(5);
+    expect(c.in_progress).toBe(15);
+    expect(c.completed).toBe(34);
+    expect(c.other).toBe(14);
+    expect(c.draft + c.contract + c.in_progress + c.completed + c.closed + c.on_hold + c.cancelled + c.other).toBe(c.all);
+  });
+
+  test("the phone's exact-status counts are still sent", () => {
+    const c = soTabCounts({ CONFIRMED: 2, SHIPPED: 1, DELIVERED: 1 });
+    expect(c.confirmed).toBe(2);
+    expect(c.delivered).toBe(2);
   });
 });
