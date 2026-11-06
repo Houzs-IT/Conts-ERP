@@ -2203,7 +2203,9 @@ export async function soDeliverableRemaining(
     .order('created_at')
     .order('id')
     .range(from, to));
-  const rawLines = soItems as Array<Record<string, unknown> & { id: string; doc_no: string; item_code: string; qty: number }>;
+  /* A credit note's row is money on the order, not goods: nothing to deliver, and no SKU a DO could carry. */
+  const rawLines = (soItems as Array<Record<string, unknown> & { id: string; doc_no: string; item_code: string; qty: number }>)
+    .filter((l) => l.item_code !== 'RENO-CREDIT');
   if (rawLines.length === 0) return out;
 
   /* THE CUSTOMER IS A PROPERTY OF THE SALES ORDER, NOT OF ITS LINES.
