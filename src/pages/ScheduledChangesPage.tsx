@@ -21,7 +21,7 @@ interface Figures { owner: number | null; cost: number | null }
 export interface ScheduledRow {
   id: string; kind: Kind; scope: 'unit' | 'list'; unitId: string | null; unitLabel: string; ownerName: string | null;
   itemId: string | null; what: string; cleanKind: string | null; effectiveFrom: string; setBy: string | null; setAt: string | null;
-  now?: Figures | null; next?: Figures | null; layouts?: number | null; termsNow?: string | null; termsNext?: string;
+  now?: Figures | null; next?: Figures | null; layouts?: number | null; byBed?: boolean; termsNow?: string | null; termsNext?: string;
 }
 interface Payload { dated: boolean; mayEdit: boolean; money: boolean; rows: ScheduledRow[] }
 
@@ -35,7 +35,7 @@ const amounts = (f: Figures | null | undefined, empty: string) => {
   return f ? `Owner ${one(f.owner)} · Cost ${one(f.cost)}` : null;
 };
 const textNow = (r: ScheduledRow) => (r.kind === 'contract' ? r.termsNow ?? 'No earlier contract' : amounts(r.now, 'not set'));
-const textNext = (r: ScheduledRow) => (r.kind === 'contract' ? r.termsNext ?? null : r.layouts ? `New prices for ${plural(r.layouts, 'layout')}` : amounts(r.next, 'list price'));
+const textNext = (r: ScheduledRow) => (r.kind === 'contract' ? r.termsNext ?? null : r.layouts ? `New prices for ${plural(r.layouts, r.byBed ? 'bed size' : 'layout')}` : amounts(r.next, 'list price'));
 
 /** Scheduled changes (owner, 30 Oct 2026): one list of everything set to change on a later date, so the office can see
  *  what is coming. A price change is cancelled here; a contract is changed on the unit's Contract tab, a list price

@@ -187,10 +187,15 @@ function ItemDrawer({ id, list, onClose, onChanged }: { id: string; list: ListPa
         <div className="p-5 flex flex-col gap-6">
           <section className="flex flex-col gap-2">
             <h3 className="m-0 text-copy font-semibold">Prices today</h3>
-            <PriceTable heading={gridHeading({ byBed: i.byBed && i.bedPricesStarted }, inUseOf(i, list.layouts).length)} layouts={inUseOf(i, list.layouts)} cells={i.current} />
-            {i.byBed && (i.bedPricesStarted
-              ? <span className="text-meta text-muted-ink">A unit's clean costs each bed size price times how many of that bed the unit has, added up. A unit with no beds recorded takes the last row.</span>
-              : <span className="text-meta text-gold-ink">Jobs use these prices by unit type until bed size prices start. Fill every bed size below in one go: from that date every unit is priced by its beds, and a bed size left empty shows Price not set.</span>)}
+            <PriceTable heading={gridHeading(i, layoutsOf(i, list.layouts).length)} layouts={layoutsOf(i, list.layouts)} cells={i.current} />
+            {i.byBed && <span className="text-meta text-muted-ink">A unit's clean costs each bed size price times how many of that bed the unit has, added up. A unit with no beds recorded takes the last row.</span>}
+            {i.byBed && !i.bedPricesStarted && <span className="text-meta text-gold-ink">No bed size prices in force yet. Fill every bed size below in one go: from that date every unit is priced by its beds, and a bed size left empty shows Price not set.</span>}
+            {i.byBed && !i.bedPricesStarted && priced(inUseOf(i, list.layouts).map(l => i.current[l] ?? { ownerPrice: null, internalCost: null, effectiveFrom: null })).length > 0 && (
+              <div className="flex flex-col gap-1.5 mt-2">
+                <span className="text-meta font-semibold text-muted-ink">Until then, jobs use the old prices by unit type</span>
+                <PriceTable heading="Unit type" layouts={inUseOf(i, list.layouts)} cells={i.current} />
+              </div>
+            )}
             {i.next && <span className="text-meta text-gold-ink">A change is scheduled from {dayText(i.next.effectiveFrom)}: see the history below.</span>}
           </section>
           {list.mayPrice
