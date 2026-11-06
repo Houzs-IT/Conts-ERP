@@ -2042,7 +2042,7 @@ export const SalesOrderDetail = () => {
     const contract = contractQ.data;
     const brand = brandsQ.data?.brands.find((b) => b.brandId === contract?.header.brandId);
     const pdfContract = contract && brand ? {
-      brandName: brand.name, letterhead: [...brand.companyLines, brand.contactLine].filter(Boolean), bankLine: brand.bankLine, termsLines: brand.termsLines,
+      brandName: brand.name, logoKey: brand.logoR2Key, letterhead: [...brand.companyLines, brand.contactLine].filter(Boolean), bankLine: brand.bankLine, termsLines: brand.termsLines,
       instalments: contract.instalments.map((i) => ({ label: i.label, percent: `${i.pctBp / 100}%`, description: i.description })),
     } : undefined;
     /* Loaded here, not at the top: the PDF library has no business on a page that may never print. */

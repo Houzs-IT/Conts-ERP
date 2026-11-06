@@ -207,7 +207,7 @@ type SoPayment = {
 /** A renovation contract prints its brand's letterhead and terms, the same as its Contract PDF (owner run, 4 Nov 2026: the
     furniture receipt terms and the company address were on a Dream Crafter contract). */
 export type SoPdfContract = {
-  brandName: string; letterhead: string[]; bankLine: string; termsLines: string[];
+  brandName: string; logoKey?: string | null; letterhead: string[]; bankLine: string; termsLines: string[];
   instalments: Array<{ label: string; percent: string; description: string }>;
 };
 
@@ -452,7 +452,9 @@ export async function renderSalesOrderInto(
      recurring bug). */
   const brandLogoKey =
     (header.resolvedBrandLogoKey ?? header.resolved_brand_logo_key ?? null) || null;
-  if (brandLogoKey) await ensureBrandLogoLoaded(brandLogoKey);
+  /* A contract prints under its own brand, whose logo is the one uploaded under Brands. */
+  const letterheadLogoKey = opts?.contract ? opts.contract.logoKey ?? null : brandLogoKey;
+  if (letterheadLogoKey) await ensureBrandLogoLoaded(letterheadLogoKey);
 
   // ── Header (shared pdf-common letterhead) ─────────────────────────
   let y = drawHeader(doc, {
@@ -461,7 +463,7 @@ export async function renderSalesOrderInto(
       { label: opts?.docNoLabel ?? 'Doc No', value: header.doc_no },
       { label: 'Date', value: fmtDocDate(header.so_date) },
     ],
-    logo: opts?.contract ? null : getBrandLogoCache(brandLogoKey),
+    logo: getBrandLogoCache(letterheadLogoKey),
     ...(opts?.contract ? { name: opts.contract.brandName, lines: opts.contract.letterhead } : {}),
   });
 
