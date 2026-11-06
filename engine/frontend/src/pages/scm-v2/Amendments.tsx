@@ -25,7 +25,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AmendmentQuickView, amendmentJobCardPath, type AmendmentQuickViewTarget } from './AmendmentQuickView';
 import { fmtDateTime } from '../../vendor/shared/format';
-import { useAmendments, type AmendmentRow } from '../../vendor/scm/lib/so-amendment-queries';
+import { useAmendments, type AmendmentRow, type VoListDetail } from '../../vendor/scm/lib/so-amendment-queries';
 import { DataGridCompat, type GridColumn } from '../../components/DataGridCompat';
 import { TonedPill } from '../../vendor/scm/components/StatusPill';
 import { QueueApproverBadge } from '../../vendor/scm/components/AmendmentApproverBadge';
@@ -57,6 +57,7 @@ import { PageHeader } from '../../components/Layout';
 import { FilterPills } from '../../components/FilterPills';
 import { useStaffLookup } from '../../hooks/useStaffLookup';
 import { customerRefOf } from '../../lib/customer-ref';
+import { VoRowLines, voContract, voPoImpact, voSignedSen, voWhatChanged } from './renovationVoRow';
 
 // SIMPLIFIED status filter (owner 2026-07-24; Rejected added 2026-09-17): Requested / Approved / Rejected / All.
 // The backend so_amendment_status enum still carries the granular two-gate values
@@ -78,6 +79,11 @@ const OPEN_ORDER = compareAmendmentsForList<AmendmentQueueRow>((r) => r.bucket, 
 /* The SO's own customer reference, by the rule the Sales Order list uses. */
 const referenceOf = (a: AmendmentRow): string =>
   customerRefOf({ ref: a.so_ref, customer_so_no: a.so_customer_so_no });
+
+const voOf = (r: AmendmentQueueRow, read: (v: VoListDetail) => string): string => {
+  const v = r.amendment?.vo;
+  return v ? read(v) : '—';
+};
 
 const actionBtn: React.CSSProperties = {
   fontFamily: 'var(--font-button)', fontSize: 'var(--fs-11, 11px)', fontWeight: 700,
@@ -142,6 +148,32 @@ const buildAmendmentColumns = (
       searchValue: (r) => r.numberLabel,
       exportValue: (r) => r.numberLabel,
       sortFn: (a, b) => a.numberLabel.localeCompare(b.numberLabel),
+    },
+    {
+      key: 'vo_changed', label: 'What changed', width: 210, sortable: true,
+      accessor: (r) => voOf(r, voWhatChanged),
+      searchValue: (r) => voOf(r, voWhatChanged),
+      exportValue: (r) => voOf(r, voWhatChanged),
+      sortFn: (a, b) => voOf(a, voWhatChanged).localeCompare(voOf(b, voWhatChanged)),
+    },
+    {
+      key: 'vo_net', label: 'Net', width: 130, sortable: true,
+      accessor: (r) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{voOf(r, (v) => voSignedSen(v.netSen))}</span>,
+      exportValue: (r) => voOf(r, (v) => voSignedSen(v.netSen)),
+      sortFn: (a, b) => (a.amendment?.vo?.netSen ?? 0) - (b.amendment?.vo?.netSen ?? 0),
+    },
+    {
+      key: 'vo_contract', label: 'Contract', width: 230,
+      accessor: (r) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{voOf(r, voContract)}</span>,
+      exportValue: (r) => voOf(r, voContract),
+    },
+    {
+      key: 'vo_po', label: 'PO impact', width: 120, sortable: true, groupable: true,
+      accessor: (r) => voOf(r, voPoImpact),
+      searchValue: (r) => voOf(r, voPoImpact),
+      exportValue: (r) => voOf(r, voPoImpact),
+      groupValue: (r) => voOf(r, voPoImpact),
+      sortFn: (a, b) => voOf(a, voPoImpact).localeCompare(voOf(b, voPoImpact)),
     },
     {
       /* Two-lane rework — WHO this request is waiting on: product changes sign
@@ -345,6 +377,10 @@ export const Amendments = () => {
              simplified buckets only REJECTED is dead — an applied (SENT)
              revision now reads as Approved, not closed. */
           rowStyle={(r) => (r.bucket === 'REJECTED' ? { opacity: 0.6, filter: 'grayscale(0.4)' } : undefined)}
+          expandable={{
+            renderExpansion: (r) => <VoRowLines vo={r.amendment?.vo} reason={r.reason} />,
+            rowExpansionKey: (r) => r.key,
+          }}
           isLoading={isLoading}
           emptyMessage="No VOs yet — raise one from a processing-locked Sales Order."
         />
