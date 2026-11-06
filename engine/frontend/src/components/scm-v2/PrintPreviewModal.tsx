@@ -27,7 +27,7 @@
 // ----------------------------------------------------------------------------
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useInRouterContext, useLocation, useSearchParams } from "react-router-dom";
 import { Download, FileText, Printer } from "lucide-react";
 import { Button } from "../Button";
 import { ModalOverlay } from "./DocumentRelationshipMapModal";
@@ -132,6 +132,18 @@ export type PrintPreviewRow = {
    second render. */
 type PrintAction = () => void | Promise<void>;
 
+/* Pages stay mounted behind the tabs, so leaving one does not unmount its card: the card closes itself instead. */
+function ClosesOnLeave({ onLeave }: { onLeave: () => void }) {
+  const { pathname } = useLocation();
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    onLeave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the page changing is the trigger
+  }, [pathname]);
+  return null;
+}
+
 export function PrintPreviewModal({
   open,
   onClose,
@@ -172,6 +184,7 @@ export function PrintPreviewModal({
    *  so "Download PDF" would be a button with nothing behind it. */
   onDownload?: PrintAction;
 }) {
+  const inRouter = useInRouterContext();
   // Letterhead follows the ACTIVE company (2990 DO previews were once branded
   // with a hardcoded Houzs literal). Same source as the jspdf letterhead, so the
   // card and the document it previews always name the same company.
@@ -189,6 +202,8 @@ export function PrintPreviewModal({
   };
 
   return (
+    <>
+    {open && inRouter && <ClosesOnLeave onLeave={onClose} />}
     <ModalOverlay
       open={open}
       onClose={onClose}
@@ -260,6 +275,7 @@ export function PrintPreviewModal({
         </div>
       </div>
     </ModalOverlay>
+    </>
   );
 }
 
