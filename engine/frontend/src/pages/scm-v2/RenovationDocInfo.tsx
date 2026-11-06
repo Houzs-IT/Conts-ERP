@@ -61,14 +61,21 @@ export function RenovationDocBlock({ data, kind }: { data: RenoDocInfo; kind: Re
   const showUnit = kind === "do" || kind === "si";
   return (
     <div className="grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-4">
-      <Cell
-        label="Project"
-        span
-        muted={!project}
-        value={project && i.projectId != null
-          ? <Link to={`/projects/${i.projectId}`} className="text-primary hover:underline">{project}</Link>
-          : "No project"}
-      />
+      {i.projectCode && i.projectId != null ? (
+        <>
+          <Cell label="Project ID" value={<Link to={`/projects/${i.projectId}`} className="text-primary hover:underline">{i.projectCode}</Link>} />
+          <Cell label="Project Name" value={i.projectName || "—"} muted={!i.projectName} />
+        </>
+      ) : (
+        <Cell
+          label="Project"
+          span
+          muted={!project}
+          value={project && i.projectId != null
+            ? <Link to={`/projects/${i.projectId}`} className="text-primary hover:underline">{project}</Link>
+            : "No project"}
+        />
+      )}
       {showUnit && <Cell label="Building" value={i.building || "—"} muted={!i.building} />}
       {showUnit && <Cell label="Unit" value={i.unitNo || "—"} muted={!i.unitNo} />}
       <Cell

@@ -287,7 +287,7 @@ describe('Delivery Order template', () => {
 
     expect(new Set(faces)).toEqual(new Set([SANS, DOC_THEME.titleFont]));
     const small = sizes.filter((n) => n < DO_SIZE.min);
-    expect(small.every((n) => n === DOC_THEME.blockPt || n === DOC_THEME.metaPt)).toBe(true);
+    expect(small.every((n) => n === DOC_THEME.blockPt || n === DOC_THEME.blockNamePt || n === DOC_THEME.metaPt)).toBe(true);
   });
 
   test('the page is A4', async () => {
