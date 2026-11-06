@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const h = vi.hoisted(() => ({ coverage: [] as unknown[], puts: [] as Array<[string, unknown]>, patches: [] as Array<[string, unknown]>, furniture: false }));
+const h = vi.hoisted(() => ({ coverage: [] as unknown[], puts: [] as Array<[string, unknown]>, patches: [] as Array<[string, unknown]>, furniture: false, pdf: [] as unknown[] }));
 
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
@@ -36,6 +36,7 @@ vi.mock("../../vendor/scm/lib/authed-fetch", async (importOriginal) => {
     },
   };
 });
+vi.mock("../scm-v2/soPdfDownload", () => ({ downloadSoPdfs: async (orders: unknown) => { h.pdf.push(orders); } }));
 vi.mock("../scm-v2/ProductionOrderChips", () => ({ ProductionOrderChips: () => null }));
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
 /* The SO line's pickers have their own test (renovationVariantPicker.test.tsx); here a pick is one button. */
@@ -206,5 +207,24 @@ describe("PO tab", () => {
     expect(within(region).getByRole("button", { name: "Change variants of SOF-GEN-3S" })).toBeTruthy();
     PO.received = 0;
     h.furniture = false;
+  });
+});
+
+describe("PO tab head (owner, 7 Nov 2026)", () => {
+  it("has Export PDF and no Close all, Export, Quantity helper or Create PO", async () => {
+    h.furniture = false;
+    renderTab();
+    expect(await screen.findByRole("button", { name: "Export PDF" })).toBeTruthy();
+    for (const name of [/Close all/, /Open all/, /^Export$/, /Quantity helper/, /Create PO/]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+      expect(screen.queryByRole("link", { name })).toBeNull();
+    }
+  });
+  it("Export PDF downloads each sales order", async () => {
+    h.furniture = false;
+    h.pdf.length = 0;
+    renderTab();
+    fireEvent.click(await screen.findByRole("button", { name: "Export PDF" }));
+    await waitFor(() => expect(h.pdf).toEqual([[{ docNo: "TC-SO-1", status: "CONFIRMED", voLocked: true, renovation: true }]]));
   });
 });

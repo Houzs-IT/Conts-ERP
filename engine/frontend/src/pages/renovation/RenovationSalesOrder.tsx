@@ -1,7 +1,7 @@
 // The renovation sales order (the contract of one project): contract sums,
 // lines (supplier and cost editable until a line is on a PO), progress billing
-// by instalment, variation orders, the SO -> PO split and the PO lines a VO
-// asked procurement to amend or cancel.
+// by instalment, variation orders and the PO lines a VO asked procurement to
+// amend or cancel. POs are raised only from MRP Proceed (owner, 7 Nov 2026).
 //
 // One sales order, one page (owner, 3 Nov 2026): on a computer these are sections of the order's own page
 // (SalesOrderDetail), and /scm/renovation/contracts/:docNo redirects there. The stand-alone page stays for the
@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { FilePlus2, Printer, ReceiptText, ShoppingCart } from 'lucide-react';
+import { FilePlus2, Printer, ReceiptText } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
 import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapModal';
@@ -22,7 +22,7 @@ import { useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
 import { STAGE_LABEL, RENO_STAGES, type StageKey } from '../../vendor/shared/renovation-stages';
 import { qtyLabel } from '../../vendor/shared/renovation-money';
 import {
-  CONTRACT_NEXT_STATUS, contractPostingWarning, refusalOf, renoSend, useBrands, useContract, useContractPosting, usePoFlags, usePoSplit, useRenoMutation,
+  CONTRACT_NEXT_STATUS, contractPostingWarning, refusalOf, renoSend, useBrands, useContract, useContractPosting, usePoFlags, useRenoMutation,
   type BillingInstalment, type ContractPosting, type ContractView, type DocLine,
 } from '../../lib/renovation/api';
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
@@ -155,74 +155,6 @@ function CreditDialog({ c, open, onClose }: { c: ContractView; open: boolean; on
   );
 }
 
-function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
-  /* Create PO lands here with #po-split, ready to raise. */
-  const { hash } = useLocation();
-  const [open, setOpen] = useState(hash === '#po-split');
-  useEffect(() => { if (hash === '#po-split') setOpen(true); }, [hash]);
-  const preview = usePoSplit(c.docNo, open);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<Array<{ id: string; poNumber: string }> | null>(null);
-  const raise = useRenoMutation(() => renoSend<{ created: Array<{ id: string; poNumber: string; totalSen: number }> }>(`/sales-orders/${encodeURIComponent(c.docNo)}/po-split`, 'POST', {}));
-  const p = preview.data;
-  return (
-    <Card title="Purchase orders" actions={!open ? <Button variant="secondary" icon={<ShoppingCart size={15} />} onClick={() => setOpen(true)}>Plan POs</Button> : null}>
-      {!open && <p className="text-[13px] text-ink-secondary">Lines group by their supplier: one PO each. Owner-supplied goods need no PO; their install labour still gets one.</p>}
-      {open && preview.isLoading && <p className="text-[13px] text-ink-muted">Working out the POs…</p>}
-      {open && p && (
-        <div className="space-y-3">
-          {p.groups.length === 0 && p.blocked.length === 0 && (p.unsupplied ?? []).length === 0 && <p className="text-[13px] text-ink-secondary">Nothing left to order.</p>}
-          {p.groups.map((g) => (
-            <div key={`${g.supplierId}:${g.categoryGroup ?? ''}:${g.warehouseId ?? ''}`} className="rounded-lg border border-border-subtle">
-              <div className="flex justify-between bg-surface-2 px-3 py-1.5 text-[13px] font-semibold"><span>{g.supplierCode} · {g.supplierName}{g.categoryGroup ? ` · ${g.categoryGroup}` : ''}</span><span className="tabular-nums">{rm(g.totalSen)}</span></div>
-              <ul className="divide-y divide-border-subtle text-[12.5px]">
-                {g.lines.map((l) => <li key={l.lineId} className="flex justify-between gap-2 px-3 py-1"><span className="truncate">{l.description}{l.description2 ? <span className="text-ink-muted"> · {l.description2}</span> : null}</span><span className="shrink-0 tabular-nums text-ink-secondary">{l.qty} x {rm(l.unitCostSen)}</span></li>)}
-              </ul>
-            </div>
-          ))}
-          {p.blocked.length > 0 && (
-            <div className="rounded-lg border border-err/30 bg-err-bg p-2.5 text-[12.5px] text-err">
-              <div className="font-semibold">Pick a supplier first ({p.blocked.length}):</div>
-              <ul className="list-disc pl-5">{p.blocked.map((l) => <li key={l.lineId}>{l.description}</li>)}</ul>
-            </div>
-          )}
-          {(p.unsupplied ?? []).length > 0 && (
-            <div className="rounded-lg border border-warning-text/30 bg-warning-bg p-2.5 text-[12.5px] text-warning-text">
-              <div className="font-semibold">Not ordered: no supplier ({(p.unsupplied ?? []).length})</div>
-              <ul className="list-disc pl-5">{(p.unsupplied ?? []).map((l) => <li key={l.lineId}>{l.description}</li>)}</ul>
-              <div>Pick a supplier on the line (Edit), or leave it if it is bought another way.</div>
-            </div>
-          )}
-          {(p.skipped.length > 0 || p.alreadyOrdered.length > 0) && (
-            <details className="text-[12.5px] text-ink-secondary">
-              <summary className="cursor-pointer font-semibold">{p.skipped.length} line(s) need no PO, {p.alreadyOrdered.length} already ordered</summary>
-              <ul className="mt-1 list-disc pl-5">
-                {p.skipped.map((l) => <li key={l.lineId}>{l.description}: {l.reason}</li>)}
-                {p.alreadyOrdered.map((l) => <li key={l.lineId}>{l.description}: already on a PO</li>)}
-              </ul>
-            </details>
-          )}
-          <ErrorBanner error={error} />
-          {done && (
-            <div className="rounded bg-synced-bg px-3 py-2 text-[13px] font-semibold text-synced">
-              Raised {done.map((po, i) => <span key={po.id}>{i > 0 && ', '}<Link className="underline" to={`/scm/purchase-orders/${po.id}`}>{po.poNumber}</Link></span>)}
-            </div>
-          )}
-          {canSplit && p.groups.length > 0 && (
-            <Button disabled={raise.isPending || p.blocked.length > 0} onClick={async () => {
-              setError(null);
-              try {
-                const r = await raise.mutateAsync(undefined);
-                setDone(r.created);
-              } catch (e) { setError(refusalOf(e).message); }
-            }}>{raise.isPending ? 'Raising…' : `Raise ${p.groups.length} PO${p.groups.length > 1 ? 's' : ''}`}</Button>
-          )}
-        </div>
-      )}
-    </Card>
-  );
-}
-
 /** Finance: when the ledger does not carry the contract as it stands (a post after convert or a VO was refused),
     say so and offer to post it again. Nothing shows for anyone else, or when it is in step. */
 function ContractPostingAction({ docNo }: { docNo: string }) {
@@ -263,21 +195,18 @@ export function RenovationSalesOrder() {
   return <ContractSections docNo={docNo} />;
 }
 
-/** Plan item 23: the contract's status, Create PO and the PO lines to fix, at the top of the sales order's page. Each opens
+/** Plan item 23: the contract's status and the PO lines to fix, at the top of the sales order's page. Each opens
     the existing section further down (ContractSections); nothing here writes. */
 export function ContractQuickLinks({ docNo }: { docNo: string }) {
   const c = useContract(docNo);
   const flags = usePoFlags(docNo);
-  const { can } = useAuth();
   if (!c.data) return null;
   const open = flags.data?.flags.filter((f) => f.status === 'OPEN').length ?? 0;
-  const live = ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'].includes(c.data.status);
   const jump = (id: string) => () => document.getElementById(id)?.scrollIntoView({ block: 'start' });
   const link = 'inline-flex items-center rounded-full border border-border bg-surface px-2.5 py-0.5 text-[12px] font-semibold text-primary hover:bg-primary-soft';
   return (
     <>
       <StatusPill status={c.data.status} />
-      {live && can('scm.renovation.po_split') && <Link to="#po-split" className={link} onClick={jump('po-split')}>Create PO</Link>}
       {open > 0 && <Link to="#po-flags" className={link} onClick={jump('po-flags')}>{open} PO line{open === 1 ? '' : 's'} to fix</Link>}
     </>
   );
@@ -296,7 +225,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
   const [crediting, setCrediting] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
-  /* An old contract link lands here with where it was going (Create PO: #po-split). */
+  /* An old contract link lands here with where it was going (#po-flags). */
   const { hash } = useLocation();
   const loaded = !!c.data;
   useEffect(() => {
@@ -449,20 +378,17 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
         </ul>
         {creditList}
       </Card>}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Card title="Variation orders" actions={live && can('scm.renovation.quote') ? <Button variant="secondary" icon={<FilePlus2 size={15} />} onClick={newVo}>New VO</Button> : null}>
-          {k.variationOrders.length === 0 && <p className="text-[13px] text-ink-secondary">No variation orders.</p>}
-          <ul className="divide-y divide-border-subtle">
-            {k.variationOrders.map((v) => (
-              <li key={v.id} className="flex items-center justify-between gap-2 py-2 text-[13px]">
-                <span><Link className="font-semibold text-primary" to={`/scm/renovation/variation-orders/${v.id}`}>{v.voNo}</Link> <span className="text-ink-secondary">{v.title}</span></span>
-                <span className="flex items-center gap-2"><span className={cn('tabular-nums', v.netSen < 0 && 'text-err')}>{rm(v.netSen)}</span><StatusPill status={v.status} /></span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-        <div id="po-split" className="scroll-mt-48"><PoSplitCard c={k} canSplit={live && can('scm.renovation.po_split')} /></div>
-      </div>
+      <Card title="Variation orders" actions={live && can('scm.renovation.quote') ? <Button variant="secondary" icon={<FilePlus2 size={15} />} onClick={newVo}>New VO</Button> : null}>
+        {k.variationOrders.length === 0 && <p className="text-[13px] text-ink-secondary">No variation orders.</p>}
+        <ul className="divide-y divide-border-subtle">
+          {k.variationOrders.map((v) => (
+            <li key={v.id} className="flex items-center justify-between gap-2 py-2 text-[13px]">
+              <span><Link className="font-semibold text-primary" to={`/scm/renovation/variation-orders/${v.id}`}>{v.voNo}</Link> <span className="text-ink-secondary">{v.title}</span></span>
+              <span className="flex items-center gap-2"><span className={cn('tabular-nums', v.netSen < 0 && 'text-err')}>{rm(v.netSen)}</span><StatusPill status={v.status} /></span>
+            </li>
+          ))}
+        </ul>
+      </Card>
       {(flags.data?.flags.length ?? 0) > 0 && (
         <div id="po-flags" className="scroll-mt-48"><Card title={`PO lines to amend or cancel (${flags.data!.flags.filter((f) => f.status === 'OPEN').length} open)`}>
           <ul className="divide-y divide-border-subtle text-[13px]">

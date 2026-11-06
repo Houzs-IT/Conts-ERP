@@ -349,7 +349,7 @@ function Guard({
  * from non-finance callers, so a salesperson sees the DO/SI generated from their
  * OWN Sales Orders — and nothing else. Safe: opens NO office/finance data.
  */
-/** A renovation contract's old address: the order's own page, keeping where the link was going (#po-split). */
+/** A renovation contract's old address: the order's own page, keeping where the link was going (#po-flags). */
 function ContractMoved() {
   const { docNo = "" } = useParams();
   const { hash } = useLocation();

@@ -55,6 +55,7 @@ import {
   displayStatusFor, fmtMoney, refOf, soLineColumns,
 } from './soDetailParts';
 import { SoPrintPreview, useSoPrintLayout } from './soPrintPreview';
+import { soPdfContract } from './soPdfDownload';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { useSetBreadcrumbs } from '../../hooks/useBreadcrumbs';
 import { canonicalizeVariants, fmtDate, fmtMoneySen, fmtSen, missingVariantAxes } from '@2990s/shared'; // Commander 2026-05-28
@@ -2093,10 +2094,7 @@ export const SalesOrderDetail = () => {
     const pwpCodes = ((detail.data as { pwpCodes?: unknown[] } | undefined)?.pwpCodes ?? []) as never;
     const contract = contractQ.data;
     const brand = brandsQ.data?.brands.find((b) => b.brandId === contract?.header.brandId);
-    const pdfContract = contract && brand ? {
-      brandName: brand.name, logoKey: brand.logoR2Key, letterhead: [...brand.companyLines, brand.contactLine].filter(Boolean), bankLine: brand.bankLine, termsLines: brand.termsLines,
-      instalments: contract.instalments.map((i) => ({ label: i.label, percent: `${i.pctBp / 100}%`, description: i.description })),
-    } : undefined;
+    const pdfContract = soPdfContract(contract, brand);
     /* Loaded here, not at the top: the PDF library has no business on a page that may never print. */
     return import('../../vendor/scm/lib/sales-order-pdf')
       .then(({ generateSalesOrderPdf }) => generateSalesOrderPdf(header, lineRows, payments, action, pwpCodes, { ...printLayoutState.pdfOpts, contract: pdfContract }))

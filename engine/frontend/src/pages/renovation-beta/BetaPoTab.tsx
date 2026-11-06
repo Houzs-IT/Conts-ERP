@@ -14,9 +14,9 @@
    PO change. */
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { ProductionOrderChips } from "../scm-v2/ProductionOrderChips";
-import { AlertTriangle, Calculator, Camera, ChevronDown, ChevronRight, Download, FilePlus2, Pencil } from "lucide-react";
+import { AlertTriangle, Camera, ChevronDown, ChevronRight, FileDown, Pencil } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { buildQueryKey, useQuery } from "../../hooks/useQuery";
 import { useQueryClient } from "@tanstack/react-query";
@@ -30,14 +30,13 @@ import { DocCell, useOpenDoc, type DocTab } from "./BetaLineDocs";
 import { betaSiteApi } from "./renovationBetaSiteApi";
 import { betaMediaApi } from "./renovationBetaMediaApi";
 import { PhotoUploadDialog, type UploadTarget } from "./BetaPhotoUpload";
-import { BetaQuantityHelper } from "./BetaQuantityHelper";
 import { BetaLineMaterials } from "./BetaLineMaterials";
 import { BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
   amountAfter, byAreaBlocks, byCategory, livePo, specLocked, SPEC_LOCKED_NOTE, dateFixedReason, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
-  linesApi, linesCsv, postVo, refusalText, withDate,
+  linesApi, postVo, refusalText, withDate,
   contractLineEdits, postContractLines, variantsAfter, voBatches,
   type LineEdit, type LinesAnswer, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
@@ -47,6 +46,7 @@ import { BetaLoading } from "./BetaLoading";
 import { SoStockPill } from "../../components/SoSourceChips";
 import type { SoLineCoverage } from "../../vendor/scm/lib/sales-order-queries";
 import { useProjectLineStock } from "./renovationBetaStock";
+import { downloadSoPdfs } from "../scm-v2/soPdfDownload";
 import { bandParts, columnWidth, moveColumn, usePoColumns, type PoColumn } from "./renovationPoColumns";
 
 /** One colour per category band, in the mockup's spirit: [bar, band background, text]. */
@@ -89,7 +89,6 @@ function useWidth(): [(el: HTMLDivElement | null) => void, number] {
 type PlanDate = "orderOn" | "deliverOn";
 
 export function BetaPoTab(p: BetaTabProps): ReactElement {
-  const { pathname } = useLocation();
   const q = useQuery(["renovation-beta", "lines", p.projectId], () => linesApi.lines(p.projectId), [p.projectId]);
   const queryClient = useQueryClient();
   /* A saved date or supplier shows on its lines at once, before the reload answers: under load the reload can be slow,
@@ -118,7 +117,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [materialsOf, setMaterialsOf] = useState<ManagedLine | null>(null);
-  const [helping, setHelping] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [wrapRef, width] = useWidth();
 
   const lines = q.data?.lines ?? [];
@@ -140,7 +139,6 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const editable = p.canWrite && editing;
   const columns = d.finance ? order : order.filter((c) => c !== "amount");
   const toggle = (key: string): void => setClosed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  const allKeys = tree.map((c) => c.key);
   const setEdit = (id: string, patch: Partial<LineEdit>): void => setEdits((e) => ({ ...e, [id]: { ...e[id], ...patch } }));
   const nextVo = (vo.data?.vos.length ?? 0) + 1;
   const voLabel = (i: number): string => `VO-${String(nextVo + i).padStart(2, "0")}`;
@@ -267,13 +265,10 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     finally { setBusyKey(null); }
   };
 
-  const exportCsv = (): void => {
-    const blob = new Blob(["﻿", linesCsv(lines, d.finance)], { type: "text/csv;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `project-${p.projectId}-lines.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+  /* The sales order's own PDF, as its page downloads it; one file per order of the project. */
+  const exportPdf = async (): Promise<void> => {
+    setExporting(true);
+    try { await downloadSoPdfs(d.sos); } catch (e) { p.onError(refusalText(e)); } finally { setExporting(false); }
   };
 
   const changedCount = batches.reduce((n, b) => n + b.lines.length, 0);
@@ -297,7 +292,6 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   return (
     <>
       <style>{DATE_CSS}</style>
-      {helping && <BetaQuantityHelper onClose={() => setHelping(false)} />}
       <WsPageHead
         title="SO"
         sub={editing
@@ -308,17 +302,10 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
             {p.canWrite && lines.length > 0 && !editing && (
               <button type="button" style={btnStyle("dark", "sm")} onClick={() => { setEditing(true); setResult(null); }}><Pencil size={14} aria-hidden="true" />Edit</button>
             )}
-            {tree.length > 0 && <button type="button" style={btnStyle("outline", "sm")} onClick={() => setClosed(closed.size ? new Set() : new Set(allKeys))}>{closed.size ? "Open all" : "Close all"}</button>}
             {p.canWrite && (photos.data?.docs.pos.length ?? 0) > 0 && (
               <button type="button" style={btnStyle("outline", "sm")} onClick={() => setUploading({ kind: "po", id: photos.data?.docs.pos[0]?.id ?? "" })}><Camera size={14} aria-hidden="true" />Upload photos</button>
             )}
-            {lines.length > 0 && <button type="button" style={btnStyle("outline", "sm")} onClick={exportCsv}><Download size={14} aria-hidden="true" />Export</button>}
-            <button type="button" style={btnStyle("outline", "sm")} onClick={() => setHelping(true)}><Calculator size={14} aria-hidden="true" />Quantity helper</button>
-            {needPo.length > 0 && d.sos.map((s) => (
-              <Link key={s.docNo} to={s.renovation ? `/scm/sales-orders/${encodeURIComponent(s.docNo)}#po-split` : "/scm/purchase-orders/from-so"} state={{ backTo: pathname }} style={btnStyle("teal", "sm")}>
-                <FilePlus2 size={14} aria-hidden="true" />Create PO{d.sos.length > 1 ? ` (${s.docNo})` : ""}
-              </Link>
-            ))}
+            {d.sos.length > 0 && <button type="button" style={btnStyle("outline", "sm")} disabled={exporting} onClick={() => void exportPdf()}><FileDown size={14} aria-hidden="true" />{exporting ? "Exporting..." : "Export PDF"}</button>}
           </span>
         )}
       />
