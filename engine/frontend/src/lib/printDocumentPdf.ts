@@ -116,7 +116,7 @@ async function purchaseOrderHeaderForPdf(po: Json): Promise<Json> {
 /* The Project rows and rooms the detail page prints: without these the same document printed from a list lost them.
    Nothing extra to show on a failed read, as on the detail page. */
 const RENO_ROUTE = { do: "/delivery-orders-mfg", po: "/mfg-purchase-orders", grn: "/grns" } as const;
-async function renoInfoFor(kind: keyof typeof RENO_ROUTE, id: string): Promise<RenoDocInfo | null> {
+export async function renoInfoFor(kind: keyof typeof RENO_ROUTE, id: string): Promise<RenoDocInfo | null> {
   try {
     return (await authedFetch<RenoDocInfo>(`${RENO_ROUTE[kind]}/${encodeURIComponent(id)}/renovation-info`)) ?? null;
   } catch {

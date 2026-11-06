@@ -703,7 +703,7 @@ export async function generateDeliveryOrderPdf(
 /* Several DOs → ONE combined file, each DO starting on a new page. For the
    batch "Export PDF" action (download a customer's DOs in one attachment). */
 export async function generateCombinedDeliveryOrderPdf(
-  docs: Array<{ header: DoHeader; items: DoItem[] }>,
+  docs: Array<{ header: DoHeader; items: DoItem[]; renovation?: RenoDocInfo | null }>,
   opts?: { fileName?: string; docTitle?: string; docNoLabel?: string; showPicking?: boolean; action?: PdfAction },
 ): Promise<void> {
   const { jsPDF } = await import('jspdf');
@@ -711,7 +711,7 @@ export async function generateCombinedDeliveryOrderPdf(
   const doc = new jsPDF({ unit: 'mm', format: DO_PAGE_FORMAT });
   for (let i = 0; i < docs.length; i += 1) {
     if (i > 0) doc.addPage();
-    await renderDeliveryOrderInto(doc, autoTable, docs[i]!.header, docs[i]!.items, opts);
+    await renderDeliveryOrderInto(doc, autoTable, docs[i]!.header, docs[i]!.items, { ...opts, renovation: docs[i]!.renovation });
   }
   deliverPdf(doc, opts?.fileName ?? 'delivery-orders.pdf', opts?.action);
 }

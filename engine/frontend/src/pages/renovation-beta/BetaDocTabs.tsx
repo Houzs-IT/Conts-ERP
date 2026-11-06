@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Camera, PackageCheck, StickyNote, Truck } from "lucide-react";
+import { Camera, FileDown, PackageCheck, StickyNote, Truck } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
 import { MediaStrip, type MediaItem } from "./BetaMedia";
 import { PhotoUploadDialog, type UploadTarget } from "./BetaPhotoUpload";
@@ -24,6 +24,8 @@ import { BETA, TONES } from "./renovationBetaTheme";
 import { doStatusWords } from "../scm-v2/renovationDoStatus";
 import { statusLabel } from "../../vendor/scm/lib/status-pill";
 import { BetaLoading } from "./BetaLoading";
+import { downloadAllDocPdfs, downloadDocPdf } from "./renovationBetaDocPdf";
+import { errorText } from "../projects/renovation/renovationModel";
 
 export function photoAsMedia(p: SitePhoto): MediaItem {
   return { id: p.id, path: p.path, kind: p.kind ?? (p.image ? "image" : "file"), name: p.name, label: p.source === "pod" ? "POD" : null, at: p.at, caption: p.area };
@@ -76,9 +78,9 @@ function poText(pos: readonly string[], client: boolean): string | null {
 }
 
 /** One document on the timeline. The left column shows the day on the first document of each day, then the time. */
-function DocRow({ d, day, today, last, lines, all, focused, canWrite, onAdd, openDo, openGr }: {
+function DocRow({ d, day, today, last, lines, all, focused, canWrite, onAdd, onDownload, openDo, openGr }: {
   d: SiteDelivery; day: string | null | undefined; today: string; last: boolean; lines: readonly ManagedLine[]; all: readonly SiteDelivery[];
-  focused: boolean; canWrite: boolean; onAdd: () => void; openDo: (no: string) => void; openGr: (no: string) => void;
+  focused: boolean; canWrite: boolean; onAdd: () => void; onDownload: () => void; openDo: (no: string) => void; openGr: (no: string) => void;
 }): ReactElement {
   const isDo = d.type === "delivery_order";
   const st = statusTone(d);
@@ -111,7 +113,10 @@ function DocRow({ d, day, today, last, lines, all, focused, canWrite, onAdd, ope
             </span>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, overflowWrap: "anywhere" }}>{d.no}</h3>
             <WsBadge tone={st.tone}>{st.text}</WsBadge>
-            {canWrite && <button type="button" onClick={onAdd} style={{ ...btnStyle("outline", "sm"), marginLeft: "auto" }}><Camera size={14} aria-hidden="true" />Upload POD</button>}
+            <span style={{ display: "flex", flexWrap: "wrap", gap: 8, marginLeft: "auto" }}>
+              <button type="button" aria-label={`Download ${d.no}`} onClick={onDownload} style={btnStyle("outline", "sm")}><FileDown size={14} aria-hidden="true" />Download</button>
+              {canWrite && <button type="button" onClick={onAdd} style={btnStyle("outline", "sm")}><Camera size={14} aria-hidden="true" />Upload POD</button>}
+            </span>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", columnGap: 18, rowGap: 4 }}>
             <Meta label={po && s.pos.length === 0 ? "" : "PO"}>{po ?? "No PO"}</Meta>
@@ -180,6 +185,7 @@ function DocList({ p, type }: { p: BetaTabProps; type: SiteDelivery["type"] }): 
   const [params, setParams] = useSearchParams();
   const [adding, setAdding] = useState<UploadTarget | null>(null);
   const [view, setView] = useState<DocView>("doc");
+  const [downloading, setDownloading] = useState(false);
   const isDo = type === "delivery_order";
   const param = isDo ? "do" : "gr";
   const focus = params.get(param);
@@ -205,11 +211,17 @@ function DocList({ p, type }: { p: BetaTabProps; type: SiteDelivery["type"] }): 
   }, { replace: true });
   const openDo = (no: string): void => open("do", no);
   const openOwn = (no: string): void => open(param, no);
+  const download = async (run: () => Promise<void>): Promise<void> => {
+    setDownloading(true);
+    try { await run(); } catch (e) { p.onError(errorText(e)); } finally { setDownloading(false); }
+  };
+  const stem = `${p.detail.project.name}-${isDo ? "DO" : "GR"}`.replace(/[^A-Za-z0-9-]+/g, "-");
 
   if (site.error && !site.data) return <p role="alert" style={{ fontSize: 14, color: WS.red }}>The {isDo ? "delivery orders" : "goods receipts"} could not be loaded: {site.error}</p>;
   return (
     <>
-      <WsPageHead title={title} sub={isDo ? "Every DO of this project's sales order, with its proof of delivery photos and videos, newest first" : "Every goods receipt of this project's POs, with the photos taken on site, newest first"} />
+      <WsPageHead title={title} sub={isDo ? "Every DO of this project's sales order, with its proof of delivery photos and videos, newest first" : "Every goods receipt of this project's POs, with the photos taken on site, newest first"}
+        right={list.length > 0 ? <button type="button" disabled={downloading} style={btnStyle("outline", "sm")} onClick={() => void download(() => downloadAllDocPdfs(list, stem))}><FileDown size={14} aria-hidden="true" />{downloading ? "Downloading..." : "Download all"}</button> : undefined} />
       {site.data?.ready && list.length > 0 && (
         <div role="group" aria-label="Show" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {VIEWS.map((v) => <WsFilterPill key={v.key} on={view === v.key} onClick={() => setView(v.key)}>{v.label(isDo)}</WsFilterPill>)}
@@ -227,7 +239,7 @@ function DocList({ p, type }: { p: BetaTabProps; type: SiteDelivery["type"] }): 
               return (
                 <DocRow key={d.id} d={d} day={i === 0 || prev !== day ? day : undefined} today={p.today} last={i === list.length - 1} lines={soLines} all={all}
                   focused={focus === d.no} canWrite={p.canWrite} openDo={openDo} openGr={(no) => open("gr", no)}
-                  onAdd={() => setAdding({ kind: isDo ? "do" : "gr", id: d.id })} />
+                  onAdd={() => setAdding({ kind: isDo ? "do" : "gr", id: d.id })} onDownload={() => void download(() => downloadDocPdf(d))} />
               );
             })}
           </ol>

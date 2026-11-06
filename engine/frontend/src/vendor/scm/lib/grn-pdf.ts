@@ -254,7 +254,7 @@ export async function generateGrnPdf(
 /* Several GRNs → ONE combined file, each GRN starting on a new page. For the
    batch "Export PDF" action on the Goods Received list. */
 export async function generateCombinedGrnPdf(
-  docs: Array<{ header: GrnHeader; items: GrnItem[] }>,
+  docs: Array<{ header: GrnHeader; items: GrnItem[]; renovation?: RenoDocInfo | null }>,
   opts?: { fileName?: string; docTitle?: string; docNoLabel?: string; action?: PdfAction },
 ): Promise<void> {
   const { jsPDF } = await import('jspdf');
@@ -262,7 +262,7 @@ export async function generateCombinedGrnPdf(
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   for (let i = 0; i < docs.length; i += 1) {
     if (i > 0) doc.addPage();
-    await renderGrnInto(doc, autoTable, docs[i]!.header, docs[i]!.items, opts);
+    await renderGrnInto(doc, autoTable, docs[i]!.header, docs[i]!.items, { ...opts, renovation: docs[i]!.renovation });
   }
   deliverPdf(doc, opts?.fileName ?? 'goods-received.pdf', opts?.action);
 }
