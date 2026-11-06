@@ -854,7 +854,9 @@ export function MobileSODetail({ docNo, onBack, onEdit, onAddLine, flowNav, onCo
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c66a34" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="m10.5 13-2.5 2.5 2.5 2.5" /><path d="m13.5 13 2.5 2.5-2.5 2.5" /></svg>
                 {hasOpenAmendment
                   ? "On order to the supplier — a VO is pending (see below). Line changes are locked until it's confirmed or rejected."
-                  : "On order to the supplier. Tap Edit to request a VO — the coordinator and supplier confirm it before the order is revised."}
+                  : h?.vo_locked
+                    ? "Confirmed order. Adding or removing a line, or changing its SKU, qty or price, is a VO. Photos, options, remarks and dates just save."
+                    : "On order to the supplier. Tap Edit to request a VO — the coordinator and supplier confirm it before the order is revised."}
               </div>
             ) : (
               <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#eef1ec", border: "1px solid #e3e6e0", borderRadius: 10, padding: "9px 11px", marginBottom: 12, fontSize: 11, color: "#5c6156" }}>
