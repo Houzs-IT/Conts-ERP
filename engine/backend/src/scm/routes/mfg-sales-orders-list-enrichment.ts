@@ -36,6 +36,7 @@ import { resolveSalesScopeIds, applySoScope, soDocOutOfScope } from '../lib/sale
 import { canViewAllSales } from '../lib/houzs-perms';
 import { loadLeadBuffers } from '../../services/agents/procurement-learning';
 import { computeMrp, mrpLineCoverage, type MrpResult } from './mrp';
+import { withListMemo } from '../lib/mrp-list-memo';
 import { soLineReadySourcePos } from '../lib/source-po-trace';
 import { soCoverage } from './mfg-sales-orders';
 import { effectiveLineStockStatus, type LiveStockState } from '../lib/so-line-effective-stock';
@@ -148,10 +149,10 @@ mfgSalesOrdersListEnrichment.get('/list-mrp-enrichment', async (c) => {
      readiness + no READY chips, identical to the list's fail-soft. */
   let mrp: MrpResult | null = null;
   try {
-    mrp = await computeMrp(sb, {
+    mrp = await withListMemo(`so-list:${companyId}`, async () => computeMrp(sb, {
       catFilter: null, whFilter: null, includeUndated: true,
       companyId, leadBuffers: await loadLeadBuffers(c.env.DB),
-    });
+    }));
   } catch { mrp = null; }
 
   /* 4. Catalog category per code (normalised, the list's exact build) — feeds
