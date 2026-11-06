@@ -20,3 +20,7 @@ set local search_path = pos;
 alter table service_items add column if not exists by_bed integer not null default 0 check (by_bed in (0, 1));
 
 update service_items set by_bed = 1 where domain = 'cleaning' and clean_kind is not null and active = 1 and by_layout = 1;
+
+-- Rebuild the Demo mode overlay (migration 0203) so demo_pos.service_items has by_bed too.
+select demo.drop_views();
+select demo.sync();
