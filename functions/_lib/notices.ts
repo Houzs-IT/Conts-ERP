@@ -102,7 +102,7 @@ async function issue(env: Env, id: string): Promise<Issue | null> {
   } catch { return null; }
 }
 
-export type RepairEvent = 'reported' | 'assigned' | 'picked' | 'ended' | 'window' | 'done' | 'overdue' | 'approval_requested' | 'approval_decided';
+export type RepairEvent = 'reported' | 'assigned' | 'picked' | 'dropped' | 'ended' | 'window' | 'done' | 'overdue' | 'approval_requested' | 'approval_decided';
 
 /** A repair job was reported, given to someone, given a time to enter the unit, finished, ran late, or needs /
  *  got the owner's approval. `detail` adds a line (the window's time, the decision). */
@@ -125,7 +125,10 @@ export async function repairNotice(env: Env, id: string, event: RepairEvent, by:
       break;
     }
     case 'picked':
-      await notifyUsers(env, { roles: ['ops_managers'] }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job picked up: ${m.unit}`, body: `${m.title} – ${m.vendor_name ?? 'a technician'} took it on the phone.`, dedupeKey: `repair-picked-${id}` });
+      await notifyUsers(env, { roles: ['ops_managers'] }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job picked up: ${m.unit}`, body: `${m.title} – ${m.vendor_name ?? 'a technician'} took it on the phone.`, dedupeKey: `repair-picked-${id}-${Date.now()}` });
+      break;
+    case 'dropped':
+      await notifyUsers(env, { roles: ['ops_managers'] }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job dropped: ${m.unit}`, body: `${m.title} – ${detail ?? 'a technician'} gave it back before starting. It is open to pick up again.`, dedupeKey: `repair-dropped-${id}-${Date.now()}` });
       break;
     case 'ended':
       await notifyUsers(env, { roles: ['ops_managers'], userIds: [m.reported_by] }, { ...base, kind: 'maintenance.done', title: `Repair finished, ready to close: ${m.unit}`, body: `${m.title}${m.vendor_name ? ` – ${m.vendor_name}` : ''}.`, dedupeKey: `repair-ended-${id}` });
