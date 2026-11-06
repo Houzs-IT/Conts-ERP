@@ -274,8 +274,8 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
       { key: 'paid', label: 'Technician paid', value: (i: Issue) => i.contractorPaidAt, hidden: true, width: 140, filter: false as const,
         text: paidText, render: (i: Issue) => <span className={i.contractorPaidAt ? 'text-ink' : 'text-warning'}>{paidText(i)}</span> },
     ] : []),
-    { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150 },
-    { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150 },
+    { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150, filter: false },
+    { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150, filter: false },
   ], [money, buildingOptions]);
 
   return (

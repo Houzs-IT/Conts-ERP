@@ -999,17 +999,17 @@ function FilterChips({ label, options, picked, hint, onToggle, density = 'roomy'
   const [search, setSearch] = useState('');
   const needle = search.trim().toLowerCase();
   const shownOptions = needle ? options.filter(o => o.label.toLowerCase().includes(needle)) : options;
-  const isLongList = options.length > SHEET_SEARCH_FROM;
   const isCompact = density === 'compact';
+  const isLongList = !isCompact && options.length > SHEET_SEARCH_FROM;
   return (
     <div className={cx('flex flex-col', isCompact ? 'gap-2' : 'gap-2.5')}>
       {hint && <span className="text-caption text-muted-ink">{hint}</span>}
       {isLongList && (
         <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={`Find ${label.toLowerCase()}`} aria-label={`Find ${label.toLowerCase()}`}
-          className={cx('block w-full max-w-[320px] box-border px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy max-md:h-11 max-md:text-[16px]', isCompact ? 'h-8' : 'h-10')} />
+          className="block w-full max-w-[320px] box-border h-10 max-md:h-11 px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy max-md:text-[16px]" />
       )}
       {!options.length && <span className="text-meta text-muted-ink">Nothing to pick from in this list.</span>}
-      <div role="group" aria-label={label} className={cx('flex flex-wrap', isCompact ? 'gap-1.5' : 'gap-2', isCompact && isLongList && 'max-h-[72px] overflow-y-auto pr-1')}>
+      <div role="group" aria-label={label} className={cx('flex flex-wrap', isCompact ? 'gap-1.5' : 'gap-2')}>
         {shownOptions.map(o => {
           const isPicked = picked.has(o.value);
           return (
