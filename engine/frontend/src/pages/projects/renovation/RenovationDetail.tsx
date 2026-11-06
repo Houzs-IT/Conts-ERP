@@ -17,7 +17,7 @@ import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
 import { cn } from "../../../lib/utils";
 import { renovationApi, type ProjectDetail } from "./renovationApi";
-import { errorText, money, shortDate, supplyLabel, supplyTone } from "./renovationModel";
+import { creditNoteToConfirm, errorText, money, shortDate, supplyLabel, supplyTone } from "./renovationModel";
 import { Dialog, Field, Pill, SkipReasonDialog, inputClass } from "./renovationUi";
 import { simpleApi, type FinanceKind, type ProjectDetailV2 } from "./simpleApi";
 import { SiteTasksPanel } from "./SiteTasksPanel";

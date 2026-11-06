@@ -62,7 +62,7 @@ const FIELD_LABEL = "mb-1 block font-mono text-[9.5px] font-semibold uppercase t
 
 const TH = "px-2.5 py-2 text-[12px] font-semibold text-ink-secondary";
 
-export function ProductionMaterialsSection({ orderId, canEdit, started = false, canAct = canEdit, works = [] }: {
+export function ProductionMaterialsSection({ orderId, canEdit, started = false, canAct = canEdit, finished = false, works = [] }: {
   orderId: string;
   /** May change the list itself: before Start, on an open order. */
   canEdit: boolean;
