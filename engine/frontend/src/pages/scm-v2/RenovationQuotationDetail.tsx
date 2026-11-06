@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
+import { useStaffLookup } from '../../hooks/useStaffLookup';
 import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
 import { coverageStateOf } from '../../components/coverage-state';
 import { DataTable } from '../../components/DataTable';
@@ -45,6 +46,7 @@ function QuotationView_({ view }: { view: QuotationView }) {
   const navigate = useNavigate();
   const [, setParams] = useSearchParams();
   const { can } = useAuth();
+  const { nameOf } = useStaffLookup();
   const canQuote = can('scm.renovation.quote');
   const [tab, setTab] = useState<'quotation' | 'revisions'>('quotation');
   const [linesView, setLinesView] = useState<SoLinesView>('item');
@@ -119,11 +121,11 @@ function QuotationView_({ view }: { view: QuotationView }) {
                 </Section>
                 <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2 [&>section]:h-full">
                   <Section title="Customer">
-                    <SoCustomerFields renoMode sharedWith={null} salesperson={header.preparedBy || '—'}
-                      header={{ debtor_name: header.customerName, phone: header.customerPhone ?? null, email: header.customerEmail ?? null }} />
+                    <SoCustomerFields renoMode sharedWith={null} salesperson={nameOf(null, header.salespersonId || null, '—')}
+                      header={{ debtor_name: header.customerName, phone: header.customerPhone ?? null, email: header.customerEmail ?? null, salesperson_id: header.salespersonId || null }} />
                   </Section>
                   <Section title="Delivery address">
-                    <SoAddressFields header={{ address1: info.address1, address2: info.address2 }} />
+                    <SoAddressFields header={{ address1: info.address1, address2: info.address2, city: info.city, postcode: info.postcode, customer_state: info.state, customer_country: info.country, sales_location: info.salesLocation }} />
                   </Section>
                 </div>
               </DetailMain>

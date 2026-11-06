@@ -135,7 +135,7 @@ import {
 } from '../../lib/renovation/api';
 import { headerFromParty } from '../renovation/QuotationCustomerCard';
 import { QuotationCards, QuotationNotices } from './renovationQuotationChrome';
-import { blockFromQuote, partyFromBlock, sectionsFromForm, seedQuoteForm, type QuoteSources } from './renovationQuotationForm';
+import { blockFromQuote, partyFromBlock, sectionsFromForm, seedQuoteForm, soFieldsFromBlock, type QuoteSources } from './renovationQuotationForm';
 import { SoInstalments } from './renovationSoInstalments';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
@@ -461,6 +461,11 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     setEmail(b.customerEmail);
     setAddress1(b.address1);
     setAddress2(b.address2);
+    if (b.salespersonId) setSalespersonId(b.salespersonId);
+    setState(b.state);
+    setCity(b.city);
+    setPostcode(b.postcode);
+    if (b.salesLocation) setSalesLocation(b.salesLocation);
     if (quotation.projectId == null) return undefined;
     let live = true;
     soInfoApi.project(quotation.projectId).then((r) => { if (live) setRenoProject(r.project); }).catch(() => undefined);
@@ -1576,7 +1581,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
   const quoteSections = quoteView ? sectionsFromForm(renoRooms, lines, renoLineRoom, quoteSources.current) : [];
   const quoteHeaderNow = (): { header: DocHeader | null; problems: string[] } => {
     const { patch, problems } = headerFromParty(partyFromBlock(blockRef.current));
-    return { header: quoteHeader ? { ...quoteHeader, ...patch } : null, problems };
+    return { header: quoteHeader ? { ...quoteHeader, ...patch, ...soFieldsFromBlock(blockRef.current) } : null, problems };
   };
   const saveSavedQuotation = async (): Promise<number | null> => {
     const { header, problems } = quoteHeaderNow();
@@ -1622,7 +1627,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           customerName: debtorName, customerPhone: phone, customerEmail: email, building: renoInfo.building, unitNo: renoInfo.unitNo,
           siteAddress: [address1, address2].filter(Boolean).join('\n'), propertyType: renoInfo.propertyType, layoutLabel: renoInfo.layoutLabel,
           bedrooms: num(renoInfo.bedrooms), bathrooms: num(renoInfo.bathrooms), builtUpSqft: num(renoInfo.builtUpSqft),
-          landAreaSqft: num(renoInfo.landAreaSqft), landSize: renoInfo.landSize,
+          landAreaSqft: num(renoInfo.landAreaSqft), landSize: renoInfo.landSize, ...soFieldsFromBlock(blockRef.current),
         },
         ...(sections ? { sections: sectionsForSave(sections) } : {}),
       });
