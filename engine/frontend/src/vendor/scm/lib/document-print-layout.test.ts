@@ -154,9 +154,9 @@ describe('letterhead: the company block never runs into the meta column', () => 
     const company = spans.filter((s) => !meta.includes(s));
     expect(company.length).toBeGreaterThan(0);
 
-    // The load-bearing claim: the company block ends above the title and number, and clears the logo on its left.
-    expect(Math.max(...company.map((s) => s.y))).toBeLessThan(metaTop);
-    expect(Math.min(...company.map((s) => s.left))).toBeGreaterThan(76);
+    // The load-bearing claim: the company block sits under the logo on the left and stops short of the number column.
+    expect(Math.min(...company.map((s) => s.y))).toBeGreaterThan(metaTop);
+    expect(Math.max(...company.map((s) => s.right))).toBeLessThan(Math.min(...meta.map((s) => s.left)));
 
     // And the guard actually engaged rather than the address happening to fit:
     // the address reaches drawHeader as 2 comma-split lines and has to wrap

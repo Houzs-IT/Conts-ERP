@@ -359,6 +359,7 @@ async function renderProductionOrderInto(
     name: COMPANY.shortName,
     logo: getBrandingLogoCache(),
     lines: letterheadLines(),
+    meta: [{ label: '', value: poDisplayNumber(header.po_number, header.revision) }, { label: '', value: fmtDocDate(header.po_date) }],
     margin,
   }) + 2;
 
