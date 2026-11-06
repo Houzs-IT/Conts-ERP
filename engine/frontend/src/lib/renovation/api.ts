@@ -104,6 +104,13 @@ export interface DocHeader {
   builtUpSqft?: number | null;
   landAreaSqft?: number | null;
   landSize?: string;
+  /* What else a sales order asks for (mig 0234). */
+  salespersonId?: string;
+  state?: string;
+  city?: string;
+  postcode?: string;
+  country?: string;
+  salesLocation?: string;
 }
 
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';

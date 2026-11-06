@@ -238,6 +238,12 @@ const headerSchema = z.object({
   bathrooms: int.min(0).max(20).nullable().optional(),
   landAreaSqft: z.number().positive().lt(100_000_000).nullable().optional(),
   landSize: z.string().max(40).optional(),
+  salespersonId: z.string().max(40).optional(),
+  state: z.string().max(80).optional(),
+  city: z.string().max(80).optional(),
+  postcode: z.string().max(20).optional(),
+  country: z.string().max(80).optional(),
+  salesLocation: z.string().max(80).optional(),
   builtUpSqft: z.number().positive().lt(100_000_000).refine((n) => Math.abs(Math.round(n * 100) - n * 100) < 1e-6, 'at most 2 decimals').nullable().optional(),
 });
 export type DocHeaderInput = z.infer<typeof headerSchema>;

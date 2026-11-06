@@ -213,7 +213,7 @@ export async function convertQuotationToSo(
   await insertSections(db, { kind: 'so', id: docNo }, sections, actor.companyId);
   await stampContractFromQuotation(db, docNo, {
     projectId: q.projectId, companyId: actor.companyId, building: h.building, unitNo: h.unitNo, sections,
-    property: { siteAddress: h.siteAddress, propertyType: h.propertyType, layoutLabel: h.layoutLabel, bedrooms: h.bedrooms, bathrooms: h.bathrooms, builtUpSqft: h.builtUpSqft, landAreaSqft: h.landAreaSqft, landSize: h.landSize },
+    property: { siteAddress: h.siteAddress, propertyType: h.propertyType, layoutLabel: h.layoutLabel, bedrooms: h.bedrooms, bathrooms: h.bathrooms, builtUpSqft: h.builtUpSqft, landAreaSqft: h.landAreaSqft, landSize: h.landSize, salespersonId: h.salespersonId, state: h.state, city: h.city, postcode: h.postcode, country: h.country, salesLocation: h.salesLocation },
   });
   await insertInstalments(db, { kind: 'so', id: docNo }, rev.instalments.map(({ id: _id, ...r }) => r), actor.companyId);
   await db.q(

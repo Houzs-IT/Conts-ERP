@@ -109,7 +109,8 @@ const numText = (n: number | null | undefined) => (n == null ? '' : String(n));
 export function blockFromQuote(h: DocHeader, projectId: number | null): CustomerPropertyValue {
   const [address1 = '', ...rest] = (h.siteAddress ?? '').split('\n');
   return {
-    ...EMPTY_CUSTOMER_PROPERTY, projectId, customerName: h.customerName, customerPhone: h.customerPhone ?? '', customerEmail: h.customerEmail ?? '',
+    ...EMPTY_CUSTOMER_PROPERTY, salespersonId: h.salespersonId ?? '', state: h.state ?? '', city: h.city ?? '', postcode: h.postcode ?? '', country: h.country ?? '',
+    salesLocation: h.salesLocation ?? '', projectId, customerName: h.customerName, customerPhone: h.customerPhone ?? '', customerEmail: h.customerEmail ?? '',
     address1, address2: rest.join('\n'), building: h.building, unitNo: h.unitNo, propertyType: h.propertyType ?? '', layoutLabel: h.layoutLabel ?? '',
     bedrooms: numText(h.bedrooms), bathrooms: numText(h.bathrooms), builtUpSqft: numText(h.builtUpSqft), landAreaSqft: numText(h.landAreaSqft), landSize: h.landSize ?? '',
   };
@@ -150,3 +151,8 @@ export function quotationLines(sections: readonly DocSection[]): { rows: Quotati
   });
   return { rows, rooms: { order, byItem } };
 }
+
+/** The sales order fields the quotation's save carries beside the party. */
+export const soFieldsFromBlock = (v: CustomerPropertyValue) => ({
+  salespersonId: v.salespersonId, state: v.state, city: v.city, postcode: v.postcode, country: v.country, salesLocation: v.salesLocation,
+});
