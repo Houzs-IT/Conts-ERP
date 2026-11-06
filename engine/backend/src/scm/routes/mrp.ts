@@ -343,6 +343,9 @@ async function ownerSuppliedGoods(sb: any, scoped: <Q>(q: Q) => Q, lines: Demand
   }).map((l) => l.id));
 }
 
+export const saveMaterialWarehouse = (sb: any, materialId: string, warehouseId: string, companyId: number) =>
+  sb.from('production_order_materials').update({ warehouse_id: warehouseId }).eq('id', materialId).eq('company_id', companyId);
+
 /* A warehouse picked for one material on the MRP page wins over its order's location. */
 async function materialWarehouses(sb: any, scoped: <Q>(q: Q) => Q, ids: string[]): Promise<Map<string, string>> {
   const { data, error } = await chunkIn<{ id: string; warehouse_id: string | null }>(ids, (batch, from, to) =>
@@ -2098,7 +2101,7 @@ mrp.post('/line-warehouse', async (c) => {
     const { data: used } = await onPo.eq('production_material_id', b.lineId);
     if ((used ?? []).length > 0) return c.json({ error: 'on_po', message: 'This material is already on a PO, so the PO says where it goes.' }, 409);
     /* The material's own warehouse: the order's location is where the finished work goes, and its other materials keep theirs. */
-    const { error } = await sb.from('production_order_materials').update({ warehouse_id: b.warehouseId }).eq('id', b.lineId).eq('company_id', companyId);
+    const { error } = await saveMaterialWarehouse(sb, b.lineId, b.warehouseId, companyId);
     if (error) return c.json({ error: 'save_failed', message: error.message }, 500);
     return c.json({ ok: true });
   }

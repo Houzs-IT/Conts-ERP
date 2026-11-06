@@ -21,9 +21,9 @@
 // Postgres; the harness rebuilds only the D1 side), so these drive computeMrp
 // through a minimal fake PostgREST client — same shape as so-converted-po.test.ts,
 // extended with the operators this engine chains (eq / in / order / limit / range).
-import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
-import { computeMrp, mrpStockAssignment, stockAssignmentKey, parseIncludeUndated, InvalidQueryFlag } from './mrp';
+import { computeMrp, mrpStockAssignment, saveMaterialWarehouse, stockAssignmentKey, parseIncludeUndated, InvalidQueryFlag } from './mrp';
+import { fakeSb as fakeTables } from '../lib/fake-postgrest';
 import { NO_BUFFERS } from '../lib/lead-time';
 import { distributeAssignedToLots, isMakeToOrderCategory } from '../lib/inventory-movements';
 import { parsePgrestInList } from '../lib/pgrest-in-list';
@@ -1711,11 +1711,14 @@ describe('MRP: a warehouse picked for one material', () => {
     const r = await computeMrp(sb, { ...opts, whFilter: 'W2' });
     expect(r.skus.flatMap((s) => s.lines).map((l) => l.productionMaterialId)).toEqual(['m1']);
   });
-  test('the route never writes the order', () => {
-    const route = readFileSync(new URL('./mrp.ts', import.meta.url), 'utf8');
-    const body = route.slice(route.indexOf("mrp.post('/line-warehouse'"), route.indexOf("mrp.post('/regenerate'"));
-    expect(body).toContain("from('production_order_materials').update({ warehouse_id");
-    expect(body).not.toContain("from('production_orders').update");
+  test('the pick writes the material, not the order', async () => {
+    const tables = {
+      production_order_materials: [{ id: 'm1', company_id: 1, warehouse_id: null }, { id: 'm2', company_id: 1, warehouse_id: null }],
+      production_orders: [{ id: 'pr1', company_id: 1, purchase_location_id: 'W1' }],
+    };
+    await saveMaterialWarehouse(fakeTables(tables), 'm1', 'W2', 1);
+    expect(tables.production_order_materials.map((m) => m.warehouse_id)).toEqual(['W2', null]);
+    expect(tables.production_orders[0]?.purchase_location_id).toBe('W1');
   });
 });
 

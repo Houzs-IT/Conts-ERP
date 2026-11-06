@@ -282,12 +282,12 @@ describe('groupForPo: contract line settings', () => {
     unit_cost_sen: 1000, supply_by_owner: false, supplier_id: 'sup', supplier_code: 'S', supplier_name: 'Sup', category: 'FURNITURE', item_description2: null,
     item_uom: 'PCS', ordered_qty: 0, ...over,
   });
-  it('a line marked No PO is not ordered', () => {
+  test('a line marked No PO is not ordered', () => {
     const r = groupForPo([row({ no_po: true })]);
     expect(r.groups).toEqual([]);
     expect(r.skipped[0]?.reason).toBe('Marked No PO on the PO tab');
   });
-  it('lines for two warehouses go on two POs', () => {
+  test('lines for two warehouses go on two POs', () => {
     const r = groupForPo([row({ warehouse_id: 'W1' }), row({ line_id: 'l2', so_item_id: 's2', warehouse_id: 'W2' })]);
     expect(r.groups.map((g) => g.warehouseId).sort()).toEqual(['W1', 'W2']);
   });
