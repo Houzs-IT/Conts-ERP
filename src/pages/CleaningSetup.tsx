@@ -49,7 +49,7 @@ export function PricesView({ tabs }: { tabs: ReactNode }) {
         {service.data.ready
           ? <ServicePrices key={priceListVersion} domain="cleaning" above={<div className="flex flex-wrap items-center justify-between gap-3">
             <p className="m-0 flex-1 min-w-[220px] text-meta text-muted-ink">Cleaning jobs made from reservations take the item for their clean type, {units.data?.byBed ? "priced by the unit's beds (each bed size price times its quantity)" : "at the unit's layout"}. Open an item to change its prices from a date; the whole list is also under Settings, Service prices.</p>
-            {service.data.mayPrice && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsChangingByPercent(true)}>Change by %</Button>}
+            {service.data.mayPrice && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsChangingByPercent(true)}>Schedule price change</Button>}
           </div>} />
           : <PriceTableCard data={t} onSaved={() => { table.reload(); units.reload(); }} />}
         <UnitPricesCard rows={units.data?.rows ?? null} mayEdit={!!units.data?.mayEdit} byBed={!!units.data?.byBed} onSaved={units.reload} />

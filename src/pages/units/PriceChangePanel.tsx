@@ -15,7 +15,7 @@ interface CatalogItem { id: string; code: string; name: string; active: boolean 
 interface PriceList { ready: boolean; mayPrice: boolean; items: CatalogItem[] }
 
 const EVERY = 'every';
-const PANEL_TITLE: Record<PriceKind, string> = { cleaning: 'Change cleaning prices by %', maintenance: 'Change item prices by %' };
+const PANEL_TITLE: Record<PriceKind, string> = { cleaning: 'Schedule cleaning price change', maintenance: 'Schedule item price change' };
 const CLEAN_TARGETS: PriceTarget[] = CLEAN_KINDS.map(([cleanKind, name]) => ({ key: cleanKind, name, request: { cleanKind } }));
 
 function useScheduleUnits(): ScheduleUnit[] {

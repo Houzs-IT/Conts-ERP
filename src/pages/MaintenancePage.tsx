@@ -948,7 +948,7 @@ function MaintenanceItems({ fallback, onChanged }: { fallback: ReactNode; onChan
     <ServicePrices key={priceListVersion} domain="maintenance" onChanged={onChanged}
       above={<div className="flex flex-wrap items-center justify-between gap-3">
         <p className="m-0 flex-1 min-w-[220px] text-meta text-muted-ink">Picking an item on a job fills its owner price (the quote) and its internal cost; both stay editable on the job. The whole list, cleaning too, is under Settings, Service prices.</p>
-        {service.data.mayPrice && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsScheduling(true)}>Change by %</Button>}
+        {service.data.mayPrice && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsScheduling(true)}>Schedule price change</Button>}
       </div>} />
     {isScheduling && <PriceChangePanel kind="maintenance" onClose={() => setIsScheduling(false)} onSaved={() => { setIsScheduling(false); setPriceListVersion(version => version + 1); onChanged(); }} />}
   </>;
