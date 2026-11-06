@@ -46,7 +46,7 @@ import {
 import { projectDocSql } from "../services/renovation/documents";
 import { plainEntry, readProjectTimeline, sortTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineEntry } from "../services/renovation/timeline";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
-import { attachmentsReady, listFilesFor, podFiles, type DocFile } from "../scm/lib/doc-attachments";
+import { attachmentsReady, linkedFilesFor, listFilesFor, podFiles, textArray, type DocFile } from "../scm/lib/doc-attachments";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -1011,7 +1011,7 @@ const LINE_AREA = `coalesce(nullif(trim((SELECT l.room FROM scm.reno_doc_lines l
     lines it carries and every photo on it: the driver's POD, the site team's receipt photos and files added to it. */
 async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Promise<{ areas: string[]; deliveries: SiteDelivery[] }> {
   const q = (sql: string) => projectDocSql(sql, projectId, companyId);
-  const [soAreas, dos, grs, doAreas, grAreas, sitePhotos] = await Promise.all([
+  const [soAreas, dos, grs, doAreas, grAreas, sitePhotos, doReceipts] = await Promise.all([
     rowsOf(c, q(`SELECT ${LINE_AREA} AS area FROM scm.mfg_sales_order_items i
                   WHERE i.doc_no IN (SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2) AND NOT i.cancelled
                   ORDER BY i.doc_no, i.line_no NULLS LAST, i.created_at, i.id`)),
@@ -1035,6 +1035,12 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
                   WHERE gi.grn_id IN (__GRS__) ORDER BY gi.created_at, gi.id`)),
     rowsOf(c, { text: `SELECT ph.id::text AS id, ph.grn_id::text AS grn_id, ph.location, ph.r2_key, ph.caption, ph.kind, ${TS("coalesce(ph.taken_at, ph.created_at)")} AS at
                          FROM scm.grn_site_photos ph WHERE ph.project_id = ? ORDER BY ph.created_at`, args: [projectId] }),
+    /* The receipts behind each DO, by the sales order line both carry or the on-site pairing: their site photos reach the DO. */
+    rowsOf(c, q(`SELECT di.delivery_order_id::text AS do_id, gi.grn_id::text AS grn_id
+                   FROM scm.delivery_order_items di JOIN scm.purchase_order_items x ON x.so_item_id = di.so_item_id
+                   JOIN scm.grn_items gi ON gi.purchase_order_item_id = x.id
+                  WHERE di.delivery_order_id IN (__DOS__)
+                 UNION SELECT t.do_id::text, t.grn_id::text FROM scm.onsite_twins t WHERE t.do_id IN (__DOS__)`)),
   ]);
   const ready = await attachmentsReady(db(c)).catch(() => false);
   const docRefs = [
@@ -1042,15 +1048,21 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
     ...grs.map((g) => ({ type: "goods_received" as const, id: String(g.id) })),
   ];
   const attached = ready ? await listFilesFor(db(c), docRefs, companyId) : new Map<string, DocFile[]>();
+  const linked = ready ? await linkedFilesFor(db(c), docRefs, companyId) : new Map<string, DocFile[]>();
   const areasOf = (rows: Row[], id: string) => uniqueAreas(rows.filter((r) => r.doc_id === id).map((r) => str(r.area)));
   const linesOf = (rows: Row[], id: string): DeliveryLine[] => rows.filter((r) => r.doc_id === id)
     .map((r) => ({ soItemId: str(r.so_item_id), poLineId: str(r.po_line_id), qty: Number(r.qty ?? 0) }));
   const docPath = (type: DeliveryType, docId: string, fileId: string) =>
     `/api/renovation/${projectId}/document-files/${type}/${encodeURIComponent(docId)}/${encodeURIComponent(fileId)}`;
-  const uploads = (type: DeliveryType, docId: string): SitePhoto[] => (attached.get(`${type}:${docId}`) ?? []).map((f) => ({
+  const uploads = (type: DeliveryType, docId: string): SitePhoto[] => [...(attached.get(`${type}:${docId}`) ?? []), ...(linked.get(`${type}:${docId}`) ?? [])].map((f) => ({
     id: `${type}-${docId}-${f.id}`, path: docPath(type, docId, f.id), name: f.caption || f.name, image: f.kind === "image", kind: mediaKindOf(f.mime, f.name),
-    area: null, at: f.at || null, source: "upload" as const,
+    area: null, at: f.at || null, source: f.source === "pod" ? "pod" as const : "upload" as const,
   }));
+  const siteShot = (p: Row, prefix = ""): SitePhoto => ({
+    id: `${prefix}site-${String(p.id)}`, path: `/api/renovation/${projectId}/files?key=${encodeURIComponent(String(p.r2_key))}`,
+    name: str(p.caption) ?? (p.kind === "supplier_do" ? "Supplier delivery order" : "Site photo"), image: isImageName(String(p.r2_key)), kind: mediaKindOf(null, String(p.r2_key)),
+    area: str(p.location), at: str(p.at), source: "site" as const,
+  });
 
   const out: SiteDelivery[] = [];
   for (const d of dos) {
@@ -1060,6 +1072,8 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
       photos.push({ id: `${pod.id}-${id}`, path: docPath("delivery_order", id, pod.id), name: "Proof of delivery", image: true, kind: "image", area: null, at: pod.at || null, source: "pod" });
     }
     photos.push(...uploads("delivery_order", id));
+    const receipts = new Set(doReceipts.filter((r) => r.do_id === id).map((r) => String(r.grn_id)));
+    photos.push(...sitePhotos.filter((p) => receipts.has(String(p.grn_id))).map((p) => siteShot(p, `do-${id}-`)));
     out.push({
       type: "delivery_order", id, no: String(d.no), at: str(d.at) ?? str(d.made_on), status: String(d.status), from: str(d.so_doc_no), poNumber: null, poIds: [],
       areas: areasOf(doAreas, id), lines: linesOf(doAreas, id), photos, note: str(d.note), driver: str(d.driver), supplierRef: null,
@@ -1067,11 +1081,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
   }
   for (const g of grs) {
     const id = String(g.id);
-    const site: SitePhoto[] = sitePhotos.filter((p) => p.grn_id === id).map((p) => ({
-      id: `site-${String(p.id)}`, path: `/api/renovation/${projectId}/files?key=${encodeURIComponent(String(p.r2_key))}`,
-      name: str(p.caption) ?? (p.kind === "supplier_do" ? "Supplier delivery order" : "Site photo"), image: isImageName(String(p.r2_key)), kind: mediaKindOf(null, String(p.r2_key)),
-      area: str(p.location), at: str(p.at), source: "site" as const,
-    }));
+    const site: SitePhoto[] = sitePhotos.filter((p) => p.grn_id === id).map((p) => siteShot(p));
     const poIds = uniqueAreas([str(g.po_id), ...(Array.isArray(g.po_ids) ? (g.po_ids as unknown[]).map(str) : [])]);
     out.push({
       type: "goods_received", id, no: String(g.no), at: str(g.at), status: String(g.status), from: str(g.supplier), poNumber: str(g.po_number), poIds,
@@ -1330,6 +1340,11 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
     const shownPos = scope === null ? pos
       : keepVisiblePos(pos, (p) => String(p.id), (await loadProjectPoLines(db(c), id, co, scope)).lines.map((l) => l.poId), scope);
     const poFiles = ready && shownPos.length ? await listFilesFor(db(c), shownPos.map((p) => ({ type: "purchase_order" as const, id: String(p.id) })), co) : new Map<string, DocFile[]>();
+    /* Every production order of the project, through its PO: its photos are on Site from the first day, before any GR or DO. */
+    const orders = ready ? await rowsOf(c, { text: `SELECT o.id::text AS id, o.po_number AS no FROM scm.production_orders o
+                                                     WHERE o.company_id = ? AND o.source_po_id::text = ANY(?::text[]) ORDER BY o.po_number`,
+      args: [co, textArray(shownPos.map((p) => String(p.id)))] }) : [];
+    const orderFiles = await listFilesFor(db(c), orders.map((o) => ({ type: "production_order" as const, id: String(o.id) })), co);
     const out: ProjectPhoto[] = [];
     for (const d of site.deliveries) {
       const isDo = d.type === "delivery_order";
@@ -1349,6 +1364,16 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
           id: `po-${pid}-${f.id}`, path: `/api/renovation/${id}/document-files/purchase_order/${encodeURIComponent(pid)}/${encodeURIComponent(f.id)}`,
           kind: mediaKindOf(f.mime, f.name), name: f.caption || f.name, at: f.at || null, area: null, category: "po", label: null,
           group: { key: `po:${pid}`, title: `PO ${String(p.no)}${p.supplier ? ` · ${String(p.supplier)}` : ""}` }, note: null,
+        });
+      }
+    }
+    for (const o of orders) {
+      const oid = String(o.id);
+      for (const f of orderFiles.get(`production_order:${oid}`) ?? []) {
+        out.push({
+          id: `production-${oid}-${f.id}`, path: `/api/renovation/${id}/document-files/production_order/${encodeURIComponent(oid)}/${encodeURIComponent(f.id)}`,
+          kind: mediaKindOf(f.mime, f.name), name: f.caption || f.name, at: f.at || null, area: null, category: "progress", label: null,
+          group: { key: `production:${oid}`, title: `Production order ${String(o.no)}` }, note: null,
         });
       }
     }

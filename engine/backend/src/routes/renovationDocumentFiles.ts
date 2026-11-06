@@ -17,7 +17,7 @@ import type { Db } from "../services/renovation/load";
 import { expand, readProjectDocuments, GRS, POS, SOS } from "../services/renovation/documents";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
 import {
-  DOC_TYPES, attachmentsReady, evidenceFiles, fileRow, isDocType, listFilesFor, listLines, podFileById, podFiles, isPodFileId, type DocFile, type DocType,
+  DOC_TYPES, attachmentsReady, carriedFileRow, evidenceFiles, fileRow, isTwinPodFileId, linkedDocFiles, isDocType, listFilesFor, listLines, podFileById, podFiles, isPodFileId, type DocFile, type DocType,
 } from "../scm/lib/doc-attachments";
 import { streamObject } from "../scm/routes/doc-attachments";
 
@@ -124,10 +124,19 @@ app.get("/:id/document-files/:type/:docId/:fileId", requirePageAccess("projects.
   if (!Number.isInteger(id) || id <= 0 || !isDocType(type)) return c.json({ error: "invalid_id" }, 400);
   const companyId = await projectCompany(c, id);
   if (companyId == null) return c.json({ error: "not_found" }, 404);
-  const docs = await projectDocs(db(c), id, companyId);
-  const doc = docs.find((d) => d.type === type && d.id === docId);
+  /* A production order's files show on the project's Site tab; it is not one of the project's listed documents. */
+  const order = type === "production_order" ? await db(c).prepare(
+    `SELECT o.po_number AS no FROM scm.production_orders o LEFT JOIN scm.purchase_orders po ON po.id = o.source_po_id
+      WHERE o.id::text = ? AND o.company_id = ? AND ?::bigint IN (o.project_id, po.project_id)`,
+  ).bind(docId, companyId, id).first<{ no: string }>() : null;
+  const doc = order ? { type, id: docId, no: order.no } : (await projectDocs(db(c), id, companyId)).find((d) => d.type === type && d.id === docId);
   if (!doc) return c.json({ error: "not_found" }, 404);
   const range = c.req.header("range");
+  if (isTwinPodFileId(fileId)) {
+    const pod = (await linkedDocFiles(db(c), { type, id: doc.id, no: doc.no, companyId })).find((f) => f.id === fileId);
+    const res = pod && ((await streamObject(c.env.SLIPS, pod.key, pod.mime, pod.name, range)) ?? (await streamObject(c.env.POD_BUCKET, pod.key, pod.mime, pod.name, range)));
+    return res ?? c.json({ error: "not_found" }, 404);
+  }
   if (type === "delivery_order" && isPodFileId(fileId)) {
     const pod = await podFileById(db(c), doc.id, fileId);
     const res = pod && ((await streamObject(c.env.SLIPS, pod.key, pod.mime, pod.name, range)) ?? (await streamObject(c.env.POD_BUCKET, pod.key, pod.mime, pod.name, range)));
@@ -138,7 +147,8 @@ app.get("/:id/document-files/:type/:docId/:fileId", requirePageAccess("projects.
     const res = ev && (await streamObject(c.env.SLIPS, ev.key, ev.mime, ev.name, range));
     return res ?? c.json({ error: "not_found" }, 404);
   }
-  const row = await fileRow(db(c), { type, id: doc.id, no: doc.no, companyId }, fileId);
+  const ref = { type, id: doc.id, no: doc.no, companyId };
+  const row = (await fileRow(db(c), ref, fileId)) ?? (await carriedFileRow(db(c), ref, fileId));
   if (!row) return c.json({ error: "not_found" }, 404);
   return (await streamObject(c.env.SO_ITEM_PHOTOS, row.key, row.mime, row.name, range)) ?? c.json({ error: "object_missing" }, 404);
 });
