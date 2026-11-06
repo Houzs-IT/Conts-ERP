@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../../components/Button';
+import { Segmented } from '../../components/Metric';
 import { Skeleton } from '../../components/States';
 import { Switch } from '../../components/Switch';
 import { useToast } from '../../components/Toast';
@@ -13,7 +14,9 @@ import type { ScheduleUnit } from './ScheduledChanges';
 export interface PriceFigures { owner_price: number | null; internal_cost: number | null }
 export interface ListChange { key: string; label: string; before: PriceFigures; after: PriceFigures }
 export interface RaisePreview { list?: ListChange[]; ownPrices?: number; unit?: { before: PriceFigures; after: PriceFigures } }
-interface Percents { owner: number | null; cleaner: number | null }
+type Direction = 'increase' | 'decrease';
+type AppliesTo = 'both' | 'owner' | 'cleaner';
+type KindPreview = { preview: RaisePreview } | { problem: string };
 interface CleaningPriceAccess { ready: boolean; mayPrice: boolean }
 
 const PREVIEW_DELAY_MILLISECONDS = 400;
@@ -24,46 +27,51 @@ const changeText = (before: number | null, after: number | null): string => {
 };
 const figuresText = ({ before, after }: { before: PriceFigures; after: PriceFigures }): string =>
   `Owner ${changeText(before.owner_price, after.owner_price)} · Cleaner ${changeText(before.internal_cost, after.internal_cost)}`;
+const hasChange = (kindPreview: KindPreview | undefined): boolean =>
+  !!kindPreview && 'preview' in kindPreview && !!(kindPreview.preview.unit || kindPreview.preview.list?.length || kindPreview.preview.ownPrices);
 
-/** Basic and Deep clean changed by a percent from a date: on every list price (All units) or on one unit. */
+/** Basic and Deep clean up or down by one percent from a date: on every list price (All units) or on one unit. */
 export function PercentSchedule({ unit, onSaved }: { unit: ScheduleUnit | null; onSaved: () => void }) {
   const toast = useToast();
   const access = useApi<CleaningPriceAccess>('/operations/service-prices?domain=cleaning');
   const [from, setFrom] = useState('');
-  const [percents, setPercents] = useState<Record<string, Percents>>({});
+  const [direction, setDirection] = useState<Direction>('increase');
+  const [percent, setPercent] = useState<number | null>(null);
+  const [appliesTo, setAppliesTo] = useState<AppliesTo>('both');
   const [shouldIncludeOwn, setShouldIncludeOwn] = useState(true);
-  const [previews, setPreviews] = useState<Record<string, RaisePreview>>({});
-  const [previewError, setPreviewError] = useState('');
+  const [previews, setPreviews] = useState<Record<string, KindPreview>>({});
   const [isBusy, setIsBusy] = useState(false);
 
-  const edits = CLEAN_KINDS.flatMap(([kind]) => {
-    const { owner = null, cleaner = null } = percents[kind] ?? {};
-    return owner || cleaner ? [{ cleanKind: kind as string, ownerPct: owner, internalPct: cleaner }] : [];
+  const signedPercent = percent ? (direction === 'decrease' ? -percent : percent) : null;
+  const requestOf = (cleanKind: string, isDryRun: boolean) => ({
+    cleanKind, effectiveFrom: from, unitId: unit?.id ?? null, includeOwn: !unit && shouldIncludeOwn, dryRun: isDryRun,
+    ownerPct: appliesTo === 'cleaner' ? null : signedPercent, internalPct: appliesTo === 'owner' ? null : signedPercent,
   });
-  const requestOf = (edit: (typeof edits)[number], isDryRun: boolean) =>
-    ({ ...edit, effectiveFrom: from, unitId: unit?.id ?? null, includeOwn: !unit && shouldIncludeOwn, dryRun: isDryRun });
-  const editsKey = JSON.stringify([from, edits, shouldIncludeOwn, unit?.id]);
+  const requestKey = JSON.stringify([from, signedPercent, appliesTo, shouldIncludeOwn, unit?.id]);
 
   useEffect(() => {
     setPreviews({});
-    setPreviewError('');
-    if (!from || !edits.length) return;
+    if (!from || !signedPercent) return;
     let isStale = false;
     const timer = setTimeout(async () => {
-      try {
-        const answers = await Promise.all(edits.map(edit => api.post<RaisePreview>('/housekeeping/price-raise', requestOf(edit, true))));
-        if (!isStale) setPreviews(Object.fromEntries(edits.map((edit, index) => [edit.cleanKind, answers[index]])));
-      } catch (failure) {
-        if (!isStale) setPreviewError(failure instanceof Error ? failure.message : 'The new prices could not be worked out.');
-      }
+      const answers = await Promise.allSettled(CLEAN_KINDS.map(([kind]) => api.post<RaisePreview>('/housekeeping/price-raise', requestOf(kind, true))));
+      if (isStale) return;
+      setPreviews(Object.fromEntries(CLEAN_KINDS.map(([kind], index) => {
+        const answer = answers[index];
+        return [kind, answer.status === 'fulfilled' ? { preview: answer.value }
+          : { problem: answer.reason instanceof Error ? answer.reason.message : 'The new price could not be worked out.' }];
+      })));
     }, PREVIEW_DELAY_MILLISECONDS);
     return () => { isStale = true; clearTimeout(timer); };
-  }, [editsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [requestKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const kindsToSave = CLEAN_KINDS.filter(([kind]) => hasChange(previews[kind])).map(([kind]) => kind as string);
+  const isPreviewReady = CLEAN_KINDS.every(([kind]) => previews[kind]);
 
   async function schedule() {
     setIsBusy(true);
     try {
-      for (const edit of edits) await api.post('/housekeeping/price-raise', requestOf(edit, false));
+      for (const kind of kindsToSave) await api.post('/housekeeping/price-raise', requestOf(kind, false));
       toast({ tone: 'success', title: 'Change scheduled.', body: `${unit ? unit.label : 'All units'}: new prices for jobs from ${date(from)}. Earlier jobs keep theirs.` });
       onSaved();
     } catch (failure) { notifyFailure(failure); } finally { setIsBusy(false); }
@@ -74,27 +82,18 @@ export function PercentSchedule({ unit, onSaved }: { unit: ScheduleUnit | null; 
   if (!access.data.ready) return <p className="m-0 text-copy text-muted-ink">Service prices are not switched on yet.</p>;
   if (!access.data.mayPrice) return <p className="m-0 text-copy text-muted-ink">Only management schedules price changes.</p>;
 
-  const isPreviewReady = edits.every(edit => previews[edit.cleanKind]);
-  const hasSomethingToChange = edits.some(({ cleanKind }) => previews[cleanKind]?.unit || previews[cleanKind]?.list?.length || previews[cleanKind]?.ownPrices);
   return (
     <section className="flex flex-col gap-3">
       <DateField label="Applies from" value={from} min={todayMyt(1)} onChange={setFrom} />
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-2.5">
-        {CLEAN_KINDS.map(([kind, label]) => {
-          const update = (change: Partial<Percents>) => setPercents(all => ({ ...all, [kind]: { owner: all[kind]?.owner ?? null, cleaner: all[kind]?.cleaner ?? null, ...change } }));
-          return (
-            <div key={kind} className="contents">
-              <span className="col-span-2 text-copy font-medium">{label}</span>
-              <PercentInput label="Owner is charged" placeholder="No change" min={-100} max={1000} value={percents[kind]?.owner ?? null} onChange={owner => update({ owner })} />
-              <PercentInput label="Cleaner is paid" placeholder="No change" min={-100} max={1000} value={percents[kind]?.cleaner ?? null} onChange={cleaner => update({ cleaner })} />
-            </div>
-          );
-        })}
-      </div>
+      <Segmented<Direction> label="Increase or decrease" value={direction} onChange={setDirection}
+        options={[{ key: 'increase', label: 'Increase' }, { key: 'decrease', label: 'Decrease' }]} />
+      <PercentInput label="By how much" placeholder="0" min={0} max={direction === 'decrease' ? 100 : 1000} value={percent} onChange={setPercent} />
+      <Segmented<AppliesTo> label="Apply to" value={appliesTo} onChange={setAppliesTo}
+        options={[{ key: 'both', label: 'Owner and cleaner' }, { key: 'owner', label: 'Owner charge' }, { key: 'cleaner', label: 'Cleaner pay' }]} />
       <span className="text-meta text-muted-ink">
         {unit
-          ? 'Worked out from this unit\'s price on that date and saved as its own price in RM, so it stops following later list changes.'
-          : 'Worked out from each list price on that date (every bed size or layout) and saved in RM. Type -5 to lower by 5%.'}
+          ? 'Basic and Deep clean, worked out from this unit\'s price on that date. Saved as its own price, so it stops following later list changes.'
+          : 'Basic and Deep clean, worked out from each list price on that date (every bed size or layout) and saved in RM.'}
       </span>
       {!unit && (
         <label className="flex items-center justify-between gap-3 min-h-11">
@@ -103,14 +102,21 @@ export function PercentSchedule({ unit, onSaved }: { unit: ScheduleUnit | null; 
         </label>
       )}
 
-      {previewError && <p role="alert" className="m-0 text-copy text-critical">{previewError}</p>}
-      {edits.length > 0 && from && isPreviewReady && (
+      {from && signedPercent && isPreviewReady && (
         <div className="flex flex-col gap-2 p-3 rounded-control bg-muted">
-          {edits.map(({ cleanKind }) => {
-            const preview = previews[cleanKind];
-            const name = CLEAN_KINDS.find(([kind]) => kind === cleanKind)?.[1] ?? cleanKind;
+          {CLEAN_KINDS.map(([kind, name]) => {
+            const kindPreview = previews[kind];
+            if ('problem' in kindPreview) {
+              return (
+                <div key={kind} className="flex flex-col gap-0.5">
+                  <span className="text-copy font-medium">{name}</span>
+                  <span className="text-meta text-muted-ink">{kindPreview.problem} Not changed.</span>
+                </div>
+              );
+            }
+            const { preview } = kindPreview;
             return (
-              <div key={cleanKind} className="flex flex-col gap-0.5">
+              <div key={kind} className="flex flex-col gap-0.5">
                 <span className="text-copy font-medium">{name}</span>
                 {preview.unit && <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{figuresText(preview.unit)}</span>}
                 {preview.list?.map(change => (
@@ -124,8 +130,9 @@ export function PercentSchedule({ unit, onSaved }: { unit: ScheduleUnit | null; 
         </div>
       )}
       <div>
-        <Button size="sm" variant="primary" loading={isBusy} disabled={!from || !edits.length || !isPreviewReady || !hasSomethingToChange}
-          disabledReason={!from ? 'Pick the date first.' : !edits.length ? 'Enter a percent first.' : !isPreviewReady ? 'Working out the new prices.' : 'No price in force on that date to change.'} onClick={() => void schedule()}>Schedule change</Button>
+        <Button size="sm" variant="primary" loading={isBusy} disabled={!from || !signedPercent || !isPreviewReady || !kindsToSave.length}
+          disabledReason={!from ? 'Pick the date first.' : !signedPercent ? 'Type the percent first.' : !isPreviewReady ? 'Working out the new prices.' : 'No price in force on that date to change.'}
+          onClick={() => void schedule()}>Schedule change</Button>
       </div>
     </section>
   );

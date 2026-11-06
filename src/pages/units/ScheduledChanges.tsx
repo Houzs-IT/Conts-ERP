@@ -35,7 +35,7 @@ const Heading = ({ children }: { children: string }) => <h3 className="m-0 text-
 export function ScheduledChanges({ units, money, onClose, onSaved }: { units: ScheduleUnit[]; money: boolean; onClose: () => void; onSaved: () => void }) {
   const [kind, setKind] = useState<Kind | ''>('');
   const [unitId, setUnitId] = useState('');
-  const [changeBy, setChangeBy] = useState<ChangeBy>('amount');
+  const [changeBy, setChangeBy] = useState<ChangeBy>('percent');
   const unit = units.find(u => u.id === unitId);
   const isAllUnits = kind === 'cleaning' && unitId === ALL_UNITS;
   const unitOptions = [...(kind === 'cleaning' ? [{ value: ALL_UNITS, label: 'All units' }] : []),
@@ -54,7 +54,7 @@ export function ScheduledChanges({ units, money, onClose, onSaved }: { units: Sc
         </div>
         {kind && <SearchSelect label="Unit" showLabel size="md" placeholder="Search unit" value={unitId} onChange={setUnitId} options={unitOptions} />}
         {kind === 'cleaning' && unit && <Segmented<ChangeBy> label="Change by" value={changeBy} onChange={setChangeBy}
-          options={[{ key: 'amount', label: 'New amount (RM)' }, { key: 'percent', label: 'Percent (%)' }]} />}
+          options={[{ key: 'percent', label: 'Percent (%)' }, { key: 'amount', label: 'New amount (RM)' }]} />}
         {isAllUnits && <PercentSchedule key="all" unit={null} onSaved={onSaved} />}
         {kind && unit && (kind === 'contract'
           ? <ContractSchedule key={unit.id} unit={unit} onSaved={onSaved} />
