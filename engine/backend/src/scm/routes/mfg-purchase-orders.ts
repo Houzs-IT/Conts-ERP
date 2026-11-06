@@ -915,6 +915,8 @@ mfgPurchaseOrders.get('/:id', async (c) => {
         .select('id, status, amendment_no')
         .in('so_doc_no', soDocNos), c)
         .not('status', 'in', '("SENT","REJECTED")')
+        /* A VO recorded before this order was raised is already in it: nothing is waiting. */
+        .gte('created_at', (purchaseOrder as { created_at?: string }).created_at ?? '1970-01-01')
         .order('created_at', { ascending: false })
         .limit(1);
       const am = ((amRows ?? []) as Array<Record<string, unknown>>)[0];
