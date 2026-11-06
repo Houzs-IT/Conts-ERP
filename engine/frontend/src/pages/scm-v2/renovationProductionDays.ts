@@ -3,6 +3,7 @@
    by the desktop page and the phone screen, so they count alike. */
 
 import type { MaterialRow, MaterialStatus } from "../../vendor/scm/lib/production-order-queries";
+import { parseProvenanceNote, provenanceNoteRe } from "../../vendor/shared/transfer-vocabulary";
 
 export interface StripPhoto { id: string; at: string; by: string | null }
 export interface StripDay<P extends StripPhoto = StripPhoto> { date: string; label: string; photos: P[]; future: boolean }
@@ -52,6 +53,15 @@ export const shortDate = (date: string): string => date.slice(5).replace("-", "/
 export const peopleOn = (photos: readonly StripPhoto[]): string => [...new Set(photos.map((p) => p.by).filter(Boolean))].join(", ");
 
 export type ReadyWord = { ready: boolean; tally: string; readyCount: number; total: number; arrivingOn: string | null };
+
+/** An order's note as staff read it. MRP stores the PO's provenance note ("Transfer from Sales Order: X"), which every
+    document-flow reader parses, so the stored words stay and only this reading says where the order really came from. */
+export function productionNote(notes: string | null | undefined): string | null {
+  const text = (notes ?? "").trim();
+  if (!text) return null;
+  const sos = parseProvenanceNote(text);
+  return sos.length > 0 ? text.replace(provenanceNoteRe(), `Raised through MRP for ${sos.join(", ")}`) : text;
+}
 
 /** The line above an order and the Start reminder: "1 of 3 ready · 1 arriving 2026/11/10 · 1 no PO yet". */
 export function materialTally(rows: readonly MaterialRow[], statuses: Record<string, MaterialStatus> | undefined, date: (d: string) => string): ReadyWord {

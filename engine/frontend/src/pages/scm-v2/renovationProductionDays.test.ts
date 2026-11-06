@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayStrip, initialDay, materialCalculation, materialTally, mytDate, mytTime, pageStart } from "./renovationProductionDays";
+import { dayStrip, initialDay, materialCalculation, materialTally, mytDate, mytTime, pageStart, productionNote } from "./renovationProductionDays";
 import type { MaterialRow, MaterialStatus } from "../../vendor/scm/lib/production-order-queries";
 
 const plan = ["2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07", "2026-11-09", "2026-11-10"];
@@ -60,5 +60,15 @@ describe("words", () => {
     expect(materialCalculation({ qty_needed: "60.000", from_composition: true, added_how: "LISTED" }, works)).toBe("120 SQFT × 0.5");
     expect(materialCalculation({ qty_needed: 60, from_composition: false, added_how: "LISTED" }, works)).toBe("Listed");
     expect(materialCalculation({ qty_needed: 60, from_composition: true, added_how: "REQUESTED" }, works)).toBe("Requested");
+  });
+});
+
+describe("an order's note", () => {
+  it("says MRP raised it, not Transfer from Sales Order", () => {
+    expect(productionNote("Transfer from Sales Order: TC-SO-2611-911")).toBe("Raised through MRP for TC-SO-2611-911");
+  });
+  it("leaves a typed note alone and shows nothing for no note", () => {
+    expect(productionNote("Renovation contract TC-SO-2611-901")).toBe("Renovation contract TC-SO-2611-901");
+    expect(productionNote("  ")).toBeNull();
   });
 });

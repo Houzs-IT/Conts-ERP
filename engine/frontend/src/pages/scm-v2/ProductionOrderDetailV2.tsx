@@ -13,6 +13,7 @@ import { lazy, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LazySlot } from "../../components/LazySlot";
 import { useStaffLookup } from "../../hooks/useStaffLookup";
+import { productionNote } from "./renovationProductionDays";
 import { AssignDialog, ChangeNotice, ProductionTimeDialog, ProgressPhotos, ProgressSummary, useAddPhotos, useProductionPress } from "./renovationProductionParts";
 import { useHoldAction } from "./use-hold-action";
 import { ProductionMaterialsSection } from "./ProductionMaterialsSection";
@@ -807,6 +808,7 @@ function ProductionOrderDetailV2ReadOnly() {
   }
 
   const rawStatus = (purchaseOrder.status || "").toUpperCase();
+  const orderNote = productionNote(purchaseOrder.notes);
   /* Both status questions now come from vendor/scm/lib/po-next-step.ts, which
      also records why the old pair was wrong: `canSubmit` gated a DRAFT onto
      PATCH /submit, a handler with no write path that 409s every draft, while
@@ -900,7 +902,7 @@ function ProductionOrderDetailV2ReadOnly() {
                 <Field label="Sales order" muted={!linkedSo} value={linkedSo ? <Link className="text-primary hover:underline" to={`/scm/sales-orders/${encodeURIComponent(linkedSo.doc_no)}`}>{linkedSo.doc_no}</Link> : "—"} />
                 <Field label="Purchase order" muted={!orderMeta.source_po} value={orderMeta.source_po ? <Link className="text-primary hover:underline" to={`/scm/purchase-orders/${orderMeta.source_po.id}`}>{orderMeta.source_po.po_number}</Link> : "—"} />
               </div>
-              {(completionStopped || rawStatus === "RECEIVED" || purchaseOrder.notes) && (
+              {(completionStopped || rawStatus === "RECEIVED" || orderNote) && (
                 <div className="space-y-3 border-t border-border-subtle p-3.5">
                   {completionStopped && (
                     <div role="alert" className="rounded-lg border border-err/30 bg-surface px-4 py-3 text-[13px] text-ink">
@@ -910,10 +912,10 @@ function ProductionOrderDetailV2ReadOnly() {
                   {rawStatus === "RECEIVED" && (
                     <p className="text-[12.5px] text-ink-muted">To reopen this order, cancel its goods receipt and delivery order first.</p>
                   )}
-                  {purchaseOrder.notes && (
+                  {orderNote && (
                     <div className="rounded-lg border border-warning-text/25 bg-warning-bg px-4 py-3">
                       <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-warning-text">Note</div>
-                      <p className="mt-1.5 text-[13px] leading-relaxed text-warning-text">{purchaseOrder.notes}</p>
+                      <p className="mt-1.5 text-[13px] leading-relaxed text-warning-text">{orderNote}</p>
                     </div>
                   )}
                 </div>
