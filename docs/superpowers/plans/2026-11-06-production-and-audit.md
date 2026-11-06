@@ -100,3 +100,13 @@ Money
 
 Houzs leftovers: CORS origins (`index.ts:218`), `MobileProfile.tsx:865`, `PortalFrame.tsx:76,90`, `so-branding-label.ts`.
 Test failures to look at: documentRefs, mailAliasRevocation, projectChecklistTemplateCompanyScope.
+
+## Added by the owner, 7 Nov 2026
+- Remove from the project and sales order screen: Close all, Export, Quantity helper, Create PO. POs are raised only from MRP Proceed. An Export PDF stays as the PDF download.
+- Draft DO can exist before goods are ready; Confirm confirms it. New phone screen for production workers: today's arrivals, by Project, Unit, DO, items, PO, date and time; Complete marks it done.
+- Project receives every photo from its Production Orders, DO and GR through the PO link.
+- Client PO: lines bought for the customer land in the project's client PO, with the supplier code, downloadable; Preview generates a link.
+- 2D drawing photos flow into Built-in lines and onto the PO.
+- Same fields for quotation and sales order, and for PO and GR. One screen for edit, confirm and view where possible.
+- All PDFs share one header standard and match what is on screen. SO PDF by area or category. DO and GR download singly or together.
+- Payment stays free: presets exist, any amount can be collected.
