@@ -193,9 +193,12 @@ export async function raisePos(
   for (const g of groups) {
     const poNumber = await mintDocNo(db, 'purchase_orders', 'po_number', `${actor.docPrefix}PO-${yymmOf(poDate)}`);
     const [po] = await db.q<{ id: string }>(
-      `insert into scm.purchase_orders (po_number, supplier_id, status, po_date, expected_at, subtotal_sen, tax_sen, total_sen, notes, submitted_at, created_by, company_id)
-       values ($1, $2, 'SUBMITTED', $3::date, $4::date, $5, 0, $5, $6, now(), $7, $8) returning id`,
-      [poNumber, g.supplierId, poDate, body.expectedAt ?? null, g.totalSen, `Renovation contract ${docNo}`, actor.staffId, actor.companyId],
+      /* Deliver To on the printed PO: the first line's warehouse, else the company's default. */
+      `insert into scm.purchase_orders (po_number, supplier_id, status, po_date, expected_at, subtotal_sen, tax_sen, total_sen, notes, submitted_at, created_by, company_id, purchase_location_id)
+       values ($1, $2, 'SUBMITTED', $3::date, $4::date, $5, 0, $5, $6, now(), $7, $8,
+         coalesce((select i.warehouse_id from scm.mfg_sales_order_items i where i.id = $9::uuid),
+                  (select w.id from scm.warehouses w where w.company_id = $8 and w.is_default limit 1))) returning id`,
+      [poNumber, g.supplierId, poDate, body.expectedAt ?? null, g.totalSen, `Renovation contract ${docNo}`, actor.staffId, actor.companyId, g.lines[0]?.soItemId ?? null],
     );
     await db.q(
       /* The SO line's options and its planned delivery date (the PO tab's line plan) ride to the supplier's line: a PO
