@@ -57,6 +57,8 @@ export const SCM_AREA_MOUNTS: ReadonlyArray<readonly [string, string]> = [
   ["/suppliers/*", "scm.procurement.suppliers"],
   ["/mfg-purchase-orders/*", "scm.procurement.po"],
   ["/po-amendments/*", "scm.procurement.po"],
+  ["/onsite-twin/grn/*", "scm.procurement.grn"],
+  ["/onsite-twin/do/*", "scm.sales.delivery"],
   ["/grns/*", "scm.procurement.grn"],
   ["/purchase-invoices/*", "scm.procurement.pi"],
   ["/mfg-sales-orders/*", "scm.sales.orders"],

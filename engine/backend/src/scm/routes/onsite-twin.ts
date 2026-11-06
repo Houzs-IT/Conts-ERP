@@ -17,11 +17,15 @@ import { isOnSiteWarehouse } from '../lib/non-selling-warehouse';
 import { callHandler } from './production-orders';
 import { createDoFromSoLinesHandler, patchDeliveryOrderStatusHandler, soDeliverableRemaining } from './delivery-orders-mfg';
 import { postGrnAndRollup, recordGrnCreate } from './grns';
+import { addUp, deliveriesToRaise, receiptPicks } from '../lib/onsite-twin-rules';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- the same loosely typed client and context as production-orders.ts */
 
-export const onsiteTwin = new Hono<{ Bindings: Env; Variables: Variables }>();
-onsiteTwin.use('*', supabaseAuth);
+/* Two routers, one area each: a GR's twin sits behind the GR gate, a DO's behind the DO gate. */
+export const onsiteTwinGrn = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const onsiteTwinDo = new Hono<{ Bindings: Env; Variables: Variables }>();
+onsiteTwinGrn.use('*', supabaseAuth);
+onsiteTwinDo.use('*', supabaseAuth);
 
 const words = (j: Record<string, unknown>, fallback: string): string => String(j.message ?? j.reason ?? j.error ?? fallback);
 
@@ -55,12 +59,56 @@ async function poLinesFor(sb: any, c: any, soItemIds: string[]) {
 const link = (sb: any, companyId: number, grnId: string, doId: string) =>
   sb.from('onsite_twins').upsert({ company_id: companyId, grn_id: grnId, do_id: doId }, { onConflict: 'grn_id,do_id', ignoreDuplicates: true });
 
+/* One twin at a time per document: two presses at once would both read nothing done yet and both act. A claim left by a
+   dead request lapses. Without the table the twin still runs, as it did before the claim existed. */
+const CLAIM_TTL_MS = 2 * 60_000;
+async function claimTwin(sb: any, docId: string, companyId: number): Promise<boolean> {
+  await sb.from('onsite_twin_claims').delete().eq('doc_id', docId).lt('claimed_at', new Date(Date.now() - CLAIM_TTL_MS).toISOString());
+  const { error } = await sb.from('onsite_twin_claims').insert({ doc_id: docId, company_id: companyId });
+  if (error?.code === '23505') return false;
+  if (error) console.error('[onsite-twin] claim failed:', error.message);
+  return true;
+}
+const releaseTwin = (sb: any, docId: string) => sb.from('onsite_twin_claims').delete().eq('doc_id', docId);
+
+/* What the receipts already tied to this delivery took, by SO line. */
+async function receivedByTwins(sb: any, doId: string): Promise<Map<string, number>> {
+  const { data } = await sb.from('onsite_twins').select('grn:grns!inner (status, grn_items (qty_accepted, qty_received, poi:purchase_order_items (so_item_id)))').eq('do_id', doId);
+  const rows = ((data ?? []) as unknown as Array<{ grn: { status: string; grn_items: Array<{ qty_accepted: number | null; qty_received: number | null; poi: { so_item_id: string | null } | null }> } }>)
+    .filter((t) => t.grn.status !== 'CANCELLED').flatMap((t) => t.grn.grn_items);
+  return addUp(rows, (r) => r.poi?.so_item_id, (r) => Number(r.qty_accepted ?? r.qty_received ?? 0));
+}
+
+/* What the deliveries already tied to this receipt carry, by SO line. */
+async function deliveredByTwins(sb: any, grnId: string): Promise<Map<string, number>> {
+  const { data } = await sb.from('onsite_twins').select('dord:delivery_orders!inner (status, delivery_order_items (so_item_id, qty))').eq('grn_id', grnId);
+  const rows = ((data ?? []) as unknown as Array<{ dord: { status: string; delivery_order_items: Array<{ so_item_id: string | null; qty: number }> } }>)
+    .filter((t) => t.dord.status !== 'CANCELLED').flatMap((t) => t.dord.delivery_order_items);
+  return addUp(rows, (r) => r.so_item_id, (r) => Number(r.qty ?? 0));
+}
+
+/* Draft deliveries planned for these SO lines, not yet tied to this receipt. */
+async function draftDeliveries(sb: any, soItemIds: string[], grnId: string, companyId: number) {
+  const { data: tiedRows } = await sb.from('onsite_twins').select('do_id').eq('grn_id', grnId);
+  const tied = new Set(((tiedRows ?? []) as Array<{ do_id: string }>).map((t) => t.do_id));
+  const { data } = await sb.from('delivery_order_items').select('so_item_id, qty, dord:delivery_orders!inner (id, status, company_id)').in('so_item_id', soItemIds);
+  return ((data ?? []) as unknown as Array<{ so_item_id: string; qty: number; dord: { id: string; status: string; company_id: number } }>)
+    .filter((l) => l.dord.status === 'DRAFT' && l.dord.company_id === companyId && !tied.has(l.dord.id))
+    .map((l) => ({ doId: l.dord.id, soItemId: l.so_item_id, qty: Number(l.qty) }));
+}
+
 /* A posted GR at On-site delivers the lines it received. */
-onsiteTwin.post('/grn/:id', async (c) => {
+onsiteTwinGrn.post('/:id', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
   const id = c.req.param('id');
+  if (!(await claimTwin(sb, id, co.companyId))) return c.json({ ok: true, raised: [], busy: true });
+  try { return await deliverReceipt(c, sb, id, co.companyId); } finally { await releaseTwin(sb, id); }
+});
+
+async function deliverReceipt(c: any, sb: any, id: string, companyId: number) {
+  const co = { companyId };
   const { data: g } = await sb.from('grns').select('id, grn_number, status, warehouse_id').eq('id', id).eq('company_id', co.companyId).maybeSingle();
   const grn = g as { id: string; grn_number: string; status: string; warehouse_id: string | null } | null;
   if (!grn) return c.json({ error: 'not_found' }, 404);
@@ -76,11 +124,12 @@ onsiteTwin.post('/grn/:id', async (c) => {
   const { data: so } = await sb.from('mfg_sales_order_items').select('id, doc_no').in('id', [...got.keys()]);
   const docOf = new Map(((so ?? []) as Array<{ id: string; doc_no: string }>).map((s) => [s.id, s.doc_no]));
   const remaining = await soDeliverableRemaining(sb, [...new Set(docOf.values())]);
+  const plan = deliveriesToRaise(got, await deliveredByTwins(sb, id), await draftDeliveries(sb, [...got.keys()], id, co.companyId), (x) => Number(remaining.get(x)?.remaining ?? 0));
+  for (const doId of plan.planned) await link(sb, co.companyId, grn.id, doId);
   const byDoc = new Map<string, Array<{ soItemId: string; qty: number }>>();
-  for (const [soItemId, qty] of got) {
-    const left = Math.min(qty, Number(remaining.get(soItemId)?.remaining ?? 0));
-    const doc = docOf.get(soItemId);
-    if (left > 0 && doc) byDoc.set(doc, [...(byDoc.get(doc) ?? []), { soItemId, qty: left }]);
+  for (const pick of plan.raise) {
+    const doc = docOf.get(pick.soItemId);
+    if (doc) byDoc.set(doc, [...(byDoc.get(doc) ?? []), pick]);
   }
   const raised: string[] = [];
   const problems: string[] = [];
@@ -97,29 +146,27 @@ onsiteTwin.post('/grn/:id', async (c) => {
   }
   if (problems.length > 0) return c.json({ error: 'twin_failed', message: problems.join(' '), raised }, 409);
   return c.json({ ok: true, raised });
-});
+}
 
 /* A confirmed DO on site receives what its lines' POs still have outstanding. */
-onsiteTwin.post('/do/:id', async (c) => {
+onsiteTwinDo.post('/:id', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
   const id = c.req.param('id');
+  if (!(await claimTwin(sb, id, co.companyId))) return c.json({ ok: true, raised: [], busy: true });
+  try { return await receiveDelivery(c, sb, id, co.companyId); } finally { await releaseTwin(sb, id); }
+});
+
+async function receiveDelivery(c: any, sb: any, id: string, companyId: number) {
+  const co = { companyId };
   const { data: d } = await sb.from('delivery_orders').select('id, do_number, status, warehouse_id').eq('id', id).eq('company_id', co.companyId).maybeSingle();
   const dord = d as { id: string; do_number: string; status: string; warehouse_id: string | null } | null;
   if (!dord) return c.json({ error: 'not_found' }, 404);
   if (dord.status === 'DRAFT' || dord.status === 'CANCELLED') return c.json({ ok: true, raised: [] });
   const lines = await onSiteDoLines(sb, id, dord.warehouse_id, co.companyId);
   const po = await poLinesFor(sb, c, lines.map((l) => l.so_item_id));
-  const picks: Array<{ poItemId: string; qty: number }> = [];
-  for (const l of lines) {
-    let need = Number(l.qty);
-    for (const p of po.filter((x) => x.so_item_id === l.so_item_id)) {
-      const open = Number(p.qty) - Number(p.received_qty ?? 0) - picks.filter((x) => x.poItemId === p.id).reduce((t, x) => t + x.qty, 0);
-      const qty = Math.min(need, open);
-      if (qty > 0) { picks.push({ poItemId: p.id, qty }); need -= qty; }
-    }
-  }
+  const picks = receiptPicks(lines, po, await receivedByTwins(sb, id));
   if (picks.length === 0) return c.json({ ok: true, raised: [] });
   const core = await createDraftGrnsFromPoItemsCore({
     req: { json: async () => ({ picks, notes: `Received on site with ${dord.do_number}` }) },
@@ -141,10 +188,10 @@ onsiteTwin.post('/do/:id', async (c) => {
   }
   if (problems.length > 0) return c.json({ error: 'twin_failed', message: problems.join(' '), raised }, 409);
   return c.json({ ok: true, raised });
-});
+}
 
 /* What the detail page shows: which PO a delivery goes with, and the twins raised so far. */
-onsiteTwin.get('/do/:id', async (c) => {
+onsiteTwinDo.get('/:id', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
@@ -162,7 +209,7 @@ onsiteTwin.get('/do/:id', async (c) => {
   });
 });
 
-onsiteTwin.get('/grn/:id', async (c) => {
+onsiteTwinGrn.get('/:id', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');

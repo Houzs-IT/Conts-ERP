@@ -22,7 +22,8 @@
 // through a minimal fake PostgREST client — same shape as so-converted-po.test.ts,
 // extended with the operators this engine chains (eq / in / order / limit / range).
 import { describe, expect, test } from 'vitest';
-import { computeMrp, mrpStockAssignment, stockAssignmentKey, parseIncludeUndated, InvalidQueryFlag } from './mrp';
+import { computeMrp, mrpStockAssignment, saveMaterialWarehouse, stockAssignmentKey, parseIncludeUndated, InvalidQueryFlag } from './mrp';
+import { fakeSb as fakeTables } from '../lib/fake-postgrest';
 import { NO_BUFFERS } from '../lib/lead-time';
 import { distributeAssignedToLots, isMakeToOrderCategory } from '../lib/inventory-movements';
 import { parsePgrestInList } from '../lib/pgrest-in-list';
@@ -1631,5 +1632,121 @@ describe('company 1: a custom pillow is planned from its own purchase order only
   test('company 2 keeps the pooled model for pillows too', async () => {
     const res = await computeMrp(asSb(world({ mfg_sales_order_items: demand, purchase_order_items: supply }, 2)), { ...opts, companyId: 2 });
     expect(lineOf(res, 'l-013496').poNumber).not.toBeNull();
+  });
+});
+
+describe('computeMrp: a held sales order is not demand', () => {
+  test('its line neither reads short nor claims stock from a live order', async () => {
+    const held = { ...demandRed(5), id: 'si-held', doc_no: 'SO-HELD', line_delivery_date: '2026-11-01', so: { ...(demandRed(5).so as Row), on_hold: true } };
+    const sb = fakeSb({
+      ...BASE_TABLES,
+      mfg_sales_order_items: [held, demandRed(3)],
+      inventory_balances: [{ item_code: 'BF-100', warehouse_id: 'W1', variant_key: 'fabriccode=red', qty: 3 }],
+      warehouses: [{ id: 'W1', code: 'KL', name: 'KL WAREHOUSE', is_active: true }],
+    });
+    const r = await computeMrp(sb, opts);
+    const lines = r.skus.flatMap((s) => s.lines);
+    expect(lines.map((l) => l.soDocNo)).toEqual(['SO-1']);
+    expect(lines[0]?.shortageQty).toBe(0);
+  });
+});
+
+describe('computeMrp: the warehouse filter narrows the page, never the supply', () => {
+  const tables = () => ({
+    ...BASE_TABLES,
+    mfg_sales_order_items: [
+      { ...demandRed(5), warehouse_id: 'W2' },
+      { ...demandRed(2), id: 'si-other', doc_no: 'SO-2', warehouse_id: 'W1', line_delivery_date: '2026-12-02' },
+    ],
+    inventory_balances: [{ item_code: 'BF-100', warehouse_id: 'W1', variant_key: 'fabriccode=red', qty: 7 }],
+    warehouses: [{ id: 'W1', code: 'KL', name: 'KL', is_active: true }, { id: 'W2', code: 'PG', name: 'PG', is_active: true }],
+  });
+  test('stock in another warehouse still covers the line: no false shortage', async () => {
+    const r = await computeMrp(fakeSb(tables()), { ...opts, whFilter: 'W2' });
+    const lines = r.skus.flatMap((s) => s.lines);
+    expect(lines.map((l) => l.soDocNo)).toEqual(['SO-1']);
+    expect(lines[0]?.shortageQty).toBe(0);
+    expect(r.skus[0]?.warehouseCode).toBe('PG');
+  });
+  test('a filtered line still consumes its share of the pool', async () => {
+    const t = tables();
+    t.inventory_balances[0]!.qty = 5;
+    const r = await computeMrp(fakeSb(t), { ...opts, whFilter: 'W1' });
+    expect(r.skus.flatMap((s) => s.lines).map((l) => [l.soDocNo, l.shortageQty])).toEqual([['SO-2', 2]]);
+  });
+});
+
+describe('computeMrp: a PO bought for a production material stays with it', () => {
+  const material = {
+    id: 'm1', item_code: 'BF-100', description: 'Board', qty_needed: 4, processing_date: null, delivery_date: '2026-12-20', created_at: null,
+    'order.status': 'SUBMITTED', 'order.on_hold': false,
+    order: { id: 'pr1', po_number: 'TC-PRO-1', purchase_location_id: 'W1', project_id: null, status: 'SUBMITTED', on_hold: false },
+  };
+  const boughtForMaterial = { ...poLine('PO-MAT', 4, null, '2026-12-10'), item_group: 'RAW', variants: null, production_material_id: 'm1' };
+  test('an earlier sales line cannot take it and leave the material short', async () => {
+    const earlier = { ...demandRed(4), item_group: 'RAW', variants: null, line_delivery_date: '2026-12-01' };
+    const sb = fakeSb({
+      ...BASE_TABLES,
+      mfg_sales_order_items: [earlier],
+      purchase_order_items: [boughtForMaterial],
+      production_order_materials: [material],
+      warehouses: [{ id: 'W1', code: 'KL', name: 'KL', is_active: true }],
+    });
+    const r = await computeMrp(sb, opts);
+    const lines = r.skus.flatMap((s) => s.lines);
+    expect(lines.find((l) => l.productionMaterialId === 'm1')).toMatchObject({ shortageQty: 0, poNumber: 'PO-MAT' });
+    expect(lines.find((l) => l.soDocNo === 'SO-1')).toMatchObject({ shortageQty: 4, poNumber: null });
+  });
+});
+
+describe('MRP: a warehouse picked for one material', () => {
+  const orderRow = { id: 'pr1', po_number: 'TC-PRO-1', purchase_location_id: 'W1', project_id: null, status: 'SUBMITTED', on_hold: false };
+  const base = { item_code: 'BF-100', description: 'Board', qty_needed: 2, processing_date: null, delivery_date: '2026-12-20', created_at: null, 'order.status': 'SUBMITTED', 'order.on_hold': false, order: orderRow };
+  test('reads on that material alone', async () => {
+    const sb = fakeSb({
+      ...BASE_TABLES,
+      production_order_materials: [{ ...base, id: 'm1', warehouse_id: 'W2' }, { ...base, id: 'm2', item_code: 'BF-200', warehouse_id: null }],
+      warehouses: [{ id: 'W1', code: 'KL', name: 'KL', is_active: true }, { id: 'W2', code: 'PG', name: 'PG', is_active: true }],
+    });
+    const r = await computeMrp(sb, { ...opts, whFilter: 'W2' });
+    expect(r.skus.flatMap((s) => s.lines).map((l) => l.productionMaterialId)).toEqual(['m1']);
+  });
+  test('the pick writes the material, not the order', async () => {
+    const tables = {
+      production_order_materials: [{ id: 'm1', company_id: 1, warehouse_id: null }, { id: 'm2', company_id: 1, warehouse_id: null }],
+      production_orders: [{ id: 'pr1', company_id: 1, purchase_location_id: 'W1' }],
+    };
+    await saveMaterialWarehouse(fakeTables(tables), 'm1', 'W2', 1);
+    expect(tables.production_order_materials.map((m) => m.warehouse_id)).toEqual(['W2', null]);
+    expect(tables.production_orders[0]?.purchase_location_id).toBe('W1');
+  });
+});
+
+describe('MRP reads a contract line settings', () => {
+  const line = (id: string, code: string): Row => ({
+    ...demandRed(1), id, item_code: code, item_group: 'RENOVATION', variants: null, line_delivery_date: '2026-12-01',
+    so: { ...(demandRed(1).so as Row), project_id: 7, customer_delivery_date: '2026-12-01' },
+  });
+  const tables = () => ({
+    ...BASE_TABLES,
+    mfg_sales_order_items: [line('s-goods', 'F-1'), line('s-works', 'W-1'), line('s-sup', 'F-2')],
+    mfg_products: [{ id: 'p1', code: 'F-1', category: 'FURNITURE', sub_category: null }, { id: 'p2', code: 'W-1', category: 'WORKS', sub_category: null }, { id: 'p3', code: 'F-2', category: 'FURNITURE', sub_category: null }],
+    reno_beta_line_plans: [],
+    reno_doc_lines: [
+      { id: 'a', so_item_id: 's-goods', supplier_id: null, supply_by_owner: true },
+      { id: 'b', so_item_id: 's-works', supplier_id: null, supply_by_owner: true },
+      { id: 'c', so_item_id: 's-sup', supplier_id: 'S9', supply_by_owner: false },
+    ],
+    suppliers: [{ id: 'S9', code: 'ACME', name: 'Acme' }],
+  });
+  const withProjects = () => { const sb = fakeSb({ ...tables(), projects: [] }); return { ...sb, schema: () => sb }; };
+  test('goods the owner supplies are not demand, works labour still is', async () => {
+    const r = await computeMrp(withProjects(), opts);
+    expect(r.skus.flatMap((s) => s.lines).map((l) => l.soItemId).sort()).toEqual(['s-sup', 's-works']);
+  });
+  test("the contract line's supplier is the planned one", async () => {
+    const r = await computeMrp(withProjects(), opts);
+    const l = r.skus.flatMap((s) => s.lines).find((x) => x.soItemId === 's-sup');
+    expect(l?.plannedSupplier).toEqual({ supplierId: 'S9', code: 'ACME', name: 'Acme' });
   });
 });

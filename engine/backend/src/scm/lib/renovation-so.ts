@@ -412,6 +412,16 @@ export async function setContractStatus(db: RenoDb, actor: RenoActor, docNo: str
       [docNo],
     );
     if (Number(p.n) > 0) throw refuse(409, 'has_purchase_orders', 'Cancel the purchase orders raised from this contract first.');
+    /* The other documents that act on its lines. A sent invoice is the billing rule above, not a block. */
+    const [d] = await db.q<{ n: number }>(`select count(*)::int as n from scm.delivery_orders d where d.so_doc_no = $1 and d.status::text <> 'CANCELLED'`, [docNo]);
+    if (Number(d.n) > 0) throw refuse(409, 'has_deliveries', 'Cancel or return the delivery orders raised from this contract first.');
+    const [m] = await db.q<{ n: number }>(
+      `select count(*)::int as n from scm.production_order_items pi join scm.production_orders o on o.id = pi.production_order_id
+         join scm.mfg_sales_order_items si on si.id = pi.so_item_id
+        where si.doc_no = $1 and o.status::text <> 'CANCELLED'`,
+      [docNo],
+    );
+    if (Number(m.n) > 0) throw refuse(409, 'has_production_orders', 'Cancel the production orders raised from this contract first.');
   }
   await db.q(`update scm.mfg_sales_orders set status = $2::scm.mfg_so_status, version = version + 1, updated_at = now() where doc_no = $1`, [docNo, to]);
   await db.q(

@@ -325,14 +325,18 @@ renovation.post('/sales-orders/:docNo/status', handle(PERM.quote, async (c, { tx
   if (!s.success) throw new RenoError(400, 'invalid_status', 'Unknown contract status.');
   const actor = actorOf(c);
   const docNo = param(c, 'docNo');
-  if (s.data === 'CANCELLED') {
-    /* A billed contract needs finance; the contract and every issued document on it must be posted first, so the
-       clearing after commit sees the whole advance (acc/reno-ledger cancelGate). */
-    const gate = await cancelGate(c.get('supabase'), { companyId: actor.companyId, soDocNo: docNo, isFinance: hasHouzsPerm(c, FINANCE_POST) });
-    if (!gate.ok) throw new RenoError(gate.status === 'forbidden' ? 403 : gate.status === 'load_failed' ? 503 : 409, gate.status, gate.reason);
-  }
-  const out = await tx((db) => setContractStatus(db, actor, docNo, s.data as RenoSoStatus, typeof b.note === 'string' ? b.note : undefined));
-  if (out.status !== 'CANCELLED') return c.json(out);
+  const note = typeof b.note === 'string' ? b.note : undefined;
+  if (s.data === 'CANCELLED') return c.json(await cancelContract(c, tx, docNo, note));
+  return c.json(await tx((db) => setContractStatus(db, actor, docNo, s.data as RenoSoStatus, note)));
+}));
+
+/* A billed contract needs finance; the contract and every issued document on it must be posted first, so the clearing
+   after commit sees the whole advance (acc/reno-ledger cancelGate). */
+async function cancelContract(c: C, tx: <T>(f: (db: RenoDb) => Promise<T>) => Promise<T>, docNo: string, note?: string) {
+  const actor = actorOf(c);
+  const gate = await cancelGate(c.get('supabase'), { companyId: actor.companyId, soDocNo: docNo, isFinance: hasHouzsPerm(c, FINANCE_POST) });
+  if (!gate.ok) throw new RenoError(gate.status === 'forbidden' ? 403 : gate.status === 'load_failed' ? 503 : 409, gate.status, gate.reason);
+  const out = await tx((db) => setContractStatus(db, actor, docNo, 'CANCELLED', note));
   /* After commit: clear the part never invoiced from the advance (acc/reno-ledger). A refusal is reported, never
      thrown; finance posts it again from the contract. */
   let posting: { status: string; reason?: string };
@@ -342,8 +346,15 @@ renovation.post('/sales-orders/:docNo/status', handle(PERM.quote, async (c, { tx
   } catch (err) {
     posting = { status: 'post_failed', reason: err instanceof Error ? err.message : String(err) };
   }
-  return c.json({ ...out, posting });
-}));
+  return { ...out, posting };
+}
+
+/** The end of a contract's cancel request: the SO status route's approvals have passed, so this is the cancel itself. */
+export const cancelContractFromSoRoute = (c: C, docNo: string): Promise<Response> =>
+  handle(null, async (ctx, { tx }) => {
+    const b = (await ctx.req.json().catch(() => ({}))) as { reason?: unknown };
+    return ctx.json(await cancelContract(ctx, tx, docNo, typeof b.reason === 'string' ? b.reason : undefined));
+  })(c);
 
 /* Finance: a credit note that lowers the contract (a special discount, less work, a refund). Needs the billing
    permission and finance's posting permission; the journal posts after commit. */

@@ -367,7 +367,18 @@ scm.route("/mfg-purchase-orders", purchaseOrderItemPhotos);
 // gates layer on inside the handlers (mig 0192).
 scm.use("/po-amendments/*", scmAreaGuard("scm.procurement.po"));
 scm.route("/po-amendments", poAmendments);
-scm.route("/onsite-twin", onsiteTwin);
+/* A GR's twin needs the right to work GRs, a DO's the right to work DOs: the same gate as confirming either, so a
+   storekeeper or driver who may confirm a delivery by scan may also raise its twin. */
+scm.use("/onsite-twin/grn/*", scmAreaGuard("scm.procurement.grn"));
+scm.use("/onsite-twin/do/*", scmAreaGuard("scm.sales.delivery", {
+  readInheritsFrom: "scm.sales.orders",
+  writeBypass: (c) => {
+    const u = c.get("user") as unknown as Parameters<typeof hasPositionCapability>[0];
+    return c.req.method === "POST" && (hasPositionCapability(u, "scm.do.load") || hasPositionCapability(u, "scm.do.dispatch"));
+  },
+}));
+scm.route("/onsite-twin/grn", onsiteTwinGrn);
+scm.route("/onsite-twin/do", onsiteTwinDo);
 scm.use("/grns/*", scmAreaGuard("scm.procurement.grn"));
 // Deferred list enrichment — the MRP-derived GRN-list columns (Assigned SO /
 // Delivered) the list no longer computes on its critical path. Mounted BEFORE
@@ -1047,7 +1058,7 @@ scm.route("/renovation-so-info", renovationSoInfo);
 
 // ── Production orders (mig 0208): the Purchase Order routes cloned onto their own tables ──
 import { productionOrders } from "./routes/production-orders";
-import { onsiteTwin } from "./routes/onsite-twin";
+import { onsiteTwinDo, onsiteTwinGrn } from "./routes/onsite-twin";
 import { productionLineImport } from "./routes/production-line-import";
 import { productionOrderItemPhotos } from "./routes/production-order-item-photos";
 import { productionOrderAttachments } from "./routes/doc-attachments";

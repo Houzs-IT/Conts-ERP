@@ -63,12 +63,14 @@ export async function readPoSchedule(db: RenoDb, poId: string, companyId: number
       where i.purchase_order_id = $1 order by p.paid_on, p.created_at`,
     [poId],
   );
-  const instalments = rows.map((r) => {
+  /* The PO's total moves with an amendment, so what is due is worked out from it now, not from the raise. */
+  const due = poInstalmentAmounts(rows.map((r) => Number(r.pct_bp)), po.totalSen);
+  const instalments = rows.map((r, i) => {
     const payable = isPayable(r.payable_on, { poStatus: po.status, fullyReceived: po.fullyReceived, handover, releasedAt: r.released_at });
     return {
-      id: r.id as string, seq: Number(r.seq), label: r.label as string, pctBp: Number(r.pct_bp), amountSen: Number(r.amount_sen),
+      id: r.id as string, seq: Number(r.seq), label: r.label as string, pctBp: Number(r.pct_bp), amountSen: due[i] ?? 0,
       payableOn: r.payable_on as PayableOn, releasedAt: r.released_at as string | null, releasedBy: r.released_by as string | null,
-      releaseNote: r.release_note as string, paidSen: Number(r.paid_sen), outstandingSen: Number(r.amount_sen) - Number(r.paid_sen), payable,
+      releaseNote: r.release_note as string, paidSen: Number(r.paid_sen), outstandingSen: (due[i] ?? 0) - Number(r.paid_sen), payable,
       payments: payments.filter((p) => p.po_instalment_id === r.id).map((p) => ({
         id: p.id as string, amountSen: Number(p.amount_sen), paidOn: p.paid_on as string, note: p.note as string,
         paymentVoucherId: p.payment_voucher_id as string | null, pvNumber: p.pv_number as string | null,

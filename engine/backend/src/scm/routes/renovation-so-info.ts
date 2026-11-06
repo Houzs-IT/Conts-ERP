@@ -361,6 +361,11 @@ renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
     `UPDATE scm.mfg_sales_order_items SET variants = ?::text::jsonb, description2 = coalesce(?, description2), remark = nullif(?, '')
       WHERE id::text = ? AND doc_no = ?`,
   ).bind(JSON.stringify(variants), summary, remark, itemId, docNo).run();
+  /* An open production order's line shows what to build, so it takes the new options too. */
+  if (!sameOptions) await db.prepare(
+    `UPDATE scm.production_order_items pi SET variants = ?::text::jsonb, description2 = coalesce(?, pi.description2)
+      FROM scm.production_orders o WHERE o.id = pi.production_order_id AND pi.so_item_id::text = ? AND o.status::text NOT IN ('CANCELLED', 'RECEIVED')`,
+  ).bind(JSON.stringify(variants), summary, itemId).run();
   await db.prepare(
     `INSERT INTO scm.mfg_so_audit_log (so_doc_no, company_id, action, actor_name_snapshot, field_changes, status_snapshot, source, note)
      VALUES (?, ?, 'UPDATE', ?, ?::text::jsonb, ?, 'renovation', ?)`,
