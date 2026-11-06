@@ -1486,7 +1486,28 @@ async function completeGrnStep(c: any, sb: any, companyId: number, o: Completion
   return null;
 }
 
-async function completeDoStep(c: any, sb: any, o: CompletionOrder): Promise<string | null> {
+type DoCarrying = { delivery_order_id: string; dord: { status: string } };
+
+/** The DO to tie a completed order to when its lines were delivered without it: a live one before a draft. */
+export function deliveryOfDeliveredLines(rows: readonly DoCarrying[]): string | null {
+  return (rows.find((r) => r.dord.status !== 'DRAFT') ?? rows[0])?.delivery_order_id ?? null;
+}
+
+/* A production line's photos join the DO line of the same SO line, keeping what the SO line brought. */
+async function carryLinePhotos(sb: any, orderId: string, doId: string): Promise<void> {
+  const { data } = await sb.from('production_order_items').select('so_item_id, photo_urls').eq('production_order_id', orderId).not('so_item_id', 'is', null);
+  const made = ((data ?? []) as Array<{ so_item_id: string; photo_urls: string[] | null }>).filter((l) => (l.photo_urls ?? []).length > 0);
+  if (made.length === 0) return;
+  const { data: lines } = await sb.from('delivery_order_items').select('id, so_item_id, photo_urls').eq('delivery_order_id', doId).in('so_item_id', made.map((l) => l.so_item_id));
+  for (const l of (lines ?? []) as Array<{ id: string; so_item_id: string; photo_urls: string[] | null }>) {
+    const merged = mergedPhotos(l.photo_urls, made.find((m) => m.so_item_id === l.so_item_id)?.photo_urls);
+    if (merged.length !== (l.photo_urls ?? []).length) await sb.from('delivery_order_items').update({ photo_urls: merged }).eq('id', l.id);
+  }
+}
+
+export const mergedPhotos = (have: readonly string[] | null | undefined, add: readonly string[] | null | undefined): string[] => [...new Set([...(have ?? []), ...(add ?? [])])];
+
+export async function completeDoStep(c: any, sb: any, o: CompletionOrder): Promise<string | null> {
   if (o.completion_do_id) {
     const { data: dord } = await sb.from('delivery_orders').select('status').eq('id', o.completion_do_id).maybeSingle();
     const status = (dord as { status?: string } | null)?.status;
@@ -1508,10 +1529,18 @@ async function completeDoStep(c: any, sb: any, o: CompletionOrder): Promise<stri
     const qty = Math.min(left, Number(l.qty));
     return qty > 0 ? [{ soItemId: l.so_item_id, qty }] : [];   // already delivered: skipped, not doubled
   });
-  if (picks.length === 0) return null;
+  if (picks.length === 0) {
+    /* Already delivered: nothing to double, but the delivery is still this order's, so its photos and POD reach it. */
+    const { data: carried, error: carriedErr } = await sb.from('delivery_order_items').select('delivery_order_id, dord:delivery_orders!inner (status)').in('so_item_id', wanted.map((l) => l.so_item_id)).neq('dord.status', 'CANCELLED');
+    if (carriedErr) return carriedErr.message;
+    const existing = deliveryOfDeliveredLines((carried ?? []) as unknown as DoCarrying[]);
+    if (existing) await sb.from('production_orders').update({ completion_do_id: existing }).eq('id', o.id);
+    return null;
+  }
   const out = await callHandler(c, createDoFromSoLinesHandler, { picks, confirmShortStock: true, warehouseId: o.purchase_location_id ?? undefined });
   if (out.status >= 300 || !out.json.id) return words(out.json, 'The delivery order could not be raised.');
   await sb.from('production_orders').update({ completion_do_id: out.json.id }).eq('id', o.id);
+  await carryLinePhotos(sb, o.id, out.json.id as string);
   const moved = out.json.movementErrors as string[] | undefined;
   return moved?.length ? `The delivery order was raised but its stock did not move: ${moved.join('; ')}` : null;
 }
