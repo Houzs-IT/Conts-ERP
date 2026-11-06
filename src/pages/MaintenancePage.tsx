@@ -283,7 +283,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
         renderCard={i => <JobCard i={i} money={money} />}
         onRowClick={i => onSelect(i.id)} rowTone={i => (i.id === selected ? 'gold' : i.state === 'resolved' ? 'muted' : null)}
         noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above}
-        filtered={filtered} onClearFilters={onClearFilters}
+        filtered={filtered} onClearFilters={onClearFilters} filterLayout="inline"
         empty={{ title: empty.title, icon: 'Wrench', action: empty.action }}
         selectable={canBulk}
         bulkActions={(picked, clear) => {

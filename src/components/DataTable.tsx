@@ -18,6 +18,7 @@ import { useTableViews, type TableLayout, type SavedView } from './DataTableView
 import { resolveRelative, isRelative } from '../lib/relativeDates';
 import { rm, date as fmtDate, dateTime as fmtDateTime, count as fmtCount, plural } from '../lib/format';
 import { phone as fmtPhone } from '../lib/phone';
+import { useMedia } from '../lib/useMedia';
 import { downloadTable, type ExportColumn, type ExportCell, type ExportKind } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { statusOf, type AnyTone, type StatusEntity } from '../lib/status';
@@ -142,6 +143,8 @@ export interface DataTableProps<R> {
   /** Page-level filters are on (so an empty list reads "nothing matches"). */
   filtered?: boolean;
   onClearFilters?: () => void;
+  /** 'inline' opens the filters as rows above the table on wide screens; phones keep the bottom sheet. */
+  filterLayout?: 'sheet' | 'inline';
   empty?: { title: string; body?: ReactNode; action?: { label: string; onClick: () => void }; icon?: string };
   /** Tick boxes. A function picks which rows can be ticked. */
   selectable?: boolean | ((r: R) => boolean);
@@ -301,7 +304,10 @@ export function DataTable<R>(props: DataTableProps<R>) {
     id, columns, rows, rowKey, loading, error, onRetry, onRowClick, rowTone, urlPrefix = '', pageSize: clientSize = 50,
     server, header, toolbar, actions, above, viewParams = [], filtered, onClearFilters, empty, selectable, bulkActions, selectionKey,
     exportName, onExport, noun = ['row', 'rows'], renderCard, cardsOnly, maxHeight, bare, noToolbar, noViews, noColumns, footer, defaultSort, phoneSort = true,
+    filterLayout = 'sheet',
   } = props;
+  const isWideScreen = useMedia('(min-width: 768px)');
+  const showsInlineFilters = filterLayout === 'inline' && isWideScreen;
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const P = urlPrefix;
@@ -599,6 +605,18 @@ export function DataTable<R>(props: DataTableProps<R>) {
         </div>
       )}
 
+      {showsInlineFilters && panel === 'filters' && (
+        <div role="region" aria-label="Filters" className="grid grid-cols-[150px_minmax(0,1fr)] gap-x-4 gap-y-1.5 items-start py-4 px-[22px] bg-page [border-bottom:1px_solid_var(--color-line-soft)]">
+          {sheetFilters.map(c => (
+            <div key={c.key} className="contents">
+              <span className="text-copy font-medium text-muted-ink min-h-9 flex items-center">{c.label}</span>
+              <FilterEditor col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)} variant="inline"
+                numberBounds={server || filterOf(c)?.kind !== 'number' ? null : numberBoundsOf(c, rows ?? [])} />
+            </div>
+          ))}
+        </div>
+      )}
+
       {activeFilters.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)] bg-page">
           {activeFilters.map(c => (
@@ -763,7 +781,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       {footer}
 
       {/* Panels */}
-      {panel === 'filters' && createPortal(
+      {panel === 'filters' && !showsInlineFilters && createPortal(
         <DialogFrame label="Filters" onClose={closePanel} dirty={false} initialFocus="panel"
           className="fixed inset-0 z-[60] flex flex-col justify-end md:items-center md:justify-center md:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]"
           panelClassName="relative w-full md:max-w-[600px] max-h-[92dvh] md:max-h-[calc(100dvh-48px)] flex flex-col bg-card rounded-t-[20px] md:rounded-card overflow-hidden [box-shadow:var(--shadow-overlay)]">
@@ -933,8 +951,9 @@ function numberBoundsOf<R>(col: Column<R>, rows: R[]): RangeBounds | null {
 
 function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, variant = 'popover', numberBounds = null }: {
   col: Column<R>; spec: FilterSpec; value: string; rows: R[]; onChange: (v: string) => void; onDone?: () => void; autoFocus?: boolean;
-  variant?: 'popover' | 'sheet'; numberBounds?: RangeBounds | null;
+  variant?: 'popover' | 'sheet' | 'inline'; numberBounds?: RangeBounds | null;
 }) {
+  if (spec.kind === 'text' && variant === 'inline') return <div className="w-[280px]"><TextFilter value={value} onChange={onChange} label={col.label} /></div>;
   if (spec.kind === 'text') return <TextFilter value={value} onChange={onChange} onDone={onDone} autoFocus={autoFocus} label={col.label} />;
   if (spec.kind === 'select') {
     const opts = optionsFor(col, spec, rows);
@@ -947,6 +966,7 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, 
       onChange([...next].join(','));
     };
     if (variant === 'sheet') return <FilterChips label={col.label} options={opts} picked={on} hint={spec.hint} onToggle={toggle} />;
+    if (variant === 'inline') return <FilterLinks label={col.label} options={opts} picked={on} onToggle={toggle} onClear={() => onChange('')} />;
     return (
       <div className="flex flex-col gap-px max-h-[280px] overflow-y-auto" role="group" aria-label={col.label}>
         {spec.hint && <span className="text-caption text-muted-ink px-1 pb-1">{spec.hint}</span>}
@@ -962,7 +982,7 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, 
       </div>
     );
   }
-  if (variant === 'sheet') return <LiveRangeFilter kind={spec.kind} money={typeOf(col) === 'money'} label={col.label} bounds={numberBounds} hint={spec.hint} value={value} onChange={onChange} />;
+  if (variant !== 'popover') return <LiveRangeFilter kind={spec.kind} money={typeOf(col) === 'money'} label={col.label} bounds={numberBounds} hint={spec.hint} value={value} onChange={onChange} layout={variant === 'inline' ? 'row' : 'stacked'} />;
   return <RangeFilter kind={spec.kind} money={typeOf(col) === 'money'} hint={spec.hint} value={value} onChange={onChange} onDone={onDone} />;
 }
 
@@ -994,6 +1014,24 @@ function FilterChips({ label, options, picked, hint, onToggle }: {
         })}
         {needle && !shownOptions.length && <span className="text-meta text-muted-ink">No {label.toLowerCase()} matches "{search.trim()}".</span>}
       </div>
+    </div>
+  );
+}
+
+const FILTER_LINK = 'min-h-9 px-2 rounded-control border-none bg-transparent font-sans text-copy cursor-pointer whitespace-nowrap';
+
+function FilterLinks({ label, options, picked, onToggle, onClear }: {
+  label: string; options: { value: string; label: string }[]; picked: Set<string>; onToggle: (value: string) => void; onClear: () => void;
+}): ReactElement {
+  const linkClass = (isPicked: boolean): string => cx(FILTER_LINK, isPicked ? 'font-semibold text-ink bg-muted' : 'text-muted-ink hover:text-ink hover:bg-muted');
+  return (
+    <div role="group" aria-label={label} className="flex flex-wrap items-center gap-x-1 gap-y-0.5 -ml-2">
+      <button type="button" aria-pressed={picked.size === 0} onClick={onClear} className={linkClass(picked.size === 0)}>Any</button>
+      {options.map(option => (
+        <button key={option.value} type="button" aria-pressed={picked.has(option.value)} onClick={() => onToggle(option.value)} className={linkClass(picked.has(option.value))}>
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -1084,8 +1122,9 @@ function RangeSlider({ label, money, bounds, from, to, onFrom, onTo }: {
   );
 }
 
-function LiveRangeFilter({ kind, money, label, bounds, hint, value, onChange }: {
+function LiveRangeFilter({ kind, money, label, bounds, hint, value, onChange, layout }: {
   kind: 'date' | 'number'; money: boolean; label: string; bounds: RangeBounds | null; hint?: string; value: string; onChange: (v: string) => void;
+  layout: 'stacked' | 'row';
 }): ReactElement {
   const [savedFrom, savedTo] = splitRange(value);
   const [from, setFrom] = useState(savedFrom), [to, setTo] = useState(savedTo);
@@ -1102,10 +1141,16 @@ function LiveRangeFilter({ kind, money, label, bounds, hint, value, onChange }: 
   }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { if (pendingValue.current !== null) latestOnChange.current(pendingValue.current); }, []);
   return (
-    <div className="flex flex-col gap-2">
+    <div className={layout === 'row' ? 'flex flex-wrap items-end gap-x-5 gap-y-2' : 'flex flex-col gap-2'}>
       {hint && <span className="text-caption text-muted-ink">{hint}</span>}
-      {kind === 'number' && bounds && <RangeSlider label={label} money={money} bounds={bounds} from={from} to={to} onFrom={setFrom} onTo={setTo} />}
-      <RangeEnds kind={kind} money={money} from={from} to={to} onFrom={setFrom} onTo={setTo} />
+      {kind === 'number' && bounds && (
+        <div className={layout === 'row' ? 'w-[300px]' : undefined}>
+          <RangeSlider label={label} money={money} bounds={bounds} from={from} to={to} onFrom={setFrom} onTo={setTo} />
+        </div>
+      )}
+      <div className={layout === 'row' ? 'w-[340px]' : undefined}>
+        <RangeEnds kind={kind} money={money} from={from} to={to} onFrom={setFrom} onTo={setTo} />
+      </div>
       {(from || to) && (
         <button type="button" onClick={() => { setFrom(''); setTo(''); }}
           className="self-start min-h-9 max-md:min-h-11 text-meta text-muted-ink bg-transparent border-none cursor-pointer underline px-0">Any {kind === 'date' ? 'date' : 'amount'}</button>
