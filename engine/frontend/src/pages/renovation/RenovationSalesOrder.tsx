@@ -196,21 +196,15 @@ export function RenovationSalesOrder() {
   return <ContractSections docNo={docNo} />;
 }
 
-/** Plan item 23: the contract's status and the PO lines to fix, at the top of the sales order's page. Each opens
-    the existing section further down (ContractSections); nothing here writes. */
+/** Plan item 23: the PO lines to fix, at the top of the sales order's page. It opens the section further down
+    (ContractSections); nothing here writes. The page's own status is the one status shown (owner, 7 Nov 2026). */
 export function ContractQuickLinks({ docNo }: { docNo: string }) {
-  const c = useContract(docNo);
   const flags = usePoFlags(docNo);
-  if (!c.data) return null;
   const open = flags.data?.flags.filter((f) => f.status === 'OPEN').length ?? 0;
   const jump = (id: string) => () => document.getElementById(id)?.scrollIntoView({ block: 'start' });
   const link = 'inline-flex items-center rounded-full border border-border bg-surface px-2.5 py-0.5 text-[12px] font-semibold text-primary hover:bg-primary-soft';
-  return (
-    <>
-      <StatusPill status={c.data.status} />
-      {open > 0 && <Link to="#po-flags" className={link} onClick={jump('po-flags')}>{open} PO line{open === 1 ? '' : 's'} to fix</Link>}
-    </>
-  );
+  if (open === 0) return null;
+  return <Link to="#po-flags" className={link} onClick={jump('po-flags')}>{open} PO line{open === 1 ? '' : 's'} to fix</Link>;
 }
 
 /** The contract's own sections. `embedded`: inside the sales order's page, which already shows the customer, the
