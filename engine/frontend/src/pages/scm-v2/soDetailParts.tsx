@@ -307,11 +307,16 @@ export function OrderTotalCard({
   subtotalSen,
   discountSen,
   totalSen,
+  title = "Order total",
+  statusShown,
 }: {
   header: SoTotalHeader;
   subtotalSen: number;
   discountSen: number;
   totalSen: number;
+  /** A quotation's words and status; a sales order uses its own. */
+  title?: string;
+  statusShown?: { tone: "success" | "warning" | "error" | "neutral"; blurb: string };
 }) {
   /* The auto-derived delivery fee is inside `totalSen` but was not itemised,
      so an all-FOC order read "Subtotal 0 → Total 250" with nothing explaining
@@ -319,11 +324,11 @@ export function OrderTotalCard({
      rather than read from a header field so the row is exactly the gap the
      reader is staring at, whatever fee components the server folds in. */
   const feeSen = totalSen - (subtotalSen - discountSen);
-  const st = displayStatusFor(header);
+  const st = statusShown ?? displayStatusFor(header);
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
-        Order total
+        {title}
       </div>
       <div className="mt-1.5 font-money text-[30px] font-bold leading-none tracking-tight text-white">
         {fmtMoney(totalSen, header.currency)}

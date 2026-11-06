@@ -195,6 +195,7 @@ const ScmHub = lazy(() => import("./pages/ScmHub").then((m) => ({ default: m.Scm
 const ScmSubgroupHub = lazy(() => import("./pages/ScmSubgroupHub").then((m) => ({ default: m.ScmSubgroupHub })));
 const ScmSalesOrdersV2 = lazy(() => import("./pages/scm-v2/MfgSalesOrdersListV2").then((m) => ({ default: m.MfgSalesOrdersListV2 })));
 const ScmSalesOrderMaintenanceV2 = lazy(() => import("./pages/scm-v2/SalesOrderMaintenance").then((m) => ({ default: m.SalesOrderMaintenance })));
+const RenoQuotationDetail = lazy(() => import("./pages/scm-v2/RenovationQuotationDetail").then((m) => ({ default: m.RenovationQuotationDetail })));
 const ScmSalesOrderNewV2 = lazy(() => import("./pages/scm-v2/SalesOrderNew").then((m) => ({ default: m.SalesOrderNew })));
 const ScmSalesOrderNewGuidedV2 = lazy(() => import("./pages/scm-v2/SalesOrderNewGuided").then((m) => ({ default: m.SalesOrderNewGuided })));
 const ScmSalesOrderNewFromProductsV2 = lazy(() => import("./pages/scm-v2/SalesOrderNewFromProducts").then((m) => ({ default: m.SalesOrderNewFromProducts })));
@@ -918,7 +919,7 @@ export default function App() {
         {/* Renovation sales documents (Conts, 2026-10-09). Sales Orders area; writes check scm.renovation.* on the server. */}
         <Route path="/scm/renovation/quotations" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationsList /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/quotations/new" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><ScmSalesOrderNewV2 asQuotation /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/renovation/quotations/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><ScmSalesOrderNewV2 asQuotation /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/renovation/quotations/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationDetail /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/templates" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationTemplates /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/templates/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationTemplateEditor /></Scm2990Shell></ScmGuard>} />
         {/* One sales order, one page (owner, 3 Nov 2026): the contract's sections are on the order's page. */}

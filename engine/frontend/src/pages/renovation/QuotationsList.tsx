@@ -18,6 +18,7 @@ import { ResizableDetailDrawer } from '../../components/ResizableDetailDrawer';
 import { useAuth } from '../../auth/AuthContext';
 import { refusalOf, useQuotation, useQuotations, type QuotationListRow } from '../../lib/renovation/api';
 import { fmtDate, rm, StatusPill } from './shared';
+import { quotationLines } from '../scm-v2/renovationQuotationForm';
 import { cn } from '../../lib/utils';
 
 const FILTERS = [
@@ -32,6 +33,30 @@ const VIEW_KEY = 'renovation-quotations-view';
 const readView = (): ListView => {
   try { return localStorage.getItem(VIEW_KEY) === 'cards' ? 'cards' : 'table'; } catch { return 'table'; }
 };
+
+/** A row's lines under it, as on the sales order list. */
+function QuotationLinesExpansion({ id }: { id: string }) {
+  const q = useQuotation(id);
+  if (!q.data) return <div className="px-4 py-3 text-[12px] text-ink-muted">{q.error ? refusalOf(q.error).message : 'Loading lines…'}</div>;
+  const { rows, rooms } = quotationLines(q.data.revision.sections);
+  const grid = 'grid grid-cols-[160px_1fr_60px_110px_110px] items-center gap-3 px-4';
+  return (
+    <div className="rounded-md border border-border-subtle bg-surface">
+      <div className={cn(grid, 'border-b border-border-subtle py-2 font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted')}>
+        <span>Room</span><span>Item</span><span className="text-right">Qty</span><span className="text-right">Unit price</span><span className="text-right">Amount</span>
+      </div>
+      {rows.map((l) => (
+        <div key={l.id} className={cn(grid, 'border-b border-border-subtle py-2 text-[12.5px] last:border-b-0')}>
+          <span className="truncate text-ink-secondary">{rooms.byItem[l.id]}</span>
+          <span className="min-w-0 truncate font-semibold text-ink">{l.description || l.item_code || '—'}</span>
+          <span className="text-right font-money text-ink-secondary">{l.qty}</span>
+          <span className="text-right font-money text-ink-secondary">{rm(l.unit_price_sen)}</span>
+          <span className="text-right font-money font-semibold text-ink">{rm(l.total_sen)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function ViewToggle({ value, onChange }: { value: ListView; onChange: (v: ListView) => void }) {
   const btn = (which: ListView, label: string, Icon: typeof TableIcon) => (
@@ -274,6 +299,7 @@ export function QuotationsList() {
         columns={COLUMNS}
         getRowKey={(r) => r.id}
         onRowClick={setSelected}
+        expandable={{ render: (r) => <QuotationLinesExpansion id={r.id} /> }}
         mobileCard={{ primary: 'docNo', cells: ['status', 'customer', 'unit', 'date', 'total'] }}
         emptyLabel={q || status ? 'No quotations match.' : 'No quotations yet.'}
         search={{

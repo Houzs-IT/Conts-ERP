@@ -10,7 +10,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "../../lib/utils";
 import { soInfoApi } from "../projects/renovation/customerPropertyApi";
-import { projectDatesText } from "../projects/renovation/customerPropertyModel";
+import { projectDatesText, type CustomerPropertyValue, type ProjectShared } from "../projects/renovation/customerPropertyModel";
 
 function Cell({ label, value, muted, span }: { label: string; value: ReactNode; muted?: boolean; span?: boolean }) {
   return (
@@ -25,7 +25,15 @@ export function RenovationSoOrderInfo({ docNo, payment }: { docNo: string; payme
   const q = useQuery({ queryKey: ["reno", "so-info", "so", docNo], queryFn: () => soInfoApi.so(docNo), staleTime: 30_000 });
   if (q.isLoading) return <div className="h-24 animate-pulse rounded-md bg-surface-dim" aria-busy="true" />;
   if (q.isError || !q.data) return <p role="alert" className="text-[13px] text-err">The order information could not be loaded. Reload the page.</p>;
-  const { info, project } = q.data;
+  return <RenovationOrderInfoCells info={q.data.info} project={q.data.project} payment={payment} />;
+}
+
+/** The cells alone, for a quotation, which holds the same fields on itself. */
+export function RenovationOrderInfoCells({ info, project, payment }: {
+  info: Pick<CustomerPropertyValue, "building" | "unitNo" | "propertyType" | "layoutLabel" | "bedrooms" | "bathrooms" | "builtUpSqft" | "landAreaSqft" | "landSize">;
+  project: ProjectShared | null;
+  payment: string | null;
+}) {
   /* The order's dates are its project's (owner, 15 Oct 2026): the created day, and the day it reached Closed. */
   const dates = projectDatesText(project, "so");
   const layout = info.layoutLabel

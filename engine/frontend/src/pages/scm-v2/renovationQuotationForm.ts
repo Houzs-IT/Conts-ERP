@@ -6,6 +6,10 @@ import type { DocHeader, DocLine, DocSection } from '../../lib/renovation/api';
 import { EMPTY_CUSTOMER_PROPERTY, type CustomerPropertyValue } from '../projects/renovation/customerPropertyModel';
 import type { QuoteParty } from '../renovation/QuotationCustomerCard';
 import { placeRows } from '../renovation/roomSections';
+import type { SoPrintRooms } from '../../vendor/scm/lib/so-print-rooms';
+import type { SoDisplayLine } from './soDetailParts';
+
+export type QuotationLine = SoDisplayLine;
 
 export interface QuoteFormLine {
   rid: string;
@@ -118,4 +122,31 @@ export function partyFromBlock(v: CustomerPropertyValue): QuoteParty {
     building: v.building, unitNo: v.unitNo, propertyType: v.propertyType, layoutLabel: v.layoutLabel, bedrooms: v.bedrooms, bathrooms: v.bathrooms,
     builtUpSqft: v.builtUpSqft, landAreaSqft: v.landAreaSqft, landSize: v.landSize,
   };
+}
+
+/** The sections as sales order lines and rooms. A lump sum is a line of its own, as it becomes on the sales order. */
+export function quotationLines(sections: readonly DocSection[]): { rows: QuotationLine[]; rooms: SoPrintRooms } {
+  const rows: QuotationLine[] = [];
+  const order: string[] = [];
+  const byItem: Record<string, string> = {};
+  sections.forEach((s, si) => {
+    const room = s.heading.trim() || DEFAULT_ROOM;
+    if (!order.some((r) => r.toLowerCase() === room.toLowerCase())) order.push(room);
+    if (s.lumpSumSen != null) {
+      const id = `lump-${si}`;
+      rows.push({ id, item_code: 'RENO-ADJUST', description: room, description2: null, uom: 'LOT', qty: 1, unit_price_sen: s.lumpSumSen, discount_sen: 0, total_sen: s.lumpSumSen });
+      byItem[id] = room;
+    }
+    s.lines.forEach((l, li) => {
+      const id = l.id ?? `line-${si}-${li}`;
+      const gross = l.qty * l.unitPriceSen;
+      const total = s.lumpSumSen != null ? 0 : l.netSen ?? gross;
+      rows.push({
+        id, item_code: l.itemCode ?? '', description: l.description, description2: null, uom: l.uom ?? '', qty: l.qty, unit_price_sen: l.unitPriceSen,
+        discount_sen: s.lumpSumSen != null ? 0 : Math.max(0, gross - total), total_sen: total,
+      });
+      byItem[id] = room;
+    });
+  });
+  return { rows, rooms: { order, byItem } };
 }

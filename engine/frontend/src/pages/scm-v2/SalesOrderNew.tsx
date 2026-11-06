@@ -134,7 +134,7 @@ import {
   type DocHeader, type DocLine, type Instalment,
 } from '../../lib/renovation/api';
 import { headerFromParty } from '../renovation/QuotationCustomerCard';
-import { QuotationActions, QuotationCards, QuotationNotices } from './renovationQuotationChrome';
+import { QuotationCards, QuotationNotices } from './renovationQuotationChrome';
 import { blockFromQuote, partyFromBlock, sectionsFromForm, seedQuoteForm, type QuoteSources } from './renovationQuotationForm';
 import { SoInstalments } from './renovationSoInstalments';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
@@ -2453,8 +2453,14 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           ? 'The order already exists. Finish or remove the retained payment rows, then continue to its Detail page.'
           : 'Customer, order info, delivery address, line items and payments — saved as one order.'}
         actions={quoteView && quoteHeader ? (
-          <QuotationActions view={quoteView} canQuote={canQuote} editable={quoteEditable} sections={quoteSections} header={quoteHeaderNow().header ?? quoteHeader}
-            instalments={quoteInstalments} brandId={quoteBrandId} onSave={saveSavedQuotation} saving={quoteSave.isPending} />
+          <>
+            <Button variant="ghost" onClick={() => navigate(`/scm/renovation/quotations/${quoteId}`)}><X {...ICON} /> Cancel</Button>
+            {quoteEditable && (
+              <Button disabled={quoteSave.isPending} onClick={() => { void saveSavedQuotation().then((v) => { if (v !== null) navigate(`/scm/renovation/quotations/${quoteId}`); }); }}>
+                <Save {...ICON} /> {quoteSave.isPending ? 'Saving…' : 'Save'}
+              </Button>
+            )}
+          </>
         ) : (
           <>
             {/* h-9 = the <Button> height — this link shares the rail with
