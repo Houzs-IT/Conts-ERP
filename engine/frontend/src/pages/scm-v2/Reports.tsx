@@ -36,6 +36,7 @@
 import { useState } from 'react';
 import { fiscalYearStart, useLedgerSettings } from '../../conts/ledgerSettings';
 import { DepartmentSelect, departmentLabel, type Department } from '../../conts/department';
+import { useSubDepartments } from '../../conts/subDepartmentQueries';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Download, Printer } from 'lucide-react';
@@ -111,8 +112,9 @@ type PnlResponse = {
   };
 };
 /* Conts: one department's P&L when one is chosen (finance phase 1, spec 3.5); none is the whole company. */
-const fetchPnl = (from: string, to: string, department: Department | '' = '') =>
-  authedFetch<PnlResponse>(`/accounting/reports/pnl?from=${from}&to=${to}${department ? `&department=${department}` : ''}`);
+/* And one of its sub-departments (SOP 1.1; chew 4 Nov 2026): the server takes the department from it. */
+const fetchPnl = (from: string, to: string, department: Department | '' = '', subDepartment = '') =>
+  authedFetch<PnlResponse>(`/accounting/reports/pnl?from=${from}&to=${to}${department ? `&department=${department}` : ''}${subDepartment ? `&subDepartment=${encodeURIComponent(subDepartment)}` : ''}`);
 
 export const PnLTab = () => {
   /* This fiscal year to date by default (spec 3.7); the year-end month comes from the ledger settings. */
@@ -124,15 +126,20 @@ export const PnLTab = () => {
   const [level, setLevel] = useState<Level>('all');
   const [editing, setEditing] = useState(false);
   const [monthly, setMonthly] = useState(false);
-  const [department, setDepartment] = useState<Department | ''>('');
+  const [department, setDepartmentState] = useState<Department | ''>('');
+  const [subDepartment, setSubDepartment] = useState('');
+  const subs = (useSubDepartments().data?.subDepartments ?? []).filter((s) => s.department === department);
+  const subName = subs.find((s) => s.id === subDepartment)?.name ?? '';
+  /* Another department clears the sub-department. */
+  const setDepartment = (d: Department | '') => { setDepartmentState(d); setSubDepartment(''); };
   const { can } = useAuth();
   const canArrange = can('scm.payment_voucher.post');
   const openLedger = useOpenLedger(() => from, () => to, () => department);
   const tree = useReportTree(level);
   const drill = { from, to, department };
   const q = useQuery({
-    queryKey: ['report-pnl', from, to, department],
-    queryFn: () => fetchPnl(from, to, department),
+    queryKey: ['report-pnl', from, to, department, subDepartment],
+    queryFn: () => fetchPnl(from, to, department, subDepartment),
     enabled: Boolean(from && to) && !monthly,
     staleTime: 30_000,
   });
@@ -144,8 +151,8 @@ export const PnLTab = () => {
   const period = `${fmtDate(from)} – ${fmtDate(to)}`;
   const sheet = (): ReportSheet | null => (q.data && lay ? {
     title: 'P&L',
-    subtitle: `${period}${department ? ` · ${departmentLabel(department)}` : ''} · % of sales · ${lay.stored ? 'on the saved layout' : "on the chart's own tree"}${level === 'all' ? '' : ` · level ${level}`}`,
-    meta: [{ label: 'Period', value: period }, ...(department ? [{ label: 'Department', value: departmentLabel(department) }] : [])],
+    subtitle: `${period}${department ? ` · ${departmentLabel(department)}` : ''}${subName ? ` · ${subName}` : ''} · % of sales · ${lay.stored ? 'on the saved layout' : "on the chart's own tree"}${level === 'all' ? '' : ` · level ${level}`}`,
+    meta: [{ label: 'Period', value: period }, ...(department ? [{ label: 'Department', value: departmentLabel(department) }] : []), ...(subName ? [{ label: 'Sub-department', value: subName }] : [])],
     tables: [statementTable(linesVisible(pnlLines(q.data), level, tree.open), '% of sales')],
   } : null);
 
@@ -160,14 +167,20 @@ export const PnLTab = () => {
           </>
         )}
         <DepartmentSelect label="P&L department" blank="All departments" value={department} onChange={setDepartment} />
+        {department && (
+          <select aria-label="P&L sub-department" value={subDepartment} onChange={(e) => setSubDepartment(e.target.value)}>
+            <option value="">All of {departmentLabel(department)}</option>
+            {subs.filter((s) => s.active || s.id === subDepartment).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
         <ByMonthButton on={monthly} onToggle={() => setMonthly((v) => !v)} />
         {canArrange && (
           <Button variant="ghost" size="sm" onClick={() => setEditing((v) => !v)} aria-pressed={editing}>Layout</Button>
         )}
-        {!monthly && q.data && <ExportButtons sheet={sheet} fileBase={`pnl-${from}-to-${to}${department ? `-${department}` : ''}`} />}
+        {!monthly && q.data && <ExportButtons sheet={sheet} fileBase={`pnl-${from}-to-${to}${department ? `-${department}` : ''}${subName ? `-${subName.replace(/[^A-Za-z0-9]+/g, '-')}` : ''}`} />}
       </div>
       {editing && <ReportLayoutEditor report="pnl" onClose={() => setEditing(false)} />}
-      {monthly && <MonthlyReport<PnlResponse> report="pnl" title="P&L" withCumulative fetchColumn={(col: MonthColumn) => fetchPnl(col.from, col.to, department)} keyParts={[department]} department={department} linesOf={pnlLines} fmt={fmtSenPlain} pctTitle="% of sales" />}
+      {monthly && <MonthlyReport<PnlResponse> report="pnl" title="P&L" withCumulative fetchColumn={(col: MonthColumn) => fetchPnl(col.from, col.to, department, subDepartment)} keyParts={[department, subDepartment]} department={department} linesOf={pnlLines} fmt={fmtSenPlain} pctTitle="% of sales" />}
       {!monthly && q.isLoading && <div style={soft}>Working the period out…</div>}
       {!monthly && q.isError && <div style={{ fontSize: 'var(--fs-13)', color: 'var(--c-danger, #a33)' }}>The statement did not load — adjust the dates to retry.</div>}
       {!monthly && q.data && lay && (

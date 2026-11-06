@@ -118,7 +118,8 @@ app.post("/", async (c) => {
   if (!user) return c.json({ error: "The account could not be prepared." }, 500);
   if (user.status !== "active") return c.json({ error: "Account is disabled" }, 403);
 
-  await c.env.DB.prepare(`UPDATE users SET last_login_at = datetime('now') WHERE id = ?`).bind(user.id).run();
+  /* Bookkeeping: the person should not wait for it. */
+  c.executionCtx.waitUntil(c.env.DB.prepare(`UPDATE users SET last_login_at = datetime('now') WHERE id = ?`).bind(user.id).run().catch(() => undefined));
   const token = await createSession(c.env, user.id);
   const sessionPass = await mintSessionPass(c.env, token, Date.now());
   return c.json({ token, ...(sessionPass ? { session_pass: sessionPass } : {}) });

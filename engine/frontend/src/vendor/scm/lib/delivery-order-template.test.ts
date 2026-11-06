@@ -223,20 +223,20 @@ describe('Delivery Order template', () => {
     setBrandingCache({ ...BRANDING_2990 }, '2990');
     const { spans } = await renderDo([itemAt(1)], { ...HEADER, scanToken: 'a'.repeat(64) });
 
-    // The title above the rule; the number and issue date in the right column under it.
+    // The title under the rule on the left; the number and issue date in the right column beside it.
     const title = spans.find((s) => s.text === 'DELIVERY ORDER');
     expect(title).toBeDefined();
-    expect(title!.y).toBeLessThan(40);
     const meta = spans.filter((s) => [`No. : ${HEADER.do_number}`, 'Issued: 2026/08/06'].includes(s.text));
     expect(meta).toHaveLength(2);
     const qr = spans.find((s) => s.text === 'SCAN AT EACH STEP');
     expect(qr).toBeDefined();
     const columnLeft = Math.min(qr!.left, ...meta.map((s) => s.left));
+    expect(title!.right).toBeLessThan(columnLeft);
 
-    // The company block: under the rule, left of the scan code and the number column.
-    const company = spans.filter((s) => s.y > 40 && s.y < 70 && s !== qr && !meta.includes(s) && s.text.trim() !== '');
+    // The company block: above the title, clear of the logo on its left.
+    const company = spans.filter((s) => s.y < title!.y - 4 && s !== qr && !meta.includes(s) && s.text.trim() !== '');
     expect(company.length).toBeGreaterThan(2);
-    expect(Math.max(...company.map((s) => s.right))).toBeLessThan(columnLeft);
+    expect(Math.min(...company.map((s) => s.left))).toBeGreaterThan(76);
   });
 
   test('the customer account code is not printed on the customer copy', async () => {

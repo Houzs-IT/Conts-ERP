@@ -29,6 +29,7 @@ import type { AuditEntityType } from '../../vendor/scm/lib/entity-audit-queries'
 import type { StatusDocType } from '../../vendor/scm/lib/status-pill';
 import {
   PURCHASE_ORDER_AUDIT_LABELS,
+  PRODUCTION_ORDER_AUDIT_LABELS,
   PURCHASE_INVOICE_AUDIT_LABELS,
   SALES_INVOICE_AUDIT_LABELS,
   DELIVERY_ORDER_AUDIT_LABELS,
@@ -50,12 +51,13 @@ type DocSpec = {
 
 export type HistoryDocType = Extract<
   AuditEntityType,
-  'PURCHASE_ORDER' | 'PURCHASE_INVOICE' | 'SALES_INVOICE' | 'DELIVERY_ORDER'
+  'PURCHASE_ORDER' | 'PRODUCTION_ORDER' | 'PURCHASE_INVOICE' | 'SALES_INVOICE' | 'DELIVERY_ORDER'
   | 'GRN' | 'PAYMENT_VOUCHER' | 'STOCK_TAKE' | 'STOCK_TRANSFER'
 >;
 
 export const DOCS: Record<HistoryDocType, DocSpec> = {
   PURCHASE_ORDER:   { entityName: 'Purchase order',   labels: PURCHASE_ORDER_AUDIT_LABELS,   statusDocType: 'po' },
+  PRODUCTION_ORDER: { entityName: 'Production order',   labels: PRODUCTION_ORDER_AUDIT_LABELS,   statusDocType: 'production' },
   PURCHASE_INVOICE: { entityName: 'Purchase invoice', labels: PURCHASE_INVOICE_AUDIT_LABELS, statusDocType: 'pi' },
   SALES_INVOICE:    { entityName: 'Invoice',          labels: SALES_INVOICE_AUDIT_LABELS,    statusDocType: 'si' },
   DELIVERY_ORDER:   { entityName: 'Delivery order',   labels: DELIVERY_ORDER_AUDIT_LABELS,   statusDocType: 'do' },

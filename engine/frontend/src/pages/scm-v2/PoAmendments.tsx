@@ -178,7 +178,7 @@ export const PoAmendments = () => {
   return (
     <div className={quick ? 'md:pr-[540px]' : undefined}>
       <PageHeader
-        eyebrow="Revision inbox"
+        eyebrow="Procurement"
         title="PO Amendments"
         description={
           isLoading

@@ -94,11 +94,12 @@ export async function planModelCategoryMoves(
   supabase: SupabaseClient,
   companyId: number,
   rows: ReadonlyArray<Record<string, unknown>>,
+  liveCategories: ReadonlyArray<{ code: string; label: string }> = [],
 ): Promise<ModelMovePlan> {
   const asked: Array<{ code: string; category: string }> = [];
   for (const r of rows) {
     const code = String(r.code ?? '').trim();
-    const category = parseMfgCategory(String(r.category ?? '').trim());
+    const category = parseMfgCategory(String(r.category ?? '').trim(), liveCategories);
     if (code && category) asked.push({ code, category });
   }
   const moves = new Map<string, Omit<ImportModelMove, 'skuCount'>>();

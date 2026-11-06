@@ -90,7 +90,7 @@ export function useBranding(): BrandingWithCompany {
   useEffect(() => {
     document.title =
       companyCode === HOUZS_COMPANY_CODE
-        ? "Houzs Century ERP"
+        ? "The Conts ERP"
         : `${shortCompanyName(branding.companyName)} ERP`;
   }, [companyCode, branding.companyName]);
 

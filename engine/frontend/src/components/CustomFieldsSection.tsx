@@ -208,7 +208,7 @@ export function CustomFieldsSection({ udf, label }: { udf: UseUdfResult; label: 
       )}
 
       <div className="mt-3 text-[10px] text-ink-muted">
-        Stored locally · Never sent to AutoCount
+        Stored on this order only
       </div>
     </section>
   );

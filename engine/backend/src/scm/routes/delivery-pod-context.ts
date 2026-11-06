@@ -141,6 +141,16 @@ export async function ownServiceAndProjectRowKeys(
    for anyone who may read that DO (the route's area guard) in its company. The
    photo sits in the shared houzs-erp bucket under the key the POD stored; no
    page could show it before, so a delivered DO read as if it had no evidence. */
+/* The DO a completed production order raised has the order's progress photos as its proof of delivery (owner, 4 Nov
+   2026). Named here rather than copied, so a photo added later arrives too. They live with the attachments. */
+export async function productionProofKeys(sb: any, doId: string): Promise<string[]> {
+  const { data: order } = await sb.from('production_orders').select('id, company_id').eq('completion_do_id', doId).maybeSingle();
+  if (!order) return [];
+  const { data } = await sb.from('doc_attachments').select('r2_key, mime').eq('company_id', order.company_id).eq('doc_type', 'production_order').eq('doc_id', order.id)
+    .is('deleted_at', null).order('created_at');
+  return ((data ?? []) as Array<{ r2_key: string; mime: string }>).filter((f) => f.mime.startsWith('image/')).map((f) => f.r2_key);
+}
+
 export const doPodPhotoHandler = async (c: Context<{ Bindings: Env; Variables: Variables }>) => {
   const sb = c.get('supabase');
   const { data, error } = await scopeToAllowedCompanies(
@@ -149,9 +159,10 @@ export const doPodPhotoHandler = async (c: Context<{ Bindings: Env; Variables: V
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   const row = data as { pod_r2_key: string | null; pod_photo_keys: string[] | null } | null;
   const keys = row?.pod_photo_keys?.length ? row.pod_photo_keys : row?.pod_r2_key ? [row.pod_r2_key] : [];
-  const key = keys[Number(c.req.param('n') ?? 0)];
+  const proof = await productionProofKeys(sb, String(c.req.param('id')));
+  const key = [...keys, ...proof][Number(c.req.param('n') ?? 0)];
   if (!key) return c.json({ error: 'not_found', reason: 'This delivery order has no POD photo.' }, 404);
-  const obj = await c.env.POD_BUCKET.get(key);
+  const obj = proof.includes(key) ? await c.env.SO_ITEM_PHOTOS.get(key) : await c.env.POD_BUCKET.get(key);
   if (!obj) return c.json({ error: 'not_found', reason: 'The POD photo file is missing from storage.' }, 404);
   return new Response(obj.body, {
     headers: { 'content-type': obj.httpMetadata?.contentType ?? 'image/jpeg', 'cache-control': 'private, max-age=300' },

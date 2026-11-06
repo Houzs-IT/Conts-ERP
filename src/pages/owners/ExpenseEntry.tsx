@@ -13,6 +13,7 @@ import { cx } from '../../lib/design-tokens';
 import { PAYERS } from '../../lib/revenueModel';
 import { Field } from '../../components/Field';
 import { receiptRequired } from '../../lib/receipts';
+import { requestsNote, sendUtilityRequests, type ToPay } from '../../lib/utilityRequests';
 
 /** A month's utility bills by account number across an owner's units, entered from one screen (the owner page). One
  *  bill at a time is "Add a bill" (Costs.tsx BillModal), which records the same expense row. Money flows one way: an
@@ -31,10 +32,12 @@ interface UtilityRow {
   expenseId: string | null; amount: number | null; chargeTo: string | null; receiptDocumentId: string | null; recordedElsewhere: boolean;
   /** The statement that deducts the bill entered here: a later month when it came after its own month was final. */
   deductMonth?: string | null; rolled?: boolean;
+  /** "Owner paid this bill" on the bill entered, and the payment request it went out on (then it is not replaced here). */
+  ownerPaid?: boolean; paymentRequestNo?: string | null;
 }
 interface BareUnit { unitId: string; unitLabel: string; recorded?: { kind: string; kindLabel: string; amount: number; deductMonth?: string; rolled?: boolean }[] }
 /** A bill typed for a unit with no account number on file: recorded with no reference (POST rows with unitId + kind). */
-interface LooseLine { key: string; unitId: string; kind: string; amount: number | null; payer: string; file: File | null }
+interface LooseLine { key: string; unitId: string; kind: string; amount: number | null; payer: string; file: File | null; ownerPaid?: boolean }
 
 const ACCOUNT_KINDS = [{ value: 'electricity', label: 'Electricity' }, { value: 'water', label: 'Water' }, { value: 'internet', label: 'Wi-Fi' }, { value: 'sewerage', label: 'IndahWater' }];
 
@@ -52,10 +55,11 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
   const [amounts, setAmounts] = useState<Record<string, number | null>>({});
   const [payers, setPayers] = useState<Record<string, string>>({});
   const [receipts, setReceipts] = useState<Record<string, File | null>>({});
+  const [paidBy, setPaidBy] = useState<Record<string, boolean>>({});
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [billDate, setBillDate] = useState(lastDayOf(initial));
-  useEffect(() => { setAmounts({}); setPayers({}); setReceipts({}); setRowErrors({}); setBillDate(lastDayOf(month)); }, [month]);
+  useEffect(() => { setAmounts({}); setPayers({}); setReceipts({}); setPaidBy({}); setRowErrors({}); setBillDate(lastDayOf(month)); }, [month]);
   const dateOk = /^\d{4}-\d{2}-\d{2}$/.test(billDate) && billDate.startsWith(month);
   const rows = data?.data ?? [];
   const bare = data?.unitsWithoutAccount ?? [];
@@ -69,15 +73,18 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
   }, [data]);
   const looseEntered = loose.filter(l => (l.amount ?? 0) > 0);
   const looseMissing = looseEntered.filter(l => receiptRequired(l.kind, l.payer) && !l.file);
+  // A bill already sent for payment stays as it is (SOP 3.10): shown, not entered again.
+  const fixed = (r: UtilityRow) => r.recordedElsewhere || !!r.paymentRequestNo;
   const value = (r: UtilityRow): number | null => r.accountId in amounts ? amounts[r.accountId] : (r.amount != null && !r.recordedElsewhere ? r.amount : null);
   const payer = (r: UtilityRow) => payers[r.accountId] ?? r.chargeTo ?? 'owner';
-  const entered = rows.filter(r => !r.recordedElsewhere && (value(r) ?? 0) > 0);
+  const ownerPaid = (r: UtilityRow) => paidBy[r.accountId] ?? r.ownerPaid ?? false;
+  const entered = rows.filter(r => !fixed(r) && (value(r) ?? 0) > 0);
   const needsReceipt = (r: UtilityRow) => receiptRequired(r.kind, payer(r)) && !receipts[r.accountId] && !r.receiptDocumentId;
   const missing = [...entered.filter(needsReceipt), ...looseMissing];
   const count = entered.length + looseEntered.length;
   // How many bills of the month still have no amount, typed here or recorded before (finance, 26 Oct 2026).
   const lines = rows.length + loose.length;
-  const toFill = lines - rows.filter(r => r.recordedElsewhere || (value(r) ?? 0) > 0).length - looseEntered.length;
+  const toFill = lines - rows.filter(r => fixed(r) || (value(r) ?? 0) > 0).length - looseEntered.length;
 
   async function save() {
     setBusy(true); setRowErrors({});
@@ -96,17 +103,20 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
         fd.append('file', l.file); fd.append('unitId', l.unitId); fd.append('kind', 'receipt');
         uploaded[`${l.unitId}:${l.kind}`] = (await api.post<{ id: string }>('/documents', fd)).id;
       }
-      const r = await api.post<{ saved: number; locked: string[]; recordedElsewhere: string[]; rolled?: { key: string; deductMonth: string }[] }>('/expenses/utilities', {
+      const r = await api.post<{ saved: number; locked: string[]; recordedElsewhere: string[]; requested?: string[]; rolled?: { key: string; deductMonth: string }[]; toPay?: ToPay[] }>('/expenses/utilities', {
         month, date: billDate, rows: [
-          ...entered.map(x => ({ accountId: x.accountId, amount: value(x), chargeTo: payer(x), receiptDocumentId: uploaded[x.accountId] ?? null })),
-          ...looseEntered.map(l => ({ unitId: l.unitId, kind: l.kind, amount: l.amount, chargeTo: l.payer, receiptDocumentId: uploaded[`${l.unitId}:${l.kind}`] ?? null })),
+          ...entered.map(x => ({ accountId: x.accountId, amount: value(x), chargeTo: payer(x), receiptDocumentId: uploaded[x.accountId] ?? null, ownerPaid: ownerPaid(x) })),
+          ...looseEntered.map(l => ({ unitId: l.unitId, kind: l.kind, amount: l.amount, chargeTo: l.payer, receiptDocumentId: uploaded[`${l.unitId}:${l.kind}`] ?? null, ownerPaid: !!l.ownerPaid })),
         ],
       });
-      const skipped = r.locked.length + r.recordedElsewhere.length;
+      // The bills the company pays go to finance, one payment request per provider (as on Scan bills).
+      const requests = await sendUtilityRequests(r.toPay);
+      const sentNote = requestsNote(requests);
+      const skipped = r.locked.length + r.recordedElsewhere.length + (r.requested?.length ?? 0) + requests.failed.length;
       const late = r.rolled ?? [];
       const lateNote = late.length ? `${late.length} ${late.length === 1 ? 'goes' : 'go'} on the ${[...new Set(late.map(x => monthLabel(x.deductMonth)))].join(' or ')} statement as ${late.length === 1 ? 'a late bill' : 'late bills'}. ` : '';
       toast({ tone: skipped ? 'warning' : 'success', title: `${r.saved} ${r.saved === 1 ? 'bill' : 'bills'} recorded for ${monthLabel(month)}.`,
-        body: skipped || late.length ? `${lateNote}${r.locked.length ? `${r.locked.length} skipped: already on a final statement. ` : ''}${r.recordedElsewhere.length ? `${r.recordedElsewhere.length} already recorded another way.` : ''}`.trim() : 'Owner-paid bills go on the owner statement with their receipts.' });
+        body: `${lateNote}${r.locked.length ? `${r.locked.length} skipped: already on a final statement. ` : ''}${r.recordedElsewhere.length ? `${r.recordedElsewhere.length} already recorded another way. ` : ''}${r.requested?.length ? `${r.requested.length} skipped: already sent for payment. ` : ''}${sentNote}`.trim() || 'Owner-paid bills go on the owner statement with their receipts.' });
       onSaved(); onClose();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setRowErrors(e.fields);
@@ -119,7 +129,7 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
     : !count ? 'Enter at least one bill'
     : `Attach the receipt for each bill the owner pays (${missing.length} missing)`;
   return (
-    <Sheet wide title="Monthly utility bills" sub="One line per account number. Enter the bill amount and attach its receipt; empty lines are skipped. Re-entering a month replaces what was entered here." onClose={onClose}
+    <Sheet wide title="Monthly utility bills" sub="One line per account number. Enter the bill amount and attach its receipt; empty lines are skipped. Re-entering a month replaces what was entered here, except bills already sent for payment. Bills the company pays go to finance as a payment request." onClose={onClose}
       footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" loading={busy} disabled={!count || !dateOk || missing.length > 0} disabledReason={disabledReason} onClick={() => void save()}>Record {count || ''} {count === 1 ? 'bill' : 'bills'}</Button></>}>
       <div className="flex items-center gap-2">
         <button type="button" aria-label="Previous month" onClick={() => step(-1)} className="w-[34px] h-[34px] grid place-items-center rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"><Icon name="ChevronLeft" size="sm" /></button>
@@ -147,29 +157,32 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
             <div className="shrink-0 border border-solid border-line rounded-card overflow-hidden">
               {rows.map(r => {
                 const amount = value(r);
-                const owes = !r.recordedElsewhere && (amount ?? 0) > 0 && receiptRequired(r.kind, payer(r));
+                const owes = !fixed(r) && (amount ?? 0) > 0 && receiptRequired(r.kind, payer(r));
                 return (
                   <div key={r.accountId} className="grid grid-cols-[minmax(0,1fr)_112px] sm:grid-cols-[minmax(0,1fr)_120px_140px_150px] gap-x-3 gap-y-2 items-center py-[10px] px-3 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
                     <div className="flex flex-col min-w-0">
                       <span className="text-copy font-medium truncate" title={r.unitLabel}>{titleCase(r.unitLabel)}</span>
-                      <span className="text-meta text-muted-ink truncate">{r.kindLabel} · {r.accountNo}{r.provider ? ` · ${r.provider}` : ''}{r.recordedElsewhere ? ' · already recorded' : r.expenseId ? ' · entered here' : ''}{r.rolled && r.deductMonth ? ` · deducted ${monthLabel(r.deductMonth)}` : !r.expenseId && rollsTo[r.unitId] ? ` · will be deducted ${monthLabel(rollsTo[r.unitId])}` : ''}</span>
+                      <span className="text-meta text-muted-ink truncate">{r.kindLabel} · {r.accountNo}{r.provider ? ` · ${r.provider}` : ''}{r.recordedElsewhere ? ' · already recorded' : r.paymentRequestNo ? ` · sent for payment (${r.paymentRequestNo})` : r.expenseId ? ' · entered here' : ''}{r.rolled && r.deductMonth ? ` · deducted ${monthLabel(r.deductMonth)}` : !r.expenseId && rollsTo[r.unitId] ? ` · will be deducted ${monthLabel(rollsTo[r.unitId])}` : ''}</span>
                     </div>
-                    {r.recordedElsewhere ? (
+                    {fixed(r) ? (
                       <MoneyText sen={r.amount ?? 0} mode="exact" tone="muted" className="text-copy text-right" />
                     ) : (
                       <MoneyInput aria-label={`${r.kindLabel} ${r.accountNo} amount in ringgit`}
                         valueSen={amount} onChangeSen={sen => setAmounts(a => ({ ...a, [r.accountId]: sen }))} className="field-input h-[38px]! min-w-0 text-right tabular-nums" />
                     )}
                     <div className="col-span-2 sm:col-span-1 min-w-0">
-                      {!r.recordedElsewhere && <Select size="sm" label={`Who pays ${r.kindLabel} ${r.accountNo}`} className="w-full" value={payer(r)}
+                      {!fixed(r) && <Select size="sm" label={`Who pays ${r.kindLabel} ${r.accountNo}`} className="w-full" value={payer(r)}
                         onChange={v => setPayers(p => ({ ...p, [r.accountId]: v }))} options={PAYERS.map(p => ({ value: p.value, label: p.label }))} />}
                     </div>
                     <div className="col-span-2 sm:col-span-1 min-w-0">
-                      {!r.recordedElsewhere && (
+                      {!fixed(r) && (
                         <RowReceipt label={`${r.kindLabel} ${r.accountNo}`} file={receipts[r.accountId] ?? null} onPick={f => setReceipts(x => ({ ...x, [r.accountId]: f }))}
                           existing={r.receiptDocumentId} needed={owes && needsReceipt(r)} error={rowErrors[r.accountId]} />
                       )}
                     </div>
+                    {!fixed(r) && (amount ?? 0) > 0 && (
+                      <OwnerPaidTick label={`${r.kindLabel} ${r.accountNo}`} checked={ownerPaid(r)} onChange={v => setPaidBy(p => ({ ...p, [r.accountId]: v }))} />
+                    )}
                   </div>
                 );
               })}
@@ -179,6 +192,17 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
           {bare.length > 0 && <NoAccountUnits units={bare} lines={loose} setLines={setLoose} errors={rowErrors} onAdded={reload} />}
         </>}
     </Sheet>
+  );
+}
+
+/** "Owner paid this bill" (chew, 5 Nov 2026; SOP 3.10, as on Scan bills): the bill is shared as usual and the full
+ *  amount goes back to the owner as O2; no payment request goes out for it. */
+export function OwnerPaidTick({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="col-span-full inline-flex items-center gap-2 text-meta text-ink cursor-pointer select-none">
+      <input type="checkbox" aria-label={`Owner paid this bill: ${label}`} checked={checked} onChange={e => onChange(e.target.checked)} />
+      Owner paid this bill <span className="text-muted-ink">(given back as O2; no payment request)</span>
+    </label>
   );
 }
 
@@ -254,6 +278,7 @@ function NoAccountUnits({ units, lines, setLines, errors, onAdded }: {
                     <div className="col-span-2 sm:col-span-1 min-w-0">
                       <RowReceipt label={what} file={l.file} onPick={f => patch(l.key, { file: f })} existing={null} needed={owes && !l.file} error={errors[l.key]} />
                     </div>
+                    {(l.amount ?? 0) > 0 && <OwnerPaidTick label={what} checked={!!l.ownerPaid} onChange={v => patch(l.key, { ownerPaid: v })} />}
                   </div>
                 );
               })}

@@ -6,7 +6,7 @@ export const BETA_TABS = [
   { key: "overview", label: "Overview", bundle: "A" },
   { key: "drawings", label: "Drawings", bundle: "A" },
   { key: "vo", label: "VO", bundle: "B" },
-  { key: "po", label: "PO", bundle: "B" },
+  { key: "po", label: "SO", bundle: "B" },
   { key: "client-po", label: "Client PO", bundle: "B" },
   { key: "do", label: "DO", bundle: "C" },
   { key: "gr", label: "GR", bundle: "C" },

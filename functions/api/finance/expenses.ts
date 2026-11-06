@@ -1,7 +1,7 @@
 import { type Env, all, one, json, fail, nowIso } from '../../_lib/db';
 import { todayMyt } from '../../_lib/ops';
 import { requireSession } from '../../_lib/auth';
-import { LOCKED_SQL, IS_PARENT_SQL, readExpenseFilter, expenseWhere, shiftMonth } from '../../_lib/expenses';
+import { LOCKED_SQL, IS_PARENT_SQL, EXPENSE_FROM as FROM, expenseOut as shape, readExpenseFilter, expenseWhere, shiftMonth } from '../../_lib/expenses';
 
 const SORTS: Record<string, string> = {
   date: 'e.incurred_on DESC, e.created_at DESC, e.id',
@@ -11,16 +11,6 @@ const SORTS: Record<string, string> = {
   unit: 'p.name, u.unit_number, e.incurred_on DESC, e.id',
   unit_desc: 'p.name DESC, u.unit_number DESC, e.incurred_on DESC, e.id',
 };
-
-const FROM = 'FROM expenses e JOIN units u ON u.id = e.unit_id JOIN properties p ON p.id = u.property_id';
-
-const shape = (r: any) => ({
-  id: r.id, unitId: r.unit_id, unitNumber: r.unit_number, propertyName: r.property_name,
-  category: r.category, description: r.description, amount: Number(r.amount),
-  incurredOn: r.incurred_on, reference: r.reference, chargeTo: r.charge_to,
-  parentExpenseId: r.parent_expense_id ?? null, locked: !!r.locked, receiptDocumentId: r.receipt_document_id ?? null,
-  taskId: r.task_id ?? null, maintenanceId: r.maintenance_id ?? null,
-});
 
 /** GET /api/finance/expenses?month=YYYY-MM|all&category=&building=&unit=&owner=&q=&sort=&page=&pageSize=&view=list|tree&export=1
  *  One page of expenses plus the totals for everything the filters match, so the screen never has to hold

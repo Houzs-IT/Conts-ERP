@@ -122,6 +122,6 @@ describe('purchase-order-pdf — a line that carries a photo prints it', () => {
   it('prints no photo block at all when the line carries no key', async () => {
     const { raw } = await render([]);
     expect(raw).not.toContain('ITEM PHOTOS');
-    expect(raw).not.toContain('/Subtype /Image');
+    expect(raw.match(/\/Subtype \/Image/g)?.length ?? 0).toBeLessThanOrEqual(1); // the letterhead's logo
   });
 });

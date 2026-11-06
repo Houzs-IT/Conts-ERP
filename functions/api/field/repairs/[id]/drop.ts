@@ -12,11 +12,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (session.role !== 'technician') return fail('FORBIDDEN', 'Only technicians drop maintenance jobs.', 403);
 
   const id = String(params.id);
+  if (!(await one(env, 'SELECT 1 AS x FROM maintenance_issues WHERE id = ?', id))) return fail('NOT_FOUND', 'That job no longer exists.', 404);
   const lastAssign = await one<LastAssign>(env, `
     SELECT after_state::jsonb ->> 'via' AS via, before_state::jsonb ->> 'state' AS state_before, actor_id FROM audit_log
     WHERE entity_table = 'maintenance_issues' AND entity_id = ? AND action = 'maintenance.assign'
     ORDER BY occurred_at DESC LIMIT 1`, id);
-  if (lastAssign?.via !== 'picked_up' || lastAssign.actor_id !== session.userId) return fail('FORBIDDEN', 'The office gave you this job. Ask the office to take it back.', 403);
+  if (lastAssign?.via !== 'picked_up' || lastAssign.actor_id !== session.userId) return fail('CONFLICT', 'The office gave you this job. Ask the office to take it back.', 409);
 
   const [byId, listed] = await Promise.all([hasAssigneeUser(env), hasTechnicianList(env)]);
   const stateAfter = lastAssign.state_before === 'reopened' ? 'reopened' : 'open';

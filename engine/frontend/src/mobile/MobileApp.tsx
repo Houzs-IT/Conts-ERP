@@ -452,23 +452,9 @@ export const MOBILE_MENU_GROUPS: { group: string; items: MobileMenuItem[] }[] = 
     { to: "/scm/stock-transfers", label: "Stock Transfers" },
     { to: "/scm/stock-takes", label: "Stock Take" },
   ]},
-  /* System — the phone half of the desktop Sidebar's `system` section. Only one
-     row so far: the AutoCount write-back queue, which is the answer to "did my
-     sales order reach AutoCount" and therefore the one system page an owner
-     opens on a phone rather than at a desk. Gated by its own live NAV_TABS entry
-     at /autocount-sync (mechanism 1 above), which carries the same two keys the
-     endpoint accepts. */
-  { group: "System", items: [
-    { to: "/autocount-sync", label: "AutoCount Sync" },
-    /* The Venture Portal feed. On a phone for the same reason the row above it
-       is: "did the portal get my sales orders" decides whether somebody's
-       commission is right, and turning the feed OFF is the one control most
-       plausibly needed away from a desk. Gated by its own live NAV_TABS entry
-       at /venture-portal-feed, carrying the same two keys the endpoint's read
-       half accepts. */
-    { to: "/venture-portal-feed", label: "Venture Portal Feed" },
-    /* The go-live change log. Second row in this group, and it belongs on a
-       phone for the same reason the first one does: "who changed my sales
+  /* System — the phone half of the desktop Sidebar's `system` section. */
+  { group: "System", items: [
+    /* The go-live change log: "who changed my sales
        order" is a question the owner asks away from a desk. Gated by its own
        live NAV_TABS entry at /change-log. */
     { to: "/change-log", label: "Change Log" },
@@ -1289,7 +1275,7 @@ function MobileNotFound({ path, onHome }: { path: string; onHome: () => void }) 
   return (
     <UrlDeadEnd
       title="Page not found"
-      body={`${path} isn't a page in Houzs ERP. Check the link or return to the app.`}
+      body={`${path} isn't a page in The Conts ERP. Check the link or return to the app.`}
       onHome={onHome}
     />
   );

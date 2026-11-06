@@ -22,7 +22,7 @@ import {
   useUpdateProductModel, useUploadProductModelPhoto, useDeleteProductModelPhoto, useBrandingPool,
   type ProductModelRow, type AllowedOptions,
 } from '../../vendor/scm/lib/product-models-queries';
-import { useMaintenanceConfig, useMfgProducts, mfgCategoryLabel, MFG_PRODUCT_CATEGORIES, type MfgCategory, type MfgProductRow } from '../../vendor/scm/lib/mfg-products-queries';
+import { useMaintenanceConfig, useMfgProducts, mfgCategoryLabel, type MfgCategory, type MfgProductRow } from '../../vendor/scm/lib/mfg-products-queries';
 import { CategorySwapSelect } from '../../vendor/scm/components/CategorySwapSelect';
 import {
   useSuppliers, useCreateBindingsBatch,
@@ -39,6 +39,7 @@ import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import { sortByText } from '../../vendor/scm/lib/sort-options';
 import { parseMoneyToSen } from '../../lib/money';
 import styles from './ProductModels.module.css';
+import { allMfgCategories } from '../../vendor/shared/product-categories';
 
 const ICON = { size: 14, strokeWidth: 1.75 } as const;
 
@@ -48,7 +49,6 @@ const ICON = { size: 14, strokeWidth: 1.75 } as const;
 const BANNER_ERR =
   'rounded-lg border border-err/40 bg-err/10 px-4 py-3 text-[13px] text-err';
 
-const CATEGORIES: readonly MfgCategory[] = MFG_PRODUCT_CATEGORIES; // the ONE list, shared/product-categories.ts
 
 /* DataGrid layout key for the Models list. The legacy page rendered one
    table per category — to keep that read on first visit we seed a default
@@ -319,7 +319,7 @@ export const ProductModels = () => {
       {/* Category filter chips */}
       <div className={styles.chipRow}>
         <FilterChip on={filter === 'all'} onClick={() => setFilter('all')}>All</FilterChip>
-        {CATEGORIES.map((c) => (
+        {(allMfgCategories() as MfgCategory[]).map((c) => (
           <FilterChip key={c} on={filter === c} onClick={() => setFilter(c)}>{mfgCategoryLabel(c)}</FilterChip>
         ))}
       </div>
@@ -1081,7 +1081,7 @@ export function NewModelDialog({
           <label className={styles.compactField} style={{ width: 200 }}>
             <span>Category</span>
             <select value={category} onChange={(e) => setCategory(e.target.value as MfgCategory)}>
-              {CATEGORIES.map((c) => <option key={c} value={c}>{mfgCategoryLabel(c)}</option>)}
+              {allMfgCategories().map((c) => <option key={c} value={c}>{mfgCategoryLabel(c)}</option>)}
             </select>
           </label>
         </div>

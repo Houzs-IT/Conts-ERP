@@ -12,10 +12,11 @@ import { usePrompt } from "../vendor/scm/components/PromptDialog";
 import { useChoice } from "../vendor/scm/components/ChoiceDialog";
 import { useAuth } from "../auth/AuthContext";
 import {
-  DEPARTMENT, RECEIPT_STATUS, financeReceiptFileUrl, pettyPath, useFinanceAction, useFinanceReceipts, useFloats, useOverrides,
+  RECEIPT_STATUS, financeReceiptFileUrl, pettyPath, useFinanceAction, useFinanceReceipts, useFloats, useOverrides,
   type FloatRow, type Receipt,
 } from "./claimsQueries";
 import { FileButtons, Money, thisMonth, useChooseBank, usePettyOptions } from "./ClaimsParts";
+import { useLineDepartmentLabel } from "./SubDepartmentSelect";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
 
 type Tab = "floats" | "finance" | "overrides";
@@ -136,6 +137,7 @@ function FinancePaysBack({ run }: { run: (path: string, body: unknown, method?: 
   const [month, setMonth] = useState(thisMonth());
   const q = useFinanceReceipts(month);
   const opts = usePettyOptions();
+  const deptLabel = useLineDepartmentLabel();
   const { can } = useAuth();
   const full = can("scm.payment_voucher.approve");
   const edit = can("scm.payment_voucher.write");
@@ -170,7 +172,7 @@ function FinancePaysBack({ run }: { run: (path: string, body: unknown, method?: 
     { key: "no", label: "Receipt", render: (r) => r.receiptNo, getValue: (r) => r.receiptNo },
     { key: "by", label: "Handed in by", render: (r) => r.submitterName, getValue: (r) => r.submitterName },
     { key: "what", label: "For", render: (r) => [r.vendorName, r.lines.map((l) => l.description).filter(Boolean).join("; ")].filter(Boolean).join(" — ") || "—", getValue: (r) => r.vendorName ?? "" },
-    { key: "dept", label: "Department", render: (r) => [...new Set(r.lines.map((l) => DEPARTMENT[l.department]))].join(", "), getValue: (r) => r.lines[0]?.department ?? "" },
+    { key: "dept", label: "Department", render: (r) => [...new Set(r.lines.map(deptLabel))].join(", "), getValue: (r) => (r.lines[0] ? deptLabel(r.lines[0]) : "") },
     { key: "amount", label: "Amount", align: "right", render: (r) => <Money sen={r.amountSen} strong />, getValue: (r) => r.amountSen },
     { key: "files", label: "Receipt", render: (r) => <FileButtons files={r.files} open={(f, mime) => financeReceiptFileUrl(r.id, f, mime)} />, getValue: (r) => r.files.length },
     { key: "status", label: "Status", render: (r) => <span>{RECEIPT_STATUS[r.status]}{r.rejectReason && <span className="block text-xs text-ink-muted">{r.rejectReason}</span>}{r.overLimit && <span className="block text-xs text-err">Project over its limit</span>}</span>, getValue: (r) => r.status },

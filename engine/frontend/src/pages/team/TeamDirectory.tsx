@@ -97,7 +97,7 @@ export function TeamDirectory({
       (c) => c.code === companiesQ.data?.activeCompanyCode,
     )?.name ??
     companiesQ.data?.companies[0]?.name ??
-    "Houzs";
+    "The Conts";
 
   const { nodes: deptNodes, noDept } = useMemo(
     () => buildDeptNodes(users, departments),

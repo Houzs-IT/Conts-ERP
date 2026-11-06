@@ -13,6 +13,7 @@ import { lazy, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { PoPaymentScheduleCard } from "../renovation/PoPaymentScheduleCard";
 import { LazySlot } from "../../components/LazySlot";
+import { ProductionOrderChips } from "./ProductionOrderChips";
 import { scmListReturnTo } from "../../lib/scmListReturn";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { formatPhone } from "@2990s/shared/phone";
@@ -596,7 +597,8 @@ function PurchaseOrderDetailV2ReadOnly() {
       .then(async ({ generatePurchaseOrderPdf }) => {
         const { loadSofaCompartmentPhotos } = await import("../../vendor/scm/lib/sales-order-queries");
         const sofaPhotos = await loadSofaCompartmentPhotos(maintenanceQ.data?.data?.sofaCompartmentMeta);
-        return generatePurchaseOrderPdf(headerForPdf as never, items as never, { action, sofaPhotos, renovation: reno });
+        const { poDrawingsAppender } = await import("../renovation-beta/renovationBetaPoDrawings");
+        return generatePurchaseOrderPdf(headerForPdf as never, items as never, { action, sofaPhotos, renovation: reno, appendAfter: await poDrawingsAppender(purchaseOrder.id) });
       })
       .catch((e) =>
         notify({
@@ -1160,6 +1162,7 @@ function PurchaseOrderDetailV2ReadOnly() {
               </Badge>
               {/* mig 0324 — BESIDE the status, never instead of it. */}
               <HoldChip onHold={purchaseOrder.on_hold} reason={purchaseOrder.hold_reason} />
+                  <ProductionOrderChips poId={purchaseOrder.id} />
             </span>
           </div>
         </div>
@@ -1188,6 +1191,7 @@ function PurchaseOrderDetailV2ReadOnly() {
                   </Badge>
                   {/* mig 0324 — BESIDE the status, never instead of it. */}
                   <HoldChip onHold={purchaseOrder.on_hold} reason={purchaseOrder.hold_reason} />
+                  <ProductionOrderChips poId={purchaseOrder.id} />
                 </span>
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-secondary">
@@ -1197,7 +1201,7 @@ function PurchaseOrderDetailV2ReadOnly() {
                   {poDisplayNumber(purchaseOrder.po_number, (purchaseOrder as unknown as { revision?: number | null }).revision)}
                 </span>
                 <Divider />
-                <span>Ordered {fmtDate(purchaseOrder.po_date)}</span>
+                <span>PO date {fmtDate(purchaseOrder.po_date)}</span>
                 {purchaseOrder.expected_at && (
                   <>
                     <Divider />
@@ -1213,7 +1217,7 @@ function PurchaseOrderDetailV2ReadOnly() {
               </div>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1.5">
+          <div className="ml-auto flex flex-col items-end gap-1.5">
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button variant="ghost" icon={<History size={14} />} onClick={() => setHistoryOpen(true)}>
               History
@@ -1224,7 +1228,7 @@ function PurchaseOrderDetailV2ReadOnly() {
             <Button variant="secondary" icon={<Printer size={14} />} onClick={print.openPreview}>
               Print PDF
             </Button>
-            {purchaseOrder.status !== "DRAFT" && purchaseOrder.status !== "CANCELLED" && (
+            {purchaseOrder.status !== "DRAFT" && purchaseOrder.status !== "CANCELLED" && purchaseOrder.supplier?.code !== "INHOUSE" && (
               <Button
                 variant="secondary"
                 icon={<Mail size={14} />}
@@ -1282,7 +1286,7 @@ function PurchaseOrderDetailV2ReadOnly() {
             {(purchaseOrder.status === 'PARTIALLY_RECEIVED' || purchaseOrder.status === 'RECEIVED')
               && pageAccess('scm.procurement.pr') !== 'none' && (
               <Button variant="secondary" icon={<Undo2 size={14} />} onClick={goReturnFromPo}>
-                Raise Return
+                Raise return
               </Button>
             )}
             <Button variant="secondary" icon={<Plus size={14} />} onClick={goAddLine}>{ADD_LINE_LABEL}</Button>
@@ -1345,7 +1349,7 @@ function PurchaseOrderDetailV2ReadOnly() {
                 <Field label="Supplier code" value={supplierCodeOf(purchaseOrder)} mono />
                 <Field
                   label="Contact"
-                  value={purchaseOrder.supplier?.contact_person || "—"}
+                  value={purchaseOrder.supplier?.contact_person || "Not provided"}
                   muted={!purchaseOrder.supplier?.contact_person}
                 />
                 <Field
@@ -1361,7 +1365,7 @@ function PurchaseOrderDetailV2ReadOnly() {
                 />
                 <Field
                   label="Address"
-                  value={purchaseOrder.supplier?.address || "—"}
+                  value={purchaseOrder.supplier?.address || "Not provided"}
                   muted={!purchaseOrder.supplier?.address}
                 />
               </div>
@@ -1481,7 +1485,7 @@ function PurchaseOrderDetailV2ReadOnly() {
                 <KeyDateRow k="PO date" v={fmtDate(purchaseOrder.po_date)} />
                 <KeyDateRow
                   k="Expected"
-                  v={fmtDate(purchaseOrder.expected_at)}
+                  v={purchaseOrder.expected_at ? fmtDate(purchaseOrder.expected_at) : "Not set"}
                   muted={!purchaseOrder.expected_at}
                 />
                 {/* Owner 2026-08-06 — supplier-revised dates, mirrored from the
@@ -1644,6 +1648,7 @@ function PurchaseOrderDetailV2ReadOnly() {
         rowLabels={{ primary: "Purchase chain", secondary: "After goods receipt" }}
         amendmentsLabel="Related amendments (Sales Order & this PO)"
         pairing={chainPairing}
+        extra={<ProductionOrderChips poId={purchaseOrder.id} label="Production order" />}
       />
       {/* A chain slot standing for several documents opens this chooser instead
           of a notice that only named them. The picked one opens in its own tab of the

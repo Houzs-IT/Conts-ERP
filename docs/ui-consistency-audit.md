@@ -164,3 +164,73 @@ Decision for the owner: a single button, badge and table across both builds. Opt
 2. **Share the small pieces only.** Badge and EmptyState (47 engine files) move to one component; Button and DataTable stay. Moderate; loses file-by-file Houzs updates for those two.
 3. **One component set.** Engine screens move to Property OS components (about 180 file-level imports, including the 78-table DataTable). Largest; ends Houzs updates for those screens.
 Recommendation: option 1, unless changes to button or table shape turn out to be frequent.
+
+## Decision (owner, 4 Nov 2026)
+
+Property OS and the engine keep two component sets (buttons, badges, tables, empty states, skeletons, page headers) with a shared look: colours, formats, wording and order come from one source. Merging them would rewrite engine screens that still take Houzs fixes file by file. A change to a button's shape is made twice; revisit if such changes become frequent.
+
+## Transaction documents as one family (4 Nov 2026)
+
+Owner's question, 4 Nov 2026: is the whole transaction flow's front end standardised? Checked on https://erp.theconts.com at
+desktop width, SO as the reference. Seen live: list and detail of SO, PO, GRN, DO, Purchase Invoice, VO and PO amendment, and
+the Production Order list. Sales Invoice and Delivery Return have no records on production (lists are empty), so their detail
+pages were read from `engine/frontend/src`, not seen. No invoice or return was created just to look at one.
+
+Every detail page keeps its own copy of the header markup. They were already the same but for the rows below, so each was
+corrected in place; shared code took the fix where one exists (`soDetailParts.tsx`, `formatWhen`, `showDate`, `shortDate`).
+
+| # | Where | Difference | State | Why / what now |
+| --- | --- | --- | --- | --- |
+| 1 | List eyebrow | "Supply Chain" (SO, DO, SI, DR), "Procurement" (PO, GRN, PI), "Revision inbox" (VO, PO amendments) | fixed | "Sales" or "Procurement" on all; the same level of word |
+| 2 | List eyebrow | PO and Production Order alone add "· 12 orders", the first tile already says it | fixed | Removed |
+| 3 | List tiles | "Total POs", "Total DOs", "Total PIs", "Total GRNs" read POS, DOS, PIS, GRNS in capitals | fixed | Total Orders, Total Invoices, Total Receipts, as SO |
+| 4 | List tiles | DR says "Scoped to current filter", the rest "All matching ..." | fixed | "All matching returns" |
+| 5 | Status word | GRN and PI tabs say Confirmed, SI tab Sent; their badges say Submitted | fixed | Tabs and sentences follow the badge (`status-pill.ts`) |
+| 6 | Status word | GRN and PI: button "Post", key date "Posted", "not yet posted" beside the word Submitted | fixed | Submit, Submitted. "Posted to GL" stays: it is the ledger's word |
+| 7 | Status word | DO's committed step reads Confirmed; PO, GRN, SI and PI read Submitted | left | Owner decision: DO "Confirmed" is a recorded ruling (`status-pill.ts`), the step where stock goes out |
+| 8 | Status word | VO and PO amendment: list says Approved, page header Applied or Sent | fixed | Header says what the list says, in the header badge every document uses (`AmendmentHeaderBadge`). The status card keeps the exact stage |
+| 9 | List sentence | "Draft through Received", "to Delivered", GRN "through Posted", DR "Pending to Refunded" (its tabs say Open); GRN omits "open the full page" | fixed | One sentence shape, words match the tabs |
+| 10 | Page title | "Goods Received" while the menu says Goods receipt | fixed | "Goods Receipts" on the list, back button, breadcrumb and shortcuts. Transfer buttons, print titles and export sheets keep "Goods Received": the approved transfer table and AutoCount's wording |
+| 11 | List columns | "Doc. No." / "Date" / "Debtor Name" on SO, "Doc No" / "Doc Date" elsewhere, "SI No." / "Customer" on SI | left | Each grid's default is that document's AutoCount listing, and the label is the export header (owner, 15 Sep 2026: a default export equals the AutoCount file) |
+| 12 | List columns | Default order and Status column differ by document | left | Same ruling. Status stays in the Columns chooser |
+| 13 | List tiles | "All matching" on SO, "Sum on this page" elsewhere | left | True in each case: SO's totals come from the server, the others from the page |
+| 14 | List search | "Searches up to 500 loaded rows only" on DR and the amendment lists | left | True: those lists load rows and filter here |
+| 15 | List | VO and PO amendments have no tiles or action buttons | left | They are inboxes, not documents raised from the list |
+| 16 | Empty states | "No sales invoices yet.", "No delivery returns yet." | no change | Already one shape |
+| 17 | Header | Action row dropped left under a long name on GRN, PI, SI, DR, PO | fixed | Stays on the right on every document |
+| 18 | Header | DO number gold, every other document dark | fixed | `text-primary-ink` |
+| 19 | Header | DO "from TC-SO" with an arrow sign, others "Transfer From (SO) TC-SO" | fixed | The shared label. PI keeps "From": its source may be a PO or a GRN |
+| 20 | Header | PO "Ordered", Key dates "PO date" | fixed | "PO date", as SO and DO |
+| 21 | Header | "VO VO-TC-SO-2611-001-04" | fixed | The word once |
+| 22 | Header | "Raise Return" beside "Raise amendment" | fixed | "Raise return" |
+| 23 | Header | "Open Revised bound PO", "Open bound PO" | fixed | "Open revised PO", "Open PO" |
+| 24 | Print entry | VO and PO amendment: "Print amendment" low in the side column; elsewhere "Print PDF" in the header | fixed | In the header on desktop; on phones it stays in the page |
+| 25 | Header | PO's two disabled-reason lines make its sticky header the tallest | left | Owner's rule: reasons as text, not only a tooltip |
+| 26 | Header | PI has Copy as new and no Relationship Map | left | A new map is a feature, not a look change |
+| 27 | Sections | DO "Customer info", others "Customer" | fixed | |
+| 28 | Sections | SO "Order information" when reading, "Order info" when editing; other documents "PO info", "Invoice info" | fixed | "Order info" |
+| 29 | Sections | "Received items", "Returned items" against "Line items" | left | They say what the table holds |
+| 30 | Sections | SO "Purchase orders (SO -> PO)" | fixed | "Purchase orders" |
+| 31 | Sections | Renovation blocks (Contract lines, Payment schedule, Variation orders) use a plainer card than the document sections | left | Renovation's own panels, and a rework rather than a look fix |
+| 32 | Recent activity | GRN had none; all others do | fixed | Same card, built from the GRN's own dates |
+| 33 | Recent activity | On SO it sits under the sections, elsewhere in the side column | left | Deliberate: in the side column it left a gap above SO's full-width lines (`soDetailParts.tsx`) |
+| 34 | History | Every document has History; VO and PO amendment show Approval history instead | left | An amendment has no document history drawer |
+| 35 | Dates | DO proof of delivery "04/11/2026, 14:38" | fixed | 2026/11/04 14:38, also on stock transfers (same bug) |
+| 36 | Dates | SO Start date "1 Nov 2026"; file captions "4 Nov 2026" | fixed | `showDate`, `shortDate`, `formatWhen` follow the numeric rule |
+| 37 | Dates | Key dates "Invoice", "Due" | fixed | "Invoice date", "Due date" |
+| 38 | Dates | Project workspace drawings list still shows "27 Oct 2026" | left | Not a transaction document; another session owns the project page |
+| 39 | Money | Hero amount: green or red on the black card on GRN, PI, SI, DR, hard to read; white on SO, PO | fixed | White; the dot beside it carries the state |
+| 40 | Money | Format | no change | RM 1,234.56 everywhere seen |
+| 41 | Empty values | Contact and Address "—" beside Phone "Not provided" in one Supplier block | fixed | "Not provided" on PO, GRN, PI |
+| 42 | Empty values | PO Expected "Not set" and "—" on one page | fixed | "Not set" |
+| 43 | Photos | "Photos & documents" on all; a cancelled PI shows "No files attached." with no drop area | left | Correct: a closed document takes no files |
+| 44 | Payments | SO empty row said click "Add Payment", the button says Collect payment | fixed | "No payments recorded yet" |
+| 45 | Back | Same button and "back to the list" on every page | no change | |
+| 46 | Badge | List pills on VO and PO amendments are `StatusPill`; other lists use `Badge` | left | Same colours; swapping the list component is more than a look fix |
+
+Production Order detail is being rebuilt in another session, so PO's detail fixes were not copied to it. Its list took the
+same changes as PO's list.
+
+Long line tables: after #647 a 40-line SO (TC-SO-2610-007) still showed about 5 rows in a 360px box, because a table with
+much of the page below it was always held at the minimum height. **fixed:** such a table now stays in the page and the
+page scrolls (`useFrozenTableHeader.ts`), on every document. Lists with little below them keep their frozen header.

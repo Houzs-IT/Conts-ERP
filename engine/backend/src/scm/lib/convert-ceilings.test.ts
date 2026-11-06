@@ -224,7 +224,7 @@ describe('SO -> PO ceiling (qty - po_qty_picked)', () => {
       expect(poRouterSrc.match(/loadBoundOrderedQty\(/g)?.length).toBe(2);
       expect(poRouterSrc).toContain('po_qty_picked: boundAwarePicked(r, boundOrdered)');
       expect(poRouterSrc).toContain('const remaining = row.qty - boundAwarePicked(row, boundOrdered);');
-      expect(poRouterSrc).toContain('(!fromMrp || isBoundForCompany(activeCompanyId(c) ?? null, row)) && p.qty > remaining');
+      expect(poRouterSrc).toContain('(!fromMrp || isBoundForCompany(activeCompanyId(c) ?? null, row, unitBound)) && p.qty > remaining');
     });
   });
 });

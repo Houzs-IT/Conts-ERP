@@ -40,7 +40,7 @@ export type AmendmentRow = {
      ('WITHDRAWN'); both sit on status REJECTED so the state machine and the
      one-open index are unchanged. NULL while still in flight, and on every row
      created before 0149. */
-  resolution?: 'REJECTED' | 'WITHDRAWN' | null;
+  resolution?: 'REJECTED' | 'WITHDRAWN' | 'RENOVATION_VO' | null;
   rejection_reason?: string | null;
   rejected_by?: string | null;
   rejected_at?: string | null;

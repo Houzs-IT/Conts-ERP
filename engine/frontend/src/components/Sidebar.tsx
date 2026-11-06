@@ -14,6 +14,7 @@ function markOpenIntentOnPlainClick(e: { button?: number; metaKey: boolean; ctrl
 
 import {
   ClipboardList,
+  Factory,
   Zap,
   Settings as SettingsIcon,
   PanelLeftClose,
@@ -536,6 +537,19 @@ export const ALL_NAV_TABS: NavTab[] = [
         ],
       },
       {
+        label: "Production",
+        icon: Factory,
+        groupId: "scm-production",
+        to: "/scm/production-orders",
+        anyPerm: ["*", "scm.access"],
+        anyAccess: ["scm.procurement.production"],
+        hideForSalesRep: true,
+        children: [
+          { to: "/scm/production-orders", label: "Production Orders", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.production"], hideForSalesRep: true },
+          { to: "/scm/sku-composition", label: "SKU Composition", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.production"], hideForSalesRep: true },
+        ],
+      },
+      {
         hideForSalesRep: true,
         label: "Transportation",
         icon: Truck,
@@ -693,6 +707,7 @@ export const ALL_NAV_TABS: NavTab[] = [
           // Renovation projects (Conts, SOP 4.2.3) — completion % and the money per project; management only.
           { to: "/scm/reno-projects", label: "Renovation Projects", icon: AlertCircle, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"], badge: "reno-cost-alerts" },
           { to: "/scm/rental-unit-costs", label: "Rental Unit Costs", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/department-spend", label: "Spending by Department", icon: FileText, anyPerm: ["*", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/other-debtors", label: "Other Debtors", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/outstanding", label: "Outstanding", icon: AlertCircle, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.outstanding"] },
           { to: "/scm/unbilled-deliveries", label: "Not Yet Billed", icon: HandCoins, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.outstanding"] },
@@ -908,39 +923,6 @@ export const ALL_NAV_TABS: NavTab[] = [
     icon: Activity,
     pageAccess: "system_health",
   },
-  // Next to System Health because it answers the same shape of question — "is
-  // the thing that runs in the background still working" — and because the
-  // owner's is "did my sales order reach AutoCount". anyPerm mirrors the two
-  // keys GET /api/scm/autocount-outbox accepts; the server is still the
-  // boundary, this only decides whether the row is worth showing.
-  {
-    section: "system",
-    to: "/autocount-sync",
-    label: "AutoCount Sync",
-    icon: RefreshCw,
-    anyPerm: ["*", "scm.autocount.read", "settings.manage"],
-  },
-  // Beside AutoCount Sync because it is the same shape of question pointed at a
-  // different system: that one is "did my document reach the account book",
-  // this one is "did the Venture Portal get my sales orders" — and the portal
-  // works out Revenue Department commission from them, so an order it never
-  // received is money somebody is not paid. The row also carries the feed's
-  // SETTINGS (receiver address, shared secret, which companies, the start
-  // date), because the alternative the hand-off contract assumed was somebody
-  // pasting SQL into a database console. anyPerm mirrors the two keys the
-  // endpoint's READ half accepts; changing anything needs
-  // scm.venture_portal.manage, checked by the server per request.
-  {
-    section: "system",
-    to: "/venture-portal-feed",
-    label: "Venture Portal Feed",
-    icon: Send,
-    anyPerm: ["*", "scm.venture_portal.read", "settings.manage"],
-  },
-  // Beside AutoCount Sync because it answers the neighbouring question. That
-  // one is "did my document reach the account book"; this one is "who changed
-  // my document, and to what" — the supervision the owner asked for when he
-  // opened sales, delivery, purchase and receipt documents to staff.
   {
     section: "system",
     to: "/change-log",

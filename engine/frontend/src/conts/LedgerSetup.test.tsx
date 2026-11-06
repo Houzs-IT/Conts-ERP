@@ -51,6 +51,8 @@ vi.mock("./opening", async (importOriginal) => ({
 }));
 vi.mock("../vendor/scm/components/ConfirmDialog", () => ({ useConfirm: () => confirmFn }));
 vi.mock("./EverydayExpense", () => ({ EverydayExpense: () => null }));
+vi.mock("./ProjectLimitSettings", () => ({ ProjectLimitSettings: () => null }));
+vi.mock("./SubDepartments", () => ({ SubDepartments: () => null }));
 vi.mock("./RenovationOpening", () => ({ RenovationOpening: () => null }));
 vi.mock("./OpeningDeposits", () => ({ OpeningDeposits: () => null }));
 

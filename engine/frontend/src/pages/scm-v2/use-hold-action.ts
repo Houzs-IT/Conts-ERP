@@ -34,6 +34,7 @@ type HoldPrompt = { noun: string };
 const PROMPTS: Record<HoldDocType, HoldPrompt> = {
   so:  { noun: "sales order" },
   po:  { noun: "purchase order" },
+  pro: { noun: "production order" },
   grn: { noun: "goods received note" },
   pi:  { noun: "purchase invoice" },
   do:  { noun: "delivery order" },

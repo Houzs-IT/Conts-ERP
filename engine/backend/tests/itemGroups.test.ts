@@ -45,6 +45,7 @@ function harness(tables: Record<string, Row[]> = {}, perms: readonly string[] = 
     acc_item_groups: GROUPS.map((r) => ({ ...r })),
     acc_item_group_accounts: [],
     product_sub_categories: SUBS.map((r) => ({ ...r })),
+    product_category_groups: [{ code: 'RAW', label: 'Raw material', default_stage: 'hardware', photo_required: false, sort_order: 90 }],
     acc_sub_category_accounts: [],
     ...tables,
   });
@@ -169,6 +170,26 @@ describe('POST /accounting/item-groups — born bound, or not born', () => {
     expect(sb.tables.acc_item_group_accounts[0]).toMatchObject({
       company_id: 2, group_code: 'CURTAIN', purchase_account: '601-0003',
     });
+  });
+
+  test('a new group joins the category master list, so a SKU can be saved under it', async () => {
+    const { app, sb } = harness();
+    const res = await post(app, '/accounting/item-groups', {
+      code: 'curtain', name: 'Curtain', companyId: 2, accounts: GOOD_ACCOUNTS,
+    });
+    expect(res.status).toBe(200);
+    expect(sb.tables.product_category_groups.find((g) => g.code === 'CURTAIN')).toMatchObject({
+      label: 'Curtain', default_stage: 'furniture', sort_order: 100,
+    });
+  });
+
+  test('a legacy code keeps mapping to its group and does not become a category of its own', async () => {
+    const { app, sb } = harness();
+    const res = await post(app, '/accounting/item-groups', {
+      code: 'dining', name: 'Dining', companyId: 2, accounts: GOOD_ACCOUNTS,
+    });
+    expect(res.status).toBe(200);
+    expect(sb.tables.product_category_groups.some((g) => g.code === 'DINING')).toBe(false);
   });
 });
 

@@ -138,7 +138,7 @@ export function ConvertPicker({ rows: given, copyFrom, ticked: tickedAtFirst, on
         <span style={muted}>The new order opens with {copyFrom}'s customer and lines; one payment row per ticked order, dated the day the money was first paid.</span>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input value={picker.more} onChange={(e) => picker.setMore(e.target.value)} placeholder="Another order, e.g. 2990-SO-2607-024" aria-label="Another cancelled order"
+        <input value={picker.more} onChange={(e) => picker.setMore(e.target.value)} placeholder="Another order, e.g. TC-SO-2607-024" aria-label="Another cancelled order"
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addAnother(); } }}
           style={{ minWidth: 260, padding: '4px 8px', border: '1px solid var(--c-line, rgba(34,31,32,0.2))', borderRadius: 6 }} />
         <button type="button" style={btn} disabled={picker.busy} onClick={() => void addAnother()}>Add</button>

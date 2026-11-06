@@ -38,6 +38,9 @@ const DESCRIPTIONS: Partial<Record<string, Record<string, string>>> = {
     assigned_so: PO_ASSIGNED_SO,
     delivered: "Delivery Orders that shipped the goods of this invoice's Purchase Order, with quantity.",
   },
+  "production-orders-v2": {
+    expected: "Expected date. Red: passed while it is still open.",
+  },
   "purchase-orders-v2": {
     expected: "Expected arrival date. Red: passed while goods are still to come.",
     assigned_so: PO_ASSIGNED_SO,

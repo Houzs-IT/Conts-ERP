@@ -5,12 +5,12 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const h = vi.hoisted(() => ({ puts: [] as Array<[string, unknown]>, patches: [] as Array<[string, unknown]>, furniture: false, supplier: false }));
+const h = vi.hoisted(() => ({ coverage: [] as unknown[], puts: [] as Array<[string, unknown]>, patches: [] as Array<[string, unknown]>, furniture: false }));
 
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
   const get = async (path: string): Promise<unknown> => {
-    if (path.endsWith("/lines")) return h.furniture ? FURNITURE : h.supplier ? SUPPLIER : LINES;
+    if (path.endsWith("/lines")) return h.furniture ? FURNITURE : LINES;
     if (path.endsWith("/vo")) return { vos: [] };
     if (path.endsWith("/site")) return SITE;
     if (path.endsWith("/photos")) return { photos: [], areas: [], docs: { dos: [], grs: [], pos: [] }, tasks: [] };
@@ -18,7 +18,7 @@ vi.mock("../../api/client", async (importOriginal) => {
   };
   const put = async (path: string, body: unknown): Promise<unknown> => {
     h.puts.push([path, body]);
-    if (path.endsWith("/supplier")) { SUPPLIER.lines[1].supplierId = "s2"; return { ok: true, supplierId: "s2", supplierName: "Other Co" }; }
+    if (path.endsWith("/line-plans")) return { ok: true, saved: (body as { itemIds: string[] }).itemIds, refused: [] };
     return { ok: true, plan: {} };
   };
   return { ...actual, api: { ...actual.api, get, put } };
@@ -28,13 +28,15 @@ vi.mock("../../vendor/scm/lib/authed-fetch", async (importOriginal) => {
   return {
     ...actual,
     authedFetch: async (path: string, init?: { body?: string }) => {
+      if (path.endsWith("/coverage")) return { coverage: h.coverage };
       h.patches.push([path, init?.body ? JSON.parse(init.body) : null]);
-      // A line a live PO buys: the spec route raises the contract VO itself.
-      if (path.endsWith("/lines/bed/spec")) return { ok: true, changed: true, voNo: "VO-TC-SO-1-02", flags: 1 };
+      // A line a live PO buys: the spec route saves it and flags the PO line.
+      if (path.endsWith("/lines/bed/spec")) return { ok: true, changed: true, flags: 1 };
       return {};
     },
   };
 });
+vi.mock("../scm-v2/ProductionOrderChips", () => ({ ProductionOrderChips: () => null }));
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
 /* The SO line's pickers have their own test (renovationVariantPicker.test.tsx); here a pick is one button. */
 vi.mock("../../vendor/scm/components/renovationVariantPicker", async (importOriginal) => {
@@ -67,7 +69,7 @@ const LINES = {
   ],
 };
 
-const PO = { poId: "po9", poNumber: "TC-PO-2611-001", poStatus: "RECEIVED", poLineId: "pl9", poDate: "2026-11-01", deliveryDate: "2026-11-05", supplierRevised: false, qty: 1, received: 1, photoKeys: [] };
+const PO = { poId: "po9", poNumber: "TC-PO-2611-001", poStatus: "RECEIVED", poLineId: "pl9", poDate: "2026-11-01", deliveryDate: "2026-11-05", supplierRevised: false, qty: 1, received: 0, photoKeys: [] };
 const FURNITURE = {
   ...LINES,
   lines: [
@@ -81,15 +83,6 @@ const FURNITURE = {
   ],
 };
 
-const CHOICES = [{ id: "s1", code: "MAIN", name: "Main Co", main: true, priceSen: 500 }, { id: "s2", code: "OTH", name: "Other Co", main: false, priceSen: 450 }];
-const SUPPLIER = {
-  ...LINES,
-  lines: [
-    { ...LINES.lines[0], contractLineId: "cl-a", supplierId: "s1", supplierChoices: CHOICES },
-    { ...LINES.lines[1], contractLineId: "cl-b", supplierId: "s1", supplierChoices: CHOICES },
-    { ...base, id: "c", itemCode: "LT-3", description: "Downlight C", plan: { orderOn: null, deliverOn: null, noPo: false }, pos: [], contractLineId: "cl-c", supplierId: null, supplierChoices: [] },
-  ],
-};
 
 const SITE = {
   ready: true, areas: ["Kitchen"],
@@ -123,16 +116,21 @@ describe("PO tab", () => {
     expect(within(region).getAllByText("Not yet").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    // A renovation contract's SKU and qty open too (saving raises a contract VO for you), with the remark and dates.
-    expect(within(region).getAllByLabelText(/^Qty for/)).toHaveLength(2);
+    // SKU, qty and supplier cannot be changed here (owner, 5 Nov 2026): the remark and dates can.
+    expect(within(region).queryByLabelText(/^Qty for/)).toBeNull();
+    expect(within(region).queryByRole("button", { name: /^Change SKU/ })).toBeNull();
+    expect(within(region).queryByLabelText(/^Supplier for/)).toBeNull();
+    expect(within(region).queryByRole("columnheader", { name: "Supplier" })).toBeNull();
     expect(within(region).getAllByRole("button", { name: /Add a remark to/ }).length).toBe(2);
-    expect(within(region).getByLabelText("PO date of TC-PO-2610-006")).toBeTruthy();
+    // The PO's own date is changed in the PO: the number opens its editor.
+    expect(within(region).queryByLabelText("PO date of TC-PO-2610-006")).toBeNull();
+    expect(within(region).getByRole("link", { name: "TC-PO-2610-006" }).getAttribute("href")).toBe("/scm/purchase-orders/po1?edit=1");
 
     const all = within(region).getByLabelText("Delivery date for every line of Lighting");
     fireEvent.change(all, { target: { value: "2026-11-20" } });
     await waitFor(() => expect(h.patches.length + h.puts.length).toBe(2));
     expect(h.patches).toEqual([["/mfg-purchase-orders/po1/items/pl1", { deliveryDate: "2026-11-20" }]]);
-    expect(h.puts).toEqual([["/api/beta/projects/7/lines/b/plan", { deliverOn: "2026-11-20" }]]);
+    expect(h.puts).toEqual([["/api/beta/projects/7/line-plans", { itemIds: ["b"], deliverOn: "2026-11-20" }]]);
     // Both lines show the band's date at once, before any reload answers.
     await waitFor(() => expect(within(region).getByLabelText("Delivery date for LT-2")).toHaveProperty("value", "2026-11-20"));
     expect(within(region).getByLabelText("Delivery date on TC-PO-2610-006 for LT-1")).toHaveProperty("value", "2026-11-20");
@@ -141,7 +139,7 @@ describe("PO tab", () => {
     expect(within(region).queryAllByRole("textbox")).toHaveLength(0);
   });
 
-  it("picks a sofa's and a bedframe's variants; a line with no variant options has nothing to pick; the PO line's change raises a VO", async () => {
+  it("picks a sofa's and a bedframe's variants; a line with no variant options has nothing to pick; the PO line is flagged, no VO", async () => {
     h.furniture = true;
     h.patches.length = 0;
     renderTab();
@@ -161,13 +159,13 @@ describe("PO tab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Pick for BEDFRAME" }));
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Save & post to VO" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/Fabric PC1461-02 -> PC1461-03/)).toBeTruthy();
-    expect(within(dialog).getByText(/a contract VO is raised/)).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save & post to VO" }));
+    expect(within(dialog).getByText(/no VO, and its PO line is flagged/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByText("VO-TC-SO-1-02 raised: the PO line is flagged for purchasing.")).toBeTruthy();
+    expect(await screen.findByText("The PO line is flagged for purchasing.")).toBeTruthy();
     expect(h.patches).toEqual([
       ["/renovation-so-info/TC-SO-1/lines/sofa/spec", { variants: { colourId: "PC1461-03", fabricId: "PC1461", fabricCode: "PC1461-03", colourLabel: "PC1461-03", fabricLabel: "PC1461", seatHeight: "24", legHeight: "Default" } }],
       ["/renovation-so-info/TC-SO-1/lines/bed/spec", { variants: { fabricCode: "PC1461-01", divanHeight: '6"', legHeight: '1"', gap: '4"', totalHeight: '11"' } }],
@@ -175,21 +173,38 @@ describe("PO tab", () => {
     h.furniture = false;
   });
 
-  it("picks a waiting line's supplier from the SKU's bound suppliers, main starred; a SKU with none says where to add one", async () => {
-    h.supplier = true;
-    h.puts.length = 0;
+  it("shows each line's stock from the coverage the sales order page reads", async () => {
+    h.furniture = true;
+    h.coverage = [{ id: "sofa", stock_state: "stock", coverage_po: null, coverage_eta: null, ready_source_pos: [], stock_status_effective: "READY" }];
+    renderTab();
+    expect(await screen.findByText("READY")).toBeTruthy();
+    h.coverage = [];
+    h.furniture = false;
+  });
+
+  it("moves a column by dragging its header, and Reset columns puts it back", async () => {
+    renderTab();
+    const region = await screen.findByRole("region", { name: "Sales order lines" });
+    const heads = (): (string | null)[] => within(region).getAllByRole("columnheader").map((h) => h.textContent);
+    expect(heads()[0]).toBe("SKU");
+    fireEvent.pointerDown(within(region).getByRole("columnheader", { name: "PO" }));
+    const sku = within(region).getByRole("columnheader", { name: "SKU" });
+    fireEvent.pointerEnter(sku);
+    fireEvent.pointerUp(sku);
+    expect(heads()[0]).toBe("PO");
+    fireEvent.click(screen.getByRole("button", { name: "Reset columns" }));
+    expect(heads()[0]).toBe("SKU");
+  });
+
+  it("locks the variants of a line with goods received", async () => {
+    h.furniture = true;
+    PO.received = 1;
     renderTab();
     const region = await screen.findByRole("region", { name: "Sales order lines" });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const pick = within(region).getByLabelText("Supplier for LT-2") as HTMLSelectElement;
-    expect([...pick.options].map((o) => o.textContent)).toEqual(["★ Main Co (main)", "Other Co"]);
-    expect(pick.value).toBe("s1");
-    // The line on a PO has no pick; the SKU with no binding says so.
-    expect(within(region).queryByLabelText("Supplier for LT-1")).toBeNull();
-    expect(within(region).getByText("No supplier bound to this SKU: add one in the SKU's suppliers")).toBeTruthy();
-    fireEvent.change(pick, { target: { value: "s2" } });
-    await waitFor(() => expect(h.puts).toEqual([["/api/beta/projects/7/lines/b/supplier", { supplierId: "s2" }]]));
-    await waitFor(() => expect((within(region).getByLabelText("Supplier for LT-2") as HTMLSelectElement).value).toBe("s2"));
-    h.supplier = false;
+    expect(within(region).queryByRole("button", { name: "Change variants of BED-HKA-1003-(K)" })).toBeNull();
+    expect(within(region).getByRole("button", { name: "Change variants of SOF-GEN-3S" })).toBeTruthy();
+    PO.received = 0;
+    h.furniture = false;
   });
 });

@@ -1065,6 +1065,61 @@ export async function deletePoItemPhoto(
   );
 }
 
+/* Production order line photos: the PO's calls on /production-orders (owner, 4 Nov 2026). */
+export async function fetchProductionItemPhotoSignedUrl(
+  poId: string,
+  itemId: string,
+  photoKey: string,
+): Promise<PhotoUrlPayload> {
+  return authedFetch<PhotoUrlPayload>(
+    `/production-orders/${encodeURIComponent(poId)}/items/${encodeURIComponent(itemId)}`
+      + `/photos/${encodeURIComponent(photoKey)}/signed`,
+  );
+}
+
+export async function fetchProductionItemPhotoBlob(
+  poId: string,
+  itemId: string,
+  photoKey: string,
+): Promise<Blob> {
+  return fetchItemPhotoBlobAt(
+    `/production-orders/${encodeURIComponent(poId)}/items/${encodeURIComponent(itemId)}`,
+    photoKey,
+  );
+}
+
+export async function uploadProductionItemPhoto(
+  poId: string,
+  itemId: string,
+  file: File,
+): Promise<UploadPoItemPhotoResult> {
+  /* WO-7 — downscale/re-encode + thumbnail in one decode pass. The thumb is
+     what the PO PDF prints (pdf-item-photos fetches thumbs only), so sending
+     it is not cosmetic. */
+  const prepared = await prepareImageForUpload(file);
+  const fd = new FormData();
+  fd.append('file', prepared.file);
+  if (prepared.thumb) fd.append('thumb', prepared.thumb);
+  return authedFetch<UploadPoItemPhotoResult>(
+    `/production-orders/${encodeURIComponent(poId)}/items/${encodeURIComponent(itemId)}/photos`,
+    { method: 'POST', body: fd },
+  );
+}
+
+export async function deleteProductionItemPhoto(
+  poId: string,
+  itemId: string,
+  photoKey: string,
+): Promise<{ photoUrls: string[] }> {
+  return authedFetch<{ photoUrls: string[] }>(
+    `/production-orders/${encodeURIComponent(poId)}/items/${encodeURIComponent(itemId)}`
+      + `/photos/${encodeURIComponent(photoKey)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export const isProductionOwnedPhotoKey = (key: string): boolean => key.startsWith('pro-items/');
+
 /* Sofa Compartment hero photo — a DIFFERENT wire than the per-line item photos
    above: keyed by compartment CODE, served by the public
    /maintenance-config/sofa-compartments/:code/photo/:key proxy (singular

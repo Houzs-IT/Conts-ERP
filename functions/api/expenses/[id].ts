@@ -2,9 +2,19 @@ import { type Env, one, run, json, fail, audit } from '../../_lib/db';
 import { rmText } from '../../_lib/format';
 import { requireSession } from '../../_lib/auth';
 import { isIsoDate } from '../../_lib/validate';
-import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked, isExpenseLocked, isUtility, utilityDeduction, expenseCategoryLabel, expenseDayLabel } from '../../_lib/expenses';
+import { EXPENSE_CATEGORIES, CHARGE_TO, EXPENSE_FROM, LOCKED_SQL, expenseOut, isPeriodLocked, isExpenseLocked, isUtility, utilityDeduction, expenseCategoryLabel, expenseDayLabel } from '../../_lib/expenses';
 import { approvalSettings, approvalsEnabled, stage } from '../../_lib/approvals';
 import { receiptRequired, RECEIPT_REQUIRED } from '../../../src/lib/receipts';
+
+/** GET /api/expenses/:id — one expense as the Accounts payable list shows it, for a link that opens it (the top-bar search). */
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (!session.manage) return fail('FORBIDDEN', 'Expenses are visible to finance and management roles.', 403);
+  const row = await one<any>(env, `SELECT e.*, u.unit_number, p.name AS property_name, ${LOCKED_SQL} AS locked ${EXPENSE_FROM} WHERE e.id = ?`, String(params.id));
+  if (!row) return fail('NOT_FOUND', 'That expense no longer exists.', 404);
+  return json(expenseOut(row));
+};
 
 /** PATCH /api/expenses/:id { category?, description?, amount?, incurredOn?, reference?, chargeTo?, receiptDocumentId? }
  *  Refused once the statement that deducts the expense is final, and for anything but a utility bill also if the new

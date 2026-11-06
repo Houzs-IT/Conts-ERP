@@ -31,9 +31,11 @@ import {
 } from '../../vendor/scm/lib/mrp-queries';
 import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import { useAuth, isAdminLevel } from '../../vendor/scm/lib/auth';
-import { useCreatePosFromSoItems } from '../../vendor/scm/lib/suppliers-queries';
+import { useCreateBinding, useCreatePosFromSoItems, useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
+import { createMaterialPos } from '../../vendor/scm/lib/production-order-queries';
 import { newIdempotencyKey } from '../../lib/idempotency';
 import { mrpViews, mrpCategoryOf, mrpGroupViews } from './mrp-views';
+import { poRequestBatches } from './mrp-po-batches';
 import { useRenovationCatalog } from '../../vendor/scm/lib/renovation-catalog-queries';
 import {
   type ModelGroup, type MrpFilters, mrpProjectLabel, groupDistinct, suppliersMainFirst, rowKey, computeTabModels, lineInWindow, groupEarliestDate,
@@ -201,6 +203,13 @@ const skuDefaultSupplierId = (s: MrpSku): string | null =>
 /* Only SHORTAGE lines are selectable / orderable. */
 const shortageLinesOf = (s: MrpSku) => s.lines.filter((l) => l.source === 'shortage' && l.shortageQty > 0 && l.soItemId);
 
+
+/** Which warehouses hold these goods, largest first: BLK 3 · TRI 2. */
+const stockWhereText = (skus: ReadonlyArray<{ stockWhere?: Array<{ code: string; qty: number }> }>): string => {
+  const at = new Map<string, number>();
+  for (const s of skus) for (const w of s.stockWhere ?? []) at.set(w.code, (at.get(w.code) ?? 0) + w.qty);
+  return [...at].sort((a, b) => b[1] - a[1]).map(([code, qty]) => `${code} ${qty}`).join(' · ');
+};
 
 export const Mrp = () => {
   const navigate = useNavigate();
@@ -355,7 +364,10 @@ export const Mrp = () => {
      — the 4G case — where the selection is still on screen, "Order failed" invites
      the re-press, and fromMrp means the server has NO qty backstop to stop it
      duplicate-ordering the whole shortage. That is the bug this exists for. */
-  const runKeyRef = useRef<string | null>(null);
+  /* Since 4 Nov 2026 one run may be several requests (mrp-po-batches.ts), so the run holds one key per request, found by
+     the request's content. A re-press after a failure mid-way replays the requests that landed; after the refresh those
+     lines are gone from the selection, which only leaves requests that have not landed. */
+  const runKeysRef = useRef(new Map<string, string>());
 
   /* Four category tabs (Commander 2026-06-15): Sofa is fed from the per-SO sofa
      SETS; the other three filter the SKU payload to their own category so a
@@ -447,21 +459,52 @@ export const Mrp = () => {
       setDialog({ kind: 'info', title: 'Nothing to order', body: 'No uncovered (shortage) lines in the current selection / window.' });
       return;
     }
+    /* A production order's raw materials have no SO line, so they go to their own convert. It shares the run key rule. */
+    const materialIds = new Set((q.data?.skus ?? []).flatMap((s) => s.lines).filter((l) => l.productionMaterialId).map((l) => l.soItemId));
+    const materialPicks = picks.filter((p) => materialIds.has(p.soItemId));
+    if (materialPicks.length > 0) {
+      /* Safe to re-key on a retry: the server orders only what a material has no PO for yet. */
+      void createMaterialPos({
+        idempotencyKey: newIdempotencyKey(), mode: poMode, ...(expectedAt ? { expectedAt } : {}),
+        picks: materialPicks.map((p) => ({ materialId: p.soItemId, qty: p.qty, supplierId: p.supplierId })),
+      }).then((res) => {
+        setSelected(new Set());
+        /* The page reads a stored plan: regenerate it, or the lines just ordered still read short. */
+        regenerate.mutate(undefined, { onSettled: () => { void q.refetch(); } });
+        setDialog(res.total > 0
+          ? { kind: 'created', title: `Successfully created ${res.total} PO${res.total === 1 ? '' : 's'}`, body: res.created.map((p) => p.poNumber).join(', ') }
+          : { kind: 'info', title: 'Already ordered', body: 'These materials are already on a PO. The list has been refreshed.' });
+      }).catch((err: unknown) => {
+        const raw = err instanceof Error ? err.message : 'Something went wrong.';
+        setDialog(raw.includes('missing_bindings')
+          ? { kind: 'info', title: 'SKUs not bound to a supplier', body: 'Assign these raw materials a supplier first, then proceed.' }
+          : { kind: 'info', title: 'Order failed', body: raw });
+      });
+      return;
+    }
     /* Commander 2026-05-31 — supplier now travels PER PICK (the per-line
        dropdown), so we no longer send supplierByCode from MRP. We DO send the
        Combined/Per-SO `mode` so the toggle works: 'combined' groups by
        (warehouse, supplier); 'per-so' splits further by source SO doc so each
        SO gets its own PO. fromMrp tags every PO line as reference-only so it
        never locks the source SO line (infinite-convert). */
-    const body = { picks, mode: poMode, fromMrp: true, ...(expectedAt ? { expectedAt } : {}) };
-    const runKey = runKeyRef.current ?? newIdempotencyKey();
-    runKeyRef.current = runKey;
-    createPos.mutate({ ...body, idempotencyKey: runKey }, {
-      onSuccess: (res) => {
+    const soDocOf = new Map([...(data?.skus ?? []), ...viewSkus].flatMap((s) => s.lines.map((l) => [l.soItemId, l.soDocNo] as const)));
+    const batches = poRequestBatches(picks, (id) => soDocOf.get(id), poMode);
+    const body = { mode: poMode, fromMrp: true, ...(expectedAt ? { expectedAt } : {}) };
+    const created: Array<{ poNumber: string }> = [];
+    void (async () => {
+      try {
+        for (const batch of batches) {
+          const contentKey = JSON.stringify([batch, body]);
+          const runKey = runKeysRef.current.get(contentKey) ?? newIdempotencyKey();
+          runKeysRef.current.set(contentKey, runKey);
+          const res = await createPos.mutateAsync({ ...body, picks: batch, idempotencyKey: runKey });
+          created.push(...(res.created ?? []));
+        }
         // The run landed (either branch below) — end it, so the next Proceed is a
-        // new run with a new key. See runKeyRef for why this is mandatory.
-        runKeyRef.current = null;
-        if (!res.total) {
+        // new run with new keys. See runKeysRef for why this is mandatory.
+        runKeysRef.current.clear();
+        if (created.length === 0) {
           setDialog({
             kind: 'info',
             title: 'No POs created',
@@ -475,12 +518,15 @@ export const Mrp = () => {
         void q.refetch();
         setDialog({
           kind: 'created',
-          title: `Successfully created ${res.total} PO${res.total === 1 ? '' : 's'}`,
-          body: (res.created ?? []).map((p) => p.poNumber).join(', '),
+          title: `Successfully created ${created.length} PO${created.length === 1 ? '' : 's'}`,
+          body: created.map((p) => p.poNumber).join(', '),
         });
-      },
-      onError: (err) => {
+      } catch (err) {
         const raw = err instanceof Error ? err.message : 'Something went wrong.';
+        const partly = created.length > 0
+          ? `\n\nAlready created before this stopped: ${created.map((p) => p.poNumber).join(', ')}. Proceed again for the rest.`
+          : '';
+        if (created.length > 0) void q.refetch();
         let codes: string[] = [];
         let errCode = '';
         try {
@@ -500,15 +546,15 @@ export const Mrp = () => {
           setDialog({
             kind: 'info',
             title: 'Already ordered',
-            body: 'Some of these lines were already put on a PO. The list has been refreshed — review what still needs ordering and proceed again.',
+            body: `Some of these lines were already put on a PO. The list has been refreshed — review what still needs ordering and proceed again.${partly}`,
           });
           return;
         }
         setDialog(codes.length > 0
-          ? { kind: 'info', title: "SKUs not bound to a supplier", body: 'Assign these to a supplier first, then proceed:\n' + codes.map((c) => `• ${c}`).join('\n') }
-          : { kind: 'info', title: 'Order failed', body: raw });
-      },
-    });
+          ? { kind: 'info', title: "SKUs not bound to a supplier", body: 'Assign these to a supplier first, then proceed:\n' + codes.map((c) => `• ${c}`).join('\n') + partly }
+          : { kind: 'info', title: 'Order failed', body: raw + partly });
+      }
+    })();
   };
 
   /* General — picks (+ codes + unit count) from SHORTAGE order-lines. When a
@@ -523,7 +569,7 @@ export const Mrp = () => {
       const def = skuDefaultSupplierId(s);
       for (const l of shortageLinesOf(s)) {
         if (onlySelected && !selected.has(l.soItemId)) continue;
-        picks.push({ soItemId: l.soItemId, qty: l.shortageQty, supplierId: lineSupplier[l.soItemId] ?? def });
+        picks.push({ soItemId: l.soItemId, qty: l.shortageQty, supplierId: lineSupplier[l.soItemId] ?? l.plannedSupplier?.supplierId ?? def });
         orderedCodes.add(s.itemCode);
         units += l.shortageQty;
       }
@@ -561,7 +607,7 @@ export const Mrp = () => {
     const already = new Set(picks.map((p) => p.soItemId));
     const accessoryLines = (data?.skus ?? [])
       .filter((s) => (s.category ?? '').toUpperCase() === 'ACCESSORY')
-      .flatMap((s) => s.lines.map((l) => ({ line: l, itemCode: s.itemCode, supplierId: lineSupplier[l.soItemId] ?? skuDefaultSupplierId(s) })))
+      .flatMap((s) => s.lines.map((l) => ({ line: l, itemCode: s.itemCode, supplierId: lineSupplier[l.soItemId] ?? l.plannedSupplier?.supplierId ?? skuDefaultSupplierId(s) })))
       .filter(({ line }) =>
         line.source === 'shortage' && line.shortageQty > 0 && line.soItemId
         && setDocs.has(line.soDocNo) && (!hasWindow || lineInWindow(line, filters)));
@@ -669,14 +715,13 @@ export const Mrp = () => {
     }
   };
 
-  /* Proceed PO — gather the selected shortage lines (or all visible shortage
-     lines if none selected) and open the confirm dialog so the operator can
-     OPTIONALLY pick one Expected Delivery date for the whole batch. */
+  /* Proceed PO — gather the selected shortage lines and open the confirm dialog
+     so the operator can OPTIONALLY pick one Expected Delivery date for the whole
+     batch. Nothing ticked orders nothing (owner, 4 Nov 2026). */
   const onProceed = () => {
-    const onlySelected = selectedShortCount > 0;
     const { picks, orderedCodes, units } = view === 'sofa'
-      ? gatherSofa(shortageSkus, onlySelected)
-      : gatherShortages(shortageSkus, onlySelected);
+      ? gatherSofa(shortageSkus, true)
+      : gatherShortages(shortageSkus, true);
     if (picks.length === 0) {
       setDialog({ kind: 'info', title: 'Nothing to order', body: 'No uncovered (shortage) lines in the current selection / window.' });
       return;
@@ -722,7 +767,9 @@ export const Mrp = () => {
       ),
       render: (g) => {
         const ids = g.variants.flatMap(shortageLineIdsOf);
-        if (ids.length === 0) return null;
+        /* An empty element, not null: DataTable prints a dash for null, which read as a blank warehouse beside the
+           Warehouse column on every covered row. */
+        if (ids.length === 0) return <span />;
         const sel = ids.filter((id) => selected.has(id));
         const all = sel.length === ids.length;
         const some = sel.length > 0 && !all;
@@ -739,11 +786,20 @@ export const Mrp = () => {
       },
     },
     {
-      key: 'warehouse', label: 'Warehouse', width: '150px',
-      getValue: (g) => g.warehouseCode ?? g.warehouseName ?? '',
-      render: (g) => (g.warehouseCode
-        ? <span className={styles.whTag} title={g.warehouseName ?? undefined}>{g.warehouseCode}</span>
-        : <span className={styles.whNone}>—</span>),
+      /* Where the goods are, not where the order sits: an order is not tied to a warehouse (owner, 5 Nov 2026). */
+      key: 'warehouse', label: 'In stock at', width: '170px',
+      getValue: (g) => stockWhereText(g.variants),
+      render: (g) => {
+        const text = stockWhereText(g.variants);
+        return text ? <span className={styles.whTag}>{text}</span> : <span className={styles.whNone}>—</span>;
+      },
+    },
+    /* Shown by default since the table opens in this order (owner, 4 Nov 2026). */
+    {
+      key: 'deliveryDate', label: 'Delivery Date', group: 'Logistics',
+      width: '140px', exportFormat: 'date',
+      getValue: (g) => groupEarliestDate(g, 'delivery') ?? '',
+      render: (g) => fmtDate(groupEarliestDate(g, 'delivery')),
     },
     {
       key: 'itemCode', label: isSofa ? 'Sales Order' : 'Item Code', width: '160px',
@@ -835,12 +891,6 @@ export const Mrp = () => {
       getValue: (g) => groupEarliestDate(g, 'soDate') ?? '',
       render: (g) => fmtDate(groupEarliestDate(g, 'soDate')),
     },
-    {
-      key: 'deliveryDate', label: 'Delivery Date', group: 'Logistics',
-      width: '140px', defaultHidden: true, exportFormat: 'date',
-      getValue: (g) => groupEarliestDate(g, 'delivery') ?? '',
-      render: (g) => fmtDate(groupEarliestDate(g, 'delivery')),
-    },
   ];
 
   /* A non-empty search force-opens every shown model so the match is visible
@@ -868,7 +918,7 @@ export const Mrp = () => {
             >
               {([
                 { mode: 'combined' as const, label: 'Combined', title: 'One PO per supplier' },
-                { mode: 'per-so' as const, label: 'Per SO', title: 'One PO per SO (sofa / bedframe)' },
+                { mode: 'per-so' as const, label: 'Per SO', title: 'One PO per SO, for each supplier' },
               ]).map(({ mode, label, title }) => (
                 <button
                   key={mode}
@@ -939,21 +989,15 @@ export const Mrp = () => {
             type="button"
             variant="primary"
             icon={<ShoppingCart {...ICON} />}
-            disabled={createPos.isPending || shortCount === 0}
+            disabled={createPos.isPending || selectedShortCount === 0}
             onClick={onProceed}
             title={
-              selectedShortCount > 0 ? 'Order the selected SKUs'
-              : hasWindow ? `Order everything in ${windowLabel} as one batch`
-              : view === 'sofa' ? 'Order all sofa sets still to order' : 'Order all shortage SKUs'
+              selectedShortCount > 0 ? 'Order the selected SKUs' : 'Tick the lines to order first'
             }
           >
             {createPos.isPending
               ? 'Processing…'
-              : selectedShortCount > 0
-                ? `Proceed PO (${selectedShortCount})`
-                : hasWindow
-                  ? `Proceed PO · window (${shortCount})`
-                  : `Proceed PO (${shortCount})`}
+              : `Proceed PO (${selectedShortCount})`}
           </Button>
         }
       />
@@ -1097,7 +1141,6 @@ export const Mrp = () => {
               flatModules={isSofa}
               variantAtL1={view === 'bedframe'}
               accessoryRiders={isSofa ? (accessoryBySoDoc.get(g.itemCode) ?? []) : []}
-              poMode={poMode}
             />
           ),
         }}
@@ -1119,7 +1162,7 @@ export const Mrp = () => {
             <p className={styles.dialogBody}>
               Generate purchase orders for {dialog.count} {dialog.count === 1 ? 'line' : 'lines'}
               {' '}({dialog.units} {dialog.units === 1 ? 'unit' : 'units'}) in{' '}
-              {poMode === 'combined' ? 'Combined (one PO per supplier)' : 'Per SO (one PO per SO)'} mode.
+              {poMode === 'combined' ? 'Combined (one PO per supplier)' : 'Per SO (one PO per SO, for each supplier)'} mode.
             </p>
             <label className={styles.dialogField}>
               <span className={styles.filterLabel}>Expected Delivery (optional — leave blank to use each SO's own date)</span>
@@ -1182,28 +1225,51 @@ export const Mrp = () => {
 
 /* Per-shortage-line supplier dropdown (Commander 2026-05-31). Each shortage SO
    line picks its own supplier, defaulting to the SKU's main supplier; different
-   lines of the same SKU MAY differ. Unbound SKU → "— none —" (can't be ordered
-   until a supplier is assigned). */
-const LineSupplierCell = ({ suppliers, chosenSupplierId, onSupplierChange }: {
+   lines of the same SKU MAY differ. Every other active supplier follows; picking
+   one binds it to the SKU, so the PO can be raised (owner, 4 Nov 2026). */
+const LineSupplierCell = ({ suppliers, planned, chosenSupplierId, onSupplierChange, itemCode, description }: {
   suppliers: MrpSku['suppliers']; chosenSupplierId: string | null;
+  /* The supplier picked on the project's SO tab: the line starts on it, bound to the SKU or not. */
+  planned?: MrpSku['lines'][number]['plannedSupplier'];
   onSupplierChange: (supplierId: string) => void;
+  itemCode: string; description: string | null;
 }) => {
-  if (suppliers.length === 0) return <span className={styles.noSupplier}>— none —</span>;
-  const defaultSupplierId = suppliers.find((s) => s.isMain)?.supplierId ?? suppliers[0]!.supplierId;
+  const all = useSuppliers({ status: 'ACTIVE' }).data ?? [];
+  const bind = useCreateBinding();
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const defaultSupplierId = planned?.supplierId ?? suppliers.find((s) => s.isMain)?.supplierId ?? suppliers[0]?.supplierId ?? '';
+  const others = all.filter((s) => !suppliers.some((b) => b.supplierId === s.id));
+  const pick = async (id: string): Promise<void> => {
+    setRefusal(null);
+    try {
+      if (others.some((s) => s.id === id)) {
+        await bind.mutateAsync({ supplierId: id, materialKind: 'mfg_product', itemCode, materialName: description || itemCode, supplierSku: itemCode, isMainSupplier: suppliers.length === 0 });
+      }
+      onSupplierChange(id);
+    } catch (e) {
+      setRefusal(e instanceof Error ? e.message : 'The supplier could not be bound.');
+    }
+  };
   return (
-    <select
-      className={styles.supplierSelect}
-      value={chosenSupplierId ?? defaultSupplierId}
-      onChange={(e) => onSupplierChange(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      title="Supplier for this SO line — defaults to the SKU's main supplier"
-    >
-      {suppliersMainFirst(suppliers).map((s) => (
-        <option key={s.supplierId} value={s.supplierId}>
-          {s.name}{s.isMain ? ' ★' : ''} · {s.code}
-        </option>
-      ))}
-    </select>
+    <>
+      <select
+        className={styles.supplierSelect}
+        value={chosenSupplierId ?? defaultSupplierId}
+        disabled={bind.isPending}
+        onChange={(e) => void pick(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        title="Supplier for this SO line — defaults to the SKU's main supplier"
+      >
+        {!defaultSupplierId && !chosenSupplierId && <option value="">Pick a supplier</option>}
+        {suppliersMainFirst(suppliers).map((s) => (
+          <option key={s.supplierId} value={s.supplierId}>
+            {s.name}{s.isMain ? ' ★' : ''} · {s.code}
+          </option>
+        ))}
+        {others.length > 0 && <optgroup label="Other suppliers">{others.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.code}</option>)}</optgroup>}
+      </select>
+      {refusal && <span role="alert" className={styles.noSupplier}>{refusal}</span>}
+    </>
   );
 };
 
@@ -1224,7 +1290,7 @@ type AccessoryRider = { sku: MrpSku; line: MrpLine };
 const ModelDrilldown = ({
   group, expandedVariants, onToggleVariant, forceOpen,
   selected, onToggleLine, onSetLinesSelected, lineSupplier, onLineSupplierChange,
-  flatModules, variantAtL1, accessoryRiders, poMode,
+  flatModules, variantAtL1, accessoryRiders,
 }: {
   group: ModelGroup;
   expandedVariants: Set<string>;
@@ -1244,7 +1310,6 @@ const ModelDrilldown = ({
   /* Sofa only — the cover / pillow shortage lines on this SO, shown under the
      sofa modules so the operator sees them ride onto the order (empty otherwise). */
   accessoryRiders?: AccessoryRider[];
-  poMode?: 'combined' | 'per-so';
 }) => {
   // Sofa (M-S1): one table per SO, module + its order-line detail on one row.
   if (flatModules) {
@@ -1252,7 +1317,7 @@ const ModelDrilldown = ({
       <div className={styles.drilldown}>
         <SofaSoTable group={group} selected={selected} onToggleLine={onToggleLine}
           lineSupplier={lineSupplier} onLineSupplierChange={onLineSupplierChange}
-          accessoryRiders={accessoryRiders ?? []} poMode={poMode ?? 'combined'} />
+          accessoryRiders={accessoryRiders ?? []} />
       </div>
     );
   }
@@ -1379,6 +1444,8 @@ const OrderLines = ({ sku, selected, onToggleLine, lineSupplier, onLineSupplierC
           key={`${ln.soDocNo}-${i}`}
           ln={ln}
           suppliers={sku.suppliers}
+          itemCode={sku.itemCode}
+          description={sku.description}
           whCode={sku.warehouseCode}
           whName={sku.warehouseName}
           selected={selected.has(ln.soItemId)}
@@ -1391,9 +1458,11 @@ const OrderLines = ({ sku, selected, onToggleLine, lineSupplier, onLineSupplierC
   </table>
 );
 
-const ChildLine = ({ ln, suppliers, whCode, whName, selected, onToggleLine, chosenSupplierId, onSupplierChange }: {
+const ChildLine = ({ ln, suppliers, itemCode, description, whCode, whName, selected, onToggleLine, chosenSupplierId, onSupplierChange }: {
   ln: MrpLine;
   suppliers: MrpSku['suppliers'];
+  itemCode: string;
+  description: string | null;
   whCode: string | null;
   whName: string | null;
   selected: boolean;
@@ -1447,7 +1516,7 @@ const ChildLine = ({ ln, suppliers, whCode, whName, selected, onToggleLine, chos
       <td className={styles.supplierCell}>
         {short
           /* Shortage line → editable per-line supplier dropdown. */
-          ? <LineSupplierCell suppliers={suppliers} chosenSupplierId={chosenSupplierId} onSupplierChange={onSupplierChange} />
+          ? <LineSupplierCell suppliers={suppliers} planned={ln.plannedSupplier} itemCode={itemCode} description={description} chosenSupplierId={chosenSupplierId} onSupplierChange={onSupplierChange} />
           /* Covered / already-PO'd line → the PO's supplier, READ-ONLY (a raised
              PO's supplier can't change). Stock lines show a dash. */
           : ln.source === 'po'
@@ -1465,7 +1534,7 @@ const ChildLine = ({ ln, suppliers, whCode, whName, selected, onToggleLine, chos
    SAME row — instead of the module → order-line two-level drill. Each sofa module
    has exactly one SO line; selection + supplier reuse the per-line handlers, so
    ordering (Proceed PO) is unchanged. */
-const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSupplierChange, accessoryRiders, poMode }: {
+const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSupplierChange, accessoryRiders }: {
   group: ModelGroup;
   selected: Set<string>;
   onToggleLine: (soItemId: string) => void;
@@ -1476,7 +1545,6 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
      the sofa set is proceeded (gatherSofa), so they follow the sofa's selection
      rather than carrying their own checkbox. */
   accessoryRiders: AccessoryRider[];
-  poMode: 'combined' | 'per-so';
 }) => (
   <table className={styles.childTable}>
     <thead>
@@ -1513,8 +1581,8 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
             <td className={styles.codeCell}>{ln.soDocNo}</td>
             <td>{mrpProjectLabel(ln) || '—'}</td>
             <td className={styles.whCell}>
-              {v.warehouseCode
-                ? <span className={styles.whTag} title={v.warehouseName ?? undefined}>{v.warehouseCode}</span>
+              {stockWhereText([v])
+                ? <span className={styles.whTag}>{stockWhereText([v])}</span>
                 : <span className={styles.whNone}>—</span>}
             </td>
             <td><span className={styles.variantTag}>{v.variantLabel ?? v.itemCode}</span></td>
@@ -1539,7 +1607,7 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
             </td>
             <td className={styles.supplierCell}>
               {short
-                ? <LineSupplierCell suppliers={v.suppliers} chosenSupplierId={lineSupplier[ln.soItemId] ?? null} onSupplierChange={(sid) => onLineSupplierChange(ln.soItemId, sid)} />
+                ? <LineSupplierCell suppliers={v.suppliers} planned={ln.plannedSupplier} itemCode={v.itemCode} description={v.description} chosenSupplierId={lineSupplier[ln.soItemId] ?? null} onSupplierChange={(sid) => onLineSupplierChange(ln.soItemId, sid)} />
                 : ln.source === 'po'
                   ? <span className={styles.poSupplierRO} title="This PO covers the line in the current allocation. Supplier is read-only because the PO is already raised."><Truck {...ICON} /> {ln.poSupplierName ?? '—'}</span>
                   : <span className={styles.whNone}>—</span>}
@@ -1550,14 +1618,12 @@ const SofaSoTable = ({ group, selected, onToggleLine, lineSupplier, onLineSuppli
       {/* Cover / pillow riders (owner 2026-09-11). These ACCESSORY shortage lines
           belong to this SO and are pulled onto the order when the sofa set is
           proceeded. Read-along: no checkbox, because they follow the sofa's
-          selection. The caption states where they land in the current mode. */}
+          selection. */}
       {accessoryRiders.length > 0 && (
         <tr className={styles.detailRow}>
           <td />
           <td colSpan={11} className="py-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-            {poMode === 'combined'
-              ? 'Accessories on this order (cover / pillow) — ride on the sofa PO when a supplier matches, else their own PO'
-              : 'Accessories on this order (cover / pillow) — ordered on their own PO (Per-SO); switch to Combined to ride on the sofa PO'}
+            Accessories on this order (cover / pillow) — ride on the sofa PO when a supplier matches, else their own PO
           </td>
         </tr>
       )}

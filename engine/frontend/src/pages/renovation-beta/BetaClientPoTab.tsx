@@ -1,6 +1,6 @@
-/* Beta workspace > Client PO (owner, 24 Oct 2026): every line the client buys themselves, which is every SO line
-   whose SKU's supplier is "Customer" (the CUS-* SKUs) or that is marked supplied by the owner, plus such lines on a VO
-   not on the SO yet. Grouped by category and sub-category, or by area.
+/* Beta workspace > Client PO (owner, 24 Oct 2026): the lines the client buys themselves. It starts empty: a line comes
+   here once MRP opens its PO to the supplier "Customer" (owner, 4 Nov 2026), and leaves if that PO is cancelled. Grouped
+   by category and sub-category, or by area.
 
    The PO tab's twin (owner, 24 Oct 2026): the same columns, read from the same places. Processing and delivery dates
    are the line's dates as the PO tab shows them (set there, in Edit), GR and DO are the documents that carried the
@@ -8,12 +8,13 @@
    WhatsApp); the client sees the items, quantities, dates and photos, never prices or suppliers. */
 
 import { useMemo, useState, type ReactElement } from "react";
+import { Link } from "react-router-dom";
 import { Check, Copy, Download, ExternalLink, Send } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
 import { LinePhotoThumbs, photoCount } from "./BetaLinePhotos";
 import { DocCell, useOpenDoc } from "./BetaLineDocs";
 import { errorText } from "../projects/renovation/renovationModel";
-import { TONE_WAIT, WS, WsBadge, WsEmpty, WsFilterPill, WsPageHead, btnStyle, cardStyle } from "./BetaWsUi";
+import { WS, WsEmpty, WsFilterPill, WsPageHead, btnStyle, cardStyle } from "./BetaWsUi";
 import { WsNarrow, WsNarrowStyle, WsTable, metaStyle, narrowBandStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
 import type { BetaTabProps } from "./betaShared";
 import { downloadClientPdf } from "./renovationBetaClientPdf";
@@ -85,13 +86,13 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
   if (!q.data) return <BetaLoading label="Loading Client PO" />;
 
   const dated = [...rows.values()].filter((r) => r.orderOn && r.deliverOn).length;
-  const COLS = 9;
+  const COLS = 10;
   return (
     <>
       <WsNarrowStyle />
       <WsPageHead
         title="Client PO"
-        sub={`What the client buys: ${items.length} item${items.length === 1 ? "" : "s"}, ${dated} with both dates set. Lines with supplier "Customer" come here by themselves; their dates are set in the PO tab.`}
+        sub={`What the client buys: ${items.length} item${items.length === 1 ? "" : "s"}, ${dated} with both dates set. A line comes here once MRP opens its PO to the supplier "Customer"; its dates are set in the SO tab.`}
       />
       {q.data.categoryRestricted && <p style={{ margin: 0, fontSize: 13, color: BETA.muted }}>Some categories are hidden for your role.</p>}
       {q.data.categoryRestricted
@@ -103,7 +104,7 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
         <WsFilterPill on={view === "area"} onClick={() => setView("area")}>By area</WsFilterPill>
       </div>
 
-      {items.length === 0 ? <WsEmpty>Nothing for the client to buy yet. Lines whose SKU supplier is "Customer" show here.</WsEmpty> : (
+      {items.length === 0 ? <WsEmpty>No Client PO yet. Open a PO to the supplier "Customer" in MRP and its lines show here.</WsEmpty> : (
         <WsTable minWidth={980} label="Client items">
           <thead>
             <tr>
@@ -113,6 +114,7 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
               <th style={{ ...thStyle, textAlign: "right" }}>Qty</th>
               <th style={thStyle} title="Processing date: when the client should buy it">Processing</th>
               <th style={thStyle} title="Delivery date: when it should reach the site">Delivery</th>
+              <th style={thStyle}>PO</th>
               <th style={thStyle}>GR</th>
               <th style={thStyle}>DO</th>
               <th style={thStyle}>Photos</th>
@@ -156,11 +158,12 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, ...metaStyle }}>
                             <span style={{ fontFamily: "ui-monospace, monospace" }}>{i.itemCode ?? "-"}</span>
                             <span>{view === "category" ? (i.area ?? "No area") : `${i.categoryLabel} · ${i.subLabel}`}</span>
-                            {i.pending && <span>Not confirmed yet</span>}
                           </div>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
                             {field("Processing", <DateText value={r.orderOn} late={r.late === "order"} />)}
                             {field("Delivery", <DateText value={r.deliverOn} late={r.late === "deliver"} />)}
+                            {field("PO", <PoLink i={i} />)}
+                            <span />
                             {field("GR", <DocCell docs={r.grDocs} state={null} tab="gr" open={openDoc} />)}
                             {field("DO", <DocCell docs={r.doDocs} state={r.doState} tab="do" open={openDoc} />)}
                           </div>
@@ -179,22 +182,24 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
   );
 }
 
+function PoLink({ i }: { i: ClientItem }): ReactElement {
+  return <Link to={`/scm/purchase-orders/${i.poId}`} style={{ fontSize: 13, fontWeight: 600 }}>{i.poNumber}</Link>;
+}
+
 function ItemRow({ r, view, openDoc }: { r: Row; view: View; openDoc: ReturnType<typeof useOpenDoc> }): ReactElement {
   const i = r.i;
   return (
     <tr>
       <td style={{ ...tdStyle, paddingLeft: 40 }}>
         {i.description || "-"}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 2 }}>
-          {i.voNo && <span style={metaStyle}>From {i.voNo}</span>}
-          {i.pending && <WsBadge tone={TONE_WAIT} size={11}>VO not approved yet</WsBadge>}
-        </div>
+        {i.voNo && <div style={{ ...metaStyle, marginTop: 2 }}>From {i.voNo}</div>}
       </td>
       <td style={{ ...tdStyle, whiteSpace: "nowrap", fontFamily: "ui-monospace, monospace", fontSize: 13 }}>{i.itemCode ?? "-"}</td>
       <td style={tdStyle}>{view === "category" ? (i.area ?? "-") : `${i.categoryLabel} · ${i.subLabel}`}</td>
       <td style={numStyle}>{qtyText(i)}</td>
       <td style={tdStyle}><DateText value={r.orderOn} late={r.late === "order"} /></td>
       <td style={tdStyle}><DateText value={r.deliverOn} late={r.late === "deliver"} /></td>
+      <td style={{ ...tdStyle, whiteSpace: "nowrap" }}><PoLink i={i} /></td>
       <td style={{ ...tdStyle, maxWidth: 150 }}><DocCell docs={r.grDocs} state={null} tab="gr" open={openDoc} /></td>
       <td style={{ ...tdStyle, maxWidth: 150 }}><DocCell docs={r.doDocs} state={r.doState} tab="do" open={openDoc} /></td>
       <td style={tdStyle}><LinePhotos i={i} /></td>

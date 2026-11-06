@@ -87,7 +87,7 @@ export type InventoryBalance = {
      can show consignment QUANTITY separately and exclude it from inventory
      VALUE. Display-only; no costing/AP path depends on it. */
   is_consignment?: boolean;
-  category?: 'ACCESSORY' | 'BEDFRAME' | 'SOFA' | 'MATTRESS' | 'SERVICE';
+  category?: string;
   size_label?: string | null;
   value_sen?: number;
   main_supplier_code?: string | null;
@@ -98,7 +98,7 @@ export type InventoryBalance = {
 export type InventoryProductTotal = {
   item_code: string;
   product_name: string;
-  category: 'ACCESSORY' | 'BEDFRAME' | 'SOFA' | 'MATTRESS' | 'SERVICE';
+  category: string;
   size_label: string | null;
   base_price_sen: number | null;
   price1_sen: number | null;

@@ -247,6 +247,8 @@ export default function OwnerOverallReportPage() {
   }
 
   const present = REPORT_GROUPS.map(g => ({ group: g, n: all.filter(r => r.group === g).length })).filter(g => g.n);
+  // Rent to rent keeps its chip even in a month with no such unit; No contract units show under All only (owner, 5 Nov 2026).
+  const chips: ReportGroup[] = [...present.map(p => p.group).filter(g => g !== 'RTR' && g !== 'NONE'), 'RTR'];
   const detail = row && (
     <OwnerOverallDetail row={row} all={all} level={level} onLevel={setLevel} onClose={() => setSelected(null)}
       onStep={step} position={at + 1} total={order.length} />
@@ -372,7 +374,7 @@ export default function OwnerOverallReportPage() {
         <div className="flex flex-col gap-1">
           <Eyebrow>Contract</Eyebrow>
           <Segmented label="Contract" value={contract} onChange={setContract}
-            options={[{ key: 'all' as Contract, label: 'All' }, ...present.map(g => ({ key: g.group as Contract, label: GROUP_NAME[g.group] }))]} />
+            options={[{ key: 'all' as Contract, label: 'All' }, ...chips.map(g => ({ key: g as Contract, label: GROUP_NAME[g] }))]} />
         </div>
         <div className="flex flex-col gap-1">
           <Eyebrow>Detail level</Eyebrow>

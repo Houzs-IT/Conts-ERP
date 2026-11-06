@@ -93,8 +93,8 @@ export const DEFAULT_BRANDING: Branding = {
   companyName: "The Conts Sdn Bhd",
   registrationNo: "202301027399 (1521322-V)",
   address:
-    "C-41-06, Jaya One, Jalan Universiti, 46200 Petaling Jaya",
-  postcode: "46200",
+    "E-28-02 Menara SUEZCAP 2, KL Gateway, No.2, Jalan Kerinchi, Gerbang Kerinchi Lestari, 59200 Kuala Lumpur",
+  postcode: "59200",
   phone: "+60 17-465 8868",
   email: "help@theconts.com",
   website: "",

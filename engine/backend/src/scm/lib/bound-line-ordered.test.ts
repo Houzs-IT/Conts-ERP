@@ -8,6 +8,7 @@
    lines ordered twice: HC-SO-013236 line 5 on HC-PO-009945 AND HC-PO-2609-058,
    HC-SO-013322 line 2 on HC-PO-010161 AND HC-PO-2609-060, and HC-SO-013503 line 2
    on HC-PO-2609-091 then HC-PO-2609-101 (since cancelled). */
+import { NO_UNIT_BOUND_CODES } from './unit-bound-sku';
 import { describe, expect, test } from 'vitest';
 import { loadBoundOrderedQty, boundAwarePicked } from './bound-line-ordered';
 
@@ -37,26 +38,26 @@ describe('loadBoundOrderedQty', () => {
 
   test('counts every LIVE purchase-order line on a bound line, MRP-origin included', async () => {
     const sb = fakeSb({ purchase_order_items: [poLine('l-013503', 3, 'SUBMITTED'), poLine('l-013503', 2, 'CANCELLED'), poLine('l-013503', 1, 'DRAFT')] });
-    const got = await loadBoundOrderedQty(sb, 1, [pillow]);
+    const got = await loadBoundOrderedQty(sb, 1, [pillow], NO_UNIT_BOUND_CODES);
     expect(got.get('l-013503')).toBe(3);
   });
 
   test('a pooled line is not read at all — its cap stays po_qty_picked', async () => {
     const sb = fakeSb({ purchase_order_items: [poLine('l-plain', 3, 'SUBMITTED')] });
-    const got = await loadBoundOrderedQty(sb, 1, [{ id: 'l-plain', item_group: 'accessory', item_code: 'AK- ESSENTIAL BOLSTER' }]);
+    const got = await loadBoundOrderedQty(sb, 1, [{ id: 'l-plain', item_group: 'accessory', item_code: 'AK- ESSENTIAL BOLSTER' }], NO_UNIT_BOUND_CODES);
     expect(got.size).toBe(0);
     expect(sb.calls).toHaveLength(0);
   });
 
   test('company 2 pools: nothing is bound there', async () => {
     const sb = fakeSb({ purchase_order_items: [poLine('l-013503', 3, 'SUBMITTED', 2)] });
-    const got = await loadBoundOrderedQty(sb, 2, [pillow]);
+    const got = await loadBoundOrderedQty(sb, 2, [pillow], NO_UNIT_BOUND_CODES);
     expect(got.size).toBe(0);
   });
 
   test('a null company binds nothing — the stricter reading belongs to the caller that knows its company', async () => {
     const sb = fakeSb({ purchase_order_items: [poLine('l-013503', 3, 'SUBMITTED')] });
-    expect((await loadBoundOrderedQty(sb, null, [pillow])).size).toBe(0);
+    expect((await loadBoundOrderedQty(sb, null, [pillow], NO_UNIT_BOUND_CODES)).size).toBe(0);
   });
 });
 

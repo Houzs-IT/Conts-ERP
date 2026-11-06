@@ -22,7 +22,8 @@ export function ProjectLimitField({ projectId, onChange, amountSen, disabled, ex
   const [reason, setReason] = useState("");
   const [sent, setSent] = useState<string | null>(null);
   const l = limit.data;
-  const over = l ? Math.max(0, amountSen - l.leftSen) : 0;
+  /* Limit check switched off (Ledger setup): the figures show, nothing is over. */
+  const over = l && l.checked !== false ? Math.max(0, amountSen - l.leftSen) : 0;
 
   const send = async () => {
     if (!l || !reason.trim()) return;
@@ -49,6 +50,7 @@ export function ProjectLimitField({ projectId, onChange, amountSen, disabled, ex
           {l.funding === "internal" ? "Budget" : "Limit"} left RM {fmtSenPlain(l.leftSen)} of RM {fmtSenPlain(l.limitSen)}
           {l.reservedSen > 0 ? ` (RM ${fmtSenPlain(l.reservedSen)} reserved)` : ""}
           {over > 0 ? ` — this voucher is RM ${fmtSenPlain(over)} over` : ""}
+          {l.checked === false ? " · limit check is off" : ""}
         </span>
       )}
       {l && over > 0 && !disabled && !asking && (

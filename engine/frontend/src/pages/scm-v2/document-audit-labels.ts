@@ -90,6 +90,15 @@ export const PURCHASE_ORDER_AUDIT_LABELS: AuditLabelDictionary = {
   moneyFields: new Set([...LINE_MONEY, 'totalSen']),
 };
 
+export const PRODUCTION_ORDER_AUDIT_LABELS: AuditLabelDictionary = {
+  actions: {
+    CREATE: 'Created production order', UPDATE: 'Updated', POST: 'Confirmed production order',
+    CANCEL: 'Cancelled production order', REVERSE: 'Reversed', DELETE: 'Deleted production order',
+  },
+  fields: { ...PO_FIELDS, poDate: 'Production order date' },
+  moneyFields: new Set([...LINE_MONEY, 'totalSen']),
+};
+
 /* ── Purchase Invoice — routes/purchase-invoices.ts ───────────────────────── */
 
 const PI_ACTIONS: Record<string, string> = {

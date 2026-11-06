@@ -312,7 +312,8 @@ siteReceipts.get("/:grnId", async (c) => {
        LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id
       WHERE g.id = ?::uuid AND g.received_at_site AND g.company_id = ?`,
   ).bind(grnId, co.companyId).first<Record<string, unknown>>();
-  if (!head) return c.json({ error: "not_found" }, 404);
+  /* Every goods receipt page asks: an ordinary warehouse receipt is an answer, not an error in the console. */
+  if (!head) return c.json({ receipt: null, photos: [], lines: [] });
   const photos = await db(c).prepare(
     `SELECT id::text AS id, grn_item_id::text AS grn_item_id, location, kind, r2_key, caption, taken_at FROM scm.grn_site_photos WHERE grn_id = ?::uuid ORDER BY created_at`,
   ).bind(grnId).all();

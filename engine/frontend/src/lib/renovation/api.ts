@@ -101,6 +101,8 @@ export interface DocHeader {
   bedrooms?: number | null;
   bathrooms?: number | null;
   builtUpSqft?: number | null;
+  landAreaSqft?: number | null;
+  landSize?: string;
 }
 
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
@@ -113,6 +115,7 @@ export interface QuotationHead {
 
 export interface QuotationListRow extends QuotationHead {
   docNo: string; customerName: string; building: string; unitNo: string; docDate: string; printFormat: PrintFormat; totalSen: number;
+  projectCode: string | null; brandName: string | null;
 }
 
 export interface Revision {
@@ -204,7 +207,7 @@ export interface PoSchedule {
 }
 
 export interface TermTemplate {
-  id: string; kind: 'CUSTOMER' | 'PO'; name: string; isDefault: boolean; active: boolean;
+  id: string; kind: 'CUSTOMER' | 'PO'; name: string; brandId: number | null; isDefault: boolean; active: boolean;
   lines: Array<{ seq: number; label: string; pctBp: number; description: string; stageCode: string | null; trigger: string; payableOn: string | null }>;
 }
 
@@ -337,7 +340,7 @@ export function useRenoMutation<TVars, TResult = unknown>(fn: (v: TVars) => Prom
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['reno'] }); },
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['reno'] }); void qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail'] }); },
   });
 }
 

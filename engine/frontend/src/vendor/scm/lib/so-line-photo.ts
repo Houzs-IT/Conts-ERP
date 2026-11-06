@@ -85,6 +85,8 @@ import {
   fetchSoItemPhotoBlob,
   fetchPoItemPhotoSignedUrl,
   fetchPoItemPhotoBlob,
+  fetchProductionItemPhotoSignedUrl,
+  fetchProductionItemPhotoBlob,
   isDirectlyLoadableUrl,
   isProxyPhotoPayload,
   PhotoProxyError,
@@ -99,7 +101,7 @@ import { THUMB_KEY_SUFFIX } from '../../../lib/imagePipeline';
    pair, and the module-level caches stay keyed by the R2 key, which is
    CORRECT to share across sources: same key, same bytes, so a thumb loaded on
    the SO detail is free on the PO detail. */
-export type LinePhotoSource = 'so' | 'po';
+export type LinePhotoSource = 'so' | 'po' | 'pro';
 
 /* Wrappers, not bare references, ON PURPOSE: a bare reference dereferences the
    sales-order-queries module namespace while THIS module evaluates, and every
@@ -119,6 +121,10 @@ const PHOTO_FETCHERS: Record<LinePhotoSource, {
   po: {
     signedUrl: (d, i, k) => fetchPoItemPhotoSignedUrl(d, i, k),
     blob: (d, i, k) => fetchPoItemPhotoBlob(d, i, k),
+  },
+  pro: {
+    signedUrl: (d, i, k) => fetchProductionItemPhotoSignedUrl(d, i, k),
+    blob: (d, i, k) => fetchProductionItemPhotoBlob(d, i, k),
   },
 };
 
@@ -442,6 +448,10 @@ export const soLinePhotoLightboxBase = (docNo: string, itemId: string): string =
  *  PO row id rather than a doc_no. */
 export const poLinePhotoLightboxBase = (poId: string, itemId: string): string =>
   `/api/scm/mfg-purchase-orders/${encodeURIComponent(poId)}/items/${encodeURIComponent(itemId)}/photos`;
+
+/** Production-order twin of poLinePhotoLightboxBase. */
+export const productionLinePhotoLightboxBase = (orderId: string, itemId: string): string =>
+  `/api/scm/production-orders/${encodeURIComponent(orderId)}/items/${encodeURIComponent(itemId)}/photos`;
 
 /** Content type for a photo key, from its extension. R2 hands back
  *  `application/octet-stream` for objects stored without a type, and an

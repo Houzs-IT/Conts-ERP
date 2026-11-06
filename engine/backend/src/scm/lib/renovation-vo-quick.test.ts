@@ -66,6 +66,13 @@ function recordingDb(): RenoDb & { calls: Array<{ text: string; params: readonly
 }
 
 describe('carryToAddedLine (quickVo, the line a VO adds)', () => {
+  it('a brand-new line stands in the room it was added to', async () => {
+    const db = recordingDb();
+    await carryToAddedLine(db, { lineId: 'V', fromSoItemId: null, sameSku: false, respec: false, itemCode: 'LMP-1', room: 'Common area' }, 'NEW', 'other');
+    expect(db.calls).toHaveLength(1);
+    expect(db.calls[0].params).toEqual(['NEW', 'Common area']);
+  });
+
   const base = { lineId: 'V1', fromSoItemId: 'OLD', sameSku: true, itemCode: 'BED-1' };
   it('same SKU with new options: the new line takes the options given, not the old line options', async () => {
     const db = recordingDb();

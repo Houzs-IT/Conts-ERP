@@ -79,9 +79,9 @@ describe('rooms made as soon as a layout is chosen', () => {
       assign: { r1: 'Common area' },
     });
   });
-  test('no layout, rooms already there, or a line with a product: left alone', () => {
+  test('no layout, or a line with a product: left alone', () => {
     expect(autoRoomsPlan([], [{ key: 'r1', filled: false }], null)).toBeNull();
-    expect(autoRoomsPlan(['Kitchen'], [{ key: 'r1', filled: false }], layout)).toBeNull();
+    expect(autoRoomsPlan(['Kitchen'], [{ key: 'r1', filled: false }], layout)?.rooms).not.toContain('Kitchen');
     expect(autoRoomsPlan([], [{ key: 'r1', filled: true }], layout)).toBeNull();
   });
   test('an order with no lines at all still gets its rooms', () => {

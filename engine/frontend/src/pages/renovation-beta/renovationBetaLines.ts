@@ -23,6 +23,7 @@ export interface LinePo {
   supplierRevised: boolean;
   qty: number; received: number;
   photoKeys: string[];
+  supplierName?: string | null;
 }
 
 export interface SupplierChoice { id: string; code: string; name: string; main: boolean; priceSen: number | null }
@@ -30,6 +31,9 @@ export interface SupplierChoice { id: string; code: string; name: string; main: 
 export interface PendingPoChange { id: string; amendmentNo: string; poId: string; poNumber: string; voLabel: string | null }
 
 export interface LinePlan { orderOn: string | null; deliverOn: string | null; noPo: boolean }
+
+export interface LineMaterial { code: string; name: string | null; uom: string | null; qty: number }
+export interface RawMaterialSku { code: string; name: string | null; uom: string | null }
 
 export interface ManagedLine {
   id: string;
@@ -49,13 +53,15 @@ export interface ManagedLine {
   amountSen: number | null;
   area: string | null;
   remark: string | null;
-  /** The supplier the line is bought from: the contract line's, else the SKU's main supplier. */
+  /** The supplier the line is to be bought from: the one picked here, else the contract line's, else the SKU's main supplier. */
   supplierName: string | null;
   supplierId?: string | null;
   /** The renovation contract line behind it, where a supplier picked here is kept (null: not a contract line). */
   contractLineId?: string | null;
-  /** The suppliers the SKU can be ordered from (its bindings), main first. */
+  /** The suppliers the SKU can be ordered from (its bindings), main first. LinesAnswer.suppliers has the rest. */
   supplierChoices?: SupplierChoice[];
+  /** Its raw materials: the list saved on the line, else the SKU's composition times the line's qty. */
+  materials?: LineMaterial[];
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none). */
   categoryCode: string | null;
@@ -79,6 +85,8 @@ export interface LinesAnswer {
   plansReady: boolean;
   sos: Array<{ docNo: string; status: string; voLocked: boolean; renovation: boolean }>;
   lines: ManagedLine[];
+  /** Every active supplier: picking one the SKU has no binding to binds it. */
+  suppliers?: Array<{ id: string; name: string }>;
   pendingPoChanges: PendingPoChange[];
   /** The caller's role sees only some product categories: lines of the others are left out by the server. */
   categoryRestricted: boolean;
@@ -87,15 +95,15 @@ export interface LinesAnswer {
 const B = "/api/beta";
 
 export const linesApi = {
+  rawMaterials: (): Promise<{ skus: RawMaterialSku[] }> => api.get<{ skus: RawMaterialSku[] }>(`${B}/raw-materials`),
+  saveMaterials: (projectId: number, itemId: string, materials: Array<{ code: string; qty: number }>): Promise<{ ok: true }> =>
+    api.put<{ ok: true }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/materials`, { materials }),
   lines: (projectId: number): Promise<LinesAnswer> => api.get<LinesAnswer>(`${B}/projects/${projectId}/lines`),
   savePlan: (projectId: number, itemId: string, b: Partial<LinePlan>): Promise<{ ok: true; plan: LinePlan }> =>
     api.put<{ ok: true; plan: LinePlan }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/plan`, b),
-  /** The supplier of a contract line, from the SKU's bound suppliers (backend renovationBeta.ts PUT .../supplier). */
-  saveSupplier: (projectId: number, itemId: string, supplierId: string): Promise<{ ok: true; supplierId: string; supplierName: string }> =>
-    api.put<{ ok: true; supplierId: string; supplierName: string }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/supplier`, { supplierId }),
-  /** The PO date, through the PO's own header update (scm mfg-purchase-orders PATCH /:id). */
-  setPoDate: (poId: string, poDate: string): Promise<unknown> =>
-    authedFetch(`/mfg-purchase-orders/${encodeURIComponent(poId)}`, { method: "PATCH", body: JSON.stringify({ poDate }) }),
+  /** One date on many lines in one request: a band's date, which each line's own request made slow (owner, 4 Nov 2026). */
+  savePlans: (projectId: number, itemIds: readonly string[], b: Partial<LinePlan>): Promise<{ ok: true; saved: string[]; refused: { itemCode: string; reason: string }[] }> =>
+    api.put<{ ok: true; saved: string[]; refused: { itemCode: string; reason: string }[] }>(`${B}/projects/${projectId}/line-plans`, { itemIds, ...b }),
   /** A PO line's delivery date, through the PO's own line update (PATCH /:id/items/:itemId). */
   setPoLineDelivery: (poId: string, poLineId: string, deliveryDate: string | null): Promise<unknown> =>
     authedFetch(`/mfg-purchase-orders/${encodeURIComponent(poId)}/items/${encodeURIComponent(poLineId)}`, { method: "PATCH", body: JSON.stringify({ deliveryDate }) }),
@@ -299,9 +307,8 @@ export async function postContractLineEdits(docNo: string, edits: ContractLineEd
 }
 
 /** A renovation contract refuses the SO amendment route (its lines change by a contract VO, which only adds or omits).
-    Options and remarks are written to the line itself (renovation-so-info spec route): no VO when no PO buys the line
-    yet; on a line a live PO buys, new options make the server raise a contract VO that replaces the line and flags its
-    PO line for purchasing (owner, 2 Nov 2026). Qty and SKU changes then raise the contract VO; a line whose options
+    Options and remarks are written to the line itself (renovation-so-info spec route) with no VO; on a line a live PO
+    buys, the server flags its PO line for purchasing (owner, 4 Nov 2026). Qty and SKU changes then raise the contract VO; a line whose options
     and qty or SKU both moved sends its options with that edit, so it is replaced once, as it now is. */
 export async function postContractLines(b: VoBatch): Promise<PostedVo> {
   const vos: string[] = [];
@@ -317,10 +324,10 @@ export async function postContractLines(b: VoBatch): Promise<PostedVo> {
         continue;
       }
       if (l.changeType === "QTY") continue;
-      const r = await authedFetch<{ voNo?: string; flags?: number } | null>(`/renovation-so-info/${encodeURIComponent(b.docNo)}/lines/${encodeURIComponent(id)}/spec`, {
+      const r = await authedFetch<{ flags?: number } | null>(`/renovation-so-info/${encodeURIComponent(b.docNo)}/lines/${encodeURIComponent(id)}/spec`, {
         method: "PUT", body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
       });
-      if (r?.voNo) { vos.push(r.voNo); flags += r.flags ?? 0; }
+      flags += r?.flags ?? 0;
     }
     if (edits.length) {
       const r = await postContractLineEdits(b.docNo, edits, "Changed on the project PO tab");
@@ -394,6 +401,12 @@ export function livePo(l: Pick<ManagedLine, "pos">): LinePo | null {
   return l.pos.find((p) => p.poStatus !== "CANCELLED") ?? null;
 }
 
+/** Goods received fix a line's SKU, options and price (owner, 4 Nov 2026); the server refuses too (renovation-spec-lock.ts). */
+export function specLocked(l: Pick<ManagedLine, "pos">): boolean {
+  return l.pos.some((p) => p.poStatus !== "CANCELLED" && p.received > 0);
+}
+export const SPEC_LOCKED_NOTE = "Goods received: the SKU, options and price are locked.";
+
 /** A line's dates. Processing (when to order) is always the line's own plan. Delivery is the PO line's once a PO
     holds it (changed on the PO), else the plan. */
 export function lineDates(l: ManagedLine): { orderOn: string | null; deliverOn: string | null; fromPo: LinePo | null } {
@@ -417,11 +430,6 @@ export function dateFixedReason(l: ManagedLine, which: "orderOn" | "deliverOn", 
   const po = livePo(l);
   if (which === "deliverOn" && po?.supplierRevised) return `supplier's revised date on ${po.poNumber}: change it on the PO`;
   return "planned dates are not switched on yet";
-}
-
-/** Whether the line still waits for a PO, so its supplier can be picked here. */
-export function picksSupplier(l: ManagedLine): boolean {
-  return l.goesTo === "po" && !l.plan.noPo && !livePo(l) && !!l.contractLineId;
 }
 
 /** A line after a date saved from here: the PO line's delivery date once a PO holds it, else the plan. */

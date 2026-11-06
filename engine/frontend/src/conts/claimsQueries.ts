@@ -10,6 +10,8 @@ export type ReceiptStatus = "HANDED_IN" | "CHECKED" | "TOPPED_UP" | "PAID_BACK" 
 export type ClaimLine = {
   department: LineDepartment; unitId: string | null; maintenanceIssueId: string | null; projectId: number | null;
   accountCode: string | null; amountSen: number; description: string | null;
+  /** Its sub-department (SOP 1.1; chew 4 Nov 2026): set on hand-in, changed by finance while checking. */
+  subDepartmentId?: string | null;
 };
 export type Receipt = {
   id: string; receiptNo: string; submitterUserId: string; submitterName: string; floatId: string | null; spendDate: string;

@@ -46,8 +46,9 @@ export function useSoPrintLayout(docNo: string | null | undefined, items: readon
 }
 
 /** The SO's Print preview: summary card, the layout picker for an order with rooms, and the three exits. */
-export function SoPrintPreview({ open, onClose, docNo, rows, layout, onViewPdf, onPrint, onDownload }: {
+export function SoPrintPreview({ open, onClose, docNo, companyName, rows, layout, onViewPdf, onPrint, onDownload }: {
   open: boolean;
+  companyName?: string;
   onClose: () => void;
   docNo: string;
   rows: PrintPreviewRow[];
@@ -62,6 +63,7 @@ export function SoPrintPreview({ open, onClose, docNo, rows, layout, onViewPdf, 
       onClose={onClose}
       docTitle="Sales Order"
       docNo={docNo}
+      companyName={companyName}
       rows={rows}
       options={layout.printRooms ? (
         <div className="flex items-center justify-between gap-3">

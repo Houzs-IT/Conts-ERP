@@ -15,6 +15,7 @@
    info card. The required list and the two-way sync rule live in
    vendor/shared/renovation-property.ts, the same file the server runs. */
 
+import { isLanded } from "../../../vendor/shared/renovation-property";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Search, X } from "lucide-react";
 import { cn } from "../../../lib/utils";
@@ -257,6 +258,8 @@ export function CustomerBlock({
               <Row label="Property">{value.propertyType}</Row>
               <Row label="Layout">{layoutText}</Row>
               <Row label="Built-up">{value.builtUpSqft ? `${Number(value.builtUpSqft).toLocaleString("en-MY")} sq ft` : ""}</Row>
+              {isLanded(value.propertyType) && <Row label="Land area">{value.landAreaSqft ? `${Number(value.landAreaSqft).toLocaleString("en-MY")} sq ft` : ""}</Row>}
+              {isLanded(value.propertyType) && <Row label="Land size">{value.landSize}</Row>}
             </>
           )}
         </>)}
@@ -402,6 +405,18 @@ export function CustomerBlock({
               <input id={id("sqft")} inputMode="decimal" className={cn(input, miss("Built-up sq ft") && ring)} value={value.builtUpSqft}
                 disabled={off("builtUpSqft")} placeholder="e.g. 1,100" onChange={(e) => set({ builtUpSqft: e.target.value.replace(/[^\d.,]/g, "") })} />
             </Cell>
+            {isLanded(value.propertyType) && (
+              <>
+                <Cell label="Land area sq ft" required missing={miss("Land area sq ft")} htmlFor={id("landarea")}>
+                  <input id={id("landarea")} inputMode="decimal" className={cn(input, miss("Land area sq ft") && ring)} value={value.landAreaSqft}
+                    disabled={off("builtUpSqft")} placeholder="e.g. 1,650" onChange={(e) => set({ landAreaSqft: e.target.value.replace(/[^\d.,]/g, "") })} />
+                </Cell>
+                <Cell label="Land size" required missing={miss("Land size")} htmlFor={id("landsize")}>
+                  <input id={id("landsize")} className={cn(input, miss("Land size") && ring)} value={value.landSize}
+                    disabled={off("builtUpSqft")} placeholder="e.g. 22 x 75" onChange={(e) => set({ landSize: e.target.value })} />
+                </Cell>
+              </>
+            )}
           </>
         )}
       </div>

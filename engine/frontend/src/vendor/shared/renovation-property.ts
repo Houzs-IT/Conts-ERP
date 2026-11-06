@@ -24,6 +24,10 @@ export interface PropertyValue {
   bedrooms: number | null;
   bathrooms: number | null;
   builtUpSqft: number | null;
+  /** Landed only (owner, 5 Nov 2026). The quotation does not ask for these. */
+  landAreaSqft?: number | null;
+  /** As measured, like "22 x 75". */
+  landSize?: string;
 }
 
 export interface SharedCustomerProperty extends PropertyValue {
@@ -69,6 +73,8 @@ export const SHARED_FIELDS: ReadonlyArray<{ key: SharedFieldKey; project: string
   { key: 'bedrooms', project: 'bedrooms', so: 'bedrooms', kind: 'int' },
   { key: 'bathrooms', project: 'bathrooms', so: 'bathrooms', kind: 'int' },
   { key: 'builtUpSqft', project: 'built_up_sqft', so: 'built_up_sqft', kind: 'numeric' },
+  { key: 'landAreaSqft', project: 'land_area_sqft', so: 'land_area_sqft', kind: 'numeric' },
+  { key: 'landSize', project: 'land_size', so: 'land_size', kind: 'text' },
 ];
 
 /** The project columns migration 0115 adds (the rest were there before). */
@@ -81,6 +87,11 @@ export const REQUIRED_FIELDS: readonly string[] = ['Customer name', 'Phone numbe
 export function siteAddressFromParts(a: { address1?: string; address2?: string; postcode?: string; city?: string; state?: string }): string {
   const t = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
   return [t(a.address1), t(a.address2), [t(a.postcode), t(a.city)].filter(Boolean).join(' '), t(a.state)].filter(Boolean).join('\n');
+}
+
+/** A landed property also records its land. */
+export function isLanded(propertyType: string | null | undefined): boolean {
+  return /landed/i.test(propertyType ?? '');
 }
 
 export interface PropertyProblem { code: string; message: string; field: string }
@@ -111,9 +122,11 @@ export function readPropertyInput(raw: Record<string, unknown> | null | undefine
   const bedrooms = parseCount(b.bedrooms);
   const bathrooms = parseCount(b.bathrooms);
   const builtUpSqft = parseSqft(b.builtUpSqft);
+  const landAreaSqft = parseSqft(b.landAreaSqft);
   if (Number.isNaN(bedrooms)) problems.push({ code: 'bedrooms_invalid', message: 'Bedrooms must be a whole number from 0 to 20.', field: 'Bedrooms' });
   if (Number.isNaN(bathrooms)) problems.push({ code: 'bathrooms_invalid', message: 'Bathrooms must be a whole number from 0 to 20.', field: 'Bathrooms' });
   if (Number.isNaN(builtUpSqft)) problems.push({ code: 'sqft_invalid', message: 'Built-up area must be a number of square feet above 0.', field: 'Built-up sq ft' });
+  if (Number.isNaN(landAreaSqft)) problems.push({ code: 'land_area_invalid', message: 'Land area must be a number of square feet above 0.', field: 'Land area sq ft' });
   return {
     value: {
       propertyType: text(b.propertyType).slice(0, 80),
@@ -121,6 +134,8 @@ export function readPropertyInput(raw: Record<string, unknown> | null | undefine
       bedrooms: Number.isNaN(bedrooms) ? null : bedrooms,
       bathrooms: Number.isNaN(bathrooms) ? null : bathrooms,
       builtUpSqft: Number.isNaN(builtUpSqft) ? null : builtUpSqft,
+      landAreaSqft: Number.isNaN(landAreaSqft) ? null : landAreaSqft,
+      landSize: text(b.landSize).slice(0, 40),
     },
     problems,
   };
@@ -143,6 +158,10 @@ export function renoSoRequiredProblems(f: {
   /* The layout (from the Project Maintenance list) brings the bedroom and bathroom counts with it. */
   need(f.property.layoutLabel.trim() !== '' && f.property.bedrooms !== null && f.property.bathrooms !== null, 'Layout');
   need(f.property.builtUpSqft !== null, 'Built-up sq ft');
+  if (isLanded(f.property.propertyType)) {
+    need(f.property.landAreaSqft != null, 'Land area sq ft');
+    need((f.property.landSize ?? '').trim() !== '', 'Land size');
+  }
   return out;
 }
 

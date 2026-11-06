@@ -38,7 +38,7 @@ export type InventoryBalance = {
   /* showAll=true rows include these */
   warehouse_code?: string;
   warehouse_name?: string;
-  category?: 'ACCESSORY' | 'BEDFRAME' | 'SOFA' | 'MATTRESS' | 'SERVICE';
+  category?: string;
   size_label?: string | null;
   value_sen?: number;
   main_supplier_code?: string | null;

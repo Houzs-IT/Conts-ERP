@@ -3,13 +3,13 @@
    screen say so next to the line before Save, and turn the server's refusal into the same plain sentence instead of
    a generic failed save. Pure. */
 
-import { RENOVATION_GROUPS } from "../../vendor/shared/renovation-catalog";
+import { mfgCategoryLabel } from "../../vendor/shared/product-categories";
 import type { RenoDocInfo } from "../../vendor/scm/lib/renovation-doc-print";
 
 /** How the trigger's message starts (migrations-pg/0116_reno_doc_flow.sql). */
 export const RENO_PO_CATEGORY_REFUSAL = "A renovation purchase order holds one category";
 
-const groupLabel = (code: string) => RENOVATION_GROUPS.find((g) => g.code === code)?.label ?? code;
+const groupLabel = (code: string) => mfgCategoryLabel(code) || code;
 
 const sentence = (po: string, itemCode: string, line: string) =>
   `${RENO_PO_CATEGORY_REFUSAL}: this PO is ${groupLabel(po)}, the line ${itemCode} is ${groupLabel(line)}. Raise a separate PO for ${groupLabel(line)}.`;

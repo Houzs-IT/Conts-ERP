@@ -174,7 +174,7 @@ const soLine = (id: string, itemCode: string, lineNo: number, docNo = SO_DOC): R
 /** Runs the real convert; returns the rows it writes to purchase_order_items. */
 async function convertAndCapture(
   soLines: Row[],
-  opts?: { pickOrder?: string[]; targetPo?: { id: string; existing: Row[] } },
+  opts?: { pickOrder?: string[]; mode?: 'combined' | 'per-so'; targetPo?: { id: string; existing: Row[] } },
 ): Promise<Row[]> {
   const captured: Row[] = [];
   const docNos = [...new Set(soLines.map((l) => l.doc_no as string))];
@@ -209,6 +209,7 @@ async function convertAndCapture(
     req: {
       json: async () => ({
         picks: order.map((id) => ({ soItemId: id, qty: 1 })),
+        mode: opts?.mode,
         ...(target ? { targetPoId: target.id } : {}),
       }),
     },
@@ -258,8 +259,15 @@ describe('a converted PO line carries the source SO line order', () => {
     expect([...rows].map((r) => r.line_no).sort((a, b) => (a as number) - (b as number))).toEqual([1, 2, 3]);
   });
 
-  test('two sales orders of sofa become two POs, each numbered from 1 in ITS order', async () => {
-    /* po-grouping.ts splits sofa per SO (the dye-lot rule), so this convert
+  test('two sales orders Combined to one supplier become one PO', async () => {
+    const other = [soLine('sj-lhf', '9058-1A(LHF)', 1, 'HC-SO-013900')];
+    const rows = await convertAndCapture([LHF, NA, RHF, ...other], { mode: 'combined' });
+    expect(new Set(rows.map((r) => r.purchase_order_id)).size).toBe(1);
+    expect(rows).toHaveLength(4);
+  });
+
+  test('two sales orders Per SO become two POs, each numbered from 1 in ITS order', async () => {
+    /* Per SO (lib/po-grouping.ts), so this convert
        emits two documents. Each is numbered independently — line_no is a
        position ON A DOCUMENT, never a global sequence. */
     const other = [
@@ -267,7 +275,7 @@ describe('a converted PO line carries the source SO line order', () => {
       soLine('sj-rhf', '9058-1A(RHF)', 2, 'HC-SO-013900'),
     ];
     const rows = await convertAndCapture([LHF, NA, RHF, ...other], {
-      pickOrder: ['sj-rhf', 'si-na', 'sj-lhf', 'si-rhf', 'si-lhf'],
+      pickOrder: ['sj-rhf', 'si-na', 'sj-lhf', 'si-rhf', 'si-lhf'], mode: 'per-so',
     });
     const byPo = new Map<unknown, Row[]>();
     for (const r of rows) {

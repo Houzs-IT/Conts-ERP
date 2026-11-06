@@ -38,10 +38,8 @@ import {
   photoKeysOf,
   type PdfPhotoImage,
 } from './pdf-item-photos';
+import { isAttachmentKey, loadDocPdfPhotos } from './pdf-doc-photos';
 import { fetchSoItemPhotoBlob } from './sales-order-queries';
-import { API_URL } from './authed-fetch';
-import { readAuthPass, readAuthToken } from '../../../lib/authToken';
-import { companyHeader } from '../../../lib/activeCompany';
 import {
   ensureBrandingLogoLoaded,
   ensureBrandLogoLoaded,
@@ -206,6 +204,13 @@ type SoPayment = {
    RECEIPT_TERMS (the POS printout is the legal record; keep in sync). */
 /* `noun` lets the Consignment Order reuse this template without printing
    "sales order" wording (Commander 2026-06-19 — same fix Hookka shipped). */
+/** A renovation contract prints its brand's letterhead and terms, the same as its Contract PDF (owner run, 4 Nov 2026: the
+    furniture receipt terms and the company address were on a Dream Crafter contract). */
+export type SoPdfContract = {
+  brandName: string; letterhead: string[]; bankLine: string; termsLines: string[];
+  instalments: Array<{ label: string; percent: string; description: string }>;
+};
+
 const receiptTerms = (noun: string): readonly string[] => [
   `This ${noun} becomes a binding tax invoice once goods are delivered and full payment is reconciled.`,
   'Balance due is payable in full before delivery. Bank transfer, DuitNow QR, and cheque accepted.',
@@ -331,35 +336,6 @@ type AutoTableFn = (typeof import('jspdf-autotable'))['default'];
    The footer loop iterates ONLY this doc's pages (`startPage`…end), so the
    per-SO doc no / portal label / "Page p of N" line stays correct when several
    SOs are appended to one document. */
-/* A line attachment as a photo key of its own, so it joins the same ITEM PHOTOS groups as photo_urls. */
-const ATTACHMENT_KEY = 'attachment:';
-
-/** Each line's attached images (its Photos button), as attachment keys, by line id. Best effort: a document whose
-    attachments cannot be read prints without them. */
-async function lineAttachmentPhotoKeys(docNo: string): Promise<Map<string, string[]>> {
-  const out = new Map<string, string[]>();
-  try {
-    const { listDocFiles } = await import('../../../components/doc-attachments/docAttachmentsApi');
-    const r = await listDocFiles('sales_order', docNo);
-    for (const line of r.lines ?? []) {
-      const ids = line.files.filter((f) => f.kind === 'image' && f.lineId === line.id).map((f) => `${ATTACHMENT_KEY}${f.id}`);
-      if (ids.length) out.set(line.id, ids);
-    }
-  } catch {
-    /* printed without the attached photos */
-  }
-  return out;
-}
-
-async function fetchAttachmentBlob(docNo: string, fileId: string): Promise<Blob> {
-  const pass = readAuthPass();
-  const res = await fetch(`${API_URL}/mfg-sales-orders/${encodeURIComponent(docNo)}/attachments/${encodeURIComponent(fileId)}`, {
-    headers: { authorization: `Bearer ${readAuthToken()}`, ...(pass ? { 'X-Session-Pass': pass } : {}), ...companyHeader() },
-  });
-  if (!res.ok) throw new Error(`attachment ${res.status}`);
-  return res.blob();
-}
-
 export async function renderSalesOrderInto(
   doc: JsPdf,
   autoTable: AutoTableFn,
@@ -371,7 +347,7 @@ export async function renderSalesOrderInto(
   pwpCodes: SoPwpCodeRow[] = [],
   opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms;
     /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
-    projectDates?: { start: string; end: string } },
+    projectDates?: { start: string; end: string }; contract?: SoPdfContract },
 ): Promise<void> {
   /* A cancelled line must never reach a CUSTOMER document — not as a printed
      row and not inside a total. The gate lives HERE, in the one function both
@@ -421,14 +397,17 @@ export async function renderSalesOrderInto(
      back to its original (fetchLinePhotoForPdf — the AutoCount cutover keys
      have no thumb; docs/bugs/0815), each photo best-effort: a key whose fetch
      or decode fails is skipped and the PDF renders without it. */
-  /* The photos people attach to a line with its Photos button (scm.doc_attachments, owner 16 Oct 2026) print too:
-     they are where every line photo now lives, and the PDF read only the older photo_urls (owner, 3 Nov 2026). */
-  const attached = await lineAttachmentPhotoKeys(header.doc_no);
-  const keysOf = (it: SoItem): string[] => [...photoKeysOf(it.photo_urls), ...(attached.get(it.id) ?? [])];
-  const photoGroups = buildPhotoGroups(orderedItems.map((it) => ({
-    code: it.item_code,
-    photoKeys: keysOf(it),
-  })));
+  /* The photos people attach with the Photos buttons (scm.doc_attachments, owner 16 Oct 2026) print too, the line's
+     and the whole order's (owner, 3 and 4 Nov 2026). */
+  const attached = await loadDocPdfPhotos('sales_order', header.doc_no);
+  const keysOf = (it: SoItem): string[] => [...photoKeysOf(it.photo_urls), ...attached.lineKeys(it.id)];
+  const photoGroups = [
+    ...buildPhotoGroups(orderedItems.map((it) => ({
+      code: it.item_code,
+      photoKeys: keysOf(it),
+    }))),
+    ...attached.documentGroups,
+  ];
   const photoOwners = photoKeyOwners(orderedItems.map((it) => ({
     id: it.id,
     photoKeys: photoKeysOf(it.photo_urls),
@@ -437,7 +416,7 @@ export async function renderSalesOrderInto(
     ? await collectPhotoImages(
         photoGroups,
         (key) => {
-          if (key.startsWith(ATTACHMENT_KEY)) return fetchAttachmentBlob(header.doc_no, key.slice(ATTACHMENT_KEY.length));
+          if (isAttachmentKey(key)) return attached.fetch(key);
           const ownerId = photoOwners.get(key);
           if (!ownerId) return Promise.reject(new Error('photo_owner_missing'));
           return fetchLinePhotoForPdf((k) => fetchSoItemPhotoBlob(header.doc_no, ownerId, k), key);
@@ -482,7 +461,8 @@ export async function renderSalesOrderInto(
       { label: opts?.docNoLabel ?? 'Doc No', value: header.doc_no },
       { label: 'Date', value: fmtDocDate(header.so_date) },
     ],
-    logo: getBrandLogoCache(brandLogoKey),
+    logo: opts?.contract ? null : getBrandLogoCache(brandLogoKey),
+    ...(opts?.contract ? { name: opts.contract.brandName, lines: opts.contract.letterhead } : {}),
   });
 
   // ── Resolve processing + delivery dates (folded into ORDER DETAILS below).
@@ -890,19 +870,27 @@ export async function renderSalesOrderInto(
   ty += 6;
 
   // ── Numbered terms (POS RECEIPT_TERMS wording) ────────────────────
+  /* A contract printed from the list or the phone has no brand terms to hand: the furniture receipt terms are not its terms. */
+  const noTerms = !opts?.contract && (header as { so_kind?: string | null }).so_kind === 'RENOVATION';
+  if (!noTerms) {
   if (ty > 255) { doc.addPage(); ty = margin; }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-  doc.text('Terms & Conditions', margin, ty);
+  doc.text(opts?.contract ? 'Payment Terms' : 'Terms & Conditions', margin, ty);
   ty += 4;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(110);
-  receiptTerms(opts?.docNoun ?? 'sales order').forEach((t, i) => {
-    const wrapped = doc.splitTextToSize(`${i + 1}. ${t}`, pageW - margin * 2) as string[];
+  const contract = opts?.contract;
+  const printed = contract
+    ? [...contract.instalments.map((i) => `${i.label} - ${i.percent} - ${i.description}`), contract.bankLine, ...contract.termsLines].filter(Boolean)
+    : receiptTerms(opts?.docNoun ?? 'sales order');
+  printed.forEach((t, i) => {
+    const wrapped = doc.splitTextToSize(contract ? t : `${i + 1}. ${t}`, pageW - margin * 2) as string[];
     doc.text(wrapped, margin, ty);
     ty += wrapped.length * 3.2 + 0.8;
   });
   doc.setTextColor(0);
+  }
 
   // ── Footer: doc no · portal label · page n of m on every page ────
   /* Number ONLY this SO's pages (startPage…end). For a combined doc this reads
@@ -932,7 +920,7 @@ export async function generateSalesOrderPdf(
   pwpCodes: SoPwpCodeRow[] = [],
   opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms;
     /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
-    projectDates?: { start: string; end: string } },
+    projectDates?: { start: string; end: string }; contract?: SoPdfContract },
 ): Promise<void> {
   // Dynamic import — code-split into a vendor chunk.
   const { jsPDF } = await import('jspdf');

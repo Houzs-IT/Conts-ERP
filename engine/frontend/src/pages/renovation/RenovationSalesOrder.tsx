@@ -4,7 +4,7 @@
 // asked procurement to amend or cancel.
 //
 // One sales order, one page (owner, 3 Nov 2026): on a computer these are sections of the order's own page
-// (SalesOrderDetailV2), and /scm/renovation/contracts/:docNo redirects there. The stand-alone page stays for the
+// (SalesOrderDetail), and /scm/renovation/contracts/:docNo redirects there. The stand-alone page stays for the
 // phone's renovation documents (mobile/MobileRenovationDocs.tsx).
 
 import { useEffect, useMemo, useState } from 'react';
@@ -47,7 +47,8 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
   const qc = useQueryClient();
   const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ kind: string; invoiceNumber?: string; noteNumber?: string; amountSen: number; posting: { status: string; reason?: string }; einvoiceWarning?: string | null }>(
     `/sales-orders/${encodeURIComponent(c.docNo)}/instalments/${inst!.id}/bill`, 'POST', body));
-  useEffect(() => { setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst]);
+  /* By id: billing refetches the contract, and a new copy of this instalment must not wipe the result just shown. */
+  useEffect(() => { setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- amount is read only when another instalment opens
   if (!inst) return null;
   const negative = amount < 0;
   const submit = async (confirmCreditNote = false) => {
@@ -162,12 +163,12 @@ function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
   const raise = useRenoMutation(() => renoSend<{ created: Array<{ id: string; poNumber: string; totalSen: number }> }>(`/sales-orders/${encodeURIComponent(c.docNo)}/po-split`, 'POST', {}));
   const p = preview.data;
   return (
-    <Card title="Purchase orders (SO -> PO)" actions={!open ? <Button variant="secondary" icon={<ShoppingCart size={15} />} onClick={() => setOpen(true)}>Plan POs</Button> : null}>
+    <Card title="Purchase orders" actions={!open ? <Button variant="secondary" icon={<ShoppingCart size={15} />} onClick={() => setOpen(true)}>Plan POs</Button> : null}>
       {!open && <p className="text-[13px] text-ink-secondary">Lines group by their supplier: one PO each. Owner-supplied goods need no PO; their install labour still gets one.</p>}
       {open && preview.isLoading && <p className="text-[13px] text-ink-muted">Working out the POs…</p>}
       {open && p && (
         <div className="space-y-3">
-          {p.groups.length === 0 && <p className="text-[13px] text-ink-secondary">Nothing left to order.</p>}
+          {p.groups.length === 0 && p.blocked.length === 0 && (p.unsupplied ?? []).length === 0 && <p className="text-[13px] text-ink-secondary">Nothing left to order.</p>}
           {p.groups.map((g) => (
             <div key={`${g.supplierId}:${g.categoryGroup ?? ''}`} className="rounded-lg border border-border-subtle">
               <div className="flex justify-between bg-surface-2 px-3 py-1.5 text-[13px] font-semibold"><span>{g.supplierCode} · {g.supplierName}{g.categoryGroup ? ` · ${g.categoryGroup}` : ''}</span><span className="tabular-nums">{rm(g.totalSen)}</span></div>
@@ -215,88 +216,6 @@ function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
   );
 }
 
-function LinesCard({ c, canEdit, filesEditable }: { c: ContractView; canEdit: boolean; filesEditable: boolean }) {
-  const sq = useSuppliers({ status: 'ACTIVE' });
-  const suppliers = sq.data ?? [];
-  const [edits, setEdits] = useState<Record<string, { supplierId?: string | null; unitCostSen?: number; stageCode?: string | null }>>({});
-  const [error, setError] = useState<string | null>(null);
-  const save = useRenoMutation(() => renoSend(`/sales-orders/${encodeURIComponent(c.docNo)}`, 'PATCH', {
-    version: c.header.version, lines: Object.entries(edits).map(([id, e]) => ({ id, ...e })),
-  }));
-  const supplierName = useMemo(() => new Map(suppliers.map((s) => [s.id, `${s.code} · ${s.name}`])), [suppliers]);
-  const editing = Object.keys(edits).length > 0;
-  return (
-    <Card title="Contract lines" dense actions={editing && canEdit ? (
-      <div className="flex gap-2">
-        <Button variant="ghost" onClick={() => setEdits({})}>Discard</Button>
-        <Button disabled={save.isPending} onClick={async () => { setError(null); try { await save.mutateAsync(undefined); setEdits({}); } catch (e) { setError(refusalOf(e).message); } }}>{save.isPending ? 'Saving…' : 'Save lines'}</Button>
-      </div>
-    ) : null}>
-      {error && <div className="p-3"><ErrorBanner error={error} /></div>}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[860px] text-left text-[12.5px]">
-          <thead className="bg-surface-2 text-[10.5px] uppercase tracking-wide text-ink-muted">
-            <tr><th className="px-3 py-1.5">Description</th><th className="text-center">Qty</th><th className="text-right">Amount</th><th className="pl-4">Supplier</th><th className="text-right">Unit cost</th><th className="pl-3 pr-3">Stage</th></tr>
-          </thead>
-          <tbody>
-            {c.sections.map((s, si) => (
-              <SectionRows key={si} section={s} canEdit={canEdit} edits={edits} setEdits={setEdits} suppliers={suppliers} supplierName={supplierName} docNo={c.docNo} filesEditable={filesEditable} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  );
-}
-
-function SectionRows({ section, canEdit, edits, setEdits, suppliers, supplierName, docNo, filesEditable }: {
-  section: ContractView['sections'][number]; canEdit: boolean; edits: Record<string, { supplierId?: string | null; unitCostSen?: number; stageCode?: string | null }>;
-  setEdits: (f: (e: Record<string, { supplierId?: string | null; unitCostSen?: number; stageCode?: string | null }>) => Record<string, { supplierId?: string | null; unitCostSen?: number; stageCode?: string | null }>) => void;
-  suppliers: Array<{ id: string; code: string; name: string }>; supplierName: Map<string, string>; docNo: string; filesEditable: boolean;
-}) {
-  return (
-    <>
-      <tr style={section.bandColor ? { background: `${section.bandColor}55` } : undefined} className="border-t border-border-subtle">
-        <td colSpan={6} className="px-3 py-1.5 font-semibold uppercase">
-          {section.heading || 'Section'}
-          {section.voId && <span className="ml-2 rounded bg-primary-soft px-1.5 py-0.5 text-[10.5px] font-semibold normal-case text-primary-ink">added by VO</span>}
-          {section.lumpSumSen !== null && <span className="float-right tabular-nums">{rm(section.lumpSumSen)}</span>}
-        </td>
-      </tr>
-      {section.lines.map((l) => {
-        const priced = l.kind === 'ITEM' || l.kind === 'CHILD';
-        const gone = Boolean(l.omittedByVoId || l.soItemCancelled);
-        const e = l.id ? edits[l.id] : undefined;
-        const set = (p: { supplierId?: string | null; unitCostSen?: number; stageCode?: string | null }) => l.id && setEdits((x) => ({ ...x, [l.id!]: { ...x[l.id!], ...p } }));
-        return (
-          <tr key={l.id} className={cn('border-t border-border-subtle', gone && 'text-ink-muted line-through')}>
-            <td className={cn('px-3 py-1', l.kind !== 'ITEM' && 'pl-7', l.kind === 'ITEM' && 'font-semibold')}>{l.description}{l.room ? <span className="font-normal text-ink-muted"> @ {l.room}</span> : null}{l.itemCode ? <span className="ml-1 text-[11px] font-normal text-ink-muted">{l.itemCode}</span> : null}{l.supplyByOwner && <span className="ml-1 text-[11px] font-normal text-warning-text">supply by owner</span>}{priced && l.soItemId && <span className="ml-1.5 inline-block align-middle no-underline"><LineFilesButton docType="sales_order" docId={docNo} lineId={l.soItemId} canEdit={filesEditable} /></span>}</td>
-            <td className="text-center tabular-nums">{priced ? lineQty(l) : ''}</td>
-            <td className="whitespace-nowrap pl-2 text-right tabular-nums">{priced && section.lumpSumSen === null ? (l.isFoc ? 'FOC' : rm(l.netSen ?? 0)) : ''}</td>
-            <td className="pl-4">
-              {priced && !gone && (canEdit
-                ? <select aria-label="Supplier" className="h-8 w-full max-w-[220px] rounded border border-border bg-surface px-1 text-[12px]" value={e?.supplierId !== undefined ? (e.supplierId ?? '') : (l.supplierId ?? '')} onChange={(ev) => set({ supplierId: ev.target.value || null })}>
-                    <option value="">— none —</option>
-                    {suppliers.map((s) => <option key={s.id} value={s.id}>{s.code} · {s.name}</option>)}
-                  </select>
-                : <span className="text-ink-secondary">{l.supplierId ? supplierName.get(l.supplierId) ?? '—' : '—'}</span>)}
-            </td>
-            <td className="w-[110px] text-right">{priced && !gone && (canEdit ? <MoneyInput className="h-8 w-full rounded border border-border px-1 text-right text-[12px]" value={e?.unitCostSen ?? l.unitCostSen} onChange={(v) => set({ unitCostSen: v ?? 0 })} /> : <span className="tabular-nums">{rm(l.unitCostSen)}</span>)}</td>
-            <td className="pl-3 pr-3">
-              {priced && !gone && (canEdit
-                ? <select aria-label="Stage" className="h-8 w-full max-w-[180px] rounded border border-border bg-surface px-1 text-[12px]" value={e?.stageCode !== undefined ? (e.stageCode ?? '') : (l.stageCode ?? '')} onChange={(ev) => set({ stageCode: ev.target.value || null })}>
-                    <option value="">From product</option>
-                    {RENO_STAGES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
-                  </select>
-                : <span className="text-ink-secondary">{l.stageCode ? STAGE_LABEL[l.stageCode as StageKey] : 'From product'}</span>)}
-            </td>
-          </tr>
-        );
-      })}
-    </>
-  );
-}
-
 /** Finance: when the ledger does not carry the contract as it stands (a post after convert or a VO was refused),
     say so and offer to post it again. Nothing shows for anyone else, or when it is in step. */
 function ContractPostingAction({ docNo }: { docNo: string }) {
@@ -323,6 +242,13 @@ function ContractPostingAction({ docNo }: { docNo: string }) {
       <Button variant="secondary" className="h-8" disabled={run.isPending} onClick={post}>{run.isPending ? 'Posting…' : 'Post contract'}</Button>
     </div>
   );
+}
+
+/** The Bill step of one instalment, from the Payments card on the sales order page. */
+export function InstalmentBillDialog({ docNo, instalmentId, onClose }: { docNo: string; instalmentId: string; onClose: () => void }) {
+  const c = useContract(docNo);
+  const inst = c.data?.billing.instalments.find((i) => i.id === instalmentId) ?? null;
+  return c.data ? <BillDialog c={c.data} inst={inst} onClose={onClose} /> : null;
 }
 
 export function RenovationSalesOrder() {
@@ -376,6 +302,24 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
     try { await run.mutateAsync(() => renoSend(`/po-flags/${id}/resolve`, 'POST', {})); } catch (e) { setError(refusalOf(e).message); }
   };
 
+  const creditList = b.credits.length > 0 && (
+          <div className="border-t border-border-subtle px-3 py-2 text-[12.5px]">
+            <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted">Credit notes on the contract · {rm(b.creditedSen)}</div>
+            <ul className="divide-y divide-border-subtle">
+              {b.credits.map((cr, i) => (
+                <li key={cr.creditNoteId ?? i} className="flex items-start justify-between gap-3 py-1.5">
+                  <span className="min-w-0">
+                    <Link className="font-semibold text-primary" to="/scm/credit-notes">{cr.noteNumber ?? 'Credit note'}</Link>
+                    <span className="text-ink-secondary"> · {cr.noteDate ? fmtDate(cr.noteDate) : ''}{cr.reason ? ` · ${cr.reason}` : ''}</span>
+                    {cr.noteStatus === 'DRAFT' && <span className="ml-1 text-warning-text">(not posted yet)</span>}
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums text-err">−{rm(cr.amountSen)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+
   const contractActions = can('scm.renovation.quote') && (CONTRACT_NEXT_STATUS[k.status] ?? []).map((n) => (
     <Button key={n.to} variant={n.danger ? 'danger' : 'secondary'} onClick={() => setStatus(n.to, n.label, n.danger)}>{n.label}</Button>
   ));
@@ -411,15 +355,26 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
       )}
       <ErrorBanner error={error} onClose={() => setError(null)} />
       {(!embedded || k.projectId === null) && <ContractProjectCard docNo={k.docNo} projectId={k.projectId} canWrite={can('projects.write')} />}
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+      <div className={embedded ? "grid grid-cols-1 gap-2 sm:grid-cols-3" : "grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6"}>
         <Stat label="Original contract" value={rm(k.totals.originalContractSen)} />
-        <Stat label="Variation orders" value={rm(k.totals.voTotalSen)} tone={k.totals.voTotalSen ? 'warn' : 'muted'} />
+        <Stat label="VOs and credit notes" value={rm(k.totals.voTotalSen)} tone={k.totals.voTotalSen ? 'warn' : 'muted'} />
         <Stat label="Revised contract" value={rm(k.totals.revisedContractSen)} />
-        <Stat label="Billed" value={rm(b.billedSen)} />
-        <Stat label="Received" value={rm(b.receivedSen)} tone="ok" />
-        <Stat label="To bill" value={rm(b.revisedContractSen - b.billedSen)} />
+        {!embedded && <>
+          <Stat label="Billed" value={rm(b.billedSen)} />
+          <Stat label="Received" value={rm(b.receivedSen)} tone="ok" />
+          <Stat label="To bill" value={rm(b.revisedContractSen - b.billedSen)} />
+        </>}
       </div>
-      <Card title="Progress billing" dense actions={(
+      {embedded && (live && can('scm.renovation.bill') && can('scm.payment_voucher.post') && b.billedSen > 0 || b.credits.length > 0) && (
+        <Card title="Credit notes" dense actions={<ContractPostingAction docNo={k.docNo} />}>
+          {live && can('scm.renovation.bill') && can('scm.payment_voucher.post') && b.billedSen > 0 && (
+            <div className="p-3"><Button variant="secondary" className="h-8" icon={<ReceiptText size={14} />} onClick={() => setCrediting(true)}>Credit note</Button></div>
+          )}
+          {creditList}
+        </Card>
+      )}
+      {embedded && !(live && can('scm.renovation.bill') && can('scm.payment_voucher.post') && b.billedSen > 0) && b.credits.length === 0 && <ContractPostingAction docNo={k.docNo} />}
+      {!embedded && <Card title="Progress billing" dense actions={(
         <div className="flex flex-wrap items-center gap-2">
           <ContractPostingAction docNo={k.docNo} />
           {live && can('scm.renovation.bill') && can('scm.payment_voucher.post') && b.billedSen > 0 && (
@@ -465,24 +420,8 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
             </li>
           ))}
         </ul>
-        {b.credits.length > 0 && (
-          <div className="border-t border-border-subtle px-3 py-2 text-[12.5px]">
-            <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted">Credit notes on the contract · {rm(b.creditedSen)}</div>
-            <ul className="divide-y divide-border-subtle">
-              {b.credits.map((cr, i) => (
-                <li key={cr.creditNoteId ?? i} className="flex items-start justify-between gap-3 py-1.5">
-                  <span className="min-w-0">
-                    <Link className="font-semibold text-primary" to="/scm/credit-notes">{cr.noteNumber ?? 'Credit note'}</Link>
-                    <span className="text-ink-secondary"> · {cr.noteDate ? fmtDate(cr.noteDate) : ''}{cr.reason ? ` · ${cr.reason}` : ''}</span>
-                    {cr.noteStatus === 'DRAFT' && <span className="ml-1 text-warning-text">(not posted yet)</span>}
-                  </span>
-                  <span className="shrink-0 font-semibold tabular-nums text-err">−{rm(cr.amountSen)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </Card>
+        {creditList}
+      </Card>}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card title="Variation orders" actions={live && can('scm.renovation.quote') ? <Button variant="secondary" icon={<FilePlus2 size={15} />} onClick={newVo}>New VO</Button> : null}>
           {k.variationOrders.length === 0 && <p className="text-[13px] text-ink-secondary">No variation orders.</p>}
@@ -510,11 +449,10 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
           </ul>
         </Card>
       )}
-      <LinesCard c={k} canEdit={live && can('scm.renovation.po_split')} filesEditable={k.status !== 'CANCELLED'} />
       {!embedded && <DocAttachments docType="sales_order" docId={k.docNo} canEdit={k.status !== 'CANCELLED'} />}
       <BillDialog c={k} inst={billing} onClose={() => setBilling(null)} />
       <CreditDialog c={k} open={crediting} onClose={() => setCrediting(false)} />
-      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="sales order" docNo={k.docNo} defaultFormat={k.header.printFormat}
+      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="sales order" docNo={k.docNo} brandName={brand?.name} defaultFormat={k.header.printFormat}
         rows={[{ label: "Customer", value: k.header.customerName || k.debtorName || "-" }]}
         build={(format) => buildPrintDoc({ kind: 'SALES_ORDER', docNo: k.docNo, format, brand, header: { ...k.header, customerName: k.header.customerName || k.debtorName, docDate: k.header.docDate ?? k.soDate /* eslint-disable-line @typescript-eslint/no-unnecessary-condition -- doc_date may be null on older SOs; fall back to the SO date */ }, sections: k.sections, instalments: k.instalments })} />
     </div>

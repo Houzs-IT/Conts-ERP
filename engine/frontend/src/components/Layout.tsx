@@ -150,8 +150,8 @@ function ReadOnlyBanner() {
             Read-Only Mode
           </div>
           <div className="text-[12px] font-medium leading-snug text-warning-text/90">
-            AutoCount writes are halted. Edits are saved locally but{" "}
-            <span className="font-semibold">not pushed to AutoCount</span>.
+            Outside sync is paused. Edits are saved here but{" "}
+            <span className="font-semibold">not sent out</span>.
           </div>
         </div>
       </div>

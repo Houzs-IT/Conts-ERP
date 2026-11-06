@@ -17,10 +17,12 @@ export interface QuoteProperty {
   bedrooms: number | null;
   bathrooms: number | null;
   builtUpSqft: number | null;
+  landAreaSqft: number | null;
+  landSize: string;
 }
 
 export const EMPTY_QUOTE_PROPERTY: QuoteProperty = {
-  siteAddress: '', propertyType: '', layoutLabel: '', bedrooms: null, bathrooms: null, builtUpSqft: null,
+  siteAddress: '', propertyType: '', layoutLabel: '', bedrooms: null, bathrooms: null, builtUpSqft: null, landAreaSqft: null, landSize: '',
 };
 
 /* Columns never disappear once a migration is in, so a true answer is kept for the isolate's life. */
@@ -55,7 +57,8 @@ const num = (v: unknown): number | null => (v === null || v === undefined || v =
 export async function readRevisionProperty(db: RenoDb, revisionId: string): Promise<QuoteProperty> {
   if (!(await quotePropertyReady(db))) return { ...EMPTY_QUOTE_PROPERTY };
   const r = (await db.q<Record<string, unknown>>(
-    `select site_address, property_type, layout_label, bedrooms, bathrooms, built_up_sqft::float8 as built_up_sqft
+    `select site_address, property_type, layout_label, bedrooms, bathrooms, built_up_sqft::float8 as built_up_sqft,
+            land_area_sqft::float8 as land_area_sqft, land_size
        from scm.reno_quotation_revisions where id = $1`,
     [revisionId],
   )).at(0);
@@ -63,6 +66,7 @@ export async function readRevisionProperty(db: RenoDb, revisionId: string): Prom
   return {
     siteAddress: String(r.site_address ?? ''), propertyType: String(r.property_type ?? ''), layoutLabel: String(r.layout_label ?? ''),
     bedrooms: num(r.bedrooms), bathrooms: num(r.bathrooms), builtUpSqft: num(r.built_up_sqft),
+    landAreaSqft: num(r.land_area_sqft), landSize: String(r.land_size ?? ''),
   };
 }
 
@@ -71,8 +75,8 @@ export async function writeRevisionProperty(db: RenoDb, revisionId: string, p: P
   const v = { ...EMPTY_QUOTE_PROPERTY, ...p };
   await db.q(
     `update scm.reno_quotation_revisions set site_address = $2, property_type = $3, layout_label = $4, bedrooms = $5::int, bathrooms = $6::int,
-        built_up_sqft = $7::numeric where id = $1`,
-    [revisionId, v.siteAddress, v.propertyType, v.layoutLabel, v.bedrooms, v.bathrooms, v.builtUpSqft],
+        built_up_sqft = $7::numeric, land_area_sqft = $8::numeric, land_size = nullif($9, '') where id = $1`,
+    [revisionId, v.siteAddress, v.propertyType, v.layoutLabel, v.bedrooms, v.bathrooms, v.builtUpSqft, v.landAreaSqft, v.landSize],
   );
 }
 
@@ -90,7 +94,7 @@ export async function readProjectParty(db: RenoDb, projectId: number | null, com
   const hasProperty = await soPropertyReady(db);
   const r = (await db.q<Record<string, unknown>>(
     `select customer_name, customer_phone, customer_email, site_address, building, unit_no
-            ${hasProperty ? ', property_type, layout_label, bedrooms, bathrooms, built_up_sqft::float8 as built_up_sqft' : ''}
+            ${hasProperty ? ', property_type, layout_label, bedrooms, bathrooms, built_up_sqft::float8 as built_up_sqft, land_area_sqft::float8 as land_area_sqft, land_size' : ''}
        from public.projects where id = $1 and company_id = $2 and project_kind = 'renovation'`,
     [projectId, companyId],
   )).at(0);
@@ -100,7 +104,7 @@ export async function readProjectParty(db: RenoDb, projectId: number | null, com
     customerName: s(r.customer_name), customerPhone: s(r.customer_phone), customerEmail: s(r.customer_email),
     siteAddress: s(r.site_address), building: s(r.building), unitNo: s(r.unit_no),
     propertyType: s(r.property_type), layoutLabel: s(r.layout_label), bedrooms: num(r.bedrooms), bathrooms: num(r.bathrooms),
-    builtUpSqft: num(r.built_up_sqft),
+    builtUpSqft: num(r.built_up_sqft), landAreaSqft: num(r.land_area_sqft), landSize: s(r.land_size),
   };
 }
 
@@ -183,9 +187,9 @@ export async function stampContractFromQuotation(
   const rooms = contractRooms(q.sections);
   await db.q(
     `update scm.mfg_sales_orders set building = $2, unit_no = $3, property_type = $4, layout_label = $5, bedrooms = $6::int, bathrooms = $7::int,
-        built_up_sqft = $8::numeric, room_sections = $9::text::jsonb where doc_no = $1`,
+        built_up_sqft = $8::numeric, room_sections = $9::text::jsonb, land_area_sqft = $10::numeric, land_size = nullif($11, '') where doc_no = $1`,
     [docNo, p.building || null, p.unitNo || null, p.propertyType || null, p.layoutLabel || null, p.bedrooms ?? null, p.bathrooms ?? null,
-      p.builtUpSqft ?? null, JSON.stringify(rooms.roomSections)],
+      p.builtUpSqft ?? null, JSON.stringify(rooms.roomSections), p.landAreaSqft ?? null, p.landSize ?? ''],
   );
   if (rooms.itemRooms.length) {
     await db.q(

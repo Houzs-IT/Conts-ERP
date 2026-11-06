@@ -1240,13 +1240,17 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
      unsaved and committed by the page's own Save, so tinting them all just
      paints the table orange. Same reasoning as the Unsaved pill. */
   const unsavedCls = isSaved ? paymentsStyles.unsavedCell : '';
+  /* Every track shares the width in proportion (owner, 5 Nov 2026: the table runs left to right), so no single column
+     balloons, which is what the fixed widths above were avoiding. */
   const gridStyle: CSSProperties | undefined = showSlip
     ? {
         gridTemplateColumns:
-          `112px 116px 116px 140px 140px 88px 140px ${hasUnsavedRows ? '104px' : '28px'}`,
+          `minmax(112px, 1fr) minmax(116px, 1fr) minmax(116px, 1fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) minmax(88px, 0.8fr) minmax(140px, 1.25fr) ${hasUnsavedRows ? '104px' : '28px'}`,
         minWidth: hasUnsavedRows ? 956 : 880,
       }
-    : undefined;
+    /* Without a Slip column (a new order) the same widths, and room for the slip and remove buttons at the row's end:
+       the 32px the stylesheet gives that track pushed them off the card. */
+    : { gridTemplateColumns: `minmax(112px, 1fr) minmax(116px, 1fr) minmax(116px, 1fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) ${isSaved && !hasUnsavedRows ? '28px' : '112px'}` };
 
   return (
     <section className={detailStyles.card}>
@@ -1291,7 +1295,8 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
               horizontally INSIDE the overflow:hidden card instead of being
               clipped at the right edge. overflow lives on the wrapper, the
               min-width on the inner .grid (must be different elements). */}
-          <div className={paymentsStyles.gridScroll}>
+          <div className={paymentsStyles.gridScroll}
+            style={(!isSaved || !paymentsQ.isLoading) && persistedPayments.length === 0 && drafts.length === 0 ? { display: 'none' } : undefined}>
           <div className={paymentsStyles.grid} style={gridStyle}>
             {/* Header row */}
             <span className={paymentsStyles.headerCell}>
@@ -1612,7 +1617,7 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
                   {d.methodLabel === CONVERT_LABEL && !locked && (
                     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                       <input className={paymentsStyles.inlineSelect} style={{ fontSize: 'var(--fs-11)', minWidth: 170 }} value={morePicker.more}
-                        onChange={(e) => morePicker.setMore(e.target.value)} placeholder="Another order, e.g. 2990-SO-2607-024" aria-label="Another order"
+                        onChange={(e) => morePicker.setMore(e.target.value)} placeholder="Another order, e.g. TC-SO-2607-024" aria-label="Another order"
                         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addSourceTo(d.uid, d.amountSen); } }} />
                       <button type="button" disabled={morePicker.busy} onClick={() => void addSourceTo(d.uid, d.amountSen)}
                         style={{ fontSize: 'var(--fs-11)', padding: '2px 8px', border: '1px solid var(--c-line, rgba(34,31,32,0.2))', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}>Add</button>

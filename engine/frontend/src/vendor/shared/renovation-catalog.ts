@@ -10,6 +10,8 @@
    Legacy Houzs categories are never renamed; LEGACY_GROUP maps them so every
    reader can ask one question: which group, which sub-category. */
 
+import { isLiveCategory } from './product-categories';
+
 export type StageKey =
   | 'design'
   | 'key_permit'
@@ -155,7 +157,7 @@ const LEGACY_GROUP: Readonly<Record<string, CatalogGroup>> = {
 const NEW_GROUPS: ReadonlySet<string> = new Set(['WORKS', 'BUILTIN', 'FURNITURE', 'LIGHTING', 'APPLIANCE', 'SOFT', 'AIRBNB', 'RAW']);
 
 export function isCatalogGroup(x: string | null | undefined): x is CatalogGroup {
-  return (CATALOG_GROUPS as readonly string[]).includes(String(x ?? ''));
+  return (CATALOG_GROUPS as readonly string[]).includes(String(x ?? '')) || isLiveCategory(x);
 }
 
 export function groupDef(group: CatalogGroup): GroupDef {
@@ -168,7 +170,21 @@ export function groupDef(group: CatalogGroup): GroupDef {
 export function categoryGroupOf(category: string | null | undefined): CatalogGroup | null {
   const c = String(category ?? '').toUpperCase();
   if (NEW_GROUPS.has(c)) return c as CatalogGroup;
-  return LEGACY_GROUP[c] ?? null;
+  return LEGACY_GROUP[c] ?? (isLiveCategory(c) ? (c as CatalogGroup) : null);
+}
+
+/** The stored categories a filter on `category` must cover: a group takes its legacy categories along
+    (FURNITURE is also every SKU still stored as SOFA); anything else is itself. */
+export function categoriesInGroup(category: string): string[] {
+  const c = category.toUpperCase();
+  return [c, ...Object.keys(LEGACY_GROUP).filter((k) => k !== c && LEGACY_GROUP[k] === c)];
+}
+
+/** Whether a row's stored category falls under a filter value, a group or a single category. */
+export function categoryMatches(stored: string | null | undefined, filter: string): boolean {
+  const s = String(stored ?? '').toUpperCase();
+  const f = filter.toUpperCase();
+  return s === f || categoryGroupOf(s) === f;
 }
 
 /* SUB_CATEGORIES above is the built-in seed. Sub-categories are edited at run time in
@@ -195,6 +211,18 @@ export function isFixedSub(group: CatalogGroup, code: string): boolean {
   return FIXED_SUB_GROUPS.includes(group) || (group === 'SERVICE' && SITE_TRADE_SERVICES.includes(code.toUpperCase()));
 }
 
+/* The saved sub-categories as last read by this browser tab, for a pure print helper with no hook. Frontend only, like rememberCategories. */
+let liveSubCategories: readonly SubCategoryDef[] = SUB_CATEGORIES;
+
+export function rememberSubCategories(list: readonly SubCategoryDef[]): void {
+  liveSubCategories = list;
+}
+
+/** A sub-category's saved name, else its code in words. */
+export function subCategoryLabelOf(group: string | null | undefined, code: string): string {
+  return liveSubCategories.find((s) => s.group === group && s.code === code)?.label ?? code.replace(/_/g, ' ');
+}
+
 export function subCategoriesOf(group: CatalogGroup, list: readonly SubCategoryDef[] = SUB_CATEGORIES): SubCategoryDef[] {
   return list.filter((s) => s.group === group).sort((a, b) => a.sort - b.sort);
 }
@@ -213,9 +241,11 @@ export function validateCategoryPair(
   category: string | null | undefined,
   sub: string | null | undefined,
   list: readonly SubCategoryDef[] = SUB_CATEGORIES,
+  /** Group codes added at run time (loadCategoryGroups); a new one may have no sub-categories yet. */
+  liveGroups: readonly string[] = [],
 ): CategoryPairResult {
   const c = String(category ?? '').toUpperCase();
-  const group = categoryGroupOf(c);
+  const group: string | null = categoryGroupOf(c) ?? (liveGroups.includes(c) ? c : null);
   if (!group) return { ok: false, error: 'invalid_category' };
   const s = sub ? String(sub).toUpperCase() : null;
   if (!s) return NEW_GROUPS.has(c) ? { ok: false, error: 'sub_category_required' } : { ok: true };
@@ -227,7 +257,7 @@ export function validateCategoryPair(
 /** Default project stage of a line, from its product's stored category. */
 export function defaultStageOf(category: string | null | undefined): StageKey | null {
   const g = categoryGroupOf(category);
-  return g ? groupDef(g).stage : null;
+  return RENOVATION_GROUPS.find((d) => d.code === g)?.stage ?? null;
 }
 
 /* The eight built-in units. The live list is scm.product_uoms (migration 0118,

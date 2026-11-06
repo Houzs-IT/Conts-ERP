@@ -32,6 +32,7 @@ import { PrintChainProvider } from '../../components/scm-v2/PrintChainProvider';
 import { registerDialogService } from '../../vendor/scm/lib/dialog-service';
 import { rememberScmListReturn } from '../../lib/scmListReturn';
 import { prefetchDocCreate } from '../../lib/prefetch-routes';
+import { CategoryMasterSync } from '../../vendor/scm/lib/renovation-catalog-queries';
 
 /** Registers the live confirm + notify fns with the module-level dialog-service
  *  bridge so non-React callers (authedFetch's short-stock gate, query onError
@@ -74,6 +75,7 @@ export function Scm2990Shell({ children }: { children: ReactNode }) {
             <DialogServiceBridge />
             <VpBrandPromptBridge />
             <ScmListReturnTracker />
+            <CategoryMasterSync />
             {/* Nick 2026-07-09 — "local host 还没有上面 pin 起来". `overflow-x:
                 hidden` on this wrapper creates a scroll container that traps
                 position: sticky on every descendant edit-mode header (the SO

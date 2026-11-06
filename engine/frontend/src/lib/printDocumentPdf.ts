@@ -249,7 +249,8 @@ export async function renderPrintBundle(target: PrintTarget, bundle: Bundle, act
     case "po": {
       const { generatePurchaseOrderPdf } = await import("../vendor/scm/lib/purchase-order-pdf");
       type A = Parameters<typeof generatePurchaseOrderPdf>;
-      return generatePurchaseOrderPdf(header as unknown as A[0], items as unknown as A[1], { action });
+      const { poDrawingsAppender } = await import("../pages/renovation-beta/renovationBetaPoDrawings");
+      return generatePurchaseOrderPdf(header as unknown as A[0], items as unknown as A[1], { action, appendAfter: await poDrawingsAppender(target.key) });
     }
     case "grn": {
       const { generateGrnPdf } = await import("../vendor/scm/lib/grn-pdf");

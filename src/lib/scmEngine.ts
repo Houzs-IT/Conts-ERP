@@ -34,6 +34,7 @@ export const LEDGER_SCREENS: readonly LedgerScreen[] = [
   { slug: 'daily-bank', label: 'Daily bank', enginePath: '/scm/daily-bank' },
   { slug: 'merchant-recon', label: 'Merchant recon', enginePath: '/scm/merchant-recon' },
   { slug: 'rental-unit-costs', label: 'Rental unit costs', enginePath: '/scm/rental-unit-costs' },
+  { slug: 'department-spend', label: 'Spending by department', enginePath: '/scm/department-spend' },
   { slug: 'renovation-projects', label: 'Renovation projects', enginePath: '/scm/reno-projects' },
 ];
 
@@ -71,6 +72,8 @@ export const ENGINE_PATH: Record<string, string> = {
   '/procurement/suppliers': '/scm/suppliers',
   '/procurement/mrp': '/scm/mrp',
   '/procurement/purchase-orders': '/scm/purchase-orders',
+  '/production/production-orders': '/scm/production-orders',
+  '/production/sku-composition': '/scm/sku-composition',
   '/procurement/po-amendments': '/scm/po-amendments',
   '/procurement/cancellations': '/scm/cancel-requests',
   '/procurement/goods-received': '/scm/grns',

@@ -6,6 +6,7 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import Scm2990Shell from "../pages/scm-v2/Scm2990Shell";
 import { CONTS_EMBEDDED } from "../conts/embed";
+import { MobileCrashBoundary } from "./MobileCrashBoundary";
 
 const QuotationsList = lazy(() => import("../pages/renovation/QuotationsList").then((m) => ({ default: m.QuotationsList })));
 const QuotationEditor = lazy(() => import("../pages/renovation/QuotationEditor").then((m) => ({ default: m.QuotationEditor })));
@@ -29,6 +30,7 @@ export function MobileRenovationDocs({ onBack }: { onBack: () => void }) {
       )}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "0 14px 32px" }}>
         <Scm2990Shell>
+          <MobileCrashBoundary resetKey="reno-docs" fallback={<div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#8a8f86" }}>This screen could not open. Go back to Menu and try again.</div>}>
           <Suspense fallback={<div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#8a8f86" }}>Loading…</div>}>
             <Routes>
               <Route path="/scm/renovation/quotations" element={<QuotationsList />} />
@@ -41,6 +43,7 @@ export function MobileRenovationDocs({ onBack }: { onBack: () => void }) {
               <Route path="*" element={<Navigate to="/scm/renovation/quotations" replace />} />
             </Routes>
           </Suspense>
+          </MobileCrashBoundary>
         </Scm2990Shell>
       </div>
     </div>

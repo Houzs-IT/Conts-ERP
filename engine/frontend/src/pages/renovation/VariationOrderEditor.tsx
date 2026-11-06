@@ -212,7 +212,7 @@ export function VariationOrderEditor() {
           <ErrorBanner error={error} />
         </div>
       </ModalOverlay>
-      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="variation order" docNo={v.voNo} defaultFormat={contract.data?.header.printFormat ?? 'AMOUNT'}
+      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="variation order" docNo={v.voNo} brandName={brand?.name} defaultFormat={contract.data?.header.printFormat ?? 'AMOUNT'}
         build={(format) => buildPrintDoc({
           kind: 'VARIATION_ORDER', docNo: v.voNo, format, brand, reference: `Contract ${v.soDocNo}`,
           header: { ...(contract.data?.header ?? {}), customerName: contract.data?.header.customerName || contract.data?.debtorName || '', docDate: docDate, lastAmended: null, docDiscountSen: 0, promoLines: [] },

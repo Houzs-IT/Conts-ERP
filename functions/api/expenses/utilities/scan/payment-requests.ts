@@ -2,6 +2,7 @@ import { type Env, fail, audit } from '../../../../_lib/db';
 import { requireSession } from '../../../../_lib/auth';
 import { fileToUpload, forwardClaims } from '../../../../_lib/claimsForward';
 import { billsToPay } from '../../../../_lib/utilityScan';
+import { linkRequest } from '../../../../_lib/utilityRequests';
 
 const MAX_FILES = 8;
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -30,6 +31,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const files = await Promise.all(picked.map(fileToUpload));
   const res = await forwardClaims(env, session, 'POST', '/utility-bills/payment-request', { provider, scanBatchId: `${batchId}#${part}`, bills: group.bills, files });
   if (res.ok) {
+    /* Each bill keeps the request it went out on (Utility bills "By payment request"; chew, 5 Nov 2026). */
+    const made = await res.clone().json<{ id?: string; requestNo?: string }>().catch(() => null);
+    if (made?.id) await linkRequest(env, group.expenseIds, { id: made.id, requestNo: made.requestNo ?? null });
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.utility_scan_payment_request', entityTable: 'utility_bill_scans', entityId: batchId,
       after: { batchId, part, provider, bills: group.bills.length, amountSen: group.bills.reduce((n, x) => n + x.amountSen, 0) } });
   }

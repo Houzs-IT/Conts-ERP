@@ -40,7 +40,7 @@ import {
 //   • Navigation repointed to /scm/sales-orders/*.
 // ----------------------------------------------------------------------------
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery as useTanstackQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Camera, ChevronDown, Save, X } from 'lucide-react';
@@ -128,6 +128,8 @@ import styles from './SalesOrderNew.module.css';
 import { CustomerBlock } from '../projects/renovation/CustomerBlock';
 import { RenovationSoRooms, roomLayoutOf } from './RenovationSoRooms';
 import { autoRoomsPlan, placeRows } from '../renovation/roomSections';
+import { refusalOf, renoSend, sectionsForSave, useBrands, useTemplates, useTerms, type DocLine } from '../../lib/renovation/api';
+import { SoInstalments } from './renovationSoInstalments';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
   EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, toRenovationBlock,
@@ -164,7 +166,8 @@ const subtotalStyle = {
   color: 'var(--c-burnt)',
 } as const;
 
-export const SalesOrderNew = () => {
+/* New Quotation is this page (owner, 5 Nov 2026: "它就是 sales order 来的"): the same blocks and rooms, saved as a quotation. */
+export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean } = {}) => {
   const navigate = useNavigate();
   const notify = useNotify();
   /* Copy-to-new-SO: ?copyFrom=<docNo> seeds this form from an existing SO
@@ -299,6 +302,17 @@ export const SalesOrderNew = () => {
      (owner 2026-08-13: company 1 only). Already cached app-wide by the chrome,
      so this costs no extra request. */
   const branding = useBranding();
+  const quoteBrands = useBrands();
+  const quoteTemplates = useTemplates();
+  const quoteTerms = useTerms();
+  /* The same four cards the saved order shows, worked out from the default terms until a contract sets them. */
+  const defaultTerms = (quoteTerms.data?.templates ?? []).find((t) => t.kind === 'CUSTOMER' && t.isDefault && t.brandId == null);
+  const [quoteBrandId, setQuoteBrandId] = useState<number | null>(null);
+  const [quoteTemplateId, setQuoteTemplateId] = useState('');
+  const [quoteBusy, setQuoteBusy] = useState(false);
+  useEffect(() => {
+    if (quoteBrandId === null && quoteBrands.data?.brands.length) setQuoteBrandId(quoteBrands.data.brands.find((b) => b.hasProfile)?.brandId ?? null);
+  }, [quoteBrands.data, quoteBrandId]);
 
   // ── Emergency contact ──────────────────────────────────────────────
   const [emergencyName,  setEmergencyName]   = useState('');
@@ -1514,7 +1528,49 @@ export const SalesOrderNew = () => {
      The two header buttons both call onSave; only the flag differs. When the
      form was opened from a scan (fromScan), "Save as Draft" is the primary
      button so scanned orders default to draft for operator review. */
+  const saveQuotation = async () => {
+    if (!quoteBrandId) {
+      void notify({ title: 'Choose the letterhead', body: 'A quotation prints under one brand.', tone: 'error' });
+      return;
+    }
+    setQuoteBusy(true);
+    try {
+      const placed = placeRows(renoRooms, lines.map((l) => ({ key: l.rid, room: renoLineRoom[l.rid] ?? '' })));
+      const filled = lines.filter((l) => l.itemCode.trim() !== '');
+      /* A package template brings its own sections when no line was entered here. */
+      const sections = quoteTemplateId && filled.length === 0 ? undefined : placed.rooms.map((heading) => ({
+        heading, bandColor: null, lumpSumSen: null, pageBreakBefore: false,
+        lines: filled.filter((l) => placed.roomOf[l.rid] === heading).map((l): DocLine => {
+          const gross = l.qty * l.unitPriceSen;
+          return {
+            kind: 'ITEM', room: heading, itemCode: l.itemCode, description: [l.description, l.remark].filter((t) => t?.trim()).join(' - '),
+            qty: l.qty, measure: null, measureUom: null, uom: l.uom || null, unitPriceSen: l.unitPriceSen, listPriceSen: null,
+            discountBp: gross > 0 ? Math.min(10000, Math.round((l.discountSen / gross) * 10000)) : 0, amountOverrideSen: null,
+            isFoc: false, supplyByOwner: false, highlight: 'NONE', supplierId: null, unitCostSen: l.unitCostSen, stageCode: null, pageBreakBefore: false,
+          };
+        }),
+      }));
+      const num = (t: string) => (t.trim() === '' || Number.isNaN(Number(t.replace(/,/g, ''))) ? null : Number(t.replace(/,/g, '')));
+      const r = await renoSend<{ id: string }>('/quotations', 'POST', {
+        projectId: renoInfo.projectId, brandId: quoteBrandId, templateId: quoteTemplateId || null,
+        header: {
+          customerName: debtorName, customerPhone: phone, customerEmail: email, building: renoInfo.building, unitNo: renoInfo.unitNo,
+          siteAddress: [address1, address2].filter(Boolean).join('\n'), propertyType: renoInfo.propertyType, layoutLabel: renoInfo.layoutLabel,
+          bedrooms: num(renoInfo.bedrooms), bathrooms: num(renoInfo.bathrooms), builtUpSqft: num(renoInfo.builtUpSqft),
+          landAreaSqft: num(renoInfo.landAreaSqft), landSize: renoInfo.landSize,
+        },
+        ...(sections ? { sections: sectionsForSave(sections) } : {}),
+      });
+      navigate(`/scm/renovation/quotations/${r.id}`);
+    } catch (e) {
+      void notify({ title: 'The quotation did not save', body: refusalOf(e).message, tone: 'error' });
+    } finally {
+      setQuoteBusy(false);
+    }
+  };
+
   const onSave = async (asDraft = false) => {
+    if (asQuotation) { await saveQuotation(); return; }
     if (createdDocNo) {
       const intents = paymentIntents();
       if (intents.length === 0) {
@@ -1693,6 +1749,7 @@ export const SalesOrderNew = () => {
           /* PR-E — per-item delivery date + cascade override flag. */
           lineDeliveryDate:           l.lineDeliveryDate ?? null,
           lineDeliveryDateOverridden: l.lineDeliveryDateOverridden ?? false,
+          lineProcessingDate: l.lineProcessingDate ?? undefined,
           /* Every line belongs to a room: one without a room goes under Common area (placeRows). */
           ...(reno ? { room: renoPlaced.roomOf[l.rid] ?? '' } : {}),
         })),
@@ -1823,7 +1880,7 @@ export const SalesOrderNew = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the layout is the trigger
   }, [reno, renoLayoutKey]);
 
-  const renderNewLine = (line: DraftLine, idx: number) => {
+  const renderNewLine = (line: DraftLine, idx: number, move?: ReactNode) => {
             /* fromScan — the slip rawText still feeds the SKU picker's placeholder
                hint for a no-match line (searchHint below). The per-line
                "scanned · NN%" review chip was REMOVED: owner — it is scan-review
@@ -1834,6 +1891,8 @@ export const SalesOrderNew = () => {
             return (
               <div key={line.rid} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                 <SoLineCard
+                  compact={reno}
+                  actions={reno ? move : undefined}
                   index={idx}
                   draft={line}
                   onChange={(patch) => updateLine(line.rid, patch)}
@@ -2309,9 +2368,11 @@ export const SalesOrderNew = () => {
           fields are missing (only blocked while a save is in flight) — onSave
           validates and tells the operator EXACTLY what's missing. */}
       <PageHeader back
-        eyebrow="Sales order"
-        title={createdDocNo ? `Complete Sales Order ${createdDocNo}` : 'New Sales Order'}
-        description={createdDocNo
+        eyebrow={asQuotation ? 'Quotation' : 'Sales order'}
+        title={asQuotation ? 'New Quotation' : createdDocNo ? `Complete Sales Order ${createdDocNo}` : 'New Sales Order'}
+        description={asQuotation
+          ? 'Customer, order info, delivery address and line items, the same as a sales order.'
+          : createdDocNo
           ? 'The order already exists. Finish or remove the retained payment rows, then continue to its Detail page.'
           : 'Customer, order info, delivery address, line items and payments — saved as one order.'}
         actions={
@@ -2319,39 +2380,42 @@ export const SalesOrderNew = () => {
             {/* h-9 = the <Button> height — this link shares the rail with
                 Cancel / Create Sales Order / Save as Draft. */}
             <Link
-              to="/scm/sales-orders"
+              to={asQuotation ? '/scm/renovation/quotations' : '/scm/sales-orders'}
               className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[11px] font-semibold uppercase tracking-wider text-ink-secondary transition-colors hover:border-primary/40 hover:bg-primary-soft hover:text-primary"
             >
-              <ArrowLeft size={14} /> Sales Orders
+              <ArrowLeft size={14} /> {asQuotation ? 'Quotations' : 'Sales Orders'}
             </Link>
-            <Button variant="ghost" onClick={() => navigate('/scm/sales-orders')}>
+            <Button variant="ghost" onClick={() => navigate(asQuotation ? '/scm/renovation/quotations' : '/scm/sales-orders')}>
               <X {...ICON} /> Cancel
             </Button>
             {/* Persistent "Can't save — N to fix · tap to see" (owner 2026-09-16):
                 a blocked Save is never silent. Count + list are backend-authored
                 (useSoValidate), so it clears itself as fields are fixed. Renders
                 nothing when the order is complete. */}
-            <SaveBlockedIndicator problems={blockingProblems} onOpen={openBlockingList} />
+            {!asQuotation && <SaveBlockedIndicator problems={blockingProblems} onOpen={openBlockingList} />}
             <Button
               variant={fromScan ? 'secondary' : 'primary'}
               onClick={() => { void onSave(false); }}
-              disabled={create.isPending}
+              disabled={create.isPending || quoteBusy}
             >
               <Save {...ICON} />
-              {create.isPending
+              {create.isPending || quoteBusy
                 ? 'Saving…'
+                : asQuotation ? 'Create Quotation'
                 : createdDocNo
                   ? (paymentIntents().length > 0 ? 'Continue payment retry' : 'Open created order')
                   : 'Create Sales Order'}
             </Button>
-            <Button
-              variant={fromScan ? 'primary' : 'secondary'}
-              onClick={() => { void onSave(true); }}
-              disabled={create.isPending || !!createdDocNo}
-            >
-              <Save {...ICON} />
-              {create.isPending ? 'Saving…' : 'Save as Draft'}
-            </Button>
+            {!asQuotation && (
+              <Button
+                variant={fromScan ? 'primary' : 'secondary'}
+                onClick={() => { void onSave(true); }}
+                disabled={create.isPending || !!createdDocNo}
+              >
+                <Save {...ICON} />
+                {create.isPending ? 'Saving…' : 'Save as Draft'}
+              </Button>
+            )}
           </>
         }
       />
@@ -2396,6 +2460,24 @@ export const SalesOrderNew = () => {
           onPickProject={pickRenoProject}
           missing={renoMissing}
           canChangeSalesperson={canChangeSalesperson}
+          orderInfoFooter={asQuotation ? (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>Letterhead <span className={styles.req}>*</span></span>
+                <select className={styles.fieldSelect} value={quoteBrandId ?? ''} onChange={(e) => setQuoteBrandId(e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">Choose...</option>
+                  {(quoteBrands.data?.brands ?? []).map((b) => <option key={b.brandId} value={b.brandId}>{b.name}</option>)}
+                </select>
+              </label>
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>Package template</span>
+                <select className={styles.fieldSelect} value={quoteTemplateId} onChange={(e) => setQuoteTemplateId(e.target.value)}>
+                  <option value="">Blank quotation</option>
+                  {(quoteTemplates.data?.templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </label>
+            </div>
+          ) : undefined}
         />
       ) : (
         <>
@@ -2421,7 +2503,7 @@ export const SalesOrderNew = () => {
               setRenoRooms(next);
               if (rename) setRenoLineRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
             }}
-            rows={lines.map((line) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', render: (n: number) => renderNewLine(line, n) }))}
+            rows={lines.map((line) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', render: (n: number, move?: ReactNode) => renderNewLine(line, n, move) }))}
             onRowRoom={(rid, room) => setRenoLineRoom((m) => ({ ...m, [rid]: room }))}
             onAddLine={(room) => {
               const l = newLine(deliveryDate || null);
@@ -2429,6 +2511,7 @@ export const SalesOrderNew = () => {
               if (room) setRenoLineRoom((m) => ({ ...m, [l.rid]: room }));
             }}
             layout={roomLayoutOf(renoInfo)}
+            compact
           />
           <section className={styles.card}>
             <div className={styles.cardBody} style={{ ...subtotalStyle, flexDirection: 'row' }}>Subtotal: {fmtRm(subtotalSen)}</div>
@@ -2462,7 +2545,18 @@ export const SalesOrderNew = () => {
           DRAFT mode it holds rows in local state; onSave (above) batches
           POST /:docNo/payments calls in parallel after the SO has been
           created and before navigating to the Detail page. */}
-      <PaymentsTable
+      {!asQuotation && reno && defaultTerms && (
+        <section className={styles.card}>
+          <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Payment schedule</h2></header>
+          <div className={styles.cardBody}>
+            <SoInstalments
+              rows={defaultTerms.lines.map((l) => ({ seq: l.seq, label: l.label, pctBp: l.pctBp, amountSen: Math.round((subtotalSen * l.pctBp) / 10000), paidSen: 0 }))}
+              money={fmtRm}
+            />
+          </div>
+        </section>
+      )}
+      {!asQuotation && <PaymentsTable
         docNo={null}
         payments={paymentDrafts}
         onChange={setPaymentDrafts}
@@ -2472,7 +2566,7 @@ export const SalesOrderNew = () => {
         collectedByAllowedIds={paymentsCollectedByAllowedIds}
         defaultCollectedBy={selfStaffMatch?.id ?? ''}
         convertSources={cancelledForCustomer.data?.orders ?? []}
-      />
+      />}
       </div>
     </div>
   );

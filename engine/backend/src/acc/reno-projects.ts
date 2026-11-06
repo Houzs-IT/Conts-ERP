@@ -79,7 +79,7 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     inChunks(docs, (b, f, t) => sb.from('reno_instalment_bills').select('so_doc_no, seq, kind, amount_sen, invoice_date').in('so_doc_no', b).order('so_doc_no').order('seq').range(f, t), 'bills'),
     inChunks(docs, (b, f, t) => sb.from('mfg_sales_order_payments').select('id, so_doc_no, paid_at, amount_sen').eq('company_id', companyId).in('so_doc_no', b).order('id').range(f, t), 'order payments'),
     inChunks(docs, (b, f, t) => sb.from('sales_invoices').select('id, so_doc_no, status').eq('company_id', companyId).in('so_doc_no', b).order('id').range(f, t), 'invoices'),
-    inChunks(projectIds, (b, f, t) => sb.from('purchase_orders').select('id, project_id, status, total_sen, po_date').eq('company_id', companyId).in('project_id', b).order('id').range(f, t), 'purchase orders'),
+    inChunks(projectIds, (b, f, t) => sb.from('purchase_orders').select('id, project_id, status, total_sen, po_date, supplier:suppliers (code)').eq('company_id', companyId).in('project_id', b).order('id').range(f, t), 'purchase orders'),
   ]);
 
   /* A contract signed before go-live: what AutoCount still had open on it came over as opening invoices of the project's
@@ -212,7 +212,8 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   for (const po of livePos) {
     const p = Number(po.project_id);
     const billed = (piByPo.get(String(po.id)) ?? []).reduce((s, pi) => s + Number(pi.total_sen ?? 0), 0);
-    add(orderedNotBilled, p, Math.max(Number(po.total_sen ?? 0) - billed, 0));
+    /* A PO to our own team has no bill to wait for (owner, 4 Nov 2026). */
+    if ((po as { supplier?: { code?: string | null } | null }).supplier?.code !== 'INHOUSE') add(orderedNotBilled, p, Math.max(Number(po.total_sen ?? 0) - billed, 0));
     for (const pi of piByPo.get(String(po.id)) ?? []) add(owed, p, Math.max(Number(pi.total_sen ?? 0) - (piPaid.get(String(pi.id)) ?? 0), 0));
   }
   const apById = new Map(liveAps.map((a) => [String(a.id), a]));

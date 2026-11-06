@@ -69,6 +69,12 @@ export const inputCls = 'h-9 min-w-0 rounded-md border border-border bg-surface 
 export const cellBaseCls = 'h-8 min-w-0 rounded border border-transparent bg-transparent px-1.5 text-[12.5px] text-ink outline-none hover:border-border focus:border-primary focus:bg-surface disabled:hover:border-transparent';
 export const cellInputCls = `${cellBaseCls} w-full`;
 
+/** A click lands the caret anywhere in the old number: typing 5000 beside a 0 saved 50000. Typing replaces it. */
+export function selectAllOnFocus(e: { currentTarget: HTMLInputElement }) {
+  const el = e.currentTarget;
+  window.setTimeout(() => el.select(), 0);
+}
+
 /** Money typed in ringgit, held in sen. Blank -> null when `nullable`. */
 export function MoneyInput({ value, onChange, disabled, nullable, className, placeholder, ariaLabel }: {
   value: number | null; onChange: (sen: number | null) => void; disabled?: boolean; nullable?: boolean; className?: string; placeholder?: string; ariaLabel?: string;
@@ -83,6 +89,7 @@ export function MoneyInput({ value, onChange, disabled, nullable, className, pla
       disabled={disabled}
       placeholder={placeholder}
       value={draft ?? shown}
+      onFocus={selectAllOnFocus}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
         if (draft === null) return;
@@ -108,6 +115,7 @@ export function PercentInput({ value, onChange, disabled, className, ariaLabel }
       disabled={disabled}
       value={draft ?? shown}
       placeholder="0"
+      onFocus={selectAllOnFocus}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
         if (draft === null) return;

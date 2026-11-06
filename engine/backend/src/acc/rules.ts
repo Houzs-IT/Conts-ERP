@@ -243,6 +243,9 @@ export type RuleLine = {
   /** The Rental unit a cost line was paid for (public.conts_units id; finance only, never charged to the owner): the
       Rental costs by unit report reads it (chew 2 Nov 2026). */
   unitId?: string | null;
+  /** The line's sub-department (scm.acc_sub_departments id; SOP 1.1, chew 4 Nov 2026): cost lines only — null reads
+      as its department's built-in row. */
+  subDepartmentId?: string | null;
 };
 
 /** Sales invoice issued (docs/bugs/0829): Dr AR for the invoice total, the
@@ -368,7 +371,7 @@ export function apInvoiceLines(
   roles: RoleCodes,
   inv: { invoice_number: string },
   supplier: { code: string | null; name: string | null; control_account?: string | null },
-  debits: Array<{ accountCode: string; myrSen: number; description: string | null; department?: Department | null; projectId?: number | null }>,
+  debits: Array<{ accountCode: string; myrSen: number; description: string | null; department?: Department | null; projectId?: number | null; subDepartmentId?: string | null }>,
 ): RuleLine[] {
   return [
     ...debits.map((d) => ({
@@ -381,6 +384,7 @@ export function apInvoiceLines(
       notes: d.description ?? `AP invoice ${inv.invoice_number}`,
       department: d.department ?? DEFAULT_DEPARTMENT,
       projectId: d.projectId ?? null,
+      subDepartmentId: d.subDepartmentId ?? null,
     })),
     // Conts: the supplier's AP is credited per department (one line when the bill has one), so each balances.
     ...splitByDepartment(debits.map((d) => ({ department: d.department, sen: d.myrSen }))).map((part) => ({
@@ -435,7 +439,7 @@ export function piLines(
  */
 export function pvLines(
   pv: { pv_number: string; payee_name: string; credit_account_code: string },
-  debitLegs: Array<{ description: string | null; debit_account_code: string; myrSen: number; department?: Department | null; project_id?: number | null; unit_id?: string | null }>,
+  debitLegs: Array<{ description: string | null; debit_account_code: string; myrSen: number; department?: Department | null; project_id?: number | null; unit_id?: string | null; sub_department_id?: string | null }>,
   supplier: { code: string | null; name: string | null; control_account?: string | null },
   /** The supplier's own AP control (a supplier payment): the Dr leg on it IS
       the supplier's sub-ledger, so it carries the party the way the invoice
@@ -458,6 +462,8 @@ export function pvLines(
       projectId: onControl ? null : (l.project_id ?? null),
       // A Rental line's unit, the same way; only Rental lines carry one (chew 2 Nov 2026).
       unitId: onControl || (l.department ?? DEFAULT_DEPARTMENT) !== 'rental' ? null : (l.unit_id ?? null),
+      // And its sub-department (SOP 1.1): the cost's; a leg settling bills carries none (the bill's lines do).
+      subDepartmentId: onControl ? null : (l.sub_department_id ?? null),
     };
   });
   // Conts: the bank is credited per department (one line when the voucher has one department, as before).

@@ -406,3 +406,56 @@ describe('projects on an AP invoice', () => {
     expect(sb.tables.ap_invoices).toHaveLength(0);
   });
 });
+
+/* Each line's sub-department (SOP 1.1; chew 4 Nov 2026): it sets the department, rides to the journal's cost line. */
+describe('sub-departments on an AP invoice', () => {
+  test('a Maintenance line saves Rental and its sub-department, and the journal carries it', async () => {
+    const { app, sb } = harness({ acc_sub_departments: [
+      { id: 's-gen', company_id: CO, department: 'rental', name: 'Rental (general)', fixed_key: 'rental_general', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-mnt', company_id: CO, department: 'rental', name: 'Maintenance', fixed_key: null, staff_department_id: null, active: true, sort: 20 },
+      { id: 's-dc', company_id: CO, department: 'supply', name: 'Renovation (Dream Crafter)', fixed_key: 'dreamcrafter', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-co', company_id: CO, department: 'shared', name: 'Company', fixed_key: 'company', staff_department_id: null, active: true, sort: 10 },
+    ] });
+    const created = await (await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [
+      { description: 'Pipe fittings', debitAccountCode: '900-A001', amountSen: 30_000, department: 'supply', subDepartmentId: 's-mnt' },
+    ] })).json() as { invoice: Row };
+    expect(sb.tables.ap_invoice_lines.map((l) => [l.department, l.sub_department_id])).toEqual([['rental', 's-mnt']]);
+    expect((await json(app, `/ap-invoices/${created.invoice.id}/post`, 'POST')).status).toBe(200);
+    const je = sb.tables.journal_entries.find((j) => j.source_type === 'API')!;
+    const cost = sb.tables.journal_entry_lines.find((l) => l.journal_entry_id === je.id && l.account_code === '900-A001')!;
+    expect(cost).toMatchObject({ department: 'rental', sub_department_id: 's-mnt' });
+  });
+
+  test('an unknown sub-department is refused and nothing is saved', async () => {
+    const { app, sb } = harness({ acc_sub_departments: [
+      { id: 's-gen', company_id: CO, department: 'rental', name: 'Rental (general)', fixed_key: 'rental_general', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-mnt', company_id: CO, department: 'rental', name: 'Maintenance', fixed_key: null, staff_department_id: null, active: true, sort: 20 },
+      { id: 's-dc', company_id: CO, department: 'supply', name: 'Renovation (Dream Crafter)', fixed_key: 'dreamcrafter', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-co', company_id: CO, department: 'shared', name: 'Company', fixed_key: 'company', staff_department_id: null, active: true, sort: 10 },
+    ] });
+    const r = await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '900-A001', amountSen: 100, subDepartmentId: 'nope' }] });
+    expect(r.status).toBe(400);
+    expect(((await r.json()) as { error: string }).error).toBe('sub_department_invalid');
+    expect(sb.tables.ap_invoices).toHaveLength(0);
+  });
+});
+
+/* Final review: the project must fit the line's sub-department on an AP invoice too (SOP 1.1). */
+describe('a project on an AP invoice line fits its sub-department', () => {
+  test('a Maintenance line on a renovation project, or The Conts on a Dream Crafter one, is refused', async () => {
+    const { app, sb } = harness({ acc_sub_departments: [
+      { id: 's-gen', company_id: CO, department: 'rental', name: 'Rental (general)', fixed_key: 'rental_general', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-mnt', company_id: CO, department: 'rental', name: 'Maintenance', fixed_key: null, staff_department_id: null, active: true, sort: 20 },
+      { id: 's-dc', company_id: CO, department: 'supply', name: 'Renovation (Dream Crafter)', fixed_key: 'dreamcrafter', staff_department_id: null, active: true, sort: 10 },
+      { id: 's-tc', company_id: CO, department: 'supply', name: 'In-house Reno (The Conts)', fixed_key: 'theconts', staff_department_id: null, active: true, sort: 20 },
+      { id: 's-co', company_id: CO, department: 'shared', name: 'Company', fixed_key: 'company', staff_department_id: null, active: true, sort: 10 },
+    ], projects: [{ id: 7, company_id: CO, name: 'SKYLINE', funding: 'customer', internal_department: null, finance_kind: 'RENOVATION', brand: null }] });
+    const mnt = await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '900-A001', amountSen: 100, subDepartmentId: 's-mnt', projectId: 7 }] });
+    expect(mnt.status).toBe(400);
+    expect(((await mnt.json()) as { message: string }).message).toBe('Line 1: SKYLINE is a Renovation project.');
+    const tc = await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '900-A001', amountSen: 100, subDepartmentId: 's-tc', projectId: 7 }] });
+    expect(((await tc.json()) as { message: string }).message).toBe('Line 1: SKYLINE is a Dream Crafter project.');
+    expect(sb.tables.ap_invoices).toHaveLength(0);
+    expect((await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '900-A001', amountSen: 100, subDepartmentId: 's-dc', projectId: 7 }] })).status).toBe(201);
+  });
+});

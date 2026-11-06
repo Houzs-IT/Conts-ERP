@@ -16,6 +16,9 @@ export type MrpAllocSource = 'stock' | 'po' | 'shortage';
 
 export type MrpLine = {
   soItemId: string;
+  /* A production order's raw material: soItemId is the material's id, soDocNo the production order's number. */
+  productionMaterialId?: string;
+  productionOrderId?: string;
   soDocNo: string;
   /* Canonical stored listing order within the SO (migration 0165) — the Sofa
      tab orders an SO's module rows by this so they read LHF → NA → RHF exactly
@@ -38,6 +41,8 @@ export type MrpLine = {
   poNumber: string | null;
   poEta: string | null;
   shortageQty: number;
+  /* Conts: the supplier picked for this line on the project's SO tab; the line starts on it. */
+  plannedSupplier?: { supplierId: string; code: string; name: string } | null;
   /* Commander 2026-05-31 — when source==='po', the covering PO's supplier so a
      covered line shows it READ-ONLY (a raised PO's supplier can't change).
      NULL on stock / shortage lines. */
@@ -54,6 +59,7 @@ export type MrpSku = {
   warehouseName: string | null;
   itemCode: string;
   variantKey: string;
+  stockWhere?: Array<{ code: string; qty: number }>;
   variantLabel: string | null;
   description: string | null;
   category: string | null;
@@ -98,6 +104,7 @@ export type SofaSet = {
   qty: number;
   orderedQty: number;
   shortageQty: number;
+  plannedSupplier?: { supplierId: string; code: string; name: string } | null;
   poNumber: string | null; // PO(s) this set's units were raised into
   poEta: string | null;    // earliest PO-line delivery date (when goods arrive)
   poSupplierId: string | null;   // covering PO's supplier (read-only on covered sets)

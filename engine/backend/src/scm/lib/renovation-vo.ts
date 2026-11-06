@@ -27,6 +27,7 @@ import { fmtSen } from '../shared/format';
 import { canonicalizeVariants } from '../shared/so-variant-rule';
 import { buildVariantSummary } from '../shared/variant-summary';
 import { variantCategoryOf } from './renovation-flow-rules';
+import { SPEC_LOCKED_ERROR, specLockedMessage } from './renovation-spec-lock';
 
 export type VoStatus = 'DRAFT' | 'SENT' | 'APPROVED' | 'CANCELLED';
 
@@ -52,8 +53,8 @@ export async function createVo(db: RenoDb, actor: RenoActor, soDocNo: string, bo
   const seq = Number(m.n) + 1;
   const voNo = voNoFor(soDocNo, seq);
   const [v] = await db.q<{ id: string }>(
-    `insert into scm.reno_variation_orders (company_id, vo_no, so_doc_no, seq, title, created_by) values ($1, $2, $3, $4, $5, $6) returning id`,
-    [actor.companyId, voNo, soDocNo, seq, body.title ?? '', actor.name],
+    `insert into scm.reno_variation_orders (company_id, vo_no, so_doc_no, seq, title, created_by, doc_date) values ($1, $2, $3, $4, $5, $6, $7::date) returning id`,
+    [actor.companyId, voNo, soDocNo, seq, body.title ?? '', actor.name, todayKl()],
   );
   await auditSo(db, { companyId: actor.companyId, docNo: soDocNo, action: 'VO_CREATE', actorName: actor.name, note: voNo });
   return { id: v.id, voNo };
@@ -226,10 +227,11 @@ export async function applyVo(
      on conflict do nothing`,
     [soDocNo, actor.staffId],
   );
+  const [requester] = actor.userId != null ? await db.q<{ id: string }>(`select id from scm.staff where user_id = $1`, [actor.userId]) : [];
   const [amd] = await db.q<{ id: string }>(
     `insert into scm.so_amendments (so_doc_no, amendment_no, status, reason, requested_by, so_approved_by, so_approved_at, sent_at, resolution, company_id)
      values ($1, $2, 'SENT', $3, $4, $4, now(), now(), 'RENOVATION_VO', $5) returning id`,
-    [soDocNo, v.vo_no, v.title || `Variation order ${v.vo_no}`, actor.staffId, actor.companyId],
+    [soDocNo, v.vo_no, v.title || `Variation order ${v.vo_no}`, requester?.id ?? actor.staffId, actor.companyId],
   );
   await db.q(`update scm.so_revisions set amendment_id = $3 where so_doc_no = $1 and revision = $2 and amendment_id is null`, [soDocNo, head.revision, amd.id]);
 
@@ -391,11 +393,13 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
     if (e.qty !== undefined && (!Number.isInteger(e.qty) || e.qty < 1)) throw refuse(422, 'bad_qty', `"${t.description}": qty must be a whole number, 1 or more.`);
     if (e.unitPriceSen !== undefined && (!Number.isInteger(e.unitPriceSen) || e.unitPriceSen < 0)) throw refuse(422, 'bad_price', `"${t.description}": the price cannot be negative.`);
     const po = await db.q(
-      `select 1 from scm.purchase_order_items pi join scm.purchase_orders po on po.id = pi.purchase_order_id
-        where pi.so_item_id = $1 and po.status::text <> 'CANCELLED' limit 1`,
+      `select po.po_number, pi.received_qty from scm.purchase_order_items pi join scm.purchase_orders po on po.id = pi.purchase_order_id
+        where pi.so_item_id = $1 and po.status::text <> 'CANCELLED'`,
       [t.soItemId],
     );
     const code = e.itemCode?.trim();
+    const received = po.find((r) => Number(r.received_qty) > 0);
+    if (received && (e.variants !== undefined || (code && code !== t.itemCode) || (e.unitPriceSen !== undefined && e.unitPriceSen !== t.unitPriceSen))) throw refuse(409, SPEC_LOCKED_ERROR, specLockedMessage(t.itemCode ?? t.description, received.po_number));
     const out = quickVoLines(t, e, po.length > 0, code ? products.get(code) ?? null : null);
     if (!out) continue;
     if (out.omit) put(t.sectionHeading, out.omit);
@@ -414,7 +418,7 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
       pageBreakBefore: false, voChange: 'ADD', omitTargetLineId: null, omitQty: null,
     };
     put(room || 'Additional works', line);
-    adds.push({ lineId: line.id, fromSoItemId: null, sameSku: false, respec: false, itemCode: line.itemCode!, variants: a.variants, remark: a.remark });
+    adds.push({ lineId: line.id, fromSoItemId: null, sameSku: false, respec: false, itemCode: line.itemCode!, variants: a.variants, remark: a.remark, room });
   }
   if (sections.size === 0) throw refuse(422, 'nothing_changed', 'Nothing on the contract changed.');
   const vo = await createVo(db, actor, soDocNo, { title });
@@ -431,7 +435,7 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
     options as given, the remark given else the replaced line's, and the new options' summary as description2; a line of another SKU gets the
     options and remark sent with it; a plain same-SKU replacement copies the old line's. Every replacement keeps the
     replaced line's dates. */
-export interface QuickAdd { lineId: string; fromSoItemId: string | null; sameSku: boolean; respec: boolean; itemCode: string; variants?: Record<string, unknown>; remark?: string }
+export interface QuickAdd { lineId: string; fromSoItemId: string | null; sameSku: boolean; respec: boolean; itemCode: string; variants?: Record<string, unknown>; remark?: string; room?: string }
 
 export async function carryToAddedLine(db: RenoDb, a: QuickAdd, to: string, group: string): Promise<void> {
   if (a.respec || (!a.sameSku && (a.variants || a.remark))) {
@@ -453,7 +457,12 @@ export async function carryToAddedLine(db: RenoDb, a: QuickAdd, to: string, grou
       );
     }
   }
-  if (!a.fromSoItemId) return;
+  if (!a.fromSoItemId) {
+    /* The VO section carries the room's heading only: without this the line printed under Other items, out of the
+       room it was added to (live run, 4 Nov 2026). */
+    if (a.room) await db.q(`update scm.mfg_sales_order_items set room = $2 where id = $1`, [to, a.room]);
+    return;
+  }
   /* The replacement stands in the same room: the VO section carries the room's heading, but the SO line's own room
      (migration 0112, what the PO tab groups and prints by) was left empty on every replaced line. */
   await db.q(
@@ -481,10 +490,11 @@ export async function listPoFlags(db: RenoDb, soDocNo: string) {
     `select f.id, f.action, f.new_qty, f.status, f.note, f.created_at::text as created_at, f.resolved_at::text as resolved_at, v.vo_no,
             po.po_number, po.id as purchase_order_id, pi.item_code, pi.qty
        from scm.reno_po_line_flags f
-       join scm.reno_variation_orders v on v.id = f.vo_id
+       left join scm.reno_variation_orders v on v.id = f.vo_id
+       left join scm.mfg_sales_order_items si on si.id = f.so_item_id
        join scm.purchase_order_items pi on pi.id = f.purchase_order_item_id
        join scm.purchase_orders po on po.id = pi.purchase_order_id
-      where v.so_doc_no = $1 order by f.created_at`,
+      where coalesce(v.so_doc_no, si.doc_no) = $1 order by f.created_at`,
     [soDocNo],
   );
   return rows.map((r) => ({ id: r.id, action: r.action, newQty: r.new_qty === null ? null : Number(r.new_qty), status: r.status, note: r.note,

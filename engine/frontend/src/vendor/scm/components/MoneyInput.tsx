@@ -51,7 +51,7 @@ export const MoneyInput = ({
   inputClassName,
   style,
   align = 'right',
-  selectOnFocus = false,
+  selectOnFocus = true,
   disabled = false,
   'aria-label': ariaLabel,
   onKeyDown,

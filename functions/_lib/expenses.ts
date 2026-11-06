@@ -109,4 +109,14 @@ export function expenseWhere(f: ExpenseFilter, skip?: keyof ExpenseFilter): { sq
 }
 
 /** SQL: true when the expense `e` is a rollup header whose line items carry its money. */
+/** The tables one expense row is read from, and what the screens see of it. */
+export const EXPENSE_FROM = 'FROM expenses e JOIN units u ON u.id = e.unit_id JOIN properties p ON p.id = u.property_id';
+export const expenseOut = (r: any) => ({
+  id: r.id, unitId: r.unit_id, unitNumber: r.unit_number, propertyName: r.property_name,
+  category: r.category, description: r.description, amount: Number(r.amount),
+  incurredOn: r.incurred_on, reference: r.reference, chargeTo: r.charge_to,
+  parentExpenseId: r.parent_expense_id ?? null, locked: !!r.locked, receiptDocumentId: r.receipt_document_id ?? null,
+  taskId: r.task_id ?? null, maintenanceId: r.maintenance_id ?? null,
+});
+
 export const IS_PARENT_SQL = 'EXISTS (SELECT 1 FROM expenses k WHERE k.parent_expense_id = e.id)';

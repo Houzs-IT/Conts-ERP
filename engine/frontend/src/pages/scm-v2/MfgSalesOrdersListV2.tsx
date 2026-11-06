@@ -26,7 +26,7 @@ import { SoListStatusCell, soRowStatusOf } from "./SoListStatusCell";
 import { SoListFilterBar } from "./SoListFilterBar";
 import { useSoListFilters } from "../../vendor/scm/lib/so-list-filter-state";
 import { salesOrderRowMenu } from "./row-menus";
-import { brandingToneForCategory, type BrandTone } from "../../lib/brandingTone";
+import { brandingToneForCategory, brandingToneForLabel, type BrandTone } from "../../lib/brandingTone";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { CancelledMoneyActions } from "./CancelledMoneyActions";
 import {
@@ -249,7 +249,7 @@ const brandOf = (r: SoRow): string => (isPlaceholderBrandText(r.branding) ? "" :
 /* This surface carries the line's CATEGORY, so it uses the accurate entry
    point: colour and label then share one bucket rule and cannot disagree.
    ../../lib/brandingTone has the whole story. */
-const brandTone = (r: SoRow): BrandTone => brandingToneForCategory(r.first_item_category);
+const brandTone = (r: SoRow): BrandTone => (/dream crafter|the conts/i.test(r.branding ?? "") ? brandingToneForLabel(r.branding) : brandingToneForCategory(r.first_item_category));
 
 
 // ─── Salesperson dropdown / split-menu ──────────────────────────────────────
@@ -712,7 +712,8 @@ function DetailDrawer({
                     </Button>
                   );
                 }
-                if (soCanRaiseDo(row.status, row.on_hold ?? null)) {
+                /* Everything already went out: there is nothing left to transfer. */
+                if (soCanRaiseDo(row.status, row.on_hold ?? null) && row.delivery_state !== "full") {
                   // ABSENT, not disabled, for anyone who may not operate a DO.
                   if (!canDeliver) return null;
                   /* Renamed from "Deliver" 2026-08-17 — the SO already reports a
@@ -930,7 +931,7 @@ function SoLinesExpansion({ docNo }: { docNo: string }) {
      and the covering incoming PO + ETA belong ON the line — the payload has
      carried them all along. Min-width + horizontal scroll keeps the grid
      honest on narrow desktop panes. */
-  const grid = "grid grid-cols-[92px_minmax(220px,1fr)_56px_100px_110px_96px_92px_190px] items-start gap-2";
+  const grid = "grid grid-cols-[92px_minmax(220px,340px)_56px_100px_110px_96px_92px_minmax(190px,1fr)] items-start gap-2";
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-surface">
       <div className="min-w-[880px]">
@@ -1903,8 +1904,8 @@ export function MfgSalesOrdersListV2() {
          admin saved from the Columns panel still takes this seed's place. */
       {
         id: "so-houzs",
-        label: "Houzs Layout",
-        hint: "AutoCount: SALES ORDER DETAILS-SALES",
+        label: "Standard Layout",
+        hint: "One row per order line",
         companyCode: "HOUZS",
         isDefault: !is2990,
         columns: SO_AUTOCOUNT_KEYS,
@@ -1972,7 +1973,7 @@ export function MfgSalesOrdersListV2() {
       <div className="-mx-4 hidden pb-3 sm:-mx-6 md:block">
         <div className="px-4 sm:px-6">
           <PageHeader
-            eyebrow="Supply Chain"
+            eyebrow="Sales"
             title="Sales Orders"
             description={`Every ${shortCompanyName(branding.companyName)} sales order — Draft to Delivered. Click any row for the quick view; open the full page to edit.`}
             primaryAction={

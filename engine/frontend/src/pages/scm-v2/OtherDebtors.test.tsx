@@ -20,6 +20,14 @@ const cancelBillAsync = vi.fn(async (_b: unknown) => ({ ok: true }));
 
 let detail: Record<string, unknown> | undefined;
 
+/* The sub-departments a line names (SOP 1.1; chew 4 Nov 2026): one built-in row per department. */
+vi.mock('../../conts/subDepartmentQueries', () => ({
+  useSubDepartments: () => ({ data: { subDepartments: [
+    { id: 's-gen', department: 'rental', name: 'Rental (general)', fixedKey: 'rental_general', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-dc', department: 'supply', name: 'Renovation (Dream Crafter)', fixedKey: 'dreamcrafter', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-co', department: 'shared', name: 'Company', fixedKey: 'company', staffDepartmentId: null, active: true, sort: 10 },
+  ] } }),
+}));
 vi.mock('../../vendor/scm/lib/accounting-queries', async (importOriginal) => ({
   /* The real pure helpers stay (postableAccounts — docs/bugs/0693); only the hooks are stubbed. */
   ...(await importOriginal<typeof import('../../vendor/scm/lib/accounting-queries')>()),
@@ -153,13 +161,13 @@ describe('the Debtor Bill — a pop-out form whose lines pick their own account'
     await waitFor(() => expect((within(d).getByLabelText('line 1 amount') as HTMLInputElement).value).toBe('450.00'));
     /* Conts: each money line's department (finance phase 1, spec 3.5) — Post waits for it. */
     expect((within(d).getByText('Post bill').closest('button') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 'rental' } });
+    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 's-gen' } });
     fireEvent.click(within(d).getByText('Post bill'));
     await waitFor(() => expect(createBillAsync).toHaveBeenCalledTimes(1));
     const sent = createBillAsync.mock.calls[0]![0] as { debtorId: string; billDate: string; lines: unknown[] };
     expect(sent.debtorId).toBe('d1');
     expect(sent.billDate).toMatch(ISO_DATE);
-    expect(sent.lines).toEqual([{ description: '转租九月', creditAccountCode: '700-0000', amountSen: 45000, department: 'rental' }]);
+    expect(sent.lines).toEqual([{ description: '转租九月', creditAccountCode: '700-0000', amountSen: 45000, department: 'rental', subDepartmentId: 's-gen' }]);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
@@ -177,12 +185,12 @@ describe('the Debtor Bill — a pop-out form whose lines pick their own account'
     fireEvent.keyDown(within(d).getByLabelText('line 1 amount'), { key: 'Insert' });
     fireEvent.change(within(d).getByLabelText('line 2 description'), { target: { value: 'Unit 3A, ground floor' } });
     expect(within(d).getByText(/a description alone is a text line/)).toBeTruthy();
-    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 'rental' } });
+    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 's-gen' } });
     fireEvent.click(within(d).getByText('Post bill'));
     await waitFor(() => expect(createBillAsync).toHaveBeenCalledTimes(1));
     const sent = createBillAsync.mock.calls[0]![0] as { lines: unknown[] };
     expect(sent.lines).toEqual([
-      { description: 'Rental September', creditAccountCode: '700-0000', amountSen: 45000, department: 'rental' },
+      { description: 'Rental September', creditAccountCode: '700-0000', amountSen: 45000, department: 'rental', subDepartmentId: 's-gen' },
       { description: 'Unit 3A, ground floor', amountSen: 0 },
     ]);
   });

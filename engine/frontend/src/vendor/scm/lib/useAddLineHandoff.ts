@@ -14,7 +14,7 @@
    return. The effect reads them at fire time, so it never needs them as
    dependencies and never fires with a stale closure.
 
-   Fires ONCE per mount, and strips the fragment when it does: left on the URL it
+   Fires ONCE per handoff, and strips the fragment when it does: left on the URL it
    re-opens the add row on every remount, which on a page that remounts after a
    save is a form that will not shut. See lib/add-line-handoff.ts for the
    contract and docs/bugs/0853 for what it is fixing. */
@@ -48,8 +48,10 @@ export function useAddLineHandoff(): MutableRefObject<AddLineHandoffTarget> {
   const navigate = useNavigate();
 
   useEffect(() => {
+    /* Once per handoff, not per mount: the Sales Order's view and editor are one page, so a second Add line reaches
+       this same mount. The hash clearing is what re-arms it. */
+    if (!wantsAddLine(location.hash)) { fired.current = false; return; }
     if (fired.current) return;
-    if (!wantsAddLine(location.hash)) return;
     /* Not yet editable — the editor is still loading, or the document is
        locked. Leave the fragment ALONE so the effect can fire on a later
        render; consuming it here would swallow the operator's intent. */

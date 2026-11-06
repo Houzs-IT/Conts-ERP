@@ -486,15 +486,18 @@ export function drawHeader(
      *  the company logo. null/undefined → the company logo memo, then the
      *  company name in spaced capitals. */
     logo?: BrandingLogo | null;
+    /** A renovation contract's own brand letterhead: its name and lines, as its Contract PDF prints. */
+    name?: string;
+    lines?: string[];
   },
 ): number {
   /* Conts (owner, 24 Oct 2026): every document draws the letterhead of the owner's sample quotations, so a PO, DO,
      GRN or invoice reads as the same family as the quotation, SO and VO. */
   const y = drawDocLetterhead(doc, {
     title: opts.docTitle.toUpperCase(),
-    name: COMPANY.shortName,
-    logo: opts.logo ?? getBrandingLogoCache(),
-    lines: letterheadLines(),
+    name: opts.name ?? COMPANY.shortName,
+    logo: opts.logo ?? (opts.name ? null : getBrandingLogoCache()),
+    lines: opts.lines ?? letterheadLines(),
     meta: opts.rightMeta,
   });
   return y + 2;
@@ -572,8 +575,10 @@ export function drawInfoColumns(
     if (!v) continue;
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(110); doc.text(label, midX, ry); doc.setTextColor(0);
-    doc.text(`: ${v}`, rValX, ry);
-    ry += lh;
+    /* Wraps inside the page margin: one long value ran past the rule and the table (owner, 5 Nov 2026). */
+    const wrapped = doc.splitTextToSize(`: ${v}`, pageW - margin - rValX) as string[];
+    doc.text(wrapped, rValX, ry);
+    ry += Math.max(1, wrapped.length) * lh;
   }
   return Math.max(ly, ry) + 4;
 }

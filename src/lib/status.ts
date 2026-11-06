@@ -216,6 +216,25 @@ export const STATUS_VOCAB = {
     record: { label: 'Record only', tone: 'info' },
     company: { label: 'Company pays', tone: 'neutral' },
   },
+  /* A utility bill's payment request, on Utility bills "By payment request" (src/lib/utilityGrid.ts requestState). */
+  utility_request: {
+    waiting: { label: 'Waiting for payment', tone: 'warning' },
+    part_paid: { label: 'Part paid', tone: 'info' },
+    paid: { label: 'Paid', tone: 'success' },
+  },
+
+  // Units > Deductions (src/pages/DeductionsPage.tsx): which side of the operator's share a line comes off.
+  deduction_type: {
+    additional: { label: 'Additional deduction', tone: 'info' },
+    o2: { label: 'O2', tone: 'warning' },
+  },
+  // Where a deduction line stands against the owner statements (functions/api/finance/deductions.ts).
+  deduction: {
+    open: { label: 'Open', tone: 'neutral' },
+    held: { label: 'Held', tone: 'warning' },
+    settled: { label: 'Settled outside', tone: 'neutral' },
+    final: { label: 'On final statement', tone: 'success' },
+  },
 
   /* ---------- Supply chain documents (built-in screens) ---------- */
   active_flag: ACTIVE_INACTIVE,

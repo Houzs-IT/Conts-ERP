@@ -19,6 +19,7 @@ import { StatCard } from '../../components/StatCard';
 import { DataTable, type Column } from '../../components/DataTable';
 import styles from './Inventory.module.css';
 import { mfgCategoryLabel } from '../../vendor/shared/product-categories';
+import { categoryMatches } from '../../vendor/shared/renovation-catalog';
 
 const STAT_GRID = 'grid grid-cols-2 md:grid-cols-4 gap-3';
 const soft: React.CSSProperties = { fontSize: 'var(--fs-13)', color: 'var(--text-soft, #8a8578)' };
@@ -89,7 +90,7 @@ const AsOfView = ({ asOf, category, search }: { asOf: string; category: string; 
 
   const needle = search.trim().toLowerCase();
   const rows = q.data.rows
-    .filter((r) => category === 'all' || r.category === category)
+    .filter((r) => category === 'all' || categoryMatches(r.category, category))
     .filter((r) => !needle || r.item_code.toLowerCase().includes(needle) || String(r.product_name ?? '').toLowerCase().includes(needle));
   const onScreen = shown ?? rows;
   const subtotals = categorySubtotals(onScreen);

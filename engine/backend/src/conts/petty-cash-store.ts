@@ -22,7 +22,7 @@ export interface ReceiptRow {
   created_at: string;
 }
 export interface ReceiptLineRow {
-  id: string; receipt_id: string; department: string; unit_id: string | null; maintenance_issue_id: string | null;
+  id: string; receipt_id: string; department: string; unit_id: string | null; maintenance_issue_id: string | null; sub_department_id?: string | null;
   project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number;
 }
 
@@ -89,7 +89,7 @@ export function receiptView(r: ReceiptRow, lines: ReceiptLineRow[], files: Array
     note: r.note, status: r.status, rejectReason: r.reject_reason, checkedAt: r.checked_at, checkedBy: r.checked_by,
     topUpPvId: r.topup_pv_id, paybackPvId: r.payback_pv_id, replacesId: r.replaces_id, source: r.source,
     lines: lines.map(l => ({ id: l.id, department: l.department, unitId: l.unit_id, maintenanceIssueId: l.maintenance_issue_id,
-      projectId: l.project_id, accountCode: l.account_code, amountSen: Number(l.amount_sen), description: l.description })),
+      projectId: l.project_id, accountCode: l.account_code, amountSen: Number(l.amount_sen), description: l.description, subDepartmentId: l.sub_department_id ?? null })),
     files: files.map(f => ({ id: f.id, fileName: f.file_name, mime: f.mime })),
   };
 }

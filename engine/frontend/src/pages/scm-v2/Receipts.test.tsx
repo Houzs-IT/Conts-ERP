@@ -24,6 +24,14 @@ const LIST = { month: null, receipts: [
   { kind: 'DEBTOR', id: 'dr1', number: 'HC-ODR-2609-001', date: '2026-09-02', payer: 'AHMAD BIN ALI', moneyAccount: '310-0010', totalSen: 20000, status: 'POSTED', debtorId: 'd1' },
   { kind: 'CUSTOMER', id: 'p1', number: 'HC-SO-2609-004', date: '2026-09-01', payer: 'Customer deposit', moneyAccount: 'EDC', totalSen: 350000, status: 'RECEIVED' },
 ] };
+/* The sub-departments a line names (SOP 1.1; chew 4 Nov 2026): one built-in row per department. */
+vi.mock('../../conts/subDepartmentQueries', () => ({
+  useSubDepartments: () => ({ data: { subDepartments: [
+    { id: 's-gen', department: 'rental', name: 'Rental (general)', fixedKey: 'rental_general', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-dc', department: 'supply', name: 'Renovation (Dream Crafter)', fixedKey: 'dreamcrafter', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-co', department: 'shared', name: 'Company', fixedKey: 'company', staffDepartmentId: null, active: true, sort: 10 },
+  ] } }),
+}));
 vi.mock("../../conts/Pickers", () => ({ ProjectPicker: () => null, UnitPicker: () => null }));
 vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
 vi.mock('../../vendor/scm/lib/accounting-queries', async (importOriginal) => ({
@@ -152,13 +160,13 @@ describe('the unified money-in list', () => {
     expect(amount.value).toBe('888.00');
     /* Conts: each line's department (finance phase 1, spec 3.5) — Post waits for it. */
     expect((screen.getByText('Post receipt').closest('button') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 'rental' } });
+    fireEvent.change(screen.getByLabelText('Line 1 department'), { target: { value: 's-gen' } });
     fireEvent.click(screen.getByText('Post receipt'));
     await waitFor(() => expect(createAsync).toHaveBeenCalledWith({
       payerName: 'ALLIANZ INSURANCE',
       receiptDate: '2026-09-02',
       bankAccountCode: '310-0010',
-      lines: [{ description: '车险赔偿', creditAccountCode: '700-0000', amountSen: 88800, department: 'rental' }],
+      lines: [{ description: '车险赔偿', creditAccountCode: '700-0000', amountSen: 88800, department: 'rental', subDepartmentId: 's-gen' }],
     }));
   });
 

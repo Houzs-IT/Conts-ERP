@@ -20,10 +20,13 @@ export function toPrintLine(l: DocLine): PrintLineInput {
 
 /** Sections as printed: lines a VO omitted (or whose SO row is cancelled) drop out. */
 export function toPrintSections(sections: DocSection[]): PrintSectionInput[] {
-  return sections.map((s) => ({
+  const printed = sections.map((s) => ({
     heading: s.heading, bandColor: s.bandColor, lumpSumSen: s.lumpSumSen, pageBreakBefore: s.pageBreakBefore,
     lines: s.lines.filter((l) => !l.omittedByVoId && !l.soItemCancelled).map(toPrintLine),
   })).filter((s) => s.lines.length > 0 || s.lumpSumSen !== null || s.heading);
+  /* A VO that replaced a section's only line leaves that heading empty beside the new one of the same name. */
+  return printed.filter((s) => s.lines.length > 0 || s.lumpSumSen !== null
+    || !printed.some((o) => o !== s && o.heading === s.heading && o.lines.length > 0));
 }
 
 export async function printBrand(brand: BrandProfile | undefined): Promise<PrintBrand> {

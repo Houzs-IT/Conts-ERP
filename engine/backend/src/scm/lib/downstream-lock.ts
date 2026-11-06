@@ -210,14 +210,16 @@ const statusById = async (sb: Sb, table: string, ids: string[]): Promise<{ ok: t
 export async function readSoLineFreeze(sb: Sb, soDocNo: string): Promise<SoLineFreezeRead> {
   const fail = (reason: string): SoLineFreezeRead => ({ ok: false, refusal: checkFailedRefusal('SO', reason) });
 
-  const [linesRes, ownDosRes, ownSisRes] = await Promise.all([
+  const [linesRes, ownDosRes, ownSisRes, billsRes] = await Promise.all([
     sb.from('mfg_sales_order_items').select('id, cancelled, variants').eq('doc_no', soDocNo),
     sb.from('delivery_orders').select('id, status').eq('so_doc_no', soDocNo),
     sb.from('sales_invoices').select('id, status').eq('so_doc_no', soDocNo),
+    sb.from('reno_instalment_bills').select('sales_invoice_id').eq('so_doc_no', soDocNo),
   ]);
   if (linesRes.error) return fail(`mfg_sales_order_items: ${linesRes.error.message}`);
   if (ownDosRes.error) return fail(`delivery_orders: ${ownDosRes.error.message}`);
   if (ownSisRes.error) return fail(`sales_invoices: ${ownSisRes.error.message}`);
+  if (billsRes.error) return fail(`reno_instalment_bills: ${billsRes.error.message}`);
 
   const lines = ((linesRes.data as unknown as Array<{ id: string; cancelled: boolean | null; variants: Record<string, unknown> | null }> | null) ?? [])
     .map((l) => ({
@@ -227,7 +229,10 @@ export async function readSoLineFreeze(sb: Sb, soDocNo: string): Promise<SoLineF
     }));
   const lineIds = lines.map((l) => l.id);
   const ownDos = (ownDosRes.data as unknown as Array<{ id: string; status: string | null }> | null) ?? [];
-  const ownSis = (ownSisRes.data as unknown as Array<{ id: string; status: string | null }> | null) ?? [];
+  /* A contract's instalment bill bills a share of the contract, not its lines: it names none, and counted as a live
+     document it froze every line from the first payment on, so no line or VO could follow (live run, 4 Nov 2026). */
+  const progressBills = new Set(((billsRes.data as unknown as Array<{ sales_invoice_id: string | null }> | null) ?? []).map((b) => b.sales_invoice_id));
+  const ownSis = ((ownSisRes.data as unknown as Array<{ id: string; status: string | null }> | null) ?? []).filter((s) => !progressBills.has(s.id));
   const isLive = (s: string | null) => String(s ?? '').trim().toUpperCase() !== 'CANCELLED';
   const liveDocumentCount = ownDos.filter((d) => isLive(d.status)).length + ownSis.filter((s) => isLive(s.status)).length;
 

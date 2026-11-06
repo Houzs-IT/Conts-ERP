@@ -40,6 +40,16 @@ const { updateAsync, idle, DETAIL, shown, notifyMock } = vi.hoisted(() => {
 vi.mock('../../conts/ProjectLimitField', () => ({
   ProjectLimitField: ({ projectId, disabled }: { projectId: number | null; disabled?: boolean }) => <span>{`Voucher project ${projectId ?? 'none'}${disabled ? ' (read-only)' : ''}`}</span>,
 }));
+/* The sub-departments a line names (SOP 1.1; chew 4 Nov 2026). */
+vi.mock('../../conts/subDepartmentQueries', () => ({
+  useSubDepartments: () => ({ data: { subDepartments: [
+    { id: 's-gen', department: 'rental', name: 'Rental (general)', fixedKey: 'rental_general', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-cln', department: 'rental', name: 'Cleaning', fixedKey: null, staffDepartmentId: null, active: true, sort: 30 },
+    { id: 's-dc', department: 'supply', name: 'Renovation (Dream Crafter)', fixedKey: 'dreamcrafter', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-tc', department: 'supply', name: 'In-house Reno (The Conts)', fixedKey: 'theconts', staffDepartmentId: null, active: true, sort: 20 },
+    { id: 's-co', department: 'shared', name: 'Company', fixedKey: 'company', staffDepartmentId: null, active: true, sort: 10 },
+  ] } }),
+}));
 vi.mock('../../conts/Pickers', () => ({
   UnitPicker: ({ value, onChange, ariaLabel }: { value: string | null; onChange: (v: string | null) => void; ariaLabel: string }) => <input aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value || null)} />,
   ProjectPicker: ({ value, onChange, ariaLabel }: { value: number | null; onChange: (v: number | null) => void; ariaLabel: string }) => <input aria-label={ariaLabel} value={value ?? ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)} />,
@@ -183,21 +193,18 @@ describe('a plain voucher: each line says what it is for', () => {
     ],
     allocations: [],
   };
-  const forOf = (n: number) => screen.getByRole('radiogroup', { name: `Line ${n} for` });
-  const checked = (n: number) => within(forOf(n)).getAllByRole('radio').find((r) => r.getAttribute('aria-checked') === 'true')?.textContent;
 
   test('there is no For switch; the lines load as Unit, Project and Company and save unchanged', async () => {
     shown.detail = MIXED;
     updateAsync.mockClear();
     try {
       draw();
-      await waitFor(() => expect(screen.getByRole('radiogroup', { name: 'Line 1 for' })).toBeTruthy());
+      await waitFor(() => expect(screen.getByLabelText('Line 1 department')).toBeTruthy());
       expect(screen.queryByText('For *')).toBeNull();
       expect(screen.queryByRole('radio', { name: 'Mixed' })).toBeNull();
-      expect([checked(1), checked(2), checked(3)]).toEqual(['Unit', 'Project', 'Company']);
       expect((screen.getByLabelText('Line 1 unit') as HTMLInputElement).value).toBe('u-a31');
       expect((screen.getByLabelText('Line 2 project') as HTMLInputElement).value).toBe('7');
-      expect(['Line 1 department', 'Line 2 department', 'Line 3 department'].map((l) => screen.getByLabelText(l).textContent))
+      expect(['Line 1 department tag', 'Line 2 department tag', 'Line 3 department tag'].map((l) => screen.getByLabelText(l).textContent))
         .toEqual(['Rental', 'Renovation', 'Company']);
       /* No voucher-wide project on a plain voucher. */
       expect(screen.queryByText(/Voucher project/)).toBeNull();
@@ -227,8 +234,8 @@ describe('a plain voucher: each line says what it is for', () => {
     updateAsync.mockClear();
     try {
       draw();
-      await waitFor(() => expect(screen.getByRole('radiogroup', { name: 'Line 1 for' })).toBeTruthy());
-      expect(['Line 1 department', 'Line 2 department', 'Line 3 department', 'Line 4 department'].map((l) => screen.getByLabelText(l).textContent))
+      await waitFor(() => expect(screen.getByLabelText('Line 1 department')).toBeTruthy());
+      expect(['Line 1 department tag', 'Line 2 department tag', 'Line 3 department tag', 'Line 4 department tag'].map((l) => screen.getByLabelText(l).textContent))
         .toEqual(['Rental', 'Rental', 'Company', 'Renovation']);
       fireEvent.click(screen.getByText('Save'));
       await waitFor(() => expect(updateAsync).toHaveBeenCalledTimes(1));
@@ -279,7 +286,7 @@ describe('a plain voucher: each line says what it is for', () => {
     try {
       draw('/scm/payment-vouchers/pv-9');
       await waitFor(() => expect(screen.getByText('Voucher project 7 (read-only)')).toBeTruthy());
-      expect(screen.queryByRole('radiogroup', { name: 'Line 1 for' })).toBeNull();
+      expect(screen.queryByLabelText('Line 1 department')).toBeNull();
     } finally {
       shown.detail = DETAIL;
     }

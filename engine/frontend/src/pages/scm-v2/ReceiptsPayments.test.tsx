@@ -63,6 +63,14 @@ const report: RpReport = {
 };
 const lastPath = { value: '' };
 
+/* The sub-departments a line names (SOP 1.1; chew 4 Nov 2026): one built-in row per department. */
+vi.mock('../../conts/subDepartmentQueries', () => ({
+  useSubDepartments: () => ({ data: { subDepartments: [
+    { id: 's-gen', department: 'rental', name: 'Rental (general)', fixedKey: 'rental_general', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-dc', department: 'supply', name: 'Renovation (Dream Crafter)', fixedKey: 'dreamcrafter', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-co', department: 'shared', name: 'Company', fixedKey: 'company', staffDepartmentId: null, active: true, sort: 10 },
+  ] } }),
+}));
 vi.mock('../../vendor/scm/lib/rp-report-queries', async (importOriginal) => ({
   ...(await importOriginal() as object),
   useRpReport: (from: string, to: string, accounts: string[], byParty: boolean) => {

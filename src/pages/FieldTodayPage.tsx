@@ -33,7 +33,7 @@ interface Job {
   addressLine: string; accessInstruction: string | null; work: string; instructions: string | null; day: string; startedAt: string | null; completedAt: string | null; readiness: string; done: boolean;
   photoCount: number; afterCount?: number; checklist: { done: number; total: number }; guestOut: boolean; guestLeftAt?: string | null; guestLeftAuto?: boolean;
   external?: { address: string; clientName: string | null; clientPhone: string | null } | null;
-  previous: { guestName: string; checkOutTime: string; state: string } | null;
+  previous: { guestName: string; checkOutTime: string; lateCheckOut?: boolean; state: string } | null;
   next: { guestName: string; checkInTime: string; checkInAt: string } | null;
   /** Nobody arrives on the job's day: the unit's next arrival on a later day. */
   nextLater?: { day: string; checkInTime: string } | null;
@@ -172,6 +172,8 @@ function MapLink({ address, className }: { address: string; className?: string }
 
 /** When the departing guest really left (the tick's time), else the planned checkout. */
 const outTime = (j: Job) => (j.guestOut && j.guestLeftAt ? hm(j.guestLeftAt) : j.previous?.checkOutTime);
+/** What the board says when the system marked the guest out: "Auto at 11:00", "Auto at 13:00 (late checkout)". */
+const autoAt = (t: PortalStrings, j: Job) => t.jobs.autoAt(outTime(j) ?? '', !!j.previous?.lateCheckOut);
 
 /** The list card: the Cleaning page's phone card in the portal's words. Start job lives in TaskDetail, not here, so a
  *  tap while scrolling the list can never start a job by mistake. */
@@ -186,7 +188,7 @@ function TaskCard({ job: j, now, fresh, active, onOpen }: { job: Job; now: numbe
       badges={<>{fresh && <StatusBadge tone="info" size="sm" label={t.jobs.newJob} />}{lateBy > 0 && <StatusBadge tone="critical" size="sm">{t.jobs.overdue(t.common.days(lateBy))}</StatusBadge>}</>}
       status={<JobStatus job={j} />}
       out={j.external ? undefined : j.previous
-        ? <PhoneStayTime label={t.jobs.out} time={outTime(j)} actual={j.guestOut} actualLabel={j.guestLeftAuto ? t.jobs.outAtCheckout : t.jobs.guestHasLeft} />
+        ? <PhoneStayTime label={t.jobs.out} time={outTime(j)} actual={j.guestOut} actualLabel={j.guestLeftAuto ? autoAt(t, j) : t.jobs.guestHasLeft} />
         : <PhoneStayTime label={t.jobs.noGuestLeaving} />}
       arrive={j.external ? undefined : j.next
         ? <PhoneStayTime label={t.jobs.in} time={j.next.checkInTime} aside={!j.done && <span className="text-meta whitespace-nowrap"><TimeLeft at={j.next.checkInAt} now={now} /></span>} />
@@ -272,7 +274,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
               <div className="rounded-control bg-muted p-2.5 flex flex-col gap-0.5">
                 <span className="text-meta text-muted-ink">{t.jobs.leaving}</span>
                 {j.previous ? <><span><b className="tabular-nums">{outTime(j)}</b> {j.previous.guestName}</span>
-                  {j.guestOut && <span className="text-meta text-gold-ink font-medium">{j.guestLeftAuto ? t.jobs.outAtCheckout : t.jobs.guestOut}</span>}</>
+                  {j.guestOut && <span className="text-meta text-gold-ink font-medium">{j.guestLeftAuto ? autoAt(t, j) : t.jobs.guestOut}</span>}</>
                   : <span className="text-muted-ink">{t.jobs.noGuest}</span>}
               </div>
               <div className="rounded-control bg-gold-tint p-2.5 flex flex-col gap-0.5">

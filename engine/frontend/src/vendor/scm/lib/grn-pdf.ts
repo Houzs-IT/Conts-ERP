@@ -19,12 +19,25 @@ import { loadSupplierDocData, supplierCodeFor, docVariantLine } from './supplier
    docs/modules/document-status-vocabulary.md §1. */
 import { statusLabel } from './status-pill';
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
+import {
+  appendPhotoMarker,
+  blobToSquarePdfImage,
+  buildPhotoGroups,
+  collectPhotoImages,
+  drawItemPhotosBlock,
+  type PdfPhotoImage,
+} from './pdf-item-photos';
+import { loadDocPdfPhotos } from './pdf-doc-photos';
+import { warehouseLine } from './warehouse-print';
 
 type GrnHeader = {
+  /* Row id: the photos are read by it. A consignment receive has none and prints no photos. */
+  id?: string | null;
   grn_number: string; status: string;
   received_at: string; delivery_note_ref: string | null;
   notes: string | null; posted_at: string | null;
   supplier_id?: string | null;
+  warehouse_id?: string | null;
   supplier?: { code: string; name: string };
   purchase_order?: { id: string; po_number: string };
 };
@@ -115,6 +128,16 @@ export async function renderGrnInto(
     },
   );
 
+  const receivedAt = await warehouseLine(header.warehouse_id);
+  if (receivedAt) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(110);
+    doc.text('RECEIVED AT', margin, y); doc.setTextColor(0);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+    const lines = doc.splitTextToSize(receivedAt, pageW - margin * 2 - 26) as string[];
+    doc.text(lines, margin + 26, y);
+    y += lines.length * 4 + 3;
+  }
+
   // Codes note (dual-code lookups already loaded above with the supplier
   // top-up, so the block prints with a full supplier profile in one round).
   doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(80);
@@ -133,10 +156,25 @@ export async function renderGrnInto(
     ),
   ).map((r) => r.__row);
 
+  /* The goods-received photos, the same block as the SO, PO and DO (owner, 4 Nov 2026): each line's own and those of
+     the PO and SO lines it came from, the whole receipt's, and the proof-of-receipt photos. */
+  const attached = await loadDocPdfPhotos('goods_received', header.id);
+  const photoGroups = [
+    ...buildPhotoGroups(orderedItems.map((it) => ({
+      code: supplierCodeFor(it, skuMap),
+      photoKeys: attached.lineKeys(it.id),
+    }))),
+    ...attached.documentGroups,
+  ];
+  const photoImages: Map<string, PdfPhotoImage> = photoGroups.length > 0
+    ? await collectPhotoImages(photoGroups, attached.fetch, blobToSquarePdfImage)
+    : new Map<string, PdfPhotoImage>();
+
   const rows = orderedItems.map((it, idx) => {
     const specs = docVariantLine(it, fabricMap, fabricDescMap, { labelled: true });
     const reno = renoLineNote(opts?.renovation, it.id, true);
-    const desc = [it.description ?? it.material_name, reno].filter(Boolean).join('\n');
+    const descLines = [it.description ?? it.material_name, reno].filter((s): s is string => Boolean(s));
+    const desc = (attached.lineKeys(it.id).length > 0 ? appendPhotoMarker(descLines) : descLines).join('\n');
     return [
       String(idx + 1),
       supplierCodeFor(it, skuMap),
@@ -160,8 +198,8 @@ export async function renderGrnInto(
     columnStyles: {
       0: { cellWidth: 8, halign: 'right' },
       1: { cellWidth: 24, fontStyle: 'bold' },
-      2: { cellWidth: 24 },
-      3: { cellWidth: 47 },
+      2: { cellWidth: 32 },
+      3: { cellWidth: 39 },
       4: { cellWidth: 11, halign: 'right' },
       5: { cellWidth: 11, halign: 'right' },
       6: { cellWidth: 11, halign: 'right' },
@@ -170,7 +208,20 @@ export async function renderGrnInto(
     },
     margin: { left: margin, right: margin },
   });
-  const lastY = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 6;
+  let lastY = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 6;
+
+  if (photoImages.size > 0) {
+    const photoRes = drawItemPhotosBlock(doc, photoGroups, photoImages, {
+      margin,
+      contentW: pageW - margin * 2,
+      startY: lastY,
+      pageBottom: 272,
+      pageTop: margin,
+      side: null,
+      onNewPage: null,
+    });
+    if (photoRes.drew) lastY = photoRes.endY + 6;
+  }
 
   drawSignatureBoxes(doc, lastY, 'Warehouse Received By', 'Supplier Driver Signature');
 

@@ -99,6 +99,10 @@ export function QuotationEditor() {
   const status = async (to: string, confirm?: string) => {
     if (confirm && !(await serviceConfirm({ title: confirm }))) return;
     if (dirty) { setError('Save your changes first.'); return; }
+    /* Sending freezes the lines, and convert refuses a priced line with no product: say so while it can still be fixed. */
+    const noProduct = to === 'SENT' && quotation.status === 'DRAFT'
+      ? sections.flatMap((s) => s.lines).filter((l) => (l.kind === 'ITEM' || l.kind === 'CHILD') && !l.itemCode).length : 0;
+    if (noProduct) { setError(`${noProduct} priced line${noProduct === 1 ? ' has' : 's have'} no product picked. Pick one first (RN- for generic works).`); return; }
     await act(() => renoSend(`/quotations/${quotation.id}/status`, 'POST', { status: to, version })).catch(() => undefined);
   };
   const newRevision = async () => {
@@ -180,7 +184,7 @@ export function QuotationEditor() {
             files={{ docType: 'quotation', docId: quotation.id, canEdit: canQuote }} />
           <DocAttachments docType="quotation" docId={quotation.id} canEdit={canQuote} />
           <Card title="Payment terms">
-            <InstalmentEditor rows={instalments} disabled={!editable} terms={terms.data?.templates ?? []} totalSen={totals.finalSen}
+            <InstalmentEditor rows={instalments} disabled={!editable} terms={(terms.data?.templates ?? []).filter((t) => t.brandId == null || t.brandId === brandId)} totalSen={totals.finalSen}
               onChange={(r) => { setInstalments(r); setDirty(true); }} />
           </Card>
         </div>
@@ -193,7 +197,7 @@ export function QuotationEditor() {
           <div className="flex items-center justify-between gap-3"><span className="text-[13px] text-ink-secondary">Unsaved changes</span><Button icon={<Save size={15} />} disabled={run.isPending} onClick={save}>{run.isPending ? 'Saving…' : 'Save'}</Button></div>
         </div>
       )}
-      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="quotation" docNo={revision.docNo} defaultFormat={header.printFormat}
+      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="quotation" docNo={revision.docNo} brandName={brand?.name} defaultFormat={header.printFormat}
         build={(format) => buildPrintDoc({ kind: 'QUOTATION', docNo: revision.docNo, format, brand, header, sections, instalments })} />
     </div>
   );

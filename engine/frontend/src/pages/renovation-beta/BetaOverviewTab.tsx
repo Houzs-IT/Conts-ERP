@@ -4,7 +4,7 @@
 import { useId, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Download, ExternalLink, MessageCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { errorText, money } from "../projects/renovation/renovationModel";
 import { BetaSiteProgressCard } from "./BetaSiteProgressCard";
 import { BetaWsDesignCard } from "./BetaWsDesignCard";
@@ -97,6 +97,7 @@ function PaymentsCard({ p }: { p: BetaTabProps }): ReactElement {
           {rows.map((r) => {
             const v = paymentCard(r, d.currentStage, handoverOn);
             const look = PAY_LOOK[v.look];
+            const part = r.paidSen > 0 && r.paidSen < r.amountSen;
             return (
               <li key={r.seq} style={{ border: look.border, background: look.bg, borderRadius: 18, padding: 16, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                 {/* Wraps so the badge drops under the name on a half-width phone tile. */}
@@ -104,8 +105,8 @@ function PaymentsCard({ p }: { p: BetaTabProps }): ReactElement {
                   <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{r.label}</span>
                   <WsBadge tone={look.tone}>{v.badge}</WsBadge>
                 </div>
-                <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-.02em", color: r.amountSen > 0 ? undefined : BETA.muted }}>{r.amountSen > 0 ? money(r.amountSen) : "-"}</div>
-                <div style={{ fontSize: 12, color: WS.text2 }}>{v.note}{r.status === "billed" && r.paidSen > 0 && ` · paid so far ${money(r.paidSen)}`}</div>
+                <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-.02em", color: r.amountSen > 0 ? undefined : BETA.muted }}>{r.amountSen > 0 ? money(part ? r.amountSen - r.paidSen : r.amountSen) : "-"}</div>
+                <div style={{ fontSize: 12, color: WS.text2 }}>{v.note}{part && ` · to collect, ${money(r.paidSen)} of ${money(r.amountSen)} paid`}</div>
               </li>
             );
           })}
@@ -246,6 +247,7 @@ function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }): ReactEleme
 /* ---------- Sales order ---------- */
 
 function OrderCard({ p }: { p: BetaTabProps }): ReactElement {
+  const { pathname } = useLocation();
   const { detail: d } = p;
   const rooms = [...new Set((d.lines ?? []).flatMap((l) => (l.room?.trim() ? [l.room.trim()] : [])))];
   const unit = [d.project.layout_label, [d.project.building, d.project.unit_no].filter(Boolean).join(" ")].filter(Boolean).join(" · ");
@@ -261,7 +263,7 @@ function OrderCard({ p }: { p: BetaTabProps }): ReactElement {
       title="Sales order"
       gap={12}
       sub={d.signedSo ? `${d.signedSo.doc_no} · signed ${dayMonthYear(d.signedSo.so_date)}` : d.so ? (soConfirmed(d.so.status) ? `${d.so.doc_no} · signed ${dayMonthYear(d.so.so_date)}` : `${d.so.doc_no} · draft, not signed yet`) : "Not signed yet"}
-      right={(d.so ?? d.signedSo) ? <Link to={`/scm/sales-orders/${encodeURIComponent((d.so ?? d.signedSo)!.doc_no)}`} style={{ ...btnStyle("outline", "sm"), color: BETA.ink }}>Open SO</Link> : undefined}
+      right={(d.so ?? d.signedSo) ? <Link to={`/scm/sales-orders/${encodeURIComponent((d.so ?? d.signedSo)!.doc_no)}`} state={{ backTo: pathname }} style={{ ...btnStyle("outline", "sm"), color: BETA.ink }}>Open SO</Link> : undefined}
     >
       {rowsList.length > 0 && (
         <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "110px 1fr", gap: "8px 10px", fontSize: 13 }}>

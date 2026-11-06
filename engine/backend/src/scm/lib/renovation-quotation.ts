@@ -15,6 +15,8 @@ export interface RenoActor {
   name: string | null;
   /** scm.staff id stamped on engine documents (created_by). */
   staffId: string;
+  /** The signed-in user, whose own scm.staff row names them on a VO; staffId is one shared system row. */
+  userId?: number | null;
   companyId: number;
   /** The company's document prefix, e.g. "HC-" (companyDocPrefix). */
   docPrefix: string;
@@ -110,11 +112,12 @@ export function mergeHeader(base: Partial<RevisionHeader>, patch: DocHeaderInput
   return h;
 }
 
-/** Instalments copied from a customer payment-term template (or the default one). */
-export async function instalmentsFromTerms(db: RenoDb, companyId: number, termTemplateId: string | null): Promise<{ templateId: string | null; rows: NormInstalment[] }> {
+/** Instalments copied from a customer payment-term template, or the default: the brand's own first, then the one for every brand. */
+export async function instalmentsFromTerms(db: RenoDb, companyId: number, termTemplateId: string | null, brandId: number | null = null): Promise<{ templateId: string | null; rows: NormInstalment[] }> {
   const tpl = termTemplateId
     ? await db.q<{ id: string }>(`select id from scm.reno_term_templates where id = $1 and kind = 'CUSTOMER' and company_id = $2`, [termTemplateId, companyId])
-    : await db.q<{ id: string }>(`select id from scm.reno_term_templates where kind = 'CUSTOMER' and company_id = $1 and is_default and active`, [companyId]);
+    : await db.q<{ id: string }>(`select id from scm.reno_term_templates where kind = 'CUSTOMER' and company_id = $1 and is_default and active
+         and (brand_id is null or brand_id = $2::bigint) order by brand_id nulls last limit 1`, [companyId, brandId]);
   if (termTemplateId && tpl.length === 0) throw refuse(404, 'term_template_not_found', 'That payment-term template does not exist.');
   if (tpl.length === 0) return { templateId: null, rows: [] };
   const rows = await db.q<{ seq: number; label: string; pct_bp: number; description: string; stage_code: string | null; trigger: NormInstalment['trigger'] }>(
@@ -176,7 +179,7 @@ export async function createQuotation(
   /* A quotation for a project starts from the project's customer and property where the form left them blank. */
   const header = fillBlanksFromProject(mergeHeader(base, body.header), await readProjectParty(db, body.projectId, actor.companyId));
   if (!instalments) {
-    const terms = await instalmentsFromTerms(db, actor.companyId, header.termTemplateId);
+    const terms = await instalmentsFromTerms(db, actor.companyId, header.termTemplateId, brandId);
     instalments = terms.rows;
     header.termTemplateId = terms.templateId;
   }
@@ -329,11 +332,12 @@ export async function setQuotationStatus(db: RenoDb, actor: RenoActor, id: strin
 
 export async function listQuotations(db: RenoDb, companyId: number, f: { projectId?: number | null; status?: string | null; q?: string | null; limit?: number }) {
   const rows = await db.q(
-    `select ${Q_COLS}, p.name as project_name, r.id as revision_id, r.doc_no, r.customer_name, r.building, r.unit_no, r.doc_date::text as doc_date,
+    `select ${Q_COLS}, p.name as project_name, p.code as project_code, b.name as brand_name, r.id as revision_id, r.doc_no, r.customer_name, r.building, r.unit_no, r.doc_date::text as doc_date,
             r.doc_discount_sen, r.print_format
        from scm.reno_quotations q
        join scm.reno_quotation_revisions r on r.quotation_id = q.id and r.rev_no = q.current_rev
        left join public.projects p on p.id = q.project_id
+       left join public.project_brands b on b.id = q.brand_id
       where q.company_id = $1
         and ($2::bigint is null or q.project_id = $2)
         and ($3::text is null or q.status = $3)
@@ -347,7 +351,7 @@ export async function listQuotations(db: RenoDb, companyId: number, f: { project
   for (const r of rows) totals.set(r.revision_id, totalsOf(structures.get(r.revision_id) ?? [], Number(r.doc_discount_sen)).finalSen);
   return rows.map((r) => ({
     ...headOf(r), docNo: r.doc_no, customerName: r.customer_name, building: r.building, unitNo: r.unit_no, docDate: r.doc_date,
-    printFormat: r.print_format, totalSen: totals.get(r.revision_id) ?? 0,
+    printFormat: r.print_format, totalSen: totals.get(r.revision_id) ?? 0, projectCode: r.project_code ?? null, brandName: r.brand_name ?? null,
   }));
 }
 
