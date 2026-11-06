@@ -159,7 +159,7 @@ const exportNow = async (url: string) => {
 describe("Delivery Returns list: the ONE Export", () => {
   it("writes AutoCount's default Detail Listing columns, in AutoCount's order, one row per line of every return the server holds", async () => {
     const { header, body, cell } = await exportNow("/scm/delivery-returns");
-    expect(header).toEqual(DR_LINE_COLUMNS.filter((c) => c.autoCount).map((c) => c.label));
+    expect(header).toEqual([...DR_LINE_COLUMNS.filter((c) => c.autoCount).map((c) => c.label), "Why", "What happens"]);
     expect(header.slice(0, 5)).toEqual(["Doc No", "Doc Date", "Debtor Code", "Debtor Name", "Agent"]);
     expect(body).toHaveLength(6);
     expect(body.map((r) => cell(r, "Item Code"))).toEqual([

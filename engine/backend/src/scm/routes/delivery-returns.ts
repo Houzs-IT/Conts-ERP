@@ -1770,6 +1770,8 @@ export const patchDeliveryReturnStatusHandler = async (c: any) => {
      but it is not declared anywhere this handler can import, and a guessed list
      would refuse a legitimate status. Recommended separately. */
   const toStatus = String(body.status).trim().toUpperCase();
+  /* Stock is already booked by the time a return can be moved, so nothing may be walked back to Draft. */
+  if (toStatus === 'DRAFT') return c.json({ error: 'dr_no_return_to_draft', reason: 'A Delivery Return cannot go back to Draft.' }, 409);
 
   // Read the current status so the CANCELLED reversal is idempotent.
   const { data: cur } = await scopeToCompanyId(sb.from('delivery_returns').select('status').eq('id', id), co.companyId).maybeSingle();

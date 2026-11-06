@@ -43,6 +43,7 @@ import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
 import { PageHeader } from "../../components/Layout";
 import { StatCard } from "../../components/StatCard";
 import { FilterPills } from "../../components/FilterPills";
+import { withDrWhy } from "./deliveryReturnWhy";
 import { DataTable, type Column } from "../../components/DataTable";
 import {
   DocumentLinesExpansion,
@@ -145,7 +146,7 @@ type DrRow = {
   lines?: DrListLine[];
 };
 
-type StatusTab = "all" | "open" | "inspected" | "refunded" | "cancelled";
+type StatusTab = "all" | "draft" | "open" | "inspected" | "refunded" | "cancelled";
 
 /* A line as the grid holds it: the server's line plus the one document fact a
    line column reads (the shared line cells pass a column only its line). */
@@ -178,7 +179,7 @@ const brandOf = (r: DrRow): string => r.branding || "—";
    the BEDFRAME arm — a THIRD spelling across the five lists. */
 const brandTone = brandingToneForLabel;
 
-// DR status flow: PENDING → RECEIVED (goods back, stock IN) → INSPECTED →
+// DR status flow: DRAFT (nothing writes it yet) · PENDING → RECEIVED (goods back, stock IN) → INSPECTED →
 // REFUNDED / CREDIT_NOTED, plus REJECTED / CANCELLED. Compress into 4
 // buckets for the pills; the row Badge still carries the raw stage label.
 // The everyday chips finance / ops watch:
@@ -190,6 +191,7 @@ const STATUS_TONE: Record<
   string,
   { tone: "success" | "warning" | "error" | "neutral"; label: string; bucket: StatusTab }
 > = {
+  draft:        { tone: "warning", label: "Draft",        bucket: "draft" },
   pending:      { tone: "warning", label: "Pending",      bucket: "open" },
   received:     { tone: "warning", label: "Received",     bucket: "open" },
   inspected:    { tone: "warning", label: "Inspected",    bucket: "inspected" },
@@ -821,10 +823,11 @@ export function DeliveryReturnsListV2() {
   }
 
   const counts = useMemo(() => {
-    const acc = { all: allRows.length, open: 0, inspected: 0, refunded: 0, cancelled: 0 };
+    const acc = { all: allRows.length, draft: 0, open: 0, inspected: 0, refunded: 0, cancelled: 0 };
     for (const r of allRows) {
       const b = statusFor(r.status).bucket;
-      if (b === "open") acc.open += 1;
+      if (b === "draft") acc.draft += 1;
+      else if (b === "open") acc.open += 1;
       else if (b === "inspected") acc.inspected += 1;
       else if (b === "refunded") acc.refunded += 1;
       else if (b === "cancelled") acc.cancelled += 1;
@@ -1149,7 +1152,7 @@ export function DeliveryReturnsListV2() {
     exportFormat: "money" as const,
   });
   const columns: Column<DrRow, DrGridLine>[] = [
-    ...returnGridColumns<DrRow, DrGridLine>(DR_LINE_COLUMNS, columnValues, linesOfDr, "doc_no"),
+    ...withDrWhy(returnGridColumns<DrRow, DrGridLine>(DR_LINE_COLUMNS, columnValues, linesOfDr, "doc_no")),
     {
       key: "salesperson",
       label: "Salesperson",
@@ -1462,6 +1465,7 @@ export function DeliveryReturnsListV2() {
 
   const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
     { value: "all", label: `All · ${counts.all}` },
+    { value: "draft", label: `Draft · ${counts.draft}` },
     { value: "open", label: `Open · ${counts.open}` },
     { value: "inspected", label: `Inspected · ${counts.inspected}` },
     { value: "refunded", label: `Refunded · ${counts.refunded}` },
