@@ -348,6 +348,7 @@ async function renderPurchaseOrderInto(
     name: COMPANY.shortName,
     logo: getBrandingLogoCache(),
     lines: letterheadLines(),
+    meta: [{ label: '', value: poDisplayNumber(header.po_number, header.revision) }, { label: '', value: fmtDocDate(header.po_date) }],
     margin,
   }) + 2;
 
@@ -412,7 +413,6 @@ async function renderPurchaseOrderInto(
       title: 'PO DETAILS',
       rows: [
         // _R suffix (owner 2026-07-27) — the printed number shows the revision.
-        ['PO No', poDisplayNumber(header.po_number, header.revision)],
         ['Your Ref No', yourRef],
         ...renoDetailRows(opts?.renovation).slice(0, 3),
         ['Date', fmtDocDate(header.po_date)],

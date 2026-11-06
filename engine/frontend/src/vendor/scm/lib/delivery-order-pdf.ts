@@ -36,7 +36,7 @@ import { DO_SIZE as S, DO_THEME as T, SANS, pt, type Rgb } from './delivery-orde
 import { docVariantLine, loadCustomerFabricMaps } from './supplier-doc-data';
 import { stripBookText } from './book-text';
 import { drawQrIntoPdf } from './pdf-qr';
-import { DOC_THEME, drawDocLetterheadAt } from '../../../lib/renovation/renovation-doc-theme';
+import { drawDocLetterheadAt } from '../../../lib/renovation/renovation-doc-theme';
 import { warehouseLine } from './warehouse-print';
 /* Owner spec 2026-08 — photos follow the line onto the printed document
    (SO → PO → DO). Same shared block the SO/PO PDFs print through; keys are
@@ -195,6 +195,7 @@ function drawDoHeader(
     meta: [{ label: 'No. :', value: header.do_number }, { label: 'Issued', value: fmtDocDate(header.do_date) }],
     margin: M,
     reserve: withQr ? QR_BOX + QR_GAP : 0,
+    rule: false,
   });
   let bottom = head.bottom;
 
@@ -203,7 +204,7 @@ function drawDoHeader(
      in the space the letterhead kept for it, so it adds no height. */
   if (withQr && header.scanToken) {
     const x = head.columnLeft;
-    const top = DOC_THEME.blockTop - 3;
+    const top = head.columnTop;
     const url = `${window.location.origin}/d/${encodeURIComponent(header.scanToken)}`;
     const drawn = drawQrIntoPdf(doc, url, x, top, QR);
     font(doc, S.footer, 'bold');
