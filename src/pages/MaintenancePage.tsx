@@ -174,7 +174,9 @@ export default function MaintenancePage() {
       {tab === 'rules' ? <ApprovalRulesPanel /> : tab === 'profit' ? <div className="flex-1 min-h-0 overflow-y-auto"><JobProfitView kind="maintenance" onOpen={id => { setTab('history'); setSelected(id); }} /></div> : tab === 'catalog' ? (
         <MaintenanceItems fallback={<CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={mayWork(user, 'operations')} onCreate={createSku} onUpdate={updateSku} />} onChanged={sku.reload} />
       ) : (
-        <>
+        <SplitPane open={!!sel} onClose={() => setSelected(null)} width={580}
+          detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null}
+          list={<>
           <div className="flex flex-col gap-4 px-5 py-4 max-md:px-4 max-md:py-3 rounded-card border border-solid border-line bg-card">
             <label className="relative flex items-center">
               <span className="absolute left-3.5 flex text-muted-ink pointer-events-none"><Icon name="Search" size="base" /></span>
@@ -191,9 +193,8 @@ export default function MaintenancePage() {
               { value: 'history', label: 'History' },
             ]} />
           </div>
-          <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580}
-            detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null} />
-        </>
+          {list}
+        </>} />
       )}
 
       {creating && <NewJobModal units={roster} onClose={() => setCreating(false)} onDone={id => { setCreating(false); reload(); setTab('open'); setSelected(id); }} />}
