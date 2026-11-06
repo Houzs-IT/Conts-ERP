@@ -21,9 +21,9 @@ describe("drWhatHappens", () => {
 describe("withDrWhy", () => {
   const col = (key: string): Column<R> => ({ key, label: key, getValue: () => "", render: () => null });
 
-  it("sits straight after Status, and Why reads the reason", () => {
-    const out = withDrWhy<R, never>([col("doc_no"), col("status"), col("ref")] as never);
-    expect(out.map((c) => c.key)).toEqual(["doc_no", "status", "why", "what_happens", "ref"]);
+  it("sits straight after the customer, and Why reads the reason", () => {
+    const out = withDrWhy<R, never>([col("doc_no"), col("debtor_name"), col("agent")] as never);
+    expect(out.map((c) => c.key)).toEqual(["doc_no", "debtor_name", "why", "what_happens", "agent"]);
     expect(out[2].getValue?.({ reason: "Damaged on site", status: "RECEIVED" })).toBe("Damaged on site");
   });
 });

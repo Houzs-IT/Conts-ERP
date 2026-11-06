@@ -31,7 +31,7 @@ const sideText = (s: VoListSide | null): string => {
   return s.unitPriceSen === null ? qty : `${qty} × ${fmtSen(s.unitPriceSen)}`;
 };
 
-const cell: React.CSSProperties = { padding: '6px 10px', textAlign: 'left', whiteSpace: 'nowrap' };
+const cell: React.CSSProperties = { padding: '6px 20px 6px 0', textAlign: 'left', whiteSpace: 'nowrap' };
 
 export const VoRowLines = ({ vo, reason }: { vo: VoListDetail | null | undefined; reason: string }) => {
   if (!vo) return <p className="px-3 py-2 text-[12.5px]" style={{ color: 'var(--fg-muted)' }}>No line detail for this row. Open it to see more.</p>;
@@ -39,7 +39,7 @@ export const VoRowLines = ({ vo, reason }: { vo: VoListDetail | null | undefined
   return (
     <div className="space-y-2 px-3 py-2 text-[12.5px]">
       <div className="overflow-x-auto">
-        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+        <table style={{ borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ color: 'var(--fg-muted)' }}>
               {['Change', 'Room', 'Item', 'Before', 'After', 'Amount'].map((h) => <th key={h} style={{ ...cell, fontWeight: 600 }}>{h}</th>)}

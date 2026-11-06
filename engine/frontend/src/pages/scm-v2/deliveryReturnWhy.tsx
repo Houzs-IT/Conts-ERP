@@ -21,7 +21,7 @@ export const drWhatHappens = (status: string | null | undefined): string => {
   }
 };
 
-/** Puts Why and What happens straight after Status. */
+/** Puts Why and What happens beside the customer: the AutoCount columns run on far to the right of the screen. */
 export function withDrWhy<R extends { reason: string | null; status: string }, L>(columns: Column<R, L>[]): Column<R, L>[] {
   const added: Column<R, L>[] = [
     {
@@ -35,6 +35,6 @@ export function withDrWhy<R extends { reason: string | null; status: string }, L
       render: (r) => <span className="text-[12.5px] text-ink-secondary">{drWhatHappens(r.status)}</span>,
     },
   ];
-  const at = columns.findIndex((c) => c.key === "status");
+  const at = columns.findIndex((c) => c.key === "debtor_name");
   return at < 0 ? [...columns, ...added] : [...columns.slice(0, at + 1), ...added, ...columns.slice(at + 1)];
 }

@@ -150,7 +150,7 @@ const buildAmendmentColumns = (
       sortFn: (a, b) => a.numberLabel.localeCompare(b.numberLabel),
     },
     {
-      key: 'vo_changed', label: 'What changed', width: 210, sortable: true,
+      key: 'vo_changed', label: 'What changed', width: 240, sortable: true,
       accessor: (r) => voOf(r, voWhatChanged),
       searchValue: (r) => voOf(r, voWhatChanged),
       exportValue: (r) => voOf(r, voWhatChanged),
