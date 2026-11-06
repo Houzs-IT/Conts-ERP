@@ -45,8 +45,7 @@ import { Button } from "../../components/Button";
 import {
   poConfirmBlockReason,
 } from "../../vendor/scm/lib/po-next-step";
-import { DataTable, type Column } from "../../components/DataTable";
-import { DATA_TABLE_LAYOUT_FAMILIES } from "../../components/dataTableLayoutFamilies";
+import { type Column } from "../../components/DataTable";
 import {
   DetailGrid,
   DetailMain,
@@ -279,17 +278,16 @@ function PersonRow({
 // success (green). Ordered + received qty ride as sub-lines so ops can see
 // how far the Production Order is through its receipt lifecycle without opening any line.
 
-function PoTotalHeroCard({ header }: { header: PoHeaderRow }) {
-  const eff = effectiveOf(header);
-  const t = EFFECTIVE_TONE[eff];
+function PoTotalHeroCard({ header, blurb }: { header: PoHeaderRow; blurb: string }) {
+  const t = EFFECTIVE_TONE[effectiveOf(header)];
   const total = totalOf(header);
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
-        {total > 0 ? "Production order value" : "Production status"}
+        Production order value
       </div>
       <div className="mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight text-white">
-        {total > 0 ? fmtMoney(total, header.currency) : t.label}
+        {fmtMoney(total, header.currency)}
       </div>
       <div className="mt-3 flex items-center gap-2">
         <span
@@ -301,17 +299,13 @@ function PoTotalHeroCard({ header }: { header: PoHeaderRow }) {
                   : "bg-sidebar-ink-muted"
           )}
         />
-        <span className="text-[12.5px] text-sidebar-ink-muted">{t.blurb}</span>
+        <span className="text-[12.5px] text-sidebar-ink-muted">{blurb}</span>
       </div>
-
-      {total > 0 && (
-        <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
-          <HeroLine k="Subtotal" v={fmtMoney(header.subtotal_sen, header.currency)} />
-          <HeroLine k="Tax" v={fmtMoney(header.tax_sen ?? 0, header.currency)} />
-          <HeroLine k="Total" v={fmtMoney(total, header.currency)} strong />
-        </div>
-      )}
-
+      <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
+        <HeroLine k="Subtotal" v={fmtMoney(header.subtotal_sen, header.currency)} />
+        <HeroLine k="Tax" v={fmtMoney(header.tax_sen ?? 0, header.currency)} />
+        <HeroLine k="Total" v={fmtMoney(total, header.currency)} strong />
+      </div>
     </div>
   );
 }
@@ -781,6 +775,9 @@ function ProductionOrderDetailV2ReadOnly() {
     },
   ];
 
+  /* The Works table of the board: Room, Item, Category, Qty. */
+  const workColumns = ["reno_room", "item", "reno_category", "qty"].flatMap((key) => [...renoLineColumns<PoItemRow>(reno, true), ...lineColumns].filter((col) => col.key === key));
+
   // ── Loading / error states ───────────────────────────────────────────
   if (!id) {
     return <div className="p-8 text-center text-ink-muted">No production order specified.</div>;
@@ -892,9 +889,9 @@ function ProductionOrderDetailV2ReadOnly() {
         <DetailGrid>
           <DetailMain>
             {page && <ChangeNotice changes={page.changes} />}
-            <section className={cn("rounded-lg border border-l-4 border-border bg-surface shadow-stone", press.tally.ready ? "border-l-synced" : "border-l-warning-text")}>
+            <section className={cn("rounded-lg border border-l-4 border-border bg-surface shadow-stone", press.tally.ready || rawStatus === "RECEIVED" ? "border-l-synced" : "border-l-warning-text")}>
               <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border-subtle px-3.5 py-2.5">
-                <div className="text-[15px] font-bold">{press.tally.ready ? "Ready" : "Not ready"}</div>
+                <div className="text-[15px] font-bold">{rawStatus === "RECEIVED" ? "Completed" : press.tally.ready ? "Ready" : "Not ready"}</div>
                 <div className="text-[13px] text-ink-secondary">{press.tally.total === 0 ? "No raw materials on this order" : `Raw materials ${press.tally.tally}`}</div>
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-3.5 p-3.5 sm:grid-cols-5">
@@ -961,15 +958,23 @@ function ProductionOrderDetailV2ReadOnly() {
                   )}
                 </div>
               )}
-              <DataTable<PoItemRow>
-                tableId={`po-lines-${id}`}
-                layoutFamily={DATA_TABLE_LAYOUT_FAMILIES.purchaseOrderLines} persistSort={false} persistFilters={false}
-                rows={items}
-                loading={false}
-                columns={reno ? [...renoLineColumns<PoItemRow>(reno, true), ...lineColumns] : lineColumns}
-                getRowKey={(l) => l.id}
-                emptyLabel="No line items"
-              />
+              <div className="-m-3 overflow-x-auto">
+                <table className="w-full border-collapse text-[13px]">
+                  <thead>
+                    <tr className="bg-surface-2 text-left">
+                      {workColumns.map((col) => <th key={col.key} className="px-3.5 py-2 text-[12px] font-semibold text-ink-secondary">{col.label}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.length === 0 && <tr><td colSpan={workColumns.length} className="px-3.5 py-4 text-center text-ink-muted">No line items</td></tr>}
+                    {items.map((l) => (
+                      <tr key={l.id} className="border-t border-border-subtle align-top">
+                        {workColumns.map((col) => <td key={col.key} className="px-3.5 py-2.5">{col.render ? col.render(l) : null}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </Section>
             <ProductionMaterialsSection orderId={purchaseOrder.id} canEdit={mayEditPoPhotos && !isCancelled && !started && rawStatus !== "RECEIVED"} started={started} canAct={canAct}
               works={items.map((l) => ({ qty: Number(l.qty), uom: l.uom }))} />
@@ -1022,7 +1027,7 @@ function ProductionOrderDetailV2ReadOnly() {
 
           <DetailAside>
             <div className="hidden lg:sticky lg:top-[124px] space-y-3 md:block">
-              <PoTotalHeroCard header={purchaseOrder} />
+              <PoTotalHeroCard header={purchaseOrder} blurb={[progress?.statusLabel ?? stageLabel, progress?.label].filter(Boolean).join(" · ")} />
 
               <AsideCard title="Key dates" action={<button type="button" className="text-[12px] font-semibold text-primary hover:underline" onClick={() => setDialog("time")}>Set production time</button>}>
                 <div className="grid grid-cols-2 gap-2.5 border-b border-border-subtle pb-2.5 text-[13px]">

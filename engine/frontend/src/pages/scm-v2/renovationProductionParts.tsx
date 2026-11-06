@@ -18,9 +18,10 @@ import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { useToast } from "../../hooks/useToast";
 import { useWarehouses } from "../../vendor/scm/lib/inventory-queries";
 import {
-  completeProductionOrder, useAssignWorkers, useProductionMaterials, useMaterialStatus, useProductionWorkers, useRawSkus, useRequestMore, useReturnStock, useSetProductionTime, useStartProduction,
+  completeProductionOrder, useAddProductionMaterial, useAssignWorkers, useProductionMaterials, useMaterialStatus, useProductionWorkers, useRawSkus, useRequestMore, useReturnStock, useSetProductionTime, useStartProduction,
   type MaterialRow, type OrderChange, type ProductionProgress, type ProductionWorker,
 } from "../../vendor/scm/lib/production-order-queries";
+import { RawMaterialAddPanel, type RawPick } from "./RawMaterialAddPanel";
 import { dayStrip, initialDay, materialTally, mytTime, pageStart, peopleOn, photoWord, shortDate } from "./renovationProductionDays";
 
 const FIELD = "mt-1 block h-10 w-full rounded-md border border-border bg-surface px-2.5 text-[14px] text-ink";
@@ -103,6 +104,23 @@ export function useProductionPress(order: { id: string; po_number: string; title
     </ModalOverlay>
   );
   return { pressStart, starting: start.isPending, complete, completing, dialog, tally, materials: rows, statuses: statuses.data };
+}
+
+/** Add raw material before Start, on the phone. The desktop page has the same panel inline. */
+export function AddMaterialDialog({ orderId, taken, open, onClose }: { orderId: string; taken: ReadonlySet<string>; open: boolean; onClose: () => void }) {
+  const skus = useRawSkus(open);
+  const add = useAddProductionMaterial(orderId);
+  const toast = useToast();
+  const onAdd = async (picks: RawPick[]) => {
+    for (const p of picks) await add.mutateAsync({ itemCode: p.code, qtyNeeded: p.qty, processingDate: null, deliveryDate: null });
+    toast.success(`${picks.length} raw material${picks.length === 1 ? "" : "s"} added`);
+    onClose();
+  };
+  return (
+    <ModalOverlay open={open} onClose={onClose} title="Add raw material">
+      {open && <RawMaterialAddPanel skus={skus.data ?? []} taken={taken} onAdd={onAdd} />}
+    </ModalOverlay>
+  );
 }
 
 export function RequestMoreDialog({ orderId, open, onClose }: { orderId: string; open: boolean; onClose: () => void }) {
@@ -286,8 +304,11 @@ export function ProgressPhotos({ orderId, progress, holidays, phone, canAdd, fin
   const paged = !phone && days.length > STRIP_PAGE;
   const start = offset ?? pageStart(selected, days.length, STRIP_PAGE);
   const shown = paged ? days.slice(start, start + STRIP_PAGE) : days;
+  /* Sideways only: scrollIntoView would also pull the whole page down to the strip. */
   useEffect(() => {
-    if (phone) stripRef.current?.querySelector("[data-on]")?.scrollIntoView({ block: "nearest", inline: "center" });
+    const strip = stripRef.current;
+    const chip = strip?.querySelector<HTMLElement>("[data-on]");
+    if (phone && strip && chip) strip.scrollLeft = chip.offsetLeft - strip.offsetLeft - (strip.clientWidth - chip.clientWidth) / 2;
   }, [phone, selected, days.length]);
   useEffect(() => { setShowAll(false); }, [selected]);
   const pick = (i: number) => { setPicked(i); };
@@ -345,7 +366,7 @@ export function ProgressSummary({ progress, hours, phone }: { progress: Producti
           <span className={cn("inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold", progress.overdue ? "bg-err/10 text-err" : "bg-synced/10 text-synced")}>{word}</span>
           {" "}<span className="text-ink-secondary">{progress.overdue ? "Past plan finish" : left == null ? "" : left === 0 ? "Last day" : `${left} day${left === 1 ? "" : "s"} left`}</span>
         </span>
-        <span className="text-ink-secondary">{hours != null ? `${phone ? "Hours" : "Production time"} ${fmtQty(hours)} hours` : "No production time set"}</span>
+        <span className="text-ink-secondary">{hours != null ? `${phone ? "" : "Production time "}${fmtQty(hours)} hours` : "No production time set"}</span>
       </div>
     </div>
   );

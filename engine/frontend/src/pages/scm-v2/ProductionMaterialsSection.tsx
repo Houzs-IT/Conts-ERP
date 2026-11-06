@@ -60,7 +60,7 @@ export function WarehouseCell({ status }: { status: MaterialStatus | undefined }
 
 const FIELD_LABEL = "mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted";
 
-const TH = "px-3.5 py-2 text-[12px] font-semibold text-ink-secondary";
+const TH = "px-2.5 py-2 text-[12px] font-semibold text-ink-secondary";
 
 export function ProductionMaterialsSection({ orderId, canEdit, started = false, canAct = canEdit, works = [] }: {
   orderId: string;
@@ -128,7 +128,7 @@ export function ProductionMaterialsSection({ orderId, canEdit, started = false, 
         <p className="text-[13px] text-ink-muted">No raw materials on this order yet.</p>
       ) : rows.length > 0 && (
         <div className="-mx-1 overflow-x-auto">
-          <table className="w-full min-w-[760px] border-collapse text-[13px]">
+          <table className="w-full min-w-[680px] border-collapse text-[13px]">
             <thead>
               <tr className="bg-surface-2 text-left">
                 <th className={TH}>Material</th>
@@ -143,7 +143,7 @@ export function ProductionMaterialsSection({ orderId, canEdit, started = false, 
             <tbody>
               {rows.map((m) => (
                 <tr key={m.id} className="border-b border-border-subtle align-top last:border-b-0">
-                  <td className="px-3.5 py-2.5">
+                  <td className="px-2.5 py-2.5">
                     <div className="font-semibold text-ink">{m.description || m.item_code}</div>
                     <div className="text-[12px] text-ink-muted">{m.item_code}</div>
                     {canEdit ? (
@@ -154,8 +154,8 @@ export function ProductionMaterialsSection({ orderId, canEdit, started = false, 
                       />
                     ) : m.notes ? <div className="mt-0.5 text-[12px] text-ink-secondary">{m.notes}</div> : null}
                   </td>
-                  <td className="whitespace-nowrap px-3.5 py-2.5 text-ink-secondary">{materialCalculation(m, works)}</td>
-                  <td className="whitespace-nowrap px-3.5 py-2.5 font-semibold">
+                  <td className="whitespace-nowrap px-2.5 py-2.5 text-ink-secondary">{materialCalculation(m, works)}</td>
+                  <td className="whitespace-nowrap px-2.5 py-2.5 font-semibold">
                     {canEdit ? (
                       <input
                         type="number" min="0" step="any" defaultValue={Number(m.qty_needed)} aria-label={`Quantity of ${m.item_code}`}
@@ -166,7 +166,7 @@ export function ProductionMaterialsSection({ orderId, canEdit, started = false, 
                     <span className="ml-1 text-[12px]">{m.uom ?? ""}</span>
                     {m.qty_returned > 0 && <div className="text-[12px] font-normal text-ink-muted">Returned {fmtQty(m.qty_returned)}</div>}
                   </td>
-                  <td className="whitespace-nowrap px-3.5 py-2.5 text-ink-secondary">
+                  <td className="whitespace-nowrap px-2.5 py-2.5 text-ink-secondary">
                     {canEdit ? (
                       <div className="space-y-1">
                         <DateField value={m.delivery_date ?? ""} onChange={(iso) => save(m, { deliveryDate: iso || null })} aria-label={`Delivery date of ${m.item_code}`} />
@@ -174,8 +174,8 @@ export function ProductionMaterialsSection({ orderId, canEdit, started = false, 
                       </div>
                     ) : fmtDate(m.delivery_date)}
                   </td>
-                  <td className="px-3.5 py-2.5"><WarehouseCell status={statuses.data?.[m.id]} /></td>
-                  <td className="px-3.5 py-2.5">
+                  <td className="px-2.5 py-2.5"><WarehouseCell status={statuses.data?.[m.id]} /></td>
+                  <td className="px-2.5 py-2.5">
                     <StockCell status={statuses.data?.[m.id]} needed={Number(m.qty_needed)} uom={m.uom ?? ""} />
                     {!m.delivery_date && !started && <div className="mt-0.5 text-[11px] text-warning-text">Add a delivery date to show it in MRP</div>}
                   </td>

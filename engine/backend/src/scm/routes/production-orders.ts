@@ -914,9 +914,9 @@ productionOrders.post('/from-sos', async (c) => {
   if (!inhouseId) return c.json({ error: 'no_inhouse', message: 'Add the In-house Production Team as a supplier first.' }, 409);
   const outside = picks.find((p) => (p.supplierId ?? inhouseId) !== inhouseId);
   if (outside) return c.json({ error: 'not_inhouse', message: 'A production order is for our own team. Raise a PO for an outside supplier.' }, 409);
-  type SoLine = { id: string; doc_no: string; item_code: string; description: string | null; item_group: string | null; variants: unknown; warehouse_id: string | null; line_delivery_date: string | null; qty: number; po_qty_picked: number | null };
+  type SoLine = { id: string; doc_no: string; item_code: string; description: string | null; item_group: string | null; variants: unknown; warehouse_id: string | null; line_delivery_date: string | null; qty: number; po_qty_picked: number | null; uom: string | null };
   const { data: soRows, error: soErr } = await scopeToCompanyId(sb.from('mfg_sales_order_items')
-    .select('id, doc_no, item_code, description, item_group, variants, warehouse_id, line_delivery_date, qty, po_qty_picked').in('id', picks.map((p) => p.soItemId)), co.companyId);
+    .select('id, doc_no, item_code, description, item_group, variants, warehouse_id, line_delivery_date, qty, po_qty_picked, uom').in('id', picks.map((p) => p.soItemId)), co.companyId);
   if (soErr) return c.json({ error: 'load_failed', reason: soErr.message }, 500);
   const soById = new Map(((soRows ?? []) as unknown as SoLine[]).map((r) => [r.id, r]));
   const missingLine = picks.find((p) => !soById.has(p.soItemId));
@@ -933,7 +933,7 @@ productionOrders.post('/from-sos', async (c) => {
   const toItem = (p: { soItemId: string; qty: number }, so: SoLine) => ({
     materialKind: 'mfg_product', itemCode: so.item_code, materialName: so.description ?? so.item_code, description: so.description, qty: Math.floor(Number(p.qty)),
     unitPriceSen: Number(binds.find((x) => x.item_code === so.item_code && x.supplier_id === inhouseId)?.unit_price_sen ?? 0), variants: so.variants,
-    itemGroup: so.item_group, deliveryDate: b.expectedAt ?? so.line_delivery_date, warehouseId: b.purchaseLocationId ?? so.warehouse_id, soItemId: so.id,
+    itemGroup: so.item_group, deliveryDate: b.expectedAt ?? so.line_delivery_date, warehouseId: b.purchaseLocationId ?? so.warehouse_id, soItemId: so.id, uom: so.uom,
   });
 
   if (b.targetPoId) {

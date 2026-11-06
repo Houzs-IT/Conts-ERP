@@ -1200,6 +1200,7 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
       variants:     (it.variants as unknown) ?? null,
       description:  (it.description as string | undefined) ?? null,
       ...lineIdentityFields(groupOf, it, buildVariantSummary), // item_group + description2, from ONE group
+      ...(it.uom ? { uom: String(it.uom) } : {}),
       /* Commander 2026-05-29 (BUG 1) — persist the source SO line (migration
          0098) so deleting this PO line can release po_qty_picked back to the
          From-SO picker. NULL for manually-added lines. */

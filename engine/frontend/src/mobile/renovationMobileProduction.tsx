@@ -15,7 +15,7 @@ import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import { useNotify } from "../vendor/scm/components/NotifyDialog";
 import { useConfirmProductionOrder, useProductionOrderDetail, useReopenProductionOrder, type MaterialStatus, type ProductionDetail } from "../vendor/scm/lib/production-order-queries";
 import { materialCalculation } from "../pages/scm-v2/renovationProductionDays";
-import { AssignDialog, ChangeNotice, ProductionTimeDialog, ProgressPhotos, ProgressSummary, RequestMoreDialog, ReturnStockDialog, useAddPhotos, useProductionPress } from "../pages/scm-v2/renovationProductionParts";
+import { AddMaterialDialog, AssignDialog, ChangeNotice, ProductionTimeDialog, ProgressPhotos, ProgressSummary, RequestMoreDialog, ReturnStockDialog, useAddPhotos, useProductionPress } from "../pages/scm-v2/renovationProductionParts";
 import { usePoCancelAction } from "../pages/scm-v2/use-production-cancel-action";
 import { useHoldAction } from "../pages/scm-v2/use-hold-action";
 
@@ -61,7 +61,7 @@ export function MobileProductionOrder({ id, onBack }: { id: string; onBack: () =
   const reopen = useReopenProductionOrder();
   const confirm = useConfirm();
   const notify = useNotify();
-  const [dialog, setDialog] = useState<"time" | "assign" | "more" | "return" | "menu" | null>(null);
+  const [dialog, setDialog] = useState<"time" | "assign" | "more" | "return" | "menu" | "add" | null>(null);
   const [showMore, setShowMore] = useState(false);
   const works = useMemo(() => (page?.items ?? []).map((l) => ({ qty: Number(l.qty), uom: l.uom })), [page?.items]);
 
@@ -124,8 +124,8 @@ export function MobileProductionOrder({ id, onBack }: { id: string; onBack: () =
             {started && <div className="mt-2.5 border-t border-border-subtle pt-2.5 text-[13px] font-semibold">Actual start {fmtDate(extra?.actual_start_at ?? null)}</div>}
           </div>
 
-          <section className={cn(CARD, "border-l-4 p-3", press.tally.ready ? "border-l-synced" : "border-l-warning-text")}>
-            <div className="text-[15px] font-bold">{press.tally.ready ? "Ready" : "Not ready"}</div>
+          <section className={cn(CARD, "border-l-4 p-3", press.tally.ready || status === "RECEIVED" ? "border-l-synced" : "border-l-warning-text")}>
+            <div className="text-[15px] font-bold">{status === "RECEIVED" ? "Completed" : press.tally.ready ? "Ready" : "Not ready"}</div>
             <div className="mb-2.5 mt-0.5 text-[13px] text-ink-secondary">{press.tally.total === 0 ? "No raw materials on this order" : `Raw materials ${press.tally.readyCount} of ${press.tally.total} ready`}</div>
             <div className="grid grid-cols-2 gap-2.5">
               <Info label="Unit number">{page.project?.unit_no || "—"}</Info>
@@ -150,7 +150,7 @@ export function MobileProductionOrder({ id, onBack }: { id: string; onBack: () =
           <section className={CARD}>
             <div className="flex items-center justify-between gap-2.5 border-b border-border-subtle px-3 py-1">
               <h2 className={H2}>Raw materials · {press.materials.length}</h2>
-              {!started && live && mayAct && <a href={`/scm/production-orders/${id}`} className={LINK}>Add raw material</a>}
+              {!started && live && mayAct && <button type="button" onClick={() => setDialog("add")} className={LINK}>Add raw material</button>}
             </div>
             {press.materials.length === 0 && <p className="p-3 text-[13px] text-ink-muted">No raw materials on this order yet.</p>}
             {press.materials.map((m) => (
@@ -216,6 +216,7 @@ export function MobileProductionOrder({ id, onBack }: { id: string; onBack: () =
       {press.dialog}
       <ProductionTimeDialog orderId={id} hours={hours} open={dialog === "time"} onClose={() => setDialog(null)} />
       <AssignDialog orderId={id} workers={workers} open={dialog === "assign"} onClose={() => setDialog(null)} />
+      <AddMaterialDialog orderId={id} taken={new Set(press.materials.map((m) => m.item_code))} open={dialog === "add"} onClose={() => setDialog(null)} />
       <RequestMoreDialog orderId={id} open={dialog === "more"} onClose={() => setDialog(null)} />
       <ReturnStockDialog orderId={id} materials={press.materials} open={dialog === "return"} onClose={() => setDialog(null)} />
       <ModalOverlay open={dialog === "menu"} onClose={() => setDialog(null)} title="More">
