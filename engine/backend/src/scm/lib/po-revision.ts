@@ -104,6 +104,8 @@ export async function applyPoAmendment(
   amendmentId: string,
   userId: string | null,
   c?: Context<any>,
+  /* A contract VO's amendment names its lines (renovation-vo.ts changeVoPoLine): each keeps its price, and no line is added. */
+  opts?: { fromVo?: boolean },
 ): Promise<ApplyPoAmendmentResult> {
   // (1) Load amendment + its lines + the PO header it targets.
   const { data: amdRow, error: amdErr } = await sb
@@ -119,7 +121,7 @@ export async function applyPoAmendment(
      purchase of a customer's piece: a company-1 sofa or pillow the MRP page then
      reports SHORT with the purchase order open. The route already branches; this
      makes the other door impossible rather than merely unused. */
-  if (amdRow.source_so_amendment_id) {
+  if (amdRow.source_so_amendment_id && !opts?.fromVo) {
     throw new Error('applyPoAmendment: a sales-order follow-up amendment applies through reviseBoundPo');
   }
   const poId = String(amdRow.po_id);
