@@ -316,7 +316,7 @@ export interface GuestIn { id: string; fullName: string; email: string | null; p
 export interface ReservationIn {
   id: string; row: number; code: string; building: string; unitNumber: string; channel: Channel; state: State; externalRef: string;
   checkIn: string; checkOut: string; guestsCount: number; gross: number; fee: number; collected: number; currency: string;
-  notes: string; createdAt: string | null; guestId: string | null; maxGuests: number | null; sizeSqft: number | null;
+  notes: string; createdAt: string | null; guestId: string | null; sizeSqft: number | null;
   /** The reservations money-breakdown columns (migration 0052), by column name. Sen; null = the export left it blank. */
   money: Record<typeof RESERVATION_MONEY_COLUMNS[number], number | string | null>;
 }
@@ -393,7 +393,6 @@ export function mapReservations(rows: Row[], today: string): ReservationPlan {
       collected: Math.max(0, sen(r['Payment Received']) ?? 0), currency: (opt(r['Currency']) ?? 'MYR').toUpperCase().slice(0, 3),
       notes: `Imported from HostPlatform (${code})${showRemarks ? ` · ${remarks!.slice(0, 200)}` : ''}`,
       createdAt: hpTimestamp(r['Created At']), guestId: gid,
-      maxGuests: num(r['Capacity (Adults)']) ? Math.round(num(r['Capacity (Adults)'])!) : null,
       sizeSqft: num(r['Room Size (sqft)']) ? Math.round(num(r['Room Size (sqft)'])!) : null,
       money: {
         room_revenue: nonNeg(r['Room Rate']), guest_cleaning_fee: nonNeg(r['Cleaning Fee']), extra_fees: sumSen(r, EXTRA_FEE_COLUMNS),
@@ -453,7 +452,7 @@ export function mapApiReservations(list: HpReservation[], today: string): Reserv
       currency: (opt(price.currency) ?? 'MYR').toUpperCase().slice(0, 3),
       notes: `Imported from the HostPlatform API (${code})${remarks && channel !== 'airbnb' && channel !== 'booking_com' && channel !== 'agoda' ? ` · ${remarks.slice(0, 200)}` : ''}`,
       createdAt: opt(r.created_at) && !Number.isNaN(Date.parse(String(r.created_at))) ? new Date(String(r.created_at)).toISOString() : null,
-      guestId: gid, maxGuests: null, sizeSqft: null,
+      guestId: gid, sizeSqft: null,
       money: {
         room_revenue: room, guest_cleaning_fee: cleaning, extra_fees: extra, sst_amount: null, tourism_tax: null, ota_tax: null,
         deposit_collected: null, deposit_refunded: null, payment_method: null, rate_plan: null, guest_nationality: null,

@@ -610,7 +610,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## SO, quotation and raw material round (6 Nov 2026)
 - Quotation lines keep their own row (add-ons, measure, supplier): the SO's row has none of these. Headings match the SO.
-- Not yet seen by mouse after #734: quotation land fields, Quotations columns, payment cards on a new order. No POs, GRNs, DOs or production orders exist since Clear test data, so their PDF rows, Ship From and the production raw material panel are unseen too.
+- Walked by mouse on 6 Nov: TC-SO-2611-021 VO, PO TC-PO-2611-024, TC-PRO-2611-018 with raw materials, Complete, TC-GRN-2611-012, TC-DO-2611-013, all PDFs. Not walked: a credit note's row leaving the project SO tab; a DO typed by hand with Ship From.
+- Open: the print preview stays open when the page behind it changes. Raised PO numbers on the SO are plain text, not links.
 - Smart Placement was tried and reverted (#718, #722): every request got slower. First open after an idle worker still takes 1-2 s a request; a fix needs the owner's choice (paid plan or fewer MRP reads).
 - 16 DOs, 1 GRN, 4 POs got BLK and CONTS-WH sales locations became BLK by hand on production, owner's request.
 

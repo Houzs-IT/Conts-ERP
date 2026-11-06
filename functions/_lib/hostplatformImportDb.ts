@@ -236,7 +236,7 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
   const prevOf = new Map(existing.map(e => [e.id, e]));
   const effects: ReservationEffects = { live: [], cancelled: [], checkoutMoved: [] };
 
-  const keep: Record<string, unknown>[] = [], usedGuests = new Set<string>(), unitFacts = new Map<string, { max: number | null; size: number | null; at: string }>();
+  const keep: Record<string, unknown>[] = [], usedGuests = new Set<string>(), unitFacts = new Map<string, { size: number; at: string }>();
   for (const r of plan.reservations) {
     const unitId = unitIdFor(r.building, r.unitNumber);
     if (!unitId) { res.errors.push({ row: r.row, reason: `${r.building} ${r.unitNumber} is not in Property OS. Import the HostPlatform listing first.` }); continue; }
@@ -266,9 +266,9 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
       guests_count: r.guestsCount, gross_booking_value: r.gross, channel_fee: r.fee, collected_revenue: r.collected, currency: r.currency,
       notes: r.notes, created_at: r.createdAt ?? now, updated_at: now, ...r.money,
     });
-    if (isOurs(unitId) && (r.maxGuests || r.sizeSqft)) {
+    if (isOurs(unitId) && r.sizeSqft) {
       const cur = unitFacts.get(unitId);
-      if (!cur || r.checkIn > cur.at) unitFacts.set(unitId, { max: r.maxGuests, size: r.sizeSqft, at: r.checkIn });
+      if (!cur || r.checkIn > cur.at) unitFacts.set(unitId, { size: r.sizeSqft, at: r.checkIn });
     }
   }
 
@@ -309,10 +309,10 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
       WHERE r.guest_id = g.id AND g.merged_into IS NOT NULL AND r.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(keep.map(k => String(k.id))));
   }
 
-  const facts = [...unitFacts.entries()].map(([id, f]) => ({ id, max_guests: f.max, size_sqft: f.size }));
+  const facts = [...unitFacts.entries()].map(([id, { size }]) => ({ id, size_sqft: size }));
   if (facts.length) {
-    await db.run(`UPDATE units u SET max_guests = COALESCE(x.max_guests, u.max_guests), size_sqft = COALESCE(x.size_sqft, u.size_sqft)
-      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, max_guests int, size_sqft int) WHERE u.id = x.id`, JSON.stringify(facts));
+    await db.run(`UPDATE units u SET size_sqft = x.size_sqft
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, size_sqft int) WHERE u.id = x.id`, JSON.stringify(facts));
   }
   if (api) res.effects = effects;
   finish(res, 'reservations');
