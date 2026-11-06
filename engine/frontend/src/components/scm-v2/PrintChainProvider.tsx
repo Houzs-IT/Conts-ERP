@@ -42,7 +42,6 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
   type ReactNode,
 } from "react";
-import { useInRouterContext, useLocation } from "react-router-dom";
 import { clearPrintResume, peekPrintResume, trackPrintAction } from "../../lib/chunkActionRecovery";
 import { PrintPreviewModal } from "./PrintPreviewModal";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
@@ -62,21 +61,8 @@ const PrintChainContext = createContext<PrintDocumentFn | null>(null);
 
 type Loaded = { header: Record<string, unknown>; items: unknown[]; payments?: unknown[]; pwpCodes?: unknown[] };
 
-/* A preview belongs to the page it was opened on: the provider outlives that page, so leaving it closes the card. */
-function ClosesOnLeave({ onLeave }: { onLeave: () => void }) {
-  const { pathname } = useLocation();
-  const first = useRef(true);
-  useEffect(() => {
-    if (first.current) { first.current = false; return; }
-    onLeave();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the page changing is the trigger
-  }, [pathname]);
-  return null;
-}
-
 export function PrintChainProvider({ children }: { children: ReactNode }) {
   const notify = useNotify();
-  const inRouter = useInRouterContext();
   const [target, setTarget] = useState<PrintTarget | null>(null);
   /* The card's summary lines. Null while the detail read is in flight, so the
      band shows the document type and number — which the row already knew — and
@@ -162,7 +148,6 @@ export function PrintChainProvider({ children }: { children: ReactNode }) {
 
   return (
     <PrintChainContext.Provider value={printDocument}>
-      {inRouter && target && <ClosesOnLeave onLeave={() => setTarget(null)} />}
       {children}
       {target && (
         <PrintPreviewModal
