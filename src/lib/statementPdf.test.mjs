@@ -42,6 +42,16 @@ test('one unit: no owner pages', async () => {
   assert.equal((await PDFDocument.load(bytes)).getPageCount(), 2);
 });
 
+test('month pages only: the owner month page, then one month page per unit', async () => {
+  const bytes = await statementPdf(report, { pages: 'month' });
+  assert.equal((await PDFDocument.load(bytes)).getPageCount(), 3);
+});
+
+test('month pages only, one unit: a single page', async () => {
+  const bytes = await statementPdf({ ...report, units: [unit({})] }, { pages: 'month' });
+  assert.equal((await PDFDocument.load(bytes)).getPageCount(), 1);
+});
+
 test('characters outside the built-in font become "?"', () => {
   assert.equal(safe('Lim 林 − café'), 'Lim ? ? café');
 });
