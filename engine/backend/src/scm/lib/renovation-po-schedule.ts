@@ -10,6 +10,7 @@
    A payment links the payment voucher that paid it; the voucher must exist, not
    be cancelled, and be for the PO's supplier. */
 
+import type { PoPaymentFacts } from './renovation-po-voucher';
 import { auditEntity, refuse, todayKl, type RenoDb } from './renovation-db';
 import { projectHandoverState, type HandoverState } from './renovation-hooks';
 import type { RenoActor } from './renovation-quotation';
@@ -140,7 +141,7 @@ export async function recordPoPayment(
   actor: RenoActor,
   instalmentId: string,
   body: { amountSen: number; paidOn?: string | null; paymentVoucherId?: string | null; note?: string },
-): Promise<{ id: string }> {
+): Promise<{ id: string; voucher: PoPaymentFacts | null }> {
   const [inst] = await db.q<{ purchase_order_id: string; label: string }>(
     `select purchase_order_id, label from scm.reno_po_instalments where id = $1 and company_id = $2 for update`,
     [instalmentId, actor.companyId],
@@ -166,5 +167,11 @@ export async function recordPoPayment(
     [actor.companyId, instalmentId, body.paymentVoucherId ?? null, body.amountSen, body.paidOn || todayKl(), body.note ?? '', actor.name],
   );
   await auditEntity(db, { companyId: actor.companyId, entityType: 'purchase_order', entityId: inst.purchase_order_id, docNo: view.po.poNumber, action: 'INSTALMENT_PAYMENT', actorName: actor.name, note: `${inst.label}: ${fmtSen(body.amountSen)}` });
-  return { id: p.id };
+  /* No voucher named: Pay makes its own behind the press (renovation-po-voucher.ts). */
+  const [sup] = body.paymentVoucherId ? [] : await db.q<{ id: string; name: string; code: string | null; control_account: string | null; project_id: number | null }>(
+    `select s.id::text as id, s.name, s.code, s.control_account, po.project_id from scm.purchase_orders po join scm.suppliers s on s.id = po.supplier_id where po.id = $1`,
+    [inst.purchase_order_id],
+  );
+  const voucher = sup ? { paidOn: body.paidOn || todayKl(), amountSen: body.amountSen, label: inst.label, poNumber: view.po.poNumber, projectId: sup.project_id, supplier: sup } : null;
+  return { id: p.id, voucher };
 }

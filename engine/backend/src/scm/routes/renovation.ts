@@ -25,6 +25,7 @@ import { convertQuotationToSo, patchContract, readContract, setContractStatus, t
 import { previewPoSplit, raisePos } from '../lib/renovation-po-split';
 import { billingView, billInstalment, creditContract } from '../lib/renovation-billing';
 import { applyVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
+import { voucherForPoPayment } from '../lib/renovation-po-voucher';
 import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule } from '../lib/renovation-po-schedule';
 import { listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
@@ -523,7 +524,9 @@ renovation.post('/po-instalments/:id/release', handle(PERM.bill, async (c, { tx 
 
 renovation.post('/po-instalments/:id/payments', handle(PERM.bill, async (c, { tx }) => {
   const b = await json(c);
-  return c.json(await tx((db) => recordPoPayment(db, actorOf(c), param(c, 'id'), {
+  const paid = await tx((db) => recordPoPayment(db, actorOf(c), param(c, 'id'), {
     amountSen: intParam(b.amountSen, 'amountSen'), paidOn: b.paidOn ?? null, paymentVoucherId: b.paymentVoucherId ?? null, note: typeof b.note === 'string' ? b.note : '',
-  })), 201);
+  }));
+  const voucher = paid.voucher ? await voucherForPoPayment(c, paid.id, paid.voucher) : null;
+  return c.json({ id: paid.id, voucher }, 201);
 }));
