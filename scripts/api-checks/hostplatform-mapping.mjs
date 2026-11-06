@@ -39,7 +39,7 @@ const res = M.mapReservations([
 ], '2026-10-08');
 check('reservations: channels', res.reservations.map(r => r.channel), ['airbnb', 'booking_com', 'maintenance_block', 'owner_stay', 'owner_stay', 'direct']);
 check('reservations: Airbnb gross = payout + fee', [res.reservations[0].gross, res.reservations[0].fee, res.reservations[0].collected], [25766, 4044, 21722]);
-check('reservations: Booking.com gross = total, cancelled', [res.reservations[1].gross, res.reservations[1].fee, res.reservations[1].state], [32423, 7245, 'cancelled']);
+check('reservations: Booking.com gross = total plus fee (Total Price is net of it), cancelled', [res.reservations[1].gross, res.reservations[1].fee, res.reservations[1].state], [39668, 7245, 'cancelled']);
 check('reservations: external ref is the site code', res.reservations.slice(0, 3).map(r => r.externalRef), ['HMTESTAAAA', '1234567801', 'BLK000001']);
 check('reservations: blocks have no guest, remarks kept', [res.reservations[2].guestId, res.reservations[2].notes], [null, 'Imported from HostPlatform (BLK000001) · MO reno inspection']);
 check('reservations: past stay is checked out', res.reservations[0].state, 'checked_out');
@@ -71,7 +71,7 @@ const wu = M.mapWorkbookUnits([
   { 'Unit编号': 'UNO-807', 'LONGTERM/PROFIT SHARING': 'PS', PACKAGE: 'D' },
 ], [{ UNIT: 'AGILE-C1313A', 'OWNER%': 0.7, 'MANAGE PAYOUT%': 0.25, 'AGENT%': 0.05 }], [{ Unit: 'UNO-807', '每月最低拿到（保底）': 3100, '合约开始': 45658 }]);
 check('workbook unit: profit share from 分成 wins over the text split', [wu.units[0].split, wu.units[0].splitValue, wu.units[0].contract.feePct, wu.units[0].pkg], ['Profit share', 70, 30, 'Package B']);
-check('workbook unit: long term + GRR', [wu.units[1].split, wu.units[1].splitValue, wu.units[1].contract.model, wu.units[1].contract.grrAmount, wu.units[1].term], ['GRR — guaranteed rent', 250000, 'grr', 250000, 'Long term']);
+check('workbook unit: long term + GRR comes in with no GRR and no contract, and is listed', [wu.units[1].split, wu.units[1].splitValue, wu.units[1].contract, wu.units[1].term, wu.notes.some(n => n.includes('UNO-806') && n.includes('GRR'))], [null, null, null, 'Long term', true]);
 check('workbook unit: package D kept as a minimum on the contract', [wu.units[2].pkg, wu.units[2].packageD, wu.units[2].contract.grrAmount, wu.units[2].contract.model], [null, true, 310000, 'management']);
 check('workbook unit: contract dates from serials', [wu.units[0].contract.startsOn, wu.units[0].contract.endsOn], ['2025-01-01', '2027-12-31']);
 
@@ -126,7 +126,7 @@ check('api: ids and references match the CSV import', apiPlan.reservations.map(r
   [['hp-res-9L3VM5OSR', 'HMCWQSHDFK'], ['hp-res-5429066259', '6295633172'], ['hp-res-PH6GK59W5', 'PH6GK59W5'], ['hp-res-BLK000003', 'BLK000003'], ['hp-res-OWN000001', 'OWN000001']]);
 check('api: channels (no guest = block, owner stay by remarks)', apiPlan.reservations.map(r => r.channel), ['airbnb', 'booking_com', 'direct', 'maintenance_block', 'owner_stay']);
 check('api: Airbnb gross is payout plus fee (as stored by the CSV import)', [byCode['9L3VM5OSR'].gross, byCode['9L3VM5OSR'].fee, byCode['9L3VM5OSR'].collected], [25766, 4044, 0]);
-check('api: other channels add no fee on top', [byCode['5429066259'].gross, byCode['5429066259'].fee, byCode.PH6GK59W5.gross], [69440, 16760, 8000]);
+check('api: Booking.com gross is room plus fee; direct adds no fee', [byCode['5429066259'].gross, byCode['5429066259'].fee, byCode.PH6GK59W5.gross], [86200, 16760, 8000]);
 check('api: states', apiPlan.reservations.map(r => r.state), ['checked_out', 'cancelled', 'checked_out', 'checked_out', 'checked_out']);
 check('api: building "(2)" and room suffix normalised', [byCode.BLK000003.building, byCode.BLK000003.unitNumber], ['Trion KL', 'B56-06 (A)']);
 check('api: blocks have no guest, guests are lower-cased email', [byCode.BLK000003.guestId, apiPlan.guests.find(g => g.id === byCode['9L3VM5OSR'].guestId)?.email], [null, 'a@x.com']);

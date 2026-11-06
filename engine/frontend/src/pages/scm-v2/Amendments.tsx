@@ -289,7 +289,7 @@ export const Amendments = () => {
   return (
     <div className={quick ? 'md:pr-[540px]' : undefined}>
       <PageHeader
-        eyebrow="Revision inbox"
+        eyebrow="Sales"
         title="VO"
         description={
           isLoading

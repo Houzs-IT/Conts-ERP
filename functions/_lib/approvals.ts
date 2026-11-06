@@ -1,3 +1,4 @@
+import { rmText } from './format';
 /** Maker-checker for money leaving the company (owner, 10 Oct 2026; migration 0096).
  *
  *  Switched off unless Settings > Approvals turns it on (setting approvals.enabled): on 11 Oct 2026 the owner
@@ -19,6 +20,7 @@ import type { Session } from './auth';
 import { can } from './access';
 import { insertPayment } from './bookingPayments';
 import { isPeriodLocked, isExpenseLocked, isUtility, utilityDeduction } from './expenses';
+import { ownerPaidCredit } from './utilityRequests';
 import { notifyUsers } from './notify';
 import { auditMany } from './history';
 
@@ -94,7 +96,7 @@ export function decisionRule(session: Pick<Session, 'userId' | 'role' | 'levels'
   if (can(session, 'finance', 'full')) {
     if (own) return { refusal: 'You asked for this, so someone else must approve it.', self: false };
     if (Number(r.amount) < ctx.settings.financeAdminLimit) return { refusal: null, self: false };
-    return { refusal: `People with Full Finance access approve amounts below RM ${(ctx.settings.financeAdminLimit / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}. Management must approve this one.`, self: false };
+    return { refusal: `People with Full Finance access approve amounts below ${rmText(ctx.settings.financeAdminLimit)}. Management must approve this one.`, self: false };
   }
   return { refusal: 'Only management and people with Full Finance access approve money requests.', self: false };
 }
@@ -369,11 +371,20 @@ const EXECUTE: Record<ApprovalKind, Executor> = {
     const deduction = isUtility(p.category) ? await utilityDeduction(tx, p.unitId, p.incurredOn) : null;
     if (!deduction && await isPeriodLocked(tx, p.unitId, p.incurredOn)) throw new ApprovalRefused('PERIOD_LOCKED', 'That month\'s owner statement is now final, so nothing can be added to it.');
     const id = crypto.randomUUID();
+    // "Owner paid this bill" (a utility bill only; chew, 5 Nov 2026): the full bill goes back to the owner as an O2 credit.
+    const ownerPaid = p.ownerPaid === true && isUtility(p.category);
+    const ownerId = ownerPaid ? (await one<{ owner_id: string | null }>(tx, 'SELECT owner_id FROM units WHERE id = ?', p.unitId))?.owner_id ?? null : null;
+    if (ownerPaid && !ownerId) throw new ApprovalRefused('VALIDATION', 'This unit has no owner to give the bill back to.');
+    const now = nowIso();
     await run(tx, `
-      INSERT INTO expenses (id, unit_id, maintenance_id, task_id, parent_expense_id, category, description, amount, currency, incurred_on, deduct_month, rolled, reference, charge_to, receipt_document_id, created_by, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?, ?, ?)`,
+      INSERT INTO expenses (id, unit_id, maintenance_id, task_id, parent_expense_id, category, description, amount, currency, incurred_on, deduct_month, rolled, reference, charge_to, receipt_document_id, created_by, created_at, owner_paid)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, p.unitId, p.maintenanceId ?? null, p.taskId ?? null, p.parentExpenseId ?? null, p.category, p.description ?? '', Number(p.amount),
-      p.incurredOn, deduction?.deductMonth ?? null, deduction?.rolled ?? false, p.reference ?? null, p.chargeTo ?? 'owner', p.receiptDocumentId ?? null, c.requestedBy, nowIso());
+      p.incurredOn, deduction?.deductMonth ?? null, deduction?.rolled ?? false, p.reference ?? null, p.chargeTo ?? 'owner', p.receiptDocumentId ?? null, c.requestedBy, now, ownerPaid);
+    if (ownerPaid && Number(p.amount) > 0) {
+      await ownerPaidCredit(tx, { expenseId: id, unitId: p.unitId, ownerId: ownerId!, kind: p.category, label: p.description || p.category, amountSen: Number(p.amount),
+        deductMonth: deduction?.deductMonth ?? String(p.incurredOn).slice(0, 7), accountNo: p.reference ?? null }, c.requestedBy, now);
+    }
     await audit(tx, { ...actor(c), action: 'expense.create', entityTable: 'expenses', entityId: id,
       after: { unitId: p.unitId, category: p.category, amount: Number(p.amount), incurredOn: p.incurredOn, chargeTo: p.chargeTo ?? 'owner', approvalId: c.approvalId } });
     return { expenseId: id };

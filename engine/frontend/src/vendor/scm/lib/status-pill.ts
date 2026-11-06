@@ -59,7 +59,7 @@ export const STATUS_TONES: Record<StatusTone, { bg: string; fg: string }> = {
 };
 
 export type StatusDocType =
-  | 'po' | 'grn' | 'pi' | 'pr'
+  | 'po' | 'production' | 'grn' | 'pi' | 'pr'
   | 'so' | 'do' | 'si' | 'dr'
   | 'stockTransfer' | 'stockTake'
   | 'soAmendment' | 'soAmendmentLane' | 'poAmendment' | 'pv'
@@ -75,6 +75,8 @@ const PO: Record<string, Entry> = {
   CANCELLED:          { label: 'Cancelled',          tone: 'danger' },
   ON_HOLD:            { label: 'On Hold',            tone: 'pending' },
 };
+/* The same statuses as a PO, but an in-house job is finished rather than received. */
+const PRODUCTION: Record<string, Entry> = { ...PO, RECEIVED: { label: 'Complete', tone: 'success' } };
 const GRN: Record<string, Entry> = {
   DRAFT:     { label: 'Draft',     tone: 'pending' },
   POSTED:    { label: 'Submitted', tone: 'info' },
@@ -204,7 +206,7 @@ const DP_ORDER: Record<string, Entry> = {
 };
 
 const MAPS: Record<StatusDocType, Record<string, Entry>> = {
-  po: PO, grn: GRN, pi: PI, pr: PR,
+  po: PO, production: PRODUCTION, grn: GRN, pi: PI, pr: PR,
   so: SO, do: DO, si: SI, dr: DR,
   stockTransfer: STOCK_TRANSFER, stockTake: STOCK_TAKE,
   soAmendment: SO_AMENDMENT, soAmendmentLane: SO_AMENDMENT_LANE, poAmendment: PO_AMENDMENT, pv: PV,

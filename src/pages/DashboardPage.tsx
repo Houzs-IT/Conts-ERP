@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { Modal as SharedModal } from '../components/Modal';
 import { TileSkeleton } from '../components/Loading';
 import { BarTrend, Eyebrow, Figure, Segmented, StatTile, TotalsRow } from '../components/Metric';
 import { Card, CardHeader, LinkAction } from '../components/Card';
@@ -107,7 +108,7 @@ function OccupancyRing({ pct }: { pct: number }) {
 
 function kpiValue(k: Kpi) {
   if (k.unit === 'percent') return `${k.value}%`;
-  if (k.currency) return rm(Number(k.value), { cents: false });
+  if (k.currency) return rm(Number(k.value));
   return String(k.value);
 }
 
@@ -329,9 +330,9 @@ const TOP_COLUMNS: Column<PortfolioRow>[] = [
     hideable: false, width: 190, sub: u => u.propertyName,
     render: u => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block">{u.unitNumber}</span> },
   { key: 'occupancy', label: 'Occupancy', type: 'number', value: u => u.occupancy, width: 90, render: u => <span className={NUM}>{u.occupancy.toFixed(1)}%</span> },
-  { key: 'adr', label: 'Avg nightly price', type: 'money', value: u => u.adr, width: 90, render: u => <span className={NUM}>{rm(u.adr, { cents: false })}</span> },
-  { key: 'revpar', label: 'Earnings per night (all nights)', type: 'money', value: u => u.revpar, width: 90, render: u => <span className={NUM}>{rm(u.revpar, { cents: false })}</span> },
-  { key: 'revenue', label: 'Earnings', type: 'money', value: u => u.revenue, width: 100, render: u => <span className={`${NUM} font-medium`}>{rm(u.revenue, { cents: false })}</span> },
+  { key: 'adr', label: 'Avg nightly price', type: 'money', value: u => u.adr, width: 90, render: u => <span className={NUM}>{rm(u.adr)}</span> },
+  { key: 'revpar', label: 'Earnings per night (all nights)', type: 'money', value: u => u.revpar, width: 90, render: u => <span className={NUM}>{rm(u.revpar)}</span> },
+  { key: 'revenue', label: 'Earnings', type: 'money', value: u => u.revenue, width: 100, render: u => <span className={`${NUM} font-medium`}>{rm(u.revenue)}</span> },
   { key: 'exception', label: 'Exception', type: 'status', value: u => u.exception?.label ?? null, status: u => u.exception, width: 130, align: 'right',
     render: u => (u.exception ? <StatusBadge tone={u.exception.tone} label={u.exception.label} size="sm" /> : <span className="text-meta text-faint">None</span>) },
 ];
@@ -357,7 +358,7 @@ export default function DashboardPage() {
   // keeps the previous payload. Fall back to the local dataset for the active
   // range whenever the live read is not available, so the toggle visibly moves.
   const tp = (trend.error ? null : trend.data) ?? (import.meta.env.DEV ? TREND[range] : EMPTY_TREND);
-  const money = (sen: number) => tp === EMPTY_TREND ? '—' : rm(sen, { cents: false });
+  const money = (sen: number) => tp === EMPTY_TREND ? '—' : rm(sen);
 
   const today = useApi<TodayPayload>('/dashboard/today', TODAY_FALLBACK);
   const exc = useApi<ExceptionPayload>('/dashboard/exceptions', EXCEPTION_FALLBACK);
@@ -514,7 +515,7 @@ export default function DashboardPage() {
                 value: s.revenue,
                 display: s.revenue > 0 ? rmCompact(s.revenue).replace('RM ', '') : '',
                 // vocab-ok: s.revenue is a field name, the visible text has no such word
-                title: `${monthLabel(s.period)} · ${rm(s.revenue, { cents: false })} · ${percent(s.occupancy)} occupancy`,
+                title: `${monthLabel(s.period)} · ${rm(s.revenue)} · ${percent(s.occupancy)} occupancy`,
                 current: s.isCurrent,
                 lineDisplay: `${s.occupancy.toFixed(0)}%`,
               }))} />
@@ -602,7 +603,7 @@ export default function DashboardPage() {
                     {c.label}
                     {c.key === 'direct' && <span className="text-meta text-muted-ink"> · no service fee</span>}
                   </span>
-                  <span className="text-meta text-muted-ink tabular-nums">{rm(c.revenue, { cents: false })}</span>
+                  <span className="text-meta text-muted-ink tabular-nums">{rm(c.revenue)}</span>
                   <span className="text-copy font-semibold tabular-nums w-[42px] text-right">{c.share}%</span>
                 </div>
               ))}
@@ -648,9 +649,9 @@ export default function DashboardPage() {
             <span className="flex items-center justify-between gap-3">
               <span className="flex flex-col gap-px min-w-0">
                 <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber} <span className="font-normal text-meta text-muted-ink">· {u.propertyName}</span></span>
-                <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{u.occupancy.toFixed(1)}% occupied · Avg nightly price {rm(u.adr, { cents: false })}</span>
+                <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{u.occupancy.toFixed(1)}% occupied · Avg nightly price {rm(u.adr)}</span>
               </span>
-              <span className="flex-none text-copy font-semibold [font-variant-numeric:tabular-nums]">{rm(u.revenue, { cents: false })}</span>
+              <span className="flex-none text-copy font-semibold [font-variant-numeric:tabular-nums]">{rm(u.revenue)}</span>
             </span>
           )} />
       </Card>}
@@ -704,31 +705,6 @@ export default function DashboardPage() {
 
 /** Local modal shell for the one dialog that carries a form field. Mirrors the
  *  shared Dialog chrome and its focus/escape behaviour. */
-function Modal({ title, sub, onClose, children, footer }: {
-  title: string; sub?: string; onClose: () => void; children: ReactNode; footer: ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.querySelector<HTMLElement>('select, textarea, input, button')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  return (
-    <div role="dialog" aria-modal="true" aria-label={title}
-      className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div ref={ref} className="relative w-full max-w-[460px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden animate-dialog">
-        <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[9px]">
-          <h2 className="m-0 text-title leading-[1.3] font-semibold text-pretty">{title}</h2>
-          {sub && <p className="m-0 text-copy leading-[1.55] text-muted-ink text-pretty">{sub}</p>}
-        </div>
-        <div className="pt-[14px] px-[22px] pb-[18px] flex flex-col gap-3">{children}</div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
-          {footer}
-        </div>
-      </div>
-    </div>
-  );
+function Modal(p: { title: string; sub?: string; onClose: () => void; children: ReactNode; footer: ReactNode }) {
+  return <SharedModal {...p} />;
 }

@@ -236,7 +236,8 @@ app.post("/", requirePermission("projects.write"), async (c) => {
   if (!created) return c.json({ error: "type_not_found" }, 400);
   if (info) await writeProjectShared(db(c), created.id, info.value);
   if (fund.funding === "internal") {
-    await db(c).prepare("UPDATE projects SET funding = 'internal', internal_department = ?, budget_sen = ? WHERE id = ?").bind(fund.department, fund.budgetSen, created.id).run();
+    /* Its brand too (SOP 1.1): an internal Renovation project's finance_kind; a Rental one keeps none. */
+    await db(c).prepare("UPDATE projects SET funding = 'internal', internal_department = ?, budget_sen = ?, finance_kind = COALESCE(?, finance_kind) WHERE id = ?").bind(fund.department, fund.budgetSen, fund.financeKind, created.id).run();
     /* Said, not assumed: an internal project saved as a customer one would have a limit of nothing. */
     const saved = await db(c).prepare("SELECT funding FROM projects WHERE id = ?").bind(created.id).first<{ funding: string }>();
     if (saved?.funding !== "internal") return c.json({ error: "funding_not_saved", message: `${created.code} was created, but not as an internal project: set it again on the project.`, ...created }, 500);
@@ -748,7 +749,17 @@ app.post("/:id/files", requirePermission("projects.write"), async (c) => {
 app.get("/:id/files", requirePageAccess("projects.list"), async (c) => {
   const id = parseId(c.req.param("id"));
   const key = c.req.query("key") ?? "";
-  if (!id || !key.startsWith(`renovation/${id}/`) || key.includes("..")) return c.json({ error: "invalid_key" }, 400);
+  if (!id || !key || key.includes("..")) return c.json({ error: "invalid_key" }, 400);
+  /* A drawing copied from another project keeps its file, so the key can carry that project's id (owner, 4 Nov 2026:
+     test projects with their source's drawings). Such a key opens only when this project's own rows name it. */
+  if (!key.startsWith(`renovation/${id}/`)) {
+    const named = await db(c).prepare(
+      `SELECT 1 AS ok FROM project_design_files WHERE project_id = ? AND r2_key = ?
+       UNION ALL SELECT 1 FROM project_design_sheets WHERE project_id = ? AND r2_key = ?
+       UNION ALL SELECT 1 FROM project_design_record_files WHERE project_id = ? AND r2_key = ? LIMIT 1`,
+    ).bind(id, key, id, key, id, key).first<{ ok: number }>();
+    if (!named) return c.json({ error: "invalid_key" }, 400);
+  }
   if (!(await projectInCompany(c, id))) return c.json({ error: "not_found" }, 404);
   const range = c.req.header("range");
   if (range) {

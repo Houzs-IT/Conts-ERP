@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { VisibleWidth } from "../conts/VisibleWidth";
+import { TableLoadError } from "../conts/TableLoadError";
 import {
   Download,
   Upload,
@@ -143,6 +144,7 @@ export function DataTable<T, L = never>(props: Props<T, L>) {
 
 function DataTableInner<T, L>({
   tableId,
+  onDisplayKeys,
   layoutFamily,
   persistFilters = true,
   persistSort = true,
@@ -960,6 +962,9 @@ function DataTableInner<T, L>({
      the leading select/expand gutters plus every display column's resolved px
      width. Recomputes as a drag mutates `widths` (via resolveWidth), so the
      table grows live while a column is resized. undefined when the flag is off. */
+  const displayKeys = displayColumns.map((c) => c.key).join(",");
+  useEffect(() => { onDisplayKeys?.(displayKeys.split(",")); }, [displayKeys, onDisplayKeys]);
+
   const fixedTableWidth = useMemo(() => {
     if (!layoutFixed) return undefined;
     const lead = (selection ? 36 : 0) + (expandable ? 32 : 0);
@@ -1894,7 +1899,10 @@ function DataTableInner<T, L>({
       const w = th.getBoundingClientRect().width;
       // Not laid out (a hidden tab): measure on a later paint instead.
       if (w <= 0) return;
-      next[th.dataset.colKey!] = Math.max(MIN_COL_WIDTH, Math.round(w));
+      /* A wide list squeezes every column: the one naming the row keeps its declared width, or doc numbers cut off. */
+      const col = displayColumns.find((c) => c.key === th.dataset.colKey);
+      const floor = col?.alwaysVisible ? parsePxWidth(col.width) ?? 0 : 0;
+      next[th.dataset.colKey!] = Math.max(MIN_COL_WIDTH, floor, Math.round(w));
     }
     setMeasured({ idKey, widths: next });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scrollWrapRef is a ref
@@ -2632,8 +2640,7 @@ function DataTableInner<T, L>({
                     className="px-3 py-14 text-center text-sm text-err"
                   >
                     <VisibleWidth scrollRef={scrollWrapRef}>
-                      <div className="font-semibold">Failed to load</div>
-                      <div className="mt-1 text-xs text-ink-muted">{error}</div>
+                      <TableLoadError error={String(error)} />
                     </VisibleWidth>
                   </td>
                 </tr>
@@ -3040,8 +3047,7 @@ function DataTableInner<T, L>({
         )}
         {!effectiveLoading && error && (
           <div className="rounded-lg border border-err/40 bg-err/5 p-4 text-center text-sm text-err">
-            <div className="font-semibold">Failed to load</div>
-            <div className="mt-1 text-xs text-ink-muted">{error}</div>
+            <TableLoadError error={String(error)} />
           </div>
         )}
         {!effectiveLoading && !error && sortedRows && sortedRows.length === 0 && (

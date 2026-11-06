@@ -9,6 +9,7 @@ import type { MrpSku, MrpLine, MrpResponse, SofaSet } from '../../vendor/scm/lib
 import { allocSourceOf } from '../../vendor/shared/mrp-alloc-source';
 import { rowBelongsToView, type MrpView } from './mrp-views';
 import { sofaAccessoryRowsPerSo } from './mrp-sofa-accessory';
+import { sortByText } from '../../vendor/scm/lib/sort-options';
 
 export type ModelGroup = {
   /* Commander 2026-05-31 — a Model is now scoped to ONE warehouse. The same
@@ -36,6 +37,29 @@ export const WH_NONE = 'NOWH';
 export const skuGroupKey = (s: MrpSku) => `${s.warehouseId ?? WH_NONE}|${s.itemCode}`;
 export const rowKey = (s: MrpSku) => `${s.warehouseId ?? WH_NONE}|${s.itemCode}${s.variantKey}`;
 
+/* Earliest delivery first, undated last, on every grouping: MRP is worked in delivery order (owner, 4 Nov 2026:
+   "按 delivery date 的 priority 去排"). Ties keep the shortages on top, then warehouse, then code. */
+const byEarliestDate = (a: string | null, b: string | null): number => {
+  if (a === b) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  return a < b ? -1 : 1;
+};
+const skuEarliestDelivery = (s: MrpSku): string | null =>
+  s.lines.reduce<string | null>((min, l) => (l.deliveryDate && (min === null || l.deliveryDate < min) ? l.deliveryDate : min), null);
+const byDeliveryThenShortage = (a: ModelGroup, b: ModelGroup): number => {
+  const byDate = byEarliestDate(groupEarliestDate(a, 'delivery'), groupEarliestDate(b, 'delivery'));
+  if (byDate !== 0) return byDate;
+  if ((b.shortage > 0 ? 1 : 0) !== (a.shortage > 0 ? 1 : 0)) {
+    return (b.shortage > 0 ? 1 : 0) - (a.shortage > 0 ? 1 : 0);
+  }
+  const wa = a.warehouseCode ?? a.warehouseName ?? '';
+  const wb = b.warehouseCode ?? b.warehouseName ?? '';
+  if (wa !== wb) return wa < wb ? -1 : 1;
+  if (a.itemCode !== b.itemCode) return a.itemCode < b.itemCode ? -1 : 1;
+  return (a.variants[0]?.variantLabel ?? '') < (b.variants[0]?.variantLabel ?? '') ? -1 : 1;
+};
+
 export function groupByModel(skus: MrpSku[]): ModelGroup[] {
   const map = new Map<string, ModelGroup>();
   for (const s of skus) {
@@ -58,20 +82,10 @@ export function groupByModel(skus: MrpSku[]): ModelGroup[] {
   }
   const groups = [...map.values()];
   for (const g of groups) {
-    g.variants.sort((a, b) => (a.variantLabel ?? '') < (b.variantLabel ?? '') ? -1 : 1);
+    g.variants.sort((a, b) =>
+      byEarliestDate(skuEarliestDelivery(a), skuEarliestDelivery(b)) || ((a.variantLabel ?? '') < (b.variantLabel ?? '') ? -1 : 1));
   }
-  // Shortage models float to the top (the orange ones to act on), then by
-  // warehouse, then by code — so each warehouse's rows cluster together.
-  groups.sort((a, b) => {
-    if ((b.shortage > 0 ? 1 : 0) !== (a.shortage > 0 ? 1 : 0)) {
-      return (b.shortage > 0 ? 1 : 0) - (a.shortage > 0 ? 1 : 0);
-    }
-    const wa = a.warehouseCode ?? a.warehouseName ?? '';
-    const wb = b.warehouseCode ?? b.warehouseName ?? '';
-    if (wa !== wb) return wa < wb ? -1 : 1;
-    return a.itemCode < b.itemCode ? -1 : 1;
-  });
-  return groups;
+  return groups.sort(byDeliveryThenShortage);
 }
 
 /* Adapter (F5, Wei Siang 2026-06-15) — fold sofa SETS into PER-SO module SKUs so
@@ -112,6 +126,7 @@ export function sofaSetsToSkus(sets: SofaSet[]): MrpSku[] {
       // an SO's module rows LHF → NA → RHF (same order as the SO PDF/detail).
       lineNo: s.lineNo, createdAt: s.createdAt,
       debtorName: s.debtorName,
+      projectId: s.projectId ?? null, projectCode: s.projectCode ?? null, projectName: s.projectName ?? null,
       customerState: s.customerState,
       soDate: s.soDate, deliveryDate: s.deliveryDate, processingDate: s.processingDate,
       orderByDate: s.orderByDate, qty: s.qty,
@@ -186,16 +201,7 @@ export function groupBySo(skus: MrpSku[]): ModelGroup[] {
     // 2026-06-16); the customer still shows in the expanded child order lines.
     g.description = sofaComposition(g.variants.map((v) => v.itemCode));
   }
-  groups.sort((a, b) => {
-    if ((b.shortage > 0 ? 1 : 0) !== (a.shortage > 0 ? 1 : 0)) {
-      return (b.shortage > 0 ? 1 : 0) - (a.shortage > 0 ? 1 : 0);
-    }
-    const wa = a.warehouseCode ?? a.warehouseName ?? '';
-    const wb = b.warehouseCode ?? b.warehouseName ?? '';
-    if (wa !== wb) return wa < wb ? -1 : 1;
-    return a.itemCode < b.itemCode ? -1 : 1;
-  });
-  return groups;
+  return groups.sort(byDeliveryThenShortage);
 }
 
 /* BF-FLAT (Commander 2026-06-16) — bedframe is flattened like the Sofa tab:
@@ -209,19 +215,7 @@ export function groupByVariant(skus: MrpSku[]): ModelGroup[] {
     variants: [s],                     // single → ModelDrilldown jumps straight to orders
     qtyNeeded: s.qtyNeeded, stock: s.stock, poOutstanding: s.poOutstanding, shortage: s.shortage,
   }));
-  // Same ordering as the other groupers: shortage (orange) first, then warehouse,
-  // then code, then the variant label so a model's colours cluster together.
-  groups.sort((a, b) => {
-    if ((b.shortage > 0 ? 1 : 0) !== (a.shortage > 0 ? 1 : 0)) {
-      return (b.shortage > 0 ? 1 : 0) - (a.shortage > 0 ? 1 : 0);
-    }
-    const wa = a.warehouseCode ?? a.warehouseName ?? '';
-    const wb = b.warehouseCode ?? b.warehouseName ?? '';
-    if (wa !== wb) return wa < wb ? -1 : 1;
-    if (a.itemCode !== b.itemCode) return a.itemCode < b.itemCode ? -1 : 1;
-    return (a.variants[0]!.variantLabel ?? '') < (b.variants[0]!.variantLabel ?? '') ? -1 : 1;
-  });
-  return groups;
+  return groups.sort(byDeliveryThenShortage);
 }
 
 /* One sofa-cover rider: an ACCESSORY shortage line on a sofa SO, carried with
@@ -239,6 +233,21 @@ export type MrpFilters = {
   onlyShort: boolean;
   search: string;
 };
+
+/** "RN-2611-001 · TESTING T-02-01", or '' for an order with no project (owner, 3 Nov 2026). */
+export const mrpProjectLabel = (l: Pick<MrpLine, 'projectCode' | 'projectName'>): string =>
+  [l.projectCode, l.projectName].filter((x): x is string => Boolean(x && x.trim())).join(' · ');
+
+/** The distinct values a Model row's SO lines carry for one field, first seen first (blank values left out). */
+export const groupDistinct = (g: ModelGroup, pick: (l: MrpLine) => string): string[] =>
+  [...new Set(g.variants.flatMap((v) => v.lines.map(pick)).filter((x) => x.trim() !== ''))];
+
+/** The supplier dropdown's order (owner, 3 Nov 2026): the SKU's main supplier first, its other bound suppliers
+    alphabetically. Only bound suppliers are ever offered; a SKU with none has no dropdown. */
+export const suppliersMainFirst = <T extends { isMain: boolean }>(suppliers: readonly T[]): T[] => [
+  ...sortByText(suppliers.filter((s) => s.isMain)),
+  ...sortByText(suppliers.filter((s) => !s.isMain)),
+];
 
 export const lineDateOf = (l: MrpLine, dateBasis: DateBasis): string | null =>
   dateBasis === 'processing' ? l.processingDate
@@ -349,10 +358,10 @@ export function computeTabModels(
     const hay: string[] = [g.itemCode, g.description ?? ''];
     for (const v of g.variants) {
       hay.push(v.variantLabel ?? '', v.itemCode);
-      for (const l of v.lines) hay.push(l.soDocNo, l.debtorName ?? '');
+      for (const l of v.lines) hay.push(l.soDocNo, l.debtorName ?? '', mrpProjectLabel(l));
     }
     for (const { sku, line } of accessoryBySoDoc.get(g.itemCode) ?? []) {
-      hay.push(sku.itemCode, sku.description ?? '', line.debtorName ?? '');
+      hay.push(sku.itemCode, sku.description ?? '', line.debtorName ?? '', mrpProjectLabel(line));
     }
     return hay.some((h) => h.toLowerCase().includes(searchQ));
   };

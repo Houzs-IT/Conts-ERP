@@ -60,8 +60,10 @@ import { advanceSoGeneration } from './so-generation';
 import { enqueueStockAllocationRecompute } from './stock-allocation-queue';
 import { SO_TERMINAL_STATES_PGREST } from '../shared/so-terminal-states';
 import { SO_PROCESSING_DATE_COLUMN } from '../shared/so-processing-date';
-import { loadNonSellingWarehouses, warehouseCanPromise } from './non-selling-warehouse';
+import { exceptOnSite, loadNonSellingWarehouses, warehouseCanPromise } from './non-selling-warehouse';
 import { pgrestIn } from './pgrest-in-list';
+import { isUnitBoundCategory } from './unit-bound-sku';
+import { isCustomizedLine } from './so-line-customized';
 
 /* Only the variant-bearing categories run bound. Owner 2026-08-10:
    "SOFA 和 BEDFRAME 因为有变体的问题,所以要走 Convert to PO 的那个模式.
@@ -380,7 +382,7 @@ async function runSoStockAllocation(
       .in('doc_no', batch)
       .eq('cancelled', false)
       .range(from, to));
-    const LINE_COLS = 'id, doc_no, item_code, item_group, variants, qty, warehouse_id, stock_status, stock_qty_ready, cancelled';
+    const LINE_COLS = 'id, doc_no, item_code, item_group, variants, remark, qty, warehouse_id, stock_status, stock_qty_ready, cancelled';
     const missingBatchCol = (m: string | undefined) => /allocated_batch_no|column .* does not exist/i.test(m ?? '');
     let { data: lineRows, error: lineError } = await readLines(`${LINE_COLS}, allocated_batch_no`);
     if (lineError && missingBatchCol(lineError.message)) {
@@ -388,7 +390,7 @@ async function runSoStockAllocation(
     }
     if (lineError) throw new Error(`allocation line load failed: ${lineError.message}`);
     const lines = (lineRows ?? []) as Array<{
-      id: string; doc_no: string; item_code: string; item_group: string | null;
+      id: string; doc_no: string; item_code: string; item_group: string | null; remark?: string | null;
       variants: VariantAttrs | null; qty: number; warehouse_id: string | null;
       stock_status: string; stock_qty_ready: number | null;
       allocated_batch_no?: string | null;
@@ -437,6 +439,7 @@ async function runSoStockAllocation(
        retry, which is the honest outcome. */
     const nonSellingWarehouses = await loadNonSellingWarehouses(sb);
     const nonSellingIds: ReadonlySet<string> = new Set(nonSellingWarehouses.keys());
+    const lineBlockedIds: ReadonlySet<string> = new Set(exceptOnSite(nonSellingWarehouses).keys());
     const batchedCodes = new Set<string>();
     /* P1 SO-SKU spec — SERVICE SKUs (delivery fee / dispose / lift) are not
        goods. Collect their codes here (same catalog pull) so the needs walk
@@ -567,7 +570,7 @@ async function runSoStockAllocation(
           line's existing stock_qty_ready — used to compute "did the value
           change". */
     const WH_NONE = 'NOWH';
-    type LineNeed = { id: string; doc_no: string; bucket: string; whId: string | null; need: number; current: string; curReady: number; group: string; item_code: string };
+    type LineNeed = { id: string; doc_no: string; bucket: string; whId: string | null; need: number; current: string; curReady: number; group: string; item_code: string; remark: string | null };
     const needs: LineNeed[] = [];
     /* Sofa lines walk the batch-bound path instead of the per-line bucket
        fill. Keep the SKU + variant + remaining so we can check each module's
@@ -602,13 +605,15 @@ async function runSoStockAllocation(
         });
         continue;
       }
-      const bucket = `${whId ?? WH_NONE}::${l.item_code}::${variant_key}`;
+      /* Every warehouse counts together (owner, 5 Nov 2026): goods leave from wherever they are. */
+      const bucket = `${WH_NONE}::${l.item_code}::${variant_key}`;
       needs.push({
         id: l.id, doc_no: l.doc_no, bucket, whId,
         need: remaining, current: l.stock_status,
         curReady: Number(l.stock_qty_ready ?? 0),
         group: (l.item_group ?? '').toLowerCase(),
         item_code: l.item_code,
+        remark: l.remark ?? null,
       });
     }
     if (needs.length === 0 && sofaLineRecs.length === 0) return { ok: true, linesFlipped: 0, ordersAdvanced: 0, ordersRegressed: 0 };
@@ -676,7 +681,7 @@ async function runSoStockAllocation(
       if (!warehouseCanPromise(r.warehouse_id, nonSellingIds)) continue;
       const v = r.variant_key ?? '';
       const qty = Number(r.qty ?? 0);
-      const whKey = `${r.warehouse_id}::${r.item_code}::${v}`;
+      const whKey = `${WH_NONE}::${r.item_code}::${v}`;
       onHandByBucket.set(whKey, (onHandByBucket.get(whKey) ?? 0) + qty);
     }
 
@@ -704,7 +709,9 @@ async function runSoStockAllocation(
        and accessories are common stock: pooling them is correct and is what
        the floor already expects, so they must NOT be diverted. */
     const dedicatedReady = new Map<string, number>();
-    const boundNeeds = needs.filter((n) => isHardBoundLine(n.group, n.item_code));
+    const boundNeed = (n: LineNeed): boolean => isHardBoundLine(n.group, n.item_code)
+      || (companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && (isUnitBoundCategory(catByCode.get(n.item_code)) || isCustomizedLine(n.remark)));
+    const boundNeeds = needs.filter(boundNeed);
     /* Sofa lines were diverted into sofaLineRecs before `needs` was built, so
        for three months this read never saw them and the bound rule the comment
        above NAMES sofa into never fired for sofa — every migrated set with no
@@ -764,7 +771,7 @@ async function runSoStockAllocation(
          repo keeps shipping. Falling through (rather than stamping PENDING
          here) hands the line to the pooled walk below, which stamps it once, in
          one place. */
-      if (!warehouseCanPromise(n.whId, nonSellingIds)) continue;
+      if (!warehouseCanPromise(n.whId, lineBlockedIds)) continue;
       const got = dedicatedReady.get(n.id) ?? 0;
       if (got <= 0) continue;
       const fill = Math.min(got, n.need);
@@ -773,7 +780,7 @@ async function runSoStockAllocation(
         : { status: 'PARTIAL', qtyReady: fill });
       // take the units out of the pool: exact bucket first, then blank-variant
       let left = fill;
-      for (const key of [n.bucket, `${n.whId ?? WH_NONE}::${n.bucket.split('::')[1]}::`]) {
+      for (const key of [n.bucket, `${WH_NONE}::${n.bucket.split('::')[1]}::`]) {
         if (left <= 0) break;
         const have = remaining.get(key) ?? 0;
         if (have <= 0) continue;
@@ -794,7 +801,7 @@ async function runSoStockAllocation(
          is still possible, through a stock transfer into a selling warehouse;
          the operator is told so on both surfaces (the pill's
          `non_selling_warehouse` note). */
-      if (!warehouseCanPromise(n.whId, nonSellingIds)) {
+      if (!warehouseCanPromise(n.whId, lineBlockedIds)) {
         targetById.set(n.id, { status: 'PENDING', qtyReady: 0 });
         nonSellingBlockedDocs.add(n.doc_no);
         continue;
@@ -805,7 +812,7 @@ async function runSoStockAllocation(
          HC-SO-013253 JAGER-(Q) read READY with no PO against blank-variant
          migrated stock (census run 33287776781, owner report 2026-08-30).
          docs/bugs/0572. Company 2 (2990) keeps pooling past this guard. */
-      if (companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && isHardBoundLine(n.group, n.item_code)) {
+      if (companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && boundNeed(n)) {
         targetById.set(n.id, { status: 'PENDING', qtyReady: 0 });
         continue;
       }
@@ -874,7 +881,7 @@ async function runSoStockAllocation(
            run 34177208009). That is a property of the migrated data, not of the
            rule: the first sofa RECEIVED into a display warehouse against its own
            PO would carry a batch and would have lit. */
-        if (!warehouseCanPromise(whId, nonSellingIds)) {
+        if (!warehouseCanPromise(whId, lineBlockedIds)) {
           for (const s of group) {
             batchTargetByLine.set(s.id, null);
             targetById.set(s.id, { status: 'PENDING', qtyReady: 0 });

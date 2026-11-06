@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 
 /* MobileServiceCase — the phone's ASSR surface.
  *
@@ -92,8 +93,20 @@ const PRODUCT_CATEGORIES = [
   { id: 3, slug: "sofa", name: "Sofa", sort_order: 3, active: 1 },
 ];
 
+/** Set to make the install a renovation one (the New Service Case then looks up the project). */
+let renovationInstall = false;
+const RENO_PROJECT = {
+  id: 7, code: "RN-2611-007", name: "Skyline A-12-03 kitchen", customerName: "Tan Mei Ling", customerPhone: "+60123456789",
+  customerEmail: "mei@example.test", address1: "", address2: "", postcode: "", city: "", state: "", siteAddress: "",
+  building: "Skyline", unitNo: "A-12-03", soDocNo: "SO-2611-003", openCaseCount: 0,
+};
+
 function mount(startNew: boolean) {
   apiGet.mockImplementation(async (url: string) => {
+    if (url.startsWith("/api/assr/renovation/context")) {
+      return renovationInstall ? { renovation: true, categories: [] } : { renovation: false, categories: [] };
+    }
+    if (url.startsWith("/api/assr/renovation/projects")) return { data: [RENO_PROJECT] };
     if (url.startsWith("/api/assr/lookups/product-categories")) return { data: PRODUCT_CATEGORIES };
     if (url.startsWith("/api/assr/lookups/issue-categories")) {
       return { data: [{ id: 1, slug: "damage", name: "Damage", sort_order: 1, active: 1 }] };
@@ -124,13 +137,16 @@ function mount(startNew: boolean) {
   });
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={qc}>
-      <MobileServiceCase onBack={() => {}} startNew={startNew} />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={qc}>
+        <MobileServiceCase onBack={() => {}} startNew={startNew} />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
 beforeEach(() => {
+  renovationInstall = false;
   apiGet.mockReset();
   apiPost.mockReset();
   apiPatch.mockReset();
@@ -143,7 +159,7 @@ afterEach(cleanup);
 async function fillIntake() {
   // The SO is PICKED from the live search, never typed — `soPicked` is what
   // gates the Create button.
-  fireEvent.change(screen.getByPlaceholderText(/SO #/i), { target: { value: "SO-2608" } });
+  fireEvent.change(await screen.findByPlaceholderText(/SO #/i), { target: { value: "SO-2608" } });
   await waitFor(() => expect(screen.getByText("SO-2608-001")).toBeTruthy());
   await act(async () => {
     fireEvent.click(screen.getByText("SO-2608-001"));
@@ -193,6 +209,35 @@ describe("MobileServiceCase intake carries the survey address", () => {
     await waitFor(() => expect(apiPost).toHaveBeenCalled());
     const call = apiPost.mock.calls.find((c) => c[0] === "/api/assr");
     expect(body(call).customer_email).toBeNull();
+  });
+});
+
+describe("MobileServiceCase intake in renovation mode looks up the project", () => {
+  it("picks the project like the desktop and sends the desktop's renovation body", async () => {
+    renovationInstall = true;
+    mount(true);
+    const picker = await screen.findByLabelText("Project");
+    expect(screen.queryByPlaceholderText(/SO #/i)).toBeNull();
+    fireEvent.focus(picker);
+    fireEvent.change(picker, { target: { value: "0123456789" } });
+    const option = await screen.findByRole("option", { name: /RN-2611-007/ });
+    expect(apiGet.mock.calls.some((c) => String(c[0]).startsWith("/api/assr/renovation/projects?q=0123456789"))).toBe(true);
+    await act(async () => {
+      fireEvent.mouseDown(option);
+    });
+    expect(screen.getByTestId("picked-project").textContent).toContain("Tan Mei Ling");
+    fireEvent.change(screen.getByPlaceholderText(/Describe the issue/i), { target: { value: "Cabinet door hinge loose" } });
+    await waitFor(() => expect(screen.getByRole("option", { name: "Damage" })).toBeTruthy());
+    fireEvent.change(screen.getByLabelText(/Issue category/i), { target: { value: "Damage" } });
+    await act(async () => {
+      fireEvent.click(screen.getByText(/Create service case/i));
+    });
+    await waitFor(() => expect(apiPost).toHaveBeenCalled());
+    const sent = body(apiPost.mock.calls.find((c) => c[0] === "/api/assr"));
+    expect(sent.project_id).toBe(7);
+    expect(sent.doc_no).toBe("");
+    expect(sent.items).toEqual([]);
+    expect(sent.customer_email).toBe("mei@example.test");
   });
 });
 

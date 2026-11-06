@@ -22,6 +22,7 @@
 // This is a DETAIL/DRILL surface — every chip renders (the "+N" ChipOverflow
 // rule applies to LIST header cells only).
 
+import { Link } from "react-router-dom";
 import { showDeliveredQty, sourcePoTitle, StockAdjChip } from "./DocumentLinesExpansion";
 import { type CoverageState, coveragePlaceholder } from "./coverage-state";
 import { cn, formatDate } from "../lib/utils";
@@ -52,6 +53,8 @@ export type SoLineSourceFields = {
    *  (no PO raised for the line) falls through to the shipped/ready/coverage
    *  trace, so a stock-only line still shows where its goods came from. */
   bound_source_pos?: string[];
+  /** When each of those POs is due, by PO number; a received PO has none. */
+  bound_source_etas?: Record<string, string>;
   shipped_source_pos?: string[];
   shipped_source_adj?: boolean;
   ready_source_pos?: ReadySourceChip[];
@@ -161,6 +164,7 @@ export function SoSourceChips({
             className={chipBase}
           >
             {po}
+            {line.bound_source_etas?.[po] && (line.remaining_qty ?? 1) > 0 ? ` · ETA ${formatDate(line.bound_source_etas[po])}` : ""}
           </span>
         ))}
         {line.shipped_source_adj && <StockAdjChip />}
@@ -213,13 +217,15 @@ export function SoSourceChips({
       ))}
       {anyAdj && <StockAdjChip />}
       {showIncoming && (
-        <span
-          title="Incoming — live MRP coverage for the un-arrived remainder, recomputed on every view; it moves as demand moves."
+        <Link
+          to={`/scm/purchase-orders?q=${encodeURIComponent(incomingPo ?? "")}`}
+          onClick={(e) => e.stopPropagation()}
+          title="Incoming — live MRP coverage for the un-arrived remainder, recomputed on every view; it moves as demand moves. Click to find this PO."
           className={cn(floatingChipBase, "whitespace-nowrap font-mono")}
         >
           {incomingPo}
           {line.coverage_eta ? ` · ETA ${formatDate(line.coverage_eta)}` : ""}
-        </span>
+        </Link>
       )}
     </span>
   );

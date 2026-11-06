@@ -2,6 +2,7 @@ import { type Env, all, one, nowIso } from './db';
 import { channexConfigured, channexListWebhooks } from './channex';
 import { CLEAN_KINDS_SQL } from './cleaning';
 import { overdueCleans } from './cleanOverdue';
+import { hostplatformConfigured, hostplatformProperties } from './hostplatform';
 
 /** Audit actions worth a second look: accounts and passwords, settings, money leaving, and anything deleted
  *  or cleared. A SQL condition on audit_log.action, shared by the health counts and the audit feed. */
@@ -34,6 +35,23 @@ const PROBLEM: Record<string, string> = {
  *  the same morning). Names as Channex spells them; `API` is Channex itself. */
 const CHANNEL_STATUS_URL = 'https://status.channex.io/index.json';
 const WATCHED: [name: string, label: string][] = [['API', 'Channex'], ['Booking.com', 'Booking.com'], ['Airbnb', 'Airbnb'], ['Agoda', 'Agoda']];
+
+/** What a provider's answer to a read with our key says about the key (CONTS-0005). A refusal (4xx, other than
+ *  "too many requests") means the key or the id beside it no longer works; no answer or a 5xx says nothing about it. */
+export type KeyAnswer = 'accepted' | 'refused' | 'unknown';
+export const keyAnswer = (status: number): KeyAnswer =>
+  status >= 200 && status < 300 ? 'accepted' : status >= 400 && status < 500 && status !== 429 ? 'refused' : 'unknown';
+
+/** Asks a provider for something harmless with the key; never throws. */
+async function askWithKey(url: string, headers: Record<string, string>): Promise<{ answer: KeyAnswer; status: number; name?: string }> {
+  try {
+    const res = await fetch(url, { headers: { accept: 'application/json', ...headers }, signal: AbortSignal.timeout(8_000) });
+    const body = await res.json().catch(() => null) as { name?: string } | null;
+    return { answer: keyAnswer(res.status), status: res.status, name: body?.name };
+  } catch {
+    return { answer: 'unknown', status: 0 };
+  }
+}
 
 /** One card for what the channels themselves report. Their page being unreadable is not our outage, so it
  *  reads "off" rather than red, and only a channel the page names as down or having problems raises it. */
@@ -113,6 +131,9 @@ export async function measureHealth(env: Env, origin: string) {
     const week = `${s?.sent ?? 0} sent in 7 days`;
     // The bell counts these failures and links here, so they are named even when the key is missing.
     if (!configured) return { value: 'Missing', status: 'off', summary: `Mail key not set${(s?.failed ?? 0) > 0 ? ` · ${s!.failed} failed in 7 days` : ''}`, detail: 'Owner statements, invitations and password resets cannot be emailed until a mail key is added.' };
+    // A send-only key may not list domains: Resend answers that one 401 restricted_api_key, which still proves the key.
+    const key = await askWithKey('https://api.resend.com/domains', { authorization: `Bearer ${(env as { MAIL_API_KEY?: string }).MAIL_API_KEY}` });
+    if (key.answer === 'refused' && key.name !== 'restricted_api_key') return { value: 'Refused', status: 'critical', summary: `Mail key refused (${key.status})`, detail: 'Resend no longer accepts the mail key, so owner statements, invitations, password resets and these alerts are not emailed. Replace MAIL_API_KEY in Cloudflare.' };
     if ((s?.failed ?? 0) > 0) return { value: 'Set', status: 'warning', summary: `${s!.failed} failed · ${week}` };
     if (s?.oldest && s.oldest < ago(DAY)) return { value: 'Set', status: 'warning', summary: `${s.waiting} waiting over a day`, detail: 'Emails held overnight are sent by the background jobs.' };
     return { value: 'Set', status: 'ok', summary: (s?.waiting ?? 0) > 0 ? `${week} · ${s!.waiting} waiting` : week };
@@ -159,6 +180,23 @@ export async function measureHealth(env: Env, origin: string) {
     return { value: String(q?.queued ?? 0), status: 'ok', summary: `waiting · ${day}`, link: integrations };
   });
 
+  const whatsapp = guarded('whatsapp', 'WhatsApp', async () => {
+    const { WHATSAPP_TOKEN: token, WHATSAPP_PHONE_ID: phoneId } = env as { WHATSAPP_TOKEN?: string; WHATSAPP_PHONE_ID?: string };
+    if (!token || !phoneId) return { value: '—', status: 'off', summary: 'Not set up', detail: 'WhatsApp messages to direct guests wait to send until the WhatsApp Business keys are added.', link: integrations };
+    const key = await askWithKey(`https://graph.facebook.com/v21.0/${encodeURIComponent(phoneId)}?fields=display_phone_number`, { authorization: `Bearer ${token}` });
+    if (key.answer === 'refused') return { value: 'Refused', status: 'critical', summary: `Key refused by Meta (${key.status})`, detail: 'WhatsApp messages to guests are not going out. Replace WHATSAPP_TOKEN (or check WHATSAPP_PHONE_ID) in Cloudflare.', link: integrations };
+    if (key.answer === 'unknown') return { value: '—', status: 'warning', summary: key.status ? `Meta answered ${key.status}` : 'Meta could not be reached', detail: 'Checked again in a few minutes.' };
+    return { value: 'Working', status: 'ok', summary: 'Key accepted by Meta' };
+  });
+
+  const hostplatform = guarded('hostplatform', 'HostPlatform', async () => {
+    if (!hostplatformConfigured(env)) return { value: '—', status: 'off', summary: 'Not set up', detail: 'Reservations are not pulled from HostPlatform until its keys are added.', link: integrations };
+    const r = await hostplatformProperties(env).catch(() => null);
+    if (r?.ok) return { value: 'Working', status: 'ok', summary: `Key accepted · ${plural(r.body!.length, 'building')}` };
+    if (r && keyAnswer(r.status) === 'refused') return { value: 'Refused', status: 'critical', summary: `Key refused (${r.status})`, detail: 'Reservations are not being pulled from HostPlatform. Replace HOSTPLATFORM_ACCESS_TOKEN in Cloudflare.', link: integrations };
+    return { value: '—', status: 'warning', summary: r?.status ? `HostPlatform answered ${r.status}` : 'HostPlatform could not be reached', detail: 'Checked again in a few minutes.' };
+  });
+
   // The background worker leaves no record of running, so it is judged by the work it should have done.
   const jobs = guarded('jobs', 'Background jobs', async () => {
     const other = await one<{ n: number }>(env, `SELECT count(*)::int AS n FROM tasks WHERE state IN ('open','assigned','in_progress') AND kind NOT IN ${CLEAN_KINDS_SQL} AND due_at IS NOT NULL AND due_at < ?`, ago(HOUR));
@@ -190,7 +228,7 @@ export async function measureHealth(env: Env, origin: string) {
   const lastDay = problems.filter(p => p.at >= ago(DAY)).length;
   const errors: Check = { key: 'problems', label: 'Problems 24h', value: String(lastDay), status: lastDay > 0 ? 'warning' : 'ok', summary: `${problems.length} in 7 days` };
 
-  const checks = [...await Promise.all([email, channex, bookings, queue, jobs, channelStatus()]), errors];
+  const checks = [...await Promise.all([email, channex, bookings, queue, whatsapp, hostplatform, jobs, channelStatus()]), errors];
   const ok = db.ok && !(r2.bound && !r2.ok) && !checks.some(c => c.status === 'critical');
   return { ok, time: nowIso(), db, r2, counts, checks, problems };
 }

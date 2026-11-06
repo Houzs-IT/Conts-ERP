@@ -433,7 +433,7 @@ function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'c
         r.closed += part.closed; r.skipped.push(...part.skipped); r.charged += part.charged; r.chargedAmount += part.chargedAmount;
       }
       const left = skippedNote(r.skipped.map(x => ({ label: x.unitNumber ?? 'A job', reason: x.reason })));
-      const money = action === 'done' ? (r.charged ? `${plural(r.charged, 'charge')} to units, ${rm(r.chargedAmount, { cents: false })}.` : 'Nothing new charged to units.') : 'Nothing charged.';
+      const money = action === 'done' ? (r.charged ? `${plural(r.charged, 'charge')} to units, ${rm(r.chargedAmount)}.` : 'Nothing new charged to units.') : 'Nothing charged.';
       onDone(action === 'done' ? `${plural(r.closed, 'cleaning job')} marked done.` : `${plural(r.closed, 'cleaning job')} cancelled.`, [money, left].filter(Boolean).join(' '));
     } catch (e) { setError(errorMessage(e, 'Not saved. Try again in a moment.')); setBusy(false); }
   }
@@ -452,7 +452,7 @@ function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'c
       sub="Recorded as done by you, now, with the note 'closed in bulk'. No photo is asked for. Each one is charged to its unit like a finished clean, on the job's own day."
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Back</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Mark {plural(n, 'job')} done</Button></>}>
       {list}
-      {estimate > 0 && <p className="m-0 text-copy text-muted-ink">About {rm(estimate, { cents: false })} to units ({plural(priced.length, 'priced job')}). A unit already charged for a clean that day is not charged twice.</p>}
+      {estimate > 0 && <p className="m-0 text-copy text-muted-ink">About {rm(estimate)} to units ({plural(priced.length, 'priced job')}). A unit already charged for a clean that day is not charged twice.</p>}
       {error && <p role="alert" className="m-0 text-copy text-danger">{error}</p>}
     </OpsModal>
   ) : (
@@ -926,7 +926,7 @@ function CheckInTime({ time, saving, onSave }: { time: string; saving: boolean; 
   return (
     <span onClick={e => e.stopPropagation()} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') save(); if (e.key === 'Escape') { setV(time); setEditing(false); } }} className="inline-flex items-center gap-1 align-middle">
       <TimeField aria-label="Next check-in time" autoFocus value={v} onChange={setV} className={cx(INPUT, 'h-8 w-[110px] px-2')} />
-      <button type="button" onClick={save} aria-label="Save the check-in time" className="h-8 w-8 grid place-items-center rounded-control border border-solid border-black bg-black text-white cursor-pointer"><Icon name="Check" size="sm" /></button>
+      <button type="button" onClick={save} aria-label="Save the check-in time" className="hit-target h-8 w-8 grid place-items-center rounded-control border border-solid border-black bg-black text-white cursor-pointer"><Icon name="Check" size="sm" /></button>
     </span>
   );
 }

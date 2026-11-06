@@ -29,7 +29,7 @@ import { supabaseAuth } from '../middleware/auth';
 import { statusCapabilityRefusal, POD_STATES } from '../lib/do-status-capability';
 import { resolveDeliveryScope, scopeMatchesAssignment } from '../lib/deliveryScope';
 import { resolveCrewSeats } from '../lib/crew-seats';
-import { fetchDoCrewAssignment, doPodPhotoHandler } from './delivery-pod-context';
+import { fetchDoCrewAssignment, doPodPhotoHandler, productionProofKeys } from './delivery-pod-context';
 import { startTripIfPlanned } from './delivery-job-progress';
 import { claimPodPhotos } from '../lib/pod-photo-claim';
 import { revertDeliveryOrderHandler } from './delivery-order-revert';
@@ -103,6 +103,8 @@ import { soRemainingByItemId } from '../lib/so-remaining-by-item';
 import { lineLinkItemMismatch, assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
 import { checkStockAvailability, shortStockResponse, stockCheckableLines, uncoveredStockCheckLines, type StockShortage } from '../lib/check-stock-availability';
 /* Conts switches: customer-supplied lines hold no stock; a renovation DO takes its site and brand from its own SO and lines. */
+import { HARD_BOUND_COMPANY_ID } from '../lib/so-stock-allocation';
+import { loadUnitBoundCodes, NO_UNIT_BOUND_CODES } from '../lib/unit-bound-sku';
 import { customerGoodsCodes, deliveredPatch, doBrandingFromLines, renovationDoSiteFields } from '../lib/renovation-flow-rules';
 import { findSofaLinesWithoutCompleteBatch, sofaNoCompleteBatchResponse, findIncompleteSofaSets, sofaIncompleteSetResponse, detectSofaSoItemIds } from '../lib/sofa-batch-guard';
 import { resolveExpectedBatchBySoItem, buildDropshipOffenders } from '../lib/dropship-batch';
@@ -115,6 +117,7 @@ import {
 import { loadSofaBatchStock, sofaStockKey } from '../lib/sofa-set-coverage';
 import { buildDoReversalRows } from '../lib/do-reversal';
 import { resolveDoLineWarehouses } from '../lib/do-line-warehouses';
+import { isOnSiteWarehouse } from '../lib/non-selling-warehouse';
 import { isMigratedNoStock } from '../lib/migrated-no-stock';
 import { currentDocNoByKey, type CurrentEvent } from '../lib/current-doc';
 import { mintMonthlyDocNo, insertWithDocNoRetry } from '../lib/doc-no';
@@ -1045,15 +1048,24 @@ async function checkDoStockAvailability(
   const lineWh = await resolveDoLineWarehouses(sb, shippable.map((l) => ({ id: l.lineRef, so_item_id: l.soItemId })), headerWarehouseId, companyId);
   const active = await uncoveredStockCheckLines(sb, shippable, lineWh, companyId);
   if (active.length === 0) return [];
+  const onSite = new Set(((await sb.from('warehouses').select('id, code').in('id', [...new Set(lineWh.values())].filter(Boolean))).data ?? [])
+    .filter((w: { code: string | null }) => isOnSiteWarehouse(w.code)).map((w: { id: string }) => w.id));
+  /* Works and Built-in serve their own SO (owner, 4 Nov 2026: 就算有别的东西、有库存，它也不能用): a line its own PO has
+     not covered is short whatever the warehouse holds. */
+  const unitBound = companyId === HARD_BOUND_COMPANY_ID ? await loadUnitBoundCodes(sb, companyId, active.map((l) => l.itemCode)) : NO_UNIT_BOUND_CODES;
+  const shortages: StockShortage[] = [];
   const byWh = new Map<string, Array<{ itemCode: string; productName: string | null; variantKey: string; qty: number }>>();
   for (const l of active) {
     const wh = lineWh.get(l.lineRef) ?? null;
-    if (!wh) continue;
+    if (!wh || onSite.has(wh)) continue;
+    if (unitBound.has(l.itemCode)) {
+      shortages.push({ itemCode: l.itemCode, productName: l.productName, variantKey: l.variantKey, warehouseId: wh, warehouseName: null, needed: Number(l.qty), available: 0, short: Number(l.qty), alternatives: [] });
+      continue;
+    }
     const arr = byWh.get(wh) ?? [];
     arr.push({ itemCode: l.itemCode, productName: l.productName, variantKey: l.variantKey, qty: Number(l.qty) });
     byWh.set(wh, arr);
   }
-  const shortages: StockShortage[] = [];
   for (const [wh, reqs] of byWh) shortages.push(...(await checkStockAvailability(sb, wh, reqs, companyId)));
   return shortages;
 }
@@ -2479,10 +2491,18 @@ export async function computeSoLifecycle(
       .in('so_doc_no', ids)
       .neq('status', 'CANCELLED'),
     sb.from('sales_invoices')
-      .select('so_doc_no, invoice_date, created_at, status')
+      .select('id, so_doc_no, invoice_date, created_at, status')
       .in('so_doc_no', ids)
       .neq('status', 'CANCELLED'),
   ]);
+  /* A contract's instalment bill is a progress bill, not the order being invoiced (owner run, 4 Nov 2026: the first of
+     four read INVOICED on the order). */
+  const siRows = (siRes.data ?? []) as Array<{ id?: string; so_doc_no: string | null; invoice_date: string | null; created_at: string | null }>;
+  const siIds = siRows.map((s) => s.id).filter((x): x is string => !!x);
+  const { data: billRows } = siIds.length
+    ? await sb.from('reno_instalment_bills').select('sales_invoice_id').in('sales_invoice_id', siIds)
+    : { data: [] };
+  const progressBills = new Set(((billRows ?? []) as Array<{ sales_invoice_id: string | null }>).map((b) => b.sales_invoice_id));
 
   // DO id → so_doc_no, so a Delivery Return (which carries delivery_order_id but
   // no so_doc_no) can be attributed back to its Sales Order.
@@ -2491,7 +2511,8 @@ export async function computeSoLifecycle(
     if (d.so_doc_no) doToSo.set(d.id, d.so_doc_no);
     push(d.so_doc_no, { date: d.do_date ?? d.created_at ?? '', createdAt: d.created_at ?? '', kind: 'delivered' });
   }
-  for (const s of (siRes.data ?? []) as Array<{ so_doc_no: string | null; invoice_date: string | null; created_at: string | null }>) {
+  for (const s of siRows) {
+    if (s.id && progressBills.has(s.id)) continue;
     push(s.so_doc_no, { date: s.invoice_date ?? s.created_at ?? '', createdAt: s.created_at ?? '', kind: 'invoiced' });
   }
 
@@ -2931,6 +2952,14 @@ deliveryOrdersMfg.get('/:id', async (c) => {
       return c.json({ error: 'not_found' }, 404);
     }
   }
+  /* The production order this DO came from: its progress photos are this DO's proof of delivery (owner, 4 Nov 2026). */
+  {
+    const proof = await productionProofKeys(sb, id);
+    if (proof.length) {
+      const head = h.data as unknown as { pod_photo_keys?: string[] | null; pod_r2_key?: string | null };
+      head.pod_photo_keys = [...(head.pod_photo_keys?.length ? head.pod_photo_keys : head.pod_r2_key ? [head.pod_r2_key] : []), ...proof];
+    }
+  }
   /* Tier 2 downstream-lock — stamp has_children so the DO Detail page can lock
      once any non-cancelled DR / SI references it. */
   const [{ count: drCount }, { count: siCount }] = await Promise.all([
@@ -3339,7 +3368,7 @@ deliveryOrdersMfg.post('/', async (c) => {
 
   const phoneRaw = (body.phone as string | undefined) ?? null;
   const emPhoneRaw = (body.emergencyContactPhone as string | undefined) ?? null;
-  /* Conts: the brand on the delivery is the brand of the goods on it, not the SO header's. */
+  /* Conts: the brand on the delivery is the brand of the goods on it; goods with no brand keep the order's (TC-DO-2611-004). */
   const lineBranding = await doBrandingFromLines(sb, items.map((it) => ({
     itemCode: String(it.itemCode ?? ''), soItemId: (it.soItemId as string | null) ?? null,
   })), activeCompanyId(c) ?? null);
@@ -3347,6 +3376,7 @@ deliveryOrdersMfg.post('/', async (c) => {
   const { data: header, error: hErr } = await insertWithDocNoRetry<{ id: string; do_number: string }>(
     () => nextNum(sb, c),
     (doNumber) => sb.from('delivery_orders').insert({
+      warehouse_id: headerWarehouseId,
     company_id: activeCompanyId(c), // multi-company: stamp the active company
     do_number: doNumber,
     so_doc_no: (body.soDocNo as string) ?? null,
@@ -3377,7 +3407,7 @@ deliveryOrdersMfg.post('/', async (c) => {
     email: (body.email as string) ?? null,
     customer_type: (body.customerType as string) ?? null,
     building_type: (body.buildingType as string) ?? null,
-    branding: lineBranding !== undefined ? lineBranding : ((body.branding as string) ?? null),
+    branding: lineBranding ?? (body.branding as string) ?? null,
     venue: (body.venue as string) ?? null,
     venue_id: (body.venueId as string) ?? null,
     /* The Create-DO form sends the reference as customerSoNo only; without
@@ -3879,6 +3909,7 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
   const { data: doHeader, error: hErr } = await insertWithDocNoRetry<{ id: string; do_number: string }>(
     () => nextNum(sb, c, srcPrefix),
     (doNumber) => sb.from('delivery_orders').insert({
+      warehouse_id: headerWarehouseId,
     /* multi-company: INHERIT the source SO's company (doCompanyId), which on this
        route can differ from the active one — a 2990 order converted while
        browsing as Houzs stays a 2990 delivery order on 2990's books, drawing
@@ -3908,7 +3939,7 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
     email: (head.email as string | null) ?? null,
     customer_type: (head.customer_type as string | null) ?? null,
     building_type: renoSite.buildingType ?? (head.building_type as string | null) ?? null,
-    branding: lineBranding !== undefined ? lineBranding : ((head.branding as string | null) ?? null),
+    branding: lineBranding ?? (head.branding as string | null) ?? null,
     venue: renoSite.venue ?? (head.venue as string | null) ?? null,
     venue_id: (head.venue_id as string | null) ?? null,
     ref: docNos.length > 1

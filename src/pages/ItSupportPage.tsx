@@ -17,6 +17,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { pageBeforeItSupport, refreshItUnread } from '../lib/itSupport';
+import { IT_MODULES, itModuleFor } from '../lib/itSupportModule';
 import { statusLabel } from '../lib/status';
 import { dateTime, relative } from '../lib/format';
 
@@ -148,6 +149,8 @@ function NewRequest({ from, onSent, onCancel }: { from: string; onSent: (code: s
   const [description, setDescription] = useState('');
   const [kind, setKind] = useState('bug');
   const [urgency, setUrgency] = useState('medium');
+  // Picked from the page they came from; they can change it or leave "Not sure".
+  const [module, setModule] = useState(() => (from ? itModuleFor(from) : ''));
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +166,7 @@ function NewRequest({ from, onSent, onCancel }: { from: string; onSent: (code: s
     form.set('priority', urgency);
     form.set('occurred_at', new Date().toISOString());
     if (from) form.set('page_url', from);
+    if (module) form.set('module', module);
     files.forEach(f => form.append('files', f, f.name));
     try {
       const r = await api.post<{ code: string }>('/it-support/tickets', form);
@@ -189,15 +193,17 @@ function NewRequest({ from, onSent, onCancel }: { from: string; onSent: (code: s
         <div className="grid gap-4 sm:grid-cols-2">
           <Select label="Kind of request" showLabel size="md" value={kind} onChange={setKind} options={KINDS} />
           <Select label="How urgent?" showLabel size="md" value={urgency} onChange={setUrgency} options={URGENCY} />
+          <Select label="Which part of the system" showLabel size="md" value={module} onChange={setModule}
+            options={[{ value: '', label: 'Not sure' }, ...IT_MODULES.map(m => ({ value: m, label: m }))]} />
         </div>
         <div className="flex flex-col gap-[7px]">
           <span className="text-meta font-medium text-muted-ink">Screenshots</span>
           <Files files={files} onChange={setFiles} />
         </div>
         {error && title.trim() && <div className="text-copy text-danger" role="alert">{error}</div>}
-        <div className="flex gap-3 pt-2">
-          <Button type="submit" variant="primary" loading={busy}>Send</Button>
+        <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="secondary" onClick={onCancel} disabled={busy} disabledReason="Sending">Cancel</Button>
+          <Button type="submit" variant="primary" loading={busy}>Send</Button>
         </div>
       </form>
     </Card>

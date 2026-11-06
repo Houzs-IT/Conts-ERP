@@ -39,7 +39,7 @@ import { canonicalizeVariants } from '../shared/so-variant-rule';
 import { buildVariantSummary } from '../shared/variant-summary';
 import { variantCategoryOf } from '../lib/renovation-flow-rules';
 import { checkAllowedOptions, loadProductAndModel, variantCheckUnavailableResponse } from '../lib/allowed-options-check';
-import { lineEditsVo } from './renovation';
+import { SPEC_LOCKED_ERROR, specLockedMessage } from '../lib/renovation-spec-lock';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -88,6 +88,28 @@ export async function stampCreatedRooms(db: Db, docNo: string, sections: string[
   const inserted = await db.prepare(`SELECT id::text AS id, item_code FROM scm.mfg_sales_order_items WHERE doc_no = ? ORDER BY line_no, created_at`)
     .bind(docNo).all<{ id: string; item_code: string | null }>();
   await writeSoRooms(db, docNo, sections ?? [], roomsForCreatedLines(inserted.results ?? [], sent));
+}
+
+/** After a create: the processing date the form sent for each line goes on that line's plan. */
+export async function stampCreatedProcessingDates(db: Db, docNo: string, companyId: number, bodyItems: unknown): Promise<void> {
+  const sent = (Array.isArray(bodyItems) ? bodyItems : []).map((it) => ({
+    itemCode: String((it as Record<string, unknown>)?.itemCode ?? ''),
+    date: String((it as Record<string, unknown>)?.lineProcessingDate ?? ''),
+  }));
+  if (!sent.some((s) => /^\d{4}-\d{2}-\d{2}$/.test(s.date))) return;
+  const inserted = await db.prepare(`SELECT id::text AS id, item_code FROM scm.mfg_sales_order_items WHERE doc_no = ? ORDER BY line_no, created_at`)
+    .bind(docNo).all<{ id: string; item_code: string | null }>();
+  const left = [...(inserted.results ?? [])];
+  for (const s of sent) {
+    const at = left.findIndex((r) => r.item_code === s.itemCode);
+    if (at < 0) continue;
+    const [row] = left.splice(at, 1);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s.date)) continue;
+    await db.prepare(
+      `INSERT INTO scm.reno_beta_line_plans (so_item_id, company_id, order_on) VALUES (?::uuid, ?, ?::date)
+       ON CONFLICT (so_item_id) DO UPDATE SET order_on = excluded.order_on, updated_at = now()`,
+    ).bind(row!.id, companyId, s.date).run();
+  }
 }
 
 /** Every reason a renovation SO cannot be saved: invalid values, then the required fields. */
@@ -177,8 +199,8 @@ renovationSoInfo.get('/so/:docNo', async (c: C) => {
   const avail = await renovationSoAvailable(db);
   if (!avail.ok) return c.json(avail.body, avail.status);
   const r = await db.prepare(
-    `SELECT project_id::int AS project_id, debtor_name, phone, email, address1, address2, building, unit_no, property_type, layout_label,
-            bedrooms, bathrooms, built_up_sqft::float8 AS built_up_sqft
+    `SELECT project_id::int AS project_id, branding, (SELECT k.brand_id::int FROM scm.reno_so_contracts k WHERE k.so_doc_no = doc_no) AS contract_brand_id, debtor_name, phone, email, address1, address2, building, unit_no, property_type, layout_label,
+            bedrooms, bathrooms, built_up_sqft::float8 AS built_up_sqft, land_area_sqft::float8 AS land_area_sqft, land_size
        FROM scm.mfg_sales_orders WHERE doc_no = ?${activeCompanySql(c)}`,
   ).bind(c.req.param('docNo') ?? '').first<Record<string, unknown>>();
   if (!r) return c.json({ error: 'so_not_found' }, 404);
@@ -190,11 +212,16 @@ renovationSoInfo.get('/so/:docNo', async (c: C) => {
   const rooms = await readSoRooms(db, c.req.param('docNo') ?? '');
   return c.json({
     ...rooms,
+    brand: { id: r.contract_brand_id == null ? null : Number(r.contract_brand_id), name: r.branding == null ? null : String(r.branding) },
     info: {
       projectId: project ? project.id : null, customerName: t(r.debtor_name), customerPhone: t(r.phone), customerEmail: t(r.email),
-      siteAddress: [t(r.address1), t(r.address2)].filter(Boolean).join('\n'), building: t(r.building), unitNo: t(r.unit_no),
-      propertyType: t(r.property_type), layoutLabel: t(r.layout_label), bedrooms: t(r.bedrooms), bathrooms: t(r.bathrooms),
-      builtUpSqft: t(r.built_up_sqft),
+      siteAddress: [t(r.address1), t(r.address2)].filter(Boolean).join('\n'),
+      /* The project is the master record: what the order lacks comes from it, so its edit form opens filled in. */
+      building: t(r.building) || t(project?.building), unitNo: t(r.unit_no) || t(project?.unitNo),
+      propertyType: t(r.property_type) || t(project?.propertyType), layoutLabel: t(r.layout_label) || t(project?.layoutLabel),
+      bedrooms: t(r.bedrooms) || t(project?.bedrooms), bathrooms: t(r.bathrooms) || t(project?.bathrooms),
+      builtUpSqft: t(r.built_up_sqft) || t(project?.builtUpSqft),
+      landAreaSqft: t(r.land_area_sqft) || t(project?.landAreaSqft), landSize: t(r.land_size) || t(project?.landSize),
     },
     project,
   });
@@ -216,6 +243,25 @@ renovationSoInfo.put('/:docNo/rooms', async (c: C) => {
   const input = readRenovationBlock(body);
   await writeSoRooms(db, docNo, input.roomSections ?? [], input.itemRooms);
   return c.json({ ok: true, ...(await readSoRooms(db, docNo)) });
+});
+
+/* Which brand the order is under (owner, 5 Nov 2026). On a contract the brand also picks its letterhead, so both move. */
+renovationSoInfo.put('/:docNo/brand', async (c: C) => {
+  const db = dbOf(c);
+  const docNo = c.req.param('docNo') ?? '';
+  const body = (await c.req.json().catch(() => null)) as { brandId?: unknown } | null;
+  const brandId = Number(body?.brandId);
+  if (!Number.isInteger(brandId) || brandId <= 0) return c.json({ error: 'brand_required', message: 'Choose a brand.' }, 400);
+  const so = await db.prepare(`SELECT status::text AS status FROM scm.mfg_sales_orders WHERE doc_no = ?${activeCompanySql(c)}`).bind(docNo).first<{ status: string }>();
+  if (!so) return c.json({ error: 'so_not_found', message: `Sales order ${docNo} does not exist.` }, 404);
+  if (so.status === 'CANCELLED' || so.status === 'CLOSED') return c.json({ error: 'so_closed', message: `Sales order ${docNo} is ${so.status.toLowerCase()}.` }, 409);
+  const brand = await db.prepare(`SELECT name FROM public.project_brands WHERE id = ? AND active = 1${activeCompanySql(c)}`).bind(brandId).first<{ name: string }>();
+  if (!brand) return c.json({ error: 'brand_not_found', message: 'That brand is not available.' }, 404);
+  await db.prepare(
+    `WITH k AS (UPDATE scm.reno_so_contracts SET brand_id = ? WHERE so_doc_no = ?)
+     UPDATE scm.mfg_sales_orders SET branding = ?, updated_at = now() WHERE doc_no = ?`,
+  ).bind(brandId, docNo, brand.name, docNo).run();
+  return c.json({ ok: true, brandId, name: brand.name });
 });
 
 renovationSoInfo.put('/:docNo', async (c: C) => {
@@ -250,9 +296,8 @@ renovationSoInfo.put('/:docNo', async (c: C) => {
    A renovation contract changes lines only through a contract VO, which adds or omits lines and never touches the
    options, so this is the one place they are set (the SO page and the project PO tab, both with the SO line's own
    pickers). Money, quantity and SKU never move here. A line a live PO already buys keeps what the supplier was sent:
-   on a renovation contract a change of its options raises a contract VO instead (owner, 2 Nov 2026: the line is
-   omitted and added again with the new options, its PO line flagged CANCEL for purchasing; renovation-vo.ts quickVo,
-   approved at once); on any other order it goes through the PO amendment. */
+   on a renovation contract the options save on the line with no VO, the amount did not move (owner, 4 Nov 2026), and
+   each PO line is flagged so purchasing tells the supplier; on any other order it goes through the PO amendment. */
 renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
   const db = dbOf(c);
   const docNo = c.req.param('docNo') ?? '';
@@ -287,15 +332,17 @@ renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
   /* The pickers offer only the Maintenance master's options for the SKU's model; the server holds the same line as the
      SO save does, so a value from anywhere else is refused (owner, 3 Nov 2026). A failed catalog read refuses too. */
   if (!sameOptions) {
+    const received = await db.prepare(
+      `SELECT po.po_number FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
+        WHERE pi.so_item_id::text = ? AND pi.received_qty > 0 AND po.status::text <> 'CANCELLED' LIMIT 1`,
+    ).bind(itemId).first<{ po_number: string }>();
+    if (received) return c.json({ error: SPEC_LOCKED_ERROR, message: specLockedMessage(line.item_code, received.po_number) }, 409);
     const { product, model, lookupError } = await loadProductAndModel(c.get('supabase'), line.item_code, line.company_id);
     if (lookupError) return c.json(variantCheckUnavailableResponse(lookupError), 409);
     const bad = checkAllowedOptions(product, model, variants as Parameters<typeof checkAllowedOptions>[2]);
     if (bad) return c.json({ ...bad, itemCode: line.item_code }, 400);
   }
-  if (po && !sameOptions) {
-    if (line.contract) {
-      return lineEditsVo(c, docNo, [{ soItemId: itemId, variants, remark }], `Options of ${line.item_code} changed (on ${po.po_number})`);
-    }
+  if (po && !sameOptions && !line.contract) {
     return c.json({ error: 'line_on_po', message: `${po.po_number} already buys this line from the supplier. Change its options through that PO's amendment.` }, 409);
   }
   const summary = buildVariantSummary(group, variants) || null;
@@ -308,7 +355,18 @@ renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
      VALUES (?, ?, 'UPDATE', ?, ?::text::jsonb, ?, 'renovation', ?)`,
   ).bind(docNo, line.company_id, String(c.get('houzsUser')?.name ?? ''), JSON.stringify([{ field: 'variants', from: before ?? null, to: variants }]),
     line.status, `${line.item_code}: options ${summary ?? 'cleared'}${remark !== (line.remark ?? '') ? `; remark ${remark || 'cleared'}` : ''}`).run();
-  return c.json({ ok: true, changed: true, variants, summary });
+  let flags = 0;
+  if (po && !sameOptions) {
+    const flagged = await db.prepare(
+      `INSERT INTO scm.reno_po_line_flags (company_id, purchase_order_item_id, so_item_id, action, new_qty, note)
+       SELECT ?, pi.id, pi.so_item_id, 'AMEND', pi.qty, ?
+         FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
+        WHERE pi.so_item_id::text = ? AND po.status::text NOT IN ('CANCELLED', 'DRAFT')
+       RETURNING id`,
+    ).bind(line.company_id, `${line.item_code}: options now ${summary ?? 'cleared'}. Tell the supplier.`, itemId).all();
+    flags = (flagged.results ?? []).length;
+  }
+  return c.json({ ok: true, changed: true, variants, summary, flags });
 });
 
 /* ── Attachments on the whole order (owner, 14 Oct 2026; mig 0115 scm.mfg_sales_orders.attachments) ──

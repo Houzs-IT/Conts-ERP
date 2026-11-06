@@ -34,6 +34,7 @@ export const LEDGER_SCREENS: readonly LedgerScreen[] = [
   { slug: 'daily-bank', label: 'Daily bank', enginePath: '/scm/daily-bank' },
   { slug: 'merchant-recon', label: 'Merchant recon', enginePath: '/scm/merchant-recon' },
   { slug: 'rental-unit-costs', label: 'Rental unit costs', enginePath: '/scm/rental-unit-costs' },
+  { slug: 'department-spend', label: 'Spending by department', enginePath: '/scm/department-spend' },
   { slug: 'renovation-projects', label: 'Renovation projects', enginePath: '/scm/reno-projects' },
 ];
 
@@ -49,14 +50,12 @@ export const ENGINE_PATH: Record<string, string> = {
   '/service/metrics': '/assr?view=metrics',
   '/service/maintenance': '/assr?view=settings',
   '/service/my-cases': '/my-cases',
-  '/projects/list': '/projects?view=list',
-  // Project monitor was dropped (owner, 11 Oct 2026: the Schedule covers it); old links move to the Schedule (App.tsx).
-  '/projects/calendar': '/projects?view=calendar',
+  // The renovation project list and calendar (Beta's Home and Calendar until 3 Nov 2026) at the old Project list and
+  // Schedule addresses, so old links open them. Project monitor's old links move to the Calendar (App.tsx).
+  '/projects/list': '/beta/projects',
+  '/projects/calendar': '/beta/calendar',
   '/projects/finances': '/projects?view=finances',
   '/projects/maintenance': '/projects?view=maintenance',
-  '/beta/home': '/beta/home',
-  '/beta/projects': '/beta/projects',
-  '/beta/calendar': '/beta/calendar',
   '/sales/quotations': '/scm/renovation/quotations',
   '/sales/orders': '/scm/sales-orders',
   '/sales/amendments': '/scm/amendments',
@@ -73,6 +72,8 @@ export const ENGINE_PATH: Record<string, string> = {
   '/procurement/suppliers': '/scm/suppliers',
   '/procurement/mrp': '/scm/mrp',
   '/procurement/purchase-orders': '/scm/purchase-orders',
+  '/production/production-orders': '/scm/production-orders',
+  '/production/sku-composition': '/scm/sku-composition',
   '/procurement/po-amendments': '/scm/po-amendments',
   '/procurement/cancellations': '/scm/cancel-requests',
   '/procurement/goods-received': '/scm/grns',

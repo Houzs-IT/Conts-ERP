@@ -10,8 +10,8 @@
    SKU that belongs to a model moves only with its model. */
 import { isMfgProductCategory } from './product-categories';
 
-export function categorySwapAllowed(from: string | null | undefined, to: string | null | undefined): boolean {
+export function categorySwapAllowed(from: string | null | undefined, to: string | null | undefined, liveGroups: readonly string[] = []): boolean {
   const a = String(from ?? '').toUpperCase();
   const b = String(to ?? '').toUpperCase();
-  return a !== b && isMfgProductCategory(b);
+  return a !== b && (isMfgProductCategory(b) || liveGroups.includes(b));
 }

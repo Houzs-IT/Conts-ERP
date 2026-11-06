@@ -42,6 +42,8 @@ import styles from './SalesOrderDetail.module.css';
 import { PageHeader } from '../../components/Layout';
 import { soRefOfCamelStamp } from '../../lib/so-ref-search';
 import { DateField } from "../../vendor/scm/components/DateField";
+import { useCategoryOptions, withRowCategories } from '../../vendor/scm/lib/renovation-catalog-queries';
+import { categoryMatches } from '../../vendor/shared/renovation-catalog';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -61,16 +63,6 @@ const FILTER_INPUT: CSSProperties = {
   background: 'var(--c-paper)',
   color: 'var(--c-ink)',
 };
-
-/** Category filter options. 'all' shows everything; the rest match item_group. */
-const CATEGORY_OPTIONS = [
-  { value: 'all',       label: 'All categories' },
-  { value: 'sofa',      label: 'Sofa' },
-  { value: 'bedframe',  label: 'Bedframe' },
-  { value: 'mattress',  label: 'Mattress' },
-  { value: 'accessory', label: 'Accessory' },
-  { value: 'service',   label: 'Service' },
-] as const;
 
 /** Which date field the range filter targets. */
 const DATE_FIELD_OPTIONS = [
@@ -120,6 +112,7 @@ export const PurchaseOrderFromSo = () => {
 
   // Toolbar filters (commander 2026-05-28).
   const [category, setCategory]   = useState<string>('all');
+  const categoryOptions = useCategoryOptions();
   const [dateField, setDateField] = useState<DateField>('soDate');
   const [dateFrom, setDateFrom]   = useState<string>('');
   const [dateTo, setDateTo]       = useState<string>('');
@@ -159,7 +152,7 @@ export const PurchaseOrderFromSo = () => {
   const rows = useMemo(() => {
     return items.filter((r) => {
       if (effectiveRemaining(r) <= 0) return false;
-      if (category !== 'all' && (r.itemGroup ?? '').toLowerCase() !== category) return false;
+      if (category !== 'all' && !categoryMatches(r.itemGroup, category)) return false;
       if (dateFrom || dateTo) {
         const d = rowDateFor(r, dateField);
         if (!d) return false;
@@ -503,7 +496,7 @@ export const PurchaseOrderFromSo = () => {
         style={FILTER_INPUT}
         aria-label="Category filter"
       >
-        {CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {[{ value: 'all', label: 'All categories' }, ...withRowCategories(categoryOptions, items.map((r) => r.itemGroup))].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
 
       {/* Date-range filter — pick which date field + from/to. */}

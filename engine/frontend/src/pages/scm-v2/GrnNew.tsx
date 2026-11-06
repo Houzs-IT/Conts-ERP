@@ -736,7 +736,7 @@ export const GrnNew = () => {
       if (!asDraft) await post.mutateAsync(createRes.id);
       if (isReplay) {
         setDialog({
-          title: `GRN ${createRes.grnNumber} was already created`,
+          title: `Goods Receipt ${createRes.grnNumber} was already created`,
           body: 'This submit repeated the earlier one — the same receipt was answered again and no second GRN or stock movement was written. '
             + 'If another batch of the same goods has arrived, start a fresh receipt via Transfer from Purchase Order.',
           goTo: `/scm/grns/${createRes.id}`,
@@ -753,7 +753,7 @@ export const GrnNew = () => {
          (ac-not-sent.tsx's own header). Never blocks; the goods are received. */
       await notifyAcNotSent(notify, createRes, 'Goods receipt');
       setDialog({
-        title: `GRN ${createRes.grnNumber} ${asDraft ? 'saved as draft' : 'created'}`,
+        title: `Goods Receipt ${createRes.grnNumber} ${asDraft ? 'saved as draft' : 'created'}`,
         body: asDraft
           ? 'Saved as a draft — no stock moved yet. Open it and Confirm to receive the goods.'
           : 'Received & posted — inventory + PO received qty updated.',
@@ -1449,7 +1449,7 @@ export const GrnNew = () => {
         <ActionResultDialog
           title={dialog.title}
           body={dialog.body}
-          primaryLabel={dialog.goTo ? 'Open GRN' : undefined}
+          primaryLabel={dialog.goTo ? 'Open Goods Receipt' : undefined}
           onPrimary={dialog.goTo ? () => { const g = dialog.goTo!; setDialog(null); navigate(g); } : undefined}
           /* Owner 2026-08-13 ("need create the new GRN for like this also") — the
              receiving loop keys one GRN per delivery back-to-back, so success
@@ -1467,7 +1467,7 @@ export const GrnNew = () => {
              for a genuinely different receipt. A button that looked right and
              quietly replayed a stock-in is precisely the bug that comment was
              written to prevent. */
-          secondaryLabel={dialog.goTo ? 'New GRN' : undefined}
+          secondaryLabel={dialog.goTo ? 'New Goods Receipt' : undefined}
           onSecondary={dialog.goTo ? () => { setDialog(null); navigate('/scm/grns/from-po'); } : undefined}
           onClose={() => setDialog(null)}
         />

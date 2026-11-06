@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Modal } from '../../components/Modal';
 import { Card } from '../../components/Card';
 import { FileRow, FileDropRow } from '../../components/Attachments';
 import { Button } from '../../components/Button';
@@ -21,11 +22,12 @@ import { refreshNavCounts } from '../../lib/navBadges';
 import { rm, monthLabel, date as fmtDate, todayMyt, titleCase, plural } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { PAYER_LABEL, PAYERS } from '../../lib/revenueModel';
-import { UtilitiesModal, type UnitChoice } from './ExpenseEntry';
+import { OwnerPaidTick, UtilitiesModal, type UnitChoice } from './ExpenseEntry';
 import { AdjustmentActions, ADJUSTMENT_KIND, ADJUSTMENT_STATE } from './Adjustments';
 import { ReceiptCell } from '../../components/ReceiptCell';
 import { receiptRequired, missingReceipt } from '../../lib/receipts';
 import { Link } from 'react-router-dom';
+import { requestsNote, sendUtilityRequests, type ToPay } from '../../lib/utilityRequests';
 
 /** A month's costs the way the owner reads them (GET /api/expenses/breakdown, functions/_lib/unitCosts.ts):
  *  Cleaning fees, Maintenance repair, Utilities (water, electricity, Wi-Fi, IndahWater), Maintenance fee (condo) and
@@ -102,6 +104,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
   const [reference, setReference] = useState('');
   const [description, setDescription] = useState('');
   const [receipt, setReceipt] = useState<File | null>(null);
+  const [ownerPaid, setOwnerPaid] = useState(false);
   const [busy, setBusy] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const validDay = ISO_DAY.test(incurredOn);
@@ -138,9 +141,13 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
       const text = description.trim() || `${kind} ${monthLabel(billMonth)}${picked?.provider ? ` (${picked.provider})` : ''}`;
       const res = await api.post<unknown>('/expenses', {
         unitId, category, amount, incurredOn, chargeTo, reference: picked?.accountNo || reference.trim() || null, description: text, receiptDocumentId,
+        ...(UTILITY.has(category) ? { ownerPaid } : {}),
       });
       if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); onSaved(); onClose(); return; }
-      toast({ tone: 'success', title: 'Bill recorded.', body: `${kind}, ${monthLabel(billMonth)}. ${chargeTo === 'owner' ? 'The owner statement deducts it before the operator\'s share.' : `${PAYER_LABEL[chargeTo] ?? chargeTo} pays: not on the owner statement.`}` });
+      // A utility bill the company pays goes to finance as a payment request (chew, 5 Nov 2026; SOP 3.10).
+      const requests = await sendUtilityRequests((res as { toPay?: ToPay[] } | null)?.toPay);
+      const sentNote = requestsNote(requests);
+      toast({ tone: requests.failed.length ? 'warning' : 'success', title: 'Bill recorded.', body: `${kind}, ${monthLabel(billMonth)}. ${chargeTo === 'owner' ? 'The owner statement deducts it before the operator\'s share.' : `${PAYER_LABEL[chargeTo] ?? chargeTo} pays: not on the owner statement.`}${ownerPaid && UTILITY.has(category) ? ' The owner paid it, so it goes back to them as O2.' : ''}${sentNote ? ` ${sentNote}` : ''}` });
       onSaved(); onClose();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);
@@ -150,16 +157,14 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
 
   const already = picked?.expenseId && picked.amount != null ? picked : null;
   return (
-    <div role="dialog" aria-modal="true" aria-label="Add a bill" className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div className="relative w-full max-w-[520px] max-h-[calc(100vh-32px)] flex flex-col bg-card rounded-card shadow-[var(--shadow-overlay)]">
-        <div className="pt-[22px] px-[22px] pb-1 flex-none">
-          <h2 className="m-0 text-title font-semibold">Add a bill</h2>
-          <p className="mt-[5px] mb-0 text-copy text-muted-ink">{fee
+    <Modal title="Add a bill" width={520} onClose={onClose}
+      sub={fee
             ? 'The condo\'s maintenance fee, paid for the owner. The owner statement deducts it after the operator\'s share.'
-            : 'A bill or cost on the unit. The bill date decides its month; a utility bill for a month whose statement is already final goes on the next open statement.'}</p>
-        </div>
-        <div className="py-4 px-[22px] flex flex-col gap-[14px] overflow-y-auto min-h-0">
+            : 'A bill or cost on the unit. The bill date decides its month; a utility bill for a month whose statement is already final goes on the next open statement.'}
+      footer={<>
+          <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason={needsReceipt && !receipt && amount && validDay ? 'Attach the receipt: the owner pays this bill' : 'Pick the bill and enter the amount and bill date'} onClick={() => void save()}>Add bill</Button>
+      </>}>
           {units.length > 1 && <Select showLabel size="md" label="Unit" value={unitId} onChange={v => { setUnitId(v); setAccount(null); }} options={units.map(u => ({ value: u.id, label: titleCase(u.label) }))} />}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Select showLabel size="md" label="Bill" value={category} onChange={v => { setCategory(v); setAccount(null); }} options={kinds} />
@@ -172,6 +177,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
               : <Select showLabel size="md" label="Paid by" value={chargeTo} onChange={setChargeTo} options={PAYERS.map(p => ({ value: p.value, label: p.label }))} />}
           </div>
           {!fee && payer && <p className="m-0 -mt-1 text-meta text-muted-ink">{payer.help}</p>}
+          {UTILITY.has(category) && <OwnerPaidTick label={`${kind} ${monthLabel(billMonth)}`} checked={ownerPaid} onChange={setOwnerPaid} />}
           {UTILITY.has(category) && accounts.length > 0 && (
             <Select showLabel size="md" label="Account" value={picked?.accountId ?? ''} onChange={v => setAccount(v)}
               options={[...accounts.map(a => ({ value: a.accountId, label: `${a.accountNo}${a.provider ? ` · ${a.provider}` : ''}` })), { value: '', label: 'Another account (type the reference)' }]} />
@@ -190,13 +196,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
             {fields.receipt ? <span className="text-meta text-critical">{fields.receipt}</span>
               : needsReceipt && !receipt && <span className="text-meta text-muted-ink">The owner pays this bill, so its receipt goes with it.</span>}
           </div>}
-        </div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end flex-wrap gap-[9px] flex-none">
-          <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason={needsReceipt && !receipt && amount && validDay ? 'Attach the receipt: the owner pays this bill' : 'Pick the bill and enter the amount and bill date'} onClick={() => void save()}>Add bill</Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

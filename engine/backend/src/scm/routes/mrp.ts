@@ -94,6 +94,9 @@ import { SO_TERMINAL_STATES } from '../shared/so-terminal-states';
 import { isDefaultMrpView, readMrpSnapshot, refreshMrpSnapshot } from '../lib/mrp-snapshot';
 import { allocSourceOf, allocSourceCoveringPo, type AllocSource } from '../shared/mrp-alloc-source';
 import { isHardBoundLine, HARD_BOUND_COMPANY_ID } from '../lib/so-stock-allocation';
+import { isUnitBoundCategory } from '../lib/unit-bound-sku';
+import { customizedKey, isCustomizedLine } from '../lib/so-line-customized';
+import { isOnSiteWarehouse } from '../lib/non-selling-warehouse';
 
 export const mrp = new Hono<{ Bindings: Env; Variables: Variables }>();
 mrp.use('*', supabaseAuth);
@@ -179,13 +182,14 @@ const RENO_RUNNING = new Set(['RENO_CONFIRMED', 'RENO_IN_PROGRESS']);
 const MRP_DEMAND_DONE_SQL = sqlNotInList(new Set([...SO_DONE].filter((st) => !RENO_RUNNING.has(st))));
 const PO_DEAD_SQL = sqlNotInList(PO_DEAD);
 
-type DemandRow = {
+export type DemandRow = {
   id: string;
   doc_no: string;
   item_code: string;
   description: string | null;
   item_group: string | null;
   variants: Record<string, unknown> | null;
+  remark?: string | null;
   qty: number;
   /* SO line's ship-from warehouse (migration 0118). NULL on lines written by a
      path that never set it (amendment ADD lines, auto free gifts) and on old
@@ -207,6 +211,9 @@ type DemandRow = {
      carves those units out of the free pool so the date-greedy walk cannot
      promise them to an earlier-delivery SO the ship-gate would then refuse. */
   allocated_batch_no: string | null;
+  /* Conts (owner, 4 Nov 2026): a raw material of a production order, planned like an SO line. `id` is the material's. */
+  productionMaterialId?: string;
+  productionOrderId?: string;
   so: {
     debtor_name: string | null;
     status: string;
@@ -269,10 +276,60 @@ const variantKeyOf = (itemGroup: string | null | undefined, variants: unknown): 
    definition of "still committed", not two. Behaviour here is unchanged. */
 
 
+/* Raw materials of open production orders as demand (owner, 4 Nov 2026): under the rules of every other line, dated by
+   their own delivery date, for what has not been received yet. A draft, held or cancelled order orders nothing. */
+async function productionMaterialDemand(sb: any, scoped: <Q>(q: Q) => Q): Promise<DemandRow[]> {
+  type Row = {
+    id: string; item_code: string; description: string | null; qty_needed: number; processing_date: string | null; delivery_date: string | null; created_at: string | null;
+    order: { id: string; po_number: string; purchase_location_id: string | null; project_id: number | null; status: string; on_hold: boolean } | null;
+  };
+  const { data, error } = await paginateAll<Row>((from, to) => scoped(sb.from('production_order_materials')
+    .select('id, item_code, description, qty_needed, processing_date, delivery_date, created_at, order:production_orders!inner (id, po_number, purchase_location_id, project_id, status, on_hold)')
+    .eq('order.status', 'SUBMITTED')
+    .eq('order.on_hold', false))
+    .order('id')
+    .range(from, to));
+  if (error) throw new Error(`mrp_load_failed: ${error.message}`);
+  const rows = (data ?? []).filter((r) => r.order);
+  const { data: received, error: recErr } = await chunkIn<{ production_material_id: string; received_qty: number | null; po: { status: string } | null }>(
+    rows.map((r) => r.id),
+    (batch, from, to) => scoped(sb.from('purchase_order_items').select('production_material_id, received_qty, po:purchase_orders!inner (status)').in('production_material_id', batch))
+      .order('id').range(from, to),
+  );
+  if (recErr) throw new Error(`mrp_load_failed: ${recErr.message}`);
+  const receivedOf = new Map<string, number>();
+  for (const l of received) {
+    if (l.po?.status === 'CANCELLED') continue;
+    receivedOf.set(l.production_material_id, (receivedOf.get(l.production_material_id) ?? 0) + Number(l.received_qty ?? 0));
+  }
+  return rows.flatMap((r): DemandRow[] => {
+    const left = Number(r.qty_needed) - (receivedOf.get(r.id) ?? 0);
+    if (left <= 0) return [];
+    return [{
+      id: r.id, productionMaterialId: r.id, productionOrderId: r.order!.id, doc_no: r.order!.po_number, item_code: r.item_code, description: r.description,
+      item_group: 'RAW', variants: null, qty: left, warehouse_id: r.order!.purchase_location_id, line_delivery_date: r.delivery_date, line_delivery_date_overridden: true,
+      line_no: null, created_at: r.created_at, cancelled: false, allocated_batch_no: null,
+      so: {
+        debtor_name: null, status: 'SUBMITTED', so_date: null, customer_delivery_date: null, amended_delivery_date: null, processing_date: r.processing_date,
+        customer_state: null, project_id: r.order!.project_id, sales_location: null,
+      },
+    }];
+  });
+}
+
 export type MrpLine = {
   soItemId: string;    // mfg_sales_order_items.id — lets the UI one-click PO this line
+  /* Set on a production order's raw material: soItemId is then the material's id, soDocNo the production order's. */
+  productionMaterialId?: string;
+  productionOrderId?: string;
   soDocNo: string;
   debtorName: string | null;
+  /* Conts (owner, 3 Nov 2026): the SO's project (scm.mfg_sales_orders.project_id -> public.projects). */
+  projectId: number | null;
+  projectCode: string | null;
+  projectName: string | null;
+  /* Conts (owner, 4 Nov 2026): the supplier picked for this line on the project's SO tab; the line starts on it. */
+  plannedSupplier?: { supplierId: string; code: string; name: string } | null;
   customerState: string | null;  // staff #8 — info-only, from the SO's customer_state
   soDate: string | null;
   deliveryDate: string | null;
@@ -308,6 +365,7 @@ export type MrpSku = {
   warehouseName: string | null;
   itemCode: string;
   variantKey: string;
+  stockWhere?: Array<{ code: string; qty: number }>;
   variantLabel: string | null;
   description: string | null;
   category: string | null;
@@ -339,6 +397,11 @@ type SofaSet = {
   lineNo: number | null;
   createdAt: string | null;
   debtorName: string | null;
+  /* Conts (owner, 3 Nov 2026): the SO's project, as on MrpLine. */
+  projectId: number | null;
+  projectCode: string | null;
+  projectName: string | null;
+  plannedSupplier?: { supplierId: string; code: string; name: string } | null;
   customerState: string | null;  // staff #8 — info-only, from the SO's customer_state
   soDate: string | null;
   deliveryDate: string | null;
@@ -382,6 +445,18 @@ const deliveryOf = (r: DemandRow): string | null => effectiveSoDelivery({
   amended_delivery_date: r.so?.amended_delivery_date,
   customer_delivery_date: r.so?.customer_delivery_date,
 });
+
+/* A project line with its PO-tab plan applied, or nothing if it is not demand (the rule at the call in computeMrp). */
+export function projectDemandLine(
+  r: DemandRow,
+  plan: { order_on: string | null; deliver_on: string | null; no_po: boolean } | undefined,
+): DemandRow[] {
+  if (plan?.no_po) return [];
+  /* The line's own processing date stands in for the order's (MRP's Processing Date column and date basis). */
+  const so = r.so && plan?.order_on ? { ...r.so, processing_date: plan.order_on } : r.so;
+  const line = plan?.deliver_on ? { ...r, so, line_delivery_date: plan.deliver_on, line_delivery_date_overridden: true } : { ...r, so };
+  return plan?.order_on || deliveryOf(line) !== null ? [line] : [];
+}
 
 /* Earliest-first comparator that pushes NULL dates to the end. */
 function byDateAsc(a: string | null, b: string | null): number {
@@ -639,7 +714,7 @@ export async function computeMrp(
   const { data: demandRaw, error: demandErr } = await paginateAll<DemandRow>((from, to) => scoped(sb
     .from('mfg_sales_order_items')
     .select(`
-      id, doc_no, item_code, description, item_group, variants, qty, warehouse_id, line_delivery_date, line_delivery_date_overridden, line_no, created_at, cancelled, allocated_batch_no,
+      id, doc_no, item_code, description, item_group, variants, remark, qty, warehouse_id, line_delivery_date, line_delivery_date_overridden, line_no, created_at, cancelled, allocated_batch_no,
       so:mfg_sales_orders!inner ( debtor_name, status, so_date, customer_delivery_date, amended_delivery_date, processing_date, customer_state, sales_location, project_id )
     `)
     .eq('cancelled', false)
@@ -663,29 +738,51 @@ export async function computeMrp(
      under both flag values. `includeUndated` only controls whether undated
      rows appear in the RESULT (visibility, not math). */
   const demandOpen = ((demandRaw ?? []) as unknown as DemandRow[]).filter(
-    (r) => r.item_code && r.so && (!SO_DONE.has(r.so.status) || (RENO_RUNNING.has(r.so.status) && r.so.project_id != null)) && r.qty > 0,
+    (r) => r.item_code && r.item_code !== 'RENO-CREDIT' && r.so && (!SO_DONE.has(r.so.status) || (RENO_RUNNING.has(r.so.status) && r.so.project_id != null)) && r.qty > 0,
   );
-  /* Conts projects (owner, 1 Nov 2026: "只要一有 Processing Date，它就会跳去 MRP 让我开 order"). A line of an order
-     that belongs to a project is demand only once the project's PO tab gives it a processing date
-     (scm.reno_beta_line_plans.order_on) and does not mark it "No PO"; its delivery date is the one set there. Orders
-     with no project keep the rule above. */
+  /* Conts projects (owner, 4 Nov 2026: "只要一有 delivery date，它就会排着出来"; widens 1 Nov's processing-date rule).
+     A line of an order that belongs to a project is demand once it has a delivery date (the one set on the project's
+     PO tab, scm.reno_beta_line_plans.deliver_on, else the order's) or a processing date (order_on), unless the PO tab
+     marks it "No PO". A processing date alone stays undated: counted, and shown only under Show no-date. Orders with
+     no project keep the rule above. */
   const projectLineIds = demandOpen.filter((r) => r.so?.project_id != null).map((r) => r.id);
-  const { data: planRows, error: planErr } = await chunkIn<{ so_item_id: string; order_on: string | null; deliver_on: string | null; no_po: boolean }>(
+  const { data: planRows, error: planErr } = await chunkIn<{ so_item_id: string; order_on: string | null; deliver_on: string | null; no_po: boolean; supplier_id: string | null }>(
     projectLineIds,
-    (batch, from, to) => scoped(sb.from('reno_beta_line_plans').select('so_item_id, order_on, deliver_on, no_po').in('so_item_id', batch))
+    (batch, from, to) => scoped(sb.from('reno_beta_line_plans').select('so_item_id, order_on, deliver_on, no_po, supplier_id').in('so_item_id', batch))
       .order('so_item_id').range(from, to),
   );
   if (planErr) throw new Error(`mrp_load_failed: ${planErr.message}`);
   const planOf = new Map(planRows.map((p) => [p.so_item_id, p]));
-  const demandActive = demandOpen.flatMap((r): DemandRow[] => {
+  const plannedIds = [...new Set(planRows.flatMap((p) => (p.supplier_id ? [p.supplier_id] : [])))];
+  const plannedById = new Map<string, { supplierId: string; code: string; name: string }>();
+  if (plannedIds.length > 0) {
+    const { data: plannedRows, error: plannedErr } = await sb.from('suppliers').select('id, code, name').in('id', plannedIds);
+    if (plannedErr) throw new Error(`mrp_load_failed: ${plannedErr.message}`);
+    for (const s of (plannedRows ?? []) as Array<{ id: string; code: string; name: string }>) plannedById.set(s.id, { supplierId: s.id, code: s.code, name: s.name });
+  }
+  const plannedSupplierOf = (soItemId: string) => plannedById.get(planOf.get(soItemId)?.supplier_id ?? '') ?? null;
+  const demandPlanned = demandOpen.flatMap((r): DemandRow[] => {
     if (r.so?.project_id == null) return [r];
-    const plan = planOf.get(r.id);
-    if (!plan?.order_on || plan.no_po) return [];
-    /* The line's own processing date stands in for the order's (MRP's Processing Date column and date basis). */
-    const so = r.so ? { ...r.so, processing_date: plan.order_on } : r.so;
-    return [plan.deliver_on ? { ...r, so, line_delivery_date: plan.deliver_on, line_delivery_date_overridden: true } : { ...r, so }];
+    return projectDemandLine(r, planOf.get(r.id));
   });
+  const demandActive = [...demandPlanned, ...await productionMaterialDemand(sb, scoped)];
   const isDatedLine = (r: DemandRow): boolean => deliveryOf(r) !== null;
+  /* Conts (owner, 3 Nov 2026): every MRP row names its project (code and name), so a line can be found and filtered
+     by project. Projects live in public.projects. */
+  const projectIds = [...new Set(demandActive.map((r) => r.so?.project_id).filter((x): x is number => x != null))];
+  const projectById = new Map<number, { code: string | null; name: string | null }>();
+  if (projectIds.length > 0) {
+    let projQ = sb.schema('public').from('projects').select('id, code, name').in('id', projectIds);
+    if (companyId != null) projQ = projQ.eq('company_id', companyId);
+    const { data: projRows, error: projErr } = await projQ;
+    if (projErr) throw new Error(`mrp_load_failed: ${projErr.message}`);
+    for (const p of (projRows ?? []) as Array<{ id: number; code: string | null; name: string | null }>) projectById.set(Number(p.id), { code: p.code, name: p.name });
+  }
+  const projectOf = (r: DemandRow): { projectId: number | null; projectCode: string | null; projectName: string | null } => {
+    const id = r.so?.project_id ?? null;
+    const p = id == null ? undefined : projectById.get(Number(id));
+    return { projectId: id == null ? null : Number(id), projectCode: p?.code ?? null, projectName: p?.name ?? null };
+  };
 
   // A partially-delivered SO keeps its header status active (the header only
   // flips to DELIVERED once EVERY line is fully covered), so already-delivered
@@ -729,7 +826,7 @@ export async function computeMrp(
      and an unbounded fan-out over every batch would trade latency for pool
      exhaustion. The bound is stated once, here, rather than defaulted inside the
      helper — see concurrency.ts on why it is a required argument. */
-  const demandDocNos = [...new Set(demandActive.map((d) => d.doc_no).filter(Boolean))];
+  const demandDocNos = [...new Set(demandPlanned.map((d) => d.doc_no).filter(Boolean))];
   const docBatches: string[][] = [];
   for (let i = 0; i < demandDocNos.length; i += 200) docBatches.push(demandDocNos.slice(i, i + 200));
   const deliverable: Awaited<ReturnType<typeof soDeliverableRemaining>> = new Map();
@@ -795,6 +892,8 @@ export async function computeMrp(
     .range(from, to));
   if (prodErr) throw new Error(`mrp_load_failed: ${prodErr.message}`);
   for (const p of prods) prodByCode.set(p.code, p);
+  const boundLine = (group: string | null | undefined, code: string | null | undefined): boolean =>
+    isHardBoundLine(group, code) || isUnitBoundCategory(prodByCode.get(code ?? '')?.category);
 
   // The category dropdown lists every catalog category (a handful of enum
   // values), independent of current demand. The DISTINCT values are few, but
@@ -810,7 +909,7 @@ export async function computeMrp(
 
   const { data: warehouses } = await scoped(sb
     .from('warehouses')
-    .select('id, code, name')
+    .select('id, code, name, is_default')
     .eq('is_active', true))
     .order('code');
   const whById = new Map<string, { code: string; name: string }>();
@@ -838,7 +937,7 @@ export async function computeMrp(
      already loaded above; only the small state-mapping table is new, and it is
      read ONCE for the whole computation, not per line. */
   const soWarehouseMasters: SoWarehouseMasters = {
-    warehouses: (warehouses ?? []) as Array<{ id: string; code: string; name: string }>,
+    warehouses: (warehouses ?? []) as Array<{ id: string; code: string; name: string; is_default: boolean | null }>,
     stateMappings: ((await scoped(
       sb.from('state_warehouse_mappings').select('state, warehouse_id'),
     )).data ?? []) as Array<{ state: string | null; warehouse_id: string | null }>,
@@ -848,6 +947,8 @@ export async function computeMrp(
      warehouse filter and label reads one resolved value and they cannot drift. */
   for (const d of demand) {
     d.warehouse_id = resolveLineWarehouseId(d.warehouse_id, d.so, soWarehouseMasters);
+    /* A material's warehouse is its production order's, and never blank: an order raised from a contract may have none. */
+    if (d.productionMaterialId && !d.warehouse_id) d.warehouse_id = (warehouses ?? [])[0]?.id ?? null;
   }
 
   // ── 3. Stock on hand — inventory_balances keyed by (warehouse, code, variant) ──
@@ -865,10 +966,21 @@ export async function computeMrp(
   const { data: balances, error: balErr } = (await balancesProm)();
   if (balErr) throw new Error(`mrp_load_failed: ${balErr.message}`);
   const stockByKey = new Map<string, number>();
+  /* Planning counts every warehouse together, and the page still says where the goods are. */
+  const stockWhereByKey = new Map<string, Map<string, number>>();
   for (const b of balances ?? []) {
+    const whCode = b.warehouse_id ? whById.get(b.warehouse_id)?.code ?? null : null;
+    if (isOnSiteWarehouse(whCode)) continue;
     const k = composite(b.warehouse_id ?? null, b.item_code, b.variant_key ?? '');
     stockByKey.set(k, (stockByKey.get(k) ?? 0) + (b.qty ?? 0));
+    if (whCode && (b.qty ?? 0) !== 0) {
+      const where = stockWhereByKey.get(k) ?? new Map<string, number>();
+      where.set(whCode, (where.get(whCode) ?? 0) + (b.qty ?? 0));
+      stockWhereByKey.set(k, where);
+    }
   }
+  const stockWhereOf = (k: string): Array<{ code: string; qty: number }> =>
+    [...(stockWhereByKey.get(k) ?? new Map<string, number>())].filter(([, qty]) => qty > 0).map(([code, qty]) => ({ code, qty }));
 
   // ── 4. Outstanding PO supply — open PO lines with ETA, keyed by (warehouse, code, variant) ──
   // Each PO line's ship-to warehouse = line warehouse_id, falling back to the PO
@@ -960,12 +1072,12 @@ export async function computeMrp(
      a bound sales line sat in a pool the line never reads. Every linked line now
      reads its own dedicated queue first (section 7), whichever side is bound. */
   const demandBoundById = new Set(
-    demandActive.filter((d) => isHardBoundLine(d.item_group, d.item_code)).map((d) => d.id),
+    demandActive.filter((d) => boundLine(d.item_group, d.item_code) || isCustomizedLine(d.remark)).map((d) => d.id),
   );
   const isDedicated = (r: PoLineRow): boolean =>
     boundCompany
     && !!r.so_item_id
-    && (isHardBoundLine(r.item_group, r.item_code) || demandBoundById.has(String(r.so_item_id)));
+    && (boundLine(r.item_group, r.item_code) || demandBoundById.has(String(r.so_item_id)));
   for (const r of (poRaw ?? []) as unknown as PoLineRow[]) {
     if (!r.po || PO_DEAD.has(r.po.status)) continue;
     /* Migration 0180 — ETA is the EFFECTIVE (latest revised) delivery date: the
@@ -1123,6 +1235,8 @@ export async function computeMrp(
       const s = Array.isArray(b.supplier) ? b.supplier[0] : b.supplier;
       if (!s) continue; // orphaned binding (supplier deleted) — skip
       const arr = suppliersByCode.get(b.item_code) ?? [];
+      // One supplier can be bound twice (no unique index): main-first order keeps its main row.
+      if (arr.some((x) => x.supplierId === b.supplier_id)) continue;
       arr.push({ supplierId: b.supplier_id, code: s.code, name: s.name, isMain: b.is_main_supplier });
       suppliersByCode.set(b.item_code, arr);
       // First (is_main_supplier first via ORDER BY) wins as the default main.
@@ -1162,12 +1276,16 @@ export async function computeMrp(
     if (isServiceLine({ itemGroup: d.item_group, itemCode: d.item_code, category: cat })) continue;
     if (catFilter && cat !== catFilter) continue;
     if (cat === 'SOFA') continue;
-    if (whFilter && (d.warehouse_id ?? null) !== whFilter) continue;
     const whId = d.warehouse_id ?? null;
-    const vkey = variantKeyOf(d.item_group, d.variants);
+    /* A remark makes the line customized: its own row here, so it draws no stock and no pooled PO (those are keyed
+       on SKU and variants alone) and reads only what was ordered for it (`bound` in section 7). */
+    const remarkKey = customizedKey(d.remark);
+    const vkey = `${variantKeyOf(d.item_group, d.variants)}${remarkKey ? `|remark:${remarkKey}` : ''}`;
     const k = composite(whId, d.item_code, vkey);
+    const summary = buildVariantSummary(d.item_group, d.variants);
+    const vlabel = remarkKey ? [summary, `Customized: ${(d.remark ?? '').trim()}`].filter(Boolean).join(' · ') : summary;
     const bucket = demandByKey.get(k)
-      ?? { whId, code: d.item_code, vkey, vlabel: buildVariantSummary(d.item_group, d.variants), rows: [] };
+      ?? { whId, code: d.item_code, vkey, vlabel, rows: [] };
     bucket.rows.push(d);
     demandByKey.set(k, bucket);
   }
@@ -1298,7 +1416,7 @@ export async function computeMrp(
          What changes is only that it may no longer be named as THIS line's
          cover, so the line reads as the shortage it is. Company 2 is untouched —
          `boundCompany` gates the whole branch. */
-      const bound = boundCompany && isHardBoundLine(r.item_group, r.item_code);
+      const bound = boundCompany && (boundLine(r.item_group, r.item_code) || isCustomizedLine(r.remark));
       const fromStock = bound
         ? Math.min(need, dedicatedReceivedByLine.get(r.id) ?? 0)
         : drawBucketStock(bucketStock, batchClaims.qtyByLine.get(r.id) ?? 0, need);
@@ -1347,8 +1465,11 @@ export async function computeMrp(
       const lineDelivery = deliveryOf(r);
       lines.push({
         soItemId: r.id,
+        ...(r.productionMaterialId ? { productionMaterialId: r.productionMaterialId, productionOrderId: r.productionOrderId } : {}),
         soDocNo: r.doc_no,
         debtorName: r.so?.debtor_name ?? null,
+        ...projectOf(r),
+        plannedSupplier: plannedSupplierOf(r.id),
         customerState: r.so?.customer_state ?? null,
         soDate: r.so?.so_date ?? null,
         deliveryDate: lineDelivery,
@@ -1385,6 +1506,7 @@ export async function computeMrp(
       warehouseName: wh?.name ?? null,
       itemCode: code,
       variantKey: bucket.vkey,
+      stockWhere: stockWhereOf(k),
       variantLabel: vlabel || null,
       description: prod?.name ?? rows[0]?.description ?? null,
       /* THE SAME EXPRESSION THE FILTER USED, and it has to be — §6 keeps a line
@@ -1447,7 +1569,6 @@ export async function computeMrp(
        item_group, or it shows on NO MRP tab and never gets a PO. */
     const sofaCat = prodByCode.get(d.item_code)?.category ?? catFromGroup(d.item_group);
     if (sofaCat !== 'SOFA') continue;
-    if (whFilter && (d.warehouse_id ?? null) !== whFilter) continue;
     const whId = d.warehouse_id ?? null;
     const vkey = variantKeyOf(d.item_group, d.variants);
     const k = composite(whId, d.item_code, vkey);
@@ -1551,6 +1672,8 @@ export async function computeMrp(
         lineNo: d.line_no ?? null,
         createdAt: d.created_at ?? null,
         debtorName: d.so?.debtor_name ?? null,
+        ...projectOf(d),
+        plannedSupplier: plannedSupplierOf(d.id),
         customerState: d.so?.customer_state ?? null,
         soDate: d.so?.so_date ?? null,
         deliveryDate: setDelivery,
@@ -1755,7 +1878,7 @@ export function mrpReverseCoverage(result: MrpResult): Map<string, PoCoverageAss
   };
   for (const sku of result.skus) {
     for (const l of sku.lines) {
-      if (l.source !== 'po' || !l.poNumber) continue;
+      if (l.source !== 'po' || !l.poNumber || l.productionMaterialId) continue; // no SO line to name
       push(l.poNumber, {
         soItemId: l.soItemId,
         soDocNo: l.soDocNo,

@@ -2,7 +2,8 @@
    order or goods receipt carries from its sales order, for the page and the print. Read from
    GET <document>/:id/renovation-info (engine/backend/src/scm/routes/renovation-doc-flow.ts). Pure. */
 
-import { RENOVATION_GROUPS, SUB_CATEGORIES } from '../../shared/renovation-catalog';
+import { subCategoryLabelOf } from '../../shared/renovation-catalog';
+import { mfgCategoryLabel } from '../../shared/product-categories';
 
 export interface RenoDocLine { room: string; categoryGroup: string; subCategory: string }
 export interface RenoDocInfo {
@@ -32,10 +33,8 @@ export function renoProjectLabel(d: RenoDocInfo | null | undefined): string | nu
 /** "Works / Electrical" label of a line's category (the catalog's names), '' when none. */
 export function renoCategoryLabel(l: RenoDocLine | undefined): string {
   if (!l) return '';
-  const group = RENOVATION_GROUPS.find((g) => g.code === l.categoryGroup)?.label ?? l.categoryGroup;
-  // ponytail: built-in names only; a sub-category added in settings prints from its code ("CURTAIN INSTALL"),
-  // a renamed one keeps its built-in name. Send the label from renovation-doc-flow.ts if prints need the edit.
-  const sub = SUB_CATEGORIES.find((s) => s.group === l.categoryGroup && s.code === l.subCategory)?.label ?? l.subCategory.replace(/_/g, ' ');
+  const group = mfgCategoryLabel(l.categoryGroup);
+  const sub = subCategoryLabelOf(l.categoryGroup, l.subCategory);
   return [group, sub].filter(Boolean).join(' / ');
 }
 
@@ -45,8 +44,12 @@ export function renoDetailRows(d: RenoDocInfo | null | undefined, opts: { short?
   /* short: the project code only, for a print column that does not wrap (the DO); its name is building + unit, printed below. */
   const project = opts.short ? (d.info.projectCode ?? renoProjectLabel(d)) : renoProjectLabel(d);
   const cat = d.info.categoryGroup ? renoCategoryLabel({ room: '', categoryGroup: d.info.categoryGroup, subCategory: d.info.subCategory ?? '' }) : null;
+  /* Project ID and name on their own rows (owner, 5 Nov 2026): together they ran past the page margin. */
+  const projectRows: Array<[string, string | null]> = opts.short
+    ? [['Project', project]]
+    : d.info.projectCode ? [['Project ID', d.info.projectCode], ['Project Name', d.info.projectName]] : [['Project', project]];
   return [
-    ['Project', project],
+    ...projectRows,
     ['Category', cat],
     ['Building', d.info.building || null],
     ['Unit', d.info.unitNo || null],

@@ -1,4 +1,5 @@
 import { type Env, one } from './db';
+import { rmText } from './format';
 
 /** A booking's money in three parts that must add up (owner-approved design, 10 Oct 2026):
  *    (1) what the guest paid   room + cleaning + other fees + SST + tourism tax = guest total
@@ -29,7 +30,8 @@ export async function moneySchema(env: Env): Promise<{ payoutCols: boolean; paym
     SELECT (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'reservations' AND table_schema = ANY(current_schemas(false))
               AND column_name IN ('payout_date', 'payout_amount', 'payment_processing_fee')) AS cols,
            (SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'booking_payments' AND table_schema = ANY(current_schemas(false))) AS payments`);
-  const found = { payoutCols: Number(r?.cols ?? 0) === 3, payments: Number(r?.payments ?? 0) === 1 };
+  // At least: in Demo mode current_schemas() holds the overlay and pos, so each one counts twice.
+  const found = { payoutCols: Number(r?.cols ?? 0) >= 3, payments: Number(r?.payments ?? 0) >= 1 };
   if (found.payoutCols && found.payments) moneySchemaSeen = found;
   return found;
 }
@@ -90,7 +92,7 @@ export interface Ledger {
 /** Values a source writes when it has nothing to say. 'others' is HostPlatform's default for every Airbnb booking. */
 const MEANINGLESS_METHOD = /^(others?|other|n\/?a|none|-|unknown)$/i;
 
-const ringgit = (sen: number) => `RM ${(sen / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const ringgit = (sen: number) => rmText(sen);
 
 export function ledger(m: MoneyIn, payments: PaymentRow[], site: string): Ledger {
   const v = (x: number | null) => (x == null ? 0 : x);
@@ -117,15 +119,17 @@ export function ledger(m: MoneyIn, payments: PaymentRow[], site: string): Ledger
       guestLines = [{ key: 'room', label: `Accommodation, ${m.nights} ${m.nights === 1 ? 'night' : 'nights'}`, amount: room }, ...others];
       if (m.roomRevenue != null && Math.abs(m.roomRevenue - room) > TOLERANCE
         // HostPlatform's "room rate" on an Airbnb booking is Airbnb's payout to us (the stay after Airbnb's fee,
-        // cleaning included): that is its convention, not a disagreement.
-        && !(m.channel === 'airbnb' && [m.gross - m.channelFee, m.payoutAmount, m.collected].some(x => x != null && Math.abs(m.roomRevenue! - x) <= TOLERANCE))) {
+        // cleaning included): that is its convention, not a disagreement. On Booking.com it is the room less
+        // Booking.com's fee.
+        && !(m.channel === 'airbnb' && [m.gross - m.channelFee, m.payoutAmount, m.collected].some(x => x != null && Math.abs(m.roomRevenue! - x) <= TOLERANCE))
+        && !(m.channel === 'booking_com' && Math.abs(m.roomRevenue - (room - m.channelFee)) <= TOLERANCE)) {
         // vocab-ok: roomRevenue is a field name, the text says accommodation
         notes.push(`The imported reservation file recorded accommodation charges of ${ringgit(m.roomRevenue)}; the guest total less the fees listed leaves ${ringgit(room)}.`);
       }
     }
   }
   sources.push({ label: 'Guest total', amount: guestTotal, from: m.fromWorkbook ? 'Owner workbook (Airbnb earnings report)' : ota ? `From ${site}` : 'This reservation' });
-  if (m.roomRevenue != null) sources.push({ label: m.channel === 'airbnb' ? 'Host payout' : 'Accommodation charges', amount: m.roomRevenue, from: 'Imported reservation file' });
+  if (m.roomRevenue != null) sources.push({ label: m.channel === 'airbnb' ? 'Host payout' : m.channel === 'booking_com' ? 'Accommodation less the service fee' : 'Accommodation charges', amount: m.roomRevenue, from: 'Imported reservation file' });
   for (const l of others) sources.push({ label: l.label, amount: l.amount, from: l.key === 'cleaning' && m.fromWorkbook ? 'Owner workbook' : 'Imported reservation file' });
 
   // (2)

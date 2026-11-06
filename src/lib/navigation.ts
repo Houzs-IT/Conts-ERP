@@ -2,7 +2,7 @@ import type { UserRole, AccessLevel, SessionUser } from './types';
 import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
-export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'statements' | 'approvals' | 'itSupport';
+export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews' | 'statements' | 'approvals' | 'itSupport';
 /** The sidebar shows one workspace at a time. Rental (The Conts) is the daily work; supply chain (Dream Crafter) sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
@@ -24,8 +24,7 @@ export interface NavGroup { label: string; workspace: Workspace; items: NavItem[
  *  - Finance > Revenue was the same page as Growth > Analytics: one "Performance" entry.
  *  - Owners moved from Finance to Properties; Inbox from Growth to Reservations, and back to Growth as Messages (2 Nov 2026).
  *  - The Fit-out register and Guest documents screens were retired (owner, 14 Oct 2026); guest invoices and receipts are issued from a reservation.
- *  - Projects > Calendar is "Schedule"; Service / Project maintenance are "Case settings" / "Project settings",
- *    so no two menu entries share a name.
+ *  - Service / Project maintenance are "Case settings" / "Project settings", so no two menu entries share a name.
  */
 /** The Dream Crafter group that holds IT Support and Category access. It shares its label with the Rental System group,
  *  so anything keyed by group label must also use the workspace. */
@@ -62,7 +61,7 @@ const LEDGER_ICON: Record<string, string> = {
   'supplier-ledger': 'book-user', 'deposit-invoices': 'file-plus', 'other-debtors': 'users', 'credit-debit-notes': 'file-minus',
   'not-yet-billed': 'hourglass', 'e-invoice': 'badge-check', 'official-receipts': 'receipt-text', 'debtors': 'contact',
   'customer-ledger': 'book-user', 'outstanding': 'clock', 'daily-bank': 'calendar-days', 'merchant-recon': 'credit-card',
-  'rental-unit-costs': 'building-2', 'renovation-projects': 'hammer',
+  'rental-unit-costs': 'building-2', 'department-spend': 'chart-pie', 'renovation-projects': 'hammer',
 };
 
 /** The Finance groups, in order, each by its screens: finance's own desk screens by key, the ledger's by slug
@@ -74,7 +73,7 @@ const FINANCE_LAYOUT: Array<[part: string, entries: string[]]> = [
   ['Billing', ['deposit-invoices', 'other-debtors', 'credit-debit-notes', 'not-yet-billed', 'e-invoice']],
   ['Collections', ['money-received', 'official-receipts', 'debtors', 'customer-ledger', 'outstanding', 'debtor-ageing']],
   ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon']],
-  ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'renovation-projects']],
+  ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'department-spend', 'renovation-projects']],
   ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup']],
 ];
 
@@ -121,6 +120,7 @@ export const NAV: NavGroup[] = [
   // Reports sit under Home (owner, 29 Oct 2026), with their own permission area since 30 Oct 2026.
   { label: 'REPORTS', workspace: 'rental', phone: false, items: [
     { key: 'yearlyReport', label: 'Yearly unit report', icon: 'file-spreadsheet', path: '/reports/yearly', area: 'reports', fresh: true },
+    { key: 'ygrrReport', label: 'YGRR report', icon: 'shield-check', path: '/reports/ygrr', area: 'reports', fresh: true },
   ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
     { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'reservations' },
@@ -152,16 +152,20 @@ export const NAV: NavGroup[] = [
     // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
     { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners', badge: 'statements' },
     { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'owners' },
+    // The workbook's misc deductions sheet: additional deductions and O2 by month (owner, 4 Nov 2026). Money, so the Finance area.
+    { key: 'deductions', label: 'Deductions', icon: 'receipt', path: '/properties/deductions', area: 'finance', fresh: true },
     // Owner B (owner, 2 Nov 2026): the new owners module, built beside Owners (A) so the two can be compared; it took
     // the Owner Showcase's menu place and permission (Performance), which is what sales staff open, and its sample
     // owner portal replaced the showcase. Its Owners, Statements and Payouts tabs follow their own areas.
     { key: 'ownerB', label: 'Owner B', icon: 'contact', path: '/owner-b', area: 'performance', fresh: true },
+    // The lists the unit screens pick from: buildings, unit types, contract types (owner, 4 Nov 2026).
+    { key: 'unitSettings', label: 'Unit settings', icon: 'settings', path: '/properties/settings', area: 'properties' },
   ] },
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
   ...financeGroups('/finance', '', 'rental'),
   { label: 'GROWTH', workspace: 'rental', items: [
     { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'pricing', full: true },
-    { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'pricing' },
+    { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'pricing', badge: 'reviews' },
     // Guest messages from Airbnb, Booking.com and WhatsApp, below Reviews (owner, 2 Nov 2026; migration 0200 moved the
     // permission area with it, so nobody's access changed).
     { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
@@ -201,16 +205,13 @@ export const NAV: NavGroup[] = [
     { key: 'serviceMaintenance', label: 'Case settings', icon: 'settings', path: '/service/maintenance', area: 'serviceCases', full: true },
     { key: 'myCases', label: 'My cases', icon: 'inbox', path: '/service/my-cases', area: 'serviceCases' },
   ] },
+  /* The engine's renovation screens are the Projects pages (owner, 3 Nov 2026): Beta's Home and Calendar replaced the
+     old Project list and Schedule, keeping those addresses (scmEngine.ts), and the Beta group is gone. */
   { label: 'PROJECTS', workspace: 'supply', items: [
-    { key: 'projectList', label: 'Project list', icon: 'folder-kanban', path: '/projects/list', area: 'projects' },
-    { key: 'projectCalendar', label: 'Schedule', icon: 'calendar-days', path: '/projects/calendar', area: 'projects' },
+    { key: 'projectList', label: 'Projects', icon: 'folder-kanban', path: '/projects/list', area: 'projects' },
+    { key: 'projectCalendar', label: 'Calendar', icon: 'calendar-days', path: '/projects/calendar', area: 'projects' },
     { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projects', full: true },
     { key: 'projectMaintenance', label: 'Project settings', icon: 'settings', path: '/projects/maintenance', area: 'projects', full: true },
-  ] },
-  // The engine's new project screens (owner, 23 Oct 2026). Their Projects area is engine-only, like Projects.
-  { label: 'BETA', workspace: 'supply', items: [
-    { key: 'betaProjects', label: 'Home', icon: 'house', path: '/beta/projects', area: 'projects' },
-    { key: 'betaCalendar', label: 'Calendar', icon: 'calendar-days', path: '/beta/calendar', area: 'projects' },
   ] },
   { label: 'SUPPLY CHAIN', workspace: 'supply', items: [
     { key: 'scSales', label: 'Sales order', icon: 'shopping-cart', area: 'scSales', children: [
@@ -240,6 +241,10 @@ export const NAV: NavGroup[] = [
       { key: 'goodsReceived', label: 'Goods receipt', icon: 'package-check', path: '/procurement/goods-received' },
       { key: 'purchaseInvoices', label: 'Purchase invoices', icon: 'receipt-text', path: '/procurement/purchase-invoices', area: 'scInvoices' },
       { key: 'purchaseReturns', label: 'Purchase returns', icon: 'package-x', path: '/procurement/purchase-returns' },
+    ] },
+    { key: 'scProduction', label: 'Production', icon: 'factory', area: 'scProcurement', children: [
+      { key: 'productionOrders', label: 'Production orders', icon: 'clipboard-list', path: '/production/production-orders' },
+      { key: 'skuComposition', label: 'SKU Composition', icon: 'clipboard-list', path: '/production/sku-composition' },
     ] },
     { key: 'scTransportPlan', label: 'Transportation', icon: 'truck', area: 'scTransportPlan', children: [
       { key: 'deliveryPlanning', label: 'Delivery planning', icon: 'route', path: '/transport/planning' },
@@ -421,6 +426,7 @@ const SUB_PAGES: [RegExp, string][] = [
   [/^\/owner-b\/[^/]+\/portal$/, 'View as owner'],
   [/^\/owner-b\/(?!sample$)[^/]+$/, 'Owner profile'],
   [/^\/owners\/(?!contracts$|statements$)[^/]+$/, 'Owner profile'],
+  [/^\/properties\/units\/new$/, 'Add unit'],
   [/^\/properties\/units\/[^/]+$/, 'Unit'],
   [/^\/system\/integrations\/hostplatform$/, 'HostPlatform import'],
 ];

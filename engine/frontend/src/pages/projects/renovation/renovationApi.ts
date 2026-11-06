@@ -240,5 +240,5 @@ export const renovationApi = {
     api.post<unknown>(`/api/scm/renovation/sales-orders/${encodeURIComponent(docNo)}/instalments/${encodeURIComponent(instalmentId)}/bill`, { invoiceDate, expectedAmountSen }),
   openLines: (projectId: number) => api.get<{ data: OpenLine[] }>(`/api/scm/site-receipts/projects/${projectId}/open-lines`),
   siteReceipt: (b: Record<string, unknown>, idempotencyKey: string) => api.post<{ created: Array<{ id: string; grnNumber: string; posted: boolean; postError?: string }>; tasksCompleted: number }>(`/api/scm/site-receipts`, b, { idempotencyKey }),
-  siteReceiptDetail: (grnId: string) => api.get<{ receipt: Record<string, unknown>; photos: PodPhoto[]; lines: Array<{ id: string; item_code: string; material_name: string; qty_accepted: number }> }>(`/api/scm/site-receipts/${grnId}`),
+  siteReceiptDetail: (grnId: string) => api.get<{ receipt: Record<string, unknown> | null; photos: PodPhoto[]; lines: Array<{ id: string; item_code: string; material_name: string; qty_accepted: number }> }>(`/api/scm/site-receipts/${grnId}`),
 };

@@ -1,5 +1,6 @@
 /* Pure helpers for the renovation screens: labels, tones, dates, error text. */
 
+import { fmtDate } from "@2990s/shared";
 import type { StageState, SupplyCondition, TaskStatus, UnitKeyStatus } from "./renovationApi";
 
 export type Tone = "ok" | "warn" | "err" | "muted" | "info";
@@ -78,9 +79,7 @@ export function money(sen: number | null | undefined): string {
 
 export function shortDate(iso: string | null | undefined): string {
   if (!iso) return "-";
-  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" });
+  return fmtDate(String(iso).slice(0, 10));
 }
 
 /** YYYY-MM-DD plus n days (calendar drag). */

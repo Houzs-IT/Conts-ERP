@@ -174,7 +174,7 @@ const EFFECTIVE_TONE: Record<
   Effective,
   { tone: "success" | "warning" | "error" | "neutral"; label: string; blurb: string }
 > = {
-  draft: { tone: "warning", label: "Draft", blurb: "Draft · not yet posted" },
+  draft: { tone: "warning", label: "Draft", blurb: "Draft · not yet submitted" },
   posted: { tone: "warning", label: "Submitted", blurb: "Submitted · awaiting payment" },
   on_hold: { tone: "warning", label: "On Hold", blurb: "On hold · payment blocked until released" },
   partial: { tone: "warning", label: "Partially paid", blurb: "Partially paid · balance still due" },
@@ -293,7 +293,7 @@ function OwedHeroCard({ header }: { header: PiHeader }) {
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
         {isPaid ? "Paid in full" : "Owed to supplier"}
       </div>
-      <div className={cn("mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight", isPaid ? "text-synced" : "text-err")}>
+      <div className={cn("mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight text-white")}>
         {fmtMoney(isPaid ? total : outstanding, header.currency)}
       </div>
       <div className="mt-3 flex items-center gap-2">
@@ -484,9 +484,9 @@ function PurchaseInvoiceDetailV2ReadOnly() {
   const doPost = async () => {
     if (!id) return;
     if (await askConfirm({
-      title: "Post this purchase invoice?",
+      title: "Submit this purchase invoice?",
       body: "Revenue-side and AP will be updated.",
-      confirmLabel: "Post invoice",
+      confirmLabel: "Submit invoice",
     })) {
       postPi.mutate(id);
     }
@@ -774,7 +774,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             <Button variant="ghost" icon={<History size={14} />} onClick={() => setHistoryOpen(true)}>History</Button>
             {/* Copy as new (owner 2026-09-03): content as template, identity
                 fresh — any status; the New page does the pre-fill. */}
@@ -787,7 +787,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
               <Button variant="danger" icon={<XCircle size={14} />} onClick={doCancel}>Cancel PI</Button>
             )}
             {canPost && (
-              <Button variant="secondary" icon={<Send size={14} />} onClick={doPost}>Post</Button>
+              <Button variant="secondary" icon={<Send size={14} />} onClick={doPost}>Submit</Button>
             )}
             {canRecordPayment && (
               <Button variant="secondary" icon={<Wallet size={14} />} onClick={goRecordPayment}>Record payment</Button>
@@ -819,7 +819,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
                 <Field label="Supplier code" value={supplierCodeOf(purchaseInvoice)} mono />
                 <Field
                   label="Contact"
-                  value={purchaseInvoice.supplier?.contact_person || "—"}
+                  value={purchaseInvoice.supplier?.contact_person || "Not provided"}
                   muted={!purchaseInvoice.supplier?.contact_person}
                 />
                 <Field
@@ -835,7 +835,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
                 />
                 <Field
                   label="Address"
-                  value={purchaseInvoice.supplier?.address || "—"}
+                  value={purchaseInvoice.supplier?.address || "Not provided"}
                   muted={!purchaseInvoice.supplier?.address}
                 />
               </div>
@@ -919,15 +919,15 @@ function PurchaseInvoiceDetailV2ReadOnly() {
               <OwedHeroCard header={purchaseInvoice} />
 
               <AsideCard title="Key dates">
-                <KeyDateRow k="Invoice" v={fmtDate(purchaseInvoice.invoice_date)} />
+                <KeyDateRow k="Invoice date" v={fmtDate(purchaseInvoice.invoice_date)} />
                 <KeyDateRow
-                  k="Due"
+                  k="Due date"
                   v={fmtDate(purchaseInvoice.due_date)}
                   muted={!purchaseInvoice.due_date}
                   danger={isOverdue}
                 />
                 {purchaseInvoice.posted_at && (
-                  <KeyDateRow k="Posted" v={fmtDate(purchaseInvoice.posted_at)} />
+                  <KeyDateRow k="Submitted" v={fmtDate(purchaseInvoice.posted_at)} />
                 )}
               </AsideCard>
 
@@ -977,7 +977,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
         <div className="flex items-center gap-2">
           {canPost ? (
             <button type="button" onClick={doPost} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-[13.5px] font-bold text-white shadow-sm hover:bg-primary-ink">
-              <Send size={16} /> Post
+              <Send size={16} /> Submit
             </button>
           ) : canRecordPayment ? (
             <button type="button" onClick={goRecordPayment} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-[13.5px] font-bold text-white shadow-sm hover:bg-primary-ink">

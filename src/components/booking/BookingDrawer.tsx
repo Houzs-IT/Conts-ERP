@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { Modal } from '../Modal';
 import { DemoReservationBar, useDemoOn } from '../demo/DemoRecords';
-import { createPortal } from 'react-dom';
 import { Drawer } from '../Dialog';
 import { Button } from '../Button';
 import { Field } from '../Field';
@@ -282,27 +282,7 @@ function Timeline({ events }: { events: TimelineEvent[] }) {
 /* ------------------------------------------------------------------ */
 
 export function CentreModal({ title, sub, onClose, children, maxWidth = 460 }: { title: string; sub?: string; onClose: () => void; children: ReactNode; maxWidth?: number }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  // Portalled to the body: inside the drawer (which animates with a transform) a fixed overlay would be
-  // trapped in the drawer's box instead of covering the screen.
-  return createPortal(
-    <div role="dialog" aria-modal="true" aria-label={title}
-      className="fixed inset-0 z-[70] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div style={{ maxWidth }} className="relative w-full bg-card rounded-card shadow-[var(--shadow-overlay)] max-h-[90dvh] flex flex-col overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
-        <div className="px-[22px] pt-[22px] pb-1 flex-none">
-          <h2 className="m-0 text-title font-semibold">{title}</h2>
-          {sub && <p className="mt-[6px] mx-0 mb-0 text-copy text-muted-ink">{sub}</p>}
-        </div>
-        {children}
-      </div>
-    </div>,
-    document.body,
-  );
+  return <Modal title={title} sub={sub} onClose={onClose} width={maxWidth} body="raw" layer="over">{children}</Modal>;
 }
 
 /** The buttons at the foot of a CentreModal form (whose padding is px-[22px] py-4): a footer bar on the page tint, as on
@@ -561,7 +541,7 @@ function NotesBox({ d, onSaved }: { d: Detail; onSaved: () => void }) {
         className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
       {dirty && (
         <div className="flex justify-end gap-2">
-          <Button size="sm" variant="tertiary" onClick={() => setText(d.staffNotes ?? '')} disabled={busy}>Discard</Button>
+          <Button size="sm" variant="secondary" onClick={() => setText(d.staffNotes ?? '')} disabled={busy}>Discard</Button>
           <Button size="sm" variant="primary" onClick={save} loading={busy}>Save notes</Button>
         </div>
       )}
@@ -722,9 +702,12 @@ function GuestPhoneRow({ guestId, phone, onSaved }: { guestId: string; phone: st
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(phone ?? '');
+  // What was just saved shows at once; the drawer's reload can answer with the row as it was a moment ago.
+  const [saved, setSaved] = useState<string | null | undefined>(undefined);
+  const shown = saved !== undefined ? saved : phone;
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (!editing) setValue(phone ?? ''); }, [phone, editing]);
+  useEffect(() => { if (!editing) setValue(shown ?? ''); }, [shown, editing]);
   async function save() {
     const problem = value.trim() ? phoneProblem(value) : undefined;
     if (problem) { setError(problem); return; }
@@ -732,6 +715,7 @@ function GuestPhoneRow({ guestId, phone, onSaved }: { guestId: string; phone: st
     try {
       await api.patch(`/guests/${encodeURIComponent(guestId)}`, { phone: value.trim() || null });
       toast({ tone: 'success', title: value.trim() ? 'Phone saved on the guest.' : 'Phone removed from the guest.' });
+      setSaved(value.trim() || null);
       setEditing(false);
       onSaved();
     } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); }
@@ -752,9 +736,9 @@ function GuestPhoneRow({ guestId, phone, onSaved }: { guestId: string; phone: st
     <div className="flex justify-between items-center gap-3">
       <span className="text-muted-ink">Phone</span>
       <span className="flex items-center gap-2 min-w-0">
-        <span className="text-right break-all"><PhoneText value={phone} className="text-ink" /></span>
+        <span className="text-right break-all"><PhoneText value={shown} className="text-ink" /></span>
         <button type="button" onClick={() => setEditing(true)} className="p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer whitespace-nowrap">
-          {phone ? 'Edit' : 'Add phone'}
+          {shown ? 'Edit' : 'Add phone'}
         </button>
       </span>
     </div>

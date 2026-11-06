@@ -61,7 +61,7 @@ const PAGES: ReadonlyArray<readonly [rel: string, docType: StatusDocType]> = [
   ['pages/scm-v2/PurchaseInvoiceDetailV2.tsx', 'pi'],
   ['pages/scm-v2/SalesInvoicesListV2.tsx', 'si'],
   ['pages/scm-v2/SalesInvoiceDetailV2.tsx', 'si'],
-  ['pages/scm-v2/SalesOrderDetailV2.tsx', 'so'],
+  ['pages/scm-v2/soDetailParts.tsx', 'so'],
   ['pages/scm-v2/so-list-status.ts', 'so'],
   ['pages/scm-v2/do-list-status.ts', 'do'],
   ['pages/scm-v2/DeliveryReturnsListV2.tsx', 'dr'],
@@ -281,6 +281,7 @@ describe('no page spells a status differently from status-pill.ts', () => {
  * instead of being skipped. */
 const STAGE_MAP_DOC: Record<string, StatusDocType> = {
   'pages/scm-v2/PurchaseOrderDetailV2.tsx': 'po',
+  'pages/scm-v2/ProductionOrderDetailV2.tsx': 'production',
   'pages/scm-v2/DeliveryOrderDetailV2.tsx': 'do',
   'pages/scm-v2/DeliveryReturnDetailV2.tsx': 'dr',
   'pages/scm-v2/GoodsReceivedDetailV2.tsx': 'grn',

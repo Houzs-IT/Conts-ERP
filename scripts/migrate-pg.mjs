@@ -97,6 +97,9 @@ await sql`create table if not exists public.pos_migrations (filename text primar
 await sql`alter table public.pos_migrations enable row level security`;
 const applied = new Map((await sql`select filename, checksum from public.pos_migrations`).map((r) => [r.filename, r.checksum]));
 
+const DEMO_BEFORE = "do $$ begin if to_regproc('demo.drop_views') is not null then perform demo.drop_views(); end if; end $$";
+const DEMO_AFTER = "do $$ begin if to_regproc('demo.sync') is not null then perform demo.sync(); end if; end $$";
+
 let pending = 0;
 for (const filename of readdirSync('migrations-pg').filter((f) => f.endsWith('.sql')).sort()) {
   const body = readFileSync(`migrations-pg/${filename}`, 'utf8');

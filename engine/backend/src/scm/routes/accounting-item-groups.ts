@@ -26,6 +26,7 @@
 // ----------------------------------------------------------------------------
 
 import { hasHouzsPerm } from '../lib/houzs-perms';
+import { categoryGroupOf } from '../shared/renovation-catalog';
 import { CONTROL_ROLES, resolveRoles } from '../../acc/rules';
 
 const requirePerm = (c: any): boolean => hasHouzsPerm(c, 'scm.payment_voucher.post');
@@ -223,6 +224,18 @@ export const itemGroupCreate = async (c: any): Promise<Response> => {
      (bindings) is plain DML from here. */
   const { error: rpcErr } = await sb.rpc('acc_register_item_group', { p_code: code, p_name: name });
   if (rpcErr) return c.json({ error: 'register_failed', reason: rpcErr.message }, 500);
+
+  /* A category is on the product pickers because it is in product_category_groups, and a SKU cannot save
+     without it (mfg_products.category_group is derived from it, not null). A legacy code (DINING) already
+     maps to a group and must keep doing so. New groups take the furniture stage until the owner says
+     otherwise: the stage decides where a line sits on a project. */
+  if (!categoryGroupOf(code)) {
+    const { data: last } = await sb.from('product_category_groups').select('sort_order').order('sort_order', { ascending: false }).limit(1).maybeSingle();
+    const { error: masterErr } = await sb.from('product_category_groups').upsert({
+      code, label: name, default_stage: 'furniture', photo_required: false, sort_order: Number(last?.sort_order ?? 0) + 10,
+    }, { onConflict: 'code', ignoreDuplicates: true });
+    if (masterErr) return c.json({ error: 'save_failed', reason: masterErr.message }, 500);
+  }
 
   const user = (c.get('houzsUser') as { name?: string } | undefined)?.name ?? null;
   const { error: upErr } = await sb.from('acc_item_group_accounts').upsert({

@@ -150,6 +150,20 @@ export const STATUS_VOCAB = {
   review: {
     replied: { label: 'Replied', tone: 'success' },
     needs_reply: { label: 'Needs reply', tone: 'warning' },
+    not_posted: { label: 'Not posted', tone: 'warning' },
+    bad: { label: 'Bad review', tone: 'danger' },
+    hidden: { label: 'Hidden until you review the guest', tone: 'info' },
+  },
+  /** The host's review of an Airbnb guest (functions/_lib/guestReviews.ts). to_write and held are worked out on the screen. */
+  guest_review: {
+    to_write: { label: 'To review', tone: 'neutral' },
+    needs_approval: { label: 'Needs approval', tone: 'warning' },
+    scheduled: { label: 'Sending', tone: 'info' },
+    held: { label: 'Held for Bad guest', tone: 'accent' },
+    waiting: { label: 'Waiting for Airbnb', tone: 'info' },
+    sent: { label: 'Sent', tone: 'success' },
+    failed: { label: 'Not sent', tone: 'danger' },
+    closed: { label: 'Window closed', tone: 'neutral' },
   },
   /** A request on IT Support, as the person who sent it reads it. The values are the IT Hub's. `resolved` is IT
    *  saying it is fixed and asking the person to check; `waiting_reporter` is IT waiting for their answer. */
@@ -201,6 +215,25 @@ export const STATUS_VOCAB = {
     charged: { label: 'Charged to owner', tone: 'success' },
     record: { label: 'Record only', tone: 'info' },
     company: { label: 'Company pays', tone: 'neutral' },
+  },
+  /* A utility bill's payment request, on Utility bills "By payment request" (src/lib/utilityGrid.ts requestState). */
+  utility_request: {
+    waiting: { label: 'Waiting for payment', tone: 'warning' },
+    part_paid: { label: 'Part paid', tone: 'info' },
+    paid: { label: 'Paid', tone: 'success' },
+  },
+
+  // Units > Deductions (src/pages/DeductionsPage.tsx): which side of the operator's share a line comes off.
+  deduction_type: {
+    additional: { label: 'Additional deduction', tone: 'info' },
+    o2: { label: 'O2', tone: 'warning' },
+  },
+  // Where a deduction line stands against the owner statements (functions/api/finance/deductions.ts).
+  deduction: {
+    open: { label: 'Open', tone: 'neutral' },
+    held: { label: 'Held', tone: 'warning' },
+    settled: { label: 'Settled outside', tone: 'neutral' },
+    final: { label: 'On final statement', tone: 'success' },
   },
 
   /* ---------- Supply chain documents (built-in screens) ---------- */

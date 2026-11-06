@@ -557,7 +557,7 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
       <div className="bg-card border border-solid border-line rounded-card p-5 grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-[14px]">
         <Stat label="Reservations" value={fmtCount(g.stays)} sub={g.upcoming ? `incl. ${g.upcoming} upcoming` : undefined} />
         <Stat label="Nights" value={fmtCount(g.nights)} />
-        <Stat label="Total spent" value={rm(g.lifetimeValue, { cents: false })}
+        <Stat label="Total spent" value={rm(g.lifetimeValue)}
           sub={`Guest totals of ${plural(g.stays, 'reservation')}${g.upcoming ? ', upcoming included' : ''}`} />
         <Stat label="Rating given" value={g.ratingScore != null ? g.ratingScore.toFixed(1) : '—'} />
       </div>
@@ -612,7 +612,7 @@ function StayRow({ s, last, onOpen }: { s: Stay; last: boolean; onOpen: () => vo
           <span className="text-meta text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {fmtNights(s.nights)}{s.externalRef ? ` · ${s.externalRef}` : ''}{s.rating != null ? ` · rated ${s.rating.toFixed(1)}` : ''}</span>
         </div>
         <span className="flex flex-col items-end min-w-[92px] max-w-[190px]">
-          <span className="text-copy font-medium [font-variant-numeric:tabular-nums] text-ink">{rm(s.value, { cents: false })}</span>
+          <span className="text-copy font-medium [font-variant-numeric:tabular-nums] text-ink">{rm(s.value)}</span>
           <span className={cx('text-caption text-right', tone)}>{status.label}</span>
         </span>
         <StatusBadge entity="stay" value={stayPhase(s)} size="sm" />
@@ -746,7 +746,7 @@ function NotesAndTags({ g, onSaved }: { g: Guest; onSaved: () => void }) {
       </div>
       {dirty && (
         <div className="flex justify-end gap-2">
-          <Button size="sm" variant="tertiary" onClick={() => setNotes(g.notes ?? '')} disabled={busy}>Discard</Button>
+          <Button size="sm" variant="secondary" onClick={() => setNotes(g.notes ?? '')} disabled={busy}>Discard</Button>
           <Button size="sm" variant="primary" loading={busy} onClick={() => save({ notes: notes.trim() || null }, 'Notes saved.')}>Save notes</Button>
         </div>
       )}

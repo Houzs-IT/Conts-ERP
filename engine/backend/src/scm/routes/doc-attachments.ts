@@ -28,7 +28,7 @@ import type { Env, Variables } from '../env';
 import type { Db } from '../../services/renovation/load';
 import {
   DOC_TYPES, MAX_FILE_BYTES, MAX_VIDEO_BYTES, adoptLegacySoAttachments, attachmentKey, attachmentsReady,
-  carriedFileRow, carriedFiles, cleanName, evidenceFiles, fileKind, fileRow, findDocsByNumber, isDocType, lineBelongs, listFiles, listLines,
+  carriedFileRow, carriedFiles, linkedDocFiles, cleanName, evidenceFiles, fileKind, fileRow, findDocsByNumber, isDocType, lineBelongs, listFiles, listLines,
   loadDoc, podFileById, podFiles, isPodFileId, textArray, type DocFile, type DocLine, type DocRef, type DocType,
 } from '../lib/doc-attachments';
 
@@ -100,6 +100,8 @@ export async function readDocFiles(db: Db, doc: DocRef): Promise<{ files: DocFil
     const pods = await podFiles(db, doc.id).catch(() => []);
     docFiles.unshift(...pods.map(({ key: _key, ...shown }) => shown));
   }
+  const linked = await linkedDocFiles(db, doc).catch((e) => { console.error('[doc-attachments] linked files', e); return []; });
+  docFiles.unshift(...linked.map(({ key: _key, ...f }) => f));
   const evidence = await evidenceFiles(db, doc).catch((e) => { console.error('[doc-attachments] evidence files', e); return []; });
   docFiles.unshift(...evidence.map(({ key: _key, ...f }) => f));
   return {
@@ -253,6 +255,7 @@ export const quotationAttachments = router('quotation', '/quotations');
 export const salesOrderAttachments = router('sales_order');
 export const variationOrderAttachments = router('variation_order', '/variation-orders');
 export const purchaseOrderAttachments = router('purchase_order');
+export const productionOrderAttachments = router('production_order');
 export const deliveryOrderAttachments = router('delivery_order');
 export const goodsReceivedAttachments = router('goods_received');
 export const deliveryReturnAttachments = router('delivery_return');

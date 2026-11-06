@@ -1,5 +1,6 @@
 import { type Env, one, all, json, fail } from '../../_lib/db';
-import { REVIEW_COLUMNS, REVIEW_FROM, reviewOut } from '../../_lib/reviews';
+import { rmText } from '../../_lib/format';
+import { REVIEW_COLUMNS, REVIEW_FROM, reviewOut, cleanColumn } from '../../_lib/reviews';
 import { can } from '../../_lib/access';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { fromSql, columnsSql, toRow } from '../../_lib/bookingList';
@@ -24,7 +25,7 @@ async function optionalColumns(env: Env): Promise<{ column_name: string }[]> {
   if (optionalSeen) return optionalSeen;
   const wanted = [...Object.keys(OPTIONAL_MONEY), 'staff_notes'];
   const rows = await all<{ column_name: string }>(env, `
-    SELECT column_name FROM information_schema.columns
+    SELECT DISTINCT column_name FROM information_schema.columns
     WHERE table_name = 'reservations' AND table_schema = ANY(current_schemas(false))
       AND column_name IN (${wanted.map(c => `'${c}'`).join(', ')})`);
   if (rows.length === wanted.length) optionalSeen = rows;
@@ -42,7 +43,7 @@ const STATE_LABEL: Record<string, string> = {
 
 interface TimelineEvent { at: string; label: string; detail?: string; actor?: string; upcoming?: boolean }
 
-const ringgit = (sen: number) => `RM ${(sen / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const ringgit = (sen: number) => rmText(sen);
 const parse = (s: string | null) => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
 
 /** One audit row in words. Rows the drawer has nothing to say about return null. */
@@ -121,7 +122,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     all<any>(env, `SELECT template, channel, state, queued_at, sent_at FROM notification_log
       WHERE entity_table = 'reservations' AND entity_id = ? ORDER BY queued_at LIMIT 50`, id),
     // The review this stay left, shown in the drawer (Reviews, owner 2 Nov 2026).
-    one<any>(env, `SELECT ${REVIEW_COLUMNS} ${REVIEW_FROM} WHERE v.reservation_id = ? ORDER BY v.reviewed_at DESC LIMIT 1`, id),
+    one<any>(env, `SELECT ${REVIEW_COLUMNS}, ${cleanColumn()} ${REVIEW_FROM} WHERE v.reservation_id = ? ORDER BY v.reviewed_at DESC LIMIT 1`, id),
     one<{ id: string }>(env, 'SELECT id FROM message_threads WHERE reservation_id = ? ORDER BY last_message_at DESC LIMIT 1', id),
   ]);
 

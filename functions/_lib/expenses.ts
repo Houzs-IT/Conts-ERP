@@ -1,10 +1,10 @@
 import { type Env, one, all } from './db';
+import { numericDate } from './format';
 import { firstOpenMonth } from '../../src/lib/deductMonth';
 
 export const EXPENSE_CATEGORIES = ['internet', 'electricity', 'water', 'sewerage', 'cleaning', 'housekeeping', 'maintenance', 'utilities', 'consumables', 'furniture', 'management_fee', 'channel_fee', 'other'];
 /** Who pays an expense ("Paid by" on screen). Only 'owner' reaches the owner statement; the rest stay in the unit's
  *  own profit and loss. owner = Owner (via statement), the_conts = Company, tenant = Tenant, guest_deposit = Guest. */
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** Words for approval summaries and reports, which are read by people: "Indah Water, 5 Oct 2026", never "sewerage, 2026-10-05". */
 export function expenseCategoryLabel(c: string | null | undefined) {
   if (!c) return 'Expense';
@@ -12,7 +12,7 @@ export function expenseCategoryLabel(c: string | null | undefined) {
 }
 export function expenseDayLabel(d: string | null | undefined) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d ?? ''));
-  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : String(d ?? '');
+  return m ? numericDate(`${m[1]}-${m[2]}-${m[3]}`) : String(d ?? '');
 }
 export const CHARGE_TO = ['owner', 'the_conts', 'tenant', 'guest_deposit', 'warranty'];
 
@@ -109,4 +109,14 @@ export function expenseWhere(f: ExpenseFilter, skip?: keyof ExpenseFilter): { sq
 }
 
 /** SQL: true when the expense `e` is a rollup header whose line items carry its money. */
+/** The tables one expense row is read from, and what the screens see of it. */
+export const EXPENSE_FROM = 'FROM expenses e JOIN units u ON u.id = e.unit_id JOIN properties p ON p.id = u.property_id';
+export const expenseOut = (r: any) => ({
+  id: r.id, unitId: r.unit_id, unitNumber: r.unit_number, propertyName: r.property_name,
+  category: r.category, description: r.description, amount: Number(r.amount),
+  incurredOn: r.incurred_on, reference: r.reference, chargeTo: r.charge_to,
+  parentExpenseId: r.parent_expense_id ?? null, locked: !!r.locked, receiptDocumentId: r.receipt_document_id ?? null,
+  taskId: r.task_id ?? null, maintenanceId: r.maintenance_id ?? null,
+});
+
 export const IS_PARENT_SQL = 'EXISTS (SELECT 1 FROM expenses k WHERE k.parent_expense_id = e.id)';

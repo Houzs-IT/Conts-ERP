@@ -51,9 +51,10 @@ import { resolveFxRate, deriveRateFromMyrPaid } from './fx-rate';
 import { fmtMoneySen } from '../../vendor/shared/format';
 import { ProjectLimitField } from '../../conts/ProjectLimitField';
 import {
-  DepartmentTag, LineForSwitch, LineTarget, lineDepartment, missingTarget, purposeOfNew, purposeOfSaved, purposePayload,
+  DepartmentTag, LineSubSelect, LineTarget, lineDepartment, missingTarget, purposeOfNew, purposeOfSaved, purposePayload,
   repurpose, useProjectSides, voucherLineCss, type PurposeDraft,
 } from '../../conts/VoucherLineFor';
+import { useSubDepartments } from '../../conts/subDepartmentQueries';
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
 
@@ -145,6 +146,13 @@ export const PaymentVoucherNew = () => {
   /* Fixed by the document type — AP Payment settles PIs, Payment Voucher is
      plain cash-out. The old three-way dropdown is gone with the split. */
   const purpose: PvPurpose = isRefund ? 'CUSTOMER_REFUND' : isAp ? 'SUPPLIER_PAYMENT' : 'OTHER';
+  /* Where the cursor starts (chew 3 Nov 2026): "开pv 的时候就是直接在key payee 那边", and "如果是ap payment 就是直接在找
+     supplier 那边" — on opening, and again on switching between the two (the page stays mounted then). */
+  const payeeRef = useRef<HTMLInputElement>(null);
+  const supplierRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    (isAp ? supplierRef.current?.querySelector('input') : payeeRef.current)?.focus();
+  }, [isAp]);
   const [creditAccountCode, setCreditAccountCode] = useState<string>('');
   /* Pre-fill Paid From with the company's own default bank (BANK_DEFAULT —
      the role the owner maintains in Recon Setup). Only while untouched. */
@@ -283,6 +291,8 @@ export const PaymentVoucherNew = () => {
   const [lines, setLines]                         = useState<DraftLine[]>([newLine()]);
   /* Each Project line's project: its funding and side set the line's tag before the save. */
   const sideOf = useProjectSides();
+  /* Each line's sub-department (SOP 1.1; chew 4 Nov 2026). */
+  const subs = useSubDepartments().data?.subDepartments ?? [];
   const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string } | null>(null);
   /* ── Customer Refund state (§14). refundDocNo is the COMMITTED number (blur /
      Enter on the input); the source is read from the server by that number. */
@@ -338,6 +348,7 @@ export const PaymentVoucherNew = () => {
           department: departmentOf(l.department),
           unitId: l.unit_id ? String(l.unit_id) : null,
           projectId: l.project_id == null ? null : Number(l.project_id),
+          subDepartmentId: l.sub_department_id ? String(l.sub_department_id) : null,
         })),
         description: String(l.description ?? ''),
         amountSen: Number(l.amount_sen ?? 0),
@@ -377,8 +388,8 @@ export const PaymentVoucherNew = () => {
     setLines((prev) => prev.map((l) => (l.rid === rid ? { ...l, ...patch } : l)));
   const dropLine = (rid: string) => setLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.rid !== rid)));
   /* A line's For, unit or project changed: what no longer applies goes, and the department follows. */
-  const setPurpose = (rid: string, patch: Partial<Pick<PurposeDraft, 'lineFor' | 'unitId' | 'projectId'>>) =>
-    setLines((prev) => prev.map((l) => (l.rid === rid ? repurpose(l, patch, sideOf) : l)));
+  const setPurpose = (rid: string, patch: Partial<Pick<PurposeDraft, 'lineFor' | 'unitId' | 'projectId' | 'subDepartmentId'>>) =>
+    setLines((prev) => prev.map((l) => (l.rid === rid ? repurpose(l, patch, sideOf, subs) : l)));
   /* A new line is for what the line above was for. */
   const addLine  = () => setLines((prev) => [...prev, newLine(purposeOfNew(prev))]);
   /* Insert adds a line and LANDS on its account (owner 2026-09-06: 按 Ins 直接
@@ -388,7 +399,8 @@ export const PaymentVoucherNew = () => {
   const [landOn, setLandOn] = useState<string | null>(null);
   useEffect(() => {
     if (landOn == null) return;
-    document.querySelector<HTMLInputElement>(`[data-line="${landOn}"] input[role="combobox"]`)?.focus();
+    /* The account cell (data-land), not the line's unit / project field, which is a combobox too and comes first. */
+    document.querySelector<HTMLInputElement>(`[data-line="${landOn}"] [data-land] input[role="combobox"]`)?.focus();
     setLandOn(null);
   }, [landOn, lines]);
   const addLineAndLand = () => {
@@ -709,7 +721,7 @@ export const PaymentVoucherNew = () => {
             ) : (
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Payee *</span>
-              <input type="text" value={payeeName} onChange={(e) => setPayeeName(e.target.value)}
+              <input ref={payeeRef} type="text" value={payeeName} onChange={(e) => setPayeeName(e.target.value)}
                 placeholder="Who are we paying? (e.g. ABC Freight Forwarding)" className={styles.fieldInput} required />
             </label>
             )}
@@ -725,6 +737,7 @@ export const PaymentVoucherNew = () => {
             {isAp && (
               <label className={styles.field}>
                 <span className={styles.fieldLabel}>Supplier *</span>
+                <span ref={supplierRef} style={{ display: 'contents' }}>
                 <SearchCombo
                   options={sortByText(suppliersQ.data ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))}
                   value={supplierId}
@@ -732,6 +745,7 @@ export const PaymentVoucherNew = () => {
                   className={styles.fieldInput}
                   placeholder={suppliersQ.isLoading ? 'Loading suppliers…' : 'Type to find the supplier this pays'}
                 />
+                </span>
               </label>
             )}
             <label className={styles.field}>
@@ -838,7 +852,7 @@ export const PaymentVoucherNew = () => {
                   onChange={(e) => setRefundDocInput(e.target.value)}
                   onBlur={() => setRefundDocNo(refundDocInput.trim())}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setRefundDocNo(refundDocInput.trim()); } }}
-                  placeholder={refundType === 'SO' ? 'e.g. 2990-SO-2607-001' : 'e.g. HC-SI-2607-001'} className={styles.fieldInput} />
+                  placeholder={refundType === 'SO' ? 'e.g. TC-SO-2607-001' : 'e.g. TC-SI-2607-001'} className={styles.fieldInput} />
               </label>
             </div>
             {refundQ.isLoading && refundDocNo && <p style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-13)' }}>Reading {refundDocNo}…</p>}
@@ -943,15 +957,15 @@ export const PaymentVoucherNew = () => {
             <div key={l.rid} data-line={l.rid} className={voucherLineCss.row}
               onKeyDown={(e) => { if (e.key === 'Insert') { e.preventDefault(); addLineAndLand(); } }}>
               <div className={`${voucherLineCss.cell} ${voucherLineCss.forCell}`}>
-                <span className={styles.fieldLabel}>Line {idx + 1} · For</span>
-                <LineForSwitch n={idx + 1} value={l.lineFor} onChange={(f) => setPurpose(l.rid, { lineFor: f })} />
+                <span className={styles.fieldLabel}>Line {idx + 1} · Department *</span>
+                <LineSubSelect n={idx + 1} line={l} subs={subs} className={styles.fieldInput} onChange={(id) => setPurpose(l.rid, { subDepartmentId: id })} />
               </div>
               <div className={voucherLineCss.cell}>
-                <span className={styles.fieldLabel}>{l.lineFor === 'unit' ? 'Unit *' : l.lineFor === 'project' ? 'Project *' : 'Paid for'}</span>
-                <LineTarget n={idx + 1} line={l} inputClass={styles.fieldInput}
+                <span className={styles.fieldLabel}>{l.department === 'shared' ? 'Paid for' : l.department === 'rental' ? 'Unit or project' : 'Project'}</span>
+                <LineTarget n={idx + 1} line={l} subs={subs} inputClass={styles.fieldInput}
                   onUnit={(u) => setPurpose(l.rid, { unitId: u })} onProject={(p) => setPurpose(l.rid, { projectId: p })} />
               </div>
-              <label className={voucherLineCss.cell}>
+              <label className={voucherLineCss.cell} data-land>
                 <span className={styles.fieldLabel}>Account (Debit) *</span>
                 <AccountSelect
                   accounts={accounts}

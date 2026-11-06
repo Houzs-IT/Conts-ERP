@@ -25,6 +25,7 @@
 // Handlers exported bare for the vitest harness (accounting-chart precedent).
 // ----------------------------------------------------------------------------
 
+import { resolveLinesSub } from '../../conts/sub-departments';
 import { Hono } from 'hono';
 import { ledgerEditSide } from '../../acc/ledger-settings';
 import { hasHouzsPerm } from '../lib/houzs-perms';
@@ -185,7 +186,15 @@ export const debtorDetailHandler = async (c: any): Promise<Response> => {
 /** A MONEY line names a credit account and a positive sen; a TEXT line (code
     null, amount 0) carries a description alone — it prints, books nothing. */
 /* Conts: each line's department (finance phase 1, spec 3.5); none is Supply chain. */
-type BillLine = { description: string | null; code: string | null; amountSen: number; department: Department };
+type BillLine = { description: string | null; code: string | null; amountSen: number; department: Department; subDepartmentId?: string | null };
+
+/** Each line's sub-department (SOP 1.1; chew 4 Nov 2026): a named one sets the line's department. Null = all good. */
+async function billSubRefusal(c: any, companyId: number, lines: BillLine[], raw: unknown, saved: ReadonlyArray<string | null> = []): Promise<Response | null> {
+  const r = await resolveLinesSub(c.get('supabase'), companyId, Array.isArray(raw) ? raw : [], saved);
+  if (!r.ok) return c.json({ error: r.error, message: r.message }, r.status);
+  r.lines.forEach((s, i) => { if (s && lines[i] && lines[i]!.code !== null) { lines[i]!.department = s.department; lines[i]!.subDepartmentId = s.subDepartmentId; } });
+  return null;
+}
 const isMoneyLine = (l: BillLine): l is BillLine & { code: string } => l.code !== null;
 
 /** 1–50 lines: money lines (an account and a positive integer sen) and text
@@ -237,7 +246,7 @@ function debtorBillRuleLines(roles: { AR_OTHER: string }, debtorName: string, bi
     ...money.map((l) => ({
       accountCode: l.code, debitSen: 0, creditSen: l.amountSen,
       partyType: null, partyCode: null, partyName: null,
-      notes: l.description ?? billNumber, department: l.department,
+      notes: l.description ?? billNumber, department: l.department, subDepartmentId: l.subDepartmentId ?? null,
     })),
   ];
 }
@@ -258,6 +267,8 @@ export const createDebtorBillHandler = async (c: any): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json({ error: 'no_company', message: 'No active company resolves for this session.' }, 409);
   const coId = co.companyId;
+  const badSub = await billSubRefusal(c, coId, lines, body.lines);
+  if (badSub) return badSub;
   /* Each credit line takes only ordinary LEAVES — the same door the PV's
      debit walks: headers refuse (父户不记账), controls refuse (由模块过账). */
   for (const code of [...new Set(lines.filter(isMoneyLine).map((l) => l.code))]) {
@@ -290,6 +301,7 @@ export const createDebtorBillHandler = async (c: any): Promise<Response> => {
     credit_account_code: l.code,
     amount_sen: l.amountSen,
     department: l.department,
+    ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
   })));
   if (lineErr) {
     await sb.from('acc_debtor_bills').delete().eq('company_id', coId).eq('id', bill.id);
@@ -355,6 +367,9 @@ export const updateDebtorBillHandler = async (c: any): Promise<Response> => {
       const leafErr = await requireLeafAccount(c, coId, code);
       if (leafErr) return leafErr;
     }
+    const { data: hadSubs } = await sb.from('acc_debtor_bill_lines').select('line_no, sub_department_id').eq('company_id', coId).eq('bill_id', bill.id).order('line_no');
+    const badSub = await billSubRefusal(c, coId, built.lines, body.lines, ((hadSubs ?? []) as Array<{ sub_department_id?: string | null }>).map((h) => h.sub_department_id ?? null));
+    if (badSub) return badSub;
     rebuilt = built;
   }
   /* A blank or absent date keeps the old one — through the shared coercion, so
@@ -373,6 +388,7 @@ export const updateDebtorBillHandler = async (c: any): Promise<Response> => {
     const { error: lineErr } = await sb.from('acc_debtor_bill_lines').insert(rebuilt.lines.map((l, i) => ({
       company_id: coId, bill_id: bill.id, line_no: i + 1,
       description: l.description, credit_account_code: l.code, amount_sen: l.amountSen, department: l.department,
+      ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
     })));
     if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
   }
@@ -397,12 +413,12 @@ export const updateDebtorBillHandler = async (c: any): Promise<Response> => {
   if (rebuilt) lines = rebuilt.lines;
   else {
     const { data: rows, error: lErr } = await scopeToCompany(
-      sb.from('acc_debtor_bill_lines').select('line_no, description, credit_account_code, amount_sen, department').eq('bill_id', bill.id), c,
+      sb.from('acc_debtor_bill_lines').select('line_no, description, credit_account_code, amount_sen, department, sub_department_id').eq('bill_id', bill.id), c,
     ).order('line_no');
     if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
     lines = ((rows ?? []) as Row[]).map((l) => ({
       description: l.description ?? null, code: l.credit_account_code ? String(l.credit_account_code) : null, amountSen: Number(l.amount_sen),
-      department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT,
+      department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, subDepartmentId: l.sub_department_id ?? null,
     }));
   }
   const roles = await resolveRoles(sb, coId);

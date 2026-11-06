@@ -82,11 +82,12 @@ function rowHeight(r: PrintRow, lines: number, density: Density): number {
 export function closingHeight(doc: Pick<PrintDoc, 'promoLines' | 'instalments' | 'kind'>, wrap: WrapFn): { height: number; termsLines: ClosingBlock['termsLines'] } {
   const termsLines = doc.instalments.map((i) => ({
     label: `${i.label || `${i.seq}`} - ${(i.pctBp / 100).toFixed(i.pctBp % 100 ? 2 : 0)}%`,
-    lines: wrap(i.description || '', 120, false),
+    /* The box prints at 6.6pt in 72mm; `wrap` measures at the row font, so 98mm breaks at about the same words. */
+    lines: wrap(i.description || '', 98, false),
   }));
-  let h = 0;
+  let h = 6;
   h += doc.promoLines.length * 5.5;
-  if (termsLines.length) h += 8 + termsLines.reduce((s, t) => s + Math.max(1, t.lines.length) * 3.9 + 1.2, 0) + 4;
+  if (termsLines.length) h += 10.5 + termsLines.reduce((s, t) => s + Math.max(1, t.lines.length) * 3.9 + 1.2, 0) + 4;
   h += 34; // two signature blocks
   return { height: h, termsLines };
 }

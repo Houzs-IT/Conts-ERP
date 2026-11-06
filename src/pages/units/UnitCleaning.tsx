@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { StaleBanner } from '../../components/DataState';
 import { Button } from '../../components/Button';
 import { MoneyInput } from '../../components/inputs';
 import { Skeleton } from '../../components/States';
@@ -31,7 +32,7 @@ export function UnitCleaning({ unitId, data, loading, error, reload, canEdit }: 
   const toast = useToast();
   const [draft, setDraft] = useState<Draft>({});
   const [busy, setBusy] = useState(false);
-  if (error) return <p role="alert" className="m-0 mb-[22px] text-copy text-critical">Cleaning prices could not be loaded: {error} <button type="button" onClick={reload} className="p-0 bg-transparent border-none cursor-pointer [font-family:inherit] font-semibold text-gold-ink">Try again</button></p>;
+  if (error) return <div className="mb-[22px]"><StaleBanner message={`Cleaning prices could not be loaded: ${error}`} onRetry={reload} /></div>;
   if (!data) return loading ? <div className="mb-[22px]"><Skeleton height={120} /></div> : null;
   if (!data.ready) return <p className="m-0 mb-[22px] text-copy text-muted-ink">Cleaning prices are not switched on yet. They need a database update (migration 0126).</p>;
   const prices = data.rows[0]?.prices;

@@ -27,6 +27,7 @@
 // ----------------------------------------------------------------------------
 
 import { doCountsAsDelivered } from '../shared/do-shipped-states';
+import { categoriesInGroup } from '../shared/renovation-catalog';
 import { Hono, type Context } from 'hono';
 import { supabaseAuth } from '../middleware/auth';
 import { escapeForOr } from '../lib/postgrest-search';
@@ -400,7 +401,7 @@ export const listInventoryHandler = async (c: any) => {
     let q = sb.from(tableName).select(cols);
     if (warehouseId) q = q.eq('warehouse_id', warehouseId);
     if (s) q = q.or(`item_code.ilike.%${s}%,product_name.ilike.%${s}%`);
-    if (showAll && category && category !== 'all') q = q.eq('category', category);
+    if (showAll && category && category !== 'all') q = q.in('category', categoriesInGroup(category));
     // multi-company: BOTH reads are per-company now. inventory_balances has
     // carried company_id since mig 0084; the showAll SKU rollup
     // (v_inventory_all_skus) gained company_id in mig 0154, which also stopped
@@ -530,7 +531,7 @@ inventory.get('/products', async (c) => {
     let q = sb.from('v_inventory_product_totals').select('*');
     q = scopeToCompany(q, c); // multi-company: isolate product totals to the active company (view exposes company_id, mig 0106)
     if (s) q = q.or(`item_code.ilike.%${s}%,product_name.ilike.%${s}%`);
-    if (category && category !== 'all') q = q.eq('category', category);
+    if (category && category !== 'all') q = q.in('category', categoriesInGroup(category));
     return q.order('item_code').range(from, to);
   });
   if (error) {

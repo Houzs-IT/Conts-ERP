@@ -18,6 +18,7 @@ import { StaleBanner } from '../components/DataState';
 import { RecordSkeleton, TreeSkeleton } from './units/UnitsSkeleton';
 import { UnitList } from './units/UnitList';
 import { exportUnits } from './units/unitExport';
+import { useContractTypes } from '../lib/useContractTypes';
 import { useApi } from '../lib/useApi';
 import { useLeaveGuard } from '../lib/useLeaveGuard';
 import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
@@ -33,7 +34,7 @@ import AccessTab from './units/AccessTab';
 import BookingsTab from './units/BookingsTab';
 import JobsTab from './units/JobsTab';
 import FinancialsTab, { MonthStepper, useFinancialMonth } from './units/FinancialsTab';
-import { SaveBar, DetailsForm, DocumentsCard, BuildingModal, ConfirmAdd, AddUnitModal } from './units/UnitForms';
+import { SaveBar, DetailsForm, DocumentsCard, BuildingModal, ConfirmAdd } from './units/UnitForms';
 import { UnitCostsCard, BillModal } from './owners/Costs';
 import ContractTab, { ModelChip } from './units/ContractTab';
 import { PaysTo } from './units/PaysTo';
@@ -41,7 +42,7 @@ import { bankName } from '../lib/vocabulary';
 import { PROPERTIES_FALLBACK, DETAIL_FALLBACK, mkUnit } from './units/fallback';
 import { RecordHistory } from '../components/RecordHistory';
 import {
-  mayEditUnits, mayChoosePayAccount, STATES, layoutFromBedrooms,
+  mayEditUnits, mayChoosePayAccount, layoutFromBedrooms,
   type Unit, type Building, type PropertiesPayload, type UnitDetail, type RosterRow,
 } from './units/shared';
 import { statusLabel, statusOf, TONE_STYLE } from '../lib/status';
@@ -85,11 +86,12 @@ const TAB_PARAMS = ['fmonth', 'when', 'from', 'to', 'page', 'size', 'jfrom', 'jt
 const LEAVE_PARAMS = ['tab', 'view'];
 const isTab = (t: string | null): t is Tab => TABS.some(([k]) => k === t);
 
-type Modal = null | { kind: 'building' } | { kind: 'editBuilding'; building: Building } | { kind: 'unit'; buildingId: string } | { kind: 'subunit'; buildingId: string; parent: Unit };
+type Modal = null | { kind: 'building' } | { kind: 'editBuilding'; building: Building } | { kind: 'subunit'; buildingId: string; parent: Unit };
 
 /** Units: the building and unit tree on the left, the whole record of the chosen unit on the right.
  *  Replaces the separate Properties, Units and Access and keys screens (old addresses redirect here, App.tsx). */
 export default function UnitsPage({ unitId }: { unitId: string }) {
+  const types = useContractTypes();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const toast = useToast();
@@ -252,10 +254,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   }
   // Only the unit's own fields go to the server; the owner is picked (a sub-unit takes its parent's).
   const newUnit = (u: Unit) => ({ id: u.id, buildingId: u.buildingId, parentUnitId: u.parentUnitId, ownerId: u.ownerId, listingName: '', unitCode: '', pkg: u.pkg, term: u.term, split: u.split, splitValue: u.splitValue });
-  function addUnit(buildingId: string, ownerId: string) {
-    const state = buildings.find(b => b.id === buildingId)?.state ?? STATES[0];
-    void createUnit(newUnit(mkUnit(crypto.randomUUID(), buildingId, '', '', state, '', { ownerId })), 'Unit added.', 'Fill in its details below.');
-  }
+  const addUnit = (buildingId: string) => navigate(`/properties/units/new?building=${encodeURIComponent(buildingId)}`);
   function addSubUnit(buildingId: string, parent: Unit) {
     const nu = mkUnit(crypto.randomUUID(), buildingId, '', '', parent.state, '', { parentUnitId: parent.id, split: 'Profit share' });
     void createUnit(newUnit(nu), 'Sub-unit added.', 'Fill in its details below.');
@@ -267,11 +266,12 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   const header = (
     <PageHeader title="Units" sub={props.data ? `${plural(units.length, 'unit')} · ${plural(buildings.length, 'building')}` : 'Loading units…'}
       actions={<>
+        {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button>}
         <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} disabled={units.length === 0} title="Download every unit with every field as an Excel file"
-          onClick={() => exportUnits(units, buildings, readiness)}>Export all units</Button>
+          onClick={() => exportUnits(units, buildings, readiness, types)}>Export all units</Button>
         <Button size="sm" variant="secondary" icon={<Icon name={listMode ? 'FolderTree' : 'Table2'} size="sm" />} onClick={() => setListMode(!listMode)}>{listMode ? 'Tree and record' : 'List of all units'}</Button>
       </>}
-      primary={canEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button> : undefined} />
+      primary={canEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => navigate('/properties/units/new')}>Add unit</Button> : undefined} />
   );
 
   const modals = <>
@@ -279,8 +279,6 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     {modal?.kind === 'editBuilding' && <BuildingModal initial={modal.building} onClose={() => setModal(null)}
       onSubmit={b => void saveBuilding(modal.building.id, b)}
       onDelete={units.every(u => u.buildingId !== modal.building.id) ? () => void deleteBuilding(modal.building) : undefined} />}
-    {modal?.kind === 'unit' && <AddUnitModal buildingName={buildings.find(b => b.id === modal.buildingId)?.name ?? 'this building'}
-      onClose={() => setModal(null)} onConfirm={ownerId => addUnit(modal.buildingId, ownerId)} />}
     {modal?.kind === 'subunit' && <ConfirmAdd title={`Add a sub-unit under ${modal.parent.unitCode || 'this unit'}`}
       sub="A part of this unit let on its own, such as a bedroom or a floor." body="The sub-unit belongs to the same owner as its parent. You can give it its own code, split and expenses." confirm="Add sub-unit"
       onClose={() => setModal(null)} onConfirm={() => addSubUnit(modal.buildingId, modal.parent)} />}
@@ -322,7 +320,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
             body={buildings.length ? 'Add a unit with the + on a building.' : 'Add a building first, then add units to it.'}
             action={canEdit && !buildings.length ? { label: 'Add building', onClick: () => setModal({ kind: 'building' }) } : undefined} />
           {buildings.length > 0 && <div className="pb-4 px-4"><UnitTree buildings={buildings} units={units} selectedId="" readiness={readiness} canEdit={canEdit}
-            onSelect={select} onEditBuilding={b => setModal({ kind: 'editBuilding', building: b })} onAddUnit={id => setModal({ kind: 'unit', buildingId: id })} onAddSubUnit={(bid, p) => setModal({ kind: 'subunit', buildingId: bid, parent: p })} /></div>}
+            onSelect={select} onEditBuilding={b => setModal({ kind: 'editBuilding', building: b })} onAddUnit={addUnit} onAddSubUnit={(bid, p) => setModal({ kind: 'subunit', buildingId: bid, parent: p })} /></div>}
         </Card>
         {modals}
       </div>
@@ -354,7 +352,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
           <div className={cx(treeOpen ? 'block' : 'hidden', 'xl:block min-w-0 xl:flex-1 xl:min-h-0')}>
             <UnitTree fill={wide} buildings={buildings} units={units} selectedId={openId} readiness={readiness} canEdit={canEdit}
               onSelect={select} onEditBuilding={b => setModal({ kind: 'editBuilding', building: b })}
-              onAddUnit={id => setModal({ kind: 'unit', buildingId: id })} onAddSubUnit={(bid, p) => setModal({ kind: 'subunit', buildingId: bid, parent: p })} />
+              onAddUnit={addUnit} onAddSubUnit={(bid, p) => setModal({ kind: 'subunit', buildingId: bid, parent: p })} />
           </div>
         </div>
 
@@ -384,6 +382,7 @@ interface RecordProps {
 }
 
 function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canEdit, dirty, saving, onSave, onDelete, onChange, reload, reloadDetail, readiness, setReadiness }: RecordProps) {
+  const types = useContractTypes();
   const toast = useToast();
   const { user } = useSession();
   // Same people as edit the unit's master data (the server's channex-setup / channex-connect).
@@ -471,9 +470,9 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                 <Select label="Status" className="w-[150px]" value={readiness} onChange={v => changeReadiness(v as UnitReadiness)}
                   options={READINESS_OPTIONS.map(r => ({ value: r, label: statusLabel('readiness', r), color: TONE_STYLE[statusOf('readiness', r).tone].fg }))} />
               </span>
-              {form?.parentUnitId && <StatusBadge tone="warning" label="Sub-unit" />}
+              {form?.parentUnitId && <StatusBadge tone="neutral" label="Sub-unit" />}
               <PurposeBadge purpose={u.purpose} />
-              <CodeBadge code={u.contractCode} />
+              <CodeBadge code={u.contractCode} types={types} />
               {u.revenueModel && (rental || u.contractCode) && <span title={`Income model: ${u.revenueModelLabel}. Change it on the Contract tab.`}><ModelChip model={u.revenueModel} label={u.termsLabel ?? u.revenueModelLabel} /></span>}
               {u.channels.length > 0 && (
                 <span className="inline-flex items-center gap-1.5" aria-label={`Sold on ${u.channels.map(c => CH[c].label).join(', ')}`}>
@@ -493,7 +492,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
         <div className="grid grid-cols-3 sm:grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-x-4 gap-y-5 pt-5 px-5 sm:px-6 pb-5 [border-top:1px_solid_var(--color-line-soft)]">
           {(rental ? [
-            ['Occupancy', `${p.occupancy}%`], ['Avg nightly price', rm(p.adr, { cents: false })], ['Earnings per night (all nights)', rm(p.revpar, { cents: false })],
+            ['Occupancy', `${p.occupancy}%`], ['Avg nightly price', rm(p.adr)], ['Earnings per night (all nights)', rm(p.revpar)],
             ['Rating', p.rating != null ? p.rating.toFixed(2) : '—'], ['Open maintenance jobs', String(openIssues)],
           ] : [['Purpose', u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom'], ['Car park bays', form?.parkingBays?.length ? String(form.parkingBays.length) : '—'], ['Open maintenance jobs', String(openIssues)]]).map(([label, value]) => (
             <div key={label} className="flex flex-col gap-2 min-w-0">

@@ -58,7 +58,7 @@ export const AREAS: Area[] = [
   // Field staff's HR record: IC, bank, salary and statutory (PLAN-hr-employees.md). Its own group so Operations staff do
   // not see pay by default. The cleaner and technician rosters themselves stay under Operations.
   { key: 'hr', label: 'Employees', group: 'HR', api: ['employees', 'attendance', 'punch-sites', 'leaves', 'payroll', 'working-hours', 'penalties', 'labor-cost'], strictRead: true },
-  { key: 'properties', label: 'Units', group: 'Units', api: ['properties', 'units', 'unit-layout-types', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
+  { key: 'properties', label: 'Units', group: 'Units', api: ['properties', 'units', 'unit-layout-types', 'unit-bed-sizes', 'contract-types', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
   { key: 'owners', label: 'Owners', group: 'Units', api: ['owners', 'contracts'] },
   { key: 'serviceCases', label: 'Service cases', group: 'Service cases', api: [] },
   { key: 'projects', label: 'Projects', group: 'Projects', api: [] },
@@ -179,6 +179,7 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; w
   { method: 'POST', path: /^\/api\/owners\/[^/]+\/notify$/, area: 'dashboard', why: 'The dashboard\'s exception action that tells an owner about a problem with their unit.' },
   { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a reservation or a guest record; the Messages inbox keeps its own area.' },
   { method: 'GET', path: /^\/api\/finance\/yearly-report$/, area: 'reports', why: 'The yearly unit report sits under Reports in the menu.' },
+  { method: 'GET', path: /^\/api\/finance\/ygrr-report$/, area: 'reports', why: 'The YGRR report (Package D) sits under Reports in the menu.' },
   // Finance reads bookings but does not make or change them (owner, 11 Oct 2026); taking a guest's payment, recording
   // a channel payout and issuing a receipt are finance's own work, so those writes follow the Finance area.
   { method: 'POST', path: /^\/api\/reservations\/[^/]+\/payments$/, area: 'finance', why: 'Recording a guest payment on a reservation is money work.' },
@@ -189,6 +190,7 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; w
   { method: 'POST', path: /^\/api\/guest-documents\/[^/]+\/void$/, area: 'finance', why: 'Voiding a guest receipt or invoice is money work.' },
   { method: 'POST', path: /^\/api\/maintenance\/issues\/[^/]+\/approve$/, area: 'finance', why: 'Recording an owner\'s approval of a repair quote is a money decision.' },
   { method: 'GET', path: /^\/api\/audit$/, area: null, why: 'The History panel on every record: the handler applies the area of the record asked for; the whole trail stays management and finance only.' },
+  { method: 'GET', path: /^\/api\/contract-types$/, area: null, why: 'The contract type list that the Units, Owners and Contracts screens all show; changing it stays under Units.' },
   { method: 'GET', path: /^\/api\/(warehouses|suppliers|drivers|vehicles|threepl-companies)$/, area: null, why: 'Supply chain reference lists that every supply chain screen picks from.' },
   // One public holiday list for the whole company (migration 0202), kept from Pricing and from HR: the handlers let in
   // Pricing (Full to change) or Employees (edit to change), whichever the person has (functions/_lib/holidays.ts).

@@ -17,6 +17,7 @@ import {
   HEADING_MM,
   ITEM_PHOTOS_HEADING,
   ITEM_PHOTOS_HEADING_CONT,
+  DOC_PHOTOS_HEADING,
   layoutPhotoGroups,
   MAX_THUMBS_PER_ROW,
   PHOTO_MARKER,
@@ -24,6 +25,7 @@ import {
   photoKeysOf,
   rangeLabel,
   sniffImageMime,
+  splitOversizeGroups,
   THUMB_GAP_MM,
   THUMB_MM,
   type PdfDocLike,
@@ -349,7 +351,7 @@ describe('drawItemPhotosBlock', () => {
     expect(res.drew).toBe(true);
     expect(res.pagesAdded).toBe(0);
     const texts = ops.filter((o): o is Extract<Op, { op: 'text' }> => o.op === 'text');
-    expect(texts.map((t) => t.text)).toEqual([ITEM_PHOTOS_HEADING, '#2', 'AKEMI-K']);
+    expect(texts.map((t) => t.text)).toEqual([`${ITEM_PHOTOS_HEADING} (1 could not be printed)`, '#2', 'AKEMI-K']);
     // gone.jpg never fetched — the group renders its two live photos side by
     // side with a thin border each, below the header line.
     const tiles = ops.filter((o) => o.op === 'image');
@@ -373,9 +375,9 @@ describe('drawItemPhotosBlock', () => {
         { chip: '#2', code: 'B', photoKeys: sixKeys },
       ],
       images,
-      { ...baseOpts, startY: 230, onNewPage: () => { headerRepaints += 1; } },
+      { ...baseOpts, startY: 200, onNewPage: () => { headerRepaints += 1; } },
     );
-    // Group 1 fits at 230 + heading; group 2 (a full six-wide row) cannot fit
+    // Group 1 fits at 200 + heading; group 2 (a full six-wide row) cannot fit
     // beside it, and the wrapped row would start below pageBottom — so the
     // WHOLE group moves to an added page.
     expect(res.pagesAdded).toBe(1);
@@ -383,6 +385,40 @@ describe('drawItemPhotosBlock', () => {
     expect(ops.filter((o) => o.op === 'addPage')).toHaveLength(1);
     const texts = ops.filter((o): o is Extract<Op, { op: 'text' }> => o.op === 'text');
     expect(texts.some((t) => t.text === ITEM_PHOTOS_HEADING_CONT)).toBe(true);
+  });
+
+  const headings = (ops: Op[]) => ops
+    .filter((o): o is Extract<Op, { op: 'text' }> => o.op === 'text' && /PHOTOS/.test(o.text));
+
+  it('leaves no heading alone at the foot of a page: it opens the page the photos start on', () => {
+    const { doc, ops } = stubDoc();
+    const res = drawItemPhotosBlock(doc, [{ chip: 'Item 1', code: 'A', photoKeys: ['a.jpg'] }], new Map([['a.jpg', img]]), { ...baseOpts, startY: 240 });
+    expect(res.pagesAdded).toBe(1);
+    expect(headings(ops).map((h) => h.text)).toEqual([ITEM_PHOTOS_HEADING]);
+    expect(ops.findIndex((o) => o.op === 'addPage')).toBeLessThan(ops.findIndex((o) => o.op === 'text'));
+  });
+
+  it('breaks a line with more photos than a page holds, and no tile leaves the page', () => {
+    const { doc, ops } = stubDoc();
+    const keys = Array.from({ length: 20 }, (_, i) => `k${i}.jpg`);
+    const res = drawItemPhotosBlock(doc, [{ chip: 'Item 1', code: 'A', photoKeys: keys }], new Map(keys.map((k) => [k, img])), baseOpts);
+    const tiles = ops.filter((o): o is Extract<Op, { op: 'rect' }> => o.op === 'rect');
+    expect(tiles).toHaveLength(20);
+    expect(Math.max(...tiles.map((t) => t.y + t.h))).toBeLessThanOrEqual(baseOpts.pageBottom);
+    expect(res.pagesAdded).toBe(2);
+    expect(ops.filter((o) => o.op === 'text' && o.text === 'Item 1 (cont.)')).toHaveLength(1);
+  });
+
+  it('counts the photos that could not be read in the heading', () => {
+    const { doc, ops } = stubDoc();
+    drawItemPhotosBlock(doc, [{ chip: 'Item 1', code: 'A', photoKeys: ['a.jpg', 'gone.jpg'] }], new Map([['a.jpg', img]]), baseOpts);
+    expect(headings(ops).map((h) => h.text)).toEqual([`${ITEM_PHOTOS_HEADING} (1 could not be printed)`]);
+  });
+
+  it('calls the block PHOTOS when no photo is on an item', () => {
+    const { doc, ops } = stubDoc();
+    drawItemPhotosBlock(doc, [{ chip: 'Document', code: '', photoKeys: ['a.jpg'], document: true }], new Map([['a.jpg', img]]), baseOpts);
+    expect(headings(ops).map((h) => h.text)).toEqual([DOC_PHOTOS_HEADING]);
   });
 
   it('lays the first groups beside the sofa zone and the overflow below it', () => {
@@ -412,6 +448,15 @@ describe('drawItemPhotosBlock', () => {
     expect(tiles[1]!.x).toBe(120 + THUMB_MM + GROUP_GAP_X_MM);
     expect(tiles[2]!.x).toBe(14);
     expect(tiles[2]!.y).toBeGreaterThanOrEqual(200 + GROUP_HEADER_MM);
+  });
+});
+
+describe('splitOversizeGroups', () => {
+  it('leaves a group that fits alone and breaks at whole rows', () => {
+    const g = (n: number): PhotoGroup => ({ chip: 'Item 2', code: 'B', photoKeys: Array.from({ length: n }, (_, i) => `k${i}`) });
+    expect(splitOversizeGroups([g(12)], 12)).toHaveLength(1);
+    const parts = splitOversizeGroups([g(13)], 13);
+    expect(parts.map((p) => [p.chip, p.photoKeys.length])).toEqual([['Item 2', 12], ['Item 2 (cont.)', 1]]);
   });
 });
 

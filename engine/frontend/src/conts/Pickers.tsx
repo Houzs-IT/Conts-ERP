@@ -1,9 +1,9 @@
 // Conts only: the project and unit pickers on a payment voucher and an AP invoice (chew 2 Nov 2026: "选 project 时无法
-// 快速打关键字眼", "做成 table"; SOP 3.2; plan 2026-11-02-voucher-purpose-unit-project-pickers.md Task 3). A button
+// 快速打关键字眼", "做成 table"; SOP 3.2; plan 2026-11-02-voucher-purpose-unit-project-pickers.md Task 3). The field
 // shows what is chosen; it opens a searchable table. Projects not yet done first, newest first; the completed ones
-// below, still pickable; test projects last. The table drops down under the field like AutoCount's Proj. No. list
-// (chew 3 Nov 2026: "可能是往下显示"): type to narrow, arrows and Enter to pick, Esc or a click outside to close; on a
-// phone it opens as the full box.
+// below, still pickable; test projects last. Like AutoCount's Proj. No. list (chew 3 Nov 2026: "可能是往下显示", "我希望
+// 一点开就直接能search"): the field itself is the search box, the table drops down under it, arrows and Enter pick,
+// Esc, Tab or a click outside close it. On a phone it opens as the full box with its own search.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Modal } from "../vendor/scm/components/Modal";
@@ -28,29 +28,11 @@ const day = (v: string | null): string => {
   return Number.isFinite(t) ? new Date(t + (v.length <= 10 ? 0 : 8 * 3_600_000)).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "—";
 };
 
-function PickerButton({ label, placeholder, disabled, onOpen, onClear, inputClass, ariaLabel, anchorRef }: {
-  label: string | null; placeholder: string; disabled?: boolean; onOpen: () => void; onClear?: () => void; inputClass?: string; ariaLabel: string;
-  anchorRef: RefObject<HTMLSpanElement | null>;
-}) {
-  return (
-    <span ref={anchorRef} style={{ display: "flex", gap: 4, alignItems: "center", minWidth: 0 }}>
-      <button type="button" aria-label={ariaLabel} className={inputClass} disabled={disabled} onClick={onOpen}
-        style={{ flex: 1, minWidth: 0, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: disabled ? "default" : "pointer", color: label ? undefined : MUTED }}>
-        {label ?? placeholder}
-      </button>
-      {label && onClear && !disabled && (
-        <button type="button" aria-label={`Clear ${ariaLabel.toLowerCase()}`} onClick={onClear} style={{ border: "none", background: "none", cursor: "pointer", color: MUTED, padding: 4 }}>×</button>
-      )}
-    </span>
-  );
-}
-
-/** The open list's state: the highlighted row (moved by the arrow keys; it starts on the chosen row, and goes to the
-    first match whenever the search changes, or when the rows arrive), closing (which empties the search and gives the
-    field its focus back, so the keyboard carries on from it) and picking. */
-function usePicker<T>(ids: T[], value: T | null, onChange: (id: T | null) => void, query: string, setQuery: (q: string) => void,
-  anchorRef: RefObject<HTMLSpanElement | null>) {
-  const [open, setOpen] = useState(false);
+/** One picker's state: open or not, the search, the highlighted row (moved by the arrow keys; it starts on the chosen
+    row, and goes to the first match whenever the search changes or the rows arrive), and picking. */
+function usePicker<T>(ids: T[], value: T | null, onChange: (id: T | null) => void, query: string, setQuery: (q: string) => void) {
+  const [open, setOpenState] = useState(false);
+  const [phone, setPhone] = useState(false);
   const [active, setActive] = useState(0);
   useEffect(() => {
     if (!open) return;
@@ -58,22 +40,68 @@ function usePicker<T>(ids: T[], value: T | null, onChange: (id: T | null) => voi
     setActive(at >= 0 ? at : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only on opening, on a new search, and when the rows arrive
   }, [open, query, ids.length > 0]);
-  const close = () => { setOpen(false); setQuery(""); anchorRef.current?.querySelector("button")?.focus(); };
+  const openList = () => { if (!open) { setPhone(window.innerWidth < PHONE); setOpenState(true); } };
+  const close = () => { setOpenState(false); setQuery(""); };
   const pick = (id: T | null) => { onChange(id); close(); };
-  return { open, toggle: () => (open ? close() : setOpen(true)), active: Math.min(active, Math.max(ids.length - 1, 0)), setActive, close, pick };
+  const at = Math.min(active, Math.max(ids.length - 1, 0));
+  /* The arrow keys, Enter and Esc, from the field (or the phone box's search). While the list is open every key stops
+     here: Esc must not also close a box the picker sits in, nor Insert add a line to the table behind it. */
+  const onKey = (e: KeyboardEvent<HTMLElement>) => {
+    if (!open) {
+      if (e.key === "ArrowDown" || e.key === "Enter") { e.preventDefault(); openList(); }
+      return;
+    }
+    e.stopPropagation();
+    if (e.key === "ArrowDown") { e.preventDefault(); if (ids.length > 0) setActive(Math.min(at + 1, ids.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActive(Math.max(at - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); if (ids.length > 0) pick(ids[at]!); }
+    else if (e.key === "Escape") { e.preventDefault(); close(); }
+    else if (e.key === "Tab") close();
+  };
+  return { open, phone, openList, close, pick, active: at, setActive, onKey };
 }
 
-/** The search box and table, dropped down under the field (or the full box on a phone). */
-function PickerPanel({ title, placeholder, anchorRef, wantWidth, count, query, setQuery, active, setActive, onEnter, onClose, onClear, children }: {
-  title: string; placeholder: string; anchorRef: RefObject<HTMLSpanElement | null>; wantWidth: number; count: number;
-  query: string; setQuery: (q: string) => void; active: number; setActive: (i: number) => void;
-  onEnter: () => void; onClose: () => void; onClear: (() => void) | null; children: ReactNode;
+type Picker = ReturnType<typeof usePicker<never>> & { pick: (id: never) => void };
+
+/** The field: the chosen label while closed; the search box while open, the chosen label then showing as its hint. */
+function PickerField({ pk, label, placeholder, query, setQuery, disabled, inputClass, ariaLabel, anchorRef, onClear }: {
+  pk: Omit<Picker, "pick">; label: string | null; placeholder: string; query: string; setQuery: (q: string) => void; disabled?: boolean;
+  inputClass?: string; ariaLabel: string; anchorRef: RefObject<HTMLSpanElement | null>; onClear: () => void;
+}) {
+  const searching = pk.open && !pk.phone;
+  return (
+    <span ref={anchorRef} style={{ display: "flex", gap: 4, alignItems: "center", minWidth: 0 }}>
+      <input type="text" role="combobox" aria-label={ariaLabel} aria-expanded={pk.open} aria-autocomplete="list" autoComplete="off"
+        className={inputClass} disabled={disabled} readOnly={pk.phone && pk.open}
+        value={searching ? query : label ?? ""} placeholder={searching ? label ?? placeholder : placeholder}
+        onFocus={() => { if (window.innerWidth >= PHONE) pk.openList(); }}
+        onClick={pk.openList}
+        onChange={(e) => {
+          /* Typing after Esc (the label showing again) searches for what was typed, not the label plus it. */
+          const v = e.target.value;
+          setQuery(!pk.open && label && v.startsWith(label) ? v.slice(label.length) : v);
+          pk.openList();
+        }}
+        onKeyDown={pk.onKey}
+        onBlur={() => { if (!pk.phone) pk.close(); }}
+        style={{ flex: 1, minWidth: 0, textOverflow: "ellipsis" }} />
+      {label && !disabled && !pk.open && (
+        <button type="button" aria-label={`Clear ${ariaLabel.toLowerCase()}`} onClick={onClear} style={{ border: "none", background: "none", cursor: "pointer", color: MUTED, padding: 4 }}>×</button>
+      )}
+    </span>
+  );
+}
+
+/** The table, dropped down under the field (or the full box, with its own search, on a phone). */
+function PickerPanel({ pk, title, placeholder, anchorRef, wantWidth, query, setQuery, onClear, children }: {
+  pk: Omit<Picker, "pick">; title: string; placeholder: string; anchorRef: RefObject<HTMLSpanElement | null>; wantWidth: number;
+  query: string; setQuery: (q: string) => void; onClear: (() => void) | null; children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [phone] = useState(() => window.innerWidth < PHONE);
   const [place, setPlace] = useState<Placement | null>(null);
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  const closeRef = useRef(pk.close);
+  closeRef.current = pk.close;
+  const { phone, active } = pk;
 
   useLayoutEffect(() => {
     if (phone) return;
@@ -105,23 +133,13 @@ function PickerPanel({ title, placeholder, anchorRef, wantWidth, count, query, s
     panelRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest" });
   }, [active, place]);
 
-  /* Keys are handled for the whole list, wherever the focus is in it, and go no further: Esc must not also close a
-     box the picker sits in, nor Insert add a line to the table behind it. */
-  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    if (e.key === "ArrowDown") { e.preventDefault(); if (count > 0) setActive(Math.min(active + 1, count - 1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setActive(Math.max(active - 1, 0)); }
-    else if (e.key === "Enter") { e.preventDefault(); if (count > 0) onEnter(); }
-    else if (e.key === "Escape") { e.preventDefault(); onClose(); }
-  };
-  const search = <input autoFocus aria-label="Search" placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} style={searchStyle} />;
   const clear = onClear && <div style={{ display: "flex", justifyContent: "flex-end" }}><button type="button" onClick={onClear} style={clearStyle}>Clear</button></div>;
 
   if (phone) {
     return (
-      <Modal title={title} ariaLabel={title} onClose={onClose} width="min(880px, 100%)">
-        <div onKeyDown={onKey} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {search}
+      <Modal title={title} ariaLabel={title} onClose={pk.close} width="min(880px, 100%)">
+        <div onKeyDown={pk.onKey} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <input autoFocus aria-label="Search" placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} style={searchStyle} />
           <div ref={panelRef} style={{ ...listBox, maxHeight: "60vh" }}>{children}</div>
           {clear}
         </div>
@@ -129,15 +147,14 @@ function PickerPanel({ title, placeholder, anchorRef, wantWidth, count, query, s
     );
   }
   return createPortal(
-    <div ref={panelRef} role="dialog" aria-label={title} onKeyDown={onKey}
-      /* A click in the list leaves the focus in the search box, so the keys keep working. */
-      onMouseDown={(e) => { if (!(e.target instanceof HTMLInputElement)) e.preventDefault(); }}
+    <div ref={panelRef} role="dialog" aria-label={title}
+      /* A click in the list never takes the focus from the field, so typing and the keys keep working there. */
+      onMouseDown={(e) => e.preventDefault()}
       style={{
         position: "fixed", zIndex: 1100, left: place?.left ?? 0, width: place?.width ?? wantWidth, top: place?.top, bottom: place?.bottom,
         maxHeight: place?.maxHeight ?? 420, visibility: place ? "visible" : "hidden", display: "flex", flexDirection: "column", gap: 8, padding: 8,
         background: "var(--c-paper, #fff)", border: `1px solid ${LINE}`, borderRadius: 8, boxShadow: "var(--shadow-3, 0 16px 40px rgba(0,0,0,0.2))",
       }}>
-      {search}
       <div style={{ ...listBox, flex: 1, minHeight: 0 }}>{children}</div>
       {clear}
     </div>,
@@ -163,17 +180,20 @@ export function ProjectName({ id }: { id: number | null | undefined }) {
   return <>{p ? projectLabel(p) : `Project ${id}`}</>;
 }
 
-export function ProjectPicker({ value, onChange, disabled, inputClass, placeholder = "Choose a project…", ariaLabel = "Project" }: {
+export function ProjectPicker({ value, onChange, disabled, inputClass, placeholder = "Choose a project…", ariaLabel = "Project", filter }: {
   value: number | null; onChange: (id: number | null) => void; disabled?: boolean; inputClass?: string; placeholder?: string; ariaLabel?: string;
+  /** Only the projects that fit (a renovation sub-department's own brand, SOP 1.1); the chosen one always shows. */
+  filter?: (p: ProjectOption) => boolean;
 }) {
   const q = useProjectOptions();
   const anchorRef = useRef<HTMLSpanElement>(null);
-  const all = (q.data?.projects ?? []) as PickProject[] & ProjectOption[];
+  const every = (q.data?.projects ?? []) as PickProject[] & ProjectOption[];
+  const all = useMemo(() => (filter ? every.filter((p) => p.id === value || filter(p as ProjectOption)) : every) as PickProject[] & ProjectOption[], [every, filter, value]);
   const chosen = value == null ? null : all.find((p) => p.id === value) ?? null;
   const [query, setQuery] = useState("");
   const groups = useMemo(() => projectRows(all, query), [all, query]);
   const ids = useMemo(() => [...groups.open, ...groups.completed, ...groups.test].map((p) => p.id), [groups]);
-  const pk = usePicker(ids, value, onChange, query, setQuery, anchorRef);
+  const pk = usePicker(ids, value, onChange, query, setQuery);
   const row = (p: PickProject, tag?: string) => (
     <tr key={p.id} {...rowProps(ids[pk.active] === p.id, p.id === value, cleanProjectName(p.name), () => pk.pick(p.id), () => pk.setActive(ids.indexOf(p.id)))}>
       <td style={{ ...cell, whiteSpace: "normal" }}>{cleanProjectName(p.name)}{tag && <span style={{ marginLeft: 6, fontSize: "var(--fs-11)", color: MUTED, border: `1px solid ${MUTED}`, borderRadius: 4, padding: "0 4px" }}>{tag}</span>}</td>
@@ -186,12 +206,11 @@ export function ProjectPicker({ value, onChange, disabled, inputClass, placehold
   const empty = ids.length === 0;
   return (
     <>
-      <PickerButton anchorRef={anchorRef} ariaLabel={ariaLabel} label={chosen ? projectLabel(chosen) : value != null ? `Project ${value}` : null} placeholder={placeholder}
-        disabled={disabled} inputClass={inputClass} onOpen={pk.toggle} onClear={() => onChange(null)} />
+      <PickerField pk={pk} anchorRef={anchorRef} ariaLabel={ariaLabel} label={chosen ? projectLabel(chosen) : value != null ? `Project ${value}` : null}
+        placeholder={placeholder} query={query} setQuery={setQuery} disabled={disabled} inputClass={inputClass} onClear={() => onChange(null)} />
       {pk.open && (
-        <PickerPanel title="Choose a project" placeholder="Project, customer or code" anchorRef={anchorRef} wantWidth={760} count={ids.length}
-          query={query} setQuery={setQuery} active={pk.active} setActive={pk.setActive} onEnter={() => pk.pick(ids[pk.active]!)} onClose={pk.close}
-          onClear={value != null ? () => pk.pick(null) : null}>
+        <PickerPanel pk={pk} title="Choose a project" placeholder="Project, customer or code" anchorRef={anchorRef} wantWidth={760}
+          query={query} setQuery={setQuery} onClear={value != null ? () => pk.pick(null) : null}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-13)" }}>
             <thead><tr><th style={head}>Project</th><th style={head}>Customer</th><th style={head}>Code</th><th style={head}>Status</th><th style={head}>Handover</th></tr></thead>
             <tbody role="listbox">
@@ -230,15 +249,14 @@ export function UnitPicker({ value, onChange, disabled, inputClass, ariaLabel = 
   const [query, setQuery] = useState("");
   const rows = useMemo(() => unitRows(all, query), [all, query]);
   const ids = useMemo(() => rows.map((u) => u.id), [rows]);
-  const pk = usePicker(ids, value, onChange, query, setQuery, anchorRef);
+  const pk = usePicker(ids, value, onChange, query, setQuery);
   return (
     <>
-      <PickerButton anchorRef={anchorRef} ariaLabel={ariaLabel} label={chosen ? unitLabel(chosen) : value ? "Unit" : null} placeholder={placeholder}
-        disabled={disabled} inputClass={inputClass} onOpen={pk.toggle} onClear={() => onChange(null)} />
+      <PickerField pk={pk} anchorRef={anchorRef} ariaLabel={ariaLabel} label={chosen ? unitLabel(chosen) : value ? "Unit" : null}
+        placeholder={placeholder} query={query} setQuery={setQuery} disabled={disabled} inputClass={inputClass} onClear={() => onChange(null)} />
       {pk.open && (
-        <PickerPanel title="Choose a unit" placeholder="Building or unit, e.g. A-3-1" anchorRef={anchorRef} wantWidth={360} count={ids.length}
-          query={query} setQuery={setQuery} active={pk.active} setActive={pk.setActive} onEnter={() => pk.pick(ids[pk.active]!)} onClose={pk.close}
-          onClear={value ? () => pk.pick(null) : null}>
+        <PickerPanel pk={pk} title="Choose a unit" placeholder="Building or unit, e.g. A-3-1" anchorRef={anchorRef} wantWidth={360}
+          query={query} setQuery={setQuery} onClear={value ? () => pk.pick(null) : null}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--fs-13)" }}>
             <thead><tr><th style={head}>Building</th><th style={head}>Unit</th></tr></thead>
             <tbody role="listbox">

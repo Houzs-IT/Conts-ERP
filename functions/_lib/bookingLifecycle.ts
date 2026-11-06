@@ -1,4 +1,5 @@
 import { replanTurnover, ensureTurnovers, CLEAN_KINDS_SQL } from './cleaning';
+import { numericDate } from './format';
 import { type Env, one, all, run, audit, nowIso } from './db';
 import type { Session } from './auth';
 import { findClash, clashResponseBody, withUnitLock } from './reservations';
@@ -21,11 +22,10 @@ const LABEL: Record<State, string> = {
 };
 const BLOCK_CHANNELS = ['maintenance_block', 'owner_stay'];
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-/** 30 Dec 2026, for messages. */
+/** 2026/12/30, for messages. */
 export const dayLabel = (iso: string) => {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
-  return `${d} ${MONTHS[m - 1]} ${y}`;
+  return numericDate(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
 };
 /** The Kuala Lumpur calendar day of an instant (or of now). */
 export const mytDay = (iso?: string) => new Date((iso ? Date.parse(iso) : Date.now()) + 8 * 3600e3).toISOString().slice(0, 10);

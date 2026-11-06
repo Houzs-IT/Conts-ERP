@@ -237,3 +237,10 @@ body:has([aria-modal="true"]:not([data-side-drawer])) .app-main { overflow: hidd
 .login-rule  { animation: login-draw 900ms var(--ease-out) 150ms both; }
 .login-rise  { animation: login-rise 700ms var(--ease-out) 260ms both; }
 @media (prefers-reduced-motion: reduce) { .login-photo, .login-rule, .login-rise { animation: none; } }
+
+/* A small control (an icon button in a tree row, a switch, a "See all ->" link) keeps its look but gets a 44px tap
+ * area on a touch phone, the same size as every other button there (owner, 3 Nov 2026, UI consistency audit item 21). */
+@media (pointer: coarse) and (max-width: 767px) {
+  .hit-target { position: relative; }
+  .hit-target::after { content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px); transform: translate(-50%, -50%); }
+}

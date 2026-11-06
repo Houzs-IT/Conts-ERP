@@ -5,11 +5,13 @@
    (Home, Projects and Calendar) adds the board read and the design, appointment and calendar entry writes at the end. */
 
 import { Hono, type Context } from "hono";
+import { TRANSIENT_CONN_RE } from "../db/d1-compat";
 import type { Env } from "../types";
 import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
 import { billingViews } from "../scm/lib/renovation-billing";
 import { todayMyt } from "../scm/lib/my-time";
+import { builtinPosOf, poDrawings, recordDrawingAmendments } from "../services/renovation/betaBuiltinPo";
 import { financeHiddenForUser } from "../services/pmsAccess";
 import { keepVisiblePos, loadCategoryScope, type CategoryScope } from "../services/categoryAccess";
 import { setChecklistStatus } from "../services/projects";
@@ -29,7 +31,9 @@ import {
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
-import { cleanLinePlan, loadProjectLines, projectLine, saveLinePlan } from "../services/renovation/betaLines";
+import { bindSupplier, cleanLinePlan, contractLineOf, lineSupplierState, loadProjectLines, notRawMaterials, projectLine, saveLineMaterials, saveLinePlan, saveLinePlans, saveLineSupplier, supplierBinding } from "../services/renovation/betaLines";
+import { patchContract } from "../scm/lib/renovation-so";
+import { inRenoTx, RenoError, sqlFor } from "../scm/lib/renovation-db";
 import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
 import {
   betaCategory, cleanAssignee, cleanDefectPatch, defectPatchNote, isImageName, money, sortDeliveries, uniqueAreas,
@@ -192,7 +196,7 @@ app.get("/projects/:id/workspace", requirePageAccess("projects.list"), async (c)
     });
   } catch (e) {
     console.error("[renovation-beta] workspace read failed", e);
-    return c.json({ error: "renovation_read_failed", message: "The workspace could not be read. Try again." }, 409);
+    return c.json({ error: "renovation_read_failed", message: "The workspace could not be read. Try again.", detail: readDetail(e) }, readStatus(e));
   }
 });
 
@@ -359,7 +363,34 @@ app.post("/design-files/:fileId/approval", requirePermission("projects.write"), 
     ).bind(fileId, f.project_id, f.company_id, approvedOn, approvedByName, note, userId(c)),
     activityStmt(c, f.project_id, f.company_id, "beta_drawing_approved", approvedByName, designLabel(f.kind, f.version), [`On ${approvedOn}`, note].filter(Boolean).join(" · ")),
   ]);
-  return c.json({ ok: true });
+  /* The approval stands whatever happens here: a failure is kept on the project's activity, so a PO is not left unrecorded unseen. */
+  let amended: string[] = [];
+  if (f.kind === "2d") {
+    try {
+      amended = await recordDrawingAmendments(db(c), f.project_id, f.company_id, designLabel(f.kind, f.version), approvedOn);
+      if (amended.length > 0) await activityStmt(c, f.project_id, f.company_id, "beta_po_drawing_amended", null, designLabel(f.kind, f.version), amended.join(", ")).run();
+    } catch (e) {
+      console.error("[renovation-beta] PO amendment for drawings failed", e);
+      await activityStmt(c, f.project_id, f.company_id, "beta_po_drawing_amend_failed", null, designLabel(f.kind, f.version), "The PO amendment was not recorded.").run().catch(() => undefined);
+    }
+  }
+  return c.json({ ok: true, amended });
+});
+
+/* The Built-in POs of a project: the 2D tab downloads the latest of each. */
+app.get("/projects/:id/builtin-pos", requirePageAccess("projects.list"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  return readOr(c, "built-in PO", async () => ({ pos: await builtinPosOf(db(c), id, co) }));
+});
+
+/* The approved 2D set a Built-in PO's PDF carries. */
+app.get("/po-drawings/:poId", requirePageAccess("projects.list"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  return readOr(c, "PO drawing", async () => poDrawings(db(c), c.req.param("poId"), co.companyId));
 });
 
 app.delete("/design-files/:fileId/approval", requirePermission("projects.write"), async (c) => {
@@ -557,7 +588,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
     });
   } catch (e) {
     console.error("[renovation-beta] board read failed", e);
-    return c.json({ error: "renovation_read_failed", message: "The board could not be read. Try again." }, 409);
+    return c.json({ error: "renovation_read_failed", message: "The board could not be read. Try again.", detail: readDetail(e) }, readStatus(e));
   }
 });
 
@@ -757,12 +788,19 @@ app.delete("/events/:id", requirePermission("projects.write"), async (c) => {
 // ── VO, PO, Client PO (bundle B, owner 24 Oct 2026) ─────────────────────
 
 /** A read of the project's documents; a database without the renovation tables yet reads as empty. */
+/** A failed read's cause, short, for the 409 body. */
+const readDetail = (e: unknown): string => String((e as Error)?.message ?? e).slice(0, 200);
+/** 503 when the database was only briefly out of reach (the screens retry a 503 once), else 409. */
+const readStatus = (e: unknown): 409 | 503 => (TRANSIENT_CONN_RE.test(String((e as Error)?.message ?? e)) ? 503 : 409);
+
 async function readOr<T>(c: Ctx, what: string, fn: () => Promise<T>): Promise<Response> {
   try {
     return c.json(await fn());
   } catch (e) {
     console.error(`[renovation-beta] ${what} read failed`, e);
-    return c.json({ error: "renovation_read_failed", message: `The ${what} could not be read. Try again.` }, 409);
+    /* The cause rides along (staff only, behind sign-in): the owner saw "could not be read" on busy workspaces and the
+       worker's own log is not reachable from where the screens are checked (3 Nov 2026). */
+    return c.json({ error: "renovation_read_failed", message: `The ${what} could not be read. Try again.`, detail: readDetail(e) }, readStatus(e));
   }
 }
 
@@ -789,8 +827,7 @@ app.get("/projects/:id/client-po", requirePageAccess("projects.list"), async (c)
   if (co == null) return c.json({ error: "not_found" }, 404);
   return readOr(c, "client item", async () => {
     const scope = await categoryScope(c);
-    const vo = await loadProjectVos(db(c), id, co, false, scope);
-    return loadClientItems(db(c), id, co, vo.vos, scope);
+    return loadClientItems(db(c), id, co, scope);
   });
 });
 
@@ -829,6 +866,113 @@ app.put("/projects/:id/lines/:itemId/plan", requirePermission("projects.write"),
     if (isMissingRelation(e)) return c.json({ error: "plans_not_ready", message: "Planned dates are not switched on yet on this server." }, 409);
     throw e;
   }
+});
+
+/* One date on a whole band of lines, in one read and one write (owner, 4 Nov 2026: a band's date was slow). */
+app.put("/projects/:id/line-plans", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const { itemIds, ...rest } = await body(c);
+  if (!Array.isArray(itemIds) || itemIds.length === 0 || itemIds.length > 500 || !itemIds.every((x) => typeof x === "string")) {
+    return c.json({ error: "invalid_plan", message: "Send the lines to change." }, 400);
+  }
+  const cleaned = cleanLinePlan(rest);
+  if (!cleaned.ok) return c.json({ error: "invalid_plan", message: cleaned.message }, 400);
+  try {
+    const out = await saveLinePlans(db(c), id, co, userId(c), itemIds as string[], cleaned.patch, await categoryScope(c));
+    if (out.saved.length) {
+      const note = [cleaned.patch.orderOn !== undefined ? `order ${cleaned.patch.orderOn ?? "cleared"}` : null, cleaned.patch.deliverOn !== undefined ? `deliver ${cleaned.patch.deliverOn ?? "cleared"}` : null].filter(Boolean).join(", ");
+      await activityStmt(c, id, co, "beta_line_plan", null, out.docNos[0] ?? null, `Line plan on ${out.saved.length} line(s): ${note}`).run();
+    }
+    return c.json({ ok: true, saved: out.saved, refused: out.refused });
+  } catch (e) {
+    if (isMissingRelation(e)) return c.json({ error: "plans_not_ready", message: "Planned dates are not switched on yet on this server." }, 409);
+    throw e;
+  }
+});
+
+/* The Raw material SKUs a line's list can take. */
+app.get("/raw-materials", requirePageAccess("projects.list"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  return readOr(c, "raw material", async () => {
+    const { results } = await db(c).prepare(
+      `SELECT DISTINCT ON (code) code, name, uom FROM scm.mfg_products WHERE company_id = ? AND category::text = 'RAW' AND status::text = 'ACTIVE' ORDER BY code`,
+    ).bind(co.companyId).all<{ code: string; name: string | null; uom: string | null }>();
+    return { skus: results ?? [] };
+  });
+});
+
+/* A line's raw materials (owner, 5 Nov 2026): the whole list replaces what it had, and a production order made from the
+   line brings it along (migration 0223). A line on a live PO is past that point: its order holds the materials. */
+app.put("/projects/:id/lines/:itemId/materials", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const b = await body(c);
+  const raw = Array.isArray(b.materials) ? (b.materials as Array<Record<string, unknown>>) : null;
+  if (!raw) return c.json({ error: "invalid_materials", message: "Send the list of materials." }, 400);
+  const materials = raw.map((m) => ({ code: String(m.code ?? "").trim(), qty: Math.round(Number(m.qty) * 1000) / 1000 }));
+  if (materials.some((m) => !m.code || !(m.qty > 0) || m.qty >= 1e8)) return c.json({ error: "invalid_materials", message: "Every material needs a quantity above zero." }, 400);
+  if (new Set(materials.map((m) => m.code)).size !== materials.length) return c.json({ error: "invalid_materials", message: "A material is listed twice." }, 400);
+  const line = await projectLine(db(c), id, co, c.req.param("itemId"), await categoryScope(c));
+  if (!line) return c.json({ error: "not_found" }, 404);
+  const state = await lineSupplierState(db(c), line.id);
+  if (state.poNumber) return c.json({ error: "line_on_po", message: `${state.poNumber} already buys ${state.itemCode}: change its materials on the production order.` }, 409);
+  const wrong = await notRawMaterials(db(c), materials.map((m) => m.code), co);
+  if (wrong.length > 0) return c.json({ error: "invalid_materials", message: `${wrong[0]} is not a Raw material SKU.` }, 400);
+  try {
+    await saveLineMaterials(db(c), line.id, co, userId(c), materials);
+    await activityStmt(c, id, co, "beta_line_materials", null, line.doc_no, `${state.itemCode}: ${materials.length} raw material${materials.length === 1 ? "" : "s"}`).run();
+  } catch (e) {
+    console.error("[renovation-beta] line materials save failed", e);
+    return c.json({ error: "materials_save_failed", message: "The materials could not be saved. Try again.", detail: readDetail(e) }, 500);
+  }
+  return c.json({ ok: true });
+});
+
+/* The supplier a line is to be bought from, picked on the SO tab before its PO (owner, 3 and 4 Nov 2026), like MRP's
+   per-line pick, on any line. A bound supplier's price (scm.supplier_material_bindings) becomes a contract line's cost;
+   any other supplier is bound to the SKU by the pick, with no price. Kept on the line's plan, which MRP starts from. A contract
+   line also keeps it on the line the PO split reads (renovation-po-split.ts), through the contract's own line edit
+   (patchContract). */
+app.put("/projects/:id/lines/:itemId/supplier", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const b = await body(c);
+  const supplierId = typeof b.supplierId === "string" ? b.supplierId.trim() : "";
+  if (!supplierId) return c.json({ error: "invalid_supplier", message: "Pick a supplier." }, 400);
+  const line = await projectLine(db(c), id, co, c.req.param("itemId"), await categoryScope(c));
+  if (!line) return c.json({ error: "not_found" }, 404);
+  const state = await lineSupplierState(db(c), line.id);
+  if (state.poNumber) return c.json({ error: "line_on_po", message: `${state.poNumber} already buys ${state.itemCode}: its supplier stays on the PO.` }, 409);
+  const bound = await supplierBinding(db(c), state.itemCode, co, supplierId) ?? await bindSupplier(db(c), state.itemCode, co, supplierId);
+  if (!bound) return c.json({ error: "supplier_not_found", message: "That supplier could not be found." }, 400);
+  const cl = await contractLineOf(db(c), line.id);
+  const user = c.get("user") as { name?: string | null; email?: string | null } | undefined;
+  const sql = sqlFor(c.env);
+  if (!sql) return c.json({ error: "supplier_save_failed", message: "The supplier could not be saved. Try again." }, 503);
+  try {
+    /* In one real transaction on postgres.js, as the contract's own route runs it (the row lock in patchContract needs
+       one, and the line and its costs change together). */
+    if (cl) {
+      await inRenoTx(sql, (tx) => patchContract(tx, { name: user?.name ?? user?.email ?? null, staffId: String(userId(c)), companyId: co, docPrefix: "" }, cl.docNo, {
+        version: cl.version, lines: [{ id: cl.lineId, supplierId, ...(bound.priceSen > 0 ? { unitCostSen: bound.priceSen } : {}) }],
+      }));
+    }
+    await saveLineSupplier(db(c), line.id, co, userId(c), supplierId);
+    await activityStmt(c, id, co, "beta_line_supplier", null, line.doc_no, `${state.itemCode}: supplier ${bound.name}`).run();
+  } catch (e) {
+    if (e instanceof RenoError) return c.json({ error: e.code, message: e.message }, e.status === 503 ? 409 : e.status);
+    console.error("[renovation-beta] line supplier save failed", e);
+    return c.json({ error: "supplier_save_failed", message: "The supplier could not be saved. Try again.", detail: readDetail(e) }, 500);
+  }
+  return c.json({ ok: true, supplierId, supplierName: bound.name });
 });
 
 /** A read-only link for the client to the Client PO list. The token carries the project and company, signed. */
@@ -948,7 +1092,7 @@ app.get("/projects/:id/site", requirePageAccess("projects.list"), async (c) => {
     return c.json({ ready: true, ...(await siteDeliveries(c, id, co)) });
   } catch (e) {
     console.error("[renovation-beta] site read failed", e);
-    return c.json({ error: "renovation_read_failed", message: "The deliveries and their photos could not be read. Try again." }, 409);
+    return c.json({ error: "renovation_read_failed", message: "The deliveries and their photos could not be read. Try again.", detail: readDetail(e) }, readStatus(e));
   }
 });
 
@@ -985,7 +1129,7 @@ app.get("/projects/:id/defects", requirePageAccess("projects.list"), async (c) =
     });
   } catch (e) {
     console.error("[renovation-beta] defects read failed", e);
-    return c.json({ error: "renovation_read_failed", message: "The defects could not be read. Try again." }, 409);
+    return c.json({ error: "renovation_read_failed", message: "The defects could not be read. Try again.", detail: readDetail(e) }, readStatus(e));
   }
 });
 
@@ -1093,7 +1237,7 @@ app.get("/projects/:id/timeline", requirePageAccess("projects.list"), async (c) 
     return c.json({ entries });
   } catch (e) {
     console.error("[renovation-beta] timeline read failed", e);
-    return c.json({ error: "renovation_read_failed", message: "The project's timeline could not be read. Try again." }, 409);
+    return c.json({ error: "renovation_read_failed", message: "The project's timeline could not be read. Try again.", detail: readDetail(e) }, readStatus(e));
   }
 });
 
@@ -1249,7 +1393,7 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
     });
   } catch (e) {
     console.error("[renovation-beta] photos read failed", e);
-    return c.json({ error: "renovation_read_failed", message: "The project's photos could not be read. Try again." }, 409);
+    return c.json({ error: "renovation_read_failed", message: "The project's photos could not be read. Try again.", detail: readDetail(e) }, readStatus(e));
   }
 });
 

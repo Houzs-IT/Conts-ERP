@@ -40,7 +40,7 @@ export type AmendmentRow = {
      ('WITHDRAWN'); both sit on status REJECTED so the state machine and the
      one-open index are unchanged. NULL while still in flight, and on every row
      created before 0149. */
-  resolution?: 'REJECTED' | 'WITHDRAWN' | null;
+  resolution?: 'REJECTED' | 'WITHDRAWN' | 'RENOVATION_VO' | null;
   rejection_reason?: string | null;
   rejected_by?: string | null;
   rejected_at?: string | null;
@@ -103,6 +103,14 @@ export type AmendmentDetail = {
   lines: AmendmentLine[];
   salesOrder: { doc_no: string; status: string; revision: number } | null;
   purchaseOrders: Array<{ id: string; po_number: string; status: string }>;
+  /* Conts (owner, 3 Nov 2026): each change in words and the VO's one-line topic. A renovation VO's REMOVE + ADD of
+     one line is one row whose `line` is a MODIFY made of the two. Absent from an older server, null when not read. */
+  changes?: AmendmentChanges | null;
+};
+
+export type AmendmentChanges = {
+  topic: string;
+  rows: Array<{ lineIds: string[]; labels: string[]; facets: Array<{ kind: string; from: string | null; to: string | null }>; line: AmendmentLine }>;
 };
 
 /* SO revision snapshot row — one per approved SO revision (so_revisions).

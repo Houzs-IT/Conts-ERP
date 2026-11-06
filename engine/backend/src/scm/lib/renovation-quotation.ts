@@ -15,6 +15,8 @@ export interface RenoActor {
   name: string | null;
   /** scm.staff id stamped on engine documents (created_by). */
   staffId: string;
+  /** The signed-in user, whose own scm.staff row names them on a VO; staffId is one shared system row. */
+  userId?: number | null;
   companyId: number;
   /** The company's document prefix, e.g. "HC-" (companyDocPrefix). */
   docPrefix: string;
@@ -110,11 +112,12 @@ export function mergeHeader(base: Partial<RevisionHeader>, patch: DocHeaderInput
   return h;
 }
 
-/** Instalments copied from a customer payment-term template (or the default one). */
-export async function instalmentsFromTerms(db: RenoDb, companyId: number, termTemplateId: string | null): Promise<{ templateId: string | null; rows: NormInstalment[] }> {
+/** Instalments copied from a customer payment-term template, or the default: the brand's own first, then the one for every brand. */
+export async function instalmentsFromTerms(db: RenoDb, companyId: number, termTemplateId: string | null, brandId: number | null = null): Promise<{ templateId: string | null; rows: NormInstalment[] }> {
   const tpl = termTemplateId
     ? await db.q<{ id: string }>(`select id from scm.reno_term_templates where id = $1 and kind = 'CUSTOMER' and company_id = $2`, [termTemplateId, companyId])
-    : await db.q<{ id: string }>(`select id from scm.reno_term_templates where kind = 'CUSTOMER' and company_id = $1 and is_default and active`, [companyId]);
+    : await db.q<{ id: string }>(`select id from scm.reno_term_templates where kind = 'CUSTOMER' and company_id = $1 and is_default and active
+         and (brand_id is null or brand_id = $2::bigint) order by brand_id nulls last limit 1`, [companyId, brandId]);
   if (termTemplateId && tpl.length === 0) throw refuse(404, 'term_template_not_found', 'That payment-term template does not exist.');
   if (tpl.length === 0) return { templateId: null, rows: [] };
   const rows = await db.q<{ seq: number; label: string; pct_bp: number; description: string; stage_code: string | null; trigger: NormInstalment['trigger'] }>(
@@ -176,7 +179,7 @@ export async function createQuotation(
   /* A quotation for a project starts from the project's customer and property where the form left them blank. */
   const header = fillBlanksFromProject(mergeHeader(base, body.header), await readProjectParty(db, body.projectId, actor.companyId));
   if (!instalments) {
-    const terms = await instalmentsFromTerms(db, actor.companyId, header.termTemplateId);
+    const terms = await instalmentsFromTerms(db, actor.companyId, header.termTemplateId, brandId);
     instalments = terms.rows;
     header.termTemplateId = terms.templateId;
   }

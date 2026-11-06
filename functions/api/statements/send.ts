@@ -1,4 +1,5 @@
 import { type Env, all, run, json, fail, nowIso } from '../../_lib/db';
+import { rmText } from '../../_lib/format';
 import { requireSession } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { auditMany } from '../../_lib/history';
@@ -63,7 +64,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         recipient: owner.email,
         channel: 'email',
         subject: 'Your statement is ready',
-        body: `Your statement is ready. Net payout RM ${(owner.net_payout / 100).toLocaleString('en-MY', { minimumFractionDigits: 2 })}. Sign in to the owner portal to see every line.`,
+        body: `Your statement is ready. Net payout ${rmText(owner.net_payout)}. Sign in to the owner portal to see every line.`,
         entityTable: 'owner_statements', entityId: r.id,
       });
     }

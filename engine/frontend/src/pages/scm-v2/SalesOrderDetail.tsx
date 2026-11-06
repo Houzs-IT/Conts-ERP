@@ -1,37 +1,63 @@
 ﻿// ----------------------------------------------------------------------------
-// SalesOrderDetail — full-page route at /mfg-sales-orders/:docNo.
+// SalesOrderDetail — the one Sales Order page, at /scm/sales-orders/:docNo.
 //
-// HOUZS-pattern B2B sales order:
-//   1. Header: back button + doc no · debtor + status pill + actions (Print PDF)
-//   2. Customer info card: editable debtor_code/name/phone/agent/branding/
-//      venue/4 addresses with autocomplete from prior SOs
-//   3. Line items table: Item code + group + description + variants summary +
-//      qty + unit price + discount + total + Edit/Delete. "+ Add Line Item"
-//      opens a modal with a product picker + variant editor (sofa: size +
-//      fabric color + leg height; bedframe: divan + gap + leg + specials).
-//   4. Totals card: per-category subtotal + grand total + margin
-//   5. Status transition strip: Draft → Confirmed → Shipped → Delivered → Invoiced → Closed.
+// One screen and one component tree for viewing and editing (owner, 4 Nov 2026).
+// `?edit=1` on the URL is the mode: Edit switches the same sections from
+// read-only to editable, and leaving Edit drops the parameter. Built on the
+// editor rather than the old read page because the editor already owns everything
+// that can go wrong: the drafts, the save lease, the VO and contract paths and the
+// locks; the read page was display only, and that display now lives in
+// soDetailParts.tsx.
+//
+//   1. Sticky header: Back, customer, status, meta line, actions.
+//   2. Banners: save failure, version conflict, cancelled, draft, lock, VO.
+//   3. Sections: CustomerCard (each section's view and edit halves), the aside.
+//   4. Line items, attachments, payments, signature, the contract's sections.
 //
 // Wires to: GET /mfg-sales-orders/:docNo, PATCH header, POST/PATCH/DELETE items,
 // PATCH /:docNo/status, GET /debtors/search.
 // ----------------------------------------------------------------------------
 
+import { SoBrandPicker } from './SoBrandPicker';
 import {
   forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
   type CSSProperties, type ReactNode,
 } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, FileText, Pencil, Plus, X, Printer, Save,
+  ArrowLeft, FileText, Plus, X, Printer, Save, Edit3, Wallet, XCircle, Phone as PhoneIcon,
   DollarSign, Lock, History, ChevronDown, Ban, Share2, Check, Trash2,
 } from 'lucide-react';
 import { Button } from '../../components/Button';
-import { PageHeader } from '../../components/Layout';
-import { PrintPreviewModal, usePrintPreview } from '../../components/scm-v2/PrintPreviewModal';
+import { DataTable } from '../../components/DataTable';
+import { DATA_TABLE_LAYOUT_FAMILIES } from '../../components/dataTableLayoutFamilies';
+import { DetailAside, DetailGrid, DetailMain, Section } from '../../components/DetailLayout';
+import { ProductionOrderChips } from './ProductionOrderChips';
+import { coverageStateOf } from '../../components/coverage-state';
+import { useOpenPrintPreviewFromUrl, usePrintPreview } from '../../components/scm-v2/PrintPreviewModal';
+import { scmListReturnTo } from '../../lib/scmListReturn';
+import { useStaffLookup } from '../../hooks/useStaffLookup';
+import { overlaySoLineCoverage } from '../../vendor/scm/lib/so-coverage-overlay';
+import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
+import { MigratedReadonlyBanner } from '../../vendor/scm/components/MigratedReadonlyBanner';
+import { SoSharedWith } from '../../vendor/scm/components/SoSharedWith';
+import { roomOrdered } from '../../vendor/scm/lib/so-print-rooms';
+import { addLineHref } from '../../vendor/scm/lib/add-line-handoff';
+import { RenovationSoOrderInfo } from './RenovationSoOrderInfo';
+import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from './renovationSoAreaLines';
+import { SoInstalments, instalmentRows, nextInstalmentSen, paymentSlots, useSoInstalments } from './renovationSoInstalments';
+import { ContractSections, InstalmentBillDialog } from '../renovation/RenovationSalesOrder';
+import { useBrands, useContract } from '../../lib/renovation/api';
+import { SPEC_LOCKED_NOTE } from '../renovation-beta/renovationBetaLines';
+import {
+  Field, SoAddressFields, SoCustomerFields, SoDetailAsideCards, SoDetailHeader, SoEmergencyFields, SoOrderInfoFields, SoRecentActivityCard,
+  displayStatusFor, fmtMoney, refOf, soLineColumns,
+} from './soDetailParts';
+import { SoPrintPreview, useSoPrintLayout } from './soPrintPreview';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
-import { SoSourceChips } from '../../components/SoSourceChips';
 import { useSetBreadcrumbs } from '../../hooks/useBreadcrumbs';
-import { buildVariantSummary, canonicalizeVariants, fmtSen, fmtDateOrDash, fmtMoneySen, lineIdentity, missingVariantAxes } from '@2990s/shared'; // Commander 2026-05-28
+import { canonicalizeVariants, fmtDate, fmtMoneySen, fmtSen, missingVariantAxes } from '@2990s/shared'; // Commander 2026-05-28
 import { PhoneInput } from '../../vendor/scm/components/PhoneInput';
 import { SkeletonDetailPage } from '../../vendor/scm/components/Skeleton';
 import {
@@ -46,6 +72,7 @@ import {
   useOverrideMfgSoLinePrice,
   useSalesOrderAuditLog,
   useSalesOrderPayments,
+  useSoLineCoverage,
   useUploadSoItemPhoto,
   type DebtorSuggestion,
 } from '../../vendor/scm/lib/sales-order-queries';
@@ -56,10 +83,10 @@ import { SO_AUDIT_LABELS } from './so-audit-labels';
 import { useSoHistoryWithRelated } from './so-history-related';
 import {
   LOCKED_STATUSES,
-  CANCELLABLE_STATUSES,
   isLocked as isSoLocked,
   procLockActive as soProcLockActive,
   amendmentEligible as soAmendmentEligible, migratedReadonly as soMigratedReadonly, migratedReadonlyReason as soMigratedReason, soDownstreamHardLocked, soItemFrozen,
+  deriveBalance as soDeriveBalance,
 } from '../../vendor/scm/lib/so-detail-gates';
 import { soDateGuardError, soErrorText } from '../../vendor/scm/lib/so-form-validate';
 import { FROZEN_LINE_LABEL, FROZEN_LINE_LABEL_STYLE, FROZEN_LINE_STYLE } from '../../vendor/scm/lib/so-frozen-line-style';
@@ -115,7 +142,7 @@ import {
   amendmentVariantSummaries,
   visibleAmendmentLines, amendmentLineSig} from '../../vendor/scm/lib/so-amendment-line-diff';
 import { routeField, type AmendmentFieldKind } from '../../vendor/scm/lib/amendment-routing';
-import { fetchSoSlipUrl, fetchScanSlipImageBlobUrl } from '../../vendor/scm/lib/slip';
+import { fetchSoSlipUrl } from '../../vendor/scm/lib/slip';
 import {
   useLocalities,
   countryForState,
@@ -137,7 +164,6 @@ import { sortByText } from '../../vendor/scm/lib/sort-options';
 import { SearchableSelect } from '../../vendor/scm/components/SearchableSelect';
 import { AddressPostcodeField } from '../../vendor/scm/components/AddressPostcodeField';
 import { DebtorSuggestList } from '../../vendor/scm/components/DebtorSuggestList';
-import { soStatusDisplay, type DeliveryState, type SoLifecycle } from '../../vendor/scm/lib/so-status';
 import { useAuth as useHouzsAuth } from '../../auth/AuthContext';
 import { useAuth } from '../../vendor/scm/lib/auth';
 import { useVenues } from '../../vendor/scm/lib/venues-queries';
@@ -145,7 +171,6 @@ import { FairDayPicker, FairPicker } from '../../components/FairPicker';
 import { fairDayCheck, fairEditPatch, fairEventOf, fairPickValue, linkedEvent, type LinkedFair } from '../../components/fairPick';
 import { useStateWarehouseMappings } from '../../vendor/scm/lib/state-warehouse-queries';
 import { useDebouncedValue } from '../../vendor/scm/lib/hooks';
-import { generateSalesOrderPdf } from '../../vendor/scm/lib/sales-order-pdf';
 import { newIdempotencyKey } from '../../lib/idempotency';
 import { useSoVariantCascade, useSoLineDeliveryDateCascade } from './use-so-variant-cascade';
 import {
@@ -159,7 +184,7 @@ import {
 import { RevisionsTab } from './so-revisions-tab';
 import styles from './SalesOrderDetail.module.css';
 import { CustomerBlock } from '../projects/renovation/CustomerBlock';
-import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
+import { soInfoApi, useSoInfoLists, useSoRooms } from '../projects/renovation/customerPropertyApi';
 import {
   EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, toRenovationBlock,
   type CustomerPropertyValue, type ProjectShared,
@@ -335,6 +360,12 @@ type SoHeader = {
   vo_locked?: boolean;
   /** RENOVATION for a renovation contract: its lines change only through the renovation routes. */
   so_kind?: string | null;
+  /* Read by the view half of the sections. */
+  first_item_branding?: string | null;
+  first_item_category?: string | null;
+  payment_methods_summary?: string;
+  discount_sen?: number;
+  collaborator_staff_ids?: string[] | null;
   vo_applies_on_raise?: boolean;
   has_children?: boolean; downstream_fully_frozen?: boolean; // a live DO/SI exists / every line is on one (shared/so-line-freeze.ts)
   has_open_amendment?: boolean;
@@ -435,11 +466,14 @@ type SoItem = {
      when the header date changes. */
   line_delivery_date: string | null;
   line_delivery_date_overridden: boolean;
+  line_processing_date?: string | null;
   /* Delivery breakdown stamped by the SO detail endpoint — which DO took how
      much off this line, plus the live balance still deliverable. */
   deliveries?: { doNumber: string; qty: number; status: string }[];
   delivered_qty?: number;
   remaining_qty?: number;
+  /* Received on this line's live POs. Above 0 its SKU, options and price are locked (renovation-spec-lock.ts). */
+  received_qty?: number;
   /* Incoming-stock coverage — the PO this line's goods were raised into +
      earliest ETA, shown while the line is still on the way. null when no PO. */
   coverage_po?: string | null;
@@ -484,6 +518,7 @@ const draftFromItem = (it: SoItem): SoLineDraft => ({
   photoUrls:      it.photo_urls ?? [],
   lineDeliveryDate:           it.line_delivery_date ?? null,
   lineDeliveryDateOverridden: it.line_delivery_date_overridden ?? false,
+  lineProcessingDate:         it.line_processing_date ?? null,
 });
 
 /* Serialised signature of exactly the fields a line PATCH persists. Two drafts
@@ -535,7 +570,7 @@ export const SalesOrderDetail = () => {
      amendment instead of writing the lines directly. The pending banner hosts
      the supplier-confirm + approve-so gates, and the Revisions tab lists prior
      SO snapshots. Buttons are gated on the Houzs scm.amendment.* permissions. */
-  const { user: currentUser, can } = useHouzsAuth();
+  const { user: currentUser, can, pageAccess } = useHouzsAuth();
   /* The 2990 bridge's staff row — null/role-only on Houzs for a user without a
      scm.staff row (e.g. the owner). Used only as the first (id) match key + a
      name fallback in selfStaffMatch below. */
@@ -580,6 +615,17 @@ export const SalesOrderDetail = () => {
 
   const header = (detail.data?.salesOrder as SoHeader | undefined) ?? null;
   const items = useMemo(() => (detail.data?.items as SoItem[] | undefined) ?? [], [detail.data]);
+  /* Live stock coverage is fetched SEPARATELY so the page paints on the fast detail response and never blocks on it;
+     the badge + source-PO chips upgrade in place when this arrives. The overlay is shared with the list drill-down. */
+  const coverage = useSoLineCoverage(docNo ?? null);
+  const lineRows = useMemo(
+    () => overlaySoLineCoverage(items.filter((l) => !l.cancelled), coverage.data?.coverage),
+    [items, coverage.data],
+  );
+  /* "By item" (the table) or "By area" / "By category" (room headings with subtotals); offered when the order has rooms. */
+  const [linesView, setLinesView] = useState<SoLinesView>('item');
+  const { nameOf: salespersonNameOf } = useStaffLookup();
+  const auditQ = useSalesOrderAuditLog(docNo ?? null);
   const itemIdsInOrder = useMemo(() => items.map((it) => it.id), [items]); // stable render-order ids for the variant cascade
   const frozenIdsRef = useRef<ReadonlySet<string>>(new Set()); frozenIdsRef.current = new Set(items.filter(soItemFrozen).map((it) => it.id)); // the header date cascade skips these
 
@@ -650,20 +696,12 @@ export const SalesOrderDetail = () => {
   // floating right-side history drawer.
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  /* PR-A — Page-level Edit/Save framework. Default is read-only: all inputs
-     are disabled, the "+ Add Line Item" button + per-line trash icons are
-     hidden, and CustomerCard's own Save button is suppressed. Click Edit in
-     the page header → entire page enters edit mode (CustomerCard inputs
-     unlock, line-item actions appear, Edit button is replaced with Save +
-     Cancel). Save commits via updateHeader; Cancel resets the local form.
-     Status transitions remain accessible outside edit mode.
-     Nick 2026-07-09 — when this component is forwarded to from V2 with
-     ?edit=1, jump straight into edit mode so the operator doesn't have to
-     click Edit again after Detail V2's Edit already navigated them here. */
+  /* PR-A — Page-level Edit/Save framework. The URL is the mode: `?edit=1` is editing, so a link, a reload and the
+     browser's Back all mean what they look like. Viewing shows the same sections read-only and hides the line and
+     address inputs; Edit opens them, and the ONE page Save commits. Status transitions stay outside edit mode. */
   const [editSearchParams] = useSearchParams();
-  const [isEditing, setIsEditing] = useState(
-    editSearchParams.get('edit') === '1',
-  );
+  const isEditing = editSearchParams.get('edit') === '1';
+  const queryClient = useQueryClient();
 
   // ── Renovation mode (Conts, 14 Oct 2026; mig 0112): the lines grouped into rooms ──
   const renoLines = useSoInfoLists().data?.ready === true;
@@ -676,6 +714,13 @@ export const SalesOrderDetail = () => {
   useEffect(() => {
     if (!renoLines || !renoDocNo || !isEditing) return;
     let live = true;
+    /* What the view already holds first, so pressing Edit does not flash the lines out of their rooms. */
+    const known = queryClient.getQueryData<Awaited<ReturnType<typeof soInfoApi.so>>>(['reno', 'so-info', 'so', renoDocNo]);
+    if (known) {
+      setRenoRooms(known.roomSections);
+      setRenoRowRoom(known.itemRooms);
+      setRenoLayout(roomLayoutOf(known.info));
+    }
     void soInfoApi.so(renoDocNo).then((r) => {
       if (!live) return;
       setRenoRooms(r.roomSections);
@@ -683,6 +728,7 @@ export const SalesOrderDetail = () => {
       setRenoLayout(roomLayoutOf(r.info));
     }).catch(() => { /* the rooms stay as typed; saving them reports a failure */ });
     return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the cache is read once, when Edit opens
   }, [renoLines, renoDocNo, isEditing]);
   const saveRenoRooms = async () => {
     if (!renoLines || !renoDocNo) return;
@@ -719,6 +765,21 @@ export const SalesOrderDetail = () => {
   const print = usePrintPreview(
     useCallback((action: PdfAction) => deliverPrintPdfRef.current(action), []),
   );
+  /* The read page's PDF layout picker and room order, from the same hook (soPrintPreview.tsx): the editor and Submit
+     VO print exactly as the read page does (owner, 3 Nov 2026). */
+  const printLayoutState = useSoPrintLayout(docNo, lineRows);
+  /* `?print=1`-style deep link into the same preview. */
+  useOpenPrintPreviewFromUrl(print.openPreview, !!header);
+  /* The renovation contract's four instalments (owner, 1 Nov 2026), as the project's payments strip shows them. */
+  const instalmentsQ = useSoInstalments(docNo ?? null, printLayoutState.renoMode);
+  const contractQ = useContract(header?.so_kind === 'RENOVATION' ? docNo : undefined);
+  const brandsQ = useBrands();
+  const [billingId, setBillingId] = useState<string | null>(null);
+  const canBill = can('scm.renovation.bill') && ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'].includes(contractQ.data?.status ?? '');
+  const instalments = useMemo(
+    () => instalmentRows(instalmentsQ.data, (printPaymentsQ.data ?? []).reduce((sum, p) => sum + (p.amount_sen || 0), 0)),
+    [instalmentsQ.data, printPaymentsQ.data],
+  );
 
   /* Payments edit mode — the money's OWN toggle (owner 2026-08-07). Declared up
      here with the other page state, NOT beside the `canEditPayments` derivation
@@ -726,10 +787,8 @@ export const SalesOrderDetail = () => {
      there throws the exact error described above. See the derivation for what
      this gates and why. */
   const [payEditing, setPayEditing] = useState(
-    /* `?payments=1` — arrived through V2's "Collect payment" button, which is
-       the only door into this page on a hard-locked order. Open the ledger
-       straight away rather than making the operator hunt for a second toggle
-       on a page they reached BY asking for payments. */
+    /* `?payments=1` — a link that asks for the ledger: open it straight away rather than making the operator hunt for
+       a second toggle on a page they reached BY asking for payments. */
     editSearchParams.get('payments') === '1',
   );
   /* Page Edit mode already unlocks the ledger, so the toggle hides while it is
@@ -745,6 +804,7 @@ export const SalesOrderDetail = () => {
      Declared here with the other page state, ABOVE the early returns — same
      rule as payEditing and the print hook. */
   const [unsavedPayments, setUnsavedPayments] = useState(0);
+  const paymentsRef = useRef<HTMLDivElement>(null);
   /* The card hands this up so Save can book the typed rows (docs/bugs/0584-*). */
   const commitPaymentsRef = useRef<(() => Promise<PaymentCommitResult>) | null>(null);
   useEffect(() => {
@@ -784,8 +844,7 @@ export const SalesOrderDetail = () => {
       : current);
   };
   const [relMapOpen, setRelMapOpen] = useState(false);
-  /* Relationship-map chain + destinations — SHARED with SalesOrderDetailV2 so the
-     two SO detail surfaces can't drift again. Called here (not at the render site)
+  /* Relationship-map chain + destinations. Called here (not at the render site)
      because the early returns below would otherwise make the hook conditional. */
   const {
     nodes: chainNodes,
@@ -817,30 +876,26 @@ export const SalesOrderDetail = () => {
   /* The ADD key rides on the ROW now (StagedAddLine.idempotencyKey): one key
      shared across distinct inserts would replay the first for all of them. */
   const activeLineLeaseRef = useRef<string | null>(null);
-  const endEditSession = () => {
-    amendKeyRef.current = null;
-    activeLineLeaseRef.current = null;
-    setIsEditing(false);
-  };
-
-  /* Leaving edit mode has to leave the EDIT ROUTE too, not just flip a flag.
-     SalesOrderDetailV2 is a thin router that renders THIS component whenever
-     `?edit=1` is on the URL, so `setIsEditing(false)` alone left the operator
-     on this legacy ledger — a visibly different page from the V2 detail they
-     pressed Edit on, at the same address, with no way back to it except the
-     browser's own Back (owner 2026-08-10: "按 Cancel 出來不一樣的頁面").
-     Dropping the param hands them back to SalesOrderDetailV2ReadOnly.
-
-     `replace` because the editor URL is a mode, not a place: V2's goEdit
-     PUSHED `?edit=1` onto the history, so replacing it here collapses the pair
-     instead of stacking a second detail entry that Back would have to walk
-     through twice.
-
-     NOT called on the amendment path — a submitted amendment deliberately
-     stays on this page to show its raised-amendment notice. */
+  /* Leaving Edit leaves the URL mode. `replace` because the editor URL is a mode, not a place: Edit PUSHED `?edit=1`,
+     so replacing it collapses the pair instead of stacking a second detail entry Back would walk through twice. */
   const returnToDetail = () => {
     if (docNo) navigate(`/scm/sales-orders/${docNo}`, { replace: true });
   };
+  const endEditSession = () => {
+    amendKeyRef.current = null;
+    activeLineLeaseRef.current = null;
+    returnToDetail();
+  };
+  /* The same page stays mounted across Edit, so what used to die with the editor is cleared here, whichever way the
+     mode ended (Cancel, Save, the browser's Back): the unlock, the retired keys, and the VO line-remove state. */
+  useEffect(() => {
+    setSaveError(null);
+    setVersionConflict(null);
+    if (isEditing) { setActiveTab('order'); return; }
+    amendKeyRef.current = null;
+    activeLineLeaseRef.current = null;
+    setUnlockOverride(false);
+  }, [isEditing]);
 
   /* Both halves of the save feedback die together — a version banner left up
      from the previous attempt would accuse the operator of a stale baseline
@@ -869,7 +924,9 @@ export const SalesOrderDetail = () => {
     };
   }, [editedDraftGroups, header, items]);
   const liveEditDraft = useMemo(() => buildEditValidateDraft(), [buildEditValidateDraft]);
-  const { problems: editBackendProblems } = useSoValidate(liveEditDraft, !!header);
+  /* Not until the lines are in the draft: for the first moment of Edit the form is still filling, and "Can't save" over
+     a blank form read as a broken order (owner, 3 Nov 2026). */
+  const { problems: editBackendProblems } = useSoValidate(liveEditDraft, isEditing && !!header && (items.length === 0 || editedDraftGroups.length > 0));
   const editClientExtras = useMemo<SaveProblem[]>(() => {
     const blankAdd = firstBlankStagedAdd(addingDrafts);
     const blankLine = Object.values(editingDrafts).some((d) => !d.itemCode.trim());
@@ -882,14 +939,30 @@ export const SalesOrderDetail = () => {
   const openEditBlockingList = () => {
     void notify({ title: saveProblemsTitle(editBlockingProblems.length), body: <SaveProblemsList problems={editBlockingProblems} />, tone: 'error' });
   };
-  const enterEdit  = () => { clearSaveFeedback(); setIsEditing(true); };
+  /* What the view shows of a save: the sections that stay mounted across Edit read their own queries. Every renovation
+     query sits under ['reno'] (the order information, the rooms, the contract's billing, VOs and PO flags). */
+  const refreshAfterSave = () => {
+    void queryClient.invalidateQueries({ queryKey: ['reno'] });
+    void queryClient.invalidateQueries({ queryKey: ['renovation-so-billing', docNo] });
+    void queryClient.invalidateQueries({ queryKey: ['mfg-sales-order-coverage', docNo] });
+  };
+  const enterEdit  = () => {
+    if (!docNo) return;
+    clearSaveFeedback();
+    setActiveTab('order');
+    /* Edit starts from what the server has now, as a fresh editor did. */
+    void detail.refetch();
+    void queryClient.invalidateQueries({ queryKey: ['reno', 'so-info', 'so', docNo] });
+    void navigate(`/scm/sales-orders/${docNo}?edit=1`);
+  };
+  /* "Add line" from the page you START on (docs/bugs/0853). */
+  const goAddLine = () => { if (docNo) { setActiveTab('order'); void navigate(addLineHref(`/scm/sales-orders/${docNo}`)); } };
   const cancelEdit = () => {
     customerCardRef.current?.reset();
     clearSaveFeedback();
     // The seed/clear effect wipes editingDrafts + addingDraft when isEditing
     // flips to false, discarding any uncommitted line edits.
     endEditSession();
-    returnToDetail();
   };
 
   /* Whole-order Save — persists the order in one shot:
@@ -901,6 +974,15 @@ export const SalesOrderDetail = () => {
      resolve; any failure surfaces inline and keeps the user in edit mode so
      nothing is silently lost. */
   const [savingOrder, setSavingOrder] = useState(false);
+  /* Never stops the save: the rest of the order is what the operator came to commit. */
+  const saveProcessingDates = async (dates: Record<string, string | null>) => {
+    try {
+      await authedFetch(`/mfg-sales-orders/${encodeURIComponent(header!.doc_no)}/line-processing-dates`, { method: 'PUT', body: JSON.stringify({ dates }) });
+    } catch {
+      void notify({ title: 'Processing dates did not save', body: 'The order saved. Open Edit and set the dates again.', tone: 'error' });
+    }
+  };
+
   const saveEdit = async () => {
     const handle = customerCardRef.current;
     if (!handle || !header) return;
@@ -958,6 +1040,11 @@ export const SalesOrderDetail = () => {
       return true;
     });
     const deleteEntries = items.filter((it) => !(it.id in editingDrafts));
+    /* Processing dates save on their own: they live on the line's plan, not the line. */
+    const processingDates = Object.fromEntries(Object.entries(editingDrafts)
+      .filter(([id, d]) => (d.lineProcessingDate ?? null) !== (originalDraftsRef.current[id]?.lineProcessingDate ?? null))
+      .map(([id, d]) => [id, d.lineProcessingDate ?? null]));
+    if (Object.keys(processingDates).length > 0) await saveProcessingDates(processingDates);
     // Snapshot: the set that goes out must be the set the guards above passed.
     const pendingAdds = addingDrafts;
     // What the operator will read in a failure message.
@@ -1027,10 +1114,9 @@ export const SalesOrderDetail = () => {
         /* A row that could not be booked KEEPS THE PAGE OPEN — leaving discards it. */
         const outcome = paymentSaveOutcome(pay);
         if (outcome.stay) { setSaveError(outcome.message ?? 'Some payment rows were not saved.'); return; }
-        endEditSession();
+        refreshAfterSave();
         // Same exit as Cancel — a completed Save is done with the edit route.
-        // (The amendment path below deliberately stays put.)
-        returnToDetail();
+        endEditSession();
       })
       .catch((e) => {
         setSavingOrder(false);
@@ -1208,7 +1294,9 @@ export const SalesOrderDetail = () => {
     for (const l of lines) {
       const variants = (l.newVariants ?? undefined) as Record<string, unknown> | undefined;
       if (l.changeType === 'ADD') {
-        adds.push({ room: String((l.oldSnapshot as { room?: string } | undefined)?.room ?? ''), itemCode: l.newItemCode ?? '', qty: l.newQty ?? 1,
+        /* A line with no room shows under Common area on the form, so it is saved there (placeRows). */
+        const room = placeRows(renoRooms, [{ key: 'add', room: String((l.oldSnapshot as { room?: string } | undefined)?.room ?? '') }]).roomOf.add ?? '';
+        adds.push({ room, itemCode: l.newItemCode ?? '', qty: l.newQty ?? 1,
           unitPriceSen: Math.max(0, Math.round(l.newUnitPriceSen ?? 0)), variants, remark: l.newRemark });
         continue;
       }
@@ -1228,10 +1316,12 @@ export const SalesOrderDetail = () => {
       await new Promise<void>((resolve, reject) => {
         handle.save({ onSuccess: () => resolve(), onError: (msg) => reject(new Error(msg)) }, { renoBlockOnly: true });
       });
+      let poFlags = 0;
       for (const l of specs) {
-        await authedFetch(`/renovation-so-info/${encodeURIComponent(header.doc_no)}/lines/${encodeURIComponent(l.salesOrderItemId ?? '')}/spec`, {
+        const r = await authedFetch<{ flags?: number }>(`/renovation-so-info/${encodeURIComponent(header.doc_no)}/lines/${encodeURIComponent(l.salesOrderItemId ?? '')}/spec`, {
           method: 'PUT', body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
         });
+        poFlags += r.flags ?? 0;
       }
       const vo = edits.length || adds.length
         ? await authedFetch<{ voNo: string; flags: number }>(`/renovation/sales-orders/${encodeURIComponent(header.doc_no)}/line-edits`, {
@@ -1240,12 +1330,13 @@ export const SalesOrderDetail = () => {
         : null;
       setSavingOrder(false);
       endEditSession();
+      refreshAfterSave();
       void detail.refetch();
       notify({
         title: 'Saved',
         body: vo
           ? `${vo.voNo} raised and applied: ${edits.length + adds.length} line change${edits.length + adds.length === 1 ? '' : 's'}.${vo.flags ? ` ${vo.flags} PO line${vo.flags === 1 ? '' : 's'} flagged for purchasing to change.` : ''}`
-          : lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.` : 'Order information saved.',
+          : lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.${poFlags ? ` ${poFlags} PO line${poFlags === 1 ? '' : 's'} flagged for purchasing to tell the supplier.` : ''}` : 'Order information saved.',
         tone: 'info',
       });
     } catch (e) {
@@ -1339,6 +1430,7 @@ export const SalesOrderDetail = () => {
       endEditSession();
       /* The VO has already applied (Conts: no approver), so the order total moved: read it back now rather than
          trusting the cache the direct-half save just wrote (owner run, 24 Oct 2026: total stale until reload). */
+      refreshAfterSave();
       if (plan === 'AMENDMENT') void detail.refetch();
       /* Two-lane rework: the server classifies (and may SPLIT) the request —
          product changes go to Purchasing, delivery changes to Logistics, each
@@ -1651,6 +1743,7 @@ export const SalesOrderDetail = () => {
        soft warning so the line can be re-attached. */
     const newItemId = (res.item as { id?: string } | null)?.id;
     if (newItemId) renoAddedIds.current[staged.key] = newItemId;
+    if (newItemId && d.lineProcessingDate) await saveProcessingDates({ [newItemId]: d.lineProcessingDate });
     if (newItemId && pendingFiles.length > 0) {
       let failed = 0;
       for (const f of pendingFiles) {
@@ -1691,17 +1784,15 @@ export const SalesOrderDetail = () => {
   }
   if (detail.isError || !header) {
     return (
-      <div className="space-y-4">
-        <Link
-          to="/scm/sales-orders"
-          className="inline-flex h-8 w-fit items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[11px] font-semibold uppercase tracking-wider text-ink-secondary transition-colors hover:border-primary/40 hover:bg-primary-soft hover:text-primary"
-        >
-          <ArrowLeft {...ICON} />
-          <span>Back</span>
-        </Link>
-        <div className={styles.bannerWarn}>
-          <strong>Sales order not found.</strong>
-          {detail.error instanceof Error ? ` ${detail.error.message}` : null}
+      <div className="mx-auto max-w-lg px-4 py-16 text-center">
+        <div className="mb-2 font-display text-[18px] font-extrabold text-err">Couldn't load {docNo}</div>
+        <p className="text-[13px] text-ink-muted">
+          {detail.error instanceof Error ? detail.error.message : 'The sales order was not found.'}
+        </p>
+        <div className="mt-4">
+          <Button variant="secondary" onClick={() => void navigate(scmListReturnTo('/scm/sales-orders'))} icon={<ArrowLeft {...SM_ICON} />}>
+            Back to Sales Orders
+          </Button>
         </div>
       </div>
     );
@@ -1714,6 +1805,17 @@ export const SalesOrderDetail = () => {
      permission the API enforces (mfg-sales-orders.ts PATCH), so the Edit button
      it re-enables can never open an order the server would refuse to save. */
   const canAttributeOther = can('scm.so.attribute_other');
+  /* The Edit button. Its label reads the lock WITHOUT the Override: a VO is what a processing-locked order asks for,
+     and only the kind of lock decides that. Migrated stays its own term so the hint can say WHICH lock this is. */
+  const hardLocked = isSoLocked(header.status, downstreamLocked);
+  const canAmend = soAmendmentEligible(header, hardLocked);
+  const editDisabled = migratedLocked || (isLocked && !canAttributeOther);
+  const lockedEditHint = migratedLocked
+    ? soMigratedReason(header)
+    : isLocked && canAttributeOther
+      ? 'This order is locked by a downstream Delivery Order / Sales Invoice — only the Salesperson can still be changed.'
+      : 'This order is locked — it already has a downstream Delivery Order / Sales Invoice.';
+  const editLabel = canAmend && header.has_open_amendment ? 'View VO' : 'Edit';
 
   /* Owner 2026-07-05 — SO PROCESS lock: once the SO has a Processing Date
      (which IS what being proceeded means — owner, pinned 2026-08-13) AND that
@@ -1765,8 +1867,11 @@ export const SalesOrderDetail = () => {
      server (price override) rather than through the amendment diff — those must
      stay disabled on a locked SO or they render-then-409. */
   const overrideLocked = isLocked || procLockActive;
+  /* The rows Edit shows: a cancelled line (a VO replaced it) is not on the order. Its draft stays and never moves, so
+     the save sees what it always saw. */
+  const liveItems = items.filter((it) => !it.cancelled);
   const visibleLines = visibleLineCounts({
-    isEditing, itemIds: items.map((it) => it.id),
+    isEditing, itemIds: liveItems.map((it) => it.id),
     editingDraftIds: Object.keys(editingDrafts), stagedAdds: addingDrafts.length,
   });
   // Houzs perm gates (mirror the server-side scm.amendment.* keys): the server
@@ -1817,7 +1922,6 @@ export const SalesOrderDetail = () => {
      payments are view-only until the operator opts in here, and a DRAFT skips
      the toggle because it is never confirmed. Page Edit mode still counts as
      opting in, so the existing flow on an unlocked SO is untouched. */
-  const canCancel = !migratedLocked && CANCELLABLE_STATUSES.includes(header.status);
   const canOfferPayEdit  = !migratedLocked && !isDraftSo && !isCancelled && !isEditing;
   const canEditPayments  = !migratedLocked && (isDraftSo || (!isCancelled && (isEditing || payEditing)));
 
@@ -1838,6 +1942,22 @@ export const SalesOrderDetail = () => {
       confirmLabel: 'Discard and leave',
       danger: true,
     });
+  };
+
+  /* Back always returns to the Sales Orders list (owner 2026-07-24), which restores its own sticky filters. */
+  const goBack = async () => {
+    /* Opened from a project: back returns there, not to the list of every order. */
+    const backTo = (location.state as { backTo?: string } | null)?.backTo;
+    if (await guardUnsavedPayments()) void navigate(backTo ?? scmListReturnTo('/scm/sales-orders'));
+  };
+  /* Collect payment unlocks the card and scrolls to it. */
+  const goPayments = () => {
+    setPayEditing(true);
+    paymentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  /* Bottom-bar CTA on phone. */
+  const goCall = () => {
+    if (header.phone) window.location.href = `tel:${header.phone.replace(/\s+/g, '')}`;
   };
 
   /* Closing the card with Done unmounts the rows, so it discards exactly what
@@ -1898,9 +2018,9 @@ export const SalesOrderDetail = () => {
     const paymentRows = printPaymentsQ.data;
     if (!Array.isArray(paymentRows)) {
       if (printPaymentsQ.isFetching) {
-        notify({ title: 'Loading payments… please try again in a moment.' });
+        void notify({ title: 'Loading payments… please try again in a moment.' });
       } else {
-        notify({
+        void notify({
           title: 'Cannot print — payments could not be loaded',
           /* authedFetch already runs every non-ok response through humanApiError,
              so this arrives as a plain sentence. Re-mapping it here would be a
@@ -1919,15 +2039,24 @@ export const SalesOrderDetail = () => {
     /* `pwpCodes` rides on the same GET /:docNo payload — vouchers this SO's
        trigger items issued, so the printed PDF can mark the trigger lines. */
     const pwpCodes = ((detail.data as { pwpCodes?: unknown[] } | undefined)?.pwpCodes ?? []) as never;
-    return generateSalesOrderPdf(header, items, payments, action, pwpCodes).catch((e) => {
-      // eslint-disable-next-line no-console
-      console.error('PDF generation failed:', e);
-      notify({
-        title: 'PDF generation failed',
-        body: `${e instanceof Error ? e.message : 'Something went wrong.'}`,
-        tone: 'error',
+    const contract = contractQ.data;
+    const brand = brandsQ.data?.brands.find((b) => b.brandId === contract?.header.brandId);
+    const pdfContract = contract && brand ? {
+      brandName: brand.name, letterhead: [...brand.companyLines, brand.contactLine].filter(Boolean), bankLine: brand.bankLine, termsLines: brand.termsLines,
+      instalments: contract.instalments.map((i) => ({ label: i.label, percent: `${i.pctBp / 100}%`, description: i.description })),
+    } : undefined;
+    /* Loaded here, not at the top: the PDF library has no business on a page that may never print. */
+    return import('../../vendor/scm/lib/sales-order-pdf')
+      .then(({ generateSalesOrderPdf }) => generateSalesOrderPdf(header, lineRows, payments, action, pwpCodes, { ...printLayoutState.pdfOpts, contract: pdfContract }))
+      .catch((e) => {
+        // eslint-disable-next-line no-console
+        console.error('PDF generation failed:', e);
+        notify({
+          title: 'PDF generation failed',
+          body: `${e instanceof Error ? e.message : 'Something went wrong.'}`,
+          tone: 'error',
+        });
       });
-    });
   };
   /* The hook itself lives above the early returns (see its declaration and why).
      This is the assignment half: every render refreshes the ref with a closure
@@ -1940,7 +2069,7 @@ export const SalesOrderDetail = () => {
               // A freshly-deleted row drops its draft (removeEditingLine) but
               // lingers in `items` until the re-fetch — skip rendering it.
               if (!editDraft) return null;
-              const cb = rowCallbacks.get(it.id), frozen = soItemFrozen(it);
+              const cb = rowCallbacks.get(it.id), frozen = soItemFrozen(it), goodsIn = Number(it.received_qty ?? 0) > 0;
               return (
                 <div key={it.id} style={frozen ? FROZEN_LINE_STYLE : undefined} data-frozen={frozen || undefined}>
                   {/* Per-line action — Override price ($). Removal is handled
@@ -1958,8 +2087,8 @@ export const SalesOrderDetail = () => {
                         which carries newUnitPriceSen. Off, not render-then-deny. */}
                     {frozen && <span style={FROZEN_LINE_LABEL_STYLE}>{FROZEN_LINE_LABEL}</span>}
                     <button type="button" className={styles.iconBtn} title="Override price"
-                      disabled={overrideLocked || frozen}
-                      onClick={() => !overrideLocked && !frozen && setOverriding(it)}>
+                      disabled={overrideLocked || frozen || goodsIn}
+                      onClick={() => !overrideLocked && !frozen && !goodsIn && setOverriding(it)}>
                       <DollarSign {...SM_ICON} />
                     </button>
                   </div>}
@@ -1967,14 +2096,15 @@ export const SalesOrderDetail = () => {
                     compact={renoLines}
                     actions={renoLines ? <>
                       <button type="button" className={renovationLineStyles.iconBtn} title="Override price" aria-label="Override price"
-                        disabled={overrideLocked || frozen}
-                        onClick={() => !overrideLocked && !frozen && setOverriding(it)}>
+                        disabled={overrideLocked || frozen || goodsIn}
+                        onClick={() => !overrideLocked && !frozen && !goodsIn && setOverriding(it)}>
                         <DollarSign {...SM_ICON} />
                       </button>
                       {!frozen && move}
                     </> : undefined}
                     index={idx}
                     draft={editDraft}
+                    specLockedNote={goodsIn ? SPEC_LOCKED_NOTE : undefined}
                     onChange={cb?.onChange ?? ((patch) => patchEditingDraft(it.id, patch))}
                     onRemove={cb?.onRemove ?? (() => removeEditingLine(it.id))}
                     canRemove={!linesLocked && !frozen}
@@ -1984,6 +2114,7 @@ export const SalesOrderDetail = () => {
                     docNo={header.doc_no}
                     itemId={it.id}
                     isEditing={!linesLocked && !frozen}
+                    remarkOpen={!linesLocked && header.so_kind === 'RENOVATION'}
                     /* Variants are mandatory only once a Processing Date is set
                        (matches this page's Save gate + the backend), so the ` *`
                        marker + red ring stay off on a no-date draft (owner
@@ -2019,815 +2150,596 @@ export const SalesOrderDetail = () => {
               );
   };
 
+  /* What the sections show. `items` above is the raw list the edit logic works on; `lineRows` is the live lines with
+     their stock coverage laid over them, for the read-only table, the totals and the PDF. */
+  const statusShown = displayStatusFor(header);
+  const subtotalSen = lineRows.reduce((s, l) => s + l.total_sen + l.discount_sen, 0);
+  const discountSen = header.discount_sen ?? lineRows.reduce((s, l) => s + l.discount_sen, 0);
+  const totalSen = header.local_total_sen;
+  const focCount = lineRows.filter((l) => l.unit_price_sen === 0 && l.total_sen === 0).length;
+  const { renoMode, printRooms, categoryView } = printLayoutState;
+  const shownRooms = linesView === 'category' ? categoryView : printRooms;
+  const lineColumns = soLineColumns<(typeof lineRows)[number]>({
+    docNo: header.doc_no, docId: header.doc_no, currency: header.currency, status: header.status, coverage: coverageStateOf(coverage),
+  });
+  const slipImageKey = (header as unknown as { slipImageKey?: string | null }).slipImageKey ?? header.slip_image_key;
+  const customerCreditSen = Number((header as { customer_credit_sen?: number }).customer_credit_sen ?? 0);
+  const customerRef = refOf(header);
+  const headerMeta: ReactNode[] = [
+    `SO date ${fmtDate(header.so_date)}`,
+    `${lineRows.length} line${lineRows.length === 1 ? '' : 's'}`,
+    /* The "Current SO-…" echo only when the order HAS been superseded by a different doc no (owner 2026-07-16). */
+    ...(currentDocNo && currentDocNo !== header.doc_no ? [`Current ${currentDocNo}`] : []),
+    ...(customerRef !== '—' ? [<>Ref <span className="font-mono font-semibold text-ink-secondary">{customerRef}</span></>] : []),
+    ...(customerCreditSen > 0 ? [`Customer credit balance: ${fmtSen(customerCreditSen)}`] : []),
+  ];
+  /* A VO is a change of amount or an added line (owner, 4 Nov 2026); options, remarks and dates only save. */
+  const raisesVo = amendmentMode && header.so_kind === 'RENOVATION' && buildAmendmentLines().some((l) => {
+    const it = items.find((x) => x.id === l.salesOrderItemId);
+    return !it || l.changeType === 'REMOVE' || (l.newItemCode ?? it.item_code) !== it.item_code
+      || (l.newQty ?? it.qty) !== it.qty || (l.newUnitPriceSen ?? it.unit_price_sen) !== it.unit_price_sen;
+  });
+  const saveLabel = amendmentMode
+    ? (savingOrder || createAmendment.isPending ? 'Submitting…' : header.so_kind === 'RENOVATION' ? (raisesVo ? 'Save as VO' : 'Save') : header.vo_locked ? 'Record VO' : 'Submit VO')
+    : (updateHeader.isPending || savingOrder ? 'Saving…' : 'Save');
+  const saveBusy = amendmentMode ? savingOrder || createAmendment.isPending : updateHeader.isPending || savingOrder;
+  const saveNow = () => { void (amendmentMode ? submitAmendment : saveEdit)(); };
+
   return (
-    /* Commander 2026-05-29 — a CANCELLED SO greys the whole page so it reads
-       as dead/inactive. The Cancel/Reopen buttons + banner stay clickable
-       (a CSS filter doesn't block pointer events). */
-    <div className="space-y-4" style={isCancelled ? { filter: 'grayscale(0.7)' } : undefined}>
-      {/* ── Header (shared PageHeader — full-bleed, design-system) ── */}
-      <PageHeader back beforeBack={guardUnsavedPayments}
-        eyebrow="Sales Order"
-        /* Owner 2026-07-16 — 17px document title (see PageHeader.titleSize).
-           Scoped to this page; every other page keeps the default h1. */
-        titleSize="sm"
-        title={`${header.doc_no} — ${header.debtor_name}`}
-        /* Owner 2026-07-16 — one meta line, no redundancy: the bare date (the
-           "SO date" label said nothing the date didn't), and the "Current
-           SO-…" echo only when the SO actually HAS been superseded by a
-           different doc no — when it equals this SO it just repeated the
-           title. */
-        description={
-          `${fmtDateOrDash(header.so_date)} · ${header.line_count} ${header.line_count === 1 ? 'line' : 'lines'}`
-          + (currentDocNo && currentDocNo !== header.doc_no ? ` · Current ${currentDocNo}` : '')
-          + (header.po_doc_no ? ` · Customer PO ${header.po_doc_no}` : '')
-          + (header.customer_so_no ? ` · Ref ${header.customer_so_no}` : '')
-          + (Number((header as { customer_credit_sen?: number }).customer_credit_sen ?? 0) > 0
-            ? ` · Customer credit balance: ${fmtSen(Number((header as { customer_credit_sen?: number }).customer_credit_sen ?? 0))}`
-            : '')
-        }
-        primaryAction={
-          /* Owner 2026-07-16 — Back is OUT of the desktop action rail: the
-             breadcrumb above ("Sales Orders › SO-…", pushed by the
-             useSetBreadcrumbs call at the top of this component) is the back
-             affordance there, so a Back button in the rail was the same
-             navigation twice.
-
-             It survives BELOW lg because TopNavbar — and with it the whole
-             breadcrumb — is `hidden … lg:flex`. `lg:hidden` here is the exact
-             complement of that rule, so Back renders precisely where the
-             breadcrumb does not. This is NOT dead code on a phone: HOUZS
-             swaps to the mobile app under 1024px, but the 2990 host does not
-             ("2990 手机关闭" — AuthGate gates mobileEnabled on the company),
-             so a 2990 user on a narrow viewport gets this desktop page with
-             no breadcrumb and would otherwise have no way back to the list.
-             h-9 = the <Button> height (the rail is one flex row — #624). */
-          <Link
-            to="/scm/sales-orders"
-            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[11px] font-semibold uppercase tracking-wider text-ink-secondary transition-colors hover:border-primary/40 hover:bg-primary-soft hover:text-primary lg:hidden"
-          >
-            <ArrowLeft size={14} />
-            <span>Back</span>
-          </Link>
-        }
+    <div className="pb-24 md:pb-0">
+      <SoDetailHeader
+        title={header.debtor_name || header.doc_no}
+        docNo={header.doc_no}
+        status={statusShown}
+        meta={headerMeta}
+        onBack={() => { void goBack(); }}
+        /* mig 0324 — the hold marker sits BESIDE the status, never instead of it. */
+        chips={<><HoldChip onHold={(header as { on_hold?: boolean | null }).on_hold} reason={(header as { hold_reason?: string | null }).hold_reason} /><ProductionOrderChips soDocNo={header.doc_no} /></>}
         actions={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {/* Total KPI rail — eyebrow label + KPI-sized value */}
-            <div className="mr-1 flex flex-col items-end leading-none">
-              <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-ink-muted">Total</span>
-              <span className="text-[15px] font-semibold tabular-nums text-primary-ink">
-                {fmtRm(header.local_total_sen, header.currency)}
-              </span>
-            </div>
-            {(() => {
-              const eff = soStatusDisplay(
-                header.status,
-                (header as { delivery_state?: DeliveryState }).delivery_state,
-                (header as { lifecycle_state?: SoLifecycle }).lifecycle_state,
-              );
-              return (
-                <>
-                  <span className={`${styles.statusPill} ${STATUS_CLASS[eff.classKey as SoStatus] ?? ''}`}>
-                    {eff.label ?? SO_STATUS_LABEL[header.status] ?? header.status.replace(/_/g, ' ')}
-                  </span>
-                  {/* mig 0324 — the hold marker sits BESIDE the status, never
-                      instead of it. Before this change an order that went on
-                      hold stopped saying "In Production" anywhere on this page,
-                      and the fact was gone from the database too. */}
-                  <HoldChip
-                    onHold={(header as { on_hold?: boolean | null }).on_hold}
-                    reason={(header as { hold_reason?: string | null }).hold_reason}
-                  />
-                </>
-              );
-            })()}
-            {/* PR-D — History drawer toggle (HOOKKA-style timeline). */}
-            <Button variant="ghost" onClick={() => setHistoryOpen(true)}>
-              <History {...ICON} />
-              <span>History</span>
-            </Button>
-            {/* Nick 2026-07-09 — shared 5-node Relationship Map (Customer PO
-                → SO → DO → GRN → SI), same chain the read-only Detail V2 uses.
-                Owner 2026-07-16 — label shortened to "Map"; each of these
-                buttons keeps its icon, which is what carries the meaning in a
-                7-control rail. */}
-            <Button variant="ghost" onClick={() => setRelMapOpen(true)}>
-              <Share2 {...ICON} />
-              <span>Map</span>
-            </Button>
-            <Button variant="ghost" onClick={print.openPreview}>
-              <Printer {...ICON} />
-              <span>Print</span>
-            </Button>
-            <PrintPreviewModal
-              open={print.open}
-              onClose={print.close}
-              docTitle="Sales Order"
-              docNo={header.doc_no}
-              rows={[
-                { label: 'Customer', value: header.debtor_name || '—' },
-                { label: 'Order date', value: fmtDateOrDash(header.so_date) },
-                { label: 'Items', value: `${header.line_count} line${header.line_count === 1 ? '' : 's'}` },
-                { label: 'Order total', value: fmtRm(header.local_total_sen, header.currency) },
-              ]}
-              {...print.handlers}
-            />
-            {/* Request cancellation (owner 2026-09-08) — a reason + two approvals; final once it runs. */}
-            {!isCancelled && canCancel && !isEditing ? (
-              <Button variant="ghost"
-                onClick={handleCancelSo} disabled={updateStatus.isPending}
-                style={{ color: 'var(--c-festive-b, #B8331F)' }}>
-                <Ban {...ICON} />
-                <span>Request cancellation</span>
-              </Button>
-            ) : null}
-            {/* PR-A — Page-level Edit/Save/Cancel.
-
-                Owner 2026-08-17 — a hard-locked (DO/SI) SO still opens for
-                edit when the caller may RE-ATTRIBUTE it. Everything else on
-                the page stays disabled: `inputsDisabled` keeps reading
-                `locked`, and only the Salesperson select opts out of it (see
-                CustomerCard). Without this, handing a delivered order to the
-                replacement rep meant clicking Override — which unlocks the
-                WHOLE order, addresses and lines included, to change one
-                dropdown. The heavy door stays for everything else. */}
-            {!isEditing ? (
-              <Button variant="primary"
-                onClick={enterEdit} disabled={migratedLocked || (isLocked && !canAttributeOther)}>
-                <Pencil {...ICON} />
-                <span>Edit</span>
-              </Button>
+          <>
+            <Button variant="ghost" icon={<History size={14} />} onClick={() => setHistoryOpen(true)}>History</Button>
+            <Button variant="ghost" icon={<Share2 size={14} />} onClick={() => setRelMapOpen(true)}>Relationship Map</Button>
+            <Button variant="secondary" icon={<Printer size={14} />} onClick={print.openPreview}>Print PDF</Button>
+            {isEditing ? (
+              <>
+                <Button variant="ghost" onClick={cancelEdit} disabled={updateHeader.isPending || savingOrder}>Cancel</Button>
+                {/* Persistent "Can't save — N to fix" pill (owner 2026-09-16): a blocked Save is never silent;
+                    backend-authored, clears live. */}
+                {!migratedLocked && <SaveBlockedIndicator problems={editBlockingProblems} onOpen={openEditBlockingList} />}
+                {/* Phase 1-C — on a processing-locked (PO'd) SO the primary Save SUBMITS AN AMENDMENT instead of
+                    writing the lines directly. */}
+                <Button variant="primary" icon={<Save size={14} />} onClick={saveNow} disabled={migratedLocked || saveBusy}>{saveLabel}</Button>
+              </>
             ) : (
               <>
-                <Button variant="ghost"
-                  onClick={cancelEdit} disabled={updateHeader.isPending || savingOrder}>
-                  <span>Cancel</span>
-                </Button>
-                {/* Persistent "Can't save — N to fix" pill (owner 2026-09-16): a
-                    blocked Save is never silent; backend-authored, clears live. */}
-                {!migratedLocked && <SaveBlockedIndicator problems={editBlockingProblems} onOpen={openEditBlockingList} />}
-                {/* Phase 1-C — on a processing-locked (PO'd) SO the primary Save
-                    SUBMITS AN AMENDMENT instead of writing the lines directly. */}
-                {amendmentMode ? (
-                  <Button variant="primary"
-                    onClick={() => { void submitAmendment(); }} disabled={migratedLocked || savingOrder || createAmendment.isPending}>
-                    <Save {...ICON} />
-                    <span>{savingOrder || createAmendment.isPending ? 'Submitting…' : header.so_kind === 'RENOVATION' ? 'Save' : header.vo_locked ? 'Record VO' : 'Submit VO'}</span>
-                  </Button>
-                ) : (
-                  <Button variant="primary"
-                    onClick={() => { void saveEdit(); }} disabled={migratedLocked || updateHeader.isPending || savingOrder}>
-                    <Save {...ICON} />
-                    <span>{updateHeader.isPending || savingOrder ? 'Saving…' : 'Save'}</span>
+                {/* Collect payment (owner 2026-08-07) — the direct door to the payments ledger: its gate is about the
+                    MONEY, not the line/header lock, because a balance is normally collected on an order that lock has
+                    already shut. A migrated order takes no money here (its balance is the one figure the ERP knows is
+                    wrong); a draft is never locked, so its card is open already. */}
+                {canOfferPayEdit && (
+                  <Button variant="secondary" icon={<Wallet size={14} />} onClick={goPayments}
+                    title="Record a payment against this order — everything else stays as it is.">
+                    Collect payment
                   </Button>
                 )}
+                {/* Cancel is a WRITE, refused on a migrated order, so it is disabled-with-a-reason rather than hidden:
+                    a salesperson looking for it must find out WHY it cannot be used. */}
+                {!isCancelled && (
+                  <Button variant="danger" icon={<XCircle size={14} />} onClick={handleCancelSo}
+                    disabled={migratedLocked || updateStatus.isPending} title={migratedLocked ? lockedEditHint : undefined}>
+                    Request cancellation
+                  </Button>
+                )}
+                {/* Same gate as Edit: adding a line IS an edit. */}
+                <Button variant="secondary" icon={<Plus size={14} />} onClick={goAddLine} disabled={editDisabled}>{ADD_LINE_LABEL}</Button>
+                <Button variant="primary" icon={<Edit3 size={14} />} onClick={enterEdit} disabled={editDisabled}
+                  title={migratedLocked || isLocked ? lockedEditHint : undefined}>
+                  {editLabel}
+                </Button>
               </>
             )}
-          </div>
+          </>
         }
       />
 
-      {/* PR-A — Inline error from the page-level Save. Cleared on Edit /
-          Cancel / next successful Save. */}
-      {saveError && (
-        <div className={styles.bannerWarn} ref={(el) => { el?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}>
-          <strong>Save failed.</strong>
-          <span>{saveError}</span>
-        </div>
-      )}
+      <div className="space-y-3 py-5">
+        <MigratedReadonlyBanner header={header} />
 
-      {versionConflict && (
-        <SoVersionConflictBanner
-          conflict={versionConflict}
-          className={styles.bannerWarn}
-          saving={savingOrder}
-          onReview={() => setHistoryOpen(true)}
-          onProceed={() => { if (adoptServerVersion()) void (amendmentMode ? submitAmendment : saveEdit)(); }}
-        />
-      )}
+        {/* PR-A — Inline error from the page-level Save. Cleared on Edit / Cancel / next successful Save. */}
+        {saveError && (
+          <div className={styles.bannerWarn} ref={(el) => { el?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}>
+            <strong>Save failed.</strong>
+            <span>{saveError}</span>
+          </div>
+        )}
 
-      {/* ── Cancelled banner (Commander 2026-05-29) ─────────────── */}
-      {isCancelled ? (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: 'var(--space-3) var(--space-4)',
-          background: 'rgba(184, 51, 31, 0.10)',
-          border: '1px solid var(--c-festive-b, #B8331F)',
-          borderRadius: 'var(--radius-md)',
-          fontSize: 'var(--fs-13)',
-        }}>
-          <span style={LOCK_BANNER_INNER_STYLE}>
-            <Ban {...ICON} />
-            <span>This SO is <strong>cancelled</strong> — it won't proceed (no MRP / PO / DO / production).</span>
-          </span>
-        </div>
-      ) : null}
+        {versionConflict && (
+          <SoVersionConflictBanner
+            conflict={versionConflict}
+            className={styles.bannerWarn}
+            saving={savingOrder}
+            onReview={() => setHistoryOpen(true)}
+            onProceed={() => { if (adoptServerVersion()) void (amendmentMode ? submitAmendment : saveEdit)(); }}
+          />
+        )}
 
-      {/* ── DRAFT banner + Confirm (DRAFT flow) ─────────────────────
-          Scanned / auto-generated SOs land as DRAFT (excluded from
-          KPI / MRP / PO / DO) so the operator can review + correct first.
-          Confirming flips DRAFT → CONFIRMED via the status mutation, which
-          invalidates the SO detail + list queries so the page updates.
-          `header.status` is typed to the post-0078 enum (no DRAFT), so the
-          stored value is read off a string view for the comparison. */}
-      {(header.status as string) === 'DRAFT' && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: 'var(--space-3) var(--space-4)',
-          background: 'rgba(232, 107, 58, 0.08)',
-          border: '1px solid var(--c-orange)',
-          borderRadius: 'var(--radius-md)',
-          fontSize: 'var(--fs-13)',
-        }}>
-          <span style={LOCK_BANNER_INNER_STYLE}>
-            <FileText {...ICON} />
-            <span>
-              <strong>Draft — not yet confirmed.</strong>{' '}
-              Review and Confirm to make it a live order (it stays out of MRP / PO / DO until then).
+        {/* ── Cancelled banner (Commander 2026-05-29) ─────────────── */}
+        {isCancelled ? (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: 'var(--space-3) var(--space-4)',
+            background: 'rgba(184, 51, 31, 0.10)',
+            border: '1px solid var(--c-festive-b, #B8331F)',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--fs-13)',
+          }}>
+            <span style={LOCK_BANNER_INNER_STYLE}>
+              <Ban {...ICON} />
+              <span>This SO is <strong>cancelled</strong> — it won't proceed (no MRP / PO / DO / production).</span>
             </span>
-          </span>
-          <div className="flex shrink-0 items-center gap-2">
-            {/* Discard draft — the escape hatch for a junk draft (esp. a bad
-                scan/OCR draft). Secondary + red so it never competes with
-                Confirm; behind the house confirm dialog. Backend refuses anything
-                but a DRAFT. */}
-            <Button variant="ghost"
-              onClick={handleDiscardDraft}
-              disabled={deleteDraft.isPending || updateStatus.isPending}
-              style={{ color: 'var(--c-festive-b, #B8331F)' }}>
-              <Trash2 {...ICON} />
-              <span>{deleteDraft.isPending ? 'Discarding…' : 'Discard draft'}</span>
-            </Button>
-            <Button variant="primary"
+          </div>
+        ) : null}
+
+        {/* ── DRAFT banner + Confirm (DRAFT flow) ─────────────────────
+            Scanned / auto-generated SOs land as DRAFT (excluded from
+            KPI / MRP / PO / DO) so the operator can review + correct first.
+            Confirming flips DRAFT → CONFIRMED via the status mutation, which
+            invalidates the SO detail + list queries so the page updates.
+            `header.status` is typed to the post-0078 enum (no DRAFT), so the
+            stored value is read off a string view for the comparison. */}
+        {(header.status as string) === 'DRAFT' && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: 'var(--space-3) var(--space-4)',
+            background: 'rgba(232, 107, 58, 0.08)',
+            border: '1px solid var(--c-orange)',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--fs-13)',
+          }}>
+            <span style={LOCK_BANNER_INNER_STYLE}>
+              <FileText {...ICON} />
+              <span>
+                <strong>Draft — not yet confirmed.</strong>{' '}
+                Review and Confirm to make it a live order (it stays out of MRP / PO / DO until then).
+              </span>
+            </span>
+            <div className="flex shrink-0 items-center gap-2">
+              {/* Discard draft — the escape hatch for a junk draft (esp. a bad
+                  scan/OCR draft). Secondary + red so it never competes with
+                  Confirm; behind the house confirm dialog. Backend refuses anything
+                  but a DRAFT. */}
+              <Button variant="ghost"
+                onClick={handleDiscardDraft}
+                disabled={deleteDraft.isPending || updateStatus.isPending}
+                style={{ color: 'var(--c-festive-b, #B8331F)' }}>
+                <Trash2 {...ICON} />
+                <span>{deleteDraft.isPending ? 'Discarding…' : 'Discard draft'}</span>
+              </Button>
+              <Button variant="primary"
+                onClick={async () => {
+                  if (!(await askConfirm({
+                    title: `Confirm ${header.doc_no}?`,
+                    body: 'This turns the draft into a live, confirmed sales order — it will appear in MRP / PO / DO flows and KPIs.',
+                    confirmLabel: 'Confirm Order',
+                  }))) return;
+                  updateStatus.mutate({ docNo: header.doc_no, status: 'CONFIRMED', expectedStatus: header.status });
+                }}
+                disabled={updateStatus.isPending || deleteDraft.isPending}>
+                <span>{updateStatus.isPending ? 'Confirming…' : 'Confirm Order'}</span>
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Lock banner ─────────────────────────────────────────── */}
+        {isEditing && !isCancelled && !migratedLocked && LOCKED_STATUSES.includes(header.status) && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: 'var(--space-3) var(--space-4)',
+            background: unlockOverride ? 'rgba(184, 51, 31, 0.06)' : 'rgba(232, 107, 58, 0.08)',
+            border: `1px solid ${unlockOverride ? 'var(--c-festive-b, #B8331F)' : 'var(--c-orange)'}`,
+            borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--fs-13)',
+          }}>
+            <span style={LOCK_BANNER_INNER_STYLE}>
+              <Lock {...ICON} />
+              {unlockOverride ? <strong>Edit-lock overridden — changes are tracked in the status timeline below.</strong>
+                : <>This SO is <strong>{header.status.replace(/_/g, ' ')}</strong>. Line item edits + addresses are locked. Click <em>Override</em> if you must change something.</>}
+            </span>
+            <Button variant={unlockOverride ? 'ghost' : 'primary'}
               onClick={async () => {
-                if (!(await askConfirm({
-                  title: `Confirm ${header.doc_no}?`,
-                  body: 'This turns the draft into a live, confirmed sales order — it will appear in MRP / PO / DO flows and KPIs.',
-                  confirmLabel: 'Confirm Order',
-                }))) return;
-                updateStatus.mutate({ docNo: header.doc_no, status: 'CONFIRMED', expectedStatus: header.status });
-              }}
-              disabled={updateStatus.isPending || deleteDraft.isPending}>
-              <span>{updateStatus.isPending ? 'Confirming…' : 'Confirm Order'}</span>
+                if (!unlockOverride) {
+                  const reason = await askPrompt({
+                    title: 'Reason for override?',
+                    body: 'This unlocks editing on a locked SO. The override is tracked in the status timeline.',
+                    placeholder: 'At least 10 characters',
+                    multiline: true,
+                    confirmLabel: 'Override',
+                    validate: (v) => (v.trim().length < 10 ? 'Override needs a reason ≥ 10 chars.' : null),
+                  });
+                  if (reason == null) return;
+                  // Audit the override via a status change row (we re-affirm the
+                  // current status with an OVERRIDE notes prefix).
+                  updateStatus.mutate({ docNo: header.doc_no, status: header.status, expectedStatus: header.status });
+                  setUnlockOverride(true);
+                } else {
+                  setUnlockOverride(false);
+                }
+              }}>
+              {unlockOverride ? 'Re-lock' : 'Override'}
             </Button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Lock banner ─────────────────────────────────────────── */}
-      {!isCancelled && (migratedLocked || LOCKED_STATUSES.includes(header.status)) && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: 'var(--space-3) var(--space-4)',
-          background: unlockOverride ? 'rgba(184, 51, 31, 0.06)' : 'rgba(232, 107, 58, 0.08)',
-          border: `1px solid ${unlockOverride ? 'var(--c-festive-b, #B8331F)' : 'var(--c-orange)'}`,
-          borderRadius: 'var(--radius-md)',
-          fontSize: 'var(--fs-13)',
-        }}>
-          <span style={LOCK_BANNER_INNER_STYLE}>
+        {/* ── Amendment-mode banner (Phase 1-C) ─────────────────────────
+            The SO is processing-locked (already PO'd) but still editable via the
+            amendment flow. Explain that Save here submits an amendment, not a
+            direct edit. Only shown when there's no open amendment already. */}
+        {isEditing && amendmentMode && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: 'var(--space-3) var(--space-4)',
+            background: 'rgba(232, 107, 58, 0.08)',
+            border: '1px solid var(--c-orange)',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--fs-13)',
+          }}>
             <Lock {...ICON} />
-            {migratedLocked ? <><strong>View only — carried over from AutoCount.</strong> {soMigratedReason(header)}</>
-              : unlockOverride ? <strong>Edit-lock overridden — changes are tracked in the status timeline below.</strong>
-              : <>This SO is <strong>{header.status.replace(/_/g, ' ')}</strong>. Line item edits + addresses are locked. Click <em>Override</em> if you must change something.</>}
-          </span>
-          <Button variant={unlockOverride ? 'ghost' : 'primary'} disabled={migratedLocked}
-            onClick={async () => {
-              if (!unlockOverride) {
-                const reason = await askPrompt({
-                  title: 'Reason for override?',
-                  body: 'This unlocks editing on a locked SO. The override is tracked in the status timeline.',
-                  placeholder: 'At least 10 characters',
-                  multiline: true,
-                  confirmLabel: 'Override',
-                  validate: (v) => (v.trim().length < 10 ? 'Override needs a reason ≥ 10 chars.' : null),
-                });
-                if (reason == null) return;
-                // Audit the override via a status change row (we re-affirm the
-                // current status with an OVERRIDE notes prefix).
-                updateStatus.mutate({ docNo: header.doc_no, status: header.status, expectedStatus: header.status });
-                setUnlockOverride(true);
-              } else {
-                setUnlockOverride(false);
-              }
-            }}>
-            {unlockOverride ? 'Re-lock' : 'Override'}
-          </Button>
-        </div>
-      )}
+            {/* Shared copy — both surfaces were wrong about addresses. */}
+            <span>{header.so_kind === 'RENOVATION' ? CONTRACT_MODE_BANNER : header.vo_locked ? VO_MODE_BANNER : AMENDMENT_MODE_BANNER}</span>
+          </div>
+        )}
 
-      {/* ── Amendment-mode banner (Phase 1-C) ─────────────────────────
-          The SO is processing-locked (already PO'd) but still editable via the
-          amendment flow. Explain that Save here submits an amendment, not a
-          direct edit. Only shown when there's no open amendment already. */}
-      {amendmentMode && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: 'var(--space-3) var(--space-4)',
-          background: 'rgba(232, 107, 58, 0.08)',
-          border: '1px solid var(--c-orange)',
-          borderRadius: 'var(--radius-md)',
-          fontSize: 'var(--fs-13)',
-        }}>
-          <Lock {...ICON} />
-          {/* Shared copy — both surfaces were wrong about addresses. */}
-          <span>{header.so_kind === 'RENOVATION' ? CONTRACT_MODE_BANNER : header.vo_locked ? VO_MODE_BANNER : AMENDMENT_MODE_BANNER}</span>
-        </div>
-      )}
-
-      {/* ── Amendment-pending banner (Phase 1-C) ──────────────────────
-          An amendment is in flight. Show its status pill + the gate actions,
-          gated by permission AND the amendment's current state, plus a "view
-          changes" link opening the before/after diff. */}
-      <CancelRequestPanel docType="so" docKey={header.doc_no} docNumber={header.doc_no} onExecute={executeCancel} executing={updateStatus.isPending} />
-      {openAmendments.map((oa) => (
-        <div key={oa.id} style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          flexWrap: 'wrap', gap: 'var(--space-3)',
-          padding: 'var(--space-3) var(--space-4)',
-          background: 'rgba(214, 158, 46, 0.14)',
-          border: '1px solid rgba(214, 158, 46, 0.55)',
-          borderRadius: 'var(--radius-md)',
-          fontSize: 'var(--fs-13)',
-        }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <History {...ICON} />
-            <span>Amendment <strong>{oa.amendment_no}</strong> pending</span>
-            <StatusPill docType={oa.lane ? 'soAmendmentLane' : 'soAmendment'} status={oa.status} />
-            {/* Two-lane rework: say WHO it is waiting on. */}
-            {(oa.lane === 'LINES' || oa.lane === 'DELIVERY') && (
-              <span style={{ color: 'var(--fg-muted)' }}>waiting for {AMENDMENT_APPROVER_LABEL[soAmendmentApprover(oa.lane)]}</span>
-            )}
-            <button type="button"
-              onClick={() => setViewingAmendmentId(oa.id)}
-              style={{
-                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                color: 'var(--c-burnt)', fontWeight: 600, fontSize: 'var(--fs-13)',
-                textDecoration: 'underline',
-              }}>
-              view changes
-            </button>
-          </span>
-          {/* Lane rows approve on the Amendment detail page (one signature);
-              the inline gates below are the LEGACY chain's only. */}
-          {oa.lane == null && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              {/* Record supplier confirmation — only at REQUESTED, gated on perm */}
-              {oa.status === 'REQUESTED' && canSupplierConfirm && (
-                <Button variant="primary"
-                  onClick={() => setShowSupplierForm((v) => !v)}
-                  disabled={supplierConfirm.isPending}>
-                  <Check {...ICON} />
-                  <span>Record supplier confirmation</span>
-                </Button>
+        {/* ── Amendment-pending banner (Phase 1-C) ──────────────────────
+            An amendment is in flight. Show its status pill + the gate actions,
+            gated by permission AND the amendment's current state, plus a "view
+            changes" link opening the before/after diff. */}
+        <CancelRequestPanel docType="so" docKey={header.doc_no} docNumber={header.doc_no} onExecute={executeCancel} executing={updateStatus.isPending} />
+        {openAmendments.map((oa) => (
+          <div key={oa.id} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            flexWrap: 'wrap', gap: 'var(--space-3)',
+            padding: 'var(--space-3) var(--space-4)',
+            background: 'rgba(214, 158, 46, 0.14)',
+            border: '1px solid rgba(214, 158, 46, 0.55)',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--fs-13)',
+          }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <History {...ICON} />
+              <span>Amendment <strong>{oa.amendment_no}</strong> pending</span>
+              <StatusPill docType={oa.lane ? 'soAmendmentLane' : 'soAmendment'} status={oa.status} />
+              {/* Two-lane rework: say WHO it is waiting on. */}
+              {(oa.lane === 'LINES' || oa.lane === 'DELIVERY') && (
+                <span style={{ color: 'var(--fg-muted)' }}>waiting for {AMENDMENT_APPROVER_LABEL[soAmendmentApprover(oa.lane)]}</span>
               )}
-              {/* Approve SO revision — only at SUPPLIER_PENDING, gated on perm */}
-              {oa.status === 'SUPPLIER_PENDING' && canApproveSo && (
-                <Button variant="primary"
-                  onClick={handleApproveSo} disabled={approveSo.isPending}>
-                  <Check {...ICON} />
-                  <span>Approve SO revision</span>
-                </Button>
-              )}
+              <button type="button"
+                onClick={() => setViewingAmendmentId(oa.id)}
+                style={{
+                  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                  color: 'var(--c-burnt)', fontWeight: 600, fontSize: 'var(--fs-13)',
+                  textDecoration: 'underline',
+                }}>
+                view changes
+              </button>
             </span>
-          )}
-          {/* Inline supplier-confirmation form (ref + note + attachment key) */}
-          {oa.lane == null && showSupplierForm && oa.status === 'REQUESTED' && canSupplierConfirm && (
-            <div style={{ flexBasis: '100%' }}>
-              <SupplierConfirmForm
-                amendmentId={oa.id}
-                onDone={() => setShowSupplierForm(false)}
-              />
-            </div>
-          )}
-        </div>
-      ))}
-
-      {/* ── Tab strip (Phase 1-C) — Order vs Revisions ────────────────
-          The Revisions tab lists prior SO snapshots read-only. Default is the
-          Order view so nothing changes for never-amended SOs. */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--line)' }}>
-        {(['order', 'revisions'] as const).map((t) => (
-          <button key={t} type="button" onClick={() => setActiveTab(t)}
-            style={{
-              padding: '8px 16px', border: 'none', background: 'none', cursor: 'pointer',
-              fontSize: 'var(--fs-13)', fontWeight: 600,
-              color: activeTab === t ? 'var(--c-burnt)' : 'var(--fg-muted)',
-              borderBottom: `2px solid ${activeTab === t ? 'var(--c-burnt)' : 'transparent'}`,
-              marginBottom: -1,
-            }}>
-            {t === 'order' ? 'Order' : 'Revisions'}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === 'revisions' ? (
-        <RevisionsTab docNo={header.doc_no} currency={header.currency} />
-      ) : (
-      <>
-      {/* ── Customer info ───────────────────────────────────────── */}
-      <CustomerCard
-        ref={customerCardRef}
-        header={header}
-        onSave={handleHeaderSave}
-        saving={updateHeader.isPending}
-        locked={isLocked} identityLocked={header.has_children === true}
-        isEditing={isEditing}
-        amendmentMode={amendmentMode}
-        onDeliveryDateChange={cascadeDeliveryDateToLines}
-        onRenoLayout={setRenoLayout}
-      />
-
-      {/* PR #140 — Commander 2026-05-26: "这个 multi address、customer PO
-          这些是什么？" The Multi-Address · Customer PO · Schedule card was
-          a HOOKKA leftover (ship-to / bill-to / install-to / customer PO
-          No / PO ID / PO Date). We don't model 3-way addresses or track
-          the customer's own PO numbers. Dropped entirely; Processing
-          Date + Delivery Date now live inside the Customer card below. */}
-
-      {/* ── Line items ──────────────────────────────────────────── */}
-      <section className={styles.card}>
-        <header className={styles.cardHeader}>
-          {/* Owner 2026-08-16 — "LINE ITEMS (2)" over three rows made the new row
-              look unreal. Counts what is RENDERED now (visibleLineCounts), and
-              says how many are unsaved: a count including staged work must say so. */}
-          <h2 className={styles.cardTitle}>
-            Line Items ({visibleLines.total})
-            {addingDrafts.length > 0 && (
-              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', color: '#a6471e' }}>
-                {addingDrafts.length} new · not saved yet
+            {/* Lane rows approve on the Amendment detail page (one signature);
+                the inline gates below are the LEGACY chain's only. */}
+            {oa.lane == null && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                {/* Record supplier confirmation — only at REQUESTED, gated on perm */}
+                {oa.status === 'REQUESTED' && canSupplierConfirm && (
+                  <Button variant="primary"
+                    onClick={() => setShowSupplierForm((v) => !v)}
+                    disabled={supplierConfirm.isPending}>
+                    <Check {...ICON} />
+                    <span>Record supplier confirmation</span>
+                  </Button>
+                )}
+                {/* Approve SO revision — only at SUPPLIER_PENDING, gated on perm */}
+                {oa.status === 'SUPPLIER_PENDING' && canApproveSo && (
+                  <Button variant="primary"
+                    onClick={handleApproveSo} disabled={approveSo.isPending}>
+                    <Check {...ICON} />
+                    <span>Approve SO revision</span>
+                  </Button>
+                )}
               </span>
             )}
-          </h2>
-          {/* PR-A — Add Line Item is only shown in edit mode.
-              Task #80 — clicking seeds one more inline SoLineCard at the bottom of
-              the table (no more modal). It used to hide itself while a draft was
-              open, capping an edit session at ONE new line (owner 2026-08-16: "it
-              should be able to keep adding lines"). `linesLocked` still refuses. */}
-          {isEditing && (
-            <Button variant="primary" onClick={() => startAddLine()} disabled={linesLocked}>
-              <Plus {...ICON} />
-              <span>{ADD_LINE_LABEL}</span>
-            </Button>
-          )}
-        </header>
+            {/* Inline supplier-confirmation form (ref + note + attachment key) */}
+            {oa.lane == null && showSupplierForm && oa.status === 'REQUESTED' && canSupplierConfirm && (
+              <div style={{ flexBasis: '100%' }}>
+                <SupplierConfirmForm
+                  amendmentId={oa.id}
+                  onDone={() => setShowSupplierForm(false)}
+                />
+              </div>
+            )}
+          </div>
+        ))}
 
-        {items.length === 0 && !isEditing ? (
-          <p className={styles.emptyRow}>No items yet — click "Edit" then "Add Line Item" to begin.</p>
-        ) : isEditing ? (
-          /* Whole-order inline edit — every line is an inline SoLineCard
-             editor and all are editable at once. There is no per-row Save /
-             Cancel anymore: the ONE page-level Save in the header commits the
-             header + every line draft (+ any new add-draft) together. Each
-             row keeps a small action bar with Override price ($) + Remove,
-             since those operate on a single line. The add-draft (if open)
-             renders as one more card at the bottom. */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-3)' }}>
-            {renoLines ? (
-              /* Renovation mode: the lines grouped into rooms (RenovationSoRooms). */
-              <RenovationSoRooms
-                rooms={renoRooms}
-                onRoomsChange={(next, rename) => {
-                  setRenoRooms(next);
-                  if (rename) setRenoRowRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
-                }}
-                rows={[
-                  ...items.filter((it) => it.id in editingDrafts).map((it) => ({
-                    key: it.id, room: renoRowRoom[it.id] ?? '', group: soItemFrozen(it) ? FROZEN_LINE_LABEL : undefined,
-                    render: (n: number, move?: ReactNode) => renderEditLine(it, n, move),
-                  })),
-                  ...addingDrafts.map((staged, i) => ({ key: staged.key, room: renoRowRoom[staged.key] ?? '', render: (n: number, move?: ReactNode) => renderStagedLine(staged, i, n, move) })),
-                ]}
-                onRowRoom={(key, room) => setRenoRowRoom((m) => ({ ...m, [key]: room }))}
-                onAddLine={(room) => startAddLine(room)}
-                layout={renoLayout}
-                disabled={linesLocked}
-                compact
+        {/* ── Tab strip (Phase 1-C) — Order vs Revisions ────────────────
+            The Revisions tab lists prior SO snapshots read-only. Default is the
+            Order view so nothing changes for never-amended SOs. */}
+        <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--line)' }}>
+          {(['order', 'revisions'] as const).map((t) => (
+            <button key={t} type="button" onClick={() => setActiveTab(t)}
+              style={{
+                padding: '8px 16px', border: 'none', background: 'none', cursor: 'pointer',
+                fontSize: 'var(--fs-13)', fontWeight: 600,
+                color: activeTab === t ? 'var(--c-burnt)' : 'var(--fg-muted)',
+                borderBottom: `2px solid ${activeTab === t ? 'var(--c-burnt)' : 'transparent'}`,
+                marginBottom: -1,
+              }}>
+              {t === 'order' ? 'Order' : 'Revisions'}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'revisions' ? (
+          <RevisionsTab docNo={header.doc_no} currency={header.currency} />
+        ) : (
+        /* Commander 2026-05-29 — a CANCELLED SO greys the page so it reads as dead. Here, not on the page root: a CSS
+           filter would pin the fixed bottom bar and every modal to this box. */
+        <div className="space-y-3" style={isCancelled ? { filter: 'grayscale(0.7)' } : undefined}>
+          {/* Phone only: on md+ the dark Order total lives in the aside. */}
+          <div className="rounded-lg border border-border bg-surface p-4 shadow-stone md:hidden">
+            <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">Order total</div>
+            <div className="mt-1 font-money text-[26px] font-bold leading-none tracking-tight text-ink">{fmtMoney(totalSen, header.currency)}</div>
+            <div className="mt-1.5 text-[12px] text-ink-muted">
+              {lineRows.length} line{lineRows.length === 1 ? '' : 's'} · {statusShown.blurb}
+            </div>
+          </div>
+
+          <DetailGrid>
+            <DetailMain>
+              <CustomerCard
+                key={header.doc_no}
+                ref={customerCardRef}
+                header={header}
+                onSave={handleHeaderSave}
+                saving={updateHeader.isPending}
+                locked={isLocked} identityLocked={header.has_children === true}
+                isEditing={isEditing}
+                amendmentMode={amendmentMode}
+                onDeliveryDateChange={cascadeDeliveryDateToLines}
+                onRenoLayout={setRenoLayout}
+              />
+              <SoRecentActivityCard header={header} auditEntries={auditQ.data ?? []} lineCount={lineRows.length} />
+            </DetailMain>
+            <DetailAside>
+              {/* Hidden on phone (the Order total above stands in). */}
+              <SoDetailAsideCards
+                header={header}
+                subtotalSen={subtotalSen}
+                discountSen={discountSen}
+                totalSen={totalSen}
+                slipImageKey={slipImageKey}
+                renoMode={renoMode}
+                nameOf={salespersonNameOf}
+              />
+            </DetailAside>
+          </DetailGrid>
+
+          {/* Line items, full width in both modes: the edit rows need it, and Edit must not move the section. */}
+          <Section
+            title={`Line items · ${isEditing ? visibleLines.total : lineRows.length}`}
+            actions={isEditing ? (
+              <span className="flex flex-wrap items-center gap-3">
+                {/* Owner 2026-08-16 — a count including staged work must say so. */}
+                {addingDrafts.length > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', color: '#a6471e' }}>
+                    {addingDrafts.length} new · not saved yet
+                  </span>
+                )}
+                {/* Owner 2026-08-16: "it should be able to keep adding lines". `linesLocked` still refuses. */}
+                <Button variant="primary" icon={<Plus size={14} />} onClick={() => startAddLine()} disabled={linesLocked}>{ADD_LINE_LABEL}</Button>
+              </span>
+            ) : focCount > 0 || printRooms ? (
+              <span className="flex flex-wrap items-center gap-3">
+                {focCount > 0 && <span className="text-[11.5px] text-ink-muted">{focCount} FOC line{focCount === 1 ? '' : 's'} included</span>}
+                {printRooms && <SoLinesViewToggle view={linesView} onChange={setLinesView} />}
+              </span>
+            ) : undefined}
+          >
+            {isEditing ? (
+              /* Whole-order inline edit — every line is an inline SoLineCard and all are editable at once; the ONE
+                 page-level Save commits the header, every line draft and every new line together. */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                {renoLines ? (
+                  /* Renovation mode: the lines grouped into rooms (RenovationSoRooms). */
+                  <RenovationSoRooms
+                    rooms={renoRooms}
+                    onRoomsChange={(next, rename) => {
+                      setRenoRooms(next);
+                      if (rename) setRenoRowRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
+                    }}
+                    rows={[
+                      ...liveItems.filter((it) => it.id in editingDrafts).map((it) => ({
+                        key: it.id, room: renoRowRoom[it.id] ?? '', group: soItemFrozen(it) ? FROZEN_LINE_LABEL : undefined,
+                        render: (n: number, move?: ReactNode) => renderEditLine(it, n, move),
+                      })),
+                      ...addingDrafts.map((staged, i) => ({ key: staged.key, room: renoRowRoom[staged.key] ?? '', render: (n: number, move?: ReactNode) => renderStagedLine(staged, i, n, move) })),
+                    ]}
+                    onRowRoom={(key, room) => setRenoRowRoom((m) => ({ ...m, [key]: room }))}
+                    onAddLine={(room) => startAddLine(room)}
+                    layout={renoLayout}
+                    disabled={linesLocked}
+                    compact
+                  />
+                ) : (
+                  <>
+                    {liveItems.map((it, idx) => renderEditLine(it, idx))}
+                    {/* New lines — as many as the operator asks for, each with its own ADD idempotency key. The caption
+                        is the "visibly staged" half of the count fix: the row number continues the table. */}
+                    {addingDrafts.map((staged, i) => renderStagedLine(staged, i))}
+                  </>
+                )}
+                {liveItems.length === 0 && addingDrafts.length === 0 && (
+                  <p className={styles.emptyRow} style={{ padding: 'var(--space-3)' }}>
+                    No items yet — click "Add line" above to begin.
+                  </p>
+                )}
+              </div>
+            ) : shownRooms && linesView !== 'item' ? (
+              <SoAreaLines<(typeof lineRows)[number]>
+                items={lineRows}
+                rooms={shownRooms}
+                columns={lineColumns.filter((col) => ['item', 'qty', 'unit', 'disc', 'processing', 'delivery', 'total'].includes(col.key))}
+                money={(sen) => fmtMoney(sen, header.currency)}
               />
             ) : (
-              <>
-                {items.map((it, idx) => renderEditLine(it, idx))}
-
-            {/* New lines — as many as the operator asks for, each with its own ADD
-                idempotency key, all committed by the page-level Save. The caption is
-                the "visibly staged" half of the count fix: the row number continues
-                the table, so a staged card would otherwise look like a saved one. */}
-                {addingDrafts.map((staged, i) => renderStagedLine(staged, i))}
-
-              </>
+              <DataTable<(typeof lineRows)[number]>
+                tableId={`so-lines-${header.doc_no}`}
+                layoutFamily={DATA_TABLE_LAYOUT_FAMILIES.salesOrderLines} persistSort={false} persistFilters={false}
+                rows={printRooms ? roomOrdered(lineRows, printRooms) : lineRows}
+                loading={false}
+                columns={printRooms ? [{
+                  key: 'room',
+                  label: 'Room',
+                  alwaysVisible: true,
+                  getValue: (l) => printRooms.byItem[l.id] ?? '',
+                  render: (l) => <span className="text-[12.5px] font-semibold text-ink">{printRooms.byItem[l.id] || '—'}</span>,
+                }, ...lineColumns] : lineColumns}
+                getRowKey={(l) => l.id}
+                emptyLabel="No line items"
+              />
             )}
-            {items.length === 0 && addingDrafts.length === 0 && (
-              <p className={styles.emptyRow} style={{ padding: 'var(--space-3)' }}>
-                No items yet — click "Add Line Item" above to begin.
-              </p>
-            )}
-          </div>
-        ) : (
-          <table className={styles.table}>
-            <thead>
-              {/* PR #144 — Group column removed ("group是什么 删掉").
-                  Category is already visible as a colored badge inside
-                  the item's variant pills, so the raw "mfg_product"
-                  internal kind isn't useful in the table view. */}
-              <tr>
-                <th>Item</th>
-                <th>Description 2</th>
-                <th className={styles.tableRight}>Qty</th>
-                <th>Transfer To</th>
-                <th className={styles.tableRight}>Unit</th>
-                <th className={styles.tableRight}>Disc</th>
-                {/* PR-E — Per-line delivery date. Falls back to the SO
-                    header date when the line hasn't been overridden. */}
-                <th className={styles.tableRight}>Delivery</th>
-                <th className={styles.tableRight}>Total</th>
-                {/* Owner 2026-07-17: per-line Unit Cost / Line Cost / Margin
-                    columns removed from the SO document view for EVERYONE —
-                    costing moves to the separate Finance "Fulfillment Costing"
-                    module. Customer-facing columns (Unit / Disc / Total) stay. */}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it) => {
-                /* PR-E — Display fallback: a line whose own date is null
-                   AND that hasn't been overridden displays the SO header's
-                   customer_delivery_date with a small "· auto" marker. The
-                   API cascade keeps line_delivery_date populated for
-                   non-overridden lines after each header save, so this
-                   fallback mostly serves rows from before migration 0074
-                   landed. */
-                const displayDate = it.line_delivery_date
-                  ?? (!it.line_delivery_date_overridden ? header.customer_delivery_date : null);
-                const isAuto = !it.line_delivery_date_overridden;
-                return (
-                <tr key={it.id}>
-                  <td>
-                    {/* Description ONCE, code NOT displayed — the shared rule
-                        (vendor/shared/line-identity.ts). The code still BINDS:
-                        it is this row's key, its search/export value and what
-                        the PO/PDF carry. No variant is passed because this table
-                        gives the variant summary its OWN "Description 2" column
-                        below — feeding it here would re-create the duplicate. */}
-                    <div className={styles.codeCell}>
-                      {lineIdentity({ code: it.item_code, description: it.description }).primary || '—'}
-                    </div>
-                    {it.remark && (
-                      <div className={styles.muted} style={{ fontStyle: 'italic' }}>
-                        Remark: {it.remark}
-                      </div>
-                    )}
-                  </td>
-                  {/* Commander 2026-05-28 — "Description 2": the HOOKKA-style
-                      one-line variant/spec summary in its own column.
-                      Commander 2026-06-16 — recompute the summary LIVE from
-                      `variants` (the source of truth) and fall back to the stored
-                      description2 only when there's nothing to recompute. This
-                      mirrors composeSoLineDescription (so-line-description.ts:34)
-                      and the Convert-From pickers (VariantDescription.tsx:30) so
-                      the VIEW table, the SO PDF, and the PO all show the SAME
-                      line. Older rows carried a STALE stored description2 (written
-                      before the remark/RM display fixes) that made this VIEW
-                      disagree with what the PO printed. */}
-                  <td data-label="Description 2">
-                    {(() => {
-                      const live = buildVariantSummary(it.item_group, it.variants);
-                      const desc2 = live || (it.description2 ?? '').trim();
-                      return desc2
-                        ? <span>{desc2}</span>
-                        : <span className={styles.muted}>—</span>;
-                    })()}
-                  </td>
-                  <td className={styles.tableRight} data-label="Qty">{it.qty}</td>
-                  <td data-label="Transfer To">
-                    {(() => {
-                      const hasDeliveries = it.deliveries && it.deliveries.length > 0;
-                      /* Which supplier PO supplied this line's goods — the ONE
-                         shared SO-source renderer (SoSourceChips): shipped
-                         batch trail (survives delivery, Owner 2026-07-11) →
-                         STOCK ADJ → READY FIFO projection → incoming MRP
-                         coverage PO + ETA (owner 2026-08-01: identical data on
-                         every surface). */
-                      const hasTrace = (it.shipped_source_pos?.length ?? 0) > 0
-                        || it.shipped_source_adj
-                        || (it.ready_source_pos?.length ?? 0) > 0
-                        || Boolean(it.coverage_po);
-                      const coverage = hasTrace
-                        ? (
-                          <div style={{ display: 'inline-block', marginTop: hasDeliveries ? 3 : 0 }}>
-                            <SoSourceChips line={it} coverage="ready" />
-                          </div>
-                        )
-                        : null;
-                      if (hasDeliveries) {
-                        return (
-                          <div>
-                            {it.deliveries!.map((d, di) => (
-                              <div key={di} style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                {d.doNumber} <span className={styles.muted} style={{ fontWeight: 400 }}>×{d.qty}</span>
-                              </div>
-                            ))}
-                            {typeof it.remaining_qty === 'number' && (
-                              <div style={{
-                                fontSize: 'var(--fs-11)', marginTop: 1,
-                                color: it.remaining_qty > 0 ? 'var(--c-festive-b, #B8331F)' : 'var(--c-secondary-a, #2F5D4F)',
-                              }}>
-                                {it.remaining_qty > 0 ? `Balance ${it.remaining_qty}` : 'Fully delivered'}
-                              </div>
-                            )}
-                            {coverage}
-                          </div>
-                        );
-                      }
-                      return coverage ?? <span className={styles.muted}>—</span>;
-                    })()}
-                  </td>
-                  <td className={styles.tableRight} data-label="Unit">{fmtRm(it.unit_price_sen, header.currency)}</td>
-                  <td className={styles.tableRight} data-label="Disc">{it.discount_sen > 0 ? fmtRm(it.discount_sen, header.currency) : '—'}</td>
-                  <td className={styles.tableRight} data-label="Delivery">
-                    {displayDate ? (
-                      <span style={isAuto ? { color: 'var(--fg-muted)' } : undefined}>
-                        {fmtDateOrDash(displayDate)}
-                        {isAuto && (
-                          <span style={{ marginLeft: 4, color: 'var(--c-orange)', fontSize: 'var(--fs-11)' }}>· auto</span>
-                        )}
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td className={styles.priceCell} data-label="Total">{fmtRm(it.total_sen, header.currency)}</td>
-                  {/* Owner 2026-07-17: per-line Unit Cost / Line Cost / Margin
-                      cells removed for EVERYONE (see the <thead> note). */}
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </section>
+          </Section>
 
-      {/* Owner 2026-07-17: the Totals·Margin (Revenue / Cost / Margin / Margin%
-          + per-category breakdown) card is removed from the SO document view
-          for EVERYONE — including directors — because costing moves to the
-          separate Finance "Fulfillment Costing" module. This is the legacy
-          `?edit=1` editor reached from SalesOrderDetailV2's Edit button; the
-          read-only V2 view had its own copy of the card removed too. The
-          customer-facing Order Total section above is untouched. */}
+          {/* PR #144 + #156 — read-only warning so the Order Coordinator sees which lines are incomplete once a
+              Processing Date is set. */}
+          {incompleteVariantLines.length > 0 && (
+            <div style={VARIANT_WARN_BANNER_STYLE}>
+              <strong>Processing Date is set — line variants must be filled before next stage.</strong>
+              <div style={VARIANT_WARN_LIST_STYLE}>
+                {incompleteVariantLines.map((l, i) => (
+                  <div key={i}>
+                    • <code>{l.code}</code> ({l.group}): {formatGroupRequirements(l.group)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-      {/* ── Payment — Houzs-pattern transactions table ────────────── */}
-      {/* Commander 2026-05-27: "Payment 也 follow Hookka 那个排版". Verbatim
-          port of houzs-erp/src/components/NewSalesOrderForm.tsx Payments
-          block (lines 1047-1126). Subtotal / Expected Deposit dropped —
-          Houzs doesn't have them, and commander wants the ledger view
-          (transactions + Deposit Paid + Balance) only.
-          Task #105 — PaymentCard was extracted into <PaymentsTable> so
-          New SO and Edit SO render the same ledger from one source. */}
-      {/* No-naked-payment-edits (owner 2026-07-13): Add / Delete / Edit are only
-          exposed when (SO is DRAFT) OR (the detail is in Edit mode). A DRAFT SO
-          is never confirmed, so its payments stay editable in the read-only view
-          too (draftUnlocked also lifts the per-row same-day EDIT lock). */}
-      {/* Owner 2026-07-17: "delivered了之後也要可以key payment". This used to pass
-          `isLocked`, which is `LOCKED_STATUSES.includes(status) || hasChildren`
-          — and DELIVERED is in that list, and a delivered SO has a DO, so a
-          delivered order's payments were frozen twice over and Edit mode could
-          not lift either. That contradicted this page's own rule three comments
-          up ("PAYMENT and every other customer field stay editable") and the
-          backend, which never gated POST /:docNo/payments on status at all.
-          isLocked is the LINE/HEADER lock: those freeze because a DO/SI already
-          quotes them. Money is not a line. Collecting the balance ON delivery is
-          the normal case — that is what a Balance figure is FOR. Only CANCELLED
-          stays shut (a cancelled order takes no money); the no-naked-edits rule
-          is unchanged, so it is still Edit-then-type for everything but DRAFT. */}
-      {/* Owner 2026-08-07 — the paragraph above says what this page MEANT to do,
-          and mobile has done since 7-17 (MobileSODetail `paymentLocked =
-          rawStatus === "CANCELLED"` + its own in-card Edit toggle). Desktop
-          never got there: `locked` dropped `isLocked` but replaced it with
-          `!isEditing`, and PAGE Edit mode is reached through a button that is
-          itself `disabled={isLocked}` (see the header Button). So on a
-          delivered SO — the exact order a balance gets collected on — the
-          operator could not enter Edit, could not Add Payment, and had nowhere
-          to put the balance-payment proof. The lock was simply reached through
-          a second door.
-          Fix mirrors mobile rather than inventing a third rule: payments carry
-          their OWN edit toggle (`payEditing`), independent of the page-level
-          Edit mode that the line/header lock owns. "電話電腦的權限應該一樣的". */}
-      {paymentRetryDrafts.length > 0 && (
-        <div className={styles.bannerWarn} role="status">
-          This order exists, but {paymentRetryDrafts.length} payment row{paymentRetryDrafts.length === 1 ? '' : 's'} were not confirmed saved.
-          The rows below are a temporary retry copy; save each payment to confirm it on the server.
-        </div>
-      )}
-      <PaymentsTable
-        key={header.doc_no}
-        docNo={header.doc_no}
-        grandTotalSen={header.local_total_sen}
-        currency={header.currency}
-        locked={!canEditPayments}
-        draftUnlocked={isDraftSo}
-        slip={{ slipKey: header.slip_key, fetcher: fetchSoSlipUrl }}
-        defaultCollectedBy={selfStaffMatch?.id ?? ''}
-        initialDrafts={paymentRetryDrafts}
-        onDraftCommitted={paymentRetryCommitted}
-        onUnsavedChange={setUnsavedPayments}
-        onRegisterCommitAll={(fn) => { commitPaymentsRef.current = fn; }}
-        receiptFor={{ source: 'SOPAY' }}
-        headerAction={canOfferPayEdit ? (
-          <Button variant="ghost" onClick={() => { void togglePayEditing(); }}>
-            {payEditing ? <span>Done</span> : <><Pencil {...ICON} /><span>Edit payments</span></>}
-          </Button>
-        ) : null}
-      />
+          <DocAttachments docType="sales_order" docId={header.doc_no} canEdit={!isCancelled} />
 
-      {/* ── CUSTOMER SIGNATURE — moved directly below Payments (Wei Siang
-          2026-06-06). Read-only proof captured on the POS handover pad; only
-          shown when the SO carries one (POS orders). */}
-      {header.signature_b64 && (
-        <section className={styles.card}>
-          <header className={styles.cardHeader}>
-            <h2 className={styles.cardTitle}>Customer Signature</h2>
-          </header>
-          <div className={styles.cardBody}>
-            <img
-              src={header.signature_b64}
-              alt="Customer signature captured at handover"
-              style={{ maxWidth: 360, width: '100%', height: 'auto', border: '1px solid var(--c-line, #E5E1DC)', borderRadius: 8, background: '#fff' }}
+          {/* Payments carry their OWN edit toggle (`payEditing`), independent of the page's Edit mode, which the
+              line/header lock owns: the balance is collected ON delivery, precisely when that lock is shut. Only
+              CANCELLED stays shut (owner 2026-07-17, 2026-08-07). No-naked-edits (owner 2026-07-13): Add / Delete / Edit
+              show only in page Edit, after Collect payment, or on a DRAFT, whose payments stay open. */}
+          {paymentRetryDrafts.length > 0 && (
+            <div className={styles.bannerWarn} role="status">
+              This order exists, but {paymentRetryDrafts.length} payment row{paymentRetryDrafts.length === 1 ? '' : 's'} were not confirmed saved.
+              The rows below are a temporary retry copy; save each payment to confirm it on the server.
+            </div>
+          )}
+          <div ref={paymentsRef}>
+            <PaymentsTable
+              key={header.doc_no}
+              docNo={header.doc_no}
+              grandTotalSen={header.local_total_sen}
+              currency={header.currency}
+              locked={!canEditPayments}
+              draftUnlocked={isDraftSo}
+              slip={{ slipKey: header.slip_key, fetcher: fetchSoSlipUrl }}
+              defaultCollectedBy={selfStaffMatch?.id ?? ''}
+              initialDrafts={paymentRetryDrafts}
+              onDraftCommitted={paymentRetryCommitted}
+              onUnsavedChange={setUnsavedPayments}
+              onRegisterCommitAll={(fn) => { commitPaymentsRef.current = fn; }}
+              receiptFor={{ source: 'SOPAY' }}
+              nextAmountSen={instalments.length > 0
+                ? (paid) => nextInstalmentSen(instalments, Math.max(paid, instalmentsQ.data?.receivedSen ?? 0))
+                : undefined}
+              aboveRows={<SoInstalments
+                rows={instalments.length > 0 ? instalments : instalmentsQ.data ? paymentSlots(printPaymentsQ.data ?? []) : []}
+                money={(sen) => fmtMoney(sen, header.currency)}
+                onBill={canBill ? setBillingId : undefined} />}
+              headerAction={canOfferPayEdit ? (
+                <Button variant="secondary" onClick={() => { void togglePayEditing(); }} icon={<Wallet size={14} />}>
+                  {payEditing ? 'Done' : 'Collect payment'}
+                </Button>
+              ) : null}
             />
           </div>
-        </section>
-      )}
 
-      {/* ── ORIGINAL SLIP (migration 0033) — the handwritten order-slip photo
-          this SO was scanned from, kept as proof. Dual-read camelCase ??
-          snake_case (the pg driver camelCases result columns).
+          {/* Read-only proof captured on the POS handover pad; only shown when the order carries one. */}
+          {header.signature_b64 && (
+            <Section title="Customer signature">
+              <img
+                src={header.signature_b64}
+                alt="Customer signature captured at handover"
+                style={{ maxWidth: 360, width: '100%', height: 'auto', border: '1px solid var(--c-line, #E5E1DC)', borderRadius: 8, background: '#fff' }}
+              />
+            </Section>
+          )}
 
-          Owner 2026-07-16 ("payment receipt 已經在第二章照片了 第一個照片可以
-          delete了") — the standalone PAYMENT RECEIPT card (receipt_image_key,
-          mig 0034) that used to sit beside this one is GONE. It rendered the
-          same card-terminal image the Payments table above already shows in
-          its Slip column: since 2026-07-15 the scan-seeded deposit is inserted
-          with `slip_key: slipKey ?? receiptImageKey`, so the receipt IS the
-          payment row's proof, and split-payment rows each carry their own
-          uploaded slip. Showing it twice on one page was the duplicate.
+          {billingId && <InstalmentBillDialog docNo={header.doc_no} instalmentId={billingId} onClose={() => { setBillingId(null); void instalmentsQ.refetch(); }} />}
 
-          This is a DESKTOP-ONLY fix: mobile already made exactly this call on
-          2026-07-04 — MobileSODetail's scanned-photos card is hard-wired to
-          `receiptKey={null}` with the note "the payment RECEIPT does NOT
-          belong in this card -- it lives on its payment row's slip". Desktop
-          was the drift; it now follows.
-
-          The ORDER SLIP stays: it is the customer's handwritten slip, a
-          different document that appears nowhere else on the page. */}
-      {(() => {
-        const slipImageKey =
-          (header as unknown as { slipImageKey?: string | null }).slipImageKey ?? header.slip_image_key;
-        if (!slipImageKey) return null;
-        return (
-          <ScannedImageCard
-            imageKey={slipImageKey}
-            title="Order Slip"
-            alt="Original handwritten sale-order slip"
-          />
-        );
-      })()}
-
-      {/* ── Variant-completeness banner ─────────────────────────────
-          PR #144 + #156 gating rule kept as a read-only warning. The
-          "Move to next stage" pill strip below it (commander 2026-05-27:
-          "这个不需要") was removed — status transitions now flow through
-          the Edit/Save path or the API directly, while this banner stays
-          so the Order Coordinator still sees which lines are incomplete
-          when a Processing Date is set. updateStatus is still wired for
-          the lock-override flow above. */}
-      {incompleteVariantLines.length > 0 && (
-        <div style={VARIANT_WARN_BANNER_STYLE}>
-          <strong>Processing Date is set — line variants must be filled before next stage.</strong>
-          <div style={VARIANT_WARN_LIST_STYLE}>
-            {incompleteVariantLines.map((l, i) => (
-              <div key={i}>
-                • <code>{l.code}</code> ({l.group}): {formatGroupRequirements(l.group)}
-              </div>
-            ))}
-          </div>
+          {/* One sales order, one page (owner, 3 Nov 2026): a renovation contract's billing, VOs, PO split and line costs
+              sit here, not on a second page. Only for those who could open that page: a sales rep reaches this route by
+              allowSales, and these sections carry costs. */}
+          {header.so_kind === 'RENOVATION' && (can('scm.access') || pageAccess('scm.sales.orders') !== 'none') && (
+            <ContractSections docNo={header.doc_no} embedded />
+          )}
         </div>
-      )}
+        )}
+      </div>
 
-      {/* Followup #85 — the standalone StatusTimeline + PriceOverridePanel
-          audit cards were superseded by the PR-D History drawer, which
-          shows ALL action types (CREATE / UPDATE_DETAILS / UPDATE_STATUS /
-          ADD_LINE / UPDATE_LINE / DELETE_LINE / ADD_PAYMENT / …) in one
-          unified feed. The underlying mfg_so_status_changes and
-          mfg_so_price_overrides tables stay (writes continue), so old
-          data remains queryable — only the rendering is removed. */}
-      </>
-      )}
+      {/* Fixed bottom action bar (phone only). */}
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface/95 px-3 pb-6 pt-2.5 shadow-slab backdrop-blur-sm md:hidden">
+        <div className="flex items-center gap-2">
+          {isEditing ? (
+            <>
+              <button type="button" onClick={cancelEdit} disabled={updateHeader.isPending || savingOrder}
+                className="inline-flex h-11 items-center justify-center rounded-lg bg-surface-2 px-4 text-[13.5px] font-semibold text-ink-secondary disabled:opacity-40">
+                Cancel
+              </button>
+              <button type="button" onClick={saveNow} disabled={migratedLocked || saveBusy}
+                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-[13.5px] font-bold text-white shadow-sm hover:bg-primary-ink disabled:opacity-40">
+                <Save size={16} /> {saveLabel}
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={enterEdit} disabled={editDisabled}
+                title={migratedLocked || isLocked ? lockedEditHint : undefined}
+                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-[13.5px] font-bold text-white shadow-sm hover:bg-primary-ink disabled:opacity-40">
+                <Edit3 size={16} /> {editLabel}
+              </button>
+              <button type="button" onClick={print.openPreview} aria-label="Print PDF"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-surface-2 text-primary-ink hover:bg-primary-soft">
+                <Printer size={17} />
+              </button>
+              <button type="button" onClick={goCall} disabled={!header.phone}
+                aria-label={header.phone ? `Call ${header.phone}` : 'No phone on file'}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-surface-2 text-primary-ink hover:bg-primary-soft disabled:opacity-40">
+                <PhoneIcon size={17} />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* ── Modals ─────────────────────────────────────────────── */}
-      {/* Task #80 — LineItemModal removed (deleted with PR #125's inline
-          SoLineCard work). Both Add + Edit now use inline SoLineCard rows
-          inside the line-items table above. */}
-      {overriding && (
-        <OverridePriceModal
-          item={overriding}
-          docNo={header.doc_no}
-          currency={header.currency}
-          onClose={() => setOverriding(null)}
-        />
-      )}
+      <SoPrintPreview
+        open={print.open}
+        onClose={print.close}
+        docNo={header.doc_no}
+        companyName={brandsQ.data?.brands.find((b) => b.brandId === contractQ.data?.header.brandId)?.name}
+        layout={printLayoutState}
+        rows={[
+          { label: 'Customer', value: header.debtor_name || '—' },
+          { label: 'Order date', value: fmtDate(header.so_date) },
+          { label: 'Items', value: `${lineRows.length} line${lineRows.length === 1 ? '' : 's'}` },
+          { label: 'Order total', value: fmtMoney(header.local_total_sen, header.currency) },
+          /* Through the SHARED gate, not off `balance_sen`: reading the column directly put a 0 here for every
+             AutoCount-imported order (see `deriveBalance`). */
+          { label: 'Balance', value: fmtMoney(soDeriveBalance(header, printPaymentsQ.data), header.currency) },
+        ]}
+        {...print.handlers}
+      />
 
       {/* Phase 1-C — Amendment before/after diff modal ("view changes"). */}
       {viewingAmendmentId && (
@@ -2843,11 +2755,7 @@ export const SalesOrderDetail = () => {
         <HistoryPanel docNo={header.doc_no} onClose={closeHistory} />
       )}
 
-      {/* Nick 2026-07-09 — Relationship Map (5-node chain). Chain + destinations
-          come from the SHARED hook, same as the V2 read-only page: this copy used
-          to hard-code every downstream node to "Not created" and no-op every
-          click, so on the page an operator amends an order from, the map lied and
-          nothing responded. */}
+      {/* Nick 2026-07-09 — Relationship Map (5-node chain), from the shared hook. */}
       <DocumentRelationshipMapModal
         open={relMapOpen}
         onClose={() => setRelMapOpen(false)}
@@ -2862,6 +2770,7 @@ export const SalesOrderDetail = () => {
           if (onChainAmendmentClick(a)) setRelMapOpen(false);
         }}
         pairing={chainPairing}
+        extra={<ProductionOrderChips soDocNo={header.doc_no} label="Production orders" />}
       />
       {/* A chain slot standing for several documents opens this chooser instead
           of a notice that only named them. The picked one opens in its own tab of the
@@ -2985,7 +2894,8 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
   // Agent + Branding kept (B2B-specific, commander 2026-05-26).
   // POS field "Salesperson" → Agent column on the SO.
   const notify = useNotify();
-  const localities = useLocalities();
+  /* The cascade's whole country list is only worth loading once someone can pick from it. */
+  const localities = useLocalities({ enabled: isEditing });
   const localityRows = useMemo(() => localities.data ?? [], [localities.data]);
   /* PICKER: the salesperson SELECTION dropdown — scoped to the active company
      via the Team-grant rule (usePickableStaff). The self-resolution copy above
@@ -3000,6 +2910,8 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
      staff.venue_id; only admin / sales_director may swap the salesperson.
      useVenues drives the read-only Venue input's display name. */
   const { can } = useHouzsAuth();
+  const { nameOf: salespersonNameOf } = useStaffLookup();
+  const rosterQ = useStaff();
   const venuesQ = useVenues();
   /* Commander 2026-05-27 ("delivery 一点没有跟着跳"): Sales Location no longer
      just mirrors header.sales_location. When the user picks a delivery state
@@ -3151,26 +3063,21 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
   const reno = renoListsQ.data?.ready === true;
   const [renoInfo, setRenoInfo] = useState<CustomerPropertyValue>(EMPTY_CUSTOMER_PROPERTY);
   const [renoProject, setRenoProject] = useState<ProjectShared | null>(null);
-  const [renoInfoLoading, setRenoInfoLoading] = useState(false);
-  const [renoLoadError, setRenoLoadError] = useState<string | null>(null);
   const [renoTried, setRenoTried] = useState(false);
   const renoLoaded = useRef('');
+  /* The same query the view's Order information reads, so pressing Edit opens filled in, without a loading line. It
+     follows the server until the operator has changed something in the block. */
+  const renoQ = useSoRooms(header.doc_no, reno);
   useEffect(() => {
-    if (!reno) return;
-    let live = true;
-    setRenoInfoLoading(true);
-    void soInfoApi.so(header.doc_no)
-      .then((r) => {
-        if (!live) return;
-        setRenoInfo(r.info);
-        setRenoProject(r.project);
-        renoLoaded.current = JSON.stringify(toRenovationBlock(r.info));
-        setRenoLoadError(null);
-      })
-      .catch(() => { if (live) setRenoLoadError('The order information could not be loaded. Reload the page.'); })
-      .finally(() => { if (live) setRenoInfoLoading(false); });
-    return () => { live = false; };
-  }, [reno, header.doc_no]);
+    if (!renoQ.data) return;
+    if (renoLoaded.current && JSON.stringify(toRenovationBlock(renoInfo)) !== renoLoaded.current) return;
+    setRenoInfo(renoQ.data.info);
+    setRenoProject(renoQ.data.project);
+    renoLoaded.current = JSON.stringify(toRenovationBlock(renoQ.data.info));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- renoInfo is what is being compared, not a trigger
+  }, [renoQ.data]);
+  const renoInfoLoading = renoQ.isPending;
+  const renoLoadError = renoQ.isError && !renoQ.data ? 'The order information could not be loaded. Reload the page.' : null;
   /* One block for Customer, Delivery address and Order information, the same one the
      project uses (owner, 14 Oct 2026): the header fields stay in `form`, the order
      information in renoInfo. */
@@ -3240,7 +3147,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
      a new customer. Debouncing here keeps `form.customerName` reactive for
      the rest of the card (state cascade, save payload) while the autocomplete
      hook sees a settled value. */
-  const debouncedDebtorQ = useDebouncedValue(form.customerName, 200);
+  const debouncedDebtorQ = useDebouncedValue(isEditing ? form.customerName : '', 200);
   const debtorQuery = useDebtorSearch(debouncedDebtorQ);
   const suggestions = (debtorQuery.data?.debtors ?? []).filter(
     (d) => (d.debtor_name ?? '').toLowerCase() !== form.customerName.trim().toLowerCase(),
@@ -3499,7 +3406,8 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
     setRenoTried(true);
     /* Checked only when the block is being written: the imported contracts came without a layout or size, and a VO on
        their lines alone must not ask for them. */
-    const miss = renoChanged() ? missingFields(blockValue) : new Set<string>();
+    /* Nor on an order with a project: those fields are the project's, and the order only follows them. */
+    const miss = renoChanged() && !renoProject ? missingFields(blockValue) : new Set<string>();
     if (miss.size > 0) {
       const msg = `Fill in: ${[...miss].join(', ')}.`;
       if (cb?.onError) cb.onError(msg);
@@ -3533,6 +3441,11 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       const seeded = initialFormFor(header);
       setForm(seeded);
       originalPayloadRef.current = payloadFor(seeded);
+      if (renoQ.data) {
+        setRenoInfo(renoQ.data.info);
+        setRenoProject(renoQ.data.project);
+        renoLoaded.current = JSON.stringify(toRenovationBlock(renoQ.data.info));
+      }
     },
     getPhone: () => form.phone ?? '',
     getLockedHeaderChanges: () =>
@@ -3554,14 +3467,26 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
      read identically. The component still exposes its imperative save() /
      reset() handle to the page-level Edit/Save flow; the 4 cards just
      replace the single wrapper. */
+  const sharedWith = (
+    <SoSharedWith
+      docNo={header.doc_no}
+      header={header}
+      staff={rosterQ.data}
+      frame={(v) => <Field label="Shared with" span={2} value={v} />}
+    />
+  );
   const customerCard = (
     <>
       {/* ── CUSTOMER ──────────────────────────────────────────────── */}
-      <section className={styles.card}>
-        <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Customer</h2>
-        </header>
-        <div className={styles.cardBody}>
+      <Section title="Customer">
+          {!isEditing ? (
+            <SoCustomerFields
+              header={header}
+              renoMode={reno}
+              salesperson={salespersonNameOf(header.agent, header.salesperson_id, 'Unassigned')}
+              sharedWith={sharedWith}
+            />
+          ) : (<>
           {/* PR-A — Customer Code input removed (commander 2026-05-27:
               "customer code 不需要"). Field still flows through state +
               payload so the server-side mapping is untouched.
@@ -3676,19 +3601,17 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
               </span>
             </label>
           </div>
-        </div>
-      </section>
+          <div className="mt-3">{sharedWith}</div>
+          </>)}
+      </Section>
 
     </>
   );
   const houzsOrderInfoCard = (
     <>
       {/* ── ORDER INFO (venue / dates / note) ─────────────────────── */}
-      <section className={styles.card}>
-        <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Order Info</h2>
-        </header>
-        <div className={styles.cardBody}>
+      <Section title="Order info">
+          {!isEditing ? <SoOrderInfoFields header={header} /> : (<>
           <div className={styles.formGrid4}>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Building Type</span>
@@ -3781,22 +3704,16 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
               ⚠ Processing Date and Delivery Date must be set together — Save is blocked.
             </div>
           )}
-        </div>
-      </section>
+          </>)}
+      </Section>
 
     </>
   );
   const emergencyCard = (
     <>
       {/* ── EMERGENCY CONTACT ─────────────────────────────────────── */}
-      <section className={styles.card}>
-        <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Emergency Contact</h2>
-          <span style={EMERGENCY_HEADER_NOTE_STYLE}>
-            Used only if we cannot reach the customer on delivery day
-          </span>
-        </header>
-        <div className={styles.cardBody}>
+      <Section title="Emergency contact" actions={<span style={EMERGENCY_HEADER_NOTE_STYLE}>Used only if we cannot reach the customer on delivery day</span>}>
+          {!isEditing ? <SoEmergencyFields header={header} /> : (<>
           <div className={styles.formGrid4}>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Contact Name</span>
@@ -3841,8 +3758,8 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
               />
             </label>
           </div>
-        </div>
-      </section>
+          </>)}
+      </Section>
 
       {/* CUSTOMER SIGNATURE + PAYMENT SLIP relocated (Wei Siang 2026-06-06):
           signature now renders directly below Payments (above), and the payment
@@ -3853,11 +3770,8 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
   const addressCard = (
     <>
       {/* ── DELIVERY ADDRESS ──────────────────────────────────────── */}
-      <section className={styles.card}>
-        <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Delivery Address</h2>
-        </header>
-        <div className={styles.cardBody}>
+      <Section title="Delivery address">
+          {!isEditing ? <SoAddressFields header={header} /> : (<>
           <div className={reno ? styles.renoGrid : styles.formGrid4}>
             <label className={`${styles.field}`} style={{ gridColumn: reno ? '1 / -1' : 'span 4' }}>
               <span className={styles.fieldLabel}>Address Line 1</span>
@@ -3961,8 +3875,8 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
               </span>
             </div>
           </div>
-        </div>
-      </section>
+          </>)}
+      </Section>
     </>
   );
 
@@ -3977,10 +3891,21 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
   return (
     <>
       {reno ? (
-        /* Renovation mode (Conts, 14 Oct 2026): the same compact layout as New SO. */
-        renoLoadError ? (
+        !isEditing ? (
+          /* A renovation order reads Order information, Customer, Delivery address: the order of the block Edit opens. */
+          <>
+            <Section title="Order info">
+              <RenovationSoOrderInfo docNo={header.doc_no} payment={header.payment_methods_summary || header.payment_method || null} />
+            </Section>
+            <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2 [&>section]:h-full">
+              {customerCard}
+              {addressCard}
+            </div>
+          </>
+        ) : renoLoadError ? (
           <p role="alert" style={{ color: 'var(--c-festive-b, #B8331F)', fontSize: 13 }}>{renoLoadError}</p>
         ) : (
+          /* Renovation mode (Conts, 14 Oct 2026): the same compact layout as New SO. */
           <CustomerBlock
             mode="so"
             arrangement="columns"
@@ -3990,17 +3915,18 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
             project={renoProject}
             onPickProject={pickRenoProject}
             missing={renoMissing}
-            disabled={!isEditing || renoInfoLoading}
+            disabled={renoInfoLoading}
             lockedKeys={renoLocked}
             canChangeSalesperson={canChangeSalesperson}
+            orderInfoFooter={<SoBrandPicker docNo={header.doc_no} />}
           />
         )
       ) : (
         <>
           {customerCard}
           {houzsOrderInfoCard}
-          {emergencyCard}
           {addressCard}
+          {emergencyCard}
         </>
       )}
     </>
@@ -4012,67 +3938,6 @@ const CustomerCard = memo(CustomerCardInner) as typeof CustomerCardInner;
 /* ════════════════════════════════════════════════════════════════════════
    Totals card
    ════════════════════════════════════════════════════════════════════════ */
-
-/* ── Scanned image viewer (migrations 0033 + 0034) ──────────────────────────
-   When the SO was created via the Scan Order flow, the handwritten ORDER SLIP
-   (0033) and/or the printed card-terminal PAYMENT RECEIPT (0034) were kept in
-   R2. Show each as proof: authed-fetch the serve endpoint as a blob (the bearer
-   token can't ride on an <img src>), render the object URL inline, and offer
-   "open full size" in a new tab. Mirrors the item-photo blob display pattern;
-   the object URL is revoked on unmount. `title` / `alt` distinguish the two. */
-const ScannedImageCard = ({
-  imageKey,
-  title,
-  alt,
-}: {
-  imageKey: string;
-  title: string;
-  alt: string;
-}) => {
-  const [src, setSrc] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let url: string | null = null;
-    fetchScanSlipImageBlobUrl(imageKey)
-      .then((u) => {
-        if (cancelled) { URL.revokeObjectURL(u); return; }
-        url = u;
-        setSrc(u);
-      })
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Something went wrong.'); });
-    return () => {
-      cancelled = true;
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [imageKey]);
-
-  return (
-    <section className={styles.card}>
-      <header className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>{title}</h2>
-      </header>
-      <div className={styles.cardBody}>
-        {error ? (
-          <div style={{ color: 'var(--c-festive-b, #B8331F)', fontSize: 13 }}>
-            Couldn&apos;t load the scanned image. {error}
-          </div>
-        ) : src ? (
-          <a href={src} target="_blank" rel="noreferrer" title="Open full size in a new tab">
-            <img
-              src={src}
-              alt={alt}
-              style={{ maxWidth: 360, width: '100%', height: 'auto', border: '1px solid var(--c-line, #E5E1DC)', borderRadius: 8, background: '#fff', cursor: 'zoom-in' }}
-            />
-          </a>
-        ) : (
-          <div style={{ fontSize: 13, color: 'var(--c-muted, #8A8377)' }}>Loading…</div>
-        )}
-      </div>
-    </section>
-  );
-};
 
 /* ── Totals · Margin card — REMOVED (owner 2026-07-17) ─────────────────────
    The Revenue / Cost / Margin / Margin% card (and its per-category cost

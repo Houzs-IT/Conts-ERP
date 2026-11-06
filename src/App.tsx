@@ -37,6 +37,7 @@ import SupplyChainEngine, { signInToEngineEarly } from './components/SupplyChain
 import { ENGINE_PATH } from './lib/scmEngine';
 import { useApi } from './lib/useApi';
 const UnitsPage = lazy(() => import('./pages/UnitsPage'));
+const AddUnitPage = lazy(() => import('./pages/units/AddUnitPage'));
 const ProductsPage = lazy(() => import('./pages/ProductsPage'));
 const SuppliersPage = lazy(() => import('./pages/SuppliersPage'));
 const ProductModelsPage = lazy(() => import('./pages/ProductModelsPage'));
@@ -83,6 +84,7 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
 const UnitPnlPage = lazy(() => import('./pages/UnitPnlPage'));
 const YearlyReportPage = lazy(() => import('./pages/YearlyReportPage'));
+const YgrrReportPage = lazy(() => import('./pages/YgrrReportPage'));
 const StatementDetailPage = lazy(() => import('./pages/StatementDetailPage'));
 const OwnerIncomeReportPage = lazy(() => import('./pages/OwnerIncomeReportPage'));
 const StatementsPrintPage = lazy(async () => ({ default: (await import('./pages/OwnerIncomeReportPage')).StatementsPrintPage }));
@@ -91,7 +93,9 @@ const OwnersPage = lazy(() => import('./pages/OwnersPage'));
 const OwnerProfilePage = lazy(() => import('./pages/OwnerProfilePage'));
 const ContractsPage = lazy(() => import('./pages/ContractsPage'));
 const LettingsPage = lazy(() => import('./pages/LettingsPage'));
+const DeductionsPage = lazy(() => import('./pages/DeductionsPage'));
 const ScheduledChangesPage = lazy(() => import('./pages/ScheduledChangesPage'));
+const UnitSettingsPage = lazy(() => import('./pages/UnitSettingsPage'));
 const PricingPage = lazy(() => import('./pages/PricingPage'));
 const ReviewsPage = lazy(() => import('./pages/ReviewsPage'));
 const InboxPage = lazy(() => import('./pages/InboxPage'));
@@ -132,7 +136,10 @@ function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   // Supply chain destinations open the engine's screens where it is set up, the built-in ones elsewhere.
-  const enginePath = ENGINE_PATH[location.pathname];
+  // ?engine=<engine screen> opens one record inside the frame (the top-bar search's results, functions/api/search).
+  const deepEngine = new URLSearchParams(location.search).get('engine');
+  const enginePath = ENGINE_PATH[location.pathname] && deepEngine && deepEngine.startsWith('/') && !deepEngine.startsWith('//')
+    ? deepEngine : ENGINE_PATH[location.pathname];
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
   const viaEngine = !!enginePath && !!engine.data?.enabled;
   const lastEnginePath = useRef<string | null>(null);
@@ -285,6 +292,8 @@ function Routed() {
         <Route path="/operations/tasks" element={<ToTaskHistory />} />
         <Route path="/properties" element={<ToUnits />} />
         <Route path="/properties/units" element={<UnitsPage unitId="" />} />
+        {/* Above :id, or "new" would be read as a unit id. */}
+        <Route path="/properties/units/new" element={<AddUnitPage />} />
         <Route path="/properties/units/:id" element={<UnitsRoute />} />
         <Route path="/properties/access" element={<ToUnits tab="access" />} />
         <Route path="/procurement/products" element={<ProductsPage />} />
@@ -315,6 +324,8 @@ function Routed() {
         <Route path="/consignment/purchase-receive" element={<PlaceholderPage title="Purchase consignment receive" />} />
         <Route path="/consignment/purchase-return" element={<PlaceholderPage title="Purchase consignment return" />} />
         <Route path="/procurement/po-amendments" element={<PlaceholderPage title="PO amendments" />} />
+        <Route path="/production/production-orders" element={<PlaceholderPage title="Production orders" />} />
+        <Route path="/production/sku-composition" element={<PlaceholderPage title="SKU Composition" />} />
         <Route path="/procurement/cancellations" element={<PlaceholderPage title="Cancellation requests" />} />
         <Route path="/sales/unbilled" element={<UnbilledDeliveriesPage />} />
         <Route path="/transport/drivers" element={<DriversPage />} />
@@ -352,6 +363,7 @@ function Routed() {
         <Route path="/finance/utility-bills" element={<ExpensesPage utilities />} />
         <Route path="/finance/unit-pnl" element={<UnitPnlPage />} />
         <Route path="/reports/yearly" element={<YearlyReportPage />} />
+        <Route path="/reports/ygrr" element={<YgrrReportPage />} />
         <Route path="/finance/expenses" element={<Moved to="/finance/payables" />} />
         <Route path="/finance/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
         <Route path="/finance/statements/:id" element={<MovedStatement />} />
@@ -362,8 +374,12 @@ function Routed() {
         <Route path="/supply/finance/utility-bills" element={<ExpensesPage utilities />} />
         <Route path="/supply/finance/unit-pnl" element={<UnitPnlPage />} />
         <Route path="/supply/finance/approvals" element={<ApprovalsPage />} />
-        {/* Project monitor was dropped (owner, 11 Oct 2026): old links open the Schedule. */}
+        {/* Project monitor was dropped (owner, 11 Oct 2026): old links open the project Calendar. */}
         <Route path="/projects/monitor" element={<Moved to="/projects/calendar" />} />
+        {/* The Beta group became the Projects pages (owner, 3 Nov 2026); its old addresses open them. */}
+        <Route path="/beta/home" element={<Moved to="/projects/list" />} />
+        <Route path="/beta/projects" element={<Moved to="/projects/list" />} />
+        <Route path="/beta/calendar" element={<Moved to="/projects/calendar" />} />
         <Route path="/owners" element={<OwnersPage />} />
         <Route path="/owners/:id" element={<OwnerProfileRoute />} />
         <Route path="/owners/contracts" element={<ContractsPage />} />
@@ -372,7 +388,9 @@ function Routed() {
         <Route path="/owner-b/:id/portal" element={<ViewAsOwnerPage />} />
         <Route path="/owner-b/sample/:id" element={<SampleOwnerPortalPage />} />
         <Route path="/properties/agent-to-let" element={<LettingsPage />} />
+        <Route path="/properties/deductions" element={<DeductionsPage />} />
         <Route path="/properties/scheduled-changes" element={<ScheduledChangesPage />} />
+        <Route path="/properties/settings" element={<UnitSettingsPage />} />
         <Route path="/owners/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
         <Route path="/owners/statements/:id" element={<StatementDetailPage />} />
         <Route path="/performance/analytics" element={<AnalyticsPage />} />

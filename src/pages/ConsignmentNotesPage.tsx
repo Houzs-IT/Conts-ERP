@@ -1,4 +1,5 @@
 import { mayRun } from '../lib/areaAccess';
+import { Meta } from '../components/Card';
 import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -246,7 +247,4 @@ function Cell({ value, onChange, w }: { value: string; onChange: (v: string) => 
 }
 function NumCell({ label, value, error, onChange }: { label: string; value: number | null; error?: string; onChange: (v: number | null) => void }) {
   return <NumberInput aria-label={label} min={0} value={value} error={error} onChange={onChange} className="h-8 w-[70px] box-border px-2 py-0 text-right font-sans text-[13px] tabular-nums text-ink bg-card border border-solid border-line rounded-control outline-none" />;
-}
-function Meta({ label, value }: { label: string; value: string }) {
-  return <div className="flex flex-col gap-0.5"><span className="text-[11px] uppercase tracking-[0.08em] text-muted-ink">{label}</span><span className="text-[13.5px]">{value}</span></div>;
 }

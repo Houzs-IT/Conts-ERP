@@ -1697,7 +1697,7 @@ export function SalesInvoicesListV2() {
 
   const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
     { value: "all", label: `All · ${counts.all}` },
-    { value: "sent", label: `Sent · ${counts.sent}` },
+    { value: "sent", label: `Submitted · ${counts.sent}` },
     { value: "partial", label: `Partial · ${counts.partial}` },
     { value: "paid", label: `Paid · ${counts.paid}` },
     { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
@@ -1730,9 +1730,9 @@ export function SalesInvoicesListV2() {
       <div className="-mx-4 hidden pb-3 sm:-mx-6 md:block">
         <div className="px-4 sm:px-6">
           <PageHeader
-            eyebrow="Supply Chain"
+            eyebrow="Sales"
             title="Sales Invoices"
-            description={`Every ${shortCompanyName(branding.companyName)} sales invoice — Sent to Paid. Click any row for the quick view; open the full page to edit or record a payment.`}
+            description={`Every ${shortCompanyName(branding.companyName)} sales invoice — Submitted to Paid. Click any row for the quick view; open the full page to edit or record a payment.`}
             primaryAction={
               /* Export lines is a READ under the caller's sales scope, so a
                  reader without write access gets it too. */

@@ -168,6 +168,7 @@ import { recordSoAudit, diffFields, type FieldChange } from '../lib/so-audit';
    module header for the 2990-SO-2608-017 edit this existed to catch and did not). */
 import { soLineFieldChanges } from '../lib/so-line-audit-diff';
 import { buildAmendmentLineRows, LINE_BUILD_ERRORS } from '../lib/amendment-lines';
+import { receivedSpecRefusal, soLineReceivedQty, SPEC_LOCKED_ERROR, specLockedMessage } from '../lib/renovation-spec-lock';
 import { resolveAmendmentLaneSplit } from '../lib/amendment-lane-resolve';
 import { dropNoopAmendmentLines } from '../lib/amendment-noop-lines';
 // OCR self-learning: a DRAFT confirm is the review event the background scan
@@ -261,7 +262,7 @@ import {
   findFreeTextSoLines, freeTextSoLineResponse,
 } from '../lib/validate-item-codes';
 import { collectSoConfirmProblems, soConfirmProblemsForDoc } from '../lib/so-confirm-gate';
-import { applyRenovationSoInfo, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedRooms } from './renovation-so-info';
+import { applyRenovationSoInfo, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedProcessingDates, stampCreatedRooms } from './renovation-so-info';
 import type { Db as RenoInfoDb } from '../../services/renovation/load';
 import { companyRequiresStockLocation, soLocationProblem, soLocationProblemForDoc, fillSoLocationFromState } from '../lib/so-location-gate';
 import { collectSoSubmitProblems, soPaymentSubFieldGap } from '../shared/so-submit-problems';
@@ -281,13 +282,13 @@ import { advanceSoGeneration } from '../lib/so-generation';
 import { creditFromCancelledSo, reverseCancelledSoCredit, getCustomerCreditBalance } from '../lib/customer-credits';
 import { summariseReadiness, type ReadinessLine } from '../lib/so-readiness';
 import { soLineStockVerdict, type LiveStockState, type SoLineStockVerdictRow } from '../lib/so-line-effective-stock';
-import { loadNonSellingWarehouses } from '../lib/non-selling-warehouse';
+import { exceptOnSite, loadNonSellingWarehouses } from '../lib/non-selling-warehouse';
 import { resolveLineCategories } from '../lib/so-readiness-category';
 import { deriveDisplayBrandingRowByDoc } from '../lib/so-display-branding';
 import { mintMonthlyDocNo, insertWithDocNoRetry, companyCodeById } from '../lib/doc-no';
 import { soDeliverableRemaining, soLineDeliveries, computeSoLifecycle, soCurrentDocNo, soLineShippedSources } from './delivery-orders-mfg';
 import { soLineReadySourcePos } from '../lib/source-po-trace';
-import { soLineBoundPoNumbers } from '../lib/so-converted-po';
+import { poEtasByNumber, soLineBoundPoNumbers } from '../lib/so-converted-po';
 /* Shared 4-state delivery-planning derivation — the SO list emits planning_state
    (the mobile Orders-list card's status) from the SAME helper the Delivery
    Planning board uses, so the two can never drift. */
@@ -1897,7 +1898,7 @@ mfgSalesOrders.get('/:docNo', async (c) => {
      stands as the verdict, and the client fetches the live coverage from
      `GET /:docNo/coverage` after the doc renders. The computation is UNCHANGED,
      just moved off the critical path — see that endpoint below. */
-  const [remainingMap, deliveriesMap, shippedTraceMap, nonSellingWh, boundPoMap] = await Promise.all([
+  const [remainingMap, deliveriesMap, shippedTraceMap, nonSellingWh, boundPoMap, receivedMap] = await Promise.all([
     soDeliverableRemaining(sb, [docNo]),
     soLineDeliveries(sb, itemRows.map((it) => it.id)),
     /* Traceability — the source PO(s) each line's SHIPPED goods came from,
@@ -1914,7 +1915,10 @@ mfgSalesOrders.get('/:docNo', async (c) => {
        FIFO batch its goods happened to ship from (another order's PO on shared
        stock). Same cheap batched link, scoped to the company. */
     soLineBoundPoNumbers(sb, itemRows.map((it) => it.id), activeCompanyId(c) ?? null),
+    /* Goods received on the line: the editor shows its spec locked before the save would be refused. */
+    soLineReceivedQty(sb, itemRows.map((it) => it.id)),
   ]);
+  const detailEtas = await poEtasByNumber(sb, [...boundPoMap.values()].flat(), activeCompanyId(c) ?? null);
   const orderProcessed = !!(h.data as { processing_date?: string | null }).processing_date;
   const items = itemRows.map((it) => {
     const rem = remainingMap.get(it.id);
@@ -1937,6 +1941,7 @@ mfgSalesOrders.get('/:docNo', async (c) => {
       deliveries,
       delivered_qty: rem?.delivered ?? deliveredQty,
       remaining_qty: rem?.remaining ?? Number(it.qty ?? 0),
+      received_qty: receivedMap.get(it.id) ?? 0,
       /* Live allocation outcome. Without the inline MRP run it is 'stock' for a
          service line and null (unknown) otherwise; GET /:docNo/coverage fills the
          real value in a beat later. */
@@ -1944,7 +1949,7 @@ mfgSalesOrders.get('/:docNo', async (c) => {
       /* What the PILL renders, and WHY when the reason is the warehouse — ONE
          home (soLineStockVerdict, §0.4). Live state `null`: the STORED verdict
          stands until GET /:docNo/coverage recomputes it. */
-      ...soLineStockVerdict(it as SoLineStockVerdictRow, null, orderProcessed, nonSellingWh),
+      ...soLineStockVerdict(it as SoLineStockVerdictRow, null, orderProcessed, exceptOnSite(nonSellingWh)),
       // coverage_po / coverage_eta are MRP-derived — unknown without the run.
       coverage_po: null,
       coverage_eta: null,
@@ -1961,6 +1966,7 @@ mfgSalesOrders.get('/:docNo', async (c) => {
       /* The line's OWN incoming PO (raised against this so_item). The SO
          "Incoming PO" chip prefers this over the shipped-batch trace. */
       bound_source_pos: boundPoMap.get(it.id) ?? [],
+      bound_source_etas: detailEtas,
     };
   });
   const totalDelivered = items.reduce((s, it) => s + Number(it.delivered_qty ?? 0), 0);
@@ -1995,6 +2001,15 @@ mfgSalesOrders.get('/:docNo', async (c) => {
     pwpCodes = [];
   }
   gateSoFinance(c, salesOrder, items);
+  /* A line's processing date lives on its plan, the row MRP and the project's PO tab read. */
+  {
+    const ids = (items as Array<{ id?: string }>).map((l) => l.id).filter((x): x is string => !!x);
+    const { data: plans } = ids.length
+      ? await sb.from('reno_beta_line_plans').select('so_item_id, order_on').in('so_item_id', ids)
+      : { data: [] };
+    const orderOn = new Map(((plans ?? []) as Array<{ so_item_id: string; order_on: string | null }>).map((p) => [p.so_item_id, p.order_on]));
+    for (const l of items as Array<Record<string, unknown>>) l.line_processing_date = orderOn.get(String(l.id)) ?? null;
+  }
   // Stamp each line's supplier fabric code so the on-screen line reads
   // "BF-01 (PC151-01)" (owner 2026-07-24). ONE batched query; fail-soft.
   await enrichLinesWithFabricSupplierCode(sb, c, items);
@@ -2064,6 +2079,7 @@ mfgSalesOrders.get('/:docNo/items', async (c) => {
   const readyPosMap = await soLineReadySourcePos(sb, activeCompanyId(c) ?? null, cov.mrp, itemRows as Array<{ id: string; item_group?: string | null; qty?: number | null; stock_status?: string | null; allocated_batch_no?: string | null }>);
   // Owner 2026-09-22: the line's OWN incoming PO — see the /:docNo detail note.
   const boundPoMap = await soLineBoundPoNumbers(sb, itemRows.map((it) => it.id), activeCompanyId(c) ?? null);
+  const boundEtas = await poEtasByNumber(sb, [...boundPoMap.values()].flat(), activeCompanyId(c) ?? null);
   const orderProcessed = !!(h.data as { processing_date?: string | null }).processing_date;
   const items = itemRows.map((it) => {
     const rem = remainingMap.get(it.id);
@@ -2100,13 +2116,14 @@ mfgSalesOrders.get('/:docNo/items', async (c) => {
       stock_state: stockState,
       // The pill's verdict + the warehouse refusal, through the same one home
       // as GET /:docNo. Gated (2026-08-30) + vetoed (2026-09-08) inside it.
-      ...soLineStockVerdict(it as SoLineStockVerdictRow, stockState as LiveStockState, orderProcessed, nonSellingWh),
+      ...soLineStockVerdict(it as SoLineStockVerdictRow, stockState as LiveStockState, orderProcessed, exceptOnSite(nonSellingWh)),
       coverage_po: covered ? cov?.po ?? null : null,
       coverage_eta: covered ? cov?.eta ?? null : null,
       shipped_source_pos: shippedPos,
       shipped_source_adj: (shippedTrace?.adjQty ?? 0) > 0,
       ready_source_pos: readyPosMap.get(it.id) ?? [],
       bound_source_pos: boundPoMap.get(it.id) ?? [],
+      bound_source_etas: boundEtas,
     };
   });
   gateSoFinance(c, null, items);
@@ -4799,6 +4816,7 @@ mfgSalesOrders.post('/', async (c) => {
     }).then(async (r) => {
       /* Rooms: the room list and each line's room (body.items[i].room), matched to the inserted lines. */
       if (r.ok) await stampCreatedRooms(c.env.DB as unknown as RenoInfoDb, createdDocNo, renoBlock.roomSections, peek!.items);
+      if (r.ok) await stampCreatedProcessingDates(c.env.DB as unknown as RenoInfoDb, createdDocNo, activeCompanyId(c) ?? 1, peek!.items);
       return r;
     }).catch((e: unknown) => {
       /* The order is committed; a failed stamp must not read as a failed save. */
@@ -6932,6 +6950,27 @@ export async function recomputeTotals(sb: any, docNo: string, c: any) {
     console.error('[so-recompute] header update failed — totals left STALE:', docNo, updErr.message);
   }
 }
+
+/* The lines' processing dates (owner, 5 Nov 2026), written to the plan so the project's PO tab and MRP read the same date. */
+mfgSalesOrders.put('/:docNo/line-processing-dates', async (c) => {
+  const sb = c.get('supabase'); const docNo = c.req.param('docNo');
+  const body = await c.req.json().catch(() => null) as { dates?: Record<string, string | null> } | null;
+  const entries = Object.entries(body?.dates ?? {});
+  if (entries.some(([, d]) => d != null && !/^\d{4}-\d{2}-\d{2}$/.test(d))) return c.json({ error: 'invalid_date' }, 400);
+  const companyId = activeCompanyId(c);
+  if (entries.length === 0 || companyId == null) return c.json({ ok: true });
+  const { data: known, error } = await scopeToCompany(sb.from('mfg_sales_order_items').select('id').eq('doc_no', docNo), c);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  const mine = new Set(((known ?? []) as Array<{ id: string }>).map((r) => r.id));
+  const rows = entries.filter(([id]) => mine.has(id)).map(([id, d]) => ({
+    so_item_id: id, company_id: companyId, order_on: d, updated_at: new Date().toISOString(),
+  }));
+  if (rows.length) {
+    const { error: upErr } = await sb.from('reno_beta_line_plans').upsert(rows, { onConflict: 'so_item_id' });
+    if (upErr) return c.json({ error: 'save_failed', reason: upErr.message }, 500);
+  }
+  return c.json({ ok: true });
+});
 
 mfgSalesOrders.post('/:docNo/items', async (c) => {
   const sb = c.get('supabase'); const docNo = c.req.param('docNo'); const user = c.get('user');
@@ -10188,11 +10227,15 @@ export const postSoPaymentHandler = async (c: any) => {
     if (!g.ok) return c.json({ error: g.error, message: g.message }, g.status);
     plan = g.plan;
   }
+  /* c.executionCtx throws where the runtime supplies none (tests): the steps then run inline. */
+  let executionCtx: { waitUntil?: (p: Promise<unknown>) => void } | undefined;
+  try { executionCtx = c.executionCtx; } catch { executionCtx = undefined; }
   /* Insert + ADD_PAYMENT audit — the factored recordSoPaymentRow core (shared
      with the background scan job). Same derivation, same insert, same audit
      shape as the pre-factoring inline code. */
   const { payment, errorMessage } = await recordSoPaymentRow(sb, {
     docNo,
+    ...(executionCtx?.waitUntil ? { defer: (work: Promise<unknown>) => executionCtx!.waitUntil!(work) } : {}),
     paidAt:            plan ? plan.paidAt : p.paidAt,
     method:            p.method,
     ...(plan ? { convertedFromDocNo: plan.fromDocNo } : {}),
@@ -11198,6 +11241,10 @@ mfgSalesOrders.post('/:docNo/amendments', async (c) => {
      class as the salesperson_id stamp at ~2738). Fall back to the system row
      when the sync row is missing so the FK stays valid. */
   const requesterStaffId = (await resolveCallerStaffId(sb, c.get('houzsUser')?.id)) ?? user.id;
+
+  const specRefusal = await receivedSpecRefusal(sb, docNo, split.lanes.flatMap((k) => split.perLane[k].lines)).catch(() => undefined);
+  if (specRefusal === undefined) return c.json(LINE_BUILD_ERRORS.unreadable, 500);
+  if (specRefusal) return c.json({ error: SPEC_LOCKED_ERROR, reason: specLockedMessage(specRefusal.itemCode, specRefusal.poNumber) }, 409);
 
   /* One insert per lane present. Numbering stays a single /A{n} sequence per SO
      (a mixed submission mints /A3 and /A4). Everything is rolled back together

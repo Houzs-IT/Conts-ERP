@@ -54,6 +54,7 @@ function actorOf(c: C): RenoActor {
   return {
     name: hu?.name ?? hu?.email ?? null,
     staffId: c.get('user').id,
+    userId: hu?.id ?? null,
     companyId: activeCompanyId(c) ?? 1,
     docPrefix: companyDocPrefix(c),
   };
@@ -477,12 +478,6 @@ async function runQuickVo(
   await onRenovationSoLinesChanged(out.soDocNo, ctx.sqlRead);
   const posting = await postContractAfterCommit(c, actor, out.soDocNo, out.docDate);
   return { voNo: out.voNo, netSen: out.netSen, revisedContractSen: out.revisedContractSen, flags: out.flags, posting };
-}
-
-/** The same contract VO for another route (the line options route, renovation-so-info.ts: a line a live PO buys
-    changes its options by VO, owner 2 Nov 2026), with this route's permission, transaction, hooks and posting. */
-export function lineEditsVo(c: C, docNo: string, edits: QuickLineEdit[], title: string): Promise<Response> {
-  return handle(PERM.voApply, async (cc, ctx) => cc.json({ ok: true, changed: true, ...(await runQuickVo(cc, ctx, docNo, edits, [], title)) }))(c);
 }
 
 renovation.get('/sales-orders/:docNo/po-flags', handle(null, async (c, { sqlRead }) => c.json({ flags: await listPoFlags(sqlRead, param(c, 'docNo')) })));

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Modal } from '../components/Modal';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
@@ -195,11 +196,11 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
     { key: 'units', label: 'Units', value: r => r.unitsLabel, hidden: true, width: 220 },
     { key: 'period', label: 'Period', value: r => r.period ?? null, text: r => (r.period ? periodLabel(r.period) : ''), hidden: true, width: 110 },
     { key: 'gross', label: 'Gross Income', type: 'money', value: r => r.grossBookingValue, width: 140,
-      render: r => <span className="tabular-nums whitespace-nowrap">{rm(r.grossBookingValue, { cents: false })}</span> },
+      render: r => <span className="tabular-nums whitespace-nowrap">{rm(r.grossBookingValue)}</span> },
     { key: 'fee', label: 'To Operator', type: 'money', value: r => r.managementFee, width: 120,
-      render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.managementFee, { cents: false })}</span> },
+      render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.managementFee)}</span> },
     { key: 'expenses', label: 'Deductions', type: 'money', value: r => r.expensesTotal, width: 120,
-      render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.expensesTotal, { cents: false })}</span> },
+      render: r => <span className="tabular-nums whitespace-nowrap text-muted-ink">&minus; {rm(r.expensesTotal)}</span> },
     { key: 'net', label: 'Net Payout to Owner', type: 'money', value: r => r.netPayout, width: 130,
       render: r => <span className={cx('tabular-nums whitespace-nowrap font-semibold', r.netPayout < 0 ? TONE.critical.text : '')}>{rm(r.netPayout)}</span> },
     { key: 'status', label: 'Status', type: 'status', value: r => r.state, width: 120,
@@ -299,10 +300,10 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
               <span className="flex flex-col gap-[3px] min-w-0 flex-1">
                 <span className="text-[13.5px] font-medium truncate">{s.ownerName}</span>
                 <span className="text-[12px] text-muted-ink truncate">{s.unitsLabel}</span>
-                <span className="text-[11.5px] text-muted-ink tabular-nums">Income {rm(s.grossBookingValue, { cents: false })} · operator share {rm(s.managementFee, { cents: false })} · deductions {rm(s.expensesTotal, { cents: false })}</span>
+                <span className="text-[11.5px] text-muted-ink tabular-nums">Income {rm(s.grossBookingValue)} · operator share {rm(s.managementFee)} · deductions {rm(s.expensesTotal)}</span>
               </span>
               <span className="flex flex-col items-end gap-[5px] shrink-0">
-                <span className="text-[13.5px] font-semibold tabular-nums">{rm(s.netPayout, { cents: false })}</span>
+                <span className="text-[13.5px] font-semibold tabular-nums">{rm(s.netPayout)}</span>
                 <StatusBadge entity="statement" value={s.state} size="sm" />
               </span>
             </span>
@@ -314,9 +315,9 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
                 <span className="text-meta text-muted-ink">Every deduction carries a category, date and amount.</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
-                <Sum label="Gross Income" value={rm(totals.gross, { cents: false })} />
-                <Sum label="To Operator" value={rm(totals.fee, { cents: false })} minus />
-                <Sum label="Deductions" value={rm(totals.expenses, { cents: false })} minus />
+                <Sum label="Gross Income" value={rm(totals.gross)} />
+                <Sum label="To Operator" value={rm(totals.fee)} minus />
+                <Sum label="Deductions" value={rm(totals.expenses)} minus />
                 <Sum label="Net Payout to Owner" value={rm(totals.net)} strong />
               </div>
             </div>
@@ -379,15 +380,8 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
     : initialPeriod;
   const [period, setPeriod] = useState(firstOpen);
   const [busy, setBusy] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   const locked = lockedPeriods.has(period);
 
-  useEffect(() => {
-    ref.current?.querySelector<HTMLElement>('select')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [busy, onClose]);
 
   async function confirm() {
     if (locked) return;
@@ -397,28 +391,19 @@ function GenerateDialog({ initialPeriod, periods, lockedPeriods, onClose, onGene
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Generate statements"
-      className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
-      <div ref={ref} className="relative w-full max-w-[440px] bg-card rounded-card shadow-[var(--shadow-overlay)] overflow-hidden [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]">
-        <div className="px-[22px] pt-[22px] pb-[18px] flex flex-col gap-3">
-          <h2 className="m-0 text-title font-semibold">Generate statements</h2>
-          <p className="m-0 text-[13px] leading-[1.55] text-muted-ink">
-            Builds each owner's month by the owner workbook's rules: reservations split by night into the month, cleaning, bills and other deductions, the contract split, then Owner Adjustments. Owner statements land as Draft and must be reviewed before sending.
-          </p>
+    <Modal title="Generate statements" onClose={onClose} busy={busy} width={440}
+      sub="Builds each owner's month by the owner workbook's rules: reservations split by night into the month, cleaning, bills and other deductions, the contract split, then Owner Adjustments. Owner statements land as Draft and must be reviewed before sending."
+      footer={<>
+          <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button size="sm" variant="primary" loading={busy} disabled={locked} disabledReason="This period has already been sent." onClick={confirm}>
+            Generate
+          </Button>
+      </>}>
           <Select label="Period" showLabel size="md" value={period} onChange={setPeriod} disabled={busy}
             options={periods.map(p => ({ value: p, label: `${periodLabel(p)}${lockedPeriods.has(p) ? ' — already sent' : ''}`, disabled: lockedPeriods.has(p) }))} />
           <div className={`py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-[12px] ${locked ? TONE.critical.text : 'text-muted-ink'}`}>
             {locked ? 'This period has already been sent and cannot be regenerated.' : 'A period that has already been sent cannot be regenerated.'}
           </div>
-        </div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">
-          <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button size="sm" variant="primary" loading={busy} disabled={locked} disabledReason="This period has already been sent." onClick={confirm}>
-            Generate
-          </Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

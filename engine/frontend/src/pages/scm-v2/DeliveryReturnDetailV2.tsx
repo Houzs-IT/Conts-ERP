@@ -406,8 +406,7 @@ function RefundHeroCard({
       </div>
       <div
         className={cn(
-          "mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight",
-          isRefunded ? "text-synced" : "text-err"
+          "mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight text-white"
         )}
       >
         {fmtMoney(refund, header.currency)}
@@ -861,7 +860,7 @@ export function DeliveryReturnDetailV2() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             <Button
               variant="ghost"
               icon={<History size={14} />}

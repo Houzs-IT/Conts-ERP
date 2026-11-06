@@ -6,7 +6,8 @@ import { cx } from '../../lib/design-tokens';
 import type { UnitReadiness } from '../../lib/types';
 import { titleCase } from '../../lib/format';
 import type { Building, Unit } from './shared';
-import { MODEL, codeName } from '../../lib/revenueModel';
+import { MODEL, PURPOSE_LABEL, codeName } from '../../lib/revenueModel';
+import { useContractTypes } from '../../lib/useContractTypes';
 import { statusLabel, statusOf, TONE_STYLE } from '../../lib/status';
 
 interface Props {
@@ -43,6 +44,7 @@ export function firstUnitId(buildings: Building[], units: Unit[]): string | unde
  *  unit, so 20-odd buildings read as a short list. A search (kept in the address as ?q=) opens every
  *  building with a hit and keeps a building whose name matches, or the units in it that do. */
 export default function UnitTree({ buildings, units, selectedId, readiness, canEdit, onSelect, onEditBuilding, onAddUnit, onAddSubUnit, fill }: Props) {
+  const types = useContractTypes();
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
   const setQ = (v: string) => setParams(p => { const n = new URLSearchParams(p); if (v) n.set('q', v); else n.delete('q'); return n; }, { replace: true });
@@ -123,7 +125,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
           </span>
           {!needle && buildings.length > 1 && (
             <button type="button" onClick={() => setAll(!anyOpen)}
-              className="bg-transparent [border:none] p-0 cursor-pointer [font-family:inherit] text-meta font-medium text-gold-ink whitespace-nowrap">
+              className="hit-target bg-transparent [border:none] p-0 cursor-pointer [font-family:inherit] text-meta font-medium text-gold-ink whitespace-nowrap">
               {anyOpen ? 'Collapse all' : 'Expand all'}
             </button>
           )}
@@ -156,9 +158,9 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                     </button>
                     {canEdit && <>
                       <button onClick={() => onEditBuilding(b)} aria-label={`Edit ${b.name}`} title="Edit building"
-                        className="w-[26px] h-[26px] flex-none grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted"><Icon name="Pencil" size="sm" /></button>
+                        className="hit-target w-[26px] h-[26px] flex-none grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted"><Icon name="Pencil" size="sm" /></button>
                       <button onClick={() => onAddUnit(b.id)} aria-label={`Add a unit to ${b.name}`} title="Add unit"
-                        className="w-[26px] h-[26px] flex-none grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-muted-ink"><Icon name="Plus" size="sm" /></button>
+                        className="hit-target w-[26px] h-[26px] flex-none grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-muted-ink"><Icon name="Plus" size="sm" /></button>
                     </>}
                   </div>
                   {open && us.map(u => {
@@ -174,11 +176,14 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                               <span className={cx('block text-copy whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</span>
                               <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName ? titleCase(u.ownerName) : 'No owner yet'}{kids.length ? ` · ${kids.length} sub-unit${kids.length > 1 ? 's' : ''}` : ''}</span>
                             </span>
-                            <span className="text-caption font-bold text-gold-ink flex-none" title={u.termsLabel ?? (u.revenueModel ? MODEL[u.revenueModel].label : u.pkg)}>{u.purpose && u.purpose !== 'rental' ? (u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom') : (u.contractCode ? codeName(u.contractCode) : null) ?? (u.revenueModel ? MODEL[u.revenueModel].short : u.pkg.replace('Package ', 'Pkg '))}</span>
+                            <span className="flex flex-col items-end flex-none text-right">
+                              <span className="text-caption font-bold text-gold-ink" title={u.termsLabel ?? (u.revenueModel ? MODEL[u.revenueModel].label : u.pkg)}>{(u.contractCode ? codeName(types, u.contractCode) : null) ?? (u.revenueModel ? MODEL[u.revenueModel].short : u.pkg.replace('Package ', 'Pkg '))}</span>
+                              {u.purpose && <span className="text-caption text-muted-ink">{PURPOSE_LABEL[u.purpose]}</span>}
+                            </span>
                           </button>
                           {canEdit && (
                             <button onClick={() => onAddSubUnit(b.id, u)} aria-label={`Add a sub-unit under ${u.unitCode || 'this unit'}`} title="Add sub-unit"
-                              className="w-[24px] h-[24px] flex-none grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-muted-ink"><Icon name="Plus" size="sm" /></button>
+                              className="hit-target w-[24px] h-[24px] flex-none grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-muted-ink"><Icon name="Plus" size="sm" /></button>
                           )}
                         </div>
                         {kids.filter(k => !needle || buildingHit(b) || hit(u) || hit(k)).map(su => {

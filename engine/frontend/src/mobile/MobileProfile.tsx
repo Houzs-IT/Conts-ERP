@@ -9,7 +9,7 @@ import {
 /** Footer product label — HOUZS keeps the historic literal. */
 function appFooterLabel(): string {
   return getBrandingCompanyCode() === HOUZS_COMPANY_CODE
-    ? "Houzs ERP"
+    ? "The Conts ERP"
     : `${shortCompanyName(getBrandingCache().companyName)} ERP`;
 }
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -309,7 +309,7 @@ export function MobileProfile({ onLogout, orgItems, onOpenOrg }: {
     browserNotificationsEnabled && browserNotificationPermission === "granted";
 
   const doLogout = async () => {
-    if (await confirm({ title: "Log out of Houzs ERP?", confirmLabel: "Log out", danger: true })) {
+    if (await confirm({ title: "Log out of The Conts ERP?", confirmLabel: "Log out", danger: true })) {
       onLogout();
     }
   };

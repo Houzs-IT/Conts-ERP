@@ -45,6 +45,7 @@ import {
 } from "../../components/DetailLayout";
 import { ModalOverlay } from "../../components/scm-v2/DocumentRelationshipMapModal";
 import { StatusPill } from "../../vendor/scm/components/StatusPill";
+import { AmendmentHeaderBadge, Divider } from "./soDetailParts";
 import { useStaffLookup } from "../../hooks/useStaffLookup";
 import {
   resolveStatusPill,
@@ -61,6 +62,7 @@ import {
   useApproveSo,
   useRejectAmendment,
   useWithdrawAmendment,
+  type AmendmentChanges,
   type AmendmentLine,
 } from "../../vendor/scm/lib/so-amendment-queries";
 import { humanApiError } from "../../vendor/scm/lib/authed-fetch";
@@ -506,6 +508,23 @@ export function AmendmentDetailV2() {
      non-zero but `lines` is empty, every recorded line is a no-op — say so
      rather than showing nothing (a legacy pre-fix amendment reads this way). */
   const recordedLineCount = (data?.lines ?? []).length;
+  /* Conts (owner, 3 Nov 2026): one card per change, named in words. A renovation VO's omit and re-add of one line
+     (stored as REMOVE + ADD) is one card; without the server's rows every line keeps its own card. */
+  const changes = (data as { changes?: AmendmentChanges | null } | undefined)?.changes ?? null;
+  const cards = useMemo(() => {
+    const rowOf = new Map((changes?.rows ?? []).flatMap((r) => r.lineIds.map((id) => [id, r] as const)));
+    const seen = new Set<string>();
+    const out: Array<{ key: string; line: AmendmentLine; labels?: string[] }> = [];
+    for (const l of lines) {
+      const r = rowOf.get(l.id);
+      if (!r) { out.push({ key: l.id, line: l }); continue; }
+      const key = r.lineIds.join("+");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ key, line: r.line, labels: r.labels });
+    }
+    return out;
+  }, [lines, changes]);
   const salesOrder = data?.salesOrder ?? null;
   const boundPo = data?.purchaseOrders?.[0] ?? null;
 
@@ -522,7 +541,7 @@ export function AmendmentDetailV2() {
     [amendment],
   );
 
-  const changeCount = headerDiffs.length + lines.length;
+  const changeCount = headerDiffs.length + cards.length;
 
   /* Every routable atom this amendment moves — lines + header — for the type
      badge(s) and the department-routing block. */
@@ -569,13 +588,13 @@ export function AmendmentDetailV2() {
       amendment: {
         amendment_no: amendmentNo,
         status,
-        reason,
+        reason: changes?.topic || reason,
         created_at: asStr(amendment.created_at) || null,
         requested_by_name: actorNameOf(asStr(amendment.requested_by)),
         so_approved_by_name: amendment.so_approved_by ? actorNameOf(asStr(amendment.so_approved_by)) : null,
         so_approved_at: asStr(amendment.so_approved_at) || null,
       },
-      lines: (data?.lines ?? []) as never,
+      lines: (changes ? cards.map((c) => c.line) : data?.lines ?? []) as never,
       salesOrder: salesOrder as never,
       customerName: (salesOrder as { customer_name?: string | null } | null)?.customer_name ?? null,
     });
@@ -822,9 +841,9 @@ export function AmendmentDetailV2() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-                  VO{amendmentNo ? ` ${amendmentNo}` : ""}
+                  {amendmentNo?.startsWith("VO") ? amendmentNo : `VO${amendmentNo ? ` ${amendmentNo}` : ""}`}
                 </h1>
-                <StatusPill docType={lane ? "soAmendmentLane" : "soAmendment"} status={status} />
+                <AmendmentHeaderBadge status={status} />
                 {lane && (
                   <span className="rounded-full border border-border bg-surface-2 px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-ink-secondary">
                     {LANE_TITLE[lane]}
@@ -833,7 +852,7 @@ export function AmendmentDetailV2() {
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-secondary">
                 <span className="font-mono font-semibold text-primary-ink">{soDocNo}</span>
-                <span className="text-ink-muted/50">·</span>
+                <Divider />
                 {/* The honest total — header fields + genuinely-changed lines.
                     It used to count every RECORDED line, so an amendment whose
                     lines were all no-ops advertised "4 changes" and showed four
@@ -843,15 +862,19 @@ export function AmendmentDetailV2() {
                 </span>
                 {asStr(amendment.created_at) && (
                   <>
-                    <span className="text-ink-muted/50">·</span>
+                    <Divider />
                     <span>Raised {fmtDateTime(String(amendment.created_at))}</span>
                   </>
                 )}
               </div>
+              {changes?.topic && (
+                <p className="mt-1.5 text-[13.5px] font-medium text-ink">{changes.topic}</p>
+              )}
               <AmendmentTypeBadges kinds={allFieldKinds} className="mt-2" />
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" icon={<Printer size={14} />} onClick={print.openPreview}>Print PDF</Button>
             {/* Owner 2026-07-27: the header jump actions read as a UNIFORM
                 bordered pair (secondary) — the naked ghost next to a boxed
                 secondary looked like plain text + a stray box, off-theme. */}
@@ -870,10 +893,10 @@ export function AmendmentDetailV2() {
                     pending follow-up the jump goes to the PO Amendment job card,
                     and the label says so. */}
                 {poRevised
-                  ? "Open Revised bound PO"
+                  ? "Open revised PO"
                   : pendingFollowUp
                     ? "Open PO Amendment"
-                    : "Open bound PO"}
+                    : "Open PO"}
               </Button>
             )}
           </div>
@@ -909,7 +932,7 @@ export function AmendmentDetailV2() {
               </Section>
             )}
 
-            <Section title={`Requested changes · ${lines.length}`}>
+            <Section title={`Requested changes · ${cards.length}`}>
               {lines.length === 0 ? (
                 <div className="text-[12px] text-ink-muted">
                   {headerDiffs.length > 0
@@ -926,8 +949,8 @@ export function AmendmentDetailV2() {
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {lines.map((l) => (
-                    <DiffCard key={l.id} line={l} />
+                  {cards.map((c) => (
+                    <DiffCard key={c.key} line={c.line} labels={c.labels} />
                   ))}
                 </div>
               )}
@@ -1004,16 +1027,19 @@ export function AmendmentDetailV2() {
               </AsideCard>
             )}
 
-            <AsideCard title="Document">
-              <Button
-                variant="secondary"
-                className="w-full"
-                icon={<Printer size={14} />}
-                onClick={print.openPreview}
-              >
-                Print amendment
-              </Button>
-            </AsideCard>
+            {/* Phone only: the desktop header carries Print PDF, like every other document. */}
+            <div className="md:hidden">
+              <AsideCard title="Document">
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  icon={<Printer size={14} />}
+                  onClick={print.openPreview}
+                >
+                  Print PDF
+                </Button>
+              </AsideCard>
+            </div>
 
             {/* Two-lane rework — a lane row has ONE signature and, on the LINES
                 lane, the follow-up PO Amendment chips after it applies. */}
@@ -1247,12 +1273,11 @@ export function AmendmentDetailV2() {
         rows={[
           { label: "Against SO", value: soDocNo || "—" },
           { label: "Status", value: amendmentPrintedStatus(status) },
+          ...(changes?.topic && changes.topic !== reason ? [{ label: "Topic", value: changes.topic }] : []),
           { label: "Reason", value: reason || "—" },
           {
             label: "Changes",
-            value: `${lines.length + headerDiffs.length} change${
-              lines.length + headerDiffs.length === 1 ? "" : "s"
-            }`,
+            value: `${changeCount} change${changeCount === 1 ? "" : "s"}`,
           },
         ]}
         {...print.handlers}

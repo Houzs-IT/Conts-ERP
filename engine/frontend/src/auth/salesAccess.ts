@@ -300,7 +300,7 @@ export function canRevertDelivery(user: AuthUser | null | undefined): boolean {
 function canOperateScmProcurement(
   can: (perm: string) => boolean,
   pageAccess: (page: string) => AccessLevel,
-  area: "scm.procurement.po" | "scm.procurement.grn" | "scm.procurement.pi",
+  area: "scm.procurement.po" | "scm.procurement.production" | "scm.procurement.grn" | "scm.procurement.pi",
 ): boolean {
   if (can("*")) return true;
   return ACCESS_RANK[pageAccess(area)] >= ACCESS_RANK.edit;
@@ -312,6 +312,13 @@ export function canOperatePurchaseOrders(
   pageAccess: (page: string) => AccessLevel,
 ): boolean {
   return canOperateScmProcurement(can, pageAccess, "scm.procurement.po");
+}
+
+export function canOperateProductionOrders(
+  can: (perm: string) => boolean,
+  pageAccess: (page: string) => AccessLevel,
+): boolean {
+  return canOperateScmProcurement(can, pageAccess, "scm.procurement.production");
 }
 
 /** May this user raise or change a GOODS RECEIPT (incl. PO→GRN convert)? */

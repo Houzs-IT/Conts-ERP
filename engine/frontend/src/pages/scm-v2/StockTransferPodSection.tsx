@@ -1,3 +1,4 @@
+import { fmtDateTime } from "@2990s/shared";
 import { useQuery } from "@tanstack/react-query";
 import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 import { PodPhotoAlbum } from "../../components/scm-v2/PodPhotoAlbum";
@@ -19,7 +20,7 @@ type Resp = {
 
 const when = (iso: string | null, by: number | null, people: Record<string, string>) =>
   iso
-    ? `${new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}${by != null && people[String(by)] ? ` · ${people[String(by)]}` : ""}`
+    ? `${fmtDateTime(iso)}${by != null && people[String(by)] ? ` · ${people[String(by)]}` : ""}`
     : "—";
 
 export function StockTransferPodSection({ id }: { id: string }) {

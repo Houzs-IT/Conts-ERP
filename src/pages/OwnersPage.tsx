@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
 import { saveBlob, zipStore } from '../lib/export';
 import type { Report } from './OwnerIncomeReportPage';
-import { rmShort, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
+import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { phone as formatPhone } from '../lib/phone';
 import { MoneyText } from '../components/MoneyText';
 import { Select } from '../components/Select';
@@ -23,7 +23,8 @@ import { useUrlState, usePhone, SearchBox, MonthStepper, shiftMonth, useFinanceF
 import { MODELS, type RevenueModel } from '../lib/revenueModel';
 import { ModelChip } from './units/ContractTab';
 import { CodeBadge } from './units/UnitExtras';
-import { CODES, codeName } from '../lib/revenueModel';
+import { typeOptions } from '../lib/revenueModel';
+import { useContractTypes } from '../lib/useContractTypes';
 import { Segmented } from '../components/ops/OpsUi';
 import { RowsSkeleton } from '../components/Loading';
 import { useSession } from '../lib/session';
@@ -124,6 +125,7 @@ export default function OwnersPage() {
 }
 
 function OwnerList({ tabs }: { tabs: ReactNode }) {
+  const types = useContractTypes();
   const url = useUrlState();
   const phone = usePhone();
   const thisMonth = todayMyt().slice(0, 7);
@@ -268,9 +270,9 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
     { key: 'address', label: 'Mailing address', value: o => addressText(o) || null, hidden: true, filter: false, width: 260 },
     { key: 'units', label: 'Units', type: 'number', align: 'left', value: o => o.units.length, width: 140, filter: { kind: 'number', hint: 'Number of units' },
       render: o => <span className="text-copy text-muted-ink truncate block" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span> },
-    { key: 'code', label: 'Contract', value: o => codeText(o), width: 110, title: 'The contract type: PS, PS GRR, PS YGRR, LT, RTR, MANAGE, WH. Mixed: units on different types.',
-      filter: { kind: 'select', options: [...CODES.map(c => ({ value: c.code, label: `${codeName(c.code)} · ${c.label}` })), { value: 'Mixed', label: 'Mixed (units on different types)' }] },
-      render: o => { const c = codeText(o); return !c ? <span className="text-muted-ink">—</span> : c === 'Mixed' ? <span className="text-meta text-muted-ink">Mixed</span> : <CodeBadge code={o.units.find(u => u.contractCode)?.contractCode} size="sm" />; } },
+    { key: 'code', label: 'Contract', value: o => codeText(o), width: 110, title: 'The contract type, from Units > Unit settings. Mixed: units on different types.',
+      filter: { kind: 'select', options: [...typeOptions(types), { value: 'Mixed', label: 'Mixed (units on different types)' }] },
+      render: o => { const c = codeText(o); return !c ? <span className="text-muted-ink">—</span> : c === 'Mixed' ? <span className="text-meta text-muted-ink">Mixed</span> : <CodeBadge code={o.units.find(u => u.contractCode)?.contractCode} types={types} size="sm" />; } },
     { key: 'bank', label: 'Bank details', value: o => bankText(o), hidden: true, width: 120, filter: { kind: 'select', options: [{ value: 'On file', label: 'On file' }, { value: 'Missing', label: 'Missing' }] } },
     { key: 'building', label: 'Buildings', value: o => buildingsOf(o) || null, hidden: true, width: 200, filter: { kind: 'text', hint: 'Owners with a unit in a building whose name contains' } },
     { key: 'unitList', label: 'Unit list', value: o => o.units.map(u => u.unitLabel).join(', ') || null, hidden: true, filter: false, width: 220 },
@@ -304,7 +306,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
       status: o => portalBadge(o, true) },
     ...(inviter ? [{ key: 'actions', label: '', width: 52, align: 'right' as const, noExport: true, sortable: false, filter: false, hideable: false,
       render: (o: Owner) => <RowActions name={titleCase(o.displayName)} items={actionsRef.current(o)} /> } satisfies Column<Owner>] : []),
-  ], [open, monthCol, inviter, buildingNameOf]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [open, monthCol, inviter, buildingNameOf, types]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -328,7 +330,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
         <div className="col-span-2 lg:col-span-1 relative rounded-card bg-black text-white p-5 flex flex-col gap-2 overflow-hidden">
           <span aria-hidden className="absolute left-5 top-0 h-[2px] w-8 bg-gold" />
           <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">To pay owners</span>
-          <span className="text-[34px] leading-none font-semibold tabular-nums text-gold">{data ? rmShort(portfolioNet) : '—'}</span>
+          <span className="text-[28px] sm:text-[34px] leading-none font-semibold tabular-nums text-gold">{data ? rm(portfolioNet) : '—'}</span>
           <span className="text-meta text-on-dark">{data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')}` : 'Loading…'}</span>
         </div>
         {([
@@ -338,7 +340,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
         ] as const).map(([label, v, hint]) => (
           <div key={label} className="rounded-card border border-solid border-line bg-card p-4 sm:p-5 flex flex-col gap-2 min-w-0">
             <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">{label}</span>
-            <span className="text-[24px] leading-none font-semibold tabular-nums">{data ? rmShort(v) : '—'}</span>
+            <span className="text-[16px] sm:text-[24px] leading-none font-semibold tabular-nums whitespace-nowrap">{data ? rm(v) : '—'}</span>
             <span className="text-meta text-muted-ink truncate">{hint}</span>
           </div>
         ))}

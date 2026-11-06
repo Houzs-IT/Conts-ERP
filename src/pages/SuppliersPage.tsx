@@ -1,5 +1,6 @@
 import { mayRun } from '../lib/areaAccess';
-import { useMemo, useState, type ReactNode } from 'react';
+import { FormSection } from '../components/Card';
+import { useMemo, useState } from 'react';
 import { Search, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -90,7 +91,7 @@ export default function SuppliersPage() {
     { key: 'phone', label: 'Phone', type: 'phone', value: s => s.phone, width: 140 },
     { key: 'category', label: 'Category', value: s => s.category },
     { key: 'terms', label: 'Terms', value: s => s.paymentTerms, width: 110 },
-    { key: 'credit', label: 'Credit limit', type: 'money', value: s => s.creditLimitSen, render: s => s.creditLimitSen ? <span className="tabular-nums whitespace-nowrap">{rm(s.creditLimitSen, { cents: false })}</span> : <span className="text-muted-ink">—</span> },
+    { key: 'credit', label: 'Credit limit', type: 'money', value: s => s.creditLimitSen, render: s => s.creditLimitSen ? <span className="tabular-nums whitespace-nowrap">{rm(s.creditLimitSen)}</span> : <span className="text-muted-ink">—</span> },
     { key: 'status', label: 'Status', type: 'status', value: s => s.status, entity: 'supplier' },
   ], []);
 
@@ -221,14 +222,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-2.5">
-      <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">{title}</div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">{children}</div>
-    </div>
-  );
-}
+const Section = FormSection;
 
 function Sel({ label, value, onChange, options }: { label: string; value: string; onChange: (e: { target: { value: string } }) => void; options: { value: string; label: string }[] }) {
   return (

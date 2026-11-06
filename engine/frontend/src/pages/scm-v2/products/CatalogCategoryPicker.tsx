@@ -3,7 +3,7 @@
    A legacy Houzs category (SOFA, ...) is shown as its group with its implied
    sub-category, and is only rewritten if the user picks something else.
    A hidden sub-category is offered only to the SKU that already has it. */
-import { RENOVATION_GROUPS, type CatalogGroup } from '../../../vendor/shared/renovation-catalog';
+import type { CatalogGroup } from '../../../vendor/shared/renovation-catalog';
 import { useRenovationCatalog } from '../../../vendor/scm/lib/renovation-catalog-queries';
 import styles from '../Products.module.css';
 
@@ -34,13 +34,13 @@ export function CatalogCategoryPicker({
             onChange({ group: g, sub: keep });
           }}
         >
-          {RENOVATION_GROUPS.map((g) => (
+          {catalog.groups.map((g) => (
             <option key={g.code} value={g.code}>{g.label}</option>
           ))}
         </select>
       </label>
       <label className={styles.field} htmlFor={`${idPrefix}-sub`}>
-        <span className={styles.fieldLabel}>{group === 'WORKS' ? 'Trade *' : 'Sub-category *'}</span>
+        <span className={styles.fieldLabel}>{group === 'WORKS' ? 'Trade *' : subs.length > 0 ? 'Sub-category *' : 'Sub-category'}</span>
         <select
           id={`${idPrefix}-sub`}
           className={styles.fieldSelect}

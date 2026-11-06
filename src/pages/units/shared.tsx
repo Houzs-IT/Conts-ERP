@@ -1,13 +1,18 @@
 import { mayRun } from '../../lib/areaAccess';
+import { Modal } from '../../components/Modal';
 import type { SessionUser } from '../../lib/types';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { cx } from '../../lib/design-tokens';
 import { useApi } from '../../lib/useApi';
 import { Select as UiSelect } from '../../components/Select';
 import type { UnitReadiness, TaskState, BookingChannel, ReservationState } from '../../lib/types';
-import type { RevenueModel, ContractCode, UnitPurpose } from '../../lib/revenueModel';
+import { BED_SIZES, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
 import type { OwnerAddress } from '../owners/shared';
 import type { PnlRow } from './PnlTable';
+import { PLACEHOLDER_OWNER } from '../../../functions/_lib/hostplatformImport';
+
+// Matched by name, as functions/_lib/placeholderOwner.ts does.
+export const isPlaceholderOwner = (name: string | null | undefined): boolean => (name ?? '').toLowerCase() === PLACEHOLDER_OWNER.toLowerCase();
 
 export const BANKS = ['MBBE', 'PBBB', 'CIBB', 'RHBB', 'HLBB', 'AMBB', 'BIMB', 'UOVB', 'OCBC'];
 export const STATES = ['Kuala Lumpur', 'Selangor', 'Penang', 'Johor', 'Melaka', 'Perak', 'Negeri Sembilan'];
@@ -36,6 +41,12 @@ const LAYOUT_TYPES_FALLBACK: LayoutTypesPayload = {
 };
 /** The unit Type list, hidden types too (a unit may still have one). */
 export const useLayoutTypes = (on = true) => useApi<LayoutTypesPayload>(on ? '/unit-layout-types' : null, LAYOUT_TYPES_FALLBACK);
+/** The bed size list (King, Queen, ...), same shape as the Type list; staff keep it on Unit settings since 0210. */
+export type BedSizesPayload = LayoutTypesPayload;
+const BED_SIZES_FALLBACK: BedSizesPayload = {
+  ready: false, mayEdit: false, data: BED_SIZES.map(({ value, label }, n) => ({ key: value, label, sortOrder: (n + 1) * 10, isActive: true })),
+};
+export const useBedSizes = (on = true) => useApi<BedSizesPayload>(on ? '/unit-bed-sizes' : null, BED_SIZES_FALLBACK);
 /** The layout a unit with this many bedrooms most likely has, to pre-fill an empty Layout type. */
 export const layoutFromBedrooms = (n: number | null | undefined): LayoutType | null =>
   n == null ? null : n <= 0 ? 'studio' : n === 1 ? '1_bedroom' : n === 2 ? '2_bedroom' : n === 3 ? '3_bedroom' : '4_plus_bedroom';
@@ -134,9 +145,14 @@ export function SectionHead({ children, noMargin }: { children: ReactNode; noMar
 export function Grid3({ children }: { children: ReactNode }) {
   return <div className="grid grid-cols-1 sm:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4 mb-[22px]">{children}</div>;
 }
-export function Labeled({ label, help, span2, children }: { label: string; help?: string; span2?: boolean; children: ReactNode }) {
+/** A row of short number boxes (bedrooms, bathrooms, size): each keeps the width of its own `Labeled` `className`
+ *  instead of a third of the form, so a 1 or 2 digit value does not sit in a 300px box. */
+export function NumberRow({ children }: { children: ReactNode }) {
+  return <div className="flex flex-wrap items-start gap-3 mb-[22px]">{children}</div>;
+}
+export function Labeled({ label, help, span2, className, children }: { label: string; help?: string; span2?: boolean; className?: string; children: ReactNode }) {
   return (
-    <div className={cx('flex flex-col gap-1.5 min-w-0', span2 && 'sm:[grid-column:span_2]')}>
+    <div className={cx('flex flex-col gap-1.5 min-w-0', span2 && 'sm:[grid-column:span_2]', className)}>
       <span className="text-meta font-medium text-muted-ink">{label}</span>
       {children}
       {help && <span className="text-caption text-muted-ink">{help}</span>}
@@ -153,21 +169,5 @@ export function ReadOnly({ children }: { children: ReactNode }) {
 }
 
 export function CentreModal({ title, sub, onClose, footer, children }: { title: string; sub?: string; onClose: () => void; footer: ReactNode; children: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.querySelector<HTMLInputElement>('input,select,textarea')?.focus();
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', k);
-    return () => document.removeEventListener('keydown', k);
-  }, [onClose]);
-  return (
-    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div ref={ref} className="relative w-full max-w-[460px] max-h-[calc(100vh-32px)] overflow-y-auto bg-card rounded-card shadow-[var(--shadow-overlay)]">
-        <div className="pt-[22px] px-[22px] pb-1"><h2 className="m-0 text-title font-semibold">{title}</h2>{sub && <p className="mt-[5px] mb-0 text-copy text-muted-ink">{sub}</p>}</div>
-        <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
-        <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end flex-wrap gap-[9px]">{footer}</div>
-      </div>
-    </div>
-  );
+  return <Modal title={title} sub={sub} onClose={onClose} footer={footer}>{children}</Modal>;
 }

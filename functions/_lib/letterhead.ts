@@ -1,3 +1,4 @@
+import { numericDate, rmText } from './format';
 /** The one letterhead and footer every printable document carries: guest invoices and official receipts, and the
  *  owner statement print view (functions/api/statements/pdf.ts). Company details come from Settings > Company
  *  (company.*, with the older org.* keys and the Settings defaults behind them); the Owner Income Report page reads
@@ -38,14 +39,12 @@ export async function companyDetails(env: Env): Promise<Company> {
 
 export const esc = (v: unknown) => String(v ?? '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!));
 /** RM 1,234.56 from sen. */
-export const ringgit = (sen: number) => `RM ${(Math.abs(sen) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-/** 3 Sep 2026 from YYYY-MM-DD or an ISO time, in Malaysia time. Month names are fixed (as src/lib/format.ts): the
- *  en-GB locale prints "Sept", which the date format does not allow. */
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export const ringgit = (sen: number) => rmText(Math.abs(sen));
+/** 2026/09/03 from YYYY-MM-DD or an ISO time, in Malaysia time (functions/_lib/dates.ts). */
 export const longDate = (d: string | null | undefined) => {
   if (!d) return '';
   const [y, m, day] = (d.length === 10 ? d : new Date(Date.parse(d) + 8 * 3600e3).toISOString().slice(0, 10)).split('-').map(Number);
-  return `${day} ${MON[m - 1]} ${y}`;
+  return numericDate(`${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
 };
 
 const CSS = `

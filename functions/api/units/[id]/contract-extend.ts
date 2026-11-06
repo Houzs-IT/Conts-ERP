@@ -3,6 +3,8 @@ import { requireSession, hasColumn } from '../../../_lib/auth';
 import { checkDate } from '../../../_lib/validate';
 import { modelOf, RENT_TO_RENT } from '../../../_lib/revenueModel';
 import { purposeReady, codeOf } from '../../../_lib/unitPurpose';
+import { contractTypes } from '../../../_lib/contractTypes';
+import { isPlaceholderOwner } from '../../../_lib/placeholderOwner';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const dayBefore = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
@@ -22,9 +24,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const b = await request.json<{ documentId?: string; startsOn?: string; endsOn?: string | null; renewsOn?: string | null }>().catch(() => null);
   if (!b) return fail('VALIDATION', 'Nothing to save.', 422);
 
-  const u = await one<any>(env, `SELECT u.id, u.purpose, u.package, u.contract_id, u.owner_id, p.name AS building, u.unit_number
-    FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, id);
+  const u = await one<any>(env, `SELECT u.id, u.purpose, u.package, u.contract_id, u.owner_id, p.name AS building, u.unit_number, o.display_name AS owner_name
+    FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id WHERE u.id = ?`, id);
   if (!u) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
+  if (isPlaceholderOwner(u.owner_name)) return fail('VALIDATION', 'Pick the owner on the Details tab first.', 422);
   const cur = u.contract_id ? await one<any>(env, 'SELECT * FROM owner_contracts WHERE id = ?', u.contract_id) : null;
   if (!cur) return fail('NO_CONTRACT', 'This unit has no contract to extend. Set one up on its Contract tab first.', 409);
 
@@ -42,7 +45,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (await one(env, 'SELECT 1 AS x FROM owner_contracts WHERE agreement_document_id = ?', doc.id)) {
     return fail('VALIDATION', 'That file is already the agreement of another contract period. Upload the new one.', 422, { documentId: 'Already used for another period.' });
   }
-  const code = codeOf(modelOf({ ...cur, contract_id: cur.id, package: u.package }), cur.contract_code);
+  const code = codeOf(await contractTypes(env), modelOf({ ...cur, contract_id: cur.id, package: u.package }), cur.contract_code);
 
   const shared = Number((await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM units WHERE contract_id = ? AND id <> ?', cur.id, id))?.n ?? 0) > 0;
   const newId = crypto.randomUUID(), now = nowIso();

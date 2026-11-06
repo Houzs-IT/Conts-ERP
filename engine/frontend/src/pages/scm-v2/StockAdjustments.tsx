@@ -12,7 +12,7 @@
 // ----------------------------------------------------------------------------
 
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, X } from "lucide-react";
 import { adjustmentReasonLabel, fmtDate, fmtDateTime, fmtQty } from "@2990s/shared";
 import { useWarehouses } from "../../vendor/scm/lib/inventory-queries";
@@ -57,7 +57,9 @@ function reasonTone(reasonCode: string | null): "warning" | "neutral" | "success
 export function StockAdjustments() {
   const navigate = useNavigate();
   const [warehouseId, setWarehouseId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  // Conts: the top-bar search opens this list searched for one item (?q=).
+  const [params] = useSearchParams();
+  const [search, setSearch] = useState(() => params.get("q") ?? "");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
 

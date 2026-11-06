@@ -70,6 +70,13 @@ jobs:
         if: steps.part.outputs.part == 'both' || steps.part.outputs.part == 'screens'
         run: npm ci && npm run build
         working-directory: engine/frontend
+      - name: Keep the previous screens' files
+        if: steps.part.outputs.part == 'both' || steps.part.outputs.part == 'screens'
+        # A tab left open still asks for its own build's files: without them its PDFs fail after every deploy.
+        continue-on-error: true
+        timeout-minutes: 5
+        run: node scripts/retain-previous-assets.mjs --base https://theconts-scm-live.pages.dev
+        working-directory: engine/frontend
       - name: Publish engine screens
         if: steps.part.outputs.part == 'both' || steps.part.outputs.part == 'screens'
         run: node scripts/engine-production.mjs screens

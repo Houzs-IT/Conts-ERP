@@ -14,8 +14,8 @@ import { useApi } from '../lib/useApi';
 import { useMedia } from '../lib/useMedia';
 import { saveBlob, toXlsx, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
-import { count, monthLabel, percent, plural, rmShort, todayMyt } from '../lib/format';
-import { overallFigures, overallTotals, GROUP_NAME, REPORT_GROUPS, type OverallInput, type OverallTotals, type ReportGroup } from '../lib/ownerOverall';
+import { count, monthLabel, percent, plural, rm, todayMyt } from '../lib/format';
+import { overallFigures, overallTotals, occupancyLabel, GROUP_NAME, REPORT_GROUPS, type OverallInput, type OverallTotals, type ReportGroup } from '../lib/ownerOverall';
 import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, type Level, type ReportRow } from './OwnerOverallDetail';
 
 /** /portfolio/owner-report — the overall owner report (the owner workbook's overall report sheet) for one month: every
@@ -110,7 +110,7 @@ function Value({ c, v }: { c: Col; v: number }) {
     case 'occ': return v ? (
       <span className="inline-flex items-center justify-center gap-2">
         <span aria-hidden className="h-1 w-10 rounded-full bg-muted overflow-hidden"><span className="block h-full bg-line-strong" style={{ width: `${Math.min(v, 100)}%` }} /></span>
-        <span className={cx('tabular-nums', tone)}>{percent(v)}</span>
+        <span className={cx('tabular-nums', tone)}>{occupancyLabel(v)}</span>
       </span>) : dash;
     case 'int': return v ? <span className={cx('tabular-nums', tone)}>{count(v)}</span> : dash;
     case 'ownpct': return v ? <span className={cx('tabular-nums', tone)}>{v}%</span> : dash;
@@ -247,6 +247,8 @@ export default function OwnerOverallReportPage() {
   }
 
   const present = REPORT_GROUPS.map(g => ({ group: g, n: all.filter(r => r.group === g).length })).filter(g => g.n);
+  // Rent to rent keeps its chip even in a month with no such unit; No contract units show under All only (owner, 5 Nov 2026).
+  const chips: ReportGroup[] = [...present.map(p => p.group).filter(g => g !== 'RTR' && g !== 'NONE'), 'RTR'];
   const detail = row && (
     <OwnerOverallDetail row={row} all={all} level={level} onLevel={setLevel} onClose={() => setSelected(null)}
       onStep={step} position={at + 1} total={order.length} />
@@ -343,9 +345,9 @@ export default function OwnerOverallReportPage() {
           <span className="block text-meta">Gain/Loss = GP − owner base (the owner's part of the rent, the fixed rent, or the higher of O1 and GRR), before O2</span>
         </> : 'Every unit\'s month, as on the owner statements'}
         actions={<>
-          <Button variant="secondary" icon={<Icon name="FileSpreadsheet" size="sm" />} onClick={exportExcel}
+          <Button variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel}
             title="The units shown, with these filters and this sort, every column, and the totals."
-            disabled={!filtered.length} disabledReason="No units to export for this month and these filters.">Export Excel</Button>
+            disabled={!filtered.length} disabledReason="No units to export for this month and these filters.">Export</Button>
           <Select label="Month" value={month} options={MONTHS} className="w-[180px]"
             onChange={v => setParams(p => { const n = new URLSearchParams(p); if (v === MONTHS[1].value) n.delete('month'); else n.set('month', v); return n; }, { replace: true })} />
         </>}
@@ -353,14 +355,14 @@ export default function OwnerOverallReportPage() {
 
       <StatRow cols={5}>
         {/* Full width until the five tiles share one row, so the two-column grid has no tile left alone. */}
-        <StatTile hero className="col-span-2 xl:col-span-1" label="Total revenue" value={data ? rmShort(totals.revenue) : undefined} loading={loading && !data}
-          hint={`${plural(totals.units, 'unit')} · ${percent(totals.occupancy)} occupancy`} />
-        <StatTile label="Total deduction" value={data ? rmShort(totals.deductions) : undefined} loading={loading && !data}
+        <StatTile hero className="col-span-2 xl:col-span-1" label="Total revenue" value={data ? rm(totals.revenue) : undefined} loading={loading && !data}
+          hint={`${plural(totals.units, 'unit')} · ${occupancyLabel(totals.occupancy)} occupancy`} />
+        <StatTile label="Total deduction" value={data ? rm(totals.deductions) : undefined} loading={loading && !data}
           hint={totals.revenue ? `${percent((totals.deductions / totals.revenue) * 100)} of revenue` : '—'} />
-        <StatTile label="Gross profit" value={data ? rmShort(totals.gp) : undefined} loading={loading && !data}
+        <StatTile label="Gross profit" value={data ? rm(totals.gp) : undefined} loading={loading && !data}
           hint={totals.revenue ? `${percent(totals.margin)} margin` : '—'} />
-        <StatTile label="Owner payout" value={data ? rmShort(totals.payout) : undefined} loading={loading && !data} hint="Every income model, with O2" />
-        <StatTile label="Gain / Loss" value={data ? rmShort(totals.gainLoss) : undefined} loading={loading && !data}
+        <StatTile label="Owner payout" value={data ? rm(totals.payout) : undefined} loading={loading && !data} hint="Every income model, with O2" />
+        <StatTile label="Gain / Loss" value={data ? rm(totals.gainLoss) : undefined} loading={loading && !data}
           tone={totals.gainLoss < 0 ? 'critical' : 'success'} hint={`${count(totals.losing)} of ${plural(totals.units, 'unit')} losing`} />
       </StatRow>
 
@@ -372,7 +374,7 @@ export default function OwnerOverallReportPage() {
         <div className="flex flex-col gap-1">
           <Eyebrow>Contract</Eyebrow>
           <Segmented label="Contract" value={contract} onChange={setContract}
-            options={[{ key: 'all' as Contract, label: 'All' }, ...present.map(g => ({ key: g.group as Contract, label: GROUP_NAME[g.group] }))]} />
+            options={[{ key: 'all' as Contract, label: 'All' }, ...chips.map(g => ({ key: g as Contract, label: GROUP_NAME[g] }))]} />
         </div>
         <div className="flex flex-col gap-1">
           <Eyebrow>Detail level</Eyebrow>
@@ -396,7 +398,7 @@ export default function OwnerOverallReportPage() {
             {chip('losing', 'Losing', all.filter(r => r.gainLoss < 0).length)}
             {chip('gaining', 'Gaining', all.filter(r => r.gainLoss >= 0).length)}
             {chip('vacant', '0% occupancy', all.filter(r => r.nights === 0 && r.days > 0).length)}
-            <button type="button" onClick={reset} className="h-8 px-3 rounded-full border-none bg-transparent text-meta text-muted-ink cursor-pointer hover:text-ink">Reset</button>
+            <button type="button" onClick={reset} className="hit-target h-8 px-3 rounded-full border-none bg-transparent text-meta text-muted-ink cursor-pointer hover:text-ink">Reset</button>
           </div>
         </div>
         <span className="ml-auto self-center text-meta text-muted-ink tabular-nums">Showing {count(filtered.length)} of {count(all.length)}</span>

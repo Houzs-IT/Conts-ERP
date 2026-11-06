@@ -36,6 +36,7 @@ import { MediaLightbox } from "../MediaLightbox";
 import {
   photoContentType,
   poLinePhotoLightboxBase,
+  productionLinePhotoLightboxBase,
   soLinePhotoLightboxBase,
   useScmLinePhoto,
   type LinePhotoSource,
@@ -93,6 +94,9 @@ function Thumb({
   );
 }
 
+/** Thumbs a read-only strip shows before its "+N". */
+export const STRIP_MAX = 3;
+
 export type LinePhotoEdit = {
   /** Upload one image onto this line; the caller owns errors + refetch. */
   onUpload: (file: File) => Promise<void>;
@@ -137,8 +141,10 @@ export function SoLinePhotoStrip({
 
   return (
     <>
-      <span className="flex flex-wrap items-center gap-1">
-        {photoKeys.map((k, i) => (
+      {/* Read only, a line shows a few thumbs and "+N" that opens the rest in the viewer: six photos in the narrow
+          Photos column made a cramped block (owner, 3 Nov 2026). Editing shows them all. */}
+      <span className={`flex items-center gap-1 ${edit ? "flex-wrap" : "flex-nowrap"}`}>
+        {(edit ? photoKeys : photoKeys.slice(0, STRIP_MAX)).map((k, i) => (
           <span key={k} className="relative inline-flex">
             <Thumb
               source={source}
@@ -165,6 +171,17 @@ export function SoLinePhotoStrip({
             )}
           </span>
         ))}
+        {!edit && photoKeys.length > STRIP_MAX && (
+          <button
+            type="button"
+            onClick={() => setOpenAt(STRIP_MAX)}
+            title={`${photoKeys.length} photos: open the rest`}
+            aria-label={`${photoKeys.length - STRIP_MAX} more photos`}
+            className="inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded border border-border bg-surface-2 px-1 text-[11px] font-semibold text-ink-secondary hover:border-primary hover:text-primary"
+          >
+            +{photoKeys.length - STRIP_MAX}
+          </button>
+        )}
         {edit && (
           <>
             <button
@@ -199,7 +216,9 @@ export function SoLinePhotoStrip({
           onChange={setOpenAt}
           onClose={() => setOpenAt(null)}
           baseUrl={
-            source === "po"
+            source === "pro"
+              ? productionLinePhotoLightboxBase(docId, itemId)
+              : source === "po"
               ? poLinePhotoLightboxBase(docId, itemId)
               : soLinePhotoLightboxBase(docId, itemId)
           }

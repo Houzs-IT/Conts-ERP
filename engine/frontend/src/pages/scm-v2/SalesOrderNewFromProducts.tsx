@@ -45,8 +45,10 @@ void _useQuery;
 import { Button } from "../../components/Button";
 import {
   useMfgProducts,
+  type MfgCategory,
   type MfgProductRow,
 } from "../../vendor/scm/lib/mfg-products-queries";
+import { useCategoryOptions } from "../../vendor/scm/lib/renovation-catalog-queries";
 import {
   useCreateMfgSalesOrder,
   useDebtorSearch,
@@ -66,16 +68,7 @@ import { PhoneInput } from "../../vendor/scm/components/PhoneInput";
 
 // ── Types & constants ───────────────────────────────────────────────────────
 
-type Category = "ALL" | "SOFA" | "BEDFRAME" | "MATTRESS" | "ACCESSORY" | "SERVICE";
-
-const CATEGORIES: Array<{ key: Category; label: string }> = [
-  { key: "ALL", label: "All" },
-  { key: "SOFA", label: "Sofas" },
-  { key: "BEDFRAME", label: "Bedframes" },
-  { key: "MATTRESS", label: "Mattresses" },
-  { key: "ACCESSORY", label: "Accessories" },
-  { key: "SERVICE", label: "Services" },
-];
+type Category = string; // "ALL", or a code of the master list
 
 type Customer = {
   name: string;
@@ -163,7 +156,7 @@ export function SalesOrderNewFromProducts() {
   // Catalogue shows a prompt instead. Cart selections are held in `knownByCode`
   // + `cartQty`, independent of this query, so gating never drops a picked item.
   const productsQ = useMfgProducts({
-    category: cat === "ALL" ? undefined : cat,
+    category: cat === "ALL" ? undefined : (cat as MfgCategory),
     search: q.trim() || undefined,
     enabled: q.trim().length >= 2 || cat !== "ALL",
   });
@@ -481,6 +474,7 @@ function Catalogue({
   onClearFilters: () => void;
   onManualAdd: () => void;
 }) {
+  const categoryOptions = useCategoryOptions();
   const filteredActive = useMemo(
     () => products.filter((p) => p.status === "ACTIVE"),
     [products],
@@ -530,13 +524,13 @@ function Catalogue({
 
       {/* Category chips */}
       <div className="mt-3 flex flex-wrap gap-1.5">
-        {CATEGORIES.map((c) => {
-          const isOn = cat === c.key;
+        {[{ value: "ALL", label: "All" }, ...categoryOptions].map((c) => {
+          const isOn = cat === c.value;
           return (
             <button
-              key={c.key}
+              key={c.value}
               type="button"
-              onClick={() => setCat(c.key)}
+              onClick={() => setCat(c.value)}
               className={cn(
                 "rounded-full border px-3 py-1 text-[11.5px] font-semibold transition-colors",
                 isOn
@@ -609,7 +603,7 @@ function Catalogue({
               <>
                 the{" "}
                 <span className="font-semibold text-accent">
-                  {CATEGORIES.find((c) => c.key === cat)?.label}
+                  {categoryOptions.find((c) => c.value === cat)?.label}
                 </span>{" "}
                 category
               </>

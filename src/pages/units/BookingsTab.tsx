@@ -72,7 +72,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
 
   const money = d?.rows.some(r => r.grossBookingValue !== undefined) ?? false;
   const summary = d && d.total > 0
-    ? `${count(d.total)} ${d.total === 1 ? 'reservation' : 'reservations'}${d.totalGross != null ? ` · ${rm(d.totalGross, { cents: false })} guest total` : ''}`
+    ? `${count(d.total)} ${d.total === 1 ? 'reservation' : 'reservations'}${d.totalGross != null ? ` · ${rm(d.totalGross)} guest total` : ''}`
     : null;
 
   const today = d?.today;
@@ -91,12 +91,12 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
     { key: 'guest', label: 'Guest', value: s => stayWho(s).name, width: 170,
       render: s => { const w = stayWho(s); return <span className={cx('whitespace-nowrap overflow-hidden text-ellipsis block', w.missing || w.hold ? 'text-muted-ink' : 'font-medium')} title={w.name}>{w.name}</span>; },
       sub: s => stayWho(s).hold ? null : [stayWho(s).missing ? 'No guest name' : null, `${s.guestsCount} ${s.guestsCount === 1 ? 'guest' : 'guests'}`].filter(Boolean).join(' · ') },
-    { key: 'stay', label: 'Dates', type: 'date', value: s => s.checkIn, width: 160,
+    { key: 'stay', label: 'Dates', type: 'date', value: s => s.checkIn, width: 200,
       render: s => <span className="whitespace-nowrap">{dateRange(s.checkIn, s.checkOut)}</span>,
       exportKind: 'text', exportValue: s => `${s.checkIn} to ${s.checkOut}` },
     { key: 'nights', label: 'Nights', type: 'number', value: s => nightsOf(s), width: 70 },
     ...(money ? [{ key: 'gross', label: 'Guest total', type: 'money', value: s => (s.grossBookingValue != null && s.grossBookingValue > 0 ? s.grossBookingValue : null), width: 110,
-      render: s => <span className="font-medium tabular-nums whitespace-nowrap">{s.grossBookingValue != null && s.grossBookingValue > 0 ? rm(s.grossBookingValue, { cents: false }) : '—'}</span> }] as Column<Stay>[] : []),
+      render: s => <span className="font-medium tabular-nums whitespace-nowrap">{s.grossBookingValue != null && s.grossBookingValue > 0 ? rm(s.grossBookingValue) : '—'}</span> }] as Column<Stay>[] : []),
     { key: 'status', label: 'Status', type: 'status', value: s => stayPhase(s, today), entity: 'stay', width: 130, filter: false,
       render: s => <StatusBadge entity="stay" value={stayPhase(s, today)} /> },
   ], [money, today]);
@@ -133,7 +133,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
           </span>
           <span className="flex flex-col items-end gap-1 flex-none">
             {s.grossBookingValue != null && s.grossBookingValue > 0 && (
-              <span className="text-copy font-medium [font-variant-numeric:tabular-nums]">{rm(s.grossBookingValue, { cents: false })}</span>
+              <span className="text-copy font-medium [font-variant-numeric:tabular-nums]">{rm(s.grossBookingValue)}</span>
             )}
             <StatusBadge entity="stay" value={stayPhase(s, d?.today)} size="sm" />
           </span>

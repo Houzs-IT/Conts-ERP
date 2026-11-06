@@ -45,7 +45,7 @@ export async function downloadClientPdf(opts: { projectName: string; clientName:
       body.push([{ content: `   ${s.label}`, colSpan: 6, styles: { fillColor: [243, 249, 248], fontStyle: "bold", textColor: [60, 70, 68] } }]);
       for (const i of s.items) {
         body.push([
-          `${i.description || "-"}${i.pending ? "\n(not confirmed yet)" : ""}`,
+          i.description || "-",
           i.itemCode ?? "-",
           i.area ?? "-",
           i.measure ?? `${i.qty}${i.uom ? ` ${i.uom}` : ""}`,

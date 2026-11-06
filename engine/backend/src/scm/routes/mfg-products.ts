@@ -39,12 +39,12 @@ import { PRODUCT_CODE_CASCADE } from '../lib/product-code-rename';
 import { moveModelCategory, planModelCategoryMoves, type ImportModelMove } from '../lib/model-category-move';
 import { ensureModelForSku, modelCodeForSku } from '../lib/ensure-model-for-sku';
 import { MFG_PRODUCT_CATEGORIES, MFG_CATEGORY_LABELS, mfgCategoryLabel, parseMfgCategory } from '../shared/product-categories';
-import { isUom, parseSubCategory, parseUom, validateCategoryPair } from '../shared/renovation-catalog';
+import { categoriesInGroup, isUom, parseSubCategory, parseUom, validateCategoryPair } from '../shared/renovation-catalog';
 import {
   deleteMfgProductPhotoHandler, listMfgProductPhotosHandler, patchMfgProductPhotoHandler,
   photoKeysFor, primaryPhotosFor, uploadMfgProductPhotoHandler,
 } from './mfg-product-photos';
-import { loadSubCategories, loadUoms } from './renovation-catalog-settings';
+import { loadCategoryGroups, loadSubCategories, loadUoms } from './renovation-catalog-settings';
 import { resolveDefaultParty, type BindingForParty } from '../lib/default-supply-party';
 
 export const mfgProducts = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -216,7 +216,7 @@ export const listMfgProductsHandler = async (c: AppContext) => {
       )
       .order('code', { ascending: true });
     if (!allStatuses) q = q.eq('status', 'ACTIVE');
-    if (category) q = q.eq('category', category);
+    if (category) q = q.in('category', categoriesInGroup(category));
     if (group) q = q.eq('category_group', group);
     if (sub) q = q.eq('sub_category', sub);
     // 0166 — barcode rides the same OR-chain so a scanner blast into the SKU
@@ -381,11 +381,16 @@ export const createMfgProductHandler = async (c: AppContext) => {
   const category = String(body.category ?? '').trim();
   if (!code)  return c.json({ error: 'code_required' }, 400);
   if (!name)  return c.json({ error: 'name_required' }, 400);
-  if (!VALID_CATEGORIES.has(category)) return c.json({ error: 'invalid_category', allowed: [...VALID_CATEGORIES] }, 400);
+  /* The enum list is the fast path; a category staff added at run time is in the master list. */
+  let liveGroups: string[] = [];
+  if (!VALID_CATEGORIES.has(category)) {
+    try { liveGroups = (await loadCategoryGroups(c.get('supabase'))).map((g) => g.code); } catch (e) { return c.json({ error: 'load_failed', reason: (e as Error).message }, 500); }
+    if (!liveGroups.includes(category)) return c.json({ error: 'invalid_category', allowed: [...VALID_CATEGORIES, ...liveGroups] }, 400);
+  }
   /* Renovation catalog: a new group (WORKS, BUILTIN, ...) needs a sub-category of
      that group; a legacy Houzs category may carry one but does not need it. */
   const subCategory = typeof body.subCategory === 'string' && body.subCategory.trim() ? body.subCategory.trim().toUpperCase() : null;
-  const pair = subCategory ? validateCategoryPair(category, subCategory, (await loadSubCategories(c.get('supabase'))).filter((s) => s.active !== false)) : validateCategoryPair(category, null);
+  const pair = subCategory ? validateCategoryPair(category, subCategory, (await loadSubCategories(c.get('supabase'))).filter((s) => s.active !== false), liveGroups) : validateCategoryPair(category, null, undefined, liveGroups);
   if (!pair.ok) return c.json({ error: pair.error }, 400);
   const uom = typeof body.uom === 'string' && body.uom.trim() ? body.uom.trim().toUpperCase() : null;
   if (uom) {
@@ -483,7 +488,12 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
   let upserted = 0;
   const failures: Array<{ code: string; reason: string }> = [];
 
-  const plan = await planModelCategoryMoves(supabase, co.companyId, list);
+  /* Only a sheet naming a category outside the enum list needs the master list. */
+  let liveCategories: Awaited<ReturnType<typeof loadCategoryGroups>> = [];
+  if (list.some((r) => String(r.category ?? '').trim() && !parseMfgCategory(String(r.category)))) {
+    try { liveCategories = await loadCategoryGroups(supabase); } catch (e) { return c.json({ error: 'load_failed', reason: (e as Error).message }, 500); }
+  }
+  const plan = await planModelCategoryMoves(supabase, co.companyId, list, liveCategories);
   if (!plan.ok) return c.json({ error: 'load_failed', reason: plan.reason }, 500);
   let subList: Awaited<ReturnType<typeof loadSubCategories>>;
   try { subList = await loadSubCategories(supabase); } catch (e) { return c.json({ error: 'load_failed', reason: (e as Error).message }, 500); }
@@ -510,7 +520,7 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
        A filled cell that is not a category is REPORTED: it used to be dropped
        without a word, so a batch category edit could save everything except
        the category and still say "updated" (owner 2026-09-15). */
-    const category = parseMfgCategory(categoryCell);
+    const category = parseMfgCategory(categoryCell, liveCategories);
     if (!code) {
       failures.push({ code, reason: 'missing code' });
       continue;
@@ -537,7 +547,7 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
     if (categoryCell && !category) {
       failures.push({
         code,
-        reason: `category "${categoryCell}" is not a category — use one of: ${MFG_PRODUCT_CATEGORIES.map((c) => MFG_CATEGORY_LABELS[c]).join(', ')}.`,
+        reason: `category "${categoryCell}" is not a category — use one of: ${[...MFG_PRODUCT_CATEGORIES.map((c) => MFG_CATEGORY_LABELS[c] as string), ...liveCategories.filter((g) => !VALID_CATEGORIES.has(g.code)).map((g) => g.label)].join(', ')}.`,
       });
       continue;
     }
@@ -585,7 +595,7 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
     const categoryChanged = !!category && category !== prev?.category;
     const finalSub = sub ?? (categoryChanged ? null : (prev?.sub_category ?? null));
     if (sub || category) {
-      const pair = validateCategoryPair(finalCategory, finalSub, subList);
+      const pair = validateCategoryPair(finalCategory, finalSub, subList, liveCategories.map((g) => g.code));
       if (!pair.ok) {
         failures.push({
           code,
@@ -1007,11 +1017,15 @@ export const patchMfgProductHandler = async (c: AppContext) => {
     const trimmed = typeof body.barcode === 'string' ? body.barcode.trim() : null;
     updates.barcode = trimmed ? trimmed : null;
   }
+  let liveGroups: string[] = [];
   if (body.category !== undefined && String(body.category).toUpperCase() !== String(current.category ?? '').toUpperCase()) {
+    if (!VALID_CATEGORIES.has(String(body.category).toUpperCase())) {
+      try { liveGroups = (await loadCategoryGroups(supabase)).map((g) => g.code); } catch (e) { return c.json({ error: 'load_failed', reason: (e as Error).message }, 500); }
+    }
     if (current.model_id) {
       return c.json({ error: 'category_on_model', reason: 'This SKU belongs to a model — change the category on the model, and its SKUs move with it.' }, 409);
     }
-    if (!categorySwapAllowed(current.category, body.category)) {
+    if (!categorySwapAllowed(current.category, body.category, liveGroups)) {
       return c.json({ error: 'category_change_not_allowed', reason: `"${String(body.category)}" is not a product category.` }, 409);
     }
     updates.category = String(body.category).toUpperCase();
@@ -1036,7 +1050,7 @@ export const patchMfgProductHandler = async (c: AppContext) => {
     }
     if (body.subCategory !== undefined || categoryChanged) {
       const finalSub = (updates.sub_category as string | null | undefined) ?? null;
-      const pair = finalSub ? validateCategoryPair(finalCategory, finalSub, await loadSubCategories(supabase)) : validateCategoryPair(finalCategory, null);
+      const pair = finalSub ? validateCategoryPair(finalCategory, finalSub, await loadSubCategories(supabase), liveGroups) : validateCategoryPair(finalCategory, null, undefined, liveGroups);
       if (!pair.ok) return c.json({ error: pair.error }, 400);
     }
     if (body.uom !== undefined) {

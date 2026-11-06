@@ -15,8 +15,10 @@ import { def as permission, extraSelfTest as permissionSelfTest } from './requir
 import { def as queryLoops } from './no-query-in-loop.mjs';
 import { def as entryBundle } from './entry-bundle.mjs';
 import { def as vocabulary } from './vocabulary.mjs';
+import { def as sharedPaths } from './shared-paths.mjs';
+import { def as enginePalette } from './engine-palette.mjs';
 
-const checks = [formatting, colours, dialogs, cjk, emoji, pills, session, audit, rawInputs, mytDates, csvFormula, permission, queryLoops, entryBundle, vocabulary];
+const checks = [sharedPaths, enginePalette, formatting, colours, dialogs, cjk, emoji, pills, session, audit, rawInputs, mytDates, csvFormula, permission, queryLoops, entryBundle, vocabulary];
 let total = 0;
 for (const p of permissionSelfTest()) { console.log(`FAIL require-permission self-test: ${p}`); total++; }
 for (const c of checks) total += runCheck(c);

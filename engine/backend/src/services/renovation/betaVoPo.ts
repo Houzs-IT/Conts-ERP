@@ -7,14 +7,18 @@
    because the VO carries the add / omit lines with their room and amounts.
    PO: every purchase order stamped with the project (purchase_orders.project_id, 0116) or holding a line bought for
    one of the project's SO lines (purchase_order_items.so_item_id).
-   Client PO: SO lines the client buys: supplied by the owner, or a customer-supplied SKU (supplier CUSTOMER;
-   isCustomerSupplied in renovation-po-split.ts). */
+   Client PO: the SO lines a live PO to the supplier CUSTOMER buys. It starts empty: a line comes here once MRP opens
+   that PO (owner, 4 Nov 2026). */
 
 import { readVo } from "../../scm/lib/renovation-vo";
 import { isCustomerSupplied, poPickerOffers, voGoesTo } from "../../scm/lib/renovation-po-split";
 import { renoDbFromD1 } from "./dbBridge";
 import { isMissingRelation, type Db } from "./load";
 import { lineVisible, type CategoryScope } from "../categoryAccess";
+import {
+  amendmentChanges, asObject, describeChange, facetLabel, pairOmitAdd, variantsAsOf, voTopic,
+  type ChangeFacet, type ChangeSide, type PairItem,
+} from "./renovationVoChanges";
 
 async function rows<T>(db: Db, sql: string, ...args: unknown[]): Promise<T[]> {
   const res = await db.prepare(sql).bind(...args).all<T>();
@@ -52,6 +56,10 @@ export interface VoLine {
   /** What a change to an existing line moved, in words ("Colour: White -> Grey", "Remark: ..."), so a change that
       costs nothing (a colour or a remark) still reads as a record. Empty for an added or removed line. */
   changes?: string[];
+  /** What kind of change the line is (renovationVoChanges.ts), headline first: added, removed, sku, qty, price, options. */
+  facets?: ChangeFacet[];
+  /** The facets in words for this caller ("Qty changed 1 → 2"); a price's figures only when finance is shown. */
+  changeLabels?: string[];
 }
 
 export interface VoRow {
@@ -62,6 +70,8 @@ export interface VoRow {
   no: string;
   soDocNo: string;
   title: string | null;
+  /** One line saying what the VO does: the title staff typed, else "2 changed, 1 added: SOFA 3S qty 1 → 2; ...". */
+  topic?: string;
   status: string;
   statusLabel: string;
   bucket: VoBucket;
@@ -275,8 +285,17 @@ export function scopeVos<T extends VoRow>(vos: readonly T[], scope: CategoryScop
   });
 }
 
+/** The line's change in words, and the VO's topic, for a caller who does or does not see money. */
+export function withWords<T extends VoRow>(v: T, money: boolean): T {
+  const lines = v.lines.map((l) => ({ ...l, changeLabels: (l.facets ?? []).map((f) => facetLabel(f, money)) }));
+  return { ...v, lines, topic: voTopic(v.title, lines.map((l) => ({ description: l.description, itemCode: l.itemCode, facets: l.facets ?? [] })), money) };
+}
+
 function hideMoney(v: VoRow): VoRow {
-  return { ...v, netSen: null, lines: v.lines.map((l) => ({ ...l, amountSen: null })) };
+  return {
+    ...v, netSen: null,
+    lines: v.lines.map((l) => ({ ...l, amountSen: null, facets: l.facets?.map((f) => (f.kind === "price" ? { ...f, from: null, to: null } : f)) })),
+  };
 }
 
 /* ---------- reads ---------- */
@@ -324,7 +343,8 @@ async function amendmentVos(db: Db, projectId: number, companyId: number): Promi
   const byId = new Map<string, VoLine[]>();
   for (const l of lines) {
     const list = byId.get(l.amendment_id) ?? [];
-    list.push(amendmentLineChange(l));
+    const [c] = amendmentChanges([{ ...l, id: l.amendment_id, cur_unit_price_sen: null, cur_variants: null }]);
+    list.push({ ...amendmentLineChange(l), facets: c?.facets ?? [] });
     byId.set(l.amendment_id, list);
   }
   return heads.map((h) => {
@@ -347,10 +367,13 @@ async function renovationVos(db: Db, projectId: number, companyId: number, custo
     projectId, companyId);
   const reno = renoDbFromD1(db);
   const out: VoRow[] = [];
-  for (const h of heads) {
-    const v = await readVo(reno, h.id, companyId);
+  const vos = [];
+  for (const h of heads) vos.push(await readVo(reno, h.id, companyId));
+  const sides = await renoVoSides(db, vos);
+  for (const [vi, h] of heads.entries()) {
+    const v = vos[vi];
     const [statusLabel, bucket] = renoVoStatus(v.status);
-    const lines: VoLine[] = [];
+    const items: Array<PairItem<RenoVoDraftLine>> = [];
     for (const s of v.sections) {
       for (const l of s.lines) {
         if (l.kind !== "ITEM" && l.kind !== "CHILD") continue;
@@ -358,16 +381,20 @@ async function renovationVos(db: Db, projectId: number, companyId: number, custo
         const client = l.supplyByOwner
           || isCustomerSupplied({ itemCode: l.itemCode, supplierCode: l.supplierId ? (customerIds.has(l.supplierId) ? "CUSTOMER" : "OTHER") : null, unitCostSen: l.unitCostSen });
         const measured = l.measureMilli !== null && l.measure !== null;
-        lines.push({
+        const line: VoLine = {
           itemCode: l.itemCode, description: l.description, room: l.room || null,
           qty: measured ? (omit ? -1 : 1) : omit ? -l.qty : l.qty,
           measure: measured ? `${Number(l.measure)} ${l.measureUom ?? ""}`.trim() : null,
           lineQty: omit ? 0 : measured ? 1 : l.qty,
           amountSen: l.netSen, change: omit ? "deduct" : "add", fromItemCode: null, categoryCode: null, subCode: null,
           goesTo: client ? "client" : !l.supplierId && !poPickerOffers({ itemCode: l.itemCode, itemGroup: null, mainSupplierCode: null }) ? "works" : "po",
-        });
+        };
+        const side = omit ? renoOldSide(l, sides.targets.get(l.omitTargetLineId ?? ""), v.status === "APPROVED") : renoNewSide(l, sides.added.get(`${v.id}|${l.id}`));
+        line.room = side.room;
+        items.push({ side: omit ? "omit" : "add", group: s.id, room: side.room, itemCode: l.itemCode, payload: { line, side, partial: omit ? partialQty(l, sides.targets.get(l.omitTargetLineId ?? ""), v.status === "APPROVED") : null } });
       }
     }
+    const lines = pairOmitAdd(items).map((p) => mergeRenoPair(p.omit, p.add));
     out.push({
       key: `v:${v.id}`, label: "", source: "renovation", no: v.voNo, soDocNo: v.soDocNo, title: v.title || null, status: v.status, statusLabel, bucket,
       date: v.docDate, raisedBy: h.created_by, recorded: false, approvedBy: bucket === "approved" ? v.approvedBy : null, approvedAt: bucket === "approved" ? v.approvedAt : null,
@@ -385,6 +412,111 @@ async function renovationVos(db: Db, projectId: number, companyId: number, custo
     }
   }
   return out;
+}
+
+/* ---------- what each renovation VO line changed ---------- */
+
+type RenoVoOut = Awaited<ReturnType<typeof readVo>>;
+type RenoVoDocLine = RenoVoOut["sections"][number]["lines"][number];
+
+/** A VO line before pairing: the tab's line, the side it stands for, and for an omit of part of a line its qty before and after. */
+export interface RenoVoDraftLine { line: VoLine; side: ChangeSide; partial: { from: number; to: number } | null }
+
+interface TargetRow { id: string; qty: number | null; unit_price_sen: number | null; room: string | null; variants: unknown; remark: string | null }
+interface AddedRow { variants: unknown; room: string | null }
+
+/** The contract line an omit names (its SO line's options and room), and the SO line each approved add became, with
+    its options as they stood when the VO was approved: an option edited afterwards on that line (an SO audit UPDATE
+    of its variants) is undone from the edit's "from", so VO-01's qty change does not read as a later colour change. */
+async function renoVoSides(db: Db, vos: readonly RenoVoOut[]): Promise<{ targets: Map<string, TargetRow>; added: Map<string, AddedRow> }> {
+  const targets = new Map<string, TargetRow>();
+  const added = new Map<string, AddedRow>();
+  const targetIds = [...new Set(vos.flatMap((v) => v.sections.flatMap((s) => s.lines.flatMap((l) => (l.voChange === "OMIT" && l.omitTargetLineId ? [l.omitTargetLineId] : [])))))];
+  if (targetIds.length) {
+    const r = await rows<TargetRow>(db,
+      `SELECT t.id::text AS id, t.qty, t.unit_price_sen, i.variants, i.remark,
+              coalesce(nullif(trim(t.room), ''), nullif(trim(i.room), ''), nullif(trim(i.location), '')) AS room
+         FROM scm.reno_doc_lines t LEFT JOIN scm.mfg_sales_order_items i ON i.id = t.so_item_id
+        WHERE t.id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
+      JSON.stringify(targetIds));
+    for (const x of r) targets.set(x.id, x);
+  }
+  const approved = vos.filter((v) => v.status === "APPROVED");
+  if (approved.length === 0) return { targets, added };
+  const contract = await rows<{ vo_id: string; item_code: string | null; qty: number | null; variants: unknown; room: string | null }>(db,
+    `SELECT s.added_by_vo_id::text AS vo_id, l.item_code, l.qty, i.variants,
+            coalesce(nullif(trim(i.room), ''), nullif(trim(i.location), ''), nullif(trim(l.room), '')) AS room
+       FROM scm.reno_doc_sections s JOIN scm.reno_doc_lines l ON l.section_id = s.id
+       LEFT JOIN scm.mfg_sales_order_items i ON i.id = l.so_item_id
+      WHERE s.added_by_vo_id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+      ORDER BY s.sort_order, l.sort_order`,
+    JSON.stringify(approved.map((v) => v.id)));
+  const edits = await rows<{ so_doc_no: string; note: string | null; field_changes: unknown; at: string }>(db,
+    `SELECT so_doc_no, note, field_changes, ${TS("created_at")} AS at FROM scm.mfg_so_audit_log
+      WHERE so_doc_no IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND action = 'UPDATE' ORDER BY created_at`,
+    JSON.stringify([...new Set(approved.map((v) => v.soDocNo))]));
+  for (const v of approved) {
+    const pool = contract.filter((c) => c.vo_id === v.id);
+    const used = new Set<number>();
+    const soEdits = edits.filter((e) => e.so_doc_no === v.soDocNo);
+    for (const s of v.sections) {
+      for (const l of s.lines) {
+        if (l.voChange === "OMIT" || (l.kind !== "ITEM" && l.kind !== "CHILD")) continue;
+        let k = pool.findIndex((c, i) => !used.has(i) && c.item_code === l.itemCode && Number(c.qty) === l.qty);
+        if (k < 0) k = pool.findIndex((c, i) => !used.has(i) && c.item_code === l.itemCode);
+        if (k < 0) continue;
+        used.add(k);
+        added.set(`${v.id}|${l.id}`, { variants: variantsAsOf(l.itemCode, pool[k].variants, soEdits, v.approvedAt), room: pool[k].room });
+      }
+    }
+  }
+  return { targets, added };
+}
+
+/* An approved VO has already cut the contract line it omitted part of: the line held its qty plus the omitted part. */
+function partialQty(l: RenoVoDocLine, t: TargetRow | undefined, approved: boolean): { from: number; to: number } | null {
+  if (l.omitQty === null || !t || t.qty === null || l.measureMilli !== null) return null;
+  const now = Number(t.qty);
+  if (approved) return now > 0 ? { from: now + l.omitQty, to: now } : null;
+  return l.omitQty < now ? { from: now, to: now - l.omitQty } : null;
+}
+
+function renoOldSide(l: RenoVoDocLine, t: TargetRow | undefined, approved: boolean): ChangeSide {
+  const p = partialQty(l, t, approved);
+  return {
+    itemCode: l.itemCode, description: l.description, room: (l.room || "").trim() || t?.room || null,
+    qty: p ? p.from : l.qty, unitPriceSen: l.unitPriceSen, variants: asObject(t?.variants), remark: t?.remark ?? null,
+  };
+}
+
+function renoNewSide(l: RenoVoDocLine, a: AddedRow | undefined): ChangeSide {
+  return { itemCode: l.itemCode, description: l.description, room: (l.room || "").trim() || a?.room || null, qty: l.qty, unitPriceSen: l.unitPriceSen, variants: asObject(a?.variants) };
+}
+
+/** One VO line from an omit, an add, or the omit and add that replace one contract line. */
+export function mergeRenoPair(omit: RenoVoDraftLine | null, add: RenoVoDraftLine | null): VoLine {
+  if (omit && !add) {
+    if (omit.partial) {
+      const facets = describeChange({ ...omit.side, qty: omit.partial.from }, { ...omit.side, qty: omit.partial.to });
+      return { ...omit.line, lineQty: omit.partial.to, facets };
+    }
+    return { ...omit.line, facets: describeChange(omit.side, null) };
+  }
+  if (!omit) return { ...add!.line, facets: describeChange(null, add!.side) };
+  const a = add!.line;
+  const o = omit.line;
+  const qty = a.measure || o.measure ? 0 : a.qty + o.qty;
+  return {
+    ...a,
+    qty,
+    measure: a.measure && o.measure && a.measure !== o.measure ? a.measure : null,
+    lineQty: a.lineQty,
+    amountSen: a.amountSen === null || o.amountSen === null ? null : a.amountSen + o.amountSen,
+    change: qty > 0 ? "add" : qty < 0 ? "deduct" : "change",
+    fromItemCode: o.itemCode && a.itemCode && o.itemCode !== a.itemCode ? o.itemCode : null,
+    room: a.room ?? o.room,
+    facets: describeChange(omit.side, add!.side),
+  };
 }
 
 /** The catalog group and sub-category codes of SKUs, by item code (the active product first when a code repeats). */
@@ -419,10 +551,11 @@ export async function loadProjectVos(db: Db, projectId: number, companyId: numbe
        FROM scm.mfg_sales_orders so WHERE ${PROJECT_SO}
       ORDER BY so.so_date DESC NULLS LAST, so.doc_no DESC LIMIT 1`,
     projectId, companyId);
+  const worded = all.map((v) => withWords(v, finance));
   return {
     so: so ? { docNo: so.doc_no, renovation: Boolean(so.renovation) } : null,
     finance,
-    vos: finance ? all : all.map(hideMoney),
+    vos: finance ? worded : worded.map(hideMoney),
     counts: voCounts(all),
     totals: finance ? voTotals(all) : null,
     categoryRestricted: scope !== null,
@@ -538,8 +671,8 @@ export async function loadProjectPoLines(db: Db, projectId: number, companyId: n
 export interface ClientItem {
   key: string;
   soDocNo: string;
-  /** The SO line id, for its photos; null for a VO line not on the SO yet. */
-  soItemId: string | null;
+  /** The SO line id, for its photos. */
+  soItemId: string;
   itemCode: string | null;
   description: string;
   /** The catalog group and sub-category codes (null: none), for the role's category access. */
@@ -558,8 +691,9 @@ export interface ClientItem {
   skuPhotos: SkuPhoto[];
   /** The VO that added it, when one did. */
   voNo: string | null;
-  /** A VO not approved yet: the item is not on the SO until it is. */
-  pending: boolean;
+  /** The Client PO that holds the line: a PO to the supplier CUSTOMER. */
+  poId: string;
+  poNumber: string;
   /** The line's processing (buy by) and delivery dates, the plan the PO tab sets (scm.reno_beta_line_plans). */
   orderOn: string | null;
   deliverOn: string | null;
@@ -596,32 +730,34 @@ export function photoList(v: unknown): string[] {
    first left every Client PO line without an area while the PO tab showed them (live run, 24 Oct 2026). */
 export const CLIENT_LINE_ROOM = `coalesce(nullif(trim(d.room), ''), nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim(i.location), ''))`;
 
-/** SO lines the client buys: supplier CUSTOMER (the line's, else the SKU's main supplier), or supplied by the owner. */
-export async function loadClientItems(
-  db: Db, projectId: number, companyId: number, pendingVos: readonly VoRow[] = [], scope: CategoryScope | null = null,
-): Promise<ClientAnswer> {
+/** SO lines on a live PO to the supplier CUSTOMER, which MRP opens (owner, 4 Nov 2026: nothing shows before that PO). */
+export async function loadClientItems(db: Db, projectId: number, companyId: number, scope: CategoryScope | null = null): Promise<ClientAnswer> {
   const r = await rows<{
-    id: string; doc_no: string; item_code: string | null; description: string | null; qty: number; uom: string | null; unit_cost_sen: number; photo_urls: unknown;
-    room: string | null; supply_by_owner: boolean | null; line_supplier_code: string | null; main_supplier_code: string | null; measure: string | null;
+    id: string; doc_no: string; item_code: string | null; description: string | null; qty: number; uom: string | null; photo_urls: unknown;
+    room: string | null; measure: string | null; po_id: string; po_number: string;
     measure_uom: string | null; vo_no: string | null; cat_label: string | null; cat_sort: number | null; sub_label: string | null; sub_sort: number | null;
     cat_code: string | null; sub_code: string | null; sku_photos: unknown;
   }>(db,
-    `SELECT i.id::text AS id, i.doc_no, i.item_code, i.description, i.qty, i.uom, i.unit_cost_sen, i.photo_urls,
-            ${CLIENT_LINE_ROOM} AS room, d.supply_by_owner, d.line_supplier_code, d.measure, d.measure_uom, d.vo_no,
+    `SELECT i.id::text AS id, i.doc_no, i.item_code, i.description, i.qty, i.uom, i.photo_urls,
+            ${CLIENT_LINE_ROOM} AS room, d.measure, d.measure_uom, d.vo_no, cpo.po_id, cpo.po_number,
             cg.label AS cat_label, cg.sort_order AS cat_sort, sc.label AS sub_label, sc.sort_order AS sub_sort, cg.code AS cat_code, sc.code AS sub_code,
-            (SELECT sp.code FROM scm.supplier_material_bindings b JOIN scm.suppliers sp ON sp.id = b.supplier_id
-              WHERE b.item_code = i.item_code AND b.company_id = so.company_id AND b.is_main_supplier LIMIT 1) AS main_supplier_code,
             (SELECT coalesce(json_agg(json_build_object('productId', ph.product_id, 'key', ph.r2_key, 'thumbKey', ph.thumb_key)
                                       ORDER BY ph.is_primary DESC, ph.sort_order, ph.created_at), '[]'::json)::text
                FROM scm.mfg_products mp JOIN scm.mfg_product_photos ph ON ph.product_id = mp.id AND ph.company_id = mp.company_id
               WHERE mp.code = i.item_code AND mp.company_id = so.company_id) AS sku_photos
        FROM scm.mfg_sales_order_items i
        JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
+       JOIN LATERAL (
+         SELECT po.id::text AS po_id, po.po_number
+           FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
+           JOIN scm.suppliers sp ON sp.id = po.supplier_id
+          WHERE pi.so_item_id = i.id AND sp.code = 'CUSTOMER' AND po.company_id = so.company_id AND po.status::text <> 'CANCELLED'
+          ORDER BY po.po_date DESC, po.po_number DESC
+          LIMIT 1) cpo ON true
        LEFT JOIN LATERAL (
-         SELECT l.room, l.supply_by_owner, ls.code AS line_supplier_code, l.measure::text AS measure, l.measure_uom,
+         SELECT l.room, l.measure::text AS measure, l.measure_uom,
                 (SELECT v.vo_no FROM scm.reno_variation_orders v WHERE v.id = coalesce(l.vo_id, s.added_by_vo_id)) AS vo_no
            FROM scm.reno_doc_lines l JOIN scm.reno_doc_sections s ON s.id = l.section_id
-           LEFT JOIN scm.suppliers ls ON ls.id = l.supplier_id
           WHERE l.so_item_id = i.id AND s.so_doc_no = i.doc_no
           LIMIT 1) d ON true
        ${CATEGORY_SQL("i.item_code", "NULL::text", "NULL::text", "so.company_id")}
@@ -631,31 +767,14 @@ export async function loadClientItems(
   const plans = await clientPlans(db, r.map((x) => x.id));
   const items: ClientItem[] = [];
   for (const x of r) {
-    const owner = Boolean(x.supply_by_owner);
-    const sku = isCustomerSupplied({ itemCode: x.item_code, supplierCode: x.line_supplier_code ?? x.main_supplier_code ?? null, unitCostSen: Number(x.unit_cost_sen) });
-    if (!owner && !sku) continue;
     if (!lineVisible(scope, x.cat_code ?? null, x.sub_code ?? null)) continue;
     items.push({
       key: `so:${x.id}`, soDocNo: x.doc_no, soItemId: x.id, itemCode: x.item_code, description: x.description ?? "",
       categoryCode: x.cat_code ?? null, subCode: x.sub_code ?? null,
       categoryLabel: x.cat_label ?? "Other", categorySort: x.cat_sort ?? 999, subLabel: x.sub_label ?? "General", subSort: x.sub_sort ?? 999,
       area: x.room || null, qty: Number(x.qty), measure: x.measure ? `${Number(x.measure)} ${x.measure_uom ?? ""}`.trim() : null, uom: x.uom,
-      photoKeys: photoList(x.photo_urls), skuPhotos: skuPhotoList(x.sku_photos), voNo: x.vo_no, pending: false,
+      photoKeys: photoList(x.photo_urls), skuPhotos: skuPhotoList(x.sku_photos), voNo: x.vo_no, poId: x.po_id, poNumber: x.po_number,
       orderOn: plans.get(x.id)?.order_on ?? null, deliverOn: plans.get(x.id)?.deliver_on ?? null,
-    });
-  }
-  // A VO not on the SO yet that adds a client item: listed so the client can be asked early, marked as such.
-  for (const v of pendingVos) {
-    if (v.bucket !== "pending") continue;
-    v.lines.forEach((l, i) => {
-      if (l.goesTo !== "client" || l.change !== "add") return;
-      if (!lineVisible(scope, l.categoryCode, l.subCode)) return;
-      items.push({
-        key: `${v.key}:${i}`, soDocNo: v.soDocNo, soItemId: null, itemCode: l.itemCode, description: l.description,
-        categoryCode: l.categoryCode, subCode: l.subCode,
-        categoryLabel: "Other", categorySort: 999, subLabel: "General", subSort: 999, area: l.room, qty: l.qty, measure: l.measure, uom: null,
-        photoKeys: [], skuPhotos: [], voNo: v.label, pending: true, orderOn: null, deliverOn: null,
-      });
     });
   }
   return { items, categoryRestricted: scope !== null };
@@ -680,7 +799,7 @@ async function clientPlans(db: Db, ids: readonly string[]): Promise<Map<string, 
 /** One photo on the client's link: an opaque reference the link's photo route resolves again, never the storage key. */
 export interface ClientPublicPhoto { ref: string; from: "line" | "sku" }
 
-export type ClientPublicItem = Pick<ClientItem, "key" | "itemCode" | "description" | "categoryLabel" | "subLabel" | "area" | "qty" | "measure" | "uom" | "pending" | "orderOn" | "deliverOn">
+export type ClientPublicItem = Pick<ClientItem, "key" | "itemCode" | "description" | "categoryLabel" | "subLabel" | "area" | "qty" | "measure" | "uom" | "orderOn" | "deliverOn">
   & { photos: ClientPublicPhoto[] };
 
 /** A storage key's reference on the client link: 24 hex of its SHA-256, so the link names no key and no document
@@ -706,7 +825,7 @@ export async function clientPhotoIndex(items: readonly ClientItem[]): Promise<Ma
 export async function clientView(items: readonly ClientItem[]): Promise<ClientPublicItem[]> {
   return Promise.all(items.map(async (i) => ({
     key: i.key, itemCode: i.itemCode, description: i.description, categoryLabel: i.categoryLabel, subLabel: i.subLabel, area: i.area, qty: i.qty,
-    measure: i.measure, uom: i.uom, pending: i.pending, orderOn: i.orderOn, deliverOn: i.deliverOn,
+    measure: i.measure, uom: i.uom, orderOn: i.orderOn, deliverOn: i.deliverOn,
     photos: [
       ...(await Promise.all(i.photoKeys.map(async (k) => ({ ref: await photoRef(k), from: "line" as const })))),
       ...(await Promise.all(i.skuPhotos.map(async (ph) => ({ ref: await photoRef(ph.key), from: "sku" as const })))),

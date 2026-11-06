@@ -13,7 +13,7 @@ import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage, downloadFile } from '../lib/api';
 import { cx } from '../lib/design-tokens';
-import { rm, date as dayText } from '../lib/format';
+import { rm, amount, date as dayText } from '../lib/format';
 import { csvObjects, readXlsx, sheetObjects, type SheetRow } from '../lib/sheets';
 import { Modal, LabeledField, INPUT_CX, LABEL_CX } from './MaintenanceCatalog';
 
@@ -55,7 +55,7 @@ function range(cells: (number | null)[]): string | null {
   const v = cells.filter((x): x is number => x != null);
   if (!v.length) return null;
   const lo = Math.min(...v), hi = Math.max(...v);
-  return lo === hi ? rm(lo) : `${rm(lo)} – ${(hi / 100).toFixed(2)}`;
+  return lo === hi ? rm(lo) : `${rm(lo)} – ${amount(hi)}`;
 }
 const margin = (o: number | null, i: number | null) => (o == null || i == null ? null : o - i);
 const marginText = (o: number | null, i: number | null) => {

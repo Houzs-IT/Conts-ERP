@@ -1,4 +1,5 @@
 import { mayWork } from '../lib/areaAccess';
+import { Meta } from '../components/Card';
 import { useMemo, useState } from 'react';
 import { Search, Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -96,7 +97,7 @@ export default function PurchaseInvoicesPage() {
 
   return (
     <>
-      <PageHeader title="Purchase invoices" sub={data ? `${all.length} ${all.length === 1 ? 'invoice' : 'invoices'} · ${rm(totalOutstanding, { cents: false })} outstanding` : '\u00a0'}
+      <PageHeader title="Purchase invoices" sub={data ? `${all.length} ${all.length === 1 ? 'invoice' : 'invoices'} · ${rm(totalOutstanding)} outstanding` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New invoice</Button> : undefined} />
 
       <DataTable<Pi>
@@ -266,6 +267,3 @@ function ViewDrawer({ pi, canWrite, onClose, onCancel }: { pi: Pi; canWrite: boo
   );
 }
 
-function Meta({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return <div className="flex flex-col gap-0.5"><span className="text-[11px] uppercase tracking-[0.08em] text-muted-ink">{label}</span><span className={cx('text-[13.5px]', mono ? '[font-family:var(--font-mono,ui-monospace,monospace)]' : '')}>{value}</span></div>;
-}

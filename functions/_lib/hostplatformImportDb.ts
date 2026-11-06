@@ -12,6 +12,7 @@ import {
   type PayoutMonthIn, type KnownUnit, type KnownProperty, type RowError,
   PLACEHOLDER_OWNER, RESERVATION_MONEY_COLUMNS, CHANNEL_LABEL, placeholderGuestName, guestId as guestIdFor, type Channel, normaliseLocation, canonicalState, canonicalCity, slug, hash, unitKey, workbookMatcher, matchWorkbookUnitHow, buildingForPrefix, splitWorkbookId, workbookOwnerId, listingOwnerId, stayState, planOwnerBanks, bankKey, type BankPick,
 } from './hostplatformImport';
+import { placeholderOwnerId } from './placeholderOwner';
 
 /** The three helpers of db.ts, bound to an environment. Lets the test script run the same SQL on PGlite. */
 export interface Db {
@@ -84,9 +85,7 @@ function finish(res: ImportResult, main: string): ImportResult {
 async function placeholderOwner(db: Db, owners: Snapshot['owners'], now: string): Promise<string> {
   const hit = owners.find(o => o.name.toLowerCase() === PLACEHOLDER_OWNER.toLowerCase());
   if (hit) return hit.id;
-  const id = 'hp-owner-to-be-confirmed';
-  await upsert(db, 'owners', [['id', 'text'], ['display_name', 'text'], ['email', 'text'], ['created_at', 'text'], ['updated_at', 'text']],
-    [{ id, display_name: PLACEHOLDER_OWNER, email: '', created_at: now, updated_at: now }], 'DO NOTHING');
+  const id = await placeholderOwnerId(db, now);
   owners.push({ id, name: PLACEHOLDER_OWNER, ic: null });
   return id;
 }

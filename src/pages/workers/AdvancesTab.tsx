@@ -256,8 +256,8 @@ function AdvanceTable({ list, lineById, payoutCount, totalSen, full, onChange }:
                   <td className={`${td} text-right whitespace-nowrap`}>
                     {on ? (
                       <span className="inline-flex gap-1">
-                        <Button size="sm" variant="primary" disabled={busy || !editSen} onClick={() => void saveEdit(a)}>Save</Button>
                         <Button size="sm" variant="tertiary" disabled={busy} onClick={() => setEditing(null)}>Cancel</Button>
+                        <Button size="sm" variant="primary" disabled={busy || !editSen} onClick={() => void saveEdit(a)}>Save</Button>
                       </span>
                     ) : (
                       <span className="inline-flex gap-1">

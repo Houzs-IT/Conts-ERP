@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Switch as SharedSwitch } from '../components/Switch';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { SystemStats } from '../components/SystemStats';
@@ -440,17 +441,7 @@ function ChannelChip({ label }: { label: string }) {
 }
 
 function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
-  return (
-    <button
-      role="switch" aria-checked={on} aria-label={label}
-      onClick={e => { e.stopPropagation(); onToggle(); }}
-      className={cx(
-        'w-11 h-[26px] flex-none rounded-full border-none cursor-pointer p-[3px] flex [transition:background_120ms_ease-out]',
-        on ? 'justify-end bg-success' : 'justify-start bg-line-strong',
-      )}>
-      <span className="w-5 h-5 rounded-full bg-white" />
-    </button>
-  );
+  return <SharedSwitch checked={on} label={label} onChange={() => onToggle()} stopPropagation />;
 }
 
 function RuleStatus({ r }: { r: Rule }) {

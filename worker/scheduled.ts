@@ -9,7 +9,7 @@ import { SCHEDULE, runJobs } from '../functions/_lib/cronJobs';
  *   * * * * *      Channex outbox: retries and anything the request-time flush missed
  *   *\/5 * * * *   HostPlatform: pull the reservations it changed since the last run; "Guest has left" by itself at the checkout time;
  *                  Mail Center email retries in the engine
- *   *\/15 * * * *  email / WhatsApp outbox (quiet hours, retries); calendar blocks of finished repair jobs
+ *   *\/15 * * * *  email / WhatsApp outbox (quiet hours, retries); calendar blocks of finished repair jobs; Airbnb guest reviews
  *   0 * * * *      overdue cleans and repairs, statements finalised but unsent
  *   0 0 * * *      the 08:00 "today" digest for operations
  *

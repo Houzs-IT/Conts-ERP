@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMfgProducts, matchesProductQuery, type MfgCategory, type MfgProductRow } from "../vendor/scm/lib/mfg-products-queries";
 import "./mobile.css";
+import { useCategoryOptions } from "../vendor/scm/lib/renovation-catalog-queries";
+import { categoryMatches } from "../vendor/shared/renovation-catalog";
 
 /* Perf cap (parity with SalesOrderNewFromProducts, PR #342) — never render more
    than this many rows at once. The full active catalog is ~1141 SKUs; painting
@@ -28,14 +30,6 @@ const RENDER_CAP = 60;
 /* The line's category axis maps 1:1 to a catalog category. "" (General item)
    shows every SKU with no category filter. */
 export type SkuPickerCat = "" | "sofa" | "bedframe";
-
-const CAT_CHIPS: Array<{ value: MfgCategory | ""; label: string }> = [
-  { value: "", label: "All" },
-  { value: "BEDFRAME", label: "Bedframe" },
-  { value: "SOFA", label: "Sofa" },
-  { value: "MATTRESS", label: "Mattress" },
-  { value: "ACCESSORY", label: "Accessory" },
-];
 
 /** What a picked SKU hands back to the line: the canonical catalog code, the
  *  lowercase item_group the backend variant rule reads, the display name, and
@@ -69,7 +63,8 @@ export function MobileSkuPicker({
   const multi = typeof onPickMany === "function";
   const seedCat: MfgCategory | "" =
     initialCat === "sofa" ? "SOFA" : initialCat === "bedframe" ? "BEDFRAME" : "";
-  const [cat, setCat] = useState<MfgCategory | "">(seedCat);
+  const [cat, setCat] = useState<string>(seedCat);
+  const categoryOptions = useCategoryOptions();
   /* Search is DEBOUNCED (PR #342 parity) — `searchInput` is the live text box;
      only after a 250ms idle does it commit to `search`, the value that drives the
      server query. Without this every keystroke refetched the whole catalog and
@@ -103,7 +98,7 @@ export function MobileSkuPicker({
     return (productsQ.data ?? []).filter(
       (p) =>
         p.status !== "INACTIVE" &&
-        (!cat || p.category === cat) &&
+        (!cat || categoryMatches(p.category, cat)) &&
         (trimmedSearch.length < 2 || matchesProductQuery(p, trimmedSearch)),
     );
   }, [productsQ.data, gateOpen, cat, trimmedSearch]);
@@ -137,7 +132,7 @@ export function MobileSkuPicker({
             />
           </div>
           <div className="chips">
-            {CAT_CHIPS.map((c) => (
+            {[{ value: "", label: "All" }, ...categoryOptions].map((c) => (
               <button
                 key={c.value || "all"}
                 className={`chip${cat === c.value ? " on" : ""}`}

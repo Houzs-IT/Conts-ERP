@@ -369,8 +369,10 @@ export function mapReservations(rows: Row[], today: string): ReservationPlan {
     const cancelled = /cancel/i.test(str(r['Booking Status']));
     const state: State = cancelled ? 'cancelled' : stayState(checkIn, checkOut, today);
     const total = sen(r['Total Price']) ?? 0, platformFee = Math.max(0, sen(r['Platform Fee']) ?? 0);
-    // Airbnb's Total Price is the host payout; the fee comes on top (same rule as channexAmounts.ts).
-    const gross = channel === 'airbnb' ? total + platformFee : total;
+    // Airbnb's Total Price is the host payout; the fee comes on top (same rule as channexAmounts.ts). Booking.com's is
+    // too: 5135519056 came as 431.15 (Room Rate 398.03 + SST 33.12) with Platform Fee 95.97, and 431.15 is what
+    // Booking.com transferred; the extranet's commissionable amount is 494.00 = 398.03 + 95.97 (3 Nov 2026).
+    const gross = channel === 'airbnb' || channel === 'booking_com' ? total + platformFee : total;
     const block = str(r['Booking Type']).toLowerCase() === 'blocked';
     let gid: string | null = null;
     if (!block) {
@@ -416,7 +418,8 @@ export const apiBuildingName = (property: unknown) => buildingName(property).rep
  *  importReservations writes both. The API has no booking type: a HostPlatform booking without guest details is a
  *  block (an owner stay when its remarks say so), any other is direct. Money is only used for bookings Property OS
  *  does not have yet (importReservations with source 'api' leaves existing money alone): the API carries no taxes,
- *  deposits or payment received. Airbnb's room amount is the host payout, so its fee goes on top (as mapReservations). */
+ *  deposits or payment received. Airbnb's and Booking.com's room amount is net of the site's fee, so the fee goes on top
+ *  (as mapReservations). */
 export function mapApiReservations(list: HpReservation[], today: string): ReservationPlan {
   const errors: RowError[] = [], guests = new Map<string, GuestIn>(), reservations: ReservationIn[] = [], codes = new Set<string>();
   list.forEach((r, i) => {
@@ -446,7 +449,7 @@ export function mapApiReservations(list: HpReservation[], today: string): Reserv
     const remarks = opt(r.remarks);
     reservations.push({
       id: `hp-res-${code}`, row: i + 1, code, building, unitNumber, channel, state, externalRef: ota ?? code, checkIn, checkOut,
-      guestsCount: Math.max(1, Math.round(num(g?.number_of_pax) ?? 1)), gross: channel === 'airbnb' ? base + fee : base, fee, collected: 0,
+      guestsCount: Math.max(1, Math.round(num(g?.number_of_pax) ?? 1)), gross: channel === 'airbnb' || channel === 'booking_com' ? base + fee : base, fee, collected: 0,
       currency: (opt(price.currency) ?? 'MYR').toUpperCase().slice(0, 3),
       notes: `Imported from the HostPlatform API (${code})${remarks && channel !== 'airbnb' && channel !== 'booking_com' && channel !== 'agoda' ? ` · ${remarks.slice(0, 200)}` : ''}`,
       createdAt: opt(r.created_at) && !Number.isNaN(Date.parse(String(r.created_at))) ? new Date(String(r.created_at)).toISOString() : null,
@@ -544,11 +547,11 @@ export interface WorkbookUnitIn {
   row: number; workbookId: string; listingName: string | null; address: string | null;
   ownerName: string | null; ic: string | null; bankName: string | null; bankAccount: string | null; bankHolder: string | null;
   pkg: Package | null; packageD: boolean; term: 'Long term' | 'Short term' | null;
-  split: 'Profit share' | 'GRR — guaranteed rent' | null; splitValue: number | null;
+  split: 'Profit share' | null; splitValue: number | null;
   /** Unit资料 'Miscellaneous Charges', kept on the unit too: a row without a contract start date has no contract to hold it. */
   miscCharges: boolean;
   contract: {
-    model: 'management' | 'grr'; feePct: number; grrAmount: number; startsOn: string; endsOn: string | null;
+    model: 'management'; feePct: number; grrAmount: number; startsOn: string; endsOn: string | null;
     agentPct: number | null; minimumGuarantee: number; minimumGuaranteeAnnual: number | null;
     guaranteeStartsOn: string | null; guaranteeEndsOn: string | null; agreementFile: string | null; miscCharges: boolean;
   } | null;
@@ -597,7 +600,7 @@ function utilityAccount(kind: UtilityAccountIn['kind'], v: unknown): UtilityAcco
 /** One entry per workbook unit id. Duplicate ids keep the later row (reported). Pool months are only taken up
  *  to the month before `today` (later months are the sheet's projection, not history). */
 export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today = todayInKL()): { units: WorkbookUnitIn[]; errors: RowError[]; notes: string[] } {
-  const errors: RowError[] = [], byId = new Map<string, WorkbookUnitIn>();
+  const errors: RowError[] = [], byId = new Map<string, WorkbookUnitIn>(), grrRows = new Map<string, string>();
   const splitOf = new Map(splits.map(s => [str(s['UNIT']).toUpperCase(), s]));
   // Older callers send the guarantee table without `_section`. The first row of a unit wins.
   const poolOf = new Map<string, Row>();
@@ -639,7 +642,10 @@ export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today 
     const annual = pl ? sen(pl['全年租金（GRR）']) : isD ? grrFloor : null;
     const startsOn = toDate(r['合约开始日期']) ?? (pl ? toDate(pl['合约开始']) : null);
     const endsOn = toDate(r['合约结束日期']) ?? (pl ? toDate(pl['合约结束']) : null);
+    // A long-term row with a GRR amount was a guaranteed rent contract. GRR is gone (owner, 4 Nov 2026), so the unit comes in
+    // with no contract and no GRR split, and the notes list it for staff to set on its Contract tab.
     const isGrr = kind === 'LT' && !!grr;
+    if (isGrr) grrRows.set(workbookId, opt(r['Listing名称']) ?? workbookId);
     const feePct = isGrr ? 0 : ownerShare !== null ? Math.max(0, Math.min(100, 100 - ownerShare)) : 25;
     const miscCharges = r['Miscellaneous Charges'] === true || /^(true|yes|y|1)$/i.test(str(r['Miscellaneous Charges']));
     const ic = opt(r['IC'])?.replace(/\s*\n\s*|\s{2,}/g, ' / ') ?? null;
@@ -653,10 +659,10 @@ export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today 
       pkg: /^[ABCD]$/.test(pkgLetter) ? (`Package ${pkgLetter}` as Package) : null,
       packageD: pkgLetter === 'D',
       term: kind === 'LT' ? 'Long term' : kind === 'PS' || kind === 'MANAGE' ? 'Short term' : null,
-      split: isGrr ? 'GRR — guaranteed rent' : ownerShare !== null ? 'Profit share' : null,
-      splitValue: isGrr ? grr : ownerShare !== null ? Math.round(ownerShare) : null,
-      contract: startsOn ? {
-        model: isGrr ? 'grr' : 'management', feePct, grrAmount: isGrr ? grr! : 0, startsOn, endsOn,
+      split: isGrr ? null : ownerShare !== null ? 'Profit share' : null,
+      splitValue: isGrr ? null : ownerShare !== null ? Math.round(ownerShare) : null,
+      contract: startsOn && !isGrr ? {
+        model: 'management', feePct, grrAmount: 0, startsOn, endsOn,
         agentPct: agent !== null && agent > 0 ? Math.min(agent, feePct) : null,
         minimumGuarantee: Math.max(0, minimum ?? 0), minimumGuaranteeAnnual: annual !== null && annual > 0 ? annual : null,
         // Package D's floor applies from the contract start (prorated by day in its first month); another package's applies throughout.
@@ -680,10 +686,11 @@ export function mapWorkbookUnits(rows: Row[], splits: Row[], pool: Row[], today 
   if (debt.length) notes.push(`${debt.length} units carry a DEBT AMOUNT (RM ${(debt.reduce((n, u) => n + u.debt!, 0) / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} in all). It is recorded against the owner but held: it is not deducted from a statement until someone releases it.`);
   const agents = units.filter(u => u.contract?.agentPct).length;
   if (agents) notes.push(`${agents} contracts have an agent share (分成 AGENT%).`);
-  const noContract = units.filter(u => !u.contract);
+  const noContract = units.filter(u => !u.contract && !grrRows.has(u.workbookId));
   if (noContract.length) notes.push(`${noContract.length} units have no contract start date. Their owner, package and split are set, but no contract is created: a contract needs a start date.`);
   const pm = units.reduce((n, u) => n + u.poolMonths.length, 0);
   if (pm) notes.push(`${pm} unit-months of the Package D guarantee pool (水池) are kept, up to last month.`);
+  if (grrRows.size) notes.push(`${grrRows.size} long-term units have a guaranteed rent (GRR) in the file: ${[...grrRows.values()].join(', ')}. GRR is no longer a contract type, so they came in with no contract. Set each one on its Contract tab.`);
   return { units, errors, notes };
 }
 

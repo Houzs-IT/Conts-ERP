@@ -1,6 +1,6 @@
 // MRP date columns (owner 2026-09-17) — Processing / SO / Delivery Date are
-// offered in the Columns drawer, default-hidden, and render the SO row's
-// earliest date on that basis once enabled.
+// offered in the Columns drawer and render the SO row's earliest date on that
+// basis. Delivery Date is shown by default, the table's own order (4 Nov 2026).
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -35,6 +35,8 @@ vi.mock('../../vendor/scm/lib/auth', () => ({
   isAdminLevel: () => true,
 }));
 vi.mock('../../vendor/scm/lib/suppliers-queries', () => ({
+  useSuppliers: () => ({ data: [] }),
+  useCreateBinding: () => ({ mutateAsync: async () => ({}), isPending: false }),
   useCreatePosFromSoItems: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
 }));
 
@@ -52,12 +54,11 @@ describe('MRP date columns — selectable from the Columns drawer', () => {
   // Column visibility is persisted per table (dt:hidden:mrp); start each test clean.
   beforeEach(() => { try { localStorage.clear(); } catch { /* jsdom */ } });
 
-  test('the three dates are offered in the picker and hidden by default', () => {
+  test('the three dates are offered in the picker, and Delivery Date shows by default', () => {
     mrpData = base({ sofaSets: [sofaSet()] });
     render(<MemoryRouter><Mrp /></MemoryRouter>);
 
-    // Default view carries no date column, so the SO row's delivery date is absent.
-    expect(screen.queryByText('2026/10/01')).toBeNull();
+    expect(screen.getAllByText('2026/10/01').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: /columns/i }));
     const drawer = screen.getByRole('dialog', { name: 'Columns' });
@@ -66,7 +67,7 @@ describe('MRP date columns — selectable from the Columns drawer', () => {
     expect(within(drawer).getByRole('button', { name: 'Delivery Date' })).toBeTruthy();
   });
 
-  test('enabling Delivery Date renders the group\'s earliest delivery date', () => {
+  test('turning Delivery Date off removes it from the table', () => {
     mrpData = base({ sofaSets: [sofaSet()] });
     render(<MemoryRouter><Mrp /></MemoryRouter>);
 
@@ -74,7 +75,6 @@ describe('MRP date columns — selectable from the Columns drawer', () => {
     const drawer = screen.getByRole('dialog', { name: 'Columns' });
     fireEvent.click(within(drawer).getByRole('button', { name: 'Delivery Date' }));
 
-    // The column now renders in the table (value shows outside the drawer).
-    expect(screen.getAllByText('2026/10/01').length).toBeGreaterThan(0);
+    expect(screen.queryByText('2026/10/01')).toBeNull();
   });
 });

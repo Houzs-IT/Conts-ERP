@@ -1,7 +1,8 @@
 import { type Env, one, all, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { changedFields } from '../../_lib/history';
 import { requireSession, hasColumn } from '../../_lib/auth';
-import { invalidUnit, ownerFieldIn, saveExpenses, saveCleaningPrice, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { invalidUnit, invalidLayoutType, ownerFieldIn, saveExpenses, saveCleaningPrice, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { invalidBedSizes } from '../../_lib/bedSizes';
 import { purposeReady, saveBays, PURPOSE_LABEL, type Purpose } from '../../_lib/unitPurpose';
 
 /** PATCH /api/units/:id — the Units screen's Save. Sends the whole unit; only what is present is changed.
@@ -18,11 +19,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!b || typeof b !== 'object') return fail('VALIDATION', 'Nothing to save.', 422);
   const ownerField = ownerFieldIn(b);
   if (ownerField) return fail('VALIDATION', "The owner's name, IC and bank details are edited on the owner's page, not on the unit.", 422, { [ownerField]: "Edit this on the owner's page." });
-  const bad = invalidUnit(b);
-  if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
 
-  const cur = await one<any>(env, 'SELECT id, property_id, parent_unit_id, owner_id, unit_number, unit_code FROM units WHERE id = ?', id);
+  const cur = await one<any>(env, 'SELECT id, property_id, parent_unit_id, owner_id, unit_number, unit_code, split_kind, layout_type FROM units WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
+  const bad = invalidUnit(b, cur.split_kind) ?? await invalidLayoutType(env, b, cur.layout_type) ?? await invalidBedSizes(env, b.beds, id);
+  if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
 
   const target = typeof b.buildingId === 'string' && b.buildingId && b.buildingId !== cur.property_id ? b.buildingId : null;
   if (target) {
@@ -68,12 +69,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   await run(env, `
     UPDATE units SET property_id = ?, unit_number = ?, unit_code = COALESCE(?, unit_code), listing_name = COALESCE(?, listing_name), address = COALESCE(?, address),
-                     package = COALESCE(?, package), term = COALESCE(?, term), split_kind = COALESCE(?, split_kind), split_value = ?,
+                     package = COALESCE(?, package), term = COALESCE(?, term), split_kind = COALESCE(?, split_kind), split_value = CASE WHEN ? THEN ? ELSE split_value END,
                      guarantee_period = COALESCE(?, guarantee_period), bedrooms = COALESCE(?, bedrooms), bathrooms = COALESCE(?, bathrooms),
                      size_sqft = CASE WHEN ? THEN ? ELSE size_sqft END, layout_type = CASE WHEN ? THEN ? ELSE layout_type END, updated_at = ?
     WHERE id = ?`,
     propertyId, number, code ?? null, b.listingName ?? null, b.address ?? null, b.pkg ?? null, b.term ?? null, b.split ?? null,
-    b.splitValue === undefined ? null : b.splitValue, b.guaranteePeriod ?? null, b.bedrooms ?? null, b.bathrooms ?? null,
+    b.splitValue !== undefined, b.splitValue ?? null, b.guaranteePeriod ?? null, b.bedrooms ?? null, b.bathrooms ?? null,
     b.sizeSqft !== undefined, b.sizeSqft ?? null, b.layoutType !== undefined, b.layoutType ?? null, now, id);
   if (target) await run(env, 'UPDATE units SET property_id = ?, updated_at = ? WHERE parent_unit_id = ?', propertyId, now, id);
   if (ready && (purpose || b.usedBy !== undefined || b.beds !== undefined)) {

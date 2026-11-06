@@ -26,7 +26,7 @@ describe('a second query is always declared to the cells that depend on it', () 
   });
 
   test.each(['PurchaseOrdersListV2.tsx', 'GoodsReceivedListV2.tsx', 'PurchaseInvoicesListV2.tsx',
-             'MfgSalesOrdersListV2.tsx', 'SalesOrderDetailV2.tsx'])(
+             'MfgSalesOrdersListV2.tsx', 'SalesOrderDetail.tsx'])(
     '%s is known to fetch coverage separately', (f) => {
       expect(withSecond).toContain(f);
     });

@@ -29,8 +29,8 @@
 // Houzs adaptations vs 2990:
 //   - Auth: supabaseAuth (same as the other ported routes) attaches the
 //     scm-scoped service client + the SCM_SYSTEM_STAFF_ID user. RLS does not
-//     apply (service role), so the showroom fallback below is purely to
-//     satisfy the NOT NULL FK pending_slip_uploads.showroom_id → scm.showrooms.
+//     apply (service role), so the showroom stamp below is informational
+//     only (pending_slip_uploads.showroom_id, nullable since Conts mig 0205).
 //   - R2: native SLIPS binding put/head/delete — no S3 API, no presigned URLs.
 //   - camelCase??snake_case dual-read on the request body.
 // ---------------------------------------------------------------------------
@@ -80,11 +80,12 @@ slips.post('/init', async (c) => {
   try { slipBindings(c.env); }
   catch (e) { return c.json({ error: 'r2_not_configured', reason: (e as Error).message }, 500); }
 
-  // pending_slip_uploads.showroom_id is NOT NULL (FK → scm.showrooms). Houzs
-  // has no showroom concept and the system staff carries none, so stamp the
-  // first active showroom (by sort_order). 2990 did the same fallback for
-  // elevated roles. No showroom seeded → a clear error rather than a FK 500.
-  // Multi-company (mig 0089): pick the ACTIVE company's showroom.
+  // Stamp the active company's first active showroom (by sort_order) when it
+  // has one; 2990 did the same fallback for elevated roles. Conts has no
+  // showrooms at all, and refusing here ("no_active_showroom") failed every
+  // photo upload on the system — the office Mark delivered and the phone POD
+  // among them — so a company without one stores the upload with none
+  // (showroom_id nullable since Conts migration 0205).
   let roomQ = sb
     .from('showrooms')
     .select('id')
@@ -95,7 +96,6 @@ slips.post('/init', async (c) => {
   const { data: defaultRoom, error: roomErr } = await roomQ.maybeSingle();
   if (roomErr) return c.json({ error: 'showroom_lookup_failed', reason: roomErr.message }, 500);
   const showroomId = (defaultRoom as { id?: string } | null)?.id ?? null;
-  if (!showroomId) return c.json({ error: 'no_active_showroom' }, 400);
 
   const sessionId = crypto.randomUUID();
   const r2Key = buildSlipKey(sessionId, contentType as SlipMime);

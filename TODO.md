@@ -2,6 +2,9 @@
 
 Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw, schema `pos`, via Hyperdrive e0781ccd...). Staging preview: https://staging-preview.theconts-os.pages.dev (Supabase ecgyrmblqfxvbfjlqkdq).
 
+## Engine
+- Staging lacks migration 0189 (the RAW category), so 0222 is not applied there and K & K SKUs do not exist on staging.
+
 ## Next: connect Airbnb, Booking.com, Agoda through Channex
 - Decision made: Channex (WhiteLabel plan, $130/month + $0.50 per unit per month, free staging at staging.channex.io; check current price at signup).
 - Stages 1-4 are done, tested and merged to main; migrations `0003`-`0005` are applied on production too. Still inert in production — no `CHANNEX_API_KEY` set there yet.
@@ -23,6 +26,11 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - No scheduled pull for messages and reviews (owner, 2 Nov 2026: screens first); they come in on the Channex webhook and the Sync button only.
 - Booking.com's review window is kept at the owner's 14 days in src/lib/reviewRules.ts; Booking.com publishes 28, change it there if stays are shown closed too early.
 - A pull reads at most 5 pages (500) of Channex reviews; a guest edit to an older review than that is not picked up.
+- Reviews, Airbnb's way (feat/reviews-airbnb, migration 0204): native scales, Airbnb categories and tags, hidden reviews, Review guests (form, templates, auto rules, Bad guest hold to day 13), new-review notices, Unit health, Cleanliness by cleaner, owner reviews API, AI draft replies. Needs 0204 on staging, then production, before merge.
+- AI draft replies need the Pages secret ANTHROPIC_API_KEY (owner sets it: `npx wrangler pages secret put ANTHROPIC_API_KEY`, add `--env preview` for staging), then Reviews > Review guests > Settings > AI draft replies on. Until then Draft reply says "AI drafting is not set up". The one setting and key serve both Draft reply buttons: on a review and in Messages (read from the conversation's last 12 messages, automatic ones left out, plus the unit and stay; scripts/api-checks/messages-ai-draft.mjs, against a pretend AI service, so the first real draft is still to be read by a person).
+- The host-reviews-guest call (POST /reviews/:id/guest_review) is built from Channex's documentation and tested against a pretend Channex only; check the first real one on a live Airbnb stay. The guest review is sent on the guest's Channex review of the stay, so it waits ("Waiting for Airbnb") until Airbnb opens that review in Channex.
+- Guest reviews are sent by the scheduled worker every 15 minutes (theconts-cron, needs CHANNEX_API_KEY) and by "Run rules now"; redeploy the cron worker after merge.
+- Cleanliness under 4.7 out of 5 is flagged for both channels, so a Booking.com 9/10 (4.5) counts as low; change CATEGORY_FLAG_BELOW / LOW_CLEANLINESS_BELOW in src/lib/reviewRules.ts if Booking.com should have its own line.
 
 ## Supply Chain as a copy of Houzs (decision: option B, resumed 7 Oct)
 - Plan: copy Houzs's supply chain screens and server code into Conts, re-coloured gold and black, instead of re-drawing each screen. Rental side untouched. Houzs's code is on this machine at C:\dev\Houzs-ERP (reference only).
@@ -57,7 +65,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Done (feat/cleaning-pod-audit, no migration): cleaning checklist removed from the board and the phone (owner, 11 Oct; its table and endpoint stay, unused); cleaner and type at the top of the job; board refreshes every 30 s so a clean finished on the phone shows as "Done HH:MM" without a reload; History in the Houzs ERP layout everywhere (one entry per action, coloured initials, "via Field app", changes folded); cleaning jobs now record their creation (checkout, prepare, plan) and show the checkout of the reservation they follow. Tested: scripts/api-checks/cleaning-pod-audit.mjs.
 - Several cleaners per cleaning job (feat/finish-cleaning-calendar, migration 0122 task_cleaners): picked on the job, in Add cleaning job, Assign whole building and the bulk Assign; every listed cleaner sees and works the job on the phone. tasks.cleaner_id / assignee_id stay the first cleaner. Open: migration 0122 not applied to staging or production (until then a job keeps one cleaner, no errors); (unit Jobs tab and the work-list cleaner filter: done in fix/oct11-leftovers). Tested: scripts/api-checks/cleaning-multi-cleaner.mjs.
 - Overdue cleaning jobs (fix/cleaning-overdue, no migration): own collapsible section on the board; management closes them in bulk (Mark done: no photo, note 'closed in bulk', charged on the job's own day; Cancel job: reason, never charged). Tasks have no Cancelled state, so a cancelled job is removed and lives on only in the audit trail (task.cancel on the job, cleaning.cancel on its stay); a Cancelled state needs a migration if History should list them. Tested: scripts/api-checks/cleaning-overdue.mjs.
-- "Guest has left" is automatic again (owner ruling 2 Nov 2026, reversing the 26 Oct manual-only decision): the cron job auto-guest-left (every 5 minutes, functions/_lib/guestLeft.ts) marks today's departures at the checkout time, 11:00 or the late checkout's (e.g. 13:00), as System with the staff tap's audit rows; staff can tap earlier or Undo, and an undone job is never marked again. Late by up to 5 minutes; until it runs the card shows red past the checkout time. Board wording "Auto at 11:00" / "Auto at 13:00 (late checkout)". Needs the cron worker (theconts-cron) deployed. Tested: scripts/api-checks/cleaning-sort-late-checkout.mjs.
+- "Guest has left" is automatic again (owner ruling 2 Nov 2026, reversing the 26 Oct manual-only decision): the cron job auto-guest-left (every 5 minutes, functions/_lib/guestLeft.ts) marks today's departures at the checkout time, 11:00 or the late checkout's (e.g. 13:00), as System with the staff tap's audit rows; staff can tap earlier or Undo, and an undone job is never marked again. Late by up to 5 minutes; until it runs the card shows red past the checkout time. Board and the cleaner's phone list say "Auto at 11:00" / "Auto at 13:00 (late checkout)" (scripts/api-checks/field-auto-out.mjs). Needs the cron worker (theconts-cron) deployed. Tested: scripts/api-checks/cleaning-sort-late-checkout.mjs.
 - Cleaning order: buildings always A to Z (external last); inside a building, units ready to clean by next check-in (soonest, none, after 20:00 or a later day), then guests still in by checkout time, then done (src/lib/cleanOrder.ts, owner 2 Nov 2026).
 - Cleaning board Layout column reads units.layout_type, which the units work adds (migration 0123); it shows a dash until that is applied and filled.
 - Cleaning jobs imported from HostPlatform have no creation entry; their History starts with "Cleaning job created" from the job's own date.
@@ -111,7 +119,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 ## Renovation project screens (feat/reno-project-ux, migration 0111, 14 Oct 2026)
 - Done (14 Oct): migration 0111 applied on staging and production (lead); PR #245 merged. It adds project_attendees (backfilled from sales_person_id / designer_person_id), project_procurement_dates, project_design_notes and two columns on project_design_files. The engine deploys on merge, so the migration must be on production first.
 - Done (14 Oct, owner ruling): renovation projects show on the original Calendar (desktop and phone) from created date to planned handover; else actual handover, else SLA due date (project_types.sla_days, not a column yet), else 45 days marked "end estimated". Computed when read (services/renovation/calendarSpan.ts). The old Task calendar is no longer reachable from any menu.
-- Later: procurement dates (Procurement details) are meant to raise purchase orders automatically; nothing does yet (TODO(auto-PO) in engine/backend/src/services/renovation/procurement.ts).
+- Ruled out (owner, 3 Nov 2026): purchase orders are NOT raised automatically from the procurement dates (Procurement details); POs stay manual. The dates drive planning and the LATE flags only. Do not build auto-PO.
 - The create form still asks for Sales and Designer; both become Attending. Wiring it to Project PIC / Attending waits for feat/reno-customer-info (migration 0112).
 
 ## Renovation Project List and Calendar week (feat/reno-list-calendar, no migration, 15 Oct 2026)
@@ -199,7 +207,11 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Step 1 (feat/owner-b-menu): Showcase control removed (menu, page, route, /api/showcase/overrides); "Owner Showcase" menu item is now Owner B (/owner-b, area Performance), a Beta beside Owners (A), which is unchanged. View as owner opens an owner's real portal read-only (?ownerId=, Finance only) and records owner.view_as on the owner's History.
 - Step 2 (feat/demo-store, migration 0199): schema demo (reservations, reviews, units, owners, guests, ids demo-), views demo.v_* (real rows live + demo rows + shadows), demo.shadow(), demo.clear(), and the rule pos.refuse_demo_ids on the five tables and the money and channel tables. A migration that drops or retypes a column of those five pos tables must run `select demo.drop_views();` before and `select demo.sync();` after; one that adds a column runs `select demo.sync();`.
 - Step 3 (feat/demo-mode): the Demo switch beside light/dark, for management and desk staff in the Sales department (functions/_lib/demo.ts); a browser cookie checked against the person on every request. While on: the blue band (Clear demo, Turn off); Reservations, the reservation drawer, Calendar and Reviews read demo.v_* (tablesFor) and add or edit sample data through /api/demo; every other write is refused (409 DEMO_MODE), so nothing reaches owners or channels. Owner portal API, statements, payouts, exports and the outbox never call tablesFor.
-- Demo mode does not cover Units, Owners, Dashboard, Performance or the Reviews Overview tab (they read live only).
+- Step 5 (feat/demo-whole-system, migration 0203; owner, 3 Nov 2026): Demo mode covers the whole system. A Demo request (functions/api/_middleware.ts, runDemo) runs every statement with demo_pos ahead of pos (functions/_lib/db.ts): demo_pos.<table> is a view over every pos table with a primary key (real rows live plus the demo store), and its INSTEAD OF trigger turns insert/update/delete into a demo row, a shadow, or a removed mark in demo.<table>. Every screen and every action works as normal and nothing reaches pos; ids made in Demo start demo-. Upserts go to the store directly; FOR UPDATE is dropped in Demo.
+- Demo always-live routes (DEMO_LIVE): sign-in, own account, /api/owner/*, the Demo switch and Clear demo, table layouts, the reservations/units/payouts/service-prices CSV exports. Refused in Demo (DEMO_REFUSED, 409): statements finalise and send, payouts, integrations, imports, claims, supply chain and accounting (the engine), IT support, system, users, Channex setup. Live-only tables (demo.live_only()): payouts, user_sessions, password_reset_tokens, user_backup_codes, login_events, and the two tables without a primary key (department_category_access, person_category_access).
+- Demo: not sent. Email and WhatsApp are recorded in demo and never sent (notify.ts); Channex and HostPlatform are never called (channex.ts, hostplatform.ts). Photos and files uploaded in Demo go to the real R2 bucket (the row is demo); Clear demo leaves the file behind.
+- Demo limits: a Demo upsert onto a key only the real table has writes a demo row from the statement's own values (its other columns take their defaults); the pos tables' check and foreign-key constraints are not enforced in the store (NOT NULL and unique indexes are); each Demo statement is its own transaction, so Demo pages are a little slower.
+- MAINTENANCE (0203): every migration is wrapped in `select demo.drop_views();` before and `select demo.sync();` after. scripts/migrate-pg.mjs and scripts/dev-pglite.mjs do it; a migration applied by hand (production through the Supabase connector) must include both lines. demo-mode.mjs fails in CI when demo_pos is missing a pos table or column.
 - Step 4 (feat/sample-portal): Owner B > Owner portal (sample) replaced the Owner Showcase (its pages, /api/showcase and functions/_lib/showcase.ts are gone; old addresses open the sample tab). Sample owners (demo.owners) get sample copies of real units and, if asked, three months of sample reservations and reviews; their portal is the real OwnerPortalPage reading /api/demo/portal/* (sample owners only, every answer sample: true), with a Sample data band and a SAMPLE DATA statement print. Sample statements are gross less the owner's share; no costs.
 - Staging still has three old seed reviews with demo-review- ids in pos.reviews (from scripts/demo-data-2.sql, renamed seed-review- since). The rule leaves them alone; delete them with scripts/delete-demo-data-2.sql when convenient.
 - Drop pos.showcase_overrides (migration 0164) one release after Showcase control's removal; nothing reads it now.
@@ -221,7 +233,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 
 ## Future (planning only, not started): Anthropic API key
 - Not needed for development help. Only needed for the two items below.
-- AI inside the system: suggested replies to guest messages (start here, so the value can be judged first), draft replies to reviews, plain-language summary of each owner statement, daily "what needs attention" summary. The server calls Claude with the key stored as a Cloudflare secret (`wrangler pages secret put ANTHROPIC_API_KEY`), never in the browser. Pay per use.
+- AI inside the system: plain-language summary of each owner statement, daily "what needs attention" summary. The server calls Claude with the key stored as a Cloudflare secret (`wrangler pages secret put ANTHROPIC_API_KEY`), never in the browser. Pay per use.
 - Optional: automatic Claude review of every pull request on GitHub (key stored as a GitHub Actions secret).
 - Do after Channex, when there are real bookings and messages to work with. Key never pasted in chat.
 
@@ -493,7 +505,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Renovation document flow (feat/reno-doc-flow, migration 0116, 14 Oct 2026)
 - OPEN, before merge: apply migration 0116 on staging, then production (lead). It adds the quotation's property block, project / building / unit / room on DO and SI, project + category on PO, room + category on PO and GR lines, the copy triggers and the one-category-per-renovation-PO rule. Until it is applied the engine reads as before (every new read checks the columns first).
-- Next: raise POs automatically from the procurement dates (per category / sub-category PO date; expected = the delivery date). Not built.
+- Ruled out (owner, 3 Nov 2026): no automatic POs from the procurement dates; purchase orders stay manual.
 - Later: carry the onsite / 3D / 2D design files onto the project's POs, GRs and DOs.
 - The Houzs PO "Add line" screen shows a refused mixed-category line as a failed save (500 insert_failed with the sentence); a friendlier 409 would mean editing Houzs's PO route.
 - Field-by-field list: docs/superpowers/plans/2026-10-14-reno-doc-flow-fields.md. Check: scripts/api-checks/reno-doc-flow.mjs (needs a local Postgres + PostgREST behind the engine's SUPABASE_URL).
@@ -509,8 +521,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## Service case looks up the project (feat/reno-service-project, no migration, 15 Oct 2026)
 - Renovation mode: the desktop New Service Case form picks a PROJECT (code, name, building / unit, customer, phone), fills the customer, phone, email and site address from it, stores project_id (migration 0081) and the project's newest SO as doc_no without asking; no Ref No; Product category is the renovation Category / Sub-category. List, detail header and side panel show the project as a link. Houzs mode unchanged.
-- OPEN: the phone app's new-case screen (mobile/MobileServiceCase.tsx, MobileAssrSoField.tsx) still searches SOs; give it the same project picker (GET /api/assr/renovation/projects).
-- OPEN: the Service Cases list search does not match the project code or name yet (services/assr.ts listAssrCases); search by customer or phone meanwhile.
+- Done (feat/global-search, 3 Nov 2026): the phone app's New Service Case in renovation mode picks the project with the desktop's picker (project, customer, phone, building / unit) and sends the desktop's body (mobile/renovationMobileCaseProject.tsx).
+- Done (feat/global-search, 3 Nov 2026): in renovation mode the Service Cases list search (and its CSV export) also matches the case's project code, name, building, unit, customer and customer phone in any format (routes/renovationServiceCases.ts caseProjectSearch).
 - Check: scripts/api-checks/reno-service-project.mjs (34 checks, local engine + PostgREST).
 - Procurement details second version (feat/reno-sku-hub, 15 Oct): per sub-category Ordered -> Received -> Delivered with GR / DO links, Ready and LATE; no item, PO or SO rows. No migration. Check: scripts/api-checks/reno-doc-flow.mjs (65 checks).
 
@@ -560,7 +572,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 
 ## In-house SO import, The Conts brand (feat/inhouse-so-seed, no migration, 2 Nov 2026, docs/so-import/inhouse/)
 - Skyline Embassy written on production 2 Nov: TC-SO-2610-007..024 (18 SOs, RM 579,770.00, dated 31 Oct, AutoCount 302-/481- accounts reused) and 22 projects RN-2610-008..029 (Embassy + Other tab). The one-off workflow so-inhouse-import.yml stays for the KL 48 run; remove it after.
-- KL 48: 44 units ready (19 Type A, 25 Type B) but not written: the owner will send a price list (chose B, 3 Nov); nothing until then. B-17-09, B-25-08, B-35-13A have no AutoCount customer / advance account.
+- KL 48: 43 units at the PDF package price (Type A RM 13,000, Type B RM 14,200; owner, 3 Nov). B-17-09 held: is AutoCount's KL48 B-17-19 its account? Write it with --release plus --account-alias or --new-accounts, then remove so-inhouse-import.yml.
 
 ## Notion SO import (feat/so-notion-import, no migration, 26 Oct 2026, docs/so-import/)
 - Re-imported on production 30 Oct (docs/so-import/README.md "Re-import"): 79 SOs (all linked), 27 VOs, RM 3,688,221.24; one-off workflow removed.
@@ -572,3 +584,54 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Flow run 1 Nov, not yet run: DO from the contract, POD upload, PO PDF and send; native date boxes could not be driven remotely (dates set in the DB for the TEST lines).
 
 - Pricing holidays (PR feat/pricing-holidays): apply migration 0202 local, staging, then production; the owner checks the loaded 2026/2027 Malaysia holiday dates against the gazette (Islamic and lunar dates marked "Check date").
+
+## One search box for the whole system (feat/global-search, migration 0206, 3 Nov 2026)
+- Done: the top-bar search (/, Ctrl+K or Cmd+K, the magnifier on a phone) finds any keyword across both sides, grouped by kind, five each with See all (up to 50): bookings, guests, units, buildings, owners, maintenance jobs, cleaning jobs (unit, cleaner, guest), expenses, utility bills, and through the engine projects, customers, quotations, sales orders, VOs, delivery orders, delivery returns, sales invoices, service cases, consignment orders, notes and returns, purchase orders, goods receipts, purchase invoices, purchase consignment orders, receives and returns, suppliers, products, stock transfers, stock takes and stock adjustments. Phone numbers and document numbers match with or without spaces and dashes. Each kind follows the person's level in its area; field and owner accounts have no search.
+- How: functions/api/search asks the engine server to server (POST /api/conts-search, signed with the sign-on secret, aud "search", carrying the person's levels; routes/renovationGlobalSearch.ts, services/renovation/renovationSearch.ts). A person who never opened Supply chain is signed on once first. An engine that is down or slow (6 s) shows "Some supply chain records could not be searched just now", never an empty result.
+- A result opens its record inside the engine frame through ?engine=<engine screen> on the menu address (src/App.tsx). A cleaning job opens through /operations/cleaning?task=, an expense or utility bill through /finance/payables?expense= (its dialog over that month's list). A stock adjustment has no page of its own, so it opens the Stock adjustments list searched for that item.
+- Consignment documents are searched by the engine, but the server leaves them out while consignment stays switched off (owner, 11 Oct 2026; src/lib/navigation.ts SWITCHED_OFF_AREAS, engine src/conts/navOnly.ts), because their screens open Home. Switch the module back on and they appear in the box with no other change.
+- OPEN, any time (not needed before merge): apply migration 0206 (trigram indexes for the search) on staging, then production. The search works without it, only slower on large tables.
+- Check: scripts/api-checks/global-search.mjs.
+
+- Engine database pool (owner, needs the Supabase or Cloudflare dashboard): the session pooler behind Hyperdrive allows 15 connections, the real ceiling behind the 504s; raise the pool size or point Hyperdrive at the transaction pooler (port 6543). #610 retries through bursts (0 of 96 reads failed, was 19 of 96) but does not raise the limit.
+
+- Engine deploy gap: a queued "Deploy engine to production" run is cancelled by a newer merge (#613's was) and the newer run publishes only what its own merge changed, so a server or screens change can be left unpublished. Make the run diff against the last successful deploy.
+
+- One SO interface, still different: read page and editor are two components (same order and wording, not the same markup); phones keep MobileSODetail and the stand-alone contract page; the editor counts cancelled lines (Line Items 6 against 4 on TC-SO-2611-001).
+
+## Messages access (owner, 4 Nov 2026)
+- Messages is for customer service, operation and management. Migration 0207 opens it for Property Management and its Customer Service position; Procurement stays closed. The Admin department (4 staff) counts as operation (owner, 4 Nov 2026): migration 0212 opens it.
+- Production orders started as a clone of the PO module (owner, 4 Nov 2026). Raw materials, MRP demand, Complete (GRN and delivered DO) and the photo flow are live. Actual vs budget is not built; branch wip/production-materials-mrp is superseded apart from that idea and can be dropped once the owner agrees.
+
+## After the 4 Nov 2026 re-check
+- State blank on 106 of 143 SOs, because their project has none. 21 can come from the Unit settings building list by exact name (Skyline Embassy 18, Maple 3); the other 85 are on 27 buildings not in that list (KL 48 is 43), so the state has to come from the owner. Warehouse is not affected: every state maps to CONTS-WH.
+- Engine screens tests: 34 of 6,726 fail. The ones read are stale guards, not screen faults: Houzs menus and routes removed, Chinese removed, category master list, the Production Order clone not added to the DataTable, coverage and storage lists. Worth a clean-up so a real failure stands out. Not read in full: MonthlyReport, ReportLayoutTree, renovationFlowFixes, mrp-views, convertScope. To fix: MobileRenovationDocs.tsx has no crash boundary of its own around its lazy pages.
+- Not yet seen live: the received-lock note on the SO edit page (needs a line received with no DO; the only one on a test order is cancelled). Project SO tab at phone width: tab switch is a native select that automation cannot drive.
+
+## SO, quotation and raw material round (6 Nov 2026)
+- Quotation edit page still differs from the SO edit page: only New Quotation is the SO page. Land area and land size are not on the quotation.
+- New Sales Order shows no payment cards: the four cards exist only once a contract does.
+- A project with a live SO is hidden from the project picker only; the server does not refuse a second order on it.
+- Smart Placement was tried and reverted (#718, #722): every request got slower. First open after an idle worker still takes 1-2 s a request; a fix needs the owner's choice (paid plan or fewer MRP reads).
+- 16 DOs, 1 GRN, 4 POs got BLK and CONTS-WH sales locations became BLK by hand on production, owner's request.
+
+## End-user test with a real mouse (5 Nov 2026)
+- Walked on erp.theconts.com from the menu: RN-2611-014, QT-2611-009, TC-SO-2611-016, TC-PO-2611-020 and -021 (In-house), TC-PRO-2611-014, TC-GRN-2611-011, TC-DO-2611-012, TC-SI-2611-003, payment RM 900, VO-TC-SO-2611-016-01, TC-CN-2611-002, Works started.
+- Not walked by mouse: a PO to a real outside supplier, Goods Receipt by hand, Delivery Order by hand (the test uses In-house, which raises them on Complete), Works completed, closing a project.
+- Not checked at phone width: the browser window would not resize.
+- Payment cards and Bill were missing on TC-SO-2611-016 straight after Convert. Retry added (#693); the failing read was never captured and the fix is not proven.
+- Open: Incoming PO number on an SO line is not a link. Doc numbers cut off in the SO and Production lists at some widths. The SO status tab Delivered read 0 with a delivered order. The side panel offers Transfer to Delivery Order on a delivered order.
+- Open: a production order raised from Plan POs has no Location; the others show CONTS-WH.
+- Owner to decide: the stage bar reads Design approved and Ordering with no drawing approved. MRP lists no line without a Processing date, so a new order is invisible there until one is set. Needs attention keeps saying Order the main items after the POs are raised.
+- Owner to decide: the Contract PDF prints RM 3,200 after a RM 100 credit note, while the contract on screen reads RM 3,100. Prepared By prints blank because nothing fills it. The sales order PDF still says "submit our quotation".
+- Left over: test projects RN-2611-013 (now used by someone else), -014, -015; QT-2611-003 draft with no project.
+
+## Engine click-through (4-5 Nov 2026)
+- Walked live on test data, no console errors: project RN-2611-012, quotation QT-2611-002, contract TC-SO-2611-012, VO, invoice TC-SI-2611-002, credit note TC-CN-2611-001, production order TC-PRO-2611-010 with raw material, goods receipt TC-GRN-2611-010, DOs TC-DO-2611-010 and 011, Works started, all their PDFs. Bound line with no PO refused with short_stock.
+- Run in a hidden tab, read from page text, PDF text and the database: no one has looked at these screens on a real phone or by eye since the tab went hidden. Horizontal overflow at 375px was scanned on 10 pages (0 found, but that scan ignores anything inside a clipped container).
+- The real supplier PO TC-PO-2611-014 was cancelled, never sent. TESTING-RAW-1 is a test SKU left in the catalog.
+- Journals do not post for SERVICE / DESIGN and other categories: no sales account bound for the company. Owner to bind under Accounting before billing for real.
+- A supplier pick binds the SKU in the catalog, so a PO flow test needs a TESTING SKU, not a real one.
+- TC-SO-2611-008 keeps one line with no room (added before the fix). Test data only.
+- Slow, not changed: coverage about 3 s because each SO view works out the whole company's MRP; line-edits 3-4 s. The 504 on SO detail was not reproduced; the only trace is one Postgres statement timeout on 4 Nov 11:35 with no query text.
+- The 33 contract VOs from before 5 Nov read Requested by The Conts ERP: the real person was never stored.

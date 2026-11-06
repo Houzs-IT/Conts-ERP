@@ -32,8 +32,8 @@ check('a role with no Sales order access does not see it', !paths(M.navFor('oper
 const PROPERTY_OS_SUPPLY = ['/supply/it-support', '/system/category-access', '/supply/finance/payables', '/supply/finance/utility-bills', '/supply/finance/approvals'];
 const unmapped = paths(M.navFor('management', true)).filter((p) => !M.ENGINE_PATH[p] && !PROPERTY_OS_SUPPLY.includes(p) && (M.workspaceOf(p) === 'supply'));
 check('every supply chain menu entry opens an engine screen', unmapped.length === 0, unmapped.join(' '));
-check('Project list and Schedule open the engine views that switch to renovation by themselves',
-  M.ENGINE_PATH['/projects/list'] === '/projects?view=list' && M.ENGINE_PATH['/projects/calendar'] === '/projects?view=calendar');
+check('Projects and Calendar open the engine renovation list and calendar (Beta until 3 Nov 2026)',
+  M.ENGINE_PATH['/projects/list'] === '/beta/projects' && M.ENGINE_PATH['/projects/calendar'] === '/beta/calendar');
 
 // Project monitor was dropped (owner, 11 Oct 2026): off the menu, and not an engine address, so an engine screen
 // never resolves to it; its old links open the Schedule (App.tsx).
@@ -124,20 +124,21 @@ check('Finance alone does not open the supply chain workspace, and stays in Rent
   supplyPaths(M.navFor('finance_admin', true, noSupply)).join(' '));
 check('with supply chain work, Finance is in both sidebars', supplyPaths(M.navFor('management', true)).includes('/supply/finance/general-ledger'));
 
-// Beta (owner, 23 Oct 2026): on the menu wherever the engine is, with no switch of its own, and each entry opens the
-// engine's page of the same address.
-// No Home: Project list opens the list of all projects that Home showed (owner, 23 Oct 2026).
-const BETA_PATHS = ['/beta/projects', '/beta/calendar'];
-check('Beta needs the engine', BETA_PATHS.every((p) => !paths(M.navFor('management', false)).includes(p)));
-check('Beta shows Project list and Calendar in that order wherever the engine is on (no switch)',
-  paths(M.navFor('management', true)).filter((p) => BETA_PATHS.includes(p)).join(' ') === BETA_PATHS.join(' '),
-  paths(M.navFor('management', true)).filter((p) => BETA_PATHS.includes(p)).join(' '));
-check('Beta follows the Projects area', BETA_PATHS.every((p) => !paths(M.navFor('operations_staff', true, { projects: 'none' })).includes(p)));
-check('Beta opens the engine Beta pages', BETA_PATHS.every((p) => M.ENGINE_PATH[p] === p));
-check('an engine Beta workspace keeps Projects highlighted', M.menuPathFor('/beta/projects/12?tab=defects') === '/beta/projects', M.menuPathFor('/beta/projects/12?tab=defects'));
-check('the engine Beta Calendar keeps its own entry highlighted', M.menuPathFor('/beta/calendar') === '/beta/calendar');
-const betaItems = M.navFor('management', true).flatMap((g) => g.items).filter((i) => i.path?.startsWith('/beta/'));
-check('the Beta menu says Project list and has no Home', betaItems.map((i) => i.label).join(', ') === 'Project list, Calendar', betaItems.map((i) => i.label).join(', '));
+// The Beta group became the Projects pages (owner, 3 Nov 2026): its Home and Calendar sit in PROJECTS at the old
+// Project list and Schedule addresses, Beta is gone, and its old addresses redirect (App.tsx).
+const PROJECT_PATHS = ['/projects/list', '/projects/calendar', '/projects/finances', '/projects/maintenance'];
+const mgmt = M.navFor('management', true);
+check('no menu entry opens a /beta/ address', !paths(mgmt).some((p) => p.startsWith('/beta/')), paths(mgmt).filter((p) => p.startsWith('/beta/')).join(' '));
+check('no BETA group', !mgmt.some((g) => g.label === 'BETA'));
+const projGroup = mgmt.find((g) => g.workspace === 'supply' && g.label === 'PROJECTS');
+check('PROJECTS reads Projects, Calendar, Finances, Project settings',
+  projGroup?.items.map((i) => i.label).join(', ') === 'Projects, Calendar, Finances, Project settings', projGroup?.items.map((i) => i.label).join(', '));
+check('PROJECTS opens the four project addresses in order', projGroup?.items.map((i) => i.path).join(' ') === PROJECT_PATHS.join(' '));
+check('Projects needs the engine', !paths(M.navFor('management', false)).includes('/projects/list'));
+check('Projects follows the Projects area', !paths(M.navFor('operations_staff', true, { projects: 'none' })).includes('/projects/list'));
+check('the /beta/ addresses are no longer menu destinations', !('/beta/projects' in M.ENGINE_PATH) && !('/beta/calendar' in M.ENGINE_PATH) && !('/beta/home' in M.ENGINE_PATH));
+check('an engine project workspace keeps Projects highlighted', M.menuPathFor('/beta/projects/12?tab=defects') === '/projects/list', M.menuPathFor('/beta/projects/12?tab=defects'));
+check('the engine renovation calendar keeps Calendar highlighted', M.menuPathFor('/beta/calendar') === '/projects/calendar', M.menuPathFor('/beta/calendar'));
 
 // Finance as one group, its eight parts opening to their screens (chew, 2 Nov 2026), the same in both sidebars;
 // every engine finance screen is in it once.

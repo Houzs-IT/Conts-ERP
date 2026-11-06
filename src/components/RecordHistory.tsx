@@ -3,10 +3,12 @@ import { api, errorMessage } from '../lib/api';
 import { rm, date, dateTime, humanize, titleCase, monthLabel, count, plural } from '../lib/format';
 import { ROLE_LABEL, CHANNEL } from '../lib/vocabulary';
 import { Skeleton } from './States';
+import { StaleBanner } from './DataState';
 import Icon from './Icon';
 import { Drawer } from './Dialog';
 import { CATEGORY as REPAIR_CATEGORY } from './ops/OpsUi';
-import { PAYER_LABEL, CATEGORY_LABEL, MODEL } from '../lib/revenueModel';
+import { PAYER_LABEL, CATEGORY_LABEL, MODEL, typeOf, codeName, type ContractType } from '../lib/revenueModel';
+import { useContractTypes } from '../lib/useContractTypes';
 import { statusLabel, type StatusEntity } from '../lib/status';
 import { CloseButton } from './CloseButton';
 import { useMedia } from '../lib/useMedia';
@@ -42,7 +44,7 @@ const ACTION: Record<string, string> = {
   'unit.channex_map': 'linked the unit to Channex', 'unit.channex_unmap': 'unlinked the unit from Channex', 'unit.channex_setup': 'set the unit up on Channex',
   'channel.connect': 'connected a channel', 'channel.disconnect': 'disconnected a channel', 'channex.enqueue_failed': 'could not send an update to the channels',
   'owner.create': 'added this owner', 'owner.update': 'edited the owner', 'owner.invite': 'invited the owner to the portal', 'owner.notify': 'messaged the owner', 'owner.delete': 'deleted the owner', 'owner.view_as': 'opened the owner portal as this owner',
-  'contract.create': 'created the contract', 'contract.update': 'edited the contract',
+  'contract.create': 'created the contract', 'contract.update': 'edited the contract', 'contract.renew': 'started a new contract', 'contract.extend': 'extended the contract',
   'statement.generate': 'generated the statement', 'statement.finalise': 'marked the statement final', 'statement.send': 'sent the statement', 'statement.adjust': 'adjusted the statement',
   'payout.create': 'created the owner payout', 'payout.run': 'started an owner payout run', 'payout.processing': 'marked it processing', 'payout.paid': 'marked it paid', 'payout.failed': 'marked it failed',
   'expense.create': 'recorded the expense', 'expense.update': 'edited the expense', 'expense.delete': 'deleted the expense',
@@ -86,12 +88,16 @@ const FIELD: Record<string, [string, Kind?]> = {
   employment: ['In-house or outsourced', 'state'], via: ['Through', 'state'], label: ['Item'], ownerApprovalRequired: ['Needs owner approval', 'bool'], released: ['Released', 'state'],
   blockFrom: ['From', 'date'], blockTo: ['Until', 'date'], copiedFrom: ['Copied from', 'name'], otaName: ['Channel'],
   type: ['Document', 'state'], docNo: ['Document number'], voided: ['Voided', 'bool'],
+  // A contract's terms (contract.update / renew / extend).
+  contractCode: ['Contract type'], code: ['Code'], revenueModel: ['Income model'], agentPct: ['Agent share', 'pct'], agentName: ['Agent'],
+  rent: ['Rent', 'money'], guarantee: ['Monthly minimum', 'money'], yearlyGuarantee: ['Yearly minimum', 'money'], tenantName: ['Tenant'],
+  endsOn: ['Ends on', 'date'], agreement: ['Agreement'],
   countryCode: ['Nationality'], idType: ['ID type'], idNumber: ['ID number'], dateOfBirth: ['Date of birth'], language: ['Language'],
 };
 const ID_TYPE: Record<string, string> = { mykad: 'MyKad', passport: 'Passport', other: 'Other ID' };
 const countryLabel = (code: string) => { try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code; } catch { return code; } };
 /** Kept in the record for the system's own use; nothing a person needs to read. */
-const HIDDEN = new Set(['moveId', 'documentId', 'windowId', 'channexBookingId', 'statementId', 'amountSource', 'sourceTaskId', 'reservationId', 'maintenanceIssueId', 'issueId', 'paymentId', 'otaBookingId', 'clashingReservationId', 'checked', 'created', 'fields', 'hasEmail', 'hasPhone', 'overlaps']);
+const HIDDEN = new Set(['moveId', 'documentId', 'windowId', 'channexBookingId', 'statementId', 'amountSource', 'sourceTaskId', 'reservationId', 'maintenanceIssueId', 'issueId', 'paymentId', 'otaBookingId', 'clashingReservationId', 'checked', 'created', 'fields', 'hasEmail', 'hasPhone', 'overlaps', 'splitFrom', 'previous', 'sharedPrevious']);
 
 /** Who reported a repair, in the words the Maintenance screen uses. */
 const REPORTED_BY: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
@@ -108,19 +114,20 @@ const ASSIGNEE_KIND: Record<string, string> = { in_house: 'In-house', contractor
 /** A cleaning job's kind in the words the Cleaning board uses. */
 const CLEAN_KIND: Record<string, string> = { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
 
-function known(k: string, v: string, table: string): string | null {
+function known(k: string, v: string, table: string, types: readonly ContractType[]): string | null {
   if (table === 'tasks' && k === 'kind' && CLEAN_KIND[v]) return CLEAN_KIND[v];
   if (table === 'tasks' && (k === 'state' || k === 'status') && v === 'resolved') return 'Done';
   if (k === 'chargeTo') return PAYER_LABEL[v] ?? null;
   if (k === 'category') return (table === 'expenses' ? CATEGORY_LABEL[v] : REPAIR_CATEGORY[v] ?? CATEGORY_LABEL[v]) ?? null;
   if (k === 'assigneeKind') return ASSIGNEE_KIND[v] ?? null;
-  if (k === 'model') return MODEL[v as keyof typeof MODEL]?.label ?? null;
+  if (k === 'model' || k === 'revenueModel') return MODEL[v as keyof typeof MODEL]?.label ?? null;
+  if ((k === 'contractCode' || (k === 'code' && table === 'owner_contracts')) && typeOf(types, v)) return codeName(types, v);
   if (k === 'readiness') return statusLabel('readiness', v);
   if (k === 'state' || k === 'status') return statusLabel(STATE_OF[table] ?? 'task', v);
   return null;
 }
 
-function show(k: string, v: unknown, names: Record<string, string>, table = ''): string {
+function show(k: string, v: unknown, names: Record<string, string>, types: readonly ContractType[], table = ''): string {
   if (v === null || v === undefined || v === '') return 'none';
   const kind = FIELD[k]?.[1] ?? (typeof v === 'number' && /(amount|total|payout|price|cost|deposit|rate)$/i.test(k) ? 'money' : 'text');
   if (k === 'countryCode' && typeof v === 'string' && /^[A-Z]{2}$/.test(v)) return countryLabel(v);
@@ -133,7 +140,7 @@ function show(k: string, v: unknown, names: Record<string, string>, table = ''):
   if (kind === 'role' && typeof v === 'string') return ROLE_LABEL[v] ?? humanize(v);
   if (k === 'source' && typeof v === 'string' && REPORTED_BY[v]) return REPORTED_BY[v];
   if (kind === 'channel' && typeof v === 'string') return CHANNEL[v as keyof typeof CHANNEL]?.label ?? humanize(v);
-  if (typeof v === 'string') { const word = known(k, v, table); if (word) return word; }
+  if (typeof v === 'string') { const word = known(k, v, table, types); if (word) return word; }
   if (kind === 'state' && typeof v === 'string') return humanize(v);
   if (typeof v === 'string') {
     if (/^\d{4}-\d{2}$/.test(v)) return monthLabel(v);
@@ -150,22 +157,23 @@ function show(k: string, v: unknown, names: Record<string, string>, table = ''):
 type Line = { key: string; label: string; from?: string; to: string };
 
 /** Field-by-field lines: a changed field shows old -> new; a field only in "after" shows its value. */
-export function historyLines(e: Pick<HistoryEntry, 'before' | 'after'> & { entityTable?: string }, names: Record<string, string> = {}): Line[] {
+export function historyLines(e: Pick<HistoryEntry, 'before' | 'after'> & { entityTable?: string }, names: Record<string, string> = {}, types: readonly ContractType[] = []): Line[] {
   const b = (e.before && typeof e.before === 'object' && !Array.isArray(e.before) ? e.before : {}) as Record<string, unknown>;
   const a = (e.after && typeof e.after === 'object' && !Array.isArray(e.after) ? e.after : {}) as Record<string, unknown>;
   const table = e.entityTable ?? '';
   const out: Line[] = [];
   for (const k of new Set([...Object.keys(b), ...Object.keys(a)])) {
-    if (HIDDEN.has(k)) continue;
+    // Older contract entries carry the record's own id in "before"; it means nothing on screen.
+    if (HIDDEN.has(k) || (table === 'owner_contracts' && k === 'id')) continue;
     const inBefore = k in b, inAfter = k in a;
     if (inBefore && inAfter) {
       if (JSON.stringify(b[k]) === JSON.stringify(a[k])) continue;
-      out.push({ key: k, label: labelOf(k), from: show(k, b[k], names, table), to: show(k, a[k], names, table) });
+      out.push({ key: k, label: labelOf(k), from: show(k, b[k], names, types, table), to: show(k, a[k], names, types, table) });
     } else if (inAfter) {
       if (a[k] === null || a[k] === undefined || a[k] === '' || a[k] === false) continue;
-      out.push({ key: k, label: labelOf(k), to: show(k, a[k], names, table) });
+      out.push({ key: k, label: labelOf(k), to: show(k, a[k], names, types, table) });
     } else {
-      out.push({ key: k, label: labelOf(k), from: show(k, b[k], names, table), to: 'removed' });
+      out.push({ key: k, label: labelOf(k), from: show(k, b[k], names, types, table), to: 'removed' });
     }
   }
   // An assignment records both the roster cleaner and the account behind it; one name is enough on screen.
@@ -234,10 +242,10 @@ function Changes({ lines }: { lines: Line[] }) {
 
 const capital = (s: string) => s.replace(/^./, c => c.toUpperCase());
 
-export function HistoryRun({ run, names }: { run: Run; names: Record<string, string>; last?: boolean }) {
+export function HistoryRun({ run, names, types }: { run: Run; names: Record<string, string>; types: readonly ContractType[]; last?: boolean }) {
   const [open, setOpen] = useState(false);
   const e = run.entries[0];
-  const lines = historyLines(e, names);
+  const lines = historyLines(e, names, types);
   const tag = tagOf(e);
   const who = e.actorKind === 'person' ? e.actorLabel : e.actorLabel || 'System';
   const role = e.actorKind === 'person' && e.actorRole ? ROLE_LABEL[e.actorRole] ?? humanize(e.actorRole) : null;
@@ -278,10 +286,12 @@ export function RecordHistory({ entity, id, also, alsoActions, title = 'History'
 }) {
   const [rows, setRows] = useState<HistoryEntry[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
+  const types = useContractTypes();
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const alsoParam = (also ?? []).map(([t, i]) => `${t}:${i}`).join(',');
   const actionsParam = (alsoActions ?? []).join(',');
 
@@ -299,7 +309,7 @@ export function RecordHistory({ entity, id, also, alsoActions, title = 'History'
       .catch(e => { if (live) setError(errorMessage(e, 'The history could not load. Check your connection and try again.')); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [entity, id, alsoParam, actionsParam, page, pageSize, refreshKey]);
+  }, [entity, id, alsoParam, actionsParam, page, pageSize, refreshKey, attempt]);
 
   const first = loading && page === 1 && rows.length === 0;
   const done = rows.length >= total;
@@ -316,11 +326,11 @@ export function RecordHistory({ entity, id, also, alsoActions, title = 'History'
         </div>
       )}
       {first && <div className="py-4 px-5 flex flex-col gap-3" aria-busy="true">{[0, 1, 2].map(i => <Skeleton key={i} height={34} />)}</div>}
-      {error && <div className="py-4 px-5 text-copy text-danger" role="alert">{error}</div>}
+      {error && <div className="py-4 px-5"><StaleBanner message={error} onRetry={() => setAttempt(n => n + 1)} /></div>}
       {!first && !error && rows.length === 0 && !origin && <div className="py-4 px-5 text-copy text-muted-ink">No changes recorded yet. Every edit from now on shows here, with who made it.</div>}
       {(runs.length > 0 || showOrigin) && (
         <ul className="list-none m-0 py-1 px-0">
-          {runs.map(r => <HistoryRun key={r.key} run={r} names={names} />)}
+          {runs.map(r => <HistoryRun key={r.key} run={r} names={names} types={types} />)}
           {showOrigin && origin && (
             <li className="grid grid-cols-[28px_1fr] gap-x-2.5 px-4 py-3 [&+&]:[border-top:1px_solid_var(--color-line-soft)]">
               <Avatar kind="system" label="" />
@@ -337,7 +347,7 @@ export function RecordHistory({ entity, id, also, alsoActions, title = 'History'
           <span className="text-meta text-muted-ink">Showing {count(rows.length)} of {count(total)}</span>
           <button type="button" onClick={() => setPage(p => p + 1)} disabled={loading}
             className="h-9 px-3 rounded-control border border-solid border-line bg-card text-copy text-ink cursor-pointer hover:bg-muted disabled:opacity-60 disabled:cursor-default">
-            {loading ? 'Loading...' : 'Show older'}
+            {loading ? 'Loading…' : 'Show older'}
           </button>
         </div>
       )}

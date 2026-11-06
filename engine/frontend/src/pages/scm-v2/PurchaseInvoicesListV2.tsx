@@ -1145,7 +1145,7 @@ export function PurchaseInvoicesListV2() {
   const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
     { value: "all", label: `All · ${counts.all}` },
     { value: "draft", label: `Draft · ${counts.draft}` },
-    { value: "posted", label: `Confirmed · ${counts.posted}` },
+    { value: "posted", label: `Submitted · ${counts.posted}` },
     { value: "partial", label: `Partial · ${counts.partial}` },
     { value: "paid", label: `Paid · ${counts.paid}` },
     { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
@@ -1176,7 +1176,7 @@ export function PurchaseInvoicesListV2() {
           <PageHeader
             eyebrow="Procurement"
             title="Purchase Invoices"
-            description="Every invoice raised by a supplier — Draft through Paid. Click any row for the quick view; open the full page to edit or record a payment."
+            description="Every invoice raised by a supplier — Draft to Paid. Click any row for the quick view; open the full page to edit or record a payment."
             primaryAction={
               <div className="flex items-stretch gap-2">
                 <Button variant="secondary" icon={<ArrowRightLeft size={14} />} onClick={goFromGrn}>
@@ -1191,7 +1191,7 @@ export function PurchaseInvoicesListV2() {
               </div>
             }
             secondaryActions={[
-              { label: "Goods Received", icon: Package, onClick: goGrns },
+              { label: "Goods Receipts", icon: Package, onClick: goGrns },
               { label: "Suppliers", icon: Users, onClick: goSuppliers },
             ]}
           />
@@ -1205,9 +1205,9 @@ export function PurchaseInvoicesListV2() {
               part of the page. */}
           <StatCard
             pending={statsPending} {...statsFail}
-            label="Total PIs"
+            label="Total Invoices"
             value={(visible.filtered ? visible.rows.length : total).toLocaleString("en-MY")}
-            subtitle={visible.filtered ? "Filtered · shown below" : "All matching PIs"}
+            subtitle={visible.filtered ? "Filtered · shown below" : "All matching invoices"}
             rail="bg-primary"
             active
           />

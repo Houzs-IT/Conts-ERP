@@ -38,6 +38,8 @@ import { variantCategoryOf } from '../lib/renovation-flow-rules';
 import { categorySwapAllowed } from '../shared/category-swap';
 import { moveModelCategory } from '../lib/model-category-move';
 import { MFG_PRODUCT_CATEGORIES } from './mfg-products';
+import { loadCategoryGroups } from './renovation-catalog-settings';
+import { categoriesInGroup } from '../shared/renovation-catalog';
 
 export const productModels = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -151,6 +153,10 @@ productModels.use('*', supabaseAuth);
    one home is MFG_PRODUCT_CATEGORIES. */
 const CATEGORIES = MFG_PRODUCT_CATEGORIES;
 
+/** In the enum list, or in the master list when staff added it at run time. */
+const knownCategory = async (c: Context<{ Bindings: Env; Variables: Variables }>, category: string): Promise<boolean> =>
+  (CATEGORIES as readonly string[]).includes(category) || (await loadCategoryGroups(c.get('supabase'))).some((g) => g.code === category);
+
 const CreateBody = z.object({
   // PR #69 — Branding is OPTIONAL across all categories per commander
   // 2026-05-26 ("bedframe dont need branding"). BEDFRAME / SOFA encode the
@@ -160,7 +166,7 @@ const CreateBody = z.object({
   branding:       z.string().trim().max(80).optional().nullable(),
   modelCode:      z.string().trim().min(1).max(32),
   name:           z.string().trim().min(1).max(200),
-  category:       z.enum(CATEGORIES),
+  category:       z.string().trim().toUpperCase().min(1),
   description:    z.string().trim().max(500).optional().nullable(),
   photoUrl:       z.string().trim().url().optional().nullable(),
   allowedOptions: z.record(z.unknown()).optional(),
@@ -173,7 +179,7 @@ const PatchBody = z.object({
   name:           z.string().trim().min(1).max(200).optional(),
   // category: any other category (shared/category-swap.ts), and it moves the
   // model's SKUs with it so none is orphaned in the other category.
-  category:       z.enum(CATEGORIES).optional(),
+  category:       z.string().trim().toUpperCase().min(1).optional(),
   description:    z.string().trim().max(500).nullable().optional(),
   photoUrl:       z.string().trim().url().nullable().optional(),
   allowedOptions: z.record(z.unknown()).optional(),
@@ -188,8 +194,8 @@ export const listProductModelsHandler = async (c: Context<{ Bindings: Env; Varia
   const category = c.req.query('category');
 
   let q = scopeToCompany(supabase.from('product_models').select(COLS), c).order('category').order('model_code');
-  if (category && (CATEGORIES as readonly string[]).includes(category)) {
-    q = q.eq('category', category);
+  if (category && (await knownCategory(c, category))) {
+    q = q.in('category', categoriesInGroup(category));
   }
   const { data, error } = await q;
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
@@ -453,6 +459,8 @@ productModels.post('/', async (c) => {
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) return c.json({ error: 'invalid_request', issues: parsed.error.issues }, 400);
 
+  if (!(await knownCategory(c, parsed.data.category))) return c.json({ error: 'invalid_category' }, 400);
+
   const supabase = c.get('supabase');
   const insert = {
     company_id:      activeCompanyId(c),
@@ -497,7 +505,10 @@ export const patchProductModelHandler = async (c: Context<{ Bindings: Env; Varia
   if (parsed.data.photoUrl !== undefined)       u.photo_url       = parsed.data.photoUrl;
   if (parsed.data.allowedOptions !== undefined) u.allowed_options = parsed.data.allowedOptions;
   if (parsed.data.active !== undefined)         u.active          = parsed.data.active;
-  if (parsed.data.category !== undefined)       u.category        = parsed.data.category;
+  if (parsed.data.category !== undefined) {
+    if (!(await knownCategory(c, parsed.data.category))) return c.json({ error: 'invalid_category' }, 400);
+    u.category = parsed.data.category;
+  }
 
   if (Object.keys(u).length === 0) {
     return c.json({ error: 'empty_patch' }, 400);
@@ -517,7 +528,7 @@ export const patchProductModelHandler = async (c: Context<{ Bindings: Env; Varia
     .maybeSingle();
   const beforeCategory = (before as { category?: string } | null)?.category ?? null;
   if (u.category !== undefined && u.category === beforeCategory) delete u.category;
-  if (u.category !== undefined && !categorySwapAllowed(beforeCategory, String(u.category))) {
+  if (u.category !== undefined && !categorySwapAllowed(beforeCategory, String(u.category), [String(u.category)])) {
     return c.json({
       error: 'category_change_not_allowed',
       reason: `"${String(u.category)}" is not a product category.`,

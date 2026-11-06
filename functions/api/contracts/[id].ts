@@ -11,11 +11,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);
   if (!b) return fail('VALIDATION', 'Nothing to change.', 422);
-  const fields = invalidContract(b, false);
-  if (Object.keys(fields).length) return fail('VALIDATION', 'Check the contract details.', 422, fields);
-
   const cur = await one<any>(env, 'SELECT id, model, management_fee_pct, grr_amount, starts_on, renews_on FROM owner_contracts WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That contract no longer exists.', 404);
+  const fields = invalidContract(b, false, cur.model);
+  if (Object.keys(fields).length) return fail('VALIDATION', 'Check the contract details.', 422, fields);
 
   const n = normalise(b);
   // A renewal must fall after the start date, whichever of the two is being changed.

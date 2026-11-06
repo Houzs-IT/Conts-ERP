@@ -11,7 +11,7 @@
 import type { Db } from "../../services/renovation/load";
 
 export type DocType =
-  | "quotation" | "sales_order" | "variation_order" | "purchase_order" | "delivery_order" | "goods_received"
+  | "quotation" | "sales_order" | "variation_order" | "purchase_order" | "production_order" | "delivery_order" | "goods_received"
   | "delivery_return" | "purchase_return" | "purchase_invoice" | "sales_invoice" | "receipt"
   | "credit_note" | "official_receipt" | "deposit_invoice" | "payment_voucher" | "ap_invoice";
 
@@ -79,6 +79,13 @@ export const DOC_TYPES: Record<DocType, DocTypeSpec> = {
     lines: item("purchase_order_items", "purchase_order_id", {
       order: "x.line_no, x.id", description: "coalesce(nullif(x.description, ''), nullif(x.material_name, ''), x.item_code)",
       parent: { type: "sales_order", col: "so_item_id" },
+    }),
+  },
+  production_order: {
+    label: "Production order", table: "scm.production_orders", idCol: "id", idKind: "uuid", noExpr: "d.po_number",
+    lines: item("production_order_items", "production_order_id", {
+      order: "x.line_no, x.id", description: "coalesce(nullif(x.description, ''), nullif(x.material_name, ''), x.item_code)",
+      parent: { type: "purchase_order", col: "source_po_item_id" },
     }),
   },
   delivery_order: {
@@ -390,6 +397,31 @@ export async function podFiles(db: Db, doId: string): Promise<Array<DocFile & { 
   }));
 }
 
+/* Files a document shows from a neighbour with no line link (owner, 4 Nov 2026), read each time so nothing is copied and
+   a photo added later arrives by itself:
+   - a production order shows its PO's whole-document photos, marked as from the PO;
+   - the GR and DO a completed production order raised show its progress photos as their proof of receipt and proof of
+     delivery (source 'pod'), the document's and every line's. */
+export async function linkedDocFiles(db: Db, doc: DocRef): Promise<Array<DocFile & { key: string }>> {
+  const load = async (where: string, ...args: unknown[]): Promise<Array<Row & { r2_key: string }>> => (await db.prepare(
+    `SELECT ${COLS}, r2_key FROM scm.doc_attachments WHERE deleted_at IS NULL AND company_id = ? AND ${where} ORDER BY created_at, id`,
+  ).bind(doc.companyId, ...args).all<Row & { r2_key: string }>()).results ?? [];
+  if (doc.type === "production_order") {
+    const po = await db.prepare(
+      `SELECT p.id::text AS id, p.po_number FROM scm.production_orders o JOIN scm.purchase_orders p ON p.id = o.source_po_id WHERE o.id = ?::uuid`,
+    ).bind(doc.id).first<{ id: string; po_number: string }>();
+    if (!po) return [];
+    return (await load("doc_type = 'purchase_order' AND doc_id = ? AND line_id IS NULL", po.id))
+      .map((r) => ({ ...toFile(r), key: r.r2_key, lineId: null, readOnly: true, from: `Purchase order ${po.po_number}` }));
+  }
+  if (doc.type !== "goods_received" && doc.type !== "delivery_order") return [];
+  const col = doc.type === "goods_received" ? "completion_grn_id" : "completion_do_id";
+  const order = await db.prepare(`SELECT id::text AS id, po_number FROM scm.production_orders WHERE ${col} = ?::uuid LIMIT 1`).bind(doc.id).first<{ id: string; po_number: string }>();
+  if (!order) return [];
+  return (await load("doc_type = 'production_order' AND doc_id = ?", order.id))
+    .map((r) => ({ ...toFile(r), key: r.r2_key, source: "pod" as const, lineId: null, readOnly: true, from: `Production order ${order.po_number}` }));
+}
+
 export const isPodFileId = (fileId: string): boolean => fileId === POD_FILE_ID || /^pod-\d+$/.test(fileId);
 
 export async function podFileById(db: Db, doId: string, fileId: string): Promise<(DocFile & { key: string }) | null> {
@@ -407,7 +439,10 @@ export async function fileRow(db: Db, doc: DocRef, fileId: string): Promise<{ ke
 
 /** A file the document shows from a line upstream (for its stream). */
 export async function carriedFileRow(db: Db, doc: DocRef, fileId: string): Promise<{ key: string; mime: string; name: string } | null> {
-  if (!UUID.test(fileId) || !DOC_TYPES[doc.type].lines?.parent) return null;
+  if (!UUID.test(fileId)) return null;
+  const linked = (await linkedDocFiles(db, doc)).find((f) => f.id === fileId);
+  if (linked) return { key: linked.key, mime: linked.mime, name: linked.name };
+  if (!DOC_TYPES[doc.type].lines?.parent) return null;
   const carried = await carriedFiles(db, doc, await listLines(db, doc));
   for (const list of carried.values()) {
     const hit = list.find((f) => f.id === fileId);

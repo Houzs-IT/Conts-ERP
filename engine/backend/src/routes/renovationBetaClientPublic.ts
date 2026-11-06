@@ -13,7 +13,7 @@ import { Hono, type Context } from "hono";
 import type { Env } from "../types";
 import { checkRateLimit, clientIp } from "../middleware/rateLimit";
 import { readClientLink, type LinkClaim } from "../services/renovation/betaClientLink";
-import { clientPhotoIndex, clientView, loadClientItems, loadProjectVos } from "../services/renovation/betaVoPo";
+import { clientPhotoIndex, clientView, loadClientItems } from "../services/renovation/betaVoPo";
 import type { Db } from "../services/renovation/load";
 import { thumbKeyFor } from "../services/photoThumbs";
 
@@ -46,8 +46,7 @@ renovationBetaClientPublic.get("/:token", async (c) => {
   const { claim, p } = link;
   const db = c.env.DB as unknown as Db;
   try {
-    const vo = await loadProjectVos(db, claim.projectId, claim.companyId, false);
-    const { items } = await loadClientItems(db, claim.projectId, claim.companyId, vo.vos);
+    const { items } = await loadClientItems(db, claim.projectId, claim.companyId);
     return c.json({ company: p.company_name, project: p.name, expiresAt: new Date(claim.expiresAt).toISOString(), items: await clientView(items) });
   } catch (e) {
     console.error("[beta-client] read failed", e);

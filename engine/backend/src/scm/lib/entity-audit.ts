@@ -46,6 +46,8 @@ export const ENTITY_TYPES = [
   /* Conts (finance phase 1): the company's ledger settings — the day the books start decides what posts, so who
      moved it, from what to what, is kept. Write-only too; entity_id is the company id. */
   'LEDGER_SETTINGS',
+  /* Conts (owner, 4 Nov 2026): the production order, a clone of the purchase order. */
+  'PRODUCTION_ORDER',
 ] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
 

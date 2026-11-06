@@ -4,6 +4,8 @@
  *    Hospitality income   every stay split by night into the month (revenue.ts), on what the booking site paid out
  *                         (collected revenue, the workbook's 金额 Amount), or, where payments are recorded against the booking
  *                         (booking_payments), by each payment: a monthly instalment over the nights it covers (stayParts).
+ *                         From Oct 2026 (NET_INCOME_FROM): the host payout the calendar shows instead, booking value
+ *                         less the booking site's fee, whether or not the payout has been recorded.
  *                         Occupancy = booked nights / days in month.
  *  - Expense deduction    cleaning (basic and deep, per session), electricity, water, Wi-Fi, Indah Water, additional
  *                         deductions (repairs and other owner-charged costs), and, when the unit's contract says so,
@@ -74,6 +76,9 @@ export interface StayRow {
   /** The money the stay brought in, in pieces that each cover their own nights (stayParts). Absent: the whole stay
    *  at collected_revenue, as before booking_payments existed. */
   parts?: StayPart[];
+  /** The host payout the calendar shows: booking value less the booking site's fee, never below 0. The income from
+   *  NET_INCOME_FROM on (see stayIncomeParts). Absent when the caller did not load it. */
+  host_payout?: number;
 }
 export interface StayPart { check_in: string; check_out: string; amount: number }
 /** An owner-charged expense. incurred_on is the bill's own date; deduct_month (YYYY-MM) the statement that takes it, a later
@@ -212,6 +217,18 @@ const ymd = (d: string) => d.slice(0, 10);
 
 const partsOf = (s: StayRow): StayPart[] => s.parts ?? [{ check_in: s.check_in, check_out: s.check_out, amount: Number(s.collected_revenue) }];
 
+/** From this month on, a stay's income is its host payout as the calendar shows it (owner, 3 Nov 2026: "overall unit report
+ *  的income 要和calender 的income 一样 ... 拿net amount"), not the payout recorded later. Earlier months keep the recorded
+ *  payout, so they still agree with the owner workbook. */
+export const NET_INCOME_FROM = '2026-10';
+
+/** The pieces a stay's income in `month` is worked out from. A stay with no host payout (no booking value, e.g. a direct
+ *  booking paid by hand) keeps the money recorded against it, as the calendar has nothing to show for it either. */
+const stayIncomeParts = (s: StayRow, month: string): StayPart[] =>
+  month >= NET_INCOME_FROM && Number(s.host_payout) > 0
+    ? [{ check_in: s.check_in, check_out: s.check_out, amount: Number(s.host_payout) }]
+    : partsOf(s);
+
 export interface PaymentPiece { reservation_id: string; amount: number; status: string; kind: string; source: string; note: string | null }
 
 /** What a stay brought in, as pieces each covering its own nights (owner, 10 Oct 2026: statements use the payments
@@ -250,7 +267,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
     const n = nightsInWindow(ymd(s.check_in), ymd(s.check_out), start, endEx);
     // Each payment piece is split by night over the nights it covers, so a long stay paid in monthly instalments is
     // credited to each month by its own instalment rather than by the stay's average night.
-    const parts = partsOf(s);
+    const parts = stayIncomeParts(s, month);
     const exact = parts.reduce((sum, p) => sum + prorate(p.amount, nightsInWindow(p.check_in, p.check_out, start, endEx), nightsInWindow(p.check_in, p.check_out, p.check_in, p.check_out)), 0);
     return { s, n, exact, paid: parts.reduce((sum, p) => sum + p.amount, 0) };
   }).filter(x => x.n > 0).sort((a, b) => a.s.check_in.localeCompare(b.s.check_in));
@@ -430,7 +447,8 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
   const [loaded] = await q<{ units: UnitRow[] | null; stays: StayRow[] | null; costs: CostRow[] | null; adjustments: AdjustmentRow[] | null; history: ContractRow[] | null; pieces: PaymentPiece[] | null }>(`
     WITH su AS (SELECT u.id, u.owner_id FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id ${unitWhere}),
     st AS (
-      SELECT r.id, r.unit_id, r.check_in, r.check_out, r.collected_revenue, r.channel, r.external_ref, g.full_name AS guest_name
+      SELECT r.id, r.unit_id, r.check_in, r.check_out, r.collected_revenue, r.channel, r.external_ref, g.full_name AS guest_name,
+             GREATEST(0, r.gross_booking_value - COALESCE(r.channel_fee, 0)) AS host_payout
       FROM reservations r LEFT JOIN guests g ON g.id = r.guest_id
       WHERE r.state IN ('confirmed','checked_in','checked_out') AND r.channel NOT IN ('maintenance_block','owner_stay')
         AND r.check_in < ? AND r.check_out > ? AND r.unit_id IN (SELECT id FROM su))
@@ -461,7 +479,7 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
   return {
     units: units.map(u => (historyOf.get(u.id)?.length ? { ...u, history: historyOf.get(u.id) } : u)),
     stays: stays.map(s => {
-      const row = { ...s, check_in: ymd(s.check_in), check_out: ymd(s.check_out), collected_revenue: Number(s.collected_revenue) };
+      const row = { ...s, check_in: ymd(s.check_in), check_out: ymd(s.check_out), collected_revenue: Number(s.collected_revenue), host_payout: Number(s.host_payout) };
       const parts = stayParts(row, piecesOf.get(s.id) ?? []);
       return parts ? { ...row, parts } : row;
     }),

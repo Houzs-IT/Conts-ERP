@@ -148,23 +148,21 @@ describe('letterhead: the company block never runs into the meta column', () => 
 
     const meta = spans.filter((s) => /^(DELIVERY ORDER|DO No: |Date: )/.test(s.text));
     expect(meta).toHaveLength(3);
-    const metaLeftEdge = Math.min(...meta.map((s) => s.left));
+    const metaTop = Math.min(...meta.map((s) => s.y));
 
-    // Everything that is NOT the meta column is the company block.
+    // Everything that is NOT the title and meta row is the company block.
     const company = spans.filter((s) => !meta.includes(s));
     expect(company.length).toBeGreaterThan(0);
-    const companyRightEdge = Math.max(...company.map((s) => s.right));
 
-    // The load-bearing claim: no company line reaches the meta column.
-    expect(companyRightEdge).toBeLessThan(metaLeftEdge);
+    // The load-bearing claim: the company block ends above the title and number, and clears the logo on its left.
+    expect(Math.max(...company.map((s) => s.y))).toBeLessThan(metaTop);
+    expect(Math.min(...company.map((s) => s.left))).toBeGreaterThan(76);
 
     // And the guard actually engaged rather than the address happening to fit:
     // the address reaches drawHeader as 2 comma-split lines and has to wrap
     // further to clear the meta column.
     const addressSpans = company.filter((s) => !s.text.toUpperCase().includes(CROWDED_BRANDING.companyName.toUpperCase()));
     expect(addressSpans.length).toBeGreaterThan(2);
-    // Conts letterhead (24 Oct 2026, renovation-doc-theme.ts): the company block sits under the rule, beside the meta.
-    expect(Math.min(...company.map((s) => s.y))).toBeGreaterThan(40);
   });
 
   test('a letterhead that already fits is not re-wrapped', async () => {

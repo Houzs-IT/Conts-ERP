@@ -218,8 +218,11 @@ export function DocumentRelationshipMapModal({
   rowLabels,
   amendmentsLabel,
   pairing,
+  extra,
 }: {
   open: boolean;
+  /** Documents past the chain, e.g. the production order a PO became. */
+  extra?: ReactNode;
   onClose: () => void;
   nodes: ChainNode[];
   onNodeClick?: (node: ChainNode) => void;
@@ -523,6 +526,8 @@ export function DocumentRelationshipMapModal({
 
         {nodes.slice(0, positions.length).map((n, i) => nodeCard(n, positions[i]!))}
       </div>
+
+      {extra && <div className="mt-3">{extra}</div>}
 
       {/* Amendments branch off the Sales Order — revision requests are real
           documents, so they get their own labelled row of clickable chips

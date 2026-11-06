@@ -1681,6 +1681,9 @@ export interface ListAssrFilters {
   date_field?: "reported" | "deadline";
   sort_by?: string;
   sort_dir?: "asc" | "desc";
+  /** Conts renovation mode: more ways for the search box to match, OR-ed with the ones below (the case's project,
+   *  routes/renovationServiceCases.ts caseProjectSearch). Absent in Houzs mode. */
+  extra_search?: { sql: string; binds: unknown[] };
   /** Row-level visibility scope (owner spec 2026-07, amended 2026-08-20): the
    *  caller + their full manager_id downline chain (services/orgScope.ts).
    *  undefined = unrestricted (admin `*` / service_cases.manage / director). An
@@ -1838,12 +1841,13 @@ export async function listAssrCases(env: Env, f: ListAssrFilters) {
     // user types with dashes/spaces is cleanPhone'd the SAME way before the
     // LIKE; the raw predicate still catches an exact-format substring.
     where.push(
-      "(LOWER(c.assr_no) LIKE ? OR LOWER(c.doc_no) LIKE ? OR LOWER(c.ref_no) LIKE ? OR LOWER(c.customer_name) LIKE ? OR LOWER(c.sales_agent) LIKE ? OR LOWER(c.complaint_issue) LIKE ? OR LOWER(c.item_code) LIKE ? OR LOWER(c.phone) LIKE ? OR LOWER(c.phone) LIKE ? OR EXISTS (SELECT 1 FROM assr_items i WHERE i.assr_id = c.id AND (LOWER(i.item_code) LIKE ? OR LOWER(i.item_description) LIKE ?)) OR EXISTS (SELECT 1 FROM assr_supplier_returns sr WHERE sr.assr_id = c.id AND LOWER(sr.ref_no) LIKE ?))"
+      "(LOWER(c.assr_no) LIKE ? OR LOWER(c.doc_no) LIKE ? OR LOWER(c.ref_no) LIKE ? OR LOWER(c.customer_name) LIKE ? OR LOWER(c.sales_agent) LIKE ? OR LOWER(c.complaint_issue) LIKE ? OR LOWER(c.item_code) LIKE ? OR LOWER(c.phone) LIKE ? OR LOWER(c.phone) LIKE ? OR EXISTS (SELECT 1 FROM assr_items i WHERE i.assr_id = c.id AND (LOWER(i.item_code) LIKE ? OR LOWER(i.item_description) LIKE ?)) OR EXISTS (SELECT 1 FROM assr_supplier_returns sr WHERE sr.assr_id = c.id AND LOWER(sr.ref_no) LIKE ?)" +
+        (f.extra_search ? ` OR ${f.extra_search.sql}` : "") + ")"
     );
     const like = `%${f.search.toLowerCase()}%`;
     const digits = cleanPhone(f.search);
     const phoneLike = digits ? `%${digits.toLowerCase()}%` : like;
-    binds.push(like, like, like, like, like, like, like, like, phoneLike, like, like, like);
+    binds.push(like, like, like, like, like, like, like, like, phoneLike, like, like, like, ...(f.extra_search?.binds ?? []));
   }
   // Calendar date-window bound (perf/servicecase-board-calendar-bound):
   // the Cases Calendar passes the viewed month grid as from/to so it pulls
@@ -2148,12 +2152,13 @@ export async function exportAssrCases(
     // user types with dashes/spaces is cleanPhone'd the SAME way before the
     // LIKE; the raw predicate still catches an exact-format substring.
     where.push(
-      "(LOWER(c.assr_no) LIKE ? OR LOWER(c.doc_no) LIKE ? OR LOWER(c.ref_no) LIKE ? OR LOWER(c.customer_name) LIKE ? OR LOWER(c.sales_agent) LIKE ? OR LOWER(c.complaint_issue) LIKE ? OR LOWER(c.item_code) LIKE ? OR LOWER(c.phone) LIKE ? OR LOWER(c.phone) LIKE ? OR EXISTS (SELECT 1 FROM assr_items i WHERE i.assr_id = c.id AND (LOWER(i.item_code) LIKE ? OR LOWER(i.item_description) LIKE ?)) OR EXISTS (SELECT 1 FROM assr_supplier_returns sr WHERE sr.assr_id = c.id AND LOWER(sr.ref_no) LIKE ?))"
+      "(LOWER(c.assr_no) LIKE ? OR LOWER(c.doc_no) LIKE ? OR LOWER(c.ref_no) LIKE ? OR LOWER(c.customer_name) LIKE ? OR LOWER(c.sales_agent) LIKE ? OR LOWER(c.complaint_issue) LIKE ? OR LOWER(c.item_code) LIKE ? OR LOWER(c.phone) LIKE ? OR LOWER(c.phone) LIKE ? OR EXISTS (SELECT 1 FROM assr_items i WHERE i.assr_id = c.id AND (LOWER(i.item_code) LIKE ? OR LOWER(i.item_description) LIKE ?)) OR EXISTS (SELECT 1 FROM assr_supplier_returns sr WHERE sr.assr_id = c.id AND LOWER(sr.ref_no) LIKE ?)" +
+        (f.extra_search ? ` OR ${f.extra_search.sql}` : "") + ")"
     );
     const like = `%${f.search.toLowerCase()}%`;
     const digits = cleanPhone(f.search);
     const phoneLike = digits ? `%${digits.toLowerCase()}%` : like;
-    binds.push(like, like, like, like, like, like, like, like, phoneLike, like, like, like);
+    binds.push(like, like, like, like, like, like, like, like, phoneLike, like, like, like, ...(f.extra_search?.binds ?? []));
   }
   pushVisibilityScope(where, f.visible_to_user_ids);
   pushAllowedCompanies(where, f.allowed_company_ids);

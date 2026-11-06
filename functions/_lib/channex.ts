@@ -1,11 +1,12 @@
-import type { Env } from './db';
+import { type Env, inDemo } from './db';
 
 /** Channex server for this environment, from wrangler.toml: staging.channex.io on preview, app.channex.io
  *  on production. Falls back to staging so a missing setting can never touch real listings. */
 export const channexServer = (env: Env) => (env.CHANNEX_BASE_URL || 'https://staging.channex.io').replace(/\/+$/, '');
 
 async function channexFetch<T = unknown>(env: Env, path: string, init?: RequestInit): Promise<{ ok: boolean; status: number; body: T | null }> {
-  if (!env.CHANNEX_API_KEY) return { ok: false, status: 0, body: null };
+  // Demo mode never calls Channex: the change stays in the demo store ("Demo: not sent").
+  if (!env.CHANNEX_API_KEY || inDemo()) return { ok: false, status: 0, body: null };
   const res = await fetch(channexServer(env) + '/api/v1' + path, {
     ...init,
     headers: { 'user-api-key': env.CHANNEX_API_KEY, accept: 'application/json', 'content-type': 'application/json', ...(init?.headers ?? {}) },
@@ -16,7 +17,7 @@ async function channexFetch<T = unknown>(env: Env, path: string, init?: RequestI
   return { ok: res.ok, status: res.status, body };
 }
 
-export const channexConfigured = (env: Env) => !!env.CHANNEX_API_KEY;
+export const channexConfigured = (env: Env) => !!env.CHANNEX_API_KEY && !inDemo();
 
 /** Only OTAs the owner has actually connected map to a channel. Bookings, messages and reviews
  *  each spell the OTA's name differently ("Airbnb" vs "AirBNB" vs "BookingCom"), so this
@@ -94,6 +95,17 @@ export function channexSendMessage(env: Env, threadId: string, body: string) {
 export const channexReviews = (env: Env, page = 1) => channexFetch<{ data: any[] }>(env, `/reviews?${paged(page)}`);
 export function channexReplyToReview(env: Env, reviewId: string, reply: string) {
   return channexFetch(env, `/reviews/${reviewId}/reply`, { method: 'POST', body: JSON.stringify({ reply: { reply } }) });
+}
+
+/** The host's review of the guest (Airbnb only), on the guest's review of that stay. Ratings 1-5; tags are
+ *  host_review_guest_* codes. Body as Channex's reviews collection gives it (3 Nov 2026). */
+export function channexGuestReview(env: Env, reviewId: string, p: {
+  scores: { category: string; rating: number }[]; publicReview: string; privateReview: string; recommend: boolean; tags: string[];
+}) {
+  return channexFetch(env, `/reviews/${reviewId}/guest_review`, {
+    method: 'POST',
+    body: JSON.stringify({ review: { scores: p.scores, private_review: p.privateReview, public_review: p.publicReview, is_reviewee_recommended: p.recommend, tags: p.tags } }),
+  });
 }
 
 /** Whole-currency-unit rate (e.g. 150.00), not sen — confirmed against the demo property. */

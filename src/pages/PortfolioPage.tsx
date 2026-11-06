@@ -76,8 +76,8 @@ function BuildingTile({ b, i, money, onOpen }: { b: BuildingCard; i: number; mon
         </span>
         {money && (
           <span className="flex items-center justify-between gap-3 text-meta text-on-dark tabular-nums">
-            <span>Avg nightly {rm(b.adr, { cents: false })}</span>
-            <span className="font-semibold text-white">{rm(b.revenue, { cents: false })}</span>
+            <span>Avg nightly {rm(b.adr)}</span>
+            <span className="font-semibold text-white">{rm(b.revenue)}</span>
           </span>
         )}
       </span>
@@ -164,10 +164,10 @@ export default function PortfolioPage() {
     { key: 'occupancy', label: 'Occupancy', type: 'number', value: r => r.occupancy, width: 100,
       render: r => <span className={NUM}>{percent(r.occupancy)}</span> },
     ...(money ? [
-      { key: 'adr', label: 'Avg nightly price', type: 'money', value: r => r.adr, width: 100, render: r => <span className={NUM}>{rm(r.adr, { cents: false })}</span> },
-      { key: 'revpar', label: 'Earnings per night (all nights)', type: 'money', value: r => r.revpar, width: 100, render: r => <span className={NUM}>{rm(r.revpar, { cents: false })}</span> },
+      { key: 'adr', label: 'Avg nightly price', type: 'money', value: r => r.adr, width: 100, render: r => <span className={NUM}>{rm(r.adr)}</span> },
+      { key: 'revpar', label: 'Earnings per night (all nights)', type: 'money', value: r => r.revpar, width: 100, render: r => <span className={NUM}>{rm(r.revpar)}</span> },
       { key: 'revenue', label: 'Earnings', type: 'money', value: r => r.revenue, width: 120, phone: 'right',
-        render: r => <span className={`${NUM} font-medium`}>{rm(r.revenue, { cents: false })}</span> },
+        render: r => <span className={`${NUM} font-medium`}>{rm(r.revenue)}</span> },
     ] as Column<PortfolioRow>[] : []),
     ...(withRating ? [{ key: 'rating', label: 'Rating', type: 'number', value: r => r.rating, width: 80,
       render: r => <span className={NUM}>{r.rating != null ? fmtRating(r.rating) : '—'}</span> }] as Column<PortfolioRow>[] : []),
@@ -178,8 +178,8 @@ export default function PortfolioPage() {
   const tiles = [
     { label: narrowed ? 'Units shown' : 'Listed units', value: count(n) },
     { label: 'Occupancy', value: percent(occ) },
-    { label: 'Avg nightly price', value: money ? rm(adr, { cents: false }) : '—' },
-    { label: 'Earnings', value: money ? rm(revenue, { cents: false }) : '—' },
+    { label: 'Avg nightly price', value: money ? rm(adr) : '—' },
+    { label: 'Earnings', value: money ? rm(revenue) : '—' },
   ];
 
   return (
@@ -245,9 +245,9 @@ export default function PortfolioPage() {
             <span className="font-semibold text-ink">{narrowed ? plural(n, 'matching unit') : `All ${plural(n, 'unit')}`}</span>
             <span><span className="text-muted-ink">Occupancy </span><span className="font-semibold tabular-nums">{percent(occ)}</span></span>
             {money && <>
-              <span><span className="text-muted-ink">Avg nightly price </span><span className="font-semibold tabular-nums">{rm(adr, { cents: false })}</span></span>
-              <span><span className="text-muted-ink">Earnings per night (all nights) </span><span className="font-semibold tabular-nums">{rm(revpar, { cents: false })}</span></span>
-              <span><span className="text-muted-ink">Earnings </span><span className="font-semibold tabular-nums">{rm(revenue, { cents: false })}</span></span>
+              <span><span className="text-muted-ink">Avg nightly price </span><span className="font-semibold tabular-nums">{rm(adr)}</span></span>
+              <span><span className="text-muted-ink">Earnings per night (all nights) </span><span className="font-semibold tabular-nums">{rm(revpar)}</span></span>
+              <span><span className="text-muted-ink">Earnings </span><span className="font-semibold tabular-nums">{rm(revenue)}</span></span>
             </>}
           </div>
         )}

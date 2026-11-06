@@ -33,7 +33,8 @@ describe('one label per category', () => {
     expect(mfgCategoryLabel('accessory')).toBe('Accessory');
   });
   test('an unknown value is shown as stored', () => {
-    expect(mfgCategoryLabel('CHAIR')).toBe('CHAIR');
+    expect(mfgCategoryLabel('CHAIR')).toBe('Chair');
+    expect(mfgCategoryLabel('CURTAIN_WORK')).toBe('Curtain work');
     expect(mfgCategoryLabel(null)).toBe('');
   });
 });

@@ -14,7 +14,8 @@ import { api, errorMessage } from '../../lib/api';
 import { monthLabel, rm, todayMyt } from '../../lib/format';
 import { StatusBadge } from '../../components/StatusBadge';
 import { contractSplit, type SplitContract } from '../../lib/utilitySplit';
-import { pdfToJpegs } from '../../lib/pdfPages';
+import { pdfToJpegs, photoForReader } from '../../lib/pdfPages';
+import { pageFileName } from '../../lib/scanPage';
 
 /** Scan bills (finance, chew 2 Nov 2026; plan docs/superpowers/plans/2026-11-02-utility-bill-scan.md Task 5): pick a
  *  month's PDFs or photos; every page is read (three at a time, no time limit) and shown as it finishes, with the unit
@@ -25,7 +26,7 @@ import { pdfToJpegs } from '../../lib/pdfPages';
 type Kind = 'electricity' | 'water' | 'internet' | 'sewerage';
 type Read = {
   kind: string; provider: string | null; billMonth: string | null; periodFrom: string | null; periodTo: string | null;
-  amountDueSen: number | null; accountNoVisible: string | null; accountNoFull: string | null; confidenceNotes: string | null;
+  amountDueSen: number | null; currentChargesSen: number | null; accountNoVisible: string | null; accountNoFull: string | null; confidenceNotes: string | null;
 };
 type Match = { colour: 'green' | 'amber' | 'red'; accountId: string | null; alreadyRecorded: boolean; reasons: string[] };
 type ScanAnswer = { scanId: string; read: Read; match: Match; unitId: string | null; candidates: { accountId: string; unitId: string | null; clues: string[] }[] };
@@ -93,14 +94,17 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
   async function readOne(row: Row) {
     try {
       const fd = new FormData();
-      fd.append('file', new File([await (await fetch(row.thumb)).blob()], `${row.fileName.replace(/\.[^.]+$/, '')}-p${row.pageNo}.jpg`, { type: 'image/jpeg' }));
+      /* Sent as the type it really is: a PNG labelled JPEG is refused by the reader. */
+      const page = await (await fetch(row.thumb)).blob();
+      const type = page.type || 'image/jpeg';
+      fd.append('file', new File([page], pageFileName(row.fileName, row.pageNo, type), { type }));
       fd.append('kind', 'receipt');
       const doc = await api.post<{ id: string }>('/documents', fd);
       const s = await api.post<ScanAnswer>('/expenses/utilities/scan', { documentId: doc.id, batchId });
       const kind = (KINDS.some(k => k.value === s.read.kind) ? s.read.kind : '') as Kind | '';
       patch(row.key, {
         state: 'done', scan: s, kind, billMonth: s.read.billMonth ?? '', periodFrom: s.read.periodFrom ?? '', periodTo: s.read.periodTo ?? '',
-        amountSen: s.read.amountDueSen, unitId: s.unitId ?? '', accountId: s.unitId ? s.match.accountId : null,
+        amountSen: s.read.currentChargesSen, unitId: s.unitId ?? '', accountId: s.unitId ? s.match.accountId : null,
         tick: s.match.colour === 'green' && !s.match.alreadyRecorded,
       });
     } catch (e) {
@@ -126,7 +130,7 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
         if (file.type === 'application/pdf') {
           let n = 0;
           for await (const p of pdfToJpegs(file)) { if (stopped.current) break; add(p, ++n); }
-        } else if (!stopped.current) add(file, 1);
+        } else if (!stopped.current) add(await photoForReader(file), 1);
       } catch (e) {
         setProblem(`${file.name} could not be opened: ${errorMessage(e)}`);
       } finally {

@@ -1,10 +1,11 @@
 import { type Env, all, one, json } from '../../_lib/db';
+import { numericDate } from '../../_lib/format';
 import { requireSession } from '../../_lib/auth';
 import { can } from '../../_lib/access';
 
 const KL_TODAY = `to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuala_Lumpur' });
-const day = (d: string) => new Date(`${d.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const day = (d: string) => numericDate(d.slice(0, 10));
 
 /** GET /api/dashboard/exceptions — what needs a person, highest risk first. One action per row. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

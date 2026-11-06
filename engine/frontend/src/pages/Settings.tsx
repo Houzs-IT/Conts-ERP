@@ -495,7 +495,7 @@ const BRANDING_FIELDS: {
   /** A textarea of this many rows instead of a one-line box. */
   rows?: number;
 }[] = [
-  { key: "companyName", label: "Company name", placeholder: "Houzs Century Sdn Bhd" },
+  { key: "companyName", label: "Company name", placeholder: "The Conts Sdn Bhd" },
   {
     key: "registrationNo",
     label: "SSM registration no",

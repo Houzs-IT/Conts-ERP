@@ -54,6 +54,7 @@ const RELATIONSHIPS: Relationship[] = [
   { child: 'delivery_order_items', childCol: 'delivery_order_id', parent: 'delivery_orders', parentCol: 'id' },
   { child: 'delivery_return_items', childCol: 'delivery_return_id', parent: 'delivery_returns', parentCol: 'id' },
   { child: 'supplier_material_bindings', childCol: 'supplier_id', parent: 'suppliers', parentCol: 'id' },
+  { child: 'production_order_materials', childCol: 'production_order_id', parent: 'production_orders', parentCol: 'id' },
 ];
 
 const CO = 1;
@@ -133,6 +134,8 @@ function fixture(): Record<string, Row[]> {
     supplier_material_bindings: [],
     suppliers: [],
     mrp_category_lead_times: [],
+    production_order_materials: [],
+    production_orders: [],
     fabric_trackings: [],
   };
 }
@@ -283,6 +286,7 @@ describe('resolvePoSoCoveragePerSkuForPos — the answer, the cost and the overl
       supplier_material_bindings: 1,
       mrp_category_lead_times: 1,
       mrp_supplier_category_lead_times: 1, // owner's per-supplier lead override, loaded beside the base
+      production_order_materials: 1,      // raw materials of open production orders, as MRP demand
 
       /* 3, not 2, since fix/unbounded-in-list-chunking landed. The deliverable-
          remaining read of this table was previously unbounded at BOTH ends: no
@@ -294,7 +298,7 @@ describe('resolvePoSoCoveragePerSkuForPos — the answer, the cost and the overl
       delivery_orders: 2,                 // DO-lock headers + MRP committed shipments
       delivery_return_items: 1,
     });
-    expect(db.totalReads()).toBe(30); // +1: the per-supplier lead override, loaded beside the base
+    expect(db.totalReads()).toBe(31); // +1: raw materials of production orders. +1: the per-supplier lead override, loaded beside the base
   });
 
   it('has the delivered ledger and the MRP engine in flight before the stored-origin chain validates its SOs', async () => {

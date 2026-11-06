@@ -40,7 +40,7 @@ const J = await import(pathToFileURL(out).href);
 
 const env = { HYPERDRIVE: { connectionString: db }, SESSION_SECRET: 'unused',
   ...(hub ? { IT_HUB_URL: hub, IT_HUB_API_KEY: arg('hub-key') ?? '', APP_ORIGIN: 'http://127.0.0.1:8788' } : {}) };
-const all = { 'channex-outbox': J.channexOutbox, 'notification-outbox': J.drainOutbox, 'repair-blocks': J.repairBlockSweep, 'overdue-sweep': J.overdueSweep, 'forgotten-clock-outs': J.forgottenClockOuts, 'daily-digest': J.dailyDigest, 'hub-health-report': J.hubHealthReport, 'auto-guest-left': J.autoGuestLeft, 'engine-mail-outbox': J.engineMailOutbox };
+const all = { 'channex-outbox': J.channexOutbox, 'notification-outbox': J.drainOutbox, 'repair-blocks': J.repairBlockSweep, 'overdue-sweep': J.overdueSweep, 'forgotten-clock-outs': J.forgottenClockOuts, 'daily-digest': J.dailyDigest, 'hub-health-report': J.hubHealthReport, 'auto-guest-left': J.autoGuestLeft, 'engine-mail-outbox': J.engineMailOutbox, 'guest-reviews': J.guestReviewSweep };
 const pick = arg('job');
 if (pick && !all[pick]) { console.error(`Unknown job ${pick}. One of: ${Object.keys(all).join(', ')}`); process.exit(2); }
 const jobs = pick ? [all[pick]] : Object.values(all);

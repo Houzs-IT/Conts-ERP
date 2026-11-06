@@ -39,6 +39,14 @@ const ROWS = [
   { kind: 'PI', id: 'pi-1', invoiceNumber: '2990-PI-2607-005', supplierId: 'sup-t', supplierCode: '400-H004', supplierName: 'HOOKKA INDUSTRIES SDN. BHD.', supplierInvoiceRef: null, description: null, invoiceDate: '2026-06-27', dueDate: '2026-07-27', currency: 'MYR', totalSen: 300_000, paidSen: 100_000, outstandingSen: 200_000, status: 'PARTIALLY_PAID' },
 ];
 
+/* The sub-departments a line names (SOP 1.1; chew 4 Nov 2026): one built-in row per department. */
+vi.mock('../../conts/subDepartmentQueries', () => ({
+  useSubDepartments: () => ({ data: { subDepartments: [
+    { id: 's-gen', department: 'rental', name: 'Rental (general)', fixedKey: 'rental_general', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-dc', department: 'supply', name: 'Renovation (Dream Crafter)', fixedKey: 'dreamcrafter', staffDepartmentId: null, active: true, sort: 10 },
+    { id: 's-co', department: 'shared', name: 'Company', fixedKey: 'company', staffDepartmentId: null, active: true, sort: 10 },
+  ] } }),
+}));
 vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
 vi.mock('../../conts/projectLimitQueries', () => ({ useProjectOptions: () => ({ data: { projects: [{ id: 7, code: 'P7', name: 'SKYLINE D-25-13', funding: 'customer' }] } }) }));
 vi.mock('../../vendor/scm/lib/ap-invoice-queries', () => ({
@@ -156,15 +164,15 @@ describe('raising an AP invoice', () => {
     expect((within(d).getByLabelText('line 1 amount') as HTMLInputElement).value).toBe('420.00');
     /* Conts: each line's department (finance phase 1, spec 3.5) — Save waits for it. */
     expect((within(d).getByText('Save as draft').closest('button') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 'rental' } });
+    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 's-gen' } });
     /* Conts: the project a cost belongs to (renovation completion %, plan 2026-10-31 Task 2) — blank means none. */
-    fireEvent.click(within(d).getByRole('button', { name: 'line 1 project' }));
+    fireEvent.click(within(d).getByRole('combobox', { name: 'line 1 project' }));
     fireEvent.click(screen.getByText('SKYLINE D-25-13'));
     fireEvent.click(within(d).getByText('Save as draft'));
     await waitFor(() => expect(createAsync).toHaveBeenCalled());
     expect(createAsync.mock.calls[0]![0]).toMatchObject({
       supplierId: 'sup-h', supplierInvoiceRef: 'HVH-1001', notes: 'Rent October',
-      lines: [{ description: 'Rent Oct', debitAccountCode: '900-A001', amountSen: 42_000, department: 'rental', projectId: 7 }],
+      lines: [{ description: 'Rent Oct', debitAccountCode: '900-A001', amountSen: 42_000, department: 'rental', subDepartmentId: 's-gen', projectId: 7 }],
     });
   });
 
@@ -206,13 +214,13 @@ describe('the scanned bill (OCR) and its files', () => {
     expect(within(d).getByText(/Account 900-A001 filled/)).toBeTruthy();
     expect(within(d).getByText(/1 scanned file\(s\) will be attached/)).toBeTruthy();
 
-    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 'shared' } });
+    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 's-co' } });
     fireEvent.click(within(d).getByText('Save as draft'));
     await waitFor(() => expect(createAsync).toHaveBeenCalled());
     expect(createAsync.mock.calls[0]![0]).toMatchObject({
       supplierId: 'sup-h', supplierInvoiceRef: 'HVH-0912', invoiceDate: '2026-09-01', dueDate: '2026-09-30',
       /* What the reader fills is upper case (owner 2026-09-08: 帮我 fill data 时默认全部大写). */
-      lines: [{ description: 'RENT SEPT', debitAccountCode: '900-A001', amountSen: 400_000, department: 'shared' }],
+      lines: [{ description: 'RENT SEPT', debitAccountCode: '900-A001', amountSen: 400_000, department: 'shared', subDepartmentId: 's-co' }],
     });
     await waitFor(() => expect(uploadAsync).toHaveBeenCalledWith({ invoiceId: 'api-2', file: { name: 'rent.pdf', mime: 'application/pdf', dataBase64: 'b64:rent.pdf' } }));
   });
@@ -266,12 +274,12 @@ describe('the bill pile hands one bill over as one AP invoice', () => {
     expect((within(d).getByLabelText('Supplier invoice ref') as HTMLInputElement).value).toBe('HVH-0913');
     expect((within(d).getByLabelText('line 1 description') as HTMLInputElement).value).toBe('RENT OCT');
     expect(within(d).getByText(/1 scanned file\(s\) will be attached/)).toBeTruthy();
-    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 'rental' } });
+    fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 's-gen' } });
     fireEvent.click(within(d).getByText('Save as draft'));
     await waitFor(() => expect(createAsync).toHaveBeenCalled());
     expect(createAsync.mock.calls[0]![0]).toMatchObject({
       supplierId: 'sup-h', supplierInvoiceRef: 'HVH-0913', invoiceDate: '2026-09-02',
-      lines: [{ description: 'RENT OCT', debitAccountCode: '900-A001', amountSen: 150_000, department: 'rental' }],
+      lines: [{ description: 'RENT OCT', debitAccountCode: '900-A001', amountSen: 150_000, department: 'rental', subDepartmentId: 's-gen' }],
     });
     await waitFor(() => expect(uploadAsync).toHaveBeenCalledWith({ invoiceId: 'api-2', file: { name: 'rent.pdf', mime: 'application/pdf', dataBase64: 'b64:rent.pdf' } }));
   });

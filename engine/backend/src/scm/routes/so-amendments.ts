@@ -26,6 +26,7 @@ import {
 } from '../shared';
 import { applySoAmendment, reviseBoundPo, ReceivedFloorError } from '../lib/so-revision';
 import { chunkIn } from '../lib/paginate-all';
+import { renovationAmendmentChanges } from '../../services/renovation/renovationVoChangeRead';
 import { raisePoFollowUps } from '../lib/amendment-po-followup';
 import { DESK, judgeLaneHandover, judgeLaneMove } from '../lib/amendment-lane-handover';
 import { countCancelRequestsAwaitingSigner } from '../lib/cancel-pending-count';
@@ -301,7 +302,7 @@ soAmendments.get('/', async (c) => {
   // scopeToCompany: isolate the list to the active company (mig 0080 company_id);
   // no-op pre-activation so single-company Houzs is unchanged.
   const { data, error } = await scopeToCompany(sb.from('so_amendments')
-    .select('id, so_doc_no, amendment_no, status, lane, reason, lane_flag_note, requested_by, created_at, updated_at'), c)
+    .select('id, so_doc_no, amendment_no, status, lane, reason, lane_flag_note, requested_by, resolution, created_at, updated_at'), c)
     .order('created_at', { ascending: false })
     .limit(500);
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
@@ -612,7 +613,16 @@ soAmendments.get('/:id', async (c) => {
     poFollowUps = (fuRows ?? []) as Array<Record<string, unknown>>;
   }
 
-  return c.json({ amendment, lines, salesOrder, purchaseOrders, poFollowUps });
+  /* Conts (owner, 3 Nov 2026): what kind of change each line is, a VO's omit and re-add of one line joined into one
+     change, and the VO's one-line topic. Never blocks the page. */
+  let changes: Awaited<ReturnType<typeof renovationAmendmentChanges>> = null;
+  try {
+    changes = await renovationAmendmentChanges(sb, amendment as never, lines as never);
+  } catch (e) {
+    console.warn('[so-amendments] change labels skipped', e instanceof Error ? e.message : e);
+  }
+
+  return c.json({ amendment, lines, salesOrder, purchaseOrders, poFollowUps, changes });
 });
 
 /* ── PATCH /:id/supplier-confirm ───────────────────────────────────────────

@@ -154,7 +154,7 @@ export function StatusFilterMenu({ entity, values, off, onChange, title = 'Statu
             );
           })}
           <div className="mt-1 pt-1 border-0 border-t border-solid border-line-soft flex items-center justify-between px-1">
-            <button type="button" onClick={() => onChange(() => ({}))} className="h-7 px-1 bg-transparent border-none cursor-pointer font-sans text-meta font-medium text-accent">Show all</button>
+            <button type="button" onClick={() => onChange(() => ({}))} className="hit-target h-7 px-1 bg-transparent border-none cursor-pointer font-sans text-meta font-medium text-accent">Show all</button>
             <Button variant="secondary" size="sm" onClick={() => setOpen(false)}>Done</Button>
           </div>
         </div>

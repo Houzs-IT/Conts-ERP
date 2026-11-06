@@ -1,4 +1,5 @@
 import { type Env, all, one, run, audit, nowIso } from './db';
+import { numericDate } from './format';
 import { ensureTurnovers, replanTurnover, CLEAN_KINDS_SQL } from './cleaning';
 import { overdueCleans } from './cleanOverdue';
 import { cleanDeadline } from '../../src/lib/cleanOverdue';
@@ -14,6 +15,7 @@ import { releaseRepairBlocks } from './repairBlocks';
 import { hasAttendance } from './attendance';
 import { FORGOTTEN_AFTER_HOURS } from './attendanceCalc';
 import { dueDepartures, markGuestLeft } from './guestLeft';
+import { runGuestReviews } from './guestReviews';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -372,7 +374,7 @@ export async function dailyDigest(env: Env, o: RunOptions = {}): Promise<JobRepo
   const items = [`To ${plural(recipients, 'person', 'people')} (management and operations): ${body}`];
   if (o.dryRun) return { job: 'daily-digest', summary: `Would send the ${day} digest.`, items };
   const r = await notifyUsers(env, { userIds: (await peopleWithAccess(env, 'operations', 'edit')).map(p => p.id) }, {
-    kind: 'digest.today', title: `Today, ${Number(day.slice(8, 10))} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(day.slice(5, 7)) - 1]}`,
+    kind: 'digest.today', title: `Today, ${numericDate(day)}`,
     body, link: '/operations/today', entityTable: 'digest', entityId: day, dedupeKey: `digest-${day}`,
   });
   return { job: 'daily-digest', summary: `Sent the ${day} digest to ${plural(r.created, 'person', 'people')}.`, items };
@@ -391,10 +393,23 @@ export const CRON = {
 export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<JobReport>)[]> = {
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
   [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox],
-  [CRON.quarterHour]: [drainOutbox, repairBlockSweep],
+  [CRON.quarterHour]: [drainOutbox, repairBlockSweep, guestReviewSweep],
   [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep],
   [CRON.daily]: [dailyDigest],
 };
+
+/** Every 15 minutes: Airbnb guest reviews (functions/_lib/guestReviews.ts). The auto rules write reviews for stays
+ *  that checked out, then every review that is due goes to Airbnb: approved and auto ones, a Bad guest's on day 13,
+ *  and failed ones tried again. With dryRun nothing is written or sent. */
+export async function guestReviewSweep(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const r = await runGuestReviews(env, { now: o.now, dryRun: o.dryRun });
+  const did = o.dryRun ? 'Would write' : 'Wrote';
+  return {
+    job: 'guest-reviews',
+    summary: `${did} ${plural(r.written + r.approval, 'guest review')} (${r.approval} for approval); sent ${r.sent}, ${r.waiting} waiting for Airbnb, ${r.failed} failed.`,
+    items: r.items,
+  };
+}
 
 export async function runJobs(env: Env, jobs: ((env: Env, o?: RunOptions) => Promise<JobReport>)[], o: RunOptions = {}): Promise<JobReport[]> {
   const out: JobReport[] = [];

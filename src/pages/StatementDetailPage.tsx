@@ -74,7 +74,7 @@ export default function StatementDetailPage() {
   if (!s) {
     return (
       <>
-        <PageHeader title="Owner statement" sub={loading ? 'Loading...' : ''} />
+        <PageHeader title="Owner statement" sub={loading ? 'Loading…' : ''} />
         {error ? <EmptyState title="This statement could not be opened." body={error} action={{ label: 'Back to statements', onClick: () => navigate('/owners?view=statements') }} />
           : <Card><TableSkeleton rows={8} cols={4} /></Card>}
       </>

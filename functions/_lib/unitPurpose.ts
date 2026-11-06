@@ -7,6 +7,7 @@
 import { type Env, one, all, run, nowIso } from './db';
 import { hasColumn } from './auth';
 import type { RevenueModel } from './revenueModel';
+import type { ContractTypeRow } from './contractTypes';
 
 export const PURPOSES = ['rental', 'showroom', 'warehouse'] as const;
 export type Purpose = typeof PURPOSES[number];
@@ -14,8 +15,8 @@ export const PURPOSE_LABEL: Record<Purpose, string> = { rental: 'Rental', showro
 export const USED_BY = ['the_conts', 'dream_crafter', 'inhouse_reno'] as const;
 export type UsedBy = typeof USED_BY[number];
 
-export const BED_SIZES = ['king', 'queen', 'super_single', 'single', 'sofa_bed', 'single_floor_mattress', 'double_decker'] as const;
-export type BedSize = typeof BED_SIZES[number];
+/** A bed size key from the bed size list (functions/_lib/bedSizes.ts, kept on Unit settings). */
+export type BedSize = string;
 export interface Bed { size: BedSize; quantity: number }
 
 /** True once migration 0125 is on this database. */
@@ -33,13 +34,14 @@ export async function purposeOf(env: Env, unitId: string): Promise<Purpose | nul
 }
 export const NOT_ON_CHANNELS = 'Showroom and warehouse units are not connected to the channels.';
 
-/** Problems with a beds list, or null. Sizes from BED_SIZES, 1 to 20 of each, one row per size. */
+/** Problems with a beds list's shape, or null: 1 to 20 of each, one row per size. Whether each size is on the bed size
+ *  list is checked against the database (invalidBedSizes in functions/_lib/bedSizes.ts). */
 export function invalidBeds(v: unknown): string | null {
   if (!Array.isArray(v)) return 'Beds must be a list.';
-  if (v.length > BED_SIZES.length) return 'One line per bed size.';
+  if (v.length > 30) return 'At most 30 bed sizes on a unit.';
   const seen = new Set<string>();
   for (const b of v) {
-    if (!b || typeof b !== 'object' || !(BED_SIZES as readonly string[]).includes((b as Bed).size)) return 'Pick a bed size.';
+    if (!b || typeof b !== 'object' || typeof (b as Bed).size !== 'string' || !(b as Bed).size) return 'Pick a bed size.';
     if (seen.has((b as Bed).size)) return 'Each bed size once; change its quantity instead.';
     seen.add((b as Bed).size);
     const q = (b as Bed).quantity;
@@ -64,32 +66,19 @@ export function invalidBays(v: unknown): string | null {
 
 /* ---- contract codes ---- */
 
-/** The staff's list (sheet UNIT): each code and the revenue model the statement works it out by. GRR is the older
- *  guaranteed-rent model, kept for the contracts that have it. */
-export const CONTRACT_CODES = ['PS', 'PS GRR', 'PS YGRR', 'LT', 'RTR', 'MANAGE', 'GRR'] as const;
-export type ContractCode = typeof CONTRACT_CODES[number];
-export const CODE_MODEL: Record<ContractCode, RevenueModel> = {
-  PS: 'management', 'PS GRR': 'management_guarantee', 'PS YGRR': 'management_yearly_guarantee', LT: 'long_term',
-  RTR: 'master_lease', MANAGE: 'management', GRR: 'grr',
-};
-export const CODE_LABEL: Record<ContractCode, string> = {
-  PS: 'Airbnb profit sharing', 'PS GRR': 'Profit sharing with monthly GRR', 'PS YGRR': 'Profit sharing with yearly GRR',
-  LT: 'Airbnb long term', RTR: 'Rent to rent', MANAGE: 'Listing management', GRR: 'Guaranteed rent',
-};
-export const isContractCode = (v: unknown): v is ContractCode => typeof v === 'string' && (CONTRACT_CODES as readonly string[]).includes(v);
+/** The staff's contract type code (PS, PS GRR, ...). The list is the contract_types table (functions/_lib/contractTypes.ts). */
+export type ContractCode = string;
 
-/** The code of a contract row: its own, else read from its model as the staff name them. */
-export function codeOf(revenueModel: RevenueModel, stored?: string | null): ContractCode {
-  if (isContractCode(stored)) return stored;
-  return ({ management: 'PS', management_guarantee: 'PS GRR', management_yearly_guarantee: 'PS YGRR', grr: 'GRR', master_lease: 'RTR', long_term: 'LT' } as const)[revenueModel];
+/** The code of a contract row: its own when it is a known type, else the default type of its model. */
+export function codeOf(types: readonly ContractTypeRow[], revenueModel: RevenueModel, stored?: string | null): ContractCode {
+  if (stored && types.some(t => t.code === stored)) return stored;
+  return (types.find(t => t.revenueModel === revenueModel && t.isDefaultForModel) ?? types.find(t => t.revenueModel === revenueModel))?.code ?? stored ?? '';
 }
 
-/** The codes a unit may take. Showroom and warehouse is only a label: those units follow the same SOP, Package A to D
- *  (staff, 29 Oct 2026; WH and WH LT dropped in migration 0181). A unit already on the older GRR keeps it. */
-export function codesFor(currentCode?: ContractCode | null): ContractCode[] {
-  const list: ContractCode[] = ['PS', 'PS GRR', 'PS YGRR', 'LT', 'RTR', 'MANAGE'];
-  return currentCode === 'GRR' ? [...list, 'GRR'] : list;
-}
+/** The types a unit may take: the active ones, and the unit's current type even when hidden. Showroom and warehouse is
+ *  only a label: those units follow the same SOP, Package A to D (staff, 29 Oct 2026). */
+export const offeredTypes = (types: readonly ContractTypeRow[], currentCode?: string | null): ContractTypeRow[] =>
+  types.filter(t => t.isActive || t.code === currentCode);
 
 /* ---- reading and saving a unit's purpose, beds and bays ---- */
 
@@ -113,10 +102,9 @@ export async function extrasFor(env: Env, ids: string[] | null): Promise<Map<str
   return out;
 }
 
-/** "1 King · 2 Single". */
-export function bedsLabel(beds: Bed[]): string {
-  const name: Record<BedSize, string> = { king: 'King', queen: 'Queen', super_single: 'Super single', single: 'Single', sofa_bed: 'Sofa bed', single_floor_mattress: 'Single floor mattress', double_decker: 'Double decker' };
-  return beds.map(b => `${b.quantity} ${name[b.size] ?? b.size}`).join(' · ');
+/** "1 King · 2 Single", with the names from the bed size list. */
+export function bedsLabel(beds: Bed[], sizes: readonly { key: string; label: string }[]): string {
+  return beds.map(b => `${b.quantity} ${sizes.find(s => s.key === b.size)?.label ?? b.size}`).join(' · ');
 }
 /** "LEVEL 5-LOT-100 (Tandem)": level first, then the lot, then the note (staff sheet UNIT, 23 Oct 2026). A level typed
  *  as "L5" or "Level 5" is not doubled up. */

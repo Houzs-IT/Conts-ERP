@@ -7,12 +7,17 @@ export type ProjectOption = {
   id: number; code: string | null; name: string; funding: "customer" | "internal";
   /* An internal project's side (rental: a unit to rent out; supply: the showroom), for a voucher line's tag. */
   internal_department?: string | null;
+  /* Its brand (SOP 1.1; chew 4 Nov 2026): RENOVATION (Dream Crafter) or INHOUSE_RENOVATION (The Conts). */
+  reno_kind?: "RENOVATION" | "INHOUSE_RENOVATION" | null;
   /* For the voucher's project picker (chew 2 Nov 2026): the customer, the contract's status, the handover, done. */
   customer_name: string | null; contract_status: string | null; planned_handover_date: string | null; handed_over_at: string | null;
   created_at: string | null; done: boolean;
 };
 export type ProjectLimit = {
-  projectId: number; projectName: string; funding: "customer" | "internal"; pctBp: number | null; receivedSen: number | null;
+  projectId: number; projectName: string; funding: "customer" | "internal";
+  /* The company checks project limits (Ledger setup); off, the figures are for reference only. */
+  checked: boolean;
+  pctBp: number | null; receivedSen: number | null;
   limitSen: number; usedSen: number; reservedSen: number; leftSen: number;
 };
 export type LimitRequest = {
@@ -56,6 +61,25 @@ export const useDecideLimit = () => {
       authedFetch<{ request: LimitRequest }>(`/accounting/limit-requests/${encodeURIComponent(id)}/${decision}`, { method: "POST", body: JSON.stringify({ note }) }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["conts-limit-requests"] });
+      void qc.invalidateQueries({ queryKey: ["conts-project-limit"] });
+    },
+  });
+};
+
+/** The company's limit settings (Ledger setup → Project limit; chew 4 Nov 2026): checked or not, and its share. */
+export type LimitSettings = { checked: boolean; pctBp: number };
+
+export const useLimitSettings = () => useQuery({
+  queryKey: ["conts-limit-settings"],
+  queryFn: () => authedFetch<LimitSettings>("/accounting/project-limit-settings"),
+});
+
+export const useSaveLimitSettings = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: LimitSettings) => authedFetch<LimitSettings>("/accounting/project-limit-settings", { method: "PUT", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["conts-limit-settings"] });
       void qc.invalidateQueries({ queryKey: ["conts-project-limit"] });
     },
   });

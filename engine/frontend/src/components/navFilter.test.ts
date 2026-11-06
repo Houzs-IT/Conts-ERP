@@ -382,7 +382,7 @@ describe("nav — every sub-group hub groupId still resolves", () => {
   });
 });
 
-describe("nav: Beta shows to everyone with project list access (owner, 23 Oct 2026: no switch)", () => {
+describe("nav: the renovation Projects and Calendar (Beta until 3 Nov 2026) show to everyone with project list access", () => {
   const office = (over: Partial<AuthUser> = {}) =>
     rep({ position_name: "Admin", department_name: "Operations", permissions: ["*"], ...over });
   const all = { "projects.list": "full" };
@@ -397,7 +397,7 @@ describe("nav: Beta shows to everyone with project list access (owner, 23 Oct 20
     }
   });
 
-  it("lists Project list and Calendar in that order", () => {
+  it("lists Projects and Calendar in that order", () => {
     const u = office();
     expect(desktopPaths(ctxFor(u, all)).filter((p) => BETA.includes(p))).toEqual(BETA);
   });

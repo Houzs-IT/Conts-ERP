@@ -4,7 +4,10 @@ import { todayMyt } from '../../_lib/ops';
 import { LOCKED_SQL } from '../../_lib/expenses';
 import { months } from '../../../src/lib/utilityGrid';
 
-/** GET /api/expenses/utility-listing?from=YYYY-MM&to=YYYY-MM[&building=<propertyId>][&unit=<unitId>]
+/** GET /api/expenses/utility-listing?from=YYYY-MM&to=YYYY-MM[&building=<propertyId>][&unit=<unitId>][&by=request]
+ *  Each bill carries its payment request (number, engine status, the MYT month it was made) and each unit its purpose
+ *  (rental, showroom, warehouse). by=request (chew, 5 Nov 2026; SOP 3.10) picks the bills whose payment request was
+ *  made in the range instead, whatever month they are for.
  *  The utility listing (plan docs/superpowers/plans/2026-10-28-utility-listing.md): every unit, its electricity, water,
  *  internet and Indah Water bills whose bill month is in the range, each with whether its deduction month's owner
  *  statement is final, and the nights booked per unit and month (the stays the owner statement counts). Read only.
@@ -28,6 +31,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const list = months(from, to);
   if (list.length > 24) return fail('VALIDATION', 'Choose up to 24 months.', 422);
   const building = url.searchParams.get('building'), unit = url.searchParams.get('unit');
+  const byRequest = url.searchParams.get('by') === 'request';
   const scope = `${building ? 'AND u.property_id = $4' : ''} ${unit ? `AND u.id = $${building ? 5 : 4}` : ''}`;
   const lookBack = shift(from, -3);
   const start = `${lookBack}-01`, endEx = `${shift(to, 1)}-01`;
@@ -36,11 +40,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const row = await one<{ units: any[] | null; bills: any[] | null; nights: any[] | null }>(env, `
     WITH b AS (
       SELECT e.id, e.unit_id, e.category, e.incurred_on, e.deduct_month, e.amount, e.charge_to, e.record_only, e.rolled,
-             e.receipt_document_id, e.reference, ${LOCKED_SQL} AS final
+             e.receipt_document_id, e.reference, ${LOCKED_SQL} AS final,
+             e.payment_request_id, e.payment_request_no, r.status AS request_status,
+             to_char(r.created_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM') AS request_month,
+             coalesce(sc.bill_sen, e.amount) AS request_sen
       FROM expenses e JOIN units u ON u.id = e.unit_id
-      WHERE e.category IN ('electricity','water','internet','sewerage') AND e.incurred_on >= $1 AND e.incurred_on < $2 ${scope}),
+      LEFT JOIN utility_payment_requests() r ON r.id = e.payment_request_id -- migration 0220: pos_app cannot read scm.payment_requests directly (RLS)
+      LEFT JOIN utility_bill_scans sc ON sc.expense_id = e.id
+      WHERE e.category IN ('electricity','water','internet','sewerage') ${byRequest
+        ? `AND r.created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur') AND r.created_at < ($2::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')`
+        : 'AND e.incurred_on >= $1 AND e.incurred_on < $2'} ${scope}),
     su AS (
-      SELECT u.id, u.property_id, p.name AS property, u.unit_number, o.display_name AS owner
+      SELECT u.id, u.property_id, p.name AS property, u.unit_number, o.display_name AS owner, coalesce(u.purpose, 'rental') AS purpose
       FROM units u JOIN properties p ON p.id = u.property_id LEFT JOIN owners o ON o.id = u.owner_id
       WHERE (u.parent_unit_id IS NULL OR u.id IN (SELECT unit_id FROM b)) ${scope}),
     m AS (SELECT x AS month, (x || '-01')::date AS s, ((x || '-01')::date + interval '1 month')::date AS e FROM jsonb_array_elements_text($3::text::jsonb) x),
@@ -60,11 +71,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   for (const x of row?.nights ?? []) (nights[x.unit_id] ??= {})[x.month] = Number(x.nights);
   return json({
     generatedAt: nowIso(), from, to, months: list,
-    units: (row?.units ?? []).map(u => ({ id: u.id, buildingId: u.property_id, building: u.property, number: u.unit_number, owner: u.owner ?? null })),
+    units: (row?.units ?? []).map(u => ({ id: u.id, buildingId: u.property_id, building: u.property, number: u.unit_number, owner: u.owner ?? null, purpose: u.purpose })),
     bills: (row?.bills ?? []).map(b => ({
       id: b.id, unitId: b.unit_id, kind: b.category, billMonth: String(b.incurred_on).slice(0, 7), deductMonth: b.deduct_month,
       amount: Number(b.amount), chargeTo: b.charge_to, recordOnly: !!b.record_only, final: !!b.final,
       receiptId: b.receipt_document_id ?? null, reference: b.reference ?? null, rolled: !!b.rolled,
+      request: b.payment_request_id && b.request_status
+        ? { id: b.payment_request_id, no: b.payment_request_no ?? null, status: b.request_status, month: b.request_month, amount: Number(b.request_sen) }
+        : null,
     })),
     nights,
   });

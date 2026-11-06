@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { createPortal } from 'react-dom';
+import { useState } from 'react';
+import { Modal } from '../Modal';
 import { Button } from '../Button';
 import Icon from '../Icon';
 import { useToast } from '../Toast';
@@ -93,14 +93,8 @@ export function VoidDocumentDialog({ doc, onClose, onDone }: { doc: GuestDocumen
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [busy, onClose]);
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  async function submit() {
     if (!reason.trim()) return;
     setBusy(true); setError(null);
     try {
@@ -113,30 +107,21 @@ export function VoidDocumentDialog({ doc, onClose, onDone }: { doc: GuestDocumen
     setBusy(false);
   }
 
-  return createPortal(
-    <div role="dialog" aria-modal="true" aria-label={`Void ${doc.docNo}`} className="fixed inset-0 z-[80] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)]">
-      <div onClick={busy ? undefined : onClose} className="absolute inset-0" />
-      <form onSubmit={submit} className="relative w-full max-w-[460px] bg-card rounded-card shadow-[var(--shadow-overlay)] flex flex-col">
-        <div className="px-[22px] pt-[22px] pb-2 flex flex-col gap-[6px]">
-          <h2 className="m-0 text-title font-semibold">Void {doc.typeLabel.toLowerCase()} {doc.docNo}?</h2>
-          <p className="m-0 text-copy text-muted-ink text-pretty">It stays on record marked void, with your reason. The number is never issued again. Tell the guest if they already have it.</p>
-        </div>
-        <div className="px-[22px] py-3 flex flex-col gap-3">
+  return (
+    <Modal title={`Void ${doc.typeLabel.toLowerCase()} ${doc.docNo}?`} width={460} layer="over" onClose={onClose} busy={busy} onSubmit={submit}
+      sub={<>It stays on record marked void, with your reason. The number is never issued again. Tell the guest if they already have it.</>}
+      footer={<>
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Keep it</Button>
+          <Button type="submit" size="sm" variant="danger" loading={busy} disabled={!reason.trim()} disabledReason="Write the reason first.">Void document</Button>
+      </>}>
           <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-meta">{doc.guestName ?? 'Guest'} · {rm(doc.amount)} · issued {date(doc.issuedAt)}</div>
           <div className="flex flex-col gap-[6px]">
             <label htmlFor="void-reason" className="text-meta font-medium text-muted-ink">Reason (required)</label>
             <textarea id="void-reason" autoFocus required value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={500}
               placeholder="e.g. Wrong guest name; reissued"
-              className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
+              className="block w-full box-border text-ink bg-card border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
           </div>
           {error && <p role="alert" className="m-0 text-meta text-danger">{error}</p>}
-        </div>
-        <div className="px-[22px] py-[14px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px] rounded-b-card">
-          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Keep it</Button>
-          <Button type="submit" size="sm" variant="danger" loading={busy} disabled={!reason.trim()} disabledReason="Write the reason first.">Void document</Button>
-        </div>
-      </form>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

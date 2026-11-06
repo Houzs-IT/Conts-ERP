@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Modal } from '../components/Modal';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
@@ -21,6 +22,7 @@ import { OwnerDetails } from './owners/OwnerDetails';
 import { OwnerCostsCard } from './owners/Costs';
 import { ModelChip } from './units/ContractTab';
 import { CodeBadge } from './units/UnitExtras';
+import { useContractTypes } from '../lib/useContractTypes';
 import { RecordHistory } from '../components/RecordHistory';
 import { MonthStepper, shiftMonth } from './finance/listKit';
 import { cx } from '../lib/design-tokens';
@@ -355,6 +357,7 @@ function OwnerCombined({ o, month }: { o: Owner; month: string }) {
 
 /** One unit's month, the way its revenue model pays the owner: its Unit P&L, which rolls up to the owner. */
 function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null }) {
+  const types = useContractTypes();
   const f = u.figures;
   const model: RevenueModel = u.revenueModel ?? (u.model === 'grr' ? 'grr' : 'management');
   const Row = ({ label, sen, muted, sign, indent }: { label: string; sen: number; muted?: boolean; sign?: boolean; indent?: boolean }) => (
@@ -369,7 +372,7 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
     <section className="bg-card border border-solid border-line rounded-card p-4 flex flex-col gap-2 min-w-0">
       <div className="flex items-start justify-between gap-2">
         <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} className="text-[16px] font-semibold tracking-[-0.01em] text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</Link>
-        <span className="inline-flex flex-wrap items-center justify-end gap-1.5"><CodeBadge code={u.contractCode} /><ModelChip model={model} label={terms(u)} /></span>
+        <span className="inline-flex flex-wrap items-center justify-end gap-1.5"><CodeBadge code={u.contractCode} types={types} /><ModelChip model={model} label={terms(u)} /></span>
       </div>
       {!f ? <div className="text-meta text-muted-ink">Figures are visible to finance and management.</div> : model === 'master_lease' ? <>
         <div className="text-meta text-muted-ink">{MODEL.master_lease.statement}</div>
@@ -408,27 +411,17 @@ function DefaultFeeModal({ current, owner, onClose, onSubmit }: { current: numbe
   const [busy, setBusy] = useState(false);
   const valid = parsed == null || (parsed >= 0 && parsed <= 100);
   return (
-    <div role="dialog" aria-modal="true" aria-label="Owner default fee" className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div className="relative w-full max-w-[440px] bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
-        <form onSubmit={e => { e.preventDefault(); if (valid && !busy) { setBusy(true); onSubmit(parsed); } }}>
-          <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
-            <h2 className="m-0 text-title font-semibold">Owner default operator share</h2>
-            <p className="m-0 text-copy text-muted-ink">Recorded for {titleCase(owner)} for reference. Leave blank to clear it.</p>
-          </div>
-          <div className="py-4 px-[22px]">
-            <PercentInput label="Default operator share %" value={parsed} placeholder="e.g. 22"
-              onChange={setParsed} help="A unit's own contract always decides its statement." />
-          </div>
-          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
-            <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
+    <Modal title="Owner default operator share" sub={<>Recorded for {titleCase(owner)} for reference. Leave blank to clear it.</>} onClose={onClose} width={440}
+      onSubmit={() => { if (valid && !busy) { setBusy(true); onSubmit(parsed); } }}
+      footer={<>
+        <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
             <Button size="sm" variant="primary" type="submit" disabled={!valid || busy} disabledReason="Enter a percentage between 0 and 100, or leave blank to clear.">
               {current != null && parsed == null ? 'Clear default' : 'Save default'}
             </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+      </>}>
+            <PercentInput label="Default operator share %" value={parsed} placeholder="e.g. 22"
+              onChange={setParsed} help="A unit's own contract always decides its statement." />
+    </Modal>
   );
 }
 

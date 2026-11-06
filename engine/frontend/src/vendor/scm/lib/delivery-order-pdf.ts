@@ -37,6 +37,7 @@ import { docVariantLine, loadCustomerFabricMaps } from './supplier-doc-data';
 import { stripBookText } from './book-text';
 import { drawQrIntoPdf } from './pdf-qr';
 import { DOC_THEME, drawDocLetterheadAt } from '../../../lib/renovation/renovation-doc-theme';
+import { warehouseLine } from './warehouse-print';
 /* Owner spec 2026-08 — photos follow the line onto the printed document
    (SO → PO → DO). Same shared block the SO/PO PDFs print through; keys are
    the SO-carried `photo_urls` (mig 20260828T0746). All generated strings are
@@ -52,6 +53,7 @@ import {
   photoKeysOf,
   type PdfPhotoImage,
 } from './pdf-item-photos';
+import { isAttachmentKey, loadDocPdfPhotos } from './pdf-doc-photos';
 import { fetchDoItemPhotoBlob } from './sales-order-queries';
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
 
@@ -72,6 +74,7 @@ type DoHeader = {
   scanToken?: string | null;
   do_date: string;
   so_doc_no: string | null;
+  warehouse_id?: string | null;
   debtor_code: string | null;
   debtor_name: string;
   expected_delivery_at: string | null;
@@ -231,7 +234,7 @@ function drawCaption(doc: Doc, text: string, x: number, top: number): number {
  * on top. Measuring by drawing into a throwaway pass would double every text
  * call, so instead each column's writer is run once in `measure` mode.
  */
-function drawInfoPanel(doc: Doc, top: number, header: DoHeader, reno?: RenoDocInfo | null): number {
+function drawInfoPanel(doc: Doc, top: number, header: DoHeader, reno?: RenoDocInfo | null, shipFrom?: string | null): number {
   const PAD_X = 5;
   const PAD_Y = 3;
   const GAP = 8;
@@ -342,6 +345,7 @@ function drawInfoPanel(doc: Doc, top: number, header: DoHeader, reno?: RenoDocIn
     // a dashed "Driver —" on an unassigned DO is noise on the driver's sheet.
     ...(header.driver_name ? [{ label: 'Driver', value: header.driver_name }] : []),
     ...(header.vehicle ? [{ label: 'Vehicle', value: header.vehicle }] : []),
+    ...(shipFrom ? [{ label: 'Ship From', value: shipFrom }] : []),
     // Status is intentionally NOT shown on the customer's copy (owner
     // 2026-09-21): the DO states what is delivered, not the order's workflow
     // state. The status still drives the header QR / on-screen views.
@@ -351,13 +355,16 @@ function drawInfoPanel(doc: Doc, top: number, header: DoHeader, reno?: RenoDocIn
     let y = draw ? drawCaption(doc, 'Delivery Details', rightX, contentTop) : contentTop + pt(S.caption) + 3;
     for (const row of rows) {
       const value = row.value || EM_DASH;
+      font(doc, S.body, row.bold ? 'bold' : 'normal');
+      const lines = doc.splitTextToSize(value, colW - LABEL_W - 4) as string[];
       y += ROW_GAP + pt(S.body);
       if (draw) {
         font(doc, S.body);
         doc.text(row.label, rightX, y);
         font(doc, S.body, row.bold ? 'bold' : 'normal');
-        doc.text(value, rightX + LABEL_W + 4, y);
+        lines.forEach((line, i) => doc.text(line, rightX + LABEL_W + 4, y + i * pt(S.body) * LINE));
       }
+      y += (lines.length - 1) * pt(S.body) * LINE;
     }
     return y;
   };
@@ -479,11 +486,18 @@ export async function renderDeliveryOrderInto(
      skipped and the PDF renders without it. The CN reuse has no header id, so
      it fetches nothing by construction. */
   const doId = header.id ?? null;
+  /* The line's and the delivery's attached photos and the proof-of-delivery photos print too (owner, 4 Nov 2026), and
+     so do those of the SO line, which the line already shows on screen. */
+  const attached = await loadDocPdfPhotos('delivery_order', doId);
+  const keysOf = (it: DoItem): string[] => [...photoKeysOf(it.photo_urls), ...attached.lineKeys(it.id)];
   const photoGroups = doId
-    ? buildPhotoGroups(items.map((it) => ({
-        code: it.item_code,
-        photoKeys: photoKeysOf(it.photo_urls),
-      })))
+    ? [
+        ...buildPhotoGroups(items.map((it) => ({
+          code: it.item_code,
+          photoKeys: keysOf(it),
+        }))),
+        ...attached.documentGroups,
+      ]
     : [];
   const photoOwners = photoKeyOwners(
     items.flatMap((it) => (it.id ? [{ id: it.id, photoKeys: photoKeysOf(it.photo_urls) }] : [])),
@@ -492,6 +506,7 @@ export async function renderDeliveryOrderInto(
     ? await collectPhotoImages(
         photoGroups,
         (key) => {
+          if (isAttachmentKey(key)) return attached.fetch(key);
           const ownerId = photoOwners.get(key);
           if (!ownerId) return Promise.reject(new Error('photo_owner_missing'));
           return fetchLinePhotoForPdf((k) => fetchDoItemPhotoBlob(doId, ownerId, k), key);
@@ -504,7 +519,7 @@ export async function renderDeliveryOrderInto(
     docTitle: opts?.docTitle ?? 'DELIVERY ORDER',
     logo: opts?.logo,
   });
-  const panelBottom = drawInfoPanel(doc, ruleY + 4, header, opts?.renovation);
+  const panelBottom = drawInfoPanel(doc, ruleY + 4, header, opts?.renovation, await warehouseLine(header.warehouse_id));
 
   // ── Line items ────────────────────────────────────────────────────
   // Description cell = SKU description + the UNIFIED variant line (same composer
@@ -521,7 +536,7 @@ export async function renderDeliveryOrderInto(
     if (composed.length === 0) return EM_DASH;
     /* Owner spec: a row carries NO image — the " (photo)" marker on the first
        description line points the reader at the ITEM PHOTOS block below. */
-    const lines = photoKeysOf(it.photo_urls).length > 0 ? appendPhotoMarker(composed) : composed;
+    const lines = keysOf(it).length > 0 ? appendPhotoMarker(composed) : composed;
     // Guard the customer copy against migrated AutoCount book text — see book-text.ts.
     return stripBookText(lines.join('\n')) || EM_DASH;
   };
@@ -647,7 +662,9 @@ export async function renderDeliveryOrderInto(
       margin: M,
       contentW: CONTENT_W,
       startY: finalY + 6,
-      pageBottom: FOOTER_RULE_Y - 6, // the items table's own bottom rail
+      /* Above the closing, so the last photos and the signature share a page: photos running past it left a page
+         holding only the signature. */
+      pageBottom: CLOSING_TOP,
       pageTop: M,
       side: null,
       onNewPage: null,

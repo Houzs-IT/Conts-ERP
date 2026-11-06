@@ -169,7 +169,7 @@ type ScmStaffRow = {
 
 // Friendly short name for a company code (HOUZS → "Houzs"; else the code).
 function companyShortName(code: string): string {
-  return code === "HOUZS" ? "Houzs" : code;
+  return code === "HOUZS" ? "The Conts" : code;
 }
 
 // One-word label for a member's grant set, for the Company column:

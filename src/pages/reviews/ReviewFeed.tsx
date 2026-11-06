@@ -8,7 +8,7 @@ import { api, errorMessage } from '../../lib/api';
 import { count, plural } from '../../lib/format';
 import { useUrlState, SearchBox, FilterSelect, BusyBar } from '../finance/listKit';
 import { ReviewCard, type Review } from './ReviewCard';
-import { BAD_REVIEW_MAX } from '../../lib/reviewRules';
+import { BAD_REVIEW_MAX, tagInfo } from '../../lib/reviewRules';
 
 interface Page {
   data: Review[]; total: number; channexConnected: boolean;
@@ -19,13 +19,14 @@ const CHANNELS = [{ value: 'airbnb', label: 'Airbnb' }, { value: 'booking_com', 
 
 /** All reviews and Bad reviews: newest first, every filter in the address. Pages of 50 load as the list is scrolled
  *  to its end (or with Show more), so nothing is cut off: the count above always says how many match. */
-export function ReviewFeed({ bad, canReply }: { bad: boolean; canReply: boolean }) {
+export function ReviewFeed({ bad, canReply, fixed }: { bad: boolean; canReply: boolean; fixed?: Record<string, string> }) {
   const url = useUrlState();
   const f = {
     q: url.get('q'), channel: url.get('channel'), propertyId: url.get('propertyId'), unitId: url.get('unitId'),
     rating: bad ? '' : url.get('rating'), reply: url.get('reply'), from: url.get('from'), to: url.get('to'), matched: url.get('matched'),
+    hidden: url.get('hidden'), tag: url.get('tag'), lowClean: url.get('lowClean'),
   };
-  const key = JSON.stringify({ ...f, bad });
+  const key = JSON.stringify({ ...f, bad, ...fixed });
   const [rows, setRows] = useState<Review[] | null>(null);
   const [meta, setMeta] = useState<Omit<Page, 'data'> | null>(null);
   const [page, setPage] = useState(1);
@@ -37,7 +38,7 @@ export function ReviewFeed({ bad, canReply }: { bad: boolean; canReply: boolean 
     setBusy(true);
     const at = key;
     try {
-      const res = await api.get<Page>('/reviews', { ...f, bad: bad ? '1' : '', page: p, pageSize: PAGE });
+      const res = await api.get<Page>('/reviews', { ...f, ...fixed, bad: bad ? '1' : '', page: p, pageSize: PAGE });
       if (live.current !== at) return;
       setRows(prev => (p === 1 ? res.data : [...(prev ?? []), ...res.data]));
       setMeta({ total: res.total, channexConnected: res.channexConnected, units: res.units, buildings: res.buildings });
@@ -81,6 +82,9 @@ export function ReviewFeed({ bad, canReply }: { bad: boolean; canReply: boolean 
         )}
         <FilterSelect className="md:flex-[1_1_170px]" label="Reply" all="Any reply state" value={f.reply} onChange={v => set({ reply: v || null })}
           options={[{ value: 'needs_reply', label: 'Needs reply' }, { value: 'replied', label: 'Replied' }, { value: 'not_posted', label: 'Saved, not posted' }]} />
+        <FilterSelect className="md:flex-[1_1_170px]" label="Show" all="Every review" value={f.hidden === '1' ? 'hidden' : f.lowClean === '1' ? 'lowClean' : ''}
+          onChange={v => set({ hidden: v === 'hidden' ? '1' : null, lowClean: v === 'lowClean' ? '1' : null })}
+          options={[{ value: 'hidden', label: 'Hidden until you review the guest' }, { value: 'lowClean', label: 'Low cleanliness' }]} />
         <div className="md:w-[160px]"><DateField aria-label="Reviewed from" value={f.from} onChange={v => set({ from: v || null })} max={f.to || undefined} /></div>
         <div className="md:w-[160px]"><DateField aria-label="Reviewed to" value={f.to} onChange={v => set({ to: v || null })} min={f.from || undefined} /></div>
       </div>
@@ -91,7 +95,8 @@ export function ReviewFeed({ bad, canReply }: { bad: boolean; canReply: boolean 
             className="bg-transparent border-none p-0 cursor-pointer text-ink-2 underline [font-family:inherit] text-meta">
             {f.matched === 'no' ? 'Show every review' : 'Only reviews with no reservation matched'}
           </button>
-          {filtered && <button type="button" onClick={() => set({ q: null, channel: null, propertyId: null, unitId: null, rating: null, reply: null, from: null, to: null, matched: null })}
+          {f.tag && <span className="text-ink">Tag: {tagInfo(f.tag).label}</span>}
+          {filtered && <button type="button" onClick={() => set({ q: null, channel: null, propertyId: null, unitId: null, rating: null, reply: null, from: null, to: null, matched: null, hidden: null, tag: null, lowClean: null })}
             className="bg-transparent border-none p-0 cursor-pointer text-ink-2 underline [font-family:inherit] text-meta">Clear filters</button>}
         </span>
       </div>
@@ -101,7 +106,7 @@ export function ReviewFeed({ bad, canReply }: { bad: boolean; canReply: boolean 
         <Card><TableSkeleton rows={4} cols={3} /></Card>
       ) : rows.length === 0 ? (
         filtered
-          ? <EmptyState kind="filtered" title={bad ? 'No bad reviews match these filters.' : 'No reviews match these filters.'} action={{ label: 'Clear filters', onClick: () => set({ q: null, channel: null, propertyId: null, unitId: null, rating: null, reply: null, from: null, to: null, matched: null }) }} />
+          ? <EmptyState kind="filtered" title={bad ? 'No bad reviews match these filters.' : 'No reviews match these filters.'} action={{ label: 'Clear filters', onClick: () => set({ q: null, channel: null, propertyId: null, unitId: null, rating: null, reply: null, from: null, to: null, matched: null, hidden: null, tag: null, lowClean: null }) }} />
           : bad
             ? <EmptyState icon="Star" title="No bad reviews" body={`No guest has given ${BAD_REVIEW_MAX} stars or fewer.`} />
             : <EmptyState icon="Star" title="No reviews yet"

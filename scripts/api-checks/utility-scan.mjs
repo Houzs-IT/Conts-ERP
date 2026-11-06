@@ -88,7 +88,7 @@ check('a unit with no account of the kind gets one, never with an empty number',
 // Next month's page for unit A matches green from the marks alone.
 const { accounts } = await M.scanContext(env);
 const { matchBill } = await import(pathToFileURL(join(root, 'src/lib/utilityMatch.ts')).href);
-const m2 = matchBill({ ...READ, billMonth: '2027-10', amountDueSen: 30000, meterPrevious: 4410 }, accounts, []);
+const m2 = matchBill({ ...READ, billMonth: '2027-10', currentChargesSen: 30000, meterPrevious: 4410 }, accounts, []);
 check("next month's page matches unit A green from what it learnt", m2.colour === 'green' && accounts.find(a => a.accountId === m2.accountId)?.unitId === A.id, m2);
 
 // The same save again (its answer was lost): nothing is written twice, and it still says what finance pays.
@@ -135,6 +135,27 @@ check('a kind corrected by hand: the provider is not taken from the misread page
 // The owner lines go on the unit's owner, the same owner whose statement carries the bill.
 const adjOwners = await sql`select distinct a.owner_id from owner_adjustments a join expenses e on e.id = a.expense_id where e.unit_id = ${A.id}`;
 check("owner lines are on the unit's owner", adjOwners.length === 1 && adjOwners[0].owner_id === A.owner_id, adjOwners);
+
+// Payment requests keep their bills (chew, 5 Nov 2026; SOP 3.10; functions/_lib/utilityRequests.ts, migration 0219).
+const outR = await build({ entryPoints: [join(root, 'functions/_lib/utilityRequests.ts')], bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'error' });
+writeFileSync(join(tmp, 'r.mjs'), outR.outputFiles[0].text);
+const R = await import(pathToFileURL(join(tmp, 'r.mjs')).href);
+check('a scanned bill keeps its "Owner paid this bill" tick on the expense', e2?.owner_paid === true && e1?.owner_paid === false, { e1: e1?.owner_paid, e2: e2?.owner_paid });
+check('the save names the bills it sends for payment', pay[0]?.expenseIds?.length === 2 && pay[0].expenseIds.includes(e1?.id) && pay[0].expenseIds.includes(e4?.id), pay[0]?.expenseIds);
+const groups = await R.billsToRequest(env, [e1.id, e2.id, e4.id]);
+check('to request: TNB, the two bills the company pays at their full bills (RM 310 split, RM 90 record only); not the one the owner paid', groups.length === 1 && groups[0].provider === 'TNB' && groups[0].bills.map(b => b.expenseId).sort().join() === [e1.id, e4.id].sort().join() && groups[0].bills.map(b => b.amountSen).sort().join() === '31000,9000', groups);
+check('the request key is the same whatever the order of the bills', await R.requestKey([e1.id, e4.id]) === await R.requestKey([e4.id, e1.id]));
+check('the request key differs for other bills', await R.requestKey([e1.id]) !== await R.requestKey([e1.id, e4.id]));
+const linked = await R.linkRequest(env, [e1.id, e4.id], { id: 'req-1', requestNo: 'PRQ-2711-001' });
+const relinked = await R.linkRequest(env, [e1.id], { id: 'req-2', requestNo: 'PRQ-2711-002' });
+const [l1] = await sql`select payment_request_id, payment_request_no from expenses where id = ${e1.id}`;
+check('each bill keeps the request it went out on, and a later one does not take it over', linked === 2 && relinked === 0 && l1.payment_request_id === 'req-1' && l1.payment_request_no === 'PRQ-2711-001', { linked, relinked, l1 });
+check('a bill already on a request is not sent again', (await R.billsToRequest(env, [e1.id, e4.id])).length === 0);
+// A bill with no account provider goes under its kind's name.
+const loose = randomUUID();
+await sql`insert into expenses (id, unit_id, category, description, amount, currency, incurred_on, deduct_month, charge_to, created_at) values (${loose}, ${B.id}, 'sewerage', 'IWK', 2400, 'MYR', '2027-09-30', '2027-09', 'owner', ${now})`;
+const iwk = await R.billsToRequest(env, [loose]);
+check('a bill with no account provider goes under its kind: Indah Water', iwk.length === 1 && iwk[0].provider === 'Indah Water' && iwk[0].bills[0].amountSen === 2400, iwk);
 
 await sql.end();
 db.kill();

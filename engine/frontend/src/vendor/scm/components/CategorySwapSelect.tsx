@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from '../lib/authed-fetch';
 import { categorySwapAllowed } from '../../shared/category-swap';
-import { MFG_PRODUCT_CATEGORIES, mfgCategoryLabel } from '../../shared/product-categories';
+import { allMfgCategories, mfgCategoryLabel } from '../../shared/product-categories';
 import { useConfirm } from './ConfirmDialog';
 
 export function CategorySwapSelect({ kind, id, category }: {
@@ -52,8 +52,8 @@ export function CategorySwapSelect({ kind, id, category }: {
         disabled={save.isPending}
         onChange={(e) => void choose(e.target.value)}
       >
-        {!MFG_PRODUCT_CATEGORIES.some((c) => c === current) && <option value={current}>{mfgCategoryLabel(current) || '(none)'}</option>}
-        {MFG_PRODUCT_CATEGORIES.map((c) => <option key={c} value={c}>{mfgCategoryLabel(c)}</option>)}
+        {!allMfgCategories().some((c) => c === current) && <option value={current}>{mfgCategoryLabel(current) || '(none)'}</option>}
+        {allMfgCategories().map((c) => <option key={c} value={c}>{mfgCategoryLabel(c)}</option>)}
       </select>
       {error && <span role="alert" style={{ color: 'var(--color-err, #b3261e)', fontSize: 'var(--fs-12)' }}>{error}</span>}
     </label>

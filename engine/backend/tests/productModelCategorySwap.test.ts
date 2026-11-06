@@ -20,6 +20,7 @@ class Q {
     if (this.patch) for (const r of hit) Object.assign(r, this.patch);
     return hit;
   }
+  order() { return this; }
   maybeSingle() { const h = this.run(); return Promise.resolve({ data: h[0] ?? null, error: null }); }
   then(res: (v: { data: Row[]; error: null }) => unknown, rej?: (e: unknown) => unknown) {
     return Promise.resolve({ data: this.run(), error: null as null }).then(res, rej);

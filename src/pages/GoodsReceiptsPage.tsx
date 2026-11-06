@@ -1,4 +1,5 @@
 import { mayRun } from '../lib/areaAccess';
+import { Meta } from '../components/Card';
 import { useMemo, useState } from 'react';
 import { Search, Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -290,6 +291,3 @@ function ViewDrawer({ grn, canWrite, onClose, onCancel }: { grn: Grn; canWrite: 
   );
 }
 
-function Meta({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return <div className="flex flex-col gap-0.5"><span className="text-[11px] uppercase tracking-[0.08em] text-muted-ink">{label}</span><span className={cx('text-[13.5px]', mono ? '[font-family:var(--font-mono,ui-monospace,monospace)]' : '')}>{value}</span></div>;
-}

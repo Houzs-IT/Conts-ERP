@@ -71,6 +71,70 @@ check('a range back to front is refused', r.status === 422, r.text);
 r = await call('GET', '/api/expenses/utility-listing');
 check('the default is the twelve months to this month', r.status === 200 && r.json?.months?.length === 12, JSON.stringify(r.json?.months));
 
+// By payment request (chew, 5 Nov 2026; SOP 3.10; migration 0219): a February bill requested on 10 April sits in April.
+const [co] = await db(`SELECT id FROM public.companies ORDER BY id LIMIT 1`);
+const reqA = randomUUID(), reqB = randomUUID();
+await db(`INSERT INTO scm.payment_requests (id, company_id, request_no, type, requester_user_id, payee_name, amount_sen, status, created_at)
+  VALUES ($1, $3, 'PRQ-CHK-001', 'PAYMENT', 'chk', 'TNB', 2000, 'PART_PAID', '2029-04-10T10:00:00+08:00'),
+         ($2, $3, 'PRQ-CHK-002', 'PAYMENT', 'chk', 'TNB', 12345, 'REJECTED', '2029-06-01T00:30:00+08:00')`, reqA, reqB, co.id)
+  .catch(e => check('payment requests seeded', false, e.message));
+await db(`UPDATE expenses SET payment_request_id = $1, payment_request_no = 'PRQ-CHK-001' WHERE id = $2`, reqA, pending);
+await db(`UPDATE expenses SET payment_request_id = $1, payment_request_no = 'PRQ-CHK-002' WHERE id = $2`, reqB, charged);
+r = await call('GET', '/api/expenses/utility-listing?from=2029-01&to=2029-06&by=request');
+const byReq = Object.fromEntries((r.json?.bills ?? []).map(x => [x.id, x]));
+check('by request: only bills whose request was made in the months', r.status === 200 && !!byReq[pending] && !byReq[company] && !byReq[record], r.text.slice(0, 300));
+check('by request: the February bill carries its April request (MYT month), number and status', byReq[pending]?.billMonth === '2029-02' && byReq[pending]?.request?.month === '2029-04'
+  && byReq[pending]?.request?.no === 'PRQ-CHK-001' && byReq[pending]?.request?.status === 'PART_PAID' && byReq[pending]?.request?.amount === 2000, JSON.stringify(byReq[pending]));
+check('by request: a rejected request still comes, with its status, for the screen to leave out', byReq[charged]?.request?.status === 'REJECTED' && byReq[charged]?.request?.month === '2029-06', JSON.stringify(byReq[charged]));
+r = await call('GET', '/api/expenses/utility-listing?from=2029-01&to=2029-06');
+const byMonth = Object.fromEntries((r.json?.bills ?? []).map(x => [x.id, x]));
+check('by bill month: a bill shows its request too, and one with none has null', byMonth[pending]?.request?.no === 'PRQ-CHK-001' && byMonth[company]?.request === null, JSON.stringify([byMonth[pending]?.request, byMonth[company]?.request]));
+check('each unit says its purpose (rental, showroom, warehouse)', (r.json?.units ?? []).every(u => ['rental', 'showroom', 'warehouse'].includes(u.purpose)), JSON.stringify((r.json?.units ?? []).slice(0, 3)));
+
+// "Owner paid this bill" on a bill entered by hand: shared as usual, the whole bill back to the owner as O2, nothing to pay.
+r = await call('POST', '/api/expenses', { unitId: a.id, category: 'water', amount: 4321, incurredOn: '2029-06-30', chargeTo: 'the_conts', ownerPaid: true, description: 'Utility check' });
+const paidId = r.json?.id;
+const [paidRow] = paidId ? await db(`SELECT owner_paid FROM expenses WHERE id = $1`, paidId) : [];
+const paidAdj = paidId ? await db(`SELECT amount, kind, state, owner_id FROM owner_adjustments WHERE expense_id = $1`, paidId) : [];
+check('owner paid by hand: recorded with the tick, an open O2 credit of the whole bill on the owner, nothing to pay',
+  r.status === 201 && paidRow?.owner_paid === true && paidAdj.length === 1 && paidAdj[0].amount === 4321 && paidAdj[0].kind === 'credit' && paidAdj[0].state === 'open' && paidAdj[0].owner_id === a.owner_id && (r.json?.toPay ?? []).length === 0,
+  JSON.stringify({ r: r.json, paidRow, paidAdj }));
+r = await call('POST', '/api/expenses', { unitId: a.id, category: 'internet', amount: 9900, incurredOn: '2029-06-30', chargeTo: 'the_conts', description: 'Utility check' });
+check('a bill the company pays comes back to be sent for payment, under its kind when no account names a provider',
+  r.status === 201 && r.json?.toPay?.length === 1 && r.json.toPay[0].provider === 'Internet' && r.json.toPay[0].expenseIds?.[0] === r.json.id && r.json.toPay[0].amountSen === 9900, r.text.slice(0, 300));
+r = await call('POST', '/api/expenses', { unitId: a.id, category: 'cleaning', amount: 100, incurredOn: '2029-06-30', chargeTo: 'the_conts', ownerPaid: true });
+check('only a utility bill can be marked as paid by the owner', r.status === 422, r.text.slice(0, 200));
+
+// A bill already sent for payment is not replaced from "Enter this month's bills".
+const acc = randomUUID();
+await db(`INSERT INTO unit_utility_accounts (id, unit_id, kind, account_no, provider, created_at, updated_at) VALUES ($1, $2, 'electricity', 'CHK-ACC-1', 'TNB', now()::text, now()::text)`, acc, a.id)
+  .catch(e => check('account seeded', false, e.message));
+const sentBill = await bill({ kind: 'electricity', amount: 5000, date: '2029-05-31', chargeTo: 'the_conts' });
+await db(`UPDATE expenses SET reference = 'CHK-ACC-1', payment_request_id = $1, payment_request_no = 'PRQ-CHK-001' WHERE id = $2`, reqA, sentBill);
+r = await call('POST', '/api/expenses/utilities', { month: '2029-05', rows: [{ accountId: acc, amount: 7000, chargeTo: 'the_conts' }] });
+const [still] = await db(`SELECT amount FROM expenses WHERE id = $1`, sentBill);
+check('a bill already sent for payment is skipped, not replaced', r.status === 201 && r.json?.requested?.includes('CHK-ACC-1') && r.json?.saved === 0 && still?.amount === 5000, JSON.stringify({ r: r.json, still }));
+r = await call('GET', `/api/expenses/utilities?month=2029-05&unitId=${a.id}`);
+const line = (r.json?.data ?? []).find(x => x.accountId === acc);
+check('the month screen shows the bill as sent for payment', line?.paymentRequestNo === 'PRQ-CHK-001' && line?.ownerPaid === false, JSON.stringify(line));
+r = await call('POST', '/api/expenses/utilities', { month: '2029-06', rows: [{ accountId: acc, amount: 6100, chargeTo: 'the_conts', ownerPaid: true }] });
+const [june] = await db(`SELECT id, owner_paid FROM expenses WHERE unit_id = $1 AND reference = 'CHK-ACC-1' AND incurred_on >= '2029-06-01' AND incurred_on < '2029-07-01'`, a.id);
+const juneAdj = june ? await db(`SELECT amount FROM owner_adjustments WHERE expense_id = $1`, june.id) : [];
+check('owner paid on the month screen: the tick is kept, the whole bill back as O2, nothing to pay', r.status === 201 && june?.owner_paid === true && juneAdj.length === 1 && juneAdj[0].amount === 6100 && (r.json?.toPay ?? []).length === 0, JSON.stringify({ r: r.json, june, juneAdj }));
+r = await call('POST', '/api/expenses/utilities', { month: '2029-06', rows: [{ accountId: acc, amount: 6200, chargeTo: 'the_conts' }] });
+const [june2] = await db(`SELECT id FROM expenses WHERE unit_id = $1 AND reference = 'CHK-ACC-1' AND incurred_on >= '2029-06-01' AND incurred_on < '2029-07-01'`, a.id);
+const juneAdj2 = await db(`SELECT 1 FROM owner_adjustments WHERE expense_id = $1`, june?.id ?? '');
+check('re-entered without the tick: the O2 line goes with the replaced bill, and the TNB bill comes back to be paid',
+  r.status === 201 && juneAdj2.length === 0 && r.json?.toPay?.length === 1 && r.json.toPay[0].provider === 'TNB' && r.json.toPay[0].expenseIds?.[0] === june2?.id, JSON.stringify({ r: r.json, juneAdj2 }));
+r = await call('POST', '/api/expenses/utilities/payment-requests', { expenseIds: [june2?.id], provider: 'TNB' });
+const [june3] = await db(`SELECT payment_request_id FROM expenses WHERE id = $1`, june2?.id ?? '');
+check('with no finance system to reach, the request is not made and the bill keeps no request', r.status >= 400 && june3?.payment_request_id === null, `${r.status} ${r.text.slice(0, 200)}`);
+r = await call('POST', '/api/expenses/utilities/payment-requests', { expenseIds: [june2?.id], provider: 'TNB' }, 'housekeeper');
+check('only finance and management send utility bills for payment', r.status === 403, r.status);
+
+await db(`DELETE FROM owner_adjustments WHERE expense_id IN (SELECT id FROM expenses WHERE unit_id = $1 AND incurred_on >= '2029-01-01' AND incurred_on < '2030-01-01')`, a.id);
+await db(`DELETE FROM unit_utility_accounts WHERE id = $1`, acc);
+await db(`DELETE FROM scm.payment_requests WHERE id IN ($1, $2)`, reqA, reqB);
 for (const u of [a, b]) await db(`DELETE FROM expenses WHERE unit_id = $1 AND incurred_on >= '2028-10-01' AND incurred_on < '2030-01-01'`, u.id);
 await db(`DELETE FROM owner_statements WHERE owner_id = $1 AND period_start = '2029-03-01'`, a.owner_id);
 await db(`DELETE FROM reservations WHERE unit_id = $1 AND check_in = '2029-03-29'`, a.id);

@@ -245,7 +245,7 @@ export function VenturePortalFeed() {
 
               <Field
                 label="Companies"
-                hint="Which companies' sales orders feed the portal. Houzs Century is 1. Nothing is sent for a company that is not listed here."
+                hint="Which companies' sales orders feed the portal. The Conts is 1. Nothing is sent for a company that is not listed here."
               >
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm text-ink">

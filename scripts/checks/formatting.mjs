@@ -1,5 +1,6 @@
 // Dates, times, money and counts are formatted only in src/lib/format.ts, so every screen prints
-// "16 Sep 2026", "14:06", "RM 1,250.00" and "4,290" the same way (never "Sept", never 2:06 pm, never RM1250).
+// "2026/09/16", "14:06", "RM 1,250.00" and "4,290" the same way (never "16 Sep 2026" since 3 Nov 2026, never 2:06 pm,
+// never RM1250). Year-first numeric dates are the owner's rule for the whole system, the engine included.
 import { runCheck, runIfMain, srcFiles, stripComments, lineHits } from './_lib.mjs';
 
 const PATTERNS = [
@@ -7,6 +8,7 @@ const PATTERNS = [
   { re: /\bIntl\.(?:DateTimeFormat|NumberFormat|RelativeTimeFormat)\b/, msg: 'Intl formatter: use src/lib/format.ts' },
   { re: /\bRM\s?(?:\$\{|\{)/, msg: 'hand-built "RM" amount: use rm() / rmShort() / <MoneyText>' },
   { re: /['"`]RM ['"`]\s*\+/, msg: 'hand-built "RM" amount: use rm() / rmShort() / <MoneyText>' },
+  { re: /\$\{[^}]+\} \$\{MONTHS\[/, msg: 'hand-built day-and-month-name date: use date() / dateShort() from src/lib/format.ts (2026/09/16, 09/16)' },
 ];
 
 export const allow = {
@@ -25,6 +27,7 @@ export const def = {
       { path: 'src/pages/X.tsx', text: "const d = new Date(x).toLocaleDateString('en-MY', { month: 'short' });" },
       { path: 'src/pages/Y.tsx', text: 'const s = `now RM ${Math.round(p / 100)}`;' },
       { path: 'src/pages/Z.tsx', text: '<span>{n.toLocaleString()}</span>' },
+      { path: 'src/pages/W.tsx', text: 'const d = `${day} ${MONTHS[m]} ${y}`;' },
     ],
     good: [{ path: 'src/pages/X.tsx', text: "import { date, rm } from '../lib/format';\nconst s = `${date(iso)} ${rm(sen)}`; // toLocaleDateString( in a comment is fine" }],
   },

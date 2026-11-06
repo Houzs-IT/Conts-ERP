@@ -1596,7 +1596,7 @@ export function MfgDeliveryOrdersListV2() {
       <div className="-mx-4 hidden pb-3 sm:-mx-6 md:block">
         <div className="px-4 sm:px-6">
           <PageHeader
-            eyebrow="Supply Chain"
+            eyebrow="Sales"
             title="Delivery Orders"
             description={`Every ${shortCompanyName(branding.companyName)} delivery order — Loaded to Delivered. Click any row for the quick view; open the full page to edit.`}
             primaryAction={
@@ -1641,7 +1641,7 @@ export function MfgDeliveryOrdersListV2() {
                 point they contradict the table beneath them. */}
             <StatCard
               pending={statsPending} {...statsFail}
-              label="Total DOs"
+              label="Total Orders"
               value={(visible.filtered ? visible.rows.length : total).toLocaleString("en-MY")}
               subtitle={visible.filtered ? "Filtered · shown below" : "All matching orders"}
               rail="bg-primary"

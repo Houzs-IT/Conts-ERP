@@ -34,6 +34,7 @@ import { einvoiceOutboxGet, einvoiceOutboxList, einvoiceRefresh, einvoiceSetting
 import { renoProjectsHandler } from '../../acc/reno-projects';
 import { listUnitsHandler } from '../../conts/units-route';
 import { rentalUnitCostsHandler } from '../../acc/rental-unit-costs';
+import { noUnitCostsHandler, subDepartmentSpendHandler } from '../../acc/sub-department-spend';
 import {
   changeExpectedCostHandler, expectedCostLogHandler, getAlertSettingsHandler, keepCostAlertHandler, listCostAlertsHandler,
   pendingCostAlertsHandler, putAlertSettingsHandler,
@@ -45,6 +46,7 @@ import { computeDailyBank } from '../../acc/daily-bank';
 import { systemTakings, postCashOverShort } from '../../acc/daily-close';
 import { resolveRoles, piLines, DEFAULT_ROLE_CODES, BAD_DEPARTMENT, DEFAULT_DEPARTMENT, departmentQuery, type AccountRole, type Department } from '../../acc/rules';
 import { readLineTags, unknownTags, type LineTags } from '../../conts/line-tags';
+import { checkProjectsFit, resolveLinesSub } from '../../conts/sub-departments';
 import { ledgerSetupStatus, OPEN_BALANCE_ROLES, roleProblem } from '../../conts/ledger-setup-status';
 import { splitByItemGroup } from '../../acc/item-group-split';
 import { classifyJournal } from '../../acc/journal-class';
@@ -81,7 +83,8 @@ import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, 
 import { importOpeningDeposits, reverseOpeningDeposits } from '../../acc/opening-deposits';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
 import { partyLedgerHandler } from '../../conts/party-ledger';
-import { approveLimitRequestHandler, createLimitRequestHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler } from '../../conts/project-limit-routes';
+import { createSubDepartmentHandler, listStaffDepartmentsHandler, listSubDepartmentsHandler, updateSubDepartmentHandler } from '../../conts/sub-department-routes';
+import { approveLimitRequestHandler, createLimitRequestHandler, getLimitSettingsHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler, setLimitSettingsHandler } from '../../conts/project-limit-routes';
 import { projectOfPurchaseInvoice } from '../../conts/project-limit';
 import * as pettyCash from '../../conts/petty-cash-routes';
 import * as paymentRequests from '../../conts/payment-request-routes';
@@ -241,8 +244,18 @@ accounting.get('/projects', listProjectsHandler);
 accounting.get('/units', listUnitsHandler);
 /* Rental costs by unit (chew 2 Nov 2026; finance only) — acc/rental-unit-costs.ts. */
 accounting.get('/rental-unit-costs', rentalUnitCostsHandler);
+/* Spending by sub-department, and a team's costs with no unit (SOP 1.1) — acc/sub-department-spend.ts. */
+accounting.get('/reports/sub-departments', subDepartmentSpendHandler);
+accounting.get('/no-unit-costs', noUnitCostsHandler);
 accounting.get('/everyday-expense', listEverydayExpenseHandler);
 accounting.put('/everyday-expense', setEverydayExpenseHandler);
+accounting.get('/project-limit-settings', getLimitSettingsHandler);
+accounting.put('/project-limit-settings', setLimitSettingsHandler);
+/* Sub-departments (SOP 1.1; chew 4 Nov 2026) — conts/sub-department-routes.ts. */
+accounting.get('/sub-departments', listSubDepartmentsHandler);
+accounting.post('/sub-departments', createSubDepartmentHandler);
+accounting.put('/sub-departments/:id', updateSubDepartmentHandler);
+accounting.get('/staff-departments', listStaffDepartmentsHandler);
 accounting.get('/projects/:id/limit', projectLimitHandler);
 accounting.post('/projects/:id/limit-requests', createLimitRequestHandler);
 accounting.get('/limit-requests', listLimitRequestsHandler);
@@ -334,6 +347,8 @@ type JeLineIn = {
   /** Conts (chew 2 Nov 2026): the project or unit the line belongs to, e.g. a deposit kept by the building. */
   projectId?: number | string | null;
   unitId?: string | null;
+  /** Conts (SOP 1.1; chew 4 Nov 2026): the line's sub-department; it sets the department. */
+  subDepartmentId?: string | null;
 };
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -742,6 +757,11 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
   const sb = c.get('supabase');
   const jeCompanyId = activeCompanyId(c);
 
+  /* Conts (SOP 1.1): each line's sub-department sets its department, before the unit is checked against it. */
+  const subs = await resolveLinesSub(sb, jeCompanyId ?? 0, lines);
+  if (!subs.ok) return c.json({ error: subs.error, message: subs.message }, subs.status);
+  subs.lines.forEach((s, i) => { if (s) lines[i]!.department = s.department; });
+
   /* Conts: each line's project or unit, checked as on a voucher line. */
   const tags: LineTags[] = [];
   for (const [i, l] of lines.entries()) {
@@ -751,6 +771,9 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
   }
   const badTag = await unknownTags(sb, jeCompanyId ?? 0, tags);
   if (badTag) return c.json(badTag, badTag.error === 'load_failed' ? 500 : 400);
+  /* Each named project fits its line's sub-department (SOP 1.1). */
+  const fit = await checkProjectsFit(sb, jeCompanyId ?? 0, subs.list, lines.map((l, i) => ({ subDepartmentId: subs.lines[i]?.subDepartmentId ?? null, department: String(l.department ?? DEFAULT_DEPARTMENT), projectId: tags[i]!.projectId })));
+  if (fit) return c.json({ error: 'project_mismatch', message: fit }, 400);
 
   /* Through the ONE gate (acc/engine), as a DRAFT — posting stays a separate,
      gated step. The engine additionally validates the chart, which this route
@@ -774,6 +797,7 @@ export const journalEntryCreateHandler = async (c: AccCtx): Promise<Response> =>
       department: l.department ?? null,
       projectId: tags[i]!.projectId,
       unitId: tags[i]!.unitId,
+      subDepartmentId: subs.lines[i]?.subDepartmentId ?? null,
     })),
     postNow: false,
   });

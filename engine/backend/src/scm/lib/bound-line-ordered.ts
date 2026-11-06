@@ -40,9 +40,10 @@ export async function loadBoundOrderedQty(
   sb: any,
   companyId: number | null,
   rows: readonly BoundCandidate[],
+  unitBound: ReadonlySet<string>,
 ): Promise<Map<string, number>> {
   const out = new Map<string, number>();
-  const ids = [...new Set(rows.filter((r) => isBoundForCompany(companyId, r)).map((r) => r.id))];
+  const ids = [...new Set(rows.filter((r) => isBoundForCompany(companyId, r, unitBound)).map((r) => r.id))];
   if (ids.length === 0) return out;
   const { data, error } = await chunkIn<{ so_item_id: string; qty: number | null; po: { status: string } | null }>(
     ids,
@@ -67,8 +68,8 @@ export async function loadBoundOrderedQty(
 
 /** Does every convert — MRP-origin included — cap this line? Company 1's bound
  *  lines only; everything else keeps the pooled model's caps unchanged. */
-export function isBoundForCompany(companyId: number | null, row: Omit<BoundCandidate, 'id'>): boolean {
-  return companyId === HARD_BOUND_COMPANY_ID && isHardBoundLine(row.item_group, row.item_code);
+export function isBoundForCompany(companyId: number | null, row: Omit<BoundCandidate, 'id'>, unitBound: ReadonlySet<string>): boolean {
+  return companyId === HARD_BOUND_COMPANY_ID && (isHardBoundLine(row.item_group, row.item_code) || unitBound.has(row.item_code ?? ''));
 }
 
 /** The pick count a cap should use: the recorded `po_qty_picked`, raised to

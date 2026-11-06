@@ -149,6 +149,25 @@ describe('a new DO takes its branding from its lines, not the SO header (TESTING
   });
 });
 
+describe('a renovation contract DO carries the contract brand (owner, 3 Nov 2026)', () => {
+  it('a Hookka bedframe on a Dream Crafter contract reads Dream Crafter', async () => {
+    const sb = fakeSb({
+      mfg_sales_order_items: [{ id: 'bed', branding: null, doc_no: 'TC-SO-2611-001' }],
+      mfg_sales_orders: [{ doc_no: 'TC-SO-2611-001', so_kind: 'RENOVATION', branding: 'Dream Crafter' }],
+      mfg_products: [{ code: 'BED-HKA-1003-(K)', company_id: 1, branding: 'HOOKKA INDUSTRIES SDN BHD' }],
+    });
+    expect(await doBrandingFromLines(sb, [{ itemCode: 'BED-HKA-1003-(K)', soItemId: 'bed' }], 1)).toBe('Dream Crafter');
+  });
+  it('a standard order still takes the goods brand', async () => {
+    const sb = fakeSb({
+      mfg_sales_order_items: [{ id: 'bed', branding: null, doc_no: 'SO-1' }],
+      mfg_sales_orders: [{ doc_no: 'SO-1', so_kind: 'STANDARD', branding: 'AKEMI' }],
+      mfg_products: [{ code: 'BED-HKA-1003-(K)', company_id: 1, branding: 'HOOKKA INDUSTRIES SDN BHD' }],
+    });
+    expect(await doBrandingFromLines(sb, [{ itemCode: 'BED-HKA-1003-(K)', soItemId: 'bed' }], 1)).toBe('HOOKKA INDUSTRIES SDN BHD');
+  });
+});
+
 describe('the SKU decides the SO line variant fields', () => {
   it('a renovation Furniture SKU filed under Sofa or Bedframe gets their fields', () => {
     expect(variantCategoryOf('FURNITURE', 'SOFA')).toBe('SOFA');

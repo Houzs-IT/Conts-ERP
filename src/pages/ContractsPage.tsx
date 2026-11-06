@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { FormModal } from '../components/Modal';
 import { useNavigate } from 'react-router-dom';
 import { color } from '../theme';
 import PageHeader from '../components/PageHeader';
@@ -19,10 +20,15 @@ import { TONE, cx } from '../lib/design-tokens';
 import { useUrlState, usePhone, SearchBox } from './finance/listKit';
 import { FilterBar } from '../components/FilterBar';
 import { statusOf } from '../lib/status';
-import { CODES, CODE, codeName, type ContractCode } from '../lib/revenueModel';
+import { typeOptions, codeName, codeLabel, PURPOSES, PURPOSE_LABEL, type ContractCode, type UnitPurpose } from '../lib/revenueModel';
+import { useContractTypes } from '../lib/useContractTypes';
 import { CodeBadge } from './units/UnitExtras';
 import { ExtendContractModal } from './units/ContractExtras';
-import { CentreModal, Labeled, Select as FormSelect } from './units/shared';
+import { CentreModal, Labeled, Select as FormSelect, mayEditUnits } from './units/shared';
+import { useSession } from '../lib/session';
+import { Drawer } from '../components/Dialog';
+import { CloseButton } from '../components/CloseButton';
+import ContractTab from './units/ContractTab';
 
 type FeeModel = 'management' | 'grr';
 type ContractState = 'Active' | 'Ending soon' | 'Ended';
@@ -40,8 +46,8 @@ interface Contract {
   renewsOn: string | null;
   endsOn?: string | null;
   offerLetter: string | null;
-  /** The staff's short code (PS, PS GRR, WH, ...) and the units this record is in force on (0125). */
-  contractCode?: ContractCode; units?: { id: string; label: string }[]; termsLabel?: string;
+  /** The staff's short code (PS, PS GRR, ...) and the units this record is in force on (0125). */
+  contractCode?: ContractCode; units?: { id: string; label: string; purpose?: UnitPurpose }[]; termsLabel?: string;
 }
 interface Payload { data: Contract[]; generatedAt: string }
 
@@ -76,7 +82,16 @@ const stateOf = (c: Contract): ContractState => {
   return 'Active';
 };
 const feeLabel = (c: Contract) => c.termsLabel ?? (
-  c.model === 'grr' ? `GRR ${rm(c.grrAmount, { cents: false })}/mo` : `${c.managementFeePct}% operator share`);
+  c.model === 'grr' ? `GRR ${rm(c.grrAmount)}/mo` : `${c.managementFeePct}% operator share`);
+/** The purpose of the units the contract is in force on: one word when they agree, "Mixed" when not, null when none. */
+const purposeOf = (c: Contract): UnitPurpose | 'mixed' | null => {
+  const set = new Set((c.units ?? []).map(u => u.purpose ?? 'rental'));
+  return set.size === 0 ? null : set.size > 1 ? 'mixed' : [...set][0];
+};
+const purposeLabel = (c: Contract): string | null => {
+  const p = purposeOf(c);
+  return p === 'mixed' ? 'Mixed' : p ? PURPOSE_LABEL[p] : null;
+};
 const inDays = (d: number) => d === 0 ? 'ends today' : d > 0 ? `in ${d} ${d === 1 ? 'day' : 'days'}` : `${-d} ${d === -1 ? 'day' : 'days'} ago`;
 
 type FilterKey = 'all' | 'soon' | 'active' | 'ended';
@@ -89,12 +104,29 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 
 export default function ContractsPage() {
   const { data, loading, error, reload } = useApi<Payload>('/contracts', FALLBACK);
+  const types = useContractTypes();
   const toast = useToast();
   const navigate = useNavigate();
   const phone = usePhone();
   const url = useUrlState();
   const [edits, setEdits] = useState<Record<string, Partial<Contract>>>({});
-  const [modal, setModal] = useState<null | { mode: 'add' } | { mode: 'edit'; id: string } | { mode: 'extend'; contract: Contract | null }>(null);
+  const [modal, setModal] = useState<null | { mode: 'add' } | { mode: 'edit'; id: string } | { mode: 'extend'; contract: Contract | null } | { mode: 'terms'; contract: Contract }>(null);
+  const { user } = useSession();
+  const canEditUnits = mayEditUnits(user);
+  const [savingPurpose, setSavingPurpose] = useState<string | null>(null);
+
+  /** Sets the purpose of every unit the contract is in force on. A unit on the channels is refused by the server. */
+  async function setPurpose(c: Contract, purpose: UnitPurpose): Promise<void> {
+    const todo = (c.units ?? []).filter(u => (u.purpose ?? 'rental') !== purpose);
+    if (!todo.length) return;
+    setSavingPurpose(c.id);
+    const results = await Promise.allSettled(todo.map(u => api.patch(`/units/${u.id}`, { purpose })));
+    setSavingPurpose(null);
+    const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [`${todo[i].label}: ${errorMessage(r.reason)}`] : []));
+    if (failed.length < todo.length) toast({ tone: 'success', title: `${plural(todo.length - failed.length, 'unit')} now ${PURPOSE_LABEL[purpose].toLowerCase()}.`, body: titleCase(c.ownerName) });
+    if (failed.length) toast({ tone: 'critical', title: 'Purpose not changed.', body: failed.join(' · ') });
+    reload();
+  }
 
   const filter: FilterKey = (['soon', 'active', 'ended'].includes(url.get('state')) ? url.get('state') : 'all') as FilterKey;
   const model = url.get('model');
@@ -177,6 +209,23 @@ export default function ContractsPage() {
     );
   };
 
+  // A tap or Enter on a control inside a row must not also open the owner (the row's own click).
+  const keepInRow = { onClick: (e: { stopPropagation: () => void }) => e.stopPropagation(), onKeyDown: (e: { stopPropagation: () => void }) => e.stopPropagation() };
+  const openTerms = (r: Contract) => setModal((r.units?.length ?? 0) > 0 ? { mode: 'terms', contract: r } : { mode: 'edit', id: r.id });
+  /** The purpose dropdown (plain text for those who cannot edit units); `md` on phone cards for a full-size tap target. */
+  const purposeControl = (r: Contract, size: 'sm' | 'md' = 'sm') => {
+    const p = purposeOf(r);
+    if (!p) return <span className="text-copy text-muted-ink">—</span>;
+    if (!canEditUnits) return <span className="text-copy">{purposeLabel(r)}</span>;
+    return (
+      <span {...keepInRow} className="block min-w-0">
+        <Select label={`Purpose of ${r.unitsLabel}`} size={size} value={p === 'mixed' ? '' : p} disabled={savingPurpose === r.id}
+          onChange={v => { if (v) void setPurpose(r, v as UnitPurpose); }}
+          options={[...(p === 'mixed' ? [{ value: '', label: 'Mixed' }] : []), ...PURPOSES.map(x => ({ value: x.value, label: x.label }))]} />
+      </span>
+    );
+  };
+
   const columns: Column<Contract>[] = [
     { key: 'owner', label: 'Owner', value: r => r.ownerName, hideable: false, width: 210,
       render: r => (
@@ -193,8 +242,8 @@ export default function ContractsPage() {
         </span>
       ) },
     { key: 'units', label: 'Units', value: r => r.unitsLabel, width: 200 },
-    { key: 'code', label: 'Code', value: r => r.contractCode ?? null, width: 96, title: 'The contract type: PS, PS GRR, PS YGRR, LT, RTR, MANAGE, WH.',
-      render: r => <CodeBadge code={r.contractCode} size="sm" />, filter: { kind: 'select', options: CODES.map(c => ({ value: c.code, label: `${codeName(c.code)} · ${c.label}` })) } },
+    { key: 'code', label: 'Code', value: r => r.contractCode ?? null, width: 96, title: 'The contract type, from Units > Unit settings.',
+      render: r => <CodeBadge code={r.contractCode} types={types} size="sm" />, filter: { kind: 'select', options: typeOptions(types) } },
     { key: 'fee', label: 'Income model', value: r => feeLabel(r), width: 140, render: r => <span className="text-copy font-medium truncate block" title={feeLabel(r)}>{feeLabel(r)}</span> },
     { key: 'model', label: 'Model', value: r => (r.model === 'grr' ? 'Guaranteed rent' : 'Operator share'), hidden: true, width: 140, filter: { kind: 'select' } },
     { key: 'feePct', label: 'Operator share %', type: 'number', value: r => (r.model === 'management' ? r.managementFeePct : null), hidden: true, width: 120 },
@@ -202,6 +251,10 @@ export default function ContractsPage() {
     { key: 'started', label: 'Started', type: 'date', value: r => r.startsOn, width: 110 },
     { key: 'ends', label: 'Ends', type: 'date', value: r => expiryOf(r), width: 140, title: 'The end date, or the renewal date when no end date is recorded.',
       render: r => <EndsCell r={r} /> },
+    // What the contract's units are for (staff, 4 Nov 2026: changed here, next to the package, not on the unit).
+    { key: 'purpose', label: 'Purpose', value: r => purposeLabel(r), width: 140, title: 'Rental units are sold on the channels; showroom and warehouse units never are.',
+      filter: { kind: 'select', options: [...PURPOSES.map(p => ({ value: p.label, label: p.label })), { value: 'Mixed', label: 'Mixed' }] },
+      render: r => purposeControl(r) },
     { key: 'endsOn', label: 'End date', type: 'date', value: r => r.endsOn ?? null, hidden: true },
     { key: 'renewsOn', label: 'Renews on', type: 'date', value: r => r.renewsOn, hidden: true },
     { key: 'offer', label: 'Offer letter', value: r => r.offerLetter, hidden: true, width: 180 },
@@ -216,7 +269,9 @@ export default function ContractsPage() {
           </button>
         )}
         <button
-          onClick={e => { e.stopPropagation(); setModal({ mode: 'edit', id: r.id }); }}
+          // A contract in force on units opens the unit's own contract editor (package, terms, dates); the older form is
+          // left for records not on any unit.
+          onClick={e => { e.stopPropagation(); openTerms(r); }}
           aria-label={`Edit contract for ${titleCase(r.ownerName)}`}
           className="grid place-items-center w-9 h-9 rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"
         >
@@ -276,7 +331,7 @@ export default function ContractsPage() {
         toolbar={<>
           <SearchBox className="flex-1 min-w-[200px]" label="Search contracts" placeholder="Search owner or unit" value={url.get('q')} onChange={v => url.set({ q: v || null, page: null })} />
           <Select className="flex-[1_1_160px] sm:flex-[0_1_180px]" label="Income model" value={model} onChange={v => url.set({ model: v || null, page: null })}
-            options={[{ value: '', label: 'All contract types' }, ...CODES.map(c => ({ value: c.code, label: `${codeName(c.code)} · ${c.label}` }))]} />
+            options={[{ value: '', label: 'All contract types' }, ...typeOptions(types)]} />
           {phone && (
             <Select className="flex-[1_1_160px]" label="Sort by" value={url.get('sort')} onChange={v => url.set({ sort: v || null, page: null })}
               options={[{ value: '', label: 'Sort: ending soonest' }, { value: 'owner:asc', label: 'Sort: owner A-Z' }, { value: 'started:desc', label: 'Sort: newest first' }]} />
@@ -294,9 +349,19 @@ export default function ContractsPage() {
               </span>
               <span className="text-meta text-muted-ink truncate w-full" title={r.unitsLabel}>{r.unitsLabel}</span>
               <span className="flex items-center justify-between gap-2 w-full flex-wrap">
-                <span className="text-meta font-medium inline-flex items-center gap-1.5"><CodeBadge code={r.contractCode} size="sm" />{feeLabel(r)}</span>
+                <span className="text-meta font-medium inline-flex items-center gap-1.5"><CodeBadge code={r.contractCode} types={types} size="sm" />{feeLabel(r)}</span>
                 <EndsCell r={r} />
               </span>
+              {/* Phones have no Purpose column or pencil: the same two actions, on the card. */}
+              {purposeOf(r) && (
+                <span className="flex items-center gap-2 w-full pt-2">
+                  <span className="flex-1 min-w-0">{purposeControl(r, 'md')}</span>
+                  <span {...keepInRow} className="shrink-0">
+                    <Button size="md" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={() => openTerms(r)}
+                      aria-label={`Edit contract for ${titleCase(r.ownerName)}`}>Edit contract</Button>
+                  </span>
+                </span>
+              )}
             </span>
           );
         }}
@@ -305,6 +370,7 @@ export default function ContractsPage() {
       {modal?.mode === 'add' && <ContractModal onClose={() => setModal(null)} onSubmit={addContract} />}
       {modal?.mode === 'extend' && <ExtendFromList contract={modal.contract} rows={rows} onClose={() => setModal(null)} onSaved={() => { setModal(null); reload(); }} />}
       {modal?.mode === 'edit' && editing && <ContractModal existing={editing} onClose={() => setModal(null)} onSubmit={input => saveEdit(editing.id, input)} />}
+      {modal?.mode === 'terms' && <ContractDrawer contract={modal.contract} canEdit={canEditUnits} onClose={() => setModal(null)} onSaved={reload} />}
     </>
   );
 }
@@ -313,31 +379,7 @@ export default function ContractsPage() {
 function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, children }: {
   title: string; sub?: string; onClose: () => void; onSubmit: () => void; submitLabel: string; canSubmit: boolean; children: ReactNode;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.querySelector<HTMLInputElement>('input,select')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  return (
-    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div ref={ref} className="relative w-full max-w-[480px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
-        <form onSubmit={e => { e.preventDefault(); if (canSubmit) onSubmit(); }}>
-          <div className="pt-[22px] px-[22px] pb-[4px] flex flex-col gap-[5px]">
-            <h2 className="m-0 text-title font-semibold">{title}</h2>
-            {sub && <p className="m-0 text-copy text-muted-ink">{sub}</p>}
-          </div>
-          <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
-          <div className="py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
-            <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Fill the required fields first">{submitLabel}</Button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
+  return <FormModal title={title} sub={sub} onClose={onClose} onSubmit={onSubmit} submitLabel={submitLabel} canSubmit={canSubmit}>{children}</FormModal>;
 }
 
 /** Placeholder upload — records the chosen filename locally; the real upload lands with the backend. */
@@ -398,7 +440,7 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
         <Field label="Unit" placeholder="e.g. Vista Jaya One #A-12-03" value={unitsLabel} onChange={e => setUnitsLabel(e.target.value)} help="For multiple units, name the primary one; link the rest on the owner." />
       </>)}
       <Select showLabel size="md" label="Income model" value={model} onChange={v => setModel(v as FeeModel)}
-        options={[{ value: 'management', label: 'Operator share (% of income)' }, { value: 'grr', label: 'GRR — guaranteed monthly rent' }]} />
+        options={[{ value: 'management', label: 'Operator share (% of income)' }, ...(existing?.model === 'grr' ? [{ value: 'grr', label: 'GRR (no longer offered)' }] : [])]} />
       {model === 'management'
         ? <PercentInput label="Operator share %" value={feePct} onChange={setFeePct} help="The Conts keeps this share; the owner receives the rest." />
         : <MoneyInput label="Guaranteed rent (RM / month)" placeholder="e.g. 3,500.00" valueSen={grrSen} onChangeSen={setGrrSen} help="The owner is paid this fixed amount regardless of occupancy." />}
@@ -413,8 +455,35 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
   );
 }
 
+/** The unit's Contract tab in a side drawer, so the package and terms are changed from the Contracts list. A contract
+ *  in force on several units is changed one unit at a time, as on the unit (the server gives that unit its own copy). */
+function ContractDrawer({ contract, canEdit, onClose, onSaved }: { contract: Contract; canEdit: boolean; onClose: () => void; onSaved: () => void }) {
+  const units = contract.units ?? [];
+  const [unitId, setUnitId] = useState(units[0]?.id ?? '');
+  return (
+    <Drawer open onClose={onClose} width={920} labelledBy="contract-drawer-title">
+      <div className="flex items-start justify-between gap-3 px-6 pt-[22px] pb-3.5">
+        <div className="flex flex-col gap-1 min-w-0">
+          <h2 id="contract-drawer-title" className="m-0 text-[19px] font-semibold">Contract · {titleCase(contract.ownerName)}</h2>
+          {units.length === 1 && <span className="text-meta text-muted-ink">{units[0].label}</span>}
+        </div>
+        <CloseButton onClick={onClose} />
+      </div>
+      {units.length > 1 && (
+        <div className="px-6 pb-3 max-w-[420px]">
+          <Labeled label="Unit"><FormSelect label="Unit" value={unitId} onChange={setUnitId} options={units.map(u => ({ value: u.id, label: u.label }))} /></Labeled>
+        </div>
+      )}
+      <div className="px-6 pb-6 flex flex-col gap-4">
+        {unitId && <ContractTab key={unitId} unitId={unitId} canEdit={canEdit} onSaved={onSaved} />}
+      </div>
+    </Drawer>
+  );
+}
+
 /** Extend from the Contracts list: the unit is picked first when the contract (or the page) covers several. */
 function ExtendFromList({ contract, rows, onClose, onSaved }: { contract: Contract | null; rows: Contract[]; onClose: () => void; onSaved: () => void }) {
+  const types = useContractTypes();
   const choices = (contract ? [contract] : rows).flatMap(c => (c.units ?? []).map(u => ({ unit: u, c })));
   const [picked, setPicked] = useState(choices.length === 1 ? choices[0].unit.id : '');
   const [go, setGo] = useState(choices.length === 1);
@@ -429,9 +498,9 @@ function ExtendFromList({ contract, rows, onClose, onSaved }: { contract: Contra
       footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!chosen} disabledReason="Pick the unit" onClick={() => setGo(true)}>Next</Button></>}>
       <Labeled label="Unit">
         <FormSelect label="Unit" value={picked} onChange={setPicked}
-          options={[{ value: '', label: choices.length ? 'Pick a unit' : 'No unit has a contract in force' }, ...choices.map(x => ({ value: x.unit.id, label: `${x.unit.label} · ${x.c.contractCode ? codeName(x.c.contractCode) : ''} · ${titleCase(x.c.ownerName)}` }))]} />
+          options={[{ value: '', label: choices.length ? 'Pick a unit' : 'No unit has a contract in force' }, ...choices.map(x => ({ value: x.unit.id, label: `${x.unit.label} · ${x.c.contractCode ? codeName(types, x.c.contractCode) : ''} · ${titleCase(x.c.ownerName)}` }))]} />
       </Labeled>
-      {chosen && <p className="m-0 text-meta text-muted-ink">{CODE[chosen.c.contractCode ?? 'PS']?.label}: {feeLabel(chosen.c)}{chosen.c.endsOn ? `, ends ${date(chosen.c.endsOn)}` : ''}.</p>}
+      {chosen && <p className="m-0 text-meta text-muted-ink">{codeLabel(types, chosen.c.contractCode ?? 'PS')}: {feeLabel(chosen.c)}{chosen.c.endsOn ? `, ends ${date(chosen.c.endsOn)}` : ''}.</p>}
     </CentreModal>
   );
 }

@@ -1,8 +1,10 @@
 import { type Env, all, one, run, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { can } from '../../_lib/access';
-import { invalidUnit, ownerFieldIn, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { invalidUnit, invalidLayoutType, ownerFieldIn, saveExpenses, saveContract, auditUnit, type UnitInput } from '../../_lib/properties';
+import { invalidBedSizes } from '../../_lib/bedSizes';
 import { purposeReady, saveBays } from '../../_lib/unitPurpose';
+import { placeholderOwnerId } from '../../_lib/placeholderOwner';
 
 /** GET /api/units?propertyId=&readiness= — the unit list (also the roster behind every unit picker). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -48,8 +50,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   });
 };
 
-/** POST /api/units { id?, buildingId, ownerId, parentUnitId?, listingName, unitCode, address, pkg, term, split, splitValue, layout..., expenses, contract }
- *  The owner is picked from the owner profiles (a sub-unit takes its parent's owner); owner identity and bank fields are refused. */
+/** POST /api/units { id?, buildingId, ownerId?, parentUnitId?, listingName, unitCode, address, pkg, term, split, splitValue, layout..., expenses, contract }
+ *  The owner is picked from the owner profiles (a sub-unit takes its parent's owner; with neither, the unit goes under the stand-in "Owner to be confirmed"); owner identity and bank fields are refused. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -59,7 +61,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const ownerField = b && typeof b === 'object' ? ownerFieldIn(b) : null;
   if (ownerField) return fail('VALIDATION', "The owner's name, IC and bank details are edited on the owner's page. Pick the owner instead.", 422, { [ownerField]: "Edit this on the owner's page." });
   if (!b?.buildingId) return fail('VALIDATION', 'Pick a building.', 422, { buildingId: 'Pick a building.' });
-  const bad = invalidUnit(b);
+  const bad = invalidUnit(b) ?? await invalidLayoutType(env, b) ?? await invalidBedSizes(env, b.beds);
   if (bad) return fail('VALIDATION', bad.message, 422, { [bad.field]: bad.message });
   if (!(await one(env, 'SELECT 1 AS x FROM properties WHERE id = ?', b.buildingId))) return fail('NOT_FOUND', 'That building does not exist.', 404);
 
@@ -69,14 +71,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return fail('CONFLICT', 'That building already has a unit with this code.', 409, { unitCode: 'This code is already used in the building.' });
   }
 
-  // A sub-unit must hang off a real unit in the same building; a bad parent just makes a top-level unit.
+  // A sub-unit must hang off a real unit in the same building; a parent that is not there is refused, never turned into a loose unit.
   let parentUnitId: string | null = null, parentOwner: string | null = null;
   if (typeof b.parentUnitId === 'string' && b.parentUnitId) {
     const parent = await one<{ owner_id: string }>(env, 'SELECT owner_id FROM units WHERE id = ? AND property_id = ?', b.parentUnitId, b.buildingId);
-    if (parent) { parentUnitId = b.parentUnitId; parentOwner = parent.owner_id; }
+    if (!parent) return fail('VALIDATION', 'That parent unit no longer exists.', 422, { parentUnitId: 'That parent unit no longer exists.' });
+    parentUnitId = b.parentUnitId; parentOwner = parent.owner_id;
   }
-  const ownerId = typeof b.ownerId === 'string' && b.ownerId ? b.ownerId : parentOwner;
-  if (!ownerId) return fail('VALIDATION', 'Pick the owner of this unit.', 422, { ownerId: 'Pick the owner.' });
+  const ownerId = typeof b.ownerId === 'string' && b.ownerId ? b.ownerId
+    : parentOwner ?? await placeholderOwnerId({ all: (sql, ...args) => all(env, sql, ...args) as never, run: (sql, ...args) => run(env, sql, ...args) }, nowIso());
   if (!(await one(env, 'SELECT 1 AS x FROM owners WHERE id = ?', ownerId))) return fail('NOT_FOUND', 'That owner does not exist.', 404, { ownerId: 'Pick an owner.' });
 
   const now = nowIso();

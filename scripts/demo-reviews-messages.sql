@@ -40,7 +40,7 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Reviews of eight of those stays, plus two with no booking matched.
 INSERT INTO reviews (id, unit_id, reservation_id, channel, rating, comment, reviewed_at, reply, replied_at, scores, channel_reply, channex_review_id, reply_push_state, reply_push_error, guest_name)
-SELECT 'demo-rv-' || s.n, CASE WHEN s.unit IS NULL THEN NULL ELSE '55555555-5555-4555-8555-00000000000' || s.unit END,
+SELECT 'local-rv-' || s.n, CASE WHEN s.unit IS NULL THEN NULL ELSE '55555555-5555-4555-8555-00000000000' || s.unit END,
   CASE WHEN s.res IS NULL THEN NULL ELSE '77777777-0000-4000-8000-0000000009' || s.res END,
   s.channel, s.rating, s.comment, to_char(current_date - s.ago, 'YYYY-MM-DD') || 'T09:00:00Z',
   s.reply, CASE WHEN s.reply IS NULL THEN NULL ELSE to_char(current_date - s.ago + 1, 'YYYY-MM-DD') || 'T10:00:00Z' END,
@@ -69,7 +69,7 @@ FROM (VALUES
 ) AS s(n, unit, res, channel, rating, comment, ago, reply, scores, channel_reply, cx, push, push_error, guest)
 ON CONFLICT (id) DO NOTHING;
 -- A reply written on Airbnb's own site, not here, counts as replied (as the Channex pull stores it).
-UPDATE reviews SET reply = channel_reply, replied_at = reviewed_at WHERE id = 'demo-rv-08' AND reply IS NULL;
+UPDATE reviews SET reply = channel_reply, replied_at = reviewed_at WHERE id = 'local-rv-08' AND reply IS NULL;
 
 -- Conversations: an Airbnb inquiry before booking (no reservation, the unit from the listing), a stay with a photo the
 -- guest sent, and replies that did not reach the guest.
@@ -95,3 +95,60 @@ INSERT INTO saved_replies (id, title, body, created_by, created_at, updated_at) 
  ('demo-saved-2','Parking','Your car park bay number is in the access details we send on the day of arrival. Tell the guard house the unit number and your name.','11111111-1111-4111-8111-000000000001','2026-10-01T00:00:00Z','2026-10-01T00:00:00Z'),
  ('demo-saved-3','Thank you after checkout','Thank you for staying with us. We hope you enjoyed it, and a review on the site would mean a lot to the team.','11111111-1111-4111-8111-000000000001','2026-10-01T00:00:00Z','2026-10-01T00:00:00Z')
 ON CONFLICT (id) DO NOTHING;
+
+-- Reviews, Airbnb's way (migration 0204): Airbnb category scores (out of 10, as Channex sends them) and tags, a review
+-- Airbnb hides until the guest is reviewed, the clean jobs and cleaners before the reviewed stays, guest review
+-- templates, an auto rule, and guest reviews in each state. Guarded so this file still loads before 0203.
+DO $demo$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'pos' AND table_name = 'guest_reviews') THEN RETURN; END IF;
+
+  UPDATE reviews SET scores = '[{"category":"cleanliness","score":10},{"category":"accuracy","score":10},{"category":"communication","score":10},{"category":"checkin","score":10},{"category":"location","score":9},{"category":"value","score":9}]',
+    tags = '["guest_review_host_positive_spotless_furniture_and_linens","guest_review_host_positive_always_responsive","guest_review_host_positive_easy_to_find"]' WHERE id = 'local-rv-01';
+  UPDATE reviews SET scores = '[{"category":"cleanliness","score":8},{"category":"accuracy","score":8},{"category":"communication","score":9},{"category":"checkin","score":8},{"category":"location","score":9},{"category":"value","score":9}]',
+    tags = '["guest_review_host_negative_stains","guest_review_host_positive_walkable"]' WHERE id = 'local-rv-03';
+  UPDATE reviews SET scores = '[{"category":"cleanliness","score":7},{"category":"accuracy","score":6},{"category":"communication","score":8},{"category":"checkin","score":4},{"category":"location","score":8},{"category":"value","score":6}]',
+    tags = '["guest_review_host_negative_hard_to_locate","guest_review_host_negative_had_to_wait","guest_review_host_negative_dirty_or_dusty"]' WHERE id = 'local-rv-04';
+  UPDATE reviews SET scores = '[{"category":"cleanliness","score":10},{"category":"accuracy","score":10},{"category":"communication","score":10},{"category":"checkin","score":10},{"category":"location","score":10},{"category":"value","score":10}]',
+    tags = '["guest_review_host_positive_walkable","guest_review_host_positive_peaceful"]', is_hidden = 1 WHERE id = 'local-rv-06';
+  UPDATE reviews SET scores = '[{"category":"cleanliness","score":9},{"category":"accuracy","score":10},{"category":"communication","score":10},{"category":"checkin","score":9},{"category":"location","score":9},{"category":"value","score":8}]' WHERE id = 'local-rv-08';
+
+  INSERT INTO cleaners (id, full_name, employment_type, is_active, created_at, updated_at) VALUES
+   ('rv-cleaner-1', 'Aminah Yusof', 'internal', 1, '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z'),
+   ('rv-cleaner-2', 'Sparkle Crew', 'outsourced', 1, '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')
+  ON CONFLICT (id) DO NOTHING;
+  -- The turnover before each reviewed stay, on its check-in day.
+  INSERT INTO tasks (id, unit_id, reservation_id, kind, state, title, scheduled_for, completed_at, cleaner_id, requires_photo, created_at, updated_at)
+  SELECT 'rv-task-' || r.id, r.unit_id, NULL, 'turnover', 'resolved', 'Turnover after check-out', r.check_in || 'T11:00:00+08:00', r.check_in || 'T13:30:00+08:00',
+    CASE WHEN r.unit_id LIKE '%3' THEN 'rv-cleaner-2' ELSE 'rv-cleaner-1' END, 1, r.check_in || 'T00:00:00Z', r.check_in || 'T00:00:00Z'
+  FROM reservations r WHERE r.id IN (SELECT reservation_id FROM reviews WHERE id LIKE 'local-rv-%' AND reservation_id IS NOT NULL)
+  ON CONFLICT (id) DO NOTHING;
+  INSERT INTO task_cleaners (id, task_id, cleaner_id, position, assigned_at)
+  SELECT 'tc-' || t.id, t.id, t.cleaner_id, 0, t.created_at FROM tasks t WHERE t.id LIKE 'rv-task-%' ON CONFLICT DO NOTHING;
+
+  INSERT INTO guest_review_templates (id, title, body, is_active, use_count, created_at, updated_at) VALUES
+   ('rv-tpl-1', 'Warm and short', '{guest} was a wonderful guest. They kept the apartment clean, communicated clearly and followed every house rule. Welcome back any time!', 1, 2, '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z'),
+   ('rv-tpl-2', 'Tidy and easy', 'Hosting {guest} was easy from start to finish. Quick replies, a tidy unit at checkout and very respectful of the building. Highly recommended.', 1, 1, '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z'),
+   ('rv-tpl-3', 'Recommend to hosts', 'We would happily host {guest} again. Considerate, friendly and left {unit} just as they found it.', 1, 0, '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z')
+  ON CONFLICT (id) DO NOTHING;
+  INSERT INTO guest_review_rules (id, name, condition, cleanliness, communication, respect_house_rules, recommend, mode, is_active, position, created_at, updated_at) VALUES
+   ('rv-rule-1', 'No issues: 5 stars', 'no_issues', 5, 5, 5, 1, 'approval', 1, 1, '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z')
+  ON CONFLICT (id) DO NOTHING;
+
+  -- Guest reviews: one a rule wrote that waits for approval (stay 01), one Airbnb refused (stay 10), a Bad guest whose
+  -- review is held (stay 06), and one sent (stay 12).
+  INSERT INTO guest_reviews (id, reservation_id, state, source, rule_id, template_id, cleanliness, communication, respect_house_rules, public_review, recommend, send_after, written_at, created_at, updated_at) VALUES
+   ('rv-gr-01', '77777777-0000-4000-8000-000000000901', 'needs_approval', 'rule', 'rv-rule-1', 'rv-tpl-1', 5, 5, 5, 'Hannah was a wonderful guest. They kept the apartment clean, communicated clearly and followed every house rule. Welcome back any time!', 1, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+  ON CONFLICT (reservation_id) DO NOTHING;
+  INSERT INTO guest_reviews (id, reservation_id, state, source, cleanliness, communication, respect_house_rules, public_review, recommend, send_after, attempts, last_error, last_attempt_at, written_at, created_at, updated_at) VALUES
+   ('rv-gr-10', '77777777-0000-4000-8000-000000000910', 'failed', 'manual', 5, 4, 5, 'Kenji was a great guest, quiet and tidy. Recommended.', 1, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 1, 'Airbnb refused it (status 422).', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+  ON CONFLICT (reservation_id) DO NOTHING;
+  INSERT INTO guest_reviews (id, reservation_id, bad_guest, bad_guest_note, bad_guest_at, state, source, cleanliness, communication, respect_house_rules, public_review, private_note, recommend, tags, send_after, written_at, created_at, updated_at) VALUES
+   ('rv-gr-06', '77777777-0000-4000-8000-000000000906', 1, 'Smoked on the balcony and left rubbish in the corridor.', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'scheduled', 'manual', 2, 3, 1,
+    'Arjun did not follow the house rules: there was smoking in the unit and rubbish was left outside the door.', 'Please follow the no-smoking rule next time.', 0,
+    '["host_review_guest_negative_smoking","host_review_guest_negative_garbage"]', to_char((now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date + 8, 'YYYY-MM-DD') || 'T03:00:00.000Z', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+  ON CONFLICT (reservation_id) DO NOTHING;
+  INSERT INTO guest_reviews (id, reservation_id, state, source, cleanliness, communication, respect_house_rules, public_review, recommend, sent_at, written_at, created_at, updated_at) VALUES
+   ('rv-gr-12', '77777777-0000-4000-8000-000000000912', 'sent', 'manual', 5, 5, 5, 'Mei Ling was a lovely guest. Welcome back!', 1, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+  ON CONFLICT (reservation_id) DO NOTHING;
+END $demo$;

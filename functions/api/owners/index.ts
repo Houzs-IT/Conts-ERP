@@ -8,7 +8,8 @@ import { DEDUCTION_WORDS } from '../../_lib/unitCosts';
 import { monthEndExclusive } from '../../_lib/revenue';
 import { checkPhone } from '../../_lib/validate';
 import { addressOf, altContactOf, ownerDetailsReady } from '../../_lib/ownerDetails';
-import { purposeReady, codeOf, type ContractCode } from '../../_lib/unitPurpose';
+import { purposeReady, codeOf } from '../../_lib/unitPurpose';
+import { contractTypes } from '../../_lib/contractTypes';
 
 const READ_ROLES = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
 /** Last four characters, ignoring spaces and dashes ("680606-08-5101" -> "5101"). */
@@ -34,7 +35,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const q: Query = (sql, ...args) => all(env, sql, ...args);
   const settingsRead = statementSettings(q);
   const inputsRead = loadInputs(q, `${month}-01`, monthEndExclusive(month), id ? { ownerIds: [id] } : {});
-  const [owners, settings, inputs, monthInputs, contracts, statements, detailsReady, portalOf, contractCodes, unitProperties] = await Promise.all([
+  const [owners, settings, inputs, monthInputs, contracts, statements, detailsReady, portalOf, contractCodes, unitProperties, types] = await Promise.all([
     ownersRead, settingsRead, inputsRead,
     Promise.all([inputsRead, settingsRead]).then(([i, st]) => withYearToDate(q, i, month, st)),
     all<any>(env, `SELECT * FROM owner_contracts ${id ? 'WHERE owner_id = ?' : ''} ORDER BY starts_on DESC`, ...(id ? [id] : [])),
@@ -45,6 +46,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ownersRead.then(o => portalStates(env, o)),
     purposeReady(env).then(ready => ready ? all<{ id: string; contract_code: string | null }>(env, 'SELECT id, contract_code FROM owner_contracts WHERE contract_code IS NOT NULL') : []),
     all<any>(env, `SELECT id, property_id FROM units ${id ? 'WHERE owner_id = ?' : ''}`, ...(id ? [id] : [])),
+    contractTypes(env),
   ]);
   const months = new Map(computeMonth(month, monthInputs, settings, 'dated').map(m => [m.unitId, m]));
   const statementOf = new Map(statements.map(s => [s.owner_id, s]));
@@ -81,14 +83,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         statement: st ? { id: st.id, state: st.state, hasUnits: !!st.has_units } : null,
         units: (unitsOf.get(o.id) ?? []).map(u => {
           const m = months.get(u.id)!;
-          const view = contractView(u.contract_id ? { ...u, id: u.contract_id, misc_charges: u.contract_misc } : null, { ...u, misc_charges: u.unit_misc }, settings.defaultFeePct);
+          const view = contractView(u.contract_id ? { ...u, id: u.contract_id, misc_charges: u.contract_misc } : null, { ...u, misc_charges: u.unit_misc }, settings.defaultFeePct, 0, types);
           const fixed = m.terms.basis !== 'share';
           const unitPct = u.management_fee_pct != null ? Number(u.management_fee_pct) : null;
           return {
             unitId: u.id, unitLabel: `${u.property_name} ${u.unit_number}`, buildingId: propertyOf.get(u.id),
             // model: the two-way split older screens filter on; revenueModel: the five models.
             model: m.terms.model === 'grr' ? 'grr' : 'management', revenueModel: m.terms.model, termsLabel: view.termsLabel,
-            contractCode: u.contract_id ? codeOf(m.terms.model, codeById.get(u.contract_id)) as ContractCode : null,
+            contractCode: u.contract_id ? codeOf(types, m.terms.model, codeById.get(u.contract_id)) : null,
             ...(fixed ? { grrAmount: m.terms.fixedRent } : { feePct: 100 - (m.ownerPct ?? 0) }),
             feeSource: unitPct != null ? 'unit' : ownerDefault != null ? 'owner-default' : 'fallback',
             occupancy: Math.min(100, Math.round(m.occupancy * 100)), adr: m.nights ? Math.round(m.gross / m.nights) : 0,

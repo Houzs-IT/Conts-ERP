@@ -52,27 +52,44 @@ export const CATEGORY_LABEL: Record<string, string> = {
   housekeeping: 'Cleaning', utilities: 'Utilities', consumables: 'Consumables', furniture: 'Furniture', management_fee: 'Operator share', channel_fee: 'Service fee',
 };
 
-/** The staff's contract codes (sheet UNIT, 17 Oct 2026) and the model each is worked out by (functions/_lib/unitPurpose.ts).
- *  Every unit, showroom and warehouse too, takes PS, PS GRR, PS YGRR, LT, RTR or MANAGE (GRR only if it already has it). */
-export type ContractCode = 'PS' | 'PS GRR' | 'PS YGRR' | 'LT' | 'RTR' | 'MANAGE' | 'GRR';
-export const CODES: { code: ContractCode; pkg?: string; model: RevenueModel; label: string; blurb: string }[] = [
-  { code: 'PS', pkg: '(Package A)', model: 'management', label: 'Airbnb profit sharing', blurb: 'We run it on the channels and split the profit' },
-  { code: 'PS GRR', pkg: '(Package B)', model: 'management_guarantee', label: 'Profit sharing, monthly GRR', blurb: 'A split, with a minimum for the owner every month' },
-  { code: 'LT', pkg: '(Package C)', model: 'long_term', label: 'Airbnb long term', blurb: 'Let to one tenant, not on the channels' },
-  { code: 'PS YGRR', pkg: '(Package D)', model: 'management_yearly_guarantee', label: 'Profit sharing, yearly GRR', blurb: 'A split, with a minimum for the owner each contract year' },
-  { code: 'RTR', pkg:'-', model: 'master_lease', label: 'Rent to rent', blurb: 'We rent the unit from the owner and run it' },
-  { code: 'MANAGE', pkg:'-',model: 'management', label: 'Listing management', blurb: 'We manage the listing for a fee, no guarantee' },
-  { code: 'GRR', model: 'grr', label: 'Guaranteed rent', blurb: 'Fixed rent to the owner each month (older contracts)' },
+/** The staff's contract type code (PS, PS GRR, ...). Staff keep the list on Unit settings (GET /api/contract-types);
+ *  an unknown or hidden code is shown as it is. */
+export type ContractCode = string;
+export interface ContractType {
+  code: ContractCode; label: string; package: string | null; revenueModel: RevenueModel; blurb: string | null;
+  isDefaultForModel: boolean; sortOrder: number; isActive: boolean;
+  /** How many contracts use it (the list endpoint only). */
+  contracts?: number;
+}
+const builtIn = (n: number, code: string, label: string, pkg: string | null, revenueModel: RevenueModel, blurb: string, isDefaultForModel = true): ContractType =>
+  ({ code, label, package: pkg, revenueModel, blurb, isDefaultForModel, sortOrder: n * 10, isActive: true });
+/** The types before migration 0206 (functions/_lib/contractTypes.ts), shown until the list arrives. */
+export const BUILT_IN_CONTRACT_TYPES: readonly ContractType[] = [
+  builtIn(1, 'PS', 'Airbnb profit sharing', 'Package A', 'management', 'We run it on the channels and split the profit'),
+  builtIn(2, 'PS GRR', 'Profit sharing with monthly GRR', 'Package B', 'management_guarantee', 'A split, with a minimum for the owner every month'),
+  builtIn(3, 'LT', 'Airbnb long term', 'Package C', 'long_term', 'Let to one tenant, not on the channels'),
+  builtIn(4, 'PS YGRR', 'Profit sharing with yearly GRR', 'Package D', 'management_yearly_guarantee', 'A split, with a minimum for the owner each contract year'),
+  builtIn(5, 'RTR', 'Rent to rent', null, 'master_lease', 'We rent the unit from the owner and run it'),
+  builtIn(6, 'MANAGE', 'Listing management', null, 'management', 'We manage the listing for a fee, no guarantee', false),
 ];
-export const CODE: Record<ContractCode, typeof CODES[number]> = Object.fromEntries(CODES.map(c => [c.code, c])) as Record<ContractCode, typeof CODES[number]>;
-export const codeName = (c: ContractCode): string => CODE[c]?.pkg ? `${c} ${CODE[c].pkg}` : c;
-/** "Package B" for PS GRR, null for the codes that have none (RTR, MANAGE, GRR, or no contract). */
-export const packageOf = (c: ContractCode | null | undefined): string | null => {
-  const pkg = c ? CODE[c]?.pkg : undefined;
-  return pkg && pkg !== '-' ? pkg.replace(/[()]/g, '') : null;
+export const typeOf = (types: readonly ContractType[], code: string | null | undefined): ContractType | undefined => types.find(t => t.code === code);
+/** "PS (Package A)"; just the code for a type with no package or one that is not on the list. */
+export const codeName = (types: readonly ContractType[], code: ContractCode): string => {
+  const pkg = typeOf(types, code)?.package;
+  return pkg ? `${code} (${pkg})` : code;
 };
-export const codeFromModel =(m: RevenueModel): ContractCode =>
-  ({ management: 'PS', management_guarantee: 'PS GRR', management_yearly_guarantee: 'PS YGRR', grr: 'GRR', master_lease: 'RTR', long_term: 'LT' } as const)[m];
+/** "Package B" for PS GRR, null for the types that have none (RTR, MANAGE, GRR, or no contract). */
+export const packageOf = (types: readonly ContractType[], code: ContractCode | null | undefined): string | null => typeOf(types, code)?.package ?? null;
+/** The type's label; the code itself when the type is not on the list. */
+export const codeLabel = (types: readonly ContractType[], code: ContractCode): string => typeOf(types, code)?.label ?? code;
+/** The type a contract with no saved type is read as: its model's default. */
+export const codeFromModel = (types: readonly ContractType[], m: RevenueModel): ContractCode =>
+  (types.find(t => t.revenueModel === m && t.isDefaultForModel) ?? types.find(t => t.revenueModel === m))?.code ?? '';
+/** Filter and picker options for every type, hidden ones too (a contract may still have one): "PS (Package A) · Airbnb profit sharing". */
+export const typeOptions = (types: readonly ContractType[]): { value: string; label: string }[] =>
+  types.map(t => ({ value: t.code, label: `${codeName(types, t.code)} · ${t.label}` }));
+/** The types a unit may take: the active ones, and its own even when hidden. */
+export const offeredTypes = (types: readonly ContractType[], current?: ContractCode | null): ContractType[] => types.filter(t => t.isActive || t.code === current);
 
 export type UnitPurpose = 'rental' | 'showroom' | 'warehouse';
 export const PURPOSES: { value: UnitPurpose; label: string; help: string }[] = [
@@ -84,6 +101,7 @@ export const PURPOSE_LABEL: Record<UnitPurpose, string> = { rental: 'Rental', sh
 export const USED_BY: { value: string; label: string }[] = [
   { value: 'the_conts', label: 'The Conts' }, { value: 'dream_crafter', label: 'Dream Crafter' }, { value: 'inhouse_reno', label: 'Inhouse Reno' },
 ];
+/** The bed sizes before migration 0210. Since then staff keep the list on Unit settings (GET /api/unit-bed-sizes). */
 export const BED_SIZES: { value: string; label: string }[] = [
   { value: 'king', label: 'King' }, { value: 'queen', label: 'Queen' }, { value: 'super_single', label: 'Super single' }, { value: 'single', label: 'Single' }, { value: 'sofa_bed', label: 'Sofa bed' },
   { value: 'single_floor_mattress', label: 'Single floor mattress' }, { value: 'double_decker', label: 'Double decker' },

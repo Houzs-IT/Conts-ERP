@@ -42,8 +42,8 @@ every pull request.
 
 ## 4. Dates, money, numbers, phones
 
-- Only through `src/lib/format.ts`: `date` (16 Sep 2026), `dateShort`, `dateRange`, `time` (14:06), `dateTime`,
-  `weekdayDate` (Sat 10 Oct), `dateTimeShort`, `monthLabel`, `relative`, `rm` (RM 1,250.00), `rmShort`, `rmRange`,
+- Only through `src/lib/format.ts`: `date` (2026/09/16, year-first numeric, owner 3 Nov 2026), `dateShort` (09/16), `dateRange`, `time` (14:06), `dateTime`,
+  `weekdayDate` (Sat 10/10), `dateTimeShort`, `monthLabel`, `relative`, `rm` (RM 1,250.00), `rmShort`, `rmRange`,
   `amount` (number only, under an RM heading), `count` (4,290), `plural`.
 - Phones: `phone(raw)` shows `+60 18-980 0069`, `+65 9123 4567`, `+62 812 3456 7890`, `+63 917 123 4567`, otherwise
   `+<code> <rest>`. Guests' phones are stored as bare digits (`60189800069`) and stay that way. On screen use
@@ -80,6 +80,8 @@ every pull request.
 | `status-pills.mjs` | private `StatusPill` / `Pill`, `<Badge>`, local status maps, rounded pills tinted by hand |
 | `require-session.mjs` | an API handler that never checks the session |
 | `require-audit.mjs` | a POST / PUT / PATCH / DELETE handler that never writes the audit log |
+| `shared-paths.mjs` | an engine file imported by Property OS that CI or a deploy workflow does not watch |
+| `engine-palette.mjs` | an engine status colour in `engine/frontend/conts/palette.mjs` that differs from `tokens.json` |
 
 Each check first runs its matcher on a planted bad sample and a good sample, and fails if the bad one is not caught,
 so a broken pattern cannot report a clean codebase. Allow-lists are short and every entry states its reason; fix the

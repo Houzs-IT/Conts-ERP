@@ -305,7 +305,7 @@ function DetailDrawer({
               </button>
               <div className="min-w-0 flex-1">
                 <div className="font-mono text-[14px] font-bold tracking-wide">{row.grn_number}</div>
-                <div className="mt-0.5 text-[11px] text-sidebar-ink-muted">Goods Received Note</div>
+                <div className="mt-0.5 text-[11px] text-sidebar-ink-muted">Goods Receipt Note</div>
               </div>
               <button type="button" onClick={onOpenFull} className="inline-flex items-center gap-1.5 rounded-md border border-accent-bright/40 px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-bright hover:bg-accent-bright/10">
                 Open full page <ExternalLink size={12} />
@@ -970,7 +970,7 @@ export function GoodsReceivedListV2() {
   const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
     { value: "all", label: `All · ${counts.all}` },
     { value: "draft", label: `Draft · ${counts.draft}` },
-    { value: "posted", label: `Confirmed · ${counts.posted}` },
+    { value: "posted", label: `Submitted · ${counts.posted}` },
     { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
     { value: "on_hold", label: `On Hold · ${counts.on_hold ?? 0}` },
   ];
@@ -980,7 +980,7 @@ export function GoodsReceivedListV2() {
       <div className={cn("transition-[padding] duration-200", selected ? "md:pr-[540px]" : "")}>
         <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
           <div className="min-w-0">
-            <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Goods Received</h1>
+            <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Goods Receipts</h1>
             <div className="mt-0.5 text-[12.5px] text-ink-muted">
               {total} GRN{total === 1 ? "" : "s"} · {fmtRm(money.received)}
             </div>
@@ -990,8 +990,8 @@ export function GoodsReceivedListV2() {
         <div className="hidden md:block">
           <PageHeader
             eyebrow="Procurement"
-            title="Goods Received"
-            description="Every GRN raised on incoming supplier shipments — Draft through Posted. Click any row for the quick view."
+            title="Goods Receipts"
+            description="Every GRN raised on incoming supplier shipments — Draft to Submitted. Click any row for the quick view; open the full page to edit."
             primaryAction={
               <div className="flex items-stretch gap-2">
                 <Button variant="secondary" icon={<ArrowRightLeft size={14} />} onClick={goFromPo}>
@@ -1014,10 +1014,10 @@ export function GoodsReceivedListV2() {
         </div>
 
         <div className="mb-5 hidden grid-cols-2 gap-3 md:grid lg:grid-cols-4">
-          <StatCard pending={statsPending} {...statsFail} label="Total GRNs" value={total.toLocaleString("en-MY")} subtitle="All matching GRNs" rail="bg-primary" active />
+          <StatCard pending={statsPending} {...statsFail} label="Total Receipts" value={total.toLocaleString("en-MY")} subtitle="All matching receipts" rail="bg-primary" active />
           <StatCard pending={statsPending} {...statsFail} label="Received Value" value={fmtRm(money.received)} subtitle="Value on this page" tone="success" rail="bg-synced" />
           <StatCard pending={statsPending} {...statsFail} label="Awaiting PI" value={fmtRm(money.awaitingPi)} subtitle="Not yet invoiced · on this page" tone="warning" rail="bg-accent-bright" />
-          <StatCard pending={statsPending} {...statsFail} label="Draft" value={fmtRm(money.draft)} subtitle="Not yet posted · on this page" rail="bg-accent" />
+          <StatCard pending={statsPending} {...statsFail} label="Draft" value={fmtRm(money.draft)} subtitle="Not yet submitted · on this page" rail="bg-accent" />
         </div>
 
         <div className="sticky top-0 z-10 -mx-4 mb-3 bg-bg/95 px-4 py-2 backdrop-blur-sm md:hidden">

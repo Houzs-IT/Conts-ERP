@@ -25,9 +25,12 @@ for (const role of ['anon', 'authenticated', 'service_role']) {
 }
 await pg.exec('create schema if not exists extensions');
 
+const DEMO_BEFORE = "do $$ begin if to_regproc('demo.drop_views') is not null then perform demo.drop_views(); end if; end $$";
+const DEMO_AFTER = "do $$ begin if to_regproc('demo.sync') is not null then perform demo.sync(); end if; end $$";
 const failed = [];
 for (const f of readdirSync(join(root, 'migrations-pg')).filter((x) => x.endsWith('.sql')).sort()) {
-  try { await pg.exec(`begin;\n${readFileSync(join(root, 'migrations-pg', f), 'utf8')}\ncommit;`); }
+  // Wrapped as scripts/migrate-pg.mjs wraps each migration: Demo mode's views dropped before, rebuilt after (0203).
+  try { await pg.exec(`begin;\n${DEMO_BEFORE};\n${readFileSync(join(root, 'migrations-pg', f), 'utf8')}\n;${DEMO_AFTER};\ncommit;`); }
   catch (e) { await pg.exec('rollback').catch(() => {}); failed.push(`${f}: ${e.message}`); }
 }
 console.log(failed.length ? `migrations that did not apply on PGlite:\n  ${failed.join('\n  ')}` : 'all migrations applied');

@@ -53,7 +53,7 @@ import {
 } from "../services/assrVisibility";
 import { notifyServiceCaseResponsible } from "../services/assrNotify";
 import { grantCaseAccess, revokeCaseAccess } from "./assrAccess";
-import { caseProjectForCreate, renovationCaseContextRoute, renovationCaseProjectsRoute, withCaseProjects } from "./renovationServiceCases";
+import { caseProjectForCreate, caseProjectSearch, renovationCaseContextRoute, renovationCaseProjectsRoute, withCaseProjects } from "./renovationServiceCases";
 import { stampCaseFromProject, type CaseProject } from "../services/renovation/serviceCaseProject";
 import type { Db as RenoDb } from "../services/renovation/load";
 import { isDirectorUser } from "../services/pmsAccess";
@@ -892,6 +892,7 @@ app.get("/", requireServiceCaseAccess(), async (c) => {
     date_field: c.req.query("date_field") === "deadline" ? "deadline" : "reported",
     sort_by: c.req.query("sort_by") || undefined,
     sort_dir: (c.req.query("sort_dir") || "").toLowerCase() === "asc" ? "asc" : "desc",
+    extra_search: await caseProjectSearch(c, c.req.query("search")),
   });
   if (visibleIds !== undefined) {
     for (const row of (result.data as any[]) ?? []) stripCreditorFields(row);
@@ -1221,6 +1222,7 @@ app.get("/export.csv", requireServiceCaseAccess(), async (c) => {
     include_archived: c.req.query("include_archived") === "1",
     archived_only: c.req.query("archived_only") === "1",
     exclude_stage: c.req.query("exclude_stage") || undefined,
+    extra_search: await caseProjectSearch(c, c.req.query("search")),
   });
   const headers = [
     "ASSR No", "SO No", "Delivery Order", "Stage", "Status", "Priority",

@@ -73,7 +73,7 @@ export function MobileLogin() {
   const loginCompanyCode = hostDefaultCompanyCode();
   const isHouzsHost = loginCompanyCode === HOUZS_COMPANY_CODE;
   const loginCompanyName = isHouzsHost
-    ? "Houzs Century"
+    ? "The Conts"
     : shortCompanyName(defaultBrandingForCompany(loginCompanyCode).companyName);
 
   return (
@@ -159,7 +159,7 @@ export function MobileLogin() {
 
         <div className="hz-lg-item" style={{ ...delay(6), display: "flex", alignItems: "center", gap: 9, marginTop: 22 }}>
           <span style={{ flex: 1, height: 1, background: "rgba(231,234,228,.12)" }} />
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "rgba(231,234,228,.4)" }}>{isHouzsHost ? "Houzs ERP" : `${loginCompanyName} ERP`}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase", color: "rgba(231,234,228,.4)" }}>{isHouzsHost ? "The Conts ERP" : `${loginCompanyName} ERP`}</span>
           <span style={{ flex: 1, height: 1, background: "rgba(231,234,228,.12)" }} />
         </div>
         <div className="hz-lg-item" style={{ ...delay(6), textAlign: "center", fontSize: 11, color: "rgba(231,234,228,.45)", marginTop: 12, lineHeight: 1.5 }}>

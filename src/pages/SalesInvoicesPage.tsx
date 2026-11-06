@@ -1,4 +1,5 @@
 import { mayWork } from '../lib/areaAccess';
+import { Meta } from '../components/Card';
 import { useMemo, useState } from 'react';
 import { Search, Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -15,7 +16,6 @@ import { persist, useRecord, useResetOnReload } from '../lib/persist';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { rm, date, todayMyt } from '../lib/format';
-import { cx } from '../lib/design-tokens';
 import { StatusBadge } from '../components/StatusBadge';
 import { statusLabel } from '../lib/status';
 import { CloseButton } from '../components/CloseButton';
@@ -86,7 +86,7 @@ export default function SalesInvoicesPage() {
 
   return (
     <>
-      <PageHeader title="Sales invoices" sub={data ? `${all.length} ${all.length === 1 ? 'invoice' : 'invoices'} · ${rm(outstanding, { cents: false })} outstanding` : '\u00a0'}
+      <PageHeader title="Sales invoices" sub={data ? `${all.length} ${all.length === 1 ? 'invoice' : 'invoices'} · ${rm(outstanding)} outstanding` : '\u00a0'}
         right={canWrite ? <Button variant="primary" icon={<Plus size={16} strokeWidth={1.75} />} onClick={() => setDrawer({ mode: 'new' })}>New invoice</Button> : undefined} />
       <DataTable<Si>
         id="scm.sales-invoices" columns={columns} rows={data ? rows : null} rowKey={r => r.id}
@@ -237,6 +237,3 @@ function ViewDrawer({ si, canWrite, onClose, onAct }: { si: Si; canWrite: boolea
   );
 }
 
-function Meta({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return <div className="flex flex-col gap-0.5"><span className="text-[11px] uppercase tracking-[0.08em] text-muted-ink">{label}</span><span className={cx('text-[13.5px]', mono ? '[font-family:var(--font-mono,ui-monospace,monospace)]' : '')}>{value}</span></div>;
-}

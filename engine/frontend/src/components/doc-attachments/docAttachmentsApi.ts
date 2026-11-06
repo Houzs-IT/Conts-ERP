@@ -2,13 +2,14 @@
    server side is engine/backend/src/scm/routes/doc-attachments.ts: each document answers on its own prefix, so the
    document's own access rules decide who may look and who may add or remove. */
 
+import { fmtDateTime } from '@2990s/shared';
 import { authedFetch, API_URL } from '../../vendor/scm/lib/authed-fetch';
 import { readAuthPass, readAuthToken } from '../../lib/authToken';
 import { companyHeader } from '../../lib/activeCompany';
 import { prepareImageForUpload } from '../../lib/imagePipeline';
 
 export type DocType =
-  | 'quotation' | 'sales_order' | 'variation_order' | 'purchase_order' | 'delivery_order' | 'goods_received'
+  | 'quotation' | 'sales_order' | 'variation_order' | 'purchase_order' | 'production_order' | 'delivery_order' | 'goods_received'
   | 'delivery_return' | 'purchase_return' | 'purchase_invoice' | 'sales_invoice' | 'receipt'
   | 'credit_note' | 'official_receipt' | 'deposit_invoice' | 'payment_voucher' | 'ap_invoice';
 
@@ -35,7 +36,7 @@ export interface LineFiles { id: string; lineNo: number; sku: string; descriptio
 export interface DocFilesResponse { ready: boolean; doc?: { type: DocType; id: string; no: string }; files: DocFile[]; lines?: LineFiles[] }
 
 export const DOC_LABEL: Record<DocType, string> = {
-  quotation: 'Quotation', sales_order: 'Sales order', variation_order: 'Variation order', purchase_order: 'Purchase order',
+  quotation: 'Quotation', sales_order: 'Sales order', variation_order: 'Variation order', production_order: 'Production order', purchase_order: 'Purchase order',
   delivery_order: 'Delivery order', goods_received: 'Goods received', delivery_return: 'Delivery return',
   purchase_return: 'Purchase return', purchase_invoice: 'Purchase invoice', sales_invoice: 'Sales invoice', receipt: 'Receipt',
   credit_note: 'Credit / debit note', official_receipt: 'Official receipt', deposit_invoice: 'Deposit invoice',
@@ -45,7 +46,7 @@ export const DOC_LABEL: Record<DocType, string> = {
 /* Where each document lives under /api/scm, and its page in the app. */
 const PREFIX: Record<DocType, string> = {
   quotation: '/renovation/quotations', sales_order: '/mfg-sales-orders', variation_order: '/renovation/variation-orders',
-  purchase_order: '/mfg-purchase-orders', delivery_order: '/delivery-orders-mfg', goods_received: '/grns',
+  purchase_order: '/mfg-purchase-orders', production_order: '/production-orders', delivery_order: '/delivery-orders-mfg', goods_received: '/grns',
   delivery_return: '/delivery-returns', purchase_return: '/purchase-returns', purchase_invoice: '/purchase-invoices',
   sales_invoice: '/sales-invoices', receipt: '/receipts', credit_note: '/credit-notes', official_receipt: '/accounting/receipts',
   deposit_invoice: '/deposit-invoices', payment_voucher: '/payment-vouchers', ap_invoice: '/ap-invoices',
@@ -58,6 +59,7 @@ export function docPagePath(type: DocType, id: string): string {
     case 'sales_order': return `/scm/sales-orders/${e}`;
     case 'variation_order': return `/scm/renovation/variation-orders/${e}`;
     case 'purchase_order': return `/scm/purchase-orders/${e}`;
+    case 'production_order': return `/scm/production-orders/${e}`;
     case 'delivery_order': return `/scm/delivery-orders/${e}`;
     case 'goods_received': return `/scm/grns/${e}`;
     case 'delivery_return': return `/scm/delivery-returns/${e}`;
@@ -95,6 +97,16 @@ export async function listDocFiles(type: DocType, id: string): Promise<DocFilesR
     if (/not switched on|not_ready/i.test(String((e as Error | null)?.message ?? e))) return { ready: false, files: [] };
     throw e;
   }
+}
+
+/** One file's bytes, with the session (the PDFs read photos through this). */
+export async function fetchDocFileBlob(type: DocType, id: string, fileId: string): Promise<Blob> {
+  const pass = readAuthPass();
+  const res = await fetch(`${API_URL}${base(type, id)}/${encodeURIComponent(fileId)}`, {
+    headers: { authorization: `Bearer ${readAuthToken()}`, ...(pass ? { 'x-session-pass': pass } : {}), ...companyHeader() },
+  });
+  if (!res.ok) throw new Error(`attachment ${res.status}`);
+  return res.blob();
 }
 
 export const setCaption = (type: DocType, id: string, fileId: string, caption: string) =>
@@ -176,5 +188,5 @@ export function formatSize(bytes: number): string {
 
 export function formatWhen(iso: string): string {
   if (!iso) return '';
-  return new Date(iso).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return fmtDateTime(iso);
 }

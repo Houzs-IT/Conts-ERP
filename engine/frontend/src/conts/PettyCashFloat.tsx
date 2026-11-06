@@ -13,8 +13,9 @@ import { useChoice } from "../vendor/scm/components/ChoiceDialog";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import { useAuth } from "../auth/AuthContext";
 import { fmtSenPlain } from "../vendor/shared/format";
-import { DEPARTMENT, RECEIPT_STATUS, financeReceiptFileUrl, pettyPath, useFinanceAction, useFloatReceipts, type Receipt } from "./claimsQueries";
+import { RECEIPT_STATUS, financeReceiptFileUrl, pettyPath, useFinanceAction, useFloatReceipts, type Receipt } from "./claimsQueries";
 import { FileButtons, Money, thisMonth, useChooseBank, usePettyOptions } from "./ClaimsParts";
+import { useLineDepartmentLabel } from "./SubDepartmentSelect";
 import { exportPettyCash } from "./pettyCashExport";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
 
@@ -30,6 +31,7 @@ export function PettyCashFloat() {
   const [month, setMonth] = useState(thisMonth());
   const q = useFloatReceipts(id, month);
   const opts = usePettyOptions();
+  const deptLabel = useLineDepartmentLabel();
   const act = useFinanceAction();
   const { can } = useAuth();
   const full = can("scm.payment_voucher.approve");
@@ -143,7 +145,7 @@ export function PettyCashFloat() {
         <span>
           {[r.vendorName, r.lines.map((l) => l.description).filter(Boolean).join("; ")].filter(Boolean).join(" — ") || "—"}
           <span className="block text-xs text-ink-muted">
-            {r.lines.map((l) => [DEPARTMENT[l.department], l.maintenanceIssueId ? "maintenance job" : null, l.projectId != null ? `project ${l.projectId}` : null].filter(Boolean).join(" · ")).join("; ")}
+            {r.lines.map((l) => [deptLabel(l), l.maintenanceIssueId ? "maintenance job" : null, l.projectId != null ? `project ${l.projectId}` : null].filter(Boolean).join(" · ")).join("; ")}
           </span>
         </span>
       ),

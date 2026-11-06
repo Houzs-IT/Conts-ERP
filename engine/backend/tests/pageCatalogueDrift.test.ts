@@ -70,6 +70,7 @@ const EVER_KNOWN_PAGE_KEYS: readonly string[] = [
   "scm.procurement.pi",
   "scm.procurement.po",
   "scm.procurement.pr",
+  "scm.procurement.production",
   "scm.procurement.products",
   "scm.procurement.suppliers",
   "scm.sales",

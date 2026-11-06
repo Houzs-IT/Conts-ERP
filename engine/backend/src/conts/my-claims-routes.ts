@@ -26,7 +26,7 @@ import { extractOneBill } from '../acc/bill-extract';
 import { lineDepartment, resolveFloatId } from './petty-cash';
 import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, receiptView, staffNames, type FloatRow, type ReceiptRow } from './petty-cash-store';
 import type { Staff } from './staff-identity';
-import { buildLines } from './claims-lines';
+import { buildLines, defaultLineSubs } from './claims-lines';
 import { myRequestRoutes } from './payment-request-routes';
 import { utilityBillRoutes } from './utility-bill-routes';
 
@@ -118,6 +118,8 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   }
   const unclaim = async () => { if (replaces) await sb.from('staff_receipts').update({ status: 'REJECTED' }).eq('id', replaces.id).eq('status', 'REPLACED'); };
   const floatId = replaces ? replaces.float_id : await myFloatId(sb, co.companyId, staff);
+  /* SOP 1.1: each line starts on the float's department's sub-department (a job's on Maintenance), else the person's. */
+  await defaultLineSubs(sb, co.companyId, built.lines, { staffDepartmentId: staff.departmentId, floatId });
   const source = c.get('claimsSource') === 'forward' ? (staff.field ? 'field_app' : 'property_os') : 'engine';
 
   /* Files first, under the receipt's own id: a failed upload leaves no receipt behind. */

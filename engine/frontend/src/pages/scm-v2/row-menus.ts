@@ -436,6 +436,26 @@ export function purchaseOrderRowMenu<R extends StatusRow & PoChainRow>(h: {
   );
 }
 
+/* ── Production Order ── the Purchase Order's menu, without the steps that lead to real documents. */
+export function productionOrderRowMenu<R extends StatusRow>(h: {
+  open: (r: R) => void;
+  edit: (r: R) => void;
+  print: (r: R) => void;
+  setHold: (r: R, onHold: boolean) => void;
+  cancel: (r: R) => void;
+  canCancel: (r: R) => boolean;
+}): (r: R) => RowMenuItem[] {
+  return (r) => buildRowMenu(
+    [
+      { label: "Open", onClick: () => h.open(r) },
+      { label: "Edit", onClick: () => h.edit(r) },
+      { label: "Print", onClick: () => h.print(r) },
+    ],
+    holdEntries(r, h.setHold),
+    [h.canCancel(r) && dangerItem("Cancel Production Order", () => h.cancel(r))],
+  );
+}
+
 /* ── Goods Received Note ────────────────────────────────────────────────────
    Two transfers out of one document — the invoice and the return — which is why
    this list's drawer already carried both and the menu simply mirrors it.

@@ -36,6 +36,9 @@ export type StatusTab =
   | "all"
   | "draft"
   | "confirmed"
+  | "reno_confirmed"
+  | "reno_in_progress"
+  | "reno_completed"
   | "in_production"
   | "ready_to_ship"
   | "delivered"
@@ -50,6 +53,9 @@ export const SO_STATUS_TABS: Array<{ value: StatusTab; label: string }> = [
   { value: "all", label: "All" },
   { value: "draft", label: "Draft" },
   { value: "confirmed", label: "Submitted" },
+  { value: "reno_confirmed", label: "Contract confirmed" },
+  { value: "reno_in_progress", label: "Works in progress" },
+  { value: "reno_completed", label: "Works completed" },
   { value: "in_production", label: "In Production" },
   { value: "ready_to_ship", label: "Ready to Ship" },
   { value: "delivered", label: "Delivered" },

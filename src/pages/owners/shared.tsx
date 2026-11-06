@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Button } from '../../components/Button';
+import { useState, type ReactNode } from 'react';
+import { FormModal } from '../../components/Modal';
+import { StaleBanner } from '../../components/DataState';
 import { Field } from '../../components/Field';
-import { MoneyInput, PercentInput, PhoneInput, DateField, phoneProblem } from '../../components/inputs';
+import { PercentInput, PhoneInput, DateField, phoneProblem } from '../../components/inputs';
 import { useApi } from '../../lib/useApi';
 import type { RosterUnit } from '../../lib/useUnitRoster';
 import { rm, monthLabel, titleCase } from '../../lib/format';
@@ -219,7 +220,7 @@ export function StatementHistory({ o }: { o: Owner }) {
     <Section title="Statement history">
       <div className="border border-solid border-line rounded-card overflow-hidden">
         {error && !data ? (
-          <div className="p-4 text-copy text-critical flex items-center gap-3">{error}<button type="button" onClick={reload} className="bg-transparent border-none p-0 text-gold-ink cursor-pointer [font-family:inherit] text-copy">Retry</button></div>
+          <div className="p-4"><StaleBanner message={error} onRetry={reload} /></div>
         ) : loading && !data ? <div className="p-4"><div className="skeleton h-16" /></div>
         : rows.length === 0 ? <div className="p-4 text-copy text-muted-ink">No owner statements yet. History appears here once a month is generated for this owner.</div>
         : rows.map(s => {
@@ -249,32 +250,7 @@ export function StatementHistory({ o }: { o: Owner }) {
 export function Modal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, children }: {
   title: string; sub?: string; onClose: () => void; onSubmit: () => void; submitLabel: string; canSubmit: boolean; children: ReactNode;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.querySelector<HTMLInputElement>('input,select')?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  return (
-    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]">
-      <div onClick={onClose} className="absolute inset-0" />
-      <div ref={ref} className="relative w-full max-w-[480px] max-h-[88vh] overflow-y-auto bg-card rounded-card [box-shadow:var(--shadow-overlay)]">
-        <form onSubmit={e => { e.preventDefault(); if (canSubmit) onSubmit(); }}>
-          <div className="pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
-            <h2 className="m-0 text-title font-semibold">{title}</h2>
-            {sub && <p className="m-0 text-copy text-muted-ink">{sub}</p>}
-          </div>
-          <div className="py-4 px-[22px] flex flex-col gap-[14px]">{children}</div>
-          {/* Pinned to the bottom so Cancel and the action stay in view when the form is taller than a phone screen. */}
-          <div className="sticky bottom-0 py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex justify-end gap-[9px]">
-            <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} disabledReason="Fill the required fields first">{submitLabel}</Button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
+  return <FormModal title={title} sub={sub} onClose={onClose} onSubmit={onSubmit} submitLabel={submitLabel} canSubmit={canSubmit}>{children}</FormModal>;
 }
 
 export function AddOwnerModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract' | 'defaultManagementFeePct'>) => void }) {
@@ -328,20 +304,14 @@ export function LinkUnitModal({ owner, units, onClose, onSubmit }: { owner: stri
   const [unitId, setUnitId] = useState('');
   const chosen = choices.find(u => u.id === unitId);
   const unitLabel = chosen ? `${chosen.propertyName} ${chosen.unitNumber}` : '';
-  const [model, setModel] = useState<FeeModel>('management');
   const [feePct, setFeePct] = useState<number | null>(25);
-  const [grrSen, setGrrSen] = useState<number | null>(null);
-  const canSubmit = unitId !== '' && (model === 'management' ? feePct != null : grrSen != null);
+  const canSubmit = unitId !== '' && feePct != null;
   return (
     <Modal title="Link a unit" sub={`Assign a unit to ${titleCase(owner)} and preset how the owner is paid.`} onClose={onClose} submitLabel="Link unit" canSubmit={canSubmit}
-      onSubmit={() => onSubmit(line(unitId, unitLabel, model, model === 'management' ? feePct ?? undefined : undefined, model === 'grr' ? grrSen ?? undefined : undefined, 0, 0, 0, 0))}>
+      onSubmit={() => onSubmit(line(unitId, unitLabel, 'management', feePct ?? undefined, undefined, 0, 0, 0, 0))}>
       <SearchSelect showLabel label="Unit" allLabel="Choose a unit" placeholder="Search unit or building" value={unitId} onChange={v => setUnitId(v)}
         options={choices.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName, hint: u.ownerName ? `now ${titleCase(u.ownerName)}` : undefined }))} />
-      <Select showLabel size="md" label="Payout model" value={model} onChange={v => setModel(v as FeeModel)}
-        options={[{ value: 'management', label: 'Operator share (% of income)' }, { value: 'grr', label: 'GRR — guaranteed monthly rent' }]} />
-      {model === 'management'
-        ? <PercentInput label="Operator share %" value={feePct} onChange={setFeePct} help="Overrides the owner default for this unit. The Conts keeps this share; the owner receives the rest." />
-        : <MoneyInput label="Guaranteed rent (RM / month)" placeholder="e.g. 3,500.00" valueSen={grrSen} onChangeSen={setGrrSen} help="The owner is paid this fixed amount regardless of occupancy." />}
+      <PercentInput label="Operator share %" value={feePct} onChange={setFeePct} help="Overrides the owner default for this unit. The Conts keeps this share; the owner receives the rest. Set another contract type on the unit's Contract tab." />
     </Modal>
   );
 }

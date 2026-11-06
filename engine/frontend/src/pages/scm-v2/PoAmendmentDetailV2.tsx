@@ -39,6 +39,7 @@ import {
   Section,
 } from "../../components/DetailLayout";
 import { StatusPill } from "../../vendor/scm/components/StatusPill";
+import { AmendmentHeaderBadge, Divider } from "./soDetailParts";
 import { useStaffLookup } from "../../hooks/useStaffLookup";
 import {
   resolveStatusPill,
@@ -497,17 +498,17 @@ export function PoAmendmentDetailV2() {
                 <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
                   Amendment{amendmentNo ? ` ${amendmentNo}` : ""}
                 </h1>
-                <StatusPill docType="poAmendment" status={status} />
+                <AmendmentHeaderBadge status={status} />
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-secondary">
                 <span className="font-mono font-semibold text-primary-ink">{poNumber}</span>
-                <span className="text-ink-muted/50">·</span>
+                <Divider />
                 <span>
                   {changeCount} change{changeCount === 1 ? "" : "s"}
                 </span>
                 {asStr(amendment.created_at) && (
                   <>
-                    <span className="text-ink-muted/50">·</span>
+                    <Divider />
                     <span>Raised {fmtDateTime(String(amendment.created_at))}</span>
                   </>
                 )}
@@ -515,7 +516,8 @@ export function PoAmendmentDetailV2() {
               <AmendmentTypeBadges kinds={allFieldKinds} className="mt-2" />
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" icon={<Printer size={14} />} onClick={print.openPreview}>Print PDF</Button>
             {/* Owner 2026-07-27: bordered secondary, matching the SO amendment
                 job card's header pair — the naked ghost read as plain text. */}
             <Button variant="secondary" icon={<ExternalLink size={14} />} onClick={openPo}>
@@ -650,16 +652,19 @@ export function PoAmendmentDetailV2() {
               </AsideCard>
             )}
 
-            <AsideCard title="Document">
-              <Button
-                variant="secondary"
-                className="w-full"
-                icon={<Printer size={14} />}
-                onClick={print.openPreview}
-              >
-                Print amendment
-              </Button>
-            </AsideCard>
+            {/* Phone only: the desktop header carries Print PDF, like every other document. */}
+            <div className="md:hidden">
+              <AsideCard title="Document">
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  icon={<Printer size={14} />}
+                  onClick={print.openPreview}
+                >
+                  Print PDF
+                </Button>
+              </AsideCard>
+            </div>
 
             {/* Single approver gate — approve / reject / withdraw, exactly what
                 the backend state machine allows. */}
