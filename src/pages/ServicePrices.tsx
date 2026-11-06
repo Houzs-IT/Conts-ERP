@@ -21,7 +21,7 @@ import { Modal, LabeledField, INPUT_CX, LABEL_CX } from './MaintenanceCatalog';
 type Domain = 'cleaning' | 'maintenance';
 interface Cell { ownerPrice: number | null; internalCost: number | null; effectiveFrom: string | null }
 export interface ServiceItem {
-  id: string; code: string; name: string; domain: Domain; category: string; uom: string; cleanKind: string | null; byLayout: boolean;
+  id: string; code: string; name: string; domain: Domain; category: string; uom: string; cleanKind: string | null; byLayout: boolean; byBed?: boolean; bedPricesStarted?: boolean; layouts?: string[];
   active: boolean; notes: string; trackStock: boolean; stockOnHand: number;
   current: Record<string, Cell>; next: { effectiveFrom: string; rows: Record<string, Cell> } | null;
 }
@@ -48,7 +48,10 @@ export const LAYOUT_LABEL: Record<string, string> = {
 const UOM_LABEL: Record<string, string> = { job: 'Per job', unit: 'Per unit', hour: 'Per hour', visit: 'Per visit', set: 'Per set' };
 const CLEAN_TYPE_LABEL: Record<string, string> = { turnover: 'Basic clean', deep_clean: 'Deep clean', light_clean: 'Light clean' };
 
-const layoutsOf = (i: { byLayout: boolean }, all: string[]) => (i.byLayout ? all : ['all']);
+const layoutsOf = (i: { byLayout: boolean; layouts?: string[] }, all: string[]) => i.layouts ?? (i.byLayout ? all : ['all']);
+const inUseOf = (i: ServiceItem, all: string[]) => (i.byBed && !i.bedPricesStarted ? all : layoutsOf(i, all));
+const pricedByText = (i: { byLayout: boolean; byBed?: boolean }) => (i.byBed ? 'by bed size' : i.byLayout ? 'by layout' : null);
+const gridHeading = (i: { byBed?: boolean }, rows: number) => (rows > 1 ? (i.byBed ? 'Bed size' : 'Layout') : '');
 const priced = (cells: Cell[]) => cells.filter(c => c.ownerPrice != null || c.internalCost != null);
 /** "RM 80.00" or "RM 80.00 – 200.00" across the layouts that have a figure. */
 function range(cells: (number | null)[]): string | null {
@@ -89,17 +92,17 @@ export function ServicePrices({ domain, above, onChanged }: { domain?: Domain; a
     ...(domain ? [] : [{ key: 'domain', label: 'Type', type: 'status' as const, value: (i: ServiceItem) => i.domain, status: (i: ServiceItem) => ({ label: DOMAIN_LABEL[i.domain], tone: (i.domain === 'cleaning' ? 'gold' : 'neutral') as 'gold' | 'neutral' }), width: 120 }]),
     { key: 'category', label: 'Sub-category', value: i => SUB_LABEL[i.category] ?? i.category, width: 130,
       sub: i => (i.cleanKind ? `Prices reservation ${CLEAN_TYPE_LABEL[i.cleanKind].toLowerCase()}s` : null) },
-    { key: 'uom', label: 'Unit of measure', value: i => UOM_LABEL[i.uom] ?? i.uom, width: 110, sub: i => (i.byLayout ? 'By layout' : null) },
+    { key: 'uom', label: 'Unit of measure', value: i => UOM_LABEL[i.uom] ?? i.uom, width: 110, sub: i => { const text = pricedByText(i); return text ? `${text[0].toUpperCase()}${text.slice(1)}` : null; } },
     { key: 'owner', label: 'Owner price', type: 'money', width: 150, align: 'right', phone: 'right',
-      value: i => Math.min(...layoutsOf(i, layouts).map(l => i.current[l]?.ownerPrice ?? Infinity)) === Infinity ? null : Math.min(...layoutsOf(i, layouts).map(l => i.current[l]?.ownerPrice ?? Infinity)),
-      render: i => { const t = range(layoutsOf(i, layouts).map(l => i.current[l]?.ownerPrice ?? null)); return t ? <span className="tabular-nums">{t}</span> : <span className="text-warning">Not set</span>; } },
+      value: i => Math.min(...inUseOf(i, layouts).map(l => i.current[l]?.ownerPrice ?? Infinity)) === Infinity ? null : Math.min(...inUseOf(i, layouts).map(l => i.current[l]?.ownerPrice ?? Infinity)),
+      render: i => { const t = range(inUseOf(i, layouts).map(l => i.current[l]?.ownerPrice ?? null)); return t ? <span className="tabular-nums">{t}</span> : <span className="text-warning">Not set</span>; } },
     { key: 'internal', label: 'Internal cost', type: 'money', width: 150, align: 'right',
-      value: i => { const v = layoutsOf(i, layouts).map(l => i.current[l]?.internalCost).filter((x): x is number => x != null); return v.length ? Math.min(...v) : null; },
-      render: i => { const t = range(layoutsOf(i, layouts).map(l => i.current[l]?.internalCost ?? null)); return t ? <span className="tabular-nums">{t}</span> : <span className="text-warning">Not set</span>; } },
+      value: i => { const v = inUseOf(i, layouts).map(l => i.current[l]?.internalCost).filter((x): x is number => x != null); return v.length ? Math.min(...v) : null; },
+      render: i => { const t = range(inUseOf(i, layouts).map(l => i.current[l]?.internalCost ?? null)); return t ? <span className="tabular-nums">{t}</span> : <span className="text-warning">Not set</span>; } },
     { key: 'margin', label: 'Margin', type: 'money', width: 150, align: 'right', title: 'Owner price less internal cost: what The Conts keeps.',
-      value: i => { const v = layoutsOf(i, layouts).map(l => margin(i.current[l]?.ownerPrice ?? null, i.current[l]?.internalCost ?? null)).filter((x): x is number => x != null); return v.length ? Math.min(...v) : null; },
+      value: i => { const v = inUseOf(i, layouts).map(l => margin(i.current[l]?.ownerPrice ?? null, i.current[l]?.internalCost ?? null)).filter((x): x is number => x != null); return v.length ? Math.min(...v) : null; },
       render: i => {
-        const v = layoutsOf(i, layouts).map(l => margin(i.current[l]?.ownerPrice ?? null, i.current[l]?.internalCost ?? null));
+        const v = inUseOf(i, layouts).map(l => margin(i.current[l]?.ownerPrice ?? null, i.current[l]?.internalCost ?? null));
         const t = range(v);
         return t ? <span className={cx('tabular-nums', v.some(x => x != null && x < 0) && 'text-danger')}>{t}</span> : <span className="text-muted-ink">–</span>;
       } },
@@ -109,7 +112,7 @@ export function ServicePrices({ domain, above, onChanged }: { domain?: Domain; a
   ], [domain, layouts]);
 
   if (d && !d.ready) return <EmptyState icon="Tag" title="Service prices are not switched on yet." body="They need a database update (migration 0127). Until then the old cleaning price table and maintenance catalog are used." />;
-  const unset = items.filter(i => i.active && !priced(layoutsOf(i, layouts).map(l => i.current[l] ?? { ownerPrice: null, internalCost: null, effectiveFrom: null })).length).length;
+  const unset = items.filter(i => i.active && !priced(inUseOf(i, layouts).map(l => i.current[l] ?? { ownerPrice: null, internalCost: null, effectiveFrom: null })).length).length;
 
   return (
     <div className="flex flex-col gap-3">
@@ -120,7 +123,7 @@ export function ServicePrices({ domain, above, onChanged }: { domain?: Domain; a
         pageSize={0} noun={['item', 'items']} exportName="service-prices" defaultSort="code:asc"
         rowTone={i => (i.active ? null : 'muted')} onRowClick={i => setOpenId(i.id)}
         renderCard={i => {
-          const ls = layoutsOf(i, layouts);
+          const ls = inUseOf(i, layouts);
           const owner = range(ls.map(l => i.current[l]?.ownerPrice ?? null)), cost = range(ls.map(l => i.current[l]?.internalCost ?? null));
           const marg = range(ls.map(l => margin(i.current[l]?.ownerPrice ?? null, i.current[l]?.internalCost ?? null)));
           return (
@@ -129,7 +132,7 @@ export function ServicePrices({ domain, above, onChanged }: { domain?: Domain; a
                 <span className="text-copy font-semibold flex-1 min-w-0 truncate">{i.name}</span>
                 {owner ? <span className="text-copy font-semibold tabular-nums">{owner}</span> : <span className="text-warning text-meta">Not set</span>}
               </span>
-              <span className="text-meta text-muted-ink">{i.code} · {SUB_LABEL[i.category] ?? i.category} · {UOM_LABEL[i.uom] ?? i.uom}{i.byLayout ? ' · by layout' : ''}</span>
+              <span className="text-meta text-muted-ink">{i.code} · {SUB_LABEL[i.category] ?? i.category} · {UOM_LABEL[i.uom] ?? i.uom}{pricedByText(i) ? ` · ${pricedByText(i)}` : ''}</span>
               <span className="text-meta text-muted-ink tabular-nums">Internal cost {cost ?? 'not set'}{marg ? ` · margin ${marg}` : ''}{i.next ? ` · changes ${dayText(i.next.effectiveFrom)}` : ''}{i.active ? '' : ' · retired'}</span>
             </span>
           );
@@ -184,7 +187,10 @@ function ItemDrawer({ id, list, onClose, onChanged }: { id: string; list: ListPa
         <div className="p-5 flex flex-col gap-6">
           <section className="flex flex-col gap-2">
             <h3 className="m-0 text-copy font-semibold">Prices today</h3>
-            <PriceTable layouts={layoutsOf(i, list.layouts)} cells={i.current} />
+            <PriceTable heading={gridHeading({ byBed: i.byBed && i.bedPricesStarted }, inUseOf(i, list.layouts).length)} layouts={inUseOf(i, list.layouts)} cells={i.current} />
+            {i.byBed && (i.bedPricesStarted
+              ? <span className="text-meta text-muted-ink">A unit's clean costs each bed size price times how many of that bed the unit has, added up. A unit with no beds recorded takes the last row.</span>
+              : <span className="text-meta text-gold-ink">Jobs use these prices by unit type until bed size prices start. Fill every bed size below in one go: from that date every unit is priced by its beds, and a bed size left empty shows Price not set.</span>)}
             {i.next && <span className="text-meta text-gold-ink">A change is scheduled from {dayText(i.next.effectiveFrom)}: see the history below.</span>}
           </section>
           {list.mayPrice
@@ -198,10 +204,10 @@ function ItemDrawer({ id, list, onClose, onChanged }: { id: string; list: ListPa
   );
 }
 
-function PriceTable({ layouts, cells }: { layouts: string[]; cells: Record<string, Cell> }) {
+function PriceTable({ heading, layouts, cells }: { heading: string; layouts: string[]; cells: Record<string, Cell> }) {
   return (
     <div className="grid grid-cols-[minmax(0,1.1fr)_repeat(3,minmax(0,1fr))] gap-x-3 text-copy">
-      <span className="text-meta font-semibold text-muted-ink pb-1.5">{layouts.length > 1 ? 'Layout' : ''}</span>
+      <span className="text-meta font-semibold text-muted-ink pb-1.5">{heading}</span>
       <span className="text-meta font-semibold text-muted-ink pb-1.5 text-right">Owner price</span>
       <span className="text-meta font-semibold text-muted-ink pb-1.5 text-right">Internal cost</span>
       <span className="text-meta font-semibold text-muted-ink pb-1.5 text-right">Margin</span>
@@ -244,7 +250,7 @@ function PriceChange({ item, layouts, today, onSaved }: { item: Detail; layouts:
         <span className="text-meta text-muted-ink">The new prices apply to jobs on or after the date. Jobs before it, and every finished job, keep the prices they had.</span>
       </div>
       <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-2 items-center text-copy">
-        <span className="text-meta font-semibold text-muted-ink">{layouts.length > 1 ? 'Layout' : ''}</span>
+        <span className="text-meta font-semibold text-muted-ink">{gridHeading(item, layouts.length)}</span>
         <span className="text-meta font-semibold text-muted-ink">Owner price</span>
         <span className="text-meta font-semibold text-muted-ink">Internal cost</span>
         {layouts.map(l => (

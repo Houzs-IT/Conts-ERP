@@ -1218,7 +1218,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
   const forKind = items.find(i => i.cleanKind === kind);
   const item = itemId === 'other' ? null : items.find(i => i.id === itemId) ?? forKind ?? null;
   useEffect(() => { setItemId(''); }, [kind]);
-  const at = item ? item.current[item.byLayout ? (external ? layout : unitRow?.layout ?? 'other') : 'all'] : undefined;
+  const at = item ? item.current[item.byLayout ? (external ? layout : unitRow?.layout ?? 'other') : 'all'] ?? item.current.no_beds : undefined;
   const fromUnit = !external && item && item.id === forKind?.id ? unitRow?.prices[kind] : undefined;
   const suggested = itemId === 'other' ? null : fromUnit?.externalCharge ?? at?.ownerPrice ?? (ready ? null : unitRow?.prices[kind]?.externalCharge ?? null);
   const suggestedPay = itemId === 'other' ? null : fromUnit?.internalCost ?? at?.internalCost ?? null;
