@@ -2,23 +2,21 @@ import { useState, type ReactNode } from 'react';
 import { Button } from '../../components/Button';
 import { CloseButton } from '../../components/CloseButton';
 import { Drawer } from '../../components/Dialog';
-import { Segmented } from '../../components/Metric';
 import { SearchSelect, Select } from '../../components/Select';
 import { Skeleton } from '../../components/States';
 import { useToast } from '../../components/Toast';
 import { DateField, MoneyInput } from '../../components/inputs';
 import { api, notifyFailure } from '../../lib/api';
-import { date, rm, todayMyt } from '../../lib/format';
+import { date, rm, titleCase, todayMyt } from '../../lib/format';
 import { useApi } from '../../lib/useApi';
 import { CLEAN_KINDS, type UnitPriceChange, type UnitPriceData } from './UnitCleaning';
 import { PercentSchedule } from './PercentSchedule';
 
 interface Sku { id: string; code: string; name: string; defaultPrice: number | null; internalCost: number | null }
 type Figures = { charge: number | null; pay: number | null };
-type PriceKind = 'cleaning' | 'maintenance';
+export type PriceKind = 'cleaning' | 'maintenance';
 const ALL_UNITS = 'all-units';
 export interface ScheduleUnit { id: string; label: string; building: string; hint: string }
-export type PricedUnit = Pick<ScheduleUnit, 'id' | 'label'>;
 
 const amountOf = (sen: number | null) => (sen == null ? 'list price' : rm(sen));
 /** The item's list name is older than the clean names staff use: a clean reads as on the Details tab. */
@@ -37,34 +35,49 @@ function SidePanel({ title, onClose, children }: { title: string; onClose: () =>
   );
 }
 
+interface RosterUnit { id: string; unitNumber: string; propertyName: string; ownerName: string }
+
+export function useScheduleUnits(): { units: ScheduleUnit[]; error: string | null } {
+  const roster = useApi<{ data: RosterUnit[] }>('/units');
+  const units = (roster.data?.data ?? []).map(({ id, unitNumber, propertyName, ownerName }) => (
+    { id, label: `${propertyName} ${unitNumber}`, building: propertyName, hint: titleCase(ownerName) }));
+  return { units, error: roster.error };
+}
+
+const unitOptionsOf = (units: ScheduleUnit[]) => units.map(({ id, label, building, hint }) => ({ value: id, label, group: building, hint }));
+
 /** The side panel of Scheduled changes (owner, 6 Nov 2026): only a dated % change, for all units or one. A unit's own
- *  prices in RM are scheduled on the unit page, a contract on the unit's Contract tab. */
+ *  price in RM is scheduled under Cleaning or Maintenance, a contract on the unit's Contract tab. */
 export function PercentChangePanel({ units, onClose, onSaved }: { units: ScheduleUnit[]; onClose: () => void; onSaved: () => void }) {
   const [unitId, setUnitId] = useState(ALL_UNITS);
   const unit = units.find(u => u.id === unitId) ?? null;
-  const unitOptions = [{ value: ALL_UNITS, label: 'All units' }, ...units.map(u => ({ value: u.id, label: u.label, group: u.building, hint: u.hint }))];
   return (
     <SidePanel title="Schedule a % change" onClose={onClose}>
-      <SearchSelect label="Units" showLabel size="md" placeholder="Search unit" value={unitId} onChange={setUnitId} options={unitOptions} />
+      <SearchSelect label="Units" showLabel size="md" placeholder="Search unit" value={unitId} onChange={setUnitId}
+        options={[{ value: ALL_UNITS, label: 'All units' }, ...unitOptionsOf(units)]} />
       {(unit || unitId === ALL_UNITS) && <PercentSchedule key={unitId} unit={unit} onSaved={onSaved} />}
     </SidePanel>
   );
 }
 
-/** One unit's own cleaning or maintenance price in RM from a later date, opened from the unit page. Nothing is moved on
- *  the day: a job reads the price in force on its own day, so the change takes over by itself. */
-export function UnitPriceChangePanel({ unit, onClose, onSaved }: { unit: PricedUnit; onClose: () => void; onSaved: () => void }) {
-  const [kind, setKind] = useState<PriceKind>('cleaning');
+const PANEL_TITLE: Record<PriceKind, string> = { cleaning: "Schedule a unit's cleaning price", maintenance: "Schedule a unit's maintenance price" };
+
+/** One unit's own cleaning or maintenance price in RM from a later date, opened from Cleaning or Maintenance prices.
+ *  Nothing is moved on the day: a job reads the price in force on its own day, so the change takes over by itself. */
+export function UnitPriceChangePanel({ kind, onClose, onSaved }: { kind: PriceKind; onClose: () => void; onSaved: () => void }) {
+  const { units, error } = useScheduleUnits();
+  const [unitId, setUnitId] = useState('');
+  const unit = units.find(u => u.id === unitId);
   return (
-    <SidePanel title={`Schedule a price change: ${unit.label}`} onClose={onClose}>
-      <Segmented<PriceKind> label="Price to change" value={kind} onChange={setKind}
-        options={[{ key: 'cleaning', label: 'Cleaning' }, { key: 'maintenance', label: 'Maintenance' }]} />
-      <PriceSchedule key={kind} kind={kind} unit={unit} onSaved={onSaved} />
+    <SidePanel title={PANEL_TITLE[kind]} onClose={onClose}>
+      {error && <p role="alert" className="m-0 text-copy text-critical">{error}</p>}
+      <SearchSelect label="Unit" showLabel size="md" placeholder="Search unit" value={unitId} onChange={setUnitId} options={unitOptionsOf(units)} />
+      {unit && <PriceSchedule key={unit.id} kind={kind} unit={unit} onSaved={onSaved} />}
     </SidePanel>
   );
 }
 
-function PriceSchedule({ kind, unit, onSaved }: { kind: PriceKind; unit: PricedUnit; onSaved: () => void }) {
+function PriceSchedule({ kind, unit, onSaved }: { kind: PriceKind; unit: ScheduleUnit; onSaved: () => void }) {
   const toast = useToast();
   const prices = useApi<UnitPriceData>(`/housekeeping/unit-prices?unitId=${encodeURIComponent(unit.id)}`);
   const skus = useApi<{ data: Sku[] }>(kind === 'maintenance' ? '/maintenance/skus?active=1' : null);

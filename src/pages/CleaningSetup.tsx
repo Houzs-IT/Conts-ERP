@@ -11,6 +11,7 @@ import { cx } from '../lib/design-tokens';
 import { rm, monthLabel, plural } from '../lib/format';
 import { INPUT, mytDay } from '../components/ops/OpsUi';
 import { ServicePrices } from './ServicePrices';
+import { UnitPriceChangePanel } from './units/ScheduledChanges';
 
 /* GET /api/housekeeping/prices, /unit-prices and /pay (functions/api/housekeeping). Amounts in sen; null = not set. */
 interface PriceRow { kind: string; layout: string; internalCost: number | null; externalCharge: number | null }
@@ -110,6 +111,7 @@ function UnitPricesCard({ rows, mayEdit, byBed, onSaved }: { rows: UnitRow[] | n
   const [q, setQ] = useState('');
   const [kind, setKind] = useState('turnover');
   const [editing, setEditing] = useState<string | null>(null);
+  const [isScheduling, setIsScheduling] = useState(false);
   const shown = useMemo(() => (rows ?? []).filter(r => !q.trim() || `${r.propertyName} ${r.unitNumber}`.toLowerCase().includes(q.trim().toLowerCase())), [rows, q]);
   const own = (rows ?? []).filter(r => Object.values(r.prices).some(p => p.override)).length;
   const withoutBeds = (rows ?? []).filter(r => !r.beds).length;
@@ -126,7 +128,9 @@ function UnitPricesCard({ rows, mayEdit, byBed, onSaved }: { rows: UnitRow[] | n
           {Object.entries(KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
         <input className={cx(INPUT, 'h-9 w-[220px] max-md:w-full')} value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or building" aria-label="Search units" />
+        {mayEdit && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsScheduling(true)}>Schedule a unit's price</Button>}
       </div>
+      {isScheduling && <UnitPriceChangePanel kind="cleaning" onClose={() => setIsScheduling(false)} onSaved={() => { setIsScheduling(false); onSaved(); }} />}
       {!rows ? <Skeleton height={120} /> : shown.length === 0 ? <span className="text-muted-ink">No unit matches.</span> : (
         <div className="flex flex-col">
           <div className="hidden md:grid grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.6fr)] gap-3 text-meta font-semibold text-muted-ink pb-2">

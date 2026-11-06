@@ -17,7 +17,6 @@ import ChannexChannelsCard from '../components/ChannexChannelsCard';
 import { StaleBanner } from '../components/DataState';
 import { RecordSkeleton, TreeSkeleton } from './units/UnitsSkeleton';
 import { UnitList } from './units/UnitList';
-import { UnitPriceChangePanel } from './units/ScheduledChanges';
 import { exportUnits } from './units/unitExport';
 import { useContractTypes } from '../lib/useContractTypes';
 import { useApi } from '../lib/useApi';
@@ -392,7 +391,6 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   const [fmonth, setFmonth] = useFinancialMonth();
   const [utilityBill, setUtilityBill] = useState(false);
   const [billsSaved, setBillsSaved] = useState(0);
-  const [isSchedulingPrice, setIsSchedulingPrice] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -452,7 +450,6 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
 
   return (
     <>
-      {isSchedulingPrice && <UnitPriceChangePanel unit={{ id: u.id, label: unitLabel }} onClose={() => setIsSchedulingPrice(false)} onSaved={() => setIsSchedulingPrice(false)} />}
       <Card>
         <div className="pt-[14px] px-[14px] pb-0">
           <CoverPhotoDrop photo={photo} onPick={takeFile} busy={uploading} className="h-[96px] sm:h-[128px]"
@@ -474,7 +471,6 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
                   options={READINESS_OPTIONS.map(r => ({ value: r, label: statusLabel('readiness', r), color: TONE_STYLE[statusOf('readiness', r).tone].fg }))} />
               </span>
               {form?.parentUnitId && <StatusBadge tone="neutral" label="Sub-unit" />}
-              {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="CalendarClock" size="sm" />} onClick={() => setIsSchedulingPrice(true)}>Schedule a price change</Button>}
               <PurposeBadge purpose={u.purpose} />
               <CodeBadge code={u.contractCode} types={types} />
               {u.revenueModel && (rental || u.contractCode) && <span title={`Income model: ${u.revenueModelLabel}. Change it on the Contract tab.`}><ModelChip model={u.revenueModel} label={u.termsLabel ?? u.revenueModelLabel} /></span>}

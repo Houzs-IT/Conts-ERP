@@ -13,7 +13,7 @@ import { api, notifyFailure } from '../lib/api';
 import { date, plural, rm, titleCase } from '../lib/format';
 import type { StatusTone } from '../lib/status';
 import { useUrlState, SearchBox } from './finance/listKit';
-import { PercentChangePanel, type ScheduleUnit } from './units/ScheduledChanges';
+import { PercentChangePanel, useScheduleUnits } from './units/ScheduledChanges';
 import { CLEAN_KINDS } from './units/UnitCleaning';
 
 type Kind = 'cleaning' | 'maintenance' | 'contract';
@@ -39,10 +39,10 @@ const textNext = (r: ScheduledRow) => (r.kind === 'contract' ? r.termsNext ?? nu
 
 /** Scheduled changes (owner, 30 Oct 2026): one list of everything set to change on a later date, so the office can see
  *  what is coming. A price change is cancelled here. Only a % change is added here (owner, 6 Nov 2026): a unit's own
- *  price in RM is scheduled on the unit page, a contract on its Contract tab, a list price under Service prices. */
+ *  price in RM is scheduled under Cleaning or Maintenance, a contract on its Contract tab, a list price under Service prices. */
 export default function ScheduledChangesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/units/scheduled-changes');
-  const roster = useApi<{ data: { id: string; unitNumber: string; propertyName: string; ownerName: string }[] }>('/units');
+  const { units } = useScheduleUnits();
   const navigate = useNavigate();
   const toast = useToast();
   const url = useUrlState();
@@ -54,7 +54,6 @@ export default function ScheduledChangesPage() {
   const count = (k: Kind) => rows.filter(r => r.kind === k).length;
   const visible = useMemo(() => rows.filter(r => (filter === 'all' || r.kind === filter)
     && (!q || [r.unitLabel, r.ownerName ?? '', nameOf(r)].some(s => s.toLowerCase().includes(q)))), [rows, filter, q]);
-  const units: ScheduleUnit[] = (roster.data?.data ?? []).map(u => ({ id: u.id, label: `${u.propertyName} ${u.unitNumber}`, building: u.propertyName, hint: titleCase(u.ownerName) }));
 
   const open = (r: ScheduledRow) => navigate(r.scope === 'list' ? '/system/settings/services' : `/properties/units/${encodeURIComponent(r.unitId ?? '')}${r.kind === 'contract' ? '?tab=contract' : ''}`);
   async function cancel(r: ScheduledRow) {
