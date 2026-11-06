@@ -27,6 +27,7 @@ import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
 import { ServicePrices } from './ServicePrices';
+import { PriceChangePanel } from './units/PriceChangePanel';
 import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
 import { HistoryDisclosure, PhoneHistory, RecordHistory } from '../components/RecordHistory';
 
@@ -173,7 +174,9 @@ export default function MaintenancePage() {
       {tab === 'rules' ? <ApprovalRulesPanel /> : tab === 'profit' ? <div className="flex-1 min-h-0 overflow-y-auto"><JobProfitView kind="maintenance" onOpen={id => { setTab('history'); setSelected(id); }} /></div> : tab === 'catalog' ? (
         <MaintenanceItems fallback={<CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={mayWork(user, 'operations')} onCreate={createSku} onUpdate={updateSku} />} onChanged={sku.reload} />
       ) : (
-        <>
+        <SplitPane open={!!sel} onClose={() => setSelected(null)} width={580}
+          detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null}
+          list={<>
           <div className="flex flex-col gap-4 px-5 py-4 max-md:px-4 max-md:py-3 rounded-card border border-solid border-line bg-card">
             <label className="relative flex items-center">
               <span className="absolute left-3.5 flex text-muted-ink pointer-events-none"><Icon name="Search" size="base" /></span>
@@ -190,9 +193,8 @@ export default function MaintenancePage() {
               { value: 'history', label: 'History' },
             ]} />
           </div>
-          <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580}
-            detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null} />
-        </>
+          {list}
+        </>} />
       )}
 
       {creating && <NewJobModal units={roster} onClose={() => setCreating(false)} onDone={id => { setCreating(false); reload(); setTab('open'); setSelected(id); }} />}
@@ -938,9 +940,17 @@ function ApprovalRulesPanel() {
 
 /** Item catalog: the maintenance part of Service prices (0127); before that update, the old catalog. */
 function MaintenanceItems({ fallback, onChanged }: { fallback: ReactNode; onChanged: () => void }) {
-  const service = useApi<{ ready: boolean }>('/operations/service-prices?domain=maintenance');
+  const service = useApi<{ ready: boolean; mayPrice?: boolean }>('/operations/service-prices?domain=maintenance');
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [priceListVersion, setPriceListVersion] = useState(0);
   if (!service.data) return <Skeleton height={240} />;
   if (!service.data.ready) return <>{fallback}</>;
-  return <ServicePrices domain="maintenance" onChanged={onChanged}
-    above={<p className="m-0 text-meta text-muted-ink">Picking an item on a job fills its owner price (the quote) and its internal cost; both stay editable on the job. The whole list, cleaning too, is under Settings, Service prices.</p>} />;
+  return <>
+    <ServicePrices key={priceListVersion} domain="maintenance" onChanged={onChanged}
+      above={<div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="m-0 flex-1 min-w-[220px] text-meta text-muted-ink">Picking an item on a job fills its owner price (the quote) and its internal cost; both stay editable on the job. The whole list, cleaning too, is under Settings, Service prices.</p>
+        {service.data.mayPrice && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsScheduling(true)}>Schedule price change</Button>}
+      </div>} />
+    {isScheduling && <PriceChangePanel kind="maintenance" onClose={() => setIsScheduling(false)} onSaved={() => { setIsScheduling(false); setPriceListVersion(version => version + 1); onChanged(); }} />}
+  </>;
 }

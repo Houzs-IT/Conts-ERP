@@ -11,6 +11,7 @@ import { cx } from '../lib/design-tokens';
 import { rm, monthLabel, plural } from '../lib/format';
 import { INPUT, mytDay } from '../components/ops/OpsUi';
 import { ServicePrices } from './ServicePrices';
+import { PriceChangePanel } from './units/PriceChangePanel';
 
 /* GET /api/housekeeping/prices, /unit-prices and /pay (functions/api/housekeeping). Amounts in sen; null = not set. */
 interface PriceRow { kind: string; layout: string; internalCost: number | null; externalCharge: number | null }
@@ -33,7 +34,9 @@ const money = (v: number | null) => (v == null ? <span className="text-warning">
 export function PricesView({ tabs }: { tabs: ReactNode }) {
   const table = useApi<PriceTable>('/housekeeping/prices');
   const units = useApi<{ ready: boolean; rows: UnitRow[]; mayEdit: boolean; byBed?: boolean }>('/housekeeping/unit-prices');
-  const service = useApi<{ ready: boolean }>('/operations/service-prices?domain=cleaning');
+  const service = useApi<{ ready: boolean; mayPrice?: boolean }>('/operations/service-prices?domain=cleaning');
+  const [isChangingByPercent, setIsChangingByPercent] = useState(false);
+  const [priceListVersion, setPriceListVersion] = useState(0);
   const t = table.data;
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto">
@@ -44,10 +47,15 @@ export function PricesView({ tabs }: { tabs: ReactNode }) {
       ) : <>
         {/* Service prices (0127) replace the price table; before it, the old table is still the one in use. */}
         {service.data.ready
-          ? <ServicePrices domain="cleaning" above={<p className="m-0 text-meta text-muted-ink">Cleaning jobs made from reservations take the item for their clean type, {units.data?.byBed ? "priced by the unit's beds (each bed size price times its quantity)" : "at the unit's layout"}. Open an item to change its prices from a date; the whole list is also under Settings, Service prices.</p>} />
+          ? <ServicePrices key={priceListVersion} domain="cleaning" above={<div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="m-0 flex-1 min-w-[220px] text-meta text-muted-ink">Cleaning jobs made from reservations take the item for their clean type, {units.data?.byBed ? "priced by the unit's beds (each bed size price times its quantity)" : "at the unit's layout"}. Open an item to change its prices from a date; the whole list is also under Settings, Service prices.</p>
+            {service.data.mayPrice && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsChangingByPercent(true)}>Schedule price change</Button>}
+          </div>} />
           : <PriceTableCard data={t} onSaved={() => { table.reload(); units.reload(); }} />}
         <UnitPricesCard rows={units.data?.rows ?? null} mayEdit={!!units.data?.mayEdit} byBed={!!units.data?.byBed} onSaved={units.reload} />
       </>}
+      {isChangingByPercent && <PriceChangePanel kind="cleaning" onClose={() => setIsChangingByPercent(false)}
+        onSaved={() => { setIsChangingByPercent(false); setPriceListVersion(version => version + 1); units.reload(); }} />}
     </div>
   );
 }

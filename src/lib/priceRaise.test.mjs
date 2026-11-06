@@ -1,7 +1,7 @@
 // node --test src/lib/priceRaise.test.mjs. Prices changed by a percent, worked out once in sen.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { figuresChanged, percentToBasisPoints, raiseFigures, raiseSen } from '../../functions/_lib/priceRaise.ts';
+import { dayAfter, figuresChanged, hasChangeInside, percentToBasisPoints, raiseFigures, raiseSen } from '../../functions/_lib/priceRaise.ts';
 
 test('raises and lowers to the nearest sen', () => {
   assert.equal(raiseSen(4000, 1000), 4400);
@@ -36,4 +36,17 @@ test('raises only the figures that are set, and only the ones asked for', () => 
 test('tells whether a raise changed anything', () => {
   assert.equal(figuresChanged({ owner_price: 4000, internal_cost: null }, { owner_price: 4000, internal_cost: null }), false);
   assert.equal(figuresChanged({ owner_price: 4000, internal_cost: null }, { owner_price: 4400, internal_cost: null }), true);
+});
+
+test('the day after crosses month and year ends', () => {
+  assert.equal(dayAfter('2026-12-01'), '2026-12-02');
+  assert.equal(dayAfter('2027-01-31'), '2027-02-01');
+  assert.equal(dayAfter('2026-12-31'), '2027-01-01');
+  assert.equal(dayAfter('2028-02-28'), '2028-02-29');
+});
+
+test('a change strictly inside the window is found, its edges are not', () => {
+  assert.equal(hasChangeInside(['2027-01-25'], '2027-01-20', '2027-02-06'), true);
+  assert.equal(hasChangeInside(['2027-01-20', '2027-02-06', '2026-11-01'], '2027-01-20', '2027-02-06'), false);
+  assert.equal(hasChangeInside([], '2027-01-20', '2027-02-06'), false);
 });

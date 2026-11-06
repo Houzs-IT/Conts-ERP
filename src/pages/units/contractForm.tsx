@@ -3,7 +3,7 @@ import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
 import { MoneyInput, PercentInput, DateField } from '../../components/inputs';
 import { StatusBadge } from '../../components/StatusBadge';
-import { rm, todayMyt } from '../../lib/format';
+import { rm } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { MODEL, MODEL_TONE, typeOf, codeName, codeFromModel, isTenancy, offeredTypes, type ContractType, type RevenueModel, type ContractCode } from '../../lib/revenueModel';
 
@@ -117,14 +117,12 @@ export interface ContractFieldsProps {
   /** Default: the active types and the draft's own. */
   offered?: readonly ContractType[];
   label?: string;
-  /** The narrow Scheduled changes panel: two columns, and a start date after today. */
-  narrow?: boolean;
   afterSelect?: ReactNode;
   onPickType?: () => void;
 }
 
 // Renders as direct children: the parent lays them out in a column.
-export function ContractFields({ d, set, errors, types, offered, label = 'Income model', narrow, afterSelect, onPickType }: ContractFieldsProps): ReactElement {
+export function ContractFields({ d, set, errors, types, offered, label = 'Income model', afterSelect, onPickType }: ContractFieldsProps): ReactElement {
   const m = d.revenueModel;
   const share = isShare(m);
   const choices = offered ?? offeredTypes(types, d.contractCode);
@@ -136,9 +134,9 @@ export function ContractFields({ d, set, errors, types, offered, label = 'Income
   );
   const day = (k: 'startsOn' | 'endsOn' | 'renewsOn' | 'guaranteeStartsOn' | 'guaranteeEndsOn', text: string) => (
     <DateField label={text} value={d[k]} onChange={v => set({ [k]: v })} error={errors[k]}
-      min={k === 'endsOn' || k === 'renewsOn' ? d.startsOn || undefined : k === 'guaranteeEndsOn' ? d.guaranteeStartsOn || undefined : k === 'startsOn' && narrow ? todayMyt(1) : undefined} />
+      min={k === 'endsOn' || k === 'renewsOn' ? d.startsOn || undefined : k === 'guaranteeEndsOn' ? d.guaranteeStartsOn || undefined : undefined} />
   );
-  const formGrid = narrow ? 'grid grid-cols-2 gap-4' : 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4';
+  const formGrid = 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4';
   const o = typeOf(types, d.contractCode);
 
   return (
@@ -201,7 +199,7 @@ export function ContractFields({ d, set, errors, types, offered, label = 'Income
             ['Deposit utilities', 'depositUtilities', 'rentOutDepositUtilities'],
             ['Deposit card', 'depositCard', 'rentOutDepositCard'],
           ] as const;
-          const gridCols = cx('grid grid-cols-[84px_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 px-4', !narrow && 'sm:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)]');
+          const gridCols = 'grid grid-cols-[84px_minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 px-4';
           const gap = (d.rentOutAmount ?? 0) - (d.monthlyRent ?? 0);
           return (
             <div role="group" aria-label="Rent to rent terms" className="rounded-card [border:1px_solid_var(--color-line)] bg-page overflow-hidden max-w-[760px]">
