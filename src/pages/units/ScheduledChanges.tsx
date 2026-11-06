@@ -13,12 +13,15 @@ import { date, rm, todayMyt } from '../../lib/format';
 import { useApi } from '../../lib/useApi';
 import ContractTab from './ContractTab';
 import { CLEAN_KINDS, type UnitPriceChange, type UnitPriceData } from './UnitCleaning';
+import { PercentSchedule } from './PercentSchedule';
 
 interface Sku { id: string; code: string; name: string; defaultPrice: number | null; internalCost: number | null }
 interface ContractTerms { id: string | null; termsLabel: string; startsOn: string | null }
 interface ContractPayload { current: ContractTerms; untilThen?: ContractTerms | null }
 type Figures = { charge: number | null; pay: number | null };
 type Kind = 'cleaning' | 'maintenance' | 'contract';
+type ChangeBy = 'amount' | 'percent';
+const ALL_UNITS = 'all-units';
 export interface ScheduleUnit { id: string; label: string; building: string; hint: string }
 
 const amountOf = (sen: number | null) => (sen == null ? 'list price' : rm(sen));
@@ -32,7 +35,11 @@ const Heading = ({ children }: { children: string }) => <h3 className="m-0 text-
 export function ScheduledChanges({ units, money, onClose, onSaved }: { units: ScheduleUnit[]; money: boolean; onClose: () => void; onSaved: () => void }) {
   const [kind, setKind] = useState<Kind | ''>('');
   const [unitId, setUnitId] = useState('');
+  const [changeBy, setChangeBy] = useState<ChangeBy>('amount');
   const unit = units.find(u => u.id === unitId);
+  const isAllUnits = kind === 'cleaning' && unitId === ALL_UNITS;
+  const unitOptions = [...(kind === 'cleaning' ? [{ value: ALL_UNITS, label: 'All units' }] : []),
+    ...units.map(u => ({ value: u.id, label: u.label, group: u.building, hint: u.hint }))];
   return (
     <Drawer open onClose={onClose} width={560} labelledBy="schedule-a-change">
       <div className="flex items-start justify-between gap-3 p-5 [border-bottom:1px_solid_var(--color-line)] sticky top-0 bg-card z-[1]">
@@ -45,11 +52,15 @@ export function ScheduledChanges({ units, money, onClose, onSaved }: { units: Sc
           <Segmented<Kind> label="What to schedule" value={kind} onChange={setKind}
             options={[{ key: 'cleaning', label: 'Cleaning' }, { key: 'maintenance', label: 'Maintenance' }, ...(money ? [{ key: 'contract' as const, label: 'Contract' }] : [])]} />
         </div>
-        {kind && <SearchSelect label="Unit" showLabel size="md" placeholder="Search unit" value={unitId} onChange={setUnitId}
-          options={units.map(u => ({ value: u.id, label: u.label, group: u.building, hint: u.hint }))} />}
+        {kind && <SearchSelect label="Unit" showLabel size="md" placeholder="Search unit" value={unitId} onChange={setUnitId} options={unitOptions} />}
+        {kind === 'cleaning' && unit && <Segmented<ChangeBy> label="Change by" value={changeBy} onChange={setChangeBy}
+          options={[{ key: 'amount', label: 'New amount (RM)' }, { key: 'percent', label: 'Percent (%)' }]} />}
+        {isAllUnits && <PercentSchedule key="all" unit={null} onSaved={onSaved} />}
         {kind && unit && (kind === 'contract'
           ? <ContractSchedule key={unit.id} unit={unit} onSaved={onSaved} />
-          : <PriceSchedule key={`${kind}:${unit.id}`} kind={kind} unit={unit} onSaved={onSaved} />)}
+          : kind === 'cleaning' && changeBy === 'percent'
+            ? <PercentSchedule key={unit.id} unit={unit} onSaved={onSaved} />
+            : <PriceSchedule key={`${kind}:${unit.id}`} kind={kind} unit={unit} onSaved={onSaved} />)}
       </div>
     </Drawer>
   );
