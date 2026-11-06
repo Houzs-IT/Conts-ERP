@@ -89,7 +89,7 @@ export function PercentSchedule({ unit, onSaved }: { unit: ScheduleUnit | null; 
         options={[{ key: 'increase', label: 'Increase' }, { key: 'decrease', label: 'Decrease' }]} />
       <PercentInput label="By how much" placeholder="0" min={0} max={direction === 'decrease' ? 100 : 1000} value={percent} onChange={setPercent} />
       <Segmented<AppliesTo> label="Apply to" value={appliesTo} onChange={setAppliesTo}
-        options={[{ key: 'both', label: 'Owner and cleaner' }, { key: 'owner', label: 'Owner charge' }, { key: 'cleaner', label: 'Cleaner pay' }]} />
+        options={[{ key: 'both', label: 'Both' }, { key: 'owner', label: 'Owner charge' }, { key: 'cleaner', label: 'Cleaner pay' }]} />
       <span className="text-meta text-muted-ink">
         {unit
           ? 'Basic and Deep clean, worked out from this unit\'s price on that date. Saved as its own price, so it stops following later list changes.'
