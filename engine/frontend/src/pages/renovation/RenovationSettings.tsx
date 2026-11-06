@@ -87,7 +87,7 @@ function BrandEditor({ brand, canEdit }: { brand: BrandProfile; canEdit: boolean
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Field label="Company block (one line each)" hint="Printed beside the logo"><textarea rows={6} className={cn(inputCls, 'h-auto py-1.5')} disabled={!canEdit} value={b.companyLines.join('\n')} onChange={(e) => setB({ ...b, companyLines: e.target.value.split('\n') })} /></Field>
         <Field label="Terms (one line each)" hint="Printed as the contract terms"><textarea rows={6} className={cn(inputCls, 'h-auto py-1.5')} disabled={!canEdit} value={b.termsLines.join('\n')} onChange={(e) => setB({ ...b, termsLines: e.target.value.split('\n') })} /></Field>
-        <Field label="Phone / email line"><input className={inputCls} disabled={!canEdit} value={b.contactLine} onChange={(e) => setB({ ...b, contactLine: e.target.value })} /></Field>
+        <Field label="Phone / email line"><textarea rows={3} className={cn(inputCls, 'h-auto py-1.5')} disabled={!canEdit} value={b.contactLine} onChange={(e) => setB({ ...b, contactLine: e.target.value.replace(/\r?\n/g, ' ') })} /></Field>
         <Field label="Bank line"><textarea rows={3} className={cn(inputCls, 'h-auto py-1.5')} disabled={!canEdit} value={b.bankLine} onChange={(e) => setB({ ...b, bankLine: e.target.value })} /></Field>
         <Field label="Intro sentence"><textarea rows={3} className={cn(inputCls, 'h-auto py-1.5')} disabled={!canEdit} value={b.intro} onChange={(e) => setB({ ...b, intro: e.target.value })} /></Field>
         <Field label="Signing company"><input className={inputCls} disabled={!canEdit} value={b.signatoryCompany} onChange={(e) => setB({ ...b, signatoryCompany: e.target.value })} /></Field>
