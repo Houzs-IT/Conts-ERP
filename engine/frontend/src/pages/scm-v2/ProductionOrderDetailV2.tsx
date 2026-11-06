@@ -975,7 +975,7 @@ function ProductionOrderDetailV2ReadOnly() {
                 </table>
               </div>
             </Section>
-            <ProductionMaterialsSection orderId={purchaseOrder.id} canEdit={mayEditPoPhotos && !isCancelled && !started && rawStatus !== "RECEIVED"} started={started} canAct={canAct}
+            <ProductionMaterialsSection orderId={purchaseOrder.id} canEdit={mayEditPoPhotos && !isCancelled && !started && rawStatus !== "RECEIVED"} started={started} canAct={canAct} finished={rawStatus === "RECEIVED"}
               works={items.map((l) => ({ qty: Number(l.qty), uom: l.uom }))} />
             {progress && (
               <Section

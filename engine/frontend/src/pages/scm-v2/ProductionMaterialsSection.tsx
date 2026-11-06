@@ -69,6 +69,8 @@ export function ProductionMaterialsSection({ orderId, canEdit, started = false, 
   started?: boolean;
   /** May press Request more and Return stock. */
   canAct?: boolean;
+  /** Finished: leftovers can still go back, nothing more can be asked for. */
+  finished?: boolean;
   works?: ReadonlyArray<{ qty: number; uom?: string | null }>;
 }) {
   const [dialog, setDialog] = useState<"more" | "return" | null>(null);
@@ -114,7 +116,7 @@ export function ProductionMaterialsSection({ orderId, canEdit, started = false, 
       actions={started ? (canAct ? (
         <div className="flex gap-2">
           <Button variant="secondary" onClick={() => setDialog("return")}>Return stock</Button>
-          <Button variant="secondary" onClick={() => setDialog("more")}>Request more</Button>
+          {!finished && <Button variant="secondary" onClick={() => setDialog("more")}>Request more</Button>}
         </div>
       ) : null) : canEdit && !noSkus ? (
         <Button variant={adding ? "secondary" : "primary"} icon={adding ? undefined : <Plus size={14} />} onClick={() => setAdding((v) => !v)}>

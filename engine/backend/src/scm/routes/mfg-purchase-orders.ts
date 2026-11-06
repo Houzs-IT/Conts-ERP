@@ -590,10 +590,11 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
   const outstanding = ((items ?? []) as unknown as Row[])
     .filter((r) => !isDocumentHeld(r.so)
       && r.so.status !== 'CANCELLED' && r.so.status !== 'DRAFT' && r.so.status !== 'ON_HOLD')
-    .filter((r) => (pooledOk ? (shortageBySoItem.get(r.id) ?? 0) > 0 : r.qty - r.po_qty_picked > 0))
+    .filter((r) => (pooledOk && shortageBySoItem.has(r.id) ? (shortageBySoItem.get(r.id) ?? 0) > 0 : r.qty - r.po_qty_picked > 0))
     .filter((r) => poPickerOffers({ itemCode: r.item_code, itemGroup: r.item_group, mainSupplierCode: mainSupplierByCode.get(r.item_code)?.code ?? null }))
     .map((r) => {
-      const remaining = pooledOk ? (shortageBySoItem.get(r.id) ?? 0) : (r.qty - r.po_qty_picked);
+      /* A line the plan does not list, such as one with no delivery date, is still open work. */
+      const remaining = pooledOk && shortageBySoItem.has(r.id) ? (shortageBySoItem.get(r.id) ?? 0) : (r.qty - r.po_qty_picked);
       return {
         soItemId:        r.id,
         soDocNo:         r.doc_no,
