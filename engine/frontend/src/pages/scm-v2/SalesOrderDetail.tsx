@@ -47,7 +47,7 @@ import { addLineHref } from '../../vendor/scm/lib/add-line-handoff';
 import { RenovationSoOrderInfo } from './RenovationSoOrderInfo';
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from './renovationSoAreaLines';
 import { SoInstalments, instalmentRows, nextInstalmentSen, paymentSlots, useSoInstalments } from './renovationSoInstalments';
-import { ContractSections, InstalmentBillDialog } from '../renovation/RenovationSalesOrder';
+import { ContractQuickLinks, ContractSections, InstalmentBillDialog } from '../renovation/RenovationSalesOrder';
 import { useBrands, useContract } from '../../lib/renovation/api';
 import { SPEC_LOCKED_NOTE } from '../renovation-beta/renovationBetaLines';
 import {
@@ -2241,7 +2241,7 @@ export const SalesOrderDetail = () => {
         meta={headerMeta}
         onBack={() => { void goBack(); }}
         /* mig 0324 — the hold marker sits BESIDE the status, never instead of it. */
-        chips={<><HoldChip onHold={(header as { on_hold?: boolean | null }).on_hold} reason={(header as { hold_reason?: string | null }).hold_reason} /><ProductionOrderChips soDocNo={header.doc_no} /></>}
+        chips={<><HoldChip onHold={(header as { on_hold?: boolean | null }).on_hold} reason={(header as { hold_reason?: string | null }).hold_reason} /><ProductionOrderChips soDocNo={header.doc_no} />{header.so_kind === 'RENOVATION' && (can('scm.access') || pageAccess('scm.sales.orders') !== 'none') && <ContractQuickLinks docNo={header.doc_no} />}</>}
         actions={
           <>
             <Button variant="ghost" icon={<History size={14} />} onClick={() => setHistoryOpen(true)}>History</Button>

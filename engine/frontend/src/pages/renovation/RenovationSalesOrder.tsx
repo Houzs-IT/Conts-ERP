@@ -156,7 +156,9 @@ function CreditDialog({ c, open, onClose }: { c: ContractView; open: boolean; on
 }
 
 function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
-  const [open, setOpen] = useState(false);
+  /* Create PO lands here with #po-split, ready to raise. */
+  const { hash } = useLocation();
+  const [open, setOpen] = useState(hash === '#po-split');
   const preview = usePoSplit(c.docNo, open);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<Array<{ id: string; poNumber: string }> | null>(null);
@@ -258,6 +260,26 @@ export function InstalmentBillDialog({ docNo, instalmentId, onClose }: { docNo: 
 export function RenovationSalesOrder() {
   const { docNo } = useParams();
   return <ContractSections docNo={docNo} />;
+}
+
+/** Plan item 23: the contract's status, Create PO and the PO lines to fix, at the top of the sales order's page. Each opens
+    the existing section further down (ContractSections); nothing here writes. */
+export function ContractQuickLinks({ docNo }: { docNo: string }) {
+  const c = useContract(docNo);
+  const flags = usePoFlags(docNo);
+  const { can } = useAuth();
+  if (!c.data) return null;
+  const open = flags.data?.flags.filter((f) => f.status === 'OPEN').length ?? 0;
+  const live = ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'].includes(c.data.status);
+  const jump = (id: string) => () => document.getElementById(id)?.scrollIntoView({ block: 'start' });
+  const link = 'inline-flex items-center rounded-full border border-border bg-surface px-2.5 py-0.5 text-[12px] font-semibold text-primary hover:bg-primary-soft';
+  return (
+    <>
+      <StatusPill status={c.data.status} />
+      {live && can('scm.renovation.po_split') && <Link to="#po-split" className={link} onClick={jump('po-split')}>Create PO</Link>}
+      {open > 0 && <Link to="#po-flags" className={link} onClick={jump('po-flags')}>{open} PO line{open === 1 ? '' : 's'} to fix</Link>}
+    </>
+  );
 }
 
 /** The contract's own sections. `embedded`: inside the sales order's page, which already shows the customer, the
@@ -441,7 +463,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
         <div id="po-split" className="scroll-mt-48"><PoSplitCard c={k} canSplit={live && can('scm.renovation.po_split')} /></div>
       </div>
       {(flags.data?.flags.length ?? 0) > 0 && (
-        <Card title={`PO lines to amend or cancel (${flags.data!.flags.filter((f) => f.status === 'OPEN').length} open)`}>
+        <div id="po-flags" className="scroll-mt-48"><Card title={`PO lines to amend or cancel (${flags.data!.flags.filter((f) => f.status === 'OPEN').length} open)`}>
           <ul className="divide-y divide-border-subtle text-[13px]">
             {flags.data!.flags.map((f) => (
               <li key={f.id} className={cn('flex flex-wrap items-center justify-between gap-2 py-2', f.status === 'RESOLVED' && 'text-ink-muted')}>
@@ -451,7 +473,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
               </li>
             ))}
           </ul>
-        </Card>
+        </Card></div>
       )}
       {!embedded && <DocAttachments docType="sales_order" docId={k.docNo} canEdit={k.status !== 'CANCELLED'} />}
       <BillDialog c={k} inst={billing} onClose={() => setBilling(null)} />
