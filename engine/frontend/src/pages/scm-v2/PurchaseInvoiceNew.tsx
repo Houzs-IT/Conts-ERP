@@ -590,10 +590,8 @@ export const PurchaseInvoiceNew = () => {
           variants:       l.variants,
         })),
       });
-      if (!asDraft) {
-        // Auto-post (Confirm) so PI lands in POSTED state (matches PO + GRN).
-        await post.mutateAsync(createRes.id);
-      }
+      // Auto-post (Confirm) so PI lands in POSTED state (matches PO + GRN).
+      const ledger = asDraft ? undefined : (await post.mutateAsync(createRes.id)).ledger;
       /* THE ACCOUNTS MAY HAVE IT WITHOUT ALL OF IT — and on a purchase
          invoice the field most likely to be missing is the SUPPLIER'S OWN
          invoice number, which is the one accounts will ask about. Same shared
@@ -603,7 +601,9 @@ export const PurchaseInvoiceNew = () => {
         title: `PI ${createRes.invoiceNumber} created`,
         body: asDraft
           ? 'Saved as Draft — review, then Confirm to post the AP liability.'
-          : 'Created + posted — AP liability recorded.',
+          : ledger
+            ? `Created, but it is not in the ledger yet: ${ledger.reason ?? ledger.status}`
+            : 'Created + posted — AP liability recorded.',
         goTo: `/scm/purchase-invoices/${createRes.id}`,
       });
     } catch (err) {

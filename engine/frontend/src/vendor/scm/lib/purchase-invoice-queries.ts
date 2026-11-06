@@ -138,7 +138,7 @@ export const usePurchaseInvoiceDetail = (id: string | null) => useQuery({
 export const usePostPurchaseInvoice = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => authedFetch(`/purchase-invoices/${id}/post`, { method: 'PATCH' }),
+    mutationFn: (id: string) => authedFetch<{ ledger?: { posted: false; status: string; reason: string | null } }>(`/purchase-invoices/${id}/post`, { method: 'PATCH' }),
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: ['purchase-invoices'] });
       qc.invalidateQueries({ queryKey: ['purchase-invoice-detail', id] });
