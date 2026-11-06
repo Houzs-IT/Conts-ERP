@@ -74,7 +74,7 @@ const byLinePosition = (a: LineRow, b: LineRow): number => {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 };
 
-export type PoLineHeader = PoEstimateDates & { id: string; purchase_location_id?: string | null };
+export type PoLineHeader = PoEstimateDates & { id: string; purchase_location_id?: string | null; status?: string | null };
 
 /**
  * Attach `lines` (PoListLine[], in printed order) to each purchase order. The
@@ -139,7 +139,12 @@ export async function attachPoLines<H extends PoLineHeader>(
   }
   const rows = headers.map((h) => {
     const headerWarehouse = h.purchase_location_id ? wh.byId.get(h.purchase_location_id) : null;
-    const lines = [...(byPo.get(h.id) ?? [])].sort(byLinePosition).map((l) => toPoListLine(h, { ...l, description2: poLineDescription2(l.item_group, l.variants, l.description2) }, {
+    const lines = [...(byPo.get(h.id) ?? [])].sort(byLinePosition).map((l) => toPoListLine(h, {
+      ...l,
+      /* Complete closes the job without booking received_qty on its lines, so a Completed order is received in full. */
+      received_qty: h.status === 'RECEIVED' ? l.qty : l.received_qty,
+      description2: poLineDescription2(l.item_group, l.variants, l.description2),
+    }, {
       soDocNo: l.so_item_id ? so.byId.get(l.so_item_id)?.doc_no ?? null : null,
       /* AutoCount lists a purchase line under the SUPPLIER's item code, and its
          Item Description / Item Group are that item's (the book's item master,
