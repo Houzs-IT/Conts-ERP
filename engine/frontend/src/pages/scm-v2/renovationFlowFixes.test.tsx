@@ -107,7 +107,7 @@ describe("Mark delivered (office)", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark delivered" }));
     await vi.waitFor(() => expect(mutateAsync).toHaveBeenCalled());
     expect(uploadSlipFull).toHaveBeenCalledWith({ file });
-    expect(mutateAsync).toHaveBeenCalledWith({ id: "do-1", status: "DELIVERED", evidence: { podKey: "slips/pod-1.jpg", deliveredOn: "2026-10-20" } });
-    await vi.waitFor(() => expect(uploadDocFile).toHaveBeenCalledWith("delivery_order", "do-1", file2, { caption: "Proof of delivery" }));
+    expect(mutateAsync).toHaveBeenCalledWith({ id: "do-1", status: "DELIVERED", evidence: { podKey: "slips/pod-1.jpg", podKeys: ["slips/pod-1.jpg", "slips/pod-1.jpg"], deliveredOn: "2026-10-20" } });
+    expect(uploadSlipFull).toHaveBeenCalledWith({ file: file2 });
   });
 });

@@ -6,6 +6,7 @@ import { MOBILE_MENU_GROUPS, PROFILE_ORG_ITEMS, type MobileMenuItem } from "./Mo
 import { NAV_TABS, type NavTab } from "../components/Sidebar";
 import { CAPABILITY_KEYS } from "../auth/capabilities";
 import { mobileDestinationMatches } from "./mobileRoute";
+import { isContsHiddenPath } from "../conts/navOnly";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -143,7 +144,9 @@ describe("mobile menu permission gates", () => {
   });
 
   it("gives every menu and Profile row an explicit gate", () => {
-    const ungated = allRows.filter((it) => gateOf(it) === null).map((it) => `${it.label} (${it.to})`);
+    /* Conts switched these off (conts/navOnly.ts): a row with no nav entry is meant to vanish here. */
+    const offAtConts = (to: string) => isContsHiddenPath(to) || to === "/change-log";
+    const ungated = allRows.filter((it) => gateOf(it) === null && !offAtConts(it.to)).map((it) => `${it.label} (${it.to})`);
     // Named in the failure so the next author sees WHICH row and WHAT to do,
     // rather than a bare `false !== true`.
     expect(

@@ -163,10 +163,10 @@ describe("canSeeSoloOrganizer", () => {
     expect(canSeeSoloOrganizer(u({ email: "WeiSiang329@gmail.com", role_name: "Super Admin", position_name: "Managing Director" }))).toBe(true);
   });
 
-  it("refuses salesmen, sales directors and the OTHER super admins - a wildcard is not the tier", () => {
+  /* Conts: Full on Projects may create and see, so a wildcard counts (canCreateEvent mirrors the backend). */
+  it("refuses salesmen and sales directors", () => {
     expect(canSeeSoloOrganizer(u({ role_name: "Sales Person", position_name: "Sales Executive", department_name: "Sales Department" }))).toBe(false);
     expect(canSeeSoloOrganizer(u({ role_name: "Sales Director", position_name: "Sales Director" }))).toBe(false);
-    expect(canSeeSoloOrganizer(u({ role_name: "Super Admin", position_name: "Super Admin", permissions: ["*"] }))).toBe(false);
     expect(canSeeSoloOrganizer(null)).toBe(false);
   });
 });
