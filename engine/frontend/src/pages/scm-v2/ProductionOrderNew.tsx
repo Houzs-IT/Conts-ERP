@@ -158,7 +158,8 @@ export const ProductionOrderNew = () => {
   const [supplierDeliveryDate4, setSupplierDeliveryDate4] = useState<string>('');
   const [purchaseLocationId, setPurchaseLocationId] = useState<string>('');
   const [notes, setNotes]             = useState<string>('');
-  const [productionTimeDays, setProductionTimeDays] = useState<string>('');
+  const [planStart, setPlanStart] = useState<string>("");
+  const [productionTimeHours, setProductionTimeHours] = useState<string>('');
 
   // ── Items state ─────────────────────────────────────────────────────
   const [lines, setLines] = useState<DraftLine[]>([newLine()]);
@@ -703,7 +704,8 @@ export const ProductionOrderNew = () => {
       supplierDeliveryDate3: supplierDeliveryDate3 || undefined,
       supplierDeliveryDate4: supplierDeliveryDate4 || undefined,
       notes: notes || undefined,
-      productionTimeDays: productionTimeDays || undefined,
+      productionTimeHours: productionTimeHours || undefined,
+      planStart: planStart || undefined,
       purchaseLocationId,
       items,
       asDraft,
@@ -865,8 +867,13 @@ export const ProductionOrderNew = () => {
             </label>
 
             <label className={styles.field}>
-              <span className={styles.fieldLabel}>Production Time (days)</span>
-              <input type="number" min="0" step="0.5" value={productionTimeDays} onChange={(e) => setProductionTimeDays(e.target.value)} className={styles.fieldInput} aria-label="Production Time in days" />
+              <span className={styles.fieldLabel}>Production Time (hours)</span>
+              <input type="number" min="0" step="0.5" value={productionTimeHours} onChange={(e) => setProductionTimeHours(e.target.value)} className={styles.fieldInput} aria-label="Production Time in hours" />
+            </label>
+
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Plan start</span>
+              <DateField fullWidth value={planStart} onChange={(iso) => setPlanStart(iso)} className={styles.fieldInput}/>
             </label>
 
             <label className={styles.field}>

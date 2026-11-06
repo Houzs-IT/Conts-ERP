@@ -337,7 +337,16 @@ productionOrders.get('/', async (c) => {
     if (!mayReadProductionPrices(c)) hidePrices(withLines.rows as Array<Record<string, unknown>>);
     return c.json({ purchaseOrders: withLines.rows, total, page, pageSize, statusCounts });
   }
-  const purchaseOrders = stamped.rows;
+  const purchaseOrders = stamped.rows as Array<{ id: string } & Record<string, unknown>>;
+  /* The phone's list: no project state on this path, so a state-only holiday is not counted here. */
+  await attachProgress(supabase, purchaseOrders, () => null);
+  const projectRows = [...new Set(purchaseOrders.map((r) => Number(r.project_id)).filter(Boolean))];
+  if (projectRows.length > 0) {
+    const { data: projects } = await supabase.schema('public').from('projects').select('id, code, building, unit_no').in('id', projectRows);
+    const label = new Map(((projects ?? []) as Array<{ id: number; code: string | null; building: string | null; unit_no: string | null }>).map((x) => [Number(x.id), [x.building, x.unit_no].filter(Boolean).join(' ') || x.code]));
+    for (const r of purchaseOrders) (r as Record<string, unknown>).project_label = label.get(Number(r.project_id)) ?? null;
+  }
+  if (!mayReadProductionPrices(c)) hidePrices(purchaseOrders);
   return c.json({ purchaseOrders });
 });
 
@@ -386,6 +395,12 @@ productionOrders.get('/links', async (c) => {
   const sb = c.get('supabase');
   const poId = c.req.query('poId');
   const soDocNo = c.req.query('soDocNo');
+  const projectId = c.req.query('projectId');
+  if (projectId) {
+    const { data, error } = await scopeToCompanyId(sb.from('production_orders').select('id, po_number, status, received_at').eq('project_id', Number(projectId)).neq('status', 'CANCELLED'), co.companyId).order('po_date');
+    if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+    return c.json({ productionOrders: data ?? [] });
+  }
   if (poId) {
     const { data, error } = await scopeToCompanyId(sb.from('production_orders').select('id, po_number, status').eq('source_po_id', poId), co.companyId);
     if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);

@@ -1261,6 +1261,32 @@ export const MODULE_CONFIGS: Record<string, ModuleConfig> = {
     sorts: [{ key: "date", label: "Date", cmp: (a, b) => byDate(pick(a, "receivedAt", "received_at"), pick(b, "receivedAt", "received_at")) }],
   },
 
+  /* The phone's way into a production order (owner, 6 Nov 2026). Status and Day N of M are worked out by the server. */
+  "production-orders": {
+    title: "Production Orders",
+    eyebrow: "Production",
+    placeholder: "Search order",
+    endpoint: "/production-orders",
+    listKey: "purchaseOrders",
+    primary: (r) => r.project_label || r.po_number,
+    secondary: (r) => join(r.po_number, r.progress?.label),
+    search: (r) => join(r.po_number, r.project_label),
+    pill: (r) => r.progress?.statusLabel ?? String(pick(r, "status") ?? ""),
+    fields: [
+      [(r) => r.po_number ?? "—", "Order"],
+      [(r) => dm(r.plan_start), "Plan start"],
+      [(r) => dm(r.expected_at), "Plan finish"],
+      [(r) => (r.assigned_to ?? []).join(", ") || "Nobody yet", "Workers"],
+    ],
+    chips: [
+      { key: "all", label: "All", match: () => true },
+      { key: "pending", label: "Pending", match: (r) => r.progress?.statusLabel === "Pending" },
+      { key: "progress", label: "In Progress", match: (r) => r.progress?.bucket === "in_progress" },
+      { key: "overdue", label: "Overdue", match: (r) => Boolean(r.progress?.overdue) },
+      { key: "done", label: "Completed", match: (r) => r.progress?.statusLabel === "Completed" },
+    ],
+  },
+
   // mfg-purchase-orders.get('/') → { purchaseOrders: [...] }; header cols:
   // po_number, status, po_date, total_sen + nested supplier:{code,name}.
   // Design m-po: Supplier/PO No/Date/Expected/Value + status pill. Real cols:

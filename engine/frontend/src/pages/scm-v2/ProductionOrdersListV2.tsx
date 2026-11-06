@@ -63,8 +63,11 @@ import {
   usePoListFacets,
   useEnrichedPoListRows,
   fetchProductionExportRows,
+  useMaterialStatus,
+  useProductionMaterials,
   type PoHeaderRow,
   type PoItemRow,
+  type ProductionProgress,
 } from "../../vendor/scm/lib/production-order-queries";
 import {
   useProductionOrdersPaged,
@@ -84,6 +87,7 @@ import { useHoldAction } from "./use-hold-action";
 import { usePoCancelAction } from "./use-production-cancel-action";
 import { StatusWithHold, rowIsHeld } from "../../vendor/scm/components/HoldChip";
 import { PrintPreviewBatchModal, usePrintPreview } from "../../components/scm-v2/PrintPreviewModal";
+import { ProgressBar } from "./renovationProductionParts";
 import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -94,13 +98,16 @@ import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
 // the pill counts no longer sum to All; that is intended.
 type StatusTab =
   | "all"
-  | "outstanding"
   | "draft"
+  | "pending"
+  | "in_progress"
+  | "overdue"
+  | "on_hold"
+  | "completed"
+  | "cancelled"
   | "open"
   | "partial"
-  | "received"
-  | "cancelled"
-  | "on_hold";
+  | "received";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -162,6 +169,13 @@ const statusFor = (
     label: s || "—",
     bucket: "open",
   };
+
+/* Status and Progress are worked out on the server from Start and the plan dates (lib/renovation-production.ts). */
+type ProductionRowExtra = { plan_start?: string | null; progress?: ProductionProgress; assigned_to?: string[]; production_time_hours?: number | string | null };
+const extraOf = (r: PoHeaderRow): ProductionRowExtra => r as unknown as ProductionRowExtra;
+const PROGRESS_TONE: Record<string, "success" | "warning" | "error" | "neutral"> = {
+  Draft: "neutral", Pending: "warning", "In Progress": "neutral", Overdue: "error", "On Hold": "neutral", Completed: "success", Cancelled: "error",
+};
 
 // ─── GRN No cell ────────────────────────────────────────────────────────────
 
@@ -713,6 +727,39 @@ const SORT_COL_MAP: Record<string, string> = {
 // Amount, via the shared DocumentLinesExpansion. A Production Order is a purchase-side doc
 // with no MRP coverage on its lines, so the SO/DO-only Stock + Incoming Production Order
 // columns are correctly absent.
+/* The row dropdown keeps its line table and adds the order's raw materials (owner, 6 Nov 2026). */
+function RawMaterialsDrop({ id }: { id: string }) {
+  const materials = useProductionMaterials(id);
+  const statuses = useMaterialStatus(id);
+  const rows = materials.data ?? [];
+  if (rows.length === 0) return null;
+  const TH = "whitespace-nowrap px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-brand text-ink-muted";
+  const TD = "whitespace-nowrap px-3 py-2";
+  return (
+    <div className="overflow-x-auto rounded-md border border-border bg-surface">
+      <table className="w-full border-collapse text-left text-[13px]">
+        <thead><tr className="bg-surface-2"><th className={TH}>Raw material</th><th className={TH}>Needed</th><th className={TH}>Stock</th><th className={TH}>Warehouse</th><th className={TH}>PO</th><th className={TH}>Arrives</th></tr></thead>
+        <tbody>
+          {rows.map((m) => {
+            const st = statuses.data?.[m.id];
+            const word = !st ? "Checking…" : st.state === "received" || st.state === "stock" ? "Ready" : st.state === "po" ? "On order" : st.issued > 0 ? "Short" : "No PO yet";
+            return (
+              <tr key={m.id} className="border-t border-border-subtle">
+                <td className="px-3 py-2"><b className="font-semibold">{m.description || m.item_code}</b> <span className="text-[12px] text-ink-muted">{m.item_code}</span></td>
+                <td className={cn(TD, "font-semibold")}>{Number(m.qty_needed)} {m.uom ?? ""}</td>
+                <td className={TD}><Badge tone={word === "Ready" ? "success" : word === "On order" ? "warning" : word === "Checking…" ? "neutral" : "error"} size="xs">{word}</Badge></td>
+                <td className={TD}>{st?.warehouse ?? "—"}</td>
+                <td className={TD}>{st?.poNumber ?? "—"}</td>
+                <td className={TD}>{st?.state === "po" && st.eta ? fmtDate(st.eta) : "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function PoLinesExpansion({ id }: { id: string }) {
   const navigate = useNavigate();
   const detailQ = useProductionOrderDetail(id);
@@ -745,6 +792,7 @@ function PoLinesExpansion({ id }: { id: string }) {
         onOpenSo={(soDocNo) => navigate(`/scm/sales-orders/${encodeURIComponent(soDocNo)}`)}
         onOpenDo={(doNo) => navigate(`/scm/delivery-orders?q=${encodeURIComponent(doNo)}`)}
       />
+      <RawMaterialsDrop id={id} />
     </div>
   );
 }
@@ -826,15 +874,9 @@ export function ProductionOrdersListV2() {
   const serverRows = (data?.purchaseOrders ?? []) as PoHeaderRow[];
   const rows = useEnrichedPoListRows(serverRows, !listLoading);
   const total = data?.total ?? 0;
-  const counts = data?.statusCounts ?? {
-    all: 0,
-    draft: 0,
-    outstanding: 0,
-    open: 0,
-    partial: 0,
-    received: 0,
-    cancelled: 0,
-    on_hold: 0,
+  const counts = {
+    all: 0, draft: 0, pending: 0, in_progress: 0, overdue: 0, on_hold: 0, completed: 0, cancelled: 0,
+    ...data?.statusCounts,
   };
 
   /* The rows the TABLE is actually showing — the page rows minus whatever the
@@ -1187,18 +1229,68 @@ export function ProductionOrdersListV2() {
       render: (r) => {
         const v = (r as { material_stock_status?: string | null }).material_stock_status;
         if (!v) return <span className="text-[12.5px] text-ink-muted">—</span>;
-        return <Badge tone={v === "READY" ? "success" : v === "PARTIAL" ? "warning" : "neutral"} size="xs">{v}</Badge>;
+        return <Badge tone={v === "READY" ? "success" : "warning"} size="xs">{v}</Badge>;
       },
     },
     {
       key: "production_time",
       label: "Production Time",
       width: "120px",
-      getValue: (r) => Number((r as { production_time_days?: number | string | null }).production_time_days ?? 0),
+      getValue: (r) => Number(extraOf(r).production_time_hours ?? 0),
       render: (r) => {
-        const d = (r as { production_time_days?: number | string | null }).production_time_days;
-        return <span className="text-[12.5px] text-ink-secondary">{d == null ? "—" : `${Number(d)} day${Number(d) === 1 ? "" : "s"}`}</span>;
+        const h = extraOf(r).production_time_hours;
+        return <span className="text-[12.5px] text-ink-secondary">{h == null ? "—" : `${Number(h)} hour${Number(h) === 1 ? "" : "s"}`}</span>;
       },
+    },
+    {
+      key: "plan_start",
+      label: "Plan Start",
+      width: "108px",
+      disableSort: true,
+      exportFormat: "date",
+      getValue: (r) => extraOf(r).plan_start ?? "",
+      render: (r) => <span className="text-[12.5px] text-ink-secondary">{fmtDate(extraOf(r).plan_start ?? null)}</span>,
+    },
+    {
+      key: "plan_finish",
+      label: "Plan Finish",
+      width: "108px",
+      disableSort: true,
+      exportFormat: "date",
+      getValue: (r) => r.expected_at ?? "",
+      render: (r) => <span className="text-[12.5px] text-ink-secondary">{fmtDate(r.expected_at)}</span>,
+    },
+    {
+      key: "progress_status",
+      label: "Status",
+      width: "116px",
+      className: "dt-cancel-keep",
+      disableSort: true,
+      getValue: (r) => extraOf(r).progress?.statusLabel ?? statusFor(r.status).label,
+      render: (r) => {
+        const word = extraOf(r).progress?.statusLabel ?? statusFor(r.status).label;
+        return <Badge tone={PROGRESS_TONE[word] ?? "neutral"} size="xs">{word}</Badge>;
+      },
+    },
+    {
+      key: "progress",
+      label: "Progress",
+      width: "124px",
+      disableSort: true,
+      getValue: (r) => extraOf(r).progress?.label ?? "",
+      render: (r) => {
+        const p = extraOf(r).progress;
+        if (!p?.label) return <span className="text-[12.5px] text-ink-muted">—</span>;
+        return <div className="min-w-[96px]"><div className="mb-1 whitespace-nowrap text-[12px] font-semibold text-ink">{p.label}</div><ProgressBar pct={p.pct} overdue={p.overdue} /></div>;
+      },
+    },
+    {
+      key: "assigned_to",
+      label: "Assigned To",
+      width: "132px",
+      disableSort: true,
+      getValue: (r) => (extraOf(r).assigned_to ?? []).join(", "),
+      render: (r) => <span className="text-[12.5px] text-ink-secondary">{(extraOf(r).assigned_to ?? []).join(", ") || "Nobody yet"}</span>,
     },
     {
       key: "expected",
@@ -1284,19 +1376,13 @@ export function ProductionOrdersListV2() {
 
   const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
     { value: "all", label: `All · ${counts.all}` },
-    // Roll-up first: "what's still on order" is the working view of this page,
-    // and it reads as a summary of the 1:1 pills that follow it. A worker
-    // predating the bucket omits the key — open + partial IS the same number
-    // off the same server-side aggregate, so derive rather than show nothing.
-    {
-      value: "outstanding",
-      label: `Outstanding · ${counts.outstanding ?? counts.open + counts.partial}`,
-    },
     { value: "draft", label: `Draft · ${counts.draft}` },
-    { value: "open", label: `Submitted · ${counts.open}` },
-    { value: "received", label: `Complete · ${counts.received}` },
-    { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
+    { value: "pending", label: `Pending · ${counts.pending}` },
+    { value: "in_progress", label: `In Progress · ${counts.in_progress}` },
+    { value: "overdue", label: `Overdue · ${counts.overdue}` },
     { value: "on_hold", label: `On Hold · ${counts.on_hold ?? 0}` },
+    { value: "completed", label: `Completed · ${counts.completed}` },
+    { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
   ];
 
   return (
@@ -1353,49 +1439,12 @@ export function ProductionOrdersListV2() {
         </div>
 
         {/* Stat strip */}
-        <div className="mb-5 hidden grid-cols-2 gap-3 md:grid lg:grid-cols-4">
-          {/* Owner 2026-08-12 — every tile now describes the rows ON SCREEN, and
-              says so when a column funnel is narrowing them. The count tile is
-              the one that has to switch source: `total` is the server's full
-              match count and is right until a client-side funnel hides part of
-              the page, at which point it contradicts the table underneath. */}
-          <StatCard
-            pending={statsPending} {...statsFail}
-            label="Total Orders"
-            value={(visible.filtered ? visible.rows.length : total).toLocaleString("en-MY")}
-            subtitle={visible.filtered ? "Filtered · shown below" : "All matching orders"}
-            rail="bg-primary"
-            active
-          />
-          <StatCard
-            pending={statsPending} {...statsFail}
-            label="Order value"
-            value={fmtRm(money.committed)}
-            subtitle={visible.filtered ? "Filtered · sum shown below" : "Sum on this page"}
-            rail="bg-accent"
-          />
-          <StatCard
-            pending={statsPending} {...statsFail}
-            label="Submitted"
-            value={fmtRm(money.outstanding)}
-            subtitle={
-              visible.filtered
-                ? "Filtered"
-                : "On this page"
-            }
-            tone="warning"
-            rail="bg-accent-bright"
-          />
-          <StatCard
-            pending={statsPending} {...statsFail}
-            label="Complete"
-            value={fmtRm(money.received)}
-            subtitle={
-              visible.filtered ? "Filtered" : "On this page"
-            }
-            tone="success"
-            rail="bg-synced"
-          />
+        <div className="mb-5 hidden grid-cols-2 gap-3 md:grid lg:grid-cols-5">
+          <StatCard pending={statsPending} {...statsFail} label="Pending" value={counts.pending.toLocaleString("en-MY")} subtitle="Not started yet" tone="warning" rail="bg-accent-bright" />
+          <StatCard pending={statsPending} {...statsFail} label="In Progress" value={counts.in_progress.toLocaleString("en-MY")} subtitle="Started, not finished" rail="bg-accent" />
+          <StatCard pending={statsPending} {...statsFail} label="Overdue" value={counts.overdue.toLocaleString("en-MY")} subtitle="Past plan finish" tone={counts.overdue > 0 ? "error" : undefined} rail="bg-err" />
+          <StatCard pending={statsPending} {...statsFail} label="On Hold" value={(counts.on_hold ?? 0).toLocaleString("en-MY")} subtitle="Stopped for now" rail="bg-ink-muted" />
+          <StatCard pending={statsPending} {...statsFail} label="Completed" value={counts.completed.toLocaleString("en-MY")} subtitle="Sent for GR and DO" tone="success" rail="bg-synced" />
         </div>
 
         {/* Mobile sticky search */}

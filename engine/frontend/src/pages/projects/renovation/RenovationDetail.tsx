@@ -25,6 +25,7 @@ import { FlowPanel } from "./FlowPanel";
 import { ContractCard, KeyCard, PeopleCard } from "./ProjectRecords";
 import { DesignTaskCard } from "./DesignTask";
 import { ProcurementPanel } from "./ProcurementPanel";
+import { RenovationWorksDone } from "./RenovationWorksDone";
 import { CustomerInfoCard } from "./CustomerInfoCard";
 import { RenovationTimeline } from "./RenovationTimeline";
 import { ProjectDocumentFiles } from "../../../components/doc-attachments/ProjectDocumentFiles";
@@ -80,6 +81,7 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
               this page offered that. The room photo gallery stays off (its data and API are unchanged). */}
           <DesignTaskCard projectId={id} canWrite={canWrite} onDone={(t) => { setNotice({ tone: "ok", text: t }); setSaved((n) => n + 1); }} onError={failed} />
           <ProcurementPanel projectId={id} canWrite={canWrite} onError={failed} showMoney={!d.financeHidden} />
+          <RenovationWorksDone projectId={id} />
           <SiteTasksPanel projectId={id} tasks={d.tasks} canWrite={canWrite} linesAvailable={!d.linesUnavailable} onAct={act}
             onSkip={(t) => setSkipping({ id: t.id, label: t.label })} />
           <ProjectDocumentFiles projectId={id} />
