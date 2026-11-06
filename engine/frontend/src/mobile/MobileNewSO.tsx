@@ -42,7 +42,7 @@ import { SearchableSelect } from "../vendor/scm/components/SearchableSelect";
 import { SgPostcodeField } from "../vendor/scm/components/SgPostcodeField";
 import { diffHeaderPayload, hasHeaderChanges } from "../vendor/scm/lib/so-header-diff";
 import { soSaveEndFields, soVersionAfter } from "../vendor/scm/lib/so-save-lease";
-import { planAmendmentSubmit, amendmentSubmittedNotice, AMENDMENT_MODE_BANNER, AMENDMENT_NOTHING_TO_SUBMIT, AMENDMENT_REASON_REQUIRED } from "../vendor/scm/lib/so-amendment-submit";
+import { planAmendmentSubmit, amendmentSubmittedNotice, AMENDMENT_MODE_BANNER, AMENDMENT_NOTHING_TO_SUBMIT, AMENDMENT_REASON_REQUIRED, NO_VO_NEEDED_BODY, NO_VO_NEEDED_TITLE, VO_MODE_BANNER } from "../vendor/scm/lib/so-amendment-submit";
 import { useAmendmentSubmitDialog } from "../vendor/scm/components/AmendmentSubmitDialog";
 import { LOCKED_STATUSES, procLockActive, migratedReadonly as soMigratedReadonly, soDownstreamHardLocked, soItemFrozen, type SoDetailGateHeader } from "../vendor/scm/lib/so-detail-gates";
 import { FROZEN_LINE_LABEL, FROZEN_LINE_LABEL_STYLE, FROZEN_LINE_STYLE } from "../vendor/scm/lib/so-frozen-line-style";
@@ -835,6 +835,8 @@ export function MobileNewSO({
      instead of writing the lines directly (desktop SalesOrderDetail parity).
      `hasOpenAmend` blocks raising a SECOND amendment while one is in flight. */
   const [amendEligible, setAmendEligible] = useState(false);
+  /* Conts: a confirmed order, where only a change of amount or lines is a VO (owner, 4 and 6 Nov 2026). */
+  const [voOrder, setVoOrder] = useState(false);
   const [hasOpenAmend, setHasOpenAmend] = useState(false);
   /* FIX D2/D3 — the PERSISTED processing date (processing_date) drives the
      processing-date lock. Kept separate from the editable procDate form value so
@@ -1061,6 +1063,7 @@ export function MobileNewSO({
            routes on. When amendment_eligible the SO is processing-locked but the
            edit view stays usable; Save then submits an amendment (see save()). */
         setAmendEligible(Boolean(detail.salesOrder.amendment_eligible));
+        setVoOrder(Boolean((detail.salesOrder as { vo_locked?: boolean }).vo_locked));
         setHasOpenAmend(Boolean(detail.salesOrder.has_open_amendment));
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Couldn't load this order.");
@@ -1941,7 +1944,7 @@ export function MobileNewSO({
            409s so_locked_processing — on the change we're about to request, or
            on a stored value we merely re-displayed. Shared helpers with desktop
            (so-amendment-header) so the split can't drift. */
-        const { changes: headerChanges } = buildAmendmentHeaderChanges(
+        const { changes: lockedHeaderChanges } = buildAmendmentHeaderChanges(
           {
             processingDate:   procOut,
             customerDeliveryDate: delivOut,
@@ -1966,7 +1969,8 @@ export function MobileNewSO({
         );
         // Frozen keys are DROPPED, not reverted (ledger 0488 + 2026-09-12): a
         // revert needed the exact seeded bytes and 409'd the lock twice.
-        const outgoingPatch = amendmentMode ? withoutFrozenHeaderFields(patch) : patch;
+        const headerChanges = voOrder ? {} : lockedHeaderChanges;
+        const outgoingPatch = amendmentMode && !voOrder ? withoutFrozenHeaderFields(patch) : patch;
 
         /* Send ONLY what the operator changed. In amendment mode the frozen
            columns are already gone, so they are never re-sent — the server's
@@ -1997,16 +2001,35 @@ export function MobileNewSO({
         }
 
         if (amendmentMode) {
-          const amLines = buildAmendmentLines();
+          const allLines = buildAmendmentLines();
+          const snapOf = new Map(origItems.map((s) => [s.id, s]));
+          const changesAmount = (l: (typeof allLines)[number]): boolean => {
+            const snap = l.salesOrderItemId ? snapOf.get(l.salesOrderItemId) : undefined;
+            return !snap || l.changeType === "REMOVE" || (l.newItemCode ?? snap.item_code) !== snap.item_code
+              || (l.newQty ?? snap.qty) !== snap.qty || (l.newUnitPriceSen ?? snap.unit_price_sen) !== snap.unit_price_sen;
+          };
+          const saveOnly = voOrder ? allLines.filter((l) => l.changeType === "SPEC" && !changesAmount(l)) : [];
+          const amLines = allLines.filter((l) => !saveOnly.includes(l));
+          const deliveryDates = voOrder ? Object.fromEntries(lines
+            .filter((l) => l.itemId && snapOf.has(l.itemId) && (l.ddate || "") !== ((snapOf.get(l.itemId)?.line_delivery_date ?? "").slice(0, 10)))
+            .map((l) => [l.itemId, l.ddate || null])) : {};
+          const hasDates = Object.keys(deliveryDates).length > 0;
           // Asks about BOTH halves — see vendor/scm/lib/so-amendment-submit.
           const plan = planAmendmentSubmit({
             hasLineChanges: amLines.length > 0,
             hasFrozenHeaderChanges: hasAmendmentHeaderChanges(headerChanges),
             hasDirectHeaderChanges: directDirty,
             hasStagedPayments: pays.some((p) => toSen(p.amount) > 0),
-            hasSaveOnlyLineChanges: lines.some((l) => l.photoFiles.length > 0),
+            hasSaveOnlyLineChanges: lines.some((l) => l.photoFiles.length > 0) || saveOnly.length > 0 || hasDates,
           });
-          if (plan === "NOTHING") { setSubmitting(false); setError(AMENDMENT_NOTHING_TO_SUBMIT); return; }
+          if (plan === "NOTHING") {
+            setSubmitting(false);
+            if (!voOrder) { setError(AMENDMENT_NOTHING_TO_SUBMIT); return; }
+            void notify({ title: NO_VO_NEEDED_TITLE, body: NO_VO_NEEDED_BODY });
+            if (onSaved) onSaved(docNo);
+            else onBack();
+            return;
+          }
           let amendCreatedRes: unknown = null;
           // DIRECT_ONLY skips ONLY this block; the tail after it is shared.
           if (plan === "AMENDMENT") {
@@ -2026,6 +2049,22 @@ export function MobileNewSO({
               setError(e instanceof Error ? e.message : "Couldn't submit the VO. Please try again.");
               return;
             }
+          }
+          /* What saves without a VO: options and remarks, line dates, and the photos picked in this edit. */
+          try {
+            for (const l of saveOnly) {
+              await authedFetch(`/renovation-so-info/${encodeURIComponent(docNo)}/lines/${encodeURIComponent(l.salesOrderItemId ?? "")}/spec`, {
+                method: "PUT", body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
+              });
+            }
+            if (hasDates) {
+              await authedFetch(`/mfg-sales-orders/${encodeURIComponent(docNo)}/line-delivery-dates`, { method: "PUT", body: JSON.stringify({ dates: deliveryDates }) });
+            }
+            await uploadStagedPhotos(docNo);
+          } catch (e) {
+            setSubmitting(false);
+            setError(e instanceof Error ? e.message : "Couldn't save those changes. Please try again.");
+            return;
           }
           // A payment recorded alongside the amendment still posts, slip or not.
           await recordNewPayments(docNo);
@@ -2422,7 +2461,9 @@ export function MobileNewSO({
                   />
                 </Field>
                 <div style={{ fontSize: 10, color: "#9aa093", marginTop: -3 }}>
-                  {amendmentMode
+                  {voOrder
+                    ? "Changing a date here just saves. It is not a VO."
+                    : amendmentMode
                     ? "Changing a date here submits a VO — it applies once approved."
                     : "Set both dates together, or leave both empty to keep this a draft."}
                 </div>
@@ -2539,7 +2580,7 @@ export function MobileNewSO({
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: "rgba(232,107,58,0.08)", border: "1px solid var(--c-orange, #e86b3a)", borderRadius: 10, padding: "9px 11px", fontSize: 11, color: "#8a4a24", lineHeight: 1.45 }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c66a34" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
                     {/* Shared with desktop — both were wrong about addresses. */}
-                    <span>{AMENDMENT_MODE_BANNER}</span>
+                    <span>{voOrder ? VO_MODE_BANNER : AMENDMENT_MODE_BANNER}</span>
                   </div>
                 )}
                 {lineEditingBlocked ? (
