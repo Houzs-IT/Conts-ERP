@@ -424,6 +424,7 @@
  "POST /api/housekeeping/guest-left": "AAAFAAFU",
  "POST /api/housekeeping/overdue": "AAFFFFFU",
  "POST /api/housekeeping/plan": "AAAFFFFU",
+ "POST /api/housekeeping/price-raise": "AAFFFFFU",
  "POST /api/housekeeping/tasks": "AAAFFFFU",
  "POST /api/housekeeping/tasks/[id]/assign": "AAAFFFFU",
  "POST /api/housekeeping/tasks/[id]/checklist": "AAAFAAFU",
