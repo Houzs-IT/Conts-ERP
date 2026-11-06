@@ -47,7 +47,7 @@ const STATUS_TONE: Record<
   string,
   { tone: "success" | "warning" | "error" | "neutral"; label: string; bucket: StatusTab }
 > = {
-  draft:       { tone: "warning", label: "Draft",       bucket: "draft" },
+  draft:       { tone: "warning", label: "Draft delivery", bucket: "draft" },
   loaded:      { tone: "warning", label: "Confirmed",   bucket: "loaded" },
   // "warning" (amber) doubles as the "in-transit" tone — Badge only ships
   // 4 tones (success/warning/error/neutral); the label carries the nuance.
