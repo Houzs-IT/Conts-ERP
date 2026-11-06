@@ -6967,6 +6967,30 @@ export async function recomputeTotals(sb: any, docNo: string, c: any) {
   }
 }
 
+/* A line's own delivery date. A date is not a VO (owner, 4 Nov 2026), so a confirmed order takes it here, off the
+   locked line routes. A cleared date goes back to following the order's. */
+mfgSalesOrders.put('/:docNo/line-delivery-dates', async (c) => {
+  const sb = c.get('supabase'); const docNo = c.req.param('docNo');
+  const body = await c.req.json().catch(() => null) as { dates?: Record<string, string | null> } | null;
+  const entries = Object.entries(body?.dates ?? {});
+  if (entries.some(([, d]) => d != null && !/^\d{4}-\d{2}-\d{2}$/.test(d))) return c.json({ error: 'invalid_date' }, 400);
+  if (entries.length === 0) return c.json({ ok: true });
+  const { data: known, error } = await scopeToCompany(sb.from('mfg_sales_order_items').select('id, item_code, line_delivery_date').eq('doc_no', docNo), c);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  const lines = new Map(((known ?? []) as Array<{ id: string; item_code: string; line_delivery_date: string | null }>).map((r) => [r.id, r]));
+  for (const [id, date] of entries) {
+    const line = lines.get(id);
+    if (!line) continue;
+    const { error: upErr } = await sb.from('mfg_sales_order_items').update({ line_delivery_date: date, line_delivery_date_overridden: date != null }).eq('id', id);
+    if (upErr) return c.json({ error: 'save_failed', reason: upErr.message }, 500);
+    await recordSoAudit(sb, {
+      docNo, action: 'UPDATE', source: 'so', note: `${line.item_code}: delivery date ${date ?? 'cleared'}`,
+      fieldChanges: [{ field: 'line_delivery_date', from: line.line_delivery_date, to: date }],
+    });
+  }
+  return c.json({ ok: true });
+});
+
 /* The lines' processing dates (owner, 5 Nov 2026), written to the plan so the project's PO tab and MRP read the same date. */
 mfgSalesOrders.put('/:docNo/line-processing-dates', async (c) => {
   const sb = c.get('supabase'); const docNo = c.req.param('docNo');

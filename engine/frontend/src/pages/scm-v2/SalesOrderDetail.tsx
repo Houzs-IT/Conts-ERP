@@ -1281,6 +1281,20 @@ export const SalesOrderDetail = () => {
     notify({ title: NO_VO_NEEDED_TITLE, body: NO_VO_NEEDED_BODY, tone: 'info' });
   };
 
+  /* Line dates are not a VO and no amendment carries them, so they save on their own routes. */
+  const lineDateChanges = () => {
+    const moved = (read: (d: SoLineDraft) => string | null) => Object.fromEntries(Object.entries(editingDrafts)
+      .filter(([id, d]) => read(d) !== read(originalDraftsRef.current[id] ?? d))
+      .map(([id, d]) => [id, read(d)]));
+    return { processing: moved((d) => d.lineProcessingDate ?? null), delivery: moved((d) => (d.lineDeliveryDateOverridden ? d.lineDeliveryDate ?? null : null)) };
+  };
+  const saveLineDates = async (changes: ReturnType<typeof lineDateChanges>, docNo: string) => {
+    if (Object.keys(changes.processing).length > 0) await saveProcessingDates(changes.processing);
+    if (Object.keys(changes.delivery).length > 0) {
+      await authedFetch(`/mfg-sales-orders/${encodeURIComponent(docNo)}/line-delivery-dates`, { method: 'PUT', body: JSON.stringify({ dates: changes.delivery }) });
+    }
+  };
+
   const saveContractEdit = async (handle: CustomerCardHandle) => {
     if (!header) return;
     const lines = buildAmendmentLines();
@@ -1293,7 +1307,9 @@ export const SalesOrderDetail = () => {
       setSaveError("A renovation contract's customer, address and dates are changed on its project (Customer info, Edit); they follow to this order.");
       return;
     }
-    if (lines.length === 0 && !handle.hasDirectHeaderChanges()) { finishEditWithoutVo(); return; }
+    const contractDates = lineDateChanges();
+    const contractDatesMoved = Object.keys(contractDates.processing).length + Object.keys(contractDates.delivery).length > 0;
+    if (lines.length === 0 && !handle.hasDirectHeaderChanges() && !contractDatesMoved) { finishEditWithoutVo(); return; }
     type Edit = { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string };
     const edits: Edit[] = [];
     const adds: Array<{ room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string }> = [];
@@ -1323,6 +1339,7 @@ export const SalesOrderDetail = () => {
       await new Promise<void>((resolve, reject) => {
         handle.save({ onSuccess: () => resolve(), onError: (msg) => reject(new Error(msg)) }, { renoBlockOnly: true });
       });
+      await saveLineDates(contractDates, header.doc_no);
       let poFlags = 0;
       for (const l of specs) {
         const r = await authedFetch<{ flags?: number }>(`/renovation-so-info/${encodeURIComponent(header.doc_no)}/lines/${encodeURIComponent(l.salesOrderItemId ?? '')}/spec`, {
@@ -1409,13 +1426,15 @@ export const SalesOrderDetail = () => {
     /* Options and remarks are not a VO (owner, 4 Nov 2026): on a confirmed order they save on their own. */
     const saveOnly = header.vo_locked ? allLines.filter((l) => l.changeType === 'SPEC' && !lineChangesAmount(l)) : [];
     const lines = allLines.filter((l) => !saveOnly.includes(l));
+    const dates = lineDateChanges();
+    const datesMoved = voOrder && Object.keys(dates.processing).length + Object.keys(dates.delivery).length > 0;
 
     // Asks about BOTH halves — see vendor/scm/lib/so-amendment-submit.
     const plan = planAmendmentSubmit({
       hasLineChanges: lines.length > 0,
       hasFrozenHeaderChanges: hasAmendmentHeaderChanges(headerChanges),
       hasDirectHeaderChanges: handle.hasDirectHeaderChanges() || headerSaves,
-      hasSaveOnlyLineChanges: saveOnly.length > 0,
+      hasSaveOnlyLineChanges: saveOnly.length > 0 || datesMoved,
     });
     if (plan === 'NOTHING') {
       if (header.vo_locked) finishEditWithoutVo();
@@ -1440,6 +1459,7 @@ export const SalesOrderDetail = () => {
           { keepLockedColsAsOriginal: !voOrder },
         );
       });
+      if (datesMoved) await saveLineDates(dates, header.doc_no);
       for (const l of saveOnly) {
         await authedFetch(`/renovation-so-info/${encodeURIComponent(header.doc_no)}/lines/${encodeURIComponent(l.salesOrderItemId ?? '')}/spec`, {
           method: 'PUT', body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
