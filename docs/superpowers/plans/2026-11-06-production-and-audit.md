@@ -110,3 +110,7 @@ Test failures to look at: documentRefs, mailAliasRevocation, projectChecklistTem
 - Same fields for quotation and sales order, and for PO and GR. One screen for edit, confirm and view where possible.
 - All PDFs share one header standard and match what is on screen. SO PDF by area or category. DO and GR download singly or together.
 - Payment stays free: presets exist, any amount can be collected.
+- Today's deliveries lists Draft and Confirmed DOs as small job cards. Tap a card to open the job: details, items, POD photos (at least 1), received by, then Mark complete.
+- Add photo (deliveries and Production progress): camera for several shots in a row, or multi-select from the album.
+- The Draft tab on Delivery Orders reads Draft delivery. The phone screen is titled Draft delivery too. No separate desktop page.
+- Phone Mark complete turns a Draft DO into Confirmed. A direct-to-site DO raises its GR at that moment, server side, once.
