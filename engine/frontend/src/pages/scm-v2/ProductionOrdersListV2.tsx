@@ -1179,6 +1179,18 @@ export function ProductionOrdersListV2() {
       render: (r) => <span className="text-[12.5px] text-ink-secondary">{(r as { project_label?: string | null }).project_label ?? "—"}</span>,
     },
     {
+      /* As an SO line's Stock (owner, 6 Nov 2026): are this order's raw materials here? */
+      key: "material_stock_status",
+      label: "Stock Status",
+      width: "116px",
+      getValue: (r) => (r as { material_stock_status?: string | null }).material_stock_status ?? "",
+      render: (r) => {
+        const v = (r as { material_stock_status?: string | null }).material_stock_status;
+        if (!v) return <span className="text-[12.5px] text-ink-muted">—</span>;
+        return <Badge tone={v === "READY" ? "success" : v === "PARTIAL" ? "warning" : "neutral"} size="xs">{v}</Badge>;
+      },
+    },
+    {
       key: "production_time",
       label: "Production Time",
       width: "120px",
