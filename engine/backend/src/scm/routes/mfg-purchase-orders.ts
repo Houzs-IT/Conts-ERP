@@ -66,7 +66,7 @@ import {
   LEAD_TIME_SELECT,
   LEAD_OVERRIDE_SELECT,
 } from '../lib/lead-time';
-import { groupKeyFor } from '../lib/po-grouping';
+import { groupKeyFor, loadPoGroupFacts } from '../lib/po-grouping';
 import { findOverConvertOffender, soLineHeadroom, type OverConvertOffender, loadBoundOrderedQty, boundAwarePicked, isBoundForCompany } from '../lib/po-over-convert';
 import {
   planAllocationCreate,
@@ -2072,6 +2072,7 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
     lines: Line[]; soDocNos: Set<string>;
   };
   const byGroup = new Map<string, Bucket>();
+  const groupFacts = await loadPoGroupFacts(supabase, activeCompanyId(c) ?? null, soItems.map((it) => it.itemCode), soItems.map((it) => it.soDocNo));
   for (const it of soItems) {
     const b = effectiveBindingFor(it)!;
     const effectiveSupplierId = b.supplier_id;
@@ -2105,7 +2106,10 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
     // 4 Nov 2026; scm/lib/po-grouping.ts). Every key starts (warehouse, supplier),
     // which is what keeps each emitted PO single-warehouse.
     const groupKey = groupKeyFor(
-      { warehouseId: lineWarehouseId, supplierId: effectiveSupplierId, soDocNo: it.soDocNo },
+      {
+        warehouseId: lineWarehouseId, supplierId: effectiveSupplierId, soDocNo: it.soDocNo,
+        categoryGroup: groupFacts.categoryGroupOf(it.itemCode, it.soDocNo), unitBound: groupFacts.unitBound(it.itemCode),
+      },
       poMode,
     );
     const bucket = byGroup.get(groupKey)
@@ -2172,6 +2176,16 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
       .flatMap((bk) => bk.lines));
     if (targetLines.length === 0) {
       return c.json({ error: 'supplier_mismatch', reason: 'None of the picked SO lines belong to this PO’s supplier.' }, 409);
+    }
+    /* Works and Built-in: one PO, one SO, on this path too. */
+    if (targetLines.some((l) => groupFacts.unitBound(l.itemCode))) {
+      const { data: already } = await supabase.from('purchase_order_items').select('so_item_id').eq('purchase_order_id', target.id).not('so_item_id', 'is', null);
+      const linked = ((already ?? []) as Array<{ so_item_id: string }>).map((x) => x.so_item_id);
+      const { data: linkedSo } = linked.length > 0 ? await supabase.from('mfg_sales_order_items').select('doc_no').in('id', linked) : { data: [] };
+      const docs = new Set([...((linkedSo ?? []) as Array<{ doc_no: string }>).map((x) => x.doc_no), ...targetLines.map((l) => l.soDocNo ?? '')]);
+      if (docs.size > 1) {
+        return c.json({ error: 'one_so_per_po', reason: `${target.po_number} already serves another sales order. Works and Built-in need their own PO.` }, 409);
+      }
     }
     const appendFrom = await nextPoLineNo(supabase, target.id);
     const rows = await poConvertLineRows(
@@ -2291,6 +2305,8 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
       supabase, header.id, sortBySourceSoLine(bucket.lines), fromMrp, activeCompanyId(c) ?? null, 1);
     const { error: iErr } = await supabase.from('purchase_order_items').insert(stampCompany(rows, c));
     if (iErr) {
+      /* An in-house PO made its production order when the header landed, and that order holds the PO in place. */
+      await supabase.from('production_orders').delete().eq('source_po_id', header.id);
       await supabase.from('purchase_orders').delete().eq('id', header.id);
       dropped.push({ supplierId, lineCount: bucket.lines.length, reason: `po_items_insert_failed: ${iErr.message}` });
       continue;
