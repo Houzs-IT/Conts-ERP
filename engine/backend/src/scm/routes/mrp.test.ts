@@ -1633,3 +1633,19 @@ describe('company 1: a custom pillow is planned from its own purchase order only
     expect(lineOf(res, 'l-013496').poNumber).not.toBeNull();
   });
 });
+
+describe('computeMrp: a held sales order is not demand', () => {
+  test('its line neither reads short nor claims stock from a live order', async () => {
+    const held = { ...demandRed(5), id: 'si-held', doc_no: 'SO-HELD', line_delivery_date: '2026-11-01', so: { ...(demandRed(5).so as Row), on_hold: true } };
+    const sb = fakeSb({
+      ...BASE_TABLES,
+      mfg_sales_order_items: [held, demandRed(3)],
+      inventory_balances: [{ item_code: 'BF-100', warehouse_id: 'W1', variant_key: 'fabriccode=red', qty: 3 }],
+      warehouses: [{ id: 'W1', code: 'KL', name: 'KL WAREHOUSE', is_active: true }],
+    });
+    const r = await computeMrp(sb, opts);
+    const lines = r.skus.flatMap((s) => s.lines);
+    expect(lines.map((l) => l.soDocNo)).toEqual(['SO-1']);
+    expect(lines[0]?.shortageQty).toBe(0);
+  });
+});

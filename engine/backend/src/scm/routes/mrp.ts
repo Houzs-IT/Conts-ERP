@@ -98,6 +98,7 @@ import { isHardBoundLine, HARD_BOUND_COMPANY_ID } from '../lib/so-stock-allocati
 import { isUnitBoundCategory } from '../lib/unit-bound-sku';
 import { customizedKey, isCustomizedLine } from '../lib/so-line-customized';
 import { isOnSiteWarehouse } from '../lib/non-selling-warehouse';
+import { isDocumentHeld } from '../lib/document-hold';
 
 export const mrp = new Hono<{ Bindings: Env; Variables: Variables }>();
 mrp.use('*', supabaseAuth);
@@ -217,6 +218,7 @@ export type DemandRow = {
   productionOrderId?: string;
   so: {
     debtor_name: string | null;
+    on_hold?: boolean | null;
     status: string;
     so_date: string | null;
     customer_delivery_date: string | null;   // the customer's ORIGINAL promise — never overwritten
@@ -716,7 +718,7 @@ export async function computeMrp(
     .from('mfg_sales_order_items')
     .select(`
       id, doc_no, item_code, description, item_group, variants, remark, qty, warehouse_id, line_delivery_date, line_delivery_date_overridden, line_no, created_at, cancelled, allocated_batch_no,
-      so:mfg_sales_orders!inner ( debtor_name, status, so_date, customer_delivery_date, amended_delivery_date, processing_date, customer_state, sales_location, project_id )
+      so:mfg_sales_orders!inner ( debtor_name, status, on_hold, so_date, customer_delivery_date, amended_delivery_date, processing_date, customer_state, sales_location, project_id )
     `)
     .eq('cancelled', false)
     .not('so.status', 'in', MRP_DEMAND_DONE_SQL))
@@ -739,7 +741,8 @@ export async function computeMrp(
      under both flag values. `includeUndated` only controls whether undated
      rows appear in the RESULT (visibility, not math). */
   const demandOpen = ((demandRaw ?? []) as unknown as DemandRow[]).filter(
-    (r) => r.item_code && r.item_code !== 'RENO-CREDIT' && r.so && (!SO_DONE.has(r.so.status) || (RENO_RUNNING.has(r.so.status) && r.so.project_id != null)) && r.qty > 0,
+    /* A held order buys nothing, the same as a held production order: it would claim stock and ask for a PO nobody wants yet. */
+    (r) => r.item_code && r.item_code !== 'RENO-CREDIT' && r.so && !isDocumentHeld(r.so) && (!SO_DONE.has(r.so.status) || (RENO_RUNNING.has(r.so.status) && r.so.project_id != null)) && r.qty > 0,
   );
   /* Conts projects (owner, 4 Nov 2026: "只要一有 delivery date，它就会排着出来"; widens 1 Nov's processing-date rule).
      A line of an order that belongs to a project is demand once it has a delivery date (the one set on the project's
