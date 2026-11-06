@@ -66,7 +66,7 @@ import {
   LEAD_TIME_SELECT,
   LEAD_OVERRIDE_SELECT,
 } from '../lib/lead-time';
-import { groupKeyFor, loadPoGroupFacts } from '../lib/po-grouping';
+import { takesOnSiteDefault, groupKeyFor, loadPoGroupFacts } from '../lib/po-grouping';
 import { findOverConvertOffender, soLineHeadroom, type OverConvertOffender, loadBoundOrderedQty, boundAwarePicked, isBoundForCompany } from '../lib/po-over-convert';
 import {
   planAllocationCreate,
@@ -103,6 +103,8 @@ import { provenanceNote } from '../shared/transfer-vocabulary';
 import type { Env, Variables } from '../env';
 import { skuCategoryResolver, lineIdentityFields } from '../lib/sku-category';
 import { loadUnitBoundCodes, NO_UNIT_BOUND_CODES } from '../lib/unit-bound-sku';
+import { inHouseSupplierId } from '../lib/grn-from-po-core';
+import { ON_SITE_WAREHOUSE_CODE } from '../lib/non-selling-warehouse';
 import { firstSoLinkCategoryMismatch, soLinkCategoryMismatch, hardBoundUnlinkRefusal, hardBoundSplitRefusal, editedLineGroup } from '../lib/hard-bound-po-line';
 import { pgrestIn } from '../lib/pgrest-in-list';
 import { withSoRefPoIds } from '../lib/so-ref-search';
@@ -785,6 +787,11 @@ async function poLineReceipts(
 }
 
 // ── Detail ────────────────────────────────────────────────────────────
+async function onSiteWarehouseId(sb: Variables['supabase'], c: Parameters<typeof scopeToCompany>[1]): Promise<string | null> {
+  const { data } = await scopeToCompany(sb.from('warehouses').select('id').eq('code', ON_SITE_WAREHOUSE_CODE), c).maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+}
+
 mfgPurchaseOrders.get('/:id', async (c) => {
   const id = c.req.param('id');
   const supabase = c.get('supabase');
@@ -2240,7 +2247,8 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
       .filter((d): d is string => Boolean(d))
       .sort();
     const headerExpectedAt = lineDates[0] ?? null;
-    const headerPurchaseLocationId: string | null = bucket.warehouseId;
+    const onSiteDefault = takesOnSiteDefault({ ...bucket, itemCodes: bucket.lines.map((l) => l.itemCode) }, await inHouseSupplierId(supabase, c), groupFacts.unitBound);
+    const headerPurchaseLocationId: string | null = onSiteDefault ? await onSiteWarehouseId(supabase, c) : bucket.warehouseId;
 
     const headerPayload = {
       company_id: activeCompanyId(c), // multi-company: stamp the active company

@@ -13,7 +13,7 @@ import { lazy, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { PoPaymentScheduleCard } from "../renovation/PoPaymentScheduleCard";
 import { LazySlot } from "../../components/LazySlot";
-import { ProductionOrderChips } from "./ProductionOrderChips";
+import { ProductionOrderChips, useProductionOrderLinks } from "./ProductionOrderChips";
 import { scmListReturnTo } from "../../lib/scmListReturn";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { formatPhone } from "@2990s/shared/phone";
@@ -509,6 +509,7 @@ function PurchaseOrderDetailV2ReadOnly() {
   const purchaseOrder =
     (detail.data as { purchaseOrder?: PoHeaderRow } | undefined)?.purchaseOrder ??
     null;
+  const productionLinks = useProductionOrderLinks({ poId: purchaseOrder?.id });
   const items: PoItemRow[] = useMemo(
     () => ((detail.data as { items?: PoItemRow[] } | undefined)?.items ?? []),
     [detail.data]
@@ -1121,8 +1122,9 @@ function PurchaseOrderDetailV2ReadOnly() {
      The predicates were inverted relative to their endpoints. */
   const confirmReason = poConfirmBlockReason(purchaseOrder.status);
   const canConfirm = confirmReason === null;
-  /* The in-house team has no delivery to receive: its PO closes when its production order is completed (owner, 6 Nov 2026). */
-  const grnReason = purchaseOrder.supplier?.code === "INHOUSE"
+  /* The in-house team has no delivery to receive: its PO closes when its production order is completed (owner, 6 Nov 2026).
+     A Built-in PO has no production order and is received like any other. */
+  const grnReason = purchaseOrder.supplier?.code === "INHOUSE" && (productionLinks.data?.length ?? 1) > 0
     ? "An in-house PO is received by completing its production order."
     : grnTransferBlockReason(purchaseOrder.status);
   const canConvertToGrn = grnReason === null;

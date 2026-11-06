@@ -46,6 +46,12 @@ export function groupKeyFor(input: GroupKeyInput, toggle: PoMode): string {
   return toggle === 'per-so' || input.unitBound ? `${base}::so:${input.soDocNo}` : base;
 }
 
+/** A bucket with no warehouse lands as a DRAFT, and a draft to our own team makes no production order. Works and Built-in
+    default On-site (owner, 5 Nov 2026), so that bucket takes On-site instead of stalling. */
+export function takesOnSiteDefault(b: { warehouseId: string | null; supplierId: string; itemCodes: readonly string[] }, inHouseId: string | null, unitBound: (code: string) => boolean): boolean {
+  return b.warehouseId === null && b.supplierId === inHouseId && b.itemCodes.length > 0 && b.itemCodes.every(unitBound);
+}
+
 export interface PoGroupFacts {
   categoryGroupOf: (itemCode: string, soDocNo: string) => string | null;
   unitBound: (itemCode: string) => boolean;

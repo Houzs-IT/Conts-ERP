@@ -12,7 +12,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../env';
 import { supabaseAuth } from '../middleware/auth';
 import { requireActiveCompanyId } from '../lib/companyScope';
-import { createDraftGrnsFromPoItemsCore, inHouseSupplierId, type GrnFromPoItemsContext } from '../lib/grn-from-po-core';
+import { createDraftGrnsFromPoItemsCore, inHouseSupplierId, posWithProductionOrder, type GrnFromPoItemsContext } from '../lib/grn-from-po-core';
 import { isOnSiteWarehouse } from '../lib/non-selling-warehouse';
 import { callHandler } from './production-orders';
 import { createDoFromSoLinesHandler, patchDeliveryOrderStatusHandler, soDeliverableRemaining } from './delivery-orders-mfg';
@@ -50,10 +50,12 @@ async function onSiteDoLines(sb: any, doId: string, doWarehouseId: string | null
 async function poLinesFor(sb: any, c: any, soItemIds: string[]) {
   if (soItemIds.length === 0) return [];
   const { data } = await sb.from('purchase_order_items')
-    .select('id, so_item_id, qty, received_qty, po:purchase_orders!inner (po_number, status, supplier_id)').in('so_item_id', soItemIds);
+    .select('id, purchase_order_id, so_item_id, qty, received_qty, po:purchase_orders!inner (po_number, status, supplier_id)').in('so_item_id', soItemIds);
   const inHouse = await inHouseSupplierId(sb, c);
-  return ((data ?? []) as unknown as Array<{ id: string; so_item_id: string; qty: number; received_qty: number | null; po: { po_number: string; status: string; supplier_id: string } }>)
-    .filter((l) => l.po.status !== 'CANCELLED' && l.po.status !== 'DRAFT' && l.po.supplier_id !== inHouse);
+  const rows = (data ?? []) as unknown as Array<{ id: string; purchase_order_id: string; so_item_id: string; qty: number; received_qty: number | null; po: { po_number: string; status: string; supplier_id: string } }>;
+  /* Production Complete receives what it made; a Built-in PO to In-house has no order and is received like any other. */
+  const made = await posWithProductionOrder(sb, rows.filter((l) => l.po.supplier_id === inHouse).map((l) => l.purchase_order_id));
+  return rows.filter((l) => l.po.status !== 'CANCELLED' && l.po.status !== 'DRAFT' && !made.has(l.purchase_order_id));
 }
 
 const link = (sb: any, companyId: number, grnId: string, doId: string) =>
@@ -113,11 +115,13 @@ async function deliverReceipt(c: any, sb: any, id: string, companyId: number) {
   const grn = g as { id: string; grn_number: string; status: string; warehouse_id: string | null } | null;
   if (!grn) return c.json({ error: 'not_found' }, 404);
   if (grn.status !== 'POSTED' || !(await onSiteIds(sb, [grn.warehouse_id], co.companyId)).size) return c.json({ ok: true, raised: [] });
-  const { data: lines } = await sb.from('grn_items').select('qty_accepted, qty_received, poi:purchase_order_items!inner (so_item_id, po:purchase_orders!inner (supplier_id))').eq('grn_id', id);
+  const { data: lines } = await sb.from('grn_items').select('qty_accepted, qty_received, poi:purchase_order_items!inner (so_item_id, purchase_order_id, po:purchase_orders!inner (supplier_id))').eq('grn_id', id);
   const inHouse = await inHouseSupplierId(sb, c);
   const got = new Map<string, number>();
-  for (const l of (lines ?? []) as unknown as Array<{ qty_accepted: number | null; qty_received: number | null; poi: { so_item_id: string | null; po: { supplier_id: string } } }>) {
-    if (!l.poi.so_item_id || l.poi.po.supplier_id === inHouse) continue;
+  const received = (lines ?? []) as unknown as Array<{ qty_accepted: number | null; qty_received: number | null; poi: { so_item_id: string | null; purchase_order_id: string; po: { supplier_id: string } } }>;
+  const made = await posWithProductionOrder(sb, received.filter((l) => l.poi.po.supplier_id === inHouse).map((l) => l.poi.purchase_order_id));
+  for (const l of received) {
+    if (!l.poi.so_item_id || made.has(l.poi.purchase_order_id)) continue;
     got.set(l.poi.so_item_id, (got.get(l.poi.so_item_id) ?? 0) + Number(l.qty_accepted ?? l.qty_received ?? 0));
   }
   if (got.size === 0) return c.json({ ok: true, raised: [] });

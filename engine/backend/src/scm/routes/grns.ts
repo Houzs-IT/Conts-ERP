@@ -10,7 +10,7 @@ import { isReceivablePo } from '../lib/source-document-gates'; import { mountHol
 import type { Context } from 'hono';
 import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
-import { createDraftGrnsFromPoItemsCore, IN_HOUSE_PO_REFUSAL, inHouseSupplierId, type GrnFromPoItemsContext } from '../lib/grn-from-po-core';
+import { createDraftGrnsFromPoItemsCore, IN_HOUSE_PO_REFUSAL, inHouseReceiptRefused, type GrnFromPoItemsContext } from '../lib/grn-from-po-core';
 import { getSupabaseService } from '../../db/supabase';
 import { noteGrnScanAccepted } from '../lib/grn-scan-review';
 import { writeMovements, defaultWarehouseId, reconcileDropshipBatches } from '../lib/inventory-movements';
@@ -1384,6 +1384,13 @@ grns.get('/:id/linked', async (c) => {
   });
 });
 
+/* The POs a bare-create receipt names: its header's and its lines'. */
+async function sourcePoIds(sb: Variables['supabase'], body: Record<string, unknown>): Promise<string[]> {
+  const lineIds = (Array.isArray(body.items) ? body.items as Array<{ purchaseOrderItemId?: string | null }> : []).map((i) => i.purchaseOrderItemId).filter((x): x is string => !!x);
+  const { data } = lineIds.length ? await sb.from('purchase_order_items').select('purchase_order_id').in('id', lineIds) : { data: [] };
+  return [...new Set([body.purchaseOrderId as string | null | undefined, ...((data ?? []) as Array<{ purchase_order_id: string }>).map((r) => r.purchase_order_id)].filter((x): x is string => !!x))];
+}
+
 grns.post('/', async (c) => {
   let body: Record<string, unknown>;
   try { body = (await c.req.json()) as Record<string, unknown>; } catch { return refuseWithoutWriting(c, { error: 'invalid_json' }, 400); }
@@ -1393,7 +1400,7 @@ grns.post('/', async (c) => {
      manual `status:'DRAFT'` body field is still rejected — DRAFT is reached only
      through the asDraft flag below, never as a free-form status. */
   const asDraft = (body as { asDraft?: unknown }).asDraft === true;
-  if (body.supplierId && body.supplierId === await inHouseSupplierId(c.get('supabase'), c)) return refuseWithoutWriting(c, IN_HOUSE_PO_REFUSAL, 409);
+  if (await inHouseReceiptRefused(c.get('supabase'), c, body.supplierId, await sourcePoIds(c.get('supabase'), body))) return refuseWithoutWriting(c, IN_HOUSE_PO_REFUSAL, 409);
   if (body.status === 'DRAFT') return refuseWithoutWriting(c, { error: 'draft_status_not_supported', message: 'Use asDraft:true to save a GRN as a draft.' }, 400);
   /* Commander 2026-05-29 — a GRN may now be created WITHOUT a parent PO
      (blank/manual receipt + From-PO-multi picks that feed the New GRN form).
@@ -1725,7 +1732,7 @@ export const createGrnFromPosHandler = async (c: Context<{ Bindings: Env; Variab
     return refuseWithoutWriting(c, { error: 'mixed_suppliers', message: 'All selected POs must be from the same supplier' }, 400);
   }
   const supplierId = [...supplierIds][0]!;
-  if (supplierId === await inHouseSupplierId(sb, c)) return refuseWithoutWriting(c, IN_HOUSE_PO_REFUSAL, 409);
+  if (await inHouseReceiptRefused(sb, c, supplierId, poList.map((p) => p.id))) return refuseWithoutWriting(c, IN_HOUSE_PO_REFUSAL, 409);
 
   // Load PO items with outstanding qty (+ variant fields for PR #44). SCOPED —
   // the LINE-level half of the same source document. Redundant after the scoped

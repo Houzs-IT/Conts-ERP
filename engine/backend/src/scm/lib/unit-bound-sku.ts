@@ -9,6 +9,9 @@ const UNIT_BOUND_CATEGORIES: ReadonlySet<string> = new Set(['WORKS', 'BUILTIN'])
 export const isUnitBoundCategory = (category: string | null | undefined): boolean =>
   UNIT_BOUND_CATEGORIES.has(String(category ?? '').toUpperCase());
 
+/** Built-in is sales order to PO only (owner, 7 Nov 2026): never a production order, even bound to In-house. */
+export const isBuiltInCategory = (category: string | null | undefined): boolean => String(category ?? '').toUpperCase() === 'BUILTIN';
+
 export const NO_UNIT_BOUND_CODES: ReadonlySet<string> = new Set();
 
 /** The codes among `codes` whose SKU is Works or Built-in. Throws on a failed read: an answer of "none" would pool a line

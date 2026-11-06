@@ -40,6 +40,7 @@ import { computeMrp } from './mrp';
 import { postGrnAndRollup, recordGrnCreate } from './grns';
 import { createDoFromSoLinesHandler, deductInventoryForDo, patchDeliveryOrderStatusHandler, soDeliverableRemaining } from './delivery-orders-mfg';
 import { createDraftGrnsFromPoItemsCore, type GrnFromPoItemsContext } from '../lib/grn-from-po-core';
+import { isBuiltInCategory } from '../lib/unit-bound-sku';
 import { loadLeadBuffers } from '../../services/agents/procurement-learning';
 import { paginateAll, chunkIn } from '../lib/paginate-all';
 import { pgrestInList } from '../lib/pgrest-in-list';
@@ -65,6 +66,14 @@ export function groupMaterialPicks<T extends MaterialPick>(picks: readonly T[], 
   }
   return [...by.values()];
 }
+
+/** The first Built-in SKU among `codes`, or null. */
+async function builtInAmong(sb: Variables['supabase'], companyId: number, codes: readonly string[]): Promise<string | null> {
+  const { data, error } = await scopeToCompanyId(sb.from('mfg_products').select('code, category, category_group').in('code', [...new Set(codes)]), companyId);
+  if (error) throw new Error(`built_in_read_failed: ${error.message}`);
+  return ((data ?? []) as unknown as Array<{ code: string; category: string | null; category_group: string | null }>).find((p) => isBuiltInCategory(p.category) || isBuiltInCategory(p.category_group))?.code ?? null;
+}
+export const builtInRefusal = (code: string) => ({ error: 'built_in_no_production', message: `${code} is Built-in: it goes on a PO from MRP, not a production order.` });
 
 const toProduction = (select: string): string => select.replace('items:purchase_order_items', 'items:production_order_items');
 const PRODUCTION_COLS = 'production_time_days, production_time_hours, plan_start, actual_start_at, project_id, source_po_id';
@@ -930,6 +939,8 @@ productionOrders.post('/from-sos', async (c) => {
     return own.length > 0 && !own.some((x) => x.supplier_id === inhouseId);
   });
   if (notOurs) return c.json({ error: 'not_inhouse', message: `${notOurs.item_code} is bought from an outside supplier. Raise a PO for it.` }, 409);
+  const builtIn = await builtInAmong(sb, co.companyId, [...soById.values()].map((r) => r.item_code));
+  if (builtIn) return c.json(builtInRefusal(builtIn), 409);
   const toItem = (p: { soItemId: string; qty: number }, so: SoLine) => ({
     materialKind: 'mfg_product', itemCode: so.item_code, materialName: so.description ?? so.item_code, description: so.description, qty: Math.floor(Number(p.qty)),
     unitPriceSen: Number(binds.find((x) => x.item_code === so.item_code && x.supplier_id === inhouseId)?.unit_price_sen ?? 0), variants: so.variants,
@@ -1064,6 +1075,8 @@ productionOrders.post('/:id/items', async (c) => {
   if (linesClosed((parent as { status: string }).status)) return c.json(LINES_CLOSED, 409);
   const unknownAdd = await unknownProductCodeRefusal(sb, [{ code: it.itemCode, kind: it.materialKind }], co.companyId);
   if (unknownAdd) return c.json(unknownAdd, 409);
+  const addedBuiltIn = await builtInAmong(sb, co.companyId, [String(it.itemCode)]);
+  if (addedBuiltIn) return c.json(builtInRefusal(addedBuiltIn), 409);
   const addGroupOf = await skuCategoryResolver(sb, [it], co.companyId ?? null);
   const parsedLine = parseLineNumbers({ qty: { value: it.qty, fallback: 1 }, unitPriceSen: { value: it.unitPriceSen }, discountSen: { value: it.discountSen } });
   if (!parsedLine.ok) return c.json(invalidLineNumberBody(parsedLine.invalid), 400);

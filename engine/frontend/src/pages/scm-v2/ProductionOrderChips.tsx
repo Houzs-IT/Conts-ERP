@@ -8,15 +8,20 @@ import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 
 type Linked = { id: string; po_number: string; status: string };
 
-export function ProductionOrderChips({ poId, soDocNo, label }: { poId?: string; soDocNo?: string; label?: string }) {
+/** The linked orders. `data` stays undefined until the read answers. */
+export function useProductionOrderLinks({ poId, soDocNo }: { poId?: string; soDocNo?: string }) {
   const qs = poId ? `poId=${encodeURIComponent(poId)}` : `soDocNo=${encodeURIComponent(soDocNo ?? "")}`;
-  const q = useQuery({
+  return useQuery({
     queryKey: ["production-order-links", qs],
     enabled: Boolean(poId || soDocNo),
     queryFn: () => authedFetch<{ productionOrders: Linked[] }>(`/production-orders/links?${qs}`).then((r) => r.productionOrders),
     retry: false,
     staleTime: 30_000,
   });
+}
+
+export function ProductionOrderChips({ poId, soDocNo, label }: { poId?: string; soDocNo?: string; label?: string }) {
+  const q = useProductionOrderLinks({ poId, soDocNo });
   if (!q.data?.length) return null;
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
