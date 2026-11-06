@@ -62,8 +62,9 @@ function progress(r: Repair): string {
  *  new problem. One column, 44px targets; a job opens full screen with its action pinned at the bottom. */
 export default function FieldRepairsPage({ above, linkRepair, onLinked }: { above?: ReactNode; linkRepair?: string | null; onLinked?: () => void }) {
   const [building, setBuilding] = useState('');
+  const [category, setCategory] = useState('');
   const [limit, setLimit] = useState(POOL_PAGE);
-  const query = new URLSearchParams({ ...(building ? { building } : {}), ...(limit > POOL_PAGE ? { limit: String(limit) } : {}) }).toString();
+  const query = new URLSearchParams({ ...(building ? { building } : {}), ...(category ? { category } : {}), ...(limit > POOL_PAGE ? { limit: String(limit) } : {}) }).toString();
   const { data, loading, error, reload } = useApi<ListPayload>(`/field/repairs${query ? `?${query}` : ''}`);
   // A new notice, the phone coming back to the app, or a minute passing reloads the list; a repair that just arrived carries a New mark.
   useFieldRefresh(reload);
@@ -80,11 +81,11 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const toast = useToast();
   const t = usePortalText();
   const tr = t.repairs;
-  const isInBuilding = (repair: Repair): boolean => !building || repair.buildingId === building;
-  const mine = (data?.mine ?? []).filter(isInBuilding);
+  const isShown = (repair: Repair): boolean => (!building || repair.buildingId === building) && (!category || repair.category === category);
+  const mine = (data?.mine ?? []).filter(isShown);
   const todo = mine.filter(r => r.state !== 'resolved' && !r.endedAt);
   const finished = mine.filter(r => r.state === 'resolved' || r.endedAt);
-  const pool = (data?.open ?? []).filter(isInBuilding);
+  const pool = (data?.open ?? []).filter(isShown);
   const groups = [
     ...groupByUnit(tab === 'open' ? [] : todo).map(group => ({ group, offer: false })),
     ...groupByUnit(tab === 'mine' ? [] : pool).map(group => ({ group, offer: true })),
@@ -99,6 +100,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const openTotal = building ? data?.buildings?.find(b => b.id === building)?.open ?? 0 : allBuildingsOpen;
 
   function chooseBuilding(id: string) { setBuilding(id); setLimit(POOL_PAGE); }
+  function chooseCategory(value: string) { setCategory(value); setLimit(POOL_PAGE); }
   async function pickAll(group: UnitGroup) {
     setPickingUnit(group.unitId);
     const result = await runEach(group.jobs, job => api.post(`/field/repairs/${job.id}/pick`, {}), job => job.title);
@@ -129,6 +131,14 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
           <select className={cx(INPUT, 'h-11')} value={building} onChange={e => chooseBuilding(e.target.value)}>
             <option value="">{data?.mayPick ? tr.allBuildingsOpen(allBuildingsOpen) : tr.allBuildings}</option>
             {buildingOptions.map(b => <option key={b.id} value={b.id}>{data?.mayPick ? tr.buildingOpen(b.name, b.open) : b.name}</option>)}
+          </select>
+        </FormRow>
+      )}
+      {data && (
+        <FormRow label={tr.problemType}>
+          <select className={cx(INPUT, 'h-11')} value={category} onChange={e => chooseCategory(e.target.value)}>
+            <option value="">{tr.allProblemTypes}</option>
+            {Object.keys(CATEGORY).map(value => <option key={value} value={value}>{wordFor(t.category, value)}</option>)}
           </select>
         </FormRow>
       )}
