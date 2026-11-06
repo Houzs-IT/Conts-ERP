@@ -609,9 +609,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Not yet seen live: the received-lock note on the SO edit page (needs a line received with no DO; the only one on a test order is cancelled). Project SO tab at phone width: tab switch is a native select that automation cannot drive.
 
 ## SO, quotation and raw material round (6 Nov 2026)
-- Quotation edit page still differs from the SO edit page: only New Quotation is the SO page. Land area and land size are not on the quotation.
-- New Sales Order shows no payment cards: the four cards exist only once a contract does.
-- A project with a live SO is hidden from the project picker only; the server does not refuse a second order on it.
+- Quotation lines keep their own row (add-ons, measure, supplier): the SO's row has none of these. Headings match the SO.
+- Not yet seen by mouse after #734: quotation land fields, Quotations columns, payment cards on a new order. No POs, GRNs, DOs or production orders exist since Clear test data, so their PDF rows, Ship From and the production raw material panel are unseen too.
 - Smart Placement was tried and reverted (#718, #722): every request got slower. First open after an idle worker still takes 1-2 s a request; a fix needs the owner's choice (paid plan or fewer MRP reads).
 - 16 DOs, 1 GRN, 4 POs got BLK and CONTS-WH sales locations became BLK by hand on production, owner's request.
 
