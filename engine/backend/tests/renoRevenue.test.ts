@@ -658,3 +658,12 @@ describe('a cancelled instalment document', () => {
     expect(v.instalments[2]?.amountSen).toBe(200_000);
   });
 });
+
+describe('what the contract has received', () => {
+  test('a deposit paid on the order counts, beside what was paid on invoices', () => {
+    const inst = [{ id: 'i1', seq: 1, label: 'A', pctBp: 10000, description: '', stageCode: null, trigger: 'so_confirmed' }];
+    const paid = { instalment_id: 'i1', seq: 1, kind: 'INVOICE' as const, amount_sen: 500_000, invoice_date: '2026-11-01', invoice_number: 'SI-1', sales_invoice_id: 'si',
+      note_number: null, credit_note_id: null, paid_sen: 100_000, si_status: 'SENT', cn_status: null };
+    expect(assembleView('SO', 'RENO_CONFIRMED', 1_000_000, 1_000_000, inst, [paid], 0, [], 0, 250_000).receivedSen).toBe(350_000);
+  });
+});

@@ -103,6 +103,12 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
       order by cc.so_doc_no, cc.created_at`,
     [docsJson],
   );
+  const orderPaid = await db.q<{ so_doc_no: string; paid_sen: number | string }>(
+    `select p.so_doc_no, coalesce(sum(p.amount_sen), 0)::bigint as paid_sen from scm.mfg_sales_order_payments p
+      where p.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) group by p.so_doc_no`,
+    [docsJson],
+  );
+  const orderPaidOf = new Map(orderPaid.map((r) => [r.so_doc_no, Number(r.paid_sen)]));
   for (const so of sos) {
     const instalments = instRows
       .filter((r) => r.so_doc_no === so.doc_no)
@@ -112,7 +118,7 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
       creditNoteId: r.credit_note_id, noteNumber: r.note_number, amountSen: Number(r.amount_sen), noteDate: r.note_date, reason: r.reason, noteStatus: r.cn_status,
     }));
     const creditedSen = credits.reduce((s, c) => s + c.amountSen, 0);
-    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits, Number(so.billed_before_golive_sen ?? 0)));
+    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits, Number(so.billed_before_golive_sen ?? 0), orderPaidOf.get(so.doc_no) ?? 0));
   }
   return out;
 }
@@ -132,6 +138,7 @@ export function assembleView(
   creditedSen = 0,
   credits: ContractCredit[] = [],
   billedBeforeGoLiveSen = 0,
+  orderPaidSen = 0,
 ): BillingView {
   /* A cancelled invoice or credit note billed nothing: its instalment is due again and its amount does not count. */
   const live = bills.filter((b) => b.si_status !== 'CANCELLED' && b.cn_status !== 'CANCELLED');
@@ -161,7 +168,8 @@ export function assembleView(
     };
   });
   const billedSen = live.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen + billedBeforeGoLiveSen;
-  const receivedSen = live.reduce((s, b) => s + (b.kind === 'INVOICE' ? Number(b.paid_sen ?? 0) : 0), 0);
+  /* Paid on the invoices, and paid on the order itself: a deposit is taken on the SO. */
+  const receivedSen = orderPaidSen + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? Number(b.paid_sen ?? 0) : 0), 0);
   const original = originalContractSen === null ? revised : Number(originalContractSen);
   return {
     soDocNo, status, originalContractSen: original, revisedContractSen: revised, voTotalSen: revised - original,
