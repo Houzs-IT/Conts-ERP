@@ -159,7 +159,7 @@ function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
   const [open, setOpen] = useState(false);
   const preview = usePoSplit(c.docNo, open);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
+  const [done, setDone] = useState<Array<{ id: string; poNumber: string }> | null>(null);
   const raise = useRenoMutation(() => renoSend<{ created: Array<{ id: string; poNumber: string; totalSen: number }> }>(`/sales-orders/${encodeURIComponent(c.docNo)}/po-split`, 'POST', {}));
   const p = preview.data;
   return (
@@ -200,13 +200,17 @@ function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
             </details>
           )}
           <ErrorBanner error={error} />
-          {done && <div className="rounded bg-synced-bg px-3 py-2 text-[13px] font-semibold text-synced">{done}</div>}
+          {done && (
+            <div className="rounded bg-synced-bg px-3 py-2 text-[13px] font-semibold text-synced">
+              Raised {done.map((po, i) => <span key={po.id}>{i > 0 && ', '}<Link className="underline" to={`/scm/purchase-orders/${po.id}`}>{po.poNumber}</Link></span>)}
+            </div>
+          )}
           {canSplit && p.groups.length > 0 && (
             <Button disabled={raise.isPending || p.blocked.length > 0} onClick={async () => {
               setError(null);
               try {
                 const r = await raise.mutateAsync(undefined);
-                setDone(`Raised ${r.created.map((x) => x.poNumber).join(', ')}`);
+                setDone(r.created);
               } catch (e) { setError(refusalOf(e).message); }
             }}>{raise.isPending ? 'Raising…' : `Raise ${p.groups.length} PO${p.groups.length > 1 ? 's' : ''}`}</Button>
           )}
