@@ -75,6 +75,7 @@ export function PercentSchedule({ unit, onSaved }: { unit: ScheduleUnit | null; 
   if (!access.data.mayPrice) return <p className="m-0 text-copy text-muted-ink">Only management schedules price changes.</p>;
 
   const isPreviewReady = edits.every(edit => previews[edit.cleanKind]);
+  const hasSomethingToChange = edits.some(({ cleanKind }) => previews[cleanKind]?.unit || previews[cleanKind]?.list?.length || previews[cleanKind]?.ownPrices);
   return (
     <section className="flex flex-col gap-3">
       <DateField label="Applies from" value={from} min={todayMyt(1)} onChange={setFrom} />
@@ -123,8 +124,8 @@ export function PercentSchedule({ unit, onSaved }: { unit: ScheduleUnit | null; 
         </div>
       )}
       <div>
-        <Button size="sm" variant="primary" loading={isBusy} disabled={!from || !edits.length || !isPreviewReady}
-          disabledReason={!from ? 'Pick the date first.' : !edits.length ? 'Enter a percent first.' : 'Working out the new prices.'} onClick={() => void schedule()}>Schedule change</Button>
+        <Button size="sm" variant="primary" loading={isBusy} disabled={!from || !edits.length || !isPreviewReady || !hasSomethingToChange}
+          disabledReason={!from ? 'Pick the date first.' : !edits.length ? 'Enter a percent first.' : !isPreviewReady ? 'Working out the new prices.' : 'No price in force on that date to change.'} onClick={() => void schedule()}>Schedule change</Button>
       </div>
     </section>
   );
