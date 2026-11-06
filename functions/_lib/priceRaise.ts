@@ -23,3 +23,11 @@ export function raiseFigures(row: PriceFigures, raise: PriceRaise): PriceFigures
 
 export const figuresChanged = (before: PriceFigures, after: PriceFigures): boolean =>
   (before.owner_price ?? null) !== (after.owner_price ?? null) || (before.internal_cost ?? null) !== (after.internal_cost ?? null);
+
+const MILLISECONDS_PER_DAY = 86_400_000;
+
+export const dayAfter = (day: string): string => new Date(Date.parse(`${day}T00:00:00Z`) + MILLISECONDS_PER_DAY).toISOString().slice(0, 10);
+
+/** A dated row strictly inside a price window would be lost when the old price comes back, so such a window is refused. */
+export const hasChangeInside = (effectiveFroms: string[], startDay: string, backOn: string): boolean =>
+  effectiveFroms.some(day => day > startDay && day < backOn);
