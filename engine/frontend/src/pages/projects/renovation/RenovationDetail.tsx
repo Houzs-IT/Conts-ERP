@@ -149,6 +149,7 @@ function ProjectFacts({ d, canWrite, onDone, onError }: { d: ProjectDetailV2; ca
 
 function BillingPromptBanner({ d, canWrite, onDone, onError }: { d: ProjectDetail; canWrite: boolean; onDone: (t: string) => void; onError: (t: string) => void }) {
   const [confirming, setConfirming] = useState<null | ProjectDetail["prompts"][number]>(null);
+  const [creditSen, setCreditSen] = useState<number | null>(null);
   const [date, setDate] = useState(() => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10));
   const [busy, setBusy] = useState(false);
   if (!d.billing.available) {
@@ -171,24 +172,28 @@ function BillingPromptBanner({ d, canWrite, onDone, onError }: { d: ProjectDetai
       {confirming && d.so && (
         <Dialog
           title={`Bill instalment ${confirming.seq}`}
-          onClose={() => setConfirming(null)}
+          onClose={() => { setConfirming(null); setCreditSen(null); }}
           footer={<>
-            <Button variant="secondary" onClick={() => setConfirming(null)} disabled={busy}>Cancel</Button>
+            <Button variant="secondary" onClick={() => { setConfirming(null); setCreditSen(null); }} disabled={busy}>Cancel</Button>
             <Button disabled={busy} onClick={async () => {
               setBusy(true);
               try {
-                await renovationApi.bill(d.so!.doc_no, confirming.instalmentId, confirming.dueSen, date);
+                await renovationApi.bill(d.so!.doc_no, confirming.instalmentId, creditSen ?? confirming.dueSen, date, creditSen != null);
                 setConfirming(null);
+                setCreditSen(null);
                 onDone(`Instalment ${confirming.seq} billed.`);
               } catch (e) {
-                onError(errorText(e));
+                const credit = creditNoteToConfirm(e);
+                if (credit != null) setCreditSen(credit);
+                else onError(errorText(e));
               } finally {
                 setBusy(false);
               }
-            }}>{busy ? "Billing..." : "Issue progress invoice"}</Button>
+            }}>{busy ? "Billing..." : creditSen != null ? "Raise credit note" : "Issue progress invoice"}</Button>
           </>}
         >
           <p className="text-sm text-ink-secondary mb-3">A progress invoice for {confirming.label}{confirming.dueSen != null ? ` (${money(confirming.dueSen)})` : ""} will be issued to the customer.</p>
+          {creditSen != null && <p className="text-sm text-ink-secondary mb-3">The contract is over-billed: this instalment comes to {money(creditSen)}. Confirm to raise a credit note instead of an invoice.</p>}
           <Field label="Invoice date"><input type="date" className={inputClass} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
         </Dialog>
       )}

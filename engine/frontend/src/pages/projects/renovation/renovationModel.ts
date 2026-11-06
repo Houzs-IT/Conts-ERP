@@ -144,6 +144,16 @@ export function blockerText(blockers: readonly string[]): string {
 }
 
 /** Human text for an API error thrown by api/client (HttpError carries the body). */
+/** The amount of an over-billed instalment the server wants confirmed as a credit note, else null. */
+export function creditNoteToConfirm(e: unknown): number | null {
+  try {
+    const j = JSON.parse(String((e as { rawBody?: string } | null)?.rawBody ?? (e as Error | null)?.message ?? "")) as { error?: string; amountSen?: number };
+    return j.error === "credit_note_needs_confirm" && typeof j.amountSen === "number" ? j.amountSen : null;
+  } catch {
+    return null;
+  }
+}
+
 export function errorText(e: unknown): string {
   const raw = (e as { rawBody?: string } | null)?.rawBody ?? (e as Error | null)?.message ?? String(e);
   try {
