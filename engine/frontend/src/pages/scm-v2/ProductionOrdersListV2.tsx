@@ -6,11 +6,10 @@
 // Route: /scm/production-orders (App.tsx flips ScmProductionOrdersV2 here).
 // Data: useProductionOrders (vendored suppliers-queries slice).
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { productionOrderRowMenu } from "./row-menus";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { buildVariantSummary, fmtSen, fmtDate, orderLineIdentity } from "@2990s/shared";
-import { formatPhone } from "@2990s/shared/phone";
 import {
   Plus,
   ChevronDown,
@@ -422,8 +421,8 @@ function DetailDrawer({
     ((detailQ.data as { items?: PoItemRow[] } | undefined)?.items ?? []);
 
   const open = !!row;
-  const st = row ? statusFor(row.status) : null;
-  const total = row ? totalOf(row) : 0;
+  /* The same words as the list's Status column. */
+  const word = row ? extraOf(row).progress?.statusLabel ?? statusFor(row.status).label : null;
   /* SO→Production Order drift (owner 2026-07-27) — surface the pending SO change in the peek
      drawer too, not only the full page. Actionable pre-receipt only. */
   const showDrift =
@@ -436,7 +435,7 @@ function DetailDrawer({
       onClose={onClose}
       ariaLabel={row ? `Production order ${row.po_number}` : "Production order details"}
     >
-        {row && st && (
+        {row && word && (
           <>
             <div className="flex h-[60px] shrink-0 items-center gap-3 bg-sidebar px-5 text-sidebar-ink">
               <button
@@ -460,57 +459,22 @@ function DetailDrawer({
               >
                 Open full page <ExternalLink size={12} />
               </button>
-              <Badge tone={st.tone} variant="solid" size="xs">
-                {st.label}
+              <Badge tone={PROGRESS_TONE[word] ?? "neutral"} variant="solid" size="xs">
+                {word}
               </Badge>
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-5">
-              <div className="text-[19px] font-bold text-ink">{supplierNameOf(row)}</div>
-              <div className="mt-1.5 flex items-center gap-2.5">
-                <span className="font-mono text-[11.5px] text-ink-muted">
-                  {supplierCodeOf(row)}
-                </span>
-                <span className="text-[12.5px] text-ink-muted">
-                  Ordered {fmtDate(row.po_date)}
-                </span>
-              </div>
+              <div className="text-[19px] font-bold text-ink">{(row as { project_label?: string | null }).project_label || "No project"}</div>
 
-              <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-border bg-surface-2 px-4 py-4">
-                <MetaItem k="Production Order date" v={fmtDate(row.po_date)} />
-                <MetaItem
-                  k="Expected"
-                  v={row.expected_at ? fmtDate(row.expected_at) : "—"}
-                />
-                <MetaItem k="Currency" v={row.currency} />
-                <MetaItem k="Lines" v={row.items?.length ?? "—"} />
+              <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-border bg-surface-2 px-4 py-4">
+                <MetaItem k="SO Doc No." v={[...new Set((row.lines ?? []).map((l) => l.so_doc_no).filter(Boolean))].join(", ") || "—"} />
+                <MetaItem k="Assigned to" v={(extraOf(row).assigned_to ?? []).join(", ") || "Nobody yet"} />
+                <MetaItem k="Plan start" v={fmtDate(extraOf(row).plan_start ?? null)} />
+                <MetaItem k="Plan finish" v={fmtDate(row.expected_at)} />
+                <MetaItem k="Progress" v={extraOf(row).progress?.label || "—"} />
+                <MetaItem k="Warehouse" v={locationOf(row) || "—"} />
               </dl>
-
-              <SectionHeading>Supplier</SectionHeading>
-              <div className="overflow-hidden rounded-lg border border-border bg-surface">
-                <div className="flex items-center gap-3 border-b border-border-subtle px-4 py-3.5">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[13px] font-bold text-accent-ink">
-                    {(supplierNameOf(row) || "S")
-                      .split(/\s+/)
-                      .filter(Boolean)
-                      .slice(0, 2)
-                      .map((w) => w[0]?.toUpperCase())
-                      .join("") || "S"}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-[14px] font-bold text-ink">
-                      {supplierNameOf(row)}
-                    </div>
-                    <div className="mt-0.5 font-mono text-[11.5px] text-ink-muted">
-                      {supplierCodeOf(row)}
-                    </div>
-                  </div>
-                </div>
-                <RowKV k="Contact" v={row.supplier?.contact_person || "—"} />
-                <RowKV k="Phone" v={formatPhone(row.supplier?.phone) || "—"} />
-                <RowKV k="Email" v={row.supplier?.email || "—"} />
-                <RowKV k="Address" v={row.supplier?.address || "—"} />
-              </div>
 
               <SectionHeading>Line items</SectionHeading>
               {driftCount > 0 && (
@@ -520,12 +484,9 @@ function DetailDrawer({
                 </div>
               )}
               <div className="overflow-hidden rounded-lg border border-border">
-                <div className="grid grid-cols-[1fr_44px_44px_44px_92px] gap-2 border-b border-border-subtle bg-surface-2 px-4 py-2 font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
+                <div className="grid grid-cols-[1fr_96px] gap-2 border-b border-border-subtle bg-surface-2 px-4 py-2 font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
                   <span>Item</span>
-                  <span className="text-right">Ord</span>
-                  <span className="text-right">Rcv</span>
-                  <span className="text-right">Bal</span>
-                  <span className="text-right">Amount</span>
+                  <span className="text-right">Qty</span>
                 </div>
                 {detailQ.isLoading && (
                   <div className="px-4 py-8 text-center text-[12px] text-ink-muted">
@@ -548,14 +509,10 @@ function DetailDrawer({
                       buildVariantSummary(l.item_group ?? "others", l.variants ?? null) ||
                       (l.description2 ?? ""),
                   });
-                  const received = Number(l.received_qty ?? 0);
-                  const ordered = Number(l.qty ?? 0);
-                  const balance = Math.max(0, ordered - received);
-                  const fullyReceived = ordered > 0 && received >= ordered;
                   return (
                     <div
                       key={l.id}
-                      className="grid grid-cols-[1fr_44px_44px_44px_92px] items-start gap-2 border-b border-border-subtle px-4 py-3 last:border-b-0"
+                      className="grid grid-cols-[1fr_96px] items-start gap-2 border-b border-border-subtle px-4 py-3 last:border-b-0"
                     >
                       <div className="min-w-0">
                         <div className="text-[12.5px] font-medium leading-snug text-ink">
@@ -578,30 +535,12 @@ function DetailDrawer({
                           </div>
                         )}
                       </div>
-                      <span className="text-right font-money text-[12.5px] text-ink-secondary">
-                        {ordered}
-                      </span>
-                      <span className={cn("text-right font-money text-[12.5px] font-semibold", fullyReceived ? "text-synced" : "text-ink-secondary")}>
-                        {received}
-                      </span>
-                      <span className={cn("text-right font-money text-[12.5px] font-semibold", balance > 0 ? "text-accent-bright" : "text-ink-muted")}>
-                        {balance > 0 ? balance : "—"}
-                      </span>
-                      <span className="text-right font-money text-[12.5px] font-semibold text-ink">
-                        {fmtRm(l.line_total_sen ?? 0)}
+                      <span className="text-right font-money text-[12.5px] font-semibold text-ink-secondary">
+                        {Number(l.qty ?? 0)} {l.uom ?? ""}
                       </span>
                     </div>
                   );
                 })}
-              </div>
-
-              <div className="mt-4 rounded-lg border border-border bg-surface px-5 py-4">
-                <div className="flex items-center justify-between gap-3 border-b border-border-subtle pb-3">
-                  <QtyTotal label="Qty" value={items.reduce((s, l) => s + l.qty, 0)} />
-                </div>
-                <div className="pt-3">
-                  <TotalRow k="Grand total" v={fmtRm(total)} strong />
-                </div>
               </div>
             </div>
 
@@ -661,57 +600,6 @@ function SectionHeading({ children }: { children: ReactNode }) {
   );
 }
 
-function RowKV({ k, v }: { k: string; v: ReactNode }) {
-  return (
-    <div className="flex items-start gap-3 border-b border-border-subtle px-4 py-2.5 last:border-b-0">
-      <span className="w-20 shrink-0 font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-        {k}
-      </span>
-      <span className="flex-1 text-[13px] font-semibold leading-relaxed text-ink">
-        {v}
-      </span>
-    </div>
-  );
-}
-
-function QtyTotal({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone?: "synced" | "balance";
-}) {
-  const color =
-    tone === "synced" && value > 0
-      ? "text-synced"
-      : tone === "balance" && value > 0
-        ? "text-accent-bright"
-        : "text-ink";
-  return (
-    <div className="flex flex-col items-center gap-0.5">
-      <span className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-        {label}
-      </span>
-      <span className={cn("font-money text-[15px] font-bold", color)}>{value}</span>
-    </div>
-  );
-}
-
-function TotalRow({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
-  return (
-    <div className="flex items-center justify-between py-1.5">
-      <span className={cn("text-[12px] text-ink-muted", strong && "text-[13px] font-semibold text-ink")}>
-        {k}
-      </span>
-      <span className={cn("font-money text-[13px] font-semibold", strong && "text-[15px] font-bold text-ink")}>
-        {v}
-      </span>
-    </div>
-  );
-}
-
 // Table column key → backend sort-whitelist column. Production Order backend whitelist is
 // { po_date, po_number, status, total_sen }; only `total` differs from its
 // backend name. Non-whitelisted columns (supplier / expected) carry `disableSort`.
@@ -760,6 +648,30 @@ function RawMaterialsDrop({ id }: { id: string }) {
   );
 }
 
+/* The dropdown sits in a row as wide as every column. It holds to the width on screen and stays there as the table
+   scrolls sideways, so nothing in it is cut off. */
+function VisibleWidth({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState<{ left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    let scroller = el?.parentElement ?? null;
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowX)) scroller = scroller.parentElement;
+    if (!el || !scroller) return;
+    const box = scroller;
+    const measure = () => {
+      const left = el.getBoundingClientRect().left - box.getBoundingClientRect().left + box.scrollLeft;
+      const inset = Math.min(left, 20);
+      setFit({ left: inset, width: Math.max(0, box.clientWidth - inset * 2) });
+    };
+    measure();
+    const seen = new ResizeObserver(measure);
+    seen.observe(box);
+    return () => seen.disconnect();
+  }, []);
+  return <div ref={ref} className="flex flex-col gap-2" style={fit ? { position: "sticky", left: fit.left, width: fit.width } : undefined}>{children}</div>;
+}
+
 function PoLinesExpansion({ id }: { id: string }) {
   const navigate = useNavigate();
   const detailQ = useProductionOrderDetail(id);
@@ -779,7 +691,7 @@ function PoLinesExpansion({ id }: { id: string }) {
     deliveredDos: [],
   }));
   return (
-    <div className="flex flex-col gap-2">
+    <VisibleWidth>
       <DocumentLinesExpansion
         isLoading={detailQ.isLoading}
         coverage="ready"
@@ -793,7 +705,7 @@ function PoLinesExpansion({ id }: { id: string }) {
         onOpenDo={(doNo) => navigate(`/scm/delivery-orders?q=${encodeURIComponent(doNo)}`)}
       />
       <RawMaterialsDrop id={id} />
-    </div>
+    </VisibleWidth>
   );
 }
 
@@ -1187,7 +1099,53 @@ export function ProductionOrdersListV2() {
       ),
     },
     lineCols.so_doc_no!,
-    lineCols.item_code!,
+    /* Straight after the order numbers, so the job's state shows without scrolling (owner, 7 Nov 2026). */
+    {
+      key: "progress_status",
+      label: "Status",
+      width: "116px",
+      className: "dt-cancel-keep",
+      disableSort: true,
+      getValue: (r) => extraOf(r).progress?.statusLabel ?? statusFor(r.status).label,
+      render: (r) => {
+        const word = extraOf(r).progress?.statusLabel ?? statusFor(r.status).label;
+        return <Badge tone={PROGRESS_TONE[word] ?? "neutral"} size="xs">{word}</Badge>;
+      },
+    },    {
+      key: "progress",
+      label: "Progress",
+      width: "124px",
+      disableSort: true,
+      getValue: (r) => extraOf(r).progress?.label ?? "",
+      render: (r) => {
+        const p = extraOf(r).progress;
+        if (!p?.label) return <span className="text-[12.5px] text-ink-muted">—</span>;
+        return <div className="min-w-[96px]"><div className="mb-1 whitespace-nowrap text-[12px] font-semibold text-ink">{p.label}</div><ProgressBar pct={p.pct} overdue={p.overdue} /></div>;
+      },
+    },    {
+      key: "plan_start",
+      label: "Plan Start",
+      width: "108px",
+      disableSort: true,
+      exportFormat: "date",
+      getValue: (r) => extraOf(r).plan_start ?? "",
+      render: (r) => <span className="text-[12.5px] text-ink-secondary">{fmtDate(extraOf(r).plan_start ?? null)}</span>,
+    },    {
+      key: "plan_finish",
+      label: "Plan Finish",
+      width: "108px",
+      disableSort: true,
+      exportFormat: "date",
+      getValue: (r) => r.expected_at ?? "",
+      render: (r) => <span className="text-[12.5px] text-ink-secondary">{fmtDate(r.expected_at)}</span>,
+    },    {
+      key: "assigned_to",
+      label: "Assigned To",
+      width: "132px",
+      disableSort: true,
+      getValue: (r) => (extraOf(r).assigned_to ?? []).join(", "),
+      render: (r) => <span className="text-[12.5px] text-ink-secondary">{(extraOf(r).assigned_to ?? []).join(", ") || "Nobody yet"}</span>,
+    },    lineCols.item_code!,
     lineCols.item_description!,
     lineCols.item_description_2!,
     lineCols.location!,
@@ -1242,56 +1200,11 @@ export function ProductionOrdersListV2() {
         return <span className="text-[12.5px] text-ink-secondary">{h == null ? "—" : `${Number(h)} hour${Number(h) === 1 ? "" : "s"}`}</span>;
       },
     },
-    {
-      key: "plan_start",
-      label: "Plan Start",
-      width: "108px",
-      disableSort: true,
-      exportFormat: "date",
-      getValue: (r) => extraOf(r).plan_start ?? "",
-      render: (r) => <span className="text-[12.5px] text-ink-secondary">{fmtDate(extraOf(r).plan_start ?? null)}</span>,
-    },
-    {
-      key: "plan_finish",
-      label: "Plan Finish",
-      width: "108px",
-      disableSort: true,
-      exportFormat: "date",
-      getValue: (r) => r.expected_at ?? "",
-      render: (r) => <span className="text-[12.5px] text-ink-secondary">{fmtDate(r.expected_at)}</span>,
-    },
-    {
-      key: "progress_status",
-      label: "Status",
-      width: "116px",
-      className: "dt-cancel-keep",
-      disableSort: true,
-      getValue: (r) => extraOf(r).progress?.statusLabel ?? statusFor(r.status).label,
-      render: (r) => {
-        const word = extraOf(r).progress?.statusLabel ?? statusFor(r.status).label;
-        return <Badge tone={PROGRESS_TONE[word] ?? "neutral"} size="xs">{word}</Badge>;
-      },
-    },
-    {
-      key: "progress",
-      label: "Progress",
-      width: "124px",
-      disableSort: true,
-      getValue: (r) => extraOf(r).progress?.label ?? "",
-      render: (r) => {
-        const p = extraOf(r).progress;
-        if (!p?.label) return <span className="text-[12.5px] text-ink-muted">—</span>;
-        return <div className="min-w-[96px]"><div className="mb-1 whitespace-nowrap text-[12px] font-semibold text-ink">{p.label}</div><ProgressBar pct={p.pct} overdue={p.overdue} /></div>;
-      },
-    },
-    {
-      key: "assigned_to",
-      label: "Assigned To",
-      width: "132px",
-      disableSort: true,
-      getValue: (r) => (extraOf(r).assigned_to ?? []).join(", "),
-      render: (r) => <span className="text-[12.5px] text-ink-secondary">{(extraOf(r).assigned_to ?? []).join(", ") || "Nobody yet"}</span>,
-    },
+
+
+
+
+
     {
       key: "expected",
       label: "Completion date",
