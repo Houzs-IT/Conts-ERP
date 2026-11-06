@@ -188,7 +188,7 @@ describe('leaving with unbooked payment rows', () => {
   });
 
   test('back and the payments Done toggle both run the guard', () => {
-    expect(detailSource).toContain("if (await guardUnsavedPayments()) void navigate(scmListReturnTo('/scm/sales-orders'));");
+    expect(detailSource).toContain("if (await guardUnsavedPayments()) void navigate(backTo ?? scmListReturnTo('/scm/sales-orders'));");
     expect(detailSource).toContain('if (payEditing && !(await guardUnsavedPayments())) return;');
     /* The guard names the MONEY, not "unsaved changes" — an operator told
        "1 payment row" can decide in one read. */

@@ -66,8 +66,8 @@ describe('the tree', () => {
     expect(within(drill).getByText('Rent August')).toBeTruthy();
     expect(within(drill).getByText('310-0010 CASH AT BANK - MAYBANK')).toBeTruthy();
     expect(within(drill).getByText('2990-HPV-2608-017')).toBeTruthy();
-    expect(within(drill).getByText(/共 1 笔/)).toBeTruthy();
-    expect((within(drill).getByRole('link', { name: '在 GL 打开' }) as HTMLAnchorElement).getAttribute('href')).toBe('/scm/accounting?tab=gl&accounts=900-A001&from=2026-08-01&to=2026-08-31');
+    expect(within(drill).getByText(/1 entry/)).toBeTruthy();
+    expect((within(drill).getByRole('link', { name: 'Open in GL' }) as HTMLAnchorElement).getAttribute('href')).toBe('/scm/accounting?tab=gl&accounts=900-A001&from=2026-08-01&to=2026-08-31');
     /* The figure keeps its own door. */
     fireEvent.click(screen.getByRole('button', { name: '900-A001 — RENTAL total' }));
     expect(onPick).toHaveBeenCalledTimes(1);

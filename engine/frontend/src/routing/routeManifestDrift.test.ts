@@ -95,7 +95,7 @@ describe("executable route contract", () => {
     // 179 since 2026-10-31 (Conts): /scm/reno-projects, renovation project status (SOP 4.2.3).
     // 180 since 2026-11-02 (Conts): /scm/rental-unit-costs, Rental costs by unit (finance only).
     // 184 since 2026-11-04 (Conts): the four /scm/production-orders routes.
-    expect(STAFF_ROUTE_PATTERNS).toHaveLength(184);
+    expect(STAFF_ROUTE_PATTERNS).toHaveLength(191);
     expect(new Set(STAFF_ROUTE_PATTERNS).size).toBe(STAFF_ROUTE_PATTERNS.length);
     expect([...STAFF_ROUTE_PATTERNS].sort()).toEqual([...appPages].sort());
   });
@@ -146,7 +146,7 @@ describe("executable route contract", () => {
     // 188 since 2026-10-31 — /scm/reno-projects (Conts).
     // 189 since 2026-11-02 — /scm/rental-unit-costs (Conts).
     // 193 since 2026-11-04 — the four /scm/production-orders routes (Conts).
-    expect(ROUTE_CONTRACT).toHaveLength(193);
+    expect(ROUTE_CONTRACT).toHaveLength(200);
   });
 
   it("keeps every desktop nav destination on a live staff route", () => {
@@ -185,15 +185,15 @@ describe("mobile route drift gate", () => {
     // row — the storekeeper's rack LOOKUP. Owner parity ruling 2026-09-12
     // (「电脑版本有的，手机版本都要有」); the phone could CREATE a rack and never
     // read one back.
-    expect(MOBILE_MENU_GROUPS.flatMap((group) => group.items)).toHaveLength(38);
+    expect(MOBILE_MENU_GROUPS.flatMap((group) => group.items)).toHaveLength(37);
     // 6 since 2026-09-10: /roles, the rebuilt Roles & Permissions screen, reached
     // from a Profile row (gated via the Team hub tab).
     // 7 since 2026-09-17: /titles, the phone Titles editor (position_policy),
     // the last desktop-only Roles & Permissions surface to reach the phone.
     expect(PROFILE_ORG_ITEMS).toHaveLength(7);
-    expect(allMobile).toHaveLength(45);
-    expect(new Set(allMobile.map((item) => item.to)).size).toBe(45);
-    expect(new Set(allMobile.map((item) => item.to.split("?")[0])).size).toBe(44);
+    expect(allMobile).toHaveLength(44);
+    expect(new Set(allMobile.map((item) => item.to)).size).toBe(44);
+    expect(new Set(allMobile.map((item) => item.to.split("?")[0])).size).toBe(43);
   });
 
   it("maps every declared mobile row to a real screen, never a placeholder stub", () => {

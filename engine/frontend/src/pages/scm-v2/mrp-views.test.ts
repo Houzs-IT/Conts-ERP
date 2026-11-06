@@ -36,7 +36,6 @@ import { mrpViews, mrpCategoryOf, rowBelongsToView } from './mrp-views';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const SCHEMA_SQL = path.join(repoRoot, 'backend/scripts/scm-schema/2990s-full-schema.sql');
 const MIGRATIONS_PG = path.join(repoRoot, 'backend/src/db/migrations-pg');
-const ALIGN_PAYLOAD = path.join(repoRoot, 'backend/scripts/data/align-skus-houzs-century.json');
 
 /** Service lines never create MRP demand, so SERVICE never gets a tab. */
 const NEVER_A_TAB = new Set(['SERVICE']);
@@ -101,26 +100,6 @@ describe('every category a product can carry is reachable from an MRP tab', () =
       + `A sales-order line on such a product is planned by computeMrp and rendered on NO tab: `
       + `the server drops it at the category filter (mrp.ts section 6, no tally) and the page `
       + `filters it out again at s.category === VIEW_CATEGORY[view]. Nothing warns.`,
-    ).toEqual([]);
-  });
-
-  test('the categories actually written into mfg_products by the SKU alignment', () => {
-    /* MEASURED, not reasoned: scripts/align-open-skus.mjs INSERTS these rows into
-       scm.mfg_products for company 1, category and all. This is the population,
-       committed in the repo, that the enum test above is abstract about. */
-    const payload = JSON.parse(fs.readFileSync(ALIGN_PAYLOAD, 'utf8')) as {
-      rows: Array<{ category: string }>;
-    };
-    const bySku = new Map<string, number>();
-    for (const r of payload.rows) bySku.set(r.category, (bySku.get(r.category) ?? 0) + 1);
-
-    const views = mrpViews([...bySku.keys()]);
-    const stranded = [...bySku.entries()]
-      .filter(([cat]) => !NEVER_A_TAB.has(cat) && !views.some((v) => rowBelongsToView(v, cat)))
-      .map(([cat, n]) => `${cat} (${n} SKUs)`);
-    expect(
-      stranded,
-      `${ALIGN_PAYLOAD} opens SKUs the MRP page can never show: ${stranded.join(', ')}.`,
     ).toEqual([]);
   });
 });

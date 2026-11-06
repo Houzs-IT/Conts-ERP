@@ -92,7 +92,7 @@ export const AccountMonthRows = ({ code, columns, from, to, department = '', mon
       })}
       <tr data-lines-foot={code} className={rowClass}>
         <td className={styles.name} style={{ ...name, fontWeight: 600 }}>
-          {lines.length} entries{month ? ` · ${month.slice(5, 7)}/${month.slice(0, 4)}` : ''}
+          {lines.length} {lines.length === 1 ? 'entry' : 'entries'}{month ? ` · ${month.slice(5, 7)}/${month.slice(0, 4)}` : ''}
           <Link to={ledgerHref([code], from, to, department)} style={{ marginLeft: 12, fontWeight: 400, color: 'var(--c-orange)' }}>Open in GL</Link>
         </td>
         {columns.map((c) => {
