@@ -606,16 +606,17 @@ export function DataTable<R>(props: DataTableProps<R>) {
       )}
 
       {inlineFiltersHost && createPortal(
-        <section aria-label="Filters" className="grid grid-cols-[130px_minmax(0,1fr)] gap-x-4 gap-y-4 items-start px-6 py-5 rounded-card border border-solid border-line bg-card">
+        <section aria-label="Filters" className="grid grid-cols-1 xl:grid-cols-2 xl:grid-flow-row-dense gap-x-8 gap-y-3 items-start px-5 py-4 rounded-card border border-solid border-line bg-card">
           {sheetFilters.map(c => (
-            <div key={c.key} className="contents">
-              <h3 className="m-0 min-h-9 flex items-center text-copy font-semibold text-ink">{c.label}</h3>
+            <div key={c.key} className={cx('grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 items-start',
+              filterOf(c)?.kind === 'select' && optionsFor(c, filterOf(c)!, rows ?? []).length > SHEET_SEARCH_FROM && 'xl:col-span-2')}>
+              <h3 className="m-0 min-h-8 flex items-center text-meta font-semibold text-ink">{c.label}</h3>
               <FilterEditor col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)} variant="inline"
                 numberBounds={server || filterOf(c)?.kind !== 'number' ? null : numberBoundsOf(c, rows ?? [])} />
             </div>
           ))}
           {anyFilter && (
-            <div className="col-start-2">
+            <div className="xl:col-span-2">
               <Button size="sm" variant="tertiary" onClick={clearEverything}>{`Clear all · showing ${fmtCount(total)} ${total === 1 ? noun[0] : noun[1]}`}</Button>
             </div>
           )}
@@ -971,7 +972,7 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, 
       if (next.has(picked)) next.delete(picked); else next.add(picked);
       onChange([...next].join(','));
     };
-    if (variant !== 'popover') return <FilterChips label={col.label} options={opts} picked={on} hint={spec.hint} onToggle={toggle} />;
+    if (variant !== 'popover') return <FilterChips label={col.label} options={opts} picked={on} hint={spec.hint} onToggle={toggle} density={variant === 'inline' ? 'compact' : 'roomy'} />;
     return (
       <div className="flex flex-col gap-px max-h-[280px] overflow-y-auto" role="group" aria-label={col.label}>
         {spec.hint && <span className="text-caption text-muted-ink px-1 pb-1">{spec.hint}</span>}
@@ -991,26 +992,30 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, 
   return <RangeFilter kind={spec.kind} money={typeOf(col) === 'money'} hint={spec.hint} value={value} onChange={onChange} onDone={onDone} />;
 }
 
-function FilterChips({ label, options, picked, hint, onToggle }: {
+function FilterChips({ label, options, picked, hint, onToggle, density = 'roomy' }: {
   label: string; options: { value: string; label: string }[]; picked: Set<string>; hint?: string; onToggle: (value: string) => void;
+  density?: 'roomy' | 'compact';
 }): ReactElement {
   const [search, setSearch] = useState('');
   const needle = search.trim().toLowerCase();
   const shownOptions = needle ? options.filter(o => o.label.toLowerCase().includes(needle)) : options;
+  const isLongList = options.length > SHEET_SEARCH_FROM;
+  const isCompact = density === 'compact';
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className={cx('flex flex-col', isCompact ? 'gap-2' : 'gap-2.5')}>
       {hint && <span className="text-caption text-muted-ink">{hint}</span>}
-      {options.length > SHEET_SEARCH_FROM && (
+      {isLongList && (
         <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={`Find ${label.toLowerCase()}`} aria-label={`Find ${label.toLowerCase()}`}
-          className="block w-full max-w-[320px] box-border h-10 max-md:h-11 px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy max-md:text-[16px]" />
+          className={cx('block w-full max-w-[320px] box-border px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy max-md:h-11 max-md:text-[16px]', isCompact ? 'h-8' : 'h-10')} />
       )}
       {!options.length && <span className="text-meta text-muted-ink">Nothing to pick from in this list.</span>}
-      <div role="group" aria-label={label} className="flex flex-wrap gap-2">
+      <div role="group" aria-label={label} className={cx('flex flex-wrap', isCompact ? 'gap-1.5' : 'gap-2', isCompact && isLongList && 'max-h-[72px] overflow-y-auto pr-1')}>
         {shownOptions.map(o => {
           const isPicked = picked.has(o.value);
           return (
             <button key={o.value} type="button" aria-pressed={isPicked} onClick={() => onToggle(o.value)}
-              className={cx('inline-flex items-center gap-1.5 min-h-9 max-md:min-h-11 max-w-full px-3.5 rounded-full border border-solid font-sans text-copy cursor-pointer',
+              className={cx('inline-flex items-center gap-1.5 max-md:min-h-11 max-w-full rounded-full border border-solid font-sans cursor-pointer',
+                isCompact ? 'min-h-8 px-3 text-meta' : 'min-h-9 px-3.5 text-copy',
                 isPicked ? 'bg-black border-black text-white' : 'bg-card border-line text-ink hover:bg-muted')}>
               {isPicked ? <Icon name="Check" size="sm" /> : <span aria-hidden className="w-3.5 h-3.5 rounded-full border border-solid border-[var(--color-line-strong)] shrink-0" />}
               <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{o.label}</span>
