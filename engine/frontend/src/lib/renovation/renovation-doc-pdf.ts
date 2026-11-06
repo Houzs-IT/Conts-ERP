@@ -34,12 +34,12 @@ function dmy(iso: string | null | undefined, longYear = false): string {
 
 function drawLetterhead(pdf: JsPdf, d: PrintDoc): void {
   const b = d.brand;
-  drawDocLetterhead(pdf, { title: DOC_TITLE[d.kind], name: b.name, logo: b.logo, lines: [...b.companyLines, b.contactLine], margin: M });
+  drawDocLetterhead(pdf, { title: DOC_TITLE[d.kind], name: b.name, logo: b.logo, lines: [...b.companyLines, b.contactLine], meta: [{ label: '', value: d.docNo }], margin: M });
 }
 
 function drawInfo(pdf: JsPdf, d: PrintDoc): void {
   const h = d.header;
-  const y0 = 72;
+  const y0 = BODY_TOP - 30;
   pdf.setFontSize(7.5);
   pdf.setFont('helvetica', 'bold');
   pdf.text('Attention', M + 2, y0);
