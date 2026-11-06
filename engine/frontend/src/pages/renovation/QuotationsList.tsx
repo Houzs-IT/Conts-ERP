@@ -101,7 +101,7 @@ const COLUMNS: Column<QuotationListRow>[] = [
   { key: 'docNo', label: 'Doc. No.', alwaysVisible: true, getValue: (r) => r.docNo, disableFilter: true,
     render: (r) => <span className="font-mono font-semibold text-primary">{r.docNo}</span> },
   { key: 'date', label: 'Date', width: '136px', getValue: (r) => r.docDate, filterType: 'date', dateValue: (r) => r.docDate, filterLabel: fmtDate,
-    render: (r) => <span className="text-ink-secondary">{fmtDate(r.docDate)}</span> },
+    render: (r) => <span className="inline-block min-w-[92px] whitespace-nowrap text-ink-secondary">{fmtDate(r.docDate)}</span> },
   { key: 'customer', label: 'Debtor Name', getValue: (r) => r.customerName || '', render: (r) => <span className="font-semibold">{r.customerName || '—'}</span> },
   { key: 'branding', label: 'Branding', width: '150px', getValue: (r) => r.brandName ?? '',
     render: (r) => (r.brandName ? <Badge tone={brandingToneForLabel(r.brandName)} variant="soft" size="xs">{r.brandName.toUpperCase()}</Badge> : <span className="text-ink-muted">—</span>) },
