@@ -176,11 +176,20 @@ async function deliverReceipt(c: any, sb: any, id: string, companyId: number, op
   const { data: so } = await sb.from('mfg_sales_order_items').select('id, doc_no').in('id', [...got.keys()]);
   const docOf = new Map(((so ?? []) as Array<{ id: string; doc_no: string }>).map((s) => [s.id, s.doc_no]));
   const remaining = await soDeliverableRemaining(sb, [...new Set(docOf.values())]);
-  const plan = deliveriesToRaise(got, await deliveredByTwins(sb, id), await draftDeliveries(sb, [...got.keys()], id, co.companyId), (x) => Number(remaining.get(x)?.remaining ?? 0));
+  const drafts = await draftDeliveries(sb, [...got.keys()], id, co.companyId);
+  /* A site receipt delivers as it is confirmed: a draft for no more than arrived is that delivery, and a bigger one stays
+     for the rest, the receipt taking its own DO. */
+  const covering = opts.siteReceipt ? drafts.filter((d) => d.qty <= (got.get(d.soItemId) ?? 0)) : drafts;
+  const plan = deliveriesToRaise(got, await deliveredByTwins(sb, id), covering, (x) => Number(remaining.get(x)?.remaining ?? 0));
   const pod = opts.siteReceipt ? await siteReceiptPod(sb, id) : [];
+  const plannedProblems: string[] = [];
   for (const doId of plan.planned) {
     await link(sb, co.companyId, grn.id, doId);
-    if (opts.siteReceipt) await markDropShipped(sb, doId, pod);
+    if (opts.siteReceipt) {
+      await markDropShipped(sb, doId, pod);
+      const done = await callHandler(c, patchDeliveryOrderStatusHandler as never, { status: 'DELIVERED', confirmShortStock: true }, { id: doId });
+      if (done.status >= 300) plannedProblems.push(words(done.json, 'The delivery order was tied but not marked delivered.'));
+    }
   }
   const byDoc = new Map<string, Array<{ soItemId: string; qty: number }>>();
   for (const pick of plan.raise) {
@@ -188,7 +197,7 @@ async function deliverReceipt(c: any, sb: any, id: string, companyId: number, op
     if (doc) byDoc.set(doc, [...(byDoc.get(doc) ?? []), pick]);
   }
   const raised: string[] = [];
-  const problems: string[] = [];
+  const problems: string[] = [...plannedProblems];
   for (const picks of byDoc.values()) {
     /* A site receipt books no stock, so its delivery takes none: raised as a draft, it never moves stock, and is marked
        before it goes to Delivered. */
