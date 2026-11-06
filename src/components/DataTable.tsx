@@ -143,8 +143,8 @@ export interface DataTableProps<R> {
   /** Page-level filters are on (so an empty list reads "nothing matches"). */
   filtered?: boolean;
   onClearFilters?: () => void;
-  /** 'inline' opens the filters as rows above the table on wide screens; phones keep the bottom sheet. */
-  filterLayout?: 'sheet' | 'inline';
+  /** Wide screens show the filters here all the time, in place of the Filter button; phones keep the bottom sheet. */
+  inlineFiltersTarget?: HTMLElement | null;
   empty?: { title: string; body?: ReactNode; action?: { label: string; onClick: () => void }; icon?: string };
   /** Tick boxes. A function picks which rows can be ticked. */
   selectable?: boolean | ((r: R) => boolean);
@@ -304,10 +304,10 @@ export function DataTable<R>(props: DataTableProps<R>) {
     id, columns, rows, rowKey, loading, error, onRetry, onRowClick, rowTone, urlPrefix = '', pageSize: clientSize = 50,
     server, header, toolbar, actions, above, viewParams = [], filtered, onClearFilters, empty, selectable, bulkActions, selectionKey,
     exportName, onExport, noun = ['row', 'rows'], renderCard, cardsOnly, maxHeight, bare, noToolbar, noViews, noColumns, footer, defaultSort, phoneSort = true,
-    filterLayout = 'sheet',
+    inlineFiltersTarget,
   } = props;
   const isWideScreen = useMedia('(min-width: 768px)');
-  const showsInlineFilters = filterLayout === 'inline' && isWideScreen;
+  const inlineFiltersHost = isWideScreen ? inlineFiltersTarget ?? null : null;
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const P = urlPrefix;
@@ -580,7 +580,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
                 <span className="absolute right-2 pointer-events-none text-muted-ink flex"><Icon name="ArrowUpDown" size="sm" /></span>
               </label>
             )}
-            {filterable.length > 0 && (
+            {filterable.length > 0 && !inlineFiltersHost && (
               <ToolButton icon="ListFilter" label="Filter" btnRef={filtersBtn} active={panel === 'filters'} count={activeFilters.length}
                 onClick={() => setPanel(p => (p === 'filters' ? null : 'filters'))} />
             )}
@@ -605,19 +605,25 @@ export function DataTable<R>(props: DataTableProps<R>) {
         </div>
       )}
 
-      {showsInlineFilters && panel === 'filters' && (
-        <div role="region" aria-label="Filters" className="grid grid-cols-[150px_minmax(0,1fr)] gap-x-4 gap-y-1.5 items-start py-4 px-[22px] bg-page [border-bottom:1px_solid_var(--color-line-soft)]">
+      {inlineFiltersHost && createPortal(
+        <section aria-label="Filters" className="grid grid-cols-[130px_minmax(0,1fr)] gap-x-4 gap-y-4 items-start px-6 py-5 rounded-card border border-solid border-line bg-card">
           {sheetFilters.map(c => (
             <div key={c.key} className="contents">
-              <span className="text-copy font-medium text-muted-ink min-h-9 flex items-center">{c.label}</span>
+              <h3 className="m-0 min-h-9 flex items-center text-copy font-semibold text-ink">{c.label}</h3>
               <FilterEditor col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)} variant="inline"
                 numberBounds={server || filterOf(c)?.kind !== 'number' ? null : numberBoundsOf(c, rows ?? [])} />
             </div>
           ))}
-        </div>
+          {anyFilter && (
+            <div className="col-start-2">
+              <Button size="sm" variant="tertiary" onClick={clearEverything}>{`Clear all · showing ${fmtCount(total)} ${total === 1 ? noun[0] : noun[1]}`}</Button>
+            </div>
+          )}
+        </section>,
+        inlineFiltersHost,
       )}
 
-      {activeFilters.length > 0 && (
+      {activeFilters.length > 0 && !inlineFiltersHost && (
         <div className="flex items-center gap-2 flex-wrap py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)] bg-page">
           {activeFilters.map(c => (
             <span key={c.key} className="inline-flex items-center gap-1 h-7 pl-[10px] pr-1 rounded-full bg-card border border-solid border-line text-meta max-w-full">
@@ -781,7 +787,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       {footer}
 
       {/* Panels */}
-      {panel === 'filters' && !showsInlineFilters && createPortal(
+      {panel === 'filters' && !inlineFiltersHost && createPortal(
         <DialogFrame label="Filters" onClose={closePanel} dirty={false} initialFocus="panel"
           className="fixed inset-0 z-[60] flex flex-col justify-end md:items-center md:justify-center md:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]"
           panelClassName="relative w-full md:max-w-[600px] max-h-[92dvh] md:max-h-[calc(100dvh-48px)] flex flex-col bg-card rounded-t-[20px] md:rounded-card overflow-hidden [box-shadow:var(--shadow-overlay)]">
@@ -965,8 +971,7 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, 
       if (next.has(picked)) next.delete(picked); else next.add(picked);
       onChange([...next].join(','));
     };
-    if (variant === 'sheet') return <FilterChips label={col.label} options={opts} picked={on} hint={spec.hint} onToggle={toggle} />;
-    if (variant === 'inline') return <FilterLinks label={col.label} options={opts} picked={on} onToggle={toggle} onClear={() => onChange('')} />;
+    if (variant !== 'popover') return <FilterChips label={col.label} options={opts} picked={on} hint={spec.hint} onToggle={toggle} />;
     return (
       <div className="flex flex-col gap-px max-h-[280px] overflow-y-auto" role="group" aria-label={col.label}>
         {spec.hint && <span className="text-caption text-muted-ink px-1 pb-1">{spec.hint}</span>}
@@ -997,7 +1002,7 @@ function FilterChips({ label, options, picked, hint, onToggle }: {
       {hint && <span className="text-caption text-muted-ink">{hint}</span>}
       {options.length > SHEET_SEARCH_FROM && (
         <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={`Find ${label.toLowerCase()}`} aria-label={`Find ${label.toLowerCase()}`}
-          className="block w-full box-border h-10 max-md:h-11 px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy max-md:text-[16px]" />
+          className="block w-full max-w-[320px] box-border h-10 max-md:h-11 px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy max-md:text-[16px]" />
       )}
       {!options.length && <span className="text-meta text-muted-ink">Nothing to pick from in this list.</span>}
       <div role="group" aria-label={label} className="flex flex-wrap gap-2">
@@ -1014,24 +1019,6 @@ function FilterChips({ label, options, picked, hint, onToggle }: {
         })}
         {needle && !shownOptions.length && <span className="text-meta text-muted-ink">No {label.toLowerCase()} matches "{search.trim()}".</span>}
       </div>
-    </div>
-  );
-}
-
-const FILTER_LINK = 'min-h-9 px-2 rounded-control border-none bg-transparent font-sans text-copy cursor-pointer whitespace-nowrap';
-
-function FilterLinks({ label, options, picked, onToggle, onClear }: {
-  label: string; options: { value: string; label: string }[]; picked: Set<string>; onToggle: (value: string) => void; onClear: () => void;
-}): ReactElement {
-  const linkClass = (isPicked: boolean): string => cx(FILTER_LINK, isPicked ? 'font-semibold text-ink bg-muted' : 'text-muted-ink hover:text-ink hover:bg-muted');
-  return (
-    <div role="group" aria-label={label} className="flex flex-wrap items-center gap-x-1 gap-y-0.5 -ml-2">
-      <button type="button" aria-pressed={picked.size === 0} onClick={onClear} className={linkClass(picked.size === 0)}>Any</button>
-      {options.map(option => (
-        <button key={option.value} type="button" aria-pressed={picked.has(option.value)} onClick={() => onToggle(option.value)} className={linkClass(picked.has(option.value))}>
-          {option.label}
-        </button>
-      ))}
     </div>
   );
 }
@@ -1143,14 +1130,15 @@ function LiveRangeFilter({ kind, money, label, bounds, hint, value, onChange, la
   return (
     <div className={layout === 'row' ? 'flex flex-wrap items-end gap-x-5 gap-y-2' : 'flex flex-col gap-2'}>
       {hint && <span className="text-caption text-muted-ink">{hint}</span>}
-      {kind === 'number' && bounds && (
-        <div className={layout === 'row' ? 'w-[300px]' : undefined}>
+      {kind === 'number' && bounds ? (
+        <div className={layout === 'row' ? 'w-[360px]' : undefined}>
           <RangeSlider label={label} money={money} bounds={bounds} from={from} to={to} onFrom={setFrom} onTo={setTo} />
         </div>
+      ) : (
+        <div className={layout === 'row' ? 'w-[340px]' : undefined}>
+          <RangeEnds kind={kind} money={money} from={from} to={to} onFrom={setFrom} onTo={setTo} />
+        </div>
       )}
-      <div className={layout === 'row' ? 'w-[340px]' : undefined}>
-        <RangeEnds kind={kind} money={money} from={from} to={to} onFrom={setFrom} onTo={setTo} />
-      </div>
       {(from || to) && (
         <button type="button" onClick={() => { setFrom(''); setTo(''); }}
           className="self-start min-h-9 max-md:min-h-11 text-meta text-muted-ink bg-transparent border-none cursor-pointer underline px-0">Any {kind === 'date' ? 'date' : 'amount'}</button>
