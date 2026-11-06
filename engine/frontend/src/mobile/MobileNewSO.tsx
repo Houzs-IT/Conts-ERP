@@ -2735,7 +2735,7 @@ export function MobileNewSO({
         <footer id="nso-footer" className="actbar" style={{ display: "flex", gap: 9 }}>
           {mode === "edit" ? (
             <button className="btn" disabled={submitting || migratedLocked} onClick={() => save(false)} style={{ flex: 1, opacity: submitting || migratedLocked ? 0.6 : 1 }}>
-              {submitting ? (amendmentMode ? "Submitting…" : "Saving…") : migratedLocked ? "View only" : amendmentMode ? "Submit Amendment" : "Save Changes"}
+              {submitting ? (amendmentMode && !voOrder ? "Submitting…" : "Saving…") : migratedLocked ? "View only" : voOrder ? "Save" : amendmentMode ? "Submit Amendment" : "Save Changes"}
             </button>
           ) : (
             <>
