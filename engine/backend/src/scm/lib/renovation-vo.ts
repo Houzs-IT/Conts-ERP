@@ -9,8 +9,9 @@
    - add lines become new SO rows and a contract section tagged with the VO;
    - a fully omitted line cancels its SO row (omitted_by_vo_id on the contract
      line); a partly omitted one has its quantity reduced and repriced;
-   - every live PO line that bought omitted work gets a reno_po_line_flags row
-     (CANCEL or AMEND to the new quantity) for procurement;
+   - a line cannot go below what was delivered: those goods need a delivery return first;
+   - every live PO line that must shrink gets a reno_po_line_flags row (CANCEL, or AMEND to what that PO line
+     keeps) for procurement. What was received stays on the PO; a line split across POs shares the new total;
    - the header rolls up again; the next unbilled instalment then catches up the
      difference, a net negative ending as a credit note (renovation-billing.ts).
 
@@ -30,6 +31,31 @@ import { variantCategoryOf } from './renovation-flow-rules';
 import { SPEC_LOCKED_ERROR, specLockedMessage } from './renovation-spec-lock';
 
 export type VoStatus = 'DRAFT' | 'SENT' | 'APPROVED' | 'CANCELLED';
+
+/** What each PO line of an SO line keeps when the line drops to `newTotal`. Lines holding receipts keep theirs first and
+    never go below them; a PO line that keeps all it has needs no flag. */
+export function poLineTargets(poLines: ReadonlyArray<{ id: string; qty: number; received_qty: number }>, newTotal: number): Array<{ id: string; action: 'CANCEL' | 'AMEND'; newQty: number }> {
+  let left = newTotal;
+  const out: Array<{ id: string; action: 'CANCEL' | 'AMEND'; newQty: number }> = [];
+  for (const l of [...poLines].sort((a, b) => b.received_qty - a.received_qty)) {
+    const keep = Math.min(l.qty, Math.max(l.received_qty, left));
+    left = Math.max(0, left - keep);
+    if (keep < l.qty) out.push({ id: l.id, action: keep === 0 ? 'CANCEL' : 'AMEND', newQty: keep });
+  }
+  return out;
+}
+
+async function deliveredQty(db: RenoDb, soItemId: string): Promise<number> {
+  const [r] = await db.q<{ n: number }>(
+    `select (coalesce((select sum(di.qty) from scm.delivery_order_items di join scm.delivery_orders d on d.id = di.delivery_order_id
+                        where di.so_item_id = $1 and d.status::text not in ('DRAFT', 'CANCELLED')), 0)
+           - coalesce((select sum(ri.qty_returned) from scm.delivery_return_items ri join scm.delivery_returns dr on dr.id = ri.delivery_return_id
+                        join scm.delivery_order_items di on di.id = ri.do_item_id
+                        where di.so_item_id = $1 and dr.status::text <> 'CANCELLED'), 0))::int as n`,
+    [soItemId],
+  );
+  return Number(r?.n ?? 0);
+}
 
 export function voNoFor(soDocNo: string, seq: number): string {
   return `VO-${soDocNo}-${String(seq).padStart(2, '0')}`;
@@ -204,6 +230,12 @@ export async function applyVo(
   }
   const addLines = addSections.flatMap((s) => s.lines.filter((l) => l.kind === 'ITEM' || l.kind === 'CHILD'));
   if (addLines.length === 0 && omits.length === 0) throw refuse(422, 'empty_vo', 'This variation order adds and omits nothing.');
+  for (const o of omits) {
+    const t = o.target;
+    const after = o.omitQty === null || o.omitQty >= t.qty || t.measureMilli !== null ? 0 : t.qty - o.omitQty;
+    const delivered = t.soItemId ? await deliveredQty(db, t.soItemId) : 0;
+    if (after < delivered) throw refuse(409, 'below_delivered', `"${t.description}": ${delivered} delivered, so this line cannot go below that. Raise a delivery return first.`, { delivered });
+  }
   const noSku = addLines.filter((l) => !l.itemCode);
   if (noSku.length) throw refuse(422, 'lines_without_sku', `${noSku.length} added line(s) have no product picked.`, { lines: noSku.map((l) => l.description) });
   if (addLines.length) {
@@ -279,16 +311,16 @@ export async function applyVo(
         [amd.id, t.soItemId, m.qty, m.unit_price_sen, m.discount_sen, JSON.stringify(old?.snap ?? null), actor.companyId],
       );
     }
-    const poLines = await db.q<{ id: string; qty: number }>(
-      `select pi.id, pi.qty from scm.purchase_order_items pi join scm.purchase_orders po on po.id = pi.purchase_order_id
+    const poLines = await db.q<{ id: string; qty: number; received_qty: number }>(
+      `select pi.id, pi.qty, coalesce(pi.received_qty, 0)::int as received_qty from scm.purchase_order_items pi join scm.purchase_orders po on po.id = pi.purchase_order_id
         where pi.so_item_id = $1 and po.status::text <> 'CANCELLED'`,
       [t.soItemId],
     );
-    for (const pl of poLines) {
+    for (const pl of poLineTargets(poLines.map((l) => ({ id: l.id, qty: Number(l.qty), received_qty: Number(l.received_qty) })), full ? 0 : t.qty - o.omitQty!)) {
       await db.q(
         `insert into scm.reno_po_line_flags (company_id, purchase_order_item_id, so_item_id, vo_id, action, new_qty, note)
          values ($1, $2, $3, $4, $5, $6, $7)`,
-        [actor.companyId, pl.id, t.soItemId, id, full ? 'CANCEL' : 'AMEND', full ? 0 : t.qty - o.omitQty!,
+        [actor.companyId, pl.id, t.soItemId, id, pl.action, pl.newQty,
           `${v.vo_no} omits ${full ? 'all of' : `${o.omitQty} of`} "${t.description}"`],
       );
       flags += 1;
