@@ -525,10 +525,10 @@ productionOrders.post('/material-pos', async (c) => {
   const picks = (b.picks ?? []).filter((p) => p.materialId && Number(p.qty) > 0);
   if (picks.length === 0) return c.json({ error: 'validation', message: 'Nothing to order.' }, 422);
   const ids = picks.map((p) => String(p.materialId));
-  type MaterialRow = { id: string; item_code: string; description: string | null; qty_needed: number; delivery_date: string | null; production_order_id: string;
+  type MaterialRow = { id: string; item_code: string; description: string | null; qty_needed: number; delivery_date: string | null; warehouse_id: string | null; production_order_id: string;
     order: { po_number: string; status: string; on_hold: boolean; purchase_location_id: string | null; project_id: number | null } | null };
   const { data: mats, error: matErr } = await scopeToCompanyId(sb.from('production_order_materials')
-    .select('id, item_code, description, qty_needed, delivery_date, production_order_id, order:production_orders (po_number, status, on_hold, purchase_location_id, project_id)')
+    .select('id, item_code, description, qty_needed, delivery_date, warehouse_id, production_order_id, order:production_orders (po_number, status, on_hold, purchase_location_id, project_id)')
     .in('id', ids), co.companyId);
   if (matErr) return c.json({ error: 'load_failed', reason: matErr.message }, 500);
   const byId = new Map(((mats ?? []) as unknown as MaterialRow[]).map((m) => [m.id, m]));
@@ -558,7 +558,7 @@ productionOrders.post('/material-pos', async (c) => {
     const m = byId.get(String(p.materialId));
     if (!m?.order) return c.json({ error: 'validation', message: 'A picked material no longer exists. Refresh MRP.' }, 409);
     if (m.order.status !== 'SUBMITTED' || m.order.on_hold) return c.json({ error: 'validation', message: `${m.order.po_number} is not open for ordering.` }, 409);
-    const warehouseId = m.order.purchase_location_id ?? fallbackWh;
+    const warehouseId = m.warehouse_id ?? m.order.purchase_location_id ?? fallbackWh;
     if (!warehouseId) return c.json({ error: 'validation', message: 'Add a warehouse first.' }, 409);
     /* A PO line counts whole units; a material may need 2.5 bags. */
     const qty = Math.min(Math.ceil(Number(p.qty)), Math.ceil(Number(m.qty_needed) - (onPo.get(m.id) ?? 0)));

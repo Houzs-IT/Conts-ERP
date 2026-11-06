@@ -318,7 +318,6 @@ async function productionMaterialDemand(sb: any, scoped: <Q>(q: Q) => Q): Promis
   });
 }
 
-<<<<<<< HEAD
 /* A material issued past the pool left the balance negative. That negative is this line's shortage, not extra need on the
    next line, so the claimed part moves from the balance onto the line, and a line whose stock has since arrived keeps
    only what it has not issued. */
@@ -365,7 +364,6 @@ async function materialWarehouses(sb: any, scoped: <Q>(q: Q) => Q, ids: string[]
     scoped(sb.from('production_order_materials').select('id, warehouse_id').in('id', batch)).order('id').range(from, to));
   if (error) throw new Error(`mrp_load_failed: ${error.message}`);
   return new Map(data.flatMap((m) => (m.warehouse_id ? [[m.id, m.warehouse_id] as const] : [])));
->>>>>>> fix/flow-money
 }
 
 export type MrpLine = {
