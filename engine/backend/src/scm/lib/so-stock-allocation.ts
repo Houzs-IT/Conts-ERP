@@ -64,6 +64,7 @@ import { exceptOnSite, loadNonSellingWarehouses, warehouseCanPromise } from './n
 import { pgrestIn } from './pgrest-in-list';
 import { isUnitBoundCategory } from './unit-bound-sku';
 import { isCustomizedLine } from './so-line-customized';
+import { customerGoodsCodes } from './renovation-flow-rules';
 
 /* Only the variant-bearing categories run bound. Owner 2026-08-10:
    "SOFA 和 BEDFRAME 因为有变体的问题,所以要走 Convert to PO 的那个模式.
@@ -764,7 +765,11 @@ async function runSoStockAllocation(
        difference. */
     const nonSellingBlockedDocs = new Set<string>();
     // Bound lines first, so their units leave the pool before anyone else walks it.
-    for (const n of boundNeeds) {
+    /* The customer's own goods never enter stock, so no pool can answer for them: the receipt itself is the answer. */
+    const customerOwned = ownPoNeeds.length > 0
+      ? await customerGoodsCodes(sb as never, ownPoNeeds.map((n) => n.item_code), HARD_BOUND_COMPANY_ID)
+      : new Set<string>();
+    for (const n of [...boundNeeds, ...ownPoNeeds.filter((x) => customerOwned.has(x.item_code))]) {
       /* Conts dates each line, so its header stays blank: a line its own PO has received is ready regardless (owner, 6 Nov 2026). */
       const ownPoReceived = companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && (dedicatedReady.get(n.id) ?? 0) > 0;
       if (allocGated.has(n.doc_no) && !ownPoReceived) continue;

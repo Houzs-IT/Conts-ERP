@@ -2501,6 +2501,11 @@ mfgPurchaseOrders.patch('/:id', async (c) => {
   }
   await queueAcPoEdit(c, id);
 
+  /* The lines carry the warehouse a receipt uses, so the header's new one has to reach them (owner, 6 Nov 2026). */
+  const movedTo = (updates as Record<string, unknown>).purchase_location_id as string | undefined;
+  if (movedTo && movedTo !== before.purchase_location_id && before.purchase_location_id) {
+    await sb.from('purchase_order_items').update({ warehouse_id: movedTo }).eq('purchase_order_id', id).eq('warehouse_id', before.purchase_location_id as string);
+  }
   return c.json({ purchaseOrder: data });
 });
 
