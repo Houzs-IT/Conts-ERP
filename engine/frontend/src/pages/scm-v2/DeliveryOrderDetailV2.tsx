@@ -496,9 +496,11 @@ function ActivityRow({
 function DeliveryStatusCard({
   header,
   totalQty,
+  shipFrom,
 }: {
   header: DoHeader;
   totalQty: number;
+  shipFrom: string | null;
 }) {
   const t = statusOf(header);
   return (
@@ -543,7 +545,7 @@ function DeliveryStatusCard({
         <div className="flex items-center justify-between">
           <span className="text-[12.5px] text-sidebar-ink-muted">Warehouse</span>
           <span className="text-[13px] font-semibold text-sidebar-ink">
-            {header.sales_location || "—"}
+            {shipFrom || "—"}
           </span>
         </div>
       </div>
@@ -643,6 +645,8 @@ export function DeliveryOrderDetailV2() {
     () => items.reduce((sum, l) => sum + Number(l.qty ?? 0), 0),
     [items]
   );
+  /* The warehouse the goods leave, the one chosen on the DO; the order's sales location only when it names none. */
+  const shipFromCode = (warehousesQ.data ?? []).find((w) => w.id === deliveryOrder?.warehouse_id)?.code ?? deliveryOrder?.sales_location ?? null;
 
   useSetBreadcrumbs([
     { label: "Delivery Orders", to: "/scm/delivery-orders" },
@@ -1252,8 +1256,8 @@ export function DeliveryOrderDetailV2() {
                   : "Not scheduled"}
             </span>
             <span>· {totalQty} items</span>
-            {deliveryOrder.sales_location && (
-              <span>· {deliveryOrder.sales_location}</span>
+            {shipFromCode && (
+              <span>· {shipFromCode}</span>
             )}
           </div>
         </div>
@@ -1351,10 +1355,10 @@ export function DeliveryOrderDetailV2() {
                       <span className="text-ink-muted">Not provided</span>
                     )}
                   </div>
-                  {deliveryOrder.sales_location && (
+                  {shipFromCode && (
                     <div className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary-soft px-2.5 py-1 text-[11.5px] font-semibold text-primary-ink">
                       <Warehouse size={12} />
-                      {deliveryOrder.sales_location}
+                      {shipFromCode}
                     </div>
                   )}
                 </div>
@@ -1467,7 +1471,7 @@ export function DeliveryOrderDetailV2() {
 
           <DetailAside>
             <div className="hidden lg:sticky lg:top-[124px] space-y-3 md:block">
-              <DeliveryStatusCard header={deliveryOrder} totalQty={totalQty} />
+              <DeliveryStatusCard header={deliveryOrder} totalQty={totalQty} shipFrom={shipFromCode} />
 
               {/* Owner 2026-07-17: Totals·Margin (Revenue/Cost/Margin) card
                   removed from the DO document view for EVERYONE — costing moves
