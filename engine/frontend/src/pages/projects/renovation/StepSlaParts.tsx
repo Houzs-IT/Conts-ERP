@@ -114,7 +114,7 @@ export function SlaDefaultsManager() {
       {error && <p role="alert" className="mb-2 text-sm text-err">{error}</p>}
       {saved && <p role="status" className="mb-2 text-sm text-synced">{saved}</p>}
       {q.loading && !q.data && <p className="text-sm text-ink-secondary">Loading...</p>}
-      <ul className="divide-y divide-border">
+      <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
         {steps.map((s) => (
           <SlaRow key={s.step_key} s={s} disabled={!ready} onSave={async (days) => {
             setError(null); setSaved(null);
@@ -133,11 +133,13 @@ function SlaRow({ s, disabled, onSave }: { s: FlowStepRow; disabled: boolean; on
   const [busy, setBusy] = useState(false);
   const dirty = v !== stored;
   return (
-    <li className={cn("flex flex-wrap items-center gap-2 py-2", !s.active && "opacity-60")}>
-      <span className="w-32 shrink-0 text-sm font-medium text-ink">{s.label}{!s.active && <span className="ml-1 text-[11px] font-normal text-ink-secondary">off</span>}</span>
-      <input className={dayInput} inputMode="numeric" aria-label={`Days allowed in ${s.label}`} placeholder="No SLA" value={v}
-        disabled={disabled || busy} onChange={(e) => setV(e.target.value.replace(/[^\d]/g, ""))} />
-      <span className="text-xs text-ink-secondary">days</span>
+    <li className={cn("flex min-w-0 flex-col gap-2 rounded-md border border-border-subtle bg-surface-2 p-3", !s.active && "opacity-60")}>
+      <span className="text-sm font-semibold text-ink">{s.label}{!s.active && <span className="ml-1 text-[11px] font-normal text-ink-secondary">off</span>}</span>
+      <span className="flex items-center gap-1.5">
+        <input className={cn(dayInput, "!w-full min-w-0 flex-1 text-right")} inputMode="numeric" aria-label={`Days allowed in ${s.label}`} placeholder="No SLA" value={v}
+          disabled={disabled || busy} onChange={(e) => setV(e.target.value.replace(/[^\d]/g, ""))} />
+        <span className="text-xs text-ink-secondary">days</span>
+      </span>
       {dirty && (
         <Button variant="secondary" disabled={busy || disabled} onClick={async () => { setBusy(true); await onSave(v === "" ? null : Number(v)); setBusy(false); }}>
           {busy ? "Saving..." : "Save"}

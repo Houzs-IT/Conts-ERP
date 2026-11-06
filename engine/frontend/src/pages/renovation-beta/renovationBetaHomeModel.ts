@@ -5,6 +5,13 @@ import type { DesignProject } from "./renovationBetaBoard";
 
 export type HomeSort = "newest" | "due";
 
+/** The VO column: open VOs first; a project whose VOs are all approved still says it has some. */
+export function voCell(vo: { count: number; approved: number } | null | undefined): string | null {
+  if (!vo?.count) return null;
+  const open = vo.count - vo.approved;
+  return open > 0 ? `${open} open` : `${vo.count} approved`;
+}
+
 export const HOME_SORTS: ReadonlyArray<readonly [HomeSort, string]> = [["newest", "Newest first"], ["due", "Due soonest"]];
 
 export function sortFromParam(v: string | null): HomeSort {

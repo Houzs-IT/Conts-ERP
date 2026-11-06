@@ -38,6 +38,15 @@ const SEN_COLUMN_KEYS = new Set([
 ]);
 const DATE_COLUMN_KEYS = new Set(["invoice_date", "due_date"]);
 
+/* Which instalment a renovation invoice bills (owner, 6 Nov 2026); the server words it. */
+export function siBillsForColumn<T extends { bills_for?: string | null }>(): Column<T> {
+  return {
+    key: "bills_for", label: "Bills for", width: "170px", disableSort: true,
+    getValue: (r) => r.bills_for ?? "",
+    render: (r) => <span className="text-[12.5px] text-ink-secondary">{r.bills_for || "—"}</span>,
+  };
+}
+
 export function siGridColumns<T extends SiColumnRow>(erpColumns: Column<T>[]): Column<T, SiListLine>[] {
   const docNoOf = (r: T): string => r.linked_ac_docno?.trim() || r.invoice_number;
   const totalSenOf = (r: T): number => Number(r.total_sen || r.local_total_sen || 0);

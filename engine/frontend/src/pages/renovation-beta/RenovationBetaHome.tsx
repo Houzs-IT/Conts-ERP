@@ -11,13 +11,14 @@ import { CreateRenovationPanel } from "../projects/renovation/CreateRenovationPa
 import { money } from "../projects/renovation/renovationModel";
 import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type ConditionWord, type HomeRow, type HomeTab } from "./renovationBetaBoard";
-import { HOME_SORTS, keepOrder, matchesSearch, newestFirst, orderOf, sortFromParam, type HomeSort } from "./renovationBetaHomeModel";
+import { HOME_SORTS, keepOrder, matchesSearch, newestFirst, orderOf, sortFromParam, voCell, type HomeSort } from "./renovationBetaHomeModel";
 import { boardApi, boardKey, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
 import { BetaSkin, useBetaPreload } from "./BetaWsUi";
 import { simpleApi, type BoardRowV2 } from "../projects/renovation/simpleApi";
 import { mytDay, slaDayText } from "./renovationBetaModel";
 import { motion } from "motion/react";
+import { fmtDate } from "@2990s/shared";
 import { BetaLoading } from "./BetaLoading";
 import { BetaMotion, SPRING } from "./betaMotion";
 import { DataTable } from "../../components/DataTable";
@@ -95,7 +96,7 @@ function slaOf(r: BoardRowV2 | undefined, today: string): Sla {
   return { step: r.step.label, text: slaDayText(r.sla, today) ?? "", over };
 }
 
-type TableRow = { r: HomeRow; sla: Sla; so: ProjectSo | undefined };
+type TableRow = { r: HomeRow; sla: Sla; so: ProjectSo | undefined; board: BoardRowV2 | undefined };
 
 /* The list's own columns, then the sales order's: Columns shows, moves and hides them, and each has a filter. */
 function homeColumns(showPay: boolean): Column<TableRow>[] {
@@ -114,12 +115,14 @@ function homeColumns(showPay: boolean): Column<TableRow>[] {
     { key: "due", label: "Due", group: "Project", width: "120px", getValue: (x) => x.r.left, render: (x) => <DueCell r={x.r} /> },
     ...(showPay ? [{ key: "payment", label: "Payment", group: "Project", width: "220px", getValue: (x: TableRow) => x.r.p.payment,
       render: (x: TableRow) => (x.r.p.payment != null ? <PayCell text={x.r.p.payment} outstandingSen={x.r.p.outstandingSen} /> : DASH) }] : []),
+    { key: "stage", label: "Step", group: "Project", width: "130px", getValue: (x) => x.sla?.step, render: (x) => x.sla?.step ?? DASH },
+    { key: "pic", label: "PIC", group: "Project", width: "140px", getValue: (x) => x.board?.renoPic.name ?? "Unassigned", render: (x) => x.board?.renoPic.name ?? <span style={{ color: MUTED }}>Unassigned</span> },
+    { key: "sales", label: "Salesperson", group: "Project", width: "140px", getValue: (x) => x.r.p.salesName, render: (x) => x.r.p.salesName ?? DASH },
+    { key: "handover", label: "Handover", group: "Project", width: "120px", getValue: (x) => x.r.p.handover, render: (x) => (x.r.p.handover ? fmtDate(x.r.p.handover) : DASH) },
+    { key: "vo", label: "VO", group: "Project", width: "110px", getValue: (x) => voCell(x.board?.vo), render: (x) => voCell(x.board?.vo) ?? DASH },
     { key: "code", label: "Project code", group: "Project", width: "130px", defaultHidden: true, getValue: (x) => x.r.p.code, render: (x) => x.r.p.code ?? DASH },
     { key: "client", label: "Client", group: "Project", width: "170px", defaultHidden: true, getValue: (x) => x.r.p.customer, render: (x) => x.r.p.customer ?? DASH },
-    { key: "stage", label: "Stage", group: "Project", width: "130px", defaultHidden: true, getValue: (x) => x.sla?.step, render: (x) => x.sla?.step ?? DASH },
-    { key: "sales", label: "Sales", group: "Project", width: "140px", defaultHidden: true, getValue: (x) => x.r.p.salesName, render: (x) => x.r.p.salesName ?? DASH },
     { key: "lead", label: "Design lead", group: "Project", width: "140px", defaultHidden: true, getValue: (x) => x.r.p.lead?.name, render: (x) => x.r.p.lead?.name ?? DASH },
-    { key: "handover", label: "Handover", group: "Project", width: "120px", defaultHidden: true, getValue: (x) => x.r.p.handover, render: (x) => x.r.p.handover ?? DASH },
   ];
   return [...own, ...soColumns<TableRow>((x) => x.so)];
 }
@@ -187,6 +190,7 @@ function HomeScreen(): ReactElement {
 
   const tableRows: TableRow[] = rows.map((r) => ({
     r, sla: slaOf(slaById.get(r.p.id), today),
+    board: slaById.get(r.p.id),
     so: r.p.soDocNos.map((d) => soByDoc.get(d)).find(Boolean),
   }));
 

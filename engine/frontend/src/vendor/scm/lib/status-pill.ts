@@ -135,6 +135,7 @@ const SI: Record<string, Entry> = {
   CANCELLED:      { label: 'Cancelled',      tone: 'danger' },
 };
 const DR: Record<string, Entry> = {
+  DRAFT:        { label: 'Draft',        tone: 'pending' },
   PENDING:      { label: 'Pending',      tone: 'info' },
   RECEIVED:     { label: 'Received',     tone: 'success' },
   INSPECTED:    { label: 'Inspected',    tone: 'success' },

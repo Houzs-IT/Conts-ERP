@@ -29,7 +29,7 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { fetchSiExportRows, type SiListLine } from "../../vendor/scm/lib/si-list-export";
-import { siGridColumns } from "./si-list-columns";
+import { siBillsForColumn, siGridColumns } from "./si-list-columns";
 import { PageHeader } from "../../components/Layout";
 import { StatCard } from "../../components/StatCard";
 import { FilterPills } from "../../components/FilterPills";
@@ -136,6 +136,7 @@ type SiRow = {
      server could not read the order — read as 0, which shows the LARGER
      outstanding. Kept apart from paid_sen: different money, different document. */
   so_deposit_applied_sen?: number | null;
+  bills_for?: string | null;
   status: string;
   currency: string;
   line_count?: number;
@@ -161,7 +162,7 @@ type SiRow = {
   margin_pct_basis?: number;
 };
 
-type StatusTab = "all" | "sent" | "partial" | "paid" | "cancelled";
+type StatusTab = "all" | "draft" | "sent" | "partial" | "paid" | "cancelled";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 // margin_pct_basis is basis points (margin/total x 10000) → percent string.
@@ -182,7 +183,7 @@ const brandOf = (r: SiRow): string => r.branding || "—";
 const brandTone = brandingToneForLabel;
 
 // SI status → filter bucket. Business flow: DRAFT → SENT → PARTIALLY_PAID →
-// PAID → CANCELLED. Buckets: sent (Draft + Sent + Overdue) / partial / paid /
+// PAID → CANCELLED. Buckets: draft / sent (Sent + Overdue) / partial / paid /
 // cancelled — the same split SI_STATUS_BUCKETS uses server-side
 // (backend/src/scm/routes/sales-invoices.ts), which is what the tab COUNTS are
 // computed from. A row whose bucket here disagrees with the server's is a row
@@ -197,7 +198,7 @@ const STATUS_TONE: Record<
   string,
   { tone: "success" | "warning" | "error" | "neutral"; label: string; bucket: StatusTab }
 > = {
-  draft:           { tone: "warning", label: "Draft",       bucket: "sent" },
+  draft:           { tone: "warning", label: "Draft",       bucket: "draft" },
   sent:            { tone: "warning", label: "Submitted",   bucket: "sent" },
   issued:          { tone: "warning", label: "Submitted",   bucket: "sent" },
   overdue:         { tone: "error",   label: "Overdue",     bucket: "sent" },
@@ -870,7 +871,7 @@ export function SalesInvoicesListV2() {
   const { requestTerm: debouncedSearch } = useDebouncedSearchTerm(search);
 
   // Send the active tab's BUCKET NAME as `status`; the backend resolves each
-  // bucket to the raw statuses it covers (sent = DRAFT+SENT+OVERDUE, partial =
+  // bucket to the raw statuses it covers (sent = SENT+OVERDUE, partial =
   // PARTIALLY_PAID, paid = PAID, cancelled = CANCELLED). `all` omits the filter.
   // ISSUED / PARTIAL / COMPLETED were listed here until 2026-08-17 and are not
   // members of the sales_invoice_status enum — sending them made each of those
@@ -909,6 +910,7 @@ export function SalesInvoicesListV2() {
   const total = data?.total ?? 0;
   const counts = data?.statusCounts ?? {
     all: 0,
+    draft: 0,
     sent: 0,
     partial: 0,
     paid: 0,
@@ -1276,6 +1278,7 @@ export function SalesInvoicesListV2() {
         );
       },
     },
+    siBillsForColumn<SiRow>(),
     {
       key: "outstanding",
       label: "Outstanding",
@@ -1697,6 +1700,7 @@ export function SalesInvoicesListV2() {
 
   const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
     { value: "all", label: `All · ${counts.all}` },
+    { value: "draft", label: `Draft · ${counts.draft}` },
     { value: "sent", label: `Submitted · ${counts.sent}` },
     { value: "partial", label: `Partial · ${counts.partial}` },
     { value: "paid", label: `Paid · ${counts.paid}` },

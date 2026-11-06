@@ -177,13 +177,13 @@ export default function MaintenancePage() {
         <SplitPane open={!!sel} onClose={() => setSelected(null)} width={580}
           detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null}
           list={<>
-          <div className="flex flex-col gap-4 px-5 py-4 max-md:px-4 max-md:py-3 rounded-card border border-solid border-line bg-card">
-            <label className="relative flex items-center">
-              <span className="absolute left-3.5 flex text-muted-ink pointer-events-none"><Icon name="Search" size="base" /></span>
+          <div className="flex flex-wrap items-start gap-2 px-5 py-3 max-md:px-4 rounded-card border border-solid border-line bg-card">
+            <label className="relative flex items-center w-[280px] max-md:w-full">
+              <span className="absolute left-3 flex text-muted-ink pointer-events-none"><Icon name="Search" size="base" /></span>
               <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit, building, problem or technician" aria-label="Search jobs"
-                className={cx(INPUT, 'h-11 w-full pl-11 text-[16px]')} />
+                className={cx(INPUT, 'h-9 max-md:h-11 w-full pl-10 max-md:text-[16px]')} />
             </label>
-            <div ref={setFiltersTarget} className="empty:hidden" />
+            <div ref={setFiltersTarget} className="flex-1 min-w-0 empty:hidden" />
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <PillTabs value={tab} onChange={t => { setTab(t); setSelected(null); }} tabs={[

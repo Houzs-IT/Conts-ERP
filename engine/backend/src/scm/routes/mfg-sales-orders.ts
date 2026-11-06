@@ -132,7 +132,7 @@ import { effectiveStatusFilter, isRangeNotSatisfiable } from '../lib/so-list-fil
 import { fromSoList, orderSoList, prepareSoListRead, readSoListParams } from '../lib/so-list-read';
 import { buildSoListRows } from '../lib/so-list-rows';
 import { attachSoLines } from '../lib/so-list-lines';
-import { SO_TAB_STATUSES, soStatusesForTab } from '../lib/so-tab-statuses';
+import { soStatusesForTab, soTabCounts } from '../lib/so-tab-statuses';
 import { chunkIn, paginateAll } from '../lib/paginate-all';
 import { tallyStatusRows, type StatusTally } from '../lib/status-counts';
 /* "A PO is already out for this SO" — the second road to the same soft lock
@@ -1332,16 +1332,9 @@ mfgSalesOrders.get('/', async (c) => {
        order can silently fall between tabs again. */
     if (!counted.ok) countError = counted.reason;
     else {
-      const allCount = Object.values(counted.byStatus).reduce((s, n) => s + n, 0);
-      let known = 0;
-      statusCounts = { all: allCount };
       /* Counted per TAB, not per status, so a folded status is counted under
          the tab that shows it instead of falling into `other`. */
-      for (const [tab, members] of Object.entries(SO_TAB_STATUSES)) {
-        const cnt = members.reduce((n, m) => n + (counted.byStatus[m] ?? 0), 0);
-        statusCounts[tab.toLowerCase()] = cnt; known += cnt;
-      }
-      statusCounts.other = allCount - known;
+      statusCounts = soTabCounts(counted.byStatus);
       /* THE On Hold PILL IS AN OVERLAY, NOT A BUCKET (mig 0324), and it is the
          one number on this strip that does not partition the set. A held order
          keeps its real status, so it is counted under that status AND here —

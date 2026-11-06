@@ -27,12 +27,13 @@ import {
 import { applySoAmendment, reviseBoundPo, ReceivedFloorError } from '../lib/so-revision';
 import { chunkIn } from '../lib/paginate-all';
 import { renovationAmendmentChanges } from '../../services/renovation/renovationVoChangeRead';
+import { voListDetails, type VoListDetail } from '../../services/renovation/renovationVoListRead';
 import { raisePoFollowUps } from '../lib/amendment-po-followup';
 import { DESK, judgeLaneHandover, judgeLaneMove } from '../lib/amendment-lane-handover';
 import { countCancelRequestsAwaitingSigner } from '../lib/cancel-pending-count';
 import { approveKeysFor } from '../shared/document-cancel';
 import { CANCEL_REQUESTS_TABLE } from './document-cancel-routes';
-import { hasHouzsPerm, holdsHouzsPermLiterally, canViewAllSales, canWriteScmConfig } from '../lib/houzs-perms';
+import { hasHouzsPerm, holdsHouzsPermLiterally, canViewAllSales, canViewScmFinance, canWriteScmConfig } from '../lib/houzs-perms';
 import { resolveSalesScopeIds, applySoScope, soDocOutOfScope, resolveCallerStaffId, resolveUserIdByStaffId } from '../lib/salesScope';
 import {
   notifySoAmendmentResolved,
@@ -389,10 +390,18 @@ soAmendments.get('/', async (c) => {
       refBySo.set(so.doc_no, so);
     }
   }
+  /* What each renovation VO changed (owner, 6 Nov 2026). Never blocks the queue: a row with no `vo` shows dashes. */
+  let voById = new Map<string, VoListDetail>();
+  try {
+    voById = await voListDetails(sb, (rows as Array<{ id: string; resolution?: string | null }>).filter((r) => r.resolution === 'RENOVATION_VO').map((r) => r.id), canViewScmFinance(c));
+  } catch (e) {
+    console.warn('[so-amendments] VO detail skipped', e instanceof Error ? e.message : e);
+  }
   const amendments = rows.map((r) => {
     const so = r.so_doc_no ? refBySo.get(r.so_doc_no) : undefined;
     return {
       ...r,
+      vo: voById.get((r as { id: string }).id) ?? null,
       bound_pos: r.so_doc_no ? (boundBySo.get(r.so_doc_no) ?? []) : [],
       so_ref: so?.ref ?? null,
       so_customer_so_no: so?.customer_so_no ?? null,

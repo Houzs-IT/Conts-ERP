@@ -611,18 +611,14 @@ export function DataTable<R>(props: DataTableProps<R>) {
       )}
 
       {inlineFiltersHost && createPortal(
-        <section aria-label="Filters" className="grid grid-cols-1 xl:grid-cols-2 xl:grid-flow-row-dense gap-x-8 gap-y-3 items-start">
+        <section aria-label="Filters" className="flex flex-wrap items-center gap-2">
           {sheetFilters.map(c => (
-            <div key={c.key} className={cx('grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 items-start',
-              filterOf(c)?.kind === 'select' && filterOf(c)?.display !== 'menu' && optionsFor(c, filterOf(c)!, rows ?? []).length > SHEET_SEARCH_FROM && 'xl:col-span-2',
-              filterOf(c)?.kind === 'number' && 'xl:col-span-2')}>
-              <h3 className="m-0 min-h-8 flex items-center text-meta font-semibold text-ink">{c.label}</h3>
-              <FilterEditor col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)} variant="inline"
-                numberBounds={server || filterOf(c)?.kind !== 'number' ? null : numberBoundsOf(c, rows ?? [])} />
-            </div>
+            <InlineFilter key={c.key} col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)}
+              numberBounds={server || filterOf(c)?.kind !== 'number' ? null : numberBoundsOf(c, rows ?? [])} />
           ))}
           {anyFilter && (
-            <div className="xl:col-span-2">
+            <div className="w-full flex flex-wrap items-center gap-2">
+              {sheetFilters.filter(c => filterValue(c)).flatMap(c => filterChipsOf(c, filterOf(c)!, filterValue(c), rows ?? [], v => setFilter(c, v)))}
               <Button size="sm" variant="tertiary" onClick={clearEverything}>{`Clear all · showing ${fmtCount(total)} ${total === 1 ? noun[0] : noun[1]}`}</Button>
             </div>
           )}
@@ -965,11 +961,58 @@ function numberBoundsOf<R>(col: Column<R>, rows: R[]): RangeBounds | null {
   return highest > lowest ? { lowest, highest } : null;
 }
 
+/* The one-row filter strip: one dropdown per filter, then a chip per thing picked, each removable on its own. */
+function InlineFilter<R>({ col, spec, value, rows, onChange, numberBounds }: {
+  col: Column<R>; spec: FilterSpec; value: string; rows: R[]; onChange: (v: string) => void; numberBounds: RangeBounds | null;
+}): ReactElement {
+  const [isOpen, setIsOpen] = useState(false);
+  const box = useRef<HTMLButtonElement>(null);
+  if (spec.kind === 'select') {
+    const picked = new Set(value ? value.split(',') : []);
+    const multi = spec.multi ?? !spec.param;
+    const toggle = (one: string) => {
+      if (!multi) { onChange(picked.has(one) ? '' : one); return; }
+      const next = new Set(picked);
+      if (next.has(one)) next.delete(one); else next.add(one);
+      onChange([...next].join(','));
+    };
+    return <FilterMenu label={col.label} options={optionsFor(col, spec, rows)} picked={picked} onToggle={toggle} onClear={() => onChange('')} compact />;
+  }
+  return (
+    <>
+      <button ref={box} type="button" aria-haspopup="dialog" aria-expanded={isOpen} aria-label={`${col.label} filter`} onClick={() => setIsOpen(open => !open)}
+        className={cx('h-9 inline-flex items-center gap-1.5 pl-3 pr-2 rounded-control border border-solid bg-card font-sans text-copy cursor-pointer whitespace-nowrap', value ? 'border-ink text-ink font-medium' : 'border-line text-ink')}>
+        {col.label}
+        <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
+      </button>
+      <Floating anchor={box} open={isOpen} onClose={() => setIsOpen(false)} label={col.label} width={320}>
+        <div className="p-3">
+          {spec.kind === 'text' ? <TextFilter value={value} onChange={onChange} label={col.label} autoFocus />
+            : <FilterEditor col={col} spec={spec} value={value} rows={rows} onChange={onChange} variant="sheet" numberBounds={numberBounds} />}
+        </div>
+      </Floating>
+    </>
+  );
+}
+
+function filterChipsOf<R>(col: Column<R>, spec: FilterSpec, value: string, rows: R[], onChange: (v: string) => void): ReactElement[] {
+  const chip = (key: string, text: string, onRemove: () => void) => (
+    <span key={key} className="inline-flex items-center gap-1 h-7 pl-[10px] pr-1 rounded-full bg-muted text-meta font-medium max-w-full">
+      <span className="truncate">{text}</span>
+      <button type="button" aria-label={`Remove ${text}`} onClick={onRemove}
+        className="relative w-5 h-5 grid place-items-center rounded-full border-none bg-transparent cursor-pointer text-muted-ink hover:bg-card"><Icon name="X" size="sm" /></button>
+    </span>
+  );
+  if (spec.kind !== 'select') return [chip(col.key, `${col.label}: ${describeFilter(col, spec, value, rows)}`, () => onChange(''))];
+  const options = optionsFor(col, spec, rows);
+  const picked = value.split(',');
+  return picked.map(v => chip(`${col.key}:${v}`, options.find(o => o.value === v)?.label ?? v, () => onChange(picked.filter(x => x !== v).join(','))));
+}
+
 function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, variant = 'popover', numberBounds = null }: {
   col: Column<R>; spec: FilterSpec; value: string; rows: R[]; onChange: (v: string) => void; onDone?: () => void; autoFocus?: boolean;
-  variant?: 'popover' | 'sheet' | 'inline'; numberBounds?: RangeBounds | null;
+  variant?: 'popover' | 'sheet'; numberBounds?: RangeBounds | null;
 }) {
-  if (spec.kind === 'text' && variant === 'inline') return <div className="w-[280px]"><TextFilter value={value} onChange={onChange} label={col.label} /></div>;
   if (spec.kind === 'text') return <TextFilter value={value} onChange={onChange} onDone={onDone} autoFocus={autoFocus} label={col.label} />;
   if (spec.kind === 'select') {
     const opts = optionsFor(col, spec, rows);
@@ -982,7 +1025,7 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, 
       onChange([...next].join(','));
     };
     if (variant !== 'popover' && spec.display === 'menu') return <FilterMenu label={col.label} options={opts} picked={on} onToggle={toggle} onClear={() => onChange('')} />;
-    if (variant !== 'popover') return <FilterChips label={col.label} options={opts} picked={on} hint={spec.hint} onToggle={toggle} density={variant === 'inline' ? 'compact' : 'roomy'} />;
+    if (variant !== 'popover') return <FilterChips label={col.label} options={opts} picked={on} hint={spec.hint} onToggle={toggle} />;
     return (
       <div className="flex flex-col gap-px max-h-[280px] overflow-y-auto" role="group" aria-label={col.label}>
         {spec.hint && <span className="text-caption text-muted-ink px-1 pb-1">{spec.hint}</span>}
@@ -998,34 +1041,32 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, 
       </div>
     );
   }
-  if (variant !== 'popover') return <LiveRangeFilter kind={spec.kind} money={typeOf(col) === 'money'} label={col.label} bounds={numberBounds} hint={spec.hint} value={value} onChange={onChange} layout={variant === 'inline' ? 'row' : 'stacked'} />;
+  if (variant !== 'popover') return <LiveRangeFilter kind={spec.kind} money={typeOf(col) === 'money'} label={col.label} bounds={numberBounds} hint={spec.hint} value={value} onChange={onChange} layout="stacked" />;
   return <RangeFilter kind={spec.kind} money={typeOf(col) === 'money'} hint={spec.hint} value={value} onChange={onChange} onDone={onDone} />;
 }
 
-function FilterChips({ label, options, picked, hint, onToggle, density = 'roomy' }: {
+function FilterChips({ label, options, picked, hint, onToggle }: {
   label: string; options: { value: string; label: string }[]; picked: Set<string>; hint?: string; onToggle: (value: string) => void;
-  density?: 'roomy' | 'compact';
 }): ReactElement {
   const [search, setSearch] = useState('');
   const needle = search.trim().toLowerCase();
   const shownOptions = needle ? options.filter(o => o.label.toLowerCase().includes(needle)) : options;
-  const isCompact = density === 'compact';
-  const isLongList = !isCompact && options.length > SHEET_SEARCH_FROM;
+  const isLongList = options.length > SHEET_SEARCH_FROM;
   return (
-    <div className={cx('flex flex-col', isCompact ? 'gap-2' : 'gap-2.5')}>
+    <div className="flex flex-col gap-2.5">
       {hint && <span className="text-caption text-muted-ink">{hint}</span>}
       {isLongList && (
         <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={`Find ${label.toLowerCase()}`} aria-label={`Find ${label.toLowerCase()}`}
           className="block w-full max-w-[320px] box-border h-10 max-md:h-11 px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy max-md:text-[16px]" />
       )}
       {!options.length && <span className="text-meta text-muted-ink">Nothing to pick from in this list.</span>}
-      <div role="group" aria-label={label} className={cx('flex flex-wrap', isCompact ? 'gap-1.5' : 'gap-2')}>
+      <div role="group" aria-label={label} className="flex flex-wrap gap-2">
         {shownOptions.map(o => {
           const isPicked = picked.has(o.value);
           return (
             <button key={o.value} type="button" aria-pressed={isPicked} onClick={() => onToggle(o.value)}
               className={cx('inline-flex items-center gap-1.5 max-md:min-h-11 max-w-full rounded-full border border-solid font-sans cursor-pointer',
-                isCompact ? 'min-h-8 px-3 text-meta' : 'min-h-9 px-3.5 text-copy',
+                'min-h-9 px-3.5 text-copy',
                 isPicked ? 'bg-black border-black text-white' : 'bg-card border-line text-ink hover:bg-muted')}>
               {isPicked ? <Icon name="Check" size="sm" /> : <span aria-hidden className="w-3.5 h-3.5 rounded-full border border-solid border-[var(--color-line-strong)] shrink-0" />}
               <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{o.label}</span>
@@ -1038,8 +1079,10 @@ function FilterChips({ label, options, picked, hint, onToggle, density = 'roomy'
   );
 }
 
-function FilterMenu({ label, options, picked, onToggle, onClear }: {
+function FilterMenu({ label, options, picked, onToggle, onClear, compact = false }: {
   label: string; options: FilterOption[]; picked: Set<string>; onToggle: (value: string) => void; onClear: () => void;
+  /** The one-row strip: the button names the filter and counts, the chips say what is picked. */
+  compact?: boolean;
 }): ReactElement {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -1051,11 +1094,11 @@ function FilterMenu({ label, options, picked, onToggle, onClear }: {
   const close = (): void => { setIsOpen(false); setSearch(''); };
   let lastGroup: string | undefined;
   return (
-    <div className="w-full max-w-[360px]">
+    <div className={compact ? 'shrink-0' : 'w-full max-w-[360px]'}>
       <button ref={box} type="button" aria-haspopup="listbox" aria-expanded={isOpen} aria-label={`${label}: ${summary}`} onClick={() => setIsOpen(open => !open)}
-        className={cx('w-full h-9 max-md:h-11 flex items-center gap-2 pl-3 pr-2 rounded-control border border-solid bg-card font-sans text-copy text-left cursor-pointer',
-          picked.size ? 'border-ink text-ink font-medium' : 'border-line text-muted-ink')}>
-        <span className="flex-1 min-w-0 truncate">{summary}</span>
+        className={cx('h-9 max-md:h-11 flex items-center gap-2 pl-3 pr-2 rounded-control border border-solid bg-card font-sans text-copy text-left cursor-pointer',
+          compact ? 'whitespace-nowrap' : 'w-full', picked.size ? 'border-ink text-ink font-medium' : compact ? 'border-line text-ink' : 'border-line text-muted-ink')}>
+        <span className={compact ? '' : 'flex-1 min-w-0 truncate'}>{compact ? label : summary}</span>
         {picked.size > 0 && <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-ink text-card text-caption font-semibold">{picked.size}</span>}
         <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
       </button>
