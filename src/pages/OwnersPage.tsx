@@ -6,7 +6,7 @@ import Icon from '../components/Icon';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api, errorMessage } from '../lib/api';
+import { api, ApiFailure, errorMessage } from '../lib/api';
 import { saveBlob, zipStore } from '../lib/export';
 import type { Report } from './OwnerIncomeReportPage';
 import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
@@ -234,6 +234,16 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
     });
   }
 
+  async function loadReport(statementId: string): Promise<Report> {
+    const path = `/statements/${encodeURIComponent(statementId)}/report`;
+    try {
+      return (await api.get<{ data: Report }>(path)).data;
+    } catch (e) {
+      if (e instanceof ApiFailure && e.status > 0 && e.status < 500) throw e;
+      return (await api.get<{ data: Report }>(path)).data;
+    }
+  }
+
   async function zipPdfs(picked: ListedStatement[]): Promise<void> {
     if (!picked.length) {
       toast({ tone: 'warning', title: `No owner statements for ${monthLabel(month)} yet.`, body: 'No owner listed had reservations, costs or charges that month.' });
@@ -248,7 +258,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
     for (let i = 0; i < picked.length; i += 4) {
       await Promise.all(picked.slice(i, i + 4).map(async s => {
         try {
-          const { data: r } = await api.get<{ data: Report }>(`/statements/${encodeURIComponent(s.id)}/report`);
+          const r = await loadReport(s.id);
           if (!r.units.length) { noReport.push(titleCase(s.ownerName)); return; }
           const opts = { logo: await logoOf(r.settings.company.logo), phone: printedPhone };
           for (const u of r.units) made.push({ name: `${u.code} - ${titleCase(s.ownerName)}`, bytes: await statementPdf({ ...r, units: [u] }, opts) });
