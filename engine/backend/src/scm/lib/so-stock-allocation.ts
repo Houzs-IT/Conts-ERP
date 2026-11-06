@@ -357,7 +357,8 @@ async function runSoStockAllocation(
        end for good with the column; see "RETIRING THE SECOND STORAGE" in
        shared/so-processing-date.ts. */
     const allocGated = new Set(
-      orders.filter((o) => !o[SO_PROCESSING_DATE_COLUMN]).map((o) => o.doc_no),
+      /* Conts dates each line, so its headers stay blank: a blank header is not an order held back (owner, 6 Nov 2026). */
+      orders.filter((o) => !o[SO_PROCESSING_DATE_COLUMN] && Number(o.company_id ?? 0) !== HARD_BOUND_COMPANY_ID).map((o) => o.doc_no),
     );
     /* Which company each document belongs to — the pooled walk needs it to
        enforce HARD_BOUND_COMPANY_ID's exclusivity (see the constant's note). */
