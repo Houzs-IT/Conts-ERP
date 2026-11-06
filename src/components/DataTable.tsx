@@ -61,6 +61,7 @@ export interface FilterSpec {
   multi?: boolean;
   /** Label above the inputs, e.g. "Stays that touch these dates". */
   hint?: string;
+  bounds?: RangeBounds;
 }
 
 export interface Column<R> {
@@ -613,7 +614,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
         <section aria-label="Filters" className="grid grid-cols-1 xl:grid-cols-2 xl:grid-flow-row-dense gap-x-8 gap-y-3 items-start">
           {sheetFilters.map(c => (
             <div key={c.key} className={cx('grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 items-start',
-              filterOf(c)?.kind === 'select' && filterOf(c)?.display !== 'menu' && optionsFor(c, filterOf(c)!, rows ?? []).length > SHEET_SEARCH_FROM && 'xl:col-span-2')}>
+              filterOf(c)?.kind === 'select' && filterOf(c)?.display !== 'menu' && optionsFor(c, filterOf(c)!, rows ?? []).length > SHEET_SEARCH_FROM && 'xl:col-span-2',
+              filterOf(c)?.kind === 'number' && 'xl:col-span-2')}>
               <h3 className="m-0 min-h-8 flex items-center text-meta font-semibold text-ink">{c.label}</h3>
               <FilterEditor col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)} variant="inline"
                 numberBounds={server || filterOf(c)?.kind !== 'number' ? null : numberBoundsOf(c, rows ?? [])} />
@@ -954,9 +956,12 @@ export interface RangeBounds { lowest: number; highest: number }
 
 function numberBoundsOf<R>(col: Column<R>, rows: R[]): RangeBounds | null {
   const scale = typeOf(col) === 'money' ? 100 : 1;
-  const numbers = rows.map(row => rawOf(col, row)).filter(raw => raw !== null && raw !== undefined && raw !== '').map(Number).filter(Number.isFinite);
-  if (!numbers.length) return null;
-  const lowest = Math.floor(Math.min(...numbers) / scale), highest = Math.ceil(Math.max(...numbers) / scale);
+  const amounts = rows.map(row => rawOf(col, row)).filter(raw => raw !== null && raw !== undefined && raw !== '').map(Number).filter(Number.isFinite)
+    .map(amount => amount / scale);
+  const startingBounds = defaultFilter(col)?.bounds;
+  if (startingBounds) amounts.push(startingBounds.lowest, startingBounds.highest);
+  if (!amounts.length) return null;
+  const lowest = Math.floor(Math.min(...amounts)), highest = Math.ceil(Math.max(...amounts));
   return highest > lowest ? { lowest, highest } : null;
 }
 
