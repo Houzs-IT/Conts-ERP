@@ -166,21 +166,19 @@ async function recomputeTotals(sb: any, deliveryReturnId: string) {
 /* ── resolveDrLineWarehouses (Agent D 2026-05-31, TASK #32) ───────────────────
    PER-WAREHOUSE CORRECTNESS for the RETURNS side. A Delivery Return must put
    stock BACK into the SAME warehouse the Delivery Order took it OUT of — never a
-   single DR-header default. The DO took it from its SO line's warehouse
-   (migration 0118), so each DR line resolves its warehouse by tracing
-   do_item_id → delivery_order_items.so_item_id → mfg_sales_order_items.
-   warehouse_id.
+   single DR-header default. The warehouse picked on the DO is where the goods left
+   (owner, 5 Nov 2026, lib/do-line-warehouses.ts), so this reads in that same order.
 
    Resolution order per DR line:
-     1. the linked DO line's SO-line warehouse (do_item_id → … → SO line)
-     2. the linked DO header's warehouse_id
+     1. the linked DO header's warehouse_id
+     2. the linked DO line's SO-line warehouse (do_item_id → … → SO line)
      3. the DR header's warehouse_id (free/ad-hoc lines — none exist now that
         "no DO, no return" is enforced, but kept as a safety net)
      4. the return's OWN company's default warehouse (last-resort fallback)
 
    Returns a map of delivery_return_items.id → warehouse_id (or null when even
    the fallbacks are absent — the caller skips those lines). */
-async function resolveDrLineWarehouses(
+export async function resolveDrLineWarehouses(
   sb: any,
   items: Array<{ id: string; do_item_id?: string | null }>,
   drHeaderWarehouseId: string | null,
@@ -230,7 +228,7 @@ async function resolveDrLineWarehouses(
   for (const it of items) {
     const meta = it.do_item_id ? doLineMeta.get(it.do_item_id) : undefined;
     const fromSo = meta?.soItemId ? (soWh.get(meta.soItemId) ?? null) : null;
-    out.set(it.id, fromSo ?? meta?.doWarehouseId ?? fallback);
+    out.set(it.id, meta?.doWarehouseId ?? fromSo ?? fallback);
   }
   return out;
 }
