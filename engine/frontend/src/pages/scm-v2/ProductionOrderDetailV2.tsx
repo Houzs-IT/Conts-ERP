@@ -14,6 +14,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from "reac
 import { LazySlot } from "../../components/LazySlot";
 import { useStaffLookup } from "../../hooks/useStaffLookup";
 import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
+import { ProductionFlow } from "./renovationProductionFlow";
 import { ProductionMaterialsSection } from "./ProductionMaterialsSection";
 import { ActivityRow, SoAddressFields, SoCustomerFields, SoDetailHeader, SoOrderInfoFields } from "./soDetailParts";
 import { scmListReturnTo } from "../../lib/scmListReturn";
@@ -270,10 +271,10 @@ function PoTotalHeroCard({ header }: { header: PoHeaderRow }) {
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
-        Production order value
+        {total > 0 ? "Production order value" : "Production status"}
       </div>
       <div className="mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight text-white">
-        {fmtMoney(total, header.currency)}
+        {total > 0 ? fmtMoney(total, header.currency) : t.label}
       </div>
       <div className="mt-3 flex items-center gap-2">
         <span
@@ -288,11 +289,13 @@ function PoTotalHeroCard({ header }: { header: PoHeaderRow }) {
         <span className="text-[12.5px] text-sidebar-ink-muted">{t.blurb}</span>
       </div>
 
-      <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
-        <HeroLine k="Subtotal" v={fmtMoney(header.subtotal_sen, header.currency)} />
-        <HeroLine k="Tax" v={fmtMoney(header.tax_sen ?? 0, header.currency)} />
-        <HeroLine k="Total" v={fmtMoney(total, header.currency)} strong />
-      </div>
+      {total > 0 && (
+        <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
+          <HeroLine k="Subtotal" v={fmtMoney(header.subtotal_sen, header.currency)} />
+          <HeroLine k="Tax" v={fmtMoney(header.tax_sen ?? 0, header.currency)} />
+          <HeroLine k="Total" v={fmtMoney(total, header.currency)} strong />
+        </div>
+      )}
 
     </div>
   );
@@ -792,6 +795,7 @@ function ProductionOrderDetailV2ReadOnly() {
   const canCancel = rawStatus !== "CANCELLED" && rawStatus !== "RECEIVED";
   const canReopen = rawStatus === "CANCELLED" || rawStatus === "RECEIVED";
   const canComplete = rawStatus === "SUBMITTED" && !purchaseOrder.on_hold;
+  const shipToName = purchaseOrder.purchase_location_id ? warehouseNameById.get(purchaseOrder.purchase_location_id) : undefined;
   const orderMeta = purchaseOrder as unknown as {
     source_po?: { id: string; po_number: string } | null; completion_step?: string | null; completion_error?: string | null;
   };
@@ -875,35 +879,11 @@ function ProductionOrderDetailV2ReadOnly() {
           </div>
         </div>
 
+        <ProductionFlow orderId={purchaseOrder.id} status={rawStatus} issuedAt={purchaseOrder.submitted_at} completedAt={purchaseOrder.received_at}
+          grn={completion?.grn} deliveryOrder={completion?.deliveryOrder} />
+
         <DetailGrid>
           <DetailMain>
-            {linkedSo ? (
-              <>
-                {linkedSo.so_kind === "RENOVATION" ? (
-                  <Section title="Order information">
-                    <RenovationSoOrderInfo docNo={linkedSo.doc_no} payment={linkedSo.payment_methods_summary || linkedSo.payment_method || null} />
-                  </Section>
-                ) : (
-                  <Section title="Order info"><SoOrderInfoFields header={linkedSo} /></Section>
-                )}
-                <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2 [&>section]:h-full">
-                  <Section title="Customer">
-                    <SoCustomerFields
-                      header={linkedSo}
-                      renoMode={linkedSo.so_kind === "RENOVATION"}
-                      salesperson={salespersonNameOf(linkedSo.agent ?? null, linkedSo.salesperson_id ?? null, "Unassigned")}
-                      sharedWith={null}
-                    />
-                  </Section>
-                  <Section title="Delivery address"><SoAddressFields header={linkedSo} /></Section>
-                </div>
-              </>
-            ) : (
-              <Section title="Customer">
-                <p className="text-[13px] text-ink-muted">No sales order is linked to this production order.</p>
-              </Section>
-            )}
-
             <Section title="Production">
               <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-4">
                 <Field label="Production Order date" value={fmtDate(purchaseOrder.po_date)} />
@@ -928,8 +908,6 @@ function ProductionOrderDetailV2ReadOnly() {
               <div className="mt-4 grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-4">
                 <Field label="Sales order" muted={!linkedSo} value={linkedSo ? <Link className="text-primary hover:underline" to={`/scm/sales-orders/${encodeURIComponent(linkedSo.doc_no)}`}>{linkedSo.doc_no}</Link> : "—"} />
                 <Field label="Purchase order" muted={!orderMeta.source_po} value={orderMeta.source_po ? <Link className="text-primary hover:underline" to={`/scm/purchase-orders/${orderMeta.source_po.id}`}>{orderMeta.source_po.po_number}</Link> : "—"} />
-                <Field label="Goods receipt" muted={!completion?.grn} value={completion?.grn ? <Link className="text-primary hover:underline" to={`/scm/grns/${completion.grn.id}`}>{completion.grn.grn_number}</Link> : "—"} />
-                <Field label="Delivery order" muted={!completion?.deliveryOrder} value={completion?.deliveryOrder ? <Link className="text-primary hover:underline" to={`/scm/delivery-orders/${completion.deliveryOrder.id}`}>{completion.deliveryOrder.do_number}</Link> : "—"} />
               </div>
               {completionStopped && (
                 <div role="alert" className="mt-4 rounded-lg border border-err/30 bg-surface px-4 py-3 text-[13px] text-ink">
@@ -992,6 +970,33 @@ function ProductionOrderDetailV2ReadOnly() {
               />
             </Section>
             <ProductionMaterialsSection orderId={purchaseOrder.id} canEdit={mayEditPoPhotos && !isCancelled} />
+            {linkedSo ? (
+              <>
+                {linkedSo.so_kind === "RENOVATION" ? (
+                  <Section title="Order information">
+                    <RenovationSoOrderInfo splitProject docNo={linkedSo.doc_no} payment={linkedSo.payment_methods_summary || linkedSo.payment_method || null} />
+                  </Section>
+                ) : (
+                  <Section title="Order info"><SoOrderInfoFields header={linkedSo} /></Section>
+                )}
+                <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2 [&>section]:h-full">
+                  <Section title="Customer">
+                    <SoCustomerFields
+                      header={linkedSo}
+                      renoMode={linkedSo.so_kind === "RENOVATION"}
+                      salesperson={salespersonNameOf(linkedSo.agent ?? null, linkedSo.salesperson_id ?? null, "Unassigned")}
+                      sharedWith={null}
+                    />
+                  </Section>
+                  <Section title="Delivery address"><SoAddressFields header={{ ...linkedSo, sales_location: shipToName ?? linkedSo.sales_location }} /></Section>
+                </div>
+              </>
+            ) : (
+              <Section title="Customer">
+                <p className="text-[13px] text-ink-muted">No sales order is linked to this production order.</p>
+              </Section>
+            )}
+
             <DocAttachments docType="production_order" docId={purchaseOrder.id} canEdit={!isCancelled} />
           </DetailMain>
 
