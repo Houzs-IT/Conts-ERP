@@ -63,6 +63,7 @@ import {
   photoLabel,
   photoUploadFailure,
   photoUploadFailureMessage,
+  pairSavedLines,
   unmatchedLinePhotos,
   type PhotoUploadFailure,
 } from '../../vendor/scm/lib/photo-upload-failures';
@@ -1270,23 +1271,19 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
         (f) => photoUploadFailure(photoLabel(l.itemCode, f.name), e)));
     }
 
-    /* Positional match — `validLines` is the same slice we sent to
-       POST /mfg-sales-orders so `savedItems[i]` corresponds to
-       `validLines[i]`. We only iterate over validLines so cancelled
-       drafts (no itemCode) are skipped without breaking the index. */
+    /* Paired by code, never by position: the server re-ranks the lines it saves. validLines skips cancelled drafts. */
     const validLines = draftLines.filter((l) => l.itemCode.trim() && l.qty > 0);
+    const pairedItems = pairSavedLines(validLines, savedItems);
     const failures: PhotoUploadFailure[] = [];
     for (let i = 0; i < validLines.length; i++) {
       const line = validLines[i]!;
       const files = line.pendingPhotoFiles ?? [];
       if (files.length === 0) continue;
-      const saved = savedItems[i];
-      if (!saved || saved.item_code !== line.itemCode) {
+      const saved = pairedItems[i];
+      if (!saved) {
         // Mismatch — log + skip rather than upload to the wrong line.
         // eslint-disable-next-line no-console
-        console.warn('[so-line-photos] index/item_code mismatch — skipping pending uploads', {
-          index: i, expected: line.itemCode, got: saved?.item_code,
-        });
+        console.warn('[so-line-photos] no saved line for this code — skipping pending uploads', { expected: line.itemCode });
         /* A "skip" was never a different outcome to the operator: the photo is
            not on the order either way. It now says WHY it is not, instead of
            being folded into a total with the ones the server refused. */

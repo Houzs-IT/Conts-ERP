@@ -106,7 +106,7 @@ import {
 import { diffHeaderPayload, hasHeaderChanges } from '../../vendor/scm/lib/so-header-diff';
 import { soSaveEndFields, soVersionAfter } from '../../vendor/scm/lib/so-save-lease';
 import { planAmendmentSubmit, amendmentSubmittedNotice, AMENDMENT_MODE_BANNER, VO_MODE_BANNER, CONTRACT_MODE_BANNER,
-  AMENDMENT_NOTHING_TO_SUBMIT } from '../../vendor/scm/lib/so-amendment-submit';
+  AMENDMENT_NOTHING_TO_SUBMIT, NO_VO_NEEDED_TITLE, NO_VO_NEEDED_BODY } from '../../vendor/scm/lib/so-amendment-submit';
 import { useAmendmentSubmitDialog } from '../../vendor/scm/components/AmendmentSubmitDialog';
 import { todayMyt } from '../../vendor/scm/lib/dates';
 import { addressLineProps } from '../../lib/acColumnWidths';
@@ -1274,6 +1274,13 @@ export const SalesOrderDetail = () => {
      no VO), then every added, removed or re-priced line, SKU or qty change as one contract VO approved for you
      (POST /renovation/sales-orders/:docNo/line-edits, owner 2 Nov 2026). Options go first so a line the VO then
      replaces carries them. */
+  /* Line photos upload the moment they are picked, so an edit with nothing else in it has nothing left to do. */
+  const finishEditWithoutVo = () => {
+    endEditSession();
+    refreshAfterSave();
+    notify({ title: NO_VO_NEEDED_TITLE, body: NO_VO_NEEDED_BODY, tone: 'info' });
+  };
+
   const saveContractEdit = async (handle: CustomerCardHandle) => {
     if (!header) return;
     const lines = buildAmendmentLines();
@@ -1286,7 +1293,7 @@ export const SalesOrderDetail = () => {
       setSaveError("A renovation contract's customer, address and dates are changed on its project (Customer info, Edit); they follow to this order.");
       return;
     }
-    if (lines.length === 0 && !handle.hasDirectHeaderChanges()) { setSaveError(AMENDMENT_NOTHING_TO_SUBMIT); return; }
+    if (lines.length === 0 && !handle.hasDirectHeaderChanges()) { finishEditWithoutVo(); return; }
     type Edit = { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string };
     const edits: Edit[] = [];
     const adds: Array<{ room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string }> = [];
@@ -1345,6 +1352,13 @@ export const SalesOrderDetail = () => {
     }
   };
 
+  /* A VO is a change of amount or an added line (owner, 4 Nov 2026); options, remarks and dates only save. */
+  const lineChangesAmount = (l: ReturnType<typeof buildAmendmentLines>[number]): boolean => {
+    const it = items.find((x) => x.id === l.salesOrderItemId);
+    return !it || l.changeType === 'REMOVE' || (l.newItemCode ?? it.item_code) !== it.item_code
+      || (l.newQty ?? it.qty) !== it.qty || (l.newUnitPriceSen ?? it.unit_price_sen) !== it.unit_price_sen;
+  };
+
   const submitAmendment = async () => {
     const handle = customerCardRef.current;
     if (!handle || !header || savingOrder) return;
@@ -1386,15 +1400,23 @@ export const SalesOrderDetail = () => {
 
     if (header.so_kind === 'RENOVATION') { await saveContractEdit(handle); return; }
     const { changes: headerChanges } = handle.getLockedHeaderChanges();
-    const lines = buildAmendmentLines();
+    const allLines = buildAmendmentLines();
+    /* Options and remarks are not a VO (owner, 4 Nov 2026): on a confirmed order they save on their own. */
+    const saveOnly = header.vo_locked ? allLines.filter((l) => l.changeType === 'SPEC' && !lineChangesAmount(l)) : [];
+    const lines = allLines.filter((l) => !saveOnly.includes(l));
 
     // Asks about BOTH halves — see vendor/scm/lib/so-amendment-submit.
     const plan = planAmendmentSubmit({
       hasLineChanges: lines.length > 0,
       hasFrozenHeaderChanges: hasAmendmentHeaderChanges(headerChanges),
       hasDirectHeaderChanges: handle.hasDirectHeaderChanges(),
+      hasSaveOnlyLineChanges: saveOnly.length > 0,
     });
-    if (plan === 'NOTHING') { setSaveError(AMENDMENT_NOTHING_TO_SUBMIT); return; }
+    if (plan === 'NOTHING') {
+      if (header.vo_locked) finishEditWithoutVo();
+      else setSaveError(AMENDMENT_NOTHING_TO_SUBMIT);
+      return;
+    }
     /* DIRECT_ONLY needs no ask: nothing is going for approval. Otherwise the shared
        dialog shows WHO approves and takes the required reason
        (owner 2026-09-15; vendor/scm/components/AmendmentSubmitDialog). */
@@ -1413,6 +1435,11 @@ export const SalesOrderDetail = () => {
           { keepLockedColsAsOriginal: true },
         );
       });
+      for (const l of saveOnly) {
+        await authedFetch(`/renovation-so-info/${encodeURIComponent(header.doc_no)}/lines/${encodeURIComponent(l.salesOrderItemId ?? '')}/spec`, {
+          method: 'PUT', body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
+        });
+      }
       /* 2. The approval half — frozen header fields + line diffs. DIRECT_ONLY
             skips ONLY this: the save above is the whole of that edit. */
       let createdRes: unknown = null;
@@ -2173,14 +2200,9 @@ export const SalesOrderDetail = () => {
     ...(customerRef !== '—' ? [<>Ref <span className="font-mono font-semibold text-ink-secondary">{customerRef}</span></>] : []),
     ...(customerCreditSen > 0 ? [`Customer credit balance: ${fmtSen(customerCreditSen)}`] : []),
   ];
-  /* A VO is a change of amount or an added line (owner, 4 Nov 2026); options, remarks and dates only save. */
-  const raisesVo = amendmentMode && header.so_kind === 'RENOVATION' && buildAmendmentLines().some((l) => {
-    const it = items.find((x) => x.id === l.salesOrderItemId);
-    return !it || l.changeType === 'REMOVE' || (l.newItemCode ?? it.item_code) !== it.item_code
-      || (l.newQty ?? it.qty) !== it.qty || (l.newUnitPriceSen ?? it.unit_price_sen) !== it.unit_price_sen;
-  });
+  const raisesVo = amendmentMode && buildAmendmentLines().some(lineChangesAmount);
   const saveLabel = amendmentMode
-    ? (savingOrder || createAmendment.isPending ? 'Submitting…' : header.so_kind === 'RENOVATION' ? (raisesVo ? 'Save as VO' : 'Save') : header.vo_locked ? 'Record VO' : 'Submit VO')
+    ? (savingOrder || createAmendment.isPending ? 'Submitting…' : header.so_kind === 'RENOVATION' ? (raisesVo ? 'Save as VO' : 'Save') : header.vo_locked ? (raisesVo ? 'Record VO' : 'Save') : 'Submit VO')
     : (updateHeader.isPending || savingOrder ? 'Saving…' : 'Save');
   const saveBusy = amendmentMode ? savingOrder || createAmendment.isPending : updateHeader.isPending || savingOrder;
   const saveNow = () => { void (amendmentMode ? submitAmendment : saveEdit)(); };
