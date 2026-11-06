@@ -159,6 +159,7 @@ function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
   /* Create PO lands here with #po-split, ready to raise. */
   const { hash } = useLocation();
   const [open, setOpen] = useState(hash === '#po-split');
+  useEffect(() => { if (hash === '#po-split') setOpen(true); }, [hash]);
   const preview = usePoSplit(c.docNo, open);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<Array<{ id: string; poNumber: string }> | null>(null);
