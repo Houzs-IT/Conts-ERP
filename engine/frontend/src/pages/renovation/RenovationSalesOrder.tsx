@@ -170,7 +170,7 @@ function PoSplitCard({ c, canSplit }: { c: ContractView; canSplit: boolean }) {
         <div className="space-y-3">
           {p.groups.length === 0 && p.blocked.length === 0 && (p.unsupplied ?? []).length === 0 && <p className="text-[13px] text-ink-secondary">Nothing left to order.</p>}
           {p.groups.map((g) => (
-            <div key={`${g.supplierId}:${g.categoryGroup ?? ''}`} className="rounded-lg border border-border-subtle">
+            <div key={`${g.supplierId}:${g.categoryGroup ?? ''}:${g.warehouseId ?? ''}`} className="rounded-lg border border-border-subtle">
               <div className="flex justify-between bg-surface-2 px-3 py-1.5 text-[13px] font-semibold"><span>{g.supplierCode} · {g.supplierName}{g.categoryGroup ? ` · ${g.categoryGroup}` : ''}</span><span className="tabular-nums">{rm(g.totalSen)}</span></div>
               <ul className="divide-y divide-border-subtle text-[12.5px]">
                 {g.lines.map((l) => <li key={l.lineId} className="flex justify-between gap-2 px-3 py-1"><span className="truncate">{l.description}{l.description2 ? <span className="text-ink-muted"> · {l.description2}</span> : null}</span><span className="shrink-0 tabular-nums text-ink-secondary">{l.qty} x {rm(l.unitCostSen)}</span></li>)}

@@ -1718,3 +1718,32 @@ describe('MRP: a warehouse picked for one material', () => {
     expect(body).not.toContain("from('production_orders').update");
   });
 });
+
+describe('MRP reads a contract line settings', () => {
+  const line = (id: string, code: string): Row => ({
+    ...demandRed(1), id, item_code: code, item_group: 'RENOVATION', variants: null, line_delivery_date: '2026-12-01',
+    so: { ...(demandRed(1).so as Row), project_id: 7, customer_delivery_date: '2026-12-01' },
+  });
+  const tables = () => ({
+    ...BASE_TABLES,
+    mfg_sales_order_items: [line('s-goods', 'F-1'), line('s-works', 'W-1'), line('s-sup', 'F-2')],
+    mfg_products: [{ id: 'p1', code: 'F-1', category: 'FURNITURE', sub_category: null }, { id: 'p2', code: 'W-1', category: 'WORKS', sub_category: null }, { id: 'p3', code: 'F-2', category: 'FURNITURE', sub_category: null }],
+    reno_beta_line_plans: [],
+    reno_doc_lines: [
+      { id: 'a', so_item_id: 's-goods', supplier_id: null, supply_by_owner: true },
+      { id: 'b', so_item_id: 's-works', supplier_id: null, supply_by_owner: true },
+      { id: 'c', so_item_id: 's-sup', supplier_id: 'S9', supply_by_owner: false },
+    ],
+    suppliers: [{ id: 'S9', code: 'ACME', name: 'Acme' }],
+  });
+  const withProjects = () => { const sb = fakeSb({ ...tables(), projects: [] }); return { ...sb, schema: () => sb }; };
+  test('goods the owner supplies are not demand, works labour still is', async () => {
+    const r = await computeMrp(withProjects(), opts);
+    expect(r.skus.flatMap((s) => s.lines).map((l) => l.soItemId).sort()).toEqual(['s-sup', 's-works']);
+  });
+  test("the contract line's supplier is the planned one", async () => {
+    const r = await computeMrp(withProjects(), opts);
+    const l = r.skus.flatMap((s) => s.lines).find((x) => x.soItemId === 's-sup');
+    expect(l?.plannedSupplier).toEqual({ supplierId: 'S9', code: 'ACME', name: 'Acme' });
+  });
+});

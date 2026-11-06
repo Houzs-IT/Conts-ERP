@@ -191,7 +191,7 @@ export interface SplitLine {
 }
 export interface SplitPreview {
   /* One PO per supplier and category group (mig 0116). */
-  groups: Array<{ categoryGroup?: string; supplierId: string; supplierCode: string; supplierName: string; lines: SplitLine[]; totalSen: number }>;
+  groups: Array<{ categoryGroup?: string; warehouseId?: string | null; supplierId: string; supplierCode: string; supplierName: string; lines: SplitLine[]; totalSen: number }>;
   blocked: SplitLine[]; skipped: SplitLine[]; alreadyOrdered: SplitLine[];
   /* Goods with no supplier: not ordered by this raise (older servers do not send it). */
   unsupplied?: SplitLine[];

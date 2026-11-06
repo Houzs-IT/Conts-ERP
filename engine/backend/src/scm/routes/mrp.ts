@@ -88,6 +88,7 @@ import { collectBatchClaims, openBucketStock, drawBucketStock } from '../lib/bat
 import { WH_NONE, composite, loadCommittedShipments } from '../lib/committed-shipments';
 import { paginateAll, chunkIn } from '../lib/paginate-all';
 import { pgrestInList } from '../lib/pgrest-in-list';
+import { categoryGroupOf, siteGroupOf } from '../shared/renovation-catalog';
 import { readMfgProductBindings } from '../lib/supplier-bindings';
 import { mapBounded, eager } from '../lib/concurrency';
 import type { Env, Variables } from '../env';
@@ -319,6 +320,27 @@ async function productionMaterialDemand(sb: any, scoped: <Q>(q: Q) => Q): Promis
       },
     }];
   });
+}
+
+type ContractLineSetting = { so_item_id: string; supplier_id: string | null; supply_by_owner: boolean };
+async function contractLineSettings(sb: any, scoped: <Q>(q: Q) => Q, soItemIds: string[]): Promise<Map<string, ContractLineSetting>> {
+  const { data, error } = await chunkIn<ContractLineSetting>(soItemIds, (batch, from, to) =>
+    scoped(sb.from('reno_doc_lines').select('so_item_id, supplier_id, supply_by_owner').in('so_item_id', batch)).order('id').range(from, to));
+  if (error) throw new Error(`mrp_load_failed: ${error.message}`);
+  return new Map(data.map((l) => [l.so_item_id, l]));
+}
+
+/* Lines the owner supplies, except a WORKS line: its labour is still ours to buy. */
+async function ownerSuppliedGoods(sb: any, scoped: <Q>(q: Q) => Q, lines: DemandRow[], settings: Map<string, ContractLineSetting>): Promise<Set<string>> {
+  const flagged = lines.filter((l) => settings.get(l.id)?.supply_by_owner);
+  const { data, error } = await chunkIn<{ code: string; category: string | null; sub_category: string | null }>([...new Set(flagged.map((l) => l.item_code))], (batch, from, to) =>
+    scoped(sb.from('mfg_products').select('code, category, sub_category').filter('code', 'in', pgrestInList(batch))).order('id').range(from, to));
+  if (error) throw new Error(`mrp_load_failed: ${error.message}`);
+  const products = new Map(data.map((p) => [p.code, p]));
+  return new Set(flagged.filter((l) => {
+    const p = products.get(l.item_code);
+    return siteGroupOf(categoryGroupOf(p?.category ?? null), p?.sub_category) !== 'WORKS';
+  }).map((l) => l.id));
 }
 
 /* A warehouse picked for one material on the MRP page wins over its order's location. */
@@ -765,16 +787,22 @@ export async function computeMrp(
   );
   if (planErr) throw new Error(`mrp_load_failed: ${planErr.message}`);
   const planOf = new Map(planRows.map((p) => [p.so_item_id, p]));
-  const plannedIds = [...new Set(planRows.flatMap((p) => (p.supplier_id ? [p.supplier_id] : [])))];
+  /* The contract line's own settings: its supplier is the planned one unless the PO tab names another, and goods the
+     owner supplies are not bought (the rule raisePos follows, renovation-po-split.ts). */
+  const contractLineOf = await contractLineSettings(sb, scoped, projectLineIds);
+  const ownerSupplied = await ownerSuppliedGoods(sb, scoped, demandOpen, contractLineOf);
+  const plannedSupplierIdOf = (soItemId: string): string | null => planOf.get(soItemId)?.supplier_id ?? contractLineOf.get(soItemId)?.supplier_id ?? null;
+  const plannedIds = [...new Set(demandOpen.flatMap((r) => { const id = plannedSupplierIdOf(r.id); return id ? [id] : []; }))];
   const plannedById = new Map<string, { supplierId: string; code: string; name: string }>();
   if (plannedIds.length > 0) {
     const { data: plannedRows, error: plannedErr } = await sb.from('suppliers').select('id, code, name').in('id', plannedIds);
     if (plannedErr) throw new Error(`mrp_load_failed: ${plannedErr.message}`);
     for (const s of (plannedRows ?? []) as Array<{ id: string; code: string; name: string }>) plannedById.set(s.id, { supplierId: s.id, code: s.code, name: s.name });
   }
-  const plannedSupplierOf = (soItemId: string) => plannedById.get(planOf.get(soItemId)?.supplier_id ?? '') ?? null;
+  const plannedSupplierOf = (soItemId: string) => plannedById.get(plannedSupplierIdOf(soItemId) ?? '') ?? null;
   const demandPlanned = demandOpen.flatMap((r): DemandRow[] => {
     if (r.so?.project_id == null) return [r];
+    if (ownerSupplied.has(r.id)) return [];
     return projectDemandLine(r, planOf.get(r.id));
   });
   const materialDemand = await productionMaterialDemand(sb, scoped);
