@@ -409,7 +409,7 @@ function ServiceCompleteButton({ docNo, itemId, done }: { docNo: string; itemId:
   return (
     <button type="button" disabled={update.isPending} className="text-[11px] font-semibold text-primary underline disabled:opacity-50"
       onClick={() => update.mutate({ docNo, itemId, status: done ? "PENDING" : "READY" })}>
-      {done ? "Undo" : "Complete"}
+      {update.isPending ? "Saving…" : done ? "Undo" : "Complete"}
     </button>
   );
 }

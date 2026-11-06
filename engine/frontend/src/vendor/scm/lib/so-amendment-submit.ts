@@ -150,7 +150,7 @@ export function amendmentSubmittedNotice(
 /** Conts: on a confirmed order only a change of amount or lines is a VO (owner, 4 Nov 2026 and 6 Nov 2026). */
 export const VO_MODE_BANNER =
   'This sales order is confirmed. Adding or removing a line, or changing its SKU, qty or price, is recorded as a VO '
-  + 'and applies straight away. Photos, options and remarks just save, with no VO.';
+  + 'and applies straight away. Photos, options, remarks, dates and the address just save, with no VO.';
 
 /** A renovation contract: only a change of amount or an added line is a VO (owner, 4 Nov 2026). */
 export const CONTRACT_MODE_BANNER =

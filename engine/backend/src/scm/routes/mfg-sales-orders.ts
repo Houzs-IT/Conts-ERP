@@ -6330,10 +6330,12 @@ export const patchMfgSalesOrderHeaderHandler = async (c: any) => {
      diff by the other road. Evaluated once, here, so both roads share one
      rejection and a future CONTROLLED-column change cannot land on one and miss
      the other. */
-  const patchDateLocked = soProcessingLocked(
+  /* Conts: on a confirmed order only a change of amount or lines is a VO, so the header is not held (owner, 6 Nov 2026). */
+  const patchVoOrder = soVoLocked(before as unknown as { status?: string | null } | null);
+  const patchDateLocked = !patchVoOrder && soProcessingLocked(
     before as unknown as { processing_date?: string | null; status: string | null } | null,
   );
-  const patchPoLocked = patchDateLocked ? false : await soPoLocked(sb, docNo);
+  const patchPoLocked = patchDateLocked || patchVoOrder ? false : await soPoLocked(sb, docNo);
   if (patchDateLocked || patchPoLocked) {
     /* Field-scoped (Loo 2026-06-13) — only a genuine change to a production-
        schedule date column is rejected; customer / address / payment header

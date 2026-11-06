@@ -34,6 +34,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { ReactNode } from 'react';
 
 vi.mock('./authed-fetch', () => ({ authedFetch: vi.fn() }));
+vi.mock('./onsite-twin-queries', () => ({ afterOnsiteConfirm: () => {} }));
 vi.mock('./dialog-service', () => ({ serviceNotify: vi.fn(() => Promise.resolve(true)) }));
 
 import { authedFetch } from './authed-fetch';
