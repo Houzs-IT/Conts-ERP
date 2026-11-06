@@ -104,9 +104,10 @@ type Answer = { body: Record<string, unknown>; status: 200 | 404 | 409 };
 const answer = (body: Record<string, unknown>, status: Answer['status'] = 200): Answer => ({ body, status });
 
 /* The photos a site receipt proves delivery with: everything but the supplier's paper. */
-async function siteReceiptPod(sb: any, grnId: string): Promise<string[]> {
-  const { data } = await sb.from('grn_site_photos').select('r2_key, kind').eq('grn_id', grnId).order('created_at');
-  return podKeysOfSitePhotos((data ?? []) as Array<{ r2_key: string; kind: string }>);
+async function siteReceiptPod(c: any, grnId: string): Promise<string[]> {
+  /* By SQL as site-receipts.ts writes them: the table is the engine's own, not on the REST client. */
+  const { results } = await c.env.DB.prepare(`SELECT r2_key, kind FROM scm.grn_site_photos WHERE grn_id = ?::uuid ORDER BY created_at`).bind(grnId).all();
+  return podKeysOfSitePhotos((results ?? []) as Array<{ r2_key: string; kind: string }>);
 }
 
 /* A site receipt is drop ship (owner, 7 Nov 2026): it books no stock (renovation-site-receipt.ts), so the delivery that goes
@@ -181,7 +182,7 @@ async function deliverReceipt(c: any, sb: any, id: string, companyId: number, op
      for the rest, the receipt taking its own DO. */
   const covering = opts.siteReceipt ? drafts.filter((d) => d.qty <= (got.get(d.soItemId) ?? 0)) : drafts;
   const plan = deliveriesToRaise(got, await deliveredByTwins(sb, id), covering, (x) => Number(remaining.get(x)?.remaining ?? 0));
-  const pod = opts.siteReceipt ? await siteReceiptPod(sb, id) : [];
+  const pod = opts.siteReceipt ? await siteReceiptPod(c, id) : [];
   const plannedProblems: string[] = [];
   for (const doId of plan.planned) {
     await link(sb, co.companyId, grn.id, doId);
