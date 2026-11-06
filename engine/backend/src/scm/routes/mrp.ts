@@ -321,6 +321,14 @@ async function productionMaterialDemand(sb: any, scoped: <Q>(q: Q) => Q): Promis
   });
 }
 
+/* A warehouse picked for one material on the MRP page wins over its order's location. */
+async function materialWarehouses(sb: any, scoped: <Q>(q: Q) => Q, ids: string[]): Promise<Map<string, string>> {
+  const { data, error } = await chunkIn<{ id: string; warehouse_id: string | null }>(ids, (batch, from, to) =>
+    scoped(sb.from('production_order_materials').select('id, warehouse_id').in('id', batch)).order('id').range(from, to));
+  if (error) throw new Error(`mrp_load_failed: ${error.message}`);
+  return new Map(data.flatMap((m) => (m.warehouse_id ? [[m.id, m.warehouse_id] as const] : [])));
+}
+
 export type MrpLine = {
   soItemId: string;    // mfg_sales_order_items.id — lets the UI one-click PO this line
   /* Set on a production order's raw material: soItemId is then the material's id, soDocNo the production order's. */
@@ -769,7 +777,9 @@ export async function computeMrp(
     if (r.so?.project_id == null) return [r];
     return projectDemandLine(r, planOf.get(r.id));
   });
-  const demandActive = [...demandPlanned, ...await productionMaterialDemand(sb, scoped)];
+  const materialDemand = await productionMaterialDemand(sb, scoped);
+  const materialWarehouseOf = await materialWarehouses(sb, scoped, materialDemand.map((d) => d.id));
+  const demandActive = [...demandPlanned, ...materialDemand.map((d) => ({ ...d, warehouse_id: materialWarehouseOf.get(d.id) ?? d.warehouse_id }))];
   const isDatedLine = (r: DemandRow): boolean => deliveryOf(r) !== null;
   /* Conts (owner, 3 Nov 2026): every MRP row names its project (code and name), so a line can be found and filtered
      by project. Projects live in public.projects. */
@@ -2059,7 +2069,8 @@ mrp.post('/line-warehouse', async (c) => {
     if (!m) return c.json({ error: 'not_found', message: 'That material is no longer on its production order.' }, 404);
     const { data: used } = await onPo.eq('production_material_id', b.lineId);
     if ((used ?? []).length > 0) return c.json({ error: 'on_po', message: 'This material is already on a PO, so the PO says where it goes.' }, 409);
-    const { error } = await sb.from('production_orders').update({ purchase_location_id: b.warehouseId }).eq('id', (m as { production_order_id: string }).production_order_id).eq('company_id', companyId);
+    /* The material's own warehouse: the order's location is where the finished work goes, and its other materials keep theirs. */
+    const { error } = await sb.from('production_order_materials').update({ warehouse_id: b.warehouseId }).eq('id', b.lineId).eq('company_id', companyId);
     if (error) return c.json({ error: 'save_failed', message: error.message }, 500);
     return c.json({ ok: true });
   }

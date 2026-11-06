@@ -21,6 +21,7 @@
 // Postgres; the harness rebuilds only the D1 side), so these drive computeMrp
 // through a minimal fake PostgREST client — same shape as so-converted-po.test.ts,
 // extended with the operators this engine chains (eq / in / order / limit / range).
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import { computeMrp, mrpStockAssignment, stockAssignmentKey, parseIncludeUndated, InvalidQueryFlag } from './mrp';
 import { NO_BUFFERS } from '../lib/lead-time';
@@ -1695,5 +1696,25 @@ describe('computeMrp: a PO bought for a production material stays with it', () =
     const lines = r.skus.flatMap((s) => s.lines);
     expect(lines.find((l) => l.productionMaterialId === 'm1')).toMatchObject({ shortageQty: 0, poNumber: 'PO-MAT' });
     expect(lines.find((l) => l.soDocNo === 'SO-1')).toMatchObject({ shortageQty: 4, poNumber: null });
+  });
+});
+
+describe('MRP: a warehouse picked for one material', () => {
+  const orderRow = { id: 'pr1', po_number: 'TC-PRO-1', purchase_location_id: 'W1', project_id: null, status: 'SUBMITTED', on_hold: false };
+  const base = { item_code: 'BF-100', description: 'Board', qty_needed: 2, processing_date: null, delivery_date: '2026-12-20', created_at: null, 'order.status': 'SUBMITTED', 'order.on_hold': false, order: orderRow };
+  test('reads on that material alone', async () => {
+    const sb = fakeSb({
+      ...BASE_TABLES,
+      production_order_materials: [{ ...base, id: 'm1', warehouse_id: 'W2' }, { ...base, id: 'm2', item_code: 'BF-200', warehouse_id: null }],
+      warehouses: [{ id: 'W1', code: 'KL', name: 'KL', is_active: true }, { id: 'W2', code: 'PG', name: 'PG', is_active: true }],
+    });
+    const r = await computeMrp(sb, { ...opts, whFilter: 'W2' });
+    expect(r.skus.flatMap((s) => s.lines).map((l) => l.productionMaterialId)).toEqual(['m1']);
+  });
+  test('the route never writes the order', () => {
+    const route = readFileSync(new URL('./mrp.ts', import.meta.url), 'utf8');
+    const body = route.slice(route.indexOf("mrp.post('/line-warehouse'"), route.indexOf("mrp.post('/regenerate'"));
+    expect(body).toContain("from('production_order_materials').update({ warehouse_id");
+    expect(body).not.toContain("from('production_orders').update");
   });
 });
