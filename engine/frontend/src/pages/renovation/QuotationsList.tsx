@@ -29,10 +29,10 @@ const FILTERS = [
 const COLUMNS: Column<QuotationListRow>[] = [
   { key: 'docNo', label: 'Doc. No.', alwaysVisible: true, getValue: (r) => r.docNo, disableFilter: true,
     render: (r) => <span className="font-mono font-semibold text-primary">{r.docNo}</span> },
-  { key: 'date', label: 'Date', getValue: (r) => r.docDate, filterType: 'date', dateValue: (r) => r.docDate, filterLabel: fmtDate,
+  { key: 'date', label: 'Date', width: '116px', getValue: (r) => r.docDate, filterType: 'date', dateValue: (r) => r.docDate, filterLabel: fmtDate,
     render: (r) => <span className="text-ink-secondary">{fmtDate(r.docDate)}</span> },
   { key: 'customer', label: 'Debtor Name', getValue: (r) => r.customerName || '', render: (r) => <span className="font-semibold">{r.customerName || '—'}</span> },
-  { key: 'branding', label: 'Branding', getValue: (r) => r.brandName ?? '',
+  { key: 'branding', label: 'Branding', width: '150px', getValue: (r) => r.brandName ?? '',
     render: (r) => (r.brandName ? <Badge tone={brandingToneForLabel(r.brandName)} variant="soft" size="xs">{r.brandName.toUpperCase()}</Badge> : <span className="text-ink-muted">—</span>) },
   { key: 'projectCode', label: 'Project ID', getValue: (r) => r.projectCode ?? '', render: (r) => <span className="font-mono text-[12px] text-ink-secondary">{r.projectCode ?? '—'}</span> },
   { key: 'project', label: 'Project Name', getValue: (r) => r.projectName ?? (r.projectId ? `#${r.projectId}` : ''),
