@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import type { RenoLineKind } from '../../vendor/shared/renovation-money';
 import type { PrintFormat } from './print-formats';
+import { setDocLetterhead } from './renovation-doc-theme';
 
 export type Highlight = 'NONE' | 'GREY' | 'PINK';
 
@@ -232,6 +233,15 @@ const send = <T>(path: string, method: string, body?: unknown) =>
   authedFetch<T>(`${BASE}${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body) });
 export const renoGet = <T>(path: string) => authedFetch<T>(`${BASE}${path}`);
 export const renoSend = send;
+
+/** Keeps the letterhead the documents print in step with SO Maintenance. A failed read leaves the company's details. */
+export async function loadDocLetterhead(): Promise<void> {
+  try {
+    const { brands } = await renoGet<{ brands: BrandProfile[] }>('/brands');
+    const b = brands.find((x) => x.name.trim().toLowerCase() === 'the conts' && x.hasProfile);
+    if (b) setDocLetterhead([...b.companyLines, b.contactLine].filter((l) => l.trim()));
+  } catch { /* the company's details stay */ }
+}
 
 /** The server's machine code and detail on a refusal (authedFetch keeps the raw body on the error). */
 export function refusalOf(err: unknown): { code: string | null; message: string; detail: Record<string, unknown> } {

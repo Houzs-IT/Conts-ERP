@@ -9,6 +9,12 @@
 import type { jsPDF as JsPdf } from 'jspdf';
 import { brandLogoFor } from './brand-logos';
 
+/* The company block and contact line of The Conts in SO Maintenance: what every document that does not follow a brand
+   prints (owner, 6 Nov 2026), so one place sets the phone and address. A PDF is drawn outside React, hence a plain value. */
+let docLetterhead: string[] | null = null;
+export const setDocLetterhead = (lines: string[] | null): void => { docLetterhead = lines?.length ? lines : null; };
+export const getDocLetterhead = (): string[] | null => docLetterhead;
+
 export interface LetterheadLogo { dataUrl: string; format: 'PNG' | 'JPEG'; width: number; height: number }
 
 export const DOC_THEME = {
