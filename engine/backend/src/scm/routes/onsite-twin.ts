@@ -20,8 +20,11 @@ import { postGrnAndRollup, recordGrnCreate } from './grns';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- the same loosely typed client and context as production-orders.ts */
 
-export const onsiteTwin = new Hono<{ Bindings: Env; Variables: Variables }>();
-onsiteTwin.use('*', supabaseAuth);
+/* Two routers, one area each: a GR's twin sits behind the GR gate, a DO's behind the DO gate. */
+export const onsiteTwinGrn = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const onsiteTwinDo = new Hono<{ Bindings: Env; Variables: Variables }>();
+onsiteTwinGrn.use('*', supabaseAuth);
+onsiteTwinDo.use('*', supabaseAuth);
 
 const words = (j: Record<string, unknown>, fallback: string): string => String(j.message ?? j.reason ?? j.error ?? fallback);
 
@@ -56,7 +59,7 @@ const link = (sb: any, companyId: number, grnId: string, doId: string) =>
   sb.from('onsite_twins').upsert({ company_id: companyId, grn_id: grnId, do_id: doId }, { onConflict: 'grn_id,do_id', ignoreDuplicates: true });
 
 /* A posted GR at On-site delivers the lines it received. */
-onsiteTwin.post('/grn/:id', async (c) => {
+onsiteTwinGrn.post('/:id', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
@@ -98,7 +101,7 @@ onsiteTwin.post('/grn/:id', async (c) => {
 });
 
 /* A confirmed DO on site receives what its lines' POs still have outstanding. */
-onsiteTwin.post('/do/:id', async (c) => {
+onsiteTwinDo.post('/:id', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
@@ -130,7 +133,7 @@ onsiteTwin.post('/do/:id', async (c) => {
     await sb.from('grns').update({ warehouse_id: dord.warehouse_id ?? undefined }).eq('id', draft.id).eq('status', 'DRAFT');
     await sb.from('grn_items').update({ zero_cost_ack: true, zero_cost_reason: `Received on site with ${dord.do_number}`, zero_cost_ack_by: c.get('user').id, zero_cost_ack_at: new Date().toISOString() })
       .eq('grn_id', draft.id).eq('unit_price_sen', 0);
-    const posted = await postGrnAndRollup(sb, draft.id, c.get('user').id, draft.companyId);
+    const posted = await postGrnAndRollup(sb, draft.id, c.get('user').id, draft.companyId, 'DRAFT');
     if (!posted.ok) { problems.push(`The goods receipt was raised but not posted: ${posted.reason}`); continue; }
     await recordGrnCreate(sb, c.get('houzsUser'), co.companyId, draft.id, draft.lineCount, `Received from ${draft.poNumbers.join(', ')} on confirming ${dord.do_number}`);
     await link(sb, co.companyId, draft.id, id);
@@ -141,7 +144,7 @@ onsiteTwin.post('/do/:id', async (c) => {
 });
 
 /* What the detail page shows: which PO a delivery goes with, and the twins raised so far. */
-onsiteTwin.get('/do/:id', async (c) => {
+onsiteTwinDo.get('/:id', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
@@ -159,7 +162,7 @@ onsiteTwin.get('/do/:id', async (c) => {
   });
 });
 
-onsiteTwin.get('/grn/:id', async (c) => {
+onsiteTwinGrn.get('/:id', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
