@@ -100,7 +100,7 @@ function QuotationCards({ rows, onOpen }: { rows: QuotationListRow[]; onOpen: (r
 const COLUMNS: Column<QuotationListRow>[] = [
   { key: 'docNo', label: 'Doc. No.', alwaysVisible: true, getValue: (r) => r.docNo, disableFilter: true,
     render: (r) => <span className="font-mono font-semibold text-primary">{r.docNo}</span> },
-  { key: 'date', label: 'Date', width: '116px', getValue: (r) => r.docDate, filterType: 'date', dateValue: (r) => r.docDate, filterLabel: fmtDate,
+  { key: 'date', label: 'Date', width: '136px', getValue: (r) => r.docDate, filterType: 'date', dateValue: (r) => r.docDate, filterLabel: fmtDate,
     render: (r) => <span className="text-ink-secondary">{fmtDate(r.docDate)}</span> },
   { key: 'customer', label: 'Debtor Name', getValue: (r) => r.customerName || '', render: (r) => <span className="font-semibold">{r.customerName || '—'}</span> },
   { key: 'branding', label: 'Branding', width: '150px', getValue: (r) => r.brandName ?? '',
