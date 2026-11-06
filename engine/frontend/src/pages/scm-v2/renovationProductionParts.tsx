@@ -27,6 +27,9 @@ import { dayStrip, initialDay, materialTally, mytTime, pageStart, peopleOn, phot
 const FIELD = "mt-1 block h-10 w-full rounded-md border border-border bg-surface px-2.5 text-[14px] text-ink";
 const message = (e: unknown): string => (e instanceof Error ? e.message : "Something went wrong.");
 
+/* A number typed over a leading zero reads 020 otherwise. */
+const wholeEntry = (v: string): string => v.replace(/^0+(?=d)/, "");
+
 export function useOrderFiles(orderId: string) {
   const q = useQuery({ queryKey: docFilesKey("production_order", orderId), queryFn: () => listDocFiles("production_order", orderId), staleTime: 30_000 });
   /* The day strip is the order's own photos, wherever on it they were added; a photo shown from its PO stays on the PO. */
@@ -154,7 +157,7 @@ export function RequestMoreDialog({ orderId, open, onClose }: { orderId: string;
       </label>
       <div className="grid grid-cols-2 gap-2.5">
         <label className="block text-[13px] text-ink-secondary">Quantity
-          <input className={FIELD} aria-label="Quantity" type="number" min="1" step="1" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} />
+          <input className={FIELD} aria-label="Quantity" type="number" min="1" step="1" inputMode="numeric" value={qty} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setQty(wholeEntry(e.target.value))} />
         </label>
         <label className="block text-[13px] text-ink-secondary">Needed by
           <input className={FIELD} aria-label="Needed by" type="date" value={neededBy} onChange={(e) => setNeededBy(e.target.value)} />
@@ -199,7 +202,7 @@ export function ReturnStockDialog({ orderId, materials, open, onClose }: { order
                 <b className="block truncate text-[13px] font-semibold">{m.description || m.item_code}</b>
                 <div className="text-[12px] text-ink-muted">{m.item_code} · taken {m.qty_issued - m.qty_returned} {m.uom ?? ""}</div>
               </div>
-              <input aria-label={`Return qty of ${m.item_code}`} type="number" min="0" step="1" inputMode="numeric" placeholder="0" value={qty[m.id] ?? ""} onChange={(e) => setQty({ ...qty, [m.id]: e.target.value })}
+              <input aria-label={`Return qty of ${m.item_code}`} type="number" min="0" step="1" inputMode="numeric" placeholder="0" value={qty[m.id] ?? ""} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setQty({ ...qty, [m.id]: wholeEntry(e.target.value) })}
                 className="h-10 w-full rounded-md border border-border bg-surface px-2 text-right text-[13px]" />
               <select aria-label={`Warehouse for ${m.item_code}`} value={where[m.id] ?? fallback} onChange={(e) => setWhere({ ...where, [m.id]: e.target.value })} className="h-10 w-full rounded-md border border-border bg-surface px-2 text-[14px]">
                 {places.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
@@ -226,8 +229,8 @@ export function ProductionTimeDialog({ orderId, hours, open, onClose }: { orderI
       footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={send} disabled={save.isPending}>Save</Button></div>}>
       <p className="mb-3 text-[13px] text-ink-secondary">The hours management gives this job.</p>
       <div className="flex items-baseline gap-2">
-        <input aria-label="Production time in hours" type="number" min="0" step="0.5" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)}
-          className="h-14 w-[120px] rounded-md border border-border bg-surface px-3 text-right text-[26px] font-bold" />
+        <input aria-label="Production time in hours" type="number" min="0" step="0.5" inputMode="decimal" value={value} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setValue(wholeEntry(e.target.value))}
+          className="h-14 w-[120px] rounded-md border border-border bg-surface px-3 text-right text-[26px] font-bold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
         <span className="text-[15px] font-semibold">hours</span>
       </div>
     </ModalOverlay>

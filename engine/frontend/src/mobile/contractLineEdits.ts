@@ -10,7 +10,7 @@ export type PhoneLineChange = {
   newVariants?: unknown;
   newRemark?: string;
 };
-type Snap = { id: string; item_code: string | null; qty: number; unit_price_sen: number };
+type Snap = { id: string; item_code: string | null; qty: number | null; unit_price_sen: number | null };
 export type ContractEdit = { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string };
 export type ContractAdd = { room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string };
 
