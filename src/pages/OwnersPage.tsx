@@ -12,7 +12,7 @@ import type { Report } from './OwnerIncomeReportPage';
 import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { phone as formatPhone } from '../lib/phone';
 import { MoneyText } from '../components/MoneyText';
-import { Select } from '../components/Select';
+import { Menu, Select } from '../components/Select';
 import {
   type Owner, type Payload,
   FALLBACK, netOf, grossOf, guaranteedOf, managedNetOf, managedGrossOf, terms, addressLines,
@@ -180,7 +180,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
   const filtered = !!(q || building || model);
   const monthText = month === thisMonth ? 'this month' : monthLabel(month);
 
-  /** The month's statement of every unit of the owners the table shows, one PDF per unit (its month and year to date),
+  /** The month's statement of every unit of the owners the table shows, one PDF per unit (its month, with or without the year to date),
    *  in one zip (owner, 22 Oct 2026). Drawn in the browser: the server has no PDF renderer. Four reports are fetched at a time. */
   const finance = !!user && areaOpen(user.role, 'finance', user.access);
   const [zipping, setZipping] = useState(false);
@@ -206,31 +206,31 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
     toast({ tone: 'info', title: `${plural(count, 'draft statement')} generated for ${monthLabel(month)}.`, body: 'Check them on the Statements tab before sending.' });
   }
 
-  function askToGenerate(picked: ListedStatement[], missing: Owner[]): void {
+  function askToGenerate(picked: ListedStatement[], missing: Owner[], monthOnly: boolean): void {
     const names = missing.slice(0, 5).map(o => titleCase(o.displayName)).join(', ');
     setDialog({
       title: `No ${monthLabel(month)} statement yet for ${plural(missing.length, 'owner')}`,
       body: 'The zip is made from generated owner statements. Generate drafts for them now from the month\'s reservations and costs, then export?',
       meta: missing.length > 5 ? `${names} and ${missing.length - 5} more` : names,
       confirmLabel: 'Generate and export',
-      extraActions: picked.length ? [{ label: `Export the ${picked.length} existing`, onClick: () => { setDialog(null); void withZipping(() => zipPdfs(picked)); } }] : [],
+      extraActions: picked.length ? [{ label: `Export the ${picked.length} existing`, onClick: () => { setDialog(null); void withZipping(() => zipPdfs(picked, monthOnly)); } }] : [],
       onConfirm: () => {
         setDialog(null);
         void withZipping(async () => {
           await generateStatements(missing.map(o => o.id));
-          await zipPdfs(await listShownStatements());
+          await zipPdfs(await listShownStatements(), monthOnly);
         });
       },
     });
   }
 
-  function zipStatements(): Promise<void> {
+  function zipStatements(monthOnly: boolean): Promise<void> {
     return withZipping(async () => {
       const picked = await listShownStatements();
       const withStatement = new Set(picked.map(s => s.ownerId));
       const missing = tableRows.filter(o => (grossOf(o) !== 0 || netOf(o) !== 0) && !withStatement.has(o.id));
-      if (missing.length) { askToGenerate(picked, missing); return; }
-      await zipPdfs(picked);
+      if (missing.length) { askToGenerate(picked, missing, monthOnly); return; }
+      await zipPdfs(picked, monthOnly);
     });
   }
 
@@ -244,7 +244,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
     }
   }
 
-  async function zipPdfs(picked: ListedStatement[]): Promise<void> {
+  async function zipPdfs(picked: ListedStatement[], monthOnly: boolean): Promise<void> {
     if (!picked.length) {
       toast({ tone: 'warning', title: `No owner statements for ${monthLabel(month)} yet.`, body: 'No owner listed had reservations, costs or charges that month.' });
       return;
@@ -260,7 +260,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
         try {
           const r = await loadReport(s.id);
           if (!r.units.length) { noReport.push(titleCase(s.ownerName)); return; }
-          const opts = { logo: await logoOf(r.settings.company.logo), phone: printedPhone };
+          const opts = { logo: await logoOf(r.settings.company.logo), phone: printedPhone, monthOnly };
           for (const u of r.units) made.push({ name: `${u.code} - ${titleCase(s.ownerName)}`, bytes: await statementPdf({ ...r, units: [u] }, opts) });
         } catch {
           failed.push(titleCase(s.ownerName));
@@ -370,11 +370,18 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
         <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">Owner payouts · {monthText} (estimate)</span>
         <span className="flex items-center gap-2 flex-wrap">
           <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
-          {finance && (
+          {finance && (zipping || !tableRows.length ? (
             <Button size="sm" variant="primary" icon={<Icon name="FileArchive" size="sm" />} loading={zipping} disabled={!tableRows.length}
-              disabledReason="No owners listed under these filters." title={`The ${monthLabel(month)} statement of each unit of the owners listed, one PDF per unit.`}
-              onClick={() => void zipStatements()}>Unit statements (.zip)</Button>
-          )}
+              disabledReason="No owners listed under these filters.">Unit statements (.zip)</Button>
+          ) : (
+            <Menu label="Unit statements (.zip)"
+              trigger={<span data-variant="primary" className="ui-btn relative isolate inline-flex items-center gap-2 h-[var(--control-height-sm)] px-[13px] rounded-control bg-[var(--color-brand-black)] text-[var(--color-text-inverse)] text-[13px] font-medium whitespace-nowrap">
+                <Icon name="FileArchive" size="sm" />Unit statements (.zip)<Icon name="ChevronDown" size="sm" /></span>}
+              items={[
+                { key: 'month', label: 'Month only', hint: `The ${monthLabel(month)} page of each unit, one PDF per unit.`, onSelect: () => void zipStatements(true) },
+                { key: 'year', label: 'Month and year to date', hint: `The ${monthLabel(month)} page, then Jan to Dec, one PDF per unit.`, onSelect: () => void zipStatements(false) },
+              ]} />
+          ))}
         </span>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] gap-3 sm:gap-4">
