@@ -83,7 +83,7 @@ import {
   soLineShippedSourcePosImpl,
 } from '../lib/source-po-trace';
 export { soLineShippedSources, resolveDoSources } from '../lib/source-po-trace';
-import { filterDoList, fromDoList, orderDoList, readDoListParams } from '../lib/do-list-read';
+import { DO_LIST_TYPES, filterDoList, fromDoList, orderDoList, readDoListParams } from '../lib/do-list-read';
 import { readStatusCounts } from '../lib/status-counts';
 import { resolveSalesScopeIds, salesDocOutOfScope } from '../lib/salesScope';
 import { enrichLinesWithFabricSupplierCode } from '../lib/fabric-supplier-code';
@@ -2731,6 +2731,7 @@ deliveryOrdersMfg.get('/', async (c) => {
      declared once in DO_STATUS_BUCKETS and the counts are derived from that
      map, so adding a tab cannot leave a count behind. */
   let statusCounts: Record<string, number> | undefined;
+  let typeCounts: Record<string, number> | undefined;
   let countError: string | null = null; // held, not returned here, so the LIST read's own error still wins the report
 
   if (!paginate) {
@@ -2785,6 +2786,9 @@ deliveryOrdersMfg.get('/', async (c) => {
       ['all', allC], ['on_hold', heldC], ...bucketNames.map((b, i) => [b, bucketC[i]]),
     ]));
     if (counted.ok) statusCounts = counted.counts; else countError = counted.reason;
+    /* The type tabs' numbers (owner, 6 Nov 2026). Their own read: a failed one drops the numbers, never the list. */
+    const typeC = await Promise.all(DO_LIST_TYPES.map((t) => countBase().eq('do_list_type', t)));
+    if (typeC.every((r) => !r.error)) typeCounts = Object.fromEntries(DO_LIST_TYPES.map((t, i) => [t, typeC[i].count ?? 0]));
   }
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   if (countError) return c.json({ error: 'status_counts_failed', reason: countError }, 500);
@@ -2797,7 +2801,7 @@ deliveryOrdersMfg.get('/', async (c) => {
        columns — the same read the export uses (lib/do-list-lines.ts). */
     const withLines = await attachDoLines(sb, c, deliveryOrders);
     if (withLines.error) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
-    return c.json({ deliveryOrders, total, page, pageSize, statusCounts });
+    return c.json({ deliveryOrders, total, page, pageSize, statusCounts, typeCounts });
   }
   return c.json({ deliveryOrders });
 });

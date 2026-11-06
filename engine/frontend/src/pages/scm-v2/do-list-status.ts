@@ -31,6 +31,13 @@
 // 2026-07-31. It has no entry in STATUS_TONE below for the same reason: no
 // do_status value maps to it, because scm.do_status has no such member and
 // never will.
+/* The type tabs (owner, 6 Nov 2026) sit beside the status tabs and narrow them; the server decides a DO's type from its lines
+   (migration 0239). Type is not a status, so every status tab stays. */
+export type TypeTab = "all" | "works_pod" | "furniture" | "loose";
+export const DO_TYPE_TABS: Array<[TypeTab, string]> = [
+  ["all", "All types"], ["works_pod", "Works POD"], ["furniture", "Furniture and Built-in"], ["loose", "Loose items"],
+];
+
 export type StatusTab = "all" | "draft" | "loaded" | "dispatched" | "in_transit" | "delivered" | "invoiced" | "on_hold" | "cancelled";
 
 // DO lifecycle: DRAFT → LOADED → DISPATCHED → IN_TRANSIT → DELIVERED →
