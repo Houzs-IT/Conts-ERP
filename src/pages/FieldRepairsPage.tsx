@@ -28,10 +28,24 @@ interface Repair {
   beforeCount: number; afterCount: number; documentCount: number;
   windows: { id: string; startsAt: string; endsAt: string; note: string | null; guestStaying: boolean }[];
 }
-interface ListPayload { mine: Repair[]; open: Repair[]; mayPick: boolean }
+interface PoolBuilding { id: string; name: string; open: number }
+interface ListPayload { mine: Repair[]; open: Repair[]; mayPick: boolean; buildings?: PoolBuilding[]; maxLimit?: number }
+interface UnitGroup { unitId: string; unitNumber: string; propertyName: string; jobs: Repair[] }
+
+const POOL_PAGE = 200;
+
+function groupByUnit(repairs: Repair[]): UnitGroup[] {
+  const groups = new Map<string, UnitGroup>();
+  for (const repair of repairs) {
+    const group = groups.get(repair.unitId) ?? { unitId: repair.unitId, unitNumber: repair.unitNumber, propertyName: repair.propertyName, jobs: [] };
+    group.jobs.push(repair);
+    groups.set(repair.unitId, group);
+  }
+  return [...groups.values()];
+}
 interface FileDoc { id: string; kind: string; url: string; fileName: string; byteSize: number; uploadedAt: string; uploader: string | null }
 interface Detail {
-  job: Repair; mine: boolean; mayPick: boolean; media: (MediaItem & { stage: 'before' | 'after' })[]; files: FileDoc[];
+  job: Repair; mine: boolean; mayPick: boolean; mayDrop?: boolean; media: (MediaItem & { stage: 'before' | 'after' })[]; files: FileDoc[];
   access: { id: string; label: string; instruction: string }[]; parking?: string | null; notes: { note: string; by: string; at: string; done: boolean }[];
 }
 
@@ -47,7 +61,10 @@ function progress(r: Repair): string {
 /** A technician's phone: the repair jobs that are theirs, the open ones nobody has (pick one up), and a way to report a
  *  new problem. One column, 44px targets; a job opens full screen with its action pinned at the bottom. */
 export default function FieldRepairsPage({ above, linkRepair, onLinked }: { above?: ReactNode; linkRepair?: string | null; onLinked?: () => void }) {
-  const { data, loading, error, reload } = useApi<ListPayload>('/field/repairs');
+  const [building, setBuilding] = useState('');
+  const [limit, setLimit] = useState(POOL_PAGE);
+  const query = new URLSearchParams({ ...(building ? { building } : {}), ...(limit > POOL_PAGE ? { limit: String(limit) } : {}) }).toString();
+  const { data, loading, error, reload } = useApi<ListPayload>(`/field/repairs${query ? `?${query}` : ''}`);
   // A new notice, the phone coming back to the app, or a minute passing reloads the list; a repair that just arrived carries a New mark.
   useFieldRefresh(reload);
   useEffect(() => {
@@ -59,15 +76,37 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   // A notice tapped in the bell: open that repair (the sheet loads it by id and says so if it is not theirs).
   useEffect(() => { if (linkRepair) { setTab('all'); setOpen(linkRepair); onLinked?.(); } }, [linkRepair]); // eslint-disable-line react-hooks/exhaustive-deps
   const [reporting, setReporting] = useState(false);
+  const [pickingUnit, setPickingUnit] = useState<string | null>(null);
   const toast = useToast();
   const t = usePortalText();
   const tr = t.repairs;
-  const mine = data?.mine ?? [];
+  const isInBuilding = (repair: Repair): boolean => !building || repair.buildingId === building;
+  const mine = (data?.mine ?? []).filter(isInBuilding);
   const todo = mine.filter(r => r.state !== 'resolved' && !r.endedAt);
   const finished = mine.filter(r => r.state === 'resolved' || r.endedAt);
-  const pool = data?.open ?? [];
-  const rows = tab === 'all' ? [...todo, ...pool] : tab === 'mine' ? todo : pool;
-  const fresh = useFreshIds([...mine, ...pool].map(r => r.id), 'repairs', !!data);
+  const pool = (data?.open ?? []).filter(isInBuilding);
+  const groups = [
+    ...groupByUnit(tab === 'open' ? [] : todo).map(group => ({ group, offer: false })),
+    ...groupByUnit(tab === 'mine' ? [] : pool).map(group => ({ group, offer: true })),
+  ];
+  const fresh = useFreshIds([...(data?.mine ?? []), ...(data?.open ?? [])].map(r => r.id), 'repairs', !!data);
+  const buildingOptions = useMemo(() => {
+    const byId = new Map((data?.buildings ?? []).map(b => [b.id, b]));
+    for (const r of data?.mine ?? []) if (!byId.has(r.buildingId)) byId.set(r.buildingId, { id: r.buildingId, name: r.propertyName, open: 0 });
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [data]);
+  const allBuildingsOpen = (data?.buildings ?? []).reduce((sum, b) => sum + b.open, 0);
+  const openTotal = building ? data?.buildings?.find(b => b.id === building)?.open ?? 0 : allBuildingsOpen;
+
+  function chooseBuilding(id: string) { setBuilding(id); setLimit(POOL_PAGE); }
+  async function pickAll(group: UnitGroup) {
+    setPickingUnit(group.unitId);
+    const result = await runEach(group.jobs, job => api.post(`/field/repairs/${job.id}/pick`, {}), job => job.title);
+    setPickingUnit(null);
+    toast({ tone: result.ok === 0 ? 'critical' : result.failed.length ? 'warning' : 'success', title: result.ok ? tr.pickedAll(result.ok) : tr.nonePicked, body: skippedNote(result.failed) || undefined });
+    reload();
+    if (result.ok) setTab('mine');
+  }
 
   return (
     <>
@@ -75,25 +114,44 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
           <h1 className="m-0 text-title font-semibold">{tr.title}</h1>
-          <div className="text-copy text-muted-ink">{data ? tr.summary(tr.jobs(todo.length), data.mayPick ? pool.length : null) : t.common.loading}</div>
+          <div className="text-copy text-muted-ink">{data ? tr.summary(tr.jobs(todo.length), data.mayPick ? openTotal : null) : t.common.loading}</div>
         </div>
         {data?.mayPick && (
           <Segmented label={tr.which} className="[&>button]:h-11" value={tab} onChange={setTab} options={[
-            { value: 'all', label: <>{tr.all} <span className="text-muted-ink tabular-nums">{todo.length + pool.length}</span></> },
+            { value: 'all', label: <>{tr.all} <span className="text-muted-ink tabular-nums">{todo.length + openTotal}</span></> },
             { value: 'mine', label: <>{tr.mine} <span className="text-muted-ink tabular-nums">{todo.length}</span></> },
-            { value: 'open', label: <>{tr.open} <span className="text-muted-ink tabular-nums">{pool.length}</span></> },
+            { value: 'open', label: <>{tr.open} <span className="text-muted-ink tabular-nums">{openTotal}</span></> },
           ]} />
         )}
       </div>
+      {buildingOptions.length > 1 && (
+        <FormRow label={tr.building}>
+          <select className={cx(INPUT, 'h-11')} value={building} onChange={e => chooseBuilding(e.target.value)}>
+            <option value="">{data?.mayPick ? tr.allBuildingsOpen(allBuildingsOpen) : tr.allBuildings}</option>
+            {buildingOptions.map(b => <option key={b.id} value={b.id}>{data?.mayPick ? tr.buildingOpen(b.name, b.open) : b.name}</option>)}
+          </select>
+        </FormRow>
+      )}
       <Button size="touch" variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setReporting(true)}>{tr.reportProblem}</Button>
       {error && <StaleBanner message={error} onRetry={reload} />}
       {loading && !data ? <><Skeleton height={120} /><Skeleton height={120} /></>
-        : rows.length === 0 && (tab === 'open' || finished.length === 0)
+        : groups.length === 0 && (tab === 'open' || finished.length === 0)
           ? <EmptyState icon="Wrench" title={tab === 'open' ? tr.noOpen : tr.noMine}
             body={tab === 'open' ? tr.noOpenBody : data?.mayPick ? tr.noMineBodyPick : tr.noMineBody} />
           : (
             <div className="flex flex-col gap-2.5">
-              {rows.map(r => <RepairCard key={r.id} r={r} offer={pool.includes(r)} fresh={fresh.has(r.id)} onOpen={() => setOpen(r.id)} />)}
+              {groups.map(({ group, offer }) => (
+                <UnitGroupCard key={`${offer ? 'open' : 'mine'}-${group.unitId}`} group={group} offer={offer} fresh={fresh} picking={pickingUnit === group.unitId}
+                  onPickAll={() => void pickAll(group)} onOpen={setOpen} />
+              ))}
+              {tab !== 'mine' && data?.mayPick && openTotal > pool.length && (
+                <div className="flex flex-col items-center gap-1.5 py-1 text-center">
+                  <span className="text-meta text-muted-ink">{tr.shown(pool.length, openTotal)}</span>
+                  {limit < (data.maxLimit ?? POOL_PAGE)
+                    ? <Button size="touch" variant="secondary" loading={loading} onClick={() => setLimit(current => current + POOL_PAGE)}>{tr.showMore}</Button>
+                    : <span className="text-meta text-muted-ink">{tr.pickBuildingForRest}</span>}
+                </div>
+              )}
               {tab !== 'open' && finished.length > 0 && (
                 <>
                   <h2 className="m-0 mt-2 text-[16px] font-semibold">{tr.finished}</h2>
@@ -102,28 +160,82 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
               )}
             </div>
           )}
-      {open && <RepairSheet id={open} onClose={() => setOpen(null)} onChanged={reload} onPicked={() => setTab('mine')} />}
+      {open && <RepairSheet id={open} onClose={() => setOpen(null)} onChanged={reload} onPicked={() => setTab('mine')} onDropped={() => { setOpen(null); setTab('open'); }} />}
       {reporting && <ReportSheet onClose={() => setReporting(false)}
         onDone={() => { setReporting(false); reload(); toast({ tone: 'success', title: tr.problemReported, body: t.jobs.officeHasIt }); }} />}
     </>
   );
 }
 
-function RepairCard({ r, offer, fresh, onOpen }: { r: Repair; offer?: boolean; fresh?: boolean; onOpen: () => void }) {
+function UnitGroupCard({ group, offer, fresh, picking, onPickAll, onOpen }: {
+  group: UnitGroup; offer: boolean; fresh: ReadonlySet<string>; picking: boolean; onPickAll: () => void; onOpen: (id: string) => void;
+}) {
+  const t = usePortalText();
+  const tr = t.repairs;
+  const [isExpanded, setIsExpanded] = useState(false);
+  const isUrgent = group.jobs.some(r => r.urgency === 'urgent' && r.state !== 'resolved');
+  const hasFresh = group.jobs.some(r => fresh.has(r.id));
+  const jobListId = `unit-jobs-${offer ? 'open' : 'mine'}-${group.unitId}`;
+  return (
+    <section aria-label={`${group.unitNumber} ${group.propertyName}`}
+      className={cx('bg-card rounded-card border border-solid flex flex-col overflow-hidden', isUrgent ? 'border-danger-line' : hasFresh ? 'border-info-line' : 'border-line')}>
+      <button type="button" aria-expanded={isExpanded} aria-controls={jobListId} onClick={() => setIsExpanded(current => !current)}
+        className="w-full text-left bg-card flex items-center gap-3 px-4 py-3 min-h-[56px] cursor-pointer hover:bg-muted">
+        <span className="flex-1 min-w-0 flex flex-col gap-1.5">
+          <b className="text-heading truncate">{group.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {group.propertyName}</span></b>
+          <span className="flex gap-1.5 flex-wrap">
+            <StatusBadge tone="neutral">{tr.jobs(group.jobs.length)}</StatusBadge>
+            {isUrgent && <StatusBadge tone="critical">{tr.urgent}</StatusBadge>}
+            {hasFresh && <StatusBadge tone="info" label={t.jobs.newJob} />}
+            {offer && <StatusBadge tone="gold">{tr.openToPick}</StatusBadge>}
+          </span>
+        </span>
+        <span className={cx('text-muted-ink transition-transform duration-200 motion-reduce:transition-none', isExpanded && 'rotate-180')}><Icon name="ChevronDown" size="nav" /></span>
+      </button>
+      {isExpanded && <div id={jobListId} className="flex flex-col">
+        {group.jobs.map(r => <RepairCard key={r.id} r={r} offer={offer} fresh={fresh.has(r.id)} onOpen={() => onOpen(r.id)} inGroup />)}
+        {offer && (
+          <div className="px-4 pb-4 pt-3 [border-top:1px_solid_var(--color-line)]">
+            <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="Hand" size="sm" />} loading={picking} onClick={onPickAll}>{tr.pickAll(group.jobs.length)}</Button>
+          </div>
+        )}
+      </div>}
+    </section>
+  );
+}
+
+function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: boolean; fresh?: boolean; inGroup?: boolean; onOpen: () => void }) {
   const t = usePortalText();
   const tr = t.repairs;
   const { short, stamp } = usePortalDates();
   const next = r.windows.find(w => Date.parse(w.endsAt) > Date.now());
+  const isUrgent = r.urgency === 'urgent' && r.state !== 'resolved';
+  const badges = (
+    <>
+      {fresh && <StatusBadge tone="info" label={t.jobs.newJob} />}
+      {isUrgent && <StatusBadge tone="critical">{tr.urgent}</StatusBadge>}
+      {r.jobType === 'pass_key' && r.state !== 'resolved' && <StatusBadge tone="info">{tr.passKey}</StatusBadge>}
+    </>
+  );
   return (
     <button type="button" onClick={onOpen}
-      className={cx('w-full text-left bg-card rounded-card border border-solid p-4 flex flex-col gap-1.5 cursor-pointer min-h-[44px]', r.urgency === 'urgent' && r.state !== 'resolved' ? 'border-danger-line' : fresh ? 'border-info-line' : 'border-line')}>
-      <span className="flex items-center gap-2">
-        <b className="text-heading flex-1 min-w-0 truncate">{r.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {r.propertyName}</span></b>
-        {fresh && <StatusBadge tone="info" label={t.jobs.newJob} />}
-        {r.urgency === 'urgent' && r.state !== 'resolved' && <StatusBadge tone="critical">{tr.urgent}</StatusBadge>}
-        {r.jobType === 'pass_key' && r.state !== 'resolved' && <StatusBadge tone="info">{tr.passKey}</StatusBadge>}
-      </span>
-      <span className="text-copy text-ink [overflow-wrap:anywhere]">{r.title}</span>
+      className={cx('w-full text-left bg-card flex flex-col gap-1.5 cursor-pointer min-h-[44px]', inGroup
+        ? 'px-4 py-3 [border-top:1px_solid_var(--color-line)] hover:bg-muted'
+        : cx('rounded-card border border-solid p-4', isUrgent ? 'border-danger-line' : fresh ? 'border-info-line' : 'border-line'))}>
+      {inGroup ? (
+        <span className="flex items-start gap-2">
+          <span className="flex-1 min-w-0 text-copy text-ink [overflow-wrap:anywhere]">{r.title}</span>
+          {badges}
+        </span>
+      ) : (
+        <>
+          <span className="flex items-center gap-2">
+            <b className="text-heading flex-1 min-w-0 truncate">{r.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {r.propertyName}</span></b>
+            {badges}
+          </span>
+          <span className="text-copy text-ink [overflow-wrap:anywhere]">{r.title}</span>
+        </>
+      )}
       <span className="text-meta text-muted-ink">{wordFor(t.category, r.category)} · {tr.reported(stamp(r.reportedAt))}{r.beforeCount ? ` · ${tr.photos(r.beforeCount)}` : ''}</span>
       {r.dueOn && r.state !== 'resolved' && r.jobType !== 'urgent' && <span className="text-meta text-ink">{tr.due(short(r.dueOn))}</span>}
       {next && <span className="text-meta text-ink flex items-center gap-1.5"><Icon name="CalendarClock" size="sm" />{tr.goIn(stamp(next.startsAt), hm(next.endsAt))}</span>}
@@ -136,7 +248,7 @@ function RepairCard({ r, offer, fresh, onOpen }: { r: Repair; offer?: boolean; f
 
 /* ---------- one job, full screen ---------- */
 
-function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose: () => void; onChanged: () => void; onPicked: () => void }) {
+function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: string; onClose: () => void; onChanged: () => void; onPicked: () => void; onDropped: () => void }) {
   const toast = useToast();
   const t = usePortalText();
   const tr = t.repairs;
@@ -184,6 +296,11 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
     if (ok === null) return;
     void act('remove', () => api.del(`/maintenance/issues/${id}/documents/${f.id}`), tr.fileRemoved);
   }
+  async function dropJob() {
+    const ok = await ask({ title: tr.dropAsk, body: tr.dropBody, confirmLabel: tr.dropConfirm, cancelLabel: tr.keepJob, danger: true });
+    if (ok === null) return;
+    if (await act('drop', () => api.post(`/field/repairs/${id}/drop`, {}), tr.dropped, tr.droppedBody)) onDropped();
+  }
   async function pickPurchase(list: FileList) {
     const file = list[0];
     if (!file) return;
@@ -224,8 +341,16 @@ function RepairSheet({ id, onClose, onChanged, onPicked }: { id: string; onClose
   } else if (j && working && j.waitingForOwner) {
     footer = <p className="m-0 text-copy text-warning text-center">{tr.waitingOwner}</p>;
   } else if (j && working && !j.startedAt) {
-    footer = <Button size="touch" variant="primary" className="w-full" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'}
-      onClick={() => void act('start', () => api.post(`/maintenance/issues/${id}/start`, {}), tr.started, tr.startedBody)}>{tr.start}</Button>;
+    footer = (
+      <div className="flex flex-col gap-2">
+        <Button size="touch" variant="primary" className="w-full" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'}
+          onClick={() => void act('start', () => api.post(`/maintenance/issues/${id}/start`, {}), tr.started, tr.startedBody)}>{tr.start}</Button>
+        {d.data?.mayDrop && (
+          <Button size="touch" variant="ghost" className="w-full" icon={<Icon name="Undo2" size="sm" />} loading={busy === 'drop'}
+            onClick={() => void dropJob()}>{tr.drop}</Button>
+        )}
+      </div>
+    );
   } else if (j && working && !j.endedAt) {
     footer = (
       <div className="flex flex-col gap-2">

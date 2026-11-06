@@ -25,6 +25,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   if (field && !flags.mine && !mayPick && !flags.reported) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
   const [job] = await fieldRepairs(env, 'm.id = ?', [id]);
+  const lastAssign = session.role === 'technician' && flags.mine && !job.startedAt && job.state === 'assigned'
+    ? await one<{ via: string | null; actor_id: string | null }>(env, `
+      SELECT after_state::jsonb ->> 'via' AS via, actor_id FROM audit_log WHERE entity_table = 'maintenance_issues' AND entity_id = ? AND action = 'maintenance.assign'
+      ORDER BY occurred_at DESC LIMIT 1`, id)
+    : null;
+  const pickedSelf = lastAssign?.via === 'picked_up' && lastAssign.actor_id === session.userId;
   const docs = await all<any>(env, `
     SELECT d.id, d.kind, d.file_name, d.mime_type, d.byte_size, d.created_at, u.full_name AS uploader
     FROM documents d LEFT JOIN users u ON u.id = d.uploaded_by WHERE d.maintenance_id = ? ORDER BY d.created_at`, id);
@@ -39,7 +45,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 
   const isMedia = (d: any) => d.kind === 'photo' || d.kind === 'video';
   return json({
-    job, mine: !!flags.mine, mayPick,
+    job, mine: !!flags.mine, mayPick, mayDrop: pickedSelf,
     media: docs.filter(isMedia).map(d => ({ id: d.id, kind: d.kind, url: `/api/documents/${d.id}/download`, fileName: d.file_name, mimeType: d.mime_type,
       stage: String(d.file_name).startsWith('after-') ? 'after' : 'before', uploadedAt: d.created_at, uploader: d.uploader ?? null })),
     files: docs.filter(d => !isMedia(d)).map(d => ({ id: d.id, kind: d.kind, url: `/api/documents/${d.id}/download`, fileName: d.file_name,

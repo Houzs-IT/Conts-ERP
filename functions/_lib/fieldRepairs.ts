@@ -14,7 +14,7 @@ export interface FieldRepair {
 }
 
 /** Repair jobs on alias `m` matching `where` (with `args`): Urgent, Pass key, then Normal by due date. */
-export async function fieldRepairs(env: Env, where: string, args: unknown[]): Promise<FieldRepair[]> {
+export async function fieldRepairs(env: Env, where: string, args: unknown[], limit = 200): Promise<FieldRepair[]> {
   const cols = await hasJobType(env);
   const rows = await all<any>(env, `
     SELECT m.id, m.unit_id, m.title, m.detail, m.state, m.category, m.urgency, m.source, m.reported_at, m.vendor_name,
@@ -28,7 +28,7 @@ export async function fieldRepairs(env: Env, where: string, args: unknown[]): Pr
     LEFT JOIN users r ON r.id = m.reported_by
     WHERE ${where}
     ORDER BY ${fieldOrderSql(cols)}
-    LIMIT 200`, ...args);
+    LIMIT ${Math.trunc(limit)}`, ...args);
   const windows = await windowsFor(env, rows.map(r => r.id));
   return rows.map(r => ({
     id: r.id, unitId: r.unit_id, unitNumber: r.unit_number, propertyName: r.property_name, buildingId: r.property_id,
