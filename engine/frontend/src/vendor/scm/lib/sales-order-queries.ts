@@ -667,10 +667,11 @@ export const useUpdateSoItemStockStatus = () => {
           },
         ),
       ),
+    /* Returned, so the button stays busy until the line shows its new state. */
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail', vars.docNo] });
       invalidateSoLists(qc);
       qc.invalidateQueries({ queryKey: ['mfg-sales-order-audit-log', vars.docNo] });
+      return qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail', vars.docNo] });
     },
     onError: (err) => {
       serviceNotify({ title: 'Stock status update failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' });

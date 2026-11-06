@@ -1399,7 +1399,12 @@ export const SalesOrderDetail = () => {
     }
 
     if (header.so_kind === 'RENOVATION') { await saveContractEdit(handle); return; }
-    const { changes: headerChanges } = handle.getLockedHeaderChanges();
+    const { changes: lockedHeaderChanges } = handle.getLockedHeaderChanges();
+    /* Dates, the address and customer details never change what the customer pays, so on a confirmed order they save
+       as they are; only a Houzs-style locked order still sends them for approval (owner, 4 and 6 Nov 2026). */
+    const voOrder = Boolean(header.vo_locked);
+    const headerSaves = voOrder && hasAmendmentHeaderChanges(lockedHeaderChanges);
+    const headerChanges = voOrder ? {} : lockedHeaderChanges;
     const allLines = buildAmendmentLines();
     /* Options and remarks are not a VO (owner, 4 Nov 2026): on a confirmed order they save on their own. */
     const saveOnly = header.vo_locked ? allLines.filter((l) => l.changeType === 'SPEC' && !lineChangesAmount(l)) : [];
@@ -1409,7 +1414,7 @@ export const SalesOrderDetail = () => {
     const plan = planAmendmentSubmit({
       hasLineChanges: lines.length > 0,
       hasFrozenHeaderChanges: hasAmendmentHeaderChanges(headerChanges),
-      hasDirectHeaderChanges: handle.hasDirectHeaderChanges(),
+      hasDirectHeaderChanges: handle.hasDirectHeaderChanges() || headerSaves,
       hasSaveOnlyLineChanges: saveOnly.length > 0,
     });
     if (plan === 'NOTHING') {
@@ -1432,7 +1437,7 @@ export const SalesOrderDetail = () => {
       await new Promise<void>((resolve, reject) => {
         handle.save(
           { onSuccess: () => resolve(), onError: (msg) => reject(new Error(msg)) },
-          { keepLockedColsAsOriginal: true },
+          { keepLockedColsAsOriginal: !voOrder },
         );
       });
       for (const l of saveOnly) {

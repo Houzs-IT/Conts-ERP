@@ -143,7 +143,7 @@ function ProjectPicker({ value, project, onPick, disabled, id }: {
         <ul role="listbox" className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-surface py-1 shadow-lg">
           {state === "loading" && rows.length === 0 && <li className="px-3 py-2 text-sm text-ink-secondary">Searching...</li>}
           {state === "error" && <li className="px-3 py-2 text-sm text-err">Projects could not be loaded. Try again.</li>}
-          {state !== "error" && rows.length === 0 && state !== "loading" && <li className="px-3 py-2 text-sm text-ink-secondary">No project matches. Create it under Projects first.</li>}
+          {state !== "error" && rows.length === 0 && state !== "loading" && <li className="px-3 py-2 text-sm text-ink-secondary">No project without a sales order matches. A project takes one sales order; to start a new one, create it under Projects first.</li>}
           {rows.map((p) => (
             <li key={p.id}>
               <button
