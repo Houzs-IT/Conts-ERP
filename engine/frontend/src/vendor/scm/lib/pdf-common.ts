@@ -18,7 +18,7 @@ import {
   type BrandingLogo,
 } from '../../../lib/branding';
 import { canonicalizeSinglePhone, formatPhone } from '../../shared/phone';
-import { drawDocLetterhead } from '../../../lib/renovation/renovation-doc-theme';
+import { drawDocLetterhead, getDocLetterhead } from '../../../lib/renovation/renovation-doc-theme';
 
 /* HOUZS letterhead — name / reg no / address / phone / email now come from the
    centralised Branding config (one editable record in Settings → Branding),
@@ -134,6 +134,8 @@ export const COMPANY = {
 /** The company block of the shared letterhead (renovation-doc-theme.ts), in the samples' shape: name and registration
  *  on one line, the address, then "PHONE : ... // EMAIL : ...". */
 export function letterheadLines(contactOf: { phone: string; email: string } = COMPANY): string[] {
+  const set = getDocLetterhead();
+  if (set) return set;
   const contact = [contactOf.phone && `PHONE : ${contactOf.phone}`, contactOf.email && `EMAIL : ${contactOf.email}`].filter(Boolean).join(' // ');
   return [[COMPANY.name.toUpperCase(), COMPANY.reg].filter(Boolean).join(' '), ...COMPANY.addressLines, contact];
 }
