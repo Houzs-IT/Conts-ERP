@@ -381,10 +381,10 @@ export function SectionCard({ section, index, count, disabled, showCost, onChang
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[860px] table-fixed text-left">
           <thead>
-            <tr className="text-[10.5px] uppercase tracking-wide text-ink-muted">
-              <th className="w-8 py-1 pl-2">No</th><th>Description</th><th className="w-[112px]">Product</th>
+            <tr className="text-[11px] font-semibold text-ink-muted">
+              <th className="w-8 py-1 pl-2 text-center">#</th><th>Item</th><th className="w-[112px]">Product</th>
               <th className="w-[52px] text-center">Qty</th><th className="w-[128px]">Measure</th><th className="w-[92px] text-right">Unit price</th>
-              <th className="w-[56px] text-right">Disc %</th><th className="w-[96px] pr-2 text-right">Amount (RM)</th><th className="w-[88px]" />
+              <th className="w-[56px] text-right">Disc</th><th className="w-[96px] pr-2 text-right">Amount</th><th className="w-[88px]" />
             </tr>
           </thead>
           <tbody>

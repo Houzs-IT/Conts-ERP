@@ -575,8 +575,10 @@ export function drawInfoColumns(
     if (!v) continue;
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(110); doc.text(label, midX, ry); doc.setTextColor(0);
-    doc.text(`: ${v}`, rValX, ry);
-    ry += lh;
+    /* Wraps inside the page margin: one long value ran past the rule and the table (owner, 5 Nov 2026). */
+    const wrapped = doc.splitTextToSize(`: ${v}`, pageW - margin - rValX) as string[];
+    doc.text(wrapped, rValX, ry);
+    ry += Math.max(1, wrapped.length) * lh;
   }
   return Math.max(ly, ry) + 4;
 }
