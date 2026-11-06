@@ -1674,3 +1674,26 @@ describe('computeMrp: the warehouse filter narrows the page, never the supply', 
     expect(r.skus.flatMap((s) => s.lines).map((l) => [l.soDocNo, l.shortageQty])).toEqual([['SO-2', 2]]);
   });
 });
+
+describe('computeMrp: a PO bought for a production material stays with it', () => {
+  const material = {
+    id: 'm1', item_code: 'BF-100', description: 'Board', qty_needed: 4, processing_date: null, delivery_date: '2026-12-20', created_at: null,
+    'order.status': 'SUBMITTED', 'order.on_hold': false,
+    order: { id: 'pr1', po_number: 'TC-PRO-1', purchase_location_id: 'W1', project_id: null, status: 'SUBMITTED', on_hold: false },
+  };
+  const boughtForMaterial = { ...poLine('PO-MAT', 4, null, '2026-12-10'), item_group: 'RAW', variants: null, production_material_id: 'm1' };
+  test('an earlier sales line cannot take it and leave the material short', async () => {
+    const earlier = { ...demandRed(4), item_group: 'RAW', variants: null, line_delivery_date: '2026-12-01' };
+    const sb = fakeSb({
+      ...BASE_TABLES,
+      mfg_sales_order_items: [earlier],
+      purchase_order_items: [boughtForMaterial],
+      production_order_materials: [material],
+      warehouses: [{ id: 'W1', code: 'KL', name: 'KL', is_active: true }],
+    });
+    const r = await computeMrp(sb, opts);
+    const lines = r.skus.flatMap((s) => s.lines);
+    expect(lines.find((l) => l.productionMaterialId === 'm1')).toMatchObject({ shortageQty: 0, poNumber: 'PO-MAT' });
+    expect(lines.find((l) => l.soDocNo === 'SO-1')).toMatchObject({ shortageQty: 4, poNumber: null });
+  });
+});

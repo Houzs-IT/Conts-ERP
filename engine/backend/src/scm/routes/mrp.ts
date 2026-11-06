@@ -248,6 +248,7 @@ type PoLineRow = {
   supplier_delivery_date_4: string | null;
   warehouse_id: string | null;        // per-line ship-to warehouse (overrides header)
   so_item_id: string | null;          // SO line this PO line was raised from (informational only now)
+  production_material_id?: string | null; // the production order's raw material this PO line buys
   po: {
     po_number: string; status: string; expected_at: string | null;
     // Migration 0180 — header revised dates, used as the fallback ETA when the
@@ -658,7 +659,7 @@ export async function computeMrp(
     .select(`
       item_code, item_group, variants, qty, received_qty, delivery_date,
       supplier_delivery_date_2, supplier_delivery_date_3, supplier_delivery_date_4,
-      warehouse_id, so_item_id,
+      warehouse_id, so_item_id, production_material_id,
       po:purchase_orders!inner ( po_number, status, expected_at, supplier_delivery_date_2, supplier_delivery_date_3, supplier_delivery_date_4, purchase_location_id, supplier_id )
     `)
     .not('po.status', 'in', PO_DEAD_SQL))
@@ -1080,10 +1081,13 @@ export async function computeMrp(
   const demandBoundById = new Set(
     demandActive.filter((d) => boundLine(d.item_group, d.item_code) || isCustomizedLine(d.remark)).map((d) => d.id),
   );
-  const isDedicated = (r: PoLineRow): boolean =>
-    boundCompany
-    && !!r.so_item_id
-    && (boundLine(r.item_group, r.item_code) || demandBoundById.has(String(r.so_item_id)));
+  /* A PO bought for a production order's material is that material's. In the pool an earlier line could take it, the
+     material then read short, and the buy route refused because its quantity is already on a PO. */
+  const dedicatedLineOf = (r: PoLineRow): string | null => {
+    if (r.production_material_id) return r.production_material_id;
+    return boundCompany && r.so_item_id && (boundLine(r.item_group, r.item_code) || demandBoundById.has(String(r.so_item_id)))
+      ? String(r.so_item_id) : null;
+  };
   for (const r of (poRaw ?? []) as unknown as PoLineRow[]) {
     if (!r.po || PO_DEAD.has(r.po.status)) continue;
     /* Migration 0180 — ETA is the EFFECTIVE (latest revised) delivery date: the
@@ -1109,8 +1113,9 @@ export async function computeMrp(
     /* The RECEIVED half is captured before the `left <= 0` exit below: a fully
        received dedicated PO leaves nothing outstanding and is exactly the case
        that must still cover its line. */
-    if (isDedicated(r)) {
-      const soItemId = String(r.so_item_id);
+    const dedicatedTo = dedicatedLineOf(r);
+    if (dedicatedTo) {
+      const soItemId = dedicatedTo;
       const got = Number(r.received_qty ?? 0);
       if (got > 0) dedicatedReceivedByLine.set(soItemId, (dedicatedReceivedByLine.get(soItemId) ?? 0) + got);
       if (left > 0) {
