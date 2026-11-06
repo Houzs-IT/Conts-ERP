@@ -281,7 +281,7 @@ const variantKeyOf = (itemGroup: string | null | undefined, variants: unknown): 
 
 
 /* Raw materials of open production orders as demand (owner, 4 Nov 2026): under the rules of every other line, dated by
-   their own delivery date. A draft, held or cancelled order orders nothing. A material asks for what has not left stock
+   their own delivery date. A draft, held or cancelled order orders nothing new. A material asks for what has not left stock
    yet; received units sit in stock and cover it there, so they are not taken off here as well (audit item 2). What Start
    issued past the pooled balance stays asked for until the balance recovers: see claimIssuedShortfalls. */
 async function productionMaterialDemand(sb: any, scoped: <Q>(q: Q) => Q): Promise<DemandRow[]> {
@@ -291,14 +291,16 @@ async function productionMaterialDemand(sb: any, scoped: <Q>(q: Q) => Q): Promis
   };
   const { data, error } = await paginateAll<Row>((from, to) => scoped(sb.from('production_order_materials')
     .select('id, item_code, description, qty_needed, qty_issued, qty_issued_short, processing_date, delivery_date, created_at, order:production_orders!inner (id, po_number, purchase_location_id, project_id, status, on_hold)')
-    .eq('order.status', 'SUBMITTED')
-    .eq('order.on_hold', false))
+    .in('order.status', ['SUBMITTED', 'RECEIVED']))
     .order('id')
     .range(from, to));
   if (error) throw new Error(`mrp_load_failed: ${error.message}`);
   const rows = (data ?? []).filter((r) => r.order);
   return rows.flatMap((r): DemandRow[] => {
-    const { unissued, shortfall } = openDemandOf(r);
+    const open = openDemandOf(r);
+    /* What left stock past the pool must still be bought, whatever the order has become since. */
+    const unissued = r.order!.status === 'SUBMITTED' && !r.order!.on_hold ? open.unissued : 0;
+    const { shortfall } = open;
     if (unissued + shortfall <= 0) return [];
     return [{
       id: r.id, productionMaterialId: r.id, productionOrderId: r.order!.id, doc_no: r.order!.po_number, item_code: r.item_code, description: r.description,

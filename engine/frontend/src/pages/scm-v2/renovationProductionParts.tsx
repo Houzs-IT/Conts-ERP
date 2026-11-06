@@ -81,7 +81,12 @@ export function useProductionPress(order: { id: string; po_number: string; title
       onError: (e) => notify({ title: "Not started", body: message(e), tone: "error" }),
     });
   };
-  const pressStart = () => (tally.ready ? startNow() : setReminder(true));
+  /* The reminder must read today's stock, so a list still loading or refreshing is waited for. */
+  const pressStart = async () => {
+    const list = (materials.isFetching ? (await materials.refetch()).data : materials.data) ?? [];
+    const fresh = statuses.isFetching || !statuses.data ? (await statuses.refetch()).data : statuses.data;
+    if (materialTally(list, fresh, fmtDate).ready) startNow(); else setReminder(true);
+  };
   const complete = async () => {
     try {
       await completeProductionOrder(order.id, setCompleting);

@@ -200,7 +200,7 @@ export function MobileProductionOrder({ id, onBack }: { id: string; onBack: () =
       {(canStart || canComplete || (status === "DRAFT" && mayAct)) && (
         <div className="shrink-0 border-t border-border bg-surface px-4 pb-3.5 pt-2.5">
           {status === "DRAFT" && <button type="button" onClick={() => confirmOrder.mutate(id)} className="h-[52px] w-full rounded-md bg-sidebar text-[15px] font-bold text-white">Confirm</button>}
-          {canStart && <button type="button" disabled={press.starting} onClick={press.pressStart} className="h-[52px] w-full rounded-md bg-sidebar text-[15px] font-bold text-white disabled:opacity-50">{press.starting ? "Starting…" : "Start"}</button>}
+          {canStart && <button type="button" disabled={press.starting} onClick={() => void press.pressStart()} className="h-[52px] w-full rounded-md bg-sidebar text-[15px] font-bold text-white disabled:opacity-50">{press.starting ? "Starting…" : "Start"}</button>}
           {canComplete && (
             <div className="grid grid-cols-2 gap-2">
               <label className={cn("flex h-[52px] cursor-pointer items-center justify-center rounded-md bg-sidebar text-[15px] font-bold text-white", photos.busy && "opacity-50")}>

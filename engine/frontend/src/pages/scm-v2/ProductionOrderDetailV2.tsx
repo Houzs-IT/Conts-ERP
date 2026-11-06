@@ -854,7 +854,7 @@ function ProductionOrderDetailV2ReadOnly() {
               <Button variant="danger" icon={<XCircle size={14} />} onClick={doCancel} disabled={cancelling}>Cancel Production Order</Button>
             )}
             {canStart && (
-              <Button variant="primary" icon={<Play size={14} />} onClick={press.pressStart} disabled={press.starting}>{press.starting ? "Starting…" : "Start"}</Button>
+              <Button variant="primary" icon={<Play size={14} />} onClick={() => void press.pressStart()} disabled={press.starting}>{press.starting ? "Starting…" : "Start"}</Button>
             )}
             {canComplete && (
               <Button variant="primary" icon={<CheckCircle2 size={14} />} onClick={doComplete} disabled={completing !== null}>
@@ -1117,7 +1117,7 @@ function ProductionOrderDetailV2ReadOnly() {
           <div className="mb-2 flex items-center gap-2">
             <button
               type="button"
-              onClick={canConfirm ? doConfirm : canStart ? press.pressStart : canComplete ? doComplete : doReopen}
+              onClick={canConfirm ? doConfirm : canStart ? () => void press.pressStart() : canComplete ? doComplete : doReopen}
               disabled={completing !== null}
               className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface text-[13.5px] font-bold text-ink hover:bg-surface-dim disabled:opacity-40"
             >
