@@ -79,6 +79,25 @@ export async function channelLetterFor(
  * payment key (a retry or a second caller finds the existing row). Every
  * method, cash included, stays a draft until finance confirms the money.
  */
+/** What the receipt reads: the number finance knows the sale by, and the customer. Callers hold the payment, and an
+    invoice payment only knows its invoice's id, so both come from the sale. A failed read leaves what the caller gave. */
+export async function receiptPaper(sb: any, p: ReceiptPaymentInput): Promise<{ docNo: string | null; customerName: string | null }> {
+  const given = { docNo: p.docNo, customerName: p.customerName ?? null };
+  if (!p.docNo) return given;
+  try {
+    if (p.source === 'SIPAY') {
+      const { data } = await sb.from('sales_invoices').select('invoice_number, debtor_name').eq('id', p.docNo).maybeSingle();
+      const si = data as { invoice_number?: string | null; debtor_name?: string | null } | null;
+      return { docNo: si?.invoice_number ?? p.docNo, customerName: given.customerName ?? si?.debtor_name ?? null };
+    }
+    if (given.customerName) return given;
+    const { data } = await sb.from('mfg_sales_orders').select('debtor_name').eq('doc_no', p.docNo).maybeSingle();
+    return { docNo: p.docNo, customerName: (data as { debtor_name?: string | null } | null)?.debtor_name ?? null };
+  } catch {
+    return given;
+  }
+}
+
 export async function createReceiptForPayment(
   sb: any,
   p: ReceiptPaymentInput,
@@ -92,6 +111,7 @@ export async function createReceiptForPayment(
     return { ok: true, id: cur.id, orNumber: cur.or_number, status: cur.status };
   }
 
+  const paper = await receiptPaper(sb, p);
   const prefix = docPrefixForCode(p.companyCode);
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const draftNo = await mintMonthlyDocNo(sb, 'acc_official_receipts', 'or_number', `${prefix}DraftOR-${docMonthTag(p.paidAt)}`);
@@ -101,8 +121,8 @@ export async function createReceiptForPayment(
       status: 'DRAFT',
       payment_source: p.source,
       payment_id: p.paymentId,
-      doc_no: p.docNo,
-      customer_name: p.customerName ?? null,
+      doc_no: paper.docNo,
+      customer_name: paper.customerName,
       method: p.method,
       amount_sen: p.amountSen,
       paid_at: p.paidAt,

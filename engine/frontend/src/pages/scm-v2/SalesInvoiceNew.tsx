@@ -394,7 +394,7 @@ export const SalesInvoiceNew = () => {
         })),
       },
       {
-        onSuccess: async (res: { id: string; invoiceNumber: string; priceWarningMessage?: string }) => {
+        onSuccess: async (res: { id: string; invoiceNumber: string; priceWarningMessage?: string; revenue?: { reason?: string } }) => {
           /* A DRAFT invoice cannot take payments yet (the server 409s a draft
              payment). Skip the payment flush — the operator records payments
              after confirming on the detail page. */
@@ -432,6 +432,14 @@ export const SalesInvoiceNew = () => {
              does. Said before either exit, so the early return below cannot
              swallow it. Never blocks: the invoice exists. */
           await notifyAcNotSent(notify, res, 'Invoice');
+          /* Issued, but its revenue did not reach the ledger: said here, or finance finds out at month end. */
+          if (res.revenue?.reason) {
+            await notify({
+              title: `Invoice ${res.invoiceNumber} was created, but it is not in the ledger yet.`,
+              body: res.revenue.reason,
+              tone: 'error',
+            });
+          }
           if (!staged) {
             setCreatedInvoice({ id: res.id, number: res.invoiceNumber });
             return;

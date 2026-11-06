@@ -325,7 +325,7 @@ export type SiFromDoInput = {
 };
 
 export type SiFromDoStatus = 201 | 400 | 404 | 409 | 500 | 503;
-export type SiFromDoRevenue = { posted: boolean; jeNo?: string; status: string };
+export type SiFromDoRevenue = { posted: boolean; jeNo?: string; status: string; reason?: string };
 /** The AutoCount enqueue's own problem sentences, passed through untouched. */
 type AcProblems = NonNullable<Awaited<ReturnType<typeof enqueueConvert>>>['problems'];
 export type SiFromDoOutcome =
@@ -581,7 +581,7 @@ export async function createSalesInvoiceFromDoLines(sb: Db, input: SiFromDoInput
       ? { posted: false, status: post.status }
       : { posted: post.status === 'posted', jeNo: post.jeNo, status: post.status };
   } else {
-    revenue = { posted: false, status: post.status };
+    revenue = { posted: false, status: post.status, reason: post.reason };
     if (post.status !== 'zero_total' && post.status !== 'invoice_not_found') {
       // eslint-disable-next-line no-console
       console.error(`[si-revenue] post failed for ${h.invoice_number}:`, post.status, post.reason);
