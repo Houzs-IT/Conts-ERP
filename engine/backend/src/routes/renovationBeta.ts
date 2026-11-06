@@ -1056,13 +1056,15 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
     ...grs.map((g) => ({ type: "goods_received" as const, id: String(g.id) })),
   ];
   const attached = ready ? await listFilesFor(db(c), docRefs, companyId) : new Map<string, DocFile[]>();
-  const linked = ready ? await linkedFilesFor(db(c), docRefs, companyId) : new Map<string, DocFile[]>();
+  const linked = ready ? await linkedFilesFor(db(c), docRefs, companyId) : new Map<string, Array<DocFile & { key: string }>>();
   const areasOf = (rows: Row[], id: string) => uniqueAreas(rows.filter((r) => r.doc_id === id).map((r) => str(r.area)));
   const linesOf = (rows: Row[], id: string): DeliveryLine[] => rows.filter((r) => r.doc_id === id)
     .map((r) => ({ soItemId: str(r.so_item_id), poLineId: str(r.po_line_id), qty: Number(r.qty ?? 0) }));
   const docPath = (type: DeliveryType, docId: string, fileId: string) =>
     `/api/renovation/${projectId}/document-files/${type}/${encodeURIComponent(docId)}/${encodeURIComponent(fileId)}`;
-  const uploads = (type: DeliveryType, docId: string): SitePhoto[] => [...(attached.get(`${type}:${docId}`) ?? []), ...(linked.get(`${type}:${docId}`) ?? [])].map((f) => ({
+  /* A drop-ship delivery's POD is its site receipt's photos: one picture, shown once. */
+  const siteKeys = new Set(sitePhotos.map((p) => String(p.r2_key)));
+  const uploads = (type: DeliveryType, docId: string): SitePhoto[] => [...(attached.get(`${type}:${docId}`) ?? []), ...(linked.get(`${type}:${docId}`) ?? []).filter((f) => !siteKeys.has(f.key))].map((f) => ({
     id: `${type}-${docId}-${f.id}`, path: docPath(type, docId, f.id), name: f.caption || f.name, image: f.kind === "image", kind: mediaKindOf(f.mime, f.name),
     area: null, at: f.at || null, source: f.source === "pod" ? "pod" as const : "upload" as const,
   }));
@@ -1076,12 +1078,14 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
   for (const d of dos) {
     const id = String(d.id);
     const photos: SitePhoto[] = [];
-    for (const pod of await podFiles(db(c), id).catch(() => [])) {
+    const pods = await podFiles(db(c), id).catch(() => []);
+    for (const pod of pods) {
       photos.push({ id: `${pod.id}-${id}`, path: docPath("delivery_order", id, pod.id), name: "Proof of delivery", image: true, kind: "image", area: null, at: pod.at || null, source: "pod" });
     }
     photos.push(...uploads("delivery_order", id));
     const receipts = new Set(doReceipts.filter((r) => r.do_id === id).map((r) => String(r.grn_id)));
-    photos.push(...sitePhotos.filter((p) => receipts.has(String(p.grn_id))).map((p) => siteShot(p, `do-${id}-`)));
+    const podKeys = new Set(pods.map((p) => p.key));
+    photos.push(...sitePhotos.filter((p) => receipts.has(String(p.grn_id)) && !podKeys.has(String(p.r2_key))).map((p) => siteShot(p, `do-${id}-`)));
     out.push({
       type: "delivery_order", id, no: String(d.no), at: str(d.at) ?? str(d.made_on), status: String(d.status), from: str(d.so_doc_no), poNumber: null, poIds: [],
       areas: areasOf(doAreas, id), lines: linesOf(doAreas, id), photos, note: str(d.note), driver: str(d.driver), supplierRef: null,

@@ -12,6 +12,10 @@ export function addUp<T>(rows: readonly T[], key: (r: T) => string | null | unde
   return out;
 }
 
+/** A site receipt's proof of delivery: the photos of the goods, not the supplier's delivery order. */
+export const podKeysOfSitePhotos = (photos: ReadonlyArray<{ r2_key: string; kind: string }>): string[] =>
+  photos.filter((p) => p.kind !== 'supplier_do').map((p) => p.r2_key);
+
 /** Receive a delivery's lines from their POs, less what receipts tied to this delivery already took. */
 export function receiptPicks(
   lines: ReadonlyArray<{ so_item_id: string; qty: number }>,

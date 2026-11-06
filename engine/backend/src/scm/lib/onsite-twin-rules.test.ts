@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addUp, deliveriesToRaise, receiptPicks } from './onsite-twin-rules';
+import { addUp, deliveriesToRaise, receiptPicks, podKeysOfSitePhotos } from './onsite-twin-rules';
 
 describe('a delivery receives what it has not yet received', () => {
   const po = [{ id: 'p1', so_item_id: 's1', qty: 6, received_qty: 0 }];
@@ -41,6 +41,12 @@ describe('a receipt delivers what is not yet delivered', () => {
   });
   it('never raises more than the order has left', () => {
     expect(deliveriesToRaise(new Map([['s1', 3]]), new Map(), [], rest(1)).raise).toEqual([{ soItemId: 's1', qty: 1 }]);
+  });
+});
+
+describe('a site receipt shares its proof of delivery', () => {
+  it('takes the photos of the goods, not the supplier paper', () => {
+    expect(podKeysOfSitePhotos([{ r2_key: 'a', kind: 'in_place' }, { r2_key: 'b', kind: 'supplier_do' }, { r2_key: 'c', kind: 'after' }])).toEqual(['a', 'c']);
   });
 });
 

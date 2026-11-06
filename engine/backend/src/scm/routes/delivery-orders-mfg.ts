@@ -5429,6 +5429,13 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     }
   }
 
+  /* A DO straight to site is received as it is confirmed, whoever confirmed it and from whatever screen. */
+  let twinProblem: string | null = null;
+  if (SHIPPED_STATES.includes(toStatus) && DO_PRESHIP_STATUSES.has((prevStatus ?? '').toUpperCase())) {
+    const { receiveConfirmedDelivery } = await import('./onsite-twin');
+    twinProblem = await receiveConfirmedDelivery(c, sb, id, co.companyId);
+  }
+
   /* Requirement #3 — a DO marked DELIVERED auto-advances its fully-covered SO. Best-effort. */
   if (toStatus === 'DELIVERED') {
     const { data: doRow } = await sb.from('delivery_orders').select('so_doc_no').eq('id', id).maybeSingle();
@@ -5490,6 +5497,7 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     deliveryOrder: data,
     movementErrors: movementErrors.length ? movementErrors : undefined,
     emailNotice: emailNotice ?? undefined,
+    twinProblem: twinProblem ?? undefined,
   });
 };
 deliveryOrdersMfg.patch('/:id/status', patchDeliveryOrderStatusHandler);

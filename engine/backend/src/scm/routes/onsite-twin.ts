@@ -4,9 +4,10 @@
    - a confirmed DO for On-site lines receives the PO lines raised for them.
    Both answer by what is still outstanding, so a repeat or the other side's sync finds nothing to do.
 
-   A separate request from the confirm on purpose: the free Workers plan allows 50 outside calls per request, and this
-   must never fail the receipt or delivery that was just confirmed. An in-house PO is left out: only completing its
-   production order receives it. */
+   The DO side runs inside the confirm (owner, 7 Nov 2026), so it depends on no screen, and the GR side still runs as its
+   own request. Neither may fail the document just confirmed. The free Workers plan allows 50 outside calls a request: if
+   the confirm runs out, the DO page's own call runs it again and finds what is done. An in-house PO is left out: only
+   completing its production order receives it. A site receipt is drop ship: see markDropShipped. */
 
 import { Hono } from 'hono';
 import type { Env, Variables } from '../env';
@@ -17,7 +18,7 @@ import { isOnSiteWarehouse } from '../lib/non-selling-warehouse';
 import { callHandler } from './production-orders';
 import { createDoFromSoLinesHandler, patchDeliveryOrderStatusHandler, soDeliverableRemaining } from './delivery-orders-mfg';
 import { postGrnAndRollup, recordGrnCreate } from './grns';
-import { addUp, deliveriesToRaise, receiptPicks } from '../lib/onsite-twin-rules';
+import { addUp, deliveriesToRaise, podKeysOfSitePhotos, receiptPicks } from '../lib/onsite-twin-rules';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- the same loosely typed client and context as production-orders.ts */
 
@@ -99,6 +100,53 @@ async function draftDeliveries(sb: any, soItemIds: string[], grnId: string, comp
     .map((l) => ({ doId: l.dord.id, soItemId: l.so_item_id, qty: Number(l.qty) }));
 }
 
+type Answer = { body: Record<string, unknown>; status: 200 | 404 | 409 };
+const answer = (body: Record<string, unknown>, status: Answer['status'] = 200): Answer => ({ body, status });
+
+/* The photos a site receipt proves delivery with: everything but the supplier's paper. */
+async function siteReceiptPod(sb: any, grnId: string): Promise<string[]> {
+  const { data } = await sb.from('grn_site_photos').select('r2_key, kind').eq('grn_id', grnId).order('created_at');
+  return podKeysOfSitePhotos((data ?? []) as Array<{ r2_key: string; kind: string }>);
+}
+
+/* A site receipt is drop ship (owner, 7 Nov 2026): it books no stock (renovation-site-receipt.ts), so the delivery that goes
+   with it must take none, or the goods would leave a shelf they never reached. migrated_no_stock is that rule: a real
+   document with no stock behind it, kept by every path that moves stock. */
+async function markDropShipped(sb: any, doId: string, pod: readonly string[]): Promise<void> {
+  const { data: d } = await sb.from('delivery_orders').select('pod_r2_key').eq('id', doId).maybeSingle();
+  const hasPod = !!(d as { pod_r2_key?: string | null } | null)?.pod_r2_key;
+  await sb.from('delivery_orders').update({ migrated_no_stock: true, ...(pod.length && !hasPod ? { pod_r2_key: pod[0], pod_photo_keys: pod } : {}) }).eq('id', doId);
+}
+
+/** Confirming a site receipt converts it to its DO, one per sales order, POD shared. Never throws: the receipt stands. */
+export async function deliverSiteReceipt(c: any, sb: any, grnId: string, companyId: number): Promise<string | null> {
+  try {
+    if (!(await claimTwin(sb, grnId, companyId))) return null;
+    try {
+      const r = await deliverReceipt(c, sb, grnId, companyId, { siteReceipt: true });
+      return r.status === 200 ? null : String(r.body.message ?? r.body.error);
+    } finally { await releaseTwin(sb, grnId); }
+  } catch (e) {
+    console.error('[onsite-twin] site receipt delivery failed', e);
+    return e instanceof Error ? e.message : 'The delivery order could not be raised.';
+  }
+}
+
+/** Confirming a DO for On-site lines raises its GR here on the server, so no screen has to ask, and once: a repeat
+    finds what the DO's receipts took. Never throws: the confirm stands, and the DO page can run it again. */
+export async function receiveConfirmedDelivery(c: any, sb: any, doId: string, companyId: number): Promise<string | null> {
+  try {
+    if (!(await claimTwin(sb, doId, companyId))) return null;
+    try {
+      const r = await receiveDelivery(c, sb, doId, companyId);
+      return r.status === 200 ? null : String(r.body.message ?? r.body.error);
+    } finally { await releaseTwin(sb, doId); }
+  } catch (e) {
+    console.error('[onsite-twin] confirm receipt failed', e);
+    return e instanceof Error ? e.message : 'The goods receipt could not be raised.';
+  }
+}
+
 /* A posted GR at On-site delivers the lines it received. */
 onsiteTwinGrn.post('/:id', async (c) => {
   const co = requireActiveCompanyId(c);
@@ -106,15 +154,15 @@ onsiteTwinGrn.post('/:id', async (c) => {
   const sb = c.get('supabase');
   const id = c.req.param('id');
   if (!(await claimTwin(sb, id, co.companyId))) return c.json({ ok: true, raised: [], busy: true });
-  try { return await deliverReceipt(c, sb, id, co.companyId); } finally { await releaseTwin(sb, id); }
+  try { const r = await deliverReceipt(c, sb, id, co.companyId); return c.json(r.body, r.status); } finally { await releaseTwin(sb, id); }
 });
 
-async function deliverReceipt(c: any, sb: any, id: string, companyId: number) {
+async function deliverReceipt(c: any, sb: any, id: string, companyId: number, opts: { siteReceipt?: boolean } = {}): Promise<Answer> {
   const co = { companyId };
   const { data: g } = await sb.from('grns').select('id, grn_number, status, warehouse_id').eq('id', id).eq('company_id', co.companyId).maybeSingle();
   const grn = g as { id: string; grn_number: string; status: string; warehouse_id: string | null } | null;
-  if (!grn) return c.json({ error: 'not_found' }, 404);
-  if (grn.status !== 'POSTED' || !(await onSiteIds(sb, [grn.warehouse_id], co.companyId)).size) return c.json({ ok: true, raised: [] });
+  if (!grn) return answer({ error: 'not_found' }, 404);
+  if (grn.status !== 'POSTED' || (!opts.siteReceipt && !(await onSiteIds(sb, [grn.warehouse_id], co.companyId)).size)) return answer({ ok: true, raised: [] });
   const { data: lines } = await sb.from('grn_items').select('qty_accepted, qty_received, poi:purchase_order_items!inner (so_item_id, purchase_order_id, po:purchase_orders!inner (supplier_id))').eq('grn_id', id);
   const inHouse = await inHouseSupplierId(sb, c);
   const got = new Map<string, number>();
@@ -124,12 +172,16 @@ async function deliverReceipt(c: any, sb: any, id: string, companyId: number) {
     if (!l.poi.so_item_id || made.has(l.poi.purchase_order_id)) continue;
     got.set(l.poi.so_item_id, (got.get(l.poi.so_item_id) ?? 0) + Number(l.qty_accepted ?? l.qty_received ?? 0));
   }
-  if (got.size === 0) return c.json({ ok: true, raised: [] });
+  if (got.size === 0) return answer({ ok: true, raised: [] });
   const { data: so } = await sb.from('mfg_sales_order_items').select('id, doc_no').in('id', [...got.keys()]);
   const docOf = new Map(((so ?? []) as Array<{ id: string; doc_no: string }>).map((s) => [s.id, s.doc_no]));
   const remaining = await soDeliverableRemaining(sb, [...new Set(docOf.values())]);
   const plan = deliveriesToRaise(got, await deliveredByTwins(sb, id), await draftDeliveries(sb, [...got.keys()], id, co.companyId), (x) => Number(remaining.get(x)?.remaining ?? 0));
-  for (const doId of plan.planned) await link(sb, co.companyId, grn.id, doId);
+  const pod = opts.siteReceipt ? await siteReceiptPod(sb, id) : [];
+  for (const doId of plan.planned) {
+    await link(sb, co.companyId, grn.id, doId);
+    if (opts.siteReceipt) await markDropShipped(sb, doId, pod);
+  }
   const byDoc = new Map<string, Array<{ soItemId: string; qty: number }>>();
   for (const pick of plan.raise) {
     const doc = docOf.get(pick.soItemId);
@@ -138,18 +190,21 @@ async function deliverReceipt(c: any, sb: any, id: string, companyId: number) {
   const raised: string[] = [];
   const problems: string[] = [];
   for (const picks of byDoc.values()) {
-    const out = await callHandler(c, createDoFromSoLinesHandler as never, { picks, confirmShortStock: true, warehouseId: grn.warehouse_id ?? undefined });
+    /* A site receipt books no stock, so its delivery takes none: raised as a draft, it never moves stock, and is marked
+       before it goes to Delivered. */
+    const out = await callHandler(c, createDoFromSoLinesHandler as never, { picks, confirmShortStock: true, warehouseId: grn.warehouse_id ?? undefined, ...(opts.siteReceipt ? { asDraft: true } : {}) });
     if (out.status >= 300 || !out.json.id) { problems.push(words(out.json, 'The delivery order could not be raised.')); continue; }
     const doId = String(out.json.id);
     await link(sb, co.companyId, grn.id, doId);
+    if (opts.siteReceipt) await markDropShipped(sb, doId, pod);
     const notMoved = out.json.movementErrors as string[] | undefined;
     if (notMoved?.length) problems.push(`The delivery order was raised but its stock did not move: ${notMoved.join('; ')}`);
     raised.push(String(out.json.doNumber ?? out.json.do_number ?? doId));
     const done = await callHandler(c, patchDeliveryOrderStatusHandler as never, { status: 'DELIVERED', confirmShortStock: true }, { id: doId });
     if (done.status >= 300) problems.push(words(done.json, 'The delivery order was raised but not marked delivered.'));
   }
-  if (problems.length > 0) return c.json({ error: 'twin_failed', message: problems.join(' '), raised }, 409);
-  return c.json({ ok: true, raised });
+  if (problems.length > 0) return answer({ error: 'twin_failed', message: problems.join(' '), raised }, 409);
+  return answer({ ok: true, raised });
 }
 
 /* A confirmed DO on site receives what its lines' POs still have outstanding. */
@@ -159,24 +214,24 @@ onsiteTwinDo.post('/:id', async (c) => {
   const sb = c.get('supabase');
   const id = c.req.param('id');
   if (!(await claimTwin(sb, id, co.companyId))) return c.json({ ok: true, raised: [], busy: true });
-  try { return await receiveDelivery(c, sb, id, co.companyId); } finally { await releaseTwin(sb, id); }
+  try { const r = await receiveDelivery(c, sb, id, co.companyId); return c.json(r.body, r.status); } finally { await releaseTwin(sb, id); }
 });
 
-async function receiveDelivery(c: any, sb: any, id: string, companyId: number) {
+async function receiveDelivery(c: any, sb: any, id: string, companyId: number): Promise<Answer> {
   const co = { companyId };
   const { data: d } = await sb.from('delivery_orders').select('id, do_number, status, warehouse_id').eq('id', id).eq('company_id', co.companyId).maybeSingle();
   const dord = d as { id: string; do_number: string; status: string; warehouse_id: string | null } | null;
-  if (!dord) return c.json({ error: 'not_found' }, 404);
-  if (dord.status === 'DRAFT' || dord.status === 'CANCELLED') return c.json({ ok: true, raised: [] });
+  if (!dord) return answer({ error: 'not_found' }, 404);
+  if (dord.status === 'DRAFT' || dord.status === 'CANCELLED') return answer({ ok: true, raised: [] });
   const lines = await onSiteDoLines(sb, id, dord.warehouse_id, co.companyId);
   const po = await poLinesFor(sb, c, lines.map((l) => l.so_item_id));
   const picks = receiptPicks(lines, po, await receivedByTwins(sb, id));
-  if (picks.length === 0) return c.json({ ok: true, raised: [] });
+  if (picks.length === 0) return answer({ ok: true, raised: [] });
   const core = await createDraftGrnsFromPoItemsCore({
     req: { json: async () => ({ picks, notes: `Received on site with ${dord.do_number}` }) },
     get: ((key: string) => c.get(key as 'supabase')) as unknown as GrnFromPoItemsContext['get'],
   });
-  if (!core.ok) return c.json({ error: 'twin_failed', message: words(core.body, 'The goods receipt could not be raised.') }, 409);
+  if (!core.ok) return answer({ error: 'twin_failed', message: words(core.body, 'The goods receipt could not be raised.') }, 409);
   const raised: string[] = [];
   const problems: string[] = [];
   for (const draft of core.created) {
@@ -190,8 +245,8 @@ async function receiveDelivery(c: any, sb: any, id: string, companyId: number) {
     await link(sb, co.companyId, draft.id, id);
     raised.push(draft.grnNumber ?? draft.id);
   }
-  if (problems.length > 0) return c.json({ error: 'twin_failed', message: problems.join(' '), raised }, 409);
-  return c.json({ ok: true, raised });
+  if (problems.length > 0) return answer({ error: 'twin_failed', message: problems.join(' '), raised }, 409);
+  return answer({ ok: true, raised });
 }
 
 /* What the detail page shows: which PO a delivery goes with, and the twins raised so far. */
