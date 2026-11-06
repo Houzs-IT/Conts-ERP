@@ -1578,7 +1578,7 @@ export function MfgDeliveryOrdersListV2() {
 
   const statusPillOptions: Array<{ value: StatusTab; label: string }> = (
     // `on_hold` sits before Cancelled, as on the other four lists. Mig 0324.
-    [["all", "All"], ["draft", "Draft"], ["loaded", "Confirmed"], ["dispatched", "Loaded"],
+    [["all", "All"], ["draft", "Draft delivery"], ["loaded", "Confirmed"], ["dispatched", "Loaded"],
      ["in_transit", "In transit"], ["delivered", "Delivered"], ["invoiced", "Invoiced"],
      ["on_hold", "On Hold"], ["cancelled", "Cancelled"]] as Array<[StatusTab, string]>
   ).map(([value, label]) => ({ value, label: `${label} · ${counts[value] ?? 0}` }));

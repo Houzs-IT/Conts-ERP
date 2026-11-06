@@ -22,6 +22,7 @@ import {
   type MaterialRow, type OrderChange, type ProductionProgress, type ProductionWorker,
 } from "../../vendor/scm/lib/production-order-queries";
 import { RawMaterialAddPanel, type RawPick } from "./RawMaterialAddPanel";
+import { usePhotoQueue } from "../../components/PhotoAdd";
 import { dayStrip, initialDay, materialTally, mytTime, pageStart, peopleOn, photoWord, shortDate } from "./renovationProductionDays";
 
 const FIELD = "mt-1 block h-10 w-full rounded-md border border-border bg-surface px-2.5 text-[14px] text-ink";
@@ -42,27 +43,10 @@ export function useOrderFiles(orderId: string) {
 
 export function useAddPhotos(orderId: string) {
   const qc = useQueryClient();
-  const notify = useNotify();
-  const toast = useToast();
-  const [busy, setBusy] = useState(false);
-  const add = async (list: FileList | null) => {
-    if (!list || list.length === 0) return;
-    setBusy(true);
-    let done = 0;
-    try {
-      for (const raw of Array.from(list)) {
-        await uploadDocFile("production_order", orderId, await toUploadableImage(raw));
-        done += 1;
-      }
-      toast.success(`${photoWord(done)} added`);
-    } catch (e) {
-      notify({ title: done > 0 ? `${photoWord(done)} added, then it stopped` : "Photo not added", body: message(e), tone: "error" });
-    } finally {
-      setBusy(false);
-      void qc.invalidateQueries({ queryKey: docFilesKey("production_order", orderId) });
-    }
-  };
-  return { add, busy };
+  return usePhotoQueue(
+    async (raw) => { await uploadDocFile("production_order", orderId, await toUploadableImage(raw)); return true; },
+    () => void qc.invalidateQueries({ queryKey: docFilesKey("production_order", orderId) }),
+  );
 }
 
 /** Start and Complete, with their one reminder. The screen supplies the buttons; both behave alike on desktop and phone. */

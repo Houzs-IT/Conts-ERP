@@ -85,7 +85,7 @@ import { PrintPreviewModal, useOpenPrintPreviewFromUrl, usePrintPreview } from "
 import { SoLinePhotoStrip } from "../../components/scm-v2/SoLinePhotoStrip";
 import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
 import { cn } from "../../lib/utils";
-import { HEIC_ACCEPT } from "../../lib/heicToJpeg";
+import { PhotoAddButtons, PhotoUploads } from "../../components/PhotoAdd";
 import { HoldChip } from "../../vendor/scm/components/HoldChip";
 
 import { DocumentHistoryDrawer } from "./DocumentHistoryDrawer";
@@ -982,13 +982,11 @@ function ProductionOrderDetailV2ReadOnly() {
                 dense
                 title={`Progress${progress.label ? ` · ${progress.label}` : ""}`}
                 actions={canAct ? (
-                  <label className={cn("inline-flex min-h-[32px] cursor-pointer items-center rounded-md bg-sidebar px-3 text-[12px] font-semibold text-white", photos.busy && "opacity-50")}>
-                    {photos.busy ? "Adding…" : "Add photos"}
-                    <input type="file" accept={`image/*,${HEIC_ACCEPT}`} multiple className="sr-only" aria-label="Add photos" disabled={photos.busy} onChange={(e) => { void photos.add(e.target.files); e.target.value = ""; }} />
-                  </label>
+                  <PhotoAddButtons queue={photos} />
                 ) : undefined}
               >
                 <div>
+                  <PhotoUploads queue={photos} hideDone />
                   {started && rawStatus === "SUBMITTED" && <ProgressSummary progress={progress} hours={productionHours} />}
                   <ProgressPhotos orderId={purchaseOrder.id} progress={progress} holidays={page?.holidays ?? []} canAdd={canAct} finishedOn={purchaseOrder.received_at?.slice(0, 10) ?? null} />
                 </div>

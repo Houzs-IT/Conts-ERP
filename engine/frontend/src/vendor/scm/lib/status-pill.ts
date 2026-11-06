@@ -116,7 +116,7 @@ const SO: Record<string, Entry> = {
   RENO_COMPLETED:   { label: 'Works completed',    tone: 'success' },
 };
 const DO: Record<string, Entry> = {
-  DRAFT:      { label: 'Draft',      tone: 'pending' },
+  DRAFT:      { label: 'Draft delivery', tone: 'pending' },
   LOADED:     { label: 'Confirmed',  tone: 'info' },
   DISPATCHED: { label: 'Loaded',     tone: 'progress' },
   IN_TRANSIT: { label: 'In Transit', tone: 'progress' },

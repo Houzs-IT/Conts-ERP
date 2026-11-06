@@ -7,7 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { fmtDate, fmtMoneySen, fmtQty } from "@2990s/shared";
 import { Button } from "../components/Button";
 import { ModalOverlay } from "../components/scm-v2/DocumentRelationshipMapModal";
-import { HEIC_ACCEPT } from "../lib/heicToJpeg";
+import { PhotoAddButtons, PhotoUploads } from "../components/PhotoAdd";
 import { cn } from "../lib/utils";
 import { useAuth } from "../auth/AuthContext";
 import { canOperateProductionOrders } from "../auth/salesAccess";
@@ -202,12 +202,10 @@ export function MobileProductionOrder({ id, onBack }: { id: string; onBack: () =
           {status === "DRAFT" && <button type="button" onClick={() => confirmOrder.mutate(id)} className="h-[52px] w-full rounded-md bg-sidebar text-[15px] font-bold text-white">Confirm</button>}
           {canStart && <button type="button" disabled={press.starting} onClick={() => void press.pressStart()} className="h-[52px] w-full rounded-md bg-sidebar text-[15px] font-bold text-white disabled:opacity-50">{press.starting ? "Starting…" : "Start"}</button>}
           {canComplete && (
-            <div className="grid grid-cols-2 gap-2">
-              <label className={cn("flex h-[52px] cursor-pointer items-center justify-center rounded-md bg-sidebar text-[15px] font-bold text-white", photos.busy && "opacity-50")}>
-                {photos.busy ? "Adding…" : "Add photo"}
-                <input type="file" accept={`image/*,${HEIC_ACCEPT}`} capture="environment" multiple className="sr-only" aria-label="Add photo" disabled={photos.busy} onChange={(e) => { void photos.add(e.target.files); e.target.value = ""; }} />
-              </label>
-              <button type="button" disabled={press.completing !== null} onClick={() => void press.complete()} className="h-[52px] rounded-md border border-border bg-surface text-[15px] font-bold disabled:opacity-50">{press.completing ?? (stopped ? "Retry Complete" : "Complete")}</button>
+            <div className="flex flex-col gap-2">
+              <PhotoUploads queue={photos} hideDone />
+              <PhotoAddButtons queue={photos} />
+              <button type="button" disabled={press.completing !== null} onClick={() => void press.complete()} className="h-[52px] w-full rounded-md border border-border bg-surface text-[15px] font-bold disabled:opacity-50">{press.completing ?? (stopped ? "Retry Complete" : "Complete")}</button>
             </div>
           )}
         </div>

@@ -320,7 +320,7 @@ const HEADER =
   'mattress_sofa_sen, bedframe_sen, accessories_sen, others_sen, service_sen, ' +
   'mattress_sofa_cost_sen, bedframe_cost_sen, accessories_cost_sen, others_cost_sen, service_cost_sen, ' +
   'local_total_sen, total_cost_sen, total_margin_sen, margin_pct_basis, line_count, ' +
-  'currency, warehouse_id, is_dropship, ' +
+  'currency, warehouse_id, is_dropship, pod_received_by, ' +
   /* Mig 0053 (port of 2990 0199) — DO-execution column: the date the goods
      arrive at the EM (East-Malaysia) holding warehouse on a sea-freight
      route. Surfaced read-only on the SO Detail mirror card and editable on
@@ -5139,6 +5139,8 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     /* Conts office "Mark delivered" (renovationDoDelivered.ts): the day the goods arrived, YYYY-MM-DD. */
     deliveredOn?: string;
     confirmShortStock?: boolean;
+    /* Who took the goods, on the phone's Draft delivery job. */
+    receivedBy?: unknown;
   }; try { body = (await c.req.json()) as typeof body; } catch { return c.json({ error: 'invalid_json' }, 400); }
   if (!body.status) return c.json({ error: 'status_required' }, 400);
   /* NORMALISE FIRST, exactly as the Sales Order handler does
@@ -5276,6 +5278,7 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
      photo. Only write when present so a plain status change never blanks
      an existing POD. */
   if (typeof body.signatureData === 'string' && body.signatureData) ts.signature_data = body.signatureData;
+  if (typeof body.receivedBy === 'string' && body.receivedBy.trim()) ts.pod_received_by = body.receivedBy.trim().slice(0, 120);
   /* Every photo of the POD; the first also stays in pod_r2_key. Only the caller's
      own uploads are accepted, and claiming them stops the slip reaper deleting
      them an hour later (lib/pod-photo-claim.ts). */
