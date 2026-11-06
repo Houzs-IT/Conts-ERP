@@ -14,7 +14,9 @@ import { DetailAside, DetailGrid, DetailMain, Section } from '../../components/D
 import { refusalOf, useQuotation, type QuotationView } from '../../lib/renovation/api';
 import { PRINT_FORMATS } from '../../lib/renovation/print-formats';
 import { DATA_TABLE_LAYOUT_FAMILIES } from '../../components/dataTableLayoutFamilies';
-import { roomOrdered } from '../../vendor/scm/lib/so-print-rooms';
+import { categoryRooms, roomOrdered } from '../../vendor/scm/lib/so-print-rooms';
+import { useMfgProducts } from '../../vendor/scm/lib/mfg-products-queries';
+import { useRenovationCatalog } from '../../vendor/scm/lib/renovation-catalog-queries';
 import { soInfoApi } from '../projects/renovation/customerPropertyApi';
 import { fmtDate } from '../renovation/shared';
 import { QuotationActions, QuotationNotices } from './renovationQuotationChrome';
@@ -47,6 +49,14 @@ function QuotationView_({ view }: { view: QuotationView }) {
   const [tab, setTab] = useState<'quotation' | 'revisions'>('quotation');
   const [linesView, setLinesView] = useState<SoLinesView>('item');
   const { rows, rooms } = useMemo(() => quotationLines(revision.sections), [revision.sections]);
+  /* By category, built as the sales order builds it; by area until the catalog has loaded. */
+  const catalogQ = useMfgProducts({ enabled: true });
+  const catalogNames = useRenovationCatalog();
+  const categoryView = useMemo(() => {
+    if (!catalogQ.data) return undefined;
+    const products = new Map(catalogQ.data.map((p) => [p.code, { group: p.category_group || p.category, sub: p.sub_category }]));
+    return categoryRooms(rows as never, (code) => products.get(code), { groups: catalogNames.groups, subs: catalogNames.all });
+  }, [catalogQ.data, rows, catalogNames.groups, catalogNames.all]);
   const project = useQuery({
     queryKey: ['reno', 'so-info', 'project', quotation.projectId],
     queryFn: () => soInfoApi.project(quotation.projectId!),
@@ -146,7 +156,7 @@ function QuotationView_({ view }: { view: QuotationView }) {
                   emptyLabel="No line items"
                 />
               ) : (
-                <SoAreaLines<QuotationLine> items={rows} rooms={rooms} money={money} columns={columns.filter((c) => AREA_COLUMNS.includes(c.key))} />
+                <SoAreaLines<QuotationLine> items={rows} rooms={linesView === 'category' ? categoryView ?? rooms : rooms} money={money} columns={columns.filter((c) => AREA_COLUMNS.includes(c.key))} />
               )}
             </Section>
 
