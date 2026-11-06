@@ -5,19 +5,20 @@ import { inForce } from '../../_lib/datedRows';
 import { hasServicePrices, hasDatedUnitPrices, serviceBook, priceGrids, writePrices, isDayStr, CLEAN_TYPES, type PriceRow, type ServiceItem } from '../../_lib/servicePrices';
 import { figuresChanged, percentToBasisPoints, raiseFigures, raiseSen, type PriceFigures, type PriceRaise } from '../../_lib/priceRaise';
 
-interface RaiseRequest { cleanKind: string; unitId: string | null; effectiveFrom: string; raise: PriceRaise; includeOwn: boolean; dryRun: boolean }
+interface RaiseRequest { cleanKind: string | null; itemId: string | null; unitId: string | null; effectiveFrom: string; raise: PriceRaise; includeOwn: boolean; dryRun: boolean }
 interface ListChange { key: string; label: string; before: PriceFigures; after: PriceFigures }
 interface OwnChange { unit_id: string; before: PriceFigures; after: PriceFigures }
 
 function readRequest(body: unknown, today: string): RaiseRequest | Response {
   const input = (body ?? {}) as Record<string, unknown>;
-  if (!(CLEAN_TYPES as readonly string[]).includes(String(input.cleanKind))) return fail('VALIDATION', 'Pick the clean type.', 422, { cleanKind: 'Pick the clean type.' });
+  const itemId = typeof input.itemId === 'string' && input.itemId ? input.itemId : null;
+  if (!itemId && !(CLEAN_TYPES as readonly string[]).includes(String(input.cleanKind))) return fail('VALIDATION', 'Pick the clean type or the item.', 422, { cleanKind: 'Pick the clean type or the item.' });
   if (!isDayStr(input.effectiveFrom) || input.effectiveFrom <= today) return fail('VALIDATION', 'Pick a day after today.', 422, { effectiveFrom: 'Pick a day after today.' });
   const ownerBasisPoints = percentToBasisPoints(input.ownerPct), internalBasisPoints = percentToBasisPoints(input.internalPct);
   if (ownerBasisPoints === undefined || internalBasisPoints === undefined) return fail('VALIDATION', 'A percent is a number from -100 to 1000, up to two decimals.', 422);
   if (!ownerBasisPoints && !internalBasisPoints) return fail('VALIDATION', 'Enter the percent to change by.', 422);
   return {
-    cleanKind: String(input.cleanKind), unitId: typeof input.unitId === 'string' && input.unitId ? input.unitId : null, effectiveFrom: input.effectiveFrom,
+    cleanKind: itemId ? null : String(input.cleanKind), itemId, unitId: typeof input.unitId === 'string' && input.unitId ? input.unitId : null, effectiveFrom: input.effectiveFrom,
     raise: { ownerBasisPoints, internalBasisPoints }, includeOwn: input.includeOwn === true, dryRun: input.dryRun === true,
   };
 }
@@ -61,8 +62,8 @@ const raisedOrKept = (merged: number | null, own: number | null, basisPoints: nu
   return merged == null ? undefined : raiseSen(merged, basisPoints);
 };
 
-/** POST /api/housekeeping/price-raise { cleanKind, effectiveFrom, ownerPct?, internalPct?, unitId?, includeOwn?, dryRun? }
- *  Changes a clean's prices by a percent from a later date, worked out once into RM and saved as ordinary dated rows.
+/** POST /api/housekeeping/price-raise { cleanKind or itemId, effectiveFrom, ownerPct?, internalPct?, unitId?, includeOwn?, dryRun? }
+ *  Changes a clean's or a service item's prices by a percent from a later date, worked out once into RM and saved as ordinary dated rows.
  *  Without `unitId`: every list price row (bed sizes or layouts) in force on that date, and with `includeOwn` each unit's
  *  own figures in force then (only the figures it has; a figure following the list keeps following it). With `unitId`:
  *  that unit's price on that date, saved as its own price. `dryRun` answers what would be saved. Management only. */
@@ -73,12 +74,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!(await hasServicePrices(env))) return fail('NOT_CONFIGURED', 'Service prices need a database update (migration 0127) that is not applied yet.', 501);
   const asked = readRequest(await request.json().catch(() => null), mytToday());
   if (asked instanceof Response) return asked;
-  const { cleanKind, unitId, effectiveFrom, raise, includeOwn, dryRun } = asked;
+  const { cleanKind, itemId, unitId, effectiveFrom, raise, includeOwn, dryRun } = asked;
   if ((unitId || includeOwn) && !(await hasDatedUnitPrices(env))) return fail('NOT_CONFIGURED', 'Dated unit prices need a database update (migration 0186) that is not applied yet.', 501);
   const book = await serviceBook(env, unitId ? [unitId] : []);
-  const item = book.itemForKind(cleanKind);
-  if (!item) return fail('NOT_FOUND', 'There is no active cleaning item for that clean type in Service prices.', 404);
-  const note = 'Changed by percent from Scheduled changes';
+  const item = itemId ? book.items.find(candidate => candidate.id === itemId && candidate.active) ?? null : book.itemForKind(cleanKind ?? '');
+  if (!item) return fail('NOT_FOUND', 'There is no active item for that in Service prices.', 404);
+  const note = 'Changed by percent';
   const actor = { actorId: session.userId, actorLabel: session.fullName };
 
   if (unitId) {
@@ -90,13 +91,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const merged = book.amounts(item.id, unitId, layoutKey(unit.layout_type, unit.bedrooms), effectiveFrom);
     const owner = raisedOrKept(merged.owner, own?.owner_price ?? null, raise.ownerBasisPoints);
     const internal = raisedOrKept(merged.internal, own?.internal_cost ?? null, raise.internalBasisPoints);
-    if (owner === undefined || internal === undefined) return fail('VALIDATION', 'This unit has no price on that date to change by a percent. Enter it in RM.', 422);
+    if (owner === undefined || internal === undefined) return fail('VALIDATION', 'This unit has no price on that date to change by a percent.', 422);
     const before = { owner_price: merged.owner, internal_cost: merged.internal }, after = raiseFigures(before, raise);
     if (dryRun) return json({ effectiveFrom, unit: { before, after } });
     const saved = { owner_price: owner, internal_cost: internal };
     await transaction(env, async tx => {
       await writeOwnRows(tx, item.id, effectiveFrom, [{ unit_id: unitId, before, after: saved }], session.userId);
-      await audit(tx, { ...actor, action: 'cleaning.unit_price_raise', entityTable: 'units', entityId: unitId, before: { itemId: item.id, ...before }, after: { itemId: item.id, effectiveFrom, ...saved, ...raise } });
+      await audit(tx, { ...actor, action: `${item.domain}.unit_price_raise`, entityTable: 'units', entityId: unitId, before: { itemId: item.id, ...before }, after: { itemId: item.id, effectiveFrom, ...saved, ...raise } });
     });
     return json({ ok: true, effectiveFrom, unit: { before, after } });
   }

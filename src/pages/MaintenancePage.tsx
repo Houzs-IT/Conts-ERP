@@ -27,7 +27,7 @@ import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
 import { ServicePrices } from './ServicePrices';
-import { UnitPriceChangePanel } from './units/ScheduledChanges';
+import { PriceChangePanel } from './units/PriceChangePanel';
 import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
 import { HistoryDisclosure, PhoneHistory, RecordHistory } from '../components/RecordHistory';
 
@@ -941,14 +941,15 @@ function ApprovalRulesPanel() {
 function MaintenanceItems({ fallback, onChanged }: { fallback: ReactNode; onChanged: () => void }) {
   const service = useApi<{ ready: boolean; mayPrice?: boolean }>('/operations/service-prices?domain=maintenance');
   const [isScheduling, setIsScheduling] = useState(false);
+  const [priceListVersion, setPriceListVersion] = useState(0);
   if (!service.data) return <Skeleton height={240} />;
   if (!service.data.ready) return <>{fallback}</>;
   return <>
-    <ServicePrices domain="maintenance" onChanged={onChanged}
+    <ServicePrices key={priceListVersion} domain="maintenance" onChanged={onChanged}
       above={<div className="flex flex-wrap items-center justify-between gap-3">
         <p className="m-0 flex-1 min-w-[220px] text-meta text-muted-ink">Picking an item on a job fills its owner price (the quote) and its internal cost; both stay editable on the job. The whole list, cleaning too, is under Settings, Service prices.</p>
-        {service.data.mayPrice && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsScheduling(true)}>Schedule a unit's price</Button>}
+        {service.data.mayPrice && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsScheduling(true)}>Change by %</Button>}
       </div>} />
-    {isScheduling && <UnitPriceChangePanel kind="maintenance" onClose={() => setIsScheduling(false)} onSaved={() => { setIsScheduling(false); onChanged(); }} />}
+    {isScheduling && <PriceChangePanel kind="maintenance" onClose={() => setIsScheduling(false)} onSaved={() => { setIsScheduling(false); setPriceListVersion(version => version + 1); onChanged(); }} />}
   </>;
 }
