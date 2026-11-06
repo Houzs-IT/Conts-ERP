@@ -549,7 +549,7 @@ async function renderPurchaseOrderInto(
       // and were wrapping ("HC-SO-2608-00" / "8"). 34mm fits 16 ch at 8.5pt; the
       // 'auto' Description column absorbs the extra width.
       0: { cellWidth: 34 },                    // For SO — fits "2990-SO-2608-026" on one line
-      1: { cellWidth: 27, fontStyle: 'bold' }, // Supplier Code (the code they act on)
+      1: { cellWidth: 38, fontStyle: 'bold' }, // Supplier Code (the code they act on)
       2: { cellWidth: 'auto' },                // Description — auto-fills the remainder
       3: { cellWidth: 11 },                    // UOM
       4: { cellWidth: 10, halign: 'right' },   // Qty

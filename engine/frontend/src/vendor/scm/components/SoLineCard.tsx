@@ -749,7 +749,8 @@ const SoLineCardInner = ({
     : 0;
 
   const lineTotal = useMemo(
-    () => Math.max(0, draft.qty * draft.unitPriceSen - draft.discountSen),
+    /* A credit row is negative on purpose; only a discount larger than the line stops at 0. */
+    () => (draft.unitPriceSen < 0 ? draft.qty * draft.unitPriceSen : Math.max(0, draft.qty * draft.unitPriceSen - draft.discountSen)),
     [draft.qty, draft.unitPriceSen, draft.discountSen],
   );
 

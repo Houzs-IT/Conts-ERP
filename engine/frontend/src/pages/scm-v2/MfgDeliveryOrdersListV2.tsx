@@ -625,6 +625,7 @@ function DetailDrawer({
                   disabled={!canConvertToSi}
                   title={siReason ?? undefined}
                   aria-describedby={siReason ? "do-drawer-si-reason" : undefined}
+                  className="whitespace-nowrap"
                 >
                   {transferToLabel('si')}
                 </Button>
