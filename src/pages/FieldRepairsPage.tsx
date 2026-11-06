@@ -140,10 +140,10 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
             body={tab === 'open' ? tr.noOpenBody : data?.mayPick ? tr.noMineBodyPick : tr.noMineBody} />
           : (
             <div className="flex flex-col gap-2.5">
-              {groups.map(({ group, offer }) => group.jobs.length === 1
-                ? <RepairCard key={group.jobs[0].id} r={group.jobs[0]} offer={offer} fresh={fresh.has(group.jobs[0].id)} onOpen={() => setOpen(group.jobs[0].id)} />
-                : <UnitGroupCard key={`${offer ? 'open' : 'mine'}-${group.unitId}`} group={group} offer={offer} fresh={fresh} picking={pickingUnit === group.unitId}
-                  onPickAll={() => void pickAll(group)} onOpen={setOpen} />)}
+              {groups.map(({ group, offer }) => (
+                <UnitGroupCard key={`${offer ? 'open' : 'mine'}-${group.unitId}`} group={group} offer={offer} fresh={fresh} picking={pickingUnit === group.unitId}
+                  onPickAll={() => void pickAll(group)} onOpen={setOpen} />
+              ))}
               {tab !== 'mine' && data?.mayPick && openTotal > pool.length && (
                 <div className="flex flex-col items-center gap-1.5 py-1 text-center">
                   <span className="text-meta text-muted-ink">{tr.shown(pool.length, openTotal)}</span>
@@ -170,21 +170,36 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
 function UnitGroupCard({ group, offer, fresh, picking, onPickAll, onOpen }: {
   group: UnitGroup; offer: boolean; fresh: ReadonlySet<string>; picking: boolean; onPickAll: () => void; onOpen: (id: string) => void;
 }) {
-  const tr = usePortalText().repairs;
+  const t = usePortalText();
+  const tr = t.repairs;
+  const [isExpanded, setIsExpanded] = useState(false);
   const isUrgent = group.jobs.some(r => r.urgency === 'urgent' && r.state !== 'resolved');
+  const hasFresh = group.jobs.some(r => fresh.has(r.id));
+  const jobListId = `unit-jobs-${offer ? 'open' : 'mine'}-${group.unitId}`;
   return (
     <section aria-label={`${group.unitNumber} ${group.propertyName}`}
-      className={cx('bg-card rounded-card border border-solid flex flex-col overflow-hidden', isUrgent ? 'border-danger-line' : 'border-line')}>
-      <div className="flex items-center gap-2 px-4 pt-4 pb-2">
-        <b className="text-heading flex-1 min-w-0 truncate">{group.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {group.propertyName}</span></b>
-        <StatusBadge tone="neutral">{tr.jobs(group.jobs.length)}</StatusBadge>
-      </div>
-      {group.jobs.map(r => <RepairCard key={r.id} r={r} offer={offer} fresh={fresh.has(r.id)} onOpen={() => onOpen(r.id)} inGroup />)}
-      {offer && (
-        <div className="px-4 pb-4 pt-3 [border-top:1px_solid_var(--color-line)]">
-          <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="Hand" size="sm" />} loading={picking} onClick={onPickAll}>{tr.pickAll(group.jobs.length)}</Button>
-        </div>
-      )}
+      className={cx('bg-card rounded-card border border-solid flex flex-col overflow-hidden', isUrgent ? 'border-danger-line' : hasFresh ? 'border-info-line' : 'border-line')}>
+      <button type="button" aria-expanded={isExpanded} aria-controls={jobListId} onClick={() => setIsExpanded(current => !current)}
+        className="w-full text-left bg-card flex items-center gap-3 px-4 py-3 min-h-[56px] cursor-pointer hover:bg-muted">
+        <span className="flex-1 min-w-0 flex flex-col gap-1.5">
+          <b className="text-heading truncate">{group.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {group.propertyName}</span></b>
+          <span className="flex gap-1.5 flex-wrap">
+            <StatusBadge tone="neutral">{tr.jobs(group.jobs.length)}</StatusBadge>
+            {isUrgent && <StatusBadge tone="critical">{tr.urgent}</StatusBadge>}
+            {hasFresh && <StatusBadge tone="info" label={t.jobs.newJob} />}
+            {offer && <StatusBadge tone="gold">{tr.openToPick}</StatusBadge>}
+          </span>
+        </span>
+        <span className={cx('text-muted-ink transition-transform duration-200 motion-reduce:transition-none', isExpanded && 'rotate-180')}><Icon name="ChevronDown" size="nav" /></span>
+      </button>
+      {isExpanded && <div id={jobListId} className="flex flex-col">
+        {group.jobs.map(r => <RepairCard key={r.id} r={r} offer={offer} fresh={fresh.has(r.id)} onOpen={() => onOpen(r.id)} inGroup />)}
+        {offer && (
+          <div className="px-4 pb-4 pt-3 [border-top:1px_solid_var(--color-line)]">
+            <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="Hand" size="sm" />} loading={picking} onClick={onPickAll}>{tr.pickAll(group.jobs.length)}</Button>
+          </div>
+        )}
+      </div>}
     </section>
   );
 }
