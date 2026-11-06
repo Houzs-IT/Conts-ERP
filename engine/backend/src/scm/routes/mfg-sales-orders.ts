@@ -361,6 +361,9 @@ mfgSalesOrders.use('*', renovationSoWriteFence(async (c, docNo) => {
   // 42703 = the column is not there yet (worker deployed before migration 0069): no renovation order can exist.
   if (error && (error as { code?: string }).code === '42703') return { kind: null, error: false };
   return { kind: (data as { so_kind?: string } | null)?.so_kind ?? null, error: Boolean(error) };
+}, async (c, docNo) => {
+  const { cancelContractFromSoRoute } = await import('./renovation');
+  return cancelContractFromSoRoute(c as never, docNo);
 }));
 
 /* ── SO child-lock guard (Tier 2 — downstream lock) ─────────────────────────
