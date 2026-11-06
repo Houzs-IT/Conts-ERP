@@ -24,7 +24,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const since = new Date(Date.now() - 14 * 864e5).toISOString();
   const mine = await fieldRepairs(env, `${mineSql(byId)} AND ${visible} AND (m.state != 'resolved' OR m.resolved_at >= ?)`,
     [...(byId ? [session.userId, session.userId] : [session.userId]), since]);
-  if (session.role !== 'technician') return json({ generatedAt: nowIso(), mine, open: [], mayPick: false, buildings: [], openTotal: 0 });
+  if (session.role !== 'technician') return json({ generatedAt: nowIso(), mine, open: [], mayPick: false, buildings: [] });
 
   // A job waiting for the owner's approval cannot be started, so it is not offered.
   const poolSql = `${UNASSIGNED_SQL} AND ${visible} AND m.state IN ('open','reopened')`;
@@ -35,6 +35,5 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id
       WHERE ${poolSql} GROUP BY p.id, p.name ORDER BY p.name`),
   ]);
-  const openTotal = buildings.filter(b => !building || b.id === building).reduce((sum, b) => sum + b.open, 0);
-  return json({ generatedAt: nowIso(), mine, open, mayPick: true, buildings, openTotal, limit, maxLimit: POOL_MAX });
+  return json({ generatedAt: nowIso(), mine, open, mayPick: true, buildings, limit, maxLimit: POOL_MAX });
 };
