@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import Icon from './Icon';
 import { Button } from './Button';
+import { CloseButton } from './CloseButton';
+import { DialogFrame } from './Modal';
 import { Field } from './Field';
 import { DateField, MoneyInput, NumberInput, parseScaled, formatScaled } from './inputs';
 import { EmptyState } from './States';
@@ -529,6 +532,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const pickCol = !!selectable;
   const minWidth = visible.reduce((n, c) => n + (c.width ?? MIN_WIDTH[typeOf(c)]), 0) + (pickCol ? 44 : 0);
   const filterable = columns.filter(c => filterOf(c));
+  const sheetFilters = [...filterable].sort((a, b) => SHEET_ORDER[filterOf(a)!.kind] - SHEET_ORDER[filterOf(b)!.kind]);
   // Phones have no header to click, so the sortable columns are offered in a menu.
   const sortChoices = visible.flatMap(c => {
     const k = sortKeyOf(c);
@@ -602,7 +606,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
               <span className="text-muted-ink whitespace-nowrap">{c.label}</span>
               <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis">{describeFilter(c, filterOf(c)!, filterValue(c), rows ?? [])}</span>
               <button type="button" aria-label={`Remove the ${c.label} filter`} onClick={() => setFilter(c, '')}
-                className="w-5 h-5 grid place-items-center rounded-full border-none bg-transparent cursor-pointer text-muted-ink hover:bg-muted"><Icon name="X" size="sm" /></button>
+                className="relative w-5 h-5 grid place-items-center rounded-full border-none bg-transparent cursor-pointer text-muted-ink hover:bg-muted before:content-[''] before:absolute before:-inset-3"><Icon name="X" size="sm" /></button>
             </span>
           ))}
           <button type="button" onClick={clearColumnFilters} className="text-meta text-muted-ink bg-transparent border-none cursor-pointer underline">Clear column filters</button>
@@ -759,24 +763,35 @@ export function DataTable<R>(props: DataTableProps<R>) {
       {footer}
 
       {/* Panels */}
-      <Floating anchor={filtersBtn} open={panel === 'filters'} onClose={closePanel} width={340} align="right" label="Filters">
-        <div className="p-2 flex flex-col gap-1">
-          {filterable.map(c => (
-            <details key={c.key} open={!!filterValue(c)} className="rounded-[8px] [&[open]]:bg-page">
-              <summary className="list-none flex items-center justify-between gap-2 px-2.5 py-2 cursor-pointer text-copy font-medium">
-                <span>{c.label}</span>
-                <span className="text-meta text-muted-ink font-normal whitespace-nowrap overflow-hidden text-ellipsis max-w-[55%]">
-                  {filterValue(c) ? describeFilter(c, filterOf(c)!, filterValue(c), rows ?? []) : 'Any'}
-                </span>
-              </summary>
-              <div className="px-2 pb-2">
-                <FilterEditor col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)} />
-              </div>
-            </details>
-          ))}
-          {activeFilters.length > 0 && <div className="px-1 pt-1"><Button size="sm" variant="tertiary" onClick={clearColumnFilters}>Clear column filters</Button></div>}
-        </div>
-      </Floating>
+      {panel === 'filters' && createPortal(
+        <DialogFrame label="Filters" onClose={closePanel} dirty={false} initialFocus="panel"
+          className="fixed inset-0 z-[60] flex flex-col justify-end md:items-center md:justify-center md:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]"
+          panelClassName="relative w-full md:max-w-[600px] max-h-[92dvh] md:max-h-[calc(100dvh-48px)] flex flex-col bg-card rounded-t-[20px] md:rounded-card overflow-hidden [box-shadow:var(--shadow-overlay)]">
+          <div className="flex-none flex flex-col px-5 pt-2.5 md:pt-4 pb-3 [border-bottom:1px_solid_var(--color-line)]">
+            <span aria-hidden className="md:hidden w-[38px] h-1 rounded-full bg-line self-center mb-2.5" />
+            <div className="flex items-center gap-3">
+              <h2 className="m-0 flex-1 text-title leading-[1.3] font-semibold">Filters</h2>
+              <CloseButton onClick={closePanel} className="max-md:w-11 max-md:h-11" />
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4 flex flex-col gap-6">
+            {sheetFilters.map(c => (
+              <section key={c.key} aria-label={c.label} className="flex flex-col gap-3">
+                <h3 className="m-0 pb-2 text-copy font-semibold [border-bottom:1px_solid_var(--color-line-soft)]">{c.label}</h3>
+                <FilterEditor col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)} variant="sheet"
+                  numberBounds={server || filterOf(c)?.kind !== 'number' ? null : numberBoundsOf(c, rows ?? [])} />
+              </section>
+            ))}
+          </div>
+          <div className="flex-none flex items-center justify-between gap-3 px-5 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))] [border-top:1px_solid_var(--color-line)] bg-page">
+            <Button variant="tertiary" className="max-md:!h-11" disabled={!anyFilter} disabledReason="No filter is on." onClick={clearEverything}>Clear all</Button>
+            <Button variant="primary" className="max-md:!h-11 max-md:flex-1" onClick={closePanel}>
+              {`Show ${fmtCount(total)} ${total === 1 ? noun[0] : noun[1]}`}
+            </Button>
+          </div>
+        </DialogFrame>,
+        document.body,
+      )}
 
       {panel?.startsWith('col:') && (() => {
         const c = byKey.get(panel.slice(4));
@@ -902,14 +917,36 @@ function describeFilter<R>(c: Column<R>, spec: FilterSpec, v: string, rows: R[])
   return a && b ? `${f(a)} – ${f(b)}` : a ? `at least ${f(a)}` : `at most ${f(b)}`;
 }
 
-function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus }: {
+const SHEET_ORDER: Record<FilterKind, number> = { select: 0, text: 1, number: 2, date: 3 };
+const SHEET_SEARCH_FROM = 12;
+const RANGE_APPLY_DELAY_MILLISECONDS = 400;
+
+export interface RangeBounds { lowest: number; highest: number }
+
+function numberBoundsOf<R>(col: Column<R>, rows: R[]): RangeBounds | null {
+  const scale = typeOf(col) === 'money' ? 100 : 1;
+  const numbers = rows.map(row => rawOf(col, row)).filter(raw => raw !== null && raw !== undefined && raw !== '').map(Number).filter(Number.isFinite);
+  if (!numbers.length) return null;
+  const lowest = Math.floor(Math.min(...numbers) / scale), highest = Math.ceil(Math.max(...numbers) / scale);
+  return highest > lowest ? { lowest, highest } : null;
+}
+
+function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, variant = 'popover', numberBounds = null }: {
   col: Column<R>; spec: FilterSpec; value: string; rows: R[]; onChange: (v: string) => void; onDone?: () => void; autoFocus?: boolean;
+  variant?: 'popover' | 'sheet'; numberBounds?: RangeBounds | null;
 }) {
   if (spec.kind === 'text') return <TextFilter value={value} onChange={onChange} onDone={onDone} autoFocus={autoFocus} label={col.label} />;
   if (spec.kind === 'select') {
     const opts = optionsFor(col, spec, rows);
     const multi = spec.multi ?? !spec.param;
     const on = new Set(value ? value.split(',') : []);
+    const toggle = (picked: string) => {
+      if (!multi) { onChange(on.has(picked) ? '' : picked); onDone?.(); return; }
+      const next = new Set(on);
+      if (next.has(picked)) next.delete(picked); else next.add(picked);
+      onChange([...next].join(','));
+    };
+    if (variant === 'sheet') return <FilterChips label={col.label} options={opts} picked={on} hint={spec.hint} onToggle={toggle} />;
     return (
       <div className="flex flex-col gap-px max-h-[280px] overflow-y-auto" role="group" aria-label={col.label}>
         {spec.hint && <span className="text-caption text-muted-ink px-1 pb-1">{spec.hint}</span>}
@@ -917,12 +954,7 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus }
         {opts.map(o => (
           <label key={o.value} className="flex items-center gap-2 px-2 py-[7px] rounded-[8px] cursor-pointer hover:bg-muted text-copy">
             <input type={multi ? 'checkbox' : 'radio'} name={`dt-${col.key}`} checked={on.has(o.value)} className="w-4 h-4 cursor-pointer"
-              onChange={() => {
-                if (!multi) { onChange(on.has(o.value) ? '' : o.value); onDone?.(); return; }
-                const next = new Set(on);
-                if (next.has(o.value)) next.delete(o.value); else next.add(o.value);
-                onChange([...next].join(','));
-              }} />
+              onChange={() => toggle(o.value)} />
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{typeOf(col) === 'channel' ? <ChannelCell channel={o.value} /> : o.label}</span>
           </label>
         ))}
@@ -930,7 +962,40 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus }
       </div>
     );
   }
+  if (variant === 'sheet') return <LiveRangeFilter kind={spec.kind} money={typeOf(col) === 'money'} label={col.label} bounds={numberBounds} hint={spec.hint} value={value} onChange={onChange} />;
   return <RangeFilter kind={spec.kind} money={typeOf(col) === 'money'} hint={spec.hint} value={value} onChange={onChange} onDone={onDone} />;
+}
+
+function FilterChips({ label, options, picked, hint, onToggle }: {
+  label: string; options: { value: string; label: string }[]; picked: Set<string>; hint?: string; onToggle: (value: string) => void;
+}): ReactElement {
+  const [search, setSearch] = useState('');
+  const needle = search.trim().toLowerCase();
+  const shownOptions = needle ? options.filter(o => o.label.toLowerCase().includes(needle)) : options;
+  return (
+    <div className="flex flex-col gap-2.5">
+      {hint && <span className="text-caption text-muted-ink">{hint}</span>}
+      {options.length > SHEET_SEARCH_FROM && (
+        <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={`Find ${label.toLowerCase()}`} aria-label={`Find ${label.toLowerCase()}`}
+          className="block w-full box-border h-10 max-md:h-11 px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy max-md:text-[16px]" />
+      )}
+      {!options.length && <span className="text-meta text-muted-ink">Nothing to pick from in this list.</span>}
+      <div role="group" aria-label={label} className="flex flex-wrap gap-2">
+        {shownOptions.map(o => {
+          const isPicked = picked.has(o.value);
+          return (
+            <button key={o.value} type="button" aria-pressed={isPicked} onClick={() => onToggle(o.value)}
+              className={cx('inline-flex items-center gap-1.5 min-h-9 max-md:min-h-11 max-w-full px-3.5 rounded-full border border-solid font-sans text-copy cursor-pointer',
+                isPicked ? 'bg-black border-black text-white' : 'bg-card border-line text-ink hover:bg-muted')}>
+              {isPicked ? <Icon name="Check" size="sm" /> : <span aria-hidden className="w-3.5 h-3.5 rounded-full border border-solid border-[var(--color-line-strong)] shrink-0" />}
+              <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{o.label}</span>
+            </button>
+          );
+        })}
+        {needle && !shownOptions.length && <span className="text-meta text-muted-ink">No {label.toLowerCase()} matches "{search.trim()}".</span>}
+      </div>
+    </div>
+  );
 }
 
 function TextFilter({ value, onChange, onDone, autoFocus, label }: { value: string; onChange: (v: string) => void; onDone?: () => void; autoFocus?: boolean; label: string }) {
@@ -942,10 +1007,13 @@ function TextFilter({ value, onChange, onDone, autoFocus, label }: { value: stri
     const t = setTimeout(() => { last.current = text; onChange(text.trim()); }, 300);
     return () => clearTimeout(t);
   }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
+  const latest = useRef({ text, onChange });
+  latest.current = { text, onChange };
+  useEffect(() => () => { if (latest.current.text !== last.current) latest.current.onChange(latest.current.text.trim()); }, []);
   return (
     <input type="search" value={text} autoFocus={autoFocus} placeholder="Contains…" aria-label={`${label} contains`}
       onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { last.current = text; onChange(text.trim()); onDone?.(); } }}
-      className="block w-full box-border h-9 px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy" />
+      className="block w-full box-border h-9 max-md:h-11 max-md:text-[16px] px-3 border border-solid border-line rounded-control outline-none bg-card text-ink font-sans text-copy" />
   );
 }
 
@@ -956,20 +1024,105 @@ function RangeEnd({ kind, money, label, value, onChange, min, error }: { kind: '
   return <NumberInput label={label} decimals={3} allowNegative error={error} value={value.trim() === '' || !Number.isFinite(Number(value)) ? null : Number(value)} onChange={v => onChange(v == null ? '' : String(v))} />;
 }
 
+const isBackwardsRange = (kind: 'date' | 'number', from: string, to: string): boolean =>
+  !!(from && to && (kind === 'date' ? to < from : Number(to) < Number(from)));
+
+function RangeEnds({ kind, money, from, to, onFrom, onTo }: {
+  kind: 'date' | 'number'; money: boolean; from: string; to: string; onFrom: (v: string) => void; onTo: (v: string) => void;
+}): ReactElement {
+  const unit = money ? ' (RM)' : '';
+  const isBackwards = isBackwardsRange(kind, from, to);
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <RangeEnd kind={kind} money={money} label={kind === 'date' ? 'From' : `At least${unit}`} value={from} onChange={onFrom} />
+      <RangeEnd kind={kind} money={money} label={kind === 'date' ? 'To' : `At most${unit}`} value={to} onChange={onTo}
+        min={kind === 'date' ? from || undefined : undefined} error={isBackwards ? (kind === 'date' ? 'Before the start.' : 'Below the minimum.') : undefined} />
+    </div>
+  );
+}
+
+const SLIDER_INPUT = cx(
+  'absolute inset-0 w-full h-full m-0 p-0 appearance-none bg-transparent pointer-events-none outline-none',
+  '[&::-webkit-slider-runnable-track]:bg-transparent [&::-moz-range-track]:bg-transparent',
+  '[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:cursor-grab',
+  '[&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 max-md:[&::-webkit-slider-thumb]:w-7 max-md:[&::-webkit-slider-thumb]:h-7',
+  '[&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-ink [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-solid [&::-webkit-slider-thumb]:border-card',
+  '[&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:cursor-grab [&::-moz-range-thumb]:w-6 [&::-moz-range-thumb]:h-6 max-md:[&::-moz-range-thumb]:w-7 max-md:[&::-moz-range-thumb]:h-7',
+  '[&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-ink [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-solid [&::-moz-range-thumb]:border-card',
+  '[&:focus-visible::-webkit-slider-thumb]:[box-shadow:0_0_0_3px_color-mix(in_srgb,var(--color-border-focus)_45%,transparent)]',
+  '[&:focus-visible::-moz-range-thumb]:[box-shadow:0_0_0_3px_color-mix(in_srgb,var(--color-border-focus)_45%,transparent)]',
+);
+
+function RangeSlider({ label, money, bounds, from, to, onFrom, onTo }: {
+  label: string; money: boolean; bounds: RangeBounds; from: string; to: string; onFrom: (v: string) => void; onTo: (v: string) => void;
+}): ReactElement {
+  const { lowest, highest } = bounds;
+  const clampToBounds = (amount: number): number => Math.min(highest, Math.max(lowest, amount));
+  const fromAmount = from === '' ? lowest : clampToBounds(Number(from));
+  const toAmount = to === '' ? highest : clampToBounds(Number(to));
+  const percentOf = (amount: number): number => ((amount - lowest) / (highest - lowest)) * 100;
+  const formatAmount = (amount: number): string => (money ? rm(amount * 100, { cents: false }) : fmtCount(amount));
+  const unitName = label.toLowerCase();
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex justify-between text-copy font-medium tabular-nums">
+        <span>{formatAmount(fromAmount)}</span>
+        <span>{formatAmount(toAmount)}{to === '' && '+'}</span>
+      </div>
+      <div className="relative h-11 md:h-9">
+        <div aria-hidden className="absolute inset-x-3 max-md:inset-x-3.5 top-1/2 -translate-y-1/2 h-1 rounded-full bg-line">
+          <div className="absolute inset-y-0 rounded-full bg-ink" style={{ left: `${percentOf(fromAmount)}%`, right: `${100 - percentOf(toAmount)}%` }} />
+        </div>
+        <input type="range" min={lowest} max={highest} step={1} value={fromAmount} aria-label={`Lowest ${unitName}`} aria-valuetext={formatAmount(fromAmount)}
+          className={SLIDER_INPUT} style={{ zIndex: percentOf(fromAmount) > 50 ? 2 : 1 }}
+          onChange={event => { const amount = Math.min(Number(event.target.value), toAmount); onFrom(amount <= lowest ? '' : String(amount)); }} />
+        <input type="range" min={lowest} max={highest} step={1} value={toAmount} aria-label={`Highest ${unitName}`} aria-valuetext={formatAmount(toAmount)}
+          className={SLIDER_INPUT} style={{ zIndex: 1 }}
+          onChange={event => { const amount = Math.max(Number(event.target.value), fromAmount); onTo(amount >= highest ? '' : String(amount)); }} />
+      </div>
+    </div>
+  );
+}
+
+function LiveRangeFilter({ kind, money, label, bounds, hint, value, onChange }: {
+  kind: 'date' | 'number'; money: boolean; label: string; bounds: RangeBounds | null; hint?: string; value: string; onChange: (v: string) => void;
+}): ReactElement {
+  const [savedFrom, savedTo] = splitRange(value);
+  const [from, setFrom] = useState(savedFrom), [to, setTo] = useState(savedTo);
+  useEffect(() => { setFrom(savedFrom); setTo(savedTo); }, [savedFrom, savedTo]);
+  const pendingValue = useRef<string | null>(null);
+  const latestOnChange = useRef(onChange);
+  latestOnChange.current = onChange;
+  useEffect(() => {
+    const nextValue = from || to ? `${from}~${to}` : '';
+    if (nextValue === value || isBackwardsRange(kind, from, to)) { pendingValue.current = null; return; }
+    pendingValue.current = nextValue;
+    const timer = setTimeout(() => { pendingValue.current = null; latestOnChange.current(nextValue); }, RANGE_APPLY_DELAY_MILLISECONDS);
+    return () => clearTimeout(timer);
+  }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { if (pendingValue.current !== null) latestOnChange.current(pendingValue.current); }, []);
+  return (
+    <div className="flex flex-col gap-2">
+      {hint && <span className="text-caption text-muted-ink">{hint}</span>}
+      {kind === 'number' && bounds && <RangeSlider label={label} money={money} bounds={bounds} from={from} to={to} onFrom={setFrom} onTo={setTo} />}
+      <RangeEnds kind={kind} money={money} from={from} to={to} onFrom={setFrom} onTo={setTo} />
+      {(from || to) && (
+        <button type="button" onClick={() => { setFrom(''); setTo(''); }}
+          className="self-start min-h-9 max-md:min-h-11 text-meta text-muted-ink bg-transparent border-none cursor-pointer underline px-0">Any {kind === 'date' ? 'date' : 'amount'}</button>
+      )}
+    </div>
+  );
+}
+
 function RangeFilter({ kind, money, hint, value, onChange, onDone }: { kind: 'date' | 'number'; money: boolean; hint?: string; value: string; onChange: (v: string) => void; onDone?: () => void }) {
   const [a0, b0] = splitRange(value);
   const [a, setA] = useState(a0), [b, setB] = useState(b0);
   useEffect(() => { setA(a0); setB(b0); }, [a0, b0]);
-  const bad = !!(a && b && (kind === 'date' ? b < a : Number(b) < Number(a)));
-  const unit = money ? ' (RM)' : '';
+  const bad = isBackwardsRange(kind, a, b);
   return (
     <form className="flex flex-col gap-2" onSubmit={e => { e.preventDefault(); if (!bad) { onChange(a || b ? `${a}~${b}` : ''); onDone?.(); } }}>
       {hint && <span className="text-caption text-muted-ink">{hint}</span>}
-      <div className="grid grid-cols-2 gap-2">
-        <RangeEnd kind={kind} money={money} label={kind === 'date' ? 'From' : `At least${unit}`} value={a} onChange={setA} />
-        <RangeEnd kind={kind} money={money} label={kind === 'date' ? 'To' : `At most${unit}`} value={b} onChange={setB}
-          min={kind === 'date' ? a || undefined : undefined} error={bad ? (kind === 'date' ? 'Before the start.' : 'Below the minimum.') : undefined} />
-      </div>
+      <RangeEnds kind={kind} money={money} from={a} to={b} onFrom={setA} onTo={setB} />
       <div className="flex justify-between gap-2">
         <Button type="button" size="sm" variant="tertiary" onClick={() => { setA(''); setB(''); onChange(''); onDone?.(); }}>Clear</Button>
         <Button type="submit" size="sm" variant="primary" disabled={bad} disabledReason="The end is before the start.">Apply</Button>
