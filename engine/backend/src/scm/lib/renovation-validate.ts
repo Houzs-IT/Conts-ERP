@@ -236,6 +236,8 @@ const headerSchema = z.object({
   layoutLabel: z.string().max(80).optional(),
   bedrooms: int.min(0).max(20).nullable().optional(),
   bathrooms: int.min(0).max(20).nullable().optional(),
+  landAreaSqft: z.number().positive().lt(100_000_000).nullable().optional(),
+  landSize: z.string().max(40).optional(),
   builtUpSqft: z.number().positive().lt(100_000_000).refine((n) => Math.abs(Math.round(n * 100) - n * 100) < 1e-6, 'at most 2 decimals').nullable().optional(),
 });
 export type DocHeaderInput = z.infer<typeof headerSchema>;

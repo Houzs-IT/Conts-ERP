@@ -332,11 +332,12 @@ export async function setQuotationStatus(db: RenoDb, actor: RenoActor, id: strin
 
 export async function listQuotations(db: RenoDb, companyId: number, f: { projectId?: number | null; status?: string | null; q?: string | null; limit?: number }) {
   const rows = await db.q(
-    `select ${Q_COLS}, p.name as project_name, r.id as revision_id, r.doc_no, r.customer_name, r.building, r.unit_no, r.doc_date::text as doc_date,
+    `select ${Q_COLS}, p.name as project_name, p.code as project_code, b.name as brand_name, r.id as revision_id, r.doc_no, r.customer_name, r.building, r.unit_no, r.doc_date::text as doc_date,
             r.doc_discount_sen, r.print_format
        from scm.reno_quotations q
        join scm.reno_quotation_revisions r on r.quotation_id = q.id and r.rev_no = q.current_rev
        left join public.projects p on p.id = q.project_id
+       left join public.project_brands b on b.id = q.brand_id
       where q.company_id = $1
         and ($2::bigint is null or q.project_id = $2)
         and ($3::text is null or q.status = $3)
@@ -350,7 +351,7 @@ export async function listQuotations(db: RenoDb, companyId: number, f: { project
   for (const r of rows) totals.set(r.revision_id, totalsOf(structures.get(r.revision_id) ?? [], Number(r.doc_discount_sen)).finalSen);
   return rows.map((r) => ({
     ...headOf(r), docNo: r.doc_no, customerName: r.customer_name, building: r.building, unitNo: r.unit_no, docDate: r.doc_date,
-    printFormat: r.print_format, totalSen: totals.get(r.revision_id) ?? 0,
+    printFormat: r.print_format, totalSen: totals.get(r.revision_id) ?? 0, projectCode: r.project_code ?? null, brandName: r.brand_name ?? null,
   }));
 }
 

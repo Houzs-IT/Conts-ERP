@@ -101,6 +101,8 @@ export interface DocHeader {
   bedrooms?: number | null;
   bathrooms?: number | null;
   builtUpSqft?: number | null;
+  landAreaSqft?: number | null;
+  landSize?: string;
 }
 
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
@@ -113,6 +115,7 @@ export interface QuotationHead {
 
 export interface QuotationListRow extends QuotationHead {
   docNo: string; customerName: string; building: string; unitNo: string; docDate: string; printFormat: PrintFormat; totalSen: number;
+  projectCode: string | null; brandName: string | null;
 }
 
 export interface Revision {

@@ -128,7 +128,8 @@ import styles from './SalesOrderNew.module.css';
 import { CustomerBlock } from '../projects/renovation/CustomerBlock';
 import { RenovationSoRooms, roomLayoutOf } from './RenovationSoRooms';
 import { autoRoomsPlan, placeRows } from '../renovation/roomSections';
-import { refusalOf, renoSend, sectionsForSave, useBrands, useTemplates, type DocLine } from '../../lib/renovation/api';
+import { refusalOf, renoSend, sectionsForSave, useBrands, useTemplates, useTerms, type DocLine } from '../../lib/renovation/api';
+import { SoInstalments } from './renovationSoInstalments';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
   EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, toRenovationBlock,
@@ -303,6 +304,9 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
   const branding = useBranding();
   const quoteBrands = useBrands();
   const quoteTemplates = useTemplates();
+  const quoteTerms = useTerms();
+  /* The same four cards the saved order shows, worked out from the default terms until a contract sets them. */
+  const defaultTerms = (quoteTerms.data?.templates ?? []).find((t) => t.kind === 'CUSTOMER' && t.isDefault && t.brandId == null);
   const [quoteBrandId, setQuoteBrandId] = useState<number | null>(null);
   const [quoteTemplateId, setQuoteTemplateId] = useState('');
   const [quoteBusy, setQuoteBusy] = useState(false);
@@ -1553,6 +1557,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           customerName: debtorName, customerPhone: phone, customerEmail: email, building: renoInfo.building, unitNo: renoInfo.unitNo,
           siteAddress: [address1, address2].filter(Boolean).join('\n'), propertyType: renoInfo.propertyType, layoutLabel: renoInfo.layoutLabel,
           bedrooms: num(renoInfo.bedrooms), bathrooms: num(renoInfo.bathrooms), builtUpSqft: num(renoInfo.builtUpSqft),
+          landAreaSqft: num(renoInfo.landAreaSqft), landSize: renoInfo.landSize,
         },
         ...(sections ? { sections: sectionsForSave(sections) } : {}),
       });
@@ -2540,6 +2545,17 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           DRAFT mode it holds rows in local state; onSave (above) batches
           POST /:docNo/payments calls in parallel after the SO has been
           created and before navigating to the Detail page. */}
+      {!asQuotation && reno && defaultTerms && (
+        <section className={styles.card}>
+          <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Payment schedule</h2></header>
+          <div className={styles.cardBody}>
+            <SoInstalments
+              rows={defaultTerms.lines.map((l) => ({ seq: l.seq, label: l.label, pctBp: l.pctBp, amountSen: Math.round((subtotalSen * l.pctBp) / 10000), paidSen: 0 }))}
+              money={fmtRm}
+            />
+          </div>
+        </section>
+      )}
       {!asQuotation && <PaymentsTable
         docNo={null}
         payments={paymentDrafts}

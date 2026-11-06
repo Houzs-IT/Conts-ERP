@@ -262,7 +262,7 @@ import {
   findFreeTextSoLines, freeTextSoLineResponse,
 } from '../lib/validate-item-codes';
 import { collectSoConfirmProblems, soConfirmProblemsForDoc } from '../lib/so-confirm-gate';
-import { applyRenovationSoInfo, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedProcessingDates, stampCreatedRooms } from './renovation-so-info';
+import { applyRenovationSoInfo, projectOrderTaken, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedProcessingDates, stampCreatedRooms } from './renovation-so-info';
 import type { Db as RenoInfoDb } from '../../services/renovation/load';
 import { companyRequiresStockLocation, soLocationProblem, soLocationProblemForDoc, fillSoLocationFromState } from '../lib/so-location-gate';
 import { collectSoSubmitProblems, soPaymentSubFieldGap } from '../shared/so-submit-problems';
@@ -4785,6 +4785,8 @@ mfgSalesOrders.post('/', async (c) => {
   if (renoBlock) {
     const avail = await renovationSoAvailable(c.env.DB as unknown as RenoInfoDb);
     if (!avail.ok) return c.json(avail.body, avail.status);
+    const taken = await projectOrderTaken(c.env.DB as unknown as RenoInfoDb, renoBlock.projectId);
+    if (taken) return c.json({ error: 'project_taken', message: `This project already has sales order ${taken}.`, problems: [{ code: 'project_taken', message: `This project already has sales order ${taken}.`, field: 'Project' }] }, 409);
     if (peek!.asDraft !== true) {
       const problems = renovationSoProblems(renoBlock, {
         customerName: String(peek!.debtorName ?? peek!.customerName ?? ''),

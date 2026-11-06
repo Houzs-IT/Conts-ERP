@@ -430,6 +430,17 @@ export function DocEditor({ sections, onChange, disabled, showCost = true, allow
   const suppliers = useMemo(() => (sq.data ?? []).map((s) => ({ id: s.id, code: s.code, name: s.name })), [sq.data]);
   const [roomNote, setRoomNote] = useState<string | null>(null);
   const layout = roomLayout && !('missing' in roomLayout) ? roomLayout : null;
+  /* Changing the layout adds its rooms straight away, the same as the sales order; rooms already here stay. */
+  const layoutKey = layout ? `${layout.bedrooms}|${layout.bathrooms}` : '';
+  const seenLayout = useRef(layoutKey);
+  useEffect(() => {
+    if (seenLayout.current === layoutKey) return;
+    seenLayout.current = layoutKey;
+    if (!layout || disabled) return;
+    const r = insertRoomSections(sections, layout.bedrooms, layout.bathrooms, (h) => blankSection(h));
+    if (r.added.length) onChange(r.sections);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the layout is the trigger
+  }, [layoutKey]);
   const generateRooms = () => {
     if (!layout) return;
     const r = insertRoomSections(sections, layout.bedrooms, layout.bathrooms, (h) => blankSection(h));
