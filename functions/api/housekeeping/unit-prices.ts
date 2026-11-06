@@ -53,10 +53,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ready: true, mayEdit: !!session.manage, dated, byBed,
     ...(only && session.manage && dated ? { changes: await unitChanges(env, only) } : {}),
     rows: units.map(u => {
-      const key = layoutKey(u.layout_type, u.bedrooms);
+      const key = layoutKey(u.layout_type, u.bedrooms), unitBeds = parseBeds(u.beds);
       return {
         unitId: u.id, unitNumber: u.unit_number, propertyName: u.property_name, buildingId: u.property_id, layout: key,
-        beds: bedsLabel(parseBeds(u.beds), sizes) || null,
+        beds: bedsLabel(unitBeds, sizes) || null, bedCount: unitBeds.reduce((total, bed) => total + bed.quantity, 0),
         prices: Object.fromEntries(PRICE_KINDS.map(k => {
           const p = price(u.id, k, key), o = ownAt.get(`${u.id}:${k}`);
           return [k, { internalCost: p.internal, externalCharge: p.external, source: p.source,
