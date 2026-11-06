@@ -433,12 +433,15 @@ async function onsiteTwinFiles(db: Db, doc: DocRef, load: (where: string, ...arg
   ).bind(doc.id).all<{ id: string; no: string }>()).results ?? [];
   const out: Array<DocFile & { key: string }> = [];
   for (const o of others) {
-    if (isGrn) out.push(...(await podFiles(db, o.id)).map((f) => ({ ...f, lineId: null, readOnly: true, from: `Delivery order ${o.no}` })));
+    if (isGrn) out.push(...(await podFiles(db, o.id)).map((f) => ({ ...f, id: `twin-${o.id}-${f.id}`, lineId: null, readOnly: true, from: `Delivery order ${o.no}` })));
     out.push(...(await load("doc_type = ? AND doc_id = ?", isGrn ? "delivery_order" : "goods_received", o.id))
       .map((r) => ({ ...toFile(r), key: r.r2_key, source: "pod" as const, lineId: null, readOnly: true, from: `${isGrn ? "Delivery order" : "Goods receipt"} ${o.no}` })));
   }
   return out;
 }
+
+/** A proof-of-delivery photo a goods receipt shows from its on-site delivery. It lives where the delivery keeps it. */
+export const isTwinPodFileId = (fileId: string): boolean => fileId.startsWith("twin-");
 
 export const isPodFileId = (fileId: string): boolean => fileId === POD_FILE_ID || /^pod-\d+$/.test(fileId);
 

@@ -357,8 +357,7 @@ async function runSoStockAllocation(
        end for good with the column; see "RETIRING THE SECOND STORAGE" in
        shared/so-processing-date.ts. */
     const allocGated = new Set(
-      /* Conts dates each line, so its headers stay blank: a blank header is not an order held back (owner, 6 Nov 2026). */
-      orders.filter((o) => !o[SO_PROCESSING_DATE_COLUMN] && Number(o.company_id ?? 0) !== HARD_BOUND_COMPANY_ID).map((o) => o.doc_no),
+      orders.filter((o) => !o[SO_PROCESSING_DATE_COLUMN]).map((o) => o.doc_no),
     );
     /* Which company each document belongs to — the pooled walk needs it to
        enforce HARD_BOUND_COMPANY_ID's exclusivity (see the constant's note). */
@@ -764,7 +763,9 @@ async function runSoStockAllocation(
     const nonSellingBlockedDocs = new Set<string>();
     // Bound lines first, so their units leave the pool before anyone else walks it.
     for (const n of boundNeeds) {
-      if (allocGated.has(n.doc_no)) continue;
+      /* Conts dates each line, so its header stays blank: a line its own PO has received is ready regardless (owner, 6 Nov 2026). */
+      const ownPoReceived = companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && (dedicatedReady.get(n.id) ?? 0) > 0;
+      if (allocGated.has(n.doc_no) && !ownPoReceived) continue;
       /* BOUND MODE IS NOT AN EXEMPTION. This pass lights off the line's own
          `purchase_order_items.received_qty` and never consults
          `inventory_balances`, so gating only the pooled on-hand read would have
