@@ -103,6 +103,8 @@ const MONEY_ONLY = /^\/api\/(payment-vouchers|purchase-invoices|sales-invoices|u
 const PUBLIC = new Set([
   'POST /api/auth/login', 'POST /api/auth/login-pin', 'POST /api/auth/login-2fa', 'POST /api/auth/forgot-password',
   'GET /api/auth/reset-password', 'POST /api/auth/reset-password', 'GET /api/settings/public',
+  // Houzs Connect checking a Conts account; the handler checks Connect's key itself.
+  'POST /api/connect/verify-login',
 ]);
 
 /** What someone still on a temporary password (an invite, or management's Reset password) can reach: replacing it,

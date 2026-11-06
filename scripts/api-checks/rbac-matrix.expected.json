@@ -375,6 +375,7 @@
  "POST /api/blocks": "AAAFFFFU",
  "POST /api/categories": "AFFFFFFU",
  "POST /api/claims/[[path]]": "AAAAFFFU",
+ "POST /api/connect/verify-login": "UUUUUUUU",
  "POST /api/consignment-notes": "AFFFFFFU",
  "POST /api/contract-types": "AAFFFFFU",
  "POST /api/contract-types/order": "AAFFFFFU",
