@@ -9,6 +9,7 @@ import { useToast } from '../components/Toast';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { saveBlob, zipStore } from '../lib/export';
 import type { Report } from './OwnerIncomeReportPage';
+import type { StatementPages } from '../lib/statementPdf';
 import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { phone as formatPhone } from '../lib/phone';
 import { MoneyText } from '../components/MoneyText';
@@ -206,31 +207,31 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
     toast({ tone: 'info', title: `${plural(count, 'draft statement')} generated for ${monthLabel(month)}.`, body: 'Check them on the Statements tab before sending.' });
   }
 
-  function askToGenerate(picked: ListedStatement[], missing: Owner[], monthOnly: boolean): void {
+  function askToGenerate(picked: ListedStatement[], missing: Owner[], pages: StatementPages): void {
     const names = missing.slice(0, 5).map(o => titleCase(o.displayName)).join(', ');
     setDialog({
       title: `No ${monthLabel(month)} statement yet for ${plural(missing.length, 'owner')}`,
       body: 'The zip is made from generated owner statements. Generate drafts for them now from the month\'s reservations and costs, then export?',
       meta: missing.length > 5 ? `${names} and ${missing.length - 5} more` : names,
       confirmLabel: 'Generate and export',
-      extraActions: picked.length ? [{ label: `Export the ${picked.length} existing`, onClick: () => { setDialog(null); void withZipping(() => zipPdfs(picked, monthOnly)); } }] : [],
+      extraActions: picked.length ? [{ label: `Export the ${picked.length} existing`, onClick: () => { setDialog(null); void withZipping(() => zipPdfs(picked, pages)); } }] : [],
       onConfirm: () => {
         setDialog(null);
         void withZipping(async () => {
           await generateStatements(missing.map(o => o.id));
-          await zipPdfs(await listShownStatements(), monthOnly);
+          await zipPdfs(await listShownStatements(), pages);
         });
       },
     });
   }
 
-  function zipStatements(monthOnly: boolean): Promise<void> {
+  function zipStatements(pages: StatementPages): Promise<void> {
     return withZipping(async () => {
       const picked = await listShownStatements();
       const withStatement = new Set(picked.map(s => s.ownerId));
       const missing = tableRows.filter(o => (grossOf(o) !== 0 || netOf(o) !== 0) && !withStatement.has(o.id));
-      if (missing.length) { askToGenerate(picked, missing, monthOnly); return; }
-      await zipPdfs(picked, monthOnly);
+      if (missing.length) { askToGenerate(picked, missing, pages); return; }
+      await zipPdfs(picked, pages);
     });
   }
 
@@ -244,7 +245,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
     }
   }
 
-  async function zipPdfs(picked: ListedStatement[], monthOnly: boolean): Promise<void> {
+  async function zipPdfs(picked: ListedStatement[], pages: StatementPages): Promise<void> {
     if (!picked.length) {
       toast({ tone: 'warning', title: `No owner statements for ${monthLabel(month)} yet.`, body: 'No owner listed had reservations, costs or charges that month.' });
       return;
@@ -260,7 +261,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
         try {
           const r = await loadReport(s.id);
           if (!r.units.length) { noReport.push(titleCase(s.ownerName)); return; }
-          const opts = { logo: await logoOf(r.settings.company.logo), phone: printedPhone, monthOnly };
+          const opts = { logo: await logoOf(r.settings.company.logo), phone: printedPhone, pages };
           for (const u of r.units) made.push({ name: `${u.code} - ${titleCase(s.ownerName)}`, bytes: await statementPdf({ ...r, units: [u] }, opts) });
         } catch {
           failed.push(titleCase(s.ownerName));
@@ -378,8 +379,8 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
               trigger={<span data-variant="primary" className="ui-btn relative isolate inline-flex items-center gap-2 h-[var(--control-height-sm)] px-[13px] rounded-control bg-[var(--color-brand-black)] text-[var(--color-text-inverse)] text-[13px] font-medium whitespace-nowrap">
                 <Icon name="FileArchive" size="sm" />Unit statements (.zip)<Icon name="ChevronDown" size="sm" /></span>}
               items={[
-                { key: 'month', label: 'Month only', hint: `The ${monthLabel(month)} page of each unit, one PDF per unit.`, onSelect: () => void zipStatements(true) },
-                { key: 'year', label: 'Month and year to date', hint: `The ${monthLabel(month)} page, then Jan to Dec, one PDF per unit.`, onSelect: () => void zipStatements(false) },
+                { key: 'month', label: 'Month only', hint: `The ${monthLabel(month)} page of each unit, one PDF per unit.`, onSelect: () => void zipStatements('month') },
+                { key: 'year', label: 'Month and year to date', hint: `The ${monthLabel(month)} page, then Jan to Dec, one PDF per unit.`, onSelect: () => void zipStatements('monthAndYear') },
               ]} />
           ))}
         </span>

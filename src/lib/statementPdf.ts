@@ -15,9 +15,10 @@ export interface StatementPdfOptions {
   logo?: Uint8Array | null;
   /** How a phone number prints (the screen report writes Malaysian numbers as dialled at home). */
   phone?: (raw: string | null) => string;
-  /** Only the month pages, without the year-to-date pages. */
-  monthOnly?: boolean;
+  pages?: StatementPages;
 }
+
+export type StatementPages = 'month' | 'monthAndYear';
 
 const MM = 72 / 25.4;
 const PAGE_W = 210 * MM, PAGE_H = 297 * MM;
@@ -279,8 +280,8 @@ export async function statementPdf(r: Report, opts: StatementPdfOptions = {}): P
     logo: opts.logo ? await doc.embedPng(opts.logo).catch(() => null) : null,
     phone: opts.phone ?? (raw => (raw ?? '').trim()),
   };
-  const { monthOnly } = opts;
-  if (r.units.length > 1) { ownerMonthPage(ctx); if (!monthOnly) ownerYearPage(ctx); }
-  for (const u of r.units) { monthPage(ctx, u); if (!monthOnly) yearPage(ctx, u); }
+  const shouldDrawYearPages = (opts.pages ?? 'monthAndYear') === 'monthAndYear';
+  if (r.units.length > 1) { ownerMonthPage(ctx); if (shouldDrawYearPages) ownerYearPage(ctx); }
+  for (const u of r.units) { monthPage(ctx, u); if (shouldDrawYearPages) yearPage(ctx, u); }
   return doc.save();
 }
