@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, type ReactNode } from 'react';
 import { Button } from '../../components/Button';
 import { CloseButton } from '../../components/CloseButton';
 import { Drawer } from '../../components/Dialog';
@@ -11,62 +10,61 @@ import { DateField, MoneyInput } from '../../components/inputs';
 import { api, notifyFailure } from '../../lib/api';
 import { date, rm, todayMyt } from '../../lib/format';
 import { useApi } from '../../lib/useApi';
-import ContractTab from './ContractTab';
 import { CLEAN_KINDS, type UnitPriceChange, type UnitPriceData } from './UnitCleaning';
 import { PercentSchedule } from './PercentSchedule';
 
 interface Sku { id: string; code: string; name: string; defaultPrice: number | null; internalCost: number | null }
-interface ContractTerms { id: string | null; termsLabel: string; startsOn: string | null }
-interface ContractPayload { current: ContractTerms; untilThen?: ContractTerms | null }
 type Figures = { charge: number | null; pay: number | null };
-type Kind = 'cleaning' | 'maintenance' | 'contract';
-type ChangeBy = 'amount' | 'percent';
+type PriceKind = 'cleaning' | 'maintenance';
 const ALL_UNITS = 'all-units';
 export interface ScheduleUnit { id: string; label: string; building: string; hint: string }
+export type PricedUnit = Pick<ScheduleUnit, 'id' | 'label'>;
 
 const amountOf = (sen: number | null) => (sen == null ? 'list price' : rm(sen));
 /** The item's list name is older than the clean names staff use: a clean reads as on the Details tab. */
 const nameOf = (c: UnitPriceChange) => CLEAN_KINDS.find(([k]) => k === c.cleanKind)?.[1] ?? c.name;
 const Heading = ({ children }: { children: string }) => <h3 className="m-0 text-copy font-semibold">{children}</h3>;
 
-/** The side panel of Scheduled changes (owner, 30 Oct 2026): choose what to schedule, then the unit, and only that form
- *  shows. Nothing is moved on the day: a job reads the price in force on its own day, and the statement the contract in
- *  force that month, so a change takes over by itself. */
-export function ScheduledChanges({ units, money, onClose, onSaved }: { units: ScheduleUnit[]; money: boolean; onClose: () => void; onSaved: () => void }) {
-  const [kind, setKind] = useState<Kind | ''>('');
-  const [unitId, setUnitId] = useState('');
-  const [changeBy, setChangeBy] = useState<ChangeBy>('percent');
-  const unit = units.find(u => u.id === unitId);
-  const isAllUnits = kind === 'cleaning' && unitId === ALL_UNITS;
-  const unitOptions = [...(kind === 'cleaning' ? [{ value: ALL_UNITS, label: 'All units' }] : []),
-    ...units.map(u => ({ value: u.id, label: u.label, group: u.building, hint: u.hint }))];
+function SidePanel({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
     <Drawer open onClose={onClose} width={560} labelledBy="schedule-a-change">
       <div className="flex items-start justify-between gap-3 p-5 [border-bottom:1px_solid_var(--color-line)] sticky top-0 bg-card z-[1]">
-        <h2 id="schedule-a-change" className="m-0 text-title font-semibold">Schedule a change</h2>
+        <h2 id="schedule-a-change" className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{title}</h2>
         <CloseButton onClick={onClose} />
       </div>
-      <div className="p-5 flex flex-col gap-6">
-        <div className="flex flex-col gap-2">
-          <Heading>What do you want to schedule?</Heading>
-          <Segmented<Kind> label="What to schedule" value={kind} onChange={setKind}
-            options={[{ key: 'cleaning', label: 'Cleaning' }, { key: 'maintenance', label: 'Maintenance' }, ...(money ? [{ key: 'contract' as const, label: 'Contract' }] : [])]} />
-        </div>
-        {kind && <SearchSelect label="Unit" showLabel size="md" placeholder="Search unit" value={unitId} onChange={setUnitId} options={unitOptions} />}
-        {kind === 'cleaning' && unit && <Segmented<ChangeBy> label="Change by" value={changeBy} onChange={setChangeBy}
-          options={[{ key: 'percent', label: 'Percent (%)' }, { key: 'amount', label: 'New amount (RM)' }]} />}
-        {isAllUnits && <PercentSchedule key="all" unit={null} onSaved={onSaved} />}
-        {kind && unit && (kind === 'contract'
-          ? <ContractSchedule key={unit.id} unit={unit} onSaved={onSaved} />
-          : kind === 'cleaning' && changeBy === 'percent'
-            ? <PercentSchedule key={unit.id} unit={unit} onSaved={onSaved} />
-            : <PriceSchedule key={`${kind}:${unit.id}`} kind={kind} unit={unit} onSaved={onSaved} />)}
-      </div>
+      <div className="p-5 flex flex-col gap-6">{children}</div>
     </Drawer>
   );
 }
 
-function PriceSchedule({ kind, unit, onSaved }: { kind: 'cleaning' | 'maintenance'; unit: ScheduleUnit; onSaved: () => void }) {
+/** The side panel of Scheduled changes (owner, 6 Nov 2026): only a dated % change, for all units or one. A unit's own
+ *  prices in RM are scheduled on the unit page, a contract on the unit's Contract tab. */
+export function PercentChangePanel({ units, onClose, onSaved }: { units: ScheduleUnit[]; onClose: () => void; onSaved: () => void }) {
+  const [unitId, setUnitId] = useState(ALL_UNITS);
+  const unit = units.find(u => u.id === unitId) ?? null;
+  const unitOptions = [{ value: ALL_UNITS, label: 'All units' }, ...units.map(u => ({ value: u.id, label: u.label, group: u.building, hint: u.hint }))];
+  return (
+    <SidePanel title="Schedule a % change" onClose={onClose}>
+      <SearchSelect label="Units" showLabel size="md" placeholder="Search unit" value={unitId} onChange={setUnitId} options={unitOptions} />
+      {(unit || unitId === ALL_UNITS) && <PercentSchedule key={unitId} unit={unit} onSaved={onSaved} />}
+    </SidePanel>
+  );
+}
+
+/** One unit's own cleaning or maintenance price in RM from a later date, opened from the unit page. Nothing is moved on
+ *  the day: a job reads the price in force on its own day, so the change takes over by itself. */
+export function UnitPriceChangePanel({ unit, onClose, onSaved }: { unit: PricedUnit; onClose: () => void; onSaved: () => void }) {
+  const [kind, setKind] = useState<PriceKind>('cleaning');
+  return (
+    <SidePanel title={`Schedule a price change: ${unit.label}`} onClose={onClose}>
+      <Segmented<PriceKind> label="Price to change" value={kind} onChange={setKind}
+        options={[{ key: 'cleaning', label: 'Cleaning' }, { key: 'maintenance', label: 'Maintenance' }]} />
+      <PriceSchedule key={kind} kind={kind} unit={unit} onSaved={onSaved} />
+    </SidePanel>
+  );
+}
+
+function PriceSchedule({ kind, unit, onSaved }: { kind: PriceKind; unit: PricedUnit; onSaved: () => void }) {
   const toast = useToast();
   const prices = useApi<UnitPriceData>(`/housekeeping/unit-prices?unitId=${encodeURIComponent(unit.id)}`);
   const skus = useApi<{ data: Sku[] }>(kind === 'maintenance' ? '/maintenance/skus?active=1' : null);
@@ -151,42 +149,5 @@ function PriceSchedule({ kind, unit, onSaved }: { kind: 'cleaning' | 'maintenanc
         </section>
       )}
     </>
-  );
-}
-
-/** A new contract with a later start date. Already one waiting: that one is changed on the Contract tab, not stacked. */
-function ContractSchedule({ unit, onSaved }: { unit: ScheduleUnit; onSaved: () => void }) {
-  const navigate = useNavigate();
-  const id = encodeURIComponent(unit.id);
-  const contract = useApi<ContractPayload>(`/units/${id}/contract`);
-  const prices = useApi<UnitPriceData>(`/housekeeping/unit-prices?unitId=${id}`);
-  if (contract.error) return <p role="alert" className="m-0 text-copy text-critical">{contract.error}</p>;
-  if (!contract.data || !prices.data) return <Skeleton height={220} />;
-  const { current, untilThen } = contract.data;
-  const waiting = current.startsOn && current.startsOn.slice(0, 10) > todayMyt();
-  const toTab = <div><Button size="sm" variant="secondary" onClick={() => navigate(`/properties/units/${id}?tab=contract`)}>Go to the Contract tab</Button></div>;
-  if (waiting) {
-    return (
-      <section className="flex flex-col gap-2">
-        <Heading>A new contract is already waiting</Heading>
-        <p className="m-0 text-copy">{current.termsLabel}, starts {date(current.startsOn ?? '')}.{untilThen ? ` Until then: ${untilThen.termsLabel}.` : ''}</p>
-        <p className="m-0 text-meta text-muted-ink">Change its terms or date on the Contract tab.</p>
-        {toTab}
-      </section>
-    );
-  }
-  if (!prices.data.mayEdit) {
-    return (
-      <section className="flex flex-col gap-2">
-        <p className="m-0 text-copy text-muted-ink">No new contract waiting. In force: {current.termsLabel}.</p>
-        <p className="m-0 text-meta text-muted-ink">Only finance and management can change a contract.</p>
-      </section>
-    );
-  }
-  return (
-    <section className="flex flex-col gap-3">
-      <p className="m-0 text-meta text-muted-ink">The statement uses a new contract for the whole month it starts in, so start on the 1st for a clean change.</p>
-      <ContractTab key={unit.id} unitId={unit.id} canEdit startNew onSaved={onSaved} />
-    </section>
   );
 }

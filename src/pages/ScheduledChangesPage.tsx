@@ -13,7 +13,7 @@ import { api, notifyFailure } from '../lib/api';
 import { date, plural, rm, titleCase } from '../lib/format';
 import type { StatusTone } from '../lib/status';
 import { useUrlState, SearchBox } from './finance/listKit';
-import { ScheduledChanges, type ScheduleUnit } from './units/ScheduledChanges';
+import { PercentChangePanel, type ScheduleUnit } from './units/ScheduledChanges';
 import { CLEAN_KINDS } from './units/UnitCleaning';
 
 type Kind = 'cleaning' | 'maintenance' | 'contract';
@@ -38,8 +38,8 @@ const textNow = (r: ScheduledRow) => (r.kind === 'contract' ? r.termsNow ?? 'No 
 const textNext = (r: ScheduledRow) => (r.kind === 'contract' ? r.termsNext ?? null : r.layouts ? `New prices for ${plural(r.layouts, r.byBed ? 'bed size' : 'layout')}` : amounts(r.next, 'list price'));
 
 /** Scheduled changes (owner, 30 Oct 2026): one list of everything set to change on a later date, so the office can see
- *  what is coming. A price change is cancelled here; a contract is changed on the unit's Contract tab, a list price
- *  under Service prices. New changes are added in the side panel. */
+ *  what is coming. A price change is cancelled here. Only a % change is added here (owner, 6 Nov 2026): a unit's own
+ *  price in RM is scheduled on the unit page, a contract on its Contract tab, a list price under Service prices. */
 export default function ScheduledChangesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/units/scheduled-changes');
   const roster = useApi<{ data: { id: string; unitNumber: string; propertyName: string; ownerName: string }[] }>('/units');
@@ -85,7 +85,7 @@ export default function ScheduledChangesPage() {
   return (
     <>
       <PageHeader title="Scheduled changes" sub={data ? `${plural(rows.length, 'change')} waiting for a date` : 'Loading…'}
-        primary={data?.mayEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Schedule a change</Button> : undefined} />
+        primary={data?.mayEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Schedule a % change</Button> : undefined} />
       {data && !data.dated && <div className="py-[10px] px-[14px] rounded-control bg-gold-tint text-copy">Dated unit prices are not switched on yet. They need a database update (migration 0186). Contracts and list prices still show here.</div>}
       <DataTable<ScheduledRow> id="scheduled-changes" columns={columns} rows={data ? visible : null} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
         onRowClick={open} viewParams={['kind', 'q']} filtered={filter !== 'all' || !!q} onClearFilters={() => url.set({ kind: null, q: null, page: null })}
@@ -105,7 +105,7 @@ export default function ScheduledChangesPage() {
           </span>
         )}
       />
-      {adding && <ScheduledChanges units={units} money={!!data?.money} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload(); }} />}
+      {adding && <PercentChangePanel units={units} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload(); }} />}
       {dialog}
     </>
   );
