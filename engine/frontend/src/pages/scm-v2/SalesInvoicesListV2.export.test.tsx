@@ -140,7 +140,7 @@ describe("Sales Invoices list: the one Export", () => {
     await exportNow();
     expect(h.aoa[0]).toEqual([
       "SI No.", "Date", "Due", "Transfer From (SO)", "Transfer From (DO)", "Source PO", "Customer", "Ref No.", "Status",
-      "Outstanding", "Total",
+      "Bills for", "Outstanding", "Total",
     ]);
     expect(h.aoa).toHaveLength(4);
     expect(h.aoa.slice(1).map((r) => r[0])).toEqual(["HC-SI-2609-001", "HC-SI-2609-001", "HC-SI-2609-002"]);
