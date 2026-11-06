@@ -82,7 +82,7 @@ describe('MRP shortage rows carry their colour on the shared DataTable', () => {
 
     const shortCells = [...dataRowOf('MT-SHORT').cells];
     expect(shortCells.length).toBeGreaterThan(3);
-    for (const td of shortCells) expect(paint(td)).toMatch(/rgba\(22,\s*105,\s*95,\s*0\.08\)/);
+    for (const td of shortCells) expect(paint(td)).toMatch(/rgba\(22,\s*105,\s*95,\s*0\.14\)/);
     // The deep-petrol bar stays on the leading cell.
     expect(getComputedStyle(shortCells[0]!).boxShadow).toMatch(/inset 3px 0 0 #08352e/);
 
@@ -96,6 +96,6 @@ describe('MRP shortage rows carry their colour on the shared DataTable', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand' }));
     const detail = dataRowOf('MT-SHORT').nextElementSibling!;
     expect(detail.hasAttribute('data-vrow')).toBe(false);
-    for (const td of (detail as HTMLTableRowElement).cells) expect(paint(td)).not.toMatch(/rgba\(22,\s*105,\s*95,\s*0\.08\)/);
+    for (const td of (detail as HTMLTableRowElement).cells) expect(paint(td)).not.toMatch(/rgba\(22,\s*105,\s*95,\s*0\.14\)/);
   });
 });

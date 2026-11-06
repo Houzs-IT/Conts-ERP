@@ -1192,7 +1192,7 @@ const liveCompletionDocs = async (sb: any, o: { completion_grn_id: string | null
    what is left. The order turns Complete only when the last one lands, so a stop midway leaves it open with Retry.
    The GRN and DO come from the code those documents always use; the handlers run on this request's own session, so
    their own gates (a user with no delivery rights, a frozen line) refuse here as they do on their own pages. */
-const callHandler = async (c: any, handler: (ctx: any) => Promise<Response>, body: unknown, param?: Record<string, string>) => {
+export const callHandler = async (c: any, handler: (ctx: any) => Promise<Response>, body: unknown, param?: Record<string, string>) => {
   const req = new Proxy(c.req, { get(t, k) {
     if (k === 'json') return async () => body;
     if (k === 'param' && param) return (n: string) => param[n];

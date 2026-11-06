@@ -415,11 +415,29 @@ export async function linkedDocFiles(db: Db, doc: DocRef): Promise<Array<DocFile
       .map((r) => ({ ...toFile(r), key: r.r2_key, lineId: null, readOnly: true, from: `Purchase order ${po.po_number}` }));
   }
   if (doc.type !== "goods_received" && doc.type !== "delivery_order") return [];
+  /* On site a receipt and a delivery are one event (owner, 6 Nov 2026): the proof of delivery is the proof of receipt. */
+  const twin = await onsiteTwinFiles(db, doc, load);
   const col = doc.type === "goods_received" ? "completion_grn_id" : "completion_do_id";
   const order = await db.prepare(`SELECT id::text AS id, po_number FROM scm.production_orders WHERE ${col} = ?::uuid LIMIT 1`).bind(doc.id).first<{ id: string; po_number: string }>();
-  if (!order) return [];
-  return (await load("doc_type = 'production_order' AND doc_id = ?", order.id))
-    .map((r) => ({ ...toFile(r), key: r.r2_key, source: "pod" as const, lineId: null, readOnly: true, from: `Production order ${order.po_number}` }));
+  if (!order) return twin;
+  return [...twin, ...(await load("doc_type = 'production_order' AND doc_id = ?", order.id))
+    .map((r) => ({ ...toFile(r), key: r.r2_key, source: "pod" as const, lineId: null, readOnly: true, from: `Production order ${order.po_number}` }))];
+}
+
+async function onsiteTwinFiles(db: Db, doc: DocRef, load: (where: string, ...args: unknown[]) => Promise<Array<Row & { r2_key: string }>>): Promise<Array<DocFile & { key: string }>> {
+  const isGrn = doc.type === "goods_received";
+  const others = (await db.prepare(
+    isGrn
+      ? `SELECT t.do_id::text AS id, d.do_number AS no FROM scm.onsite_twins t JOIN scm.delivery_orders d ON d.id = t.do_id WHERE t.grn_id = ?::uuid`
+      : `SELECT t.grn_id::text AS id, g.grn_number AS no FROM scm.onsite_twins t JOIN scm.grns g ON g.id = t.grn_id WHERE t.do_id = ?::uuid`,
+  ).bind(doc.id).all<{ id: string; no: string }>()).results ?? [];
+  const out: Array<DocFile & { key: string }> = [];
+  for (const o of others) {
+    if (isGrn) out.push(...(await podFiles(db, o.id)).map((f) => ({ ...f, lineId: null, readOnly: true, from: `Delivery order ${o.no}` })));
+    out.push(...(await load("doc_type = ? AND doc_id = ?", isGrn ? "delivery_order" : "goods_received", o.id))
+      .map((r) => ({ ...toFile(r), key: r.r2_key, source: "pod" as const, lineId: null, readOnly: true, from: `${isGrn ? "Delivery order" : "Goods receipt"} ${o.no}` })));
+  }
+  return out;
 }
 
 export const isPodFileId = (fileId: string): boolean => fileId === POD_FILE_ID || /^pod-\d+$/.test(fileId);

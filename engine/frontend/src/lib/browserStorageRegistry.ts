@@ -83,6 +83,7 @@ export const BROWSER_STORAGE_KEY_REGISTRY: readonly StorageKeyRegistration[] = [
   { id: "pending-reminder-acks", classification: "TRANSIENT", storage: ["localStorage"], keyFamily: "pending-reminder:u<user>:c<company>:<YYYY-MM-DD>", matches: (key) => /^pending-reminder:u\d+:c\d+:\d{4}-\d{2}-\d{2}$/.test(key) },
   { id: "identity-preferences", classification: "IDENTITY_PREF", storage: ["localStorage"], keyFamily: "<approved preference base>:u<user>:c<company>", matches: identityPreference },
   { id: "beta-last-project", classification: "DEVICE_PREF", storage: ["localStorage"], keyFamily: "beta:lastProject", matches: exact("beta:lastProject") },
+  { id: "renovation-quotations-view", classification: "DEVICE_PREF", storage: ["localStorage"], keyFamily: "renovation-quotations-view", matches: exact("renovation-quotations-view") },
   { id: "pwa-dismissals", classification: "DEVICE_PREF", storage: ["localStorage"], keyFamily: "pwa:<surface>:dismissed-at", matches: prefix("pwa:") },
   // Native-app opt-ins, per DEVICE and per install. Currently just the
   // biometric-session flag (native:biometric-session) that gates unlocking a
@@ -206,6 +207,7 @@ export const PRODUCTION_STORAGE_CALLERS = [
   // key is per user so a shared browser never shows one person's draft to the
   // next. Reviewed with the announcements redesign.
   "pages/announcements/ComposerModal.tsx",
+  "pages/renovation/QuotationsList.tsx",
   "pages/renovation-beta/renovationBetaBoardApi.ts",
   "pages/renovation-beta/renovationPoColumns.ts",
   "pages/scm-v2/ProductModels.tsx",
