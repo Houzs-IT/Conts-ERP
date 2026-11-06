@@ -354,7 +354,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       )}
 
       <div ref={wrapRef} style={{ width: "100%", minWidth: 0 }}>
-        {tree.length === 0 ? <WsEmpty>{d.categoryRestricted ? "No lines you can see for this project." : <>No sales order yet. Make a quotation for this project and convert it. <Link to="/scm/renovation/quotations">Open Quotations</Link></>}</WsEmpty>
+        {tree.length === 0 ? <WsEmpty>{d.categoryRestricted ? "No lines you can see for this project." : <>No sales order yet. Make a quotation for this project and convert it. <Link to={`/scm/renovation/quotations/new?projectId=${p.projectId}`}>New Quotation</Link></>}</WsEmpty>
           : width === 0 || width >= TABLE_MIN ? (
             <div role="region" aria-label="Sales order lines" style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
               <table onPointerLeave={() => { setDragging(null); setDropOn(null); }} style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
