@@ -360,7 +360,7 @@ export function CustomerBlock({
       <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-4">
         <Cell label="Project" className="col-span-2" htmlFor={id("project")}>
           {mode === "so"
-            ? <ProjectPicker id={id("project")} value={value.projectId} project={project ?? null} onPick={(p) => onPickProject?.(p)} disabled={disabled} />
+            ? <ProjectPicker id={id("project")} value={value.projectId} project={project ?? null} onPick={(p) => onPickProject?.(p)} disabled={off("projectId")} />
             : <ReadOnly>{projectLabel}</ReadOnly>}
           {gaps.length > 0 && (
             <p className="mt-1 text-[11px] text-ink-secondary">
