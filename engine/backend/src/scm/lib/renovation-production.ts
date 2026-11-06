@@ -80,7 +80,7 @@ export function progressOf(o: OrderClock, today: IsoDate, holidays: ReadonlySet<
   const start = planDays[0] ?? o.actual_start_at.slice(0, 10);
   /* Before the first plan day a started job still reads Day 1. Past the last it keeps counting, so a late job reads Day 11 of 7. */
   const dayNo = Math.max(1, scheduleDays(start, today, holidays).length);
-  const daysLeft = Math.max(0, m - dayNo);
+  const daysLeft = m > 0 ? Math.max(0, m - dayNo) : null;
   return { ...base, label: m > 0 ? `Day ${dayNo} of ${m}` : `Day ${dayNo}`, dayNo, daysLeft, pct: m > 0 ? Math.min(100, Math.round((dayNo / m) * 100)) : 0 };
 }
 

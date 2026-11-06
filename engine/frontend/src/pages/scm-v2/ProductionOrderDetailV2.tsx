@@ -13,7 +13,6 @@ import { lazy, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LazySlot } from "../../components/LazySlot";
 import { useStaffLookup } from "../../hooks/useStaffLookup";
-import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
 import { AssignDialog, ChangeNotice, ProductionTimeDialog, ProgressPhotos, ProgressSummary, useAddPhotos, useProductionPress } from "./renovationProductionParts";
 import { useHoldAction } from "./use-hold-action";
 import { ProductionMaterialsSection } from "./ProductionMaterialsSection";
@@ -465,7 +464,7 @@ function ProductionOrderDetailV2ReadOnly() {
   const started = Boolean(orderExtra?.actual_start_at);
   const title = (page?.project?.building || page?.project?.unit_no)
     ? [page.project.building, page.project.unit_no].filter(Boolean).join(" ")
-    : linkedSo?.debtor_name || purchaseOrder?.po_number || "";
+    : (reno || linkedSo?.so_kind === "RENOVATION" ? null : linkedSo?.debtor_name) || purchaseOrder?.po_number || "";
   const press = useProductionPress({ id: id ?? "", po_number: purchaseOrder?.po_number ?? "", title }, () => void detail.refetch());
   const photos = useAddPhotos(id ?? "");
   const holdAction = useHoldAction("pro");
@@ -995,15 +994,10 @@ function ProductionOrderDetailV2ReadOnly() {
                 </div>
               </Section>
             )}
-            {linkedSo ? (
+            {/* Production staff see the job, never the customer or the payment (owner, 6 Nov 2026). */}
+            {reno || linkedSo?.so_kind === "RENOVATION" ? null : linkedSo ? (
               <>
-                {linkedSo.so_kind === "RENOVATION" ? (
-                  <Section title="Order information">
-                    <RenovationSoOrderInfo splitProject docNo={linkedSo.doc_no} payment={linkedSo.payment_methods_summary || linkedSo.payment_method || null} />
-                  </Section>
-                ) : (
-                  <Section title="Order info"><SoOrderInfoFields header={linkedSo} /></Section>
-                )}
+                <Section title="Order info"><SoOrderInfoFields header={linkedSo} /></Section>
                 <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2 [&>section]:h-full">
                   <Section title="Customer">
                     <SoCustomerFields
