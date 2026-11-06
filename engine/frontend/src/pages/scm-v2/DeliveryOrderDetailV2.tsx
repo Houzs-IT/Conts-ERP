@@ -1488,6 +1488,7 @@ export function DeliveryOrderDetailV2() {
 
               <AsideCard title="Key dates">
                 <KeyDateRow k="DO date" v={fmtDate(deliveryOrder.do_date)} />
+                {(deliveryOrder as { pod_received_by?: string | null }).pod_received_by && <KeyDateRow k="Received by" v={(deliveryOrder as { pod_received_by?: string | null }).pod_received_by!} />}
                 <KeyDateRow
                   k="Scheduled"
                   v={
