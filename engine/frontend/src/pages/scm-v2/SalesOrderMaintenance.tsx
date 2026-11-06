@@ -78,11 +78,11 @@ import styles from './SalesOrderMaintenance.module.css';
 const SECTIONS = [
   { key: 'venues', label: 'Venues' },
   { key: 'geo', label: 'Geo & Warehouses' },
-  { key: 'dropdowns', label: 'Dropdowns' },
   { key: 'brands', label: 'Brands' },
   { key: 'package-templates', label: 'Package templates' },
   { key: 'payment-terms', label: 'Payment terms' },
   { key: 'letterheads', label: 'Letterheads' },
+  { key: 'dropdowns', label: 'Dropdowns' },
 ] as const;
 const ALL_SECTION_KEYS = SECTIONS.map((s) => s.key);
 
@@ -114,7 +114,7 @@ export const SalesOrderMaintenance = () => {
       <PageHeader
         eyebrow="Reference data"
         title="Sales Order Maintenance"
-        description="Reference data behind SO forms — venues, warehouses, geo, dropdowns."
+        description="Reference data behind sales orders: venues, warehouses, brands, payment terms, letterheads and dropdowns."
         primaryAction={
           <Link
             to="/scm/sales-orders"
@@ -298,7 +298,7 @@ const MaintenanceBody = ({ canEdit, open }: { canEdit: boolean; open: ReturnType
   const [newStateCode, setNewStateCode] = useState('');
   const [newCity,     setNewCity]     = useState('');
   const [newPostcode, setNewPostcode] = useState('');
-  const [newCountry, setNewCountry] = useState('Malaysia');
+  const [newCountry, setNewCountry] = useState('');
 
   /* Group localities by (country) → (country, state) for the L1 + L2 stat
      tiles, computed once per data refresh. */
@@ -559,7 +559,7 @@ const MaintenanceBody = ({ canEdit, open }: { canEdit: boolean; open: ReturnType
 
       {/* L1 — Country list */}
       {geoView === 'country' && (
-        <div className={styles.tableCard}>
+        <div className={styles.geoTable}>
           {localities.isLoading ? (
             <div className={styles.empty}>Loading…</div>
           ) : localityGroups.countries.length === 0 ? (
@@ -621,7 +621,7 @@ const MaintenanceBody = ({ canEdit, open }: { canEdit: boolean; open: ReturnType
 
       {/* L2 — States in selected country, integrated with warehouse + notes */}
       {geoView === 'state' && (
-        <div className={styles.tableCard}>
+        <div className={styles.geoTable}>
           {(() => {
             const statesInCountry = Array.from(localityGroups.statesByCountry.values())
               .filter((s) => s.country === selectedCountry)
@@ -891,7 +891,7 @@ const MaintenanceBody = ({ canEdit, open }: { canEdit: boolean; open: ReturnType
           level default per city. Bulk-stamps all postcodes under the city
           when changed. Empty value means "follow state". */}
       {geoView === 'city' && (
-        <div className={styles.tableCard}>
+        <div className={styles.geoTable}>
           {citiesInState.length === 0 ? (
             <div className={styles.empty}>No cities in {selectedState} yet — add one below.</div>
           ) : (() => {
@@ -982,7 +982,7 @@ const MaintenanceBody = ({ canEdit, open }: { canEdit: boolean; open: ReturnType
 
       {/* L4 — Postcodes leaf */}
       {geoView === 'postcode' && (
-        <div className={styles.tableCard}>
+        <div className={styles.geoTable}>
           {postcodeRows.length === 0 ? (
             <div className={styles.empty}>No postcodes in {selectedCity} yet — add one below.</div>
           ) : (

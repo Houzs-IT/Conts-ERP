@@ -85,14 +85,14 @@ function BrandEditor({ brand, canEdit }: { brand: BrandProfile; canEdit: boolean
     <Card title={<span className="flex items-center gap-2"><span className="inline-block h-3 w-3 rounded-full" style={{ background: brand.color }} />{brand.name}</span>}
       actions={canEdit ? <Button icon={<Save size={15} />} disabled={save.isPending} onClick={async () => { setError(null); setSaved(false); try { await save.mutateAsync(undefined); setSaved(true); } catch (e) { setError(refusalOf(e).message); } }}>{save.isPending ? 'Saving…' : 'Save'}</Button> : null}>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <Field label="Company block (one line each)" hint="Printed under the logo"><textarea rows={4} className={cn(inputCls, 'h-auto py-1.5')} disabled={!canEdit} value={b.companyLines.join('\n')} onChange={(e) => setB({ ...b, companyLines: e.target.value.split('\n') })} /></Field>
-        <Field label="Terms (one line each)" hint="Printed at the foot of every page"><textarea rows={4} className={cn(inputCls, 'h-auto py-1.5')} disabled={!canEdit} value={b.termsLines.join('\n')} onChange={(e) => setB({ ...b, termsLines: e.target.value.split('\n') })} /></Field>
+        <Field label="Company block (one line each)" hint="Printed beside the logo"><textarea rows={6} className={cn(inputCls, 'h-auto py-1.5')} disabled={!canEdit} value={b.companyLines.join('\n')} onChange={(e) => setB({ ...b, companyLines: e.target.value.split('\n') })} /></Field>
+        <Field label="Terms (one line each)" hint="Printed as the contract terms"><textarea rows={6} className={cn(inputCls, 'h-auto py-1.5')} disabled={!canEdit} value={b.termsLines.join('\n')} onChange={(e) => setB({ ...b, termsLines: e.target.value.split('\n') })} /></Field>
         <Field label="Phone / email line"><input className={inputCls} disabled={!canEdit} value={b.contactLine} onChange={(e) => setB({ ...b, contactLine: e.target.value })} /></Field>
-        <Field label="Bank line"><input className={inputCls} disabled={!canEdit} value={b.bankLine} onChange={(e) => setB({ ...b, bankLine: e.target.value })} /></Field>
-        <Field label="Intro sentence"><input className={inputCls} disabled={!canEdit} value={b.intro} onChange={(e) => setB({ ...b, intro: e.target.value })} /></Field>
+        <Field label="Bank line"><textarea rows={3} className={cn(inputCls, 'h-auto py-1.5')} disabled={!canEdit} value={b.bankLine} onChange={(e) => setB({ ...b, bankLine: e.target.value })} /></Field>
+        <Field label="Intro sentence"><textarea rows={3} className={cn(inputCls, 'h-auto py-1.5')} disabled={!canEdit} value={b.intro} onChange={(e) => setB({ ...b, intro: e.target.value })} /></Field>
         <Field label="Signing company"><input className={inputCls} disabled={!canEdit} value={b.signatoryCompany} onChange={(e) => setB({ ...b, signatoryCompany: e.target.value })} /></Field>
       </div>
-      <p className="mt-2 text-[12px] text-ink-muted">{brand.logoR2Key ? 'Logo: uploaded in Project Maintenance > Brands.' : 'No logo yet: upload it in Project Maintenance > Brands; until then the brand name prints as text.'}</p>
+      <p className="mt-2 text-[12px] text-ink-muted">{brand.logoR2Key ? 'Logo: uploaded under Brands.' : 'No logo yet: upload it under Brands.'}</p>
       {saved && <p className="mt-1 text-[12.5px] font-semibold text-synced">Saved.</p>}
       <ErrorBanner error={error} />
     </Card>
