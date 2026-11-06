@@ -5,4 +5,6 @@ set local lock_timeout = '5s';
 
 alter table scm.delivery_orders add column if not exists pod_received_by text;
 
+notify pgrst, 'reload schema';
+
 select demo.sync();
