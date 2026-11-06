@@ -31,6 +31,7 @@ import { betaSiteApi } from "./renovationBetaSiteApi";
 import { betaMediaApi } from "./renovationBetaMediaApi";
 import { PhotoUploadDialog, type UploadTarget } from "./BetaPhotoUpload";
 import { BetaLineMaterials } from "./BetaLineMaterials";
+import { LineApprovedDrawings } from "./BetaApprovedDrawings";
 import { BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
@@ -282,7 +283,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
 
   const deliveries = site.data?.deliveries ?? [];
   const cell = (l: ManagedLine): RowCtx => ({
-    l, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
+    l, projectId: p.projectId, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
     setEdit: (patch) => setEdit(l.id, patch), openMaterials: () => setMaterialsOf(l), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
     stock: stockByLine.get(l.id),
@@ -550,6 +551,7 @@ function Band({ band, label, hint, open, onToggle, columns, dates }: { band: rea
 }
 
 interface RowCtx {
+  projectId?: number;
   l: ManagedLine;
   edit: LineEdit | undefined;
   editable: boolean;
@@ -615,6 +617,7 @@ function DescCell(r: RowCtx): ReactElement {
         <RemarkControl {...r} />
       </div>
       <MaterialsLink r={r} />
+      {r.projectId !== undefined && r.l.categoryCode === "BUILTIN" && <LineApprovedDrawings projectId={r.projectId} />}
       {photoCount(photos) > 0 && <LinePhotoThumbs photos={photos} label={r.l.description || r.l.itemCode} />}
       {r.refusal && <span role="alert" style={{ fontSize: 12, color: WS.red }}>Not saved: {r.refusal}</span>}
       {r.pending.map((c) => (

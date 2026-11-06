@@ -69,6 +69,12 @@ export async function poDrawings(db: Db, poId: string, companyId: number): Promi
       WHERE po.id = ?::uuid AND po.company_id = ? LIMIT 1`,
   ).bind(poId, companyId).first<{ id: number; name: string; building: string | null; unit_no: string | null }>();
   if (!p) return { projectId: null };
+  return { ...(await projectDrawings(db, p.id)), projectName: p.name, unit: [p.building, p.unit_no].filter(Boolean).join(" ") || null };
+}
+
+/** The project's 2D files and its approved set, for a Built-in line that may have no PO yet. */
+export async function projectDrawings(db: Db, projectId: number): Promise<PoDrawings> {
+  const p = { id: projectId };
   const { results } = await db.prepare(
     `SELECT f.id::int AS id, f.kind, f.version::int AS version, f.file_name, f.r2_key, f.external_url, f.content_type, f.size_bytes,
             f.submitted_on::text AS submitted_on, f.uploaded_at::text AS uploaded_at
@@ -80,7 +86,7 @@ export async function poDrawings(db: Db, poId: string, companyId: number): Promi
       WHERE f.project_id = ? AND f.kind = '2d' AND r.approved_on IS NOT NULL ORDER BY f.version DESC LIMIT 1`,
   ).bind(p.id).first<{ id: number; version: number; approved_on: string }>();
   return {
-    projectId: p.id, projectName: p.name, unit: [p.building, p.unit_no].filter(Boolean).join(" ") || null, files: results ?? [],
+    projectId: p.id, files: results ?? [],
     approved: a ? { fileId: a.id, version: a.version, approvedOn: a.approved_on } : null,
   };
 }
