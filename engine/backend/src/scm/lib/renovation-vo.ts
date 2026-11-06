@@ -45,6 +45,19 @@ export function poLineTargets(poLines: ReadonlyArray<{ id: string; qty: number; 
   return out;
 }
 
+/* The next unbilled instalment catches a VO up. Once every instalment is billed there is none, so the VO gets its own:
+   as the last on the schedule it bills what is left of the contract, and 0% leaves the others' percentages alone. */
+async function ensureBalanceInstalment(db: RenoDb, soDocNo: string, voNo: string, companyId: number): Promise<void> {
+  await db.q(
+    `insert into scm.reno_doc_instalments (company_id, so_doc_no, seq, label, pct_bp, trigger)
+     select $2::bigint, $1::text, coalesce(max(i.seq), 0) + 1, $3::text, 0, 'so_confirmed'
+       from scm.reno_doc_instalments i left join scm.reno_instalment_bills b on b.instalment_id = i.id
+      where i.so_doc_no = $1
+     having count(*) > 0 and count(*) = count(b.id)`,
+    [soDocNo, companyId, `Balance of ${voNo}`],
+  );
+}
+
 async function deliveredQty(db: RenoDb, soItemId: string): Promise<number> {
   const [r] = await db.q<{ n: number }>(
     `select (coalesce((select sum(di.qty) from scm.delivery_order_items di join scm.delivery_orders d on d.id = di.delivery_order_id
@@ -331,6 +344,7 @@ export async function applyVo(
   const before = await db.q<{ total: number }>(`select local_total_sen as total from scm.mfg_sales_orders where doc_no = $1`, [soDocNo]);
   const revised = await recomputeSoHeader(db, soDocNo);
   const net = revised - Number(before[0]?.total ?? 0);
+  if (net !== 0) await ensureBalanceInstalment(db, soDocNo, v.vo_no, actor.companyId);
   await db.q(`update scm.mfg_sales_orders set revision = revision + 1 where doc_no = $1`, [soDocNo]);
   await db.q(`update scm.reno_so_contracts set last_amended = $2::date, version = version + 1, updated_at = now() where so_doc_no = $1`, [soDocNo, todayKl()]);
   await db.q(

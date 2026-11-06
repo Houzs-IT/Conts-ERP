@@ -133,7 +133,9 @@ export function assembleView(
   credits: ContractCredit[] = [],
   billedBeforeGoLiveSen = 0,
 ): BillingView {
-  const billByInst = new Map(bills.map((b) => [b.instalment_id, b]));
+  /* A cancelled invoice or credit note billed nothing: its instalment is due again and its amount does not count. */
+  const live = bills.filter((b) => b.si_status !== 'CANCELLED' && b.cn_status !== 'CANCELLED');
+  const billByInst = new Map(live.map((b) => [b.instalment_id, b]));
   const billedMap = new Map<number, number>();
   for (const i of instalments) {
     const b = billByInst.get(i.id);
@@ -158,8 +160,8 @@ export function assembleView(
       } : null,
     };
   });
-  const billedSen = bills.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen + billedBeforeGoLiveSen;
-  const receivedSen = bills.reduce((s, b) => s + (b.kind === 'INVOICE' ? Number(b.paid_sen ?? 0) : 0), 0);
+  const billedSen = live.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen + billedBeforeGoLiveSen;
+  const receivedSen = live.reduce((s, b) => s + (b.kind === 'INVOICE' ? Number(b.paid_sen ?? 0) : 0), 0);
   const original = originalContractSen === null ? revised : Number(originalContractSen);
   return {
     soDocNo, status, originalContractSen: original, revisedContractSen: revised, voTotalSen: revised - original,
@@ -250,6 +252,8 @@ export async function billInstalment(
   } else {
     result = { kind: 'ZERO', amountSen: 0 };
   }
+  /* One bill per instalment: a cancelled one is replaced. Its document keeps its own record. */
+  await db.q(`delete from scm.reno_instalment_bills where instalment_id = $1`, [instalmentId]);
   await db.q(
     `insert into scm.reno_instalment_bills (company_id, so_doc_no, instalment_id, seq, kind, amount_sen, cum_bp, revised_contract_sen, billed_before_sen,
         invoice_date, sales_invoice_id, invoice_number, credit_note_id, note_number, created_by)
