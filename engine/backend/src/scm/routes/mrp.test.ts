@@ -1649,3 +1649,28 @@ describe('computeMrp: a held sales order is not demand', () => {
     expect(lines[0]?.shortageQty).toBe(0);
   });
 });
+
+describe('computeMrp: the warehouse filter narrows the page, never the supply', () => {
+  const tables = () => ({
+    ...BASE_TABLES,
+    mfg_sales_order_items: [
+      { ...demandRed(5), warehouse_id: 'W2' },
+      { ...demandRed(2), id: 'si-other', doc_no: 'SO-2', warehouse_id: 'W1', line_delivery_date: '2026-12-02' },
+    ],
+    inventory_balances: [{ item_code: 'BF-100', warehouse_id: 'W1', variant_key: 'fabriccode=red', qty: 7 }],
+    warehouses: [{ id: 'W1', code: 'KL', name: 'KL', is_active: true }, { id: 'W2', code: 'PG', name: 'PG', is_active: true }],
+  });
+  test('stock in another warehouse still covers the line: no false shortage', async () => {
+    const r = await computeMrp(fakeSb(tables()), { ...opts, whFilter: 'W2' });
+    const lines = r.skus.flatMap((s) => s.lines);
+    expect(lines.map((l) => l.soDocNo)).toEqual(['SO-1']);
+    expect(lines[0]?.shortageQty).toBe(0);
+    expect(r.skus[0]?.warehouseCode).toBe('PG');
+  });
+  test('a filtered line still consumes its share of the pool', async () => {
+    const t = tables();
+    t.inventory_balances[0]!.qty = 5;
+    const r = await computeMrp(fakeSb(t), { ...opts, whFilter: 'W1' });
+    expect(r.skus.flatMap((s) => s.lines).map((l) => [l.soDocNo, l.shortageQty])).toEqual([['SO-2', 2]]);
+  });
+});

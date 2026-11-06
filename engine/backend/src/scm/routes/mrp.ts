@@ -650,8 +650,7 @@ export async function computeMrp(
   const catRowsProm = eager(paginateAll<{ category: string | null }>((from, to) =>
     scoped(sb.from('mfg_products').select('category')).order('id').range(from, to)));
   const balancesProm = eager(paginateAll<BalanceRow>((from, to) => {
-    let q = scoped(sb.from('inventory_balances').select('item_code, warehouse_id, variant_key, qty'));
-    if (whFilter) q = q.eq('warehouse_id', whFilter);
+    const q = scoped(sb.from('inventory_balances').select('item_code, warehouse_id, variant_key, qty'));
     return q.order('item_code').order('warehouse_id').order('variant_key').order('company_id').range(from, to);
   }));
   const poRawProm = eager(paginateAll<PoLineRow>((from, to) => scoped(sb
@@ -960,8 +959,8 @@ export async function computeMrp(
 
   // ── 3. Stock on hand — inventory_balances keyed by (warehouse, code, variant) ──
   // Commander 2026-05-31 — warehouse is part of the bucket identity (no cross-WH
-  // pooling). whFilter scopes the query to one warehouse; otherwise every
-  // warehouse's balance lands in its own bucket.
+  // pooling). Superseded 5 Nov 2026: stock is pooled (composite), so whFilter narrows which lines show, never what
+  // supply counts: filtering supply read goods in the next building as a shortage.
   // PAGED: 1,065 balance rows in prod on 2026-08-16 — unpaged, the last ~65
   // buckets read as zero stock and MRP invented a shortage for each of them.
   // inventory_balances is a VIEW (migration 0084) grouped by
@@ -1124,7 +1123,6 @@ export async function computeMrp(
     }
     if (left <= 0) continue;
     const poWh = r.warehouse_id ?? r.po.purchase_location_id ?? null;
-    if (whFilter && poWh !== whFilter) continue;
     const k = composite(poWh, r.item_code, variantKeyOf(r.item_group, r.variants));
     poDrafts.push({
       bucketKey: k, poNumber: r.po.po_number, eta, qtyLeft: left, supplierId: r.po.supplier_id ?? null,
@@ -1450,6 +1448,9 @@ export async function computeMrp(
         }
       }
 
+      /* The warehouse filter is visibility too: the line consumed its share of the pool above. */
+      if (whFilter && r.warehouse_id !== whFilter) continue;
+
       /* Audit D6 — the allocation above ALWAYS runs (undated rows sort last, so
          they only ever consume what dated rows left behind); visibility is the
          only thing the flag controls. A hidden row's consumption stands so the
@@ -1506,9 +1507,10 @@ export async function computeMrp(
     const poOutstanding = poOutstandingByKey.get(k) ?? 0;
     const shortage = lines.reduce((acc, l) => acc + l.shortageQty, 0);
     const main = mainByCode.get(code);
-    const wh = whId ? whById.get(whId) : null;
+    const shownWh = whFilter ?? whId;
+    const wh = shownWh ? whById.get(shownWh) : null;
     skus.push({
-      warehouseId: whId,
+      warehouseId: shownWh,
       warehouseCode: wh?.code ?? null,
       warehouseName: wh?.name ?? null,
       itemCode: code,
@@ -1659,6 +1661,7 @@ export async function computeMrp(
         if (front.qtyLeft <= 0) queue.shift();
       }
       const ordered = eff - need;                     // covered by pooled stock+PO
+      if (whFilter && d.warehouse_id !== whFilter) continue;
 
       /* Audit D6 — same rule as section 7: the allocation above always runs;
          the flag only controls whether the (undated) set is rendered. Counted
