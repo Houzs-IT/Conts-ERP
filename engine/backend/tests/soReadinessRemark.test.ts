@@ -91,7 +91,7 @@ describe("service-only ⇒ READY (owner: 如果它是 service 的单，也应该
        SVC-* — and only the catalog knows. Without it this SO is an accessory
        that will never be allocated. */
     const r = summariseReadiness([
-      { item_group: "others", item_code: "DELIV-KL", category: "SERVICE", stock_status: "PENDING" },
+      { item_group: "others", item_code: "DELIV-KL", category: "SERVICE", stock_status: "READY" },
     ]);
     expect(r.accCount).toBe(0);
     expect(r.svcCount).toBe(1);
@@ -286,5 +286,21 @@ describe("the invariants, over every shape at once", () => {
   test.each(shapes)("%s — ready and pending lists never name the same group", (_name, lines) => {
     const r = summariseReadiness(lines);
     for (const cat of r.readyCategories) expect(r.pendingCategories).not.toContain(cat);
+  });
+});
+
+describe("Conts: a service is finished by hand", () => {
+  const sofa = { item_group: "sofa", item_code: "SOF-1", stock_status: "READY" };
+  const service = { item_group: "service", item_code: "CUS-AIRCON_INSTALL", stock_status: "PENDING" };
+
+  test("an open service keeps the remark off READY but never holds the delivery", () => {
+    const r = summariseReadiness([sofa, service]);
+    expect(r.stockRemark).toBe("PARTIAL");
+    expect(r.isShipReady).toBe(true);
+  });
+
+  test("completed, the order reads READY; fees have nothing to complete", () => {
+    expect(summariseReadiness([sofa, { ...service, stock_status: "READY" }]).stockRemark).toBe("READY");
+    expect(summariseReadiness([sofa, { item_group: "service", item_code: "SVC-DELIVERY", stock_status: "PENDING" }]).stockRemark).toBe("READY");
   });
 });
