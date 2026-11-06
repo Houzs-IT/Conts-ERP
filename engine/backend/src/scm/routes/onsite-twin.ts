@@ -145,7 +145,7 @@ async function deliverReceipt(c: any, sb: any, id: string, companyId: number) {
     const notMoved = out.json.movementErrors as string[] | undefined;
     if (notMoved?.length) problems.push(`The delivery order was raised but its stock did not move: ${notMoved.join('; ')}`);
     raised.push(String(out.json.doNumber ?? out.json.do_number ?? doId));
-    const done = await callHandler(c, patchDeliveryOrderStatusHandler as never, { status: 'DELIVERED' }, { id: doId });
+    const done = await callHandler(c, patchDeliveryOrderStatusHandler as never, { status: 'DELIVERED', confirmShortStock: true }, { id: doId });
     if (done.status >= 300) problems.push(words(done.json, 'The delivery order was raised but not marked delivered.'));
   }
   if (problems.length > 0) return c.json({ error: 'twin_failed', message: problems.join(' '), raised }, 409);

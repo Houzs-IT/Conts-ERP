@@ -101,7 +101,7 @@ import { resolveItemGroups } from '../lib/sku-category';
 import { buildDoItemRow as buildItemRow, loadCarriedSoLinePhotos, carriedPhotoUrls } from '../lib/do-item-row';
 import { soRemainingByItemId } from '../lib/so-remaining-by-item';
 import { lineLinkItemMismatch, assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
-import { checkStockAvailability, shortStockResponse, stockCheckableLines, uncoveredStockCheckLines, type StockShortage } from '../lib/check-stock-availability';
+import { checkStockAvailability, shortStockResponse, shortStockStops, stockCheckableLines, uncoveredStockCheckLines, type StockShortage } from '../lib/check-stock-availability';
 /* Conts switches: customer-supplied lines hold no stock; a renovation DO takes its site and brand from its own SO and lines. */
 import { HARD_BOUND_COMPANY_ID } from '../lib/so-stock-allocation';
 import { loadUnitBoundCodes, NO_UNIT_BOUND_CODES } from '../lib/unit-bound-sku';
@@ -3278,7 +3278,7 @@ deliveryOrdersMfg.post('/', async (c) => {
       return c.json(sofaSetPoSplitResponse(plan.setConflicts), 409);
     }
     commitments = plan.bindings;
-    if (shortages.length > 0 && !body.confirmShortStock) {
+    if (shortStockStops(shortages, body as { asDraft?: boolean; confirmShortStock?: boolean })) {
       markIdempotencyNoWrite(c);
       return c.json(shortStockResponse(shortages, bindingList(commitments)), 409);
     }
@@ -3881,7 +3881,7 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
     return c.json(sofaSetPoSplitResponse(commitmentPlan.setConflicts), 409);
   }
   const commitments = commitmentPlan.bindings;
-  if (shortages.length > 0 && !body.confirmShortStock) {
+  if (shortStockStops(shortages, body)) {
     markIdempotencyNoWrite(c);
     return c.json(shortStockResponse(shortages, bindingList(commitments)), 409);
   }
@@ -5138,6 +5138,7 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     podLat?: number; podLng?: number; podAccuracyM?: number; podLocatedAt?: string;
     /* Conts office "Mark delivered" (renovationDoDelivered.ts): the day the goods arrived, YYYY-MM-DD. */
     deliveredOn?: string;
+    confirmShortStock?: boolean;
   }; try { body = (await c.req.json()) as typeof body; } catch { return c.json({ error: 'invalid_json' }, 400); }
   if (!body.status) return c.json({ error: 'status_required' }, 400);
   /* NORMALISE FIRST, exactly as the Sales Order handler does
@@ -5363,6 +5364,17 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
         }
       }
     }
+  }
+
+  /* A draft skipped the short-stock question when it was saved: Confirm asks it, where its stock leaves. */
+  if (prevStatus === 'DRAFT' && SHIPPED_STATES.includes(toStatus)) {
+    const { data: lines } = await sb.from('delivery_order_items').select('id, so_item_id, item_code, item_group, description, variants, qty').eq('delivery_order_id', id);
+    const { data: head } = await sb.from('delivery_orders').select('warehouse_id').eq('id', id).maybeSingle();
+    const shortages = await checkDoStockAvailability(sb, ((lines ?? []) as Array<{ id: string; so_item_id: string | null; item_code: string | null; item_group: string | null; description: string | null; variants: VariantAttrs | null; qty: number | null }>).map((l) => ({
+      lineRef: l.id, soItemId: l.so_item_id, itemCode: l.item_code ?? '', itemGroup: l.item_group, productName: l.description,
+      variantKey: computeVariantKey(l.item_group, l.variants), qty: Number(l.qty ?? 0),
+    })), (head as { warehouse_id?: string | null } | null)?.warehouse_id ?? null, co.companyId);
+    if (shortStockStops(shortages, body)) return c.json(shortStockResponse(shortages, []), 409);
   }
 
   /* Bug #3/#11 — ATOMIC cancel guard. Two concurrent cancels can both read a

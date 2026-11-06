@@ -1549,7 +1549,7 @@ async function completeDeliverStep(c: any, sb: any, o: CompletionOrder): Promise
   if (o.completion_do_id) {
     const { data: dord } = await sb.from('delivery_orders').select('status').eq('id', o.completion_do_id).maybeSingle();
     if ((dord as { status?: string } | null)?.status !== 'DELIVERED') {
-      const out = await callHandler(c, patchDeliveryOrderStatusHandler, { status: 'DELIVERED' }, { id: o.completion_do_id });
+      const out = await callHandler(c, patchDeliveryOrderStatusHandler, { status: 'DELIVERED', confirmShortStock: true }, { id: o.completion_do_id });
       if (out.status >= 300) return words(out.json, 'The delivery order could not be marked delivered.');
     }
   }
