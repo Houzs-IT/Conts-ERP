@@ -29,7 +29,7 @@ interface Repair {
   windows: { id: string; startsAt: string; endsAt: string; note: string | null; guestStaying: boolean }[];
 }
 interface PoolBuilding { id: string; name: string; open: number }
-interface ListPayload { mine: Repair[]; open: Repair[]; mayPick: boolean; buildings?: PoolBuilding[]; openTotal?: number; maxLimit?: number }
+interface ListPayload { mine: Repair[]; open: Repair[]; mayPick: boolean; buildings?: PoolBuilding[]; maxLimit?: number }
 interface UnitGroup { unitId: string; unitNumber: string; propertyName: string; jobs: Repair[] }
 
 const POOL_PAGE = 200;
@@ -85,7 +85,6 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const todo = mine.filter(r => r.state !== 'resolved' && !r.endedAt);
   const finished = mine.filter(r => r.state === 'resolved' || r.endedAt);
   const pool = (data?.open ?? []).filter(isInBuilding);
-  const openTotal = data?.openTotal ?? pool.length;
   const groups = [
     ...groupByUnit(tab === 'open' ? [] : todo).map(group => ({ group, offer: false })),
     ...groupByUnit(tab === 'mine' ? [] : pool).map(group => ({ group, offer: true })),
@@ -97,6 +96,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
     return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [data]);
   const allBuildingsOpen = (data?.buildings ?? []).reduce((sum, b) => sum + b.open, 0);
+  const openTotal = building ? data?.buildings?.find(b => b.id === building)?.open ?? 0 : allBuildingsOpen;
 
   function chooseBuilding(id: string) { setBuilding(id); setLimit(POOL_PAGE); }
   async function pickAll(group: UnitGroup) {
