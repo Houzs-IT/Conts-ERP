@@ -22,6 +22,6 @@ export async function warehouseLine(id: string | null | undefined): Promise<stri
 /** A delivery to the On-site warehouse goes to the project, so the supplier reads the project's unit. */
 export function deliverToAddress(code: string, address: string, reno?: RenoDocInfo | null): string {
   if (code !== 'ONSITE') return address;
-  const site = [reno?.info?.building, reno?.info?.unitNo].filter(Boolean).join(' ');
+  const site = [reno?.info?.building, reno?.info?.unitNo].filter(Boolean).join(' ') || reno?.info?.projectName || '';
   return site ? `${address}: ${site}` : address;
 }
