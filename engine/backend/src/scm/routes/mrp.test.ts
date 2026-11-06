@@ -1678,7 +1678,7 @@ describe('computeMrp: the warehouse filter narrows the page, never the supply', 
 
 describe('computeMrp: a PO bought for a production material stays with it', () => {
   const material = {
-    id: 'm1', item_code: 'BF-100', description: 'Board', qty_needed: 4, processing_date: null, delivery_date: '2026-12-20', created_at: null,
+    id: 'm1', item_code: 'BF-100', description: 'Board', qty_needed: 4, qty_issued: 0, qty_issued_short: 0, processing_date: null, delivery_date: '2026-12-20', created_at: null,
     'order.status': 'SUBMITTED', 'order.on_hold': false,
     order: { id: 'pr1', po_number: 'TC-PRO-1', purchase_location_id: 'W1', project_id: null, status: 'SUBMITTED', on_hold: false },
   };
@@ -1701,7 +1701,7 @@ describe('computeMrp: a PO bought for a production material stays with it', () =
 
 describe('MRP: a warehouse picked for one material', () => {
   const orderRow = { id: 'pr1', po_number: 'TC-PRO-1', purchase_location_id: 'W1', project_id: null, status: 'SUBMITTED', on_hold: false };
-  const base = { item_code: 'BF-100', description: 'Board', qty_needed: 2, processing_date: null, delivery_date: '2026-12-20', created_at: null, 'order.status': 'SUBMITTED', 'order.on_hold': false, order: orderRow };
+  const base = { item_code: 'BF-100', description: 'Board', qty_needed: 2, qty_issued: 0, qty_issued_short: 0, processing_date: null, delivery_date: '2026-12-20', created_at: null, 'order.status': 'SUBMITTED', 'order.on_hold': false, order: orderRow };
   test('reads on that material alone', async () => {
     const sb = fakeSb({
       ...BASE_TABLES,
