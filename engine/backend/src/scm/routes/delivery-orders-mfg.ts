@@ -3841,6 +3841,9 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
   const shipWarehouseId = headerWarehouseId
     ?? primaryWarehouseOf([...lineWarehouses.values()])
     ?? (await defaultWarehouseId(sb, doCompanyId));
+  /* A DO from one warehouse names it, for the printed Ship From; a DO across several stays per line. */
+  const lineWarehouseIds = [...new Set(lineWarehouses.values())];
+  const storedWarehouseId = headerWarehouseId ?? (lineWarehouseIds.length === 1 ? lineWarehouseIds[0]! : null);
   const shortages: StockShortage[] = await checkDoStockAvailability(
     sb, stockLines, headerWarehouseId, doCompanyId,
   );
@@ -3909,7 +3912,7 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
   const { data: doHeader, error: hErr } = await insertWithDocNoRetry<{ id: string; do_number: string }>(
     () => nextNum(sb, c, srcPrefix),
     (doNumber) => sb.from('delivery_orders').insert({
-      warehouse_id: headerWarehouseId,
+      warehouse_id: storedWarehouseId,
     /* multi-company: INHERIT the source SO's company (doCompanyId), which on this
        route can differ from the active one — a 2990 order converted while
        browsing as Houzs stays a 2990 delivery order on 2990's books, drawing
