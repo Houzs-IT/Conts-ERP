@@ -2607,7 +2607,12 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
             onRowRoom={(rid, room) => setRenoLineRoom((m) => ({ ...m, [rid]: room }))}
             onAddLine={(room) => {
               const l = newLine(deliveryDate || null);
-              setLines((prev) => [...prev, l]);
+              /* The page opens with one empty line in the first room. Starting in another room replaces it, or the
+                 first real line would be number 2 and the empty one would drop out at save. */
+              const opening = lines.length === 1 && lines[0] ? lines[0] : null;
+              const openingRoom = opening ? placeRows(renoRooms, [{ key: opening.rid, room: renoLineRoom[opening.rid] ?? '' }]).roomOf[opening.rid] : null;
+              const replaces = !!opening && room !== openingRoom && !quoteView && !opening.itemCode.trim() && !opening.description.trim() && !opening.remark?.trim();
+              setLines((prev) => (replaces ? [l] : [...prev, l]));
               if (room) setRenoLineRoom((m) => ({ ...m, [l.rid]: room }));
             }}
             layout={roomLayoutOf(renoInfo)}
