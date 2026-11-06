@@ -64,6 +64,7 @@ import { exceptOnSite, loadNonSellingWarehouses, warehouseCanPromise } from './n
 import { pgrestIn } from './pgrest-in-list';
 import { isUnitBoundCategory } from './unit-bound-sku';
 import { isCustomizedLine } from './so-line-customized';
+import { customerGoodsCodes } from './renovation-flow-rules';
 
 /* Only the variant-bearing categories run bound. Owner 2026-08-10:
    "SOFA 和 BEDFRAME 因为有变体的问题,所以要走 Convert to PO 的那个模式.
@@ -712,13 +713,15 @@ async function runSoStockAllocation(
     const boundNeed = (n: LineNeed): boolean => isHardBoundLine(n.group, n.item_code)
       || (companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && (isUnitBoundCategory(catByCode.get(n.item_code)) || isCustomizedLine(n.remark)));
     const boundNeeds = needs.filter(boundNeed);
+    /* Conts: the rest of the lines, read only for whether their own PO has received them (owner, 6 Nov 2026). */
+    const ownPoNeeds = needs.filter((n) => !boundNeed(n) && companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID);
     /* Sofa lines were diverted into sofaLineRecs before `needs` was built, so
        for three months this read never saw them and the bound rule the comment
        above NAMES sofa into never fired for sofa — every migrated set with no
        exact-multiset dye lot stayed PENDING with its own PO fully received
        (11 lines on 2026-08-29, run 33233660301). Their ids join the read here;
        the sofa set walk below consults dedicatedReady when no batch covers. */
-    if (boundNeeds.length > 0 || sofaLineRecs.length > 0) {
+    if (boundNeeds.length > 0 || ownPoNeeds.length > 0 || sofaLineRecs.length > 0) {
       /* INVERTED, for the same reason and by the same shape as the DO-line read
          above: chunking the 3,520 bedframe/sofa line ids cost 18 serial
          requests on production. `!inner` on the PO link means only lines that
@@ -730,7 +733,7 @@ async function runSoStockAllocation(
          case-insensitively there, and a SQL predicate that had to reproduce
          that could answer differently. Reading a superset and intersecting is
          exact — `dedicatedReady` is only ever consulted for bound line ids. */
-      const boundIds = new Set([...boundNeeds.map((n) => n.id), ...sofaLineRecs.map((s) => s.id)]);
+      const boundIds = new Set([...boundNeeds.map((n) => n.id), ...ownPoNeeds.map((n) => n.id), ...sofaLineRecs.map((s) => s.id)]);
       const { data: poLinkRows } = await paginateAll<{
         id: string; po_items: Array<{ qty: number; received_qty: number | null }> | null;
       }>((from, to) => sb
@@ -762,7 +765,11 @@ async function runSoStockAllocation(
        difference. */
     const nonSellingBlockedDocs = new Set<string>();
     // Bound lines first, so their units leave the pool before anyone else walks it.
-    for (const n of boundNeeds) {
+    /* The customer's own goods never enter stock, so no pool can answer for them: the receipt itself is the answer. */
+    const customerOwned = ownPoNeeds.length > 0
+      ? await customerGoodsCodes(sb as never, ownPoNeeds.map((n) => n.item_code), HARD_BOUND_COMPANY_ID)
+      : new Set<string>();
+    for (const n of [...boundNeeds, ...ownPoNeeds.filter((x) => customerOwned.has(x.item_code))]) {
       /* Conts dates each line, so its header stays blank: a line its own PO has received is ready regardless (owner, 6 Nov 2026). */
       const ownPoReceived = companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && (dedicatedReady.get(n.id) ?? 0) > 0;
       if (allocGated.has(n.doc_no) && !ownPoReceived) continue;
@@ -793,7 +800,9 @@ async function runSoStockAllocation(
     }
     for (const n of needs) {
       if (targetById.has(n.id)) continue; // settled by its dedicated PO above
-      if (allocGated.has(n.doc_no)) {
+      /* Conts dates each line, so a blank header holds nothing back once the line's own PO has received it; the pool still decides. */
+      const ownPoIn = companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && (dedicatedReady.get(n.id) ?? 0) > 0;
+      if (allocGated.has(n.doc_no) && !ownPoIn) {
         targetById.set(n.id, { status: 'PENDING', qtyReady: 0 });
         continue;
       }

@@ -146,7 +146,7 @@ export type ReadinessSummary = {
  */
 export function summariseReadiness(lines: ReadinessLine[]): ReadinessSummary {
   const live = lines.filter((l) => !l.cancelled);
-  let mainCount = 0, mainReady = 0, accCount = 0, accReady = 0, svcCount = 0, fulCount = 0;
+  let mainCount = 0, mainReady = 0, accCount = 0, accReady = 0, svcCount = 0, fulCount = 0, svcOpen = 0;
   /* Per-MAIN-category totals, so the label can name the categories that are
      FULLY in ("BEDFRAME" when every bedframe line is READY while a mattress
      line on the same SO is not). A category is ready only when total === ready;
@@ -167,6 +167,9 @@ export function summariseReadiness(lines: ReadinessLine[]): ReadinessSummary {
        strongest of the three signals. */
     if (isServiceLine({ itemGroup: l.item_group, itemCode: l.item_code, category: l.category })) {
       svcCount += 1;
+      /* Conts: a service is work, and stays open until someone completes it. It never holds a delivery back (installing
+         comes after it), so only the remark notices. Fees and adjustments have nothing to complete. */
+      if (l.stock_status !== 'READY' && !/^(SVC-|RENO-)/i.test(l.item_code ?? '')) svcOpen += 1;
       continue;
     }
     /* ALREADY SHIPPED — counted, never gating, for the same reason SERVICE
@@ -259,7 +262,7 @@ export function summariseReadiness(lines: ReadinessLine[]): ReadinessSummary {
   let stockRemark: string;
   if (liveCount === 0) {
     stockRemark = '';                       // no lines — say nothing, ship nothing
-  } else if (isFullyReady) {
+  } else if (isFullyReady && svcOpen === 0) {
     stockRemark = 'READY';                  // incl. service-only and acc-only-all-in
   } else if (mainCount > 0 && isMainReady) {
     stockRemark = 'PARTIAL';                // every MAIN in, an accessory is not
