@@ -290,7 +290,10 @@
    background, so the wash shows on every cell without making a pinned cell see-
    through. [data-vrow] = the data row only; DataTable copies this class onto the
    expanded drill-down row too, which keeps its own grey ground. */
-.rowShort[data-vrow] > td { box-shadow: inset 0 0 0 9999px rgba(22, 105, 95, 0.08); }
+.rowShort[data-vrow] > td { box-shadow: inset 0 0 0 9999px rgba(22, 105, 95, 0.14); font-weight: 600; }
+/* Already on a PO: greyed right back, so what is left to order stands out (owner, 6 Nov 2026). */
+.rowOrdered[data-vrow] > td { box-shadow: inset 0 0 0 9999px rgba(17, 20, 15, 0.05); color: #a3a79c; }
+.rowOrdered[data-vrow] > td * { color: #a3a79c; font-weight: 400; }
 .rowShort[data-vrow] > td:first-child { box-shadow: inset 3px 0 0 #08352e, inset 0 0 0 9999px rgba(22, 105, 95, 0.08); }
 /* The same row as a phone card (DataTable's stacked cards below `sm`). */
 .rowShort[data-mobile-card] { box-shadow: inset 3px 0 0 #08352e, inset 0 0 0 9999px rgba(22, 105, 95, 0.08); }
@@ -444,3 +447,5 @@
   /* Keep the table contained inside its own scroll box (belt-and-braces). */
   .tableWrap { max-width: 100%; }
 }
+
+.whSelect { height: 26px; padding: 0 4px; border: 1px solid #c9ccc3; border-radius: 6px; background: #fff; font-size: 11.5px; font-weight: 600; }

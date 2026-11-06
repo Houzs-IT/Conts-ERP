@@ -66,6 +66,7 @@ import { computeVariantKey, buildVariantSummary, isServiceLine, splitSofaCode, e
 import { supabaseAuth } from '../middleware/auth';
 import { soDeliverableRemaining } from './delivery-orders-mfg';
 import { activeCompanyId } from '../lib/companyScope';
+import { recordSoAudit } from '../lib/so-audit';
 import { enrichLinesWithFabricSupplierCode } from '../lib/fabric-supplier-code';
 import { resolveLineWarehouseId, type SoWarehouseMasters } from '../lib/so-warehouse';
 import {
@@ -770,14 +771,17 @@ export async function computeMrp(
   /* Conts (owner, 3 Nov 2026): every MRP row names its project (code and name), so a line can be found and filtered
      by project. Projects live in public.projects. */
   const projectIds = [...new Set(demandActive.map((r) => r.so?.project_id).filter((x): x is number => x != null))];
-  const projectById = new Map<number, { code: string | null; name: string | null }>();
+  const projectById = new Map<number, { code: string | null; name: string | null; customer: string | null; state: string | null }>();
   if (projectIds.length > 0) {
-    let projQ = sb.schema('public').from('projects').select('id, code, name').in('id', projectIds);
+    let projQ = sb.schema('public').from('projects').select('id, code, name, customer_name, state').in('id', projectIds);
     if (companyId != null) projQ = projQ.eq('company_id', companyId);
     const { data: projRows, error: projErr } = await projQ;
     if (projErr) throw new Error(`mrp_load_failed: ${projErr.message}`);
-    for (const p of (projRows ?? []) as Array<{ id: number; code: string | null; name: string | null }>) projectById.set(Number(p.id), { code: p.code, name: p.name });
+    for (const p of (projRows ?? []) as Array<{ id: number; code: string | null; name: string | null; customer_name: string | null; state: string | null }>) projectById.set(Number(p.id), { customer: p.customer_name, state: p.state, code: p.code, name: p.name });
   }
+  /* A production order's materials have no SO: the project says who they are for and where they go (owner, 6 Nov 2026). */
+  const customerOf = (r: DemandRow): string | null => r.so?.debtor_name ?? (r.so?.project_id == null ? null : projectById.get(Number(r.so.project_id))?.customer ?? null);
+  const stateOf = (r: DemandRow): string | null => r.so?.customer_state ?? (r.so?.project_id == null ? null : projectById.get(Number(r.so.project_id))?.state ?? null);
   const projectOf = (r: DemandRow): { projectId: number | null; projectCode: string | null; projectName: string | null } => {
     const id = r.so?.project_id ?? null;
     const p = id == null ? undefined : projectById.get(Number(id));
@@ -1467,10 +1471,10 @@ export async function computeMrp(
         soItemId: r.id,
         ...(r.productionMaterialId ? { productionMaterialId: r.productionMaterialId, productionOrderId: r.productionOrderId } : {}),
         soDocNo: r.doc_no,
-        debtorName: r.so?.debtor_name ?? null,
+        debtorName: customerOf(r),
         ...projectOf(r),
         plannedSupplier: plannedSupplierOf(r.id),
-        customerState: r.so?.customer_state ?? null,
+        customerState: stateOf(r),
         soDate: r.so?.so_date ?? null,
         deliveryDate: lineDelivery,
         processingDate: r.so?.processing_date ?? null,
@@ -1671,10 +1675,10 @@ export async function computeMrp(
         soDocNo: d.doc_no,
         lineNo: d.line_no ?? null,
         createdAt: d.created_at ?? null,
-        debtorName: d.so?.debtor_name ?? null,
+        debtorName: customerOf(d),
         ...projectOf(d),
         plannedSupplier: plannedSupplierOf(d.id),
-        customerState: d.so?.customer_state ?? null,
+        customerState: stateOf(d),
         soDate: d.so?.so_date ?? null,
         deliveryDate: setDelivery,
         processingDate: d.so?.processing_date ?? null,
@@ -2028,6 +2032,40 @@ const MRP_SNAPSHOT_FRESH_MS = 60 * 1000;
 /* Manual "Regenerate" — recompute the default-view MRP for the active company
    and store it, then return it fresh. POST is gated 'edit' on scm.procurement.mrp
    by the area guard in scm/index.ts (same as any other MRP write). */
+/* Choose where a line still to be ordered is delivered, from the MRP page (owner, 6 Nov 2026). A line already on a PO
+   keeps its warehouse: the PO says where it goes. */
+mrp.post('/line-warehouse', async (c) => {
+  const sb = c.get('supabase');
+  const companyId = activeCompanyId(c);
+  if (companyId == null) return c.json({ error: 'no_company' }, 400);
+  const b = (await c.req.json().catch(() => null)) as { lineId?: string; warehouseId?: string; productionMaterial?: boolean } | null;
+  if (!b?.lineId || !b.warehouseId) return c.json({ error: 'validation', message: 'Pick a warehouse.' }, 400);
+  const { data: wh } = await sb.from('warehouses').select('id, code').eq('id', b.warehouseId).eq('company_id', companyId).maybeSingle();
+  if (!wh) return c.json({ error: 'validation', message: 'That warehouse is not in this company.' }, 400);
+  const onPo = sb.from('purchase_order_items').select('id, po:purchase_orders!inner (status)').neq('po.status', 'CANCELLED').limit(1);
+  if (b.productionMaterial) {
+    const { data: m } = await sb.from('production_order_materials').select('production_order_id, company_id').eq('id', b.lineId).eq('company_id', companyId).maybeSingle();
+    if (!m) return c.json({ error: 'not_found', message: 'That material is no longer on its production order.' }, 404);
+    const { data: used } = await onPo.eq('production_material_id', b.lineId);
+    if ((used ?? []).length > 0) return c.json({ error: 'on_po', message: 'This material is already on a PO, so the PO says where it goes.' }, 409);
+    const { error } = await sb.from('production_orders').update({ purchase_location_id: b.warehouseId }).eq('id', (m as { production_order_id: string }).production_order_id).eq('company_id', companyId);
+    if (error) return c.json({ error: 'save_failed', message: error.message }, 500);
+    return c.json({ ok: true });
+  }
+  const { data: line } = await sb.from('mfg_sales_order_items').select('id, doc_no, item_code, warehouse_id').eq('id', b.lineId).eq('company_id', companyId).maybeSingle();
+  if (!line) return c.json({ error: 'not_found', message: 'That line is no longer on its order.' }, 404);
+  const { data: used } = await onPo.eq('so_item_id', b.lineId);
+  if ((used ?? []).length > 0) return c.json({ error: 'on_po', message: 'This line is already on a PO, so the PO says where it goes.' }, 409);
+  const row = line as { id: string; doc_no: string; item_code: string; warehouse_id: string | null };
+  const { error } = await sb.from('mfg_sales_order_items').update({ warehouse_id: b.warehouseId }).eq('id', row.id);
+  if (error) return c.json({ error: 'save_failed', message: error.message }, 500);
+  await recordSoAudit(sb, {
+    docNo: row.doc_no, action: 'UPDATE', source: 'mrp', note: `${row.item_code}: warehouse changed on MRP to ${(wh as { code: string }).code}`,
+    fieldChanges: [{ field: 'warehouse_id', from: row.warehouse_id, to: b.warehouseId }],
+  });
+  return c.json({ ok: true });
+});
+
 mrp.post('/regenerate', async (c) => {
   const sb = c.get('supabase');
   const companyId = activeCompanyId(c);

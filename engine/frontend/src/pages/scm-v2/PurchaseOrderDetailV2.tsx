@@ -1121,7 +1121,10 @@ function PurchaseOrderDetailV2ReadOnly() {
      The predicates were inverted relative to their endpoints. */
   const confirmReason = poConfirmBlockReason(purchaseOrder.status);
   const canConfirm = confirmReason === null;
-  const grnReason = grnTransferBlockReason(purchaseOrder.status);
+  /* The in-house team has no delivery to receive: its PO closes when its production order is completed (owner, 6 Nov 2026). */
+  const grnReason = purchaseOrder.supplier?.code === "INHOUSE"
+    ? "An in-house PO is received by completing its production order."
+    : grnTransferBlockReason(purchaseOrder.status);
   const canConvertToGrn = grnReason === null;
   const canCancel = rawStatus !== "CANCELLED" && rawStatus !== "RECEIVED";
   const canReopen = rawStatus === "CANCELLED";

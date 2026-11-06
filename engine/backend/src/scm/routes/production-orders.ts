@@ -148,6 +148,38 @@ export async function recomputePoExpectedAt(sb: any, poId: string) {
 
 
 
+/* The Stock Status of each order on a list (owner, 6 Nov 2026): are its raw materials here? READY when every material
+   is received or in stock, PARTIAL when some are, PENDING when none are. An order with no materials has nothing to wait
+   for and stays blank. A failed plan read leaves stock out rather than failing the list: received lines still count. */
+async function attachMaterialReadiness(c: any, sb: any, rows: Array<Record<string, unknown>>, companyId: number | null): Promise<void> {
+  const open = rows.filter((r) => r.status === 'SUBMITTED' || r.status === 'DRAFT' || r.status === 'RECEIVED');
+  if (open.length === 0) return;
+  const { data: mats } = await sb.from('production_order_materials').select('id, production_order_id, qty_needed').in('production_order_id', open.map((r) => r.id));
+  const materials = (mats ?? []) as Array<{ id: string; production_order_id: string; qty_needed: number }>;
+  if (materials.length === 0) return;
+  const { data: linked } = await sb.from('purchase_order_items')
+    .select('production_material_id, received_qty, po:purchase_orders!inner (status)').in('production_material_id', materials.map((m) => m.id));
+  const received = new Map<string, number>();
+  for (const l of (linked ?? []) as unknown as Array<{ production_material_id: string; received_qty: number | null; po: { status: string } | null }>) {
+    if (l.po?.status === 'CANCELLED') continue;
+    received.set(l.production_material_id, (received.get(l.production_material_id) ?? 0) + Number(l.received_qty ?? 0));
+  }
+  const isIn = (m: { id: string; qty_needed: number }) => (received.get(m.id) ?? 0) >= Number(m.qty_needed);
+  let inStock = new Set<string>();
+  if (materials.some((m) => !isIn(m)) && companyId != null) {
+    try {
+      const plan = await computeMrp(sb, { catFilter: RAW_CATEGORY, whFilter: null, includeUndated: true, companyId, leadBuffers: await loadLeadBuffers(c.env.DB) } as never);
+      inStock = new Set(plan.skus.flatMap((s: { lines: Array<{ soItemId: string; source: string }> }) => s.lines).filter((l: { source: string }) => l.source === 'stock').map((l: { soItemId: string }) => l.soItemId));
+    } catch { /* stock is left out of the verdict; received lines still count */ }
+  }
+  for (const r of open) {
+    const own = materials.filter((m) => m.production_order_id === r.id);
+    if (own.length === 0) continue;
+    const ready = own.filter((m) => isIn(m) || inStock.has(m.id)).length;
+    r.material_stock_status = ready === own.length ? 'READY' : ready > 0 ? 'PARTIAL' : 'PENDING';
+  }
+}
+
 productionOrders.get('/', async (c) => {
   const status = c.req.query('status');
   const supplierId = c.req.query('supplierId');
@@ -248,6 +280,7 @@ productionOrders.get('/', async (c) => {
        carry them: its callers never render a line column. */
     const withLines = await attachPoLines(supabase, c, stamped.rows);
     if (withLines.error) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
+    await attachMaterialReadiness(c, supabase, withLines.rows as Array<Record<string, unknown>>, activeCompanyId(c) ?? null);
     return c.json({ purchaseOrders: withLines.rows, total, page, pageSize, statusCounts });
   }
   const purchaseOrders = stamped.rows;
@@ -1196,11 +1229,18 @@ async function completeGrnStep(c: any, sb: any, companyId: number, o: Completion
   if (error) return error.message;
   const picks = ((lines ?? []) as Array<{ id: string; qty: number; received_qty: number | null }>)
     .map((l) => ({ poItemId: l.id, qty: Number(l.qty) - Number(l.received_qty ?? 0) })).filter((p) => p.qty > 0);
-  if (picks.length === 0) return null;   // already received by hand: nothing to double
+  if (picks.length === 0) {
+    /* Already received by hand, nothing to double. The receipt is still this order's, so its photos reach that GR. */
+    const { data: line } = await sb.from('grn_items').select('grn_id, grn:grns!inner (status), poi:purchase_order_items!inner (purchase_order_id)')
+      .eq('poi.purchase_order_id', o.source_po_id).eq('grn.status', 'POSTED').limit(1).maybeSingle();
+    const grnId = (line as { grn_id?: string } | null)?.grn_id;
+    if (grnId) await sb.from('production_orders').update({ completion_grn_id: grnId }).eq('id', o.id);
+    return null;
+  }
   const core = await createDraftGrnsFromPoItemsCore({
     req: { json: async () => ({ picks, notes: `Completed from production order ${o.po_number}` }) },
     get: ((key: string) => c.get(key as 'supabase')) as unknown as GrnFromPoItemsContext['get'],
-  });
+  }, { fromProductionOrder: true });
   if (!core.ok) return words(core.body, 'The goods receipt could not be raised.');
   const draft = core.created[0];
   if (!draft) return 'The goods receipt could not be raised.';

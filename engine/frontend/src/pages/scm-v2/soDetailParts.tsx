@@ -4,7 +4,8 @@
 import type { ReactNode } from "react";
 import { ArrowLeft, CircleDot, Warehouse } from "lucide-react";
 import { Badge } from "../../components/Badge";
-import { SoSourceChips, SoStockPill } from "../../components/SoSourceChips";
+import { isSystemServiceCode, SoSourceChips, SoStockPill } from "../../components/SoSourceChips";
+import { useUpdateSoItemStockStatus } from "../../vendor/scm/lib/sales-order-queries";
 import type { Column } from "../../components/DataTable";
 import type { coverageStateOf } from "../../components/coverage-state";
 import { SoLinePhotoStrip } from "../../components/scm-v2/SoLinePhotoStrip";
@@ -397,6 +398,17 @@ function TotalLine({
 
 // ─── Line item columns ─────────────────────────────────────────────────────
 
+/** A service is finished by hand (owner, 6 Nov 2026). The press is also how to take it back. */
+function ServiceCompleteButton({ docNo, itemId, done }: { docNo: string; itemId: string; done: boolean }) {
+  const update = useUpdateSoItemStockStatus();
+  return (
+    <button type="button" disabled={update.isPending} className="text-[11px] font-semibold text-primary underline disabled:opacity-50"
+      onClick={() => update.mutate({ docNo, itemId, status: done ? "PENDING" : "READY" })}>
+      {done ? "Undo" : "Complete"}
+    </button>
+  );
+}
+
 const CONTS_LINE_DATES = [['processing', 'Processing', 'line_processing_date'], ['delivery', 'Delivery', 'line_delivery_date']] as const;
 
 /** The read-only line table's columns; the same set for By item and (narrowed) By area / By category. */
@@ -578,7 +590,13 @@ export function soLineColumns<T extends SoDisplayLine>({ docNo, docId, currency,
       label: "Stock",
       width: "96px",
       getValue: (l) => l.stock_state ?? l.stock_status ?? "",
-      render: (l) => <SoStockPill line={l} />,
+      render: (l) => (
+        <span className="inline-flex flex-col items-start gap-1">
+          <SoStockPill line={l} />
+          {(l.item_group ?? "").toUpperCase().includes("SERVICE") && !isSystemServiceCode(l.item_code) && status?.toLowerCase() !== "cancelled"
+            && <ServiceCompleteButton docNo={docNo} itemId={l.id} done={l.stock_status === "READY"} />}
+        </span>
+      ),
     },
     {
       key: "source",

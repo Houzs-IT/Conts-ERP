@@ -65,8 +65,21 @@ export type CreateDraftGrnsFromPoItemsResult =
   | { ok: true; created: DraftGrnFromPoItems[]; overReceipt: { poItemId: string; requested: number; remaining: number } | null }
   | { ok: false; status: ContentfulStatusCode; body: Record<string, unknown> };
 
+/** The in-house team's supplier row. A PO to it is received by completing its production order, never by hand. */
+export async function inHouseSupplierId(sb: unknown, c: unknown): Promise<string | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- called from routes with differently typed clients
+  const { data } = await scopeToCompany((sb as any).from('suppliers').select('id').eq('code', 'INHOUSE'), c as never).maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+}
+
+export const IN_HOUSE_PO_REFUSAL = {
+  error: 'in_house_po',
+  message: 'An in-house PO is received by completing its production order, not by a goods receipt.',
+};
+
 export async function createDraftGrnsFromPoItemsCore(
   c: GrnFromPoItemsContext,
+  opts: { fromProductionOrder?: boolean } = {},
 ): Promise<CreateDraftGrnsFromPoItemsResult> {
   /* company-scope: the source load is scopeToCompany-filtered below, the header
      is stamped with the active company, and the only by-id write is the ROLLBACK
@@ -119,6 +132,11 @@ export async function createDraftGrnsFromPoItemsCore(
   const itemList = (itemsData ?? []) as unknown as ItemRow[];
   const byId = new Map<string, ItemRow>();
   for (const r of itemList) byId.set(r.id, r);
+
+  if (!opts.fromProductionOrder) {
+    const inHouse = await inHouseSupplierId(sb, c);
+    if (inHouse && itemList.some((r) => r.po.supplier_id === inHouse)) return { ok: false, status: 409, body: IN_HOUSE_PO_REFUSAL };
+  }
 
   // Validate every pick — qty > 0 and qty ≤ remaining.
   for (const p of picks) {

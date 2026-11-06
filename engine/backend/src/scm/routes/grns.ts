@@ -10,7 +10,7 @@ import { isReceivablePo } from '../lib/source-document-gates'; import { mountHol
 import type { Context } from 'hono';
 import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
-import { createDraftGrnsFromPoItemsCore, type GrnFromPoItemsContext } from '../lib/grn-from-po-core';
+import { createDraftGrnsFromPoItemsCore, IN_HOUSE_PO_REFUSAL, inHouseSupplierId, type GrnFromPoItemsContext } from '../lib/grn-from-po-core';
 import { getSupabaseService } from '../../db/supabase';
 import { noteGrnScanAccepted } from '../lib/grn-scan-review';
 import { writeMovements, defaultWarehouseId, reconcileDropshipBatches } from '../lib/inventory-movements';
@@ -1391,6 +1391,7 @@ grns.post('/', async (c) => {
      manual `status:'DRAFT'` body field is still rejected — DRAFT is reached only
      through the asDraft flag below, never as a free-form status. */
   const asDraft = (body as { asDraft?: unknown }).asDraft === true;
+  if (body.supplierId && body.supplierId === await inHouseSupplierId(c.get('supabase'), c)) return refuseWithoutWriting(c, IN_HOUSE_PO_REFUSAL, 409);
   if (body.status === 'DRAFT') return refuseWithoutWriting(c, { error: 'draft_status_not_supported', message: 'Use asDraft:true to save a GRN as a draft.' }, 400);
   /* Commander 2026-05-29 — a GRN may now be created WITHOUT a parent PO
      (blank/manual receipt + From-PO-multi picks that feed the New GRN form).
@@ -1722,6 +1723,7 @@ export const createGrnFromPosHandler = async (c: Context<{ Bindings: Env; Variab
     return refuseWithoutWriting(c, { error: 'mixed_suppliers', message: 'All selected POs must be from the same supplier' }, 400);
   }
   const supplierId = [...supplierIds][0]!;
+  if (supplierId === await inHouseSupplierId(sb, c)) return refuseWithoutWriting(c, IN_HOUSE_PO_REFUSAL, 409);
 
   // Load PO items with outstanding qty (+ variant fields for PR #44). SCOPED —
   // the LINE-level half of the same source document. Redundant after the scoped
