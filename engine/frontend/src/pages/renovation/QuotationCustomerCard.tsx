@@ -8,7 +8,7 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { cn } from '../../lib/utils';
 import { PhoneInput } from '../../vendor/scm/components/PhoneInput';
-import { parseCount, parseSqft } from '../../vendor/shared/renovation-property';
+import { isLanded, parseCount, parseSqft } from '../../vendor/shared/renovation-property';
 import type { DocHeader } from '../../lib/renovation/api';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import type { LayoutOption, ProjectShared } from '../projects/renovation/customerPropertyModel';
@@ -16,7 +16,7 @@ import type { LayoutOption, ProjectShared } from '../projects/renovation/custome
 /** The form's value: every field as typed (numbers stay text until saved). */
 export interface QuoteParty {
   customerName: string; customerPhone: string; customerEmail: string; siteAddress: string; building: string; unitNo: string;
-  propertyType: string; layoutLabel: string; bedrooms: string; bathrooms: string; builtUpSqft: string;
+  propertyType: string; layoutLabel: string; bedrooms: string; bathrooms: string; builtUpSqft: string; landAreaSqft: string; landSize: string;
 }
 
 const numText = (n: number | null | undefined) => (n == null ? '' : String(n));
@@ -27,6 +27,7 @@ export function partyFromHeader(h: DocHeader): QuoteParty {
     customerName: h.customerName, customerPhone: h.customerPhone ?? '', customerEmail: h.customerEmail ?? '',
     siteAddress: h.siteAddress ?? '', building: h.building, unitNo: h.unitNo, propertyType: h.propertyType ?? '',
     layoutLabel: h.layoutLabel ?? '', bedrooms: numText(h.bedrooms), bathrooms: numText(h.bathrooms), builtUpSqft: numText(h.builtUpSqft),
+    landAreaSqft: numText(h.landAreaSqft), landSize: h.landSize ?? '',
   };
 }
 
@@ -35,15 +36,18 @@ export function headerFromParty(v: QuoteParty): { patch: Partial<DocHeader>; pro
   const bedrooms = parseCount(v.bedrooms);
   const bathrooms = parseCount(v.bathrooms);
   const sqft = parseSqft(v.builtUpSqft);
+  const land = parseSqft(v.landAreaSqft);
   const problems: string[] = [];
   if (Number.isNaN(bedrooms) || Number.isNaN(bathrooms)) problems.push('Pick the layout again: its bedroom or bathroom count is not a whole number.');
   if (Number.isNaN(sqft)) problems.push('Built-up sq ft must be a number above 0, with at most 2 decimals.');
+  if (Number.isNaN(land)) problems.push('Land area sq ft must be a number above 0, with at most 2 decimals.');
   return {
     patch: {
       customerName: v.customerName, customerPhone: v.customerPhone, customerEmail: v.customerEmail.trim(), siteAddress: v.siteAddress,
       building: v.building, unitNo: v.unitNo, propertyType: v.propertyType, layoutLabel: v.layoutLabel,
       bedrooms: Number.isNaN(bedrooms) ? null : bedrooms, bathrooms: Number.isNaN(bathrooms) ? null : bathrooms,
       builtUpSqft: Number.isNaN(sqft) ? null : sqft,
+      landAreaSqft: Number.isNaN(land) ? null : land, landSize: v.landSize.trim(),
     },
     problems,
   };
@@ -58,6 +62,7 @@ export function partyFromProject(v: QuoteParty, p: ProjectShared): QuoteParty {
     customerEmail: pick(v.customerEmail, p.customerEmail), siteAddress: pick(v.siteAddress, site), building: pick(v.building, p.building),
     unitNo: pick(v.unitNo, p.unitNo), propertyType: pick(v.propertyType, p.propertyType), layoutLabel: pick(v.layoutLabel, p.layoutLabel),
     bedrooms: pick(v.bedrooms, numText(p.bedrooms)), bathrooms: pick(v.bathrooms, numText(p.bathrooms)), builtUpSqft: pick(v.builtUpSqft, numText(p.builtUpSqft)),
+    landAreaSqft: pick(v.landAreaSqft, numText(p.landAreaSqft)), landSize: pick(v.landSize, p.landSize ?? ''),
   };
 }
 
@@ -152,6 +157,17 @@ export function QuotationCustomerCard({ header, projectId, disabled, onChange, r
           <input id={id('sqft')} inputMode="decimal" className={input} value={value.builtUpSqft} disabled={disabled} placeholder="e.g. 1,100"
             onChange={(e) => set({ builtUpSqft: e.target.value.replace(/[^\d.,]/g, '') })} />
         </Cell>
+        {isLanded(value.propertyType) && (
+          <>
+            <Cell label="Land area sq ft" htmlFor={id('land')}>
+              <input id={id('land')} inputMode="decimal" className={input} value={value.landAreaSqft} disabled={disabled} placeholder="e.g. 1,650"
+                onChange={(e) => set({ landAreaSqft: e.target.value.replace(/[^\d.,]/g, '') })} />
+            </Cell>
+            <Cell label="Land size" htmlFor={id('landsize')}>
+              <input id={id('landsize')} className={input} value={value.landSize} disabled={disabled} placeholder="e.g. 22 x 75" onChange={(e) => set({ landSize: e.target.value })} />
+            </Cell>
+          </>
+        )}
       </div>
       {problems.length > 0 && <p role="alert" className="text-[12.5px] text-err">{problems.join(' ')}</p>}
       {!disabled && projectId != null && proj.data && (

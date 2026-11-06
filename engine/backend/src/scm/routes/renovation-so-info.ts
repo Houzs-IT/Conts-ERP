@@ -112,6 +112,15 @@ export async function stampCreatedProcessingDates(db: Db, docNo: string, company
   }
 }
 
+/** The live sales order a project already has (one project, one order: owner, 5 Nov 2026), null when free. */
+export async function projectOrderTaken(db: Db, projectId: number | null, exceptDocNo: string | null = null): Promise<string | null> {
+  if (projectId == null) return null;
+  const r = await db.prepare(
+    `SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ? AND status::text <> 'CANCELLED' AND doc_no IS DISTINCT FROM ? LIMIT 1`,
+  ).bind(projectId, exceptDocNo).first<{ doc_no: string }>();
+  return r?.doc_no ?? null;
+}
+
 /** Every reason a renovation SO cannot be saved: invalid values, then the required fields. */
 export function renovationSoProblems(input: RenovationSoInput, head: { customerName: string; phone: string; address1: string }): PropertyProblem[] {
   const invalid = new Set(input.problems.map((p) => p.field));
@@ -284,6 +293,8 @@ renovationSoInfo.put('/:docNo', async (c: C) => {
   const input = so.so_kind === 'STANDARD' ? read : { ...read, roomSections: null };
   const problems = renovationSoProblems(input, { customerName: so.debtor_name ?? '', phone: so.phone ?? '', address1: so.address1 ?? '' });
   if (problems.length) return c.json({ error: 'validation_failed', problems }, 422);
+  const taken = await projectOrderTaken(db, input.projectId, docNo);
+  if (taken) return c.json({ error: 'project_taken', message: `This project already has sales order ${taken}.` }, 409);
   const r = await applyRenovationSoInfo(db, docNo, input, {
     companyId: activeCompanyId(c) ?? so.company_id, companySql: activeCompanySql(c, 'p.company_id'),
     actorId: Number(c.get('houzsUser')?.id ?? 0),

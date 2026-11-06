@@ -7,7 +7,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Edit3, ExternalLink, FileText, Plus, Wrench, X } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
+import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
+import { brandingToneForLabel } from '../../lib/brandingTone';
 import { DataTable } from '../../components/DataTable';
 import type { Column } from '../../components/dataTableTypes';
 import { FilterPills } from '../../components/FilterPills';
@@ -23,16 +25,20 @@ const FILTERS = [
   { value: 'ACCEPTED', label: 'Accepted' }, { value: 'REJECTED', label: 'Rejected' }, { value: 'EXPIRED', label: 'Expired' },
 ];
 
+/* The same columns, names and order as the Sales Orders list (owner, 5 Nov 2026: "它就是 sales order 来的"). */
 const COLUMNS: Column<QuotationListRow>[] = [
-  { key: 'docNo', label: 'Quotation', alwaysVisible: true, getValue: (r) => r.docNo, disableFilter: true,
-    render: (r) => <span className="font-semibold text-primary">{r.docNo}</span> },
-  { key: 'project', label: 'Project', getValue: (r) => r.projectName ?? (r.projectId ? `#${r.projectId}` : ''),
-    render: (r) => <span className="text-ink-secondary">{r.projectName ?? (r.projectId ? `#${r.projectId}` : '—')}</span> },
-  { key: 'customer', label: 'Customer', getValue: (r) => r.customerName || '', render: (r) => r.customerName || '—' },
-  { key: 'unit', label: 'Building / unit', getValue: (r) => [r.building, r.unitNo].filter(Boolean).join(' '),
-    render: (r) => <span className="text-ink-secondary">{[r.building, r.unitNo].filter(Boolean).join(' ') || '—'}</span> },
+  { key: 'docNo', label: 'Doc. No.', alwaysVisible: true, getValue: (r) => r.docNo, disableFilter: true,
+    render: (r) => <span className="font-mono font-semibold text-primary">{r.docNo}</span> },
   { key: 'date', label: 'Date', getValue: (r) => r.docDate, filterType: 'date', dateValue: (r) => r.docDate, filterLabel: fmtDate,
     render: (r) => <span className="text-ink-secondary">{fmtDate(r.docDate)}</span> },
+  { key: 'customer', label: 'Debtor Name', getValue: (r) => r.customerName || '', render: (r) => <span className="font-semibold">{r.customerName || '—'}</span> },
+  { key: 'branding', label: 'Branding', getValue: (r) => r.brandName ?? '',
+    render: (r) => (r.brandName ? <Badge tone={brandingToneForLabel(r.brandName)} variant="soft" size="xs">{r.brandName.toUpperCase()}</Badge> : <span className="text-ink-muted">—</span>) },
+  { key: 'projectCode', label: 'Project ID', getValue: (r) => r.projectCode ?? '', render: (r) => <span className="font-mono text-[12px] text-ink-secondary">{r.projectCode ?? '—'}</span> },
+  { key: 'project', label: 'Project Name', getValue: (r) => r.projectName ?? (r.projectId ? `#${r.projectId}` : ''),
+    render: (r) => <span className="text-ink-secondary">{r.projectName ?? (r.projectId ? `#${r.projectId}` : '—')}</span> },
+  { key: 'unit', label: 'Building / unit', getValue: (r) => [r.building, r.unitNo].filter(Boolean).join(' '),
+    render: (r) => <span className="text-ink-secondary">{[r.building, r.unitNo].filter(Boolean).join(' ') || '—'}</span> },
   { key: 'total', label: 'Total', align: 'right', getValue: (r) => r.totalSen,
     exportValue: (r) => r.totalSen / 100, disableFilter: true,
     total: (rows) => rm(rows.reduce((s, r) => s + r.totalSen, 0)),
