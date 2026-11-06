@@ -520,6 +520,8 @@ async function renderPurchaseOrderInto(
      total-pages placeholder, resolved by putTotalPages below. */
   const totalPagesExp = '{total_pages}';
   const drawPageHeader = (pageNumber: number) => {
+    // The first page carries the letterhead and its number in the details; the footer pages it.
+    if (pageNumber === 1) return;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(80);
     /* Right edge measured on the printed text: aligning right on the {total_pages} placeholder leaves it short of the margin. */
     const prefix = `${poDisplayNumber(header.po_number, header.revision)} · Page ${pageNumber} of `;

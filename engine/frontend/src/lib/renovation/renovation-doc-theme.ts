@@ -13,16 +13,19 @@ export interface LetterheadLogo { dataUrl: string; format: 'PNG' | 'JPEG'; width
 
 export const DOC_THEME = {
   logoTop: 12,
-  logoMaxW: 62,
-  logoMaxH: 18,
+  logoMaxW: 54,
+  logoMaxH: 16,
   titleFont: 'times',
-  titlePt: 18,
+  titlePt: 16,
   titleBaseline: 27,
   ruleY: 32,
   ruleWidth: 0.3,
   blockTop: 47,
-  blockPt: 7,
-  blockStep: 3.6,
+  blockNamePt: 8.5,
+  blockPt: 7.5,
+  blockStep: 3.8,
+  /* PDF viewers draw Helvetica with a slightly wider stand-in than jsPDF measures, which ran the block past the rule. */
+  blockInset: 0.5,
   metaPt: 8,
   metaStep: 4.6,
 } as const;
@@ -74,19 +77,28 @@ export function drawDocLetterheadAt(pdf: JsPdf, o: LetterheadOpts): { bottom: nu
   const logoH = logo.height * scale;
   pdf.addImage(logo.dataUrl, logo.format, M, t.logoTop, logoW, logoH);
 
+  /* The company's name reads first, the address and contact sit smaller under it, and the block centres on the logo
+     (owner, 6 Nov 2026: every line at one size next to the page number looked messy). */
+  const blockW = right - (M + logoW + 8);
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(t.blockPt);
-  const blockW = right - (M + logoW + 8);
-  let blockY = t.logoTop + 2.5;
-  for (const line of o.lines) {
-    if (!line) continue;
-    for (const l of wrapLine(pdf, line, blockW)) {
-      pdf.text(l, right, blockY, { align: 'right' });
-      blockY += t.blockStep;
-    }
-  }
+  const blockLines = o.lines.filter((l): l is string => !!l).flatMap((l, i) => {
+    if (i === 0) { pdf.setFont('helvetica', 'bold'); pdf.setFontSize(t.blockNamePt); }
+    const wrapped = wrapLine(pdf, l, blockW);
+    if (i === 0) { pdf.setFont('helvetica', 'normal'); pdf.setFontSize(t.blockPt); }
+    return wrapped.map((text, j) => ({ text, name: i === 0 && j === 0 }));
+  });
+  const blockH = Math.max(0, blockLines.length - 1) * t.blockStep;
+  const firstBaseline = Math.max(t.logoTop + 2.5, t.logoTop + logoH / 2 - blockH / 2 + 1);
+  blockLines.forEach((l, i) => {
+    pdf.setFont('helvetica', l.name ? 'bold' : 'normal');
+    pdf.setFontSize(l.name ? t.blockNamePt : t.blockPt);
+    pdf.text(l.text, right - t.blockInset, firstBaseline + i * t.blockStep, { align: 'right' });
+  });
+  pdf.setTextColor(0);
+  const blockBottom = firstBaseline + blockH + 2;
 
-  const ruleY = Math.max(t.ruleY, t.logoTop + logoH + 3, blockY);
+  const ruleY = Math.max(t.ruleY, t.logoTop + logoH + 3, blockBottom);
   pdf.setDrawColor(0);
   pdf.setLineWidth(t.ruleWidth);
   pdf.line(M, ruleY, right, ruleY);

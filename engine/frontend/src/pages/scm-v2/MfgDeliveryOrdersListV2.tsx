@@ -80,6 +80,7 @@ import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { useChoice } from "../../vendor/scm/components/ChoiceDialog";
 import { useQueryClient } from "@tanstack/react-query";
+import { useWarehouses } from "../../vendor/scm/lib/inventory-queries";
 import { cn } from "../../lib/utils";
 import { convertToLink, transferToLabel, transferFromLabel, transferFromColumnLabel } from "../../lib/convertScope";
 import { isCancelledDocStatus } from "../../lib/scm";
@@ -110,6 +111,7 @@ type DoRow = HoldFields & {
   debtor_code: string | null;
   salesperson_id: string | null;
   sales_location: string | null;
+  warehouse_id?: string | null;
   customer_so_no: string | null;
   po_doc_no: string | null;
   /** Source PO(s) this DO's shipped goods came from (batch_no = source PO on the
@@ -383,6 +385,9 @@ function DetailDrawer({
   salespersonName: string;
 }) {
   const detailQ = useMfgDeliveryOrderDetail(row?.id ?? null);
+  /* As on the DO page: the warehouse the goods leave; the order's sales location only when the DO names none. */
+  const warehousesQ = useWarehouses();
+  const shipFrom = (warehousesQ.data ?? []).find((w) => w.id === row?.warehouse_id)?.code ?? row?.sales_location;
   const items: Array<{
     item_code?: string;
     product_name?: string;
@@ -477,7 +482,7 @@ function DetailDrawer({
                 <MetaItem k="Expected at" v={fmtDate(row.expected_delivery_at)} />
                 <MetaItem k="Driver" v={row.driver_name || "—"} />
                 <MetaItem k="Vehicle" v={row.vehicle || "—"} />
-                <MetaItem k="Location" v={row.sales_location || "—"} />
+                <MetaItem k="Location" v={shipFrom || "—"} />
                 <MetaItem k="Salesperson" v={salespersonName} />
               </dl>
 
