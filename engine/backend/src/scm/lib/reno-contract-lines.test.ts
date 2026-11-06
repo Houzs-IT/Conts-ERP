@@ -6,6 +6,7 @@
 import { describe, expect, test } from 'vitest';
 import { fakeSb, type Row } from './fake-postgrest';
 import { contractRevenueLines, spreadByWeight } from './reno-contract-lines';
+import { waterfallTarget } from '../../acc/reno-waterfall';
 
 const SO = '2990-SO-2611-001';
 const item = (id: string, code: string, total: number, over: Row = {}): Row => ({
@@ -75,5 +76,17 @@ describe('contract revenue lines', () => {
     expect(spreadByWeight(-100, [1, 1, 1])).toEqual([-34, -33, -33]);
     expect(spreadByWeight(10, [0, 0])).toEqual([5, 5]);
     expect(spreadByWeight(7, [2, 5])).toEqual([2, 5]);
+  });
+});
+
+describe('a waived line', () => {
+  test('a negative line lowers the others and the waterfall can run', async () => {
+    const sb = fakeSb({
+      mfg_sales_order_items: [item('i1', 'RN-ELEC', 300_000), item('i2', 'RN-CEIL', 100_000), item('i3', 'RN-WAIVE', -40_000)],
+      mfg_products: [product('RN-ELEC', 'WORKS', 'ELEC'), product('RN-CEIL', 'WORKS', 'CEILING'), product('RN-WAIVE', 'SERVICE', null)],
+    });
+    const lines = await contractRevenueLines(sb, SO, 2);
+    expect(lines.map((l) => l.amountSen)).toEqual([270_000, 90_000, 0]);
+    expect([...waterfallTarget(lines, 360_000).values()].reduce((a, b) => a + b, 0)).toBe(360_000);
   });
 });
