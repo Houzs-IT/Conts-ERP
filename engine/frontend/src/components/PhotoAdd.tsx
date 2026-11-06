@@ -80,7 +80,7 @@ function Thumb({ file }: { file: File }): ReactElement {
 /** The two ways in, side by side. */
 export function PhotoAddButtons<T>({ queue, disabled, className }: { queue: PhotoQueue<T>; disabled?: boolean; className?: string }): ReactElement {
   const camera = useRef<HTMLInputElement>(null);
-  const button = "flex min-h-[44px] flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[13px] font-semibold text-ink";
+  const button = "flex min-h-[44px] flex-1 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-surface px-3 text-[13px] font-semibold text-ink";
   return (
     <div className={cn("flex gap-2", disabled && "pointer-events-none opacity-50", className)}>
       <label className={button}>

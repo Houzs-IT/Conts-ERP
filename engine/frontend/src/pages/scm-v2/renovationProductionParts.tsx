@@ -324,7 +324,7 @@ export function ProgressPhotos({ orderId, progress, holidays, phone, canAdd, fin
             {photos.length > 0 && <span className="text-ink-muted">{[photoWord(photos.length), peopleOn(photos)].filter(Boolean).join(" · ")}</span>}
           </div>
           {photos.length === 0 ? (
-            <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-[13px] text-ink-muted">{day.future ? "This day has not come yet." : canAdd ? "No photos for this day. Press Add photos." : "No photos for this day."}</p>
+            <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-[13px] text-ink-muted">{day.future ? "This day has not come yet." : canAdd ? "No photos for this day. Press Take photo or From album." : "No photos for this day."}</p>
           ) : (
             <div className={cn("grid gap-1.5", phone ? "grid-cols-4" : "grid-cols-8")}>
               {photos.slice(0, limit).map((f, i) => (
