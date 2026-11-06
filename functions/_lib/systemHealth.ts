@@ -192,7 +192,7 @@ export async function measureHealth(env: Env, origin: string) {
   const hostplatform = guarded('hostplatform', 'HostPlatform', async () => {
     if (!hostplatformConfigured(env)) return { value: '—', status: 'off', summary: 'Not set up', detail: 'Reservations are not pulled from HostPlatform until its keys are added.', link: integrations };
     const r = await hostplatformProperties(env).catch(() => null);
-    if (r?.ok) return { value: 'Working', status: 'ok', summary: `Key accepted · ${plural(r.body!.length, 'property', 'properties')}` };
+    if (r?.ok) return { value: 'Working', status: 'ok', summary: `Key accepted · ${plural(r.body!.length, 'building')}` };
     if (r && keyAnswer(r.status) === 'refused') return { value: 'Refused', status: 'critical', summary: `Key refused (${r.status})`, detail: 'Reservations are not being pulled from HostPlatform. Replace HOSTPLATFORM_ACCESS_TOKEN in Cloudflare.', link: integrations };
     return { value: '—', status: 'warning', summary: r?.status ? `HostPlatform answered ${r.status}` : 'HostPlatform could not be reached', detail: 'Checked again in a few minutes.' };
   });
