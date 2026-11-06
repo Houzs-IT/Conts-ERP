@@ -1,7 +1,10 @@
 import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { hasCleanPrices, priceBook, layoutKey, PRICE_KINDS } from '../../_lib/cleaningPrices';
-import { hasServicePrices, serviceBook, hasDatedUnitPrices, isDayStr, FROM_THE_START } from '../../_lib/servicePrices';
+import { hasServicePrices, serviceBook, hasDatedUnitPrices, hasPriceByBed, isDayStr, FROM_THE_START } from '../../_lib/servicePrices';
+import { bedSizes } from '../../_lib/bedSizes';
+import { NO_BEDS, parseBeds } from '../../_lib/bedPricing';
+import { bedsLabel } from '../../_lib/unitPurpose';
 
 /** A unit's own prices that are not history: each item's row in force today (unless it means the list price) and every
  *  row still to come. The unit's Scheduled changes panel. */
@@ -27,9 +30,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Only the office sees cleaning prices.', 403);
   if (!(await hasCleanPrices(env))) return json({ ready: false, rows: [], mayEdit: false });
   const layout = (await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'u.layout_type' : 'NULL::text';
+  const beds = (await hasColumn(env, 'units', 'beds').catch(() => false)) ? 'u.beds::text' : 'NULL::text';
   const only = new URL(request.url).searchParams.get('unitId');
   const units = await all<any>(env, `
-    SELECT u.id, u.unit_number, u.bedrooms, ${layout} AS layout_type, p.id AS property_id, p.name AS property_name
+    SELECT u.id, u.unit_number, u.bedrooms, ${layout} AS layout_type, ${beds} AS beds, p.id AS property_id, p.name AS property_name
     FROM units u JOIN properties p ON p.id = u.property_id ${only ? 'WHERE u.id = ?' : ''} ORDER BY p.name, u.unit_number`, ...(only ? [only] : []));
   // Since Service prices (0127) a unit's own figures are per item: the cleaning item of each clean type.
   const dated = await hasDatedUnitPrices(env);
@@ -42,13 +46,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       'SELECT unit_id, kind, internal_cost, external_charge FROM unit_cleaning_prices');
   const ownAt = new Map(own.map(o => [`${o.unit_id}:${o.kind}`, o]));
   const price = await priceBook(env, units.map(u => u.id));
+  const sizes = await bedSizes(env);
+  const byBed = (await hasPriceByBed(env)) && !!(await one(env, `SELECT 1 AS x FROM service_items s JOIN service_item_prices p ON p.item_id = s.id
+    WHERE s.by_bed = 1 AND s.active = 1 AND s.clean_kind IS NOT NULL AND (p.layout LIKE 'bed:%' OR p.layout = ?) AND p.effective_from <= ? LIMIT 1`, NO_BEDS, mytToday()));
   return json({
-    ready: true, mayEdit: !!session.manage, dated,
+    ready: true, mayEdit: !!session.manage, dated, byBed,
     ...(only && session.manage && dated ? { changes: await unitChanges(env, only) } : {}),
     rows: units.map(u => {
       const key = layoutKey(u.layout_type, u.bedrooms);
       return {
         unitId: u.id, unitNumber: u.unit_number, propertyName: u.property_name, buildingId: u.property_id, layout: key,
+        beds: bedsLabel(parseBeds(u.beds), sizes) || null,
         prices: Object.fromEntries(PRICE_KINDS.map(k => {
           const p = price(u.id, k, key), o = ownAt.get(`${u.id}:${k}`);
           return [k, { internalCost: p.internal, externalCharge: p.external, source: p.source,

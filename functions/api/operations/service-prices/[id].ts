@@ -1,7 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso, mytToday } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { mayWork } from '../../../_lib/access';
-import { hasServicePrices, itemView, loadPrices, checkItem, layoutGrid, ITEM_WRITERS } from '../../../_lib/servicePrices';
+import { hasServicePrices, itemView, loadPrices, checkItem, priceGrids, ITEM_WRITERS } from '../../../_lib/servicePrices';
 
 /** GET /api/operations/service-prices/:id — one item, its prices in force today and its price history: every dated
  *  change, newest first, with who set it, and how many jobs were priced from the item. */
@@ -19,7 +19,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const currentFrom = [...byDate.keys()].find(d => d <= today) ?? null;
   const used = await one<{ n: number }>(env, `SELECT (SELECT COUNT(*) FROM tasks WHERE service_item_id = ?) + (SELECT COUNT(*) FROM maintenance_issues WHERE sku_id = ?) AS n`, item.id, item.id);
   return json({
-    ...itemView(item, rows, today, await layoutGrid(env)), today, jobs: Number(used?.n ?? 0),
+    ...itemView(item, rows, today, await priceGrids(env)), today, jobs: Number(used?.n ?? 0),
     history: [...byDate.entries()].map(([effectiveFrom, list]) => ({
       effectiveFrom, status: effectiveFrom > today ? 'scheduled' : effectiveFrom === currentFrom ? 'current' : 'past',
       note: list[0].note ?? null, setBy: list[0].created_by_name ?? null, setAt: list[0].created_at,
@@ -44,6 +44,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (bad) return bad;
   const active = b.active ?? !!cur.active, kind = b.cleanKind !== undefined ? b.cleanKind : cur.clean_kind;
   if (kind && active && await one(env, 'SELECT 1 AS x FROM service_items WHERE clean_kind = ? AND active = 1 AND id != ?', kind, id)) return fail('CONFLICT', 'Another active item is already the price for that clean type.', 409, { cleanKind: 'Taken by another item.' });
+  if (b.byLayout !== undefined && b.byLayout !== !!cur.by_layout && cur.by_bed) {
+    return fail('CONFLICT', 'This item is priced by bed size. Add a new item to price it another way.', 409, { byLayout: 'It is priced by bed size.' });
+  }
   if (b.byLayout !== undefined && b.byLayout !== !!cur.by_layout && await one(env, 'SELECT 1 AS x FROM service_item_prices WHERE item_id = ?', id)) {
     return fail('CONFLICT', 'This item already has prices. Add a new item to price it the other way.', 409, { byLayout: 'It already has prices.' });
   }

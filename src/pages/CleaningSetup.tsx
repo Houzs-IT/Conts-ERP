@@ -16,7 +16,7 @@ import { ServicePrices } from './ServicePrices';
 interface PriceRow { kind: string; layout: string; internalCost: number | null; externalCharge: number | null }
 interface PriceTable { ready: boolean; kinds: string[]; layouts: string[]; rows: PriceRow[]; mayEdit: boolean }
 interface UnitPrice { internalCost: number | null; externalCharge: number | null; source: 'unit' | 'table' | null; override: { internalCost: number | null; externalCharge: number | null } | null }
-interface UnitRow { unitId: string; unitNumber: string; propertyName: string; buildingId: string; layout: string; prices: Record<string, UnitPrice> }
+interface UnitRow { unitId: string; unitNumber: string; propertyName: string; buildingId: string; layout: string; beds?: string | null; prices: Record<string, UnitPrice> }
 interface PayRow { cleanerId: string; name: string; unitJobs: number; externalJobs: number; unitPay: number; externalPay: number; unpriced: number; total: number }
 
 const KIND: Record<string, string> = { turnover: 'Basic', deep_clean: 'Deep', light_clean: 'Light' };
@@ -32,7 +32,7 @@ const money = (v: number | null) => (v == null ? <span className="text-warning">
  *  unit's own figures where it differs. Management edits; everyone in the office reads. */
 export function PricesView({ tabs }: { tabs: ReactNode }) {
   const table = useApi<PriceTable>('/housekeeping/prices');
-  const units = useApi<{ ready: boolean; rows: UnitRow[]; mayEdit: boolean }>('/housekeeping/unit-prices');
+  const units = useApi<{ ready: boolean; rows: UnitRow[]; mayEdit: boolean; byBed?: boolean }>('/housekeeping/unit-prices');
   const service = useApi<{ ready: boolean }>('/operations/service-prices?domain=cleaning');
   const t = table.data;
   return (
@@ -44,9 +44,9 @@ export function PricesView({ tabs }: { tabs: ReactNode }) {
       ) : <>
         {/* Service prices (0127) replace the price table; before it, the old table is still the one in use. */}
         {service.data.ready
-          ? <ServicePrices domain="cleaning" above={<p className="m-0 text-meta text-muted-ink">Cleaning jobs made from reservations take the item for their clean type, at the unit's layout. Open an item to change its prices from a date; the whole list is also under Settings, Service prices.</p>} />
+          ? <ServicePrices domain="cleaning" above={<p className="m-0 text-meta text-muted-ink">Cleaning jobs made from reservations take the item for their clean type, {units.data?.byBed ? "priced by the unit's beds (each bed size price times its quantity)" : "at the unit's layout"}. Open an item to change its prices from a date; the whole list is also under Settings, Service prices.</p>} />
           : <PriceTableCard data={t} onSaved={() => { table.reload(); units.reload(); }} />}
-        <UnitPricesCard rows={units.data?.rows ?? null} mayEdit={!!units.data?.mayEdit} onSaved={units.reload} />
+        <UnitPricesCard rows={units.data?.rows ?? null} mayEdit={!!units.data?.mayEdit} byBed={!!units.data?.byBed} onSaved={units.reload} />
       </>}
     </div>
   );
@@ -106,7 +106,7 @@ function PriceTableCard({ data, onSaved }: { data: PriceTable; onSaved: () => vo
   );
 }
 
-function UnitPricesCard({ rows, mayEdit, onSaved }: { rows: UnitRow[] | null; mayEdit: boolean; onSaved: () => void }) {
+function UnitPricesCard({ rows, mayEdit, byBed, onSaved }: { rows: UnitRow[] | null; mayEdit: boolean; byBed: boolean; onSaved: () => void }) {
   const [q, setQ] = useState('');
   const [kind, setKind] = useState('turnover');
   const [editing, setEditing] = useState<string | null>(null);
@@ -127,7 +127,7 @@ function UnitPricesCard({ rows, mayEdit, onSaved }: { rows: UnitRow[] | null; ma
       {!rows ? <Skeleton height={120} /> : shown.length === 0 ? <span className="text-muted-ink">No unit matches.</span> : (
         <div className="flex flex-col">
           <div className="hidden md:grid grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.6fr)] gap-3 text-meta font-semibold text-muted-ink pb-2">
-            <span>Unit</span><span>Layout</span><span>Owner price</span><span>Internal cost</span><span />
+            <span>Unit</span><span>{byBed ? 'Beds' : 'Layout'}</span><span>Owner price</span><span>Internal cost</span><span />
           </div>
           {shown.map(r => {
             const p = r.prices[kind];
@@ -136,7 +136,9 @@ function UnitPricesCard({ rows, mayEdit, onSaved }: { rows: UnitRow[] | null; ma
               : (
                 <div key={r.unitId} className="grid grid-cols-2 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.6fr)] gap-x-3 gap-y-1 py-2 [border-top:1px_solid_var(--color-line-soft)] items-center text-copy">
                   <span className="col-span-2 md:col-span-1"><b>{r.unitNumber}</b> <span className="text-muted-ink">{r.propertyName}</span></span>
-                  <span className="text-muted-ink">{LAYOUT[r.layout] ?? r.layout}</span>
+                  {byBed
+                    ? <span className={cx('[overflow-wrap:anywhere]', r.beds ? 'text-muted-ink' : 'text-warning')}>{r.beds ?? 'No beds recorded'}</span>
+                    : <span className="text-muted-ink">{LAYOUT[r.layout] ?? r.layout}</span>}
                   <span className="max-md:order-4"><span className="md:hidden text-muted-ink">Owner price </span>{money(p?.externalCharge ?? null)}{p?.override && <span className="ml-1 text-meta text-gold-ink">own</span>}</span>
                   <span className="max-md:order-5"><span className="md:hidden text-muted-ink">Internal cost </span>{money(p?.internalCost ?? null)}</span>
                   <span className="text-right">{mayEdit && <button type="button" onClick={() => setEditing(r.unitId)} className="text-gold-ink font-medium cursor-pointer bg-transparent border-0 p-0 [font-family:inherit]">Edit</button>}</span>
