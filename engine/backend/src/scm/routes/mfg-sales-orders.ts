@@ -4569,10 +4569,22 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
         activeCompanyId(c) ?? null,
         listFallback,
       );
-      if (headerBrand) {
-        effectiveBrand = headerBrand;
+      /* A SKU's maker is not the seller: a Hookka sofa on a Conts order stamped the order Hookka (owner, 6 Nov 2026).
+         The order's brand is its project's, else a brand the company keeps, else blank. */
+      let projectBrand: string | null = null;
+      if (projectIdToStamp != null) {
+        try {
+          const p = await c.env.DB.prepare(`SELECT brand FROM projects WHERE id = ?`).bind(projectIdToStamp).first<{ brand: string | null }>();
+          projectBrand = String(p?.brand ?? '').trim() || null;
+        } catch { projectBrand = null; }
+      }
+      const kept = listFallback?.brands ?? [];
+      const sellerBrand = projectBrand
+        ?? (kept.length === 0 || kept.some((b) => b.toLowerCase() === String(headerBrand ?? '').toLowerCase()) ? headerBrand : null);
+      if (sellerBrand) {
+        effectiveBrand = sellerBrand;
         await scopeToCompany(
-          sb.from('mfg_sales_orders').update({ branding: headerBrand }).eq('doc_no', docNo),
+          sb.from('mfg_sales_orders').update({ branding: sellerBrand }).eq('doc_no', docNo),
           c,
         );
       }

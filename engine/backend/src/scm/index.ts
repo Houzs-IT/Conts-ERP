@@ -367,6 +367,7 @@ scm.route("/mfg-purchase-orders", purchaseOrderItemPhotos);
 // gates layer on inside the handlers (mig 0192).
 scm.use("/po-amendments/*", scmAreaGuard("scm.procurement.po"));
 scm.route("/po-amendments", poAmendments);
+scm.route("/onsite-twin", onsiteTwin);
 scm.use("/grns/*", scmAreaGuard("scm.procurement.grn"));
 // Deferred list enrichment — the MRP-derived GRN-list columns (Assigned SO /
 // Delivered) the list no longer computes on its critical path. Mounted BEFORE
@@ -1046,6 +1047,7 @@ scm.route("/renovation-so-info", renovationSoInfo);
 
 // ── Production orders (mig 0208): the Purchase Order routes cloned onto their own tables ──
 import { productionOrders } from "./routes/production-orders";
+import { onsiteTwin } from "./routes/onsite-twin";
 import { productionLineImport } from "./routes/production-line-import";
 import { productionOrderItemPhotos } from "./routes/production-order-item-photos";
 import { productionOrderAttachments } from "./routes/doc-attachments";

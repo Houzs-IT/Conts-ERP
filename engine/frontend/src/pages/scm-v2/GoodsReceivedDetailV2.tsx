@@ -5,6 +5,7 @@
 import { lazy, useCallback, useMemo, useState, type ReactNode } from "react";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { formatPhone } from "@2990s/shared/phone";
+import { OnsiteTwinCard } from "./OnsiteTwinCard";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LazySlot } from "../../components/LazySlot";
 import { scmListReturnTo } from "../../lib/scmListReturn";
@@ -771,6 +772,7 @@ function GoodsReceivedDetailV2ReadOnly() {
               />
             </Section>
             <GrnProofOfReceiptCard grn={grn} canEdit={!isCancelled} />
+            <OnsiteTwinCard kind="grn" id={grn.id} confirmed={rawStatus === "POSTED"} />
             <DocAttachments
               docType="goods_received"
               docId={grn.id}

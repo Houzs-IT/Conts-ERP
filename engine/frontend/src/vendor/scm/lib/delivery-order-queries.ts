@@ -22,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
 import { idempotentInit } from '../../../lib/idempotency';
 import { serviceNotify } from './dialog-service';
+import { afterOnsiteConfirm } from './onsite-twin-queries';
 import { invalidateSoLists } from './sales-order-queries';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
 
@@ -326,7 +327,12 @@ export const useUpdateMfgDeliveryOrderStatus = () => {
       authedFetch(`/delivery-orders-mfg/${id}/status`, {
         method: 'PATCH', body: JSON.stringify({ status, ...(evidence ?? {}) }),
       }),
-    onSuccess: (_, vars) => refreshAfterDoStatus(qc, vars.id),
+    onSuccess: (_, vars) => {
+      refreshAfterDoStatus(qc, vars.id);
+      if (vars.status !== 'DRAFT' && vars.status !== 'CANCELLED') {
+        afterOnsiteConfirm('do', vars.id, () => { void qc.invalidateQueries({ queryKey: ['onsite-twin', 'do', vars.id] }); void qc.invalidateQueries({ queryKey: ['grns'] }); });
+      }
+    },
     onError: (err) => {
       serviceNotify({ title: 'Status update failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' });
     },

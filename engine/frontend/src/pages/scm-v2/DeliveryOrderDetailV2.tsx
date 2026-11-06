@@ -23,6 +23,7 @@
 // useUpdateMfgDeliveryOrderStatus (unchanged from prior V2).
 
 import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { OnsiteTwinCard } from "./OnsiteTwinCard";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { scmListReturnTo } from "../../lib/scmListReturn";
 import {
@@ -1461,6 +1462,7 @@ export function DeliveryOrderDetailV2() {
               />
             </Section>
 
+            <OnsiteTwinCard kind="do" id={deliveryOrder.id} confirmed={rawStatus !== "draft" && rawStatus !== "cancelled"} />
             <DocAttachments
               docType="delivery_order"
               docId={deliveryOrder.id}
