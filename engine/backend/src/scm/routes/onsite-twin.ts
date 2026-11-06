@@ -89,6 +89,8 @@ onsiteTwin.post('/grn/:id', async (c) => {
     if (out.status >= 300 || !out.json.id) { problems.push(words(out.json, 'The delivery order could not be raised.')); continue; }
     const doId = String(out.json.id);
     await link(sb, co.companyId, grn.id, doId);
+    const notMoved = out.json.movementErrors as string[] | undefined;
+    if (notMoved?.length) problems.push(`The delivery order was raised but its stock did not move: ${notMoved.join('; ')}`);
     raised.push(String(out.json.doNumber ?? out.json.do_number ?? doId));
     const done = await callHandler(c, patchDeliveryOrderStatusHandler as never, { status: 'DELIVERED' }, { id: doId });
     if (done.status >= 300) problems.push(words(done.json, 'The delivery order was raised but not marked delivered.'));
@@ -132,6 +134,7 @@ onsiteTwin.post('/do/:id', async (c) => {
       .eq('grn_id', draft.id).eq('unit_price_sen', 0);
     const posted = await postGrnAndRollup(sb, draft.id, c.get('user').id, draft.companyId);
     if (!posted.ok) { problems.push(`The goods receipt was raised but not posted: ${posted.reason}`); continue; }
+    if (posted.movementErrors?.length) problems.push(`The goods receipt posted but its stock did not move: ${posted.movementErrors.join('; ')}`);
     await recordGrnCreate(sb, c.get('houzsUser'), co.companyId, draft.id, draft.lineCount, `Received from ${draft.poNumbers.join(', ')} on confirming ${dord.do_number}`);
     await link(sb, co.companyId, draft.id, id);
     raised.push(draft.grnNumber ?? draft.id);

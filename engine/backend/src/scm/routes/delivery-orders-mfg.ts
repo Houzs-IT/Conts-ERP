@@ -1221,7 +1221,7 @@ async function resolveDoLineRacks(
   return out;
 }
 
-async function deductInventoryForDo(sb: any, deliveryOrderId: string, performedBy: string): Promise<string[]> {
+export async function deductInventoryForDo(sb: any, deliveryOrderId: string, performedBy: string): Promise<string[]> {
   // Idempotency guard #1 — has this DO already written OUT movements?
   const { count: existing } = await sb
     .from('inventory_movements')

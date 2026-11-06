@@ -4307,7 +4307,7 @@ mountHoldRoute(mfgPurchaseOrders, 'po');
    PGRST116 can't 500 it. A cancellable PO never has a GRN (poHasDownstream
    blocks cancel once one exists), so a CANCELLED PO was always SUBMITTED —
    reopening to SUBMITTED is correct. */
-mfgPurchaseOrders.patch('/:id/reopen', async (c) => {
+export const reopenPurchaseOrderHandler = async (c: any) => {
   const id = c.req.param('id');
   const supabase = c.get('supabase');
 
@@ -4402,7 +4402,8 @@ mfgPurchaseOrders.patch('/:id/reopen', async (c) => {
     .eq('id', id), co.companyId)
     .maybeSingle();
   return c.json({ purchaseOrder: after ?? { id, status: 'SUBMITTED' } });
-});
+};
+mfgPurchaseOrders.patch('/:id/reopen', reopenPurchaseOrderHandler);
 
 /* ── Delete: REMOVED (owner rule, 2026-08-11) ──────────────────────────────
    There was a DELETE /:id here that hard-purged a CANCELLED PO, header and

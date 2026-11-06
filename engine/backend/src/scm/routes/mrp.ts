@@ -61,6 +61,7 @@
 //            warehouseId omitted / 'all' → every warehouse (union of per-WH buckets)
 // ----------------------------------------------------------------------------
 
+import { claimShortfall, openDemandOf } from '../lib/renovation-production';
 import { Hono } from 'hono';
 import { computeVariantKey, buildVariantSummary, isServiceLine, splitSofaCode, effectiveDelivery, effectiveSoDelivery, type VariantAttrs } from '../shared';
 import { supabaseAuth } from '../middleware/auth';
@@ -185,6 +186,8 @@ const PO_DEAD_SQL = sqlNotInList(PO_DEAD);
 
 export type DemandRow = {
   id: string;
+  /* Part of qty that Start issued past the pooled balance. */
+  issuedShortfallQty?: number;
   doc_no: string;
   item_code: string;
   description: string | null;
@@ -278,37 +281,28 @@ const variantKeyOf = (itemGroup: string | null | undefined, variants: unknown): 
 
 
 /* Raw materials of open production orders as demand (owner, 4 Nov 2026): under the rules of every other line, dated by
-   their own delivery date, for what has not been received yet. A draft, held or cancelled order orders nothing. */
+   their own delivery date. A draft, held or cancelled order orders nothing. A material asks for what has not left stock
+   yet; received units sit in stock and cover it there, so they are not taken off here as well (audit item 2). What Start
+   issued past the pooled balance stays asked for until the balance recovers: see claimIssuedShortfalls. */
 async function productionMaterialDemand(sb: any, scoped: <Q>(q: Q) => Q): Promise<DemandRow[]> {
   type Row = {
-    id: string; item_code: string; description: string | null; qty_needed: number; processing_date: string | null; delivery_date: string | null; created_at: string | null;
+    id: string; item_code: string; description: string | null; qty_needed: number; qty_issued: number; qty_issued_short: number; processing_date: string | null; delivery_date: string | null; created_at: string | null;
     order: { id: string; po_number: string; purchase_location_id: string | null; project_id: number | null; status: string; on_hold: boolean } | null;
   };
   const { data, error } = await paginateAll<Row>((from, to) => scoped(sb.from('production_order_materials')
-    .select('id, item_code, description, qty_needed, processing_date, delivery_date, created_at, order:production_orders!inner (id, po_number, purchase_location_id, project_id, status, on_hold)')
+    .select('id, item_code, description, qty_needed, qty_issued, qty_issued_short, processing_date, delivery_date, created_at, order:production_orders!inner (id, po_number, purchase_location_id, project_id, status, on_hold)')
     .eq('order.status', 'SUBMITTED')
     .eq('order.on_hold', false))
     .order('id')
     .range(from, to));
   if (error) throw new Error(`mrp_load_failed: ${error.message}`);
   const rows = (data ?? []).filter((r) => r.order);
-  const { data: received, error: recErr } = await chunkIn<{ production_material_id: string; received_qty: number | null; po: { status: string } | null }>(
-    rows.map((r) => r.id),
-    (batch, from, to) => scoped(sb.from('purchase_order_items').select('production_material_id, received_qty, po:purchase_orders!inner (status)').in('production_material_id', batch))
-      .order('id').range(from, to),
-  );
-  if (recErr) throw new Error(`mrp_load_failed: ${recErr.message}`);
-  const receivedOf = new Map<string, number>();
-  for (const l of received) {
-    if (l.po?.status === 'CANCELLED') continue;
-    receivedOf.set(l.production_material_id, (receivedOf.get(l.production_material_id) ?? 0) + Number(l.received_qty ?? 0));
-  }
   return rows.flatMap((r): DemandRow[] => {
-    const left = Number(r.qty_needed) - (receivedOf.get(r.id) ?? 0);
-    if (left <= 0) return [];
+    const { unissued, shortfall } = openDemandOf(r);
+    if (unissued + shortfall <= 0) return [];
     return [{
       id: r.id, productionMaterialId: r.id, productionOrderId: r.order!.id, doc_no: r.order!.po_number, item_code: r.item_code, description: r.description,
-      item_group: 'RAW', variants: null, qty: left, warehouse_id: r.order!.purchase_location_id, line_delivery_date: r.delivery_date, line_delivery_date_overridden: true,
+      item_group: 'RAW', variants: null, qty: unissued + shortfall, issuedShortfallQty: shortfall, warehouse_id: r.order!.purchase_location_id, line_delivery_date: r.delivery_date, line_delivery_date_overridden: true,
       line_no: null, created_at: r.created_at, cancelled: false, allocated_batch_no: null,
       so: {
         debtor_name: null, status: 'SUBMITTED', so_date: null, customer_delivery_date: null, amended_delivery_date: null, processing_date: r.processing_date,
@@ -316,6 +310,22 @@ async function productionMaterialDemand(sb: any, scoped: <Q>(q: Q) => Q): Promis
       },
     }];
   });
+}
+
+/* A material issued past the pool left the balance negative. That negative is this line's shortage, not extra need on the
+   next line, so the claimed part moves from the balance onto the line, and a line whose stock has since arrived keeps
+   only what it has not issued. */
+function claimIssuedShortfalls(demand: DemandRow[], stockByKey: Map<string, number>, keyOf: (d: DemandRow) => string, dateOf: (d: DemandRow) => string | null): void {
+  const byKey = new Map<string, DemandRow[]>();
+  for (const d of demand) if (d.issuedShortfallQty) byKey.set(keyOf(d), [...(byKey.get(keyOf(d)) ?? []), d]);
+  for (const [k, rows] of byKey) {
+    rows.sort((a, b) => (dateOf(a) ?? '9999').localeCompare(dateOf(b) ?? '9999'));
+    const asks = rows.map((d) => ({ d, qty: d.issuedShortfallQty! }));
+    const { kept, balance } = claimShortfall(asks, stockByKey.get(k) ?? 0);
+    stockByKey.set(k, balance);
+    for (const a of asks) a.d.qty = Number(a.d.qty) - a.d.issuedShortfallQty! + (kept.includes(a) ? a.qty : 0);
+  }
+  for (let i = demand.length - 1; i >= 0; i -= 1) if (demand[i]!.productionMaterialId && !(Number(demand[i]!.qty) > 0)) demand.splice(i, 1);
 }
 
 export type MrpLine = {
@@ -983,6 +993,7 @@ export async function computeMrp(
       stockWhereByKey.set(k, where);
     }
   }
+  claimIssuedShortfalls(demand, stockByKey, (d) => composite(d.warehouse_id ?? null, d.item_code, variantKeyOf(d.item_group, d.variants)), (d) => d.line_delivery_date ?? null);
   const stockWhereOf = (k: string): Array<{ code: string; qty: number }> =>
     [...(stockWhereByKey.get(k) ?? new Map<string, number>())].filter(([, qty]) => qty > 0).map(([code, qty]) => ({ code, qty }));
 

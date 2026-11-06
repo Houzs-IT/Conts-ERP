@@ -7,7 +7,8 @@
 
 import type { CompanyScopeCtx } from './companyScope';
 import { pageWithTruncation } from './outstanding-po-lines';
-import { filterPoList, type PoListFilters } from './po-list-read';
+import type { PoListFilters } from './po-list-read';
+import { filterProductionList } from './production-list-read';
 
 export const PO_FACET_COLS = ['supplier', 'creditor_code', 'currency', 'po_date'] as const;
 export type PoFacetCol = (typeof PO_FACET_COLS)[number];
@@ -59,7 +60,7 @@ export async function buildPoFacets(
       // !inner so a creditor filter removes the PO, exactly as poListSelect does.
       const select = `po_number, supplier_id, po_date, currency, supplier:suppliers${creditor ? '!inner' : ''}(name, code)`;
       return pageWithTruncation<FacetRow>((from, to) =>
-        (filterPoList(sb.from('production_orders').select(select), f, c, validStatuses) as unknown as Ranged)
+        (filterProductionList(sb.from('production_orders').select(select), f, c, validStatuses) as unknown as Ranged)
           .order('po_number', { ascending: true })
           .range(from, to));
     }),

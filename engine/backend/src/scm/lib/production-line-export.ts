@@ -17,7 +17,8 @@ import { scopeToCompany, type CompanyScopeCtx } from './companyScope';
 import { lookupByIds } from './document-line-export';
 import { chunkIn } from './paginate-all';
 import { pageWithTruncation } from './outstanding-po-lines';
-import { filterPoList, orderPoList, poListSelect, stampPoListGrns, type PoListFilters } from './po-list-read';
+import { orderPoList, poListSelect, stampPoListGrns, type PoListFilters } from './po-list-read';
+import { filterProductionList } from './production-list-read';
 import { warehouseLabel } from './warehouse-label';
 import { bookSpellingOrOwn } from '../../services/autocount-writeback';
 import { LOCATION_MAP } from '../../services/autocount-master-maps';
@@ -177,7 +178,7 @@ export async function buildPoExportRows(
 ): Promise<PoExportRows> {
   const sb = sbIn as Sb;
   const read = await pageWithTruncation<{ id: string; purchase_location_id?: string | null } & Record<string, unknown>>((from, to) =>
-    orderPoList(filterPoList(sb.from('production_orders').select(poListSelect(filters).replace('items:purchase_order_items', 'items:production_order_items')), filters, c, validStatuses), filters.sort)
+    orderPoList(filterProductionList(sb.from('production_orders').select(poListSelect(filters).replace('items:purchase_order_items', 'items:production_order_items')), filters, c, validStatuses), filters.sort)
       .range(from, to));
   if (read.error) return { error: `purchase orders: ${read.error.message}` };
   // includeLineLinked=false: the export stamps every PO a tab matches, so the
