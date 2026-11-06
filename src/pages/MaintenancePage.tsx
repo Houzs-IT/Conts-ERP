@@ -9,7 +9,7 @@ import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { Skeleton } from '../components/States';
 import { AttachmentLabel, MediaGallery, FileList, FileDropRow, PhotosPdfButton } from '../components/Attachments';
-import { DataTable, type Column } from '../components/DataTable';
+import { DataTable, type Column, type FilterOption } from '../components/DataTable';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -174,7 +174,14 @@ export default function MaintenancePage() {
         <MaintenanceItems fallback={<CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={mayWork(user, 'operations')} onCreate={createSku} onUpdate={updateSku} />} onChanged={sku.reload} />
       ) : (
         <>
-          <div ref={setFiltersTarget} className="empty:hidden" />
+          <div className="flex flex-col gap-4 px-5 py-4 max-md:px-4 max-md:py-3 rounded-card border border-solid border-line bg-card">
+            <label className="relative flex items-center">
+              <span className="absolute left-3.5 flex text-muted-ink pointer-events-none"><Icon name="Search" size="base" /></span>
+              <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit, building, problem or technician" aria-label="Search jobs"
+                className={cx(INPUT, 'h-11 w-full pl-11 text-[16px]')} />
+            </label>
+            <div ref={setFiltersTarget} className="empty:hidden" />
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
             <PillTabs value={tab} onChange={t => { setTab(t); setSelected(null); }} tabs={[
               { value: 'open', label: 'Open', count: data ? openTab.length : undefined },
@@ -182,11 +189,6 @@ export default function MaintenancePage() {
               { value: 'done', label: 'Done' },
               { value: 'history', label: 'History' },
             ]} />
-            {tab === 'history' && (
-              <div className="flex gap-2 flex-wrap md:ml-auto max-md:w-full">
-                <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or problem" aria-label="Search" className={cx(INPUT, 'h-9 w-[200px] max-md:w-full')} />
-              </div>
-            )}
           </div>
           <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580}
             detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null} />
@@ -241,10 +243,21 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     clear(); onChanged();
   }
 
+  const technicians = useTechnicians();
+  const assigneeOptions = useMemo<FilterOption[]>(() => {
+    const groupOf = (kind: string | null | undefined): string => (kind === 'in_house' ? 'In-house' : 'Contractors');
+    const byName = new Map(technicians.map(t => [t.name, { value: t.name, label: t.name, group: groupOf(t.kind) }]));
+    for (const issue of rows ?? []) {
+      if (issue.vendorName && !byName.has(issue.vendorName)) byName.set(issue.vendorName, { value: issue.vendorName, label: issue.vendorName, group: groupOf(issue.assigneeKind) });
+    }
+    const named = [...byName.values()].sort((a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label));
+    return [{ value: 'Unassigned', label: 'Unassigned' }, ...named];
+  }, [technicians, rows]);
+
   const columns = useMemo<Column<Issue>[]>(() => [
-    { key: 'unit', label: 'Unit', value: i => i.unitNumber, text: i => `${i.unitNumber} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
+    { key: 'unit', label: 'Unit', value: i => i.unitNumber, text: i => `${i.unitNumber} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120, filter: false,
       render: i => <b className="text-ink">{i.unitNumber}</b> },
-    { key: 'issue', label: 'Problem', value: i => i.title, width: 240,
+    { key: 'issue', label: 'Problem', value: i => i.title, width: 240, filter: false,
       sub: i => <>From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}{i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</>,
       render: i => <span className="block whitespace-normal text-ink">{i.title}</span> },
     { key: 'urgency', label: 'Type', type: 'status', value: i => typeOf(i),
@@ -256,7 +269,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     { key: 'building', label: 'Building', value: i => i.buildingId, text: i => i.propertyName, width: 150, hidden: true,
       filter: { kind: 'select', options: buildingOptions } },
     { key: 'assignee', label: 'Assigned to', value: i => i.vendorName ?? 'Unassigned', text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 160,
-      filter: { kind: 'select' },
+      filter: { kind: 'select', display: 'menu', options: assigneeOptions },
       render: i => (i.vendorName
         ? <span className="block truncate">{i.vendorName}<span className="text-muted-ink"> {i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}</span></span>
         : <span className="text-danger">Unassigned</span>) },
@@ -276,7 +289,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     ] : []),
     { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150, filter: false },
     { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150, filter: false },
-  ], [money, buildingOptions]);
+  ], [money, buildingOptions, assigneeOptions]);
 
   return (
     <>

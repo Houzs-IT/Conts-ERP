@@ -45,10 +45,14 @@ export type ColumnType = 'text' | 'date' | 'datetime' | 'money' | 'number' | 're
 export type FilterKind = 'text' | 'select' | 'date' | 'number';
 export type Raw = string | number | boolean | null | undefined;
 
+export interface FilterOption { value: string; label: string; group?: string }
+
 export interface FilterSpec {
   kind: FilterKind;
   /** Choices for `select`. Left out in client mode, they are the distinct values in the rows. */
-  options?: { value: string; label: string }[];
+  options?: FilterOption[];
+  /** Select: 'menu' shows a box that opens a searchable, grouped list in place of chips (for long lists of people). */
+  display?: 'chips' | 'menu';
   /** Server mode: the URL parameter the list endpoint reads for this filter (text and select). */
   param?: string;
   /** Server mode: the two URL parameters of a range (date and number), e.g. ['from', 'to']. */
@@ -606,10 +610,10 @@ export function DataTable<R>(props: DataTableProps<R>) {
       )}
 
       {inlineFiltersHost && createPortal(
-        <section aria-label="Filters" className="grid grid-cols-1 xl:grid-cols-2 xl:grid-flow-row-dense gap-x-8 gap-y-3 items-start px-5 py-4 rounded-card border border-solid border-line bg-card">
+        <section aria-label="Filters" className="grid grid-cols-1 xl:grid-cols-2 xl:grid-flow-row-dense gap-x-8 gap-y-3 items-start">
           {sheetFilters.map(c => (
             <div key={c.key} className={cx('grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 items-start',
-              filterOf(c)?.kind === 'select' && optionsFor(c, filterOf(c)!, rows ?? []).length > SHEET_SEARCH_FROM && 'xl:col-span-2')}>
+              filterOf(c)?.kind === 'select' && filterOf(c)?.display !== 'menu' && optionsFor(c, filterOf(c)!, rows ?? []).length > SHEET_SEARCH_FROM && 'xl:col-span-2')}>
               <h3 className="m-0 min-h-8 flex items-center text-meta font-semibold text-ink">{c.label}</h3>
               <FilterEditor col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)} variant="inline"
                 numberBounds={server || filterOf(c)?.kind !== 'number' ? null : numberBoundsOf(c, rows ?? [])} />
@@ -912,7 +916,7 @@ function DefaultCard<R>({ columns, r }: { columns: Column<R>[]; r: R }) {
 /* filters                                                             */
 /* ------------------------------------------------------------------ */
 
-function optionsFor<R>(c: Column<R>, spec: FilterSpec, rows: R[]): { value: string; label: string }[] {
+function optionsFor<R>(c: Column<R>, spec: FilterSpec, rows: R[]): FilterOption[] {
   if (spec.options) return spec.options;
   const seen = new Map<string, string>();
   for (const r of rows) {
@@ -972,6 +976,7 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, 
       if (next.has(picked)) next.delete(picked); else next.add(picked);
       onChange([...next].join(','));
     };
+    if (variant !== 'popover' && spec.display === 'menu') return <FilterMenu label={col.label} options={opts} picked={on} onToggle={toggle} onClear={() => onChange('')} />;
     if (variant !== 'popover') return <FilterChips label={col.label} options={opts} picked={on} hint={spec.hint} onToggle={toggle} density={variant === 'inline' ? 'compact' : 'roomy'} />;
     return (
       <div className="flex flex-col gap-px max-h-[280px] overflow-y-auto" role="group" aria-label={col.label}>
@@ -1024,6 +1029,64 @@ function FilterChips({ label, options, picked, hint, onToggle, density = 'roomy'
         })}
         {needle && !shownOptions.length && <span className="text-meta text-muted-ink">No {label.toLowerCase()} matches "{search.trim()}".</span>}
       </div>
+    </div>
+  );
+}
+
+function FilterMenu({ label, options, picked, onToggle, onClear }: {
+  label: string; options: FilterOption[]; picked: Set<string>; onToggle: (value: string) => void; onClear: () => void;
+}): ReactElement {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const box = useRef<HTMLButtonElement>(null);
+  const needle = search.trim().toLowerCase();
+  const shownOptions = needle ? options.filter(o => `${o.group ?? ''} ${o.label}`.toLowerCase().includes(needle)) : options;
+  const pickedLabels = options.filter(o => picked.has(o.value)).map(o => o.label);
+  const summary = pickedLabels.length === 0 ? `Any ${label.toLowerCase()}` : pickedLabels.length <= 2 ? pickedLabels.join(', ') : `${pickedLabels.slice(0, 2).join(', ')} +${pickedLabels.length - 2}`;
+  const close = (): void => { setIsOpen(false); setSearch(''); };
+  let lastGroup: string | undefined;
+  return (
+    <div className="w-full max-w-[360px]">
+      <button ref={box} type="button" aria-haspopup="listbox" aria-expanded={isOpen} aria-label={`${label}: ${summary}`} onClick={() => setIsOpen(open => !open)}
+        className={cx('w-full h-9 max-md:h-11 flex items-center gap-2 pl-3 pr-2 rounded-control border border-solid bg-card font-sans text-copy text-left cursor-pointer',
+          picked.size ? 'border-ink text-ink font-medium' : 'border-line text-muted-ink')}>
+        <span className="flex-1 min-w-0 truncate">{summary}</span>
+        {picked.size > 0 && <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-ink text-card text-caption font-semibold">{picked.size}</span>}
+        <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
+      </button>
+      <Floating anchor={box} open={isOpen} onClose={close} label={label} width={Math.max(box.current?.offsetWidth ?? 0, 280)}>
+        <div className="flex items-center gap-2 px-3 h-10 [border-bottom:1px_solid_var(--color-line-soft)]">
+          <Icon name="Search" size="sm" color="var(--color-muted-ink)" />
+          <input autoFocus value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); close(); box.current?.focus(); } }}
+            placeholder={`Search ${label.toLowerCase()}`} aria-label={`Search ${label.toLowerCase()}`}
+            className="flex-1 min-w-0 border-none outline-none bg-transparent font-sans text-copy max-md:text-[16px] text-ink" />
+        </div>
+        <div role="listbox" aria-multiselectable aria-label={label} className="max-h-[320px] overflow-y-auto py-1">
+          {!shownOptions.length && <div className="px-3 py-3 text-meta text-muted-ink">No match for "{search.trim()}".</div>}
+          {shownOptions.map(option => {
+            const heading = option.group && option.group !== lastGroup ? option.group : null;
+            lastGroup = option.group;
+            const isPicked = picked.has(option.value);
+            return (
+              <div key={option.value}>
+                {heading && <div className="px-3 pt-2 pb-1 text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{heading}</div>}
+                <button type="button" role="option" aria-selected={isPicked} onClick={() => onToggle(option.value)}
+                  className={cx('w-[calc(100%-8px)] mx-1 px-2.5 min-h-9 max-md:min-h-11 rounded-control flex items-center gap-2 border-none bg-transparent font-sans text-copy text-ink text-left cursor-pointer hover:bg-muted', isPicked && 'font-semibold')}>
+                  <span aria-hidden className={cx('w-4 h-4 grid place-items-center rounded-[4px] border border-solid shrink-0', isPicked ? 'bg-ink border-ink text-card' : 'border-[var(--color-line-strong)]')}>
+                    {isPicked && <Icon name="Check" size="sm" />}
+                  </span>
+                  <span className="flex-1 min-w-0 truncate">{option.label}</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        {picked.size > 0 && (
+          <div className="flex justify-end px-2 py-1.5 [border-top:1px_solid_var(--color-line-soft)]">
+            <Button size="sm" variant="tertiary" onClick={onClear}>Clear</Button>
+          </div>
+        )}
+      </Floating>
     </div>
   );
 }
