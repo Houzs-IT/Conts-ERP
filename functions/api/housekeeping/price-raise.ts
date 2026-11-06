@@ -3,7 +3,7 @@ import { requireSession, hasColumn } from '../../_lib/auth';
 import { layoutKey } from '../../_lib/cleaningPrices';
 import { inForce } from '../../_lib/datedRows';
 import { hasServicePrices, hasDatedUnitPrices, serviceBook, priceGrids, writePrices, isDayStr, CLEAN_TYPES, type PriceRow } from '../../_lib/servicePrices';
-import { dayAfter, figuresChanged, hasChangeInside, percentToBasisPoints, raiseFigures, raiseSen, type PriceFigures, type PriceRaise } from '../../_lib/priceRaise';
+import { dayAfter, figuresChanged, hasChangeInside, percentToBasisPoints, raiseFigures, raiseNote, raiseSen, restoreNote, type PriceFigures, type PriceRaise } from '../../_lib/priceRaise';
 
 interface RaiseRequest {
   cleanKind: string | null; itemId: string | null; unitId: string | null; effectiveFrom: string; effectiveTo: string | null; backOn: string | null;
@@ -95,7 +95,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const book = await serviceBook(env, unitId ? [unitId] : []);
   const item = itemId ? book.items.find(candidate => candidate.id === itemId && candidate.active) ?? null : book.itemForKind(cleanKind ?? '');
   if (!item) return fail('NOT_FOUND', 'There is no active item for that in Service prices.', 404);
-  const note = effectiveTo ? `Changed by percent to ${effectiveTo}` : 'Changed by percent';
+  const note = raiseNote(raise, item.domain === 'cleaning' ? 'cleaner pay' : 'internal cost', effectiveTo);
   const actor = { actorId: session.userId, actorLabel: session.fullName };
   const window = { effectiveFrom, effectiveTo, backOn };
 
@@ -138,7 +138,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   await transaction(env, async tx => {
     if (list.length) await writePrices(tx, item.id, { effectiveFrom, note, rows: list.map(({ key, after }) => ({ layout: key, ownerPrice: after.owner_price, internalCost: after.internal_cost })) }, session.userId);
     await writeOwnRows(tx, item.id, effectiveFrom, own.map(({ unit_id, after }) => ({ unit_id, figures: after })), session.userId);
-    if (backOn && listBack.length) await writePrices(tx, item.id, { effectiveFrom: backOn, note: `Back after the percent change from ${effectiveFrom}`, rows: listBack.map(({ key, before }) => ({ layout: key, ownerPrice: before.owner_price, internalCost: before.internal_cost })) }, session.userId);
+    if (backOn && listBack.length) await writePrices(tx, item.id, { effectiveFrom: backOn, note: restoreNote(effectiveFrom, effectiveTo ?? backOn), rows: listBack.map(({ key, before }) => ({ layout: key, ownerPrice: before.owner_price, internalCost: before.internal_cost })) }, session.userId);
     if (backOn) await writeOwnRows(tx, item.id, backOn, ownBack.map(({ unit_id, before }) => ({ unit_id, figures: before })), session.userId);
     await audit(tx, { ...actor, action: 'service_item.price_raise', entityTable: 'service_items', entityId: item.id,
       after: { code: item.code, ...window, ...raise, listRows: list.length, ownPrices: own.length } });

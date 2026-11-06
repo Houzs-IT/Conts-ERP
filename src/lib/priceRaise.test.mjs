@@ -1,7 +1,7 @@
 // node --test src/lib/priceRaise.test.mjs. Prices changed by a percent, worked out once in sen.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dayAfter, figuresChanged, hasChangeInside, percentToBasisPoints, raiseFigures, raiseSen } from '../../functions/_lib/priceRaise.ts';
+import { dayAfter, figuresChanged, hasChangeInside, percentToBasisPoints, raiseFigures, raiseNote, raiseSen, restoreNote } from '../../functions/_lib/priceRaise.ts';
 
 test('raises and lowers to the nearest sen', () => {
   assert.equal(raiseSen(4000, 1000), 4400);
@@ -49,4 +49,11 @@ test('a change strictly inside the window is found, its edges are not', () => {
   assert.equal(hasChangeInside(['2027-01-25'], '2027-01-20', '2027-02-06'), true);
   assert.equal(hasChangeInside(['2027-01-20', '2027-02-06', '2026-11-01'], '2027-01-20', '2027-02-06'), false);
   assert.equal(hasChangeInside([], '2027-01-20', '2027-02-06'), false);
+});
+
+test('the history note says which figures moved, by how much and until when', () => {
+  assert.equal(raiseNote({ ownerBasisPoints: 1000, internalBasisPoints: 1000 }, 'cleaner pay', '2027-02-05'),
+    'Changed by percent: owner price +10%, cleaner pay +10%, until 2027-02-05');
+  assert.equal(raiseNote({ ownerBasisPoints: -550, internalBasisPoints: null }, 'internal cost', null), 'Changed by percent: owner price -5.5%');
+  assert.equal(restoreNote('2027-01-20', '2027-02-05'), 'Back to the prices before the percent change of 2027-01-20 to 2027-02-05');
 });

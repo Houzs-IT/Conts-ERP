@@ -31,3 +31,17 @@ export const dayAfter = (day: string): string => new Date(Date.parse(`${day}T00:
 /** A dated row strictly inside a price window would be lost when the old price comes back, so such a window is refused. */
 export const hasChangeInside = (effectiveFroms: string[], startDay: string, backOn: string): boolean =>
   effectiveFroms.some(day => day > startDay && day < backOn);
+
+const percentText = (basisPoints: number): string => `${basisPoints > 0 ? '+' : ''}${basisPoints / 100}%`;
+
+export function raiseNote(raise: PriceRaise, internalLabel: string, effectiveTo: string | null): string {
+  const parts = [
+    raise.ownerBasisPoints ? `owner price ${percentText(raise.ownerBasisPoints)}` : null,
+    raise.internalBasisPoints ? `${internalLabel} ${percentText(raise.internalBasisPoints)}` : null,
+  ].filter((part): part is string => part !== null);
+  const changed = `Changed by percent: ${parts.join(', ')}`;
+  return effectiveTo ? `${changed}, until ${effectiveTo}` : changed;
+}
+
+export const restoreNote = (effectiveFrom: string, effectiveTo: string): string =>
+  `Back to the prices before the percent change of ${effectiveFrom} to ${effectiveTo}`;

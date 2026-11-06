@@ -14,6 +14,7 @@ export interface RaisePreview { list?: ListChange[]; ownPrices?: number; unit?: 
 export interface PriceTarget { key: string; name: string; request: { cleanKind: string } | { itemId: string } }
 type Direction = 'increase' | 'decrease';
 type AppliesTo = 'both' | 'owner' | 'internal';
+type Duration = 'dates' | 'onward';
 type TargetPreview = { preview: RaisePreview } | { problem: string };
 
 const PREVIEW_DELAY_MILLISECONDS = 400;
@@ -26,7 +27,10 @@ const changeText = (before: number | null, after: number | null): string => {
 const hasChange = (targetPreview: TargetPreview | undefined): boolean =>
   !!targetPreview && 'preview' in targetPreview && !!(targetPreview.preview.unit || targetPreview.preview.list?.length || targetPreview.preview.ownPrices);
 
-function scopeNote(kind: PriceKind, unit: ScheduleUnit | null): string {
+function scopeNote(kind: PriceKind, unit: ScheduleUnit | null, isUntilLastDay: boolean): string {
+  if (kind === 'cleaning' && !isUntilLastDay) return unit
+    ? "Basic and Deep clean, worked out from this unit's price on that date. Saved as its own price from then on, so it stops following later list changes."
+    : 'Basic and Deep clean, worked out from each list price on that date (every bed size or layout) and saved in RM from then on.';
   if (kind === 'maintenance') return 'Worked out from each item\'s list price on that date and saved in RM. Jobs from that date use it.';
   return unit
     ? 'Basic and Deep clean, worked out from this unit\'s price on the first day. Only jobs from the first to the last day use it; after that the unit\'s price goes back.'
@@ -38,6 +42,7 @@ export function PercentSchedule({ kind, targets, unit, onSaved }: { kind: PriceK
   const toast = useToast();
   const [from, setFrom] = useState('');
   const [lastDay, setLastDay] = useState('');
+  const [duration, setDuration] = useState<Duration>('dates');
   const [direction, setDirection] = useState<Direction>('increase');
   const [percent, setPercent] = useState<number | null>(null);
   const [appliesTo, setAppliesTo] = useState<AppliesTo>('both');
@@ -46,7 +51,7 @@ export function PercentSchedule({ kind, targets, unit, onSaved }: { kind: PriceK
   const [isBusy, setIsBusy] = useState(false);
 
   const canIncludeOwn = kind === 'cleaning' && !unit;
-  const needsLastDay = kind === 'cleaning';
+  const needsLastDay = kind === 'cleaning' && duration === 'dates';
   const isDateReady = !!from && (!needsLastDay || (!!lastDay && lastDay >= from));
   const internalLabel = INTERNAL_LABEL[kind];
   const signedPercent = percent ? (direction === 'decrease' ? -percent : percent) : null;
@@ -54,7 +59,7 @@ export function PercentSchedule({ kind, targets, unit, onSaved }: { kind: PriceK
     ...request, effectiveFrom: from, effectiveTo: needsLastDay ? lastDay : null, unitId: unit?.id ?? null, includeOwn: canIncludeOwn && shouldIncludeOwn, dryRun: isDryRun,
     ownerPct: appliesTo === 'internal' ? null : signedPercent, internalPct: appliesTo === 'owner' ? null : signedPercent,
   });
-  const requestKey = JSON.stringify([from, lastDay, signedPercent, appliesTo, shouldIncludeOwn, unit?.id, targets.map(({ key }) => key)]);
+  const requestKey = JSON.stringify([from, needsLastDay ? lastDay : null, signedPercent, appliesTo, shouldIncludeOwn, unit?.id, targets.map(({ key }) => key)]);
 
   useEffect(() => {
     setPreviews({});
@@ -93,6 +98,8 @@ export function PercentSchedule({ kind, targets, unit, onSaved }: { kind: PriceK
 
   return (
     <section className="flex flex-col gap-3">
+      {kind === 'cleaning' && <Segmented<Duration> label="How long" value={duration} onChange={setDuration}
+        options={[{ key: 'dates', label: 'For set dates' }, { key: 'onward', label: 'From then on' }]} />}
       <div className={needsLastDay ? 'grid grid-cols-1 min-[420px]:grid-cols-2 gap-3' : 'contents'}>
         <DateField label={needsLastDay ? 'First day' : 'Applies from'} value={from} min={todayMyt(1)} onChange={setFrom} />
         {needsLastDay && <DateField label="Last day" value={lastDay} min={from || todayMyt(1)} onChange={setLastDay} />}
@@ -102,7 +109,7 @@ export function PercentSchedule({ kind, targets, unit, onSaved }: { kind: PriceK
       <PercentInput label="By how much" placeholder="0" min={0} max={direction === 'decrease' ? 100 : 1000} value={percent} onChange={setPercent} />
       <Segmented<AppliesTo> label="Apply to" value={appliesTo} onChange={setAppliesTo}
         options={[{ key: 'both', label: 'Both' }, { key: 'owner', label: 'Owner price' }, { key: 'internal', label: internalLabel }]} />
-      <span className="text-meta text-muted-ink">{scopeNote(kind, unit)}</span>
+      <span className="text-meta text-muted-ink">{scopeNote(kind, unit, needsLastDay)}</span>
       {canIncludeOwn && (
         <label className="flex items-center justify-between gap-3 min-h-11">
           <span className="text-copy">Also change units' own prices by the same percent</span>
