@@ -438,7 +438,7 @@ async function orderFilesBehind(db: Db, docs: ReadonlyArray<{ type: DocType; id:
       WHERE coalesce(cardinality(pi.photo_urls), 0) > 0 ORDER BY pi.line_no, pi.id`,
   ).bind(ids("goods_received"), ids("delivery_order")).all<{ for_type: string; for_id: string; order_no: string; item_id: string; photo_urls: string[]; created_at: string }>();
   for (const r of lines.results ?? []) {
-    r.photo_urls.forEach((key, n) => add(`${r.for_type}:${r.for_id}`, {
+    lineKeys(r.photo_urls).forEach((key, n) => add(`${r.for_type}:${r.for_id}`, {
       id: `${LINE_PHOTO_ID}${r.item_id}-${n}`, key, name: "Line photo", mime: "image/jpeg", kind: "image", size: 0, caption: "", source: "pod", by: null,
       at: new Date(r.created_at).toISOString(), lineId: null, readOnly: true, from: `Production order ${r.order_no}`,
     }));
@@ -447,6 +447,27 @@ async function orderFilesBehind(db: Db, docs: ReadonlyArray<{ type: DocType; id:
 }
 
 const LINE_PHOTO_ID = "pline-";
+
+/* The database shim hands a text[] back as its literal, "{a,b}", when it reads by SQL. */
+const lineKeys = (v: unknown): string[] => (Array.isArray(v) ? v.filter((k): k is string => typeof k === "string" && !!k)
+  : typeof v === "string" && v.startsWith("{") ? v.slice(1, -1).split(",").map((k) => k.replace(/^"|"$/g, "")).filter(Boolean) : []);
+
+/** The photos on production orders' lines, keyed by order id: the project's Site tab streams them from the order. */
+export async function orderLineFiles(db: Db, orderIds: readonly string[]): Promise<Map<string, Linked[]>> {
+  const out = new Map<string, Linked[]>();
+  if (orderIds.length === 0) return out;
+  const res = await db.prepare(
+    `SELECT pi.production_order_id::text AS order_id, pi.id::text AS item_id, pi.photo_urls, pi.created_at, pi.room FROM scm.production_order_items pi
+      WHERE pi.production_order_id::text = ANY(?::text[]) AND coalesce(cardinality(pi.photo_urls), 0) > 0 ORDER BY pi.line_no, pi.id`,
+  ).bind(textArray([...orderIds])).all<{ order_id: string; item_id: string; photo_urls: string[]; created_at: string; room: string | null }>();
+  for (const r of res.results ?? []) {
+    out.set(r.order_id, [...(out.get(r.order_id) ?? []), ...lineKeys(r.photo_urls).map((key, n): Linked => ({
+      id: `${LINE_PHOTO_ID}${r.item_id}-${n}`, key, name: "Line photo", mime: "image/jpeg", kind: "image", size: 0, caption: r.room?.trim() ?? "", source: "upload", by: null,
+      at: new Date(r.created_at).toISOString(), lineId: r.item_id, readOnly: true,
+    }))]);
+  }
+  return out;
+}
 
 /** linkedDocFiles for a project's GRs and DOs at once, keyed "type:id": the roll-up reads this instead of one call a document. */
 export async function linkedFilesFor(db: Db, docs: ReadonlyArray<{ type: DocType; id: string }>, companyId: number): Promise<Map<string, Linked[]>> {
@@ -522,6 +543,10 @@ export async function fileRow(db: Db, doc: DocRef, fileId: string): Promise<{ ke
 /** A file the document shows from a line upstream (for its stream). */
 export async function carriedFileRow(db: Db, doc: DocRef, fileId: string): Promise<{ key: string; mime: string; name: string } | null> {
   if (!UUID.test(fileId) && !fileId.startsWith(LINE_PHOTO_ID)) return null;
+  if (doc.type === "production_order" && fileId.startsWith(LINE_PHOTO_ID)) {
+    const own = (await orderLineFiles(db, [doc.id])).get(doc.id)?.find((f) => f.id === fileId);
+    return own ? { key: own.key, mime: own.mime, name: own.name } : null;
+  }
   const linked = (await linkedDocFiles(db, doc)).find((f) => f.id === fileId);
   if (linked) return { key: linked.key, mime: linked.mime, name: linked.name };
   if (!DOC_TYPES[doc.type].lines?.parent) return null;

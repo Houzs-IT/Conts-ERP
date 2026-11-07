@@ -125,10 +125,9 @@ app.get("/:id/document-files/:type/:docId/:fileId", requirePageAccess("projects.
   const companyId = await projectCompany(c, id);
   if (companyId == null) return c.json({ error: "not_found" }, 404);
   /* A production order's files show on the project's Site tab; it is not one of the project's listed documents. */
-  const order = type === "production_order" ? await db(c).prepare(
-    `SELECT o.po_number AS no FROM scm.production_orders o LEFT JOIN scm.purchase_orders po ON po.id = o.source_po_id
-      WHERE o.id::text = ? AND o.company_id = ? AND ?::bigint IN (o.project_id, po.project_id)`,
-  ).bind(docId, companyId, id).first<{ no: string }>() : null;
+  const inProject = expand(`SELECT o.po_number AS no FROM scm.production_orders o
+                             WHERE o.id::text = ? AND o.company_id = ?2 AND (o.project_id = ?1 OR o.source_po_id IN (${POS}))`, id, companyId);
+  const order = type === "production_order" ? await db(c).prepare(inProject.text).bind(docId, ...inProject.args).first<{ no: string }>() : null;
   const doc = order ? { type, id: docId, no: order.no } : (await projectDocs(db(c), id, companyId)).find((d) => d.type === type && d.id === docId);
   if (!doc) return c.json({ error: "not_found" }, 404);
   const range = c.req.header("range");
