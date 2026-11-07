@@ -186,6 +186,11 @@ export interface BillResult {
   creditNoteId?: string;
 }
 
+/** Billed ahead of this instalment. A later bill is its own share of the contract, so an earlier instalment billed again
+    after its invoice was cancelled comes to what the screen previews (instalmentPreview), not a credit. */
+export const billedBeforeInstalment = (view: Pick<BillingView, 'billedSen' | 'instalments'>, seq: number): number =>
+  view.billedSen - view.instalments.reduce((s, i) => s + (i.seq > seq && i.bill ? i.bill.amountSen : 0), 0);
+
 export async function billInstalment(
   db: RenoDb,
   actor: RenoActor,
@@ -200,11 +205,12 @@ export async function billInstalment(
   if (!inst) throw refuse(404, 'instalment_not_found', 'That instalment is not on this contract.');
   if (inst.bill) throw refuse(409, 'already_billed', `Instalment ${inst.seq} is already billed.`);
   if (!inst.isNext) throw refuse(409, 'not_next', `Bill instalment ${view.nextSeq} first: instalments are billed in order.`, { nextSeq: view.nextSeq });
+  const billedBefore = billedBeforeInstalment(view, inst.seq);
   const n = nextInstalmentAmount({
     instalments: view.instalments.map((i) => ({ seq: i.seq, pctBp: i.pctBp })),
     seq: inst.seq,
     revisedContractSen: view.revisedContractSen,
-    billedSen: view.billedSen,
+    billedSen: billedBefore,
   });
   if (n.amountSen !== body.expectedAmountSen) {
     throw refuse(409, 'stale_amount', 'The amount changed since this screen was opened (a variation order moved the contract sum). Check the new amount and bill again.',
@@ -266,7 +272,7 @@ export async function billInstalment(
     `insert into scm.reno_instalment_bills (company_id, so_doc_no, instalment_id, seq, kind, amount_sen, cum_bp, revised_contract_sen, billed_before_sen,
         invoice_date, sales_invoice_id, invoice_number, credit_note_id, note_number, created_by)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11, $12, $13, $14, $15)`,
-    [actor.companyId, soDocNo, instalmentId, inst.seq, result.kind, result.amountSen, n.cumBp, view.revisedContractSen, view.billedSen, invoiceDate,
+    [actor.companyId, soDocNo, instalmentId, inst.seq, result.kind, result.amountSen, n.cumBp, view.revisedContractSen, billedBefore, invoiceDate,
       result.salesInvoiceId ?? null, result.invoiceNumber ?? null, result.creditNoteId ?? null, result.noteNumber ?? null, actor.name],
   );
   await auditSo(db, {
