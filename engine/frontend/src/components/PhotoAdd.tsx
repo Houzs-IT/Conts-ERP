@@ -2,8 +2,8 @@
    inputs because a phone cannot do both from one: `capture` opens the camera and takes one shot, `multiple` opens the album.
    Every photo uploads on its own, shows how it went, and a failed one can be tried again without the others. */
 
-import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
-import { Camera, Images, RotateCw, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactElement } from "react";
+import { Camera, Images, RotateCw, Video, X } from "lucide-react";
 import { HEIC_ACCEPT } from "../lib/heicToJpeg";
 import { cn } from "../lib/utils";
 
@@ -74,27 +74,60 @@ function Thumb({ file }: { file: File }): ReactElement {
     setUrl(u);
     return () => URL.revokeObjectURL(u);
   }, [file]);
+  if (url && file.type.startsWith("video/")) return <video src={url} muted playsInline preload="metadata" className="h-full w-full object-cover" />;
   return url ? <img src={url} alt="" className="h-full w-full object-cover" /> : <span className="block h-full w-full bg-surface-2" />;
 }
 
-/** The two ways in, side by side. */
-export function PhotoAddButtons<T>({ queue, disabled, className }: { queue: PhotoQueue<T>; disabled?: boolean; className?: string }): ReactElement {
-  const camera = useRef<HTMLInputElement>(null);
+/** The ways in, side by side. The same standard as every photo and video upload in the ERP (owner, Oct 2026; production
+    and site, 8 Nov 2026): on a phone, after each shot a sheet comes back with Take another, so several are shot in a row
+    without leaving the job; the album picks many at once. With video on, a video can be recorded or picked as well. */
+export function PhotoAddButtons<T>({ queue, disabled, className, video }: { queue: PhotoQueue<T>; disabled?: boolean; className?: string; video?: boolean }): ReactElement {
+  const [again, setAgain] = useState<null | "photo" | "video">(null);
   const button = "flex min-h-[44px] flex-1 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-surface px-3 text-[13px] font-semibold text-ink";
+  const row = "flex min-h-[48px] w-full cursor-pointer items-center gap-3 rounded-md border border-border bg-surface px-3.5 text-[14px] font-semibold text-ink";
+  const albumAccept = video ? `${ACCEPT},video/*` : ACCEPT;
+  // A label around the input keeps the press a real tap, so the phone lets the camera open again.
+  const shot = (kind: "photo" | "video") => (e: ChangeEvent<HTMLInputElement>) => {
+    const had = e.target.files?.length ?? 0;
+    queue.add(e.target.files); e.target.value = "";
+    if (had > 0 && usesTouch()) setAgain(kind);
+  };
+  const camera = (cls: string, label: string, kind: "photo" | "video", icon: ReactElement, aria = label) => (
+    <label className={cls}>
+      {icon}<span className={cls === row ? "flex-1" : undefined}>{label}</span>
+      <input type="file" accept={kind === "video" ? "video/*" : ACCEPT} capture="environment" className="sr-only" aria-label={aria} disabled={disabled} onChange={shot(kind)} />
+    </label>
+  );
+  const album = (cls: string, label: string) => (
+    <label className={cls}>
+      <Images size={16} aria-hidden="true" /><span className={cls === row ? "flex-1" : undefined}>{label}</span>
+      <input type="file" accept={albumAccept} multiple className="sr-only" aria-label="Choose from album" disabled={disabled}
+        onChange={(e) => { queue.add(e.target.files); e.target.value = ""; setAgain(null); }} />
+    </label>
+  );
   return (
-    <div className={cn("flex gap-2", disabled && "pointer-events-none opacity-50", className)}>
-      <label className={button}>
-        <Camera size={16} aria-hidden="true" />{queue.jobs.length > 0 ? "Take another" : "Take photo"}
-        {/* After a shot the camera comes straight back on a phone, until it is cancelled. A browser may refuse: the button stays. */}
-        <input ref={camera} type="file" accept={ACCEPT} capture="environment" className="sr-only" aria-label="Take photo" disabled={disabled}
-          onChange={(e) => { queue.add(e.target.files); e.target.value = ""; if (usesTouch()) window.setTimeout(() => camera.current?.click(), 0); }} />
-      </label>
-      <label className={button}>
-        <Images size={16} aria-hidden="true" />From album
-        <input type="file" accept={ACCEPT} multiple className="sr-only" aria-label="Choose from album" disabled={disabled}
-          onChange={(e) => { queue.add(e.target.files); e.target.value = ""; }} />
-      </label>
-    </div>
+    <>
+      <div className={cn("flex gap-2", disabled && "pointer-events-none opacity-50", className)}>
+        {camera(button, queue.jobs.length > 0 ? "Take another" : "Take photo", "photo", <Camera size={16} aria-hidden="true" />, "Take photo")}
+        {video && camera(button, "Record video", "video", <Video size={16} aria-hidden="true" />)}
+        {album(button, "From album")}
+      </div>
+      {again && (
+        <div role="dialog" aria-label="Add another" className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={() => setAgain(null)}>
+          <div className="flex w-full flex-col gap-2 rounded-t-2xl bg-surface p-4 pb-6" onClick={(e) => e.stopPropagation()}>
+            <span className="mb-1 text-[12px] text-ink-secondary">{queue.jobs.length} on this job so far. Uploads keep going in the background.</span>
+            {again === "video"
+              ? camera(row, "Record another", "video", <Video size={18} aria-hidden="true" />)
+              : camera(row, "Take another", "photo", <Camera size={18} aria-hidden="true" />)}
+            {video && (again === "video"
+              ? camera(row, "Take a photo", "photo", <Camera size={18} aria-hidden="true" />)
+              : camera(row, "Record a video", "video", <Video size={18} aria-hidden="true" />))}
+            {album(row, "From album")}
+            <button type="button" onClick={() => setAgain(null)} className="mt-2 min-h-[48px] rounded-md bg-ink text-[14px] font-semibold text-white">Done</button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

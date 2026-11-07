@@ -986,7 +986,7 @@ function ProductionOrderDetailV2ReadOnly() {
                 dense
                 title={`Progress${progress.label ? ` · ${progress.label}` : ""}`}
                 actions={canAct ? (
-                  <PhotoAddButtons queue={photos} />
+                  <PhotoAddButtons queue={photos} video />
                 ) : undefined}
               >
                 <div>
