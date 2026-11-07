@@ -7,6 +7,7 @@ import { GRN_STATUS_BUCKETS } from '../lib/grn-status-buckets';
 import { GRN_HEADER_COLS, GRN_LIST_SELECT, grnListSelect, filterGrnList, orderGrnList, readGrnListFilters } from '../lib/grn-list-read'; import { attachGrnLines } from '../lib/grn-export-rows';
 import { HELD_OR_TERM, isDocumentHeld } from '../lib/document-hold';
 import { isReceivablePo } from '../lib/source-document-gates'; import { mountHoldRoute } from './document-hold-routes';
+import { voChangeWaiting } from '../lib/renovation-po-change-guard';
 import type { Context } from 'hono';
 import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
@@ -1449,6 +1450,8 @@ grns.post('/', async (c) => {
           return refuseWithoutWriting(c, { error: 'po_not_receivable', poItemId: r.id, status: po?.status ?? null, onHold: isDocumentHeld(po) }, 409);
         }
       }
+      const changeWaiting = await voChangeWaiting(sb, [...acceptedByPoItem.keys()]);
+      if (changeWaiting) return refuseWithoutWriting(c, changeWaiting, 409);
       const remByPoItem = new Map<string, number>(
         ((poItems ?? []) as Array<{ id: string; qty: number; received_qty: number }>)
           .map((r) => [r.id, (r.qty ?? 0) - (r.received_qty ?? 0)]),
@@ -1761,6 +1764,9 @@ export const createGrnFromPosHandler = async (c: Context<{ Bindings: Env; Variab
 
   if (itemList.length === 0) return refuseWithoutWriting(c, { error: 'nothing_outstanding', message: 'No outstanding lines came back for this PO. Open it and check its received balance before treating it as received in full.' }, 400); // Refusing is right; the VERDICT was not. This read is company-scoped and scopeToCompany fails closed, so [] arrives with error: null whether the order is settled or the company could not be resolved. Five siblings in purchase-returns / purchase-consignment-* were reworded with it; audit:empty-state-claims keeps them honest.
 
+  const changeWaiting = await voChangeWaiting(sb, itemList.map((it) => it.id));
+  if (changeWaiting) return refuseWithoutWriting(c, changeWaiting, 409);
+
   // Conts C6: a copied line's code must still be in Products.
   {
     const unknownCodes = await unknownProductCodeRefusal(sb, itemList.map((it) => ({ code: it.item_code, kind: it.material_kind })), activeCompanyId(c));
@@ -1975,6 +1981,8 @@ export const postGrnHandler = async (c: any) => {
     .select('purchase_order_item_id').eq('grn_id', id);
   const poItemIds = ((gLines ?? []) as Array<{ purchase_order_item_id: string | null }>)
     .map((l) => l.purchase_order_item_id);
+  const changeWaiting = await voChangeWaiting(sb, poItemIds);
+  if (changeWaiting) return refuseWithoutWriting(c, changeWaiting, 409);
   const over = await verifyGrnOverReceipt(sb, id, poItemIds);
   if (over) {
     return refuseWithoutWriting(c, { error: 'qty_exceeds_remaining', poItemId: over.poItemId, requested: over.requested, remaining: over.remaining }, 409);

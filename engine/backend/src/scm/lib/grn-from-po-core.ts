@@ -33,6 +33,7 @@ import { todayMyt } from './my-time';
 import { normalizeAllocationMethod } from './landed-allocation';
 import { assertForeignRatePostable } from './fx-guard';
 import { effectiveDelivery } from '../shared';
+import { voChangeWaiting } from './renovation-po-change-guard';
 
 export type GrnFromPoItemsContext = {
   req: { json(): Promise<unknown> };
@@ -169,6 +170,9 @@ export async function createDraftGrnsFromPoItemsCore(
       return { ok: false, status: 409, body: { error: 'po_not_receivable', poItemId: p.poItemId, status: row.po.status, onHold: isDocumentHeld(row.po) } };
     }
   }
+
+  const changeWaiting = await voChangeWaiting(sb, picks.map((p) => p.poItemId));
+  if (changeWaiting) return { ok: false, status: 409, body: changeWaiting };
 
   // Conts C6: a copied line's code must still be in Products.
   const unknownCodes = await unknownProductCodeRefusal(sb, itemList.map((r) => ({ code: r.item_code, kind: r.material_kind })), activeCompanyId(c));

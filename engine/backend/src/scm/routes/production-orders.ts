@@ -49,6 +49,7 @@ import { scmAreaAllows } from '../middleware/area-guard';
 import { checkReturn, filterProductionTab, holidaySet, materialVerdict, progressOf, stockStatusOf, validHours, wholeNeed, type MaterialState, type PoLink, type ReturnLine } from '../lib/renovation-production';
 import { filterProductionList } from '../lib/production-list-read';
 import { PRODUCTION_DOC, issueMaterials, returnMaterial, reverseIssues } from '../lib/renovation-production-stock';
+import { voChangeWaiting } from '../lib/renovation-po-change-guard';
 
 export const productionOrders = new Hono<{ Bindings: Env; Variables: Variables }>();
 productionOrders.use('*', supabaseAuth);
@@ -1583,6 +1584,12 @@ productionOrders.post('/:id/complete', async (c) => {
   if (o.status !== 'SUBMITTED') return c.json({ error: 'validation', message: `Only an order in production can be completed (this one is ${o.status.toLowerCase()}).` }, 409);
   if (o.on_hold) return c.json({ error: 'validation', message: 'This production order is on hold. Take it off hold first.' }, 409);
   if (!o.actual_start_at && !o.completion_step) return c.json({ error: 'not_started', message: 'Press Start first: that is when its stock leaves.' }, 409);
+  if (o.source_po_id) {
+    const { data: poLines, error: poErr } = await sb.from('purchase_order_items').select('id').eq('purchase_order_id', o.source_po_id);
+    if (poErr) return c.json({ error: 'load_failed', message: 'The PO could not be read. Try again.' }, 500);
+    const waiting = await voChangeWaiting(sb, ((poLines ?? []) as Array<{ id: string }>).map((l) => l.id));
+    if (waiting) return c.json(waiting, 409);
+  }
   /* One step at a time: a second press, or a retry while the first still runs, finds the lock and stops. */
   const stale = new Date(Date.now() - 120_000).toISOString();
   const { data: locked } = await scopeToCompanyId(sb.from('production_orders').update({ completion_lock_at: new Date().toISOString() }).eq('id', o.id), co.companyId)
