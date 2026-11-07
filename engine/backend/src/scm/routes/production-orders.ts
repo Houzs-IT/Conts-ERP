@@ -1155,6 +1155,9 @@ productionOrders.patch('/:id/items/:itemId', async (c) => {
   if (prev.source_po_item_id && it.itemCode !== undefined && String(it.itemCode ?? '') !== String(prev.item_code ?? '')) {
     return c.json({ error: 'follows_po', message: 'This line follows its PO: change the SKU there.' }, 409);
   }
+  if (prev.source_po_item_id && it.qty !== undefined && Number(it.qty) !== Number(prev.qty)) {
+    return c.json({ error: 'follows_po', message: 'Change it on the PO: this line follows its PO, and Complete receives what the PO says.' }, 409);
+  }
   const parsedEdit = parseLineNumbers({
     qty: { value: it.qty !== undefined ? it.qty : prev.qty },
     unitPriceSen: { value: it.unitPriceSen !== undefined ? it.unitPriceSen : prev.unit_price_sen },
