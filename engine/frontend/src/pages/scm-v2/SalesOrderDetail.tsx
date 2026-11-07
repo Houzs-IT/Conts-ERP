@@ -47,7 +47,7 @@ import { addLineHref } from '../../vendor/scm/lib/add-line-handoff';
 import { RenovationSoOrderInfo } from './RenovationSoOrderInfo';
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from './renovationSoAreaLines';
 import { SoInstalments, instalmentRows, nextInstalmentSen, paymentSlots, useSoInstalments } from './renovationSoInstalments';
-import { ContractSections, InstalmentBillDialog } from '../renovation/RenovationSalesOrder';
+import { ContractQuickLinks, ContractSections, InstalmentBillDialog } from '../renovation/RenovationSalesOrder';
 import { useBrands, useContract } from '../../lib/renovation/api';
 import { SPEC_LOCKED_NOTE } from '../renovation-beta/renovationBetaLines';
 import {
@@ -55,6 +55,7 @@ import {
   displayStatusFor, fmtMoney, refOf, soLineColumns,
 } from './soDetailParts';
 import { SoPrintPreview, useSoPrintLayout } from './soPrintPreview';
+import { soPdfContract } from './soPdfDownload';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { useSetBreadcrumbs } from '../../hooks/useBreadcrumbs';
 import { canonicalizeVariants, fmtDate, fmtMoneySen, fmtSen, missingVariantAxes } from '@2990s/shared'; // Commander 2026-05-28
@@ -122,6 +123,7 @@ import { paymentSaveOutcome } from '../../vendor/scm/lib/payment-save-outcome';
 import { completePaymentRetryDraft, consumePaymentRetryNavigationState, readPaymentRetryHandoff, readPaymentRetryNavigationState } from '../../lib/paymentRetryHandoff';
 import { DocumentRelationshipMapModal, DocumentChoiceDialog } from '../../components/scm-v2/DocumentRelationshipMapModal';
 import { useSoRelationshipMap } from './so-relationship-map';
+import { RenovationDocTrail } from './RenovationDocTrail';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
 import { usePrompt } from '../../vendor/scm/components/PromptDialog';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
@@ -2093,10 +2095,7 @@ export const SalesOrderDetail = () => {
     const pwpCodes = ((detail.data as { pwpCodes?: unknown[] } | undefined)?.pwpCodes ?? []) as never;
     const contract = contractQ.data;
     const brand = brandsQ.data?.brands.find((b) => b.brandId === contract?.header.brandId);
-    const pdfContract = contract && brand ? {
-      brandName: brand.name, logoKey: brand.logoR2Key, letterhead: [...brand.companyLines, brand.contactLine].filter(Boolean), bankLine: brand.bankLine, termsLines: brand.termsLines,
-      instalments: contract.instalments.map((i) => ({ label: i.label, percent: `${i.pctBp / 100}%`, description: i.description })),
-    } : undefined;
+    const pdfContract = soPdfContract(contract, brand);
     /* Loaded here, not at the top: the PDF library has no business on a page that may never print. */
     return import('../../vendor/scm/lib/sales-order-pdf')
       .then(({ generateSalesOrderPdf }) => generateSalesOrderPdf(header, lineRows, payments, action, pwpCodes, { ...printLayoutState.pdfOpts, contract: pdfContract }))
@@ -2241,7 +2240,7 @@ export const SalesOrderDetail = () => {
         meta={headerMeta}
         onBack={() => { void goBack(); }}
         /* mig 0324 — the hold marker sits BESIDE the status, never instead of it. */
-        chips={<><HoldChip onHold={(header as { on_hold?: boolean | null }).on_hold} reason={(header as { hold_reason?: string | null }).hold_reason} /><ProductionOrderChips soDocNo={header.doc_no} /></>}
+        chips={<><HoldChip onHold={(header as { on_hold?: boolean | null }).on_hold} reason={(header as { hold_reason?: string | null }).hold_reason} /><ProductionOrderChips soDocNo={header.doc_no} />{header.so_kind === 'RENOVATION' && (can('scm.access') || pageAccess('scm.sales.orders') !== 'none') && <ContractQuickLinks docNo={header.doc_no} />}</>}
         actions={
           <>
             <Button variant="ghost" icon={<History size={14} />} onClick={() => setHistoryOpen(true)}>History</Button>
@@ -2568,6 +2567,7 @@ export const SalesOrderDetail = () => {
             </DetailAside>
           </DetailGrid>
 
+          <RenovationDocTrail kind="so" id={header.doc_no} />
           {/* Line items, full width in both modes: the edit rows need it, and Edit must not move the section. */}
           <Section
             title={`Line items · ${isEditing ? visibleLines.total : lineRows.length}`}

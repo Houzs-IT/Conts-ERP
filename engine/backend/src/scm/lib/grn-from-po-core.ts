@@ -33,6 +33,7 @@ import { todayMyt } from './my-time';
 import { normalizeAllocationMethod } from './landed-allocation';
 import { assertForeignRatePostable } from './fx-guard';
 import { effectiveDelivery } from '../shared';
+import { voChangeWaiting } from './renovation-po-change-guard';
 
 export type GrnFromPoItemsContext = {
   req: { json(): Promise<unknown> };
@@ -70,6 +71,23 @@ export async function inHouseSupplierId(sb: unknown, c: unknown): Promise<string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- called from routes with differently typed clients
   const { data } = await scopeToCompany((sb as any).from('suppliers').select('id').eq('code', 'INHOUSE'), c as never).maybeSingle();
   return (data as { id: string } | null)?.id ?? null;
+}
+
+/** POs among `poIds` that have a production order: those close by Complete. A Built-in PO to In-house has none (0243). */
+export async function posWithProductionOrder(sb: unknown, poIds: readonly string[]): Promise<ReadonlySet<string>> {
+  if (poIds.length === 0) return new Set();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- called from routes with differently typed clients
+  const { data, error } = await (sb as any).from('production_orders').select('source_po_id').in('source_po_id', [...new Set(poIds)]);
+  if (error) throw new Error(`production_order_read_failed: ${error.message}`);
+  return new Set(((data ?? []) as Array<{ source_po_id: string }>).map((r) => r.source_po_id));
+}
+
+/** May this receipt be refused as in-house work? A receipt to our own team with no PO behind it, or for a PO with a
+    production order, is; a PO with none is received like any other. */
+export async function inHouseReceiptRefused(sb: unknown, c: unknown, supplierId: unknown, poIds: readonly string[]): Promise<boolean> {
+  if (!supplierId || supplierId !== await inHouseSupplierId(sb, c)) return false;
+  if (poIds.length === 0) return true;
+  return (await posWithProductionOrder(sb, poIds)).size > 0;
 }
 
 export const IN_HOUSE_PO_REFUSAL = {
@@ -135,7 +153,8 @@ export async function createDraftGrnsFromPoItemsCore(
 
   if (!opts.fromProductionOrder) {
     const inHouse = await inHouseSupplierId(sb, c);
-    if (inHouse && itemList.some((r) => r.po.supplier_id === inHouse)) return { ok: false, status: 409, body: IN_HOUSE_PO_REFUSAL };
+    const own = itemList.filter((r) => r.po.supplier_id === inHouse);
+    if (inHouse && own.length > 0 && (await posWithProductionOrder(sb, own.map((r) => r.purchase_order_id))).size > 0) return { ok: false, status: 409, body: IN_HOUSE_PO_REFUSAL };
   }
 
   // Validate every pick — qty > 0 and qty ≤ remaining.
@@ -151,6 +170,9 @@ export async function createDraftGrnsFromPoItemsCore(
       return { ok: false, status: 409, body: { error: 'po_not_receivable', poItemId: p.poItemId, status: row.po.status, onHold: isDocumentHeld(row.po) } };
     }
   }
+
+  const changeWaiting = await voChangeWaiting(sb, picks.map((p) => p.poItemId));
+  if (changeWaiting) return { ok: false, status: 409, body: changeWaiting };
 
   // Conts C6: a copied line's code must still be in Products.
   const unknownCodes = await unknownProductCodeRefusal(sb, itemList.map((r) => ({ code: r.item_code, kind: r.material_kind })), activeCompanyId(c));

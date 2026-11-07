@@ -7,6 +7,7 @@ import { lineIdentity, orderLineIdentity } from "@2990s/shared";
 import { buildVariantSummary } from "../vendor/shared/variant-summary";
 import { formatPhone } from "@2990s/shared/phone";
 import { authedFetch } from "../vendor/scm/lib/authed-fetch";
+import { afterOnsiteConfirm, onsiteConfirmKind } from "../vendor/scm/lib/onsite-twin-queries";
 import { usePoSoCoverage, originsByCode, provenanceByCode, storedLinkSkus, deliveredByCode, type OriginAssignment } from "../vendor/scm/lib/flow-queries";
 import { CommittedBatchRowMobile, PairedSoRowsMobile, SourcePosRowMobile, SubstitutedRowMobile } from "./source-chips"; import { MobileLinePoFacts, mobilePiPoPriceNotice } from "./MobileLinePoRef";
 import { MobileRelationshipMap } from "./MobileRelationshipMap";
@@ -1282,6 +1283,8 @@ function DocActionFooter({ moduleKey, id, header, invalidate, onPOD, onDeleted }
       }
       refresh();
       void notify({ title: "Done" });
+      const twin = onsiteConfirmKind(moduleKey, action.key);
+      if (twin) afterOnsiteConfirm(twin, id, refresh);
     },
     /* A zero-cost receipt refusal is the one error here that CAN be answered on
        this screen: the sheet carries the same sentence plus the two remedies the

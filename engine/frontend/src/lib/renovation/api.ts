@@ -185,18 +185,6 @@ export interface VoView {
   sections: DocSection[]; totals: { addSen: number; omitSen: number; netSen: number };
 }
 
-export interface SplitLine {
-  lineId: string; soItemId: string; itemCode: string; description: string; description2: string | null; uom: string; qty: number;
-  unitCostSen: number; amountSen: number; supplierId: string | null; reason?: string;
-}
-export interface SplitPreview {
-  /* One PO per supplier and category group (mig 0116). */
-  groups: Array<{ categoryGroup?: string; supplierId: string; supplierCode: string; supplierName: string; lines: SplitLine[]; totalSen: number }>;
-  blocked: SplitLine[]; skipped: SplitLine[]; alreadyOrdered: SplitLine[];
-  /* Goods with no supplier: not ordered by this raise (older servers do not send it). */
-  unsupplied?: SplitLine[];
-}
-
 export interface PoFlag {
   id: string; action: 'AMEND' | 'CANCEL'; newQty: number | null; status: 'OPEN' | 'RESOLVED'; note: string; createdAt: string;
   resolvedAt: string | null; voNo: string; poNumber: string; purchaseOrderId: string; itemCode: string; qty: number;
@@ -264,7 +252,6 @@ export const qk = {
   templates: ['reno', 'templates'] as const,
   template: (id: string) => ['reno', 'template', id] as const,
   contract: (docNo: string) => ['reno', 'contract', docNo] as const,
-  poSplit: (docNo: string) => ['reno', 'po-split', docNo] as const,
   poFlags: (docNo: string) => ['reno', 'po-flags', docNo] as const,
   vo: (id: string) => ['reno', 'vo', id] as const,
   terms: ['reno', 'terms'] as const,
@@ -294,10 +281,6 @@ export function useTemplate(id: string | undefined) {
 
 export function useContract(docNo: string | undefined) {
   return useQuery({ queryKey: qk.contract(docNo ?? ''), queryFn: () => renoGet<ContractView>(`/sales-orders/${encodeURIComponent(docNo!)}`), enabled: Boolean(docNo) });
-}
-
-export function usePoSplit(docNo: string | undefined, enabled: boolean) {
-  return useQuery({ queryKey: qk.poSplit(docNo ?? ''), queryFn: () => renoGet<SplitPreview>(`/sales-orders/${encodeURIComponent(docNo!)}/po-split`), enabled: Boolean(docNo) && enabled });
 }
 
 /** How a contract change was posted to the project's accounts, as convert / VO approve / post-contract answer it. */

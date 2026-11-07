@@ -1660,7 +1660,8 @@ inventory.get('/reservations', async (c) => {
   try {
     const mrp = await computeMrp(sb, {
       catFilter: null,
-      whFilter: warehouseId ?? null,
+      /* Stock is pooled, so one warehouse's lots answer to demand from every warehouse. */
+      whFilter: null,
       includeUndated: true,
       companyId: activeCompanyId(c),
       leadBuffers: await loadLeadBuffers(c.env.DB),

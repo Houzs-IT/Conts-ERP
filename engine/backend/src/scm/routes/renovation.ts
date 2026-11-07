@@ -24,7 +24,10 @@ import {
 import { convertQuotationToSo, patchContract, readContract, setContractStatus, type RenoSoStatus } from '../lib/renovation-so';
 import { previewPoSplit, raisePos } from '../lib/renovation-po-split';
 import { billingView, billInstalment, creditContract } from '../lib/renovation-billing';
+import { applyCustomerCreditToSi } from '../lib/customer-credits';
+import { recomputeSiPaid } from '../lib/si-order-deposit';
 import { applyVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
+import { voucherForPoPayment } from '../lib/renovation-po-voucher';
 import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule } from '../lib/renovation-po-schedule';
 import { listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
@@ -325,14 +328,18 @@ renovation.post('/sales-orders/:docNo/status', handle(PERM.quote, async (c, { tx
   if (!s.success) throw new RenoError(400, 'invalid_status', 'Unknown contract status.');
   const actor = actorOf(c);
   const docNo = param(c, 'docNo');
-  if (s.data === 'CANCELLED') {
-    /* A billed contract needs finance; the contract and every issued document on it must be posted first, so the
-       clearing after commit sees the whole advance (acc/reno-ledger cancelGate). */
-    const gate = await cancelGate(c.get('supabase'), { companyId: actor.companyId, soDocNo: docNo, isFinance: hasHouzsPerm(c, FINANCE_POST) });
-    if (!gate.ok) throw new RenoError(gate.status === 'forbidden' ? 403 : gate.status === 'load_failed' ? 503 : 409, gate.status, gate.reason);
-  }
-  const out = await tx((db) => setContractStatus(db, actor, docNo, s.data as RenoSoStatus, typeof b.note === 'string' ? b.note : undefined));
-  if (out.status !== 'CANCELLED') return c.json(out);
+  const note = typeof b.note === 'string' ? b.note : undefined;
+  if (s.data === 'CANCELLED') return c.json(await cancelContract(c, tx, docNo, note));
+  return c.json(await tx((db) => setContractStatus(db, actor, docNo, s.data as RenoSoStatus, note)));
+}));
+
+/* A billed contract needs finance; the contract and every issued document on it must be posted first, so the clearing
+   after commit sees the whole advance (acc/reno-ledger cancelGate). */
+async function cancelContract(c: C, tx: <T>(f: (db: RenoDb) => Promise<T>) => Promise<T>, docNo: string, note?: string) {
+  const actor = actorOf(c);
+  const gate = await cancelGate(c.get('supabase'), { companyId: actor.companyId, soDocNo: docNo, isFinance: hasHouzsPerm(c, FINANCE_POST) });
+  if (!gate.ok) throw new RenoError(gate.status === 'forbidden' ? 403 : gate.status === 'load_failed' ? 503 : 409, gate.status, gate.reason);
+  const out = await tx((db) => setContractStatus(db, actor, docNo, 'CANCELLED', note));
   /* After commit: clear the part never invoiced from the advance (acc/reno-ledger). A refusal is reported, never
      thrown; finance posts it again from the contract. */
   let posting: { status: string; reason?: string };
@@ -342,8 +349,15 @@ renovation.post('/sales-orders/:docNo/status', handle(PERM.quote, async (c, { tx
   } catch (err) {
     posting = { status: 'post_failed', reason: err instanceof Error ? err.message : String(err) };
   }
-  return c.json({ ...out, posting });
-}));
+  return { ...out, posting };
+}
+
+/** The end of a contract's cancel request: the SO status route's approvals have passed, so this is the cancel itself. */
+export const cancelContractFromSoRoute = (c: C, docNo: string): Promise<Response> =>
+  handle(null, async (ctx, { tx }) => {
+    const b = (await ctx.req.json().catch(() => ({}))) as { reason?: unknown };
+    return ctx.json(await cancelContract(ctx, tx, docNo, typeof b.reason === 'string' ? b.reason : undefined));
+  })(c);
 
 /* Finance: a credit note that lowers the contract (a special discount, less work, a refund). Needs the billing
    permission and finance's posting permission; the journal posts after commit. */
@@ -391,6 +405,27 @@ renovation.post('/sales-orders/:docNo/po-split', handle(PERM.poSplit, async (c, 
 renovation.get('/sales-orders/:docNo/billing', handle(null, async (c, { sqlRead }) =>
   c.json(await billingView(sqlRead, param(c, 'docNo'), actorOf(c).companyId))));
 
+/* A paid invoice that was cancelled left its money as customer credit, and a new bill spends it as every other invoice does.
+   After commit, because a failure must not undo the bill: the credit stands and the invoice reads unpaid. */
+async function spendCustomerCredit(c: Context<{ Bindings: Env; Variables: Variables }>, siId: string): Promise<number> {
+  const sb = c.get('supabase');
+  try {
+    const { data, error } = await sb.from('sales_invoices').select('invoice_number, total_sen, paid_sen, debtor_code, debtor_name').eq('id', siId).maybeSingle();
+    if (error) throw new Error(error.message);
+    const si = data as { invoice_number: string; total_sen: number; paid_sen: number | null; debtor_code: string | null; debtor_name: string | null } | null;
+    if (!si?.debtor_code) return 0;
+    const res = await applyCustomerCreditToSi(sb, {
+      debtorCode: si.debtor_code, debtorName: si.debtor_name, siId, siNumber: si.invoice_number,
+      remainingDueSen: Math.max(0, Number(si.total_sen) - Number(si.paid_sen ?? 0)), createdBy: c.get('user')?.id,
+    });
+    if (res.applied > 0) await recomputeSiPaid(sb, siId);
+    return res.applied;
+  } catch (e) {
+    console.error('[customer-credit] apply-on-bill failed', siId, e);
+    return 0;
+  }
+}
+
 renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(PERM.bill, async (c, { tx }) => {
   const b = await json(c);
   const actor = actorOf(c);
@@ -411,9 +446,10 @@ renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(PERM.bill, a
   } catch (err) {
     posting = { status: 'post_failed', reason: err instanceof Error ? err.message : String(err) };
   }
+  const creditApplied = result.kind === 'INVOICE' && result.salesInvoiceId ? await spendCustomerCredit(c, result.salesInvoiceId) : 0;
   const einvoice = result.kind === 'INVOICE' ? await warningAfterPosting(c, actor, 'INVOICE', result.invoiceNumber)
     : result.kind === 'CREDIT_NOTE' ? await warningAfterPosting(c, actor, 'CREDIT_NOTE', result.noteNumber) : null;
-  return c.json({ ...result, posting, einvoiceWarning: einvoice }, 201);
+  return c.json({ ...result, posting, creditApplied, einvoiceWarning: einvoice }, 201);
 }));
 
 /* ── Variation orders ───────────────────────────────────────────────────── */
@@ -512,7 +548,9 @@ renovation.post('/po-instalments/:id/release', handle(PERM.bill, async (c, { tx 
 
 renovation.post('/po-instalments/:id/payments', handle(PERM.bill, async (c, { tx }) => {
   const b = await json(c);
-  return c.json(await tx((db) => recordPoPayment(db, actorOf(c), param(c, 'id'), {
+  const paid = await tx((db) => recordPoPayment(db, actorOf(c), param(c, 'id'), {
     amountSen: intParam(b.amountSen, 'amountSen'), paidOn: b.paidOn ?? null, paymentVoucherId: b.paymentVoucherId ?? null, note: typeof b.note === 'string' ? b.note : '',
-  })), 201);
+  }));
+  const voucher = paid.voucher ? await voucherForPoPayment(c, paid.id, paid.voucher) : null;
+  return c.json({ id: paid.id, voucher }, 201);
 }));

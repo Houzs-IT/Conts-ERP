@@ -7,7 +7,7 @@ export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
 /** `icon`: drawn only in the phone menu, where each screen is its own row; the desktop shows its category's icon. */
-export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey; icon?: string }
+export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey; icon?: string; phoneOnly?: boolean }
 /** `full`: the screen's data is for roles with Full on its area (the server refuses Edit), so it is shown only then.
  *  `fresh`: a newly added screen, marked New in the desktop menu. */
 export interface NavItem {
@@ -243,6 +243,7 @@ export const NAV: NavGroup[] = [
     { key: 'scProduction', label: 'Production', icon: 'factory', area: 'scProcurement', children: [
       { key: 'productionOrders', label: 'Production orders', icon: 'clipboard-list', path: '/production/production-orders' },
       { key: 'skuComposition', label: 'SKU Composition', icon: 'clipboard-list', path: '/production/sku-composition' },
+      { key: 'draftDelivery', label: 'Draft delivery', icon: 'truck', path: '/production/draft-delivery', phoneOnly: true },
     ] },
     { key: 'scTransportPlan', label: 'Transportation', icon: 'truck', area: 'scTransportPlan', children: [
       { key: 'deliveryPlanning', label: 'Delivery planning', icon: 'route', path: '/transport/planning' },

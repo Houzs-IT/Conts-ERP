@@ -21,8 +21,12 @@ import { inArm } from './so-ref-search';
 const BUCKETS: Readonly<Record<string, string[] | undefined>> = DO_STATUS_BUCKETS;
 
 /** The list's filter contract, as the query string carries it. */
+/** The type tabs (owner, 6 Nov 2026); values of the computed field scm.do_list_type (migration 0239). */
+export const DO_LIST_TYPES = ['works_pod', 'furniture', 'loose'] as const;
+
 export type DoListParams = {
   status: string | null;
+  type: string | null;
   q: string | null;
   sort: string | null;
   from: string | null;
@@ -56,6 +60,7 @@ function jsonArrayParam(v: string | undefined): string[] | null {
 export function readDoListParams(query: (key: string) => string | undefined): DoListParams {
   return {
     status: param(query('status')),
+    type: (DO_LIST_TYPES as readonly string[]).includes(query('type') ?? '') ? query('type')! : null,
     q: param(query('q')),
     sort: param(query('sort')),
     from: param(query('from')),
@@ -118,6 +123,7 @@ export function filterDoList<Q>(q: Q, p: DoListParams, c: CompanyScopeCtx, scope
     else if (BUCKETS[status]) out = out.in('status', BUCKETS[status]);
     else out = out.eq('status', status);
   }
+  if (p.type) out = out.eq('do_list_type', p.type);
   /* free-text search over the columns the list's search matches: customer
      name, phone, the linked SO reference, and the doc numbers. */
   if (p.q) {

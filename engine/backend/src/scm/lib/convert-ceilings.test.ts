@@ -206,7 +206,7 @@ describe('SO -> PO ceiling (qty - po_qty_picked)', () => {
     };
 
     test('POST /:id/items calls the remaining-qty guard', () => {
-      expect(handler("mfgPurchaseOrders.post('/:id/items'")).toContain('soLineOverConvertRefusal');
+      expect(handler('export const addPoLineHandler')).toContain('soLineOverConvertRefusal');
     });
 
     test('PATCH /:id/items/:itemId calls the remaining-qty guard', () => {

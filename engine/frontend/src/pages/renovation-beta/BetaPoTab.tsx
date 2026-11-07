@@ -14,9 +14,9 @@
    PO change. */
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { ProductionOrderChips } from "../scm-v2/ProductionOrderChips";
-import { AlertTriangle, Calculator, Camera, ChevronDown, ChevronRight, Download, FilePlus2, Pencil } from "lucide-react";
+import { AlertTriangle, Camera, ChevronDown, ChevronRight, FileDown, Pencil } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { buildQueryKey, useQuery } from "../../hooks/useQuery";
 import { useQueryClient } from "@tanstack/react-query";
@@ -30,14 +30,14 @@ import { DocCell, useOpenDoc, type DocTab } from "./BetaLineDocs";
 import { betaSiteApi } from "./renovationBetaSiteApi";
 import { betaMediaApi } from "./renovationBetaMediaApi";
 import { PhotoUploadDialog, type UploadTarget } from "./BetaPhotoUpload";
-import { BetaQuantityHelper } from "./BetaQuantityHelper";
 import { BetaLineMaterials } from "./BetaLineMaterials";
+import { LineApprovedDrawings } from "./BetaApprovedDrawings";
 import { BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
   amountAfter, byAreaBlocks, byCategory, livePo, specLocked, SPEC_LOCKED_NOTE, dateFixedReason, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
-  linesApi, linesCsv, postVo, refusalText, withDate,
+  linesApi, postVo, refusalText, withDate,
   contractLineEdits, postContractLines, variantsAfter, voBatches,
   type LineEdit, type LinesAnswer, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
@@ -47,6 +47,7 @@ import { BetaLoading } from "./BetaLoading";
 import { SoStockPill } from "../../components/SoSourceChips";
 import type { SoLineCoverage } from "../../vendor/scm/lib/sales-order-queries";
 import { useProjectLineStock } from "./renovationBetaStock";
+import { downloadSoPdfs } from "../scm-v2/soPdfDownload";
 import { bandParts, columnWidth, moveColumn, usePoColumns, type PoColumn } from "./renovationPoColumns";
 
 /** One colour per category band, in the mockup's spirit: [bar, band background, text]. */
@@ -89,7 +90,6 @@ function useWidth(): [(el: HTMLDivElement | null) => void, number] {
 type PlanDate = "orderOn" | "deliverOn";
 
 export function BetaPoTab(p: BetaTabProps): ReactElement {
-  const { pathname } = useLocation();
   const q = useQuery(["renovation-beta", "lines", p.projectId], () => linesApi.lines(p.projectId), [p.projectId]);
   const queryClient = useQueryClient();
   /* A saved date or supplier shows on its lines at once, before the reload answers: under load the reload can be slow,
@@ -118,7 +118,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [materialsOf, setMaterialsOf] = useState<ManagedLine | null>(null);
-  const [helping, setHelping] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [wrapRef, width] = useWidth();
 
   const lines = q.data?.lines ?? [];
@@ -140,7 +140,6 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const editable = p.canWrite && editing;
   const columns = d.finance ? order : order.filter((c) => c !== "amount");
   const toggle = (key: string): void => setClosed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  const allKeys = tree.map((c) => c.key);
   const setEdit = (id: string, patch: Partial<LineEdit>): void => setEdits((e) => ({ ...e, [id]: { ...e[id], ...patch } }));
   const nextVo = (vo.data?.vos.length ?? 0) + 1;
   const voLabel = (i: number): string => `VO-${String(nextVo + i).padStart(2, "0")}`;
@@ -267,13 +266,10 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     finally { setBusyKey(null); }
   };
 
-  const exportCsv = (): void => {
-    const blob = new Blob(["﻿", linesCsv(lines, d.finance)], { type: "text/csv;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `project-${p.projectId}-lines.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+  /* The sales order's own PDF, as its page downloads it; one file per order of the project. */
+  const exportPdf = async (): Promise<void> => {
+    setExporting(true);
+    try { await downloadSoPdfs(d.sos); } catch (e) { p.onError(refusalText(e)); } finally { setExporting(false); }
   };
 
   const changedCount = batches.reduce((n, b) => n + b.lines.length, 0);
@@ -287,7 +283,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
 
   const deliveries = site.data?.deliveries ?? [];
   const cell = (l: ManagedLine): RowCtx => ({
-    l, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
+    l, projectId: p.projectId, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
     setEdit: (patch) => setEdit(l.id, patch), openMaterials: () => setMaterialsOf(l), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
     stock: stockByLine.get(l.id),
@@ -297,7 +293,6 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   return (
     <>
       <style>{DATE_CSS}</style>
-      {helping && <BetaQuantityHelper onClose={() => setHelping(false)} />}
       <WsPageHead
         title="SO"
         sub={editing
@@ -308,17 +303,10 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
             {p.canWrite && lines.length > 0 && !editing && (
               <button type="button" style={btnStyle("dark", "sm")} onClick={() => { setEditing(true); setResult(null); }}><Pencil size={14} aria-hidden="true" />Edit</button>
             )}
-            {tree.length > 0 && <button type="button" style={btnStyle("outline", "sm")} onClick={() => setClosed(closed.size ? new Set() : new Set(allKeys))}>{closed.size ? "Open all" : "Close all"}</button>}
             {p.canWrite && (photos.data?.docs.pos.length ?? 0) > 0 && (
               <button type="button" style={btnStyle("outline", "sm")} onClick={() => setUploading({ kind: "po", id: photos.data?.docs.pos[0]?.id ?? "" })}><Camera size={14} aria-hidden="true" />Upload photos</button>
             )}
-            {lines.length > 0 && <button type="button" style={btnStyle("outline", "sm")} onClick={exportCsv}><Download size={14} aria-hidden="true" />Export</button>}
-            <button type="button" style={btnStyle("outline", "sm")} onClick={() => setHelping(true)}><Calculator size={14} aria-hidden="true" />Quantity helper</button>
-            {needPo.length > 0 && d.sos.map((s) => (
-              <Link key={s.docNo} to={s.renovation ? `/scm/sales-orders/${encodeURIComponent(s.docNo)}#po-split` : "/scm/purchase-orders/from-so"} state={{ backTo: pathname }} style={btnStyle("teal", "sm")}>
-                <FilePlus2 size={14} aria-hidden="true" />Create PO{d.sos.length > 1 ? ` (${s.docNo})` : ""}
-              </Link>
-            ))}
+            {d.sos.length > 0 && <button type="button" style={btnStyle("outline", "sm")} disabled={exporting} onClick={() => void exportPdf()}><FileDown size={14} aria-hidden="true" />{exporting ? "Exporting..." : "Export PDF"}</button>}
           </span>
         )}
       />
@@ -366,7 +354,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       )}
 
       <div ref={wrapRef} style={{ width: "100%", minWidth: 0 }}>
-        {tree.length === 0 ? <WsEmpty>{d.categoryRestricted ? "No lines you can see for this project." : <>No sales order yet. Make a quotation for this project and convert it. <Link to="/scm/renovation/quotations">Open Quotations</Link></>}</WsEmpty>
+        {tree.length === 0 ? <WsEmpty>{d.categoryRestricted ? "No lines you can see for this project." : <>No sales order yet. Make a quotation for this project and convert it. <Link to={`/scm/renovation/quotations/new?projectId=${p.projectId}`}>New Quotation</Link></>}</WsEmpty>
           : width === 0 || width >= TABLE_MIN ? (
             <div role="region" aria-label="Sales order lines" style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
               <table onPointerLeave={() => { setDragging(null); setDropOn(null); }} style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
@@ -495,7 +483,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       )}
       {varying && <VariantDialog {...cell(varying)} onClose={() => setVarying(null)} />}
       {materialsOf && (
-        <BetaLineMaterials projectId={p.projectId} line={materialsOf} canEdit={editable && !livePo(materialsOf)} onClose={() => setMaterialsOf(null)}
+        <BetaLineMaterials projectId={p.projectId} line={materialsOf} canEdit={p.canWrite && !materialsOf.materialsClosedBy} onClose={() => setMaterialsOf(null)}
           onSaved={() => { setMaterialsOf(null); q.reload(); }} />
       )}
     </>
@@ -563,6 +551,7 @@ function Band({ band, label, hint, open, onToggle, columns, dates }: { band: rea
 }
 
 interface RowCtx {
+  projectId?: number;
   l: ManagedLine;
   edit: LineEdit | undefined;
   editable: boolean;
@@ -628,6 +617,7 @@ function DescCell(r: RowCtx): ReactElement {
         <RemarkControl {...r} />
       </div>
       <MaterialsLink r={r} />
+      {r.projectId !== undefined && r.l.categoryCode === "BUILTIN" && <LineApprovedDrawings projectId={r.projectId} />}
       {photoCount(photos) > 0 && <LinePhotoThumbs photos={photos} label={r.l.description || r.l.itemCode} />}
       {r.refusal && <span role="alert" style={{ fontSize: 12, color: WS.red }}>Not saved: {r.refusal}</span>}
       {r.pending.map((c) => (
@@ -774,16 +764,15 @@ function FixedDate({ r, which, value, late, title }: { r: RowCtx; which: PlanDat
   );
 }
 
-/** One line: the PO number and its PO date ("TC-PO-2610-006 · 24 Oct"), changed in the PO's own editor, which the number
+/** The PO number with its date under it, as the GR and DO cells beside it: changed in the PO's own editor, which the number
     opens from Edit mode. No PO yet: "-" (and, in edit mode, whether the line needs one). */
 function PoCell({ r }: { r: RowCtx }): ReactElement {
   const po = livePo(r.l);
   if (po) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, whiteSpace: "nowrap" }} title={`${po.poNumber}${po.poDate ? `, PO date ${dayMonthYear(po.poDate)}` : ""}`}>
-        <Link to={`/scm/purchase-orders/${po.poId}${r.editable ? "?edit=1" : ""}`} style={{ fontSize: 12.5, fontWeight: 600, flex: "0 1 auto", ...ellipsis }}>{po.poNumber}</Link>
-        <span aria-hidden="true" style={{ ...metaStyle, flexShrink: 0 }}>·</span>
-        <span style={{ ...metaStyle, flexShrink: 0 }}>{dayMonth(po.poDate)}</span>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1, minWidth: 0 }} title={`${po.poNumber}${po.poDate ? `, PO date ${dayMonthYear(po.poDate)}` : ""}`}>
+        <Link to={`/scm/purchase-orders/${po.poId}${r.editable ? "?edit=1" : ""}`} style={{ fontSize: 12, fontWeight: 600, maxWidth: "100%", ...ellipsis }}>{po.poNumber}</Link>
+        <span style={{ fontSize: 11, color: BETA.muted }}>{dayMonth(po.poDate)}</span>
       </div>
     );
   }
@@ -814,9 +803,10 @@ function StockCell({ r }: { r: RowCtx }): ReactElement {
   const c = r.stock;
   const inFull = r.l.do === "yes";
   return (
-    <span title={c?.coverage_po ? `Incoming ${c.coverage_po}${c.coverage_eta ? `, ${c.coverage_eta}` : ""}` : undefined}>
+    <span style={{ display: "inline-flex", flexDirection: "column", gap: 1 }} title={c?.coverage_po ? `Incoming ${c.coverage_po}${c.coverage_eta ? `, ${c.coverage_eta}` : ""}` : undefined}>
       <SoStockPill line={{ item_group: r.l.itemGroup, delivered_qty: inFull ? r.l.qty : 0, remaining_qty: inFull ? 0 : r.l.qty, stock_state: c?.stock_state ?? null,
         stock_status_effective: (c?.stock_status_effective ?? null) as "READY" | "PARTIAL" | "PENDING" | null, non_selling_warehouse: c?.non_selling_warehouse ?? null }} />
+      {!inFull && c?.stock_state === "po" && c.coverage_eta && <span style={{ fontSize: 11, color: BETA.muted, whiteSpace: "nowrap" }}>Arrives {dayMonth(c.coverage_eta)}</span>}
     </span>
   );
 }

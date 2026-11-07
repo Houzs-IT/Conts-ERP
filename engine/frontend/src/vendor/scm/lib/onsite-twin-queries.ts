@@ -15,6 +15,14 @@ export const useOnsiteTwin = (kind: 'grn' | 'do', id: string | null) => useQuery
 export const syncOnsiteTwin = (kind: 'grn' | 'do', id: string) =>
   authedFetch<{ raised?: string[] }>(`/onsite-twin/${kind}/${id}`, { method: 'POST' });
 
+/** The phone runs a document's next step through one generic action; these two are an on-site confirm. Cancelling or a
+    later step on another module raises no partner. */
+export function onsiteConfirmKind(moduleKey: string, actionKey: string): 'grn' | 'do' | null {
+  if (moduleKey === 'delivery-orders-mfg' && actionKey === 'next') return 'do';
+  if (moduleKey === 'grns' && actionKey === 'post') return 'grn';
+  return null;
+}
+
 export function afterOnsiteConfirm(kind: 'grn' | 'do', id: string, refresh: () => void): void {
   void syncOnsiteTwin(kind, id).then(refresh).catch((e: unknown) => {
     serviceNotify({

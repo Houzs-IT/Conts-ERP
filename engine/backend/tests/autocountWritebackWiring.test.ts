@@ -299,7 +299,7 @@ describe('a cancel that reached AutoCount is final', () => {
   });
 
   test('the PO reopen route refuses the same way', () => {
-    const h = rawPo.slice(rawPo.indexOf("mfgPurchaseOrders.patch('/:id/reopen'"));
+    const h = rawPo.slice(rawPo.indexOf('export const reopenPurchaseOrderHandler'));
     const guard = h.slice(0, h.indexOf('cannot_reopen'));
     expect(guard).toContain('cancel_is_final');
     expect(guard).toContain('linked_ac_docno');

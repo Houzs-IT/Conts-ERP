@@ -2,22 +2,52 @@
    minute, under day headings; inside a day one card per event (one DO's POD, one defect's before / after, one
    upload of progress photos), each with its time and a category chip. Pure rules, tested on fixed data. */
 
-import type { PhotoCategory, ProjectPhoto } from "./renovationBetaMediaApi";
+import type { EmptySources, PhotoCategory, ProjectPhoto } from "./renovationBetaMediaApi";
 
-export type PhotoFilter = "all" | "progress" | "do" | "gr" | "po" | "measure" | "defect";
+export type PhotoFilter = "all" | "progress" | "production" | "do" | "gr" | "po" | "measure" | "defect";
 
 export const CATEGORY_CHIP: Readonly<Record<PhotoCategory, string>> = {
-  progress: "Progress", do: "DO", gr: "GR", po: "PO", measure: "Measure", defect: "Defect",
+  progress: "Progress", production: "Production", do: "DO", gr: "GR", po: "PO", measure: "Measure", defect: "Defect",
 };
 
-/** The filter chips in the owner's order; PO only when there is a PO photo. */
-export function photoFilters(photos: readonly ProjectPhoto[]): PhotoFilter[] {
-  const base: PhotoFilter[] = ["all", "progress", "do", "gr", "measure", "defect"];
-  return photos.some((p) => p.category === "po") ? [...base.slice(0, 4), "po", ...base.slice(4)] : base;
+/** The filter chips in the owner's order; Production and PO only where the project has such a document or photo. */
+export function photoFilters(photos: readonly ProjectPhoto[], empty: EmptySources): PhotoFilter[] {
+  const has = (c: "production" | "po"): boolean => empty[c].length > 0 || photos.some((p) => p.category === c);
+  return ["all", "progress", ...(has("production") ? ["production" as const] : []), "do", "gr", ...(has("po") ? ["po" as const] : []), "measure", "defect"];
+}
+
+const SOURCE_NAME: Readonly<Record<keyof EmptySources, string>> = { production: "Production orders", do: "DOs", gr: "GRs", po: "POs" };
+const SHOWN_NOS = 3;
+
+/** One short line per source with documents that hold no photo: "DOs: TC-DO-2611-003, TC-DO-2611-004 and 2 more". */
+export function emptySourceLines(empty: EmptySources, filter: PhotoFilter): string[] {
+  return (Object.keys(SOURCE_NAME) as Array<keyof EmptySources>)
+    .filter((k) => (filter === "all" || filter === k) && empty[k].length > 0)
+    .map((k) => {
+      const more = empty[k].length - SHOWN_NOS;
+      return `${SOURCE_NAME[k]}: ${empty[k].slice(0, SHOWN_NOS).join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
+    });
+}
+
+const WHERE_FROM: Readonly<Record<PhotoFilter, string>> = {
+  all: "Progress photos, Production Order photos, PODs, goods receipts, the site measure and defects all land here by themselves.",
+  progress: "No progress photos yet. Add the site team's photos with Add photos.",
+  production: "No production photos yet. Photos taken on a Production Order land here by themselves, day by day.",
+  do: "No delivery photos yet. A POD taken on the DO lands here by itself.",
+  gr: "No receipt photos yet. Photos taken on a goods receipt land here by themselves.",
+  po: "No PO photos yet. A photo added on a PO lands here by itself.",
+  measure: "No site measure photos yet. Photos on a site measure record land here by themselves.",
+  defect: "No defect photos yet. Before and after photos of a defect land here by themselves.",
+};
+
+/** What the page says when the filter shows nothing. */
+export function emptyMessage(filter: PhotoFilter, area: string, anyPhotos: boolean): string {
+  if (area) return `No ${filter === "all" ? "" : `${CATEGORY_CHIP[filter]} `}photos are tagged ${area}.`;
+  return anyPhotos || filter !== "all" ? WHERE_FROM[filter] : `No photos on this project yet. ${WHERE_FROM.all}`;
 }
 
 export function countBy(photos: readonly ProjectPhoto[]): Record<PhotoFilter, number> {
-  const out: Record<PhotoFilter, number> = { all: photos.length, progress: 0, do: 0, gr: 0, po: 0, measure: 0, defect: 0 };
+  const out: Record<PhotoFilter, number> = { all: photos.filter((p) => !p.repeat).length, progress: 0, production: 0, do: 0, gr: 0, po: 0, measure: 0, defect: 0 };
   for (const p of photos) out[p.category]++;
   return out;
 }
@@ -32,7 +62,7 @@ export function photoAreas(soAreas: readonly string[], photos: readonly ProjectP
 }
 
 export function filterPhotos(photos: readonly ProjectPhoto[], filter: PhotoFilter, area: string): ProjectPhoto[] {
-  return photos.filter((p) => (filter === "all" || p.category === filter) && (!area || (p.area != null && same(p.area, area))));
+  return photos.filter((p) => (filter === "all" ? !p.repeat : p.category === filter) && (!area || (p.area != null && same(p.area, area))));
 }
 
 /** The Malaysian day of an ISO time. */

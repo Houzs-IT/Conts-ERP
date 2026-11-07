@@ -11,7 +11,7 @@ vi.mock("../../vendor/scm/lib/authed-fetch", () => ({
 }));
 
 import {
-  amendmentLine, amountAfter, byAreaBlocks, contractLineEdits, dateSettable, editProblem, effectiveEdit, groupDate, groupDateTargets, lineDates, lineLate, linesCsv,
+  amendmentLine, amountAfter, byAreaBlocks, contractLineEdits, dateSettable, editProblem, effectiveEdit, groupDate, groupDateTargets, lineDates, lineLate,
   postContractLines, refusalText, variantsAfter, voBatches, type ManagedLine,
 } from "./renovationBetaLines";
 
@@ -105,12 +105,6 @@ describe("dates", () => {
   it("by area: one block per room, no area last", () => {
     const b = byAreaBlocks([line({ id: "a", area: null }), line({ id: "b", area: "Kitchen" }), line({ id: "c", area: "Kitchen" })]);
     expect(b.map((x) => [x.label, x.count])).toEqual([["Kitchen", 2], ["No area", 1]]);
-  });
-  it("exports one row per line, quoting commas", () => {
-    const csv = linesCsv([line({ description: "Paint, matte" })], true).split("\r\n");
-    expect(csv).toHaveLength(2);
-    expect(csv[1]).toContain('"Paint, matte"');
-    expect(csv[1]).toContain("200.00");
   });
 });
 

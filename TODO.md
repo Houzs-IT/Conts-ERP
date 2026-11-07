@@ -637,3 +637,13 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - The 33 contract VOs from before 5 Nov read Requested by The Conts ERP: the real person was never stored.
 - Quotation on phone still opens the old QuotationEditor (src/mobile/MobileRenovationDocs.tsx); desktop uses the SO page since 6 Nov 2026.
 - Edit SO shows a credit row at amount 0.00 (real amount unchanged on save).
+
+## Production rebuild, left open (7 Nov 2026)
+- Accounting: renovation item groups unbound, invoices skip the ledger; someone else is mapping them.
+- A material kept at what is out after a VO removal, then re-added by another line, can over-issue; Return stock corrects it.
+- A VO recorded only as a flag (hand amendment already open) does not stop a receipt.
+- `acc/reno-projects.ts:245` reads the next instalment on total billed, display only, wrong after an earlier SI is cancelled.
+- A PO-line upload overwrites the production line's own pro-items photos (trigger from 0211).
+- Not tried on a real phone camera, nor Built-in and 2D photos with real data. PO payment journal not seen on screen.
+- Backend `test:light` has about 13 files failing on main itself (scans, wording); not touched here.
+- Local test data lives only on localhost.

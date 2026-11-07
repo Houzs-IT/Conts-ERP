@@ -37,7 +37,7 @@ import {
 } from '../../vendor/scm/lib/production-order-queries';
 import { DataGridCompat, type GridColumn } from '../../components/DataGridCompat';
 import { useIdempotencyKey } from '../../lib/idempotency';
-import { readScmHandoff, writeScmHandoff } from '../../lib/scmHandoffStorage';
+import { readScmHandoff } from '../../lib/scmHandoffStorage';
 import { ActionResultDialog } from '../../vendor/scm/components/ActionResultDialog';
 import { ItemGroupPill } from '../../vendor/scm/lib/category-badges';
 import styles from './SalesOrderDetail.module.css';
@@ -129,7 +129,8 @@ export const ProductionOrderFromSo = () => {
   // In-app result dialog (validation only now — the grid feeds the form).
   const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string } | null>(null);
 
-  const items = useMemo(() => itemsQ.data ?? [], [itemsQ.data]);
+  /* A production order is our own team's work: a line bought from an outside supplier goes on a PO instead. */
+  const items = useMemo(() => (itemsQ.data ?? []).filter((r) => !r.mainSupplierCode || r.mainSupplierCode === 'INHOUSE'), [itemsQ.data]);
 
   /* Commander 2026-05-30 — the New Production Order form stashes its current draft
      (poNewDraft) before sending us here. Build a per-soItemId draft qty map so:
@@ -471,17 +472,17 @@ export const ProductionOrderFromSo = () => {
       return;
     }
 
-    const out = picked
-      .map(([soItemId, v]) => {
-        const row = items.find((r) => r.soItemId === soItemId);
-        return row ? { ...row, _pickQty: v.qty } : null;
-      })
-      .filter(Boolean);
-    if (!writeScmHandoff('proFromSoPicks', out)) {
-      setDialog({ title: 'Unable to continue', body: 'This browser could not safely store your picked lines. Your selection is still here; free some browser storage and try again.' });
-      return;
-    }
-    navigate('/scm/production-orders/new');
+    /* Transfer raises an in-house PO in between (owner, 6 Nov 2026), so every order has a PO and the order comes from it. */
+    createPos.mutate(
+      { picks: picked.map(([soItemId, v]) => ({ soItemId, qty: v.qty })), idempotencyKey: idemKey },
+      {
+        onSuccess: (res) => {
+          const made = res.created ?? [];
+          navigate(made.length === 1 ? `/scm/production-orders/${made[0]!.id}` : '/scm/production-orders');
+        },
+        onError: (e) => setDialog({ title: 'Not transferred', body: e instanceof Error ? e.message : 'Something went wrong.' }),
+      },
+    );
   };
 
   // ── Toolbar (filters + select/clear) rendered inside the DataGrid ──────
@@ -564,12 +565,12 @@ export const ProductionOrderFromSo = () => {
               variant="primary" size="md"
               onClick={onSave}
               disabled={pickedCount === 0 || createPos.isPending}
-              title={targetPoId ? 'Add the picked SO lines into this Production Order' : 'Add the picked SO lines into the New Production Order form'}
+              title={targetPoId ? 'Add the picked SO lines into this Production Order' : 'Raise an in-house PO and its Production Order from the picked SO lines'}
             >
               <Save {...ICON} />
               {createPos.isPending
                 ? 'Adding…'
-                : pickedCount === 0 ? 'Pick at least 1 line' : `Add ${pickedCount} line${pickedCount === 1 ? '' : 's'} to Production Order`}
+                : pickedCount === 0 ? 'Pick at least 1 line' : targetPoId ? `Add ${pickedCount} line${pickedCount === 1 ? '' : 's'} to Production Order` : `Transfer ${pickedCount} line${pickedCount === 1 ? '' : 's'}`}
             </Button>
           </div>
         }

@@ -27,6 +27,7 @@
 // ----------------------------------------------------------------------------
 
 import { requireActiveCompanyId } from '../lib/companyScope';
+import { hasHouzsPerm } from '../lib/houzs-perms';
 import { convertSources, orderMoney, ordersWithMoney, refundDraftBody } from '../lib/so-money';
 import { createPaymentVoucherCore } from './payment-vouchers';
 import { fmtSen } from '../shared/format';
@@ -51,6 +52,8 @@ export const soMoneyHandler = async (c: Ctx): Promise<Response> => {
 };
 
 export const soMoneyRefundHandler = async (c: Ctx): Promise<Response> => {
+  /* The voucher door's own gate: this path reaches its core directly, past the area guard that only asks for Sales edit. */
+  if (!hasHouzsPerm(c, 'scm.payment_voucher.create')) return c.json({ error: 'forbidden', reason: 'Raising a refund needs the payment voucher create permission.' }, 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');

@@ -1144,6 +1144,25 @@ export type ReviseBoundPoResult = {
   warnings: string[];
 };
 
+/** The VO's open PO amendment on one PO, applied line by line. Its flags close with it. */
+export async function applyVoPoAmendments(sb: Sb, soAmendmentId: string, userId: string | null, c: Context<any> | undefined, onlyPoId: string | undefined): Promise<ReviseBoundPoResult> {
+  const out: ReviseBoundPoResult = { revisedPoIds: [], perPo: [], warnings: [] };
+  if (!onlyPoId) return out;
+  const { applyPoAmendment } = await import('./po-revision');
+  const { data, error } = await sb.from('po_amendments').select('id').eq('source_so_amendment_id', soAmendmentId).eq('po_id', onlyPoId).eq('status', 'REQUESTED');
+  if (error) throw new Error(`reviseBoundPo: VO amendment load failed: ${error.message}`);
+  for (const a of (data ?? []) as Array<{ id: string }>) {
+    const { data: lines } = await sb.from('po_amendment_lines').select('purchase_order_item_id').eq('amendment_id', a.id);
+    const r = await applyPoAmendment(sb, a.id, userId, c, { fromVo: true });
+    const ids = ((lines ?? []) as Array<{ purchase_order_item_id: string | null }>).map((l) => l.purchase_order_item_id).filter((x): x is string => !!x);
+    if (ids.length) await sb.from('reno_po_line_flags').update({ status: 'RESOLVED', resolved_at: new Date().toISOString(), resolved_by: 'PO amendment' }).in('purchase_order_item_id', ids).eq('status', 'OPEN');
+    out.revisedPoIds.push(r.poId);
+    out.perPo.push({ poId: r.poId, poNumber: r.poNumber, revision: r.revision, linesRederived: r.linesUpdated, linesRemoved: r.linesRemoved, linesAdded: r.linesAdded });
+    out.warnings.push(...r.warnings);
+  }
+  return out;
+}
+
 export class ReceivedFloorError extends Error {
   code = 'received_floor' as const;
   poItemId: string;
@@ -1176,11 +1195,14 @@ export async function reviseBoundPo(
   // (1) Load amendment → SO doc_no.
   const { data: amdRow, error: amdErr } = await sb
     .from('so_amendments')
-    .select('id, so_doc_no, status')
+    .select('id, so_doc_no, status, resolution')
     .eq('id', amendmentId)
     .maybeSingle();
   if (amdErr) throw new Error(`reviseBoundPo: amendment load failed: ${amdErr.message}`);
   if (!amdRow) throw new Error('reviseBoundPo: amendment not found');
+  /* A contract VO's PO change is not re-derived from the order: that reprices the line at furniture cost and takes one SO
+     line's qty for each of its split PO lines. Its amendment names each line's own new qty, price untouched. */
+  if ((amdRow as { resolution?: string | null }).resolution === 'RENOVATION_VO') return applyVoPoAmendments(sb, amendmentId, userId, c, opts?.onlyPoId);
   const docNo = (amdRow as AmendmentRow).so_doc_no;
   assertNotMirrored(docNo, 'reviseBoundPo', c);
 

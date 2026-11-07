@@ -533,7 +533,7 @@ const MaintenanceBody = ({ canEdit, open }: { canEdit: boolean; open: ReturnType
 
       {/* Breadcrumb */}
       {geoView !== 'country' && (
-        <div className={styles.filterBar} style={{ marginBottom: 'var(--space-2)' }}>
+        <div className={styles.filterBar}>
           <button type="button" className={styles.editBtn} onClick={goToCountry}>
             ← All countries
           </button>

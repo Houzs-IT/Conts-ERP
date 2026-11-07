@@ -48,6 +48,7 @@ import { convertToLink, transferToLabel, transferFromColumnLabel } from "../../l
 import { DocumentHistoryDrawer } from "./DocumentHistoryDrawer";
 import { DocumentRelationshipMapModal, DocumentChoiceDialog } from "../../components/scm-v2/DocumentRelationshipMapModal";
 import { useGrnRelationshipMap } from "./grn-relationship-map";
+import { RenovationDocTrail } from "./RenovationDocTrail";
 import { resolveFxRate } from "./fx-rate";
 import { HoldChip, type HoldFields } from "../../vendor/scm/components/HoldChip";
 
@@ -721,6 +722,7 @@ function GoodsReceivedDetailV2ReadOnly() {
 
         <DetailGrid>
           <DetailMain>
+            <RenovationDocTrail kind="gr" id={id} />
             <Section title="Supplier">
               <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-3">
                 <Field label="Supplier" value={supplierNameOf(grn)} />

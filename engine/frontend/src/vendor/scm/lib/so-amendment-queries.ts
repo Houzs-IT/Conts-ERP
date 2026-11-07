@@ -26,8 +26,25 @@ import { retryUnlessClientError } from '../../../lib/retryPolicy';
 /* ── Row + detail shapes (mirror the API response verbatim) ─────────────────
    List rows are loosely typed (accessors read by name), matching the GRN/SO
    list convention. */
+/* What the VO list shows for a renovation VO (renovationVoListRead.ts). Null is a value the record does not hold, or
+   money this role does not see. */
+export type VoListSide = { qty: number | null; uom: string | null; unitPriceSen: number | null };
+export type VoListDetail = {
+  added: number;
+  changed: number;
+  removed: number;
+  netSen: number | null;
+  beforeSen: number | null;
+  afterSen: number | null;
+  signedName: string | null;
+  signedAt: string | null;
+  poFixes: Array<{ poNumber: string | null; action: 'AMEND' | 'CANCEL'; newQty: number | null; open: boolean }>;
+  lines: Array<{ change: 'Added' | 'Changed' | 'Removed'; room: string | null; itemCode: string | null; description: string; before: VoListSide | null; after: VoListSide | null; amountSen: number | null }>;
+};
+
 export type AmendmentRow = {
   id: string;
+  vo?: VoListDetail | null;
   so_doc_no: string;
   amendment_no: number | string | null;
   status: string;

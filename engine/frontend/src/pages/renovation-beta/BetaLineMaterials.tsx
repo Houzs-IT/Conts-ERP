@@ -1,5 +1,5 @@
 /* The raw materials of one SO line (owner, 5 Nov 2026): preset from the SKU's composition times the line's qty, changed
-   here for this line. When the line reaches a production order they come with it. Read-only once a live PO holds it. */
+   here for this line. A change also reaches the line's production order (owner, 7 Nov 2026). Read-only once it is completed. */
 
 import { useEffect, useState, type ReactElement } from "react";
 import { Trash2 } from "lucide-react";
@@ -96,7 +96,7 @@ export function BetaLineMaterials({ projectId, line, canEdit, onClose, onSaved }
           </div>
         </div>
       )}
-      {!canEdit && (line.materials ?? []).length > 0 && <p style={{ ...metaStyle, margin: "8px 0 0" }}>Change these on the production order.</p>}
+      {!canEdit && (line.materials ?? []).length > 0 && <p style={{ ...metaStyle, margin: "8px 0 0" }}>{line.materialsClosedBy ? `${line.materialsClosedBy} is completed, so these are final.` : "Only the project team can change these."}</p>}
       {error && <p role="alert" style={{ margin: "8px 0 0", fontSize: 13, color: WS.red }}>{error}</p>}
     </WsDialog>
   );

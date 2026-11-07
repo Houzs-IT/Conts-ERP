@@ -43,6 +43,7 @@ import { SO_STATUS_RANK, soStatusTransitionError, soDiscardBlocked } from '../li
 import { HELD_OR_TERM, HOLD_COLUMNS, isDocumentHeld } from '../lib/document-hold';
 import { mountHoldRoute } from './document-hold-routes';
 import { renovationSoWriteFence } from '../lib/renovation-write-fence';
+import { carrySoPhoto } from '../lib/renovation-so-photo-carry';
 import { enqueueSoCreate, enqueueCancel, enqueueEdit, retiredLineOf, type AcRetiredLine } from '../lib/autocount-outbox';
 import { fitSoAddress } from '../../services/autocount-address-fit';
 import { fitAddressIfTouched } from '../lib/so-address-on-save';
@@ -132,7 +133,7 @@ import { effectiveStatusFilter, isRangeNotSatisfiable } from '../lib/so-list-fil
 import { fromSoList, orderSoList, prepareSoListRead, readSoListParams } from '../lib/so-list-read';
 import { buildSoListRows } from '../lib/so-list-rows';
 import { attachSoLines } from '../lib/so-list-lines';
-import { SO_TAB_STATUSES, soStatusesForTab } from '../lib/so-tab-statuses';
+import { soStatusesForTab, soTabCounts } from '../lib/so-tab-statuses';
 import { chunkIn, paginateAll } from '../lib/paginate-all';
 import { tallyStatusRows, type StatusTally } from '../lib/status-counts';
 /* "A PO is already out for this SO" — the second road to the same soft lock
@@ -361,6 +362,9 @@ mfgSalesOrders.use('*', renovationSoWriteFence(async (c, docNo) => {
   // 42703 = the column is not there yet (worker deployed before migration 0069): no renovation order can exist.
   if (error && (error as { code?: string }).code === '42703') return { kind: null, error: false };
   return { kind: (data as { so_kind?: string } | null)?.so_kind ?? null, error: Boolean(error) };
+}, async (c, docNo) => {
+  const { cancelContractFromSoRoute } = await import('./renovation');
+  return cancelContractFromSoRoute(c as never, docNo);
 }));
 
 /* ── SO child-lock guard (Tier 2 — downstream lock) ─────────────────────────
@@ -1329,16 +1333,9 @@ mfgSalesOrders.get('/', async (c) => {
        order can silently fall between tabs again. */
     if (!counted.ok) countError = counted.reason;
     else {
-      const allCount = Object.values(counted.byStatus).reduce((s, n) => s + n, 0);
-      let known = 0;
-      statusCounts = { all: allCount };
       /* Counted per TAB, not per status, so a folded status is counted under
          the tab that shows it instead of falling into `other`. */
-      for (const [tab, members] of Object.entries(SO_TAB_STATUSES)) {
-        const cnt = members.reduce((n, m) => n + (counted.byStatus[m] ?? 0), 0);
-        statusCounts[tab.toLowerCase()] = cnt; known += cnt;
-      }
-      statusCounts.other = allCount - known;
+      statusCounts = soTabCounts(counted.byStatus);
       /* THE On Hold PILL IS AN OVERLAY, NOT A BUCKET (mig 0324), and it is the
          one number on this strip that does not partition the set. A held order
          keeps its real status, so it is counted under that status AND here —
@@ -9883,6 +9880,7 @@ mfgSalesOrders.post('/:docNo/items/:itemId/photos', async (c) => {
     await deleteThumbFor(c.env.SO_ITEM_PHOTOS, photoKey);
     return c.json({ error: 'db_update_failed', reason: updErr.message }, 500);
   }
+  await carrySoPhoto(sb, itemId, { add: photoKey });
 
   // PR-D — emit an ADD_LINE-style audit row noting the photo addition.
   // Reuses UPDATE_LINE so the History panel groups it with other line
@@ -10089,6 +10087,7 @@ mfgSalesOrders.delete('/:docNo/items/:itemId/photos/:photoKey', async (c) => {
     .update({ photo_urls: nextKeys })
     .eq('id', itemId);
   if (updErr) return c.json({ error: 'db_update_failed', reason: updErr.message }, 500);
+  await carrySoPhoto(sb, itemId, { remove: photoKey });
 
   // R2 delete best-effort — if it fails we've already removed the key
   // from the array, so the orphan is invisible to the UI. A future

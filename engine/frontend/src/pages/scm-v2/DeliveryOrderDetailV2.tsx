@@ -77,6 +77,7 @@ import { useStaffLookup } from "../../hooks/useStaffLookup";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { usePrompt } from "../../vendor/scm/components/PromptDialog";
 import { useDoRelationshipMap } from "./sales-doc-relationship-map";
+import { RenovationDocTrail } from "./RenovationDocTrail";
 import { useDoCancelAction } from "./use-do-cancel-action";
 import {
   DocumentRelationshipMapModal,
@@ -1022,7 +1023,7 @@ export function DeliveryOrderDetailV2() {
      "Mark In Transit" for the same document. See vendor/scm/lib/do-next-step.ts. */
   const advanceStep = doAdvanceStep(deliveryOrder.status);
   const advanceReason = doAdvanceBlockReason(deliveryOrder.status);
-  const siReason = siTransferBlockReason(deliveryOrder.status);
+  const siReason = reno ? "Renovation work is billed by instalment on the project, not from a delivery order." : siTransferBlockReason(deliveryOrder.status);
   const canConvertToSi = siReason === null;
   const isCancelled = rawStatus === "cancelled";
 
@@ -1266,6 +1267,7 @@ export function DeliveryOrderDetailV2() {
         <DetailGrid>
           <DetailMain>
             {/* Customer info — Customer SO No. first, per design */}
+            <RenovationDocTrail kind="do" id={id} />
             <Section title="Customer">
               <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
                 <Field
@@ -1488,6 +1490,7 @@ export function DeliveryOrderDetailV2() {
 
               <AsideCard title="Key dates">
                 <KeyDateRow k="DO date" v={fmtDate(deliveryOrder.do_date)} />
+                {(deliveryOrder as { pod_received_by?: string | null }).pod_received_by && <KeyDateRow k="Received by" v={(deliveryOrder as { pod_received_by?: string | null }).pod_received_by!} />}
                 <KeyDateRow
                   k="Scheduled"
                   v={

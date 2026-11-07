@@ -107,8 +107,9 @@ describe('desktop SO Amendment queue', () => {
   it('shows no buttons to someone who cannot sign, and none on an amendment row', () => {
     viewer = { id: 31, perms: [] };
     const { container } = desktop();
-    expect(within(rowFor(container, 'HC-SO-000002')).queryByRole('button')).toBeNull();
-    expect(within(rowFor(container, 'HC-SO-000001')).queryByRole('button')).toBeNull();
+    const actions = (doc: string) => within(rowFor(container, doc)).queryAllByRole('button').filter((b) => b.getAttribute('aria-label') !== 'Expand row');
+    expect(actions('HC-SO-000002')).toEqual([]);
+    expect(actions('HC-SO-000001')).toEqual([]);
   });
 
   it('does not offer the signature to the person who raised the request', () => {

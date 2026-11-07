@@ -19,6 +19,10 @@ export const CONTS_EMBEDDED: boolean = (() => {
   try { return window.self !== window.top; } catch { return true; }
 })();
 
+/** The screens with a phone design of their own (owner, 7 Nov 2026): inside Property OS these use it, every other screen
+ *  stays the one fitted layout (owner, 16 Oct 2026). */
+export const PHONE_DESIGNED = /^\/scm\/(production-orders|draft-delivery)(\/|$)/;
+
 // Inside the frame this app's own top bars are not drawn (Layout.tsx); embed.css keys off this class.
 if (CONTS_EMBEDDED) {
   try { document.documentElement.classList.add("conts-embedded"); } catch { /* no document */ }
@@ -89,7 +93,7 @@ export function listenForContsNavigation(): void {
   // The router moves with pushState / replaceState, which raise no event of their own.
   for (const k of ["pushState", "replaceState"] as const) {
     const move = window.history[k].bind(window.history);
-    window.history[k] = (...args: Parameters<History["pushState"]>) => { move(...args); tellLocation(); };
+    window.history[k] = (...args: Parameters<History["pushState"]>) => { move(...args); tellLocation(); window.dispatchEvent(new Event("conts:moved")); };
   }
   window.addEventListener("popstate", tellLocation);
   // Lets Property OS know the frame is ready to be steered, and when the session has ended.
@@ -97,7 +101,7 @@ export function listenForContsNavigation(): void {
   // And when a screen is on view: until then the frame is blank while it signs in and loads, so Property OS keeps
   // its own loading message up.
   const shown = window.setInterval(() => {
-    const main = document.querySelector("main");
+    const main = document.querySelector("main") ?? document.querySelector("#root");
     if (!main || (main.textContent ?? "").trim().length < 20) return;
     window.clearInterval(shown);
     try { window.parent.postMessage({ type: "conts:shown" }, "*"); } catch { /* no parent */ }

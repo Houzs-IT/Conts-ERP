@@ -229,6 +229,7 @@ const EFFECTIVE_TONE: Record<
 // Fine-grained stage label — keeps the exact stored status readable in
 // the header Badge even when the effective bucket collapses it.
 const STAGE_LABEL: Record<string, string> = {
+  DRAFT: "Draft",
   PENDING: "Pending",
   RECEIVED: "Received",
   INSPECTED: "Inspected",

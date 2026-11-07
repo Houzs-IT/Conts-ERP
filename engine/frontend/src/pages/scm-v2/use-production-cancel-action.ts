@@ -54,8 +54,8 @@ export function usePoCancelAction() {
     const reason = await prompt(poCancelPrompt(poNumber));
     if (reason == null) return false;
     try {
-      await cancel.mutateAsync({ id, reason: reason.trim() });
-      void serviceNotify({ title: `Production Order ${poNumber} cancelled`, body: "It is cancelled." });
+      const done = await cancel.mutateAsync({ id, reason: reason.trim() });
+      void serviceNotify({ title: `Production Order ${poNumber} cancelled`, body: done.warning ?? "It is cancelled." });
       return true;
     } catch (err) {
       /* A refusal that reaches nobody is worse than a crash (CLAUDE.md). The

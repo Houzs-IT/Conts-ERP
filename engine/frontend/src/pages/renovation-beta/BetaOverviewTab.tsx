@@ -90,7 +90,7 @@ function PaymentsCard({ p }: { p: BetaTabProps }): ReactElement {
     >
       {totals && <PaymentTotalsRow totals={totals} linked={payments.state === "ok"} />}
       {payments.state === "hidden" && <p style={{ fontSize: 14, color: BETA.muted }}>Payment figures are hidden for your role.</p>}
-      {payments.state === "none" && <p style={{ fontSize: 14, color: BETA.muted }}>No sales order is linked yet. Once one is, each payment recorded on it fills the next box here.</p>}
+      {payments.state === "none" && <p style={{ fontSize: 14, color: BETA.muted }}>No sales order is linked yet. Once one is, each payment recorded on it fills the next box here. <Link to={`/scm/renovation/quotations/new?projectId=${p.projectId}`}>New Quotation</Link></p>}
       {rows.length > 0 && (
         // .pay-grid (BetaWsUi CSS): four across, two on a narrow frame or a phone; auto-fit left a lone fourth tile.
         <ol aria-label="Payments" className="pay-grid" style={{ listStyle: "none", margin: 0, padding: 0 }}>

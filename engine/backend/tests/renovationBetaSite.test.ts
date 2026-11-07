@@ -44,7 +44,7 @@ describe("Beta timeline: filters", () => {
   const e = (id: string, title: string) => ({ id, category: "system" as const, title });
   test("each entry is filed under what it is about", () => {
     expect(betaCategory(e("po:1", "Purchase order PO-1 created"))).toBe("supplier");
-    expect(betaCategory(e("deliv:1", "Delivered: DO-1"))).toBe("supplier");
+    expect(betaCategory(e("deliv:1", "Delivered: DO-1"))).toBe("delivery");
     expect(betaCategory(e("pay:1", "Payment received RM 10.00"))).toBe("sales");
     expect(betaCategory(e("vo:1", "Variation order VO-1 drafted"))).toBe("sales");
     expect(betaCategory(e("design:1", "3D v1 submitted"))).toBe("design");

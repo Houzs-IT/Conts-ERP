@@ -81,9 +81,9 @@ export function QuotationActions({ view, canQuote, editable, sections, header, i
       <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Print PDF</Button>
       {current && <Button variant="ghost" icon={<Copy size={15} />} onClick={saveAsTemplate}>Save as package template</Button>}
       {current && quotation.status === 'DRAFT' && <Button variant="secondary" icon={<Send size={15} />} disabled={busy} onClick={() => status('SENT')}>Mark sent</Button>}
-      {current && quotation.status === 'SENT' && <Button variant="secondary" icon={<FileCheck2 size={15} />} disabled={busy} onClick={() => status('ACCEPTED', `Mark ${revision.docNo} accepted by the customer?`)}>Accepted</Button>}
-      {current && (quotation.status === 'DRAFT' || quotation.status === 'SENT') && <Button variant="ghost" disabled={busy} onClick={() => status('REJECTED', 'Mark this quotation rejected?')}>Rejected</Button>}
-      {current && quotation.status === 'ACCEPTED' && <Button variant="ghost" disabled={busy} onClick={() => status('SENT')}>Undo accept</Button>}
+      {current && quotation.status === 'SENT' && <Button variant="primary" icon={<FileCheck2 size={15} />} disabled={busy} onClick={() => status('ACCEPTED', `Mark ${revision.docNo} accepted by the customer?`)}>Accepted</Button>}
+      {current && (quotation.status === 'DRAFT' || quotation.status === 'SENT') && <Button variant="danger" disabled={busy} onClick={() => status('REJECTED', 'Mark this quotation rejected?')}>Rejected</Button>}
+      {current && quotation.status === 'ACCEPTED' && <Button variant="secondary" disabled={busy} onClick={() => status('SENT')}>Undo accept</Button>}
       {current && quotation.status !== 'ACCEPTED' && quotation.status !== 'DRAFT' && <Button variant="secondary" disabled={busy} onClick={newRevision}>New revision R{quotation.currentRev + 1}</Button>}
       {current && quotation.status === 'ACCEPTED' && <Button disabled={busy} onClick={convert}>Convert to sales order</Button>}
       {editable && <Button icon={<Pencil size={15} />} disabled={busy} onClick={onEdit}>Edit</Button>}

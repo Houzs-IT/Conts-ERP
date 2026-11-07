@@ -39,6 +39,8 @@ export type MobileRoute =
   | { t: "menu"; to: string; label: string }
   /** Deep link to one sales order — the mobile SO detail screen. */
   | { t: "so-detail"; docNo: string }
+  /** Deep link to one production order. */
+  | { t: "production-detail"; id: string }
   /** A real destination that this user's position may not open. */
   | { t: "locked"; label: string }
   /** No mobile screen exists for this path. The honest dead end. */
@@ -142,6 +144,11 @@ export function resolveMobileRoute(
   // takes exactly a docNo. Only ONE segment: /scm/sales-orders/new/guided is a
   // desktop creation wizard, not a document. Gated on the SO list being visible
   // to this user, since that is the permission the detail screen's data needs.
+  const proDeep = /^\/scm\/production-orders\/([0-9a-f-]{36})$/.exec(path);
+  if (proDeep) {
+    if (!visible.some((d) => mobileDestinationMatches("/scm/production-orders", d.to))) return { t: "locked", label: "Production Orders" };
+    return { t: "production-detail", id: proDeep[1] };
+  }
   const soDeep = /^\/scm\/sales-orders\/([^/]+)$/.exec(path);
   if (soDeep && !SO_RESERVED_SEGMENTS.has(soDeep[1])) {
     const canSo = visible.some((d) => mobileDestinationMatches("/scm/sales-orders", d.to));

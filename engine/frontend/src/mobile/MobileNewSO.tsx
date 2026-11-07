@@ -10,6 +10,7 @@ import {
 } from "../vendor/scm/lib/so-variant-cascade";
 import { useQueryClient } from "@tanstack/react-query";
 import { authedFetch, type SaveProblem } from "../vendor/scm/lib/authed-fetch";
+import { contractLineEdits } from "./contractLineEdits";
 import { lineWriteFailure, lineWriteSaveMessage, type LineWriteFailure } from "../vendor/scm/lib/line-write-failures";
 import { amendmentVariants } from "../vendor/scm/lib/so-amendment-line-diff";
 import { photoLabel, photoUploadFailure, photoUploadFailureMessage, unmatchedLinePhotos, type PhotoUploadFailure } from "../vendor/scm/lib/photo-upload-failures";
@@ -201,6 +202,7 @@ type Payment = {
 
 // Existing (prefill) shapes — raw snake_case columns from the detail endpoints.
 type SoHeader = {
+  so_kind?: string | null;
   doc_no: string;
   /* Optimistic-lock token (migration 0153) — loaded here and echoed back on the
      edit-mode header PATCH so a concurrent editor's Save can't silently overwrite
@@ -837,6 +839,8 @@ export function MobileNewSO({
   const [amendEligible, setAmendEligible] = useState(false);
   /* Conts: a confirmed order, where only a change of amount or lines is a VO (owner, 4 and 6 Nov 2026). */
   const [voOrder, setVoOrder] = useState(false);
+  /* A renovation contract refuses the generic SO writes; its lines change by contract VO. */
+  const [contractOrder, setContractOrder] = useState(false);
   const [hasOpenAmend, setHasOpenAmend] = useState(false);
   /* FIX D2/D3 — the PERSISTED processing date (processing_date) drives the
      processing-date lock. Kept separate from the editable procDate form value so
@@ -972,6 +976,7 @@ export function MobileNewSO({
         ]);
         if (cancelled) return;
         const h = detail.salesOrder;
+        setContractOrder(h.so_kind === "RENOVATION");
         setName(h.debtor_name ?? "");
         setCustRef(h.customer_so_no ?? h.ref ?? "");
         setPhone(toE164(h.phone));
@@ -1988,6 +1993,11 @@ export function MobileNewSO({
            invalidates everything itself once the whole composite save settles. */
         // Captured once: the plan must ask about the SAME patch this branch sends.
         const directDirty = hasHeaderChanges(dirtyPatch);
+        if (contractOrder && directDirty) {
+          setSubmitting(false);
+          setError("A renovation contract's customer, address and dates are changed on its project. They follow to this order.");
+          return;
+        }
         if (amendmentMode && directDirty) {
           /* Attach the mandatory loaded token after the dirty check, so `version`
              never turns an otherwise-empty patch into a mutation. A 409 throws;
@@ -2032,7 +2042,20 @@ export function MobileNewSO({
           }
           let amendCreatedRes: unknown = null;
           // DIRECT_ONLY skips ONLY this block; the tail after it is shared.
-          if (plan === "AMENDMENT") {
+          if (plan === "AMENDMENT" && contractOrder) {
+            try {
+              const { edits, adds } = contractLineEdits(amLines, origItems);
+              if (edits.length + adds.length > 0) {
+                amendCreatedRes = await authedFetch(`/renovation/sales-orders/${encodeURIComponent(docNo)}/line-edits`, {
+                  method: "POST", body: JSON.stringify({ edits, adds, title: "Changed on the sales order" }),
+                });
+              }
+            } catch (e) {
+              setSubmitting(false);
+              setError(e instanceof Error ? e.message : "Couldn't save the change. Please try again.");
+              return;
+            }
+          } else if (plan === "AMENDMENT") {
             /* The shared dialog (vendor/scm/components/AmendmentSubmitDialog): shows
                WHO approves, takes the required reason, lets the requester flag the
                approver — the same ask as the desktop page (owner 2026-09-15). */

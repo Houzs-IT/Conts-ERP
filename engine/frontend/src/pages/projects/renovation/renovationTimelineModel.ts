@@ -5,7 +5,7 @@
 import { api } from "../../../api/client";
 
 export type TimelineNoteType = "customer" | "design" | "supplier" | "site" | "sales";
-export type TimelineCategory = "system" | TimelineNoteType;
+export type TimelineCategory = "system" | "production" | "delivery" | TimelineNoteType;
 export type TimelineFilter = "all" | TimelineCategory;
 
 export interface TimelineEntry {
@@ -17,6 +17,13 @@ export interface TimelineEntry {
   body: string | null;
   by: string | null;
   noteId?: number;
+  doc?: TimelineDoc;
+}
+
+export interface TimelineDoc {
+  kind: "quotation" | "so" | "po" | "production" | "gr" | "do" | "invoice" | "payment" | "vo";
+  id: string;
+  no: string;
 }
 
 export interface TimelineView { projectId: number; notesReady: boolean; entries: TimelineEntry[] }
@@ -27,12 +34,16 @@ export const CATEGORY_LABEL: Readonly<Record<TimelineCategory, string>> = {
   customer: "Customer",
   design: "Design",
   supplier: "Supplier",
+  production: "Production",
+  delivery: "Delivery",
   site: "Site",
   sales: "Sales",
 };
 
 export const NOTE_TYPES: readonly TimelineNoteType[] = ["customer", "design", "supplier", "site", "sales"];
 export const FILTERS: readonly TimelineFilter[] = ["all", "system", ...NOTE_TYPES];
+/** Beta files production and deliveries under their own chips; only its Timeline reads those entries. */
+export const BETA_FILTERS: readonly TimelineFilter[] = ["all", "system", "customer", "design", "supplier", "production", "delivery", "site", "sales"];
 export const NOTE_MAX = 2000;
 
 /** Chip and ring colours per category, matching the service case timeline where the category exists there. */
@@ -41,6 +52,8 @@ export const CHIP_CLASS: Readonly<Record<TimelineCategory, string>> = {
   customer: "bg-amber-100 text-amber-800",
   design: "bg-violet-100 text-violet-800",
   supplier: "bg-primary/10 text-primary",
+  production: "bg-primary/10 text-primary",
+  delivery: "bg-primary/10 text-primary",
   site: "bg-emerald-100 text-emerald-800",
   sales: "bg-accent-soft text-accent",
 };
@@ -49,6 +62,8 @@ export const RING_CLASS: Readonly<Record<TimelineCategory, string>> = {
   customer: "border-amber-500",
   design: "border-violet-500",
   supplier: "border-primary",
+  production: "border-primary",
+  delivery: "border-primary",
   site: "border-emerald-500",
   sales: "border-accent",
 };
@@ -57,8 +72,8 @@ export function filterEntries(entries: readonly TimelineEntry[], f: TimelineFilt
   return f === "all" ? [...entries] : entries.filter((e) => e.category === f);
 }
 
-export function countByCategory(entries: readonly TimelineEntry[]): Record<TimelineFilter, number> {
-  const out = Object.fromEntries(FILTERS.map((f) => [f, 0])) as Record<TimelineFilter, number>;
+export function countByCategory(entries: readonly TimelineEntry[], filters: readonly TimelineFilter[] = FILTERS): Record<TimelineFilter, number> {
+  const out = Object.fromEntries(filters.map((f) => [f, 0])) as Record<TimelineFilter, number>;
   for (const e of entries) {
     out.all += 1;
     out[e.category] += 1;

@@ -1,7 +1,7 @@
 /* Project Maintenance (renovation mode): the two pick lists the sales order form
    and the project share (owner, 14 Oct 2026; migration 0112). Property types
    (Condo, Landed, ...) and layouts (a label with its bedroom and bathroom
-   counts). Rename, reorder, switch off; nothing is deleted, so saved orders and
+   counts). Rename, reorder, set Not in use; nothing is deleted, so saved orders and
    projects keep the label they were written with. */
 
 import { useState, type ReactNode } from "react";
@@ -12,7 +12,7 @@ import { cn } from "../../../lib/utils";
 import { projectInfoApi } from "./customerPropertyApi";
 import type { LayoutOption, PropertyTypeOption } from "./customerPropertyModel";
 import { errorText } from "./renovationModel";
-import { inputClass } from "./renovationUi";
+import { InUseToggle, inputClass } from "./renovationUi";
 
 function Box({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
   return (
@@ -67,7 +67,7 @@ export function PropertyListsManager() {
   const layoutOk = layout.bedrooms !== "" && layout.bathrooms !== "" && Number.isInteger(bed) && Number.isInteger(bath);
 
   return (
-    <Box title="Property types and layouts" hint="The sales order form and the project pick from these. A layout carries its bedroom and bathroom counts; the line items can make one room section per room from it. Switch a row off instead of deleting it.">
+    <Box title="Property types and layouts" hint="The sales order form and the project pick from these. A layout carries its bedroom and bathroom counts; the line items can make one room section per room from it. Add a new one at the bottom of each list. Set one to Not in use to hide it from new orders; old orders keep it.">
       {error && <p role="alert" className="mb-2 text-sm text-err">{error}</p>}
       {q.loading && <p className="text-sm text-ink-secondary">Loading...</p>}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -81,8 +81,8 @@ export function PropertyListsManager() {
                 onSave={(b) => run(() => projectInfoApi.patchPropertyType(t.id, b))} />
             ))}
           </ul>
-          <div className="mt-3 flex gap-2">
-            <input className={cn(inputClass, "min-w-0 flex-1 max-w-md")} placeholder="e.g. Townhouse" value={typeLabel} onChange={(e) => setTypeLabel(e.target.value)} aria-label="New property type" />
+          <div className="mt-3 flex gap-2 border-t border-border pt-3">
+            <input className={cn(inputClass, "min-w-0 flex-1")} placeholder="e.g. Townhouse" value={typeLabel} onChange={(e) => setTypeLabel(e.target.value)} aria-label="New property type" />
             <Button icon={<Plus size={14} />} disabled={!typeLabel.trim()} onClick={() => run(async () => { await projectInfoApi.addPropertyType(typeLabel.trim()); setTypeLabel(""); })}>Add</Button>
           </div>
         </div>
@@ -96,7 +96,7 @@ export function PropertyListsManager() {
                 onSave={(b) => run(() => projectInfoApi.patchLayout(l.id, b))} />
             ))}
           </ul>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
             <input className={cn(inputClass, "min-w-0 flex-1")} placeholder="Label, e.g. 3 bed 3 bath" value={layout.label} onChange={(e) => setLayout({ ...layout, label: e.target.value })} aria-label="New layout label" />
             <input className={small} inputMode="numeric" placeholder="Bed" value={layout.bedrooms} onChange={(e) => setLayout({ ...layout, bedrooms: e.target.value.replace(/\D/g, "") })} aria-label="Bedrooms" />
             <input className={small} inputMode="numeric" placeholder="Bath" value={layout.bathrooms} onChange={(e) => setLayout({ ...layout, bathrooms: e.target.value.replace(/\D/g, "") })} aria-label="Bathrooms" />
@@ -114,11 +114,11 @@ export function PropertyListsManager() {
 function TypeRow({ t, onUp, onDown, onSave }: { t: PropertyTypeOption; onUp?: () => void; onDown?: () => void; onSave: (b: { label?: string; active?: boolean }) => void }) {
   const [label, setLabel] = useState(t.label);
   return (
-    <li className={cn("flex items-center gap-2 py-1.5", !t.active && "opacity-60")}>
+    <li className="flex items-center gap-3 py-2">
       <Arrows onUp={onUp} onDown={onDown} />
       <input className={cn(inputClass, "min-w-0 flex-1")} value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Property type" />
       {label.trim() !== t.label && <Button disabled={!label.trim()} onClick={() => onSave({ label: label.trim() })}>Save</Button>}
-      <Button variant="ghost" onClick={() => onSave({ active: !t.active })}>{t.active ? "Switch off" : "Switch on"}</Button>
+      <InUseToggle on={t.active} name={t.label} onChange={(active) => onSave({ active })} />
     </li>
   );
 }
@@ -129,13 +129,13 @@ function LayoutRow({ l, onUp, onDown, onSave }: { l: LayoutOption; onUp?: () => 
   const [bath, setBath] = useState(String(l.bathrooms));
   const changed = label.trim() !== l.label || bed !== String(l.bedrooms) || bath !== String(l.bathrooms);
   return (
-    <li className={cn("flex flex-wrap items-center gap-2 py-1.5", !l.active && "opacity-60")}>
+    <li className="flex flex-wrap items-center gap-3 py-2">
       <Arrows onUp={onUp} onDown={onDown} />
       <input className={cn(inputClass, "min-w-0 flex-1")} value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Layout label" />
       <input className={small} inputMode="numeric" value={bed} onChange={(e) => setBed(e.target.value.replace(/\D/g, ""))} aria-label="Bedrooms" title="Bedrooms" />
       <input className={small} inputMode="numeric" value={bath} onChange={(e) => setBath(e.target.value.replace(/\D/g, ""))} aria-label="Bathrooms" title="Bathrooms" />
       {changed && <Button disabled={!label.trim() || bed === "" || bath === ""} onClick={() => onSave({ label: label.trim(), bedrooms: Number(bed), bathrooms: Number(bath) })}>Save</Button>}
-      <Button variant="ghost" onClick={() => onSave({ active: !l.active })}>{l.active ? "Switch off" : "Switch on"}</Button>
+      <InUseToggle on={l.active} name={l.label} onChange={(active) => onSave({ active })} />
     </li>
   );
 }

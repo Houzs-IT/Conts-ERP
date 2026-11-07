@@ -1,18 +1,19 @@
 /* Beta workspace > Timeline, laid out as the mockup's Timeline view: a search box, Export, filter chips, and one card
    per day with a round icon per entry, a RECORD tag on approvals, key passes and the handover, and a CSV export of what
-   is on screen. The engine's categories take the mockup's icons and colours. */
+   is on screen. The engine's categories take the mockup's icons and colours. An entry about a document opens that
+   document: its tab, on the document where the tab can (renovationBetaModel.ts timelineTarget). */
 
 import { useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "../../hooks/useQuery";
 import {
-  CATEGORY_LABEL, FILTERS, countByCategory, filterEntries, type TimelineCategory, type TimelineEntry,
+  BETA_FILTERS, CATEGORY_LABEL, countByCategory, filterEntries, type TimelineCategory, type TimelineEntry,
 } from "../projects/renovation/renovationTimelineModel";
 import { WS, WsEmpty, WsFilterPill, WsPageHead, WsTag, btnStyle, cardStyle } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
-import { dayHeading, groupByDay, isRecordEntry, mytDay, mytTime, plainTimelineEntry, searchEntries, timelineCsv } from "./renovationBetaModel";
+import { dayHeading, groupByDay, isRecordEntry, mytDay, mytTime, plainTimelineEntry, searchEntries, timelineCsv, timelineTarget, type TimelineTarget } from "./renovationBetaModel";
 import { betaSiteApi } from "./renovationBetaSiteApi";
 import { BETA, TONES, type BetaTone } from "./renovationBetaTheme";
-import type { BetaTabKey } from "./renovationBetaTabs";
 import { BetaLoading } from "./BetaLoading";
 
 const TONE: Readonly<Record<TimelineCategory, BetaTone>> = {
@@ -20,20 +21,11 @@ const TONE: Readonly<Record<TimelineCategory, BetaTone>> = {
   design: [TONES.grey.ink, TONES.grey.soft],
   customer: [TONES.grey.ink, TONES.grey.soft],
   supplier: [TONES.amber.ink, TONES.amber.soft],
+  production: [TONES.amber.ink, TONES.amber.soft],
+  delivery: [TONES.accent.ink, TONES.accent.soft],
   sales: [TONES.accent.ink, TONES.accent.soft],
   system: [TONES.grey.ink, TONES.grey.soft],
 };
-
-const TAB_NAME: Readonly<Partial<Record<BetaTabKey, string>>> = { drawings: "Drawings", site: "Site and photos", defects: "Defects", overview: "Overview" };
-
-/** The tab an entry opens: drawings for design, the deliveries for supplier entries, the pipeline for a defect. */
-function opensTab(e: Pick<TimelineEntry, "category" | "title">): BetaTabKey | null {
-  if (e.category === "design") return "drawings";
-  if (e.category === "supplier") return "site";
-  if (e.category === "site") return /defect/i.test(e.title ?? "") ? "defects" : "site";
-  if (e.category === "sales" && /payment/i.test(e.title ?? "")) return "overview";
-  return null;
-}
 
 function Icon({ category }: { category: TimelineCategory }): ReactElement {
   const paths: Record<TimelineCategory, ReactNode> = {
@@ -41,21 +33,32 @@ function Icon({ category }: { category: TimelineCategory }): ReactElement {
     design: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
     customer: <><circle cx="12" cy="8" r="4" /><path d="M4 21c.6-4.5 4-7 8-7s7.4 2.5 8 7" /></>,
     supplier: <><path d="M3 4h3l2.5 11h10L21 7H7" /><circle cx="10" cy="19" r="1.4" /><circle cx="17" cy="19" r="1.4" /></>,
+    production: <><path d="M4 21V10l6 4v-4l6 4V4h4v17z" /><path d="M8 18h2M13 18h2" /></>,
+    delivery: <><path d="M3 7h11v10H3zM14 11h4l3 3v3h-7" /><circle cx="7.5" cy="18" r="1.6" /><circle cx="17" cy="18" r="1.6" /></>,
     sales: <><rect x="3" y="6" width="18" height="12" rx="2" /><path d="M3 10h18" /></>,
     system: <><circle cx="8" cy="15" r="4" /><path d="M11 12l9-9M17 6l3 3" /></>,
   };
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">{paths[category]}</svg>;
 }
 
-export function BetaTimelineTab({ projectId, today, onDone, onError, openTab }: BetaTabProps): ReactElement {
+export function BetaTimelineTab({ projectId, today, onDone, onError }: BetaTabProps): ReactElement {
   // Always ask again on opening the tab, so what was just saved on another tab shows.
   const q = useQuery(["renovation-beta", "timeline", projectId], () => betaSiteApi.timeline(projectId), [projectId], { refetchOnMount: "always", staleTime: 0 });
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
+  const [filter, setFilter] = useState<(typeof BETA_FILTERS)[number]>("all");
   const [search, setSearch] = useState("");
   const entries = useMemo(() => (q.data?.entries ?? []).map(plainTimelineEntry), [q.data]);
-  const counts = countByCategory(entries);
+  const counts = countByCategory(entries, BETA_FILTERS);
   const shown = searchEntries(filterEntries(entries, filter), search);
   const days = groupByDay(shown, (e) => mytDay(e.at));
+  const [, setParams] = useSearchParams();
+  const open = (t: TimelineTarget): void => setParams((prev) => {
+    const next = new URLSearchParams(prev);
+    if (t.tab) next.set("tab", t.tab);
+    next.delete("do");
+    next.delete("gr");
+    if (t.focus) next.set(t.focus[0], t.focus[1]);
+    return next;
+  }, { replace: true });
 
   function exportCsv(): void {
     try {
@@ -93,7 +96,7 @@ export function BetaTimelineTab({ projectId, today, onDone, onError, openTab }: 
       />
 
       <div role="group" aria-label="Filter timeline" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {FILTERS.map((f) => (
+        {BETA_FILTERS.map((f) => (
           <WsFilterPill key={f} on={filter === f} onClick={() => setFilter(f)}>
             {f === "all" ? "All" : CATEGORY_LABEL[f]}{counts[f] > 0 && <> <span style={{ opacity: 0.7 }}>{counts[f]}</span></>}
           </WsFilterPill>
@@ -111,7 +114,7 @@ export function BetaTimelineTab({ projectId, today, onDone, onError, openTab }: 
                   {g.day === today ? `Today · ${dayHeading(g.day, today)}` : g.day ? dayHeading(g.day, today) : "No date"}
                 </h3>
                 <ol className="stag" style={{ ...cardStyle, listStyle: "none", margin: 0, padding: 0, gap: 0, overflow: "hidden" }}>
-                  {g.items.map((e, i) => <EntryRow key={e.id} e={e} first={i === 0} openTab={openTab} />)}
+                  {g.items.map((e, i) => <EntryRow key={e.id} e={e} first={i === 0} open={open} />)}
                 </ol>
               </section>
             ))}
@@ -121,10 +124,11 @@ export function BetaTimelineTab({ projectId, today, onDone, onError, openTab }: 
   );
 }
 
-function EntryRow({ e, first, openTab }: { e: TimelineEntry; first: boolean; openTab: (tab: BetaTabKey) => void }): ReactElement {
+function EntryRow({ e, first, open }: { e: TimelineEntry; first: boolean; open: (t: TimelineTarget) => void }): ReactElement {
   const [ink, bg] = TONE[e.category];
   const time = e.dateOnly ? null : mytTime(e.at);
-  const target = opensTab(e);
+  const target = timelineTarget(e);
+  const linkStyle = { display: "inline-block", marginTop: 6, fontSize: 13, fontWeight: 600, textDecoration: "none", overflowWrap: "anywhere" } as const;
   return (
     <li style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "14px 16px", borderTop: first ? undefined : `1px solid ${WS.rowLine}` }}>
       <span style={{ flex: "none", width: 36, height: 36, borderRadius: 18, background: bg, color: ink, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon category={e.category} /></span>
@@ -137,8 +141,10 @@ function EntryRow({ e, first, openTab }: { e: TimelineEntry; first: boolean; ope
         {e.title && <div style={{ marginTop: 2, fontWeight: 600, overflowWrap: "anywhere" }}>{e.title}</div>}
         {e.by && <div style={{ fontSize: 13, color: BETA.muted }}>{e.by}</div>}
         {e.body && <div style={{ marginTop: 4, whiteSpace: "pre-line", fontSize: 14, color: WS.text2, overflowWrap: "anywhere" }}>{e.body}</div>}
+        {target && (target.href
+          ? <Link to={target.href} className="link" style={linkStyle}>{target.label} →</Link>
+          : <button type="button" className="link" style={linkStyle} onClick={() => open(target)}>{target.label} →</button>)}
       </div>
-      {target && <button type="button" className="link" style={{ flex: "none", alignSelf: "center", textDecoration: "none" }} onClick={() => openTab(target)}>Open →<span className="sr"> {TAB_NAME[target] ?? ""}</span></button>}
     </li>
   );
 }
