@@ -52,7 +52,7 @@ class FakeQuery {
   }
   order() { return this; } limit() { return this; } range() { return this; }
   gt() { return this; } gte() { return this; } lt() { return this; } lte() { return this; }
-  not() { return this; } like() { return this; } or() { return this; }
+  not() { return this; } like() { return this; } or() { return this; } filter() { return this; }
   private run(): Row[] {
     if (this.op === 'insert') { this.rows.push(...this.inserted); return this.inserted; }
     const hit = this.rows.filter((r) => this.preds.every((p) => p(r)));

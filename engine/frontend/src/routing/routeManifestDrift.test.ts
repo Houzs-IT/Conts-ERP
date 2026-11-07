@@ -185,7 +185,8 @@ describe("mobile route drift gate", () => {
     // row — the storekeeper's rack LOOKUP. Owner parity ruling 2026-09-12
     // (「电脑版本有的，手机版本都要有」); the phone could CREATE a rack and never
     // read one back.
-    expect(MOBILE_MENU_GROUPS.flatMap((group) => group.items)).toHaveLength(37);
+    // 39 since 2026-11-07: Production Orders and Draft delivery, the phone screens the production workers use.
+    expect(MOBILE_MENU_GROUPS.flatMap((group) => group.items)).toHaveLength(39);
     // 6 since 2026-09-10: /roles, the rebuilt Roles & Permissions screen, reached
     // from a Profile row (gated via the Team hub tab).
     // 7 since 2026-09-17: /titles, the phone Titles editor (position_policy),
