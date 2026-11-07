@@ -24,6 +24,8 @@ import {
 import { convertQuotationToSo, patchContract, readContract, setContractStatus, type RenoSoStatus } from '../lib/renovation-so';
 import { previewPoSplit, raisePos } from '../lib/renovation-po-split';
 import { billingView, billInstalment, creditContract } from '../lib/renovation-billing';
+import { applyCustomerCreditToSi } from '../lib/customer-credits';
+import { recomputeSiPaid } from '../lib/si-order-deposit';
 import { applyVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
 import { voucherForPoPayment } from '../lib/renovation-po-voucher';
 import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule } from '../lib/renovation-po-schedule';
@@ -403,6 +405,27 @@ renovation.post('/sales-orders/:docNo/po-split', handle(PERM.poSplit, async (c, 
 renovation.get('/sales-orders/:docNo/billing', handle(null, async (c, { sqlRead }) =>
   c.json(await billingView(sqlRead, param(c, 'docNo'), actorOf(c).companyId))));
 
+/* A paid invoice that was cancelled left its money as customer credit, and a new bill spends it as every other invoice does.
+   After commit, because a failure must not undo the bill: the credit stands and the invoice reads unpaid. */
+async function spendCustomerCredit(c: Context<{ Bindings: Env; Variables: Variables }>, siId: string): Promise<number> {
+  const sb = c.get('supabase');
+  try {
+    const { data, error } = await sb.from('sales_invoices').select('invoice_number, total_sen, paid_sen, debtor_code, debtor_name').eq('id', siId).maybeSingle();
+    if (error) throw new Error(error.message);
+    const si = data as { invoice_number: string; total_sen: number; paid_sen: number | null; debtor_code: string | null; debtor_name: string | null } | null;
+    if (!si?.debtor_code) return 0;
+    const res = await applyCustomerCreditToSi(sb, {
+      debtorCode: si.debtor_code, debtorName: si.debtor_name, siId, siNumber: si.invoice_number,
+      remainingDueSen: Math.max(0, Number(si.total_sen) - Number(si.paid_sen ?? 0)), createdBy: c.get('user')?.id,
+    });
+    if (res.applied > 0) await recomputeSiPaid(sb, siId);
+    return res.applied;
+  } catch (e) {
+    console.error('[customer-credit] apply-on-bill failed', siId, e);
+    return 0;
+  }
+}
+
 renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(PERM.bill, async (c, { tx }) => {
   const b = await json(c);
   const actor = actorOf(c);
@@ -423,9 +446,10 @@ renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(PERM.bill, a
   } catch (err) {
     posting = { status: 'post_failed', reason: err instanceof Error ? err.message : String(err) };
   }
+  const creditApplied = result.kind === 'INVOICE' && result.salesInvoiceId ? await spendCustomerCredit(c, result.salesInvoiceId) : 0;
   const einvoice = result.kind === 'INVOICE' ? await warningAfterPosting(c, actor, 'INVOICE', result.invoiceNumber)
     : result.kind === 'CREDIT_NOTE' ? await warningAfterPosting(c, actor, 'CREDIT_NOTE', result.noteNumber) : null;
-  return c.json({ ...result, posting, einvoiceWarning: einvoice }, 201);
+  return c.json({ ...result, posting, creditApplied, einvoiceWarning: einvoice }, 201);
 }));
 
 /* ── Variation orders ───────────────────────────────────────────────────── */
