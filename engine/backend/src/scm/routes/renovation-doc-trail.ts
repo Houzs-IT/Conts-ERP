@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../env';
 import { supabaseAuth } from '../middleware/auth';
 import { requireActiveCompanyId } from '../lib/companyScope';
+import { soCoverage } from './mfg-sales-orders';
 
 export const renovationDocTrail = new Hono<{ Bindings: Env; Variables: Variables }>();
 renovationDocTrail.use('*', supabaseAuth);
@@ -57,6 +58,55 @@ const ROOTS = `
   sos AS (SELECT so.doc_no, so.status::text AS status, so.so_date, so.on_hold FROM scm.mfg_sales_orders so JOIN roots r ON r.doc_no = so.doc_no WHERE so.company_id = ? AND so.so_kind = 'RENOVATION'),
   items AS (SELECT si.id FROM scm.mfg_sales_order_items si JOIN sos ON sos.doc_no = si.doc_no),
   pos AS (SELECT DISTINCT po.id FROM scm.purchase_orders po JOIN scm.purchase_order_items i ON i.purchase_order_id = po.id JOIN items ON items.id = i.so_item_id)`;
+
+/* Per sales order line, for the Transfer from Sales Order pickers (owner, 7 Nov 2026): its stock, and the PO,
+   production order, GR and DO that hold it. A line with none of those shows the arrival date of the incoming stock
+   it is counted against. */
+export type LineStock = 'stock' | 'po' | 'shortage' | null;
+export interface LineStatus { stock: LineStock; incomingPo: string | null; eta: string | null; steps: TrailStep[] }
+type LineRow = TrailRow & { line: string };
+
+export function lineStatuses(
+  ids: readonly string[], rows: readonly LineRow[],
+  cover: ReadonlyMap<string, { source?: string | null; po?: string | null; eta?: string | null }>,
+): Record<string, LineStatus> {
+  const out: Record<string, LineStatus> = {};
+  for (const id of ids) {
+    const c = cover.get(id);
+    const source = c?.source === 'stock' || c?.source === 'po' || c?.source === 'shortage' ? c.source : null;
+    out[id] = { stock: source, incomingPo: source === 'po' ? c?.po ?? null : null, eta: source === 'po' ? c?.eta ?? null : null, steps: trailOf(rows.filter((r) => r.line === id)) };
+  }
+  return out;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+renovationDocTrail.get('/lines', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const ids = [...new Set((c.req.query('ids') ?? '').split(',').map((s) => s.trim()).filter((s) => UUID.test(s)))].slice(0, 400);
+  if (ids.length === 0) return c.json({ lines: {} });
+  const { results } = await (c.env.DB as unknown as Db).prepare(
+    `WITH ids AS (SELECT unnest(string_to_array(?::text, ',')) AS id)
+     SELECT i.so_item_id::text AS line, 'po' AS kind, po.id::text AS id, po.po_number AS no, po.status::text AS status, po.on_hold, po.expected_at::text AS expected, NULL::text AS started, po.received_at::text AS done, s.name AS who
+       FROM scm.purchase_order_items i JOIN ids ON ids.id = i.so_item_id::text JOIN scm.purchase_orders po ON po.id = i.purchase_order_id AND po.company_id = ?
+       LEFT JOIN scm.suppliers s ON s.id = po.supplier_id
+     UNION
+     SELECT i.so_item_id::text, 'production', o.id::text, o.po_number, o.status::text, o.on_hold, o.expected_at::text, o.actual_start_at::text, o.received_at::text, NULL
+       FROM scm.production_order_items i JOIN ids ON ids.id = i.so_item_id::text JOIN scm.production_orders o ON o.id = i.production_order_id AND o.company_id = ?
+     UNION
+     SELECT pi.so_item_id::text, 'gr', g.id::text, g.grn_number, g.status::text, g.on_hold, NULL, NULL, g.received_at::text, NULL
+       FROM scm.grn_items gi JOIN scm.purchase_order_items pi ON pi.id = gi.purchase_order_item_id JOIN ids ON ids.id = pi.so_item_id::text
+       JOIN scm.grns g ON g.id = gi.grn_id JOIN scm.purchase_orders po ON po.id = g.purchase_order_id AND po.company_id = ?
+     UNION
+     SELECT di.so_item_id::text, 'do', d.id::text, d.do_number, d.status::text, d.on_hold, coalesce(d.customer_delivery_date, d.do_date)::text, NULL, d.delivered_at::text, NULL
+       FROM scm.delivery_order_items di JOIN ids ON ids.id = di.so_item_id::text JOIN scm.delivery_orders d ON d.id = di.delivery_order_id
+       JOIN scm.mfg_sales_orders so ON so.doc_no = d.so_doc_no AND so.company_id = ?`,
+  ).bind(ids.join(','), co.companyId, co.companyId, co.companyId, co.companyId).all<LineRow>();
+  // Stock is best effort: when the stock count fails the documents still show.
+  const cov = await soCoverage(c, c.get('supabase'));
+  return c.json({ lines: lineStatuses(ids, results ?? [], cov.coverage as ReadonlyMap<string, { source?: string | null; po?: string | null; eta?: string | null }>) });
+});
 
 renovationDocTrail.get('/', async (c) => {
   const co = requireActiveCompanyId(c);

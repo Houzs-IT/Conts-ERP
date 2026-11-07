@@ -40,6 +40,7 @@ import { PageHeader } from '../../components/Layout';
 import { soRefOfCamelStamp } from '../../lib/so-ref-search';
 import { lineDiscountShare } from '../../vendor/shared/line-discount-share';
 import { fmtMoneySen, fmtQty } from '@2990s/shared';
+import { SoLineStatusCell, soLineStatusText, useSoLineStatus } from './SoLineStatus';
 
 /* Conts C5: a pick carries its share of the SO line's discount, so the value
    shown here is the value the delivery order will hold. */
@@ -258,6 +259,7 @@ export const DeliveryOrderFromSo = () => {
     [picks],
   );
 
+  const lineStatus = useSoLineStatus(allRows.map((r) => r.soItemId));
   const columns = useMemo<GridColumn<DeliverableSoLine>[]>(() => [
     /* The per-row tick lives in the grid's first-class `selectable` column, so
        the header carries a real select-all checkbox scoped to the filtered
@@ -304,6 +306,12 @@ export const DeliveryOrderFromSo = () => {
         />
       ),
       searchValue: (r) => `${r.description ?? ''} ${r.description2 ?? ''}`.trim(),
+    },
+    {
+      key: 'lineStatus', label: 'Stock & orders', width: 320, sortable: false,
+      accessor: (r) => <SoLineStatusCell s={lineStatus[r.soItemId]} />,
+      searchValue: (r) => soLineStatusText(lineStatus[r.soItemId]),
+      exportValue: (r) => soLineStatusText(lineStatus[r.soItemId]),
     },
     {
       key: 'qty', label: 'SO Qty', width: 70, align: 'right', sortable: true,
@@ -363,7 +371,7 @@ export const DeliveryOrderFromSo = () => {
       sortFn: (a, b) => a.remaining * a.unitPriceSen - b.remaining * b.unitPriceSen,
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- column accessors derive from the pick/qty state already in deps; listing the helpers would only rebuild the columns for no behavioural change
-  ], [picks, lockedCustomer]);
+  ], [picks, lockedCustomer, lineStatus]);
 
   const onContinue = () => {
     if (pickedCount === 0) {
