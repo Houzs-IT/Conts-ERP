@@ -130,6 +130,17 @@ export function allocateIssue(need: number, stock: WarehouseStock[], fallbackWar
 export type MaterialIssue = { qty_issued: number; qty_returned: number };
 export const returnable = (m: MaterialIssue): number => Math.max(0, m.qty_issued - m.qty_returned);
 
+/** Where a raw material PO lands: the first wanted warehouse that counts stock, else the default one. Start and MRP ignore
+    On-site, so a material bought into it would never be seen. */
+export function materialPoWarehouse(
+  wanted: ReadonlyArray<string | null | undefined>,
+  warehouses: ReadonlyArray<{ id: string; code: string; is_default?: boolean | null }>,
+): string | null {
+  const usable = warehouses.filter((w) => w.code.toUpperCase() !== 'ONSITE');
+  const onSite = new Set(warehouses.filter((w) => w.code.toUpperCase() === 'ONSITE').map((w) => w.id));
+  return wanted.find((id) => id && !onSite.has(id)) ?? (usable.find((w) => w.is_default) ?? usable[0])?.id ?? null;
+}
+
 export type ReturnLine = { materialId: string; qty: number; warehouseId: string };
 
 /** Refuses the whole return before anything moves: one bad line must not leave half of it done. */

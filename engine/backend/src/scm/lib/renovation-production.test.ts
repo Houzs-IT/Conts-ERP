@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  allocateIssue, bucketOf, checkReturn, claimShortfall, holidaySet, isOverdue, materialVerdict, openDemandOf, progressOf, scheduleDays, stockStatusOf, validHours, wholeNeed,
+  allocateIssue, bucketOf, checkReturn, claimShortfall, holidaySet, isOverdue, materialPoWarehouse, materialVerdict, openDemandOf, progressOf, scheduleDays, stockStatusOf, validHours, wholeNeed,
 } from './renovation-production';
 import { issueMaterials, returnMaterial, reverseIssues, PRODUCTION_DOC } from './renovation-production-stock';
 
@@ -290,5 +290,20 @@ describe('reversal', () => {
     const n = db.tables.inventory_movements!.length;
     await reverseIssues(db, 'o1', 'staff');
     expect(db.tables.inventory_movements!).toHaveLength(n);
+  });
+});
+
+describe('materialPoWarehouse', () => {
+  const list = [{ id: 'a', code: 'AAA' }, { id: 'b', code: 'BLK', is_default: true }, { id: 's', code: 'ONSITE' }];
+  it('keeps a warehouse that counts stock', () => {
+    expect(materialPoWarehouse(['a', 'b'], list)).toBe('a');
+  });
+  it('skips On-site for the next wanted one, then the default', () => {
+    expect(materialPoWarehouse(['s', 'a'], list)).toBe('a');
+    expect(materialPoWarehouse(['s', 's'], list)).toBe('b');
+    expect(materialPoWarehouse([null, null], list)).toBe('b');
+  });
+  it('has nothing to give with only On-site', () => {
+    expect(materialPoWarehouse(['s'], [list[2]!])).toBeNull();
   });
 });

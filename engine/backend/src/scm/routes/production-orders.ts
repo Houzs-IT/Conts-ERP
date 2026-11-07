@@ -46,7 +46,7 @@ import { paginateAll, chunkIn } from '../lib/paginate-all';
 import { pgrestInList } from '../lib/pgrest-in-list';
 import { klToday, materialDates } from '../lib/production-material-dates';
 import { scmAreaAllows } from '../middleware/area-guard';
-import { checkReturn, filterProductionTab, holidaySet, materialVerdict, progressOf, stockStatusOf, validHours, wholeNeed, type MaterialState, type PoLink, type ReturnLine } from '../lib/renovation-production';
+import { checkReturn, filterProductionTab, holidaySet, materialPoWarehouse, materialVerdict, progressOf, stockStatusOf, validHours, wholeNeed, type MaterialState, type PoLink, type ReturnLine } from '../lib/renovation-production';
 import { filterProductionList } from '../lib/production-list-read';
 import { PRODUCTION_DOC, issueMaterials, returnMaterial, reverseIssues } from '../lib/renovation-production-stock';
 import { voChangeWaiting } from '../lib/renovation-po-change-guard';
@@ -556,8 +556,8 @@ productionOrders.post('/material-pos', async (c) => {
   });
   if (bindErr) return c.json({ error: 'load_failed', reason: bindErr.message }, 500);
   const { data: inhouse } = await scopeToCompanyId(sb.from('suppliers').select('id').eq('code', 'INHOUSE'), co.companyId).maybeSingle();
-  const { data: wh } = await scopeToCompanyId(sb.from('warehouses').select('id').eq('is_active', true), co.companyId).order('code').limit(1);
-  const fallbackWh = ((wh ?? [])[0] as { id: string } | undefined)?.id ?? null;
+  const { data: wh } = await scopeToCompanyId(sb.from('warehouses').select('id, code, is_default').eq('is_active', true), co.companyId).order('code');
+  const warehouses = (wh ?? []) as unknown as Array<{ id: string; code: string; is_default: boolean | null }>;
   const { data: prods } = await chunkIn<{ code: string; name: string | null; cost_price_sen: number | null }>(codes, (batch, from, to) =>
     scopeToCompanyId(sb.from('mfg_products').select('code, name, cost_price_sen').filter('code', 'in', pgrestInList(batch)), co.companyId).order('id').range(from, to) as never);
   const prodOf = new Map(prods.map((p) => [p.code, p]));
@@ -568,7 +568,7 @@ productionOrders.post('/material-pos', async (c) => {
     const m = byId.get(String(p.materialId));
     if (!m?.order) return c.json({ error: 'validation', message: 'A picked material no longer exists. Refresh MRP.' }, 409);
     if (m.order.status !== 'SUBMITTED' || m.order.on_hold) return c.json({ error: 'validation', message: `${m.order.po_number} is not open for ordering.` }, 409);
-    const warehouseId = m.warehouse_id ?? m.order.purchase_location_id ?? fallbackWh;
+    const warehouseId = materialPoWarehouse([m.warehouse_id, m.order.purchase_location_id], warehouses);
     if (!warehouseId) return c.json({ error: 'validation', message: 'Add a warehouse first.' }, 409);
     /* A PO line counts whole units; a material may need 2.5 bags. */
     const qty = Math.min(Math.ceil(Number(p.qty)), Math.ceil(Number(m.qty_needed) - (onPo.get(m.id) ?? 0)));
