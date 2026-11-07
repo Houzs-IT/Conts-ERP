@@ -19,7 +19,7 @@ const DOT: Readonly<Record<TrailStep["tone"], string>> = { done: "#11694a", acti
 
 export function RenovationDocTrail({ kind, id }: { kind: TrailKind; id: string | undefined | null }): ReactElement | null {
   const q = useQuery({
-    queryKey: ["renovation-doc-trail", kind, id], enabled: !!id, staleTime: 15_000,
+    queryKey: ["renovation-doc-trail", kind, id], enabled: !!id, staleTime: 0, refetchOnMount: "always",
     queryFn: () => authedFetch<{ steps: TrailStep[] }>(`/renovation-doc-trail?kind=${kind}&id=${encodeURIComponent(id ?? "")}`),
   });
   const steps = q.data?.steps ?? [];

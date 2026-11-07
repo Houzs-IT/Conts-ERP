@@ -1023,7 +1023,7 @@ export function DeliveryOrderDetailV2() {
      "Mark In Transit" for the same document. See vendor/scm/lib/do-next-step.ts. */
   const advanceStep = doAdvanceStep(deliveryOrder.status);
   const advanceReason = doAdvanceBlockReason(deliveryOrder.status);
-  const siReason = siTransferBlockReason(deliveryOrder.status);
+  const siReason = reno ? "Renovation work is billed by instalment on the project, not from a delivery order." : siTransferBlockReason(deliveryOrder.status);
   const canConvertToSi = siReason === null;
   const isCancelled = rawStatus === "cancelled";
 

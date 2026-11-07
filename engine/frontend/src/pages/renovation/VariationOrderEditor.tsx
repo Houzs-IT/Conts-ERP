@@ -77,7 +77,9 @@ export function VariationOrderEditor() {
   const netSen = v.status === 'APPROVED' ? v.totals.netSen : addSen + omitSen;
 
   const bodySections = (): unknown[] => {
-    const add = sectionsForSave(adds.filter((s) => s.lines.length > 0)) as Array<{ lines: unknown[] }>;
+    /* The form opens with an empty line to type in: a VO that only omits must not be refused for it. */
+    const typed = adds.map((s) => ({ ...s, lines: s.lines.filter((l) => l.kind !== 'ITEM' || l.itemCode || l.description.trim() || amountsOf(l).netSen !== 0) })).filter((s) => s.lines.length > 0);
+    const add = sectionsForSave(typed) as Array<{ lines: unknown[] }>;
     const omitLines = omits.map((o) => ({ kind: 'ITEM', voChange: 'OMIT', omitTargetLineId: o.lineId, omitQty: o.omitQty, description: '' }));
     return omitLines.length ? [...add, { heading: 'OMIT', bandColor: null, lumpSumSen: null, pageBreakBefore: false, lines: omitLines }] : add;
   };
