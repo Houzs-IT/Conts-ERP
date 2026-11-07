@@ -204,7 +204,7 @@ export function MobileProductionOrder({ id, onBack }: { id: string; onBack: () =
           {canComplete && (
             <div className="flex flex-col gap-2">
               <PhotoUploads queue={photos} hideDone />
-              <PhotoAddButtons queue={photos} />
+              <PhotoAddButtons queue={photos} video />
               <button type="button" disabled={press.completing !== null} onClick={() => void press.complete()} className="h-[52px] w-full rounded-md border border-border bg-surface text-[15px] font-bold disabled:opacity-50">{press.completing ?? (stopped ? "Retry Complete" : "Complete")}</button>
             </div>
           )}

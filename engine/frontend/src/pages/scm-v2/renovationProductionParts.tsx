@@ -36,7 +36,7 @@ export function useOrderFiles(orderId: string) {
   /* The day strip is the order's own photos, wherever on it they were added; a photo shown from its PO stays on the PO. */
   const photos = useMemo(() => {
     const d = q.data;
-    return [...(d?.files ?? []), ...(d?.lines ?? []).flatMap((l) => l.files)].filter((f) => f.kind === "image" && !f.from);
+    return [...(d?.files ?? []), ...(d?.lines ?? []).flatMap((l) => l.files)].filter((f) => (f.kind === "image" || f.kind === "video") && !f.from);
   }, [q.data]);
   return { ...q, photos };
 }

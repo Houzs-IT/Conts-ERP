@@ -39,4 +39,19 @@ describe("PhotoAdd", () => {
     await waitFor(() => expect(document.querySelector("output")!.textContent).toContain("a.jpg"));
     expect(upload).toHaveBeenCalledTimes(3);
   });
+  it("on a phone, a shot brings back Take another, and video can be recorded", async () => {
+    const mm = window.matchMedia;
+    window.matchMedia = ((q: string) => ({ matches: q.includes("coarse"), media: q, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as typeof window.matchMedia;
+    try {
+      function V() { const q = usePhotoQueue(async (f: File) => f.name); return <PhotoAddButtons queue={q} video />; }
+      render(<V />);
+      expect((screen.getByLabelText("Record video") as HTMLInputElement).accept).toBe("video/*");
+      fireEvent.change(screen.getByLabelText("Take photo"), { target: { files: [file("c.jpg")] } });
+      const sheet = await screen.findByRole("dialog", { name: "Add another" });
+      expect(sheet.textContent).toContain("Take another");
+      expect(sheet.textContent).toContain("Record a video");
+      fireEvent.click(screen.getByRole("button", { name: "Done" }));
+      expect(screen.queryByRole("dialog", { name: "Add another" })).toBeNull();
+    } finally { window.matchMedia = mm; }
+  });
 });
