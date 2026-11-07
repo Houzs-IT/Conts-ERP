@@ -600,10 +600,7 @@ productionOrders.post('/material-pos', async (c) => {
         unitPriceSen: g.unitPriceSen, deliveryDate: g.deliveryDate, warehouseId: g.warehouseId,
       })),
     };
-    const out = await createMfgPurchaseOrderHandler({
-      req: { json: async () => body }, get: (k: string) => c.get(k as 'supabase'), set: (k: string, v: unknown) => c.set(k as 'supabase', v as never), env: c.env,
-      json: (j: unknown, status?: number) => ({ json: j, status: status ?? 200 }),
-    }) as unknown as { json: { id?: string; poNumber?: string } & Record<string, unknown>; status: number };
+    const out = await callHandler(c, createMfgPurchaseOrderHandler, body) as unknown as { json: { id?: string; poNumber?: string } & Record<string, unknown>; status: number };
     if (out.status >= 300 || !out.json.id) return c.json({ ...out.json, created }, out.status as 409);
     const { error: rpcErr } = await sb.rpc('production_link_po', {
       p_po: out.json.id, p_materials: group.map((g) => g.materialId), p_project: projects.length === 1 ? projects[0] : null,
@@ -1006,10 +1003,7 @@ productionOrders.post('/from-sos', async (c) => {
     const location = b.purchaseLocationId ?? items.find((i) => i.warehouseId)?.warehouseId ?? (wh as { id: string } | null)?.id;
     if (!location) return c.json({ error: 'purchase_location_id_required', message: 'These sales order lines have no warehouse.', created }, 409);
     const body = { supplierId: inhouseId, purchaseLocationId: location, expectedAt: items.map((i) => i.deliveryDate).filter(Boolean).sort()[0] ?? null, items };
-    const out = await createMfgPurchaseOrderHandler({
-      req: { json: async () => body }, get: (k: string) => c.get(k as 'supabase'), set: (k: string, v: unknown) => c.set(k as 'supabase', v as never), env: c.env,
-      json: (j: unknown, status?: number) => ({ json: j, status: status ?? 200 }),
-    }) as unknown as { json: { id?: string; poNumber?: string } & Record<string, unknown>; status: number };
+    const out = await callHandler(c, createMfgPurchaseOrderHandler, body) as unknown as { json: { id?: string; poNumber?: string } & Record<string, unknown>; status: number };
     if (out.status >= 300 || !out.json.id) return c.json({ ...out.json, created }, out.status as 409);
     const { data: made, error: madeErr } = await scopeToCompanyId(sb.from('production_orders').select('id, po_number').eq('source_po_id', out.json.id), co.companyId).maybeSingle();
     if (madeErr || !made) return c.json({ error: 'order_not_made', message: `${String(out.json.poNumber)} was raised but no production order came of it.`, created }, 409);
