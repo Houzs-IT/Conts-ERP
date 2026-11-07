@@ -1352,8 +1352,8 @@ async function undoStart(c: any, sb: any, orderId: string): Promise<string | nul
 }
 
 /* The reason is mandatory, as on a PO; it is kept on the order's history. An order partly through Complete cannot be
-   cancelled (audit item 11): its GR or DO must be undone first. The issued stock comes back, and the in-house PO goes with
-   the order, so nothing is left open behind it. */
+   cancelled while its GR or DO is live (audit item 11); once they are cancelled the step means nothing and is cleared. The
+   issued stock comes back, and the in-house PO goes with the order, so nothing is left open behind it. */
 productionOrders.patch('/:id/cancel', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { reason?: unknown };
   const reason = String(body.reason ?? '').trim();
@@ -1365,14 +1365,14 @@ productionOrders.patch('/:id/cancel', async (c) => {
   const o = data as { status: string; source_po_id: string | null; actual_start_at: string | null; completion_grn_id: string | null; completion_do_id: string | null; completion_step: string | null } | null;
   if (o?.status === 'SUBMITTED' && (o.completion_step || o.completion_grn_id || o.completion_do_id)) {
     const live = await liveCompletionDocs(sb, o);
-    if (live.length > 0 || o.completion_step) return c.json({ error: 'documents_live', message: live.length > 0 ? `Cancel ${live.join(' and ')} first, then cancel this production order.` : 'Complete has already run on this order. Finish it, then reopen it.' }, 409);
+    if (live.length > 0) return c.json({ error: 'documents_live', message: `Cancel ${live.join(' and ')} first, then cancel this production order.` }, 409);
   }
   if (o?.actual_start_at && o.status !== 'RECEIVED') {
     const problem = await undoStart(c, sb, c.req.param('id'));
     if (problem) return c.json({ error: 'stock_failed', message: problem }, 409);
     await touchProjectTasks(sb, c.req.param('id'), 'reopen');
   }
-  const res = await setStatus(c, ['DRAFT', 'SUBMITTED', 'ON_HOLD'], 'CANCELLED', { cancelled_at: new Date().toISOString(), start_lock_at: null, ...START_CLEARED }, reason);
+  const res = await setStatus(c, ['DRAFT', 'SUBMITTED', 'ON_HOLD'], 'CANCELLED', { cancelled_at: new Date().toISOString(), start_lock_at: null, completion_step: null, completion_error: null, completion_grn_id: null, completion_do_id: null, ...START_CLEARED }, reason);
   if (res.status >= 300 || !o?.source_po_id || o.status === 'CANCELLED') return res;
   const po = await callHandler(c, cancelPurchaseOrderHandler, { reason }, { id: o.source_po_id });
   if (po.status >= 300) return c.json({ purchaseOrder: { id: c.req.param('id'), status: 'CANCELLED' }, warning: `The production order is cancelled, but its PO stayed open: ${words(po.json, 'it could not be cancelled')}` });
