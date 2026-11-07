@@ -647,3 +647,10 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Not tried on a real phone camera, nor Built-in and 2D photos with real data. PO payment journal not seen on screen.
 - Backend `test:light` has about 13 files failing on main itself (scans, wording); not touched here.
 - Local test data lives only on localhost.
+
+## Manual and pickers (7-8 Nov 2026, PRs #791-#793)
+- User manuals (computer and phone, English and Chinese) are published artifacts and PDFs, built by a script outside the repo from localhost screenshots; the owner shares them. Screens that change need new screenshots there.
+- Transfer from Sales Order pickers (PO, Production, DO) show Stock & orders per line (GET /renovation-doc-trail/lines). Lines the MRP plan does not list are judged by the quantity on POs and production orders, since MRP Proceed PO leaves po_qty_picked at 0.
+- Project SO tab nets delivery returns (PR #792); a returned line reads PENDING, as on the sales order page.
+- Production photos follow the upload standard (PR #793): sheet after each shot, Record video. A real phone recording a video has not been tried.
+- Payments on the project Overview read Not confirmed until Finance confirms the receipt; tied to the accounting mapping above.
