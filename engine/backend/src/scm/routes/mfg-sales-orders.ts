@@ -43,6 +43,7 @@ import { SO_STATUS_RANK, soStatusTransitionError, soDiscardBlocked } from '../li
 import { HELD_OR_TERM, HOLD_COLUMNS, isDocumentHeld } from '../lib/document-hold';
 import { mountHoldRoute } from './document-hold-routes';
 import { renovationSoWriteFence } from '../lib/renovation-write-fence';
+import { carrySoPhoto } from '../lib/renovation-so-photo-carry';
 import { enqueueSoCreate, enqueueCancel, enqueueEdit, retiredLineOf, type AcRetiredLine } from '../lib/autocount-outbox';
 import { fitSoAddress } from '../../services/autocount-address-fit';
 import { fitAddressIfTouched } from '../lib/so-address-on-save';
@@ -9879,6 +9880,7 @@ mfgSalesOrders.post('/:docNo/items/:itemId/photos', async (c) => {
     await deleteThumbFor(c.env.SO_ITEM_PHOTOS, photoKey);
     return c.json({ error: 'db_update_failed', reason: updErr.message }, 500);
   }
+  await carrySoPhoto(sb, itemId, { add: photoKey });
 
   // PR-D — emit an ADD_LINE-style audit row noting the photo addition.
   // Reuses UPDATE_LINE so the History panel groups it with other line
@@ -10085,6 +10087,7 @@ mfgSalesOrders.delete('/:docNo/items/:itemId/photos/:photoKey', async (c) => {
     .update({ photo_urls: nextKeys })
     .eq('id', itemId);
   if (updErr) return c.json({ error: 'db_update_failed', reason: updErr.message }, 500);
+  await carrySoPhoto(sb, itemId, { remove: photoKey });
 
   // R2 delete best-effort — if it fails we've already removed the key
   // from the array, so the orphan is invisible to the UI. A future
