@@ -11,6 +11,7 @@
    Notes people add by hand live in project_timeline_notes (migration 0118), typed Customer / Design / Supplier /
    Site / Sales. Newest first. */
 
+import { SCM_SYSTEM_STAFF_ID } from "../../scm/lib/staffCompanyScope";
 import { FLOW_STEP_DEFAULT_LABEL, HOLD_FLAG_LABEL, INTERNAL_TASKS, TASK_CATEGORIES, isFlowStepKey } from "../../scm/shared/renovation-stages";
 import { mediaActivityText } from "./betaMedia";
 import { projectDocSql } from "./documents";
@@ -18,7 +19,7 @@ import { isMissingRelation, type Db } from "./load";
 
 export const TIMELINE_NOTE_TYPES = ["customer", "design", "supplier", "site", "sales"] as const;
 export type TimelineNoteType = (typeof TIMELINE_NOTE_TYPES)[number];
-export type TimelineCategory = "system" | TimelineNoteType;
+export type TimelineCategory = "system" | "production" | "delivery" | TimelineNoteType;
 export const TIMELINE_NOTE_MAX = 2000;
 
 export interface TimelineEntry {
@@ -35,6 +36,14 @@ export interface TimelineEntry {
   by: string | null;
   /** the hand-written note's id, for archiving */
   noteId?: number;
+  /** the document it is about, for Beta's link to it */
+  doc?: TimelineDoc;
+}
+
+export interface TimelineDoc {
+  kind: "quotation" | "so" | "po" | "production" | "gr" | "do" | "invoice" | "payment" | "vo";
+  id: string;
+  no: string;
 }
 
 type Row = Record<string, unknown>;
@@ -209,8 +218,8 @@ export async function readProjectTimeline(db: Db, projectId: number, companyId: 
     const { when, ...rest } = e;
     out.push({ ...rest, at: when.at, dateOnly: when.dateOnly });
   };
-  const sys = (id: string, when: { at: string; dateOnly: boolean } | null, t: { title: string; body: string | null }, by: unknown) =>
-    push({ id, when, category: "system", title: plainWords(t.title), body: plainWords(t.body), by: str(by) });
+  const sys = (id: string, when: { at: string; dateOnly: boolean } | null, t: { title: string; body: string | null }, by: unknown, doc?: TimelineDoc) =>
+    push({ id, when, category: "system", title: plainWords(t.title), body: plainWords(t.body), by: str(by), ...(doc ? { doc } : {}) });
 
   const [project, acts, flow, labelsRows, keys, visits, files, dnotes, notes, docs] = await Promise.all([
     db.prepare(`SELECT created_at, ${TS("closed_at")} AS closed_at, ${TS("handed_over_at")} AS handed_over_at, end_date FROM projects WHERE id = ?`).bind(projectId).first<Row>(),
@@ -295,7 +304,8 @@ export async function readProjectTimeline(db: Db, projectId: number, companyId: 
   for (const d of docs) {
     const kind = String(d.kind);
     const title = kind === "po" ? `Purchase order ${String(d.no)} created` : kind === "gr" ? `Goods receipt ${String(d.no)} created` : `Delivery order ${String(d.no)} created`;
-    sys(`${kind}:${String(d.id)}`, d.created_at ? { at: String(d.created_at), dateOnly: false } : null, { title, body: str(d.detail) }, d.by_name);
+    sys(`${kind}:${String(d.id)}`, d.created_at ? { at: String(d.created_at), dateOnly: false } : null, { title, body: str(d.detail) }, d.by_name,
+      { kind: kind === "po" || kind === "gr" ? kind : "do", id: String(d.id), no: String(d.no) });
   }
   for (const n of notes) {
     push({ id: `note:${String(n.id)}`, when: { at: String(n.created_at), dateOnly: false }, category: n.note_type as TimelineNoteType,
@@ -304,20 +314,23 @@ export async function readProjectTimeline(db: Db, projectId: number, companyId: 
   return sortTimeline(out);
 }
 
+/* The shared SCM login stamps its one system staff row on every document: that is the app, not a person who did it. */
+const STAFF_NAME = `CASE WHEN st.id <> '${SCM_SYSTEM_STAFF_ID}' THEN st.name END`;
+
 /** The project's POs, GRs and DOs, one row each: kind, id, number, created_at, a short detail and who made it. */
 async function readDocEvents(db: Db, projectId: number, companyId: number): Promise<Row[]> {
   const q = projectDocSql(
     `SELECT 'po' AS kind, po.id::text AS id, po.po_number AS no, ${TS("po.created_at")} AS created_at,
-            concat_ws(' · ', sup.name, nullif(concat_ws(' / ', po.category_group, po.sub_category), '')) AS detail, st.name AS by_name
+            concat_ws(' · ', sup.name, nullif(initcap(replace(concat_ws(' / ', po.category_group, po.sub_category), '_', ' ')), '')) AS detail, ${STAFF_NAME} AS by_name
        FROM scm.purchase_orders po LEFT JOIN scm.suppliers sup ON sup.id = po.supplier_id LEFT JOIN scm.staff st ON st.id = po.created_by
       WHERE po.id IN (__POS__)
      UNION ALL
      SELECT 'gr', g.id::text, g.grn_number, ${TS("g.created_at")},
-            concat_ws(' · ', sup.name, CASE WHEN g.received_at_site THEN 'received on site' END), st.name
+            concat_ws(' · ', sup.name, CASE WHEN g.received_at_site THEN 'received on site' END), ${STAFF_NAME}
        FROM scm.grns g LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id LEFT JOIN scm.staff st ON st.id = g.created_by
       WHERE g.id IN (__GRS__)
      UNION ALL
-     SELECT 'do', d.id::text, d.do_number, ${TS("d.created_at")}, d.so_doc_no, st.name
+     SELECT 'do', d.id::text, d.do_number, ${TS("d.created_at")}, d.so_doc_no, ${STAFF_NAME}
        FROM scm.delivery_orders d LEFT JOIN scm.staff st ON st.id = d.created_by
       WHERE d.id IN (__DOS__)`,
     projectId, companyId,

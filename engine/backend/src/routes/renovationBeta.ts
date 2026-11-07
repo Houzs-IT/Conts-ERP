@@ -47,9 +47,10 @@ import {
   type MediaItemIn, type ProjectPhoto,
 } from "../services/renovation/betaMedia";
 import { projectDocSql } from "../services/renovation/documents";
-import { plainEntry, readProjectTimeline, sortTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineEntry } from "../services/renovation/timeline";
+import { chainTimeline, statusWords } from "../services/renovation/betaTimelineChain";
+import { datedAt, plainEntry, readProjectTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineDoc, type TimelineEntry } from "../services/renovation/timeline";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
-import { attachmentsReady, linkedFilesFor, listFilesFor, podFiles, textArray, type DocFile } from "../scm/lib/doc-attachments";
+import { attachmentsReady, linkedFilesFor, listFilesFor, orderLineFiles, podFiles, textArray, type DocFile } from "../scm/lib/doc-attachments";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -1196,23 +1197,36 @@ app.patch("/defects/:defectId", requirePermission("projects.write"), async (c) =
   return c.json({ ok: true });
 });
 
-/** Beta's own Timeline: the engine's timeline, each entry filed under what it is about, plus the sales order,
-    payments received, variation orders, deliveries and site receipts. */
+/** Beta's own Timeline: the engine's timeline, each entry filed under what it is about, plus the rest of the document
+    chain: quotations, sales orders, production Start and Complete, invoices, payments, variation orders, deliveries
+    and site receipts. */
 async function betaTimelineExtras(c: Ctx, projectId: number, companyId: number): Promise<TimelineEntry[]> {
   const q = (sql: string) => projectDocSql(sql, projectId, companyId);
   const hidden = financeHiddenForUser(c.get("user"));
   const safe = (p: Promise<Row[]>): Promise<Row[]> => p.catch((e: unknown) => { if (isMissingRelation(e)) return []; throw e; });
-  const [sos, pays, vos, dos, grs] = await Promise.all([
-    safe(rowsOf(c, q(`SELECT doc_no, so_date::text AS so_date, ${TS("created_at")} AS created_at, status::text AS status, local_total_sen::bigint AS total_sen
+  const [quotes, sos, orders, invoices, pays, vos, dos, grs] = await Promise.all([
+    safe(rowsOf(c, q(`SELECT q.id::text AS id, q.quote_no, q.status::text AS status, q.current_rev, ${TS("q.created_at")} AS created_at,
+                             (SELECT r.doc_date::date::text FROM scm.reno_quotation_revisions r WHERE r.quotation_id = q.id AND r.rev_no = q.current_rev) AS doc_date
+                        FROM scm.reno_quotations q WHERE q.project_id = ?1 AND q.company_id = ?2`))),
+    safe(rowsOf(c, q(`SELECT doc_no, so_date::date::text AS so_date, ${TS("created_at")} AS created_at, status::text AS status, local_total_sen::bigint AS total_sen
                         FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2`))),
+    /* Complete makes its GR and DO a moment before it stamps the order: it sits at the first of them, so it reads before them. */
+    safe(rowsOf(c, q(`SELECT o.id::text AS id, o.po_number AS no, o.status::text AS status, po.po_number AS po_no, ${TS("o.actual_start_at")} AS started_at,
+                             o.actual_start_by_name AS started_by, ${TS("least(o.received_at, g.created_at, d.created_at)")} AS done_at
+                        FROM scm.production_orders o LEFT JOIN scm.purchase_orders po ON po.id = o.source_po_id
+                        LEFT JOIN scm.grns g ON g.id = o.completion_grn_id LEFT JOIN scm.delivery_orders d ON d.id = o.completion_do_id
+                       WHERE o.company_id = ?2 AND o.status::text <> 'CANCELLED' AND (o.project_id = ?1 OR o.source_po_id IN (__POS__))`))),
+    safe(rowsOf(c, q(`SELECT s.id::text AS id, s.invoice_number, s.invoice_date::date::text AS invoice_date, ${TS("s.created_at")} AS created_at, s.status::text AS status,
+                             s.total_sen::bigint AS total_sen
+                        FROM scm.sales_invoices s WHERE s.id IN (__SIS__)`))),
     hidden ? Promise.resolve([] as Row[]) : safe(rowsOf(c, q(
-      `SELECT p.id::text AS id, p.so_doc_no, p.paid_at::text AS paid_on, ${TS("p.created_at")} AS created_at, p.amount_sen::bigint AS amount_sen, p.method::text AS method
+      `SELECT p.id::text AS id, p.so_doc_no, p.paid_at::date::text AS paid_on, ${TS("p.created_at")} AS created_at, p.amount_sen::bigint AS amount_sen, p.method::text AS method
          FROM scm.mfg_sales_order_payments p WHERE p.so_doc_no IN (SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2)`))),
     safe(rowsOf(c, q(`SELECT v.id::text AS id, v.vo_no, v.title, v.status, v.net_sen::bigint AS net_sen, ${TS("v.created_at")} AS created_at,
                              ${TS("v.approved_at")} AS approved_at, v.approved_by, v.signed_name
                         FROM scm.reno_variation_orders v
                        WHERE v.company_id = ?2 AND v.so_doc_no IN (SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2)`))),
-    safe(rowsOf(c, q(`SELECT d.id::text AS id, d.do_number, ${TS("d.delivered_at")} AS delivered_at, d.pod_r2_key IS NOT NULL AS has_pod,
+    safe(rowsOf(c, q(`SELECT d.id::text AS id, d.do_number, ${TS("d.delivered_at")} AS delivered_at, d.pod_r2_key, d.pod_photo_keys,
                              d.signature_data IS NOT NULL AS signed
                         FROM scm.delivery_orders d WHERE d.id IN (__DOS__) AND d.delivered_at IS NOT NULL`))),
     safe(rowsOf(c, q(`SELECT g.id::text AS id, g.grn_number, ${TS("g.site_received_at")} AS at, sup.name AS supplier, g.customer_signer_name,
@@ -1220,38 +1234,65 @@ async function betaTimelineExtras(c: Ctx, projectId: number, companyId: number):
                         FROM scm.grns g LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id
                        WHERE g.id IN (__GRS__) AND g.received_at_site AND g.site_received_at IS NOT NULL`))),
   ]);
+  /* The photos behind a delivery prove it too: a production order's photos are its POD, a twin's POD is shared. */
+  const proof: Map<string, DocFile[]> = await attachmentsReady(db(c)).catch(() => false)
+    ? await linkedFilesFor(db(c), [
+      ...dos.map((d) => ({ type: "delivery_order" as const, id: String(d.id) })),
+      ...grs.map((g) => ({ type: "goods_received" as const, id: String(g.id) })),
+    ], companyId)
+    : new Map<string, DocFile[]>();
+  const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? "" : "s"}`;
   const out: TimelineEntry[] = [];
-  const day = (d: unknown, fallback: unknown): { at: string; dateOnly: boolean } | null => {
-    const s = str(d);
-    if (s && /^\d{4}-\d{2}-\d{2}$/.test(s)) return { at: `${s}T00:00:00Z`, dateOnly: true };
-    const f = str(fallback);
-    return f ? { at: f, dateOnly: false } : null;
+  const add = (id: string, when: { at: string; dateOnly: boolean } | null, category: TimelineCategory, title: string, body: string | null, by: string | null, doc: TimelineDoc) => {
+    if (when) out.push({ id, at: when.at, dateOnly: when.dateOnly, category, title, body, by, doc });
   };
-  const add = (id: string, when: { at: string; dateOnly: boolean } | null, category: TimelineCategory, title: string, body: string | null, by: string | null = null) => {
-    if (when) out.push({ id, at: when.at, dateOnly: when.dateOnly, category, title, body, by });
-  };
+  const moment = (at: unknown) => { const s = str(at); return s ? { at: s, dateOnly: false } : null; };
+  for (const x of quotes) {
+    const no = String(x.quote_no);
+    add(`quotation:${String(x.id)}`, datedAt(x.doc_date, x.created_at), "sales", `Quotation ${no}`,
+      [statusWords(x.status), Number(x.current_rev) > 1 ? `Revision ${String(x.current_rev)}` : null].filter(Boolean).join(" · ") || null, null, { kind: "quotation", id: String(x.id), no });
+  }
   for (const s of sos) {
-    add(`so:${String(s.doc_no)}`, day(s.so_date, s.created_at), "sales", `Sales order ${String(s.doc_no)}`,
-      [hidden || s.total_sen == null ? null : money(Number(s.total_sen)), str(s.status)].filter(Boolean).join(" · ") || null);
+    const no = String(s.doc_no);
+    add(`so:${no}`, datedAt(s.so_date, s.created_at), "sales", `Sales order ${no}`,
+      [hidden || s.total_sen == null ? null : money(Number(s.total_sen)), statusWords(s.status)].filter(Boolean).join(" · ") || null, null, { kind: "so", id: no, no });
+  }
+  for (const o of orders) {
+    const doc = { kind: "production" as const, id: String(o.id), no: String(o.no) };
+    const made = str(o.po_no) ? `From ${String(o.po_no)}` : null;
+    add(`prod:${doc.id}:start`, moment(o.started_at), "production", `Production started: ${doc.no}`, made, str(o.started_by), doc);
+    if (o.status === "RECEIVED") add(`prod:${doc.id}:done`, moment(o.done_at), "production", `Production completed: ${doc.no}`, made, null, doc);
+  }
+  for (const s of invoices) {
+    const no = String(s.invoice_number);
+    add(`si:${String(s.id)}`, datedAt(s.invoice_date, s.created_at), "sales", `Sales invoice ${no}`,
+      [hidden || s.total_sen == null ? null : money(Number(s.total_sen)), statusWords(s.status)].filter(Boolean).join(" · ") || null, null, { kind: "invoice", id: String(s.id), no });
   }
   for (const p of pays) {
-    add(`pay:${String(p.id)}`, day(p.paid_on, p.created_at), "sales", `Payment received ${money(Number(p.amount_sen ?? 0))}`,
-      [str(p.method), str(p.so_doc_no)].filter(Boolean).join(" · ") || null);
+    add(`pay:${String(p.id)}`, datedAt(p.paid_on, p.created_at), "sales", `Payment received ${money(Number(p.amount_sen ?? 0))}`,
+      [statusWords(p.method), str(p.so_doc_no)].filter(Boolean).join(" · ") || null, null, { kind: "payment", id: String(p.id), no: String(p.so_doc_no) });
   }
   for (const v of vos) {
-    const label = `Variation order ${String(v.vo_no)}`;
-    add(`vo:${String(v.id)}`, day(null, v.created_at), "sales", `${label} drafted`,
-      [str(v.title), hidden ? null : money(Number(v.net_sen ?? 0))].filter(Boolean).join(" · ") || null);
-    if (v.approved_at) add(`vo:${String(v.id)}:approved`, day(null, v.approved_at), "sales", `${label} approved`, str(v.signed_name) ? `Signed by ${String(v.signed_name)}` : null, str(v.approved_by));
+    const doc = { kind: "vo" as const, id: String(v.id), no: String(v.vo_no) };
+    const label = `Variation order ${doc.no}`;
+    add(`vo:${doc.id}`, moment(v.created_at), "sales", `${label} drafted`,
+      [str(v.title), hidden ? null : money(Number(v.net_sen ?? 0))].filter(Boolean).join(" · ") || null, null, doc);
+    if (v.approved_at) add(`vo:${doc.id}:approved`, moment(v.approved_at), "sales", `${label} approved`, str(v.signed_name) ? `Signed by ${String(v.signed_name)}` : null, str(v.approved_by), doc);
   }
   for (const d of dos) {
-    add(`deliv:${String(d.id)}`, day(null, d.delivered_at), "supplier", `Delivered: ${String(d.do_number)}`,
-      [d.has_pod === true ? "Proof of delivery photo" : null, d.signed === true ? "signed" : null].filter(Boolean).join(" · ") || "No proof of delivery yet");
+    const id = String(d.id);
+    const listed = Array.isArray(d.pod_photo_keys) ? d.pod_photo_keys.length : 0;
+    const shots = (listed || (d.pod_r2_key ? 1 : 0)) + (proof.get(`delivery_order:${id}`)?.length ?? 0);
+    add(`deliv:${id}`, moment(d.delivered_at), "delivery", `Delivered: ${String(d.do_number)}`,
+      [shots ? plural(shots, "proof of delivery photo") : null, d.signed === true ? "signed" : null].filter(Boolean).join(" · ") || "No proof of delivery yet", null,
+      { kind: "do", id, no: String(d.do_number) });
   }
   for (const g of grs) {
-    const n = Number(g.photos ?? 0);
-    add(`grsite:${String(g.id)}`, day(null, g.at), "supplier", `Received on site: ${String(g.grn_number)}`,
-      [str(g.supplier), `${n} photo${n === 1 ? "" : "s"}`, str(g.customer_signer_name) ? `signed by ${String(g.customer_signer_name)}` : null].filter(Boolean).join(" · "));
+    const id = String(g.id);
+    const n = Number(g.photos ?? 0) + (proof.get(`goods_received:${id}`)?.length ?? 0);
+    add(`grsite:${id}`, moment(g.at), "delivery", `Received on site: ${String(g.grn_number)}`,
+      [str(g.supplier), plural(n, "photo"), str(g.customer_signer_name) ? `signed by ${String(g.customer_signer_name)}` : null].filter(Boolean).join(" · "), null,
+      { kind: "gr", id, no: String(g.grn_number) });
   }
   return out;
 }
@@ -1267,7 +1308,7 @@ app.get("/projects/:id/timeline", requirePageAccess("projects.list"), async (c) 
       readProjectTimeline(db(c), id, co, { docsReady, notesReady }),
       docsReady ? betaTimelineExtras(c, id, co) : Promise.resolve([] as TimelineEntry[]),
     ]);
-    const entries = sortTimeline([...base, ...extra]).map((e) => plainEntry({ ...e, category: betaCategory(e) }));
+    const entries = chainTimeline([...base, ...extra].map((e) => ({ ...e, category: betaCategory(e) }))).map(plainEntry);
     return c.json({ entries });
   } catch (e) {
     console.error("[renovation-beta] timeline read failed", e);
