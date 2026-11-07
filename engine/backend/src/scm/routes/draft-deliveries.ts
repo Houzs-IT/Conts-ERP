@@ -56,7 +56,7 @@ draftDeliveries.get('/', async (c) => {
        FROM scm.delivery_orders d
        LEFT JOIN scm.mfg_sales_orders so ON so.doc_no = d.so_doc_no
        LEFT JOIN projects p ON p.id = coalesce(d.project_id, so.project_id)
-      WHERE d.company_id = ? AND d.status::text = 'DRAFT'
+      WHERE d.company_id = ? AND d.status::text = 'DRAFT' AND NOT d.on_hold AND NOT coalesce(so.on_hold, false) AND coalesce(so.status::text, '') <> 'ON_HOLD'
       ORDER BY coalesce(d.customer_delivery_date, d.do_date) NULLS LAST, d.time_range NULLS LAST, d.do_number
       LIMIT 300`,
   ).bind(co.companyId).all<DraftJobRow>();
@@ -71,7 +71,8 @@ export function completeProblem(b: { podKeys?: unknown; receivedBy?: unknown }):
 }
 
 /* Mark complete confirms the draft: stock moves, POD and Received by stay on the DO, and a DO straight to site raises its GR
-   with the same POD, through the status route every other confirm takes. A second press finds it confirmed and does nothing. */
+   with the same POD, through the status route every other confirm takes, which also refuses a held DO or SO. A second press
+   finds it confirmed and does nothing. */
 draftDeliveries.post('/:id/complete', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);

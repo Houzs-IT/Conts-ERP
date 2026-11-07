@@ -15,7 +15,7 @@ import { Hono } from 'hono';
 import { propagateDoCrewToTrip } from '../lib/trip-crew-sync';
 import type { Context } from 'hono';
 import { normalizePhone } from '../shared/phone';
-import { firstUndeliverableSo, soNotDeliverableResponse } from '../lib/source-document-gates';
+import { firstHeldSo, firstUndeliverableSo, heldSoBehindLines, soNotDeliverableResponse, soOnHoldResponse } from '../lib/source-document-gates';
 import { HOLD_COLUMNS, isDocumentHeld } from '../lib/document-hold';
 import { mountHoldRoute } from './document-hold-routes';
 import { DO_STATUS_BUCKETS } from '../lib/do-status-buckets';
@@ -5188,7 +5188,7 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const { data: cur } = await scopeToCompanyId(
-    sb.from('delivery_orders').select('status, so_doc_no, customer_delivered_date, updated_at').eq('id', id), co.companyId,
+    sb.from('delivery_orders').select('status, so_doc_no, customer_delivered_date, updated_at, on_hold').eq('id', id), co.companyId,
   ).maybeSingle();
   if (!cur) return c.json(NOT_THIS_COMPANY, 404);
   const prevStatus = (cur as { status: string }).status;
@@ -5249,6 +5249,13 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
   if (toStatus === 'CANCELLED') {
     const childLock = await doHasDownstream(sb, id);
     if (childLock) return c.json(childLock, 409);
+  }
+
+  /* A hold pauses the goods: nothing leaves on a draft that is held, or on one whose SO is. */
+  if (SHIPPED_STATES.includes(toStatus) && DO_PRESHIP_STATUSES.has((prevStatus ?? '').toUpperCase())) {
+    if (isDocumentHeld(cur as { status: string; on_hold: boolean | null })) return c.json({ error: 'do_on_hold', message: 'This Delivery Order is on hold. Take it off hold first.' }, 409);
+    const heldSo = await heldSoBehindLines(sb, 'delivery_order_items', 'delivery_order_id', id) ?? await firstHeldSo(sb, [(cur as { so_doc_no?: string | null }).so_doc_no]);
+    if (heldSo) return c.json(soOnHoldResponse(heldSo), 409);
   }
 
   const now = new Date().toISOString();

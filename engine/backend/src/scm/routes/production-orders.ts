@@ -50,6 +50,7 @@ import { checkReturn, filterProductionTab, holidaySet, materialPoWarehouse, mate
 import { filterProductionList } from '../lib/production-list-read';
 import { PRODUCTION_DOC, issueMaterials, returnMaterial, reverseIssues } from '../lib/renovation-production-stock';
 import { voChangeWaiting } from '../lib/renovation-po-change-guard';
+import { heldSoBehindLines, soOnHoldResponse } from '../lib/source-document-gates';
 
 export const productionOrders = new Hono<{ Bindings: Env; Variables: Variables }>();
 productionOrders.use('*', supabaseAuth);
@@ -1631,6 +1632,8 @@ productionOrders.post('/:id/start', async (c) => {
   if (order.actual_start_at) return c.json({ ok: true, alreadyStarted: true, startedAt: order.actual_start_at });
   if (order.status !== 'SUBMITTED') return c.json({ error: 'validation', message: `Only a confirmed order can start (this one is ${order.status.toLowerCase()}).` }, 409);
   if (order.on_hold) return c.json({ error: 'validation', message: 'This production order is on hold. Take it off hold first.' }, 409);
+  const heldSo = await heldSoBehindLines(sb, 'production_order_items', 'production_order_id', id);
+  if (heldSo) return c.json(soOnHoldResponse(heldSo), 409);
   const stale = new Date(Date.now() - 120_000).toISOString();
   const { data: locked, error: lockErr } = await scopeToCompanyId(sb.from('production_orders').update({ start_lock_at: new Date().toISOString() }).eq('id', id), co.companyId)
     .is('actual_start_at', null).or(`start_lock_at.is.null,start_lock_at.lt.${stale}`).select('id');
