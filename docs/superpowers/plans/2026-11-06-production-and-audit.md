@@ -114,3 +114,10 @@ Test failures to look at: documentRefs, mailAliasRevocation, projectChecklistTem
 - Add photo (deliveries and Production progress): camera for several shots in a row, or multi-select from the album.
 - The Draft tab on Delivery Orders reads Draft delivery. The phone screen is titled Draft delivery too. No separate desktop page.
 - Phone Mark complete turns a Draft DO into Confirmed. A direct-to-site DO raises its GR at that moment, server side, once.
+
+## Added by the owner, 7 Nov 2026 (later)
+- Raw material quantities are edited on the SO line and follow to the production order until it is completed.
+- Every document of a renovation order shows Order status: the chain with dates. PO date sits under its number, as on GR and DO.
+- Handover may happen with work not finished: tasks just stay incomplete. No gate is added.
+- Accounting mapping is handled by someone else.
+- Inside the ERP a phone opens the Production and Draft delivery phone screens; other screens stay the fitted layout.
