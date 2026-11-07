@@ -35,7 +35,7 @@ import { PO_LINE_AUDIT_FIELDS, PO_LINE_AUDIT_SELECT } from '../lib/entity-audit-
 import { eager } from '../lib/concurrency';
 import { skuCategoryResolver, lineIdentityFields } from '../lib/sku-category';
 import { readMfgProductBindings } from '../lib/supplier-bindings';
-import { VALID_STATUSES, parseBulkSupplierDateBody, createMfgPurchaseOrderHandler, cancelPurchaseOrderHandler, reopenPurchaseOrderHandler } from './mfg-purchase-orders';
+import { VALID_STATUSES, addPoLineHandler, parseBulkSupplierDateBody, createMfgPurchaseOrderHandler, cancelPurchaseOrderHandler, reopenPurchaseOrderHandler } from './mfg-purchase-orders';
 import { computeMrp } from './mrp';
 import { postGrnAndRollup, recordGrnCreate } from './grns';
 import { createDoFromSoLinesHandler, deductInventoryForDo, patchDeliveryOrderStatusHandler, soDeliverableRemaining } from './delivery-orders-mfg';
@@ -641,6 +641,18 @@ async function changesAfterStart(sb: any, header: Record<string, unknown>, soIte
   return out.sort((a, b) => b.at.localeCompare(a.at));
 }
 
+/* An order made from a PO takes new lines through that PO: Complete receives PO lines and the SO quota is counted there, so
+   a line only on the order would be neither. Migration 0208's trigger copies it across. */
+type AddedLine = { ok: true; item: unknown } | { ok: false; status: number; body: { error: string; message: string } };
+async function addLineThroughPo(c: any, sb: any, poId: string, line: unknown): Promise<AddedLine> {
+  const out = await callHandler(c, addPoLineHandler, line, { id: poId });
+  if (out.status >= 300) return { ok: false, status: out.status, body: { error: String(out.json.error ?? 'po_line_failed'), message: words(out.json, 'The line could not be added to the PO.') } };
+  const poLineId = (out.json.item as { id?: string } | undefined)?.id;
+  const { data } = await sb.from('production_order_items').select('*').eq('source_po_item_id', poLineId).maybeSingle();
+  if (!data) return { ok: false, status: 409, body: { error: 'order_line_missing', message: 'The line went on the PO but did not reach this production order. Refresh and check the PO.' } };
+  return { ok: true, item: data };
+}
+
 /* In-house technicians, for Assign. */
 productionOrders.get('/workers', async (c) => {
   const { data, error } = await c.get('supabase').from('production_workers').select('id, name, trade').order('name');
@@ -959,6 +971,16 @@ productionOrders.post('/from-sos', async (c) => {
       const left = Number(so.qty) - Number(so.po_qty_picked ?? 0);
       if (Math.floor(Number(p.qty)) > left) return c.json({ error: 'qty_exceeds_remaining', message: `${so.item_code}: only ${left} of this Sales Order line is left to order.` }, 409);
     }
+    if (order.source_po_id) {
+      let appended = 0;
+      for (const p of picks) {
+        const added = await addLineThroughPo(c, sb, order.source_po_id, toItem(p, soById.get(p.soItemId)!));
+        if (!added.ok) return c.json({ ...added.body, appended }, added.status as 409);
+        appended += 1;
+      }
+      await recomputePoExpectedAt(sb, b.targetPoId);
+      return c.json({ total: 1, created: [], appended }, 201);
+    }
     const { data: last } = await sb.from('production_order_items').select('line_no').eq('production_order_id', b.targetPoId).order('line_no', { ascending: false }).limit(1);
     const start = Number(((last ?? [])[0] as { line_no?: number } | undefined)?.line_no ?? 0) + 1;
     const rows = picks.map((p) => {
@@ -1072,9 +1094,10 @@ productionOrders.post('/:id/items', async (c) => {
   const sb = c.get('supabase');
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const { data: parent } = await scopeToCompanyId(sb.from('production_orders').select('id, status').eq('id', poId), co.companyId).maybeSingle();
+  const { data: parent } = await scopeToCompanyId(sb.from('production_orders').select('id, status, source_po_id').eq('id', poId), co.companyId).maybeSingle();
   if (!parent) return c.json(NOT_THIS_COMPANY, 404);
   if (linesClosed((parent as { status: string }).status)) return c.json(LINES_CLOSED, 409);
+  const sourcePoId = (parent as { source_po_id: string | null }).source_po_id;
   const unknownAdd = await unknownProductCodeRefusal(sb, [{ code: it.itemCode, kind: it.materialKind }], co.companyId);
   if (unknownAdd) return c.json(unknownAdd, 409);
   const addedBuiltIn = await builtInAmong(sb, co.companyId, [String(it.itemCode)]);
@@ -1094,11 +1117,19 @@ productionOrders.post('/:id/items', async (c) => {
     unit_cost_sen: Number(it.unitCostSen ?? 0), delivery_date: dateOrNull(it.deliveryDate), supplier_delivery_date_2: dateOrNull(it.supplierDeliveryDate2),
     supplier_delivery_date_3: dateOrNull(it.supplierDeliveryDate3), supplier_delivery_date_4: dateOrNull(it.supplierDeliveryDate4), warehouse_id: (it.warehouseId as string) ?? null,
   };
-  const { data: last } = await sb.from('production_order_items').select('line_no').eq('production_order_id', poId).order('line_no', { ascending: false }).limit(1);
-  const lineNo = Number(((last ?? [])[0] as { line_no?: number } | undefined)?.line_no ?? 0) + 1;
-  const { data, error } = await sb.from('production_order_items').insert({ ...row, line_no: lineNo, company_id: activeCompanyId(c) }).select('*').single();
-  if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
-  await recomputePoTotals(sb, poId);
+  let data: unknown;
+  if (sourcePoId) {
+    const through = await addLineThroughPo(c, sb, sourcePoId, it);
+    if (!through.ok) return c.json(through.body, through.status as 409);
+    data = through.item;
+  } else {
+    const { data: last } = await sb.from('production_order_items').select('line_no').eq('production_order_id', poId).order('line_no', { ascending: false }).limit(1);
+    const lineNo = Number(((last ?? [])[0] as { line_no?: number } | undefined)?.line_no ?? 0) + 1;
+    const { data: inserted, error } = await sb.from('production_order_items').insert({ ...row, line_no: lineNo, company_id: activeCompanyId(c) }).select('*').single();
+    if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
+    data = inserted;
+    await recomputePoTotals(sb, poId);
+  }
   await recomputePoExpectedAt(sb, poId);
   const added = (data ?? {}) as unknown as Record<string, unknown>;
   const meta = await loadAuditMeta(sb, poId);

@@ -2896,7 +2896,7 @@ export async function soLineOverConvertRefusal(
   return requested > remaining ? { soItemId, requested, remaining } : null;
 }
 
-mfgPurchaseOrders.post('/:id/items', async (c) => {
+export const addPoLineHandler = async (c: any) => {
   const poId = c.req.param('id');
   let it: Record<string, unknown>;
   try { it = (await c.req.json()) as Record<string, unknown>; } catch { return c.json({ error: 'invalid_json' }, 400); }
@@ -3020,7 +3020,8 @@ mfgPurchaseOrders.post('/:id/items', async (c) => {
   await queueAcPoEdit(c, poId, [], data?.id ? [String(data.id)] : []);
 
   return c.json({ item: data }, 201);
-});
+};
+mfgPurchaseOrders.post('/:id/items', addPoLineHandler);
 
 mfgPurchaseOrders.patch('/:id/items/:itemId', async (c) => {
   const poId = c.req.param('id'); const itemId = c.req.param('itemId');
