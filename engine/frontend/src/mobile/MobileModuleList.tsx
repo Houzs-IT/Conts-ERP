@@ -1,3 +1,4 @@
+import { CONTS_EMBEDDED } from "../conts/embed";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { siDepositAppliedSen, siOutstandingSen } from "../vendor/scm/lib/si-outstanding";
 import { lineIdentity } from "@2990s/shared";
@@ -537,7 +538,7 @@ export function MobileModuleList({
   return (
     <div className="hz-m" style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--app-bg)" }}>
       <header className="hdr">
-        {onBack && (
+        {onBack && !CONTS_EMBEDDED && (
           <div style={{ marginBottom: 8 }}>
             <button className="back" onClick={onBack}>
               <span className="chev">{"‹"}</span> Menu
