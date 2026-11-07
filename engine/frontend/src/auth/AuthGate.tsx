@@ -8,7 +8,7 @@ import {
   shortCompanyName,
 } from "../lib/branding";
 import { useIsMobile } from "../mobile/useIsMobile";
-import { CONTS_EMBEDDED } from "../conts/embed";
+import { CONTS_EMBEDDED, PHONE_DESIGNED } from "../conts/embed";
 
 // Code-split the mobile app: desktop users never download it, and it stays out
 // of the initial JS bundle (keeps the bundle-budget CI gate green).
@@ -67,6 +67,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // Conts: inside Property OS every screen is the one layout, fitted to the phone (owner, 16 Oct 2026), so
   // no screen is "not available on mobile".
   const mobileEnabled = isMobile && !CONTS_EMBEDDED && hostDefaultCompanyCode() === HOUZS_COMPANY_CODE;
+  const [path, setPath] = useState(() => window.location.pathname);
+  useEffect(() => {
+    if (!CONTS_EMBEDDED) return;
+    const moved = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", moved);
+    window.addEventListener("conts:moved", moved);
+    return () => { window.removeEventListener("popstate", moved); window.removeEventListener("conts:moved", moved); };
+  }, []);
+  const phoneShell = mobileEnabled || (isMobile && CONTS_EMBEDDED && hostDefaultCompanyCode() === HOUZS_COMPANY_CODE && PHONE_DESIGNED.test(path));
 
   // Track the hash so in-page links (#forgot, back-to-login) re-render
   // the gate without a full navigation. #invite= arrives as a fresh
@@ -139,7 +148,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   }
 
-  return mobileEnabled ? (
+  return phoneShell ? (
     <LazySlot resetKey={slotKey("shell-mobile")} fallback={null}>
       <MobileApp />
     </LazySlot>
