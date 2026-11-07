@@ -192,7 +192,7 @@ describe("mobile route drift gate", () => {
     // 7 since 2026-09-17: /titles, the phone Titles editor (position_policy),
     // the last desktop-only Roles & Permissions surface to reach the phone.
     expect(PROFILE_ORG_ITEMS).toHaveLength(7);
-    expect(allMobile).toHaveLength(44);
+    expect(allMobile).toHaveLength(46);
     expect(new Set(allMobile.map((item) => item.to)).size).toBe(44);
     expect(new Set(allMobile.map((item) => item.to.split("?")[0])).size).toBe(43);
   });
