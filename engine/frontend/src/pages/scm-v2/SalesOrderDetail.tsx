@@ -123,6 +123,7 @@ import { paymentSaveOutcome } from '../../vendor/scm/lib/payment-save-outcome';
 import { completePaymentRetryDraft, consumePaymentRetryNavigationState, readPaymentRetryHandoff, readPaymentRetryNavigationState } from '../../lib/paymentRetryHandoff';
 import { DocumentRelationshipMapModal, DocumentChoiceDialog } from '../../components/scm-v2/DocumentRelationshipMapModal';
 import { useSoRelationshipMap } from './so-relationship-map';
+import { RenovationDocTrail } from './RenovationDocTrail';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
 import { usePrompt } from '../../vendor/scm/components/PromptDialog';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
@@ -2566,6 +2567,7 @@ export const SalesOrderDetail = () => {
             </DetailAside>
           </DetailGrid>
 
+          <RenovationDocTrail kind="so" id={header.doc_no} />
           {/* Line items, full width in both modes: the edit rows need it, and Edit must not move the section. */}
           <Section
             title={`Line items · ${isEditing ? visibleLines.total : lineRows.length}`}

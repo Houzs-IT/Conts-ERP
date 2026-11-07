@@ -62,6 +62,8 @@ export interface ManagedLine {
   supplierChoices?: SupplierChoice[];
   /** Its raw materials: the list saved on the line, else the SKU's composition times the line's qty. */
   materials?: LineMaterial[];
+  /** The completed production order that closes its raw materials (null: they can still change). */
+  materialsClosedBy?: string | null;
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none). */
   categoryCode: string | null;

@@ -1064,6 +1064,8 @@ import { productionLineImport } from "./routes/production-line-import";
 import { productionOrderItemPhotos } from "./routes/production-order-item-photos";
 import { productionOrderAttachments } from "./routes/doc-attachments";
 import { renovationProductionInfo } from "./routes/renovation-doc-flow";
+import { renovationDocTrail } from "./routes/renovation-doc-trail";
+scm.route("/renovation-doc-trail", renovationDocTrail);
 scm.use("/production-orders/*", scmAreaGuard("scm.procurement.production"));
 scm.route("/production-orders/draft-deliveries", draftDeliveries);
 scm.route("/production-orders", productionLineImport);

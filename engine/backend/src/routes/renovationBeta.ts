@@ -31,9 +31,12 @@ import {
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
-import { bindSupplier, cleanLinePlan, contractLineOf, lineSupplierState, loadProjectLines, notRawMaterials, projectLine, saveLineMaterials, saveLinePlan, saveLinePlans, saveLineSupplier, supplierBinding } from "../services/renovation/betaLines";
+import { bindSupplier, cleanLinePlan, contractLineOf, lineSupplierState, loadProjectLines, notRawMaterials, projectLine, saveLinePlan, saveLinePlans, saveLineSupplier, supplierBinding } from "../services/renovation/betaLines";
 import { patchContract } from "../scm/lib/renovation-so";
 import { inRenoTx, RenoError, sqlFor } from "../scm/lib/renovation-db";
+import { saveMaterialsAndFollow } from "../scm/lib/renovation-line-materials";
+import { issueMaterials } from "../scm/lib/renovation-production-stock";
+import { getSupabaseService } from "../db/supabase";
 import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
 import {
   betaCategory, cleanAssignee, cleanDefectPatch, defectPatchNote, isImageName, money, sortDeliveries, uniqueAreas,
@@ -914,7 +917,8 @@ app.get("/raw-materials", requirePageAccess("projects.list"), async (c) => {
 });
 
 /* A line's raw materials (owner, 5 Nov 2026): the whole list replaces what it had, and a production order made from the
-   line brings it along (migration 0223). A line on a live PO is past that point: its order holds the materials. */
+   line brings it along (migration 0223). Once an order exists the change follows it (owner, 7 Nov 2026), and an extra on
+   a started order leaves stock now, as Request more does. */
 app.put("/projects/:id/lines/:itemId/materials", requirePermission("projects.write"), async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
@@ -929,13 +933,21 @@ app.put("/projects/:id/lines/:itemId/materials", requirePermission("projects.wri
   const line = await projectLine(db(c), id, co, c.req.param("itemId"), await categoryScope(c));
   if (!line) return c.json({ error: "not_found" }, 404);
   const state = await lineSupplierState(db(c), line.id);
-  if (state.poNumber) return c.json({ error: "line_on_po", message: `${state.poNumber} already buys ${state.itemCode}: change its materials on the production order.` }, 409);
   const wrong = await notRawMaterials(db(c), materials.map((m) => m.code), co);
   if (wrong.length > 0) return c.json({ error: "invalid_materials", message: `${wrong[0]} is not a Raw material SKU.` }, 400);
+  const sql = sqlFor(c.env);
+  if (!sql) return c.json({ error: "materials_save_failed", message: "The materials could not be saved. Try again." }, 503);
   try {
-    await saveLineMaterials(db(c), line.id, co, userId(c), materials);
+    const started = await inRenoTx(sql, (tx) => saveMaterialsAndFollow(tx, { soItemId: line.id, companyId: co, userId: userId(c), materials }));
     await activityStmt(c, id, co, "beta_line_materials", null, line.doc_no, `${state.itemCode}: ${materials.length} raw material${materials.length === 1 ? "" : "s"}`).run();
+    const sb = getSupabaseService(c.env);
+    for (const o of started) {
+      const { data } = await sb.from("production_order_materials").select("id").eq("production_order_id", o.orderId).in("item_code", o.codes);
+      const issued = await issueMaterials(sb, { orderId: o.orderId, poNumber: o.poNumber, companyId: co, performedBy: null, only: ((data ?? []) as Array<{ id: string }>).map((m) => m.id) });
+      if (!issued.ok) return c.json({ error: "stock_failed", message: `Saved, but the extra did not leave stock for ${o.poNumber}: ${issued.reason}` }, 409);
+    }
   } catch (e) {
+    if (e instanceof RenoError) return c.json({ error: e.code, message: e.message }, e.status === 503 ? 409 : e.status);
     console.error("[renovation-beta] line materials save failed", e);
     return c.json({ error: "materials_save_failed", message: "The materials could not be saved. Try again.", detail: readDetail(e) }, 500);
   }

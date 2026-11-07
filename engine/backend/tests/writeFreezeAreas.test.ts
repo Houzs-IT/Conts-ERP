@@ -62,9 +62,11 @@ describe('the area table mirrors scm/index.ts', () => {
        bypass perms. Listing it among the never-liftable data routers would tell
        the operator something false. It is the only such exclusion. */
     const NOT_A_DATA_ROUTER = new Set(['/write-freeze']);
+    /* Sits behind the /production-orders/* guard, so it has an area without a mount of its own. */
+    const insideGuard = (r: string) => mountsFromSource().some(([p]) => p.endsWith('/*') && r.startsWith(p.slice(0, -1)));
     const guarded = new Set(mountsFromSource().map(([p]) => p.replace(/\/\*$/, '')));
     const unguarded = routedPrefixesFromSource()
-      .filter((r) => !guarded.has(r) && !NOT_A_DATA_ROUTER.has(r));
+      .filter((r) => !guarded.has(r) && !NOT_A_DATA_ROUTER.has(r) && !insideGuard(r));
     expect([...SCM_UNGUARDED_PREFIXES].sort()).toEqual(unguarded.sort());
   });
 

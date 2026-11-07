@@ -11,6 +11,7 @@
 
 import { lazy, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { RenovationDocTrail } from "./RenovationDocTrail";
 import { PoPaymentScheduleCard } from "../renovation/PoPaymentScheduleCard";
 import { LazySlot } from "../../components/LazySlot";
 import { ProductionOrderChips, useProductionOrderLinks } from "./ProductionOrderChips";
@@ -1348,6 +1349,7 @@ function PurchaseOrderDetailV2ReadOnly() {
 
         <DetailGrid>
           <DetailMain>
+            <RenovationDocTrail kind="po" id={id} />
             {/* Supplier */}
             <Section title="Supplier">
               <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-3">

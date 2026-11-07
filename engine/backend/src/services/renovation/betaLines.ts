@@ -85,6 +85,8 @@ export interface ManagedLine {
   supplierChoices: SupplierChoice[];
   /** Its raw materials: the list saved on the line, else the SKU's composition times the line's qty. */
   materials: LineMaterial[];
+  /** The completed production order that closes its raw materials (null: they can still change). */
+  materialsClosedBy: string | null;
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none), for the role's category access. */
   categoryCode: string | null;
@@ -294,6 +296,7 @@ export async function loadProjectLines(
   const r = all.filter((x) => lineVisible(scope, x.cat_code ?? null, x.sub_code ?? null));
   const plans = await readPlans(db, r.map((x) => x.id));
   const materials = await readLineMaterials(db, r.map((x) => ({ id: x.id, itemCode: x.item_code ?? "", qty: Number(x.qty) })), companyId, plans.saved);
+  const closedBy = await materialsClosedBy(db, r.map((x) => x.id));
   const lines: ManagedLine[] = r.map((x) => {
     const pos = posOf(x.pos);
     const status = String(x.so_status ?? "").toUpperCase();
@@ -308,7 +311,7 @@ export async function loadProjectLines(
       area: x.area, remark: x.remark?.trim() || null,
       supplierName: picked?.name ?? (x.contract_line_id ? x.contract_supplier_name : x.supplier_name),
       supplierId: picked?.id ?? (x.contract_line_id ? x.contract_supplier_id : x.supplier_id),
-      contractLineId: x.contract_line_id, supplierChoices: choicesOf(x.supplier_choices), materials: materials.get(x.id) ?? [],
+      contractLineId: x.contract_line_id, supplierChoices: choicesOf(x.supplier_choices), materials: materials.get(x.id) ?? [], materialsClosedBy: closedBy.get(x.id) ?? null,
       goesTo: voGoesTo({ itemCode: x.item_code, itemGroup: x.item_group, mainSupplierCode: picked?.code ?? x.supplier_code }),
       categoryCode: x.cat_code ?? null, subCode: x.sub_code ?? null,
       variantCategory: x.prod_category ? variantCategoryOf(x.prod_category, x.prod_sub) : null,
@@ -464,6 +467,17 @@ export async function lineSupplierState(db: Db, soItemId: string): Promise<{ ite
   return { itemCode: r?.item_code ?? "", poNumber: r?.po_number ?? null };
 }
 
+/** Lines whose production orders are all finished, with one order's number to name. */
+async function materialsClosedBy(db: Db, ids: readonly string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const r = await rows<{ so_item_id: string; po_number: string }>(db,
+    `SELECT i.so_item_id::text AS so_item_id, min(o.po_number) AS po_number
+       FROM scm.production_order_items i JOIN scm.production_orders o ON o.id = i.production_order_id AND o.status::text <> 'CANCELLED'
+      WHERE i.so_item_id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+      GROUP BY 1 HAVING NOT bool_or(o.status::text IN ('DRAFT', 'SUBMITTED'))`, JSON.stringify(ids));
+  return new Map(r.map((x) => [x.so_item_id, x.po_number]));
+}
+
 /** Each line's raw materials: its saved list, else the SKU's composition times its qty. */
 async function readLineMaterials(db: Db, lines: ReadonlyArray<{ id: string; itemCode: string; qty: number }>, companyId: number, saved: ReadonlySet<string>): Promise<Map<string, LineMaterial[]>> {
   const out = new Map<string, LineMaterial[]>();
@@ -499,21 +513,6 @@ export async function notRawMaterials(db: Db, codes: readonly string[], companyI
     companyId, JSON.stringify(codes));
   const ok = new Set(r.map((x) => x.code));
   return codes.filter((c) => !ok.has(c));
-}
-
-/** Replaces the line's list in one statement and marks it saved, so the composition stops applying to this line. */
-export async function saveLineMaterials(db: Db, soItemId: string, companyId: number, userId: number, materials: ReadonlyArray<{ code: string; qty: number }>): Promise<void> {
-  const list = JSON.stringify(materials);
-  await db.prepare(
-    `WITH picked AS (SELECT code, qty FROM jsonb_to_recordset(?::text::jsonb) AS x(code text, qty numeric)),
-     gone AS (DELETE FROM scm.so_line_materials m WHERE m.so_item_id = ?::uuid AND m.material_code NOT IN (SELECT code FROM picked)),
-     kept AS (INSERT INTO scm.so_line_materials (so_item_id, company_id, material_code, qty, updated_by)
-              SELECT ?::uuid, ?, code, qty, ? FROM picked
-              ON CONFLICT (so_item_id, material_code) DO UPDATE SET qty = excluded.qty, updated_by = excluded.updated_by, updated_at = now())
-     INSERT INTO scm.reno_beta_line_plans (so_item_id, company_id, materials_saved, updated_by, updated_at)
-     VALUES (?::uuid, ?, true, ?, now())
-     ON CONFLICT (so_item_id) DO UPDATE SET materials_saved = true, updated_by = excluded.updated_by, updated_at = now()`,
-  ).bind(list, soItemId, soItemId, companyId, userId, soItemId, companyId, userId).run();
 }
 
 /** Keeps the pick on the line's plan, leaving its dates as they are. */

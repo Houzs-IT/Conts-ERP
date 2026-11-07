@@ -11,6 +11,7 @@
 
 import { lazy, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { RenovationDocTrail } from "./RenovationDocTrail";
 import { LazySlot } from "../../components/LazySlot";
 import { useStaffLookup } from "../../hooks/useStaffLookup";
 import { productionNote } from "./renovationProductionDays";
@@ -922,6 +923,7 @@ function ProductionOrderDetailV2ReadOnly() {
               )}
             </section>
 
+            <RenovationDocTrail kind="production" id={purchaseOrder.id} />
             {/* Line items */}
             <Section
               title={`Works · ${items.length}`}

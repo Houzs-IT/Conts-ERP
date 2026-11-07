@@ -483,7 +483,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
       )}
       {varying && <VariantDialog {...cell(varying)} onClose={() => setVarying(null)} />}
       {materialsOf && (
-        <BetaLineMaterials projectId={p.projectId} line={materialsOf} canEdit={editable && !livePo(materialsOf)} onClose={() => setMaterialsOf(null)}
+        <BetaLineMaterials projectId={p.projectId} line={materialsOf} canEdit={p.canWrite && !materialsOf.materialsClosedBy} onClose={() => setMaterialsOf(null)}
           onSaved={() => { setMaterialsOf(null); q.reload(); }} />
       )}
     </>
@@ -764,16 +764,15 @@ function FixedDate({ r, which, value, late, title }: { r: RowCtx; which: PlanDat
   );
 }
 
-/** One line: the PO number and its PO date ("TC-PO-2610-006 · 24 Oct"), changed in the PO's own editor, which the number
+/** The PO number with its date under it, as the GR and DO cells beside it: changed in the PO's own editor, which the number
     opens from Edit mode. No PO yet: "-" (and, in edit mode, whether the line needs one). */
 function PoCell({ r }: { r: RowCtx }): ReactElement {
   const po = livePo(r.l);
   if (po) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, whiteSpace: "nowrap" }} title={`${po.poNumber}${po.poDate ? `, PO date ${dayMonthYear(po.poDate)}` : ""}`}>
-        <Link to={`/scm/purchase-orders/${po.poId}${r.editable ? "?edit=1" : ""}`} style={{ fontSize: 12.5, fontWeight: 600, flex: "0 1 auto", ...ellipsis }}>{po.poNumber}</Link>
-        <span aria-hidden="true" style={{ ...metaStyle, flexShrink: 0 }}>·</span>
-        <span style={{ ...metaStyle, flexShrink: 0 }}>{dayMonth(po.poDate)}</span>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1, minWidth: 0 }} title={`${po.poNumber}${po.poDate ? `, PO date ${dayMonthYear(po.poDate)}` : ""}`}>
+        <Link to={`/scm/purchase-orders/${po.poId}${r.editable ? "?edit=1" : ""}`} style={{ fontSize: 12, fontWeight: 600, maxWidth: "100%", ...ellipsis }}>{po.poNumber}</Link>
+        <span style={{ fontSize: 11, color: BETA.muted }}>{dayMonth(po.poDate)}</span>
       </div>
     );
   }
@@ -804,9 +803,10 @@ function StockCell({ r }: { r: RowCtx }): ReactElement {
   const c = r.stock;
   const inFull = r.l.do === "yes";
   return (
-    <span title={c?.coverage_po ? `Incoming ${c.coverage_po}${c.coverage_eta ? `, ${c.coverage_eta}` : ""}` : undefined}>
+    <span style={{ display: "inline-flex", flexDirection: "column", gap: 1 }} title={c?.coverage_po ? `Incoming ${c.coverage_po}${c.coverage_eta ? `, ${c.coverage_eta}` : ""}` : undefined}>
       <SoStockPill line={{ item_group: r.l.itemGroup, delivered_qty: inFull ? r.l.qty : 0, remaining_qty: inFull ? 0 : r.l.qty, stock_state: c?.stock_state ?? null,
         stock_status_effective: (c?.stock_status_effective ?? null) as "READY" | "PARTIAL" | "PENDING" | null, non_selling_warehouse: c?.non_selling_warehouse ?? null }} />
+      {!inFull && c?.stock_state === "po" && c.coverage_eta && <span style={{ fontSize: 11, color: BETA.muted, whiteSpace: "nowrap" }}>Arrives {dayMonth(c.coverage_eta)}</span>}
     </span>
   );
 }

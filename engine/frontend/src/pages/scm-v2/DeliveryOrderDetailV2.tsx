@@ -77,6 +77,7 @@ import { useStaffLookup } from "../../hooks/useStaffLookup";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { usePrompt } from "../../vendor/scm/components/PromptDialog";
 import { useDoRelationshipMap } from "./sales-doc-relationship-map";
+import { RenovationDocTrail } from "./RenovationDocTrail";
 import { useDoCancelAction } from "./use-do-cancel-action";
 import {
   DocumentRelationshipMapModal,
@@ -1266,6 +1267,7 @@ export function DeliveryOrderDetailV2() {
         <DetailGrid>
           <DetailMain>
             {/* Customer info — Customer SO No. first, per design */}
+            <RenovationDocTrail kind="do" id={id} />
             <Section title="Customer">
               <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
                 <Field
