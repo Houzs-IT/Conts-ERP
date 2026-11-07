@@ -21,6 +21,7 @@ import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
   crossCompanySourceRefusal,
   requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../lib/companyScope';
 import { stampDoLineSoRefs } from '../lib/so-ref-lookup';
+import { isMigratedNoStock, type MigratedFlagRow } from '../lib/migrated-no-stock';
 import { writeMovements, defaultWarehouseId } from '../lib/inventory-movements';
 import { assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
 import { dateOrNull, coerceEmptyDates } from '../lib/date-coerce';
@@ -285,6 +286,22 @@ async function resolveDrLineBatches(
   return out;
 }
 
+/* A delivery that took no stock gives none back: a site receipt's drop ship never touched a shelf, so its return moves
+   nothing. Read per line, because one return may cover several DOs. */
+async function noStockDrLines(sb: any, items: ReadonlyArray<{ id: string; do_item_id?: string | null }>, headerDoId: string | null): Promise<Set<string>> {
+  const doItemIds = [...new Set(items.map((it) => it.do_item_id ?? null).filter((x): x is string => !!x))];
+  const { data: doLines } = doItemIds.length ? await sb.from('delivery_order_items').select('id, delivery_order_id').in('id', doItemIds) : { data: [] };
+  const doOfLine = new Map(((doLines ?? []) as Array<{ id: string; delivery_order_id: string }>).map((l) => [l.id, l.delivery_order_id]));
+  const doIds = [...new Set([...doOfLine.values(), ...(headerDoId ? [headerDoId] : [])])];
+  if (doIds.length === 0) return new Set();
+  const { data: dos } = await sb.from('delivery_orders').select('id, migrated_no_stock').in('id', doIds);
+  const noStock = new Set(((dos ?? []) as Array<{ id: string } & MigratedFlagRow>).filter((d) => isMigratedNoStock(d)).map((d) => d.id));
+  return new Set(items.filter((it) => {
+    const doId = (it.do_item_id ? doOfLine.get(it.do_item_id) : null) ?? headerDoId;
+    return !!doId && noStock.has(doId);
+  }).map((it) => it.id));
+}
+
 async function increaseInventoryForReturn(sb: any, deliveryReturnId: string, performedBy: string): Promise<string[]> {
   // Idempotency guard #1 — has this DR already written IN movements?
   const { count: existing } = await sb
@@ -296,7 +313,7 @@ async function increaseInventoryForReturn(sb: any, deliveryReturnId: string, per
   if ((existing ?? 0) > 0) return []; // already increased — no-op
 
   const { data: drHeader } = await sb.from('delivery_returns')
-    .select('return_number, warehouse_id, company_id')
+    .select('return_number, warehouse_id, company_id, delivery_order_id')
     .eq('id', deliveryReturnId).maybeSingle();
   const { data: items } = await sb.from('delivery_return_items')
     .select('id, do_item_id, item_code, description, qty_returned, item_group, variants, unit_cost_sen')
@@ -315,6 +332,7 @@ async function increaseInventoryForReturn(sb: any, deliveryReturnId: string, per
   );
   // Sofa batch per DR line — returned modules re-enter the batch they shipped from.
   const lineBatch = await resolveDrLineBatches(sb, items as Array<{ id: string; do_item_id?: string | null }>);
+  const noStockLines = await noStockDrLines(sb, items as Array<{ id: string; do_item_id?: string | null }>, (drHeader as { delivery_order_id?: string | null } | null)?.delivery_order_id ?? null);
 
   /* Collapse identical (warehouse_id, item_code, variant_key, batch_no) lines
      into one IN row. A DR can list the same product across two lines AND across
@@ -330,7 +348,7 @@ async function increaseInventoryForReturn(sb: any, deliveryReturnId: string, per
     /* P1 SO-SKU spec §4.6 — depth guard: a SERVICE line must never write stock
        IN. The route guards reject them at create/edit; this keeps any line
        that slips through (legacy data, direct DB write) inventory-neutral. */
-    if (isServiceLine({ itemGroup: it.item_group, itemCode: it.item_code })) continue;
+    if (isServiceLine({ itemGroup: it.item_group, itemCode: it.item_code }) || noStockLines.has(it.id)) continue;
     const qty = Number(it.qty_returned ?? 0);
     if (qty <= 0) continue;
     const warehouseId = lineWh.get(it.id) ?? null;
@@ -419,7 +437,7 @@ async function increaseInventoryForReturn(sb: any, deliveryReturnId: string, per
    throws, so the four best-effort try/catch callers below caught nothing. */
 async function resyncInventoryForReturn(sb: any, deliveryReturnId: string, performedBy: string): Promise<string[]> {
   const { data: drHeader } = await sb.from('delivery_returns')
-    .select('return_number, status, warehouse_id, company_id')
+    .select('return_number, status, warehouse_id, company_id, delivery_order_id')
     .eq('id', deliveryReturnId).maybeSingle();
   if (!drHeader) return [];
   const drStatus = ((drHeader as { status: string | null }).status ?? '').toUpperCase();
@@ -444,11 +462,12 @@ async function resyncInventoryForReturn(sb: any, deliveryReturnId: string, perfo
       (drHeader as { company_id?: number | null }).company_id ?? undefined,
     );
     const lineBatch = await resolveDrLineBatches(sb, lineRows as Array<{ id: string; do_item_id?: string | null }>);
+    const noStockLines = await noStockDrLines(sb, lineRows, (drHeader as { delivery_order_id?: string | null }).delivery_order_id ?? null);
     for (const it of lineRows) {
       /* P1 SO-SKU spec §4.6 — SERVICE lines never wrote IN on create, so they
          stay out of the resync TARGET too (else the delta walk would write a
          phantom IN to "catch up"). */
-      if (isServiceLine({ itemGroup: it.item_group, itemCode: it.item_code })) continue;
+      if (isServiceLine({ itemGroup: it.item_group, itemCode: it.item_code }) || noStockLines.has(it.id)) continue;
       const qty = Number(it.qty_returned ?? 0);
       if (qty <= 0) continue;
       const warehouseId = lineWh.get(it.id) ?? null;
