@@ -1373,11 +1373,27 @@ productionOrders.patch('/:id/cancel', async (c) => {
     await touchProjectTasks(sb, c.req.param('id'), 'reopen');
   }
   const res = await setStatus(c, ['DRAFT', 'SUBMITTED', 'ON_HOLD'], 'CANCELLED', { cancelled_at: new Date().toISOString(), start_lock_at: null, completion_step: null, completion_error: null, completion_grn_id: null, completion_do_id: null, ...START_CLEARED }, reason);
-  if (res.status >= 300 || !o?.source_po_id || o.status === 'CANCELLED') return res;
-  const po = await callHandler(c, cancelPurchaseOrderHandler, { reason }, { id: o.source_po_id });
-  if (po.status >= 300) return c.json({ purchaseOrder: { id: c.req.param('id'), status: 'CANCELLED' }, warning: `The production order is cancelled, but its PO stayed open: ${words(po.json, 'it could not be cancelled')}` });
-  return res;
+  if (res.status >= 300 || o?.status === 'CANCELLED') return res;
+  const notes: string[] = [];
+  if (o?.source_po_id) {
+    const po = await callHandler(c, cancelPurchaseOrderHandler, { reason }, { id: o.source_po_id });
+    if (po.status >= 300) notes.push(`The production order is cancelled, but its PO stayed open: ${words(po.json, 'it could not be cancelled')}`);
+  }
+  const openMaterialPos = await openMaterialPosOf(sb, c.req.param('id'));
+  if (openMaterialPos.length > 0) notes.push(`Raw materials are still on order for it: ${openMaterialPos.join(', ')}. Cancel them if the goods are no longer wanted.`);
+  return notes.length > 0 ? c.json({ purchaseOrder: { id: c.req.param('id'), status: 'CANCELLED' }, openMaterialPos, warning: notes.join(' ') }) : res;
 });
+
+/* Bought for this order and not yet all in. A cancelled order does not stop a supplier, so whoever cancels is told. */
+async function openMaterialPosOf(sb: any, orderId: string): Promise<string[]> {
+  const { data: mats } = await sb.from('production_order_materials').select('id').eq('production_order_id', orderId);
+  const ids = ((mats ?? []) as Array<{ id: string }>).map((m) => m.id);
+  if (ids.length === 0) return [];
+  const { data: lines } = await sb.from('purchase_order_items').select('qty, received_qty, po:purchase_orders!inner (po_number, status)').in('production_material_id', ids);
+  const open = ((lines ?? []) as unknown as Array<{ qty: number; received_qty: number | null; po: { po_number: string; status: string } }>)
+    .filter((l) => !['CANCELLED', 'RECEIVED', 'CLOSED'].includes(l.po.status) && Number(l.qty) > Number(l.received_qty ?? 0));
+  return [...new Set(open.map((l) => l.po.po_number))];
+}
 
 /* A completed order reopens only once its GR and DO are undone: they are real documents with stock behind them. Reopened,
    it is not started again: its stock is back and the next Start issues it afresh. */

@@ -618,7 +618,7 @@ export function useCancelProductionOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
-      authedFetch<{ purchaseOrder: { id: string; status: PoStatus; cancelled_at: string } }>(
+      authedFetch<{ purchaseOrder: { id: string; status: PoStatus; cancelled_at: string }; warning?: string }>(
         `/production-orders/${id}/cancel`,
         { method: 'PATCH', body: JSON.stringify({ reason }) },
       ),
