@@ -1079,7 +1079,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
   const siteKeys = new Set(sitePhotos.map((p) => String(p.r2_key)));
   const uploads = (type: DeliveryType, docId: string): SitePhoto[] => [...(attached.get(`${type}:${docId}`) ?? []), ...(linked.get(`${type}:${docId}`) ?? []).filter((f) => !siteKeys.has(f.key))].map((f) => ({
     id: `${type}-${docId}-${f.id}`, path: docPath(type, docId, f.id), name: f.caption || f.name, image: f.kind === "image", kind: mediaKindOf(f.mime, f.name),
-    area: null, at: f.at || null, source: f.source === "pod" ? "pod" as const : "upload" as const,
+    area: null, at: f.at || null, source: f.source === "pod" ? "pod" as const : "upload" as const, ...(f.from ? { from: f.from } : {}),
   }));
   const siteShot = (p: Row, prefix = ""): SitePhoto => ({
     id: `${prefix}site-${String(p.id)}`, path: `/api/renovation/${projectId}/files?key=${encodeURIComponent(String(p.r2_key))}`,
@@ -1373,8 +1373,9 @@ app.post("/projects/:id/media", requirePermission("projects.write"), async (c) =
   return c.json({ ok: true, added: list.value.length }, 201);
 });
 
-/** Every photo and video of the project, newest first, each with what it is (progress, DO, GR, PO, measure, defect)
-    and its area when one is known; with the project's DOs, GRs, POs and site steps for the upload form. */
+/** Every photo and video of the project, newest first, each with what it is (progress, production, DO, GR, PO, measure,
+    defect) and its area when one is known; with the project's DOs, GRs, POs and site steps for the upload form, and the
+    documents that hold no photo yet, so the page can say so. */
 app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
@@ -1405,12 +1406,24 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
     const shownPos = scope === null ? pos
       : keepVisiblePos(pos, (p) => String(p.id), (await loadProjectPoLines(db(c), id, co, scope)).lines.map((l) => l.poId), scope);
     const poFiles = ready && shownPos.length ? await listFilesFor(db(c), shownPos.map((p) => ({ type: "purchase_order" as const, id: String(p.id) })), co) : new Map<string, DocFile[]>();
-    /* Every production order of the project, through its PO: its photos are on Site from the first day, before any GR or DO. */
-    const orders = ready ? await rowsOf(c, { text: `SELECT o.id::text AS id, o.po_number AS no FROM scm.production_orders o
-                                                     WHERE o.company_id = ? AND o.source_po_id::text = ANY(?::text[]) ORDER BY o.po_number`,
-      args: [co, textArray(shownPos.map((p) => String(p.id)))] }) : [];
-    const orderFiles = await listFilesFor(db(c), orders.map((o) => ({ type: "production_order" as const, id: String(o.id) })), co);
+    /* Every production order of the project, through its PO or its own project mark: its photos are on Site from the
+       first day, before any GR or DO. A restricted role keeps to the POs it may see. */
+    const orders = ready ? await rowsOf(c, { text: `SELECT o.id::text AS id, o.po_number AS no, g.grn_number AS gr_no, d.do_number AS do_no,
+                                                           (SELECT min(pi.room) FROM scm.production_order_items pi WHERE pi.production_order_id = o.id
+                                                             HAVING count(DISTINCT pi.room) = 1) AS room
+                                                      FROM scm.production_orders o LEFT JOIN scm.grns g ON g.id = o.completion_grn_id
+                                                      LEFT JOIN scm.delivery_orders d ON d.id = o.completion_do_id
+                                                     WHERE o.company_id = ? AND o.status::text <> 'CANCELLED'
+                                                       AND (o.source_po_id::text = ANY(?::text[]) OR (?::boolean AND o.project_id = ?)) ORDER BY o.po_number`,
+      args: [co, textArray(shownPos.map((p) => String(p.id))), scope === null, id] }) : [];
+    const orderIds = orders.map((o) => String(o.id));
+    const [orderFiles, orderLines] = await Promise.all([
+      listFilesFor(db(c), orderIds.map((oid) => ({ type: "production_order" as const, id: oid })), co),
+      orderLineFiles(db(c), orderIds),
+    ]);
     const out: ProjectPhoto[] = [];
+    /* A production order's photos are also its GR's and DO's proof, on those chips; All shows each picture once, on the order's card. */
+    const orderOrigin = new Set(orders.map((o) => `Production order ${String(o.no)}`));
     for (const d of site.deliveries) {
       const isDo = d.type === "delivery_order";
       const group = { key: `${isDo ? "do" : "gr"}:${d.id}`, title: `${isDo ? "DO" : "GR"} ${d.no}${!isDo && d.from ? ` · ${d.from}` : ""}` };
@@ -1418,7 +1431,7 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
       for (const ph of d.photos) {
         out.push({
           id: ph.id, path: ph.path, kind: ph.kind, name: ph.name, at: ph.at ?? d.at, area: ph.area ?? oneArea,
-          category: isDo ? "do" : "gr", label: ph.source === "pod" ? "POD" : null, group, note: null,
+          category: isDo ? "do" : "gr", label: ph.source === "pod" ? "POD" : null, group, note: null, ...(ph.from && orderOrigin.has(ph.from) ? { repeat: true } : {}),
         });
       }
     }
@@ -1434,11 +1447,12 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
     }
     for (const o of orders) {
       const oid = String(o.id);
-      for (const f of orderFiles.get(`production_order:${oid}`) ?? []) {
+      const also = [str(o.gr_no) ? `GR ${String(o.gr_no)}` : null, str(o.do_no) ? `DO ${String(o.do_no)}` : null].filter(Boolean).join(" and ");
+      for (const f of [...(orderFiles.get(`production_order:${oid}`) ?? []), ...(orderLines.get(oid) ?? [])]) {
         out.push({
           id: `production-${oid}-${f.id}`, path: `/api/renovation/${id}/document-files/production_order/${encodeURIComponent(oid)}/${encodeURIComponent(f.id)}`,
-          kind: mediaKindOf(f.mime, f.name), name: f.caption || f.name, at: f.at || null, area: null, category: "progress", label: null,
-          group: { key: `production:${oid}`, title: `Production order ${String(o.no)}` }, note: null,
+          kind: mediaKindOf(f.mime, f.name), name: f.lineId ? f.name : f.caption || f.name, at: f.at || null, area: (f.lineId ? f.caption : null) || str(o.room), category: "production", label: null,
+          group: { key: `production:${oid}`, title: `Production order ${String(o.no)}` }, note: also ? `Also on ${also}` : null,
         });
       }
     }
@@ -1478,6 +1492,12 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
         dos: site.deliveries.filter((d) => d.type === "delivery_order").map((d) => ({ id: d.id, no: d.no })),
         grs: site.deliveries.filter((d) => d.type === "goods_received").map((d) => ({ id: d.id, no: d.no })),
         pos: shownPos.map((p) => ({ id: String(p.id), no: String(p.no) })),
+      },
+      empty: {
+        production: orders.filter((o) => !orderFiles.has(`production_order:${String(o.id)}`) && !orderLines.has(String(o.id))).map((o) => String(o.no)),
+        do: site.deliveries.filter((d) => d.type === "delivery_order" && d.photos.length === 0).map((d) => d.no),
+        gr: site.deliveries.filter((d) => d.type === "goods_received" && d.photos.length === 0).map((d) => d.no),
+        po: shownPos.filter((p) => !poFiles.has(`purchase_order:${String(p.id)}`)).map((p) => String(p.no)),
       },
       tasks: tasks.filter((t) => t.state !== "skipped").map((t) => ({ id: Number(t.id), label: taskName.get(Number(t.id)) ?? "Site step", state: String(t.state) })),
     });

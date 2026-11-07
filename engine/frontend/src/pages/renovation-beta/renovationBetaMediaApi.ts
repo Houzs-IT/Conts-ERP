@@ -11,7 +11,7 @@ import { prepareImageForUpload } from "../../lib/imagePipeline";
 import { uploadDocFile, type DocType } from "../../components/doc-attachments/docAttachmentsApi";
 import { fileMime, type MediaItem, type MediaKind } from "./BetaMedia";
 
-export type PhotoCategory = "progress" | "do" | "gr" | "po" | "measure" | "defect";
+export type PhotoCategory = "progress" | "production" | "do" | "gr" | "po" | "measure" | "defect";
 
 export interface ProjectPhoto {
   id: string;
@@ -24,15 +24,21 @@ export interface ProjectPhoto {
   label: string | null;
   group: { key: string; title: string };
   note: string | null;
+  /** The same picture is on its production order's card: its own chip shows it, All does not show it twice. */
+  repeat?: boolean;
 }
 
 export interface PhotoDocs { dos: Array<{ id: string; no: string }>; grs: Array<{ id: string; no: string }>; pos: Array<{ id: string; no: string }> }
+
+/** The project's documents that hold no photo yet, by source. */
+export interface EmptySources { production: string[]; do: string[]; gr: string[]; po: string[] }
 
 export interface PhotosView {
   ready: boolean;
   areas: string[];
   photos: ProjectPhoto[];
   docs: PhotoDocs;
+  empty: EmptySources;
   tasks: Array<{ id: number; label: string; state: string }>;
 }
 
