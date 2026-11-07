@@ -194,7 +194,7 @@ describe("mobile route drift gate", () => {
     expect(PROFILE_ORG_ITEMS).toHaveLength(7);
     expect(allMobile).toHaveLength(46);
     expect(new Set(allMobile.map((item) => item.to)).size).toBe(46);
-    expect(new Set(allMobile.map((item) => item.to.split("?")[0])).size).toBe(43);
+    expect(new Set(allMobile.map((item) => item.to.split("?")[0])).size).toBe(45);
   });
 
   it("maps every declared mobile row to a real screen, never a placeholder stub", () => {
