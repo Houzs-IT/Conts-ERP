@@ -20,7 +20,7 @@
 
 import { transferFromLabel } from '../../lib/convertScope';
 import { todayMyt } from '../../vendor/scm/lib/dates';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRightLeft, ChevronDown, Save, X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
@@ -132,6 +132,9 @@ export const DeliveryReturnNew = () => {
   /* Prefill from the DO once its detail loads. Guarded so we only seed once
      (when the form is still pristine) — re-fetches don't clobber edits. */
   const [prefilled, setPrefilled] = useState(false);
+  /* The picked lines are read once and kept: the hand-off is cleared on first read, and an effect that runs twice
+     (React dev mode) would otherwise fall back to every line of the DO. */
+  const pickedRef = useRef<unknown[] | null | undefined>(undefined);
   useEffect(() => {
     if (!fromDo || prefilled) return;
     const dval = doDetail.data?.deliveryOrder as Record<string, unknown> | undefined;
@@ -172,7 +175,8 @@ export const DeliveryReturnNew = () => {
       description: string | null; uom: string | null; qty: number; condition: string;
       unitPriceSen: number; discountSen: number; unitCostSen: number; variants: unknown;
     };
-    const stash = fromPicks ? readScmHandoff<Stash[]>('drFromDoPicks') : null;
+    if (pickedRef.current === undefined) pickedRef.current = fromPicks ? readScmHandoff<Stash[]>('drFromDoPicks') : null;
+    const stash = pickedRef.current as Stash[] | null;
 
     if (stash && stash.length > 0) {
       setLines(stash.map((s, i) => ({

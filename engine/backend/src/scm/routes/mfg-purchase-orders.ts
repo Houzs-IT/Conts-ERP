@@ -109,6 +109,7 @@ import { firstSoLinkCategoryMismatch, soLinkCategoryMismatch, hardBoundUnlinkRef
 import { pgrestIn } from '../lib/pgrest-in-list';
 import { withSoRefPoIds } from '../lib/so-ref-search';
 import { poPickerOffers } from '../lib/renovation-po-split';
+import { chunkIn } from '../lib/paginate-all';
 
 /* ── Supplier sofa-combo auto-pricing (Commander 2026-05-29) ─────────────────
    The supplier prices a sofa SET (a colour-matched bundle of modules) as a
@@ -589,14 +590,39 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
     console.error('[outstanding-so-items] pooled shortage compute failed; falling back to picked cap', e);
   }
 
+  /* A line the plan does not list is judged by what is really on a PO. po_qty_picked is not kept by every way a PO is
+     raised (MRP Proceed PO on a renovation order leaves it at 0), so on its own it kept ordered, received and delivered
+     lines on the picker (owner, 7 Nov 2026). */
+  const unplanned = ((items ?? []) as unknown as Row[]).filter((r) => !(pooledOk && shortageBySoItem.has(r.id))).map((r) => r.id);
+  const onPo = new Map<string, number>();
+  const onPro = new Map<string, number>();
+  if (unplanned.length > 0) {
+    const { data: poRows } = await chunkIn<{ so_item_id: string; qty: number | string | null; purchase_order: { status: string } | Array<{ status: string }> | null }>(
+      unplanned,
+      (batch, from, to) => supabase.from('purchase_order_items')
+        .select('so_item_id, qty, purchase_order:purchase_orders!inner(status)')
+        .in('so_item_id', batch).neq('purchase_order.status', 'CANCELLED').range(from, to),
+    );
+    for (const p of poRows) onPo.set(p.so_item_id, (onPo.get(p.so_item_id) ?? 0) + Number(p.qty ?? 0));
+    // A Works line made straight into a production order (no in-house PO) is covered as well.
+    const { data: proRows } = await chunkIn<{ so_item_id: string; qty: number | string | null }>(
+      unplanned,
+      (batch, from, to) => supabase.from('production_order_items')
+        .select('so_item_id, qty, production_order:production_orders!inner(status)')
+        .in('so_item_id', batch).neq('production_order.status', 'CANCELLED').range(from, to),
+    );
+    for (const p of proRows) onPro.set(p.so_item_id, (onPro.get(p.so_item_id) ?? 0) + Number(p.qty ?? 0));
+  }
+  const unplannedLeft = (r: Row): number => r.qty - Math.max(r.po_qty_picked, onPo.get(r.id) ?? 0, onPro.get(r.id) ?? 0);
+
   const outstanding = ((items ?? []) as unknown as Row[])
     .filter((r) => !isDocumentHeld(r.so)
       && r.so.status !== 'CANCELLED' && r.so.status !== 'DRAFT' && r.so.status !== 'ON_HOLD')
-    .filter((r) => (pooledOk && shortageBySoItem.has(r.id) ? (shortageBySoItem.get(r.id) ?? 0) > 0 : r.qty - r.po_qty_picked > 0))
+    .filter((r) => (pooledOk && shortageBySoItem.has(r.id) ? (shortageBySoItem.get(r.id) ?? 0) > 0 : unplannedLeft(r) > 0))
     .filter((r) => poPickerOffers({ itemCode: r.item_code, itemGroup: r.item_group, mainSupplierCode: mainSupplierByCode.get(r.item_code)?.code ?? null }))
     .map((r) => {
       /* A line the plan does not list, such as one with no delivery date, is still open work. */
-      const remaining = pooledOk && shortageBySoItem.has(r.id) ? (shortageBySoItem.get(r.id) ?? 0) : (r.qty - r.po_qty_picked);
+      const remaining = pooledOk && shortageBySoItem.has(r.id) ? (shortageBySoItem.get(r.id) ?? 0) : unplannedLeft(r);
       return {
         soItemId:        r.id,
         soDocNo:         r.doc_no,

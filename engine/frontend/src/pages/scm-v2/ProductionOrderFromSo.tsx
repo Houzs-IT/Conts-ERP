@@ -40,10 +40,13 @@ import { useIdempotencyKey } from '../../lib/idempotency';
 import { readScmHandoff } from '../../lib/scmHandoffStorage';
 import { ActionResultDialog } from '../../vendor/scm/components/ActionResultDialog';
 import { ItemGroupPill } from '../../vendor/scm/lib/category-badges';
+import { useCategoryOptions, withRowCategories } from '../../vendor/scm/lib/renovation-catalog-queries';
+import { categoryMatches } from '../../vendor/shared/renovation-catalog';
 import styles from './SalesOrderDetail.module.css';
 import { PageHeader } from '../../components/Layout';
 import { soRefOfCamelStamp } from '../../lib/so-ref-search';
 import { DateField } from "../../vendor/scm/components/DateField";
+import { SoLineStatusCell, soLineStatusText, useSoLineStatus } from './SoLineStatus';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -63,16 +66,6 @@ const FILTER_INPUT: CSSProperties = {
   background: 'var(--c-paper)',
   color: 'var(--c-ink)',
 };
-
-/** Category filter options. 'all' shows everything; the rest match item_group. */
-const CATEGORY_OPTIONS = [
-  { value: 'all',       label: 'All categories' },
-  { value: 'sofa',      label: 'Sofa' },
-  { value: 'bedframe',  label: 'Bedframe' },
-  { value: 'mattress',  label: 'Mattress' },
-  { value: 'accessory', label: 'Accessory' },
-  { value: 'service',   label: 'Service' },
-] as const;
 
 /** Which date field the range filter targets. */
 const DATE_FIELD_OPTIONS = [
@@ -122,6 +115,7 @@ export const ProductionOrderFromSo = () => {
 
   // Toolbar filters (commander 2026-05-28).
   const [category, setCategory]   = useState<string>('all');
+  const categoryOptions = useCategoryOptions();
   const [dateField, setDateField] = useState<DateField>('soDate');
   const [dateFrom, setDateFrom]   = useState<string>('');
   const [dateTo, setDateTo]       = useState<string>('');
@@ -162,7 +156,7 @@ export const ProductionOrderFromSo = () => {
   const rows = useMemo(() => {
     return items.filter((r) => {
       if (effectiveRemaining(r) <= 0) return false;
-      if (category !== 'all' && (r.itemGroup ?? '').toLowerCase() !== category) return false;
+      if (category !== 'all' && !categoryMatches(r.itemGroup, category)) return false;
       if (dateFrom || dateTo) {
         const d = rowDateFor(r, dateField);
         if (!d) return false;
@@ -287,6 +281,7 @@ export const ProductionOrderFromSo = () => {
 
   // ── Columns — memoized on `picks` so the controlled checkbox + qty input
   //    re-render when pick state changes (DataGrid is React.memo'd). ───────
+  const lineStatus = useSoLineStatus(items.map((r) => r.soItemId));
   const columns = useMemo<GridColumn<OutstandingSoItem>[]>(() => [
     {
       key: 'pick', label: '', width: 40, sortable: false, groupable: false,
@@ -374,6 +369,12 @@ export const ProductionOrderFromSo = () => {
       searchValue: (r) => r.description ?? '',
     },
     {
+      key: 'lineStatus', label: 'Stock & orders', width: 320, sortable: false,
+      accessor: (r) => <SoLineStatusCell s={lineStatus[r.soItemId]} />,
+      searchValue: (r) => soLineStatusText(lineStatus[r.soItemId]),
+      exportValue: (r) => soLineStatusText(lineStatus[r.soItemId]),
+    },
+    {
       key: 'qty', label: 'SO Qty', width: 70, align: 'right', sortable: true,
       accessor: (r) => fmtQty(r.qty),
       sortFn: (a, b) => a.qty - b.qty,
@@ -444,7 +445,7 @@ export const ProductionOrderFromSo = () => {
       sortFn: (a, b) => a.remainingQty * a.unitPriceSen - b.remainingQty * b.unitPriceSen,
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- column accessors derive from the pick/qty state already in deps; listing the helpers would only rebuild the columns for no behavioural change
-  ], [picks, draftQtyById]);
+  ], [picks, draftQtyById, lineStatus]);
 
   // ── Add to Production Order ────────────────────────────────────────────────────────
   // Commander 2026-05-29 — two modes:
@@ -506,7 +507,7 @@ export const ProductionOrderFromSo = () => {
         style={FILTER_INPUT}
         aria-label="Category filter"
       >
-        {CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {[{ value: 'all', label: 'All categories' }, ...withRowCategories(categoryOptions, items.map((r) => r.itemGroup))].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
 
       {/* Date-range filter — pick which date field + from/to. */}

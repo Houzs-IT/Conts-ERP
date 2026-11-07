@@ -44,6 +44,7 @@ import { soRefOfCamelStamp } from '../../lib/so-ref-search';
 import { DateField } from "../../vendor/scm/components/DateField";
 import { useCategoryOptions, withRowCategories } from '../../vendor/scm/lib/renovation-catalog-queries';
 import { categoryMatches } from '../../vendor/shared/renovation-catalog';
+import { SoLineStatusCell, soLineStatusText, useSoLineStatus } from './SoLineStatus';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -277,6 +278,7 @@ export const PurchaseOrderFromSo = () => {
 
   // ── Columns — memoized on `picks` so the controlled checkbox + qty input
   //    re-render when pick state changes (DataGrid is React.memo'd). ───────
+  const lineStatus = useSoLineStatus(items.map((r) => r.soItemId));
   const columns = useMemo<GridColumn<OutstandingSoItem>[]>(() => [
     {
       key: 'pick', label: '', width: 40, sortable: false, groupable: false,
@@ -364,6 +366,12 @@ export const PurchaseOrderFromSo = () => {
       searchValue: (r) => r.description ?? '',
     },
     {
+      key: 'lineStatus', label: 'Stock & orders', width: 320, sortable: false,
+      accessor: (r) => <SoLineStatusCell s={lineStatus[r.soItemId]} />,
+      searchValue: (r) => soLineStatusText(lineStatus[r.soItemId]),
+      exportValue: (r) => soLineStatusText(lineStatus[r.soItemId]),
+    },
+    {
       key: 'qty', label: 'SO Qty', width: 70, align: 'right', sortable: true,
       accessor: (r) => fmtQty(r.qty),
       sortFn: (a, b) => a.qty - b.qty,
@@ -434,7 +442,7 @@ export const PurchaseOrderFromSo = () => {
       sortFn: (a, b) => a.remainingQty * a.unitPriceSen - b.remainingQty * b.unitPriceSen,
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- column accessors derive from the pick/qty state already in deps; listing the helpers would only rebuild the columns for no behavioural change
-  ], [picks, draftQtyById]);
+  ], [picks, draftQtyById, lineStatus]);
 
   // ── Add to PO ────────────────────────────────────────────────────────
   // Commander 2026-05-29 — two modes:

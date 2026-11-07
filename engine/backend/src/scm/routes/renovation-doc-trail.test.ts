@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stepOf, trailOf, type TrailRow } from './renovation-doc-trail';
+import { lineStatuses, stepOf, trailOf, type TrailRow } from './renovation-doc-trail';
 
 const row = (over: Partial<TrailRow>): TrailRow => ({ kind: 'po', id: '1', no: 'TC-PO-1', status: 'SUBMITTED', on_hold: false, expected: '2026-11-20', started: null, done: null, who: null, ...over });
 
@@ -26,4 +26,19 @@ describe('stepOf', () => {
 
 it('trailOf keeps the flow order', () => {
   expect(trailOf([row({ kind: 'do', no: 'D' }), row({ kind: 'so', no: 'S' }), row({ kind: 'gr', no: 'G' })]).map((s) => s.kind)).toEqual(['so', 'gr', 'do']);
+});
+
+describe('lineStatuses', () => {
+  it('each line gets its own documents and its stock; an incoming PO brings its arrival date', () => {
+    const rows = [{ ...row({}), line: 'a' }, { ...row({ kind: 'production', id: '2', no: 'TC-PRO-1', started: '2026-11-08' }), line: 'b' }];
+    const cover = new Map([['a', { source: 'stock', po: null, eta: null }], ['c', { source: 'po', po: 'TC-PO-9', eta: '2026-11-30' }]]);
+    const out = lineStatuses(['a', 'b', 'c'], rows, cover);
+    expect(out.a).toMatchObject({ stock: 'stock', eta: null });
+    expect(out.a.steps.map((s) => s.no)).toEqual(['TC-PO-1']);
+    expect(out.b).toMatchObject({ stock: null, steps: [{ no: 'TC-PRO-1', word: 'In progress, due' }] });
+    expect(out.c).toMatchObject({ stock: 'po', incomingPo: 'TC-PO-9', eta: '2026-11-30', steps: [] });
+  });
+  it('an unknown stock word reads as no stock information', () => {
+    expect(lineStatuses(['a'], [], new Map([['a', { source: 'odd' }]])).a.stock).toBeNull();
+  });
 });
