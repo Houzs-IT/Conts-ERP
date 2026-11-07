@@ -193,7 +193,7 @@ describe("mobile route drift gate", () => {
     // the last desktop-only Roles & Permissions surface to reach the phone.
     expect(PROFILE_ORG_ITEMS).toHaveLength(7);
     expect(allMobile).toHaveLength(46);
-    expect(new Set(allMobile.map((item) => item.to)).size).toBe(44);
+    expect(new Set(allMobile.map((item) => item.to)).size).toBe(46);
     expect(new Set(allMobile.map((item) => item.to.split("?")[0])).size).toBe(43);
   });
 
