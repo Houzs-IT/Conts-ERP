@@ -21,6 +21,8 @@ const { invoiceableDoLines, deliverableSoLines, outstandingGrnItems, returnableD
   returnableDoLines: vi.fn(),
 }));
 
+// The Stock & orders column reads its own query; these tests are about which lines a picker offers.
+vi.mock("./SoLineStatus", () => ({ useSoLineStatus: () => ({}), SoLineStatusCell: () => null, soLineStatusText: () => "" }));
 vi.mock("../../vendor/scm/lib/sales-invoice-queries", () => ({
   useInvoiceableDoLines: invoiceableDoLines,
 }));
