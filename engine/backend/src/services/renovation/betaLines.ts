@@ -272,7 +272,13 @@ export async function loadProjectLines(
                LEFT JOIN scm.suppliers ps ON ps.id = po.supplier_id
               WHERE pi.so_item_id = i.id) AS pos,
             (SELECT coalesce(sum(doi.qty), 0)::int FROM scm.delivery_order_items doi JOIN scm.delivery_orders dd ON dd.id = doi.delivery_order_id
-              WHERE doi.so_item_id = i.id AND dd.status::text NOT IN ('CANCELLED', 'DRAFT')) AS delivered,
+              WHERE doi.so_item_id = i.id AND dd.status::text NOT IN ('CANCELLED', 'DRAFT'))
+            /* Goods that came back on a delivery return are no longer on site: the line reads as the sales order page does. */
+            - (SELECT coalesce(sum(ri.qty_returned), 0)::int FROM scm.delivery_return_items ri
+                 JOIN scm.delivery_returns dr ON dr.id = ri.delivery_return_id AND dr.status::text <> 'CANCELLED'
+                 JOIN scm.delivery_order_items doi ON doi.id = ri.do_item_id
+                 JOIN scm.delivery_orders dd ON dd.id = doi.delivery_order_id AND dd.status::text NOT IN ('CANCELLED', 'DRAFT')
+                WHERE doi.so_item_id = i.id) AS delivered,
             i.photo_urls,
             (SELECT coalesce(json_agg(json_build_object('productId', ph.product_id, 'key', ph.r2_key, 'thumbKey', ph.thumb_key)
                                       ORDER BY ph.is_primary DESC, ph.sort_order, ph.created_at), '[]'::json)::text
