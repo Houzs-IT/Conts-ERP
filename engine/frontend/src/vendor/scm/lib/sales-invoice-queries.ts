@@ -82,7 +82,7 @@ export const useCreateSalesInvoice = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ idempotencyKey, ...body }: { idempotencyKey?: string } & Record<string, unknown>) =>
-      authedFetch<{ id: string; invoiceNumber: string; revenue?: { posted: boolean; jeNo?: string; status: string } }>(
+      authedFetch<{ id: string; invoiceNumber: string; revenue?: { posted: boolean; jeNo?: string; status: string; reason?: string } }>(
         `/sales-invoices`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }),
       ),
     onSuccess: () => {

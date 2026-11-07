@@ -855,7 +855,7 @@ export const createSalesInvoiceHandler = async (c: Context<{ Bindings: Env; Vari
   }
 
   /* REVENUE — record it now. Idempotent + best-effort. */
-  let revenue: { posted: boolean; jeNo?: string; status: string } = { posted: false, status: 'skipped' };
+  let revenue: { posted: boolean; jeNo?: string; status: string; reason?: string } = { posted: false, status: 'skipped' };
   const post = await postSiRevenue(sb, h.invoice_number);
   if (post.ok) {
     /* 'migrated_source' carries no jeNo and needs none: AutoCount already booked
@@ -864,7 +864,7 @@ export const createSalesInvoiceHandler = async (c: Context<{ Bindings: Env; Vari
       ? { posted: false, status: post.status }
       : { posted: post.status === 'posted', jeNo: post.jeNo, status: post.status };
   } else {
-    revenue = { posted: false, status: post.status };
+    revenue = { posted: false, status: post.status, reason: post.reason };
     if (post.status !== 'zero_total' && post.status !== 'invoice_not_found') {
       // eslint-disable-next-line no-console
       console.error(`[si-revenue] post failed for ${h.invoice_number}:`, post.status, post.reason);
