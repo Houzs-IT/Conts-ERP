@@ -1483,7 +1483,7 @@ function PurchaseOrderDetailV2ReadOnly() {
             <PoApprovedDrawings poId={purchaseOrder.id} />
             <DocAttachments docType="purchase_order" docId={purchaseOrder.id} canEdit={!isCancelled} />
             {/* Renovation PO payment schedule (Conts, 2026-10-09): Mobilise / Completion / Retention. */}
-            <PoPaymentScheduleCard poId={purchaseOrder.id} offerDefault={items.some((l) => l.item_group === "RENOVATION")} />
+            <PoPaymentScheduleCard poId={purchaseOrder.id} offerDefault={Boolean(reno) || items.some((l) => l.item_group === "RENOVATION")} />
           </DetailMain>
 
           <DetailAside>

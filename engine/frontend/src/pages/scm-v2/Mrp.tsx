@@ -524,7 +524,8 @@ export const Mrp = () => {
         // Refresh so coverage updates immediately; keep the result in an in-app
         // dialog (not a browser alert) per commander.
         setSelected(new Set());
-        void q.refetch();
+        /* The page reads a stored plan: regenerate it, or the lines just ordered stay on the list and can be picked again. */
+        regenerate.mutate(undefined, { onSettled: () => { void q.refetch(); } });
         setDialog({
           kind: 'created',
           title: `Successfully created ${created.length} PO${created.length === 1 ? '' : 's'}`,
@@ -550,8 +551,9 @@ export const Mrp = () => {
         // another session/tab (server: qty_exceeds_remaining). Refresh so the
         // ordered line drops off, and tell the operator plainly instead of
         // showing the raw error (Commander 2026-05-29).
-        if (errCode === 'qty_exceeds_remaining') {
-          void q.refetch();
+        // The shared error map turns this code into a goods-receipt sentence before it reaches here.
+        if (errCode === 'qty_exceeds_remaining' || raw.includes('already fully received')) {
+          regenerate.mutate(undefined, { onSettled: () => { void q.refetch(); } });
           setDialog({
             kind: 'info',
             title: 'Already ordered',
