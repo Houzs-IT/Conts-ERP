@@ -151,7 +151,9 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const engine = useApi<{ enabled: boolean }>('/supply-chain/engine');
   const counts = useNavCounts(path);
   const approvalsOn = counts?.approvalsOn === true;
-  const all = useMemo(() => withoutOffItems(navFor(user!.role, !!engine.data?.enabled, user!.access), approvalsOn),
+  // A phone-only screen stays out of the desktop menu; the phone menu reads the full list.
+  const all = useMemo(() => withoutOffItems(navFor(user!.role, !!engine.data?.enabled, user!.access), approvalsOn)
+    .map(g => ({ ...g, items: g.items.map(i => (i.children ? { ...i, children: i.children.filter(c => !c.phoneOnly) } : i)) })),
     [user, engine.data?.enabled, approvalsOn]);
 
   // The account menu closes the usual ways: Escape, a click anywhere else, or moving to another page.
