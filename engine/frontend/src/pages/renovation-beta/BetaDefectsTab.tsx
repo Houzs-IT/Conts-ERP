@@ -20,6 +20,7 @@ import { betaSiteApi, type DefectMediaFile, type DefectPatch, type DefectTicket 
 import { dueLine, overdueCount, ticketColumns } from "./renovationBetaSiteModel";
 import { BETA, TONES } from "./renovationBetaTheme";
 import { BetaLoading } from "./BetaLoading";
+import { BetaHandoverDialog } from "./BetaHandoverDialog";
 
 /** Column header colours: amber for the contractor's turn, blue for the check, green for done. */
 const COLUMNS: ReadonlyArray<{ key: DefectColumn; title: string; caption: string; ink: string; bg: string; bar: string; empty: string }> = [
@@ -56,6 +57,7 @@ export function BetaDefectsTab(p: BetaTabProps): ReactElement {
   const site = useQuery(["renovation-beta", "site", projectId], () => betaSiteApi.site(projectId), [projectId]);
   const [reporting, setReporting] = useState(false);
   const [openId, setOpenId] = useState<number | null>(null);
+  const [handingOver, setHandingOver] = useState(false);
   const tickets = q.data?.defects ?? [];
   const cols = ticketColumns(tickets, today);
   const late = overdueCount(tickets, today);
@@ -102,8 +104,8 @@ export function BetaDefectsTab(p: BetaTabProps): ReactElement {
 
       <section aria-label="Handover" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px 20px", padding: "16px 18px", background: BETA.surface, border: `1px solid ${BETA.line}`, borderRadius: 12 }}>
         <div style={{ flex: "1 1 300px" }}>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>Ready for handover{handoverOn ? ` on ${dayMonth(handoverOn)}` : ""}?</div>
-          <div style={{ fontSize: 13, color: BETA.muted }}>Keys and final payment after every defect is closed and the client signs</div>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>{detail.project.handed_over_at ? `Handed over on ${dayMonth(handoverOn as string)}` : `Ready for handover${handoverOn ? ` on ${dayMonth(handoverOn)}` : ""}?`}</div>
+          <div style={{ fontSize: 13, color: BETA.muted }}>Close every defect, then the client signs and takes the keys. Unfinished tasks stay open</div>
         </div>
         <div style={{ flex: "0 1 320px", minWidth: 200 }} data-testid="snag-progress">
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
@@ -114,8 +116,12 @@ export function BetaDefectsTab(p: BetaTabProps): ReactElement {
             <div style={{ width: `${total ? Math.round((closed / total) * 100) : 0}%`, height: 8, borderRadius: 4, background: WS.green }} />
           </div>
         </div>
+        {canWrite && !detail.project.handed_over_at && (
+          <button type="button" style={btnStyle("teal", "lg")} disabled={total - closed > 0} title={total - closed > 0 ? "Close every defect first" : undefined} onClick={() => setHandingOver(true)}>Hand over</button>
+        )}
       </section>
 
+      {handingOver && <BetaHandoverDialog projectId={projectId} customerName={detail.project.customer_name ?? null} onClose={() => setHandingOver(false)} onDone={(t) => { setHandingOver(false); p.onDone(t); }} />}
       {open && <TicketDialog key={open.id} t={open} p={p} areas={areas} onClose={() => setOpenId(null)} />}
     </>
   );
