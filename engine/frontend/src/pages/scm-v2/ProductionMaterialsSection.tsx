@@ -47,7 +47,7 @@ export function StockCell({ status, needed, uom }: { status: MaterialStatus | un
   }
   return (
     <>
-      <Badge tone="error" size="xs">{status.issued > 0 ? "Short" : "No PO yet"}</Badge>
+      <span className="inline-block whitespace-nowrap"><Badge tone="error" size="xs">{status.issued > 0 ? "Short" : "No PO yet"}</Badge></span>
       {under(`Short ${fmtQty(status.shortQty ?? needed)} ${uom}`, <Link to="/scm/mrp" className="font-semibold text-primary hover:underline">Order in MRP</Link>)}
     </>
   );

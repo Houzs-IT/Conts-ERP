@@ -1023,6 +1023,8 @@ export function DeliveryOrderDetailV2() {
      "Mark In Transit" for the same document. See vendor/scm/lib/do-next-step.ts. */
   const advanceStep = doAdvanceStep(deliveryOrder.status);
   const advanceReason = doAdvanceBlockReason(deliveryOrder.status);
+  // A renovation DO bills nothing, so the next-step sentence about a Sales Invoice would mislead.
+  const advanceNote = reno && /Sales Invoice/.test(advanceReason ?? "") ? null : advanceReason;
   const siReason = reno ? "Renovation work is billed by instalment on the project, not from a delivery order." : siTransferBlockReason(deliveryOrder.status);
   const canConvertToSi = siReason === null;
   const isCancelled = rawStatus === "cancelled";
@@ -1229,7 +1231,7 @@ export function DeliveryOrderDetailV2() {
               the disabled buttons point at with aria-describedby. */}
           {canWriteDo && (
             <div className="flex max-w-[420px] flex-col items-end gap-0.5 text-right">
-              <NextStepNote id="do-advance-reason" reason={advanceReason} />
+              <NextStepNote id="do-advance-reason" reason={advanceNote} />
               <NextStepNote id="do-si-reason" reason={siReason} />
             </div>
           )}
@@ -1633,7 +1635,7 @@ export function DeliveryOrderDetailV2() {
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface/95 px-3 pb-6 pt-2.5 shadow-slab backdrop-blur-sm md:hidden">
         {canWriteDo && (
           <div className="mb-1.5 flex flex-col gap-0.5">
-            <NextStepNote id="do-advance-reason-phone" reason={advanceReason} />
+            <NextStepNote id="do-advance-reason-phone" reason={advanceNote} />
             <NextStepNote id="do-si-reason-phone" reason={siReason} />
           </div>
         )}
