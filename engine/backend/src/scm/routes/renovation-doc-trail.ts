@@ -7,6 +7,7 @@ import type { Env, Variables } from '../env';
 import { supabaseAuth } from '../middleware/auth';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { soCoverage } from './mfg-sales-orders';
+import { withListMemo } from '../lib/mrp-list-memo';
 
 export const renovationDocTrail = new Hono<{ Bindings: Env; Variables: Variables }>();
 renovationDocTrail.use('*', supabaseAuth);
@@ -104,7 +105,9 @@ renovationDocTrail.get('/lines', async (c) => {
        JOIN scm.mfg_sales_orders so ON so.doc_no = d.so_doc_no AND so.company_id = ?`,
   ).bind(ids.join(','), co.companyId, co.companyId, co.companyId, co.companyId).all<LineRow>();
   // Stock is best effort: when the stock count fails the documents still show.
-  const cov = await soCoverage(c, c.get('supabase'));
+  /* The picker asks in pages; the whole-company stock count is the same for each page, so it is worked out once and
+     reused for a few seconds (as the list screens do) instead of once per page. */
+  const cov = await withListMemo(`doc-trail-lines:${co.companyId}`, () => soCoverage(c, c.get('supabase')));
   return c.json({ lines: lineStatuses(ids, results ?? [], cov.coverage as ReadonlyMap<string, { source?: string | null; po?: string | null; eta?: string | null }>) });
 });
 

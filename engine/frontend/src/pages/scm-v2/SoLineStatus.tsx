@@ -1,28 +1,43 @@
 /* The stock and documents of each sales order line, for the Transfer from Sales Order pickers (owner, 7 Nov 2026):
    is it in stock, which PO, production order, GR and DO hold it, and when an incoming PO is expected to arrive. */
 
-import { useQuery } from "@tanstack/react-query";
-import type { ReactElement } from "react";
+import { useQueries } from "@tanstack/react-query";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { fmtDate } from "@2990s/shared";
 import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 import type { TrailStep } from "./RenovationDocTrail";
 
 export interface LineStatus { stock: "stock" | "po" | "shortage" | null; incomingPo: string | null; eta: string | null; steps: TrailStep[] }
 
+/* Asked page by page, in the order the rows are listed, one page after the other: the first rows fill in at once and
+   a picker of thousands of lines never waits for all of them (owner, 8 Nov 2026: 5,076 lines on production). */
+const PAGE = 150;
 export function useSoLineStatus(ids: readonly string[]): Record<string, LineStatus> {
-  const key = [...new Set(ids)].sort();
-  const q = useQuery({
-    queryKey: ["so-line-status", key.join(",")], enabled: key.length > 0, staleTime: 30_000,
-    queryFn: async () => {
-      const out: Record<string, LineStatus> = {};
-      for (let i = 0; i < key.length; i += 300) {
-        const r = await authedFetch<{ lines: Record<string, LineStatus> }>(`/renovation-doc-trail/lines?ids=${key.slice(i, i + 300).join(",")}`);
-        Object.assign(out, r.lines);
-      }
-      return out;
-    },
+  const pages = useMemo(() => {
+    const seen = new Set<string>(); const list: string[] = [];
+    for (const id of ids) if (!seen.has(id)) { seen.add(id); list.push(id); }
+    const out: string[][] = [];
+    for (let i = 0; i < list.length; i += PAGE) out.push(list.slice(i, i + PAGE));
+    return out;
+  }, [ids]);
+  const [answered, setAnswered] = useState(0);
+  const results = useQueries({
+    queries: pages.map((page, n) => ({
+      queryKey: ["so-line-status", page.join(",")],
+      staleTime: 30_000,
+      queryFn: () => authedFetch<{ lines: Record<string, LineStatus> }>(`/renovation-doc-trail/lines?ids=${page.join(",")}`).then((r) => r.lines),
+      // Each page waits for the one before it, so the server is never asked for every page at once.
+      enabled: n <= answered,
+      retry: 1,
+    })),
   });
-  return q.data ?? {};
+  const settled = results.findIndex((r) => r.fetchStatus !== "idle" || r.status === "pending");
+  const reached = settled === -1 ? pages.length : settled;
+  useEffect(() => { if (reached > answered) setAnswered(reached); }, [reached, answered]);
+  const data = results.map((r) => r.data);
+  return useMemo(() => Object.assign({}, ...data.map((d) => d ?? {})) as Record<string, LineStatus>,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one entry per page; the array identity changes every render
+    [results.map((r) => r.dataUpdatedAt).join(",")]);
 }
 
 const LABEL: Readonly<Record<TrailStep["kind"], string>> = { so: "SO", po: "PO", production: "Production", gr: "GR", do: "DO" };
