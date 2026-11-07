@@ -96,7 +96,7 @@ const confirm = (app: Hono, id: string) =>
   app.request(`/delivery-orders/${id}/status`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ status: 'LOADED' }),
+    body: JSON.stringify({ status: 'LOADED', confirmShortStock: true }),
   });
 
 async function overDeliveryRefusal(res: Response): Promise<{ error?: string; conflicts?: string[] } | null> {
