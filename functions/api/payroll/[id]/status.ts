@@ -2,7 +2,7 @@ import { mayRun } from '../../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { notifyUsers } from '../../../_lib/notify';
-import { hasPayroll, NOT_MIGRATED, periodEnded, toPayslip, type PayslipRow } from '../../../_lib/payroll';
+import { hasPayroll, NOT_MIGRATED, periodEnded, toPayslip, missingSlips, type PayslipRow } from '../../../_lib/payroll';
 import { hasPenalties, PENALTY_SUM_SQL, postPenalties, unpostPenalties } from '../../../_lib/penalties';
 
 const MANAGE = ['management']; // everyone else needs Full on HR (functions/_lib/access.ts)
@@ -33,6 +33,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!slip) return fail('NOT_FOUND', 'That payslip no longer exists.', 404);
   if (slip.status !== move.from) return fail('CONFLICT', `That payslip is ${slip.status}; it cannot be ${DONE[action]} from there.`, 409);
   if (action === 'approve' && !periodEnded(slip.period)) return fail('CONFLICT', 'A month can be approved once it has ended. Until then the slip is an estimate.', 409);
+
+  // Hookka #1181: never approve a month while someone on its payroll has no slip; they would silently go unpaid.
+  if (action === 'approve') {
+    const missing = await missingSlips(env, slip.period);
+    if (missing.length) {
+      return fail('MISSING_PAYSLIPS', `No payslip yet for ${missing.map(m => m.name).join(', ')}. Generate the month again, then approve.`, 409);
+    }
+  }
 
   // Hookka: a penalty approved or revoked after the draft was made must be on the slip before it is approved.
   const penalties = await hasPenalties(env);

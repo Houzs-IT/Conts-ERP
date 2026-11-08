@@ -17,7 +17,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!isPeriod(period)) return fail('VALIDATION', 'Pick a month.', 422, { period: 'Pick a month.' });
   if (!throughDay(period)) return fail('VALIDATION', 'That month has not started yet.', 422, { period: 'Not started yet.' });
 
-  const done = await generateDrafts(env, period, session.userId);
+  let done: { written: number; kept: number };
+  try {
+    done = await generateDrafts(env, period, session.userId);
+  } catch (e) {
+    // All-or-nothing: nothing was saved, so the screen can say so and the run can simply be tried again.
+    return fail('NOT_SAVED', e instanceof Error ? e.message : 'Payroll was not saved. Try again.', 409);
+  }
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'payroll.generate', entityTable: 'payslips', entityId: period, after: done });
   return json(done);
 };
