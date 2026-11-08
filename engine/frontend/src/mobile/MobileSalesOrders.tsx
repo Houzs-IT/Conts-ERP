@@ -6,6 +6,7 @@ import { useNotify } from "../vendor/scm/components/NotifyDialog";
 import { useAuth } from "../auth/AuthContext";
 import { quickActionAccess } from "../auth/salesAccess";
 import { normalizeJobs, type ScanJobsResp } from "./MobileScan";
+import { useScanJobDriver } from "../vendor/scm/lib/scan-job-driver";
 import { MobileVirtualList } from "./MobileVirtualList";
 import { invalidateSoShared } from "./sharedInvalidate";
 import { confirmSoWithFreshVersion } from "./mobile-so-concurrency";
@@ -336,7 +337,7 @@ export function MobileSalesOrders({ onScan, onOpen, onNew, onNewCase }: { onScan
      hiccup silently skips the notification (retry:false, no dialog). */
   const salesperson = (user?.name || user?.email || "").trim();
   const notifiedRef = useRef(false);
-  const { data: jobsData } = useQuery({
+  const { data: jobsData, refetch: refetchScanJobs } = useQuery({
     queryKey: ["mobile-so-scan-jobs", salesperson],
     queryFn: () =>
       authedFetch<ScanJobsResp>(
@@ -345,6 +346,9 @@ export function MobileSalesOrders({ onScan, onOpen, onNew, onNewCase }: { onScan
     staleTime: 0,
     retry: false,
   });
+  // A rep who scans and goes straight to Orders still gets their queued scans run (no queue on this server).
+  const scanJobs = useMemo(() => normalizeJobs(jobsData), [jobsData]);
+  useScanJobDriver("/scan-so", scanJobs, () => void refetchScanJobs());
   useEffect(() => {
     if (notifiedRef.current || !jobsData) return;
     const now = Date.now();

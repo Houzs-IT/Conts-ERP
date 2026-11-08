@@ -27,6 +27,8 @@ import {
   type ScanJob,
   type ScanJobsResp,
 } from "../vendor/scm/lib/scan-jobs";
+import { useScanJobDriver } from "../vendor/scm/lib/scan-job-driver";
+import { ScanJobRetry } from "../vendor/scm/components/ScanJobRetry";
 import "./mobile.css";
 
 // Re-export the shared job helpers so existing consumers that import them from
@@ -664,6 +666,8 @@ export function MobileScan({
       normalizeJobs(query.state.data).some(isActiveJob) ? 4000 : false,
   });
   const jobs = useMemo(() => normalizeJobs(jobsData), [jobsData]);
+  // No queue on this server: the open screen runs each queued scan (scan-job-driver.ts).
+  useScanJobDriver("/scan-so", jobs, () => void refetchJobs());
 
   const visibleJobs = useMemo(
     () =>
@@ -1177,6 +1181,7 @@ export function MobileScan({
                               Duplicate of {j.duplicateOf}
                             </div>
                           )}
+                          <ScanJobRetry base="/scan-so" job={j} onDone={() => void refetchJobs()} />
                         </div>
                         <span style={{ flex: "none", fontSize: 10.5, color: "#9aa093", paddingTop: 4 }}>
                           {createdAt ? hhmm(createdAt) : ""}

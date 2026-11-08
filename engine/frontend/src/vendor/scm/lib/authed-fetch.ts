@@ -72,7 +72,9 @@ export const API_URL =
    NB: `path` here is the segment AFTER the /api/scm mount, so the /scan- test
    still matches the vendored scan endpoints. */
 function timeoutSignal(path: string): AbortSignal | undefined {
-  const ms = /\/scan-/.test(path) ? 120_000 : 30_000;
+  // A scan job's /work request is held open for the whole OCR run (scan-job-driver.ts): give it longer than the
+  // server's 3-minute stale window so the browser never gives up on a job that is still alive.
+  const ms = /\/scan-[a-z]+\/jobs\/[^/]+\/work$/.test(path) ? 240_000 : /\/scan-/.test(path) ? 120_000 : 30_000;
   try { return AbortSignal.timeout(ms); } catch { return undefined; } // pre-2022 browsers
 }
 
