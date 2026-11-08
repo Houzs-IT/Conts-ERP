@@ -8,6 +8,13 @@
  */
 import { soDeliverableRemaining } from '../routes/delivery-orders-mfg';
 
+/** SQLSTATE raised by the SO line delete floor (migration 0248, ported from Houzs
+ *  20261029T1000): the SO line is carried by a live delivery order. Callers answer
+ *  it with their existing 409, not a 500. */
+export const SO_LINE_OVER_DELIVERED = 'P0409';
+export const isSoLineOverDelivered = (err: { code?: string | null } | null | undefined): boolean =>
+  err?.code === SO_LINE_OVER_DELIVERED;
+
 export async function soRemainingByItemId(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any,

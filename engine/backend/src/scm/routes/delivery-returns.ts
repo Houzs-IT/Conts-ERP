@@ -42,6 +42,7 @@ import { SO_ITEM_FINANCE_KEYS } from '../lib/finance-keys';
 import { sourceUnitCostByItemId } from '../lib/source-cost';
 import { resolveSalesScopeIds, salesDocOutOfScope, resolveCallerStaffId } from '../lib/salesScope';
 import { enrichLinesWithFabricSupplierCode } from '../lib/fabric-supplier-code';
+import { drCancelCapRefusal } from '../lib/dr-cancel-cap';
 import {
   DR_FINANCE_KEYS,
   DR_HEADER_COLS,
@@ -1807,6 +1808,14 @@ export const patchDeliveryReturnStatusHandler = async (c: any) => {
       error: 'dr_cancelled_final',
       reason: 'A cancelled Delivery Return cannot be reactivated — its stock entry was already drained. Create a new return instead.',
     }, 409);
+  }
+
+  /* Its units go back on the SO lines' delivered total; refuse when a later DO already re-shipped them
+     (Houzs 127f66943, done here in the app: lib/dr-cancel-cap.ts). */
+  if (toStatus === 'CANCELLED') {
+    const cap = await drCancelCapRefusal(sb, id);
+    if (cap === 'unreadable') return c.json({ error: 'cancel_check_failed', message: 'Could not check the Sales Order lines this return belongs to. Try again.' }, 503);
+    if (cap) return c.json(cap, 409);
   }
 
   const now = new Date().toISOString();
