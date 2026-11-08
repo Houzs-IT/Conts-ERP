@@ -67,6 +67,9 @@ import { PageHeader } from '../../components/Layout';
 import { resolveFxRate } from './fx-rate';
 import { computeTotalHeight, isTotalHeightCategory, isTotalHeightPart } from '../../vendor/shared/total-height';
 import { DateField } from "../../vendor/scm/components/DateField";
+import { takePvFiles, pvFileToFile } from '../../vendor/scm/lib/pv-file-handoff';
+import type { PvFilePayload } from '../../vendor/scm/lib/payment-voucher-queries';
+import { uploadDocFile } from '../../components/doc-attachments/docAttachmentsApi';
 
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
@@ -183,6 +186,8 @@ export const PurchaseInvoiceNew = () => {
   }, [specialAddonsQ.data]);
 
   const [supplierInvoiceRef, setSupplierInvoiceRef] = useState<string>('');
+  /* The scanned bill's pages, handed over by the scan page; attached after save. */
+  const [pendingFiles, setPendingFiles] = useState<PvFilePayload[]>([]);
   const [invoiceDate, setInvoiceDate] = useState<string>(() => todayMyt());
   const [dueDate, setDueDate]         = useState<string>('');
   /* Commander 2026-05-29 — "Bill date 都是 standard 的，放 30 天之内，根据这个
@@ -293,6 +298,8 @@ export const PurchaseInvoiceNew = () => {
     } | null)?.scanBill;
     if (!scan || scanApplied.current || !isManual) return;
     scanApplied.current = true;
+    const carried = takePvFiles();
+    if (carried.length > 0) setPendingFiles(carried);
     if (scan.supplierId) setManualSupplierId(scan.supplierId);
     if (scan.extraction.invoiceNumber) setSupplierInvoiceRef(scan.extraction.invoiceNumber);
     if (scan.extraction.invoiceDate) setInvoiceDate(scan.extraction.invoiceDate);
@@ -590,6 +597,25 @@ export const PurchaseInvoiceNew = () => {
           variants:       l.variants,
         })),
       });
+      /* Attach the scanned bill AFTER the invoice exists, in scan order. A failed
+         upload never un-saves the bill: the dialog says what still needs adding
+         from the detail page's Files card. */
+      let attached = 0;
+      let attachErr: string | null = null;
+      for (const f of pendingFiles) {
+        try {
+          await uploadDocFile('purchase_invoice', createRes.id, pvFileToFile(f), { caption: 'Scanned supplier bill' });
+          attached += 1;
+        } catch (e) {
+          attachErr = e instanceof Error ? e.message : 'The file could not be uploaded.';
+          break;
+        }
+      }
+      if (attached > 0) setPendingFiles((prev) => prev.slice(attached));
+      const filesNote = [
+        attached > 0 ? `${attached} scanned file(s) attached.` : null,
+        attachErr ? `${pendingFiles.length - attached} file(s) did not attach (${attachErr}) - add them from the invoice's Files card.` : null,
+      ].filter(Boolean).join(' ');
       // Auto-post (Confirm) so PI lands in POSTED state (matches PO + GRN).
       const ledger = asDraft ? undefined : (await post.mutateAsync(createRes.id)).ledger;
       /* THE ACCOUNTS MAY HAVE IT WITHOUT ALL OF IT — and on a purchase
@@ -599,11 +625,14 @@ export const PurchaseInvoiceNew = () => {
       await notifyAcNotSent(notify, createRes, 'Purchase invoice');
       setDialog({
         title: `PI ${createRes.invoiceNumber} created`,
-        body: asDraft
-          ? 'Saved as Draft — review, then Confirm to post the AP liability.'
-          : ledger
-            ? `Created, but it is not in the ledger yet: ${ledger.reason ?? ledger.status}`
-            : 'Created + posted — AP liability recorded.',
+        body: [
+          asDraft
+            ? 'Saved as Draft — review, then Confirm to post the AP liability.'
+            : ledger
+              ? `Created, but it is not in the ledger yet: ${ledger.reason ?? ledger.status}`
+              : 'Created + posted — AP liability recorded.',
+          filesNote,
+        ].filter(Boolean).join(' '),
         goTo: `/scm/purchase-invoices/${createRes.id}`,
       });
     } catch (err) {
@@ -721,6 +750,11 @@ export const PurchaseInvoiceNew = () => {
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Supplier Invoice #</span>
               <input type="text" value={supplierInvoiceRef} onChange={(e) => setSupplierInvoiceRef(e.target.value)} placeholder="From the supplier's printed invoice" className={styles.fieldInput} />
+              {pendingFiles.length > 0 && (
+                <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
+                  {pendingFiles.length} scanned file(s) will be attached on save: {pendingFiles.map((f) => f.name).join(', ')}
+                </span>
+              )}
             </label>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Invoice Date</span>
