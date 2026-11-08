@@ -295,7 +295,6 @@ export const DeliveryReturnDetail = () => {
                 /* Downstream document: the variants rode in from the DO line;
                    they are not re-required or re-seeded here. */
                 variantsRequired={false}
-                lineDateLocked={false}
                 seedSofaLegDefault={false}
                 attachOptions={null}
               />
