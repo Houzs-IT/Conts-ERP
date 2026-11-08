@@ -85,6 +85,24 @@ export async function refreshMrpSnapshot(
 }
 
 /**
+ * Drop a company's stored plan after a write that moves supply (a PO cancelled or reopened), so the MRP page
+ * recomputes on its next open instead of showing the cancelled PO as cover. Houzs refreshes it in the background
+ * (9ff5dc768); Conts drops it instead because a recompute inside the request would spend the free Workers plan's
+ * outside-call budget, and the page already recomputes and stores a missing plan on open. Never fails the write.
+ */
+export async function expireMrpSnapshot(sb: Sb, companyId: number | null | undefined, where: string): Promise<void> {
+  if (companyId == null) return;
+  try {
+    const { error } = await sb.from('mrp_snapshots').delete().eq('company_id', companyId);
+    // eslint-disable-next-line no-console
+    if (error) console.error(`[mrp-snapshot] expire after ${where} company=${companyId}:`, error.message);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(`[mrp-snapshot] expire after ${where} company=${companyId}:`, e);
+  }
+}
+
+/**
  * Refresh every live company's stored MRP snapshot — the scheduled (~15 min)
  * job, run from the Worker's `scheduled()` handler where env.DB + the SCM client
  * are already to hand (so no pgrest-shim / lead-buffer plumbing). Best-effort per
