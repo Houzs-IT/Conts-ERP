@@ -631,7 +631,16 @@ soAmendments.get('/:id', async (c) => {
     console.warn('[so-amendments] change labels skipped', e instanceof Error ? e.message : e);
   }
 
-  return c.json({ amendment, lines, salesOrder, purchaseOrders, poFollowUps, changes });
+  /* Whether the caller raised this amendment, decided here because only the
+     server can: requested_by is a scm.staff uuid and the browser's scm-auth
+     bridge has no staff id, so the page's own compare was always false and the
+     requester never saw Withdraw (ported from Houzs #4454). Same identity rule
+     PATCH /:id/withdraw enforces. */
+  const callerStaffId = await resolveCallerStaffId(sb, c.get('houzsUser')?.id);
+  const viewerIsRequester = callerStaffId != null && amendment.requested_by != null
+    && callerStaffId === amendment.requested_by;
+
+  return c.json({ amendment, lines, salesOrder, purchaseOrders, poFollowUps, changes, viewerIsRequester });
 });
 
 /* ── PATCH /:id/supplier-confirm ───────────────────────────────────────────
