@@ -15,6 +15,7 @@
 // it to sequence a follow-up, or ignore the promise for a plain toast.
 // ----------------------------------------------------------------------------
 
+import { useEscapeLayer } from '../../../lib/escapeStack';
 import {
   createContext, useCallback, useContext, useState,
   type CSSProperties, type ReactNode,
@@ -58,7 +59,10 @@ export type NotifyOpts = {
 
 export type NotifyDialogProps = NotifyOpts & { onClose: () => void };
 
-export const NotifyDialog = ({ title, body, okLabel = 'OK', tone, onClose }: NotifyDialogProps) => (
+export const NotifyDialog = ({ title, body, okLabel = 'OK', tone, onClose }: NotifyDialogProps) => {
+  // Esc dismisses this message alone, not the form under it.
+  useEscapeLayer(onClose);
+  return (
   <div style={backdrop} onClick={onClose} role="presentation">
     <div style={card} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
       <h2 style={tone === 'error' ? titleErrStyle : titleStyle}>{title}</h2>
@@ -68,7 +72,8 @@ export const NotifyDialog = ({ title, body, okLabel = 'OK', tone, onClose }: Not
       </div>
     </div>
   </div>
-);
+  );
+};
 
 type NotifyFn = (opts: NotifyOpts) => Promise<void>;
 

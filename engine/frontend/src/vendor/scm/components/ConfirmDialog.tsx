@@ -18,6 +18,7 @@
 // a superseding prompt all resolve false, so a dismissed prompt never acts.
 // ----------------------------------------------------------------------------
 
+import { useEscapeLayer } from '../../../lib/escapeStack';
 import {
   createContext, useCallback, useContext, useState,
   type CSSProperties, type ReactNode,
@@ -92,6 +93,8 @@ export const ConfirmDialog = ({
   value = '', onValueChange, onConfirm, onCancel,
 }: ConfirmDialogProps) => {
   const blocked = Boolean(input?.required) && value.trim() === '';
+  // Esc cancels this box alone, not the form under it.
+  useEscapeLayer(onCancel);
   return (
     <div style={backdrop} onClick={onCancel} role="presentation">
       <div style={card} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">

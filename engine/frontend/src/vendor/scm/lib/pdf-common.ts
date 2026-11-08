@@ -19,6 +19,7 @@ import {
 } from '../../../lib/branding';
 import { canonicalizeSinglePhone, formatPhone } from '../../shared/phone';
 import { drawDocLetterhead, getDocLetterhead } from '../../../lib/renovation/renovation-doc-theme';
+import { pushEscape } from '../../../lib/escapeStack';
 
 /* HOUZS letterhead — name / reg no / address / phone / email now come from the
    centralised Branding config (one editable record in Settings → Branding),
@@ -772,14 +773,10 @@ function openPdfViewerOverlay(blob: Blob, filename: string, opts: { print?: bool
   button('New tab', false, () => openPdfPreviewTab(blob, URL.createObjectURL(blob), filename));
   button('Close', false, () => close());
 
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape') return;
-    // Capture + stop, so Esc closes only the viewer, not the Print preview under it.
-    e.stopPropagation();
-    close();
-  };
+  /* Through the shared Esc stack, so Esc closes only the viewer, not the Print preview under it. */
+  let popEscape = (): void => {};
   function close() {
-    document.removeEventListener('keydown', onKey, true);
+    popEscape();
     backdrop.remove();
     document.body.style.overflow = prevOverflow;
     URL.revokeObjectURL(blobUrl);
@@ -787,7 +784,7 @@ function openPdfViewerOverlay(blob: Blob, filename: string, opts: { print?: bool
   backdrop.addEventListener('click', (e) => {
     if (e.target === backdrop) close();
   });
-  document.addEventListener('keydown', onKey, true);
+  popEscape = pushEscape(close);
 
   /* The browser's own Save takes its name from the address: a blob saves as a
      GUID (owner 2026-11-06), the worker's path saves as the document. An iframe
