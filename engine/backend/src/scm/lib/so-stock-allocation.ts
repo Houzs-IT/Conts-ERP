@@ -592,9 +592,11 @@ async function runSoStockAllocation(
         itemCode: l.item_code,
         category: serviceCodes.has(l.item_code) ? 'SERVICE' : null,
       })) continue;
-      const delivered = deliveredBySoItem.get(l.id) ?? 0;
-      const returned = returnedBySoItem.get(l.id) ?? 0;
-      const remaining = Number(l.qty ?? 0) - delivered + returned;
+      /* Returned units are NOT owed again (Houzs e11313aba): returned goods go back to stock for the next matching
+         order, so netting the return back in handed the same units straight back to the order that returned them.
+         Only the stock claim changes: the DO picker still shows the returned qty as deliverable, so a replacement
+         can still be shipped on purpose, and header readiness below is unchanged. */
+      const remaining = Number(l.qty ?? 0) - (deliveredBySoItem.get(l.id) ?? 0);
       if (remaining <= 0) continue;
       const variant_key = computeVariantKey(l.item_group ?? null, l.variants ?? null);
       const whId = l.warehouse_id ?? null;
