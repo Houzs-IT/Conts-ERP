@@ -194,3 +194,36 @@ test('a worker penalty comes off net pay after statutory, like an advance', () =
   assert.equal(f.epfEmployeeSen, without.epfEmployeeSen);
   assert.equal(f.netSen, without.netSen - 5_000 - 2_000);
 });
+
+// Hookka #902: a resigned person's working days after the last day are absences at once, not when the month closes.
+test('resigned mid-month: the running-month draft already pays what the closed month will', () => {
+  const left = '2026-11-14';
+  const days = workingDates.filter(d => d <= left).map(d => ({ date: d, minutes: 480, forgotOut: false }));
+  const midMonth = computePay({ ...base, throughDay: '2026-11-18', days, lastWorkingDay: left });
+  const closed = computePay({ ...base, days, lastWorkingDay: left });
+  const after = workingDates.filter(d => d > left).length; // 16 to 30 Nov less Sundays = 13
+  assert.equal(after, 13);
+  assert.equal(closed.absentDays, 13);
+  assert.equal(midMonth.absentDays, 13);
+  assert.equal(midMonth.workingDays, 25);
+  assert.equal(midMonth.grossSen, closed.grossSen);
+  assert.equal(midMonth.grossSen, 260_000 - 13 * 10_000);
+  // The same draft for someone still employed docks nothing yet (the last days are pending).
+  const stays = computePay({ ...base, throughDay: '2026-11-18', days });
+  assert.equal(stays.absentDays, 1); // 16-18 Nov blank, the last two pending
+});
+
+test('resigned: a day logged after the last day is not an absence, and the dock never passes the basic', () => {
+  const left = '2026-11-14';
+  const days = workingDates.filter(d => d <= left).map(d => ({ date: d, minutes: 480, forgotOut: false }));
+  const f = computePay({ ...base, throughDay: '2026-11-30', days: [...days, { date: '2026-11-16', minutes: 480, forgotOut: false }], lastWorkingDay: left });
+  assert.equal(f.absentDays, 12);
+  const gone = computePay({ ...base, days: [], lastWorkingDay: '2026-11-01', throughDay: '2026-11-03' });
+  assert.equal(gone.absentDays, 25);
+  assert.equal(gone.absenceDeductionSen, 250_000);
+  // A 24-day rate (RM 108.33) times 25 absent days would dock more than the RM 2,600 basic: capped at the basic.
+  const capped = computePay({ ...base, employee: { ...person, workingDaysPerMonth: 24 }, days: [], lastWorkingDay: '2026-11-01', throughDay: '2026-11-03' });
+  assert.equal(capped.absenceDeductionSen, 260_000);
+  const lastMonthOff = computePay({ ...base, days: [], lastWorkingDay: '2026-10-31' });
+  assert.equal(lastMonthOff.absentDays, 25); // a last day before the month: the ordinary rules, no extra dock
+});
