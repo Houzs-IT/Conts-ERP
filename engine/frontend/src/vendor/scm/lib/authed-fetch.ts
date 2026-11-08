@@ -646,6 +646,11 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   // another company's id exists would itself leak.
   not_found_in_company:
     "That record isn't available in the company you're working in.",
+  // Delivery Return cancel refusals (backend scm/lib/dr-cancel-cap.ts).
+  cancel_over_delivers:
+    'A later Delivery Order already shipped these returned units again, so cancelling this return would deliver more than was ordered. Cancel or reduce that Delivery Order first.',
+  cancel_check_failed:
+    "We couldn't check the Sales Order this return belongs to, so it was not cancelled. Please try again.",
   already_posted: 'This journal entry is already posted.',
   je_reversed:
     'This journal entry was reversed and cannot be posted. Create a new one.',
