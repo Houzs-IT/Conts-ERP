@@ -12,7 +12,7 @@ vi.mock("../../vendor/scm/lib/authed-fetch", () => ({
 
 import {
   amendmentLine, amountAfter, byAreaBlocks, contractLineEdits, dateSettable, editProblem, effectiveEdit, groupDate, groupDateTargets, lineDates, lineLate,
-  postContractLines, refusalText, variantsAfter, voBatches, type ManagedLine,
+  postContractLines, refusalText, unitAfter, variantsAfter, voBatches, type ManagedLine,
 } from "./renovationBetaLines";
 
 const line = (over: Partial<ManagedLine> = {}): ManagedLine => ({
@@ -173,5 +173,15 @@ describe("postContractLines", () => {
     expect(h.calls[0][1]).toEqual({ variants: { fabricCode: "F2", seatHeight: "24" } });
     expect((h.calls[2][1] as { edits: unknown[] }).edits).toEqual([{ soItemId: "c", qty: 5, variants: { fabricCode: "F1", seatHeight: "28" } }]);
     expect(r).toMatchObject({ applied: true, amendmentNo: "VO-TC-SO-1-03", poFlags: 1 });
+  });
+});
+
+describe("unitAfter: a picked SKU with no sell price keeps the line's price", () => {
+  it("keeps the stored price when the picked SKU's price is 0", () => {
+    expect(unitAfter(line(), { itemCode: "PNT-1L", pickedPriceSen: 0 })).toBe(10000);
+    expect(amountAfter(line(), { itemCode: "PNT-1L", pickedPriceSen: 0 })).toBe(20000);
+  });
+  it("takes the picked SKU's own price when it has one", () => {
+    expect(unitAfter(line(), { itemCode: "PNT-1L", pickedPriceSen: 4500 })).toBe(4500);
   });
 });
