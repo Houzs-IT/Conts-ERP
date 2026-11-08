@@ -302,6 +302,12 @@ for (const file of pending) {
   const stmts = splitSqlStatements(file.sql);
   try {
     await pg.begin(async (tx) => {
+      // Every file starts from the role's own search_path. A plain
+      // `SET search_path = ...` inside a migration is SESSION-level on this one
+      // connection (max: 1), so without this it outlived its file and steered
+      // the next file's unqualified CREATE TABLE into another schema (Houzs
+      // bde48c895, #4466: five tables built in scm on a bulk catch-up run).
+      await tx.unsafe("RESET search_path");
       for (const s of stmts) await tx.unsafe(s);
       await tx`
         INSERT INTO _pg_migrations (filename, checksum)
