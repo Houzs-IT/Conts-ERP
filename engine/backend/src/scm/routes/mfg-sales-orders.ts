@@ -76,6 +76,7 @@ import { paymentMayChange, SLIP_DATE_OVERRIDE_NOTE, SO_PAYMENT_AMEND, SO_PAYMENT
 import { AMEND_SOURCE, ledgerFieldChange } from '../../acc/payment-corrections';
 import { paymentReasonRule } from '../lib/so-payment-reason';
 import { paymentVersionGuard, soCasGrace, soCasGraceOpen } from '../lib/so-cas';
+import { markIdempotencyNoWrite } from '../../middleware/idempotency';
 /* SO-SKU spec P2 — every charge is a SKU line. Predicates from P1; the
    fee/addon → SERVICE-line decomposition builders are pure + shared. */
 import {
@@ -194,6 +195,7 @@ import {
   loadSpecialAddons,
   recomputeFromSnapshot,
   erpLineTrust,
+  unitAfterLineEdit,
   loadProductByCode,
   loadProductsByCodes,
   loadFabricByCode,
@@ -2252,7 +2254,9 @@ mfgSalesOrders.post('/backfill-warehouses', async (c) => {
    below feeds it a synthetic context built from Env + the identities captured
    at enqueue time. `c.json(body, status)` inside the core returns a plain
    outcome object; the HTTP route re-emits it as the real JSON response. */
-export type SoCreateOutcome = { status: number; body: Record<string, unknown> };
+/* `noWrite` marks a refusal answered before the core's first business write, so
+   the HTTP route can release the idempotency claim (see createSalesOrderCore). */
+export type SoCreateOutcome = { status: number; body: Record<string, unknown>; noWrite?: true };
 export type SoCreateContext = {
   req: { json(): Promise<unknown> };
   /* supabase keeps the REAL client type — the core body relies on the typed
@@ -2288,6 +2292,16 @@ export type SoCreateContext = {
 };
 
 async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome> {
+  /* Every refusal above the first business write (the customer upsert, below)
+     leaves nothing behind — the only thing claimed by then is a doc-number
+     counter suffix, which cannot duplicate an order — so it goes out marked
+     noWrite and POST / releases the idempotency claim. Without that, the form's
+     one key per mount froze the first refusal and the corrected Save answered
+     idempotency_key_reused until the operator left and re-keyed the whole order
+     (ported from Houzs #5131). */
+  let wrote = false;
+  const answer = c.json;
+  c = { ...c, json: (b, s) => (wrote ? answer(b, s) : { ...answer(b, s), noWrite: true }) };
   let body: Record<string, unknown>;
   try { body = (await c.req.json()) as Record<string, unknown>; } catch { return c.json({ error: 'invalid_json' }, 400); }
   /* Multi-company (mig 0061): the active company for this create (SoCreateContext
@@ -2730,6 +2744,7 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
      customer_id (the POS never sent one). */
   let orderCustomerId: string | null = null;
   const casCo = requireActiveCompanyId(c); if (!casCo.ok) return c.json(casCo.refusal, 409);  // HAZARD 1
+  wrote = true;  // the first business write follows; no refusal from here on may release the claim
   /* Scan blank-draft shell (owner 2026-07-04) — a scan that could not read the
      customer's name/phone still lands a draft the rep completes by hand, but it
      carries PLACEHOLDER name/phone. Resolving a customer identity off those
@@ -4792,9 +4807,11 @@ mfgSalesOrders.post('/', async (c) => {
   const peek = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
   const renoBlock = peek && peek.renovation && typeof peek.renovation === 'object' ? readRenovationBlock(peek.renovation) : null;
   if (renoBlock) {
+    /* These refusals run before anything is written: release the idempotency claim so the corrected Save goes through. */
     const avail = await renovationSoAvailable(c.env.DB as unknown as RenoInfoDb);
-    if (!avail.ok) return c.json(avail.body, avail.status);
+    if (!avail.ok) { markIdempotencyNoWrite(c); return c.json(avail.body, avail.status); }
     const taken = await projectOrderTaken(c.env.DB as unknown as RenoInfoDb, renoBlock.projectId);
+    if (taken) markIdempotencyNoWrite(c);
     if (taken) return c.json({ error: 'project_taken', message: `This project already has sales order ${taken}.`, problems: [{ code: 'project_taken', message: `This project already has sales order ${taken}.`, field: 'Project' }] }, 409);
     if (peek!.asDraft !== true) {
       const problems = renovationSoProblems(renoBlock, {
@@ -4802,7 +4819,7 @@ mfgSalesOrders.post('/', async (c) => {
         phone: String(peek!.phone ?? ''),
         address1: String(peek!.address1 ?? ''),
       });
-      if (problems.length) return c.json({ error: 'validation_failed', problems }, 422);
+      if (problems.length) { markIdempotencyNoWrite(c); return c.json({ error: 'validation_failed', problems }, 422); }
     }
   }
   const out = await createSalesOrderCore({
@@ -4843,6 +4860,7 @@ mfgSalesOrders.post('/', async (c) => {
     });
     if (vpBrand) return c.json({ ...out.body, vpBrand }, 201);
   }
+  if (out.noWrite) markIdempotencyNoWrite(c);
   return c.json(out.body, out.status as 201);
 });
 
@@ -7719,6 +7737,8 @@ mfgSalesOrders.patch('/:docNo/items/:itemId', async (c) => {
     }, 422);
   }
   const clientUnit = it.unitPriceSen !== undefined ? Number(it.unitPriceSen) : prev.unit_price_sen;
+  // owner ruling — non-POS author prices freely; see erpLineTrust.
+  const patchTrust = erpLineTrust(posTablet, clientUnit, it.zeroPriceIntended, patchSoIsMigrated);
   const discount = it.discountSen !== undefined ? Number(it.discountSen) : prev.discount_sen;
 
   /* MFG-PRICING-ENGINE — Server-side recompute on PATCH. Triggered when
@@ -7861,8 +7881,7 @@ mfgSalesOrders.patch('/:docNo/items/:itemId', async (c) => {
       sofaModuleCostRowsPatch,
       modelOverridesPatch, // migration 0175 — per-Model Δ
       compartmentOverridesPatch, // migration 0025 — per-compartment Δ
-      // owner ruling — non-POS author prices freely; see erpLineTrust.
-      erpLineTrust(posTablet, clientUnit, it.zeroPriceIntended, patchSoIsMigrated),
+      patchTrust,
     );
     /* Task 6 — grandfathering: a line already carrying variants.freeItem was
        made free at create time and must STAY at RM 0 on edit recompute, even
@@ -7897,7 +7916,7 @@ mfgSalesOrders.patch('/:docNo/items/:itemId', async (c) => {
        RM490 加购 into RM990 with no warning (Loo 2026-06-28). */
     : prevIsReward
     ? prev.unit_price_sen
-    : (recomputedPatch ? recomputedPatch.unit_price_sen : clientUnit);
+    : unitAfterLineEdit(recomputedPatch ? recomputedPatch.unit_price_sen : clientUnit, prev.unit_price_sen, patchTrust);
   /* Audit 2026-06-11 C-2 — same discount gate as POST /: the effective
      (patch-else-stored) discount must sit in [0, qty × unit] against the
      effective unit price (422, reject-don't-normalize). */

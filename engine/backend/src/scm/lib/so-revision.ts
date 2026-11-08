@@ -44,6 +44,7 @@ import {
   type TrustSelling,
 } from './mfg-pricing-recompute';
 import { recordSoAudit, type FieldChange } from './so-audit';
+import { skuCategoryResolver } from './sku-category';
 import { deriveMfgPoUnitCost } from './po-pricing';
 import { readMfgProductBindings } from './supplier-bindings';
 import { rederivePoLineFromSoLine, type RevisedSoLine } from './po-line-rederive';
@@ -178,6 +179,9 @@ type AmendmentLineRow = {
      The sanctioned lever for reducing a derived price (the delivery fee), and
      the one money field the amendment road did not carry. */
   new_discount_sen: number | null;
+  /* HC-0095 — the operator TYPED the requested 0. False on every row before the
+     column, so a queued seeded 0 cannot zero a priced line on approval. */
+  zero_price_intended: boolean | null;
   old_snapshot: Record<string, unknown> | null;
 };
 
@@ -337,7 +341,7 @@ export async function applySoAmendment(
   const { data: lineRows, error: lineErr } = await sb
     .from('so_amendment_lines')
     .select('id, sales_order_item_id, change_type, new_item_code, new_variants, ' +
-      'new_qty, new_unit_price_sen, new_remark, new_discount_sen, old_snapshot')
+      'new_qty, new_unit_price_sen, zero_price_intended, new_remark, new_discount_sen, old_snapshot')
     .eq('amendment_id', amendmentId);
   if (lineErr) throw new Error(`applySoAmendment: amendment lines load failed: ${lineErr.message}`);
   const amendmentLines = (lineRows ?? []) as AmendmentLineRow[];
@@ -519,6 +523,11 @@ export async function applySoAmendment(
      which the audit drawer does not read. So the one moment the SO's lines are
      rewritten by somebody other than their owner was the one moment the trail
      could not say what they had been. */
+  const groupOf = await skuCategoryResolver(
+    sb,
+    amendmentLines.filter((d) => d.new_item_code).map((d) => ({ materialKind: 'mfg_product', itemCode: d.new_item_code })),
+    soCompanyId,
+  );
   const lineChanges: FieldChange[] = [];
   const noteChange = (field: string, from: unknown, to: unknown) => {
     if (String(from ?? '') === String(to ?? '')) return;
@@ -569,8 +578,8 @@ export async function applySoAmendment(
         prodCategory = (prod.category ?? '').trim() || null;
       }
       const variants = (diff.new_variants ?? null) as Record<string, unknown> | null;
-      /* ITEM GROUP — the requested blob first, then the line's own old snapshot,
-         then the CATALOG's category (owner 2026-08-11). The catalog step is new:
+      /* ITEM GROUP — the CATALOG's category first (the SKU wins, as on POST /), then
+         the requested blob, then the line's own old snapshot (owner 2026-08-11). The catalog step is new:
          the chain used to fall straight to the literal 'others', so an added
          SVC-ADDON landed with item_group='others' while the identical SKU
          created through POST / lands 'service'. That is not cosmetic —
@@ -580,7 +589,7 @@ export async function applySoAmendment(
          line mis-grouped as goods asks the factory to make a delivery fee.
          'others' remains the last resort for a catalog row with no category. */
       const itemGroup = String(
-        variants?.itemGroup ?? diff.old_snapshot?.item_group ?? prodCategory ?? 'others',
+        prodCategory ?? variants?.itemGroup ?? diff.old_snapshot?.item_group ?? 'others',
       ).toLowerCase();
       const qty = Math.max(1, Number(diff.new_qty ?? 1));
 
@@ -695,7 +704,13 @@ export async function applySoAmendment(
     const itemCode = change === 'SPEC' && diff.new_item_code
       ? String(diff.new_item_code).trim()
       : String(row.item_code ?? '');
-    const itemGroup = String(row.item_group ?? 'others').toLowerCase();
+    /* A code moved by SPEC takes the NEW SKU's category, as the PO twin does
+       (po-revision.ts). Keeping the old line's group left a swapped line on the
+       old SKU's group, which MRP and supplier binding read. */
+    const codeMoved = itemCode !== String(row.item_code ?? '').trim();
+    const itemGroup = String(
+      (codeMoved ? groupOf({ materialKind: 'mfg_product', itemCode }) : null) ?? row.item_group ?? 'others',
+    ).toLowerCase();
     const qty = diff.new_qty != null ? Math.max(1, Number(diff.new_qty)) : Math.max(1, Number(row.qty ?? 1));
     // SPEC carries new variants; QTY leaves the existing variants untouched.
     const variants = change === 'SPEC' && diff.new_variants != null
@@ -708,9 +723,14 @@ export async function applySoAmendment(
        replaces with the catalogue figure, exactly as before, and on a migrated
        order the 'including-zero' protection preserves. That is the property that
        makes this fix incapable of authoring a price without an approval: with
-       `approval === null` an unvalidated payload number is never even read. */
-    const clientUnit = (approval !== null && diff.new_unit_price_sen != null)
-      ? Number(diff.new_unit_price_sen)
+       `approval === null` an unvalidated payload number is never even read.
+       HC-0095: a requested 0 counts only when the operator claimed it
+       (zero_price_intended), the amendment twin of unitAfterLineEdit. An
+       unclaimed 0 is an unpriced SKU's seed and keeps the stored price. */
+    const requestedUnit = diff.new_unit_price_sen;
+    const clientUnit = (approval !== null && requestedUnit != null
+        && (Number(requestedUnit) !== 0 || diff.zero_price_intended === true))
+      ? Number(requestedUnit)
       : Number(row.unit_price_sen ?? 0);
 
     /* amendTrust — see where it is derived. MIGRATED: 'including-zero', so the
@@ -768,6 +788,7 @@ export async function applySoAmendment(
 
     const { error: updErr } = await sb.from('mfg_sales_order_items').update({
       item_code:               itemCode,
+      ...(codeMoved ? { item_group: itemGroup } : {}),
       qty,
       variants,
       unit_price_sen:        unit,
@@ -807,6 +828,7 @@ export async function applySoAmendment(
       const wasCode = String(row.item_code ?? '');
       const key = wasCode || String(diff.sales_order_item_id);
       noteChange(`line_${key}_item_code`, wasCode, itemCode);
+      noteChange(`line_${key}_item_group`, row.item_group, itemGroup);
       noteChange(`line_${key}_qty`, row.qty, qty);
       noteChange(`line_${key}_unit_price_sen`, row.unit_price_sen, unit);
       noteChange(
