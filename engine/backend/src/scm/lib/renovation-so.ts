@@ -19,6 +19,7 @@ import type { DocHeaderInput, NormSection, PrintFormat } from './renovation-vali
 import { stampContractFromQuotation } from './renovation-doc-flow';
 import { lineCostSen, soMirrorRow } from '../shared/renovation-money';
 import { isStageKey } from '../shared/renovation-stages';
+import { isServiceLine } from '../shared/service-sku';
 
 export const RENO_LIVE_STATUSES = ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'] as const;
 export type RenoSoStatus = (typeof RENO_LIVE_STATUSES)[number] | 'CLOSED' | 'CANCELLED';
@@ -422,6 +423,23 @@ export async function setContractStatus(db: RenoDb, actor: RenoActor, docNo: str
       [docNo],
     );
     if (Number(m.n) > 0) throw refuse(409, 'has_production_orders', 'Cancel the production orders raised from this contract first.');
+  }
+  if (to === 'CANCELLED') {
+    /* The stock allocator walks live orders only, so a cancelled contract's goods lines kept READY, stock_qty_ready
+       and any claimed batch for ever, holding stock no one will deliver. Service lines are READY from birth and stay so.
+       Same release as the generic SO cancel (Houzs f238fd2b4). */
+    const lines = await db.q<{ id: string; item_code: string | null; item_group: string | null }>(
+      `select id, item_code, item_group from scm.mfg_sales_order_items where doc_no = $1 and cancelled = false`,
+      [docNo],
+    );
+    const goodsIds = lines.filter((l) => !isServiceLine({ itemGroup: l.item_group, itemCode: l.item_code })).map((l) => l.id);
+    if (goodsIds.length > 0) {
+      await db.q(
+        `update scm.mfg_sales_order_items set stock_status = 'PENDING', stock_qty_ready = 0, allocated_batch_no = null
+          where doc_no = $1 and id = any($2::uuid[])`,
+        [docNo, goodsIds],
+      );
+    }
   }
   await db.q(`update scm.mfg_sales_orders set status = $2::scm.mfg_so_status, version = version + 1, updated_at = now() where doc_no = $1`, [docNo, to]);
   await db.q(
