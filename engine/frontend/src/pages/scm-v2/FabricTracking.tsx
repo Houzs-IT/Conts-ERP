@@ -17,6 +17,7 @@
 // components/FabricsTable.tsx — changes here reflect there automatically.
 // ----------------------------------------------------------------------------
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useMemo, useRef, useState } from 'react';
 import { Search, Plus, X, Download, Upload, Info } from 'lucide-react';
 import { Button, IconButton } from '../../components/Button';
@@ -72,7 +73,7 @@ export const FabricTracking = () => {
   const onExport = () => {
     const all = (search.trim() ? exportFetch : rows) ?? rows;
     if (all.length === 0) { notify({ title: 'No fabrics to export.', tone: 'error' }); return; }
-    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const stamp = todayMyt().replace(/-/g, '');
     triggerDownload(`fabric-converter-${stamp}.csv`, toCsv(all));
   };
 

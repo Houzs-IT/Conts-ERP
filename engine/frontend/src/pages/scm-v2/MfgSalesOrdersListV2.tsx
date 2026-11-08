@@ -19,6 +19,7 @@
 // The old ledger-style page (MfgSalesOrdersList.tsx, DataGrid-based) stays in
 // the tree; App.tsx route swap decides which one users see.
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { shippedProgressColumn, ShippedProgressPill } from "./so-list-shipped-column";
 import { SO_STATUS_TABS, soStatusTabOf, type StatusTab } from "./so-list-status";
@@ -1369,7 +1370,7 @@ export function MfgSalesOrdersListV2() {
             payments: b.payments as never,
             pwpCodes: b.pwpCodes as never,
           })),
-          { fileName: `sales-orders-${new Date().toISOString().slice(0, 10)}.pdf`, action }
+          { fileName: `sales-orders-${todayMyt()}.pdf`, action }
         );
       } else {
         for (const b of bundles)

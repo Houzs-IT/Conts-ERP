@@ -220,3 +220,14 @@ export function senToRm(sen: number): number {
 export function scaledToQuantity(scaled: number): number {
   return scaled / 1000;
 }
+
+/**
+ * What a person typed into an RM box -> an RM number, or NaN when it is blank
+ * or cannot be read. A drop-in for `parseFloat(text)` / `Number(text)` on money
+ * text: `parseFloat("12,000")` is 12 and `Number("12,000")` is NaN, while this
+ * reads 12000. Callers keep their own `Number.isFinite` / `< 0` checks.
+ */
+export function rmFromText(raw: unknown): number {
+  const r = parseMoneyToSen(raw, undefined, { allowNegative: true });
+  return r.ok && !r.empty ? senToRm(r.sen) : NaN;
+}

@@ -7,6 +7,7 @@
 // letterhead; the table is the same autoTable dress every document wears.
 // ----------------------------------------------------------------------------
 
+import { todayMyt } from './dates';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
@@ -94,6 +95,6 @@ export async function generateApListingPdf(rows: ApListRow[], filter: ApListingF
       10: { cellWidth: 26 },
     },
   });
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = todayMyt();
   deliverPdf(doc, `supplier-invoice-listing-${stamp}.pdf`, opts?.action ?? 'preview');
 }

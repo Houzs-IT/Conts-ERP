@@ -6,6 +6,7 @@
 // Route: /scm/purchase-orders (App.tsx flips ScmPurchaseOrdersV2 here).
 // Data: usePurchaseOrders (vendored suppliers-queries slice).
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { purchaseOrderRowMenu } from "./row-menus";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -1117,7 +1118,7 @@ export function PurchaseOrdersListV2() {
       }
       if (how === "one") {
         await pdf.generateCombinedPurchaseOrderPdf(pos as never, {
-          fileName: `purchase-orders-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `purchase-orders-${todayMyt()}.pdf`,
           action,
         });
       } else {

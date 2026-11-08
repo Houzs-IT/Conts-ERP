@@ -1,3 +1,4 @@
+import { rmFromText } from "../../lib/money";
 import { useState, useEffect } from "react";
 import { useToast } from "../../hooks/useToast";
 import { api } from "../../api/client";
@@ -38,7 +39,7 @@ export function QuickRentalField({
 
   const save = async () => {
     const trimmed = val.trim();
-    const n = trimmed === "" ? 0 : parseFloat(trimmed);
+    const n = trimmed === "" ? 0 : rmFromText(trimmed);
     if (isNaN(n) || n < 0) {
       toast.error("Enter a valid rental amount");
       return;

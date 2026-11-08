@@ -1,3 +1,4 @@
+import { todayMyt } from "../vendor/scm/lib/dates";
 import { useMemo } from "react";
 import { formatDate } from "../lib/utils";
 import { getHolidaysOn } from "../lib/holidays";
@@ -85,7 +86,7 @@ export function MobileGantt({
   tasks,
   onTaskClick,
 }: Props) {
-  const today = isoOnly(new Date());
+  const today = todayMyt();
 
   // ── Timeline range ─────────────────────────────────────────
   // Anchor to project dates, extend to cover any out-of-range task due_date,

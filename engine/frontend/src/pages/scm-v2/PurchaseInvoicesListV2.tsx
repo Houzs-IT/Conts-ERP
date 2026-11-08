@@ -3,6 +3,7 @@
 // framing, but the money flows OUT to the supplier instead of in from the
 // customer. Outstanding here is what WE owe, not what customers owe us.
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildVariantSummary, fmtSen, fmtDate, orderLineIdentity } from "@2990s/shared";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -840,7 +841,7 @@ export function PurchaseInvoicesListV2() {
       for (const r of chosen) bundles.push(await fetchPiBundle(r));
       if (how === "one") {
         await generateCombinedPurchaseInvoicePdf(bundles as never, {
-          fileName: `purchase-invoices-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `purchase-invoices-${todayMyt()}.pdf`,
           action,
         });
       } else {

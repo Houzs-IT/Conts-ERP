@@ -15,6 +15,7 @@
  * Auth: token in URL (/portal/supplier/:token). No localStorage —
  * link IS the auth, matching the customer portal model.
  */
+import { rmFromText } from "../../lib/money";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Package, Printer, Trash2, Upload } from "lucide-react";
@@ -217,8 +218,8 @@ export function PortalSupplierCasePage() {
   }
 
   async function submitQuote() {
-    const labour = parseFloat(quoteLabour || "0");
-    const materials = parseFloat(quoteMaterials || "0");
+    const labour = rmFromText(quoteLabour || "0");
+    const materials = rmFromText(quoteMaterials || "0");
     if (!Number.isFinite(labour) || labour < 0 || !Number.isFinite(materials) || materials < 0) {
       setErr("Quote amounts must be numbers ≥ 0");
       return;

@@ -6,6 +6,7 @@
 // Route: /scm/production-orders (App.tsx flips ScmProductionOrdersV2 here).
 // Data: useProductionOrders (vendored suppliers-queries slice).
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { productionOrderRowMenu } from "./row-menus";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -1027,7 +1028,7 @@ export function ProductionOrdersListV2() {
       }
       if (how === "one") {
         await pdf.generateCombinedProductionOrderPdf(pos as never, {
-          fileName: `production-orders-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `production-orders-${todayMyt()}.pdf`,
           action,
         });
       } else {

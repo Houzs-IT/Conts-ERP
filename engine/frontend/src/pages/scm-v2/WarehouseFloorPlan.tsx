@@ -13,6 +13,7 @@
 // table); Tailwind semantic classes are used wherever a token maps to one.
 // ----------------------------------------------------------------------------
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useMemo, useState, type CSSProperties } from 'react';
 import {
   Search, X, Truck, ArrowLeftRight,
@@ -140,7 +141,7 @@ export function WarehouseFloorPlan({
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `warehouse-slots-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `warehouse-slots-${todayMyt()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
