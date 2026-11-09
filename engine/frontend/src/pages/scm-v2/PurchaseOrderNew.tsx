@@ -43,6 +43,7 @@ import { useFabricTrackings, fabricOptionLabel } from '../../vendor/scm/lib/fabr
 import { poMissingOptionLabels } from '../../conts/flowRules';
 import { useWarehouses } from '../../vendor/scm/lib/inventory-queries';
 import { sortByText, sortByNumeric, byText } from '../../vendor/scm/lib/sort-options';
+import { SearchableSelect } from '../../vendor/scm/components/SearchableSelect';
 import {
   computeMfgPoUnitCost,
   type MfgFabricTier,
@@ -801,16 +802,15 @@ export const PurchaseOrderNew = () => {
             {/* LEFT column */}
             <label className={styles.field}>
               <span className={`${styles.fieldLabel} ${styles.fieldLabelReq}`}>Creditor <span className={styles.req}>*</span></span>
-              <select
+              {/* Type-to-search: a plain select over every supplier was a long scroll (Hookka #HK supplier picker, owner 8 Nov). */}
+              <SearchableSelect
                 value={supplierId}
-                onChange={(e) => setSupplierId(e.target.value)}
+                onChange={setSupplierId}
+                options={sortByText(suppliers.data ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))}
+                placeholder="Type a supplier code or name"
+                ariaLabel="Creditor"
                 className={styles.fieldInput}
-              >
-                <option value="">— Pick a supplier —</option>
-                {sortByText(suppliers.data ?? []).map((s) => (
-                  <option key={s.id} value={s.id}>{s.code} · {s.name}</option>
-                ))}
-              </select>
+              />
             </label>
 
             {/* RIGHT column */}
