@@ -296,7 +296,6 @@ export const DeliveryReturnDetail = () => {
                    they are not re-required or re-seeded here. */
                 variantsRequired={false}
                 seedSofaLegDefault={false}
-                attachOptions={null}
               />
             );
           })}
