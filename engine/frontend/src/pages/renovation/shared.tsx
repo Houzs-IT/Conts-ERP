@@ -76,10 +76,13 @@ export function selectAllOnFocus(e: { currentTarget: HTMLInputElement }) {
 }
 
 /** Money typed in ringgit, held in sen. Blank -> null when `nullable`. */
-export function MoneyInput({ value, onChange, disabled, nullable, className, placeholder, ariaLabel }: {
+export function MoneyInput({ value, onChange, disabled, nullable, className, placeholder, ariaLabel, blankZero }: {
   value: number | null; onChange: (sen: number | null) => void; disabled?: boolean; nullable?: boolean; className?: string; placeholder?: string; ariaLabel?: string;
+  /** RM 0 shows as a grey "0.00" placeholder, so typing a price does not start with deleting a 0. */
+  blankZero?: boolean;
 }) {
-  const shown = value === null ? '' : (value / 100).toFixed(2).replace(/\.00$/, '');
+  const shown = value === null || (blankZero && value === 0) ? '' : (value / 100).toFixed(2).replace(/\.00$/, '');
+  if (blankZero && placeholder === undefined) placeholder = '0.00';
   const [draft, setDraft] = useState<string | null>(null);
   return (
     <input
