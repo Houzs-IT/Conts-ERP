@@ -27,6 +27,8 @@ import {
   enqueuePiScan, fetchPiScanJobs, clearFailedPiScans,
   isActivePiJob, piHhmm, piJobTs, isPiTodayTs, type PiScanJob,
 } from '../lib/pi-scan-jobs';
+import { useScanJobDriver, isStalledScanJob } from '../lib/scan-job-driver';
+import { ScanJobRetry } from './ScanJobRetry';
 
 const ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
 
@@ -56,6 +58,10 @@ export function ScanInvoiceModal({ onClose }: { onClose: () => void }) {
     void tick();
     return () => { alive = false; if (timer) clearTimeout(timer); };
   }, []);
+
+  const refresh = async () => { try { setJobs(await fetchPiScanJobs()); } catch { /* the poll catches up */ } };
+  // No queue on this server: the open screen runs each queued scan (scan-job-driver.ts).
+  useScanJobDriver('/scan-pi', jobs, () => void refresh());
 
   const onFiles = async (list: FileList | null | undefined) => {
     const files = list ? Array.from(list) : [];
@@ -160,7 +166,7 @@ export function ScanInvoiceModal({ onClose }: { onClose: () => void }) {
                     <div className="flex items-center gap-2 text-[12.5px]">
                       <FileText size={13} className="flex-none text-sidebar-ink-muted" />
                       <span className="font-medium text-ink">
-                        {isActivePiJob(j) && 'Reading invoice…'}
+                        {isActivePiJob(j) && (isStalledScanJob(j) ? 'Stalled' : 'Reading invoice…')}
                         {j.status === 'done' && j.linkedDocNo && `Draft ${j.linkedDocNo}`}
                         {j.status === 'done' && !j.linkedDocNo && 'Needs review'}
                         {j.status === 'error' && 'Could not process'}
@@ -168,6 +174,7 @@ export function ScanInvoiceModal({ onClose }: { onClose: () => void }) {
                       <span className="ml-auto flex-none text-[11px] text-sidebar-ink-muted">{piHhmm(piJobTs(j.createdAt))}</span>
                     </div>
                     {j.error && <p className="mt-1 text-[11.5px] leading-snug text-sidebar-ink-muted">{j.error}</p>}
+                    <ScanJobRetry base="/scan-pi" job={j} onDone={() => void refresh()} />
                     {j.status === 'done' && j.linkedDocNo && (
                       <button type="button" className="mt-1 text-[11.5px] font-semibold text-accent-bright hover:underline" onClick={() => openPi(j.linkedDocNo!)}>
                         Open draft invoice

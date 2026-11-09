@@ -46,6 +46,7 @@ import { todayMyt } from '../lib/my-time';
 import { activeCompanyId } from '../lib/companyScope';
 import { type ScanDocumentType, DEFAULT_SCAN_DOCUMENT_TYPE, coerceScanDocumentType } from '../lib/scan-document-type';
 import { jobToJson } from './scan-so-serialize';
+import { workScanJob, requeueScanJob, handOffReclaimedJob, REQUEUE_REASON } from '../lib/scan-job-drive';
 import { normalizePhone, fmtSen } from '../shared';
 import { resolveCallerStaffId } from '../lib/salesScope';
 import {
@@ -4236,8 +4237,11 @@ scanSo.post('/enqueue', async (c) => {
   //    reason we moved off waitUntil, which Cloudflare evicts on the 60-110s
   //    real-slip OCR calls, leaving jobs stuck 'running' forever.
   //
-  //    FALLBACK: if SCAN_QUEUE is unbound (older deploy / test runtime), run the
-  //    pipeline in waitUntil exactly as before so nothing regresses.
+  //    No queue (Conts: a Queue is paid and the engine runs no cron): the
+  //    screen runs the job by holding POST /jobs/:id/work open
+  //    (scan-job-drive.ts). Never waitUntil, which Cloudflare cancels ~30 s
+  //    after this reply. Photos that did not reach R2 cannot be replayed by
+  //    /work, so that job runs here before answering.
   if (c.env.SCAN_QUEUE) {
     try {
       await c.env.SCAN_QUEUE.send({ jobId });
@@ -4247,8 +4251,8 @@ scanSo.post('/enqueue', async (c) => {
       // shows a queued job it can poll.
       console.error('[scan-so enqueue] SCAN_QUEUE.send failed:', jobId, (e as Error).message);
     }
-  } else {
-    const pipeline = runScanJob(c.env, {
+  } else if (imageKeys.length === 0) {
+    await runScanJob(c.env, {
       id: jobId,
       salesperson: repGiven,
       salespersonId: uploaderStaffId,
@@ -4261,14 +4265,9 @@ scanSo.post('/enqueue', async (c) => {
       firstBuffer,
       imageKeys,
     });
-    try {
-      c.executionCtx.waitUntil(pipeline);
-    } catch {
-      /* non-Workers runtime (tests) — let the floating promise run */
-    }
   }
 
-  return c.json({ job_id: jobId, status: 'queued' }, 202);
+  return c.json({ job_id: jobId, status: 'queued', drive: !c.env.SCAN_QUEUE }, 202);
 });
 
 // ---------------------------------------------------------------------------
@@ -4396,14 +4395,7 @@ export async function processScanQueueMessage(env: Env, jobId: string): Promise<
   });
 }
 
-async function reapStaleScanJobs(
-  env: Env,
-  svc: ReturnType<typeof serviceClient>,
-  // The calling poll handler's executionCtx.waitUntil (try/catch-wrapped for
-  // non-Workers test runtimes) — the retry pipeline must outlive the poll
-  // response, exactly like the enqueue path.
-  runInBackground: (p: Promise<unknown>) => void,
-): Promise<void> {
+async function reapStaleScanJobs(env: Env, svc: ReturnType<typeof serviceClient>): Promise<void> {
   try {
     const nowIso = new Date().toISOString();
     const cutoff = new Date(Date.now() - SCAN_JOB_STALE_MINUTES * 60 * 1000).toISOString();
@@ -4450,49 +4442,9 @@ async function reapStaleScanJobs(
         .select('id');
       if (claimErr || !claimed || claimed.length === 0) continue;
 
-      // Dual-read both casings (the #1 recurring result-column bug class).
-      const rawKeys = r.imageKeys ?? r.image_keys;
-      const imageKeys = Array.isArray(rawKeys) ? rawKeys.map(String) : [];
-      const salesperson = typeof r.salesperson === 'string' ? r.salesperson : '';
-      const salespersonId = String(r.salespersonId ?? r.salesperson_id ?? '');
-      const huRaw = r.houzsUserId ?? r.houzs_user_id;
-      const houzsUserId = huRaw != null && Number.isFinite(Number(huRaw)) ? Number(huRaw) : null;
-      const coRaw = r.companyId ?? r.company_id;
-      const companyId = coRaw != null && Number.isFinite(Number(coRaw)) ? Number(coRaw) : null;
-      // Legacy rows predating the column read back null -> coerce to 'SO'.
-      const documentType = coerceScanDocumentType(r.documentType ?? r.document_type);
-
-      // Heavy part (R2 reads + the whole pipeline) runs AFTER the poll
-      // responds — never inline in the GET.
-      runInBackground((async () => {
-        const files = salespersonId ? await loadScanJobFilesFromR2(env.SO_ITEM_PHOTOS, imageKeys) : null;
-        if (!files) {
-          // No durable photos (enqueue-time R2 put failed / bucket unbound) or
-          // no replayable identity — the retry cannot run; terminal error now.
-          console.warn('[scan-so jobs] retry not replayable, erroring:', id);
-          await svc
-            .from('scan_jobs')
-            .update({ status: 'error', error: STALE_JOB_ERROR, updated_at: new Date().toISOString() })
-            .eq('id', id);
-          return;
-        }
-        console.warn('[scan-so jobs] re-running stale job (retry 1/1):', id);
-        await runScanJob(env, {
-          id,
-          salesperson,
-          salespersonId,
-          // The enqueue-time user_metadata name is not on the row; the
-          // normalized rep display name is the closest replay identity.
-          salespersonName: salesperson || null,
-          houzsUserId,
-          documentType,
-          companyId,
-          fileBlocks: files.fileBlocks,
-          uploadedImages: files.uploadedImages,
-          firstBuffer: files.firstBuffer,
-          imageKeys,
-        });
-      })());
+      // Re-queued, not re-run here (a re-run in the poll's waitUntil was cut
+      // ~30 s after the poll answered): the queue or the screen's /work call runs it.
+      await handOffReclaimedJob(env, id);
     }
 
     // 2) TERMINAL pass — stale jobs whose single retry is already spent.
@@ -4515,13 +4467,7 @@ async function reapStaleScanJobs(
 scanSo.get('/jobs', async (c) => {
   const rep = normalizeRepKey(c.req.query('salesperson'));
   const svc = serviceClient(c.env);
-  await reapStaleScanJobs(c.env, svc, (p) => {
-    try {
-      c.executionCtx.waitUntil(p);
-    } catch {
-      /* non-Workers runtime (tests) — let the floating promise run */
-    }
-  });
+  await reapStaleScanJobs(c.env, svc);
   let q = svc
     .from('scan_jobs')
     .select('id, status, salesperson, so_doc_no, linked_doc_no, document_type, error, sample_id, duplicate_of, image_keys, created_at, updated_at')
@@ -4545,13 +4491,7 @@ scanSo.get('/jobs/:id', async (c) => {
   const id = (c.req.param('id') ?? '').trim();
   if (!id) return c.json({ error: 'bad_request', reason: 'Missing job id.' }, 400);
   const svc = serviceClient(c.env);
-  await reapStaleScanJobs(c.env, svc, (p) => {
-    try {
-      c.executionCtx.waitUntil(p);
-    } catch {
-      /* non-Workers runtime (tests) — let the floating promise run */
-    }
-  });
+  await reapStaleScanJobs(c.env, svc);
   const { data, error } = await svc
     .from('scan_jobs')
     .select('id, status, salesperson, so_doc_no, linked_doc_no, document_type, error, sample_id, duplicate_of, image_keys, created_at, updated_at')
@@ -4564,6 +4504,28 @@ scanSo.get('/jobs/:id', async (c) => {
   }
   if (!data) return c.json({ error: 'not_found', reason: 'Scan job not found.' }, 404);
   return c.json({ success: true, data: { job: jobToJson(data as Record<string, unknown>) } });
+});
+
+// ---------------------------------------------------------------------------
+// POST /scan-so/jobs/:id/work — the screen holds this open while the job runs
+// (scan-job-drive.ts); GR/PI rows are refused by the document_type filter.
+// POST /scan-so/jobs/:id/retry — a failed or stalled scan back in the queue.
+// ---------------------------------------------------------------------------
+scanSo.post('/jobs/:id/work', async (c) => {
+  const id = (c.req.param('id') ?? '').trim();
+  if (!id) return c.json({ error: 'bad_request', reason: 'Missing job id.' }, 400);
+  const svc = serviceClient(c.env);
+  const { ran, job } = await workScanJob(c.env, svc, id, activeCompanyId(c) ?? null, 'SO', (jobId) => processScanQueueMessage(c.env, jobId));
+  if (!job) return c.json({ error: 'not_found', reason: 'Scan job not found.' }, 404);
+  return c.json({ success: true, data: { ran, job: jobToJson(job) } });
+});
+
+scanSo.post('/jobs/:id/retry', async (c) => {
+  const id = (c.req.param('id') ?? '').trim();
+  if (!id) return c.json({ error: 'bad_request', reason: 'Missing job id.' }, 400);
+  const outcome = await requeueScanJob(serviceClient(c.env), id, activeCompanyId(c) ?? null, 'SO');
+  if (outcome !== 'requeued') return c.json({ error: outcome, reason: REQUEUE_REASON[outcome] }, outcome === 'not_found' ? 404 : 409);
+  return c.json({ success: true });
 });
 
 // ---------------------------------------------------------------------------

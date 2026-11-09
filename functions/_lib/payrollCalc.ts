@@ -129,6 +129,9 @@ export interface PayInput {
   penaltySen: number;
   ytd: YearToDate;
   rules: PayRules;
+  /** A resigned person's last working day (Employee.resignedAt). Working days after it with nothing logged are absences
+   *  at once, to the month's end, so a mid-month draft already pays what the closed month will (Hookka #902). */
+  lastWorkingDay?: string | null;
 }
 
 export interface PayFigures {
@@ -211,13 +214,18 @@ export function computePay(p: PayInput): PayFigures {
   }
 
   // While the month is running, the last few working days with nothing logged are pending, not absences (Hookka).
+  // Days after a resignation are never pending: nothing is still to be keyed for someone who has left.
+  const left = p.lastWorkingDay && p.lastWorkingDay.startsWith(`${p.period}-`) ? p.lastWorkingDay : null;
   const pending = new Set<string>();
   if (p.throughDay < allDates[allDates.length - 1]) {
     for (const d of [...workingDates].sort().reverse()) {
       if (pending.size >= rules.absenceGraceWorkingDays) break;
+      if (left && d > left) continue;
       if (!worked.has(d) && !leaveDates.has(d)) pending.add(d);
     }
   }
+  // The working days still to come in the month after the last day: absent now rather than when the month closes.
+  const afterLeaving = left ? allDates.filter(d => d > p.throughDay && d > left && isWorking(d)).length : 0;
 
   const monthly = e.payBasis === 'monthly';
   const basic = monthly ? p.basicSalarySen : 0;
@@ -228,8 +236,9 @@ export function computePay(p: PayInput): PayFigures {
   const hourDivisor = rules.hourRateDivisorMode === 'fixed' ? rules.rateHoursPerDay
     : rules.hourRateDivisorMode === 'hoursOnly' ? hoursPerDay : hoursPerDay + lunchHours;
   const hourRateSen = Math.round(dayRateExact / Math.max(1, hourDivisor));
-  const absentDays = monthly ? Math.max(0, workingDates.size - daysWorked - leaveDates.size - pending.size) : 0;
-  const absenceDeductionSen = Math.round(absentDays * dayRateExact);
+  const absentDays = monthly ? Math.max(0, workingDates.size - daysWorked - leaveDates.size - pending.size) + afterLeaving : 0;
+  // Never more than the basic: a fixed 26-day rate times a 27-working-day month would otherwise pay below zero.
+  const absenceDeductionSen = Math.min(basic, Math.round(absentDays * dayRateExact));
 
   let otMin = 0, sundayMin = 0, holidayMin = 0, dockMin = 0;
   for (const [date, d] of worked) {
@@ -277,7 +286,7 @@ export function computePay(p: PayInput): PayFigures {
   const totalDeductionsSen = epfEmployeeSen + socsoEmployeeSen + eisEmployeeSen + pcb.pcbSen;
   return {
     basicSalarySen: basic, dayRateSen: Math.round(dayRateExact), hourRateSen,
-    workingDays: workingDates.size, daysWorked, paidLeaveDays: leaveDates.size, absentDays, absenceDeductionSen,
+    workingDays: workingDates.size + (monthly ? afterLeaving : 0), daysWorked, paidLeaveDays: leaveDates.size, absentDays, absenceDeductionSen,
     otHours, otSen, sundayHours, sundaySen, holidayHours, holidaySen, lateShortHours, lateShortSen, allowanceSen, grossSen: grossWithAllowanceSen,
     epfEmployeeSen, epfEmployerSen, socsoEmployeeSen, socsoEmployerSen, eisEmployeeSen, eisEmployerSen,
     pcbSen: pcb.pcbSen, pcbStatus: pcb.status, pcbNote: pcb.note,

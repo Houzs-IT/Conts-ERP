@@ -874,6 +874,16 @@ async function resolveDoSofaBatchMap(
   return batchBySoItem;
 }
 
+/* Conts: the free Workers plan allows 50 outside calls a request (Hookka #1152), and a 60-line DO re-costed with one
+   update per line stopped part-way. One call (migration 0250) stamps every line; before 0250 is applied, one per line. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function writeDoItemCosts(sb: any, deliveryOrderId: string, rows: Array<{ id: string; [col: string]: unknown }>): Promise<void> {
+  if (rows.length === 0) return;
+  const { error } = await sb.rpc('do_restamp_item_costs', { p_do: deliveryOrderId, p_rows: rows });
+  if (!error) return;
+  for (const { id, ...update } of rows) await sb.from('delivery_order_items').update(update).eq('id', id);
+}
+
 export async function restampDoActualCost(sb: any, deliveryOrderId: string) {
   try {
     /* Forward-compat (mig 0057): is_dropship column may not exist yet — retry without it. */
@@ -939,6 +949,7 @@ export async function restampDoActualCost(sb: any, deliveryOrderId: string) {
        which invents money when the per-unit figure is sub-sen — ledger B5. */
     const allocByLine = allocateAcrossBuckets(items as Array<{ id: string; qty: number }>, aggByBucket,
       (it: any) => `${lineWh.get(it.id) ?? ''}::${it.item_code}::${computeVariantKey(it.item_group ?? null, it.variants ?? null)}::${it.so_item_id ? (batchBySoItem.get(it.so_item_id) ?? '') : ''}`);
+    const costRows: Array<{ id: string; [col: string]: unknown }> = [];
     for (const it of items as Array<{
       id: string; so_item_id?: string | null; item_code: string; qty: number;
       item_group?: string | null; variants?: VariantAttrs | null; line_total_sen: number | null;
@@ -965,8 +976,9 @@ export async function restampDoActualCost(sb: any, deliveryOrderId: string) {
          Costing report. Nothing else about the cost numbers changes. */
       const shipFreeze = freezeShipCost(it.ship_cost_sen ?? null, unitCost);
       if (shipFreeze !== undefined) update.ship_cost_sen = shipFreeze;
-      await sb.from('delivery_order_items').update(update).eq('id', it.id);
+      costRows.push({ id: it.id, ...update });
     }
+    await writeDoItemCosts(sb, deliveryOrderId, costRows);
 
     await recomputeTotals(sb, deliveryOrderId);
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[restampDoActualCost] failed:', e); }
@@ -1363,7 +1375,7 @@ export async function deductInventoryForDo(sb: any, deliveryOrderId: string, per
 // per DO regardless of which UI path dispatched. Best-effort throughout — the
 // separate rack ledger must never break the FIFO stock OUT.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function stockOutDoLinesFromRacks(
+export async function stockOutDoLinesFromRacks(
   sb: any,
   deliveryOrderId: string,
   doNo: string,
@@ -1384,6 +1396,11 @@ async function stockOutDoLinesFromRacks(
   const touchedRacks = new Set<string>();
 
   const customerGoods = await customerGoodsCodes(sb, items.map((it) => String(it.item_code ?? '')), companyId);
+  /* Conts (Hookka #1152, free plan: 50 outside calls a request): every rack read and write below is one call for the
+     whole DO, not one per line, so a 60-line DO no longer stops part-way through its rack stock-out. Lines are still
+     taken in order, oldest placement first, so two lines of one product share the racks exactly as before. */
+  type Line = { it: Record<string, unknown>; qty: number; itemCode: string; warehouseId: string; explicitRackId: string | null };
+  const lines: Line[] = [];
   for (const it of items) {
     if (isServiceLine({ itemGroup: it.item_group as string | null, itemCode: it.item_code as string })) continue;
     if (customerGoods.has(String(it.item_code ?? '').trim())) continue;
@@ -1393,73 +1410,107 @@ async function stockOutDoLinesFromRacks(
     if (!itemCode) continue;
     const warehouseId = lineWh.get(it.id as string) ?? null;
     if (!warehouseId) continue;
+    lines.push({ it, qty, itemCode, warehouseId, explicitRackId: (it.rack_id as string | null) ?? null });
+  }
+  if (lines.length === 0) return;
 
-    // Resolve the source rack row(s). Explicit pick first; else the racks in the
-    // ship-from warehouse that actually hold this product, oldest stock first.
-    const explicitRackId = (it.rack_id as string | null) ?? null;
-    let rackRows: Array<{ id: string; rack: string | null; warehouse_id: string | null }> = [];
-    if (explicitRackId) {
-      const { data } = await scopeToCompanyIdOrOpen(sb.from('warehouse_racks').select('id, rack, warehouse_id').eq('id', explicitRackId), companyId).limit(1);
-      rackRows = (data ?? []) as typeof rackRows;
-    } else {
-      const { data: whRacks } = await scopeToCompanyIdOrOpen(sb.from('warehouse_racks').select('id, rack, warehouse_id').eq('warehouse_id', warehouseId), companyId);
-      rackRows = (whRacks ?? []) as typeof rackRows;
-    }
-    if (rackRows.length === 0) continue; // warehouse has no racks — nothing to move
-    const rackIds = rackRows.map((r) => r.id);
-    const rackById = new Map(rackRows.map((r) => [r.id, r]));
+  // Every candidate rack in one or two reads: the explicit picks by id, the rest by ship-from warehouse.
+  type RackRow = { id: string; rack: string | null; warehouse_id: string | null };
+  const explicitIds = [...new Set(lines.map((l) => l.explicitRackId).filter((x): x is string => !!x))];
+  const autoWhs = [...new Set(lines.filter((l) => !l.explicitRackId).map((l) => l.warehouseId))];
+  const [explicitRes, whRes] = await Promise.all([
+    explicitIds.length ? scopeToCompanyIdOrOpen(sb.from('warehouse_racks').select('id, rack, warehouse_id').in('id', explicitIds), companyId) : Promise.resolve({ data: [] }),
+    autoWhs.length ? scopeToCompanyIdOrOpen(sb.from('warehouse_racks').select('id, rack, warehouse_id').in('warehouse_id', autoWhs), companyId) : Promise.resolve({ data: [] }),
+  ]);
+  const rackById = new Map<string, RackRow>();
+  for (const r of [...(((explicitRes as { data: RackRow[] | null }).data) ?? []), ...(((whRes as { data: RackRow[] | null }).data) ?? [])]) rackById.set(r.id, r);
+  if (rackById.size === 0) return; // no racks where this DO ships from: nothing to move
+  const racksFor = (l: Line): string[] => (l.explicitRackId
+    ? (rackById.has(l.explicitRackId) ? [l.explicitRackId] : [])
+    : [...rackById.values()].filter((r) => r.warehouse_id === l.warehouseId).map((r) => r.id));
 
-    // Placements of this product on the candidate rack(s), oldest first (FIFO).
-    const { data: placements } = await scopeToCompanyIdOrOpen(sb.from('warehouse_rack_items')
-      .select('id, rack_id, qty, stocked_in_date')
-      .in('rack_id', rackIds).eq('item_code', itemCode), companyId)
-      .order('stocked_in_date', { ascending: true });
-    const placementRows = (placements ?? []) as Array<{ id: string; rack_id: string; qty: number; stocked_in_date: string }>;
+  // Every placement of every product on those racks, oldest first (FIFO), in one read.
+  type Placement = { id: string; rack_id: string; item_code: string; qty: number; stocked_in_date: string };
+  const { data: placements } = await scopeToCompanyIdOrOpen(sb.from('warehouse_rack_items')
+    .select('id, rack_id, item_code, qty, stocked_in_date')
+    .in('rack_id', [...rackById.keys()]).in('item_code', [...new Set(lines.map((l) => l.itemCode))]), companyId)
+    .order('stocked_in_date', { ascending: true });
+  const placementRows = (placements ?? []) as Placement[];
+  const left = new Map<string, number>(); // placement id -> qty still on the rack after the lines so far
+  for (const p of placementRows) left.set(p.id, Number(p.qty));
 
-    let remaining = qty;
+  const moveRows: Array<Record<string, unknown>> = [];
+  for (const l of lines) {
+    const rackIds = new Set(racksFor(l));
+    if (rackIds.size === 0) continue;
+    let remaining = l.qty;
     const outByRack = new Map<string, number>();
     for (const p of placementRows) {
       if (remaining <= 0) break;
-      const take = Math.min(p.qty, remaining);
-      if (take >= p.qty) {
-        await scopeToCompanyIdOrOpen(sb.from('warehouse_rack_items').delete().eq('id', p.id), companyId);
-      } else {
-        await scopeToCompanyIdOrOpen(sb.from('warehouse_rack_items').update({ qty: p.qty - take }).eq('id', p.id), companyId);
-      }
+      if (p.item_code !== l.itemCode || !rackIds.has(p.rack_id)) continue;
+      const onRack = left.get(p.id) ?? 0;
+      if (onRack <= 0) continue;
+      const take = Math.min(onRack, remaining);
+      left.set(p.id, onRack - take);
       outByRack.set(p.rack_id, (outByRack.get(p.rack_id) ?? 0) + take);
       remaining -= take;
     }
-
-    // No matching placement found (product never racked, or all consumed). When
-    // the operator explicitly named a rack, still honour the pick by logging the
-    // whole line off that rack so the ledger reflects their action; otherwise
-    // skip silently (never invent a rack the goods were not on).
+    // No matching placement: an explicit pick is still logged off that rack (the operator's action); otherwise skip.
     if (outByRack.size === 0) {
-      if (!explicitRackId) continue;
-      outByRack.set(explicitRackId, qty);
+      if (!l.explicitRackId) continue;
+      outByRack.set(l.explicitRackId, l.qty);
     }
-
-    const moveRows = [...outByRack.entries()].map(([rackId, movedQty]) => {
+    for (const [rackId, movedQty] of outByRack) {
       const r = rackById.get(rackId);
       touchedRacks.add(rackId);
-      return {
+      moveRows.push({
         ...companyCol,
         movement_type: 'STOCK_OUT',
         rack_id: rackId,
         rack_label: r?.rack ?? null,
-        warehouse_id: r?.warehouse_id ?? warehouseId,
-        item_code: itemCode,
-        product_name: (it.description as string | null) ?? null,
+        warehouse_id: r?.warehouse_id ?? l.warehouseId,
+        item_code: l.itemCode,
+        product_name: (l.it.description as string | null) ?? null,
         source_doc_no: doNo,
         quantity: movedQty,
         reason: RACK_REASON,
         performed_by: performedBy,
-      };
-    });
-    if (moveRows.length > 0) await sb.from('warehouse_rack_movements').insert(moveRows);
+      });
+    }
   }
 
-  for (const rackId of touchedRacks) await refreshRackStatusInline(sb, rackId);
+  // Emptied placements go in one delete; the rest are set to what is left, one call per distinct remaining qty.
+  const gone = placementRows.filter((p) => (left.get(p.id) ?? 0) <= 0 && Number(p.qty) > 0).map((p) => p.id);
+  const byQty = new Map<number, string[]>();
+  for (const p of placementRows) {
+    const q = left.get(p.id) ?? 0;
+    if (q > 0 && q !== Number(p.qty)) byQty.set(q, [...(byQty.get(q) ?? []), p.id]);
+  }
+  if (gone.length) await scopeToCompanyIdOrOpen(sb.from('warehouse_rack_items').delete().in('id', gone), companyId);
+  for (const [q, ids] of byQty) await scopeToCompanyIdOrOpen(sb.from('warehouse_rack_items').update({ qty: q }).in('id', ids), companyId);
+  if (moveRows.length > 0) await sb.from('warehouse_rack_movements').insert(moveRows);
+
+  await refreshRackStatuses(sb, [...touchedRacks]);
+}
+
+/** refreshRackStatusInline for many racks: two reads and one update per resulting status, whatever the rack count. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function refreshRackStatuses(sb: any, rackIds: string[]): Promise<void> {
+  if (rackIds.length === 0) return;
+  if (rackIds.length === 1) { await refreshRackStatusInline(sb, rackIds[0]!); return; }
+  const [{ data: held }, { data: racks }] = await Promise.all([
+    sb.from('warehouse_rack_items').select('rack_id').in('rack_id', rackIds),
+    sb.from('warehouse_racks').select('id, reserved').in('id', rackIds),
+  ]);
+  const occupied = new Set(((held ?? []) as Array<{ rack_id: string }>).map((r) => r.rack_id));
+  const reserved = new Set(((racks ?? []) as Array<{ id: string; reserved: boolean | null }>).filter((r) => r.reserved).map((r) => r.id));
+  const byStatus = new Map<string, string[]>();
+  for (const id of rackIds) {
+    const status = occupied.has(id) ? 'OCCUPIED' : reserved.has(id) ? 'RESERVED' : 'EMPTY';
+    byStatus.set(status, [...(byStatus.get(status) ?? []), id]);
+  }
+  const now = new Date().toISOString();
+  for (const [status, ids] of byStatus) await sb.from('warehouse_racks').update({ status, updated_at: now }).in('id', ids);
 }
 
 // Recompute + persist a rack's derived status (items win over the reserved

@@ -244,7 +244,18 @@ export async function reconcileUncostedOuts(
   if (distinct.length === 0) return { ok: true, reconciled: 0, affectedDoIds: [] };
 
   let reconciled = 0;
-  for (const b of distinct) {
+  /* Conts: the free Workers plan allows 50 outside calls a request, so many buckets go in one call (migration 0250's
+     fn_reconcile_uncosted_outs runs the same per-bucket function for each). Before 0250 is applied, one call each. */
+  let batched = false;
+  if (distinct.length > 1) {
+    const { data, error } = await sb.rpc('fn_reconcile_uncosted_outs', {
+      p_buckets: distinct.map((b) => ({ warehouse_id: b.warehouse_id, item_code: b.item_code, variant_key: b.variant_key ?? '' })),
+      p_before_ts: cutoffTs,
+      p_created_by: performedBy,
+    });
+    if (!error) { batched = true; reconciled = Number(data ?? 0); }
+  }
+  for (const b of batched ? [] : distinct) {
     try {
       const { data, error } = await sb.rpc('fn_reconcile_uncosted_out', {
         p_warehouse_id: b.warehouse_id,
