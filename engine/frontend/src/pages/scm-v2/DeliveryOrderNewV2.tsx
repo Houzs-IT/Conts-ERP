@@ -27,6 +27,7 @@
 //
 // Route: /scm/delivery-orders/new (App.tsx flips ScmDeliveryOrderNewV2 here).
 
+import { afterCreatePath, sourceDocPath } from "../../lib/returnToSource";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -1018,7 +1019,7 @@ export function DeliveryOrderNewV2() {
              Never blocks; the DO exists and the goods have gone. */
           await notifyAcNotSent(notify, res, "Delivery order");
           if (res?.id) {
-            navigate(`/scm/delivery-orders/${res.id}`);
+            navigate(afterCreatePath(`/scm/delivery-orders/${res.id}`, sourceDocPath.salesOrder(fromSoParam)));
           } else {
             navigate("/scm/delivery-orders");
           }

@@ -502,7 +502,10 @@ export const GrnFromPo = () => {
       setDialog({ title: 'Unable to continue', body: 'This browser could not safely store your picked lines. Your selection is still here; free some browser storage and try again.' });
       return;
     }
-    navigate('/scm/grns/new');
+    /* Raised from ONE PO (the list's Transfer to Goods Received): the receipt returns there after its save
+       (Houzs 8b91eeda0, owner 8 Nov 2026). A batch or open pick has no single source to return to. */
+    const onlyPo = poIdSet.size === 1 ? [...poIdSet][0] : null;
+    navigate(onlyPo ? `/scm/grns/new?backToPo=${encodeURIComponent(onlyPo)}` : '/scm/grns/new');
   };
 
   // ── Toolbar (filters + select/clear) — same layout as Create-PO-from-SO.
