@@ -9,7 +9,7 @@ import { DocAttachments } from '../../components/doc-attachments/DocAttachments'
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import {
-  contractPostingWarning, refusalOf, renoSend, useBrands, useRenoMutation, useTerms,
+  contractPostingWarning, instalmentsForSave, refusalOf, renoSend, sectionsForSave, useBrands, useRenoMutation, useTerms,
   type ContractPosting, type DocHeader, type DocSection, type Instalment, type QuotationView,
 } from '../../lib/renovation/api';
 import { buildPrintDoc } from '../../lib/renovation/print-doc';
@@ -17,6 +17,20 @@ import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { HeaderForm, InstalmentEditor, totalsOfSections, TotalsCard } from '../renovation/DocParts';
 import { PrintDialog } from '../renovation/PrintDialog';
 import { Card, ErrorBanner, todayIso } from '../renovation/shared';
+
+/** The header a copied quotation starts with: who the customer is and where the work is are cleared (the copy is
+    for someone else), the dates restart today, and the package's own wording, discount and print setup stay. */
+export function copiedHeader(h: DocHeader, brandId: number | null): DocHeader {
+  return {
+    ...h,
+    brandId,
+    attention: '', customerName: '', customerPhone: '', customerEmail: '',
+    building: '', unitNo: '', siteAddress: '', propertyType: '', layoutLabel: '',
+    bedrooms: null, bathrooms: null, builtUpSqft: null, landAreaSqft: null, landSize: '',
+    state: '', city: '', postcode: '',
+    docDate: todayIso(), lastAmended: null, validUntil: null,
+  };
+}
 
 export function QuotationActions({ view, canQuote, editable, sections, header, instalments, brandId, onEdit }: {
   view: QuotationView;
@@ -68,6 +82,26 @@ export function QuotationActions({ view, canQuote, editable, sections, header, i
     const name = await dialog.prompt('Name for the package template (e.g. Skyline Embassy Type A Classic)');
     if (name) await act(() => renoSend(`/quotations/${quotation.id}/save-as-template`, 'POST', { name, revNo: revision.revNo }));
   };
+  /* Copy as new (owner, 9 Nov 2026): a renovation package reused for another customer. Lines, payment terms and
+     the quotation's own wording come across; the customer, the property and the project are left blank to fill in,
+     and the copy starts as a fresh draft dated today. */
+  const copyAsNew = async () => {
+    if (!(await serviceConfirm({
+      title: `Copy ${revision.docNo} as a new quotation?`,
+      body: 'Every line and the payment terms are copied into a new draft. Customer, property and project are left blank for you to fill in.',
+      confirmLabel: 'Copy',
+    }))) return;
+    const r = await act(() => renoSend<{ id: string }>('/quotations', 'POST', {
+      projectId: null,
+      brandId,
+      header: copiedHeader(header, brandId),
+      sections: sectionsForSave(sections),
+      instalments: instalmentsForSave(instalments),
+    })) as { id: string } | null;
+    if (!r) return;
+    toast.success(`Copied from ${revision.docNo}. Fill in the customer and property.`);
+    navigate(`/scm/renovation/quotations/${r.id}`);
+  };
   const brand = brands.data?.brands.find((b) => b.brandId === brandId);
 
   return (
@@ -79,6 +113,7 @@ export function QuotationActions({ view, canQuote, editable, sections, header, i
         </select>
       )}
       <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Print PDF</Button>
+      {canQuote && <Button variant="ghost" icon={<Copy size={15} />} disabled={busy} onClick={copyAsNew}>Copy as new</Button>}
       {current && <Button variant="ghost" icon={<Copy size={15} />} onClick={saveAsTemplate}>Save as package template</Button>}
       {current && quotation.status === 'DRAFT' && <Button variant="secondary" icon={<Send size={15} />} disabled={busy} onClick={() => status('SENT')}>Mark sent</Button>}
       {current && quotation.status === 'SENT' && <Button variant="primary" icon={<FileCheck2 size={15} />} disabled={busy} onClick={() => status('ACCEPTED', `Mark ${revision.docNo} accepted by the customer?`)}>Accepted</Button>}
