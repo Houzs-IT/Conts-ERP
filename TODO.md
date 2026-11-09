@@ -2,13 +2,36 @@
 
 Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw, schema `pos`, via Hyperdrive e0781ccd...). Staging preview: https://staging-preview.theconts-os.pages.dev (Supabase ecgyrmblqfxvbfjlqkdq).
 
-## Ports from Houzs / Hookka (owner picks 8-9 Nov 2026; one at a time, PC is slow)
-- Done: bug batch #799-#803; cancelled number strike + PO CANCELLED watermark #804; PO supplier type-to-search #805; PO Copy as new #806; quotation Copy as new #807 (SO copy dropped: every SO is a renovation contract).
-- Next, in order: date range presets (Houzs DateRangeButton); Back keeps list place and filters (Houzs #4822); after save go back to the source document (Houzs 8b91eeda0); PO urgent mark, GRN date column, deactivated SKU unpickable (613a0f94a, 4f9927029, #4899); phone number pad and +/- qty (48cab0c14, 28f23ef9b); form draft autosave (Hookka use-form-draft); project search per word (ccffd9269).
-- Then: server date filter on every list date column (3e6d15825, aeba82653); status tabs with count and money (Hookka 5aff2b333); global search finds SO/PO/invoices, PO list search by material; DB quantity caps (#4606-#4625, check on-site GRN/DO and VO first); "items not ready" warning before DO ships (ed9657c29); add remaining SO lines to a DO (#4877); Excel import with diff preview (Hookka d36177ca0); supplier price list from actual paid price with unit guard (Hookka 5957bdd87); blank SKU import template and CSV UTF-8 (d820c31f0, a7ca6b9f5); SO line photo/drawing reaches PO (608f24ce0).
-- Then: batch confirm draft GRNs / supplier invoices with PO-price columns (5191c5f7c, d1a3794d4); books start date, opening balance page, default receive/pay banks (8b0725ea8, 2d7497650, 5596706af); worker actual hours vs budget; handover snag list; stock take and stock adjustment as numbered documents; payment-voucher bill scanning with AI usage log.
-- Bug left from the batch: PO supplier dates 2/3/4 can be overwritten (Houzs 2e66d226b, #5035).
-- Owner said no: merge duplicate item codes, cash flow forecast, PO email from staff mailbox, phone SO progress/print DO, cheapest-supplier default, purchase return kinds, GRN post permission/multi-rack, accounting bugs.
+## Ports from Houzs / Hookka (owner picks 8-9 Nov 2026) — pick up here
+- How to work: one item = one branch = one PR; port by `git format-patch -1 <sha>` from the Houzs repo (C:/Users/User/Desktop/houzs-erp-local, read only) and `git apply --directory=engine --reject`, then fit by hand; Houzs frontend/ = engine/frontend, backend/ = engine/backend. Hookka (C:/Users/User/hookka-erp-testing, use origin/main, read only) is reference only.
+- Checks per item: engine/frontend `npx tsc -b`; engine/backend `npx tsc --noEmit -p .`; backend tests with `npx vitest run --config vitest.light.config.mts <name>`; frontend `npx vitest run <file>`; then real clicks from the menu on the local system (Conts-ERP-worktrees/conts-local: `node start.mjs`, login management@theconts.com / LocalTest1; set CONTS_CODE to the worktree to run its engine or screens); merge; wait for "Deploy engine to production"; check erp.theconts.com.
+- PC is slow (owner, 9 Nov): one helper, one install, one test run, one server at a time; stop the local system when done. Built-in browser pane freezes when hidden; Chrome extension works when the window is visible.
+- Migrations: new file in migrations-pg/ with the next number; apply to production through the Supabase connector inside begin/commit with `select demo.drop_views();` first and `select demo.sync();` last, plus `insert into public.pos_migrations (filename, checksum)` (sha256 of the LF body, first 16 hex); apply before merging the code.
+- Every Conts sales order is a renovation contract (so_kind RENOVATION); Houzs SO-only features usually need a renovation equivalent or are skipped. Accounting is out of scope except item 13 below.
+- Done: bug batch #799-#803; cancelled number strike + PO CANCELLED watermark #804; PO supplier type-to-search #805; PO Copy as new #806; quotation Copy as new #807; return to the source document after save #809 (GRN picker passes backToPo); PO urgent mark + GRN Date column + deactivated SKU not pickable #810 (urgent print and inactive picker tested by unit tests only).
+- Already present, nothing to port: date range presets (DataTable date filter has Today / This week / This month / Last month / Overdue); Back keeps list filters (lib/scmListReturn). Scroll position on Back is not kept; Houzs only did it for Merchant Recon.
+- 1. Phone: number pad on unit price and amount, +/- and up/down on qty, mouse wheel does not change price (Houzs 48cab0c14 #4545, 28f23ef9b, bbbcc8010, 7e5bb785f, 3249ce00c). Check renovation phone screens too.
+- 2. Long forms save a draft and offer "Restore your draft?" (Hookka src/lib/use-form-draft.ts); quotations and VOs first.
+- 3. Project search matches each word on its own (Houzs ccffd9269, 59132dd42).
+- 4. Server-side date filter on every list date column (SO, PO, GRN, PI, SI, DO) and the To box not cut off (Houzs 3e6d15825, aeba82653).
+- 5. Status tabs show count and money, e.g. "Pending 25 · RM 15,631" on SO, PO, GRN, PI, invoice lists; same rows for both, no RM 0.00 for unpriced, no money on Cancelled (Hookka 5aff2b333, f9ff4d840, 65db859f0, 79323f31c, 2a34a38cb).
+- 6. Global search (top bar, Property OS src/components/TopBar.tsx -> functions/api/search) also finds SO, PO and invoices; PO list search matches line items (engine/backend/src/scm/lib/po-list-read.ts ~188).
+- 7. Database quantity caps: receive <= PO line, deliver <= SO line, bill <= received/delivered, no cancel of an invoiced DO, no cut below shipped (Houzs #4606 #4607 #4613 #4617 #4620 #4625). Check against on-site GRN/DO (renovation-site-receipt.ts) and VOs before turning on.
+- 8. "Item not ready" warning before a DO ships lines with no stock set aside (Houzs ed9657c29 #4485).
+- 9. An existing DO can pull in the SO's remaining lines (Houzs #4877).
+- 10. Excel import shows new / changed / unchanged rows before applying; catalog price updates (Hookka d36177ca0, 2b04557df); a blank cell never wipes a stored value.
+- 11. Supplier price list updated from the price actually paid, refusing jumps that look like a unit mix-up (box vs piece) (Hookka 5957bdd87, 6801df6fb).
+- 12. Blank SKU import template; CSV exports keep Chinese text readable in Excel (UTF-8 BOM) (Houzs d820c31f0, a7ca6b9f5). Not merge of duplicate codes (owner said no).
+- 13. Accounting go-live settings only: books start date, Opening Balance page, separate default banks for receiving and paying (Houzs 8b0725ea8, 2d7497650, 5596706af).
+- 14. SO line photo or drawing added after the PO exists reaches the PO (Houzs 608f24ce0); renovation contract lines.
+- 15. Confirm several draft GRNs / supplier invoices at once with invoice-vs-PO price columns (Houzs 5191c5f7c, d1a3794d4).
+- 16. Worker actual hours per production order (start/stop), actual vs budgeted hours (Hookka routes/working-hour-entries.ts, job-cards.ts, wip-times.ts); keep plan dates and hours budget separate (production-hours rule).
+- 17. Handover snag / defect list: checklist templates, defects with photos, pending queue (Hookka routes/qc-inspections.ts, qc-templates.ts, qc-pending.ts); handover may stay open with unfinished items.
+- 18. Stock take rounds with Excel export and gain/loss, and stock adjustment as a numbered, editable document (Houzs #4496 #4498 #4930, #4519 #4913).
+- 19. Payment voucher bill scanning (up to 12 bills) and an AI usage / accuracy page (Houzs pv-extract.ts, payment-request-bill.ts, acc/bill-extract.ts, ai_usage_events); needs ANTHROPIC_API_KEY on the engine worker (owner sets it), AI cost accepted by the owner.
+- Bug left: PO supplier dates 2/3/4 already recorded can be overwritten (Houzs 2e66d226b #5035).
+- Owner said no: merge duplicate item codes, cash flow forecast, PO email from staff mailbox, phone SO progress / print DO, cheapest-supplier default, purchase return kinds, GRN post permission / multi-rack, SO Copy as new, accounting bugs and other accounting features.
+- Background reviews (scratchpad, may be gone): per-commit tables of every Houzs commit since c20343f5 and Hookka since 8 Aug; regenerate with `git log` if needed.
 
 ## Engine
 - Staging lacks migration 0189 (the RAW category), so 0222 is not applied there and K & K SKUs do not exist on staging.
