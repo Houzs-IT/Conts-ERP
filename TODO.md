@@ -2,6 +2,14 @@
 
 Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw, schema `pos`, via Hyperdrive e0781ccd...). Staging preview: https://staging-preview.theconts-os.pages.dev (Supabase ecgyrmblqfxvbfjlqkdq).
 
+## Ports from Houzs / Hookka (owner picks 8-9 Nov 2026; one at a time, PC is slow)
+- Done: bug batch #799-#803; cancelled number strike + PO CANCELLED watermark #804; PO supplier type-to-search #805; PO Copy as new #806; quotation Copy as new #807 (SO copy dropped: every SO is a renovation contract).
+- Next, in order: date range presets (Houzs DateRangeButton); Back keeps list place and filters (Houzs #4822); after save go back to the source document (Houzs 8b91eeda0); PO urgent mark, GRN date column, deactivated SKU unpickable (613a0f94a, 4f9927029, #4899); phone number pad and +/- qty (48cab0c14, 28f23ef9b); form draft autosave (Hookka use-form-draft); project search per word (ccffd9269).
+- Then: server date filter on every list date column (3e6d15825, aeba82653); status tabs with count and money (Hookka 5aff2b333); global search finds SO/PO/invoices, PO list search by material; DB quantity caps (#4606-#4625, check on-site GRN/DO and VO first); "items not ready" warning before DO ships (ed9657c29); add remaining SO lines to a DO (#4877); Excel import with diff preview (Hookka d36177ca0); supplier price list from actual paid price with unit guard (Hookka 5957bdd87); blank SKU import template and CSV UTF-8 (d820c31f0, a7ca6b9f5); SO line photo/drawing reaches PO (608f24ce0).
+- Then: batch confirm draft GRNs / supplier invoices with PO-price columns (5191c5f7c, d1a3794d4); books start date, opening balance page, default receive/pay banks (8b0725ea8, 2d7497650, 5596706af); worker actual hours vs budget; handover snag list; stock take and stock adjustment as numbered documents; payment-voucher bill scanning with AI usage log.
+- Bug left from the batch: PO supplier dates 2/3/4 can be overwritten (Houzs 2e66d226b, #5035).
+- Owner said no: merge duplicate item codes, cash flow forecast, PO email from staff mailbox, phone SO progress/print DO, cheapest-supplier default, purchase return kinds, GRN post permission/multi-rack, accounting bugs.
+
 ## Engine
 - Staging lacks migration 0189 (the RAW category), so 0222 is not applied there and K & K SKUs do not exist on staging.
 
