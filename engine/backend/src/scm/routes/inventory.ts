@@ -411,7 +411,10 @@ export const listInventoryHandler = async (c: any) => {
     // degrades to no predicate when the active company is unresolved
     // (pre-migration / cold-start), so single-company Houzs is unchanged.
     q = scopeToCompany(q, c);
-    return q.order('item_code').range(from, to);
+    /* A TOTAL order: item_code alone repeats per warehouse (and per variant), so 1000-row windows could
+       repeat or skip rows (Houzs 9cc4fdbdf). */
+    q = q.order('item_code').order('warehouse_id');
+    return (showAll ? q : q.order('variant_key')).order('company_id').range(from, to);
   });
   if (error) {
     if (/relation .* does not exist/i.test(error.message) || /column .* does not exist/i.test(error.message)) {
@@ -458,6 +461,7 @@ async function deliveredReturnedBySoItem(
     .from('delivery_order_items')
     .select('id, so_item_id, qty, delivery_order_id')
     .in('so_item_id', batch)
+    .order('id')
     .range(from, to));
   const doLineRows = (doLines ?? []) as Array<{ id: string; so_item_id: string | null; qty: number; delivery_order_id: string }>;
   const doIds = [...new Set(doLineRows.map((l) => l.delivery_order_id).filter(Boolean))];
@@ -465,7 +469,7 @@ async function deliveredReturnedBySoItem(
   const doLineToSoItem = new Map<string, string>();
   if (doIds.length > 0) {
     const { data: dos } = await chunkIn<{ id: string; status: string | null }>(doIds, (batch, from, to) =>
-      sb.from('delivery_orders').select('id, status').in('id', batch).range(from, to));
+      sb.from('delivery_orders').select('id, status').in('id', batch).order('id').range(from, to));
     for (const d of (dos ?? []) as Array<{ id: string; status: string | null }>) {
       // A PRE-SHIP DO hasn't shipped and hasn't moved stock — excluding it
       // (like soDeliverableRemaining's LEAK GUARD) keeps its units in Reserved
@@ -487,13 +491,14 @@ async function deliveredReturnedBySoItem(
       .from('delivery_return_items')
       .select('do_item_id, qty_returned, delivery_return_id')
       .in('do_item_id', batch)
+      .order('id')
       .range(from, to));
     const drLineRows = (drLines ?? []) as Array<{ do_item_id: string | null; qty_returned: number; delivery_return_id: string }>;
     const drIds = [...new Set(drLineRows.map((l) => l.delivery_return_id).filter(Boolean))];
     const activeDrIds = new Set<string>();
     if (drIds.length > 0) {
       const { data: drs } = await chunkIn<{ id: string; status: string | null }>(drIds, (batch, from, to) =>
-        sb.from('delivery_returns').select('id, status').in('id', batch).range(from, to));
+        sb.from('delivery_returns').select('id, status').in('id', batch).order('id').range(from, to));
       for (const d of (drs ?? []) as Array<{ id: string; status: string | null }>) {
         if ((d.status ?? '').toUpperCase() !== 'CANCELLED') activeDrIds.add(d.id);
       }
@@ -532,7 +537,7 @@ inventory.get('/products', async (c) => {
     q = scopeToCompany(q, c); // multi-company: isolate product totals to the active company (view exposes company_id, mig 0106)
     if (s) q = q.or(`item_code.ilike.%${s}%,product_name.ilike.%${s}%`);
     if (category && category !== 'all') q = q.in('category', categoriesInGroup(category));
-    return q.order('item_code').range(from, to);
+    return q.order('item_code').order('company_id').range(from, to);
   });
   if (error) {
     if (/relation .* does not exist/i.test(error.message)) {
@@ -619,7 +624,7 @@ inventory.get('/products', async (c) => {
     if (warehouseId) {
       const { data: bal, error: balErr } = await chunkIn(codes, (batch, from, to) => pgrestIn(scopeToCompany(sb
         .from('inventory_balances').select('item_code, qty'), c)
-        .eq('warehouse_id', warehouseId), 'item_code', batch).range(from, to));
+        .eq('warehouse_id', warehouseId), 'item_code', batch).order('item_code').order('warehouse_id').order('variant_key').order('company_id').range(from, to));
       if (balErr) {
         // eslint-disable-next-line no-console
         console.error('[inventory] warehouse balances read failed:', (balErr as { message?: unknown }).message ?? balErr);
@@ -641,7 +646,7 @@ inventory.get('/products', async (c) => {
     if (scopedNonSelling.length > 0) {
       const { data: nsBal, error: nsErr } = await chunkIn(codes, (batch, from, to) => pgrestIn(scopeToCompany(sb
         .from('inventory_balances').select('item_code, qty'), c)
-        .in('warehouse_id', scopedNonSelling), 'item_code', batch).range(from, to));
+        .in('warehouse_id', scopedNonSelling), 'item_code', batch).order('item_code').order('warehouse_id').order('variant_key').order('company_id').range(from, to));
       if (nsErr) {
         // eslint-disable-next-line no-console
         console.error('[inventory] non-selling balances read failed:', (nsErr as { message?: unknown }).message ?? nsErr);
@@ -663,7 +668,10 @@ inventory.get('/products', async (c) => {
         .select('id, item_code, qty, warehouse_id, line_delivery_date, cancelled, so:mfg_sales_orders!inner(status, customer_delivery_date)'), c), 'item_code', batch)
         .eq('cancelled', false);
       if (warehouseId) dq = dq.eq('warehouse_id', warehouseId); // ask A — scope demand to this warehouse (mig 0118)
-      return dq.range(from, to);
+      /* Every paged read here carries a TOTAL order (paginate-all.ts: ordering INSIDE the factory). Unordered,
+         the 1000-row windows could repeat or skip rows: Houzs counted one SO line twice and left READY lines
+         out, a wrong Available (9cc4fdbdf). */
+      return dq.order('id').range(from, to);
     });
     if (demandErr) {
       // eslint-disable-next-line no-console
@@ -701,7 +709,7 @@ inventory.get('/products', async (c) => {
     // ~30 days").
     const { data: poItems, error: poErr } = await chunkIn(codes, (batch, from, to) => pgrestIn(scopeToCompany(sb
       .from('purchase_order_items')
-      .select('item_code, qty, received_qty, delivery_date, supplier_delivery_date_2, supplier_delivery_date_3, supplier_delivery_date_4, warehouse_id, po:purchase_orders!inner(po_number, status, expected_at, supplier_delivery_date_2, supplier_delivery_date_3, supplier_delivery_date_4, purchase_location_id)'), c), 'item_code', batch).range(from, to));
+      .select('item_code, qty, received_qty, delivery_date, supplier_delivery_date_2, supplier_delivery_date_3, supplier_delivery_date_4, warehouse_id, po:purchase_orders!inner(po_number, status, expected_at, supplier_delivery_date_2, supplier_delivery_date_3, supplier_delivery_date_4, purchase_location_id)'), c), 'item_code', batch).order('id').range(from, to));
     if (poErr) {
       // eslint-disable-next-line no-console
       console.error('[inventory] incoming PO lines read failed:', (poErr as { message?: unknown }).message ?? poErr);
@@ -738,7 +746,7 @@ inventory.get('/products', async (c) => {
         // to the drawer's buildStockBreakdown formula.
         .select('item_code, received_at, qty_remaining, remaining_value_sen, source_doc_type, source_doc_no'), c), 'item_code', batch); // multi-company: isolate open lots to the active company (view exposes company_id, mig 0106)
       if (warehouseId) lq = lq.eq('warehouse_id', warehouseId); // ask A — oldest lot within this warehouse
-      return lq.range(from, to);
+      return lq.order('received_at').order('id').range(from, to);
     });
     if (lotsErr) {
       // eslint-disable-next-line no-console
@@ -1186,7 +1194,7 @@ inventory.get('/cogs', async (c) => {
     if (itemCode) q = q.eq('item_code', itemCode);
     if (from) q = q.gte('consumed_at', from);
     if (to)   q = q.lte('consumed_at', `${to}T23:59:59Z`);
-    return q.range(pFrom, pTo);
+    return q.order('id').range(pFrom, pTo);
   });
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   return c.json({ cogs: data ?? [] });
@@ -1207,7 +1215,7 @@ inventory.get('/value', async (c) => {
     let q = sb.from('v_inventory_value').select('*');
     q = scopeToCompany(q, c); // multi-company: isolate valuation to the active company (view exposes company_id, mig 0106)
     if (warehouseId) q = q.eq('warehouse_id', warehouseId);
-    return q.order('item_code').range(from, to);
+    return q.order('item_code').order('warehouse_id').order('variant_key').order('company_id').order('product_name').range(from, to);
   });
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   return c.json({ value: data ?? [] });
@@ -1237,7 +1245,7 @@ inventory.get('/analytics', async (c) => {
       .select('item_code, product_name, qty_remaining, remaining_value_sen, received_at, warehouse_id, source_doc_type, source_doc_no');
     lotsQ = scopeToCompany(lotsQ, c); // multi-company: isolate open lots to the active company (view exposes company_id, mig 0106)
     if (warehouseId) lotsQ = lotsQ.eq('warehouse_id', warehouseId);
-    return lotsQ.range(from, to);
+    return lotsQ.order('received_at').order('id').range(from, to);
   });
   if (lotsErr) return c.json({ error: 'load_failed', reason: lotsErr.message }, 500);
 
@@ -1249,7 +1257,7 @@ inventory.get('/analytics', async (c) => {
       .select('item_code, total_cost_sen, consumed_at, warehouse_id');
     cogsQ = scopeToCompany(cogsQ, c); // multi-company: isolate COGS stream to the active company (view exposes company_id, mig 0106)
     if (warehouseId) cogsQ = cogsQ.eq('warehouse_id', warehouseId);
-    return cogsQ.range(from, to);
+    return cogsQ.order('id').range(from, to);
   });
   if (cogsErr) return c.json({ error: 'load_failed', reason: cogsErr.message }, 500);
 
@@ -1501,7 +1509,7 @@ inventory.get('/reservations', async (c) => {
     q = scopeToCompany(q, c); // open lots are per-company (view exposes company_id, mig 0106)
     if (warehouseId) q = q.eq('warehouse_id', warehouseId);
     if (itemCode) q = q.eq('item_code', itemCode);
-    return q.order('received_at', { ascending: true }).range(from, to);
+    return q.order('received_at', { ascending: true }).order('id').range(from, to);
   });
   if (lotErr) return c.json({ error: 'load_failed', reason: lotErr.message }, 500);
   const lots = lotRows ?? [];
@@ -1526,7 +1534,7 @@ inventory.get('/reservations', async (c) => {
       grnNos,
       (batch, from, to) => scopeToCompany(sb
         .from('grns').select('grn_number, purchase_order_id'), c)
-        .in('grn_number', batch).range(from, to),
+        .in('grn_number', batch).order('grn_number').range(from, to),
     );
     const poIds = [...new Set(
       (grnRows ?? [])
@@ -1539,7 +1547,7 @@ inventory.get('/reservations', async (c) => {
         poIds,
         (batch, from, to) => scopeToCompany(sb
           .from('purchase_orders').select('id, po_number'), c)
-          .in('id', batch).range(from, to),
+          .in('id', batch).order('id').range(from, to),
       );
       for (const p of poRows ?? []) {
         if (p.po_number) poNoById.set(p.id, p.po_number);
@@ -1585,6 +1593,7 @@ inventory.get('/reservations', async (c) => {
       .select(select)
       .eq('stock_status', 'READY')
       .eq('cancelled', false), c)
+      .order('id')
       .range(from, to) as unknown as PromiseLike<{ data: ReadyLine[] | null; error: { message: string; code?: string } | null }>);
     let res = await pull(READY_SELECT);
     if (res.error && /allocated_batch_no|column .* does not exist/i.test(res.error.message ?? '')) {
@@ -1629,7 +1638,7 @@ inventory.get('/reservations', async (c) => {
   const categoryByCode = new Map<string, string | null>();
   if (lotCodes.length > 0) {
     const { data: prods, error: prodErr } = await chunkIn(lotCodes, (batch, from, to) => pgrestIn(scopeToCompany(sb
-      .from('mfg_products').select('code, category'), c), 'code', batch).range(from, to));
+      .from('mfg_products').select('code, category'), c), 'code', batch).order('code').order('company_id').range(from, to));
     if (prodErr) {
       // eslint-disable-next-line no-console
       console.error('[inventory] lot-code category read failed:', (prodErr as { message?: unknown }).message ?? prodErr);

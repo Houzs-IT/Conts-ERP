@@ -36,7 +36,8 @@ import { soHasDownstream } from '../lib/downstream-lock';
 import { dateOrNull, effectiveDateAfterPatch, isDateColumn } from '../lib/date-coerce';
 import { soStatusAfterProcessingDateChange } from '../lib/so-proceed-status-change';
 import { soIsMigrated, withSoMigratedReadonly } from '../lib/migrated-so-readonly';
-import { readSoLineFreeze, soLineWriteRefusal, soBuildLineIds, soLineFrozen, SO_FULLY_FROZEN_REFUSAL } from '../lib/downstream-lock'; // own line: autocountWritebackWiring asserts the import above verbatim
+import { readSoLineFreeze, soLineWriteRefusal, soBuildLineIds, soLineFrozen, SO_FULLY_FROZEN_REFUSAL, SO_LINE_FROZEN_REFUSAL } from '../lib/downstream-lock'; // own line: autocountWritebackWiring asserts the import above verbatim
+import { isSoLineOverDelivered } from '../lib/so-remaining-by-item';
 /* Status-transition table + the discard guards — lifted out of this file, which
    may only shrink. See lib/so-lifecycle-guards.ts. */
 import { SO_STATUS_RANK, soStatusTransitionError, soDiscardBlocked } from '../lib/so-lifecycle-guards';
@@ -5290,6 +5291,25 @@ export const patchMfgSalesOrderStatusHandler = async (c: any) => {
 
     if (voucherPlan) await applySoCancelVouchers(sbx, docNo, voucherPlan);
 
+    /* The allocation recompute only walks live SOs, so a cancelled order's
+       lines kept READY + their claimed sofa batch forever. Release them here.
+       SERVICE lines are READY from birth (nothing to allocate) and stay so. */
+    if (isCancel) {
+      const { data: liveLines, error: lineErr } = await scopeToCompanyId(sbx.from('mfg_sales_order_items')
+        .select('id, item_code, item_group'), co.companyId)
+        .eq('doc_no', docNo).eq('cancelled', false);
+      if (lineErr) throw new Error(`so-cancel line read failed: ${lineErr.message}`);
+      const goodsIds = ((liveLines ?? []) as Array<{ id: string; item_code: string | null; item_group: string | null }>)
+        .filter((l) => !isServiceLine({ itemGroup: l.item_group, itemCode: l.item_code }))
+        .map((l) => l.id);
+      if (goodsIds.length > 0) {
+        const { error: relErr } = await scopeToCompanyId(sbx.from('mfg_sales_order_items')
+          .update({ stock_status: 'PENDING', stock_qty_ready: 0, allocated_batch_no: null }), co.companyId)
+          .eq('doc_no', docNo).in('id', goodsIds);
+        if (relErr) throw new Error(`so-cancel allocation release failed: ${relErr.message}`);
+      }
+    }
+
     // Audit row — best-effort on the ordinary path. Inside the cancel's atomic
     // command recordSoAudit throws instead, so a cancel can never commit the
     // voiding without the trail that explains it.
@@ -8124,6 +8144,7 @@ mfgSalesOrders.delete('/:docNo/items/:itemId', async (c) => {
     docNo,
     itemId,
   );
+  if (isSoLineOverDelivered(error)) return c.json(SO_LINE_FROZEN_REFUSAL, 409); // a DO confirmed after the freeze read (migration 0248)
   if (error) return c.json({ error: 'delete_failed', reason: error.message }, 500);
   // Default Free Gift (0170) — removing a trigger line (e.g. a mattress) must
   // auto-delete its free gift; reconcile drops orphaned gifts, then recomputes.

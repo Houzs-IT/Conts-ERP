@@ -107,6 +107,7 @@ import { inHouseSupplierId } from '../lib/grn-from-po-core';
 import { ON_SITE_WAREHOUSE_CODE } from '../lib/non-selling-warehouse';
 import { firstSoLinkCategoryMismatch, soLinkCategoryMismatch, hardBoundUnlinkRefusal, hardBoundSplitRefusal, editedLineGroup } from '../lib/hard-bound-po-line';
 import { pgrestIn } from '../lib/pgrest-in-list';
+import { expireMrpSnapshot } from '../lib/mrp-snapshot';
 import { withSoRefPoIds } from '../lib/so-ref-search';
 import { poPickerOffers } from '../lib/renovation-po-split';
 import { chunkIn } from '../lib/paginate-all';
@@ -4346,6 +4347,7 @@ export const cancelPurchaseOrderHandler = async (c: any) => {
     createdBy: c.get('houzsUser')?.id ?? null,
   });
 
+  await expireMrpSnapshot(supabase, co.companyId, 'po-cancel');
   return c.json({ purchaseOrder: after ?? { id, status: 'CANCELLED' } });
 };
 mfgPurchaseOrders.patch('/:id/cancel', cancelPurchaseOrderHandler);
@@ -4454,6 +4456,7 @@ export const reopenPurchaseOrderHandler = async (c: any) => {
     .select('id, status, cancelled_at')
     .eq('id', id), co.companyId)
     .maybeSingle();
+  await expireMrpSnapshot(supabase, co.companyId, 'po-reopen');
   return c.json({ purchaseOrder: after ?? { id, status: 'SUBMITTED' } });
 };
 mfgPurchaseOrders.patch('/:id/reopen', reopenPurchaseOrderHandler);

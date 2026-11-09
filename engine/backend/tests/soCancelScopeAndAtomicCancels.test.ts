@@ -249,6 +249,16 @@ describe('PO cancel is a single ACTIVE->CANCELLED transition', () => {
     expect(t.purchase_orders[0].cancelled_at).toBe('FIRST-WINNER');
     expect(t.entity_audit_log).toHaveLength(0);
   });
+
+  test('a cancel drops this company\'s stored MRP plan, so the page stops counting the PO as cover (Houzs 9ff5dc768)', async () => {
+    const t: Record<string, Row[]> = {
+      purchase_orders: pos(),
+      mrp_snapshots: [{ company_id: CO_A, result: {} }, { company_id: CO_B, result: {} }],
+    };
+    const res = await jsonPatch(harness(t, CO_A).app, '/purchase-orders/po-a/cancel');
+    expect(res.status).toBe(200);
+    expect(t.mrp_snapshots.map((s) => s.company_id)).toEqual([CO_B]);
+  });
 });
 
 describe('PC Order cancel is a single ACTIVE->CANCELLED transition', () => {

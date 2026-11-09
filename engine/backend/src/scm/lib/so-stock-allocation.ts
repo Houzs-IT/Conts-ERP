@@ -592,9 +592,11 @@ async function runSoStockAllocation(
         itemCode: l.item_code,
         category: serviceCodes.has(l.item_code) ? 'SERVICE' : null,
       })) continue;
-      const delivered = deliveredBySoItem.get(l.id) ?? 0;
-      const returned = returnedBySoItem.get(l.id) ?? 0;
-      const remaining = Number(l.qty ?? 0) - delivered + returned;
+      /* Returned units are NOT owed again (Houzs e11313aba): returned goods go back to stock for the next matching
+         order, so netting the return back in handed the same units straight back to the order that returned them.
+         Only the stock claim changes: the DO picker still shows the returned qty as deliverable, so a replacement
+         can still be shipped on purpose, and header readiness below is unchanged. */
+      const remaining = Number(l.qty ?? 0) - (deliveredBySoItem.get(l.id) ?? 0);
       if (remaining <= 0) continue;
       const variant_key = computeVariantKey(l.item_group ?? null, l.variants ?? null);
       const whId = l.warehouse_id ?? null;
@@ -734,7 +736,7 @@ async function runSoStockAllocation(
          that could answer differently. Reading a superset and intersecting is
          exact — `dedicatedReady` is only ever consulted for bound line ids. */
       const boundIds = new Set([...boundNeeds.map((n) => n.id), ...ownPoNeeds.map((n) => n.id), ...sofaLineRecs.map((s) => s.id)]);
-      const { data: poLinkRows } = await paginateAll<{
+      const { data: poLinkRows, error: poLinkError } = await paginateAll<{
         id: string; po_items: Array<{ qty: number; received_qty: number | null }> | null;
       }>((from, to) => sb
         .from('mfg_sales_order_items')
@@ -744,6 +746,10 @@ async function runSoStockAllocation(
         .gt('po_items.received_qty', 0)
         .order('id')
         .range(from, to));
+      /* A failed read looked like "no PO has received anything", so every bound READY line was written PENDING and
+         READY_TO_SHIP orders regressed, under ok:true with no retry. Throwing here, before step 8 writes anything,
+         turns it into the wrapper's queued retry like the other reads in this function (Houzs 2bd976116). */
+      if (poLinkError) throw new Error(`allocation PO-receipt load failed: ${poLinkError.message}`);
       for (const r of poLinkRows ?? []) {
         if (!boundIds.has(r.id)) continue;
         for (const p of r.po_items ?? []) {

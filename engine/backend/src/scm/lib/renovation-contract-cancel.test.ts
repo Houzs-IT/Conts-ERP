@@ -46,3 +46,36 @@ describe('cancelling a contract checks every document on it', () => {
     await expect(setContractStatus(dbWith({ pro: 1 }), actor, 'TC-SO-1', 'CANCELLED')).rejects.toMatchObject({ code: 'has_production_orders' });
   });
 });
+
+describe('cancelling a contract releases its goods lines from stock allocation (Houzs f238fd2b4)', () => {
+  const head = { doc_no: 'TC-SO-1', status: 'RENO_CONFIRMED', so_kind: 'RENOVATION', revision: 1, version: 1, debtor_code: null, debtor_name: null, company_id: 1, branding: null, local_total_sen: 0 };
+  const actor = { companyId: 1, name: 'T', staffId: 's', docPrefix: '', userId: 1 } as never;
+  const run = async (to: 'CANCELLED' | 'RENO_IN_PROGRESS') => {
+    const writes: Array<{ sql: string; params: unknown[] }> = [];
+    const db = {
+      q: async (sql: string, params: unknown[] = []) => {
+        if (/from scm\.mfg_sales_orders o/.test(sql)) return [head] as never;
+        if (/count\(/.test(sql)) return [{ n: 0 }] as never;
+        if (/select id, item_code, item_group from scm\.mfg_sales_order_items/.test(sql)) {
+          return [
+            { id: 'goods-1', item_code: 'CAB-01', item_group: 'CABINET' },
+            { id: 'svc-1', item_code: 'SVC-INSTALL', item_group: 'SERVICE' },
+          ] as never;
+        }
+        if (/^\s*update scm\.mfg_sales_order_items/.test(sql)) writes.push({ sql, params });
+        return [] as never;
+      },
+    } as unknown as RenoDb;
+    await setContractStatus(db, actor, 'TC-SO-1', to);
+    return writes;
+  };
+  it('goods lines go back to PENDING with nothing ready and no claimed batch; service lines are left alone', async () => {
+    const writes = await run('CANCELLED');
+    expect(writes).toHaveLength(1);
+    expect(writes[0].sql).toMatch(/stock_status = 'PENDING', stock_qty_ready = 0, allocated_batch_no = null/);
+    expect(writes[0].params).toEqual(['TC-SO-1', ['goods-1']]);
+  });
+  it('a non-cancel transition does not touch the lines', async () => {
+    expect(await run('RENO_IN_PROGRESS')).toEqual([]);
+  });
+});
