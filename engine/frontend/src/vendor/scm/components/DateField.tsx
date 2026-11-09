@@ -46,6 +46,10 @@ export type DateFieldProps = {
   /** Fired when the text box loses focus, after the display snaps back to the
    *  canonical value. */
   onBlur?: () => void;
+  /** Fired instead of `onBlur` when the text box is left holding text that is
+   *  not a date. The parent's value is put back to what it was on focus and the
+   *  box shows it again; without this prop the text stays, outlined red. */
+  onInvalid?: (text: string) => void;
   required?: boolean;
 };
 
@@ -147,7 +151,10 @@ export function parseDmy(text: string): string | null {
   const t = text.trim();
   const compact = /^(\d{4})(\d{2})(\d{2})$/.exec(t);
   const spaced = compact ? null : /^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})$/.exec(t);
-  const m = compact ?? spaced;
+  // Day-first with a 4-digit year last (30/10/2026) is how the sheet-era staff
+  // type a date, and is unambiguous, so it is read rather than refused (HC-0164).
+  const dayFirst = compact || spaced ? null : /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/.exec(t);
+  const m = compact ?? spaced ?? (dayFirst && [dayFirst[0], dayFirst[3], dayFirst[2], dayFirst[1]]);
   if (!m) return null;
   const yyyy = Number(m[1]);
   const mm = Number(m[2]);
@@ -176,8 +183,16 @@ export function DateField({
   highlight = false,
   style,
   onBlur,
+  onInvalid,
   required = false,
 }: DateFieldProps) {
+  /* The host's LATEST onBlur. A calendar pick commits a tick after onChange, by
+     which time the host has re-rendered with the picked value; calling the
+     onBlur captured at pick time handed it the OLD value, so a blur-committing
+     host compared old with old and saved nothing (2026-10-26: HC-SO-2609-164's
+     Delivery Date showed 28, stayed 20 in the database, WhatsApp sent 20). */
+  const onBlurRef = useRef(onBlur);
+  onBlurRef.current = onBlur;
   // `editing` is non-null only while the text box has focus; the rest of the
   // time the display is derived straight from the canonical ISO `value`, so the
   // field can never drift out of sync with the parent.
@@ -187,6 +202,13 @@ export function DateField({
   // his own typo — the entry was lost with no border, no message and nothing
   // announced, because `aria-invalid` came only from the `invalid` PROP.
   const [draftInvalid, setDraftInvalid] = useState(false);
+  /* The value the field held when focus arrived. Clearing the box on the way to
+     retyping emits '' to the parent; if the retyped text then does not parse, a
+     blur-committing host would save that '' as "no date" while the box still
+     shows the operator's text (HC-0164: HC-SO-006432's Delivery Date was set,
+     then wiped 17 s later by a retype). An unparseable blur hands the parent
+     this value back and commits nothing. */
+  const focusValueRef = useRef(value);
   const nativeRef = useRef<HTMLInputElement>(null);
   const fallbackId = useId();
   const inputId = id ?? fallbackId;
@@ -232,7 +254,7 @@ export function DateField({
         disabled={disabled}
         required={required}
         value={display}
-        onFocus={(e) => { setEditing(isoToDmy(value)); setDraftInvalid(false); e.currentTarget.select(); }}
+        onFocus={(e) => { focusValueRef.current = value; setEditing(isoToDmy(value)); setDraftInvalid(false); e.currentTarget.select(); }}
         onChange={(e) => {
           const raw = e.target.value;
           const digits = raw.replace(/\D/g, '');
@@ -248,11 +270,19 @@ export function DateField({
         onBlur={() => {
           const text = (editing ?? '').trim();
           if (text !== '' && parseDmy(text) === null) {
-            setDraftInvalid(true);
-          } else {
-            setEditing(null);
-            setDraftInvalid(false);
+            if (value !== focusValueRef.current) onChange(focusValueRef.current);
+            // A host that reports the error itself gets the box back to the
+            // saved value, as the HC Delivery sheet does after its popup.
+            if (onInvalid) {
+              setEditing(null);
+              onInvalid(text);
+            } else {
+              setDraftInvalid(true);
+            }
+            return;
           }
+          setEditing(null);
+          setDraftInvalid(false);
           onBlur?.();
         }}
       />
@@ -311,7 +341,7 @@ export function DateField({
           // input; a blur-committing host (InlineEdit saves on blur) would
           // otherwise miss it (2026-08-20: a Service-case Supplier Pickup
           // Date chosen via the icon showed in the field, never saved).
-          setTimeout(() => onBlur?.(), 0);
+          setTimeout(() => onBlurRef.current?.(), 0);
         }}
       />
     </span>

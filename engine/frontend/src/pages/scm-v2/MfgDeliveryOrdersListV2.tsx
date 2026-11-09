@@ -10,6 +10,7 @@
 //       useUpdateMfgDeliveryOrderStatus (all live in the vendored SCM lib —
 //       we don't re-derive them; the Theme C paint is chrome-only).
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DO_TYPE_TABS, statusFor, doCancellableStatus, type StatusTab, type TypeTab } from "./do-list-status";
 import { deliveryOrderRowMenu } from "./row-menus";
@@ -1114,7 +1115,7 @@ export function MfgDeliveryOrdersListV2() {
       for (const r of chosen) bundles.push(await fetchDoBundle(r));
       if (how === "one") {
         await generateCombinedDeliveryOrderPdf(bundles as never, {
-          fileName: `delivery-orders-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `delivery-orders-${todayMyt()}.pdf`,
           action,
         });
       } else {

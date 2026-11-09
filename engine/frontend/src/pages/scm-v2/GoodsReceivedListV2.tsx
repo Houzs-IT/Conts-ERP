@@ -3,6 +3,7 @@
 // so the framing is stock-in (received value + line count) rather than
 // outstanding/owed.
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { grnRowMenu } from "./row-menus";
 import { buildVariantSummary, fmtSen, fmtDate, isServiceLine, orderLineIdentity } from "@2990s/shared";
@@ -742,7 +743,7 @@ export function GoodsReceivedListV2() {
       for (const r of chosen) bundles.push(await fetchGrnBundle(r));
       if (how === "one") {
         await generateCombinedGrnPdf(bundles as never, {
-          fileName: `goods-received-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `goods-received-${todayMyt()}.pdf`,
           action,
         });
       } else {

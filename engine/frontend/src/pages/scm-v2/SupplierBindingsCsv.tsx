@@ -7,6 +7,7 @@
 // by both the dialog and the unit test).
 // ----------------------------------------------------------------------------
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../../components/Button';
@@ -181,7 +182,7 @@ export function exportBindingsCsv(
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `supplier-${supplierCode}-bindings-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `supplier-${supplierCode}-bindings-${todayMyt()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

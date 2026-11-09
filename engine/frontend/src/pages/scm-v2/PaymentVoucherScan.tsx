@@ -173,7 +173,11 @@ export const PaymentVoucherScan = ({ target = 'pv' }: { target?: 'pv' | 'ap' } =
     extraction: BillExtraction,
     supplierId: string | null,
     lines?: Array<{ description: string | null; amountSen: number | null }>,
+    files: PvFilePayload[] = [],
   ) => {
+    /* The bill's pages ride along like the voucher's and the AP invoice's;
+       the New Purchase Invoice page attaches them once the bill saves. */
+    stashPvFiles(files);
     navigate('/scm/purchase-invoices/new', { state: { scanBill: { extraction, supplierId, ...(lines ? { lines } : {}) } } });
   };
 
@@ -358,7 +362,7 @@ export const PaymentVoucherScan = ({ target = 'pv' }: { target?: 'pv' | 'ap' } =
                             <Button variant="secondary" size="sm" onClick={() => openVoucher(b.extraction, { memory: b.memory, files: billFiles[b.index] ?? [] })}>
                               Open as voucher
                             </Button>
-                            <Button variant="ghost" size="sm" onClick={() => openBill(b.extraction, g.supplierId)}>
+                            <Button variant="ghost" size="sm" onClick={() => openBill(b.extraction, g.supplierId, undefined, billFiles[b.index] ?? [])}>
                               Open as bill
                             </Button>
                           </span>
@@ -405,6 +409,7 @@ export const PaymentVoucherScan = ({ target = 'pv' }: { target?: 'pv' | 'ap' } =
                               description: [g.label, b.extraction.invoiceNumber].filter(Boolean).join(' '),
                               amountSen: b.extraction.totalSen,
                             })),
+                            g.bills.flatMap((b) => billFiles[b.index] ?? []),
                           );
                         }}>
                           Open as ONE bill

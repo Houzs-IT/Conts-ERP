@@ -17,6 +17,7 @@
 // rewritten in place. Unlike Copy, an edit keeps the party on each line.
 // ----------------------------------------------------------------------------
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useMemo, useState } from 'react';
 import { DEPARTMENT_OPTIONS, type Department } from '../../conts/department';
 import { nextLineSub, SubDepartmentSelect } from '../../conts/SubDepartmentSelect';
@@ -142,7 +143,7 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
   const accounts = useAccounts();
   const createM = useCreateJournalEntry();
   const editM = useEditJournalEntry();
-  const [entryDate, setEntryDate] = useState(() => editing?.entryDate ?? new Date().toISOString().slice(0, 10));
+  const [entryDate, setEntryDate] = useState(() => editing?.entryDate ?? todayMyt());
   const [narration, setNarration] = useState(initial?.narration ?? '');
   const [lines, setLines] = useState<DraftLine[]>(initial && initial.lines.length > 0 ? initial.lines.map((l) => ({ ...l })) : [{ ...EMPTY_LINE }, { ...EMPTY_LINE }]);
 

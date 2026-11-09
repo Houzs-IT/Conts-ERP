@@ -25,6 +25,7 @@
    columns move together server-side through `zeroCostAckColumns`), then the
    original `PATCH /grns/:id/post` runs again. Nothing about the RULE is
    re-implemented here. */
+import { rmFromText } from "../lib/money";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { authedFetch } from "../vendor/scm/lib/authed-fetch";
@@ -45,11 +46,11 @@ const blank = (): Decision => ({ price: "", ack: false, reason: "" });
  *  free" tick. This mirrors the server's own condition, said one round-trip
  *  earlier — the same posture as the SO form's pre-checks. */
 export function lineIsAnswered(d: Decision): boolean {
-  return d.ack || Math.round(Number(d.price) * 100) > 0;
+  return d.ack || Math.round(rmFromText(d.price) * 100) > 0;
 }
 
 const senOf = (price: string): number | null => {
-  const sen = Math.round(Number(price) * 100);
+  const sen = Math.round(rmFromText(price) * 100);
   return Number.isFinite(sen) && sen > 0 ? sen : null;
 };
 

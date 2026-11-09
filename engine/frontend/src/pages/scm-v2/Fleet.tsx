@@ -25,6 +25,7 @@
 // sibling SCM surface still carries the same shape; do not "restore" the claim.
 // ----------------------------------------------------------------------------
 
+import { rmFromText } from "../../lib/money";
 import { useCallback, useMemo, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
@@ -657,7 +658,7 @@ const CreateLorryDrawer = ({ onClose }: { onClose: () => void }) => {
     const m3 = form.capacityM3.trim() ? Number(form.capacityM3) : null;
     const kg = form.capacityKg.trim() ? Number(form.capacityKg) : null;
     const sets = form.maxSets.trim() ? Number(form.maxSets) : null;
-    const revRm = form.maxRevenueRm.trim() ? Number(form.maxRevenueRm) : null;
+    const revRm = form.maxRevenueRm.trim() ? rmFromText(form.maxRevenueRm) : null;
     create.mutate({
       plate: form.plate.trim(),
       type,

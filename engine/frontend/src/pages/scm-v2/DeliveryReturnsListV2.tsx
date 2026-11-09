@@ -15,6 +15,7 @@
 // prominent meta row in the drawer — it's the field ops actually cares
 // about when triaging a return.
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useMemo, useState, type ReactNode } from "react";
 import { brandingToneForLabel } from "../../lib/brandingTone";
 import { transferFromLabel, transferFromColumnLabel } from "../../lib/convertScope";
@@ -955,7 +956,7 @@ export function DeliveryReturnsListV2() {
       for (const r of chosen) bundles.push(await fetchDrBundle(r.id));
       if (how === "one") {
         await generateCombinedDeliveryReturnPdf(bundles as never, {
-          fileName: `delivery-returns-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `delivery-returns-${todayMyt()}.pdf`,
           action,
         });
       } else {

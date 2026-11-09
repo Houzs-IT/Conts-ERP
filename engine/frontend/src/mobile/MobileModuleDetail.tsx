@@ -1,3 +1,4 @@
+import { rmFromText } from "../lib/money";
 import { useMemo, useState } from "react";
 import { siDepositAppliedSen, siOutstandingSen } from "../vendor/scm/lib/si-outstanding";
 import { offersRecordPayment, piPaymentHint } from "./doc-payment";
@@ -1154,7 +1155,7 @@ function PaymentSheet({ id, header, onClose, onDone }: {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const amountSen = Math.round(Number(amount) * 100);
+      const amountSen = Math.round(rmFromText(amount) * 100);
       if (!Number.isFinite(amountSen) || amountSen <= 0) throw new Error("Enter a valid amount greater than zero.");
       const body: Record<string, unknown> = { paidAt: date, method, amountSen };
       if (ref.trim()) body.approvalCode = ref.trim();

@@ -32,6 +32,7 @@
 // the screen renders, with the page's live warehouse / date / only-shortages /
 // search filters. No figure is recomputed here.
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import type { SheetData as WxlSheetData, Cell as WxlCell } from 'write-excel-file';
 import type { MrpResponse, MrpSku, MrpLine } from '../../vendor/scm/lib/mrp-queries';
 import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
@@ -361,7 +362,7 @@ export async function exportMrpWorkbook(opts: ExportMrpWorkbookOptions): Promise
     );
 
     const blob = await buildMrpWorkbookBlob(sheets, { asOf, warehouseLabel, filters });
-    const date = new Date().toISOString().slice(0, 10);
+    const date = todayMyt();
     downloadBlob(blob, `mrp-stock-status-${date}.xlsx`);
   } catch (e) {
     onError(e instanceof Error ? e : new Error(String(e)));

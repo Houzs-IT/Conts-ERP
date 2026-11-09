@@ -4,6 +4,7 @@
 // booked on Complete). Money-IN framing — a rare thing on the procurement
 // side where every other doc is money-out.
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useMemo, useState, type ReactNode } from "react";
 import { buildVariantSummary, fmtSen, fmtDate, orderLineIdentity } from "@2990s/shared";
 import { formatPhone } from "@2990s/shared/phone";
@@ -665,7 +666,7 @@ export function PurchaseReturnsListV2() {
       for (const r of chosen) bundles.push(await fetchPrBundle(r));
       if (how === "one") {
         await generateCombinedPurchaseReturnPdf(bundles as never, {
-          fileName: `purchase-returns-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `purchase-returns-${todayMyt()}.pdf`,
           action,
         });
       } else {

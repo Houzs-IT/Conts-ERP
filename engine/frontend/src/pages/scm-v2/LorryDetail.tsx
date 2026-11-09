@@ -17,6 +17,7 @@
 // off an empty cost table.
 // ----------------------------------------------------------------------------
 
+import { rmFromText } from "../../lib/money";
 import { useMemo, useState } from 'react';
 import { Plus, X, Paperclip, Trash2 } from 'lucide-react';
 import { Button } from '@2990s/design-system';
@@ -556,14 +557,14 @@ const AddServiceRecord = ({ lorryId, onClose }: { lorryId: string; onClose: () =
     if (!form.serviceDate) { notify({ title: 'Service date required.', tone: 'error' }); return; }
     if (!form.description.trim()) { notify({ title: 'Describe what was done.', tone: 'error' }); return; }
     const cost = form.cost.trim();
-    if (cost && !Number.isFinite(Number(cost))) { notify({ title: 'Cost must be a number.', tone: 'error' }); return; }
+    if (cost && !Number.isFinite(rmFromText(cost))) { notify({ title: 'Cost must be a number.', tone: 'error' }); return; }
 
     create.mutate({
       lorryId,
       serviceDate: form.serviceDate,
       description: form.description.trim(),
       workshop: form.workshop.trim() || null,
-      costSen: cost ? Math.round(Number(cost) * 100) : 0,
+      costSen: cost ? Math.round(rmFromText(cost) * 100) : 0,
       odometerKm: form.odometerKm.trim() ? Math.round(Number(form.odometerKm)) : null,
       nextServiceDate: form.nextServiceDate || null,
       nextServiceKm: form.nextServiceKm.trim() ? Math.round(Number(form.nextServiceKm)) : null,

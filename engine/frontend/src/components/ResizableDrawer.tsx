@@ -13,6 +13,7 @@
 // it); Escape and a scrim click both close.
 // ----------------------------------------------------------------------------
 
+import { useEscapeLayer } from "../lib/escapeStack";
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -91,11 +92,7 @@ export function ResizableDrawer({
   };
 
   /* Esc closes. */
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeLayer(onClose);
 
   /* Belt-and-braces: drop any in-flight drag listeners on unmount. */
   useEffect(

@@ -1,6 +1,7 @@
 // SalesInvoicesListV2 — Sales Invoices listing (mirrors DO/SO V2). SI-specific:
 // money stats, payment-biased status flow, From SO/DO anchors. /scm/sales-invoices.
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { siPaymentIntentSearch } from "./siPaymentIntent";
 import { salesInvoiceRowMenu } from "./row-menus";
@@ -1068,7 +1069,7 @@ export function SalesInvoicesListV2() {
       for (const r of chosen) bundles.push(await fetchSiBundle(r));
       if (how === "one") {
         await generateCombinedSalesInvoicePdf(bundles as never, {
-          fileName: `sales-invoices-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `sales-invoices-${todayMyt()}.pdf`,
           action,
         });
       } else {

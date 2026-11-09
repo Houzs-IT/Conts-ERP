@@ -6,7 +6,7 @@
  * this module replaced.
  */
 import { describe, it, expect } from 'vitest';
-import { parseMoneyToSen, parseQuantity, senToRm } from './money';
+import { parseMoneyToSen, parseQuantity, rmFromText, senToRm } from './money';
 
 function sen(raw: unknown): number {
   const r = parseMoneyToSen(raw, 'Price');
@@ -186,5 +186,23 @@ describe('senToRm', () => {
       const s = sen(text);
       expect(senToRm(s)).toBeCloseTo(Number(text), 10);
     }
+  });
+});
+
+describe('rmFromText', () => {
+  it('a thousands comma is read, not cut off', () => {
+    expect(parseFloat('12,000')).toBe(12);
+    expect(rmFromText('12,000')).toBe(12000);
+    expect(rmFromText('RM 1,234.50')).toBe(1234.5);
+    expect(rmFromText('19.99')).toBe(19.99);
+  });
+  it('blank and unreadable are NaN, like parseFloat', () => {
+    expect(rmFromText('')).toBeNaN();
+    expect(rmFromText('  ')).toBeNaN();
+    expect(rmFromText('abc')).toBeNaN();
+    expect(rmFromText('1,20')).toBeNaN();
+  });
+  it('a negative stays negative so the caller can refuse it', () => {
+    expect(rmFromText('-5')).toBe(-5);
   });
 });
