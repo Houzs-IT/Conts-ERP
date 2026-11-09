@@ -69,7 +69,7 @@ import { SpecialOrders } from './SpecialOrders';
 import styles from './SoLineCard.module.css';
 import { DateField } from "./DateField";
 import { DiscountInput } from './DiscountInput';
-import { NumberInput } from './NumberInput';
+import { NumberInput, cleanNumericText } from './NumberInput';
 import { variantCategoryOf } from '../lib/renovationVariantCategory';
 import { RenovationPhotoButton, renovationLineStyles as compactStyles } from './renovationSoLineCompact';
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
@@ -378,6 +378,7 @@ const SoLineCardInner = ({
      from the canonical centi only when it changes from outside, e.g. a
      product pick resets it to 0. */
   const [priceText, setPriceText] = useState((amountCellSen / 100).toFixed(2));
+  const [priceTyping, setPriceTyping] = useState(false);
   /* Load the full catalog ONCE (cached 5 min) and filter it LOCALLY — the picker
      no longer fires a `/mfg-products?search=` request per keystroke, so typing
      stays instant even while the Worker is slow or dropping connections (owner
@@ -1101,10 +1102,13 @@ const SoLineCardInner = ({
           onChange={(e) => onChange({ remark: e.target.value })}
         />
 
-        {/* 4. Qty */}
+        {/* 4. Qty: a small count, so it gets up/down arrows; the Unit Price
+             beside it is typed (Houzs DEV-62). */}
         <NumberInput
           sign="unsigned"
           decimal={false}
+          step={1}
+          min={1}
           className={styles.numericInput}
           value={draft.qty === 0 ? null : draft.qty}
           disabled={!isEditing}
@@ -1117,10 +1121,14 @@ const SoLineCardInner = ({
              amount cell is impossible to miss between the qty and date
              columns that sit either side of it. */}
         <input
-          type="number"
-          step="0.01"
+          type="text"
+          inputMode="decimal"
           className={styles.priceInput}
-          value={priceText}
+          /* Any RM 0 shows as the placeholder so typing a price does not start
+             with deleting "0.00"; a 0 shows only while being typed. A fee line
+             keeps its 0.00: there it means the fee is waived. */
+          value={!isFeeLine && amountCellSen === 0 && !priceTyping ? '' : priceText}
+          placeholder="0.00"
           disabled={!specOpen || !canEditPrice}
           title={
             specLockedNote ? specLockedNote
@@ -1129,8 +1137,9 @@ const SoLineCardInner = ({
               : undefined
           }
           onChange={(e) => {
-            const t = e.target.value;
+            const t = cleanNumericText(e.target.value, 'signed', true);
             setPriceText(t);
+            setPriceTyping(true);
             if (isFeeLine) {
               /* A BLANK box is mid-edit, not "waive the fee". `Number('')` is
                  0, which would read as charge-nothing and discount the whole
@@ -1143,7 +1152,7 @@ const SoLineCardInner = ({
             }
             onChange({ unitPriceSen: Math.round(Number(t) * 100) || 0, priceAuthored: true });
           }}
-          onBlur={() => setPriceText((amountCellSen / 100).toFixed(2))}
+          onBlur={() => { setPriceTyping(false); setPriceText((amountCellSen / 100).toFixed(2)); }}
         />
 
         {/* 6. Discount — owner 2026-09-12: the sales side had no discount field

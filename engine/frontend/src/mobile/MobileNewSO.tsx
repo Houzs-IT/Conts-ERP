@@ -3076,6 +3076,7 @@ function LineCard({
   const picked = Boolean(line.itemCode.trim());
   const v = line.variants;
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [priceTyping, setPriceTyping] = useState(false);
 
   /* Per-SKU allowed_options (Modular ON/OFF), resolved by code. */
   const allowQ = useModelAllowedOptionsByCode(line.itemCode || undefined);
@@ -3208,16 +3209,29 @@ function LineCard({
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 7, padding: 10 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-          <Field label="Qty" style={{ flex: 0.5 }}>
-            <input className="fld-i" inputMode="numeric" value={line.qty} onChange={(e) => onChange({ qty: e.target.value })} />
+          {/* Qty is a small count, so it steps with − / +; the price is a big
+              number, so it gets the decimal keypad (Houzs DEV-62). */}
+          <Field label="Qty" style={{ flex: 0.7 }}>
+            <div className="qty-step">
+              <button type="button" aria-label="Decrease qty" disabled={(num(line.qty) || 1) <= 1}
+                onClick={() => onChange({ qty: String(Math.max(1, (num(line.qty) || 1) - 1)) })}>{"−"}</button>
+              <input className="fld-i" inputMode="numeric" aria-label="Qty" value={line.qty} onChange={(e) => onChange({ qty: e.target.value })} />
+              <button type="button" aria-label="Increase qty"
+                onClick={() => onChange({ qty: String((num(line.qty) || 1) + 1) })}>{"+"}</button>
+            </div>
           </Field>
           <Field label="Unit Price" style={{ flex: 1 }}>
             <input
               className="fld-i money"
-              value={line.price}
+              inputMode="decimal"
+              /* Any RM 0 shows as the placeholder so typing a price does not
+                 start with deleting "0.00"; a 0 shows only while being typed. */
+              value={toSen(line.price) === 0 && !priceTyping ? "" : line.price}
+              placeholder="0.00"
               disabled={!canEditPrice}
               title={!canEditPrice ? "Price follows the SKU Master sell price — admin can override" : undefined}
-              onChange={(e) => onChange({ price: e.target.value, priceAuthored: true })}
+              onChange={(e) => { setPriceTyping(true); onChange({ price: e.target.value, priceAuthored: true }); }}
+              onBlur={() => setPriceTyping(false)}
             />
           </Field>
         </div>
@@ -3725,7 +3739,7 @@ function PayCard({ pay, staff, convertSources, onChange, onRemove }: { pay: Paym
             )}
           </Field>
           <Field label="Amount" style={{ flex: 1.1 }}>
-            <input className="fld-i money" value={pay.amount} onChange={(e) => onChange({ amount: e.target.value })} />
+            <input className="fld-i money" inputMode="decimal" value={pay.amount} onChange={(e) => onChange({ amount: e.target.value })} />
           </Field>
         </div>
         {/* Merchant needs BOTH (missingMethodSubField); marked required now that
