@@ -130,6 +130,14 @@ export default function MaintenancePage() {
     const m = new Map<string, string>([...roster.filter(u => u.propertyId).map(u => [u.propertyId!, u.propertyName] as [string, string]), ...issues.map(i => [i.buildingId, i.propertyName] as [string, string])]);
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'en', { numeric: true })).map(([value, label]) => ({ value, label }));
   }, [issues, roster]);
+  const unitOptions: FilterOption[] = useMemo(() => {
+    const byId = new Map<string, FilterOption>([
+      ...issues.map(({ unitId, unitNumber, propertyName }) => [unitId, { value: unitId, label: unitNumber, group: propertyName }] as const),
+      ...roster.map(({ id, unitCode, unitNumber, propertyName }) => [id, { value: id, label: unitCode || unitNumber, group: propertyName }] as const),
+    ]);
+    const collator = new Intl.Collator('en', { numeric: true });
+    return [...byId.values()].sort((a, b) => collator.compare(a.group ?? '', b.group ?? '') || collator.compare(a.label, b.label));
+  }, [issues, roster]);
   const sel = issues.find(i => i.id === selected) ?? null;
   const historySpend = tab === 'history' ? rows.reduce((s, i) => s + (i.finalAmount ?? 0), 0) : 0;
 
@@ -150,7 +158,7 @@ export default function MaintenancePage() {
     <>
       {error && data && <StaleBanner message={`Showing the last jobs we have. ${error}`} onRetry={reload} />}
       <IssueTable tab={tab} rows={data ? rows : null} loading={loading} error={data ? null : error} onRetry={reload} selected={selected} onSelect={setSelected}
-        money={money} canBulk={!FIELD_ROLES.includes(user!.role)} onChanged={reload} buildingOptions={buildingOptions} filtersTarget={filtersTarget}
+        money={money} canBulk={!FIELD_ROLES.includes(user!.role)} onChanged={reload} buildingOptions={buildingOptions} unitOptions={unitOptions} filtersTarget={filtersTarget}
         filtered={!!q} onClearFilters={() => setQ('')}
         above={tab === 'history' && rows.length > 0 && money ? (
           <div className="text-copy text-muted-ink py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
@@ -220,9 +228,9 @@ const paidText = (i: Issue) => (i.contractorPaidAt ? `Paid ${dateShort(i.contrac
 const MOVE_DONE: Record<Move, string> = { start: 'started', end: 'marked repair finished', reopen: 'reopened' };
 const COST_SLIDER_START: RangeBounds = { lowest: 0, highest: 1000 };
 
-function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, money, canBulk, onChanged, buildingOptions, filtersTarget, filtered, onClearFilters, empty, above }: {
+function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, money, canBulk, onChanged, buildingOptions, unitOptions, filtersTarget, filtered, onClearFilters, empty, above }: {
   tab: Tab; rows: Issue[] | null; loading: boolean; error: string | null; onRetry: () => void; selected: string | null; onSelect: (id: string) => void;
-  money: boolean; canBulk: boolean; onChanged: () => void; buildingOptions: SelectOption[]; filtersTarget: HTMLElement | null; filtered: boolean; onClearFilters: () => void;
+  money: boolean; canBulk: boolean; onChanged: () => void; buildingOptions: SelectOption[]; unitOptions: FilterOption[]; filtersTarget: HTMLElement | null; filtered: boolean; onClearFilters: () => void;
   empty: { title: string; action?: { label: string; onClick: () => void } }; above?: ReactNode;
 }) {
   const toast = useToast();
@@ -258,7 +266,10 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
   }, [technicians, rows]);
 
   const columns = useMemo<Column<Issue>[]>(() => [
-    { key: 'unit', label: 'Unit', value: i => i.unitNumber, text: i => `${i.unitNumber} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120, filter: false,
+    { key: 'building', label: 'Building', value: i => i.buildingId, text: i => i.propertyName, width: 150, hidden: true,
+      filter: { kind: 'select', options: buildingOptions } },
+    { key: 'unit', label: 'Unit', value: i => i.unitId, text: i => `${i.unitNumber} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
+      filter: { kind: 'select', display: 'menu', options: unitOptions },
       render: i => <b className="text-ink">{i.unitNumber}</b> },
     { key: 'issue', label: 'Problem', value: i => i.title, width: 240, filter: false,
       sub: i => <>From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}{i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</>,
@@ -269,8 +280,6 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     { key: 'status', label: 'Status', type: 'status', value: i => statusOf(i).label, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 160 },
     { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, hidden: true,
       filter: { kind: 'select', options: Object.entries(CATEGORY).map(([value, label]) => ({ value, label })) } },
-    { key: 'building', label: 'Building', value: i => i.buildingId, text: i => i.propertyName, width: 150, hidden: true,
-      filter: { kind: 'select', options: buildingOptions } },
     { key: 'assignee', label: 'Assigned to', value: i => i.vendorName ?? 'Unassigned', text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 160,
       filter: { kind: 'select', display: 'menu', options: assigneeOptions },
       render: i => (i.vendorName
@@ -293,7 +302,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     ] : []),
     { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150, filter: false },
     { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150, filter: false },
-  ], [money, buildingOptions, assigneeOptions]);
+  ], [money, buildingOptions, unitOptions, assigneeOptions]);
 
   return (
     <>
