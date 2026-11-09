@@ -30,6 +30,8 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - 18. Stock take rounds with Excel export and gain/loss, and stock adjustment as a numbered, editable document (Houzs #4496 #4498 #4930, #4519 #4913).
 - 19. Payment voucher bill scanning (up to 12 bills) and an AI usage / accuracy page (Houzs pv-extract.ts, payment-request-bill.ts, acc/bill-extract.ts, ai_usage_events); needs ANTHROPIC_API_KEY on the engine worker (owner sets it), AI cost accepted by the owner.
 - Bug left: PO supplier dates 2/3/4 already recorded can be overwritten (Houzs 2e66d226b #5035).
+- Waiting on the owner (ask, do not act): keep or delete project CURVO 1234 (RN-2610-060, GGCOM's; its SO was cleared on 8 Nov); merge or close old PRs #749 (health key checks) and #387 (finance phase 1.5 docs); the four seeded staff accounts (line above in this file); confirm ANTHROPIC_API_KEY is set on the production engine worker before item 19 (the copied scan features need it).
+- Go-live clear (8 Nov): production test data was deleted, so test only on the local system; document numbers were not reset.
 - Owner said no: merge duplicate item codes, cash flow forecast, PO email from staff mailbox, phone SO progress / print DO, cheapest-supplier default, purchase return kinds, GRN post permission / multi-rack, SO Copy as new, accounting bugs and other accounting features.
 - Background reviews (scratchpad, may be gone): per-commit tables of every Houzs commit since c20343f5 and Hookka since 8 Aug; regenerate with `git log` if needed.
 
