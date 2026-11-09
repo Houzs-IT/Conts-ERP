@@ -64,6 +64,8 @@ export type DataGridCompatProps<T> = {
   onRowClick?: (row: T) => void;
   onRowDoubleClick?: (row: T) => void;
   rowStyle?: (row: T) => CSSProperties | undefined;
+  /** Row class, e.g. `dt-row-cancelled` for a cancelled document (lib/scm cancelledRowClass). */
+  getRowClassName?: (row: T) => string | undefined;
   /** Show the first N rows with a "Load more" affordance instead of the whole
    *  set (search / filters / sort still run over everything). */
   initialRowLimit?: number;
@@ -174,6 +176,7 @@ export function DataGridCompat<T>({
   onRowClick,
   onRowDoubleClick,
   rowStyle,
+  getRowClassName,
   onFilteredRowsChange,
   toolbar,
   focusSearchNonce,
@@ -210,6 +213,7 @@ export function DataGridCompat<T>({
       onRowClick={onRowClick}
       onRowDoubleClick={onRowDoubleClick}
       getRowStyle={rowStyle}
+      getRowClassName={getRowClassName}
       initialRowLimit={initialRowLimit}
       onRowReorder={onRowReorder}
       onFilteredRowsChange={onFilteredRowsChange}
