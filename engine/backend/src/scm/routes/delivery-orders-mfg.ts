@@ -877,7 +877,7 @@ async function resolveDoSofaBatchMap(
 /* Conts: the free Workers plan allows 50 outside calls a request (Hookka #1152), and a 60-line DO re-costed with one
    update per line stopped part-way. One call (migration 0250) stamps every line; before 0250 is applied, one per line. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function writeDoItemCosts(sb: any, deliveryOrderId: string, rows: Array<{ id: string } & Record<string, number>>): Promise<void> {
+export async function writeDoItemCosts(sb: any, deliveryOrderId: string, rows: Array<{ id: string; [col: string]: unknown }>): Promise<void> {
   if (rows.length === 0) return;
   const { error } = await sb.rpc('do_restamp_item_costs', { p_do: deliveryOrderId, p_rows: rows });
   if (!error) return;
@@ -949,7 +949,7 @@ export async function restampDoActualCost(sb: any, deliveryOrderId: string) {
        which invents money when the per-unit figure is sub-sen — ledger B5. */
     const allocByLine = allocateAcrossBuckets(items as Array<{ id: string; qty: number }>, aggByBucket,
       (it: any) => `${lineWh.get(it.id) ?? ''}::${it.item_code}::${computeVariantKey(it.item_group ?? null, it.variants ?? null)}::${it.so_item_id ? (batchBySoItem.get(it.so_item_id) ?? '') : ''}`);
-    const costRows: Array<{ id: string } & Record<string, number>> = [];
+    const costRows: Array<{ id: string; [col: string]: unknown }> = [];
     for (const it of items as Array<{
       id: string; so_item_id?: string | null; item_code: string; qty: number;
       item_group?: string | null; variants?: VariantAttrs | null; line_total_sen: number | null;
