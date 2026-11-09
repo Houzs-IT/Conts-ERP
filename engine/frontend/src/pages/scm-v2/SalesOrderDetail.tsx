@@ -142,7 +142,7 @@ import {
   amendmentLineFieldKinds,
   amendmentOldSnapshot,
   amendmentVariantSummaries,
-  visibleAmendmentLines, amendmentLineSig} from '../../vendor/scm/lib/so-amendment-line-diff';
+  visibleAmendmentLines, amendmentLineSig, amendmentRequestedUnitPriceSen, amendmentPriceFields} from '../../vendor/scm/lib/so-amendment-line-diff';
 import { routeField, type AmendmentFieldKind } from '../../vendor/scm/lib/amendment-routing';
 import { fetchSoSlipUrl } from '../../vendor/scm/lib/slip';
 import {
@@ -504,6 +504,8 @@ const draftFromItem = (it: SoItem): SoLineDraft => ({
   uom:            it.uom ?? 'UNIT',
   qty:            it.qty ?? 1,
   unitPriceSen: it.unit_price_sen ?? 0,
+  // The persisted price IS this line's price, 0 included; a product re-pick clears it.
+  priceAuthored: true,
   discountSen:  it.discount_sen ?? 0,
   unitCostSen:  it.unit_cost_sen ?? 0,
   // 2026-06-08 (Loo) — canonicalise POS-vocabulary sofa keys (depth →
@@ -1177,7 +1179,12 @@ export const SalesOrderDetail = () => {
       /* Fall back to the item's own pristine draft when the seed is missing, so a
          line can never be recorded just because its snapshot went absent. */
       const orig = originalDraftsRef.current[it.id] ?? draftFromItem(it);
-      if (amendmentLineSig(draft) === amendmentLineSig(orig)) continue; // nothing amendable moved
+      /* A SEEDED 0 (an unpriced SKU re-pick, priceAuthored false) requests no
+         price: the line keeps its stored one, so the signature and the QTY/SPEC
+         test both read it as the stored price (HC-SO-013490, billed RM 0). */
+      const requestedUnitSen = amendmentRequestedUnitPriceSen(draft);
+      const effective = { ...draft, unitPriceSen: requestedUnitSen ?? orig.unitPriceSen };
+      if (amendmentLineSig(effective) === amendmentLineSig(orig)) continue; // nothing amendable moved
       /* QTY vs SPEC — compared against the same pristine draft the signature
          used, so both sides are canonicalised alike (an `it`-derived fallback
          would compare canonicalised drafts to a raw blob and mis-classify a
@@ -1185,7 +1192,7 @@ export const SalesOrderDetail = () => {
       const qtyOnly =
         draft.itemCode === orig.itemCode
         && JSON.stringify(draft.variants ?? null) === JSON.stringify(orig.variants ?? null)
-        && draft.unitPriceSen === orig.unitPriceSen
+        && effective.unitPriceSen === orig.unitPriceSen
         && draft.qty !== orig.qty;
       out.push({
         salesOrderItemId: it.id,
@@ -1193,7 +1200,8 @@ export const SalesOrderDetail = () => {
         newItemCode: draft.itemCode || undefined,
         newVariants: draft.variants ?? undefined,
         newQty: draft.qty,
-        newUnitPriceSen: draft.unitPriceSen,
+        // Omitted (null on the row) when no price is requested: the apply keeps the stored price.
+        ...amendmentPriceFields(draft),
         /* mig 0280 — the line's remark rides the amendment. Sent ONLY when it
            actually moved: null/absent means "not requested", which is what stops
            the apply from rewriting a remark this session never touched. */
@@ -1754,9 +1762,9 @@ export const SalesOrderDetail = () => {
       uom:            d.uom,
       qty:            d.qty,
       unitPriceSen: d.unitPriceSen,
-      /* This line ALREADY EXISTS: its 0 is the price it carries, so re-sending
-         it must not silently re-price it (a qty-only edit sends the price too). */
-      ...zeroPriceClaim(d.unitPriceSen, true),
+      /* A persisted 0 or a typed 0 is claimed; the 0 a product re-pick seeds
+         (no sell price) is not, so the server keeps the stored price (BUG-63). */
+      ...zeroPriceClaim(d.unitPriceSen, d.priceAuthored === true),
       discountSen:  d.discountSen,
       unitCostSen:  d.unitCostSen,
       variants:       d.variants,

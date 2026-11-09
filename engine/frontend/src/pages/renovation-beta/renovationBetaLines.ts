@@ -174,10 +174,11 @@ export function effectiveEdit(l: ManagedLine, e: LineEdit | undefined): LineEdit
 }
 
 /** The unit price after the edit, by the SO edit's own rule: a picked SKU starts at its catalog sell price
-    (SoLineCard pickProduct), a qty change keeps the line's price. The server re-derives it when the VO applies. */
+    (SoLineCard pickProduct), a qty change keeps the line's price. The server re-derives it when the VO applies.
+    A picked SKU with no sell price (0) keeps the line's price: that 0 is "no price found", not a price anyone typed. */
 export function unitAfter(l: ManagedLine, e: LineEdit | null): number | null {
   if (l.unitPriceSen === null) return null;
-  if (e?.itemCode && e.pickedPriceSen !== undefined) return e.pickedPriceSen;
+  if (e?.itemCode && e.pickedPriceSen !== undefined && e.pickedPriceSen > 0) return e.pickedPriceSen;
   return l.unitPriceSen;
 }
 

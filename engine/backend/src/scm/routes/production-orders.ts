@@ -50,6 +50,7 @@ import { checkReturn, filterProductionTab, holidaySet, materialPoWarehouse, mate
 import { filterProductionList } from '../lib/production-list-read';
 import { PRODUCTION_DOC, issueMaterials, returnMaterial, reverseIssues } from '../lib/renovation-production-stock';
 import { voChangeWaiting } from '../lib/renovation-po-change-guard';
+import { refuseWithoutWriting } from '../lib/no-write-refusal';
 import { heldSoBehindLines, soOnHoldResponse } from '../lib/source-document-gates';
 
 export const productionOrders = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -830,33 +831,35 @@ productionOrders.get('/:id/material-status', async (c) => {
 });
 
 const createProductionOrder = async (c: any) => {
+  /* Every refusal before the header insert writes nothing, so it releases the form's idempotency key: the corrected
+     Save goes through instead of answering idempotency_key_reused until reload (same fix as the SO create, Houzs #5131). */
   let body: Record<string, unknown>;
-  try { body = (await c.req.json()) as Record<string, unknown>; } catch { return c.json({ error: 'invalid_json' }, 400); }
+  try { body = (await c.req.json()) as Record<string, unknown>; } catch { return refuseWithoutWriting(c, { error: 'invalid_json' }, 400); }
   const supplierId = body.supplierId as string | undefined;
-  if (!supplierId) return c.json({ error: 'supplier_id_required' }, 400);
+  if (!supplierId) return refuseWithoutWriting(c, { error: 'supplier_id_required' }, 400);
   const expectedAt = dateOrNull(body.expectedAt) ?? todayMyt();
   const purchaseLocationId = body.purchaseLocationId as string | undefined;
-  if (!purchaseLocationId) return c.json({ error: 'purchase_location_id_required' }, 400);
+  if (!purchaseLocationId) return refuseWithoutWriting(c, { error: 'purchase_location_id_required' }, 400);
   const headerD2 = dateOrNull(body.supplierDeliveryDate2);
   const headerD3 = dateOrNull(body.supplierDeliveryDate3);
   const headerD4 = dateOrNull(body.supplierDeliveryDate4);
   const items = (body.items as Array<Record<string, unknown>> | undefined) ?? [];
   const currency = ((body.currency as string) ?? 'MYR').toUpperCase();
-  if (!VALID_CURRENCIES.has(currency)) return c.json({ error: 'invalid_currency' }, 400);
+  if (!VALID_CURRENCIES.has(currency)) return refuseWithoutWriting(c, { error: 'invalid_currency' }, 400);
   const supabase = c.get('supabase');
   const user = c.get('user');
 
   const groupOf = await skuCategoryResolver(supabase, items, activeCompanyId(c) ?? null);
   const unknownCodes = await unknownProductCodeRefusal(supabase, items.map((it) => ({ code: it.itemCode, kind: it.materialKind })), activeCompanyId(c));
-  if (unknownCodes) return c.json(unknownCodes, 409);
+  if (unknownCodes) return refuseWithoutWriting(c, unknownCodes, 409);
   for (const [i, it] of items.entries()) {
     const parsed = parseLineNumbers({ qty: { value: it.qty }, unitPriceSen: { value: it.unitPriceSen }, discountSen: { value: it.discountSen } });
     if (!parsed.ok) {
       const b = invalidLineNumberBody(parsed.invalid);
-      return c.json({ ...b, reason: `Line ${i + 1}: ${b.reason}` }, 400);
+      return refuseWithoutWriting(c, { ...b, reason: `Line ${i + 1}: ${b.reason}` }, 400);
     }
-    if (!VALID_KINDS.has(it.materialKind as string)) return c.json({ error: 'invalid_material_kind', reason: `Line ${i + 1}` }, 400);
-    if (!it.itemCode || !it.materialName) return c.json({ error: 'item_code_required', reason: `Line ${i + 1}` }, 400);
+    if (!VALID_KINDS.has(it.materialKind as string)) return refuseWithoutWriting(c, { error: 'invalid_material_kind', reason: `Line ${i + 1}` }, 400);
+    if (!it.itemCode || !it.materialName) return refuseWithoutWriting(c, { error: 'item_code_required', reason: `Line ${i + 1}` }, 400);
   }
   let subtotal = 0;
   const itemRows = items.map((it) => {
@@ -919,39 +922,40 @@ productionOrders.post('/', createProductionOrder);
    order has a PO, the SO quota and its guards are the PO's, and migration 0208's trigger makes the order. One PO per SO:
    Works and Built-in are bound to one unit. A PO and an order to anyone but the In-house Production Team do not mix here. */
 productionOrders.post('/from-sos', async (c) => {
+  // Refusals before the first append or insert write nothing and release the key (see createProductionOrder).
   const co = requireActiveCompanyId(c);
-  if (!co.ok) return c.json(co.refusal, 409);
+  if (!co.ok) return refuseWithoutWriting(c, co.refusal, 409);
   const sb = c.get('supabase');
   const b = (await c.req.json().catch(() => ({}))) as {
     picks?: Array<{ soItemId: string; qty: number; supplierId?: string | null }>; targetPoId?: string; expectedAt?: string; purchaseLocationId?: string;
     supplierByCode?: Record<string, string>;
   };
   const picks = (b.picks ?? []).filter((p) => p.soItemId && Number(p.qty) > 0);
-  if (picks.length === 0) return c.json({ error: 'no_picks', message: 'Nothing to convert.' }, 400);
-  if (picks.some((p) => !Number.isFinite(Number(p.qty)) || Math.floor(Number(p.qty)) < 1)) return c.json({ error: 'validation', message: 'Pick at least one whole unit of each line.' }, 422);
+  if (picks.length === 0) return refuseWithoutWriting(c, { error: 'no_picks', message: 'Nothing to convert.' }, 400);
+  if (picks.some((p) => !Number.isFinite(Number(p.qty)) || Math.floor(Number(p.qty)) < 1)) return refuseWithoutWriting(c, { error: 'validation', message: 'Pick at least one whole unit of each line.' }, 422);
   const { data: inhouseRow } = await scopeToCompanyId(sb.from('suppliers').select('id').eq('code', 'INHOUSE'), co.companyId).maybeSingle();
   const inhouseId = (inhouseRow as { id: string } | null)?.id ?? null;
-  if (!inhouseId) return c.json({ error: 'no_inhouse', message: 'Add the In-house Production Team as a supplier first.' }, 409);
+  if (!inhouseId) return refuseWithoutWriting(c, { error: 'no_inhouse', message: 'Add the In-house Production Team as a supplier first.' }, 409);
   const outside = picks.find((p) => (p.supplierId ?? inhouseId) !== inhouseId);
-  if (outside) return c.json({ error: 'not_inhouse', message: 'A production order is for our own team. Raise a PO for an outside supplier.' }, 409);
+  if (outside) return refuseWithoutWriting(c, { error: 'not_inhouse', message: 'A production order is for our own team. Raise a PO for an outside supplier.' }, 409);
   type SoLine = { id: string; doc_no: string; item_code: string; description: string | null; item_group: string | null; variants: unknown; warehouse_id: string | null; line_delivery_date: string | null; qty: number; po_qty_picked: number | null; uom: string | null };
   const { data: soRows, error: soErr } = await scopeToCompanyId(sb.from('mfg_sales_order_items')
     .select('id, doc_no, item_code, description, item_group, variants, warehouse_id, line_delivery_date, qty, po_qty_picked, uom').in('id', picks.map((p) => p.soItemId)), co.companyId);
-  if (soErr) return c.json({ error: 'load_failed', reason: soErr.message }, 500);
+  if (soErr) return refuseWithoutWriting(c, { error: 'load_failed', reason: soErr.message }, 500);
   const soById = new Map(((soRows ?? []) as unknown as SoLine[]).map((r) => [r.id, r]));
   const missingLine = picks.find((p) => !soById.has(p.soItemId));
-  if (missingLine) return c.json({ error: 'so_line_not_found', message: 'A picked Sales Order line no longer exists. Refresh and try again.' }, 404);
+  if (missingLine) return refuseWithoutWriting(c, { error: 'so_line_not_found', message: 'A picked Sales Order line no longer exists. Refresh and try again.' }, 404);
   const { data: binds, error: bindErr } = await readMfgProductBindings<{ item_code: string; supplier_id: string; unit_price_sen: number }>(sb, {
     codes: [...soById.values()].map((r) => r.item_code), companyId: co.companyId, select: 'item_code, supplier_id, unit_price_sen',
   });
-  if (bindErr) return c.json({ error: 'load_failed', reason: bindErr.message }, 500);
+  if (bindErr) return refuseWithoutWriting(c, { error: 'load_failed', reason: bindErr.message }, 500);
   const notOurs = [...soById.values()].find((so) => {
     const own = binds.filter((x) => x.item_code === so.item_code);
     return own.length > 0 && !own.some((x) => x.supplier_id === inhouseId);
   });
-  if (notOurs) return c.json({ error: 'not_inhouse', message: `${notOurs.item_code} is bought from an outside supplier. Raise a PO for it.` }, 409);
+  if (notOurs) return refuseWithoutWriting(c, { error: 'not_inhouse', message: `${notOurs.item_code} is bought from an outside supplier. Raise a PO for it.` }, 409);
   const builtIn = await builtInAmong(sb, co.companyId, [...soById.values()].map((r) => r.item_code));
-  if (builtIn) return c.json(builtInRefusal(builtIn), 409);
+  if (builtIn) return refuseWithoutWriting(c, builtInRefusal(builtIn), 409);
   const toItem = (p: { soItemId: string; qty: number }, so: SoLine) => ({
     materialKind: 'mfg_product', itemCode: so.item_code, materialName: so.description ?? so.item_code, description: so.description, qty: Math.floor(Number(p.qty)),
     unitPriceSen: Number(binds.find((x) => x.item_code === so.item_code && x.supplier_id === inhouseId)?.unit_price_sen ?? 0), variants: so.variants,
@@ -961,12 +965,12 @@ productionOrders.post('/from-sos', async (c) => {
   if (b.targetPoId) {
     const { data: target } = await scopeToCompanyId(sb.from('production_orders').select('id, status, source_po_id').eq('id', b.targetPoId), co.companyId).maybeSingle();
     const order = target as { id: string; status: string; source_po_id: string | null } | null;
-    if (!order) return c.json(NOT_THIS_COMPANY, 404);
-    if (order.status === 'RECEIVED' || order.status === 'CANCELLED') return c.json({ error: 'validation', message: `This production order is ${order.status === 'RECEIVED' ? 'complete' : 'cancelled'}.` }, 409);
+    if (!order) return refuseWithoutWriting(c, NOT_THIS_COMPANY, 404);
+    if (order.status === 'RECEIVED' || order.status === 'CANCELLED') return refuseWithoutWriting(c, { error: 'validation', message: `This production order is ${order.status === 'RECEIVED' ? 'complete' : 'cancelled'}.` }, 409);
     for (const p of picks) {
       const so = soById.get(p.soItemId)!;
       const left = Number(so.qty) - Number(so.po_qty_picked ?? 0);
-      if (Math.floor(Number(p.qty)) > left) return c.json({ error: 'qty_exceeds_remaining', message: `${so.item_code}: only ${left} of this Sales Order line is left to order.` }, 409);
+      if (Math.floor(Number(p.qty)) > left) return refuseWithoutWriting(c, { error: 'qty_exceeds_remaining', message: `${so.item_code}: only ${left} of this Sales Order line is left to order.` }, 409);
     }
     if (order.source_po_id) {
       let appended = 0;
