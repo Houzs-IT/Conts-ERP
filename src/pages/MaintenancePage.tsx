@@ -47,6 +47,7 @@ interface Issue {
   /** Migration 0126: job type, severity, parts and due date; approvalStatus is Needs owner approval / Approved / Not needed. */
   jobType?: JobType; severity?: 'minor' | 'major'; dueOn?: string | null; needsParts?: boolean; partsArrivedAt?: string | null;
   approvalStatus?: 'needed' | 'approved' | 'not_needed';
+  supportRequestedAt?: string | null; supportNote?: string | null;
 }
 type JobType = 'urgent' | 'pass_key' | 'normal';
 const JOB_TYPE: Record<JobType, string> = { urgent: 'Urgent', pass_key: 'Pass key', normal: 'Normal' };
@@ -56,12 +57,13 @@ const APPROVAL: Record<string, { label: string; tone: AnyTone }> = {
 };
 const typeOf = (i: Issue): JobType => i.jobType ?? (i.urgency === 'urgent' ? 'urgent' : 'normal');
 /** Approved, but the parts it waits for have not come: still hidden from the technicians. */
+const needsSupport = (i: Issue): boolean => i.state !== 'resolved' && !i.endedAt && !!i.supportRequestedAt;
 const waitingParts = (i: Issue) => i.state !== 'resolved' && i.approvalStatus === 'approved' && !!i.needsParts && !i.partsArrivedAt;
 /** `billing` is false until migration 0108 is applied; billing date, collected and contractor payment are then hidden. */
 interface Payload { billing?: boolean; jobTypes?: boolean; data: Issue[] }
 interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string; byteSize?: number }
 
-type Tab = 'open' | 'pass_key' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
+type Tab = 'open' | 'pass_key' | 'support' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
 const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
 const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office', booking: 'Booking' };
@@ -78,6 +80,7 @@ function statusOf(i: Issue): { label: string; tone: AnyTone } {
   if (i.state === 'resolved') return { label: i.finalAmount ? `Done · ${PAYER_SHORT[i.chargeTo]}` : 'Done', tone: 'success' };
   if (awaitingOwner(i)) return { label: 'Awaiting owner approval', tone: 'warning' };
   if (waitingParts(i)) return { label: 'Waiting for parts', tone: 'warning' };
+  if (needsSupport(i)) return { label: 'Needs support', tone: 'critical' };
   if (i.state === 'in_progress' || i.startedAt) return { label: i.endedAt ? 'Repair finished' : 'In progress', tone: 'info' };
   if (i.vendorName) return { label: 'Assigned', tone: 'neutral' };
   return { label: 'New', tone: 'neutral' };
@@ -116,9 +119,10 @@ export default function MaintenancePage() {
   const openTab = open.filter(i => !awaitingOwner(i));
   const urgent = openTab.filter(i => typeOf(i) === 'urgent').length;
   const passKeys = openTab.filter(i => typeOf(i) === 'pass_key');
+  const support = openTab.filter(needsSupport);
   const monthCost = issues.filter(i => i.state === 'resolved' && (i.resolvedAt ?? '').slice(0, 7) === monthStart).reduce((s, i) => s + (i.finalAmount ?? 0), 0);
 
-  const base = tab === 'open' ? openTab : tab === 'pass_key' ? passKeys : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
+  const base = tab === 'open' ? openTab : tab === 'pass_key' ? passKeys : tab === 'support' ? support : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
   const ql = q.trim().toLowerCase();
   const rows = base.filter(i => (!ql || `${i.unitNumber} ${i.propertyName} ${i.title} ${i.vendorName ?? ''}`.toLowerCase().includes(ql)))
     // Open jobs in the order they are worked: Urgent, Pass key, then Normal one by one by due date (the day reported when none).
@@ -145,7 +149,7 @@ export default function MaintenancePage() {
   const historySpend = tab === 'history' ? rows.reduce((s, i) => s + (i.finalAmount ?? 0), 0) : 0;
 
   const sub = data
-    ? `${openTab.length} open · ${urgent} urgent · ${approval.length} awaiting owner approval${money ? ` · this month ${rm(monthCost)}` : ''}`
+    ? `${openTab.length} open · ${urgent} urgent${support.length ? ` · ${support.length} need support` : ''} · ${approval.length} awaiting owner approval${money ? ` · this month ${rm(monthCost)}` : ''}`
     : 'Maintenance jobs on every unit';
 
   async function createSku(input: CatalogInput) {
@@ -166,7 +170,7 @@ export default function MaintenancePage() {
         above={tab === 'history' && rows.length > 0 && money ? (
           <div className="text-copy text-muted-ink py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
         ) : undefined}
-        empty={{ title: tab === 'pass_key' ? 'No pass key handovers coming up.' : tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
+        empty={{ title: tab === 'pass_key' ? 'No pass key handovers coming up.' : tab === 'support' ? 'No technician is waiting for support.' : tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
           action: tab === 'open' ? { label: 'Add maintenance job', onClick: () => setCreating(true) } : undefined }} />
     </>
   );
@@ -200,6 +204,7 @@ export default function MaintenancePage() {
             <PillTabs value={tab} onChange={t => { setTab(t); setSelected(null); }} tabs={[
               { value: 'open', label: 'Open', count: data ? openTab.length : undefined },
               ...(data?.jobTypes ? [{ value: 'pass_key' as const, label: 'Pass key', count: passKeys.length }] : []),
+              { value: 'support', label: 'Needs support', count: data ? support.length : undefined },
               { value: 'approval', label: 'Awaiting owner approval', count: data ? approval.length : undefined },
               { value: 'done', label: 'Done' },
               { value: 'history', label: 'History' },
@@ -531,6 +536,15 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
             {i.ownerHasLogin && <Button size="sm" variant="tertiary" loading={busy === 'resend'}
               onClick={() => void act('resend', () => api.post(`/maintenance/issues/${i.id}/request-approval`, {}), 'Sent to the owner again.')}>Send again</Button>}
           </div>}
+        </div>
+      )}
+
+      {needsSupport(i) && (
+        <div className="rounded-control bg-critical-bg text-critical p-3 flex flex-col gap-2">
+          <span className="font-semibold">{i.vendorName ?? 'The technician'} needs support · {stamp(i.supportRequestedAt ?? '')}</span>
+          <span className="whitespace-pre-wrap [overflow-wrap:anywhere]">Tried: {i.supportNote}</span>
+          <Button size="sm" variant="secondary" className="self-start max-sm:min-h-11" loading={busy === 'support'}
+            onClick={() => void act('support', () => api.del(`/maintenance/issues/${i.id}/support`), 'Support request cleared.')}>Support given</Button>
         </div>
       )}
 

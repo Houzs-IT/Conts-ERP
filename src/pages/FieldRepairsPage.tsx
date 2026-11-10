@@ -25,14 +25,20 @@ interface Repair {
   title: string; detail: string | null; category: string; urgency: string; jobType?: string; dueOn?: string | null; state: string; source: string;
   reportedAt: string; reporter: string | null; assigneeName: string | null;
   startedAt: string | null; endedAt: string | null; resolvedAt: string | null; blocksUnit: boolean; waitingForOwner: boolean;
+  supportRequestedAt?: string | null; supportNote?: string | null;
   beforeCount: number; afterCount: number; documentCount: number;
   windows: { id: string; startsAt: string; endsAt: string; note: string | null; guestStaying: boolean }[];
 }
 interface PoolBuilding { id: string; name: string; open: number }
-interface ListPayload { mine: Repair[]; open: Repair[]; mayPick: boolean; buildings?: PoolBuilding[]; maxLimit?: number }
+interface ListPayload { mine: Repair[]; open: Repair[]; team?: Repair[]; mayPick: boolean; buildings?: PoolBuilding[]; maxLimit?: number }
 interface UnitGroup { unitId: string; unitNumber: string; propertyName: string; jobs: Repair[] }
+interface TechnicianGroup { name: string; jobs: Repair[] }
+type ListTab = 'all' | 'mine' | 'open' | 'team';
 
 const POOL_PAGE = 200;
+const UNIT_SEARCH_DELAY_MS = 300;
+
+const unitKeyOf = (text: string): string => text.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
 
 function groupByUnit(repairs: Repair[]): UnitGroup[] {
   const groups = new Map<string, UnitGroup>();
@@ -42,6 +48,17 @@ function groupByUnit(repairs: Repair[]): UnitGroup[] {
     groups.set(repair.unitId, group);
   }
   return [...groups.values()];
+}
+
+function groupByTechnician(repairs: Repair[]): TechnicianGroup[] {
+  const groups = new Map<string, TechnicianGroup>();
+  for (const repair of repairs) {
+    const name = repair.assigneeName?.trim() ?? '';
+    const group = groups.get(name.toLowerCase()) ?? { name, jobs: [] };
+    group.jobs.push(repair);
+    groups.set(name.toLowerCase(), group);
+  }
+  return [...groups.values()].sort((first, second) => first.name.localeCompare(second.name));
 }
 interface FileDoc { id: string; kind: string; url: string; fileName: string; byteSize: number; uploadedAt: string; uploader: string | null }
 interface Detail {
@@ -63,8 +80,16 @@ function progress(r: Repair): string {
 export default function FieldRepairsPage({ above, linkRepair, onLinked }: { above?: ReactNode; linkRepair?: string | null; onLinked?: () => void }) {
   const [building, setBuilding] = useState('');
   const [category, setCategory] = useState('');
+  const [unitSearch, setUnitSearch] = useState('');
+  const [unitKey, setUnitKey] = useState('');
   const [limit, setLimit] = useState(POOL_PAGE);
-  const query = new URLSearchParams({ ...(building ? { building } : {}), ...(category ? { category } : {}), ...(limit > POOL_PAGE ? { limit: String(limit) } : {}) }).toString();
+  useEffect(() => {
+    const nextKey = unitKeyOf(unitSearch);
+    if (nextKey === unitKey) return;
+    const timer = window.setTimeout(() => { setUnitKey(nextKey); setLimit(POOL_PAGE); }, UNIT_SEARCH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [unitSearch, unitKey]);
+  const query = new URLSearchParams({ ...(building ? { building } : {}), ...(category ? { category } : {}), ...(unitKey ? { unit: unitKey } : {}), ...(limit > POOL_PAGE ? { limit: String(limit) } : {}) }).toString();
   const { data, loading, error, reload } = useApi<ListPayload>(`/field/repairs${query ? `?${query}` : ''}`);
   // A new notice, the phone coming back to the app, or a minute passing reloads the list; a repair that just arrived carries a New mark.
   useFieldRefresh(reload);
@@ -72,7 +97,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
     const t = window.setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 60_000);
     return () => window.clearInterval(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const [tab, setTab] = useState<'all' | 'mine' | 'open'>('all');
+  const [tab, setTab] = useState<ListTab>('all');
   const [open, setOpen] = useState<string | null>(null);
   // A notice tapped in the bell: open that repair (the sheet loads it by id and says so if it is not theirs).
   useEffect(() => { if (linkRepair) { setTab('all'); setOpen(linkRepair); onLinked?.(); } }, [linkRepair]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -81,12 +106,14 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const toast = useToast();
   const t = usePortalText();
   const tr = t.repairs;
-  const isShown = (repair: Repair): boolean => (!building || repair.buildingId === building) && (!category || repair.category === category);
+  const isShown = (repair: Repair): boolean => (!building || repair.buildingId === building) && (!category || repair.category === category)
+    && (!unitKey || unitKeyOf(repair.unitNumber).includes(unitKey));
   const mine = (data?.mine ?? []).filter(isShown);
   const todo = mine.filter(r => r.state !== 'resolved' && !r.endedAt);
   const finished = mine.filter(r => r.state === 'resolved' || r.endedAt);
   const pool = (data?.open ?? []).filter(isShown);
-  const groups = [
+  const team = (data?.team ?? []).filter(isShown);
+  const groups = tab === 'team' ? [] : [
     ...groupByUnit(tab === 'open' ? [] : todo).map(group => ({ group, offer: false })),
     ...groupByUnit(tab === 'mine' ? [] : pool).map(group => ({ group, offer: true })),
   ];
@@ -123,9 +150,16 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
             { value: 'all', label: <>{tr.all} <span className="text-muted-ink tabular-nums">{todo.length + openTotal}</span></> },
             { value: 'mine', label: <>{tr.mine} <span className="text-muted-ink tabular-nums">{todo.length}</span></> },
             { value: 'open', label: <>{tr.open} <span className="text-muted-ink tabular-nums">{openTotal}</span></> },
+            { value: 'team', label: <>{tr.team} <span className="text-muted-ink tabular-nums">{team.length}</span></> },
           ]} />
         )}
       </div>
+      {data && (
+        <FormRow label={tr.unitSearch}>
+          <input type="search" enterKeyHint="search" autoComplete="off" className={cx(INPUT, 'h-11 text-[16px]')} value={unitSearch}
+            onChange={e => setUnitSearch(e.target.value)} placeholder={tr.unitSearchPh} maxLength={40} />
+        </FormRow>
+      )}
       {buildingOptions.length > 1 && (
         <FormRow label={tr.building}>
           <select className={cx(INPUT, 'h-11')} value={building} onChange={e => chooseBuilding(e.target.value)}>
@@ -145,9 +179,12 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
       <Button size="touch" variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setReporting(true)}>{tr.reportProblem}</Button>
       {error && <StaleBanner message={error} onRetry={reload} />}
       {loading && !data ? <><Skeleton height={120} /><Skeleton height={120} /></>
+        : tab === 'team' ? <TeamList jobs={team} />
         : groups.length === 0 && (tab === 'open' || finished.length === 0)
-          ? <EmptyState icon="Wrench" title={tab === 'open' ? tr.noOpen : tr.noMine}
-            body={tab === 'open' ? tr.noOpenBody : data?.mayPick ? tr.noMineBodyPick : tr.noMineBody} />
+          ? unitKey
+            ? <EmptyState icon="Search" title={tr.noUnitMatch(unitSearch.trim())} body={tr.noUnitMatchBody} />
+            : <EmptyState icon="Wrench" title={tab === 'open' ? tr.noOpen : tr.noMine}
+              body={tab === 'open' ? tr.noOpenBody : data?.mayPick ? tr.noMineBodyPick : tr.noMineBody} />
           : (
             <div className="flex flex-col gap-2.5">
               {groups.map(({ group, offer }) => (
@@ -214,7 +251,24 @@ function UnitGroupCard({ group, offer, fresh, picking, onPickAll, onOpen }: {
   );
 }
 
-function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: boolean; fresh?: boolean; inGroup?: boolean; onOpen: () => void }) {
+function TeamList({ jobs }: { jobs: Repair[] }) {
+  const tr = usePortalText().repairs;
+  if (jobs.length === 0) return <EmptyState icon="Users" title={tr.noTeam} body={tr.noTeamBody} />;
+  return (
+    <div className="flex flex-col gap-2.5">
+      {groupByTechnician(jobs).map(technician => (
+        <section key={technician.name.toLowerCase()} aria-label={technician.name} className="flex flex-col gap-2.5">
+          <h2 className="m-0 mt-2 text-[16px] font-semibold flex items-center gap-2">
+            <Icon name="UserRound" size="sm" />{technician.name}<span className="text-copy text-muted-ink font-normal">· {tr.jobs(technician.jobs.length)}</span>
+          </h2>
+          {technician.jobs.map(r => <RepairCard key={r.id} r={r} />)}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: boolean; fresh?: boolean; inGroup?: boolean; onOpen?: () => void }) {
   const t = usePortalText();
   const tr = t.repairs;
   const { short, stamp } = usePortalDates();
@@ -227,11 +281,11 @@ function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: b
       {r.jobType === 'pass_key' && r.state !== 'resolved' && <StatusBadge tone="info">{tr.passKey}</StatusBadge>}
     </>
   );
-  return (
-    <button type="button" onClick={onOpen}
-      className={cx('w-full text-left bg-card flex flex-col gap-1.5 cursor-pointer min-h-[44px]', inGroup
-        ? 'px-4 py-3 [border-top:1px_solid_var(--color-line)] hover:bg-muted'
-        : cx('rounded-card border border-solid p-4', isUrgent ? 'border-danger-line' : fresh ? 'border-info-line' : 'border-line'))}>
+  const className = cx('w-full box-border text-left bg-card flex flex-col gap-1.5 min-h-[44px]', inGroup
+    ? 'px-4 py-3 [border-top:1px_solid_var(--color-line)]'
+    : cx('rounded-card border border-solid p-4', isUrgent ? 'border-danger-line' : fresh ? 'border-info-line' : 'border-line'));
+  const content = (
+    <>
       {inGroup ? (
         <span className="flex items-start gap-2">
           <span className="flex-1 min-w-0 text-copy text-ink [overflow-wrap:anywhere]">{r.title}</span>
@@ -252,8 +306,11 @@ function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: b
       <span className="flex gap-1.5 flex-wrap pt-0.5">
         {offer ? <StatusBadge tone="gold">{tr.openToPick}</StatusBadge> : <StatusBadge tone={statusOf('maintenance', progress(r)).tone} label={wordFor(t.repairStatus, progress(r))} dot />}
       </span>
-    </button>
+    </>
   );
+  return onOpen
+    ? <button type="button" onClick={onOpen} className={cx(className, 'cursor-pointer', inGroup && 'hover:bg-muted')}>{content}</button>
+    : <div className={className}>{content}</div>;
 }
 
 /* ---------- one job, full screen ---------- */
@@ -272,6 +329,8 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   const [purchase, setPurchase] = useState<{ id: string; file: File; amountSen: number | null; spendDate: string | null } | null>(null);
   const [note, setNote] = useState('');
   const [doneNote, setDoneNote] = useState('');
+  const [isAskingSupport, setIsAskingSupport] = useState(false);
+  const [supportNote, setSupportNote] = useState('');
   const [confirm, ask] = useConfirm();
   const j = d.data?.job;
   const mine = !!d.data?.mine;
@@ -361,14 +420,37 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
         )}
       </div>
     );
+  } else if (j && working && !j.endedAt && isAskingSupport) {
+    footer = (
+      <div className="flex flex-col gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-copy font-semibold">{tr.supportTitle}</span>
+          <span className="text-meta text-muted-ink">{tr.supportHint}</span>
+          <textarea className={cx(TEXTAREA, 'text-[16px]')} value={supportNote} onChange={e => setSupportNote(e.target.value)} placeholder={tr.supportPh} maxLength={1000} autoFocus />
+        </label>
+        <Button size="touch" variant="primary" className="w-full" icon={<Icon name="Send" size="sm" />} loading={busy === 'support'}
+          disabled={!supportNote.trim()} disabledReason={tr.supportNeedNote}
+          onClick={() => void act('support', () => api.post(`/maintenance/issues/${id}/support`, { note: supportNote.trim() }), tr.supportSent, tr.supportSentBody).then(ok => { if (ok) { setIsAskingSupport(false); setSupportNote(''); } })}>{tr.supportSend}</Button>
+        <Button size="touch" variant="ghost" className="w-full" onClick={() => setIsAskingSupport(false)}>{tr.form.cancel}</Button>
+      </div>
+    );
   } else if (j && working && !j.endedAt) {
     footer = (
       <div className="flex flex-col gap-2">
+        {j.supportRequestedAt && (
+          <div className="rounded-control bg-warning-bg text-warning p-3 flex flex-col gap-1">
+            <span>{tr.supportAsked(stamp(j.supportRequestedAt))}</span>
+            {j.supportNote && <span className="text-meta whitespace-pre-wrap [overflow-wrap:anywhere]">{j.supportNote}</span>}
+          </div>
+        )}
         <input className={cx(INPUT, 'h-11')} value={doneNote} onChange={e => setDoneNote(e.target.value)} placeholder={tr.whatYouDid} aria-label={tr.whatYouDidLabel} maxLength={1000} />
         <Button size="touch" variant="primary" className="w-full" icon={<Icon name="CircleCheck" size="sm" />} loading={busy === 'end'}
           disabled={counts.after === 0} disabledReason={tr.needAfter}
           onClick={() => void act('end', () => api.post(`/maintenance/issues/${id}/end`, { note: doneNote.trim() || undefined }), tr.markedDone, tr.markedDoneBody)}>{tr.markDone}</Button>
         {counts.after === 0 && <span className="text-meta text-muted-ink text-center">{tr.needAfterHint}</span>}
+        {!j.supportRequestedAt && (
+          <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="LifeBuoy" size="sm" />} onClick={() => setIsAskingSupport(true)}>{tr.needSupport}</Button>
+        )}
       </div>
     );
   } else if (j && working && j.endedAt) {
