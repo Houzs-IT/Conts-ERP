@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { Star } from 'lucide-react';
 import Icon from '../../components/Icon';
 import { cx } from '../../lib/design-tokens';
 import { categoryLabel, categoryFlagged, scaleText, type Scale } from '../../lib/reviewRules';
@@ -14,11 +15,16 @@ export const CATEGORY_ICON: Readonly<Record<string, string>> = {
   staff: 'Users', facilities: 'Building2', comfort: 'Sofa', services: 'BadgeCheck',
 };
 
+/** One filled star, sized by the surrounding text (1em). */
+export function StarMark({ className }: { className?: string }) {
+  return <Star aria-hidden size="1em" fill="currentColor" strokeWidth={0} className={cx('inline-block flex-none', className)} />;
+}
+
 export function Stars({ n, max = 5, size = 'sm', label }: { n: number; max?: 5; size?: 'xs' | 'sm' | 'base'; label?: string }) {
   const whole = Math.round(n);
   return (
     <span className={cx('inline-flex gap-px leading-none', size === 'xs' ? 'text-[11px]' : size === 'sm' ? 'text-[14px]' : 'text-[19px]')} role="img" aria-label={label ?? `${n} out of ${max} stars`}>
-      {Array.from({ length: max }, (_, i) => <span key={i} aria-hidden className={i < whole ? 'text-ink' : 'text-line'}>★</span>)}
+      {Array.from({ length: max }, (_, i) => <StarMark key={i} className={i < whole ? 'text-ink' : 'text-line'} />)}
     </span>
   );
 }
