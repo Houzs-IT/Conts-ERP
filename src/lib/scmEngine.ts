@@ -36,6 +36,8 @@ export const LEDGER_SCREENS: readonly LedgerScreen[] = [
   { slug: 'rental-unit-costs', label: 'Rental unit costs', enginePath: '/scm/rental-unit-costs' },
   { slug: 'department-spend', label: 'Spending by department', enginePath: '/scm/department-spend' },
   { slug: 'renovation-projects', label: 'Renovation projects', enginePath: '/scm/reno-projects' },
+  // What the AI bill reader costs and how often it answers (TODO item 19, Houzs AI Usage).
+  { slug: 'ai-usage', label: 'AI usage', enginePath: '/scm/ai-usage' },
 ];
 
 function ledgerPaths(prefix: string): Record<string, string> {

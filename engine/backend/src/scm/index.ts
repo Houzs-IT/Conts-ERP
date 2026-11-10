@@ -48,6 +48,7 @@ import { purchaseInvoices } from "./routes/purchase-invoices";
 import { purchaseInvoicesListEnrichment } from "./routes/purchase-invoices-list-enrichment";
 import { purchaseInvoiceExports } from "./routes/purchase-invoice-exports";
 import { paymentVouchers } from "./routes/payment-vouchers";
+import { aiUsageRoutes } from "./routes/ai-usage";
 import { otherDebtors } from "./routes/other-debtors";
 import { apInvoices } from "./routes/ap-invoices";
 import { creditNotes } from "./routes/credit-notes";
@@ -630,6 +631,7 @@ scm.route("/stock-takes", stockTakes);
 scm.use("/accounting/*", scmAreaGuard("scm.finance.accounting"));
 scm.use("/accounting/*", requireLedgerAccess({ except: ACCOUNTING_OPEN_PATHS })); // Conts: the Ledger area
 scm.route("/accounting", officialReceiptAttachments); // photos and documents (mig 0119)
+scm.route("/accounting", aiUsageRoutes); // AI usage: what the bill reader costs (mig 0298)
 scm.route("/accounting", accounting);
 // Payment Vouchers — standalone AP cash-out doc (port of 2990 0189/0202, Phase
 // 1-B MYR). A finance document that posts a JE to the GL + can settle PIs, so it

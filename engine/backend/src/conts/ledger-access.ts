@@ -37,9 +37,10 @@ export const ACCOUNTING_OPEN_PATHS: readonly OpenPath[] = [
 ];
 
 /** Under /payment-vouchers, what other screens use without the Ledger: the AP invoice bill scan
- *  (reads a bill, writes nothing) and the refund line on the sales order payment panel. */
+ *  (reads a bill, or cuts a PDF into its pages; writes nothing) and the refund line on the sales order payment panel. */
 export const PAYMENT_VOUCHER_OPEN_PATHS: readonly OpenPath[] = [
   { method: "POST", path: /\/payment-vouchers\/extract$/ },
+  { method: "POST", path: /\/payment-vouchers\/split-pdf$/ },
   { method: "GET", path: /\/payment-vouchers\/refund-source$/ },
 ];
 
