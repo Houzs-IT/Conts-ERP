@@ -35,11 +35,15 @@ const figure = (v: number | null) => (v == null ? <span className="text-muted-in
 export function CleaningPriceTable({ onSaved }: { onSaved: () => void }) {
   const q = useApi<Payload>('/housekeeping/clean-prices');
   const [editing, setEditing] = useState(false);
+  // Prices already set for a later date can be looked at before they apply (chew: prices may change later).
+  const [showNext, setShowNext] = useState(false);
   const d = q.data;
   if (q.loading && !d) return <Skeleton height={260} />;
   if (q.error && !d) return <StaleBanner message={q.error} onRetry={q.reload} />;
   if (!d?.byCount || !d.rows) return null;
   const fields: Field[] = d.guestPrices ? ['owner', 'guest', 'cost'] : ['owner', 'cost'];
+  const next = showNext ? d.next ?? null : null;
+  const shown = next ? next.rows : d.rows;
   return (
     <section className="bg-card rounded-card border border-solid border-line p-4 flex flex-col gap-3">
       <div className="flex items-start gap-3 flex-wrap">
@@ -48,14 +52,22 @@ export function CleaningPriceTable({ onSaved }: { onSaved: () => void }) {
           <p className="m-0 text-meta text-muted-ink">
             {d.since ? `In force since ${dayText(d.since)}. ` : ''}King, Queen and Single beds count; floor mattresses and sofa beds do not. A unit's own prices, below, win over the table.
           </p>
-          {d.next && <p className="m-0 mt-1 text-meta text-gold-ink">New prices from {dayText(d.next.effectiveFrom)}.</p>}
+          {!d.since && !d.next && <p className="m-0 mt-1 text-meta text-warning">No prices yet. Until the table has prices in force, every unit keeps its own cleaning price.</p>}
           {!d.guestPrices && <p className="m-0 mt-1 text-meta text-muted-ink">The guest's charge shows once its database update (migration 0257) is applied.</p>}
         </div>
         {d.mayEdit && !editing && <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Change prices</Button>}
       </div>
+      {d.next && !editing && (
+        <div role="tablist" aria-label="Which prices" className="flex gap-1 flex-wrap">
+          {[{ isNext: false, label: 'In force now' }, { isNext: true, label: `From ${dayText(d.next.effectiveFrom)}` }].map(t => (
+            <button key={t.label} type="button" role="tab" aria-selected={showNext === t.isNext} onClick={() => setShowNext(t.isNext)}
+              className={cx('h-9 px-3 rounded-control border border-solid text-copy cursor-pointer', showNext === t.isNext ? 'bg-black text-white border-black' : 'bg-card text-ink border-line')}>{t.label}</button>
+          ))}
+        </div>
+      )}
       {editing && d.today
-        ? <TableEditor rows={d.rows} fields={fields} today={d.today} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); q.reload(); onSaved(); }} />
-        : <PriceGrid fields={fields} first="Beds" rows={d.rows.map(r => ({ key: r.key, label: r.label, basic: r.basic, deep: r.deep }))} />}
+        ? <TableEditor rows={shown} fields={fields} today={d.today} start={next?.effectiveFrom ?? d.today} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); setShowNext(false); q.reload(); onSaved(); }} />
+        : <PriceGrid fields={fields} first="Beds" rows={shown.map(r => ({ key: r.key, label: r.label, basic: r.basic, deep: r.deep }))} />}
       <div className="flex flex-col gap-1.5 mt-1">
         <h3 className="m-0 text-copy font-semibold">Units with their own price</h3>
         {d.own && d.own.length > 0
@@ -104,11 +116,11 @@ function PriceGrid({ fields, first, rows, cell }: {
   );
 }
 
-function TableEditor({ rows, fields, today, onClose, onSaved }: { rows: Row[]; fields: Field[]; today: string; onClose: () => void; onSaved: () => void }) {
+function TableEditor({ rows, fields, today, start: startDay, onClose, onSaved }: { rows: Row[]; fields: Field[]; today: string; start: string; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const start = useMemo(() => Object.fromEntries(rows.map(r => [r.key, { basic: { ...r.basic }, deep: { ...r.deep } }])), [rows]);
   const [grid, setGrid] = useState<Record<string, { basic: Figures; deep: Figures }>>(start);
-  const [from, setFrom] = useState(today);
+  const [from, setFrom] = useState(startDay);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const changed = rows.filter(r => SIDES.some(([side]) => fields.some(f => grid[r.key][side][f] !== start[r.key][side][f])));
