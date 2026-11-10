@@ -9,7 +9,7 @@
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
-import { ledgerSetupStatus } from '../src/conts/ledger-setup-status';
+import { ledgerSetupStatus, OPEN_BALANCE_ROLES } from '../src/conts/ledger-setup-status';
 import { accountRolePut, setupStatusHandler } from '../src/scm/routes/accounting';
 import { DEFAULT_ROLE_CODES } from '../src/acc/rules';
 
@@ -233,6 +233,16 @@ describe('the routes, after review', () => {
       { company_id: CO, account_code: DEFAULT_ROLE_CODES.BANK_DEFAULT, debit_sen: 50_000, credit_sen: 0, posted: true, reversed: false, reversed_by_je: null, entry_date: '2026-10-01' },
     ] });
     expect((await put(app(sb), 'BANK_DEFAULT', { accountCode: '310-0020' })).status).toBe(200);
+  });
+
+  /* The paying bank is the same kind of rule as the receiving one: it only says where new payouts start. Both or
+     neither are confirm-guarded — never one without the other. */
+  test('moving the paying bank needs no confirmation either, and it is guarded exactly like the receiving bank', async () => {
+    expect(OPEN_BALANCE_ROLES.includes('BANK_PAY_DEFAULT')).toBe(OPEN_BALANCE_ROLES.includes('BANK_DEFAULT'));
+    const sb = world({ accounts: chart().concat([acct('310-0020', { acc_money: true })]), v_gl_entries: [
+      { company_id: CO, account_code: DEFAULT_ROLE_CODES.BANK_PAY_DEFAULT, debit_sen: 0, credit_sen: 50_000, posted: true, reversed: false, reversed_by_je: null, entry_date: '2026-10-01' },
+    ] });
+    expect((await put(app(sb), 'BANK_PAY_DEFAULT', { accountCode: '310-0020' })).status).toBe(200);
   });
 
   test('a prototype key is not a posting rule', async () => {

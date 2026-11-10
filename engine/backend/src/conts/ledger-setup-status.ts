@@ -27,8 +27,8 @@ export const RETIRED_ROLES: readonly AccountRole[] = ["SALES", "INVENTORY", "CLO
 
 /** Rules whose account holds open balances — what customers and suppliers owe, money waiting in a clearing, deposits,
     stock. Moving one leaves those balances on the old account while new postings go to the new one, so the move is
-    confirmed first. The default bank and the drawer are not here: each bank keeps its own money, and moving the
-    default only changes where new vouchers start. */
+    confirmed first. The default banks (receiving BANK_DEFAULT, paying BANK_PAY_DEFAULT) and the drawer are not here:
+    each bank keeps its own money, and moving a default only changes where new receipts or vouchers start. */
 export const OPEN_BALANCE_ROLES: readonly AccountRole[] = [
   "AR", "AR_OTHER", "AP", "AP_OTHER", "TRANSIT_EDC", "TRANSIT_ONLINE", "CUSTOMER_DEPOSITS",
   "INVENTORY_CUSTOMER", "INVENTORY_DISPLAY", "INVENTORY_SERVICE",
