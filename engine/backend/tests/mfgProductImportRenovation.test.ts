@@ -61,9 +61,14 @@ function harness() {
     await next();
   });
   app.post('/import', batchImportMfgProductsHandler as never);
-  const run = async (rows: Row[]) => {
-    const res = await app.request('/import', { method: 'POST', body: JSON.stringify({ rows }), headers: { 'content-type': 'application/json' } });
-    return (await res.json()) as { upserted: number; failures: Array<{ code: string; reason: string }> };
+  const run = async (rows: Row[], extra: Row = {}) => {
+    const res = await app.request('/import', { method: 'POST', body: JSON.stringify({ rows, ...extra }), headers: { 'content-type': 'application/json' } });
+    return (await res.json()) as {
+      upserted: number; unchanged?: number; failures: Array<{ code: string; reason: string }>;
+      counts?: { new: number; changed: number; unchanged: number };
+      plan?: Array<{ code: string; status: string; changes: Array<{ field: string; from: unknown; to: unknown }> }>;
+      modelsToMove?: Array<{ modelCode: string }>;
+    };
   };
   const sku = (code: string) => tables.mfg_products.find((r) => r.code === code);
   return { run, sku, tables };
@@ -167,5 +172,65 @@ describe('POST /mfg-products/batch-import — renovation columns', () => {
     const out = await run([{ code: 'HK-1', status: 'Pending' }]);
     expect(out.failures[0].reason).toMatch(/Active or Inactive/);
     expect(sku('HK-1')!.status).toBe('ACTIVE');
+  });
+});
+
+describe('POST /mfg-products/batch-import — preview (dryRun) and unchanged rows', () => {
+  test('the preview says new / changed / unchanged per row and writes nothing', async () => {
+    const { run, sku, tables } = harness();
+    tables.mfg_products[0].base_price_sen = 10000;
+    const before = JSON.stringify(tables.mfg_products);
+    const out = await run([
+      { code: 'EL-9', name: 'Lighting point', category: 'Works', sub_category: 'Electrical', uom: 'point' },
+      { code: 'HK-1', name: 'Hacking', base_price_sen: 12500, uom: 'LOT' },
+      { code: 'WR-1', name: 'Wardrobe', status: 'inactive' },
+    ], { dryRun: true });
+    expect(out.counts).toEqual({ new: 1, changed: 1, unchanged: 1 });
+    expect(out.plan!.map((p) => [p.code, p.status])).toEqual([['EL-9', 'new'], ['HK-1', 'changed'], ['WR-1', 'unchanged']]);
+    expect(out.plan![1].changes).toEqual([{ field: 'base_price_sen', from: 10000, to: 12500 }]);
+    expect(JSON.stringify(tables.mfg_products)).toBe(before);
+    expect(sku('EL-9')).toBeUndefined();
+  });
+
+  test('the preview still reports a row the import would refuse', async () => {
+    const { run } = harness();
+    const out = await run([{ code: 'X-1', name: 'x', category: 'WORKS' }], { dryRun: true });
+    expect(out.counts).toEqual({ new: 0, changed: 0, unchanged: 0 });
+    expect(out.failures[0].reason).toMatch(/sub-category/i);
+  });
+
+  test('the preview names a model that a category change would move', async () => {
+    const { run, sku } = harness();
+    const out = await run([{ code: 'SV-A', category: 'WORKS', sub_category: 'Painting' }], { dryRun: true });
+    expect(out.modelsToMove!.map((m) => m.modelCode)).toEqual(['SV']);
+    expect(sku('SV-A')!.category).toBe('SERVICE');
+  });
+
+  test('a code twice in one file previews the way apply runs it: new once, then changed or unchanged', async () => {
+    const rows = [
+      { code: 'EL-7', name: 'Lighting point', category: 'Works', sub_category: 'Electrical', uom: 'point' },
+      { code: 'EL-7', uom: 'unit' },
+      { code: 'EL-7', uom: 'unit' },
+    ];
+    const preview = harness();
+    const out = await preview.run(rows, { dryRun: true });
+    expect(out.plan!.map((p) => p.status)).toEqual(['new', 'changed', 'unchanged']);
+    expect(out.plan![1].changes).toEqual([{ field: 'uom', from: 'POINT', to: 'UNIT' }]);
+    expect(out.counts).toEqual({ new: 1, changed: 1, unchanged: 1 });
+    expect(preview.sku('EL-7')).toBeUndefined();
+
+    const applied = harness();
+    const done = await applied.run(rows);
+    expect(done).toMatchObject({ upserted: 2, unchanged: 1, failures: [] });
+    expect(applied.sku('EL-7')).toMatchObject({ uom: 'UNIT', name: 'Lighting point' });
+  });
+
+  test('a blank cell is never a change, and an unchanged row is not written', async () => {
+    const { run, sku } = harness();
+    const out = await run([{ code: 'HK-1', name: '', category: '', sub_category: '', uom: '', status: '', description: '' }]);
+    expect(out.failures).toEqual([]);
+    expect(out.upserted).toBe(0);
+    expect(out.unchanged).toBe(1);
+    expect(sku('HK-1')).toMatchObject({ name: 'Hacking', category: 'WORKS', sub_category: 'HACKING', uom: 'LOT' });
   });
 });

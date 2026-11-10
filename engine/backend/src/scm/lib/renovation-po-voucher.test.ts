@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { poVoucherDeps, voucherBody, voucherForPoPayment, withVoucherKeys, type PoPaymentFacts } from './renovation-po-voucher';
 
 const facts: PoPaymentFacts = { paidOn: '2026-11-07', amountSen: 30000, label: 'Mobilise', poNumber: 'TC-PO-1', projectId: 7, supplier: { id: 's1', name: 'Kim Hup', code: '400-K001', control_account: null } };
-const roles = { BANK_DEFAULT: '310-0010', AP: '400-0000', AP_OTHER: '405-0000' } as never;
+const roles = { BANK_DEFAULT: '310-0010', BANK_PAY_DEFAULT: '310-0020', AP: '400-0000', AP_OTHER: '405-0000' } as never;
 const updates: unknown[] = [];
 const c = { req: { param: () => '' }, get: (k: string) => {
   if (k === 'supabase') return { from: () => ({ update: (r: unknown) => { updates.push(r); return { eq: async () => ({}) }; } }) };
@@ -18,8 +18,8 @@ describe('voucherForPoPayment', () => {
     poVoucherDeps.create = async () => new Response(JSON.stringify({ id: 'pv1', pvNumber: 'PV-1' }), { status: 201 });
     poVoucherDeps.post = async () => new Response('{"ok":true}', { status: 200 });
   });
-  it('pays the supplier control from the default bank', () => {
-    expect(voucherBody(facts, roles)).toMatchObject({ creditAccountCode: '310-0010', supplierId: 's1', voucherDate: '2026-11-07', lines: [{ debitAccountCode: '400-0000', amountSen: 30000 }] });
+  it('pays the supplier control from the default paying bank', () => {
+    expect(voucherBody(facts, roles)).toMatchObject({ creditAccountCode: '310-0020', supplierId: 's1', voucherDate: '2026-11-07', lines: [{ debitAccountCode: '400-0000', amountSen: 30000 }] });
   });
   it('makes the voucher, ties it to the payment and posts it', async () => {
     expect(await voucherForPoPayment(c, 'p1', facts)).toEqual({ pvNumber: 'PV-1', posted: true, problem: null });

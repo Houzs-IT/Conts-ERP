@@ -24,6 +24,35 @@ export type SupplierDateSlot = keyof typeof SUPPLIER_DATE_SLOT_COL;
 /* A postgres.js transaction hands a date column back as a JS Date; the audit's
    from-value must still read as the day, not "Tue Sep 15 2026 ...". */
 const dayOrRaw = (v: unknown): unknown => (v instanceof Date ? v.toISOString().slice(0, 10) : v);
+const dayOf = (v: unknown): string => (v == null || v === '' ? '' : String(dayOrRaw(v)).slice(0, 10));
+
+/* A recorded supplier date is history (Houzs 2e66d226b, #5035): the bulk action
+   asks this before it writes and never overwrites a filled slot. The line import
+   and the delivery-sheet sync are not gated (they pass requireEmpty: false). */
+export function recordedSupplierDate(header: Record<string, unknown>, slot: SupplierDateSlot): string | null {
+  return dayOf(header[SUPPLIER_DATE_SLOT_COL[slot]]) || null;
+}
+
+/* The header PATCH may fill an empty Date 2/3/4 but not change or clear a filled
+   one (the same value sent again is not a change). `fill` = the slots this PATCH
+   newly fills; the write is made conditional on them still being NULL, so two
+   people filling the same slot cannot overwrite each other. */
+export function supplierDatePatchGate(before: Record<string, unknown>, updates: Record<string, unknown>) {
+  const slots = ([2, 3, 4] as const).filter((s) => SUPPLIER_DATE_SLOT_COL[s] in updates);
+  const was = (s: SupplierDateSlot) => dayOf(before[SUPPLIER_DATE_SLOT_COL[s]]);
+  const now = (s: SupplierDateSlot) => dayOf(updates[SUPPLIER_DATE_SLOT_COL[s]]);
+  const changed = slots.filter((s) => was(s) !== '' && now(s) !== was(s));
+  const fill = slots.filter((s) => was(s) === '' && now(s) !== '').map((s) => SUPPLIER_DATE_SLOT_COL[s]);
+  return {
+    refusal: changed.length === 0 ? null : {
+      error: 'supplier_date_recorded', slots: changed,
+      reason: `Supplier Date ${changed.join(', ')} already recorded; it cannot be changed. Record the next empty date instead.`,
+    },
+    fill,
+    raced: { error: 'supplier_date_recorded', slots: fill, reason: 'Someone else recorded that Supplier Date just now. Reload and try again.' },
+    onlyIfEmpty: <T extends { is: (c: string, v: null) => T }>(q: T): T => fill.reduce((acc, col) => acc.is(col, null), q),
+  };
+}
 
 export async function cascadePoSupplierDate(
   sb: any,
@@ -38,16 +67,19 @@ export async function cascadePoSupplierDate(
     applyToLines: boolean;
     actor: AuditActor | null;
     note: string | null;
+    /** true = write only while the slot is still empty (bulk action: a double
+     *  click or a second person must not overwrite a just-recorded date). */
+    requireEmpty: boolean;
   },
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const { companyId, poId, before, slot, date, applyToLines, actor, note } = args;
+  const { companyId, poId, before, slot, date, applyToLines, actor, note, requireEmpty } = args;
   const col = SUPPLIER_DATE_SLOT_COL[slot];
 
-  const { error } = await scopeToCompanyId(
-    sb.from('purchase_orders').update({ [col]: date, updated_at: new Date().toISOString() }).eq('id', poId),
-    companyId,
-  );
+  let q = sb.from('purchase_orders').update({ [col]: date, updated_at: new Date().toISOString() }).eq('id', poId);
+  if (requireEmpty) q = q.is(col, null);
+  const { data: hit, error } = await scopeToCompanyId(q, companyId).select('id').maybeSingle();
   if (error) return { ok: false, reason: error.message };
+  if (requireEmpty && !hit) return { ok: false, reason: `Supplier Date ${slot} was recorded by someone else just now.` };
 
   if (applyToLines) {
     const { error: lineErr } = await scopeToCompanyId(

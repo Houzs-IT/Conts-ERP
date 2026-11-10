@@ -30,8 +30,13 @@ export function matchesSearch(p: DesignProject, query: string): boolean {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return true;
   const hay = searchText(p);
-  return words.every((w) => hay.includes(w));
+  const initials = initialsOf(p.building);
+  return words.every((w) => hay.includes(w) || (/^[a-z]{3,6}$/.test(w) && initials.includes(w)));
 }
+
+/** A building's initials: a word of 3 to 6 letters such as "ser" also finds Skyline Embassy Residences (Houzs ccffd9269). */
+export const initialsOf = (name: string | null | undefined): string =>
+  (name ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map((w) => w[0]).join("");
 
 /** Newest first: made most recently on top (a new project is never buried mid-list); the same moment by id. */
 export function newestFirst(list: readonly DesignProject[]): DesignProject[] {
