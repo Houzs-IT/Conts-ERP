@@ -403,6 +403,28 @@ export async function loadAiUsageReport(db: Db, companyId: number, monthCount: n
   });
 }
 
+/** How many calls of one feature this company and person made since `sinceIso` (failed ones too: they were sent).
+ *  A person with no numeric id is counted with the others who have none. null when the count cannot be read
+ *  (no Postgres, table absent): the caller allows, as the recorder never blocks. */
+export async function countRecentAiCalls(
+  db: Db | undefined,
+  q: { companyId: number; userId: number | null; feature: string; sinceIso: string },
+): Promise<number | null> {
+  if (!db) return null;
+  try {
+    const row = await db.prepare(`
+      SELECT count(*) AS n
+        FROM public.ai_usage_events
+       WHERE company_id = ? AND feature = ? AND created_at >= ?::timestamptz
+         AND user_id IS NOT DISTINCT FROM ?`).bind(q.companyId, q.feature, q.sinceIso, q.userId).first<{ n: unknown }>();
+    const n = Number(row?.n);
+    return Number.isFinite(n) ? n : null;
+  } catch (e) {
+    console.warn('[ai-usage] recent count not read, allowing:', e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 /** The latest failed calls of one company, newest first — what went wrong. */
 export async function loadRecentAiFailures(db: Db, companyId: number, limit = 20): Promise<Array<{ at: string; feature: string; label: string; error: string | null; httpStatus: number | null }>> {
   const res = await db.prepare(`

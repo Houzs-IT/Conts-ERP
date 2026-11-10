@@ -32,6 +32,8 @@ create table if not exists public.ai_usage_events (
 
 create index if not exists idx_ai_usage_events_company_created_at on public.ai_usage_events (company_id, created_at);
 create index if not exists idx_ai_usage_events_feature_created_at on public.ai_usage_events (feature, created_at);
+-- The bill-read limit (pv-extract.ts): one count per read of this company's, this feature's, this person's last minutes.
+create index if not exists idx_ai_usage_events_limit on public.ai_usage_events (company_id, feature, user_id, created_at);
 
 comment on table public.ai_usage_events is
   'One row per Anthropic API call by the engine (tokens, ok/error). Written by services/aiUsage.ts, read by the AI usage screen.';

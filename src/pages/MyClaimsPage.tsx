@@ -204,6 +204,10 @@ function HandInForm({ me, onDone }: { me: Me; onDone: () => void }) {
   const readNo = useRef(0);
   const dateTyped = useRef(false);
   const switchKind = (k: Kind) => { if (k !== kind) { readNo.current++; setReading(false); setKind(k); setFiles([]); setProblem(null); } };
+  /* The form as it is NOW, for a bill read that comes back after the person changed it (a PO or supplier picked,
+     a payee typed while reading): pick()'s own variables are the values from when the files were chosen. */
+  const formNow = useRef({ amountSen, hasSupplierOrPo: false, payeeName, wantedOn, note });
+  formNow.current = { amountSen, hasSupplierOrPo: !!supplier || !!poId, payeeName, wantedOn, note };
 
   async function pick(list: FileList) {
     const chosen = [...files, ...Array.from(list)].slice(0, 8);
@@ -216,9 +220,9 @@ function HandInForm({ me, onDone }: { me: Me; onDone: () => void }) {
       const read = await readRequestBill(chosen);
       if (mine !== readNo.current) return;
       setReading(false);
-      const fill = requestBillFill(read, { amountSen, hasSupplierOrPo: !!supplier || !!poId, payeeName, wantedOn, note, today: todayMyt() });
+      const fill = requestBillFill(read, { ...formNow.current, today: todayMyt() });
       if (fill.amountSen != null) setAmountSen(a => a ?? fill.amountSen!);
-      if (fill.supplier) setSupplier(s => s ?? fill.supplier!);
+      if (fill.supplier && !formNow.current.hasSupplierOrPo) setSupplier(s => s ?? fill.supplier!);
       if (fill.payeeName) setPayeeName(v => v || fill.payeeName!);
       if (fill.wantedOn) setWantedOn(v => v || fill.wantedOn!);
       if (fill.note) setNote(v => v || fill.note!);

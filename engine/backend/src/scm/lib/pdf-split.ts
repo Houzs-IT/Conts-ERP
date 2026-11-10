@@ -19,13 +19,15 @@ export const MAX_SPLIT_PAGES = 24;
 
 /* Worker memory (review of #860): the PDF arrives as base64 JSON, is decoded,
    loaded by pdf-lib, and every page copy can carry the shared fonts and images
-   again. The input is capped at 8 MB and the pages together at 3x the input. */
-export const MAX_SPLIT_INPUT_BYTES = 8 * 1024 * 1024;
+   again. pdf-lib holds the parsed file several times over in the 128 MB Worker,
+   so the input is capped at 4 MB and the pages together at 3x the input. A
+   bigger scan: add its pages as separate files. */
+export const MAX_SPLIT_INPUT_BYTES = 4 * 1024 * 1024;
 export const MAX_SPLIT_OUTPUT_RATIO = 3;
 
 export type SplitResult =
   | { ok: true; pages: Uint8Array[] }
-  | { ok: false; reason: 'unreadable' | 'too_many_pages' | 'output_too_big'; pageCount?: number };
+  | { ok: false; reason: 'unreadable' | 'no_pages' | 'too_many_pages' | 'output_too_big'; pageCount?: number };
 
 export async function splitPdfPages(bytes: Uint8Array): Promise<SplitResult> {
   let src: PDFDocument;
@@ -35,6 +37,7 @@ export async function splitPdfPages(bytes: Uint8Array): Promise<SplitResult> {
     return { ok: false, reason: 'unreadable' };
   }
   const n = src.getPageCount();
+  if (n === 0) return { ok: false, reason: 'no_pages', pageCount: 0 };
   if (n > MAX_SPLIT_PAGES) return { ok: false, reason: 'too_many_pages', pageCount: n };
   const pages: Uint8Array[] = [];
   const budget = bytes.length * MAX_SPLIT_OUTPUT_RATIO;

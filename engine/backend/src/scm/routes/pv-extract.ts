@@ -10,11 +10,10 @@
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId, scopeToCompany } from '../lib/companyScope';
 import { extractOneBill, matchSupplier, normalizeVendor, BILL_IMAGE_MIMES, BILL_MODEL, MAX_BILLS_PER_CALL, MAX_FILES_PER_BILL, MAX_BILL_FILE_BYTES } from '../../acc/bill-extract';
-import { requestAiTag } from '../../services/aiUsage';
+import { countRecentAiCalls, requestAiTag } from '../../services/aiUsage';
 import { toBase64 } from '../lib/scan-ocr';
 import { base64ToBytes } from '../../services/mail-parse';
 import { MAX_SPLIT_INPUT_BYTES, MAX_SPLIT_PAGES, splitPdfPages } from '../lib/pdf-split';
-import { checkRateLimit } from '../../middleware/rateLimit';
 
 /** Bills read at once inside one batch: serial reads of twelve bills were past
     the browser's wait (Houzs #4642). */
@@ -22,6 +21,9 @@ export const PARALLEL_BILL_READS = 4;
 /** Server-side bill reads per person per company per window: five full piles of 12 with retries. */
 export const BILL_READS_PER_WINDOW = 60;
 export const BILL_READ_WINDOW_SEC = 600;
+/** The largest extract body: one bill's pages at the file cap as base64, with room. The pile sends one bill per
+    request; a body past this is refused on its declared size before it is read. */
+export const EXTRACT_BODY_LIMIT = 48 * 1024 * 1024;
 
 /* ── Bill OCR — read incoming bills into voucher pre-fills (2026-09-02) ──────
    Each `bills` entry is ONE document (its files are its pages — the human said
@@ -40,12 +42,10 @@ export const extractBillsHandler = async (c: any) => {
     return c.json({ error: 'anthropic_key_missing', message: 'The bill reader is not set up here (no ANTHROPIC_API_KEY on the engine).' }, 503);
   }
 
-  /* The pile caps itself at 12 bills, but each bill is its own request now: a speed bump on the server too (the
-     KV limiter in middleware/rateLimit.ts, open when KV is unbound). One person, one company, BILL_READS_PER_WINDOW
-     requests per 10 minutes. */
-  const who = (c.get('houzsUser') as { id?: unknown } | undefined)?.id ?? (c.get('user') as { id?: unknown } | undefined)?.id ?? 'anon';
-  const limited = await checkRateLimit(c, 'bill_read', `${co.companyId}:${String(who)}`, BILL_READS_PER_WINDOW, BILL_READ_WINDOW_SEC);
-  if (limited) return c.json({ error: 'too_many_reads', message: `At most ${BILL_READS_PER_WINDOW} bill reads in ${BILL_READ_WINDOW_SEC / 60} minutes — wait a few minutes and read the rest.` }, 429);
+  const declared = Number(c.req.header('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > EXTRACT_BODY_LIMIT) {
+    return c.json({ error: 'body_too_big', message: 'Too much in one read — send one bill at a time.' }, 413);
+  }
 
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
@@ -70,6 +70,19 @@ export const extractBillsHandler = async (c: any) => {
         return c.json({ error: 'file_too_big', message: `Bill ${i + 1}: a file is over ${Math.round(MAX_BILL_FILE_BYTES / 1024 / 1024)}MB.` }, 400);
       }
     }
+  }
+
+  /* The pile caps itself at 12 bills, but each bill is its own request now: a limit on the server too, counted in
+     BILLS from the reads already logged in ai_usage_events (one row per bill read) for this company and person over
+     the last BILL_READ_WINDOW_SEC. One indexed count, no write; no table or a failed count allows (as the logger).
+     Rows are logged right after each read, so reads still in flight are not yet counted: a speed bump, not a wall. */
+  const tag = requestAiTag(c, 'bill_extract', BILL_MODEL);
+  const recent = await countRecentAiCalls(c.env?.DB, {
+    companyId: co.companyId, userId: tag.userId, feature: 'bill_extract',
+    sinceIso: new Date(Date.now() - BILL_READ_WINDOW_SEC * 1000).toISOString(),
+  });
+  if (recent != null && recent + bills.length > BILL_READS_PER_WINDOW) {
+    return c.json({ error: 'too_many_reads', message: `At most ${BILL_READS_PER_WINDOW} bill reads in ${BILL_READ_WINDOW_SEC / 60} minutes — wait a few minutes and read the rest.` }, 429);
   }
 
   /* Suppliers once for the whole batch — matching is per bill, in code. */
@@ -99,7 +112,6 @@ export const extractBillsHandler = async (c: any) => {
   };
 
   /* Bills are read together, PARALLEL_BILL_READS at a time. */
-  const tag = requestAiTag(c, 'bill_extract', BILL_MODEL);
   const read: Array<Awaited<ReturnType<typeof extractOneBill>>> = new Array(bills.length);
   let nextBill = 0;
   await Promise.all(Array.from({ length: Math.min(PARALLEL_BILL_READS, bills.length) }, async () => {
@@ -150,6 +162,7 @@ export const splitPdfHandler = async (c: any) => {
   const got = await splitPdfPages(bytes);
   if (!got.ok) {
     if (got.reason === 'too_many_pages') return c.json({ error: 'too_many_pages', message: `The PDF has ${got.pageCount} pages — split at most ${MAX_SPLIT_PAGES}.` }, 400);
+    if (got.reason === 'no_pages') return c.json({ error: 'no_pages', message: 'This PDF has no pages to split.' }, 422);
     if (got.reason === 'output_too_big') return c.json({ error: 'output_too_big', message: 'This PDF grows too big when cut into pages — add its pages as separate files instead.' }, 413);
     return c.json({ error: 'unreadable_pdf', message: 'This PDF could not be split — it may be password-protected or damaged.' }, 422);
   }

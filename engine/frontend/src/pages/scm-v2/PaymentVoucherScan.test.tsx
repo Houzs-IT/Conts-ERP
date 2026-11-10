@@ -357,6 +357,17 @@ describe('a pile of many bills', () => {
     expect(screen.queryByText('supplier.pdf')).toBeNull();
   });
 
+  test('a split that brings back no pages keeps the PDF in the pile', async () => {
+    splitAsync.mockClear();
+    splitAsync.mockResolvedValueOnce([]);
+    draw();
+    fireEvent.change(screen.getByLabelText('Add bill files'), { target: { files: [pdf('empty.pdf')] } });
+    fireEvent.click(screen.getByText('Several bills inside — split by page'));
+    expect(await screen.findByText('empty.pdf has no pages to split — it stays as one bill.')).toBeTruthy();
+    expect(screen.getByText('empty.pdf')).toBeTruthy();
+    expect(screen.getByText('Read 1 bill(s)')).toBeTruthy();
+  });
+
   test('a payment slip, a summary and a repeated page are set aside; "It is a bill" puts one back; Tick every receipt', async () => {
     extractAsync.mockClear();
     landedState = null;

@@ -181,6 +181,8 @@ export const PaymentVoucherScan = ({ target = 'pv' }: { target?: 'pv' | 'ap' } =
     setSplitting(rid);
     try {
       const pages = await splitPdfPages(p.file);
+      /* No pages back: the PDF stays in the pile as it was, never silently dropped. */
+      if (pages.length === 0) { setNote(`${p.file.name} has no pages to split — it stays as one bill.`); return; }
       const next = pages.map((f) => ({ rid: `f${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, file: f, merged: false }));
       setPicked((prev) => prev.flatMap((x) => (x.rid === rid ? next : [x])));
       setBillGroups((prev) => prev.flatMap((g) => (g.length === 1 && g[0] === rid ? next.map((n) => [n.rid]) : [g])));

@@ -57,10 +57,18 @@ describe('POST /payment-vouchers/split-pdf', () => {
     expect(await res.json()).toMatchObject({ error: 'file_too_big' });
   });
 
-  test('a PDF past 8 MB is a 413 without being decoded', async () => {
+  /* Second review of #860: a PDF of no pages used to come back ok with nothing, and the file vanished from the pile. */
+  test('a PDF with no pages is refused with a sentence', async () => {
+    const empty = await (await PDFDocument.create()).save({ addDefaultPage: false });
+    const res = await post(appFor(['*']), b64(empty));
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ error: 'no_pages', message: 'This PDF has no pages to split.' });
+  });
+
+  test('a PDF past 4 MB is a 413 without being decoded', async () => {
     const res = await post(appFor(['*']), 'A'.repeat(SPLIT_BODY_LIMIT + 4));
     expect(res.status).toBe(413);
-    expect(MAX_SPLIT_INPUT_BYTES).toBe(8 * 1024 * 1024);
+    expect(MAX_SPLIT_INPUT_BYTES).toBe(4 * 1024 * 1024);
   });
 
   test('without the scan permission it is refused', async () => {
