@@ -14,7 +14,7 @@ type Db = Parameters<typeof loadLedgerSettings>[0];
     setup refuses money there, and Daily Bank shows them beside the banks). Any: every other rule. */
 export type RoleKind = "money" | "clearing" | "any";
 export const roleKind = (role: AccountRole): RoleKind =>
-  role === "CASH" || role === "BANK_DEFAULT" ? "money" : role === "TRANSIT_EDC" || role === "TRANSIT_ONLINE" ? "clearing" : "any";
+  role === "CASH" || role === "BANK_DEFAULT" || role === "BANK_PAY_DEFAULT" ? "money" : role === "TRANSIT_EDC" || role === "TRANSIT_ONLINE" ? "clearing" : "any";
 
 /** Rules nothing posts on any more, so they are not part of being ready: SALES was the template's (sales post by item
     group), INVENTORY and CLOSING_STOCK the one-account stock the three stock buckets replaced (2026-09-21), PETTY_CASH

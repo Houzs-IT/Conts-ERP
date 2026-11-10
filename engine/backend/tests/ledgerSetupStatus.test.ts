@@ -91,6 +91,15 @@ describe('ledgerSetupStatus', () => {
     expect(s.roles.find((r) => r.role === 'AR_OTHER')!.problem).toBe('header');
   });
 
+  /* Houzs 5596706af: the paying bank is its own money rule; unset it is the receiving bank, set it stands apart. */
+  test('the paying bank follows the receiving bank until set, and must be a money account', async () => {
+    const unset = await ledgerSetupStatus(world({ acc_account_roles: [{ company_id: CO, role: 'BANK_DEFAULT', account_code: DEFAULT_ROLE_CODES.CASH }] }), CO);
+    expect(unset.roles.find((r) => r.role === 'BANK_PAY_DEFAULT')).toMatchObject({ accountCode: DEFAULT_ROLE_CODES.CASH, kind: 'money', problem: null });
+    const expense = await ledgerSetupStatus(world({ acc_account_roles: [{ company_id: CO, role: 'BANK_PAY_DEFAULT', account_code: DEFAULT_ROLE_CODES.AP }] }), CO);
+    expect(expense.roles.find((r) => r.role === 'BANK_PAY_DEFAULT')).toMatchObject({ accountCode: DEFAULT_ROLE_CODES.AP, problem: 'not_money' });
+    expect(expense.roles.find((r) => r.role === 'BANK_DEFAULT')!.accountCode).toBe(DEFAULT_ROLE_CODES.BANK_DEFAULT);
+  });
+
   test('an override is what is checked, not the default', async () => {
     const s = await ledgerSetupStatus(world({ acc_account_roles: [{ company_id: CO, role: 'AR_OTHER', account_code: '399-9999' }] }), CO);
     expect(s.roles.find((r) => r.role === 'AR_OTHER')).toMatchObject({ role: 'AR_OTHER', accountCode: '399-9999', problem: 'missing_account' });

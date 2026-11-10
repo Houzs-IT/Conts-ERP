@@ -484,7 +484,7 @@ const DefaultBankRow = () => {
 
   return (
     <div className={css.defs}>
-      <div className={css.defLabel}>Default bank</div>
+      <div className={css.defLabel}>Default bank — receiving</div>
       <div className={css.defRow}>
         <select
           aria-label="Default bank account"
@@ -504,14 +504,14 @@ const DefaultBankRow = () => {
           disabled={!dirty || save.isPending}
           onClick={() => {
             save.mutate(choice, {
-              onSuccess: () => { setNote('Saved — vouchers now pre-fill this bank.'); setChoice(''); },
+              onSuccess: () => { setNote('Saved.'); setChoice(''); },
               onError: (e) => setNote(e instanceof Error ? e.message : 'Not saved.'),
             });
           }}
         >
           {save.isPending ? 'Saving…' : 'Save'}
         </button>
-        <span style={softText}>pre-fills every voucher&rsquo;s Paid From; transfer payments land here{note ? ` · ${note}` : ''}</span>
+        <span style={softText}>transfer payments land here; vouchers pay from it unless a paying bank is set in Ledger setup &rsaquo; Posting rules{note ? ` · ${note}` : ''}</span>
       </div>
     </div>
   );
