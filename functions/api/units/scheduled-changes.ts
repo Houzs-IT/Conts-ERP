@@ -2,7 +2,7 @@ import { type Env, all, json, mytToday } from '../../_lib/db';
 import { requireSession, hasColumn } from '../../_lib/auth';
 import { can } from '../../_lib/access';
 import { layoutKey } from '../../_lib/cleaningPrices';
-import { hasDatedUnitPrices, hasPriceByBed, hasServicePrices, serviceBook } from '../../_lib/servicePrices';
+import { bedPricingMode, hasDatedUnitPrices, hasPriceByBed, hasServicePrices, serviceBook } from '../../_lib/servicePrices';
 import { statementSettings } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
 import { heldContract } from '../../_lib/datedRows';
@@ -19,6 +19,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const dated = await hasDatedUnitPrices(env);
   const service = await hasServicePrices(env);
   const byBed = service && (await hasPriceByBed(env)) ? 's.by_bed' : '0';
+  const bedPricing = service ? await bedPricingMode(env) : 'size';
   const seePrices = !!session.manage, seeContracts = !!session.manage || can(session, 'finance', 'view');
 
   const layout = (await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'u.layout_type' : 'NULL::text';
@@ -58,7 +59,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         id: `list:${r.id}:${r.effective_from}`, kind: r.domain, scope: 'list', unitId: null, unitLabel: 'All units', ownerName: null,
         itemId: r.id, what: r.name, cleanKind: r.clean_kind, effectiveFrom: r.effective_from, setBy: r.set_by ?? null, setAt: r.set_at,
         // A price per layout has no one figure to show.
-        layouts: r.by_layout ? r.layouts : null, byBed: !!r.by_bed,
+        layouts: r.by_layout ? r.layouts : null, byBed: !!r.by_bed, bedPricing: r.by_bed ? bedPricing : null,
         now: seePrices && !r.by_layout ? figures(now.owner, now.internal) : null, next: seePrices && !r.by_layout ? figures(r.owner_price, r.internal_cost) : null,
       };
     }),
