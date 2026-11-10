@@ -208,7 +208,8 @@ const en = {
     form: {
       title: 'Report a problem', cancel: 'Cancel', building: 'Building', pickBuilding: 'Pick the building', unit: 'Unit', pickUnit: 'Pick the unit',
       pickBuildingFirst: 'Pick the building first', othersUnit: 'Others (not in a unit)', what: 'What is wrong', whatPh: 'e.g. Aircon not cooling', kind: 'Kind of problem', pickOne: 'Pick one',
-      urgency: 'Urgency', normal: 'Normal', urgent: 'Urgent', details: 'Details (optional)', detailsPh: 'Where it is, what you saw', send: 'Send to the office',
+      urgency: 'Urgency', normal: 'Normal', urgent: 'Urgent', details: 'Details (optional)', detailsPh: 'Where it is, what you saw',
+      where: 'Where in the building', wherePh: 'e.g. Lobby, lift B, level 12 corridor', errWhere: 'Say where in the building.', send: 'Send to the office',
       errUnit: 'Pick the unit.', errTitle: 'Say what is wrong.', errKind: 'Pick the kind of problem.', notSent: 'Not sent. Check your signal and try again.',
       someNotAdded: 'Reported, but some photos were not added.',
       notAdded: (list: string): string => `Not added: ${list}.`,
@@ -392,7 +393,8 @@ const ms: PortalStrings = {
     form: {
       title: 'Lapor masalah', cancel: 'Batal', building: 'Bangunan', pickBuilding: 'Pilih bangunan', unit: 'Unit', pickUnit: 'Pilih unit',
       pickBuildingFirst: 'Pilih bangunan dahulu', othersUnit: 'Lain-lain (bukan dalam unit)', what: 'Apa yang rosak', whatPh: 'cth. Aircond tidak sejuk', kind: 'Jenis masalah', pickOne: 'Pilih satu',
-      urgency: 'Kesegeraan', normal: 'Biasa', urgent: 'Segera', details: 'Butiran (pilihan)', detailsPh: 'Di mana, apa yang anda nampak', send: 'Hantar ke pejabat',
+      urgency: 'Kesegeraan', normal: 'Biasa', urgent: 'Segera', details: 'Butiran (pilihan)', detailsPh: 'Di mana, apa yang anda nampak',
+      where: 'Di mana dalam bangunan', wherePh: 'cth. Lobi, lif B, koridor tingkat 12', errWhere: 'Nyatakan di mana dalam bangunan.', send: 'Hantar ke pejabat',
       errUnit: 'Pilih unit.', errTitle: 'Nyatakan apa yang rosak.', errKind: 'Pilih jenis masalah.', notSent: 'Tidak dihantar. Semak isyarat anda dan cuba lagi.',
       someNotAdded: 'Dilaporkan, tetapi beberapa foto tidak ditambah.',
       notAdded: list => `Tidak ditambah: ${list}.`,
@@ -572,7 +574,8 @@ const zh: PortalStrings = {
     form: {
       title: '报告问题', cancel: '取消', building: '大楼', pickBuilding: '选择大楼', unit: '单位', pickUnit: '选择单位',
       pickBuildingFirst: '请先选择大楼', othersUnit: '其他（不在单位内）', what: '什么问题', whatPh: '例如：冷气不冷', kind: '问题类型', pickOne: '选一个',
-      urgency: '紧急程度', normal: '一般', urgent: '紧急', details: '详情（可选）', detailsPh: '在哪里，你看到了什么', send: '发送给办公室',
+      urgency: '紧急程度', normal: '一般', urgent: '紧急', details: '详情（可选）', detailsPh: '在哪里，你看到了什么',
+      where: '大楼里的哪个位置', wherePh: '例如：大堂、B号电梯、12楼走廊', errWhere: '请写出在大楼的哪个位置。', send: '发送给办公室',
       errUnit: '请选择单位。', errTitle: '请写出什么问题。', errKind: '请选择问题类型。', notSent: '没有发送。请检查网络信号再试一次。',
       someNotAdded: '已报告，但有些照片没有添加。',
       notAdded: list => `没有添加：${list}。`,
@@ -752,7 +755,8 @@ const my: PortalStrings = {
     form: {
       title: 'ပြဿနာ သတင်းပို့ရန်', cancel: 'မလုပ်တော့ပါ', building: 'အဆောက်အအုံ', pickBuilding: 'အဆောက်အအုံ ရွေးပါ', unit: 'အခန်း', pickUnit: 'အခန်း ရွေးပါ',
       pickBuildingFirst: 'အဆောက်အအုံ အရင်ရွေးပါ', othersUnit: 'အခြား (အခန်းထဲမဟုတ်)', what: 'ဘာဖြစ်နေသလဲ', whatPh: 'ဥပမာ - အဲယားကွန်း မအေးပါ', kind: 'ပြဿနာ အမျိုးအစား', pickOne: 'တစ်ခု ရွေးပါ',
-      urgency: 'အရေးကြီးမှု', normal: 'ပုံမှန်', urgent: 'အရေးပေါ်', details: 'အသေးစိတ် (မဖြစ်မနေ မဟုတ်)', detailsPh: 'ဘယ်နေရာ၊ ဘာတွေ့ခဲ့သလဲ', send: 'ရုံးသို့ ပို့ရန်',
+      urgency: 'အရေးကြီးမှု', normal: 'ပုံမှန်', urgent: 'အရေးပေါ်', details: 'အသေးစိတ် (မဖြစ်မနေ မဟုတ်)', detailsPh: 'ဘယ်နေရာ၊ ဘာတွေ့ခဲ့သလဲ',
+      where: 'အဆောက်အအုံထဲ ဘယ်နေရာ', wherePh: 'ဥပမာ - ဧည့်ခန်းမ၊ ဓာတ်လှေကား B၊ ၁၂ ထပ် စင်္ကြံ', errWhere: 'အဆောက်အအုံထဲ ဘယ်နေရာလဲ ရေးပါ။', send: 'ရုံးသို့ ပို့ရန်',
       errUnit: 'အခန်း ရွေးပါ။', errTitle: 'ဘာဖြစ်နေသလဲ ရေးပါ။', errKind: 'ပြဿနာ အမျိုးအစား ရွေးပါ။', notSent: 'မပို့ရပါ။ ဆက်သွယ်မှု စစ်ပြီး ထပ်စမ်းပါ။',
       someNotAdded: 'သတင်းပို့ပြီး၊ သို့သော် ဓာတ်ပုံအချို့ မထည့်ရပါ။',
       notAdded: list => `မထည့်ရသည်များ - ${list}။`,

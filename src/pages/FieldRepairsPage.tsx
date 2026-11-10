@@ -620,22 +620,25 @@ function ReportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
   const [f, setF] = useState({ building: '', unitId: '', title: '', category: '', urgency: 'normal', detail: '' });
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; form?: string }>({});
+  const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; detail?: string; form?: string }>({});
+  const inBuildingJob = f.unitId === OTHERS_UNIT;
   const all = units.data?.data ?? [];
   const buildings = useMemo(() => [...new Map(all.map(u => [u.propertyId, u.propertyName])).entries()].map(([id, name]) => ({ id, name })), [all]);
   const inBuilding = all.filter(u => u.propertyId === f.building);
   useEffect(() => { if (buildings.length === 1 && !f.building) setF(x => ({ ...x, building: buildings[0].id })); }, [buildings, f.building]);
 
   async function save() {
-    const bad = { unitId: f.unitId ? undefined : tf.errUnit, title: f.title.trim() ? undefined : tf.errTitle, category: f.category ? undefined : tf.errKind };
-    if (bad.unitId || bad.title || bad.category) { setError(bad); return; }
+    const bad = { unitId: f.unitId ? undefined : tf.errUnit, title: f.title.trim() ? undefined : tf.errTitle, category: f.category ? undefined : tf.errKind,
+      detail: inBuildingJob && !f.detail.trim() ? tf.errWhere : undefined };
+    if (Object.values(bad).some(Boolean)) { setError(bad); return; }
     setBusy(true); setError({});
     let id: string;
     try {
       id = (await api.post<{ id: string }>('/maintenance/issues', { ...(f.unitId === OTHERS_UNIT ? { propertyId: f.building } : { unitId: f.unitId }), title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category, urgency: f.urgency })).id;
     } catch (e) {
       const fields = e instanceof ApiFailure ? e.fields ?? {} : {};
-      setError({ unitId: fields.unitId ?? fields.unitNumber ?? fields.propertyId, title: fields.title, category: fields.category, form: fields.title || fields.category ? undefined : errorMessage(e, tf.notSent) });
+      setError({ unitId: fields.unitId ?? fields.unitNumber ?? fields.propertyId, title: fields.title, category: fields.category, detail: fields.detail && tf.errWhere,
+        form: fields.title || fields.category || fields.detail ? undefined : errorMessage(e, tf.notSent) });
       setBusy(false); return;
     }
     if (picked.files.length) {
@@ -688,8 +691,9 @@ function ReportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
               </select>
             </FormRow>
           </div>
-          <FormRow label={tf.details}>
-            <textarea className={TEXTAREA} value={f.detail} onChange={e => setF(x => ({ ...x, detail: e.target.value }))} placeholder={tf.detailsPh} maxLength={2000} />
+          <FormRow label={inBuildingJob ? tf.where : tf.details} error={error.detail}>
+            <textarea className={TEXTAREA} value={f.detail} onChange={e => { setF(x => ({ ...x, detail: e.target.value })); setError(x => ({ ...x, detail: undefined })); }}
+              placeholder={inBuildingJob ? tf.wherePh : tf.detailsPh} maxLength={2000} />
           </FormRow>
           <ProblemPhotos picked={picked} sending={sending} />
           {error.form && <span className="text-meta text-danger" role="alert">{error.form}</span>}
