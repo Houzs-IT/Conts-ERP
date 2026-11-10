@@ -168,14 +168,15 @@ export const DeliveryOrderFromSo = () => {
      screen is a ready-to-review draft rather than a filtered list to re-tick by
      hand. Copies GrnFromPo, the one convert that already worked. Nothing ships
      and no stock moves here — Continue only carries the picks to the New DO
-     form. */
+     form. Lines whose stock is not READY stay unticked (BUG-59, Azza: deliver
+     the ready lines now, the rest on a later DO). */
   const prefilled = useRef(false);
   useEffect(() => {
     if (prefilled.current) return;
     if (scope.keys.size === 0) return;
     if (linesQ.isLoading) return;
     prefilled.current = true;
-    const mine = rows.filter((r) => r.remaining > 0);
+    const mine = rows.filter((r) => r.remaining > 0 && !r.notReady);
     const first = mine[0];
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mine[0] is typed non-optional without noUncheckedIndexedAccess; an empty scope match is real
     if (!first) return;

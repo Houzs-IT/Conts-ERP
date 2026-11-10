@@ -71,8 +71,11 @@ interface Detail extends Required<Omit<BookingSummary, 'guestPhone'>> {
   money: Money; ledger: Ledger; timeline: TimelineEvent[]; moves: Move[];
   documents?: GuestDocument[]; approvals?: Approval[];
   review?: Review | null; threadId?: string | null;
+  passKey?: PassKeyStatus | null;
   can: { changeDates: boolean; changeDatesReason: string | null; recordPayment: boolean; editDetails: boolean; paymentsReady: boolean; issueDocuments?: boolean; invoiceReason?: string | null };
 }
+
+export interface PassKeyStatus { buildingNeedsKey: boolean; selfCheckIn: boolean; jobId: string | null; jobState: string | null; technician: string | null }
 
 /** Airbnb, Booking.com and Agoda own their bookings' dates; a change is made there and arrives through Channex. */
 const OTA: BookingChannel[] = ['airbnb', 'booking_com', 'agoda'];
@@ -516,6 +519,40 @@ function TimesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => void; o
   );
 }
 
+function passKeyLine({ selfCheckIn, jobId, jobState, technician }: PassKeyStatus): string {
+  if (selfCheckIn) return 'No pass key job: the guest lets themselves in.';
+  if (!jobId) return 'A pass key job is made before check-in.';
+  if (jobState === 'resolved') return 'Pass key handed over.';
+  return technician ? `Pass key job given to ${technician}.` : 'Pass key job waiting for a technician.';
+}
+
+function PassKeyBox({ reservationId, passKey, onSaved }: { reservationId: string; passKey: PassKeyStatus; onSaved: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  async function save(selfCheckIn: boolean) {
+    setBusy(true);
+    try {
+      await api.patch(`/reservations/${reservationId}/details`, { selfCheckIn });
+      toast({ tone: 'success', title: selfCheckIn ? 'Guest checks in by themselves. No pass key job.' : 'Pass key job added.' });
+      onSaved();
+    } catch (err) { toast({ tone: 'critical', title: 'Not saved.', body: failMessage(err) }); }
+    setBusy(false);
+  }
+  return (
+    <div className="flex flex-col gap-2 text-copy">
+      <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">Pass key</div>
+      <label className="flex items-center gap-3 min-h-11 cursor-pointer">
+        <input type="checkbox" className="size-5 flex-none" checked={passKey.selfCheckIn} disabled={busy} onChange={e => void save(e.target.checked)} />
+        Guest checks in by themselves (no pass key)
+      </label>
+      <div className="text-meta text-muted-ink">
+        {passKeyLine(passKey)}
+        {passKey.jobId && <> <Link to={`/operations/maintenance?id=${encodeURIComponent(passKey.jobId)}`} className="text-ink underline">Open job</Link></>}
+      </div>
+    </div>
+  );
+}
+
 /** Internal notes on the booking. What an import wrote stays separate and read-only, because a re-import rewrites it. */
 function NotesBox({ d, onSaved }: { d: Detail; onSaved: () => void }) {
   const toast = useToast();
@@ -908,6 +945,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
           <button type="button" onClick={() => setTimesOpen(true)}
             className="self-start -mt-3 p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer">Change check-in or checkout time</button>
         )}
+        {d?.passKey?.buildingNeedsKey && live && !block && <PassKeyBox reservationId={d.id} passKey={d.passKey} onSaved={() => { reload(); onChanged?.(id); }} />}
         {d && live && !block && <LateCheckoutBlock reservationId={d.id} onChanged={() => { reload(); onChanged?.(id); }} />}
 
         {!block && d && (

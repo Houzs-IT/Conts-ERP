@@ -138,7 +138,7 @@ export function WarehouseFloorPlan({
     const body = pickedSlots.map((s) =>
       [s.id, s.status, s.productLabel, s.customer, s.itemCount ? String(s.qty) : '', s.inDate, s.doc].map((v) => esc(String(v))).join(','));
     const csv = [head.join(','), ...body].join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const url = URL.createObjectURL(new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8;' }));
     const a = document.createElement('a');
     a.href = url;
     a.download = `warehouse-slots-${todayMyt()}.csv`;

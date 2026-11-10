@@ -486,6 +486,7 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
   if (!co.ok) return c.json(co.refusal, 409);
   const supabase = c.get('supabase');
   let upserted = 0;
+  let created = 0;
   const failures: Array<{ code: string; reason: string }> = [];
 
   /* Only a sheet naming a category outside the enum list needs the master list. */
@@ -731,10 +732,11 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
       failures.push({ code, reason: error.message });
     } else {
       upserted += 1;
+      if (!existing) created += 1;
     }
   }
 
-  return c.json({ upserted, failed: failures.length, failures: failures.slice(0, 50), modelsMoved });
+  return c.json({ upserted, created, failed: failures.length, failures: failures.slice(0, 50), modelsMoved });
 };
 mfgProducts.post('/batch-import', batchImportMfgProductsHandler);
 

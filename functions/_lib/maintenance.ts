@@ -69,7 +69,7 @@ export function toInstant(v: unknown): string | null {
  *  Without it those fields are left out of every read and refused on write, and the job works as before. */
 export const hasBilling = (env: Env) => hasColumn(env, 'maintenance_issues', 'billing_date').catch(() => false);
 
-/** Migration 0254: property_id on a job that sits in a building, not a unit. Without it every job has a unit. */
+/** Migration 0255: property_id on a job that sits in a building, not a unit. Without it every job has a unit. */
 export const hasBuildingJobs = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'property_id').catch(() => false);
 
 export const BUILDING_JOB_LABEL = 'Building (no unit)';

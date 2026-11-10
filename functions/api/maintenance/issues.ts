@@ -66,7 +66,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       needsParts: !!r.needs_parts, partsArrivedAt: r.parts_arrived_at ?? null,
       supportRequestedAt: r.support_requested_at ?? null, supportNote: r.support_note ?? null,
       // Needs owner approval / Approved / Not needed (owner, 17 Oct 2026).
-      approvalStatus: r.owner_approved_at ? 'approved' : r.owner_approval_required && r.charge_to === 'owner' ? 'needed' : 'not_needed', source: r.source ?? 'staff', sourceTaskId: r.source_task_id ?? null,
+      approvalStatus: r.owner_approved_at ? 'approved' : r.owner_approval_required && r.charge_to === 'owner' ? 'needed' : 'not_needed', source: r.source ?? 'staff', sourceTaskId: r.source_task_id ?? null, reservationId: r.reservation_id ?? null,
       vendorName: r.vendor_name, assigneeName: r.vendor_name, assigneeKind: r.assignee_kind ?? null,
       // Raw ISO: the screen formats.
       reportedAt: r.reported_at, resolvedAt: r.resolved_at,

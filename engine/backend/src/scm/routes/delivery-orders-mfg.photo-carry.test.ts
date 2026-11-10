@@ -135,6 +135,7 @@ async function convertAndCapture(soLines: Row[], soHead: Row = {}, heads: Row[] 
         picks: soLines.map((l) => ({ soItemId: l.id, qty: 1 })),
         asDraft: true,
         confirmShortStock: true,
+        confirmNotReady: true,
       }),
       param: () => undefined,
     },
