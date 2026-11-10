@@ -415,7 +415,6 @@
  "POST /api/finance/payables": "AFFAFFFU",
  "POST /api/fleet-health": "AFFFFFFU",
  "POST /api/goods-receipts": "AFFFFFFU",
- "POST /api/field/tasks/[id]/pick": "FFFFAFFU",
  "POST /api/guest-documents": "AFFAFFFU",
  "POST /api/guest-documents/[id]/void": "AFFAFFFU",
  "POST /api/guests": "AAAFFFFU",
