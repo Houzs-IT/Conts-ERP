@@ -67,6 +67,8 @@ import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 import { withStatusLabels } from "../../vendor/scm/lib/status-pill";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { useConfirm } from "../../vendor/scm/components/ConfirmDialog";
+import { useBatchConfirm } from "../../vendor/scm/lib/batch-confirm";
+import { afterOnsiteConfirm } from "../../vendor/scm/lib/onsite-twin-queries";
 import { useChoice } from "../../vendor/scm/components/ChoiceDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "../../lib/utils";
@@ -589,6 +591,22 @@ export function GoodsReceivedListV2() {
   // Conts: a failed load says so on the cards, with Retry, instead of "Loading…" for ever.
   const statsFail = { failed: Boolean(error), onRetry: () => void refetch() };
   const postGrn = usePostGrn();
+  /* Confirm every ticked draft in turn (Houzs 5191c5f7c, TODO port item 15).
+     Same post and same follow-up as the row's own Confirm: an on-site receipt
+     raises its delivery order. */
+  const batchConfirm = useBatchConfirm<GrnRow>({
+    noun: "goods receipt",
+    body: "Inventory will be received into the warehouse.",
+    pathOf: (r) => `/grns/${r.id}/post`,
+    docOf: (r) => r.grn_number,
+    problemOf: (res) => {
+      const errs = (res as { movementErrors?: string[] } | null)?.movementErrors;
+      return errs && errs.length > 0 ? `stock was not received (${errs.join("; ")})` : null;
+    },
+    afterEach: (r) => afterOnsiteConfirm("grn", r.id, () => { void queryClient.invalidateQueries({ queryKey: ["mfg-delivery-orders"] }); }),
+    refresh: [["grns"], ["grns-paged"], ["inventory"]],
+    onDone: () => setSelectedIds(new Set()),
+  });
   const cancelGrn = useCancelGrn();
   const holdAction = useHoldAction("grn");
 
@@ -599,6 +617,8 @@ export function GoodsReceivedListV2() {
   const serverRows = (data?.grns ?? []) as GrnRow[];
   const rows = useEnrichedGrnListRows(serverRows, !listLoading);
   const total = data?.total ?? 0;
+  /* Each tab's money, server-summed over the same rows as its count (TODO item 5). */
+  const tabMoney: Record<string, number> = data?.statusMoneySen ?? {};
   const counts = data?.statusCounts ?? { all: 0, draft: 0, posted: 0, cancelled: 0, on_hold: 0 };
 
   // Money KPIs are summed over the CURRENT page only (paginated contract has no
@@ -791,6 +811,8 @@ export function GoodsReceivedListV2() {
       postGrn.mutate(r.id, { onSuccess: () => setSelected(null) });
     }
   };
+  /* Ticked on this page and still a draft: a posted or held row is left out. */
+  const draftsPicked = rows.filter((r) => selectedIds.has(r.id) && r.status.toUpperCase() === "DRAFT" && !rowIsHeld(r));
   const doCancel = async (r: GrnRow) => {
     if (await askConfirm({
       title: `Cancel GRN ${r.grn_number}?`,
@@ -969,10 +991,10 @@ export function GoodsReceivedListV2() {
     ...Object.keys(byKey).filter((k) => !(GRN_DEFAULT_COLUMN_KEYS as readonly string[]).includes(k)).map((k) => byKey[k]!),
   ];
 
-  const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
-    { value: "all", label: `All · ${counts.all}` },
-    { value: "draft", label: `Draft · ${counts.draft}` },
-    { value: "posted", label: `Submitted · ${counts.posted}` },
+  const statusPillOptions: Array<{ value: StatusTab; label: string; moneySen?: number }> = [
+    { value: "all", label: `All · ${counts.all}`, moneySen: tabMoney.all },
+    { value: "draft", label: `Draft · ${counts.draft}`, moneySen: tabMoney.draft },
+    { value: "posted", label: `Submitted · ${counts.posted}`, moneySen: tabMoney.posted },
     { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
     { value: "on_hold", label: `On Hold · ${counts.on_hold ?? 0}` },
   ];
@@ -1066,8 +1088,13 @@ export function GoodsReceivedListV2() {
                     Combine into one PDF or download separately.
                   </span>
                   <div className="flex-1" />
+                  {draftsPicked.length > 0 && (
+                    <Button variant="primary" icon={<CheckCircle2 size={14} />} disabled={batchConfirm.confirming} onClick={() => void batchConfirm.confirm(draftsPicked)}>
+                      {batchConfirm.confirming ? batchConfirm.progressLabel : `Confirm (${draftsPicked.length})`}
+                    </Button>
+                  )}
                   <Button
-                    variant="primary"
+                    variant="secondary"
                     icon={<Printer size={14} />}
                     disabled={printingDocs}
                     onClick={batchPrint.openPreview}

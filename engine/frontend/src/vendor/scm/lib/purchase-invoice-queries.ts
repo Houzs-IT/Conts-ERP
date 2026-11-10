@@ -49,7 +49,7 @@ export function usePurchaseInvoicesPaged(params: { from?: string; to?: string; p
   usp.set('pageSize', String(pageSize));
   return useQuery({
     queryKey: ['purchase-invoices-paged', page, pageSize, status ?? '', q ?? '', sort ?? '', JSON.stringify(creditorNames ?? []), JSON.stringify(creditorCodes ?? []), JSON.stringify(currencies ?? []), from ?? '', to ?? ''],
-    queryFn: ({ signal }) => authedFetch<{ purchaseInvoices: any[]; total: number; page: number; pageSize: number; statusCounts: { all: number; draft: number; posted: number; partial: number; paid: number; cancelled: number } & Partial<Record<'on_hold', number>> }>(`/purchase-invoices?${usp.toString()}`, { signal }),
+    queryFn: ({ signal }) => authedFetch<{ purchaseInvoices: any[]; total: number; page: number; pageSize: number; statusMoneySen?: Record<string, number>; statusCounts: { all: number; draft: number; posted: number; partial: number; paid: number; cancelled: number } & Partial<Record<'on_hold', number>> }>(`/purchase-invoices?${usp.toString()}`, { signal }),
     placeholderData: (prev: any) => prev,
     staleTime: 30_000,
     retry: retryUnlessClientError,
@@ -135,13 +135,24 @@ export const usePurchaseInvoiceDetail = (id: string | null) => useQuery({
   queryFn: () => authedFetch<{ purchaseInvoice: any; items: any[]; customerDos?: Array<{ id: string; do_number: string }> }>(`/purchase-invoices/${id}`),
   enabled: Boolean(id), staleTime: 30_000, retry: retryUnlessClientError, retryDelay: 800,
 });
-export const usePostPurchaseInvoice = () => {
+/* PATCH /purchase-invoices/:id/post can answer 200 with the invoice confirmed
+   but its payables entry refused (`ledger.posted === false`). Null when booked. */
+export function piNotBookedProblem(res: unknown): string | null {
+  const ledger = (res as { ledger?: { posted?: boolean; status?: string; reason?: string | null } } | null | undefined)?.ledger;
+  if (!ledger || ledger.posted !== false) return null;
+  return `confirmed, but not booked to payables (${ledger.reason || ledger.status || 'no reason given'})`;
+}
+
+/** `reportNotBooked: false` for a caller that tells the operator itself (New PI). */
+export const usePostPurchaseInvoice = ({ reportNotBooked = true }: { reportNotBooked?: boolean } = {}) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => authedFetch<{ ledger?: { posted: false; status: string; reason: string | null } }>(`/purchase-invoices/${id}/post`, { method: 'PATCH' }),
-    onSuccess: (_, id) => {
+    onSuccess: (data, id) => {
       qc.invalidateQueries({ queryKey: ['purchase-invoices'] });
       qc.invalidateQueries({ queryKey: ['purchase-invoice-detail', id] });
+      const problem = reportNotBooked ? piNotBookedProblem(data) : null;
+      if (problem) serviceNotify({ title: 'Invoice confirmed, payables not updated', body: `${problem[0]!.toUpperCase()}${problem.slice(1)}.`, tone: 'error' });
     },
     /* The AP commit had no error path until 2026-08-21, while every sibling in
        this file (cancel, record payment, delete item) had one. Its two call

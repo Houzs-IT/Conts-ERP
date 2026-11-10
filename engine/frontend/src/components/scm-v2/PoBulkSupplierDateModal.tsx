@@ -122,7 +122,7 @@ export function PoBulkSupplierDateModal({
           <strong className="text-ink">
             {count} selected {count === 1 ? "purchase order" : "purchase orders"}
           </strong>
-          . Purchase orders with a Goods Receipt are skipped and listed after.
+          . Purchase orders with a Goods Receipt, or with that date already recorded, are skipped and listed after.
         </p>
 
         <div className="flex flex-col gap-1.5">

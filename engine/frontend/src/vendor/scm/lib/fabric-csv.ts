@@ -220,8 +220,14 @@ export function importErrorDetail(err: unknown): string | null {
   return parts.length ? parts.join('\n') : null;
 }
 
+// The UTF-8 BOM, once: without it Excel opens the file in the PC's codepage and
+// Chinese text comes out garbled. Callers that already prefix one keep a single mark.
+export function withBom(csv: string): string {
+  return csv.charCodeAt(0) === 0xFEFF ? csv : '\ufeff' + csv;
+}
+
 export function triggerDownload(filename: string, csv: string): void {
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob([withBom(csv)], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

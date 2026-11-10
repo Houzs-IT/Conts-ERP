@@ -17,5 +17,6 @@ describe('the SKU import template', () => {
     expect(savedSummary({ upserted: 5, created: 2 })).toBe('2 new SKUs · 3 SKUs updated');
     expect(savedSummary({ upserted: 1, created: 1 })).toBe('1 new SKU');
     expect(savedSummary({ upserted: 3 })).toBe('3 SKUs updated');
+    expect(savedSummary({ upserted: 2, created: 0, unchanged: 7 })).toBe('2 SKUs updated · 7 unchanged');
   });
 });
