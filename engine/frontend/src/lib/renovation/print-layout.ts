@@ -15,7 +15,7 @@ import { buildRows, summaryOf, type DocSummary, type PrintDoc, type PrintRow } f
 
 export const A4 = { width: 210, height: 297, margin: 14 } as const;
 /** Where the body starts under the repeated header block, and where the footer starts. */
-export const BODY_TOP = 102;
+export const BODY_TOP = 88;
 export const FOOTER_TOP = 250;
 export const BODY_HEIGHT = FOOTER_TOP - BODY_TOP;
 export type Density = 'normal' | 'compact';

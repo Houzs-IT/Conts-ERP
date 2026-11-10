@@ -25,28 +25,34 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   if (field && !flags.mine && !mayPick && !flags.reported) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
 
   const [job] = await fieldRepairs(env, 'm.id = ?', [id]);
+  const lastAssign = session.role === 'technician' && flags.mine && !job.startedAt && job.state === 'assigned'
+    ? await one<{ via: string | null; actor_id: string | null }>(env, `
+      SELECT after_state::jsonb ->> 'via' AS via, actor_id FROM audit_log WHERE entity_table = 'maintenance_issues' AND entity_id = ? AND action = 'maintenance.assign'
+      ORDER BY occurred_at DESC LIMIT 1`, id)
+    : null;
+  const pickedSelf = lastAssign?.via === 'picked_up' && lastAssign.actor_id === session.userId;
   const docs = await all<any>(env, `
     SELECT d.id, d.kind, d.file_name, d.mime_type, d.byte_size, d.created_at, u.full_name AS uploader
     FROM documents d LEFT JOIN users u ON u.id = d.uploaded_by WHERE d.maintenance_id = ? ORDER BY d.created_at`, id);
-  const access = flags.mine || !field
+  const access = (flags.mine || !field) && job.unitId
     ? await all<{ id: string; label: string; instruction: string | null }>(env, `SELECT id, label, instruction FROM access_credentials c WHERE unit_id = ?${await usedBySql(env, 'c', 'maintenance')} ORDER BY label`, job.unitId)
     : [];
   const notes = await all<{ note: string; actor_label: string; occurred_at: string; action: string }>(env, `
     SELECT after_state::jsonb ->> 'note' AS note, actor_label, occurred_at, action FROM audit_log
-    WHERE entity_table = 'maintenance_issues' AND entity_id = ? AND action IN ('maintenance.note','maintenance.end')
+    WHERE entity_table = 'maintenance_issues' AND entity_id = ? AND action IN ('maintenance.note','maintenance.end','maintenance.support')
       AND COALESCE(after_state::jsonb ->> 'note', '') <> ''
     ORDER BY occurred_at`, id);
 
   const isMedia = (d: any) => d.kind === 'photo' || d.kind === 'video';
   return json({
-    job, mine: !!flags.mine, mayPick,
+    job, mine: !!flags.mine, mayPick, mayDrop: pickedSelf,
     media: docs.filter(isMedia).map(d => ({ id: d.id, kind: d.kind, url: `/api/documents/${d.id}/download`, fileName: d.file_name, mimeType: d.mime_type,
       stage: String(d.file_name).startsWith('after-') ? 'after' : 'before', uploadedAt: d.created_at, uploader: d.uploader ?? null })),
     files: docs.filter(d => !isMedia(d)).map(d => ({ id: d.id, kind: d.kind, url: `/api/documents/${d.id}/download`, fileName: d.file_name,
       byteSize: Number(d.byte_size), uploadedAt: d.created_at, uploader: d.uploader ?? null })),
     access: access.filter(a => a.instruction).map(a => ({ id: a.id, label: a.label, instruction: a.instruction })),
     // The unit's car park bays (staff sheet UNIT, 17 Oct 2026), with the access details.
-    parking: flags.mine ? await parkingFor(env, job.unitId) : null,
+    parking: flags.mine && job.unitId ? await parkingFor(env, job.unitId) : null,
     notes: notes.map(n => ({ note: n.note, by: n.actor_label, at: n.occurred_at, done: n.action === 'maintenance.end' })),
   });
 };

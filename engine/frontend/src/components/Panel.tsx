@@ -1,3 +1,4 @@
+import { useEscapeLayer } from "../lib/escapeStack";
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
@@ -66,15 +67,12 @@ export function Panel({
     }
   }
 
-  // Keyboard handling: Esc dismiss + Tab focus cycling inside the panel.
+  // Keyboard handling: Esc dismiss (through the shared Esc stack, so a confirm
+  // over the panel closes alone) + Tab focus cycling inside the panel.
+  useEscapeLayer(attemptClose, open);
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        attemptClose();
-        return;
-      }
       if (e.key === "Tab" && panelRef.current) {
         const focusables = Array.from(
           panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),

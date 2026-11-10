@@ -47,9 +47,9 @@ export function expand(sql: string, projectId: number, companyId: number): { tex
   return { text, args };
 }
 
-/** A query over the project's documents: __POS__, __GRS__ and __DOS__ stand for the sets above (used by the Timeline). */
+/** A query over the project's documents: __POS__, __GRS__, __DOS__ and __SIS__ stand for the sets above (used by the Timeline). */
 export function projectDocSql(sql: string, projectId: number, companyId: number): { text: string; args: number[] } {
-  return expand(sql.replace(/__POS__/g, POS).replace(/__GRS__/g, GRS).replace(/__DOS__/g, DOS), projectId, companyId);
+  return expand(sql.replace(/__POS__/g, POS).replace(/__GRS__/g, GRS).replace(/__DOS__/g, DOS).replace(/__SIS__/g, SIS), projectId, companyId);
 }
 
 const num = (v: unknown) => Number(v ?? 0);

@@ -28,7 +28,13 @@ type KindLookup = (c: Context<any>, docNo: string) => Promise<{ kind: string | n
 
 /** Middleware for the /mfg-sales-orders router. `lookup` reads so_kind. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mounted on routers with their own Env/Variables
-export function renovationSoWriteFence(lookup: KindLookup): MiddlewareHandler<any> {
+export function renovationSoWriteFence(
+  lookup: KindLookup,
+  /* The approved cancel of a contract arrives here, on the same status route as any SO: its two approvals are checked
+     before this runs, so it must end in the contract's own cancel rather than a refusal. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the router's own Context type
+  cancelContract?: (c: Context<any>, docNo: string) => Promise<Response>,
+): MiddlewareHandler<any> {
   return async (c, next) => {
     const path = new URL(c.req.url).pathname;
     const m = /\/mfg-sales-orders\/([^/]+)(?:\/(.*))?$/.exec(path);
@@ -41,6 +47,10 @@ export function renovationSoWriteFence(lookup: KindLookup): MiddlewareHandler<an
       return c.json({ error: 'so_kind_unreadable', message: 'Could not confirm what kind of order this is. Nothing was changed; try again.' }, 503);
     }
     if (r.kind === 'RENOVATION') {
+      if (cancelContract && c.req.method === 'PATCH' && m[2] === 'status') {
+        const body = (await c.req.json().catch(() => null)) as { status?: unknown } | null;
+        if (String(body?.status ?? '').trim().toUpperCase() === 'CANCELLED') return cancelContract(c, docNo);
+      }
       return c.json({
         error: 'renovation_so_write_refused',
         message: 'This is a renovation contract. Change its lines through a variation order and its status on the renovation contract screen.',

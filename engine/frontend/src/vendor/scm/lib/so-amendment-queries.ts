@@ -26,8 +26,25 @@ import { retryUnlessClientError } from '../../../lib/retryPolicy';
 /* ── Row + detail shapes (mirror the API response verbatim) ─────────────────
    List rows are loosely typed (accessors read by name), matching the GRN/SO
    list convention. */
+/* What the VO list shows for a renovation VO (renovationVoListRead.ts). Null is a value the record does not hold, or
+   money this role does not see. */
+export type VoListSide = { qty: number | null; uom: string | null; unitPriceSen: number | null };
+export type VoListDetail = {
+  added: number;
+  changed: number;
+  removed: number;
+  netSen: number | null;
+  beforeSen: number | null;
+  afterSen: number | null;
+  signedName: string | null;
+  signedAt: string | null;
+  poFixes: Array<{ poNumber: string | null; action: 'AMEND' | 'CANCEL'; newQty: number | null; open: boolean }>;
+  lines: Array<{ change: 'Added' | 'Changed' | 'Removed'; room: string | null; itemCode: string | null; description: string; before: VoListSide | null; after: VoListSide | null; amountSen: number | null }>;
+};
+
 export type AmendmentRow = {
   id: string;
+  vo?: VoListDetail | null;
   so_doc_no: string;
   amendment_no: number | string | null;
   status: string;
@@ -103,6 +120,8 @@ export type AmendmentDetail = {
   lines: AmendmentLine[];
   salesOrder: { doc_no: string; status: string; revision: number } | null;
   purchaseOrders: Array<{ id: string; po_number: string; status: string }>;
+  /** The caller raised this amendment (server-resolved staff identity). */
+  viewerIsRequester?: boolean;
   /* Conts (owner, 3 Nov 2026): each change in words and the VO's one-line topic. A renovation VO's REMOVE + ADD of
      one line is one row whose `line` is a MODIFY made of the two. Absent from an older server, null when not read. */
   changes?: AmendmentChanges | null;
@@ -132,6 +151,8 @@ export type CreateAmendmentLine = {
   newVariants?: unknown;
   newQty?: number;
   newUnitPriceSen?: number;
+  /* HC-0095 — sent with a TYPED 0 only; the apply ignores a 0 without it. */
+  zeroPriceIntended?: true;
   /* mig 0280 — the line's REMARK. Omit when the request does not touch it; ''
      is a real request to clear it. Before 0280 this had no column and the
      submit dropped it in silence (owner 2026-08-11, 2990-SO-2608-016). */

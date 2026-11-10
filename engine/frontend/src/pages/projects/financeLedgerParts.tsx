@@ -1,3 +1,4 @@
+import { rmFromText } from "../../lib/money";
 import { useState } from "react";
 import { Plus, Trash2, ExternalLink, Pencil, ChevronDown, ChevronUp } from "lucide-react";
 import { useToast } from "../../hooks/useToast";
@@ -377,7 +378,7 @@ function AddFinanceLineForm({
   const [submitting, setSubmitting] = useState(false);
 
   async function submit() {
-    const n = parseFloat(amount);
+    const n = rmFromText(amount);
     if (!Number.isFinite(n) || n < 0) {
       toast.error("Amount must be a non-negative number");
       return;
@@ -534,7 +535,7 @@ export function EditFinanceLineRow({
   const [submitting, setSubmitting] = useState(false);
 
   async function submit() {
-    const n = parseFloat(amount);
+    const n = rmFromText(amount);
     if (!Number.isFinite(n) || n < 0) {
       toast.error("Amount must be a non-negative number");
       return;

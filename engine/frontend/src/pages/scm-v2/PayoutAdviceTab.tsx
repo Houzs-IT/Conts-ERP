@@ -22,6 +22,7 @@
 // reconciliation screen only (owner: merchant reconciliation 那边上传就好).
 // ----------------------------------------------------------------------------
 
+import { rmFromText } from "../../lib/money";
 import { useState } from 'react';
 import { AlertTriangle, Upload } from 'lucide-react';
 import {
@@ -271,7 +272,7 @@ const ChargeForm = ({ payoutId, day, chargeAccounts, defaultAccount, onClose }: 
   const [account, setAccount] = useState(defaultAccount ?? (chargeAccounts.length > 0 ? chargeAccounts[0].accountCode : ''));
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const amountSen = Math.round(Number(amount) * 100);
+  const amountSen = Math.round(rmFromText(amount) * 100);
   const ready = Number.isFinite(amountSen) && amountSen > 0 && account !== '' && note.trim() !== '';
   return (
     <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginLeft: 8 }}>

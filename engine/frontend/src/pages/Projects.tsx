@@ -1,3 +1,5 @@
+import { rmFromText } from "../lib/money";
+import { todayMyt } from "../vendor/scm/lib/dates";
 import { Fragment, createContext, useContext, useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate, useParams, Navigate, useSearchParams } from "react-router-dom";
 import {
@@ -874,7 +876,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
         toast.error(all.length === 0 ? "No projects match the current filter." : "Nothing to export.");
         return;
       }
-      const date = new Date().toISOString().slice(0, 10);
+      const date = todayMyt();
       downloadCSV(`projects-${date}.csv`, toCSV(all, csvCols));
     } catch (e: any) {
       toast.error(e?.message || "Export failed");
@@ -8133,7 +8135,7 @@ function ProjectSalesEntriesSection({
   const [qtSaving, setQtSaving] = useState(false);
 
   async function saveQuickTotal() {
-    const n = parseFloat(qtValue);
+    const n = rmFromText(qtValue);
     if (!Number.isFinite(n) || n < 0) {
       toast.error("Enter a valid total sales amount");
       return;
@@ -8152,7 +8154,7 @@ function ProjectSalesEntriesSection({
   }
 
   async function saveQuickLog() {
-    const n = parseFloat(qlAmount);
+    const n = rmFromText(qlAmount);
     if (!Number.isFinite(n) || n <= 0) {
       toast.error("Amount must be a positive number");
       return;

@@ -2,7 +2,8 @@
    takes today (Malaysia time, YYYY-MM-DD) as a value so the rules can be tested on fixed dates. */
 
 import { INTERNAL_TASKS, RENO_STAGES, STAGE_LABEL, TASK_CATEGORIES } from "../../vendor/shared/renovation-stages";
-import { CATEGORY_LABEL, type TimelineEntry } from "../projects/renovation/renovationTimelineModel";
+import { CATEGORY_LABEL, type TimelineDoc, type TimelineEntry } from "../projects/renovation/renovationTimelineModel";
+import type { BetaTabKey } from "./renovationBetaTabs";
 import { daysBetween, money, shortDate } from "../projects/renovation/renovationModel";
 import type { DesignFile, SiteMeasure, TaskViewV2 } from "../projects/renovation/simpleApi";
 import type { BetaDefect, BetaInstalment, BetaPayments, BetaReview, BetaWorkspace, ReminderKind } from "./renovationBetaApi";
@@ -10,7 +11,6 @@ import {
   APPT_LABEL, apptLeftText, apptWithDefault, dayWord, deadlineGroups, diff, ds, leftText, ord, todoText,
   type ApptKey, type BoardModel, type DesignProject, type Kind,
 } from "./renovationBetaBoard";
-import type { BetaTabKey } from "./renovationBetaTabs";
 
 const day = (iso: string): string => iso.slice(0, 10);
 
@@ -356,6 +356,35 @@ export function plainText(text: string | null): string | null {
 export function plainTimelineEntry(e: TimelineEntry): TimelineEntry {
   if (e.noteId != null) return e;
   return { ...e, title: plainText(e.title), body: plainText(e.body) };
+}
+
+/** Where an entry's Open lands. */
+export interface TimelineTarget {
+  label: string;
+  /** A tab of this project, with the document to open it on (DO and GR tabs read ?do= and ?gr=). */
+  tab?: BetaTabKey;
+  focus?: readonly ["do" | "gr", string];
+  /** A document with no tab of its own in the workspace: its own page. */
+  href?: string;
+}
+
+const DOC_TAB: Readonly<Partial<Record<TimelineDoc["kind"], BetaTabKey>>> = { quotation: "po", so: "po", po: "po", vo: "vo" };
+
+/** The document an entry is about, then the tab its kind of work lives on. */
+export function timelineTarget(e: Pick<TimelineEntry, "category" | "title" | "doc">): TimelineTarget | null {
+  const d = e.doc;
+  if (d) {
+    const label = `Open ${d.no}`;
+    if (d.kind === "do" || d.kind === "gr") return { label, tab: d.kind, focus: [d.kind, d.no] };
+    if (d.kind === "production") return { label, href: `/scm/production-orders/${encodeURIComponent(d.id)}` };
+    if (d.kind === "invoice") return { label, href: `/scm/sales-invoices/${encodeURIComponent(d.id)}` };
+    if (d.kind === "payment") return { label: "Open payments", tab: "overview" };
+    return { label, tab: DOC_TAB[d.kind] };
+  }
+  if (e.category === "design") return { label: "Open drawings", tab: "drawings" };
+  if (e.category === "site") return /defect/i.test(e.title ?? "") ? { label: "Open defects", tab: "defects" } : { label: "Open photos", tab: "site" };
+  if (e.category === "sales" && /payment/i.test(e.title ?? "")) return { label: "Open payments", tab: "overview" };
+  return null;
 }
 
 const RECORD_TITLE = /\bapproved\b|key passed|handover signed|handed over/i;

@@ -29,6 +29,7 @@
    carries whichever one the type needs, so nothing here re-derives it.
    ---------------------------------------------------------------------------- */
 
+import type { RenoDocInfo } from "../vendor/scm/lib/renovation-doc-print";
 import { authedFetch } from "../vendor/scm/lib/authed-fetch";
 import type { PdfAction } from "../vendor/scm/lib/pdf-common";
 import type { PrintTarget } from "./printChain";
@@ -110,6 +111,17 @@ async function purchaseOrderHeaderForPdf(po: Json): Promise<Json> {
     your_ref_no: (po.your_ref_no as string | null) ?? null,
     source_so_doc_no: (po.source_so_doc_no as string | null) ?? null,
   };
+}
+
+/* The Project rows and rooms the detail page prints: without these the same document printed from a list lost them.
+   Nothing extra to show on a failed read, as on the detail page. */
+const RENO_ROUTE = { do: "/delivery-orders-mfg", po: "/mfg-purchase-orders", grn: "/grns" } as const;
+export async function renoInfoFor(kind: keyof typeof RENO_ROUTE, id: string): Promise<RenoDocInfo | null> {
+  try {
+    return (await authedFetch<RenoDocInfo>(`${RENO_ROUTE[kind]}/${encodeURIComponent(id)}/renovation-info`)) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** A few identifying lines for the print preview card, so the operator can see
@@ -234,7 +246,7 @@ export async function renderPrintBundle(target: PrintTarget, bundle: Bundle, act
     case "do": {
       const { generateDeliveryOrderPdf } = await import("../vendor/scm/lib/delivery-order-pdf");
       type A = Parameters<typeof generateDeliveryOrderPdf>;
-      return generateDeliveryOrderPdf(header as unknown as A[0], items as unknown as A[1], { action });
+      return generateDeliveryOrderPdf(header as unknown as A[0], items as unknown as A[1], { action, renovation: await renoInfoFor("do", target.key) });
     }
     case "si": {
       const { generateSalesInvoicePdf } = await import("../vendor/scm/lib/sales-invoice-pdf");
@@ -250,12 +262,12 @@ export async function renderPrintBundle(target: PrintTarget, bundle: Bundle, act
       const { generatePurchaseOrderPdf } = await import("../vendor/scm/lib/purchase-order-pdf");
       type A = Parameters<typeof generatePurchaseOrderPdf>;
       const { poDrawingsAppender } = await import("../pages/renovation-beta/renovationBetaPoDrawings");
-      return generatePurchaseOrderPdf(header as unknown as A[0], items as unknown as A[1], { action, appendAfter: await poDrawingsAppender(target.key) });
+      return generatePurchaseOrderPdf(header as unknown as A[0], items as unknown as A[1], { action, renovation: await renoInfoFor("po", target.key), appendAfter: await poDrawingsAppender(target.key) });
     }
     case "grn": {
       const { generateGrnPdf } = await import("../vendor/scm/lib/grn-pdf");
       type A = Parameters<typeof generateGrnPdf>;
-      return generateGrnPdf(header as unknown as A[0], items as unknown as A[1], { action });
+      return generateGrnPdf(header as unknown as A[0], items as unknown as A[1], { action, renovation: await renoInfoFor("grn", target.key) });
     }
     case "pi": {
       const { generatePurchaseInvoicePdf } = await import("../vendor/scm/lib/purchase-invoice-pdf");

@@ -415,6 +415,8 @@ export function deliveryOrderRowMenu<R extends StatusRow & DoChainRow>(h: {
 export function purchaseOrderRowMenu<R extends StatusRow & PoChainRow>(h: {
   open: (r: R) => void;
   edit: (r: R) => void;
+  /* HC-0149: a new PO seeded from this one; any status. */
+  copyAsNew: (r: R) => void;
   print: (t: PrintTarget) => void;
   transferToGrn: (r: R) => void;
   setHold: (r: R, onHold: boolean) => void;
@@ -428,6 +430,7 @@ export function purchaseOrderRowMenu<R extends StatusRow & PoChainRow>(h: {
     [
       { label: "Open", onClick: () => h.open(r) },
       { label: "Edit", onClick: () => h.edit(r) },
+      { label: "Copy as new", onClick: () => h.copyAsNew(r) },
       ...printEntries(purchaseOrderPrintChain(r), { print: h.print, open: () => h.open(r) }),
     ],
     [h.canReceive(r) && { label: transferToLabel("grn"), onClick: () => h.transferToGrn(r) }],

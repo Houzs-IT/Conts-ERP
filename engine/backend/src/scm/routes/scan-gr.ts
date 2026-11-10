@@ -29,6 +29,7 @@ import { companyCodeById } from '../lib/doc-no';
 import { resolveCallerStaffId } from '../lib/salesScope';
 import { postPersonalNotice } from '../../services/personalNotice';
 import { jobToJson } from './scan-so-serialize';
+import { workScanJob, requeueScanJob, handOffReclaimedJob, REQUEUE_REASON } from '../lib/scan-job-drive';
 import {
   sha256Hex,
   parseScanFiles,
@@ -299,7 +300,7 @@ async function runGrnScanJob(
 
 // ---------------------------------------------------------------------------
 // POST /scan-gr/enqueue — persist photos + a document_type='GR' job row, respond
-// FAST, run the pipeline off the queue (waitUntil fallback when unbound). Same
+// FAST, run the pipeline off the queue (no queue: the screen drives /jobs/:id/work). Same
 // multipart contract as /scan-so/enqueue (repeated `file` field).
 // ---------------------------------------------------------------------------
 scanGr.post('/enqueue', async (c) => {
@@ -370,15 +371,18 @@ scanGr.post('/enqueue', async (c) => {
   }
 
   // Hand to the Cloudflare Queue; the consumer rebuilds everything from the row
-  // + R2 photos. FALLBACK to waitUntil when SCAN_QUEUE is unbound (test runtime).
+  // + R2 photos. Without a queue the screen runs the job by holding
+  // POST /jobs/:id/work open (scan-job-drive.ts): never waitUntil, which
+  // Cloudflare cancels ~30 s after this reply. Photos that did not reach R2
+  // cannot be replayed by /work, so that job runs here before answering.
   if (c.env.SCAN_QUEUE) {
     try {
       await c.env.SCAN_QUEUE.send({ jobId });
     } catch (e) {
       console.error('[scan-gr enqueue] SCAN_QUEUE.send failed:', jobId, (e as Error).message);
     }
-  } else {
-    const pipeline = runGrnScanJob(c.env, {
+  } else if (imageKeys.length === 0) {
+    await runGrnScanJob(c.env, {
       id: jobId,
       uploaderStaffId,
       houzsUserId,
@@ -388,10 +392,9 @@ scanGr.post('/enqueue', async (c) => {
       firstBuffer,
       imageKeys,
     });
-    try { c.executionCtx.waitUntil(pipeline); } catch { /* non-Workers runtime (tests) */ }
   }
 
-  return c.json({ job_id: jobId, status: 'queued' }, 202);
+  return c.json({ job_id: jobId, status: 'queued', drive: !c.env.SCAN_QUEUE }, 202);
 });
 
 // Rebuild the reaper/queue file inputs, run the GR pipeline. Shared by the queue
@@ -450,11 +453,7 @@ export async function processGrnScanQueueMessage(env: Env, jobId: string): Promi
 // Stale-job reaper for GR jobs, scoped to document_type='GR' so it and the SO
 // reaper never touch each other's rows. One automatic re-run (retry_count 0->1),
 // then terminal error — same policy as the SO reaper.
-async function reapStaleGrnScanJobs(
-  env: Env,
-  svc: SupabaseClient,
-  runInBackground: (p: Promise<unknown>) => void,
-): Promise<void> {
+async function reapStaleGrnScanJobs(env: Env, svc: SupabaseClient): Promise<void> {
   try {
     const nowIso = new Date().toISOString();
     const cutoff = new Date(Date.now() - SCAN_JOB_STALE_MINUTES * 60 * 1000).toISOString();
@@ -482,14 +481,8 @@ async function reapStaleGrnScanJobs(
         .eq('id', id).eq('retry_count', 0).in('status', ['queued', 'running'])
         .select('id');
       if (claimErr || !claimed || claimed.length === 0) continue;
-      runInBackground((async () => {
-        console.warn('[scan-gr jobs] re-running stale job (retry 1/1):', id);
-        const outcome = await runGrnJobFromRow(env, id, r);
-        if (outcome === 'not_replayable') {
-          console.warn('[scan-gr jobs] retry not replayable, erroring:', id);
-          await svc.from('scan_jobs').update({ status: 'error', error: STALE_JOB_ERROR, updated_at: new Date().toISOString() }).eq('id', id);
-        }
-      })());
+      // Re-queued, not re-run here: the queue or the screen's /work call runs it.
+      await handOffReclaimedJob(env, id);
     }
     await svc.from('scan_jobs')
       .update({ status: 'error', error: STALE_JOB_ERROR, updated_at: nowIso })
@@ -504,7 +497,7 @@ const JOB_SELECT = 'id, status, salesperson, so_doc_no, linked_doc_no, document_
 // GET /scan-gr/jobs — latest 20 GR jobs for the active company.
 scanGr.get('/jobs', async (c) => {
   const svc = serviceClient(c.env);
-  await reapStaleGrnScanJobs(c.env, svc, (p) => { try { c.executionCtx.waitUntil(p); } catch { /* tests */ } });
+  await reapStaleGrnScanJobs(c.env, svc);
   const { data, error } = await svc
     .from('scan_jobs')
     .select(JOB_SELECT)
@@ -525,7 +518,7 @@ scanGr.get('/jobs/:id', async (c) => {
   const id = (c.req.param('id') ?? '').trim();
   if (!id) return c.json({ error: 'bad_request', reason: 'Missing job id.' }, 400);
   const svc = serviceClient(c.env);
-  await reapStaleGrnScanJobs(c.env, svc, (p) => { try { c.executionCtx.waitUntil(p); } catch { /* tests */ } });
+  await reapStaleGrnScanJobs(c.env, svc);
   // company-scope: by-id read scoped to the caller's active company, so one
   // company cannot poll another's scan job (the list read below is scoped the
   // same way). scan_jobs.company_id is NOT NULL (mig 0083, HOUZS default 0091).
@@ -538,6 +531,27 @@ scanGr.get('/jobs/:id', async (c) => {
   }
   if (!data) return c.json({ error: 'not_found', reason: 'Scan job not found.' }, 404);
   return c.json({ success: true, data: { job: jobToJson(data as Record<string, unknown>) } });
+});
+
+// POST /scan-gr/jobs/:id/work — the screen holds this open while the job runs
+// (scan-job-drive.ts). Answers with the job as it stands afterwards.
+scanGr.post('/jobs/:id/work', async (c) => {
+  const id = (c.req.param('id') ?? '').trim();
+  if (!id) return c.json({ error: 'bad_request', reason: 'Missing job id.' }, 400);
+  const svc = serviceClient(c.env);
+  const { ran, job } = await workScanJob(c.env, svc, id, activeCompanyId(c) ?? null, 'GR', (jobId) => processGrnScanQueueMessage(c.env, jobId));
+  if (!job) return c.json({ error: 'not_found', reason: 'Scan job not found.' }, 404);
+  return c.json({ success: true, data: { ran, job: jobToJson(job) } });
+});
+
+// POST /scan-gr/jobs/:id/retry — a failed or stalled scan back in the queue; the
+// screen then drives it with /work.
+scanGr.post('/jobs/:id/retry', async (c) => {
+  const id = (c.req.param('id') ?? '').trim();
+  if (!id) return c.json({ error: 'bad_request', reason: 'Missing job id.' }, 400);
+  const outcome = await requeueScanJob(serviceClient(c.env), id, activeCompanyId(c) ?? null, 'GR');
+  if (outcome !== 'requeued') return c.json({ error: outcome, reason: REQUEUE_REASON[outcome] }, outcome === 'not_found' ? 404 : 409);
+  return c.json({ success: true });
 });
 
 // POST /scan-gr/jobs/clear-failed — delete this company's terminal error GR rows.

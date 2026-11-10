@@ -1,3 +1,4 @@
+import { todayMyt } from "../vendor/scm/lib/dates";
 import { useMemo } from "react";
 import { CheckCircle2, Lock } from "lucide-react";
 import { cn, formatDate } from "../lib/utils";
@@ -109,7 +110,7 @@ export function ProjectGantt({
 
   const planStart = projectStartDate ? new Date(projectStartDate) : null;
   const planEnd = projectEndDate ? new Date(projectEndDate) : null;
-  const today = isoOnly(new Date());
+  const today = todayMyt();
   const todayDate = new Date(today);
 
   // ── Group tasks per lane ───────────────────────────────────

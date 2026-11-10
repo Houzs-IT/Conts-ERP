@@ -23,6 +23,7 @@ import type { Env, Variables } from "../env";
 import { supabaseAuth } from "../middleware/auth";
 import { createDraftGrnsFromPoItemsCore, type GrnFromPoItemsContext } from "../lib/grn-from-po-core";
 import { postGrnAndRollup, recordGrnCreate } from "./grns";
+import { deliverSiteReceipt } from './onsite-twin';
 import { refuseWithoutWriting } from "../lib/no-write-refusal";
 import { requireActiveCompanyId } from "../lib/companyScope";
 import { todayMyt } from "../lib/my-time";
@@ -245,7 +246,7 @@ siteReceipts.post("/", async (c) => {
   /* The real person who signed, not the pinned system staff row every SCM call runs as. */
   const supervisorStaffId = (await resolveCallerStaffId(sb, c.get("houzsUser")?.id)) ?? user.id;
   const hasGps = body.lat != null && body.lng != null;
-  const created: Array<{ id: string; grnNumber: string; posted: boolean; postError?: string }> = [];
+  const created: Array<{ id: string; grnNumber: string; posted: boolean; postError?: string; deliveryError?: string }> = [];
   for (const draft of coreRes.created) {
     const draftItems = await sb.from("grn_items").select("id, purchase_order_item_id").eq("grn_id", draft.id);
     const itemByPoItem = new Map(((draftItems.data ?? []) as Array<{ id: string; purchase_order_item_id: string | null }>).map((r) => [r.purchase_order_item_id ?? "", r.id]));
@@ -274,7 +275,9 @@ siteReceipts.post("/", async (c) => {
     }
     const postRes = await postGrnAndRollup(sb, draft.id, user.id, draft.companyId);
     await recordGrnCreate(sb, c.get("houzsUser"), co.companyId, draft.id, draft.lineCount, `Site receipt at the unit (project ${projectId}) from ${draft.poNumbers.join(", ")}`);
-    created.push({ id: draft.id, grnNumber: draft.grnNumber, posted: postRes.ok, ...(postRes.ok ? {} : { postError: postRes.reason }) });
+    /* Drop ship (owner, 7 Nov 2026): the receipt becomes its DO at once, POD shared, and neither touches stock. */
+    const deliveryError = postRes.ok ? await deliverSiteReceipt(c, sb, draft.id, draft.companyId) : null;
+    created.push({ id: draft.id, grnNumber: draft.grnNumber, posted: postRes.ok, ...(postRes.ok ? {} : { postError: postRes.reason }), ...(deliveryError ? { deliveryError } : {}) });
   }
 
   /* Trade tasks complete when their purchase order is fully received. */

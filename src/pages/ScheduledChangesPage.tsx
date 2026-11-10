@@ -13,7 +13,7 @@ import { api, notifyFailure } from '../lib/api';
 import { date, plural, rm, titleCase } from '../lib/format';
 import type { StatusTone } from '../lib/status';
 import { useUrlState, SearchBox } from './finance/listKit';
-import { ScheduledChanges, type ScheduleUnit } from './units/ScheduledChanges';
+import { PriceChangePanel, type PriceKind } from './units/PriceChangePanel';
 import { CLEAN_KINDS } from './units/UnitCleaning';
 
 type Kind = 'cleaning' | 'maintenance' | 'contract';
@@ -21,7 +21,7 @@ interface Figures { owner: number | null; cost: number | null }
 export interface ScheduledRow {
   id: string; kind: Kind; scope: 'unit' | 'list'; unitId: string | null; unitLabel: string; ownerName: string | null;
   itemId: string | null; what: string; cleanKind: string | null; effectiveFrom: string; setBy: string | null; setAt: string | null;
-  now?: Figures | null; next?: Figures | null; layouts?: number | null; termsNow?: string | null; termsNext?: string;
+  now?: Figures | null; next?: Figures | null; layouts?: number | null; byBed?: boolean; termsNow?: string | null; termsNext?: string;
 }
 interface Payload { dated: boolean; mayEdit: boolean; money: boolean; rows: ScheduledRow[] }
 
@@ -35,26 +35,24 @@ const amounts = (f: Figures | null | undefined, empty: string) => {
   return f ? `Owner ${one(f.owner)} · Cost ${one(f.cost)}` : null;
 };
 const textNow = (r: ScheduledRow) => (r.kind === 'contract' ? r.termsNow ?? 'No earlier contract' : amounts(r.now, 'not set'));
-const textNext = (r: ScheduledRow) => (r.kind === 'contract' ? r.termsNext ?? null : r.layouts ? `New prices for ${plural(r.layouts, 'layout')}` : amounts(r.next, 'list price'));
+const textNext = (r: ScheduledRow) => (r.kind === 'contract' ? r.termsNext ?? null : r.layouts ? `New prices for ${plural(r.layouts, r.byBed ? 'bed size' : 'layout')}` : amounts(r.next, 'list price'));
 
 /** Scheduled changes (owner, 30 Oct 2026): one list of everything set to change on a later date, so the office can see
- *  what is coming. A price change is cancelled here; a contract is changed on the unit's Contract tab, a list price
- *  under Service prices. New changes are added in the side panel. */
+ *  what is coming. A price change is cancelled here, and a cleaning or maintenance % change is added from the same panel
+ *  as under Cleaning and Maintenance (owner, 9 Nov 2026). A contract is started on the unit's Contract tab. */
 export default function ScheduledChangesPage() {
   const { data, loading, error, reload } = useApi<Payload>('/units/scheduled-changes');
-  const roster = useApi<{ data: { id: string; unitNumber: string; propertyName: string; ownerName: string }[] }>('/units');
   const navigate = useNavigate();
   const toast = useToast();
   const url = useUrlState();
   const [dialog, ask] = useConfirm();
-  const [adding, setAdding] = useState(false);
+  const [addingKind, setAddingKind] = useState<PriceKind | null>(null);
   const filter = (['cleaning', 'maintenance', 'contract'].includes(url.get('kind')) ? url.get('kind') : 'all') as Kind | 'all';
   const q = url.get('q').toLowerCase();
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const count = (k: Kind) => rows.filter(r => r.kind === k).length;
   const visible = useMemo(() => rows.filter(r => (filter === 'all' || r.kind === filter)
     && (!q || [r.unitLabel, r.ownerName ?? '', nameOf(r)].some(s => s.toLowerCase().includes(q)))), [rows, filter, q]);
-  const units: ScheduleUnit[] = (roster.data?.data ?? []).map(u => ({ id: u.id, label: `${u.propertyName} ${u.unitNumber}`, building: u.propertyName, hint: titleCase(u.ownerName) }));
 
   const open = (r: ScheduledRow) => navigate(r.scope === 'list' ? '/system/settings/services' : `/properties/units/${encodeURIComponent(r.unitId ?? '')}${r.kind === 'contract' ? '?tab=contract' : ''}`);
   async function cancel(r: ScheduledRow) {
@@ -85,7 +83,8 @@ export default function ScheduledChangesPage() {
   return (
     <>
       <PageHeader title="Scheduled changes" sub={data ? `${plural(rows.length, 'change')} waiting for a date` : 'Loading…'}
-        primary={data?.mayEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Schedule a change</Button> : undefined} />
+        actions={data?.mayEdit ? <Button size="sm" variant="secondary" onClick={() => setAddingKind('maintenance')}>Maintenance price change</Button> : undefined}
+        primary={data?.mayEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setAddingKind('cleaning')}>Cleaning price change</Button> : undefined} />
       {data && !data.dated && <div className="py-[10px] px-[14px] rounded-control bg-gold-tint text-copy">Dated unit prices are not switched on yet. They need a database update (migration 0186). Contracts and list prices still show here.</div>}
       <DataTable<ScheduledRow> id="scheduled-changes" columns={columns} rows={data ? visible : null} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
         onRowClick={open} viewParams={['kind', 'q']} filtered={filter !== 'all' || !!q} onClearFilters={() => url.set({ kind: null, q: null, page: null })}
@@ -105,7 +104,7 @@ export default function ScheduledChangesPage() {
           </span>
         )}
       />
-      {adding && <ScheduledChanges units={units} money={!!data?.money} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload(); }} />}
+      {addingKind && <PriceChangePanel kind={addingKind} onClose={() => setAddingKind(null)} onSaved={() => { setAddingKind(null); reload(); }} />}
       {dialog}
     </>
   );

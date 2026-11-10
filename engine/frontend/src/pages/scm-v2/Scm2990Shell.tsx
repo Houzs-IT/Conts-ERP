@@ -32,6 +32,7 @@ import { PrintChainProvider } from '../../components/scm-v2/PrintChainProvider';
 import { registerDialogService } from '../../vendor/scm/lib/dialog-service';
 import { rememberScmListReturn } from '../../lib/scmListReturn';
 import { prefetchDocCreate } from '../../lib/prefetch-routes';
+import { loadDocLetterhead } from '../../lib/renovation/api';
 import { CategoryMasterSync } from '../../vendor/scm/lib/renovation-catalog-queries';
 
 /** Registers the live confirm + notify fns with the module-level dialog-service
@@ -63,6 +64,7 @@ function ScmListReturnTracker() {
 }
 
 export function Scm2990Shell({ children }: { children: ReactNode }) {
+  useEffect(() => { void loadDocLetterhead(); }, []);
   return (
     <NotifyProvider>
       <ConfirmProvider>

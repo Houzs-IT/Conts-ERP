@@ -22,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
 import { idempotentInit } from '../../../lib/idempotency';
 import { serviceNotify } from './dialog-service';
+import { afterOnsiteConfirm } from './onsite-twin-queries';
 import { invalidateSoLists } from './sales-order-queries';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
 
@@ -51,6 +52,8 @@ export type DeliverableSoLine = {
   /** The order's raw reference pair (resolve with soRefOfCamelStamp). */
   soRef?: string | null;
   soCustomerSoNo?: string | null;
+  /** Null when the line's stock is READY (BUG-59). */
+  notReady: { status: 'PARTIAL' | 'PENDING'; reason: string } | null;
 };
 
 export const useDeliverableSoLines = () => useQuery({
@@ -217,9 +220,10 @@ export const useMfgDeliveryOrders = (status?: string) => useQuery({
 // express (open/in_transit/delivered), so those show all rows still counted.
 /** The Delivery Order list's filter as query parameters, no paging: the list
  *  request and the list's export (do-list-export.ts) send exactly these. */
-export function doListSearchParams(f: { status?: string; q?: string; sort?: string; debtorNames?: string[]; currencies?: string[] }): URLSearchParams {
+export function doListSearchParams(f: { status?: string; type?: string; q?: string; sort?: string; debtorNames?: string[]; currencies?: string[] }): URLSearchParams {
   const usp = new URLSearchParams();
   if (f.status) usp.set('status', f.status);
+  if (f.type) usp.set('type', f.type);
   if (f.q && f.q.trim()) usp.set('q', f.q.trim());
   if (f.sort) usp.set('sort', f.sort);
   // Server-filterable column funnels (owner 2026-09-16): Customer Name /
@@ -229,15 +233,15 @@ export function doListSearchParams(f: { status?: string; q?: string; sort?: stri
   return usp;
 }
 
-export function useMfgDeliveryOrdersPaged(params: { enabled: boolean; page: number; pageSize: number; status?: string; q?: string; sort?: string; debtorNames?: string[]; currencies?: string[] }) {
-  const { enabled, page, pageSize, status, q, sort, debtorNames, currencies } = params;
-  const usp = doListSearchParams({ status, q, sort, debtorNames, currencies });
+export function useMfgDeliveryOrdersPaged(params: { enabled: boolean; page: number; pageSize: number; status?: string; type?: string; q?: string; sort?: string; debtorNames?: string[]; currencies?: string[] }) {
+  const { enabled, page, pageSize, status, type, q, sort, debtorNames, currencies } = params;
+  const usp = doListSearchParams({ status, type, q, sort, debtorNames, currencies });
   usp.set('page', String(page));
   usp.set('pageSize', String(pageSize));
   return useQuery({
     enabled,
-    queryKey: ['mfg-delivery-orders-paged', page, pageSize, status ?? '', q ?? '', sort ?? '', JSON.stringify(debtorNames ?? []), JSON.stringify(currencies ?? [])],
-    queryFn: ({ signal }) => authedFetch<{ deliveryOrders: any[]; total: number; page: number; pageSize: number; statusCounts: { all: number; open: number; in_transit: number; delivered: number; cancelled: number } }>(`/delivery-orders-mfg?${usp.toString()}`, { signal }),
+    queryKey: ['mfg-delivery-orders-paged', page, pageSize, status ?? '', type ?? '', q ?? '', sort ?? '', JSON.stringify(debtorNames ?? []), JSON.stringify(currencies ?? [])],
+    queryFn: ({ signal }) => authedFetch<{ deliveryOrders: any[]; total: number; page: number; pageSize: number; statusCounts: { all: number; open: number; in_transit: number; delivered: number; cancelled: number }; typeCounts?: Record<string, number> }>(`/delivery-orders-mfg?${usp.toString()}`, { signal }),
     placeholderData: (prev: any) => prev,
     staleTime: 30_000,
     retry: retryUnlessClientError,
@@ -267,9 +271,11 @@ export const useCreateMfgDeliveryOrder = () => {
         `/delivery-orders-mfg`,
         idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }),
       ),
-    onSuccess: () => {
+    onSuccess: (made, vars) => {
       qc.invalidateQueries({ queryKey: ['mfg-delivery-orders'] });
       releaseSoSideQueries(qc);
+      /* asDraft lands a plan; anything else is confirmed on create and raises its receipt. */
+      if (vars.asDraft !== true) afterOnsiteConfirm('do', made.id, () => { void qc.invalidateQueries({ queryKey: ['grns'] }); });
     },
   });
 };
@@ -326,7 +332,12 @@ export const useUpdateMfgDeliveryOrderStatus = () => {
       authedFetch(`/delivery-orders-mfg/${id}/status`, {
         method: 'PATCH', body: JSON.stringify({ status, ...(evidence ?? {}) }),
       }),
-    onSuccess: (_, vars) => refreshAfterDoStatus(qc, vars.id),
+    onSuccess: (_, vars) => {
+      refreshAfterDoStatus(qc, vars.id);
+      if (vars.status !== 'DRAFT' && vars.status !== 'CANCELLED') {
+        afterOnsiteConfirm('do', vars.id, () => { void qc.invalidateQueries({ queryKey: ['onsite-twin', 'do', vars.id] }); void qc.invalidateQueries({ queryKey: ['grns'] }); });
+      }
+    },
     onError: (err) => {
       serviceNotify({ title: 'Status update failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' });
     },

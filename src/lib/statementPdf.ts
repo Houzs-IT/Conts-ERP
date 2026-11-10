@@ -5,7 +5,7 @@ import { isTenancy } from './revenueModel';
 /**
  * One owner statement as a real PDF file, drawn page for page like the Owner Income Report on screen
  * (src/pages/OwnerIncomeReportPage.tsx): the owner's all-units month and year to date when they have more than one
- * unit, then each unit's month and year to date. Called once per unit by the Owners list's "Unit statements (.zip)" export.
+ * unit, then each unit's month and year to date (or the month pages only). Called once per unit by the Owners list's "Unit statements (.zip)" export.
  * Keep the two in step: a row added to the screen report has to be drawn here too.
  * No imports beyond pdf-lib and types, so `node --test src/lib/statementPdf.test.mjs` runs it as it is.
  */
@@ -15,7 +15,10 @@ export interface StatementPdfOptions {
   logo?: Uint8Array | null;
   /** How a phone number prints (the screen report writes Malaysian numbers as dialled at home). */
   phone?: (raw: string | null) => string;
+  pages?: StatementPages;
 }
+
+export type StatementPages = 'month' | 'monthAndYear';
 
 const MM = 72 / 25.4;
 const PAGE_W = 210 * MM, PAGE_H = 297 * MM;
@@ -277,7 +280,8 @@ export async function statementPdf(r: Report, opts: StatementPdfOptions = {}): P
     logo: opts.logo ? await doc.embedPng(opts.logo).catch(() => null) : null,
     phone: opts.phone ?? (raw => (raw ?? '').trim()),
   };
-  if (r.units.length > 1) { ownerMonthPage(ctx); ownerYearPage(ctx); }
-  for (const u of r.units) { monthPage(ctx, u); yearPage(ctx, u); }
+  const shouldDrawYearPages = (opts.pages ?? 'monthAndYear') === 'monthAndYear';
+  if (r.units.length > 1) { ownerMonthPage(ctx); if (shouldDrawYearPages) ownerYearPage(ctx); }
+  for (const u of r.units) { monthPage(ctx, u); if (shouldDrawYearPages) yearPage(ctx, u); }
   return doc.save();
 }

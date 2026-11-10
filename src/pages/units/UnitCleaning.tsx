@@ -14,7 +14,7 @@ import { rm } from '../../lib/format';
 export interface UnitPrice { internalCost: number | null; externalCharge: number | null; source: 'unit' | 'table' | null; override: { internalCost: number | null; externalCharge: number | null } | null }
 /** A unit's own price in force or still to come (management only). Both figures empty: the list price from that day. */
 export interface UnitPriceChange { itemId: string; name: string; domain: string; cleanKind: string | null; effectiveFrom: string; ownerPrice: number | null; internalCost: number | null; scheduled: boolean }
-export interface UnitPriceData { ready: boolean; rows: Array<{ unitId: string; prices: Record<string, UnitPrice> }>; mayEdit: boolean; dated?: boolean; changes?: UnitPriceChange[] }
+export interface UnitPriceData { ready: boolean; rows: Array<{ unitId: string; prices: Record<string, UnitPrice> }>; mayEdit: boolean; dated?: boolean; byBed?: boolean; changes?: UnitPriceChange[] }
 
 export const CLEAN_KINDS = [['turnover', 'Basic clean'], ['deep_clean', 'Deep clean']] as const;
 
@@ -43,7 +43,7 @@ export function UnitCleaning({ unitId, data, loading, error, reload, canEdit }: 
   const pay = (k: string) => (draft[k]?.pay !== undefined ? draft[k].pay : own(k)?.internalCost ?? null);
   const hint = (k: string, field: 'externalCharge' | 'internalCost') => {
     const p = prices[k];
-    return p?.source === 'table' && p[field] != null ? `List ${rm(p[field])}` : 'Not set';
+    return p?.source === 'table' && p[field] != null ? `${data.byBed ? 'From beds' : 'List'} ${rm(p[field])}` : 'Not set';
   };
   const set = (k: string, p: Draft[string]) => setDraft(d => ({ ...d, [k]: { ...d[k], ...p } }));
   const changed = CLEAN_KINDS.filter(([k]) => draft[k] && (charge(k) !== (own(k)?.externalCharge ?? null) || pay(k) !== (own(k)?.internalCost ?? null)));

@@ -57,6 +57,8 @@ function sentBody(): Record<string, unknown> {
   return JSON.parse(String(init.body));
 }
 
+vi.mock("./onsite-twin-queries", () => ({ afterOnsiteConfirm: () => {} }));
+
 beforeEach(() => {
   authedFetch.mockReset();
   authedFetch.mockResolvedValue({ deliveryOrder: { id: "do-1", status: "DELIVERED" } });

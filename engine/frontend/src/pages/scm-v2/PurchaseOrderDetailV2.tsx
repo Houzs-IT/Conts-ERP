@@ -11,14 +11,17 @@
 
 import { lazy, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { RenovationDocTrail } from "./RenovationDocTrail";
 import { PoPaymentScheduleCard } from "../renovation/PoPaymentScheduleCard";
 import { LazySlot } from "../../components/LazySlot";
-import { ProductionOrderChips } from "./ProductionOrderChips";
+import { ProductionOrderChips, useProductionOrderLinks } from "./ProductionOrderChips";
+import { PoApprovedDrawings } from "../renovation-beta/BetaApprovedDrawings";
 import { scmListReturnTo } from "../../lib/scmListReturn";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { formatPhone } from "@2990s/shared/phone";
 import {
   ArrowLeft,
+  Copy,
   History,
   Printer,
   Mail,
@@ -509,6 +512,7 @@ function PurchaseOrderDetailV2ReadOnly() {
   const purchaseOrder =
     (detail.data as { purchaseOrder?: PoHeaderRow } | undefined)?.purchaseOrder ??
     null;
+  const productionLinks = useProductionOrderLinks({ poId: purchaseOrder?.id });
   const items: PoItemRow[] = useMemo(
     () => ((detail.data as { items?: PoItemRow[] } | undefined)?.items ?? []),
     [detail.data]
@@ -1121,7 +1125,11 @@ function PurchaseOrderDetailV2ReadOnly() {
      The predicates were inverted relative to their endpoints. */
   const confirmReason = poConfirmBlockReason(purchaseOrder.status);
   const canConfirm = confirmReason === null;
-  const grnReason = grnTransferBlockReason(purchaseOrder.status);
+  /* The in-house team has no delivery to receive: its PO closes when its production order is completed (owner, 6 Nov 2026).
+     A Built-in PO has no production order and is received like any other. */
+  const grnReason = purchaseOrder.supplier?.code === "INHOUSE" && (productionLinks.data?.length ?? 1) > 0
+    ? "An in-house PO is received by completing its production order."
+    : grnTransferBlockReason(purchaseOrder.status);
   const canConvertToGrn = grnReason === null;
   const canCancel = rawStatus !== "CANCELLED" && rawStatus !== "RECEIVED";
   const canReopen = rawStatus === "CANCELLED";
@@ -1224,6 +1232,10 @@ function PurchaseOrderDetailV2ReadOnly() {
             </Button>
             <Button variant="ghost" icon={<Share2 size={14} />} onClick={() => setRelMapOpen(true)}>
               Relationship Map
+            </Button>
+            <Button variant="ghost" icon={<Copy size={14} />}
+              onClick={() => navigate(`/scm/purchase-orders/new?copyFrom=${purchaseOrder.id}`)}>
+              Copy as new
             </Button>
             <Button variant="secondary" icon={<Printer size={14} />} onClick={print.openPreview}>
               Print PDF
@@ -1342,6 +1354,7 @@ function PurchaseOrderDetailV2ReadOnly() {
 
         <DetailGrid>
           <DetailMain>
+            <RenovationDocTrail kind="po" id={id} />
             {/* Supplier */}
             <Section title="Supplier">
               <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-3">
@@ -1472,9 +1485,10 @@ function PurchaseOrderDetailV2ReadOnly() {
                 emptyLabel="No line items"
               />
             </Section>
+            <PoApprovedDrawings poId={purchaseOrder.id} />
             <DocAttachments docType="purchase_order" docId={purchaseOrder.id} canEdit={!isCancelled} />
             {/* Renovation PO payment schedule (Conts, 2026-10-09): Mobilise / Completion / Retention. */}
-            <PoPaymentScheduleCard poId={purchaseOrder.id} offerDefault={items.some((l) => l.item_group === "RENOVATION")} />
+            <PoPaymentScheduleCard poId={purchaseOrder.id} offerDefault={Boolean(reno) || items.some((l) => l.item_group === "RENOVATION")} />
           </DetailMain>
 
           <DetailAside>

@@ -1,3 +1,5 @@
+import { rmFromText } from "../lib/money";
+import { todayMyt } from "../vendor/scm/lib/dates";
 import { useMemo, useState, useRef, useEffect } from "react";
 import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { Truck, RefreshCw, X, AlertTriangle, ChevronRight, FileUp } from "lucide-react";
@@ -914,7 +916,7 @@ function PlanForm({ vehicleId, components, plan, taken, onCancel, onSaved }: {
     if (busy || !ok) return;
     setBusy(true); setErr(null);
     try {
-      const rm = estCost.trim() === "" ? null : Number(estCost);
+      const rm = estCost.trim() === "" ? null : rmFromText(estCost);
       await api.post(`/api/fleet-maintenance/vehicles/${vehicleId}/plans`, {
         component,
         intervalKm: num(intervalKm),
@@ -1057,7 +1059,7 @@ export function MileageSection({ readings, vehicleId, onChanged }: {
   const canWrite = !!vehicleId && !!onChanged;
   const [adding, setAdding] = useState(false);
   const [km, setKm] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayMyt());
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1471,7 +1473,7 @@ function BreakdownEdit({ b, onChanged }: { b: BreakdownView; onChanged: () => vo
     if (busy) return;
     setBusy(true); setErr(null);
     try {
-      const cost = towingCost.trim() === "" ? null : Number(towingCost);
+      const cost = towingCost.trim() === "" ? null : rmFromText(towingCost);
       await api.patch(`/api/fleet-maintenance/breakdowns/${b.id}`, {
         faultType: faultType.trim() || null,
         severity,
@@ -1651,7 +1653,7 @@ function WorkOrderCard({ wo, cause, onChanged }: { wo: WorkOrderView; cause?: Br
     if (busy || !pName.trim()) return;
     setBusy(true); setErr(null);
     try {
-      await api.post(`/api/fleet-maintenance/work-orders/${wo.id}/parts`, { name: pName.trim(), qty: Number(pQty) || 1, unitPriceSen: Math.round((Number(pPrice) || 0) * 100) });
+      await api.post(`/api/fleet-maintenance/work-orders/${wo.id}/parts`, { name: pName.trim(), qty: Number(pQty) || 1, unitPriceSen: Math.round((rmFromText(pPrice) || 0) * 100) });
       setAddingPart(false); setPName(""); setPQty("1"); setPPrice(""); onChanged();
     } catch (e) { setErr(apiErrText(e)); } finally { setBusy(false); }
   };
@@ -1787,8 +1789,8 @@ export function ComponentsSection({ vehicleId, currentKm, components, onChanged 
     try {
       await api.post(`/api/fleet-maintenance/vehicles/${vehicleId}/components`, {
         componentType: type, position, brand: brand.trim() || undefined, serial: serial.trim() || undefined,
-        fittedKm: fittedKm ? Number(fittedKm) : undefined, fittedDate: new Date().toISOString().slice(0, 10),
-        purchasePriceSen: price ? Math.round(Number(price) * 100) : undefined, warrantyUntil: warranty || undefined,
+        fittedKm: fittedKm ? Number(fittedKm) : undefined, fittedDate: todayMyt(),
+        purchasePriceSen: price ? Math.round(rmFromText(price) * 100) : undefined, warrantyUntil: warranty || undefined,
       });
       setAdding(false); setBrand(""); setSerial(""); setPrice(""); setWarranty(""); onChanged();
     } catch (e) { setErr(apiErrText(e)); } finally { setBusy(false); }
@@ -1853,14 +1855,14 @@ function ComponentCard({ c, currentKm, onChanged }: { c: ComponentView; currentK
   const remove = async () => {
     if (busy) return;
     setBusy(true); setErr(null);
-    try { await api.patch(`/api/fleet-maintenance/components/${c.id}`, { status: "REMOVED", removedDate: new Date().toISOString().slice(0, 10), removedKm: currentKm ?? undefined }); onChanged(); }
+    try { await api.patch(`/api/fleet-maintenance/components/${c.id}`, { status: "REMOVED", removedDate: todayMyt(), removedKm: currentKm ?? undefined }); onChanged(); }
     catch (e) { setErr(apiErrText(e)); } finally { setBusy(false); }
   };
   const logEvent = async () => {
     if (busy) return;
     setBusy(true); setErr(null);
     try {
-      await api.post(`/api/fleet-maintenance/components/${c.id}/events`, { eventType, eventDate: new Date().toISOString().slice(0, 10), odometerKm: currentKm ?? undefined, note: eventNote.trim() || undefined });
+      await api.post(`/api/fleet-maintenance/components/${c.id}/events`, { eventType, eventDate: todayMyt(), odometerKm: currentKm ?? undefined, note: eventNote.trim() || undefined });
       setLogging(false); setEventNote(""); onChanged();
     } catch (e) { setErr(apiErrText(e)); } finally { setBusy(false); }
   };
@@ -2012,7 +2014,7 @@ export function AddRenewalForm({ lorryId, docType, onSaved }: {
           issueDate: issueDate || null,
           expiryDate,
           documentRef: documentRef || null,
-          costSen: cost.trim() === "" ? null : Math.round(Number(cost) * 100),
+          costSen: cost.trim() === "" ? null : Math.round(rmFromText(cost) * 100),
           owner: owner || null,
           ...(docType === "PUSPAKOM" ? { result: result || null, reinspectionDeadline: reinspect || null } : {}),
         },

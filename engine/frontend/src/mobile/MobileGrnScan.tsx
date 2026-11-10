@@ -18,6 +18,8 @@ import {
   type ScanJob,
   type ScanJobsResp,
 } from "../vendor/scm/lib/scan-jobs";
+import { useScanJobDriver, isStalledScanJob } from "../vendor/scm/lib/scan-job-driver";
+import { ScanJobRetry } from "../vendor/scm/components/ScanJobRetry";
 import "./mobile.css";
 
 const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf";
@@ -44,7 +46,7 @@ export function MobileGrnScan({ onBack }: { onBack: () => void }) {
     setError(null);
   };
 
-  const { data: jobsData } = useQuery({
+  const { data: jobsData, refetch } = useQuery({
     queryKey: ["mobile-grn-scan-jobs"],
     enabled: enqueuedJobIds.length > 0,
     queryFn: () => authedFetch<ScanJobsResp>("/scan-gr/jobs"),
@@ -64,6 +66,8 @@ export function MobileGrnScan({ onBack }: { onBack: () => void }) {
       .filter((j): j is ScanJob => Boolean(j))
       .sort((a, b) => jobTs(a.createdAt) - jobTs(b.createdAt));
   }, [jobsData, enqueuedJobIds]);
+  // No queue on this server: the open screen runs each queued scan (scan-job-driver.ts).
+  useScanJobDriver("/scan-gr", trackedJobs, () => void refetch());
 
   const runScan = async () => {
     if (submitting || files.length === 0) return;
@@ -153,7 +157,8 @@ export function MobileGrnScan({ onBack }: { onBack: () => void }) {
               const done = j.status === "done";
               const needsReview = done && !j.linkedDocNo;
               const color = done ? (needsReview ? "#a16a2e" : "#16695f") : j.status === "error" ? "#a33" : "#767b6e";
-              const label = active ? (j.status === "running" ? "Reading…" : "Queued") : done ? (needsReview ? "Review" : "Draft") : j.status === "error" ? "Failed" : j.status;
+              const stalled = isStalledScanJob(j);
+              const label = stalled ? "Stalled" : active ? (j.status === "running" ? "Reading…" : "Queued") : done ? (needsReview ? "Review" : "Draft") : j.status === "error" ? "Failed" : j.status;
               return (
                 <div key={j.id} style={{ display: "flex", gap: 10, padding: "10px 12px", background: "#fff", borderRadius: 10, marginBottom: 6 }}>
                   <span style={{ flex: "none", fontSize: 11, fontWeight: 700, color }}>{label}</span>
@@ -165,6 +170,7 @@ export function MobileGrnScan({ onBack }: { onBack: () => void }) {
                       : j.status === "error"
                         ? (j.error || "Couldn't read the delivery order.")
                         : "Reading the delivery order…"}
+                    <ScanJobRetry base="/scan-gr" job={j} onDone={() => void refetch()} />
                   </div>
                   <span style={{ flex: "none", fontSize: 11, color: "#9aa093" }}>{jobTs(j.createdAt) ? hhmm(jobTs(j.createdAt)) : ""}</span>
                 </div>

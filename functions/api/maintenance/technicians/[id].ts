@@ -2,7 +2,7 @@ import { mayWork } from '../../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso, transaction } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { hasTechnicianList } from '../../../_lib/maintenance';
-import { followWorker } from '../../../_lib/fieldAccess';
+import { followWorker, followDepartment } from '../../../_lib/fieldAccess';
 
 const EMPLOYMENT = ['internal', 'outsourced'];
 const MANAGE = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
@@ -67,6 +67,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   await transaction(env, async tx => {
     await run(tx, `UPDATE technicians SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, now, id);
     if (loginActive !== null && await followWorker(tx, t.user_id, loginActive)) after.appLogin = loginActive ? 'on' : 'off';
+    const department = loginActive === null ? null : await followDepartment(tx, t.user_id);
+    if (department) after.loginDepartment = department;
     if (rename) await run(tx, `UPDATE maintenance_issues SET vendor_name = ?, updated_at = ? WHERE technician_id = ? AND state <> 'resolved'`, rename, now, id);
     // Moving to contractor switches the login off, so their open jobs stop showing in that login's field app.
     if (b?.employmentType === 'outsourced') await run(tx, `UPDATE maintenance_issues SET assignee_kind = 'contractor', assignee_user_id = NULL, updated_at = ? WHERE technician_id = ? AND state <> 'resolved'`, now, id);

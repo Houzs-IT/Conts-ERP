@@ -5,7 +5,7 @@ import { getBrandingCache } from "../../lib/branding";
 import type { DesignFile } from "../projects/renovation/simpleApi";
 import { dayMonthYear } from "./renovationBetaModel";
 import { appendPartsToPdf, type PdfPart } from "./renovationBetaPdf";
-import { sheetSetAt, sheetsApi } from "./renovationBetaSheets";
+import { sheetSetAt, sheetsApi, type BetaSheet } from "./renovationBetaSheets";
 
 const B = "/api/beta";
 
@@ -16,6 +16,23 @@ interface PoDrawings {
 }
 
 export const builtinPos = (projectId: number): Promise<{ pos: BuiltinPo[] }> => api.get(`${B}/projects/${projectId}/builtin-pos`);
+
+export interface ApprovedSheets { projectId: number; version: number; approvedOn: string; sheets: Array<{ key: string; name: string; fileName: string }> }
+
+/** The set as sheets with a stored file; null with nothing approved, or for a PO that is not Built-in. */
+export function approvedSheets(d: Pick<PoDrawings, "projectId" | "files" | "approved">, sheets: BetaSheet[]): ApprovedSheets | null {
+  const { projectId, approved } = d;
+  if (!projectId || !approved) return null;
+  const list = sheetSetAt(d.files ?? [], sheets, approved.version).flatMap((x) => (x.key ? [{ key: x.key, name: x.name, fileName: x.fileName }] : []));
+  return list.length ? { projectId, version: approved.version, approvedOn: approved.approvedOn, sheets: list } : null;
+}
+
+async function withSheets(d: PoDrawings): Promise<ApprovedSheets | null> {
+  if (!d.projectId || !d.approved) return null;
+  return approvedSheets(d, (await sheetsApi.list(d.projectId)).sheets);
+}
+export const poApprovedSheets = async (poId: string): Promise<ApprovedSheets | null> => withSheets(await api.get<PoDrawings>(`${B}/po-drawings/${encodeURIComponent(poId)}`));
+export const projectApprovedSheets = async (projectId: number): Promise<ApprovedSheets | null> => withSheets(await api.get<PoDrawings>(`${B}/projects/${projectId}/approved-2d`));
 
 /** What to draw after the PO's last page, or null when this PO has no approved drawings to carry. */
 export async function poDrawingsAppender(poId: string): Promise<((doc: Parameters<typeof appendPartsToPdf>[0]) => Promise<void>) | null> {

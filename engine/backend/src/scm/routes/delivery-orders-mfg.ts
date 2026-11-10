@@ -15,7 +15,7 @@ import { Hono } from 'hono';
 import { propagateDoCrewToTrip } from '../lib/trip-crew-sync';
 import type { Context } from 'hono';
 import { normalizePhone } from '../shared/phone';
-import { firstUndeliverableSo, soNotDeliverableResponse } from '../lib/source-document-gates';
+import { firstHeldSo, firstUndeliverableSo, heldSoBehindLines, soNotDeliverableResponse, soOnHoldResponse } from '../lib/source-document-gates';
 import { HOLD_COLUMNS, isDocumentHeld } from '../lib/document-hold';
 import { mountHoldRoute } from './document-hold-routes';
 import { DO_STATUS_BUCKETS } from '../lib/do-status-buckets';
@@ -68,6 +68,7 @@ import { loadCommittedShipments } from '../lib/committed-shipments';
 import { syncSoDeliveredFromDo } from '../lib/so-delivery-sync';
 import { findOverDeliveredSoItems, findOverDeliveredUnlinkedItems } from '../lib/do-over-delivery';
 import { findUnlinkedSoLines, unlinkedSoLinesResponse, itemCodeKey } from '../lib/do-unlinked-so-lines';
+import { findNotReadySoLines, itemsNotReadyResponse } from '../lib/do-not-ready-lines';
 import { unlinkedScanRefusal } from '../lib/unlinked-line-edit-guard';
 import { maybeSendDeliveryOrderEmail } from '../lib/do-email';
 import { warehouseLabel } from '../lib/warehouse-label';
@@ -83,7 +84,7 @@ import {
   soLineShippedSourcePosImpl,
 } from '../lib/source-po-trace';
 export { soLineShippedSources, resolveDoSources } from '../lib/source-po-trace';
-import { filterDoList, fromDoList, orderDoList, readDoListParams } from '../lib/do-list-read';
+import { DO_LIST_TYPES, filterDoList, fromDoList, orderDoList, readDoListParams } from '../lib/do-list-read';
 import { readStatusCounts } from '../lib/status-counts';
 import { resolveSalesScopeIds, salesDocOutOfScope } from '../lib/salesScope';
 import { enrichLinesWithFabricSupplierCode } from '../lib/fabric-supplier-code';
@@ -101,7 +102,7 @@ import { resolveItemGroups } from '../lib/sku-category';
 import { buildDoItemRow as buildItemRow, loadCarriedSoLinePhotos, carriedPhotoUrls } from '../lib/do-item-row';
 import { soRemainingByItemId } from '../lib/so-remaining-by-item';
 import { lineLinkItemMismatch, assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
-import { checkStockAvailability, shortStockResponse, stockCheckableLines, uncoveredStockCheckLines, type StockShortage } from '../lib/check-stock-availability';
+import { checkStockAvailability, shortStockResponse, shortStockStops, stockCheckableLines, uncoveredStockCheckLines, type StockShortage } from '../lib/check-stock-availability';
 /* Conts switches: customer-supplied lines hold no stock; a renovation DO takes its site and brand from its own SO and lines. */
 import { HARD_BOUND_COMPANY_ID } from '../lib/so-stock-allocation';
 import { loadUnitBoundCodes, NO_UNIT_BOUND_CODES } from '../lib/unit-bound-sku';
@@ -320,7 +321,7 @@ const HEADER =
   'mattress_sofa_sen, bedframe_sen, accessories_sen, others_sen, service_sen, ' +
   'mattress_sofa_cost_sen, bedframe_cost_sen, accessories_cost_sen, others_cost_sen, service_cost_sen, ' +
   'local_total_sen, total_cost_sen, total_margin_sen, margin_pct_basis, line_count, ' +
-  'currency, warehouse_id, is_dropship, ' +
+  'currency, warehouse_id, is_dropship, pod_received_by, ' +
   /* Mig 0053 (port of 2990 0199) — DO-execution column: the date the goods
      arrive at the EM (East-Malaysia) holding warehouse on a sea-freight
      route. Surfaced read-only on the SO Detail mirror card and editable on
@@ -874,6 +875,16 @@ async function resolveDoSofaBatchMap(
   return batchBySoItem;
 }
 
+/* Conts: the free Workers plan allows 50 outside calls a request (Hookka #1152), and a 60-line DO re-costed with one
+   update per line stopped part-way. One call (migration 0250) stamps every line; before 0250 is applied, one per line. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function writeDoItemCosts(sb: any, deliveryOrderId: string, rows: Array<{ id: string; [col: string]: unknown }>): Promise<void> {
+  if (rows.length === 0) return;
+  const { error } = await sb.rpc('do_restamp_item_costs', { p_do: deliveryOrderId, p_rows: rows });
+  if (!error) return;
+  for (const { id, ...update } of rows) await sb.from('delivery_order_items').update(update).eq('id', id);
+}
+
 export async function restampDoActualCost(sb: any, deliveryOrderId: string) {
   try {
     /* Forward-compat (mig 0057): is_dropship column may not exist yet — retry without it. */
@@ -939,6 +950,7 @@ export async function restampDoActualCost(sb: any, deliveryOrderId: string) {
        which invents money when the per-unit figure is sub-sen — ledger B5. */
     const allocByLine = allocateAcrossBuckets(items as Array<{ id: string; qty: number }>, aggByBucket,
       (it: any) => `${lineWh.get(it.id) ?? ''}::${it.item_code}::${computeVariantKey(it.item_group ?? null, it.variants ?? null)}::${it.so_item_id ? (batchBySoItem.get(it.so_item_id) ?? '') : ''}`);
+    const costRows: Array<{ id: string; [col: string]: unknown }> = [];
     for (const it of items as Array<{
       id: string; so_item_id?: string | null; item_code: string; qty: number;
       item_group?: string | null; variants?: VariantAttrs | null; line_total_sen: number | null;
@@ -965,8 +977,9 @@ export async function restampDoActualCost(sb: any, deliveryOrderId: string) {
          Costing report. Nothing else about the cost numbers changes. */
       const shipFreeze = freezeShipCost(it.ship_cost_sen ?? null, unitCost);
       if (shipFreeze !== undefined) update.ship_cost_sen = shipFreeze;
-      await sb.from('delivery_order_items').update(update).eq('id', it.id);
+      costRows.push({ id: it.id, ...update });
     }
+    await writeDoItemCosts(sb, deliveryOrderId, costRows);
 
     await recomputeTotals(sb, deliveryOrderId);
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[restampDoActualCost] failed:', e); }
@@ -1221,7 +1234,7 @@ async function resolveDoLineRacks(
   return out;
 }
 
-async function deductInventoryForDo(sb: any, deliveryOrderId: string, performedBy: string): Promise<string[]> {
+export async function deductInventoryForDo(sb: any, deliveryOrderId: string, performedBy: string): Promise<string[]> {
   // Idempotency guard #1 — has this DO already written OUT movements?
   const { count: existing } = await sb
     .from('inventory_movements')
@@ -1363,7 +1376,7 @@ async function deductInventoryForDo(sb: any, deliveryOrderId: string, performedB
 // per DO regardless of which UI path dispatched. Best-effort throughout — the
 // separate rack ledger must never break the FIFO stock OUT.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function stockOutDoLinesFromRacks(
+export async function stockOutDoLinesFromRacks(
   sb: any,
   deliveryOrderId: string,
   doNo: string,
@@ -1384,6 +1397,11 @@ async function stockOutDoLinesFromRacks(
   const touchedRacks = new Set<string>();
 
   const customerGoods = await customerGoodsCodes(sb, items.map((it) => String(it.item_code ?? '')), companyId);
+  /* Conts (Hookka #1152, free plan: 50 outside calls a request): every rack read and write below is one call for the
+     whole DO, not one per line, so a 60-line DO no longer stops part-way through its rack stock-out. Lines are still
+     taken in order, oldest placement first, so two lines of one product share the racks exactly as before. */
+  type Line = { it: Record<string, unknown>; qty: number; itemCode: string; warehouseId: string; explicitRackId: string | null };
+  const lines: Line[] = [];
   for (const it of items) {
     if (isServiceLine({ itemGroup: it.item_group as string | null, itemCode: it.item_code as string })) continue;
     if (customerGoods.has(String(it.item_code ?? '').trim())) continue;
@@ -1393,73 +1411,107 @@ async function stockOutDoLinesFromRacks(
     if (!itemCode) continue;
     const warehouseId = lineWh.get(it.id as string) ?? null;
     if (!warehouseId) continue;
+    lines.push({ it, qty, itemCode, warehouseId, explicitRackId: (it.rack_id as string | null) ?? null });
+  }
+  if (lines.length === 0) return;
 
-    // Resolve the source rack row(s). Explicit pick first; else the racks in the
-    // ship-from warehouse that actually hold this product, oldest stock first.
-    const explicitRackId = (it.rack_id as string | null) ?? null;
-    let rackRows: Array<{ id: string; rack: string | null; warehouse_id: string | null }> = [];
-    if (explicitRackId) {
-      const { data } = await scopeToCompanyIdOrOpen(sb.from('warehouse_racks').select('id, rack, warehouse_id').eq('id', explicitRackId), companyId).limit(1);
-      rackRows = (data ?? []) as typeof rackRows;
-    } else {
-      const { data: whRacks } = await scopeToCompanyIdOrOpen(sb.from('warehouse_racks').select('id, rack, warehouse_id').eq('warehouse_id', warehouseId), companyId);
-      rackRows = (whRacks ?? []) as typeof rackRows;
-    }
-    if (rackRows.length === 0) continue; // warehouse has no racks — nothing to move
-    const rackIds = rackRows.map((r) => r.id);
-    const rackById = new Map(rackRows.map((r) => [r.id, r]));
+  // Every candidate rack in one or two reads: the explicit picks by id, the rest by ship-from warehouse.
+  type RackRow = { id: string; rack: string | null; warehouse_id: string | null };
+  const explicitIds = [...new Set(lines.map((l) => l.explicitRackId).filter((x): x is string => !!x))];
+  const autoWhs = [...new Set(lines.filter((l) => !l.explicitRackId).map((l) => l.warehouseId))];
+  const [explicitRes, whRes] = await Promise.all([
+    explicitIds.length ? scopeToCompanyIdOrOpen(sb.from('warehouse_racks').select('id, rack, warehouse_id').in('id', explicitIds), companyId) : Promise.resolve({ data: [] }),
+    autoWhs.length ? scopeToCompanyIdOrOpen(sb.from('warehouse_racks').select('id, rack, warehouse_id').in('warehouse_id', autoWhs), companyId) : Promise.resolve({ data: [] }),
+  ]);
+  const rackById = new Map<string, RackRow>();
+  for (const r of [...(((explicitRes as { data: RackRow[] | null }).data) ?? []), ...(((whRes as { data: RackRow[] | null }).data) ?? [])]) rackById.set(r.id, r);
+  if (rackById.size === 0) return; // no racks where this DO ships from: nothing to move
+  const racksFor = (l: Line): string[] => (l.explicitRackId
+    ? (rackById.has(l.explicitRackId) ? [l.explicitRackId] : [])
+    : [...rackById.values()].filter((r) => r.warehouse_id === l.warehouseId).map((r) => r.id));
 
-    // Placements of this product on the candidate rack(s), oldest first (FIFO).
-    const { data: placements } = await scopeToCompanyIdOrOpen(sb.from('warehouse_rack_items')
-      .select('id, rack_id, qty, stocked_in_date')
-      .in('rack_id', rackIds).eq('item_code', itemCode), companyId)
-      .order('stocked_in_date', { ascending: true });
-    const placementRows = (placements ?? []) as Array<{ id: string; rack_id: string; qty: number; stocked_in_date: string }>;
+  // Every placement of every product on those racks, oldest first (FIFO), in one read.
+  type Placement = { id: string; rack_id: string; item_code: string; qty: number; stocked_in_date: string };
+  const { data: placements } = await scopeToCompanyIdOrOpen(sb.from('warehouse_rack_items')
+    .select('id, rack_id, item_code, qty, stocked_in_date')
+    .in('rack_id', [...rackById.keys()]).in('item_code', [...new Set(lines.map((l) => l.itemCode))]), companyId)
+    .order('stocked_in_date', { ascending: true });
+  const placementRows = (placements ?? []) as Placement[];
+  const left = new Map<string, number>(); // placement id -> qty still on the rack after the lines so far
+  for (const p of placementRows) left.set(p.id, Number(p.qty));
 
-    let remaining = qty;
+  const moveRows: Array<Record<string, unknown>> = [];
+  for (const l of lines) {
+    const rackIds = new Set(racksFor(l));
+    if (rackIds.size === 0) continue;
+    let remaining = l.qty;
     const outByRack = new Map<string, number>();
     for (const p of placementRows) {
       if (remaining <= 0) break;
-      const take = Math.min(p.qty, remaining);
-      if (take >= p.qty) {
-        await scopeToCompanyIdOrOpen(sb.from('warehouse_rack_items').delete().eq('id', p.id), companyId);
-      } else {
-        await scopeToCompanyIdOrOpen(sb.from('warehouse_rack_items').update({ qty: p.qty - take }).eq('id', p.id), companyId);
-      }
+      if (p.item_code !== l.itemCode || !rackIds.has(p.rack_id)) continue;
+      const onRack = left.get(p.id) ?? 0;
+      if (onRack <= 0) continue;
+      const take = Math.min(onRack, remaining);
+      left.set(p.id, onRack - take);
       outByRack.set(p.rack_id, (outByRack.get(p.rack_id) ?? 0) + take);
       remaining -= take;
     }
-
-    // No matching placement found (product never racked, or all consumed). When
-    // the operator explicitly named a rack, still honour the pick by logging the
-    // whole line off that rack so the ledger reflects their action; otherwise
-    // skip silently (never invent a rack the goods were not on).
+    // No matching placement: an explicit pick is still logged off that rack (the operator's action); otherwise skip.
     if (outByRack.size === 0) {
-      if (!explicitRackId) continue;
-      outByRack.set(explicitRackId, qty);
+      if (!l.explicitRackId) continue;
+      outByRack.set(l.explicitRackId, l.qty);
     }
-
-    const moveRows = [...outByRack.entries()].map(([rackId, movedQty]) => {
+    for (const [rackId, movedQty] of outByRack) {
       const r = rackById.get(rackId);
       touchedRacks.add(rackId);
-      return {
+      moveRows.push({
         ...companyCol,
         movement_type: 'STOCK_OUT',
         rack_id: rackId,
         rack_label: r?.rack ?? null,
-        warehouse_id: r?.warehouse_id ?? warehouseId,
-        item_code: itemCode,
-        product_name: (it.description as string | null) ?? null,
+        warehouse_id: r?.warehouse_id ?? l.warehouseId,
+        item_code: l.itemCode,
+        product_name: (l.it.description as string | null) ?? null,
         source_doc_no: doNo,
         quantity: movedQty,
         reason: RACK_REASON,
         performed_by: performedBy,
-      };
-    });
-    if (moveRows.length > 0) await sb.from('warehouse_rack_movements').insert(moveRows);
+      });
+    }
   }
 
-  for (const rackId of touchedRacks) await refreshRackStatusInline(sb, rackId);
+  // Emptied placements go in one delete; the rest are set to what is left, one call per distinct remaining qty.
+  const gone = placementRows.filter((p) => (left.get(p.id) ?? 0) <= 0 && Number(p.qty) > 0).map((p) => p.id);
+  const byQty = new Map<number, string[]>();
+  for (const p of placementRows) {
+    const q = left.get(p.id) ?? 0;
+    if (q > 0 && q !== Number(p.qty)) byQty.set(q, [...(byQty.get(q) ?? []), p.id]);
+  }
+  if (gone.length) await scopeToCompanyIdOrOpen(sb.from('warehouse_rack_items').delete().in('id', gone), companyId);
+  for (const [q, ids] of byQty) await scopeToCompanyIdOrOpen(sb.from('warehouse_rack_items').update({ qty: q }).in('id', ids), companyId);
+  if (moveRows.length > 0) await sb.from('warehouse_rack_movements').insert(moveRows);
+
+  await refreshRackStatuses(sb, [...touchedRacks]);
+}
+
+/** refreshRackStatusInline for many racks: two reads and one update per resulting status, whatever the rack count. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function refreshRackStatuses(sb: any, rackIds: string[]): Promise<void> {
+  if (rackIds.length === 0) return;
+  if (rackIds.length === 1) { await refreshRackStatusInline(sb, rackIds[0]!); return; }
+  const [{ data: held }, { data: racks }] = await Promise.all([
+    sb.from('warehouse_rack_items').select('rack_id').in('rack_id', rackIds),
+    sb.from('warehouse_racks').select('id, reserved').in('id', rackIds),
+  ]);
+  const occupied = new Set(((held ?? []) as Array<{ rack_id: string }>).map((r) => r.rack_id));
+  const reserved = new Set(((racks ?? []) as Array<{ id: string; reserved: boolean | null }>).filter((r) => r.reserved).map((r) => r.id));
+  const byStatus = new Map<string, string[]>();
+  for (const id of rackIds) {
+    const status = occupied.has(id) ? 'OCCUPIED' : reserved.has(id) ? 'RESERVED' : 'EMPTY';
+    byStatus.set(status, [...(byStatus.get(status) ?? []), id]);
+  }
+  const now = new Date().toISOString();
+  for (const [status, ids] of byStatus) await sb.from('warehouse_racks').update({ status, updated_at: now }).in('id', ids);
 }
 
 // Recompute + persist a rack's derived status (items win over the reserved
@@ -2203,7 +2255,9 @@ export async function soDeliverableRemaining(
     .order('created_at')
     .order('id')
     .range(from, to));
-  const rawLines = soItems as Array<Record<string, unknown> & { id: string; doc_no: string; item_code: string; qty: number }>;
+  /* A credit note's row is money on the order, not goods: nothing to deliver, and no SKU a DO could carry. */
+  const rawLines = (soItems as Array<Record<string, unknown> & { id: string; doc_no: string; item_code: string; qty: number }>)
+    .filter((l) => l.item_code !== 'RENO-CREDIT');
   if (rawLines.length === 0) return out;
 
   /* THE CUSTOMER IS A PROPERTY OF THE SALES ORDER, NOT OF ITS LINES.
@@ -2729,6 +2783,7 @@ deliveryOrdersMfg.get('/', async (c) => {
      declared once in DO_STATUS_BUCKETS and the counts are derived from that
      map, so adding a tab cannot leave a count behind. */
   let statusCounts: Record<string, number> | undefined;
+  let typeCounts: Record<string, number> | undefined;
   let countError: string | null = null; // held, not returned here, so the LIST read's own error still wins the report
 
   if (!paginate) {
@@ -2783,6 +2838,9 @@ deliveryOrdersMfg.get('/', async (c) => {
       ['all', allC], ['on_hold', heldC], ...bucketNames.map((b, i) => [b, bucketC[i]]),
     ]));
     if (counted.ok) statusCounts = counted.counts; else countError = counted.reason;
+    /* The type tabs' numbers (owner, 6 Nov 2026). Their own read: a failed one drops the numbers, never the list. */
+    const typeC = await Promise.all(DO_LIST_TYPES.map((t) => countBase().eq('do_list_type', t)));
+    if (typeC.every((r) => !r.error)) typeCounts = Object.fromEntries(DO_LIST_TYPES.map((t, i) => [t, typeC[i].count ?? 0]));
   }
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   if (countError) return c.json({ error: 'status_counts_failed', reason: countError }, 500);
@@ -2795,7 +2853,7 @@ deliveryOrdersMfg.get('/', async (c) => {
        columns — the same read the export uses (lib/do-list-lines.ts). */
     const withLines = await attachDoLines(sb, c, deliveryOrders);
     if (withLines.error) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
-    return c.json({ deliveryOrders, total, page, pageSize, statusCounts });
+    return c.json({ deliveryOrders, total, page, pageSize, statusCounts, typeCounts });
   }
   return c.json({ deliveryOrders });
 });
@@ -2840,7 +2898,8 @@ deliveryOrdersMfg.get('/deliverable-so-lines', async (c) => {
   const lines = [...remainingMap.values()].filter((l) => l.remaining > 0);
   // The order's customer reference, for the picker's search (owner 2026-09-25).
   await stampSoRefsCamel(sb, lines, (l) => l.docNo, (q) => scopeToAllowedCompanies(q, c), 'deliverable-so-lines');
-  return c.json({ lines });
+  const notReady = new Map((await findNotReadySoLines(sb, lines.map((l) => l.soItemId), activeCompanyId(c) ?? null)).map((n) => [n.soItemId, n]));
+  return c.json({ lines: lines.map((l) => ({ ...l, notReady: notReady.get(l.soItemId) ?? null })) });
 });
 
 /* ── SO → DO conversion source ────────────────────────────────────────────────
@@ -3214,6 +3273,12 @@ deliveryOrdersMfg.post('/', async (c) => {
     }
   }
 
+  // BUG-59: warn (never block) when a picked SO line is not READY. A draft ships nothing, so it is not asked.
+  if (!body.confirmNotReady && body.asDraft !== true) {
+    const notReady = await findNotReadySoLines(sb, items.map((it) => String(it.soItemId ?? '')), activeCompanyId(c) ?? null);
+    if (notReady.length > 0) { markIdempotencyNoWrite(c); return c.json(itemsNotReadyResponse(notReady), 409); }
+  }
+
   /* Edge #1+#2 — soft stock check, gated by confirmShortStock.
      The check now runs even on the CONFIRMED replay, because its answer is what
      tells the binding decision below how much was actually on hand. It is the
@@ -3272,7 +3337,7 @@ deliveryOrdersMfg.post('/', async (c) => {
       return c.json(sofaSetPoSplitResponse(plan.setConflicts), 409);
     }
     commitments = plan.bindings;
-    if (shortages.length > 0 && !body.confirmShortStock) {
+    if (shortStockStops(shortages, body as { asDraft?: boolean; confirmShortStock?: boolean })) {
       markIdempotencyNoWrite(c);
       return c.json(shortStockResponse(shortages, bindingList(commitments)), 409);
     }
@@ -3624,7 +3689,7 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
      handler just inserted; the insert stamps the SOURCE company, so the id is
      not caller-supplied. */
   const sb = c.get('supabase'); const user = c.get('user');
-  let body: { picks?: Array<{ soItemId?: string; qty?: number }>; confirmShortStock?: boolean; warehouseId?: string; asDraft?: boolean; dropShip?: boolean };
+  let body: { picks?: Array<{ soItemId?: string; qty?: number }>; confirmShortStock?: boolean; confirmNotReady?: boolean; warehouseId?: string; asDraft?: boolean; dropShip?: boolean };
   try { body = (await c.req.json()) as typeof body; } catch { return c.json({ error: 'invalid_json' }, 400); }
 
   // Collapse duplicate soItemIds (sum their qty) so a line can't appear twice.
@@ -3808,6 +3873,12 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
     }
   }
 
+  /* A draft DO only says when the goods are expected (owner, on-site flow): nothing ships yet, so nothing to warn. */
+  if (!body.confirmNotReady && !body.asDraft) {
+    const notReady = await findNotReadySoLines(sb, sortedPicks.map((line) => line.soItemId), doCompanyId ?? null);
+    if (notReady.length > 0) { markIdempotencyNoWrite(c); return c.json(itemsNotReadyResponse(notReady), 409); }
+  }
+
   // Edge #1+#2 — soft stock check at the target warehouse, gated by
   // confirmShortStock. Returns 409 short_stock with cross-warehouse alternatives
   // so the picker can offer "ship anyway / switch warehouse / reduce qty".
@@ -3841,6 +3912,9 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
   const shipWarehouseId = headerWarehouseId
     ?? primaryWarehouseOf([...lineWarehouses.values()])
     ?? (await defaultWarehouseId(sb, doCompanyId));
+  /* A DO from one warehouse names it, for the printed Ship From; a DO across several stays per line. */
+  const lineWarehouseIds = [...new Set(lineWarehouses.values())];
+  const storedWarehouseId = headerWarehouseId ?? (lineWarehouseIds.length === 1 ? lineWarehouseIds[0]! : null);
   const shortages: StockShortage[] = await checkDoStockAvailability(
     sb, stockLines, headerWarehouseId, doCompanyId,
   );
@@ -3872,7 +3946,7 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
     return c.json(sofaSetPoSplitResponse(commitmentPlan.setConflicts), 409);
   }
   const commitments = commitmentPlan.bindings;
-  if (shortages.length > 0 && !body.confirmShortStock) {
+  if (shortStockStops(shortages, body)) {
     markIdempotencyNoWrite(c);
     return c.json(shortStockResponse(shortages, bindingList(commitments)), 409);
   }
@@ -3909,7 +3983,7 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
   const { data: doHeader, error: hErr } = await insertWithDocNoRetry<{ id: string; do_number: string }>(
     () => nextNum(sb, c, srcPrefix),
     (doNumber) => sb.from('delivery_orders').insert({
-      warehouse_id: headerWarehouseId,
+      warehouse_id: storedWarehouseId,
     /* multi-company: INHERIT the source SO's company (doCompanyId), which on this
        route can differ from the active one — a 2990 order converted while
        browsing as Houzs stays a 2990 delivery order on 2990's books, drawing
@@ -5117,6 +5191,11 @@ deliveryOrdersMfg.delete('/:id/items/:itemId', async (c) => {
    docs/bugs/0888-the-delivery-order-payment-ledger-served-a-table-production.md. */
 
 // ── Status transition + inventory deduction / reversal ────────────────────
+/* A cancel whose stock reversal failed stays CANCELLED; pressing Cancel again later runs the reversal again. */
+const CANCEL_RETRY_AFTER_MS = 60_000;
+export const cancelReversalRetryDue = (updatedAt: string | null | undefined, nowMs: number): boolean =>
+  Boolean(updatedAt) && nowMs - Date.parse(String(updatedAt)) >= CANCEL_RETRY_AFTER_MS;
+
 export const patchDeliveryOrderStatusHandler = async (c: any) => {
   const sb = c.get('supabase'); const id = c.req.param('id'); const user = c.get('user');
   let body: {
@@ -5124,6 +5203,9 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     podLat?: number; podLng?: number; podAccuracyM?: number; podLocatedAt?: string;
     /* Conts office "Mark delivered" (renovationDoDelivered.ts): the day the goods arrived, YYYY-MM-DD. */
     deliveredOn?: string;
+    confirmShortStock?: boolean;
+    /* Who took the goods, on the phone's Draft delivery job. */
+    receivedBy?: unknown;
   }; try { body = (await c.req.json()) as typeof body; } catch { return c.json({ error: 'invalid_json' }, 400); }
   if (!body.status) return c.json({ error: 'status_required' }, 400);
   /* NORMALISE FIRST, exactly as the Sales Order handler does
@@ -5171,7 +5253,7 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const { data: cur } = await scopeToCompanyId(
-    sb.from('delivery_orders').select('status, so_doc_no, customer_delivered_date').eq('id', id), co.companyId,
+    sb.from('delivery_orders').select('status, so_doc_no, customer_delivered_date, updated_at, on_hold').eq('id', id), co.companyId,
   ).maybeSingle();
   if (!cur) return c.json(NOT_THIS_COMPANY, 404);
   const prevStatus = (cur as { status: string }).status;
@@ -5189,9 +5271,13 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
       return c.json({ error: 'not_your_job', reason: 'You can only complete a delivery assigned to you.' }, 403);
   }
 
-  // Already cancelled → echo back without re-reversing (would double-credit).
+  /* Already cancelled → echo back. The reversal is idempotent, so a later cancel is how a failed one is retried; right
+     after the cancel this is a double press, and two reversals in flight could both pass its check. */
   if (toStatus === 'CANCELLED' && prevStatus === 'CANCELLED') {
-    return c.json({ deliveryOrder: { id, status: 'CANCELLED' } });
+    const retried = cancelReversalRetryDue((cur as { updated_at?: string | null }).updated_at, Date.now())
+      ? await reverseInventoryForDo(sb, id, user.id).catch((e: unknown) => [`DO reversal threw: ${e instanceof Error ? e.message : 'unknown'}`])
+      : [];
+    return c.json({ deliveryOrder: { id, status: 'CANCELLED' }, movementErrors: retried.length ? retried : undefined });
   }
   /* Audit 2026-06-10 #1 (CRITICAL) — a CANCELLED DO is FINAL. Un-cancelling
      re-shipped goods with ZERO net stock deduction: the cancel's add-back
@@ -5230,6 +5316,13 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     if (childLock) return c.json(childLock, 409);
   }
 
+  /* A hold pauses the goods: nothing leaves on a draft that is held, or on one whose SO is. */
+  if (SHIPPED_STATES.includes(toStatus) && DO_PRESHIP_STATUSES.has((prevStatus ?? '').toUpperCase())) {
+    if (isDocumentHeld(cur as { status: string; on_hold: boolean | null })) return c.json({ error: 'do_on_hold', message: 'This Delivery Order is on hold. Take it off hold first.' }, 409);
+    const heldSo = await heldSoBehindLines(sb, 'delivery_order_items', 'delivery_order_id', id) ?? await firstHeldSo(sb, [(cur as { so_doc_no?: string | null }).so_doc_no]);
+    if (heldSo) return c.json(soOnHoldResponse(heldSo), 409);
+  }
+
   const now = new Date().toISOString();
   const ts: Record<string, string> = { updated_at: now };
   // Numeric columns cannot live in `ts` (typed Record<string, string>); merged
@@ -5257,6 +5350,7 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
      photo. Only write when present so a plain status change never blanks
      an existing POD. */
   if (typeof body.signatureData === 'string' && body.signatureData) ts.signature_data = body.signatureData;
+  if (typeof body.receivedBy === 'string' && body.receivedBy.trim()) ts.pod_received_by = body.receivedBy.trim().slice(0, 120);
   /* Every photo of the POD; the first also stays in pod_r2_key. Only the caller's
      own uploads are accepted, and claiming them stops the slip reaper deleting
      them an hour later (lib/pod-photo-claim.ts). */
@@ -5347,6 +5441,17 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     }
   }
 
+  /* A draft skipped the short-stock question when it was saved: Confirm asks it, where its stock leaves. */
+  if (prevStatus === 'DRAFT' && SHIPPED_STATES.includes(toStatus)) {
+    const { data: lines } = await sb.from('delivery_order_items').select('id, so_item_id, item_code, item_group, description, variants, qty').eq('delivery_order_id', id);
+    const { data: head } = await sb.from('delivery_orders').select('warehouse_id').eq('id', id).maybeSingle();
+    const shortages = await checkDoStockAvailability(sb, ((lines ?? []) as Array<{ id: string; so_item_id: string | null; item_code: string | null; item_group: string | null; description: string | null; variants: VariantAttrs | null; qty: number | null }>).map((l) => ({
+      lineRef: l.id, soItemId: l.so_item_id, itemCode: l.item_code ?? '', itemGroup: l.item_group, productName: l.description,
+      variantKey: computeVariantKey(l.item_group, l.variants), qty: Number(l.qty ?? 0),
+    })), (head as { warehouse_id?: string | null } | null)?.warehouse_id ?? null, co.companyId);
+    if (shortStockStops(shortages, body)) return c.json(shortStockResponse(shortages, []), 409);
+  }
+
   /* Bug #3/#11 — ATOMIC cancel guard. Two concurrent cancels can both read a
      non-cancelled status and both reverse inventory (double-reverse). For CANCELLED
      the write is conditional on status != CANCELLED; "no row returned" = someone
@@ -5365,9 +5470,12 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     }
     data = updated as { id: string; status: string };
   } else {
+    /* Written only over the status every guard above read: a cancel landing in between must not be overwritten, or a
+       cancelled DO reads shipped with its stock already back on the shelf. */
     const { data: updated, error } = await scopeToCompanyId(sb.from('delivery_orders')
-      .update({ status: toStatus, ...ts, ...tsNum, ...tsJson }).eq('id', id), co.companyId).select('id, status').single();
+      .update({ status: toStatus, ...ts, ...tsNum, ...tsJson }).eq('id', id), co.companyId).eq('status', prevStatus).select('id, status').maybeSingle();
     if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
+    if (!updated) return c.json({ error: 'status_changed', reason: 'This delivery order just changed. Reload it and try again.' }, 409);
     data = updated as { id: string; status: string };
   }
 
@@ -5394,6 +5502,13 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     if ((CONFIRM_HOP_STATES as readonly string[]).includes(toStatus) && DO_PRESHIP_STATUSES.has((prevStatus ?? '').toUpperCase())) {
       emailNotice = await maybeSendDeliveryOrderEmail(sb, c.env, id);
     }
+  }
+
+  /* A DO straight to site is received as it is confirmed, whoever confirmed it and from whatever screen. */
+  let twinProblem: string | null = null;
+  if (SHIPPED_STATES.includes(toStatus) && DO_PRESHIP_STATUSES.has((prevStatus ?? '').toUpperCase())) {
+    const { receiveConfirmedDelivery } = await import('./onsite-twin');
+    twinProblem = await receiveConfirmedDelivery(c, sb, id, co.companyId);
   }
 
   /* Requirement #3 — a DO marked DELIVERED auto-advances its fully-covered SO. Best-effort. */
@@ -5457,6 +5572,7 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     deliveryOrder: data,
     movementErrors: movementErrors.length ? movementErrors : undefined,
     emailNotice: emailNotice ?? undefined,
+    twinProblem: twinProblem ?? undefined,
   });
 };
 deliveryOrdersMfg.patch('/:id/status', patchDeliveryOrderStatusHandler);

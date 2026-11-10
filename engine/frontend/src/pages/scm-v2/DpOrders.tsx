@@ -37,6 +37,7 @@ import { StatusPill } from '../../vendor/scm/components/StatusPill';
 import { statusLabel } from '../../vendor/scm/lib/status-pill';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
+import { cancelledDocNoClass, cancelledRowClass } from '../../lib/scm';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -137,7 +138,7 @@ export const DpOrders = () => {
       key: 'dp_no', label: 'DP No', width: '150px',
       getValue: (r) => r.dp_no ?? '',
       render: (r) => r.dp_no
-        ? <span style={{ fontFamily: 'var(--font-mono, monospace)', whiteSpace: 'nowrap' }}>{r.dp_no}</span>
+        ? <span style={{ fontFamily: 'var(--font-mono, monospace)', whiteSpace: 'nowrap' }} className={cancelledDocNoClass(r.status)}>{r.dp_no}</span>
         : <span style={{ color: 'var(--fg-muted)' }}>—</span>,
     },
     {
@@ -277,6 +278,7 @@ export const DpOrders = () => {
         error={list.error ? (list.error instanceof Error ? list.error.message : 'Failed to load DP orders.') : undefined}
         emptyLabel={searchTerm ? 'No DP orders match this search.' : 'No DP orders yet. Create one with “New DP order”.'}
         getRowKey={(r) => r.id}
+        getRowClassName={(r) => cancelledRowClass(r.status)}
         search={{
           value: searchTerm,
           onChange: setSearchTerm,

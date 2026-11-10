@@ -20,7 +20,7 @@
 // Backed by GET /mrp (apps/api/src/routes/mrp.ts).
 // ----------------------------------------------------------------------------
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { ChevronRight, ChevronDown, RefreshCw, Truck, ShoppingCart, CalendarRange, Clock, Download } from 'lucide-react';
 import { DataTable, type Column } from '../../components/DataTable';
@@ -203,7 +203,7 @@ const skuDefaultSupplierId = (s: MrpSku): string | null =>
 /* Only SHORTAGE lines are selectable / orderable. */
 const shortageLinesOf = (s: MrpSku) => s.lines.filter((l) => l.source === 'shortage' && l.shortageQty > 0 && l.soItemId);
 
-
+
 /** Which warehouses hold these goods, largest first: BLK 3 · TRI 2. */
 const stockWhereText = (skus: ReadonlyArray<{ stockWhere?: Array<{ code: string; qty: number }> }>): string => {
   const at = new Map<string, number>();
@@ -320,6 +320,15 @@ export const Mrp = () => {
      this came from the saved snapshot (the default view opens instantly from it);
      `regenerate` recomputes it server-side. See mrp-snapshot.ts. */
   const regenerate = useRegenerateMrp();
+  const lineWarehouse = useMemo(() => ({
+    warehouses: q.data?.warehouses ?? [],
+    change: (ln: MrpLine, warehouseId: string) => {
+      void authedFetch('/mrp/line-warehouse', { method: 'POST', body: JSON.stringify({ lineId: ln.soItemId, warehouseId, productionMaterial: Boolean(ln.productionMaterialId) }) })
+        .then(() => regenerate.mutate(undefined, { onSettled: () => { void q.refetch(); } }))
+        .catch((err: unknown) => setDialog({ kind: 'info', title: 'Warehouse not changed', body: err instanceof Error ? err.message : 'Something went wrong.' }));
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuilt only when the list of warehouses changes
+  }), [q.data?.warehouses]);
   /* `data.undated` (the tab-appropriate count of withheld demand) is no longer
      read here — the banner that displayed it was removed on the owner's
      instruction, 2026-08-20. The response still carries it and the backend still
@@ -515,7 +524,8 @@ export const Mrp = () => {
         // Refresh so coverage updates immediately; keep the result in an in-app
         // dialog (not a browser alert) per commander.
         setSelected(new Set());
-        void q.refetch();
+        /* The page reads a stored plan: regenerate it, or the lines just ordered stay on the list and can be picked again. */
+        regenerate.mutate(undefined, { onSettled: () => { void q.refetch(); } });
         setDialog({
           kind: 'created',
           title: `Successfully created ${created.length} PO${created.length === 1 ? '' : 's'}`,
@@ -541,8 +551,9 @@ export const Mrp = () => {
         // another session/tab (server: qty_exceeds_remaining). Refresh so the
         // ordered line drops off, and tell the operator plainly instead of
         // showing the raw error (Commander 2026-05-29).
-        if (errCode === 'qty_exceeds_remaining') {
-          void q.refetch();
+        // The shared error map turns this code into a goods-receipt sentence before it reaches here.
+        if (errCode === 'qty_exceeds_remaining' || raw.includes('already fully received')) {
+          regenerate.mutate(undefined, { onSettled: () => { void q.refetch(); } });
           setDialog({
             kind: 'info',
             title: 'Already ordered',
@@ -1093,6 +1104,7 @@ export const Mrp = () => {
           header, per-column funnel filters, sort, column show/hide, CSV export
           and Reset layout all come from DataTable — the parity the owner asked
           for, and the freeze that never worked on the hand-built table. */}
+      <LineWarehouseContext.Provider value={lineWarehouse}>
       <DataTable<ModelGroup>
         tableId="mrp"
         documentLabel="MRP · Stock Status"
@@ -1104,7 +1116,7 @@ export const Mrp = () => {
         loading={q.isLoading}
         error={q.isError ? (q.error instanceof Error ? q.error.message : 'Failed to load') : null}
         getRowKey={(g) => g.groupKey}
-        getRowClassName={(g) => (g.shortage > 0 ? styles.rowShort : undefined)}
+        getRowClassName={(g) => (g.shortage > 0 ? styles.rowShort : g.poOutstanding > 0 ? styles.rowOrdered : undefined)}
         exportName={`mrp-${view}`}
         /* The Export button downloads the v7 workbook (a sheet per category tab),
            not this tab's grid CSV — see onExportWorkbook. */
@@ -1151,6 +1163,7 @@ export const Mrp = () => {
           : 'No open Sales-Order demand for this filter.'
         }
       />
+      </LineWarehouseContext.Provider>
 
       {/* In-app result dialog — Commander 2026-05-29: confirm/result inside the
           page, not a browser alert. The 'confirm' kind is the Proceed-PO step
@@ -1415,6 +1428,9 @@ const FragmentRow = ({ children }: { children: ReactNode }) => <>{children}</>;
 /* The SO-order child table — shared by every leaf level. Each shortage line has
    its own select checkbox + supplier dropdown; covered lines show the covering
    PO's supplier read-only (Commander 2026-05-31). */
+/* The choices each order line offers; a context because the line sits several tables down. */
+const LineWarehouseContext = createContext<{ warehouses: MrpWarehouse[]; change: (ln: MrpLine, warehouseId: string) => void }>({ warehouses: [], change: () => {} });
+
 const OrderLines = ({ sku, selected, onToggleLine, lineSupplier, onLineSupplierChange }: {
   sku: MrpSku;
   selected: Set<string>;
@@ -1446,6 +1462,7 @@ const OrderLines = ({ sku, selected, onToggleLine, lineSupplier, onLineSupplierC
           suppliers={sku.suppliers}
           itemCode={sku.itemCode}
           description={sku.description}
+          whId={sku.warehouseId}
           whCode={sku.warehouseCode}
           whName={sku.warehouseName}
           selected={selected.has(ln.soItemId)}
@@ -1458,11 +1475,12 @@ const OrderLines = ({ sku, selected, onToggleLine, lineSupplier, onLineSupplierC
   </table>
 );
 
-const ChildLine = ({ ln, suppliers, itemCode, description, whCode, whName, selected, onToggleLine, chosenSupplierId, onSupplierChange }: {
+const ChildLine = ({ ln, suppliers, itemCode, description, whId, whCode, whName, selected, onToggleLine, chosenSupplierId, onSupplierChange }: {
   ln: MrpLine;
   suppliers: MrpSku['suppliers'];
   itemCode: string;
   description: string | null;
+  whId: string | null;
   whCode: string | null;
   whName: string | null;
   selected: boolean;
@@ -1471,6 +1489,7 @@ const ChildLine = ({ ln, suppliers, itemCode, description, whCode, whName, selec
   onSupplierChange: (supplierId: string) => void;
 }) => {
   const short = ln.source === 'shortage' && ln.shortageQty > 0 && Boolean(ln.soItemId);
+  const lineWarehouse = useContext(LineWarehouseContext);
   return (
     <tr className={short ? styles.childShort : undefined}>
       <td className={styles.colSelect}>
@@ -1486,9 +1505,16 @@ const ChildLine = ({ ln, suppliers, itemCode, description, whCode, whName, selec
       <td className={styles.codeCell}>{ln.soDocNo}</td>
       <td>{mrpProjectLabel(ln) || '—'}</td>
       <td className={styles.whCell}>
-        {whCode
-          ? <span className={styles.whTag} title={whName ?? undefined}>{whCode}</span>
-          : <span className={styles.whNone}>—</span>}
+        {short && lineWarehouse.warehouses.length > 0
+          ? (
+            <select className={styles.whSelect} aria-label={`Warehouse for ${ln.soDocNo}`} value={whId ?? ''} onChange={(e) => { if (e.target.value) lineWarehouse.change(ln, e.target.value); }}>
+              {!whId && <option value="">Choose</option>}
+              {lineWarehouse.warehouses.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
+            </select>
+          )
+          : whCode
+            ? <span className={styles.whTag} title={whName ?? undefined}>{whCode}</span>
+            : <span className={styles.whNone}>—</span>}
       </td>
       <td>{ln.debtorName ?? '—'}</td>
       <td>{ln.customerState ?? '—'}</td>

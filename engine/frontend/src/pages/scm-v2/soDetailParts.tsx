@@ -4,7 +4,8 @@
 import type { ReactNode } from "react";
 import { ArrowLeft, CircleDot, Warehouse } from "lucide-react";
 import { Badge } from "../../components/Badge";
-import { SoSourceChips, SoStockPill } from "../../components/SoSourceChips";
+import { isSystemServiceCode, SoSourceChips, SoStockPill } from "../../components/SoSourceChips";
+import { useUpdateSoItemStockStatus } from "../../vendor/scm/lib/sales-order-queries";
 import type { Column } from "../../components/DataTable";
 import type { coverageStateOf } from "../../components/coverage-state";
 import { SoLinePhotoStrip } from "../../components/scm-v2/SoLinePhotoStrip";
@@ -307,11 +308,16 @@ export function OrderTotalCard({
   subtotalSen,
   discountSen,
   totalSen,
+  title = "Order total",
+  statusShown,
 }: {
   header: SoTotalHeader;
   subtotalSen: number;
   discountSen: number;
   totalSen: number;
+  /** A quotation's words and status; a sales order uses its own. */
+  title?: string;
+  statusShown?: { tone: "success" | "warning" | "error" | "neutral"; blurb: string };
 }) {
   /* The auto-derived delivery fee is inside `totalSen` but was not itemised,
      so an all-FOC order read "Subtotal 0 → Total 250" with nothing explaining
@@ -319,11 +325,11 @@ export function OrderTotalCard({
      rather than read from a header field so the row is exactly the gap the
      reader is staring at, whatever fee components the server folds in. */
   const feeSen = totalSen - (subtotalSen - discountSen);
-  const st = displayStatusFor(header);
+  const st = statusShown ?? displayStatusFor(header);
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
-        Order total
+        {title}
       </div>
       <div className="mt-1.5 font-money text-[30px] font-bold leading-none tracking-tight text-white">
         {fmtMoney(totalSen, header.currency)}
@@ -396,6 +402,17 @@ function TotalLine({
 }
 
 // ─── Line item columns ─────────────────────────────────────────────────────
+
+/** A service is finished by hand (owner, 6 Nov 2026). The press is also how to take it back. */
+function ServiceCompleteButton({ docNo, itemId, done }: { docNo: string; itemId: string; done: boolean }) {
+  const update = useUpdateSoItemStockStatus();
+  return (
+    <button type="button" disabled={update.isPending} className="text-[11px] font-semibold text-primary underline disabled:opacity-50"
+      onClick={() => update.mutate({ docNo, itemId, status: done ? "PENDING" : "READY" })}>
+      {update.isPending ? "Saving…" : done ? "Undo" : "Complete"}
+    </button>
+  );
+}
 
 const CONTS_LINE_DATES = [['processing', 'Processing', 'line_processing_date'], ['delivery', 'Delivery', 'line_delivery_date']] as const;
 
@@ -578,7 +595,13 @@ export function soLineColumns<T extends SoDisplayLine>({ docNo, docId, currency,
       label: "Stock",
       width: "96px",
       getValue: (l) => l.stock_state ?? l.stock_status ?? "",
-      render: (l) => <SoStockPill line={l} />,
+      render: (l) => (
+        <span className="inline-flex flex-col items-start gap-1">
+          <SoStockPill line={l} />
+          {(l.item_group ?? "").toUpperCase().includes("SERVICE") && !isSystemServiceCode(l.item_code) && status?.toLowerCase() !== "cancelled"
+            && <ServiceCompleteButton docNo={docNo} itemId={l.id} done={l.stock_status === "READY"} />}
+        </span>
+      ),
     },
     {
       key: "source",

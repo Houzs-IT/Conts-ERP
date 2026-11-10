@@ -7,7 +7,7 @@ export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
 /** `icon`: drawn only in the phone menu, where each screen is its own row; the desktop shows its category's icon. */
-export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey; icon?: string }
+export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey; icon?: string; phoneOnly?: boolean }
 /** `full`: the screen's data is for roles with Full on its area (the server refuses Edit), so it is shown only then.
  *  `fresh`: a newly added screen, marked New in the desktop menu. */
 export interface NavItem {
@@ -144,9 +144,9 @@ export const NAV: NavGroup[] = [
   { label: 'UNITS', workspace: 'rental', items: [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
     { key: 'units', label: 'Units', icon: 'building-2', path: '/properties/units', area: 'properties' },
-    // Units we find a long-term tenant for, for the owner (staff sheet UNIT, 17 Oct 2026).
     // Everything set to change on a later date, in one list (owner, 30 Oct 2026).
-    { key: 'scheduledChanges', label: 'Scheduled changes', icon: 'calendar-clock', path: '/properties/scheduled-changes', area: 'properties', fresh: true },
+    { key: 'scheduledChanges', label: 'Scheduled changes', icon: 'calendar-clock', path: '/properties/scheduled-changes', area: 'properties' },
+    // Units we find a long-term tenant for, for the owner (staff sheet UNIT, 17 Oct 2026).
     { key: 'agentToLet', label: 'Agent to let', icon: 'key-round', path: '/properties/agent-to-let', area: 'properties' },
     // Owner statements and owner payouts live on the owner (owner, 11 Oct 2026): each owner's page, and the Owners
     // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
@@ -245,6 +245,7 @@ export const NAV: NavGroup[] = [
     { key: 'scProduction', label: 'Production', icon: 'factory', area: 'scProcurement', children: [
       { key: 'productionOrders', label: 'Production orders', icon: 'clipboard-list', path: '/production/production-orders' },
       { key: 'skuComposition', label: 'SKU Composition', icon: 'clipboard-list', path: '/production/sku-composition' },
+      { key: 'draftDelivery', label: 'Draft delivery', icon: 'truck', path: '/production/draft-delivery', phoneOnly: true },
     ] },
     { key: 'scTransportPlan', label: 'Transportation', icon: 'truck', area: 'scTransportPlan', children: [
       { key: 'deliveryPlanning', label: 'Delivery planning', icon: 'route', path: '/transport/planning' },

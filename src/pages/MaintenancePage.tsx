@@ -9,7 +9,7 @@ import { Select, SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { Skeleton } from '../components/States';
 import { AttachmentLabel, MediaGallery, FileList, FileDropRow, PhotosPdfButton } from '../components/Attachments';
-import { DataTable, type Column } from '../components/DataTable';
+import { DataTable, type Column, type FilterOption, type RangeBounds } from '../components/DataTable';
 import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -22,11 +22,12 @@ import { cx } from '../lib/design-tokens';
 import { rm, plural, dateShort, date, monthLabel } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
-  PillTabs, Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm, AssigneePicker, useTechnicians, KIND_WORD } from '../components/ops/OpsUi';
+  PillTabs, Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm, PassKeyJobForm, AssigneePicker, useTechnicians, KIND_WORD } from '../components/ops/OpsUi';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
 import { ServicePrices } from './ServicePrices';
+import { PriceChangePanel } from './units/PriceChangePanel';
 import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
 import { HistoryDisclosure, PhoneHistory, RecordHistory } from '../components/RecordHistory';
 
@@ -36,7 +37,7 @@ interface Overlap { reservationId: string; guestName: string; checkIn: string; c
 interface RepairWin { id: string; startsAt: string; endsAt: string; note: string | null; overlaps: Overlap[] }
 type ChargeTo = 'owner' | 'the_conts' | 'guest_deposit' | 'warranty';
 interface Issue {
-  id: string; unitId: string; unitNumber: string; propertyName: string; buildingId: string; title: string; detail: string | null; state: string;
+  id: string; unitId: string | null; unitNumber: string | null; propertyName: string; buildingId: string; title: string; detail: string | null; state: string;
   category: string; urgency: 'normal' | 'urgent'; source: string; sourceTaskId: string | null;
   vendorName: string | null; assigneeKind: 'in_house' | 'contractor' | null; reportedAt: string; resolvedAt: string | null;
   blocksUnit: boolean; ownerApprovalRequired: boolean; ownerApprovedAt: string | null; chargeTo: ChargeTo; reporter: string | null;
@@ -46,6 +47,7 @@ interface Issue {
   /** Migration 0126: job type, severity, parts and due date; approvalStatus is Needs owner approval / Approved / Not needed. */
   jobType?: JobType; severity?: 'minor' | 'major'; dueOn?: string | null; needsParts?: boolean; partsArrivedAt?: string | null;
   approvalStatus?: 'needed' | 'approved' | 'not_needed';
+  supportRequestedAt?: string | null; supportNote?: string | null;
 }
 type JobType = 'urgent' | 'pass_key' | 'normal';
 const JOB_TYPE: Record<JobType, string> = { urgent: 'Urgent', pass_key: 'Pass key', normal: 'Normal' };
@@ -55,15 +57,17 @@ const APPROVAL: Record<string, { label: string; tone: AnyTone }> = {
 };
 const typeOf = (i: Issue): JobType => i.jobType ?? (i.urgency === 'urgent' ? 'urgent' : 'normal');
 /** Approved, but the parts it waits for have not come: still hidden from the technicians. */
+const needsSupport = (i: Issue): boolean => i.state !== 'resolved' && !i.endedAt && !!i.supportRequestedAt;
 const waitingParts = (i: Issue) => i.state !== 'resolved' && i.approvalStatus === 'approved' && !!i.needsParts && !i.partsArrivedAt;
 /** `billing` is false until migration 0108 is applied; billing date, collected and contractor payment are then hidden. */
 interface Payload { billing?: boolean; jobTypes?: boolean; data: Issue[] }
 interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string; byteSize?: number }
 
-type Tab = 'open' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
+type Tab = 'open' | 'pass_key' | 'support' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
 const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
-const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
+const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office', booking: 'Reservation' };
+const checkInAt = (i: Issue): string => i.windows[0]?.startsAt ?? i.dueOn ?? i.reportedAt;
 // The item catalog: staff pick an item (or Other) on a job; management and operations keep the list (request M3).
 const SHOW_CATALOG = true;
 const DOC_KIND: Record<string, string> = { claim: 'Claim from the technician or contractor', invoice: 'Invoice to the payer', receipt: 'Receipt', purchase: 'Bought by staff (handed in as a receipt)', pod: 'Proof of work', other: 'File' };
@@ -76,6 +80,7 @@ function statusOf(i: Issue): { label: string; tone: AnyTone } {
   if (i.state === 'resolved') return { label: i.finalAmount ? `Done · ${PAYER_SHORT[i.chargeTo]}` : 'Done', tone: 'success' };
   if (awaitingOwner(i)) return { label: 'Awaiting owner approval', tone: 'warning' };
   if (waitingParts(i)) return { label: 'Waiting for parts', tone: 'warning' };
+  if (needsSupport(i)) return { label: 'Needs support', tone: 'critical' };
   if (i.state === 'in_progress' || i.startedAt) return { label: i.endedAt ? 'Repair finished' : 'In progress', tone: 'info' };
   if (i.vendorName) return { label: 'Assigned', tone: 'neutral' };
   return { label: 'New', tone: 'neutral' };
@@ -88,12 +93,13 @@ export default function MaintenancePage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('open');
-  const [category, setCategory] = useState('');
-  const [building, setBuilding] = useState('');
   const [q, setQ] = useState('');
+  const [filtersTarget, setFiltersTarget] = useState<HTMLDivElement | null>(null);
   const selected = params.get('id');
   const setSelected = (id: string | null) => setParams(p => { const n = new URLSearchParams(p); if (id) n.set('id', id); else n.delete('id'); return n; }, { replace: true });
   const [creating, setCreating] = useState(false);
+  const [isAddingPassKey, setIsAddingPassKey] = useState(false);
+  const canAddPassKey = !!user && !FIELD_ROLES.includes(user.role) && user.role !== 'owner';
 
   const { data, loading, error, reload: reloadData } = useApi<Payload>('/maintenance/issues');
   // The side menu's counts (open jobs, today's work) follow what was just done here.
@@ -104,7 +110,7 @@ export default function MaintenancePage() {
   // A link from a clean (?id=) opens the right tab.
   useEffect(() => {
     const it = issues.find(i => i.id === selected);
-    if (it && tab !== 'history' && tab !== 'catalog' && tab !== 'rules' && tab !== 'profit') setTab(it.state === 'resolved' ? 'done' : awaitingOwner(it) ? 'approval' : 'open');
+    if (it && tab !== 'history' && tab !== 'catalog' && tab !== 'rules' && tab !== 'profit' && tab !== 'pass_key') setTab(it.state === 'resolved' ? 'done' : awaitingOwner(it) ? 'approval' : 'open');
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const monthStart = mytDay(0).slice(0, 7);
@@ -114,14 +120,16 @@ export default function MaintenancePage() {
   // The header counts what the tabs count: a job waiting for its owner sits under that tab, not under Open.
   const openTab = open.filter(i => !awaitingOwner(i));
   const urgent = openTab.filter(i => typeOf(i) === 'urgent').length;
+  const passKeys = openTab.filter(i => typeOf(i) === 'pass_key');
+  const support = openTab.filter(needsSupport);
   const monthCost = issues.filter(i => i.state === 'resolved' && (i.resolvedAt ?? '').slice(0, 7) === monthStart).reduce((s, i) => s + (i.finalAmount ?? 0), 0);
 
-  const base = tab === 'open' ? openTab : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
+  const base = tab === 'open' ? openTab : tab === 'pass_key' ? passKeys : tab === 'support' ? support : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
   const ql = q.trim().toLowerCase();
-  const rows = base.filter(i => (!category || i.category === category) && (!building || i.buildingId === building)
-    && (!ql || `${i.unitNumber} ${i.propertyName} ${i.title} ${i.vendorName ?? ''}`.toLowerCase().includes(ql)))
+  const rows = base.filter(i => (!ql || `${unitText(i)} ${i.propertyName} ${i.title} ${i.vendorName ?? ''}`.toLowerCase().includes(ql)))
     // Open jobs in the order they are worked: Urgent, Pass key, then Normal one by one by due date (the day reported when none).
-    .sort((a, b) => tab === 'open'
+    .sort((a, b) => tab === 'pass_key' ? checkInAt(a).localeCompare(checkInAt(b))
+      : tab === 'open'
       ? JOB_ORDER[typeOf(a)] - JOB_ORDER[typeOf(b)] || (a.dueOn ?? a.reportedAt.slice(0, 10)).localeCompare(b.dueOn ?? b.reportedAt.slice(0, 10)) || a.reportedAt.localeCompare(b.reportedAt)
       : b.reportedAt.localeCompare(a.reportedAt));
   // Every building with units, not only those with a job loaded (request M1): a filter that lists a building with no
@@ -131,11 +139,19 @@ export default function MaintenancePage() {
     const m = new Map<string, string>([...roster.filter(u => u.propertyId).map(u => [u.propertyId!, u.propertyName] as [string, string]), ...issues.map(i => [i.buildingId, i.propertyName] as [string, string])]);
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'en', { numeric: true })).map(([value, label]) => ({ value, label }));
   }, [issues, roster]);
+  const unitOptions: FilterOption[] = useMemo(() => {
+    const byId = new Map<string, FilterOption>([
+      ...issues.flatMap(({ unitId, unitNumber, propertyName }) => unitId && unitNumber ? [[unitId, { value: unitId, label: unitNumber, group: propertyName }] as const] : []),
+      ...roster.map(({ id, unitCode, unitNumber, propertyName }) => [id, { value: id, label: unitCode || unitNumber, group: propertyName }] as const),
+    ]);
+    const collator = new Intl.Collator('en', { numeric: true });
+    return [...byId.values()].sort((a, b) => collator.compare(a.group ?? '', b.group ?? '') || collator.compare(a.label, b.label));
+  }, [issues, roster]);
   const sel = issues.find(i => i.id === selected) ?? null;
   const historySpend = tab === 'history' ? rows.reduce((s, i) => s + (i.finalAmount ?? 0), 0) : 0;
 
   const sub = data
-    ? `${openTab.length} open · ${urgent} urgent · ${approval.length} awaiting owner approval${money ? ` · this month ${rm(monthCost)}` : ''}`
+    ? `${openTab.length} open · ${urgent} urgent${support.length ? ` · ${support.length} need support` : ''} · ${approval.length} awaiting owner approval${money ? ` · this month ${rm(monthCost)}` : ''}`
     : 'Maintenance jobs on every unit';
 
   async function createSku(input: CatalogInput) {
@@ -151,12 +167,12 @@ export default function MaintenancePage() {
     <>
       {error && data && <StaleBanner message={`Showing the last jobs we have. ${error}`} onRetry={reload} />}
       <IssueTable tab={tab} rows={data ? rows : null} loading={loading} error={data ? null : error} onRetry={reload} selected={selected} onSelect={setSelected}
-        money={money} canBulk={!FIELD_ROLES.includes(user!.role)} onChanged={reload}
-        filtered={!!(category || building || q)} onClearFilters={() => { setCategory(''); setBuilding(''); setQ(''); }}
+        money={money} canBulk={!FIELD_ROLES.includes(user!.role)} onChanged={reload} buildingOptions={buildingOptions} unitOptions={unitOptions} filtersTarget={filtersTarget}
+        filtered={!!q} onClearFilters={() => setQ('')}
         above={tab === 'history' && rows.length > 0 && money ? (
           <div className="text-copy text-muted-ink py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
         ) : undefined}
-        empty={{ title: tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
+        empty={{ title: tab === 'pass_key' ? 'No pass key handovers coming up.' : tab === 'support' ? 'No technician is waiting for support.' : tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
           action: tab === 'open' ? { label: 'Add maintenance job', onClick: () => setCreating(true) } : undefined }} />
     </>
   );
@@ -170,38 +186,49 @@ export default function MaintenancePage() {
           {money && <Button size="sm" variant={tab === 'profit' ? 'primary' : 'secondary'} icon={<Icon name="TrendingUp" size="sm" />} onClick={() => setTab(tab === 'profit' ? 'open' : 'profit')}>Profit by job</Button>}
           {SHOW_CATALOG && <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Item catalog</Button>}
         </>}
-        primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add maintenance job</Button>} />
+        primary={<>
+          {canAddPassKey && <Button size="sm" variant="secondary" className="max-sm:-order-1!" icon={<Icon name="KeyRound" size="sm" />} onClick={() => setIsAddingPassKey(true)}>Add pass key job</Button>}
+          <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add maintenance job</Button>
+        </>} />
 
       {tab === 'rules' ? <ApprovalRulesPanel /> : tab === 'profit' ? <div className="flex-1 min-h-0 overflow-y-auto"><JobProfitView kind="maintenance" onOpen={id => { setTab('history'); setSelected(id); }} /></div> : tab === 'catalog' ? (
         <MaintenanceItems fallback={<CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={mayWork(user, 'operations')} onCreate={createSku} onUpdate={updateSku} />} onChanged={sku.reload} />
       ) : (
-        <>
+        <SplitPane open={!!sel} onClose={() => setSelected(null)} width={580}
+          detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null}
+          list={<>
+          <div className="flex flex-wrap items-start gap-2 px-5 py-3 max-md:px-4 rounded-card border border-solid border-line bg-card">
+            <label className="relative flex items-center w-[280px] max-md:w-full">
+              <span className="absolute left-3 flex text-muted-ink pointer-events-none"><Icon name="Search" size="base" /></span>
+              <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit, building, problem or technician" aria-label="Search jobs"
+                className={cx(INPUT, 'h-9 max-md:h-11 w-full pl-10 max-md:text-[16px]')} />
+            </label>
+            <div ref={setFiltersTarget} className="flex-1 min-w-0 empty:hidden" />
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
             <PillTabs value={tab} onChange={t => { setTab(t); setSelected(null); }} tabs={[
               { value: 'open', label: 'Open', count: data ? openTab.length : undefined },
+              ...(data?.jobTypes ? [{ value: 'pass_key' as const, label: 'Pass key', count: passKeys.length }] : []),
+              { value: 'support', label: 'Needs support', count: data ? support.length : undefined },
               { value: 'approval', label: 'Awaiting owner approval', count: data ? approval.length : undefined },
               { value: 'done', label: 'Done' },
               { value: 'history', label: 'History' },
             ]} />
-            <div className="flex gap-2 flex-wrap md:ml-auto max-md:w-full">
-              {tab === 'history' && <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or problem" aria-label="Search" className={cx(INPUT, 'h-9 w-[200px] max-md:w-full')} />}
-              <Select label="Category" value={category} onChange={setCategory} options={Object.entries(CATEGORY).map(([value, label]) => ({ value, label }))} placeholder="All categories" className="w-[150px] max-md:flex-1" />
-              <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className="w-[170px] max-md:flex-1" />
-            </div>
           </div>
-          <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580}
-            detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null} />
-        </>
+          {list}
+        </>} />
       )}
 
       {creating && <NewJobModal units={roster} onClose={() => setCreating(false)} onDone={id => { setCreating(false); reload(); setTab('open'); setSelected(id); }} />}
+      {isAddingPassKey && <PassKeyJobForm units={roster} onClose={() => setIsAddingPassKey(false)} onDone={id => { setIsAddingPassKey(false); reload(); setTab('open'); setSelected(id); }} />}
     </div>
   );
 }
 
 /* ---------- the list ---------- */
 
-const jobLabel = (i: Issue) => `${i.propertyName} ${i.unitNumber}`;
+const unitText = ({ unitNumber }: Pick<Issue, 'unitNumber'>): string => unitNumber ?? 'Building (no unit)';
+const jobLabel = (i: Issue) => `${i.propertyName} ${unitText(i)}`;
 // Some rows are in progress without a start time (set before Start repair recorded one), so the state counts too.
 const started = (i: Issue) => !!i.startedAt || i.state === 'in_progress';
 type Move = 'start' | 'end' | 'reopen';
@@ -215,10 +242,11 @@ function moveSkip(i: Issue, move: Move): string | null {
 const collectedText = (i: Issue) => (i.collectedAt ? `Collected ${dateShort(i.collectedAt)}` : COLLECT_FROM[i.chargeTo] && (i.finalAmount ?? i.quotedAmount) ? 'Not yet' : '');
 const paidText = (i: Issue) => (i.contractorPaidAt ? `Paid ${dateShort(i.contractorPaidAt)}` : i.contractorAmount != null ? 'Not yet' : '');
 const MOVE_DONE: Record<Move, string> = { start: 'started', end: 'marked repair finished', reopen: 'reopened' };
+const COST_SLIDER_START: RangeBounds = { lowest: 0, highest: 1000 };
 
-function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, money, canBulk, onChanged, filtered, onClearFilters, empty, above }: {
+function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, money, canBulk, onChanged, buildingOptions, unitOptions, filtersTarget, filtered, onClearFilters, empty, above }: {
   tab: Tab; rows: Issue[] | null; loading: boolean; error: string | null; onRetry: () => void; selected: string | null; onSelect: (id: string) => void;
-  money: boolean; canBulk: boolean; onChanged: () => void; filtered: boolean; onClearFilters: () => void;
+  money: boolean; canBulk: boolean; onChanged: () => void; buildingOptions: SelectOption[]; unitOptions: FilterOption[]; filtersTarget: HTMLElement | null; filtered: boolean; onClearFilters: () => void;
   empty: { title: string; action?: { label: string; onClick: () => void } }; above?: ReactNode;
 }) {
   const toast = useToast();
@@ -242,36 +270,57 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     clear(); onChanged();
   }
 
+  const technicians = useTechnicians();
+  const assigneeOptions = useMemo<FilterOption[]>(() => {
+    const groupOf = (kind: string | null | undefined): string => (kind === 'in_house' ? 'In-house' : 'Contractors');
+    const byName = new Map(technicians.map(t => [t.name, { value: t.name, label: t.name, group: groupOf(t.kind) }]));
+    for (const issue of rows ?? []) {
+      if (issue.vendorName && !byName.has(issue.vendorName)) byName.set(issue.vendorName, { value: issue.vendorName, label: issue.vendorName, group: groupOf(issue.assigneeKind) });
+    }
+    const named = [...byName.values()].sort((a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label));
+    return [{ value: 'Unassigned', label: 'Unassigned' }, ...named];
+  }, [technicians, rows]);
+
   const columns = useMemo<Column<Issue>[]>(() => [
-    { key: 'unit', label: 'Unit', value: i => i.unitNumber, text: i => `${i.unitNumber} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
-      render: i => <b className="text-ink">{i.unitNumber}</b> },
-    { key: 'issue', label: 'Problem', value: i => i.title, width: 240,
-      sub: i => <>From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}{i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</>,
+    { key: 'building', label: 'Building', value: i => i.buildingId, text: i => i.propertyName, width: 150, hidden: true,
+      filter: { kind: 'select', options: buildingOptions } },
+    { key: 'unit', label: 'Unit', value: i => i.unitId, text: i => `${unitText(i)} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
+      filter: { kind: 'select', display: 'menu', options: unitOptions },
+      render: i => <b className="text-ink">{unitText(i)}</b> },
+    { key: 'issue', label: 'Problem', value: i => i.title, width: 240, filter: false,
+      sub: i => i.source === 'booking'
+        ? <>Guest check-in {stamp(checkInAt(i))}</>
+        : <>From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}{i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</>,
       render: i => <span className="block whitespace-normal text-ink">{i.title}</span> },
-    { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, filter: false, hidden: true },
     { key: 'urgency', label: 'Type', type: 'status', value: i => typeOf(i),
-      status: i => ({ label: JOB_TYPE[typeOf(i)], tone: typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral' }), width: 110, phone: 'meta' },
+      status: i => ({ label: JOB_TYPE[typeOf(i)], tone: typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral' }), width: 110, phone: 'meta',
+      filter: { kind: 'select', options: Object.entries(JOB_TYPE).map(([value, label]) => ({ value, label })) } },
     { key: 'status', label: 'Status', type: 'status', value: i => statusOf(i).label, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 160 },
-    { key: 'assignee', label: 'Assigned to', value: i => i.vendorName, text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 160,
+    { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, hidden: true,
+      filter: { kind: 'select', options: Object.entries(CATEGORY).map(([value, label]) => ({ value, label })) } },
+    { key: 'assignee', label: 'Assigned to', value: i => i.vendorName ?? 'Unassigned', text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 160,
+      filter: { kind: 'select', display: 'menu', options: assigneeOptions },
       render: i => (i.vendorName
         ? <span className="block truncate">{i.vendorName}<span className="text-muted-ink"> {i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}</span></span>
         : <span className="text-danger">Unassigned</span>) },
-    { key: 'due', label: 'Due', type: 'date', value: i => i.dueOn ?? null, width: 110, hidden: true },
+    { key: 'due', label: 'Due', type: 'date', value: i => i.dueOn ?? null, width: 110, hidden: true, filter: false },
     { key: 'approval', label: 'Owner approval', type: 'status', value: i => i.approvalStatus ?? 'not_needed',
+      filter: { kind: 'select', options: Object.entries(APPROVAL).map(([value, { label }]) => ({ value, label })) },
       status: i => { const a = APPROVAL[i.approvalStatus ?? 'not_needed']; return { label: a.label, tone: a.tone === 'gold' ? 'neutral' : a.tone }; }, width: 150 },
     ...(money ? [{ key: 'cost', label: 'Cost', type: 'money' as const, value: (i: Issue) => i.finalAmount ?? i.quotedAmount, width: 110, title: 'The final cost, or the quote while the job is open.',
+      filter: { kind: 'number' as const, bounds: COST_SLIDER_START },
       render: (i: Issue) => { const c = i.finalAmount ?? i.quotedAmount; return c == null ? <span className="text-faint">—</span> : <span className="tabular-nums whitespace-nowrap">{rm(c)}{i.finalAmount == null && <span className="text-muted-ink text-meta"> quote</span>}</span>; } }] : []),
     ...(money ? [
-      { key: 'billing', label: 'Billing date', type: 'date' as const, value: (i: Issue) => i.billingDate, hidden: true, width: 130 },
-      { key: 'collected', label: 'Collected', value: (i: Issue) => i.collectedAt, hidden: true, width: 130, title: 'When the money from the payer came in.',
+      { key: 'billing', label: 'Billing date', type: 'date' as const, value: (i: Issue) => i.billingDate, hidden: true, width: 130, filter: false as const },
+      { key: 'collected', label: 'Collected', value: (i: Issue) => i.collectedAt, hidden: true, width: 130, title: 'When the money from the payer came in.', filter: false as const,
         text: collectedText, render: (i: Issue) => <span className={i.collectedAt ? 'text-ink' : 'text-warning'}>{collectedText(i)}</span> },
-      { key: 'owed', label: 'Owed to technician', type: 'money' as const, value: (i: Issue) => i.contractorAmount, hidden: true, width: 150 },
-      { key: 'paid', label: 'Technician paid', value: (i: Issue) => i.contractorPaidAt, hidden: true, width: 140,
+      { key: 'owed', label: 'Owed to technician', type: 'money' as const, value: (i: Issue) => i.contractorAmount, hidden: true, width: 150, filter: false as const },
+      { key: 'paid', label: 'Technician paid', value: (i: Issue) => i.contractorPaidAt, hidden: true, width: 140, filter: false as const,
         text: paidText, render: (i: Issue) => <span className={i.contractorPaidAt ? 'text-ink' : 'text-warning'}>{paidText(i)}</span> },
     ] : []),
-    { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150 },
-    { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150 },
-  ], [money]);
+    { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150, filter: false },
+    { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150, filter: false },
+  ], [money, buildingOptions, unitOptions, assigneeOptions]);
 
   return (
     <>
@@ -280,7 +329,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
         renderCard={i => <JobCard i={i} money={money} />}
         onRowClick={i => onSelect(i.id)} rowTone={i => (i.id === selected ? 'gold' : i.state === 'resolved' ? 'muted' : null)}
         noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above}
-        filtered={filtered} onClearFilters={onClearFilters}
+        filtered={filtered} onClearFilters={onClearFilters} inlineFiltersTarget={filtersTarget}
         empty={{ title: empty.title, icon: 'Wrench', action: empty.action }}
         selectable={canBulk}
         bulkActions={(picked, clear) => {
@@ -306,12 +355,12 @@ function JobCard({ i, money }: { i: Issue; money: boolean }) {
   return (
     <span className="flex flex-col gap-1 min-w-0">
       <span className="flex items-baseline justify-between gap-2">
-        <span className="min-w-0 truncate"><b className="text-copy text-ink">{i.unitNumber}</b><span className="text-meta text-muted-ink"> · {i.propertyName}</span></span>
+        <span className="min-w-0 truncate"><b className="text-copy text-ink">{unitText(i)}</b><span className="text-meta text-muted-ink"> · {i.propertyName}</span></span>
         {money && cost != null && <span className="text-copy font-medium tabular-nums whitespace-nowrap">{rm(cost)}{i.finalAmount == null && <span className="text-meta text-muted-ink font-normal"> quote</span>}</span>}
       </span>
       <span className="text-copy text-ink [overflow-wrap:anywhere]">{i.title}</span>
       <span className="text-meta text-muted-ink">
-        {CATEGORY[i.category] ?? i.category} · {i.vendorName ? i.vendorName : <span className="text-danger">Unassigned</span>} · reported {dateShort(i.reportedAt)}
+        {i.source === 'booking' ? <>Guest check-in {stamp(checkInAt(i))}</> : CATEGORY[i.category] ?? i.category} · {i.vendorName ? i.vendorName : <span className="text-danger">Unassigned</span>}{i.source !== 'booking' && <> · reported {dateShort(i.reportedAt)}</>}
       </span>
       <span className="flex gap-1.5 flex-wrap pt-0.5">
         {typeOf(i) !== 'normal' && <StatusBadge tone={typeOf(i) === 'urgent' ? 'critical' : 'info'}>{JOB_TYPE[typeOf(i)]}</StatusBadge>}
@@ -403,14 +452,14 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   async function recordApproval() {
     const ok = await ask({ title: "Record the owner's approval?", confirmLabel: 'Record approval',
       body: 'Only do this once the owner has said yes. The job can then go ahead.',
-      meta: <>{i.propertyName} {i.unitNumber} · {i.title}<br />Quote: {i.quotedAmount != null ? rm(i.quotedAmount) : 'no amount yet'}</> });
+      meta: <>{jobLabel(i)} · {i.title}<br />Quote: {i.quotedAmount != null ? rm(i.quotedAmount) : 'no amount yet'}</> });
     if (ok === null) return;
     void act('approve', () => api.post(`/maintenance/issues/${i.id}/approve`, { approved: true, quotedAmount: i.quotedAmount }), 'Approval recorded.', 'The job can go ahead.');
   }
   async function markCollected(day: string | null) {
     if (day) {
       const ok = await ask({ title: `Mark collected from ${collectFrom}?`, confirmLabel: 'Mark collected',
-        meta: <>{i.propertyName} {i.unitNumber} · {i.title}<br />{charge != null ? rm(charge) : '—'}, collected {date(day)}</> });
+        meta: <>{jobLabel(i)} · {i.title}<br />{charge != null ? rm(charge) : '—'}, collected {date(day)}</> });
       if (ok === null) return;
     }
     void act('collected', () => api.patch(`/maintenance/issues/${i.id}`, { collectedAt: day }), day ? 'Marked collected.' : 'Marked not collected.');
@@ -447,7 +496,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       {confirmUi}
       <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-4 pb-4 bg-black text-white flex items-start gap-3">
         <div className="flex-1 min-w-0 flex flex-col gap-1">
-          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{i.propertyName} · {i.unitNumber}</div>
+          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{i.propertyName} · {unitText(i)}</div>
           <div className="text-[19px] leading-tight font-semibold">{i.title}</div>
           <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
             {steps.map((s, k) => (
@@ -497,6 +546,15 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         </div>
       )}
 
+      {needsSupport(i) && (
+        <div className="rounded-control bg-critical-bg text-critical p-3 flex flex-col gap-2">
+          <span className="font-semibold">{i.vendorName ?? 'The technician'} needs support · {stamp(i.supportRequestedAt ?? '')}</span>
+          <span className="whitespace-pre-wrap [overflow-wrap:anywhere]">Tried: {i.supportNote}</span>
+          <Button size="sm" variant="secondary" className="self-start max-sm:min-h-11" loading={busy === 'support'}
+            onClick={() => void act('support', () => api.del(`/maintenance/issues/${i.id}/support`), 'Support request cleared.')}>Support given</Button>
+        </div>
+      )}
+
       {!done && i.jobType && <JobPlan i={i} busy={busy} act={act} />}
       {waitingParts(i) && <div className="rounded-control bg-warning-bg text-warning p-3">The owner approved. The technicians see this job once the parts are ticked as arrived.</div>}
 
@@ -540,7 +598,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
               <DateField aria-label="Billing date" className={INPUT} value={billingDate} onChange={setBillingDate} />
             </FormRow>}
             <FormRow label="Who pays">
-              {done ? <span className="h-10 flex items-center">{PAYER[i.chargeTo]}</span>
+              {done || !i.unitId ? <span className="h-10 flex items-center">{PAYER[i.chargeTo]}</span>
                 : <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>
                   {(['owner', 'the_conts', 'guest_deposit'] as ChargeTo[]).concat(i.chargeTo === 'warranty' ? ['warranty'] : []).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}
                 </select>}
@@ -656,7 +714,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         <>
           {(!i.blocksUnit || skus.some(s => s.trackStock && s.active && s.stockOnHand > 0)) && (
             <section className="flex flex-col rounded-card border border-solid border-line overflow-hidden">
-              {!i.blocksUnit && (
+              {!i.blocksUnit && i.unitId && (
                 <div className="flex items-center gap-3 px-3.5 py-3">
                   <span className="w-8 h-8 flex-none grid place-items-center rounded-full bg-muted text-muted-ink"><Icon name="Ban" size="sm" /></span>
                   <span className="flex-1 min-w-0 flex flex-col">
@@ -667,7 +725,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
                 </div>
               )}
               {skus.some(s => s.trackStock && s.active && s.stockOnHand > 0) && (
-                <div className={cx('flex items-center gap-3 px-3.5 py-3', !i.blocksUnit && '[border-top:1px_solid_var(--color-line-soft)]')}>
+                <div className={cx('flex items-center gap-3 px-3.5 py-3', !i.blocksUnit && i.unitId && '[border-top:1px_solid_var(--color-line-soft)]')}>
                   <span className="w-8 h-8 flex-none grid place-items-center rounded-full bg-muted text-muted-ink"><Icon name="PackageMinus" size="sm" /></span>
                   <span className="flex-1 min-w-0 flex flex-col">
                     <span className="font-medium text-ink">Parts from stock</span>
@@ -699,7 +757,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       {windowOpen && <WindowModal issue={i} onClose={() => setWindowOpen(false)} onDone={(n) => { setWindowOpen(false); toast({ tone: n ? 'warning' : 'success', title: 'Repair window added.', body: n ? `It overlaps ${n} ${n === 1 ? 'reservation' : 'reservations'}. Make sure the guest agreed.` : 'No guest is in the unit then.' }); refresh(); }} />}
       {blockOpen && <BlockModal issue={i} onClose={() => setBlockOpen(false)} onDone={() => { setBlockOpen(false); toast({ tone: 'success', title: 'Unit blocked.', body: 'The nights are blocked on the calendar until the repair is done.' }); refresh(); }} />}
       {completeOpen && <CompleteModal issue={i} billing={billing} onClose={() => setCompleteOpen(false)} onDone={() => { setCompleteOpen(false); toast({ tone: 'success', title: 'Job done.', body: 'The cost is on the unit as an expense.' }); refresh(); }} />}
-      {exchange && <ExchangeModal jobLabel={`${i.propertyName} ${i.unitNumber} · ${i.title}`} skus={skus.filter(s => s.active)} onClose={() => setExchange(false)}
+      {exchange && <ExchangeModal jobLabel={`${jobLabel(i)} · ${i.title}`} skus={skus.filter(s => s.active)} onClose={() => setExchange(false)}
         onExchange={(s, qty) => { setExchange(false); void act('exchange', () => api.post(`/maintenance/issues/${i.id}/exchange`, { skuId: s.id, qty }), 'Drawn from stock.', `${qty} x ${s.name}.`); }} />}
     </div>
   );
@@ -756,7 +814,7 @@ function WindowModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => 
     catch (e) { setError(errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Add repair window" sub={`When the technician may enter ${issue.propertyName} ${issue.unitNumber}. Malaysia time.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Add window', () => void save())}>
+    <OpsModal title="Add repair window" sub={`When the technician may enter ${jobLabel(issue)}. Malaysia time.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Add window', () => void save())}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <FormRow label="From" error={error}><DateTimeField aria-label="From" className={INPUT} value={start} onChange={setStart} required /></FormRow>
         <FormRow label="To"><DateTimeField aria-label="To" className={INPUT} value={end} min={start || undefined} onChange={setEnd} required /></FormRow>
@@ -777,7 +835,7 @@ function BlockModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => v
     catch (e) { setError(e instanceof ApiFailure && e.status === 409 ? 'A reservation already holds some of those nights. Pick dates when the unit is free.' : errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Block unit until fixed" sub={`${issue.propertyName} ${issue.unitNumber} is blocked for these nights, and shows as under maintenance.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Block unit', () => void save())}>
+    <OpsModal title="Block unit until fixed" sub={`${jobLabel(issue)} is blocked for these nights, and shows as under maintenance.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Block unit', () => void save())}>
       <div className="grid grid-cols-2 gap-3">
         <FormRow label="First night" error={error}><DateField aria-label="First night" className={INPUT} value={from} onChange={v => v && setFrom(v)} /></FormRow>
         <FormRow label="Available again"><DateField aria-label="Available again" className={INPUT} value={to} min={from || undefined} onChange={v => v && setTo(v)} /></FormRow>
@@ -801,7 +859,7 @@ function CompleteModal({ issue, billing, onClose, onDone }: { issue: Issue; bill
     catch (e) { setError(errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Mark job done" sub={`${issue.propertyName} ${issue.unitNumber} · ${issue.title}`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Mark done', () => void save())}>
+    <OpsModal title="Mark job done" sub={`${jobLabel(issue)} · ${issue.title}`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Mark done', () => void save())}>
       <FormRow label="Final cost, RM (required)" error={error} hint="Recorded as a maintenance expense on the unit. RM 0 records nothing.">
         <MoneyInput className={INPUT} valueSen={amountSen} onChangeSen={setAmountSen} aria-label="Final cost in RM" />
       </FormRow>
@@ -809,7 +867,7 @@ function CompleteModal({ issue, billing, onClose, onDone }: { issue: Issue; bill
         <DateField aria-label="Billing date" className={INPUT} value={billingDate} onChange={setBillingDate} />
       </FormRow>}
       <FormRow label="Who pays">
-        <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>{(['owner', 'the_conts', 'guest_deposit', 'warranty'] as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select>
+        <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>{((issue.unitId ? ['owner', 'the_conts', 'guest_deposit', 'warranty'] : ['the_conts']) as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select>
       </FormRow>
       {issue.blocksUnit && <span className="text-meta text-muted-ink">The unit goes back to ready, and the nights blocked for this repair become available again.</span>}
     </OpsModal>
@@ -918,9 +976,17 @@ function ApprovalRulesPanel() {
 
 /** Item catalog: the maintenance part of Service prices (0127); before that update, the old catalog. */
 function MaintenanceItems({ fallback, onChanged }: { fallback: ReactNode; onChanged: () => void }) {
-  const service = useApi<{ ready: boolean }>('/operations/service-prices?domain=maintenance');
+  const service = useApi<{ ready: boolean; mayPrice?: boolean }>('/operations/service-prices?domain=maintenance');
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [priceListVersion, setPriceListVersion] = useState(0);
   if (!service.data) return <Skeleton height={240} />;
   if (!service.data.ready) return <>{fallback}</>;
-  return <ServicePrices domain="maintenance" onChanged={onChanged}
-    above={<p className="m-0 text-meta text-muted-ink">Picking an item on a job fills its owner price (the quote) and its internal cost; both stay editable on the job. The whole list, cleaning too, is under Settings, Service prices.</p>} />;
+  return <>
+    <ServicePrices key={priceListVersion} domain="maintenance" onChanged={onChanged}
+      above={<div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="m-0 flex-1 min-w-[220px] text-meta text-muted-ink">Picking an item on a job fills its owner price (the quote) and its internal cost; both stay editable on the job. The whole list, cleaning too, is under Settings, Service prices.</p>
+        {service.data.mayPrice && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsScheduling(true)}>Schedule price change</Button>}
+      </div>} />
+    {isScheduling && <PriceChangePanel kind="maintenance" onClose={() => setIsScheduling(false)} onSaved={() => { setIsScheduling(false); setPriceListVersion(version => version + 1); onChanged(); }} />}
+  </>;
 }

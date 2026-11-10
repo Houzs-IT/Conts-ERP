@@ -155,8 +155,9 @@
       "rem   rem    rem    rem    rem    rem"
       "qtyL  qtyL   priceL priceL discL  discL"
       "qty   qty    price  price  disc   disc"
-      "dateL dateL  dateL  dateL  .      ."
-      "date  date   date   date   photo  amt";
+      "procL procL  procL  delL   delL   delL"
+      "proc  proc   proc   del    del    del"
+      "photo photo  amt    amt    amt    amt";
     row-gap: 4px;
   }
   .row > :nth-child(1) { grid-area: no; }
@@ -165,14 +166,16 @@
   .row > :nth-child(4) { grid-area: qty; }
   .row > :nth-child(5) { grid-area: price; }
   .row > :nth-child(6) { grid-area: disc; }
-  .row > :nth-child(7) { grid-area: date; }
-  .row > :nth-child(8) { grid-area: amt; }
-  .row > :nth-child(9) { grid-area: photo; justify-self: end; }
-  .row > :nth-child(10) { grid-area: act; }
-  .row > :nth-child(11) { grid-area: qtyL; }
-  .row > :nth-child(12) { grid-area: priceL; }
-  .row > :nth-child(13) { grid-area: discL; }
-  .row > :nth-child(14) { grid-area: dateL; }
+  .row > :nth-child(7) { grid-area: proc; }
+  .row > :nth-child(8) { grid-area: del; }
+  .row > :nth-child(9) { grid-area: amt; justify-self: end; }
+  .row > :nth-child(10) { grid-area: photo; justify-self: start; }
+  .row > :nth-child(11) { grid-area: act; }
+  .row > :nth-child(12) { grid-area: qtyL; }
+  .row > :nth-child(13) { grid-area: priceL; }
+  .row > :nth-child(14) { grid-area: discL; }
+  .row > :nth-child(15) { grid-area: procL; }
+  .row > :nth-child(16) { grid-area: delL; }
   .label {
     display: block;
     margin-top: 4px;

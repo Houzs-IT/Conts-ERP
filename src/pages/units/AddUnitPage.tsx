@@ -16,7 +16,7 @@ import { useSession } from '../../lib/session';
 import { api, ApiFailure, errorMessage, notifyFailure } from '../../lib/api';
 import { titleCase } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
-import { PURPOSES, USED_BY, offeredTypes } from '../../lib/revenueModel';
+import { PURPOSES, USED_BY, offeredTypes, optionsOfType, type ContractTypeOptions } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
 import { BedsEditor, BaysEditor } from './UnitExtras';
 import { BuildingModal, useOwnerOptions } from './UnitForms';
@@ -43,9 +43,9 @@ function bodyOfForm(f: AddUnitForm, layout: string | null): NewUnitBody {
   };
 }
 
-function contractProblems(d: Draft): Record<string, string> {
+function contractProblems(d: Draft, options: ContractTypeOptions): Record<string, string> {
   if (!d.contractCode) return { contractCode: 'Pick a package.' };
-  const p = problems(d);
+  const p = problems(d, options);
   if (!d.startsOn) p.startsOn = 'Enter the start date.';
   else if (d.renewsOn && d.renewsOn <= d.startsOn) p.renewsOn = 'Renewal must be after the start date.';
   return p;
@@ -65,6 +65,7 @@ export default function AddUnitPage(): ReactElement {
 
   const [form, setForm] = useState<AddUnitForm>(() => ({ ...EMPTY_FORM, buildingId: params.get('building') ?? '' }));
   const [draft, setDraft] = useState<Draft>(() => blankDraft());
+  const draftOptions = optionsOfType(types, draft.contractCode, draft.revenueModel);
   const [step, setStep] = useState<StepIndex>(0);
   const [tried, setTried] = useState<readonly boolean[]>([false, false, false]);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
@@ -103,7 +104,7 @@ export default function AddUnitPage(): ReactElement {
   }, []);
 
   const hasOwner = !!form.ownerId;
-  const own = step === 2 ? (hasOwner ? contractProblems(draft) : {}) : stepProblems(step, form);
+  const own = step === 2 ? (hasOwner ? contractProblems(draft, draftOptions) : {}) : stepProblems(step, form);
   // The contract step shows its problems at once, as the Contract tab does.
   const shownErrors = { ...(step < 2 && tried[step] ? own : {}), ...serverErrors };
   const blocked = Object.values(own)[0];
@@ -133,7 +134,7 @@ export default function AddUnitPage(): ReactElement {
       }
       if (hasOwner) {
         try {
-          await api.put(`/units/${encodeURIComponent(id)}/contract`, { ...bodyOf(draft), mode: 'update' });
+          await api.put(`/units/${encodeURIComponent(id)}/contract`, { ...bodyOf(draft, draftOptions), mode: 'update' });
         } catch (e) {
           if (e instanceof ApiFailure && e.fields) setContractErrors(e.fields);
           toast({ tone: 'critical', title: 'The unit was added, but its contract was not saved.', body: errorMessage(e, 'Check the contract below and save it again.') });
@@ -285,7 +286,7 @@ export default function AddUnitPage(): ReactElement {
             hasOwner ? (
               <div className="flex flex-col gap-5 min-w-0">
                 <SectionHead noMargin>Contract</SectionHead>
-                <ContractFields d={draft} set={editDraft} errors={{ ...contractProblems(draft), ...contractErrors }} types={types} offered={offeredTypes(types)} label="Package"
+                <ContractFields d={draft} set={editDraft} errors={{ ...contractProblems(draft, draftOptions), ...contractErrors }} types={types} offered={offeredTypes(types)} label="Package"
                   afterSelect={!draft.contractCode && <p className="m-0 text-meta text-muted-ink">Pick a package to see the boxes it needs.</p>} />
               </div>
             ) : (

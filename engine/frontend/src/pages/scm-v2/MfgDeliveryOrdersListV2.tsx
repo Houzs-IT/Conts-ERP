@@ -10,8 +10,9 @@
 //       useUpdateMfgDeliveryOrderStatus (all live in the vendored SCM lib —
 //       we don't re-derive them; the Theme C paint is chrome-only).
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { statusFor, doCancellableStatus, type StatusTab } from "./do-list-status";
+import { DO_TYPE_TABS, statusFor, doCancellableStatus, type StatusTab, type TypeTab } from "./do-list-status";
 import { deliveryOrderRowMenu } from "./row-menus";
 import { doCountsAsInvoiceable, doCountsAsDelivered } from "../../vendor/shared/do-shipped-states";
 import { useDoCancelAction } from "./use-do-cancel-action";
@@ -80,6 +81,7 @@ import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { useChoice } from "../../vendor/scm/components/ChoiceDialog";
 import { useQueryClient } from "@tanstack/react-query";
+import { useWarehouses } from "../../vendor/scm/lib/inventory-queries";
 import { cn } from "../../lib/utils";
 import { convertToLink, transferToLabel, transferFromLabel, transferFromColumnLabel } from "../../lib/convertScope";
 import { isCancelledDocStatus } from "../../lib/scm";
@@ -110,6 +112,7 @@ type DoRow = HoldFields & {
   debtor_code: string | null;
   salesperson_id: string | null;
   sales_location: string | null;
+  warehouse_id?: string | null;
   customer_so_no: string | null;
   po_doc_no: string | null;
   /** Source PO(s) this DO's shipped goods came from (batch_no = source PO on the
@@ -383,6 +386,9 @@ function DetailDrawer({
   salespersonName: string;
 }) {
   const detailQ = useMfgDeliveryOrderDetail(row?.id ?? null);
+  /* As on the DO page: the warehouse the goods leave; the order's sales location only when the DO names none. */
+  const warehousesQ = useWarehouses();
+  const shipFrom = (warehousesQ.data ?? []).find((w) => w.id === row?.warehouse_id)?.code ?? row?.sales_location;
   const items: Array<{
     item_code?: string;
     product_name?: string;
@@ -477,7 +483,7 @@ function DetailDrawer({
                 <MetaItem k="Expected at" v={fmtDate(row.expected_delivery_at)} />
                 <MetaItem k="Driver" v={row.driver_name || "—"} />
                 <MetaItem k="Vehicle" v={row.vehicle || "—"} />
-                <MetaItem k="Location" v={row.sales_location || "—"} />
+                <MetaItem k="Location" v={shipFrom || "—"} />
                 <MetaItem k="Salesperson" v={salespersonName} />
               </dl>
 
@@ -620,6 +626,7 @@ function DetailDrawer({
                   disabled={!canConvertToSi}
                   title={siReason ?? undefined}
                   aria-describedby={siReason ? "do-drawer-si-reason" : undefined}
+                  className="whitespace-nowrap"
                 >
                   {transferToLabel('si')}
                 </Button>
@@ -822,6 +829,7 @@ export function MfgDeliveryOrdersListV2() {
   const canWriteDo = canOperateDeliveryOrders(user, can, pageAccess);
 
   const status = (params.get("status") ?? "all") as StatusTab;
+  const doType = (params.get("type") ?? "all") as TypeTab;
   const view = (params.get("view") ?? "table") as "table" | "cards";
   const search = params.get("q") ?? "";
   // URL is state — the 0-based page index lives in `?page=`. pageSize is a
@@ -855,12 +863,14 @@ export function MfgDeliveryOrdersListV2() {
   // DISPATCHED+IN_TRANSIT, delivered = SIGNED+DELIVERED+INVOICED+COMPLETED,
   // cancelled = CANCELLED). `all` omits the filter.
   const apiStatus = status === "all" ? undefined : status;
+  const apiType = doType === "all" ? undefined : doType;
 
   const { data, isLoading, isFetching, isPlaceholderData, error, refetch } = useMfgDeliveryOrdersPaged({
     enabled: true,
     page,
     pageSize,
     status: apiStatus,
+    type: apiType,
     q: debouncedSearch,
     sort,
     ...serverFunnels,
@@ -937,6 +947,13 @@ export function MfgDeliveryOrdersListV2() {
     next.delete("page"); // status change → back to page 0
     setParams(next, { replace: true });
   };
+  const setTypeChip = (t: TypeTab) => {
+    const next = new URLSearchParams(params);
+    if (t === "all") next.delete("type");
+    else next.set("type", t);
+    next.delete("page");
+    setParams(next, { replace: true });
+  };
   const setView = (v: "table" | "cards") => {
     const next = new URLSearchParams(params);
     if (v === "table") next.delete("view");
@@ -983,7 +1000,7 @@ export function MfgDeliveryOrdersListV2() {
     setParams(new URLSearchParams(), { replace: true });
   };
   const filtersActive =
-    status !== "all" || view !== "table" || search.trim().length > 0;
+    status !== "all" || doType !== "all" || view !== "table" || search.trim().length > 0;
 
   const onPullToRefresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ["mfg-delivery-orders"] });
@@ -1098,7 +1115,7 @@ export function MfgDeliveryOrdersListV2() {
       for (const r of chosen) bundles.push(await fetchDoBundle(r));
       if (how === "one") {
         await generateCombinedDeliveryOrderPdf(bundles as never, {
-          fileName: `delivery-orders-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `delivery-orders-${todayMyt()}.pdf`,
           action,
         });
       } else {
@@ -1562,10 +1579,16 @@ export function MfgDeliveryOrdersListV2() {
 
   const statusPillOptions: Array<{ value: StatusTab; label: string }> = (
     // `on_hold` sits before Cancelled, as on the other four lists. Mig 0324.
-    [["all", "All"], ["draft", "Draft"], ["loaded", "Confirmed"], ["dispatched", "Loaded"],
+    [["all", "All"], ["draft", "Draft delivery"], ["loaded", "Confirmed"], ["dispatched", "Loaded"],
      ["in_transit", "In transit"], ["delivered", "Delivered"], ["invoiced", "Invoiced"],
      ["on_hold", "On Hold"], ["cancelled", "Cancelled"]] as Array<[StatusTab, string]>
   ).map(([value, label]) => ({ value, label: `${label} · ${counts[value] ?? 0}` }));
+
+  const typeCounts: Record<string, number> | undefined = data?.typeCounts;
+  const typePillOptions = DO_TYPE_TABS.map(([value, label]) => ({
+    value,
+    label: value === "all" || !typeCounts ? label : `${label} · ${typeCounts[value] ?? 0}`,
+  }));
 
   return (
     <PullToRefresh onRefresh={onPullToRefresh}>
@@ -1686,6 +1709,7 @@ export function MfgDeliveryOrdersListV2() {
               value={status}
               onChange={(v) => setStatusChip(v)}
             />
+            <FilterPills options={typePillOptions} value={doType} onChange={(v) => setTypeChip(v)} />
             <div className="flex-1" />
             <ViewToggle value={view} onChange={setView} />
           </div>
@@ -1712,6 +1736,7 @@ export function MfgDeliveryOrdersListV2() {
           value={status}
           onChange={(v) => setStatusChip(v)}
         />
+        <FilterPills options={typePillOptions} value={doType} onChange={(v) => setTypeChip(v)} />
       </div>
 
       {/* Phone → Cards */}
@@ -1818,7 +1843,7 @@ export function MfgDeliveryOrdersListV2() {
                  search and sort match, not the page; one row per line; the
                  visible columns, funnels and sort. */
               exportLines={{
-                fetchRows: () => fetchDoExportRows<DoRow>({ status: apiStatus, q: debouncedSearch, sort }),
+                fetchRows: () => fetchDoExportRows<DoRow>({ status: apiStatus, type: apiType, q: debouncedSearch, sort }),
                 linesOf: (r) => r.lines ?? [],
                 sheetName: "Delivery Orders",
                 onError: (e) => void notify({ title: "Export failed", body: e.message || "The export could not be completed.", tone: "error" }),

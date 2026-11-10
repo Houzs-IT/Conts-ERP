@@ -100,6 +100,21 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   );
 }
 
+/** In use / Not in use (owner, 6 Nov 2026), in place of the Switch off button: a list row is hidden from new work, never deleted. */
+export function InUseToggle({ on, onChange, name }: { on: boolean; onChange: (on: boolean) => void; name: string }) {
+  return (
+    <button
+      type="button" role="switch" aria-checked={on} aria-label={`${name} in use`} onClick={() => onChange(!on)}
+      className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-ink-secondary"
+    >
+      <span className={`relative h-[18px] w-8 rounded-full transition-colors ${on ? "bg-primary" : "bg-border"}`}>
+        <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-surface transition-[left] ${on ? "left-4" : "left-0.5"}`} />
+      </span>
+      <span className="w-[62px] text-left">{on ? "In use" : "Not in use"}</span>
+    </button>
+  );
+}
+
 export const inputClass = "w-full rounded-md border border-border bg-surface px-3 py-2 text-sm";
 /** Compact field for dense record cards (key log, design steps, procurement dates). */
 export const smallInput = "w-full min-w-0 rounded border border-border bg-surface px-2 py-1 text-xs text-ink disabled:opacity-60";

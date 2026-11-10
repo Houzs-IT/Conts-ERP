@@ -152,7 +152,7 @@ export function mediaActivityText(from: string | null, note: string | null): { t
 
 /* ---------- Site & photos: one list of every photo and video of the project ---------- */
 
-export type PhotoCategory = "progress" | "do" | "gr" | "po" | "measure" | "defect";
+export type PhotoCategory = "progress" | "production" | "do" | "gr" | "po" | "measure" | "defect";
 
 export interface ProjectPhoto {
   id: string;
@@ -169,6 +169,8 @@ export interface ProjectPhoto {
   /** The card it sits on in the timeline: one per document, defect, site step or measure; progress photos per upload. */
   group: { key: string; title: string };
   note: string | null;
+  /** The same picture is on its production order's card: its own chip shows it, All does not show it twice. */
+  repeat?: boolean;
 }
 
 /** Newest first, to the second; undated last in the order given. */

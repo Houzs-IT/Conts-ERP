@@ -29,6 +29,6 @@ describe("BetaLineMaterials", () => {
   it("is read-only once the line is on a PO", () => {
     render(<BetaLineMaterials projectId={7} line={line} canEdit={false} onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.queryByLabelText("Quantity of PLC-KNK-001")).toBeNull();
-    expect(screen.getByText("Change these on the production order.")).toBeTruthy();
+    expect(screen.getByText("Only the project team can change these.")).toBeTruthy();
   });
 });

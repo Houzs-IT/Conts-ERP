@@ -97,7 +97,7 @@ export type DoBookHeader = {
    keyed by the stored value. This file's canonical test asserts the two say the
    same words. LOADED reads "Confirmed" and DISPATCHED "Loaded" on screen. */
 export const DO_STATUS_WORDS: Readonly<Record<string, string>> = {
-  DRAFT: 'Draft',
+  DRAFT: 'Draft delivery',
   LOADED: 'Confirmed',
   DISPATCHED: 'Loaded',
   IN_TRANSIT: 'In transit',

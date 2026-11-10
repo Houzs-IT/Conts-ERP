@@ -30,7 +30,7 @@ type Progress = 'reported' | 'assigned' | 'in_progress' | 'repair_finished' | 'a
 interface Job {
   id: string; title: string; state: string; progress: Progress; why: 'overdue' | 'urgent' | 'visit' | 'blocking'; urgent: boolean;
   category: string; assigneeName: string | null; blocksUnit: boolean; visit: { startsAt: string; endsAt: string } | null; dueBy: string | null;
-  unitNumber: string; propertyName: string;
+  unitNumber: string | null; propertyName: string;
 }
 type Free = 'ready' | 'needs_cleaning' | 'cleaning' | 'blocked';
 interface FreeUnit {
@@ -257,7 +257,7 @@ function JobLine({ m }: { m: Job }) {
       className={cx(ROW, 'flex flex-wrap items-center gap-x-3 gap-y-2 text-copy text-ink no-underline hover:bg-page')}>
       <span className={cx('w-[96px] flex-none [font-variant-numeric:tabular-nums]', m.visit ? 'font-semibold' : 'text-meta text-muted-ink')}>{when}</span>
       <span className="flex-1 min-w-[180px]">
-        <b className="[overflow-wrap:anywhere]">{m.propertyName} {m.unitNumber}</b> · {m.title}
+        <b className="[overflow-wrap:anywhere]">{m.propertyName} {m.unitNumber ?? 'Building (no unit)'}</b> · {m.title}
         <span className="block text-meta text-muted-ink">{CATEGORY[m.category] ?? m.category} · {m.assigneeName ?? 'nobody assigned'}{m.dueBy ? ` · available again ${dayLabel(m.dueBy)}` : ''}</span>
       </span>
       <span className="flex items-center gap-2 flex-wrap justify-end ml-auto">

@@ -82,6 +82,8 @@ import {
   type ScanJob,
   type ScanJobsResp,
 } from '../lib/scan-jobs';
+import { useScanJobDriver, isStalledScanJob } from '../lib/scan-job-driver';
+import { ScanJobRetry } from './ScanJobRetry';
 import styles from './ScanOrderModal.module.css';
 
 const ICON = { size: 14, strokeWidth: 1.75 } as const;
@@ -318,7 +320,7 @@ export const ScanOrderModal = ({ onClose }: Props) => {
      every 4s while any tracked job is still queued/running or hasn't surfaced
      yet; a fully-settled list stops the interval. */
   const repParam = salesperson.trim();
-  const { data: jobsData } = useQuery({
+  const { data: jobsData, refetch } = useQuery({
     queryKey: ['scan-modal-jobs', repParam],
     enabled: enqueuedJobIds.length > 0,
     queryFn: () =>
@@ -341,6 +343,8 @@ export const ScanOrderModal = ({ onClose }: Props) => {
       .filter((j): j is ScanJob => Boolean(j))
       .sort((a, b) => jobTs(a.createdAt) - jobTs(b.createdAt));
   }, [jobsData, enqueuedJobIds]);
+  // No queue on this server: the open modal runs each queued scan (scan-job-driver.ts).
+  useScanJobDriver('/scan-so', trackedJobs, () => void refetch());
 
   /* ── Slot capture ───────────────────────────────────────────────────────
      Re-target the hidden input to the active order, then open the file picker.
@@ -759,7 +763,7 @@ export const ScanOrderModal = ({ onClose }: Props) => {
                   const done = j.status === 'done';
                   const failed = j.status === 'error';
                   const chipClass = done ? styles.chipTeal : failed ? styles.chipYellow : styles.chipGrey;
-                  const chipLabel = active ? (j.status === 'running' ? 'Reading…' : 'Queued') : done ? 'Done' : failed ? 'Failed' : j.status;
+                  const chipLabel = isStalledScanJob(j) ? 'Stalled' : active ? (j.status === 'running' ? 'Reading…' : 'Queued') : done ? 'Done' : failed ? 'Failed' : j.status;
                   return (
                     <div key={j.id} className={styles.resultRow}>
                       <span className={`${styles.chip} ${chipClass}`}>
@@ -776,6 +780,7 @@ export const ScanOrderModal = ({ onClose }: Props) => {
                         {j.duplicateOf && (
                           <div className={styles.resultSub}>Possible duplicate of {j.duplicateOf}</div>
                         )}
+                        <ScanJobRetry base="/scan-so" job={j} onDone={() => void refetch()} />
                       </div>
                       <span style={{ flex: 'none', fontSize: 11, color: 'var(--fg-muted)' }}>
                         {jobTs(j.createdAt) ? hhmm(jobTs(j.createdAt)) : ''}
@@ -793,8 +798,8 @@ export const ScanOrderModal = ({ onClose }: Props) => {
           <p className={styles.sub} style={{ marginTop: 4 }}>
             Each order takes an order slip and, optionally, one or more card-terminal
             payment receipts — each receipt becomes its own payment on the draft. We
-            read every slip and save a draft order per slip in the background — you do
-            not have to wait here for it.
+            read every slip and save a draft order per slip. Keep this window open
+            until each slip shows Done — the reading runs from here.
           </p>
         </div>
 

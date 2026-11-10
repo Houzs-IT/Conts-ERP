@@ -112,6 +112,15 @@ export async function stampCreatedProcessingDates(db: Db, docNo: string, company
   }
 }
 
+/** The live sales order a project already has (one project, one order: owner, 5 Nov 2026), null when free. */
+export async function projectOrderTaken(db: Db, projectId: number | null, exceptDocNo: string | null = null): Promise<string | null> {
+  if (projectId == null) return null;
+  const r = await db.prepare(
+    `SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ? AND status::text <> 'CANCELLED' AND doc_no IS DISTINCT FROM ? LIMIT 1`,
+  ).bind(projectId, exceptDocNo).first<{ doc_no: string }>();
+  return r?.doc_no ?? null;
+}
+
 /** Every reason a renovation SO cannot be saved: invalid values, then the required fields. */
 export function renovationSoProblems(input: RenovationSoInput, head: { customerName: string; phone: string; address1: string }): PropertyProblem[] {
   const invalid = new Set(input.problems.map((p) => p.field));
@@ -261,6 +270,11 @@ renovationSoInfo.put('/:docNo/brand', async (c: C) => {
     `WITH k AS (UPDATE scm.reno_so_contracts SET brand_id = ? WHERE so_doc_no = ?)
      UPDATE scm.mfg_sales_orders SET branding = ?, updated_at = now() WHERE doc_no = ?`,
   ).bind(brandId, docNo, brand.name, docNo).run();
+  /* The SO and its project carry one brand, each way (owner, 10 Nov 2026). */
+  await db.prepare(
+    `UPDATE projects SET brand = ?, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+      WHERE id = (SELECT project_id FROM scm.mfg_sales_orders WHERE doc_no = ?)`,
+  ).bind(brand.name, docNo).run();
   return c.json({ ok: true, brandId, name: brand.name });
 });
 
@@ -284,6 +298,8 @@ renovationSoInfo.put('/:docNo', async (c: C) => {
   const input = so.so_kind === 'STANDARD' ? read : { ...read, roomSections: null };
   const problems = renovationSoProblems(input, { customerName: so.debtor_name ?? '', phone: so.phone ?? '', address1: so.address1 ?? '' });
   if (problems.length) return c.json({ error: 'validation_failed', problems }, 422);
+  const taken = await projectOrderTaken(db, input.projectId, docNo);
+  if (taken) return c.json({ error: 'project_taken', message: `This project already has sales order ${taken}.` }, 409);
   const r = await applyRenovationSoInfo(db, docNo, input, {
     companyId: activeCompanyId(c) ?? so.company_id, companySql: activeCompanySql(c, 'p.company_id'),
     actorId: Number(c.get('houzsUser')?.id ?? 0),
@@ -350,6 +366,11 @@ renovationSoInfo.put('/:docNo/lines/:itemId/spec', async (c: C) => {
     `UPDATE scm.mfg_sales_order_items SET variants = ?::text::jsonb, description2 = coalesce(?, description2), remark = nullif(?, '')
       WHERE id::text = ? AND doc_no = ?`,
   ).bind(JSON.stringify(variants), summary, remark, itemId, docNo).run();
+  /* An open production order's line shows what to build, so it takes the new options too. */
+  if (!sameOptions) await db.prepare(
+    `UPDATE scm.production_order_items pi SET variants = ?::text::jsonb, description2 = coalesce(?, pi.description2)
+      FROM scm.production_orders o WHERE o.id = pi.production_order_id AND pi.so_item_id::text = ? AND o.status::text NOT IN ('CANCELLED', 'RECEIVED')`,
+  ).bind(JSON.stringify(variants), summary, itemId).run();
   await db.prepare(
     `INSERT INTO scm.mfg_so_audit_log (so_doc_no, company_id, action, actor_name_snapshot, field_changes, status_snapshot, source, note)
      VALUES (?, ?, 'UPDATE', ?, ?::text::jsonb, ?, 'renovation', ?)`,

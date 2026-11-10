@@ -51,6 +51,7 @@ import { postUnpostedSiPayments } from '../../acc/payments';
 import { afterSiPaymentRemoved, insertSiPaymentRow } from '../lib/si-payment-row';
 import { recomputeSiPaid as recomputePaid, readOrderDepositForInvoice } from '../lib/si-order-deposit';
 import { stampSoDates, stampDoNumber, stampOrderDeposit } from '../lib/si-list-stamps';
+import { stampBillsFor } from '../lib/renovation-si-bills-for';
 import { SI_HEADER_COLS, SI_LIST_SELECT, filterSiList, orderSiList, readSiListFilters } from '../lib/si-list-read';
 import { attachSiLines } from '../lib/si-export-rows';
 import { SI_STATUS_BUCKETS } from '../lib/si-status-buckets';
@@ -479,7 +480,7 @@ salesInvoices.get('/', async (c) => {
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   const total = count ?? (data?.length ?? 0);
 
-  /* Status counts mirror the FE filter-pill buckets (sent / partial / paid /
+  /* Status counts mirror the FE filter-pill buckets (draft / sent / partial / paid /
      cancelled) over the SAME scope + company filters but WITHOUT status /
      search / pagination. */
   const countBase = () => {
@@ -488,15 +489,16 @@ salesInvoices.get('/', async (c) => {
     cq = scopeToCompany(cq, c);
     return cq;
   };
-  const [allC, sentC, partialC, paidC, cancelledC] = await Promise.all([
+  const [allC, draftC, sentC, partialC, paidC, cancelledC] = await Promise.all([
     countBase(),
+    countBase().in('status', SI_STATUS_BUCKETS.draft),
     countBase().in('status', SI_STATUS_BUCKETS.sent),
     countBase().in('status', SI_STATUS_BUCKETS.partial),
     countBase().in('status', SI_STATUS_BUCKETS.paid),
     countBase().in('status', SI_STATUS_BUCKETS.cancelled),
   ]);
   // A count that could not be READ is reported, never served as 0; an empty bucket still answers 0 (lib/status-counts.ts).
-  const counted = readStatusCounts({ all: allC, sent: sentC, partial: partialC, paid: paidC, cancelled: cancelledC });
+  const counted = readStatusCounts({ all: allC, draft: draftC, sent: sentC, partial: partialC, paid: paidC, cancelled: cancelledC });
   if (!counted.ok) return c.json({ error: 'status_counts_failed', reason: counted.reason }, 500);
   const statusCounts = counted.counts;
 
@@ -504,6 +506,7 @@ salesInvoices.get('/', async (c) => {
   await stampDoNumber(sb, data);
   await stampSourcePos(sb, data);
   await stampOrderDeposit(sb, data, activeCompanyId(c) ?? null);
+  await stampBillsFor(sb, data);
   gateSiFinance(data, canViewScmFinance(c));
   /* The page's LINES, in AutoCount's spelling — the same attach the export
      uses (lib/si-export-rows.ts), so a line column shows on screen exactly
@@ -852,7 +855,7 @@ export const createSalesInvoiceHandler = async (c: Context<{ Bindings: Env; Vari
   }
 
   /* REVENUE — record it now. Idempotent + best-effort. */
-  let revenue: { posted: boolean; jeNo?: string; status: string } = { posted: false, status: 'skipped' };
+  let revenue: { posted: boolean; jeNo?: string; status: string; reason?: string } = { posted: false, status: 'skipped' };
   const post = await postSiRevenue(sb, h.invoice_number);
   if (post.ok) {
     /* 'migrated_source' carries no jeNo and needs none: AutoCount already booked
@@ -861,7 +864,7 @@ export const createSalesInvoiceHandler = async (c: Context<{ Bindings: Env; Vari
       ? { posted: false, status: post.status }
       : { posted: post.status === 'posted', jeNo: post.jeNo, status: post.status };
   } else {
-    revenue = { posted: false, status: post.status };
+    revenue = { posted: false, status: post.status, reason: post.reason };
     if (post.status !== 'zero_total' && post.status !== 'invoice_not_found') {
       // eslint-disable-next-line no-console
       console.error(`[si-revenue] post failed for ${h.invoice_number}:`, post.status, post.reason);

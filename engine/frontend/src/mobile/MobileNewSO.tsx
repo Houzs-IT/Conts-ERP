@@ -10,8 +10,9 @@ import {
 } from "../vendor/scm/lib/so-variant-cascade";
 import { useQueryClient } from "@tanstack/react-query";
 import { authedFetch, type SaveProblem } from "../vendor/scm/lib/authed-fetch";
+import { contractLineEdits } from "./contractLineEdits";
 import { lineWriteFailure, lineWriteSaveMessage, type LineWriteFailure } from "../vendor/scm/lib/line-write-failures";
-import { amendmentVariants } from "../vendor/scm/lib/so-amendment-line-diff";
+import { amendmentVariants, amendmentRequestedUnitPriceSen, amendmentPriceFields } from "../vendor/scm/lib/so-amendment-line-diff";
 import { photoLabel, photoUploadFailure, photoUploadFailureMessage, unmatchedLinePhotos, type PhotoUploadFailure } from "../vendor/scm/lib/photo-upload-failures";
 import { runSoVersionedMutation } from "../vendor/scm/lib/so-versioned-mutation";
 import { notifySaveProblems, SaveProblemsList, saveProblemsTitle } from "../vendor/scm/components/SaveProblemsList";
@@ -42,7 +43,7 @@ import { SearchableSelect } from "../vendor/scm/components/SearchableSelect";
 import { SgPostcodeField } from "../vendor/scm/components/SgPostcodeField";
 import { diffHeaderPayload, hasHeaderChanges } from "../vendor/scm/lib/so-header-diff";
 import { soSaveEndFields, soVersionAfter } from "../vendor/scm/lib/so-save-lease";
-import { planAmendmentSubmit, amendmentSubmittedNotice, AMENDMENT_MODE_BANNER, AMENDMENT_NOTHING_TO_SUBMIT, AMENDMENT_REASON_REQUIRED } from "../vendor/scm/lib/so-amendment-submit";
+import { planAmendmentSubmit, amendmentSubmittedNotice, AMENDMENT_MODE_BANNER, AMENDMENT_NOTHING_TO_SUBMIT, AMENDMENT_REASON_REQUIRED, NO_VO_NEEDED_BODY, NO_VO_NEEDED_TITLE, VO_MODE_BANNER } from "../vendor/scm/lib/so-amendment-submit";
 import { useAmendmentSubmitDialog } from "../vendor/scm/components/AmendmentSubmitDialog";
 import { LOCKED_STATUSES, procLockActive, migratedReadonly as soMigratedReadonly, soDownstreamHardLocked, soItemFrozen, type SoDetailGateHeader } from "../vendor/scm/lib/so-detail-gates";
 import { FROZEN_LINE_LABEL, FROZEN_LINE_LABEL_STYLE, FROZEN_LINE_STYLE } from "../vendor/scm/lib/so-frozen-line-style";
@@ -201,6 +202,7 @@ type Payment = {
 
 // Existing (prefill) shapes — raw snake_case columns from the detail endpoints.
 type SoHeader = {
+  so_kind?: string | null;
   doc_no: string;
   /* Optimistic-lock token (migration 0153) — loaded here and echoed back on the
      edit-mode header PATCH so a concurrent editor's Save can't silently overwrite
@@ -835,6 +837,10 @@ export function MobileNewSO({
      instead of writing the lines directly (desktop SalesOrderDetail parity).
      `hasOpenAmend` blocks raising a SECOND amendment while one is in flight. */
   const [amendEligible, setAmendEligible] = useState(false);
+  /* Conts: a confirmed order, where only a change of amount or lines is a VO (owner, 4 and 6 Nov 2026). */
+  const [voOrder, setVoOrder] = useState(false);
+  /* A renovation contract refuses the generic SO writes; its lines change by contract VO. */
+  const [contractOrder, setContractOrder] = useState(false);
   const [hasOpenAmend, setHasOpenAmend] = useState(false);
   /* FIX D2/D3 — the PERSISTED processing date (processing_date) drives the
      processing-date lock. Kept separate from the editable procDate form value so
@@ -970,6 +976,7 @@ export function MobileNewSO({
         ]);
         if (cancelled) return;
         const h = detail.salesOrder;
+        setContractOrder(h.so_kind === "RENOVATION");
         setName(h.debtor_name ?? "");
         setCustRef(h.customer_so_no ?? h.ref ?? "");
         setPhone(toE164(h.phone));
@@ -1061,6 +1068,7 @@ export function MobileNewSO({
            routes on. When amendment_eligible the SO is processing-locked but the
            edit view stays usable; Save then submits an amendment (see save()). */
         setAmendEligible(Boolean(detail.salesOrder.amendment_eligible));
+        setVoOrder(Boolean((detail.salesOrder as { vo_locked?: boolean }).vo_locked));
         setHasOpenAmend(Boolean(detail.salesOrder.has_open_amendment));
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Couldn't load this order.");
@@ -1717,8 +1725,8 @@ export function MobileNewSO({
     description: l.name.trim(),
     qty: num(l.qty) || 1,
     unitPriceSen: toSen(l.price),
-    /* An EXISTING line: its 0 IS its persisted price (desktop's PATCH said so since #2425). */
-    ...zeroPriceClaim(toSen(l.price), true),
+    /* A persisted or typed 0 is claimed; a re-pick's seeded 0 is not, so the server keeps the stored price (BUG-63). */
+    ...zeroPriceClaim(toSen(l.price), l.priceAuthored === true),
     lineDeliveryDate: l.ddate || null,
     variants: buildVariants(l),
   });
@@ -1751,10 +1759,11 @@ export function MobileNewSO({
      its own old_snapshot and rendered as an identical Was/Requesting pair
      (Owner 2026-07-16: "完全看不出有什麼變動申請？"). Desktop had the same defect via
      lineCommitSig; both now test only what the payload carries. */
+  const requestedPriceSen = (l: LineItem): number | null => amendmentRequestedUnitPriceSen({ unitPriceSen: toSen(l.price), priceAuthored: l.priceAuthored }); // a seeded 0 requests NO price (HC-SO-013490)
   const amendmentLineChanged = (l: LineItem, snap: SoItem): boolean => {
     if (l.itemCode !== (snap.item_code ?? "")) return true;
     if ((num(l.qty) || 1) !== (snap.qty ?? 1)) return true;
-    if (toSen(l.price) !== (snap.unit_price_sen ?? 0)) return true;
+    if ((requestedPriceSen(l) ?? (snap.unit_price_sen ?? 0)) !== (snap.unit_price_sen ?? 0)) return true;
     /* Variants WITHOUT the remark side channel on BOTH sides (amendmentVariants):
        buildVariants copies the remark into variants.remark, the stored blob of an
        imported line carries none, so the raw compare read every remarked line as
@@ -1826,7 +1835,7 @@ export function MobileNewSO({
       if (!amendmentLineChanged(l, snap)) continue; // nothing amendable moved
       const codeSame = l.itemCode === (snap.item_code ?? "");
       const variantsSame = canonJson(amendmentVariants(buildVariants(l))) === canonJson(amendmentVariants(snap.variants));
-      const priceSame = toSen(l.price) === (snap.unit_price_sen ?? 0);
+      const priceSame = (requestedPriceSen(l) ?? (snap.unit_price_sen ?? 0)) === (snap.unit_price_sen ?? 0);
       const qtyMoved = (num(l.qty) || 1) !== (snap.qty ?? 1);
       const qtyOnly = codeSame && variantsSame && priceSame && qtyMoved;
       out.push({
@@ -1836,7 +1845,7 @@ export function MobileNewSO({
         // The remark rides newRemark below, never inside the variants an approval writes back.
         newVariants: amendmentVariants(buildVariants(l)) ?? undefined,
         newQty: num(l.qty) || 1,
-        newUnitPriceSen: toSen(l.price),
+        ...amendmentPriceFields({ unitPriceSen: toSen(l.price), priceAuthored: l.priceAuthored }), // omitted = null on the row = keep the stored price
         /* mig 0280 — send the remark only when it MOVED (desktop parity): a null
            new_remark is "not requested", which is what keeps the apply from
            rewriting a remark this session never touched. */
@@ -1941,7 +1950,7 @@ export function MobileNewSO({
            409s so_locked_processing — on the change we're about to request, or
            on a stored value we merely re-displayed. Shared helpers with desktop
            (so-amendment-header) so the split can't drift. */
-        const { changes: headerChanges } = buildAmendmentHeaderChanges(
+        const { changes: lockedHeaderChanges } = buildAmendmentHeaderChanges(
           {
             processingDate:   procOut,
             customerDeliveryDate: delivOut,
@@ -1966,7 +1975,8 @@ export function MobileNewSO({
         );
         // Frozen keys are DROPPED, not reverted (ledger 0488 + 2026-09-12): a
         // revert needed the exact seeded bytes and 409'd the lock twice.
-        const outgoingPatch = amendmentMode ? withoutFrozenHeaderFields(patch) : patch;
+        const headerChanges = voOrder ? {} : lockedHeaderChanges;
+        const outgoingPatch = amendmentMode && !voOrder ? withoutFrozenHeaderFields(patch) : patch;
 
         /* Send ONLY what the operator changed. In amendment mode the frozen
            columns are already gone, so they are never re-sent — the server's
@@ -1984,6 +1994,11 @@ export function MobileNewSO({
            invalidates everything itself once the whole composite save settles. */
         // Captured once: the plan must ask about the SAME patch this branch sends.
         const directDirty = hasHeaderChanges(dirtyPatch);
+        if (contractOrder && directDirty) {
+          setSubmitting(false);
+          setError("A renovation contract's customer, address and dates are changed on its project. They follow to this order.");
+          return;
+        }
         if (amendmentMode && directDirty) {
           /* Attach the mandatory loaded token after the dirty check, so `version`
              never turns an otherwise-empty patch into a mutation. A 409 throws;
@@ -1997,18 +2012,51 @@ export function MobileNewSO({
         }
 
         if (amendmentMode) {
-          const amLines = buildAmendmentLines();
+          const allLines = buildAmendmentLines();
+          const snapOf = new Map(origItems.map((s) => [s.id, s]));
+          const changesAmount = (l: (typeof allLines)[number]): boolean => {
+            const snap = l.salesOrderItemId ? snapOf.get(l.salesOrderItemId) : undefined;
+            return !snap || l.changeType === "REMOVE" || (l.newItemCode ?? snap.item_code) !== snap.item_code
+              || (l.newQty ?? snap.qty) !== snap.qty || (l.newUnitPriceSen ?? snap.unit_price_sen) !== snap.unit_price_sen;
+          };
+          const saveOnly = voOrder ? allLines.filter((l) => l.changeType === "SPEC" && !changesAmount(l)) : [];
+          const amLines = allLines.filter((l) => !saveOnly.includes(l));
+          const deliveryDates = voOrder ? Object.fromEntries(lines
+            .filter((l) => l.itemId && snapOf.has(l.itemId) && (l.ddate || "") !== ((snapOf.get(l.itemId)?.line_delivery_date ?? "").slice(0, 10)))
+            .map((l) => [l.itemId, l.ddate || null])) : {};
+          const hasDates = Object.keys(deliveryDates).length > 0;
           // Asks about BOTH halves — see vendor/scm/lib/so-amendment-submit.
           const plan = planAmendmentSubmit({
             hasLineChanges: amLines.length > 0,
             hasFrozenHeaderChanges: hasAmendmentHeaderChanges(headerChanges),
             hasDirectHeaderChanges: directDirty,
             hasStagedPayments: pays.some((p) => toSen(p.amount) > 0),
+            hasSaveOnlyLineChanges: lines.some((l) => l.photoFiles.length > 0) || saveOnly.length > 0 || hasDates,
           });
-          if (plan === "NOTHING") { setSubmitting(false); setError(AMENDMENT_NOTHING_TO_SUBMIT); return; }
+          if (plan === "NOTHING") {
+            setSubmitting(false);
+            if (!voOrder) { setError(AMENDMENT_NOTHING_TO_SUBMIT); return; }
+            void notify({ title: NO_VO_NEEDED_TITLE, body: NO_VO_NEEDED_BODY });
+            if (onSaved) onSaved(docNo);
+            else onBack();
+            return;
+          }
           let amendCreatedRes: unknown = null;
           // DIRECT_ONLY skips ONLY this block; the tail after it is shared.
-          if (plan === "AMENDMENT") {
+          if (plan === "AMENDMENT" && contractOrder) {
+            try {
+              const { edits, adds } = contractLineEdits(amLines, origItems);
+              if (edits.length + adds.length > 0) {
+                amendCreatedRes = await authedFetch(`/renovation/sales-orders/${encodeURIComponent(docNo)}/line-edits`, {
+                  method: "POST", body: JSON.stringify({ edits, adds, title: "Changed on the sales order" }),
+                });
+              }
+            } catch (e) {
+              setSubmitting(false);
+              setError(e instanceof Error ? e.message : "Couldn't save the change. Please try again.");
+              return;
+            }
+          } else if (plan === "AMENDMENT") {
             /* The shared dialog (vendor/scm/components/AmendmentSubmitDialog): shows
                WHO approves, takes the required reason, lets the requester flag the
                approver — the same ask as the desktop page (owner 2026-09-15). */
@@ -2025,6 +2073,22 @@ export function MobileNewSO({
               setError(e instanceof Error ? e.message : "Couldn't submit the VO. Please try again.");
               return;
             }
+          }
+          /* What saves without a VO: options and remarks, line dates, and the photos picked in this edit. */
+          try {
+            for (const l of saveOnly) {
+              await authedFetch(`/renovation-so-info/${encodeURIComponent(docNo)}/lines/${encodeURIComponent(l.salesOrderItemId ?? "")}/spec`, {
+                method: "PUT", body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
+              });
+            }
+            if (hasDates) {
+              await authedFetch(`/mfg-sales-orders/${encodeURIComponent(docNo)}/line-delivery-dates`, { method: "PUT", body: JSON.stringify({ dates: deliveryDates }) });
+            }
+            await uploadStagedPhotos(docNo);
+          } catch (e) {
+            setSubmitting(false);
+            setError(e instanceof Error ? e.message : "Couldn't save those changes. Please try again.");
+            return;
           }
           // A payment recorded alongside the amendment still posts, slip or not.
           await recordNewPayments(docNo);
@@ -2421,7 +2485,9 @@ export function MobileNewSO({
                   />
                 </Field>
                 <div style={{ fontSize: 10, color: "#9aa093", marginTop: -3 }}>
-                  {amendmentMode
+                  {voOrder
+                    ? "Changing a date here just saves. It is not a VO."
+                    : amendmentMode
                     ? "Changing a date here submits a VO — it applies once approved."
                     : "Set both dates together, or leave both empty to keep this a draft."}
                 </div>
@@ -2538,7 +2604,7 @@ export function MobileNewSO({
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: "rgba(232,107,58,0.08)", border: "1px solid var(--c-orange, #e86b3a)", borderRadius: 10, padding: "9px 11px", fontSize: 11, color: "#8a4a24", lineHeight: 1.45 }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c66a34" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
                     {/* Shared with desktop — both were wrong about addresses. */}
-                    <span>{AMENDMENT_MODE_BANNER}</span>
+                    <span>{voOrder ? VO_MODE_BANNER : AMENDMENT_MODE_BANNER}</span>
                   </div>
                 )}
                 {lineEditingBlocked ? (
@@ -2693,7 +2759,7 @@ export function MobileNewSO({
         <footer id="nso-footer" className="actbar" style={{ display: "flex", gap: 9 }}>
           {mode === "edit" ? (
             <button className="btn" disabled={submitting || migratedLocked} onClick={() => save(false)} style={{ flex: 1, opacity: submitting || migratedLocked ? 0.6 : 1 }}>
-              {submitting ? (amendmentMode ? "Submitting…" : "Saving…") : migratedLocked ? "View only" : amendmentMode ? "Submit Amendment" : "Save Changes"}
+              {submitting ? (amendmentMode && !voOrder ? "Submitting…" : "Saving…") : migratedLocked ? "View only" : voOrder ? "Save" : amendmentMode ? "Submit Amendment" : "Save Changes"}
             </button>
           ) : (
             <>
@@ -2747,6 +2813,7 @@ export function MobileNewSO({
             name: (sku.name ?? "").trim() || code,
             cat: nextCat,
             price: fromSen(sku.unitPriceSen),
+            priceAuthored: false, // seeded, not typed (BUG-63)
             variants: seededVariants,
             overriddenKeys: [],
           };
@@ -3009,6 +3076,7 @@ function LineCard({
   const picked = Boolean(line.itemCode.trim());
   const v = line.variants;
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [priceTyping, setPriceTyping] = useState(false);
 
   /* Per-SKU allowed_options (Modular ON/OFF), resolved by code. */
   const allowQ = useModelAllowedOptionsByCode(line.itemCode || undefined);
@@ -3141,16 +3209,29 @@ function LineCard({
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 7, padding: 10 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-          <Field label="Qty" style={{ flex: 0.5 }}>
-            <input className="fld-i" inputMode="numeric" value={line.qty} onChange={(e) => onChange({ qty: e.target.value })} />
+          {/* Qty is a small count, so it steps with − / +; the price is a big
+              number, so it gets the decimal keypad (Houzs DEV-62). */}
+          <Field label="Qty" style={{ flex: 0.7 }}>
+            <div className="qty-step">
+              <button type="button" aria-label="Decrease qty" disabled={(num(line.qty) || 1) <= 1}
+                onClick={() => onChange({ qty: String(Math.max(1, (num(line.qty) || 1) - 1)) })}>{"−"}</button>
+              <input className="fld-i" inputMode="numeric" aria-label="Qty" value={line.qty} onChange={(e) => onChange({ qty: e.target.value })} />
+              <button type="button" aria-label="Increase qty"
+                onClick={() => onChange({ qty: String((num(line.qty) || 1) + 1) })}>{"+"}</button>
+            </div>
           </Field>
           <Field label="Unit Price" style={{ flex: 1 }}>
             <input
               className="fld-i money"
-              value={line.price}
+              inputMode="decimal"
+              /* Any RM 0 shows as the placeholder so typing a price does not
+                 start with deleting "0.00"; a 0 shows only while being typed. */
+              value={toSen(line.price) === 0 && !priceTyping ? "" : line.price}
+              placeholder="0.00"
               disabled={!canEditPrice}
               title={!canEditPrice ? "Price follows the SKU Master sell price — admin can override" : undefined}
-              onChange={(e) => onChange({ price: e.target.value, priceAuthored: true })}
+              onChange={(e) => { setPriceTyping(true); onChange({ price: e.target.value, priceAuthored: true }); }}
+              onBlur={() => setPriceTyping(false)}
             />
           </Field>
         </div>
@@ -3658,7 +3739,7 @@ function PayCard({ pay, staff, convertSources, onChange, onRemove }: { pay: Paym
             )}
           </Field>
           <Field label="Amount" style={{ flex: 1.1 }}>
-            <input className="fld-i money" value={pay.amount} onChange={(e) => onChange({ amount: e.target.value })} />
+            <input className="fld-i money" inputMode="decimal" value={pay.amount} onChange={(e) => onChange({ amount: e.target.value })} />
           </Field>
         </div>
         {/* Merchant needs BOTH (missingMethodSubField); marked required now that

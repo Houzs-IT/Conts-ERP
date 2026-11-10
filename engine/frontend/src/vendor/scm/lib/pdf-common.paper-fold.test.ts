@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { ensurePdfCjkFont } from './pdf-common';
+import { ensurePdfCjkFont, paperText } from './pdf-common';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -15,6 +15,18 @@ afterEach(() => {
 });
 
 const REMARK = 'KL - Akemi - SOLO  - AEON RAWANG March 24, 2026 → March 29, 2026';
+
+describe('pasted invisible characters never block a PDF', () => {
+  it('a six-per-em space passes the glyph check with no font fetch (HC-PO-2611-134)', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(ensurePdfCjkFont(new jsPDF(), { notes: 'KING SIZE' })).resolves.toBeUndefined();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  it('turns a wide space into a space and drops a zero-width mark', () => {
+    expect(paperText('a b　c​d﻿')).toBe('a b cd');
+  });
+});
 
 describe('paper folds (→ ← − ≈) never block a PDF', () => {
   it('a remark carrying "→" passes the glyph check with no font fetch', async () => {

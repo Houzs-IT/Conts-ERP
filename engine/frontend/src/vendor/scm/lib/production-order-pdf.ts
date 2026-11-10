@@ -81,7 +81,7 @@ import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc
 import { deliverToAddress } from './warehouse-print';
 
 type PoHeader = {
-  production_time_days?: number | string | null;
+  production_time_hours?: number | string | null;
   po_number:     string;
   /** Production Order row id (uuid) — the per-line photo proxy routes are keyed by it
       (/production-orders/:id/items/:itemId/photos/…). Optional: the detail
@@ -359,6 +359,7 @@ async function renderProductionOrderInto(
     name: COMPANY.shortName,
     logo: getBrandingLogoCache(),
     lines: letterheadLines(),
+    meta: [{ label: '', value: poDisplayNumber(header.po_number, header.revision) }, { label: '', value: fmtDocDate(header.po_date) }],
     margin,
   }) + 2;
 
@@ -420,7 +421,7 @@ async function renderProductionOrderInto(
         ...renoDetailRows(opts?.renovation).slice(0, 3),
         ['Date', fmtDocDate(header.po_date)],
         /* Migration 0180 — print the EFFECTIVE (latest revised) delivery date. */
-        ['Production Time', header.production_time_days != null ? `${Number(header.production_time_days)} day(s)` : ''],
+        ['Production Time', header.production_time_hours != null ? `${Number(header.production_time_hours)} hours` : '—'],
         ['Completion date', (() => {
           const eff = effectiveDelivery(
             header.expected_at,
@@ -520,6 +521,8 @@ async function renderProductionOrderInto(
      total-pages placeholder, resolved by putTotalPages below. */
   const totalPagesExp = '{total_pages}';
   const drawPageHeader = (pageNumber: number) => {
+    // The first page carries the letterhead and its number in the details; the footer pages it.
+    if (pageNumber === 1) return;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(80);
     /* Right edge measured on the printed text: aligning right on the {total_pages} placeholder leaves it short of the margin. */
     const prefix = `${poDisplayNumber(header.po_number, header.revision)} · Page ${pageNumber} of `;

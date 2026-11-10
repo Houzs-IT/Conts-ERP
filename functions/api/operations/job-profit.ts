@@ -3,6 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { can } from '../../_lib/access';
 import { maintenanceMoney, cleaningMoney } from '../../_lib/jobProfit';
 import { MYT_DATE, SHEET_CLEANER } from '../../_lib/ops';
+import { jobPlaceJoin } from '../../_lib/maintenance';
 
 /** GET /api/operations/job-profit?kind=maintenance|cleaning&month=YYYY-MM — Profit by job: every job finished in the month
  *  (Malaysia), with its unit, category, who did it, what was billed, the actual cost (invoices, else the estimate) and
@@ -17,10 +18,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const month = url.searchParams.get('month') ?? new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7);
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return fail('VALIDATION', 'Pick a month.', 422, { month: 'YYYY-MM' });
 
+  const placeJoin = kind === 'maintenance' ? await jobPlaceJoin(env) : '';
   const jobs = kind === 'maintenance'
     ? await all<any>(env, `
       SELECT m.id, m.title, m.category, m.charge_to, m.vendor_name AS who, ${MYT_DATE('m.resolved_at')} AS day, u.id AS unit_id, u.unit_number, p.id AS building_id, p.name AS building
-      FROM maintenance_issues m JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id
+      FROM maintenance_issues m ${placeJoin}
       WHERE m.state = 'resolved' AND m.resolved_at IS NOT NULL AND substr(${MYT_DATE('m.resolved_at')}, 1, 7) = ? ORDER BY m.resolved_at`, month)
     : await all<any>(env, `
       SELECT t.id, t.title, t.kind AS category, 'owner' AS charge_to, COALESCE(cl.full_name, a.full_name, ${SHEET_CLEANER('t')}) AS who, ${MYT_DATE('t.completed_at')} AS day,

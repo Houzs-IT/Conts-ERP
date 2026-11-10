@@ -17,7 +17,8 @@ import { scopeToCompany, type CompanyScopeCtx } from './companyScope';
 import { lookupByIds } from './document-line-export';
 import { chunkIn } from './paginate-all';
 import { pageWithTruncation } from './outstanding-po-lines';
-import { filterPoList, orderPoList, poListSelect, stampPoListGrns, type PoListFilters } from './po-list-read';
+import { orderPoList, poListSelect, stampPoListGrns, type PoListFilters } from './po-list-read';
+import { filterProductionList } from './production-list-read';
 import { warehouseLabel } from './warehouse-label';
 import { bookSpellingOrOwn } from '../../services/autocount-writeback';
 import { LOCATION_MAP } from '../../services/autocount-master-maps';
@@ -73,7 +74,7 @@ const byLinePosition = (a: LineRow, b: LineRow): number => {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 };
 
-export type PoLineHeader = PoEstimateDates & { id: string; purchase_location_id?: string | null };
+export type PoLineHeader = PoEstimateDates & { id: string; purchase_location_id?: string | null; status?: string | null };
 
 /**
  * Attach `lines` (PoListLine[], in printed order) to each purchase order. The
@@ -138,7 +139,12 @@ export async function attachPoLines<H extends PoLineHeader>(
   }
   const rows = headers.map((h) => {
     const headerWarehouse = h.purchase_location_id ? wh.byId.get(h.purchase_location_id) : null;
-    const lines = [...(byPo.get(h.id) ?? [])].sort(byLinePosition).map((l) => toPoListLine(h, { ...l, description2: poLineDescription2(l.item_group, l.variants, l.description2) }, {
+    const lines = [...(byPo.get(h.id) ?? [])].sort(byLinePosition).map((l) => toPoListLine(h, {
+      ...l,
+      /* Complete closes the job without booking received_qty on its lines, so a Completed order is received in full. */
+      received_qty: h.status === 'RECEIVED' ? l.qty : l.received_qty,
+      description2: poLineDescription2(l.item_group, l.variants, l.description2),
+    }, {
       soDocNo: l.so_item_id ? so.byId.get(l.so_item_id)?.doc_no ?? null : null,
       /* AutoCount lists a purchase line under the SUPPLIER's item code, and its
          Item Description / Item Group are that item's (the book's item master,
@@ -177,7 +183,7 @@ export async function buildPoExportRows(
 ): Promise<PoExportRows> {
   const sb = sbIn as Sb;
   const read = await pageWithTruncation<{ id: string; purchase_location_id?: string | null } & Record<string, unknown>>((from, to) =>
-    orderPoList(filterPoList(sb.from('production_orders').select(poListSelect(filters).replace('items:purchase_order_items', 'items:production_order_items')), filters, c, validStatuses), filters.sort)
+    orderPoList(filterProductionList(sb.from('production_orders').select(poListSelect(filters).replace('items:purchase_order_items', 'items:production_order_items')), filters, c, validStatuses), filters.sort)
       .range(from, to));
   if (read.error) return { error: `purchase orders: ${read.error.message}` };
   // includeLineLinked=false: the export stamps every PO a tab matches, so the

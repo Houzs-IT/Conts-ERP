@@ -117,7 +117,10 @@ export function ScmSubgroupHub({
     return undefined;
   };
   const group = findGroup(NAV_TABS);
-  const kids = (group?.children ?? []).filter(visible);
+  /* Finance's entries sit inside its sub-groups, so a group with no page of its own stands for what is in it. */
+  const openable = (tabs: readonly NavTab[]): NavTab[] =>
+    tabs.filter(visible).flatMap((k) => (k.to ? [k] : openable(k.children ?? [])));
+  const kids = openable(group?.children ?? []);
 
   // Empty state — a role with SCM access but no leaves inside this specific
   // sub-group (e.g. warehouse without inventory / stock take). Better than a

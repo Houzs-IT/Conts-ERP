@@ -17,10 +17,14 @@
    MOVED 2026-09-15 out of routes/sales-invoices.ts, unchanged, when the list's
    filter moved to lib/si-list-read.ts for the exports — the same move the PI
    and GRN maps made on 2026-08-21.
+
+   DRAFT LEFT `sent` on 2026-11-06 (owner): a draft has not gone to anyone, so it
+   gets its own tab and Submitted means submitted.
    ---------------------------------------------------------------------------- */
 
 export const SI_STATUS_BUCKETS: Record<string, string[]> = {
-  sent: ['DRAFT', 'SENT', 'OVERDUE'],
+  draft: ['DRAFT'],
+  sent: ['SENT', 'OVERDUE'],
   partial: ['PARTIALLY_PAID'],
   paid: ['PAID'],
   cancelled: ['CANCELLED'],

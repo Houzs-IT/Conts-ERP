@@ -242,10 +242,11 @@ describe("nav — Finance / HR are top-level, not under Supply Chain", () => {
       .map((t) => t.label);
   };
 
-  it("both are ROOT entries for a user who can see everything", () => {
+  /* Conts switched HR off (owner decision C7, conts/navOnly.ts). */
+  it("Finance is a ROOT entry for a user who can see everything, HR is off", () => {
     const labels = topLevelLabels(ctxFor(admin()));
     expect(labels).toContain("Finance");
-    expect(labels).toContain("HR");
+    expect(labels).not.toContain("HR");
   });
 
   it("neither is a child of Supply Chain any more", () => {
@@ -255,12 +256,11 @@ describe("nav — Finance / HR are top-level, not under Supply Chain", () => {
     expect(childLabels).not.toContain("HR");
   });
 
-  it("every Finance and HR URL still resolves — a reorganisation, not a route change", () => {
+  it("every Finance URL still resolves — a reorganisation, not a route change", () => {
     const paths = desktopPaths(ctxFor(admin()));
     for (const p of [
       "/scm/accounting", "/scm/payment-vouchers", "/scm/outstanding",
       "/scm/unbilled-deliveries", "/scm/currencies",
-      "/scm/hr/commission", "/scm/hr/settings",
     ]) expect(paths).toContain(p);
   });
 
@@ -299,12 +299,12 @@ describe("nav — Finance / HR are top-level, not under Supply Chain", () => {
     expect(desktopPaths(ctx)).not.toContain("/scm/hr/commission");
   });
 
-  it("scm.hr.read alone shows Commission but NOT the HR Settings editor", () => {
+  it("scm.hr.read shows no HR screen at Conts", () => {
     const ctx = ctxFor(
       rep({ permissions: ["scm.hr.read"], position_name: "HR Executive", department_name: "Management" }),
     );
     const paths = desktopPaths(ctx);
-    expect(paths).toContain("/scm/hr/commission");
+    expect(paths).not.toContain("/scm/hr/commission");
     expect(paths).not.toContain("/scm/hr/settings");
   });
 
@@ -315,9 +315,9 @@ describe("nav — Finance / HR are top-level, not under Supply Chain", () => {
     expect(labels).not.toContain("HR");
   });
 
-  it("desktop and phone agree on both groups' leaves", () => {
+  it("desktop and phone agree on Finance's leaves", () => {
     const ctx = ctxFor(admin());
-    for (const p of ["/scm/accounting", "/scm/hr/commission", "/scm/hr/settings"]) {
+    for (const p of ["/scm/accounting"]) {
       expect(desktopPaths(ctx)).toContain(p);
       expect(phoneAllows(ctx, p)).toBe(true);
     }
@@ -335,10 +335,11 @@ describe("nav — Assistant gates on the org.assistant.use capability", () => {
   const withCap = (v: boolean) =>
     rep({ position_name: "Operation Manager", department_name: "Operation Department", capabilities: { "org.assistant.use": v } });
 
-  it("shows Assistant on desktop AND phone when the capability is true", () => {
+  /* Conts: Assistant is not in the kept menu (conts/navOnly.ts), so even the capability shows no link. */
+  it("shows no Assistant link at Conts even when the capability is true", () => {
     const ctx = ctxFor(withCap(true));
-    expect(desktopPaths(ctx)).toContain("/assistant");
-    expect(phoneAllows(ctx, "/assistant")).toBe(true);
+    expect(desktopPaths(ctx)).not.toContain("/assistant");
+    expect(phoneAllows(ctx, "/assistant")).toBe(false);
   });
 
   it("hides Assistant on both surfaces when the capability is false", () => {

@@ -2,6 +2,39 @@
 
 Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw, schema `pos`, via Hyperdrive e0781ccd...). Staging preview: https://staging-preview.theconts-os.pages.dev (Supabase ecgyrmblqfxvbfjlqkdq).
 
+## Ports from Houzs / Hookka (owner picks 8-9 Nov 2026) — pick up here
+- How to work: one item = one branch = one PR; port by `git format-patch -1 <sha>` from the Houzs repo (C:/Users/User/Desktop/houzs-erp-local, read only) and `git apply --directory=engine --reject`, then fit by hand; Houzs frontend/ = engine/frontend, backend/ = engine/backend. Hookka (C:/Users/User/hookka-erp-testing, use origin/main, read only) is reference only.
+- Checks per item: engine/frontend `npx tsc -b`; engine/backend `npx tsc --noEmit -p .`; backend tests with `npx vitest run --config vitest.light.config.mts <name>`; frontend `npx vitest run <file>`; then real clicks from the menu on the local system (Conts-ERP-worktrees/conts-local: `node start.mjs`, login management@theconts.com / LocalTest1; set CONTS_CODE to the worktree to run its engine or screens); merge; wait for "Deploy engine to production"; check erp.theconts.com.
+- PC is slow (owner, 9 Nov): one helper, one install, one test run, one server at a time; stop the local system when done. Built-in browser pane freezes when hidden; Chrome extension works when the window is visible.
+- Migrations: new file in migrations-pg/ with the next number; apply to production through the Supabase connector inside begin/commit with `select demo.drop_views();` first and `select demo.sync();` last, plus `insert into public.pos_migrations (filename, checksum)` (sha256 of the LF body, first 16 hex); apply before merging the code.
+- Every Conts sales order is a renovation contract (so_kind RENOVATION); Houzs SO-only features usually need a renovation equivalent or are skipped. Accounting is out of scope except item 13 below.
+- Done: bug batch #799-#803; cancelled number strike + PO CANCELLED watermark #804; PO supplier type-to-search #805; PO Copy as new #806; quotation Copy as new #807; return to the source document after save #809 (GRN picker passes backToPo); PO urgent mark + GRN Date column + deactivated SKU not pickable #810 (urgent print and inactive picker tested by unit tests only).
+- Already present, nothing to port: date range presets (DataTable date filter has Today / This week / This month / Last month / Overdue); Back keeps list filters (lib/scmListReturn). Scroll position on Back is not kept; Houzs only did it for Merchant Recon.
+- 1. In PR (feat/qty-stepper-price-pad), not yet clicked through: SO line qty has up/down arrows, Unit Price is a typed decimal box (no wheel/arrow change), RM 0 price shows a 0.00 placeholder; phone SO qty - / + and number pad on price and payment amount; renovation quotation/VO editor: phone qty - / +, desktop qty arrow keys, RM 0 unit price blank. Unit tests only; needs a click-through on the local system (not runnable on the Mac: no engine/backend/.dev.vars) or production after merge.
+- 2. Long forms save a draft and offer "Restore your draft?" (Hookka src/lib/use-form-draft.ts); quotations and VOs first.
+- 3. Project search matches each word on its own (Houzs ccffd9269, 59132dd42).
+- 4. Server-side date filter on every list date column (SO, PO, GRN, PI, SI, DO) and the To box not cut off (Houzs 3e6d15825, aeba82653).
+- 5. Status tabs show count and money, e.g. "Pending 25 · RM 15,631" on SO, PO, GRN, PI, invoice lists; same rows for both, no RM 0.00 for unpriced, no money on Cancelled (Hookka 5aff2b333, f9ff4d840, 65db859f0, 79323f31c, 2a34a38cb).
+- 6. Global search (top bar, Property OS src/components/TopBar.tsx -> functions/api/search) also finds SO, PO and invoices; PO list search matches line items (engine/backend/src/scm/lib/po-list-read.ts ~188).
+- 7. Database quantity caps: receive <= PO line, deliver <= SO line, bill <= received/delivered, no cancel of an invoiced DO, no cut below shipped (Houzs #4606 #4607 #4613 #4617 #4620 #4625). Check against on-site GRN/DO (renovation-site-receipt.ts) and VOs before turning on.
+- 8. "Item not ready" warning before a DO ships lines with no stock set aside (Houzs ed9657c29 #4485).
+- 9. An existing DO can pull in the SO's remaining lines (Houzs #4877).
+- 10. Excel import shows new / changed / unchanged rows before applying; catalog price updates (Hookka d36177ca0, 2b04557df); a blank cell never wipes a stored value.
+- 11. Supplier price list updated from the price actually paid, refusing jumps that look like a unit mix-up (box vs piece) (Hookka 5957bdd87, 6801df6fb).
+- 12. Blank SKU import template; CSV exports keep Chinese text readable in Excel (UTF-8 BOM) (Houzs d820c31f0, a7ca6b9f5). Not merge of duplicate codes (owner said no).
+- 13. Accounting go-live settings only: books start date, Opening Balance page, separate default banks for receiving and paying (Houzs 8b0725ea8, 2d7497650, 5596706af).
+- 14. SO line photo or drawing added after the PO exists reaches the PO (Houzs 608f24ce0); renovation contract lines.
+- 15. Confirm several draft GRNs / supplier invoices at once with invoice-vs-PO price columns (Houzs 5191c5f7c, d1a3794d4).
+- 16. Worker actual hours per production order (start/stop), actual vs budgeted hours (Hookka routes/working-hour-entries.ts, job-cards.ts, wip-times.ts); keep plan dates and hours budget separate (production-hours rule).
+- 17. Handover snag / defect list: checklist templates, defects with photos, pending queue (Hookka routes/qc-inspections.ts, qc-templates.ts, qc-pending.ts); handover may stay open with unfinished items.
+- 18. Stock take rounds with Excel export and gain/loss, and stock adjustment as a numbered, editable document (Houzs #4496 #4498 #4930, #4519 #4913).
+- 19. Payment voucher bill scanning (up to 12 bills) and an AI usage / accuracy page (Houzs pv-extract.ts, payment-request-bill.ts, acc/bill-extract.ts, ai_usage_events); needs ANTHROPIC_API_KEY on the engine worker (owner sets it), AI cost accepted by the owner.
+- Bug left: PO supplier dates 2/3/4 already recorded can be overwritten (Houzs 2e66d226b #5035).
+- Waiting on the owner (ask, do not act): keep or delete project CURVO 1234 (RN-2610-060, GGCOM's; its SO was cleared on 8 Nov); merge or close old PRs #749 (health key checks) and #387 (finance phase 1.5 docs); the four seeded staff accounts (line above in this file); confirm ANTHROPIC_API_KEY is set on the production engine worker before item 19 (the copied scan features need it).
+- Go-live clear (8 Nov): production test data was deleted, so test only on the local system; document numbers were not reset.
+- Owner said no: merge duplicate item codes, cash flow forecast, PO email from staff mailbox, phone SO progress / print DO, cheapest-supplier default, purchase return kinds, GRN post permission / multi-rack, SO Copy as new, accounting bugs and other accounting features.
+- Background reviews (scratchpad, may be gone): per-commit tables of every Houzs commit since c20343f5 and Hookka since 8 Aug; regenerate with `git log` if needed.
+
 ## Engine
 - Staging lacks migration 0189 (the RAW category), so 0222 is not applied there and K & K SKUs do not exist on staging.
 
@@ -609,9 +642,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Not yet seen live: the received-lock note on the SO edit page (needs a line received with no DO; the only one on a test order is cancelled). Project SO tab at phone width: tab switch is a native select that automation cannot drive.
 
 ## SO, quotation and raw material round (6 Nov 2026)
-- Quotation edit page still differs from the SO edit page: only New Quotation is the SO page. Land area and land size are not on the quotation.
-- New Sales Order shows no payment cards: the four cards exist only once a contract does.
-- A project with a live SO is hidden from the project picker only; the server does not refuse a second order on it.
+- Quotation lines keep their own row (add-ons, measure, supplier): the SO's row has none of these. Headings match the SO.
+- Walked by mouse on 6 Nov: TC-SO-2611-021 VO, PO TC-PO-2611-024, TC-PRO-2611-018 with raw materials, Complete, TC-GRN-2611-012, TC-DO-2611-013, all PDFs. Not walked: a credit note's row leaving the project SO tab; a DO typed by hand with Ship From.
+- Open: the print preview stays open when the page behind it changes. Raised PO numbers on the SO are plain text, not links.
 - Smart Placement was tried and reverted (#718, #722): every request got slower. First open after an idle worker still takes 1-2 s a request; a fix needs the owner's choice (paid plan or fewer MRP reads).
 - 16 DOs, 1 GRN, 4 POs got BLK and CONTS-WH sales locations became BLK by hand on production, owner's request.
 
@@ -635,3 +668,22 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - TC-SO-2611-008 keeps one line with no room (added before the fix). Test data only.
 - Slow, not changed: coverage about 3 s because each SO view works out the whole company's MRP; line-edits 3-4 s. The 504 on SO detail was not reproduced; the only trace is one Postgres statement timeout on 4 Nov 11:35 with no query text.
 - The 33 contract VOs from before 5 Nov read Requested by The Conts ERP: the real person was never stored.
+- Quotation on phone still opens the old QuotationEditor (src/mobile/MobileRenovationDocs.tsx); desktop uses the SO page since 6 Nov 2026.
+- Edit SO shows a credit row at amount 0.00 (real amount unchanged on save).
+
+## Production rebuild, left open (7 Nov 2026)
+- Accounting: renovation item groups unbound, invoices skip the ledger; someone else is mapping them.
+- A material kept at what is out after a VO removal, then re-added by another line, can over-issue; Return stock corrects it.
+- A VO recorded only as a flag (hand amendment already open) does not stop a receipt.
+- `acc/reno-projects.ts:245` reads the next instalment on total billed, display only, wrong after an earlier SI is cancelled.
+- A PO-line upload overwrites the production line's own pro-items photos (trigger from 0211).
+- Not tried on a real phone camera, nor Built-in and 2D photos with real data. PO payment journal not seen on screen.
+- Backend `test:light` has about 13 files failing on main itself (scans, wording); not touched here.
+- Local test data lives only on localhost.
+
+## Manual and pickers (7-8 Nov 2026, PRs #791-#793)
+- User manuals (computer and phone, English and Chinese) are published artifacts and PDFs, built by a script outside the repo from localhost screenshots; the owner shares them. Screens that change need new screenshots there.
+- Transfer from Sales Order pickers (PO, Production, DO) show Stock & orders per line (GET /renovation-doc-trail/lines). Lines the MRP plan does not list are judged by the quantity on POs and production orders, since MRP Proceed PO leaves po_qty_picked at 0.
+- Project SO tab nets delivery returns (PR #792); a returned line reads PENDING, as on the sales order page.
+- Production photos follow the upload standard (PR #793): sheet after each shot, Record video. A real phone recording a video has not been tried.
+- Payments on the project Overview read Not confirmed until Finance confirms the receipt; tied to the accounting mapping above.

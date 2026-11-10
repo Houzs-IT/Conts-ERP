@@ -1,9 +1,10 @@
 /* Beta workspace > Site & photos (owner, 24 Oct 2026): one vertical timeline of every photo and video of the project,
    newest first to the minute, drawn like the Overview's Site progress card: the day and time on the left, a dot on a
    line, and on the right the event (one DO's POD, one GR's receipt photos, one defect's before / after, one upload of
-   progress photos) with its category chip and its media as one strip of equal tiles. DO PODs and GR photos come in by
-   themselves from those documents (GET /photos), nothing is uploaded twice. Category chips with counts filter it, and
-   an area filter narrows it further. "Add photos" opens on Progress. */
+   progress photos, one production order's photos of one day) with its category chip and its media as one strip of equal
+   tiles. Production Order photos, DO PODs and GR photos come in by themselves from those documents (GET /photos), nothing
+   is uploaded twice. Category chips with counts filter it, and an area filter narrows it further. A document with no
+   photo yet is named by source under the list. "Add photos" opens on Progress. */
 
 import { useMemo, useState, type ReactElement } from "react";
 import { Camera } from "lucide-react";
@@ -12,9 +13,9 @@ import { MediaStrip } from "./BetaMedia";
 import { PhotoUploadDialog } from "./BetaPhotoUpload";
 import { WS, WsEmpty, WsFilterPill, WsPageHead, btnStyle, inputStyle } from "./BetaWsUi";
 import type { BetaTabProps } from "./betaShared";
-import { asMedia, betaMediaApi, type PhotoCategory } from "./renovationBetaMediaApi";
+import { asMedia, betaMediaApi, type EmptySources, type PhotoCategory } from "./renovationBetaMediaApi";
 import {
-  CATEGORY_CHIP, cardLine, clockOf, countBy, dayTitle, mediaCount, filterPhotos, photoAreas, photoFilters, photoTimeline, type PhotoCard, type PhotoFilter,
+  CATEGORY_CHIP, cardLine, clockOf, countBy, dayTitle, emptyMessage, emptySourceLines, mediaCount, filterPhotos, photoAreas, photoFilters, photoTimeline, type PhotoCard, type PhotoFilter,
 } from "./renovationBetaPhotosModel";
 import { BETA, TONES, type BetaTone } from "./renovationBetaTheme";
 import { BetaLoading } from "./BetaLoading";
@@ -22,6 +23,7 @@ import { BetaLoading } from "./BetaLoading";
 /* One accent per category, from the Beta palette: teal for the site team, blue for deliveries, amber for defects. */
 export const CATEGORY_TONE: Readonly<Record<PhotoCategory, BetaTone>> = {
   progress: [BETA.accent, TONES.accent.soft],
+  production: [WS.amber, TONES.amber.soft],
   do: [WS.blue, TONES.grey.soft],
   gr: [WS.blue, TONES.grey.soft],
   po: [WS.text2, WS.chip],
@@ -61,6 +63,19 @@ function EventRow({ c, day, today, last }: { c: PhotoCard; day: string | null | 
   );
 }
 
+/** The documents still without a photo, one short line per source. */
+function NoPhotoNote({ lines }: { lines: readonly string[] }): ReactElement | null {
+  if (lines.length === 0) return null;
+  return (
+    <div style={{ fontSize: 13, color: BETA.muted, lineHeight: 1.5, overflowWrap: "anywhere" }}>
+      <div style={{ fontWeight: 700 }}>No photos yet on</div>
+      {lines.map((l) => <div key={l}>{l}</div>)}
+    </div>
+  );
+}
+
+const NO_EMPTY: EmptySources = { production: [], do: [], gr: [], po: [] };
+
 export function BetaSiteTab({ projectId, today, canWrite, onDone }: BetaTabProps): ReactElement {
   const q = useQuery(["renovation-beta", "photos", projectId], () => betaMediaApi.photos(projectId), [projectId]);
   const [filter, setFilter] = useState<PhotoFilter>("all");
@@ -73,18 +88,21 @@ export function BetaSiteTab({ projectId, today, canWrite, onDone }: BetaTabProps
   const days = photoTimeline(shown);
   // undefined day = same day as the event above, so the left column names each day once.
   const events = days.flatMap((d) => d.cards.map((c, i) => ({ c, day: i === 0 ? d.day : undefined })));
+  const empty = q.data?.empty ?? NO_EMPTY;
+  const noPhoto = emptySourceLines(empty, filter);
+  const addButton = canWrite ? <button type="button" onClick={() => setAdding(true)} style={btnStyle("teal", "lg")}><Camera size={16} aria-hidden="true" />Add photos</button> : null;
 
   return (
     <>
       <WsPageHead
         title="Site & photos"
-        sub="Every photo and video of the project, newest first: the site team's progress, deliveries, receipts, the site measure and defects"
-        right={canWrite ? <button type="button" onClick={() => setAdding(true)} style={btnStyle("teal", "lg")}><Camera size={16} aria-hidden="true" />Add photos</button> : undefined}
+        sub="Every photo and video of the project, newest first: the site team's progress, production, deliveries, receipts, the site measure and defects"
+        right={addButton ?? undefined}
       />
 
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+      {photos.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
         <div role="group" aria-label="Show" style={{ display: "flex", flexWrap: "wrap", gap: 8, flex: "1 1 320px", minWidth: 0 }}>
-          {photoFilters(photos).map((f) => (
+          {photoFilters(photos, empty).map((f) => (
             <WsFilterPill key={f} on={filter === f} onClick={() => setFilter(f)}>
               <span style={{ whiteSpace: "nowrap" }}>{f === "all" ? "All" : CATEGORY_CHIP[f]} <span style={{ opacity: 0.7 }}>{counts[f]}</span></span>
             </WsFilterPill>
@@ -99,16 +117,26 @@ export function BetaSiteTab({ projectId, today, canWrite, onDone }: BetaTabProps
             </select>
           </label>
         )}
-      </div>
+      </div>}
 
       {q.loading && !q.data ? <BetaLoading label="Loading photos" size="inline" />
         : q.error && !q.data ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The photos could not be loaded: {q.error}</p>
         : shown.length === 0 ? (
-          <WsEmpty>{photos.length === 0 ? "No photos yet. Progress photos, PODs, goods receipts, the site measure and defects all show here." : "No photos match this filter."}</WsEmpty>
+          <WsEmpty>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+              <span>{emptyMessage(filter, area, photos.length > 0)}</span>
+              {area ? <button type="button" onClick={() => setArea("")} style={btnStyle("outline", "md")}>Show all areas</button>
+                : (filter === "all" || filter === "progress") && addButton}
+              <NoPhotoNote lines={area ? [] : noPhoto} />
+            </div>
+          </WsEmpty>
         ) : (
-          <ol className="stag" aria-label="Photo timeline" style={{ listStyle: "none", margin: 0, padding: 0 }}>
-            {events.map((e, i) => <EventRow key={`${e.c.key}-${i}`} c={e.c} day={e.day} today={today} last={i === events.length - 1} />)}
-          </ol>
+          <>
+            <ol className="stag" aria-label="Photo timeline" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {events.map((e, i) => <EventRow key={`${e.c.key}-${i}`} c={e.c} day={e.day} today={today} last={i === events.length - 1} />)}
+            </ol>
+            <NoPhotoNote lines={noPhoto} />
+          </>
         )}
 
       {adding && q.data && (

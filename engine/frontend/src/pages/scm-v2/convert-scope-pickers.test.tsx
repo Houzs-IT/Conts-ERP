@@ -21,6 +21,8 @@ const { invoiceableDoLines, deliverableSoLines, outstandingGrnItems, returnableD
   returnableDoLines: vi.fn(),
 }));
 
+// The Stock & orders column reads its own query; these tests are about which lines a picker offers.
+vi.mock("./SoLineStatus", () => ({ useSoLineStatus: () => ({}), SoLineStatusCell: () => null, soLineStatusText: () => "" }));
 vi.mock("../../vendor/scm/lib/sales-invoice-queries", () => ({
   useInvoiceableDoLines: invoiceableDoLines,
 }));
@@ -162,6 +164,16 @@ describe('SO → DO: "Deliver" lands on the order you came from', () => {
 
   it("pre-ticks it", () => {
     deliverableSoLines.mockReturnValue(loaded(TWO_SOS));
+    at(convertToLink("soToDo", "HC-SO-0001"), <DeliveryOrderFromSo />);
+    expect(screen.getByText(/Continue with 1 line/)).toBeTruthy();
+  });
+
+  /* Conts shows stock in its own "Stock & orders" column; the reason is said by the warning on Create. */
+  it("leaves a line that is not READY unticked (BUG-59)", () => {
+    deliverableSoLines.mockReturnValue(loaded([
+      soLine({ soItemId: "s-1", notReady: null }),
+      soLine({ soItemId: "s-3", itemCode: "AERO-MP", notReady: { status: "PENDING", reason: "No stock has been set aside for this line yet." } }),
+    ]));
     at(convertToLink("soToDo", "HC-SO-0001"), <DeliveryOrderFromSo />);
     expect(screen.getByText(/Continue with 1 line/)).toBeTruthy();
   });

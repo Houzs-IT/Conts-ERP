@@ -1,3 +1,4 @@
+import { rmFromText } from "../lib/money";
 import { useMemo, useState } from "react";
 import { siDepositAppliedSen, siOutstandingSen } from "../vendor/scm/lib/si-outstanding";
 import { offersRecordPayment, piPaymentHint } from "./doc-payment";
@@ -7,6 +8,7 @@ import { lineIdentity, orderLineIdentity } from "@2990s/shared";
 import { buildVariantSummary } from "../vendor/shared/variant-summary";
 import { formatPhone } from "@2990s/shared/phone";
 import { authedFetch } from "../vendor/scm/lib/authed-fetch";
+import { afterOnsiteConfirm, onsiteConfirmKind } from "../vendor/scm/lib/onsite-twin-queries";
 import { usePoSoCoverage, originsByCode, provenanceByCode, storedLinkSkus, deliveredByCode, type OriginAssignment } from "../vendor/scm/lib/flow-queries";
 import { CommittedBatchRowMobile, PairedSoRowsMobile, SourcePosRowMobile, SubstitutedRowMobile } from "./source-chips"; import { MobileLinePoFacts, mobilePiPoPriceNotice } from "./MobileLinePoRef";
 import { MobileRelationshipMap } from "./MobileRelationshipMap";
@@ -1153,7 +1155,7 @@ function PaymentSheet({ id, header, onClose, onDone }: {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const amountSen = Math.round(Number(amount) * 100);
+      const amountSen = Math.round(rmFromText(amount) * 100);
       if (!Number.isFinite(amountSen) || amountSen <= 0) throw new Error("Enter a valid amount greater than zero.");
       const body: Record<string, unknown> = { paidAt: date, method, amountSen };
       if (ref.trim()) body.approvalCode = ref.trim();
@@ -1282,6 +1284,8 @@ function DocActionFooter({ moduleKey, id, header, invalidate, onPOD, onDeleted }
       }
       refresh();
       void notify({ title: "Done" });
+      const twin = onsiteConfirmKind(moduleKey, action.key);
+      if (twin) afterOnsiteConfirm(twin, id, refresh);
     },
     /* A zero-cost receipt refusal is the one error here that CAN be answered on
        this screen: the sheet carries the same sentence plus the two remedies the

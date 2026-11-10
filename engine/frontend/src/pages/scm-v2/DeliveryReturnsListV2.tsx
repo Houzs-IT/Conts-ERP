@@ -15,6 +15,7 @@
 // prominent meta row in the drawer — it's the field ops actually cares
 // about when triaging a return.
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useMemo, useState, type ReactNode } from "react";
 import { brandingToneForLabel } from "../../lib/brandingTone";
 import { transferFromLabel, transferFromColumnLabel } from "../../lib/convertScope";
@@ -43,6 +44,7 @@ import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
 import { PageHeader } from "../../components/Layout";
 import { StatCard } from "../../components/StatCard";
 import { FilterPills } from "../../components/FilterPills";
+import { withDrWhy } from "./deliveryReturnWhy";
 import { DataTable, type Column } from "../../components/DataTable";
 import {
   DocumentLinesExpansion,
@@ -65,6 +67,7 @@ import { useChoice } from "../../vendor/scm/components/ChoiceDialog";
 import { useConfirm } from "../../vendor/scm/components/ConfirmDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "../../lib/utils";
+import { cancelledDocNoClass, cancelledRowClass } from "../../lib/scm";
 import { ResizableDetailDrawer } from "../../components/ResizableDetailDrawer";
 import { useAuth } from "../../auth/AuthContext";
 import { deliveryReturnRowMenu } from "./row-menus";
@@ -145,7 +148,7 @@ type DrRow = {
   lines?: DrListLine[];
 };
 
-type StatusTab = "all" | "open" | "inspected" | "refunded" | "cancelled";
+type StatusTab = "all" | "draft" | "open" | "inspected" | "refunded" | "cancelled";
 
 /* A line as the grid holds it: the server's line plus the one document fact a
    line column reads (the shared line cells pass a column only its line). */
@@ -178,7 +181,7 @@ const brandOf = (r: DrRow): string => r.branding || "—";
    the BEDFRAME arm — a THIRD spelling across the five lists. */
 const brandTone = brandingToneForLabel;
 
-// DR status flow: PENDING → RECEIVED (goods back, stock IN) → INSPECTED →
+// DR status flow: DRAFT (nothing writes it yet) · PENDING → RECEIVED (goods back, stock IN) → INSPECTED →
 // REFUNDED / CREDIT_NOTED, plus REJECTED / CANCELLED. Compress into 4
 // buckets for the pills; the row Badge still carries the raw stage label.
 // The everyday chips finance / ops watch:
@@ -190,6 +193,7 @@ const STATUS_TONE: Record<
   string,
   { tone: "success" | "warning" | "error" | "neutral"; label: string; bucket: StatusTab }
 > = {
+  draft:        { tone: "warning", label: "Draft",        bucket: "draft" },
   pending:      { tone: "warning", label: "Pending",      bucket: "open" },
   received:     { tone: "warning", label: "Received",     bucket: "open" },
   inspected:    { tone: "warning", label: "Inspected",    bucket: "inspected" },
@@ -340,7 +344,7 @@ function CardsGrid({ rows, onOpen }: { rows: DrRow[]; onOpen: (r: DrRow) => void
             className="group relative overflow-hidden rounded-lg border border-border bg-surface px-4 py-4 text-left shadow-stone transition-all duration-200 hover:-translate-y-px hover:border-primary/40 hover:shadow-slab focus:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/30"
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="font-docno text-[12.5px] font-semibold text-ink">
+              <span className={cn("font-docno text-[12.5px] font-semibold text-ink", cancelledDocNoClass(r.status))}>
                 {r.return_number}
               </span>
               <Badge tone={st.tone} size="xs">{st.label}</Badge>
@@ -821,10 +825,11 @@ export function DeliveryReturnsListV2() {
   }
 
   const counts = useMemo(() => {
-    const acc = { all: allRows.length, open: 0, inspected: 0, refunded: 0, cancelled: 0 };
+    const acc = { all: allRows.length, draft: 0, open: 0, inspected: 0, refunded: 0, cancelled: 0 };
     for (const r of allRows) {
       const b = statusFor(r.status).bucket;
-      if (b === "open") acc.open += 1;
+      if (b === "draft") acc.draft += 1;
+      else if (b === "open") acc.open += 1;
       else if (b === "inspected") acc.inspected += 1;
       else if (b === "refunded") acc.refunded += 1;
       else if (b === "cancelled") acc.cancelled += 1;
@@ -952,7 +957,7 @@ export function DeliveryReturnsListV2() {
       for (const r of chosen) bundles.push(await fetchDrBundle(r.id));
       if (how === "one") {
         await generateCombinedDeliveryReturnPdf(bundles as never, {
-          fileName: `delivery-returns-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `delivery-returns-${todayMyt()}.pdf`,
           action,
         });
       } else {
@@ -1080,7 +1085,7 @@ export function DeliveryReturnsListV2() {
     doc_no: {
       doc: (r) => r.return_number,
       width: "156px",
-      render: (r) => <span className="font-docno text-[12.5px] font-semibold text-ink">{r.return_number}</span>,
+      render: (r) => <span className={cn("font-docno text-[12.5px] font-semibold text-ink", cancelledDocNoClass(r.status))}>{r.return_number}</span>,
     },
     doc_date: { doc: (r) => r.return_date || null, width: "108px" },
     debtor_code: { doc: (r) => r.debtor_code || null, width: "120px", mono: true },
@@ -1149,7 +1154,7 @@ export function DeliveryReturnsListV2() {
     exportFormat: "money" as const,
   });
   const columns: Column<DrRow, DrGridLine>[] = [
-    ...returnGridColumns<DrRow, DrGridLine>(DR_LINE_COLUMNS, columnValues, linesOfDr, "doc_no"),
+    ...withDrWhy(returnGridColumns<DrRow, DrGridLine>(DR_LINE_COLUMNS, columnValues, linesOfDr, "doc_no")),
     {
       key: "salesperson",
       label: "Salesperson",
@@ -1462,6 +1467,7 @@ export function DeliveryReturnsListV2() {
 
   const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
     { value: "all", label: `All · ${counts.all}` },
+    { value: "draft", label: `Draft · ${counts.draft}` },
     { value: "open", label: `Open · ${counts.open}` },
     { value: "inspected", label: `Inspected · ${counts.inspected}` },
     { value: "refunded", label: `Refunded · ${counts.refunded}` },
@@ -1650,6 +1656,7 @@ export function DeliveryReturnsListV2() {
               error={error ? (error as Error).message ?? "Failed to load" : null}
               columns={columns}
               getRowKey={(r) => r.id}
+              getRowClassName={(r) => cancelledRowClass(r.status)}
               onRowClick={(r) => setSelected(r)}
               contextMenu={drContextMenu}
               expandable={{

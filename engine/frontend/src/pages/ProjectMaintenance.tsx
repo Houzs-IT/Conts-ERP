@@ -1828,19 +1828,6 @@ function BrandManager() {
       defaultOpen
       description="Shown in the project Brand dropdown. Renames cascade to existing projects so historical data stays in sync."
     >
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
-          placeholder="New brand name…"
-          className="h-9 min-w-[200px] flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-        />
-        <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
-          Add
-        </Button>
-      </div>
-
       <ul className="divide-y divide-border-subtle rounded-md border border-border bg-bg/40">
         {q.loading && (
           <>
@@ -1958,6 +1945,18 @@ function BrandManager() {
         expanded={expanded}
         onToggle={() => setExpanded((s) => !s)}
       />
+      <div className="mt-3 flex border-t border-border pt-3 flex flex-wrap items-center gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder="New brand name…"
+          className="h-9 min-w-[200px] flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+        />
+        <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
+          Add
+        </Button>
+      </div>
     </CollapsibleSection>
   );
 }

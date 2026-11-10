@@ -16,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
 import { invalidateSoLists } from './sales-order-queries';
 import { serviceNotify } from './dialog-service';
+import { afterOnsiteConfirm } from './onsite-twin-queries';
 import { idempotentInit, newIdempotencyKey } from '../../../lib/idempotency';
 
 export const DELIVERY_STATES = [
@@ -916,7 +917,7 @@ type DeliverablePickLine = { soItemId: string; docNo: string; remaining: number 
 
 export type ConvertSoResult = {
   /** SOs that produced a new DO. */
-  converted: Array<{ docNo: string; doNumber: string }>;
+  converted: Array<{ docNo: string; doNumber: string; id: string }>;
   /** SOs with nothing left to deliver (no remaining lines) — not converted. */
   skipped: Array<{ docNo: string; reason: 'already_delivered' }>;
   /** SOs the endpoint rejected (e.g. sofa no-batch / short-stock / race). */
@@ -997,7 +998,7 @@ export function useConvertSosToDo() {
               `/delivery-orders-mfg/from-sos`,
               idempotentInit(keyFor(docNo), { method: 'POST', body: JSON.stringify({ picks }) }),
             );
-            out.converted.push({ docNo, doNumber: res.doNumber });
+            out.converted.push({ docNo, doNumber: res.doNumber, id: res.id });
           } catch (e) {
             out.failed.push({ docNo, message: e instanceof Error ? e.message : 'Something went wrong.' });
           }
@@ -1005,9 +1006,10 @@ export function useConvertSosToDo() {
       }
       return out;
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       // The new DO(s) + their DO-execution data must appear on the planning rows.
       qc.invalidateQueries({ queryKey: ['delivery-planning'] });
+      for (const made of res.converted) afterOnsiteConfirm('do', made.id, () => { void qc.invalidateQueries({ queryKey: ['grns'] }); });
       qc.invalidateQueries({ queryKey: ['mfg-delivery-orders'] });
       qc.invalidateQueries({ queryKey: ['mfg-delivery-orders', 'deliverable-so-lines'], refetchType: 'all' });
       invalidateSoLists(qc);

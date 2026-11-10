@@ -62,6 +62,8 @@ export interface ManagedLine {
   supplierChoices?: SupplierChoice[];
   /** Its raw materials: the list saved on the line, else the SKU's composition times the line's qty. */
   materials?: LineMaterial[];
+  /** The completed production order that closes its raw materials (null: they can still change). */
+  materialsClosedBy?: string | null;
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none). */
   categoryCode: string | null;
@@ -172,10 +174,11 @@ export function effectiveEdit(l: ManagedLine, e: LineEdit | undefined): LineEdit
 }
 
 /** The unit price after the edit, by the SO edit's own rule: a picked SKU starts at its catalog sell price
-    (SoLineCard pickProduct), a qty change keeps the line's price. The server re-derives it when the VO applies. */
+    (SoLineCard pickProduct), a qty change keeps the line's price. The server re-derives it when the VO applies.
+    A picked SKU with no sell price (0) keeps the line's price: that 0 is "no price found", not a price anyone typed. */
 export function unitAfter(l: ManagedLine, e: LineEdit | null): number | null {
   if (l.unitPriceSen === null) return null;
-  if (e?.itemCode && e.pickedPriceSen !== undefined) return e.pickedPriceSen;
+  if (e?.itemCode && e.pickedPriceSen !== undefined && e.pickedPriceSen > 0) return e.pickedPriceSen;
   return l.unitPriceSen;
 }
 
@@ -467,27 +470,6 @@ export function lineLate(l: ManagedLine, today: string): "order" | "deliver" | n
   if (!d.fromPo && !l.plan.noPo && l.goesTo === "po" && d.orderOn && d.orderOn < today) return "order";
   if (l.do !== "yes" && d.deliverOn && d.deliverOn < today) return "deliver";
   return null;
-}
-
-/* ---------- export ---------- */
-
-const csvCell = (v: unknown): string => {
-  const t = v === null || v === undefined ? "" : String(v);
-  return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
-};
-
-export function linesCsv(lines: readonly ManagedLine[], finance: boolean): string {
-  const head = ["SO", "Category", "Sub-category", "SKU", "Description", "Variants", "Colour", "Area", "Remark", "UOM", "Qty",
-    ...(finance ? ["Amount (RM)"] : []), "Processing date", "Delivery date", "PO", "PO date", "GR", "DO"];
-  const out = [head];
-  for (const l of lines) {
-    const d = lineDates(l);
-    out.push([l.soDocNo, l.categoryLabel, l.subLabel, l.itemCode, l.description, l.variantText ?? "", colourOf(l), l.area ?? "", l.remark ?? "", l.uom, String(l.qty),
-      ...(finance ? [l.amountSen === null ? "" : (l.amountSen / 100).toFixed(2)] : []),
-      d.orderOn ?? "", d.deliverOn ?? "", l.pos.filter((p) => p.poStatus !== "CANCELLED").map((p) => p.poNumber).join(" "), d.fromPo?.poDate ?? "",
-      l.goesTo === "po" || l.pos.length ? l.gr : "", l.do]);
-  }
-  return out.map((r) => r.map(csvCell).join(",")).join("\r\n");
 }
 
 /* ---------- by area ---------- */

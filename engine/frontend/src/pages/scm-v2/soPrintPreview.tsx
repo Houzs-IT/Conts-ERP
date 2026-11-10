@@ -45,6 +45,19 @@ export function useSoPrintLayout(docNo: string | null | undefined, items: readon
   };
 }
 
+/** The category heading of a contract line for its PDF, as the SO's own By category reads it. */
+export function useLineCategory(enabled: boolean): (l: { itemCode?: string | null }) => string | null {
+  const catalogQ = useMfgProducts({ enabled });
+  const names = useRenovationCatalog();
+  return useMemo(() => {
+    const products = new Map((catalogQ.data ?? []).map((p) => [p.code, { group: p.category_group || p.category, sub: p.sub_category }]));
+    return (l) => {
+      if (!l.itemCode) return null;
+      return categoryRooms([{ id: "x", item_code: l.itemCode }], (code) => products.get(code), { groups: names.groups, subs: names.all }).byItem.x ?? null;
+    };
+  }, [catalogQ.data, names.groups, names.all]);
+}
+
 /** The SO's Print preview: summary card, the layout picker for an order with rooms, and the three exits. */
 export function SoPrintPreview({ open, onClose, docNo, companyName, rows, layout, onViewPdf, onPrint, onDownload }: {
   open: boolean;

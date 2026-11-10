@@ -69,6 +69,18 @@ export function toInstant(v: unknown): string | null {
  *  Without it those fields are left out of every read and refused on write, and the job works as before. */
 export const hasBilling = (env: Env) => hasColumn(env, 'maintenance_issues', 'billing_date').catch(() => false);
 
+/** Migration 0255: property_id on a job that sits in a building, not a unit. Without it every job has a unit. */
+export const hasBuildingJobs = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'property_id').catch(() => false);
+
+export const BUILDING_JOB_LABEL = 'Building (no unit)';
+
+/** The units and properties joins for a query on `maintenance_issues m`, as aliases u (may be null) and p. */
+export async function jobPlaceJoin(env: Env): Promise<string> {
+  return (await hasBuildingJobs(env))
+    ? 'LEFT JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = COALESCE(u.property_id, m.property_id)'
+    : 'LEFT JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id';
+}
+
 export const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Whether a picked name is one of the company's own people (an active technician, housekeeper or operations
@@ -85,6 +97,8 @@ export function mineSql(byId: boolean) {
 }
 
 export const hasAssigneeUser = (env: Env) => hasColumn(env, 'maintenance_issues', 'assignee_user_id').catch(() => false);
+
+export const hasSupportRequest = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'support_requested_at').catch(() => false);
 
 /** Whether a repair job is the signed-in field user's: the rule every field write on a repair checks. */
 export async function isAssignee(env: Env, id: string, userId: string): Promise<boolean> {

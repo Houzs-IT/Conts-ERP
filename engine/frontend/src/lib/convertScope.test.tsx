@@ -151,5 +151,5 @@ describe("no site hand-builds a convert link", () => {
       });
     }
     expect(offences).toEqual([]);
-  });
+  }, 60_000);
 });

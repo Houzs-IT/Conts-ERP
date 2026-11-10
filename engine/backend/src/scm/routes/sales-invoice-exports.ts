@@ -20,6 +20,7 @@ import { supabaseAuth } from '../middleware/auth';
 import { readSiListFilters } from '../lib/si-list-read';
 import { readSiExportRows } from '../lib/si-export-rows';
 import { stampSoDates, stampDoNumber, stampOrderDeposit } from '../lib/si-list-stamps';
+import { stampBillsFor } from '../lib/renovation-si-bills-for';
 import { resolveSalesScopeIds } from '../lib/salesScope';
 import { canViewAllSales, canViewScmFinance } from '../lib/houzs-perms';
 import { activeCompanyId } from '../lib/companyScope';
@@ -40,6 +41,7 @@ async function stampSiHeaders(sb: unknown, rows: Array<Record<string, unknown>>,
   for (let i = 0; i < rows.length; i += STAMP_BATCH) {
     const batch = rows.slice(i, i + STAMP_BATCH);
     await stampSoDates(sb, batch);
+    await stampBillsFor(sb, batch);
     await stampDoNumber(sb, batch);
     await stampSourcePos(sb, batch);
     await stampOrderDeposit(sb, batch, companyId);

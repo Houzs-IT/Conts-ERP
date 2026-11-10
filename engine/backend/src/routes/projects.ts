@@ -2734,10 +2734,23 @@ app.post("/:id/read", requirePageAccess("projects.list"), async (c) => {
 
 // ── Archive / restore (soft delete) ───────────────────────────
 
+/* Finished sales orders. A completed project is what gets archived, so only work still running stops it. */
+const SO_NOT_LIVE = `'CANCELLED', 'CLOSED', 'DELIVERED', 'INVOICED', 'RENO_COMPLETED'`;
+const liveDocList = (nos: readonly string[]): string => nos.length > 5 ? `${nos.slice(0, 5).join(", ")} and ${nos.length - 5} more` : nos.join(", ");
+
 app.post("/:id/archive", requirePermission("projects.manage"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (isNaN(id)) return c.json({ error: "Invalid ID" }, 400);
   const user = c.get("user");
+  const co = activeCompanySql(c);
+  const { results: live } = await c.env.DB.prepare(
+    `SELECT doc_no AS no FROM scm.mfg_sales_orders WHERE project_id = ?${co} AND status::text NOT IN (${SO_NOT_LIVE})
+     UNION ALL SELECT po_number FROM scm.purchase_orders WHERE project_id = ?${co} AND status::text NOT IN ('CANCELLED', 'RECEIVED')
+     UNION ALL SELECT po_number FROM scm.production_orders WHERE project_id = ?${co} AND status::text NOT IN ('CANCELLED', 'RECEIVED')`,
+  ).bind(id, id, id).all<{ no: string }>();
+  if ((live ?? []).length > 0) {
+    return c.json({ error: "project_has_live_documents", message: `This project still has live documents: ${liveDocList(live.map((r) => r.no))}. Finish or cancel them first, then archive it.` }, 409);
+  }
   await c.env.DB.prepare(
     `UPDATE projects
         SET archived_at = datetime('now'), archived_by = ?, updated_at = datetime('now')

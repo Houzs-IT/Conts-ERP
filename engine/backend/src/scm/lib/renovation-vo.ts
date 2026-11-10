@@ -9,8 +9,11 @@
    - add lines become new SO rows and a contract section tagged with the VO;
    - a fully omitted line cancels its SO row (omitted_by_vo_id on the contract
      line); a partly omitted one has its quantity reduced and repriced;
-   - every live PO line that bought omitted work gets a reno_po_line_flags row
-     (CANCEL or AMEND to the new quantity) for procurement;
+   - a line cannot go below what was delivered: those goods need a delivery return first;
+   - every live PO line that must shrink changes with the VO (owner, 7 Nov 2026): a draft PO on the spot; an issued PO
+     through a PO amendment for someone to approve, keeping the line's own price, plus a reno_po_line_flags row
+     (CANCEL, or AMEND to what that PO line keeps) that closes when it applies. What was received stays on the PO; a line
+     split across POs shares the new total;
    - the header rolls up again; the next unbilled instalment then catches up the
      difference, a net negative ending as a credit note (renovation-billing.ts).
 
@@ -30,6 +33,86 @@ import { variantCategoryOf } from './renovation-flow-rules';
 import { SPEC_LOCKED_ERROR, specLockedMessage } from './renovation-spec-lock';
 
 export type VoStatus = 'DRAFT' | 'SENT' | 'APPROVED' | 'CANCELLED';
+
+/** What each PO line of an SO line keeps when the line drops to `newTotal`. Lines holding receipts keep theirs first and
+    never go below them; a PO line that keeps all it has needs no flag. */
+export function poLineTargets(poLines: ReadonlyArray<{ id: string; qty: number; received_qty: number }>, newTotal: number): Array<{ id: string; action: 'CANCEL' | 'AMEND'; newQty: number }> {
+  let left = newTotal;
+  const out: Array<{ id: string; action: 'CANCEL' | 'AMEND'; newQty: number }> = [];
+  for (const l of [...poLines].sort((a, b) => b.received_qty - a.received_qty)) {
+    const keep = Math.min(l.qty, Math.max(l.received_qty, left));
+    left = Math.max(0, left - keep);
+    if (keep < l.qty) out.push({ id: l.id, action: keep === 0 ? 'CANCEL' : 'AMEND', newQty: keep });
+  }
+  return out;
+}
+
+/** A VO's change to one PO line. A draft has gone nowhere, so it changes here. An issued PO has gone to the supplier, so the
+    change waits for approval (owner, 24 Oct 2026) on the PO's one open amendment, tied to the VO so the project's SO tab
+    shows it: a later VO on the same line replaces what the first one asked. A hand-raised amendment left open answers
+    'flag': the flag tells purchasing to finish that one first. Price is never touched. */
+export async function changeVoPoLine(db: RenoDb, c: {
+  companyId: number; poLineId: string; oldQty: number; target: { action: 'CANCEL' | 'AMEND'; newQty: number };
+  po: { id: string; number: string; status: string }; source: { id: string; no: string; requestedBy: string | null };
+}): Promise<'direct' | 'amendment' | 'flag'> {
+  if (c.po.status === 'DRAFT') {
+    if (c.target.action === 'CANCEL') await db.q(`delete from scm.purchase_order_items where id = $1`, [c.poLineId]);
+    else {
+      await db.q(`update scm.purchase_order_items set qty = $2, line_total_sen = greatest($2 * unit_price_sen - coalesce(discount_sen, 0), 0) where id = $1`, [c.poLineId, c.target.newQty]);
+    }
+    await db.q(
+      `update scm.purchase_orders po set subtotal_sen = t.sum, total_sen = t.sum, updated_at = now()
+         from (select coalesce(sum(line_total_sen), 0)::bigint as sum from scm.purchase_order_items where purchase_order_id = $1) t where po.id = $1`,
+      [c.po.id],
+    );
+    return 'direct';
+  }
+  const [open] = await db.q<{ id: string; source_so_amendment_id: string | null }>(
+    `select id, source_so_amendment_id from scm.po_amendments where po_id = $1 and status::text = 'REQUESTED' limit 1 for update`, [c.po.id],
+  );
+  if (open && !open.source_so_amendment_id) return 'flag';
+  let amendmentId = open?.id;
+  if (!amendmentId) {
+    const [count] = await db.q<{ n: number }>(`select count(*)::int as n from scm.po_amendments where po_id = $1`, [c.po.id]);
+    const [made] = await db.q<{ id: string }>(
+      `insert into scm.po_amendments (po_id, po_number, amendment_no, status, reason, requested_by, company_id, source_so_amendment_id, source_so_amendment_no)
+       values ($1, $2, $3, 'REQUESTED', $4, $5, $6, $7, $8) returning id`,
+      [c.po.id, c.po.number, `${c.po.number}/A${Number(count.n) + 1}`, `Raised from ${c.source.no}. Approving changes this PO's quantities; its prices stay.`, c.source.requestedBy, c.companyId, c.source.id, c.source.no],
+    );
+    amendmentId = made.id;
+  }
+  await db.q(`delete from scm.po_amendment_lines where amendment_id = $1 and purchase_order_item_id = $2`, [amendmentId, c.poLineId]);
+  await db.q(
+    `insert into scm.po_amendment_lines (amendment_id, purchase_order_item_id, change_type, new_qty, old_snapshot, company_id) values ($1, $2, $3, $4, $5::text::jsonb, $6)`,
+    [amendmentId, c.poLineId, c.target.action === 'CANCEL' ? 'REMOVE' : 'QTY', c.target.action === 'CANCEL' ? null : c.target.newQty, JSON.stringify({ qty: c.oldQty }), c.companyId],
+  );
+  return 'amendment';
+}
+
+/* The next unbilled instalment catches a VO up. Once every instalment is billed there is none, so the VO gets its own:
+   as the last on the schedule it bills what is left of the contract, and 0% leaves the others' percentages alone. */
+async function ensureBalanceInstalment(db: RenoDb, soDocNo: string, voNo: string, companyId: number): Promise<void> {
+  await db.q(
+    `insert into scm.reno_doc_instalments (company_id, so_doc_no, seq, label, pct_bp, trigger)
+     select $2::bigint, $1::text, coalesce(max(i.seq), 0) + 1, $3::text, 0, 'so_confirmed'
+       from scm.reno_doc_instalments i left join scm.reno_instalment_bills b on b.instalment_id = i.id
+      where i.so_doc_no = $1
+     having count(*) > 0 and count(*) = count(b.id)`,
+    [soDocNo, companyId, `Balance of ${voNo}`],
+  );
+}
+
+async function deliveredQty(db: RenoDb, soItemId: string): Promise<number> {
+  const [r] = await db.q<{ n: number }>(
+    `select (coalesce((select sum(di.qty) from scm.delivery_order_items di join scm.delivery_orders d on d.id = di.delivery_order_id
+                        where di.so_item_id = $1 and d.status::text not in ('DRAFT', 'CANCELLED')), 0)
+           - coalesce((select sum(ri.qty_returned) from scm.delivery_return_items ri join scm.delivery_returns dr on dr.id = ri.delivery_return_id
+                        join scm.delivery_order_items di on di.id = ri.do_item_id
+                        where di.so_item_id = $1 and dr.status::text <> 'CANCELLED'), 0))::int as n`,
+    [soItemId],
+  );
+  return Number(r?.n ?? 0);
+}
 
 export function voNoFor(soDocNo: string, seq: number): string {
   return `VO-${soDocNo}-${String(seq).padStart(2, '0')}`;
@@ -204,6 +287,12 @@ export async function applyVo(
   }
   const addLines = addSections.flatMap((s) => s.lines.filter((l) => l.kind === 'ITEM' || l.kind === 'CHILD'));
   if (addLines.length === 0 && omits.length === 0) throw refuse(422, 'empty_vo', 'This variation order adds and omits nothing.');
+  for (const o of omits) {
+    const t = o.target;
+    const after = o.omitQty === null || o.omitQty >= t.qty || t.measureMilli !== null ? 0 : t.qty - o.omitQty;
+    const delivered = t.soItemId ? await deliveredQty(db, t.soItemId) : 0;
+    if (after < delivered) throw refuse(409, 'below_delivered', `"${t.description}": ${delivered} delivered, so this line cannot go below that. Raise a delivery return first.`, { delivered });
+  }
   const noSku = addLines.filter((l) => !l.itemCode);
   if (noSku.length) throw refuse(422, 'lines_without_sku', `${noSku.length} added line(s) have no product picked.`, { lines: noSku.map((l) => l.description) });
   if (addLines.length) {
@@ -279,16 +368,21 @@ export async function applyVo(
         [amd.id, t.soItemId, m.qty, m.unit_price_sen, m.discount_sen, JSON.stringify(old?.snap ?? null), actor.companyId],
       );
     }
-    const poLines = await db.q<{ id: string; qty: number }>(
-      `select pi.id, pi.qty from scm.purchase_order_items pi join scm.purchase_orders po on po.id = pi.purchase_order_id
+    const poLines = await db.q<{ id: string; qty: number; received_qty: number; po_id: string; po_number: string; po_status: string }>(
+      `select pi.id, pi.qty, coalesce(pi.received_qty, 0)::int as received_qty, po.id as po_id, po.po_number, po.status::text as po_status
+         from scm.purchase_order_items pi join scm.purchase_orders po on po.id = pi.purchase_order_id
         where pi.so_item_id = $1 and po.status::text <> 'CANCELLED'`,
       [t.soItemId],
     );
-    for (const pl of poLines) {
+    for (const pl of poLineTargets(poLines.map((l) => ({ id: l.id, qty: Number(l.qty), received_qty: Number(l.received_qty) })), full ? 0 : t.qty - o.omitQty!)) {
+      const line = poLines.find((l) => l.id === pl.id)!;
+      const how = await changeVoPoLine(db, { companyId: actor.companyId, poLineId: pl.id, oldQty: Number(line.qty), target: pl, po: { id: line.po_id, number: line.po_number, status: line.po_status },
+        source: { id: amd.id, no: v.vo_no, requestedBy: requester?.id ?? actor.staffId } });
+      if (how === 'direct') continue;
       await db.q(
         `insert into scm.reno_po_line_flags (company_id, purchase_order_item_id, so_item_id, vo_id, action, new_qty, note)
          values ($1, $2, $3, $4, $5, $6, $7)`,
-        [actor.companyId, pl.id, t.soItemId, id, full ? 'CANCEL' : 'AMEND', full ? 0 : t.qty - o.omitQty!,
+        [actor.companyId, pl.id, t.soItemId, id, pl.action, pl.newQty,
           `${v.vo_no} omits ${full ? 'all of' : `${o.omitQty} of`} "${t.description}"`],
       );
       flags += 1;
@@ -299,6 +393,7 @@ export async function applyVo(
   const before = await db.q<{ total: number }>(`select local_total_sen as total from scm.mfg_sales_orders where doc_no = $1`, [soDocNo]);
   const revised = await recomputeSoHeader(db, soDocNo);
   const net = revised - Number(before[0]?.total ?? 0);
+  if (net !== 0) await ensureBalanceInstalment(db, soDocNo, v.vo_no, actor.companyId);
   await db.q(`update scm.mfg_sales_orders set revision = revision + 1 where doc_no = $1`, [soDocNo]);
   await db.q(`update scm.reno_so_contracts set last_amended = $2::date, version = version + 1, updated_at = now() where so_doc_no = $1`, [soDocNo, todayKl()]);
   await db.q(

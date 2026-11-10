@@ -17,10 +17,20 @@ export interface QuoteProperty {
   bedrooms: number | null;
   bathrooms: number | null;
   builtUpSqft: number | null;
+  landAreaSqft: number | null;
+  landSize: string;
+  /* What else a sales order asks for (mig 0234). */
+  salespersonId: string;
+  state: string;
+  city: string;
+  postcode: string;
+  country: string;
+  salesLocation: string;
 }
 
 export const EMPTY_QUOTE_PROPERTY: QuoteProperty = {
-  siteAddress: '', propertyType: '', layoutLabel: '', bedrooms: null, bathrooms: null, builtUpSqft: null,
+  siteAddress: '', propertyType: '', layoutLabel: '', bedrooms: null, bathrooms: null, builtUpSqft: null, landAreaSqft: null, landSize: '',
+  salespersonId: '', state: '', city: '', postcode: '', country: '', salesLocation: '',
 };
 
 /* Columns never disappear once a migration is in, so a true answer is kept for the isolate's life. */
@@ -55,7 +65,8 @@ const num = (v: unknown): number | null => (v === null || v === undefined || v =
 export async function readRevisionProperty(db: RenoDb, revisionId: string): Promise<QuoteProperty> {
   if (!(await quotePropertyReady(db))) return { ...EMPTY_QUOTE_PROPERTY };
   const r = (await db.q<Record<string, unknown>>(
-    `select site_address, property_type, layout_label, bedrooms, bathrooms, built_up_sqft::float8 as built_up_sqft
+    `select site_address, property_type, layout_label, bedrooms, bathrooms, built_up_sqft::float8 as built_up_sqft,
+            land_area_sqft::float8 as land_area_sqft, land_size, salesperson_id::text as salesperson_id, customer_state, city, postcode, customer_country, sales_location
        from scm.reno_quotation_revisions where id = $1`,
     [revisionId],
   )).at(0);
@@ -63,6 +74,9 @@ export async function readRevisionProperty(db: RenoDb, revisionId: string): Prom
   return {
     siteAddress: String(r.site_address ?? ''), propertyType: String(r.property_type ?? ''), layoutLabel: String(r.layout_label ?? ''),
     bedrooms: num(r.bedrooms), bathrooms: num(r.bathrooms), builtUpSqft: num(r.built_up_sqft),
+    landAreaSqft: num(r.land_area_sqft), landSize: String(r.land_size ?? ''),
+    salespersonId: String(r.salesperson_id ?? ''), state: String(r.customer_state ?? ''), city: String(r.city ?? ''), postcode: String(r.postcode ?? ''),
+    country: String(r.customer_country ?? ''), salesLocation: String(r.sales_location ?? ''),
   };
 }
 
@@ -71,8 +85,10 @@ export async function writeRevisionProperty(db: RenoDb, revisionId: string, p: P
   const v = { ...EMPTY_QUOTE_PROPERTY, ...p };
   await db.q(
     `update scm.reno_quotation_revisions set site_address = $2, property_type = $3, layout_label = $4, bedrooms = $5::int, bathrooms = $6::int,
-        built_up_sqft = $7::numeric where id = $1`,
-    [revisionId, v.siteAddress, v.propertyType, v.layoutLabel, v.bedrooms, v.bathrooms, v.builtUpSqft],
+        built_up_sqft = $7::numeric, land_area_sqft = $8::numeric, land_size = nullif($9, ''), salesperson_id = nullif($10, '')::uuid,
+        customer_state = nullif($11, ''), city = nullif($12, ''), postcode = nullif($13, ''), customer_country = nullif($14, ''), sales_location = nullif($15, '') where id = $1`,
+    [revisionId, v.siteAddress, v.propertyType, v.layoutLabel, v.bedrooms, v.bathrooms, v.builtUpSqft, v.landAreaSqft, v.landSize,
+      v.salespersonId, v.state, v.city, v.postcode, v.country, v.salesLocation],
   );
 }
 
@@ -90,17 +106,18 @@ export async function readProjectParty(db: RenoDb, projectId: number | null, com
   const hasProperty = await soPropertyReady(db);
   const r = (await db.q<Record<string, unknown>>(
     `select customer_name, customer_phone, customer_email, site_address, building, unit_no
-            ${hasProperty ? ', property_type, layout_label, bedrooms, bathrooms, built_up_sqft::float8 as built_up_sqft' : ''}
+            ${hasProperty ? ', property_type, layout_label, bedrooms, bathrooms, built_up_sqft::float8 as built_up_sqft, land_area_sqft::float8 as land_area_sqft, land_size' : ''}
        from public.projects where id = $1 and company_id = $2 and project_kind = 'renovation'`,
     [projectId, companyId],
   )).at(0);
   if (!r) return null;
   const s = (v: unknown) => (v == null ? '' : String(v));
   return {
+    ...EMPTY_QUOTE_PROPERTY,
     customerName: s(r.customer_name), customerPhone: s(r.customer_phone), customerEmail: s(r.customer_email),
     siteAddress: s(r.site_address), building: s(r.building), unitNo: s(r.unit_no),
     propertyType: s(r.property_type), layoutLabel: s(r.layout_label), bedrooms: num(r.bedrooms), bathrooms: num(r.bathrooms),
-    builtUpSqft: num(r.built_up_sqft),
+    builtUpSqft: num(r.built_up_sqft), landAreaSqft: num(r.land_area_sqft), landSize: s(r.land_size),
   };
 }
 
@@ -165,7 +182,15 @@ export async function stampContractFromQuotation(
   if (addr.address1) {
     await db.q(`update scm.mfg_sales_orders set address1 = $2, address2 = $3 where doc_no = $1`, [docNo, addr.address1, addr.address2 || null]);
   }
-  /* The project's other shared fields the quotation does not carry (salesperson, structured address, sales location):
+  /* What the quotation holds goes first; blanks stay for the project below. */
+  const qp = q.property;
+  await db.q(
+    `update scm.mfg_sales_orders set salesperson_id = coalesce(nullif($2, '')::uuid, salesperson_id), customer_state = coalesce(nullif($3, ''), customer_state),
+        city = coalesce(nullif($4, ''), city), postcode = coalesce(nullif($5, ''), postcode), customer_country = coalesce(nullif($6, ''), customer_country),
+        sales_location = coalesce(nullif($7, ''), sales_location) where doc_no = $1`,
+    [docNo, qp.salespersonId, qp.state, qp.city, qp.postcode, qp.country, qp.salesLocation],
+  );
+  /* The project's other shared fields the quotation may not carry (salesperson, structured address, sales location):
      a converted SO came out with no salesperson though its project had one (owner run, 1 Nov 2026). Blanks only. */
   if (q.projectId != null) {
     await db.q(
@@ -183,9 +208,9 @@ export async function stampContractFromQuotation(
   const rooms = contractRooms(q.sections);
   await db.q(
     `update scm.mfg_sales_orders set building = $2, unit_no = $3, property_type = $4, layout_label = $5, bedrooms = $6::int, bathrooms = $7::int,
-        built_up_sqft = $8::numeric, room_sections = $9::text::jsonb where doc_no = $1`,
+        built_up_sqft = $8::numeric, room_sections = $9::text::jsonb, land_area_sqft = $10::numeric, land_size = nullif($11, '') where doc_no = $1`,
     [docNo, p.building || null, p.unitNo || null, p.propertyType || null, p.layoutLabel || null, p.bedrooms ?? null, p.bathrooms ?? null,
-      p.builtUpSqft ?? null, JSON.stringify(rooms.roomSections)],
+      p.builtUpSqft ?? null, JSON.stringify(rooms.roomSections), p.landAreaSqft ?? null, p.landSize ?? ''],
   );
   if (rooms.itemRooms.length) {
     await db.q(

@@ -22,6 +22,7 @@ import { grnListParams } from './grn-list-export';
 import { applyListMrpEnrichment, type EnrichableMrpRow, type ListMrpEnrichment } from '../../../lib/listMrpEnrichment';
 import { idempotentInit } from '../../../lib/idempotency';
 import { serviceNotify } from './dialog-service';
+import { afterOnsiteConfirm } from './onsite-twin-queries';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
 import { writeFailed, writeFailedAs, reportInBandFailure } from './mutation-error';
 
@@ -240,6 +241,7 @@ export const usePostGrn = () => {
       qc.invalidateQueries({ queryKey: ['grn-detail', id] });
       qc.invalidateQueries({ queryKey: ['grns'] });
       qc.invalidateQueries({ queryKey: ['inventory'] });
+      afterOnsiteConfirm('grn', id, () => { void qc.invalidateQueries({ queryKey: ['onsite-twin', 'grn', id] }); void qc.invalidateQueries({ queryKey: ['mfg-delivery-orders'] }); });
     },
     /* The commit chokepoint for inventory IN had no error path at all until
        2026-08-21. Three of its four call sites pass no per-call `onError`

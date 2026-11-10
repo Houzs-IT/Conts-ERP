@@ -66,9 +66,36 @@ export const SO_TAB_STATUSES: Record<string, string[]> = {
   CANCELLED:     ['CANCELLED'],
 };
 
+/* The desktop list's stage tabs (owner, 6 Nov 2026): All, Draft, Contract, In
+   Progress, Completed, Closed, On Hold, Cancelled. A stage holds several exact
+   statuses and each row keeps its exact status pill. The map above stays, because
+   the phone list still filters and counts one status at a time. */
+export const SO_STAGE_TAB_STATUSES: Record<string, string[]> = {
+  CONTRACT:    ['CONFIRMED', 'RENO_CONFIRMED'],
+  IN_PROGRESS: ['RENO_IN_PROGRESS', 'IN_PRODUCTION', 'READY_TO_SHIP'],
+  COMPLETED:   ['RENO_COMPLETED', 'SHIPPED', 'DELIVERED', 'INVOICED'],
+};
+
 /** The statuses a tab selects. An unknown tab value selects itself, so a caller
  *  the buckets have never heard of still filters to something real rather than
  *  silently widening to every row. */
 export function soStatusesForTab(tab: string): string[] {
-  return SO_TAB_STATUSES[tab] ?? [tab];
+  return SO_STAGE_TAB_STATUSES[tab] ?? SO_TAB_STATUSES[tab] ?? [tab];
+}
+
+/** Counts per tab, lowercase keys. Every order lands in one exact-status bucket or
+ *  in `other`; the stage keys are the same orders summed a second way. */
+export function soTabCounts(byStatus: Record<string, number>): Record<string, number> {
+  const all = Object.values(byStatus).reduce((s, n) => s + n, 0);
+  const counts: Record<string, number> = { all };
+  const sum = (members: string[]) => members.reduce((n, m) => n + (byStatus[m] ?? 0), 0);
+  let known = 0;
+  for (const [tab, members] of Object.entries(SO_TAB_STATUSES)) {
+    const n = sum(members);
+    counts[tab.toLowerCase()] = n;
+    known += n;
+  }
+  for (const [tab, members] of Object.entries(SO_STAGE_TAB_STATUSES)) counts[tab.toLowerCase()] = sum(members);
+  counts.other = all - known;
+  return counts;
 }

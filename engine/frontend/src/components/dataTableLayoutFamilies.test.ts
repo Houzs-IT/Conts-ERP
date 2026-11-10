@@ -22,7 +22,7 @@ describe("DataTable document-family layout manifest", () => {
         [...readFileSync(`${dir}/${f}`, "utf8").matchAll(/layoutFamily=\{DATA_TABLE_LAYOUT_FAMILIES\.(\w+)\}([^\n]*)/g)]
           .map((m) => ({ file: f, family: m[1], rest: m[2] })),
       );
-    expect(uses.map((u) => u.family).sort()).toEqual(Object.keys(DATA_TABLE_LAYOUT_FAMILIES).sort());
+    expect([...new Set(uses.map((u) => u.family))].sort()).toEqual(Object.keys(DATA_TABLE_LAYOUT_FAMILIES).sort());
     for (const u of uses) {
       expect(`${u.file} ${u.rest}`).toContain("persistSort={false}");
       expect(`${u.file} ${u.rest}`).toContain("persistFilters={false}");

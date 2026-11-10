@@ -61,14 +61,14 @@ describe("adding a raw material", () => {
     h.rows = [{ id: "m1", item_code: "RAW-1", description: "Plywood", uom: "PCS", qty_needed: 2, processing_date: null, delivery_date: "2026-12-01", notes: null }];
     show();
     expect(screen.queryByLabelText("Search raw materials")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Raw material" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add raw material" }));
     expect(screen.getByLabelText("Search raw materials")).toBeTruthy();
   });
 
   it("adds to the line when the material and dates match", async () => {
     h.rows = [{ id: "m1", item_code: "RAW-1", description: "Plywood", uom: "PCS", qty_needed: 2, processing_date: null, delivery_date: null }];
     show();
-    fireEvent.click(screen.getByRole("button", { name: "Raw material" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add raw material" }));
     pick();
     fireEvent.click(screen.getByRole("button", { name: "Add raw material" }));
     await waitFor(() => expect(h.update).toHaveBeenCalled());

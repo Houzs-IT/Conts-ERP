@@ -6,6 +6,7 @@
 // the scan needs a nudge.
 // ----------------------------------------------------------------------------
 
+import { rmFromText } from "../lib/money";
 import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import { formatCurrency } from "../lib/utils";
@@ -43,7 +44,7 @@ export function SetupInvoiceFill() {
 
   async function apply() {
     setDone(null);
-    const amt = Number(amount);
+    const amt = rmFromText(amount);
     if (!projectId) { setDone({ ok: false, msg: "Pick a project." }); return; }
     if (!Number.isFinite(amt) || amt <= 0) { setDone({ ok: false, msg: "Enter a valid amount." }); return; }
     setApplying(true);

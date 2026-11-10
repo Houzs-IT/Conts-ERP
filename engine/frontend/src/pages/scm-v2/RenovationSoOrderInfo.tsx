@@ -10,7 +10,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "../../lib/utils";
 import { soInfoApi } from "../projects/renovation/customerPropertyApi";
-import { projectDatesText } from "../projects/renovation/customerPropertyModel";
+import { projectDatesText, type CustomerPropertyValue, type ProjectShared } from "../projects/renovation/customerPropertyModel";
 
 function Cell({ label, value, muted, span }: { label: string; value: ReactNode; muted?: boolean; span?: boolean }) {
   return (
@@ -21,11 +21,23 @@ function Cell({ label, value, muted, span }: { label: string; value: ReactNode; 
   );
 }
 
-export function RenovationSoOrderInfo({ docNo, payment }: { docNo: string; payment: string | null }) {
+export function RenovationSoOrderInfo({ docNo, payment, splitProject = false }: { docNo: string; payment: string | null; splitProject?: boolean }) {
   const q = useQuery({ queryKey: ["reno", "so-info", "so", docNo], queryFn: () => soInfoApi.so(docNo), staleTime: 30_000 });
   if (q.isLoading) return <div className="h-24 animate-pulse rounded-md bg-surface-dim" aria-busy="true" />;
   if (q.isError || !q.data) return <p role="alert" className="text-[13px] text-err">The order information could not be loaded. Reload the page.</p>;
-  const { info, project } = q.data;
+  return <RenovationOrderInfoCells info={q.data.info} project={q.data.project} payment={payment} splitProject={splitProject} brand={q.data.brand?.name ?? null} />;
+}
+
+/** The cells alone, for a quotation, which holds the same fields on itself. */
+export function RenovationOrderInfoCells({ info, project, payment, splitProject = false, brand }: {
+  info: Pick<CustomerPropertyValue, "building" | "unitNo" | "propertyType" | "layoutLabel" | "bedrooms" | "bathrooms" | "builtUpSqft" | "landAreaSqft" | "landSize">;
+  project: ProjectShared | null;
+  payment: string | null;
+  /** Project ID and name in two cells, as the PO prints them. */
+  splitProject?: boolean;
+  /** The order's brand, shown when the order has one (owner, 10 Nov 2026). */
+  brand?: string | null;
+}) {
   /* The order's dates are its project's (owner, 15 Oct 2026): the created day, and the day it reached Closed. */
   const dates = projectDatesText(project, "so");
   const layout = info.layoutLabel
@@ -35,14 +47,22 @@ export function RenovationSoOrderInfo({ docNo, payment }: { docNo: string; payme
     ? ` (${info.bedrooms} bed, ${info.bathrooms} bath)` : "";
   return (
     <div className="grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-4">
-      <Cell
-        label="Project"
-        span
-        value={project
-          ? <Link to={`/projects/${project.id}`} className="text-primary hover:underline">{project.code ?? `#${project.id}`} · {project.name}</Link>
-          : "No project"}
-        muted={!project}
-      />
+      {splitProject && project ? (
+        <>
+          <Cell label="Project ID" value={<Link to={`/projects/${project.id}`} className="text-primary hover:underline">{project.code ?? `#${project.id}`}</Link>} />
+          <Cell label="Project Name" value={project.name} />
+        </>
+      ) : (
+        <Cell
+          label="Project"
+          span
+          value={project
+            ? <Link to={`/projects/${project.id}`} className="text-primary hover:underline">{project.code ?? `#${project.id}`} · {project.name}</Link>
+            : "No project"}
+          muted={!project}
+        />
+      )}
+      {brand != null && <Cell label="Brand" value={brand} />}
       <Cell label="Start date" value={dates.start} muted={!dates.startSet} />
       <Cell label="End date" value={dates.end} muted={!dates.endSet} />
       <Cell label="Building" span value={info.building || "—"} muted={!info.building} />

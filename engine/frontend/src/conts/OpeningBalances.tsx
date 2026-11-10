@@ -3,7 +3,7 @@
 // upload, look at the preview (a bad row is marked red and stops the import), import.
 import { useRef, useState } from "react";
 import { Button } from "@2990s/design-system";
-import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
+import { SetupCard } from "./SetupCard";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import {
   OPENING_COLUMNS, downloadTemplate, parseJournalGrid, parsePayablesGrid, parseReceivablesGrid, readWorkbookGrid, useImportOpening,
@@ -21,8 +21,7 @@ const rm = (sen: number): string => (sen / 100).toLocaleString("en-MY", { minimu
 export function OpeningBalances({ canSave, ledgerStartDate }: { canSave: boolean; ledgerStartDate: string | null }) {
   const check = useOpeningCheck(!!ledgerStartDate);
   return (
-    <section className={styles.card} style={{ padding: "var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
-      <h2 className={styles.cardTitle}>Opening balances</h2>
+    <SetupCard title="Opening balances" description="AutoCount's figures on the day before the books start: the trial balance, then the invoices customers still owe and the bills the company still owes.">
       {!ledgerStartDate ? (
         <p style={{ margin: 0, color: MUTED }}>Set the day the books start first: the opening balances are dated the day before it.</p>
       ) : (
@@ -37,7 +36,7 @@ export function OpeningBalances({ canSave, ledgerStartDate }: { canSave: boolean
             hint="AutoCount's outstanding creditor list. The supplier code must match a supplier in the system." />
         </>
       )}
-    </section>
+    </SetupCard>
   );
 }
 

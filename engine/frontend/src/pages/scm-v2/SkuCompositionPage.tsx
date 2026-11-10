@@ -110,7 +110,7 @@ export function SkuCompositionPage() {
       <PageHeader
         eyebrow="Production"
         title="SKU Composition"
-        description="Set the raw materials one unit of a SKU uses. Projects with that SKU bring them in by themselves."
+        description="The raw materials one unit of a SKU uses."
         primaryAction={<Button icon={<Plus size={14} />} onClick={() => open("")}>New Composition</Button>}
       />
 
@@ -141,6 +141,7 @@ export function SkuCompositionPage() {
         error={rows.error ? "The compositions could not be loaded." : null}
         columns={COLUMNS}
         getRowKey={(r) => r.code}
+        getRowClassName={(r) => (r.code === sku ? "bg-accent-soft/40" : undefined)}
         onRowClick={(r) => open(r.code)}
         mobileCard={{ primary: "code", cells: ["name", "count"] }}
         emptyLabel={q ? "Nothing matches." : view === "with" ? "None yet. Press New Composition to start." : "Every SKU has a composition."}

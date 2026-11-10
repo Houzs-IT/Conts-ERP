@@ -5,9 +5,11 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Edit3, ExternalLink, FileText, Plus, Wrench, X } from 'lucide-react';
+import { Edit3, ExternalLink, FileText, LayoutGrid, Plus, Table as TableIcon, Wrench, X } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
+import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
+import { brandingToneForLabel } from '../../lib/brandingTone';
 import { DataTable } from '../../components/DataTable';
 import type { Column } from '../../components/dataTableTypes';
 import { FilterPills } from '../../components/FilterPills';
@@ -16,6 +18,7 @@ import { ResizableDetailDrawer } from '../../components/ResizableDetailDrawer';
 import { useAuth } from '../../auth/AuthContext';
 import { refusalOf, useQuotation, useQuotations, type QuotationListRow } from '../../lib/renovation/api';
 import { fmtDate, rm, StatusPill } from './shared';
+import { quotationLines } from '../scm-v2/renovationQuotationForm';
 import { cn } from '../../lib/utils';
 
 const FILTERS = [
@@ -23,16 +26,90 @@ const FILTERS = [
   { value: 'ACCEPTED', label: 'Accepted' }, { value: 'REJECTED', label: 'Rejected' }, { value: 'EXPIRED', label: 'Expired' },
 ];
 
+/* The same columns, names and order as the Sales Orders list (owner, 5 Nov 2026: "它就是 sales order 来的"). */
+/* Table or Cards, as on the sales order list (owner, 6 Nov 2026); remembered per browser. */
+type ListView = 'table' | 'cards';
+const VIEW_KEY = 'renovation-quotations-view';
+const readView = (): ListView => {
+  try { return localStorage.getItem(VIEW_KEY) === 'cards' ? 'cards' : 'table'; } catch { return 'table'; }
+};
+
+/** A row's lines under it, as on the sales order list. */
+function QuotationLinesExpansion({ id }: { id: string }) {
+  const q = useQuotation(id);
+  if (!q.data) return <div className="px-4 py-3 text-[12px] text-ink-muted">{q.error ? refusalOf(q.error).message : 'Loading lines…'}</div>;
+  const { rows, rooms } = quotationLines(q.data.revision.sections);
+  const grid = 'grid grid-cols-[160px_1fr_60px_110px_110px] items-center gap-3 px-4';
+  return (
+    <div className="rounded-md border border-border-subtle bg-surface">
+      <div className={cn(grid, 'border-b border-border-subtle py-2 font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted')}>
+        <span>Room</span><span>Item</span><span className="text-right">Qty</span><span className="text-right">Unit price</span><span className="text-right">Amount</span>
+      </div>
+      {rows.map((l) => (
+        <div key={l.id} className={cn(grid, 'border-b border-border-subtle py-2 text-[12.5px] last:border-b-0')}>
+          <span className="truncate text-ink-secondary">{rooms.byItem[l.id]}</span>
+          <span className="min-w-0 truncate font-semibold text-ink">{l.description || l.item_code || '—'}</span>
+          <span className="text-right font-money text-ink-secondary">{l.qty}</span>
+          <span className="text-right font-money text-ink-secondary">{rm(l.unit_price_sen)}</span>
+          <span className="text-right font-money font-semibold text-ink">{rm(l.total_sen)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ViewToggle({ value, onChange }: { value: ListView; onChange: (v: ListView) => void }) {
+  const btn = (which: ListView, label: string, Icon: typeof TableIcon) => (
+    <button type="button" onClick={() => onChange(which)} aria-pressed={value === which}
+      className={cn('inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors',
+        value === which ? 'bg-primary text-white shadow-sm' : 'text-ink-secondary hover:bg-primary-soft hover:text-primary')}>
+      <Icon size={13} />{label}
+    </button>
+  );
+  return <div className="inline-flex items-center gap-0.5 rounded-md border border-border bg-surface p-1 shadow-stone">{btn('table', 'Table', TableIcon)}{btn('cards', 'Cards', LayoutGrid)}</div>;
+}
+
+function QuotationCards({ rows, onOpen }: { rows: QuotationListRow[]; onOpen: (r: QuotationListRow) => void }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+      {rows.map((r) => (
+        <button key={r.id} type="button" onClick={() => onOpen(r)}
+          className="group relative overflow-hidden rounded-lg border border-border bg-surface px-4 py-4 text-left shadow-stone transition-all duration-200 hover:-translate-y-px hover:border-primary/40 hover:shadow-slab focus:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/30">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-docno text-[12.5px] font-semibold text-ink">{r.docNo}</span>
+            <StatusPill status={r.status} />
+          </div>
+          <div className="mt-2 truncate text-[15px] font-semibold text-ink">{r.customerName || '—'}</div>
+          <div className="mt-1 flex items-center gap-2">
+            {r.brandName && <Badge tone={brandingToneForLabel(r.brandName)} variant="soft" size="xs">{r.brandName}</Badge>}
+            <span className="text-[11.5px] text-ink-muted">{fmtDate(r.docDate)}</span>
+          </div>
+          <div className="mt-3.5 flex items-end justify-between border-t border-border-subtle pt-3">
+            <div className="min-w-0">
+              <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">Project</div>
+              <div className="mt-0.5 truncate font-mono text-[12px] font-semibold text-ink-secondary">{r.projectCode || '—'}</div>
+            </div>
+            <span className="font-money text-[15px] font-bold text-ink">{rm(r.totalSen)}</span>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const COLUMNS: Column<QuotationListRow>[] = [
-  { key: 'docNo', label: 'Quotation', alwaysVisible: true, getValue: (r) => r.docNo, disableFilter: true,
-    render: (r) => <span className="font-semibold text-primary">{r.docNo}</span> },
-  { key: 'project', label: 'Project', getValue: (r) => r.projectName ?? (r.projectId ? `#${r.projectId}` : ''),
+  { key: 'docNo', label: 'Doc. No.', alwaysVisible: true, getValue: (r) => r.docNo, disableFilter: true,
+    render: (r) => <span className="font-mono font-semibold text-primary">{r.docNo}</span> },
+  { key: 'date', label: 'Date', width: '136px', getValue: (r) => r.docDate, filterType: 'date', dateValue: (r) => r.docDate, filterLabel: fmtDate,
+    render: (r) => <span className="inline-block min-w-[92px] whitespace-nowrap text-ink-secondary">{fmtDate(r.docDate)}</span> },
+  { key: 'customer', label: 'Debtor Name', getValue: (r) => r.customerName || '', render: (r) => <span className="font-semibold">{r.customerName || '—'}</span> },
+  { key: 'branding', label: 'Branding', width: '150px', getValue: (r) => r.brandName ?? '',
+    render: (r) => (r.brandName ? <Badge tone={brandingToneForLabel(r.brandName)} variant="soft" size="xs">{r.brandName.toUpperCase()}</Badge> : <span className="text-ink-muted">—</span>) },
+  { key: 'projectCode', label: 'Project ID', getValue: (r) => r.projectCode ?? '', render: (r) => <span className="font-mono text-[12px] text-ink-secondary">{r.projectCode ?? '—'}</span> },
+  { key: 'project', label: 'Project Name', getValue: (r) => r.projectName ?? (r.projectId ? `#${r.projectId}` : ''),
     render: (r) => <span className="text-ink-secondary">{r.projectName ?? (r.projectId ? `#${r.projectId}` : '—')}</span> },
-  { key: 'customer', label: 'Customer', getValue: (r) => r.customerName || '', render: (r) => r.customerName || '—' },
   { key: 'unit', label: 'Building / unit', getValue: (r) => [r.building, r.unitNo].filter(Boolean).join(' '),
     render: (r) => <span className="text-ink-secondary">{[r.building, r.unitNo].filter(Boolean).join(' ') || '—'}</span> },
-  { key: 'date', label: 'Date', getValue: (r) => r.docDate, filterType: 'date', dateValue: (r) => r.docDate, filterLabel: fmtDate,
-    render: (r) => <span className="text-ink-secondary">{fmtDate(r.docDate)}</span> },
   { key: 'total', label: 'Total', align: 'right', getValue: (r) => r.totalSen,
     exportValue: (r) => r.totalSen / 100, disableFilter: true,
     total: (rows) => rm(rows.reduce((s, r) => s + r.totalSen, 0)),
@@ -169,6 +246,11 @@ export function QuotationsList() {
   const all = list.data?.quotations ?? [];
   const rows = status ? all.filter((r) => r.status === status) : all;
   const of = (s: string) => all.filter((r) => r.status === s);
+  const [view, setView] = useState<ListView>(readView);
+  const changeView = (v: ListView) => {
+    setView(v);
+    try { localStorage.setItem(VIEW_KEY, v); } catch { /* remembered for this visit only */ }
+  };
   const pending = list.isLoading;
   const failed = { failed: Boolean(list.error), onRetry: () => void list.refetch() };
   return (
@@ -197,8 +279,16 @@ export function QuotationsList() {
           value={status}
           onChange={setStatus}
         />
+        <div className="flex-1" />
+        {view === 'cards' && <input aria-label="Search quotations" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search number, customer, building…" className="h-9 w-64 max-w-full rounded-md border border-border bg-surface px-3 text-[13px] text-ink focus:border-primary focus:outline-none" />}
+        <ViewToggle value={view} onChange={changeView} />
       </div>
 
+      {view === 'cards' ? (
+        rows.length === 0
+          ? <div className="rounded-lg border border-dashed border-border bg-surface px-6 py-16 text-center text-[13px] font-semibold text-ink shadow-stone">{q || status ? 'No quotations match.' : 'No quotations yet.'}</div>
+          : <QuotationCards rows={rows} onOpen={setSelected} />
+      ) : (
       <DataTable<QuotationListRow>
         tableId="renovation-quotations"
         documentLabel="Quotations"
@@ -209,6 +299,7 @@ export function QuotationsList() {
         columns={COLUMNS}
         getRowKey={(r) => r.id}
         onRowClick={setSelected}
+        expandable={{ render: (r) => <QuotationLinesExpansion id={r.id} /> }}
         mobileCard={{ primary: 'docNo', cells: ['status', 'customer', 'unit', 'date', 'total'] }}
         emptyLabel={q || status ? 'No quotations match.' : 'No quotations yet.'}
         search={{
@@ -220,6 +311,7 @@ export function QuotationsList() {
           countPending: list.isLoading,
         }}
       />
+      )}
       <QuotationDrawer row={selected} onClose={() => setSelected(null)} />
     </div>
   );

@@ -35,6 +35,13 @@ check('technician sees the open job to pick up', list.status === 200 && list.jso
 check('the contractor\'s job is not offered', !list.json.open.some(j => j.id === otherId), list.text.slice(0, 400));
 check('no amount anywhere on the phone list', !/quotedAmount|finalAmount|contractorAmount|25000/.test(list.text), list.text.slice(0, 400));
 check('technician may pick up', list.json.mayPick === true, list.text.slice(0, 200));
+const unitDigits = units.json.data[0].unitNumber.replace(/[^\p{L}\p{N}]/gu, '');
+const byUnit = await call('GET', `/api/field/repairs?unit=${encodeURIComponent(unitDigits)}`, undefined, 'technician');
+const byUnitOpen = byUnit.json?.buildings?.reduce((sum, b) => sum + b.open, 0);
+check('a unit search finds the open job, typed without dashes', byUnit.status === 200 && byUnit.json.open.some(j => j.id === openId), byUnit.text.slice(0, 400));
+check('a unit search counts only that unit\'s open jobs', byUnit.json.open.every(j => j.unitNumber.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase().includes(unitDigits.toLowerCase())) && byUnitOpen === byUnit.json.open.length, byUnit.text.slice(0, 400));
+const noUnit = await call('GET', '/api/field/repairs?unit=zz-no-such-unit-99', undefined, 'technician');
+check('a unit search with no match offers nothing and counts zero', noUnit.status === 200 && noUnit.json.open.length === 0 && noUnit.json.buildings.every(b => b.open === 0), noUnit.text.slice(0, 400));
 const hk = await call('GET', '/api/field/repairs', undefined, 'housekeeper');
 check('a cleaner is not offered jobs to pick up', hk.status === 200 && hk.json.open.length === 0 && hk.json.mayPick === false, hk.text.slice(0, 200));
 

@@ -64,6 +64,7 @@ import { exceptOnSite, loadNonSellingWarehouses, warehouseCanPromise } from './n
 import { pgrestIn } from './pgrest-in-list';
 import { isUnitBoundCategory } from './unit-bound-sku';
 import { isCustomizedLine } from './so-line-customized';
+import { customerGoodsCodes } from './renovation-flow-rules';
 
 /* Only the variant-bearing categories run bound. Owner 2026-08-10:
    "SOFA 和 BEDFRAME 因为有变体的问题,所以要走 Convert to PO 的那个模式.
@@ -591,9 +592,11 @@ async function runSoStockAllocation(
         itemCode: l.item_code,
         category: serviceCodes.has(l.item_code) ? 'SERVICE' : null,
       })) continue;
-      const delivered = deliveredBySoItem.get(l.id) ?? 0;
-      const returned = returnedBySoItem.get(l.id) ?? 0;
-      const remaining = Number(l.qty ?? 0) - delivered + returned;
+      /* Returned units are NOT owed again (Houzs e11313aba): returned goods go back to stock for the next matching
+         order, so netting the return back in handed the same units straight back to the order that returned them.
+         Only the stock claim changes: the DO picker still shows the returned qty as deliverable, so a replacement
+         can still be shipped on purpose, and header readiness below is unchanged. */
+      const remaining = Number(l.qty ?? 0) - (deliveredBySoItem.get(l.id) ?? 0);
       if (remaining <= 0) continue;
       const variant_key = computeVariantKey(l.item_group ?? null, l.variants ?? null);
       const whId = l.warehouse_id ?? null;
@@ -712,13 +715,15 @@ async function runSoStockAllocation(
     const boundNeed = (n: LineNeed): boolean => isHardBoundLine(n.group, n.item_code)
       || (companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && (isUnitBoundCategory(catByCode.get(n.item_code)) || isCustomizedLine(n.remark)));
     const boundNeeds = needs.filter(boundNeed);
+    /* Conts: the rest of the lines, read only for whether their own PO has received them (owner, 6 Nov 2026). */
+    const ownPoNeeds = needs.filter((n) => !boundNeed(n) && companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID);
     /* Sofa lines were diverted into sofaLineRecs before `needs` was built, so
        for three months this read never saw them and the bound rule the comment
        above NAMES sofa into never fired for sofa — every migrated set with no
        exact-multiset dye lot stayed PENDING with its own PO fully received
        (11 lines on 2026-08-29, run 33233660301). Their ids join the read here;
        the sofa set walk below consults dedicatedReady when no batch covers. */
-    if (boundNeeds.length > 0 || sofaLineRecs.length > 0) {
+    if (boundNeeds.length > 0 || ownPoNeeds.length > 0 || sofaLineRecs.length > 0) {
       /* INVERTED, for the same reason and by the same shape as the DO-line read
          above: chunking the 3,520 bedframe/sofa line ids cost 18 serial
          requests on production. `!inner` on the PO link means only lines that
@@ -730,8 +735,8 @@ async function runSoStockAllocation(
          case-insensitively there, and a SQL predicate that had to reproduce
          that could answer differently. Reading a superset and intersecting is
          exact — `dedicatedReady` is only ever consulted for bound line ids. */
-      const boundIds = new Set([...boundNeeds.map((n) => n.id), ...sofaLineRecs.map((s) => s.id)]);
-      const { data: poLinkRows } = await paginateAll<{
+      const boundIds = new Set([...boundNeeds.map((n) => n.id), ...ownPoNeeds.map((n) => n.id), ...sofaLineRecs.map((s) => s.id)]);
+      const { data: poLinkRows, error: poLinkError } = await paginateAll<{
         id: string; po_items: Array<{ qty: number; received_qty: number | null }> | null;
       }>((from, to) => sb
         .from('mfg_sales_order_items')
@@ -741,6 +746,10 @@ async function runSoStockAllocation(
         .gt('po_items.received_qty', 0)
         .order('id')
         .range(from, to));
+      /* A failed read looked like "no PO has received anything", so every bound READY line was written PENDING and
+         READY_TO_SHIP orders regressed, under ok:true with no retry. Throwing here, before step 8 writes anything,
+         turns it into the wrapper's queued retry like the other reads in this function (Houzs 2bd976116). */
+      if (poLinkError) throw new Error(`allocation PO-receipt load failed: ${poLinkError.message}`);
       for (const r of poLinkRows ?? []) {
         if (!boundIds.has(r.id)) continue;
         for (const p of r.po_items ?? []) {
@@ -762,8 +771,14 @@ async function runSoStockAllocation(
        difference. */
     const nonSellingBlockedDocs = new Set<string>();
     // Bound lines first, so their units leave the pool before anyone else walks it.
-    for (const n of boundNeeds) {
-      if (allocGated.has(n.doc_no)) continue;
+    /* The customer's own goods never enter stock, so no pool can answer for them: the receipt itself is the answer. */
+    const customerOwned = ownPoNeeds.length > 0
+      ? await customerGoodsCodes(sb as never, ownPoNeeds.map((n) => n.item_code), HARD_BOUND_COMPANY_ID)
+      : new Set<string>();
+    for (const n of [...boundNeeds, ...ownPoNeeds.filter((x) => customerOwned.has(x.item_code))]) {
+      /* Conts dates each line, so its header stays blank: a line its own PO has received is ready regardless (owner, 6 Nov 2026). */
+      const ownPoReceived = companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && (dedicatedReady.get(n.id) ?? 0) > 0;
+      if (allocGated.has(n.doc_no) && !ownPoReceived) continue;
       /* BOUND MODE IS NOT AN EXEMPTION. This pass lights off the line's own
          `purchase_order_items.received_qty` and never consults
          `inventory_balances`, so gating only the pooled on-hand read would have
@@ -791,7 +806,9 @@ async function runSoStockAllocation(
     }
     for (const n of needs) {
       if (targetById.has(n.id)) continue; // settled by its dedicated PO above
-      if (allocGated.has(n.doc_no)) {
+      /* Conts dates each line, so a blank header holds nothing back once the line's own PO has received it; the pool still decides. */
+      const ownPoIn = companyByDoc.get(n.doc_no) === HARD_BOUND_COMPANY_ID && (dedicatedReady.get(n.id) ?? 0) > 0;
+      if (allocGated.has(n.doc_no) && !ownPoIn) {
         targetById.set(n.id, { status: 'PENDING', qtyReady: 0 });
         continue;
       }

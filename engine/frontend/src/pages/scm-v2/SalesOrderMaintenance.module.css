@@ -58,6 +58,7 @@
   display: grid;
   grid-template-columns: 1fr 100px 1fr 110px auto;
   gap: 8px;
+  align-items: center;
 }
 .addRowEyebrow {
   font-family: var(--font-mono, ui-monospace, monospace);
@@ -75,6 +76,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  margin-bottom: 12px;
 }
 
 /* ── Info / breadcrumb banner ─────────────────────────────────────── */
@@ -88,6 +90,14 @@
   line-height: 1.5;
 }
 .banner strong { color: #11140f; font-weight: 600; }
+/* The drill-down tables bring their own card and toolbar, so this wrapper only holds spacing. */
+.geoTable { min-width: 0; }
+.geoTable > .empty { border: 1px dashed #d6d9d2; border-radius: 10px; }
+.banner + .banner,
+.banner + .geoTable,
+.geoTable + .addRowCard,
+.tableCard + .addRowCard,
+.venuesCard + .addRowCard { margin-top: 12px; }
 
 /* ── Empty state row ──────────────────────────────────────────────── */
 .empty {
@@ -110,12 +120,12 @@
   text-transform: uppercase;
   color: #767b6e;
   text-align: left;
-  padding: 9px 16px;
+  padding: 10px 16px;
   background: #f4f6f3;
   border-bottom: 1px solid #e3e6e0;
 }
 .table tbody td {
-  padding: 9px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid #e3e6e0;
   font-size: 12.5px;
   color: #11140f;

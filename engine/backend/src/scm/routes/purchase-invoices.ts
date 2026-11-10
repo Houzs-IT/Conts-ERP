@@ -18,6 +18,8 @@ import {
   sortSoLinesByGroupRank,
 } from '../shared/so-line-display';
 import { postPiAccounting, reversePiAccounting, resyncPiAccounting } from './accounting';
+import { inHouseSupplierId } from '../lib/grn-from-po-core';
+import { isCustomerGoods } from '../lib/renovation-flow-rules';
 import { recostForPi, recostFromGrn } from '../lib/recost';
 import { normalizeCurrency, normalizeExchangeRate, masterRateForCurrency } from '../lib/fx';
 import { assertForeignRatePostable, assertForeignRatePatchable } from '../lib/fx-guard';
@@ -438,9 +440,13 @@ purchaseInvoices.get('/outstanding-grn-items', async (c) => {
      current one — the same GRN line read two different ways (found on
      2990-GRN-2608-006: detail KN390-1, picker KN390-2). One batched read,
      fail-soft. */
-  await enrichLinesWithFabricSupplierCode(sb, c, loaded.items);
+  /* Nobody bills for the customer's own goods or for the in-house team's work, so their receipts are not waiting for an
+     invoice (owner, 6 Nov 2026). */
+  const inHouse = await inHouseSupplierId(sb, c);
+  const billable = loaded.items.filter((i) => i.supplierId !== inHouse && !isCustomerGoods(i.itemCode, i.supplierCode));
+  await enrichLinesWithFabricSupplierCode(sb, c, billable);
 
-  return c.json({ items: loaded.items, truncated: loaded.truncated });
+  return c.json({ items: billable, truncated: loaded.truncated });
 });
 
 purchaseInvoices.get('/:id', async (c) => {
@@ -913,6 +919,7 @@ export const postPurchaseInvoiceHandler = async (c: any) => {
       if (!ensure.ok) {
         // eslint-disable-next-line no-console
         console.error(`[pi-accounting] ensure-post failed for ${curRow.invoice_number}:`, ensure.status, ensure.reason);
+        return c.json({ purchaseInvoice: cur, ledger: { posted: false, status: ensure.status, reason: ensure.reason ?? null } });
       }
     }
     return c.json({ purchaseInvoice: cur });
@@ -1073,7 +1080,7 @@ export const postPurchaseInvoiceHandler = async (c: any) => {
     // eslint-disable-next-line no-console
     console.warn('[pi scan learning] note skipped (non-fatal):', curRow.invoice_number, (e as Error).message);
   }
-  return c.json({ purchaseInvoice: data });
+  return c.json(postRes.ok ? { purchaseInvoice: data } : { purchaseInvoice: data, ledger: { posted: false, status: postRes.status, reason: postRes.reason ?? null } });
 };
 purchaseInvoices.patch('/:id/post', postPurchaseInvoiceHandler);
 

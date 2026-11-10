@@ -19,6 +19,7 @@
 // statement feeds: the same rows, read from the file instead of typed.
 // ----------------------------------------------------------------------------
 
+import { rmFromText } from "../../lib/money";
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, Download, Landmark, Undo2 } from 'lucide-react';
@@ -305,7 +306,7 @@ const BatchReceipts = ({ batchId, onBack }: { batchId: number; onBack: () => voi
   const send = () => {
     /* Blank = the rest of it. The ordinary payout is one credit for the whole
        statement, and nobody should retype a number the statement knows. */
-    const typed = amount.trim() ? Math.round(Number(amount) * 100) : null;
+    const typed = amount.trim() ? Math.round(rmFromText(amount) * 100) : null;
     receive.mutate({ batchId, receivedOn: on, amountSen: typed }, {
       onSuccess: () => { setOn(''); setAmount(''); },
     });

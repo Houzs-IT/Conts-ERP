@@ -23,6 +23,7 @@
 // useUpdateMfgDeliveryOrderStatus (unchanged from prior V2).
 
 import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { OnsiteTwinCard } from "./OnsiteTwinCard";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { scmListReturnTo } from "../../lib/scmListReturn";
 import {
@@ -76,6 +77,7 @@ import { useStaffLookup } from "../../hooks/useStaffLookup";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { usePrompt } from "../../vendor/scm/components/PromptDialog";
 import { useDoRelationshipMap } from "./sales-doc-relationship-map";
+import { RenovationDocTrail } from "./RenovationDocTrail";
 import { useDoCancelAction } from "./use-do-cancel-action";
 import {
   DocumentRelationshipMapModal,
@@ -496,9 +498,11 @@ function ActivityRow({
 function DeliveryStatusCard({
   header,
   totalQty,
+  shipFrom,
 }: {
   header: DoHeader;
   totalQty: number;
+  shipFrom: string | null;
 }) {
   const t = statusOf(header);
   return (
@@ -543,7 +547,7 @@ function DeliveryStatusCard({
         <div className="flex items-center justify-between">
           <span className="text-[12.5px] text-sidebar-ink-muted">Warehouse</span>
           <span className="text-[13px] font-semibold text-sidebar-ink">
-            {header.sales_location || "—"}
+            {shipFrom || "—"}
           </span>
         </div>
       </div>
@@ -643,6 +647,8 @@ export function DeliveryOrderDetailV2() {
     () => items.reduce((sum, l) => sum + Number(l.qty ?? 0), 0),
     [items]
   );
+  /* The warehouse the goods leave, the one chosen on the DO; the order's sales location only when it names none. */
+  const shipFromCode = (warehousesQ.data ?? []).find((w) => w.id === deliveryOrder?.warehouse_id)?.code ?? deliveryOrder?.sales_location ?? null;
 
   useSetBreadcrumbs([
     { label: "Delivery Orders", to: "/scm/delivery-orders" },
@@ -1017,7 +1023,9 @@ export function DeliveryOrderDetailV2() {
      "Mark In Transit" for the same document. See vendor/scm/lib/do-next-step.ts. */
   const advanceStep = doAdvanceStep(deliveryOrder.status);
   const advanceReason = doAdvanceBlockReason(deliveryOrder.status);
-  const siReason = siTransferBlockReason(deliveryOrder.status);
+  // A renovation DO bills nothing, so the next-step sentence about a Sales Invoice would mislead.
+  const advanceNote = reno && /Sales Invoice/.test(advanceReason ?? "") ? null : advanceReason;
+  const siReason = reno ? "Renovation work is billed by instalment on the project, not from a delivery order." : siTransferBlockReason(deliveryOrder.status);
   const canConvertToSi = siReason === null;
   const isCancelled = rawStatus === "cancelled";
 
@@ -1223,7 +1231,7 @@ export function DeliveryOrderDetailV2() {
               the disabled buttons point at with aria-describedby. */}
           {canWriteDo && (
             <div className="flex max-w-[420px] flex-col items-end gap-0.5 text-right">
-              <NextStepNote id="do-advance-reason" reason={advanceReason} />
+              <NextStepNote id="do-advance-reason" reason={advanceNote} />
               <NextStepNote id="do-si-reason" reason={siReason} />
             </div>
           )}
@@ -1252,8 +1260,8 @@ export function DeliveryOrderDetailV2() {
                   : "Not scheduled"}
             </span>
             <span>· {totalQty} items</span>
-            {deliveryOrder.sales_location && (
-              <span>· {deliveryOrder.sales_location}</span>
+            {shipFromCode && (
+              <span>· {shipFromCode}</span>
             )}
           </div>
         </div>
@@ -1261,6 +1269,7 @@ export function DeliveryOrderDetailV2() {
         <DetailGrid>
           <DetailMain>
             {/* Customer info — Customer SO No. first, per design */}
+            <RenovationDocTrail kind="do" id={id} />
             <Section title="Customer">
               <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
                 <Field
@@ -1351,10 +1360,10 @@ export function DeliveryOrderDetailV2() {
                       <span className="text-ink-muted">Not provided</span>
                     )}
                   </div>
-                  {deliveryOrder.sales_location && (
+                  {shipFromCode && (
                     <div className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary-soft px-2.5 py-1 text-[11.5px] font-semibold text-primary-ink">
                       <Warehouse size={12} />
-                      {deliveryOrder.sales_location}
+                      {shipFromCode}
                     </div>
                   )}
                 </div>
@@ -1457,6 +1466,7 @@ export function DeliveryOrderDetailV2() {
               />
             </Section>
 
+            <OnsiteTwinCard kind="do" id={deliveryOrder.id} confirmed={rawStatus !== "draft" && rawStatus !== "cancelled"} />
             <DocAttachments
               docType="delivery_order"
               docId={deliveryOrder.id}
@@ -1467,7 +1477,7 @@ export function DeliveryOrderDetailV2() {
 
           <DetailAside>
             <div className="hidden lg:sticky lg:top-[124px] space-y-3 md:block">
-              <DeliveryStatusCard header={deliveryOrder} totalQty={totalQty} />
+              <DeliveryStatusCard header={deliveryOrder} totalQty={totalQty} shipFrom={shipFromCode} />
 
               {/* Owner 2026-07-17: Totals·Margin (Revenue/Cost/Margin) card
                   removed from the DO document view for EVERYONE — costing moves
@@ -1482,6 +1492,7 @@ export function DeliveryOrderDetailV2() {
 
               <AsideCard title="Key dates">
                 <KeyDateRow k="DO date" v={fmtDate(deliveryOrder.do_date)} />
+                {(deliveryOrder as { pod_received_by?: string | null }).pod_received_by && <KeyDateRow k="Received by" v={(deliveryOrder as { pod_received_by?: string | null }).pod_received_by!} />}
                 <KeyDateRow
                   k="Scheduled"
                   v={
@@ -1624,7 +1635,7 @@ export function DeliveryOrderDetailV2() {
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface/95 px-3 pb-6 pt-2.5 shadow-slab backdrop-blur-sm md:hidden">
         {canWriteDo && (
           <div className="mb-1.5 flex flex-col gap-0.5">
-            <NextStepNote id="do-advance-reason-phone" reason={advanceReason} />
+            <NextStepNote id="do-advance-reason-phone" reason={advanceNote} />
             <NextStepNote id="do-si-reason-phone" reason={siReason} />
           </div>
         )}

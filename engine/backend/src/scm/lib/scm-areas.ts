@@ -57,6 +57,8 @@ export const SCM_AREA_MOUNTS: ReadonlyArray<readonly [string, string]> = [
   ["/suppliers/*", "scm.procurement.suppliers"],
   ["/mfg-purchase-orders/*", "scm.procurement.po"],
   ["/po-amendments/*", "scm.procurement.po"],
+  ["/onsite-twin/grn/*", "scm.procurement.grn"],
+  ["/onsite-twin/do/*", "scm.sales.delivery"],
   ["/grns/*", "scm.procurement.grn"],
   ["/purchase-invoices/*", "scm.procurement.pi"],
   ["/mfg-sales-orders/*", "scm.sales.orders"],
@@ -141,6 +143,8 @@ export const SCM_AREA_MOUNTS: ReadonlyArray<readonly [string, string]> = [
    leave the operator to discover it from a still-refused save. The same drift
    test that pins SCM_AREA_MOUNTS pins this list. */
 export const SCM_UNGUARDED_PREFIXES: readonly string[] = [
+  /* One order's chain across sales, purchasing, production and delivery, so no single area owns it. Read-only. */
+  "/renovation-doc-trail",
   "/categories",
   "/pos-cart",
   "/personal-quick-picks",

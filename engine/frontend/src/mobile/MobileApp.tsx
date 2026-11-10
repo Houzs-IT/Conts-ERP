@@ -69,6 +69,8 @@ const MobileScan = lazy(() => import("./MobileScan").then((m) => ({ default: m.M
 const MobileScanInvoice = lazy(() => import("./MobileScanInvoice").then((m) => ({ default: m.MobileScanInvoice })));
 const MobileGrnScan = lazy(() => import("./MobileGrnScan").then((m) => ({ default: m.MobileGrnScan })));
 const MobileConvertWizard = lazy(() => import("./MobileConvertWizard").then((m) => ({ default: m.MobileConvertWizard })));
+const MobileDraftDelivery = lazy(() => import("./MobileDraftDelivery").then((m) => ({ default: m.MobileDraftDelivery })));
+const MobileProductionOrder = lazy(() => import("./renovationMobileProduction").then((m) => ({ default: m.MobileProductionOrder })));
 const MobilePOD = lazy(() => import("./MobilePOD").then((m) => ({ default: m.MobilePOD })));
 const MobileMileageCapture = lazy(() => import("./MobileMileageCapture").then((m) => ({ default: m.MobileMileageCapture })));
 const MobileProfile = lazy(() => import("./MobileProfile").then((m) => ({ default: m.MobileProfile })));
@@ -111,6 +113,8 @@ type Screen =
   | { t: "tab" }
   | { t: "search" }
   | { t: "so-detail"; docNo: string }
+  | { t: "production-detail"; id: string }
+  | { t: "draft-delivery" }
   | { t: "amendments" }
   | { t: "po-amendments" }
   | { t: "po-amendment-detail"; id: string }
@@ -214,6 +218,7 @@ export function destinationScreen(to: string, label: string): DestinationTarget 
     if (teamKey && MODULE_CONFIGS[teamKey]) return { t: "module", key: teamKey, title: label };
     return { t: "stub", title: label };
   }
+  if (path === "/scm/draft-delivery") return { t: "draft-delivery" };
   const key = ROUTE_TO_CONFIG[path];
   if (key && MODULE_CONFIGS[key]) return { t: "module", key, title: label };
   return { t: "stub", title: label };
@@ -229,6 +234,8 @@ function initialScreenFor(route: MobileRoute): Screen {
       return { t: "tab" };
     case "so-detail":
       return { t: "so-detail", docNo: route.docNo };
+    case "production-detail":
+      return { t: "production-detail", id: route.id };
     case "locked":
       return { t: "locked", label: route.label };
     case "desktop-only":
@@ -261,6 +268,7 @@ const ROUTE_TO_CONFIG: Record<string, string> = {
   "/scm/delivery-returns": "delivery-returns",
   "/scm/mrp": "mrp",
   "/scm/purchase-orders": "mfg-purchase-orders",
+  "/scm/production-orders": "production-orders",
   "/scm/grns": "grns",
   "/scm/purchase-invoices": "purchase-invoices",
   "/scm/purchase-returns": "purchase-returns",
@@ -377,6 +385,8 @@ export const MOBILE_MENU_GROUPS: { group: string; items: MobileMenuItem[] }[] = 
   { group: "Procurement & MRP", items: [
     { to: "/scm/mrp", label: "MRP · Stock Status" },
     { to: "/scm/purchase-orders", label: "Purchase Orders" },
+    { to: "/scm/production-orders", label: "Production Orders" },
+    { to: "/scm/draft-delivery", label: "Draft delivery", gateVia: "/scm/production-orders" },
     { to: "/scm/po-amendments", label: "PO Amendments" },
     { to: "/scm/grns", label: "Goods Receipt" },
     { to: "/scm/purchase-invoices", label: "Purchase Invoices" },
@@ -453,7 +463,8 @@ export const MOBILE_MENU_GROUPS: { group: string; items: MobileMenuItem[] }[] = 
     { to: "/scm/stock-takes", label: "Stock Take" },
   ]},
   /* System — the phone half of the desktop Sidebar's `system` section. */
-  { group: "System", items: [
+  { group: "System", items: [
+
     /* The go-live change log: "who changed my sales
        order" is a question the owner asks away from a desk. Gated by its own
        live NAV_TABS entry at /change-log. */
@@ -836,6 +847,8 @@ function MobileAppInner() {
   let overlay: ReactNode = null;
   if (screen.t === "search") overlay = <MobileSearch onBack={back} onNavigate={onSearchNavigate} />;
   else if (screen.t === "so-detail") overlay = <MobileSODetail docNo={screen.docNo} onBack={back} onEdit={(d) => setScreen({ t: "new-so", mode: "edit", docNo: d })} onAddLine={(d) => setScreen({ t: "new-so", mode: "edit", docNo: d, addLine: true })} flowNav={flowNav} onConvert={(convertFrom) => setScreen({ t: "new-so", mode: "new", convertFrom })} />;
+  else if (screen.t === "production-detail") overlay = <MobileProductionOrder id={screen.id} onBack={back} />;
+  else if (screen.t === "draft-delivery") overlay = <MobileDraftDelivery onBack={back} />;
   else if (screen.t === "amendments") overlay = <MobileAmendments onBack={back} onOpen={(doc) => setScreen({ t: "so-detail", docNo: doc })} />;
   else if (screen.t === "po-amendments") overlay = <MobilePoAmendments onBack={back} onOpen={(id) => setScreen({ t: "po-amendment-detail", id })} onOpenSo={(doc) => setScreen({ t: "so-detail", docNo: doc })} />;
   else if (screen.t === "po-amendment-detail") overlay = <MobilePoAmendmentDetail amendmentId={screen.id} onBack={() => setScreen({ t: "po-amendments" })} />;
@@ -958,7 +971,7 @@ function MobileAppInner() {
         ? <ScanInvoiceLauncher onClick={() => setScreen({ t: "scan-pi" })} />
         : grnScanEntry;
     overlay = <MobileModuleList config={MODULE_CONFIGS[k]} onBack={back}
-      onOpen={(row) => setScreen({ t: "module-detail", key: k, row, title: screen.title })}
+      onOpen={(row) => setScreen(k === "production-orders" ? { t: "production-detail", id: row.id } : { t: "module-detail", key: k, row, title: screen.title })}
       onNew={onNew}
       aboveList={aboveList} />;
   }

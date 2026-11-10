@@ -590,7 +590,7 @@ export function DocumentLinesExpansion({
       <div style={{ minWidth: `${minWpx}px` }}>
         <div
           style={gridStyle}
-          className="grid items-start gap-2 border-b border-border-subtle bg-surface-2 px-4 py-2 font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted"
+          className={cn("grid items-start gap-y-2 border-b border-border-subtle bg-surface-2 px-4 py-2 font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted", paired ? "gap-x-6" : "gap-x-2")}
         >
           <span>Group</span>
           <span>Item</span>
@@ -628,7 +628,7 @@ export function DocumentLinesExpansion({
             <div
               key={i}
               style={gridStyle}
-              className="grid items-start gap-2 border-b border-border-subtle px-4 py-2.5 last:border-b-0"
+              className={cn("grid items-start gap-y-2 border-b border-border-subtle px-4 py-2.5 last:border-b-0", paired ? "gap-x-6" : "gap-x-2")}
             >
               <span>
                 <ItemGroupPill group={l.itemGroup} />

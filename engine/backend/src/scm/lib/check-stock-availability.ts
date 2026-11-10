@@ -268,6 +268,11 @@ export type ShortStockBinding = { itemCode: string; poNumber: string; eta: strin
  *  as drop-ship?" were the same question — the goods are not here — and the
  *  second one existed only to authorise the binding. Naming the incoming PO here
  *  puts that information in the first dialog, so the answer can carry it. */
+/** Does this shortage stop the save? A draft is the plan for when goods arrive (owner, 7 Nov 2026): it may exist before
+    they do, and the question is asked on Confirm. */
+export const shortStockStops = (shortages: readonly unknown[], b: { asDraft?: boolean; confirmShortStock?: boolean }): boolean =>
+  shortages.length > 0 && b.asDraft !== true && !b.confirmShortStock;
+
 export const shortStockResponse = (
   shortages: StockShortage[],
   bindings: ShortStockBinding[] = [],

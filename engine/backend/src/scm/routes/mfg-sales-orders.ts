@@ -36,13 +36,15 @@ import { soHasDownstream } from '../lib/downstream-lock';
 import { dateOrNull, effectiveDateAfterPatch, isDateColumn } from '../lib/date-coerce';
 import { soStatusAfterProcessingDateChange } from '../lib/so-proceed-status-change';
 import { soIsMigrated, withSoMigratedReadonly } from '../lib/migrated-so-readonly';
-import { readSoLineFreeze, soLineWriteRefusal, soBuildLineIds, soLineFrozen, SO_FULLY_FROZEN_REFUSAL } from '../lib/downstream-lock'; // own line: autocountWritebackWiring asserts the import above verbatim
+import { readSoLineFreeze, soLineWriteRefusal, soBuildLineIds, soLineFrozen, SO_FULLY_FROZEN_REFUSAL, SO_LINE_FROZEN_REFUSAL } from '../lib/downstream-lock'; // own line: autocountWritebackWiring asserts the import above verbatim
+import { isSoLineOverDelivered } from '../lib/so-remaining-by-item';
 /* Status-transition table + the discard guards — lifted out of this file, which
    may only shrink. See lib/so-lifecycle-guards.ts. */
 import { SO_STATUS_RANK, soStatusTransitionError, soDiscardBlocked } from '../lib/so-lifecycle-guards';
 import { HELD_OR_TERM, HOLD_COLUMNS, isDocumentHeld } from '../lib/document-hold';
 import { mountHoldRoute } from './document-hold-routes';
 import { renovationSoWriteFence } from '../lib/renovation-write-fence';
+import { carrySoPhoto } from '../lib/renovation-so-photo-carry';
 import { enqueueSoCreate, enqueueCancel, enqueueEdit, retiredLineOf, type AcRetiredLine } from '../lib/autocount-outbox';
 import { fitSoAddress } from '../../services/autocount-address-fit';
 import { fitAddressIfTouched } from '../lib/so-address-on-save';
@@ -75,6 +77,7 @@ import { paymentMayChange, SLIP_DATE_OVERRIDE_NOTE, SO_PAYMENT_AMEND, SO_PAYMENT
 import { AMEND_SOURCE, ledgerFieldChange } from '../../acc/payment-corrections';
 import { paymentReasonRule } from '../lib/so-payment-reason';
 import { paymentVersionGuard, soCasGrace, soCasGraceOpen } from '../lib/so-cas';
+import { markIdempotencyNoWrite } from '../../middleware/idempotency';
 /* SO-SKU spec P2 — every charge is a SKU line. Predicates from P1; the
    fee/addon → SERVICE-line decomposition builders are pure + shared. */
 import {
@@ -132,7 +135,7 @@ import { effectiveStatusFilter, isRangeNotSatisfiable } from '../lib/so-list-fil
 import { fromSoList, orderSoList, prepareSoListRead, readSoListParams } from '../lib/so-list-read';
 import { buildSoListRows } from '../lib/so-list-rows';
 import { attachSoLines } from '../lib/so-list-lines';
-import { SO_TAB_STATUSES, soStatusesForTab } from '../lib/so-tab-statuses';
+import { soStatusesForTab, soTabCounts } from '../lib/so-tab-statuses';
 import { chunkIn, paginateAll } from '../lib/paginate-all';
 import { tallyStatusRows, type StatusTally } from '../lib/status-counts';
 /* "A PO is already out for this SO" — the second road to the same soft lock
@@ -193,6 +196,7 @@ import {
   loadSpecialAddons,
   recomputeFromSnapshot,
   erpLineTrust,
+  unitAfterLineEdit,
   loadProductByCode,
   loadProductsByCodes,
   loadFabricByCode,
@@ -262,7 +266,7 @@ import {
   findFreeTextSoLines, freeTextSoLineResponse,
 } from '../lib/validate-item-codes';
 import { collectSoConfirmProblems, soConfirmProblemsForDoc } from '../lib/so-confirm-gate';
-import { applyRenovationSoInfo, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedProcessingDates, stampCreatedRooms } from './renovation-so-info';
+import { applyRenovationSoInfo, projectOrderTaken, readRenovationBlock, renovationSoAvailable, renovationSoProblems, stampCreatedProcessingDates, stampCreatedRooms } from './renovation-so-info';
 import type { Db as RenoInfoDb } from '../../services/renovation/load';
 import { companyRequiresStockLocation, soLocationProblem, soLocationProblemForDoc, fillSoLocationFromState } from '../lib/so-location-gate';
 import { collectSoSubmitProblems, soPaymentSubFieldGap } from '../shared/so-submit-problems';
@@ -361,6 +365,9 @@ mfgSalesOrders.use('*', renovationSoWriteFence(async (c, docNo) => {
   // 42703 = the column is not there yet (worker deployed before migration 0069): no renovation order can exist.
   if (error && (error as { code?: string }).code === '42703') return { kind: null, error: false };
   return { kind: (data as { so_kind?: string } | null)?.so_kind ?? null, error: Boolean(error) };
+}, async (c, docNo) => {
+  const { cancelContractFromSoRoute } = await import('./renovation');
+  return cancelContractFromSoRoute(c as never, docNo);
 }));
 
 /* ── SO child-lock guard (Tier 2 — downstream lock) ─────────────────────────
@@ -1329,16 +1336,9 @@ mfgSalesOrders.get('/', async (c) => {
        order can silently fall between tabs again. */
     if (!counted.ok) countError = counted.reason;
     else {
-      const allCount = Object.values(counted.byStatus).reduce((s, n) => s + n, 0);
-      let known = 0;
-      statusCounts = { all: allCount };
       /* Counted per TAB, not per status, so a folded status is counted under
          the tab that shows it instead of falling into `other`. */
-      for (const [tab, members] of Object.entries(SO_TAB_STATUSES)) {
-        const cnt = members.reduce((n, m) => n + (counted.byStatus[m] ?? 0), 0);
-        statusCounts[tab.toLowerCase()] = cnt; known += cnt;
-      }
-      statusCounts.other = allCount - known;
+      statusCounts = soTabCounts(counted.byStatus);
       /* THE On Hold PILL IS AN OVERLAY, NOT A BUCKET (mig 0324), and it is the
          one number on this strip that does not partition the set. A held order
          keeps its real status, so it is counted under that status AND here —
@@ -2255,7 +2255,9 @@ mfgSalesOrders.post('/backfill-warehouses', async (c) => {
    below feeds it a synthetic context built from Env + the identities captured
    at enqueue time. `c.json(body, status)` inside the core returns a plain
    outcome object; the HTTP route re-emits it as the real JSON response. */
-export type SoCreateOutcome = { status: number; body: Record<string, unknown> };
+/* `noWrite` marks a refusal answered before the core's first business write, so
+   the HTTP route can release the idempotency claim (see createSalesOrderCore). */
+export type SoCreateOutcome = { status: number; body: Record<string, unknown>; noWrite?: true };
 export type SoCreateContext = {
   req: { json(): Promise<unknown> };
   /* supabase keeps the REAL client type — the core body relies on the typed
@@ -2291,6 +2293,16 @@ export type SoCreateContext = {
 };
 
 async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome> {
+  /* Every refusal above the first business write (the customer upsert, below)
+     leaves nothing behind — the only thing claimed by then is a doc-number
+     counter suffix, which cannot duplicate an order — so it goes out marked
+     noWrite and POST / releases the idempotency claim. Without that, the form's
+     one key per mount froze the first refusal and the corrected Save answered
+     idempotency_key_reused until the operator left and re-keyed the whole order
+     (ported from Houzs #5131). */
+  let wrote = false;
+  const answer = c.json;
+  c = { ...c, json: (b, s) => (wrote ? answer(b, s) : { ...answer(b, s), noWrite: true }) };
   let body: Record<string, unknown>;
   try { body = (await c.req.json()) as Record<string, unknown>; } catch { return c.json({ error: 'invalid_json' }, 400); }
   /* Multi-company (mig 0061): the active company for this create (SoCreateContext
@@ -2733,6 +2745,7 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
      customer_id (the POS never sent one). */
   let orderCustomerId: string | null = null;
   const casCo = requireActiveCompanyId(c); if (!casCo.ok) return c.json(casCo.refusal, 409);  // HAZARD 1
+  wrote = true;  // the first business write follows; no refusal from here on may release the claim
   /* Scan blank-draft shell (owner 2026-07-04) — a scan that could not read the
      customer's name/phone still lands a draft the rep completes by hand, but it
      carries PLACEHOLDER name/phone. Resolving a customer identity off those
@@ -4569,10 +4582,22 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
         activeCompanyId(c) ?? null,
         listFallback,
       );
-      if (headerBrand) {
-        effectiveBrand = headerBrand;
+      /* A SKU's maker is not the seller: a Hookka sofa on a Conts order stamped the order Hookka (owner, 6 Nov 2026).
+         The order's brand is its project's, else a brand the company keeps, else blank. */
+      let projectBrand: string | null = null;
+      if (projectIdToStamp != null) {
+        try {
+          const p = await c.env.DB.prepare(`SELECT brand FROM projects WHERE id = ?`).bind(projectIdToStamp).first<{ brand: string | null }>();
+          projectBrand = String(p?.brand ?? '').trim() || null;
+        } catch { projectBrand = null; }
+      }
+      const kept = listFallback?.brands ?? [];
+      const sellerBrand = projectBrand
+        ?? (kept.length === 0 || kept.some((b) => b.toLowerCase() === String(headerBrand ?? '').toLowerCase()) ? headerBrand : null);
+      if (sellerBrand) {
+        effectiveBrand = sellerBrand;
         await scopeToCompany(
-          sb.from('mfg_sales_orders').update({ branding: headerBrand }).eq('doc_no', docNo),
+          sb.from('mfg_sales_orders').update({ branding: sellerBrand }).eq('doc_no', docNo),
           c,
         );
       }
@@ -4783,15 +4808,19 @@ mfgSalesOrders.post('/', async (c) => {
   const peek = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
   const renoBlock = peek && peek.renovation && typeof peek.renovation === 'object' ? readRenovationBlock(peek.renovation) : null;
   if (renoBlock) {
+    /* These refusals run before anything is written: release the idempotency claim so the corrected Save goes through. */
     const avail = await renovationSoAvailable(c.env.DB as unknown as RenoInfoDb);
-    if (!avail.ok) return c.json(avail.body, avail.status);
+    if (!avail.ok) { markIdempotencyNoWrite(c); return c.json(avail.body, avail.status); }
+    const taken = await projectOrderTaken(c.env.DB as unknown as RenoInfoDb, renoBlock.projectId);
+    if (taken) markIdempotencyNoWrite(c);
+    if (taken) return c.json({ error: 'project_taken', message: `This project already has sales order ${taken}.`, problems: [{ code: 'project_taken', message: `This project already has sales order ${taken}.`, field: 'Project' }] }, 409);
     if (peek!.asDraft !== true) {
       const problems = renovationSoProblems(renoBlock, {
         customerName: String(peek!.debtorName ?? peek!.customerName ?? ''),
         phone: String(peek!.phone ?? ''),
         address1: String(peek!.address1 ?? ''),
       });
-      if (problems.length) return c.json({ error: 'validation_failed', problems }, 422);
+      if (problems.length) { markIdempotencyNoWrite(c); return c.json({ error: 'validation_failed', problems }, 422); }
     }
   }
   const out = await createSalesOrderCore({
@@ -4832,6 +4861,7 @@ mfgSalesOrders.post('/', async (c) => {
     });
     if (vpBrand) return c.json({ ...out.body, vpBrand }, 201);
   }
+  if (out.noWrite) markIdempotencyNoWrite(c);
   return c.json(out.body, out.status as 201);
 });
 
@@ -5278,6 +5308,25 @@ export const patchMfgSalesOrderStatusHandler = async (c: any) => {
     }
 
     if (voucherPlan) await applySoCancelVouchers(sbx, docNo, voucherPlan);
+
+    /* The allocation recompute only walks live SOs, so a cancelled order's
+       lines kept READY + their claimed sofa batch forever. Release them here.
+       SERVICE lines are READY from birth (nothing to allocate) and stay so. */
+    if (isCancel) {
+      const { data: liveLines, error: lineErr } = await scopeToCompanyId(sbx.from('mfg_sales_order_items')
+        .select('id, item_code, item_group'), co.companyId)
+        .eq('doc_no', docNo).eq('cancelled', false);
+      if (lineErr) throw new Error(`so-cancel line read failed: ${lineErr.message}`);
+      const goodsIds = ((liveLines ?? []) as Array<{ id: string; item_code: string | null; item_group: string | null }>)
+        .filter((l) => !isServiceLine({ itemGroup: l.item_group, itemCode: l.item_code }))
+        .map((l) => l.id);
+      if (goodsIds.length > 0) {
+        const { error: relErr } = await scopeToCompanyId(sbx.from('mfg_sales_order_items')
+          .update({ stock_status: 'PENDING', stock_qty_ready: 0, allocated_batch_no: null }), co.companyId)
+          .eq('doc_no', docNo).in('id', goodsIds);
+        if (relErr) throw new Error(`so-cancel allocation release failed: ${relErr.message}`);
+      }
+    }
 
     // Audit row — best-effort on the ordinary path. Inside the cancel's atomic
     // command recordSoAudit throws instead, so a cancel can never commit the
@@ -6316,10 +6365,12 @@ export const patchMfgSalesOrderHeaderHandler = async (c: any) => {
      diff by the other road. Evaluated once, here, so both roads share one
      rejection and a future CONTROLLED-column change cannot land on one and miss
      the other. */
-  const patchDateLocked = soProcessingLocked(
+  /* Conts: on a confirmed order only a change of amount or lines is a VO, so the header is not held (owner, 6 Nov 2026). */
+  const patchVoOrder = soVoLocked(before as unknown as { status?: string | null } | null);
+  const patchDateLocked = !patchVoOrder && soProcessingLocked(
     before as unknown as { processing_date?: string | null; status: string | null } | null,
   );
-  const patchPoLocked = patchDateLocked ? false : await soPoLocked(sb, docNo);
+  const patchPoLocked = patchDateLocked || patchVoOrder ? false : await soPoLocked(sb, docNo);
   if (patchDateLocked || patchPoLocked) {
     /* Field-scoped (Loo 2026-06-13) — only a genuine change to a production-
        schedule date column is rejected; customer / address / payment header
@@ -6950,6 +7001,30 @@ export async function recomputeTotals(sb: any, docNo: string, c: any) {
     console.error('[so-recompute] header update failed — totals left STALE:', docNo, updErr.message);
   }
 }
+
+/* A line's own delivery date. A date is not a VO (owner, 4 Nov 2026), so a confirmed order takes it here, off the
+   locked line routes. A cleared date goes back to following the order's. */
+mfgSalesOrders.put('/:docNo/line-delivery-dates', async (c) => {
+  const sb = c.get('supabase'); const docNo = c.req.param('docNo');
+  const body = await c.req.json().catch(() => null) as { dates?: Record<string, string | null> } | null;
+  const entries = Object.entries(body?.dates ?? {});
+  if (entries.some(([, d]) => d != null && !/^\d{4}-\d{2}-\d{2}$/.test(d))) return c.json({ error: 'invalid_date' }, 400);
+  if (entries.length === 0) return c.json({ ok: true });
+  const { data: known, error } = await scopeToCompany(sb.from('mfg_sales_order_items').select('id, item_code, line_delivery_date').eq('doc_no', docNo), c);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  const lines = new Map(((known ?? []) as Array<{ id: string; item_code: string; line_delivery_date: string | null }>).map((r) => [r.id, r]));
+  for (const [id, date] of entries) {
+    const line = lines.get(id);
+    if (!line) continue;
+    const { error: upErr } = await sb.from('mfg_sales_order_items').update({ line_delivery_date: date, line_delivery_date_overridden: date != null }).eq('id', id);
+    if (upErr) return c.json({ error: 'save_failed', reason: upErr.message }, 500);
+    await recordSoAudit(sb, {
+      docNo, action: 'UPDATE', source: 'so', note: `${line.item_code}: delivery date ${date ?? 'cleared'}`,
+      fieldChanges: [{ field: 'line_delivery_date', from: line.line_delivery_date, to: date }],
+    });
+  }
+  return c.json({ ok: true });
+});
 
 /* The lines' processing dates (owner, 5 Nov 2026), written to the plan so the project's PO tab and MRP read the same date. */
 mfgSalesOrders.put('/:docNo/line-processing-dates', async (c) => {
@@ -7682,6 +7757,8 @@ mfgSalesOrders.patch('/:docNo/items/:itemId', async (c) => {
     }, 422);
   }
   const clientUnit = it.unitPriceSen !== undefined ? Number(it.unitPriceSen) : prev.unit_price_sen;
+  // owner ruling — non-POS author prices freely; see erpLineTrust.
+  const patchTrust = erpLineTrust(posTablet, clientUnit, it.zeroPriceIntended, patchSoIsMigrated);
   const discount = it.discountSen !== undefined ? Number(it.discountSen) : prev.discount_sen;
 
   /* MFG-PRICING-ENGINE — Server-side recompute on PATCH. Triggered when
@@ -7824,8 +7901,7 @@ mfgSalesOrders.patch('/:docNo/items/:itemId', async (c) => {
       sofaModuleCostRowsPatch,
       modelOverridesPatch, // migration 0175 — per-Model Δ
       compartmentOverridesPatch, // migration 0025 — per-compartment Δ
-      // owner ruling — non-POS author prices freely; see erpLineTrust.
-      erpLineTrust(posTablet, clientUnit, it.zeroPriceIntended, patchSoIsMigrated),
+      patchTrust,
     );
     /* Task 6 — grandfathering: a line already carrying variants.freeItem was
        made free at create time and must STAY at RM 0 on edit recompute, even
@@ -7860,7 +7936,7 @@ mfgSalesOrders.patch('/:docNo/items/:itemId', async (c) => {
        RM490 加购 into RM990 with no warning (Loo 2026-06-28). */
     : prevIsReward
     ? prev.unit_price_sen
-    : (recomputedPatch ? recomputedPatch.unit_price_sen : clientUnit);
+    : unitAfterLineEdit(recomputedPatch ? recomputedPatch.unit_price_sen : clientUnit, prev.unit_price_sen, patchTrust);
   /* Audit 2026-06-11 C-2 — same discount gate as POST /: the effective
      (patch-else-stored) discount must sit in [0, qty × unit] against the
      effective unit price (422, reject-don't-normalize). */
@@ -8087,6 +8163,7 @@ mfgSalesOrders.delete('/:docNo/items/:itemId', async (c) => {
     docNo,
     itemId,
   );
+  if (isSoLineOverDelivered(error)) return c.json(SO_LINE_FROZEN_REFUSAL, 409); // a DO confirmed after the freeze read (migration 0248)
   if (error) return c.json({ error: 'delete_failed', reason: error.message }, 500);
   // Default Free Gift (0170) — removing a trigger line (e.g. a mattress) must
   // auto-delete its free gift; reconcile drops orphaned gifts, then recomputes.
@@ -9843,6 +9920,7 @@ mfgSalesOrders.post('/:docNo/items/:itemId/photos', async (c) => {
     await deleteThumbFor(c.env.SO_ITEM_PHOTOS, photoKey);
     return c.json({ error: 'db_update_failed', reason: updErr.message }, 500);
   }
+  await carrySoPhoto(sb, itemId, { add: photoKey });
 
   // PR-D — emit an ADD_LINE-style audit row noting the photo addition.
   // Reuses UPDATE_LINE so the History panel groups it with other line
@@ -10049,6 +10127,7 @@ mfgSalesOrders.delete('/:docNo/items/:itemId/photos/:photoKey', async (c) => {
     .update({ photo_urls: nextKeys })
     .eq('id', itemId);
   if (updErr) return c.json({ error: 'db_update_failed', reason: updErr.message }, 500);
+  await carrySoPhoto(sb, itemId, { remove: photoKey });
 
   // R2 delete best-effort — if it fails we've already removed the key
   // from the array, so the orphan is invisible to the UI. A future

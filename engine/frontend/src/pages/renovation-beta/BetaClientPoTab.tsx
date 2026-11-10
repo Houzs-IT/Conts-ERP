@@ -86,7 +86,7 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
   if (!q.data) return <BetaLoading label="Loading Client PO" />;
 
   const dated = [...rows.values()].filter((r) => r.orderOn && r.deliverOn).length;
-  const COLS = 10;
+  const COLS = 11;
   return (
     <>
       <WsNarrowStyle />
@@ -110,6 +110,7 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
             <tr>
               <th style={thStyle}>Item</th>
               <th style={thStyle}>SKU</th>
+              <th style={thStyle}>Supplier code</th>
               <th style={thStyle}>{view === "category" ? "Area" : "Category"}</th>
               <th style={{ ...thStyle, textAlign: "right" }}>Qty</th>
               <th style={thStyle} title="Processing date: when the client should buy it">Processing</th>
@@ -157,6 +158,7 @@ export function BetaClientPoTab(p: BetaTabProps): ReactElement {
                           </div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, ...metaStyle }}>
                             <span style={{ fontFamily: "ui-monospace, monospace" }}>{i.itemCode ?? "-"}</span>
+                            {i.supplierCode && <span style={{ fontFamily: "ui-monospace, monospace" }}>Supplier code {i.supplierCode}</span>}
                             <span>{view === "category" ? (i.area ?? "No area") : `${i.categoryLabel} · ${i.subLabel}`}</span>
                           </div>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
@@ -195,6 +197,7 @@ function ItemRow({ r, view, openDoc }: { r: Row; view: View; openDoc: ReturnType
         {i.voNo && <div style={{ ...metaStyle, marginTop: 2 }}>From {i.voNo}</div>}
       </td>
       <td style={{ ...tdStyle, whiteSpace: "nowrap", fontFamily: "ui-monospace, monospace", fontSize: 13 }}>{i.itemCode ?? "-"}</td>
+      <td style={{ ...tdStyle, whiteSpace: "nowrap", fontFamily: "ui-monospace, monospace", fontSize: 13 }}>{i.supplierCode ?? "-"}</td>
       <td style={tdStyle}>{view === "category" ? (i.area ?? "-") : `${i.categoryLabel} · ${i.subLabel}`}</td>
       <td style={numStyle}>{qtyText(i)}</td>
       <td style={tdStyle}><DateText value={r.orderOn} late={r.late === "order"} /></td>

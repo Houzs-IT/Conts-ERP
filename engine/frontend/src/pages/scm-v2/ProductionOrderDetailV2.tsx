@@ -11,9 +11,12 @@
 
 import { lazy, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { RenovationDocTrail } from "./RenovationDocTrail";
 import { LazySlot } from "../../components/LazySlot";
 import { useStaffLookup } from "../../hooks/useStaffLookup";
-import { RenovationSoOrderInfo } from "./RenovationSoOrderInfo";
+import { productionNote } from "./renovationProductionDays";
+import { AssignDialog, ChangeNotice, ProductionTimeDialog, ProgressPhotos, ProgressSummary, useAddPhotos, useProductionPress } from "./renovationProductionParts";
+import { useHoldAction } from "./use-hold-action";
 import { ProductionMaterialsSection } from "./ProductionMaterialsSection";
 import { ActivityRow, SoAddressFields, SoCustomerFields, SoDetailHeader, SoOrderInfoFields } from "./soDetailParts";
 import { scmListReturnTo } from "../../lib/scmListReturn";
@@ -27,6 +30,8 @@ import {
   XCircle,
   Edit3,
   MoreHorizontal,
+  PauseCircle,
+  Play,
   CheckCircle2,
   RotateCcw,
   Package,
@@ -41,8 +46,7 @@ import { Button } from "../../components/Button";
 import {
   poConfirmBlockReason,
 } from "../../vendor/scm/lib/po-next-step";
-import { DataTable, type Column } from "../../components/DataTable";
-import { DATA_TABLE_LAYOUT_FAMILIES } from "../../components/dataTableLayoutFamilies";
+import { type Column } from "../../components/DataTable";
 import {
   DetailGrid,
   DetailMain,
@@ -57,6 +61,7 @@ import {
   useProductionOrderDetail,
   useReopenProductionOrder,
   useConfirmProductionOrder,
+  type ProductionDetail,
 } from "../../vendor/scm/lib/production-order-queries";
 import {
   useSupplierDetail,
@@ -82,6 +87,7 @@ import { PrintPreviewModal, useOpenPrintPreviewFromUrl, usePrintPreview } from "
 import { SoLinePhotoStrip } from "../../components/scm-v2/SoLinePhotoStrip";
 import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
 import { cn } from "../../lib/utils";
+import { PhotoAddButtons, PhotoUploads } from "../../components/PhotoAdd";
 import { HoldChip } from "../../vendor/scm/components/HoldChip";
 
 import { DocumentHistoryDrawer } from "./DocumentHistoryDrawer";
@@ -205,13 +211,23 @@ function Field({
 
 // ─── Aside primitives ───────────────────────────────────────────────────────
 
-function AsideCard({ title, children }: { title: string; children: ReactNode }) {
+function AsideCard({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
     <div className="rounded-lg border border-border bg-surface p-4 shadow-stone">
-      <div className="mb-3 font-mono text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
-        {title}
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-brand text-ink-muted">{title}</span>
+        {action}
       </div>
       {children}
+    </div>
+  );
+}
+
+function BigDate({ k, v, muted }: { k: string; v: string; muted?: boolean }) {
+  return (
+    <div>
+      <div className="text-ink-secondary">{k}</div>
+      <div className={cn("mt-0.5 text-[15px] font-bold", muted && "text-ink-muted")}>{v}</div>
     </div>
   );
 }
@@ -263,9 +279,8 @@ function PersonRow({
 // success (green). Ordered + received qty ride as sub-lines so ops can see
 // how far the Production Order is through its receipt lifecycle without opening any line.
 
-function PoTotalHeroCard({ header }: { header: PoHeaderRow }) {
-  const eff = effectiveOf(header);
-  const t = EFFECTIVE_TONE[eff];
+function PoTotalHeroCard({ header, blurb }: { header: PoHeaderRow; blurb: string }) {
+  const t = EFFECTIVE_TONE[effectiveOf(header)];
   const total = totalOf(header);
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
@@ -285,15 +300,13 @@ function PoTotalHeroCard({ header }: { header: PoHeaderRow }) {
                   : "bg-sidebar-ink-muted"
           )}
         />
-        <span className="text-[12.5px] text-sidebar-ink-muted">{t.blurb}</span>
+        <span className="text-[12.5px] text-sidebar-ink-muted">{blurb}</span>
       </div>
-
       <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
         <HeroLine k="Subtotal" v={fmtMoney(header.subtotal_sen, header.currency)} />
         <HeroLine k="Tax" v={fmtMoney(header.tax_sen ?? 0, header.currency)} />
         <HeroLine k="Total" v={fmtMoney(total, header.currency)} strong />
       </div>
-
     </div>
   );
 }
@@ -367,7 +380,6 @@ function ProductionOrderDetailV2ReadOnly() {
   const confirmPo = useConfirmProductionOrder();
   const { cancelPo, isPending: cancelling } = usePoCancelAction();
   const reopenPo = useReopenProductionOrder();
-  const [completing, setCompleting] = useState<string | null>(null);
   const notify = useNotify();
   const confirm = useConfirm();
   const { can, pageAccess } = useHouzsAuth();
@@ -448,8 +460,17 @@ function ProductionOrderDetailV2ReadOnly() {
   const completion = (detail.data as {
     completion?: { grn: { id: string; grn_number: string } | null; deliveryOrder: { id: string; do_number: string } | null };
   } | undefined)?.completion;
-  const productionDays = (purchaseOrder as { production_time_days?: number | string | null } | null)?.production_time_days == null
-    ? null : Number((purchaseOrder as unknown as { production_time_days: number | string }).production_time_days);
+  const page = detail.data as unknown as ProductionDetail | undefined;
+  const orderExtra = purchaseOrder as unknown as { production_time_hours?: number | string | null; plan_start?: string | null; actual_start_at?: string | null; actual_start_by_name?: string | null } | null;
+  const productionHours = orderExtra?.production_time_hours == null ? null : Number(orderExtra.production_time_hours);
+  const started = Boolean(orderExtra?.actual_start_at);
+  const title = (page?.project?.building || page?.project?.unit_no)
+    ? [page.project.building, page.project.unit_no].filter(Boolean).join(" ")
+    : (reno || linkedSo?.so_kind === "RENOVATION" ? null : linkedSo?.debtor_name) || purchaseOrder?.po_number || "";
+  const press = useProductionPress({ id: id ?? "", po_number: purchaseOrder?.po_number ?? "", title }, () => void detail.refetch());
+  const photos = useAddPhotos(id ?? "");
+  const holdAction = useHoldAction("pro");
+  const [dialog, setDialog] = useState<"time" | "assign" | null>(null);
   const { nameOf: salespersonNameOf } = useStaffLookup();
 
   useSetBreadcrumbs([
@@ -697,6 +718,7 @@ function ProductionOrderDetailV2ReadOnly() {
       key: "photos",
       label: "Photos",
       width: "110px",
+      defaultHidden: true,
       getValue: (l) => (l.photo_urls ?? []).length,
       render: (l) => (
         <div className="flex items-center gap-1.5">
@@ -732,6 +754,7 @@ function ProductionOrderDetailV2ReadOnly() {
       key: "unit",
       label: "Unit price",
       width: "108px",
+      defaultHidden: true,
       align: "right",
       getValue: (l) => l.unit_price_sen,
       render: (l) => (
@@ -744,6 +767,7 @@ function ProductionOrderDetailV2ReadOnly() {
       key: "total",
       label: "Amount",
       width: "132px",
+      defaultHidden: true,
       align: "right",
       getValue: (l) => l.line_total_sen,
       render: (l) => (
@@ -751,6 +775,9 @@ function ProductionOrderDetailV2ReadOnly() {
       ),
     },
   ];
+
+  /* The Works table of the board: Room, Item, Category, Qty. */
+  const workColumns = ["reno_room", "item", "reno_category", "qty"].flatMap((key) => [...renoLineColumns<PoItemRow>(reno, true), ...lineColumns].filter((col) => col.key === key));
 
   // ── Loading / error states ───────────────────────────────────────────
   if (!id) {
@@ -782,6 +809,7 @@ function ProductionOrderDetailV2ReadOnly() {
   }
 
   const rawStatus = (purchaseOrder.status || "").toUpperCase();
+  const orderNote = productionNote(purchaseOrder.notes);
   /* Both status questions now come from vendor/scm/lib/po-next-step.ts, which
      also records why the old pair was wrong: `canSubmit` gated a DRAFT onto
      PATCH /submit, a handler with no write path that 409s every draft, while
@@ -791,49 +819,28 @@ function ProductionOrderDetailV2ReadOnly() {
   const canConfirm = poConfirmBlockReason(purchaseOrder.status) === null;
   const canCancel = rawStatus !== "CANCELLED" && rawStatus !== "RECEIVED";
   const canReopen = rawStatus === "CANCELLED" || rawStatus === "RECEIVED";
-  const canComplete = rawStatus === "SUBMITTED" && !purchaseOrder.on_hold;
+  const canComplete = rawStatus === "SUBMITTED" && !purchaseOrder.on_hold && (started || Boolean((purchaseOrder as unknown as { completion_step?: string | null }).completion_step));
+  const shipToName = purchaseOrder.purchase_location_id ? warehouseNameById.get(purchaseOrder.purchase_location_id) : undefined;
   const orderMeta = purchaseOrder as unknown as {
     source_po?: { id: string; po_number: string } | null; completion_step?: string | null; completion_error?: string | null;
   };
   const completionStopped = rawStatus === "SUBMITTED" && Boolean(orderMeta.completion_step || orderMeta.completion_error);
   const soLineCount = new Set(items.map((l) => l.so_item_id).filter(Boolean)).size;
-  const doComplete = async () => {
-    if (!id) return;
-    const ok = await confirm({
-      title: completionStopped ? `Finish completing ${purchaseOrder.po_number}?` : `Complete ${purchaseOrder.po_number}?`,
-      body: [
-        orderMeta.source_po ? `A goods receipt is raised for what is left on ${orderMeta.source_po.po_number}.` : "There is no purchase order to receive.",
-        soLineCount > 0 ? `A delivery order is raised for what is left of ${soLineCount} sales order line${soLineCount === 1 ? "" : "s"} and marked delivered.` : "There is no sales order line to deliver.",
-        "Stock moves in, then out. The photos on this order become their proof of receipt and proof of delivery. Lines already received or delivered are skipped.",
-      ].join(" "),
-      confirmLabel: completionStopped ? "Retry" : "Complete",
-    });
-    if (!ok) return;
-    const steps: Array<[string, string]> = [["grn", "Receiving…"], ["do", "Raising delivery…"], ["deliver", "Delivering…"]];
-    try {
-      for (const [step, label] of steps) {
-        setCompleting(label);
-        await authedFetch(`/production-orders/${id}/complete`, { method: "POST", body: JSON.stringify({ step }) });
-      }
-      notify({ title: `${purchaseOrder.po_number} complete` });
-    } catch (e) {
-      notify({ title: "Complete stopped", body: `${e instanceof Error ? e.message : "Something went wrong."} What was already raised stays; Retry carries on from there.`, tone: "error" });
-    } finally {
-      setCompleting(null);
-      void detail.refetch();
-    }
-  };
+  const { completing } = press;
+  const canStart = rawStatus === "SUBMITTED" && !purchaseOrder.on_hold && !started;
+  const doComplete = () => void press.complete();
+  const progress = page?.progress;
+  const canAct = mayEditPoPhotos && (rawStatus === "SUBMITTED" || rawStatus === "RECEIVED");
   const isCancelled = rawStatus === "CANCELLED";
 
   return (
     <div className="pb-56 md:pb-0">
       <SoDetailHeader
-        title={linkedSo?.debtor_name || purchaseOrder.po_number}
+        title={title}
         docNo={purchaseOrder.po_number}
-        status={{ tone: badgeTone, label: stageLabel }}
+        status={{ tone: badgeTone, label: progress?.statusLabel ?? stageLabel }}
         meta={[
-          `Production Order date ${fmtDate(purchaseOrder.po_date)}`,
-          ...(purchaseOrder.expected_at ? [`Completion date ${fmtDate(purchaseOrder.expected_at)}`] : []),
+          `Document date ${fmtDate(purchaseOrder.po_date)}`,
           `${items.length} line${items.length === 1 ? "" : "s"}`,
         ]}
         onBack={goBack}
@@ -842,11 +849,17 @@ function ProductionOrderDetailV2ReadOnly() {
           <>
             <Button variant="ghost" icon={<History size={14} />} onClick={() => setHistoryOpen(true)}>History</Button>
             <Button variant="secondary" icon={<Printer size={14} />} onClick={print.openPreview}>Print PDF</Button>
+            {(rawStatus === "SUBMITTED" || rawStatus === "DRAFT") && (
+              <Button variant="secondary" icon={<PauseCircle size={14} />} onClick={() => void holdAction(purchaseOrder.id, purchaseOrder.po_number, !purchaseOrder.on_hold)}>{purchaseOrder.on_hold ? "Take off hold" : "Put on hold"}</Button>
+            )}
             {canCancel && (
               <Button variant="danger" icon={<XCircle size={14} />} onClick={doCancel} disabled={cancelling}>Cancel Production Order</Button>
             )}
+            {canStart && (
+              <Button variant="primary" icon={<Play size={14} />} onClick={() => void press.pressStart()} disabled={press.starting}>{press.starting ? "Starting…" : "Start"}</Button>
+            )}
             {canComplete && (
-              <Button variant="primary" icon={<CheckCircle2 size={14} />} onClick={() => void doComplete()} disabled={completing !== null}>
+              <Button variant="primary" icon={<CheckCircle2 size={14} />} onClick={doComplete} disabled={completing !== null}>
                 {completing ?? (completionStopped ? "Retry Complete" : "Complete")}
               </Button>
             )}
@@ -855,7 +868,7 @@ function ProductionOrderDetailV2ReadOnly() {
               <Button variant="secondary" icon={<CheckCircle2 size={14} />} onClick={doConfirm}>Confirm Production Order</Button>
             )}
             <Button variant="secondary" icon={<Plus size={14} />} onClick={goAddLine}>{ADD_LINE_LABEL}</Button>
-            <Button variant={canComplete ? "secondary" : "primary"} icon={<Edit3 size={14} />} onClick={goEdit}>Edit</Button>
+            <Button variant="secondary" icon={<Edit3 size={14} />} onClick={goEdit}>Edit</Button>
           </>
         }
       />
@@ -877,78 +890,45 @@ function ProductionOrderDetailV2ReadOnly() {
 
         <DetailGrid>
           <DetailMain>
-            {linkedSo ? (
-              <>
-                {linkedSo.so_kind === "RENOVATION" ? (
-                  <Section title="Order information">
-                    <RenovationSoOrderInfo docNo={linkedSo.doc_no} payment={linkedSo.payment_methods_summary || linkedSo.payment_method || null} />
-                  </Section>
-                ) : (
-                  <Section title="Order info"><SoOrderInfoFields header={linkedSo} /></Section>
-                )}
-                <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2 [&>section]:h-full">
-                  <Section title="Customer">
-                    <SoCustomerFields
-                      header={linkedSo}
-                      renoMode={linkedSo.so_kind === "RENOVATION"}
-                      salesperson={salespersonNameOf(linkedSo.agent ?? null, linkedSo.salesperson_id ?? null, "Unassigned")}
-                      sharedWith={null}
-                    />
-                  </Section>
-                  <Section title="Delivery address"><SoAddressFields header={linkedSo} /></Section>
-                </div>
-              </>
-            ) : (
-              <Section title="Customer">
-                <p className="text-[13px] text-ink-muted">No sales order is linked to this production order.</p>
-              </Section>
-            )}
-
-            <Section title="Production">
-              <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-4">
-                <Field label="Production Order date" value={fmtDate(purchaseOrder.po_date)} />
-                <Field
-                  label="Completion date"
-                  value={purchaseOrder.expected_at ? fmtDate(purchaseOrder.expected_at) : "Not set"}
-                  muted={!purchaseOrder.expected_at}
-                />
-                <Field
-                  label="Production Time"
-                  value={productionDays != null ? `${fmtQty(productionDays)} day${productionDays === 1 ? "" : "s"}` : "Not set"}
-                  muted={productionDays == null}
-                />
-                <Field
-                  label="Ship-to warehouse"
-                  value={purchaseOrder.purchase_location_id
-                    ? (warehouseNameById.get(purchaseOrder.purchase_location_id) ?? (warehousesQ.isLoading ? "Loading…" : "Not set"))
-                    : "Not set"}
-                  muted={!purchaseOrder.purchase_location_id}
-                />
+            {page && <ChangeNotice changes={page.changes} />}
+            <section className={cn("rounded-lg border border-l-4 border-border bg-surface shadow-stone", press.tally.ready || rawStatus === "RECEIVED" ? "border-l-synced" : "border-l-warning-text")}>
+              <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border-subtle px-3.5 py-2.5">
+                <div className="text-[15px] font-bold">{rawStatus === "RECEIVED" ? "Completed" : press.tally.ready ? "Ready" : "Not ready"}</div>
+                <div className="text-[13px] text-ink-secondary">{press.tally.total === 0 ? "No raw materials on this order" : `Raw materials ${press.tally.tally}`}</div>
               </div>
-              <div className="mt-4 grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3.5 p-3.5 sm:grid-cols-5">
+                <Field label="Unit number" value={page?.project?.unit_no || "—"} muted={!page?.project?.unit_no} />
+                <Field label="Building" value={page?.project?.building || "—"} muted={!page?.project?.building} />
+                <Field label="Project ID" muted={!page?.project} value={page?.project ? <Link className="text-primary hover:underline" to={`/projects/${page.project.id}`}>{page.project.code ?? page.project.id}</Link> : "—"} />
                 <Field label="Sales order" muted={!linkedSo} value={linkedSo ? <Link className="text-primary hover:underline" to={`/scm/sales-orders/${encodeURIComponent(linkedSo.doc_no)}`}>{linkedSo.doc_no}</Link> : "—"} />
                 <Field label="Purchase order" muted={!orderMeta.source_po} value={orderMeta.source_po ? <Link className="text-primary hover:underline" to={`/scm/purchase-orders/${orderMeta.source_po.id}`}>{orderMeta.source_po.po_number}</Link> : "—"} />
-                <Field label="Goods receipt" muted={!completion?.grn} value={completion?.grn ? <Link className="text-primary hover:underline" to={`/scm/grns/${completion.grn.id}`}>{completion.grn.grn_number}</Link> : "—"} />
-                <Field label="Delivery order" muted={!completion?.deliveryOrder} value={completion?.deliveryOrder ? <Link className="text-primary hover:underline" to={`/scm/delivery-orders/${completion.deliveryOrder.id}`}>{completion.deliveryOrder.do_number}</Link> : "—"} />
               </div>
-              {completionStopped && (
-                <div role="alert" className="mt-4 rounded-lg border border-err/30 bg-surface px-4 py-3 text-[13px] text-ink">
-                  <strong>Complete stopped partway.</strong> {orderMeta.completion_error ?? "Press Retry Complete to carry on."}
+              {(completionStopped || rawStatus === "RECEIVED" || orderNote) && (
+                <div className="space-y-3 border-t border-border-subtle p-3.5">
+                  {completionStopped && (
+                    <div role="alert" className="rounded-lg border border-err/30 bg-surface px-4 py-3 text-[13px] text-ink">
+                      <strong>Complete stopped partway.</strong> {orderMeta.completion_error ?? "Press Retry Complete to carry on."}
+                    </div>
+                  )}
+                  {rawStatus === "RECEIVED" && (
+                    <p className="text-[12.5px] text-ink-muted">To reopen this order, cancel its goods receipt and delivery order first.</p>
+                  )}
+                  {orderNote && (
+                    <div className="rounded-lg border border-warning-text/25 bg-warning-bg px-4 py-3">
+                      <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-warning-text">Note</div>
+                      <p className="mt-1.5 text-[13px] leading-relaxed text-warning-text">{orderNote}</p>
+                    </div>
+                  )}
                 </div>
               )}
-              {rawStatus === "RECEIVED" && (
-                <p className="mt-4 text-[12.5px] text-ink-muted">To reopen this order, cancel its goods receipt and delivery order first.</p>
-              )}
-              {purchaseOrder.notes && (
-                <div className="mt-4 rounded-lg border border-warning-text/25 bg-warning-bg px-4 py-3">
-                  <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-warning-text">Note</div>
-                  <p className="mt-1.5 text-[13px] leading-relaxed text-warning-text">{purchaseOrder.notes}</p>
-                </div>
-              )}
-            </Section>
+            </section>
 
+            <RenovationDocTrail kind="production" id={purchaseOrder.id} />
             {/* Line items */}
-            <Section title={`Works · ${items.length}`}>
+            <Section
+              title={`Works · ${items.length}`}
+              actions={orderMeta.source_po ? <span className="text-[12px] text-ink-muted">Follows <Link className="text-primary hover:underline" to={`/scm/purchase-orders/${orderMeta.source_po.id}`}>{orderMeta.source_po.po_number}</Link></span> : undefined}
+            >
               {/* Revision-pending / SO-drift banner (owner 2026-07-27). A pending
                   SO amendment means this Production Order must be re-approved before the
                   new spec is built; surface it here (the editor
@@ -981,48 +961,97 @@ function ProductionOrderDetailV2ReadOnly() {
                   )}
                 </div>
               )}
-              <DataTable<PoItemRow>
-                tableId={`po-lines-${id}`}
-                layoutFamily={DATA_TABLE_LAYOUT_FAMILIES.purchaseOrderLines} persistSort={false} persistFilters={false}
-                rows={items}
-                loading={false}
-                columns={reno ? [...renoLineColumns<PoItemRow>(reno, true), ...lineColumns] : lineColumns}
-                getRowKey={(l) => l.id}
-                emptyLabel="No line items"
-              />
+              <div className="-m-3 overflow-x-auto">
+                <table className="w-full border-collapse text-[13px]">
+                  <thead>
+                    <tr className="bg-surface-2 text-left">
+                      {workColumns.map((col) => <th key={col.key} className="px-3.5 py-2 text-[12px] font-semibold text-ink-secondary">{col.label}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.length === 0 && <tr><td colSpan={workColumns.length} className="px-3.5 py-4 text-center text-ink-muted">No line items</td></tr>}
+                    {items.map((l) => (
+                      <tr key={l.id} className="border-t border-border-subtle align-top">
+                        {workColumns.map((col) => <td key={col.key} className="px-3.5 py-2.5">{col.render ? col.render(l) : null}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </Section>
-            <ProductionMaterialsSection orderId={purchaseOrder.id} canEdit={mayEditPoPhotos && !isCancelled} />
+            <ProductionMaterialsSection orderId={purchaseOrder.id} canEdit={mayEditPoPhotos && !isCancelled && !started && rawStatus !== "RECEIVED"} started={started} canAct={canAct} finished={rawStatus === "RECEIVED"}
+              works={items.map((l) => ({ qty: Number(l.qty), uom: l.uom }))} />
+            {progress && (
+              <Section
+                dense
+                title={`Progress${progress.label ? ` · ${progress.label}` : ""}`}
+                actions={canAct ? (
+                  <PhotoAddButtons queue={photos} video />
+                ) : undefined}
+              >
+                <div>
+                  <PhotoUploads queue={photos} hideDone />
+                  {started && rawStatus === "SUBMITTED" && <ProgressSummary progress={progress} hours={productionHours} />}
+                  <ProgressPhotos orderId={purchaseOrder.id} progress={progress} holidays={page?.holidays ?? []} canAdd={canAct} finishedOn={purchaseOrder.received_at?.slice(0, 10) ?? null} />
+                </div>
+              </Section>
+            )}
+            {/* Production staff see the job, never the customer or the payment (owner, 6 Nov 2026). */}
+            {reno || linkedSo?.so_kind === "RENOVATION" ? null : linkedSo ? (
+              <>
+                <Section title="Order info"><SoOrderInfoFields header={linkedSo} /></Section>
+                <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2 [&>section]:h-full">
+                  <Section title="Customer">
+                    <SoCustomerFields
+                      header={linkedSo}
+                      renoMode={linkedSo.so_kind === "RENOVATION"}
+                      salesperson={salespersonNameOf(linkedSo.agent ?? null, linkedSo.salesperson_id ?? null, "Unassigned")}
+                      sharedWith={null}
+                    />
+                  </Section>
+                  <Section title="Delivery address"><SoAddressFields header={{ ...linkedSo, sales_location: shipToName ?? linkedSo.sales_location }} /></Section>
+                </div>
+              </>
+            ) : (
+              <Section title="Customer">
+                <p className="text-[13px] text-ink-muted">No sales order is linked to this production order.</p>
+              </Section>
+            )}
+
             <DocAttachments docType="production_order" docId={purchaseOrder.id} canEdit={!isCancelled} />
           </DetailMain>
 
           <DetailAside>
             <div className="hidden lg:sticky lg:top-[124px] space-y-3 md:block">
-              <PoTotalHeroCard header={purchaseOrder} />
+              <PoTotalHeroCard header={purchaseOrder} blurb={[progress?.statusLabel ?? stageLabel, progress?.label].filter(Boolean).join(" · ")} />
 
-              <AsideCard title="Key dates">
-                <KeyDateRow k="Production Order date" v={fmtDate(purchaseOrder.po_date)} />
-                <KeyDateRow k="Completion date" v={purchaseOrder.expected_at ? fmtDate(purchaseOrder.expected_at) : "Not set"} muted={!purchaseOrder.expected_at} />
-                {purchaseOrder.submitted_at && (
-                  <KeyDateRow
-                    k="Issued"
-                    v={fmtDate(purchaseOrder.submitted_at)}
-                  />
-                )}
-                {purchaseOrder.received_at && (
-                  <KeyDateRow
-                    k="Completed"
-                    v={fmtDate(purchaseOrder.received_at)}
-                  />
-                )}
-                {purchaseOrder.cancelled_at && (
-                  <KeyDateRow
-                    k="Cancelled"
-                    v={fmtDate(purchaseOrder.cancelled_at)}
-                  />
-                )}
+              <AsideCard title="Key dates" action={<button type="button" className="text-[12px] font-semibold text-primary hover:underline" onClick={() => setDialog("time")}>Set production time</button>}>
+                <div className="grid grid-cols-2 gap-2.5 border-b border-border-subtle pb-2.5 text-[13px]">
+                  <BigDate k="Plan start" v={orderExtra?.plan_start ? fmtDate(orderExtra.plan_start) : "Not set"} muted={!orderExtra?.plan_start} />
+                  <BigDate k="Plan finish" v={purchaseOrder.expected_at ? fmtDate(purchaseOrder.expected_at) : "Not set"} muted={!purchaseOrder.expected_at} />
+                  <BigDate k="Actual start" v={orderExtra?.actual_start_at ? fmtDate(orderExtra.actual_start_at) : "Not yet"} muted={!orderExtra?.actual_start_at} />
+                  <BigDate k="Actual finish" v={purchaseOrder.received_at ? fmtDate(purchaseOrder.received_at) : "Not yet"} muted={!purchaseOrder.received_at} />
+                </div>
+                <div className="grid grid-cols-2 gap-2.5 border-b border-border-subtle py-2.5 text-[13px]">
+                  <div>
+                    <div className="text-ink-secondary">Schedule</div>
+                    <div className="mt-0.5 text-[18px] font-bold">{progress?.planDays.length ? `${progress.planDays.length} day${progress.planDays.length === 1 ? "" : "s"}` : "Not set"}</div>
+                    <div className="text-[12px] text-ink-muted">No Sundays, holidays</div>
+                  </div>
+                  <div>
+                    <div className="text-ink-secondary">Production time</div>
+                    <div className={cn("mt-0.5 text-[18px] font-bold", productionHours == null && "text-ink-muted")}>{productionHours == null ? "Not set" : `${fmtQty(productionHours)} hours`}</div>
+                  </div>
+                </div>
+                <KeyDateRow k="Document date" v={fmtDate(purchaseOrder.po_date)} />
+                {purchaseOrder.submitted_at && <KeyDateRow k="Issued" v={fmtDate(purchaseOrder.submitted_at)} />}
+                {purchaseOrder.cancelled_at && <KeyDateRow k="Cancelled" v={fmtDate(purchaseOrder.cancelled_at)} />}
               </AsideCard>
 
-              <AsideCard title="People">
+              <AsideCard title="People" action={canAct && rawStatus === "SUBMITTED" ? <button type="button" className="text-[12px] font-semibold text-primary hover:underline" onClick={() => setDialog("assign")}>Assign</button> : undefined}>
+                {(page?.workers ?? []).map((w) => (
+                  <PersonRow key={w.id} initials={initialsOf(w.name)} name={w.name} role={`Worker · ${w.how === "STARTED" ? "Pressed Start" : "Assigned"}`} tone="accent" />
+                ))}
                 <PersonRow
                   initials={initialsOf(supplierNameOf(purchaseOrder))}
                   name={supplierNameOf(purchaseOrder)}
@@ -1045,6 +1074,9 @@ function ProductionOrderDetailV2ReadOnly() {
                   meta={fmtDate(purchaseOrder.po_date)}
                   dot={EFFECTIVE_TONE[effectiveOf(purchaseOrder)].tone === "success" ? "success" : "primary"}
                 />
+                {orderExtra?.actual_start_at && (
+                  <ActivityRow title="Started" meta={[fmtDate(orderExtra.actual_start_at), orderExtra.actual_start_by_name].filter(Boolean).join(" · ")} dot="primary" />
+                )}
                 {purchaseOrder.submitted_at && (
                   <ActivityRow
                     title="Issued"
@@ -1077,16 +1109,16 @@ function ProductionOrderDetailV2ReadOnly() {
           stops impersonating them. The reasons render as TEXT because a `title`
           tooltip cannot be summoned on a touch screen. */}
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface/95 px-3 pb-6 pt-2.5 shadow-slab backdrop-blur-sm md:hidden">
-        {(canConfirm || canComplete || canReopen) && (
+        {(canConfirm || canStart || canComplete || canReopen) && (
           <div className="mb-2 flex items-center gap-2">
             <button
               type="button"
-              onClick={canConfirm ? doConfirm : canComplete ? () => void doComplete() : doReopen}
+              onClick={canConfirm ? doConfirm : canStart ? () => void press.pressStart() : canComplete ? doComplete : doReopen}
               disabled={completing !== null}
               className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface text-[13.5px] font-bold text-ink hover:bg-surface-dim disabled:opacity-40"
             >
               {canReopen ? <RotateCcw size={16} /> : <CheckCircle2 size={16} />}
-              {canConfirm ? "Confirm Production Order" : canComplete ? (completing ?? (completionStopped ? "Retry Complete" : "Complete")) : "Reopen"}
+              {canConfirm ? "Confirm Production Order" : canStart ? "Start" : canComplete ? (completing ?? (completionStopped ? "Retry Complete" : "Complete")) : "Reopen"}
             </button>
           </div>
         )}
@@ -1109,6 +1141,9 @@ function ProductionOrderDetailV2ReadOnly() {
         </div>
       </div>
 
+      {press.dialog}
+      <ProductionTimeDialog orderId={purchaseOrder.id} hours={productionHours} open={dialog === "time"} onClose={() => setDialog(null)} />
+      <AssignDialog orderId={purchaseOrder.id} workers={page?.workers ?? []} open={dialog === "assign"} onClose={() => setDialog(null)} />
       {historyOpen && (
         <DocumentHistoryDrawer doc="PRODUCTION_ORDER" id={String(purchaseOrder.id)}
           label={purchaseOrder.po_number} onClose={() => setHistoryOpen(false)} />

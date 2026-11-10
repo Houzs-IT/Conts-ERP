@@ -16,6 +16,7 @@
  * builds, with only the data hook faked, and assert what the operator SEES.
  */
 import { cleanup, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { convertToLink } from "../../lib/convertScope";
@@ -42,7 +43,7 @@ afterEach(() => {
 });
 
 const at = (url: string) =>
-  render(<MemoryRouter initialEntries={[url]}><GrnFromPo /></MemoryRouter>);
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[url]}><GrnFromPo /></MemoryRouter></QueryClientProvider>);
 
 /** The three states the page's own query hook can be in.
  *
