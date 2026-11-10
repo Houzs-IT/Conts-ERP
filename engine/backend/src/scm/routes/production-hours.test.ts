@@ -197,3 +197,54 @@ describe('review fixes', () => {
     expect((await app(sb).request('/o1/hours/start', json({ personKey: 'tech-gone' }))).status).toBe(422);
   });
 });
+
+/* ── Second review (#857) ──────────────────────────────────────────────── */
+describe('second review fixes', () => {
+  it('3. a timer forgotten past 16 h is closed at the limit and Start begins a fresh entry', async () => {
+    const old = new Date(Date.now() - 20 * 3600_000).toISOString();
+    const sb = world(order(), [{ id: 'e1', production_order_id: 'o1', person_key: 'user:9', name: 'Mei', started_at: old, stopped_at: null, how: 'TIMER' }]);
+    const res = await app(sb).request('/o1/hours/start', json({}));
+    expect(res.status).toBe(201);
+    const rows = sb.tables.production_time_entries as Row[];
+    expect(rows).toHaveLength(2);
+    expect(Date.parse(String(rows[0].stopped_at)) - Date.parse(old)).toBe(16 * 3600_000);
+    expect(rows[1].stopped_at ?? null).toBeNull();
+  });
+
+  it('4. the list totals come from the database sum, and page past the row cap without it', async () => {
+    const sb = world();
+    sb.rpcHandlers.production_actual_minutes = () => [{ production_order_id: 'o1', minutes: '125' }];
+    expect((await actualMinutesByOrder(sb, ['o1'])).get('o1')).toBe(125);
+    /* No function yet: 1,500 one-hour entries, read in pages past the fake's 1,000-row cap, all counted. */
+    const many: Row[] = Array.from({ length: 1500 }, (_, i) => ({ id: `e${String(i).padStart(5, '0')}`, production_order_id: 'o1', person_key: `p${i}`, name: 'X', started_at: '2026-11-01T00:00:00Z', stopped_at: '2026-11-01T01:00:00Z' }));
+    const capped = fakeSb({ production_time_entries: many }, {}, [], [], 1000);
+    expect((await actualMinutesByOrder(capped, ['o1'])).get('o1')).toBe(1500 * 60);
+  });
+
+  it('a second Stop that lost the race writes no second History line', async () => {
+    const { recordEntityAudit } = await import('../lib/entity-audit');
+    const sb = world(order(), [{ id: 'e1', production_order_id: 'o1', person_key: 'user:9', name: 'Mei', started_at: new Date(Date.now() - 3600_000).toISOString(), stopped_at: null }]);
+    const from = sb.from;
+    const raced = { ...sb, from: (t: string) => {
+      const b = from(t) as Record<string, any>;
+      if (t !== 'production_time_entries') return b;
+      /* The other press stops it between this one's read and write. */
+      return { ...b, update: (u: Row) => { sb.tables.production_time_entries[0]!.stopped_at = new Date().toISOString(); return b.update(u); } };
+    } } as unknown as ReturnType<typeof fakeSb>;
+    (recordEntityAudit as unknown as { mockClear: () => void }).mockClear();
+    const res = await app(raced).request('/o1/hours/stop', json({}));
+    expect(res.status).toBe(200);
+    expect((await res.json() as { alreadyStopped?: boolean }).alreadyStopped).toBe(true);
+    expect(recordEntityAudit).not.toHaveBeenCalled();
+  });
+
+  it('Stop in the same instant as Start ends after it (the row check wants stop > start) and counts nought', async () => {
+    const now = new Date().toISOString();
+    const sb = world(order(), [{ id: 'e1', production_order_id: 'o1', person_key: 'user:9', name: 'Mei', started_at: now, stopped_at: null }]);
+    const res = await app(sb).request('/o1/hours/stop', json({}));
+    expect(res.status).toBe(200);
+    const row = sb.tables.production_time_entries[0] as Row;
+    expect(Date.parse(String(row.stopped_at))).toBeGreaterThan(Date.parse(now));
+    expect((await res.json() as { minutes: number }).minutes).toBe(0);
+  });
+});

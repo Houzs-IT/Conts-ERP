@@ -53,6 +53,9 @@ export function ProductionHoursPanel({ orderId, workers, canAct, phone, myName =
   const [editing, setEditing] = useState<ProductionTimeEntry | "new" | null>(null);
   const h = q.data;
   const people = useMemo(() => (h ? clockPeople(h, workers, myName) : []), [h, workers, myName]);
+  /* Add time takes you or a worker still on the order (the server refuses anyone else); someone who left keeps a row
+     above only so a running timer can be stopped. */
+  const enterable = useMemo(() => people.filter((p) => p.you || workers.some((w) => w.person_key === p.key)), [people, workers]);
   const run = (a: HoursAction, title: string) => act.mutate(a, { onError: (e) => notify({ title, body: message(e), tone: "error" }) });
 
   if (q.isLoading) return <p className="p-3 text-[13px] text-ink-muted">Loading hours…</p>;
@@ -145,7 +148,7 @@ export function ProductionHoursPanel({ orderId, workers, canAct, phone, myName =
           </table>
         </div>
       )}
-      {editing !== null && <EntryDialog open entry={editing === "new" ? null : editing} people={people} onClose={() => setEditing(null)}
+      {editing !== null && <EntryDialog open entry={editing === "new" ? null : editing} people={enterable} onClose={() => setEditing(null)}
         onSave={(a) => act.mutate(a, { onSuccess: () => setEditing(null), onError: (e) => notify({ title: "Not saved", body: message(e), tone: "error" }) })} saving={act.isPending} />}
     </div>
   );
@@ -167,7 +170,10 @@ function EntryDialog({ open, entry, people, onClose, onSave, saving }: {
     setStart(entry ? timeBoxOf(entry.started_at) : "08:00");
     setStop(entry?.stopped_at ? timeBoxOf(entry.stopped_at) : entry ? "" : "17:00");
     setNotes(entry?.notes ?? "");
-  }, [open, entry, people]);
+    /* Filled once per opening: the hours re-read every minute while a timer runs, and a refill would undo what was
+       typed (and save against the first person). */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, entry?.id]);
   const runningEdit = entry != null && !entry.stopped_at;
   /* A stop earlier than the start is the next morning (a night shift). */
   const stopDate = stop && stop <= start ? new Date(Date.parse(`${date}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10) : date;

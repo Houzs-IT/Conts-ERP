@@ -1,4 +1,4 @@
--- REVERSAL: revert the code first; then drop table scm.production_time_entries. (btree_gist may stay; nothing else uses it.)
+-- REVERSAL: revert the code first; then drop function scm.production_actual_minutes(uuid[]); drop table scm.production_time_entries. (btree_gist may stay; nothing else uses it.)
 -- Worker actual hours on a production order (TODO item 16). A worker presses Start time / Stop time on the order, or a
 -- supervisor adds or corrects an entry by hand. Actual hours = the sum of the entries; the budget stays
 -- production_orders.production_time_hours (management's figure, migration 0237) and the plan dates stay plan_start /
@@ -48,6 +48,20 @@ alter table scm.production_time_entries owner to scm_engine;
 alter table scm.production_time_entries enable row level security;
 revoke all on scm.production_time_entries from anon, authenticated;
 grant all on scm.production_time_entries to service_role, pos_app;
+
+-- The Production Orders list's Actual Hours: minutes per order summed here, so no row cap can cut them short. A running
+-- timer counts to now, never past 16 hours (lib/production-hours.ts MAX_ENTRY_MINUTES).
+create or replace function scm.production_actual_minutes(p_orders uuid[]) returns table (production_order_id uuid, minutes bigint)
+language sql stable set search_path = scm, pg_temp as $$
+  select e.production_order_id,
+         sum(round(extract(epoch from (least(coalesce(e.stopped_at, now()), e.started_at + interval '16 hours') - e.started_at)) / 60))::bigint
+    from scm.production_time_entries e
+   where e.production_order_id = any (p_orders)
+   group by e.production_order_id
+$$;
+alter function scm.production_actual_minutes(uuid[]) owner to scm_engine;
+revoke all on function scm.production_actual_minutes(uuid[]) from public, anon, authenticated;
+grant execute on function scm.production_actual_minutes(uuid[]) to service_role, pos_app;
 
 notify pgrst, 'reload schema';
 select demo.sync();

@@ -92,4 +92,23 @@ describe("the panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop time" }));
     expect(mutate.mock.calls[0]![0]).toEqual({ kind: "stop", personKey: "tech-1" });
   });
+  test("second review 1: the once-a-minute re-read does not reset what is typed in Add time", () => {
+    data = base({ canTime: false });
+    const view = render(<ProductionHoursPanel orderId="o1" workers={workers} canAct />);
+    fireEvent.click(screen.getByText("Add time"));
+    fireEvent.change(screen.getByLabelText("Worker"), { target: { value: "tech-1" } });
+    fireEvent.change(screen.getByLabelText("Start"), { target: { value: "13:00" } });
+    /* The hours come back with new figures (a timer counting up): a fresh object, new people list. */
+    data = base({ canTime: false, summary: { ...base().summary, actualMinutes: 760 } });
+    view.rerender(<ProductionHoursPanel orderId="o1" workers={[...workers]} canAct />);
+    expect((screen.getByLabelText("Worker") as HTMLSelectElement).value).toBe("tech-1");
+    expect((screen.getByLabelText("Start") as HTMLInputElement).value).toBe("13:00");
+  });
+  test("second review: someone who left the order is not offered in Add time (the server would refuse them)", () => {
+    data = base({ canTime: false });
+    render(<ProductionHoursPanel orderId="o1" workers={[]} canAct />);
+    fireEvent.click(screen.getByText("Add time"));
+    const options = [...(screen.getByLabelText("Worker") as HTMLSelectElement).options].map((o) => o.value);
+    expect(options).toEqual(["user:9"]);
+  });
 });

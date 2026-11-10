@@ -80,8 +80,13 @@ export function checkEntryTimes(startedAt: unknown, stoppedAt: unknown, now: Dat
 /** Stopping a running timer: past MAX_ENTRY_MINUTES it stops at the limit, and says so, rather than count a forgotten night. */
 export function stopTimeFor(startedAt: string, now: Date): { stoppedAt: string; capped: boolean } {
   const cap = ms(startedAt) + MAX_ENTRY_MINUTES * 60_000;
-  return now.getTime() > cap ? { stoppedAt: new Date(cap).toISOString(), capped: true } : { stoppedAt: now.toISOString(), capped: false };
+  if (now.getTime() > cap) return { stoppedAt: new Date(cap).toISOString(), capped: true };
+  /* Stop in the same instant as Start (a double tap) still ends after it: the row's check wants stop > start. It counts 0. */
+  return { stoppedAt: new Date(Math.max(now.getTime(), ms(startedAt) + 1000)).toISOString(), capped: false };
 }
+
+/** A running timer older than the limit: it is closed at the limit before anything new starts. */
+export const isStale = (startedAt: string, now: Date): boolean => now.getTime() > ms(startedAt) + MAX_ENTRY_MINUTES * 60_000;
 
 /** Two entries of one person may not overlap: the same hour is not worked twice on one order. */
 export function overlaps(entries: readonly TimeEntry[], personKey: string, startedAt: string, stoppedAt: string | null, exceptId: string | null, now: Date): TimeEntry | null {

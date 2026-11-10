@@ -14,7 +14,8 @@
 import { requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../lib/companyScope';
 import { scmAreaAllows } from '../middleware/area-guard';
 import { recordEntityAudit } from '../lib/entity-audit';
-import { checkEntryTimes, entryMinutes, hoursOf, overlaps, stopTimeFor, summarizeHours, type TimeEntry } from '../lib/production-hours';
+import { checkEntryTimes, entryMinutes, hoursOf, isStale, MAX_ENTRY_MINUTES, overlaps, stopTimeFor, summarizeHours, type TimeEntry } from '../lib/production-hours';
+import { paginateAll } from '../lib/paginate-all';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client and Hono context, untyped in this family */
 type Ctx = any;
@@ -123,7 +124,16 @@ export const timerStartHandler = async (c: Ctx): Promise<Response> => {
   const { data: open, error: openErr } = await sb.from('production_time_entries').select('id, started_at')
     .eq('production_order_id', o.id).eq('person_key', who.key).is('stopped_at', null).maybeSingle();
   if (openErr) return c.json({ error: 'load_failed', reason: openErr.message }, 500);
-  if (open) return c.json({ ok: true, alreadyRunning: true, id: (open as { id: string }).id, startedAt: (open as { started_at: string }).started_at });
+  if (open) {
+    const run = open as { id: string; started_at: string };
+    if (!isStale(run.started_at, new Date())) return c.json({ ok: true, alreadyRunning: true, id: run.id, startedAt: run.started_at });
+    /* Left on past the limit (yesterday's forgotten Stop): it ends at the limit, and today's time starts afresh. */
+    const capAt = stopTimeFor(run.started_at, new Date()).stoppedAt;
+    const { error: capErr } = await sb.from('production_time_entries')
+      .update({ stopped_at: capAt, updated_at: new Date().toISOString(), updated_by_name: actorName(c) }).eq('id', run.id).is('stopped_at', null);
+    if (capErr) return c.json({ error: 'save_failed', reason: capErr.message }, 500);
+    await audit(c, sb, co.companyId, o, `Time stopped: ${who.name}, ${MAX_ENTRY_MINUTES / 60} h (left on, stopped at the 16-hour limit)`);
+  }
   const now = new Date().toISOString();
   const { data, error } = await sb.from('production_time_entries').insert({
     production_order_id: o.id, company_id: co.companyId, person_key: who.key, name: who.name, started_at: now, how: 'TIMER',
@@ -156,9 +166,12 @@ export const timerStopHandler = async (c: Ctx): Promise<Response> => {
   const row = open as { id: string; started_at: string; name: string };
   const who = { key, name: row.name };
   const stop = stopTimeFor(row.started_at, new Date());
-  const { error } = await sb.from('production_time_entries')
-    .update({ stopped_at: stop.stoppedAt, updated_at: new Date().toISOString(), updated_by_name: actorName(c) }).eq('id', row.id).is('stopped_at', null);
+  const { data: closed, error } = await sb.from('production_time_entries')
+    .update({ stopped_at: stop.stoppedAt, updated_at: new Date().toISOString(), updated_by_name: actorName(c) }).eq('id', row.id).is('stopped_at', null)
+    .select('id').maybeSingle();
   if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  /* A second press that lost the race to the first: already stopped, nothing more to write. */
+  if (!closed) return c.json({ ok: true, alreadyStopped: true, id: row.id });
   const minutes = entryMinutes({ started_at: row.started_at, stopped_at: stop.stoppedAt }, new Date());
   await audit(c, sb, co.companyId, o, `Time stopped: ${who.name}, ${hoursOf(minutes)} h${stop.capped ? ' (stopped at the 16-hour limit)' : ''}`);
   return c.json({ ok: true, id: row.id, stoppedAt: stop.stoppedAt, minutes, capped: stop.capped });
@@ -280,7 +293,15 @@ export async function stopRunningTimers(sb: Db, orderId: string, byName: string)
 export async function actualMinutesByOrder(sb: Db, orderIds: string[]): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   if (orderIds.length === 0) return out;
-  const { data, error } = await sb.from('production_time_entries').select('production_order_id, started_at, stopped_at').in('production_order_id', orderIds);
+  /* One row per order from the database (scm.production_actual_minutes, migration 0291), whatever the number of entries. */
+  const { data: sums, error: rpcErr } = await sb.rpc('production_actual_minutes', { p_orders: orderIds });
+  if (!rpcErr) {
+    for (const r of (sums ?? []) as Array<{ production_order_id: string; minutes: number | string }>) out.set(r.production_order_id, Number(r.minutes) || 0);
+    return out;
+  }
+  /* Before the function exists: every entry, paged past the row cap. */
+  const { data, error } = await paginateAll((from: number, to: number) => sb.from('production_time_entries')
+    .select('id, production_order_id, started_at, stopped_at').in('production_order_id', orderIds).order('id').range(from, to));
   if (error) { console.error('[production-hours] list read failed', error.message); return out; }
   const now = new Date();
   for (const r of (data ?? []) as Array<{ production_order_id: string; started_at: string; stopped_at: string | null }>) {

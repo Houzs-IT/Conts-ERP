@@ -1348,9 +1348,11 @@ productionOrders.patch('/:id/confirm', async (c) => {
 const START_CLEARED = { actual_start_at: null, actual_start_by: null, actual_start_by_name: null };
 
 /* Puts a started order back to not started: its stock returns first, so a stop here leaves it started and repeatable. */
-async function undoStart(c: any, sb: any, orderId: string): Promise<string | null> {
+export async function undoStart(c: any, sb: any, orderId: string): Promise<string | null> {
   const back = await reverseIssues(sb, orderId, c.get('user')?.id ?? null);
   if (!back.ok) return back.reason;
+  /* No longer started: nobody stays on the clock, or the timer would run on hidden and block the next Start's time. */
+  await stopRunningTimers(sb, orderId, actorName(c));
   const { error } = await sb.from('production_order_workers').delete().eq('production_order_id', orderId).eq('how', 'STARTED');
   return error ? error.message : null;
 }
@@ -1843,4 +1845,17 @@ productionOrders.patch('/:id/production-time', async (c) => {
   return c.json({ ok: true, hours });
 });
 
-productionOrders.patch('/:id/hold', makeHoldHandler({ table: 'production_orders', keyColumn: 'id', param: 'id', responseKey: 'purchaseOrder', echoColumns: 'po_number, status' }));
+const holdHandler = makeHoldHandler({ table: 'production_orders', keyColumn: 'id', param: 'id', responseKey: 'purchaseOrder', echoColumns: 'po_number, status' });
+/* On hold, the work stops: whoever is on the clock is stopped (Start time is refused while it is held). */
+export const productionHoldHandler = async (c: any): Promise<Response> => {
+  const res = await holdHandler(c);
+  if (res.status < 300) {
+    const co = requireActiveCompanyId(c);
+    if (co.ok) {
+      const { data } = await scopeToCompanyId(c.get('supabase').from('production_orders').select('id, on_hold').eq('id', c.req.param('id')), co.companyId).maybeSingle();
+      if ((data as { on_hold?: boolean } | null)?.on_hold) await stopRunningTimers(c.get('supabase'), String(c.req.param('id')), actorName(c));
+    }
+  }
+  return res;
+};
+productionOrders.patch('/:id/hold', productionHoldHandler);
