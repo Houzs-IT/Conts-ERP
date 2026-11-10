@@ -157,6 +157,10 @@ export const fieldVisibleSql = (cols: boolean) => cols
   ? `NOT (m.owner_approval_required = 1 AND m.charge_to = 'owner' AND (m.owner_approved_at IS NULL OR (m.needs_parts = 1 AND m.parts_arrived_at IS NULL)))`
   : `NOT (m.owner_approval_required = 1 AND m.charge_to = 'owner' AND m.owner_approved_at IS NULL)`;
 
+export const passKeyTodaySql = (cols: boolean): string => cols
+  ? `(m.job_type IS DISTINCT FROM 'pass_key' OR m.due_on IS NULL OR m.due_on = to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD'))`
+  : 'TRUE';
+
 /** Field order: Urgent, Pass key, then Normal by due date (the day reported when none is set), oldest first. */
 export const fieldOrderSql = (cols: boolean) => cols
   ? `CASE m.job_type WHEN 'urgent' THEN 0 WHEN 'pass_key' THEN 1 ELSE 2 END, COALESCE(m.due_on, substr(m.reported_at, 1, 10)), m.reported_at`
