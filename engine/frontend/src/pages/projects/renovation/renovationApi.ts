@@ -125,6 +125,8 @@ export interface ProjectDetail {
     id: number; code: string | null; name: string; customer_name: string | null; customer_phone: string | null; customer_email?: string | null; layout_label?: string | null; customer_kind: string | null;
     /** Conts (finance phase 1.5): RENOVATION / INHOUSE_RENOVATION, or null to follow the quotation's brand. */
     finance_kind?: string | null;
+    /** The brand it is sold under; its sales order carries the same one. */
+    brand?: string | null;
     building: string | null; unit_no: string | null; site_address: string | null; planned_handover_date: string | null;
     handed_over_at: string | null; salesperson_name: string | null; notes: string | null;
   };

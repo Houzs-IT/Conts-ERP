@@ -168,6 +168,8 @@ export const simpleApi = {
   setPlannedHandover: (id: number, date: string | null) => api.patch<{ ok: true }>(`${R}/${id}`, { plannedHandoverDate: date }),
   /** Renovation or inhouse renovation (Conts, finance phase 1.5); null follows the quotation's brand. */
   setFinanceKind: (id: number, kind: FinanceKind | null) => api.patch<{ ok: true }>(`${R}/${id}`, { financeKind: kind }),
+  /** The project's brand; its open sales order and the contract letterhead follow. */
+  setBrand: (id: number, brandId: number) => api.patch<{ ok: true }>(`${R}/${id}`, { brandId }),
   crewAssignments: () => api.get<{ data: CrewAssignment[] }>(`${R}/crew-assignments`),
   patchFlowStep: (key: FlowStepKey, b: Partial<{ label: string; sortOrder: number; active: boolean }>) => api.patch<{ ok: true }>(`${R}/flow-steps/${key}`, b),
   taskCategories: () => api.get<{ data: TaskCategoryRow[] }>(`${R}/task-categories`),

@@ -639,7 +639,29 @@ app.patch("/:id", requirePermission("projects.write"), async (c) => {
     sets.push("finance_kind = ?");
     args.push(kind.value);
   }
+  /* The project and its sales order carry one brand, each way (owner, 10 Nov 2026); on a contract it is also the
+     letterhead. A brand the company keeps, by id. */
+  let brandName: string | null = null;
+  let brandId: number | null = null;
+  if ("brandId" in b) {
+    brandId = parseId(String(b.brandId ?? ""));
+    const row = brandId
+      ? await db(c).prepare(`SELECT name FROM public.project_brands WHERE id = ? AND active = 1 AND company_id = (SELECT company_id FROM projects WHERE id = ?)`)
+        .bind(brandId, id).first<{ name: string }>()
+      : null;
+    if (!row) return c.json({ error: "brand_not_found", message: "That brand is not available." }, 400);
+    brandName = row.name;
+    sets.push("brand = ?");
+    args.push(brandName);
+  }
   if (sets.length === 0) return c.json({ ok: true });
+  if (brandName != null) {
+    await db(c).prepare(
+      `WITH so AS (SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ? AND status::text NOT IN ('CANCELLED', 'CLOSED')),
+            k AS (UPDATE scm.reno_so_contracts SET brand_id = ? WHERE so_doc_no IN (SELECT doc_no FROM so))
+       UPDATE scm.mfg_sales_orders SET branding = ?, updated_at = now() WHERE doc_no IN (SELECT doc_no FROM so)`,
+    ).bind(id, brandId, brandName).run();
+  }
   await db(c).prepare(`UPDATE projects SET ${sets.join(", ")}, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`)
     .bind(...args, id).run();
   /* The name follows Building + Unit (owner, 14 Oct 2026) unless this edit names the project itself. */

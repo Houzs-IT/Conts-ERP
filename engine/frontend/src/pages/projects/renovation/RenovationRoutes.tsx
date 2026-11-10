@@ -12,6 +12,7 @@ import { renovationApi } from "./renovationApi";
 import { RenovationBoard } from "./RenovationBoard";
 import { RenovationCalendar } from "./RenovationCalendar";
 import { RenovationDetail } from "./RenovationDetail";
+import { ConfirmProvider } from "../../../vendor/scm/components/ConfirmDialog";
 import { ProjectMonitor } from "./ProjectMonitor";
 import { useScrollToRenovationSection } from "./renovationScrollToHash";
 
@@ -59,5 +60,6 @@ export function RenovationProjectRoute({ id, fallback }: { id: number; fallback:
   useScrollToRenovationSection(kind === "renovation");
   if (kind === "checking") return <p className="py-10 text-center text-sm text-ink-secondary">Loading project...</p>;
   if (kind === "other") return <>{fallback()}</>;
-  return <RenovationDetail id={id} canWrite={can("projects.write")} />;
+  /* Its file panels ask "are you sure?" through useConfirm, which this route had no provider for: the page crashed. */
+  return <ConfirmProvider><RenovationDetail id={id} canWrite={can("projects.write")} /></ConfirmProvider>;
 }

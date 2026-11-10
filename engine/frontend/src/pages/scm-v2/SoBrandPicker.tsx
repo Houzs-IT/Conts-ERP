@@ -1,6 +1,7 @@
 /* Which brand this sales order is under (owner, 5 Nov 2026). It saves when picked, and a contract's letterhead follows. */
 
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useBrands } from "../../lib/renovation/api";
 import { soInfoApi, soInfoErrorText } from "../projects/renovation/customerPropertyApi";
 import { useToast } from "../../vendor/scm/components/Toast";
@@ -8,6 +9,7 @@ import { useToast } from "../../vendor/scm/components/Toast";
 export function SoBrandPicker({ docNo }: { docNo: string }) {
   const brands = useBrands();
   const toast = useToast();
+  const qc = useQueryClient();
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +33,9 @@ export function SoBrandPicker({ docNo }: { docNo: string }) {
     try {
       const r = await soInfoApi.saveBrand(docNo, Number(next));
       setValue(next);
-      toast.success(`${docNo} is now under ${r.name}`);
+      /* The order view and its project show the new brand at once. */
+      void qc.invalidateQueries({ queryKey: ["reno", "so-info", "so", docNo] });
+      toast.success(`${docNo} is now under ${r.name}, and so is its project`);
     } catch (e) {
       setError(soInfoErrorText(e));
     } finally {
