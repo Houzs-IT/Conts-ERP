@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { StaleBanner } from '../components/DataState';
@@ -11,7 +11,7 @@ import { useApi } from '../lib/useApi';
 import { useNow } from '../lib/useMedia';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
-import { ReportDamageModal, Segmented, hm, mytDay, type MediaItem } from '../components/ops/OpsUi';
+import { FormRow, INPUT, ReportDamageModal, Segmented, hm, mytDay, type MediaItem } from '../components/ops/OpsUi';
 import { PhoneJobCard, PhoneJobList, PhoneStayTime } from '../components/ops/PhoneJobCard';
 import { CleanProof, stageCounts } from '../components/ops/CleanProof';
 import { StatusBadge } from '../components/StatusBadge';
@@ -39,6 +39,24 @@ interface Job {
   nextLater?: { day: string; checkInTime: string } | null;
 }
 interface Detail { media: MediaItem[]; access: { id: string; label: string; instruction: string }[]; parking?: string | null }
+interface ListPayload { rows: Job[]; open?: Job[]; team?: Job[]; mayPick?: boolean; date?: string }
+interface CleanerGroup { name: string; jobs: Job[] }
+type ListTab = 'ongoing' | 'all' | 'done' | 'team';
+
+const CLEAN_TYPES = ['turnover', 'deep_clean', 'light_clean'] as const;
+const unitKeyOf = (text: string): string => text.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
+
+function byCleaner(jobs: Job[]): CleanerGroup[] {
+  const groups = new Map<string, CleanerGroup>();
+  for (const job of jobs) {
+    for (const name of job.team ?? []) {
+      const group = groups.get(name.toLowerCase()) ?? { name, jobs: [] };
+      group.jobs.push(job);
+      groups.set(name.toLowerCase(), group);
+    }
+  }
+  return [...groups.values()].sort((first, second) => first.name.localeCompare(second.name));
+}
 
 /** The cleaner's order (lib/cleanOrder), the same as the office's board: the arrival on the job's day, else the next one. */
 const jobOrder = (j: Job): CleanOrderInput => ({
@@ -58,9 +76,9 @@ function byBuilding(jobs: Job[]): Group[] {
   return sortBuildings([...m.values()], g => g.name, g => g.id === 'external');
 }
 
-/** The cleaner's phone: the same list as the Cleaning page on a phone (components/ops/PhoneJobCard), with only their own
- *  jobs and none of the office's tabs or actions. One list in the cleaner's order (lib/cleanOrder), jobs left over from
- *  earlier days in an Overdue section above it. Tapping a job opens TaskDetail: access, the office's notes, guest left,
+/** The cleaner's phone: the same list as the Cleaning page on a phone (components/ops/PhoneJobCard). Tabs as on the
+ *  repairs page: On-going, All (their jobs plus the day's cleans nobody has, to take), Done, Team (read-only). Their jobs
+ *  in the cleaner's order (lib/cleanOrder), jobs left over from earlier days in an Overdue section above them. Tapping a job opens TaskDetail: access, the office's notes, guest left,
  *  start, Before and After photos, complete. One column, 44px targets. */
 export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: string | null; onLinked?: () => void }) {
   const now = useNow(30000);
@@ -69,7 +87,7 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   const { weekday } = usePortalDates();
   const [pick, setPick] = useState<'today' | 'tomorrow'>('today');
   const date = pick === 'today' ? mytDay(0) : mytDay(1);
-  const { data, loading, error, reload } = useApi<{ rows: Job[]; date?: string }>(`/field/tasks?date=${date}`);
+  const { data, loading, error, reload } = useApi<ListPayload>(`/field/tasks?date=${date}`);
   // A new notice, or the phone coming back to the app, reloads the list now; a job that just arrived carries a New mark.
   useFieldRefresh(reload);
   // The office ticks the guest out or changes a time on its board: the list catches up every 30 seconds, as the board does,
@@ -81,8 +99,14 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
     return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', tick); };
   }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
   const [open, setOpen] = useState<string | null>(null);
+  const [tab, setTab] = useState<ListTab>('all');
+  const [building, setBuilding] = useState('');
+  const [cleanType, setCleanType] = useState('');
+  const [unitSearch, setUnitSearch] = useState('');
+  const [taking, setTaking] = useState<string | null>(null);
+  const [confirm, ask] = useConfirm();
   const jobs = data?.rows ?? [];
-  const fresh = useFreshIds(jobs.map(j => j.id), date, !!data && data.date === date);
+  const fresh = useFreshIds([...jobs, ...(data?.open ?? [])].map(j => j.id), date, !!data && data.date === date);
   const openJob = jobs.find(j => j.id === open) ?? null;
   useEffect(() => { if (open && data && !openJob) setOpen(null); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
   // A notice tapped in the bell: open that job on its own day.
@@ -95,17 +119,61 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
       .finally(() => { if (live) onLinked?.(); });
     return () => { live = false; };
   }, [linkTask]); // eslint-disable-line react-hooks/exhaustive-deps
-  const overdue = useMemo(() => byBuilding(jobs.filter(j => jobOverdue(j, now))), [jobs, now]);
-  const day = useMemo(() => byBuilding(jobs.filter(j => !jobOverdue(j, now))), [jobs, now]);
+  const unitKey = unitKeyOf(unitSearch);
+  const isShown = (j: Job): boolean => (!building || j.buildingId === building) && (!cleanType || j.kind === cleanType)
+    && (!unitKey || unitKeyOf(j.unit.unitNumber ?? '').includes(unitKey));
+  const mine = jobs.filter(isShown);
+  const ongoing = mine.filter(j => !j.done);
+  const finished = mine.filter(j => j.done);
+  const pool = (data?.open ?? []).filter(isShown);
+  const team = (data?.team ?? []).filter(isShown);
+  const mineInTab = tab === 'ongoing' ? ongoing : tab === 'done' ? finished : tab === 'all' ? mine : [];
+  const poolInTab = tab === 'all' ? pool : [];
+  const overdue = byBuilding(mineInTab.filter(j => jobOverdue(j, now)));
+  const day = byBuilding(mineInTab.filter(j => !jobOverdue(j, now)));
+  const poolGroups = byBuilding(poolInTab);
   const overdueCount = overdue.reduce((n, g) => n + g.jobs.length, 0);
   const left = jobs.filter(j => !j.done).length;
+  const buildingOptions = useMemo(() => {
+    const byId = new Map([...(data?.rows ?? []), ...(data?.open ?? []), ...(data?.team ?? [])].map(j => [j.buildingId, j.unit.propertyName]));
+    return [...byId].map(([id, name]) => ({ id, name })).sort((first, second) => first.name.localeCompare(second.name));
+  }, [data]);
+  const tabLabel = (name: string, count: number): ReactNode => (
+    <span className="flex flex-col items-center">{name}<span className="text-meta text-muted-ink tabular-nums">{count}</span></span>
+  );
+  async function take(j: Job) {
+    const unit = j.unit.unitNumber;
+    const answer = await ask({ title: t.jobs.takeTitle(unit), body: t.jobs.takeBody, confirmLabel: t.jobs.take, cancelLabel: t.jobs.cancel });
+    if (answer === null) return;
+    setTaking(j.id);
+    try {
+      await api.post(`/field/tasks/${j.id}/pick`, {});
+      toast({ tone: 'success', title: t.jobs.taken(unit) });
+      setTab('ongoing');
+    } catch (failure) {
+      toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(failure, t.jobs.checkSignal) });
+    } finally {
+      setTaking(null);
+      reload();
+    }
+  }
   const card = (j: Job) => <TaskCard key={j.id} job={j} now={now} fresh={fresh.has(j.id)} active={j.id === open} onOpen={() => setOpen(j.id)} />;
-  const buildings = (gs: Group[]) => gs.map(g => (
+  const offerCard = (j: Job) => <TaskCard key={j.id} job={j} now={now} fresh={fresh.has(j.id)} active={j.id === taking} offer onOpen={() => { if (!taking) void take(j); }} />;
+  const groupHeading = (name: string, jobsInGroup: Job[]) => (
+    <h2 className="m-0 px-1 text-[16px] font-semibold tracking-[-0.01em] flex items-baseline gap-2">{name}<span className="text-meta text-muted-ink font-normal tabular-nums">{t.jobs.groupDone(jobsInGroup.filter(j => j.done).length, jobsInGroup.length)}</span></h2>
+  );
+  const buildings = (gs: Group[], render = card) => gs.map(g => (
     <section key={g.id} className="flex flex-col gap-2">
-      <h2 className="m-0 px-1 text-[16px] font-semibold tracking-[-0.01em] flex items-baseline gap-2">{g.name}<span className="text-meta text-muted-ink font-normal tabular-nums">{t.jobs.groupDone(g.jobs.filter(j => j.done).length, g.jobs.length)}</span></h2>
-      <PhoneJobList label={g.name}>{g.jobs.map(card)}</PhoneJobList>
+      {groupHeading(g.name, g.jobs)}
+      <PhoneJobList label={g.name}>{g.jobs.map(render)}</PhoneJobList>
     </section>
   ));
+  const isListEmpty = tab === 'team' ? team.length === 0 : mineInTab.length === 0 && poolInTab.length === 0;
+  const emptyState = unitKey
+    ? <EmptyState icon="Search" title={t.repairs.noUnitMatch(unitSearch.trim())} body={t.repairs.noUnitMatchBody} />
+    : tab === 'team' ? <EmptyState icon="Users" title={t.jobs.noTeam} body={t.jobs.noTeamBody} />
+    : tab === 'done' ? <EmptyState icon="Sparkles" title={t.jobs.noDone} />
+    : <EmptyState icon="Sparkles" title={t.jobs.none(weekday(date))} body={tab === 'ongoing' && pool.length > 0 ? t.jobs.noneBodyPick : t.jobs.noneBody} />;
 
   return (
     <>
@@ -115,10 +183,48 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
           <div className="text-copy text-muted-ink">{weekday(date)} · {data ? t.jobs.summary(left, jobs.length - left) : t.common.loading}</div>
         </div>
         <Segmented label={t.jobs.day} className="[&>button]:h-11" value={pick} onChange={setPick} options={[{ value: 'today', label: t.jobs.today }, { value: 'tomorrow', label: t.jobs.tomorrow }]} />
+        {data && (
+          <Segmented label={t.jobs.which} value={tab} onChange={setTab}
+            className="w-full grid grid-flow-col auto-cols-fr [&>button]:h-auto [&>button]:self-stretch [&>button]:min-h-11 [&>button]:px-1 [&>button]:py-1 [&>button]:whitespace-normal [&>button]:leading-tight"
+            options={[
+              { value: 'ongoing', label: tabLabel(t.jobs.ongoing, ongoing.length) },
+              { value: 'all', label: tabLabel(t.jobs.all, mine.length + pool.length) },
+              { value: 'done', label: tabLabel(t.jobs.done, finished.length) },
+              ...(data.mayPick ? [{ value: 'team' as const, label: tabLabel(t.jobs.team, team.length) }] : []),
+            ]} />
+        )}
       </div>
+      {data && (
+        <FormRow label={t.repairs.unitSearch}>
+          <input type="search" enterKeyHint="search" autoComplete="off" className={cx(INPUT, 'h-11 text-[16px]')} value={unitSearch}
+            onChange={e => setUnitSearch(e.target.value)} placeholder={t.repairs.unitSearchPh} maxLength={40} />
+        </FormRow>
+      )}
+      {buildingOptions.length > 1 && (
+        <FormRow label={t.repairs.building}>
+          <select className={cx(INPUT, 'h-11 text-[16px]')} value={building} onChange={e => setBuilding(e.target.value)}>
+            <option value="">{t.repairs.allBuildings}</option>
+            {buildingOptions.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </FormRow>
+      )}
+      {data && (
+        <FormRow label={t.jobs.cleaningType}>
+          <select className={cx(INPUT, 'h-11 text-[16px]')} value={cleanType} onChange={e => setCleanType(e.target.value)}>
+            <option value="">{t.jobs.allTypes}</option>
+            {CLEAN_TYPES.map(value => <option key={value} value={value}>{wordFor(t.jobs.clean, value)}</option>)}
+          </select>
+        </FormRow>
+      )}
       {error && <StaleBanner message={error} onRetry={reload} />}
       {loading && !data ? <><Skeleton height={84} /><Skeleton height={84} /></>
-        : jobs.length === 0 ? <EmptyState icon="Sparkles" title={t.jobs.none(weekday(date))} body={t.jobs.noneBody} />
+        : isListEmpty ? emptyState
+        : tab === 'team' ? byCleaner(team).map(cleaner => (
+          <section key={cleaner.name.toLowerCase()} className="flex flex-col gap-2">
+            {groupHeading(cleaner.name, cleaner.jobs)}
+            <PhoneJobList label={cleaner.name}>{sortForCleaner(cleaner.jobs, jobOrder).map(j => <TaskCard key={j.id} job={j} now={now} fresh={false} active={false} showBuilding />)}</PhoneJobList>
+          </section>
+        ))
         : <>
           {overdueCount > 0 && (
             <section aria-label={t.jobs.overdueTitle} className="flex-none rounded-card border border-solid border-danger-line bg-danger-bg flex flex-col">
@@ -136,8 +242,15 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
               {buildings(day)}
             </>
           )}
+          {poolGroups.length > 0 && (
+            <>
+              <h2 className="m-0 px-1 mt-1 text-heading font-semibold flex items-center gap-2">{t.jobs.openToPick}<StatusBadge tone="gold">{poolInTab.length}</StatusBadge></h2>
+              {buildings(poolGroups, offerCard)}
+            </>
+          )}
         </>}
       {/* The list stays mounted under the sheet, so closing it lands back at the same scroll position. */}
+      {confirm}
       <Drawer open={!!openJob} onClose={() => setOpen(null)} labelledBy={openJob ? `task-title-${openJob.id}` : undefined}>
         {openJob && <TaskDetail key={openJob.id} job={openJob} now={now} onClose={() => setOpen(null)} onChanged={reload} />}
       </Drawer>
@@ -177,15 +290,15 @@ const autoAt = (t: PortalStrings, j: Job) => t.jobs.autoAt(outTime(j) ?? '', !!j
 
 /** The list card: the Cleaning page's phone card in the portal's words. Start job lives in TaskDetail, not here, so a
  *  tap while scrolling the list can never start a job by mistake. */
-function TaskCard({ job: j, now, fresh, active, onOpen }: { job: Job; now: number; fresh: boolean; active: boolean; onOpen: () => void }) {
+function TaskCard({ job: j, now, fresh, active, offer, showBuilding, onOpen }: { job: Job; now: number; fresh: boolean; active: boolean; offer?: boolean; showBuilding?: boolean; onOpen?: () => void }) {
   const t = usePortalText();
   const { short } = usePortalDates();
   const lateBy = j.done ? 0 : daysLate(j.day);
   const tone = cleanRowTone({ day: j.day, status: j.done ? 'done' : j.state === 'in_progress' ? 'cleaning' : 'waiting', guestOut: j.guestOut, checkOutTime: j.previous?.checkOutTime ?? null }, now);
   return (
     <PhoneJobCard title={j.unit.unitNumber} active={active} tone={tone} onSelect={onOpen}
-      building={j.external ? [j.external.clientName, j.external.clientPhone].filter(Boolean).join(' · ') || undefined : undefined}
-      badges={<>{fresh && <StatusBadge tone="info" size="sm" label={t.jobs.newJob} />}{lateBy > 0 && <StatusBadge tone="critical" size="sm">{t.jobs.overdue(t.common.days(lateBy))}</StatusBadge>}</>}
+      building={j.external ? [j.external.clientName, j.external.clientPhone].filter(Boolean).join(' · ') || undefined : showBuilding ? j.unit.propertyName : undefined}
+      badges={<>{offer && <StatusBadge tone="gold" size="sm">{t.jobs.openToPick}</StatusBadge>}{fresh && <StatusBadge tone="info" size="sm" label={t.jobs.newJob} />}{lateBy > 0 && <StatusBadge tone="critical" size="sm">{t.jobs.overdue(t.common.days(lateBy))}</StatusBadge>}</>}
       status={<JobStatus job={j} />}
       out={j.external ? undefined : j.previous
         ? <PhoneStayTime label={t.jobs.out} time={outTime(j)} actual={j.guestOut} actualLabel={j.guestLeftAuto ? autoAt(t, j) : t.jobs.guestHasLeft} />

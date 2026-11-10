@@ -94,4 +94,22 @@ row = await boardRow(third);
 check('empty list: unassigned', r.status === 200 && row?.cleaners?.length === 0 && row?.status === 'unassigned' && row?.state === 'open', JSON.stringify(row));
 check('single cleanerId still works', (await call('POST', `/api/housekeeping/tasks/${third}/assign`, { cleanerId: out2, force: true })).status === 200 && (await boardRow(third))?.cleaners?.length === 1);
 
+// 10. A cleaner takes a clean nobody has (All tab), and sees what in-house teammates hold (Team tab).
+const mate = (await call('POST', '/api/housekeeping/cleaners', { name: `Mate ${run}`, employmentType: 'internal' })).json?.id;
+const free = (await call('POST', '/api/housekeeping/tasks', { unitId: units[1].id, date: today, kind: 'turnover' })).json?.id;
+const held = (await call('POST', '/api/housekeeping/tasks', { unitId: unit.id, date: today, kind: 'deep_clean', cleanerIds: [mate] })).json?.id;
+let lists = (await call('GET', `/api/field/tasks?date=${today}`, undefined, 'housekeeper')).json;
+check('pick: free clean listed under open', lists?.mayPick === true && lists?.open?.some(x => x.id === free) && !lists?.rows?.some(x => x.id === free), JSON.stringify(lists?.open?.map(x => x.id)));
+check('pick: open rows carry no access instruction', lists?.open?.every(x => x.accessInstruction === null));
+check('team: in-house mate job listed with her name', lists?.team?.find(x => x.id === held)?.team?.includes(`Mate ${run}`), JSON.stringify(lists?.team?.find(x => x.id === held)));
+check('team: outsourced-only job not listed', !lists?.team?.some(x => x.id === third) && !lists?.open?.some(x => x.id === third));
+check('pick: technician 403', (await call('POST', `/api/field/tasks/${free}/pick`, {}, 'technician')).status === 403);
+r = await call('POST', `/api/field/tasks/${free}/pick`, {}, 'housekeeper');
+check('pick: 200', r.status === 200, r.text);
+lists = (await call('GET', `/api/field/tasks?date=${today}`, undefined, 'housekeeper')).json;
+check('pick: now in her own rows', lists?.rows?.some(x => x.id === free) && !lists?.open?.some(x => x.id === free));
+check('pick: board names her', (await boardRow(free))?.cleaners?.some(c => c.cleanerId === nurul));
+check('pick: second take 409', (await call('POST', `/api/field/tasks/${free}/pick`, {}, 'housekeeper')).status === 409);
+check('pick: held job 409', (await call('POST', `/api/field/tasks/${held}/pick`, {}, 'housekeeper')).status === 409);
+
 done();
