@@ -8,6 +8,8 @@
 
 import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { funnelTicked } from "../../hooks/useServerColumnFunnels";
+import { conditionDateRange } from "../../components/dataTableConditionFilters";
 import { purchaseOrderRowMenu } from "./row-menus";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { buildVariantSummary, fmtSen, fmtDate, orderLineIdentity } from "@2990s/shared";
@@ -830,7 +832,7 @@ export function PurchaseOrdersListV2() {
      and the MRP-derived Assigned SO / Delivered) stays
      client-side on the loaded page — those columns are line- or MRP-level and
      the list query cannot express them cheaply. */
-  const [serverFunnels, setServerFunnels] = useState<{ creditorNames?: string[]; creditorCodes?: string[]; currencies?: string[]; docDates?: string[] }>({});
+  const [serverFunnels, setServerFunnels] = useState<{ creditorNames?: string[]; creditorCodes?: string[]; currencies?: string[]; docDates?: string[]; from?: string; to?: string }>({});
   const { requestTerm: debouncedSearch } = useDebouncedSearchTerm(search);
 
   // Send the active tab's BUCKET NAME as `status`; the backend resolves each
@@ -931,7 +933,8 @@ export function PurchaseOrdersListV2() {
       creditorNames: pick("supplier"),
       creditorCodes: pick("creditor_code"),
       currencies: pick("currency"),
-      docDates: pick("po_date"),
+      docDates: funnelTicked(colFilters, "po_date"),
+      ...conditionDateRange(colFilters.po_date),
     };
     const sig = JSON.stringify(next);
     if (sig === serverFunnelSigRef.current) return;
