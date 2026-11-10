@@ -1,5 +1,6 @@
 import { type Env, all } from './db';
 import { MYT_DATE } from './ops';
+import { notTestCleaner } from './hr';
 import { CLEANING_CARDS, readJobMinutes, type CleaningCardKey } from './jobCards';
 import { minutesBetween, totalJobs, type JobTotals } from './jobEfficiency';
 
@@ -26,7 +27,7 @@ export async function cleanerJobs(env: Env, from: string, to: string): Promise<C
       AND ${MYT_DATE('t.completed_at')} BETWEEN ? AND ?
       AND (t.cleaner_id = c.id OR (c.user_id IS NOT NULL AND t.assignee_id = c.user_id)
            OR EXISTS (SELECT 1 FROM task_cleaners tc WHERE tc.task_id = t.id AND (tc.cleaner_id = c.id OR (c.user_id IS NOT NULL AND tc.user_id = c.user_id))))
-    WHERE c.employment_type = 'internal' AND (c.is_active > 0 OR t.id IS NOT NULL)
+    WHERE c.employment_type = 'internal' AND (c.is_active > 0 OR t.id IS NOT NULL) AND ${notTestCleaner('c')}
     ORDER BY c.full_name, c.id`, from, to), readJobMinutes(env)]);
 
   const byCleaner = new Map<string, { name: string; jobs: CleanerJobRow[] }>();

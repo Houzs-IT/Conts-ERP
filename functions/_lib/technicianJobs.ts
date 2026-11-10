@@ -1,6 +1,7 @@
 import { type Env, all } from './db';
 import { MYT_DATE } from './ops';
 import { CATEGORIES, hasTechnicianList } from './maintenance';
+import { notTestTechnician } from './hr';
 import { REPAIR_CARDS, readJobMinutes, type RepairCardKey } from './jobCards';
 import { minutesBetween, totalJobs, type JobTotals } from './jobEfficiency';
 
@@ -36,7 +37,7 @@ export async function technicianJobs(env: Env, from: string, to: string): Promis
     LEFT JOIN maintenance_issues m ON m.technician_id = tech.id AND m.state = 'resolved' AND m.resolved_at IS NOT NULL
       AND ${MYT_DATE('m.resolved_at')} BETWEEN ? AND ?
     LEFT JOIN units u ON u.id = m.unit_id
-    WHERE tech.employment_type = 'internal' AND (tech.is_active > 0 OR m.id IS NOT NULL)
+    WHERE tech.employment_type = 'internal' AND (tech.is_active > 0 OR m.id IS NOT NULL) AND ${notTestTechnician('tech')}
     ORDER BY tech.full_name, tech.id, day, m.id`, from, to), readJobMinutes(env)]);
 
   const jobs: RepairJob[] = rows.flatMap(row => {

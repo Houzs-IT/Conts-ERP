@@ -23,7 +23,10 @@ export type PayBasis = (typeof PAY_BASES)[number];
 export type TaxResidency = (typeof TAX_RESIDENCIES)[number];
 export type TaxCategory = (typeof TAX_CATEGORIES)[number];
 export type Bank = (typeof MALAYSIAN_BANKS)[number];
-export type EmployeeStatus = 'active' | 'resigned';
+export const EMPLOYEE_STATUSES = ['active', 'resigned', 'test'] as const;
+export type EmployeeStatus = (typeof EMPLOYEE_STATUSES)[number];
+export const EMPLOYEE_STATUS_LABEL: Record<EmployeeStatus, string> = { active: 'Active', resigned: 'Resigned', test: 'Test account' };
+export const isEmployeeStatus = (value: string): value is EmployeeStatus => EMPLOYEE_STATUSES.some(status => status === value);
 
 export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = { transfer: 'Bank transfer', cash: 'Cash' };
 export const PAY_BASIS_LABEL: Record<PayBasis, string> = { monthly: 'Monthly salary', daily: 'Daily rate' };
@@ -46,7 +49,7 @@ export const employeeInput = z.object({
   position: z.enum(POSITIONS),
   nationality: text(40),
   joinDate: day.nullable(),
-  status: z.enum(['active', 'resigned']),
+  status: z.enum(EMPLOYEE_STATUSES),
   resignedAt: day.nullable(),
   payBasis: z.enum(PAY_BASES),
   basicSalarySen: sen,
@@ -69,7 +72,7 @@ export const employeeInput = z.object({
   taxChildReliefSen: sen.nullable(),
   annualLeaveDays: z.int().min(0).max(60).nullable(),
   medicalLeaveDays: z.int().min(0).max(60).nullable(),
-}).refine(e => e.status === 'active' || !!e.resignedAt, { path: ['resignedAt'], message: 'Give the last working day.' });
+}).refine(e => e.status !== 'resigned' || !!e.resignedAt, { path: ['resignedAt'], message: 'Give the last working day.' });
 export type EmployeeInput = z.infer<typeof employeeInput>;
 
 /** One person on the Employees tab: the roster entry, and the HR record (defaults until it is first saved). */
@@ -117,7 +120,7 @@ export interface DcEmployee {
   phone: string | null;
   jobTitle: string | null;
   joinDate: string | null;
-  status: EmployeeStatus;
+  status: Exclude<EmployeeStatus, 'test'>;
   resignedAt: string | null;
 }
 export const dcEmployeeInput = z.object({
