@@ -9,6 +9,7 @@ import {
   layoutFor,
   mergeProjectIntoSo,
   missingFields,
+  quoteBrandFor,
   showDate,
   projectDatesText,
   toRenovationBlock,
@@ -120,5 +121,25 @@ describe("Start date / End date are read-only and come from the project (owner, 
   test("a linked project: its created day, and its Closed day once it has one", () => {
     expect(projectDatesText({ startDate: "2026-10-01", endDate: null }, "so")).toEqual({ start: "2026/10/01", end: "Set when Closed", startSet: true, endSet: false });
     expect(projectDatesText({ startDate: "2026-10-01", endDate: "2026-10-15" }, "project")).toEqual({ start: "2026/10/01", end: "2026/10/15", startSet: true, endSet: true });
+  });
+});
+
+/* chew, 10 Nov 2026: a new quotation opened for a project starts on the project's brand (its letterhead). */
+describe("the brand a new quotation for a project starts on", () => {
+  const BRANDS = [
+    { brandId: 1, name: "Dream Crafter", active: true },
+    { brandId: 2, name: "The Conts", active: true },
+    { brandId: 3, name: "Old Brand", active: false },
+  ];
+  test("the brand in use named like the project's, in any case", () => {
+    expect(quoteBrandFor({ brand: "The Conts" }, BRANDS)).toBe(2);
+    expect(quoteBrandFor({ brand: " dream crafter " }, BRANDS)).toBe(1);
+  });
+  test("none when the project has no brand, or names one no longer in use", () => {
+    expect(quoteBrandFor({ brand: null }, BRANDS)).toBeNull();
+    expect(quoteBrandFor({}, BRANDS)).toBeNull();
+    expect(quoteBrandFor(null, BRANDS)).toBeNull();
+    expect(quoteBrandFor({ brand: "Old Brand" }, BRANDS)).toBeNull();
+    expect(quoteBrandFor({ brand: "Somebody else" }, BRANDS)).toBeNull();
   });
 });

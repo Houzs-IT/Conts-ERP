@@ -23,6 +23,7 @@ import { computeProjectView, stageCompletionBlockers, type ProjectView } from ".
 import { manualSkipRefusal } from "../services/renovation/stages";
 import { GATE_REASON_TEXT } from "../services/renovation/gate";
 import { createRenovationProject, validateCreate, type CreateRenovationInput } from "../services/renovation/create";
+import { projectBrandFrom } from "../services/renovation/projectBrand";
 import { plannedDatesRefusal, isInternalTradeCode, tradeTaskStatus } from "../services/renovation/tradeTasks";
 import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
 import { groupEvidence, type EvidencePhoto } from "../services/renovation/pod";
@@ -224,6 +225,11 @@ app.post("/", requirePermission("projects.write"), async (c) => {
       building: v.building || null, unitNo: v.unitNo || null,
     });
   }
+  /* chew, 10 Nov 2026: the brand is chosen when the project opens (Dream Crafter or The Conts) and brings its finance
+     type; an older caller that sends only a finance type gets that type's brand. */
+  const picked = await projectBrandFrom(db(c), body as Record<string, unknown>, co.companyId);
+  if (!picked.ok) return c.json({ error: picked.error, message: picked.message }, 400);
+  if (picked.brand && (body as Record<string, unknown>).financeKind == null) (body as Record<string, unknown>).financeKind = picked.brand.financeKind;
   /* Conts (finance phase 1.5; SOP 3.4): an internal project — the company's own money — has a department and a budget,
      and no customer of its own. */
   const fund = fundingFrom(body as Record<string, unknown>);
@@ -232,7 +238,13 @@ app.post("/", requirePermission("projects.write"), async (c) => {
   if (!String(body.name ?? "").trim()) body.name = projectNameFrom(body.building, body.unitNo, body.customerName);
   const refusal = validateCreate(body);
   if (refusal) return c.json({ error: refusal }, 400);
-  const created = await createRenovationProject(db(c), body as CreateRenovationInput, userId(c), co.companyId);
+  /* A customer project and an internal Renovation one carry the brand; an internal Rental one has none (SOP 1.1). */
+  const branded = fund.funding === "customer" || fund.department === "supply";
+  const created = await createRenovationProject(db(c), {
+    ...(body as CreateRenovationInput),
+    brand: branded ? picked.brand?.name ?? null : null,
+    financeKind: branded ? fund.financeKind ?? picked.brand?.financeKind ?? null : null,
+  }, userId(c), co.companyId);
   if (!created) return c.json({ error: "type_not_found" }, 400);
   if (info) await writeProjectShared(db(c), created.id, info.value);
   if (fund.funding === "internal") {
