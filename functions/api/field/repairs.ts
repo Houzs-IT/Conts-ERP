@@ -10,11 +10,15 @@ const UNIT_KEY_SQL = "regexp_replace(u.unit_number, '[^[:alnum:]]', '', 'g')";
 
 interface PoolBuilding { id: string; name: string; open: number }
 
+const heldByTechnicianSql = (byId: boolean): string => `EXISTS (SELECT 1 FROM users tu WHERE tu.role = 'technician' AND ${byId
+  ? '(tu.id = m.assignee_user_id OR (m.assignee_user_id IS NULL AND lower(trim(tu.full_name)) = lower(trim(m.vendor_name))))'
+  : 'lower(trim(tu.full_name)) = lower(trim(m.vendor_name))'})`;
+
 /** GET /api/field/repairs?building=&category=&unit=&limit= — the signed-in person's repair jobs (open ones, and the ones closed in the last 14 days),
  *  and, for a technician, the open jobs nobody has yet that they may pick up, in one building when `building` is given,
  *  of one problem type when `category` is given, on units whose number contains `unit` (letters and digits only, so
  *  "1203" finds A-12-03), with every building's open count of those (zero kept, so a picked building stays listed),
- *  and the jobs other in-house technicians are working on now (`team`, read-only on the phone).
+ *  and the jobs the other technicians are working on now (`team`, read-only on the phone).
  *  `limit` grows by 200 per "Show more", up to 1000. Never carries an amount. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -33,7 +37,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const mine = await fieldRepairs(env, `${mineSql(byId)} AND ${visible} AND (m.state != 'resolved' OR m.resolved_at >= ?)`, [...mineArgs, since]);
   if (session.role !== 'technician') return json({ generatedAt: nowIso(), mine, open: [], team: [], mayPick: false, buildings: [] });
 
-  const teamSql = `m.assignee_kind = 'in_house' AND NOT COALESCE(${mineSql(byId)}, FALSE) AND ${visible} AND m.state != 'resolved' AND m.ended_at IS NULL`;
+  const teamSql = `m.assignee_kind = 'in_house' AND ${heldByTechnicianSql(byId)} AND NOT COALESCE(${mineSql(byId)}, FALSE) AND ${visible} AND m.state != 'resolved' AND m.ended_at IS NULL`;
 
   // A job waiting for the owner's approval cannot be started, so it is not offered.
   const poolSql = `${UNASSIGNED_SQL} AND ${visible} AND m.state IN ('open','reopened')`;
