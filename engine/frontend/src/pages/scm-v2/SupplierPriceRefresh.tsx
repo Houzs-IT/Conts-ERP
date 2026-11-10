@@ -53,9 +53,10 @@ export function SupplierPriceRefreshDialog({ supplierId, onClose }: { supplierId
         </header>
         <div className={styles.modalBody}>
           <p style={{ fontSize: 'var(--fs-12)', color: '#767b6e', marginBottom: 'var(--space-3)' }}>
-            Each item's price is compared with the latest posted purchase invoice from this supplier. The new price takes
-            effect from that invoice's date, so the next PO copies what was actually paid. A jump of more than 3x, or an
-            invoice in another unit, is not applied: it is usually a box vs piece mix-up. Nothing changes until you press Update.
+            Each item's price is compared with the latest posted purchase invoice from this supplier (the price after the
+            line's discount). The new price takes effect from that invoice's date, so the next PO copies what was actually
+            paid. A jump of more than 3x, an invoice in another unit or with no unit, or an item with no list price yet, is not
+            applied: it is usually a box vs piece mix-up. Nothing changes until you press Update.
           </p>
           {plan.isLoading && <p style={{ fontSize: 'var(--fs-13)' }}>Checking invoices…</p>}
           {plan.error && <p style={{ fontSize: 'var(--fs-13)', color: '#b3261e' }}>{(plan.error as Error).message}</p>}

@@ -557,7 +557,7 @@ export type PriceDrift = {
   invoiceNumber: string | null;
   deltaSen: number;
   eligible: boolean;
-  reason?: 'current' | 'two_prices' | 'unit_mismatch' | 'list_newer' | 'currency' | 'size_priced';
+  reason?: 'current' | 'two_prices' | 'unit_mismatch' | 'list_newer' | 'currency' | 'size_priced' | 'no_list_price';
   whyNot?: string;
 };
 export type PriceRefreshPlan = {

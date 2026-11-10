@@ -35,7 +35,7 @@ import { scopeToCompany, activeCompanyId, stampCompany,
   detailMissResponse } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
 import { pgrestIn } from '../lib/pgrest-in-list';
-import { planPriceRefresh, type BindingForRefresh, type PaidLine } from '../lib/supplier-price-refresh';
+import { netUnitSen, planPriceRefresh, type BindingForRefresh, type PaidLine } from '../lib/supplier-price-refresh';
 import { apControlOf, resolveRoles } from '../../acc/rules';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { holdsLedger } from '../../conts/ledger-access';
@@ -1330,14 +1330,15 @@ async function loadPriceRefreshPlan(c: any, supplierId: string, companyId: numbe
   const piIds = [...piById.keys()];
   for (let i = 0; i < piIds.length; i += 100) {
     const { data, error } = await pgrestIn(
-      supabase.from('purchase_invoice_items').select('purchase_invoice_id, item_code, unit_price_sen, uom').gt('unit_price_sen', 0),
+      supabase.from('purchase_invoice_items').select('purchase_invoice_id, item_code, qty, unit_price_sen, discount_sen, uom').gt('unit_price_sen', 0),
       'purchase_invoice_id', piIds.slice(i, i + 100),
     );
     if (error) return { ok: false as const, reason: (error as { message: string }).message };
-    for (const l of (data ?? []) as Array<{ purchase_invoice_id: string; item_code: string | null; unit_price_sen: number; uom: string | null }>) {
+    for (const l of (data ?? []) as Array<{ purchase_invoice_id: string; item_code: string | null; qty: number | null; unit_price_sen: number; discount_sen: number | null; uom: string | null }>) {
       const pi = piById.get(l.purchase_invoice_id);
       if (!pi || !l.item_code || !codes.includes(l.item_code)) continue;
-      lines.push({ itemCode: l.item_code, invoiceDate: pi.invoice_date, invoiceNumber: pi.invoice_number, unitPriceSen: l.unit_price_sen, uom: l.uom, currency: pi.currency });
+      /* Net of the line's discount: what one unit actually cost. */
+      lines.push({ itemCode: l.item_code, invoiceDate: pi.invoice_date, invoiceNumber: pi.invoice_number, unitPriceSen: netUnitSen(l.qty, l.unit_price_sen, l.discount_sen), uom: l.uom, currency: pi.currency });
     }
   }
   const skuUom = new Map<string, string | null>();
@@ -1349,6 +1350,19 @@ async function loadPriceRefreshPlan(c: any, supplierId: string, companyId: numbe
     if (error) return { ok: false as const, reason: (error as { message: string }).message };
     for (const r of (data ?? []) as Array<{ code: string; uom: string | null }>) skuUom.set(r.code, r.uom);
   }
+  /* A price change entered on the binding's timeline (POST .../price-changes)
+     lands in supplier_binding_price_history and leaves price_valid_from alone:
+     the newest effective_from there also makes the list "newer" than an invoice. */
+  const { data: hist, error: hErr } = await supabase.from('supplier_binding_price_history')
+    .select('item_code, effective_from')
+    .eq('company_id', companyId).eq('supplier_id', supplierId).eq('material_kind', 'mfg_product');
+  if (hErr) return { ok: false as const, reason: hErr.message };
+  const newest = new Map<string, string>();
+  for (const h of (hist ?? []) as Array<{ item_code: string; effective_from: string | null }>) {
+    const d = String(h.effective_from ?? '').slice(0, 10);
+    if (d && d > (newest.get(h.item_code) ?? '')) newest.set(h.item_code, d);
+  }
+  for (const b of list) b.history_from = newest.get(b.item_code) ?? null;
   return { ok: true as const, plan: planPriceRefresh(list, lines, skuUom), bindings: list };
 }
 

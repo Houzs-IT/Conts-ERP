@@ -15,6 +15,11 @@
 //   · a list already dated after the last invoice (somebody's newer decision)
 //   · an invoice in another currency than the price list
 //   · a binding priced by size / tier (an invoice line cannot say which cell)
+//   · a unit missing on the invoice line or the SKU, or a list with no price
+//     yet: the box vs piece check cannot run, so a person looks first
+// The paid price is NET of the line's discount: (qty x unit - discount) / qty.
+// "The list is newer" reads both the binding's own date and the newest
+// effective-dated price change (supplier_binding_price_history).
 // A zero-priced line is never a price; an item never invoiced is left alone.
 //
 // Pure: the preview and the apply run this same function on fresh reads.
@@ -40,9 +45,20 @@ export type BindingForRefresh = {
   price_matrix: unknown;
   price_valid_from: string | null;
   currency: string | null;
+  /** Newest effective_from in supplier_binding_price_history for this supplier + item. */
+  history_from?: string | null;
 };
 
-export type RefreshReason = 'current' | 'two_prices' | 'unit_mismatch' | 'list_newer' | 'currency' | 'size_priced';
+/** What one unit actually cost on an invoice line: unit price less the line's
+ *  discount spread over its quantity, rounded to the sen. */
+export function netUnitSen(qty: number | null | undefined, unitSen: number, discountSen: number | null | undefined): number {
+  const q = Number(qty);
+  const d = Number(discountSen) || 0;
+  if (!(d > 0) || !Number.isFinite(q) || q <= 0) return unitSen;
+  return Math.round((q * unitSen - d) / q);
+}
+
+export type RefreshReason = 'current' | 'two_prices' | 'unit_mismatch' | 'list_newer' | 'currency' | 'size_priced' | 'no_list_price';
 
 export type PriceDrift = {
   bindingId: string;
@@ -99,7 +115,8 @@ export function planPriceRefresh(
     const hit = latest.get(b.item_code.trim());
     if (!hit) continue; // never invoiced: no evidence is not a price
     const listSen = Number(b.unit_price_sen) || 0;
-    const listFrom = day(b.price_valid_from) || null;
+    /* The later of the binding's own date and its newest scheduled / recorded price change. */
+    const listFrom = [day(b.price_valid_from), day(b.history_from)].filter(Boolean).sort().at(-1) || null;
     const base = {
       bindingId: b.id, itemCode: b.item_code, materialName: b.material_name,
       listSen, listFrom, paidOn: hit.date, invoiceNumber: hit.invoiceNumber,
@@ -122,7 +139,11 @@ export function planPriceRefresh(
       continue;
     }
     const skuUom = norm(skuUomByCode.get(b.item_code) ?? null);
-    const otherUom = [...hit.uoms].find((u) => skuUom && u !== skuUom);
+    if (!skuUom || hit.uoms.size === 0) {
+      refuse('unit_mismatch', `no unit on the ${!skuUom ? 'SKU' : 'invoice line'}, so a box vs piece mix-up cannot be ruled out: check the invoice against the list's unit`, paidSen);
+      continue;
+    }
+    const otherUom = [...hit.uoms].find((u) => u !== skuUom);
     if (otherUom) {
       refuse('unit_mismatch', `invoiced per ${otherUom}, the SKU is sold per ${skuUom}: check the invoice against the list's unit`, paidSen);
       continue;
@@ -131,8 +152,12 @@ export function planPriceRefresh(
       refuse('current', 'already current', paidSen);
       continue;
     }
-    const ratio = listSen > 0 ? paidSen / listSen : null;
-    if (ratio !== null && (ratio > OUTLIER_MULTIPLE || ratio < 1 / OUTLIER_MULTIPLE)) {
+    if (listSen <= 0) {
+      refuse('no_list_price', `the price list has no price yet, so a ${rm(paidSen)} invoice price cannot be checked for a unit mix-up: enter it by hand`, paidSen);
+      continue;
+    }
+    const ratio = paidSen / listSen;
+    if ((ratio > OUTLIER_MULTIPLE || ratio < 1 / OUTLIER_MULTIPLE)) {
       refuse('unit_mismatch',
         `price moved ${ratio.toFixed(1)}x (${rm(listSen)} → ${rm(paidSen)}): almost always a per-box vs per-piece mix-up, not a price change. Check the invoice against the list's unit.`,
         paidSen);
