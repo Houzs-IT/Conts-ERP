@@ -52,6 +52,7 @@ import { PRODUCTION_DOC, issueMaterials, returnMaterial, reverseIssues } from '.
 import { voChangeWaiting } from '../lib/renovation-po-change-guard';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
 import { heldSoBehindLines, soOnHoldResponse } from '../lib/source-document-gates';
+import { actualMinutesByOrder, entryAddHandler, entryDeleteHandler, entryEditHandler, hoursGetHandler, stopRunningTimers, timerStartHandler, timerStopHandler } from './production-hours';
 
 export const productionOrders = new Hono<{ Bindings: Env; Variables: Variables }>();
 productionOrders.use('*', supabaseAuth);
@@ -219,8 +220,13 @@ async function attachProgress(sb: any, rows: Array<Record<string, unknown>>, sta
   if (rows.length === 0) return;
   const holidays = await loadHolidays(sb);
   const today = todayMyt();
-  const { data: people } = await sb.from('production_order_workers').select('production_order_id, name').in('production_order_id', rows.map((r) => r.id)).order('created_at');
+  const [{ data: people }, actual] = await Promise.all([
+    sb.from('production_order_workers').select('production_order_id, name').in('production_order_id', rows.map((r) => r.id)).order('created_at'),
+    actualMinutesByOrder(sb, rows.map((r) => String(r.id))),
+  ]);
   for (const r of rows) {
+    /* Worker hours so far (production-hours.ts); the budget is the row's own production_time_hours. */
+    r.actual_minutes = actual.get(String(r.id)) ?? 0;
     r.progress = progressOf(r as never, today, holidaySet(holidays, stateOf(r)));
     r.assigned_to = ((people ?? []) as Array<{ production_order_id: string; name: string }>).filter((p) => p.production_order_id === r.id).map((p) => p.name);
   }
@@ -1657,6 +1663,8 @@ productionOrders.post('/:id/complete', async (c) => {
     ...(problem ? {} : { completion_step: step === 'deliver' ? 'done' : step }),
   }).eq('id', o.id);
   if (problem) return c.json({ error: 'step_failed', step, message: problem }, 409);
+  /* The work is done: whoever is still on the clock is stopped now. */
+  if (step === 'grn') await stopRunningTimers(sb, o.id, actorName(c));
   return c.json({ ok: true, step });
 });
 
@@ -1805,6 +1813,14 @@ productionOrders.put('/:id/workers', async (c) => {
   });
   return c.json({ ok: true });
 });
+
+/* Worker actual hours (TODO item 16): production-hours.ts. */
+productionOrders.get('/:id/hours', hoursGetHandler);
+productionOrders.post('/:id/hours/start', timerStartHandler);
+productionOrders.post('/:id/hours/stop', timerStopHandler);
+productionOrders.post('/:id/hours', entryAddHandler);
+productionOrders.patch('/:id/hours/:entryId', entryEditHandler);
+productionOrders.delete('/:id/hours/:entryId', entryDeleteHandler);
 
 /* Production Time is management's budget in hours. Days and hours are never converted. */
 productionOrders.patch('/:id/production-time', async (c) => {
