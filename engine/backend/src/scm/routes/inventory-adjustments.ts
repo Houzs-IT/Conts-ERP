@@ -91,27 +91,52 @@ const nextAdjustmentNo = (db: ScopedDb, c: Ctx): Promise<string> =>
     'library hand-off: mintMonthlyDocNo partitions by the per-company DOC-NUMBER PREFIX, not by a predicate — its .like() for HC-SA-2610-% never matches another company\'s numbers',
   ), 'stock_adjustments', 'adjustment_no', `${companyDocPrefix(c)}SA-${docMonthTag(null)}`);
 
-/** Open qty in one bucket of the warehouse. A null batch means the un-batched
-    lots only — the same reading the pre-document POST used. */
-async function openQty(db: ScopedDb, c: Ctx, warehouseId: string, b: Bucket): Promise<number> {
-  let q = db.from('v_inventory_lots_open', companyScope(c))
-    .select('qty_remaining')
-    .eq('warehouse_id', warehouseId)
-    .eq('item_code', b.item_code)
-    .eq('variant_key', b.variant_key);
-  q = b.batch_no == null ? q.is('batch_no', null) : q.eq('batch_no', b.batch_no);
-  const { data, error } = await q;
-  if (error) throw new Error(error.message);
-  return (data as Array<{ qty_remaining: number | null }>).reduce((s, l) => s + Number(l.qty_remaining ?? 0), 0);
+/* ONE read per table for the whole document, never one per line: a 40-line
+   adjustment that read its lots line by line spent the Worker's 50-subrequest
+   budget between the header insert and the movement insert, leaving a document
+   whose lines never moved stock. */
+type LotReads = {
+  /** Open qty per bucket (bucketKeyOf). A null batch means the un-batched lots only. */
+  open: Map<string, number>;
+  /** Every lot (open + consumed) per item_code + variant_key, for the found-stock cost. */
+  lots: Map<string, LotCostRow[]>;
+};
+
+const costKey = (itemCode: string, variantKey: string | null) => JSON.stringify([itemCode, variantKey ?? '']);
+
+async function readLots(db: ScopedDb, c: Ctx, warehouseId: string, codes: readonly string[]): Promise<LotReads> {
+  const uniq = [...new Set(codes)];
+  const out: LotReads = { open: new Map(), lots: new Map() };
+  if (uniq.length === 0) return out;
+  const [openRes, lotRes] = await Promise.all([
+    chunkIn<{ item_code: string; variant_key: string | null; batch_no: string | null; qty_remaining: number | null }>(uniq, (batch, pFrom, pTo) =>
+      db.from('v_inventory_lots_open', companyScope(c))
+        .select('item_code, variant_key, batch_no, qty_remaining')
+        .eq('warehouse_id', warehouseId).in('item_code', batch).range(pFrom, pTo)),
+    chunkIn<LotCostRow & { item_code: string; variant_key: string | null }>(uniq, (batch, pFrom, pTo) =>
+      db.from('inventory_lots', companyScope(c))
+        .select('item_code, variant_key, unit_cost_sen, qty_remaining, source_doc_type, received_at')
+        .eq('warehouse_id', warehouseId).in('item_code', batch).range(pFrom, pTo)),
+  ]);
+  if (openRes.error) throw new Error(openRes.error.message);
+  if (lotRes.error) throw new Error(lotRes.error.message);
+  for (const l of openRes.data) {
+    const k = bucketKeyOf(l);
+    out.open.set(k, (out.open.get(k) ?? 0) + Number(l.qty_remaining ?? 0));
+  }
+  for (const l of lotRes.data) {
+    const k = costKey(l.item_code, l.variant_key);
+    out.lots.set(k, [...(out.lots.get(k) ?? []), l]);
+  }
+  return out;
 }
 
 /** Every bucket whose net goes DOWN by more than it holds, as one sentence. */
-async function shortages(db: ScopedDb, c: Ctx, warehouseId: string, deltas: readonly BucketDelta[]): Promise<string[]> {
+function shortages(reads: LotReads, deltas: readonly BucketDelta[]): string[] {
   const out: string[] = [];
   for (const d of deltas) {
     if (d.delta >= 0) continue;
-    // eslint-disable-next-line no-await-in-loop -- a handful of buckets per document; sequential keeps the subrequest count flat
-    const open = await openQty(db, c, warehouseId, d.bucket);
+    const open = reads.open.get(bucketKeyOf(d.bucket)) ?? 0;
     if (-d.delta > open) out.push(`${bucketLabel(d.bucket)}: only ${open} on hand, this takes out ${-d.delta}`);
   }
   return out;
@@ -120,15 +145,8 @@ async function shortages(db: ScopedDb, c: Ctx, warehouseId: string, deltas: read
 /** The cost found stock enters at. Never 0 (audit R3): the operator's figure,
     else what this document wrote the same bucket off at, else the bucket's
     known lot cost. null = nothing to go on, so the caller refuses. */
-async function increaseCostSen(
-  db: ScopedDb, c: Ctx, warehouseId: string, b: Bucket, preferredSen: number,
-): Promise<number | null> {
-  const { data: lots } = await db.from('inventory_lots', companyScope(c))
-    .select('unit_cost_sen, qty_remaining, source_doc_type, received_at')
-    .eq('warehouse_id', warehouseId)
-    .eq('item_code', b.item_code)
-    .eq('variant_key', b.variant_key);
-  const forced = resolveForcedUnitCostSen({ operatorCostSen: preferredSen, lots: (lots ?? []) as LotCostRow[] });
+function increaseCostSen(reads: LotReads, b: Bucket, preferredSen: number): number | null {
+  const forced = resolveForcedUnitCostSen({ operatorCostSen: preferredSen, lots: reads.lots.get(costKey(b.item_code, b.variant_key)) ?? [] });
   return forced.ok ? forced.unitCostSen : null;
 }
 
@@ -249,18 +267,19 @@ inventoryAdjustments.post('/', async (c) => {
   if (!whCheck.ok) return refuseWithoutWriting(c, whCheck.body, whCheck.status);
 
   const deltas = bucketDeltas([], lines);
+  let reads: LotReads;
   try {
-    const short = await shortages(db, c, warehouseId, deltas);
-    if (short.length) return refuseWithoutWriting(c, { error: 'insufficient_bucket', message: `Not enough stock — ${short.join('; ')}.` }, 422);
+    reads = await readLots(db, c, warehouseId, lines.map((l) => l.item_code));
   } catch (e) {
     return refuseWithoutWriting(c, { error: 'stock_check_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
   }
+  const short = shortages(reads, deltas);
+  if (short.length) return refuseWithoutWriting(c, { error: 'insufficient_bucket', message: `Not enough stock — ${short.join('; ')}.` }, 422);
 
   const costs = new Map<number, number>();
   for (const l of lines) {
     if (l.qty < 0) continue;
-    // eslint-disable-next-line no-await-in-loop -- one read per found-stock line
-    const sen = await increaseCostSen(db, c, warehouseId, l, l.unit_cost_sen ?? 0);
+    const sen = increaseCostSen(reads, l, l.unit_cost_sen ?? 0);
     if (sen == null) return refuseWithoutWriting(c, costRequired(l), 422);
     costs.set(l.line_no, sen);
   }
@@ -284,13 +303,19 @@ inventoryAdjustments.post('/', async (c) => {
   const dropHeader = () => db.from('stock_adjustments', CENTRALISED(
     'rollback of the header this handler inserted moments ago — a handler-minted id, not caller-supplied',
   )).delete().eq('id', header.id);
+  /* A failure after the header insert, once the header is gone again (its lines
+     cascade, the movements are one statement that failed whole), has left no
+     document and moved no stock — so the Idempotency-Key is released and the
+     retry goes through. Only the burned document number remains, which is a
+     gap, not a duplicate. If the rollback itself failed the claim is kept. */
+  const failAfterHeader = async (body: Record<string, unknown>) => {
+    const { error: dErr } = await dropHeader();
+    return dErr ? c.json({ ...body, rollbackFailed: dErr.message }, 500) : refuseWithoutWriting(c, body, 500);
+  };
 
   const { error: lErr } = await db.from('stock_adjustment_lines', companyScope(c))
     .insert(lines.map((l) => lineRow(header.id, l, costs.get(l.line_no) ?? null)));
-  if (lErr) {
-    await dropHeader();
-    return c.json({ error: 'lines_insert_failed', reason: lErr.message }, 500);
-  }
+  if (lErr) return failAfterHeader({ error: 'lines_insert_failed', reason: lErr.message });
 
   /* ONE insert statement, so the FIFO trigger runs every line inside one
      transaction: a failure moves nothing at all. Found stock goes first so a
@@ -317,10 +342,7 @@ inventoryAdjustments.post('/', async (c) => {
       performed_by: performedBy,
     }));
   const { error: mErr } = await db.from('inventory_movements', companyScope(c)).insert(movements);
-  if (mErr) {
-    await dropHeader();
-    return c.json({ error: 'insert_failed', reason: mErr.message }, 500);
-  }
+  if (mErr) return failAfterHeader({ error: 'insert_failed', reason: mErr.message });
 
   /* Oversell retro-cost (0154): found stock opens lots, so an earlier "ship
      anyway" DO that went out at RM0 here can now be costed. Best-effort — the
@@ -429,19 +451,20 @@ inventoryAdjustments.patch('/:id', async (c) => {
     if (incomplete) {
       return c.json({ error: 'adjustment_incomplete', message: `${incomplete.item_code}: ${incomplete.increase_errors.join(' ')}` }, 422);
     }
+    let reads: LotReads;
     try {
-      const short = await shortages(db, c, header.warehouse_id, deltas);
-      if (short.length) return c.json({ error: 'insufficient_stock', message: `Not enough stock — ${short.join('; ')}.` }, 409);
+      reads = await readLots(db, c, header.warehouse_id, deltas.map((d) => d.bucket.item_code));
     } catch (e) {
       return c.json({ error: 'stock_check_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
     }
+    const short = shortages(reads, deltas);
+    if (short.length) return c.json({ error: 'insufficient_stock', message: `Not enough stock — ${short.join('; ')}.` }, 409);
     for (const d of deltas) {
       if (d.delta < 0) continue;
       const k = bucketKeyOf(d.bucket);
       const typed = lines.find((l) => bucketKeyOf(l) === k && (l.unit_cost_sen ?? 0) > 0)?.unit_cost_sen ?? 0;
       const preferred = typed || writtenOffUnitCostSen(moved, k);
-      // eslint-disable-next-line no-await-in-loop -- one read per bucket that gains stock
-      const sen = await increaseCostSen(db, c, header.warehouse_id, d.bucket, preferred);
+      const sen = increaseCostSen(reads, d.bucket, preferred);
       if (sen == null) return c.json(costRequired(d.bucket), 422);
       costs.set(k, sen);
     }

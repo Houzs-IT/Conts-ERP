@@ -101,8 +101,11 @@ export function parseAdjustmentLines(raw: unknown[]): LinesParse {
 export type BucketRow = { item_code: string; variant_key: string | null; batch_no: string | null; qty: number };
 export type Bucket = { item_code: string; variant_key: string; batch_no: string | null };
 
+/* A blank batch is no batch: rows backfilled from old movements can carry ''
+   where the form sends nothing (null), and keying them apart made an untouched
+   line read as "reverse the '' bucket, post the null one". */
 export const bucketKeyOf = (r: { item_code: string; variant_key: string | null; batch_no: string | null }): string =>
-  JSON.stringify([r.item_code, r.variant_key ?? '', r.batch_no ?? null]);
+  JSON.stringify([r.item_code, r.variant_key ?? '', r.batch_no || null]);
 
 export type BucketDelta = { bucket: Bucket; oldNet: number; newNet: number; delta: number };
 
@@ -115,7 +118,7 @@ export function bucketDeltas(moved: readonly BucketRow[], wanted: readonly Bucke
     const k = bucketKeyOf(r);
     let d = acc.get(k);
     if (!d) {
-      d = { bucket: { item_code: r.item_code, variant_key: r.variant_key ?? '', batch_no: r.batch_no ?? null }, oldNet: 0, newNet: 0, delta: 0 };
+      d = { bucket: { item_code: r.item_code, variant_key: r.variant_key ?? '', batch_no: r.batch_no || null }, oldNet: 0, newNet: 0, delta: 0 };
       acc.set(k, d);
     }
     return d;

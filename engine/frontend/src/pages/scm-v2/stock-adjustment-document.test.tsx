@@ -26,12 +26,13 @@ const DOC: StockAdjustmentDoc = {
 };
 
 let failNextUpdate: Error | null = null;
+let currentDoc: StockAdjustmentDoc = DOC;
 const updateCalls: Array<{ notes?: string | null; expectedUpdatedAt?: string; lines?: Array<{ itemCode: string; qty: number; variantKey?: string | null }> }> = [];
 vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ user: { id: 1 }, can: () => false }) }));
 vi.mock('../../vendor/scm/lib/stock-queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../vendor/scm/lib/stock-queries')>()),
   useStockAdjustments: () => ({ data: [DOC], isLoading: false, error: null }),
-  useStockAdjustmentDoc: () => ({ data: DOC, isLoading: false, isPending: false, error: null }),
+  useStockAdjustmentDoc: () => ({ data: currentDoc, isLoading: false, isPending: false, error: null }),
   // The bucket the -3 came out of is EMPTY now: nothing open to take from.
   useInventoryBuckets: () => ({ data: [], isLoading: false }),
   useInventoryProductBreakdown: (itemCode: string | null) => ({
@@ -80,6 +81,7 @@ import { StockAdjustmentDetail } from './StockAdjustmentDetail';
 import { StockAdjustmentEdit } from './StockAdjustmentNew';
 
 afterEach(() => {
+  currentDoc = DOC;
   updateCalls.length = 0;
   notify.mockClear();
   localStorage.clear();
@@ -153,5 +155,17 @@ describe('Stock adjustment is a document (BUG-66)', () => {
     expect(arg.body).toMatch(/Reload the page/);
     // Still editable: nothing was saved, so the Save button is still there.
     expect(screen.getByRole('button', { name: /Save Changes/ })).toBeTruthy();
+  });
+
+  test('a saved line with no reason (an old backfilled adjustment) blocks the save instead of being reversed', async () => {
+    currentDoc = { ...DOC, lines: DOC.lines.map((l, i) => (i === 0 ? { ...l, reason_code: null } : l)) };
+    draw('/scm/stock-adjustments/sa-1/edit');
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }));
+    await vi.waitFor(() => expect(notify).toHaveBeenCalled());
+    const arg = (notify.mock.calls[0] as unknown as [{ title: string; body: string }])[0];
+    expect(arg.title).toBe('A saved line is not complete');
+    expect(arg.body).toContain('"CH-1"');
+    // Nothing sent: the server never sees a body that silently leaves CH-1 out.
+    expect(updateCalls).toHaveLength(0);
   });
 });

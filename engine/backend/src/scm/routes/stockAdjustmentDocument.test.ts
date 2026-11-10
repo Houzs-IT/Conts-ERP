@@ -187,3 +187,52 @@ describe('PATCH /inventory/adjustments/:id — two saves of one version post the
     expect(docMovements('sa-1')).toHaveLength(1);
   });
 });
+
+describe('a long adjustment stays inside the Worker budget', () => {
+  it('40 lines read the lots once per table, not once per line', async () => {
+    const orig = sb.from.bind(sb);
+    let calls = 0;
+    (sb as { from: typeof sb.from }).from = ((t: string) => { calls += 1; return orig(t); }) as typeof sb.from;
+    const lines = Array.from({ length: 40 }, (_, i) => line(i % 2 ? 'CH-1' : 'CH-2', i % 2 ? 1 : -1, i % 2 ? 'FOUND' : 'DAMAGE'));
+    // 20 write-offs of CH-2 need 20 open; give it 30.
+    (sb.tables.v_inventory_lots_open as Row[]).push({ warehouse_id: 'wh-1', item_code: 'CH-2', variant_key: '', batch_no: null, qty_remaining: 26, company_id: 1 });
+    const res = await call('POST', '/', { warehouseId: 'wh-1', lines });
+    expect(res.status).toBe(201);
+    // Was 2 + one lot read per line (40+); now a fixed handful whatever the line count.
+    expect(calls).toBeLessThanOrEqual(15);
+    const id = ((await res.json()) as { id: string }).id;
+    expect(docMovements(id)).toHaveLength(40);
+  });
+
+  it('a write-off larger than one bucket holds is still refused when read in one go', async () => {
+    const res = await call('POST', '/', { warehouseId: 'wh-1', lines: [line('CH-2', -3), line('CH-2', -2)] });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { message: string }).message).toContain('only 4 on hand, this takes out 5');
+  });
+});
+
+describe('POST failing after the header insert', () => {
+  it('rolls the document back and releases the Idempotency-Key so the retry goes through', async () => {
+    const orig = sb.from.bind(sb);
+    (sb as { from: typeof sb.from }).from = ((t: string) => {
+      const b = orig(t);
+      if (t === 'inventory_movements') b.insert = () => Promise.resolve({ data: null, error: { message: 'boom' } });
+      return b;
+    }) as typeof sb.from;
+    const before = (sb.tables.stock_adjustments as Row[]).length;
+    const res = await call('POST', '/', { warehouseId: 'wh-1', lines: [line('CH-1', -1)] });
+    expect(res.status).toBe(500);
+    expect(res.headers.get('Idempotency-Outcome')).toBe('no-write');
+    expect((sb.tables.stock_adjustments as Row[]).length).toBe(before);
+  });
+});
+
+describe('a backfilled line with a blank batch', () => {
+  it("is the same bucket as the form's no-batch line: an untouched edit moves nothing", async () => {
+    (sb.tables.inventory_movements as Row[])[0]!.batch_no = '';
+    (sb.tables.stock_adjustment_lines as Row[])[0]!.batch_no = '';
+    const res = await call('PATCH', '/sa-1', { expectedUpdatedAt: V0, lines: [line('CH-1', -3)] });
+    expect(res.status).toBe(200);
+    expect(docMovements('sa-1')).toHaveLength(1);
+  });
+});

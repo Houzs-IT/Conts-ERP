@@ -137,6 +137,13 @@ export const blankLine = (): LineDraft => ({
   costRm: null,
 });
 
+/** EDIT: lines that came from the saved document (origQty is what they moved,
+    never 0) but would now be dropped as incomplete — no SKU, no non-zero qty,
+    or no reason. A line whose SKU was changed counts as new (origQty reset). */
+export const incompleteSavedLines = (lines: readonly LineDraft[]): LineDraft[] =>
+  lines.filter((it) => it.origQty !== 0
+    && !(it.itemCode.trim() && Number.isFinite(it.qty) && it.qty !== 0 && it.reasonCode));
+
 const lineFromDoc = (l: StockAdjustmentLine): LineDraft => {
   const key = bucketKey({ variant_key: l.variant_key, batch_no: l.batch_no });
   return {
@@ -734,6 +741,19 @@ const StockAdjustmentForm = ({ onStartNew, existing }: { onStartNew: () => void;
   const canSave = Boolean(warehouseId) && validLines.length > 0 && blockedLines.length === 0 && !submitting;
 
   const onSave = async () => {
+    /* EDIT: a saved line that is now incomplete would be left out of the body,
+       and the server reads a missing line as DELETED and writes the reversing
+       movement. Old adjustments backfilled without a reason are exactly this.
+       Removing a saved line is the delete button's job, never a side effect. */
+    const incompleteSaved = existing ? incompleteSavedLines(lines) : [];
+    if (incompleteSaved.length > 0) {
+      void notify({
+        title: 'A saved line is not complete',
+        body: `${incompleteSaved.map((it) => `"${it.itemCode || 'a line'}"`).join(', ')} ${incompleteSaved.length === 1 ? 'is' : 'are'} already on this adjustment but ${incompleteSaved.length === 1 ? 'has' : 'have'} no SKU, quantity or reason now. Fill ${incompleteSaved.length === 1 ? 'it' : 'them'} in, or remove the line with its delete button if its stock movement should be undone. Nothing was saved.`,
+        tone: 'error',
+      });
+      return;
+    }
     if (!warehouseId || validLines.length === 0) {
       void notify({ title: 'Pick a Warehouse and fill in at least one line (SKU, Qty, Reason) before saving.', tone: 'error' });
       return;
