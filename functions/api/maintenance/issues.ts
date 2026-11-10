@@ -4,7 +4,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { resolveUnit } from '../../_lib/ops';
 import { windowsFor, staysOverlapping } from '../../_lib/cleaning';
-import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, JOB_TYPES, SEVERITIES, DAY, assigneeUserId, pickAssignee, hasTechnicianList, hasBilling, toInstant, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../_lib/maintenance';
+import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, JOB_TYPES, SEVERITIES, DAY, assigneeUserId, pickAssignee, hasTechnicianList, hasBilling, hasBuildingJobs, jobPlaceJoin, toInstant, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../_lib/maintenance';
 import { repairNotice } from '../../_lib/notices';
 import { hasServicePrices, serviceBook } from '../../_lib/servicePrices';
 import { layoutKey } from '../../_lib/cleaningPrices';
@@ -24,8 +24,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const where: string[] = [], args: unknown[] = [];
   if (state) { where.push('m.state = ?'); args.push(state); }
   if (unitId) { where.push('m.unit_id = ?'); args.push(unitId); }
+  const placeJoin = await jobPlaceJoin(env);
   const rows = await all<any>(env, `
-    SELECT m.*, u.unit_number, p.id AS property_id, p.name AS property_name, COALESCE(r.full_name, '') AS reporter,
+    SELECT m.*, u.unit_number, p.id AS building_id, p.name AS property_name, COALESCE(r.full_name, '') AS reporter,
            s.code AS sku_code, s.name AS sku_name,
            (SELECT COUNT(*) FROM documents d WHERE d.maintenance_id = m.id AND d.kind IN ('photo','video')) AS photo_count,
            (SELECT COUNT(*) FROM documents d WHERE d.maintenance_id = m.id AND d.kind NOT IN ('photo','video')) AS document_count,
@@ -33,8 +34,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            (SELECT min(e.incurred_on) FROM expenses e WHERE e.maintenance_id = m.id) AS expensed_on,
            (o.user_id IS NOT NULL) AS owner_has_login
     FROM maintenance_issues m
-    JOIN units u ON u.id = m.unit_id
-    JOIN properties p ON p.id = u.property_id
+    ${placeJoin}
     LEFT JOIN owners o ON o.id = u.owner_id
     LEFT JOIN users r ON r.id = m.reported_by
     LEFT JOIN maintenance_skus s ON s.id = m.sku_id
@@ -59,7 +59,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // False until migration 0126: the screen then offers Normal and Urgent only, and no severity, parts or due date.
     jobTypes: await hasJobType(env),
     data: rows.map(r => ({
-      id: r.id, unitId: r.unit_id, unitNumber: r.unit_number, propertyName: r.property_name, buildingId: r.property_id,
+      id: r.id, unitId: r.unit_id, unitNumber: r.unit_number, propertyName: r.property_name, buildingId: r.building_id,
       title: r.title, detail: r.detail, state: r.state,
       category: r.category ?? 'other', urgency: r.urgency ?? 'normal',
       jobType: r.job_type ?? (r.urgency === 'urgent' ? 'urgent' : 'normal'), severity: r.severity ?? 'minor', dueOn: r.due_on ?? null,
@@ -102,11 +102,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const b = await request.json<any>().catch(() => null);
   if (!b?.title?.trim()) return fail('VALIDATION', 'A short title is required.', 422, { title: 'Enter a short title.' });
-  const unit = await resolveUnit(env, b.unitId, b.propertyName);
-  if (unit === 'ambiguous') return fail('VALIDATION', 'More than one unit has that number. Say which building.', 422, { unitNumber: 'Pick the building too.' });
-  if (!unit) return fail('NOT_FOUND', 'That unit does not exist.', 404, { unitNumber: 'Pick a unit that exists.' });
-  const chargeTo = b.chargeTo ?? 'owner';
+  const propertyId = typeof b.propertyId === 'string' && b.propertyId ? b.propertyId : null;
+  if (propertyId && b.unitId) return fail('VALIDATION', 'Pick a unit or the building, not both.', 422, { unitId: 'Pick a unit or the building, not both.' });
+  let unit: { id: string } | null = null;
+  if (propertyId) {
+    if (!(await hasBuildingJobs(env))) return fail('VALIDATION', 'Jobs in the building are not switched on yet.', 422, { propertyId: 'Jobs in the building are not switched on yet.' });
+    if (!(await one(env, 'SELECT id FROM properties WHERE id = ?', propertyId))) return fail('NOT_FOUND', 'That building does not exist.', 404, { propertyId: 'Pick a building that exists.' });
+    if (b.ownerApprovalRequired || b.blocksUnit || b.sourceTaskId || b.items?.length) return fail('VALIDATION', 'A job in the building has no owner to approve it and no unit to block.', 422);
+  } else {
+    const found = await resolveUnit(env, b.unitId, b.propertyName);
+    if (found === 'ambiguous') return fail('VALIDATION', 'More than one unit has that number. Say which building.', 422, { unitNumber: 'Pick the building too.' });
+    if (!found) return fail('NOT_FOUND', 'That unit does not exist.', 404, { unitNumber: 'Pick a unit that exists.' });
+    unit = found;
+  }
+  const chargeTo = b.chargeTo ?? (propertyId ? 'the_conts' : 'owner');
   if (!CHARGE_TO.includes(chargeTo)) return fail('VALIDATION', 'Pick who pays.', 422, { chargeTo: 'Pick who pays.' });
+  if (propertyId && chargeTo !== 'the_conts') return fail('VALIDATION', 'A job in the building is paid by The Conts.', 422, { chargeTo: 'A job in the building is paid by The Conts.' });
   const category = b.category ?? 'other';
   if (!CATEGORIES.includes(category)) return fail('VALIDATION', 'Pick a category.', 422, { category: 'Pick a category.' });
   const cols = await hasJobType(env);
@@ -126,7 +137,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let sourceTaskId: string | null = null;
   if (typeof b.sourceTaskId === 'string' && b.sourceTaskId) {
     const t = await one<{ id: string; unit_id: string; assignee_id: string | null }>(env, 'SELECT id, unit_id, assignee_id FROM tasks WHERE id = ?', b.sourceTaskId);
-    if (!t || t.unit_id !== unit.id) return fail('VALIDATION', 'That cleaning job is not on this unit.', 422);
+    if (!t || t.unit_id !== unit?.id) return fail('VALIDATION', 'That cleaning job is not on this unit.', 422);
     if (field && t.assignee_id !== session.userId) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
     sourceTaskId = t.id;
   }
@@ -143,7 +154,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const sku = await one<any>(env, 'SELECT id, default_price FROM maintenance_skus WHERE id = ?', String(b.skuId));
     if (!sku) return fail('NOT_FOUND', 'That catalog item does not exist.', 404, { skuId: 'Pick a catalog item that exists.' });
     skuId = sku.id;
-    if (!field && await hasServicePrices(env)) {
+    if (!field && unit && await hasServicePrices(env)) {
       const u = await one<{ layout_type: string | null; bedrooms: number | null }>(env, 'SELECT * FROM units WHERE id = ?', unit.id);
       const a = (await serviceBook(env, [unit.id])).amounts(sku.id, unit.id, layoutKey(u?.layout_type, u?.bedrooms), mytToday());
       quoted ??= a.owner;
@@ -152,7 +163,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   // The job's items (owner, 17 Oct 2026): picked from Service prices with a quantity; their total is the quote.
   let lines: Line[] = [];
-  if (Array.isArray(b.items) && b.items.length && !field && await hasJobInvoices(env)) {
+  if (Array.isArray(b.items) && b.items.length && !field && unit && await hasJobInvoices(env)) {
     const priced = await priceLines(env, unit.id, b.items);
     if ('error' in priced) return priced.error;
     lines = priced.lines;
@@ -187,26 +198,26 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const listed = await hasTechnicianList(env);
   await run(env, `
     INSERT INTO maintenance_issues
-      (id, unit_id, reported_by, state, title, detail, sku_id, quoted_amount, owner_approval_required,
+      (id, unit_id${propertyId ? ', property_id' : ''}, reported_by, state, title, detail, sku_id, quoted_amount, owner_approval_required,
        blocks_unit, blocked_from, blocked_to, charge_to, category, urgency, source, source_task_id, vendor_name, assignee_kind,
        reported_at, created_at, updated_at${withUser ? ', assignee_user_id' : ''}${listed ? ', technician_id' : ''}${cols ? ', job_type, severity, needs_parts, due_on' : ''}${billingCols ? ', contractor_amount' : ''})
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${withUser ? ', ?' : ''}${listed ? ', ?' : ''}${cols ? ', ?, ?, ?, ?' : ''}${billingCols ? ', ?' : ''})`,
-    id, unit.id, session.userId, state, b.title.trim().slice(0, 160), b.detail ? String(b.detail).slice(0, 2000) : null, skuId,
+    VALUES (?, ?${propertyId ? ', ?' : ''}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${withUser ? ', ?' : ''}${listed ? ', ?' : ''}${cols ? ', ?, ?, ?, ?' : ''}${billingCols ? ', ?' : ''})`,
+    id, unit?.id ?? null, ...(propertyId ? [propertyId] : []), session.userId, state, b.title.trim().slice(0, 160), b.detail ? String(b.detail).slice(0, 2000) : null, skuId,
     quoted, approval ? 1 : 0,
     b.blocksUnit ? 1 : 0, b.blocksUnit ? (b.blockedFrom ?? mytToday()) : null, b.blockedTo ?? null,
     chargeTo, category, urgency, source, sourceTaskId, vendor, who?.kind ?? null,
     now, now, now, ...(withUser ? [userId] : []), ...(listed ? [who?.technicianId ?? null] : []), ...(cols ? [jobType, severity, b.needsParts ? 1 : 0, b.dueOn ?? null] : []), ...(billingCols ? [internal] : []));
 
   if (lines.length) await writeLines(env, id, lines, session.userId);
-  if (b.blocksUnit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
+  if (b.blocksUnit && unit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
   let overlaps: unknown[] = [];
   if (win) {
     await run(env, `INSERT INTO maintenance_windows (id, issue_id, starts_at, ends_at, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       crypto.randomUUID(), id, win.startsAt, win.endsAt, win.note, session.userId, now);
-    overlaps = await staysOverlapping(env, unit.id, win.startsAt, win.endsAt);
+    if (unit) overlaps = await staysOverlapping(env, unit.id, win.startsAt, win.endsAt);
   }
 
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.create', entityTable: 'maintenance_issues', entityId: id, after: { unitId: unit.id, title: b.title, category, urgency, jobType, severity, needsParts: !!b.needsParts, dueOn: b.dueOn ?? null, approvalByRule: approval && !asked, source, sourceTaskId, blocksUnit: !!b.blocksUnit, approval, skuId, quotedAmount: quoted, internalCost: internal, items: lines, assignee: vendor, window: win }, source: field ? 'field_app' : b.source ?? 'web' });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.create', entityTable: 'maintenance_issues', entityId: id, after: { unitId: unit?.id ?? null, propertyId, title: b.title, category, urgency, jobType, severity, needsParts: !!b.needsParts, dueOn: b.dueOn ?? null, approvalByRule: approval && !asked, source, sourceTaskId, blocksUnit: !!b.blocksUnit, approval, skuId, quotedAmount: quoted, internalCost: internal, items: lines, assignee: vendor, window: win }, source: field ? 'field_app' : b.source ?? 'web' });
   await notify(env, {
     template: 'ops.damage_reported', recipient: 'operations@theconts.com', channel: 'in_app',
     subject: b.blocksUnit ? 'Unit blocked' : urgency === 'urgent' ? 'Urgent repair reported' : 'Damage reported',

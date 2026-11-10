@@ -1,6 +1,6 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { hasBilling, DAY } from '../../_lib/maintenance';
+import { hasBilling, jobPlaceJoin, BUILDING_JOB_LABEL, DAY } from '../../_lib/maintenance';
 
 /** Accounts payable (owner, 11 Oct 2026: "expenses I treat as AP, done by finance"): what the company owes outside
  *  people and whether it has been paid. Today that is the technician or contractor on a maintenance job
@@ -8,7 +8,7 @@ import { hasBilling, DAY } from '../../_lib/maintenance';
  *  no paid date yet. Finance has no access to the Operations area, so the paid date is recorded here, not through
  *  /api/maintenance. Nothing here touches the expense rows that unit costs and owner statements read. */
 
-const FROM = `FROM maintenance_issues m JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id
+const fromJobs = (placeJoin: string): string => `FROM maintenance_issues m ${placeJoin}
   WHERE m.contractor_amount IS NOT NULL AND m.contractor_amount > 0`;
 
 /** GET /api/finance/payables?paid=no|yes|all&q= — contractor claims, the unpaid ones first (oldest billing date
@@ -21,6 +21,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!(await hasBilling(env))) {
     return json({ generatedAt: nowIso(), ready: false, data: [], counts: { unpaid: 0, paid: 0 }, owed: 0 });
   }
+  const FROM = fromJobs(await jobPlaceJoin(env));
   const sp = new URL(request.url).searchParams;
   const paid = sp.get('paid') === 'yes' ? 'yes' : sp.get('paid') === 'all' ? 'all' : 'no';
   const q = sp.get('q')?.trim() || null;
@@ -28,7 +29,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (paid === 'no') where.push('m.contractor_paid_at IS NULL');
   if (paid === 'yes') where.push('m.contractor_paid_at IS NOT NULL');
   if (q) {
-    where.push(`(m.vendor_name ILIKE ? OR m.title ILIKE ? OR (p.name || ' ' || u.unit_number) ILIKE ?)`);
+    where.push(`(m.vendor_name ILIKE ? OR m.title ILIKE ? OR (p.name || ' ' || COALESCE(u.unit_number, '${BUILDING_JOB_LABEL}')) ILIKE ?)`);
     const like = `%${q.replace(/[%_\\]/g, c => '\\' + c)}%`;
     args.push(like, like, like);
   }

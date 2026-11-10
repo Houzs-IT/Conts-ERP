@@ -34,7 +34,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const docs = await all<any>(env, `
     SELECT d.id, d.kind, d.file_name, d.mime_type, d.byte_size, d.created_at, u.full_name AS uploader
     FROM documents d LEFT JOIN users u ON u.id = d.uploaded_by WHERE d.maintenance_id = ? ORDER BY d.created_at`, id);
-  const access = flags.mine || !field
+  const access = (flags.mine || !field) && job.unitId
     ? await all<{ id: string; label: string; instruction: string | null }>(env, `SELECT id, label, instruction FROM access_credentials c WHERE unit_id = ?${await usedBySql(env, 'c', 'maintenance')} ORDER BY label`, job.unitId)
     : [];
   const notes = await all<{ note: string; actor_label: string; occurred_at: string; action: string }>(env, `
@@ -52,7 +52,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       byteSize: Number(d.byte_size), uploadedAt: d.created_at, uploader: d.uploader ?? null })),
     access: access.filter(a => a.instruction).map(a => ({ id: a.id, label: a.label, instruction: a.instruction })),
     // The unit's car park bays (staff sheet UNIT, 17 Oct 2026), with the access details.
-    parking: flags.mine ? await parkingFor(env, job.unitId) : null,
+    parking: flags.mine && job.unitId ? await parkingFor(env, job.unitId) : null,
     notes: notes.map(n => ({ note: n.note, by: n.actor_label, at: n.occurred_at, done: n.action === 'maintenance.end' })),
   });
 };

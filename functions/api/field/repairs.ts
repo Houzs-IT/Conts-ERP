@@ -1,6 +1,6 @@
 import { type Env, all, json, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { mineSql, hasAssigneeUser, UNASSIGNED_SQL, hasJobType, fieldVisibleSql, CATEGORIES } from '../../_lib/maintenance';
+import { mineSql, hasAssigneeUser, UNASSIGNED_SQL, hasJobType, fieldVisibleSql, jobPlaceJoin, CATEGORIES } from '../../_lib/maintenance';
 import { fieldRepairs } from '../../_lib/fieldRepairs';
 
 const POOL_PAGE = 200;
@@ -47,12 +47,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   ];
   const filterSql = filters.map(({ sql }) => sql).join(' AND ') || 'TRUE';
   const filterArgs = filters.map(({ arg }) => arg);
+  const placeJoin = await jobPlaceJoin(env);
   const [open, buildings, team] = await Promise.all([
     fieldRepairs(env, `${poolSql} AND ${filterSql}${building ? ' AND p.id = ?' : ''}`,
       [...filterArgs, ...(building ? [building] : [])], limit),
     all<PoolBuilding>(env, `
       SELECT p.id, p.name, COUNT(*) FILTER (WHERE ${filterSql})::int AS open FROM maintenance_issues m
-      JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id
+      ${placeJoin}
       WHERE ${poolSql} GROUP BY p.id, p.name ORDER BY p.name`, ...filterArgs),
     fieldRepairs(env, teamSql, mineArgs, POOL_MAX),
   ]);

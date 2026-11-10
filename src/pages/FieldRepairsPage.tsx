@@ -21,7 +21,7 @@ import { todayMyt } from '../lib/format';
 
 /* GET /api/field/repairs and /api/field/repairs/:id (functions/api/field/repairs*.ts). No amounts: the server never sends any. */
 interface Repair {
-  id: string; unitId: string; unitNumber: string; propertyName: string; buildingId: string; addressLine: string;
+  id: string; unitId: string | null; unitNumber: string | null; propertyName: string; buildingId: string; addressLine: string;
   title: string; detail: string | null; category: string; urgency: string; jobType?: string; dueOn?: string | null; state: string; source: string;
   reportedAt: string; reporter: string | null; assigneeName: string | null;
   startedAt: string | null; endedAt: string | null; resolvedAt: string | null; blocksUnit: boolean; waitingForOwner: boolean;
@@ -31,7 +31,7 @@ interface Repair {
 }
 interface PoolBuilding { id: string; name: string; open: number }
 interface ListPayload { mine: Repair[]; open: Repair[]; team?: Repair[]; mayPick: boolean; buildings?: PoolBuilding[]; maxLimit?: number }
-interface UnitGroup { unitId: string; unitNumber: string; propertyName: string; jobs: Repair[] }
+interface UnitGroup { groupKey: string; unitNumber: string | null; propertyName: string; jobs: Repair[] }
 interface TechnicianGroup { name: string; jobs: Repair[] }
 type ListTab = 'all' | 'mine' | 'open' | 'team';
 
@@ -39,13 +39,17 @@ const POOL_PAGE = 200;
 const UNIT_SEARCH_DELAY_MS = 300;
 
 const unitKeyOf = (text: string): string => text.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
+const placeName = ({ unitNumber, propertyName }: Pick<Repair, 'unitNumber' | 'propertyName'>): string => unitNumber ? `${propertyName} ${unitNumber}` : propertyName;
+const placeTitle = ({ unitNumber, propertyName }: Pick<Repair, 'unitNumber' | 'propertyName'>, noUnit: string): { title: string; sub: string } =>
+  unitNumber ? { title: unitNumber, sub: propertyName } : { title: propertyName, sub: noUnit };
 
 function groupByUnit(repairs: Repair[]): UnitGroup[] {
   const groups = new Map<string, UnitGroup>();
   for (const repair of repairs) {
-    const group = groups.get(repair.unitId) ?? { unitId: repair.unitId, unitNumber: repair.unitNumber, propertyName: repair.propertyName, jobs: [] };
+    const groupKey = repair.unitId ?? `building:${repair.buildingId}`;
+    const group = groups.get(groupKey) ?? { groupKey, unitNumber: repair.unitNumber, propertyName: repair.propertyName, jobs: [] };
     group.jobs.push(repair);
-    groups.set(repair.unitId, group);
+    groups.set(groupKey, group);
   }
   return [...groups.values()];
 }
@@ -107,7 +111,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const t = usePortalText();
   const tr = t.repairs;
   const isShown = (repair: Repair): boolean => (!building || repair.buildingId === building) && (!category || repair.category === category)
-    && (!unitKey || unitKeyOf(repair.unitNumber).includes(unitKey));
+    && (!unitKey || unitKeyOf(repair.unitNumber ?? '').includes(unitKey));
   const mine = (data?.mine ?? []).filter(isShown);
   const todo = mine.filter(r => r.state !== 'resolved' && !r.endedAt);
   const finished = mine.filter(r => r.state === 'resolved' || r.endedAt);
@@ -129,7 +133,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   function chooseBuilding(id: string) { setBuilding(id); setLimit(POOL_PAGE); }
   function chooseCategory(value: string) { setCategory(value); setLimit(POOL_PAGE); }
   async function pickAll(group: UnitGroup) {
-    setPickingUnit(group.unitId);
+    setPickingUnit(group.groupKey);
     const result = await runEach(group.jobs, job => api.post(`/field/repairs/${job.id}/pick`, {}), job => job.title);
     setPickingUnit(null);
     toast({ tone: result.ok === 0 ? 'critical' : result.failed.length ? 'warning' : 'success', title: result.ok ? tr.pickedAll(result.ok) : tr.nonePicked, body: skippedNote(result.failed) || undefined });
@@ -188,7 +192,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
           : (
             <div className="flex flex-col gap-2.5">
               {groups.map(({ group, offer }) => (
-                <UnitGroupCard key={`${offer ? 'open' : 'mine'}-${group.unitId}`} group={group} offer={offer} fresh={fresh} picking={pickingUnit === group.unitId}
+                <UnitGroupCard key={`${offer ? 'open' : 'mine'}-${group.groupKey}`} group={group} offer={offer} fresh={fresh} picking={pickingUnit === group.groupKey}
                   onPickAll={() => void pickAll(group)} onOpen={setOpen} />
               ))}
               {tab !== 'mine' && data?.mayPick && openTotal > pool.length && (
@@ -222,14 +226,15 @@ function UnitGroupCard({ group, offer, fresh, picking, onPickAll, onOpen }: {
   const [isExpanded, setIsExpanded] = useState(false);
   const isUrgent = group.jobs.some(r => r.urgency === 'urgent' && r.state !== 'resolved');
   const hasFresh = group.jobs.some(r => fresh.has(r.id));
-  const jobListId = `unit-jobs-${offer ? 'open' : 'mine'}-${group.unitId}`;
+  const jobListId = `unit-jobs-${offer ? 'open' : 'mine'}-${group.groupKey}`;
+  const place = placeTitle(group, tr.noUnit);
   return (
-    <section aria-label={`${group.unitNumber} ${group.propertyName}`}
+    <section aria-label={`${place.title} ${place.sub}`}
       className={cx('bg-card rounded-card border border-solid flex flex-col overflow-hidden', isUrgent ? 'border-danger-line' : hasFresh ? 'border-info-line' : 'border-line')}>
       <button type="button" aria-expanded={isExpanded} aria-controls={jobListId} onClick={() => setIsExpanded(current => !current)}
         className="w-full text-left bg-card flex items-center gap-3 px-4 py-3 min-h-[56px] cursor-pointer hover:bg-muted">
         <span className="flex-1 min-w-0 flex flex-col gap-1.5">
-          <b className="text-heading truncate">{group.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {group.propertyName}</span></b>
+          <b className="text-heading truncate">{place.title}<span className="text-copy text-muted-ink font-normal"> · {place.sub}</span></b>
           <span className="flex gap-1.5 flex-wrap">
             <StatusBadge tone="neutral">{tr.jobs(group.jobs.length)}</StatusBadge>
             {isUrgent && <StatusBadge tone="critical">{tr.urgent}</StatusBadge>}
@@ -294,7 +299,7 @@ function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: b
       ) : (
         <>
           <span className="flex items-center gap-2">
-            <b className="text-heading flex-1 min-w-0 truncate">{r.unitNumber}<span className="text-copy text-muted-ink font-normal"> · {r.propertyName}</span></b>
+            <b className="text-heading flex-1 min-w-0 truncate">{placeTitle(r, tr.noUnit).title}<span className="text-copy text-muted-ink font-normal"> · {placeTitle(r, tr.noUnit).sub}</span></b>
             {badges}
           </span>
           <span className="text-copy text-ink [overflow-wrap:anywhere]">{r.title}</span>
@@ -460,7 +465,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={j ? `${j.unitNumber} ${j.title}` : tr.job} data-repair-sheet
+    <div role="dialog" aria-modal="true" aria-label={j ? `${j.unitNumber ?? j.propertyName} ${j.title}` : tr.job} data-repair-sheet
       className="fixed inset-0 z-[55] bg-page flex flex-col">
       <header className="flex-none bg-card [border-bottom:1px_solid_var(--color-line)]">
         <div className="max-w-[560px] mx-auto flex items-center gap-2 px-2 py-2">
@@ -468,7 +473,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
           <Icon name="ChevronLeft" size="nav" />
         </button>
         <div className="flex-1 min-w-0">
-          <div className="text-heading font-semibold truncate">{j ? `${j.unitNumber} · ${j.propertyName}` : tr.job}</div>
+          <div className="text-heading font-semibold truncate">{j ? `${placeTitle(j, tr.noUnit).title} · ${placeTitle(j, tr.noUnit).sub}` : tr.job}</div>
           {j && <div className="text-meta text-muted-ink truncate">{j.title}</div>}
         </div>
         </div>
@@ -495,7 +500,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
               </section>
 
               <InfoRow icon="MapPin" label={tr.where}>
-                <b>{j.propertyName} {j.unitNumber}</b>
+                <b>{placeName(j)}</b>
                 {j.addressLine && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(j.addressLine)}`} target="_blank" rel="noopener noreferrer"
                   className="min-h-11 flex items-center gap-2 text-ink"><span className="flex-1 min-w-0 underline underline-offset-2">{j.addressLine}</span><span className="text-meta text-muted-ink">{tr.openMap}</span></a>}
               </InfoRow>
@@ -522,7 +527,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
                   { value: 'before', label: <>{tr.before} <span className="text-muted-ink tabular-nums">{counts.before}</span></> },
                   { value: 'after', label: <>{tr.after} <span className="text-muted-ink tabular-nums">{counts.after}</span></> },
                 ]} />
-                <MediaGallery key={stage} items={media.filter(m => m.stage === stage)} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: stage }, `${j.propertyName} ${j.unitNumber}`) : undefined}
+                <MediaGallery key={stage} items={media.filter(m => m.stage === stage)} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: stage }, placeName(j)) : undefined}
                   onDone={refresh} onRemove={working ? m => void removePhoto(m) : undefined} addLabel={stage === 'before' ? tr.addBefore : tr.addAfter}
                   emptyText={stage === 'before' ? tr.noBefore : tr.noAfter} />
               </section>
@@ -601,7 +606,8 @@ function InfoRow({ icon, label, children }: { icon: string; label: string; child
 
 /* ---------- report a new problem ---------- */
 
-interface UnitName { id: string; unitNumber: string; propertyName: string }
+interface UnitName { id: string; unitNumber: string; propertyId: string; propertyName: string }
+const OTHERS_UNIT = 'others';
 
 /** The office's "Add maintenance job" form on the phone: building, unit, the problem, its category and urgency, and
  *  photos of it. It lands on the Maintenance screen as an open job. */
@@ -616,9 +622,9 @@ function ReportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; form?: string }>({});
   const all = units.data?.data ?? [];
-  const buildings = useMemo(() => [...new Set(all.map(u => u.propertyName))], [all]);
-  const inBuilding = all.filter(u => u.propertyName === f.building);
-  useEffect(() => { if (buildings.length === 1 && !f.building) setF(x => ({ ...x, building: buildings[0] })); }, [buildings, f.building]);
+  const buildings = useMemo(() => [...new Map(all.map(u => [u.propertyId, u.propertyName])).entries()].map(([id, name]) => ({ id, name })), [all]);
+  const inBuilding = all.filter(u => u.propertyId === f.building);
+  useEffect(() => { if (buildings.length === 1 && !f.building) setF(x => ({ ...x, building: buildings[0].id })); }, [buildings, f.building]);
 
   async function save() {
     const bad = { unitId: f.unitId ? undefined : tf.errUnit, title: f.title.trim() ? undefined : tf.errTitle, category: f.category ? undefined : tf.errKind };
@@ -626,15 +632,15 @@ function ReportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
     setBusy(true); setError({});
     let id: string;
     try {
-      id = (await api.post<{ id: string }>('/maintenance/issues', { unitId: f.unitId, title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category, urgency: f.urgency })).id;
+      id = (await api.post<{ id: string }>('/maintenance/issues', { ...(f.unitId === OTHERS_UNIT ? { propertyId: f.building } : { unitId: f.unitId }), title: f.title.trim(), detail: f.detail.trim() || undefined, category: f.category, urgency: f.urgency })).id;
     } catch (e) {
       const fields = e instanceof ApiFailure ? e.fields ?? {} : {};
-      setError({ unitId: fields.unitId ?? fields.unitNumber, title: fields.title, category: fields.category, form: fields.title || fields.category ? undefined : errorMessage(e, tf.notSent) });
+      setError({ unitId: fields.unitId ?? fields.unitNumber ?? fields.propertyId, title: fields.title, category: fields.category, form: fields.title || fields.category ? undefined : errorMessage(e, tf.notSent) });
       setBusy(false); return;
     }
     if (picked.files.length) {
       setSending(true);
-      const failed = await picked.send(inBuilding.filter(u => u.id === f.unitId).map(u => `${u.propertyName} ${u.unitNumber}`)[0] ?? '', id);
+      const failed = await picked.send(f.unitId === OTHERS_UNIT ? buildings.find(b => b.id === f.building)?.name ?? '' : inBuilding.filter(u => u.id === f.unitId).map(u => `${u.propertyName} ${u.unitNumber}`)[0] ?? '', id);
       if (failed.length) toast({ tone: 'warning', title: tf.someNotAdded, body: tf.notAdded(failed.join(', ')) });
     }
     onDone();
@@ -656,13 +662,14 @@ function ReportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
           <FormRow label={tf.building}>
             <select className={cx(INPUT, 'h-11')} value={f.building} onChange={e => setF(x => ({ ...x, building: e.target.value, unitId: '' }))}>
               <option value="" disabled>{units.loading ? t.common.loading : tf.pickBuilding}</option>
-              {buildings.map(b => <option key={b} value={b}>{b}</option>)}
+              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </FormRow>
           <FormRow label={tf.unit} error={error.unitId}>
             <select className={cx(INPUT, 'h-11')} value={f.unitId} disabled={!f.building} onChange={e => { setF(x => ({ ...x, unitId: e.target.value })); setError(x => ({ ...x, unitId: undefined })); }}>
               <option value="" disabled>{f.building ? tf.pickUnit : tf.pickBuildingFirst}</option>
               {inBuilding.map(u => <option key={u.id} value={u.id}>{u.unitNumber}</option>)}
+              <option value={OTHERS_UNIT}>{tf.othersUnit}</option>
             </select>
           </FormRow>
           <FormRow label={tf.what} error={error.title}>

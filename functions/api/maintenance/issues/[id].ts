@@ -95,6 +95,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
   if (b?.chargeTo !== undefined) {
     if (!CHARGE_TO.includes(b.chargeTo)) return fail('VALIDATION', 'Pick who pays.', 422, { chargeTo: 'Pick who pays.' });
+    if (!cur.unit_id && b.chargeTo !== 'the_conts') return fail('VALIDATION', 'A job in the building is paid by The Conts.', 422, { chargeTo: 'A job in the building is paid by The Conts.' });
     put('charge_to', 'chargeTo', b.chargeTo);
   }
   if (typeof b?.title === 'string') {
@@ -105,7 +106,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     if (b.skuId !== null && !(await one(env, 'SELECT 1 AS x FROM maintenance_skus WHERE id = ?', String(b.skuId)))) return fail('NOT_FOUND', 'That catalog item does not exist.', 404, { skuId: 'Pick an item from the catalog, or Other.' });
     put('sku_id', 'skuId', b.skuId === null ? null : String(b.skuId));
     // A newly picked item fills a quote and an internal cost not yet set, from its prices in force today.
-    if (b.skuId !== null && moneyRole && await hasServicePrices(env)) {
+    if (b.skuId !== null && moneyRole && cur.unit_id && await hasServicePrices(env)) {
       const u = await one<{ layout_type: string | null; bedrooms: number | null }>(env, 'SELECT * FROM units WHERE id = ?', cur.unit_id);
       const a = (await serviceBook(env, [cur.unit_id])).amounts(String(b.skuId), cur.unit_id, layoutKey(u?.layout_type, u?.bedrooms), mytToday());
       if (cur.quoted_amount == null && b.quotedAmount === undefined && a.owner != null) put('quoted_amount', 'quotedAmount', a.owner);
