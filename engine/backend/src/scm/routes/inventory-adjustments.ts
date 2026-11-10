@@ -28,6 +28,17 @@
 //   POST   /       create + post (one warehouse, 1..N lines)
 //   PATCH  /:id    notes and/or a full replace of the lines
 //
+// DOUBLE SUBMIT. POST takes the form's Idempotency-Key (middleware/idempotency):
+// a double click replays the first answer instead of raising a second document;
+// every refusal above the header insert releases the claim (refuseWithoutWriting)
+// so the corrected resubmit goes through. PATCH is optimistic: the client sends
+// the header's updated_at as `expectedUpdatedAt`, and the handler CLAIMS the
+// document with `update … set updated_at = now() where id = ? and updated_at =
+// <sent>` before it writes any movement. Two saves of the same version (a double
+// click, two tabs) both compute the same delta from the ledger, so without the
+// claim both would post it; with it the second finds no row and gets 409
+// stale_document and nothing is written.
+//
 // EDIT writes one signed ADJUSTMENT per (item, variant, batch) bucket whose net
 // changed (new net - what the document already moved), not a reverse-all +
 // re-post: the trigger never sees an intermediate state, and a bucket the edit
@@ -47,6 +58,7 @@ import { resolveCallerStaffId } from '../lib/salesScope';
 import { scmDb, companyScope, CENTRALISED, type ScopedDb } from '../lib/scopedDb';
 import { mintMonthlyDocNo, insertWithDocNoRetry, docMonthTag } from '../lib/doc-no';
 import { paginateAll, chunkIn } from '../lib/paginate-all';
+import { refuseWithoutWriting } from '../lib/no-write-refusal';
 import {
   linesFromBody,
   parseAdjustmentLines,
@@ -138,6 +150,20 @@ async function performerStaffId(c: Ctx & { get(k: 'houzsUser'): unknown; get(k: 
 
 type MovementRow = Record<string, unknown> & { movement_type: 'ADJUSTMENT'; warehouse_id: string; item_code: string; variant_key: string; qty: number };
 
+/** Two timestamps name the same instant (PostgREST may print +00:00 where the
+    client kept Z, or drop trailing zeros). */
+const sameInstant = (a: string, b: string): boolean => {
+  if (a === b) return true;
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  return Number.isFinite(ta) && ta === tb;
+};
+
+const STALE_DOCUMENT = {
+  error: 'stale_document',
+  message: 'Someone else changed this stock adjustment after you opened it. Reload the page to see their changes, then make your edit again.',
+} as const;
+
 const lineSummary = (lines: ReadonlyArray<{ item_code: string; qty: number; reason_code: string | null }>) =>
   lines.map((l) => `${l.item_code} ${l.qty > 0 ? '+' : ''}${l.qty}${l.reason_code ? ` ${l.reason_code}` : ''}`).join('; ');
 
@@ -200,17 +226,17 @@ inventoryAdjustments.get('/:id', async (c) => {
 inventoryAdjustments.post('/', async (c) => {
   const db = scmDb(c);
   let body: Record<string, unknown>;
-  try { body = (await c.req.json()) as Record<string, unknown>; } catch { return c.json({ error: 'invalid_json' }, 400); }
+  try { body = (await c.req.json()) as Record<string, unknown>; } catch { return refuseWithoutWriting(c, { error: 'invalid_json' }, 400); }
 
   const warehouseId = String(body.warehouseId ?? '');
   const raw = linesFromBody(body);
-  if (!warehouseId || !raw) return c.json({ error: 'warehouse_and_product_required' }, 400);
+  if (!warehouseId || !raw) return refuseWithoutWriting(c, { error: 'warehouse_and_product_required' }, 400);
   const parsed = parseAdjustmentLines(raw);
-  if (!parsed.ok) return c.json({ error: parsed.error, message: parsed.message }, 400);
+  if (!parsed.ok) return refuseWithoutWriting(c, { error: parsed.error, message: parsed.message }, 400);
   const lines = parsed.lines;
   const incomplete = lines.find((l) => l.increase_errors.length > 0);
   if (incomplete) {
-    return c.json({ error: 'adjustment_incomplete', message: `${incomplete.item_code}: ${incomplete.increase_errors.join(' ')}` }, 422);
+    return refuseWithoutWriting(c, { error: 'adjustment_incomplete', message: `${incomplete.item_code}: ${incomplete.increase_errors.join(' ')}` }, 422);
   }
 
   /* THE WAREHOUSE IS A BODY FIELD and this handler writes movements that open
@@ -218,16 +244,16 @@ inventoryAdjustments.post('/', async (c) => {
      warehouse id would read as "no stock here" and an INCREASE would land goods
      in the other company's warehouse. See lib/ref-in-company.ts. */
   const co = requireActiveCompanyId(c);
-  if (!co.ok) return c.json(co.refusal, 409);
+  if (!co.ok) return refuseWithoutWriting(c, co.refusal, 409);
   const whCheck = await assertWarehouseInCompany(c.get('supabase'), warehouseId, co.companyId);
-  if (!whCheck.ok) return c.json(whCheck.body, whCheck.status);
+  if (!whCheck.ok) return refuseWithoutWriting(c, whCheck.body, whCheck.status);
 
   const deltas = bucketDeltas([], lines);
   try {
     const short = await shortages(db, c, warehouseId, deltas);
-    if (short.length) return c.json({ error: 'insufficient_bucket', message: `Not enough stock — ${short.join('; ')}.` }, 422);
+    if (short.length) return refuseWithoutWriting(c, { error: 'insufficient_bucket', message: `Not enough stock — ${short.join('; ')}.` }, 422);
   } catch (e) {
-    return c.json({ error: 'stock_check_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
+    return refuseWithoutWriting(c, { error: 'stock_check_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
   }
 
   const costs = new Map<number, number>();
@@ -235,14 +261,14 @@ inventoryAdjustments.post('/', async (c) => {
     if (l.qty < 0) continue;
     // eslint-disable-next-line no-await-in-loop -- one read per found-stock line
     const sen = await increaseCostSen(db, c, warehouseId, l, l.unit_cost_sen ?? 0);
-    if (sen == null) return c.json(costRequired(l), 422);
+    if (sen == null) return refuseWithoutWriting(c, costRequired(l), 422);
     costs.set(l.line_no, sen);
   }
 
   /* Everything above is read-only, so refusing here leaves nothing changed. The
      audit row below cannot say that: it runs after stock has moved. */
   const pf = await assertAuditWritable(db.unscoped(AUDIT_CLIENT), { entityType: 'INVENTORY_ADJUSTMENT', action: 'CREATE', companyId: co.companyId });
-  if (!pf.ok) return c.json(auditUnavailableBody(), 409);
+  if (!pf.ok) return refuseWithoutWriting(c, auditUnavailableBody(), 409);
 
   const performedBy = await performerStaffId(c);
   const notes = String(body.notes ?? '').trim() || null;
@@ -351,6 +377,10 @@ inventoryAdjustments.patch('/:id', async (c) => {
   const hasNotes = Object.hasOwn(body, 'notes');
   const raw = Array.isArray(body.lines) ? body.lines : null;
   if (!hasNotes && !raw) return c.json({ error: 'nothing_to_update' }, 400);
+  /* The version the editor opened. Required: without it two saves of the same
+     version cannot be told apart, and each would post the same delta. */
+  const expectedUpdatedAt = typeof body.expectedUpdatedAt === 'string' ? body.expectedUpdatedAt : '';
+  if (!expectedUpdatedAt) return c.json({ error: 'expected_updated_at_required', message: 'Reload this adjustment and make your edit again.' }, 400);
 
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
@@ -359,7 +389,12 @@ inventoryAdjustments.patch('/:id', async (c) => {
     .select(HEADER).eq('id', id).maybeSingle();
   if (hErr) return c.json({ error: 'load_failed', reason: hErr.message }, 500);
   if (!headerData) return c.json(NOT_THIS_COMPANY, 404);
-  const header = headerData as unknown as { id: string; adjustment_no: string; warehouse_id: string; notes: string | null };
+  const header = headerData as unknown as { id: string; adjustment_no: string; warehouse_id: string; notes: string | null; updated_at: string };
+  /* The version THIS request validated, kept as its own string at read time —
+     the claim below compares against exactly what was checked here. */
+  const readVersion = header.updated_at;
+  // Cheap early answer; the conditional claim below is what actually decides.
+  if (!sameInstant(readVersion, expectedUpdatedAt)) return c.json(STALE_DOCUMENT, 409);
 
   let lines: AdjustmentLine[] = [];
   let oldLines: Array<{ id: string; item_code: string; qty: number; reason_code: string | null; product_name: string | null; variants: Record<string, unknown> | null; description2: string | null }> = [];
@@ -416,6 +451,19 @@ inventoryAdjustments.patch('/:id', async (c) => {
   if (!pf.ok) return c.json(auditUnavailableBody(), 409);
 
   const performedBy = await performerStaffId(c);
+  const newNotes = hasNotes ? (String(body.notes ?? '').trim() || null) : header.notes;
+
+  /* THE CLAIM — before any movement. Compare-and-set on the version the editor
+     opened: of two saves of the same version exactly one gets the row back; the
+     other moved nothing and is told to reload. The value is sent back exactly as
+     the header read returned it, so PostgREST compares the same timestamp. */
+  const { data: claimed, error: claimErr } = await db.from('stock_adjustments', companyScope(c))
+    .update({ notes: newNotes, updated_at: new Date().toISOString() })
+    .eq('id', id).eq('updated_at', readVersion)
+    .select('id').maybeSingle();
+  if (claimErr) return c.json({ error: 'update_failed', reason: claimErr.message }, 500);
+  if (!claimed) return c.json(STALE_DOCUMENT, 409);
+
   const movements: MovementRow[] = deltas.map((d) => {
     const k = bucketKeyOf(d.bucket);
     const src = lines.find((l) => bucketKeyOf(l) === k);
@@ -459,11 +507,6 @@ inventoryAdjustments.patch('/:id', async (c) => {
       if (delErr) return c.json({ error: 'lines_replace_failed', reason: delErr.message, stockMoved: movements.length > 0 }, 500);
     }
   }
-
-  const newNotes = hasNotes ? (String(body.notes ?? '').trim() || null) : header.notes;
-  const { error: upErr } = await db.from('stock_adjustments', companyScope(c))
-    .update({ notes: newNotes, updated_at: new Date().toISOString() }).eq('id', id);
-  if (upErr) return c.json({ error: 'update_failed', reason: upErr.message }, 500);
 
   if (movements.length) await reconcileUncostedAfterIn(c.get('supabase'), movements, performedBy);
 

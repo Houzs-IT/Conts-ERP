@@ -25,7 +25,8 @@ const DOC: StockAdjustmentDoc = {
   ],
 };
 
-const updateCalls: Array<{ notes?: string | null; lines?: Array<{ itemCode: string; qty: number; variantKey?: string | null }> }> = [];
+let failNextUpdate: Error | null = null;
+const updateCalls: Array<{ notes?: string | null; expectedUpdatedAt?: string; lines?: Array<{ itemCode: string; qty: number; variantKey?: string | null }> }> = [];
 vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ user: { id: 1 }, can: () => false }) }));
 vi.mock('../../vendor/scm/lib/stock-queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../vendor/scm/lib/stock-queries')>()),
@@ -40,7 +41,11 @@ vi.mock('../../vendor/scm/lib/stock-queries', async (importOriginal) => ({
   useStockAdjustment: () => ({ isPending: false, mutateAsync: async () => ({ id: 'x', adjustmentNo: 'x' }) }),
   useUpdateStockAdjustment: () => ({
     isPending: false,
-    mutateAsync: async (vars: (typeof updateCalls)[number]) => { updateCalls.push(vars); return {}; },
+    mutateAsync: async (vars: (typeof updateCalls)[number]) => {
+      updateCalls.push(vars);
+      if (failNextUpdate) { const e = failNextUpdate; failNextUpdate = null; throw e; }
+      return {};
+    },
   }),
 }));
 vi.mock('../../vendor/scm/lib/inventory-queries', async (importOriginal) => ({
@@ -127,6 +132,26 @@ describe('Stock adjustment is a document (BUG-66)', () => {
 
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0]!.lines!.map((l) => [l.itemCode, l.qty])).toEqual([['CH-1', -2], ['CH-2', 2]]);
+    // The version the editor opened rides along, so a second save of it is refused.
+    expect(updateCalls[0]!.expectedUpdatedAt).toBe('2026-10-07T03:00:00Z');
     expect(within(screen.getByRole('dialog')).getByText('TC-SA-2610-001 updated')).toBeTruthy();
+  });
+
+  test('a save that lost the race to another save says so and asks for a reload', async () => {
+    failNextUpdate = Object.assign(new Error('That clashes with something already in the system.'), {
+      status: 409,
+      body: JSON.stringify({ error: 'stale_document', message: 'Someone else changed this stock adjustment.' }),
+    });
+    draw('/scm/stock-adjustments/sa-1/edit');
+    const qty = document.querySelector('tbody input[aria-label="Qty for CH-1"]') as HTMLInputElement;
+    fireEvent.focus(qty);
+    fireEvent.change(qty, { target: { value: '-2' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/ }));
+    await vi.waitFor(() => expect(notify).toHaveBeenCalled());
+    const arg = (notify.mock.calls[0] as unknown as [{ title: string; body: string }])[0];
+    expect(arg.title).toBe('TC-SA-2610-001 was changed by someone else');
+    expect(arg.body).toMatch(/Reload the page/);
+    // Still editable: nothing was saved, so the Save button is still there.
+    expect(screen.getByRole('button', { name: /Save Changes/ })).toBeTruthy();
   });
 });

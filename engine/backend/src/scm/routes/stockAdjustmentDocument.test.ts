@@ -84,6 +84,7 @@ async function call(method: string, path: string, body: Record<string, unknown>,
   return app.request(path, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 }
 
+const V0 = '2026-10-07T00:00:00Z';
 const line = (itemCode: string, qty: number, reasonCode = 'DAMAGE') => ({ itemCode, qty, reasonCode });
 
 describe('POST /inventory/adjustments — one document', () => {
@@ -103,6 +104,8 @@ describe('POST /inventory/adjustments — one document', () => {
     const before = (sb.tables.stock_adjustments as Row[]).length;
     const res = await call('POST', '/', { warehouseId: 'wh-1', lines: [line('CH-2', -5)] });
     expect(res.status).toBe(422);
+    // Nothing written, so the Idempotency-Key claim is released for the corrected resubmit.
+    expect(res.headers.get('Idempotency-Outcome')).toBe('no-write');
     expect((sb.tables.stock_adjustments as Row[]).length).toBe(before);
     expect(movements()).toHaveLength(1);
   });
@@ -110,7 +113,7 @@ describe('POST /inventory/adjustments — one document', () => {
 
 describe('PATCH /inventory/adjustments/:id — edit moves only the difference', () => {
   it('-3 edited to -5 writes ONE -2 movement and replaces the line', async () => {
-    const res = await call('PATCH', '/sa-1', { lines: [line('CH-1', -5)] });
+    const res = await call('PATCH', '/sa-1', { expectedUpdatedAt: V0,  lines: [line('CH-1', -5)] });
     expect(res.status).toBe(200);
     const mv = docMovements('sa-1');
     expect(mv.map((m) => m.qty)).toEqual([-3, -2]);
@@ -119,7 +122,7 @@ describe('PATCH /inventory/adjustments/:id — edit moves only the difference', 
   });
 
   it('-3 edited to -12 needs 9 more but only 7 are open: refused, nothing written', async () => {
-    const res = await call('PATCH', '/sa-1', { lines: [line('CH-1', -12)] });
+    const res = await call('PATCH', '/sa-1', { expectedUpdatedAt: V0,  lines: [line('CH-1', -12)] });
     expect(res.status).toBe(409);
     expect(((await res.json()) as { message: string }).message).toContain('only 7 on hand');
     expect(docMovements('sa-1')).toHaveLength(1);
@@ -127,7 +130,7 @@ describe('PATCH /inventory/adjustments/:id — edit moves only the difference', 
   });
 
   it('-3 edited to -1 puts 2 back at the cost they were written off at', async () => {
-    const res = await call('PATCH', '/sa-1', { lines: [line('CH-1', -1)] });
+    const res = await call('PATCH', '/sa-1', { expectedUpdatedAt: V0,  lines: [line('CH-1', -1)] });
     expect(res.status).toBe(200);
     const back = docMovements('sa-1')[1]!;
     expect(back.qty).toBe(2);
@@ -135,7 +138,7 @@ describe('PATCH /inventory/adjustments/:id — edit moves only the difference', 
   });
 
   it('a reason / notes-only edit moves no stock', async () => {
-    const res = await call('PATCH', '/sa-1', { notes: 'recount', lines: [line('CH-1', -3, 'WRITEOFF')] });
+    const res = await call('PATCH', '/sa-1', { expectedUpdatedAt: V0,  notes: 'recount', lines: [line('CH-1', -3, 'WRITEOFF')] });
     expect(res.status).toBe(200);
     expect(docMovements('sa-1')).toHaveLength(1);
     expect(docLines('sa-1').map((l) => l.reason_code)).toEqual(['WRITEOFF']);
@@ -143,8 +146,44 @@ describe('PATCH /inventory/adjustments/:id — edit moves only the difference', 
   });
 
   it("404s on another company's document and writes nothing", async () => {
-    const res = await call('PATCH', '/sa-9', { notes: 'should not land' }, 1);
+    const res = await call('PATCH', '/sa-9', { expectedUpdatedAt: V0,  notes: 'should not land' }, 1);
     expect(res.status).toBe(404);
     expect((sb.tables.stock_adjustments as Row[]).find((h) => h.id === 'sa-9')!.notes).toBe('other company');
+  });
+});
+
+describe('PATCH /inventory/adjustments/:id — two saves of one version post the delta once', () => {
+  it('the second save of the same version is 409 stale_document and moves nothing', async () => {
+    const first = await call('PATCH', '/sa-1', { expectedUpdatedAt: V0, lines: [line('CH-1', -5)] });
+    expect(first.status).toBe(200);
+    const second = await call('PATCH', '/sa-1', { expectedUpdatedAt: V0, lines: [line('CH-1', -5)] });
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as { error: string }).error).toBe('stale_document');
+    expect(docMovements('sa-1').map((m) => m.qty)).toEqual([-3, -2]);
+    expect(docLines('sa-1').map((l) => l.qty)).toEqual([-5]);
+  });
+
+  it('two saves racing past the header read: only the one that claims the version writes', async () => {
+    // Both requests read the header before either claims it: hold the first
+    // one's claim until the second has read, then let them both run.
+    const fire = () => call('PATCH', '/sa-1', { expectedUpdatedAt: V0, lines: [line('CH-1', -5)] });
+    const [a, b] = await Promise.all([fire(), fire()]);
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    expect(docMovements('sa-1').map((m) => m.qty)).toEqual([-3, -2]);
+  });
+
+  it('the save carries the new version back, and that version saves again', async () => {
+    const first = await call('PATCH', '/sa-1', { expectedUpdatedAt: V0, lines: [line('CH-1', -5)] });
+    const v1 = ((await first.json()) as { adjustment: { updated_at: string } }).adjustment.updated_at;
+    expect(v1).not.toBe(V0);
+    const again = await call('PATCH', '/sa-1', { expectedUpdatedAt: v1, lines: [line('CH-1', -6)] });
+    expect(again.status).toBe(200);
+    expect(docMovements('sa-1').map((m) => m.qty)).toEqual([-3, -2, -1]);
+  });
+
+  it('a save without the version is refused', async () => {
+    const res = await call('PATCH', '/sa-1', { lines: [line('CH-1', -5)] });
+    expect(res.status).toBe(400);
+    expect(docMovements('sa-1')).toHaveLength(1);
   });
 });

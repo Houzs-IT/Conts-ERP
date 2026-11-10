@@ -208,10 +208,12 @@ export function useStockAdjustmentDoc(id: string | null) {
 export function useStockAdjustment() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { warehouseId: string; notes?: string; lines: StockAdjustmentLineInput[] }) =>
-      authedFetch<{ id: string; adjustmentNo: string }>(`/inventory/adjustments`, {
-        method: 'POST', body: JSON.stringify(body),
-      }),
+    /* `idempotencyKey` rides as a header, not in the body (lib/idempotency.ts):
+       one key per form mount, so a double click replays the first answer
+       instead of raising a second document and moving the stock twice. */
+    mutationFn: ({ idempotencyKey, ...body }: { warehouseId: string; notes?: string; lines: StockAdjustmentLineInput[]; idempotencyKey?: string }) =>
+      authedFetch<{ id: string; adjustmentNo: string }>(`/inventory/adjustments`,
+        idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) })),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['inventory'] });
     },
@@ -221,7 +223,10 @@ export function useStockAdjustment() {
 export function useUpdateStockAdjustment(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { notes?: string | null; lines?: StockAdjustmentLineInput[] }) =>
+    /* `expectedUpdatedAt` = the header's updated_at when the editor opened. The
+       server claims the document on it before moving stock and answers 409
+       stale_document when someone saved in between (isStaleAdjustmentError). */
+    mutationFn: (body: { notes?: string | null; lines?: StockAdjustmentLineInput[]; expectedUpdatedAt: string }) =>
       authedFetch<{ adjustment: Omit<StockAdjustmentDoc, 'lines'>; movedBuckets: number }>(`/inventory/adjustments/${id}`, {
         method: 'PATCH', body: JSON.stringify(body),
       }),
@@ -229,6 +234,12 @@ export function useUpdateStockAdjustment(id: string) {
       void qc.invalidateQueries({ queryKey: ['inventory'] });
     },
   });
+}
+
+/** The edit lost the race: someone saved this document after the editor opened it. */
+export function isStaleAdjustmentError(err: unknown): boolean {
+  const e = err as { status?: number; body?: string } | null;
+  return e?.status === 409 && typeof e.body === 'string' && e.body.includes('"stale_document"');
 }
 
 // Open stock buckets for one SKU, grouped by (variant_key, batch_no) — powers

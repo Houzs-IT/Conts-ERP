@@ -51,6 +51,7 @@ import {
   useStockAdjustment,
   useStockAdjustmentDoc,
   useUpdateStockAdjustment,
+  isStaleAdjustmentError,
   useInventoryProductBreakdown,
   useInventoryBuckets,
   type StockAdjustmentDoc,
@@ -67,6 +68,7 @@ import { ActionResultDialog } from '../../vendor/scm/components/ActionResultDial
 import { SkeletonDetailPage } from '../../vendor/scm/components/Skeleton';
 import { FreshMount } from '../../lib/freshMount';
 import { useAuth } from '../../auth/AuthContext';
+import { useIdempotencyKey } from '../../lib/idempotency';
 import { canViewProductCost } from '../../auth/salesAccess';
 import { SpecialOrders } from '../../vendor/scm/components/SpecialOrders';
 import { NumberInput } from '../../vendor/scm/components/NumberInput';
@@ -657,6 +659,9 @@ const StockAdjustmentForm = ({ onStartNew, existing }: { onStartNew: () => void;
   const navigate = useNavigate();
   const create = useStockAdjustment();
   const update = useUpdateStockAdjustment(existing?.id ?? '');
+  /* One key for the one document this mount raises (lib/idempotency.ts): a
+     double click on Save replays the first answer, never a second document. */
+  const idemKey = useIdempotencyKey();
   /* Off native browser dialogs onto the house dialog system — this screen
      writes stock, so its warnings must look like the rest of the ERP rather
      than like OS chrome the operator has learned to dismiss. */
@@ -774,14 +779,22 @@ const StockAdjustmentForm = ({ onStartNew, existing }: { onStartNew: () => void;
     try {
       const body = { notes: notes.trim() || undefined, lines: validLines.map(lineInput) };
       if (existing) {
-        await update.mutateAsync({ ...body, notes: notes.trim() || null });
+        await update.mutateAsync({ ...body, notes: notes.trim() || null, expectedUpdatedAt: existing.updated_at });
         setSaved({ id: existing.id, adjustmentNo: existing.adjustment_no });
       } else {
-        const r = await create.mutateAsync({ warehouseId, ...body });
+        const r = await create.mutateAsync({ warehouseId, ...body, idempotencyKey: idemKey });
         setSaved({ id: r.id, adjustmentNo: r.adjustmentNo });
       }
       setResultOpen(true);
     } catch (err) {
+      if (existing && isStaleAdjustmentError(err)) {
+        void notify({
+          title: `${existing.adjustment_no} was changed by someone else`,
+          body: 'Someone saved this stock adjustment after you opened it, so your changes were not saved and no stock was moved. Reload the page to see the latest version, then make your edit again.',
+          tone: 'error',
+        });
+        return;
+      }
       /* authedFetch already ran the response through humanApiError. The whole
          document is written in one statement, so a failure moved nothing. */
       void notify({
