@@ -6,6 +6,7 @@ import { Download, ExternalLink, MessageCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Link, useLocation } from "react-router-dom";
 import { errorText, money } from "../projects/renovation/renovationModel";
+import { BrandFact, FinanceKindFact } from "../projects/renovation/ProjectBrandFacts";
 import { BetaSiteProgressCard } from "./BetaSiteProgressCard";
 import { BetaWsDesignCard } from "./BetaWsDesignCard";
 import { BetaWsKeyCard } from "./BetaWsKeyCard";
@@ -344,17 +345,23 @@ function FinalDrawingsCard({ p, onOpen }: { p: BetaTabProps; onOpen: (f: DesignF
 
 /* ---------- Client & team ---------- */
 
-function TeamCard({ p, onEdit }: { p: BetaTabProps; onEdit: () => void }): ReactElement {
+export function TeamCard({ p, onEdit }: { p: BetaTabProps; onEdit: () => void }): ReactElement {
   const { detail: d } = p;
   const id = useId();
   const attending = d.people.attending.map((a) => a.name).join(", ");
-  const rowsList: Array<[string, string]> = [
+  const rowsList: Array<[string, ReactNode]> = [
     ["Client", [d.project.customer_name, d.project.customer_phone].filter(Boolean).join(" · ") || "-"],
     ["Designer", p.board.p.lead?.name ?? "-"],
     ["Sales", d.people.sales.name ?? "-"],
     ["Site PIC", p.board.p.site?.name ?? "-"],
   ];
   if (attending) rowsList.push(["Attending", attending]);
+  /* chew, 10 Nov 2026: the brand (and its finance type) set here too, as on the project page — the sales order and its
+     letterhead follow the brand; the finance type is settled once there is a contract. */
+  rowsList.push(["Brand", <BrandFact projectId={d.project.id} value={d.project.brand ?? null} canWrite={p.canWrite} onDone={p.onDone} onError={p.onError} />]);
+  if (!d.financeHidden) {
+    rowsList.push(["Finance type", <FinanceKindFact projectId={d.project.id} value={d.project.finance_kind ?? null} canWrite={p.canWrite && !d.so} onDone={p.onDone} onError={p.onError} />]);
+  }
   return (
     <section aria-labelledby={id} style={{ ...cardStyle, gap: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 8, borderBottom: `1px solid ${WS.rowLine}` }}>
