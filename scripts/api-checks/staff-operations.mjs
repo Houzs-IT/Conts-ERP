@@ -43,6 +43,13 @@ r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pas
 check('CS (operations staff) adds a Pass key job and gives it to a technician', r.status === 201 && r.json.ownerApprovalRequired === false, r.text);
 const passKey = r.json.id;
 check('visibility: a job that needs no approval is in the technician app at once', await listed(passKey));
+const mytToday = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key later ${tag}`, category: 'other', jobType: 'pass_key', dueOn: '2030-03-01' }, 'operations_staff');
+check('visibility: a Pass key job for a later check-in day is not in the technician app yet', r.status === 201 && !(await listed(r.json.id)), r.text);
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key earlier ${tag}`, category: 'other', jobType: 'pass_key', dueOn: '2020-03-01' }, 'operations_staff');
+check('visibility: a Pass key job for a past check-in day is not in the technician app', r.status === 201 && !(await listed(r.json.id)), r.text);
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key today ${tag}`, category: 'other', jobType: 'pass_key', dueOn: mytToday }, 'operations_staff');
+check('visibility: a Pass key job for today is offered to technicians', r.status === 201 && await listed(r.json.id), r.text);
 
 // The rules hold an aircon job (always) until the owner approves AND its parts arrive.
 r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Aircon ${tag}`, category: 'aircon', jobType: 'normal', needsParts: true, dueOn: '2030-01-05', assigneeName: HAFIZ }, 'operations_manager');
