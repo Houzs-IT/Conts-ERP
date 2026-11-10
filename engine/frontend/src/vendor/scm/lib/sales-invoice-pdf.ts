@@ -24,6 +24,7 @@ import { docVariantLine, loadCustomerFabricMaps } from './supplier-doc-data';
    docs/modules/document-status-vocabulary.md §1. */
 import { statusLabel } from './status-pill';
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
+import { brandPrintFor } from '../../../lib/renovation/brand-print';
 
 type SiHeader = {
   invoice_number: string; status: string;
@@ -97,12 +98,15 @@ export async function renderSalesInvoiceInto(
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 14;
 
+  /* Under the invoice's own brand when it has one (owner, 10 Nov 2026); the company letterhead otherwise. */
+  const brand = await brandPrintFor((header as { branding?: string | null }).branding);
   let y = drawHeader(doc, {
     docTitle: 'SALES INVOICE',
     rightMeta: [
       { label: 'Invoice No', value: header.invoice_number },
       { label: 'Date',       value: fmtDocDate(header.invoice_date) },
     ],
+    ...(brand ? { name: brand.name, logo: brand.logo, ...(brand.lines.length ? { lines: brand.lines } : {}) } : {}),
   });
 
   /* Same composition as the DO's DELIVER TO block (delivery-order-pdf.ts) so the
