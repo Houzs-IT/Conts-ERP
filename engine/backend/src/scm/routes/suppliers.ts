@@ -1307,32 +1307,34 @@ const PAID_PI_STATUSES = ['POSTED', 'PARTIALLY_PAID', 'PAID', 'ON_HOLD'];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hono ctx, matches the binding handlers
 async function loadPriceRefreshPlan(c: any, supplierId: string, companyId: number) {
   const supabase = c.get('supabase');
-  const { data: bindings, error: bErr } = await scopeToCompanyId(
+  /* Paged: PostgREST stops at 1,000 rows, and a dropped row here would leave that item out of the plan. */
+  const { data: bindings, error: bErr } = await paginateAll((from, to) => scopeToCompanyId(
     supabase.from('supplier_material_bindings')
       .select('id, supplier_id, item_code, material_name, unit_price_sen, price_matrix, price_valid_from, currency, is_main_supplier')
       .eq('supplier_id', supplierId)
       .eq('material_kind', 'mfg_product'),
     companyId,
-  );
+  ).order('id').range(from, to));
   if (bErr) return { ok: false as const, reason: bErr.message };
   const list = (bindings ?? []) as Array<BindingForRefresh & { supplier_id: string; is_main_supplier: boolean | null }>;
   if (list.length === 0) return { ok: true as const, plan: [], bindings: list };
 
-  const { data: pis, error: piErr } = await scopeToCompanyId(
+  const { data: pis, error: piErr } = await paginateAll((from, to) => scopeToCompanyId(
     supabase.from('purchase_invoices').select('id, invoice_number, invoice_date, currency')
       .eq('supplier_id', supplierId).in('status', PAID_PI_STATUSES),
     companyId,
-  );
+  ).order('id').range(from, to));
   if (piErr) return { ok: false as const, reason: piErr.message };
   const piById = new Map(((pis ?? []) as Array<{ id: string; invoice_number: string | null; invoice_date: string | null; currency: string | null }>).map((p) => [p.id, p]));
   const codes = [...new Set(list.map((b) => b.item_code))];
   const lines: PaidLine[] = [];
   const piIds = [...piById.keys()];
   for (let i = 0; i < piIds.length; i += 100) {
-    const { data, error } = await pgrestIn(
+    /* Paged: 100 invoices can hold more than 1,000 lines, and a dropped newest line would offer an older price. */
+    const { data, error } = await paginateAll((from, to) => pgrestIn(
       supabase.from('purchase_invoice_items').select('purchase_invoice_id, item_code, qty, unit_price_sen, discount_sen, uom').gt('unit_price_sen', 0),
       'purchase_invoice_id', piIds.slice(i, i + 100),
-    );
+    ).order('id').range(from, to));
     if (error) return { ok: false as const, reason: (error as { message: string }).message };
     for (const l of (data ?? []) as Array<{ purchase_invoice_id: string; item_code: string | null; qty: number | null; unit_price_sen: number; discount_sen: number | null; uom: string | null }>) {
       const pi = piById.get(l.purchase_invoice_id);

@@ -121,8 +121,12 @@ class FakeQuery {
   gt(col: string, val: number) { this.preds.push((r) => Number(r[col]) > val); return this; }
   in(col: string, vals: unknown[]) { const s = new Set(vals.map(String)); this.preds.push((r) => s.has(String(r[col]))); return this; }
   neq(col: string, val: unknown) { this.preds.push((r) => String(r[col]) !== String(val)); return this; }
+  private window: [number, number] | null = null;
+  order() { return this; }
+  range(from: number, to: number) { this.window = [from, to]; return this; }
   private run() {
-    const hit = this.rows.filter((r) => this.preds.every((p) => p(r)));
+    const all = this.rows.filter((r) => this.preds.every((p) => p(r)));
+    const hit = this.window ? all.slice(this.window[0], this.window[1] + 1) : all;
     if (this.patch) for (const r of hit) Object.assign(r, this.patch);
     return hit;
   }
