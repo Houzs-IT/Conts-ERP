@@ -39,7 +39,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     : [];
   const notes = await all<{ note: string; actor_label: string; occurred_at: string; action: string }>(env, `
     SELECT after_state::jsonb ->> 'note' AS note, actor_label, occurred_at, action FROM audit_log
-    WHERE entity_table = 'maintenance_issues' AND entity_id = ? AND action IN ('maintenance.note','maintenance.end')
+    WHERE entity_table = 'maintenance_issues' AND entity_id = ? AND action IN ('maintenance.note','maintenance.end','maintenance.support')
       AND COALESCE(after_state::jsonb ->> 'note', '') <> ''
     ORDER BY occurred_at`, id);
 
