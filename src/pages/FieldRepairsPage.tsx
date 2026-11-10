@@ -29,8 +29,10 @@ interface Repair {
   windows: { id: string; startsAt: string; endsAt: string; note: string | null; guestStaying: boolean }[];
 }
 interface PoolBuilding { id: string; name: string; open: number }
-interface ListPayload { mine: Repair[]; open: Repair[]; mayPick: boolean; buildings?: PoolBuilding[]; maxLimit?: number }
+interface ListPayload { mine: Repair[]; open: Repair[]; team?: Repair[]; mayPick: boolean; buildings?: PoolBuilding[]; maxLimit?: number }
 interface UnitGroup { unitId: string; unitNumber: string; propertyName: string; jobs: Repair[] }
+interface TechnicianGroup { name: string; jobs: Repair[] }
+type ListTab = 'all' | 'mine' | 'open' | 'team';
 
 const POOL_PAGE = 200;
 
@@ -42,6 +44,17 @@ function groupByUnit(repairs: Repair[]): UnitGroup[] {
     groups.set(repair.unitId, group);
   }
   return [...groups.values()];
+}
+
+function groupByTechnician(repairs: Repair[]): TechnicianGroup[] {
+  const groups = new Map<string, TechnicianGroup>();
+  for (const repair of repairs) {
+    const name = repair.assigneeName?.trim() ?? '';
+    const group = groups.get(name.toLowerCase()) ?? { name, jobs: [] };
+    group.jobs.push(repair);
+    groups.set(name.toLowerCase(), group);
+  }
+  return [...groups.values()].sort((first, second) => first.name.localeCompare(second.name));
 }
 interface FileDoc { id: string; kind: string; url: string; fileName: string; byteSize: number; uploadedAt: string; uploader: string | null }
 interface Detail {
@@ -72,7 +85,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
     const t = window.setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 60_000);
     return () => window.clearInterval(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const [tab, setTab] = useState<'all' | 'mine' | 'open'>('all');
+  const [tab, setTab] = useState<ListTab>('all');
   const [open, setOpen] = useState<string | null>(null);
   // A notice tapped in the bell: open that repair (the sheet loads it by id and says so if it is not theirs).
   useEffect(() => { if (linkRepair) { setTab('all'); setOpen(linkRepair); onLinked?.(); } }, [linkRepair]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -86,7 +99,8 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const todo = mine.filter(r => r.state !== 'resolved' && !r.endedAt);
   const finished = mine.filter(r => r.state === 'resolved' || r.endedAt);
   const pool = (data?.open ?? []).filter(isShown);
-  const groups = [
+  const team = (data?.team ?? []).filter(isShown);
+  const groups = tab === 'team' ? [] : [
     ...groupByUnit(tab === 'open' ? [] : todo).map(group => ({ group, offer: false })),
     ...groupByUnit(tab === 'mine' ? [] : pool).map(group => ({ group, offer: true })),
   ];
@@ -123,6 +137,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
             { value: 'all', label: <>{tr.all} <span className="text-muted-ink tabular-nums">{todo.length + openTotal}</span></> },
             { value: 'mine', label: <>{tr.mine} <span className="text-muted-ink tabular-nums">{todo.length}</span></> },
             { value: 'open', label: <>{tr.open} <span className="text-muted-ink tabular-nums">{openTotal}</span></> },
+            { value: 'team', label: <>{tr.team} <span className="text-muted-ink tabular-nums">{team.length}</span></> },
           ]} />
         )}
       </div>
@@ -145,6 +160,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
       <Button size="touch" variant="secondary" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setReporting(true)}>{tr.reportProblem}</Button>
       {error && <StaleBanner message={error} onRetry={reload} />}
       {loading && !data ? <><Skeleton height={120} /><Skeleton height={120} /></>
+        : tab === 'team' ? <TeamList jobs={team} />
         : groups.length === 0 && (tab === 'open' || finished.length === 0)
           ? <EmptyState icon="Wrench" title={tab === 'open' ? tr.noOpen : tr.noMine}
             body={tab === 'open' ? tr.noOpenBody : data?.mayPick ? tr.noMineBodyPick : tr.noMineBody} />
@@ -214,7 +230,24 @@ function UnitGroupCard({ group, offer, fresh, picking, onPickAll, onOpen }: {
   );
 }
 
-function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: boolean; fresh?: boolean; inGroup?: boolean; onOpen: () => void }) {
+function TeamList({ jobs }: { jobs: Repair[] }) {
+  const tr = usePortalText().repairs;
+  if (jobs.length === 0) return <EmptyState icon="Users" title={tr.noTeam} body={tr.noTeamBody} />;
+  return (
+    <div className="flex flex-col gap-2.5">
+      {groupByTechnician(jobs).map(technician => (
+        <section key={technician.name.toLowerCase()} aria-label={technician.name} className="flex flex-col gap-2.5">
+          <h2 className="m-0 mt-2 text-[16px] font-semibold flex items-center gap-2">
+            <Icon name="UserRound" size="sm" />{technician.name}<span className="text-copy text-muted-ink font-normal">· {tr.jobs(technician.jobs.length)}</span>
+          </h2>
+          {technician.jobs.map(r => <RepairCard key={r.id} r={r} />)}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: boolean; fresh?: boolean; inGroup?: boolean; onOpen?: () => void }) {
   const t = usePortalText();
   const tr = t.repairs;
   const { short, stamp } = usePortalDates();
@@ -227,11 +260,11 @@ function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: b
       {r.jobType === 'pass_key' && r.state !== 'resolved' && <StatusBadge tone="info">{tr.passKey}</StatusBadge>}
     </>
   );
-  return (
-    <button type="button" onClick={onOpen}
-      className={cx('w-full text-left bg-card flex flex-col gap-1.5 cursor-pointer min-h-[44px]', inGroup
-        ? 'px-4 py-3 [border-top:1px_solid_var(--color-line)] hover:bg-muted'
-        : cx('rounded-card border border-solid p-4', isUrgent ? 'border-danger-line' : fresh ? 'border-info-line' : 'border-line'))}>
+  const className = cx('w-full text-left bg-card flex flex-col gap-1.5 min-h-[44px]', inGroup
+    ? 'px-4 py-3 [border-top:1px_solid_var(--color-line)]'
+    : cx('rounded-card border border-solid p-4', isUrgent ? 'border-danger-line' : fresh ? 'border-info-line' : 'border-line'));
+  const content = (
+    <>
       {inGroup ? (
         <span className="flex items-start gap-2">
           <span className="flex-1 min-w-0 text-copy text-ink [overflow-wrap:anywhere]">{r.title}</span>
@@ -252,8 +285,11 @@ function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: b
       <span className="flex gap-1.5 flex-wrap pt-0.5">
         {offer ? <StatusBadge tone="gold">{tr.openToPick}</StatusBadge> : <StatusBadge tone={statusOf('maintenance', progress(r)).tone} label={wordFor(t.repairStatus, progress(r))} dot />}
       </span>
-    </button>
+    </>
   );
+  return onOpen
+    ? <button type="button" onClick={onOpen} className={cx(className, 'cursor-pointer', inGroup && 'hover:bg-muted')}>{content}</button>
+    : <div className={className}>{content}</div>;
 }
 
 /* ---------- one job, full screen ---------- */
