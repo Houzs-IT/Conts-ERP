@@ -544,6 +544,54 @@ export function useUpdateBinding() {
   });
 }
 
+/* Price list from what was paid (TODO port item 11): each binding against the
+   latest accepted purchase invoice line. The GET writes nothing. */
+export type PriceDrift = {
+  bindingId: string;
+  itemCode: string;
+  materialName: string | null;
+  listSen: number;
+  listFrom: string | null;
+  paidSen: number | null;
+  paidOn: string;
+  invoiceNumber: string | null;
+  deltaSen: number;
+  eligible: boolean;
+  reason?: 'current' | 'two_prices' | 'unit_mismatch' | 'list_newer' | 'currency' | 'size_priced' | 'no_list_price';
+  whyNot?: string;
+};
+export type PriceRefreshPlan = {
+  changes: PriceDrift[];
+  unitMismatches: PriceDrift[];
+  refused: PriceDrift[];
+  current: number;
+};
+
+export function useSupplierPriceRefresh(supplierId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['supplier-price-refresh', supplierId],
+    queryFn: () => authedFetch<PriceRefreshPlan>(`/suppliers/${supplierId}/price-refresh`),
+    enabled,
+    staleTime: 0,
+  });
+}
+
+export function useApplySupplierPriceRefresh() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ supplierId, bindingIds }: { supplierId: string; bindingIds: string[] }) =>
+      authedFetch<{ updated: number; failed: Array<{ bindingId: string; itemCode: string; reason: string }> }>(
+        `/suppliers/${supplierId}/price-refresh`,
+        { method: 'POST', body: JSON.stringify({ bindingIds }) },
+      ),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['supplier-detail', vars.supplierId] });
+      qc.invalidateQueries({ queryKey: ['supplier-price-refresh', vars.supplierId] });
+      qc.invalidateQueries({ queryKey: ['suppliers-for-material'] });
+    },
+  });
+}
+
 export function useDeleteBinding() {
   const qc = useQueryClient();
   return useMutation({
