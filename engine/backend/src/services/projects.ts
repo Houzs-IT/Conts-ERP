@@ -6,6 +6,14 @@ import { canonicalizeMyState } from "../scm/lib/canonical-state";
 import { canonicalizeVenue } from "../scm/lib/canonical-venue";
 import { deriveProjectCode, deriveProjectName, syncedNameForOrganizerChange } from "./project-naming";
 import { checklistRowDone } from "./checklistProgress";
+
+/** LIKE patterns for a word typed as a name's initials: SCCC reads Setia City
+ *  Convention Centre. Letters only, 3 to 6 of them. */
+export function initialsLikes(word: string): string[] {
+  if (!/^[a-z]{3,6}$/i.test(word)) return [];
+  const body = [...word].join("% ");
+  return [`${body}%`, `% ${body}%`];
+}
 export { deriveProjectCode, deriveProjectName };
 
 /** Disambiguate against existing codes by appending -2, -3, … */
@@ -1847,11 +1855,16 @@ export async function listProjects(env: Env, f: ListProjectsFilters) {
     // correlated subquery to users (mirroring the `pic.name` display join at
     // the SELECT) so it also works inside the COUNT(*) query, which does NOT
     // join users. Additive — keeps code/name/venue/organizer.
-    where.push(
-      "(p.code LIKE ? OR p.name LIKE ? OR p.venue LIKE ? OR p.organizer LIKE ? OR p.brand LIKE ? OR (SELECT u.name FROM users u WHERE u.id = p.pic_id) LIKE ?)"
-    );
-    const like = `%${f.search}%`;
-    binds.push(like, like, like, like, like, like);
+    // Each word on its own, in any order and any field: "mle dataran" (owner
+    // 2026-11-04). A short word also reads as the venue's initials: "sccc".
+    for (const word of String(f.search).trim().split(/\s+/).filter(Boolean)) {
+      const like = `%${word}%`;
+      const initials = initialsLikes(word);
+      where.push(
+        `(p.code LIKE ? OR p.name LIKE ? OR p.venue LIKE ? OR p.organizer LIKE ? OR p.brand LIKE ? OR (SELECT u.name FROM users u WHERE u.id = p.pic_id) LIKE ?${initials.map(() => " OR p.venue LIKE ?").join("")})`
+      );
+      binds.push(like, like, like, like, like, like, ...initials);
+    }
   }
   // Row-level PIC/brand visibility ACL removed (owner decision 2026-08-19):
   // within a company, any user with the projects permission sees ALL that
