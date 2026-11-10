@@ -73,7 +73,7 @@ async function task(env: Env, id: string): Promise<Task | null> {
 }
 
 /** A clean was given to someone, finished, or ran past its time. */
-export async function cleaningNotice(env: Env, id: string, event: 'assigned' | 'completed' | 'overdue', by: string | null) {
+export async function cleaningNotice(env: Env, id: string, event: 'assigned' | 'picked' | 'completed' | 'overdue', by: string | null, byName?: string) {
   const t = await task(env, id);
   if (!t) return;
   const link = `/operations/cleaning?task=${encodeURIComponent(id)}`;
@@ -82,6 +82,8 @@ export async function cleaningNotice(env: Env, id: string, event: 'assigned' | '
   if (event === 'assigned') {
     const people = await taskPeople(env, id);
     if (people.length) await notifyUsers(env, people, { ...base, kind: 'cleaning.assigned', title: `Cleaning job assigned to you: ${t.unit}`, body: `${t.title}${when}.`, dedupeKey: `clean-assigned-${id}-${people.join('-')}` });
+  } else if (event === 'picked') {
+    await notifyUsers(env, { roles: ['ops_managers'] }, { ...base, kind: 'cleaning.assigned', title: `Cleaning job picked up: ${t.unit}`, body: `${t.title}${when} – ${byName ?? 'a cleaner'} took it on the phone.`, dedupeKey: `clean-picked-${id}-${by ?? ''}` });
   } else if (event === 'completed') {
     await notifyUsers(env, 'ops', { ...base, kind: 'cleaning.completed', title: `Cleaning job done: ${t.unit}`, body: `${t.title} is finished; the unit is ready.`, dedupeKey: `clean-done-${id}` });
   } else {
