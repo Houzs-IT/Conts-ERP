@@ -4,6 +4,7 @@
 // Ledger: the people who scan bills are the people who see what scanning costs.
 // Reads public.ai_usage_events only; writes nothing.
 import { Hono } from 'hono';
+import { supabaseAuth } from '../middleware/auth';
 import { requireActiveCompanyId } from '../lib/companyScope';
 import { loadAiUsageReport, loadRecentAiFailures } from '../../services/aiUsage';
 
@@ -26,4 +27,8 @@ export const aiUsageHandler = async (c: any): Promise<Response> => {
 };
 
 export const aiUsageRoutes = new Hono();
+/* The SCM bridge, declared here rather than inherited: until 2026-11-11 this router
+   only got it because officialReceiptAttachments (mounted just before it on
+   /accounting) registers '/accounting/*' supabaseAuth. tests/scmRouterBridge.test.ts. */
+aiUsageRoutes.use('*', supabaseAuth);
 aiUsageRoutes.get('/ai-usage', aiUsageHandler);

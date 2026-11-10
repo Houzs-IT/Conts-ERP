@@ -2,7 +2,11 @@
    no report. The Accounting area guard and the Ledger in front of it are scm/index.ts's (mounted on /accounting). */
 import { Hono } from 'hono';
 import { describe, expect, test, vi } from 'vitest';
-import { aiUsageRoutes } from './ai-usage';
+
+/* The router now declares the supabaseAuth bridge itself; stub it here the way the sibling route tests do. */
+vi.mock('../middleware/auth', () => ({ supabaseAuth: async (_c: unknown, next: () => Promise<void>) => next() }));
+
+const { aiUsageRoutes } = await import('./ai-usage');
 
 const dbStub = (seen: unknown[][]) => ({
   prepare: (sql: string) => ({
