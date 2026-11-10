@@ -74,7 +74,8 @@ export const API_URL =
 function timeoutSignal(path: string): AbortSignal | undefined {
   // A scan job's /work request is held open for the whole OCR run (scan-job-driver.ts): give it longer than the
   // server's 3-minute stale window so the browser never gives up on a job that is still alive.
-  const ms = /\/scan-[a-z]+\/jobs\/[^/]+\/work$/.test(path) ? 240_000 : /\/scan-/.test(path) ? 120_000 : 30_000;
+  // Reading a counted stock take sheet holds the request open while the photo is read (it writes nothing).
+  const ms = /\/scan-[a-z]+\/jobs\/[^/]+\/work$/.test(path) ? 240_000 : /\/scan-|\/stock-takes\/[^/]+\/read-sheet$/.test(path) ? 120_000 : 30_000;
   try { return AbortSignal.timeout(ms); } catch { return undefined; } // pre-2022 browsers
 }
 
