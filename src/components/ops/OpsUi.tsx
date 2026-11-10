@@ -392,6 +392,71 @@ export function ReportDamageModal({ unitId, unitLabel, taskId, onClose, onDone }
   return <MaintenanceJobForm unit={{ id: unitId, label: unitLabel }} taskId={taskId} onClose={onClose} onDone={onDone} />;
 }
 
+const PASS_KEY_ACTION = { hand_over: 'Hand over', collect: 'Collect' } as const;
+type PassKeyAction = keyof typeof PASS_KEY_ACTION;
+const PHONE_INPUT = cx(INPUT, 'max-md:h-11 max-md:text-[16px]');
+
+export function PassKeyJobForm({ units, onClose, onDone }: { units: RosterUnit[]; onClose: () => void; onDone: (id: string) => void }) {
+  const [form, setForm] = useState({ unitId: '', action: 'hand_over' as PassKeyAction, startsAt: `${mytDay(0)}T15:00`, guestName: '', assignee: '', note: '' });
+  const [isBusy, setIsBusy] = useState(false);
+  const [error, setError] = useState<{ unitId?: string; startsAt?: string; form?: string }>({});
+  const techs = useTechnicians();
+  const update = (patch: Partial<typeof form>) => setForm(current => ({ ...current, ...patch }));
+
+  async function submit() {
+    const { unitId, action, startsAt, guestName, assignee, note } = form;
+    const missing = { unitId: unitId ? undefined : 'Pick the unit.', startsAt: startsAt ? undefined : 'Pick the day and time.' };
+    if (missing.unitId || missing.startsAt) { setError(missing); return; }
+    setIsBusy(true); setError({});
+    const guest = guestName.trim();
+    const title = `Pass key: ${PASS_KEY_ACTION[action].toLowerCase()}${guest ? `${action === 'hand_over' ? ' to' : ' from'} ${guest}` : ''}`;
+    const endsAt = new Date(Date.parse(`${startsAt}:00+08:00`) + 3600e3).toISOString();
+    try {
+      const { id } = await api.post<{ id: string }>('/maintenance/issues', {
+        unitId, title, detail: note.trim() || undefined, category: 'other', jobType: 'pass_key', severity: 'minor',
+        dueOn: startsAt.slice(0, 10), reportSource: 'staff', source: 'web', window: { startsAt, endsAt },
+        ...(assignee.trim() ? { assigneeName: assignee.trim() } : {}),
+      });
+      onDone(id);
+    } catch (failure) {
+      const fields = failure instanceof ApiFailure ? failure.fields ?? {} : {};
+      const when = fields.windowStartsAt ?? fields.windowEndsAt ?? fields.dueOn;
+      setError({ unitId: fields.unitId, startsAt: when, form: fields.unitId || when ? undefined : errorMessage(failure, 'Not saved. Try again.') });
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <OpsModal title="Add pass key job" sub="One key hand-over or collection on one unit." onClose={onClose} busy={isBusy}
+      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={isBusy}>Cancel</Button><Button size="sm" variant="primary" loading={isBusy} onClick={() => void submit()}>Add pass key job</Button></>}>
+      <FormRow label="Unit" error={error.unitId} hint="Type the building or the unit, e.g. agile 13a.">
+        <UnitPicker units={units} value={form.unitId} error={error.unitId} onChange={unitId => { update({ unitId }); setError(current => ({ ...current, unitId: undefined })); }} />
+      </FormRow>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <FormRow label="Key">
+          <select className={PHONE_INPUT} value={form.action} onChange={event => update({ action: event.target.value === 'collect' ? 'collect' : 'hand_over' })}>
+            {Object.entries(PASS_KEY_ACTION).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </FormRow>
+        <FormRow label="When" error={error.startsAt} hint="Malaysia time.">
+          <DateTimeField aria-label="When" className={PHONE_INPUT} value={form.startsAt}
+            onChange={startsAt => { update({ startsAt }); setError(current => ({ ...current, startsAt: undefined })); }} />
+        </FormRow>
+      </div>
+      <FormRow label="Guest (optional)">
+        <input className={PHONE_INPUT} value={form.guestName} onChange={event => update({ guestName: event.target.value })} maxLength={80} placeholder="e.g. Tan Wei Ming" autoComplete="off" />
+      </FormRow>
+      <FormRow label="Who does it (optional)" hint="Leave empty to assign later.">
+        <AssigneePicker value={form.assignee} onChange={assignee => update({ assignee })} techs={techs} />
+      </FormRow>
+      <FormRow label="Note (optional)">
+        <textarea className={cx(TEXTAREA, 'max-md:text-[16px]')} value={form.note} onChange={event => update({ note: event.target.value })} maxLength={2000} placeholder="e.g. Key box code, where to meet" />
+      </FormRow>
+      {error.form && <span className="text-meta text-danger" role="alert">{error.form}</span>}
+    </OpsModal>
+  );
+}
+
 /* ---------- photos of the problem, picked before the job exists and sent once it does ---------- */
 
 export interface PickedMedia { key: string; file: File; preview: string | null; video: boolean; state: 'ready' | 'uploading' | 'done' | 'failed'; error?: string }
