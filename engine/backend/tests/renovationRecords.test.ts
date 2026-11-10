@@ -103,7 +103,8 @@ describe("project PIC and attending (owner, 14 Oct 2026)", () => {
 describe("design: 3D / 2D submissions by link and change notes", () => {
   test("a link submission needs an http(s) address; dates default to today and never lie ahead", () => {
     expect(cleanDesignLink({ kind: "3d", url: "https://drive.example/x", personId: 3, nextPersonId: 4 }, TODAY))
-      .toEqual({ ok: true, value: { kind: "3d", url: "https://drive.example/x", submittedOn: TODAY, personId: 3, personIds: [3], nextPersonId: 4, note: null } });
+      .toEqual({ ok: true, value: { kind: "3d", url: "https://drive.example/x", name: null, submittedOn: TODAY, personId: 3, personIds: [3], nextPersonId: 4, note: null } });
+    expect(cleanDesignLink({ kind: "3d", url: "https://drive.example/x", name: " Living hall " }, TODAY)).toMatchObject({ ok: true, value: { name: "Living hall" } });
     expect(cleanDesignLink({ kind: "3d", url: "javascript:alert(1)" }, TODAY)).toMatchObject({ ok: false, error: "url_invalid" });
     expect(cleanDesignLink({ kind: "4d", url: "https://x.example" }, TODAY)).toMatchObject({ ok: false, error: "kind_invalid" });
     expect(cleanDesignLink({ kind: "2d", url: "https://x.example", submittedOn: "2026-12-01" }, TODAY)).toMatchObject({ ok: false, error: "date_in_future" });

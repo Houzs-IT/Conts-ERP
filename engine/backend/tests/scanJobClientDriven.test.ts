@@ -1,4 +1,3 @@
-// @vitest-project light
 // Conts: scan jobs run inside a request the screen holds open (POST .../jobs/:id/work), never in ctx.waitUntil, which
 // Cloudflare cancels ~30 s after the reply (Hookka #485 / 87fc435a9). The engine has no Queue and no cron, so this is
 // the only way a 60-110 s OCR run can finish. These tests pin the stall rule, the claim / retry behaviour and the
