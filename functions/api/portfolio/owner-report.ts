@@ -11,11 +11,8 @@ import type { ReportGroup } from '../../../src/lib/ownerOverall';
 
 const UTILITIES = new Set(['electricity', 'water', 'internet', 'sewerage']);
 
-const GROUP_OF: Record<string, ReportGroup> = {
-  PS: 'PS', 'PS GRR': 'PS', 'PS YGRR': 'PS', LT: 'LT', RTR: 'RTR', MANAGE: 'MANAGE',
-};
-/** A type staff added on Units > Unit settings is grouped by its income model. GRR is no longer a contract type
- *  (contractTypes.ts NO_GRR), so it has no group of its own. */
+/** A type is grouped by its income model; one whose owner is paid a fixed amount is in the MANAGE group. GRR is no
+ *  longer a contract type (contractTypes.ts NO_GRR), so it has no group of its own. */
 const MODEL_GROUP: Record<RevenueModel, ReportGroup> = {
   management: 'PS', management_guarantee: 'PS', management_yearly_guarantee: 'PS', long_term: 'LT', master_lease: 'RTR', grr: 'NONE',
 };
@@ -63,7 +60,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // The stored code belongs to the current contract; a month under an earlier one reads its code from that model.
     const stored = unitForMonth(u, month).contract_id === u.contract_id ? u.contract_code : null;
     const code = m.terms.source === 'contract' ? codeOf(types, m.terms.model, stored) : null;
-    const group: ReportGroup = code === null ? 'NONE' : GROUP_OF[code] ?? MODEL_GROUP[m.terms.model];
+    const group: ReportGroup = code === null ? 'NONE' : types.find(type => type.code === code)?.hasFixedOwnerAmount ? 'MANAGE' : MODEL_GROUP[m.terms.model];
     const sum = (pick: (category: string) => boolean) => f.deductionGroups.filter(g => pick(g.category)).reduce((n, g) => n + g.amount, 0);
     return [{
       unitId: m.unitId, // The workbook's code (SKYLINE-C2701): the unit's own code field holds only its number (C27-01).

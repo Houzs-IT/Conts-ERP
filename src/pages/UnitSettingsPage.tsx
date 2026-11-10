@@ -14,7 +14,7 @@ import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { StatusBadge } from '../components/StatusBadge';
 import { api, notifyFailure, ApiFailure } from '../lib/api';
-import { MODELS, codeName, type ContractType, type RevenueModel } from '../lib/revenueModel';
+import { MODELS, codeName, plainOptions, fittingOptions, type ContractType, type ContractTypeOptions, type RevenueModel } from '../lib/revenueModel';
 import { useContractTypesPayload } from '../lib/useContractTypes';
 import { plural } from '../lib/format';
 import { BuildingModal } from './units/UnitForms';
@@ -231,7 +231,7 @@ function ContractTypesTab() {
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <p className="m-0 text-copy text-muted-ink flex-1 basis-[240px]">The contract types a unit can take. Each one is worked out by one of the six income models. A hidden type stays on the contracts that have it. The extra terms of MANAGE (owner amount), RTR (rent to rent deposits) and LT (no operator share) stay with those codes, so a new type takes its model's plain terms.</p>
+        <p className="m-0 text-copy text-muted-ink flex-1 basis-[240px]">The contract types a unit can take. Each one is worked out by one of the six income models. A hidden type stays on the contracts that have it. Each type also has options (owner fixed amount, agent share, no operator share, rent-out grid), so a new package is one income model plus the options ticked.</p>
         {canEdit && <Button size="sm" variant="primary" className="max-md:min-h-11" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({})}>Add contract type</Button>}
       </div>
       {ct.data && !ct.data.ready && <p className="m-0 mb-3 text-meta text-warning">The contract types cannot be changed on this database yet.</p>}
@@ -248,7 +248,9 @@ function ContractTypesTab() {
                     {t.isDefaultForModel && <StatusBadge tone="info" label="Default for its model" size="sm" />}
                   </span>
                   <span className="text-copy [overflow-wrap:anywhere]">{t.label}</span>
-                  <span className="text-meta text-muted-ink">{MODELS.find(m => m.key === t.revenueModel)?.label ?? t.revenueModel} · {plural(t.contracts ?? 0, 'contract')}</span>
+                  <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">
+                    {[MODELS.find(m => m.key === t.revenueModel)?.label ?? t.revenueModel, ...fittingOptions(t.revenueModel).filter(o => t[o.key]).map(o => o.short), plural(t.contracts ?? 0, 'contract')].join(' · ')}
+                  </span>
                 </div>
                 {canEdit && (
                   <div className="flex flex-wrap items-center gap-2">
@@ -266,12 +268,12 @@ function ContractTypesTab() {
           </ul>
         </Card>
       )}
-      {modal && <ContractTypeModal initial={modal.initial} onClose={() => setModal(null)} onSaved={() => { setModal(null); ct.reload(); }} />}
+      {modal && <ContractTypeModal initial={modal.initial} canSetOptions={!!ct.data?.optionsReady} onClose={() => setModal(null)} onSaved={() => { setModal(null); ct.reload(); }} />}
     </>
   );
 }
 
-function ContractTypeModal({ initial, onClose, onSaved }: { initial?: ContractType; onClose: () => void; onSaved: () => void }) {
+function ContractTypeModal({ initial, canSetOptions, onClose, onSaved }: { initial?: ContractType; canSetOptions: boolean; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [code, setCode] = useState(initial?.code ?? '');
   const [label, setLabel] = useState(initial?.label ?? '');
@@ -282,16 +284,24 @@ function ContractTypeModal({ initial, onClose, onSaved }: { initial?: ContractTy
   const [saving, setSaving] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const used = initial?.contracts ?? 0;
+  const [options, setOptions] = useState<ContractTypeOptions>(initial ?? plainOptions('', 'management'));
   const modelLocked = !!initial && (used > 0 || initial.isDefaultForModel);
+  const optionsLocked = !canSetOptions || used > 0;
+  const shownOptions = fittingOptions(model);
+  const optionsBody = Object.fromEntries(shownOptions.map(o => [o.key, options[o.key]]));
   const ok = label.trim() !== '' && (!!initial || code.trim() !== '');
+  function pickModel(next: RevenueModel): void {
+    setModel(next);
+    setOptions(plainOptions('', next));
+  }
   async function submit(): Promise<void> {
     setSaving(true);
     try {
       const common = { label: label.trim(), package: pkg.trim() || null, blurb: blurb.trim() || null };
       if (initial) {
-        await api.patch(`/contract-types/${encodeURIComponent(initial.code)}`, { ...common, ...(modelLocked ? {} : { revenueModel: model }), ...(isDefault && !initial.isDefaultForModel ? { isDefaultForModel: true } : {}) });
+        await api.patch(`/contract-types/${encodeURIComponent(initial.code)}`, { ...common, ...(modelLocked ? {} : { revenueModel: model }), ...(optionsLocked ? {} : optionsBody), ...(isDefault && !initial.isDefaultForModel ? { isDefaultForModel: true } : {}) });
       } else {
-        await api.post('/contract-types', { ...common, code: code.trim(), revenueModel: model, isDefaultForModel: isDefault });
+        await api.post('/contract-types', { ...common, ...(optionsLocked ? {} : optionsBody), code: code.trim(), revenueModel: model, isDefaultForModel: isDefault });
       }
       toast({ tone: 'success', title: initial ? 'Contract type saved.' : 'Contract type added.' });
       onSaved();
@@ -308,10 +318,24 @@ function ContractTypeModal({ initial, onClose, onSaved }: { initial?: ContractTy
       <Field label="Name" placeholder="e.g. Airbnb profit sharing" value={label} maxLength={80} error={fields.label} style={{ minHeight: 44 }} onChange={e => setLabel(e.target.value)} />
       <Field label="Package" placeholder="e.g. Package A" help="Leave empty if it has none." value={pkg} maxLength={30} error={fields.package} style={{ minHeight: 44 }} onChange={e => setPkg(e.target.value)} />
       <Labeled label="Income model" help={modelLocked ? (used > 0 ? `${plural(used, 'contract')} use this type, so its income model is fixed.` : 'This is the default for its model. Make another type the default to change it.') : MODELS.find(m => m.key === model)?.statement}>
-        <FormSelect label="Income model" value={model} disabled={modelLocked} onChange={v => { const next = MODELS.find(m => m.key === v); if (next) setModel(next.key); }}
+        <FormSelect label="Income model" value={model} disabled={modelLocked} onChange={v => { const next = MODELS.find(m => m.key === v); if (next) pickModel(next.key); }}
           options={MODELS.filter(m => m.key !== 'grr' || m.key === model).map(m => ({ value: m.key, label: m.label }))} />
         {fields.revenueModel && <span className="text-caption text-critical">{fields.revenueModel}</span>}
       </Labeled>
+      {shownOptions.length > 0 && (
+        <fieldset className="m-0 p-0 border-0 flex flex-col gap-1 min-w-0">
+          <legend className="p-0 mb-1 text-meta font-medium text-muted-ink">Options</legend>
+          {shownOptions.map(o => (
+            <label key={o.key} className={`flex items-start gap-2 text-copy min-h-11 ${optionsLocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+              <input type="checkbox" checked={options[o.key]} disabled={optionsLocked} onChange={e => setOptions(prev => ({ ...prev, [o.key]: e.target.checked }))} className="mt-[3px] accent-[var(--color-gold-ink)]" />
+              <span>{o.label} <span className="block text-meta text-muted-ink">{o.hint}</span>
+                {fields[o.key] && <span className="block text-caption text-critical">{fields[o.key]}</span>}
+              </span>
+            </label>
+          ))}
+          {optionsLocked && <span className="text-caption text-muted-ink">{used > 0 ? `${plural(used, 'contract')} use this type, so its options are fixed. Add a new type for other options.` : 'The options cannot be changed on this database yet.'}</span>}
+        </fieldset>
+      )}
       <Field label="What it means" placeholder="One line staff can read" value={blurb} maxLength={200} error={fields.blurb} style={{ minHeight: 44 }} onChange={e => setBlurb(e.target.value)} />
       <label className="flex items-start gap-2 text-copy cursor-pointer min-h-11">
         <input type="checkbox" checked={isDefault} disabled={initial?.isDefaultForModel} onChange={e => setIsDefault(e.target.checked)} className="mt-[3px] accent-[var(--color-gold-ink)]" />
