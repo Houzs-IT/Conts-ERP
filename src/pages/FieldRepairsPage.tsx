@@ -260,7 +260,7 @@ function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: b
       {r.jobType === 'pass_key' && r.state !== 'resolved' && <StatusBadge tone="info">{tr.passKey}</StatusBadge>}
     </>
   );
-  const className = cx('w-full text-left bg-card flex flex-col gap-1.5 min-h-[44px]', inGroup
+  const className = cx('w-full box-border text-left bg-card flex flex-col gap-1.5 min-h-[44px]', inGroup
     ? 'px-4 py-3 [border-top:1px_solid_var(--color-line)]'
     : cx('rounded-card border border-solid p-4', isUrgent ? 'border-danger-line' : fresh ? 'border-info-line' : 'border-line'));
   const content = (
