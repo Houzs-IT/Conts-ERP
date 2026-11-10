@@ -52,6 +52,7 @@ import { PRODUCTION_DOC, issueMaterials, returnMaterial, reverseIssues } from '.
 import { voChangeWaiting } from '../lib/renovation-po-change-guard';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
 import { heldSoBehindLines, soOnHoldResponse } from '../lib/source-document-gates';
+import { actualMinutesByOrder, entryAddHandler, entryDeleteHandler, entryEditHandler, hoursGetHandler, stopRunningTimers, timerStartHandler, timerStopHandler } from './production-hours';
 
 export const productionOrders = new Hono<{ Bindings: Env; Variables: Variables }>();
 productionOrders.use('*', supabaseAuth);
@@ -219,8 +220,13 @@ async function attachProgress(sb: any, rows: Array<Record<string, unknown>>, sta
   if (rows.length === 0) return;
   const holidays = await loadHolidays(sb);
   const today = todayMyt();
-  const { data: people } = await sb.from('production_order_workers').select('production_order_id, name').in('production_order_id', rows.map((r) => r.id)).order('created_at');
+  const [{ data: people }, actual] = await Promise.all([
+    sb.from('production_order_workers').select('production_order_id, name').in('production_order_id', rows.map((r) => r.id)).order('created_at'),
+    actualMinutesByOrder(sb, rows.map((r) => String(r.id))),
+  ]);
   for (const r of rows) {
+    /* Worker hours so far (production-hours.ts); the budget is the row's own production_time_hours. */
+    r.actual_minutes = actual.get(String(r.id)) ?? 0;
     r.progress = progressOf(r as never, today, holidaySet(holidays, stateOf(r)));
     r.assigned_to = ((people ?? []) as Array<{ production_order_id: string; name: string }>).filter((p) => p.production_order_id === r.id).map((p) => p.name);
   }
@@ -1342,9 +1348,11 @@ productionOrders.patch('/:id/confirm', async (c) => {
 const START_CLEARED = { actual_start_at: null, actual_start_by: null, actual_start_by_name: null };
 
 /* Puts a started order back to not started: its stock returns first, so a stop here leaves it started and repeatable. */
-async function undoStart(c: any, sb: any, orderId: string): Promise<string | null> {
+export async function undoStart(c: any, sb: any, orderId: string): Promise<string | null> {
   const back = await reverseIssues(sb, orderId, c.get('user')?.id ?? null);
   if (!back.ok) return back.reason;
+  /* No longer started: nobody stays on the clock, or the timer would run on hidden and block the next Start's time. */
+  await stopRunningTimers(sb, orderId, actorName(c));
   const { error } = await sb.from('production_order_workers').delete().eq('production_order_id', orderId).eq('how', 'STARTED');
   return error ? error.message : null;
 }
@@ -1668,6 +1676,9 @@ productionOrders.post('/:id/complete', async (c) => {
     ...(problem ? {} : { completion_step: step === 'deliver' ? 'done' : step }),
   }).eq('id', o.id);
   if (problem) return c.json({ error: 'step_failed', step, message: problem }, 409);
+  /* The work is done: whoever is still on the clock is stopped now, and again after each later step (Start time is
+     refused once completion has begun, production-hours.ts; this catches a timer that slipped in between). */
+  await stopRunningTimers(sb, o.id, actorName(c));
   return c.json({ ok: true, step });
 });
 
@@ -1817,6 +1828,14 @@ productionOrders.put('/:id/workers', async (c) => {
   return c.json({ ok: true });
 });
 
+/* Worker actual hours (TODO item 16): production-hours.ts. */
+productionOrders.get('/:id/hours', hoursGetHandler);
+productionOrders.post('/:id/hours/start', timerStartHandler);
+productionOrders.post('/:id/hours/stop', timerStopHandler);
+productionOrders.post('/:id/hours', entryAddHandler);
+productionOrders.patch('/:id/hours/:entryId', entryEditHandler);
+productionOrders.delete('/:id/hours/:entryId', entryDeleteHandler);
+
 /* Production Time is management's budget in hours. Days and hours are never converted. */
 productionOrders.patch('/:id/production-time', async (c) => {
   const co = requireActiveCompanyId(c);
@@ -1837,4 +1856,17 @@ productionOrders.patch('/:id/production-time', async (c) => {
   return c.json({ ok: true, hours });
 });
 
-productionOrders.patch('/:id/hold', makeHoldHandler({ table: 'production_orders', keyColumn: 'id', param: 'id', responseKey: 'purchaseOrder', echoColumns: 'po_number, status' }));
+const holdHandler = makeHoldHandler({ table: 'production_orders', keyColumn: 'id', param: 'id', responseKey: 'purchaseOrder', echoColumns: 'po_number, status' });
+/* On hold, the work stops: whoever is on the clock is stopped (Start time is refused while it is held). */
+export const productionHoldHandler = async (c: any): Promise<Response> => {
+  const res = await holdHandler(c);
+  if (res.status < 300) {
+    const co = requireActiveCompanyId(c);
+    if (co.ok) {
+      const { data } = await scopeToCompanyId(c.get('supabase').from('production_orders').select('id, on_hold').eq('id', c.req.param('id')), co.companyId).maybeSingle();
+      if ((data as { on_hold?: boolean } | null)?.on_hold) await stopRunningTimers(c.get('supabase'), String(c.req.param('id')), actorName(c));
+    }
+  }
+  return res;
+};
+productionOrders.patch('/:id/hold', productionHoldHandler);
