@@ -8,6 +8,7 @@
 // ----------------------------------------------------------------------------
 
 import { todayMyt } from '../../vendor/scm/lib/dates';
+import { fmtSen } from '../../vendor/shared/format';
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../../components/Button';
@@ -590,7 +591,7 @@ type ImportPreview = {
   unchanged: number;
 };
 
-const rmText = (sen: number | null | undefined) => (sen == null ? '(blank)' : `RM ${(sen / 100).toFixed(2)}`);
+const rmText = (sen: number | null | undefined) => (sen == null ? '(blank)' : fmtSen(sen));
 
 /* What one update changes, in plain words, old → new (TODO port item 10). */
 export function describeBindingPatch(binding: BindingRow, patch: Partial<NewBinding>): string[] {
