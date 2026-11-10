@@ -820,6 +820,8 @@ export type BatchImportResult = {
   upserted: number;
   /* Of `upserted`, the rows whose code was new. */
   created?: number;
+  /* Rows that matched what was stored, so nothing was written. */
+  unchanged?: number;
   failed: number;
   failures: Array<{ code: string; reason: string }>;
   /* A category change on a SKU that belongs to a model moves the model and all its SKUs. */
@@ -833,6 +835,31 @@ export type ImportModelMove = {
   to: string;
   skuCount: number;
 };
+
+/* What an import WOULD do, judged by the server against the database as it
+   stands (dryRun: nothing is written). Hookka d36177ca0: see the plan, then apply. */
+export type SkuImportChange = { field: string; from: unknown; to: unknown };
+export type SkuImportPlanRow = {
+  code: string;
+  name: string | null;
+  status: 'new' | 'changed' | 'unchanged';
+  changes: SkuImportChange[];
+};
+export type BatchImportPlan = {
+  dryRun: true;
+  counts: { new: number; changed: number; unchanged: number };
+  plan: SkuImportPlanRow[];
+  failed: number;
+  failures: Array<{ code: string; reason: string }>;
+  modelsToMove?: Array<Omit<ImportModelMove, 'skuCount'>>;
+};
+
+export function previewBatchImport(rows: BatchImportRow[]): Promise<BatchImportPlan> {
+  return authedFetch<BatchImportPlan>(`/mfg-products/batch-import`, {
+    method: 'POST',
+    body: JSON.stringify({ rows, dryRun: true }),
+  });
+}
 
 export function useBatchImportMfgProducts() {
   const qc = useQueryClient();

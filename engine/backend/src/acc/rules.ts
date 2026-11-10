@@ -44,6 +44,11 @@ import type { StockBucket } from '../scm/lib/stock-bucket';
 export type AccountRole =
   | 'AR' | 'AR_OTHER' | 'SALES' | 'INVENTORY' | 'AP' | 'AP_OTHER'
   | 'CASH' | 'BANK_DEFAULT' | 'TRANSIT_EDC' | 'TRANSIT_ONLINE' | 'CUSTOMER_DEPOSITS' | 'OVER_SHORT'
+  /* The bank money is PAID FROM by default (a voucher's Paid From, a supplier
+     payment, a refund) — apart from BANK_DEFAULT, the bank money is received
+     INTO (Houzs 5596706af, owner 2026-11-04: receive in one bank, pay from
+     another). Unset, it is BANK_DEFAULT (resolveRoles). */
+  | 'BANK_PAY_DEFAULT'
   | 'CLOSING_STOCK'
   /* The three closing stocks by warehouse bucket (owner 2026-09-21: closing
      stock - customer / display / service): each bucket's stock, opening and
@@ -77,6 +82,7 @@ export const DEFAULT_ROLE_CODES: Record<AccountRole, string> = {
   AP_OTHER: '405-0000',          // OTHER CREDITOS (the accountant's spelling)
   CASH: '320-0000',              // CASH IN HAND
   BANK_DEFAULT: '310-0010',      // CASH AT BANK - MAYBANK
+  BANK_PAY_DEFAULT: '310-0010',  // resolveRoles: the company's BANK_DEFAULT when unset
   TRANSIT_EDC: '326-0000',       // CARD MACHINE CLEARING (EDC)
   TRANSIT_ONLINE: '327-0000',    // ONLINE PAYMENT CLEARING (FPX/E-WALLET)
   CUSTOMER_DEPOSITS: '400-0001', // DEPOSIT (under ACCOUNT PAYABLE)
@@ -170,9 +176,11 @@ export async function resolveRoles(sb: any, companyId: number | null): Promise<R
     console.error('[acc/rules] roles read failed — using default codes:', error.message);
     return codes;
   }
-  for (const r of (data ?? []) as Array<{ role: string; account_code: string }>) {
+  const rows = (data ?? []) as Array<{ role: string; account_code: string }>;
+  for (const r of rows) {
     if (r.role in codes && r.account_code) codes[r.role as AccountRole] = r.account_code;
   }
+  if (!rows.some((r) => r.role === 'BANK_PAY_DEFAULT' && r.account_code)) codes.BANK_PAY_DEFAULT = codes.BANK_DEFAULT;
   return codes;
 }
 

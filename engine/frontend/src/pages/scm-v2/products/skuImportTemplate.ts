@@ -75,12 +75,14 @@ export function skuTemplateSheets(cols: TemplateCol[]): [SheetData, SheetData] {
 }
 
 /** "2 new SKUs · 3 updated". An API from before the split sends only `upserted`, all of it once read as "updated". */
-export function savedSummary(r: Pick<BatchImportResult, 'upserted' | 'created'>): string {
+export function savedSummary(r: Pick<BatchImportResult, 'upserted' | 'created' | 'unchanged'>): string {
   const created = r.created ?? 0;
   const updated = r.upserted - created;
+  const unchanged = r.unchanged ?? 0;
   const parts = [
     created > 0 ? `${created} new SKU${created === 1 ? '' : 's'}` : '',
     updated > 0 ? `${updated} SKU${updated === 1 ? '' : 's'} updated` : '',
+    unchanged > 0 ? `${unchanged} unchanged` : '',
   ].filter(Boolean);
   return parts.join(' · ');
 }
