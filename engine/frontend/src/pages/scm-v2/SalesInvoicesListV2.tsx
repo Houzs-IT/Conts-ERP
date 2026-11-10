@@ -62,6 +62,7 @@ import {
 } from "../../vendor/scm/lib/sales-invoice-queries";
 import { useMfgCustomers } from "../../vendor/scm/lib/sales-order-queries";
 import { useServerColumnFunnels, funnelValues } from "../../hooks/useServerColumnFunnels";
+import { conditionDateRange } from "../../components/dataTableConditionFilters";
 import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { useChoice } from "../../vendor/scm/components/ChoiceDialog";
@@ -866,7 +867,7 @@ export function SalesInvoicesListV2() {
   const customersQ = useMfgCustomers();
   const customerNames = useMemo(() => [...new Set((customersQ.data?.customers ?? []).map((cst) => cst.name).filter((n): n is string => !!n))], [customersQ.data]);
   const { serverFunnels, onColFiltersChange } = useServerColumnFunnels(
-    (cf) => ({ debtorNames: funnelValues(cf, "debtor_name"), currencies: funnelValues(cf, "currency") }),
+    (cf) => ({ ...conditionDateRange(cf["invoice_date"]), debtorNames: funnelValues(cf, "debtor_name"), currencies: funnelValues(cf, "currency") }),
     () => setPageParam(0),
   );
   const { requestTerm: debouncedSearch } = useDebouncedSearchTerm(search);
@@ -909,6 +910,8 @@ export function SalesInvoicesListV2() {
   // Server already filtered + sorted this page — render verbatim.
   const rows = (data?.salesInvoices ?? []) as SiRow[];
   const total = data?.total ?? 0;
+  /* Each tab's money, server-summed over the same rows as its count (TODO item 5). */
+  const tabMoney: Record<string, number> = data?.statusMoneySen ?? {};
   const counts = data?.statusCounts ?? {
     all: 0,
     draft: 0,
@@ -1699,12 +1702,12 @@ export function SalesInvoicesListV2() {
   // AutoCount's Detail Listing columns lead, in its order (si-list-columns.tsx).
   const columns = siGridColumns<SiRow>(erpColumns);
 
-  const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
-    { value: "all", label: `All · ${counts.all}` },
-    { value: "draft", label: `Draft · ${counts.draft}` },
-    { value: "sent", label: `Submitted · ${counts.sent}` },
-    { value: "partial", label: `Partial · ${counts.partial}` },
-    { value: "paid", label: `Paid · ${counts.paid}` },
+  const statusPillOptions: Array<{ value: StatusTab; label: string; moneySen?: number }> = [
+    { value: "all", label: `All · ${counts.all}`, moneySen: tabMoney.all },
+    { value: "draft", label: `Draft · ${counts.draft}`, moneySen: tabMoney.draft },
+    { value: "sent", label: `Submitted · ${counts.sent}`, moneySen: tabMoney.sent },
+    { value: "partial", label: `Partial · ${counts.partial}`, moneySen: tabMoney.partial },
+    { value: "paid", label: `Paid · ${counts.paid}`, moneySen: tabMoney.paid },
     { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
   ];
 

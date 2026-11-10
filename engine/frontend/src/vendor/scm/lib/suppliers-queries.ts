@@ -544,6 +544,54 @@ export function useUpdateBinding() {
   });
 }
 
+/* Price list from what was paid (TODO port item 11): each binding against the
+   latest accepted purchase invoice line. The GET writes nothing. */
+export type PriceDrift = {
+  bindingId: string;
+  itemCode: string;
+  materialName: string | null;
+  listSen: number;
+  listFrom: string | null;
+  paidSen: number | null;
+  paidOn: string;
+  invoiceNumber: string | null;
+  deltaSen: number;
+  eligible: boolean;
+  reason?: 'current' | 'two_prices' | 'unit_mismatch' | 'list_newer' | 'currency' | 'size_priced' | 'no_list_price';
+  whyNot?: string;
+};
+export type PriceRefreshPlan = {
+  changes: PriceDrift[];
+  unitMismatches: PriceDrift[];
+  refused: PriceDrift[];
+  current: number;
+};
+
+export function useSupplierPriceRefresh(supplierId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['supplier-price-refresh', supplierId],
+    queryFn: () => authedFetch<PriceRefreshPlan>(`/suppliers/${supplierId}/price-refresh`),
+    enabled,
+    staleTime: 0,
+  });
+}
+
+export function useApplySupplierPriceRefresh() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ supplierId, bindingIds }: { supplierId: string; bindingIds: string[] }) =>
+      authedFetch<{ updated: number; failed: Array<{ bindingId: string; itemCode: string; reason: string }> }>(
+        `/suppliers/${supplierId}/price-refresh`,
+        { method: 'POST', body: JSON.stringify({ bindingIds }) },
+      ),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['supplier-detail', vars.supplierId] });
+      qc.invalidateQueries({ queryKey: ['supplier-price-refresh', vars.supplierId] });
+      qc.invalidateQueries({ queryKey: ['suppliers-for-material'] });
+    },
+  });
+}
+
 export function useDeleteBinding() {
   const qc = useQueryClient();
   return useMutation({
@@ -689,16 +737,16 @@ export type PoStatusCounts = {
      `outstanding` is: an older deployment answers without it. */
   on_hold?: number;
 };
-export function usePurchaseOrdersPaged(params: { page: number; pageSize: number; status?: string; supplierId?: string; q?: string; sort?: string; creditorNames?: string[]; creditorCodes?: string[]; currencies?: string[]; docDates?: string[] }) {
-  const { page, pageSize, status, supplierId, q, sort, creditorNames, creditorCodes, currencies, docDates } = params;
+export function usePurchaseOrdersPaged(params: { from?: string; to?: string; page: number; pageSize: number; status?: string; supplierId?: string; q?: string; sort?: string; creditorNames?: string[]; creditorCodes?: string[]; currencies?: string[]; docDates?: string[] }) {
+  const { page, pageSize, status, supplierId, q, sort, creditorNames, creditorCodes, currencies, docDates, from, to } = params;
   // The filter half is shared with the two exports (po-list-export.ts), so an
   // export can never be sent a different filter than the list it was pressed on.
-  const usp = poListParams({ status, supplierId, q, sort, creditorNames, creditorCodes, currencies, docDates });
+  const usp = poListParams({ status, supplierId, q, sort, creditorNames, creditorCodes, currencies, docDates, from, to });
   usp.set('page', String(page));
   usp.set('pageSize', String(pageSize));
   return useQuery({
-    queryKey: ['mfg-purchase-orders-paged', page, pageSize, status ?? '', supplierId ?? '', q ?? '', sort ?? '', JSON.stringify(creditorNames ?? []), JSON.stringify(creditorCodes ?? []), JSON.stringify(currencies ?? []), JSON.stringify(docDates ?? [])],
-    queryFn: ({ signal }) => authedFetch<{ purchaseOrders: PoHeaderRow[]; total: number; page: number; pageSize: number; statusCounts: PoStatusCounts }>(`/mfg-purchase-orders?${usp.toString()}`, { signal }),
+    queryKey: ['mfg-purchase-orders-paged', page, pageSize, status ?? '', supplierId ?? '', q ?? '', sort ?? '', JSON.stringify(creditorNames ?? []), JSON.stringify(creditorCodes ?? []), JSON.stringify(currencies ?? []), JSON.stringify(docDates ?? []), from ?? '', to ?? ''],
+    queryFn: ({ signal }) => authedFetch<{ purchaseOrders: PoHeaderRow[]; total: number; page: number; pageSize: number; statusMoneySen?: Record<string, number>; statusCounts: PoStatusCounts }>(`/mfg-purchase-orders?${usp.toString()}`, { signal }),
     placeholderData: (prev: any) => prev,
     staleTime: 30_000,
     retry: retryUnlessClientError,

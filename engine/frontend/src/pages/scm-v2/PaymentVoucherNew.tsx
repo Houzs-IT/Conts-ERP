@@ -154,10 +154,11 @@ export const PaymentVoucherNew = () => {
     (isAp ? supplierRef.current?.querySelector('input') : payeeRef.current)?.focus();
   }, [isAp]);
   const [creditAccountCode, setCreditAccountCode] = useState<string>('');
-  /* Pre-fill Paid From with the company's own default bank (BANK_DEFAULT —
-     the role the owner maintains in Recon Setup). Only while untouched. */
+  /* Pre-fill Paid From with the company's default paying bank
+     (BANK_PAY_DEFAULT, Ledger setup > Posting rules; the receiving bank
+     BANK_DEFAULT when it is not set). Only while untouched. */
   useEffect(() => {
-    const dflt = rolesQ.data?.roles.BANK_DEFAULT;
+    const dflt = rolesQ.data?.roles.BANK_PAY_DEFAULT ?? rolesQ.data?.roles.BANK_DEFAULT;
     if (!dflt || creditAccountCode) return;
     if (moneyAccounts.some((a) => a.account_code === dflt)) setCreditAccountCode(dflt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
