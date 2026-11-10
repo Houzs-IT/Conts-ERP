@@ -2990,7 +2990,8 @@ app.get("/:id/timeline.csv", requireServiceCaseAccess(), async (c) => {
     lines.push(fields.map(csvField).join(","));
   }
 
-  return new Response(lines.join("\n"), {
+  // BOM so Excel reads the file as UTF-8 and Chinese notes stay readable.
+  return new Response("\uFEFF" + lines.join("\n"), {
     headers: {
       "content-type": "text/csv; charset=utf-8",
       "content-disposition": `attachment; filename="${row.assr_no}-timeline.csv"`,

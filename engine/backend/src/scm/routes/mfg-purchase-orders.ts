@@ -16,6 +16,8 @@
 //   PATCH /mfg-purchase-orders/:id/reopen     — flip CANCELLED → SUBMITTED
 // ----------------------------------------------------------------------------
 
+import { readStatusMoney } from '../lib/status-money';
+import { isPoLineOverReceived } from '../lib/qty-cap';
 import { Hono } from 'hono';
 import { PO_STATUS_BUCKETS } from '../lib/po-status-buckets';
 import { HELD_OR_TERM, isDocumentHeld } from '../lib/document-hold';
@@ -46,7 +48,7 @@ import { resolveMaintenanceConfigForSupplier, poVariantPricingInput } from '../l
 import { readMfgProductBindings } from '../lib/supplier-bindings';
 import { loadOutstandingSoLines } from '../lib/outstanding-so-lines';
 import { poHasDownstream } from '../lib/downstream-lock';
-import { cascadePoSupplierDate, SUPPLIER_DATE_SLOT_COL, type SupplierDateSlot } from '../lib/po-supplier-date-cascade';
+import { cascadePoSupplierDate, recordedSupplierDate, supplierDatePatchGate, SUPPLIER_DATE_SLOT_COL, type SupplierDateSlot } from '../lib/po-supplier-date-cascade';
 import { description2InputsChanged } from '../lib/po-line-description2';
 import { dateOrNull, coerceEmptyDates } from '../lib/date-coerce';
 import { todayMyt } from '../lib/my-time';
@@ -406,6 +408,7 @@ mfgPurchaseOrders.get('/', async (c) => {
   let page = 0;
   let pageSize = 50;
   let statusCounts: { all: number; draft: number; outstanding: number; open: number; partial: number; received: number; cancelled: number } | undefined;
+  let statusMoneySen: Record<string, number> | undefined;
   let countError: string | null = null; // held, not returned here, so the LIST read's own error still wins the report
 
   if (!paginate) {
@@ -450,6 +453,12 @@ mfgPurchaseOrders.get('/', async (c) => {
     };
     /* PERF: the seven head-only counts read nothing the page query produces, so
        they are issued alongside it rather than after it. Semantics unchanged. */
+    /* Each tab's money over the same filters (TODO item 5). */
+    const moneyProm = readStatusMoney((sel) => {
+      let mq = supabase.from('purchase_orders').select(sel);
+      if (supplierId) mq = mq.eq('supplier_id', supplierId);
+      return scopeToCompany(mq, c);
+    }, 'total_sen', PO_STATUS_BUCKETS);
     const countsProm = eager(Promise.all([
       countBase(),
       countBase().in('status', PO_STATUS_BUCKETS.draft),
@@ -468,6 +477,7 @@ mfgPurchaseOrders.get('/', async (c) => {
     // A count that could not be READ is reported, never served as 0; an empty bucket still answers 0 (lib/status-counts.ts).
     const counted = readStatusCounts({ all: allC, draft: draftC, outstanding: outstandingC, open: openC, partial: partialC, received: receivedC, cancelled: cancelledC, on_hold: onHoldC });
     if (counted.ok) statusCounts = counted.counts; else countError = counted.reason;
+    statusMoneySen = await moneyProm;
   }
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   if (countError) return c.json({ error: 'status_counts_failed', reason: countError }, 500);
@@ -491,7 +501,7 @@ mfgPurchaseOrders.get('/', async (c) => {
        carry them: its callers never render a line column. */
     const withLines = await attachPoLines(supabase, c, stamped.rows);
     if (withLines.error) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
-    return c.json({ purchaseOrders: withLines.rows, total, page, pageSize, statusCounts });
+    return c.json({ purchaseOrders: withLines.rows, total, page, pageSize, statusCounts, statusMoneySen });
   }
   const purchaseOrders = stamped.rows;
   return c.json({ purchaseOrders });
@@ -2509,11 +2519,14 @@ mfgPurchaseOrders.patch('/:id', async (c) => {
   if (lockedChanges.length > 0 && (await poHasDownstream(sb, id))) {
     return c.json(poIdentityLockedRefusal(lockedChanges), 409);
   }
+  const sdGate = supplierDatePatchGate(before, updates); // a recorded Supplier Date 2/3/4 is history (Houzs #5035)
+  if (sdGate.refusal) return c.json(sdGate.refusal, 409);
   /* A cleared Supplier Date 2/3/4 posts "", which Postgres rejects on a date
      column, so every PO that left one blank failed to save (production,
      2026-08-17). It mutates `updates`, so the audit below records the NULL. */
-  const { data, error } = await scopeToCompanyId(sb.from('purchase_orders').update(coerceEmptyDates(updates)).eq('id', id), co.companyId).select('*').single();
+  const { data, error } = await sdGate.onlyIfEmpty(scopeToCompanyId(sb.from('purchase_orders').update(coerceEmptyDates(updates)).eq('id', id), co.companyId)).select('*').maybeSingle();
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
+  if (!data) return sdGate.fill.length ? c.json(sdGate.raced, 409) : c.json(NOT_THIS_COMPANY, 404);
 
   {
     const auditPatch: Record<string, unknown> = {};
@@ -2666,11 +2679,13 @@ mfgPurchaseOrders.post('/bulk-supplier-date', async (c) => {
 
     const childLock = await poHasDownstream(sb, id);
     if (childLock) { skipped.push({ id, poNumber, reason: childLock.message }); continue; }
+    const recorded = recordedSupplierDate(before, slot);
+    if (recorded) { skipped.push({ id, poNumber, reason: `Supplier Date ${slot} already recorded (${recorded}).` }); continue; }
 
     /* Header + every line + the audit row, in lib/po-supplier-date-cascade.ts —
        the one writer the PO line import's estimate dates share. */
     const written = await cascadePoSupplierDate(sb, {
-      companyId: co.companyId, poId: id, before, slot, date, applyToLines, actor: c.get('houzsUser') ?? null, note: null,
+      companyId: co.companyId, poId: id, before, slot, date, applyToLines, actor: c.get('houzsUser') ?? null, note: null, requireEmpty: true,
     });
     if (!written.ok) { skipped.push({ id, poNumber, reason: written.reason }); continue; }
     /* ERP -> AutoCount edit, ONE PER PO THAT ACTUALLY MOVED — inside the loop
@@ -3194,6 +3209,8 @@ mfgPurchaseOrders.patch('/:id/items/:itemId', async (c) => {
   }
 
   const { error } = await scopeToCompanyId(sb.from('purchase_order_items').update(coerceEmptyDates(updates)).eq('id', itemId), co.companyId);
+  // HC-0004: the DB floor (migration 0275) refused a cut below what a GRN, posted after the lock read above, received.
+  if (isPoLineOverReceived(error)) return c.json({ error: 'received_floor', message: 'A goods received note has just received this line. Its qty can no longer be cut below what was received. Refresh and check the order.', reason: error!.message }, 409);
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
 
   /* Diff `updates` — the EFFECTIVE values written — against the stored row. qty,

@@ -48,6 +48,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     : await all<Own>(env,
       'SELECT unit_id, kind, internal_cost, external_charge, NULL::int AS guest_charge FROM unit_cleaning_prices');
   const ownAt = new Map(own.map(o => [`${o.unit_id}:${o.kind}`, o]));
+  // The unit's old cleaning price (its costs, unit_expenses): what it was charged before the price table, and what a
+  // clean still falls back to when the table has no price for it (no beds recorded). Shown beside the new one.
+  const oldRows = await all<{ unit_id: string; category: string; amount: number }>(env, `
+    SELECT DISTINCT ON (unit_id, category) unit_id, category, amount FROM unit_expenses
+    WHERE category IN ('cleaning', 'cleaning_deep') AND amount > 0 ${only ? 'AND unit_id = ?' : ''}
+    ORDER BY unit_id, category, sort_order`, ...(only ? [only] : []));
+  const oldAt = new Map(oldRows.map(r => [`${r.unit_id}:${r.category === 'cleaning_deep' ? 'deep_clean' : 'turnover'}`, Number(r.amount)]));
   const price = await priceBook(env, units.map(u => u.id));
   const sizes = await bedSizes(env);
   const bedPricing = await bedPricingMode(env);
@@ -65,7 +72,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         beds: bedsLabel(unitBeds, sizes) || null, bedCount: bedPricing === 'count' ? countedBeds(unitBeds) : unitBeds.reduce((total, bed) => total + bed.quantity, 0),
         prices: Object.fromEntries(PRICE_KINDS.map(k => {
           const p = price(u.id, k, key), o = ownAt.get(`${u.id}:${k}`);
-          return [k, { internalCost: p.internal, externalCharge: p.external, guestCharge: p.guest ?? null, source: p.source,
+          return [k, { internalCost: p.internal, externalCharge: p.external, guestCharge: p.guest ?? null, oldCharge: oldAt.get(`${u.id}:${k}`) ?? null, source: p.source,
             // All empty is a dated row that went back to the list price: no override.
             override: o && (o.internal_cost != null || o.external_charge != null || o.guest_charge != null)
               ? { internalCost: o.internal_cost ?? null, externalCharge: o.external_charge ?? null, guestCharge: o.guest_charge ?? null } : null }];

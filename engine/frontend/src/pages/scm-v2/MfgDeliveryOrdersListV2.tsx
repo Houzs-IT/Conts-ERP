@@ -12,6 +12,7 @@
 
 import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { conditionDateRange } from "../../components/dataTableConditionFilters";
 import { DO_TYPE_TABS, statusFor, doCancellableStatus, type StatusTab, type TypeTab } from "./do-list-status";
 import { deliveryOrderRowMenu } from "./row-menus";
 import { doCountsAsInvoiceable, doCountsAsDelivered } from "../../vendor/shared/do-shipped-states";
@@ -849,7 +850,7 @@ export function MfgDeliveryOrdersListV2() {
      pagination runs over the filtered set: Customer (debtor) Name + Currency.
      Debtor CODE (grid value prefers ac_debtor_code) and line-level / MRP funnels
      stay client-side on the loaded page. */
-  const [serverFunnels, setServerFunnels] = useState<{ debtorNames?: string[]; currencies?: string[] }>({});
+  const [serverFunnels, setServerFunnels] = useState<{ debtorNames?: string[]; currencies?: string[]; from?: string; to?: string }>({});
   const customersQ = useMfgCustomers();
   const customerNames = useMemo(
     () => [...new Set((customersQ.data?.customers ?? []).map((cst) => cst.name).filter((n): n is string => !!n))],
@@ -987,7 +988,7 @@ export function MfgDeliveryOrdersListV2() {
       const v = colFilters[key];
       return v && v.length > 0 ? v : undefined;
     };
-    const next = { debtorNames: pick("debtor_name"), currencies: pick("currency") };
+    const next = { debtorNames: pick("debtor_name"), currencies: pick("currency"), ...conditionDateRange(colFilters.do_date) };
     const sig = JSON.stringify(next);
     if (sig === serverFunnelSigRef.current) return;
     serverFunnelSigRef.current = sig;
