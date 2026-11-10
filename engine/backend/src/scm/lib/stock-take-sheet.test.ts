@@ -14,7 +14,7 @@ const LINES = [
   { id: 'c', item_code: 'PILLOW', variant_label: null },
 ];
 const RACKS = [{ id: 'r1', rack: 'Rack L5.1' }, { id: 'r2', rack: 'Rack R12.2' }];
-const row = (over: Partial<{ no: number | null; itemCode: string | null; counted: number | null; rack: string | null; unclear: boolean }>) =>
+const row = (over: Partial<{ no: number | null; itemCode: string | null; variant: string | null; counted: number | null; rack: string | null; unclear: boolean }>) =>
   ({ no: null, itemCode: null, counted: null, rack: null, unclear: false, ...over });
 
 describe('normalizing what the model read', () => {
@@ -43,10 +43,26 @@ describe('normalizing what the model read', () => {
 });
 
 describe('matching rows to the take', () => {
-  test('the printed # names the line when its code agrees; the rack resolves', () => {
-    const { proposals, unmatched } = matchSheetRows([row({ no: 3, itemCode: '1025-(SS)', counted: 2, rack: 'L5.1' })], LINES, RACKS);
+  test('the printed # names the line when its code and variant agree; the rack resolves', () => {
+    const { proposals, unmatched } = matchSheetRows([row({ no: 3, itemCode: '1025-(SS)', variant: 'FABRICCODE PC151-02', counted: 2, rack: 'L5.1' })], LINES, RACKS);
     expect(unmatched).toEqual([]);
     expect(proposals).toEqual([expect.objectContaining({ lineId: 'b2', counted: 2, rackId: 'r1' })]);
+  });
+
+  test('a # shifted onto a sibling variant by a later-added line: the printed variant wins', () => {
+    // The sheet's row 3 was printed as pc151-01; since then the take's row 3 has become pc151-02.
+    const { proposals } = matchSheetRows([row({ no: 3, itemCode: '1025-(SS)', variant: 'fabriccode pc151-01', counted: 7 })], LINES, RACKS);
+    expect(proposals.map((p) => [p.lineId, p.counted])).toEqual([['b1', 7]]);
+  });
+
+  test('a shared code with no variant read is never matched by its # alone', () => {
+    const { proposals, unmatched } = matchSheetRows([row({ no: 3, itemCode: '1025-(SS)', counted: 7 })], LINES, RACKS);
+    expect(proposals).toEqual([]);
+    expect(unmatched.map((u) => u.reason)).toEqual(['ambiguous_code']);
+  });
+
+  test('the model\'s variant is kept when it reads one', () => {
+    expect(normalizeSheetRows({ rows: [{ no: 1, itemCode: 'A', variant: ' pc151-01 ', counted: 1 }] })[0]!.variant).toBe('pc151-01');
   });
 
   test('a # shifted by a later-added line falls back to a unique code', () => {
@@ -174,5 +190,43 @@ describe('reverse puts the racks back as the post found them', () => {
     const sb = fakeSb({ stock_takes: [{ id: 't1', company_id: 1, rack_moves: null }], warehouse_rack_items: [] });
     const r = await reverseStockTakeRacks(sb, { takeId: 't1', takeNo: 'ST-1', warehouseId: 'wh', companyId: 1, performedBy: 'u1' });
     expect(r).toEqual({ restored: 0, removed: 0, error: null });
+  });
+});
+
+describe('rack moves at post stay inside the Worker budget and read every line', () => {
+  const world = (n: number, racks: number, maxRows: number | null = null) => fakeSb({
+    stock_take_lines: Array.from({ length: n }, (_, i) => ({
+      id: `l${i}`, stock_take_id: 't1', company_id: 1, item_code: `SKU-${String(i).padStart(4, '0')}`, variant_key: '',
+      product_name: null, counted_qty: 1, rack_id: `r${i % racks}`,
+    })),
+    stock_takes: [{ id: 't1', company_id: 1, rack_moves: null }],
+    warehouse_racks: Array.from({ length: racks * 2 }, (_, i) => ({ id: i < racks ? `r${i}` : `old${i - racks}`, rack: `R${i}`, warehouse_id: 'wh', company_id: 1, reserved: false, status: 'OCCUPIED' })),
+    warehouse_rack_items: Array.from({ length: Math.min(n, racks) }, (_, i) => ({
+      id: `p${i}`, company_id: 1, rack_id: `old${i}`, item_code: `SKU-${String(i).padStart(4, '0')}`, variant_key: '', product_name: null, qty: 1,
+    })),
+    warehouse_rack_movements: [],
+  }, {}, [], [], maxRows);
+  const args = { takeId: 't1', takeNo: 'ST-1', warehouseId: 'wh', companyId: 1, performedBy: 'u1' };
+
+  test('a take touching 24 racks makes a fixed number of calls, and every rack status is right', async () => {
+    const sb = world(12, 12);
+    let calls = 0;
+    const counting = { ...sb, from: (t: string) => { calls += 1; return sb.from(t); } };
+    const r = await applyStockTakeRacks(counting, args);
+    expect(r.error).toBeNull();
+    expect(r.moved).toBe(12);
+    // Was 8 + 3 per touched rack (80 here); now one status read and at most three status updates.
+    expect(calls).toBeLessThanOrEqual(14);
+    const status = new Map((sb.tables.warehouse_racks as Row[]).map((x) => [x.id, x.status]));
+    expect(status.get('r0')).toBe('OCCUPIED');
+    expect(status.get('old0')).toBe('EMPTY');
+  });
+
+  test('a take of 1,500 lines places all of them past the 1,000-row ceiling', async () => {
+    const sb = world(1500, 3, 1000);
+    const r = await applyStockTakeRacks(sb, args);
+    expect(r.error).toBeNull();
+    const placed = (sb.tables.warehouse_rack_items as Row[]).filter((x) => x.source_doc_no === 'ST-1');
+    expect(placed).toHaveLength(1500);
   });
 });

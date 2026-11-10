@@ -260,21 +260,23 @@ stockTakes.get('/', async (c) => {
     // chunkIn — a full-warehouse stock-take has one line per SKU, so lines
     // across the listed takes can exceed the 1000-row cap (and ids can exceed
     // 1000 too); batch + page so line_count + variance_total aren't understated.
-    const { data: lineRows } = await chunkIn<{ stock_take_id: string; variance: number | null; counted_qty: number | null }>(ids, (batch, pFrom, pTo) => sb
+    const { data: lineRows } = await chunkIn<{ stock_take_id: string; system_qty: number | null; counted_qty: number | null }>(ids, (batch, pFrom, pTo) => sb
       .from('stock_take_lines')
-      .select('stock_take_id, variance, counted_qty')
+      .select('stock_take_id, system_qty, counted_qty')
       .in('stock_take_id', batch)
       .range(pFrom, pTo));
     const list = (lineRows as unknown as Array<{
-      stock_take_id: string; variance: number | null; counted_qty: number | null;
+      stock_take_id: string; system_qty: number | null; counted_qty: number | null;
     }>) ?? [];
     for (const l of list) {
       countByTake.set(l.stock_take_id, (countByTake.get(l.stock_take_id) ?? 0) + 1);
-      // Only count variance from lines that were actually counted.
-      if (l.counted_qty != null && l.variance != null) {
+      /* Only count variance from lines that were actually counted. counted −
+         system, as the detail screen does: the stored `variance` column is
+         written by nothing, so summing it always gave 0. */
+      if (l.counted_qty != null && l.system_qty != null) {
         varianceByTake.set(
           l.stock_take_id,
-          (varianceByTake.get(l.stock_take_id) ?? 0) + Number(l.variance),
+          (varianceByTake.get(l.stock_take_id) ?? 0) + Number(l.counted_qty) - Number(l.system_qty),
         );
       }
     }
@@ -378,8 +380,10 @@ export const getStockTakeDetailHandler = async (c: any) => {
     /* PRINT ORDER: the PDF numbers rows in this order and the sheet reader
        (stock-take-sheet-read.ts) matches a row's # against it — a tie on
        item_code must not be left to the planner. */
-    sb.from('stock_take_lines').select(LINE).eq('stock_take_id', id)
-      .order('item_code').order('variant_key').order('id'),
+    /* PAGED: a whole-warehouse take has 2,000+ lines and one PostgREST read
+       stops at ~1,000 without an error. */
+    paginateAll((pFrom, pTo) => sb.from('stock_take_lines').select(LINE).eq('stock_take_id', id)
+      .order('item_code').order('variant_key').order('id').range(pFrom, pTo)),
   ]);
 
   if (headerRes.error) return c.json({ error: 'load_failed', reason: headerRes.error.message }, 500);
@@ -618,13 +622,16 @@ export const patchStockTakeLinesHandler = async (c: any) => {
      PostgREST's 1000-row cap) rather than a read per line — the update loop
      below is already one round-trip per line and does not need doubling. */
   const lineIds = lines.map((l) => l.id).filter((x): x is string => !!x);
-  const beforeById = new Map<string, { item_code: string; counted_qty: number | null; notes: string | null }>();
+  type BeforeLine = {
+    id: string; stock_take_id: string; company_id: number | null; item_code: string; counted_qty: number | null;
+    counted_by: string | null; counted_at: string | null; notes: string | null; rack_id: string | null;
+  };
+  const beforeById = new Map<string, BeforeLine>();
   if (lineIds.length > 0) {
-    const { data: beforeLines } = await chunkIn<{
-      id: string; item_code: string; counted_qty: number | null; notes: string | null;
-    }>(lineIds, (batch, pFrom, pTo) => sb.from('stock_take_lines')
-      .select('id, item_code, counted_qty, notes')
+    const { data: beforeLines, error: bErr } = await chunkIn<BeforeLine>(lineIds, (batch, pFrom, pTo) => sb.from('stock_take_lines')
+      .select('id, stock_take_id, company_id, item_code, counted_qty, counted_by, counted_at, notes, rack_id')
       .eq('stock_take_id', id).in('id', batch).range(pFrom, pTo));
+    if (bErr) return c.json({ error: 'load_failed', reason: bErr.message }, 500);
     for (const b of beforeLines ?? []) beforeById.set(b.id, b);
   }
 
@@ -634,11 +641,17 @@ export const patchStockTakeLinesHandler = async (c: any) => {
      which is honest; stamping the system row is how "Unknown user" happened. */
   const counterStaffId = await callerStaffIdOf(sb, c);
 
-  // Issue updates one-at-a-time (Supabase JS lacks a true bulk upsert by
-  // PK). Pilot scale (<500 lines per take) — fine. If volumes grow we can
-  // switch to a single RPC.
+  /* ONE upsert per 200 lines, not one update per line: the photo reader applies
+     a whole sheet at once, and ~45 per-line updates spent the Worker's
+     50-subrequest budget. Each row is the line as read above (this take's own,
+     by the stock_take_id-filtered read) with the patch merged in, so every
+     NOT NULL column is present and the conflict on id updates in place. A line
+     id not of this take is skipped, as the per-line `.eq('stock_take_id')`
+     update skipped it before. */
   const errors: string[] = [];
   const countChanges: Array<FieldChange | null> = [];
+  const upserts: Array<Record<string, unknown>> = [];
+  const upsertChanges: Array<FieldChange | null> = [];
   for (const l of lines) {
     if (!l.id) continue;
     const patch: Record<string, unknown> = {};
@@ -655,18 +668,22 @@ export const patchStockTakeLinesHandler = async (c: any) => {
     if ('notes' in l) patch.notes = l.notes ?? null;
     if ('rackId' in l) patch.rack_id = l.rackId ? l.rackId : null;
     if (Object.keys(patch).length === 0) continue;
-
-    const { error } = await sb.from('stock_take_lines')
-      .update(patch).eq('id', l.id).eq('stock_take_id', id);
-    if (error) { errors.push(`${l.id}: ${error.message}`); continue; }
-
+    const b = beforeById.get(l.id);
+    if (!b) continue;
+    upserts.push({
+      id: b.id, stock_take_id: b.stock_take_id, company_id: b.company_id, item_code: b.item_code,
+      counted_qty: b.counted_qty, counted_by: b.counted_by, counted_at: b.counted_at, notes: b.notes, rack_id: b.rack_id,
+      ...patch,
+    });
     /* Keyed by PRODUCT CODE, not the line uuid — the History drawer's reader is
        a stock controller asking "who changed the count on this SKU", and a uuid
-       cannot answer that. Only lines whose stored update SUCCEEDED reach here. */
-    const b = beforeById.get(l.id);
-    if ('counted_qty' in patch) {
-      countChanges.push(fieldChange(b?.item_code ?? l.id, b?.counted_qty ?? null, patch.counted_qty));
-    }
+       cannot answer that. Only lines whose stored write SUCCEEDED are recorded. */
+    upsertChanges.push('counted_qty' in patch ? fieldChange(b.item_code, b.counted_qty ?? null, patch.counted_qty) : null);
+  }
+  for (let i = 0; i < upserts.length; i += 200) {
+    const { error } = await sb.from('stock_take_lines').upsert(upserts.slice(i, i + 200), { onConflict: 'id' });
+    if (error) { errors.push(error.message); continue; }
+    countChanges.push(...upsertChanges.slice(i, i + 200));
   }
 
   if (errors.length > 0) {
@@ -1102,6 +1119,13 @@ stockTakes.patch('/:id/reverse', async (c) => {
     ]),
   });
 
+  /* Stock changed back — re-walk SO stock allocation (mirrors the post path,
+     and like it runs before the placement-only rack work). */
+  try {
+    const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
+    await recomputeSoStockAllocation(sb);
+  } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] reverse-stock-take failed:', e); }
+
   /* Racks back too: the post moved the counted goods onto the racks the
      counter wrote and recorded what it took off (stock_takes.rack_moves). Put
      those back, best-effort like the post — reported, never a reason to fail. */
@@ -1109,12 +1133,6 @@ stockTakes.patch('/:id/reverse', async (c) => {
     takeId: header.id, takeNo: header.take_no, warehouseId: header.warehouse_id,
     companyId: co.companyId, performedBy: reverserStaffId,
   });
-
-  /* Stock changed back — re-walk SO stock allocation (mirrors the post path). */
-  try {
-    const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-    await recomputeSoStockAllocation(sb);
-  } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] reverse-stock-take failed:', e); }
 
   return c.json({
     take: cancelled,
@@ -1222,9 +1240,17 @@ export const postStockTakeHandler = async (c: any) => {
     id: string; take_no: string; warehouse_id: string;
   };
 
-  const { data: lines } = await sb.from('stock_take_lines')
+  /* PAGED and ordered: an unpaged read of a 2,000-line take returns an
+     arbitrary ~1,000 and the rest would get no movement on a POSTED take. A
+     failed read puts the take back to OPEN rather than post a partial count. */
+  const { data: lines, error: linesErr } = await paginateAll((pFrom, pTo) => sb.from('stock_take_lines')
     .select('item_code, product_name, variant_key, counted_qty, notes')
-    .eq('stock_take_id', id);
+    .eq('stock_take_id', id)
+    .order('item_code').order('variant_key').order('id').range(pFrom, pTo));
+  if (linesErr) {
+    await scopeToCompanyId(sb.from('stock_takes').update({ status: 'OPEN', posted_at: null }).eq('id', id), co.companyId).eq('status', 'POSTED');
+    return c.json({ error: 'post_failed', reason: linesErr.message }, 500);
+  }
   const counted = ((lines as Array<{
     item_code: string; product_name: string | null;
     variant_key: string | null; counted_qty: number | null; notes: string | null;
@@ -1431,19 +1457,24 @@ export const postStockTakeHandler = async (c: any) => {
     ]),
   });
 
-  /* Round 2 (owner 2026-10-06): the goods go on the racks the counter wrote.
-     Placement only (the rack ledger is separate from stock), best-effort —
-     reported, never a reason to undo the post. */
-  const racks = await applyStockTakeRacks(sb, {
-    takeId: header.id, takeNo: header.take_no, warehouseId: header.warehouse_id,
-    companyId: co.companyId, performedBy: callerStaffId ?? user.id,
-  });
-
-  /* B2C SO auto-allocation — variance changed stock, re-walk SO lines. */
+  /* B2C SO auto-allocation — variance changed stock, re-walk SO lines. BEFORE
+     the rack moves: it matters to stock, the racks are placement only, and the
+     Worker's subrequest budget is spent in order. */
   try {
     const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
     await recomputeSoStockAllocation(sb);
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-stock-take failed:', e); }
+
+  /* Round 2 (owner 2026-10-06): the goods go on the racks the counter wrote.
+     Placement only (the rack ledger is separate from stock), best-effort —
+     reported, never a reason to undo the post. Not when the stock movements
+     failed: the racks would then say the count happened when stock says not. */
+  const racks = movementErrors.length
+    ? { moved: 0, skippedCodes: [] as string[], error: 'Stock was not adjusted, so the racks were left as they were.' }
+    : await applyStockTakeRacks(sb, {
+      takeId: header.id, takeNo: header.take_no, warehouseId: header.warehouse_id,
+      companyId: co.companyId, performedBy: callerStaffId ?? user.id,
+    });
 
   return c.json({
     take: posted,

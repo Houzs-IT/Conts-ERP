@@ -71,6 +71,11 @@ type StkLine = {
   notes?: string | null;
 };
 
+/* counted − system, as the screen computes it: the stored `variance` column is
+   written by nothing. null when uncounted or the system qty is withheld. */
+export const lineVariance = (l: { counted_qty: number | null; system_qty: number | null }): number | null =>
+  l.counted_qty == null || l.system_qty == null ? null : l.counted_qty - l.system_qty;
+
 const SCOPE_LABEL = (scopeType: string, scopeValue: string | null): string => {
   if (scopeType === 'ALL') return 'All SKUs';
   if (scopeType === 'NONZERO') return 'SKUs with stock';
@@ -190,7 +195,7 @@ export async function renderStockTakeInto(
       counted,
       /* An UNCOUNTED line has no variance — printing 0 there would say the
          count agreed when nobody has counted it. */
-      counting ? '' : l.counted_qty == null || l.variance == null ? '' : signed(l.variance),
+      counting ? '' : lineVariance(l) == null ? '' : signed(lineVariance(l)!),
       l.notes ?? '',
     ];
   });
@@ -238,9 +243,10 @@ export async function renderStockTakeInto(
   for (const l of lines) {
     if (l.counted_qty == null) continue;
     counted += 1;
-    if (l.variance == null) continue;
-    if (l.variance > 0) variancePos += l.variance;
-    if (l.variance < 0) varianceNeg += l.variance;
+    const v = lineVariance(l);
+    if (v == null) continue;
+    if (v > 0) variancePos += v;
+    if (v < 0) varianceNeg += v;
   }
   const uncounted = lines.length - counted;
 

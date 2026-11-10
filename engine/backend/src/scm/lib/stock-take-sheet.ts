@@ -6,14 +6,19 @@
 //
 // Matching never guesses:
 //   1. the printed row number (#) names the line, IF that line's item code is
-//      the code read on the same row (the # is the print order, which a line
-//      added after printing can shift);
-//   2. else the item code, IF exactly one line carries it;
+//      the code read on the same row AND its variant is the variant read there
+//      (the # is the print order, which a line added after printing can shift,
+//      onto a sibling variant of the same code);
+//   2. else the item code + variant, IF exactly one line carries them;
 //   3. else the row is returned unmatched with the reason.
+// A code the take holds on several variant lines is matched only with the
+// variant read: without it the # alone could post the count on a sibling.
 
 export type SheetRow = {
   no: number | null;
   itemCode: string | null;
+  /** The printed Variant text on the row; null when blank or not read. */
+  variant?: string | null;
   counted: number | null;
   rack: string | null;
   unclear: boolean;
@@ -44,6 +49,9 @@ export type SheetUnmatched = {
 /** Item codes as compared: case and whitespace do not count ("AK-HP SL MOB" = "ak-hp  sl mob"). */
 export const normCode = (s: string): string => s.toUpperCase().replace(/\s+/g, '');
 
+/** Variant labels as compared: case and spacing do not count; blank = none. */
+export const normVariant = (s: string | null): string => (s ?? '').toUpperCase().replace(/\s+/g, '');
+
 /** "Rack L5.1", "rack l5.1", "L5.1 " → "L5.1". */
 export const normRack = (s: string): string =>
   s.toUpperCase().replace(/^\s*RACK\b/, '').replace(/\s+/g, '');
@@ -70,10 +78,12 @@ export const normalizeSheetRows = (raw: unknown): SheetRow[] => {
     const counted = countedN != null && Number.isInteger(countedN) && countedN >= 0 ? countedN : null;
     const rack = typeof r.rack === 'string' && r.rack.trim() ? r.rack.trim() : null;
     const itemCode = typeof r.itemCode === 'string' && r.itemCode.trim() ? r.itemCode.trim() : null;
+    const variant = typeof r.variant === 'string' && r.variant.trim() ? r.variant.trim() : null;
     if (counted == null && rack == null) continue; // nothing written on this row
     out.push({
       no: Number.isInteger(noN) && noN > 0 ? noN : null,
       itemCode,
+      ...(variant ? { variant } : {}),
       counted,
       rack,
       // A number the model could not read cleanly is flagged, and a count it
@@ -103,11 +113,18 @@ export const matchSheetRows = (
       unmatched.push({ no: row.no, itemCode: row.itemCode, counted: row.counted, rackText: row.rack, reason });
     let line: SheetLine;
     const atNo = row.no != null ? linesInPrintOrder[row.no - 1] : undefined;
-    if (atNo && (row.itemCode == null || normCode(atNo.item_code) === normCode(row.itemCode))) {
+    const rowVariant = normVariant(row.variant ?? null);
+    /* The variant settles a shared code. Read: it must agree. Not read: the #
+       is trusted only for a code that has a single line in the take. */
+    const variantAgrees = (l: SheetLine) => (row.variant != null
+      ? normVariant(l.variant_label) === rowVariant
+      : (byCode.get(normCode(l.item_code)) ?? []).length <= 1);
+    if (atNo && variantAgrees(atNo) && (row.itemCode == null || normCode(atNo.item_code) === normCode(row.itemCode))) {
       line = atNo;
     } else if (row.itemCode != null) {
-      const same = byCode.get(normCode(row.itemCode)) ?? [];
-      if (same.length === 1) line = same[0];
+      const sameCode = byCode.get(normCode(row.itemCode)) ?? [];
+      const same = row.variant != null ? sameCode.filter((l) => normVariant(l.variant_label) === rowVariant) : sameCode;
+      if (same.length === 1) line = same[0]!;
       else { miss(same.length === 0 ? 'not_on_sheet' : 'ambiguous_code'); continue; }
     } else {
       miss('no_code');
@@ -134,12 +151,13 @@ Its table columns are: #, Item, Description, Variant, System, Counted, Rack, Not
 The printed parts are typed. The counter has HANDWRITTEN numbers in the Counted column and rack labels (like "L5.1", "R12.2") in the Rack column.
 
 Return ONLY a JSON object, no prose:
-{"takeNo": string | null, "rows": [{"no": number, "itemCode": string, "counted": number | null, "rack": string | null, "unclear": boolean}]}
+{"takeNo": string | null, "rows": [{"no": number, "itemCode": string, "variant": string | null, "counted": number | null, "rack": string | null, "unclear": boolean}]}
 
 Rules:
 - takeNo: the printed "STK No" at the top right (e.g. "HC-STK-2610-002"), or null if this page does not show it.
 - Include a row ONLY if something is handwritten in its Counted or Rack cell.
 - no: the printed row number in the # column. itemCode: the printed Item text exactly as printed.
+- variant: the printed Variant text on that row exactly as printed, or null if the Variant cell is blank.
 - counted: the handwritten whole number. A dash, a tick or "0" written as zero means 0. Blank means null.
 - rack: the handwritten rack label exactly as written, or null if blank.
 - If a handwritten number or label is hard to read, give your best reading AND set "unclear": true. Never invent a value for an empty cell.`;

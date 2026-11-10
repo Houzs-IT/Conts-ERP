@@ -35,7 +35,13 @@ const OTHER_STAFF = 'staff-other';
 
 type Row = Record<string, any>;
 
+/* PostgREST's response ceiling (db-max-rows), when a test sets it: a select
+   answers at most this many rows of its .range() window, with no error. */
+let ROW_CAP: number | null = null;
+let UPSERT_CALLS = 0;
+
 class FakeQuery {
+  private win: [number, number] | null = null;
   private preds: Array<(r: Row) => boolean> = [];
   private op: 'select' | 'update' | 'delete' | 'insert' = 'select';
   private patch: Row = {};
@@ -44,12 +50,21 @@ class FakeQuery {
   select() { return this; }
   order() { return this; }
   limit() { return this; }
-  range() { return this; }
+  range(from: number, to: number) { this.win = [from, to]; return this; }
   ilike() { return this; }
   like() { return this; }
   update(p: Row) { this.op = 'update'; this.patch = p; return this; }
   delete() { this.op = 'delete'; return this; }
   insert(p: Row | Row[]) { this.op = 'insert'; this.inserted = Array.isArray(p) ? p : [p]; return this; }
+  /* PostgREST upsert on id: an existing row takes the payload's columns, a new id is inserted. */
+  upsert(p: Row | Row[]) {
+    UPSERT_CALLS += 1;
+    for (const r of Array.isArray(p) ? p : [p]) {
+      const hit = this.rows.find((x) => x.id === r.id);
+      if (hit) Object.assign(hit, r); else this.rows.push({ ...r });
+    }
+    return Promise.resolve({ data: null, error: null });
+  }
   eq(col: string, val: unknown) {
     this.log.push(`${this.table}.${this.op}:eq:${col}`);
     this.preds.push((r) => String(r[col]) === String(val));
@@ -79,7 +94,12 @@ class FakeQuery {
     return Promise.resolve({ data: h[0] ?? null, error: h.length ? null : { message: 'no rows' } });
   }
   then(res: (v: any) => any, rej?: (e: any) => any) {
-    return Promise.resolve({ data: this.run(), error: null }).then(res, rej);
+    let data = this.run();
+    if (this.op === 'select') {
+      if (this.win) data = data.slice(this.win[0], this.win[1] + 1);
+      if (ROW_CAP != null) data = data.slice(0, ROW_CAP);
+    }
+    return Promise.resolve({ data, error: null }).then(res, rej);
   }
 }
 
@@ -520,5 +540,56 @@ describe('round 2 — racks and the paper sheet (owner 2026-10-06)', () => {
     const other = await (await req()).json() as Row;
     expect(other.takeNoMatches).toBe(false);
     expect(other.proposals).toEqual([]);
+  });
+});
+
+describe('a whole-warehouse take (2,000+ lines) is read whole', () => {
+  afterEach(() => { ROW_CAP = null; });
+  const big = (n: number) => {
+    const t = takeFixture();
+    t.stock_take_lines = Array.from({ length: n }, (_, i) => {
+      const code = `SKU-${String(i).padStart(4, '0')}`;
+      return { id: `ln-${i}`, stock_take_id: 'st-1', company_id: CO, item_code: code, product_name: code,
+        variant_key: '', system_qty: 1, counted_qty: 0, variance: -1, notes: null };
+    });
+    t.inventory_balances = t.stock_take_lines.map((l) => ({ company_id: CO, warehouse_id: 'w1', item_code: l.item_code, variant_key: '', qty: 1 }));
+    t.inventory_lots = [];
+    return t;
+  };
+
+  test('posting writes a movement for every counted line past the 1,000-row ceiling', async () => {
+    ROW_CAP = 1000;
+    const t = big(1500);
+    const res = await jsonReq(harness(t, { perms: ['*'] }).app, '/stock-takes/st-1/post', 'PATCH');
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Row).movementsWritten).toBe(1500);
+    expect(t.inventory_movements).toHaveLength(1500);
+  });
+
+  test('the detail (PDF / Excel source) carries every line', async () => {
+    ROW_CAP = 1000;
+    const t = big(1500);
+    const res = await harness(t, { perms: ['*'] }).app.request('/stock-takes/st-1');
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Row).lines).toHaveLength(1500);
+  });
+});
+
+describe('applying a whole sheet of counts', () => {
+  test('60 counted lines are stored in one write, each with its own count, who and when', async () => {
+    const t = takeFixture();
+    t.stock_take_lines = Array.from({ length: 60 }, (_, i) => ({
+      id: `ln-${i}`, stock_take_id: 'st-1', company_id: CO, item_code: `SKU-${i}`, product_name: null,
+      variant_key: '', system_qty: 5, counted_qty: null, variance: null, notes: 'keep', rack_id: null,
+    }));
+    UPSERT_CALLS = 0;
+    const res = await jsonReq(harness(t).app, '/stock-takes/st-1/lines', 'PATCH', {
+      lines: [...t.stock_take_lines.map((l, i) => ({ id: l.id, countedQty: i })), { id: 'not-this-take', countedQty: 9 }],
+    });
+    expect(res.status).toBe(200);
+    expect(UPSERT_CALLS).toBe(1);
+    expect(t.stock_take_lines).toHaveLength(60); // the foreign id was skipped, not inserted
+    expect(t.stock_take_lines.map((l) => l.counted_qty)).toEqual(Array.from({ length: 60 }, (_, i) => i));
+    expect(t.stock_take_lines.every((l) => l.counted_by === CALLER_STAFF && l.notes === 'keep' && l.system_qty === 5)).toBe(true);
   });
 });

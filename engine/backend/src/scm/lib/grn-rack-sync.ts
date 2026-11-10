@@ -12,7 +12,7 @@ import { todayMyt } from './my-time';
 
 type AnySb = any;
 
-const deriveRackStatus = (itemCount: number, reserved: boolean): 'OCCUPIED' | 'EMPTY' | 'RESERVED' =>
+export const deriveRackStatus = (itemCount: number, reserved: boolean): 'OCCUPIED' | 'EMPTY' | 'RESERVED' =>
   reserved ? 'RESERVED' : itemCount > 0 ? 'OCCUPIED' : 'EMPTY';
 
 export async function refreshRackStatus(sb: AnySb, rackId: string): Promise<void> {

@@ -31,9 +31,12 @@ const INK = '#11140f';
 const text = (v: string | null | undefined): Cell => (v ? { value: v, type: String } : null);
 const qty = (v: number | null | undefined): Cell => (v == null ? null : { value: v, type: Number, align: 'right' });
 
-/* An UNCOUNTED line has no variance — a 0 there would say the count agreed. */
-const varianceOf = (l: StockTakeLine): number | null =>
-  l.counted_qty == null || l.variance == null ? null : l.variance;
+/* counted − system, as the screen computes it (StockTakeDetail varianceOf):
+   the stored `variance` column is written by nothing, so it read blank. An
+   UNCOUNTED line has no variance — a 0 there would say the count agreed — and
+   a withheld system qty (blind) has none either. */
+export const varianceOf = (l: StockTakeLine): number | null =>
+  l.counted_qty == null || l.system_qty == null ? null : l.counted_qty - l.system_qty;
 
 export const systemQtyWithheld = (lines: StockTakeLine[]): boolean =>
   lines.length > 0 && lines.every((l) => l.system_qty == null);

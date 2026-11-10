@@ -505,6 +505,15 @@ describe('Stock Take PDF', () => {
       .toBe('pc151-01 · gap 12" · divan 10" · leg 1" · hb fully covered');
   });
 
+  /* The stored variance column is written by nothing, so the sheet works it out: counted - system. */
+  test('a POSTED sheet prints the variance from counted and system even when the variance column is empty', async () => {
+    const { draws } = await renderTake(TAKE_HEADER, TAKE_LINES.map((l) => ({ ...l, system_qty: 10, counted_qty: 7, variance: null })));
+    expect(draws.map((d) => d.text)).toContain('-3');
+    const { lineVariance } = await import('./stock-take-pdf');
+    expect(lineVariance({ counted_qty: null, system_qty: 4 })).toBeNull();
+    expect(lineVariance({ counted_qty: 4, system_qty: null })).toBeNull();
+  });
+
   test('a POSTED sheet shows Variance in place of Rack', async () => {
     const { draws } = await renderTake(TAKE_HEADER, TAKE_LINES);
     const text = draws.map((d) => d.text);

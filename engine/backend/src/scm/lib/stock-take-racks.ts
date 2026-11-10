@@ -21,7 +21,8 @@
 // them) and puts the old rows back as they were. Best-effort the same way.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { todayMyt } from './my-time';
-import { refreshRackStatus } from './grn-rack-sync';
+import { deriveRackStatus } from './grn-rack-sync';
+import { paginateAll, chunkIn } from './paginate-all';
 
 export type RackCountLine = { item_code: string; variant_key: string | null; product_name: string | null; counted_qty: number | null; rack_id: string | null };
 /** A warehouse_rack_items row. The named fields drive the plan; the rest ride
@@ -73,12 +74,41 @@ export const planStockTakeRackMoves = (lines: readonly RackCountLine[], existing
   return plan;
 };
 
-async function rackLabels(sb: any, warehouseId: string, companyId: number): Promise<{ ids: string[]; label: Map<string, string>; error: string | null }> {
+type WarehouseRacks = { ids: string[]; label: Map<string, string>; reserved: Map<string, boolean>; error: string | null };
+
+async function rackLabels(sb: any, warehouseId: string, companyId: number): Promise<WarehouseRacks> {
   const { data: racks, error } = await sb.from('warehouse_racks')
-    .select('id, rack').eq('warehouse_id', warehouseId).eq('company_id', companyId);
-  if (error) return { ids: [], label: new Map(), error: error.message };
-  const rows = (racks ?? []) as Array<{ id: string; rack: string }>;
-  return { ids: rows.map((r) => r.id), label: new Map(rows.map((r) => [r.id, r.rack])), error: null };
+    .select('id, rack, reserved').eq('warehouse_id', warehouseId).eq('company_id', companyId);
+  if (error) return { ids: [], label: new Map(), reserved: new Map(), error: error.message };
+  const rows = (racks ?? []) as Array<{ id: string; rack: string; reserved: boolean | null }>;
+  return {
+    ids: rows.map((r) => r.id),
+    label: new Map(rows.map((r) => [r.id, r.rack])),
+    reserved: new Map(rows.map((r) => [r.id, r.reserved === true])),
+    error: null,
+  };
+}
+
+/** Rack status for every touched rack in a FIXED number of calls — one read of
+    which touched racks still hold anything, then one update per resulting
+    status (at most three). refreshRackStatus costs three calls per rack, and a
+    take that touches a dozen racks would spend the Worker's 50-subrequest
+    budget before the post's SO allocation recompute ran. */
+export async function refreshRackStatuses(sb: any, racks: Pick<WarehouseRacks, 'reserved'>, rackIds: Iterable<string>): Promise<void> {
+  const ids = [...new Set(rackIds)];
+  if (ids.length === 0) return;
+  const { data: held, error } = await chunkIn<{ rack_id: string }>(ids, (batch, pFrom, pTo) => sb.from('warehouse_rack_items')
+    .select('rack_id').in('rack_id', batch).order('id').range(pFrom, pTo));
+  if (error) return; // best-effort, like the moves themselves
+  const occupied = new Set(held.map((r) => r.rack_id));
+  const byStatus = new Map<string, string[]>();
+  for (const id of ids) {
+    const st = deriveRackStatus(occupied.has(id) ? 1 : 0, racks.reserved.get(id) ?? false);
+    byStatus.set(st, [...(byStatus.get(st) ?? []), id]);
+  }
+  for (const [status, rids] of byStatus) {
+    await sb.from('warehouse_racks').update({ status }).in('id', rids);
+  }
 }
 
 /** Apply the plan for one posted take. Best-effort; returns what it did. */
@@ -86,9 +116,10 @@ export async function applyStockTakeRacks(
   sb: any,
   args: { takeId: string; takeNo: string; warehouseId: string; companyId: number; performedBy: string },
 ): Promise<{ moved: number; skippedCodes: string[]; error: string | null }> {
-  const { data: lines, error: lErr } = await sb.from('stock_take_lines')
+  const { data: lines, error: lErr } = await paginateAll((pFrom, pTo) => sb.from('stock_take_lines')
     .select('item_code, variant_key, product_name, counted_qty, rack_id')
-    .eq('stock_take_id', args.takeId).eq('company_id', args.companyId);
+    .eq('stock_take_id', args.takeId).eq('company_id', args.companyId)
+    .order('item_code').order('variant_key').order('id').range(pFrom, pTo));
   if (lErr) return { moved: 0, skippedCodes: [], error: lErr.message };
   const counted = ((lines ?? []) as RackCountLine[]).filter((l) => (l.counted_qty ?? 0) > 0 && l.rack_id);
   if (counted.length === 0) return { moved: 0, skippedCodes: [], error: null };
@@ -96,13 +127,16 @@ export async function applyStockTakeRacks(
   const racks = await rackLabels(sb, args.warehouseId, args.companyId);
   if (racks.error) return { moved: 0, skippedCodes: [], error: racks.error };
   const codes = [...new Set(counted.map((l) => l.item_code))];
-  const { data: existing, error: eErr } = racks.ids.length === 0
-    ? { data: [], error: null }
-    : await sb.from('warehouse_rack_items')
+  /* Chunked + paged: a whole-warehouse take counts thousands of codes. */
+  const rackSet = new Set(racks.ids);
+  const { data: existingAll, error: eErr } = racks.ids.length === 0
+    ? { data: [] as RackPlacement[], error: null }
+    : await chunkIn<RackPlacement>(codes, (batch, pFrom, pTo) => sb.from('warehouse_rack_items')
       .select(PLACEMENT_COLS)
       .eq('company_id', args.companyId)
-      .in('rack_id', racks.ids)
-      .in('item_code', codes);
+      .in('item_code', batch)
+      .order('id').range(pFrom, pTo));
+  const existing = (existingAll ?? []).filter((p) => rackSet.has(p.rack_id));
   if (eErr) return { moved: 0, skippedCodes: [], error: eErr.message };
 
   const plan = planStockTakeRackMoves((lines ?? []) as RackCountLine[], (existing ?? []) as RackPlacement[]);
@@ -110,7 +144,10 @@ export async function applyStockTakeRacks(
 
   const base = { company_id: args.companyId, warehouse_id: args.warehouseId, source_doc_no: args.takeNo, performed_by: args.performedBy };
   if (plan.remove.length > 0) {
-    const { error: dErr } = await sb.from('warehouse_rack_items').delete().in('id', plan.remove.map((p) => p.id));
+    let dErr: { message: string } | null = null;
+    for (let i = 0; i < plan.remove.length && !dErr; i += 200) {
+      ({ error: dErr } = await sb.from('warehouse_rack_items').delete().in('id', plan.remove.slice(i, i + 200).map((p) => p.id)));
+    }
     if (dErr) return { moved: 0, skippedCodes: plan.skippedCodes, error: dErr.message };
     await sb.from('warehouse_rack_movements').insert(plan.remove.map((p) => ({
       ...base, movement_type: 'STOCK_OUT', rack_id: p.rack_id, rack_label: racks.label.get(p.rack_id) ?? null,
@@ -135,9 +172,7 @@ export async function applyStockTakeRacks(
     ...base, movement_type: 'STOCK_IN', rack_id: p.rack_id, rack_label: racks.label.get(p.rack_id) ?? null,
     item_code: p.item_code, variant_key: p.variant_key, product_name: p.product_name, quantity: p.qty, reason: 'Stock take — counted on this rack',
   })));
-  for (const rid of new Set([...plan.remove.map((p) => p.rack_id), ...plan.place.map((p) => p.rack_id)])) {
-    await refreshRackStatus(sb, rid);
-  }
+  await refreshRackStatuses(sb, racks, [...plan.remove.map((p) => p.rack_id), ...plan.place.map((p) => p.rack_id)]);
   return { moved: plan.place.length, skippedCodes: plan.skippedCodes, error: null };
 }
 
@@ -193,6 +228,6 @@ export async function reverseStockTakeRacks(
     })));
     for (const p of back) touched.add(p.rack_id);
   }
-  for (const rid of touched) await refreshRackStatus(sb, rid);
+  await refreshRackStatuses(sb, racks, touched);
   return { restored: back.length, removed: removedRows.length, error: null };
 }

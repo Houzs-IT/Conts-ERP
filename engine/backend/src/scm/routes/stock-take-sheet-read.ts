@@ -11,6 +11,7 @@
 // ----------------------------------------------------------------------------
 
 import { requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../lib/companyScope';
+import { paginateAll } from '../lib/paginate-all';
 import { CLAUDE_MODEL, IMAGE_MIMES, MAX_FILE_BYTES, anthropicFetchWithRetry, stripJsonFences, type AnthropicResponse } from '../lib/scan-ocr';
 import { SHEET_READ_PROMPT, matchSheetRows, normalizeSheetRows, type SheetLine, type SheetRack } from '../lib/stock-take-sheet';
 
@@ -55,9 +56,9 @@ export const readStockTakeSheetHandler = async (c: any): Promise<Response> => {
 
   /* PRINT ORDER — the same order GET /:id returns and the PDF numbers. */
   const [linesRes, racksRes] = await Promise.all([
-    scopeToCompanyId(sb.from('stock_take_lines').select('id, item_code, variant_label')
+    paginateAll((pFrom, pTo) => scopeToCompanyId(sb.from('stock_take_lines').select('id, item_code, variant_label')
       .eq('stock_take_id', id), co.companyId)
-      .order('item_code').order('variant_key').order('id'),
+      .order('item_code').order('variant_key').order('id').range(pFrom, pTo)),
     scopeToCompanyId(sb.from('warehouse_racks').select('id, rack').eq('warehouse_id', take.warehouse_id), co.companyId),
   ]);
   if (linesRes.error) return c.json({ error: 'load_failed', reason: linesRes.error.message }, 500);

@@ -39,6 +39,13 @@ describe('stock take Excel export', () => {
     expect(ws.I5!.z).toBe(AMOUNT_FORMAT);
   });
 
+  /* The stored variance column is written by nothing (it arrives null): the export works it out as
+     counted − system, as the screen does, so Variance and the RM gain/loss are never blank. */
+  it('computes variance and RM from counted and system, not the unwritten variance column', async () => {
+    const { rows } = await grid([line({ variance: null, system_qty: 10, counted_qty: 7 })]);
+    expect(rows[4]).toEqual(['MATT-A', 'Mattress A', undefined, 10, 7, 'Rack L5.1', undefined, -3, -1500, 'Adrian']);
+  });
+
   it('leaves out System, Variance and Value when the server withheld the system qty', async () => {
     const { rows } = await grid([line({ system_qty: null, variance: null, est_unit_cost_sen: null })]);
     expect(rows[3]).toEqual(['SKU', 'Name', 'Variant', 'Counted Qty', 'Rack', 'Notes', 'Counted By']);
