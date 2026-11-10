@@ -210,6 +210,9 @@ export const NAV: NavGroup[] = [
   { label: 'PROJECTS', workspace: 'supply', items: [
     { key: 'projectList', label: 'Projects', icon: 'folder-kanban', path: '/projects/list', area: 'projects' },
     { key: 'projectCalendar', label: 'Calendar', icon: 'calendar-days', path: '/projects/calendar', area: 'projects' },
+    // Handover snag list (TODO item 17): every project's open defects, and the checklists a handover check starts from.
+    { key: 'projectDefects', label: 'Defects', icon: 'clipboard-check', path: '/projects/defects', area: 'projects' },
+    { key: 'projectHandoverChecklists', label: 'Handover checklists', icon: 'list-checks', path: '/projects/handover-checklists', area: 'projects' },
     { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projects', full: true },
     { key: 'projectMaintenance', label: 'Project settings', icon: 'settings', path: '/projects/maintenance', area: 'projects', full: true },
   ] },
