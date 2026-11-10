@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authedFetch } from "../vendor/scm/lib/authed-fetch";
+import { SetupCard } from "./SetupCard";
 
 type Row = { account_code: string; account_name: string; everyday_expense: boolean | null };
 
@@ -20,11 +21,7 @@ export function EverydayExpense({ canSave }: { canSave: boolean }) {
   const ticked = (q.data?.accounts ?? []).filter((a) => a.everyday_expense === true).length;
 
   return (
-    <section style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-      <h2 style={{ margin: 0, fontSize: 16 }}>Everyday expenses</h2>
-      <p style={{ margin: 0, color: "var(--fg-muted)", fontSize: "var(--fs-13)" }}>
-        Rent, utilities and the like: paid as usual, outside a project&apos;s limit or an internal project&apos;s budget. {ticked} ticked.
-      </p>
+    <SetupCard title="Everyday expenses" description={<>Rent, utilities and the like: paid as usual, outside a project&apos;s limit or an internal project&apos;s budget. {ticked} ticked.</>}>
       <input aria-label="Find an expense account" placeholder="Find an account" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ maxWidth: 280 }} />
       {q.isError && <div role="alert" style={{ color: "var(--c-festive-b, #b3261e)" }}>The expense accounts did not load.</div>}
       {note && <div role="alert" style={{ color: "var(--c-festive-b, #b3261e)" }}>{note}</div>}
@@ -40,6 +37,6 @@ export function EverydayExpense({ canSave }: { canSave: boolean }) {
           </label>
         ))}
       </div>
-    </section>
+    </SetupCard>
   );
 }

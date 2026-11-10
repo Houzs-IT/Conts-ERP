@@ -1,13 +1,16 @@
 // Item Groups tab (GL redesign item 1). What is pinned:
-//   • an unbound group arrives PRE-FILLED with the suggested defaults and says
-//     so — the sign-off flow: nothing writes until Save;
+//   • the table reads each bound account with its full name, and how many groups are bound;
+//   • an unbound group opens PRE-FILLED with the suggested defaults and says
+//     so — the sign-off flow: nothing writes until Save; a suggestion whose
+//     accounts are not all in this chart is not offered;
 //   • Save sends exactly the four drafted accounts for the active company;
-//   • a bound, untouched group says bound and its Save stays disabled;
+//   • a bound, untouched group cannot be saved again;
 //   • the New-group dialog refuses to create until code, name and all four
-//     accounts are given (born bound), and upper-cases the code.
+//     accounts are given (born bound), and upper-cases the code;
+//   • no picker offers an account that has accounts under it (chew 10 Nov 2026).
 
 import { describe, expect, test, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import type { ItemGroup, ItemSubCategory } from './accounting-phase1-queries';
 
 const bindMutate = vi.fn();
@@ -21,6 +24,8 @@ const GROUPS: ItemGroup[] = [
     bindings: { '2': { purchase: '601-0003', sales: '501-0000', salesReturn: '510-0000', purchaseReturn: '612-0000' } },
   },
   { code: 'BEDLINES', name: 'Bedlines', isActive: true, bindings: {} },
+  /* Its suggestion names 601-0004, which this chart does not have: no half-filled suggestion. */
+  { code: 'SERVICE', name: 'Service', isActive: true, bindings: {} },
 ];
 
 const SUBS: ItemSubCategory[] = [
@@ -64,7 +69,10 @@ vi.mock('../../vendor/scm/lib/accounting-queries', () => ({
   }),
 }));
 
-vi.mock('../../lib/activeCompany', () => ({ getActiveCompanyId: () => 2 }));
+vi.mock('../../lib/activeCompany', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getActiveCompanyId: () => 2,
+}));
 
 import { ItemGroupsTab, accountsForBinding, accountsForSubCategory } from './ItemGroups';
 
@@ -75,19 +83,42 @@ beforeEach(() => {
   subBindMutate.mockClear();
 });
 
-describe('the sign-off flow', () => {
-  test('an unbound group arrives pre-filled with the suggestion, marked unsaved', () => {
+const rowOf = (code: string): HTMLElement => {
+  const cell = screen.getAllByText(code).find((el) => el.closest('tr'));
+  return cell!.closest('tr') as HTMLElement;
+};
+const openGroup = (verb: 'Bind' | 'Edit', code: string): HTMLElement => {
+  fireEvent.click(screen.getByRole('button', { name: `${verb} ${code}` }));
+  return screen.getByRole('dialog');
+};
+
+describe('the table', () => {
+  test('each bound account reads with its full name; the count says how many groups are bound', () => {
     render(<ItemGroupsTab />);
-    // BEDLINES has no saved binding for company 2 → suggested defaults shown.
-    expect(screen.getByText('Suggested · unsaved')).toBeTruthy();
+    expect(screen.getByTestId('groups-bound').textContent).toBe('1 of 3 groups bound');
+    const sofa = rowOf('SOFA');
+    expect(sofa.textContent).toContain('601-0003');
+    expect(sofa.textContent).toContain('PURCHASE OF SOFA');
+    expect(sofa.textContent).toContain('RETURN INWARDS');
+    expect(sofa.textContent).toContain('Bound');
+    expect(rowOf('BEDLINES').textContent).toContain('Not bound');
+    expect(rowOf('BEDLINES').textContent).toContain('2 sub-categories · 1 with own accounts');
+  });
+});
+
+describe('the sign-off flow', () => {
+  test('an unbound group opens pre-filled with the suggestion, marked as not saved', () => {
+    render(<ItemGroupsTab />);
+    const dialog = openGroup('Bind', 'BEDLINES');
+    expect(within(dialog).getByText(/Suggested accounts/)).toBeTruthy();
     const purchase = screen.getByLabelText('BEDLINES Purchase account') as HTMLInputElement;
     expect(purchase.value).toContain('602-0000');
   });
 
-  test('Save on the suggested row sends the four drafted accounts for the active company', () => {
+  test('Save on the suggestion sends the four drafted accounts for the active company', () => {
     render(<ItemGroupsTab />);
-    const row = screen.getByText('BEDLINES').closest('tr') as HTMLElement;
-    const save = Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Save')!;
+    const dialog = openGroup('Bind', 'BEDLINES');
+    const save = within(dialog).getAllByRole('button', { name: 'Save' })[0];
     expect(save.hasAttribute('disabled')).toBe(false);
     fireEvent.click(save);
     expect(bindMutate).toHaveBeenCalledTimes(1);
@@ -98,39 +129,48 @@ describe('the sign-off flow', () => {
     });
   });
 
-  test('a bound, untouched group says bound and cannot be re-saved', () => {
+  test('a suggestion whose accounts are not all in this chart is not offered', () => {
     render(<ItemGroupsTab />);
-    expect(screen.getByText('bound')).toBeTruthy();
-    const row = screen.getByText('SOFA').closest('tr') as HTMLElement;
-    const save = Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Save')!;
-    expect(save.hasAttribute('disabled')).toBe(true);
+    const dialog = openGroup('Bind', 'SERVICE');
+    expect(within(dialog).queryByText(/Suggested accounts/)).toBeNull();
+    expect((screen.getByLabelText('SERVICE Sales account') as HTMLInputElement).value).toBe('');
+    expect(within(dialog).getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true);
+  });
+
+  test('a bound, untouched group cannot be saved again', () => {
+    render(<ItemGroupsTab />);
+    const dialog = openGroup('Edit', 'SOFA');
+    expect(within(dialog).getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true);
   });
 
   test('turning a group off goes through the patch, bindings untouched', () => {
     render(<ItemGroupsTab />);
-    const row = screen.getByText('SOFA').closest('tr') as HTMLElement;
-    const off = Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Turn off')!;
-    fireEvent.click(off);
+    const dialog = openGroup('Edit', 'SOFA');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Turn off' }));
     expect(patchMutate).toHaveBeenCalledWith({ code: 'SOFA', isActive: false });
     expect(bindMutate).not.toHaveBeenCalled();
   });
 
   test('the picker offers only its ledger side, under section headers (owner 2026-09-05)', () => {
     render(<ItemGroupsTab />);
+    openGroup('Bind', 'BEDLINES');
     const purchase = screen.getByLabelText('BEDLINES Purchase account');
     fireEvent.focus(purchase);
     /* EXPENSE list: the chart's cost section heads it (read off the account
-       rows, never decided here); equity/bank/income never show. */
-    expect(screen.getByText('COST OF GOODS SOLD')).toBeTruthy();
-    expect(screen.queryByText(/^CAPITAL/)).toBeNull();
-    expect(screen.queryByText(/CASH AT BANK/)).toBeNull();
-    expect(screen.queryByText(/SALES OF FURNITURE/)).toBeNull();
+       rows, never decided here); equity/bank/income never show. (The table
+       behind the dialog names SOFA's accounts, so look inside the list only.) */
+    let list = within(screen.getByRole('listbox'));
+    expect(list.getByText('COST OF GOODS SOLD')).toBeTruthy();
+    expect(list.queryByText(/^CAPITAL/)).toBeNull();
+    expect(list.queryByText(/CASH AT BANK/)).toBeNull();
+    expect(list.queryByText(/SALES OF FURNITURE/)).toBeNull();
     fireEvent.blur(purchase);
     const sales = screen.getByLabelText('BEDLINES Sales Return account');
     fireEvent.focus(sales);
     /* INCOME list: 510 files under SALES ADJUSTMENTS; expense rows stay out. */
-    expect(screen.getByText('SALES ADJUSTMENTS')).toBeTruthy();
-    expect(screen.queryByText(/PURCHASE OF SOFA/)).toBeNull();
+    list = within(screen.getByRole('listbox'));
+    expect(list.getByText('SALES ADJUSTMENTS')).toBeTruthy();
+    expect(list.queryByText(/PURCHASE OF SOFA/)).toBeNull();
   });
 });
 
@@ -196,26 +236,42 @@ describe('which accounts a binding offers', () => {
     expect(codes(accountsForBinding('SOFA', 'sales_account', chart))).toEqual(['500-0000']);
     expect(codes(accountsForBinding('SOFA', 'purchase_return_account', chart))).toEqual(['601-0000']);
   });
+
+  /* chew 10 Nov 2026: 有子科目的就直接让父账户不显示 — posting refuses a header, so only the accounts under it show. */
+  test('no slot offers an account that has accounts under it', () => {
+    const tree = [
+      { account_code: '500-0000', account_name: 'SALES', account_type: 'INCOME', is_active: true },
+      { account_code: '500-0010', account_name: 'SALES - RENO ITEMS', account_type: 'INCOME', is_active: true, parent_code: '500-0000' },
+      { account_code: '620-0000', account_name: 'COST OF SALES', account_type: 'EXPENSE', is_active: true },
+      { account_code: '602-0000', account_name: 'CARPENTRY COSTS', account_type: 'EXPENSE', is_active: true, parent_code: '620-0000' },
+    ];
+    expect(codes(accountsForBinding('BUILTIN', 'sales_account', tree))).toEqual(['500-0010']);
+    expect(codes(accountsForBinding('BUILTIN', 'purchase_return_account', tree))).toEqual(['602-0000']);
+    expect(codes(accountsForBinding('RENOVATION', 'sales_account', tree))).toEqual(['500-0010']);
+  });
 });
 
-/* Renovation revenue (spec 2.4, plan Task 1): each group lists its sub-categories, each with its own sales and purchase
-   account; an empty side uses the group's account. */
+/* Renovation revenue (spec 2.4, plan Task 1): a group's dialog lists its sub-categories, each with its own sales and
+   purchase account; an empty side uses the group's account. */
 describe('sub-category accounts', () => {
   const openBedlines = () => {
     render(<ItemGroupsTab />);
     expect(screen.queryByLabelText('PILLOW Sales account')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Sub-categories (2)' }));
+    openGroup('Bind', 'BEDLINES');
   };
 
-  test("a group's sub-categories open under it; an unbound side says it uses the group's account", () => {
+  test("a group's sub-categories show in its dialog; an unbound side says it uses the group's account", () => {
     openBedlines();
     const sales = screen.getByLabelText('PILLOW Sales account') as HTMLInputElement;
     expect(sales.value).toBe('');
     expect(sales.placeholder).toBe("Uses the group's account");
     expect((screen.getByLabelText('SHEET Sales account') as HTMLInputElement).value).toContain('502-0000');
-    /* SOFA has none, so it offers no toggle. */
-    const sofa = screen.getByText('SOFA').closest('tr') as HTMLElement;
-    expect(sofa.textContent).not.toContain('Sub-categories');
+  });
+
+  test('a group with none shows no sub-category list', () => {
+    render(<ItemGroupsTab />);
+    const dialog = openGroup('Edit', 'SOFA');
+    expect(within(dialog).queryByRole('region', { name: 'Sub-categories' })).toBeNull();
   });
 
   test('Save sends this sub-category\'s two sides for the active company, the empty one as null', () => {
@@ -225,7 +281,7 @@ describe('sub-category accounts', () => {
     fireEvent.change(purchase, { target: { value: '602-0000' } });
     fireEvent.mouseDown(screen.getAllByText(/^602-0000 — /)[0]);
     const row = screen.getByText('Pillow').closest('tr') as HTMLElement;
-    fireEvent.click(Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Save')!);
+    fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
     expect(subBindMutate).toHaveBeenCalledTimes(1);
     expect(subBindMutate.mock.calls[0][0]).toEqual({ code: 'PILLOW', companyId: 2, salesAccount: null, purchaseAccount: '602-0000' });
   });
@@ -238,7 +294,7 @@ describe('sub-category accounts', () => {
     fireEvent.mouseDown(screen.getAllByText(/^602-0000 — /)[0]);
     fireEvent.blur(purchase);
     const row = screen.getByText('Pillow').closest('tr') as HTMLElement;
-    const save = () => fireEvent.click(Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Save')!);
+    const save = () => fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
     /* The server refuses: mutate never calls onSuccess. */
     save();
     expect((screen.getByLabelText('PILLOW Purchase account') as HTMLInputElement).value).toContain('602-0000');
@@ -251,9 +307,8 @@ describe('sub-category accounts', () => {
   test("'Use group' clears both sides of a bound sub-category", () => {
     openBedlines();
     const row = screen.getByText('Bed sheet').closest('tr') as HTMLElement;
-    const save = Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Save')!;
-    expect(save.hasAttribute('disabled')).toBe(true);
-    fireEvent.click(Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Use group')!);
+    expect(within(row).getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(within(row).getByRole('button', { name: 'Use group' }));
     expect(subBindMutate.mock.calls[0][0]).toEqual({ code: 'SHEET', companyId: 2, salesAccount: null, purchaseAccount: null });
   });
 

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@2990s/design-system";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import { useLimitSettings, useSaveLimitSettings } from "./projectLimitQueries";
+import { SetupCard } from "./SetupCard";
 
 const pctText = (bp: number): string => `${Number.isInteger(bp / 100) ? bp / 100 : (bp / 100).toFixed(2)}%`;
 
@@ -55,8 +56,7 @@ export function ProjectLimitSettings({ canSave }: { canSave: boolean }) {
   };
 
   return (
-    <section style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 16, display: "flex", flexDirection: "column", gap: 8, maxWidth: 640 }}>
-      <h2 style={{ margin: 0, fontSize: 16 }}>Project limit</h2>
+    <SetupCard title="Project limit">
       {q.isError && <div role="alert" style={{ color: "var(--c-festive-b, #b3261e)" }}>The project limit settings did not load.</div>}
       <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: "var(--fs-13)" }}>
         <input type="checkbox" aria-label="Check project limits" checked={checked} disabled={!canSave || !q.isSuccess} onChange={(e) => setChecked(e.target.checked)} />
@@ -81,6 +81,6 @@ export function ProjectLimitSettings({ canSave }: { canSave: boolean }) {
         {note && <span style={{ fontSize: "var(--fs-13)" }}>{note}</span>}
         {!canSave && <span style={{ fontSize: "var(--fs-12)", color: "var(--fg-muted)" }}>Only someone who approves extra project limit may change these.</span>}
       </div>
-    </section>
+    </SetupCard>
   );
 }
