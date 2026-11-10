@@ -220,10 +220,13 @@ export const useMfgDeliveryOrders = (status?: string) => useQuery({
 // express (open/in_transit/delivered), so those show all rows still counted.
 /** The Delivery Order list's filter as query parameters, no paging: the list
  *  request and the list's export (do-list-export.ts) send exactly these. */
-export function doListSearchParams(f: { status?: string; type?: string; q?: string; sort?: string; debtorNames?: string[]; currencies?: string[] }): URLSearchParams {
+export function doListSearchParams(f: { from?: string; to?: string; status?: string; type?: string; q?: string; sort?: string; debtorNames?: string[]; currencies?: string[] }): URLSearchParams {
   const usp = new URLSearchParams();
   if (f.status) usp.set('status', f.status);
   if (f.type) usp.set('type', f.type);
+  /* The DO Date column's date filter, run by the server (Houzs 3e6d15825). */
+  if (f.from) usp.set('from', f.from);
+  if (f.to) usp.set('to', f.to);
   if (f.q && f.q.trim()) usp.set('q', f.q.trim());
   if (f.sort) usp.set('sort', f.sort);
   // Server-filterable column funnels (owner 2026-09-16): Customer Name /
@@ -233,14 +236,14 @@ export function doListSearchParams(f: { status?: string; type?: string; q?: stri
   return usp;
 }
 
-export function useMfgDeliveryOrdersPaged(params: { enabled: boolean; page: number; pageSize: number; status?: string; type?: string; q?: string; sort?: string; debtorNames?: string[]; currencies?: string[] }) {
-  const { enabled, page, pageSize, status, type, q, sort, debtorNames, currencies } = params;
-  const usp = doListSearchParams({ status, type, q, sort, debtorNames, currencies });
+export function useMfgDeliveryOrdersPaged(params: { from?: string; to?: string; enabled: boolean; page: number; pageSize: number; status?: string; type?: string; q?: string; sort?: string; debtorNames?: string[]; currencies?: string[] }) {
+  const { enabled, page, pageSize, status, type, q, sort, debtorNames, currencies, from, to } = params;
+  const usp = doListSearchParams({ status, type, q, sort, debtorNames, currencies, from, to });
   usp.set('page', String(page));
   usp.set('pageSize', String(pageSize));
   return useQuery({
     enabled,
-    queryKey: ['mfg-delivery-orders-paged', page, pageSize, status ?? '', type ?? '', q ?? '', sort ?? '', JSON.stringify(debtorNames ?? []), JSON.stringify(currencies ?? [])],
+    queryKey: ['mfg-delivery-orders-paged', page, pageSize, status ?? '', type ?? '', q ?? '', sort ?? '', JSON.stringify(debtorNames ?? []), JSON.stringify(currencies ?? []), from ?? '', to ?? ''],
     queryFn: ({ signal }) => authedFetch<{ deliveryOrders: any[]; total: number; page: number; pageSize: number; statusCounts: { all: number; open: number; in_transit: number; delivered: number; cancelled: number }; typeCounts?: Record<string, number> }>(`/delivery-orders-mfg?${usp.toString()}`, { signal }),
     placeholderData: (prev: any) => prev,
     staleTime: 30_000,

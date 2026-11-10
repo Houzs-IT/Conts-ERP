@@ -21,7 +21,7 @@ import {
   GUEST_REVIEW_CATEGORIES, GUEST_CATEGORY_LABELS, GUEST_REVIEW_TAGS, GUEST_REVIEW_WINDOW_DAYS, BAD_GUEST_SEND_DAY,
   tagInfo, timeLeft, type GuestReviewCategory,
 } from '../../lib/reviewRules';
-import { Avatar, Notice } from './reviewUi';
+import { Avatar, Notice, StarMark } from './reviewUi';
 
 /* Review guests (owner, 3 Nov 2026): Airbnb lets the host review the guest for GUEST_REVIEW_WINDOW_DAYS after checkout,
  * and hides the guest's review of us until we do. The form follows Airbnb's own steps: cleanliness, communication and
@@ -212,7 +212,7 @@ export function GuestReviews({ canWrite }: { canWrite: boolean }) {
                         {r.sentAt ? <span className="font-normal text-muted-ink"> · sent {fmtDate(r.sentAt)}</span> : null}
                       </span>
                       <span className="text-meta text-muted-ink">
-                        {GUEST_REVIEW_CATEGORIES.map(k => `${GUEST_CATEGORY_LABELS[k]} ${r[k]}★`).join(' · ')} · {r.recommend ? 'Would host again' : 'Would not host again'}
+                        {GUEST_REVIEW_CATEGORIES.map(k => `${GUEST_CATEGORY_LABELS[k]} ${r[k]}/5`).join(' · ')} · {r.recommend ? 'Would host again' : 'Would not host again'}
                       </span>
                       <p className="m-0 text-copy leading-[1.55] whitespace-pre-line [overflow-wrap:anywhere]">{r.publicReview}</p>
                       {r.privateNote && <span className="text-meta text-muted-ink"><Icon name="Lock" size="sm" /> Private note: {r.privateNote}</span>}
@@ -251,7 +251,7 @@ export function StarPicker({ value, onChange, label }: { value: number; onChange
     <div role="radiogroup" aria-label={label} className="flex gap-1">
       {[1, 2, 3, 4, 5].map(n => (
         <button key={n} type="button" role="radio" aria-checked={value === n} aria-label={`${n} ${n === 1 ? 'star' : 'stars'}`} onClick={() => onChange(n)}
-          className={cx('w-11 h-11 grid place-items-center bg-transparent border-none cursor-pointer text-[30px] leading-none p-0', n <= value ? 'text-ink' : 'text-line')}>★</button>
+          className={cx('w-11 h-11 grid place-items-center bg-transparent border-none cursor-pointer text-[30px] leading-none p-0', n <= value ? 'text-ink' : 'text-line')}><StarMark /></button>
       ))}
     </div>
   );
@@ -395,7 +395,7 @@ export function GuestReviewForm({ stay, onClose, onSaved }: { stay: GuestStay; o
         )}
         {key === 'recommend' && d.recommend !== null && (
           <div className="flex flex-col gap-1 text-meta text-muted-ink">
-            <span>{GUEST_REVIEW_CATEGORIES.map(k => `${GUEST_CATEGORY_LABELS[k]} ${d[k]}★`).join(' · ')}</span>
+            <span>{GUEST_REVIEW_CATEGORIES.map(k => `${GUEST_CATEGORY_LABELS[k]} ${d[k]}/5`).join(' · ')}</span>
             {d.tags.length > 0 && <span>Tags: {d.tags.map(t => tagInfo(t).label).join(', ')}</span>}
           </div>
         )}
@@ -530,7 +530,7 @@ function RulesPanel({ onClose }: { onClose: () => void }) {
               <span className="w-6 text-meta text-muted-ink tabular-nums">{i + 1}.</span>
               <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                 <span className={cx('text-copy font-medium', !r.active && 'text-muted-ink')}>{r.name}{!r.active ? ' (off)' : ''}</span>
-                <span className="text-meta text-muted-ink">{cond(r.condition)} · {GUEST_REVIEW_CATEGORIES.map(k => `${r[k]}★`).join(' ')} · {r.recommend ? 'host again' : 'not again'} · {r.mode === 'auto' ? 'sends by itself' : 'needs approval'}</span>
+                <span className="text-meta text-muted-ink">{cond(r.condition)} · {GUEST_REVIEW_CATEGORIES.map(k => `${r[k]}/5`).join(' ')} · {r.recommend ? 'host again' : 'not again'} · {r.mode === 'auto' ? 'sends by itself' : 'needs approval'}</span>
               </div>
               <div className="flex gap-1">
                 <Button size="sm" variant="ghost" onClick={() => setEdit({ ...r })}>Edit</Button>

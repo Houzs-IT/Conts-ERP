@@ -95,6 +95,12 @@ describe("the project list", () => {
     for (const q of ["usj", "ms tan", "rn-2610", "so-2610-002", "JIA", "usj tan"]) expect(matchesSearch(x, q), q).toBe(true);
     expect(matchesSearch(x, "nara")).toBe(false);
   });
+
+  it("reads a word of 3 to 6 letters as the building's initials too", () => {
+    const x = p(1, null, { building: "Skyline Embassy Residences", customer: "Ms Lim" });
+    for (const q of ["ser", "SER lim", "skyline"]) expect(matchesSearch(x, q), q).toBe(true);
+    for (const q of ["se", "sx", "ers"]) expect(matchesSearch(x, q), q).toBe(false);
+  });
 });
 
 describe("photo cards", () => {

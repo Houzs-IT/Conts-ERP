@@ -160,7 +160,7 @@ export const PurchaseInvoiceNew = () => {
      rather than book the supplier's bill a second time. */
   const idemKey = useIdempotencyKey();
   const create = useCreatePurchaseInvoice();
-  const post   = usePostPurchaseInvoice();
+  const post   = usePostPurchaseInvoice({ reportNotBooked: false });
   const saving = create.isPending || post.isPending;
 
   // Manual-mode supplier (mirrors GrnNew).

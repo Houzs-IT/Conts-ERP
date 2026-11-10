@@ -44,16 +44,16 @@ export const useSalesInvoices = (status?: string) =>
 // (UPPERCASE) — the caller maps its filter-pill bucket to a DB status first and
 // passes undefined for the multi-status buckets the single-status filter can't
 // express (sent/partial/paid), so those show all rows still counted.
-export function useSalesInvoicesPaged(params: { page: number; pageSize: number; status?: string; q?: string; sort?: string; debtorNames?: string[]; currencies?: string[] }) {
-  const { page, pageSize, status, q, sort, debtorNames, currencies } = params;
+export function useSalesInvoicesPaged(params: { from?: string; to?: string; page: number; pageSize: number; status?: string; q?: string; sort?: string; debtorNames?: string[]; currencies?: string[] }) {
+  const { page, pageSize, status, q, sort, debtorNames, currencies, from, to } = params;
   // The filter half is shared with the two exports (si-list-export.ts), so an
   // export can never be sent a different filter than the list it was pressed on.
-  const usp = siListParams({ status, q, sort, debtorNames, currencies });
+  const usp = siListParams({ status, q, sort, debtorNames, currencies, from, to });
   usp.set('page', String(page));
   usp.set('pageSize', String(pageSize));
   return useQuery({
-    queryKey: ['sales-invoices-paged', page, pageSize, status ?? '', q ?? '', sort ?? '', JSON.stringify(debtorNames ?? []), JSON.stringify(currencies ?? [])],
-    queryFn: ({ signal }) => authedFetch<{ salesInvoices: any[]; total: number; page: number; pageSize: number; statusCounts: { all: number; draft: number; sent: number; partial: number; paid: number; cancelled: number } }>(`/sales-invoices?${usp.toString()}`, { signal }),
+    queryKey: ['sales-invoices-paged', page, pageSize, status ?? '', q ?? '', sort ?? '', JSON.stringify(debtorNames ?? []), JSON.stringify(currencies ?? []), from ?? '', to ?? ''],
+    queryFn: ({ signal }) => authedFetch<{ salesInvoices: any[]; total: number; page: number; pageSize: number; statusMoneySen?: Record<string, number>; statusCounts: { all: number; draft: number; sent: number; partial: number; paid: number; cancelled: number } }>(`/sales-invoices?${usp.toString()}`, { signal }),
     placeholderData: (prev: any) => prev,
     staleTime: 30_000,
     retry: retryUnlessClientError,

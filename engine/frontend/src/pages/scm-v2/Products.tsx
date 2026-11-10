@@ -60,6 +60,7 @@ import {
   useUpdateMfgProductPrices,
   useCreateMfgProduct,
   useBatchImportMfgProducts,
+  previewBatchImport,
   useDeleteMfgProduct,
   useUpdateMfgProductStatus,
   useMaintenanceConfig,
@@ -78,6 +79,7 @@ import {
   type MfgProductRow,
   type BatchImportRow,
   type BatchImportResult,
+  type BatchImportPlan,
   type MaintenanceConfig,
   type PricedOption,
   type SeatHeightPrice,
@@ -127,6 +129,7 @@ import { CONTS_HIDDEN_MAINTENANCE_KEYS, CONTS_RENOVATION_CATALOG, resolveProduct
 import { RenovationSkuMaster } from './products/RenovationSkuMaster';
 import { RenovationImportHint } from './products/RenovationImportHint';
 import { downloadSkuImportTemplate, savedSummary } from './products/skuImportTemplate';
+import { SkuImportPreview } from './products/SkuImportPreview';
 
 const ICON_PROPS = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -4709,7 +4712,7 @@ const ImportSkusDialog = ({ sofaSizes, onClose, renovation = false }: { sofaSize
   const batchImport = useBatchImportMfgProducts();
   // Parsed rows held for PREVIEW — committed only on explicit Confirm (Commander
   // 2026-06-15, no 裸奔: picking a file must NOT write to the server).
-  const [staged, setStaged] = useState<{ rows: BatchImportRow[]; tierErrors: Array<{ code: string; reason: string }> } | null>(null);
+  const [staged, setStaged] = useState<{ rows: BatchImportRow[]; tierErrors: Array<{ code: string; reason: string }>; plan: BatchImportPlan } | null>(null);
 
   const handleFile = async (file: File) => {
     setBusy(true);
@@ -4849,8 +4852,10 @@ const ImportSkusDialog = ({ sofaSizes, onClose, renovation = false }: { sofaSize
       }
 
       // Stage for preview — DO NOT commit yet (Commander 2026-06-15, no 裸奔):
-      // show what will change and require an explicit Confirm before writing.
-      setStaged({ rows, tierErrors });
+      // the server judges every row against the database WITHOUT writing and
+      // says new / changed / unchanged; Confirm is the only write.
+      const plan = await previewBatchImport(rows);
+      setStaged({ rows, tierErrors, plan });
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : 'Something went wrong.');
     } finally {
@@ -4930,22 +4935,17 @@ const ImportSkusDialog = ({ sofaSizes, onClose, renovation = false }: { sofaSize
             is written until the operator confirms this staged batch. */}
         {staged && !result && (
           <div style={{ marginTop: 'var(--space-4)' }}>
-            <p style={{ fontSize: 'var(--fs-13)' }}>
-              <strong>{staged.rows.length}</strong> SKU{staged.rows.length === 1 ? '' : 's'} ready to import
-              {staged.tierErrors.length > 0 && (
-                <> · <span style={{ color: '#0c3f39' }}>{staged.tierErrors.length} will be skipped</span></>
-              )}. Blank cells keep the current value. <strong>Nothing is saved until you confirm.</strong>
-            </p>
-            {staged.tierErrors.length > 0 && (
-              <ul style={{ margin: 'var(--space-2) 0 0', paddingLeft: 'var(--space-4)', fontSize: 'var(--fs-12)', color: '#0c3f39' }}>
-                {staged.tierErrors.slice(0, 8).map((e) => <li key={e.code}>{e.code}: {e.reason}</li>)}
-                {staged.tierErrors.length > 8 && <li>…and {staged.tierErrors.length - 8} more</li>}
-              </ul>
-            )}
+            <SkuImportPreview plan={staged.plan} skipped={staged.tierErrors} />
             <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end', marginTop: 'var(--space-4)' }}>
               <Button variant="secondary" onClick={() => setStaged(null)} disabled={busy}>Cancel</Button>
-              <Button variant="primary" onClick={() => void confirmImport()} disabled={busy}>
-                {busy ? 'Importing…' : `Confirm import (${staged.rows.length})`}
+              <Button
+                variant="primary"
+                onClick={() => void confirmImport()}
+                disabled={busy || staged.plan.counts.new + staged.plan.counts.changed === 0}
+              >
+                {busy ? 'Importing…'
+                  : staged.plan.counts.new + staged.plan.counts.changed === 0 ? 'Nothing to change'
+                    : `Confirm import (${staged.plan.counts.new + staged.plan.counts.changed})`}
               </Button>
             </div>
           </div>
