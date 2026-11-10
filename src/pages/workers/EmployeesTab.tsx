@@ -19,7 +19,7 @@ import { useSession } from '../../lib/session';
 import { rm, plural, todayMyt } from '../../lib/format';
 import {
   EMPLOYEE_DEFAULTS, POSITION_LABEL, MALAYSIAN_BANKS, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, TAX_RESIDENCIES, TAX_RESIDENCY_LABEL,
-  TAX_CATEGORIES, TAX_CATEGORY_LABEL, type Employee, type EmployeeInput,
+  TAX_CATEGORIES, TAX_CATEGORY_LABEL, EMPLOYEE_STATUSES, EMPLOYEE_STATUS_LABEL, isEmployeeStatus, type Employee, type EmployeeInput,
 } from '../../../functions/_lib/hrFields';
 
 /* ------------------------------------------------------------------ *
@@ -44,6 +44,7 @@ const departmentsOf = ({ cleanerId, technicianId, cleanerActive, technicianActiv
 };
 function statusOf(e: Employee): { label: string; tone: 'success' | 'neutral' | 'warning' } {
   if (e.status === 'resigned') return { label: 'Resigned', tone: 'neutral' };
+  if (e.status === 'test') return { label: 'Test', tone: 'neutral' };
   if (!e.isActive) return { label: 'Switched off', tone: 'warning' };
   return { label: 'Active', tone: 'success' };
 }
@@ -122,7 +123,7 @@ export default function EmployeesTab() {
       <DataTable<Employee>
         id="employees" columns={columns} rows={loading && people.length === 0 ? null : people}
         rowKey={e => e.cleanerId ?? e.technicianId ?? e.name} pageSize={0} noun={['employee', 'employees']} exportName="employee-master"
-        rowTone={e => (e.status === 'resigned' || !e.isActive ? 'muted' : null)}
+        rowTone={e => (e.status !== 'active' || !e.isActive ? 'muted' : null)}
         onRowClick={mayEdit ? e => setForm({ person: e }) : undefined}
         header={
           <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -293,8 +294,8 @@ function EmployeeForm({ person, onClose, onSaved }: {
             {!creating && dept && dept !== wasDept && <span className="text-meta text-muted-ink">Saving moves them to {dept === 'cleaning' ? 'Cleaning' : 'Maintenance'}. Their app opens on {dept === 'cleaning' ? 'cleaning jobs' : 'repair jobs'} from the next time it loads.</span>}
             {errors.departments && <span className="text-meta text-danger">{errors.departments}</span>}
           </fieldset>
-          <Select label="Status" showLabel size="md" value={d.status} onChange={v => set('status', v === 'resigned' ? 'resigned' : 'active')}
-            options={[{ value: 'active', label: 'Active' }, { value: 'resigned', label: 'Resigned' }]} />
+          <Select label="Status" showLabel size="md" value={d.status} onChange={v => set('status', isEmployeeStatus(v) ? v : 'active')}
+            options={EMPLOYEE_STATUSES.map(status => ({ value: status, label: EMPLOYEE_STATUS_LABEL[status] }))} />
           <DateField label="Join date" value={d.joinDate ?? ''} onChange={v => set('joinDate', v || null)} error={errors.joinDate} />
           {d.status === 'resigned' && (
             <DateField label="Last working day" value={d.resignedAt ?? ''} onChange={v => set('resignedAt', v || null)} required error={errors.resignedAt} />

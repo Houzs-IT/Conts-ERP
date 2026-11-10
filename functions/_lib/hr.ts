@@ -68,6 +68,14 @@ function toEmployee(r: Row): Employee {
   };
 }
 
+export const isTestEmployee = ({ status }: Pick<Employee, 'status'>): boolean => status === 'test';
+
+export const notTestCleaner = (cleaner: string): string => `NOT EXISTS (SELECT 1 FROM employees te WHERE te.status = 'test'
+  AND (te.cleaner_id = ${cleaner}.id OR te.technician_id IN (SELECT tt.id FROM technicians tt WHERE tt.user_id = ${cleaner}.user_id)))`;
+
+export const notTestTechnician = (technician: string): string => `NOT EXISTS (SELECT 1 FROM employees te WHERE te.status = 'test'
+  AND (te.technician_id = ${technician}.id OR te.cleaner_id IN (SELECT tc.id FROM cleaners tc WHERE tc.user_id = ${technician}.user_id)))`;
+
 /** Everyone on the Employees tab, switched-off roster entries last. */
 export async function listEmployees(env: Env): Promise<Employee[]> {
   const rows = await all<Row>(env, `${PEOPLE} ORDER BY p.is_active DESC, p.full_name`);
