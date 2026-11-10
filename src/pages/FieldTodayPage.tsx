@@ -152,22 +152,20 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   }
   const card = (j: Job) => <TaskCard key={j.id} job={j} now={now} fresh={fresh.has(j.id)} active={j.id === open} onOpen={() => setOpen(j.id)} />;
   const offerCard = (j: Job) => <TaskCard key={j.id} job={j} now={now} fresh={fresh.has(j.id)} active={j.id === open} offer onOpen={() => setOpen(j.id)} />;
-  const groupHeading = (name: string, jobsInGroup: Job[]) => (
-    <h2 className="m-0 px-1 text-[16px] font-semibold tracking-[-0.01em] flex items-baseline gap-2">{name}<span className="text-meta text-muted-ink font-normal tabular-nums">{t.jobs.groupDone(jobsInGroup.filter(j => j.done).length, jobsInGroup.length)}</span></h2>
-  );
-  const buildings = (gs: Group[]) => gs.map(g => (
-    <section key={g.id} className="flex flex-col gap-2">
-      {groupHeading(g.name, g.jobs)}
-      <PhoneJobList label={g.name}>{g.jobs.map(card)}</PhoneJobList>
-    </section>
+  const hasFreshJob = (group: Group): boolean => group.jobs.some(job => fresh.has(job.id));
+  const buildings = (groups: Group[]) => groups.map(group => (
+    <GroupCard key={group.id} name={group.name} icon="Building2" jobs={group.jobs} now={now} hasFresh={hasFreshJob(group)}
+      badges={<StatusBadge tone="neutral">{t.jobs.groupDone(group.jobs.filter(job => job.done).length, group.jobs.length)}</StatusBadge>}>
+      {group.jobs.map(card)}
+    </GroupCard>
   ));
-  const offeredBuildings = (gs: Group[]) => gs.map(g => (
-    <section key={g.id} className="flex flex-col gap-2">
-      <h2 className="m-0 px-1 text-[16px] font-semibold tracking-[-0.01em] flex items-center gap-2">{g.name}<StatusBadge tone="gold" size="sm">{t.repairs.jobs(g.jobs.length)}</StatusBadge></h2>
-      <PhoneJobList label={g.name}>{g.jobs.map(offerCard)}</PhoneJobList>
-      <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="Hand" size="sm" />} loading={takingBuilding === g.id}
-        disabled={takingBuilding !== null && takingBuilding !== g.id} onClick={() => void takeAll(g)}>{t.jobs.takeAll(g.jobs.length)}</Button>
-    </section>
+  const offeredBuildings = (groups: Group[]) => groups.map(group => (
+    <GroupCard key={group.id} name={group.name} icon="Building2" jobs={group.jobs} now={now} hasFresh={hasFreshJob(group)}
+      badges={<><StatusBadge tone="neutral">{t.repairs.jobs(group.jobs.length)}</StatusBadge><StatusBadge tone="gold">{t.jobs.openToPick}</StatusBadge></>}
+      footer={<Button size="touch" variant="secondary" className="w-full" icon={<Icon name="Hand" size="sm" />} loading={takingBuilding === group.id}
+        disabled={takingBuilding !== null && takingBuilding !== group.id} onClick={() => void takeAll(group)}>{t.jobs.takeAll(group.jobs.length)}</Button>}>
+      {group.jobs.map(offerCard)}
+    </GroupCard>
   ));
   const isListEmpty = tab === 'team' ? team.length === 0 : mineInTab.length === 0 && poolInTab.length === 0;
   const emptyState = unitKey
@@ -256,25 +254,36 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
 const cleanName = (t: PortalStrings, j: Job) => (j.kind in t.jobs.clean ? wordFor(t.jobs.clean, j.kind) : j.work);
 
 /** Time left until the next guest: red under two hours, "guest due now" once past (OpsUi's TimeLeft in the portal's words). */
-function CleanerCard({ cleaner, now }: { cleaner: CleanerGroup; now: number }) {
+interface GroupCardProps { name: string; icon: string; jobs: Job[]; now: number; hasFresh?: boolean; badges: ReactNode; footer?: ReactNode; children: ReactNode }
+
+function GroupCard({ name, icon, jobs, now, hasFresh = false, badges, footer, children }: GroupCardProps) {
   const t = usePortalText();
-  const overdueCount = cleaner.jobs.filter(j => jobOverdue(j, now)).length;
+  const overdueCount = jobs.filter(job => jobOverdue(job, now)).length;
   return (
-    <details className={cx('group bg-card rounded-card border border-solid overflow-hidden flex-none', overdueCount ? 'border-danger-line' : 'border-line')}>
+    <details className={cx('group bg-card rounded-card border border-solid overflow-hidden flex-none', overdueCount ? 'border-danger-line' : hasFresh ? 'border-info-line' : 'border-line')}>
       <summary className="list-none [&::-webkit-details-marker]:hidden flex items-center gap-3 px-4 py-3 min-h-[56px] cursor-pointer hover:bg-muted">
         <span className="flex-1 min-w-0 flex flex-col gap-1.5">
-          <b className="text-heading truncate flex items-center gap-2"><Icon name="UserRound" size="sm" />{cleaner.name}</b>
+          <b className="text-heading truncate flex items-center gap-2"><Icon name={icon} size="sm" />{name}</b>
           <span className="flex gap-1.5 flex-wrap">
-            <StatusBadge tone="neutral">{t.repairs.jobs(cleaner.jobs.length)}</StatusBadge>
+            {badges}
             {overdueCount > 0 && <StatusBadge tone="critical">{t.jobs.overdueTitle} · {overdueCount}</StatusBadge>}
+            {hasFresh && <StatusBadge tone="info" label={t.jobs.newJob} />}
           </span>
         </span>
         <span className="text-muted-ink transition-transform duration-200 motion-reduce:transition-none group-open:rotate-180"><Icon name="ChevronDown" size="nav" /></span>
       </summary>
-      <PhoneJobList label={cleaner.name} className="rounded-none border-x-0 border-b-0">
-        {sortForCleaner(cleaner.jobs, jobOrder).map(j => <TaskCard key={j.id} job={j} now={now} fresh={false} active={false} showBuilding />)}
-      </PhoneJobList>
+      <PhoneJobList label={name} className="rounded-none border-x-0 border-b-0">{children}</PhoneJobList>
+      {footer && <div className="px-4 pb-4 pt-3 [border-top:1px_solid_var(--color-line)]">{footer}</div>}
     </details>
+  );
+}
+
+function CleanerCard({ cleaner, now }: { cleaner: CleanerGroup; now: number }) {
+  const t = usePortalText();
+  return (
+    <GroupCard name={cleaner.name} icon="UserRound" jobs={cleaner.jobs} now={now} badges={<StatusBadge tone="neutral">{t.repairs.jobs(cleaner.jobs.length)}</StatusBadge>}>
+      {sortForCleaner(cleaner.jobs, jobOrder).map(job => <TaskCard key={job.id} job={job} now={now} fresh={false} active={false} showBuilding />)}
+    </GroupCard>
   );
 }
 
