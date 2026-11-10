@@ -59,6 +59,7 @@ import {
   usePurchaseInvoiceDetail,
   useCancelPurchaseInvoice,
   usePostPurchaseInvoice,
+  piNotBookedProblem,
 } from "../../vendor/scm/lib/purchase-invoice-queries";
 import { useAuth as useHouzsAuth } from "../../auth/AuthContext";
 import { apPaymentHrefFor, canOpenApPayment, piAwaitsPayment } from "../../vendor/scm/lib/pi-payment-path";
@@ -678,7 +679,7 @@ export function PurchaseInvoicesListV2() {
     body: "Inventory and Payables will be updated.",
     pathOf: (r) => `/purchase-invoices/${r.id}/post`,
     docOf: (r) => r.invoice_number,
-    problemOf: () => null,
+    problemOf: piNotBookedProblem,
     refresh: [["purchase-invoices"], ["purchase-invoices-paged"]],
     onDone: () => setSelectedIds(new Set()),
   });
