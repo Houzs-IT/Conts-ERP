@@ -494,6 +494,7 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
   let created = 0;
   let unchanged = 0;
   const planRows: SkuImportPlanRow[] = [];
+  const plannedByCode = new Map<string, Record<string, unknown>>();
   const failures: Array<{ code: string; reason: string }> = [];
 
   /* Only a sheet naming a category outside the enum list needs the master list. */
@@ -549,8 +550,12 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
      * rather than a rule.
      *
      * The existence read moved UP for this; the write branch below reuses it. */
-    const { data: existing } = await supabase.from('mfg_products')
+    const { data: stored } = await supabase.from('mfg_products')
       .select('id, name, description, base_model, size_label, branding, base_price_sen, price1_sen, unit_m3_milli, seat_height_prices, category, sub_category, uom, status').eq('code', code).eq('company_id', activeCompanyId(c)).maybeSingle();
+    /* The same code again in one file: apply writes the earlier row first and
+       reads it back here, so the dry run judges this row against that planned
+       state too (a code new to the system is "new" once, then "changed"). */
+    const existing = (dryRun ? plannedByCode.get(code) : undefined) ?? stored;
 
     if (categoryCell && !category) {
       failures.push({
@@ -683,6 +688,7 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
     /* New, changed or unchanged — the same verdict the preview showed. */
     const verdict = diffSkuImportRow(existing as Record<string, unknown> | null, row);
     if (dryRun) {
+      plannedByCode.set(code, { ...((existing as Record<string, unknown> | null) ?? { id: '(planned)' }), ...row });
       planRows.push({
         code,
         name: name || ((existing as { name?: string } | null)?.name ?? null),

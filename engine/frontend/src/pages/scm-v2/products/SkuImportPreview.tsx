@@ -60,8 +60,8 @@ export function SkuImportPreview({ plan, skipped }: { plan: BatchImportPlan; ski
         <>
           <div style={{ marginTop: 'var(--space-2)', fontWeight: 600 }}>Changed</div>
           <ul style={box}>
-            {changed.slice(0, LIST_MAX).map((p) => (
-              <li key={p.code}>
+            {changed.slice(0, LIST_MAX).map((p, i) => (
+              <li key={`${p.code}-${i}`}>
                 <span className="font-money">{p.code}</span>{p.name ? ` ${p.name}` : ''}
                 <ul style={{ paddingLeft: 'var(--space-3)', color: '#4b5045' }}>
                   {p.changes.map((c) => <li key={c.field}>{describeSkuChange(c)}</li>)}
@@ -76,8 +76,8 @@ export function SkuImportPreview({ plan, skipped }: { plan: BatchImportPlan; ski
         <>
           <div style={{ marginTop: 'var(--space-2)', fontWeight: 600 }}>New</div>
           <ul style={box}>
-            {created.slice(0, LIST_MAX).map((p) => (
-              <li key={p.code}><span className="font-money">{p.code}</span>{p.name ? ` ${p.name}` : ''}</li>
+            {created.slice(0, LIST_MAX).map((p, i) => (
+              <li key={`${p.code}-${i}`}><span className="font-money">{p.code}</span>{p.name ? ` ${p.name}` : ''}</li>
             ))}
             {created.length > LIST_MAX && <li>…and {created.length - LIST_MAX} more</li>}
           </ul>

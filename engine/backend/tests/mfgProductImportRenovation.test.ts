@@ -206,6 +206,25 @@ describe('POST /mfg-products/batch-import — preview (dryRun) and unchanged row
     expect(sku('SV-A')!.category).toBe('SERVICE');
   });
 
+  test('a code twice in one file previews the way apply runs it: new once, then changed or unchanged', async () => {
+    const rows = [
+      { code: 'EL-7', name: 'Lighting point', category: 'Works', sub_category: 'Electrical', uom: 'point' },
+      { code: 'EL-7', uom: 'unit' },
+      { code: 'EL-7', uom: 'unit' },
+    ];
+    const preview = harness();
+    const out = await preview.run(rows, { dryRun: true });
+    expect(out.plan!.map((p) => p.status)).toEqual(['new', 'changed', 'unchanged']);
+    expect(out.plan![1].changes).toEqual([{ field: 'uom', from: 'POINT', to: 'UNIT' }]);
+    expect(out.counts).toEqual({ new: 1, changed: 1, unchanged: 1 });
+    expect(preview.sku('EL-7')).toBeUndefined();
+
+    const applied = harness();
+    const done = await applied.run(rows);
+    expect(done).toMatchObject({ upserted: 2, unchanged: 1, failures: [] });
+    expect(applied.sku('EL-7')).toMatchObject({ uom: 'UNIT', name: 'Lighting point' });
+  });
+
   test('a blank cell is never a change, and an unchanged row is not written', async () => {
     const { run, sku } = harness();
     const out = await run([{ code: 'HK-1', name: '', category: '', sub_category: '', uom: '', status: '', description: '' }]);
