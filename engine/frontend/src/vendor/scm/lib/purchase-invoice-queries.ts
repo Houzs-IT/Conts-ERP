@@ -40,15 +40,15 @@ export const usePurchaseInvoices = (status?: string) =>
 // unpaginated list. `status` is the resolved purchase_invoices.status DB value
 // (UPPERCASE); each PI filter-pill bucket (draft/posted/partial/paid/cancelled)
 // maps 1:1 to a single DB status, so no bucket needs dropping.
-export function usePurchaseInvoicesPaged(params: { page: number; pageSize: number; status?: string; q?: string; sort?: string; creditorNames?: string[]; creditorCodes?: string[]; currencies?: string[] }) {
-  const { page, pageSize, status, q, sort, creditorNames, creditorCodes, currencies } = params;
+export function usePurchaseInvoicesPaged(params: { from?: string; to?: string; page: number; pageSize: number; status?: string; q?: string; sort?: string; creditorNames?: string[]; creditorCodes?: string[]; currencies?: string[] }) {
+  const { page, pageSize, status, q, sort, creditorNames, creditorCodes, currencies, from, to } = params;
   // The filter half is shared with the two exports (pi-list-export.ts), so an
   // export can never be sent a different filter than the list it was pressed on.
-  const usp = piListParams({ status, q, sort, creditorNames, creditorCodes, currencies });
+  const usp = piListParams({ status, q, sort, creditorNames, creditorCodes, currencies, from, to });
   usp.set('page', String(page));
   usp.set('pageSize', String(pageSize));
   return useQuery({
-    queryKey: ['purchase-invoices-paged', page, pageSize, status ?? '', q ?? '', sort ?? '', JSON.stringify(creditorNames ?? []), JSON.stringify(creditorCodes ?? []), JSON.stringify(currencies ?? [])],
+    queryKey: ['purchase-invoices-paged', page, pageSize, status ?? '', q ?? '', sort ?? '', JSON.stringify(creditorNames ?? []), JSON.stringify(creditorCodes ?? []), JSON.stringify(currencies ?? []), from ?? '', to ?? ''],
     queryFn: ({ signal }) => authedFetch<{ purchaseInvoices: any[]; total: number; page: number; pageSize: number; statusMoneySen?: Record<string, number>; statusCounts: { all: number; draft: number; posted: number; partial: number; paid: number; cancelled: number } & Partial<Record<'on_hold', number>> }>(`/purchase-invoices?${usp.toString()}`, { signal }),
     placeholderData: (prev: any) => prev,
     staleTime: 30_000,

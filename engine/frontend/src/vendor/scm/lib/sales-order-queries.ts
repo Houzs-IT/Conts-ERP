@@ -71,8 +71,11 @@ export const useMfgSalesOrders = (status?: string) =>
 // mfg_sales_orders.status column stores UPPERCASE — uppercase here to match.
 /** The Sales Order list's filter as query parameters, no paging: the list request
  *  and the list's export (so-list-export.ts) send exactly these. */
-export function soListSearchParams(f: { status?: string; q?: string; sort?: string; filters?: readonly SoListFilter[]; debtorNames?: string[]; currencies?: string[] }): URLSearchParams {
+export function soListSearchParams(f: { from?: string; to?: string; status?: string; q?: string; sort?: string; filters?: readonly SoListFilter[]; debtorNames?: string[]; currencies?: string[] }): URLSearchParams {
   const usp = new URLSearchParams();
+  /* The SO Date column's date filter, run by the server (Houzs 3e6d15825). */
+  if (f.from) usp.set('from', f.from);
+  if (f.to) usp.set('to', f.to);
   if (f.status && f.status !== 'all') usp.set('status', f.status.toUpperCase());
   if (f.q && f.q.trim()) usp.set('q', f.q.trim());
   if (f.sort) usp.set('sort', f.sort);
@@ -84,9 +87,9 @@ export function soListSearchParams(f: { status?: string; q?: string; sort?: stri
   return usp;
 }
 
-export function useMfgSalesOrdersPaged(params: { page: number; pageSize: number; status?: string; q?: string; sort?: string; enabled?: boolean; filters?: readonly SoListFilter[]; debtorNames?: string[]; currencies?: string[] }) {
-  const { page, pageSize, status, q, sort, enabled, filters = [], debtorNames, currencies } = params;
-  const usp = soListSearchParams({ status, q, sort, filters, debtorNames, currencies });
+export function useMfgSalesOrdersPaged(params: { from?: string; to?: string; page: number; pageSize: number; status?: string; q?: string; sort?: string; enabled?: boolean; filters?: readonly SoListFilter[]; debtorNames?: string[]; currencies?: string[] }) {
+  const { page, pageSize, status, q, sort, enabled, filters = [], debtorNames, currencies, from, to } = params;
+  const usp = soListSearchParams({ status, q, sort, filters, debtorNames, currencies, from, to });
   usp.set('page', String(page));
   usp.set('pageSize', String(pageSize));
   return useQuery({
@@ -95,7 +98,7 @@ export function useMfgSalesOrdersPaged(params: { page: number; pageSize: number;
     // initial query already carries any localStorage-restored `sort` instead of
     // firing sort-less, getting aborted, and immediately re-firing with sort.
     enabled: enabled ?? true,
-    queryKey: ['mfg-sales-orders-paged', page, pageSize, status ?? '', q ?? '', sort ?? '', usp.getAll('f').join('|'), JSON.stringify(debtorNames ?? []), JSON.stringify(currencies ?? [])],
+    queryKey: ['mfg-sales-orders-paged', page, pageSize, status ?? '', q ?? '', sort ?? '', usp.getAll('f').join('|'), JSON.stringify(debtorNames ?? []), JSON.stringify(currencies ?? []), from ?? '', to ?? ''],
     // statusCounts carries ONE bucket per backend SO_STATUSES entry (lowercase:
     // draft/confirmed/in_production/ready_to_ship/shipped/delivered/invoiced/
     // closed/on_hold/cancelled) plus `all` and `other` (legacy/unknown
