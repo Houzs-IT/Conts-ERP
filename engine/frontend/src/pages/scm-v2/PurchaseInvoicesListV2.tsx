@@ -681,6 +681,8 @@ export function PurchaseInvoicesListV2() {
      fetched a beat after the page renders, never gating anything. */
   const poPriceById = usePiListPoPriceMap(useMemo(() => serverRows.map((r) => r.id).filter(Boolean) as string[], [serverRows]), !listLoading);
   const total = data?.total ?? 0;
+  /* Each tab's money, server-summed over the same rows as its count (TODO item 5). */
+  const tabMoney: Record<string, number> = data?.statusMoneySen ?? {};
   const counts = data?.statusCounts ?? {
     all: 0,
     draft: 0,
@@ -1143,12 +1145,12 @@ export function PurchaseInvoicesListV2() {
     ...Object.keys(byKey).filter((k) => !(PI_DEFAULT_COLUMN_KEYS as readonly string[]).includes(k)).map((k) => byKey[k]!),
   ];
 
-  const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
-    { value: "all", label: `All · ${counts.all}` },
-    { value: "draft", label: `Draft · ${counts.draft}` },
-    { value: "posted", label: `Submitted · ${counts.posted}` },
-    { value: "partial", label: `Partial · ${counts.partial}` },
-    { value: "paid", label: `Paid · ${counts.paid}` },
+  const statusPillOptions: Array<{ value: StatusTab; label: string; moneySen?: number }> = [
+    { value: "all", label: `All · ${counts.all}`, moneySen: tabMoney.all },
+    { value: "draft", label: `Draft · ${counts.draft}`, moneySen: tabMoney.draft },
+    { value: "posted", label: `Submitted · ${counts.posted}`, moneySen: tabMoney.posted },
+    { value: "partial", label: `Partial · ${counts.partial}`, moneySen: tabMoney.partial },
+    { value: "paid", label: `Paid · ${counts.paid}`, moneySen: tabMoney.paid },
     { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
     { value: "on_hold", label: `On Hold · ${counts.on_hold ?? 0}` },
   ];

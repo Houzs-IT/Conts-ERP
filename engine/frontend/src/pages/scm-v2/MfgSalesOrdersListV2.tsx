@@ -1132,6 +1132,7 @@ export function MfgSalesOrdersListV2() {
   // Status tab counts come from the server over the FULL scoped set (not the
   // page), so the pills stay correct while paging / searching.
   const counts: Record<string, number> = data?.statusCounts ?? { all: 0 };
+  const money: Record<string, number> = data?.statusMoneySen ?? {};
 
   // KPI money stats — the backend paginated contract returns `aggregates` with
   // FULL-SET revenue/outstanding/paid sums (computed server-side over the same
@@ -1921,11 +1922,13 @@ export function MfgSalesOrdersListV2() {
      status spellings) appears only when the server reports a non-zero count
      for it — or while it is the active filter, so the selected pill can never
      vanish from under the user. */
-  const statusPillOptions: Array<{ value: StatusTab; label: string; count: number }> = [
+  const statusPillOptions: Array<{ value: StatusTab; label: string; count: number; moneySen?: number }> = [
     ...SO_STATUS_TABS.map(({ value, label }) => ({
       value,
       label,
       count: counts[value] ?? 0,
+      /* The order value in each tab, never on Cancelled (TODO item 5). */
+      moneySen: value === "cancelled" ? undefined : money[value],
     })),
     ...((counts.other ?? 0) > 0 || status === "other"
       ? [{ value: "other" as StatusTab, label: "Other", count: counts.other ?? 0 }]

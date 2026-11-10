@@ -102,7 +102,7 @@ export function useMfgSalesOrdersPaged(params: { page: number; pageSize: number;
     // spellings), summing to `all`. Keys beyond the original four are optional
     // so a mid-deploy old backend (four-bucket shape) still typechecks — the
     // pages read every bucket with `?? 0`.
-    queryFn: ({ signal }) => authedFetch<{ salesOrders: any[]; total: number; page: number; pageSize: number; statusCounts: { all: number; draft: number; confirmed: number; cancelled: number } & Partial<Record<'in_production' | 'ready_to_ship' | 'shipped' | 'delivered' | 'invoiced' | 'closed' | 'on_hold' | 'other', number>>; aggregates?: { revenueSen: number; outstandingSen: number; paidSen: number } }>(`/mfg-sales-orders?${usp.toString()}`, { signal }),
+    queryFn: ({ signal }) => authedFetch<{ salesOrders: any[]; total: number; page: number; pageSize: number; statusCounts: { all: number; draft: number; confirmed: number; cancelled: number } & Partial<Record<'in_production' | 'ready_to_ship' | 'shipped' | 'delivered' | 'invoiced' | 'closed' | 'on_hold' | 'other', number>>; statusMoneySen?: Record<string, number>; aggregates?: { revenueSen: number; outstandingSen: number; paidSen: number } }>(`/mfg-sales-orders?${usp.toString()}`, { signal }),
     placeholderData: (prev: any) => prev,
     staleTime: 30_000,
     retry: retryUnlessClientError,

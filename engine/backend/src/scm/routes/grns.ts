@@ -1,6 +1,7 @@
 // /grns — Goods Receipt Notes (procurement receiving step).
 // PO → GRN → Purchase Invoice. On POST, qty_received rolls up to PO items.
 
+import { readStatusMoney } from '../lib/status-money';
 import { poPriceByPoItemId, poRefByPoItemId, stampGrnLinePoRefs, type LinePoRef } from '../lib/line-po-ref';
 import { Hono } from 'hono';
 import { GRN_STATUS_BUCKETS } from '../lib/grn-status-buckets';
@@ -1005,6 +1006,7 @@ grns.get('/', async (c) => {
   let page = 0;
   let pageSize = 50;
   let statusCounts: { all: number; draft: number; posted: number; cancelled: number } | undefined;
+  let statusMoneySen: Record<string, number> | undefined;
   let countError: string | null = null; // held, not returned here, so the LIST read's own error still wins the report
 
   if (!paginate) {
@@ -1040,6 +1042,12 @@ grns.get('/', async (c) => {
       return cq;
     };
     /* PERF: issued here, awaited below; semantics and error order unchanged. */
+    /* Each tab's money over the same filters (TODO item 5). */
+    const moneyProm = readStatusMoney((sel) => {
+      let mq = scopeToCompany(sb.from('grns').select(sel), c);
+      if (supplierId) mq = mq.eq('supplier_id', supplierId);
+      return mq;
+    }, 'total_sen', GRN_STATUS_BUCKETS);
     const countsProm = eager(Promise.all([
       countBase(),
       countBase().in('status', GRN_STATUS_BUCKETS.draft),
@@ -1055,6 +1063,7 @@ grns.get('/', async (c) => {
     // A count that could not be READ is reported, never served as 0; an empty bucket still answers 0 (lib/status-counts.ts).
     const counted = readStatusCounts({ all: allC, draft: draftC, posted: postedC, cancelled: cancelledC, on_hold: onHoldC });
     if (counted.ok) statusCounts = counted.counts; else countError = counted.reason;
+    statusMoneySen = await moneyProm;
   }
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   if (countError) return c.json({ error: 'status_counts_failed', reason: countError }, 500);
@@ -1127,7 +1136,7 @@ grns.get('/', async (c) => {
   }));
   if (!paginate) return c.json({ grns }); // lines (the export's own attach, lib/grn-export-rows.ts) only on the paged grid
   const withLines = await attachGrnLines(sb, c, grns); if (withLines.error !== null) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
-  return c.json({ grns: withLines.rows, total, page, pageSize, statusCounts });
+  return c.json({ grns: withLines.rows, total, page, pageSize, statusCounts, statusMoneySen });
 });
 
 /* ── GET /outstanding-po-items ──────────────────────────────────────────

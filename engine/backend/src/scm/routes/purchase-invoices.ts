@@ -1,5 +1,6 @@
 // /purchase-invoices — supplier billing us (after GRN).
 
+import { readStatusMoney } from '../lib/status-money';
 import { Hono } from 'hono';
 import { PI_STATUS_BUCKETS } from '../lib/pi-status-buckets';
 import { PI_HEADER_COLS, PI_LIST_SELECT, piListSelect, filterPiList, orderPiList, readPiListFilters } from '../lib/pi-list-read';
@@ -390,6 +391,8 @@ purchaseInvoices.get('/', async (c) => {
      paid / cancelled) over the SAME company filter but WITHOUT status / search /
      pagination. */
   const countBase = () => scopeToCompany(sb.from('purchase_invoices').select('*', { count: 'exact', head: true }), c);
+  /* Each tab's money over the same filters (TODO item 5). */
+  const moneyProm = readStatusMoney((sel) => scopeToCompany(sb.from('purchase_invoices').select(sel), c), 'total_sen', PI_STATUS_BUCKETS);
   const [allC, draftC, postedC, partialC, paidC, cancelledC, onHoldC] = await Promise.all([
     countBase(),
     countBase().in('status', PI_STATUS_BUCKETS.draft),
@@ -403,6 +406,7 @@ purchaseInvoices.get('/', async (c) => {
   const counted = readStatusCounts({ all: allC, draft: draftC, posted: postedC, partial: partialC, paid: paidC, cancelled: cancelledC, on_hold: onHoldC });
   if (!counted.ok) return c.json({ error: 'status_counts_failed', reason: counted.reason }, 500);
   const statusCounts = counted.counts;
+  const statusMoneySen = await moneyProm;
 
   const purchaseInvoices = (data ?? []) as unknown as Array<Record<string, unknown>>; // MRP columns OMITTED (C16); healed by GET /list-mrp-enrichment — see BUG-HISTORY
   /* The page's LINES, in AutoCount's spelling — the same attach the export
@@ -411,7 +415,7 @@ purchaseInvoices.get('/', async (c) => {
      callers never render a line column. */
   const withLines = await attachPiLines(sb, c, purchaseInvoices as Array<{ id: string } & Record<string, unknown>>);
   if (withLines.error !== null) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
-  return c.json({ purchaseInvoices: withLines.rows, total, page, pageSize, statusCounts });
+  return c.json({ purchaseInvoices: withLines.rows, total, page, pageSize, statusCounts, statusMoneySen });
 });
 
 /* ── GET /outstanding-grn-items ─────────────────────────────────────────

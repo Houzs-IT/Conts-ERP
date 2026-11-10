@@ -33,6 +33,7 @@
 //
 // Mounted at '/sales-invoices' in scm/index.ts.
 
+import { readStatusMoney } from '../lib/status-money';
 import { lineDiscountShare } from '../shared/line-discount-share';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -489,6 +490,12 @@ salesInvoices.get('/', async (c) => {
     cq = scopeToCompany(cq, c);
     return cq;
   };
+  /* Each tab's money over the same filters (TODO item 5). */
+  const moneyProm = readStatusMoney((sel) => {
+    let mq = sb.from('sales_invoices').select(sel);
+    if (scopeIds) mq = mq.in('salesperson_id', scopeIds);
+    return scopeToCompany(mq, c);
+  }, 'local_total_sen', SI_STATUS_BUCKETS);
   const [allC, draftC, sentC, partialC, paidC, cancelledC] = await Promise.all([
     countBase(),
     countBase().in('status', SI_STATUS_BUCKETS.draft),
@@ -501,6 +508,7 @@ salesInvoices.get('/', async (c) => {
   const counted = readStatusCounts({ all: allC, draft: draftC, sent: sentC, partial: partialC, paid: paidC, cancelled: cancelledC });
   if (!counted.ok) return c.json({ error: 'status_counts_failed', reason: counted.reason }, 500);
   const statusCounts = counted.counts;
+  const statusMoneySen = await moneyProm;
 
   await stampSoDates(sb, data);
   await stampDoNumber(sb, data);
@@ -514,7 +522,7 @@ salesInvoices.get('/', async (c) => {
      callers never render a line column. */
   const withLines = await attachSiLines(sb, c, (data ?? []) as Array<{ id: string } & Record<string, unknown>>);
   if (withLines.error !== null) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
-  return c.json({ salesInvoices: withLines.rows, total, page, pageSize, statusCounts });
+  return c.json({ salesInvoices: withLines.rows, total, page, pageSize, statusCounts, statusMoneySen });
 });
 
 // ── Invoiceable DO lines (line-level partial-invoice picker) ──────────────
