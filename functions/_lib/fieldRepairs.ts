@@ -1,11 +1,11 @@
 import { type Env, all } from './db';
 import { windowsFor } from './cleaning';
-import { hasJobType, fieldOrderSql, hasSupportRequest } from './maintenance';
+import { hasJobType, fieldOrderSql, hasSupportRequest, jobPlaceJoin } from './maintenance';
 
 /** One repair job as the field app shows it: where, what, how urgent, who reported it, when the technician may go in,
  *  and how far the work is. Never any amount: quotes, final cost, billing and what the technician is owed stay office-only. */
 export interface FieldRepair {
-  id: string; unitId: string; unitNumber: string; propertyName: string; buildingId: string; addressLine: string;
+  id: string; unitId: string | null; unitNumber: string | null; propertyName: string; buildingId: string; addressLine: string;
   title: string; detail: string | null; category: string; urgency: string; jobType: string; dueOn: string | null; state: string; source: string;
   reportedAt: string; reporter: string | null; assigneeName: string | null;
   startedAt: string | null; endedAt: string | null; resolvedAt: string | null; blocksUnit: boolean;
@@ -17,6 +17,7 @@ export interface FieldRepair {
 export async function fieldRepairs(env: Env, where: string, args: unknown[], limit = 200): Promise<FieldRepair[]> {
   const cols = await hasJobType(env);
   const support = await hasSupportRequest(env);
+  const placeJoin = await jobPlaceJoin(env);
   const rows = await all<any>(env, `
     SELECT m.id, m.unit_id, m.title, m.detail, m.state, m.category, m.urgency, m.source, m.reported_at, m.vendor_name,
            m.started_at, m.ended_at, m.resolved_at, m.blocks_unit, m.owner_approval_required, m.owner_approved_at, m.charge_to,${cols ? ' m.job_type, m.due_on,' : ''}${support ? ' m.support_requested_at, m.support_note,' : ''}
@@ -25,7 +26,7 @@ export async function fieldRepairs(env: Env, where: string, args: unknown[], lim
            (SELECT COUNT(*)::int FROM documents d WHERE d.maintenance_id = m.id AND d.kind IN ('photo','video') AND d.file_name LIKE 'after-%') AS after_count,
            (SELECT COUNT(*)::int FROM documents d WHERE d.maintenance_id = m.id AND d.kind NOT IN ('photo','video')) AS document_count
     FROM maintenance_issues m
-    JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id
+    ${placeJoin}
     LEFT JOIN users r ON r.id = m.reported_by
     WHERE ${where}
     ORDER BY ${fieldOrderSql(cols)}

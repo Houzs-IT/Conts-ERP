@@ -2,7 +2,7 @@ import { type Env, one } from './db';
 import { numericDay, rmText } from './format';
 import { peopleWithAccess } from './access';
 import { notifyUsers, taskPeople, technicianFor } from './notify';
-import { fieldVisibleSql, hasJobType } from './maintenance';
+import { fieldVisibleSql, hasJobType, jobPlaceJoin, BUILDING_JOB_LABEL } from './maintenance';
 
 /** The notices staff get when something happens to a booking, a clean or a repair job. Every function here
  *  is safe to await inside a handler: notifyUsers never throws, and the lookups are wrapped the same way. */
@@ -94,10 +94,11 @@ interface Issue { id: string; title: string; unit: string; urgency: string | nul
 
 async function issue(env: Env, id: string): Promise<Issue | null> {
   try {
+    const placeJoin = await jobPlaceJoin(env);
     return await one<Issue>(env, `
       SELECT m.id, m.title, m.urgency, m.vendor_name, m.assignee_user_id, m.reported_by, m.quoted_amount, o.user_id AS owner_user,
-             trim(coalesce(p.name, '') || ' ' || u.unit_number) AS unit
-      FROM maintenance_issues m JOIN units u ON u.id = m.unit_id LEFT JOIN properties p ON p.id = u.property_id
+             trim(coalesce(p.name, '') || ' ' || COALESCE(u.unit_number, '${BUILDING_JOB_LABEL}')) AS unit
+      FROM maintenance_issues m ${placeJoin}
       LEFT JOIN owners o ON o.id = u.owner_id WHERE m.id = ?`, id);
   } catch { return null; }
 }

@@ -4,6 +4,7 @@ import { isPeriodLocked } from './expenses';
 import { hasCleanPrices, cleanAmounts } from './cleaningPrices';
 import { hasJobInvoices } from './jobProfit';
 import { rentalOnly } from './unitPurpose';
+import { jobPlaceJoin } from './maintenance';
 import { syncPassKeyJobs } from './passKeyJobs';
 
 export const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'] as const;
@@ -133,7 +134,7 @@ export async function windowsFor(env: Env, issueIds: string[]): Promise<Map<stri
     WHERE w.issue_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY w.starts_at`, JSON.stringify(issueIds));
   const now = Date.now();
   for (const r of rows) {
-    const overlaps = r.source !== 'booking' && Date.parse(r.ends_at) > now ? await staysOverlapping(env, r.unit_id, r.starts_at, r.ends_at) : [];
+    const overlaps = r.unit_id && r.source !== 'booking' && Date.parse(r.ends_at) > now ? await staysOverlapping(env, r.unit_id, r.starts_at, r.ends_at) : [];
     const list = out.get(r.issue_id) ?? [];
     list.push({ id: r.id, issueId: r.issue_id, startsAt: r.starts_at, endsAt: r.ends_at, note: r.note ?? null, overlaps });
     out.set(r.issue_id, list);
@@ -144,11 +145,12 @@ export async function windowsFor(env: Env, issueIds: string[]): Promise<Map<stri
 /** Repair windows that touch one Malaysian day, with their job and unit, for Cleaning and Today. */
 export async function windowsOnDay(env: Env, day: string) {
   const from = `${day}T00:00:00+08:00`, to = `${day}T23:59:59+08:00`;
+  const placeJoin = await jobPlaceJoin(env);
   const rows = await all<any>(env, `
     SELECT w.id, w.issue_id, w.starts_at, w.ends_at, w.note, m.title, m.state, m.urgency, m.category, m.vendor_name, m.unit_id, m.source,
            u.unit_number, p.id AS property_id, p.name AS property_name
     FROM maintenance_windows w JOIN maintenance_issues m ON m.id = w.issue_id
-    JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id
+    ${placeJoin}
     WHERE m.state != 'resolved' AND w.starts_at::timestamptz <= ?::timestamptz AND w.ends_at::timestamptz >= ?::timestamptz
     ORDER BY w.starts_at`, to, from);
   const out = [];
@@ -157,7 +159,7 @@ export async function windowsOnDay(env: Env, day: string) {
       id: r.id, issueId: r.issue_id, startsAt: r.starts_at, endsAt: r.ends_at, note: r.note ?? null,
       title: r.title, state: r.state, urgency: r.urgency, category: r.category, assigneeName: r.vendor_name ?? null,
       unitId: r.unit_id, unitNumber: r.unit_number, buildingId: r.property_id, propertyName: r.property_name,
-      overlaps: r.source !== 'booking' && Date.parse(r.ends_at) > Date.now() ? await staysOverlapping(env, r.unit_id, r.starts_at, r.ends_at) : [],
+      overlaps: r.unit_id && r.source !== 'booking' && Date.parse(r.ends_at) > Date.now() ? await staysOverlapping(env, r.unit_id, r.starts_at, r.ends_at) : [],
     });
   }
   return out;

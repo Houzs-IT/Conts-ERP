@@ -37,7 +37,7 @@ interface Overlap { reservationId: string; guestName: string; checkIn: string; c
 interface RepairWin { id: string; startsAt: string; endsAt: string; note: string | null; overlaps: Overlap[] }
 type ChargeTo = 'owner' | 'the_conts' | 'guest_deposit' | 'warranty';
 interface Issue {
-  id: string; unitId: string; unitNumber: string; propertyName: string; buildingId: string; title: string; detail: string | null; state: string;
+  id: string; unitId: string | null; unitNumber: string | null; propertyName: string; buildingId: string; title: string; detail: string | null; state: string;
   category: string; urgency: 'normal' | 'urgent'; source: string; sourceTaskId: string | null;
   vendorName: string | null; assigneeKind: 'in_house' | 'contractor' | null; reportedAt: string; resolvedAt: string | null;
   blocksUnit: boolean; ownerApprovalRequired: boolean; ownerApprovedAt: string | null; chargeTo: ChargeTo; reporter: string | null;
@@ -124,7 +124,7 @@ export default function MaintenancePage() {
 
   const base = tab === 'open' ? openTab : tab === 'pass_key' ? passKeys : tab === 'support' ? support : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
   const ql = q.trim().toLowerCase();
-  const rows = base.filter(i => (!ql || `${i.unitNumber} ${i.propertyName} ${i.title} ${i.vendorName ?? ''}`.toLowerCase().includes(ql)))
+  const rows = base.filter(i => (!ql || `${unitText(i)} ${i.propertyName} ${i.title} ${i.vendorName ?? ''}`.toLowerCase().includes(ql)))
     // Open jobs in the order they are worked: Urgent, Pass key, then Normal one by one by due date (the day reported when none).
     .sort((a, b) => tab === 'pass_key' ? checkInAt(a).localeCompare(checkInAt(b))
       : tab === 'open'
@@ -139,7 +139,7 @@ export default function MaintenancePage() {
   }, [issues, roster]);
   const unitOptions: FilterOption[] = useMemo(() => {
     const byId = new Map<string, FilterOption>([
-      ...issues.map(({ unitId, unitNumber, propertyName }) => [unitId, { value: unitId, label: unitNumber, group: propertyName }] as const),
+      ...issues.flatMap(({ unitId, unitNumber, propertyName }) => unitId && unitNumber ? [[unitId, { value: unitId, label: unitNumber, group: propertyName }] as const] : []),
       ...roster.map(({ id, unitCode, unitNumber, propertyName }) => [id, { value: id, label: unitCode || unitNumber, group: propertyName }] as const),
     ]);
     const collator = new Intl.Collator('en', { numeric: true });
@@ -221,7 +221,8 @@ export default function MaintenancePage() {
 
 /* ---------- the list ---------- */
 
-const jobLabel = (i: Issue) => `${i.propertyName} ${i.unitNumber}`;
+const unitText = ({ unitNumber }: Pick<Issue, 'unitNumber'>): string => unitNumber ?? 'Building (no unit)';
+const jobLabel = (i: Issue) => `${i.propertyName} ${unitText(i)}`;
 // Some rows are in progress without a start time (set before Start repair recorded one), so the state counts too.
 const started = (i: Issue) => !!i.startedAt || i.state === 'in_progress';
 type Move = 'start' | 'end' | 'reopen';
@@ -277,9 +278,9 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
   const columns = useMemo<Column<Issue>[]>(() => [
     { key: 'building', label: 'Building', value: i => i.buildingId, text: i => i.propertyName, width: 150, hidden: true,
       filter: { kind: 'select', options: buildingOptions } },
-    { key: 'unit', label: 'Unit', value: i => i.unitId, text: i => `${i.unitNumber} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
+    { key: 'unit', label: 'Unit', value: i => i.unitId, text: i => `${unitText(i)} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
       filter: { kind: 'select', display: 'menu', options: unitOptions },
-      render: i => <b className="text-ink">{i.unitNumber}</b> },
+      render: i => <b className="text-ink">{unitText(i)}</b> },
     { key: 'issue', label: 'Problem', value: i => i.title, width: 240, filter: false,
       sub: i => i.source === 'booking'
         ? <>Guest check-in {stamp(checkInAt(i))}</>
@@ -348,7 +349,7 @@ function JobCard({ i, money }: { i: Issue; money: boolean }) {
   return (
     <span className="flex flex-col gap-1 min-w-0">
       <span className="flex items-baseline justify-between gap-2">
-        <span className="min-w-0 truncate"><b className="text-copy text-ink">{i.unitNumber}</b><span className="text-meta text-muted-ink"> · {i.propertyName}</span></span>
+        <span className="min-w-0 truncate"><b className="text-copy text-ink">{unitText(i)}</b><span className="text-meta text-muted-ink"> · {i.propertyName}</span></span>
         {money && cost != null && <span className="text-copy font-medium tabular-nums whitespace-nowrap">{rm(cost)}{i.finalAmount == null && <span className="text-meta text-muted-ink font-normal"> quote</span>}</span>}
       </span>
       <span className="text-copy text-ink [overflow-wrap:anywhere]">{i.title}</span>
@@ -445,14 +446,14 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   async function recordApproval() {
     const ok = await ask({ title: "Record the owner's approval?", confirmLabel: 'Record approval',
       body: 'Only do this once the owner has said yes. The job can then go ahead.',
-      meta: <>{i.propertyName} {i.unitNumber} · {i.title}<br />Quote: {i.quotedAmount != null ? rm(i.quotedAmount) : 'no amount yet'}</> });
+      meta: <>{jobLabel(i)} · {i.title}<br />Quote: {i.quotedAmount != null ? rm(i.quotedAmount) : 'no amount yet'}</> });
     if (ok === null) return;
     void act('approve', () => api.post(`/maintenance/issues/${i.id}/approve`, { approved: true, quotedAmount: i.quotedAmount }), 'Approval recorded.', 'The job can go ahead.');
   }
   async function markCollected(day: string | null) {
     if (day) {
       const ok = await ask({ title: `Mark collected from ${collectFrom}?`, confirmLabel: 'Mark collected',
-        meta: <>{i.propertyName} {i.unitNumber} · {i.title}<br />{charge != null ? rm(charge) : '—'}, collected {date(day)}</> });
+        meta: <>{jobLabel(i)} · {i.title}<br />{charge != null ? rm(charge) : '—'}, collected {date(day)}</> });
       if (ok === null) return;
     }
     void act('collected', () => api.patch(`/maintenance/issues/${i.id}`, { collectedAt: day }), day ? 'Marked collected.' : 'Marked not collected.');
@@ -489,7 +490,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       {confirmUi}
       <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-4 pb-4 bg-black text-white flex items-start gap-3">
         <div className="flex-1 min-w-0 flex flex-col gap-1">
-          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{i.propertyName} · {i.unitNumber}</div>
+          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{i.propertyName} · {unitText(i)}</div>
           <div className="text-[19px] leading-tight font-semibold">{i.title}</div>
           <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
             {steps.map((s, k) => (
@@ -591,7 +592,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
               <DateField aria-label="Billing date" className={INPUT} value={billingDate} onChange={setBillingDate} />
             </FormRow>}
             <FormRow label="Who pays">
-              {done ? <span className="h-10 flex items-center">{PAYER[i.chargeTo]}</span>
+              {done || !i.unitId ? <span className="h-10 flex items-center">{PAYER[i.chargeTo]}</span>
                 : <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>
                   {(['owner', 'the_conts', 'guest_deposit'] as ChargeTo[]).concat(i.chargeTo === 'warranty' ? ['warranty'] : []).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}
                 </select>}
@@ -707,7 +708,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         <>
           {(!i.blocksUnit || skus.some(s => s.trackStock && s.active && s.stockOnHand > 0)) && (
             <section className="flex flex-col rounded-card border border-solid border-line overflow-hidden">
-              {!i.blocksUnit && (
+              {!i.blocksUnit && i.unitId && (
                 <div className="flex items-center gap-3 px-3.5 py-3">
                   <span className="w-8 h-8 flex-none grid place-items-center rounded-full bg-muted text-muted-ink"><Icon name="Ban" size="sm" /></span>
                   <span className="flex-1 min-w-0 flex flex-col">
@@ -718,7 +719,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
                 </div>
               )}
               {skus.some(s => s.trackStock && s.active && s.stockOnHand > 0) && (
-                <div className={cx('flex items-center gap-3 px-3.5 py-3', !i.blocksUnit && '[border-top:1px_solid_var(--color-line-soft)]')}>
+                <div className={cx('flex items-center gap-3 px-3.5 py-3', !i.blocksUnit && i.unitId && '[border-top:1px_solid_var(--color-line-soft)]')}>
                   <span className="w-8 h-8 flex-none grid place-items-center rounded-full bg-muted text-muted-ink"><Icon name="PackageMinus" size="sm" /></span>
                   <span className="flex-1 min-w-0 flex flex-col">
                     <span className="font-medium text-ink">Parts from stock</span>
@@ -750,7 +751,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       {windowOpen && <WindowModal issue={i} onClose={() => setWindowOpen(false)} onDone={(n) => { setWindowOpen(false); toast({ tone: n ? 'warning' : 'success', title: 'Repair window added.', body: n ? `It overlaps ${n} ${n === 1 ? 'reservation' : 'reservations'}. Make sure the guest agreed.` : 'No guest is in the unit then.' }); refresh(); }} />}
       {blockOpen && <BlockModal issue={i} onClose={() => setBlockOpen(false)} onDone={() => { setBlockOpen(false); toast({ tone: 'success', title: 'Unit blocked.', body: 'The nights are blocked on the calendar until the repair is done.' }); refresh(); }} />}
       {completeOpen && <CompleteModal issue={i} billing={billing} onClose={() => setCompleteOpen(false)} onDone={() => { setCompleteOpen(false); toast({ tone: 'success', title: 'Job done.', body: 'The cost is on the unit as an expense.' }); refresh(); }} />}
-      {exchange && <ExchangeModal jobLabel={`${i.propertyName} ${i.unitNumber} · ${i.title}`} skus={skus.filter(s => s.active)} onClose={() => setExchange(false)}
+      {exchange && <ExchangeModal jobLabel={`${jobLabel(i)} · ${i.title}`} skus={skus.filter(s => s.active)} onClose={() => setExchange(false)}
         onExchange={(s, qty) => { setExchange(false); void act('exchange', () => api.post(`/maintenance/issues/${i.id}/exchange`, { skuId: s.id, qty }), 'Drawn from stock.', `${qty} x ${s.name}.`); }} />}
     </div>
   );
@@ -807,7 +808,7 @@ function WindowModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => 
     catch (e) { setError(errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Add repair window" sub={`When the technician may enter ${issue.propertyName} ${issue.unitNumber}. Malaysia time.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Add window', () => void save())}>
+    <OpsModal title="Add repair window" sub={`When the technician may enter ${jobLabel(issue)}. Malaysia time.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Add window', () => void save())}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <FormRow label="From" error={error}><DateTimeField aria-label="From" className={INPUT} value={start} onChange={setStart} required /></FormRow>
         <FormRow label="To"><DateTimeField aria-label="To" className={INPUT} value={end} min={start || undefined} onChange={setEnd} required /></FormRow>
@@ -828,7 +829,7 @@ function BlockModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => v
     catch (e) { setError(e instanceof ApiFailure && e.status === 409 ? 'A reservation already holds some of those nights. Pick dates when the unit is free.' : errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Block unit until fixed" sub={`${issue.propertyName} ${issue.unitNumber} is blocked for these nights, and shows as under maintenance.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Block unit', () => void save())}>
+    <OpsModal title="Block unit until fixed" sub={`${jobLabel(issue)} is blocked for these nights, and shows as under maintenance.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Block unit', () => void save())}>
       <div className="grid grid-cols-2 gap-3">
         <FormRow label="First night" error={error}><DateField aria-label="First night" className={INPUT} value={from} onChange={v => v && setFrom(v)} /></FormRow>
         <FormRow label="Available again"><DateField aria-label="Available again" className={INPUT} value={to} min={from || undefined} onChange={v => v && setTo(v)} /></FormRow>
@@ -852,7 +853,7 @@ function CompleteModal({ issue, billing, onClose, onDone }: { issue: Issue; bill
     catch (e) { setError(errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Mark job done" sub={`${issue.propertyName} ${issue.unitNumber} · ${issue.title}`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Mark done', () => void save())}>
+    <OpsModal title="Mark job done" sub={`${jobLabel(issue)} · ${issue.title}`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Mark done', () => void save())}>
       <FormRow label="Final cost, RM (required)" error={error} hint="Recorded as a maintenance expense on the unit. RM 0 records nothing.">
         <MoneyInput className={INPUT} valueSen={amountSen} onChangeSen={setAmountSen} aria-label="Final cost in RM" />
       </FormRow>
@@ -860,7 +861,7 @@ function CompleteModal({ issue, billing, onClose, onDone }: { issue: Issue; bill
         <DateField aria-label="Billing date" className={INPUT} value={billingDate} onChange={setBillingDate} />
       </FormRow>}
       <FormRow label="Who pays">
-        <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>{(['owner', 'the_conts', 'guest_deposit', 'warranty'] as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select>
+        <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>{((issue.unitId ? ['owner', 'the_conts', 'guest_deposit', 'warranty'] : ['the_conts']) as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select>
       </FormRow>
       {issue.blocksUnit && <span className="text-meta text-muted-ink">The unit goes back to ready, and the nights blocked for this repair become available again.</span>}
     </OpsModal>

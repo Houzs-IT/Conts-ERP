@@ -27,6 +27,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     : await one<{ id: string; unit_id: string | null; title: string }>(env, 'SELECT id, unit_id, title FROM tasks WHERE id = ?', String(b.jobId ?? ''));
   if (!job) return fail('NOT_FOUND', 'That job no longer exists.', 404);
   // An expense belongs to a unit: an external clean (an outside address) is costed by its cleaner's pay only.
+  if (!job.unit_id && b.kind === 'maintenance') return fail('VALIDATION', 'A job in the building has no unit to put the invoice on. Its cost is the amount on the job.', 422);
   if (!job.unit_id) return fail('VALIDATION', 'An external cleaning job has no unit to put the invoice on. Its cost is the cleaner\'s pay.', 422);
   if (!(await one(env, 'SELECT 1 AS x FROM documents WHERE id = ?', b.documentId))) return fail('NOT_FOUND', 'Upload the invoice again.', 404, { file: 'Upload the invoice again.' });
   const id = crypto.randomUUID();
