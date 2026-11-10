@@ -57,6 +57,8 @@ const Projects = lazy(() => import("./pages/Projects").then((m) => ({ default: m
 const ProjectDetail = lazy(() => import("./pages/Projects").then((m) => ({ default: m.ProjectDetail })));
 const RenovationBetaHome = lazy(() => import("./pages/renovation-beta/RenovationBetaHome").then((m) => ({ default: m.RenovationBetaHome })));
 const RenovationBetaCalendar = lazy(() => import("./pages/renovation-beta/RenovationBetaCalendar").then((m) => ({ default: m.RenovationBetaCalendar })));
+const RenovationBetaDefectQueue = lazy(() => import("./pages/renovation-beta/RenovationBetaDefectQueue").then((m) => ({ default: m.RenovationBetaDefectQueue })));
+const RenovationBetaHandoverTemplates = lazy(() => import("./pages/renovation-beta/RenovationBetaHandoverTemplates").then((m) => ({ default: m.RenovationBetaHandoverTemplates })));
 const RenovationBetaWorkspace = lazy(() => import("./pages/renovation-beta/RenovationBetaWorkspace").then((m) => ({ default: m.RenovationBetaWorkspace })));
 const FairReportFill = lazy(() => import("./pages/FairReportFill").then((m) => ({ default: m.FairReportFill })));
 const ScheduleReconcile = lazy(() => import("./pages/ScheduleReconcile").then((m) => ({ default: m.ScheduleReconcile })));
@@ -582,6 +584,9 @@ export default function App() {
         <Route path="/beta/home" element={<Navigate to="/beta/projects" replace />} />
         <Route path="/beta/projects" element={<PageGuard page="projects.list"><RenovationBetaHome /></PageGuard>} />
         <Route path="/beta/calendar" element={<PageGuard page="projects.list"><RenovationBetaCalendar /></PageGuard>} />
+        {/* Handover snag list (TODO item 17): the open defects of every project, and the company's handover checklists. */}
+        <Route path="/beta/defects" element={<PageGuard page="projects.list"><RenovationBetaDefectQueue /></PageGuard>} />
+        <Route path="/beta/handover-checklists" element={<PageGuard page="projects.list"><RenovationBetaHandoverTemplates /></PageGuard>} />
         <Route path="/beta/projects/:id" element={<PageGuard page="projects.list"><RenovationBetaWorkspace /></PageGuard>} />
         <Route
           path="/fair-report-fill"

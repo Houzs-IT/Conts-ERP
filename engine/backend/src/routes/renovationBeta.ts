@@ -47,6 +47,7 @@ import {
   type MediaItemIn, type ProjectPhoto,
 } from "../services/renovation/betaMedia";
 import { projectDocSql } from "../services/renovation/documents";
+import { HANDOVER_NOT_READY, itemFailRefusal } from "../services/renovation/handoverChecks";
 import { chainTimeline, statusWords } from "../services/renovation/betaTimelineChain";
 import { datedAt, plainEntry, readProjectTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineDoc, type TimelineEntry } from "../services/renovation/timeline";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
@@ -239,6 +240,29 @@ app.post("/projects/:id/defects", requirePermission("projects.write"), async (c)
   const extra = cleanMediaList(raw.media, id, { area: location });
   if (!extra.ok) return c.json({ error: extra.error, message: extra.message }, 400);
   const more = extra.value.filter((m) => m.key !== photoKey);
+  // From a handover check (migration 0296): the item it failed is marked Fail and keeps the defect's id, in the same statement.
+  let checkItemId: number | null = null;
+  if (raw.checkItemId != null && raw.checkItemId !== "") {
+    checkItemId = parseId(String(raw.checkItemId));
+    if (!checkItemId) return c.json({ error: "invalid_id", message: "That checklist item is not valid." }, 400);
+    let item: { defect_id: number | null; completed_at: string | null } | null;
+    try {
+      item = await db(c).prepare(
+        `SELECT i.defect_id::int AS defect_id, k.completed_at::text AS completed_at
+           FROM project_handover_check_items i JOIN project_handover_checks k ON k.id = i.check_id WHERE i.id = ? AND k.project_id = ?`,
+      ).bind(checkItemId, id).first<{ defect_id: number | null; completed_at: string | null }>();
+    } catch (e) {
+      if (isMissingRelation(e)) return c.json(HANDOVER_NOT_READY, 409);
+      throw e;
+    }
+    if (!item) return c.json({ error: "not_found", message: "That checklist item is not on this project." }, 404);
+    const refused = itemFailRefusal({ completedAt: item.completed_at }, { result: null, defectId: item.defect_id == null ? null : Number(item.defect_id) });
+    if (refused) return c.json(refused, 409);
+  }
+  const linkItem = checkItemId == null ? "" : `,
+     l AS (
+       UPDATE project_handover_check_items SET result = 'fail', defect_id = d.id, checked_by = ?::bigint, checked_at = now()
+         FROM d WHERE project_handover_check_items.id = ?::bigint AND project_handover_check_items.defect_id IS NULL)`;
   // Phase 'snag' so the handover rule (every snag closed first) counts it.
   // One statement: the defect and its activity row are written together or not at all.
   const row = await db(c).prepare(
@@ -253,9 +277,10 @@ app.post("/projects/:id/defects", requirePermission("projects.write"), async (c)
      m AS (
        INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
        SELECT d.project_id, '${MEDIA_ACTION}', 'defect:' || d.id || ':before', x.key, x.meta, ?::bigint, d.company_id
-         FROM d, jsonb_to_recordset(?::text::jsonb) AS x(key text, meta text))
+         FROM d, jsonb_to_recordset(?::text::jsonb) AS x(key text, meta text))${linkItem}
      SELECT id::int AS id FROM d`,
-  ).bind(id, description, photoKey, userId(c), location, dueDate, trade, co, who.value, reportNote, userId(c), userId(c), mediaRowsJson(more))
+  ).bind(id, description, photoKey, userId(c), location, dueDate, trade, co, who.value, reportNote, userId(c), userId(c), mediaRowsJson(more),
+    ...(checkItemId == null ? [] : [userId(c), checkItemId]))
     .first<{ id: number }>();
   if (!row) return c.json({ error: "defect_not_saved", message: "The problem could not be saved. Try again." }, 409);
   return c.json({ id: row.id }, 201);

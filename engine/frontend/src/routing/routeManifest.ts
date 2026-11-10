@@ -27,6 +27,8 @@ export const STAFF_ROUTE_PATTERNS = [
   "/beta/home",
   "/beta/projects",
   "/beta/calendar",
+  "/beta/defects",
+  "/beta/handover-checklists",
   "/beta/projects/:id",
   "/venture-portal-feed",
   "/change-log",
