@@ -270,6 +270,11 @@ renovationSoInfo.put('/:docNo/brand', async (c: C) => {
     `WITH k AS (UPDATE scm.reno_so_contracts SET brand_id = ? WHERE so_doc_no = ?)
      UPDATE scm.mfg_sales_orders SET branding = ?, updated_at = now() WHERE doc_no = ?`,
   ).bind(brandId, docNo, brand.name, docNo).run();
+  /* The SO and its project carry one brand, each way (owner, 10 Nov 2026). */
+  await db.prepare(
+    `UPDATE projects SET brand = ?, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+      WHERE id = (SELECT project_id FROM scm.mfg_sales_orders WHERE doc_no = ?)`,
+  ).bind(brand.name, docNo).run();
   return c.json({ ok: true, brandId, name: brand.name });
 });
 
