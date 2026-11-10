@@ -17,11 +17,11 @@ export interface PoPaymentFacts {
 
 const KEYS = ['scm.payment_voucher.write', 'scm.payment_voucher.check', 'scm.payment_voucher.approve', 'scm.payment_voucher.post'];
 
-/** What the voucher says: Dr the supplier's control, Cr the default bank. */
+/** What the voucher says: Dr the supplier's control, Cr the default paying bank (BANK_PAY_DEFAULT). */
 export function voucherBody(p: PoPaymentFacts, roles: RoleCodes): Record<string, unknown> {
   const description = `${p.poNumber} ${p.label}`;
   return {
-    payeeName: p.supplier.name, supplierId: p.supplier.id, purpose: 'SUPPLIER_PAYMENT', creditAccountCode: roles.BANK_DEFAULT, voucherDate: p.paidOn, projectId: p.projectId,
+    payeeName: p.supplier.name, supplierId: p.supplier.id, purpose: 'SUPPLIER_PAYMENT', creditAccountCode: roles.BANK_PAY_DEFAULT, voucherDate: p.paidOn, projectId: p.projectId,
     notes: description, lines: [{ debitAccountCode: apControlOf(roles, p.supplier), amountSen: p.amountSen, description }],
   };
 }

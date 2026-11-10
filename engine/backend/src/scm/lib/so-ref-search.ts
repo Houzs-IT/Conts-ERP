@@ -92,9 +92,26 @@ export async function withSoRefDocNos<F extends { q: string | null; soRefDocNos:
   return { ...f, soRefDocNos: await soDocNosByRef(sb, c, f.q) };
 }
 
-/** The PO list's filters with the SO-reference matches resolved (see above). */
+/** POs in the caller's company with a line whose item code, name, supplier SKU or
+ *  description contains the term (TODO item 6: the PO list search matches line items).
+ *  Capped like the reference match: a term on hundreds of lines is not a lookup. */
+export async function poIdsByLineText(sb: Sb, c: CompanyScopeCtx, term: string | null): Promise<string[]> {
+  const s = escapeForOr(term ?? '');
+  if (s.length < 2) return [];
+  const cols = ['item_code', 'material_name', 'supplier_sku', 'description'];
+  const res = await scopeToCompany(
+    sb.from('purchase_order_items').select('purchase_order_id').or(cols.map((col) => `${col}.ilike.%${s}%`).join(',')),
+    c,
+  ).limit(SO_REF_MATCH_CAP * 4);
+  if (res.error) throw new Error(`PO line search failed: ${res.error.message}`);
+  const ids = [...new Set((res.data as { purchase_order_id: string | null }[]).map((r) => r.purchase_order_id).filter((v): v is string => Boolean(v)))];
+  return ids.slice(0, SO_REF_MATCH_CAP);
+}
+
+/** The PO list's filters with the SO-reference and line-item matches resolved (see above). */
 export async function withSoRefPoIds<F extends { q: string | null; soRefPoIds: string[] }>(
   sb: Sb, c: CompanyScopeCtx, f: F,
 ): Promise<F> {
-  return { ...f, soRefPoIds: await poIdsForSoDocNos(sb, await soDocNosByRef(sb, c, f.q)) };
+  const [byRef, byLine] = await Promise.all([poIdsForSoDocNos(sb, await soDocNosByRef(sb, c, f.q)), poIdsByLineText(sb, c, f.q)]);
+  return { ...f, soRefPoIds: [...new Set([...byRef, ...byLine])] };
 }

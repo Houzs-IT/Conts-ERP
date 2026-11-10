@@ -1490,6 +1490,12 @@ const movedStock = async (sb: any, doc: 'GRN' | 'DO', id: string, type: 'IN' | '
   return (count ?? 0) > 0;
 };
 
+/** A completion receipt left as a DRAFT by an earlier failed try, which the PO -> GRN cap (migration 0272) now refuses
+    because the line was received by hand meanwhile: it is stale, to be dropped and re-raised for what is still open. */
+export function staleCompletionDraft(status: string | undefined, postFailure: string): boolean {
+  return status === 'DRAFT' && postFailure === 'qty_exceeds_remaining';
+}
+
 async function completeGrnStep(c: any, sb: any, companyId: number, o: CompletionOrder): Promise<string | null> {
   /* Anything listed after Start (a line added, a composition change) leaves stock here, so nothing finishes unissued. */
   const issued = await issueMaterials(sb, { orderId: o.id, poNumber: o.po_number, companyId, performedBy: c.get('user')?.id ?? null });
@@ -1501,8 +1507,13 @@ async function completeGrnStep(c: any, sb: any, companyId: number, o: Completion
       /* Posted with no stock behind it is an earlier failed move: posting again books only what is missing. */
       if (status === 'POSTED' && await movedStock(sb, 'GRN', o.completion_grn_id, 'IN')) return null;
       const posted = await postGrnAndRollup(sb, o.completion_grn_id, c.get('user').id, companyId);
-      if (!posted.ok) return `The goods receipt was raised but not posted: ${posted.reason}`;
-      return posted.movementErrors?.length ? `The goods receipt posted but its stock did not move: ${posted.movementErrors.join('; ')}` : null;
+      if (!posted.ok && !staleCompletionDraft(status, posted.reason)) return `The goods receipt was raised but not posted: ${posted.reason}`;
+      if (posted.ok) return posted.movementErrors?.length ? `The goods receipt posted but its stock did not move: ${posted.movementErrors.join('; ')}` : null;
+      /* The PO line was received by hand after this draft was made, so the database cap (migration 0272) refuses it on
+         every retry. It moved no stock: drop it and receive only what is still open below (nothing, if all of it was). */
+      await sb.from('grn_items').delete().eq('grn_id', o.completion_grn_id);
+      await sb.from('grns').delete().eq('id', o.completion_grn_id).eq('status', 'DRAFT');
+      await sb.from('production_orders').update({ completion_grn_id: null }).eq('id', o.id);
     }
   }
   if (!o.source_po_id) return null;

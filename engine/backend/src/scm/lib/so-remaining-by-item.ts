@@ -9,8 +9,10 @@
 import { soDeliverableRemaining } from '../routes/delivery-orders-mfg';
 
 /** SQLSTATE raised by the SO line delete floor (migration 0248, ported from Houzs
- *  20261029T1000): the SO line is carried by a live delivery order. Callers answer
- *  it with their existing 409, not a 500. */
+ *  20261029T1000): the SO line is carried by a live delivery order; and by
+ *  scm.assert_so_line_not_over_delivered (migration 0270): the write would push an
+ *  SO line's live delivered total past its qty, or cut its qty below it. Callers
+ *  answer it with their existing 409, not a 500. */
 export const SO_LINE_OVER_DELIVERED = 'P0409';
 export const isSoLineOverDelivered = (err: { code?: string | null } | null | undefined): boolean =>
   err?.code === SO_LINE_OVER_DELIVERED;
