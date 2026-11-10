@@ -1,7 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { hasCleanPrices, priceBook, layoutKey, PRICE_KINDS } from '../../_lib/cleaningPrices';
-import { hasServicePrices, serviceBook, hasDatedUnitPrices, hasPriceByBed, bedPricingMode, isDayStr, FROM_THE_START } from '../../_lib/servicePrices';
+import { hasServicePrices, serviceBook, hasDatedUnitPrices, hasPriceByBed, hasGuestPrices, bedPricingMode, isDayStr, FROM_THE_START } from '../../_lib/servicePrices';
 import { bedSizes } from '../../_lib/bedSizes';
 import { NO_BEDS, countedBeds, parseBeds } from '../../_lib/bedPricing';
 import { bedsLabel } from '../../_lib/unitPurpose';
@@ -37,13 +37,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     FROM units u JOIN properties p ON p.id = u.property_id ${only ? 'WHERE u.id = ?' : ''} ORDER BY p.name, u.unit_number`, ...(only ? [only] : []));
   // Since Service prices (0127) a unit's own figures are per item: the cleaning item of each clean type.
   const dated = await hasDatedUnitPrices(env);
+  const guestReady = await hasGuestPrices(env);
+  type Own = { unit_id: string; kind: string; internal_cost: number | null; external_charge: number | null; guest_charge: number | null };
   const own = (await hasServicePrices(env))
-    ? await all<{ unit_id: string; kind: string; internal_cost: number | null; external_charge: number | null }>(env,
-      `SELECT ${dated ? 'DISTINCT ON (o.unit_id, s.clean_kind)' : ''} o.unit_id, s.clean_kind AS kind, o.internal_cost, o.owner_price AS external_charge
+    ? await all<Own>(env,
+      `SELECT ${dated ? 'DISTINCT ON (o.unit_id, s.clean_kind)' : ''} o.unit_id, s.clean_kind AS kind, o.internal_cost, o.owner_price AS external_charge,
+              ${guestReady ? 'o.guest_price' : 'NULL::int'} AS guest_charge
        FROM unit_service_prices o JOIN service_items s ON s.id = o.item_id WHERE s.clean_kind IS NOT NULL AND s.active = 1
        ${dated ? 'AND o.effective_from <= ? ORDER BY o.unit_id, s.clean_kind, o.effective_from DESC' : ''}`, ...(dated ? [mytToday()] : []))
-    : await all<{ unit_id: string; kind: string; internal_cost: number | null; external_charge: number | null }>(env,
-      'SELECT unit_id, kind, internal_cost, external_charge FROM unit_cleaning_prices');
+    : await all<Own>(env,
+      'SELECT unit_id, kind, internal_cost, external_charge, NULL::int AS guest_charge FROM unit_cleaning_prices');
   const ownAt = new Map(own.map(o => [`${o.unit_id}:${o.kind}`, o]));
   const price = await priceBook(env, units.map(u => u.id));
   const sizes = await bedSizes(env);
@@ -52,7 +55,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     WHERE s.by_bed = 1 AND s.active = 1 AND s.clean_kind IS NOT NULL AND (p.layout LIKE ? OR p.layout = ?) AND p.effective_from <= ? LIMIT 1`,
     bedPricing === 'count' ? 'beds:%' : 'bed:%', NO_BEDS, mytToday()));
   return json({
-    ready: true, mayEdit: !!session.manage, dated, byBed, bedPricing,
+    ready: true, mayEdit: !!session.manage, dated, byBed, bedPricing, guestPrices: guestReady,
     ...(only && session.manage && dated ? { changes: await unitChanges(env, only) } : {}),
     rows: units.map(u => {
       const key = layoutKey(u.layout_type, u.bedrooms), unitBeds = parseBeds(u.beds);
@@ -62,9 +65,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         beds: bedsLabel(unitBeds, sizes) || null, bedCount: bedPricing === 'count' ? countedBeds(unitBeds) : unitBeds.reduce((total, bed) => total + bed.quantity, 0),
         prices: Object.fromEntries(PRICE_KINDS.map(k => {
           const p = price(u.id, k, key), o = ownAt.get(`${u.id}:${k}`);
-          return [k, { internalCost: p.internal, externalCharge: p.external, source: p.source,
-            // Both empty is a dated row that went back to the list price: no override.
-            override: o && (o.internal_cost != null || o.external_charge != null) ? { internalCost: o.internal_cost ?? null, externalCharge: o.external_charge ?? null } : null }];
+          return [k, { internalCost: p.internal, externalCharge: p.external, guestCharge: p.guest ?? null, source: p.source,
+            // All empty is a dated row that went back to the list price: no override.
+            override: o && (o.internal_cost != null || o.external_charge != null || o.guest_charge != null)
+              ? { internalCost: o.internal_cost ?? null, externalCharge: o.external_charge ?? null, guestCharge: o.guest_charge ?? null } : null }];
         })),
       };
     }),
@@ -84,7 +88,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const byItem = typeof b?.itemId === 'string' && !!b.itemId;
   if (!byItem && !(PRICE_KINDS as readonly string[]).includes(b?.kind)) return fail('VALIDATION', 'Pick the clean type.', 422, { kind: 'Pick the clean type.' });
   const ok = (v: unknown) => v == null || (Number.isInteger(v) && (v as number) >= 0);
-  if (!ok(b.internalCost) || !ok(b.externalCharge)) return fail('VALIDATION', 'Amounts are sen, RM 0.00 or more, or empty.', 422);
+  if (!ok(b.internalCost) || !ok(b.externalCharge) || !ok(b.guestCharge)) return fail('VALIDATION', 'Amounts are sen, RM 0.00 or more, or empty.', 422);
   if (!(await one(env, 'SELECT 1 AS x FROM units WHERE id = ?', String(b.unitId ?? '')))) return fail('NOT_FOUND', 'That unit does not exist.', 404);
   const today = mytToday(), from: unknown = b.effectiveFrom ?? null;
   if (from != null && (!isDayStr(from) || from <= today)) return fail('VALIDATION', 'Pick a day after today.', 422, { effectiveFrom: 'Pick a day after today.' });
@@ -94,20 +98,25 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     const book = await serviceBook(env, []);
     const item = byItem ? book.items.find(i => i.id === b.itemId && i.domain === 'maintenance' && i.active) : book.itemForKind(b.kind);
     if (!item) return fail('NOT_FOUND', byItem ? 'That maintenance item is not in Service prices.' : 'There is no active cleaning item for that clean type in Service prices.', 404);
-    const was = await one<any>(env, `SELECT internal_cost, owner_price FROM unit_service_prices WHERE unit_id = ? AND item_id = ?
+    const guestReady = await hasGuestPrices(env);
+    const was = await one<any>(env, `SELECT internal_cost, owner_price${guestReady ? ', guest_price' : ''} FROM unit_service_prices WHERE unit_id = ? AND item_id = ?
       ${dated ? 'AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1' : ''}`, b.unitId, item.id, ...(dated ? [from ?? today] : []));
-    const empty = b.internalCost == null && b.externalCharge == null;
-    // Both empty from a date is a row of its own: the list price from then on. Without a date it is simply no row.
+    // A caller that does not send the guest's fee (0257) keeps the unit's own one.
+    const guest: number | null = !guestReady ? null : b.guestCharge !== undefined ? b.guestCharge ?? null : was?.guest_price ?? null;
+    const empty = b.internalCost == null && b.externalCharge == null && guest == null;
+    // All empty from a date is a row of its own: the list price from then on. Without a date it is simply no row.
     if (empty && from == null) await run(env, `DELETE FROM unit_service_prices WHERE unit_id = ? AND item_id = ? ${dated ? 'AND effective_from <= ?' : ''}`, b.unitId, item.id, ...(dated ? [today] : []));
     else {
-      await run(env, `INSERT INTO unit_service_prices (unit_id, item_id, ${dated ? 'effective_from, ' : ''}owner_price, internal_cost, updated_at, updated_by) VALUES (?, ?, ${dated ? '?, ' : ''}?, ?, ?, ?)
-        ON CONFLICT (unit_id, item_id${dated ? ', effective_from' : ''}) DO UPDATE SET owner_price = excluded.owner_price, internal_cost = excluded.internal_cost, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-        b.unitId, item.id, ...(dated ? [from ?? FROM_THE_START] : []), b.externalCharge ?? null, b.internalCost ?? null, nowIso(), session.userId);
+      await run(env, `INSERT INTO unit_service_prices (unit_id, item_id, ${dated ? 'effective_from, ' : ''}owner_price, internal_cost, ${guestReady ? 'guest_price, ' : ''}updated_at, updated_by)
+        VALUES (?, ?, ${dated ? '?, ' : ''}?, ?, ${guestReady ? '?, ' : ''}?, ?)
+        ON CONFLICT (unit_id, item_id${dated ? ', effective_from' : ''}) DO UPDATE SET owner_price = excluded.owner_price, internal_cost = excluded.internal_cost,
+          ${guestReady ? 'guest_price = excluded.guest_price, ' : ''}updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+        b.unitId, item.id, ...(dated ? [from ?? FROM_THE_START] : []), b.externalCharge ?? null, b.internalCost ?? null, ...(guestReady ? [guest] : []), nowIso(), session.userId);
       if (dated && from == null) await run(env, 'DELETE FROM unit_service_prices WHERE unit_id = ? AND item_id = ? AND effective_from <= ? AND effective_from <> ?', b.unitId, item.id, today, FROM_THE_START);
     }
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'cleaning.unit_price', entityTable: 'units', entityId: b.unitId,
-      before: was ? { kind: b.kind, itemId: item.id, internalCost: was.internal_cost, externalCharge: was.owner_price } : { kind: b.kind, itemId: item.id },
-      after: { kind: b.kind, itemId: item.id, internalCost: b.internalCost ?? null, externalCharge: b.externalCharge ?? null, effectiveFrom: from ?? undefined } });
+      before: was ? { kind: b.kind, itemId: item.id, internalCost: was.internal_cost, externalCharge: was.owner_price, guestCharge: was.guest_price ?? undefined } : { kind: b.kind, itemId: item.id },
+      after: { kind: b.kind, itemId: item.id, internalCost: b.internalCost ?? null, externalCharge: b.externalCharge ?? null, guestCharge: guestReady ? guest : undefined, effectiveFrom: from ?? undefined } });
     return json({ ok: true });
   }
   const before = await one<any>(env, 'SELECT internal_cost, external_charge FROM unit_cleaning_prices WHERE unit_id = ? AND kind = ?', b.unitId, b.kind);

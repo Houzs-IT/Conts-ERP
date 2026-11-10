@@ -20,7 +20,8 @@ export function layoutKey(layoutType: unknown, bedrooms: unknown): string {
   return n <= 0 ? 'studio' : n >= 4 ? '4_plus_bedroom' : `${n}_bedroom`;
 }
 
-export interface CleanAmounts { internal: number | null; external: number | null; source: 'unit' | 'table' | null; itemId?: string | null }
+/** internal = the cleaner's pay, external = charged to the owner, guest = charged to a guest (0257; null before it). */
+export interface CleanAmounts { internal: number | null; external: number | null; guest?: number | null; source: 'unit' | 'table' | null; itemId?: string | null }
 const priceKind = (kind: string) => ((PRICE_KINDS as readonly string[]).includes(kind) ? kind : 'turnover');
 
 /** The amounts for cleans on these units, on a day (default today). From the service prices (0127): the cleaning item
@@ -32,7 +33,7 @@ export async function priceBook(env: Env, unitIds: string[]): Promise<(unitId: s
     const book = await serviceBook(env, unitIds);
     return (unitId, kind, layout, day) => {
       const a = book.amounts(book.itemForKind(priceKind(kind))?.id ?? null, unitId, layout, mytDay(day));
-      return { internal: a.internal, external: a.owner, source: a.source, itemId: a.itemId };
+      return { internal: a.internal, external: a.owner, guest: a.guest, source: a.source, itemId: a.itemId };
     };
   }
   const table = await all<{ kind: string; layout: string; internal_cost: number | null; external_charge: number | null }>(env,

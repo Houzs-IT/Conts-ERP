@@ -18,7 +18,8 @@ export const isBedGridKey = (key: string, mode: BedPricing = 'size'): boolean =>
 export const NOT_COUNTED: ReadonlySet<string> = new Set(['single_floor_mattress', 'sofa_bed']);
 
 export interface BedCount { size: string; quantity: number }
-export interface DatedFigures { owner_price: number | null; internal_cost: number | null; effective_from: string }
+/** A price row: what the owner is charged, the cleaner's pay, and (migration 0257) what a guest is charged. */
+export interface DatedFigures { owner_price: number | null; internal_cost: number | null; guest_price?: number | null; effective_from: string }
 
 export const countedBeds = (beds: readonly BedCount[]): number => beds.reduce((n, bed) => n + (NOT_COUNTED.has(bed.size) ? 0 : bed.quantity), 0);
 
@@ -39,7 +40,7 @@ export function parseBeds(stored: unknown): BedCount[] {
   return Array.isArray(value) ? value.filter(isBedCount) : [];
 }
 
-const sumField = (beds: readonly BedCount[], rows: readonly (DatedFigures | null)[], field: 'owner_price' | 'internal_cost'): number | null => {
+const sumField = (beds: readonly BedCount[], rows: readonly (DatedFigures | null)[], field: 'owner_price' | 'internal_cost' | 'guest_price'): number | null => {
   let total = 0;
   for (const [index, bed] of beds.entries()) {
     const price = rows[index]?.[field];
@@ -57,6 +58,7 @@ export function priceFromBeds(beds: readonly BedCount[], priceOf: (size: string)
   return {
     owner_price: sumField(beds, rows, 'owner_price'),
     internal_cost: sumField(beds, rows, 'internal_cost'),
+    guest_price: sumField(beds, rows, 'guest_price'),
     effective_from: dates.sort()[dates.length - 1],
   };
 }

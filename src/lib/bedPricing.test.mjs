@@ -12,7 +12,7 @@ const priceOf = size => prices[size] ?? null;
 
 test('sums each bed size price times its quantity', () => {
   const total = priceFromBeds([{ size: 'queen', quantity: 2 }, { size: 'single', quantity: 1 }], priceOf);
-  assert.deepEqual(total, { owner_price: 11000, internal_cost: 7000, effective_from: '2026-12-05' });
+  assert.deepEqual(total, { owner_price: 11000, internal_cost: 7000, guest_price: null, effective_from: '2026-12-05' });
 });
 
 test('a bed size with no price leaves that figure not set', () => {
@@ -66,7 +66,7 @@ test('by number of beds: the row for the count, six or more on the last row, non
 
 test('by bed size is unchanged: each size times its quantity, no beds on the no-beds row', () => {
   const bySize = key => ({ 'bed:queen': prices.queen, 'bed:single': prices.single, no_beds: yj.no_beds })[key] ?? null;
-  assert.deepEqual(priceByBeds('size', [{ size: 'queen', quantity: 2 }, { size: 'single', quantity: 1 }], bySize), { owner_price: 11000, internal_cost: 7000, effective_from: '2026-12-05' });
+  assert.deepEqual(priceByBeds('size', [{ size: 'queen', quantity: 2 }, { size: 'single', quantity: 1 }], bySize), { owner_price: 11000, internal_cost: 7000, guest_price: null, effective_from: '2026-12-05' });
   assert.equal(priceByBeds('size', [], bySize).internal_cost, 5000);
 });
 
