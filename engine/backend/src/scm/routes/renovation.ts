@@ -16,7 +16,7 @@ import { supabaseAuth } from '../middleware/auth';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { activeCompanyId, companyDocPrefix } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
-import { inRenoTx, renoDbOf, RenoError, sqlFor, type RenoDb } from '../lib/renovation-db';
+import { inRenoTx, qtyCapRefusalOf, renoDbOf, RenoError, sqlFor, type RenoDb } from '../lib/renovation-db';
 import {
   createQuotation, createTemplate, getQuotation, getTemplate, listQuotations, listTemplates, newRevision, saveRevision, saveTemplate,
   setQuotationStatus, type QuotationStatus, type RenoActor,
@@ -94,6 +94,8 @@ function handle(perm: string | null, fn: (c: C, ctx: { sqlRead: RenoDb; tx: <T>(
       return await fn(c, { sqlRead: renoDbOf(sql), tx: (f) => inRenoTx(sql, (db) => f(db)) });
     } catch (err) {
       if (err instanceof RenoError) return c.json({ error: err.code, message: err.message, ...(err.detail ?? {}) }, err.status);
+      const capped = qtyCapRefusalOf(err);
+      if (capped) return c.json(capped, 409);
       console.error('[renovation] request failed:', err);
       return c.json({ error: 'renovation_failed', message: 'Something went wrong; nothing was saved. Please try again.' }, 500);
     }

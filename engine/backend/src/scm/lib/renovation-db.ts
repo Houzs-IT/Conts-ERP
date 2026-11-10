@@ -46,6 +46,18 @@ export class RenoError extends Error {
 export const refuse = (status: RenoError['status'], code: string, message: string, detail?: Record<string, unknown>) =>
   new RenoError(status, code, message, detail);
 
+/** A database quantity cap (migrations 0270-0275) refusing a renovation write, as the 409 the route answers. The VO
+    checks the same sums first (below_delivered, poLineTargets); this is the answer when a delivery or receipt raced in
+    between that read and the write. Anything else is not ours: null. */
+export function qtyCapRefusalOf(err: unknown): { error: string; message: string } | null {
+  switch ((err as { code?: unknown } | null)?.code) {
+    case 'P0409': return { error: 'below_delivered', message: 'A delivery order has just shipped this line, so it cannot go below what was delivered. Reload and try again; nothing was saved.' };
+    case 'P0411': return { error: 'below_received', message: 'A goods receipt has just received this purchase order line, so it cannot go below what was received. Reload and try again; nothing was saved.' };
+    case 'P0410': case 'P0412': case 'P0413': return { error: 'qty_cap', message: 'Another document has just used this quantity. Reload and try again; nothing was saved.' };
+    default: return null;
+  }
+}
+
 /** "2026-10-09" -> "2610". */
 export function yymmOf(isoDate: string): string {
   const m = /^(\d{4})-(\d{2})-\d{2}/.exec(isoDate);
