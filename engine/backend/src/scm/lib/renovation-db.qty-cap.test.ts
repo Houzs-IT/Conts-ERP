@@ -10,6 +10,9 @@ describe('qtyCapRefusalOf', () => {
   it('answers the other caps plainly', () => {
     for (const code of ['P0410', 'P0412', 'P0413']) expect(qtyCapRefusalOf({ code })?.error).toBe('qty_cap');
   });
+  it('a deadlock Postgres broke (a VO meeting a DO confirm) is a "try again" 409, not a 500', () => {
+    expect(qtyCapRefusalOf({ code: '40P01', message: 'deadlock detected' })?.error).toBe('busy_retry');
+  });
   it('leaves every other error alone', () => {
     expect(qtyCapRefusalOf(new Error('boom'))).toBeNull();
     expect(qtyCapRefusalOf({ code: '23505' })).toBeNull();

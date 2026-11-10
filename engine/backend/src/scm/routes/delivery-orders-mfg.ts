@@ -101,6 +101,7 @@ import { validateItemCodes, unknownItemCodeResponse, unknownProductCodeRefusal }
 import { resolveItemGroups } from '../lib/sku-category';
 import { buildDoItemRow as buildItemRow, loadCarriedSoLinePhotos, carriedPhotoUrls } from '../lib/do-item-row';
 import { isSoLineOverDelivered, soRemainingByItemId } from '../lib/so-remaining-by-item';
+import { DEADLOCK_RETRY, isDeadlock } from '../lib/qty-cap';
 import { lineLinkItemMismatch, assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
 import { checkStockAvailability, shortStockResponse, shortStockStops, stockCheckableLines, uncoveredStockCheckLines, type StockShortage } from '../lib/check-stock-availability';
 /* Conts switches: customer-supplied lines hold no stock; a renovation DO takes its site and brand from its own SO and lines. */
@@ -5471,6 +5472,7 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
       .eq('id', id), co.companyId).neq('status', 'CANCELLED')
       .select('id, status').maybeSingle();
     // Database lock (migration 0271): an SI line raced in after the doHasDownstream check above.
+    if (isDeadlock(error)) return c.json(DEADLOCK_RETRY, 409);
     const dbLock = doCancelDbRefusal(error);
     if (dbLock) return c.json(dbLock, 409);
     if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
@@ -5486,6 +5488,7 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     const { data: updated, error } = await scopeToCompanyId(sb.from('delivery_orders')
       .update({ status: toStatus, ...ts, ...tsNum, ...tsJson }).eq('id', id), co.companyId).eq('status', prevStatus).select('id, status').maybeSingle();
     // Database cap (migration 0270): confirming would ship more than the SO line ordered.
+    if (isDeadlock(error)) return c.json(DEADLOCK_RETRY, 409);
     if (isSoLineOverDelivered(error)) return c.json({ error: 'over_delivery', message: 'This delivery would ship more than the Sales Order ordered: another DO already covers it. Refresh and check the Sales Order.', reason: error?.message }, 409);
     if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
     if (!updated) return c.json({ error: 'status_changed', reason: 'This delivery order just changed. Reload it and try again.' }, 409);
