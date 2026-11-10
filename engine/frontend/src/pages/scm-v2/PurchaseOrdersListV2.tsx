@@ -877,6 +877,8 @@ export function PurchaseOrdersListV2() {
   const serverRows = (data?.purchaseOrders ?? []) as PoHeaderRow[];
   const rows = useEnrichedPoListRows(serverRows, !listLoading);
   const total = data?.total ?? 0;
+  /* Each tab's money, server-summed over the same rows as its count (TODO item 5). */
+  const tabMoney: Record<string, number> = data?.statusMoneySen ?? {};
   const counts = data?.statusCounts ?? {
     all: 0,
     draft: 0,
@@ -1436,8 +1438,8 @@ export function PurchaseOrdersListV2() {
     lineCols.line_id!,
   ];
 
-  const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
-    { value: "all", label: `All · ${counts.all}` },
+  const statusPillOptions: Array<{ value: StatusTab; label: string; moneySen?: number }> = [
+    { value: "all", label: `All · ${counts.all}`, moneySen: tabMoney.all },
     // Roll-up first: "what's still on order" is the working view of this page,
     // and it reads as a summary of the 1:1 pills that follow it. A worker
     // predating the bucket omits the key — open + partial IS the same number
@@ -1445,11 +1447,12 @@ export function PurchaseOrdersListV2() {
     {
       value: "outstanding",
       label: `Outstanding · ${counts.outstanding ?? counts.open + counts.partial}`,
+      moneySen: tabMoney.outstanding,
     },
-    { value: "draft", label: `Draft · ${counts.draft}` },
-    { value: "open", label: `Submitted · ${counts.open}` },
-    { value: "partial", label: `Partial · ${counts.partial}` },
-    { value: "received", label: `Received · ${counts.received}` },
+    { value: "draft", label: `Draft · ${counts.draft}`, moneySen: tabMoney.draft },
+    { value: "open", label: `Submitted · ${counts.open}`, moneySen: tabMoney.open },
+    { value: "partial", label: `Partial · ${counts.partial}`, moneySen: tabMoney.partial },
+    { value: "received", label: `Received · ${counts.received}`, moneySen: tabMoney.received },
     { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
     { value: "on_hold", label: `On Hold · ${counts.on_hold ?? 0}` },
   ];

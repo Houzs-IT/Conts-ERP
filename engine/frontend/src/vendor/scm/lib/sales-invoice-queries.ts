@@ -53,7 +53,7 @@ export function useSalesInvoicesPaged(params: { page: number; pageSize: number; 
   usp.set('pageSize', String(pageSize));
   return useQuery({
     queryKey: ['sales-invoices-paged', page, pageSize, status ?? '', q ?? '', sort ?? '', JSON.stringify(debtorNames ?? []), JSON.stringify(currencies ?? [])],
-    queryFn: ({ signal }) => authedFetch<{ salesInvoices: any[]; total: number; page: number; pageSize: number; statusCounts: { all: number; draft: number; sent: number; partial: number; paid: number; cancelled: number } }>(`/sales-invoices?${usp.toString()}`, { signal }),
+    queryFn: ({ signal }) => authedFetch<{ salesInvoices: any[]; total: number; page: number; pageSize: number; statusMoneySen?: Record<string, number>; statusCounts: { all: number; draft: number; sent: number; partial: number; paid: number; cancelled: number } }>(`/sales-invoices?${usp.toString()}`, { signal }),
     placeholderData: (prev: any) => prev,
     staleTime: 30_000,
     retry: retryUnlessClientError,

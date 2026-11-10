@@ -698,7 +698,7 @@ export function usePurchaseOrdersPaged(params: { page: number; pageSize: number;
   usp.set('pageSize', String(pageSize));
   return useQuery({
     queryKey: ['mfg-purchase-orders-paged', page, pageSize, status ?? '', supplierId ?? '', q ?? '', sort ?? '', JSON.stringify(creditorNames ?? []), JSON.stringify(creditorCodes ?? []), JSON.stringify(currencies ?? []), JSON.stringify(docDates ?? [])],
-    queryFn: ({ signal }) => authedFetch<{ purchaseOrders: PoHeaderRow[]; total: number; page: number; pageSize: number; statusCounts: PoStatusCounts }>(`/mfg-purchase-orders?${usp.toString()}`, { signal }),
+    queryFn: ({ signal }) => authedFetch<{ purchaseOrders: PoHeaderRow[]; total: number; page: number; pageSize: number; statusMoneySen?: Record<string, number>; statusCounts: PoStatusCounts }>(`/mfg-purchase-orders?${usp.toString()}`, { signal }),
     placeholderData: (prev: any) => prev,
     staleTime: 30_000,
     retry: retryUnlessClientError,

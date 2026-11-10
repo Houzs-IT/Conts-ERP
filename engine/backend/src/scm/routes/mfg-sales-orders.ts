@@ -1213,6 +1213,8 @@ mfgSalesOrders.get('/', async (c) => {
   let page = 0;
   let pageSize = 50;
   let statusCounts: Record<string, number> | undefined;
+  /** Each tab's order value in sen, the same tabs as statusCounts (no on_hold overlay). */
+  let statusMoneySen: Record<string, number> | undefined;
   let countError: string | null = null; // held, not returned here, so the LIST read's own error still wins the report
   /* Full-set money KPIs (Revenue / Outstanding / Paid). Pre-pagination the FE
      summed these three view columns over the whole status+search-filtered set;
@@ -1273,14 +1275,21 @@ mfgSalesOrders.get('/', async (c) => {
       if (r.error) return { ok: false, reason: `on-hold count failed: ${r.error.message}` };
       return { ok: true, n: r.count ?? 0 };
     })();
+    /* Each tab's count and its money (TODO item 5, Hookka 5aff2b333): the same grouped
+       read, so the money covers exactly the rows the count does. */
+    let moneyTally = { ok: false, reason: 'not read' } as StatusTally;
     const countsProm = (async (): Promise<StatusTally> => {
-      const agg = await scopedCountQ(sb.from(read.countFrom).select('status, cnt:doc_no.count()'));
-      if (!agg.error) return tallyStatusRows<{ status: string | null; cnt: number }>(agg, (r) => Number(r.cnt ?? 0));
-      const fb = await paginateAll<{ status: string | null }>((cfrom, cto) =>
-        scopedCountQ(sb.from(read.countFrom).select('status')).range(cfrom, cto));
+      const agg = await scopedCountQ(sb.from(read.countFrom).select('status, cnt:doc_no.count(), amt:local_total_sen.sum()'));
+      if (!agg.error) {
+        moneyTally = tallyStatusRows<{ status: string | null; amt: number | null }>(agg, (r) => Number(r.amt ?? 0));
+        return tallyStatusRows<{ status: string | null; cnt: number }>(agg, (r) => Number(r.cnt ?? 0));
+      }
+      const fb = await paginateAll<{ status: string | null; local_total_sen: number | null }>((cfrom, cto) =>
+        scopedCountQ(sb.from(read.countFrom).select('status, local_total_sen')).range(cfrom, cto));
       /* Named separately from tallyStatusRows' own error branch so the 500 says
          which of the TWO reads died, not just that the second one did. */
       if (fb.error) return { ok: false, reason: `status counts failed: aggregate ${agg.error.message}; fallback ${fb.error.message}` };
+      moneyTally = tallyStatusRows(fb, (r) => Number(r.local_total_sen ?? 0));
       return tallyStatusRows(fb, () => 1);
     })();
 
@@ -1354,6 +1363,11 @@ mfgSalesOrders.get('/', async (c) => {
       if (heldCount.ok) statusCounts.on_hold = heldCount.n;
       else countError = heldCount.reason;
     }
+    if (moneyTally.ok) {
+      statusMoneySen = soTabCounts(moneyTally.byStatus);
+      /* A cancelled order is worth nothing: All leaves its money out. */
+      statusMoneySen.all -= statusMoneySen.cancelled ?? 0;
+    }
 
     if (moneyRes.error || !moneyRes.data) return c.json({ error: 'load_failed', reason: moneyRes.error?.message ?? 'money_kpis_failed' }, 500);
     aggregates = moneyRes.data;
@@ -1382,7 +1396,7 @@ mfgSalesOrders.get('/', async (c) => {
     if (withLines.error) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
   }
 
-  if (paginate) return c.json({ salesOrders: rows, total, page, pageSize, statusCounts, aggregates });
+  if (paginate) return c.json({ salesOrders: rows, total, page, pageSize, statusCounts, statusMoneySen, aggregates });
   return c.json({ salesOrders: rows });
 });
 

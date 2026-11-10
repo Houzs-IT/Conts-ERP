@@ -616,6 +616,8 @@ export function GoodsReceivedListV2() {
   const serverRows = (data?.grns ?? []) as GrnRow[];
   const rows = useEnrichedGrnListRows(serverRows, !listLoading);
   const total = data?.total ?? 0;
+  /* Each tab's money, server-summed over the same rows as its count (TODO item 5). */
+  const tabMoney: Record<string, number> = data?.statusMoneySen ?? {};
   const counts = data?.statusCounts ?? { all: 0, draft: 0, posted: 0, cancelled: 0, on_hold: 0 };
 
   // Money KPIs are summed over the CURRENT page only (paginated contract has no
@@ -988,10 +990,10 @@ export function GoodsReceivedListV2() {
     ...Object.keys(byKey).filter((k) => !(GRN_DEFAULT_COLUMN_KEYS as readonly string[]).includes(k)).map((k) => byKey[k]!),
   ];
 
-  const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
-    { value: "all", label: `All · ${counts.all}` },
-    { value: "draft", label: `Draft · ${counts.draft}` },
-    { value: "posted", label: `Submitted · ${counts.posted}` },
+  const statusPillOptions: Array<{ value: StatusTab; label: string; moneySen?: number }> = [
+    { value: "all", label: `All · ${counts.all}`, moneySen: tabMoney.all },
+    { value: "draft", label: `Draft · ${counts.draft}`, moneySen: tabMoney.draft },
+    { value: "posted", label: `Submitted · ${counts.posted}`, moneySen: tabMoney.posted },
     { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
     { value: "on_hold", label: `On Hold · ${counts.on_hold ?? 0}` },
   ];

@@ -16,6 +16,7 @@
 //   PATCH /mfg-purchase-orders/:id/reopen     — flip CANCELLED → SUBMITTED
 // ----------------------------------------------------------------------------
 
+import { readStatusMoney } from '../lib/status-money';
 import { isPoLineOverReceived } from '../lib/qty-cap';
 import { Hono } from 'hono';
 import { PO_STATUS_BUCKETS } from '../lib/po-status-buckets';
@@ -407,6 +408,7 @@ mfgPurchaseOrders.get('/', async (c) => {
   let page = 0;
   let pageSize = 50;
   let statusCounts: { all: number; draft: number; outstanding: number; open: number; partial: number; received: number; cancelled: number } | undefined;
+  let statusMoneySen: Record<string, number> | undefined;
   let countError: string | null = null; // held, not returned here, so the LIST read's own error still wins the report
 
   if (!paginate) {
@@ -451,6 +453,12 @@ mfgPurchaseOrders.get('/', async (c) => {
     };
     /* PERF: the seven head-only counts read nothing the page query produces, so
        they are issued alongside it rather than after it. Semantics unchanged. */
+    /* Each tab's money over the same filters (TODO item 5). */
+    const moneyProm = readStatusMoney((sel) => {
+      let mq = supabase.from('purchase_orders').select(sel);
+      if (supplierId) mq = mq.eq('supplier_id', supplierId);
+      return scopeToCompany(mq, c);
+    }, 'total_sen', PO_STATUS_BUCKETS);
     const countsProm = eager(Promise.all([
       countBase(),
       countBase().in('status', PO_STATUS_BUCKETS.draft),
@@ -469,6 +477,7 @@ mfgPurchaseOrders.get('/', async (c) => {
     // A count that could not be READ is reported, never served as 0; an empty bucket still answers 0 (lib/status-counts.ts).
     const counted = readStatusCounts({ all: allC, draft: draftC, outstanding: outstandingC, open: openC, partial: partialC, received: receivedC, cancelled: cancelledC, on_hold: onHoldC });
     if (counted.ok) statusCounts = counted.counts; else countError = counted.reason;
+    statusMoneySen = await moneyProm;
   }
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   if (countError) return c.json({ error: 'status_counts_failed', reason: countError }, 500);
@@ -492,7 +501,7 @@ mfgPurchaseOrders.get('/', async (c) => {
        carry them: its callers never render a line column. */
     const withLines = await attachPoLines(supabase, c, stamped.rows);
     if (withLines.error) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
-    return c.json({ purchaseOrders: withLines.rows, total, page, pageSize, statusCounts });
+    return c.json({ purchaseOrders: withLines.rows, total, page, pageSize, statusCounts, statusMoneySen });
   }
   const purchaseOrders = stamped.rows;
   return c.json({ purchaseOrders });
