@@ -8,6 +8,9 @@ import { MoneyText } from '../components/MoneyText';
 import { DataTable, type Column } from '../components/DataTable';
 import { FilterBar } from '../components/FilterBar';
 import { StatTile, StatRow } from '../components/Metric';
+import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
+import { useToast } from '../components/Toast';
+import { api, notifyFailure } from '../lib/api';
 import { useApi } from '../lib/useApi';
 import { monthLabel, rm, titleCase, todayMyt } from '../lib/format';
 import { statusOf, statusLabel } from '../lib/status';
@@ -40,6 +43,35 @@ export default function DeductionsPage(): JSX.Element {
   const q = url.get('q').trim().toLowerCase();
   const { data, loading, error, reload } = useApi<Payload>(`/finance/deductions?month=${month}`);
   const [adding, setAdding] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  const toast = useToast();
+
+  const canRemove = (line: DeductionLine): boolean =>
+    line.status !== 'final' && (line.type === 'additional' ? !!data?.canAdd : !!data?.canAddO2 && !!line.ownerId);
+  const removePath = ({ type, id, ownerId }: DeductionLine): string => (type === 'additional'
+    ? `/expenses/${encodeURIComponent(id)}`
+    : `/owners/${encodeURIComponent(ownerId ?? '')}/adjustments/${encodeURIComponent(id)}`);
+  const askRemove = (line: DeductionLine): void => setConfirm({
+    title: 'Remove this deduction?',
+    body: `${line.unitLabel ?? 'No unit'}, ${rm(line.amount)}${line.remarks ? `: ${line.remarks}` : ''}.`,
+    meta: 'It comes off the owner statement. This cannot be undone; add it again if it was removed by mistake.',
+    confirmLabel: 'Remove', busyLabel: 'Removing…', danger: true,
+    onConfirm: async () => {
+      try {
+        const { regenerate } = await api.del<{ regenerate?: string | null }>(removePath(line));
+        toast({ tone: 'success', title: 'Deduction removed.',
+          body: regenerate ? `Regenerate the ${monthLabel(regenerate)} owner statements to take it off that statement.` : line.unitLabel ?? undefined });
+        setConfirm(null);
+        reload();
+      } catch (failure) { notifyFailure(failure); }
+    },
+  });
+  const removeButton = (line: DeductionLine, sizeClass: string): JSX.Element | null => (canRemove(line) ? (
+    <button type="button" aria-label="Remove deduction" title="Remove deduction" onClick={event => { event.stopPropagation(); askRemove(line); }}
+      className={`grid place-items-center flex-none ${sizeClass} rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer`}>
+      <Icon name="Trash2" size="sm" />
+    </button>
+  ) : null);
 
   const rows = useMemo(() => data?.data ?? [], [data]);
   const additional = useMemo(() => rows.filter(r => r.type === 'additional'), [rows]);
@@ -57,6 +89,8 @@ export default function DeductionsPage(): JSX.Element {
     { key: 'remarks', label: 'Remarks', value: r => r.remarks, width: 240, render: r => <span className="truncate block" title={r.remarks}>{r.remarks || '—'}</span> },
     { key: 'owner', label: 'Owner', type: 'person', value: r => (r.ownerName ? titleCase(r.ownerName) : null), width: 160 },
     { key: 'status', label: 'Status', type: 'status', value: r => statusLabel('deduction', r.status), status: r => statusOf('deduction', r.status), width: 160, filter: { kind: 'select' } },
+    { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
+      render: r => removeButton(r, 'w-[30px] h-[30px]') },
   ];
 
   return (
@@ -89,13 +123,17 @@ export default function DeductionsPage(): JSX.Element {
               <MoneyText sen={r.amount} mode="exact" className="text-copy tabular-nums whitespace-nowrap" />
             </span>
             <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{r.remarks || '—'}</span>
-            <span className="flex flex-wrap items-center gap-1.5">
-              <StatusBadge entity="deduction_type" value={r.type} size="sm" />
-              <StatusBadge entity="deduction" value={r.status} size="sm" />
+            <span className="flex items-center justify-between gap-2">
+              <span className="flex flex-wrap items-center gap-1.5">
+                <StatusBadge entity="deduction_type" value={r.type} size="sm" />
+                <StatusBadge entity="deduction" value={r.status} size="sm" />
+              </span>
+              {removeButton(r, 'w-11 h-11')}
             </span>
           </span>
         )}
       />
+      <ConfirmDialog spec={confirm} onClose={() => setConfirm(null)} />
       {adding && data && <DeductionPanel month={month} canAddO2={data.canAddO2} onClose={() => setAdding(false)} onSaved={reload} />}
     </>
   );
