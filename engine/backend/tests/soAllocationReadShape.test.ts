@@ -207,8 +207,16 @@ describe('SO stock-allocation sweep — read shape', () => {
        display / showroom / service stock is never promised to a customer
        (lib/non-selling-warehouse.ts). It is a CONSTANT — it does not chunk and
        does not grow with the order book, which is the property this file cares
-       about — and the alternative was to read the warehouse type per line. */
+       about — and the alternative was to read the warehouse type per line.
+
+       15 since 2026-11-06 (da74511d, a Conts renovation rule): the fifteenth is
+       `supplier_material_bindings`, read once through customerGoodsCodes
+       (lib/renovation-flow-rules.ts) to find the customer's own goods among the
+       lines with their own PO. Those goods never enter stock, so the PO receipt
+       alone makes them ready. One request per sweep with the item codes in it;
+       it does not chunk by SO-line id. */
     expect(db.reads.get('warehouses')).toBe(1);
-    expect(db.totalReads()).toBe(14);
+    expect(db.reads.get('supplier_material_bindings')).toBe(1);
+    expect(db.totalReads()).toBe(15);
   });
 });
