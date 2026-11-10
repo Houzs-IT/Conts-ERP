@@ -33,7 +33,7 @@ const money = (v: number | null) => (v == null ? <span className="text-warning">
  *  unit's own figures where it differs. Management edits; everyone in the office reads. */
 export function PricesView({ tabs }: { tabs: ReactNode }) {
   const table = useApi<PriceTable>('/housekeeping/prices');
-  const units = useApi<{ ready: boolean; rows: UnitRow[]; mayEdit: boolean; byBed?: boolean }>('/housekeeping/unit-prices');
+  const units = useApi<{ ready: boolean; rows: UnitRow[]; mayEdit: boolean; byBed?: boolean; bedPricing?: 'size' | 'count' }>('/housekeeping/unit-prices');
   const service = useApi<{ ready: boolean; mayPrice?: boolean }>('/operations/service-prices?domain=cleaning');
   const [isChangingByPercent, setIsChangingByPercent] = useState(false);
   const [priceListVersion, setPriceListVersion] = useState(0);
@@ -48,11 +48,11 @@ export function PricesView({ tabs }: { tabs: ReactNode }) {
         {/* Service prices (0127) replace the price table; before it, the old table is still the one in use. */}
         {service.data.ready
           ? <ServicePrices key={priceListVersion} domain="cleaning" above={<div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="m-0 flex-1 min-w-[220px] text-meta text-muted-ink">Cleaning jobs made from reservations take the item for their clean type, {units.data?.byBed ? "priced by the unit's beds (each bed size price times its quantity)" : "at the unit's layout"}. Open an item to change its prices from a date; the whole list is also under Settings, Service prices.</p>
+            <p className="m-0 flex-1 min-w-[220px] text-meta text-muted-ink">Cleaning jobs made from reservations take the item for their clean type, {units.data?.byBed ? (units.data.bedPricing === 'count' ? "priced by the unit's number of beds (floor mattresses and sofa beds do not count)" : "priced by the unit's beds (each bed size price times its quantity)") : "at the unit's layout"}. Open an item to change its prices from a date; the whole list is also under Settings, Service prices.</p>
             {service.data.mayPrice && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsChangingByPercent(true)}>Schedule price change</Button>}
           </div>} />
           : <PriceTableCard data={t} onSaved={() => { table.reload(); units.reload(); }} />}
-        <UnitPricesCard rows={units.data?.rows ?? null} mayEdit={!!units.data?.mayEdit} byBed={!!units.data?.byBed} onSaved={units.reload} />
+        <UnitPricesCard rows={units.data?.rows ?? null} mayEdit={!!units.data?.mayEdit} byBed={!!units.data?.byBed} byCount={units.data?.bedPricing === 'count'} onSaved={units.reload} />
       </>}
       {isChangingByPercent && <PriceChangePanel kind="cleaning" onClose={() => setIsChangingByPercent(false)}
         onSaved={() => { setIsChangingByPercent(false); setPriceListVersion(version => version + 1); units.reload(); }} />}
@@ -114,7 +114,7 @@ function PriceTableCard({ data, onSaved }: { data: PriceTable; onSaved: () => vo
   );
 }
 
-function UnitPricesCard({ rows, mayEdit, byBed, onSaved }: { rows: UnitRow[] | null; mayEdit: boolean; byBed: boolean; onSaved: () => void }) {
+function UnitPricesCard({ rows, mayEdit, byBed, byCount, onSaved }: { rows: UnitRow[] | null; mayEdit: boolean; byBed: boolean; byCount: boolean; onSaved: () => void }) {
   const [q, setQ] = useState('');
   const [kind, setKind] = useState('turnover');
   const [editing, setEditing] = useState<string | null>(null);
@@ -126,8 +126,12 @@ function UnitPricesCard({ rows, mayEdit, byBed, onSaved }: { rows: UnitRow[] | n
       <div className="flex items-start gap-3 flex-wrap">
         <div className="flex-1 min-w-[200px]">
           <h2 className="m-0 text-heading font-semibold">Per unit</h2>
-          <p className="m-0 text-meta text-muted-ink">Each unit's price is worked out from its beds: each bed size price times how many. A unit's own figures replace that. {rows ? `${own} of ${rows.length} units have their own.` : ''}</p>
-          {!byBed && <p className="m-0 mt-1 text-meta text-warning">No bed size prices yet. Enter them in the list above (Basic clean, Deep clean) and every unit's price fills in from its beds.</p>}
+          <p className="m-0 text-meta text-muted-ink">{byCount
+            ? "Each unit's price is the one for its number of beds (King, Queen and Single; floor mattresses and sofa beds do not count)."
+            : "Each unit's price is worked out from its beds: each bed size price times how many."} A unit's own figures replace that. {rows ? `${own} of ${rows.length} units have their own.` : ''}</p>
+          {!byBed && <p className="m-0 mt-1 text-meta text-warning">{byCount
+            ? 'No prices by number of beds yet. Enter them in the list above (Basic clean, Deep clean) and every unit\'s price fills in from its beds.'
+            : 'No bed size prices yet. Enter them in the list above (Basic clean, Deep clean) and every unit\'s price fills in from its beds.'}</p>}
           {withoutBeds > 0 && <p className="m-0 mt-1 text-meta text-warning">{plural(withoutBeds, 'unit')} with no beds recorded. Add the beds on the unit's Settings, or they take the "No beds recorded" price.</p>}
         </div>
         <select className={cx(INPUT, 'h-9 w-auto')} value={kind} onChange={e => setKind(e.target.value)} aria-label="Clean type">

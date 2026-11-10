@@ -1,9 +1,9 @@
 import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
 import { hasCleanPrices, priceBook, layoutKey, PRICE_KINDS } from '../../_lib/cleaningPrices';
-import { hasServicePrices, serviceBook, hasDatedUnitPrices, hasPriceByBed, isDayStr, FROM_THE_START } from '../../_lib/servicePrices';
+import { hasServicePrices, serviceBook, hasDatedUnitPrices, hasPriceByBed, bedPricingMode, isDayStr, FROM_THE_START } from '../../_lib/servicePrices';
 import { bedSizes } from '../../_lib/bedSizes';
-import { NO_BEDS, parseBeds } from '../../_lib/bedPricing';
+import { NO_BEDS, countedBeds, parseBeds } from '../../_lib/bedPricing';
 import { bedsLabel } from '../../_lib/unitPurpose';
 
 /** A unit's own prices that are not history: each item's row in force today (unless it means the list price) and every
@@ -47,16 +47,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const ownAt = new Map(own.map(o => [`${o.unit_id}:${o.kind}`, o]));
   const price = await priceBook(env, units.map(u => u.id));
   const sizes = await bedSizes(env);
+  const bedPricing = await bedPricingMode(env);
   const byBed = (await hasPriceByBed(env)) && !!(await one(env, `SELECT 1 AS x FROM service_items s JOIN service_item_prices p ON p.item_id = s.id
-    WHERE s.by_bed = 1 AND s.active = 1 AND s.clean_kind IS NOT NULL AND (p.layout LIKE 'bed:%' OR p.layout = ?) AND p.effective_from <= ? LIMIT 1`, NO_BEDS, mytToday()));
+    WHERE s.by_bed = 1 AND s.active = 1 AND s.clean_kind IS NOT NULL AND (p.layout LIKE ? OR p.layout = ?) AND p.effective_from <= ? LIMIT 1`,
+    bedPricing === 'count' ? 'beds:%' : 'bed:%', NO_BEDS, mytToday()));
   return json({
-    ready: true, mayEdit: !!session.manage, dated, byBed,
+    ready: true, mayEdit: !!session.manage, dated, byBed, bedPricing,
     ...(only && session.manage && dated ? { changes: await unitChanges(env, only) } : {}),
     rows: units.map(u => {
       const key = layoutKey(u.layout_type, u.bedrooms), unitBeds = parseBeds(u.beds);
       return {
         unitId: u.id, unitNumber: u.unit_number, propertyName: u.property_name, buildingId: u.property_id, layout: key,
-        beds: bedsLabel(unitBeds, sizes) || null, bedCount: unitBeds.reduce((total, bed) => total + bed.quantity, 0),
+        // Priced by number of beds, the count is the one the price is read from: floor mattresses and sofa beds left out.
+        beds: bedsLabel(unitBeds, sizes) || null, bedCount: bedPricing === 'count' ? countedBeds(unitBeds) : unitBeds.reduce((total, bed) => total + bed.quantity, 0),
         prices: Object.fromEntries(PRICE_KINDS.map(k => {
           const p = price(u.id, k, key), o = ownAt.get(`${u.id}:${k}`);
           return [k, { internalCost: p.internal, externalCharge: p.external, source: p.source,

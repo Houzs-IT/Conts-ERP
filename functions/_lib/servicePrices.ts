@@ -1,9 +1,18 @@
-import { type Env, all, run, fail, nowIso, mytToday } from './db';
+import { type Env, all, one, run, fail, nowIso, mytToday } from './db';
 import { hasColumn } from './auth';
 import { layoutTypes } from './layoutTypes';
 import { inForce } from './datedRows';
 import { bedSizes } from './bedSizes';
-import { NO_BEDS, bedKey, isBedGridKey, parseBeds, priceFromBeds, type BedCount, type DatedFigures } from './bedPricing';
+import { NO_BEDS, bedCountRows, bedKey, isBedGridKey, parseBeds, priceByBeds, type BedCount, type BedPricing, type DatedFigures } from './bedPricing';
+
+/** Which way an item priced by beds reads them (bedPricing.ts): settings 'cleaning.bedPricing' = 'count' prices by how
+ *  many beds a unit has (chew, 10 Nov 2026, YJ's pay); anything else by bed size. One switch for every item, since the
+ *  price grid's rows follow it. */
+export const BED_PRICING_SETTING = 'cleaning.bedPricing';
+export async function bedPricingMode(env: Env): Promise<BedPricing> {
+  const row = await one<{ value: string | null }>(env, 'SELECT value FROM settings WHERE key = ?', BED_PRICING_SETTING).catch(() => null);
+  return row?.value === 'count' ? 'count' : 'size';
+}
 
 /** Service prices (owner, 17 Oct 2026; migration 0127): one item list for cleaning and maintenance, each item with an
  *  owner price (what the owner is charged) and an internal cost (what it costs us), effective-dated. A job takes the
@@ -57,9 +66,10 @@ export interface Book {
 /** Everything needed to price jobs on these units: the list and every dated price is small, so it is read once. */
 export async function serviceBook(env: Env, unitIds: string[]): Promise<Book> {
   const byBedReady = await hasPriceByBed(env);
-  const [items, prices] = await Promise.all([
+  const [items, prices, mode] = await Promise.all([
     all<ServiceItem>(env, `SELECT id, code, name, domain, category, unit_label, clean_kind, by_layout, ${byBedReady ? 'by_bed' : '0 AS by_bed'}, active FROM service_items`),
     all<PriceRow>(env, 'SELECT id, item_id, layout, effective_from, owner_price, internal_cost FROM service_item_prices ORDER BY effective_from DESC'),
+    bedPricingMode(env),
   ]);
   const ids = [...new Set(unitIds.filter(Boolean))];
   const dated = ids.length ? await hasDatedUnitPrices(env) : false;
@@ -72,7 +82,7 @@ export async function serviceBook(env: Env, unitIds: string[]): Promise<Book> {
   const bedPricesStart = new Map<string, string>();
   for (const p of prices) {
     const start = bedPricesStart.get(p.item_id);
-    if (isBedGridKey(p.layout) && (!start || p.effective_from < start)) bedPricesStart.set(p.item_id, p.effective_from);
+    if (isBedGridKey(p.layout, mode) && (!start || p.effective_from < start)) bedPricesStart.set(p.item_id, p.effective_from);
   }
   const ownAt = new Map<string, typeof own>();
   for (const o of own) ownAt.set(`${o.unit_id}:${o.item_id}`, [...(ownAt.get(`${o.unit_id}:${o.item_id}`) ?? []), o]);
@@ -83,8 +93,7 @@ export async function serviceBook(env: Env, unitIds: string[]): Promise<Book> {
     const start = bedPricesStart.get(item.id);
     if (!item.by_bed || !start || day < start) return layoutRow(item, layout, day);
     const beds = unitId ? bedsOf.get(unitId) ?? [] : [];
-    if (!beds.length) return inForce(byKey.get(`${item.id}:${NO_BEDS}`), day);
-    return priceFromBeds(beds, size => inForce(byKey.get(`${item.id}:${bedKey(size)}`), day));
+    return priceByBeds(mode, beds, key => inForce(byKey.get(`${item.id}:${key}`), day));
   };
   return {
     items,
@@ -128,17 +137,19 @@ export async function layoutGrid(env: Env): Promise<Grid> {
   const types = await layoutTypes(env);
   return { keys: types.filter(t => t.isActive).map(t => t.key), labels: { ...LABEL.layout, ...Object.fromEntries(types.map(t => [t.key, t.label])) } };
 }
-export async function bedGrid(env: Env): Promise<Grid> {
+export async function bedGrid(env: Env, mode?: BedPricing): Promise<Grid> {
+  if ((mode ?? await bedPricingMode(env)) === 'count') return bedCountRows();
   const sizes = await bedSizes(env);
   return {
     keys: [...sizes.map(size => bedKey(size.key)), NO_BEDS],
     labels: { ...Object.fromEntries(sizes.map(size => [bedKey(size.key), size.label])), [NO_BEDS]: 'No beds recorded' },
   };
 }
-export interface Grids { layout: Grid; bed: Grid }
+export interface Grids { layout: Grid; bed: Grid; bedPricing: BedPricing }
 export async function priceGrids(env: Env): Promise<Grids> {
-  const [layout, bed] = await Promise.all([layoutGrid(env), bedGrid(env)]);
-  return { layout, bed };
+  const bedPricing = await bedPricingMode(env);
+  const [layout, bed] = await Promise.all([layoutGrid(env), bedGrid(env, bedPricing)]);
+  return { layout, bed, bedPricing };
 }
 export const gridOf = (item: { by_bed?: unknown }, grids: Grids): Grid => (item.by_bed ? grids.bed : grids.layout);
 export const layoutsOf = (byLayout: unknown, grid: Grid = DEFAULT_GRID()) => (byLayout ? [...grid.keys] : ['all']);
@@ -147,7 +158,7 @@ type Cell = { ownerPrice: number | null; internalCost: number | null; effectiveF
 /** An item as the screen shows it: its prices in force today per layout, and the next scheduled change. */
 export function itemView(i: any, rows: PriceRow[], today: string, grids: Grids) {
   const layouts = layoutsOf(i.by_layout, gridOf(i, grids));
-  const bedPricesStarted = !!i.by_bed && rows.some(r => isBedGridKey(r.layout) && r.effective_from <= today);
+  const bedPricesStarted = !!i.by_bed && rows.some(r => isBedGridKey(r.layout, grids.bedPricing) && r.effective_from <= today);
   const inUse = i.by_bed && !bedPricesStarted ? layoutsOf(i.by_layout, grids.layout) : layouts;
   const keys = [...new Set([...inUse, ...layouts])];
   const current: Record<string, Cell> = {};
@@ -158,7 +169,7 @@ export function itemView(i: any, rows: PriceRow[], today: string, grids: Grids) 
   const future = rows.filter(r => r.effective_from > today && keys.includes(r.layout)).map(r => r.effective_from).sort()[0] ?? null;
   return {
     id: i.id, code: i.code, name: i.name, domain: i.domain, category: i.category, uom: i.unit_label, cleanKind: i.clean_kind ?? null,
-    byLayout: !!i.by_layout, byBed: !!i.by_bed, bedPricesStarted, layouts, active: !!i.active, notes: i.notes ?? '', trackStock: !!i.track_stock, stockOnHand: Number(i.stock_on_hand ?? 0),
+    byLayout: !!i.by_layout, byBed: !!i.by_bed, bedPricing: i.by_bed ? grids.bedPricing : null, bedPricesStarted, layouts, active: !!i.active, notes: i.notes ?? '', trackStock: !!i.track_stock, stockOnHand: Number(i.stock_on_hand ?? 0),
     current, next: future ? { effectiveFrom: future, rows: Object.fromEntries(keys.map(l => {
       const r = inForce(rows.filter(x => x.layout === l), future);
       return [l, { ownerPrice: r?.owner_price ?? null, internalCost: r?.internal_cost ?? null, effectiveFrom: r?.effective_from ?? null }];

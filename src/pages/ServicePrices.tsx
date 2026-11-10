@@ -21,7 +21,9 @@ import { Modal, LabeledField, INPUT_CX, LABEL_CX } from './MaintenanceCatalog';
 type Domain = 'cleaning' | 'maintenance';
 interface Cell { ownerPrice: number | null; internalCost: number | null; effectiveFrom: string | null }
 export interface ServiceItem {
-  id: string; code: string; name: string; domain: Domain; category: string; uom: string; cleanKind: string | null; byLayout: boolean; byBed?: boolean; bedPricesStarted?: boolean; layouts?: string[];
+  id: string; code: string; name: string; domain: Domain; category: string; uom: string; cleanKind: string | null; byLayout: boolean; byBed?: boolean;
+  /** How an item priced by beds reads them: each bed size's price added up, or one price per number of beds. */
+  bedPricing?: 'size' | 'count' | null; bedPricesStarted?: boolean; layouts?: string[];
   active: boolean; notes: string; trackStock: boolean; stockOnHand: number;
   current: Record<string, Cell>; next: { effectiveFrom: string; rows: Record<string, Cell> } | null;
 }
@@ -50,8 +52,11 @@ const CLEAN_TYPE_LABEL: Record<string, string> = { turnover: 'Basic clean', deep
 
 const layoutsOf = (i: { byLayout: boolean; layouts?: string[] }, all: string[]) => i.layouts ?? (i.byLayout ? all : ['all']);
 const inUseOf = (i: ServiceItem, all: string[]) => (i.byBed && !i.bedPricesStarted ? all : layoutsOf(i, all));
-const pricedByText = (i: { byLayout: boolean; byBed?: boolean }) => (i.byBed ? 'by bed size' : i.byLayout ? 'by layout' : null);
-const gridHeading = (i: { byBed?: boolean }, rows: number) => (rows > 1 ? (i.byBed ? 'Bed size' : 'Layout') : '');
+const byBedCount = (i: { byBed?: boolean; bedPricing?: string | null }) => !!i.byBed && i.bedPricing === 'count';
+const pricedByText = (i: { byLayout: boolean; byBed?: boolean; bedPricing?: string | null }) =>
+  (i.byBed ? (byBedCount(i) ? 'by number of beds' : 'by bed size') : i.byLayout ? 'by layout' : null);
+const gridHeading = (i: { byBed?: boolean; bedPricing?: string | null }, rows: number) =>
+  (rows > 1 ? (i.byBed ? (byBedCount(i) ? 'Beds' : 'Bed size') : 'Layout') : '');
 const priced = (cells: Cell[]) => cells.filter(c => c.ownerPrice != null || c.internalCost != null);
 /** "RM 80.00" or "RM 80.00 – 200.00" across the layouts that have a figure. */
 function range(cells: (number | null)[]): string | null {
@@ -188,8 +193,12 @@ function ItemDrawer({ id, list, onClose, onChanged }: { id: string; list: ListPa
           <section className="flex flex-col gap-2">
             <h3 className="m-0 text-copy font-semibold">Prices today</h3>
             <PriceTable heading={gridHeading(i, layoutsOf(i, list.layouts).length)} layouts={layoutsOf(i, list.layouts)} cells={i.current} />
-            {i.byBed && <span className="text-meta text-muted-ink">A unit's clean costs each bed size price times how many of that bed the unit has, added up. A unit with no beds recorded takes the last row.</span>}
-            {i.byBed && !i.bedPricesStarted && <span className="text-meta text-gold-ink">No bed size prices in force yet. Fill every bed size below in one go: from that date every unit is priced by its beds, and a bed size left empty shows Price not set.</span>}
+            {i.byBed && (byBedCount(i)
+              ? <span className="text-meta text-muted-ink">A unit's clean takes the price for its number of beds: King, Queen and Single beds count, floor mattresses and sofa beds do not. A unit with no beds recorded takes the last row. With the owner price empty, the owner is charged the unit's own cleaning price (the unit's costs), as before.</span>
+              : <span className="text-meta text-muted-ink">A unit's clean costs each bed size price times how many of that bed the unit has, added up. A unit with no beds recorded takes the last row.</span>)}
+            {i.byBed && !i.bedPricesStarted && <span className="text-meta text-gold-ink">{byBedCount(i)
+              ? 'No prices by number of beds in force yet. Fill the rows below in one go: from that date every unit is priced by its number of beds, and a row left empty shows Price not set.'
+              : 'No bed size prices in force yet. Fill every bed size below in one go: from that date every unit is priced by its beds, and a bed size left empty shows Price not set.'}</span>}
             {i.byBed && !i.bedPricesStarted && priced(inUseOf(i, list.layouts).map(l => i.current[l] ?? { ownerPrice: null, internalCost: null, effectiveFrom: null })).length > 0 && (
               <div className="flex flex-col gap-1.5 mt-2">
                 <span className="text-meta font-semibold text-muted-ink">Until then, jobs use the old prices by unit type</span>
