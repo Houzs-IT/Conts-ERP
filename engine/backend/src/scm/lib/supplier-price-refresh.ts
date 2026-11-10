@@ -25,6 +25,8 @@
 // Pure: the preview and the apply run this same function on fresh reads.
 // ----------------------------------------------------------------------------
 
+import { fmtSen } from '../shared/format';
+
 /** A move bigger than this either way is treated as a unit mix-up. */
 export const OUTLIER_MULTIPLE = 3;
 
@@ -75,7 +77,8 @@ export type PriceDrift = {
   whyNot?: string;
 };
 
-const rm = (sen: number) => `RM ${(sen / 100).toFixed(2)}`;
+/* Money in a refusal reads the AutoCount way, "RM 1,800.00" (tests/moneyTextShape.test.ts). */
+const rm = (sen: number) => fmtSen(sen);
 const day = (d: string | null | undefined) => String(d ?? '').slice(0, 10);
 const norm = (s: string | null | undefined) => String(s ?? '').trim().toUpperCase();
 
