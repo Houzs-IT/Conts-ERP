@@ -139,7 +139,7 @@ import { blockFromQuote, partyFromBlock, sectionsFromForm, seedQuoteForm, soFiel
 import { SoInstalments } from './renovationSoInstalments';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
-  EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, toRenovationBlock,
+  EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, quoteBrandFor, toRenovationBlock,
   type CustomerPropertyValue, type ProjectShared,
 } from '../projects/renovation/customerPropertyModel';
 import { fmtMoneySen } from '@2990s/shared';
@@ -351,6 +351,16 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
   const renoPending = renoListsQ.isLoading;
   const [renoInfo, setRenoInfo] = useState<CustomerPropertyValue>(EMPTY_CUSTOMER_PROPERTY);
   const [renoProject, setRenoProject] = useState<ProjectShared | null>(null);
+  /* chew, 10 Nov 2026: a new quotation opened for a project starts on the project's brand (its letterhead), once per
+     project; it can still be changed, and a saved quotation keeps its own. */
+  const brandSeededFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (!asQuotation || quoteId || !renoProject || brandSeededFor.current === renoProject.id) return;
+    const id = quoteBrandFor(renoProject, quoteBrands.data?.brands ?? []);
+    if (id == null) return;
+    brandSeededFor.current = renoProject.id;
+    setQuoteBrandId(id);
+  }, [asQuotation, quoteId, renoProject, quoteBrands.data]);
   const [renoTried, setRenoTried] = useState(false);
   /* Rooms: the order's room list and each line's room by its rid. */
   const [renoRooms, setRenoRooms] = useState<string[]>([]);
