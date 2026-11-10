@@ -2,6 +2,7 @@ import { type Env, all, one, run, nowIso, mytToday } from './db';
 import { hasColumn } from './auth';
 import { LIVE_STAY_SQL } from './cleaning';
 import { rentalOnly } from './unitPurpose';
+import { repairNotice } from './notices';
 
 export type PassKeyScope = { from: string; to: string } | { reservationIds: string[] };
 
@@ -33,6 +34,13 @@ async function logSystem(env: Env, action: string, rows: { id: string; reservati
     action, nowIso(), JSON.stringify(rows.map(row => ({ id: row.id, reservationId: row.reservation_id }))));
 }
 
+async function noticeSameDay(env: Env, created: { id: string; due_on: string; starts_at: string }[]): Promise<void> {
+  const today = mytToday();
+  for (const { id, due_on: checkInDay, starts_at: checkInAt } of created) {
+    if (checkInDay === today) await repairNotice(env, id, 'pass_key_today', null, `Check-in ${checkInAt.slice(11, 16)}`);
+  }
+}
+
 export async function syncPassKeyJobs(env: Env, scope: PassKeyScope, limit = 200): Promise<number> {
   try {
     const filter = scopeFilter(scope);
@@ -59,7 +67,7 @@ export async function syncPassKeyJobs(env: Env, scope: PassKeyScope, limit = 200
       WHERE w.issue_id = m.id AND w.created_by IS NULL AND w.note = ? AND ${AUTO_JOB} AND m.state != 'resolved'
         AND ${filter.sql} AND w.starts_at IS DISTINCT FROM ${CHECK_IN_AT}`, WINDOW_NOTE, ...filter.args);
 
-    const created = await all<{ id: string; reservation_id: string }>(env, `
+    const created = await all<{ id: string; reservation_id: string; due_on: string; starts_at: string }>(env, `
       WITH picked AS (
         SELECT gen_random_uuid()::text AS issue_id, r.id AS reservation_id, r.unit_id, r.check_in,
                'Pass key: ' || COALESCE(NULLIF(trim(g.full_name), ''), 'guest') AS title,
@@ -75,14 +83,15 @@ export async function syncPassKeyJobs(env: Env, scope: PassKeyScope, limit = 200
         SELECT issue_id, unit_id, reservation_id, 'open', title, 'other', 'normal', 'booking', 'pass_key', 'minor', check_in, ?, ?, ?
         FROM picked
         ON CONFLICT DO NOTHING
-        RETURNING id, reservation_id
+        RETURNING id, reservation_id, due_on
       ), opened AS (
         INSERT INTO maintenance_windows (id, issue_id, starts_at, ends_at, note, created_by, created_at)
         SELECT gen_random_uuid()::text, made.id, picked.starts_at, picked.ends_at, ?, NULL, ?
         FROM made JOIN picked ON picked.issue_id = made.id
       )
-      SELECT id, reservation_id FROM made`, ...filter.args, mytToday(), now, now, now, WINDOW_NOTE, now);
+      SELECT made.id, made.reservation_id, made.due_on, picked.starts_at FROM made JOIN picked ON picked.issue_id = made.id`, ...filter.args, mytToday(), now, now, now, WINDOW_NOTE, now);
     await logSystem(env, 'maintenance.pass_key_created', created);
+    await noticeSameDay(env, created);
     return created.length;
   } catch (error) {
     console.error('syncPassKeyJobs failed', error);
