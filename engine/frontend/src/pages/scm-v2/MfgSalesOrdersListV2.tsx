@@ -21,6 +21,7 @@
 
 import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { conditionDateRange } from "../../components/dataTableConditionFilters";
 import { shippedProgressColumn, ShippedProgressPill } from "./so-list-shipped-column";
 import { SO_STATUS_TABS, soStatusTabOf, type StatusTab } from "./so-list-status";
 import { SoListStatusCell, soRowStatusOf } from "./SoListStatusCell";
@@ -1083,7 +1084,7 @@ export function MfgSalesOrdersListV2() {
      Debtor CODE and every line-level / MRP funnel stay client-side on the loaded
      page (documented — debtor_code's grid value prefers ac_debtor_code, and the
      line/MRP columns are not base columns on the list view). */
-  const [serverFunnels, setServerFunnels] = useState<{ debtorNames?: string[]; currencies?: string[] }>({});
+  const [serverFunnels, setServerFunnels] = useState<{ debtorNames?: string[]; currencies?: string[]; from?: string; to?: string }>({});
   /* Seed the Customer Name funnel with every customer (not only the loaded
      page's) so a customer whose orders are all on a later page is still
      pickable — the point of pushing the filter server-side. */
@@ -1132,6 +1133,7 @@ export function MfgSalesOrdersListV2() {
   // Status tab counts come from the server over the FULL scoped set (not the
   // page), so the pills stay correct while paging / searching.
   const counts: Record<string, number> = data?.statusCounts ?? { all: 0 };
+  const money: Record<string, number> = data?.statusMoneySen ?? {};
 
   // KPI money stats — the backend paginated contract returns `aggregates` with
   // FULL-SET revenue/outstanding/paid sums (computed server-side over the same
@@ -1212,7 +1214,7 @@ export function MfgSalesOrdersListV2() {
       const v = colFilters[key];
       return v && v.length > 0 ? v : undefined;
     };
-    const next = { debtorNames: pick("debtor_name"), currencies: pick("currency") };
+    const next = { debtorNames: pick("debtor_name"), currencies: pick("currency"), ...conditionDateRange(colFilters.so_date) };
     const sig = JSON.stringify(next);
     if (sig === serverFunnelSigRef.current) return;
     serverFunnelSigRef.current = sig;
@@ -1921,11 +1923,13 @@ export function MfgSalesOrdersListV2() {
      status spellings) appears only when the server reports a non-zero count
      for it — or while it is the active filter, so the selected pill can never
      vanish from under the user. */
-  const statusPillOptions: Array<{ value: StatusTab; label: string; count: number }> = [
+  const statusPillOptions: Array<{ value: StatusTab; label: string; count: number; moneySen?: number }> = [
     ...SO_STATUS_TABS.map(({ value, label }) => ({
       value,
       label,
       count: counts[value] ?? 0,
+      /* The order value in each tab, never on Cancelled (TODO item 5). */
+      moneySen: value === "cancelled" ? undefined : money[value],
     })),
     ...((counts.other ?? 0) > 0 || status === "other"
       ? [{ value: "other" as StatusTab, label: "Other", count: counts.other ?? 0 }]

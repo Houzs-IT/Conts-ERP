@@ -20,6 +20,8 @@ import { PrintDialog } from './PrintDialog';
 import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
 import { Card, ErrorBanner, Field, inputCls, rm, StatusPill, todayIso } from './shared';
 import { cn } from '../../lib/utils';
+import { useRenovationDraft } from '../../lib/renovation/renovationFormDraft';
+import { RenovationDraftBanner } from './renovationDraftBanner';
 
 interface OmitPick { lineId: string; omitQty: number | null }
 
@@ -61,6 +63,17 @@ export function VariationOrderEditor() {
     setDirty(false);
   }, [vo.data]);
 
+  const draftValue = useMemo(() => ({ title, docDate, adds, omits }), [title, docDate, adds, omits]);
+  const draft = useRenovationDraft(
+    vo.data?.status === 'DRAFT' && can('scm.renovation.quote') ? `vo:${vo.data.id}` : null,
+    draftValue, dirty, vo.data?.version ?? null,
+  );
+  const restoreDraft = () => {
+    const d = draft.offered?.v;
+    if (d) { setTitle(d.title); setDocDate(d.docDate); setAdds(d.adds); setOmits(d.omits); setDirty(true); }
+    draft.answer(true);
+  };
+
   const targets = useMemo(() => (contract.data?.sections ?? []).flatMap((s) => (s.lumpSumSen !== null ? [] : s.lines
     .filter((l) => (l.kind === 'ITEM' || l.kind === 'CHILD') && !l.omittedByVoId && !l.soItemCancelled)
     .map((l) => ({ section: s.heading, line: l })))), [contract.data]);
@@ -87,7 +100,7 @@ export function VariationOrderEditor() {
     setError(null);
     try { await run.mutateAsync(fn); return true; } catch (e) { setError(refusalOf(e).message); return false; }
   };
-  const save = () => act(() => renoSend(`/variation-orders/${v.id}`, 'PUT', { version: v.version, title, docDate, sections: bodySections() })).then((ok) => ok && setDirty(false));
+  const save = () => act(() => renoSend(`/variation-orders/${v.id}`, 'PUT', { version: v.version, title, docDate, sections: bodySections() })).then((ok) => { if (ok) { setDirty(false); draft.clear(); } });
   const setStatus = async (to: string, confirm?: string) => {
     if (confirm && !(await serviceConfirm({ title: confirm, danger: to === 'CANCELLED' }))) return;
     if (dirty) { setError('Save your changes first.'); return; }
@@ -135,6 +148,7 @@ export function VariationOrderEditor() {
         )}
       />
       <ErrorBanner error={error} onClose={() => setError(null)} />
+      {draft.offered && <RenovationDraftBanner savedAt={draft.offered.ts} stale={draft.stale} onRestore={restoreDraft} onDiscard={() => draft.answer(false)} />}
       {v.status !== 'APPROVED' && v.status !== 'CANCELLED' && can('scm.renovation.quote') && (
         <div className="flex flex-wrap gap-2">
           {v.status === 'DRAFT' && <Button variant="secondary" icon={<Send size={15} />} onClick={() => setStatus('SENT')}>Mark sent for signature</Button>}

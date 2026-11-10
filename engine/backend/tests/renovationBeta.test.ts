@@ -21,6 +21,9 @@ describe("Beta routes: the switch", () => {
       "DELETE /events/:id",
       "DELETE /projects/:id/appointments/:kind",
       "GET /board",
+      "GET /po-drawings/:poId",
+      "GET /projects/:id/approved-2d",
+      "GET /projects/:id/builtin-pos",
       "GET /projects/:id/client-po",
       "GET /projects/:id/defects",
       "GET /projects/:id/lines",
@@ -30,6 +33,7 @@ describe("Beta routes: the switch", () => {
       "GET /projects/:id/timeline",
       "GET /projects/:id/vo",
       "GET /projects/:id/workspace",
+      "GET /raw-materials",
       "PATCH /defects/:defectId",
       "PATCH /events/:id",
       "POST /defects/:defectId/close",
@@ -46,7 +50,10 @@ describe("Beta routes: the switch", () => {
       "PUT /design-notes/:noteId/days",
       "PUT /projects/:id/appointments/:kind",
       "PUT /projects/:id/design",
+      "PUT /projects/:id/line-plans",
+      "PUT /projects/:id/lines/:itemId/materials",
       "PUT /projects/:id/lines/:itemId/plan",
+      "PUT /projects/:id/lines/:itemId/supplier",
       "PUT /settings",
     ]);
   });

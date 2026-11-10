@@ -18,7 +18,7 @@ import { isOnSiteWarehouse } from '../lib/non-selling-warehouse';
 import { callHandler } from './production-orders';
 import { createDoFromSoLinesHandler, patchDeliveryOrderStatusHandler, soDeliverableRemaining } from './delivery-orders-mfg';
 import { postGrnAndRollup, recordGrnCreate } from './grns';
-import { addUp, deliveriesToRaise, podKeysOfSitePhotos, receiptPicks } from '../lib/onsite-twin-rules';
+import { addUp, deliverOrWithdraw, deliveriesToRaise, podKeysOfSitePhotos, receiptPicks } from '../lib/onsite-twin-rules';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- the same loosely typed client and context as production-orders.ts */
 
@@ -210,8 +210,13 @@ async function deliverReceipt(c: any, sb: any, id: string, companyId: number, op
     const notMoved = out.json.movementErrors as string[] | undefined;
     if (notMoved?.length) problems.push(`The delivery order was raised but its stock did not move: ${notMoved.join('; ')}`);
     raised.push(String(out.json.doNumber ?? out.json.do_number ?? doId));
-    const done = await callHandler(c, patchDeliveryOrderStatusHandler as never, { status: 'DELIVERED', confirmShortStock: true }, { id: doId });
-    if (done.status >= 300) problems.push(words(done.json, 'The delivery order was raised but not marked delivered.'));
+    const settled = await deliverOrWithdraw({
+      deliver: () => callHandler(c, patchDeliveryOrderStatusHandler as never, { status: 'DELIVERED', confirmShortStock: true }, { id: doId }),
+      withdraw: () => callHandler(c, patchDeliveryOrderStatusHandler as never, { status: 'CANCELLED' }, { id: doId }),
+      untie: () => sb.from('onsite_twins').delete().eq('grn_id', grn.id).eq('do_id', doId),
+    }, Boolean(opts.siteReceipt));
+    if (settled.problem) problems.push(settled.problem);
+    if (settled.withdrawn) raised.pop();
   }
   if (problems.length > 0) return answer({ error: 'twin_failed', message: problems.join(' '), raised }, 409);
   return answer({ ok: true, raised });
