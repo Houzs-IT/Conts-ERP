@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import Icon from './Icon';
 import { cx } from '../lib/design-tokens';
 import { errorMessage } from '../lib/api';
@@ -256,7 +257,7 @@ function MediaViewer({ item, onClose }: { item: MediaItem; onClose: () => void }
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose]);
-  return (
+  return createPortal(
     <div role="dialog" aria-modal="true" aria-label={item.fileName} className="fixed inset-0 z-[70] grid place-items-center p-4 bg-[rgba(21,21,21,0.86)]" onClick={onClose}>
       <div className="relative max-w-[min(960px,100%)] max-h-full flex flex-col gap-2" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-2 text-white text-copy">
@@ -268,7 +269,8 @@ function MediaViewer({ item, onClose }: { item: MediaItem; onClose: () => void }
           ? <video src={item.url} controls autoPlay className="max-w-full max-h-[80dvh] bg-black rounded-control" />
           : <img src={item.url} alt={item.fileName} className="max-w-full max-h-[80dvh] object-contain rounded-control" />}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -429,7 +431,7 @@ export function MediaSourceSheet({ again, lastKind, count, onPhoto, onVideo, onL
   onPhoto: () => void; onVideo: () => void; onLibrary: () => void; onClose: () => void;
 }) {
   const row = 'min-h-[52px] flex items-center gap-3 px-1 border-0 [border-bottom:1px_solid_var(--color-line-soft)] bg-transparent cursor-pointer text-left text-copy text-ink';
-  return (
+  return createPortal(
     <div role="dialog" aria-modal aria-label="Add photo or video" className="fixed inset-0 z-[70] flex flex-col justify-end">
       <div onClick={onClose} className="absolute inset-0 bg-[var(--color-surface-scrim)]" />
       <div className="relative bg-card rounded-t-[20px] pt-2.5 pb-[calc(16px+env(safe-area-inset-bottom))] px-4 flex flex-col">
@@ -459,6 +461,7 @@ export function MediaSourceSheet({ again, lastKind, count, onPhoto, onVideo, onL
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
