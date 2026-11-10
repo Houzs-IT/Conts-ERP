@@ -84,3 +84,21 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   });
   return json({ ok: true });
 };
+
+export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (!session.manage) return fail('FORBIDDEN', 'Only finance and management can remove expenses.', 403);
+
+  const id = String(params.id);
+  const cur = await one<{ unit_id: string; deduct_month: string; category: string; amount: number; incurred_on: string; description: string | null; charge_to: string }>(env,
+    'SELECT unit_id, deduct_month, category, amount, incurred_on, description, charge_to FROM expenses WHERE id = ?', id);
+  if (!cur) return fail('NOT_FOUND', 'That expense no longer exists.', 404);
+  if (await isExpenseLocked(env, cur)) return fail('PERIOD_LOCKED', 'The owner statement for that month is final, so this expense is locked.', 409);
+  if (await one(env, 'SELECT 1 AS x FROM expenses WHERE parent_expense_id = ? LIMIT 1', id)) return fail('HAS_LINE_ITEMS', 'This bill has line items under it. Remove those first.', 409);
+
+  await run(env, 'DELETE FROM expenses WHERE id = ?', id);
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.delete', entityTable: 'expenses', entityId: id,
+    before: { unitId: cur.unit_id, category: cur.category, amount: cur.amount, incurredOn: cur.incurred_on, description: cur.description, chargeTo: cur.charge_to }, after: null });
+  return json({ ok: true });
+};

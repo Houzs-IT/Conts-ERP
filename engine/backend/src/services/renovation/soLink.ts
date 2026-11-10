@@ -16,6 +16,7 @@ import type { Db } from "./load";
 import { loadProjectRows, loadRenovationFacts } from "./load";
 import { onContractLinesChanged, writeCachedStage } from "./contractSync";
 import { createRenovationProject, type CreateRenovationInput } from "./create";
+import { brandOfSo } from "./projectBrand";
 import { copySoIntoProject } from "./customerProperty";
 
 export type LinkRefusal =
@@ -161,7 +162,8 @@ export async function unlinkSoFromProject(db: Db, projectId: number, actorId: nu
   return { ok: true, docNo };
 }
 
-/** Open a project from an SO that has none: name, customer, building and unit come from the contract header. */
+/** Open a project from an SO that has none: name, customer, building and unit come from the contract header, and the
+    brand from the SO, with its finance type (chew, 10 Nov 2026). */
 export async function createProjectFromSo(
   db: Db,
   docNo: string,
@@ -172,17 +174,22 @@ export async function createProjectFromSo(
 ): Promise<LinkResult & { projectId?: number; code?: string }> {
   const so = await db.prepare(
     `SELECT o.doc_no, o.so_kind, o.status::text AS status, o.project_id::int AS project_id, o.company_id::int AS company_id, o.debtor_name,
-            o.phone, o.email, o.agent, c.customer_name, c.building, c.unit_no
+            o.phone, o.email, o.agent, c.customer_name, c.building, c.unit_no, o.branding, c.brand_id::int AS brand_id
        FROM scm.mfg_sales_orders o LEFT JOIN scm.reno_so_contracts c ON c.so_doc_no = o.doc_no WHERE o.doc_no = ?`,
-  ).bind(docNo).first<SoForLink & { debtor_name: string | null; phone: string | null; email: string | null; agent: string | null; customer_name: string | null; building: string | null; unit_no: string | null }>();
+  ).bind(docNo).first<SoForLink & {
+    debtor_name: string | null; phone: string | null; email: string | null; agent: string | null; customer_name: string | null;
+    building: string | null; unit_no: string | null; branding: string | null; brand_id: number | null;
+  }>();
   const refusal = linkRefusal(so, { projectCompanyId: companyId, projectProjectSo: null, projectId: -1 });
   if (refusal) return { ok: false, status: refusal === "so_not_found" ? 404 : 409, error: refusal, message: LINK_REFUSAL_TEXT[refusal] };
   const customer = (so!.customer_name || so!.debtor_name || "").trim();
   const name = String(input.name ?? "").trim() || [so!.building, so!.unit_no, customer].map((x) => String(x ?? "").trim()).filter(Boolean).join(" ") || docNo;
+  const brand = await brandOfSo(db, { brandId: so!.brand_id == null ? null : Number(so!.brand_id), branding: so!.branding }, companyId);
   const body: CreateRenovationInput = {
     name, projectTypeId: input.projectTypeId, customerKind: "customer", customerName: customer || name,
     customerPhone: so!.phone, customerEmail: so!.email, building: so!.building || null, unitNo: so!.unit_no || null,
     salespersonName: so!.agent, salesPersonId: input.salesPersonId ?? null,
+    brand: brand?.name ?? null, financeKind: brand?.financeKind ?? null,
   };
   const created = await createRenovationProject(db, body, actorId, companyId);
   if (!created) return { ok: false, status: 409, error: "type_not_found", message: "That project type does not exist or is switched off." };

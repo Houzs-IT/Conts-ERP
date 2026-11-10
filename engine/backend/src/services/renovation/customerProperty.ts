@@ -65,6 +65,8 @@ export interface ProjectShared extends SharedCustomerProperty {
   endDate: string | null;
   /** The salesperson's name (scm.staff), for display. */
   salespersonName: string;
+  /** The project's brand (public.project_brands.name), or null: a quotation opened for it starts on this letterhead. */
+  brand: string | null;
 }
 
 const s = (v: unknown): string => (v == null ? "" : String(v));
@@ -115,6 +117,7 @@ export async function readProjectShared(db: Db, projectId: number, companySql: s
     id: Number(row.id), code: (row.code as string | null) ?? null, name: s(row.name),
     startDate: row.start_date ? s(row.start_date).slice(0, 10) : null, endDate: row.end_date ? s(row.end_date).slice(0, 10) : null,
     salespersonName: s(r.salesperson_name) || s(row.salesperson_name),
+    brand: s(row.brand).trim() || null,
   };
 }
 

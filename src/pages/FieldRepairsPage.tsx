@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { StaleBanner } from '../components/DataState';
@@ -33,7 +33,8 @@ interface PoolBuilding { id: string; name: string; open: number }
 interface ListPayload { mine: Repair[]; open: Repair[]; team?: Repair[]; mayPick: boolean; buildings?: PoolBuilding[]; maxLimit?: number }
 interface UnitGroup { groupKey: string; unitNumber: string | null; propertyName: string; jobs: Repair[] }
 interface TechnicianGroup { name: string; jobs: Repair[] }
-type ListTab = 'all' | 'mine' | 'open' | 'team';
+type ListTab = 'pass_key' | 'ongoing' | 'all' | 'done' | 'team';
+type GroupedBy = 'unit' | 'technician';
 
 const POOL_PAGE = 200;
 const UNIT_SEARCH_DELAY_MS = 300;
@@ -117,10 +118,17 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const finished = mine.filter(r => r.state === 'resolved' || r.endedAt);
   const pool = (data?.open ?? []).filter(isShown);
   const team = (data?.team ?? []).filter(isShown);
-  const groups = tab === 'team' ? [] : [
-    ...groupByUnit(tab === 'open' ? [] : todo).map(group => ({ group, offer: false })),
-    ...groupByUnit(tab === 'mine' ? [] : pool).map(group => ({ group, offer: true })),
+  const passKeyTodo = todo.filter(r => r.jobType === 'pass_key');
+  const myJobsShown = tab === 'pass_key' ? passKeyTodo : tab === 'ongoing' || tab === 'all' ? todo : [];
+  const groups = [
+    ...groupByUnit(myJobsShown).map(group => ({ group, offer: false })),
+    ...groupByUnit(tab === 'all' ? pool : []).map(group => ({ group, offer: true })),
   ];
+  const finishedShown = tab === 'all' || tab === 'done' ? finished : [];
+  const emptyTitle = tab === 'pass_key' ? tr.noPassKey : tab === 'done' ? tr.noDone : tr.noMine;
+  const tabLabel = (name: string, count: number): ReactNode => (
+    <span className="flex flex-col items-center">{name}<span className="text-meta text-muted-ink tabular-nums">{count}</span></span>
+  );
   const fresh = useFreshIds([...(data?.mine ?? []), ...(data?.open ?? [])].map(r => r.id), 'repairs', !!data);
   const buildingOptions = useMemo(() => {
     const byId = new Map((data?.buildings ?? []).map(b => [b.id, b]));
@@ -138,7 +146,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
     setPickingUnit(null);
     toast({ tone: result.ok === 0 ? 'critical' : result.failed.length ? 'warning' : 'success', title: result.ok ? tr.pickedAll(result.ok) : tr.nonePicked, body: skippedNote(result.failed) || undefined });
     reload();
-    if (result.ok) setTab('mine');
+    if (result.ok) setTab('ongoing');
   }
 
   return (
@@ -149,13 +157,16 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
           <h1 className="m-0 text-title font-semibold">{tr.title}</h1>
           <div className="text-copy text-muted-ink">{data ? tr.summary(tr.jobs(todo.length), data.mayPick ? openTotal : null) : t.common.loading}</div>
         </div>
-        {data?.mayPick && (
-          <Segmented label={tr.which} className="[&>button]:h-11" value={tab} onChange={setTab} options={[
-            { value: 'all', label: <>{tr.all} <span className="text-muted-ink tabular-nums">{todo.length + openTotal}</span></> },
-            { value: 'mine', label: <>{tr.mine} <span className="text-muted-ink tabular-nums">{todo.length}</span></> },
-            { value: 'open', label: <>{tr.open} <span className="text-muted-ink tabular-nums">{openTotal}</span></> },
-            { value: 'team', label: <>{tr.team} <span className="text-muted-ink tabular-nums">{team.length}</span></> },
-          ]} />
+        {data && (
+          <Segmented label={tr.which} value={tab} onChange={setTab}
+            className="w-full grid grid-flow-col auto-cols-fr [&>button]:h-auto [&>button]:self-stretch [&>button]:min-h-11 [&>button]:px-1 [&>button]:py-1 [&>button]:whitespace-normal [&>button]:leading-tight"
+            options={[
+              { value: 'pass_key', label: tabLabel(tr.passKey, passKeyTodo.length) },
+              { value: 'ongoing', label: tabLabel(tr.ongoing, todo.length) },
+              { value: 'all', label: tabLabel(tr.all, todo.length + openTotal) },
+              { value: 'done', label: tabLabel(tr.done, finished.length) },
+              ...(data.mayPick ? [{ value: 'team' as const, label: tabLabel(tr.team, team.length) }] : []),
+            ]} />
         )}
       </div>
       {data && (
@@ -184,18 +195,17 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
       {error && <StaleBanner message={error} onRetry={reload} />}
       {loading && !data ? <><Skeleton height={120} /><Skeleton height={120} /></>
         : tab === 'team' ? <TeamList jobs={team} />
-        : groups.length === 0 && (tab === 'open' || finished.length === 0)
+        : groups.length === 0 && finishedShown.length === 0
           ? unitKey
             ? <EmptyState icon="Search" title={tr.noUnitMatch(unitSearch.trim())} body={tr.noUnitMatchBody} />
-            : <EmptyState icon="Wrench" title={tab === 'open' ? tr.noOpen : tr.noMine}
-              body={tab === 'open' ? tr.noOpenBody : data?.mayPick ? tr.noMineBodyPick : tr.noMineBody} />
+            : <EmptyState icon="Wrench" title={emptyTitle} body={tab === 'done' ? undefined : data?.mayPick ? tr.noMineBodyPick : tr.noMineBody} />
           : (
             <div className="flex flex-col gap-2.5">
               {groups.map(({ group, offer }) => (
                 <UnitGroupCard key={`${offer ? 'open' : 'mine'}-${group.groupKey}`} group={group} offer={offer} fresh={fresh} picking={pickingUnit === group.groupKey}
                   onPickAll={() => void pickAll(group)} onOpen={setOpen} />
               ))}
-              {tab !== 'mine' && data?.mayPick && openTotal > pool.length && (
+              {tab === 'all' && data?.mayPick && openTotal > pool.length && (
                 <div className="flex flex-col items-center gap-1.5 py-1 text-center">
                   <span className="text-meta text-muted-ink">{tr.shown(pool.length, openTotal)}</span>
                   {limit < (data.maxLimit ?? POOL_PAGE)
@@ -203,15 +213,11 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
                     : <span className="text-meta text-muted-ink">{tr.pickBuildingForRest}</span>}
                 </div>
               )}
-              {tab !== 'open' && finished.length > 0 && (
-                <>
-                  <h2 className="m-0 mt-2 text-[16px] font-semibold">{tr.finished}</h2>
-                  {finished.map(r => <RepairCard key={r.id} r={r} onOpen={() => setOpen(r.id)} />)}
-                </>
-              )}
+              {tab === 'all' && finishedShown.length > 0 && <h2 className="m-0 mt-2 text-[16px] font-semibold">{tr.finished}</h2>}
+              {finishedShown.map(r => <RepairCard key={r.id} r={r} onOpen={() => setOpen(r.id)} />)}
             </div>
           )}
-      {open && <RepairSheet id={open} onClose={() => setOpen(null)} onChanged={reload} onPicked={() => setTab('mine')} onDropped={() => { setOpen(null); setTab('open'); }} />}
+      {open && <RepairSheet id={open} onClose={() => setOpen(null)} onChanged={reload} onPicked={() => setTab('ongoing')} onDropped={() => { setOpen(null); setTab('all'); }} />}
       {reporting && <ReportSheet onClose={() => setReporting(false)}
         onDone={() => { setReporting(false); reload(); toast({ tone: 'success', title: tr.problemReported, body: t.jobs.officeHasIt }); }} />}
     </>
@@ -223,35 +229,42 @@ function UnitGroupCard({ group, offer, fresh, picking, onPickAll, onOpen }: {
 }) {
   const t = usePortalText();
   const tr = t.repairs;
-  const [isExpanded, setIsExpanded] = useState(false);
   const isUrgent = group.jobs.some(r => r.urgency === 'urgent' && r.state !== 'resolved');
   const hasFresh = group.jobs.some(r => fresh.has(r.id));
-  const jobListId = `unit-jobs-${offer ? 'open' : 'mine'}-${group.groupKey}`;
   const place = placeTitle(group, tr.noUnit);
   return (
-    <section aria-label={`${place.title} ${place.sub}`}
-      className={cx('bg-card rounded-card border border-solid flex flex-col overflow-hidden', isUrgent ? 'border-danger-line' : hasFresh ? 'border-info-line' : 'border-line')}>
+    <ExpandableCard label={`${place.title} ${place.sub}`} borderClass={isUrgent ? 'border-danger-line' : hasFresh ? 'border-info-line' : 'border-line'} header={(
+      <>
+        <b className="text-heading truncate">{place.title}<span className="text-copy text-muted-ink font-normal"> · {place.sub}</span></b>
+        <span className="flex gap-1.5 flex-wrap">
+          <StatusBadge tone="neutral">{tr.jobs(group.jobs.length)}</StatusBadge>
+          {isUrgent && <StatusBadge tone="critical">{tr.urgent}</StatusBadge>}
+          {hasFresh && <StatusBadge tone="info" label={t.jobs.newJob} />}
+          {offer && <StatusBadge tone="gold">{tr.openToPick}</StatusBadge>}
+        </span>
+      </>
+    )}>
+      {group.jobs.map(r => <RepairCard key={r.id} r={r} offer={offer} fresh={fresh.has(r.id)} onOpen={() => onOpen(r.id)} groupedBy="unit" />)}
+      {offer && (
+        <div className="px-4 pb-4 pt-3 [border-top:1px_solid_var(--color-line)]">
+          <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="Hand" size="sm" />} loading={picking} onClick={onPickAll}>{tr.pickAll(group.jobs.length)}</Button>
+        </div>
+      )}
+    </ExpandableCard>
+  );
+}
+
+function ExpandableCard({ label, borderClass, header, children }: { label: string; borderClass: string; header: ReactNode; children: ReactNode }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const jobListId = useId();
+  return (
+    <section aria-label={label} className={cx('bg-card rounded-card border border-solid flex flex-col overflow-hidden', borderClass)}>
       <button type="button" aria-expanded={isExpanded} aria-controls={jobListId} onClick={() => setIsExpanded(current => !current)}
         className="w-full text-left bg-card flex items-center gap-3 px-4 py-3 min-h-[56px] cursor-pointer hover:bg-muted">
-        <span className="flex-1 min-w-0 flex flex-col gap-1.5">
-          <b className="text-heading truncate">{place.title}<span className="text-copy text-muted-ink font-normal"> · {place.sub}</span></b>
-          <span className="flex gap-1.5 flex-wrap">
-            <StatusBadge tone="neutral">{tr.jobs(group.jobs.length)}</StatusBadge>
-            {isUrgent && <StatusBadge tone="critical">{tr.urgent}</StatusBadge>}
-            {hasFresh && <StatusBadge tone="info" label={t.jobs.newJob} />}
-            {offer && <StatusBadge tone="gold">{tr.openToPick}</StatusBadge>}
-          </span>
-        </span>
+        <span className="flex-1 min-w-0 flex flex-col gap-1.5">{header}</span>
         <span className={cx('text-muted-ink transition-transform duration-200 motion-reduce:transition-none', isExpanded && 'rotate-180')}><Icon name="ChevronDown" size="nav" /></span>
       </button>
-      {isExpanded && <div id={jobListId} className="flex flex-col">
-        {group.jobs.map(r => <RepairCard key={r.id} r={r} offer={offer} fresh={fresh.has(r.id)} onOpen={() => onOpen(r.id)} inGroup />)}
-        {offer && (
-          <div className="px-4 pb-4 pt-3 [border-top:1px_solid_var(--color-line)]">
-            <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="Hand" size="sm" />} loading={picking} onClick={onPickAll}>{tr.pickAll(group.jobs.length)}</Button>
-          </div>
-        )}
-      </div>}
+      {isExpanded && <div id={jobListId} className="flex flex-col">{children}</div>}
     </section>
   );
 }
@@ -261,19 +274,30 @@ function TeamList({ jobs }: { jobs: Repair[] }) {
   if (jobs.length === 0) return <EmptyState icon="Users" title={tr.noTeam} body={tr.noTeamBody} />;
   return (
     <div className="flex flex-col gap-2.5">
-      {groupByTechnician(jobs).map(technician => (
-        <section key={technician.name.toLowerCase()} aria-label={technician.name} className="flex flex-col gap-2.5">
-          <h2 className="m-0 mt-2 text-[16px] font-semibold flex items-center gap-2">
-            <Icon name="UserRound" size="sm" />{technician.name}<span className="text-copy text-muted-ink font-normal">· {tr.jobs(technician.jobs.length)}</span>
-          </h2>
-          {technician.jobs.map(r => <RepairCard key={r.id} r={r} />)}
-        </section>
-      ))}
+      {groupByTechnician(jobs).map(technician => <TechnicianGroupCard key={technician.name.toLowerCase()} technician={technician} />)}
     </div>
   );
 }
 
-function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: boolean; fresh?: boolean; inGroup?: boolean; onOpen?: () => void }) {
+function TechnicianGroupCard({ technician }: { technician: TechnicianGroup }) {
+  const tr = usePortalText().repairs;
+  const isUrgent = technician.jobs.some(r => r.urgency === 'urgent');
+  return (
+    <ExpandableCard label={technician.name} borderClass={isUrgent ? 'border-danger-line' : 'border-line'} header={(
+      <>
+        <b className="text-heading truncate flex items-center gap-2"><Icon name="UserRound" size="sm" />{technician.name}</b>
+        <span className="flex gap-1.5 flex-wrap">
+          <StatusBadge tone="neutral">{tr.jobs(technician.jobs.length)}</StatusBadge>
+          {isUrgent && <StatusBadge tone="critical">{tr.urgent}</StatusBadge>}
+        </span>
+      </>
+    )}>
+      {technician.jobs.map(r => <RepairCard key={r.id} r={r} groupedBy="technician" />)}
+    </ExpandableCard>
+  );
+}
+
+function RepairCard({ r, offer, fresh, groupedBy, onOpen }: { r: Repair; offer?: boolean; fresh?: boolean; groupedBy?: GroupedBy; onOpen?: () => void }) {
   const t = usePortalText();
   const tr = t.repairs;
   const { short, stamp } = usePortalDates();
@@ -286,12 +310,12 @@ function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: b
       {r.jobType === 'pass_key' && r.state !== 'resolved' && <StatusBadge tone="info">{tr.passKey}</StatusBadge>}
     </>
   );
-  const className = cx('w-full box-border text-left bg-card flex flex-col gap-1.5 min-h-[44px]', inGroup
+  const className = cx('w-full box-border text-left bg-card flex flex-col gap-1.5 min-h-[44px]', groupedBy
     ? 'px-4 py-3 [border-top:1px_solid_var(--color-line)]'
     : cx('rounded-card border border-solid p-4', isUrgent ? 'border-danger-line' : fresh ? 'border-info-line' : 'border-line'));
   const content = (
     <>
-      {inGroup ? (
+      {groupedBy === 'unit' ? (
         <span className="flex items-start gap-2">
           <span className="flex-1 min-w-0 text-copy text-ink [overflow-wrap:anywhere]">{r.title}</span>
           {badges}
@@ -314,7 +338,7 @@ function RepairCard({ r, offer, fresh, inGroup, onOpen }: { r: Repair; offer?: b
     </>
   );
   return onOpen
-    ? <button type="button" onClick={onOpen} className={cx(className, 'cursor-pointer', inGroup && 'hover:bg-muted')}>{content}</button>
+    ? <button type="button" onClick={onOpen} className={cx(className, 'cursor-pointer', groupedBy && 'hover:bg-muted')}>{content}</button>
     : <div className={className}>{content}</div>;
 }
 

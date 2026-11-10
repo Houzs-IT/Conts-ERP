@@ -1,7 +1,7 @@
 import { mayWork } from '../../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso, transaction } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
-import { followWorker } from '../../../_lib/fieldAccess';
+import { followWorker, followDepartment } from '../../../_lib/fieldAccess';
 
 const EMPLOYMENT = ['internal', 'outsourced'];
 const MANAGE = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
@@ -61,6 +61,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   await transaction(env, async tx => {
     await run(tx, `UPDATE cleaners SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, nowIso(), id);
     if (loginActive !== null && await followWorker(tx, c.user_id, loginActive)) after.appLogin = loginActive ? 'on' : 'off';
+    const department = loginActive === null ? null : await followDepartment(tx, c.user_id);
+    if (department) after.loginDepartment = department;
     await audit(tx, {
       actorId: session.userId, actorLabel: session.fullName, action: 'housekeeping.cleaner_update',
       entityTable: 'cleaners', entityId: id, before, after,

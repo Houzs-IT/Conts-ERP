@@ -1,4 +1,4 @@
-import { type Env, one, json, fail, audit, nowIso } from '../../../../_lib/db';
+import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { rmText } from '../../../../_lib/format';
 import { requireSession } from '../../../../_lib/auth';
 import { mayChangeAdjustments } from '../../../../_lib/ownerScope';
@@ -82,4 +82,27 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
 
   return fail('VALIDATION', 'Unknown action. Use release, hold or settle.', 422);
+};
+
+export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (!mayChangeAdjustments(session)) return fail('FORBIDDEN', 'Only management, finance and operations managers can remove owner adjustments.', 403);
+  const ownerId = String(params.id), id = String(params.adjId);
+
+  const cur = await one<{ kind: string; amount: number; description: string; occurred_on: string; state: string; statement_id: string | null; statement_state: string | null; period_start: string | null }>(env, `
+    SELECT a.kind, a.amount, a.description, a.occurred_on, a.state, a.statement_id, s.state AS statement_state, s.period_start
+    FROM owner_adjustments a LEFT JOIN owner_statements s ON s.id = a.statement_id WHERE a.id = ? AND a.owner_id = ?`, id, ownerId);
+  if (!cur) return fail('NOT_FOUND', 'That adjustment no longer exists.', 404);
+  if (cur.statement_id && LOCKED.includes(cur.statement_state ?? '')) {
+    return fail('ON_FINAL_STATEMENT', `The ${String(cur.period_start).slice(0, 7)} statement already carries this adjustment and is final.`, 409);
+  }
+  if (await one(env, `SELECT 1 AS x FROM approval_requests WHERE kind = 'debt_write_off' AND status = 'pending' AND payload->>'adjustmentId' = ?`, id)) {
+    return fail('ALREADY_REQUESTED', 'A write-off of this debt is waiting for approval. Reject it first.', 409);
+  }
+
+  await run(env, 'DELETE FROM owner_adjustments WHERE id = ? AND owner_id = ?', id, ownerId);
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner_adjustment.delete', entityTable: 'owner_adjustments', entityId: id,
+    before: { ownerId, kind: cur.kind, amount: cur.amount, description: cur.description, occurredOn: cur.occurred_on, state: cur.state, statementId: cur.statement_id }, after: null });
+  return json({ ok: true, regenerate: cur.statement_id ? String(cur.period_start).slice(0, 7) : null });
 };
