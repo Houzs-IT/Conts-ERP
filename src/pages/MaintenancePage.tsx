@@ -348,7 +348,7 @@ function JobCard({ i, money }: { i: Issue; money: boolean }) {
       </span>
       <span className="text-copy text-ink [overflow-wrap:anywhere]">{i.title}</span>
       <span className="text-meta text-muted-ink">
-        {CATEGORY[i.category] ?? i.category} · {i.vendorName ? i.vendorName : <span className="text-danger">Unassigned</span>} · reported {dateShort(i.reportedAt)}
+        {i.source === 'booking' ? <>Guest check-in {stamp(checkInAt(i))}</> : CATEGORY[i.category] ?? i.category} · {i.vendorName ? i.vendorName : <span className="text-danger">Unassigned</span>}{i.source !== 'booking' && <> · reported {dateShort(i.reportedAt)}</>}
       </span>
       <span className="flex gap-1.5 flex-wrap pt-0.5">
         {typeOf(i) !== 'normal' && <StatusBadge tone={typeOf(i) === 'urgent' ? 'critical' : 'info'}>{JOB_TYPE[typeOf(i)]}</StatusBadge>}
