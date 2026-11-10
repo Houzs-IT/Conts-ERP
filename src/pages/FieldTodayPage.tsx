@@ -219,12 +219,7 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
       {error && <StaleBanner message={error} onRetry={reload} />}
       {loading && !data ? <><Skeleton height={84} /><Skeleton height={84} /></>
         : isListEmpty ? emptyState
-        : tab === 'team' ? byCleaner(team).map(cleaner => (
-          <section key={cleaner.name.toLowerCase()} className="flex flex-col gap-2">
-            {groupHeading(cleaner.name, cleaner.jobs)}
-            <PhoneJobList label={cleaner.name}>{sortForCleaner(cleaner.jobs, jobOrder).map(j => <TaskCard key={j.id} job={j} now={now} fresh={false} active={false} showBuilding />)}</PhoneJobList>
-          </section>
-        ))
+        : tab === 'team' ? byCleaner(team).map(cleaner => <CleanerCard key={cleaner.name.toLowerCase()} cleaner={cleaner} now={now} />)
         : <>
           {overdueCount > 0 && (
             <section aria-label={t.jobs.overdueTitle} className="flex-none rounded-card border border-solid border-danger-line bg-danger-bg flex flex-col">
@@ -261,6 +256,28 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
 const cleanName = (t: PortalStrings, j: Job) => (j.kind in t.jobs.clean ? wordFor(t.jobs.clean, j.kind) : j.work);
 
 /** Time left until the next guest: red under two hours, "guest due now" once past (OpsUi's TimeLeft in the portal's words). */
+function CleanerCard({ cleaner, now }: { cleaner: CleanerGroup; now: number }) {
+  const t = usePortalText();
+  const overdueCount = cleaner.jobs.filter(j => jobOverdue(j, now)).length;
+  return (
+    <details className={cx('group bg-card rounded-card border border-solid overflow-hidden flex-none', overdueCount ? 'border-danger-line' : 'border-line')}>
+      <summary className="list-none [&::-webkit-details-marker]:hidden flex items-center gap-3 px-4 py-3 min-h-[56px] cursor-pointer hover:bg-muted">
+        <span className="flex-1 min-w-0 flex flex-col gap-1.5">
+          <b className="text-heading truncate flex items-center gap-2"><Icon name="UserRound" size="sm" />{cleaner.name}</b>
+          <span className="flex gap-1.5 flex-wrap">
+            <StatusBadge tone="neutral">{t.repairs.jobs(cleaner.jobs.length)}</StatusBadge>
+            {overdueCount > 0 && <StatusBadge tone="critical">{t.jobs.overdueTitle} · {overdueCount}</StatusBadge>}
+          </span>
+        </span>
+        <span className="text-muted-ink transition-transform duration-200 motion-reduce:transition-none group-open:rotate-180"><Icon name="ChevronDown" size="nav" /></span>
+      </summary>
+      <PhoneJobList label={cleaner.name} className="rounded-none border-x-0 border-b-0">
+        {sortForCleaner(cleaner.jobs, jobOrder).map(j => <TaskCard key={j.id} job={j} now={now} fresh={false} active={false} showBuilding />)}
+      </PhoneJobList>
+    </details>
+  );
+}
+
 function TimeLeft({ at, now }: { at: string; now: number }) {
   const t = usePortalText();
   const min = Math.round((Date.parse(at) - now) / 60000);

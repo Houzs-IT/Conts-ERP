@@ -75,6 +75,7 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/field\/repairs\/[^/]+\/(pick|drop|note)$/],
   // A cleaner on the job switches it between Basic clean (BC) and Deep clean (DC) (the handler checks it is theirs).
   ['PATCH', /^\/api\/field\/tasks\/[^/]+\/kind$/],
+  ['POST', /^\/api\/field\/tasks\/[^/]+\/pick$/],
   ['GET', /^\/api\/housekeeping\/tasks\/[^/]+(\/checklist|\/photos)?$/],
   ['POST', /^\/api\/housekeeping\/tasks\/[^/]+\/(checklist|start)$/],
   ['POST', /^\/api\/housekeeping\/guest-left$/],
