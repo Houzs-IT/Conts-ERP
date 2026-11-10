@@ -397,7 +397,7 @@ export async function refundDraftBody(sb: Db, companyId: number, money: OrderMon
     refundSourceDocNo: money.docNo,
     refundAmountSen: amountSen,
     payeeName: money.customer.name ?? money.docNo,
-    creditAccountCode: roles.BANK_DEFAULT,
+    creditAccountCode: roles.BANK_PAY_DEFAULT,
     voucherDate: todayMyt(),
     notes: `Refund requested from ${money.docNo}${requestedBy ? ` by ${requestedBy}` : ''}${note ? ` — ${note}` : ''}`,
   };

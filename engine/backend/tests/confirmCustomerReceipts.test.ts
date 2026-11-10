@@ -224,6 +224,14 @@ describe('finance confirms against the bank statement', () => {
       banks: [{ code: '310-0010', name: 'CASH AT BANK - HONG LEONG' }, { code: '310-0020', name: 'CASH AT BANK - MAYBANK' }],
     });
   });
+
+  /* The list feeds only the confirm dialog — customer money coming IN — so it starts on the receiving bank even
+     when a separate paying bank (BANK_PAY_DEFAULT) is set. Payouts pre-fill the paying bank elsewhere. */
+  test('a separate paying bank does not move the default a receipt is confirmed onto', async () => {
+    const sb = world({ acc_account_roles: [{ company_id: CO, role: 'BANK_PAY_DEFAULT', account_code: '310-0020' }] });
+    const res = await harness(sb).app.request('/accounting/receipts/banks');
+    expect(((await res.json()) as { defaultCode: string }).defaultCode).toBe('310-0010');
+  });
 });
 
 describe('who may confirm, and onto what', () => {

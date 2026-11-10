@@ -65,6 +65,8 @@ export interface ProjectShared extends SharedCustomerProperty {
   endDate: string | null;
   /** The salesperson's name (scm.staff), for display. */
   salespersonName: string;
+  /** The project's brand (public.project_brands.name), or null: a quotation opened for it starts on this letterhead. */
+  brand: string | null;
 }
 
 const s = (v: unknown): string => (v == null ? "" : String(v));
@@ -115,6 +117,7 @@ export async function readProjectShared(db: Db, projectId: number, companySql: s
     id: Number(row.id), code: (row.code as string | null) ?? null, name: s(row.name),
     startDate: row.start_date ? s(row.start_date).slice(0, 10) : null, endDate: row.end_date ? s(row.end_date).slice(0, 10) : null,
     salespersonName: s(r.salesperson_name) || s(row.salesperson_name),
+    brand: s(row.brand).trim() || null,
   };
 }
 
@@ -138,14 +141,17 @@ export async function writeProjectShared(db: Db, projectId: number, v: Partial<R
 /** Project picker for the SO form: renovation projects of this company, newest first, with their shared fields. */
 /** One project takes one sales order (owner, 5 Nov 2026): a project with a live order is not offered. */
 export async function searchProjects(db: Db, companySql: string, q: string): Promise<ProjectShared[]> {
+  /* Each word on its own, in any field and any order: "kl48 lim" (Houzs port, owner 8 Nov 2026). */
+  const words = q.trim().split(/\s+/).filter(Boolean).slice(0, 6);
   const res = await db.prepare(
     `SELECT p.id::int AS id FROM projects p
       WHERE p.project_kind = 'renovation' AND p.archived_at IS NULL${companySql}
         AND NOT EXISTS (SELECT 1 FROM scm.mfg_sales_orders so WHERE so.project_id = p.id AND so.status::text <> 'CANCELLED')
-        AND (? = '' OR p.name ILIKE '%' || ? || '%' OR coalesce(p.code, '') ILIKE '%' || ? || '%'
-             OR coalesce(p.building, '') ILIKE '%' || ? || '%' OR coalesce(p.customer_name, '') ILIKE '%' || ? || '%')
+${words.map(() => `
+        AND (p.name ILIKE '%' || ? || '%' OR coalesce(p.code, '') ILIKE '%' || ? || '%'
+             OR coalesce(p.building, '') ILIKE '%' || ? || '%' OR coalesce(p.customer_name, '') ILIKE '%' || ? || '%')`).join("")}
       ORDER BY p.id DESC LIMIT 30`,
-  ).bind(q, q, q, q, q).all<{ id: number }>();
+  ).bind(...words.flatMap((w) => [w, w, w, w])).all<{ id: number }>();
   const out: ProjectShared[] = [];
   for (const row of res.results ?? []) {
     const one = await readProjectShared(db, Number(row.id), companySql);

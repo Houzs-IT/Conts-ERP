@@ -7,7 +7,7 @@ import { invalidDraft, draftColumns, rentToRentColumns, modelOf, isRevenueModel,
 import { contractView, unitExample, lastMonth } from '../../../_lib/unitContract';
 import { heldContract } from '../../../_lib/datedRows';
 import { purposeReady, codeOf, offeredTypes, type Purpose } from '../../../_lib/unitPurpose';
-import { contractTypes, NO_GRR } from '../../../_lib/contractTypes';
+import { contractTypes, optionsOfType, NO_GRR, type ContractTypeRow, type ContractTypeOptions } from '../../../_lib/contractTypes';
 import { isPlaceholderOwner } from '../../../_lib/placeholderOwner';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -24,6 +24,11 @@ function termsOf(r: Record<string, unknown>): Record<string, unknown> {
     rent: num(r.grr_amount), guarantee: num(r.minimum_guarantee), yearlyGuarantee: num(r.minimum_guarantee_annual),
     tenantName: r.tenant_name ?? null, startsOn: day(r.starts_on), endsOn: day(r.ends_on), renewsOn: day(r.renews_on),
   };
+}
+
+function optionsForDraft(types: readonly ContractTypeRow[], draft: ContractDraft): ContractTypeOptions {
+  const model = isRevenueModel(draft.revenueModel) ? draft.revenueModel : 'management';
+  return optionsOfType(types, draft.contractCode || codeOf(types, model), model);
 }
 
 async function unitOf(env: Env, id: string) {
@@ -77,13 +82,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const id = String(params.id);
   const b = await request.json<ContractDraft & { month?: string }>().catch(() => null);
   if (!b) return fail('VALIDATION', 'Nothing to work out.', 422);
-  const fields = invalidDraft({ ...b, startsOn: b.startsOn || '2000-01-01' });
+  const draft = { ...b, startsOn: b.startsOn || '2000-01-01' };
+  const options = optionsForDraft(await contractTypes(env), draft);
+  const fields = invalidDraft(draft, options);
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the contract details.', 422, fields);
   const u = await unitOf(env, id);
   if (!u) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
   if (isPlaceholderOwner(u.owner_name)) return fail('VALIDATION', PICK_OWNER, 422);
   const month = MONTH.test(b.month ?? '') ? b.month! : lastMonth(todayMyt());
-  const example = await unitExample((sql, ...args) => all(env, sql, ...args), id, month, { ...b, startsOn: b.startsOn || '2000-01-01' });
+  const example = await unitExample((sql, ...args) => all(env, sql, ...args), id, month, draftColumns(draft, options));
   return json({ month, example });
 };
 
@@ -99,7 +106,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   const id = String(params.id);
   const b = await request.json<ContractDraft & { mode?: string }>().catch(() => null);
   if (!b) return fail('VALIDATION', 'Nothing to save.', 422);
-  const fields = invalidDraft(b);
+  const types = await contractTypes(env);
+  const options = optionsForDraft(types, b);
+  const fields = invalidDraft(b, options);
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the contract details.', 422, fields);
   const u = await unitOf(env, id);
   if (!u) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
@@ -110,7 +119,6 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   const model = b.revenueModel;
   if (!isRevenueModel(model)) return fail('VALIDATION', 'Check the contract details.', 422, { revenueModel: 'Pick one income model.' });
   if (model === 'grr' || b.contractCode === 'GRR') return fail('VALIDATION', NO_GRR, 422, { contractCode: NO_GRR });
-  const types = await contractTypes(env);
   const code = typeof b.contractCode === 'string' && b.contractCode ? b.contractCode : codeOf(types, model);
   const type = types.find(t => t.code === code);
   if (!type) return fail('VALIDATION', 'Check the contract details.', 422, { contractCode: `${code} is not a contract type.` });
@@ -121,10 +129,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
     return fail('VALIDATION', `${code} (${type.label}) is hidden, so a contract cannot take it. A unit can take ${allowed.join(', ')}.`, 422, { contractCode: `Pick ${allowed.join(' or ')}.` });
   }
   const c = {
-    ...draftColumns(b), ...((await purposeReady(env)) ? { contract_code: code } : {}),
+    ...draftColumns(b, options), ...((await purposeReady(env)) ? { contract_code: code } : {}),
     ...((await hasColumn(env, 'owner_contracts', 'rent_out_amount')) ? rentToRentColumns(b) : {}),
-    // LT (Package C) has no operator share: the owner gets the tenant's whole rent less costs (staff sheet UNIT, 26 Oct 2026).
-    ...(code === 'LT' ? { management_fee_pct: 0 } : {}),
   }, now = nowIso();
   const shared = cur ? Number((await one<{ n: number }>(env, 'SELECT COUNT(*) AS n FROM units WHERE contract_id = ? AND id <> ?', cur.id, id))?.n ?? 0) : 0;
   const mode = b.mode === 'new' ? 'new' : 'update';

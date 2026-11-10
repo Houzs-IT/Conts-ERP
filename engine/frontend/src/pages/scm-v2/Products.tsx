@@ -60,6 +60,7 @@ import {
   useUpdateMfgProductPrices,
   useCreateMfgProduct,
   useBatchImportMfgProducts,
+  previewBatchImport,
   useDeleteMfgProduct,
   useUpdateMfgProductStatus,
   useMaintenanceConfig,
@@ -78,6 +79,7 @@ import {
   type MfgProductRow,
   type BatchImportRow,
   type BatchImportResult,
+  type BatchImportPlan,
   type MaintenanceConfig,
   type PricedOption,
   type SeatHeightPrice,
@@ -126,6 +128,8 @@ import { ProductRow, fmtRm, fmtUnit, priceForHeightTier, useSkuGridOrder, saveSt
 import { CONTS_HIDDEN_MAINTENANCE_KEYS, CONTS_RENOVATION_CATALOG, resolveProductTab, visibleProductTabs } from '../../conts/catalog';
 import { RenovationSkuMaster } from './products/RenovationSkuMaster';
 import { RenovationImportHint } from './products/RenovationImportHint';
+import { downloadSkuImportTemplate, savedSummary } from './products/skuImportTemplate';
+import { SkuImportPreview } from './products/SkuImportPreview';
 
 const ICON_PROPS = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -4614,7 +4618,8 @@ function exportSkusCsv(rows: MfgProductRow[], sofaSizes: string[], tier: SofaPri
     }
   }
 
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  // BOM: without it Excel opens the file in the PC's codepage and KŌRI-style codes come out garbled (HC-0165).
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -4707,7 +4712,7 @@ const ImportSkusDialog = ({ sofaSizes, onClose, renovation = false }: { sofaSize
   const batchImport = useBatchImportMfgProducts();
   // Parsed rows held for PREVIEW — committed only on explicit Confirm (Commander
   // 2026-06-15, no 裸奔: picking a file must NOT write to the server).
-  const [staged, setStaged] = useState<{ rows: BatchImportRow[]; tierErrors: Array<{ code: string; reason: string }> } | null>(null);
+  const [staged, setStaged] = useState<{ rows: BatchImportRow[]; tierErrors: Array<{ code: string; reason: string }>; plan: BatchImportPlan } | null>(null);
 
   const handleFile = async (file: File) => {
     setBusy(true);
@@ -4847,8 +4852,10 @@ const ImportSkusDialog = ({ sofaSizes, onClose, renovation = false }: { sofaSize
       }
 
       // Stage for preview — DO NOT commit yet (Commander 2026-06-15, no 裸奔):
-      // show what will change and require an explicit Confirm before writing.
-      setStaged({ rows, tierErrors });
+      // the server judges every row against the database WITHOUT writing and
+      // says new / changed / unchanged; Confirm is the only write.
+      const plan = await previewBatchImport(rows);
+      setStaged({ rows, tierErrors, plan });
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : 'Something went wrong.');
     } finally {
@@ -4865,10 +4872,9 @@ const ImportSkusDialog = ({ sofaSizes, onClose, renovation = false }: { sofaSize
       const res = await batchImport.mutateAsync(staged.rows);
       setResult(staged.tierErrors.length > 0
         ? {
-            upserted: res.upserted,
+            ...res,
             failed: res.failed + staged.tierErrors.length,
             failures: [...staged.tierErrors, ...(res.failures ?? [])],
-            modelsMoved: res.modelsMoved,
           }
         : res);
       setStaged(null);
@@ -4897,10 +4903,17 @@ const ImportSkusDialog = ({ sofaSizes, onClose, renovation = false }: { sofaSize
           <button type="button" className={styles.iconBtn} onClick={onClose}><X {...ICON_PROPS} /></button>
         </header>
         {renovation ? <RenovationImportHint /> : <p style={{ fontSize: 'var(--fs-13)', color: '#767b6e' }}>
-          Pick a CSV or Excel file exported from this page. Edit the prices in Excel,
-          save, and import it back. A blank cell is left as it was — it never clears a price.
+          A code that is not in SKU Master creates a new SKU (it needs a name and a category);
+          a code already there edits that SKU. Start from the template for new SKUs, or from
+          Export SKUs to edit prices. A blank cell is left as it was — it never clears a price.
           Up to 500 SKUs per file. A new category on a SKU that belongs to a model moves the model and all its SKUs.
         </p>}
+        {/* A blank file to start new SKUs from (Houzs 2990-0025, owner 8 Nov 2026). */}
+        <Button variant="secondary" onClick={() => void downloadSkuImportTemplate(sofaSizes, renovation)} style={{ marginTop: 'var(--space-3)' }}>
+          <Download {...ICON_PROPS} />
+          <span>Download template</span>
+        </Button>
+        <br />
         <input
           type="file"
           accept=".csv,.xlsx,.xls"
@@ -4922,22 +4935,17 @@ const ImportSkusDialog = ({ sofaSizes, onClose, renovation = false }: { sofaSize
             is written until the operator confirms this staged batch. */}
         {staged && !result && (
           <div style={{ marginTop: 'var(--space-4)' }}>
-            <p style={{ fontSize: 'var(--fs-13)' }}>
-              <strong>{staged.rows.length}</strong> SKU{staged.rows.length === 1 ? '' : 's'} ready to import
-              {staged.tierErrors.length > 0 && (
-                <> · <span style={{ color: '#0c3f39' }}>{staged.tierErrors.length} will be skipped</span></>
-              )}. Blank cells keep the current value. <strong>Nothing is saved until you confirm.</strong>
-            </p>
-            {staged.tierErrors.length > 0 && (
-              <ul style={{ margin: 'var(--space-2) 0 0', paddingLeft: 'var(--space-4)', fontSize: 'var(--fs-12)', color: '#0c3f39' }}>
-                {staged.tierErrors.slice(0, 8).map((e) => <li key={e.code}>{e.code}: {e.reason}</li>)}
-                {staged.tierErrors.length > 8 && <li>…and {staged.tierErrors.length - 8} more</li>}
-              </ul>
-            )}
+            <SkuImportPreview plan={staged.plan} skipped={staged.tierErrors} />
             <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end', marginTop: 'var(--space-4)' }}>
               <Button variant="secondary" onClick={() => setStaged(null)} disabled={busy}>Cancel</Button>
-              <Button variant="primary" onClick={() => void confirmImport()} disabled={busy}>
-                {busy ? 'Importing…' : `Confirm import (${staged.rows.length})`}
+              <Button
+                variant="primary"
+                onClick={() => void confirmImport()}
+                disabled={busy || staged.plan.counts.new + staged.plan.counts.changed === 0}
+              >
+                {busy ? 'Importing…'
+                  : staged.plan.counts.new + staged.plan.counts.changed === 0 ? 'Nothing to change'
+                    : `Confirm import (${staged.plan.counts.new + staged.plan.counts.changed})`}
               </Button>
             </div>
           </div>
@@ -4956,7 +4964,7 @@ const ImportSkusDialog = ({ sofaSizes, onClose, renovation = false }: { sofaSize
               color: result.failed > 0 ? '#0c3f39' : '#2F5D4F',
             }}>
               {result.upserted > 0
-                ? `Saved — ${result.upserted} SKU${result.upserted === 1 ? '' : 's'} updated${result.failed > 0 ? ` · ${result.failed} failed` : ''}`
+                ? `Saved — ${savedSummary(result)}${result.failed > 0 ? ` · ${result.failed} failed` : ''}`
                 : result.failed > 0
                   ? `Nothing saved — ${result.failed} row${result.failed === 1 ? '' : 's'} failed`
                   : 'Nothing to update — every value already matched what was saved'}

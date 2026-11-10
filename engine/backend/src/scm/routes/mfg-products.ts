@@ -37,6 +37,7 @@ import type { Env, Variables } from '../env';
 import { categorySwapAllowed } from '../shared/category-swap';
 import { PRODUCT_CODE_CASCADE } from '../lib/product-code-rename';
 import { moveModelCategory, planModelCategoryMoves, type ImportModelMove } from '../lib/model-category-move';
+import { diffSkuImportRow, type SkuImportPlanRow } from '../lib/sku-import-diff';
 import { ensureModelForSku, modelCodeForSku } from '../lib/ensure-model-for-sku';
 import { MFG_PRODUCT_CATEGORIES, MFG_CATEGORY_LABELS, mfgCategoryLabel, parseMfgCategory } from '../shared/product-categories';
 import { categoriesInGroup, isUom, parseSubCategory, parseUom, validateCategoryPair } from '../shared/renovation-catalog';
@@ -476,9 +477,13 @@ mfgProducts.post('/', createMfgProductHandler);
 export const batchImportMfgProductsHandler = async (c: AppContext) => {
   const gate = await requireRole(c);
   if (!gate.ok) return gate.res;
-  let body: { rows?: Array<Record<string, unknown>> };
+  let body: { rows?: Array<Record<string, unknown>>; dryRun?: boolean };
   try { body = (await c.req.json()) as typeof body; } catch { return c.json({ error: 'invalid_json' }, 400); }
   const list = body.rows ?? [];
+  /* dryRun: judge every row against the database exactly as the import would,
+     write nothing, and say which rows are new, changed (field by field) or
+     unchanged. The Import SKUs preview shows this before Confirm. */
+  const dryRun = body.dryRun === true;
   if (list.length === 0) return c.json({ error: 'rows_required' }, 400);
   if (list.length > 500) return c.json({ error: 'too_many', message: 'Max 500 rows per import' }, 400);
 
@@ -486,6 +491,10 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
   if (!co.ok) return c.json(co.refusal, 409);
   const supabase = c.get('supabase');
   let upserted = 0;
+  let created = 0;
+  let unchanged = 0;
+  const planRows: SkuImportPlanRow[] = [];
+  const plannedByCode = new Map<string, Record<string, unknown>>();
   const failures: Array<{ code: string; reason: string }> = [];
 
   /* Only a sheet naming a category outside the enum list needs the master list. */
@@ -541,8 +550,12 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
      * rather than a rule.
      *
      * The existence read moved UP for this; the write branch below reuses it. */
-    const { data: existing } = await supabase.from('mfg_products')
-      .select('id, seat_height_prices, category, sub_category, uom, status').eq('code', code).eq('company_id', activeCompanyId(c)).maybeSingle();
+    const { data: stored } = await supabase.from('mfg_products')
+      .select('id, name, description, base_model, size_label, branding, base_price_sen, price1_sen, unit_m3_milli, seat_height_prices, category, sub_category, uom, status').eq('code', code).eq('company_id', activeCompanyId(c)).maybeSingle();
+    /* The same code again in one file: apply writes the earlier row first and
+       reads it back here, so the dry run judges this row against that planned
+       state too (a code new to the system is "new" once, then "changed"). */
+    const existing = (dryRun ? plannedByCode.get(code) : undefined) ?? stored;
 
     if (categoryCell && !category) {
       failures.push({
@@ -651,6 +664,46 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
     }
     const tierOf = (e: SeatEntry) => e.tier ?? 'PRICE_2';
 
+    if (existing) {
+      // Merge sofa prices BY TIER: the export ships one tier at a time, so an
+      // import must only replace the tiers it carries and leave the other tiers
+      // (P1/P2/P3) on the SKU untouched — never wipe them.
+      if (incomingSeat.length > 0) {
+        const incomingTiers = new Set(incomingSeat.map(tierOf));
+        const existingSeat = (Array.isArray((existing as { seat_height_prices?: unknown }).seat_height_prices)
+          ? (existing as { seat_height_prices: SeatEntry[] }).seat_height_prices
+          : []);
+        const kept = existingSeat.filter((e) => !incomingTiers.has(tierOf(e)));
+        /* …and merge the RETAIL dimension back onto the tiers it DOES carry.
+           SeatEntry has no `sellingPriceSen` and the import sheet has no column
+           for one — retail is 2990's POS SKU Master's alone — so replacing a
+           tier outright deletes every retail price in it. PRICE_1 is exactly
+           where that money lives. Same rule as the PATCH merge below and as the
+           company-2 trigger (migration 20260920T1300). */
+        row.seat_height_prices = mergeRetailOntoDerivedSeatGrid(existingSeat, [...kept, ...incomingSeat]);
+      }
+    } else if (incomingSeat.length > 0) {
+      row.seat_height_prices = incomingSeat;
+    }
+    /* New, changed or unchanged — the same verdict the preview showed. */
+    const verdict = diffSkuImportRow(existing as Record<string, unknown> | null, row);
+    if (dryRun) {
+      plannedByCode.set(code, { ...((existing as Record<string, unknown> | null) ?? { id: '(planned)' }), ...row });
+      planRows.push({
+        code,
+        name: name || ((existing as { name?: string } | null)?.name ?? null),
+        status: verdict.status,
+        changes: verdict.changes,
+      });
+      continue;
+    }
+    /* Nothing differs: no write, so the SKU is not touched at all. A row whose
+       model an earlier row of this file already moved still counts as saved. */
+    if (existing && verdict.status === 'unchanged' && !(category && plan.moves.has(code))) {
+      unchanged += 1;
+      continue;
+    }
+
     // Never rewrite the PK id on re-import: UPDATE an existing SKU by code (id +
     // any omitted column left untouched), INSERT a brand-new SKU with a fresh id.
     // `existing` was read above, where it also decides create-vs-edit.
@@ -676,26 +729,8 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
     }
     let error;
     if (existing) {
-      // Merge sofa prices BY TIER: the export ships one tier at a time, so an
-      // import must only replace the tiers it carries and leave the other tiers
-      // (P1/P2/P3) on the SKU untouched — never wipe them.
-      if (incomingSeat.length > 0) {
-        const incomingTiers = new Set(incomingSeat.map(tierOf));
-        const existingSeat = (Array.isArray((existing as { seat_height_prices?: unknown }).seat_height_prices)
-          ? (existing as { seat_height_prices: SeatEntry[] }).seat_height_prices
-          : []);
-        const kept = existingSeat.filter((e) => !incomingTiers.has(tierOf(e)));
-        /* …and merge the RETAIL dimension back onto the tiers it DOES carry.
-           SeatEntry has no `sellingPriceSen` and the import sheet has no column
-           for one — retail is 2990's POS SKU Master's alone — so replacing a
-           tier outright deletes every retail price in it. PRICE_1 is exactly
-           where that money lives. Same rule as the PATCH merge below and as the
-           company-2 trigger (migration 20260920T1300). */
-        row.seat_height_prices = mergeRetailOntoDerivedSeatGrid(existingSeat, [...kept, ...incomingSeat]);
-      }
       ({ error } = await supabase.from('mfg_products').update(row).eq('code', code).eq('company_id', activeCompanyId(c)));
     } else {
-      if (incomingSeat.length > 0) row.seat_height_prices = incomingSeat;
       // Every NEW SKU belongs to a Model (owner 2026-09-18). name + category are
       // guaranteed present on a create by the guard above; base_model links a
       // variant's SKUs to one shared model, a flat product is its own 1:1 model.
@@ -731,10 +766,21 @@ export const batchImportMfgProductsHandler = async (c: AppContext) => {
       failures.push({ code, reason: error.message });
     } else {
       upserted += 1;
+      if (!existing) created += 1;
     }
   }
 
-  return c.json({ upserted, failed: failures.length, failures: failures.slice(0, 50), modelsMoved });
+  if (dryRun) {
+    const counts = { new: 0, changed: 0, unchanged: 0 };
+    for (const p of planRows) counts[p.status] += 1;
+    /* A category change on a modelled SKU moves its whole model on apply. */
+    const modelsToMove = [...new Map(planRows.flatMap((p) => {
+      const m = plan.moves.get(p.code);
+      return m ? [[m.modelId, m] as const] : [];
+    })).values()];
+    return c.json({ dryRun: true, counts, plan: planRows, failed: failures.length, failures: failures.slice(0, 50), modelsToMove });
+  }
+  return c.json({ upserted, created, unchanged, failed: failures.length, failures: failures.slice(0, 50), modelsMoved });
 };
 mfgProducts.post('/batch-import', batchImportMfgProductsHandler);
 

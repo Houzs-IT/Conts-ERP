@@ -9,7 +9,7 @@ vi.mock("./simpleApi", async (importOriginal) => ({
   simpleApi: { setFinanceKind: (...a: unknown[]) => setFinanceKind(...(a as [])) },
 }));
 
-import { FinanceKindFact } from "./RenovationDetail";
+import { FinanceKindFact } from "./ProjectBrandFacts";
 
 describe("the project's Type", () => {
   it("blank reads as following the quotation brand, and a choice is saved", async () => {

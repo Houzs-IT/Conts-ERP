@@ -20,12 +20,12 @@ import { useUrlState, SearchBox } from './listKit';
 interface Claim {
   id: string; title: string; state: string; payee: string | null; payeeKind: string | null; chargeTo: string | null;
   billingDate: string | null; finishedAt: string | null; amount: number; paidOn: string | null;
-  unitId: string; unitNumber: string; propertyName: string;
+  unitId: string | null; unitNumber: string | null; propertyName: string;
 }
 interface Payload { ready: boolean; data: Claim[]; counts: { unpaid: number; paid: number }; owed: number }
 type Paid = 'no' | 'yes' | 'all';
 
-const unitOf = (c: Claim) => `${c.propertyName} ${c.unitNumber}`;
+const unitOf = (c: Claim) => `${c.propertyName} ${c.unitNumber ?? 'Building (no unit)'}`;
 const billedOn = (c: Claim) => c.billingDate ?? c.finishedAt?.slice(0, 10) ?? null;
 
 export default function ContractorClaims() {

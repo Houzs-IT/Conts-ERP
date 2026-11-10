@@ -9,9 +9,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Cleaners and technicians cannot request approval.', 403);
 
   const id = String(params.id);
-  const cur = await one<any>(env, 'SELECT id, state, quoted_amount, owner_approved_at FROM maintenance_issues WHERE id = ?', id);
+  const cur = await one<any>(env, 'SELECT id, state, unit_id, quoted_amount, owner_approved_at FROM maintenance_issues WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That job no longer exists.', 404);
   if (cur.state === 'resolved') return fail('CONFLICT', 'That job is already finished.', 409);
+  if (!cur.unit_id) return fail('VALIDATION', 'A job in the building has no owner to approve it.', 422);
   if (cur.quoted_amount == null) return fail('VALIDATION', 'Add a quote before asking the owner to approve.', 422);
 
   await run(env, `UPDATE maintenance_issues SET owner_approval_required = 1, owner_approved_at = NULL, state = 'waiting', updated_at = ? WHERE id = ?`, nowIso(), id);

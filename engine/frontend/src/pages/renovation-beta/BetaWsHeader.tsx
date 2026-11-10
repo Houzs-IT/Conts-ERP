@@ -1,7 +1,7 @@
 /* Beta workspace header, as the mockup's project page opens: the name in capitals, the code line, the team chips
    with WhatsApp and Assign, and the stage stepper. */
 
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, MessageCircle, Pencil } from "lucide-react";
 import { motion } from "motion/react";
@@ -22,6 +22,8 @@ interface HeaderProps {
   canWrite: boolean;
   today: string;
   openDialog: (dialog: BetaDialog) => void;
+  /** Shown at the header's right: Delete project, for those who manage projects. */
+  actions?: ReactNode;
 }
 
 const DAY_MS = 86_400_000;
@@ -67,7 +69,7 @@ function AvatarStack({ who, ring }: { who: readonly PersonRef[]; ring: string })
 /** The chips' least height: the design's pill, and a full touch target. */
 const CARD_H = 44;
 
-export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDialog }: HeaderProps): ReactElement {
+export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDialog, actions }: HeaderProps): ReactElement {
   const { project: p } = d;
   const peopleQ = usePeople();
   const handoverOn = p.handed_over_at ?? p.planned_handover_date;
@@ -151,6 +153,7 @@ export function BetaWsHeader({ d, p: board, people = [], canWrite, today, openDi
           )}
         </div>
       </div>
+      {actions && <div style={{ display: "flex", flexWrap: "wrap", gap: 8, flex: "none" }}>{actions}</div>}
     </section>
   );
 }

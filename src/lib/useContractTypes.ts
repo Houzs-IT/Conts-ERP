@@ -2,8 +2,8 @@ import { useMemo } from 'react';
 import { useApi, type Query } from './useApi';
 import { BUILT_IN_CONTRACT_TYPES, type ContractType } from './revenueModel';
 
-export interface ContractTypesPayload { ready: boolean; mayEdit: boolean; data: ContractType[] }
-const FALLBACK: ContractTypesPayload = { ready: false, mayEdit: false, data: [...BUILT_IN_CONTRACT_TYPES] };
+export interface ContractTypesPayload { ready: boolean; optionsReady: boolean; mayEdit: boolean; data: ContractType[] }
+const FALLBACK: ContractTypesPayload = { ready: false, optionsReady: false, mayEdit: false, data: [...BUILT_IN_CONTRACT_TYPES] };
 
 /** The contract type list as the server holds it, hidden types too, with what the editing screen needs. */
 export const useContractTypesPayload = (on = true): Query<ContractTypesPayload> => useApi<ContractTypesPayload>(on ? '/contract-types' : null, FALLBACK);

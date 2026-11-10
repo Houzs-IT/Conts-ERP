@@ -8,7 +8,7 @@ import { rating as fmtRating, date as fmtDate, count, plural } from '../../lib/f
 import { cx, TONE } from '../../lib/design-tokens';
 import { useUrlState } from '../finance/listKit';
 import { BAD_REVIEW_MAX, AIRBNB_CATEGORIES, CATEGORY_FLAG_BELOW, categoryLabel, categoryFlagged } from '../../lib/reviewRules';
-import { CategoryGrid, Distribution, TenBox } from './reviewUi';
+import { CategoryGrid, Distribution, StarMark, TenBox } from './reviewUi';
 import type { CategoryAverages } from './ReviewHealth';
 const Tile = StatTile;
 
@@ -61,7 +61,7 @@ export function ReviewsOverview() {
       : { key: 'place', label: 'Unit', value: r => `${r.propertyName ?? ''} ${r.unitNumber ?? ''}`.trim(), render: r => <span className="font-medium">{r.unitNumber}</span>, sub: r => r.propertyName ?? '', hideable: false, phone: 'title', width: 180 },
     { key: 'reviews', label: 'Reviews', type: 'number', value: r => r.reviews, align: 'right', width: 80 },
     { key: 'average', label: 'Average', type: 'number', value: r => r.average, align: 'right', width: 90, phone: 'right', title: 'Out of 5, Airbnb and Booking.com together',
-      render: r => r.average == null ? <span className="text-muted-ink">No reviews</span> : <span className="inline-flex items-center gap-1.5 tabular-nums"><span className="text-ink">★</span>{fmtRating(r.average)}</span> },
+      render: r => r.average == null ? <span className="text-muted-ink">No reviews</span> : <span className="inline-flex items-center gap-1.5 tabular-nums"><StarMark className="text-ink" />{fmtRating(r.average)}</span> },
     ...catCols,
     { key: 'flags', label: 'Flags', sortable: false, width: 140, phone: 'meta',
       value: r => r.flagged.map(categoryLabel).join(', '),
@@ -89,7 +89,7 @@ export function ReviewsOverview() {
           <div className="flex items-end justify-between gap-4 flex-wrap">
             <div className="flex flex-col gap-1">
               <span className="flex items-center gap-2 text-[40px] sm:text-[48px] leading-none font-semibold tabular-nums">
-                <span aria-hidden className="text-[32px] sm:text-[40px]">★</span>{sum.data?.average != null ? fmtRating(sum.data.average) : '–'}
+                <span aria-hidden className="text-[32px] sm:text-[40px] inline-flex"><StarMark /></span>{sum.data?.average != null ? fmtRating(sum.data.average) : '–'}
               </span>
               <span className="text-copy text-muted-ink">{sum.data ? `${plural(total, 'review')} · ${replyRate}% replied` : 'Loading…'}</span>
               <span className="text-caption text-muted-ink">Out of 5, Airbnb and Booking.com together</span>
@@ -98,7 +98,7 @@ export function ReviewsOverview() {
               <button type="button" onClick={() => open({ tab: 'all', channel: 'airbnb' })}
                 className="flex flex-col items-start gap-1 rounded-card border border-solid border-line bg-card px-4 py-3 cursor-pointer [font-family:inherit] text-left min-w-0 sm:min-w-[150px]">
                 <span className="text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">Airbnb</span>
-                <span className="text-heading font-semibold tabular-nums">★ {air?.average != null ? air.average.toFixed(2) : '–'} <span className="text-meta font-normal text-muted-ink">/ 5</span></span>
+                <span className="text-heading font-semibold tabular-nums inline-flex items-center gap-1"><StarMark /> {air?.average != null ? air.average.toFixed(2) : '–'} <span className="text-meta font-normal text-muted-ink">/ 5</span></span>
                 <span className="text-caption text-muted-ink">{plural(air?.reviews ?? 0, 'review')}</span>
               </button>
               <button type="button" onClick={() => open({ tab: 'all', channel: 'booking_com' })}

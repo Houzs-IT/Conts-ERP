@@ -8,7 +8,7 @@ import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { date, monthLabel, rm, todayMyt } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
-import { typeOf, codeName, codeLabel, codeFromModel, isTenancy, type ContractType, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
+import { typeOf, codeName, codeLabel, codeFromModel, isTenancy, optionsOfType, type ContractType, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
 import { ExtendContractModal, GenerateAgreement } from './ContractExtras';
 import { CodeBadge } from './UnitExtras';
@@ -75,19 +75,20 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   // A contract with no saved type is read from its terms; saving would lock that guess in, so the type is chosen first.
   const typeUnset = !!current?.id && current.typeStored === false && mode === 'update';
   const dirty = (!!d && !!original && JSON.stringify(d) !== JSON.stringify(original)) || (typeUnset && picked);
-  const local: Record<string, string> = { ...(d ? problems(d) : {}), ...(typeUnset && !picked ? { contractCode: 'Choose the contract type first.' } : {}) };
+  const options = useMemo(() => (d ? optionsOfType(types, d.contractCode, d.revenueModel) : null), [types, d]);
+  const local: Record<string, string> = { ...(d && options ? problems(d, options) : {}), ...(typeUnset && !picked ? { contractCode: 'Choose the contract type first.' } : {}) };
   const shown = { ...local, ...fields };
 
   // The example follows the form: once the terms change, the server works last month out again on them.
   useEffect(() => {
-    if (!d || !dirty || Object.keys(problems(d)).length) { setPreview(null); return; }
+    if (!d || !options || !dirty || Object.keys(problems(d, options)).length) { setPreview(null); return; }
     const t = setTimeout(() => {
       setPreviewing(true);
-      api.post<{ example: Example | null }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d), month: data?.month })
+      api.post<{ example: Example | null }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d, options), month: data?.month })
         .then(r => setPreview(r.example)).catch(() => setPreview(null)).finally(() => setPreviewing(false));
     }, 350);
     return () => clearTimeout(t);
-  }, [d, dirty, unitId, data?.month]);
+  }, [d, options, dirty, unitId, data?.month]);
 
   if (isPlaceholderOwner(data?.unit.ownerName)) {
     return <Card><div className="p-8 text-center text-copy text-muted-ink">Pick the owner on the Details tab first. A contract is made with the owner, so this unit has none until then.</div></Card>;
@@ -102,10 +103,10 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
   const guess = current.contractCode ?? codeFromModel(types, current.revenueModel);
 
   async function save() {
-    if (!d) return;
+    if (!d || !options) return;
     setSaving(true);
     try {
-      const r = await api.put<{ split: boolean }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d), mode });
+      const r = await api.put<{ split: boolean }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d, options), mode });
       toast({ tone: 'success', title: mode === 'new' ? 'New contract started.' : 'Contract saved.',
         body: `${codeName(types, d.contractCode)}: ${codeLabel(types, d.contractCode)}.${r.split ? ' This unit now has its own contract; the other units keep theirs.' : ''} Draft owner statements change when regenerated; final ones keep their figures.` });
       setMode('update'); reload(); onSaved();

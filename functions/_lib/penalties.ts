@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { type Env, all, one, run, nowIso, mytToday } from './db';
 import { hasColumn } from './auth';
 import { employeeIdsFor } from './hr';
+import { BUILDING_JOB_LABEL } from './maintenance';
 
 /**
  * Worker Penalty (migration 0173), ported from Hookka's worker-penalties: a penalty raised against a cleaning or repair
@@ -70,7 +71,7 @@ export async function listPenalties(env: Env, id?: string): Promise<Penalty[]> {
 async function jobRef(env: Env, kind: JobKind, id: string): Promise<string | null> {
   const r = kind === 'cleaning'
     ? await one<{ unit: string | null; title: string }>(env, `SELECT COALESCE(u.unit_number, t.external_address) AS unit, t.title FROM tasks t LEFT JOIN units u ON u.id = t.unit_id WHERE t.id = ?`, id)
-    : await one<{ unit: string | null; title: string }>(env, `SELECT u.unit_number AS unit, m.title FROM maintenance_issues m JOIN units u ON u.id = m.unit_id WHERE m.id = ?`, id);
+    : await one<{ unit: string | null; title: string }>(env, `SELECT COALESCE(u.unit_number, '${BUILDING_JOB_LABEL}') AS unit, m.title FROM maintenance_issues m LEFT JOIN units u ON u.id = m.unit_id WHERE m.id = ?`, id);
   return r ? [r.unit, r.title].filter(Boolean).join(' · ') : null;
 }
 
@@ -153,10 +154,10 @@ export async function findJobs(env: Env, q: string): Promise<JobOption[]> {
       WHERE COALESCE(t.completed_at, t.scheduled_for, t.created_at) >= ? AND (lower(COALESCE(u.unit_number, t.external_address, '')) LIKE ? OR lower(t.title) LIKE ?)
       ORDER BY COALESCE(t.completed_at, t.scheduled_for, t.created_at) DESC LIMIT 20`, since, like, like),
     all<{ id: string; unit: string; title: string; day: string | null; people: string | null }>(env, `
-      SELECT m.id, u.unit_number AS unit, m.title, substr(COALESCE(m.resolved_at, m.created_at), 1, 10) AS day,
+      SELECT m.id, COALESCE(u.unit_number, '${BUILDING_JOB_LABEL}') AS unit, m.title, substr(COALESCE(m.resolved_at, m.created_at), 1, 10) AS day,
              (SELECT json_agg(json_build_object('id', t.id, 'name', t.full_name))::text FROM technicians t WHERE t.employment_type = 'internal' AND t.id = m.technician_id) AS people
-      FROM maintenance_issues m JOIN units u ON u.id = m.unit_id
-      WHERE COALESCE(m.resolved_at, m.created_at) >= ? AND (lower(u.unit_number) LIKE ? OR lower(m.title) LIKE ?)
+      FROM maintenance_issues m LEFT JOIN units u ON u.id = m.unit_id
+      WHERE COALESCE(m.resolved_at, m.created_at) >= ? AND (lower(COALESCE(u.unit_number, '')) LIKE ? OR lower(m.title) LIKE ?)
       ORDER BY COALESCE(m.resolved_at, m.created_at) DESC LIMIT 20`, since, like, like),
   ]);
   const people = (raw: string | null): { id: string; name: string }[] => (raw ? PEOPLE_JSON.parse(JSON.parse(raw)) : []);

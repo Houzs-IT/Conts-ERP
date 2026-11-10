@@ -79,7 +79,7 @@ export const useSetRole = () => {
 /** Each posting rule in the words finance uses (backend/src/acc/rules.ts AccountRole). */
 export const ROLE_LABELS: Record<string, string> = {
   AR: "Trade debtors (customers)", AR_OTHER: "Other debtors", SALES: "Sales (fallback)", INVENTORY: "Stock (fallback)",
-  AP: "Trade creditors (suppliers)", AP_OTHER: "Other creditors", CASH: "Cash in hand", BANK_DEFAULT: "Default bank",
+  AP: "Trade creditors (suppliers)", AP_OTHER: "Other creditors", CASH: "Cash in hand", BANK_DEFAULT: "Default bank — receiving", BANK_PAY_DEFAULT: "Default bank — paying",
   TRANSIT_EDC: "Card machine clearing", TRANSIT_ONLINE: "Online payment clearing", CUSTOMER_DEPOSITS: "Customer deposits",
   OVER_SHORT: "Cash over / short", CLOSING_STOCK: "Closing stock (one account)", PETTY_CASH: "Petty cash",
   INVENTORY_CUSTOMER: "Stock — customer", INVENTORY_DISPLAY: "Stock — display", INVENTORY_SERVICE: "Stock — service",

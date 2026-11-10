@@ -2,10 +2,11 @@ import { type Env, all, one, run, json, fail, audit, nowIso } from '../../../_li
 import { CLEAN_KINDS_SQL } from '../../../_lib/cleaning';
 import { CLEAN_DAY_SQL } from '../../../_lib/cleanOverdue';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
+import { hasPassKeyJobs, syncPassKeyJobs } from '../../../_lib/passKeyJobs';
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-/** PATCH /api/reservations/:id/details { checkInTime?, checkOutTime?, staffNotes? }
+/** PATCH /api/reservations/:id/details { checkInTime?, checkOutTime?, staffNotes?, selfCheckIn? }
  *  An early check-in or late check-out (Cleaning reads these times from the booking to plan the turnover), and the booking's
  *  internal notes. Times are ours to set on any booking, a booking site's too: they do not change the nights. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -32,6 +33,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     const v = b.staffNotes === null ? null : String(b.staffNotes).trim().slice(0, 2000) || null;
     if (v !== (cur.staff_notes ?? null)) { set.push('staff_notes = ?'); args.push(v); before.staffNotes = cur.staff_notes ? 'set' : 'empty'; after.staffNotes = v ? 'set' : 'empty'; }
   }
+  if (b.selfCheckIn !== undefined) {
+    if (typeof b.selfCheckIn !== 'boolean') return fail('VALIDATION', 'Say whether the guest checks in by themselves.', 422, { selfCheckIn: 'Yes or no.' });
+    if (!(await hasPassKeyJobs(env))) return fail('CONFLICT', 'Pass key jobs are not set up on this database yet.', 409);
+    const current = await one<{ self_check_in: boolean }>(env, 'SELECT self_check_in FROM reservations WHERE id = ?', id);
+    if (current?.self_check_in !== b.selfCheckIn) { set.push('self_check_in = ?'); args.push(b.selfCheckIn); before.selfCheckIn = current?.self_check_in ?? false; after.selfCheckIn = b.selfCheckIn; }
+  }
   // The cleaning job before this arrival carries its own next-guest time (HostPlatform's, or one set before): it follows the
   // time set here, so the card, its time left and when the job turns overdue all read the new check-in (owner, 2 Nov 2026).
   const synced = b.checkInTime !== undefined && cur.unit_id && cur.check_in
@@ -49,5 +56,6 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   await run(env, `UPDATE reservations SET ${set.join(', ')}, updated_at = ? WHERE id = ?`, ...args, nowIso(), id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.details', entityTable: 'reservations', entityId: id, before, after });
+  if (after.checkInTime !== undefined || after.selfCheckIn !== undefined) await syncPassKeyJobs(env, { reservationIds: [id] });
   return json({ id, changed: true, ...after });
 };

@@ -1,7 +1,8 @@
 /* Opening a renovation project. One SQL statement (data-modifying CTEs), so the
    project, its finance row, its 11 stage rows, its stage checklist copied from
    the type's template and its template tasks all exist together or not at all.
-   No brand, venue or event type: those belong to exhibitions. Code RN-YYMM-NNN. */
+   No venue or event type: those belong to exhibitions. The brand (Dream Crafter or
+   The Conts) and its finance type are saved with it (chew, 10 Nov 2026). Code RN-YYMM-NNN. */
 
 import { RENO_STAGES } from "../../scm/shared/renovation-stages";
 import type { Db } from "./load";
@@ -30,6 +31,9 @@ export interface CreateRenovationInput {
   renoPicPersonId?: number | null;
   /** People attending the project from the start (owner, 14 Oct 2026: People = Project PIC + Attending). */
   attendingPersonIds?: number[] | null;
+  /** The brand's name (public.project_brands.name) and its finance type, resolved by the caller (projectBrand.ts). */
+  brand?: string | null;
+  financeKind?: "RENOVATION" | "INHOUSE_RENOVATION" | null;
 }
 
 export type CreateRefusal =
@@ -100,11 +104,12 @@ export async function createRenovationProject(
          INSERT INTO projects (code, name, stage, project_kind, project_type_id, customer_kind, customer_id, customer_name,
                                customer_phone, customer_email, pos_owner_id, pos_unit_id, building, unit_no, site_address,
                                planned_handover_date, salesperson_name, pic_id, notes, created_by, company_id, reno_stage,
-                               sales_person_id, designer_person_id, reno_pic_person_id)
+                               sales_person_id, designer_person_id, reno_pic_person_id, brand, finance_kind)
          SELECT code.code, ?, 'draft', 'renovation', t.id, ?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?::date, ?, ?, ?, ?, ?, 'design',
                 (SELECT id FROM project_people WHERE id = ?::bigint AND company_id = ?),
                 (SELECT id FROM project_people WHERE id = ?::bigint AND company_id = ?),
-                (SELECT id FROM project_people WHERE id = ?::bigint AND company_id = ?)
+                (SELECT id FROM project_people WHERE id = ?::bigint AND company_id = ?),
+                nullif(?, ''), nullif(?, '')
            FROM t, code
          RETURNING id, code, sales_person_id, designer_person_id
        ),
@@ -166,6 +171,7 @@ export async function createRenovationProject(
       input.building ?? null, input.unitNo ?? null, input.siteAddress ?? null, input.plannedHandoverDate || null,
       input.salespersonName ?? null, input.picId ?? null, input.notes ?? null, actorId, companyId,
       input.salesPersonId ?? null, companyId, input.designerPersonId ?? null, companyId, input.renoPicPersonId ?? null, companyId,
+      input.brand?.trim() || null, input.financeKind ?? null,
       companyId, `{${RENO_STAGES.join(",")}}`,
       companyId,
       companyId,

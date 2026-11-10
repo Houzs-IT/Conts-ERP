@@ -37,6 +37,7 @@ import { docVariantLine, loadCustomerFabricMaps } from './supplier-doc-data';
 import { stripBookText } from './book-text';
 import { drawQrIntoPdf } from './pdf-qr';
 import { drawDocLetterheadAt } from '../../../lib/renovation/renovation-doc-theme';
+import { brandPrintFor, type BrandPrint } from '../../../lib/renovation/brand-print';
 import { warehouseLine } from './warehouse-print';
 /* Owner spec 2026-08 — photos follow the line onto the printed document
    (SO → PO → DO). Same shared block the SO/PO PDFs print through; keys are
@@ -179,7 +180,7 @@ const font = (doc: Doc, sizePt: number, style: 'normal' | 'bold' = 'normal'): vo
 function drawDoHeader(
   doc: Doc,
   header: DoHeader,
-  opts: { docTitle: string; logo?: BrandingLogo | null },
+  opts: { docTitle: string; logo?: BrandingLogo | null; brand?: BrandPrint | null },
 ): number {
   /* The shared Conts letterhead. The number ("No. :", owner 2026-09-21) and issue date sit in its right column; the
      customer-service desk (owner 2026-08-07, falling back to the headline phone / e-mail) is its contact line. */
@@ -189,9 +190,10 @@ function drawDoHeader(
   const withQr = Boolean(header.scanToken && typeof window !== 'undefined');
   const head = drawDocLetterheadAt(doc, {
     title: opts.docTitle.toUpperCase(),
-    name: COMPANY.shortName,
-    logo: opts.logo ?? getBrandingLogoCache(),
-    lines: letterheadLines({ phone: COMPANY.csPhone || COMPANY.phone, email: COMPANY.csEmail || COMPANY.email }),
+    /* Under the DO's own brand when it has one (owner, 10 Nov 2026); the company letterhead otherwise. */
+    name: opts.brand?.name ?? COMPANY.shortName,
+    logo: opts.logo ?? opts.brand?.logo ?? getBrandingLogoCache(),
+    lines: opts.brand?.lines.length ? opts.brand.lines : letterheadLines({ phone: COMPANY.csPhone || COMPANY.phone, email: COMPANY.csEmail || COMPANY.email }),
     meta: [{ label: 'No. :', value: header.do_number }, { label: 'Issued', value: fmtDocDate(header.do_date) }],
     margin: M,
     reserve: withQr ? QR_BOX + QR_GAP : 0,
@@ -519,6 +521,7 @@ export async function renderDeliveryOrderInto(
   const ruleY = drawDoHeader(doc, header, {
     docTitle: opts?.docTitle ?? 'DELIVERY ORDER',
     logo: opts?.logo,
+    brand: await brandPrintFor((header as { branding?: string | null }).branding),
   });
   const panelBottom = drawInfoPanel(doc, ruleY + 4, header, opts?.renovation, await warehouseLine(header.warehouse_id));
 

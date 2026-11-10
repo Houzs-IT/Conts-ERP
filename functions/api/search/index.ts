@@ -4,6 +4,7 @@ import { levelsFor } from '../../_lib/access';
 import { quickSearch } from '../../_lib/bookingList';
 import { IS_PARENT_SQL, UTILITY_KINDS, expenseCategoryLabel } from '../../_lib/expenses';
 import { MYT_DATE, SHEET_CLEANER } from '../../_lib/ops';
+import { jobPlaceJoin, BUILDING_JOB_LABEL } from '../../_lib/maintenance';
 import { cleanerNamesSql, taskCleanersReady } from '../../_lib/taskCleaners';
 import { guestSearch } from '../../_lib/guestList';
 import { engineSearchOpen, mayUseScmEngine, scmEngineConfigured, searchEngine, type EngineSearch } from '../../_lib/scmEngine';
@@ -116,10 +117,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     FROM owners o WHERE lower(o.display_name || ' ' || COALESCE(o.email, '') || ' ' || COALESCE(o.phone, '')) LIKE ?
     ORDER BY o.display_name LIMIT ${n}`, like);
 
+  const jobPlace = await jobPlaceJoin(env);
   const jobsRead = !q || !sees('operations') || !want('maintenance') ? [] : all<any>(env, `
     SELECT m.id, m.title, m.state, m.reported_at, u.unit_number, p.name AS property_name
-    FROM maintenance_issues m JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id
-    WHERE ${words.map(() => `lower(m.title || ' ' || COALESCE(m.vendor_name, '') || ' ' || p.name || ' ' || u.unit_number) LIKE ?`).join(' AND ') || 'FALSE'}
+    FROM maintenance_issues m ${jobPlace}
+    WHERE ${words.map(() => `lower(m.title || ' ' || COALESCE(m.vendor_name, '') || ' ' || p.name || ' ' || COALESCE(u.unit_number, '${BUILDING_JOB_LABEL}')) LIKE ?`).join(' AND ') || 'FALSE'}
     ORDER BY (m.state = 'resolved') ASC, m.reported_at DESC LIMIT ${n}`, ...words);
 
   const cleansAsked = !!q && sees('operations') && want('cleaning');
@@ -170,7 +172,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
   for (const g of guests) out.push({ id: g.id, kind: 'guest', label: g.full_name, sub: g.email || g.phone || 'No contact details', target: `/reservations/guests?g=${encodeURIComponent(g.id)}` });
   for (const o of owners) out.push({ id: o.id, kind: 'owner', label: o.display_name, sub: `${o.units} unit${Number(o.units) === 1 ? '' : 's'}${o.email ? ` · ${o.email}` : ''}`, target: `/owners/${encodeURIComponent(o.id)}` });
-  for (const m of jobs) out.push({ id: m.id, kind: 'maintenance', label: m.title, sub: `${m.property_name} ${m.unit_number}`, state: m.state, date: m.reported_at, target: `/operations/maintenance?id=${encodeURIComponent(m.id)}` });
+  for (const m of jobs) out.push({ id: m.id, kind: 'maintenance', label: m.title, sub: `${m.property_name} ${m.unit_number ?? BUILDING_JOB_LABEL}`, state: m.state, date: m.reported_at, target: `/operations/maintenance?id=${encodeURIComponent(m.id)}` });
   for (const c of cleans) {
     out.push({
       id: c.id, kind: 'cleaning', label: `${c.property_name} ${c.unit_number}`,
