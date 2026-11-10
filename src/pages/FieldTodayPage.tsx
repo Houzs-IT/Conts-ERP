@@ -10,6 +10,7 @@ import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
 import { useNow } from '../lib/useMedia';
 import { api, errorMessage } from '../lib/api';
+import { runEach, skippedNote } from '../lib/bulk';
 import { cx } from '../lib/design-tokens';
 import { FormRow, INPUT, ReportDamageModal, Segmented, hm, mytDay, type MediaItem } from '../components/ops/OpsUi';
 import { PhoneJobCard, PhoneJobList, PhoneStayTime } from '../components/ops/PhoneJobCard';
@@ -103,11 +104,11 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   const [building, setBuilding] = useState('');
   const [cleanType, setCleanType] = useState('');
   const [unitSearch, setUnitSearch] = useState('');
-  const [taking, setTaking] = useState<string | null>(null);
-  const [confirm, ask] = useConfirm();
+  const [takingBuilding, setTakingBuilding] = useState<string | null>(null);
   const jobs = data?.rows ?? [];
   const fresh = useFreshIds([...jobs, ...(data?.open ?? [])].map(j => j.id), date, !!data && data.date === date);
-  const openJob = jobs.find(j => j.id === open) ?? null;
+  const openJob = [...jobs, ...(data?.open ?? [])].find(j => j.id === open) ?? null;
+  const isOpenJobOffered = !!openJob && !jobs.some(j => j.id === openJob.id);
   useEffect(() => { if (open && data && !openJob) setOpen(null); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
   // A notice tapped in the bell: open that job on its own day.
   useEffect(() => {
@@ -141,31 +142,31 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   const tabLabel = (name: string, count: number): ReactNode => (
     <span className="flex flex-col items-center">{name}<span className="text-meta text-muted-ink tabular-nums">{count}</span></span>
   );
-  async function take(j: Job) {
-    const unit = j.unit.unitNumber;
-    const answer = await ask({ title: t.jobs.takeTitle(unit), body: t.jobs.takeBody, confirmLabel: t.jobs.take, cancelLabel: t.jobs.cancel });
-    if (answer === null) return;
-    setTaking(j.id);
-    try {
-      await api.post(`/field/tasks/${j.id}/pick`, {});
-      toast({ tone: 'success', title: t.jobs.taken(unit) });
-      setTab('ongoing');
-    } catch (failure) {
-      toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(failure, t.jobs.checkSignal) });
-    } finally {
-      setTaking(null);
-      reload();
-    }
+  async function takeAll(group: Group) {
+    setTakingBuilding(group.id);
+    const result = await runEach(group.jobs, job => api.post(`/field/tasks/${job.id}/pick`, {}), job => job.unit.unitNumber);
+    setTakingBuilding(null);
+    toast({ tone: result.ok === 0 ? 'critical' : result.failed.length ? 'warning' : 'success', title: result.ok ? t.jobs.takenAll(result.ok) : t.jobs.noneTaken, body: skippedNote(result.failed) || undefined });
+    reload();
+    if (result.ok) setTab('ongoing');
   }
   const card = (j: Job) => <TaskCard key={j.id} job={j} now={now} fresh={fresh.has(j.id)} active={j.id === open} onOpen={() => setOpen(j.id)} />;
-  const offerCard = (j: Job) => <TaskCard key={j.id} job={j} now={now} fresh={fresh.has(j.id)} active={j.id === taking} offer onOpen={() => { if (!taking) void take(j); }} />;
+  const offerCard = (j: Job) => <TaskCard key={j.id} job={j} now={now} fresh={fresh.has(j.id)} active={j.id === open} offer onOpen={() => setOpen(j.id)} />;
   const groupHeading = (name: string, jobsInGroup: Job[]) => (
     <h2 className="m-0 px-1 text-[16px] font-semibold tracking-[-0.01em] flex items-baseline gap-2">{name}<span className="text-meta text-muted-ink font-normal tabular-nums">{t.jobs.groupDone(jobsInGroup.filter(j => j.done).length, jobsInGroup.length)}</span></h2>
   );
-  const buildings = (gs: Group[], render = card) => gs.map(g => (
+  const buildings = (gs: Group[]) => gs.map(g => (
     <section key={g.id} className="flex flex-col gap-2">
       {groupHeading(g.name, g.jobs)}
-      <PhoneJobList label={g.name}>{g.jobs.map(render)}</PhoneJobList>
+      <PhoneJobList label={g.name}>{g.jobs.map(card)}</PhoneJobList>
+    </section>
+  ));
+  const offeredBuildings = (gs: Group[]) => gs.map(g => (
+    <section key={g.id} className="flex flex-col gap-2">
+      <h2 className="m-0 px-1 text-[16px] font-semibold tracking-[-0.01em] flex items-center gap-2">{g.name}<StatusBadge tone="gold" size="sm">{t.repairs.jobs(g.jobs.length)}</StatusBadge></h2>
+      <PhoneJobList label={g.name}>{g.jobs.map(offerCard)}</PhoneJobList>
+      <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="Hand" size="sm" />} loading={takingBuilding === g.id}
+        disabled={takingBuilding !== null && takingBuilding !== g.id} onClick={() => void takeAll(g)}>{t.jobs.takeAll(g.jobs.length)}</Button>
     </section>
   ));
   const isListEmpty = tab === 'team' ? team.length === 0 : mineInTab.length === 0 && poolInTab.length === 0;
@@ -240,14 +241,13 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
           {poolGroups.length > 0 && (
             <>
               <h2 className="m-0 px-1 mt-1 text-heading font-semibold flex items-center gap-2">{t.jobs.openToPick}<StatusBadge tone="gold">{poolInTab.length}</StatusBadge></h2>
-              {buildings(poolGroups, offerCard)}
+              {offeredBuildings(poolGroups)}
             </>
           )}
         </>}
       {/* The list stays mounted under the sheet, so closing it lands back at the same scroll position. */}
-      {confirm}
       <Drawer open={!!openJob} onClose={() => setOpen(null)} labelledBy={openJob ? `task-title-${openJob.id}` : undefined}>
-        {openJob && <TaskDetail key={openJob.id} job={openJob} now={now} onClose={() => setOpen(null)} onChanged={reload} />}
+        {openJob && <TaskDetail key={openJob.id} job={openJob} now={now} offered={isOpenJobOffered} onClose={() => setOpen(null)} onChanged={reload} onTaken={() => setTab('ongoing')} />}
       </Drawer>
     </>
   );
@@ -311,12 +311,12 @@ function TaskCard({ job: j, now, fresh, active, offer, showBuilding, onOpen }: {
   const t = usePortalText();
   const { short } = usePortalDates();
   const lateBy = j.done ? 0 : daysLate(j.day);
-  const tone = cleanRowTone({ day: j.day, status: j.done ? 'done' : j.state === 'in_progress' ? 'cleaning' : 'waiting', guestOut: j.guestOut, checkOutTime: j.previous?.checkOutTime ?? null }, now);
+  const tone = offer ? null : cleanRowTone({ day: j.day, status: j.done ? 'done' : j.state === 'in_progress' ? 'cleaning' : 'waiting', guestOut: j.guestOut, checkOutTime: j.previous?.checkOutTime ?? null }, now);
   return (
     <PhoneJobCard title={j.unit.unitNumber} active={active} tone={tone} onSelect={onOpen}
       building={j.external ? [j.external.clientName, j.external.clientPhone].filter(Boolean).join(' · ') || undefined : showBuilding ? j.unit.propertyName : undefined}
-      badges={<>{offer && <StatusBadge tone="gold" size="sm">{t.jobs.openToPick}</StatusBadge>}{fresh && <StatusBadge tone="info" size="sm" label={t.jobs.newJob} />}{lateBy > 0 && <StatusBadge tone="critical" size="sm">{t.jobs.overdue(t.common.days(lateBy))}</StatusBadge>}</>}
-      status={<JobStatus job={j} />}
+      badges={<>{fresh && <StatusBadge tone="info" size="sm" label={t.jobs.newJob} />}{lateBy > 0 && <StatusBadge tone="critical" size="sm">{t.jobs.overdue(t.common.days(lateBy))}</StatusBadge>}</>}
+      status={offer ? <StatusBadge tone="gold" size="sm">{t.jobs.openToPick}</StatusBadge> : <JobStatus job={j} />}
       out={j.external ? undefined : j.previous
         ? <PhoneStayTime label={t.jobs.out} time={outTime(j)} actual={j.guestOut} actualLabel={j.guestLeftAuto ? autoAt(t, j) : t.jobs.guestHasLeft} />
         : <PhoneStayTime label={t.jobs.noGuestLeaving} />}
@@ -334,13 +334,14 @@ function TaskCard({ job: j, now, fresh, active, offer, showBuilding, onOpen }: {
 
 /** One job in full, in a sheet over the list, laid out like the Cleaning page's job sheet: a black header, the type, the
  *  guests, the Before and After photos, door access and the office's notes, with the next step pinned at the bottom. */
-function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number; onClose: () => void; onChanged: () => void }) {
+function TaskDetail({ job: j, now, offered, onClose, onChanged, onTaken }: { job: Job; now: number; offered: boolean; onClose: () => void; onChanged: () => void; onTaken: () => void }) {
   const toast = useToast();
   const t = usePortalText();
   const { weekday } = usePortalDates();
   const [busy, setBusy] = useState<string | null>(null);
   const [damage, setDamage] = useState(false);
-  const detail = useApi<Detail>(`/housekeeping/tasks/${j.id}`);
+  // The server shows a clean's photos and access only to the cleaners on it (housekeeping/tasks/[id].ts), so a preview skips it.
+  const detail = useApi<Detail>(offered ? null : `/housekeeping/tasks/${j.id}`);
   const [confirm, ask] = useConfirm();
   // Only After files are proof of work; a Before photo never unlocks Mark complete (owner, 2 Nov 2026).
   const files = detail.data ? stageCounts(detail.data.media).after : j.afterCount ?? j.photoCount;
@@ -348,12 +349,17 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
   const phase = j.done ? 'done' : j.state !== 'in_progress' ? 'todo' : files > 0 ? 'proof' : 'started';
   // The server refuses a start while the departing guest is in (housekeeping/tasks/[id]/start.ts): Guest left comes first.
   const guestIn = !j.done && !!j.previous && !j.guestOut;
+  const canChangeKind = !offered && !j.done && !j.external && (j.kind === 'turnover' || j.kind === 'deep_clean');
 
-  async function act(key: string, fn: () => Promise<unknown>, ok: string) {
+  async function act(key: string, fn: () => Promise<unknown>, ok: string, body?: string): Promise<boolean> {
     setBusy(key);
-    try { await fn(); toast({ tone: 'success', title: ok }); onChanged(); detail.reload(); }
-    catch (e) { toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(e, t.jobs.checkSignal) }); }
+    try { await fn(); toast({ tone: 'success', title: ok, body }); onChanged(); detail.reload(); return true; }
+    catch (e) { toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(e, t.jobs.checkSignal) }); return false; }
     finally { setBusy(null); }
+  }
+  async function take() {
+    if (await act('take', () => api.post(`/field/tasks/${j.id}/pick`, {}), t.jobs.taken(j.unit.unitNumber), t.jobs.takenBody)) onTaken();
+    else onChanged();
   }
   async function remove(m: MediaItem) {
     const ok = await ask({ title: m.kind === 'video' ? t.jobs.removeVideo : t.jobs.removePhoto, body: t.jobs.removeBody, confirmLabel: t.jobs.remove, cancelLabel: t.jobs.keep, danger: true });
@@ -377,7 +383,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
           <div id={`task-title-${j.id}`} className="text-[19px] leading-tight font-semibold [overflow-wrap:anywhere]">{j.unit.unitNumber} · {cleanName(t, j)}</div>
           {size && <div className="text-meta text-on-dark">{size}</div>}
           <div className="mt-1 flex items-center gap-2 flex-wrap">
-            <JobStatus job={j} />
+            {offered ? <StatusBadge tone="gold" size="sm">{t.jobs.openToPick}</StatusBadge> : <JobStatus job={j} />}
             {jobOverdue(j, now) && <StatusBadge tone="critical" size="sm">{daysLate(j.day) > 0 ? t.jobs.overdue(t.common.days(daysLate(j.day))) : t.jobs.overdueTitle}</StatusBadge>}
             {j.startedAt && phase !== 'done' && <span className="text-meta text-on-dark">{t.jobs.startedLine(hm(j.startedAt))}</span>}
           </div>
@@ -385,11 +391,11 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 flex flex-col gap-4 text-copy">
-        {(j.team?.length || (!j.done && !j.external && (j.kind === 'turnover' || j.kind === 'deep_clean')) || j.external) && (
+        {(j.team?.length || canChangeKind || j.external) && (
           <section className="flex flex-col gap-1">
             {j.team && j.team.length > 0 && <span>{t.jobs.with(j.team.join(', '))}</span>}
             {/* Basic clean unless the cleaner sees it needs a deep one (26 Oct 2026). */}
-            {!j.done && !j.external && (j.kind === 'turnover' || j.kind === 'deep_clean') && (
+            {canChangeKind && (
               <Segmented label={t.jobs.cleaningType} className="self-start [&>button]:h-11" value={j.kind}
                 onChange={v => { if (busy !== 'kind' && v !== j.kind) void act('kind', () => api.patch(`/field/tasks/${j.id}/kind`, { kind: v }), t.jobs.changedTo(wordFor(t.jobs.clean, v))); }}
                 options={[{ value: 'turnover', label: t.jobs.basicShort }, { value: 'deep_clean', label: t.jobs.deepShort }]} />
@@ -418,7 +424,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
               ? <span>{t.jobs.finishBy} <b className="tabular-nums">{j.next.checkInTime}</b></span>
               : <span className="text-muted-ink">{t.jobs.noArrival}</span>)}
             {!j.done && daysLate(j.day) > 0 && <span className="text-danger">{t.jobs.overdueFrom(t.common.days(daysLate(j.day)), weekday(j.day))}</span>}
-            {guestIn && phase !== 'todo' && (
+            {!offered && guestIn && phase !== 'todo' && (
               <Button size="touch" variant="secondary" loading={busy === 'left'} onClick={() => void act('left', () => api.post('/housekeeping/guest-left', { taskId: j.id }), t.jobs.guestLeftOk)}>{t.jobs.guestLeft}</Button>
             )}
           </section>
@@ -434,7 +440,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
 
         {/* Photos only once the job is started: photos taken before the start would not prove the finished work. Uploading
             never completes the job; Mark complete in the bar below is its own tap (owner, 2 Nov 2026). */}
-        {phase !== 'todo' && (detail.data
+        {!offered && phase !== 'todo' && (detail.data
           ? <CleanProof taskId={j.id} unitLabel={`${j.unit.propertyName} ${j.unit.unitNumber}`} media={detail.data.media} done={j.done} onUploaded={() => { detail.reload(); onChanged(); }}
               onRemove={m => void remove(m)}
               hint={phase === 'started' ? <StatusBadge tone="warning">{t.jobs.proofRequired}</StatusBadge>
@@ -454,7 +460,8 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
         {!j.external && (
           <section className="flex flex-col gap-2">
             <h3 className={h3}>{t.jobs.access}</h3>
-            {!detail.data && !access.length ? <Skeleton height={44} />
+            {offered ? <span className="text-muted-ink">{t.jobs.accessOnTake}</span>
+              : !detail.data && !access.length ? <Skeleton height={44} />
               : access.length === 0 ? <span className="text-muted-ink">{t.jobs.noAccess}</span>
               : access.map(a => <div key={a.id} className="rounded-control bg-muted p-2.5 flex flex-col gap-0.5"><b className="font-medium">{a.label}</b><span className="text-meta text-muted-ink">{a.instruction}</span></div>)}
             {detail.data?.parking && <span className="text-meta"><span className="text-muted-ink">{t.jobs.carPark}:</span> {detail.data.parking}</span>}
@@ -466,7 +473,11 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
       {/* Pinned above the phone's home bar. data-action-bar lifts the staging View as switch above it (ViewAs.tsx). */}
       {(phase !== 'done' || !j.external) && (
         <div data-action-bar className="flex-none bg-card [border-top:1px_solid_var(--color-line)] px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] flex flex-col gap-2">
-          {phase === 'todo' && guestIn ? (
+          {offered ? (
+            <Button size="touch" variant="primary" className="w-full" icon={<Icon name="Hand" size="sm" />} loading={busy === 'take'} onClick={() => void take()}>
+              {t.jobs.take}
+            </Button>
+          ) : phase === 'todo' && guestIn ? (
             <>
               <span className="text-meta text-muted-ink">{t.jobs.startAfterGuestLeft}</span>
               <Button size="touch" variant="primary" className="w-full" loading={busy === 'left'}
@@ -485,7 +496,7 @@ function TaskDetail({ job: j, now, onClose, onChanged }: { job: Job; now: number
               {phase === 'started' ? t.jobs.uploadToComplete : t.jobs.markComplete}
             </Button>
           )}
-          {!j.external && <Button size="touch" variant="danger" className="w-full" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>{t.jobs.reportDamage}</Button>}
+          {!offered && !j.external && <Button size="touch" variant="danger" className="w-full" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>{t.jobs.reportDamage}</Button>}
         </div>
       )}
       {confirm}
