@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from './db';
 import { type Session, hashPassword, revokeSessions } from './auth';
-import { can } from './access';
+import { can, roleForKind } from './access';
 import { NO_EMAIL_DOMAIN, PIN_ROLES, employeeIdFor, hasEmployeeIds, tempPin } from './fieldPin';
 
 
@@ -10,6 +10,7 @@ const LISTS = {
   technicians: { role: 'technician', noun: 'technician', action: 'maintenance.technician', kind: 'maintenance' },
 } as const;
 export type WorkerList = keyof typeof LISTS;
+export type FieldKind = (typeof LISTS)[WorkerList]['kind'];
 
 /**
  * "Give app access" on a worker list entry: lets an in-house worker sign in to the field app with an employee ID
@@ -87,4 +88,22 @@ export async function followWorker(env: Env, userId: string | null, active: bool
   await run(env, 'UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?', active ? 1 : 0, nowIso(), userId);
   if (!active) await revokeSessions(env, userId);
   return true;
+}
+
+export async function followDepartment(env: Env, userId: string | null): Promise<FieldKind | null> {
+  if (!userId) return null;
+  const roster = await one<{ cleaning: boolean; maintenance: boolean }>(env, `SELECT
+    EXISTS (SELECT 1 FROM cleaners WHERE user_id = ? AND employment_type = 'internal' AND is_active = 1) AS cleaning,
+    EXISTS (SELECT 1 FROM technicians WHERE user_id = ? AND employment_type = 'internal' AND is_active = 1) AS maintenance`, userId, userId);
+  if (!roster || roster.cleaning === roster.maintenance) return null;
+  const kind: FieldKind = roster.cleaning ? 'cleaning' : 'maintenance';
+  const role = roleForKind(kind);
+  const moved = await one(env, `
+    UPDATE users u SET role = ?, department_id = d.id, department = d.name, position_id = p.id, position = p.name, updated_at = ?
+    FROM departments d LEFT JOIN LATERAL (SELECT id, name FROM positions WHERE department_id = d.id ORDER BY sort, lower(name) LIMIT 1) p ON true
+    WHERE u.id = ? AND u.role IN (${PIN_ROLES.map(() => '?').join(', ')})
+      AND d.id = (SELECT id FROM departments WHERE kind = ? ORDER BY sort, name LIMIT 1)
+      AND (u.role <> ? OR NOT EXISTS (SELECT 1 FROM departments held WHERE held.id = u.department_id AND held.kind = ?))
+    RETURNING u.id`, role, nowIso(), userId, ...PIN_ROLES, kind, role, kind);
+  return moved ? kind : null;
 }
