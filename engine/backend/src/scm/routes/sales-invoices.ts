@@ -65,7 +65,7 @@ import { resolveSalesScopeIds, salesDocOutOfScope } from '../lib/salesScope';
 import { readStatusCounts } from '../lib/status-counts';
 import { canViewAllSales, canViewScmFinance } from '../lib/houzs-perms';
 import { SO_ITEM_FINANCE_KEYS } from '../lib/finance-keys';
-import { doLineRemaining, doRemainingByItemId, checkSiOverRemaining, checkSiReopenOverRemaining, findOverInvoicedDoItems, resolveCandidateDoIds, custKeyOf, remainingUnavailableResponse, siTransferRefusal, type DoRemainingLine } from '../lib/do-line-remaining';
+import { doLineRemaining, doRemainingByItemId, checkSiOverRemaining, isDoLineOverInvoiced, checkSiReopenOverRemaining, findOverInvoicedDoItems, resolveCandidateDoIds, custKeyOf, remainingUnavailableResponse, siTransferRefusal, type DoRemainingLine } from '../lib/do-line-remaining';
 import { siShadowRefusal, unlinkedEditRefusal } from '../lib/unlinked-line-edit-guard';
 import { assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
 import { resolveSiHeaderSources, resolveDoLineSources } from '../lib/source-po-trace';
@@ -795,7 +795,12 @@ export const createSalesInvoiceHandler = async (c: Context<{ Bindings: Env; Vari
   if (items.length > 0) {
     const rows = items.map((it, lineNo) => buildItemRow(h.id, it, lineNo));
     const { error: iErr } = await sb.from('sales_invoice_items').insert(stampCompany(rows, c));
-    if (iErr) { await sb.from('sales_invoices').delete().eq('id', h.id); return c.json({ error: 'items_insert_failed', reason: iErr.message }, 500); }
+    if (iErr) {
+      await sb.from('sales_invoices').delete().eq('id', h.id);
+      // HC-0004: the DB cap (migration 0273) refused a line past its DO line.
+      if (isDoLineOverInvoiced(iErr)) return c.json({ error: 'race_conflict', message: 'Another operator just invoiced overlapping qty from this Delivery Order. Refresh and try again.', reason: iErr.message }, 409);
+      return c.json({ error: 'items_insert_failed', reason: iErr.message }, 500);
+    }
 
   /* Race-condition guard — the SI counterpart of "Edge #E" in
      delivery-orders-mfg.ts. checkSiOverRemaining above is read-before-write, so
@@ -1034,6 +1039,7 @@ export const appendDoLinesToSalesInvoiceHandler = async (c: any) => {
   if (rows.length === 0) return c.json({ error: 'do_fully_invoiced' }, 409);
 
   const { error: iErr } = await sb.from('sales_invoice_items').insert(stampCompany(rows, c));
+  if (isDoLineOverInvoiced(iErr)) return c.json({ error: 'race_conflict', message: 'Another operator just invoiced overlapping qty from this Delivery Order. Refresh and try again.', reason: iErr?.message }, 409);
   if (iErr) return c.json({ error: 'items_insert_failed', reason: iErr.message }, 500);
   await recomputeTotals(sb, id);
   await recomputePaid(sb, id);
@@ -1247,6 +1253,7 @@ export const appendSalesInvoiceItemHandler = async (c: any) => {
 
   const row = buildItemRow(id, it, nextLineNo);
   const { data, error } = await sb.from('sales_invoice_items').insert({ ...row, company_id: co.companyId }).select(ITEM).single();
+  if (isDoLineOverInvoiced(error)) return c.json({ error: 'over_remaining', message: 'Add qty exceeds what is left to invoice on the linked Delivery Order line.', reason: error?.message }, 409);
   if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
   await recomputeTotals(sb, id);
   await recomputePaid(sb, id);
@@ -1384,6 +1391,7 @@ salesInvoices.patch('/:id/items/:itemId', async (c) => {
   }
 
   const { error } = await scopeToCompanyId(sb.from('sales_invoice_items').update(updates).eq('id', itemId), co.companyId);
+  if (isDoLineOverInvoiced(error)) return c.json({ error: 'over_remaining', message: 'New qty exceeds what is left to invoice on the linked Delivery Order line.', reason: error?.message }, 409);
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
 
   /* Diff `updates` — the EFFECTIVE values written — against the stored row. qty,
@@ -1855,6 +1863,9 @@ export const patchSalesInvoiceStatusHandler = async (c: any) => {
       .eq('id', id), co.companyId)
       .select('id, status, invoice_number, paid_sen, debtor_code, debtor_name')
       .single();
+    if (isDoLineOverInvoiced(error)) {
+      return c.json({ error: 'over_remaining', message: 'Cannot reopen — the delivered quantity has since been invoiced elsewhere. The DO lines no longer have room for this invoice.', reason: error?.message }, 409);
+    }
     if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
     data = updated as typeof data;
   }

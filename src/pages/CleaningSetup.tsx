@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { MoneyInput } from '../components/inputs';
@@ -51,10 +52,15 @@ export function PricesView({ tabs }: { tabs: ReactNode }) {
       ) : <>
         {/* By number of beds (chew, 10 Nov 2026), Basic and Deep clean as one table; it shows nothing otherwise. */}
         {service.data.ready && <CleaningPriceTable key={priceListVersion} onSaved={() => { setPriceListVersion(version => version + 1); units.reload(); }} />}
-        {/* Service prices (0127) replace the price table; before it, the old table is still the one in use. */}
+        {/* Service prices (0127) replace the price table; before it, the old table is still the one in use. Priced by
+            number of beds, the table above already holds Basic and Deep clean, so the item list stays under Settings only
+            (chew, 10 Nov 2026). */}
+        {service.data.ready && units.data?.bedPricing === 'count' && (
+          <p className="m-0 text-meta text-muted-ink">Light clean and the full list of cleaning items are under <Link to="/system/settings/services" className="text-gold-ink font-medium">Settings, Service prices</Link>.</p>
+        )}
         {service.data.ready
-          ? <ServicePrices key={priceListVersion} domain="cleaning" above={<div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="m-0 flex-1 min-w-[220px] text-meta text-muted-ink">Cleaning jobs made from reservations take the item for their clean type, {units.data?.byBed ? (units.data.bedPricing === 'count' ? "priced by the unit's number of beds (floor mattresses and sofa beds do not count)" : "priced by the unit's beds (each bed size price times its quantity)") : "at the unit's layout"}. Open an item to change its prices from a date; the whole list is also under Settings, Service prices.</p>
+          ? units.data && units.data.bedPricing !== 'count' && <ServicePrices key={priceListVersion} domain="cleaning" above={<div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="m-0 flex-1 min-w-[220px] text-meta text-muted-ink">Cleaning jobs made from reservations take the item for their clean type, {units.data.byBed ? "priced by the unit's beds (each bed size price times its quantity)" : "at the unit's layout"}. Open an item to change its prices from a date; the whole list is also under Settings, Service prices.</p>
             {service.data.mayPrice && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsChangingByPercent(true)}>Schedule price change</Button>}
           </div>} />
           : <PriceTableCard data={t} onSaved={() => { table.reload(); units.reload(); }} />}
