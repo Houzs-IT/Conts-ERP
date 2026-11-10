@@ -66,7 +66,7 @@ interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploade
 type Tab = 'open' | 'pass_key' | 'support' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
 const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
-const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office', booking: 'Booking' };
+const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office', booking: 'Reservation' };
 const checkInAt = (i: Issue): string => i.windows[0]?.startsAt ?? i.dueOn ?? i.reportedAt;
 // The item catalog: staff pick an item (or Other) on a job; management and operations keep the list (request M3).
 const SHOW_CATALOG = true;

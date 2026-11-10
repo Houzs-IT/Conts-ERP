@@ -306,7 +306,7 @@ export function BuildingModal({ initial, onClose, onSubmit, onDelete }: { initia
       </label>
       <label className="flex items-start gap-2 text-copy cursor-pointer">
         <input type="checkbox" checked={needsPassKey} onChange={e => setNeedsPassKey(e.target.checked)} className="mt-[3px] accent-[var(--color-gold-ink)]" />
-        <span>Check-ins need a pass key <span className="block text-meta text-muted-ink">Every check-in here becomes a Pass key job in Maintenance, unless the booking says the guest checks in by themselves.</span></span>
+        <span>Check-ins need a pass key <span className="block text-meta text-muted-ink">Every check-in here becomes a Pass key job in Maintenance, unless the reservation says the guest checks in by themselves.</span></span>
       </label>
     </CentreModal>
   );
