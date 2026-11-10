@@ -187,7 +187,7 @@ export default function MaintenancePage() {
           {SHOW_CATALOG && <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Item catalog</Button>}
         </>}
         primary={<>
-          {canAddPassKey && <Button size="sm" variant="secondary" icon={<Icon name="KeyRound" size="sm" />} onClick={() => setIsAddingPassKey(true)}>Add pass key job</Button>}
+          {canAddPassKey && <Button size="sm" variant="secondary" className="max-sm:-order-1!" icon={<Icon name="KeyRound" size="sm" />} onClick={() => setIsAddingPassKey(true)}>Add pass key job</Button>}
           <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setCreating(true)}>Add maintenance job</Button>
         </>} />
 
