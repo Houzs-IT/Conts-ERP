@@ -1,4 +1,4 @@
--- REVERSAL: revert the code first. update scm.inventory_lot_consumptions c set source_doc_id = null, source_doc_no = null from scm.stock_adjustments h where c.movement_id = h.id and c.source_doc_id = h.id; update scm.inventory_lots l set source_doc_id = null, source_doc_no = null from scm.stock_adjustments h where l.movement_id = h.id and l.source_doc_id = h.id; update scm.inventory_movements m set source_doc_id = null, source_doc_no = null from scm.stock_adjustments h where m.id = h.id and m.source_doc_id = h.id; drop index if exists scm.idx_inventory_movements_adjustment_doc; drop table scm.stock_adjustment_lines; drop table scm.stock_adjustments; alter table scm.stock_take_lines drop column rack_id, drop column added_on_count; alter table scm.stock_takes drop column nonzero_only, drop column assignee_staff_ids. The SA counter rows in scm.doc_number_counters may stay (a counter only moves up).
+-- REVERSAL: revert the code first. update scm.inventory_lot_consumptions c set source_doc_id = null, source_doc_no = null from scm.stock_adjustments h where c.movement_id = h.id and c.source_doc_id = h.id; update scm.inventory_lots l set source_doc_id = null, source_doc_no = null from scm.stock_adjustments h where l.movement_id = h.id and l.source_doc_id = h.id; update scm.inventory_movements m set source_doc_id = null, source_doc_no = null from scm.stock_adjustments h where m.id = h.id and m.source_doc_id = h.id; drop index if exists scm.idx_inventory_movements_adjustment_doc; drop table scm.stock_adjustment_lines; drop table scm.stock_adjustments; alter table scm.stock_take_lines drop column rack_id, drop column added_on_count; alter table scm.stock_takes drop column nonzero_only, drop column assignee_staff_ids, drop column rack_moves. The SA counter rows in scm.doc_number_counters may stay (a counter only moves up).
 -- Stock take rounds and the stock adjustment document (TODO item 18; Houzs 20261006T1500, 20261006T1700, 20261007T1100,
 -- 20261007T1110, merged into one file).
 --
@@ -28,6 +28,9 @@ alter table scm.stock_take_lines add column if not exists added_on_count boolean
 
 /* ── Stock take, round 2: the rack each line was counted on ──────────────── */
 alter table scm.stock_take_lines add column if not exists rack_id uuid references scm.warehouse_racks(id) on delete set null;
+-- What the post did to the racks ({removed: [full warehouse_rack_items rows], placedIds: [...]}), so a reverse can put
+-- the old placements back (lib/stock-take-racks.ts reverseStockTakeRacks). null = the post moved nothing.
+alter table scm.stock_takes add column if not exists rack_moves jsonb;
 
 /* ── Stock adjustment as a document ──────────────────────────────────────── */
 create table if not exists scm.stock_adjustments (
@@ -72,6 +75,7 @@ alter table scm.stock_adjustment_lines owner to scm_engine;
 alter table scm.stock_adjustments enable row level security;
 alter table scm.stock_adjustment_lines enable row level security;
 grant all on scm.stock_adjustments, scm.stock_adjustment_lines to service_role, pos_app;
+revoke all on scm.stock_adjustments, scm.stock_adjustment_lines from anon, authenticated;
 
 /* ── Backfill: one document per old manual adjustment ────────────────────────
    Only movement_type = 'ADJUSTMENT' with source_doc_type = 'ADJUSTMENT' and no source_doc_id: DO-cancel and DR-resync

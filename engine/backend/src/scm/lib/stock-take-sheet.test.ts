@@ -1,8 +1,11 @@
 // Reading a counted paper sheet back (owner 2026-10-06) and moving goods to the
 // counted rack at post. Both are pure here; the routes only do I/O.
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { matchSheetRows, normalizeSheetRows, normCode, resolveRack } from './stock-take-sheet';
-import { planStockTakeRackMoves } from './stock-take-racks';
+import { planStockTakeRackMoves, applyStockTakeRacks, reverseStockTakeRacks } from './stock-take-racks';
+import { fakeSb, type Row } from './fake-postgrest';
+
+vi.mock('./my-time', () => ({ todayMyt: () => '2026-10-08' }));
 
 const LINES = [
   { id: 'a', item_code: 'AK-HP SL MOB MATT (Q) -2F', variant_label: null },
@@ -70,12 +73,38 @@ describe('moving goods to the counted rack at post', () => {
     { id: 'p2', rack_id: 'old', item_code: 'MATT', product_name: 'Matt', qty: 2 },
   ];
 
-  test('a code whose every counted line names a rack: old placements off, counted qty on, per variant', () => {
+  test('a pair whose every counted line names a rack: its old placements off, counted qty on', () => {
+    const plan = planStockTakeRackMoves([
+      { item_code: 'BED', variant_key: '', product_name: 'Bed', counted_qty: 3, rack_id: 'r1' },
+    ], existing);
+    expect(plan.remove.map((p) => p.id)).toEqual(['p1']);
+    expect(plan.place).toEqual([{ rack_id: 'r1', variant_key: '', qty: 3, item_code: 'BED', product_name: 'Bed' }]);
+  });
+
+  test('counting some variants of a code leaves the placements of the variants nobody counted', () => {
+    const placed = [
+      { id: 'v1', rack_id: 'old', item_code: 'BED', variant_key: 'f=1', product_name: 'Bed', qty: 4 },
+      { id: 'v2', rack_id: 'old', item_code: 'BED', variant_key: 'f=2', product_name: 'Bed', qty: 5 },
+      { id: 'v3', rack_id: 'old', item_code: 'BED', variant_key: 'f=3', product_name: 'Bed', qty: 6 },
+      { id: 'g0', rack_id: 'old', item_code: 'BED', variant_key: '', product_name: 'Bed', qty: 7 },
+    ];
+    const plan = planStockTakeRackMoves([
+      { item_code: 'BED', variant_key: 'f=1', product_name: 'Bed', counted_qty: 2, rack_id: 'r1' },
+      // f=2 is on the sheet but was not counted (null) and f=3 counted 0: neither is touched.
+      { item_code: 'BED', variant_key: 'f=2', product_name: 'Bed', counted_qty: null, rack_id: null },
+      { item_code: 'BED', variant_key: 'f=3', product_name: 'Bed', counted_qty: 0, rack_id: 'r1' },
+    ], placed);
+    expect(plan.remove.map((p) => p.id)).toEqual(['v1']);
+    expect(plan.place.map((p) => [p.variant_key, p.qty])).toEqual([['f=1', 2]]);
+  });
+
+  test('per variant: each counted variant goes on its rack', () => {
     const plan = planStockTakeRackMoves([
       { item_code: 'BED', variant_key: 'f=1', product_name: 'Bed', counted_qty: 2, rack_id: 'r1' },
       { item_code: 'BED', variant_key: 'f=2', product_name: 'Bed', counted_qty: 1, rack_id: 'r1' },
     ], existing);
-    expect(plan.remove.map((p) => p.id)).toEqual(['p1']);
+    // p1 is the variant-less placement and '' was not counted: it stays.
+    expect(plan.remove).toEqual([]);
     expect(plan.place).toEqual([
       { rack_id: 'r1', variant_key: 'f=1', qty: 2, item_code: 'BED', product_name: 'Bed' },
       { rack_id: 'r1', variant_key: 'f=2', qty: 1, item_code: 'BED', product_name: 'Bed' },
@@ -83,15 +112,17 @@ describe('moving goods to the counted rack at post', () => {
     expect(plan.skippedCodes).toEqual([]);
   });
 
-  test('a code with a counted line WITHOUT a rack is left alone, and named', () => {
+  test('a pair with a counted line WITHOUT a rack is left alone, and named; other pairs still move', () => {
     const plan = planStockTakeRackMoves([
       { item_code: 'BED', variant_key: '', product_name: 'Bed', counted_qty: 2, rack_id: 'r1' },
+      { item_code: 'BED', variant_key: 'x', product_name: 'Bed', counted_qty: 1, rack_id: 'r1' },
       { item_code: 'BED', variant_key: 'x', product_name: 'Bed', counted_qty: 1, rack_id: null },
       { item_code: 'MATT', variant_key: '', product_name: 'Matt', counted_qty: 5, rack_id: null },
     ], existing);
-    expect(plan.remove).toEqual([]);
-    expect(plan.place).toEqual([]);
-    expect(plan.skippedCodes).toEqual(['BED']);
+    // The '' pair moves; the 'x' pair has one line without a rack and is left alone.
+    expect(plan.remove.map((p) => p.id)).toEqual(['p1']);
+    expect(plan.place.map((p) => [p.variant_key, p.rack_id])).toEqual([['', 'r1']]);
+    expect(plan.skippedCodes).toEqual(['BED (x)']);
   });
 
   test('a zero count names no placement', () => {
@@ -100,5 +131,48 @@ describe('moving goods to the counted rack at post', () => {
     ], existing);
     expect(plan.place).toEqual([]);
     expect(plan.remove).toEqual([]);
+  });
+});
+
+describe('reverse puts the racks back as the post found them', () => {
+  test('post moves the counted pair and records it; reverse takes it off and restores the old rows', async () => {
+    const sb = fakeSb({
+      stock_take_lines: [
+        { stock_take_id: 't1', company_id: 1, item_code: 'BED', variant_key: 'f=1', product_name: 'Bed', counted_qty: 2, rack_id: 'r-new' },
+      ],
+      stock_takes: [{ id: 't1', company_id: 1, rack_moves: null }],
+      warehouse_racks: [
+        { id: 'r-old', rack: 'A-1', warehouse_id: 'wh', company_id: 1, reserved: false, status: 'OCCUPIED' },
+        { id: 'r-new', rack: 'B-2', warehouse_id: 'wh', company_id: 1, reserved: false, status: 'EMPTY' },
+      ],
+      warehouse_rack_items: [
+        { id: 'old-1', company_id: 1, rack_id: 'r-old', item_code: 'BED', variant_key: 'f=1', product_name: 'Bed', qty: 3,
+          source_doc_no: 'GRN-1', stocked_in_date: '2026-09-01', notes: null },
+        { id: 'old-2', company_id: 1, rack_id: 'r-old', item_code: 'BED', variant_key: 'f=2', product_name: 'Bed', qty: 4,
+          source_doc_no: 'GRN-1', stocked_in_date: '2026-09-01', notes: null },
+      ],
+      warehouse_rack_movements: [],
+    });
+    const args = { takeId: 't1', takeNo: 'ST-1', warehouseId: 'wh', companyId: 1, performedBy: 'u1' };
+    const items = () => (sb.tables.warehouse_rack_items as Row[]).map((r) => [r.id, r.rack_id, r.variant_key, r.qty]);
+
+    const posted = await applyStockTakeRacks(sb, args);
+    expect(posted.error).toBeNull();
+    // f=2 was not counted: still where it was.
+    expect(items()).toEqual([['old-2', 'r-old', 'f=2', 4], [expect.any(String), 'r-new', 'f=1', 2]]);
+
+    const reversed = await reverseStockTakeRacks(sb, args);
+    expect(reversed).toEqual({ restored: 1, removed: 1, error: null });
+    expect(items().sort()).toEqual([['old-1', 'r-old', 'f=1', 3], ['old-2', 'r-old', 'f=2', 4]]);
+    const restored = (sb.tables.warehouse_rack_items as Row[]).find((r) => r.id === 'old-1')!;
+    expect(restored.source_doc_no).toBe('GRN-1');
+    expect((sb.tables.warehouse_rack_movements as Row[]).map((m) => m.movement_type))
+      .toEqual(['STOCK_OUT', 'STOCK_IN', 'STOCK_OUT', 'STOCK_IN']);
+  });
+
+  test('a take whose post moved nothing reverses nothing', async () => {
+    const sb = fakeSb({ stock_takes: [{ id: 't1', company_id: 1, rack_moves: null }], warehouse_rack_items: [] });
+    const r = await reverseStockTakeRacks(sb, { takeId: 't1', takeNo: 'ST-1', warehouseId: 'wh', companyId: 1, performedBy: 'u1' });
+    expect(r).toEqual({ restored: 0, removed: 0, error: null });
   });
 });

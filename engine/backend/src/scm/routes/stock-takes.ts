@@ -61,7 +61,7 @@ import { resolveCallerStaffId } from '../lib/salesScope';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { pgrestIn } from '../lib/pgrest-in-list';
 import { readStockTakeSheetHandler } from './stock-take-sheet-read';
-import { applyStockTakeRacks } from '../lib/stock-take-racks';
+import { applyStockTakeRacks, reverseStockTakeRacks } from '../lib/stock-take-racks';
 
 export const stockTakes = new Hono<{ Bindings: Env; Variables: Variables }>();
 stockTakes.use('*', supabaseAuth);
@@ -1102,6 +1102,14 @@ stockTakes.patch('/:id/reverse', async (c) => {
     ]),
   });
 
+  /* Racks back too: the post moved the counted goods onto the racks the
+     counter wrote and recorded what it took off (stock_takes.rack_moves). Put
+     those back, best-effort like the post — reported, never a reason to fail. */
+  const racks = await reverseStockTakeRacks(sb, {
+    takeId: header.id, takeNo: header.take_no, warehouseId: header.warehouse_id,
+    companyId: co.companyId, performedBy: reverserStaffId,
+  });
+
   /* Stock changed back — re-walk SO stock allocation (mirrors the post path). */
   try {
     const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
@@ -1112,6 +1120,8 @@ stockTakes.patch('/:id/reverse', async (c) => {
     take: cancelled,
     movementsReversed: movementErrors.length ? 0 : reverseRows.length,
     movementErrors: movementErrors.length ? movementErrors : undefined,
+    racksRestored: racks.restored,
+    rackError: racks.error ?? undefined,
   });
 });
 
