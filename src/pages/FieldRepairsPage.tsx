@@ -35,6 +35,9 @@ interface TechnicianGroup { name: string; jobs: Repair[] }
 type ListTab = 'all' | 'mine' | 'open' | 'team';
 
 const POOL_PAGE = 200;
+const UNIT_SEARCH_DELAY_MS = 300;
+
+const unitKeyOf = (text: string): string => text.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
 
 function groupByUnit(repairs: Repair[]): UnitGroup[] {
   const groups = new Map<string, UnitGroup>();
@@ -76,8 +79,16 @@ function progress(r: Repair): string {
 export default function FieldRepairsPage({ above, linkRepair, onLinked }: { above?: ReactNode; linkRepair?: string | null; onLinked?: () => void }) {
   const [building, setBuilding] = useState('');
   const [category, setCategory] = useState('');
+  const [unitSearch, setUnitSearch] = useState('');
+  const [unitKey, setUnitKey] = useState('');
   const [limit, setLimit] = useState(POOL_PAGE);
-  const query = new URLSearchParams({ ...(building ? { building } : {}), ...(category ? { category } : {}), ...(limit > POOL_PAGE ? { limit: String(limit) } : {}) }).toString();
+  useEffect(() => {
+    const nextKey = unitKeyOf(unitSearch);
+    if (nextKey === unitKey) return;
+    const timer = window.setTimeout(() => { setUnitKey(nextKey); setLimit(POOL_PAGE); }, UNIT_SEARCH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [unitSearch, unitKey]);
+  const query = new URLSearchParams({ ...(building ? { building } : {}), ...(category ? { category } : {}), ...(unitKey ? { unit: unitKey } : {}), ...(limit > POOL_PAGE ? { limit: String(limit) } : {}) }).toString();
   const { data, loading, error, reload } = useApi<ListPayload>(`/field/repairs${query ? `?${query}` : ''}`);
   // A new notice, the phone coming back to the app, or a minute passing reloads the list; a repair that just arrived carries a New mark.
   useFieldRefresh(reload);
@@ -94,7 +105,8 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const toast = useToast();
   const t = usePortalText();
   const tr = t.repairs;
-  const isShown = (repair: Repair): boolean => (!building || repair.buildingId === building) && (!category || repair.category === category);
+  const isShown = (repair: Repair): boolean => (!building || repair.buildingId === building) && (!category || repair.category === category)
+    && (!unitKey || unitKeyOf(repair.unitNumber).includes(unitKey));
   const mine = (data?.mine ?? []).filter(isShown);
   const todo = mine.filter(r => r.state !== 'resolved' && !r.endedAt);
   const finished = mine.filter(r => r.state === 'resolved' || r.endedAt);
@@ -141,6 +153,12 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
           ]} />
         )}
       </div>
+      {data && (
+        <FormRow label={tr.unitSearch}>
+          <input type="search" enterKeyHint="search" autoComplete="off" className={cx(INPUT, 'h-11 text-[16px]')} value={unitSearch}
+            onChange={e => setUnitSearch(e.target.value)} placeholder={tr.unitSearchPh} maxLength={40} />
+        </FormRow>
+      )}
       {buildingOptions.length > 1 && (
         <FormRow label={tr.building}>
           <select className={cx(INPUT, 'h-11')} value={building} onChange={e => chooseBuilding(e.target.value)}>
@@ -162,8 +180,10 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
       {loading && !data ? <><Skeleton height={120} /><Skeleton height={120} /></>
         : tab === 'team' ? <TeamList jobs={team} />
         : groups.length === 0 && (tab === 'open' || finished.length === 0)
-          ? <EmptyState icon="Wrench" title={tab === 'open' ? tr.noOpen : tr.noMine}
-            body={tab === 'open' ? tr.noOpenBody : data?.mayPick ? tr.noMineBodyPick : tr.noMineBody} />
+          ? unitKey
+            ? <EmptyState icon="Search" title={tr.noUnitMatch(unitSearch.trim())} body={tr.noUnitMatchBody} />
+            : <EmptyState icon="Wrench" title={tab === 'open' ? tr.noOpen : tr.noMine}
+              body={tab === 'open' ? tr.noOpenBody : data?.mayPick ? tr.noMineBodyPick : tr.noMineBody} />
           : (
             <div className="flex flex-col gap-2.5">
               {groups.map(({ group, offer }) => (

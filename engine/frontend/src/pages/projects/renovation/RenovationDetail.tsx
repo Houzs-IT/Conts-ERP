@@ -20,6 +20,7 @@ import { renovationApi, type ProjectDetail } from "./renovationApi";
 import { creditNoteToConfirm, errorText, money, shortDate, supplyLabel, supplyTone } from "./renovationModel";
 import { Dialog, Field, Pill, SkipReasonDialog, inputClass } from "./renovationUi";
 import { simpleApi, type FinanceKind, type ProjectDetailV2 } from "./simpleApi";
+import { useBrands } from "../../../lib/renovation/api";
 import { SiteTasksPanel } from "./SiteTasksPanel";
 import { FlowPanel } from "./FlowPanel";
 import { ContractCard, KeyCard, PeopleCard } from "./ProjectRecords";
@@ -138,6 +139,7 @@ function ProjectFacts({ d, canWrite, onDone, onError }: { d: ProjectDetailV2; ca
   /* Conts (finance phase 1.5; chew, 24 Oct 2026): renovation (301-0000) or inhouse renovation (302-0000) — the control
      the customer is opened under when the quotation becomes the contract. Settled once there is a contract (the
      server refuses a change then). Not shown to those who do not see the money. */
+  if (canWrite || d.project.brand) facts.push(["Brand", <BrandFact projectId={d.project.id} value={d.project.brand ?? null} canWrite={canWrite} onDone={onDone} onError={onError} />]);
   if (!d.financeHidden) facts.push(["Finance type", <FinanceKindFact projectId={d.project.id} value={d.project.finance_kind ?? null} canWrite={canWrite && !d.so} onDone={onDone} onError={onError} />]);
   if (facts.length === 0) return null;
   return (
@@ -262,6 +264,32 @@ export function FinanceKindFact({ projectId, value, canWrite, onDone, onError }:
         } catch (err) { onError(errorText(err)); } finally { setBusy(false); }
       }}>
       {Object.entries(FINANCE_KIND_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+    </select>
+  );
+}
+
+/** The brand, chosen in place (PATCH /api/renovation/:id); the sales order and its letterhead follow (owner, 10 Nov 2026). */
+function BrandFact({ projectId, value, canWrite, onDone, onError }: {
+  projectId: number; value: string | null; canWrite: boolean; onDone: (t: string) => void; onError: (t: string) => void;
+}) {
+  const brands = useBrands();
+  const [busy, setBusy] = useState(false);
+  const rows = (brands.data?.brands ?? []).filter((b) => b.active);
+  const current = rows.find((b) => b.name === value)?.brandId;
+  if (!canWrite) return <span>{value ?? "-"}</span>;
+  return (
+    <select className="h-7 rounded border border-border bg-surface px-1.5 text-xs" aria-label="Brand" value={current ?? ""} disabled={busy || rows.length === 0}
+      onChange={async (e) => {
+        const next = Number(e.target.value);
+        if (!next) return;
+        setBusy(true);
+        try {
+          await simpleApi.setBrand(projectId, next);
+          onDone(`Brand set to ${rows.find((b) => b.brandId === next)?.name ?? ""}. Its sales order follows.`);
+        } catch (err) { onError(errorText(err)); } finally { setBusy(false); }
+      }}>
+      {current == null && <option value="">{value ?? "Choose a brand"}</option>}
+      {rows.map((b) => <option key={b.brandId} value={b.brandId}>{b.name}</option>)}
     </select>
   );
 }
