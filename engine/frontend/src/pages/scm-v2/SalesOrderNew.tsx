@@ -1927,9 +1927,11 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
   type QuoteDraft = {
     lines: DraftLine[]; renoRooms: string[]; renoLineRoom: Record<string, string>;
     quoteHeader: DocHeader | null; quoteInstalments: Instalment[]; quoteBrandId: number | null; block: CustomerPropertyValue;
+    /* The saved line behind each row, by row id: restored with the rows so they keep their saved lines. */
+    sources: QuoteSources;
   };
   const quoteDraftJson = quoteView ? JSON.stringify({
-    lines, renoRooms, renoLineRoom, quoteHeader, quoteInstalments, quoteBrandId, block: blockValue,
+    lines, renoRooms, renoLineRoom, quoteHeader, quoteInstalments, quoteBrandId, block: blockValue, sources: quoteSources.current,
   } satisfies QuoteDraft) : '';
   const [quoteTouchedFor, setQuoteTouchedFor] = useState('');
   const quoteDirty = quoteView !== undefined && quoteTouchedFor === quoteSeedKey;
@@ -1947,7 +1949,8 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
   const restoreQuoteDraft = () => {
     try {
       const d = quoteDraft.offered ? JSON.parse(quoteDraft.offered.v) as QuoteDraft : null;
-      if (d && Array.isArray(d.lines)) {
+      if (d && Array.isArray(d.lines) && d.sources) {
+        quoteSources.current = d.sources;
         setLines(d.lines); setRenoRooms(d.renoRooms); setRenoLineRoom(d.renoLineRoom);
         setQuoteHeader(d.quoteHeader); setQuoteInstalments(d.quoteInstalments); setQuoteBrandId(d.quoteBrandId);
         applyBlock(d.block);
