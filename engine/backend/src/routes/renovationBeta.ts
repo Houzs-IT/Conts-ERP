@@ -259,17 +259,26 @@ app.post("/projects/:id/defects", requirePermission("projects.write"), async (c)
     const refused = itemFailRefusal({ completedAt: item.completed_at }, { result: null, defectId: item.defect_id == null ? null : Number(item.defect_id) });
     if (refused) return c.json(refused, 409);
   }
-  const linkItem = checkItemId == null ? "" : `,
+  // With a check item the item row is locked first and the defect is inserted FROM that lock: when the item was linked
+  // or its check finished meanwhile (double submit, two people), the lock finds no row and nothing at all is written.
+  const fromCheck = checkItemId != null;
+  const lock = fromCheck ? `lk AS (
+       SELECT i.id FROM project_handover_check_items i JOIN project_handover_checks k ON k.id = i.check_id
+        WHERE i.id = ?::bigint AND k.project_id = ?::bigint AND k.completed_at IS NULL AND i.defect_id IS NULL
+          FOR UPDATE OF i),
+     ` : "";
+  const link = fromCheck ? `,
      l AS (
-       UPDATE project_handover_check_items SET result = 'fail', defect_id = d.id, checked_by = ?::bigint, checked_at = now()
-         FROM d WHERE project_handover_check_items.id = ?::bigint AND project_handover_check_items.defect_id IS NULL)`;
+       UPDATE project_handover_check_items i SET result = 'fail', defect_id = d.id, checked_by = ?::bigint, checked_at = now()
+         FROM d, lk WHERE i.id = lk.id)` : "";
   // Phase 'snag' so the handover rule (every snag closed first) counts it.
   // One statement: the defect and its activity row are written together or not at all.
   const row = await db(c).prepare(
-    `WITH d AS (
+    `WITH ${lock}d AS (
        INSERT INTO project_defects (project_id, phase, reported_by_role, item_description, photo_r2_key, reported_by, reported_at,
                                     resolved, stage_key, location, due_date, trade, company_id, assignee_person_id)
-       VALUES (?, 'snag', 'supervisor', ?, ?, ?, to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 0, 'handover', ?, ?::date, ?, ?, ?::bigint)
+       SELECT ?::bigint, 'snag', 'supervisor', ?::text, ?::text, ?::bigint, to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 0, 'handover',
+              ?::text, ?::date, ?::text, ?::bigint, ?::bigint${fromCheck ? " FROM lk" : ""}
        RETURNING id, project_id, company_id, item_description),
      a AS (
        INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
@@ -277,11 +286,13 @@ app.post("/projects/:id/defects", requirePermission("projects.write"), async (c)
      m AS (
        INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
        SELECT d.project_id, '${MEDIA_ACTION}', 'defect:' || d.id || ':before', x.key, x.meta, ?::bigint, d.company_id
-         FROM d, jsonb_to_recordset(?::text::jsonb) AS x(key text, meta text))${linkItem}
+         FROM d, jsonb_to_recordset(?::text::jsonb) AS x(key text, meta text))${link}
      SELECT id::int AS id FROM d`,
-  ).bind(id, description, photoKey, userId(c), location, dueDate, trade, co, who.value, reportNote, userId(c), userId(c), mediaRowsJson(more),
-    ...(checkItemId == null ? [] : [userId(c), checkItemId]))
+  ).bind(...(fromCheck ? [checkItemId, id] : []),
+    id, description, photoKey, userId(c), location, dueDate, trade, co, who.value, reportNote, userId(c), userId(c), mediaRowsJson(more),
+    ...(fromCheck ? [userId(c)] : []))
     .first<{ id: number }>();
+  if (!row && fromCheck) return c.json({ error: "check_changed", message: "This checklist item was just changed by someone else, or its check was finished. Reload and look again." }, 409);
   if (!row) return c.json({ error: "defect_not_saved", message: "The problem could not be saved. Try again." }, 409);
   return c.json({ id: row.id }, 201);
 });

@@ -150,7 +150,7 @@ function CheckItems({ check, canWrite, busy, onMark, onFail }: {
 function Marks({ i, canWrite, busy, onMark, onFail }: {
   i: CheckItem; canWrite: boolean; busy: boolean; onMark: (i: CheckItem, r: "pass" | "na" | null) => void; onFail: (i: CheckItem) => void;
 }): ReactElement {
-  const locked = !canWrite || busy || i.defectId != null;
+  const locked = !canWrite || busy || i.defectId != null || i.result === "fail";
   const btn = (on: boolean, color: string) => ({
     minHeight: 36, minWidth: 64, padding: "0 10px", borderRadius: 999, font: "inherit", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4, justifyContent: "center",
     border: `1px solid ${on ? color : BETA.line}`, background: on ? color : "transparent", color: on ? "#FFFFFF" : BETA.ink, cursor: locked ? "default" : "pointer",

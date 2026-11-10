@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { Hono } from "hono";
 import handover from "../src/routes/renovationBetaHandover";
@@ -42,7 +43,7 @@ function fakeDb(answer: (sql: string, args: unknown[]) => unknown) {
     bind: (...a: unknown[]) => stmt(sql, a),
     first: async () => { ran.push({ sql, args }); return (answer(sql, args) as unknown) ?? null; },
     all: async () => { ran.push({ sql, args }); return { results: (answer(sql, args) as unknown[]) ?? [] }; },
-    run: async () => { ran.push({ sql, args }); return {}; },
+    run: async () => { ran.push({ sql, args }); answer(sql, args); return {}; },
     sql,
   });
   return {
@@ -110,6 +111,28 @@ describe("handover checklist routes against a pretend database", () => {
     expect(await res.json()).toMatchObject({ error: "check_open" });
   });
 
+  test("two starts at once: the one-open-check index's clash answers check_open", async () => {
+    const { db } = fakeDb((sql) => {
+      if (sql.includes("FROM projects WHERE id = ?")) return { company_id: 1 };
+      if (sql.includes("INSERT INTO project_handover_checks")) throw Object.assign(new Error("duplicate key value violates unique constraint"), { code: "23505" });
+      return null;
+    });
+    const res = await appWith(db)("POST", "/projects/7/handover-checks", { templateId: 2 });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: "check_open" });
+  });
+
+  test("a reopen that clashes with another open check answers check_open", async () => {
+    const { db } = fakeDb((sql) => {
+      if (sql.includes("FROM project_handover_checks k JOIN projects p")) return { id: 4, project_id: 7, company_id: 1, completed_at: "2026-11-09T00:00:00Z", template_name: "T" };
+      if (sql.startsWith("UPDATE project_handover_checks SET completed_at = NULL")) throw Object.assign(new Error("duplicate key value"), { code: "23505" });
+      return null;
+    });
+    const res = await appWith(db)("POST", "/handover-checks/4/reopen");
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: "check_open" });
+  });
+
   test("Finish refuses while items are unmarked; the check stays open", async () => {
     const { db, ran } = fakeDb((sql) => {
       if (sql.includes("FROM project_handover_checks k JOIN projects p")) return { id: 4, project_id: 7, company_id: 1, completed_at: null, template_name: "T" };
@@ -152,8 +175,8 @@ describe("a Fail is a defect report from the check (POST /projects/:id/defects w
   const report = { location: "Kitchen", description: "Sink: leaks", photoKey: "renovation/7/defect-a.jpg", checkItemId: 8 };
   const answers = (item: Record<string, unknown> | null) => (sql: string) => {
     if (sql.includes("FROM projects WHERE id = ?")) return { company_id: 1 };
-    if (sql.includes("FROM project_handover_check_items i JOIN project_handover_checks k")) return item;
     if (sql.includes("INSERT INTO project_defects")) return { id: 21 };
+    if (sql.includes("FROM project_handover_check_items i JOIN project_handover_checks k")) return item;
     return null;
   };
 
@@ -163,8 +186,24 @@ describe("a Fail is a defect report from the check (POST /projects/:id/defects w
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ id: 21 });
     const ins = ran.find((r) => r.sql.includes("INSERT INTO project_defects"))!;
-    expect(ins.sql).toContain("UPDATE project_handover_check_items SET result = 'fail', defect_id = d.id");
-    expect(ins.args.slice(-2)).toEqual([5, 8]);
+    expect(ins.sql).toContain("UPDATE project_handover_check_items i SET result = 'fail', defect_id = d.id");
+    // The item is locked first and the defect is inserted FROM that lock, so a lost race writes nothing.
+    expect(ins.sql).toMatch(/lk AS \([\s\S]*k\.completed_at IS NULL AND i\.defect_id IS NULL[\s\S]*FOR UPDATE OF i\)/);
+    expect(ins.sql).toMatch(/INSERT INTO project_defects[\s\S]*FROM lk\s+RETURNING/);
+    expect(ins.args.slice(0, 2)).toEqual([8, 7]);
+    expect(ins.args.slice(-1)).toEqual([5]);
+  });
+
+  test("a report that lost the race for its item (the lock found no row) answers 409 and writes nothing", async () => {
+    const { db } = fakeDb((sql) => {
+      if (sql.includes("FROM projects WHERE id = ?")) return { company_id: 1 };
+      if (sql.includes("INSERT INTO project_defects")) return null; // the lock matched nothing, so no defect id comes back
+      if (sql.includes("FROM project_handover_check_items i JOIN project_handover_checks k")) return { defect_id: null, completed_at: null };
+      return null;
+    });
+    const res = await appWith(db, ["projects.write"], renovationBeta as never)("POST", "/projects/7/defects", report);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: "check_changed" });
   });
 
   test("an item that already has a defect, or of another project, is refused before anything is written", async () => {
@@ -224,6 +263,8 @@ describe("marks on a check", () => {
     expect(itemMarkRefusal({ completedAt: null }, { result: null, defectId: null })).toBeNull();
     expect(itemMarkRefusal({ completedAt: "2026-11-10T01:00:00Z" }, { result: null, defectId: null })).toMatchObject({ error: "check_finished" });
     expect(itemMarkRefusal({ completedAt: null }, { result: "fail", defectId: 4 })).toMatchObject({ error: "defect_raised" });
+    // A Fail whose defect went (only with the whole project) still stays Fail.
+    expect(itemMarkRefusal({ completedAt: null }, { result: "fail", defectId: null })).toMatchObject({ error: "defect_raised" });
     expect(itemFailRefusal({ completedAt: null }, { result: "pass", defectId: null })).toBeNull();
     expect(itemFailRefusal({ completedAt: null }, { result: "fail", defectId: 4 })).toMatchObject({ error: "defect_raised" });
     expect(itemFailRefusal({ completedAt: "2026-11-10T01:00:00Z" }, { result: null, defectId: null })).toMatchObject({ error: "check_finished" });
@@ -235,5 +276,22 @@ describe("marks on a check", () => {
     expect(finishRefusal({ completedAt: null }, p)).toMatchObject({ error: "items_unchecked", message: expect.stringContaining("1 item is not marked") });
     expect(finishRefusal({ completedAt: null }, checkProgress([{ result: "pass" }]))).toBeNull();
     expect(finishRefusal({ completedAt: "x" }, checkProgress([{ result: "pass" }]))).toMatchObject({ error: "check_finished" });
+  });
+});
+
+describe("migration 0296", () => {
+  const sql = readFileSync(new URL("../../../migrations-pg/0296_handover_checklists.sql", import.meta.url), "utf8");
+  test("the database holds one open check per project", () => {
+    expect(sql).toMatch(/create unique index if not exists project_handover_checks_one_open\s+on public\.project_handover_checks \(project_id\) where completed_at is null/);
+  });
+  test("grants match project_handovers (0080): owner scm_engine, RLS, service_role only", () => {
+    expect(sql).not.toMatch(/pos_app/);
+    expect(sql).toContain("grant all on public.%I to service_role'");
+    expect(sql).toContain("owner to scm_engine");
+    expect(sql).toContain("revoke all on public.%I from anon, authenticated");
+  });
+  test("is wrapped in the demo overlay rebuild", () => {
+    expect(sql.indexOf("select demo.drop_views();")).toBeLessThan(sql.indexOf("create table"));
+    expect(sql.trimEnd().endsWith("select demo.sync();")).toBe(true);
   });
 });

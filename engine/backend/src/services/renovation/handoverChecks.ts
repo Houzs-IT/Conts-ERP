@@ -82,7 +82,8 @@ export interface CheckState { completedAt: string | null }
 /** Why an item cannot be marked from the check screen now; null when it can. */
 export function itemMarkRefusal(check: CheckState, item: CheckItemState): { error: string; message: string } | null {
   if (check.completedAt) return { error: "check_finished", message: "This check is finished. Reopen it to change a mark." };
-  if (item.defectId != null) return { error: "defect_raised", message: "This item failed and has a defect. Close the defect in the Defects board instead." };
+  // A Fail stays Fail: its defect is worked in the Defects board (and only goes with the whole project).
+  if (item.defectId != null || item.result === "fail") return { error: "defect_raised", message: "This item failed and has a defect. Close the defect in the Defects board instead." };
   return null;
 }
 

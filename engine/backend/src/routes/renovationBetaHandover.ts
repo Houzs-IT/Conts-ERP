@@ -104,6 +104,8 @@ app.get("/handover-templates", requirePageAccess("projects.list"), guarded(true,
 
 const ITEMS_INSERT = `INSERT INTO handover_checklist_template_items (template_id, sequence, area, item, criteria)
   SELECT ?::bigint, x.n, x.area, x.item, x.criteria FROM jsonb_to_recordset(?::text::jsonb) WITH ORDINALITY AS x(area text, item text, criteria text, n bigint)`;
+const CHECK_OPEN = { error: "check_open", message: "This project already has an open handover check. Finish it or carry on with it." } as const;
+const CHECK_OPEN_OTHER = { error: "check_open", message: "Another handover check of this project is open. Finish it first." } as const;
 const NAME_TAKEN = { error: "name_taken", message: "Another checklist already has that name." } as const;
 
 app.post("/handover-templates", requirePermission("projects.manage"), guarded(false, async (c) => {
@@ -204,8 +206,10 @@ app.post("/projects/:id/handover-checks", requirePermission("projects.write"), g
   const templateId = parseId(String((await body(c)).templateId ?? ""));
   if (!templateId) return c.json({ error: "template_required", message: "Pick a checklist." }, 400);
   const open = await db(c).prepare(`SELECT id FROM project_handover_checks WHERE project_id = ? AND completed_at IS NULL`).bind(id).first();
-  if (open) return c.json({ error: "check_open", message: "This project already has an open handover check. Finish it or carry on with it." }, 409);
-  const row = await db(c).prepare(
+  if (open) return c.json(CHECK_OPEN, 409);
+  let row: { id: number } | null;
+  try {
+    row = await db(c).prepare(
     `WITH tp AS (SELECT id, name FROM handover_checklist_templates WHERE id = ? AND company_id = ? AND active),
           k AS (INSERT INTO project_handover_checks (project_id, company_id, template_id, template_name, started_by)
                 SELECT ?, ?, tp.id, tp.name, ? FROM tp RETURNING id, template_id, template_name),
@@ -215,6 +219,11 @@ app.post("/projects/:id/handover-checks", requirePermission("projects.write"), g
                 SELECT ?::bigint, 'handover_check_started', NULL, k.template_name, NULL, ?::bigint, ?::bigint FROM k)
      SELECT id::int AS id FROM k`,
   ).bind(templateId, co, id, co, userId(c), id, userId(c), co).first<{ id: number }>();
+  } catch (e) {
+    // Two starts at once: the one-open-check index (0296) refuses the second.
+    if (isUniqueViolation(e)) return c.json(CHECK_OPEN, 409);
+    throw e;
+  }
   if (!row) return c.json({ error: "template_not_found", message: "That checklist is not on this company's list, or it is switched off." }, 404);
   return c.json({ id: row.id }, 201);
 }));
@@ -236,7 +245,7 @@ app.post("/handover-check-items/:itemId", requirePermission("projects.write"), g
     `UPDATE project_handover_check_items SET result = ?::text, note = ?::text,
             checked_by = CASE WHEN ?::text IS NULL THEN NULL ELSE ?::bigint END,
             checked_at = CASE WHEN ?::text IS NULL THEN NULL ELSE now() END
-      WHERE id = ? AND defect_id IS NULL
+      WHERE id = ? AND defect_id IS NULL AND result IS DISTINCT FROM 'fail'
         AND check_id IN (SELECT id FROM project_handover_checks WHERE id = ? AND completed_at IS NULL)
       RETURNING id::int AS id`,
   ).bind(result, note, result, userId(c), result, itemId, k.id).first<{ id: number }>();
@@ -274,11 +283,16 @@ app.post("/handover-checks/:id/reopen", requirePermission("projects.write"), gua
   if (!k) return c.json({ error: "not_found" }, 404);
   if (!k.completed_at) return c.json({ error: "check_open", message: "This check is still open." }, 409);
   const other = await db(c).prepare(`SELECT id FROM project_handover_checks WHERE project_id = ? AND completed_at IS NULL AND id <> ?`).bind(k.project_id, id).first();
-  if (other) return c.json({ error: "check_open", message: "Another handover check of this project is open. Finish it first." }, 409);
-  await db(c).batch!([
-    db(c).prepare(`UPDATE project_handover_checks SET completed_at = NULL, completed_by = NULL WHERE id = ?`).bind(id),
-    activity(c, k.project_id, k.company_id, "handover_check_reopened", k.template_name, null),
-  ]);
+  if (other) return c.json(CHECK_OPEN_OTHER, 409);
+  try {
+    await db(c).batch!([
+      db(c).prepare(`UPDATE project_handover_checks SET completed_at = NULL, completed_by = NULL WHERE id = ?`).bind(id),
+      activity(c, k.project_id, k.company_id, "handover_check_reopened", k.template_name, null),
+    ]);
+  } catch (e) {
+    if (isUniqueViolation(e)) return c.json(CHECK_OPEN_OTHER, 409);
+    throw e;
+  }
   return c.json({ ok: true });
 }));
 
