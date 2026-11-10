@@ -86,6 +86,8 @@ export function mineSql(byId: boolean) {
 
 export const hasAssigneeUser = (env: Env) => hasColumn(env, 'maintenance_issues', 'assignee_user_id').catch(() => false);
 
+export const hasSupportRequest = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'support_requested_at').catch(() => false);
+
 /** Whether a repair job is the signed-in field user's: the rule every field write on a repair checks. */
 export async function isAssignee(env: Env, id: string, userId: string): Promise<boolean> {
   const byId = await hasAssigneeUser(env);

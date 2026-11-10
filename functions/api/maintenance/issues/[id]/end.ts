@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
-import { isAssignee } from '../../../../_lib/maintenance';
+import { isAssignee, hasSupportRequest } from '../../../../_lib/maintenance';
 import { repairNotice } from '../../../../_lib/notices';
 
 /** POST /api/maintenance/issues/:id/end { note? } — records when the repair finished. The job is not
@@ -27,7 +27,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
   const now = nowIso();
   const endedAt = cur.ended_at ?? now;
-  await run(env, `UPDATE maintenance_issues SET ended_at = ?, updated_at = ? WHERE id = ?`, endedAt, now, id);
+  const clearSupport = (await hasSupportRequest(env)) ? ', support_requested_at = NULL, support_note = NULL' : '';
+  await run(env, `UPDATE maintenance_issues SET ended_at = ?, updated_at = ?${clearSupport} WHERE id = ?`, endedAt, now, id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.end', entityTable: 'maintenance_issues', entityId: id, before: { startedAt: cur.started_at }, after: { endedAt, note }, source: field ? 'field_app' : 'web' });
   if (!cur.ended_at) await repairNotice(env, id, 'ended', session.userId);
   return json({ ok: true, endedAt });

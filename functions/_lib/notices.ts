@@ -102,7 +102,7 @@ async function issue(env: Env, id: string): Promise<Issue | null> {
   } catch { return null; }
 }
 
-export type RepairEvent = 'reported' | 'assigned' | 'picked' | 'dropped' | 'ended' | 'window' | 'done' | 'overdue' | 'approval_requested' | 'approval_decided';
+export type RepairEvent = 'reported' | 'assigned' | 'picked' | 'dropped' | 'ended' | 'window' | 'done' | 'overdue' | 'approval_requested' | 'approval_decided' | 'support';
 
 /** A repair job was reported, given to someone, given a time to enter the unit, finished, ran late, or needs /
  *  got the owner's approval. `detail` adds a line (the window's time, the decision). */
@@ -150,6 +150,9 @@ export async function repairNotice(env: Env, id: string, event: RepairEvent, by:
         title: `Repair quote to approve: ${m.unit}`, body: `${m.title}${quote ? `. Quote ${quote}` : ''}. Open your owner portal to approve it.` });
       break;
     }
+    case 'support':
+      await notifyUsers(env, 'ops', { ...base, kind: 'maintenance.support', title: `Technician needs support: ${m.unit}`, body: `${m.title} – ${m.vendor_name ?? 'the technician'} tried: ${detail ?? ''}`, dedupeKey: `repair-support-${id}-${Date.now()}` });
+      break;
     case 'approval_decided':
       await notifyUsers(env, { roles: ['ops'], userIds: tech }, { ...base, kind: 'approval.decided', title: `Maintenance job ${detail ?? 'decided'}: ${m.unit}`, body: m.title });
       break;

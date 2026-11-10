@@ -25,6 +25,7 @@ interface Repair {
   title: string; detail: string | null; category: string; urgency: string; jobType?: string; dueOn?: string | null; state: string; source: string;
   reportedAt: string; reporter: string | null; assigneeName: string | null;
   startedAt: string | null; endedAt: string | null; resolvedAt: string | null; blocksUnit: boolean; waitingForOwner: boolean;
+  supportRequestedAt?: string | null; supportNote?: string | null;
   beforeCount: number; afterCount: number; documentCount: number;
   windows: { id: string; startsAt: string; endsAt: string; note: string | null; guestStaying: boolean }[];
 }
@@ -292,6 +293,8 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   const [purchase, setPurchase] = useState<{ id: string; file: File; amountSen: number | null; spendDate: string | null } | null>(null);
   const [note, setNote] = useState('');
   const [doneNote, setDoneNote] = useState('');
+  const [isAskingSupport, setIsAskingSupport] = useState(false);
+  const [supportNote, setSupportNote] = useState('');
   const [confirm, ask] = useConfirm();
   const j = d.data?.job;
   const mine = !!d.data?.mine;
@@ -381,14 +384,37 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
         )}
       </div>
     );
+  } else if (j && working && !j.endedAt && isAskingSupport) {
+    footer = (
+      <div className="flex flex-col gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-copy font-semibold">{tr.supportTitle}</span>
+          <span className="text-meta text-muted-ink">{tr.supportHint}</span>
+          <textarea className={cx(TEXTAREA, 'text-[16px]')} value={supportNote} onChange={e => setSupportNote(e.target.value)} placeholder={tr.supportPh} maxLength={1000} autoFocus />
+        </label>
+        <Button size="touch" variant="primary" className="w-full" icon={<Icon name="Send" size="sm" />} loading={busy === 'support'}
+          disabled={!supportNote.trim()} disabledReason={tr.supportNeedNote}
+          onClick={() => void act('support', () => api.post(`/maintenance/issues/${id}/support`, { note: supportNote.trim() }), tr.supportSent, tr.supportSentBody).then(ok => { if (ok) { setIsAskingSupport(false); setSupportNote(''); } })}>{tr.supportSend}</Button>
+        <Button size="touch" variant="ghost" className="w-full" onClick={() => setIsAskingSupport(false)}>{tr.form.cancel}</Button>
+      </div>
+    );
   } else if (j && working && !j.endedAt) {
     footer = (
       <div className="flex flex-col gap-2">
+        {j.supportRequestedAt && (
+          <div className="rounded-control bg-warning-bg text-warning p-3 flex flex-col gap-1">
+            <span>{tr.supportAsked(stamp(j.supportRequestedAt))}</span>
+            {j.supportNote && <span className="text-meta whitespace-pre-wrap [overflow-wrap:anywhere]">{j.supportNote}</span>}
+          </div>
+        )}
         <input className={cx(INPUT, 'h-11')} value={doneNote} onChange={e => setDoneNote(e.target.value)} placeholder={tr.whatYouDid} aria-label={tr.whatYouDidLabel} maxLength={1000} />
         <Button size="touch" variant="primary" className="w-full" icon={<Icon name="CircleCheck" size="sm" />} loading={busy === 'end'}
           disabled={counts.after === 0} disabledReason={tr.needAfter}
           onClick={() => void act('end', () => api.post(`/maintenance/issues/${id}/end`, { note: doneNote.trim() || undefined }), tr.markedDone, tr.markedDoneBody)}>{tr.markDone}</Button>
         {counts.after === 0 && <span className="text-meta text-muted-ink text-center">{tr.needAfterHint}</span>}
+        {!j.supportRequestedAt && (
+          <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="LifeBuoy" size="sm" />} onClick={() => setIsAskingSupport(true)}>{tr.needSupport}</Button>
+        )}
       </div>
     );
   } else if (j && working && j.endedAt) {
