@@ -1,4 +1,6 @@
 -- REVERSAL: DROP TRIGGER IF EXISTS trg_do_item_so_over_delivery ON scm.delivery_order_items;
+--           DROP TRIGGER IF EXISTS trg_do_items_so_over_delivery_ins ON scm.delivery_order_items;
+--           DROP FUNCTION IF EXISTS scm.fn_do_items_so_over_delivery_ins();
 --           DROP TRIGGER IF EXISTS trg_do_status_so_over_delivery ON scm.delivery_orders;
 --           DROP FUNCTION IF EXISTS scm.fn_do_item_so_over_delivery();
 --           DROP FUNCTION IF EXISTS scm.fn_do_status_so_over_delivery();
@@ -132,8 +134,42 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_do_item_so_over_delivery ON scm.delivery_order_items;
 CREATE TRIGGER trg_do_item_so_over_delivery
-  AFTER INSERT OR UPDATE OF qty, so_item_id, delivery_order_id ON scm.delivery_order_items
+  AFTER UPDATE OF qty, so_item_id, delivery_order_id ON scm.delivery_order_items
   FOR EACH ROW EXECUTE FUNCTION scm.fn_do_item_so_over_delivery();
+
+-- An INSERT is checked once per statement, over its rows' parent lines SORTED by id (review of #856): row triggers
+-- lock the parent lines in insert order, so two multi-line inserts naming the same lines in a different order could
+-- deadlock. The row function above still answers an UPDATE (an UPDATE trigger with a column list cannot read
+-- transition tables). Same rule as the row path: only rows on a live parent document, with a quantity, add.
+CREATE OR REPLACE FUNCTION scm.fn_do_items_so_over_delivery_ins()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = scm, public
+AS $$
+DECLARE
+  v_so_item_id uuid;
+BEGIN
+  FOR v_so_item_id IN
+    SELECT DISTINCT n.so_item_id
+      FROM new_rows n
+      JOIN scm.delivery_orders d ON d.id = n.delivery_order_id
+     WHERE n.so_item_id IS NOT NULL
+       AND coalesce(n.qty, 0) > 0
+       AND upper(d.status::text) NOT IN ('DRAFT', 'CANCELLED')
+     ORDER BY n.so_item_id
+  LOOP
+    PERFORM scm.assert_so_line_not_over_delivered(v_so_item_id);
+  END LOOP;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_do_items_so_over_delivery_ins ON scm.delivery_order_items;
+CREATE TRIGGER trg_do_items_so_over_delivery_ins
+  AFTER INSERT ON scm.delivery_order_items
+  REFERENCING NEW TABLE AS new_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION scm.fn_do_items_so_over_delivery_ins();
 
 -- A DO entering a live status (DRAFT confirm, or an un-cancel) adds all its
 -- linked lines at once. Drafts do not count toward remaining, so two drafts on
@@ -169,3 +205,10 @@ CREATE TRIGGER trg_do_status_so_over_delivery
   WHEN (upper(OLD.status::text) IN ('DRAFT', 'CANCELLED')
         AND upper(NEW.status::text) NOT IN ('DRAFT', 'CANCELLED'))
   EXECUTE FUNCTION scm.fn_do_status_so_over_delivery();
+
+-- SECURITY DEFINER functions are not for calling: only these triggers run them (a trigger needs no EXECUTE grant),
+-- so nobody may call one through the API (repo pattern, 0243 / 0250).
+revoke all on function scm.assert_so_line_not_over_delivered(uuid) from public, anon, authenticated;
+revoke all on function scm.fn_do_item_so_over_delivery() from public, anon, authenticated;
+revoke all on function scm.fn_do_status_so_over_delivery() from public, anon, authenticated;
+revoke all on function scm.fn_do_items_so_over_delivery_ins() from public, anon, authenticated;

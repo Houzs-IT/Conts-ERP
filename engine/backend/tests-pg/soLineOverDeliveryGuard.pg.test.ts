@@ -79,6 +79,9 @@ describePg('HC-0004 T1 — SO line over-delivery guard', () => {
     const parsed = new URL(url);
     if (parsed.hostname !== '127.0.0.1' && parsed.hostname !== 'localhost') throw new Error('refusing a non-local TEST_DATABASE_URL');
     admin = postgres(url, { max: 1 });
+    // The migrations revoke their functions from Supabase's API roles, which a bare Postgres lacks (cluster-wide).
+    await admin.unsafe(`do $$ begin if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if;
+      if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if; end $$`);
     await admin.unsafe(`DROP DATABASE IF EXISTS ${DB} WITH (FORCE)`);
     await admin.unsafe(`CREATE DATABASE ${DB}`);
     // prepare: false — each test drops and rebuilds the schema under the same names.

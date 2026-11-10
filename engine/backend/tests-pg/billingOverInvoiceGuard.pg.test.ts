@@ -34,7 +34,13 @@ const FIXTURE = `
   CREATE SCHEMA scm;
   CREATE TYPE scm.purchase_invoice_status AS ENUM ('DRAFT','POSTED','PARTIALLY_PAID','PAID','CANCELLED','VOID');
   CREATE TYPE scm.sales_invoice_status AS ENUM ('DRAFT','SENT','PARTIALLY_PAID','PAID','CANCELLED','VOID');
-  CREATE TABLE scm.grn_items (id uuid PRIMARY KEY, qty_accepted integer NOT NULL, returned_qty integer NOT NULL DEFAULT 0);
+  -- The parent documents the asserts read (review of #856: a DRAFT / CANCELLED parent bills nothing); one live each.
+  CREATE TABLE scm.grns (id uuid PRIMARY KEY, status text NOT NULL DEFAULT 'POSTED');
+  INSERT INTO scm.grns (id) VALUES ('00000000-0000-0000-0000-0000000000f1');
+  CREATE TABLE scm.delivery_orders (id uuid PRIMARY KEY, status text NOT NULL DEFAULT 'DELIVERED');
+  INSERT INTO scm.delivery_orders (id) VALUES ('00000000-0000-0000-0000-0000000000f2');
+  CREATE TABLE scm.grn_items (id uuid PRIMARY KEY, grn_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-0000000000f1' REFERENCES scm.grns(id),
+    qty_accepted integer NOT NULL, returned_qty integer NOT NULL DEFAULT 0);
   CREATE TABLE scm.purchase_invoices (id uuid PRIMARY KEY, status scm.purchase_invoice_status NOT NULL DEFAULT 'POSTED', note text);
   CREATE TABLE scm.purchase_invoice_items (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -42,7 +48,8 @@ const FIXTURE = `
     grn_item_id uuid REFERENCES scm.grn_items(id) ON DELETE SET NULL,
     qty integer NOT NULL, note text
   );
-  CREATE TABLE scm.delivery_order_items (id uuid PRIMARY KEY, qty integer NOT NULL);
+  CREATE TABLE scm.delivery_order_items (id uuid PRIMARY KEY, delivery_order_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-0000000000f2'
+    REFERENCES scm.delivery_orders(id), qty integer NOT NULL);
   CREATE TABLE scm.delivery_returns (id uuid PRIMARY KEY, status text NOT NULL DEFAULT 'PENDING');
   CREATE TABLE scm.delivery_return_items (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -114,6 +121,9 @@ describePg('HC-0004 T4 — GRN -> PI and DO -> SI over-invoice guards', () => {
     const parsed = new URL(url);
     if (parsed.hostname !== '127.0.0.1' && parsed.hostname !== 'localhost') throw new Error('refusing a non-local TEST_DATABASE_URL');
     admin = postgres(url, { max: 1 });
+    // The migrations revoke their functions from Supabase's API roles, which a bare Postgres lacks (cluster-wide).
+    await admin.unsafe(`do $$ begin if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if;
+      if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if; end $$`);
     await admin.unsafe(`DROP DATABASE IF EXISTS ${DB} WITH (FORCE)`);
     await admin.unsafe(`CREATE DATABASE ${DB}`);
     // prepare: false — each test drops and rebuilds the schema under the same names.

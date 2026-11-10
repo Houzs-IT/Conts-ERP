@@ -1,4 +1,8 @@
 -- REVERSAL: DROP TRIGGER IF EXISTS trg_pi_item_grn_over_invoice ON scm.purchase_invoice_items;
+--           DROP TRIGGER IF EXISTS trg_si_items_do_over_invoice_ins ON scm.sales_invoice_items;
+--           DROP FUNCTION IF EXISTS scm.fn_si_items_do_over_invoice_ins();
+--           DROP TRIGGER IF EXISTS trg_pi_items_grn_over_invoice_ins ON scm.purchase_invoice_items;
+--           DROP FUNCTION IF EXISTS scm.fn_pi_items_grn_over_invoice_ins();
 --           DROP TRIGGER IF EXISTS trg_pi_status_grn_over_invoice ON scm.purchase_invoices;
 --           DROP TRIGGER IF EXISTS trg_si_item_do_over_invoice ON scm.sales_invoice_items;
 --           DROP TRIGGER IF EXISTS trg_si_status_do_over_invoice ON scm.sales_invoices;
@@ -58,13 +62,27 @@ AS $$
 DECLARE
   v_cap      numeric;
   v_invoiced numeric;
+  v_status   text;
 BEGIN
+  -- The parent GRN first, FOR SHARE: a cancel in flight holds it (its UPDATE), so this waits for it and then reads
+  -- CANCELLED; a cancel that comes second waits for this insert. Header before line, so a cancel that goes on to
+  -- write the GRN's lines cannot meet this the other way round.
+  SELECT upper(gr.status::text) INTO v_status
+    FROM scm.grns gr
+   WHERE gr.id = (SELECT g0.grn_id FROM scm.grn_items g0 WHERE g0.id = p_grn_item_id)
+     FOR SHARE;
+
   SELECT coalesce(g.qty_accepted, 0) - coalesce(g.returned_qty, 0) INTO v_cap
     FROM scm.grn_items g
    WHERE g.id = p_grn_item_id
      FOR NO KEY UPDATE;
   IF NOT FOUND THEN
     RETURN;
+  END IF;
+  -- A DRAFT or CANCELLED GRN received nothing, so nothing on it can be billed (review of #856: a GRN cancelled after
+  -- the PI screen read it left its accepted qty billable).
+  IF coalesce(v_status, 'CANCELLED') IN ('DRAFT', 'CANCELLED') THEN
+    v_cap := 0;
   END IF;
 
   SELECT coalesce(sum(i.qty), 0) INTO v_invoiced
@@ -125,8 +143,42 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_pi_item_grn_over_invoice ON scm.purchase_invoice_items;
 CREATE TRIGGER trg_pi_item_grn_over_invoice
-  AFTER INSERT OR UPDATE OF qty, grn_item_id, purchase_invoice_id ON scm.purchase_invoice_items
+  AFTER UPDATE OF qty, grn_item_id, purchase_invoice_id ON scm.purchase_invoice_items
   FOR EACH ROW EXECUTE FUNCTION scm.fn_pi_item_grn_over_invoice();
+
+-- An INSERT is checked once per statement, over its rows' parent lines SORTED by id (review of #856): row triggers
+-- lock the parent lines in insert order, so two multi-line inserts naming the same lines in a different order could
+-- deadlock. The row function above still answers an UPDATE (an UPDATE trigger with a column list cannot read
+-- transition tables). Same rule as the row path: only rows on a live parent document, with a quantity, add.
+CREATE OR REPLACE FUNCTION scm.fn_pi_items_grn_over_invoice_ins()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = scm, public
+AS $$
+DECLARE
+  v_grn_item_id uuid;
+BEGIN
+  FOR v_grn_item_id IN
+    SELECT DISTINCT n.grn_item_id
+      FROM new_rows n
+      JOIN scm.purchase_invoices p ON p.id = n.purchase_invoice_id
+     WHERE n.grn_item_id IS NOT NULL
+       AND coalesce(n.qty, 0) > 0
+       AND upper(p.status::text) NOT IN ('DRAFT', 'CANCELLED')
+     ORDER BY n.grn_item_id
+  LOOP
+    PERFORM scm.assert_grn_line_not_over_invoiced(v_grn_item_id);
+  END LOOP;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_pi_items_grn_over_invoice_ins ON scm.purchase_invoice_items;
+CREATE TRIGGER trg_pi_items_grn_over_invoice_ins
+  AFTER INSERT ON scm.purchase_invoice_items
+  REFERENCING NEW TABLE AS new_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION scm.fn_pi_items_grn_over_invoice_ins();
 
 -- A PI entering a live status (DRAFT confirm, or an un-cancel) bills all its
 -- linked lines at once. Drafts do not count, so two drafts on one GRN line
@@ -175,13 +227,29 @@ DECLARE
   v_qty      numeric;
   v_returned numeric;
   v_invoiced numeric;
+  v_status   text;
 BEGIN
+  -- The line lock alone serialises with a DO cancel: 0271 takes FOR UPDATE on every line of the DO, so whichever
+  -- comes second waits, and this then reads the parent's status fresh. The DO header is NOT locked here: the cancel
+  -- holds the header and then asks for the lines, and this insert already holds its FK share on the line, so a header
+  -- lock here would deadlock against it. The status is read by its own statement AFTER the lock is held: a join in the
+  -- locking statement would hand back the header as it was before the wait.
   SELECT coalesce(d.qty, 0) INTO v_qty
     FROM scm.delivery_order_items d
    WHERE d.id = p_do_item_id
      FOR NO KEY UPDATE;
   IF NOT FOUND THEN
     RETURN;
+  END IF;
+  SELECT upper(o.status::text) INTO v_status
+    FROM scm.delivery_order_items d
+    JOIN scm.delivery_orders o ON o.id = d.delivery_order_id
+   WHERE d.id = p_do_item_id;
+  -- A DRAFT or CANCELLED DO delivered nothing, so nothing on it can be billed (review of #856: a DO cancelled after
+  -- the SI screen read it, before 0271 could see the SI line, left its qty billable). The app refuses both too
+  -- (si-from-do.ts).
+  IF v_status IN ('DRAFT', 'CANCELLED') THEN
+    v_qty := 0;
   END IF;
 
   SELECT coalesce(sum(r.qty_returned), 0) INTO v_returned
@@ -248,8 +316,42 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_si_item_do_over_invoice ON scm.sales_invoice_items;
 CREATE TRIGGER trg_si_item_do_over_invoice
-  AFTER INSERT OR UPDATE OF qty, do_item_id, sales_invoice_id ON scm.sales_invoice_items
+  AFTER UPDATE OF qty, do_item_id, sales_invoice_id ON scm.sales_invoice_items
   FOR EACH ROW EXECUTE FUNCTION scm.fn_si_item_do_over_invoice();
+
+-- An INSERT is checked once per statement, over its rows' parent lines SORTED by id (review of #856): row triggers
+-- lock the parent lines in insert order, so two multi-line inserts naming the same lines in a different order could
+-- deadlock. The row function above still answers an UPDATE (an UPDATE trigger with a column list cannot read
+-- transition tables). Same rule as the row path: only rows on a live parent document, with a quantity, add.
+CREATE OR REPLACE FUNCTION scm.fn_si_items_do_over_invoice_ins()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = scm, public
+AS $$
+DECLARE
+  v_do_item_id uuid;
+BEGIN
+  FOR v_do_item_id IN
+    SELECT DISTINCT n.do_item_id
+      FROM new_rows n
+      JOIN scm.sales_invoices s ON s.id = n.sales_invoice_id
+     WHERE n.do_item_id IS NOT NULL
+       AND coalesce(n.qty, 0) > 0
+       AND upper(coalesce(s.status::text, '')) <> 'CANCELLED'
+     ORDER BY n.do_item_id
+  LOOP
+    PERFORM scm.assert_do_line_not_over_invoiced(v_do_item_id);
+  END LOOP;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_si_items_do_over_invoice_ins ON scm.sales_invoice_items;
+CREATE TRIGGER trg_si_items_do_over_invoice_ins
+  AFTER INSERT ON scm.sales_invoice_items
+  REFERENCING NEW TABLE AS new_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION scm.fn_si_items_do_over_invoice_ins();
 
 CREATE OR REPLACE FUNCTION scm.fn_si_status_do_over_invoice()
 RETURNS TRIGGER
@@ -280,3 +382,14 @@ CREATE TRIGGER trg_si_status_do_over_invoice
   FOR EACH ROW
   WHEN (upper(OLD.status::text) = 'CANCELLED' AND upper(NEW.status::text) <> 'CANCELLED')
   EXECUTE FUNCTION scm.fn_si_status_do_over_invoice();
+
+-- SECURITY DEFINER functions are not for calling: only these triggers run them (a trigger needs no EXECUTE grant),
+-- so nobody may call one through the API (repo pattern, 0243 / 0250).
+revoke all on function scm.assert_grn_line_not_over_invoiced(uuid) from public, anon, authenticated;
+revoke all on function scm.fn_pi_item_grn_over_invoice() from public, anon, authenticated;
+revoke all on function scm.fn_pi_status_grn_over_invoice() from public, anon, authenticated;
+revoke all on function scm.assert_do_line_not_over_invoiced(uuid) from public, anon, authenticated;
+revoke all on function scm.fn_si_item_do_over_invoice() from public, anon, authenticated;
+revoke all on function scm.fn_si_status_do_over_invoice() from public, anon, authenticated;
+revoke all on function scm.fn_pi_items_grn_over_invoice_ins() from public, anon, authenticated;
+revoke all on function scm.fn_si_items_do_over_invoice_ins() from public, anon, authenticated;

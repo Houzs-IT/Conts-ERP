@@ -71,3 +71,7 @@ CREATE TRIGGER trg_do_cancel_invoiced_lock
   FOR EACH ROW
   WHEN (upper(NEW.status::text) = 'CANCELLED' AND upper(OLD.status::text) <> 'CANCELLED')
   EXECUTE FUNCTION scm.fn_do_cancel_invoiced_lock();
+
+-- SECURITY DEFINER functions are not for calling: only these triggers run them (a trigger needs no EXECUTE grant),
+-- so nobody may call one through the API (repo pattern, 0243 / 0250).
+revoke all on function scm.fn_do_cancel_invoiced_lock() from public, anon, authenticated;

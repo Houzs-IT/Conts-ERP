@@ -30,6 +30,7 @@ import {
 } from '../lib/return-unlinked-lines';
 import { assertSourceLinesInCompany } from '../lib/ref-in-company';
 import { isGrnLineOverInvoiced, piGrnSourceRefusal } from '../lib/pi-grn-source-guard';
+import { postFromGrnDraft } from '../lib/pi-from-grn-post';
 import { readStatusCounts } from '../lib/status-counts';
 import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
   requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY,
@@ -1307,6 +1308,7 @@ export const createPurchaseInvoicesFromGrnItemsHandler = async (c: Context<{ Bin
   const sb = c.get('supabase');
   const created: Array<{ id: string; invoiceNumber: string; supplierId: string; grnCount: number; lineCount: number }> = [];
   let dbCapRefused = false;
+  const postFailed: Array<{ id: string; invoiceNumber: string; reason: string }> = [];
 
   for (const draft of coreRes.created) {
     /* Auto-post (the UI create is auto-posted; the draft-only core left this to
@@ -1314,16 +1316,11 @@ export const createPurchaseInvoicesFromGrnItemsHandler = async (c: Context<{ Bin
        status POSTED in the insert and never called postPiAccounting — so the flip
        reproduces that exactly. It MUST precede recomputeGrnInvoiced, which
        excludes DRAFT PIs from the invoiced_qty recount. */
-    const { error: flipErr } = await scopeToCompanyId(sb.from('purchase_invoices').update({
-      status: 'POSTED', posted_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-    }).eq('id', draft.id), activeCompanyId(c) as number);
-    // HC-0004: the DB cap refused the post (a concurrent PI billed the line).
-    // Roll this bucket's draft back (the header cascades its lines).
-    if (isGrnLineOverInvoiced(flipErr)) {
-      await scopeToCompanyId(sb.from('purchase_invoices').delete().eq('id', draft.id), activeCompanyId(c) as number);
-      dbCapRefused = true;
-      continue;
-    }
+    const flip = await postFromGrnDraft(sb, draft.id, activeCompanyId(c));
+    // Database cap (migration 0273): a concurrent PI billed the line; the draft was rolled back.
+    if (flip.kind === 'capped') { dbCapRefused = true; continue; }
+    /* Any other failure leaves this bucket DRAFT: say so, never report it POSTED. */
+    if (flip.kind === 'failed') { postFailed.push({ id: draft.id, invoiceNumber: draft.invoiceNumber, reason: flip.reason }); continue; }
 
     /* CREATE recorded HERE, past the flip, so its status snapshot reads POSTED
        exactly as when the insert stamped POSTED inline. Each bucket is its own
@@ -1364,6 +1361,9 @@ export const createPurchaseInvoicesFromGrnItemsHandler = async (c: Context<{ Bin
     });
   }
 
+  if (postFailed.length > 0) {
+    return c.json({ error: 'post_failed', message: `${postFailed.map((f) => f.invoiceNumber).join(', ')} could not be posted and ${postFailed.length === 1 ? 'is' : 'are'} left as draft.`, postFailed, created }, 500);
+  }
   if (dbCapRefused) {
     return c.json({ error: 'qty_exceeds_remaining', message: 'Another purchase invoice already bills these goods received lines. Refresh the picker and try again.', created }, 409);
   }

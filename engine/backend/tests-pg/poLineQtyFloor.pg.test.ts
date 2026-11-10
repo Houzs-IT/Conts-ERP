@@ -77,6 +77,9 @@ describePg('HC-0004 — PO line qty floor', () => {
     const parsed = new URL(url);
     if (parsed.hostname !== '127.0.0.1' && parsed.hostname !== 'localhost') throw new Error('refusing a non-local TEST_DATABASE_URL');
     admin = postgres(url, { max: 1 });
+    // The migrations revoke their functions from Supabase's API roles, which a bare Postgres lacks (cluster-wide).
+    await admin.unsafe(`do $$ begin if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if;
+      if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if; end $$`);
     await admin.unsafe(`DROP DATABASE IF EXISTS ${DB} WITH (FORCE)`);
     await admin.unsafe(`CREATE DATABASE ${DB}`);
     // prepare: false — each test drops and rebuilds the schema under the same names.
@@ -144,9 +147,9 @@ describePg('HC-0004 — PO line qty floor', () => {
 
   test('an already-over line takes an unrelated edit, a same-qty write and a raise', async () => {
     // Prod's shape: 6 received against qty 5, from before the guard.
-    await a.unsafe('ALTER TABLE scm.grn_items DISABLE TRIGGER trg_grn_item_po_over_receipt');
+    await a.unsafe('ALTER TABLE scm.grn_items DISABLE TRIGGER trg_grn_items_po_over_receipt_ins');
     await a`INSERT INTO scm.grn_items (grn_id, purchase_order_item_id, qty_accepted) VALUES (${G1}, ${PO}, 3)`;
-    await a.unsafe('ALTER TABLE scm.grn_items ENABLE TRIGGER trg_grn_item_po_over_receipt');
+    await a.unsafe('ALTER TABLE scm.grn_items ENABLE TRIGGER trg_grn_items_po_over_receipt_ins');
 
     expect(await codeOf(a`UPDATE scm.purchase_order_items SET note = 'x' WHERE id = ${PO}`)).toBeNull();
     expect(await codeOf(a`UPDATE scm.purchase_order_items SET qty = qty, note = 'y' WHERE id = ${PO}`)).toBeNull();

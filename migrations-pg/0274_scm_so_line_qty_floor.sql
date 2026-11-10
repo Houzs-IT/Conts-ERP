@@ -49,3 +49,7 @@ CREATE TRIGGER trg_so_item_qty_floor
   FOR EACH ROW
   WHEN (NEW.qty < OLD.qty)
   EXECUTE FUNCTION scm.fn_so_item_qty_floor();
+
+-- SECURITY DEFINER functions are not for calling: only these triggers run them (a trigger needs no EXECUTE grant),
+-- so nobody may call one through the API (repo pattern, 0243 / 0250).
+revoke all on function scm.fn_so_item_qty_floor() from public, anon, authenticated;

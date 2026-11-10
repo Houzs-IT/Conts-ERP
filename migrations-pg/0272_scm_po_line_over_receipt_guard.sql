@@ -1,4 +1,6 @@
 -- REVERSAL: DROP TRIGGER IF EXISTS trg_grn_item_po_over_receipt ON scm.grn_items;
+--           DROP TRIGGER IF EXISTS trg_grn_items_po_over_receipt_ins ON scm.grn_items;
+--           DROP FUNCTION IF EXISTS scm.fn_grn_items_po_over_receipt_ins();
 --           DROP TRIGGER IF EXISTS trg_grn_status_po_over_receipt ON scm.grns;
 --           DROP FUNCTION IF EXISTS scm.fn_grn_item_po_over_receipt();
 --           DROP FUNCTION IF EXISTS scm.fn_grn_status_po_over_receipt();
@@ -122,8 +124,42 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_grn_item_po_over_receipt ON scm.grn_items;
 CREATE TRIGGER trg_grn_item_po_over_receipt
-  AFTER INSERT OR UPDATE OF qty_accepted, purchase_order_item_id, grn_id ON scm.grn_items
+  AFTER UPDATE OF qty_accepted, purchase_order_item_id, grn_id ON scm.grn_items
   FOR EACH ROW EXECUTE FUNCTION scm.fn_grn_item_po_over_receipt();
+
+-- An INSERT is checked once per statement, over its rows' parent lines SORTED by id (review of #856): row triggers
+-- lock the parent lines in insert order, so two multi-line inserts naming the same lines in a different order could
+-- deadlock. The row function above still answers an UPDATE (an UPDATE trigger with a column list cannot read
+-- transition tables). Same rule as the row path: only rows on a live parent document, with a quantity, add.
+CREATE OR REPLACE FUNCTION scm.fn_grn_items_po_over_receipt_ins()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = scm, public
+AS $$
+DECLARE
+  v_po_item_id uuid;
+BEGIN
+  FOR v_po_item_id IN
+    SELECT DISTINCT n.purchase_order_item_id
+      FROM new_rows n
+      JOIN scm.grns g ON g.id = n.grn_id
+     WHERE n.purchase_order_item_id IS NOT NULL
+       AND coalesce(n.qty_accepted, 0) - coalesce(n.returned_qty, 0) > 0
+       AND upper(g.status::text) NOT IN ('DRAFT', 'CANCELLED')
+     ORDER BY n.purchase_order_item_id
+  LOOP
+    PERFORM scm.assert_po_line_not_over_received(v_po_item_id);
+  END LOOP;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_grn_items_po_over_receipt_ins ON scm.grn_items;
+CREATE TRIGGER trg_grn_items_po_over_receipt_ins
+  AFTER INSERT ON scm.grn_items
+  REFERENCING NEW TABLE AS new_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION scm.fn_grn_items_po_over_receipt_ins();
 
 -- A GRN entering a live status (DRAFT post, or an un-cancel) adds all its
 -- linked lines at once. Drafts do not count, so two drafts on one PO line could
@@ -159,3 +195,10 @@ CREATE TRIGGER trg_grn_status_po_over_receipt
   WHEN (upper(OLD.status::text) IN ('DRAFT', 'CANCELLED')
         AND upper(NEW.status::text) NOT IN ('DRAFT', 'CANCELLED'))
   EXECUTE FUNCTION scm.fn_grn_status_po_over_receipt();
+
+-- SECURITY DEFINER functions are not for calling: only these triggers run them (a trigger needs no EXECUTE grant),
+-- so nobody may call one through the API (repo pattern, 0243 / 0250).
+revoke all on function scm.assert_po_line_not_over_received(uuid) from public, anon, authenticated;
+revoke all on function scm.fn_grn_item_po_over_receipt() from public, anon, authenticated;
+revoke all on function scm.fn_grn_status_po_over_receipt() from public, anon, authenticated;
+revoke all on function scm.fn_grn_items_po_over_receipt_ins() from public, anon, authenticated;
