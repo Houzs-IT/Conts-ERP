@@ -79,7 +79,8 @@ export const BILL_READER_PATH = /\/payment-vouchers\/extract$|\/payment-vouchers
 function timeoutSignal(path: string): AbortSignal | undefined {
   // A scan job's /work request is held open for the whole OCR run (scan-job-driver.ts): give it longer than the
   // server's 3-minute stale window so the browser never gives up on a job that is still alive.
-  const ms = /\/scan-[a-z]+\/jobs\/[^/]+\/work$/.test(path) ? 240_000 : /\/scan-/.test(path) || BILL_READER_PATH.test(path) ? 120_000 : 30_000;
+  // Reading a counted stock take sheet or a scanned bill holds the request open while the photo is read.
+  const ms = /\/scan-[a-z]+\/jobs\/[^/]+\/work$/.test(path) ? 240_000 : /\/scan-|\/stock-takes\/[^/]+\/read-sheet$/.test(path) || BILL_READER_PATH.test(path) ? 120_000 : 30_000;
   try { return AbortSignal.timeout(ms); } catch { return undefined; } // pre-2022 browsers
 }
 

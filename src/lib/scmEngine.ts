@@ -56,6 +56,8 @@ export const ENGINE_PATH: Record<string, string> = {
   // Schedule addresses, so old links open them. Project monitor's old links move to the Calendar (App.tsx).
   '/projects/list': '/beta/projects',
   '/projects/calendar': '/beta/calendar',
+  '/projects/defects': '/beta/defects',
+  '/projects/handover-checklists': '/beta/handover-checklists',
   '/projects/finances': '/projects?view=finances',
   '/projects/maintenance': '/projects?view=maintenance',
   '/sales/quotations': '/scm/renovation/quotations',

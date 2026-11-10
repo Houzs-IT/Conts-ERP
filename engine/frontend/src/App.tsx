@@ -57,6 +57,8 @@ const Projects = lazy(() => import("./pages/Projects").then((m) => ({ default: m
 const ProjectDetail = lazy(() => import("./pages/Projects").then((m) => ({ default: m.ProjectDetail })));
 const RenovationBetaHome = lazy(() => import("./pages/renovation-beta/RenovationBetaHome").then((m) => ({ default: m.RenovationBetaHome })));
 const RenovationBetaCalendar = lazy(() => import("./pages/renovation-beta/RenovationBetaCalendar").then((m) => ({ default: m.RenovationBetaCalendar })));
+const RenovationBetaDefectQueue = lazy(() => import("./pages/renovation-beta/RenovationBetaDefectQueue").then((m) => ({ default: m.RenovationBetaDefectQueue })));
+const RenovationBetaHandoverTemplates = lazy(() => import("./pages/renovation-beta/RenovationBetaHandoverTemplates").then((m) => ({ default: m.RenovationBetaHandoverTemplates })));
 const RenovationBetaWorkspace = lazy(() => import("./pages/renovation-beta/RenovationBetaWorkspace").then((m) => ({ default: m.RenovationBetaWorkspace })));
 const FairReportFill = lazy(() => import("./pages/FairReportFill").then((m) => ({ default: m.FairReportFill })));
 const ScheduleReconcile = lazy(() => import("./pages/ScheduleReconcile").then((m) => ({ default: m.ScheduleReconcile })));
@@ -149,6 +151,8 @@ const ScmFinanceDashboardV2 = lazy(() => import("./pages/scm-v2/FinanceDashboard
 const ScmPaymentVoucherDetailV2 = lazy(() => import("./pages/scm-v2/PaymentVoucherDetail").then((m) => ({ default: m.PaymentVoucherDetail })));
 const ScmStockAdjustmentsV2 = lazy(() => import("./pages/scm-v2/StockAdjustments").then((m) => ({ default: m.StockAdjustments })));
 const ScmStockAdjustmentNewV2 = lazy(() => import("./pages/scm-v2/StockAdjustmentNew").then((m) => ({ default: m.StockAdjustmentNew })));
+const ScmStockAdjustmentEditV2 = lazy(() => import("./pages/scm-v2/StockAdjustmentNew").then((m) => ({ default: m.StockAdjustmentEdit })));
+const ScmStockAdjustmentDetailV2 = lazy(() => import("./pages/scm-v2/StockAdjustmentDetail").then((m) => ({ default: m.StockAdjustmentDetail })));
 const ScmStockTransfersV2 = lazy(() => import("./pages/scm-v2/StockTransfersListV2").then((m) => ({ default: m.StockTransfersListV2 })));
 const ScmStockTransferNewV2 = lazy(() => import("./pages/scm-v2/StockTransferNew").then((m) => ({ default: m.StockTransferNew })));
 const ScmStockTransferDetailV2 = lazy(() => import("./pages/scm-v2/StockTransferDetail").then((m) => ({ default: m.StockTransferDetail })));
@@ -583,6 +587,9 @@ export default function App() {
         <Route path="/beta/home" element={<Navigate to="/beta/projects" replace />} />
         <Route path="/beta/projects" element={<PageGuard page="projects.list"><RenovationBetaHome /></PageGuard>} />
         <Route path="/beta/calendar" element={<PageGuard page="projects.list"><RenovationBetaCalendar /></PageGuard>} />
+        {/* Handover snag list (TODO item 17): the open defects of every project, and the company's handover checklists. */}
+        <Route path="/beta/defects" element={<PageGuard page="projects.list"><RenovationBetaDefectQueue /></PageGuard>} />
+        <Route path="/beta/handover-checklists" element={<PageGuard page="projects.list"><RenovationBetaHandoverTemplates /></PageGuard>} />
         <Route path="/beta/projects/:id" element={<PageGuard page="projects.list"><RenovationBetaWorkspace /></PageGuard>} />
         <Route
           path="/fair-report-fill"
@@ -833,6 +840,8 @@ export default function App() {
             inventory-view but no adjustments grant reaches Inventory, not this. */}
         <Route path="/scm/stock-adjustments" element={<ScmGuard area="scm.warehouse.adjustments"><Scm2990Shell><ScmStockAdjustmentsV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/stock-adjustments/new" element={<ScmGuard area="scm.warehouse.adjustments"><Scm2990Shell><ScmStockAdjustmentNewV2 /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/stock-adjustments/:id" element={<ScmGuard area="scm.warehouse.adjustments"><Scm2990Shell><ScmStockAdjustmentDetailV2 /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/stock-adjustments/:id/edit" element={<ScmGuard area="scm.warehouse.adjustments"><Scm2990Shell><ScmStockAdjustmentEditV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/stock-transfers" element={<ScmGuard area="scm.warehouse.transfers"><Scm2990Shell><ScmStockTransfersV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/stock-transfers/new" element={<ScmGuard area="scm.warehouse.transfers"><Scm2990Shell><ScmStockTransferNewV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/stock-transfers/:id" element={<ScmGuard area="scm.warehouse.transfers"><Scm2990Shell><ScmStockTransferDetailV2 /></Scm2990Shell></ScmGuard>} />

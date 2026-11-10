@@ -126,14 +126,14 @@ check('with supply chain work, Finance is in both sidebars', supplyPaths(M.navFo
 
 // The Beta group became the Projects pages (owner, 3 Nov 2026): its Home and Calendar sit in PROJECTS at the old
 // Project list and Schedule addresses, Beta is gone, and its old addresses redirect (App.tsx).
-const PROJECT_PATHS = ['/projects/list', '/projects/calendar', '/projects/finances', '/projects/maintenance'];
+const PROJECT_PATHS = ['/projects/list', '/projects/calendar', '/projects/defects', '/projects/handover-checklists', '/projects/finances', '/projects/maintenance'];
 const mgmt = M.navFor('management', true);
 check('no menu entry opens a /beta/ address', !paths(mgmt).some((p) => p.startsWith('/beta/')), paths(mgmt).filter((p) => p.startsWith('/beta/')).join(' '));
 check('no BETA group', !mgmt.some((g) => g.label === 'BETA'));
 const projGroup = mgmt.find((g) => g.workspace === 'supply' && g.label === 'PROJECTS');
-check('PROJECTS reads Projects, Calendar, Finances, Project settings',
-  projGroup?.items.map((i) => i.label).join(', ') === 'Projects, Calendar, Finances, Project settings', projGroup?.items.map((i) => i.label).join(', '));
-check('PROJECTS opens the four project addresses in order', projGroup?.items.map((i) => i.path).join(' ') === PROJECT_PATHS.join(' '));
+check('PROJECTS reads Projects, Calendar, Defects, Handover checklists, Finances, Project settings',
+  projGroup?.items.map((i) => i.label).join(', ') === 'Projects, Calendar, Defects, Handover checklists, Finances, Project settings', projGroup?.items.map((i) => i.label).join(', '));
+check('PROJECTS opens the six project addresses in order', projGroup?.items.map((i) => i.path).join(' ') === PROJECT_PATHS.join(' '));
 check('Projects needs the engine', !paths(M.navFor('management', false)).includes('/projects/list'));
 check('Projects follows the Projects area', !paths(M.navFor('operations_staff', true, { projects: 'none' })).includes('/projects/list'));
 check('the /beta/ addresses are no longer menu destinations', !('/beta/projects' in M.ENGINE_PATH) && !('/beta/calendar' in M.ENGINE_PATH) && !('/beta/home' in M.ENGINE_PATH));

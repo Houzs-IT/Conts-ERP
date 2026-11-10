@@ -10,6 +10,7 @@ import { ModalOverlay } from "../components/scm-v2/DocumentRelationshipMapModal"
 import { PhotoAddButtons, PhotoUploads } from "../components/PhotoAdd";
 import { cn } from "../lib/utils";
 import { useAuth } from "../auth/AuthContext";
+import { ProductionHoursPanel } from "../pages/scm-v2/ProductionHours";
 import { canOperateProductionOrders } from "../auth/salesAccess";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import { useNotify } from "../vendor/scm/components/NotifyDialog";
@@ -178,6 +179,13 @@ export function MobileProductionOrder({ id, onBack }: { id: string; onBack: () =
               <h2 className={cn(H2, "border-b border-border-subtle px-3 py-2.5")}>Progress{progress.label ? ` · ${progress.label}` : ""}</h2>
               {started && live && <ProgressSummary progress={progress} hours={hours} phone />}
               <ProgressPhotos orderId={id} progress={progress} holidays={page.holidays} phone canAdd={mayAct && live} finishedOn={order.received_at?.slice(0, 10) ?? null} />
+            </section>
+          )}
+
+          {(started || status === "RECEIVED") && (
+            <section className={CARD}>
+              <h2 className={cn(H2, "border-b border-border-subtle px-3 py-2.5")}>Worker hours</h2>
+              <ProductionHoursPanel orderId={id} workers={workers} canAct={mayAct && (live || status === "RECEIVED")} phone />
             </section>
           )}
 
