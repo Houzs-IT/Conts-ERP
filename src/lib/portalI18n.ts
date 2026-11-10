@@ -155,7 +155,7 @@ const en = {
     doneThanks: (unit: string): string => `${unit} done. Thank you.`,
     reportDamage: 'Report damage', damageReported: 'Damage reported.', officeHasIt: 'The office has it as a maintenance job.',
     which: 'Which jobs', ongoing: 'On-going', all: 'All', done: 'Done', team: 'Team', allTypes: 'All cleaning types',
-    noDone: 'No finished job yet.', noTeam: 'No one else on the team has a clean right now.', noTeamBody: 'Cleans your teammates are on appear here.',
+    noDone: 'No finished job yet.', noTeam: 'No one else on the team has a clean right now.', noTeamBody: 'Cleaning jobs your teammates are on appear here.',
     openToPick: 'Open to take', take: 'Take this job', cancel: 'Cancel', noneBodyPick: 'Take one from All, or wait for the office to give you one.',
     takeTitle: (unit: string): string => `Take ${unit}?`, takeBody: 'It moves to your jobs. The office can see you took it.',
     taken: (unit: string): string => `${unit} is yours.`,
