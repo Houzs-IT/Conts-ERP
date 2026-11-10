@@ -61,10 +61,11 @@ const waitingParts = (i: Issue) => i.state !== 'resolved' && i.approvalStatus ==
 interface Payload { billing?: boolean; jobTypes?: boolean; data: Issue[] }
 interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string; byteSize?: number }
 
-type Tab = 'open' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
+type Tab = 'open' | 'pass_key' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
 const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
-const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office' };
+const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office', booking: 'Booking' };
+const checkInAt = (i: Issue): string => i.windows[0]?.startsAt ?? i.dueOn ?? i.reportedAt;
 // The item catalog: staff pick an item (or Other) on a job; management and operations keep the list (request M3).
 const SHOW_CATALOG = true;
 const DOC_KIND: Record<string, string> = { claim: 'Claim from the technician or contractor', invoice: 'Invoice to the payer', receipt: 'Receipt', purchase: 'Bought by staff (handed in as a receipt)', pod: 'Proof of work', other: 'File' };
@@ -104,7 +105,7 @@ export default function MaintenancePage() {
   // A link from a clean (?id=) opens the right tab.
   useEffect(() => {
     const it = issues.find(i => i.id === selected);
-    if (it && tab !== 'history' && tab !== 'catalog' && tab !== 'rules' && tab !== 'profit') setTab(it.state === 'resolved' ? 'done' : awaitingOwner(it) ? 'approval' : 'open');
+    if (it && tab !== 'history' && tab !== 'catalog' && tab !== 'rules' && tab !== 'profit' && tab !== 'pass_key') setTab(it.state === 'resolved' ? 'done' : awaitingOwner(it) ? 'approval' : 'open');
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const monthStart = mytDay(0).slice(0, 7);
@@ -114,13 +115,15 @@ export default function MaintenancePage() {
   // The header counts what the tabs count: a job waiting for its owner sits under that tab, not under Open.
   const openTab = open.filter(i => !awaitingOwner(i));
   const urgent = openTab.filter(i => typeOf(i) === 'urgent').length;
+  const passKeys = openTab.filter(i => typeOf(i) === 'pass_key');
   const monthCost = issues.filter(i => i.state === 'resolved' && (i.resolvedAt ?? '').slice(0, 7) === monthStart).reduce((s, i) => s + (i.finalAmount ?? 0), 0);
 
-  const base = tab === 'open' ? openTab : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
+  const base = tab === 'open' ? openTab : tab === 'pass_key' ? passKeys : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
   const ql = q.trim().toLowerCase();
   const rows = base.filter(i => (!ql || `${i.unitNumber} ${i.propertyName} ${i.title} ${i.vendorName ?? ''}`.toLowerCase().includes(ql)))
     // Open jobs in the order they are worked: Urgent, Pass key, then Normal one by one by due date (the day reported when none).
-    .sort((a, b) => tab === 'open'
+    .sort((a, b) => tab === 'pass_key' ? checkInAt(a).localeCompare(checkInAt(b))
+      : tab === 'open'
       ? JOB_ORDER[typeOf(a)] - JOB_ORDER[typeOf(b)] || (a.dueOn ?? a.reportedAt.slice(0, 10)).localeCompare(b.dueOn ?? b.reportedAt.slice(0, 10)) || a.reportedAt.localeCompare(b.reportedAt)
       : b.reportedAt.localeCompare(a.reportedAt));
   // Every building with units, not only those with a job loaded (request M1): a filter that lists a building with no
@@ -163,7 +166,7 @@ export default function MaintenancePage() {
         above={tab === 'history' && rows.length > 0 && money ? (
           <div className="text-copy text-muted-ink py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
         ) : undefined}
-        empty={{ title: tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
+        empty={{ title: tab === 'pass_key' ? 'No pass key handovers coming up.' : tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
           action: tab === 'open' ? { label: 'Add maintenance job', onClick: () => setCreating(true) } : undefined }} />
     </>
   );
@@ -196,6 +199,7 @@ export default function MaintenancePage() {
           <div className="flex items-center gap-2 flex-wrap">
             <PillTabs value={tab} onChange={t => { setTab(t); setSelected(null); }} tabs={[
               { value: 'open', label: 'Open', count: data ? openTab.length : undefined },
+              ...(data?.jobTypes ? [{ value: 'pass_key' as const, label: 'Pass key', count: passKeys.length }] : []),
               { value: 'approval', label: 'Awaiting owner approval', count: data ? approval.length : undefined },
               { value: 'done', label: 'Done' },
               { value: 'history', label: 'History' },
@@ -272,7 +276,9 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
       filter: { kind: 'select', display: 'menu', options: unitOptions },
       render: i => <b className="text-ink">{i.unitNumber}</b> },
     { key: 'issue', label: 'Problem', value: i => i.title, width: 240, filter: false,
-      sub: i => <>From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}{i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</>,
+      sub: i => i.source === 'booking'
+        ? <>Guest check-in {stamp(checkInAt(i))}</>
+        : <>From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}{i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</>,
       render: i => <span className="block whitespace-normal text-ink">{i.title}</span> },
     { key: 'urgency', label: 'Type', type: 'status', value: i => typeOf(i),
       status: i => ({ label: JOB_TYPE[typeOf(i)], tone: typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral' }), width: 110, phone: 'meta',

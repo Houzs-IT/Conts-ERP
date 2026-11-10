@@ -1,7 +1,8 @@
-import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
+import { type Env, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, hasColumn } from '../../_lib/auth';
+import { hasPassKeyJobs, syncPassKeyJobs } from '../../_lib/passKeyJobs';
 
-/** PATCH /api/properties/:id { name, city, state, fullAccessCard? } — correct a building's name or location, and say
+/** PATCH /api/properties/:id { name, city, state, fullAccessCard?, needsPassKey? } — correct a building's name or location, and say
  *  whether its card alone opens the lobby, lift and car park (0161). */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -20,7 +21,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   await run(env, 'UPDATE properties SET name = ?, city = ?, state = ?, updated_at = ? WHERE id = ?', name, city, state, nowIso(), id);
   const card = typeof b?.fullAccessCard === 'boolean' && (await hasColumn(env, 'properties', 'full_access_card').catch(() => false)) ? b.fullAccessCard as boolean : undefined;
   if (card !== undefined) await run(env, 'UPDATE properties SET full_access_card = ? WHERE id = ?', card, id);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'property.update', entityTable: 'properties', entityId: id, before: { name: cur.name, city: cur.city, state: cur.state }, after: { name, city, state, ...(card !== undefined ? { fullAccessCard: card } : {}) } });
+  const passKey = typeof b?.needsPassKey === 'boolean' && (await hasPassKeyJobs(env)) ? b.needsPassKey as boolean : undefined;
+  if (passKey !== undefined) await run(env, 'UPDATE properties SET needs_pass_key = ? WHERE id = ?', passKey, id);
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'property.update', entityTable: 'properties', entityId: id, before: { name: cur.name, city: cur.city, state: cur.state }, after: { name, city, state, ...(card !== undefined ? { fullAccessCard: card } : {}), ...(passKey !== undefined ? { needsPassKey: passKey } : {}) } });
+  if (passKey !== undefined) await syncPassKeyJobs(env, { from: mytToday(), to: '9999-12-31' }, 500);
   return json({ ok: true });
 };
 
