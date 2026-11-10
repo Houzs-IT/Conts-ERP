@@ -1663,8 +1663,9 @@ productionOrders.post('/:id/complete', async (c) => {
     ...(problem ? {} : { completion_step: step === 'deliver' ? 'done' : step }),
   }).eq('id', o.id);
   if (problem) return c.json({ error: 'step_failed', step, message: problem }, 409);
-  /* The work is done: whoever is still on the clock is stopped now. */
-  if (step === 'grn') await stopRunningTimers(sb, o.id, actorName(c));
+  /* The work is done: whoever is still on the clock is stopped now, and again after each later step (Start time is
+     refused once completion has begun, production-hours.ts; this catches a timer that slipped in between). */
+  await stopRunningTimers(sb, o.id, actorName(c));
   return c.json({ ok: true, step });
 });
 

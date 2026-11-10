@@ -21,10 +21,10 @@ export const MAX_ENTRY_MINUTES = 16 * 60;
 
 const ms = (iso: string): number => Date.parse(iso);
 
-/** Whole minutes of one entry; a running one counts up to `now`. */
+/** Whole minutes of one entry; a running one counts up to `now`, never past the limit (Stop would cap it there too). */
 export function entryMinutes(e: Pick<TimeEntry, 'started_at' | 'stopped_at'>, now: Date): number {
   const start = ms(e.started_at);
-  const end = e.stopped_at ? ms(e.stopped_at) : now.getTime();
+  const end = e.stopped_at ? ms(e.stopped_at) : Math.min(now.getTime(), start + MAX_ENTRY_MINUTES * 60_000);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
   return Math.round((end - start) / 60_000);
 }

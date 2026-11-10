@@ -10,6 +10,10 @@ describe('entryMinutes', () => {
     expect(entryMinutes(e('1', 'a', '2026-11-10T08:00:00Z', '2026-11-10T09:30:00Z'), NOW)).toBe(90);
     expect(entryMinutes(e('2', 'a', '2026-11-10T09:15:00Z', null), NOW)).toBe(45);
   });
+  it('a running timer counts no further than the limit (review fix 3)', () => {
+    expect(entryMinutes(e('5', 'a', '2026-11-08T08:00:00Z', null), NOW)).toBe(MAX_ENTRY_MINUTES);
+    expect(summarizeHours([e('5', 'a', '2026-11-08T08:00:00Z', null)], 10, NOW).actualMinutes).toBe(MAX_ENTRY_MINUTES);
+  });
   it('reads nought for a broken entry rather than a negative', () => {
     expect(entryMinutes(e('3', 'a', '2026-11-10T09:00:00Z', '2026-11-10T08:00:00Z'), NOW)).toBe(0);
     expect(entryMinutes(e('4', 'a', 'not a date', null), NOW)).toBe(0);

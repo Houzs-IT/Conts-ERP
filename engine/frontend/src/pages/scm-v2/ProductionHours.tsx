@@ -59,8 +59,10 @@ export function ProductionHoursPanel({ orderId, workers, canAct, phone, myName =
   if (q.isError || !h) return <p className="p-3 text-[13px] text-err">The hours could not be loaded.</p>;
   const words = budgetWords(h);
   const running = new Map(h.entries.filter((e) => !e.stopped_at).map((e) => [e.person_key, e]));
+  /* A worker times only themselves; a supervisor (Full access to Production Orders) anyone, and keeps the entries. */
   const mayTime = canAct && h.canTime;
-  const mayEnter = canAct && h.canEnter;
+  const mayEnter = canAct && h.canEnter && h.canSupervise;
+  const mayClock = (you: boolean) => canAct && (you || h.canSupervise);
 
   return (
     <div>
@@ -91,9 +93,9 @@ export function ProductionHoursPanel({ orderId, workers, canAct, phone, myName =
                 {total > 0 ? ` · ${fmtHours(total)} on this order` : ""}
               </div>
             </div>
-            {mayTime && (live
-              ? <Button variant="secondary" disabled={act.isPending} onClick={() => run({ kind: "stop", personKey: p.key }, "Not stopped")}>Stop time</Button>
-              : <Button disabled={act.isPending} onClick={() => run({ kind: "start", personKey: p.key }, "Not started")}>Start time</Button>)}
+            {/* Stop goes with the running timer, also after the order closed or the worker left it. */}
+            {live && mayClock(p.you) && <Button variant="secondary" disabled={act.isPending} onClick={() => run({ kind: "stop", personKey: p.key }, "Not stopped")}>Stop time</Button>}
+            {!live && mayTime && mayClock(p.you) && <Button disabled={act.isPending} onClick={() => run({ kind: "start", personKey: p.key }, "Not started")}>Start time</Button>}
           </div>
         );
       })}

@@ -12,6 +12,7 @@
    finished); entries by hand may also be added to a finished order. Complete stops every running timer. */
 
 import { requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../lib/companyScope';
+import { scmAreaAllows } from '../middleware/area-guard';
 import { recordEntityAudit } from '../lib/entity-audit';
 import { checkEntryTimes, entryMinutes, hoursOf, overlaps, stopTimeFor, summarizeHours, type TimeEntry } from '../lib/production-hours';
 
@@ -21,7 +22,15 @@ type Db = any;
 
 const COLS = 'id, production_order_id, person_key, name, started_at, stopped_at, notes, how, created_at, created_by_name, updated_at, updated_by_name';
 
-type Order = { id: string; po_number: string; status: string; on_hold: boolean; actual_start_at: string | null; production_time_hours: number | string | null };
+type Order = { id: string; po_number: string; status: string; on_hold: boolean; actual_start_at: string | null; production_time_hours: number | string | null; completion_step: string | null };
+
+/** A supervisor: Full access to Production Orders (the level above Edit in the engine's access matrix). A supervisor
+    puts anyone on or off the clock and adds, corrects or removes entries; everyone else with Edit times only themselves.
+    Like every area check, a user whose access matrix is not set up yet passes (scmAreaAllows). */
+export const maySupervise = (c: Ctx): boolean => scmAreaAllows(c.get('houzsUser'), 'scm.procurement.production', 'full');
+const NOT_SUPERVISOR = { error: 'forbidden', message: 'Only a production supervisor (Full access to Production Orders) can do this for someone else or change entries.' };
+/** The database refused an overlapping entry (exclusion constraint, migration 0291) or a second running timer. */
+const isClash = (error: { code?: string } | null): boolean => error?.code === '23P01';
 
 const actorName = (c: Ctx): string => {
   const u = c.get('houzsUser') as { name?: string; full_name?: string; email?: string } | undefined;
@@ -29,10 +38,11 @@ const actorName = (c: Ctx): string => {
 };
 /** The caller as a worker: the same key Start writes on production_order_workers. */
 export const selfKey = (c: Ctx): string => `user:${String(c.get('houzsUser')?.id ?? actorName(c))}`;
+const isSelf = (c: Ctx, personKey: unknown): boolean => !(typeof personKey === 'string' && personKey.trim()) || personKey.trim() === selfKey(c);
 
 async function loadOrder(c: Ctx, sb: Db, companyId: number): Promise<Order | null> {
   const { data } = await scopeToCompanyId(sb.from('production_orders')
-    .select('id, po_number, status, on_hold, actual_start_at, production_time_hours').eq('id', c.req.param('id')), companyId).maybeSingle();
+    .select('id, po_number, status, on_hold, actual_start_at, production_time_hours, completion_step').eq('id', c.req.param('id')), companyId).maybeSingle();
   return (data ?? null) as Order | null;
 }
 
@@ -54,6 +64,8 @@ async function personFor(c: Ctx, sb: Db, orderId: string, personKey: unknown): P
 
 const timerRefusal = (o: Order): string | null => {
   if (o.status === 'RECEIVED') return 'This production order is complete.';
+  /* Complete runs in three steps and the order stays in production until the last: no new time once it has begun. */
+  if (o.completion_step) return 'This production order is being completed.';
   if (o.status !== 'SUBMITTED') return `Time runs only on an order in production (this one is ${o.status.toLowerCase()}).`;
   if (!o.actual_start_at) return 'Press Start on the order first.';
   if (o.on_hold) return 'This production order is on hold. Take it off hold first.';
@@ -92,6 +104,7 @@ export const hoursGetHandler = async (c: Ctx): Promise<Response> => {
     me: selfKey(c),
     canTime: timerRefusal(o) == null,
     canEnter: entryRefusal(o) == null,
+    canSupervise: maySupervise(c),
   });
 };
 
@@ -104,6 +117,7 @@ export const timerStartHandler = async (c: Ctx): Promise<Response> => {
   const refusal = timerRefusal(o);
   if (refusal) return c.json({ error: 'validation', message: refusal }, 409);
   const b = (await c.req.json().catch(() => ({}))) as { personKey?: unknown };
+  if (!isSelf(c, b.personKey) && !maySupervise(c)) return c.json(NOT_SUPERVISOR, 403);
   const who = await personFor(c, sb, o.id, b.personKey);
   if (!who.ok) return c.json({ error: 'validation', message: who.message }, 422);
   const { data: open, error: openErr } = await sb.from('production_time_entries').select('id, started_at')
@@ -116,7 +130,11 @@ export const timerStartHandler = async (c: Ctx): Promise<Response> => {
     created_by: c.get('user')?.id ?? null, created_by_name: actorName(c),
   }).select('id').single();
   /* The one-running-timer index answers a double tap that slipped past the read above. */
-  if (error) return c.json(error.code === '23505' ? { error: 'already_running', message: `${who.name} is already on the clock.` } : { error: 'save_failed', reason: error.message }, error.code === '23505' ? 409 : 500);
+  if (error) {
+    if (error.code === '23505') return c.json({ error: 'already_running', message: `${who.name} is already on the clock.` }, 409);
+    if (isClash(error)) return c.json({ error: 'overlap', message: `${who.name} already has time on this order that overlaps now.` }, 409);
+    return c.json({ error: 'save_failed', reason: error.message }, 500);
+  }
   await audit(c, sb, co.companyId, o, `Time started: ${who.name} at ${hhmm(now)}`);
   return c.json({ ok: true, id: (data as { id: string }).id, startedAt: now }, 201);
 };
@@ -128,13 +146,15 @@ export const timerStopHandler = async (c: Ctx): Promise<Response> => {
   const o = await loadOrder(c, sb, co.companyId);
   if (!o) return c.json(NOT_THIS_COMPANY, 404);
   const b = (await c.req.json().catch(() => ({}))) as { personKey?: unknown };
-  const who = await personFor(c, sb, o.id, b.personKey);
-  if (!who.ok) return c.json({ error: 'validation', message: who.message }, 422);
-  const { data: open, error: openErr } = await sb.from('production_time_entries').select('id, started_at')
-    .eq('production_order_id', o.id).eq('person_key', who.key).is('stopped_at', null).maybeSingle();
+  if (!isSelf(c, b.personKey) && !maySupervise(c)) return c.json(NOT_SUPERVISOR, 403);
+  /* Stop goes by the running timer, not the worker list: someone taken off the order can still be stopped. */
+  const key = typeof b.personKey === 'string' && b.personKey.trim() ? b.personKey.trim() : selfKey(c);
+  const { data: open, error: openErr } = await sb.from('production_time_entries').select('id, started_at, name')
+    .eq('production_order_id', o.id).eq('person_key', key).is('stopped_at', null).maybeSingle();
   if (openErr) return c.json({ error: 'load_failed', reason: openErr.message }, 500);
-  if (!open) return c.json({ error: 'not_running', message: `${who.name} is not on the clock on this order.` }, 409);
-  const row = open as { id: string; started_at: string };
+  if (!open) return c.json({ error: 'not_running', message: 'That person is not on the clock on this order.' }, 409);
+  const row = open as { id: string; started_at: string; name: string };
+  const who = { key, name: row.name };
   const stop = stopTimeFor(row.started_at, new Date());
   const { error } = await sb.from('production_time_entries')
     .update({ stopped_at: stop.stoppedAt, updated_at: new Date().toISOString(), updated_by_name: actorName(c) }).eq('id', row.id).is('stopped_at', null);
@@ -150,6 +170,7 @@ export const entryAddHandler = async (c: Ctx): Promise<Response> => {
   const sb = c.get('supabase');
   const o = await loadOrder(c, sb, co.companyId);
   if (!o) return c.json(NOT_THIS_COMPANY, 404);
+  if (!maySupervise(c)) return c.json(NOT_SUPERVISOR, 403);
   const refusal = entryRefusal(o);
   if (refusal) return c.json({ error: 'validation', message: refusal }, 409);
   const b = (await c.req.json().catch(() => ({}))) as { personKey?: unknown; startedAt?: unknown; stoppedAt?: unknown; notes?: unknown };
@@ -167,6 +188,7 @@ export const entryAddHandler = async (c: Ctx): Promise<Response> => {
     production_order_id: o.id, company_id: co.companyId, person_key: who.key, name: who.name, started_at: t.startedAt, stopped_at: t.stoppedAt,
     notes, how: 'MANUAL', created_by: c.get('user')?.id ?? null, created_by_name: actorName(c),
   }).select('id').single();
+  if (isClash(error)) return c.json({ error: 'overlap', message: `${who.name} already has time on this order that overlaps.` }, 409);
   if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
   const minutes = entryMinutes({ started_at: t.startedAt, stopped_at: t.stoppedAt }, now);
   await audit(c, sb, co.companyId, o, `Time added by hand: ${who.name}, ${hoursOf(minutes)} h`);
@@ -184,10 +206,12 @@ export const entryEditHandler = async (c: Ctx): Promise<Response> => {
   const sb = c.get('supabase');
   const o = await loadOrder(c, sb, co.companyId);
   if (!o) return c.json(NOT_THIS_COMPANY, 404);
+  if (!maySupervise(c)) return c.json(NOT_SUPERVISOR, 403);
   const refusal = entryRefusal(o);
   if (refusal) return c.json({ error: 'validation', message: refusal }, 409);
   const e = await loadEntry(c, sb, o.id);
   if (!e) return c.json({ error: 'not_found', message: 'That time entry is not on this order.' }, 404);
+  const wasRunning = !e.stopped_at;
   const b = (await c.req.json().catch(() => ({}))) as { startedAt?: unknown; stoppedAt?: unknown; notes?: unknown };
   const now = new Date();
   const updates: Record<string, unknown> = { updated_at: now.toISOString(), updated_by_name: actorName(c) };
@@ -209,8 +233,12 @@ export const entryEditHandler = async (c: Ctx): Promise<Response> => {
     if (clash) return c.json({ error: 'overlap', message: `${e.name} already has time from ${hhmm(clash.started_at)} on this order that overlaps.` }, 409);
   }
   if (b.notes !== undefined) updates.notes = typeof b.notes === 'string' && b.notes.trim() ? b.notes.trim().slice(0, 500) : null;
-  const { error } = await sb.from('production_time_entries').update(updates).eq('id', e.id);
+  /* Written only if the entry is still as read: a running timer stopped meanwhile is not given a start past the cap. */
+  const q = sb.from('production_time_entries').update(updates).eq('id', e.id);
+  const { data: written, error } = await (wasRunning ? q.is('stopped_at', null) : q).select('id').maybeSingle();
+  if (isClash(error)) return c.json({ error: 'overlap', message: `${e.name} already has time on this order that overlaps.` }, 409);
   if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  if (!written) return c.json({ error: 'changed', message: 'This entry changed meanwhile (stopped or corrected). Look again and retry.' }, 409);
   const before = hoursOf(entryMinutes(e, now));
   const after = hoursOf(entryMinutes({ started_at: String(updates.started_at ?? e.started_at), stopped_at: (updates.stopped_at as string | undefined) ?? e.stopped_at }, now));
   await audit(c, sb, co.companyId, o, `Time corrected: ${e.name}, ${before} h to ${after} h`);
@@ -223,6 +251,7 @@ export const entryDeleteHandler = async (c: Ctx): Promise<Response> => {
   const sb = c.get('supabase');
   const o = await loadOrder(c, sb, co.companyId);
   if (!o) return c.json(NOT_THIS_COMPANY, 404);
+  if (!maySupervise(c)) return c.json(NOT_SUPERVISOR, 403);
   const refusal = entryRefusal(o);
   if (refusal) return c.json({ error: 'validation', message: refusal }, 409);
   const e = await loadEntry(c, sb, o.id);

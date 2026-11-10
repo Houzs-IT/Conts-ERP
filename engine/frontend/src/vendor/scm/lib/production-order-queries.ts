@@ -856,6 +856,8 @@ export type ProductionHours = {
   me: string;
   canTime: boolean;
   canEnter: boolean;
+  /** Full access to Production Orders: may time anyone and add, correct or remove entries. */
+  canSupervise: boolean;
 };
 /** Minutes as hours with one decimal, the way the budget is typed (7.5). */
 export const hoursOf = (minutes: number): number => Math.round(minutes / 6) / 10;

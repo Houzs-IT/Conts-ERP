@@ -24,7 +24,7 @@ const base = (over: Partial<ProductionHours> = {}): ProductionHours => ({
     { id: "e1", person_key: "tech-1", name: "Ali", started_at: "2026-11-09T01:00:00Z", stopped_at: "2026-11-09T09:00:00Z", notes: null, how: "TIMER", minutes: 480, created_by_name: null, updated_by_name: null },
     { id: "e2", person_key: "tech-1", name: "Ali", started_at: "2026-11-10T01:15:00Z", stopped_at: null, notes: null, how: "TIMER", minutes: 60, created_by_name: null, updated_by_name: null },
   ],
-  me: "user:9", canTime: true, canEnter: true, ...over,
+  me: "user:9", canTime: true, canEnter: true, canSupervise: true, ...over,
 });
 
 beforeEach(() => { mutate.mockReset(); data = base(); });
@@ -75,5 +75,21 @@ describe("the panel", () => {
     fireEvent.change(screen.getByLabelText("Stop"), { target: { value: "15:30" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(mutate.mock.calls[0]![0]).toEqual({ kind: "add", personKey: "tech-1", startedAt: "2026-11-09T05:00:00.000Z", stoppedAt: "2026-11-09T07:30:00.000Z", notes: "" });
+  });
+  test("review fix 4: a worker who is not a supervisor clocks only themselves and cannot change entries", () => {
+    data = base({ canSupervise: false });
+    render(<ProductionHoursPanel orderId="o1" workers={workers} canAct />);
+    expect(screen.queryByRole("button", { name: "Stop time" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Start time" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Start time" }));
+    expect(mutate.mock.calls[0]![0]).toEqual({ kind: "start", personKey: "user:9" });
+    expect(screen.queryByText("Add time")).toBeNull();
+    expect(screen.queryByText("Edit")).toBeNull();
+  });
+  test("review fix 6: a running timer can still be stopped after timing has closed", () => {
+    data = base({ canTime: false });
+    render(<ProductionHoursPanel orderId="o1" workers={[]} canAct />);
+    fireEvent.click(screen.getByRole("button", { name: "Stop time" }));
+    expect(mutate.mock.calls[0]![0]).toEqual({ kind: "stop", personKey: "tech-1" });
   });
 });

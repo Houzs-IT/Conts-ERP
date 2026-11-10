@@ -22,13 +22,16 @@ function world(o: Row = order(), entries: Row[] = []) {
   });
 }
 
-function app(sb: ReturnType<typeof fakeSb>) {
+/* A worker with Edit on Production Orders, not Full: a supervisor is the default caller (Mei, matrix not set up). */
+const WORKER = { id: 10, name: 'Ali', scm_l2_configured: true, page_access: { 'scm.procurement.production': 'edit' } };
+
+function app(sb: ReturnType<typeof fakeSb>, houzsUser: Row = { id: 9, name: 'Mei' }) {
   const a = new Hono();
   a.use('*', async (c, next) => {
     c.set('companyId' as never, CO as never);
     c.set('supabase' as never, sb as never);
     c.set('user' as never, { id: 'staff-uuid' } as never);
-    c.set('houzsUser' as never, { id: 9, name: 'Mei' } as never);
+    c.set('houzsUser' as never, houzsUser as never);
     await next();
   });
   a.get('/:id/hours', hoursGetHandler);
@@ -123,5 +126,74 @@ describe('what the order page reads', () => {
     expect(before.get('o1')).toBe(90);
     expect(await stopRunningTimers(sb, 'o1', 'Mei')).toBe(1);
     expect(sb.tables.production_time_entries.every((x: Row) => x.stopped_at)).toBe(true);
+  });
+});
+
+/* ── Review fixes (#857) ───────────────────────────────────────────────── */
+const patch = (body: unknown) => ({ method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+/** The table answers the next write on it with this database error (an exclusion constraint the fake cannot model). */
+function failingWrites(sb: ReturnType<typeof fakeSb>, code: string) {
+  const from = sb.from;
+  return { ...sb, from: (t: string) => {
+    const b = from(t) as Record<string, any>;
+    if (t !== 'production_time_entries') return b;
+    const refuse = () => { const r: Record<string, any> = { select: () => r, single: async () => ({ data: null, error: { code, message: 'conflicting key value violates exclusion constraint' } }), eq: () => r, is: () => r,
+      then: (ok: (v: unknown) => unknown) => ok({ data: null, error: { code, message: 'conflict' } }) }; return r; };
+    return { ...b, insert: refuse, update: refuse };
+  } } as unknown as ReturnType<typeof fakeSb>;
+}
+
+describe('review fixes', () => {
+  it('1. no Start once Complete has begun (the order is still in production until the last step)', async () => {
+    const res = await app(world(order({ completion_step: 'grn' }))).request('/o1/hours/start', json({}));
+    expect(res.status).toBe(409);
+    expect((await res.json() as { message: string }).message).toContain('being completed');
+  });
+
+  it('2. an overlap the database refuses (exclusion constraint, 23P01) answers 409, not 500', async () => {
+    const sb = failingWrites(world(), '23P01');
+    const add = await app(sb).request('/o1/hours', json({ personKey: 'tech-1', startedAt: '2026-11-09T01:00:00Z', stoppedAt: '2026-11-09T02:00:00Z' }));
+    expect(add.status).toBe(409);
+    expect((await add.json() as { error: string }).error).toBe('overlap');
+    const start = await app(failingWrites(world(), '23P01')).request('/o1/hours/start', json({}));
+    expect(start.status).toBe(409);
+  });
+
+  it('4. a worker times only themselves; entries by hand are for a supervisor', async () => {
+    const sb = world();
+    expect((await app(sb, WORKER).request('/o1/hours/start', json({}))).status).toBe(201);
+    expect((await app(sb, WORKER).request('/o1/hours/start', json({ personKey: 'tech-1' }))).status).toBe(403);
+    expect((await app(sb, WORKER).request('/o1/hours/stop', json({ personKey: 'user:9' }))).status).toBe(403);
+    expect((await app(sb, WORKER).request('/o1/hours', json({ startedAt: '2026-11-09T01:00:00Z', stoppedAt: '2026-11-09T02:00:00Z' }))).status).toBe(403);
+    const id = String(sb.tables.production_time_entries[0].id);
+    expect((await app(sb, WORKER).request(`/o1/hours/${id}`, patch({ notes: 'x' }))).status).toBe(403);
+    expect((await app(sb, WORKER).request(`/o1/hours/${id}`, { method: 'DELETE' })).status).toBe(403);
+    expect((await (await app(sb, WORKER).request('/o1/hours')).json() as { canSupervise: boolean }).canSupervise).toBe(false);
+    expect((await (await app(sb).request('/o1/hours')).json() as { canSupervise: boolean }).canSupervise).toBe(true);
+    /* Full access supervises. */
+    const lead = { ...WORKER, id: 11, page_access: { 'scm.procurement.production': 'full' } };
+    expect((await app(sb, lead).request('/o1/hours/start', json({ personKey: 'tech-1' }))).status).toBe(201);
+  });
+
+  it('5. correcting a running timer that was stopped meanwhile writes nothing and says so', async () => {
+    const sb = world(order(), [{ id: 'e1', production_order_id: 'o1', person_key: 'tech-1', name: 'Ali', started_at: new Date(Date.now() - 3600_000).toISOString(), stopped_at: null, how: 'TIMER' }]);
+    const from = sb.from;
+    const raced = { ...sb, from: (t: string) => {
+      const b = from(t) as Record<string, any>;
+      if (t !== 'production_time_entries') return b;
+      /* Stop lands between the read and the write. */
+      return { ...b, update: (u: Row) => { sb.tables.production_time_entries[0].stopped_at = new Date().toISOString(); return b.update(u); } };
+    } } as unknown as ReturnType<typeof fakeSb>;
+    const res = await app(raced).request('/o1/hours/e1', patch({ startedAt: new Date(Date.now() - 7200_000).toISOString() }));
+    expect(res.status).toBe(409);
+    expect((await res.json() as { error: string }).error).toBe('changed');
+  });
+
+  it('6. Stop works for someone taken off the order; Start for them does not', async () => {
+    const sb = world(order(), [{ id: 'e1', production_order_id: 'o1', person_key: 'tech-gone', name: 'Siva', started_at: new Date(Date.now() - 3600_000).toISOString(), stopped_at: null, how: 'TIMER' }]);
+    const stop = await app(sb).request('/o1/hours/stop', json({ personKey: 'tech-gone' }));
+    expect(stop.status).toBe(200);
+    expect(sb.tables.production_time_entries[0].stopped_at).toBeTruthy();
+    expect((await app(sb).request('/o1/hours/start', json({ personKey: 'tech-gone' }))).status).toBe(422);
   });
 });
