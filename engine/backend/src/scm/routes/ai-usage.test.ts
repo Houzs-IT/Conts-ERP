@@ -1,7 +1,7 @@
 /* GET /accounting/ai-usage — the active company's months and its latest failures; months clamped to 1..24; no company,
    no report. The Accounting area guard and the Ledger in front of it are scm/index.ts's (mounted on /accounting). */
 import { Hono } from 'hono';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { aiUsageRoutes } from './ai-usage';
 
 const dbStub = (seen: unknown[][]) => ({
@@ -39,6 +39,21 @@ describe('GET /accounting/ai-usage', () => {
   test('months is clamped to 1..24', async () => {
     expect(((await (await appFor(4, []).req('?months=99')).json()) as { months: unknown[] }).months).toHaveLength(24);
     expect(((await (await appFor(4, []).req('?months=0')).json()) as { months: unknown[] }).months).toHaveLength(1);
+  });
+
+  /* Review of #860: a database error is logged, never sent to the browser. */
+  test('a failed read answers a fixed sentence, not the database error', async () => {
+    const a = new Hono<{ Variables: Record<string, unknown> }>();
+    a.use('*', async (c, next) => { c.set('companyId', 4); await next(); });
+    a.route('/accounting', aiUsageRoutes);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await a.request('/accounting/ai-usage', {}, { DB: { prepare: () => { throw new Error('relation "public.ai_usage_events" does not exist'); } } });
+    expect(res.status).toBe(500);
+    const body = await res.text();
+    expect(body).not.toMatch(/relation|ai_usage_events/);
+    expect(JSON.parse(body)).toEqual({ error: 'load_failed', message: 'AI usage could not be read. Try again in a moment.' });
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
   });
 
   test('no active company: refused', async () => {

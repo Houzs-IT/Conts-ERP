@@ -36,11 +36,12 @@ create index if not exists idx_ai_usage_events_feature_created_at on public.ai_u
 comment on table public.ai_usage_events is
   'One row per Anthropic API call by the engine (tokens, ok/error). Written by services/aiUsage.ts, read by the AI usage screen.';
 
--- The engine owns its tables (0047); the browser-facing roles get nothing, as for every engine table.
+-- The engine owns its tables (0047) and is the only reader and writer (as 0080): the browser-facing roles and Property OS
+-- (pos_app) get nothing.
 alter table public.ai_usage_events owner to scm_engine;
 alter table public.ai_usage_events enable row level security;
 revoke all on public.ai_usage_events from public, anon, authenticated;
-grant select, insert on public.ai_usage_events to service_role, pos_app;
+grant select, insert on public.ai_usage_events to service_role;
 
 notify pgrst, 'reload schema';
 

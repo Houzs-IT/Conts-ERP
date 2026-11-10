@@ -13,11 +13,15 @@ import { extractOneBill, matchSupplier, normalizeVendor, BILL_IMAGE_MIMES, BILL_
 import { requestAiTag } from '../../services/aiUsage';
 import { toBase64 } from '../lib/scan-ocr';
 import { base64ToBytes } from '../../services/mail-parse';
-import { MAX_SPLIT_PAGES, splitPdfPages } from '../lib/pdf-split';
+import { MAX_SPLIT_INPUT_BYTES, MAX_SPLIT_PAGES, splitPdfPages } from '../lib/pdf-split';
+import { checkRateLimit } from '../../middleware/rateLimit';
 
 /** Bills read at once inside one batch: serial reads of twelve bills were past
     the browser's wait (Houzs #4642). */
 export const PARALLEL_BILL_READS = 4;
+/** Server-side bill reads per person per company per window: five full piles of 12 with retries. */
+export const BILL_READS_PER_WINDOW = 60;
+export const BILL_READ_WINDOW_SEC = 600;
 
 /* ── Bill OCR — read incoming bills into voucher pre-fills (2026-09-02) ──────
    Each `bills` entry is ONE document (its files are its pages — the human said
@@ -35,6 +39,13 @@ export const extractBillsHandler = async (c: any) => {
   if (!apiKey) {
     return c.json({ error: 'anthropic_key_missing', message: 'The bill reader is not set up here (no ANTHROPIC_API_KEY on the engine).' }, 503);
   }
+
+  /* The pile caps itself at 12 bills, but each bill is its own request now: a speed bump on the server too (the
+     KV limiter in middleware/rateLimit.ts, open when KV is unbound). One person, one company, BILL_READS_PER_WINDOW
+     requests per 10 minutes. */
+  const who = (c.get('houzsUser') as { id?: unknown } | undefined)?.id ?? (c.get('user') as { id?: unknown } | undefined)?.id ?? 'anon';
+  const limited = await checkRateLimit(c, 'bill_read', `${co.companyId}:${String(who)}`, BILL_READS_PER_WINDOW, BILL_READ_WINDOW_SEC);
+  if (limited) return c.json({ error: 'too_many_reads', message: `At most ${BILL_READS_PER_WINDOW} bill reads in ${BILL_READ_WINDOW_SEC / 60} minutes — wait a few minutes and read the rest.` }, 429);
 
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
@@ -113,6 +124,9 @@ export const extractBillsHandler = async (c: any) => {
   return c.json({ bills: out });
 };
 
+/** The largest split request body: the input cap as base64, plus room for the JSON around it. */
+export const SPLIT_BODY_LIMIT = Math.ceil(MAX_SPLIT_INPUT_BYTES / 3) * 4 + 64 * 1024;
+
 /* POST /payment-vouchers/split-pdf — one PDF of several bills, cut into one
    PDF per page (Houzs HC-0204) for the pile to read one by one. Nothing is
    kept or written: the pages go back to the browser and travel on as pile
@@ -121,18 +135,23 @@ export const splitPdfHandler = async (c: any) => {
   if (!hasHouzsPerm(c, 'scm.payment_voucher.create')) {
     return c.json({ error: "You don't have permission to do that." }, 403);
   }
+  const tooBig = () => c.json({ error: 'file_too_big', message: `The PDF is over ${MAX_SPLIT_INPUT_BYTES / 1024 / 1024}MB — split it before uploading, or add its pages as separate files.` }, 413);
+  /* Refused on the declared size before the body is read: an 8 MB PDF is ~11 MB of base64. */
+  const declared = Number(c.req.header('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > SPLIT_BODY_LIMIT) return tooBig();
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
-  const bytes = base64ToBytes(String(body?.dataBase64 ?? ''));
+  const b64 = String(body?.dataBase64 ?? '');
+  /* No Content-Length (chunked): still refused before decoding. */
+  if (b64.length > SPLIT_BODY_LIMIT) return tooBig();
+  const bytes = base64ToBytes(b64);
   if (!bytes || bytes.length === 0) return c.json({ error: 'no_file', message: 'Send the PDF to split.' }, 400);
-  if (bytes.length > MAX_BILL_FILE_BYTES) {
-    return c.json({ error: 'file_too_big', message: `The PDF is over ${Math.round(MAX_BILL_FILE_BYTES / 1024 / 1024)}MB.` }, 400);
-  }
+  if (bytes.length > MAX_SPLIT_INPUT_BYTES) return tooBig();
   const got = await splitPdfPages(bytes);
   if (!got.ok) {
-    return got.reason === 'too_many_pages'
-      ? c.json({ error: 'too_many_pages', message: `The PDF has ${got.pageCount} pages — a pile holds at most ${MAX_SPLIT_PAGES}.` }, 400)
-      : c.json({ error: 'unreadable_pdf', message: 'This PDF could not be split — it may be password-protected or damaged.' }, 422);
+    if (got.reason === 'too_many_pages') return c.json({ error: 'too_many_pages', message: `The PDF has ${got.pageCount} pages — split at most ${MAX_SPLIT_PAGES}.` }, 400);
+    if (got.reason === 'output_too_big') return c.json({ error: 'output_too_big', message: 'This PDF grows too big when cut into pages — add its pages as separate files instead.' }, 413);
+    return c.json({ error: 'unreadable_pdf', message: 'This PDF could not be split — it may be password-protected or damaged.' }, 422);
   }
   return c.json({ pages: got.pages.map((p) => toBase64(p.slice().buffer)) });
 };

@@ -20,7 +20,8 @@ export const aiUsageHandler = async (c: any): Promise<Response> => {
     ]);
     return c.json({ ...report, recentFailures: failures });
   } catch (e) {
-    return c.json({ error: 'load_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
+    console.error('[ai-usage] report failed:', e instanceof Error ? e.message : e);
+    return c.json({ error: 'load_failed', message: 'AI usage could not be read. Try again in a moment.' }, 500);
   }
 };
 

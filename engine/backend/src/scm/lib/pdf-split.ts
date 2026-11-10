@@ -12,13 +12,20 @@
 
 import { PDFDocument } from 'pdf-lib';
 
-/* The pile holds 50 files (MAX_PILE_FILES); a PDF longer than that is a
-   catalogue, not a stack of bills. */
-export const MAX_SPLIT_PAGES = 50;
+/* Conts reads at most 12 bills a pile (PaymentVoucherScan MAX_PILE_BILLS); 24
+   pages leaves room for two-page bills merged back, and a PDF longer than that
+   is a catalogue, not a stack of bills. (Houzs: 50.) */
+export const MAX_SPLIT_PAGES = 24;
+
+/* Worker memory (review of #860): the PDF arrives as base64 JSON, is decoded,
+   loaded by pdf-lib, and every page copy can carry the shared fonts and images
+   again. The input is capped at 8 MB and the pages together at 3x the input. */
+export const MAX_SPLIT_INPUT_BYTES = 8 * 1024 * 1024;
+export const MAX_SPLIT_OUTPUT_RATIO = 3;
 
 export type SplitResult =
   | { ok: true; pages: Uint8Array[] }
-  | { ok: false; reason: 'unreadable' | 'too_many_pages'; pageCount?: number };
+  | { ok: false; reason: 'unreadable' | 'too_many_pages' | 'output_too_big'; pageCount?: number };
 
 export async function splitPdfPages(bytes: Uint8Array): Promise<SplitResult> {
   let src: PDFDocument;
@@ -30,11 +37,17 @@ export async function splitPdfPages(bytes: Uint8Array): Promise<SplitResult> {
   const n = src.getPageCount();
   if (n > MAX_SPLIT_PAGES) return { ok: false, reason: 'too_many_pages', pageCount: n };
   const pages: Uint8Array[] = [];
+  const budget = bytes.length * MAX_SPLIT_OUTPUT_RATIO;
+  let total = 0;
   for (let i = 0; i < n; i += 1) {
     const doc = await PDFDocument.create();
     const [page] = await doc.copyPages(src, [i]);
     doc.addPage(page!);
-    pages.push(await doc.save());
+    const out = await doc.save();
+    total += out.length;
+    /* Each page re-carrying the whole file's resources: stop before the pile does. */
+    if (total > budget) return { ok: false, reason: 'output_too_big', pageCount: n };
+    pages.push(out);
   }
   return { ok: true, pages };
 }

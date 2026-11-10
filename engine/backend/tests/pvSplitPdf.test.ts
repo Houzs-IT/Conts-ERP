@@ -8,6 +8,8 @@ import { Hono } from 'hono';
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, test } from 'vitest';
 import { splitPdfHandler } from '../src/scm/routes/payment-vouchers';
+import { SPLIT_BODY_LIMIT } from '../src/scm/routes/pv-extract';
+import { MAX_SPLIT_INPUT_BYTES } from '../src/scm/lib/pdf-split';
 
 const appFor = (perms: string[]) => {
   const app = new Hono();
@@ -44,6 +46,21 @@ describe('POST /payment-vouchers/split-pdf', () => {
     const res = await post(appFor(['*']), btoa('not a pdf'));
     expect(res.status).toBe(422);
     expect(await res.json()).toMatchObject({ error: 'unreadable_pdf' });
+  });
+
+  /* Review of #860: refused on its declared size before the body is read, and on the base64 length when undeclared. */
+  test('a body declared past the cap is a 413 before it is read', async () => {
+    const res = await appFor(['*']).request('/payment-vouchers/split-pdf', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': String(SPLIT_BODY_LIMIT + 1) }, body: '{"dataBase64":"x"}',
+    });
+    expect(res.status).toBe(413);
+    expect(await res.json()).toMatchObject({ error: 'file_too_big' });
+  });
+
+  test('a PDF past 8 MB is a 413 without being decoded', async () => {
+    const res = await post(appFor(['*']), 'A'.repeat(SPLIT_BODY_LIMIT + 4));
+    expect(res.status).toBe(413);
+    expect(MAX_SPLIT_INPUT_BYTES).toBe(8 * 1024 * 1024);
   });
 
   test('without the scan permission it is refused', async () => {
