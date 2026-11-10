@@ -1,5 +1,5 @@
 import { type Env, all, mytToday } from './db';
-import { listEmployees } from './hr';
+import { listEmployees, isTestEmployee } from './hr';
 import type { Department, Employee } from './hrFields';
 import { readHolidays } from './leave';
 import { readPayRules, hasPayroll } from './payroll';
@@ -96,7 +96,8 @@ export function closedMonth(from: string, to: string, today: string): string | n
 
 export async function laborCost(env: Env, from: string, to: string, showRevenue: boolean, department: Department | null): Promise<LaborCostPayload> {
   const today = mytToday();
-  const [people, holidays, rules, payroll] = await Promise.all([listEmployees(env), readHolidays(env), readPayRules(env), hasPayroll(env)]);
+  const [everyone, holidays, rules, payroll] = await Promise.all([listEmployees(env), readHolidays(env), readPayRules(env), hasPayroll(env)]);
+  const people = everyone.filter(person => !isTestEmployee(person));
   const [allRows, salaryOn] = await Promise.all([hoursRows(env, people, from, to), salaries(env, people, to, payroll)]);
   const rows = department ? allRows.filter(r => r.department === department) : allRows;
   const costPeople = new Map<string, CostPerson>(people.filter((p): p is Employee & { id: string } => !!p.id).map(p => [p.id, {
