@@ -48,6 +48,7 @@ export function deliveriesToRaise(
 ): { raise: Array<{ soItemId: string; qty: number }>; planned: string[] } {
   const raise: Array<{ soItemId: string; qty: number }> = [];
   const planned = new Set<string>();
+  const leftOf = new Map<string, number>();
   for (const [soItemId, got] of received) {
     let left = got - (alreadyDelivered.get(soItemId) ?? 0);
     for (const d of drafts.filter((x) => x.soItemId === soItemId)) {
@@ -55,8 +56,35 @@ export function deliveriesToRaise(
       left -= d.qty;
       planned.add(d.doId);
     }
-    const qty = Math.min(left, remaining(soItemId));
+    leftOf.set(soItemId, left);
+  }
+  /* The planned drafts will deliver too, so what is left on the SO line is less them (a draft is not counted in
+     `remaining`): without this, a receipt bigger than the line raised a DO the database cap (0270) refuses. */
+  for (const [soItemId, left] of leftOf) {
+    const draftQty = drafts.filter((d) => d.soItemId === soItemId && planned.has(d.doId)).reduce((t, d) => t + d.qty, 0);
+    const qty = Math.min(left, remaining(soItemId) - draftQty);
     if (qty > 0) raise.push({ soItemId, qty });
   }
   return { raise, planned: [...planned] };
+}
+
+type HandlerAnswer = { status: number; json?: Record<string, unknown> };
+
+/** Marks a DO the twin just raised as Delivered. A site receipt's DO was raised as a draft for this receipt only, so one
+    that cannot be delivered (the database cap, migration 0270, refused it) is withdrawn rather than left behind as a
+    stray draft: cancelled, not deleted, so its AutoCount entry and audit trail close the usual way, and untied from the
+    receipt. The problem is reported either way. */
+export async function deliverOrWithdraw(
+  io: { deliver: () => Promise<HandlerAnswer>; withdraw: () => Promise<HandlerAnswer>; untie: () => PromiseLike<unknown> },
+  siteReceipt: boolean,
+): Promise<{ problem: string | null; withdrawn: boolean }> {
+  const done = await io.deliver();
+  if (done.status < 300) return { problem: null, withdrawn: false };
+  const j = done.json ?? {};
+  const problem = String(j.message ?? j.reason ?? j.error ?? 'The delivery order was raised but not marked delivered.');
+  if (!siteReceipt) return { problem, withdrawn: false };
+  const off = await io.withdraw();
+  if (off.status >= 300) return { problem: `${problem} The draft delivery order could not be cancelled; cancel it by hand.`, withdrawn: false };
+  await io.untie();
+  return { problem: `${problem} The draft delivery order raised for it was cancelled.`, withdrawn: true };
 }

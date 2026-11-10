@@ -14,7 +14,7 @@ type Db = Parameters<typeof loadLedgerSettings>[0];
     setup refuses money there, and Daily Bank shows them beside the banks). Any: every other rule. */
 export type RoleKind = "money" | "clearing" | "any";
 export const roleKind = (role: AccountRole): RoleKind =>
-  role === "CASH" || role === "BANK_DEFAULT" ? "money" : role === "TRANSIT_EDC" || role === "TRANSIT_ONLINE" ? "clearing" : "any";
+  role === "CASH" || role === "BANK_DEFAULT" || role === "BANK_PAY_DEFAULT" ? "money" : role === "TRANSIT_EDC" || role === "TRANSIT_ONLINE" ? "clearing" : "any";
 
 /** Rules nothing posts on any more, so they are not part of being ready: SALES was the template's (sales post by item
     group), INVENTORY and CLOSING_STOCK the one-account stock the three stock buckets replaced (2026-09-21), PETTY_CASH
@@ -27,8 +27,8 @@ export const RETIRED_ROLES: readonly AccountRole[] = ["SALES", "INVENTORY", "CLO
 
 /** Rules whose account holds open balances — what customers and suppliers owe, money waiting in a clearing, deposits,
     stock. Moving one leaves those balances on the old account while new postings go to the new one, so the move is
-    confirmed first. The default bank and the drawer are not here: each bank keeps its own money, and moving the
-    default only changes where new vouchers start. */
+    confirmed first. The default banks (receiving BANK_DEFAULT, paying BANK_PAY_DEFAULT) and the drawer are not here:
+    each bank keeps its own money, and moving a default only changes where new receipts or vouchers start. */
 export const OPEN_BALANCE_ROLES: readonly AccountRole[] = [
   "AR", "AR_OTHER", "AP", "AP_OTHER", "TRANSIT_EDC", "TRANSIT_ONLINE", "CUSTOMER_DEPOSITS",
   "INVENTORY_CUSTOMER", "INVENTORY_DISPLAY", "INVENTORY_SERVICE",

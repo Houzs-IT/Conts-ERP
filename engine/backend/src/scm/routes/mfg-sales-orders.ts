@@ -8063,6 +8063,8 @@ mfgSalesOrders.patch('/:docNo/items/:itemId', async (c) => {
     docNo,
     itemId,
   );
+  // HC-0004: the DB floor (migration 0274) refused a cut below what a DO, created after the freeze read above, ships.
+  if (isSoLineOverDelivered(error)) return c.json({ error: 'qty_below_delivered', message: 'A Delivery Order has just shipped this Sales Order line. Its qty can no longer be cut below what was delivered. Refresh and check the order.', reason: error!.message }, 409);
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
   // Default Free Gift (0170) — editing a line (code/qty) may add or drop a
   // trigger; reconcile auto-syncs the gift lines, then recomputes totals.

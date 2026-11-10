@@ -179,7 +179,17 @@ function fakeDb(tables: Record<string, Row[]>, opts: { failInsertOn?: string } =
     };
     return q;
   };
-  return { from, writes, tables };
+  /* scm.production_stamp_issued (migration 0250): one call stamps every material's issued and short count. */
+  const rpc = async (fn: string, args: { p_order: string; p_rows: Array<{ id: string; issued: number; short: number }> }) => {
+    if (fn !== 'production_stamp_issued') return { data: null, error: { message: `function ${fn} does not exist` } };
+    let n = 0;
+    for (const r of args.p_rows) {
+      const m = (tables.production_order_materials ?? []).find((x) => x.id === r.id && x.production_order_id === args.p_order);
+      if (m) { m.qty_issued = r.issued; m.qty_issued_short = r.short; n += 1; }
+    }
+    return { data: n, error: null };
+  };
+  return { from, rpc, writes, tables };
 }
 
 const seed = () => ({
