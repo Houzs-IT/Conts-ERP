@@ -37,7 +37,7 @@ import type { Env, Variables } from '../env';
 import { writeMovements, defaultWarehouseId } from '../lib/inventory-movements';
 import { dateOrNull, coerceEmptyDates, normalizeEventDay } from '../lib/date-coerce';
 import { allocateAcrossBuckets } from '../lib/bucket-cost-allocation';
-import { doHasDownstream } from '../lib/downstream-lock';
+import { doCancelDbRefusal, doHasDownstream } from '../lib/downstream-lock';
 import { claimedSoItemIdsOnDo, fillMissingSoItemIds } from '../lib/derive-do-so-item-id';
 import { DO_AUDIT_FIELDS, DO_AUDIT_SELECT, DO_LINE_AUDIT_FIELDS, DO_IDENTITY_LABELS } from '../lib/do-audit-fields';
 import { identityLockedRefusal } from '../shared/header-inherited-lock'; import { doLockedHeaderChanges, DO_HEADER_OPEN_DESCRIPTION } from '../shared/do-header-lock';
@@ -100,7 +100,8 @@ import { freezeShipCost } from '../lib/fulfillment-costing';
 import { validateItemCodes, unknownItemCodeResponse, unknownProductCodeRefusal } from '../lib/validate-item-codes';
 import { resolveItemGroups } from '../lib/sku-category';
 import { buildDoItemRow as buildItemRow, loadCarriedSoLinePhotos, carriedPhotoUrls } from '../lib/do-item-row';
-import { soRemainingByItemId } from '../lib/so-remaining-by-item';
+import { isSoLineOverDelivered, soRemainingByItemId } from '../lib/so-remaining-by-item';
+import { DEADLOCK_RETRY, isDeadlock } from '../lib/qty-cap';
 import { lineLinkItemMismatch, assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
 import { checkStockAvailability, shortStockResponse, shortStockStops, stockCheckableLines, uncoveredStockCheckLines, type StockShortage } from '../lib/check-stock-availability';
 /* Conts switches: customer-supplied lines hold no stock; a renovation DO takes its site and brand from its own SO and lines. */
@@ -3510,7 +3511,12 @@ deliveryOrdersMfg.post('/', async (c) => {
     const linePhotos = await loadCarriedSoLinePhotos(sb, items as Array<{ soItemId?: unknown }>, (q) => scopeToCompany(q, c));
     const rows = items.map((it, lineNo) => buildItemRow(h.id, it, lineNo, commitments.get(String(lineNo)) ?? null, linePhotos));
     const { error: iErr } = await sb.from('delivery_order_items').insert(stampCompany(rows, c));
-    if (iErr) { await sb.from('delivery_orders').delete().eq('id', h.id); return c.json({ error: 'items_insert_failed', reason: iErr.message }, 500); }
+    if (iErr) {
+      await sb.from('delivery_orders').delete().eq('id', h.id);
+      // HC-0004: the DB cap (migration 0270) refused a line past its SO line's qty.
+      if (isSoLineOverDelivered(iErr)) return c.json({ error: 'race_conflict', message: 'Another operator just delivered overlapping qty from this Sales Order. Refresh and try again.', reason: iErr.message }, 409);
+      return c.json({ error: 'items_insert_failed', reason: iErr.message }, 500);
+    }
     await recomputeTotals(sb, h.id);
   }
 
@@ -4097,6 +4103,7 @@ export const createDoFromSoLinesHandler = async (c: Context<{ Bindings: Env; Var
   if (iErr) {
     // Roll the header back so we don't leave a headerless DO.
     await sb.from('delivery_orders').delete().eq('id', dh.id);
+    if (isSoLineOverDelivered(iErr)) return c.json({ error: 'race_conflict', message: 'Another operator just converted overlapping qty from this Sales Order. Refresh the picker and try again.', reason: iErr.message }, 409);
     return c.json({ error: 'items_insert_failed', reason: iErr.message }, 500);
   }
 
@@ -4729,6 +4736,7 @@ export const addDeliveryOrderItemHandler = async (c: Context<{ Bindings: Env; Va
   const addPhotos = await loadCarriedSoLinePhotos(sb, [it as { soItemId?: unknown }], (q) => scopeToCompany(q, c));
   const row = buildItemRow(id, it, nextLineNo, addCommitments.get('add') ?? null, addPhotos);
   const { data, error } = await sb.from('delivery_order_items').insert({ ...row, company_id: activeCompanyId(c) }).select(ITEM).single();
+  if (isSoLineOverDelivered(error)) return c.json({ error: 'over_remaining', message: 'Add qty exceeds remaining on the linked Sales Order line.', soItemId: it.soItemId ?? null, reason: error?.message }, 409);
   if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
   /* Drop-ship (mig 0057) — once a drop-shipped line is added, stamp the DO so
      the "batch not received" badge shows. Best-effort (never blocks the add). */
@@ -5030,6 +5038,7 @@ deliveryOrdersMfg.patch('/:id/items/:itemId', async (c) => {
   }
 
   const { error } = await scopeToCompanyId(sb.from('delivery_order_items').update(updates).eq('id', itemId), co.companyId);
+  if (isSoLineOverDelivered(error)) return c.json({ error: 'over_remaining', message: 'New qty exceeds the most this line can deliver for the linked Sales Order line.', soItemId: prev.so_item_id ?? null, reason: error?.message }, 409);
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
 
   /* Diff `updates` — the EFFECTIVE values written — against the stored row. qty
@@ -5462,6 +5471,10 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
       .update({ status: toStatus, ...ts, ...tsNum, ...tsJson })
       .eq('id', id), co.companyId).neq('status', 'CANCELLED')
       .select('id, status').maybeSingle();
+    // Database lock (migration 0271): an SI line raced in after the doHasDownstream check above.
+    if (isDeadlock(error)) return c.json(DEADLOCK_RETRY, 409);
+    const dbLock = doCancelDbRefusal(error);
+    if (dbLock) return c.json(dbLock, 409);
     if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
     if (!updated) {
       // Lost the race — another concurrent cancel already flipped it. Do NOT
@@ -5474,6 +5487,9 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
        cancelled DO reads shipped with its stock already back on the shelf. */
     const { data: updated, error } = await scopeToCompanyId(sb.from('delivery_orders')
       .update({ status: toStatus, ...ts, ...tsNum, ...tsJson }).eq('id', id), co.companyId).eq('status', prevStatus).select('id, status').maybeSingle();
+    // Database cap (migration 0270): confirming would ship more than the SO line ordered.
+    if (isDeadlock(error)) return c.json(DEADLOCK_RETRY, 409);
+    if (isSoLineOverDelivered(error)) return c.json({ error: 'over_delivery', message: 'This delivery would ship more than the Sales Order ordered: another DO already covers it. Refresh and check the Sales Order.', reason: error?.message }, 409);
     if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
     if (!updated) return c.json({ error: 'status_changed', reason: 'This delivery order just changed. Reload it and try again.' }, 409);
     data = updated as { id: string; status: string };
