@@ -843,6 +843,59 @@ export function useDeleteComposition() {
     onSuccess: () => { void qc.invalidateQueries({ queryKey: COMPOSITION_KEY }); },
   });
 }
+/* ── Worker actual hours (TODO item 16; backend routes/production-hours.ts) ── */
+export type ProductionTimeEntry = {
+  id: string; person_key: string; name: string; started_at: string; stopped_at: string | null; notes: string | null;
+  how: 'TIMER' | 'MANUAL'; minutes: number; created_by_name: string | null; updated_by_name: string | null;
+};
+export type ProductionHoursPerson = { personKey: string; name: string; minutes: number; running: boolean; entries: number };
+export type ProductionHours = {
+  budgetHours: number | null;
+  summary: { actualMinutes: number; budgetMinutes: number | null; varianceMinutes: number | null; overBudget: boolean; running: number; people: ProductionHoursPerson[] };
+  entries: ProductionTimeEntry[];
+  me: string;
+  canTime: boolean;
+  canEnter: boolean;
+  /** Full access to Production Orders: may time anyone and add, correct or remove entries. */
+  canSupervise: boolean;
+};
+/** Minutes as hours with one decimal, the way the budget is typed (7.5). */
+export const hoursOf = (minutes: number): number => Math.round(minutes / 6) / 10;
+
+export function useProductionHours(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ['production-order-hours', id],
+    enabled: enabled && !!id,
+    queryFn: () => authedFetch<ProductionHours>(`/production-orders/${id}/hours`),
+    /* A running timer counts up: read again each minute while the page is open. */
+    refetchInterval: 60_000,
+    retry: retryUnlessClientError,
+  });
+}
+export type HoursAction =
+  | { kind: 'start' | 'stop'; personKey?: string }
+  | { kind: 'add'; personKey?: string; startedAt: string; stoppedAt: string; notes?: string }
+  | { kind: 'edit'; entryId: string; startedAt?: string; stoppedAt?: string; notes?: string }
+  | { kind: 'delete'; entryId: string };
+export function useProductionHoursAction(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (a: HoursAction) => {
+      switch (a.kind) {
+        case 'start': case 'stop': return orderPost<{ ok: true }>(`${id}/hours/${a.kind}`)({ personKey: a.personKey });
+        case 'add': return orderPost<{ ok: true }>(`${id}/hours`)({ personKey: a.personKey, startedAt: a.startedAt, stoppedAt: a.stoppedAt, notes: a.notes });
+        case 'edit': return orderPost<{ ok: true }>(`${id}/hours/${a.entryId}`, 'PATCH')({ startedAt: a.startedAt, stoppedAt: a.stoppedAt, notes: a.notes });
+        case 'delete': return authedFetch<{ ok: true }>(`/production-orders/${id}/hours/${a.entryId}`, { method: 'DELETE' });
+      }
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['production-order-hours', id] });
+      void qc.invalidateQueries({ queryKey: ['production-orders'] });
+      void qc.invalidateQueries({ queryKey: ['production-orders-paged'] });
+    },
+  });
+}
+
 /** MRP's Proceed PO for raw materials. A repeat press finds nothing left to order and answers total 0. */
 export const createMaterialPos = ({ idempotencyKey, ...body }: {
   idempotencyKey?: string; picks: Array<{ materialId: string; qty: number; supplierId: string | null }>; mode: 'combined' | 'per-so'; expectedAt?: string;

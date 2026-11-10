@@ -95,8 +95,8 @@ describe("executable route contract", () => {
     // 179 since 2026-10-31 (Conts): /scm/reno-projects, renovation project status (SOP 4.2.3).
     // 180 since 2026-11-02 (Conts): /scm/rental-unit-costs, Rental costs by unit (finance only).
     // 184 since 2026-11-04 (Conts): the four /scm/production-orders routes.
-    // 193 since 2026-11-10 (Conts): /beta/defects and /beta/handover-checklists, the handover snag list (TODO item 17).
-    expect(STAFF_ROUTE_PATTERNS).toHaveLength(193);
+    // 195 since 2026-11-11: +2 /scm/stock-adjustments/:id and /:id/edit (Houzs BUG-66), +2 /beta/defects and /beta/handover-checklists (TODO item 17).
+    expect(STAFF_ROUTE_PATTERNS).toHaveLength(195);
     expect(new Set(STAFF_ROUTE_PATTERNS).size).toBe(STAFF_ROUTE_PATTERNS.length);
     expect([...STAFF_ROUTE_PATTERNS].sort()).toEqual([...appPages].sort());
   });
@@ -147,8 +147,8 @@ describe("executable route contract", () => {
     // 188 since 2026-10-31 — /scm/reno-projects (Conts).
     // 189 since 2026-11-02 — /scm/rental-unit-costs (Conts).
     // 193 since 2026-11-04 — the four /scm/production-orders routes (Conts).
-    // 202 since 2026-11-10 — /beta/defects and /beta/handover-checklists (Conts).
-    expect(ROUTE_CONTRACT).toHaveLength(202);
+    // 204 since 2026-11-11: +2 stock adjustment document pages, +2 /beta/defects and /beta/handover-checklists.
+    expect(ROUTE_CONTRACT).toHaveLength(204);
   });
 
   it("keeps every desktop nav destination on a live staff route", () => {

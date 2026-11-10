@@ -71,6 +71,11 @@ type StkLine = {
   notes?: string | null;
 };
 
+/* counted − system, as the screen computes it: the stored `variance` column is
+   written by nothing. null when uncounted or the system qty is withheld. */
+export const lineVariance = (l: { counted_qty: number | null; system_qty: number | null }): number | null =>
+  l.counted_qty == null || l.system_qty == null ? null : l.counted_qty - l.system_qty;
+
 const SCOPE_LABEL = (scopeType: string, scopeValue: string | null): string => {
   if (scopeType === 'ALL') return 'All SKUs';
   if (scopeType === 'NONZERO') return 'SKUs with stock';
@@ -78,6 +83,23 @@ const SCOPE_LABEL = (scopeType: string, scopeValue: string | null): string => {
   if (scopeType === 'CODE_PREFIX') return `Prefix · ${scopeValue ?? '—'}`;
   return scopeType;
 };
+
+/* The variant as a counting sheet prints it: the same facts, short words, so a
+   bedframe row stays one or two lines instead of four. "fabriccode pc151-01 ·
+   divanheight 10\"" → "pc151-01 · divan 10\"". The screen keeps the full label. */
+const PRINT_KEY: Record<string, string> = {
+  fabriccode: '', special: '', divanheight: 'divan', legheight: 'leg',
+  totalheight: 'total', seatheight: 'seat', seatsize: 'seat',
+};
+export const printVariant = (label: string): string =>
+  label.split(' · ').map((part) => {
+    const sp = part.indexOf(' ');
+    if (sp < 0) return part;
+    const key = part.slice(0, sp).toLowerCase();
+    if (!(key in PRINT_KEY)) return part;
+    const short = PRINT_KEY[key];
+    return short ? `${short} ${part.slice(sp + 1)}` : part.slice(sp + 1);
+  }).join(' · ');
 
 /** A signed variance reads as a variance only with its sign on it. */
 const signed = (n: number): string => (n > 0 ? `+${n}` : String(n));
@@ -126,7 +148,7 @@ export async function renderStockTakeInto(
       rows: [
         ['Warehouse', whName && whName !== whLabel ? `${whLabel} · ${whName}` : whLabel],
         ['Scope', SCOPE_LABEL(header.scope_type, header.scope_value)],
-        ['Assignee', header.assignee_name],
+        ['Assignees', header.assignee_name],
         ['Notes', header.notes],
       ],
     },
@@ -154,52 +176,62 @@ export async function renderStockTakeInto(
     y += 4;
   }
 
-  /* Server order is kept as it comes (`.order('item_code')`). The sofa build
-     walk the sales / purchase documents apply is not used: take lines carry no
-     `item_group` and no `variants`, so it would be a no-op. */
+  /* COMPACT (owner 2026-10-06: a 704-line take printed to 40+ pages). One
+     line per row: the name is cut with an ellipsis rather than wrapped, the
+     variant has its own narrow column (it tells two buckets of one SKU apart, so
+     it is never cut), and each row keeps just enough height to write a count
+     by hand. An OPEN sheet is a counting sheet: its Variance column (empty on
+     paper) gives way to a blank RACK column for where the goods actually sit.
+     Server order is kept as it comes (`.order('item_code')`). */
+  const counting = header.status === 'OPEN';
   const rows = lines.map((l, idx) => {
-    const variant = l.variant_label ?? variantKeyLabel(l.variant_key, '');
-    const desc = [l.product_name, variant].filter(Boolean).join('\n');
-    const base = [String(idx + 1), l.item_code, desc || '—'];
+    const variant = printVariant(l.variant_label ?? variantKeyLabel(l.variant_key, ''));
+    const base = [String(idx + 1), l.item_code, l.product_name || '—', variant];
     const counted = l.counted_qty == null ? '' : String(l.counted_qty);
-    if (withheld) return [...base, counted, l.notes ?? ''];
+    if (withheld) return [...base, counted, '', l.notes ?? ''];
     return [
       ...base,
       l.system_qty == null ? '—' : String(l.system_qty),
       counted,
       /* An UNCOUNTED line has no variance — printing 0 there would say the
          count agreed when nobody has counted it. */
-      l.counted_qty == null || l.variance == null ? '' : signed(l.variance),
+      counting ? '' : lineVariance(l) == null ? '' : signed(lineVariance(l)!),
       l.notes ?? '',
     ];
   });
+  const head = withheld
+    ? ['#', 'Item', 'Description', 'Variant', 'Counted', 'Rack', 'Notes']
+    : ['#', 'Item', 'Description', 'Variant', 'System', 'Counted', counting ? 'Rack' : 'Variance', 'Notes'];
+  /* 182mm of A4 between the margins. */
+  const columnStyles = withheld
+    ? {
+      0: { cellWidth: 7, halign: 'right' },
+      1: { cellWidth: 40, fontSize: 7 },
+      2: { cellWidth: 44, overflow: 'ellipsize' },
+      3: { cellWidth: 40, fontSize: 6.5 },
+      4: { cellWidth: 15, halign: 'right' },
+      5: { cellWidth: 16 },
+      6: { cellWidth: 20 },
+    }
+    : {
+      0: { cellWidth: 7, halign: 'right' },
+      1: { cellWidth: 38, fontSize: 7 },
+      2: { cellWidth: 34, overflow: 'ellipsize' },
+      3: { cellWidth: 42, fontSize: 6.5 },
+      4: { cellWidth: 13, halign: 'right' },
+      5: { cellWidth: 14, halign: 'right' },
+      6: { cellWidth: 16, halign: counting ? 'left' : 'right' },
+      7: { cellWidth: 18 },
+    };
   autoTable(doc, {
     startY: y,
-    head: [withheld
-      ? ['#', 'Item', 'Description', 'Counted', 'Notes']
-      : ['#', 'Item', 'Description', 'System', 'Counted', 'Variance', 'Notes']],
+    head: [head],
     body: rows,
     theme: 'plain',
     rowPageBreak: 'avoid',
-    styles: { ...DOC_TABLE_STYLES, fontSize: 8.5 },
-    headStyles: DOC_TABLE_HEAD_STYLES,
-    columnStyles: withheld
-      ? {
-        0: { cellWidth: 8, halign: 'right' },
-        1: { cellWidth: 30 },
-        2: { cellWidth: 78 },
-        3: { cellWidth: 20, halign: 'right' },
-        4: { cellWidth: 46 },
-      }
-      : {
-        0: { cellWidth: 8, halign: 'right' },
-        1: { cellWidth: 28 },
-        2: { cellWidth: 56 },
-        3: { cellWidth: 18, halign: 'right' },
-        4: { cellWidth: 18, halign: 'right' },
-        5: { cellWidth: 20, halign: 'right' },
-        6: { cellWidth: 34 },
-      },
+    styles: { ...DOC_TABLE_STYLES, fontSize: 7.5, cellPadding: { top: 1, bottom: 1, left: 1.2, right: 1.2 }, minCellHeight: 5.5, valign: 'middle' },
+    headStyles: { ...DOC_TABLE_HEAD_STYLES, fontSize: 7.5 },
+    columnStyles,
     margin: { left: margin, right: margin },
   });
   const lastY = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 6;
@@ -211,9 +243,10 @@ export async function renderStockTakeInto(
   for (const l of lines) {
     if (l.counted_qty == null) continue;
     counted += 1;
-    if (l.variance == null) continue;
-    if (l.variance > 0) variancePos += l.variance;
-    if (l.variance < 0) varianceNeg += l.variance;
+    const v = lineVariance(l);
+    if (v == null) continue;
+    if (v > 0) variancePos += v;
+    if (v < 0) varianceNeg += v;
   }
   const uncounted = lines.length - counted;
 
