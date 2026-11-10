@@ -4,6 +4,7 @@ import { isPeriodLocked } from './expenses';
 import { hasCleanPrices, cleanAmounts } from './cleaningPrices';
 import { hasJobInvoices } from './jobProfit';
 import { rentalOnly } from './unitPurpose';
+import { syncPassKeyJobs } from './passKeyJobs';
 
 export const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'] as const;
 export const CLEAN_KINDS_SQL = `('turnover','deep_clean','light_clean')`;
@@ -127,12 +128,12 @@ export async function windowsFor(env: Env, issueIds: string[]): Promise<Map<stri
   const out = new Map<string, RepairWindow[]>();
   if (!issueIds.length) return out;
   const rows = await all<any>(env, `
-    SELECT w.id, w.issue_id, w.starts_at, w.ends_at, w.note, m.unit_id
+    SELECT w.id, w.issue_id, w.starts_at, w.ends_at, w.note, m.unit_id, m.source
     FROM maintenance_windows w JOIN maintenance_issues m ON m.id = w.issue_id
     WHERE w.issue_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY w.starts_at`, JSON.stringify(issueIds));
   const now = Date.now();
   for (const r of rows) {
-    const overlaps = Date.parse(r.ends_at) > now ? await staysOverlapping(env, r.unit_id, r.starts_at, r.ends_at) : [];
+    const overlaps = r.source !== 'booking' && Date.parse(r.ends_at) > now ? await staysOverlapping(env, r.unit_id, r.starts_at, r.ends_at) : [];
     const list = out.get(r.issue_id) ?? [];
     list.push({ id: r.id, issueId: r.issue_id, startsAt: r.starts_at, endsAt: r.ends_at, note: r.note ?? null, overlaps });
     out.set(r.issue_id, list);
@@ -144,7 +145,7 @@ export async function windowsFor(env: Env, issueIds: string[]): Promise<Map<stri
 export async function windowsOnDay(env: Env, day: string) {
   const from = `${day}T00:00:00+08:00`, to = `${day}T23:59:59+08:00`;
   const rows = await all<any>(env, `
-    SELECT w.id, w.issue_id, w.starts_at, w.ends_at, w.note, m.title, m.state, m.urgency, m.category, m.vendor_name, m.unit_id,
+    SELECT w.id, w.issue_id, w.starts_at, w.ends_at, w.note, m.title, m.state, m.urgency, m.category, m.vendor_name, m.unit_id, m.source,
            u.unit_number, p.id AS property_id, p.name AS property_name
     FROM maintenance_windows w JOIN maintenance_issues m ON m.id = w.issue_id
     JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id
@@ -156,7 +157,7 @@ export async function windowsOnDay(env: Env, day: string) {
       id: r.id, issueId: r.issue_id, startsAt: r.starts_at, endsAt: r.ends_at, note: r.note ?? null,
       title: r.title, state: r.state, urgency: r.urgency, category: r.category, assigneeName: r.vendor_name ?? null,
       unitId: r.unit_id, unitNumber: r.unit_number, buildingId: r.property_id, propertyName: r.property_name,
-      overlaps: Date.parse(r.ends_at) > Date.now() ? await staysOverlapping(env, r.unit_id, r.starts_at, r.ends_at) : [],
+      overlaps: r.source !== 'booking' && Date.parse(r.ends_at) > Date.now() ? await staysOverlapping(env, r.unit_id, r.starts_at, r.ends_at) : [],
     });
   }
   return out;
@@ -176,6 +177,7 @@ export const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{
  */
 export async function ensureTurnovers(env: Env, scope: { from: string; to: string } | { reservationIds: string[] }, limit = 200): Promise<number> {
   try {
+    await syncPassKeyJobs(env, scope, limit);
     const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
     const ids = 'reservationIds' in scope ? scope.reservationIds.filter(Boolean) : null;
     if (ids && !ids.length) return 0;
@@ -233,6 +235,7 @@ export async function replanTurnover(env: Env, reservationId: string, live: bool
       RETURNING t.id`, reservationId);
     if (gone.length) await audit(env, { actorId: null, actorLabel: 'System', action: 'task.remove', entityTable: 'reservations', entityId: reservationId, after: { removed: gone.map(g => g.id), reason: live ? 'dates moved' : 'reservation cancelled' } });
     if (live) await ensureTurnovers(env, { reservationIds: [reservationId] });
+    else await syncPassKeyJobs(env, { reservationIds: [reservationId] });
   } catch (e) {
     console.error('replanTurnover failed', e);
   }

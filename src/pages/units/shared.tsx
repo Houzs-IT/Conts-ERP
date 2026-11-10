@@ -94,6 +94,7 @@ export interface Building {
   id: string; name: string; city: string; state: string;
   /** Migration 0161: the building's card alone opens the lobby, lift and car park. */
   fullAccessCard?: boolean;
+  needsPassKey?: boolean;
 }
 export interface PropertiesPayload { buildings: Building[]; units: Unit[]; generatedAt: string }
 

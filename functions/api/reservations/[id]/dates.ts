@@ -1,4 +1,5 @@
 import { replanTurnover } from '../../../_lib/cleaning';
+import { syncPassKeyJobs } from '../../../_lib/passKeyJobs';
 import { type Env, one, json, fail, audit, nowIso } from '../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { findClash, clashResponseBody, withUnitLock } from '../../../_lib/reservations';
@@ -75,6 +76,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   });
   if (cur.state !== 'inquiry') await bookingNotice(env, id, 'dates', session.userId, { from: { checkIn: cur.check_in, checkOut: cur.check_out } });
   if (b.checkOut !== cur.check_out) await replanTurnover(env, id, true);
+  else if (b.checkIn !== cur.check_in) await syncPassKeyJobs(env, { reservationIds: [id] });
 
   // A live stay holds its nights on the channels; an inquiry does not hold dates, so there is nothing to move.
   let channel: 'queued' | 'not_linked' | 'failed' | null = null;
