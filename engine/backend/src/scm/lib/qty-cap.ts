@@ -168,3 +168,18 @@ export async function qtyCapRefusal(
     ownPriorDraw: args.ownPriorDraw,
   });
 }
+
+/** SQLSTATE raised by scm.assert_po_line_not_over_received (mig
+ *  0272): the write would push a PO line's live received total up
+ *  past its qty. Callers answer it with their existing 409, not a 500. */
+export const PO_LINE_OVER_RECEIVED = 'P0411';
+export const isPoLineOverReceived = (err: { code?: string | null } | null | undefined): boolean =>
+  err?.code === PO_LINE_OVER_RECEIVED;
+
+/** Postgres broke a deadlock by aborting this write (SQLSTATE 40P01): nothing was saved. The caps' row locks can meet a
+ *  VO or another document's write in the other order; the answer is "try again", not a 500. */
+export const isDeadlock = (err: { code?: string | null } | null | undefined): boolean => err?.code === '40P01';
+export const DEADLOCK_RETRY = {
+  error: 'busy_retry',
+  message: 'Someone else was changing the same lines at the same moment, so nothing was saved. Please try again.',
+} as const;

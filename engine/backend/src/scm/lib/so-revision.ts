@@ -65,6 +65,7 @@ import { routingNote, type AmendmentFieldKind } from '../shared/amendment-routin
 import { soAmendableHeaderFields } from '../shared/so-field-policy';
 import { canonicaliseSoHeaderChanges } from '../shared/so-processing-date';
 import { readSoLineFreeze, soLineWriteRefusal } from './downstream-lock';
+import { isPoLineOverReceived } from './qty-cap';
 import { SO_IDENTITY_LOCK_COLS } from '../shared/so-identity-lock';
 
 /* The routable field atoms an SO amendment moves — lines + header — for the audit
@@ -1201,6 +1202,19 @@ export class ReceivedFloorError extends Error {
   }
 }
 
+/** HC-0004: the DB floor (migration 0275) refused a PO line qty cut below
+ *  what live GRNs received — a GRN posted after the floor read above. Same
+ *  ReceivedFloorError, so the callers' existing 409 answers it. */
+export function receivedFloorFromDb(
+  err: { code?: string | null; message?: string } | null,
+  poItemId: string,
+  revisedQty: number,
+): ReceivedFloorError | null {
+  if (!isPoLineOverReceived(err)) return null;
+  const m = /would have ([\d.]+) received/.exec(err?.message ?? '');
+  return new ReceivedFloorError(poItemId, revisedQty, m ? Number(m[1]) : NaN);
+}
+
 export async function reviseBoundPo(
   sb: Sb,
   amendmentId: string,
@@ -1504,7 +1518,10 @@ export async function reviseBoundPo(
       });
       warnings.push(...lineWarnings);
       const { error: updErr } = await sb.from('purchase_order_items').update(patch).eq('id', pi.id);
-      if (updErr) throw new Error(`reviseBoundPo: PO line update failed for ${pi.id}: ${updErr.message}`);
+      if (updErr) {
+        throw receivedFloorFromDb(updErr, pi.id, Number(patch.qty))
+          ?? new Error(`reviseBoundPo: PO line update failed for ${pi.id}: ${updErr.message}`);
+      }
       linesRederived += 1;
     }
 
