@@ -16,7 +16,7 @@ import { currentCheck, failPrefill, itemsByArea, progressLine } from "./renovati
 import { dayMonth, mytDay } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
 
-const DEFECT_WORDS = { open: "Defect to fix", fixed: "Fixed, to check", closed: "Defect closed" } as const;
+const DEFECT_WORDS = { open: "Defect to fix", fixed: "Fixed, to check", closed: "Defect closed", archived: "Defect archived" } as const;
 
 export function BetaHandoverChecklist({ p, areas }: { p: BetaTabProps; areas: readonly string[] }): ReactElement | null {
   const q = useQuery(["renovation-beta", "handover-checks", p.projectId], () => handoverApi.checks(p.projectId), [p.projectId]);
@@ -136,7 +136,7 @@ function CheckItems({ check, canWrite, busy, onMark, onFail }: {
                   {i.criteria && <div style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{i.criteria}</div>}
                   {i.note && <div style={{ fontSize: 12, color: WS.text2 }}>Note: {i.note}</div>}
                 </div>
-                {i.defectState && <WsBadge tone={i.defectState === "closed" ? TONE_ACCENT : i.defectState === "fixed" ? TONE_QUIET : TONE_ALERT}>{DEFECT_WORDS[i.defectState]}</WsBadge>}
+                {i.defectState && <WsBadge tone={i.defectState === "closed" ? TONE_ACCENT : i.defectState === "fixed" || i.defectState === "archived" ? TONE_QUIET : TONE_ALERT}>{DEFECT_WORDS[i.defectState]}</WsBadge>}
                 <Marks i={i} canWrite={canWrite} busy={busy} onMark={onMark} onFail={onFail} />
               </li>
             ))}

@@ -65,6 +65,12 @@ async function projectCompany(c: Ctx, id: number): Promise<number | null> {
   return r ? Number(r.company_id) : null;
 }
 
+/** An item's defect: archived (taken off the board), closed, fixed waiting for a check, or still to fix. */
+export function defectStateOf(i: Row): "archived" | "closed" | "fixed" | "open" | null {
+  if (i.defect_id == null) return null;
+  return i.defect_archived_at ? "archived" : i.defect_closed_at ? "closed" : i.defect_fixed_at ? "fixed" : "open";
+}
+
 interface CheckRow { id: number; project_id: number; company_id: number; completed_at: string | null; template_name: string }
 
 /** A check of a renovation project in the active company. */
@@ -102,8 +108,10 @@ app.get("/handover-templates", requirePageAccess("projects.list"), guarded(true,
   });
 }));
 
+/** The items in order. WITH ORDINALITY cannot take a column definition list, so the record set goes inside ROWS FROM. */
+const ITEMS_FROM = `ROWS FROM (jsonb_to_recordset(?::text::jsonb) AS (area text, item text, criteria text)) WITH ORDINALITY AS x(area, item, criteria, n)`;
 const ITEMS_INSERT = `INSERT INTO handover_checklist_template_items (template_id, sequence, area, item, criteria)
-  SELECT ?::bigint, x.n, x.area, x.item, x.criteria FROM jsonb_to_recordset(?::text::jsonb) WITH ORDINALITY AS x(area text, item text, criteria text, n bigint)`;
+  SELECT ?::bigint, x.n, x.area, x.item, x.criteria FROM ${ITEMS_FROM}`;
 const CHECK_OPEN = { error: "check_open", message: "This project already has an open handover check. Finish it or carry on with it." } as const;
 const CHECK_OPEN_OTHER = { error: "check_open", message: "Another handover check of this project is open. Finish it first." } as const;
 const NAME_TAKEN = { error: "name_taken", message: "Another checklist already has that name." } as const;
@@ -117,7 +125,7 @@ app.post("/handover-templates", requirePermission("projects.manage"), guarded(fa
     const row = await db(c).prepare(
       `WITH t AS (INSERT INTO handover_checklist_templates (company_id, name, active, created_by, updated_by) VALUES (?, ?, ?, ?, ?) RETURNING id),
             i AS (INSERT INTO handover_checklist_template_items (template_id, sequence, area, item, criteria)
-                  SELECT t.id, x.n, x.area, x.item, x.criteria FROM t, jsonb_to_recordset(?::text::jsonb) WITH ORDINALITY AS x(area text, item text, criteria text, n bigint))
+                  SELECT t.id, x.n, x.area, x.item, x.criteria FROM t, ${ITEMS_FROM})
        SELECT id::int AS id FROM t`,
     ).bind(co.companyId, v.value.name, v.value.active, userId(c), userId(c), templateItemsJson(v.value.items)).first<{ id: number }>();
     return c.json({ id: row?.id }, 201);
@@ -167,11 +175,11 @@ app.get("/projects/:id/handover-checks", requirePageAccess("projects.list"), gua
     db(c).prepare(
       `SELECT i.id::int AS id, i.check_id::int AS check_id, i.area, i.item, i.criteria, i.result, i.note, i.defect_id::int AS defect_id,
               ${TS("i.checked_at")} AS checked_at, u.name AS checked_by_name,
-              ${TS("d.fixed_at")} AS defect_fixed_at, ${TS("d.closed_at")} AS defect_closed_at
+              ${TS("d.fixed_at")} AS defect_fixed_at, ${TS("d.closed_at")} AS defect_closed_at, d.archived_at AS defect_archived_at
          FROM project_handover_check_items i
          JOIN project_handover_checks k ON k.id = i.check_id
          LEFT JOIN users u ON u.id = i.checked_by
-         LEFT JOIN project_defects d ON d.id = i.defect_id AND d.archived_at IS NULL
+         LEFT JOIN project_defects d ON d.id = i.defect_id
         WHERE k.project_id = ? ORDER BY i.check_id, i.sequence`,
     ).bind(id).all<Row>(),
   ]);
@@ -190,7 +198,7 @@ app.get("/projects/:id/handover-checks", requirePageAccess("projects.list"), gua
         progress: checkProgress(its.map((i) => ({ result: str(i.result) }))),
         items: its.map((i) => ({
           id: Number(i.id), area: str(i.area), item: String(i.item), criteria: str(i.criteria), result: str(i.result), note: str(i.note),
-          defectId: num(i.defect_id), defectState: i.defect_id == null ? null : i.defect_closed_at ? "closed" : i.defect_fixed_at ? "fixed" : "open",
+          defectId: num(i.defect_id), defectState: defectStateOf(i),
           checkedAt: str(i.checked_at), checkedByName: str(i.checked_by_name),
         })),
       };
@@ -210,9 +218,9 @@ app.post("/projects/:id/handover-checks", requirePermission("projects.write"), g
   let row: { id: number } | null;
   try {
     row = await db(c).prepare(
-    `WITH tp AS (SELECT id, name FROM handover_checklist_templates WHERE id = ? AND company_id = ? AND active),
+    `WITH tp AS (SELECT id, name FROM handover_checklist_templates WHERE id = ?::bigint AND company_id = ?::bigint AND active),
           k AS (INSERT INTO project_handover_checks (project_id, company_id, template_id, template_name, started_by)
-                SELECT ?, ?, tp.id, tp.name, ? FROM tp RETURNING id, template_id, template_name),
+                SELECT ?::bigint, ?::bigint, tp.id, tp.name, ?::bigint FROM tp RETURNING id, template_id, template_name),
           i AS (INSERT INTO project_handover_check_items (check_id, sequence, area, item, criteria)
                 SELECT k.id, ti.sequence, ti.area, ti.item, ti.criteria FROM k JOIN handover_checklist_template_items ti ON ti.template_id = k.template_id),
           a AS (INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
@@ -246,7 +254,7 @@ app.post("/handover-check-items/:itemId", requirePermission("projects.write"), g
             checked_by = CASE WHEN ?::text IS NULL THEN NULL ELSE ?::bigint END,
             checked_at = CASE WHEN ?::text IS NULL THEN NULL ELSE now() END
       WHERE id = ? AND defect_id IS NULL AND result IS DISTINCT FROM 'fail'
-        AND check_id IN (SELECT id FROM project_handover_checks WHERE id = ? AND completed_at IS NULL)
+        AND check_id IN (SELECT id FROM project_handover_checks WHERE id = ? AND completed_at IS NULL FOR UPDATE)
       RETURNING id::int AS id`,
   ).bind(result, note, result, userId(c), result, itemId, k.id).first<{ id: number }>();
   if (!row) return c.json({ error: "check_changed", message: "Someone else just changed this check. Reload and look again." }, 409);
@@ -262,7 +270,11 @@ app.post("/handover-checks/:id/finish", requirePermission("projects.write"), gua
   const progress = checkProgress(items.results ?? []);
   const refused = finishRefusal({ completedAt: k.completed_at }, progress);
   if (refused) return c.json({ ...refused, progress }, 409);
-  const row = await db(c).prepare(
+  // Two statements in one transaction: the lock waits for any mark or failed-item report holding this check, and the
+  // finish that follows reads the items after it (a fresh snapshot), so it never finishes past an item just cleared.
+  const done = await db(c).batch!([
+    db(c).prepare(`SELECT id FROM project_handover_checks WHERE id = ? FOR UPDATE`).bind(id),
+    db(c).prepare(
     `WITH u AS (UPDATE project_handover_checks SET completed_at = now(), completed_by = ?
                  WHERE id = ? AND completed_at IS NULL
                    AND NOT EXISTS (SELECT 1 FROM project_handover_check_items i WHERE i.check_id = ? AND i.result IS NULL)
@@ -270,8 +282,9 @@ app.post("/handover-checks/:id/finish", requirePermission("projects.write"), gua
           a AS (INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
                 SELECT ?::bigint, 'handover_check_finished', NULL, u.template_name, ?::text, ?::bigint, ?::bigint FROM u)
      SELECT id::int AS id FROM u`,
-  ).bind(userId(c), id, id, k.project_id, `${progress.passed} passed, ${progress.failed} failed, ${progress.na} not applicable`, userId(c), k.company_id)
-    .first<{ id: number }>();
+  ).bind(userId(c), id, id, k.project_id, `${progress.passed} passed, ${progress.failed} failed, ${progress.na} not applicable`, userId(c), k.company_id),
+  ]);
+  const row = (done[1] as Array<{ id: number }> | undefined)?.[0];
   if (!row) return c.json({ error: "check_changed", message: "Someone else just changed this check. Reload and look again." }, 409);
   return c.json({ ok: true, progress });
 }));

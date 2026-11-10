@@ -8,7 +8,7 @@ export interface TemplateItem { id?: number; area: string | null; item: string; 
 export interface HandoverTemplate { id: number; name: string; active: boolean; updatedAt: string | null; items: TemplateItem[] }
 
 export type CheckResult = "pass" | "fail" | "na";
-export type DefectState = "open" | "fixed" | "closed";
+export type DefectState = "open" | "fixed" | "closed" | "archived";
 
 export interface CheckItem {
   id: number;

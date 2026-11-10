@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { Hono } from "hono";
-import handover from "../src/routes/renovationBetaHandover";
+import handover, { defectStateOf } from "../src/routes/renovationBetaHandover";
 import renovationBeta from "../src/routes/renovationBeta";
 import {
   checkProgress, cleanItemMark, cleanTemplate, finishRefusal, itemFailRefusal, itemMarkRefusal, templateItemsJson,
@@ -44,11 +44,12 @@ function fakeDb(answer: (sql: string, args: unknown[]) => unknown) {
     first: async () => { ran.push({ sql, args }); return (answer(sql, args) as unknown) ?? null; },
     all: async () => { ran.push({ sql, args }); return { results: (answer(sql, args) as unknown[]) ?? [] }; },
     run: async () => { ran.push({ sql, args }); answer(sql, args); return {}; },
+    rows: async () => { ran.push({ sql, args }); const v = answer(sql, args); return Array.isArray(v) ? v : v == null ? [] : [v]; },
     sql,
   });
   return {
     ran,
-    db: { prepare: (sql: string) => stmt(sql), batch: async (s: Array<{ run: () => Promise<unknown> }>) => Promise.all(s.map((x) => x.run())) },
+    db: { prepare: (sql: string) => stmt(sql), batch: async (s: Array<{ rows: () => Promise<unknown> }>) => Promise.all(s.map((x) => x.rows())) },
   };
 }
 
@@ -188,7 +189,7 @@ describe("a Fail is a defect report from the check (POST /projects/:id/defects w
     const ins = ran.find((r) => r.sql.includes("INSERT INTO project_defects"))!;
     expect(ins.sql).toContain("UPDATE project_handover_check_items i SET result = 'fail', defect_id = d.id");
     // The item is locked first and the defect is inserted FROM that lock, so a lost race writes nothing.
-    expect(ins.sql).toMatch(/lk AS \([\s\S]*k\.completed_at IS NULL AND i\.defect_id IS NULL[\s\S]*FOR UPDATE OF i\)/);
+    expect(ins.sql).toMatch(/lk AS \([\s\S]*k\.completed_at IS NULL AND i\.defect_id IS NULL[\s\S]*FOR UPDATE OF i, k\)/);
     expect(ins.sql).toMatch(/INSERT INTO project_defects[\s\S]*FROM lk\s+RETURNING/);
     expect(ins.args.slice(0, 2)).toEqual([8, 7]);
     expect(ins.args.slice(-1)).toEqual([5]);
@@ -221,6 +222,47 @@ describe("a Fail is a defect report from the check (POST /projects/:id/defects w
     const res = await appWith(db, ["projects.write"], renovationBeta as never)("POST", "/projects/7/defects", { ...report, checkItemId: undefined });
     expect(res.status).toBe(201);
     expect(ran.find((r) => r.sql.includes("INSERT INTO project_defects"))!.sql).not.toContain("project_handover_check_items");
+  });
+});
+
+describe("second review: SQL shape and locks (run for real in tests-pg/handoverChecks.pg.test.ts)", () => {
+  test("template items are numbered with ROWS FROM ... WITH ORDINALITY (Postgres refuses ORDINALITY with a column list)", async () => {
+    const { db, ran } = fakeDb((sql) => (sql.includes("INSERT INTO handover_checklist_templates") ? { id: 9 } : sql.startsWith("SELECT id FROM handover_checklist_templates") ? { id: 9 } : null));
+    const send = appWith(db);
+    await send("POST", "/handover-templates", { name: "A", items: [{ item: "Door" }] });
+    await send("PUT", "/handover-templates/9", { name: "A", items: [{ item: "Door" }] });
+    const inserts = ran.filter((r) => r.sql.includes("INSERT INTO handover_checklist_template_items"));
+    expect(inserts).toHaveLength(2);
+    for (const r of inserts) {
+      expect(r.sql).toContain("ROWS FROM (jsonb_to_recordset(?::text::jsonb) AS (area text, item text, criteria text)) WITH ORDINALITY AS x(area, item, criteria, n)");
+    }
+  });
+
+  test("a mark locks the open check row; Finish locks it first, then finishes in a later statement", async () => {
+    const check = { id: 4, project_id: 7, company_id: 1, completed_at: null, template_name: "T" };
+    const { db, ran } = fakeDb((sql) => {
+      if (sql.includes("SELECT i.check_id")) return { check_id: 4, result: null, defect_id: null };
+      if (sql.includes("FROM project_handover_checks k JOIN projects p")) return check;
+      if (sql.startsWith("SELECT result FROM")) return [{ result: "pass" }];
+      if (sql.startsWith("UPDATE project_handover_check_items") || sql.includes("WITH u AS")) return { id: 4 };
+      return null;
+    });
+    const send = appWith(db);
+    expect((await send("POST", "/handover-check-items/8", { result: "pass" })).status).toBe(200);
+    expect(ran.find((r) => r.sql.startsWith("UPDATE project_handover_check_items"))!.sql).toMatch(/completed_at IS NULL FOR UPDATE\)/);
+    expect((await send("POST", "/handover-checks/4/finish")).status).toBe(200);
+    const lock = ran.findIndex((r) => r.sql === "SELECT id FROM project_handover_checks WHERE id = ? FOR UPDATE");
+    const fin = ran.findIndex((r) => r.sql.includes("WITH u AS (UPDATE project_handover_checks SET completed_at = now()"));
+    expect(lock).toBeGreaterThan(-1);
+    expect(fin).toBeGreaterThan(lock);
+  });
+
+  test("an archived defect has its own state", () => {
+    expect(defectStateOf({ defect_id: null })).toBeNull();
+    expect(defectStateOf({ defect_id: 3, defect_archived_at: "2026-11-10T00:00:00Z", defect_closed_at: null })).toBe("archived");
+    expect(defectStateOf({ defect_id: 3, defect_closed_at: "x" })).toBe("closed");
+    expect(defectStateOf({ defect_id: 3, defect_fixed_at: "x" })).toBe("fixed");
+    expect(defectStateOf({ defect_id: 3 })).toBe("open");
   });
 });
 

@@ -265,7 +265,7 @@ app.post("/projects/:id/defects", requirePermission("projects.write"), async (c)
   const lock = fromCheck ? `lk AS (
        SELECT i.id FROM project_handover_check_items i JOIN project_handover_checks k ON k.id = i.check_id
         WHERE i.id = ?::bigint AND k.project_id = ?::bigint AND k.completed_at IS NULL AND i.defect_id IS NULL
-          FOR UPDATE OF i),
+          FOR UPDATE OF i, k),
      ` : "";
   const link = fromCheck ? `,
      l AS (
