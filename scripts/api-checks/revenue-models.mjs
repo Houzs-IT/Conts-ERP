@@ -13,7 +13,7 @@ import { build } from 'esbuild';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const out = await build({
-  stdin: { contents: `export * from './functions/_lib/ownerStatement.ts'; export * from './functions/_lib/revenueModel.ts'; export { contractView } from './functions/_lib/unitContract.ts';`, resolveDir: root, loader: 'ts' },
+  stdin: { contents: `export * from './functions/_lib/ownerStatement.ts'; export * from './functions/_lib/revenueModel.ts'; export { legacyOptions } from './functions/_lib/contractTypes.ts'; export { contractView } from './functions/_lib/unitContract.ts';`, resolveDir: root, loader: 'ts' },
   bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'error',
 });
 const tmp = mkdtempSync(join(tmpdir(), 'rm-check-'));
@@ -23,6 +23,8 @@ const M = await import(pathToFileURL(join(tmp, 'm.mjs')).href);
 let fails = 0;
 const check = (name, ok, more = '') => { if (!ok) fails++; console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${more ? ` :: ${more}` : ''}`); };
 const rm = sen => (sen / 100).toFixed(2);
+const invalidDraft = (draft, options = M.legacyOptions('', draft.revenueModel)) => M.invalidDraft(draft, options);
+const draftColumns = (draft, options = M.legacyOptions('', draft.revenueModel)) => M.draftColumns(draft, options);
 
 const unit = (over = {}) => ({
   id: 'u', owner_id: 'o', owner_name: 'x', unit_number: 'A-1', unit_code: null, property_name: 'Demo', address: null, package: 'Package A', term: 'Short term',
@@ -115,20 +117,31 @@ console.log('\n4. Contract history (unitForMonth)');
 
 /* ---------- 5. The Contract tab's rules ---------- */
 console.log('\n5. Contract form rules (invalidDraft / draftColumns)');
-check('owner + management + agent must add to 100', !!M.invalidDraft({ revenueModel: 'management', ownerPct: 75, managementPct: 20, agentPct: 10, startsOn: '2026-09-01' }).ownerPct);
-check('75/20/5 is valid', Object.keys(M.invalidDraft({ revenueModel: 'management', ownerPct: 75, managementPct: 20, agentPct: 5, startsOn: '2026-09-01' })).length === 0);
-check('a guarantee needs its monthly minimum', !!M.invalidDraft({ revenueModel: 'management_guarantee', ownerPct: 75, managementPct: 25, startsOn: '2026-09-01' }).minimumGuarantee);
-check('a long-term let needs its tenant', !!M.invalidDraft({ revenueModel: 'long_term', monthlyRent: 200000, startsOn: '2026-09-01' }).tenantName);
+check('owner + management + agent must add to 100', !!invalidDraft({ revenueModel: 'management', ownerPct: 75, managementPct: 20, agentPct: 10, startsOn: '2026-09-01' }).ownerPct);
+check('75/20/5 is valid', Object.keys(invalidDraft({ revenueModel: 'management', ownerPct: 75, managementPct: 20, agentPct: 5, startsOn: '2026-09-01' })).length === 0);
+check('a guarantee needs its monthly minimum', !!invalidDraft({ revenueModel: 'management_guarantee', ownerPct: 75, managementPct: 25, startsOn: '2026-09-01' }).minimumGuarantee);
+check('a long-term let needs its tenant', !!invalidDraft({ revenueModel: 'long_term', monthlyRent: 200000, startsOn: '2026-09-01' }).tenantName);
 check('WH LT is gone (migration 0181)', !M.isRevenueModel('wh_long_term'));
 {
-  const c = M.draftColumns({ revenueModel: 'long_term', monthlyRent: 400000, managementPct: 0, tenantName: ' Dream Crafter ', ownerPct: 75, deposit: 1000, startsOn: '2026-09-01' });
+  const share = { revenueModel: 'management', contractCode: 'MANAGE 2', ownerPct: 80, managementPct: 20, agentPct: 0, startsOn: '2026-09-01' };
+  const fixedOwner = { ...M.legacyOptions('', 'management'), hasFixedOwnerAmount: true };
+  check('a type with a fixed owner amount needs the amount, whatever its code', !!invalidDraft(share, fixedOwner).ownerAmount && !invalidDraft(share).ownerAmount);
+  check('and stores it', draftColumns({ ...share, ownerAmount: 150000 }, fixedOwner).grr_amount === 150000 && draftColumns({ ...share, ownerAmount: 150000 }).grr_amount === 0);
+  const noAgent = { ...M.legacyOptions('', 'management'), hasAgentShare: false };
+  check('a type with no agent share refuses an agent %', !!invalidDraft({ ...share, ownerPct: 75, agentPct: 5 }, noAgent).agentPct && !invalidDraft(share, noAgent).agentPct);
+  const let_ = { revenueModel: 'long_term', monthlyRent: 400000, managementPct: 10, tenantName: 'Tenant', startsOn: '2026-09-01' };
+  check('a long-term type keeps its operator share only without the no operator share option',
+    draftColumns(let_).management_fee_pct === 0 && draftColumns(let_, { ...M.legacyOptions('', 'long_term'), hasNoOperatorShare: false }).management_fee_pct === 10);
+}
+{
+  const c = draftColumns({ revenueModel: 'long_term', monthlyRent: 400000, managementPct: 0, tenantName: ' Dream Crafter ', ownerPct: 75, deposit: 1000, startsOn: '2026-09-01' });
   check('a long-term let keeps the rent and the tenant, nothing else',
     c.revenue_model === 'long_term' && c.model === 'management' && c.grr_amount === 400000 && c.management_fee_pct === 0 && c.tenant_name === 'Dream Crafter' && c.deposit_amount === null && c.minimum_guarantee === 0);
 }
 {
-  const c = M.draftColumns({ revenueModel: 'grr', monthlyRent: 300000, ownerPct: 75, minimumGuarantee: 280000, startsOn: '2026-09-01' });
+  const c = draftColumns({ revenueModel: 'grr', monthlyRent: 300000, ownerPct: 75, minimumGuarantee: 280000, startsOn: '2026-09-01' });
   check('switching to GRR clears the share and the guarantee', c.model === 'grr' && c.minimum_guarantee === 0 && c.management_fee_pct === 0 && c.grr_amount === 300000);
-  const d = M.draftColumns({ revenueModel: 'management', ownerPct: 75, managementPct: 20, agentPct: 5, monthlyRent: 300000, startsOn: '2026-09-01' });
+  const d = draftColumns({ revenueModel: 'management', ownerPct: 75, managementPct: 20, agentPct: 5, monthlyRent: 300000, startsOn: '2026-09-01' });
   check('management stores the operator share 25% (agent 5%) and no rent', d.management_fee_pct === 25 && d.agent_fee_pct === 5 && d.grr_amount === 0);
 }
 
