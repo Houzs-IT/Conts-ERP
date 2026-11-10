@@ -109,6 +109,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!(await hasBuildingJobs(env))) return fail('VALIDATION', 'Jobs in the building are not switched on yet.', 422, { propertyId: 'Jobs in the building are not switched on yet.' });
     if (!(await one(env, 'SELECT id FROM properties WHERE id = ?', propertyId))) return fail('NOT_FOUND', 'That building does not exist.', 404, { propertyId: 'Pick a building that exists.' });
     if (b.ownerApprovalRequired || b.blocksUnit || b.sourceTaskId || b.items?.length) return fail('VALIDATION', 'A job in the building has no owner to approve it and no unit to block.', 422);
+    if (typeof b.detail !== 'string' || !b.detail.trim()) return fail('VALIDATION', 'Say where in the building.', 422, { detail: 'Say where in the building, e.g. lobby, lift B, level 12 corridor.' });
   } else {
     const found = await resolveUnit(env, b.unitId, b.propertyName);
     if (found === 'ambiguous') return fail('VALIDATION', 'More than one unit has that number. Say which building.', 422, { unitNumber: 'Pick the building too.' });
