@@ -240,7 +240,7 @@ export function Announcements() {
       toast.error("Select a notice with loaded read receipts first");
       return;
     }
-    const blob = new Blob([receiptsCsv(a, acks)], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob(['﻿', receiptsCsv(a, acks)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
