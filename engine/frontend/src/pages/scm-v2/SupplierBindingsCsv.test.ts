@@ -3,7 +3,7 @@
 // sen), leave KNOWN codes alone, and always carry a non-empty supplier_sku +
 // materialName (the batch-create endpoint requires them).
 import { describe, expect, test } from 'vitest';
-import { buildCreates, detectImportFormat } from './SupplierBindingsCsv';
+import { buildCreates, buildLongPatches, buildWidePatches, describeBindingPatch, detectImportFormat } from './SupplierBindingsCsv';
 import type { BindingRow } from '../../vendor/scm/lib/suppliers-queries';
 import type { MfgProductRow } from '../../vendor/scm/lib/mfg-products-queries';
 
@@ -60,5 +60,48 @@ describe('buildCreates — bulk import auto-create', () => {
   test('detectImportFormat picks long when price_rm present', () => {
     expect(detectImportFormat(LONG_HEADER)).toBe('long');
     expect(detectImportFormat(['internal_code', 'unit_price_rm'])).toBe('wide');
+  });
+});
+
+/* TODO port item 10: the price-list import says new / changed / unchanged, and a
+   blank cell never wipes a stored price. */
+describe('supplier price list import — changed, unchanged, blank keeps', () => {
+  const bound = (b: Partial<BindingRow>): BindingRow =>
+    ({ id: `b-${b.item_code}`, supplier_sku: 'S', unit_price_sen: 0, lead_time_days: 0, moq: 0, is_main_supplier: false, price_matrix: null, ...b }) as BindingRow;
+  const sofa = { code: 'SOFA-1', category: 'SOFA' } as MfgProductRow;
+
+  test('a matching row is unchanged; a new price is a change, old → new', () => {
+    const map = new Map([
+      ['A', bound({ item_code: 'A', unit_price_sen: 1000 })],
+      ['B', bound({ item_code: 'B', unit_price_sen: 2000 })],
+    ]);
+    const rows = [['A', '', 'other', '', '', '10.00', '', '', ''], ['B', '', 'other', '', '', '25.50', '', '', '']];
+    const { patches, matched } = buildLongPatches(rows, LONG_HEADER, map, new Map());
+    expect(matched).toBe(2);
+    expect([...patches.values()].map((p) => p.binding.item_code)).toEqual(['B']);
+    const b = [...patches.values()][0]!;
+    expect(describeBindingPatch(b.binding, b.patch)).toEqual(['Price: RM 20.00 → RM 25.50']);
+  });
+
+  test('a blank flat price keeps the stored price', () => {
+    const map = new Map([['A', bound({ item_code: 'A', unit_price_sen: 1000 })]]);
+    const { patches } = buildLongPatches([['A', '', 'other', '', '', '', '', '', '']], LONG_HEADER, map, new Map());
+    expect(patches.size).toBe(0);
+  });
+
+  test('a blank size / tier cell keeps that price; the same matrix is not a change', () => {
+    const matrix = { '30': { P1: 100000, P2: 120000 } };
+    const map = new Map([['SOFA-1', bound({ item_code: 'SOFA-1', price_matrix: matrix })]]);
+    const products = new Map([['SOFA-1', sofa]]);
+    const same = buildLongPatches([
+      ['SOFA-1', '', 'sofa', '30', 'P1', '1000.00', '', '', ''],
+      ['SOFA-1', '', 'sofa', '30', 'P2', '', '', '', ''],
+    ], LONG_HEADER, map, products);
+    expect(same.patches.size).toBe(0);
+    const wide = buildWidePatches([['SOFA-1', '', '']], ['internal_code', 'sofa_30_P1', 'sofa_30_P2'], map, products, ['30']);
+    expect(wide.patches.size).toBe(0);
+    expect(wide.matched).toBe(1);
+    const changed = buildLongPatches([['SOFA-1', '', 'sofa', '30', 'P2', '1300.00', '', '', '']], LONG_HEADER, map, products);
+    expect([...changed.patches.values()][0]!.patch.priceMatrix).toEqual({ '30': { P1: 100000, P2: 130000 } });
   });
 });

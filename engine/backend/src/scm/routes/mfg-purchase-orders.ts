@@ -16,6 +16,7 @@
 //   PATCH /mfg-purchase-orders/:id/reopen     — flip CANCELLED → SUBMITTED
 // ----------------------------------------------------------------------------
 
+import { isPoLineOverReceived } from '../lib/qty-cap';
 import { Hono } from 'hono';
 import { PO_STATUS_BUCKETS } from '../lib/po-status-buckets';
 import { HELD_OR_TERM, isDocumentHeld } from '../lib/document-hold';
@@ -3199,6 +3200,8 @@ mfgPurchaseOrders.patch('/:id/items/:itemId', async (c) => {
   }
 
   const { error } = await scopeToCompanyId(sb.from('purchase_order_items').update(coerceEmptyDates(updates)).eq('id', itemId), co.companyId);
+  // HC-0004: the DB floor (migration 0275) refused a cut below what a GRN, posted after the lock read above, received.
+  if (isPoLineOverReceived(error)) return c.json({ error: 'received_floor', message: 'A goods received note has just received this line. Its qty can no longer be cut below what was received. Refresh and check the order.', reason: error!.message }, 409);
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
 
   /* Diff `updates` — the EFFECTIVE values written — against the stored row. qty,
