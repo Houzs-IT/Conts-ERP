@@ -16,6 +16,7 @@ import { hasAttendance } from './attendance';
 import { FORGOTTEN_AFTER_HOURS } from './attendanceCalc';
 import { dueDepartures, markGuestLeft } from './guestLeft';
 import { runGuestReviews } from './guestReviews';
+import { passKeyUrgencyChanges, applyPassKeyUrgency } from './passKeyJobs';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -154,6 +155,16 @@ export async function repairBlockSweep(env: Env, o: RunOptions = {}): Promise<Jo
   return {
     job: 'repair-blocks', summary: released.length ? `${o.dryRun ? 'Would release' : 'Released'} ${plural(released.length, 'calendar block')} held for finished repair jobs.` : 'No finished repair job still holds the calendar.',
     items: released.map(r => `${r.action === 'cancelled' ? 'remove' : 'end today'}: block ${r.reservationId} (${r.from} to ${r.to}) for job ${r.issueId}`),
+  };
+}
+
+export async function passKeyUrgencySweep(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const changes = o.dryRun ? await passKeyUrgencyChanges(env) : await applyPassKeyUrgency(env);
+  const raised = changes.filter(change => change.urgency === 'urgent').length;
+  return {
+    job: 'pass-key-urgency',
+    summary: changes.length ? `${o.dryRun ? 'Would mark' : 'Marked'} ${plural(raised, 'pass key job')} Urgent and ${plural(changes.length - raised, 'pass key job')} Normal.` : 'Every pass key job already has the right urgency.',
+    items: changes.map(change => `${change.id}: ${change.urgency}`),
   };
 }
 
@@ -394,7 +405,7 @@ export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<Job
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
   [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox],
   [CRON.quarterHour]: [drainOutbox, repairBlockSweep, guestReviewSweep],
-  [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep],
+  [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep, passKeyUrgencySweep],
   [CRON.daily]: [dailyDigest],
 };
 

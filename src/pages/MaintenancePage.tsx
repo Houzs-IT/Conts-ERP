@@ -56,7 +56,7 @@ const APPROVAL: Record<string, { label: string; tone: AnyTone }> = {
   needed: { label: 'Needs owner approval', tone: 'warning' }, approved: { label: 'Approved', tone: 'success' }, not_needed: { label: 'Not needed', tone: 'neutral' },
 };
 const typeOf = (i: Issue): JobType => i.jobType ?? (i.urgency === 'urgent' ? 'urgent' : 'normal');
-const isOffDayPassKey = (i: Issue): boolean => typeOf(i) === 'pass_key' && !!i.dueOn && i.dueOn !== mytDay(0);
+const isOffDayPassKey = (i: Issue): boolean => typeOf(i) === 'pass_key' && !!i.dueOn && (i.dueOn < mytDay(0) || i.dueOn > mytDay(1));
 /** Approved, but the parts it waits for have not come: still hidden from the technicians. */
 const needsSupport = (i: Issue): boolean => i.state !== 'resolved' && !i.endedAt && !!i.supportRequestedAt;
 const waitingParts = (i: Issue) => i.state !== 'resolved' && i.approvalStatus === 'approved' && !!i.needsParts && !i.partsArrivedAt;
@@ -174,7 +174,7 @@ export default function MaintenancePage() {
         above={tab === 'history' && rows.length > 0 && money ? (
           <div className="text-copy text-muted-ink py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
         ) : undefined}
-        empty={{ title: tab === 'pass_key' ? 'No pass key handovers today.' : tab === 'support' ? 'No technician is waiting for support.' : tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
+        empty={{ title: tab === 'pass_key' ? 'No pass key handovers today or tomorrow.' : tab === 'support' ? 'No technician is waiting for support.' : tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
           action: tab === 'open' ? { label: 'Add maintenance job', onClick: () => setCreating(true) } : undefined }} />
     </>
   );

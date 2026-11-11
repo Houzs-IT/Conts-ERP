@@ -50,6 +50,9 @@ r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pas
 check('visibility: a Pass key job for a past check-in day is not in the technician app', r.status === 201 && !(await listed(r.json.id)), r.text);
 r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key today ${tag}`, category: 'other', jobType: 'pass_key', dueOn: mytToday }, 'operations_staff');
 check('visibility: a Pass key job for today is offered to technicians', r.status === 201 && await listed(r.json.id), r.text);
+const mytTomorrow = new Date(Date.now() + 32 * 3600e3).toISOString().slice(0, 10);
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key tomorrow ${tag}`, category: 'other', jobType: 'pass_key', dueOn: mytTomorrow }, 'operations_staff');
+check('visibility: a Pass key job for tomorrow is offered to technicians', r.status === 201 && await listed(r.json.id), r.text);
 
 // The rules hold an aircon job (always) until the owner approves AND its parts arrive.
 r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Aircon ${tag}`, category: 'aircon', jobType: 'normal', needsParts: true, dueOn: '2030-01-05', assigneeName: HAFIZ }, 'operations_manager');

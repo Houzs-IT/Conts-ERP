@@ -157,8 +157,11 @@ export const fieldVisibleSql = (cols: boolean) => cols
   ? `NOT (m.owner_approval_required = 1 AND m.charge_to = 'owner' AND (m.owner_approved_at IS NULL OR (m.needs_parts = 1 AND m.parts_arrived_at IS NULL)))`
   : `NOT (m.owner_approval_required = 1 AND m.charge_to = 'owner' AND m.owner_approved_at IS NULL)`;
 
-export const passKeyTodaySql = (cols: boolean): string => cols
-  ? `(m.job_type IS DISTINCT FROM 'pass_key' OR m.due_on IS NULL OR m.due_on = to_char(now() AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD'))`
+export const MYT_DAY = (offsetDays: number): string =>
+  `to_char((now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date + ${Math.trunc(offsetDays)}, 'YYYY-MM-DD')`;
+
+export const passKeyShownSql = (cols: boolean): string => cols
+  ? `(m.job_type IS DISTINCT FROM 'pass_key' OR m.due_on IS NULL OR m.due_on BETWEEN ${MYT_DAY(0)} AND ${MYT_DAY(1)})`
   : 'TRUE';
 
 /** Field order: Urgent, Pass key, then Normal by due date (the day reported when none is set), oldest first. */
