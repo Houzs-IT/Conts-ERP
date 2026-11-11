@@ -25,7 +25,7 @@ export function StayRange({ from, to, onChange, label = 'Stay', required, min, h
   const bad = n !== null && n <= 0;
   const message = error || help;
   return (
-    <div className="flex flex-col gap-1.5 min-w-0">
+    <div className="ds-stay flex flex-col gap-1.5 min-w-0">
       {label && <label htmlFor={`${id}-from`} className="ds-label">{label}{required && <span className="ds-req" aria-hidden>*</span>}</label>}
       <div className="ds-ctl ds-drange" style={error || bad ? { borderColor: 'var(--color-critical-line)' } : undefined}>
         <input id={`${id}-from`} type="date" aria-label="Check-in" value={from} min={min} required={required} disabled={disabled}

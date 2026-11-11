@@ -86,11 +86,22 @@
 }
 .ds-ctl:focus-within { border-color: var(--color-border-focus); box-shadow: var(--focus-ring); }
 .ds-ctl input { flex: 1; min-width: 0; border: 0 !important; background: transparent !important; font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--color-ink); padding: 8px 10px; outline: none !important; box-shadow: none !important; }
-.ds-drange { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; }
+/* The stay field is a size container, so the control can lay itself out by its own width, not the window's. */
+.ds-stay { container-type: inline-size; }
+/* Each date is as wide as a full dd/mm/yyyy plus the picker icon (a date input's own default width is fixed and
+   too narrow at this size, so it is set from the text: ten tabular characters, the icon, the padding). The night count
+   takes what is left. The trailing 1fr column keeps the arrow from stretching when the count moves to its own line. */
+.ds-drange { display: grid; grid-template-columns: max-content auto max-content minmax(0, 1fr); }
+.ds-drange input { flex: none; box-sizing: border-box; width: calc(7.6em + 20px); min-width: calc(7.6em + 20px); }
 .ds-drange .ds-arr { color: var(--color-muted-ink); display: flex; }
 .ds-drange .ds-nights {
   padding: 0 12px; font-size: 12px; font-weight: 600; color: var(--color-gold-ink); white-space: nowrap;
-  border-left: 1px solid var(--color-line-soft); align-self: stretch; display: flex; align-items: center;
+  border-left: 1px solid var(--color-line-soft); align-self: stretch; display: flex; align-items: center; justify-content: flex-end;
+}
+/* Under 320px of field width the night count wraps onto its own line under the dates, as on a phone. */
+@container (max-width: 320px) {
+  .ds-drange .ds-nights { grid-column: 1 / -1; justify-content: flex-start; border-left: 0; border-top: 1px solid var(--color-line-soft); padding: 6px 12px; }
+  .ds-drange .ds-nights:empty { display: none; }
 }
 .ds-drange .ds-nights.is-bad { color: var(--color-critical-fg); }
 
@@ -143,7 +154,6 @@
 
 /* Phone: the stay's night count drops under the two dates, so both dates show in full. */
 @media (max-width: 640px) {
-  .ds-drange { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
-  .ds-drange .ds-nights { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--color-line-soft); padding: 6px 12px; }
+  .ds-drange .ds-nights { grid-column: 1 / -1; justify-content: flex-start; border-left: 0; border-top: 1px solid var(--color-line-soft); padding: 6px 12px; }
   .ds-drange .ds-nights:empty { display: none; }
 }
