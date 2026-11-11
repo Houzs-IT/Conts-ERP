@@ -5,7 +5,7 @@ import { areaKeysOf, countGrants, resolveRoleLevels } from '../../lib/roleGrid';
 import type { AccessChart, Department, Position } from '../../lib/types';
 import { GroupToggle } from './GroupToggle';
 import {
-  COMPANY_HEADING, COMPANY_LABEL, DEPARTMENT_HEADING, DEPARTMENT_LABEL, LIST_ROW, SELECTED_ROW, TAG, deskCompaniesOf, defaultRoleName, headCountWithoutPosition, isSameRole, useToggleSet, visibleCategoriesOf, type RoleTarget,
+  COMPANY_HEADING, COMPANY_LABEL, DEPARTMENT_HEADING, DEPARTMENT_LABEL, LIST_ROW, NO_POSITION_LABEL, SELECTED_ROW, TAG, deskCompaniesOf, hasPeopleWithoutPosition, headCountWithoutPosition, isSameRole, useToggleSet, visibleCategoriesOf, type RoleTarget,
 } from './shared';
 
 export interface RolesViewProps {
@@ -58,24 +58,29 @@ function RoleRow({ name, isLocked, isSelected, people, summary, onOpen }: RoleRo
   );
 }
 
+function NoPositionsYet() {
+  return <p className={cx(LIST_ROW, 'm-0 bg-card text-meta text-muted-ink')}>No positions yet. Add one under Setup.</p>;
+}
+
 function DepartmentRoles({ chart, department, selectedRole, isOpen, onToggle, onOpen }: DepartmentRolesProps) {
   const isManagement = department.kind === 'management';
   const rowFor = (position: Position | null) => {
     const target = { departmentId: department.id, positionId: position?.id ?? null };
     return (
-      <RoleRow key={position?.id ?? 'staff'} name={position?.name ?? defaultRoleName(department)} isLocked={false}
+      <RoleRow key={position?.id ?? 'no-position'} name={position?.name ?? NO_POSITION_LABEL} isLocked={false}
         isSelected={isSameRole(selectedRole, target)}
         people={position ? position.headCount : headCountWithoutPosition(department)}
         summary={summaryFor(chart, department, position)} onOpen={() => onOpen(target)} />
     );
   };
+  const positionsShown: (Position | null)[] = hasPeopleWithoutPosition(department) ? [null, ...department.positions] : department.positions;
   return (
     <div>
-      <GroupToggle label={department.name} note={plural(isManagement ? 1 : department.positions.length + 1, 'role')}
+      <GroupToggle label={department.name} note={plural(isManagement ? 1 : positionsShown.length, 'role')}
         isOpen={isOpen} onToggle={onToggle} className={DEPARTMENT_HEADING} labelClassName={DEPARTMENT_LABEL} />
       {isOpen && (isManagement
         ? <RoleRow name="Management" isLocked isSelected={false} people={department.headCount} summary="Full on everything. Cannot be changed." onOpen={() => undefined} />
-        : [rowFor(null), ...department.positions.map(rowFor)])}
+        : positionsShown.length > 0 ? positionsShown.map(rowFor) : <NoPositionsYet />)}
     </div>
   );
 }

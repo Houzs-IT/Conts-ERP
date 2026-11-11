@@ -6,7 +6,7 @@ import { plural } from '../../lib/format';
 import type { AccessChart, Department, PermissionPerson } from '../../lib/types';
 import { GroupToggle } from './GroupToggle';
 import {
-  COMPANY_HEADING, COMPANY_LABEL, DEPARTMENT_HEADING, DEPARTMENT_LABEL, LIST_ROW, SELECTED_ROW, TAG, deskCompaniesOf, defaultRoleName, useToggleSet,
+  COMPANY_HEADING, COMPANY_LABEL, DEPARTMENT_HEADING, DEPARTMENT_LABEL, LIST_ROW, NO_POSITION_LABEL, SELECTED_ROW, TAG, deskCompaniesOf, useToggleSet,
   type ToggleSet,
 } from './shared';
 
@@ -28,7 +28,7 @@ const OFF_TAG_STYLE = { color: 'var(--color-text-muted)', borderColor: 'var(--co
 
 function roleNameOf(person: PermissionPerson, department: Department): string {
   if (department.kind === 'management') return 'Management';
-  return department.positions.find(position => position.id === person.positionId)?.name ?? defaultRoleName(department);
+  return department.positions.find(position => position.id === person.positionId)?.name ?? NO_POSITION_LABEL;
 }
 
 function PersonRow({ person, roleName, isSelected, onOpen }: PersonRowProps) {
