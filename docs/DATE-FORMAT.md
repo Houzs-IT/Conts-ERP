@@ -12,7 +12,13 @@ with each menu move (`conts:navigate`, `dayFirst`). Nothing else changes: stored
 CSV exports and file stamps stay ISO. Two Dream Crafter places with no side switch are day first too (YH, 11 Nov
 2026, "dd-mm-yyyy for both"): the Projects print sheet (`engine/backend/src/routes/projects_print.ts`, through
 `withDayFirst()`) and the Renovation Beta screens, whose "10 Nov 2026" month names now go through `fmtDate` /
-`fmtDayMonth`. Other server text and PDFs do not know a side and stay year-first.
+`fmtDayMonth`. The engine server's other Dream Crafter text is day first too (YH, 11 Nov 2026, "for dreamcrafter
+... all dd-mm-yyyy"): the service-case print and its "Printed" stamp (`assr_print.ts`), service-case notices
+(`services/assrNotify.ts`), the purchase order print and email (`scm/lib/po.ts`, `scm/lib/po-email.ts`) and the
+sales order date-filter label (`scm/lib/my-time.ts`). The Property OS server's text (`functions/_lib/format.ts`:
+notices, the daily digest, the letterhead on owner statements, agreements and guest invoices) serves only The Conts
+side, so it stays year-first. Ledger references (`engine/backend/src/acc/journal-refs.ts`) serve both sides' Finance
+and stay year-first.
 
 Single source of truth on the screens: [`src/lib/format.ts`](../src/lib/format.ts). On the server:
 [`functions/_lib/dates.ts`](../functions/_lib/dates.ts). The engine keeps its own copy of the same rule

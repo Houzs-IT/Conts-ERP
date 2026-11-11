@@ -25,7 +25,7 @@
 import type { Env } from "../types";
 import { uplineUserIds } from "./orgScope";
 import { postPersonalNotice } from "./personalNotice";
-import { fmtDateTime } from "../scm/shared/format";
+import { fmtDateTime, withDayFirst } from "../scm/shared/format";
 
 /** users.id rows whose display name matches `name` (lowercased, trimmed). */
 async function resolveUserIdsByName(env: Env, name: string): Promise<number[]> {
@@ -63,7 +63,8 @@ async function resolveUserNamesByIds(env: Env, ids: number[]): Promise<string[]>
 // The notice is posted from a UTC Worker; fmtDateTime stamps the reassignment
 // moment in Malaysia time (UTC+8, no DST) so the body reads at the wall-clock
 // the office saw. This used to be a fifth hand-rolled copy of that shift.
-const fmtMytDateTime = fmtDateTime;
+// Service cases are Dream Crafter's, so day first (YH, 11 Nov 2026).
+const fmtMytDateTime = (d: Date) => withDayFirst(() => fmtDateTime(d));
 
 export async function notifyServiceCaseResponsible(
   env: Env,

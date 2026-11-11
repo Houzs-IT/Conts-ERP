@@ -2,7 +2,7 @@
 // Database-touching validation (lane state, !po_issued) lives in the route handler
 // since it requires Supabase client. This file is for pure logic + tests.
 
-import { fmtDate } from '../shared/format';
+import { fmtDate, withDayFirst } from '../shared/format';
 
 export interface PoLineItem {
   order_id: string;
@@ -60,7 +60,7 @@ export interface PoPrintInput {
 
 export function renderPoPrintHtml(input: PoPrintInput): string {
   const { po, supplier, lines, coordinator, sourceOrderIds, showroom } = input;
-  const issuedDate = fmtDate(po.created_at);
+  const issuedDate = withDayFirst(() => fmtDate(po.created_at)); // Dream Crafter's PO: day first (YH, 11 Nov 2026)
 
   const linesHtml = lines.map((l) => `
     <tr>
