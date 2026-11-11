@@ -10,9 +10,9 @@ import type { AirbnbTxn } from './airbnbCsv';
 export type Rule = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8' | 'R9' | 'R10' | 'R11' | 'R12' | 'R13' | 'R99';
 export const RULES: Record<Rule, string> = {
   R1: 'Equal',
-  R2: 'Extra charge inside the reservation',
+  R2: 'Additional charge inside the reservation',
   R3: 'Cancelled, fully refunded',
-  R4: 'Money won back',
+  R4: 'Recovered from Airbnb',
   R5: 'Equal after the adjustment',
   R6: 'Long stay, not fully paid yet',
   R7: 'Extended, paid in parts',
@@ -29,9 +29,9 @@ export const RULE_ORDER = Object.keys(RULES) as Rule[];
 
 /** Money that is the company's, never an owner's (chew: extras "归我们"; won back and cancelled-but-paid "default
  *  归公司"), kept apart by kind ("要分开记"). */
-export type IncomeKind = 'extra_charge' | 'won_back' | 'cancelled_paid' | 'aircover';
+export type IncomeKind = 'additional_charge' | 'recovered' | 'cancelled_paid' | 'aircover';
 export const INCOME_KINDS: Record<IncomeKind, string> = {
-  extra_charge: 'Extra charge', won_back: 'Money won back', cancelled_paid: 'Cancelled but paid', aircover: 'AirCover reimbursement',
+  additional_charge: 'Additional charge', recovered: 'Recovered from Airbnb', cancelled_paid: 'Cancelled but paid', aircover: 'AirCover',
 };
 
 /** What confirming would do to the booking: nothing, set its amount, mark it cancelled, look by hand, or wait for a
@@ -45,8 +45,9 @@ export const near = (a: number, b: number) => Math.abs(a - b) < 5;
 
 export type ReconTxn = Pick<AirbnbTxn, 'txnDate' | 'type' | 'code' | 'startDate' | 'endDate' | 'nights' | 'guest' | 'listing' | 'details' | 'amount' | 'paidOut'>
   & Partial<Pick<AirbnbTxn, 'arrivingBy' | 'referenceCode'>> & { id: string };
-export interface Stay { id: string; code: string; unitId: string; unit: string; guest: string | null; checkIn: string; checkOut: string; state: string; net: number }
-export interface Income { kind: IncomeKind; amount: number; date: string; txnIds: string[]; note: string }
+/** `gross` and `fee` (the guest total and Airbnb's fee, sen) are what confirming changes; the rules read `net` only. */
+export interface Stay { id: string; code: string; unitId: string; unit: string; guest: string | null; checkIn: string; checkOut: string; state: string; net: number; gross?: number; fee?: number }
+export interface Income { kind: IncomeKind; amount: number; date: string; txnIds: string[]; note: string; details: string | null }
 export interface Payment { id: string; date: string; amount: number; inMonth: boolean }
 
 export interface Line {
@@ -54,7 +55,8 @@ export interface Line {
   /** R7: likely when the system holds the first payment, else look closer. */
   sure: 'likely' | 'look' | null;
   action: Action;
-  /** The booking's net after the change, for set_amount (and 0 for cancel). */
+  /** The booking's net after the change, for set_amount (and 0 for cancel). On a line to check whose reservation
+   *  Airbnb paid in these files, what Airbnb kept: finance may set the reservation to it when confirming. */
   newAmount: number | null;
   suggestion: string;
   income: Income[];
@@ -99,16 +101,16 @@ export function classify(code: string, rows: ReconTxn[], stays: Stay[], ctx: { m
   const nights = facts?.nights ?? null;
   const monthStart = `${ctx.month}-01`;
 
-  const incomeOf = (t: ReconTxn, kind: IncomeKind, note: string): Income => ({ kind, amount: t.amount, date: t.txnDate, txnIds: [t.id], note });
+  const incomeOf = (t: ReconTxn, kind: IncomeKind, note: string): Income => ({ kind, amount: t.amount, date: t.txnDate, txnIds: [t.id], note, details: t.details });
   const airIncome = air.map(t => incomeOf(t, 'aircover', 'AirCover damage reimbursement'));
-  const extraIncome = (except?: ReconTxn) => extras.filter(t => t !== except).map(t => incomeOf(t, 'extra_charge', 'Resolution payout'));
+  const extraIncome = (except?: ReconTxn) => extras.filter(t => t !== except).map(t => incomeOf(t, 'additional_charge', 'Resolution payout'));
   const units = active.length > 1 ? ` It covers ${active.length} units; split the amount between them.` : '';
 
   const line = (rule: Rule, action: Action, suggestion: string, o: { newAmount?: number | null; income?: Income[]; sure?: Line['sure'] } = {}): Line => {
     // A code is compared whole, but its company income belongs to the month each line is dated in.
     const income = (o.income ?? [...airIncome, ...extraIncome()]).filter(i => i.date.slice(0, 7) === ctx.month);
     const also = income.length && !suggestion.includes('company income')
-      ? ` Also record ${rmText(income.reduce((n, i) => n + i.amount, 0))} as company income (${[...new Set(income.map(i => INCOME_KINDS[i.kind].toLowerCase()))].join(', ')}).`
+      ? ` Also record ${rmText(income.reduce((n, i) => n + i.amount, 0))} as company income (${[...new Set(income.map(i => INCOME_KINDS[i.kind]))].join(', ')}).`
       : '';
     return {
       code, rule, sure: o.sure ?? null, action, newAmount: o.newAmount ?? null, suggestion: suggestion + also, income,
@@ -154,7 +156,7 @@ export function classify(code: string, rows: ReconTxn[], stays: Stay[], ctx: { m
     if (kept > 0) {
       const after = adjustment < 0 ? `, after ${rmText(-adjustment)} refunded` : '';
       return line('R10', 'none', `Cancelled in the system but Airbnb paid ${rmText(kept)}${after}. Record it as company income; confirm each one.`,
-        { income: [{ kind: 'cancelled_paid', amount: kept, date: res[res.length - 1].txnDate, txnIds: [...res, ...adjRows, ...resAdj].map(t => t.id), note: 'Cancelled but paid' }, ...airIncome, ...extraIncome()] });
+        { income: [{ kind: 'cancelled_paid', amount: kept, date: res[res.length - 1].txnDate, txnIds: [...res, ...adjRows, ...resAdj].map(t => t.id), note: 'Cancelled but paid', details: null }, ...airIncome, ...extraIncome()] });
     }
     return line('R99', 'check', `Cancelled in the system, and Airbnb took back more than it paid (${rmText(-kept)}). Check by hand.`);
   }
@@ -169,7 +171,7 @@ export function classify(code: string, rows: ReconTxn[], stays: Stay[], ctx: { m
   const inside = parts.find(p => near(sys, kept + sum(p)));
   if (inside) {
     const x = sum(inside);
-    return line('R2', 'set_amount', `The system’s ${rmText(sys)} includes ${rmText(x)} that Airbnb paid apart (extra charge). Set the reservation to ${rmText(kept)} and record ${rmText(x)} as company income.${units}`,
+    return line('R2', 'set_amount', `The system’s ${rmText(sys)} includes ${rmText(x)} that Airbnb paid apart (additional charge). Set the reservation to ${rmText(kept)} and record ${rmText(x)} as company income.${units}`,
       { newAmount: kept });
   }
 
@@ -180,8 +182,8 @@ export function classify(code: string, rows: ReconTxn[], stays: Stay[], ctx: { m
   const totalDeducted = -sum(deductions);
   const won = deductions.length ? extras.find(p => deductions.some(d => near(-d.amount, p.amount)) || near(totalDeducted, p.amount)) : undefined;
   if (won) {
-    return line('R4', 'set_amount', `Airbnb took back ${rmText(totalDeducted)} and paid ${rmText(won.amount)} back through the Resolution Centre. Set the reservation to ${rmText(kept)} (the owner’s) and record ${rmText(won.amount)} as company income (money won back). Confirm by hand.${units}`,
-      { newAmount: kept, income: [...airIncome, incomeOf(won, 'won_back', 'Money won back'), ...extraIncome(won)] });
+    return line('R4', 'set_amount', `Airbnb took back ${rmText(totalDeducted)} and paid ${rmText(won.amount)} back through the Resolution Centre. Set the reservation to ${rmText(kept)} (the owner’s) and record ${rmText(won.amount)} as company income (recovered from Airbnb). Confirm by hand.${units}`,
+      { newAmount: kept, income: [...airIncome, incomeOf(won, 'recovered', 'Recovered from Airbnb'), ...extraIncome(won)] });
   }
 
   if (adjustment !== 0 && near(sys, kept)) return line('R5', 'none', `Equal after Airbnb’s adjustment of ${rmText(-adjustment)}. Nothing to change; confirm only.`);
@@ -206,10 +208,36 @@ export function classify(code: string, rows: ReconTxn[], stays: Stay[], ctx: { m
       { newAmount: reservation });
   }
 
+  // chew, 10 Nov 2026, on a refund after the payment: "每笔自己看". Confirming can set the reservation to what Airbnb
+  // kept, or leave it.
+  const airbnbFigure = { newAmount: kept > 0 ? kept : null };
   if (adjustment < 0 && near(sys, reservation)) {
-    return line('R99', 'check', `Airbnb paid ${rmText(reservation)}, the amount in the system, then took back ${rmText(-adjustment)} (refund to the guest). Decide whether the reservation should be ${rmText(kept)}.`);
+    return line('R99', 'check', `Airbnb paid ${rmText(reservation)}, the amount in the system, then took back ${rmText(-adjustment)} (refund to the guest). Decide whether the reservation should be ${rmText(kept)}.`, airbnbFigure);
   }
-  return line('R99', 'check', `The system has ${rmText(sys)}; Airbnb paid ${rmText(reservation)}${adjustment ? ` and took back ${rmText(-adjustment)}` : ''}. Check by hand.`);
+  return line('R99', 'check', `The system has ${rmText(sys)}; Airbnb paid ${rmText(reservation)}${adjustment ? ` and took back ${rmText(-adjustment)}` : ''}. Check by hand.`, airbnbFigure);
+}
+
+/** The income type a company income line starts with (step 2; chew 11 Nov 2026). Money the rules name themselves —
+ *  recovered from Airbnb, cancelled but paid — takes that type. Other money takes the first active type or sub-type
+ *  whose words (comma-separated, any case) are in Airbnb's Details, else the active type of its system key. An inactive
+ *  type, or none, leaves it for finance to choose. A sub-type gives its parent as the type. */
+export interface IncomeTypeRef { id: string; parentId: string | null; systemKey: string | null; matchWords: string | null; active: boolean; sortOrder: number }
+export function proposeIncomeType(types: readonly IncomeTypeRef[], systemKey: IncomeKind, details: string | null): { typeId: string | null; subTypeId: string | null } {
+  const byId = new Map(types.map(t => [t.id, t]));
+  const usable = (t: IncomeTypeRef) => t.active && (!t.parentId || byId.get(t.parentId)?.active === true);
+  const of = (t: IncomeTypeRef) => (t.parentId ? { typeId: t.parentId, subTypeId: t.id } : { typeId: t.id, subTypeId: null });
+  const system = () => {
+    const t = types.find(x => x.systemKey === systemKey && !x.parentId);
+    return t && t.active ? { typeId: t.id, subTypeId: null } : { typeId: null, subTypeId: null };
+  };
+  if (systemKey === 'recovered' || systemKey === 'cancelled_paid') return system();
+  const text = (details ?? '').toLowerCase();
+  if (text) {
+    const hit = [...types].sort((a, b) => a.sortOrder - b.sortOrder)
+      .find(t => usable(t) && (t.matchWords ?? '').split(',').map(w => w.trim().toLowerCase()).some(w => w && text.includes(w)));
+    if (hit) return of(hit);
+  }
+  return system();
 }
 
 /** R12: Airbnb stays checking in during the month that no uploaded file has a booking payment for. */
@@ -276,7 +304,7 @@ export function reconcileMonth(month: string, txns: ReconTxn[], stays: Stay[], t
     };
   }).filter(r => r.count > 0);
   const coded = monthRows.filter(t => t.code);
-  const income = { extra_charge: 0, won_back: 0, cancelled_paid: 0, aircover: 0 } as Record<IncomeKind, number>;
+  const income = { additional_charge: 0, recovered: 0, cancelled_paid: 0, aircover: 0 } as Record<IncomeKind, number>;
   for (const l of lines) for (const i of l.income) income[i.kind] += i.amount;
   return {
     lines, summary,
