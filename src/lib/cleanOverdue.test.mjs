@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { nextCheckIn, cleanDeadline, isCleanOverdue, daysPast } = await import('./cleanOverdue.ts');
+const { nextCheckIn, cleanDeadline, isCleanOverdue, daysPast, openToTake } = await import('./cleanOverdue.ts');
 
 const at = iso => Date.parse(iso);
 
@@ -64,4 +64,16 @@ test('days past', () => {
   assert.equal(daysPast('2026-10-31', at('2026-11-02T00:30:00+08:00')), 2);
   assert.equal(daysPast('2026-11-02', at('2026-11-02T23:30:00+08:00')), 0);
   assert.equal(daysPast('2026-11-05', at('2026-11-02T10:00:00+08:00')), 0);
+});
+
+test('an overdue clean is not offered to take on /portal/today; one not yet due is', () => {
+  const now = at('2026-11-11T15:00:00+08:00');
+  const jobs = [
+    { id: 'yesterday', day: '2026-11-10', next: null, done: false },
+    { id: 'past-check-in', day: '2026-11-11', next: { checkInTime: '14:00' }, done: false },
+    { id: 'later-check-in', day: '2026-11-11', next: { checkInTime: '16:00' }, done: false },
+    { id: 'no-check-in', day: '2026-11-11', next: null, done: false },
+    { id: 'tomorrow', day: '2026-11-12', next: null, done: false },
+  ];
+  assert.deepEqual(openToTake(jobs, now).map(j => j.id), ['later-check-in', 'no-check-in', 'tomorrow']);
 });

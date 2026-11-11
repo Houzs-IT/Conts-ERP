@@ -8,7 +8,7 @@ import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, mytToday, isDay, standardItems } from '
 import { hasCleanPrices } from '../../_lib/cleaningPrices';
 import { AFTER_FILE_SQL } from '../../_lib/media';
 import { standardCheckIn } from '../../_lib/cleanOverdue';
-import { nextCheckIn } from '../../../src/lib/cleanOverdue';
+import { nextCheckIn, openToTake } from '../../../src/lib/cleanOverdue';
 import { cleaningCheckoutSql } from '../../_lib/lateCheckout';
 
 const LEFTOVER_DAYS = 14;
@@ -105,5 +105,5 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       } };
   });
   const scoped = (wanted: JobScope) => jobs.filter(({ scope }) => scope === wanted).map(({ job }) => job);
-  return json({ generatedAt: nowIso(), date, rows: scoped('mine'), open: scoped('open'), team: scoped('team'), mayPick });
+  return json({ generatedAt: nowIso(), date, rows: scoped('mine'), open: openToTake(scoped('open'), Date.now()), team: scoped('team'), mayPick });
 };

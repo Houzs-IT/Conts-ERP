@@ -60,6 +60,12 @@ export function isCleanOverdue({ day, checkIn, done }: CleanOverdueInput, now: n
   return Number.isFinite(at) && now >= at;
 }
 
+/** The free cleans a cleaner may still take: an overdue one is not offered (feedback list, 11 Nov 2026). Same rule as the
+ *  portal's Overdue section: the next guest's check-in on the job's day, else the end of that day. */
+export function openToTake<T extends { day: string; next?: { checkInTime: string } | null; done: boolean }>(jobs: T[], now: number): T[] {
+  return jobs.filter(j => !isCleanOverdue({ day: j.day, checkIn: j.next?.checkInTime ?? null, done: j.done }, now));
+}
+
 /** Whole days between the job's day and today (Malaysia), 0 for today or later: "Overdue · 2 days". */
 export function daysPast(day: string, now: number): number {
   if (!DAY.test(day)) return 0;
