@@ -121,6 +121,16 @@ export interface ScmAreaGuardOpts {
   writeBypass?: (c: Context<{ Bindings: Env; Variables: Variables }>) => boolean;
 }
 
+/** The area gate for a handler that reaches another area's documents directly, so that area's middleware never ran. Same
+ *  answer as the guard's own steps: wildcard passes, no L2 config falls back to the umbrella, otherwise the level decides. */
+export function scmAreaAllows(user: unknown, area: string, level: AccessLevel = "edit"): boolean {
+  const u = user as Partial<AuthUser> | undefined;
+  if (!u) return false;
+  if (u.permissions_set?.has("*") || u.permissions?.includes("*")) return true;
+  if (!u.scm_l2_configured) return true;
+  return meetsLevel((u.page_access?.[area] ?? "none") as AccessLevel, level);
+}
+
 export function scmAreaGuard(area: string, opts?: ScmAreaGuardOpts): MiddlewareHandler<{
   Bindings: Env;
   Variables: Variables;

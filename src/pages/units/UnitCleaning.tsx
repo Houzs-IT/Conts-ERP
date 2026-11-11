@@ -1,88 +1,98 @@
-import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { StaleBanner } from '../../components/DataState';
-import { Button } from '../../components/Button';
-import { MoneyInput } from '../../components/inputs';
 import { Skeleton } from '../../components/States';
-import { useToast } from '../../components/Toast';
-import { api, notifyFailure } from '../../lib/api';
-import { rm } from '../../lib/format';
+import { cx } from '../../lib/design-tokens';
+import { amount, plural } from '../../lib/format';
 
-/** The unit's own cleaning prices, on its Details tab (staff sheet UNIT, 27 Oct 2026). The same figures as Cleaning,
- *  Prices, Per unit (GET and PUT /api/housekeeping/unit-prices): per clean type, what the owner is charged and what the
- *  cleaner is paid. A box left empty uses the list price, shown in grey. Amounts are sen. */
+/** The unit's cleaning prices, on its Details tab: for each clean type the old price (the unit's own cleaning price
+ *  from before the price table) and what applies now, what the owner is charged, what a guest is charged and what the
+ *  cleaner is paid, and where that comes from (GET /api/housekeeping/unit-prices?unitId=). Read only (chew, 10 Nov
+ *  2026: prices are entered under Cleaning, Prices, not here). Amounts are sen. */
 
-export interface UnitPrice { internalCost: number | null; externalCharge: number | null; source: 'unit' | 'table' | null; override: { internalCost: number | null; externalCharge: number | null } | null }
+export interface UnitPrice {
+  internalCost: number | null; externalCharge: number | null; guestCharge?: number | null;
+  /** The unit's old cleaning price (unit costs); a clean still falls back to it when nothing else is set. */
+  oldCharge?: number | null;
+  source: 'unit' | 'table' | null;
+  override: { internalCost: number | null; externalCharge: number | null; guestCharge?: number | null } | null;
+}
 /** A unit's own price in force or still to come (management only). Both figures empty: the list price from that day. */
 export interface UnitPriceChange { itemId: string; name: string; domain: string; cleanKind: string | null; effectiveFrom: string; ownerPrice: number | null; internalCost: number | null; scheduled: boolean }
-export interface UnitPriceData { ready: boolean; rows: Array<{ unitId: string; prices: Record<string, UnitPrice> }>; mayEdit: boolean; dated?: boolean; changes?: UnitPriceChange[] }
+export interface UnitPriceData {
+  ready: boolean; rows: Array<{ unitId: string; bedCount?: number; prices: Record<string, UnitPrice> }>; mayEdit: boolean; dated?: boolean;
+  byBed?: boolean; bedPricing?: 'size' | 'count'; guestPrices?: boolean; changes?: UnitPriceChange[];
+}
 
 export const CLEAN_KINDS = [['turnover', 'Basic clean'], ['deep_clean', 'Deep clean']] as const;
 
-/** Basic or deep clean with no owner price at all (not its own, not the list's): cleaning jobs on this unit show "Price not set". */
+/** What the owner is charged for one clean now: the unit's own or the table's price, else the old price it falls back to. */
+const ownerNow = (p: UnitPrice | undefined): number | null => p?.externalCharge ?? p?.oldCharge ?? null;
+
+/** Basic or deep clean with no owner price at all (own, table or old): cleaning jobs on this unit show "Price not set". */
 export const missingCleanPrice = (d: UnitPriceData | null): boolean => {
   const prices = d?.ready ? d.rows[0]?.prices : undefined;
-  return !!prices && ['turnover', 'deep_clean'].some(k => prices[k]?.externalCharge == null);
+  return !!prices && ['turnover', 'deep_clean'].some(k => ownerNow(prices[k]) == null);
 };
 
-type Draft = Record<string, { charge?: number | null; pay?: number | null }>;
+const CELL = 'py-2 px-2 [border-top:1px_solid_var(--color-line-soft)]';
+const GROUP = '[border-left:1px_solid_var(--color-line)]';
+const HEAD = 'pb-1.5 px-2 text-meta font-semibold text-muted-ink';
+const figure = (v: number | null | undefined) => (v == null ? <span className="text-muted-ink">—</span> : amount(v));
 
-export function UnitCleaning({ unitId, data, loading, error, reload, canEdit }: {
+export function UnitCleaning({ data, loading, error, reload }: {
   unitId: string; data: UnitPriceData | null; loading: boolean; error: string | null; reload: () => void; canEdit: boolean;
 }) {
-  const toast = useToast();
-  const [draft, setDraft] = useState<Draft>({});
-  const [busy, setBusy] = useState(false);
   if (error) return <div className="mb-[22px]"><StaleBanner message={`Cleaning prices could not be loaded: ${error}`} onRetry={reload} /></div>;
   if (!data) return loading ? <div className="mb-[22px]"><Skeleton height={120} /></div> : null;
   if (!data.ready) return <p className="m-0 mb-[22px] text-copy text-muted-ink">Cleaning prices are not switched on yet. They need a database update (migration 0126).</p>;
-  const prices = data.rows[0]?.prices;
+  const row = data.rows[0];
+  const prices = row?.prices;
   if (!prices) return <p className="m-0 mb-[22px] text-copy text-muted-ink">This unit has no cleaning prices to show yet.</p>;
-  const mayEdit = canEdit && data.mayEdit;
-  const own = (k: string) => prices[k]?.override ?? null;
-  const charge = (k: string) => (draft[k]?.charge !== undefined ? draft[k].charge : own(k)?.externalCharge ?? null);
-  const pay = (k: string) => (draft[k]?.pay !== undefined ? draft[k].pay : own(k)?.internalCost ?? null);
-  const hint = (k: string, field: 'externalCharge' | 'internalCost') => {
-    const p = prices[k];
-    return p?.source === 'table' && p[field] != null ? `List ${rm(p[field])}` : 'Not set';
+  const byCount = data.byBed && data.bedPricing === 'count';
+  const from = (p: UnitPrice | undefined): string => {
+    if (p?.override) return "This unit's own price";
+    if (p?.source === 'table') return byCount ? `Price table, ${plural(row.bedCount ?? 0, 'bed')}` : 'Price list';
+    if (p?.oldCharge != null) return 'Old price: the table has none for this unit';
+    return 'Not set';
   };
-  const set = (k: string, p: Draft[string]) => setDraft(d => ({ ...d, [k]: { ...d[k], ...p } }));
-  const changed = CLEAN_KINDS.filter(([k]) => draft[k] && (charge(k) !== (own(k)?.externalCharge ?? null) || pay(k) !== (own(k)?.internalCost ?? null)));
-
-  async function save() {
-    setBusy(true);
-    try {
-      for (const [k] of changed) await api.put('/housekeeping/unit-prices', { unitId, kind: k, internalCost: pay(k), externalCharge: charge(k) });
-      toast({ tone: 'success', title: 'Cleaning prices saved.', body: 'Cleaning jobs not yet finished on this unit use them from now on.' });
-      setDraft({});
-      reload();
-    } catch (e) { notifyFailure(e); } finally { setBusy(false); }
-  }
-
   return (
-    <div className="flex flex-col gap-3 mb-[22px]">
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-4 gap-y-2.5 max-w-[640px]">
-        <span className="max-sm:hidden text-meta font-medium text-muted-ink">Clean type</span>
-        <span className="max-sm:hidden text-meta font-medium text-muted-ink">Owner is charged</span>
-        <span className="max-sm:hidden text-meta font-medium text-muted-ink">Cleaner is paid</span>
-        {CLEAN_KINDS.map(([k, label]) => (
-          <div key={k} className="contents">
-            <span className="max-sm:col-span-2 text-copy font-medium">{label}{own(k) && <span className="ml-1.5 text-meta font-normal text-gold-ink">own price</span>}</span>
-            <MoneyInput label="" aria-label={`${label}: owner is charged`} placeholder={hint(k, 'externalCharge')} valueSen={charge(k)} disabled={!mayEdit}
-              onChangeSen={v => set(k, { charge: v })} />
-            <MoneyInput label="" aria-label={`${label}: cleaner is paid`} placeholder={hint(k, 'internalCost')} valueSen={pay(k)} disabled={!mayEdit}
-              onChangeSen={v => set(k, { pay: v })} />
-          </div>
-        ))}
+    <div className="flex flex-col gap-2 mb-[22px]">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[600px] max-w-[820px] table-fixed border-collapse text-copy tabular-nums">
+          <colgroup><col className="w-[18%]" /><col className="w-[13%]" /><col className="w-[13%]" /><col className="w-[13%]" /><col className="w-[13%]" /><col /></colgroup>
+          <thead>
+            <tr>
+              <th rowSpan={2} scope="col" className={cx(HEAD, 'text-left align-bottom pl-0')}>Clean type</th>
+              <th rowSpan={2} scope="col" className={cx(HEAD, 'text-right align-bottom')}>Old price</th>
+              <th colSpan={3} scope="colgroup" className={cx('text-center pb-1 text-copy font-semibold', GROUP)}>Now</th>
+              <th rowSpan={2} scope="col" className={cx(HEAD, 'text-left align-bottom')}>Comes from</th>
+            </tr>
+            <tr>
+              <th scope="col" className={cx(HEAD, 'text-right', GROUP)}>Owner</th>
+              <th scope="col" className={cx(HEAD, 'text-right')}>Guest</th>
+              <th scope="col" className={cx(HEAD, 'text-right')}>Cleaner pay</th>
+            </tr>
+          </thead>
+          <tbody>
+            {CLEAN_KINDS.map(([k, label]) => {
+              const p = prices[k];
+              return (
+                <tr key={k}>
+                  <th scope="row" className={cx(CELL, 'text-left font-medium pl-0')}>{label}</th>
+                  <td className={cx(CELL, 'text-right text-muted-ink')}>{figure(p?.oldCharge)}</td>
+                  <td className={cx(CELL, 'text-right', GROUP)}>{figure(ownerNow(p))}</td>
+                  <td className={cx(CELL, 'text-right')}>{figure(p?.guestCharge)}</td>
+                  <td className={cx(CELL, 'text-right')}>{figure(p?.internalCost)}</td>
+                  <td className={cx(CELL, 'text-left text-meta text-muted-ink')}>{from(p)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
       <span className="text-meta text-muted-ink">
-        {mayEdit ? 'Leave a box empty to use the list price, shown in grey. The list is edited under Cleaning, Prices.' : 'Only management changes cleaning prices. The list is under Cleaning, Prices.'}
+        Amounts in RM. Prices are changed under <Link to="/operations/cleaning?tab=prices" className="text-gold-ink font-medium">Cleaning, Prices</Link>: the table by number of beds, or this unit's own price under Per unit.
       </span>
-      {mayEdit && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="primary" loading={busy} disabled={changed.length === 0} disabledReason="Change a price first." onClick={() => void save()}>Save cleaning prices</Button>
-          {changed.length > 0 && !busy && <Button size="sm" variant="secondary" onClick={() => setDraft({})}>Discard</Button>}
-        </div>
-      )}
     </div>
   );
 }

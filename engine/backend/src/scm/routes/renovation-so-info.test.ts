@@ -8,7 +8,7 @@ describe('the renovation block of a sales order', () => {
     const r = readRenovationBlock({ projectId: '12', building: ' Skyline ', unitNo: 'A-1-1', propertyType: 'Condo', layoutLabel: '2 bed 2 bath', bedrooms: 2, bathrooms: '2', builtUpSqft: '950' });
     expect(r.projectId).toBe(12);
     expect(r.building).toBe('Skyline');
-    expect(r.property).toEqual({ propertyType: 'Condo', layoutLabel: '2 bed 2 bath', bedrooms: 2, bathrooms: 2, builtUpSqft: 950 });
+    expect(r.property).toEqual({ propertyType: 'Condo', layoutLabel: '2 bed 2 bath', bedrooms: 2, bathrooms: 2, builtUpSqft: 950, landAreaSqft: null, landSize: '' });
     expect(r.problems).toEqual([]);
   });
 

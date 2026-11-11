@@ -1,5 +1,6 @@
 /* Small building blocks shared by the renovation pages. */
 
+import { fmtDate as sharedFmtDate } from '../../vendor/shared/format';
 import { useState, type ReactNode } from 'react';
 import { formatRm } from '../../vendor/shared/renovation-money';
 import { STATUS_LABEL } from '../../lib/renovation/api';
@@ -76,10 +77,13 @@ export function selectAllOnFocus(e: { currentTarget: HTMLInputElement }) {
 }
 
 /** Money typed in ringgit, held in sen. Blank -> null when `nullable`. */
-export function MoneyInput({ value, onChange, disabled, nullable, className, placeholder, ariaLabel }: {
+export function MoneyInput({ value, onChange, disabled, nullable, className, placeholder, ariaLabel, blankZero }: {
   value: number | null; onChange: (sen: number | null) => void; disabled?: boolean; nullable?: boolean; className?: string; placeholder?: string; ariaLabel?: string;
+  /** RM 0 shows as a grey "0.00" placeholder, so typing a price does not start with deleting a 0. */
+  blankZero?: boolean;
 }) {
-  const shown = value === null ? '' : (value / 100).toFixed(2).replace(/\.00$/, '');
+  const shown = value === null || (blankZero && value === 0) ? '' : (value / 100).toFixed(2).replace(/\.00$/, '');
+  if (blankZero && placeholder === undefined) placeholder = '0.00';
   const [draft, setDraft] = useState<string | null>(null);
   return (
     <input
@@ -136,11 +140,9 @@ export function Stat({ label, value, tone }: { label: string; value: ReactNode; 
   );
 }
 
+/** The app's one date rule (dd/mm/yyyy); '—' when there is no date. */
 export function fmtDate(iso: string | null | undefined): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? '');
-  if (!m) return '—';
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${Number(m[3])} ${months[Number(m[2]) - 1]} ${m[1]}`;
+  return /^\d{4}-\d{2}-\d{2}/.test(iso ?? '') ? sharedFmtDate(iso!.slice(0, 10)) : '—';
 }
 
 export const todayIso = (): string => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);

@@ -2,8 +2,7 @@
    five tabs, the table on a desktop and the cards on a phone, the footer line. A row opens the Beta project.
    Plan: docs/superpowers/plans/2026-10-23-beta-project-workspace.md, section 10. */
 
-import { useMemo, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Search, X } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
@@ -12,27 +11,21 @@ import { CreateRenovationPanel } from "../projects/renovation/CreateRenovationPa
 import { money } from "../projects/renovation/renovationModel";
 import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type ConditionWord, type HomeRow, type HomeTab } from "./renovationBetaBoard";
-import { HOME_SORTS, keepOrder, matchesSearch, newestFirst, orderOf, sortFromParam, type HomeSort } from "./renovationBetaHomeModel";
-import { boardApi, boardKey, prefetchOnIntent, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
+import { HOME_SORTS, keepOrder, onBrandList, matchesSearch, orderOf, sortFromParam, sortHome, voCell, type HomeSort } from "./renovationBetaHomeModel";
+import { boardApi, boardKey, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
 import { BetaSkin, useBetaPreload } from "./BetaWsUi";
 import { simpleApi, type BoardRowV2 } from "../projects/renovation/simpleApi";
 import { mytDay, slaDayText } from "./renovationBetaModel";
 import { motion } from "motion/react";
+import { fmtDate } from "@2990s/shared";
 import { BetaLoading } from "./BetaLoading";
 import { BetaMotion, SPRING } from "./betaMotion";
+import { DataTable } from "../../components/DataTable";
+import type { Column } from "../../components/dataTableTypes";
+import { fetchProjectSos, soColumns, type ProjectSo } from "./renovationBetaSoColumns";
 
-const TH = {
-  padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, letterSpacing: ".04em", textTransform: "uppercase", color: MUTED,
-  borderBottom: `1px solid ${BETA.line}`, background: BETA.head, whiteSpace: "nowrap",
-} as const;
-const TD = { padding: "11px 12px", borderBottom: `1px solid ${BETA.lineSoft}`, verticalAlign: "middle", fontSize: 13 } as const;
 const DASH = <span style={{ color: BETA.faint }}>–</span>;
-/* Column shares of the table width (fixed layout), so the columns line up and fill the row at any width or zoom.
-   The building tag wraps instead of being cut ("18 USJ 2/4P S...", owner 24 Oct 2026), so its column is wider.
-   Order: Building, Project, ID condition, Due, Payment. */
-const COLS_PAY = ["16%", "30%", "16%", "14%", "24%"] as const;
-const COLS_NO_PAY = ["18%", "40%", "20%", "22%"] as const;
 
 function DuePill({ left, small = false }: { left: number; small?: boolean }): ReactElement {
   const [ink, bg] = betaDueTone(left);
@@ -103,6 +96,39 @@ function slaOf(r: BoardRowV2 | undefined, today: string): Sla {
   return { step: r.step.label, text: slaDayText(r.sla, today) ?? "", over };
 }
 
+type TableRow = { r: HomeRow; sla: Sla; so: ProjectSo | undefined; board: BoardRowV2 | undefined };
+
+/* The list's own columns, then the sales order's: Columns shows, moves and hides them, and each has a filter. */
+function homeColumns(showPay: boolean): Column<TableRow>[] {
+  const own: Column<TableRow>[] = [
+    { key: "building", label: "Building", group: "Project", width: "170px", getValue: (x) => x.r.p.tag, render: (x) => {
+      const [ink, bg] = betaTagTone(x.r.p.tag);
+      return <span title={x.r.p.tag} style={{ display: "inline-block", maxWidth: "100%", padding: "2px 8px", borderRadius: 10, background: bg, color: ink, fontSize: 12, fontWeight: 600, lineHeight: 1.35, overflowWrap: "anywhere" }}>{x.r.p.tag.toUpperCase()}</span>;
+    } },
+    { key: "project", label: "Project", group: "Project", width: "300px", getValue: (x) => x.r.p.title, render: (x) => (
+      <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.3, minWidth: 0 }}>
+        <Link to={`/beta/projects/${x.r.p.id}`} onClick={() => rememberLastProject(x.r.p.id)} style={{ color: BETA.ink, textDecoration: "none", fontWeight: 600, overflowWrap: "anywhere" }}>{x.r.p.title}</Link>
+        {x.r.p.customer && <span style={{ color: MUTED, fontSize: 12, overflowWrap: "anywhere" }}>{x.r.p.customer}</span>}
+      </span>
+    ) },
+    { key: "created", label: "Created", group: "Project", width: "120px", getValue: (x) => x.r.p.createdAt, render: (x) => (x.r.p.createdAt ? fmtDate(x.r.p.createdAt) : DASH),
+      filterType: "date", dateValue: (x) => x.r.p.createdAt },
+    { key: "condition", label: "ID condition", group: "Project", width: "150px", getValue: (x) => x.r.word, render: (x) => <StatusCell r={x.r} /> },
+    { key: "due", label: "Due", group: "Project", width: "120px", getValue: (x) => x.r.left, render: (x) => <DueCell r={x.r} /> },
+    ...(showPay ? [{ key: "payment", label: "Payment", group: "Project", width: "220px", getValue: (x: TableRow) => x.r.p.payment,
+      render: (x: TableRow) => (x.r.p.payment != null ? <PayCell text={x.r.p.payment} outstandingSen={x.r.p.outstandingSen} /> : DASH) }] : []),
+    { key: "stage", label: "Step", group: "Project", width: "130px", getValue: (x) => x.sla?.step, render: (x) => x.sla?.step ?? DASH },
+    { key: "pic", label: "PIC", group: "Project", width: "140px", getValue: (x) => x.board?.renoPic.name ?? "Unassigned", render: (x) => x.board?.renoPic.name ?? <span style={{ color: MUTED }}>Unassigned</span> },
+    { key: "sales", label: "Salesperson", group: "Project", width: "140px", getValue: (x) => x.r.p.salesName, render: (x) => x.r.p.salesName ?? DASH },
+    { key: "handover", label: "Handover", group: "Project", width: "120px", getValue: (x) => x.r.p.handover, render: (x) => (x.r.p.handover ? fmtDate(x.r.p.handover) : DASH) },
+    { key: "vo", label: "VO", group: "Project", width: "110px", getValue: (x) => voCell(x.board?.vo), render: (x) => voCell(x.board?.vo) ?? DASH },
+    { key: "code", label: "Project code", group: "Project", width: "130px", defaultHidden: true, getValue: (x) => x.r.p.code, render: (x) => x.r.p.code ?? DASH },
+    { key: "client", label: "Client", group: "Project", width: "170px", defaultHidden: true, getValue: (x) => x.r.p.customer, render: (x) => x.r.p.customer ?? DASH },
+    { key: "lead", label: "Design lead", group: "Project", width: "140px", defaultHidden: true, getValue: (x) => x.r.p.lead?.name, render: (x) => x.r.p.lead?.name ?? DASH },
+  ];
+  return [...own, ...soColumns<TableRow>((x) => x.so)];
+}
+
 /** The colours are set before anything else draws, so the loading line and an error already have them. */
 export function RenovationBetaHome(): ReactElement {
   useBetaPreload();
@@ -116,12 +142,15 @@ export function RenovationBetaHome(): ReactElement {
 
 function HomeScreen(): ReactElement {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const q = useQuery(boardKey(), () => boardApi.board(), []);
   // Step and SLA come from the current project board, so both screens agree while they run side by side.
   const steps = useQuery(["renovation-beta", "step-sla"], () => simpleApi.boardRows(), []);
   const slaById = useMemo(() => new Map((steps.data?.data ?? []).map((r) => [r.id, r])), [steps.data]);
   const phone = useIsPhone();
+  /* Every order in the company, for columns that start hidden: read only once one of them is showing. */
+  const [soColumnsShown, setSoColumnsShown] = useState(false);
+  const sos = useQuery(["renovation-beta", "project-sos"], () => fetchProjectSos(), [], { enabled: !phone && soColumnsShown });
+  const soByDoc = useMemo(() => new Map((sos.data ?? []).map((s) => [s.doc_no, s])), [sos.data]);
   const today = mytDay(new Date().toISOString());
   const [tab, setTab] = useState<HomeTab>("all");
   const { can } = useAuth();
@@ -132,7 +161,8 @@ function HomeScreen(): ReactElement {
   /* The order rows were first shown in, per tab, sort and search: Assign and other saves reload the board, and a row
      must not jump under the finger (live run, 24 Oct 2026: the wrong project was opened). A reload starts afresh. */
   const kept = useRef<{ key: string; order: Map<number, number> } | null>(null);
-  function setParam(k: "q" | "sort", v: string): void {
+  const brand = params.get("brand") ?? "";
+  function setParam(k: "q" | "sort" | "brand", v: string): void {
     setParams((prev) => {
       const next = new URLSearchParams(prev);
       if (v && !(k === "sort" && v === "newest")) next.set(k, v); else next.delete(k);
@@ -140,15 +170,14 @@ function HomeScreen(): ReactElement {
     }, { replace: true });
   }
   const last = readLastProject();
-  const m = useMemo(() => (q.data ? buildModel(q.data) : null), [q.data]);
+  const m = useMemo(() => (q.data ? buildModel({ ...q.data, projects: q.data.projects.filter((p) => onBrandList(p, brand)) }) : null), [q.data, brand]);
 
   if (q.error && !m) return <ErrorBanner text={`The projects could not be loaded: ${q.error}`} onRetry={q.reload} />;
   if (!m) return <BetaLoading label="Loading projects" size="page" />;
 
   const counts = homeCounts(m);
   const inTab = homeList(m, tab);
-  const sorted = sort === "newest" ? newestFirst(inTab) : inTab;
-  const found = sorted.filter((p) => matchesSearch(p, query));
+  const found = sortHome(inTab, sort).filter((p) => matchesSearch(p, query));
   const viewKey = `${tab}|${sort}|${query.trim().toLowerCase()}`;
   if (!kept.current || kept.current.key !== viewKey) kept.current = { key: viewKey, order: orderOf(found) };
   const list = keepOrder(found, kept.current.order);
@@ -161,11 +190,11 @@ function HomeScreen(): ReactElement {
     navigate(`/beta/projects/${id}`);
   }
 
-  /* A click anywhere on the row opens the project; the link keeps its own action. */
-  function rowClick(e: MouseEvent<HTMLElement>, id: number): void {
-    if (e.target instanceof Element && e.target.closest("a, button")) return;
-    open(id);
-  }
+  const tableRows: TableRow[] = rows.map((r) => ({
+    r, sla: slaOf(slaById.get(r.p.id), today),
+    board: slaById.get(r.p.id),
+    so: r.p.soDocNos.map((d) => soByDoc.get(d)).find(Boolean),
+  }));
 
   return (
     <BetaMotion>
@@ -210,6 +239,14 @@ function HomeScreen(): ReactElement {
           )}
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: MUTED }}>
+          Brand
+          <select aria-label="Filter by brand" value={brand} onChange={(e) => setParam("brand", e.target.value)}
+            style={{ minHeight: 40, padding: "0 12px", border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, background: BETA.field, font: "inherit", fontSize: 14, color: BETA.ink }}>
+            <option value="">All brands</option>
+            {[...new Set((q.data?.projects ?? []).map((p) => p.brand?.trim()).filter((b): b is string => Boolean(b)))].sort().map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: MUTED }}>
           Sort
           <select aria-label="Sort projects" value={sort} onChange={(e) => setParam("sort", e.target.value as HomeSort)}
             style={{ minHeight: 40, padding: "0 12px", border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, background: BETA.field, font: "inherit", fontSize: 14, color: BETA.ink }}>
@@ -252,49 +289,21 @@ function HomeScreen(): ReactElement {
           {rows.map((r) => <PhoneCard key={r.p.id} r={r} sla={slaOf(slaById.get(r.p.id), today)} onOpen={() => rememberLastProject(r.p.id)} />)}
         </ol>
       ) : (
-        <div style={{ ...CARD, overflowX: "auto" }}>
-          <table style={{ width: "100%", minWidth: 960, borderCollapse: "collapse", tableLayout: "fixed" }}>
-            <colgroup>
-              {(showPay ? COLS_PAY : COLS_NO_PAY).map((w, i) => <col key={i} style={{ width: w }} />)}
-            </colgroup>
-            <thead>
-              <tr>
-                <th scope="col" style={TH}>Building</th>
-                <th scope="col" style={TH}>Project</th>
-                <th scope="col" style={TH}>ID condition</th>
-                <th scope="col" style={TH}>Due</th>
-                {showPay && <th scope="col" style={TH}>Payment</th>}
-              </tr>
-            </thead>
-            <tbody className="stag">
-              {rows.length === 0 && <tr><td colSpan={showPay ? 5 : 4} style={{ ...TD, color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</td></tr>}
-              {rows.map((r) => {
-                const [tagInk, tagBg] = betaTagTone(r.p.tag);
-                return (
-                  <tr key={r.p.id} onClick={(e) => rowClick(e, r.p.id)} {...prefetchOnIntent(queryClient, r.p.id)} style={{ cursor: "pointer", background: r.p.id === last ? BETA.pick : BETA.row }}>
-                    <td style={TD}>
-                      <span title={r.p.tag} style={{ display: "inline-block", maxWidth: "100%", padding: "2px 8px", borderRadius: 10, background: tagBg, color: tagInk, fontSize: 12, fontWeight: 600, lineHeight: 1.35, overflowWrap: "anywhere" }}>
-                        {r.p.tag.toUpperCase()}
-                      </span>
-                    </td>
-                    <td style={TD}>
-                      <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.3, minWidth: 0 }}>
-                        <Link to={`/beta/projects/${r.p.id}`} onClick={() => rememberLastProject(r.p.id)} style={{ color: BETA.ink, textDecoration: "none", fontWeight: 600, overflowWrap: "anywhere" }}>{r.p.title}</Link>
-                        {r.p.customer && <span style={{ color: MUTED, fontSize: 12, overflowWrap: "anywhere" }}>{r.p.customer}</span>}
-                      </span>
-                    </td>
-                    <td style={TD}><StatusCell r={r} /></td>
-                    <td style={TD}><DueCell r={r} /></td>
-                    {showPay && <td style={TD}>{r.p.payment != null ? <PayCell text={r.p.payment} outstandingSen={r.p.outstandingSen} /> : DASH}</td>}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div style={{ ...CARD, overflow: "hidden" }}>
+          <DataTable<TableRow>
+            tableId="projects-home"
+            onDisplayKeys={(keys) => setSoColumnsShown(keys.some((k) => k.startsWith("so_")))}
+            documentLabel="Projects"
+            rows={tableRows}
+            columns={homeColumns(showPay)}
+            getRowKey={(x) => x.r.p.id}
+            onRowClick={(x) => open(x.r.p.id)}
+            emptyLabel={query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}
+          />
         </div>
       )}
 
-      <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · {sort === "newest" ? "newest first" : "due soonest first"} · tap a project to open it</div>
+      <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · {(HOME_SORTS.find(([k]) => k === sort)?.[1] ?? "").toLowerCase()} · tap a project to open it</div>
     </div>
     </BetaMotion>
   );

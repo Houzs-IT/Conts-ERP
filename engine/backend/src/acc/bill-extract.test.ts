@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  coerceBillJson, parseModelJson, extractOneBill, matchSupplier,
+  coerceBillJson, parseModelJson, extractOneBill, matchSupplier, normalizeVendor,
 } from './bill-extract';
 
 describe('coerceBillJson', () => {
@@ -40,6 +40,39 @@ describe('coerceBillJson', () => {
     expect(out.invoiceDate).toBeNull();   // non-ISO refused, not re-parsed
     expect(out.totalSen).toBeNull();
     expect(out.lines).toEqual([]);
+  });
+
+  /* Owner 2026-11-03: a staff claim PDF split by page — its bank slips and
+     summary pages are not bills, and a Shopee screenshot held two orders. */
+  it('keeps the payment_proof / summary kinds and the several-receipts flag; anything else is false', () => {
+    expect(coerceBillJson({ documentKind: 'payment_proof' }).documentKind).toBe('payment_proof');
+    expect(coerceBillJson({ documentKind: 'summary' }).documentKind).toBe('summary');
+    expect(coerceBillJson({ severalReceipts: true }).severalReceipts).toBe(true);
+    expect(coerceBillJson({ severalReceipts: 'yes' }).severalReceipts).toBe(false);
+    expect(coerceBillJson({}).severalReceipts).toBe(false);
+  });
+
+  /* Owner 2026-10-02 (upload 后很多资料都没有填): a payment request fills its
+     "What is it for" and the payee's bank from the paper — read as printed. */
+  it('reads the one-line summary and the printed bank account; nothing printed is null', () => {
+    const out = coerceBillJson({
+      vendorName: 'HOUZS VENTURE HOLDINGS SDN BHD', totalRm: 8082.33,
+      summary: "  Payroll cost share — Aug'26 · adjustment  ",
+      payTo: { bankName: 'Hong Leong Bank Berhad', accountNo: '123-4567-8901', accountName: 'Houzs Venture Holding Sdn Bhd' },
+    });
+    expect(out.summary).toBe("Payroll cost share — Aug'26 · adjustment");
+    expect(out.payTo).toEqual({ bankName: 'Hong Leong Bank Berhad', accountNo: '123-4567-8901', accountName: 'Houzs Venture Holding Sdn Bhd' });
+
+    const none = coerceBillJson({ vendorName: 'TNB', summary: '', payTo: { bankName: null, accountNo: '', accountName: null } });
+    expect(none.summary).toBeNull();
+    expect(none.payTo).toBeNull();
+    expect(coerceBillJson({ vendorName: 'TNB' }).payTo).toBeNull();
+  });
+
+  it('an account number the model sent as a JSON number is kept only while it is exact', () => {
+    expect(coerceBillJson({ payTo: { accountNo: 12345678901 } }).payTo).toEqual({ bankName: null, accountNo: '12345678901', accountName: null });
+    /* 17 digits cannot survive a JSON number — no account beats a wrong one. */
+    expect(coerceBillJson({ payTo: { bankName: 'Maybank', accountNo: 51234567890123456 } }).payTo).toEqual({ bankName: 'Maybank', accountNo: null, accountName: null });
   });
 
   it('parseModelJson takes the outermost object out of prose and fences', () => {
@@ -129,6 +162,22 @@ describe('matchSupplier', () => {
     expect(m?.supplier.id).toBe('s3');
   });
 
+  it('INV-2610-097: HOOKKA INDUSTRIES SDN BHD on the paper is HOOKKA INDUSTRIES SDN. BHD.', () => {
+    expect(normalizeVendor('HOOKKA INDUSTRIES SDN BHD')).toBe('HOOKKA INDUSTRIES');
+    expect(normalizeVendor('HOOKKA INDUSTRIES SDN. BHD.')).toBe('HOOKKA INDUSTRIES');
+    expect(normalizeVendor('Hookka Industries S/B')).toBe('HOOKKA INDUSTRIES');
+    // A stored key (acc_vendor_memory.vendor_key): BERHAD and LTD stay as they always did.
+    expect(normalizeVendor('Tenaga Nasional Berhad')).toBe('TENAGA NASIONAL BERHAD');
+    expect(matchSupplier('HOOKKA INDUSTRIES SDN BHD', SUPPLIERS)).toMatchObject({ supplier: { id: 's1' }, confidence: 'exact' });
+  });
+
+  it('two suppliers fitting equally: nothing pre-selected', () => {
+    const twins = [...SUPPLIERS, { id: 's4', code: '400-H005', name: 'Hookka Industries Sdn Bhd' }];
+    expect(matchSupplier('HOOKKA INDUSTRIES SDN BHD', twins)).toBeNull();
+    const two = [{ id: 'a', code: null, name: 'ARMANI SOFA (JB) SDN BHD' }, { id: 'b', code: null, name: 'ARMANI SOFA (KL) SDN BHD' }];
+    expect(matchSupplier('ARMANI SOFA', two)).toBeNull();
+  });
+
   it('below the rungs: nothing — a wrong supplier pre-selected is worse than none', () => {
     expect(matchSupplier('TENAGA NASIONAL BERHAD', SUPPLIERS)).toBeNull();
     expect(matchSupplier(null, SUPPLIERS)).toBeNull();
@@ -143,20 +192,20 @@ describe('extractOneBill', () => {
   }), { status: 200 })) as unknown as typeof fetch;
 
   it('a clean answer comes back coerced', async () => {
-    const r = await extractOneBill('key', FILES, modelSays('{"vendorName":"TNB","totalRm":10}'));
+    const r = await extractOneBill('key', FILES, null, modelSays('{"vendorName":"TNB","totalRm":10}'));
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.extraction.totalSen).toBe(1000);
   });
 
   it('API refusal is a sentence, not a throw', async () => {
     const failing: typeof fetch = (async () => new Response('overloaded', { status: 529 })) as unknown as typeof fetch;
-    const r = await extractOneBill('key', FILES, failing);
+    const r = await extractOneBill('key', FILES, null, failing);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/refused \(529\)/);
   });
 
   it('an answer with no JSON is refused with advice, not crashed on', async () => {
-    const r = await extractOneBill('key', FILES, modelSays('I see a cat.'));
+    const r = await extractOneBill('key', FILES, null, modelSays('I see a cat.'));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/clearer photo/);
   });

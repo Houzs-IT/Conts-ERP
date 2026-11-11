@@ -44,8 +44,12 @@ export function renoDetailRows(d: RenoDocInfo | null | undefined, opts: { short?
   /* short: the project code only, for a print column that does not wrap (the DO); its name is building + unit, printed below. */
   const project = opts.short ? (d.info.projectCode ?? renoProjectLabel(d)) : renoProjectLabel(d);
   const cat = d.info.categoryGroup ? renoCategoryLabel({ room: '', categoryGroup: d.info.categoryGroup, subCategory: d.info.subCategory ?? '' }) : null;
+  /* Project ID and name on their own rows (owner, 5 Nov 2026): together they ran past the page margin. */
+  const projectRows: Array<[string, string | null]> = opts.short
+    ? [['Project', project]]
+    : d.info.projectCode ? [['Project ID', d.info.projectCode], ['Project Name', d.info.projectName]] : [['Project', project]];
   return [
-    ['Project', project],
+    ...projectRows,
     ['Category', cat],
     ['Building', d.info.building || null],
     ['Unit', d.info.unitNo || null],

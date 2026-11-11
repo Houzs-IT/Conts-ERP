@@ -71,8 +71,16 @@ export const API_URL =
    error; a caller-initiated abort is never rewritten.
    NB: `path` here is the segment AFTER the /api/scm mount, so the /scan- test
    still matches the vendored scan endpoints. */
+/* The bill readers — a supplier bill, the PDF splitter — each hand paper to the
+   AI reader, which can take past 30 s on a long bill (Houzs #4463: the pile's
+   "That took too long"). They get the scan wait, and since they WRITE NOTHING a
+   timeout says so instead of warning of a duplicate save. */
+export const BILL_READER_PATH = /\/payment-vouchers\/extract$|\/payment-vouchers\/split-pdf$/;
 function timeoutSignal(path: string): AbortSignal | undefined {
-  const ms = /\/scan-/.test(path) ? 120_000 : 30_000;
+  // A scan job's /work request is held open for the whole OCR run (scan-job-driver.ts): give it longer than the
+  // server's 3-minute stale window so the browser never gives up on a job that is still alive.
+  // Reading a counted stock take sheet or a scanned bill holds the request open while the photo is read.
+  const ms = /\/scan-[a-z]+\/jobs\/[^/]+\/work$/.test(path) ? 240_000 : /\/scan-|\/stock-takes\/[^/]+\/read-sheet$/.test(path) || BILL_READER_PATH.test(path) ? 120_000 : 30_000;
   try { return AbortSignal.timeout(ms); } catch { return undefined; } // pre-2022 browsers
 }
 
@@ -109,6 +117,11 @@ async function fetchWithTimeout(url: string, init: RequestInit, path: string): P
          Either way it fails LOUDLY — never a spinner the operator walks away
          from believing it saved (owner ruling 2026-07-19). */
       const method = String(init.method ?? 'GET').toUpperCase();
+      if (method !== 'GET' && BILL_READER_PATH.test(path)) {
+        /* A reader writes nothing — reading again is always safe; it is not
+           replayed by itself, since one try already waited two minutes. */
+        throw correlateError(new Error('Reading took too long — nothing was saved. Please read it again.'), requestId);
+      }
       if (method !== 'GET') {
         const hasIdemKey = Boolean(
           (init.headers as Record<string, string> | undefined)?.['Idempotency-Key'],
@@ -172,6 +185,28 @@ async function confirmDropship(raw: string): Promise<boolean> {
         `It nets out and the batch number stamps onto this Delivery Order when ` +
         `the Goods Received Note arrives.\n\nAffected: ${codes}`,
       confirmLabel: 'Confirm drop-ship',
+      danger: true,
+    });
+  } catch {
+    return false;
+  }
+}
+
+/* BUG-59 — some picked Sales Order lines have no stock set aside for them.
+   A warning, not a block (Azza 2026-10-06): the operator may go back or
+   deliver anyway. Returns true on confirm; replays with confirmNotReady:true. */
+async function confirmNotReady(raw: string): Promise<boolean> {
+  try {
+    const body = JSON.parse(raw.slice(raw.indexOf('{'))) as {
+      lines?: Array<{ docNo: string; itemCode: string; reason: string }>;
+    };
+    const lines = (body.lines ?? [])
+      .map((l) => `• ${l.itemCode} (${l.docNo})\n   ${l.reason}`)
+      .join('\n\n');
+    return await serviceConfirm({
+      title: 'Item Not Ready',
+      body: `${lines}\n\nGo back and untick these lines to deliver them on a later Delivery Order, or deliver them now anyway.`,
+      confirmLabel: 'Deliver anyway',
       danger: true,
     });
   } catch {
@@ -329,7 +364,15 @@ export async function authedFetch<T>(path: string, init?: RequestInit): Promise<
     try { mergedBody = JSON.parse(init.body) as Record<string, unknown>; } catch { mergedBody = null; }
     for (let guard = 0; mergedBody && guard < 4 && res.status === 409; guard++) {
       const text = await consumeCorrelated(res, () => res.clone().text());
-      if (text.includes('"short_stock"') && mergedBody.confirmShortStock !== true) {
+      if (text.includes('"items_not_ready"') && mergedBody.confirmNotReady !== true) {
+        if (!(await confirmNotReady(text))) {
+          throw correlateError(
+            new Error('Some lines are not ready, so the delivery order was not created. Untick them and deliver them on a later Delivery Order.'),
+            requestIdFromResponse(res),
+          );
+        }
+        mergedBody = { ...mergedBody, confirmNotReady: true };
+      } else if (text.includes('"short_stock"') && mergedBody.confirmShortStock !== true) {
         /* ASK ONCE (2026-07-31). "Ship as drop-ship?" and "Ship anyway?" are the
            same question — the goods are not here — and the operator has already
            answered it in the affirmative on this very request. Re-asking it in
@@ -646,6 +689,11 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   // another company's id exists would itself leak.
   not_found_in_company:
     "That record isn't available in the company you're working in.",
+  // Delivery Return cancel refusals (backend scm/lib/dr-cancel-cap.ts).
+  cancel_over_delivers:
+    'A later Delivery Order already shipped these returned units again, so cancelling this return would deliver more than was ordered. Cancel or reduce that Delivery Order first.',
+  cancel_check_failed:
+    "We couldn't check the Sales Order this return belongs to, so it was not cancelled. Please try again.",
   already_posted: 'This journal entry is already posted.',
   je_reversed:
     'This journal entry was reversed and cannot be posted. Create a new one.',

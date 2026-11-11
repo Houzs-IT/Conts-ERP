@@ -134,6 +134,8 @@ export default function PayrollTab() {
   const sum = (pick: (f: PayFigures) => number): number => figures.reduce((n, f) => n + pick(f), 0);
   const pcbMissing = figures.filter(f => !pcbHasFigure(f.pcbStatus) && f.pcbStatus !== 'DISABLED').length;
   const stored = lines.some(l => l.payslip);
+  // On payroll with no slip (a run cut off, or someone added since): Approve All would leave them unpaid.
+  const unslipped = stored ? lines.filter(l => !l.payslip) : [];
   const canGenerate = !stored || drafts.length > 0 || lines.some(l => !l.payslip && l.estimate);
 
   async function run() {
@@ -147,6 +149,16 @@ export default function PayrollTab() {
   }
 
   async function approveAll() {
+    // Check again on fresh figures: the list on screen may predate a run or a new hire.
+    try {
+      const fresh = await api.get<PayrollPayload>(`/payroll?period=${period}`);
+      const gap = fresh.lines.filter(l => !l.payslip);
+      if (gap.length) {
+        toast({ tone: 'critical', title: `${gap.length} ${gap.length === 1 ? 'person has' : 'people have'} no payslip.`, body: `${gap.map(l => l.employee.name).join(', ')}. Regenerate the month, then approve.` });
+        reload();
+        return;
+      }
+    } catch (e) { notifyFailure(e); return; }
     if (await ask({ title: `Approve ${drafts.length} payslips for ${monthName(period)}?`, body: 'Each person sees their payslip on the phone, and the month\'s advances count as taken back. You can reopen one until it is marked paid.', confirmLabel: 'Approve all' }) === null) return;
     setBusy(true);
     try {
@@ -159,7 +171,7 @@ export default function PayrollTab() {
 
   const columns = useMemo<Column<PayrollLine>[]>(() => [
     { key: 'name', label: 'Employee', value: l => l.employee.name, hideable: false, width: 190,
-      render: l => <span className="flex flex-col"><span className="font-semibold whitespace-nowrap">{l.employee.name}</span><span className="text-meta text-muted-ink">{l.employee.employeeId ?? '-'} · {department(l)}</span></span> },
+      render: l => <span className="flex flex-col"><span className="font-semibold whitespace-nowrap">{l.employee.name}</span><span className="text-meta text-muted-ink">{l.employee.employeeId ?? '-'} · {department(l)}{l.employee.resignedAt ? ` · left ${l.employee.resignedAt}` : ''}</span></span> },
     money('basic', 'Basic', f => f.basicSalarySen),
     { key: 'days', label: 'Days', value: l => figuresOf(l)?.daysWorked ?? null, width: 80, align: 'center', title: 'Days worked of the working days in the month.',
       render: l => { const f = figuresOf(l); return f ? <span className="tabular-nums">{f.daysWorked}/{f.workingDays}</span> : ''; } },
@@ -224,13 +236,19 @@ export default function PayrollTab() {
                     </Button>
                   )}
                   {full && data && drafts.length > 0 && (
-                    <Button size="sm" variant="primary" icon={<Icon name="Check" size="sm" />} disabled={busy || !data.ended}
-                      title={data.ended ? undefined : 'A month can be approved once it has ended.'} onClick={() => void approveAll()}>Approve All</Button>
+                    <Button size="sm" variant="primary" icon={<Icon name="Check" size="sm" />} disabled={busy || !data.ended || unslipped.length > 0}
+                      title={unslipped.length ? 'Some people on payroll have no payslip. Regenerate first.' : data.ended ? undefined : 'A month can be approved once it has ended.'} onClick={() => void approveAll()}>Approve All</Button>
                   )}
                   {data && figures.length > 0 && <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => exportCsv(data)}>Export CSV</Button>}
                   {figures.length > 0 && <Button size="sm" variant="tertiary" icon={<Icon name="Printer" size="sm" />} onClick={() => window.print()}>Print Report</Button>}
                 </span>
               </div>
+              {unslipped.length > 0 && (
+                <p className="m-0 px-3 py-2 rounded-control bg-page text-meta text-warning" role="alert">
+                  <span className="font-semibold">{unslipped.length} {unslipped.length === 1 ? 'person on payroll has' : 'people on payroll have'} no payslip:</span>{' '}
+                  {unslipped.map(l => l.employee.name).join(', ')}. {full ? 'Regenerate to make theirs; Approve All waits until everyone has one.' : 'Approval waits until everyone has one.'}
+                </p>
+              )}
               {data && !data.ended && (
                 <p className="m-0 px-3 py-2 rounded-control bg-page text-meta text-muted-ink">
                   <span className="font-semibold text-ink">Estimate · month in progress.</span> Figures cover the days up to today and change as hours are logged. Generate at month-end to lock them in.
@@ -316,6 +334,11 @@ function SlipModal({ line, month, full, onClose, onChange }: { line: PayrollLine
         </div>
       </div>
       <div className="mt-4 px-4 py-3 rounded-control bg-page flex justify-between text-[18px] font-bold"><span>Net pay</span><span className={`tabular-nums ${f.netSen < 0 ? 'text-danger' : ''}`}>{rm(f.netSen)}</span></div>
+      {line.employee.resignedAt && line.employee.payBasis === 'monthly' && (
+        <p className="m-0 mt-3 text-meta text-ink">
+          <span className="font-semibold">Resigned · last working day {line.employee.resignedAt}.</span> Every working day after it, to the end of the month, counts as absent.
+        </p>
+      )}
       <p className="m-0 mt-3 text-meta text-muted-ink">
         Working days {f.workingDays} · worked {f.daysWorked} · paid leave {f.paidLeaveDays} · absent {f.absentDays}. Employer pays EPF {rm(f.epfEmployerSen)}, SOCSO {rm(f.socsoEmployerSen)}, EIS {rm(f.eisEmployerSen)}.
       </p>

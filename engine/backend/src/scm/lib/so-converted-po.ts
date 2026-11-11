@@ -58,6 +58,31 @@ export async function soConvertedPoNumbers(
   return out;
 }
 
+/** When each still-open PO is due, by PO number: the supplier's latest revised date, else the PO's own. Best-effort:
+ *  a read error yields no dates, and the chip then shows the number alone. */
+export async function poEtasByNumber(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any,
+  poNumbers: string[],
+  companyId: number | null,
+): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const numbers = [...new Set(poNumbers)];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scoped = (q: any) => (companyId == null ? q : q.eq('company_id', companyId));
+  for (const part of chunk(numbers, IN_CHUNK)) {
+    const { data, error } = await scoped(sb.from('purchase_orders')
+      .select('po_number, status, expected_at, supplier_delivery_date_2, supplier_delivery_date_3, supplier_delivery_date_4')).in('po_number', part);
+    if (error) return out;
+    for (const p of (data ?? []) as Array<Record<string, string | null>>) {
+      if (['CANCELLED', 'RECEIVED'].includes((p.status ?? '').toUpperCase())) continue;
+      const eta = p.supplier_delivery_date_4 ?? p.supplier_delivery_date_3 ?? p.supplier_delivery_date_2 ?? p.expected_at;
+      if (p.po_number && eta) out[p.po_number] = eta;
+    }
+  }
+  return out;
+}
+
 /**
  * Per SO LINE (so_item_id) the system PO numbers raised AGAINST THAT LINE — the
  * line's OWN incoming PO, the same `purchase_order_items.so_item_id` link

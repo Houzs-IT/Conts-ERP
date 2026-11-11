@@ -52,6 +52,8 @@ export interface PendingPoChange {
   voLabel: string | null;
 }
 
+export interface LineMaterial { code: string; name: string | null; uom: string | null; qty: number }
+
 export interface ManagedLine {
   id: string;
   soDocNo: string;
@@ -81,6 +83,10 @@ export interface ManagedLine {
   /** The suppliers this SKU can be ordered from (its supplier bindings), main first (owner, 3 Nov 2026: only these).
       LinesAnswer.suppliers has the rest. */
   supplierChoices: SupplierChoice[];
+  /** Its raw materials: the list saved on the line, else the SKU's composition times the line's qty. */
+  materials: LineMaterial[];
+  /** The completed production order that closes its raw materials (null: they can still change). */
+  materialsClosedBy: string | null;
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none), for the role's category access. */
   categoryCode: string | null;
@@ -211,24 +217,26 @@ export function choicesOf(v: unknown): SupplierChoice[] {
 
 interface PickedSupplier { id: string; name: string; code: string }
 
-async function readPlans(db: Db, ids: readonly string[]): Promise<{ ready: boolean; byId: Map<string, ManagedLine["plan"]>; picked: Map<string, PickedSupplier> }> {
+async function readPlans(db: Db, ids: readonly string[]): Promise<{ ready: boolean; byId: Map<string, ManagedLine["plan"]>; picked: Map<string, PickedSupplier>; saved: Set<string> }> {
   const byId = new Map<string, ManagedLine["plan"]>();
   const picked = new Map<string, PickedSupplier>();
-  if (ids.length === 0) return { ready: true, byId, picked };
+  const saved = new Set<string>();
+  if (ids.length === 0) return { ready: true, byId, picked, saved };
   try {
-    const r = await rows<{ so_item_id: string; order_on: string | null; deliver_on: string | null; no_po: boolean; supplier_id: string | null; supplier_name: string | null; supplier_code: string | null }>(db,
-      `SELECT p.so_item_id::text AS so_item_id, p.order_on::text AS order_on, p.deliver_on::text AS deliver_on, p.no_po,
+    const r = await rows<{ so_item_id: string; order_on: string | null; deliver_on: string | null; no_po: boolean; materials_saved: boolean; supplier_id: string | null; supplier_name: string | null; supplier_code: string | null }>(db,
+      `SELECT p.so_item_id::text AS so_item_id, p.order_on::text AS order_on, p.deliver_on::text AS deliver_on, p.no_po, p.materials_saved,
               s.id::text AS supplier_id, s.name AS supplier_name, s.code AS supplier_code
          FROM scm.reno_beta_line_plans p LEFT JOIN scm.suppliers s ON s.id = p.supplier_id
         WHERE p.so_item_id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
       JSON.stringify(ids));
     for (const p of r) {
       byId.set(p.so_item_id, { orderOn: p.order_on, deliverOn: p.deliver_on, noPo: Boolean(p.no_po) });
+      if (p.materials_saved) saved.add(p.so_item_id);
       if (p.supplier_id) picked.set(p.so_item_id, { id: p.supplier_id, name: p.supplier_name ?? p.supplier_code ?? "", code: p.supplier_code ?? "" });
     }
-    return { ready: true, byId, picked };
+    return { ready: true, byId, picked, saved };
   } catch (e) {
-    if (isMissingRelation(e)) return { ready: false, byId, picked };
+    if (isMissingRelation(e)) return { ready: false, byId, picked, saved };
     throw e;
   }
 }
@@ -264,7 +272,13 @@ export async function loadProjectLines(
                LEFT JOIN scm.suppliers ps ON ps.id = po.supplier_id
               WHERE pi.so_item_id = i.id) AS pos,
             (SELECT coalesce(sum(doi.qty), 0)::int FROM scm.delivery_order_items doi JOIN scm.delivery_orders dd ON dd.id = doi.delivery_order_id
-              WHERE doi.so_item_id = i.id AND dd.status::text NOT IN ('CANCELLED', 'DRAFT')) AS delivered,
+              WHERE doi.so_item_id = i.id AND dd.status::text NOT IN ('CANCELLED', 'DRAFT'))
+            /* Goods that came back on a delivery return are no longer on site: the line reads as the sales order page does. */
+            - (SELECT coalesce(sum(ri.qty_returned), 0)::int FROM scm.delivery_return_items ri
+                 JOIN scm.delivery_returns dr ON dr.id = ri.delivery_return_id AND dr.status::text <> 'CANCELLED'
+                 JOIN scm.delivery_order_items doi ON doi.id = ri.do_item_id
+                 JOIN scm.delivery_orders dd ON dd.id = doi.delivery_order_id AND dd.status::text NOT IN ('CANCELLED', 'DRAFT')
+                WHERE doi.so_item_id = i.id) AS delivered,
             i.photo_urls,
             (SELECT coalesce(json_agg(json_build_object('productId', ph.product_id, 'key', ph.r2_key, 'thumbKey', ph.thumb_key)
                                       ORDER BY ph.is_primary DESC, ph.sort_order, ph.created_at), '[]'::json)::text
@@ -282,11 +296,13 @@ export async function loadProjectLines(
                            WHERE p.code = i.item_code AND p.company_id = so.company_id ORDER BY (p.status::text = 'ACTIVE') DESC LIMIT 1) prod ON true
        LEFT JOIN scm.product_category_groups cg ON cg.code = prod.category_group
        LEFT JOIN scm.product_sub_categories sc ON sc.group_code = cg.code AND sc.code = prod.sub_category
-      WHERE ${PROJECT_SO} AND NOT coalesce(i.cancelled, false)
+      WHERE ${PROJECT_SO} AND NOT coalesce(i.cancelled, false) AND i.item_code IS DISTINCT FROM 'RENO-CREDIT'
       ORDER BY so.so_date NULLS LAST, i.doc_no, i.line_no NULLS LAST`,
     projectId, companyId);
   const r = all.filter((x) => lineVisible(scope, x.cat_code ?? null, x.sub_code ?? null));
   const plans = await readPlans(db, r.map((x) => x.id));
+  const materials = await readLineMaterials(db, r.map((x) => ({ id: x.id, itemCode: x.item_code ?? "", qty: Number(x.qty) })), companyId, plans.saved);
+  const closedBy = await materialsClosedBy(db, r.map((x) => x.id));
   const lines: ManagedLine[] = r.map((x) => {
     const pos = posOf(x.pos);
     const status = String(x.so_status ?? "").toUpperCase();
@@ -301,7 +317,7 @@ export async function loadProjectLines(
       area: x.area, remark: x.remark?.trim() || null,
       supplierName: picked?.name ?? (x.contract_line_id ? x.contract_supplier_name : x.supplier_name),
       supplierId: picked?.id ?? (x.contract_line_id ? x.contract_supplier_id : x.supplier_id),
-      contractLineId: x.contract_line_id, supplierChoices: choicesOf(x.supplier_choices),
+      contractLineId: x.contract_line_id, supplierChoices: choicesOf(x.supplier_choices), materials: materials.get(x.id) ?? [], materialsClosedBy: closedBy.get(x.id) ?? null,
       goesTo: voGoesTo({ itemCode: x.item_code, itemGroup: x.item_group, mainSupplierCode: picked?.code ?? x.supplier_code }),
       categoryCode: x.cat_code ?? null, subCode: x.sub_code ?? null,
       variantCategory: x.prod_category ? variantCategoryOf(x.prod_category, x.prod_sub) : null,
@@ -455,6 +471,54 @@ export async function lineSupplierState(db: Db, soItemId: string): Promise<{ ite
        FROM scm.mfg_sales_order_items i WHERE i.id::text = ?`,
   ).bind(soItemId).first<{ item_code: string | null; po_number: string | null }>();
   return { itemCode: r?.item_code ?? "", poNumber: r?.po_number ?? null };
+}
+
+/** Lines whose production orders are all finished, with one order's number to name. */
+async function materialsClosedBy(db: Db, ids: readonly string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const r = await rows<{ so_item_id: string; po_number: string }>(db,
+    `SELECT i.so_item_id::text AS so_item_id, min(o.po_number) AS po_number
+       FROM scm.production_order_items i JOIN scm.production_orders o ON o.id = i.production_order_id AND o.status::text <> 'CANCELLED'
+      WHERE i.so_item_id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+      GROUP BY 1 HAVING NOT bool_or(o.status::text IN ('DRAFT', 'SUBMITTED'))`, JSON.stringify(ids));
+  return new Map(r.map((x) => [x.so_item_id, x.po_number]));
+}
+
+/** Each line's raw materials: its saved list, else the SKU's composition times its qty. */
+async function readLineMaterials(db: Db, lines: ReadonlyArray<{ id: string; itemCode: string; qty: number }>, companyId: number, saved: ReadonlySet<string>): Promise<Map<string, LineMaterial[]>> {
+  const out = new Map<string, LineMaterial[]>();
+  if (lines.length === 0) return out;
+  const push = (id: string, m: LineMaterial): void => { out.set(id, [...(out.get(id) ?? []), m]); };
+  const product = `LEFT JOIN LATERAL (SELECT p.name, p.uom FROM scm.mfg_products p WHERE p.code = m.material_code AND p.company_id = m.company_id LIMIT 1) p ON true`;
+  const savedIds = lines.filter((l) => saved.has(l.id)).map((l) => l.id);
+  if (savedIds.length > 0) {
+    const r = await rows<{ so_item_id: string; material_code: string; qty: number; name: string | null; uom: string | null }>(db,
+      `SELECT m.so_item_id::text AS so_item_id, m.material_code, m.qty, p.name, p.uom FROM scm.so_line_materials m ${product}
+        WHERE m.so_item_id::text IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY m.material_code`,
+      JSON.stringify(savedIds));
+    for (const m of r) push(m.so_item_id, { code: m.material_code, name: m.name, uom: m.uom, qty: Number(m.qty) });
+  }
+  const preset = lines.filter((l) => !saved.has(l.id) && l.itemCode);
+  if (preset.length > 0) {
+    const r = await rows<{ sku_code: string; material_code: string; qty: number; name: string | null; uom: string | null }>(db,
+      `SELECT m.sku_code, m.material_code, m.qty, p.name, p.uom FROM scm.sku_compositions m ${product}
+        WHERE m.company_id = ? AND m.sku_code IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY m.created_at`,
+      companyId, JSON.stringify([...new Set(preset.map((l) => l.itemCode))]));
+    for (const l of preset) for (const m of r) {
+      if (m.sku_code === l.itemCode) push(l.id, { code: m.material_code, name: m.name, uom: m.uom, qty: Math.round(Number(m.qty) * l.qty * 1000) / 1000 });
+    }
+  }
+  return out;
+}
+
+/** The codes among `codes` that are not active Raw material SKUs. */
+export async function notRawMaterials(db: Db, codes: readonly string[], companyId: number): Promise<string[]> {
+  const r = await rows<{ code: string }>(db,
+    `SELECT code FROM scm.mfg_products WHERE company_id = ? AND category::text = 'RAW' AND status::text = 'ACTIVE'
+        AND code IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
+    companyId, JSON.stringify(codes));
+  const ok = new Set(r.map((x) => x.code));
+  return codes.filter((c) => !ok.has(c));
 }
 
 /** Keeps the pick on the line's plan, leaving its dates as they are. */

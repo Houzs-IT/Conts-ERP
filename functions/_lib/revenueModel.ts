@@ -1,4 +1,5 @@
 import { checkDate } from './validate';
+import type { ContractTypeOptions } from './contractTypes';
 
 /** How an owner is paid for a unit: one revenue model per contract (migration 0093). The model decides how the
  *  monthly statement is worked out (ownerStatement.ts); the Units screen's Contract tab shows only its fields. */
@@ -91,7 +92,7 @@ const sen = (v: unknown) => Number.isInteger(v) && (v as number) >= 0;
 
 /** Field-keyed problems with a contract for one model, empty when it can be saved. Only the chosen model's fields
  *  are checked; the others are ignored (and cleared on save). */
-export function invalidDraft(d: ContractDraft): Record<string, string> {
+export function invalidDraft(d: ContractDraft, options: ContractTypeOptions): Record<string, string> {
   const f: Record<string, string> = {};
   if (!isRevenueModel(d.revenueModel)) { f.revenueModel = 'Pick one income model.'; return f; }
   const m = d.revenueModel;
@@ -103,7 +104,8 @@ export function invalidDraft(d: ContractDraft): Record<string, string> {
     for (const [k, v] of [['ownerPct', o], ['managementPct', g], ['agentPct', a]] as const) if (!Number.isFinite(v) || v < 0 || v > 100) f[k] = 'Enter 0 to 100.';
     if (!f.ownerPct && !f.managementPct && !f.agentPct && Math.abs(o + g + a - 100) > 0.001) f.ownerPct = `Owner, management and agent must add up to 100% (now ${Number((o + g + a).toFixed(2))}%).`;
     if (m === 'management_yearly_guarantee' && (!sen(d.yearlyGuarantee) || !d.yearlyGuarantee)) f.yearlyGuarantee = 'Enter the guarantee for each contract year.';
-    if (d.contractCode === 'MANAGE' && (!sen(d.ownerAmount) || !d.ownerAmount)) f.ownerAmount = "Enter the owner's amount.";
+    if (options.hasFixedOwnerAmount && (!sen(d.ownerAmount) || !d.ownerAmount)) f.ownerAmount = "Enter the owner's amount.";
+    if (!options.hasAgentShare && !f.agentPct && a > 0) f.agentPct = 'This contract type has no agent share.';
     if (m === 'management_guarantee') {
       if (!sen(d.minimumGuarantee) || !d.minimumGuarantee) f.minimumGuarantee = 'Enter the monthly minimum.';
       if (d.guaranteeStartsOn && !DATE.test(d.guaranteeStartsOn)) f.guaranteeStartsOn = 'Enter a date.';
@@ -126,10 +128,10 @@ export function invalidDraft(d: ContractDraft): Record<string, string> {
 
 /** The owner_contracts columns for a valid draft. Fields that do not belong to the model are cleared, so switching
  *  model never leaves an old guarantee or rent behind for the statement to pick up. */
-export function draftColumns(d: ContractDraft) {
+export function draftColumns(d: ContractDraft, options: ContractTypeOptions) {
   const m = d.revenueModel as RevenueModel;
   const share = isShare(m);
-  const operator = share ? 100 - Number(d.ownerPct) : isTenancy(m) ? Number(d.managementPct ?? 0) : 0;
+  const operator = share ? 100 - Number(d.ownerPct) : isTenancy(m) && !options.hasNoOperatorShare ? Number(d.managementPct ?? 0) : 0;
   return {
     revenue_model: m,
     model: m === 'grr' ? 'grr' : 'management',
@@ -141,10 +143,11 @@ export function draftColumns(d: ContractDraft) {
     ...(m === 'management_yearly_guarantee' ? { minimum_guarantee_annual: Number(d.yearlyGuarantee) } : {}),
     guarantee_starts_on: m === 'management_guarantee' ? (d.guaranteeStartsOn || null) : null,
     guarantee_ends_on: m === 'management_guarantee' ? (d.guaranteeEndsOn || null) : null,
-    grr_amount: share ? (d.contractCode === 'MANAGE' ? Number(d.ownerAmount ?? 0) : 0) : Number(d.monthlyRent),
+    grr_amount: share ? (options.hasFixedOwnerAmount ? Number(d.ownerAmount ?? 0) : 0) : Number(d.monthlyRent),
     deposit_amount: m === 'master_lease' ? (d.deposit ?? null) : null,
     tenant_name: isTenancy(m) ? (d.tenantName?.trim() || null) : null,
     starts_on: d.startsOn!, ends_on: d.endsOn || null, renews_on: d.renewsOn || null,
     misc_charges: share && d.miscCharges ? 1 : 0,
   };
 }
+export type ContractColumns = ReturnType<typeof draftColumns>;

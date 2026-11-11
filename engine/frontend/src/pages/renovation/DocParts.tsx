@@ -117,7 +117,7 @@ export function InstalmentEditor({ rows, onChange, disabled, terms, totalSen }: 
         {rows.map((r, i) => {
           cum += r.pctBp;
           return (
-            <div key={i} className="grid grid-cols-2 gap-2 rounded-lg border border-border-subtle p-2 md:grid-cols-[110px_80px_1fr_190px_190px_110px_32px] md:items-start">
+            <div key={i} className="grid grid-cols-2 gap-2 rounded-lg border border-border-subtle p-2 md:grid-cols-[110px_80px_1fr_190px_215px_110px_32px] md:items-start">
               <input aria-label="Instalment label" className={inputCls} disabled={disabled} value={r.label} onChange={(e) => onChange(rows.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} placeholder={`${i + 1}ST PAYMENT`} />
               <PercentInput ariaLabel="Percent" value={r.pctBp} disabled={disabled} onChange={(bp) => onChange(rows.map((x, j) => (j === i ? { ...x, pctBp: bp } : x)))} />
               <textarea aria-label="Description" rows={2} className={cn(inputCls, 'col-span-2 h-auto py-1.5 md:col-span-1')} disabled={disabled} value={r.description} onChange={(e) => onChange(rows.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} />

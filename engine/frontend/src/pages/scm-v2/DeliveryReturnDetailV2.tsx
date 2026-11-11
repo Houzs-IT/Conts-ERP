@@ -33,8 +33,9 @@
 // ScmDeliveryReturnDetailV2 is the whole switch. Data + mutations use
 // the vendored delivery-return-queries slice.
 
-import { useMemo, useState, type ReactNode } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { lazy, useMemo, useState, type ReactNode } from "react";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { LazySlot } from "../../components/LazySlot";
 import { scmListReturnTo } from "../../lib/scmListReturn";
 import {
   ArrowLeft,
@@ -229,6 +230,7 @@ const EFFECTIVE_TONE: Record<
 // Fine-grained stage label — keeps the exact stored status readable in
 // the header Badge even when the effective bucket collapses it.
 const STAGE_LABEL: Record<string, string> = {
+  DRAFT: "Draft",
   PENDING: "Pending",
   RECEIVED: "Received",
   INSPECTED: "Inspected",
@@ -472,9 +474,35 @@ function HeroLine({
   );
 }
 
+// ─── Editor (lazy) ─────────────────────────────────────────────────────────
+// This page is read-only. The Edit button (and the list's right-click Edit)
+// lands on ?edit=1, which is handed to ./DeliveryReturnDetail, the editor with
+// no route of its own. Same forward as PurchaseReturnDetailV2.
+const DeliveryReturnDetailInlineEditor = lazy(() =>
+  import("./DeliveryReturnDetail").then((m) => ({ default: m.DeliveryReturnDetail })),
+);
+
+/* Thin router: its only hooks run unconditionally at the top, so the ?edit=1
+   flip between two children with different hook counts is safe. */
+export function DeliveryReturnDetailV2() {
+  const [params] = useSearchParams();
+  const location = useLocation();
+  if (params.get("edit") === "1") {
+    return (
+      <LazySlot
+        resetKey={`dr-editor:${location.pathname}`}
+        fallback={<div className="p-8 text-[13px] text-ink-muted">Loading editor…</div>}
+      >
+        <DeliveryReturnDetailInlineEditor />
+      </LazySlot>
+    );
+  }
+  return <DeliveryReturnDetailV2ReadOnly />;
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────
 
-export function DeliveryReturnDetailV2() {
+function DeliveryReturnDetailV2ReadOnly() {
   const { id } = useParams<{ id: string }>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -909,13 +937,15 @@ export function DeliveryReturnDetailV2() {
                 Mark refunded
               </Button>
             )}
-            <Button
-              variant="primary"
-              icon={<Edit3 size={14} />}
-              onClick={goEdit}
-            >
-              Edit
-            </Button>
+            {!isTerminal && (
+              <Button
+                variant="primary"
+                icon={<Edit3 size={14} />}
+                onClick={goEdit}
+              >
+                Edit
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -1228,7 +1258,7 @@ export function DeliveryReturnDetailV2() {
             >
               <CheckCircle2 size={16} /> Mark refunded
             </button>
-          ) : (
+          ) : !isTerminal ? (
             <button
               type="button"
               onClick={goEdit}
@@ -1236,7 +1266,7 @@ export function DeliveryReturnDetailV2() {
             >
               <Edit3 size={16} /> Edit
             </button>
-          )}
+          ) : null}
           <button
             type="button"
             onClick={print.openPreview}

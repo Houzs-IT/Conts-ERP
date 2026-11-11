@@ -15,6 +15,7 @@ import { mayWork } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
 import { date, time, todayMyt } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
+import { hoursFlag } from '../../lib/hoursFlag';
 import type { HoursPayload, HoursPerson, HoursPunch } from '../../../functions/api/working-hours/index';
 import { DEPARTMENTS, DEPARTMENT_LABEL, type Department } from '../../../functions/_lib/hrFields';
 import { TableSkeleton } from '../../components/DataState';
@@ -238,7 +239,7 @@ function HoursRow({ row: r, multiDay, people, person, punch, total, from, to, ma
 }) {
   const editable = mayEdit && r.origin === 'new';
   const standard = person?.hoursPerDay ?? 8;
-  const flag = total > standard ? 'OT' : total > 0 && total < standard ? 'short' : null;
+  const flag = hoursFlag(total, standard, punch);
   return (
     <tr className={cx('align-top [border-bottom:1px_solid_var(--color-line-soft)]', r.dirty && 'bg-page')}>
       {multiDay && (

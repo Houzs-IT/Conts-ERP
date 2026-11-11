@@ -17,6 +17,8 @@ import {
   enqueuePiScan, fetchPiScanJobs, clearFailedPiScans,
   isActivePiJob, piHhmm, piJobTs, isPiTodayTs, type PiScanJob,
 } from "../vendor/scm/lib/pi-scan-jobs";
+import { useScanJobDriver, isStalledScanJob } from "../vendor/scm/lib/scan-job-driver";
+import { ScanJobRetry } from "../vendor/scm/components/ScanJobRetry";
 
 export function MobileScanInvoice({
   onBack,
@@ -47,6 +49,10 @@ export function MobileScanInvoice({
     void tick();
     return () => { alive = false; if (timer) clearTimeout(timer); };
   }, []);
+
+  const refresh = async () => { try { setJobs(await fetchPiScanJobs()); } catch { /* the poll catches up */ } };
+  // No queue on this server: the open screen runs each queued scan (scan-job-driver.ts).
+  useScanJobDriver("/scan-pi", jobs, () => void refresh());
 
   const onFiles = async (list: FileList | null | undefined) => {
     const files = list ? Array.from(list) : [];
@@ -128,7 +134,7 @@ export function MobileScanInvoice({
                   <div key={j.id} style={{ border: "1px solid #e7e2d6", borderRadius: 10, padding: "10px 12px", background: "#fff" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: bad ? "#b23c17" : "#11140f" }}>
                       <span>
-                        {isActivePiJob(j) && "Reading invoice…"}
+                        {isActivePiJob(j) && (isStalledScanJob(j) ? "Stalled" : "Reading invoice…")}
                         {ok && `Draft ${j.linkedDocNo}`}
                         {done && !j.linkedDocNo && "Needs review"}
                         {j.status === "error" && "Could not process"}
@@ -136,6 +142,7 @@ export function MobileScanInvoice({
                       <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 500, color: "#767b6e" }}>{piHhmm(piJobTs(j.createdAt))}</span>
                     </div>
                     {j.error && <div style={{ fontSize: 11.5, color: "#767b6e", marginTop: 4, lineHeight: 1.5 }}>{j.error}</div>}
+                    <ScanJobRetry base="/scan-pi" job={j} onDone={() => void refresh()} />
                     {ok && (
                       <button onClick={() => onOpenPi(j.linkedDocNo!.split(",")[0]?.trim() ?? j.linkedDocNo!)}
                         style={{ marginTop: 6, background: "none", border: "none", color: "#16695f", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>

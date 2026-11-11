@@ -21,6 +21,7 @@ const PenaltiesTab = lazy(() => import('./workers/PenaltiesTab'));
 const LaborCostTab = lazy(() => import('./workers/LaborCostTab'));
 const DepartmentLaborTab = lazy(() => import('./workers/DepartmentLaborTab'));
 const EmployeePerformanceTab = lazy(() => import('./workers/EmployeePerformanceTab'));
+const StandardTimesTab = lazy(() => import('./workers/StandardTimesTab'));
 const DcEmployeesTab = lazy(() => import('./workers/DcEmployeesTab'));
 const DcEmployeePerformanceTab = lazy(() => import('./workers/DcEmployeePerformanceTab'));
 const DcHrEmptyTab = lazy(() => import('./workers/DcHrEmptyTab'));
@@ -44,6 +45,7 @@ const TABS = [
   { key: 'department-labor', label: 'Department Labor', icon: 'DollarSign' },
   { key: 'detail', label: 'Employee Performance', icon: 'Search' },
   { key: 'department-performance', label: 'Department Performance', icon: 'Activity' },
+  { key: 'standard-times', label: 'Standard Times', icon: 'Timer' },
   { key: 'payroll', label: 'Payroll', icon: 'DollarSign' },
   { key: 'advances', label: 'Advances', icon: 'Download' },
   { key: 'penalties', label: 'Worker Penalty', icon: 'TriangleAlert' },
@@ -56,7 +58,7 @@ const isTab = (v: string | null): v is TabKey => v === 'leave' || TABS.some(t =>
 /** Twelve tabs do not fit in one row, so the bar shows three sections and the second row shows the pages in the
  *  chosen section (owner, 27 Oct 2026). Hookka's order is kept inside each section. */
 const SECTIONS = [
-  { key: 'hours', label: 'Hours', tabs: ['working-hours', 'attendance', 'punch-sites', 'efficiency', 'detail', 'department-performance'] },
+  { key: 'hours', label: 'Hours', tabs: ['working-hours', 'attendance', 'punch-sites', 'efficiency', 'detail', 'department-performance', 'standard-times'] },
   { key: 'staff', label: 'Staff', tabs: ['employee-master', 'outside'] },
   { key: 'pay', label: 'Pay', tabs: ['payroll', 'advances', 'penalties', 'labor-cost', 'department-labor'] },
 ] as const satisfies readonly { key: string; label: string; tabs: readonly TabKey[] }[];
@@ -68,7 +70,7 @@ const tabsIn = (section: (typeof SECTIONS)[number]): typeof TABS[number][] =>
 
 /** Tabs Hookka measures from factory job cards. The Conts has not decided what production time is for cleaning and
  *  repair jobs (owner, 26 Oct 2026), so they stay empty rather than show a made-up figure. Employee Performance
- *  already counts each cleaner's Basic and Deep cleans, at 0 minutes a job until the times are decided. */
+ *  already measures each cleaner's cleans and each technician's repairs against the Standard Times cards. */
 const UNDECIDED: Partial<Record<TabKey, string>> = {
   efficiency: 'Each person\'s production time against the hours they clocked.',
   'department-performance': 'Each department\'s production hours and efficiency, day by day.',
@@ -113,6 +115,7 @@ export default function EmployeesPage({ dreamCrafter = false }: EmployeesPagePro
   else if (tab === 'labor-cost') body = <LaborCostTab />;
   else if (tab === 'department-labor') body = <DepartmentLaborTab />;
   else if (tab === 'detail') body = <EmployeePerformanceTab />;
+  else if (tab === 'standard-times') body = <StandardTimesTab />;
   else {
     body = <EmptyState icon="Activity" title="Production time is not decided yet"
       body={`${UNDECIDED[tab] ?? ''} On Hookka this comes from factory job cards. It stays empty until The Conts decides what counts as production time for cleaning and repair jobs.`} />;

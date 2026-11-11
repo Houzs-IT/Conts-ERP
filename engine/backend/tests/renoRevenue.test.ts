@@ -630,3 +630,40 @@ describe('review fixes', () => {
     expect(new Set(opening.map((a) => a.line_key)).size).toBe(opening.length);
   });
 });
+
+describe('a cancelled instalment document', () => {
+  const inst = [
+    { id: 'i1', seq: 1, label: 'A', pctBp: 5000, description: '', stageCode: null, trigger: 'so_confirmed' },
+    { id: 'i2', seq: 2, label: 'B', pctBp: 5000, description: '', stageCode: null, trigger: 'so_confirmed' },
+  ];
+  const bill = (over: Record<string, unknown>) => ({
+    instalment_id: 'i1', seq: 1, kind: 'INVOICE' as const, amount_sen: 500_000, invoice_date: '2026-11-01', invoice_number: 'SI-1', sales_invoice_id: 'si',
+    note_number: null, credit_note_id: null, paid_sen: 0, si_status: 'SENT', cn_status: null, ...over,
+  });
+  test('a live invoice counts and its instalment is done', () => {
+    const v = assembleView('SO', 'RENO_CONFIRMED', 1_000_000, 1_000_000, inst, [bill({})]);
+    expect(v.billedSen).toBe(500_000);
+    expect(v.nextSeq).toBe(2);
+  });
+  test('a cancelled invoice bills nothing and its instalment is due again', () => {
+    const v = assembleView('SO', 'RENO_CONFIRMED', 1_000_000, 1_000_000, inst, [bill({ si_status: 'CANCELLED' })]);
+    expect(v.billedSen).toBe(0);
+    expect(v.nextSeq).toBe(1);
+    expect(v.instalments[0]?.bill).toBeNull();
+  });
+  test('a 0% last row bills the balance a late VO added', () => {
+    const three = [...inst, { id: 'i3', seq: 3, label: 'Balance of VO-1', pctBp: 0, description: '', stageCode: null, trigger: 'so_confirmed' }];
+    const v = assembleView('SO', 'RENO_CONFIRMED', 1_000_000, 1_200_000, three, [bill({}), bill({ instalment_id: 'i2', seq: 2, invoice_number: 'SI-2', sales_invoice_id: 'si2' })]);
+    expect(v.nextSeq).toBe(3);
+    expect(v.instalments[2]?.amountSen).toBe(200_000);
+  });
+});
+
+describe('what the contract has received', () => {
+  test('a deposit paid on the order counts, beside what was paid on invoices', () => {
+    const inst = [{ id: 'i1', seq: 1, label: 'A', pctBp: 10000, description: '', stageCode: null, trigger: 'so_confirmed' }];
+    const paid = { instalment_id: 'i1', seq: 1, kind: 'INVOICE' as const, amount_sen: 500_000, invoice_date: '2026-11-01', invoice_number: 'SI-1', sales_invoice_id: 'si',
+      note_number: null, credit_note_id: null, paid_sen: 100_000, si_status: 'SENT', cn_status: null };
+    expect(assembleView('SO', 'RENO_CONFIRMED', 1_000_000, 1_000_000, inst, [paid], 0, [], 0, 250_000).receivedSen).toBe(350_000);
+  });
+});

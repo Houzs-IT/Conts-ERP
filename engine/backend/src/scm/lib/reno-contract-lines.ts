@@ -120,6 +120,17 @@ export async function contractRevenueLines(sb: Sb, soDocNo: string, companyId?: 
     keys.forEach((k, i) => amount.set(k, (amount.get(k) ?? 0) + shares[i]));
   }
 
+  /* A waived line is a negative rate. The waterfall fills lines with what they earn, so a negative one lowers the others
+     as the header discount does, and the lines still sum to exactly the contract. */
+  for (const [key, sen] of [...amount]) {
+    if (sen >= 0) continue;
+    const others = [...amount.keys()].filter((k) => (amount.get(k) ?? 0) > 0);
+    if (others.length === 0) break;
+    const shares = spreadByWeight(sen, others.map((k) => amount.get(k) ?? 0));
+    amount.set(key, 0);
+    others.forEach((k, i) => amount.set(k, (amount.get(k) ?? 0) + shares[i]));
+  }
+
   return work.map((r) => {
     const p = product.get(String(r.item_code ?? ''));
     return { key: r.id, itemCode: String(r.item_code ?? ''), group: p?.group ?? '', subCategory: p?.sub ?? null, amountSen: amount.get(r.id) ?? 0 };

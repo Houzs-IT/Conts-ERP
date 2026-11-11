@@ -10,6 +10,7 @@
    A payment links the payment voucher that paid it; the voucher must exist, not
    be cancelled, and be for the PO's supplier. */
 
+import type { PoPaymentFacts } from './renovation-po-voucher';
 import { auditEntity, refuse, todayKl, type RenoDb } from './renovation-db';
 import { projectHandoverState, type HandoverState } from './renovation-hooks';
 import type { RenoActor } from './renovation-quotation';
@@ -63,12 +64,14 @@ export async function readPoSchedule(db: RenoDb, poId: string, companyId: number
       where i.purchase_order_id = $1 order by p.paid_on, p.created_at`,
     [poId],
   );
-  const instalments = rows.map((r) => {
+  /* The PO's total moves with an amendment, so what is due is worked out from it now, not from the raise. */
+  const due = poInstalmentAmounts(rows.map((r) => Number(r.pct_bp)), po.totalSen);
+  const instalments = rows.map((r, i) => {
     const payable = isPayable(r.payable_on, { poStatus: po.status, fullyReceived: po.fullyReceived, handover, releasedAt: r.released_at });
     return {
-      id: r.id as string, seq: Number(r.seq), label: r.label as string, pctBp: Number(r.pct_bp), amountSen: Number(r.amount_sen),
+      id: r.id as string, seq: Number(r.seq), label: r.label as string, pctBp: Number(r.pct_bp), amountSen: due[i] ?? 0,
       payableOn: r.payable_on as PayableOn, releasedAt: r.released_at as string | null, releasedBy: r.released_by as string | null,
-      releaseNote: r.release_note as string, paidSen: Number(r.paid_sen), outstandingSen: Number(r.amount_sen) - Number(r.paid_sen), payable,
+      releaseNote: r.release_note as string, paidSen: Number(r.paid_sen), outstandingSen: (due[i] ?? 0) - Number(r.paid_sen), payable,
       payments: payments.filter((p) => p.po_instalment_id === r.id).map((p) => ({
         id: p.id as string, amountSen: Number(p.amount_sen), paidOn: p.paid_on as string, note: p.note as string,
         paymentVoucherId: p.payment_voucher_id as string | null, pvNumber: p.pv_number as string | null,
@@ -138,7 +141,7 @@ export async function recordPoPayment(
   actor: RenoActor,
   instalmentId: string,
   body: { amountSen: number; paidOn?: string | null; paymentVoucherId?: string | null; note?: string },
-): Promise<{ id: string }> {
+): Promise<{ id: string; voucher: PoPaymentFacts | null }> {
   const [inst] = await db.q<{ purchase_order_id: string; label: string }>(
     `select purchase_order_id, label from scm.reno_po_instalments where id = $1 and company_id = $2 for update`,
     [instalmentId, actor.companyId],
@@ -164,5 +167,11 @@ export async function recordPoPayment(
     [actor.companyId, instalmentId, body.paymentVoucherId ?? null, body.amountSen, body.paidOn || todayKl(), body.note ?? '', actor.name],
   );
   await auditEntity(db, { companyId: actor.companyId, entityType: 'purchase_order', entityId: inst.purchase_order_id, docNo: view.po.poNumber, action: 'INSTALMENT_PAYMENT', actorName: actor.name, note: `${inst.label}: ${fmtSen(body.amountSen)}` });
-  return { id: p.id };
+  /* No voucher named: Pay makes its own behind the press (renovation-po-voucher.ts). */
+  const [sup] = body.paymentVoucherId ? [] : await db.q<{ id: string; name: string; code: string | null; control_account: string | null; project_id: number | null }>(
+    `select s.id::text as id, s.name, s.code, s.control_account, po.project_id from scm.purchase_orders po join scm.suppliers s on s.id = po.supplier_id where po.id = $1`,
+    [inst.purchase_order_id],
+  );
+  const voucher = sup ? { paidOn: body.paidOn || todayKl(), amountSen: body.amountSen, label: inst.label, poNumber: view.po.poNumber, projectId: sup.project_id, supplier: sup } : null;
+  return { id: p.id, voucher };
 }

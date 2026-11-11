@@ -16,7 +16,7 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
 import { api, notifyFailure, errorMessage } from '../lib/api';
-import { todayMyt, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, plural, count, rmShort, amount } from '../lib/format';
+import { todayMyt, dateInputValue, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, plural, count, rmShort, amount } from '../lib/format';
 import { CHANNEL, TONE } from '../lib/vocabulary';
 import type { BookingChannel, Tone } from '../lib/types';
 import { CalendarFilters } from '../components/calendar/CalendarFilters';
@@ -500,7 +500,7 @@ function CalendarBoard() {
                   <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: TONE[syncTrouble ? 'warning' : 'success'].line }} />
                   {syncTrouble
                     ? <Link to="/system/integrations" className="no-underline" style={{ color: TONE.warning.fg }}>Channel errors · see Integrations</Link>
-                    : <>Channels updated {iso(new Date(lastSync)) === todayMyt() ? timeWithZone(lastSync) : `${dateShort(lastSync)} ${time(lastSync)}`}</>}
+                    : <>Channels updated {dateInputValue(lastSync) === todayMyt() ? timeWithZone(lastSync) : `${dateShort(lastSync)} ${time(lastSync)}`}</>}
                 </span>
               )}
               <button type="button" onClick={() => setFiltersOpen(v => !v)} aria-expanded={filtersOpen} aria-label={filterCount ? `Filters, ${filterCount} on` : 'Filters'} title="Filters"

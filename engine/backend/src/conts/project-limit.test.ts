@@ -4,10 +4,11 @@
      · a customer project's limit is 70% (the company's share, or the project's own) of what the customer paid;
      · an approved extra amount adds to it; an internal project spends against its budget;
      · lines on an everyday-expense account (rent, utilities) do not count;
-     · a voucher paying one project's bills names that project; one paying two projects' bills is refused. */
+     · a voucher paying one project's bills names that project; one paying bills of two projects names none and is
+       split over them, each bill's amount by its lines (chew 11 Nov 2026). */
 import { describe, expect, test } from 'vitest';
 import { fakeSb, publicTablesOnly, type Row } from '../scm/lib/fake-postgrest';
-import { checkVoucherLimit, projectLimit, projectOfBills } from './project-limit';
+import { billProjectLines, checkVoucherLimit, projectLimit, projectOfBills, settlementProjects } from './project-limit';
 
 const CO = 1;
 const pv = (id: string, sen: number, over: Row = {}): Row[] => [
@@ -126,12 +127,56 @@ describe('the project a voucher pays', () => {
   });
 
   test('bills of one project name it; bills of no project name none', async () => {
-    expect(await projectOfBills(bills(), CO, { piIds: ['pi-1'], apInvoiceIds: ['ap-1'] })).toEqual({ ok: true, projectId: 7 });
-    expect(await projectOfBills(bills(), CO, { piIds: ['pi-3'], apInvoiceIds: [] })).toEqual({ ok: true, projectId: null });
+    expect(await projectOfBills(bills(), CO, { piIds: ['pi-1'], apInvoiceIds: ['ap-1'] })).toEqual({ ok: true, projectId: 7, projects: [7] });
+    expect(await projectOfBills(bills(), CO, { piIds: ['pi-3'], apInvoiceIds: [] })).toEqual({ ok: true, projectId: null, projects: [] });
   });
 
-  test('bills of two projects are refused', async () => {
-    expect(await projectOfBills(bills(), CO, { piIds: ['pi-1', 'pi-2'], apInvoiceIds: [] })).toMatchObject({ ok: false, error: 'many_projects' });
+  test('bills of two projects name none and list both', async () => {
+    expect(await projectOfBills(bills(), CO, { piIds: ['pi-1', 'pi-2'], apInvoiceIds: [] })).toEqual({ ok: true, projectId: null, projects: [7, 9] });
+  });
+
+  test('what each allocation pays, with its bill’s projects: an AP invoice by its lines, a purchase invoice its PO’s', async () => {
+    const sb = world({
+      purchase_orders: [{ id: 'po-1', company_id: CO, project_id: 7 }],
+      purchase_invoices: [{ id: 'pi-1', company_id: CO, purchase_order_id: 'po-1' }],
+      ap_invoice_lines: [
+        { id: 'l1', invoice_id: 'ap-9', project_id: 175, amount_sen: 18_000 },
+        { id: 'l2', invoice_id: 'ap-9', project_id: 175, amount_sen: 9_000 },
+        { id: 'l3', invoice_id: 'ap-9', project_id: 324, amount_sen: 4_200 },
+      ],
+    });
+    expect(await billProjectLines(sb, CO, [{ pi_id: null, ap_invoice_id: 'ap-9', amount_sen: 31_200 }, { pi_id: 'pi-1', ap_invoice_id: null, amount_sen: 5_000 }])).toEqual({
+      ok: true,
+      bills: [
+        { sen: 31_200, lines: [{ projectId: 175, sen: 18_000 }, { projectId: 175, sen: 9_000 }, { projectId: 324, sen: 4_200 }] },
+        { sen: 5_000, lines: [{ projectId: 7, sen: 1 }] },
+      ],
+    });
+  });
+});
+
+describe('a payment over bills of two projects, split (chew 11 Nov 2026)', () => {
+  // TC-API-2611-004: RM 180 + RM 90 for one project, RM 42 for another.
+  const bill = (sen: number) => ({ sen, lines: [{ projectId: 175, sen: 18_000 }, { projectId: 175, sen: 9_000 }, { projectId: 324, sen: 4_200 }] });
+
+  test('paid in full: each project its lines', () => {
+    expect(settlementProjects(31_200, [bill(31_200)])).toEqual([{ projectId: 175, sen: 27_000 }, { projectId: 324, sen: 4_200 }]);
+  });
+
+  test('paid in part: in proportion, to the sen, adding up to what is paid', () => {
+    expect(settlementProjects(15_600, [bill(15_600)])).toEqual([{ projectId: 175, sen: 13_500 }, { projectId: 324, sen: 2_100 }]);
+    const odd = settlementProjects(10_001, [bill(10_001)]);
+    expect(odd.reduce((s, p) => s + p.sen, 0)).toBe(10_001);
+    expect(odd.map((p) => p.projectId)).toEqual([175, 324]);
+  });
+
+  test('an advance paid beyond the bills names no project, last', () => {
+    expect(settlementProjects(41_200, [bill(31_200)])).toEqual([{ projectId: 175, sen: 27_000 }, { projectId: 324, sen: 4_200 }, { projectId: null, sen: 10_000 }]);
+  });
+
+  test('a bill line with no project, and a bill with no lines, name none', () => {
+    expect(settlementProjects(3_000, [{ sen: 2_000, lines: [{ projectId: 7, sen: 1 }, { projectId: null, sen: 1 }] }, { sen: 1_000, lines: [] }]))
+      .toEqual([{ projectId: 7, sen: 1_000 }, { projectId: null, sen: 2_000 }]);
   });
 });
 

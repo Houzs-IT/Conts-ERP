@@ -140,7 +140,8 @@ type HeaderDraft = {
   currency: string;
   notes: string;
   purchaseLocationId: string;
-  productionTimeDays: string;
+  productionTimeHours: string;
+  planStart: string;
 };
 
 /* Whole-line edit (owner 2026-06-19) — Edit mode now drives one PoLineCard per
@@ -184,7 +185,8 @@ const headerSnapshot = (p: any): HeaderDraft => ({
   currency:              p.currency ?? 'MYR',
   notes:                 p.notes ?? '',
   purchaseLocationId:    p.purchase_location_id ?? '',
-  productionTimeDays:    p.production_time_days == null ? '' : String(p.production_time_days),
+  productionTimeHours: (p as { production_time_hours?: number | string | null }).production_time_hours == null ? '' : String((p as { production_time_hours?: number | string | null }).production_time_hours),
+  planStart: (p as { plan_start?: string | null }).plan_start ?? '',
 });
 
 /* Map a persisted Production Order line → an editable PoLineCard draft. item_group is the
@@ -1667,9 +1669,13 @@ const SupplierCard = ({
               supplier who revises a second time, when every line is already
               filled and the fan-down therefore moves nothing. */}
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>Production Time (days)</span>
-            <input type="number" min="0" step="0.5" className={styles.fieldInput} value={draft.productionTimeDays} disabled={locked}
-              onChange={(e) => onField('productionTimeDays', e.target.value)} aria-label="Production Time in days" />
+            <span className={styles.fieldLabel}>Production Time (hours)</span>
+            <input type="number" min="0" step="0.5" className={styles.fieldInput} value={draft.productionTimeHours} disabled={locked}
+              onChange={(e) => onField('productionTimeHours', e.target.value)} aria-label="Production Time in hours" />
+          </label>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Plan start</span>
+            <DateField fullWidth className={styles.fieldInput} value={draft.planStart} disabled={locked} onChange={(iso) => onField('planStart', iso)} />
           </label>
           <label className={styles.field}>
             <span className={styles.fieldLabel}>Ship-to warehouse</span>

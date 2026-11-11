@@ -4,15 +4,19 @@ import { usedBySql } from '../../_lib/credentials';
 import { MYT_DATE } from '../../_lib/ops';
 import { unitLayoutSql, unitMattressesSql, unitLayout } from '../../_lib/unitLayout';
 import { taskCleanersReady, mineSql, mineArgs, cleanerListSql, parseCleaners } from '../../_lib/taskCleaners';
-import { LIVE_STAY_SQL, mytToday, isDay, standardItems } from '../../_lib/cleaning';
+import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, mytToday, isDay, standardItems } from '../../_lib/cleaning';
 import { hasCleanPrices } from '../../_lib/cleaningPrices';
 import { AFTER_FILE_SQL } from '../../_lib/media';
 import { standardCheckIn } from '../../_lib/cleanOverdue';
-import { nextCheckIn } from '../../../src/lib/cleanOverdue';
+import { nextCheckIn, openToTake } from '../../../src/lib/cleanOverdue';
 import { cleaningCheckoutSql } from '../../_lib/lateCheckout';
+
+const LEFTOVER_DAYS = 14;
+type JobScope = 'mine' | 'open' | 'team' | 'outsourced';
 
 /** GET /api/field/tasks?date=today — the signed-in person's own jobs for the day (plus, for today, anything left over from earlier),
  *  with the guest leaving and the guest arriving on each unit, so a cleaner on the phone sees what the office sees.
+ *  A cleaner also gets the day's unfinished cleans nobody has (`open`, to take) and the ones in-house teammates hold (`team`, read-only).
  *  Never carries revenue, fees or payout figures. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -31,9 +35,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // A requested late checkout holds the unit until its time, as on the office's board (lib/lateCheckout).
   const prevOut = await cleaningCheckoutSql(env, 'prev');
   const ext = (await hasCleanPrices(env)) ? 't.external_address, t.external_client, t.external_phone' : 'NULL::text AS external_address, NULL::text AS external_client, NULL::text AS external_phone';
+  const mayPick = session.role === 'housekeeper';
+  // shortcut: others' unfinished cleans from earlier days only count back 14 days, so stale imports never flood All; widen if the office wants older ones offered.
+  const leftoverFrom = new Date(Date.parse(`${today}T00:00:00Z`) - LEFTOVER_DAYS * 864e5).toISOString().slice(0, 10);
 
   const rows = await all<any>(env, `
-    SELECT t.id, t.unit_id, t.kind, t.title, t.instructions, t.state, t.due_at, t.scheduled_for, t.next_guest_at, t.requires_photo, t.sync, t.updated_at,
+    SELECT t.id, t.unit_id, t.assignee_id, t.cleaner_id, t.kind, t.title, t.instructions, t.state, t.due_at, t.scheduled_for, t.next_guest_at, t.requires_photo, t.sync, t.updated_at,
            t.started_at, t.completed_at, t.guest_left_at, ${ext}, ${when} AS day, ${cleanerListSql(ready)} AS cleaner_list,
            u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name, p.address_line,
            (SELECT c.instruction FROM access_credentials c WHERE c.unit_id = u.id${usedBy} ORDER BY c.updated_at DESC LIMIT 1) AS access_instruction,
@@ -61,30 +68,32 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       SELECT r.check_in, r.check_in_time FROM reservations r WHERE r.unit_id = t.unit_id AND r.check_in > ${when} AND ${LIVE_STAY_SQL('r')}
         AND r.state NOT IN ('checked_in','checked_out') ORDER BY r.check_in, r.check_in_time LIMIT 1
     ) later ON nxt.id IS NULL
-    WHERE ${mineSql(ready)}
+    WHERE (${mineSql(ready)}${mayPick ? ` OR (t.kind IN ${CLEAN_KINDS_SQL} AND t.state != 'resolved' AND ${when} >= ?)` : ''})
       AND (${when} = ?${carry ? ` OR (t.state != 'resolved' AND ${when} < ?)` : ''})
-    ORDER BY p.name NULLS LAST, u.unit_number`, ...mineArgs(ready, session.userId), date, ...(carry ? [date] : []));
+    ORDER BY p.name NULLS LAST, u.unit_number`, ...mineArgs(ready, session.userId), ...(mayPick ? [leftoverFrom] : []), date, ...(carry ? [date] : []));
   const stdIn = await standardCheckIn(env);
   const defaultOut = (await all<{ value: string }>(env, `SELECT value FROM settings WHERE key IN ('operations.checkOut','ops.check_out') ORDER BY key = 'operations.checkOut' DESC LIMIT 1`))[0]?.value ?? '11:00';
 
-  return json({
-    generatedAt: nowIso(), date,
-    rows: rows.map(r => {
+  const jobs = rows.map(r => {
+      const cleaners = parseCleaners(r.cleaner_list);
+      const isMine = r.assignee_id === session.userId || cleaners.some(c => c.userId === session.userId);
+      const isFree = !r.assignee_id && !r.cleaner_id && cleaners.length === 0;
+      const scope: JobScope = isMine ? 'mine' : isFree ? 'open' : cleaners.some(c => !c.outsourced) ? 'team' : 'outsourced';
       const sameDay = r.next_guest_at && r.due_at && r.next_guest_at.slice(0, 10) === r.due_at.slice(0, 10);
       const guestOut = !!r.guest_left_at || r.prev_state === 'checked_out';
       // The next guest's real check-in, as on the office's board (src/lib/cleanOverdue.ts).
       const cin = r.next_guest ? nextCheckIn({ day: r.day, reservationTime: r.next_time ?? '', taskNextGuestAt: r.next_guest_at, standard: stdIn }) : null;
-      return {
+      return { scope, job: {
         id: r.id, unitId: r.unit_id, kind: r.kind, state: r.state,
         // An external clean has an address and maybe a client instead of a unit (owner, 17 Oct 2026).
         unit: r.unit_id ? { unitNumber: r.unit_number, propertyName: r.property_name, size: unitLayout(r).size, layout: unitLayout(r).layout }
           : { unitNumber: r.external_address, propertyName: 'External', size: null, layout: null },
         buildingId: r.property_id ?? 'external',
         external: r.unit_id ? null : { address: r.external_address, clientName: r.external_client ?? null, clientPhone: r.external_phone ?? null },
-        addressLine: String(r.unit_id ? r.address_line ?? '' : r.external_address ?? '').replace(/[\s,]+$/, ''), accessInstruction: r.access_instruction ?? null,
+        addressLine: String(r.unit_id ? r.address_line ?? '' : r.external_address ?? '').replace(/[\s,]+$/, ''), accessInstruction: isMine ? r.access_instruction ?? null : null,
         work: r.title, instructions: r.instructions ?? null, day: r.day, dueAt: r.due_at, nextGuestAt: r.next_guest_at, startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null,
         // Who else is on the job with this cleaner (owner, 11 Oct 2026: several cleaners per clean).
-        team: parseCleaners(r.cleaner_list).filter(c => c.userId !== session.userId).map(c => c.name),
+        team: cleaners.filter(c => c.userId !== session.userId).map(c => c.name),
         readiness: r.readiness, done: r.state === 'resolved', flag: sameDay ? 'Same-day turnaround' : null,
         requiresPhoto: !!r.requires_photo, photoCount: Number(r.photo_count), afterCount: Number(r.after_count),
         checklist: { done: Number(r.ticks), total: standardItems(r.kind).length + Number(r.custom_items) },
@@ -93,7 +102,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         nextLater: !cin && r.later_day ? { day: r.later_day, checkInTime: r.later_time || stdIn } : null,
         sync: r.state === 'resolved' ? 'synced' : r.sync === 'synced' ? null : r.sync,
         syncedAt: r.state === 'resolved' ? r.updated_at : null,
-      };
-    }),
+      } };
   });
+  const scoped = (wanted: JobScope) => jobs.filter(({ scope }) => scope === wanted).map(({ job }) => job);
+  return json({ generatedAt: nowIso(), date, rows: scoped('mine'), open: openToTake(scoped('open'), Date.now()), team: scoped('team'), mayPick });
 };

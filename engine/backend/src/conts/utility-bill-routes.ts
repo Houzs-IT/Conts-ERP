@@ -13,7 +13,8 @@ import { docMonthTag, insertWithDocNoRetry, mintMonthlyDocNo } from '../scm/lib/
 import { todayMyt } from '../scm/lib/my-time';
 import { DOC_FILE_MIMES } from '../scm/lib/doc-files';
 import { normalizeVendor } from '../acc/bill-extract';
-import { readUtilityPage } from '../acc/utility-bill-read';
+import { readUtilityPage, UTILITY_READ_MODEL } from '../acc/utility-bill-read';
+import { requestAiTag } from '../services/aiUsage';
 import { decodeFiles, removeFiles, storeFiles } from './claims-files';
 import type { Staff } from './staff-identity';
 
@@ -32,7 +33,7 @@ export const readPageHandler = async (c: Ctx): Promise<Response> => {
   if (!DOC_FILE_MIMES.has(page.mime) || !page.dataBase64) return c.json({ error: 'bad_type', message: 'Photos (JPEG, PNG, WebP) or a PDF only.' }, 400);
   const key = (c.env as { ANTHROPIC_API_KEY?: string } | undefined)?.ANTHROPIC_API_KEY;
   if (!key) return c.json({ error: 'SCAN_NOT_SET_UP', message: "Bill scanning isn't set up yet." }, 503);
-  const r = await readUtilityPage(key, page);
+  const r = await readUtilityPage(key, page, fetch, requestAiTag(c, 'utility_bill_read', UTILITY_READ_MODEL));
   if ('error' in r) return c.json({ error: 'unreadable', message: r.error }, 502);
   return c.json(r);
 };

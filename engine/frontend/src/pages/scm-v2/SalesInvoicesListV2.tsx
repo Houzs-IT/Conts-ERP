@@ -1,6 +1,7 @@
 // SalesInvoicesListV2 — Sales Invoices listing (mirrors DO/SO V2). SI-specific:
 // money stats, payment-biased status flow, From SO/DO anchors. /scm/sales-invoices.
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { siPaymentIntentSearch } from "./siPaymentIntent";
 import { salesInvoiceRowMenu } from "./row-menus";
@@ -29,7 +30,7 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { fetchSiExportRows, type SiListLine } from "../../vendor/scm/lib/si-list-export";
-import { siGridColumns } from "./si-list-columns";
+import { siBillsForColumn, siGridColumns } from "./si-list-columns";
 import { PageHeader } from "../../components/Layout";
 import { StatCard } from "../../components/StatCard";
 import { FilterPills } from "../../components/FilterPills";
@@ -61,6 +62,7 @@ import {
 } from "../../vendor/scm/lib/sales-invoice-queries";
 import { useMfgCustomers } from "../../vendor/scm/lib/sales-order-queries";
 import { useServerColumnFunnels, funnelValues } from "../../hooks/useServerColumnFunnels";
+import { conditionDateRange } from "../../components/dataTableConditionFilters";
 import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { useChoice } from "../../vendor/scm/components/ChoiceDialog";
@@ -136,6 +138,7 @@ type SiRow = {
      server could not read the order — read as 0, which shows the LARGER
      outstanding. Kept apart from paid_sen: different money, different document. */
   so_deposit_applied_sen?: number | null;
+  bills_for?: string | null;
   status: string;
   currency: string;
   line_count?: number;
@@ -161,7 +164,7 @@ type SiRow = {
   margin_pct_basis?: number;
 };
 
-type StatusTab = "all" | "sent" | "partial" | "paid" | "cancelled";
+type StatusTab = "all" | "draft" | "sent" | "partial" | "paid" | "cancelled";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 // margin_pct_basis is basis points (margin/total x 10000) → percent string.
@@ -182,7 +185,7 @@ const brandOf = (r: SiRow): string => r.branding || "—";
 const brandTone = brandingToneForLabel;
 
 // SI status → filter bucket. Business flow: DRAFT → SENT → PARTIALLY_PAID →
-// PAID → CANCELLED. Buckets: sent (Draft + Sent + Overdue) / partial / paid /
+// PAID → CANCELLED. Buckets: draft / sent (Sent + Overdue) / partial / paid /
 // cancelled — the same split SI_STATUS_BUCKETS uses server-side
 // (backend/src/scm/routes/sales-invoices.ts), which is what the tab COUNTS are
 // computed from. A row whose bucket here disagrees with the server's is a row
@@ -197,7 +200,7 @@ const STATUS_TONE: Record<
   string,
   { tone: "success" | "warning" | "error" | "neutral"; label: string; bucket: StatusTab }
 > = {
-  draft:           { tone: "warning", label: "Draft",       bucket: "sent" },
+  draft:           { tone: "warning", label: "Draft",       bucket: "draft" },
   sent:            { tone: "warning", label: "Submitted",   bucket: "sent" },
   issued:          { tone: "warning", label: "Submitted",   bucket: "sent" },
   overdue:         { tone: "error",   label: "Overdue",     bucket: "sent" },
@@ -864,13 +867,13 @@ export function SalesInvoicesListV2() {
   const customersQ = useMfgCustomers();
   const customerNames = useMemo(() => [...new Set((customersQ.data?.customers ?? []).map((cst) => cst.name).filter((n): n is string => !!n))], [customersQ.data]);
   const { serverFunnels, onColFiltersChange } = useServerColumnFunnels(
-    (cf) => ({ debtorNames: funnelValues(cf, "debtor_name"), currencies: funnelValues(cf, "currency") }),
+    (cf) => ({ ...conditionDateRange(cf["invoice_date"]), debtorNames: funnelValues(cf, "debtor_name"), currencies: funnelValues(cf, "currency") }),
     () => setPageParam(0),
   );
   const { requestTerm: debouncedSearch } = useDebouncedSearchTerm(search);
 
   // Send the active tab's BUCKET NAME as `status`; the backend resolves each
-  // bucket to the raw statuses it covers (sent = DRAFT+SENT+OVERDUE, partial =
+  // bucket to the raw statuses it covers (sent = SENT+OVERDUE, partial =
   // PARTIALLY_PAID, paid = PAID, cancelled = CANCELLED). `all` omits the filter.
   // ISSUED / PARTIAL / COMPLETED were listed here until 2026-08-17 and are not
   // members of the sales_invoice_status enum — sending them made each of those
@@ -907,8 +910,11 @@ export function SalesInvoicesListV2() {
   // Server already filtered + sorted this page — render verbatim.
   const rows = (data?.salesInvoices ?? []) as SiRow[];
   const total = data?.total ?? 0;
+  /* Each tab's money, server-summed over the same rows as its count (TODO item 5). */
+  const tabMoney: Record<string, number> = data?.statusMoneySen ?? {};
   const counts = data?.statusCounts ?? {
     all: 0,
+    draft: 0,
     sent: 0,
     partial: 0,
     paid: 0,
@@ -1066,7 +1072,7 @@ export function SalesInvoicesListV2() {
       for (const r of chosen) bundles.push(await fetchSiBundle(r));
       if (how === "one") {
         await generateCombinedSalesInvoicePdf(bundles as never, {
-          fileName: `sales-invoices-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `sales-invoices-${todayMyt()}.pdf`,
           action,
         });
       } else {
@@ -1276,6 +1282,7 @@ export function SalesInvoicesListV2() {
         );
       },
     },
+    siBillsForColumn<SiRow>(),
     {
       key: "outstanding",
       label: "Outstanding",
@@ -1695,11 +1702,12 @@ export function SalesInvoicesListV2() {
   // AutoCount's Detail Listing columns lead, in its order (si-list-columns.tsx).
   const columns = siGridColumns<SiRow>(erpColumns);
 
-  const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
-    { value: "all", label: `All · ${counts.all}` },
-    { value: "sent", label: `Submitted · ${counts.sent}` },
-    { value: "partial", label: `Partial · ${counts.partial}` },
-    { value: "paid", label: `Paid · ${counts.paid}` },
+  const statusPillOptions: Array<{ value: StatusTab; label: string; moneySen?: number }> = [
+    { value: "all", label: `All · ${counts.all}`, moneySen: tabMoney.all },
+    { value: "draft", label: `Draft · ${counts.draft}`, moneySen: tabMoney.draft },
+    { value: "sent", label: `Submitted · ${counts.sent}`, moneySen: tabMoney.sent },
+    { value: "partial", label: `Partial · ${counts.partial}`, moneySen: tabMoney.partial },
+    { value: "paid", label: `Paid · ${counts.paid}`, moneySen: tabMoney.paid },
     { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
   ];
 

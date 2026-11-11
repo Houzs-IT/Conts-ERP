@@ -22,6 +22,7 @@ import { grnListParams } from './grn-list-export';
 import { applyListMrpEnrichment, type EnrichableMrpRow, type ListMrpEnrichment } from '../../../lib/listMrpEnrichment';
 import { idempotentInit } from '../../../lib/idempotency';
 import { serviceNotify } from './dialog-service';
+import { afterOnsiteConfirm } from './onsite-twin-queries';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
 import { writeFailed, writeFailedAs, reportInBandFailure } from './mutation-error';
 
@@ -99,16 +100,16 @@ export const useGrns = (status?: string) =>
 // the resolved grns.status DB value (UPPERCASE); each GRN filter-pill bucket
 // (draft/posted/cancelled) maps 1:1 to a single DB status, so no bucket needs
 // to be dropped here.
-export function useGrnsPaged(params: { page: number; pageSize: number; status?: string; q?: string; sort?: string; creditorNames?: string[]; creditorCodes?: string[]; currencies?: string[] }) {
-  const { page, pageSize, status, q, sort, creditorNames, creditorCodes, currencies } = params;
+export function useGrnsPaged(params: { from?: string; to?: string; page: number; pageSize: number; status?: string; q?: string; sort?: string; creditorNames?: string[]; creditorCodes?: string[]; currencies?: string[] }) {
+  const { page, pageSize, status, q, sort, creditorNames, creditorCodes, currencies, from, to } = params;
   // The filter half is shared with the two exports (grn-list-export.ts), so an
   // export can never be sent a different filter than the list it was pressed on.
-  const usp = grnListParams({ status, q, sort, creditorNames, creditorCodes, currencies });
+  const usp = grnListParams({ status, q, sort, creditorNames, creditorCodes, currencies, from, to });
   usp.set('page', String(page));
   usp.set('pageSize', String(pageSize));
   return useQuery({
-    queryKey: ['grns-paged', page, pageSize, status ?? '', q ?? '', sort ?? '', JSON.stringify(creditorNames ?? []), JSON.stringify(creditorCodes ?? []), JSON.stringify(currencies ?? [])],
-    queryFn: ({ signal }) => authedFetch<{ grns: any[]; total: number; page: number; pageSize: number; statusCounts: { all: number; draft: number; posted: number; cancelled: number } & Partial<Record<'on_hold', number>> }>(`/grns?${usp.toString()}`, { signal }),
+    queryKey: ['grns-paged', page, pageSize, status ?? '', q ?? '', sort ?? '', JSON.stringify(creditorNames ?? []), JSON.stringify(creditorCodes ?? []), JSON.stringify(currencies ?? []), from ?? '', to ?? ''],
+    queryFn: ({ signal }) => authedFetch<{ grns: any[]; total: number; page: number; pageSize: number; statusMoneySen?: Record<string, number>; statusCounts: { all: number; draft: number; posted: number; cancelled: number } & Partial<Record<'on_hold', number>> }>(`/grns?${usp.toString()}`, { signal }),
     placeholderData: (prev: any) => prev,
     staleTime: 30_000,
     retry: retryUnlessClientError,
@@ -240,6 +241,7 @@ export const usePostGrn = () => {
       qc.invalidateQueries({ queryKey: ['grn-detail', id] });
       qc.invalidateQueries({ queryKey: ['grns'] });
       qc.invalidateQueries({ queryKey: ['inventory'] });
+      afterOnsiteConfirm('grn', id, () => { void qc.invalidateQueries({ queryKey: ['onsite-twin', 'grn', id] }); void qc.invalidateQueries({ queryKey: ['mfg-delivery-orders'] }); });
     },
     /* The commit chokepoint for inventory IN had no error path at all until
        2026-08-21. Three of its four call sites pass no per-call `onError`

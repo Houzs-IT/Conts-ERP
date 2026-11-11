@@ -21,7 +21,9 @@ import { StatRow, StatTile, SectionTitle } from '../components/Metric';
 interface Arrival {
   reservationId: string; state: string; channel: string; guestName: string; guests: number; checkInTime: string; checkOut: string;
   unitId: string; unitNumber: string; readiness: string; buildingId: string; propertyName: string; cleanState: string | null; arrivedAt: string | null;
+  passKey: PassKeyJob | null;
 }
+interface PassKeyJob { isHandedOver: boolean; technician: string | null }
 interface Departure {
   reservationId: string; state: string; channel: string; guestName: string; checkOutTime: string;
   unitId: string; unitNumber: string; buildingId: string; propertyName: string; taskId: string | null; taskState: string | null; guestOut: boolean; leftAt: string | null;
@@ -30,7 +32,7 @@ type Progress = 'reported' | 'assigned' | 'in_progress' | 'repair_finished' | 'a
 interface Job {
   id: string; title: string; state: string; progress: Progress; why: 'overdue' | 'urgent' | 'visit' | 'blocking'; urgent: boolean;
   category: string; assigneeName: string | null; blocksUnit: boolean; visit: { startsAt: string; endsAt: string } | null; dueBy: string | null;
-  unitNumber: string; propertyName: string;
+  unitNumber: string | null; propertyName: string;
 }
 type Free = 'ready' | 'needs_cleaning' | 'cleaning' | 'blocked';
 interface FreeUnit {
@@ -154,6 +156,7 @@ export default function OperationsTodayPage() {
                 unit={`${a.propertyName} ${a.unitNumber}`} guest={`${a.guestName}${a.guests ? ` · ${a.guests} ${a.guests === 1 ? 'guest' : 'guests'}` : ''}`}
                 sub={!inside && a.cleanState && a.cleanState !== 'resolved' ? `Cleaning ${a.cleanState === 'in_progress' ? 'in progress' : 'not finished'}` : undefined} subTone="warning"
                 actions={<>
+                  {a.passKey && <PassKeyBadge passKey={a.passKey} />}
                   {inside ? <StatusBadge tone="success">Currently hosting</StatusBadge> : <StatusBadge tone={r.tone}>{r.label}</StatusBadge>}
                   {canArrive && <Button size="sm" variant="secondary" loading={busy === a.reservationId} onClick={() => void guestArrived(a)}>Guest arrived</Button>}
                   {!inside && <TimeButton label="Change check-in time" onClick={() => setEditTime({ id: a.reservationId, which: 'in', label: `${a.propertyName} ${a.unitNumber}`, value: a.checkInTime })} />}
@@ -218,6 +221,13 @@ function StayLine({ id, channel, time, done, unit, guest, sub, subTone, actions 
   );
 }
 
+function PassKeyBadge({ passKey: { isHandedOver, technician } }: { passKey: PassKeyJob }): JSX.Element {
+  if (isHandedOver) return <StatusBadge tone="success">Pass key done</StatusBadge>;
+  return technician
+    ? <StatusBadge tone="info">Pass key · {technician}</StatusBadge>
+    : <StatusBadge tone="warning">Pass key · no technician</StatusBadge>;
+}
+
 function TimeButton({ label, onClick }: { label: string; onClick: () => void }) {
   return <Button size="sm" variant="tertiary" icon={<Icon name="Clock" size="sm" />} aria-label={label} title={label} onClick={onClick}>Time</Button>;
 }
@@ -257,7 +267,7 @@ function JobLine({ m }: { m: Job }) {
       className={cx(ROW, 'flex flex-wrap items-center gap-x-3 gap-y-2 text-copy text-ink no-underline hover:bg-page')}>
       <span className={cx('w-[96px] flex-none [font-variant-numeric:tabular-nums]', m.visit ? 'font-semibold' : 'text-meta text-muted-ink')}>{when}</span>
       <span className="flex-1 min-w-[180px]">
-        <b className="[overflow-wrap:anywhere]">{m.propertyName} {m.unitNumber}</b> · {m.title}
+        <b className="[overflow-wrap:anywhere]">{m.propertyName} {m.unitNumber ?? 'Building (no unit)'}</b> · {m.title}
         <span className="block text-meta text-muted-ink">{CATEGORY[m.category] ?? m.category} · {m.assigneeName ?? 'nobody assigned'}{m.dueBy ? ` · available again ${dayLabel(m.dueBy)}` : ''}</span>
       </span>
       <span className="flex items-center gap-2 flex-wrap justify-end ml-auto">

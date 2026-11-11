@@ -25,6 +25,7 @@
 // reference, and a loud refusal for a file it cannot read.
 // ----------------------------------------------------------------------------
 
+import { rmFromText } from "../../lib/money";
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, ArrowRight, CheckCheck, Download, Undo2, Upload } from 'lucide-react';
@@ -166,7 +167,7 @@ const ReconcileTab = () => {
           acquirerCode: code,
           fileName: f.name,
           content: f.content,
-          summaryFeeSen: summaryFee.trim() ? Math.round(Number(summaryFee) * 100) : null,
+          summaryFeeSen: summaryFee.trim() ? Math.round(rmFromText(summaryFee) * 100) : null,
           statementMonth: statementMonth || null,
         });
         made.push(r.batchId);

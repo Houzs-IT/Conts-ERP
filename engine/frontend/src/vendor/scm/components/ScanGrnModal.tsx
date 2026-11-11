@@ -33,6 +33,8 @@ import {
   type ScanJob,
   type ScanJobsResp,
 } from '../lib/scan-jobs';
+import { useScanJobDriver, isStalledScanJob } from '../lib/scan-job-driver';
+import { ScanJobRetry } from './ScanJobRetry';
 import styles from './ScanOrderModal.module.css';
 
 const ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf';
@@ -68,7 +70,7 @@ export function ScanGrnModal({ onClose }: { onClose: () => void }) {
 
   /* Results — poll GET /scan-gr/jobs (company-scoped, GR-only) and show only the
      jobs this session enqueued. Every 4s while any is queued/running. */
-  const { data: jobsData } = useQuery({
+  const { data: jobsData, refetch } = useQuery({
     queryKey: ['scan-grn-modal-jobs'],
     enabled: enqueuedJobIds.length > 0,
     queryFn: () => authedFetch<ScanJobsResp>('/scan-gr/jobs'),
@@ -88,6 +90,8 @@ export function ScanGrnModal({ onClose }: { onClose: () => void }) {
       .filter((j): j is ScanJob => Boolean(j))
       .sort((a, b) => jobTs(a.createdAt) - jobTs(b.createdAt));
   }, [jobsData, enqueuedJobIds]);
+  // No queue on this server: the open modal runs each queued scan (scan-job-driver.ts).
+  useScanJobDriver('/scan-gr', trackedJobs, () => void refetch());
 
   // One /scan-gr/enqueue POST — every page of the delivery order under `file`
   // (the repeated-`file` contract the backend + SO scanner share). Downscale
@@ -198,7 +202,8 @@ export function ScanGrnModal({ onClose }: { onClose: () => void }) {
                   // note is NEEDS-REVIEW (no doc created — matcher couldn't map a PO).
                   const needsReview = done && !j.linkedDocNo;
                   const chipClass = done ? (needsReview ? styles.chipYellow : styles.chipTeal) : failed ? styles.chipYellow : styles.chipGrey;
-                  const chipLabel = active ? (j.status === 'running' ? 'Reading…' : 'Queued') : done ? (needsReview ? 'Review' : 'Draft') : failed ? 'Failed' : j.status;
+                  const stalled = isStalledScanJob(j);
+                  const chipLabel = stalled ? 'Stalled' : active ? (j.status === 'running' ? 'Reading…' : 'Queued') : done ? (needsReview ? 'Review' : 'Draft') : failed ? 'Failed' : j.status;
                   return (
                     <div key={j.id} className={styles.resultRow}>
                       <span className={`${styles.chip} ${chipClass}`}>
@@ -217,6 +222,7 @@ export function ScanGrnModal({ onClose }: { onClose: () => void }) {
                         {done && j.linkedDocNo && j.error && (
                           <div className={styles.resultSub}>{j.error}</div>
                         )}
+                        <ScanJobRetry base="/scan-gr" job={j} onDone={() => void refetch()} />
                       </div>
                       <span style={{ flex: 'none', fontSize: 11, color: 'var(--fg-muted)' }}>
                         {jobTs(j.createdAt) ? hhmm(jobTs(j.createdAt)) : ''}

@@ -4,7 +4,7 @@
 // every row, and applies. A row with a problem stops the whole file. Nothing posts: the opening balances carry it.
 import { useRef, useState } from "react";
 import { Button } from "@2990s/design-system";
-import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
+import { SetupCard } from "./SetupCard";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import { readWorkbookGrid } from "./opening";
 import {
@@ -94,8 +94,7 @@ export function RenovationOpening({ canSave, ledgerStartDate }: { canSave: boole
   };
 
   return (
-    <section className={styles.card} style={{ padding: "var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-      <h2 className={styles.cardTitle}>Renovation contracts at go-live</h2>
+    <SetupCard title="Renovation contracts at go-live">
       {!ledgerStartDate ? (
         <p style={{ margin: 0, color: MUTED }}>Set the day the books start first: only contracts signed before it are seeded here.</p>
       ) : (
@@ -154,6 +153,6 @@ export function RenovationOpening({ canSave, ledgerStartDate }: { canSave: boole
           {note && <p style={{ margin: 0, color: note.ok ? GOOD : BAD }}>{note.text}</p>}
         </>
       )}
-    </section>
+    </SetupCard>
   );
 }

@@ -30,6 +30,7 @@ import { todayMyt } from './my-time';
 import { dateOrNull } from './date-coerce';
 import {
   doLineRemaining, doRemainingByItemId, findOverInvoicedDoItems, custKeyOf, remainingUnavailableResponse, siTransferRefusal,
+  isDoLineOverInvoiced,
 } from './do-line-remaining';
 import { deliveryMustMirrorAutoCount, refuseMigratedSources } from './migrated-chain';
 import { MIGRATED_DELIVERIES_NOT_INVOICED_IN_AUTOCOUNT } from './migrated-deliveries-not-invoiced.generated';
@@ -325,7 +326,7 @@ export type SiFromDoInput = {
 };
 
 export type SiFromDoStatus = 201 | 400 | 404 | 409 | 500 | 503;
-export type SiFromDoRevenue = { posted: boolean; jeNo?: string; status: string };
+export type SiFromDoRevenue = { posted: boolean; jeNo?: string; status: string; reason?: string };
 /** The AutoCount enqueue's own problem sentences, passed through untouched. */
 type AcProblems = NonNullable<Awaited<ReturnType<typeof enqueueConvert>>>['problems'];
 export type SiFromDoOutcome =
@@ -333,6 +334,17 @@ export type SiFromDoOutcome =
   | { ok: false; status: Exclude<SiFromDoStatus, 201>; body: Record<string, unknown> };
 
 const refuse = (status: Exclude<SiFromDoStatus, 201>, body: Record<string, unknown>): SiFromDoOutcome => ({ ok: false, status, body });
+
+/** The renovation contract these deliveries belong to, if any. 42703: so_kind not there yet (before migration 0069). */
+async function renovationDocOf(sb: Db, doIds: string[]): Promise<{ ok: true; docNo: string | null } | { ok: false; reason: string }> {
+  const { data: dos, error } = await sb.from('delivery_orders').select('so_doc_no').in('id', doIds);
+  if (error) return { ok: false, reason: error.message };
+  const docs = [...new Set(((dos ?? []) as Array<{ so_doc_no: string | null }>).map((d) => d.so_doc_no).filter((x): x is string => !!x))];
+  if (docs.length === 0) return { ok: true, docNo: null };
+  const { data: sos, error: soErr } = await sb.from('mfg_sales_orders').select('doc_no, so_kind').in('doc_no', docs);
+  if (soErr) return (soErr as { code?: string }).code === '42703' ? { ok: true, docNo: null } : { ok: false, reason: soErr.message };
+  return { ok: true, docNo: ((sos ?? []) as Array<{ doc_no: string; so_kind?: string | null }>).find((s) => s.so_kind === 'RENOVATION')?.doc_no ?? null };
+}
 
 /**
  * Raise ONE sales invoice off the picked delivery-order lines (all of one
@@ -365,6 +377,18 @@ export async function createSalesInvoiceFromDoLines(sb: Db, input: SiFromDoInput
   const missing = pickedIds.filter((id) => !idToDo.has(id));
   if (missing.length > 0) return refuse(404, { error: 'do_item_not_found', missing });
   const doIds = [...new Set([...idToDo.values()])];
+  /* A renovation contract bills by instalment. An invoice off its delivery would sit outside the schedule, and the next
+     instalment's "cumulative less billed" would not know about it. The route's refusal covers the hand-made invoice only. */
+  {
+    const contract = await renovationDocOf(sb, doIds);
+    if (!contract.ok) return refuse(500, { error: 'load_failed', reason: contract.reason });
+    if (contract.docNo) {
+      return refuse(409, {
+        error: 'renovation_so_bills_by_instalment',
+        message: `${contract.docNo} is a renovation contract: bill it by instalment on the renovation contract screen.`,
+      });
+    }
+  }
   /* A delivery carried over from AutoCount is invoiced by the migrated-invoice
      converter, never here. AutoCount already raised the invoice and already
      booked its revenue, so this path would mint a second one under an ERP
@@ -516,6 +540,8 @@ export async function createSalesInvoiceFromDoLines(sb: Db, input: SiFromDoInput
   const { error: iErr } = await sb.from('sales_invoice_items').insert(stamped);
   if (iErr) {
     await sb.from('sales_invoices').delete().eq('id', h.id);
+    // HC-0004: the DB cap (migration 0273) refused a line past its DO line.
+    if (isDoLineOverInvoiced(iErr)) return refuse(409, { error: 'race_conflict', message: 'Another operator just invoiced overlapping qty from this Delivery Order. Refresh and try again.', reason: iErr.message });
     return refuse(500, { error: 'items_insert_failed', reason: iErr.message });
   }
   /* Race-condition guard — same as the POST / path, and the SI counterpart of
@@ -581,7 +607,7 @@ export async function createSalesInvoiceFromDoLines(sb: Db, input: SiFromDoInput
       ? { posted: false, status: post.status }
       : { posted: post.status === 'posted', jeNo: post.jeNo, status: post.status };
   } else {
-    revenue = { posted: false, status: post.status };
+    revenue = { posted: false, status: post.status, reason: post.reason };
     if (post.status !== 'zero_total' && post.status !== 'invoice_not_found') {
       // eslint-disable-next-line no-console
       console.error(`[si-revenue] post failed for ${h.invoice_number}:`, post.status, post.reason);

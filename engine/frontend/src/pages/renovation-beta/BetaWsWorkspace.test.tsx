@@ -164,6 +164,9 @@ function open(url = "/beta/projects/7"): void {
 
 afterEach(() => localStorage.clear());
 
+
+// These are Dream Crafter screens: dates read day first (YH, 11 Nov 2026).
+
 describe("Beta project workspace", () => {
   it("shows the mockup's header, stepper and tabs, and remembers the project", async () => {
     open();
@@ -216,12 +219,12 @@ describe("Beta project workspace", () => {
     expect(screen.getByText("2D · by Yi Xuan")).toBeTruthy();
     expect(screen.getByText("Site briefing · Alex")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Start 3D today" })).toBeTruthy();
-    // Past design the step bar's step leads To do (live run, 24 Oct 2026); the design and payment rows follow it.
+    // Past design the step bar's step leads To do (live run, 24/10/2026); the design and payment rows follow it.
     expect(screen.getByText("Next step · renovation")).toBeTruthy();
     expect(screen.getByText("Next site step: Electrical wiring & ceiling frame")).toBeTruthy();
     expect(screen.getByText("3D not started")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Start 3D today\s*: 3D not started/ })).toBeTruthy();
-    expect(screen.getByText("SO-001 · signed 10 Aug 2026")).toBeTruthy();
+    expect(screen.getByText("SO-001 · signed 10/08/2026")).toBeTruthy();
   });
 
   it("opens the shared assign form from the header", async () => {
@@ -331,7 +334,7 @@ describe("Beta project workspace", () => {
     expect(within(doCard).getByText("POD")).toBeTruthy();
     // The PO and delivery date are the PO line's, as the PO tab shows them, not the line's own plan.
     expect(within(doCard).getByText("PO-001")).toBeTruthy();
-    expect(within(doCard).getByText("2 Nov")).toBeTruthy();
+    expect(within(doCard).getByText("02/11")).toBeTruthy();
     expect(screen.queryByRole("listitem", { name: "Goods receipt GRN-001" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "By category" }));
     const cat = await screen.findByRole("region", { name: "Cabinet" });

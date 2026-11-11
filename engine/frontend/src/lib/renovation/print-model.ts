@@ -11,6 +11,9 @@ import { PRINT_FORMATS, type ColumnKey, type PrintFormat } from './print-formats
 export type DocKind = 'QUOTATION' | 'SALES_ORDER' | 'VARIATION_ORDER';
 
 export interface PrintLineInput {
+  /** Line id and SKU, for the sales order's item, area or category layouts. */
+  id?: string;
+  itemCode?: string | null;
   kind: RenoLineKind;
   description: string;
   room?: string;

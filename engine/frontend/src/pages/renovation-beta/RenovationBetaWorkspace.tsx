@@ -24,6 +24,7 @@ import { BetaSiteTab } from "./BetaSiteTab";
 import { BetaTimelineTab } from "./BetaTimelineTab";
 import { BetaVoTab } from "./BetaVoTab";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
+import { DeleteProjectButton } from "./BetaDeleteProject";
 import { BetaWsHeader, BetaWsStepper } from "./BetaWsHeader";
 import { BetaSkin, useBetaPreload, WS, WsNotice, WsStyle } from "./BetaWsUi";
 import type { BetaTabProps, BoardView } from "./betaShared";
@@ -115,13 +116,17 @@ function WorkspaceScreen(): ReactElement {
     steps: d.flow.steps, currentKey: d.flow.current, currentIndex: d.flow.currentIndex, soDate: (d.signedSo ?? d.so)?.so_date ?? null, soStatus: (d.signedSo ?? d.so)?.status ?? null, handoverOn: p.handed_over_at ?? p.planned_handover_date, tasks: d.tasks, today, sla: d.stepSla ?? null,
   });
   const hold = d.hold ? (d.hold.flag === "in_defect" ? "In defect" : "On hold") : null;
+  // A project opened by mistake (chew, 10 Nov 2026). Once it has a contract it is never offered; the server refuses
+  // any project with a document on it anyway.
+  const canDelete = can("projects.manage") && !d.so && !d.signedSo;
 
   return (
     <BetaMotion>
     <div className="bws" style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%", minWidth: 0, paddingBottom: 40 }}>
       <WsStyle />
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
-        <BetaWsHeader d={d} p={board.p} people={board.m.everyone} canWrite={can("projects.write")} today={today} openDialog={setDialog} />
+        <BetaWsHeader d={d} p={board.p} people={board.m.everyone} canWrite={can("projects.write")} today={today} openDialog={setDialog}
+          actions={canDelete ? <DeleteProjectButton project={{ id, code: p.code, name: p.name }} onError={onError} /> : undefined} />
       </motion.div>
       <BetaWsStepper items={items} hold={hold} />
 

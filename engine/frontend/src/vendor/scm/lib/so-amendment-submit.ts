@@ -41,6 +41,9 @@ export type AmendmentSubmitInput = {
   /** The FREE half is dirty: customer name / phone / email / note — anything
       the header PATCH still writes directly while the SO is locked. */
   hasDirectHeaderChanges: boolean;
+  /** Lines whose only change saves straight to the order (options, remark): a VO is a change of amount or an added
+      line (owner, 4 Nov 2026), so these raise none. */
+  hasSaveOnlyLineChanges?: boolean;
   /** Mobile stages payments in the same form and posts them at the end of this
       same submit. A payment needs no approval, but it IS a change: without this
       a payment-only edit on a locked SO was refused "No changes to submit" and
@@ -52,7 +55,7 @@ export type AmendmentSubmitInput = {
 
 export function planAmendmentSubmit(input: AmendmentSubmitInput): AmendmentSubmitPlan {
   if (input.hasLineChanges || input.hasFrozenHeaderChanges) return 'AMENDMENT';
-  if (input.hasDirectHeaderChanges || input.hasStagedPayments) return 'DIRECT_ONLY';
+  if (input.hasDirectHeaderChanges || input.hasStagedPayments || input.hasSaveOnlyLineChanges) return 'DIRECT_ONLY';
   return 'NOTHING';
 }
 
@@ -60,6 +63,10 @@ export function planAmendmentSubmit(input: AmendmentSubmitInput): AmendmentSubmi
     are what the button raises — the FREE half never gets this far. */
 export const AMENDMENT_NOTHING_TO_SUBMIT =
   'No changes to submit — edit a line, a date or the delivery address first, then submit the VO.';
+
+/** Shown when a confirmed order is saved with nothing that needs a VO. Photos and files saved as they were added. */
+export const NO_VO_NEEDED_TITLE = 'Saved';
+export const NO_VO_NEEDED_BODY = 'Nothing here changes what the customer pays, so no VO was needed. Photos are already on the order.';
 
 /** The reason prompt's validation message, shared by both surfaces (owner
     2026-09-15: the reason is REQUIRED; the server refuses 400 reason_required
@@ -140,10 +147,10 @@ export function amendmentSubmittedNotice(
     banner kept promising they saved directly for three weeks (HC-SO-013497).
     The list of what saves straight away is the FREE set in so-field-policy —
     keep it in step with that table, not with memory. */
-/** Conts (owner 2026-10-24): a confirmed order changes only through a VO, recorded and applied at once. */
+/** Conts: on a confirmed order only a change of amount or lines is a VO (owner, 4 Nov 2026 and 6 Nov 2026). */
 export const VO_MODE_BANNER =
-  'This sales order is confirmed, so every change is recorded as a VO (VO-01, VO-02, ...). Edit the lines '
-  + 'as usual and press Record VO: the change applies straight away, no approval needed.';
+  'This sales order is confirmed. Adding or removing a line, or changing its SKU, qty or price, is recorded as a VO '
+  + 'and applies straight away. Photos, options, remarks, dates and the address just save, with no VO.';
 
 /** A renovation contract: only a change of amount or an added line is a VO (owner, 4 Nov 2026). */
 export const CONTRACT_MODE_BANNER =

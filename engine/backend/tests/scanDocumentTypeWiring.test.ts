@@ -66,11 +66,17 @@ describe('the queue consumer and reaper read + carry document_type', () => {
     expect(fn).toContain('documentType,');
   });
 
-  test('the stale-job reaper selects and coerces document_type for its re-run', () => {
+  /* Since 5d8177da the reaper no longer re-runs a stale job itself (that re-run sat in waitUntil and was cut after
+     ~30 s). It re-queues the row and hands it off; the run then goes through processScanQueueMessage (queue) or the
+     screen's /work call, both of which read and coerce document_type above. So the reaper's own duty is narrower:
+     touch SO rows only, and never replay one in-line. */
+  test('the stale-job reaper only touches SO jobs and hands a re-claimed job off instead of re-running it', () => {
     const fn = between(scanSoSrc, 'async function reapStaleScanJobs', "scanSo.get('/jobs'");
     expect(fn).toContain('retry_count, company_id, document_type');
-    expect(fn).toContain('coerceScanDocumentType(r.documentType ?? r.document_type)');
-    expect(fn).toContain('documentType,');
+    expect(fn.match(/\.eq\('document_type', 'SO'\)/g) ?? []).toHaveLength(3);
+    expect(fn).toContain('await handOffReclaimedJob(env, id);');
+    expect(fn).not.toContain('processScanQueueMessage(');
+    expect(fn).not.toContain('waitUntil(');
   });
 });
 

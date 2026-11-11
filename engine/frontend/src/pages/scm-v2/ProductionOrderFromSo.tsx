@@ -37,13 +37,16 @@ import {
 } from '../../vendor/scm/lib/production-order-queries';
 import { DataGridCompat, type GridColumn } from '../../components/DataGridCompat';
 import { useIdempotencyKey } from '../../lib/idempotency';
-import { readScmHandoff, writeScmHandoff } from '../../lib/scmHandoffStorage';
+import { readScmHandoff } from '../../lib/scmHandoffStorage';
 import { ActionResultDialog } from '../../vendor/scm/components/ActionResultDialog';
 import { ItemGroupPill } from '../../vendor/scm/lib/category-badges';
+import { useCategoryOptions, withRowCategories } from '../../vendor/scm/lib/renovation-catalog-queries';
+import { categoryMatches } from '../../vendor/shared/renovation-catalog';
 import styles from './SalesOrderDetail.module.css';
 import { PageHeader } from '../../components/Layout';
 import { soRefOfCamelStamp } from '../../lib/so-ref-search';
 import { DateField } from "../../vendor/scm/components/DateField";
+import { SoLineStatusCell, soLineStatusText, useSoLineStatus } from './SoLineStatus';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -63,16 +66,6 @@ const FILTER_INPUT: CSSProperties = {
   background: 'var(--c-paper)',
   color: 'var(--c-ink)',
 };
-
-/** Category filter options. 'all' shows everything; the rest match item_group. */
-const CATEGORY_OPTIONS = [
-  { value: 'all',       label: 'All categories' },
-  { value: 'sofa',      label: 'Sofa' },
-  { value: 'bedframe',  label: 'Bedframe' },
-  { value: 'mattress',  label: 'Mattress' },
-  { value: 'accessory', label: 'Accessory' },
-  { value: 'service',   label: 'Service' },
-] as const;
 
 /** Which date field the range filter targets. */
 const DATE_FIELD_OPTIONS = [
@@ -122,6 +115,7 @@ export const ProductionOrderFromSo = () => {
 
   // Toolbar filters (commander 2026-05-28).
   const [category, setCategory]   = useState<string>('all');
+  const categoryOptions = useCategoryOptions();
   const [dateField, setDateField] = useState<DateField>('soDate');
   const [dateFrom, setDateFrom]   = useState<string>('');
   const [dateTo, setDateTo]       = useState<string>('');
@@ -129,7 +123,8 @@ export const ProductionOrderFromSo = () => {
   // In-app result dialog (validation only now — the grid feeds the form).
   const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string } | null>(null);
 
-  const items = useMemo(() => itemsQ.data ?? [], [itemsQ.data]);
+  /* A production order is our own team's work: a line bought from an outside supplier goes on a PO instead. */
+  const items = useMemo(() => (itemsQ.data ?? []).filter((r) => !r.mainSupplierCode || r.mainSupplierCode === 'INHOUSE'), [itemsQ.data]);
 
   /* Commander 2026-05-30 — the New Production Order form stashes its current draft
      (poNewDraft) before sending us here. Build a per-soItemId draft qty map so:
@@ -161,7 +156,7 @@ export const ProductionOrderFromSo = () => {
   const rows = useMemo(() => {
     return items.filter((r) => {
       if (effectiveRemaining(r) <= 0) return false;
-      if (category !== 'all' && (r.itemGroup ?? '').toLowerCase() !== category) return false;
+      if (category !== 'all' && !categoryMatches(r.itemGroup, category)) return false;
       if (dateFrom || dateTo) {
         const d = rowDateFor(r, dateField);
         if (!d) return false;
@@ -286,6 +281,7 @@ export const ProductionOrderFromSo = () => {
 
   // ── Columns — memoized on `picks` so the controlled checkbox + qty input
   //    re-render when pick state changes (DataGrid is React.memo'd). ───────
+  const lineStatus = useSoLineStatus(items.map((r) => r.soItemId));
   const columns = useMemo<GridColumn<OutstandingSoItem>[]>(() => [
     {
       key: 'pick', label: '', width: 40, sortable: false, groupable: false,
@@ -373,6 +369,12 @@ export const ProductionOrderFromSo = () => {
       searchValue: (r) => r.description ?? '',
     },
     {
+      key: 'lineStatus', label: 'Stock & orders', width: 320, sortable: false,
+      accessor: (r) => <SoLineStatusCell s={lineStatus[r.soItemId]} />,
+      searchValue: (r) => soLineStatusText(lineStatus[r.soItemId]),
+      exportValue: (r) => soLineStatusText(lineStatus[r.soItemId]),
+    },
+    {
       key: 'qty', label: 'SO Qty', width: 70, align: 'right', sortable: true,
       accessor: (r) => fmtQty(r.qty),
       sortFn: (a, b) => a.qty - b.qty,
@@ -443,7 +445,7 @@ export const ProductionOrderFromSo = () => {
       sortFn: (a, b) => a.remainingQty * a.unitPriceSen - b.remainingQty * b.unitPriceSen,
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- column accessors derive from the pick/qty state already in deps; listing the helpers would only rebuild the columns for no behavioural change
-  ], [picks, draftQtyById]);
+  ], [picks, draftQtyById, lineStatus]);
 
   // ── Add to Production Order ────────────────────────────────────────────────────────
   // Commander 2026-05-29 — two modes:
@@ -471,17 +473,17 @@ export const ProductionOrderFromSo = () => {
       return;
     }
 
-    const out = picked
-      .map(([soItemId, v]) => {
-        const row = items.find((r) => r.soItemId === soItemId);
-        return row ? { ...row, _pickQty: v.qty } : null;
-      })
-      .filter(Boolean);
-    if (!writeScmHandoff('proFromSoPicks', out)) {
-      setDialog({ title: 'Unable to continue', body: 'This browser could not safely store your picked lines. Your selection is still here; free some browser storage and try again.' });
-      return;
-    }
-    navigate('/scm/production-orders/new');
+    /* Transfer raises an in-house PO in between (owner, 6 Nov 2026), so every order has a PO and the order comes from it. */
+    createPos.mutate(
+      { picks: picked.map(([soItemId, v]) => ({ soItemId, qty: v.qty })), idempotencyKey: idemKey },
+      {
+        onSuccess: (res) => {
+          const made = res.created ?? [];
+          navigate(made.length === 1 ? `/scm/production-orders/${made[0]!.id}` : '/scm/production-orders');
+        },
+        onError: (e) => setDialog({ title: 'Not transferred', body: e instanceof Error ? e.message : 'Something went wrong.' }),
+      },
+    );
   };
 
   // ── Toolbar (filters + select/clear) rendered inside the DataGrid ──────
@@ -505,7 +507,7 @@ export const ProductionOrderFromSo = () => {
         style={FILTER_INPUT}
         aria-label="Category filter"
       >
-        {CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {[{ value: 'all', label: 'All categories' }, ...withRowCategories(categoryOptions, items.map((r) => r.itemGroup))].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
 
       {/* Date-range filter — pick which date field + from/to. */}
@@ -564,12 +566,12 @@ export const ProductionOrderFromSo = () => {
               variant="primary" size="md"
               onClick={onSave}
               disabled={pickedCount === 0 || createPos.isPending}
-              title={targetPoId ? 'Add the picked SO lines into this Production Order' : 'Add the picked SO lines into the New Production Order form'}
+              title={targetPoId ? 'Add the picked SO lines into this Production Order' : 'Raise an in-house PO and its Production Order from the picked SO lines'}
             >
               <Save {...ICON} />
               {createPos.isPending
                 ? 'Adding…'
-                : pickedCount === 0 ? 'Pick at least 1 line' : `Add ${pickedCount} line${pickedCount === 1 ? '' : 's'} to Production Order`}
+                : pickedCount === 0 ? 'Pick at least 1 line' : targetPoId ? `Add ${pickedCount} line${pickedCount === 1 ? '' : 's'} to Production Order` : `Transfer ${pickedCount} line${pickedCount === 1 ? '' : 's'}`}
             </Button>
           </div>
         }

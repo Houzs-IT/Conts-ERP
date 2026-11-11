@@ -65,6 +65,8 @@ export interface ProjectShared extends SharedCustomerProperty {
   endDate: string | null;
   /** The salesperson's name (scm.staff), for display. */
   salespersonName: string;
+  /** The project's brand (public.project_brands.name), or null: a quotation opened for it starts on this letterhead. */
+  brand: string | null;
 }
 
 const s = (v: unknown): string => (v == null ? "" : String(v));
@@ -115,6 +117,7 @@ export async function readProjectShared(db: Db, projectId: number, companySql: s
     id: Number(row.id), code: (row.code as string | null) ?? null, name: s(row.name),
     startDate: row.start_date ? s(row.start_date).slice(0, 10) : null, endDate: row.end_date ? s(row.end_date).slice(0, 10) : null,
     salespersonName: s(r.salesperson_name) || s(row.salesperson_name),
+    brand: s(row.brand).trim() || null,
   };
 }
 
@@ -136,14 +139,19 @@ export async function writeProjectShared(db: Db, projectId: number, v: Partial<R
 }
 
 /** Project picker for the SO form: renovation projects of this company, newest first, with their shared fields. */
+/** One project takes one sales order (owner, 5 Nov 2026): a project with a live order is not offered. */
 export async function searchProjects(db: Db, companySql: string, q: string): Promise<ProjectShared[]> {
+  /* Each word on its own, in any field and any order: "kl48 lim" (Houzs port, owner 8 Nov 2026). */
+  const words = q.trim().split(/\s+/).filter(Boolean).slice(0, 6);
   const res = await db.prepare(
     `SELECT p.id::int AS id FROM projects p
       WHERE p.project_kind = 'renovation' AND p.archived_at IS NULL${companySql}
-        AND (? = '' OR p.name ILIKE '%' || ? || '%' OR coalesce(p.code, '') ILIKE '%' || ? || '%'
-             OR coalesce(p.building, '') ILIKE '%' || ? || '%' OR coalesce(p.customer_name, '') ILIKE '%' || ? || '%')
+        AND NOT EXISTS (SELECT 1 FROM scm.mfg_sales_orders so WHERE so.project_id = p.id AND so.status::text <> 'CANCELLED')
+${words.map(() => `
+        AND (p.name ILIKE '%' || ? || '%' OR coalesce(p.code, '') ILIKE '%' || ? || '%'
+             OR coalesce(p.building, '') ILIKE '%' || ? || '%' OR coalesce(p.customer_name, '') ILIKE '%' || ? || '%')`).join("")}
       ORDER BY p.id DESC LIMIT 30`,
-  ).bind(q, q, q, q, q).all<{ id: number }>();
+  ).bind(...words.flatMap((w) => [w, w, w, w])).all<{ id: number }>();
   const out: ProjectShared[] = [];
   for (const row of res.results ?? []) {
     const one = await readProjectShared(db, Number(row.id), companySql);
@@ -218,9 +226,10 @@ export async function copySoIntoProject(db: Db, docNo: string, projectId: number
 export async function writeSoPropertyColumns(db: Db, docNo: string, projectId: number | null, so: Pick<SoShared, keyof PropertyValue | "building" | "unitNo">): Promise<void> {
   await db.prepare(
     `UPDATE scm.mfg_sales_orders SET project_id = ?, building = nullif(?, ''), unit_no = nullif(?, ''), property_type = nullif(?, ''),
-            layout_label = nullif(?, ''), bedrooms = ?::int, bathrooms = ?::int, built_up_sqft = ?::numeric, updated_at = now()
+            layout_label = nullif(?, ''), bedrooms = ?::int, bathrooms = ?::int, built_up_sqft = ?::numeric,
+            land_area_sqft = coalesce(?::numeric, land_area_sqft), land_size = coalesce(nullif(?, ''), land_size), updated_at = now()
       WHERE doc_no = ? AND coalesce(so_kind, 'STANDARD') = 'STANDARD'`,
-  ).bind(projectId, so.building, so.unitNo, so.propertyType, so.layoutLabel, so.bedrooms, so.bathrooms, so.builtUpSqft, docNo).run();
+  ).bind(projectId, so.building, so.unitNo, so.propertyType, so.layoutLabel, so.bedrooms, so.bathrooms, so.builtUpSqft, so.landAreaSqft ?? null, so.landSize ?? '', docNo).run();
 }
 
 /** The SO's rooms: its ordered room list and each live line's room (lines of another order are never touched). */

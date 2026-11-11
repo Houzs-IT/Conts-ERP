@@ -282,13 +282,26 @@ export async function drainStockAllocationRecompute(env: Env): Promise<Allocatio
  * can never surface as an unhandled rejection that fails the whole invocation.
  */
 export function deferAllocationRecompute(c: any, sb: any, where: string): void {
-  const sweep = recomputeSoStockAllocation(sb).then(
-    () => undefined,
-    (error: unknown) => {
-      // eslint-disable-next-line no-console
-      console.error(`[so-allocation] ${where} failed:`, error);
-    },
-  );
+  /* Conts (no cron, no Queue): Cloudflare cancels waitUntil work ~30 s after
+     the response, and nothing on this worker would ever sweep again. So the
+     repair row is written FIRST (a fast upsert, before the long part), then the
+     sweep runs as a drain of that row. A sweep cut part-way leaves the row
+     PENDING (its lease lapses after LEASE_MS) and the next allocation trigger's
+     drain finishes it, instead of the projection staying stale with no trace. */
+  const sweep = enqueueStockAllocationRecompute(sb, `deferred:${where}`)
+    .then(() => drainStockAllocationRecomputeWithClient(sb))
+    .then(
+      (result) => {
+        if (!result.completed && !result.deferred) {
+          // eslint-disable-next-line no-console
+          console.error(`[so-allocation] ${where} left the recompute pending:`, result.reason);
+        }
+      },
+      (error: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error(`[so-allocation] ${where} failed:`, error);
+      },
+    );
   /* c.executionCtx throws outside Workers (vitest). There the floating promise
      just runs — already `.catch`ed, so it cannot break the test run. */
   try { c.executionCtx.waitUntil(sweep); }

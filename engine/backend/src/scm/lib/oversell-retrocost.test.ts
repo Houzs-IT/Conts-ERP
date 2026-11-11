@@ -240,9 +240,17 @@ describe('reconcileUncostedOuts — orchestration', () => {
    not be able to roll back the receipt that triggered it. */
 describe('reconcileUncostedAfterIn — lot-opening filter + failure containment', () => {
   const WH = 'wh-1';
+  /* Since d7435ba6 two or more buckets go in one fn_reconcile_uncosted_outs call (p_buckets, migration 0250);
+     a single bucket still uses fn_reconcile_uncosted_out. Read both. */
   const bucketsOf = (sb: { calls: Array<{ name: string; args: Record<string, unknown> }> }) =>
-    sb.calls.filter((c) => c.name === 'fn_reconcile_uncosted_out')
-      .map((c) => `${c.args.p_warehouse_id}::${c.args.p_item_code}::${c.args.p_variant_key}`);
+    sb.calls.flatMap((c) => {
+      if (c.name === 'fn_reconcile_uncosted_out') return [`${c.args.p_warehouse_id}::${c.args.p_item_code}::${c.args.p_variant_key}`];
+      if (c.name === 'fn_reconcile_uncosted_outs') {
+        return (c.args.p_buckets as Array<{ warehouse_id: string; item_code: string; variant_key: string }>)
+          .map((b) => `${b.warehouse_id}::${b.item_code}::${b.variant_key}`);
+      }
+      return [];
+    });
 
   test('reconciles IN and POSITIVE ADJUSTMENT rows; ignores OUT and NEGATIVE ADJUSTMENT', async () => {
     const sb = fakeSb({ rpc: () => 0, outMovements: [] });

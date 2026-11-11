@@ -95,7 +95,7 @@ describe.each(['so', 'po', 'do', 'gr'])('%s PDF photos', (kind) => {
     const raw = pdf.toString('latin1');
     out(`${kind}-none`, pdf);
     expect(raw).not.toContain('PHOTOS');
-    expect(raw).not.toContain('/Subtype /Image');
+    expect(raw.match(/\/Subtype \/Image/g)?.length ?? 0).toBeLessThanOrEqual(1); // the letterhead's logo
     expect(pagesOf(raw)).toBe(1);
   });
 

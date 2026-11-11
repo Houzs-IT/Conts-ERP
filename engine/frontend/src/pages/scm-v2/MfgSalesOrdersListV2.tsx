@@ -19,14 +19,16 @@
 // The old ledger-style page (MfgSalesOrdersList.tsx, DataGrid-based) stays in
 // the tree; App.tsx route swap decides which one users see.
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { conditionDateRange } from "../../components/dataTableConditionFilters";
 import { shippedProgressColumn, ShippedProgressPill } from "./so-list-shipped-column";
-import { SO_STATUS_TABS, type StatusTab } from "./so-list-status";
+import { SO_STATUS_TABS, soStatusTabOf, type StatusTab } from "./so-list-status";
 import { SoListStatusCell, soRowStatusOf } from "./SoListStatusCell";
 import { SoListFilterBar } from "./SoListFilterBar";
 import { useSoListFilters } from "../../vendor/scm/lib/so-list-filter-state";
 import { salesOrderRowMenu } from "./row-menus";
-import { brandingToneForCategory, type BrandTone } from "../../lib/brandingTone";
+import { brandingToneForCategory, brandingToneForLabel, type BrandTone } from "../../lib/brandingTone";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { CancelledMoneyActions } from "./CancelledMoneyActions";
 import {
@@ -249,7 +251,7 @@ const brandOf = (r: SoRow): string => (isPlaceholderBrandText(r.branding) ? "" :
 /* This surface carries the line's CATEGORY, so it uses the accurate entry
    point: colour and label then share one bucket rule and cannot disagree.
    ../../lib/brandingTone has the whole story. */
-const brandTone = (r: SoRow): BrandTone => brandingToneForCategory(r.first_item_category);
+const brandTone = (r: SoRow): BrandTone => (/dream crafter|the conts/i.test(r.branding ?? "") ? brandingToneForLabel(r.branding) : brandingToneForCategory(r.first_item_category));
 
 
 // ─── Salesperson dropdown / split-menu ──────────────────────────────────────
@@ -365,7 +367,7 @@ function ViewToggle({
     );
   };
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-md border border-border bg-surface p-1 shadow-stone">
+    <div className="dc-glass inline-flex items-center gap-0.5 rounded-md border border-border bg-surface p-1 shadow-stone">
       {btn("table", "Table", TableIcon)}
       {btn("cards", "Cards", LayoutGrid)}
     </div>
@@ -712,7 +714,8 @@ function DetailDrawer({
                     </Button>
                   );
                 }
-                if (soCanRaiseDo(row.status, row.on_hold ?? null)) {
+                /* Everything already went out: there is nothing left to transfer. */
+                if (soCanRaiseDo(row.status, row.on_hold ?? null) && row.delivery_state !== "full") {
                   // ABSENT, not disabled, for anyone who may not operate a DO.
                   if (!canDeliver) return null;
                   /* Renamed from "Deliver" 2026-08-17 — the SO already reports a
@@ -930,7 +933,7 @@ function SoLinesExpansion({ docNo }: { docNo: string }) {
      and the covering incoming PO + ETA belong ON the line — the payload has
      carried them all along. Min-width + horizontal scroll keeps the grid
      honest on narrow desktop panes. */
-  const grid = "grid grid-cols-[92px_minmax(220px,1fr)_56px_100px_110px_96px_92px_190px] items-start gap-2";
+  const grid = "grid grid-cols-[92px_minmax(220px,340px)_56px_100px_110px_96px_92px_minmax(190px,1fr)] items-start gap-2";
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-surface">
       <div className="min-w-[880px]">
@@ -1039,7 +1042,7 @@ export function MfgSalesOrdersListV2() {
   // ONE gate, shared with every other DO/SI control on both platforms.
   const canDeliver = canOperateDeliveryOrders(user, can, pageAccess);
 
-  const status = (params.get("status") ?? "all") as StatusTab;
+  const status = soStatusTabOf(params.get("status"));
   // View toggle applies at md+; on phones we always render the card list
   // regardless of the URL param (a 9-col DataTable is unreadable on 360dpi).
   const view = (params.get("view") ?? "table") as "table" | "cards";
@@ -1081,7 +1084,7 @@ export function MfgSalesOrdersListV2() {
      Debtor CODE and every line-level / MRP funnel stay client-side on the loaded
      page (documented — debtor_code's grid value prefers ac_debtor_code, and the
      line/MRP columns are not base columns on the list view). */
-  const [serverFunnels, setServerFunnels] = useState<{ debtorNames?: string[]; currencies?: string[] }>({});
+  const [serverFunnels, setServerFunnels] = useState<{ debtorNames?: string[]; currencies?: string[]; from?: string; to?: string }>({});
   /* Seed the Customer Name funnel with every customer (not only the loaded
      page's) so a customer whose orders are all on a later page is still
      pickable — the point of pushing the filter server-side. */
@@ -1130,6 +1133,7 @@ export function MfgSalesOrdersListV2() {
   // Status tab counts come from the server over the FULL scoped set (not the
   // page), so the pills stay correct while paging / searching.
   const counts: Record<string, number> = data?.statusCounts ?? { all: 0 };
+  const money: Record<string, number> = data?.statusMoneySen ?? {};
 
   // KPI money stats — the backend paginated contract returns `aggregates` with
   // FULL-SET revenue/outstanding/paid sums (computed server-side over the same
@@ -1210,7 +1214,7 @@ export function MfgSalesOrdersListV2() {
       const v = colFilters[key];
       return v && v.length > 0 ? v : undefined;
     };
-    const next = { debtorNames: pick("debtor_name"), currencies: pick("currency") };
+    const next = { debtorNames: pick("debtor_name"), currencies: pick("currency"), ...conditionDateRange(colFilters.so_date) };
     const sig = JSON.stringify(next);
     if (sig === serverFunnelSigRef.current) return;
     serverFunnelSigRef.current = sig;
@@ -1368,7 +1372,7 @@ export function MfgSalesOrdersListV2() {
             payments: b.payments as never,
             pwpCodes: b.pwpCodes as never,
           })),
-          { fileName: `sales-orders-${new Date().toISOString().slice(0, 10)}.pdf`, action }
+          { fileName: `sales-orders-${todayMyt()}.pdf`, action }
         );
       } else {
         for (const b of bundles)
@@ -1913,17 +1917,19 @@ export function MfgSalesOrdersListV2() {
     ];
   }, [branding.companyCode]);
 
-  /* One pill per vocabulary status, each carrying its FULL-set count (see
+  /* One pill per stage, each carrying its FULL-set count (see
      SO_STATUS_TABS) via FilterPills' count badge — these are the SERVER's
      statusCounts, never a count of the loaded page. "Other" (legacy/unknown
      status spellings) appears only when the server reports a non-zero count
      for it — or while it is the active filter, so the selected pill can never
      vanish from under the user. */
-  const statusPillOptions: Array<{ value: StatusTab; label: string; count: number }> = [
+  const statusPillOptions: Array<{ value: StatusTab; label: string; count: number; moneySen?: number }> = [
     ...SO_STATUS_TABS.map(({ value, label }) => ({
       value,
       label,
       count: counts[value] ?? 0,
+      /* The order value in each tab, never on Cancelled (TODO item 5). */
+      moneySen: value === "cancelled" ? undefined : money[value],
     })),
     ...((counts.other ?? 0) > 0 || status === "other"
       ? [{ value: "other" as StatusTab, label: "Other", count: counts.other ?? 0 }]

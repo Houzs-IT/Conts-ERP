@@ -8,7 +8,7 @@ import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { date, monthLabel, rm, todayMyt } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
-import { typeOf, codeName, codeLabel, codeFromModel, isTenancy, type ContractType, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
+import { typeOf, codeName, codeLabel, codeFromModel, isTenancy, optionsOfType, type ContractType, type RevenueModel, type ContractCode, type UnitPurpose } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
 import { ExtendContractModal, GenerateAgreement } from './ContractExtras';
 import { CodeBadge } from './UnitExtras';
@@ -48,13 +48,12 @@ const historyColumns = (types: readonly ContractType[]): Column<ContractView>[] 
   { key: 'ends', label: 'To', type: 'date', value: h => h.endsOn, width: 116, render: h => <span className="whitespace-nowrap">{h.endsOn ? date(h.endsOn) : 'Open'}</span> },
 ];
 
-/** `startNew`: only the form for a new contract with a later start date, for the narrow Scheduled changes panel. */
-export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew }: { unitId: string; canEdit: boolean; onSaved: () => void; footer?: ReactNode; startNew?: boolean }) {
+export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unitId: string; canEdit: boolean; onSaved: () => void; footer?: ReactNode }) {
   const toast = useToast();
   const types = useContractTypes();
   const { data, loading, error, reload } = useApi<Payload>(`/units/${encodeURIComponent(unitId)}/contract`);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [mode, setMode] = useState<'update' | 'new'>(startNew ? 'new' : 'update');
+  const [mode, setMode] = useState<'update' | 'new'>('update');
   const [fields, setFields] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<Example | null>(null);
@@ -71,25 +70,25 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
     if (!current.id && allowedCodes?.length && !allowedCodes.includes(o.contractCode)) return { ...o, contractCode: allowedCodes[0], revenueModel: typeOf(types, allowedCodes[0])?.revenueModel ?? o.revenueModel };
     return o;
   }, [current, allowedCodes, types]);
-  useEffect(() => { if (original) { setDraft(startNew ? { ...original, startsOn: '', endsOn: '', renewsOn: '' } : original); setMode(startNew ? 'new' : 'update'); setFields({}); setPreview(null); setPicked(false); } }, [original, startNew]);
+  useEffect(() => { if (original) { setDraft(original); setMode('update'); setFields({}); setPreview(null); setPicked(false); } }, [original]);
   const d = draft ?? original;
   // A contract with no saved type is read from its terms; saving would lock that guess in, so the type is chosen first.
   const typeUnset = !!current?.id && current.typeStored === false && mode === 'update';
   const dirty = (!!d && !!original && JSON.stringify(d) !== JSON.stringify(original)) || (typeUnset && picked);
-  const local: Record<string, string> = { ...(d ? problems(d) : {}), ...(typeUnset && !picked ? { contractCode: 'Choose the contract type first.' } : {}),
-    ...(startNew && d && (!d.startsOn || d.startsOn <= todayMyt()) ? { startsOn: 'Pick a day after today.' } : {}) };
+  const options = useMemo(() => (d ? optionsOfType(types, d.contractCode, d.revenueModel) : null), [types, d]);
+  const local: Record<string, string> = { ...(d && options ? problems(d, options) : {}), ...(typeUnset && !picked ? { contractCode: 'Choose the contract type first.' } : {}) };
   const shown = { ...local, ...fields };
 
   // The example follows the form: once the terms change, the server works last month out again on them.
   useEffect(() => {
-    if (startNew || !d || !dirty || Object.keys(problems(d)).length) { setPreview(null); return; }
+    if (!d || !options || !dirty || Object.keys(problems(d, options)).length) { setPreview(null); return; }
     const t = setTimeout(() => {
       setPreviewing(true);
-      api.post<{ example: Example | null }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d), month: data?.month })
+      api.post<{ example: Example | null }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d, options), month: data?.month })
         .then(r => setPreview(r.example)).catch(() => setPreview(null)).finally(() => setPreviewing(false));
     }, 350);
     return () => clearTimeout(t);
-  }, [d, dirty, unitId, data?.month, startNew]);
+  }, [d, options, dirty, unitId, data?.month]);
 
   if (isPlaceholderOwner(data?.unit.ownerName)) {
     return <Card><div className="p-8 text-center text-copy text-muted-ink">Pick the owner on the Details tab first. A contract is made with the owner, so this unit has none until then.</div></Card>;
@@ -104,11 +103,11 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
   const guess = current.contractCode ?? codeFromModel(types, current.revenueModel);
 
   async function save() {
-    if (!d) return;
+    if (!d || !options) return;
     setSaving(true);
     try {
-      const r = await api.put<{ split: boolean }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d), mode });
-      toast({ tone: 'success', title: startNew ? `Contract scheduled from ${date(d.startsOn)}.` : mode === 'new' ? 'New contract started.' : 'Contract saved.',
+      const r = await api.put<{ split: boolean }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d, options), mode });
+      toast({ tone: 'success', title: mode === 'new' ? 'New contract started.' : 'Contract saved.',
         body: `${codeName(types, d.contractCode)}: ${codeLabel(types, d.contractCode)}.${r.split ? ' This unit now has its own contract; the other units keep theirs.' : ''} Draft owner statements change when regenerated; final ones keep their figures.` });
       setMode('update'); reload(); onSaved();
     } catch (e) {
@@ -119,7 +118,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
 
   const saveButton = (
     <Button size="sm" variant="primary" loading={saving} disabled={!dirty || Object.keys(local).length > 0}
-      disabledReason={Object.values(local)[0] ?? 'Nothing has changed'} onClick={() => void save()}>{startNew ? 'Schedule contract' : mode === 'new' ? 'Start contract' : 'Save contract'}</Button>
+      disabledReason={Object.values(local)[0] ?? 'Nothing has changed'} onClick={() => void save()}>{mode === 'new' ? 'Start contract' : 'Save contract'}</Button>
   );
 
   return (
@@ -132,10 +131,10 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
               {current.id && current.contractCode && <><CodeBadge code={current.contractCode} types={types} size="sm" />{' '}</>}
               {current.id && current.startsOn && current.startsOn.slice(0, 10) > todayMyt() ? <>Starts {date(current.startsOn)} · {current.termsLabel}{data!.untilThen ? <>. Until then: {data!.untilThen.termsLabel}</> : ''}</>
                 : current.id ? <>In force {current.startsOn ? `from ${date(current.startsOn)}` : ''}{current.endsOn ? ` to ${date(current.endsOn)}` : ''} · {current.termsLabel}</> : <>No contract record yet: the unit's own split is used ({current.termsLabel}). Saving creates its contract.</>}
-              {!startNew && data!.history.length > 0 && <> · <a href="#contract-history" className="text-gold-ink">Contract history ({data!.history.length})</a></>}
+              {data!.history.length > 0 && <> · <a href="#contract-history" className="text-gold-ink">Contract history ({data!.history.length})</a></>}
             </span>
           </div>
-          {canEdit && !startNew && (
+          {canEdit && (
             <div className="flex flex-wrap items-center gap-2">
               {dirty && <span className="text-meta text-warning">Unsaved changes</span>}
               <GenerateAgreement unitId={unitId} refreshKey={(current.id ?? 'none') + (current.startsOn ?? '')} />
@@ -150,7 +149,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
           {mode === 'new' && <div className="py-[10px] px-[14px] rounded-control bg-gold-tint text-copy">A new contract from its start date. The current one ends the day before and stays in this unit's history; statements before the new start keep using it.</div>}
           {current.sharedWith > 0 && mode === 'update' && <div className="py-[10px] px-[14px] rounded-control bg-muted text-meta text-muted-ink">This contract record also covers {current.sharedWith} other {current.sharedWith === 1 ? 'unit' : 'units'} of the owner. Saving here gives this unit its own copy; the others are not changed.</div>}
 
-          <ContractFields d={d} set={set} errors={shown} types={types} offered={offered} narrow={startNew} onPickType={() => setPicked(true)}
+          <ContractFields d={d} set={set} errors={shown} types={types} offered={offered} onPickType={() => setPicked(true)}
             afterSelect={typeUnset && !picked && (
               <div className="flex flex-wrap items-center justify-between gap-3 py-[10px] px-[14px] rounded-control bg-gold-tint text-copy">
                 <span>Type not set. This contract has no saved type; it is being read as <b>{codeName(types, guess)}</b> from its terms. Choose the type above, or keep this one, before saving.</span>
@@ -158,15 +157,14 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer, startNew
               </div>
             )} />
         </fieldset>
-        {startNew && canEdit && <div className="px-5 pb-5">{saveButton}</div>}
       </Card>
 
       {extending && current.id && <ExtendContractModal unitId={unitId} unitLabel={data!.unit.label}
         current={{ code: current.contractCode ?? codeFromModel(types, current.revenueModel), termsLabel: current.termsLabel, startsOn: current.startsOn, endsOn: current.endsOn }}
         onClose={() => setExtending(false)} onSaved={() => { setExtending(false); reload(); onSaved(); }} />}
-      {!startNew && <StatementExample example={example} month={data!.month} draft={dirty && !!preview} busy={previewing} />}
+      <StatementExample example={example} month={data!.month} draft={dirty && !!preview} busy={previewing} />
 
-      {!startNew && data!.history.length > 0 && (
+      {data!.history.length > 0 && (
         <Card>
           <div id="contract-history" className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
             <span className="text-[16px] font-semibold tracking-[-0.01em]">Contract history</span>

@@ -17,14 +17,16 @@ import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
 import { cn } from "../../../lib/utils";
 import { renovationApi, type ProjectDetail } from "./renovationApi";
-import { errorText, money, shortDate, supplyLabel, supplyTone } from "./renovationModel";
+import { creditNoteToConfirm, errorText, money, shortDate, supplyLabel, supplyTone } from "./renovationModel";
 import { Dialog, Field, Pill, SkipReasonDialog, inputClass } from "./renovationUi";
-import { simpleApi, type FinanceKind, type ProjectDetailV2 } from "./simpleApi";
+import { simpleApi, type ProjectDetailV2 } from "./simpleApi";
+import { BrandFact, FinanceKindFact } from "./ProjectBrandFacts";
 import { SiteTasksPanel } from "./SiteTasksPanel";
 import { FlowPanel } from "./FlowPanel";
 import { ContractCard, KeyCard, PeopleCard } from "./ProjectRecords";
 import { DesignTaskCard } from "./DesignTask";
 import { ProcurementPanel } from "./ProcurementPanel";
+import { RenovationWorksDone } from "./RenovationWorksDone";
 import { CustomerInfoCard } from "./CustomerInfoCard";
 import { RenovationTimeline } from "./RenovationTimeline";
 import { ProjectDocumentFiles } from "../../../components/doc-attachments/ProjectDocumentFiles";
@@ -80,6 +82,7 @@ export function RenovationDetail({ id, canWrite, embedded = false }: { id: numbe
               this page offered that. The room photo gallery stays off (its data and API are unchanged). */}
           <DesignTaskCard projectId={id} canWrite={canWrite} onDone={(t) => { setNotice({ tone: "ok", text: t }); setSaved((n) => n + 1); }} onError={failed} />
           <ProcurementPanel projectId={id} canWrite={canWrite} onError={failed} showMoney={!d.financeHidden} />
+          <RenovationWorksDone projectId={id} />
           <SiteTasksPanel projectId={id} tasks={d.tasks} canWrite={canWrite} linesAvailable={!d.linesUnavailable} onAct={act}
             onSkip={(t) => setSkipping({ id: t.id, label: t.label })} />
           <ProjectDocumentFiles projectId={id} />
@@ -136,6 +139,7 @@ function ProjectFacts({ d, canWrite, onDone, onError }: { d: ProjectDetailV2; ca
   /* Conts (finance phase 1.5; chew, 24 Oct 2026): renovation (301-0000) or inhouse renovation (302-0000) — the control
      the customer is opened under when the quotation becomes the contract. Settled once there is a contract (the
      server refuses a change then). Not shown to those who do not see the money. */
+  if (canWrite || d.project.brand) facts.push(["Brand", <BrandFact projectId={d.project.id} value={d.project.brand ?? null} canWrite={canWrite} onDone={onDone} onError={onError} />]);
   if (!d.financeHidden) facts.push(["Finance type", <FinanceKindFact projectId={d.project.id} value={d.project.finance_kind ?? null} canWrite={canWrite && !d.so} onDone={onDone} onError={onError} />]);
   if (facts.length === 0) return null;
   return (
@@ -149,6 +153,7 @@ function ProjectFacts({ d, canWrite, onDone, onError }: { d: ProjectDetailV2; ca
 
 function BillingPromptBanner({ d, canWrite, onDone, onError }: { d: ProjectDetail; canWrite: boolean; onDone: (t: string) => void; onError: (t: string) => void }) {
   const [confirming, setConfirming] = useState<null | ProjectDetail["prompts"][number]>(null);
+  const [creditSen, setCreditSen] = useState<number | null>(null);
   const [date, setDate] = useState(() => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10));
   const [busy, setBusy] = useState(false);
   if (!d.billing.available) {
@@ -171,24 +176,28 @@ function BillingPromptBanner({ d, canWrite, onDone, onError }: { d: ProjectDetai
       {confirming && d.so && (
         <Dialog
           title={`Bill instalment ${confirming.seq}`}
-          onClose={() => setConfirming(null)}
+          onClose={() => { setConfirming(null); setCreditSen(null); }}
           footer={<>
-            <Button variant="secondary" onClick={() => setConfirming(null)} disabled={busy}>Cancel</Button>
+            <Button variant="secondary" onClick={() => { setConfirming(null); setCreditSen(null); }} disabled={busy}>Cancel</Button>
             <Button disabled={busy} onClick={async () => {
               setBusy(true);
               try {
-                await renovationApi.bill(d.so!.doc_no, confirming.instalmentId, confirming.dueSen, date);
+                await renovationApi.bill(d.so!.doc_no, confirming.instalmentId, creditSen ?? confirming.dueSen, date, creditSen != null);
                 setConfirming(null);
+                setCreditSen(null);
                 onDone(`Instalment ${confirming.seq} billed.`);
               } catch (e) {
-                onError(errorText(e));
+                const credit = creditNoteToConfirm(e);
+                if (credit != null) setCreditSen(credit);
+                else onError(errorText(e));
               } finally {
                 setBusy(false);
               }
-            }}>{busy ? "Billing..." : "Issue progress invoice"}</Button>
+            }}>{busy ? "Billing..." : creditSen != null ? "Raise credit note" : "Issue progress invoice"}</Button>
           </>}
         >
           <p className="text-sm text-ink-secondary mb-3">A progress invoice for {confirming.label}{confirming.dueSen != null ? ` (${money(confirming.dueSen)})` : ""} will be issued to the customer.</p>
+          {creditSen != null && <p className="text-sm text-ink-secondary mb-3">The contract is over-billed: this instalment comes to {money(creditSen)}. Confirm to raise a credit note instead of an invoice.</p>}
           <Field label="Invoice date"><input type="date" className={inputClass} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
         </Dialog>
       )}
@@ -230,32 +239,6 @@ function LinkedDocuments({ d }: { d: ProjectDetail }) {
         </div>
       </dl>
     </section>
-  );
-}
-
-const FINANCE_KIND_LABEL: Record<string, string> = {
-  "": "By quotation brand", RENOVATION: "Renovation (301)", INHOUSE_RENOVATION: "Inhouse renovation (302)",
-};
-
-/** Renovation or inhouse renovation, chosen in place (PATCH /api/renovation/:id); blank follows the quotation's brand:
-    The Conts → inhouse renovation, Dream Crafter → renovation. */
-export function FinanceKindFact({ projectId, value, canWrite, onDone, onError }: {
-  projectId: number; value: string | null; canWrite: boolean; onDone: (t: string) => void; onError: (t: string) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  if (!canWrite) return <span>{FINANCE_KIND_LABEL[value ?? ""] ?? value}</span>;
-  return (
-    <select className="h-7 rounded border border-border bg-surface px-1.5 text-xs" aria-label="Project type" value={value ?? ""} disabled={busy}
-      onChange={async (e) => {
-        const next = (e.target.value || null) as FinanceKind | null;
-        setBusy(true);
-        try {
-          await simpleApi.setFinanceKind(projectId, next);
-          onDone(`Type set to ${FINANCE_KIND_LABEL[next ?? ""]}.`);
-        } catch (err) { onError(errorText(err)); } finally { setBusy(false); }
-      }}>
-      {Object.entries(FINANCE_KIND_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-    </select>
   );
 }
 

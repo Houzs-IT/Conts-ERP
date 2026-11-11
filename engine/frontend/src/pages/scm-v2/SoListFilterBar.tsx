@@ -93,7 +93,7 @@ export function SoListFilterBar({ q }: { q: string }) {
         </span>
       ))}
       <button ref={triggerRef} type="button" onClick={() => (open ? setOpen(false) : openPanel())} aria-expanded={open}
-        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[12px] font-semibold uppercase tracking-wider text-ink-secondary hover:border-primary/60 hover:text-primary">
+        className="dc-glass inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[12px] font-semibold uppercase tracking-wider text-ink-secondary hover:border-primary/60 hover:text-primary">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 5h18M6 12h12M10 19h4" /></svg>
         {filters.length > 0 ? `Filters · ${filters.length}` : "More filters"}
       </button>

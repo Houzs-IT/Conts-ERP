@@ -232,9 +232,10 @@ export async function checkVoucherLimit(sb: Db, companyId: number, pvId: string)
   return over.length ? { ok: false, over } : { ok: true };
 }
 
-/** The one project the bills a voucher pays belong to: a purchase invoice through its PO, an AP invoice through its
-    lines. None: null. Two or more: refused — one voucher pays one project. */
-export async function projectOfBills(sb: Db, companyId: number, bills: { piIds: string[]; apInvoiceIds: string[] }): Promise<{ ok: true; projectId: number | null } | { ok: false; error: string }> {
+/** The projects the bills a voucher pays belong to: a purchase invoice through its PO, an AP invoice through its
+    lines. `projectId` is the one project when there is exactly one, else null; `projects` lists them all (an AP invoice
+    may be split over projects, chew 11 Nov 2026). */
+export async function projectOfBills(sb: Db, companyId: number, bills: { piIds: string[]; apInvoiceIds: string[] }): Promise<{ ok: true; projectId: number | null; projects: number[] } | { ok: false; error: string }> {
   const projects = new Set<number>();
   if (bills.piIds.length > 0) {
     const { data: pis, error } = await sb.from('purchase_invoices').select('id, purchase_order_id').eq('company_id', companyId).in('id', bills.piIds);
@@ -251,8 +252,72 @@ export async function projectOfBills(sb: Db, companyId: number, bills: { piIds: 
     if (error) return { ok: false, error: error.message };
     for (const l of (lines ?? []) as Array<{ project_id: number | null }>) if (l.project_id != null) projects.add(Number(l.project_id));
   }
-  if (projects.size > 1) return { ok: false, error: 'many_projects' };
-  return { ok: true, projectId: projects.size === 1 ? [...projects][0]! : null };
+  return { ok: true, projectId: projects.size === 1 ? [...projects][0]! : null, projects: [...projects] };
+}
+
+export type BillShare = { sen: number; lines: Array<{ projectId: number | null; sen: number }> };
+
+/** What each allocation of a voucher pays, with the projects of the bill it settles: an AP invoice's lines (amounts by
+    project), a purchase invoice wholly its PO's project. In allocation order. */
+export async function billProjectLines(
+  sb: Db, companyId: number, allocations: ReadonlyArray<{ pi_id: string | null; ap_invoice_id: string | null; amount_sen: number }>,
+): Promise<{ ok: true; bills: BillShare[] } | Fail> {
+  const apIds = [...new Set(allocations.map((a) => a.ap_invoice_id).filter((x): x is string => !!x))];
+  const piIds = [...new Set(allocations.map((a) => a.pi_id).filter((x): x is string => !!x))];
+  const apLines = new Map<string, Array<{ projectId: number | null; sen: number }>>();
+  if (apIds.length > 0) {
+    const { data, error } = await sb.from('ap_invoice_lines').select('invoice_id, project_id, amount_sen').in('invoice_id', apIds);
+    if (error) return { ok: false, error: error.message };
+    for (const l of (data ?? []) as Array<{ invoice_id: string; project_id: number | null; amount_sen: number }>) {
+      const at = apLines.get(String(l.invoice_id)) ?? [];
+      at.push({ projectId: l.project_id == null ? null : Number(l.project_id), sen: Number(l.amount_sen ?? 0) });
+      apLines.set(String(l.invoice_id), at);
+    }
+  }
+  const piProject = new Map<string, number | null>();
+  if (piIds.length > 0) {
+    const { data: pis, error } = await sb.from('purchase_invoices').select('id, purchase_order_id').eq('company_id', companyId).in('id', piIds);
+    if (error) return { ok: false, error: error.message };
+    const poOf = new Map(((pis ?? []) as Array<{ id: string; purchase_order_id: string | null }>).map((p) => [String(p.id), p.purchase_order_id]));
+    const poIds = [...new Set([...poOf.values()].filter((x): x is string => !!x))];
+    const poProject = new Map<string, number | null>();
+    if (poIds.length > 0) {
+      const { data: pos, error: poErr } = await sb.from('purchase_orders').select('id, project_id').eq('company_id', companyId).in('id', poIds);
+      if (poErr) return { ok: false, error: poErr.message };
+      for (const po of (pos ?? []) as Array<{ id: string; project_id: number | null }>) poProject.set(String(po.id), po.project_id == null ? null : Number(po.project_id));
+    }
+    for (const id of piIds) { const po = poOf.get(id); piProject.set(id, po ? poProject.get(po) ?? null : null); }
+  }
+  return {
+    ok: true,
+    bills: allocations.map((a) => ({
+      sen: Number(a.amount_sen ?? 0),
+      lines: a.ap_invoice_id ? apLines.get(String(a.ap_invoice_id)) ?? [] : [{ projectId: a.pi_id ? piProject.get(String(a.pi_id)) ?? null : null, sen: 1 }],
+    })),
+  };
+}
+
+/** A payment over bills of two or more projects (chew 11 Nov 2026), split by project: each bill's amount spread over its
+    lines in proportion, to the sen (largest remainder, as settlementDepartments does for departments); what is paid
+    beyond the bills (an advance) names no project. Pure. Projects in the order they first appear; no project last. */
+export function settlementProjects(totalSen: number, bills: ReadonlyArray<BillShare>): Array<{ projectId: number | null; sen: number }> {
+  const by = new Map<number | null, number>();
+  const add = (p: number | null, sen: number) => by.set(p, (by.get(p) ?? 0) + sen);
+  let settled = 0;
+  for (const bill of bills) {
+    settled += bill.sen;
+    const lineTotal = bill.lines.reduce((s, l) => s + l.sen, 0);
+    if (lineTotal <= 0) { add(null, bill.sen); continue; }
+    const exact = bill.lines.map((l) => (bill.sen * l.sen) / lineTotal);
+    const shares = exact.map(Math.floor);
+    let left = bill.sen - shares.reduce((s, n) => s + n, 0);
+    const byFraction = exact.map((x, i) => ({ i, f: x - Math.floor(x) })).sort((a, b) => b.f - a.f || a.i - b.i);
+    for (const { i } of byFraction) { if (left <= 0) break; shares[i]! += 1; left -= 1; }
+    bill.lines.forEach((l, i) => add(l.projectId, shares[i]!));
+  }
+  if (totalSen - settled !== 0) add(null, totalSen - settled);
+  const parts = [...by.entries()].map(([projectId, sen]) => ({ projectId, sen })).filter((p) => p.sen !== 0);
+  return [...parts.filter((p) => p.projectId != null), ...parts.filter((p) => p.projectId == null)];
 }
 
 /** The project one purchase invoice was bought for: its PO's, else its GRN's. Null when neither names one, or a read
@@ -275,17 +340,20 @@ export function lineDepartmentOfProject(p: { funding: string | null; internal_de
   return p.funding === 'internal' && p.internal_department === 'rental' ? 'rental' : 'supply';
 }
 
-/** The project a voucher pays (SOP 3.4): the one named on it, else the one its bills belong to. A name that differs
-    from the bills', or bills of two projects, is refused — one voucher pays one project. */
+/** The project a voucher pays (SOP 3.4): the one named on it, else the one its bills belong to; a name that differs
+    from the bills' is refused. Bills of two or more projects (an AP invoice split over projects, chew 11 Nov 2026) are
+    paid by one voucher split over their projects (`split`): no one project, and a name that is one of theirs is left
+    aside (the edit page used to send the first line's), one that is none of theirs refused. */
 export async function resolveVoucherProject(
   sb: Db, companyId: number, named: unknown, bills: { piIds: string[]; apInvoiceIds: string[] },
-): Promise<{ ok: true; projectId: number | null } | { ok: false; status: 400 | 409 | 500; body: Record<string, unknown> }> {
+): Promise<{ ok: true; projectId: number | null; split: boolean } | { ok: false; status: 400 | 409 | 500; body: Record<string, unknown> }> {
   const fromBills = await projectOfBills(sb, companyId, bills);
-  if (!fromBills.ok) {
-    if (fromBills.error === 'many_projects') return { ok: false, status: 409, body: { error: 'many_projects', message: 'One payment voucher pays one project: these bills belong to more than one.' } };
-    return { ok: false, status: 500, body: { error: 'load_failed', reason: fromBills.error } };
+  if (!fromBills.ok) return { ok: false, status: 500, body: { error: 'load_failed', reason: fromBills.error } };
+  if (fromBills.projects.length > 1) {
+    if (named == null || named === '' || fromBills.projects.includes(Number(named))) return { ok: true, projectId: null, split: true };
+    return { ok: false, status: 409, body: { error: 'project_mismatch', message: 'The bills this voucher pays belong to other projects. Leave Project empty: the payment is split over the bills’ projects.' } };
   }
-  if (named == null || named === '') return { ok: true, projectId: fromBills.projectId };
+  if (named == null || named === '') return { ok: true, projectId: fromBills.projectId, split: false };
   const id = Number(named);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, status: 400, body: { error: 'project_invalid' } };
   const { data, error } = await sb.schema('public').from('projects').select('id').eq('company_id', companyId).eq('id', id).maybeSingle();
@@ -294,7 +362,7 @@ export async function resolveVoucherProject(
   if (fromBills.projectId != null && fromBills.projectId !== id) {
     return { ok: false, status: 409, body: { error: 'project_mismatch', message: "The bills this voucher pays belong to another project." } };
   }
-  return { ok: true, projectId: id };
+  return { ok: true, projectId: id, split: false };
 }
 
 /** The refusal of a voucher over a project's limit, in the SOP's words: what is left and by how much it is over. */

@@ -223,20 +223,20 @@ describe('Delivery Order template', () => {
     setBrandingCache({ ...BRANDING_2990 }, '2990');
     const { spans } = await renderDo([itemAt(1)], { ...HEADER, scanToken: 'a'.repeat(64) });
 
-    // The title above the rule; the number and issue date in the right column under it.
+    // The title top right; the number and issue date under it, the scan code beside them.
     const title = spans.find((s) => s.text === 'DELIVERY ORDER');
     expect(title).toBeDefined();
-    expect(title!.y).toBeLessThan(40);
-    const meta = spans.filter((s) => [`No. : ${HEADER.do_number}`, 'Issued: 2026/08/06'].includes(s.text));
+    const meta = spans.filter((s) => [`No. : ${HEADER.do_number}`, 'Issued: 06/08/2026'].includes(s.text));
     expect(meta).toHaveLength(2);
     const qr = spans.find((s) => s.text === 'SCAN AT EACH STEP');
     expect(qr).toBeDefined();
-    const columnLeft = Math.min(qr!.left, ...meta.map((s) => s.left));
+    for (const m of meta) expect(m.y).toBeGreaterThan(title!.y);
+    expect(qr!.y).toBeGreaterThan(Math.max(...meta.map((s) => s.y)));
 
-    // The company block: under the rule, left of the scan code and the number column.
-    const company = spans.filter((s) => s.y > 40 && s.y < 70 && s !== qr && !meta.includes(s) && s.text.trim() !== '');
+    // The company block: on the left, under the logo, clear of the scan code.
+    const company = spans.filter((s) => s.left < 20 && s.y > 20 && s.y < qr!.y + 8 && s.text.trim() !== '');
     expect(company.length).toBeGreaterThan(2);
-    expect(Math.max(...company.map((s) => s.right))).toBeLessThan(columnLeft);
+    expect(Math.max(...company.map((s) => s.right))).toBeLessThan(qr!.left);
   });
 
   test('the customer account code is not printed on the customer copy', async () => {
@@ -287,7 +287,7 @@ describe('Delivery Order template', () => {
 
     expect(new Set(faces)).toEqual(new Set([SANS, DOC_THEME.titleFont]));
     const small = sizes.filter((n) => n < DO_SIZE.min);
-    expect(small.every((n) => n === DOC_THEME.blockPt || n === DOC_THEME.metaPt)).toBe(true);
+    expect(small.every((n) => n === DOC_THEME.blockPt || n === DOC_THEME.blockNamePt || n === DOC_THEME.metaPt)).toBe(true);
   });
 
   test('the page is A4', async () => {

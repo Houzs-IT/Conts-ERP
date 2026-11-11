@@ -97,3 +97,13 @@ describe('coverageStateOf maps a query to the three states', () => {
     expect(coverageStateOf({ isLoading: false })).toBe('ready');
   });
 });
+
+describe('the line’s own PO on the SO surface', () => {
+  test('shows when it is due, and stops once the line is delivered', () => {
+    const own = { bound_source_pos: ['TC-PO-1'], bound_source_etas: { 'TC-PO-1': '2026-11-18' }, remaining_qty: 1 };
+    const { container, rerender } = render(<SoSourceChips line={own} coverage="ready" />);
+    expect(container.textContent).toContain('ETA');
+    rerender(<SoSourceChips line={{ ...own, remaining_qty: 0 }} coverage="ready" />);
+    expect(container.textContent).not.toContain('ETA');
+  });
+});

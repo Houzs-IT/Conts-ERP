@@ -43,6 +43,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { authedFetch } = vi.hoisted(() => ({ authedFetch: vi.fn() }));
 vi.mock("../vendor/scm/lib/authed-fetch", () => ({ authedFetch }));
+vi.mock("../vendor/scm/lib/onsite-twin-queries", () => ({ afterOnsiteConfirm: () => {} }));
 vi.mock("../vendor/scm/lib/dialog-service", () => ({ serviceNotify: vi.fn() }));
 /* Every delivery closes with a photo (2026-10-07), so each case attaches one;
    the upload itself is stubbed and its key is what the payload must carry. */

@@ -24,6 +24,8 @@ export interface SitePhoto {
   /** The room the photo was taken in, when the site team tagged it. */
   area: string | null;
   at: string | null;
+  /** Shown here but kept on another document, e.g. "Production order TC-PRO-2611-906". */
+  from?: string;
   source: "pod" | "site" | "upload";
 }
 
@@ -147,8 +149,10 @@ export function betaCategory(e: Pick<TimelineEntry, "id" | "category" | "title">
   if (e.category !== "system") return e.category;
   const id = e.id;
   const t = (e.title ?? "").toLowerCase();
-  if (/^(po|gr|do|deliv|grsite):/.test(id)) return "supplier";
-  if (/^(so|pay|vo):/.test(id)) return "sales";
+  if (/^po:/.test(id)) return "supplier";
+  if (/^prod:/.test(id)) return "production";
+  if (/^(gr|do|deliv|grsite):/.test(id)) return "delivery";
+  if (/^(quotation|so|si|pay|vo):/.test(id)) return "sales";
   if (/^(design|dnote|onsite):/.test(id)) return "design";
   if (/^key:/.test(id) || id === "project:handover") return "site";
   if (/^defect|key passed|handed over|handover|site task|task |snag/.test(t)) return "site";

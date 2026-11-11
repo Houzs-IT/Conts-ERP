@@ -100,6 +100,30 @@ check('change: the income model moves while no contract uses the type', r.status
 r = await patchType(CODE, { revenueModel: 'management' });
 check('change: and back', r.status === 200, r.text);
 
+/* ---------- options ---------- */
+{
+  const seeded = Object.fromEntries((await listTypes()).map(t => [t.code, t]));
+  check('options: MANAGE has the fixed owner amount, RTR the rent-out grid, LT no operator share, PS the agent share',
+    seeded.MANAGE?.hasFixedOwnerAmount && seeded.RTR?.hasRentOutGrid && seeded.LT?.hasNoOperatorShare && seeded.PS?.hasAgentShare && !seeded.PS?.hasFixedOwnerAmount, JSON.stringify(seeded.PS));
+  const models = ['management', 'management_guarantee', 'management_yearly_guarantee', 'master_lease', 'long_term'];
+  check('options: the screens offer each option for the same income models as the server',
+    M.screens.CONTRACT_TYPE_OPTIONS.every(o => models.every(m => o.fits(m) === M.lib.OPTION_FITS[o.key](m))) && M.screens.CONTRACT_TYPE_OPTIONS.length === M.lib.CONTRACT_TYPE_OPTION_KEYS.length);
+  check('options: the built-in lists agree', JSON.stringify(M.screens.BUILT_IN_CONTRACT_TYPES) === JSON.stringify(M.lib.BUILT_IN_CONTRACT_TYPES));
+  const OWN = `${CODE} M`.slice(0, 20);
+  r = await addType({ code: OWN, label: 'Check manage', revenueModel: 'long_term', hasFixedOwnerAmount: true });
+  check('options: one that does not fit the income model is refused', r.status === 422 && !!r.json?.error?.fields?.hasFixedOwnerAmount, r.text);
+  r = await addType({ code: OWN, label: 'Check manage', revenueModel: 'management', hasFixedOwnerAmount: true, hasAgentShare: false });
+  const own = (await listTypes()).find(t => t.code === OWN);
+  check('options: a new type keeps the options ticked', r.status === 201 && own?.hasFixedOwnerAmount === true && own.hasAgentShare === false, JSON.stringify(own));
+  check('options: a new type with none sent takes its model\'s plain terms', added.hasAgentShare === true && added.hasFixedOwnerAmount === false);
+  r = await patchType(OWN, { hasAgentShare: true });
+  check('options: they change while no contract uses the type', r.status === 200 && (await listTypes()).find(t => t.code === OWN)?.hasAgentShare === true, r.text);
+  r = await patchType(OWN, { revenueModel: 'long_term' });
+  const moved = (await listTypes()).find(t => t.code === OWN);
+  check('options: a new income model takes its own plain options', r.status === 200 && moved?.hasNoOperatorShare === true && !moved.hasFixedOwnerAmount && !moved.hasAgentShare, JSON.stringify(moved));
+  await patchType(OWN, { revenueModel: 'management', hasFixedOwnerAmount: true });
+}
+
 /* ---------- one default per income model ---------- */
 check('add: guaranteed rent is refused', (await addType({ code: `${CODE} R`.slice(0, 20), label: 'Check', revenueModel: 'grr' })).status === 422);
 const before = (await listTypes()).find(t => t.revenueModel === 'long_term' && t.isDefaultForModel);
@@ -123,7 +147,7 @@ const saveContract = (id, body) => call(M.contract, 'PUT', `/api/units/${id}/con
 
 r = await saveContract(unitId, draft('NO SUCH TYPE'));
 check('contract: a code that is not a type is refused', r.status === 422 && !!r.json?.error?.fields?.contractCode, r.text);
-r = await saveContract(unitId, draft(CODE, 'long_term'));
+r = await saveContract(unitId, { ...draft(CODE, 'long_term'), monthlyRent: 250000, tenantName: 'Tenant' });
 check('contract: a type with another income model is refused', r.status === 422 && !!r.json?.error?.fields?.contractCode, r.text);
 r = await saveContract(unitId, draft(CODE));
 check('contract: an active type is accepted', r.status === 200, r.text);
@@ -132,6 +156,17 @@ check('contract: it reads back with the type\'s code and offers the active types
 r = await patchType(CODE, { revenueModel: 'long_term' });
 check('contract: the income model of a type in use cannot change', r.status === 409 && !!r.json?.error?.fields?.revenueModel, r.text);
 check('contract: the list counts the contract', (await listTypes()).find(t => t.code === CODE)?.contracts === 1);
+r = await patchType(CODE, { hasAgentShare: false });
+check('contract: the options of a type in use cannot change', r.status === 409 && !!r.json?.error?.fields?.hasAgentShare, r.text);
+{
+  const OWN = `${CODE} M`.slice(0, 20), unit3 = `t-unit3-${tag}`;
+  await run(env, 'INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)', unit3, propId, ownerId, 'C-03', now, now);
+  r = await saveContract(unit3, { ...draft(OWN), ownerPct: 80, managementPct: 20 });
+  check('contract: a type with a fixed owner amount needs the amount', r.status === 422 && !!r.json?.error?.fields?.ownerAmount, r.text);
+  r = await saveContract(unit3, { ...draft(OWN), ownerPct: 80, managementPct: 20, ownerAmount: 150000 });
+  const saved = (await call(M.contract, 'GET', `/api/units/${unit3}/contract`, { params: { id: unit3 } })).json?.current;
+  check('contract: and reads it back, like MANAGE', r.status === 200 && saved?.contractCode === OWN && saved.ownerAmount === 150000, JSON.stringify(saved));
+}
 
 await patchType(CODE, { isActive: false });
 r = await call(M.contract, 'GET', `/api/units/${unitId}/contract`, { params: { id: unitId } });

@@ -1,28 +1,35 @@
 /* The one letterhead every Conts document prints (owner, 24 Oct 2026: SO, DO, VO, PO and the rest must look like one
-   family). It is the letterhead of the owner's sample quotations (renovation-doc-pdf.ts): the logo top left, the
-   document title in large serif capitals top right, a black rule, then the company block in small type under the rule
-   on the left. The engine's own documents (PO, GRN, amendments, invoices, the plain SO) draw the same letterhead and
-   put their number and dates in a column on the right under the rule, where the quotation keeps its info block.
+   family). The logo top left with the company block under it, the document title in serif capitals top right, then a
+   black rule (owner, 6 Nov 2026). The engine's own documents (PO, GRN, amendments, invoices, the plain SO) draw the same letterhead and
+   put their number and dates under the title.
    The delivery order draws it too (owner, 24 Oct 2026: Conts prints DOs on a normal A4 printer, not dot-matrix), with its
    scan code in the space `reserve` keeps beside the number column.
    Units are millimetres on an A4 jsPDF page. */
 
 import type { jsPDF as JsPdf } from 'jspdf';
+import { brandLogoFor } from './brand-logos';
+
+/* The company block and contact line of The Conts in SO Maintenance: what every document that does not follow a brand
+   prints (owner, 6 Nov 2026), so one place sets the phone and address. A PDF is drawn outside React, hence a plain value. */
+let docLetterhead: string[] | null = null;
+export const setDocLetterhead = (lines: string[] | null): void => { docLetterhead = lines?.length ? lines : null; };
+export const getDocLetterhead = (): string[] | null => docLetterhead;
 
 export interface LetterheadLogo { dataUrl: string; format: 'PNG' | 'JPEG'; width: number; height: number }
 
 export const DOC_THEME = {
   logoTop: 12,
-  logoMaxW: 62,
-  logoMaxH: 24,
+  logoMaxW: 54,
+  logoMaxH: 14,
   titleFont: 'times',
-  titlePt: 20,
-  titleBaseline: 27,
-  ruleY: 40,
+  titlePt: 17,
+  titleBaseline: 19,
+  ruleY: 44,
   ruleWidth: 0.3,
-  blockTop: 47,
-  blockPt: 6.5,
-  blockStep: 4.1,
+  blockNamePt: 8.5,
+  blockPt: 7.5,
+  blockStep: 3.8,
+  blockMaxW: 112,
   metaPt: 8,
   metaStep: 4.6,
 } as const;
@@ -53,6 +60,8 @@ export interface LetterheadOpts {
   margin?: number;
   /** Width (mm) kept free left of the right column, for something the caller draws there (the DO's scan code). */
   reserve?: number;
+  /** false: the caller draws the rule, under something of its own in the right column. */
+  rule?: boolean;
 }
 
 /** Draws the letterhead and returns the y (mm) where the document's body may start. */
@@ -60,70 +69,71 @@ export function drawDocLetterhead(pdf: JsPdf, o: LetterheadOpts): number {
   return drawDocLetterheadAt(pdf, o).bottom;
 }
 
-/** As drawDocLetterhead, also giving the x where the right column (with its reserved space) begins. */
-export function drawDocLetterheadAt(pdf: JsPdf, o: LetterheadOpts): { bottom: number; columnLeft: number } {
+/** As drawDocLetterhead, also giving where the right column (with its reserved space) begins and how far down it runs.
+    The owner's choice of 6 Nov 2026: logo and company block on the left, the title and number top right, then the rule. */
+export function drawDocLetterheadAt(pdf: JsPdf, o: LetterheadOpts): { bottom: number; columnLeft: number; columnTop: number } {
   const t = DOC_THEME;
   const M = o.margin ?? 14;
   const right = pdf.internal.pageSize.getWidth() - M;
   pdf.setTextColor(0);
 
-  let markRight = M + 2;
-  if (o.logo) {
-    const scale = Math.min(t.logoMaxW / o.logo.width, t.logoMaxH / o.logo.height);
-    const w = o.logo.width * scale;
-    try {
-      pdf.addImage(o.logo.dataUrl, o.logo.format, M + 2, t.logoTop, w, o.logo.height * scale);
-      markRight = M + 2 + w;
-    } catch {
-      o = { ...o, logo: null };
-    }
-  }
-  if (!o.logo) {
-    // The serif has no CJK glyphs; helvetica is the face ensurePdfCjkFont redirects onto the CJK subset.
-    pdf.setFont(/^[\u0000-\u00ff]*$/.test(o.name) ? t.titleFont : 'helvetica', 'normal');
-    pdf.setFontSize(20);
-    pdf.setTextColor(30);
-    const spaced = o.name.toUpperCase().split('').join(' ');
-    pdf.text(spaced, M + 2, 26, { maxWidth: 100 });
-    markRight = M + 2 + Math.min(100, pdf.getTextWidth(spaced));
-    pdf.setTextColor(0);
-  }
+  /* The wide mark the owner chose in mockup B (6 Nov 2026): a square upload is too small to read at this height. */
+  const squareConts = o.logo != null && o.logo.width / o.logo.height < 1.6 && /the\s*conts/i.test(o.name);
+  const logo = o.logo && !squareConts ? o.logo : brandLogoFor(o.name);
+  const scale = Math.min(t.logoMaxW / logo.width, t.logoMaxH / logo.height);
+  const logoW = logo.width * scale;
+  const logoH = logo.height * scale;
+  pdf.addImage(logo.dataUrl, logo.format, M, t.logoTop, logoW, logoH);
+
+  // One "Label: value" text per row; a row with no label prints its value alone.
+  const meta = (o.meta ?? []).filter((m) => m.value).map((m) => {
+    const label = m.label.trim();
+    return label ? `${label}${label.endsWith(':') ? '' : ':'} ${m.value}` : m.value;
+  });
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(t.metaPt);
+  const metaW = Math.max(0, ...meta.map((m) => pdf.getTextWidth(m)));
+  const columnLeft = right - metaW - (o.reserve ?? 0);
 
   // The title shrinks rather than run into the logo.
   pdf.setFont(t.titleFont, 'bold');
   let pt: number = t.titlePt;
   pdf.setFontSize(pt);
-  const room = right - 4 - (markRight + 6);
+  const room = right - M - logoW - 6;
   while (pt > 12 && pdf.getTextWidth(o.title) > room) { pt -= 1; pdf.setFontSize(pt); }
-  pdf.text(o.title, right - 4, t.titleBaseline, { align: 'right' });
+  pdf.text(o.title, right, t.titleBaseline, { align: 'right' });
 
-  pdf.setDrawColor(0);
-  pdf.setLineWidth(t.ruleWidth);
-  pdf.line(M + 2, t.ruleY, right - 2, t.ruleY);
-
-  // Right column first: its width sets how wide the company block may run.
-  // One "Label: value" text per row, right-aligned, as every engine document has always printed its number and dates.
-  const meta = (o.meta ?? []).filter((m) => m.value).map((m) => `${m.label}${m.label.trim().endsWith(':') ? '' : ':'} ${m.value}`);
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(t.metaPt);
-  const metaW = Math.max(0, ...meta.map((m) => pdf.getTextWidth(m)));
-  let metaY = t.blockTop;
+  let metaY = t.titleBaseline + 5.5;
+  const columnTop = metaY - 2.5;
   for (const m of meta) {
-    pdf.text(m, right - 2, metaY, { align: 'right' });
+    pdf.text(m, right, metaY, { align: 'right' });
     metaY += t.metaStep;
   }
 
-  pdf.setFont('helvetica', 'normal');
+  /* The company's name reads first and the address and contact sit smaller under it (owner, 6 Nov 2026). */
+  const blockW = Math.min(t.blockMaxW, columnLeft - M - 6);
   pdf.setFontSize(t.blockPt);
-  const columnLeft = right - 2 - metaW - (o.reserve ?? 0);
-  const blockW = columnLeft - (metaW || o.reserve ? 8 : 0) - (M + 2);
-  let y = t.blockTop;
-  for (const line of o.lines) {
-    if (!line) continue;
-    for (const l of wrapLine(pdf, line, blockW)) {
-      pdf.text(l, M + 2, y);
-      y += t.blockStep;
-    }
+  const blockLines = o.lines.filter((l): l is string => !!l).flatMap((l, i) => {
+    if (i === 0) { pdf.setFont('helvetica', 'bold'); pdf.setFontSize(t.blockNamePt); }
+    const wrapped = wrapLine(pdf, l, blockW);
+    if (i === 0) { pdf.setFont('helvetica', 'normal'); pdf.setFontSize(t.blockPt); }
+    return wrapped.map((text, j) => ({ text, name: i === 0 && j === 0 }));
+  });
+  let blockY = t.logoTop + logoH + 3.5;
+  for (const l of blockLines) {
+    pdf.setFont('helvetica', l.name ? 'bold' : 'normal');
+    pdf.setFontSize(l.name ? t.blockNamePt : t.blockPt);
+    pdf.text(l.text, M, blockY);
+    blockY += t.blockStep;
   }
-  return { bottom: Math.max(y, metaY) + 2, columnLeft };
+
+  const contentBottom = Math.max(blockY - t.blockStep + 2, metaY - t.metaStep + 2, t.logoTop + logoH + 2);
+  if (o.rule === false) return { bottom: contentBottom, columnLeft, columnTop };
+  const ruleY = Math.max(t.ruleY, contentBottom + 1);
+  pdf.setDrawColor(0);
+  pdf.setLineWidth(t.ruleWidth);
+  pdf.line(M, ruleY, right, ruleY);
+  return { bottom: ruleY + 6, columnLeft, columnTop };
 }

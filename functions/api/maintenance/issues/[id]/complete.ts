@@ -4,6 +4,7 @@ import { CHARGE_TO, DAY, hasBilling } from '../../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../../_lib/expenses';
 import { releaseRepairBlocks } from '../../../../_lib/repairBlocks';
 import { repairNotice } from '../../../../_lib/notices';
+import { PASS_KEY_DONE_ONLY } from '../../../../_lib/passKeyJobs';
 
 /** POST /api/maintenance/issues/:id/complete { finalAmount, chargeTo?, billingDate? } — closes the job, puts a blocked unit back
  *  on sale and raises the expense on the unit with the payer chosen (owner through the statement, the company, the guest's
@@ -25,10 +26,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (b?.billingDate != null && (typeof b.billingDate !== 'string' || !DAY.test(b.billingDate))) return fail('VALIDATION', 'Pick the billing date.', 422, { billingDate: 'Pick the billing date.' });
   const billing = await hasBilling(env);
 
-  const cur = await one<any>(env, `SELECT id, state, unit_id, title, blocks_unit, charge_to, owner_approval_required, owner_approved_at${billing ? ', billing_date' : ''} FROM maintenance_issues WHERE id = ?`, id);
+  const cur = await one<any>(env, `SELECT id, state, job_type, unit_id, title, blocks_unit, charge_to, owner_approval_required, owner_approved_at${billing ? ', billing_date' : ''} FROM maintenance_issues WHERE id = ?`, id);
   if (!cur) return fail('NOT_FOUND', 'That job no longer exists.', 404);
+  if (cur.job_type === 'pass_key') return fail('CONFLICT', PASS_KEY_DONE_ONLY, 409);
   if (cur.state === 'resolved') return json({ ok: true });
   const chargeTo: string = b?.chargeTo ?? cur.charge_to;
+  if (!cur.unit_id && chargeTo !== 'the_conts') return fail('VALIDATION', 'A job in the building is paid by The Conts.', 422, { chargeTo: 'A job in the building is paid by The Conts.' });
   if (cur.owner_approval_required && !cur.owner_approved_at && chargeTo === 'owner') return fail('APPROVAL_PENDING', 'The owner has not approved this quote yet.', 409);
 
   const now = nowIso();
@@ -36,8 +39,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const billingDate: string | null = billing ? (b?.billingDate ?? cur.billing_date ?? null) : null;
   const day = billingDate ?? today;
   const prior = await one<{ id: string; incurred_on: string; amount: number }>(env, 'SELECT id, incurred_on, amount FROM expenses WHERE maintenance_id = ? ORDER BY created_at LIMIT 1', id);
+  const expenseOn = amount > 0 && cur.unit_id ? day : null;
   const unchanged = !!prior && Number(prior.amount) === amount && prior.incurred_on === day;
-  if (amount > 0 && !unchanged && await isPeriodLocked(env, cur.unit_id, day)) return fail('PERIOD_LOCKED', "That month's owner statement is already final, so the cost cannot be added to it. Pick a later billing date.", 409, { billingDate: 'That month is closed.' });
+  if (amount > 0 && cur.unit_id && !unchanged && await isPeriodLocked(env, cur.unit_id, day)) return fail('PERIOD_LOCKED', "That month's owner statement is already final, so the cost cannot be added to it. Pick a later billing date.", 409, { billingDate: 'That month is closed.' });
   if (prior && !unchanged && await isPeriodLocked(env, cur.unit_id, prior.incurred_on)) return fail('PERIOD_LOCKED', 'This job was finished before and its cost is on an owner statement that is already final. Ask finance to adjust it there.', 409);
   await run(env, `UPDATE maintenance_issues SET state = 'resolved', final_amount = ?, charge_to = ?, resolved_at = ?, blocks_unit = 0${billing ? ', billing_date = ?' : ''}, updated_at = ? WHERE id = ?`,
     amount, chargeTo, now, ...(billing ? [billingDate ?? (amount > 0 ? day : null)] : []), now, id);
@@ -53,15 +57,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   } else if (prior) {
     await run(env, 'DELETE FROM expenses WHERE id = ?', prior.id);
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.delete', entityTable: 'expenses', entityId: prior.id, before: { amount: prior.amount, incurredOn: prior.incurred_on }, after: { reason: 'Maintenance job closed again at RM 0' } });
-  } else if (amount > 0) {
+  } else if (amount > 0 && cur.unit_id) {
+    // A job in the building has no unit to put the cost on (expenses.unit_id is NOT NULL); it stays on the job and in payables.
     await run(env, `
       INSERT INTO expenses (id, unit_id, maintenance_id, category, description, amount, currency, incurred_on, charge_to, created_by, created_at)
       VALUES (?, ?, ?, 'maintenance', ?, ?, 'MYR', ?, ?, ?, ?)`,
       crypto.randomUUID(), cur.unit_id, id, cur.title, amount, day, chargeTo, session.userId, now);
   }
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.complete', entityTable: 'maintenance_issues', entityId: id, before: { state: cur.state, billingDate: cur.billing_date ?? null }, after: { state: 'resolved', finalAmount: amount, chargeTo, billingDate: billing ? (billingDate ?? (amount > 0 ? day : null)) : undefined, expenseOn: amount > 0 ? day : null } });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.complete', entityTable: 'maintenance_issues', entityId: id, before: { state: cur.state, billingDate: cur.billing_date ?? null }, after: { state: 'resolved', finalAmount: amount, chargeTo, billingDate: billing ? (billingDate ?? (amount > 0 ? day : null)) : undefined, expenseOn } });
   // The calendar block "Block unit until fixed" made is given back now, not left for someone to remove by hand.
   const released = await releaseRepairBlocks(env, [id], { id: session.userId, label: session.fullName });
   await repairNotice(env, id, 'done', session.userId);
-  return json({ ok: true, chargeTo, expensed: amount > 0, expenseOn: amount > 0 ? day : null, blocksReleased: released.length });
+  return json({ ok: true, chargeTo, expensed: expenseOn !== null, expenseOn, blocksReleased: released.length });
 };

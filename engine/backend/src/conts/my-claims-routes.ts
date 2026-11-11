@@ -4,7 +4,8 @@
 // Property OS forwards on a person's behalf (staffFromAssertion). Every query is limited to the caller; a keeper's to
 // their own float.
 //   GET  /me                       who I am here: field or office, where my receipts go, whether I keep a float
-//   POST /extract                  { files: [{ name, mime, dataBase64 }] } -> { amountSen, date, vendorName }
+//   POST /extract                  { files: [{ name, mime, dataBase64 }], kind? } -> { amountSen, date, vendorName }; kind
+//                                  'request' (a Direct pay bill) adds { dueDate, summary, documentKind, supplier }
 //   POST /receipts                 hand in a receipt (paid from my department's float, or by finance)
 //   GET  /receipts?month=          my receipts
 //   GET  /receipts/:id/files/:fileId   a receipt's file: mine, or on the float I keep
@@ -22,7 +23,8 @@ import { todayMyt } from '../scm/lib/my-time';
 import { DOC_FILE_MIMES } from '../scm/lib/doc-files';
 import { MAX_FILES, decodeFiles, fileResponse, removeFiles, storeFiles } from './claims-files';
 import { docMonthTag, insertWithDocNoRetry, mintMonthlyDocNo } from '../scm/lib/doc-no';
-import { extractOneBill } from '../acc/bill-extract';
+import { BILL_MODEL, extractOneBill, matchSupplier } from '../acc/bill-extract';
+import { requestAiTag } from '../services/aiUsage';
 import { lineDepartment, resolveFloatId } from './petty-cash';
 import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, receiptView, staffNames, type FloatRow, type ReceiptRow } from './petty-cash-store';
 import type { Staff } from './staff-identity';
@@ -66,14 +68,30 @@ export const meHandler = async (c: Ctx): Promise<Response> => {
 export const extractHandler = async (c: Ctx): Promise<Response> => {
   const key = (c.env as { ANTHROPIC_API_KEY?: string } | undefined)?.ANTHROPIC_API_KEY;
   if (!key) return c.json({ error: 'anthropic_key_missing', message: 'Reading receipts is not set up yet. Type the amount.' }, 503);
-  const files = (await bodyOf(c))?.files;
-  if (!Array.isArray(files) || files.length === 0 || files.length > MAX_FILES) return c.json({ error: 'validation', message: 'Add the receipt photos.' }, 422);
+  const body = await bodyOf(c);
+  const files = body?.files;
+  /* kind "request": the bill on a Direct pay request (Houzs payment-request-bill.ts, owner 2026-10-02 there: the
+     request fills its empty fields from the bill it reads). Anything else is a receipt being handed in. */
+  const forRequest = body?.kind === 'request';
+  if (!Array.isArray(files) || files.length === 0 || files.length > MAX_FILES) return c.json({ error: 'validation', message: forRequest ? 'Add the bill.' : 'Add the receipt photos.' }, 422);
   const bill = (files as Array<Record<string, unknown>>).map(f => ({ name: String(f.name ?? 'receipt'), mime: String(f.mime ?? ''), dataBase64: String(f.dataBase64 ?? '') }));
   if (bill.some(f => !DOC_FILE_MIMES.has(f.mime))) return c.json({ error: 'bad_type', message: 'Photos (JPEG, PNG, WebP) or a PDF only.' }, 400);
-  const r = await extractOneBill(key, bill);
+  const r = await extractOneBill(key, bill, requestAiTag(c, forRequest ? 'request_bill' : 'claim_receipt', BILL_MODEL));
   if (!r.ok) return c.json({ amountSen: null, date: null, vendorName: null, unreadable: true });
   const x = r.extraction;
-  return c.json({ amountSen: x.totalSen ?? null, date: x.invoiceDate && DATE.test(x.invoiceDate) ? x.invoiceDate : null, vendorName: x.vendorName ?? null });
+  const read = { amountSen: x.totalSen ?? null, date: x.invoiceDate && DATE.test(x.invoiceDate) ? x.invoiceDate : null, vendorName: x.vendorName ?? null };
+  if (!forRequest) return c.json(read);
+  /* The supplier the bill names, matched in plain code against the company's list (office staff only, as the supplier
+     picker); none when two fit equally. The person still picks; nothing is written here. */
+  let supplier: { id: string; code: string | null; name: string } | null = null;
+  const co = requireActiveCompanyId(c);
+  if (co.ok && !staffOf(c).field && x.vendorName) {
+    const list = await paginateAll<{ id: string; code: string | null; name: string }>((f, t) =>
+      c.get('supabase').from('suppliers').select('id, code, name').eq('company_id', co.companyId).order('name').order('id').range(f, t));
+    const m = list.error ? null : matchSupplier(x.vendorName, (list.data ?? []).slice(0, 5000));
+    supplier = m ? { id: m.supplier.id, code: m.supplier.code, name: m.supplier.name } : null;
+  }
+  return c.json({ ...read, dueDate: x.dueDate && DATE.test(x.dueDate) ? x.dueDate : null, summary: x.summary ?? null, documentKind: x.documentKind, supplier });
 };
 
 export const handInHandler = async (c: Ctx): Promise<Response> => {

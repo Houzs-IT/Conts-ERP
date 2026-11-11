@@ -9,12 +9,15 @@ vi.mock("../../api/client", async (importOriginal) => {
 });
 
 import { MediaGrid, MediaStrip, durationText, mediaRefusal, type MediaItem } from "./BetaMedia";
-import { keepOrder, matchesSearch, newestFirst, orderOf } from "./renovationBetaHomeModel";
+import { keepOrder, onBrandList, matchesSearch, newestFirst, orderOf, sortFromParam, sortHome } from "./renovationBetaHomeModel";
 import { cardLine, dayTitle, photoTimeline } from "./renovationBetaPhotosModel";
 import type { ProjectPhoto } from "./renovationBetaMediaApi";
 import type { DesignProject } from "./renovationBetaBoard";
 
 const item = (i: number, kind: MediaItem["kind"] = "image", path = `/p/${i}`): MediaItem => ({ id: `m${i}`, path, kind, name: `file-${i}`, label: i === 0 ? "Before" : null });
+
+
+// These are Dream Crafter screens: dates read day first (YH, 11 Nov 2026).
 
 describe("MediaGrid", () => {
   it.each([
@@ -85,6 +88,22 @@ describe("the project list", () => {
     expect(newestFirst([p(1, "2026-10-01T00:00:00Z"), p(3, "2026-10-24T02:57:52Z"), p(2, null)]).map((x) => x.id)).toEqual([3, 1, 2]);
   });
 
+  it("sorts oldest first, by handover and by building, with no date last", () => {
+    const list = [p(1, "2026-10-05T00:00:00Z", { tag: "Baron", handover: "2026-12-01" }), p(2, null, { tag: "astrum", handover: null }), p(3, "2026-10-01T00:00:00Z", { tag: "Astrum", handover: "2026-11-20" })];
+    expect(sortHome(list, "oldest").map((x) => x.id)).toEqual([3, 1, 2]);
+    expect(sortHome(list, "handover").map((x) => x.id)).toEqual([3, 1, 2]);
+    expect(sortHome(list, "building").map((x) => x.id)).toEqual([2, 3, 1]);
+    expect(sortHome(list, "due").map((x) => x.id)).toEqual([1, 2, 3]);
+    expect(sortFromParam("oldest")).toBe("oldest");
+    expect(sortFromParam("nonsense")).toBe("newest");
+  });
+
+  it("lists every project; the Brand filter keeps that brand and those with no brand, any case", () => {
+    const brands = [" dream crafter ", "Dream Crafter", null, "", undefined, "The Conts"];
+    expect(brands.map((brand) => onBrandList({ brand }, ""))).toEqual([true, true, true, true, true, true]);
+    expect(brands.map((brand) => onBrandList({ brand }, "Dream Crafter"))).toEqual([true, true, true, true, true, false]);
+  });
+
   it("keeps a row where it was after a save re-sorts the list", () => {
     const order = orderOf([p(5, null), p(4, null), p(3, null)]);
     expect(keepOrder([p(3, null), p(5, null), p(9, null), p(4, null)], order).map((x) => x.id)).toEqual([5, 4, 3, 9]);
@@ -94,6 +113,12 @@ describe("the project list", () => {
     const x = p(1, null, { building: "18 USJ 2/4P Service Residence", customer: "Ms Tan", code: "RN-2610-006", soDocNos: ["TC-SO-2610-002"], team: { "3": [{ id: 1, name: "Jia Xin" }], "2": [] } });
     for (const q of ["usj", "ms tan", "rn-2610", "so-2610-002", "JIA", "usj tan"]) expect(matchesSearch(x, q), q).toBe(true);
     expect(matchesSearch(x, "nara")).toBe(false);
+  });
+
+  it("reads a word of 3 to 6 letters as the building's initials too", () => {
+    const x = p(1, null, { building: "Skyline Embassy Residences", customer: "Ms Lim" });
+    for (const q of ["ser", "SER lim", "skyline"]) expect(matchesSearch(x, q), q).toBe(true);
+    for (const q of ["se", "sx", "ers"]) expect(matchesSearch(x, q), q).toBe(false);
   });
 });
 
@@ -110,8 +135,8 @@ describe("photo cards", () => {
     ]);
     expect(days.map((d) => d.day)).toEqual(["2026-10-24", "2026-10-23"]);
     expect(days[0].cards.map(cardLine)).toEqual(["3:42 pm · DO do:1 · POD · 1 photo, 1 video", "11:00 am · Defect: tile crack · Before / After · 2 photos"]);
-    expect(dayTitle("2026-10-24", "2026-10-24")).toBe("Today · 24 Oct");
-    expect(dayTitle("2026-10-23", "2026-10-24")).toBe("Yesterday · 23 Oct");
-    expect(dayTitle("2025-12-03", "2026-10-24")).toBe("3 Dec 2025");
+    expect(dayTitle("2026-10-24", "2026-10-24")).toBe("Today · 24/10");
+    expect(dayTitle("2026-10-23", "2026-10-24")).toBe("Yesterday · 23/10");
+    expect(dayTitle("2025-12-03", "2026-10-24")).toBe("03/12/2025");
   });
 });

@@ -9,7 +9,7 @@ import { isStageKey } from '../shared/renovation-stages';
 
 export async function listTermTemplates(db: RenoDb, companyId: number, kind?: 'CUSTOMER' | 'PO' | null) {
   const tpls = await db.q(
-    `select id, kind, name, is_default, active from scm.reno_term_templates where company_id = $1 and ($2::text is null or kind = $2) order by kind, name`,
+    `select id, kind, name, is_default, active, brand_id::int as brand_id from scm.reno_term_templates where company_id = $1 and ($2::text is null or kind = $2) order by kind, name`,
     [companyId, kind ?? null],
   );
   const lines = await db.q(
@@ -19,7 +19,7 @@ export async function listTermTemplates(db: RenoDb, companyId: number, kind?: 'C
     [companyId],
   );
   return tpls.map((t) => ({
-    id: t.id as string, kind: t.kind as 'CUSTOMER' | 'PO', name: t.name as string, isDefault: t.is_default as boolean, active: t.active as boolean,
+    id: t.id as string, kind: t.kind as 'CUSTOMER' | 'PO', name: t.name as string, brandId: t.brand_id == null ? null : Number(t.brand_id), isDefault: t.is_default as boolean, active: t.active as boolean,
     lines: lines.filter((l) => l.template_id === t.id).map((l) => ({
       seq: Number(l.seq), label: l.label as string, pctBp: Number(l.pct_bp), description: l.description as string,
       stageCode: l.stage_code as string | null, trigger: l.trigger as string, payableOn: l.payable_on as string | null,
@@ -30,6 +30,8 @@ export async function listTermTemplates(db: RenoDb, companyId: number, kind?: 'C
 const termBody = z.object({
   kind: z.enum(['CUSTOMER', 'PO']),
   name: z.string().trim().min(1).max(100),
+  /* Blank: every brand. */
+  brandId: z.number().int().positive().nullable().optional().default(null),
   isDefault: z.boolean().optional().default(false),
   active: z.boolean().optional().default(true),
   lines: z.array(z.object({
@@ -55,19 +57,19 @@ export async function saveTermTemplate(db: RenoDb, actor: RenoActor, id: string 
   }
   const dup = await db.q(`select 1 from scm.reno_term_templates where company_id = $1 and kind = $2 and lower(name) = lower($3) and ($4::uuid is null or id <> $4)`, [actor.companyId, b.kind, b.name, id]);
   if (dup.length) throw refuse(409, 'name_taken', `A ${b.kind === 'PO' ? 'PO' : 'customer'} template called "${b.name}" already exists.`);
-  if (b.isDefault) await db.q(`update scm.reno_term_templates set is_default = false where company_id = $1 and kind = $2 and ($3::uuid is null or id <> $3)`, [actor.companyId, b.kind, id]);
+  if (b.isDefault) await db.q(`update scm.reno_term_templates set is_default = false where company_id = $1 and kind = $2 and ($3::uuid is null or id <> $3) and brand_id is not distinct from $4::bigint`, [actor.companyId, b.kind, id, b.brandId]);
   let tplId = id;
   if (id) {
     const [r] = await db.q<{ id: string }>(
-      `update scm.reno_term_templates set name = $3, is_default = $4, active = $5, updated_at = now() where id = $1 and company_id = $2 and kind = $6 returning id`,
-      [id, actor.companyId, b.name, b.isDefault, b.active, b.kind],
+      `update scm.reno_term_templates set name = $3, is_default = $4, active = $5, brand_id = $7::bigint, updated_at = now() where id = $1 and company_id = $2 and kind = $6 returning id`,
+      [id, actor.companyId, b.name, b.isDefault, b.active, b.kind, b.brandId],
     );
     if (!r) throw refuse(404, 'term_template_not_found', 'That payment-term template does not exist.');
     await db.q(`delete from scm.reno_term_template_lines where template_id = $1`, [id]);
   } else {
     const [r] = await db.q<{ id: string }>(
-      `insert into scm.reno_term_templates (company_id, kind, name, is_default, active) values ($1, $2, $3, $4, $5) returning id`,
-      [actor.companyId, b.kind, b.name, b.isDefault, b.active],
+      `insert into scm.reno_term_templates (company_id, kind, name, is_default, active, brand_id) values ($1, $2, $3, $4, $5, $6::bigint) returning id`,
+      [actor.companyId, b.kind, b.name, b.isDefault, b.active, b.brandId],
     );
     tplId = r.id;
   }

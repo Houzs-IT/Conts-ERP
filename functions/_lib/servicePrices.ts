@@ -1,7 +1,18 @@
-import { type Env, all, run, fail, nowIso, mytToday } from './db';
+import { type Env, all, one, run, fail, nowIso, mytToday } from './db';
 import { hasColumn } from './auth';
 import { layoutTypes } from './layoutTypes';
 import { inForce } from './datedRows';
+import { bedSizes } from './bedSizes';
+import { NO_BEDS, bedCountRows, bedKey, isBedGridKey, parseBeds, priceByBeds, type BedCount, type BedPricing, type DatedFigures } from './bedPricing';
+
+/** Which way an item priced by beds reads them (bedPricing.ts): settings 'cleaning.bedPricing' = 'count' prices by how
+ *  many beds a unit has (chew, 10 Nov 2026, YJ's pay); anything else by bed size. One switch for every item, since the
+ *  price grid's rows follow it. */
+export const BED_PRICING_SETTING = 'cleaning.bedPricing';
+export async function bedPricingMode(env: Env): Promise<BedPricing> {
+  const row = await one<{ value: string | null }>(env, 'SELECT value FROM settings WHERE key = ?', BED_PRICING_SETTING).catch(() => null);
+  return row?.value === 'count' ? 'count' : 'size';
+}
 
 /** Service prices (owner, 17 Oct 2026; migration 0127): one item list for cleaning and maintenance, each item with an
  *  owner price (what the owner is charged) and an internal cost (what it costs us), effective-dated. A job takes the
@@ -26,14 +37,27 @@ export const mytDay = (at: string | null | undefined) => {
 
 export const hasServicePrices = (env: Env) => hasColumn(env, 'service_items', 'domain').catch(() => false);
 
-export interface ServiceItem { id: string; code: string; name: string; domain: string; category: string; unit_label: string; clean_kind: string | null; by_layout: number; active: number }
-export interface PriceRow { id: string; item_id: string; layout: string; effective_from: string; owner_price: number | null; internal_cost: number | null }
-export interface Amounts { owner: number | null; internal: number | null; source: 'unit' | 'table' | null; itemId: string | null; effectiveFrom: string | null }
-const NONE: Amounts = { owner: null, internal: null, source: null, itemId: null, effectiveFrom: null };
+export interface ServiceItem { id: string; code: string; name: string; domain: string; category: string; unit_label: string; clean_kind: string | null; by_layout: number; by_bed?: number; active: number }
+export interface PriceRow { id: string; item_id: string; layout: string; effective_from: string; owner_price: number | null; internal_cost: number | null; guest_price?: number | null }
+/** owner = charged to the owner, internal = the cleaner's pay (or the item's cost), guest = charged to a guest (0257). */
+export interface Amounts { owner: number | null; internal: number | null; guest: number | null; source: 'unit' | 'table' | null; itemId: string | null; effectiveFrom: string | null }
+const NONE: Amounts = { owner: null, internal: null, guest: null, source: null, itemId: null, effectiveFrom: null };
+
+/** Migration 0257: the guest's cleaning fee, on the price list and on a unit's own prices (chew, 10 Nov 2026). */
+export const hasGuestPrices = (env: Env): Promise<boolean> => hasColumn(env, 'service_item_prices', 'guest_price').catch(() => false);
 
 /** Migration 0186: a unit's own prices take a date. A row from before it applies "from the start". */
 export const hasDatedUnitPrices = (env: Env) => hasColumn(env, 'unit_service_prices', 'effective_from').catch(() => false);
 export const FROM_THE_START = '2000-01-01';
+
+export const hasPriceByBed = (env: Env): Promise<boolean> => hasColumn(env, 'service_items', 'by_bed').catch(() => false);
+
+async function loadUnitBeds(env: Env, unitIds: string[]): Promise<Map<string, BedCount[]>> {
+  if (!(await hasColumn(env, 'units', 'beds').catch(() => false))) return new Map();
+  const rows = await all<{ id: string; beds: string | null }>(env,
+    'SELECT id, beds::text AS beds FROM units WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', JSON.stringify(unitIds));
+  return new Map(rows.map(row => [row.id, parseBeds(row.beds)]));
+}
 
 export interface Book {
   items: ServiceItem[];
@@ -45,31 +69,50 @@ export interface Book {
 
 /** Everything needed to price jobs on these units: the list and every dated price is small, so it is read once. */
 export async function serviceBook(env: Env, unitIds: string[]): Promise<Book> {
-  const [items, prices] = await Promise.all([
-    all<ServiceItem>(env, 'SELECT id, code, name, domain, category, unit_label, clean_kind, by_layout, active FROM service_items'),
-    all<PriceRow>(env, 'SELECT id, item_id, layout, effective_from, owner_price, internal_cost FROM service_item_prices ORDER BY effective_from DESC'),
+  const [byBedReady, guestReady] = await Promise.all([hasPriceByBed(env), hasGuestPrices(env)]);
+  const guestCol = guestReady ? 'guest_price' : 'NULL::int AS guest_price';
+  const [items, prices, mode] = await Promise.all([
+    all<ServiceItem>(env, `SELECT id, code, name, domain, category, unit_label, clean_kind, by_layout, ${byBedReady ? 'by_bed' : '0 AS by_bed'}, active FROM service_items`),
+    all<PriceRow>(env, `SELECT id, item_id, layout, effective_from, owner_price, internal_cost, ${guestCol} FROM service_item_prices ORDER BY effective_from DESC`),
+    bedPricingMode(env),
   ]);
   const ids = [...new Set(unitIds.filter(Boolean))];
   const dated = ids.length ? await hasDatedUnitPrices(env) : false;
-  const own = ids.length ? await all<{ unit_id: string; item_id: string; effective_from: string; owner_price: number | null; internal_cost: number | null }>(env,
-    `SELECT unit_id, item_id, ${dated ? 'effective_from' : `'${FROM_THE_START}' AS effective_from`}, owner_price, internal_cost FROM unit_service_prices
+  const own = ids.length ? await all<{ unit_id: string; item_id: string; effective_from: string; owner_price: number | null; internal_cost: number | null; guest_price: number | null }>(env,
+    `SELECT unit_id, item_id, ${dated ? 'effective_from' : `'${FROM_THE_START}' AS effective_from`}, owner_price, internal_cost, ${guestCol} FROM unit_service_prices
      WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY effective_from DESC`, JSON.stringify(ids)) : [];
+  const bedsOf = ids.length && items.some(i => i.by_bed) ? await loadUnitBeds(env, ids) : new Map<string, BedCount[]>();
   const byKey = new Map<string, PriceRow[]>();
   for (const p of prices) byKey.set(`${p.item_id}:${p.layout}`, [...(byKey.get(`${p.item_id}:${p.layout}`) ?? []), p]);
+  const bedPricesStart = new Map<string, string>();
+  for (const p of prices) {
+    const start = bedPricesStart.get(p.item_id);
+    if (isBedGridKey(p.layout, mode) && (!start || p.effective_from < start)) bedPricesStart.set(p.item_id, p.effective_from);
+  }
   const ownAt = new Map<string, typeof own>();
   for (const o of own) ownAt.set(`${o.unit_id}:${o.item_id}`, [...(ownAt.get(`${o.unit_id}:${o.item_id}`) ?? []), o]);
   const byId = new Map(items.map(i => [i.id, i]));
+  const layoutRow = (item: ServiceItem, layout: string, day: string): DatedFigures | null =>
+    inForce(byKey.get(`${item.id}:${item.by_layout ? layout : 'all'}`), day) ?? (item.by_layout ? inForce(byKey.get(`${item.id}:all`), day) : null);
+  const listRow = (item: ServiceItem, unitId: string | null, layout: string, day: string): DatedFigures | null => {
+    const start = bedPricesStart.get(item.id);
+    if (!item.by_bed || !start || day < start) return layoutRow(item, layout, day);
+    const beds = unitId ? bedsOf.get(unitId) ?? [] : [];
+    return priceByBeds(mode, beds, key => inForce(byKey.get(`${item.id}:${key}`), day));
+  };
   return {
     items,
     itemForKind: kind => items.find(i => i.domain === 'cleaning' && i.clean_kind === kind && i.active) ?? null,
     amounts(itemId, unitId, layout, day) {
       const item = itemId ? byId.get(itemId) : null;
       if (!item) return NONE;
-      const row = inForce(byKey.get(`${item.id}:${item.by_layout ? layout : 'all'}`), day) ?? (item.by_layout ? inForce(byKey.get(`${item.id}:all`), day) : null);
+      const row = listRow(item, unitId, layout, day);
       const o = unitId ? inForce(ownAt.get(`${unitId}:${item.id}`), day) : null;
       const owner = o?.owner_price ?? row?.owner_price ?? null, internal = o?.internal_cost ?? row?.internal_cost ?? null;
-      const source = o && (o.owner_price != null || o.internal_cost != null) ? 'unit' : owner != null || internal != null ? 'table' : null;
-      return { owner: owner == null ? null : Number(owner), internal: internal == null ? null : Number(internal), source, itemId: item.id, effectiveFrom: row?.effective_from ?? null };
+      const guest = o?.guest_price ?? row?.guest_price ?? null;
+      const source = o && (o.owner_price != null || o.internal_cost != null || o.guest_price != null) ? 'unit' : owner != null || internal != null || guest != null ? 'table' : null;
+      const num = (v: number | null) => (v == null ? null : Number(v));
+      return { owner: num(owner), internal: num(internal), guest: num(guest), source, itemId: item.id, effectiveFrom: row?.effective_from ?? null };
     },
   };
 }
@@ -101,25 +144,39 @@ export async function layoutGrid(env: Env): Promise<Grid> {
   const types = await layoutTypes(env);
   return { keys: types.filter(t => t.isActive).map(t => t.key), labels: { ...LABEL.layout, ...Object.fromEntries(types.map(t => [t.key, t.label])) } };
 }
+export async function bedGrid(env: Env, mode?: BedPricing): Promise<Grid> {
+  if ((mode ?? await bedPricingMode(env)) === 'count') return bedCountRows();
+  const sizes = await bedSizes(env);
+  return {
+    keys: [...sizes.map(size => bedKey(size.key)), NO_BEDS],
+    labels: { ...Object.fromEntries(sizes.map(size => [bedKey(size.key), size.label])), [NO_BEDS]: 'No beds recorded' },
+  };
+}
+export interface Grids { layout: Grid; bed: Grid; bedPricing: BedPricing }
+export async function priceGrids(env: Env): Promise<Grids> {
+  const bedPricing = await bedPricingMode(env);
+  const [layout, bed] = await Promise.all([layoutGrid(env), bedGrid(env, bedPricing)]);
+  return { layout, bed, bedPricing };
+}
+export const gridOf = (item: { by_bed?: unknown }, grids: Grids): Grid => (item.by_bed ? grids.bed : grids.layout);
 export const layoutsOf = (byLayout: unknown, grid: Grid = DEFAULT_GRID()) => (byLayout ? [...grid.keys] : ['all']);
-type Cell = { ownerPrice: number | null; internalCost: number | null; effectiveFrom: string | null };
+type Cell = { ownerPrice: number | null; internalCost: number | null; guestPrice: number | null; effectiveFrom: string | null };
+const cellOf = (r: PriceRow | null | undefined): Cell =>
+  ({ ownerPrice: r?.owner_price ?? null, internalCost: r?.internal_cost ?? null, guestPrice: r?.guest_price ?? null, effectiveFrom: r?.effective_from ?? null });
 
 /** An item as the screen shows it: its prices in force today per layout, and the next scheduled change. */
-export function itemView(i: any, rows: PriceRow[], today: string, grid: Grid = DEFAULT_GRID()) {
-  const layouts = layoutsOf(i.by_layout, grid);
+export function itemView(i: any, rows: PriceRow[], today: string, grids: Grids) {
+  const layouts = layoutsOf(i.by_layout, gridOf(i, grids));
+  const bedPricesStarted = !!i.by_bed && rows.some(r => isBedGridKey(r.layout, grids.bedPricing) && r.effective_from <= today);
+  const inUse = i.by_bed && !bedPricesStarted ? layoutsOf(i.by_layout, grids.layout) : layouts;
+  const keys = [...new Set([...inUse, ...layouts])];
   const current: Record<string, Cell> = {};
-  for (const l of layouts) {
-    const r = inForce(rows.filter(x => x.layout === l), today);
-    current[l] = { ownerPrice: r?.owner_price ?? null, internalCost: r?.internal_cost ?? null, effectiveFrom: r?.effective_from ?? null };
-  }
-  const future = rows.filter(r => r.effective_from > today && layouts.includes(r.layout)).map(r => r.effective_from).sort()[0] ?? null;
+  for (const l of keys) current[l] = cellOf(inForce(rows.filter(x => x.layout === l), today));
+  const future = rows.filter(r => r.effective_from > today && keys.includes(r.layout)).map(r => r.effective_from).sort()[0] ?? null;
   return {
     id: i.id, code: i.code, name: i.name, domain: i.domain, category: i.category, uom: i.unit_label, cleanKind: i.clean_kind ?? null,
-    byLayout: !!i.by_layout, active: !!i.active, notes: i.notes ?? '', trackStock: !!i.track_stock, stockOnHand: Number(i.stock_on_hand ?? 0),
-    current, next: future ? { effectiveFrom: future, rows: Object.fromEntries(layouts.map(l => {
-      const r = inForce(rows.filter(x => x.layout === l), future);
-      return [l, { ownerPrice: r?.owner_price ?? null, internalCost: r?.internal_cost ?? null, effectiveFrom: r?.effective_from ?? null }];
-    })) } : null,
+    byLayout: !!i.by_layout, byBed: !!i.by_bed, bedPricing: i.by_bed ? grids.bedPricing : null, bedPricesStarted, layouts, active: !!i.active, notes: i.notes ?? '', trackStock: !!i.track_stock, stockOnHand: Number(i.stock_on_hand ?? 0),
+    current, next: future ? { effectiveFrom: future, rows: Object.fromEntries(keys.map(l => [l, cellOf(inForce(rows.filter(x => x.layout === l), future))])) } : null,
   };
 }
 
@@ -142,8 +199,9 @@ export function checkItem(b: any, create: boolean): Response | null {
   return null;
 }
 
-export type PriceSet = { effectiveFrom: string; note: string | null; rows: { layout: string; ownerPrice: number | null; internalCost: number | null }[] };
-const amountOk = (v: unknown) => v === null || (Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 100_000_000);
+/** A dated price change. A row without `guestPrice` keeps the guest's fee in force on that date (writePriceSets). */
+export type PriceSet = { effectiveFrom: string; note: string | null; rows: { layout: string; ownerPrice: number | null; internalCost: number | null; guestPrice?: number | null }[] };
+export const amountOk = (v: unknown) => v === null || (Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 100_000_000);
 
 /** A dated price change: { effectiveFrom, note?, rows: [{ layout, ownerPrice, internalCost }] }, sen or null. */
 export function checkPriceRows(p: any, byLayout: boolean, grid: Grid = DEFAULT_GRID()): PriceSet | { error: Response } {
@@ -155,23 +213,16 @@ export function checkPriceRows(p: any, byLayout: boolean, grid: Grid = DEFAULT_G
     const layout = r?.layout ?? 'all';
     if (!allowed.includes(layout) || seen.has(layout)) return { error: fieldFail(byLayout ? 'Unknown layout in the price grid.' : 'This item has one price, not a grid.', 'rows', 'Check the layouts.') };
     seen.add(layout);
-    if (!amountOk(r.ownerPrice ?? null) || !amountOk(r.internalCost ?? null)) return { error: fieldFail('Prices are RM 0.00 or more, or empty.', 'rows', 'Check the amounts.') };
+    if (!amountOk(r.ownerPrice ?? null) || !amountOk(r.internalCost ?? null) || !amountOk(r.guestPrice ?? null)) return { error: fieldFail('Prices are RM 0.00 or more, or empty.', 'rows', 'Check the amounts.') };
   }
   return { effectiveFrom: p.effectiveFrom, note: typeof p.note === 'string' && p.note.trim() ? p.note.trim().slice(0, 300) : null,
-    rows: p.rows.map((r: any) => ({ layout: r.layout ?? 'all', ownerPrice: r.ownerPrice ?? null, internalCost: r.internalCost ?? null })) };
+    rows: p.rows.map((r: any) => ({ layout: r.layout ?? 'all', ownerPrice: r.ownerPrice ?? null, internalCost: r.internalCost ?? null,
+      ...(r.guestPrice !== undefined ? { guestPrice: r.guestPrice ?? null } : {}) })) };
 }
 
 /** Writes a dated price change (same date again replaces it). Also keeps the old preset price column in step. */
 export async function writePrices(env: Env, itemId: string, set: PriceSet, userId: string) {
-  await run(env, `INSERT INTO service_item_prices (id, item_id, layout, effective_from, owner_price, internal_cost, note, created_at, created_by)
-    SELECT gen_random_uuid()::text, ?, x.layout, ?, x.owner_price, x.internal_cost, ?, ?, ?
-    FROM jsonb_to_recordset(?::text::jsonb) AS x(layout text, owner_price int, internal_cost int)
-    ON CONFLICT (item_id, layout, effective_from) DO UPDATE SET owner_price = excluded.owner_price, internal_cost = excluded.internal_cost,
-      note = excluded.note, created_at = excluded.created_at, created_by = excluded.created_by`,
-    itemId, set.effectiveFrom, set.note, nowIso(), userId,
-    JSON.stringify(set.rows.map(r => ({ layout: r.layout, owner_price: r.ownerPrice, internal_cost: r.internalCost }))));
-  const flat = set.rows.find(r => r.layout === 'all');
-  if (flat?.ownerPrice != null && set.effectiveFrom <= mytToday()) await run(env, 'UPDATE service_items SET default_price = ?, updated_at = ? WHERE id = ?', flat.ownerPrice, nowIso(), itemId);
+  await writePriceSets(env, [{ itemId, set }], userId);
 }
 
 /* The spreadsheet (CSV / Excel) the owner fills in: one row per item, or per item and layout for an item priced by layout. */
@@ -214,10 +265,11 @@ const yesNo = (v: unknown) => {
 const blank = (v: unknown) => v == null || String(v).trim() === '';
 
 /** Export rows for the item list as it stands today. */
-export function sheetRows(items: any[], prices: Map<string, PriceRow[]>, today: string, grid: Grid = DEFAULT_GRID()): string[][] {
+export function sheetRows(items: any[], prices: Map<string, PriceRow[]>, today: string, grids: Grids): string[][] {
   const out: string[][] = [];
   for (const i of items) {
-    const v = itemView(i, prices.get(i.id) ?? [], today, grid);
+    const grid = gridOf(i, grids);
+    const v = itemView(i, prices.get(i.id) ?? [], today, grids);
     for (const l of layoutsOf(i.by_layout, grid)) {
       const c = v.current[l];
       out.push([i.code, i.name, LABEL.domain[i.domain] ?? i.domain, LABEL.category[i.category] ?? i.category, LABEL.uom[i.unit_label] ?? i.unit_label,
@@ -239,7 +291,7 @@ export interface ImportPlan {
 
 /** Works out what an imported sheet changes. Blank cells leave things as they are; a changed price becomes a price
  *  change from `effectiveFrom`. "Margin" and "Price since" are for reading and are ignored. Nothing is written here. */
-export function planImport(raw: Record<string, unknown>[], items: any[], prices: Map<string, PriceRow[]>, effectiveFrom: string, grid: Grid = DEFAULT_GRID()): ImportPlan {
+export function planImport(raw: Record<string, unknown>[], items: any[], prices: Map<string, PriceRow[]>, effectiveFrom: string, grids: Grids): ImportPlan {
   const plan: ImportPlan = { errors: [], creates: [], updates: [], prices: [], unchanged: 0 };
   const groups = new Map<string, { line: number; get: (c: string) => unknown }[]>();
   raw.forEach((r, i) => {
@@ -262,6 +314,7 @@ export function planImport(raw: Record<string, unknown>[], items: any[], prices:
     const code = String(first.get('Code')).trim().replace(/^'/, '').slice(0, 40);
     const err = (line: number, message: string) => { plan.errors.push({ line, message: `${code}: ${message}` }); };
     const cur = byCode.get(k);
+    const grid = gridOf(cur ?? {}, grids);
     const domain = blank(first.get('Type')) ? cur?.domain ?? null : fromLabel(LABEL.domain, first.get('Type'));
     if (!domain) { err(first.line, 'Type must be Cleaning or Maintenance.'); continue; }
     if (cur && domain !== cur.domain) { err(first.line, `Type cannot change (it is ${LABEL.domain[cur.domain]}). Use a new code.`); continue; }
@@ -321,12 +374,17 @@ export function planImport(raw: Record<string, unknown>[], items: any[], prices:
 
 /** Several dated price changes in one statement (an import). Same rules as writePrices. */
 export async function writePriceSets(env: Env, sets: { itemId: string; set: PriceSet }[], userId: string) {
-  const rows = sets.flatMap(({ itemId, set }) => set.rows.map(r => ({ item_id: itemId, layout: r.layout, effective_from: set.effectiveFrom, owner_price: r.ownerPrice, internal_cost: r.internalCost, note: set.note })));
+  const rows = sets.flatMap(({ itemId, set }) => set.rows.map(r => ({ item_id: itemId, layout: r.layout, effective_from: set.effectiveFrom, owner_price: r.ownerPrice, internal_cost: r.internalCost,
+    guest_price: r.guestPrice ?? null, guest_set: r.guestPrice !== undefined, note: set.note })));
   if (!rows.length) return;
-  await run(env, `INSERT INTO service_item_prices (id, item_id, layout, effective_from, owner_price, internal_cost, note, created_at, created_by)
-    SELECT gen_random_uuid()::text, x.item_id, x.layout, x.effective_from, x.owner_price, x.internal_cost, x.note, ?, ?
-    FROM jsonb_to_recordset(?::text::jsonb) AS x(item_id text, layout text, effective_from text, owner_price int, internal_cost int, note text)
-    ON CONFLICT (item_id, layout, effective_from) DO UPDATE SET owner_price = excluded.owner_price, internal_cost = excluded.internal_cost,
+  // A row that does not name the guest's fee (the item drawer, an import) keeps the one in force on its date (0257).
+  const guest = await hasGuestPrices(env);
+  const guestValue = `CASE WHEN x.guest_set THEN x.guest_price ELSE (SELECT p.guest_price FROM service_item_prices p
+    WHERE p.item_id = x.item_id AND p.layout = x.layout AND p.effective_from <= x.effective_from ORDER BY p.effective_from DESC LIMIT 1) END`;
+  await run(env, `INSERT INTO service_item_prices (id, item_id, layout, effective_from, owner_price, internal_cost${guest ? ', guest_price' : ''}, note, created_at, created_by)
+    SELECT gen_random_uuid()::text, x.item_id, x.layout, x.effective_from, x.owner_price, x.internal_cost${guest ? `, ${guestValue}` : ''}, x.note, ?, ?
+    FROM jsonb_to_recordset(?::text::jsonb) AS x(item_id text, layout text, effective_from text, owner_price int, internal_cost int, guest_price int, guest_set boolean, note text)
+    ON CONFLICT (item_id, layout, effective_from) DO UPDATE SET owner_price = excluded.owner_price, internal_cost = excluded.internal_cost${guest ? ', guest_price = excluded.guest_price' : ''},
       note = excluded.note, created_at = excluded.created_at, created_by = excluded.created_by`, nowIso(), userId, JSON.stringify(rows));
   const flat = rows.filter(r => r.layout === 'all' && r.owner_price != null && r.effective_from <= mytToday());
   if (flat.length) await run(env, `UPDATE service_items s SET default_price = x.owner_price, updated_at = ? FROM jsonb_to_recordset(?::text::jsonb) AS x(item_id text, owner_price int)

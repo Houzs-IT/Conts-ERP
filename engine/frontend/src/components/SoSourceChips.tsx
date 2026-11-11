@@ -22,6 +22,7 @@
 // This is a DETAIL/DRILL surface — every chip renders (the "+N" ChipOverflow
 // rule applies to LIST header cells only).
 
+import { Link } from "react-router-dom";
 import { showDeliveredQty, sourcePoTitle, StockAdjChip } from "./DocumentLinesExpansion";
 import { type CoverageState, coveragePlaceholder } from "./coverage-state";
 import { cn, formatDate } from "../lib/utils";
@@ -35,6 +36,7 @@ export type ReadySourceChip = {
 
 export type SoLineSourceFields = {
   item_group?: string | null;
+  item_code?: string | null;
   stock_status?: string | null;
   stock_state?: "stock" | "po" | "shortage" | null;
   /** The SERVER's verdict over both columns above (scm/lib/so-line-effective-stock.ts),
@@ -52,6 +54,8 @@ export type SoLineSourceFields = {
    *  (no PO raised for the line) falls through to the shipped/ready/coverage
    *  trace, so a stock-only line still shows where its goods came from. */
   bound_source_pos?: string[];
+  /** When each of those POs is due, by PO number; a received PO has none. */
+  bound_source_etas?: Record<string, string>;
   shipped_source_pos?: string[];
   shipped_source_adj?: boolean;
   ready_source_pos?: ReadySourceChip[];
@@ -69,9 +73,18 @@ export type SoLineSourceFields = {
    fully shipped → DELIVERED; on-hand → READY; partially covered → PARTIAL;
    else PENDING. SERVICE lines carry no physical stock, so a service is
    inherently available → always READY (owner 2026-07-24). */
+/** Fees and renovation adjustments: a service row with no work behind it. */
+export const isSystemServiceCode = (code: string | null | undefined): boolean => /^(SVC-|RENO-)/i.test(code ?? "");
+
 export function soLineStockPill(l: SoLineSourceFields): { label: string; cls: string } | null {
-  if ((l.item_group ?? "").toUpperCase().includes("SERVICE"))
-    return { label: "READY", cls: "bg-synced-bg text-synced" };
+  if ((l.item_group ?? "").toUpperCase().includes("SERVICE")) {
+    /* Conts (owner, 6 Nov 2026): a service is work to be finished, so it stays PENDING until someone completes it.
+       Only the system rows (fees, renovation adjustments) have nothing to do. */
+    if (isSystemServiceCode(l.item_code)) return { label: "READY", cls: "bg-synced-bg text-synced" };
+    return l.stock_status === "READY"
+      ? { label: "COMPLETED", cls: "bg-synced-bg text-synced" }
+      : { label: "PENDING", cls: "bg-surface-dim text-ink-muted" };
+  }
   const shipped = (l.delivered_qty ?? 0) > 0 && (l.remaining_qty ?? null) === 0;
   if (shipped) return { label: "DELIVERED", cls: "bg-surface-dim text-ink-muted" };
   /* PREFER THE SERVER'S VERDICT. The `||` below is the rule this client used to
@@ -161,6 +174,7 @@ export function SoSourceChips({
             className={chipBase}
           >
             {po}
+            {line.bound_source_etas?.[po] && (line.remaining_qty ?? 1) > 0 ? ` · ETA ${formatDate(line.bound_source_etas[po])}` : ""}
           </span>
         ))}
         {line.shipped_source_adj && <StockAdjChip />}
@@ -213,13 +227,15 @@ export function SoSourceChips({
       ))}
       {anyAdj && <StockAdjChip />}
       {showIncoming && (
-        <span
-          title="Incoming — live MRP coverage for the un-arrived remainder, recomputed on every view; it moves as demand moves."
+        <Link
+          to={`/scm/purchase-orders?q=${encodeURIComponent(incomingPo ?? "")}`}
+          onClick={(e) => e.stopPropagation()}
+          title="Incoming — live MRP coverage for the un-arrived remainder, recomputed on every view; it moves as demand moves. Click to find this PO."
           className={cn(floatingChipBase, "whitespace-nowrap font-mono")}
         >
           {incomingPo}
           {line.coverage_eta ? ` · ETA ${formatDate(line.coverage_eta)}` : ""}
-        </span>
+        </Link>
       )}
     </span>
   );

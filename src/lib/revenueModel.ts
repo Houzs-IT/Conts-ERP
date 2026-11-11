@@ -20,6 +20,7 @@ export const MODELS: { key: RevenueModel; label: string; short: string; blurb: s
 ];
 /** Let to one tenant: the owner gets the tenant's rent less the operator share (functions/_lib/revenueModel.ts). */
 export const isTenancy = (m: string): boolean => m === 'long_term';
+export const isShare = (m: RevenueModel): boolean => m === 'management' || m === 'management_guarantee' || m === 'management_yearly_guarantee';
 export const MODEL: Record<RevenueModel, typeof MODELS[number]> = Object.fromEntries(MODELS.map(m => [m.key, m])) as Record<RevenueModel, typeof MODELS[number]>;
 
 /** The colour each model's label takes (StatusBadge tone). */
@@ -55,14 +56,33 @@ export const CATEGORY_LABEL: Record<string, string> = {
 /** The staff's contract type code (PS, PS GRR, ...). Staff keep the list on Unit settings (GET /api/contract-types);
  *  an unknown or hidden code is shown as it is. */
 export type ContractCode = string;
-export interface ContractType {
+
+export const CONTRACT_TYPE_OPTIONS = [
+  { key: 'hasFixedOwnerAmount', label: 'Owner is paid a fixed amount', short: 'Owner fixed amount', hint: 'An Owner (RM) box instead of Owner %.', fits: isShare },
+  { key: 'hasAgentShare', label: 'An agent takes a share', short: 'Agent share', hint: 'Agent % and Agent name boxes. Without it the agent is saved as 0.', fits: isShare },
+  { key: 'hasNoOperatorShare', label: 'No operator share', short: 'No operator share', hint: "The owner gets the tenant's whole rent less costs. Without it an Operator % box is shown.", fits: isTenancy },
+  { key: 'hasRentOutGrid', label: 'Rent-out grid', short: 'Rent-out grid', hint: 'Both sides of a rent to rent: what we pay the owner and what we rent it out for, with deposits.', fits: (m: RevenueModel): boolean => m === 'master_lease' },
+] as const;
+export type ContractTypeOptionKey = typeof CONTRACT_TYPE_OPTIONS[number]['key'];
+export type ContractTypeOptions = Record<ContractTypeOptionKey, boolean>;
+export const plainOptions = (code: string, model: RevenueModel): ContractTypeOptions => ({
+  hasFixedOwnerAmount: code === 'MANAGE' && isShare(model),
+  hasAgentShare: isShare(model),
+  hasNoOperatorShare: isTenancy(model),
+  hasRentOutGrid: code === 'RTR' && model === 'master_lease',
+});
+export const optionsOfType = (types: readonly ContractType[], code: ContractCode, model: RevenueModel): ContractTypeOptions =>
+  types.find(t => t.code === code) ?? plainOptions(code, model);
+export const fittingOptions = (model: RevenueModel): typeof CONTRACT_TYPE_OPTIONS[number][] => CONTRACT_TYPE_OPTIONS.filter(option => option.fits(model));
+
+export interface ContractType extends ContractTypeOptions {
   code: ContractCode; label: string; package: string | null; revenueModel: RevenueModel; blurb: string | null;
   isDefaultForModel: boolean; sortOrder: number; isActive: boolean;
   /** How many contracts use it (the list endpoint only). */
   contracts?: number;
 }
 const builtIn = (n: number, code: string, label: string, pkg: string | null, revenueModel: RevenueModel, blurb: string, isDefaultForModel = true): ContractType =>
-  ({ code, label, package: pkg, revenueModel, blurb, isDefaultForModel, sortOrder: n * 10, isActive: true });
+  ({ code, label, package: pkg, revenueModel, blurb, isDefaultForModel, sortOrder: n * 10, isActive: true, ...plainOptions(code, revenueModel) });
 /** The types before migration 0206 (functions/_lib/contractTypes.ts), shown until the list arrives. */
 export const BUILT_IN_CONTRACT_TYPES: readonly ContractType[] = [
   builtIn(1, 'PS', 'Airbnb profit sharing', 'Package A', 'management', 'We run it on the channels and split the profit'),

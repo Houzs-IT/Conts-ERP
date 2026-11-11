@@ -153,7 +153,7 @@ export function JobMoneyPanel({ kind, jobId, unitId, catalog, itemsLocked, onCha
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-2">
           <b className="text-copy flex-1">Invoices {d.invoices.length ? `(${d.invoices.length})` : ''}</b>
-          <Button size="sm" variant="secondary" onClick={() => setSubmitting(true)} disabled={!unitId} disabledReason="An external cleaning job is costed by its internal cost (what the cleaner is paid).">Submit invoice</Button>
+          <Button size="sm" variant="secondary" onClick={() => setSubmitting(true)} disabled={!unitId} disabledReason={kind === 'maintenance' ? 'A job in the building has no unit to put an invoice on.' : 'An external cleaning job is costed by its internal cost (what the cleaner is paid).'}>Submit invoice</Button>
         </div>
         {d.invoices.length === 0 ? <span className="text-meta text-muted-ink">No supplier, contractor or cleaner invoice yet{d.money && d.actual != null ? ': the actual cost is an estimate until one comes in.' : '.'}</span> : (
           <ul className="m-0 p-0 list-none flex flex-col text-copy">
@@ -228,8 +228,9 @@ export function SubmitInvoiceModal({ kind, jobId, unitId, onClose, onDone }: { k
 
 /* ---- Profit by job ---- */
 
+const NO_UNIT = 'Building (no unit)';
 interface ProfitRow {
-  id: string; title: string; category: string; chargeTo: string; who: string | null; day: string; unitId: string | null; unitNumber: string; buildingId: string; building: string;
+  id: string; title: string; category: string; chargeTo: string; who: string | null; day: string; unitId: string | null; unitNumber: string | null; buildingId: string; building: string;
   billed: number; billedSource: string; actual: number | null; actualSource: string | null; invoices: number; profit: number | null;
 }
 interface ProfitPayload { kind: Kind; month: string; rows: ProfitRow[]; totals: { jobs: number; billed: number; actual: number; profit: number; estimated: number; unknown: number } }
@@ -250,7 +251,7 @@ export function JobProfitView({ kind, onOpen }: { kind: Kind; onOpen?: (id: stri
   const people = [...new Set(all.map(r => r.who ?? ''))].filter(Boolean).sort();
   const columns = useMemo<Column<ProfitRow>[]>(() => [
     { key: 'day', label: 'Finished', type: 'date', value: r => r.day, width: 110 },
-    { key: 'unit', label: 'Unit', value: r => `${r.building} ${r.unitNumber}`, width: 160, phone: 'title', render: r => <span><b>{r.unitNumber}</b> <span className="text-muted-ink">{r.building}</span></span> },
+    { key: 'unit', label: 'Unit', value: r => `${r.building} ${r.unitNumber ?? NO_UNIT}`, width: 160, phone: 'title', render: r => <span><b>{r.unitNumber ?? NO_UNIT}</b> <span className="text-muted-ink">{r.building}</span></span> },
     { key: 'job', label: kind === 'maintenance' ? 'Job' : 'Clean', value: r => r.title, width: 200, sub: r => (kind === 'maintenance' && r.chargeTo !== 'owner' ? `Paid by ${r.chargeTo === 'the_conts' ? 'The Conts' : r.chargeTo.replace('_', ' ')}` : null) },
     { key: 'category', label: 'Category', value: r => CATEGORY_WORD[r.category] ?? r.category, width: 120 },
     { key: 'who', label: kind === 'maintenance' ? 'Contractor' : 'Cleaner', value: r => r.who ?? '', width: 140 },

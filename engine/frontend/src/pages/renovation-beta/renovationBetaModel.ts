@@ -1,8 +1,10 @@
 /* Pure rules behind the Beta project workspace, bundle A (plan section 9). No React, no calls: every function
    takes today (Malaysia time, YYYY-MM-DD) as a value so the rules can be tested on fixed dates. */
 
+import { fmtDate, fmtDayMonth } from "../../vendor/shared/format";
 import { INTERNAL_TASKS, RENO_STAGES, STAGE_LABEL, TASK_CATEGORIES } from "../../vendor/shared/renovation-stages";
-import { CATEGORY_LABEL, type TimelineEntry } from "../projects/renovation/renovationTimelineModel";
+import { CATEGORY_LABEL, type TimelineDoc, type TimelineEntry } from "../projects/renovation/renovationTimelineModel";
+import type { BetaTabKey } from "./renovationBetaTabs";
 import { daysBetween, money, shortDate } from "../projects/renovation/renovationModel";
 import type { DesignFile, SiteMeasure, TaskViewV2 } from "../projects/renovation/simpleApi";
 import type { BetaDefect, BetaInstalment, BetaPayments, BetaReview, BetaWorkspace, ReminderKind } from "./renovationBetaApi";
@@ -10,7 +12,6 @@ import {
   APPT_LABEL, apptLeftText, apptWithDefault, dayWord, deadlineGroups, diff, ds, leftText, ord, todoText,
   type ApptKey, type BoardModel, type DesignProject, type Kind,
 } from "./renovationBetaBoard";
-import type { BetaTabKey } from "./renovationBetaTabs";
 
 const day = (iso: string): string => iso.slice(0, 10);
 
@@ -358,6 +359,35 @@ export function plainTimelineEntry(e: TimelineEntry): TimelineEntry {
   return { ...e, title: plainText(e.title), body: plainText(e.body) };
 }
 
+/** Where an entry's Open lands. */
+export interface TimelineTarget {
+  label: string;
+  /** A tab of this project, with the document to open it on (DO and GR tabs read ?do= and ?gr=). */
+  tab?: BetaTabKey;
+  focus?: readonly ["do" | "gr", string];
+  /** A document with no tab of its own in the workspace: its own page. */
+  href?: string;
+}
+
+const DOC_TAB: Readonly<Partial<Record<TimelineDoc["kind"], BetaTabKey>>> = { quotation: "po", so: "po", po: "po", vo: "vo" };
+
+/** The document an entry is about, then the tab its kind of work lives on. */
+export function timelineTarget(e: Pick<TimelineEntry, "category" | "title" | "doc">): TimelineTarget | null {
+  const d = e.doc;
+  if (d) {
+    const label = `Open ${d.no}`;
+    if (d.kind === "do" || d.kind === "gr") return { label, tab: d.kind, focus: [d.kind, d.no] };
+    if (d.kind === "production") return { label, href: `/scm/production-orders/${encodeURIComponent(d.id)}` };
+    if (d.kind === "invoice") return { label, href: `/scm/sales-invoices/${encodeURIComponent(d.id)}` };
+    if (d.kind === "payment") return { label: "Open payments", tab: "overview" };
+    return { label, tab: DOC_TAB[d.kind] };
+  }
+  if (e.category === "design") return { label: "Open drawings", tab: "drawings" };
+  if (e.category === "site") return /defect/i.test(e.title ?? "") ? { label: "Open defects", tab: "defects" } : { label: "Open photos", tab: "site" };
+  if (e.category === "sales" && /payment/i.test(e.title ?? "")) return { label: "Open payments", tab: "overview" };
+  return null;
+}
+
 const RECORD_TITLE = /\bapproved\b|key passed|handover signed|handed over/i;
 
 /** Approvals, key passes and the handover are the entries that settle a question; the screen tags them RECORD. */
@@ -451,28 +481,24 @@ export function filterFeed(items: readonly FeedItem[], room: string): FeedItem[]
   return items.filter((i) => (room === NO_ROOM ? !i.room : i.room === room));
 }
 
-/* ---------- Dates as the mockup prints them ---------- */
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+/* ---------- Dates: the app's one rule (dd/mm/yyyy, YH 11 Nov 2026) ---------- */
 
 function ymd(iso: string | null | undefined): [number, number, number] | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
   return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
 }
 
-/** "14 Oct" (the mockup never prints the year on a card); "-" when there is no date. Fixed month names, not the browser's locale. */
+/** "14/10" (a card never prints the year); "-" when there is no date. */
 export function dayMonth(iso: string | null | undefined): string {
-  const p = ymd(iso);
-  return p ? `${p[2]} ${MONTHS[p[1] - 1] ?? ""}` : "-";
+  return ymd(iso) ? fmtDayMonth(iso!.slice(0, 10)) : "-";
 }
 
-/** "15 Nov 2026"; "-" when there is no date. */
+/** "15/11/2026"; "-" when there is no date. */
 export function dayMonthYear(iso: string | null | undefined): string {
-  const p = ymd(iso);
-  return p ? `${p[2]} ${MONTHS[p[1] - 1] ?? ""} ${p[0]}` : "-";
+  return ymd(iso) ? fmtDate(iso!.slice(0, 10)) : "-";
 }
 
-/** A day's heading: "14 Oct", with the year when it is not today's year. */
+/** A day's heading: "14/10", with the year when it is not today's year. */
 export function dayHeading(dayValue: string, today: string): string {
   return ymd(dayValue)?.[0] === ymd(today)?.[0] ? dayMonth(dayValue) : dayMonthYear(dayValue);
 }

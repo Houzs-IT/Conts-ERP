@@ -165,6 +165,9 @@ describe("Beta board: grouping", () => {
       payment: { state: "ok", label: "2nd payment" },
     });
     expect(buildBoardProject({ ...row, id: 9 }, sets, { state: "none" })).toMatchObject({ files: [], notes: [], reviews: [], appointments: [], payment: { state: "none" } });
+    // The brand decides which list shows the project; blank reads as none.
+    expect(buildBoardProject({ ...row, brand: " Dream Crafter " }, sets, { state: "none" }).brand).toBe("Dream Crafter");
+    expect(buildBoardProject({ ...row, brand: "" }, sets, { state: "none" }).brand).toBeNull();
   });
 });
 

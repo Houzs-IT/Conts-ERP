@@ -28,6 +28,7 @@ import { ReceiptCell } from '../../components/ReceiptCell';
 import { receiptRequired, missingReceipt } from '../../lib/receipts';
 import { Link } from 'react-router-dom';
 import { requestsNote, sendUtilityRequests, type ToPay } from '../../lib/utilityRequests';
+import type { UnitPriceData } from '../units/UnitCleaning';
 
 /** A month's costs the way the owner reads them (GET /api/expenses/breakdown, functions/_lib/unitCosts.ts):
  *  Cleaning fees, Maintenance repair, Utilities (water, electricity, Wi-Fi, IndahWater), Maintenance fee (condo) and
@@ -274,7 +275,8 @@ function PaidOnBehalfList({ items, adjustments, ownerId, showUnit, canChange, ca
           <span className="flex flex-col gap-0.5 min-w-0">
             <span className="text-copy text-ink [overflow-wrap:anywhere]">{a.description}</span>
             <span className="text-meta text-muted-ink">
-              {[ADJUSTMENT_KIND[a.kind] ?? a.kind, fmtDate(a.occurredOn), showUnit ? titleCase(a.unitLabel) : null, a.source === 'owner_workbook' ? 'from the owner workbook' : null].filter(Boolean).join(' · ')}
+              {[ADJUSTMENT_KIND[a.kind] ?? a.kind, fmtDate(a.occurredOn), showUnit ? titleCase(a.unitLabel) : null,
+                a.source === 'owner_workbook' ? 'from the owner workbook' : a.source === 'airbnb_recon' ? 'from Airbnb reconciliation' : null].filter(Boolean).join(' · ')}
             </span>
             {a.placedOnFirstUnit && <span className="text-caption text-muted-ink">Recorded for the owner, not a unit: the statement puts it on this unit.</span>}
             {a.statement && <Link to={`/owners/statements/${encodeURIComponent(a.statement.id)}`} className="text-meta text-ink underline underline-offset-2 self-start">On the {monthLabel(a.statement.period)} owner statement</Link>}
@@ -321,7 +323,7 @@ export function costLines(items: CostItem[], adjustments: AdjustmentItem[]): Cos
     lines.push({
       id: a.id, unitLabel: a.unitLabel, date: a.occurredOn, description: a.description,
       kindLabel: a.isMaintenanceFee ? 'Maintenance fee (condo)' : ADJUSTMENT_KIND[a.kind] ?? a.kind,
-      how: a.source === 'owner_workbook' ? 'Imported' : a.isMaintenanceFee ? 'Bill' : 'Manual',
+      how: a.source === 'owner_workbook' ? 'Imported' : a.source === 'airbnb_recon' ? 'Airbnb reconciliation' : a.isMaintenanceFee ? 'Bill' : 'Manual',
       amount: Math.abs(a.amount), effect: a.amount < 0 ? 'after' : 'credit', payer: 'Owner', receiptDocumentId: null,
       expenseId: null, unitId: a.unitId, missingReceipt: false,
     });
@@ -486,11 +488,15 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
   );
 }
 
-/** The unit's standard cleaning price: what a finished standard clean charges the unit (functions/_lib/cleaning.ts). */
+/** The unit's standard cleaning price: what a finished standard clean charges the unit (functions/_lib/cleaning.ts).
+ *  Once cleaning is priced from the table by number of beds, these boxes no longer set the charge (chew, 10 Nov 2026:
+ *  prices are entered under Cleaning, Prices only), so they become one line saying what is charged now. */
 function CleaningPrice({ unitId, price, deepPrice, legacy, canEdit, onSaved }: {
   unitId: string; price: number | null | undefined; deepPrice: number | null | undefined; legacy: { category: string; amount: number }[]; canEdit: boolean; onSaved: () => void;
 }) {
   const toast = useToast();
+  const priced = useApi<UnitPriceData>(`/housekeeping/unit-prices?unitId=${encodeURIComponent(unitId)}`);
+  const fromTable = !!priced.data?.ready && !!priced.data.byBed && priced.data.bedPricing === 'count';
   const current = price && price > 0 ? price : null;
   const currentDeep = deepPrice && deepPrice > 0 ? deepPrice : null;
   const [draft, setDraft] = useState<number | null | undefined>(undefined);
@@ -512,6 +518,25 @@ function CleaningPrice({ unitId, price, deepPrice, legacy, canEdit, onSaved }: {
       setDraft(undefined); setDraftDeep(undefined); onSaved();
     } catch (e) { notifyFailure(e); } finally { setBusy(false); }
   }
+  const notDeductedNote = notDeducted.length > 0 && (
+    <div className="rounded-control bg-muted px-3 py-2.5 text-meta text-muted-ink text-pretty">
+      From the old monthly costs list, never deducted from a statement: {notDeducted.map(e => `${e.category} ${rm(e.amount)}`).join(', ')}.
+      If the owner should pay one, add it as a bill.
+    </div>
+  );
+  if (fromTable) {
+    const p = priced.data?.rows[0]?.prices ?? {};
+    const charged = (k: string) => { const v = p[k]?.externalCharge ?? p[k]?.oldCharge ?? null; return v == null ? 'not set' : rm(v); };
+    return (
+      <div className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)]">
+        <span className="text-copy font-semibold">Cleaning prices</span>
+        <span className="text-meta text-muted-ink text-pretty">
+          A finished clean charges the unit, owner pays: Basic clean {charged('turnover')}, Deep clean {charged('deep_clean')}. They come from the cleaning price table by number of beds, or this unit's own price. The old and new prices are on the unit's Details tab; prices are changed under <Link to="/operations/cleaning?tab=prices" className="text-gold-ink font-medium">Cleaning, Prices</Link>.
+        </span>
+        {notDeductedNote}
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-3 pt-4 [border-top:1px_solid_var(--color-line-soft)]">
       <div className="flex flex-wrap items-end gap-3">
@@ -524,12 +549,7 @@ function CleaningPrice({ unitId, price, deepPrice, legacy, canEdit, onSaved }: {
         {canEdit && <Button size="sm" variant="secondary" loading={busy} disabled={!dirty} disabledReason="Nothing has changed" onClick={() => void save()}>Save prices</Button>}
       </div>
       <span className="text-meta text-muted-ink">Charged to the unit, owner pays, when a clean of that type is finished.{!current || !currentDeep ? ' A price not set falls back to the last price used on this unit, or the default in Settings.' : ''}</span>
-      {notDeducted.length > 0 && (
-        <div className="rounded-control bg-muted px-3 py-2.5 text-meta text-muted-ink text-pretty">
-          From the old monthly costs list, never deducted from a statement: {notDeducted.map(e => `${e.category} ${rm(e.amount)}`).join(', ')}.
-          If the owner should pay one, add it as a bill.
-        </div>
-      )}
+      {notDeductedNote}
     </div>
   );
 }

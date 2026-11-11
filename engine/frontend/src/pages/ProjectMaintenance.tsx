@@ -1579,7 +1579,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
 // tints by project status (mig 088), so brand colour is unused;
 // the column still exists in the DB for backward compatibility.
 
-interface BrandRow {
+export interface BrandRow {
   id: number;
   name: string;
   color: string;
@@ -1602,12 +1602,15 @@ const brandLogoKey = (b: BrandRow): string =>
 // because the serve endpoint needs the bearer so <img src> can't hit it
 // directly + in-app dialog.confirm for Remove). The uploaded logo prints
 // on SCM Sales Order PDFs when the SO resolves to this brand.
-function BrandLogoCell({
+export function BrandLogoCell({
   brand,
   onChanged,
+  large = false,
 }: {
   brand: BrandRow;
   onChanged: () => void;
+  /** A preview big enough to read, opening the full picture when clicked (SO Maintenance). */
+  large?: boolean;
 }) {
   const toast = useToast();
   const dialog = useDialog();
@@ -1688,11 +1691,13 @@ function BrandLogoCell({
   return (
     <div className="flex shrink-0 items-center gap-1.5">
       {url ? (
-        <img
-          src={url}
-          alt={`${brand.name} logo`}
-          className="h-8 max-w-[80px] shrink-0 rounded-sm object-contain"
-        />
+        <a href={url} target="_blank" rel="noreferrer" title="Open the full logo">
+          <img
+            src={url}
+            alt={`${brand.name} logo`}
+            className={cn("shrink-0 rounded-sm object-contain", large ? "h-16 max-w-[260px]" : "h-8 max-w-[80px]")}
+          />
+        </a>
       ) : (
         <div
           className="grid h-8 w-10 shrink-0 place-items-center rounded-sm border border-dashed border-border text-ink-muted"
@@ -1823,19 +1828,6 @@ function BrandManager() {
       defaultOpen
       description="Shown in the project Brand dropdown. Renames cascade to existing projects so historical data stays in sync."
     >
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
-          placeholder="New brand name…"
-          className="h-9 min-w-[200px] flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-        />
-        <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
-          Add
-        </Button>
-      </div>
-
       <ul className="divide-y divide-border-subtle rounded-md border border-border bg-bg/40">
         {q.loading && (
           <>
@@ -1953,6 +1945,18 @@ function BrandManager() {
         expanded={expanded}
         onToggle={() => setExpanded((s) => !s)}
       />
+      <div className="mt-3 flex border-t border-border pt-3 flex flex-wrap items-center gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder="New brand name…"
+          className="h-9 min-w-[200px] flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+        />
+        <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
+          Add
+        </Button>
+      </div>
     </CollapsibleSection>
   );
 }

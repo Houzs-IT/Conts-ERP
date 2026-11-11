@@ -78,9 +78,10 @@ import { authedFetch } from './authed-fetch';
 type ProductionPdfSo = { doc_no: string; debtor_name?: string | null; phone?: string | null; email?: string | null; address1?: string | null; address2?: string | null; city?: string | null; postcode?: string | null };
 type ProductionPdfMaterial = { item_code: string; description: string | null; uom: string | null; qty_needed: number | string; processing_date: string | null; delivery_date: string | null; notes?: string | null };
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
+import { deliverToAddress } from './warehouse-print';
 
 type PoHeader = {
-  production_time_days?: number | string | null;
+  production_time_hours?: number | string | null;
   po_number:     string;
   /** Production Order row id (uuid) — the per-line photo proxy routes are keyed by it
       (/production-orders/:id/items/:itemId/photos/…). Optional: the detail
@@ -358,6 +359,7 @@ async function renderProductionOrderInto(
     name: COMPANY.shortName,
     logo: getBrandingLogoCache(),
     lines: letterheadLines(),
+    meta: [{ label: '', value: poDisplayNumber(header.po_number, header.revision) }, { label: '', value: fmtDocDate(header.po_date) }],
     margin,
   }) + 2;
 
@@ -416,10 +418,10 @@ async function renderProductionOrderInto(
         // _R suffix (owner 2026-07-27) — the printed number shows the revision.
         ['Production Order No', poDisplayNumber(header.po_number, header.revision)],
         ['Your Ref No', yourRef],
-        ...renoDetailRows(opts?.renovation).slice(0, 2),
+        ...renoDetailRows(opts?.renovation).slice(0, 3),
         ['Date', fmtDocDate(header.po_date)],
         /* Migration 0180 — print the EFFECTIVE (latest revised) delivery date. */
-        ['Production Time', header.production_time_days != null ? `${Number(header.production_time_days)} day(s)` : ''],
+        ['Production Time', header.production_time_hours != null ? `${Number(header.production_time_hours)} hours` : '—'],
         ['Completion date', (() => {
           const eff = effectiveDelivery(
             header.expected_at,
@@ -438,7 +440,7 @@ async function renderProductionOrderInto(
      full-width so the supplier sees exactly where to ship (owner 2026-06-19;
      the address is the warehouse `location` field). */
   const deliverToName = (header.purchase_location_name ?? '').trim();
-  const deliverToAddr = (header.delivery_address ?? '').trim();
+  const deliverToAddr = deliverToAddress(deliverToName, (header.delivery_address ?? '').trim(), opts?.renovation);
   if (deliverToName || deliverToAddr) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(110);
     doc.text('DELIVER TO', margin, y); doc.setTextColor(0);
@@ -519,11 +521,12 @@ async function renderProductionOrderInto(
      total-pages placeholder, resolved by putTotalPages below. */
   const totalPagesExp = '{total_pages}';
   const drawPageHeader = (pageNumber: number) => {
+    // The first page carries the letterhead and its number in the details; the footer pages it.
+    if (pageNumber === 1) return;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(80);
-    doc.text(
-      `${poDisplayNumber(header.po_number, header.revision)} · Page ${pageNumber} of ${totalPagesExp}`,
-      pageW - margin, 10, { align: 'right' },
-    );
+    /* Right edge measured on the printed text: aligning right on the {total_pages} placeholder leaves it short of the margin. */
+    const prefix = `${poDisplayNumber(header.po_number, header.revision)} · Page ${pageNumber} of `;
+    doc.text(`${prefix}${totalPagesExp}`, pageW - margin - doc.getTextWidth(`${prefix}1`), 10);
     doc.setTextColor(0);
   };
 

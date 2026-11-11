@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { SO_STATUS_TABS, statusFor } from "./so-list-status";
+import { SO_STATUS_TABS, soStatusTabOf, statusFor } from "./so-list-status";
 
 /* Every Sales Order status the LIST can be handed. Not the tab list — a tab is
    a filter, and SHIPPED has no tab of its own since it folds into Delivered
@@ -33,14 +33,18 @@ describe("statusFor", () => {
     expect(statusFor("CLOSED").label).toBe("Closed");
   });
 
-  /* Every TAB must also resolve, or the tab strip and the pill disagree about
-     the same order — which is the drift this map keeps producing. */
-  test("every status tab's value resolves to a label", () => {
-    for (const { value } of SO_STATUS_TABS) {
-      if (value === "all") continue;
-      const { label } = statusFor(value.toUpperCase());
-      expect(label, `tab ${value} has no label`).not.toMatch(/_/);
-    }
+  test("the tabs are the owner's stages, in his order", () => {
+    expect(SO_STATUS_TABS.map((t) => t.label)).toEqual(
+      ["All", "Draft", "Contract", "In Progress", "Completed", "Closed", "On Hold", "Cancelled"],
+    );
+  });
+
+  test("an old one-status link opens on the stage that holds it", () => {
+    expect(soStatusTabOf("confirmed")).toBe("contract");
+    expect(soStatusTabOf("reno_in_progress")).toBe("in_progress");
+    expect(soStatusTabOf("invoiced")).toBe("completed");
+    expect(soStatusTabOf("closed")).toBe("closed");
+    expect(soStatusTabOf(null)).toBe("all");
   });
 
   test("case does not matter — the column is read straight off the row", () => {

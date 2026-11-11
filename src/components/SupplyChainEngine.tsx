@@ -10,6 +10,14 @@ const b64url = (s: string) => btoa(unescape(encodeURIComponent(s))).replace(/\+/
 // Well inside the engine's 7-day session (engine/backend/src/services/auth.ts), so a tab left open never shows its sign-in.
 const ENGINE_SIGN_IN_MAX_AGE_MS = 24 * 3600e3;
 const USED_SUPPLY_CHAIN_KEY = 'conts.usedSupplyChain';
+// The record open in the frame: the address only names its menu, so a refresh would otherwise fall back to the list.
+const LAST_ENGINE_PATH_KEY = 'conts.lastEnginePath';
+const readLastEnginePath = (menu: string): string | null => {
+  try {
+    const last = JSON.parse(sessionStorage.getItem(LAST_ENGINE_PATH_KEY) ?? 'null') as { menu?: string; path?: string } | null;
+    return last?.menu === menu && last.path ? last.path : null;
+  } catch { return null; }
+};
 
 type EngineSession = { site: string; token: string; sessionPass: string | null };
 const requestEngineSession = () => api.post<EngineSession>('/supply-chain/engine-session');
@@ -38,9 +46,13 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
   const [started, setStarted] = useState(false);
   const frame = useRef<HTMLIFrameElement>(null);
   const site = useRef('');
-  const wanted = useRef(enginePath);
-  wanted.current = enginePath;
   const location = useLocation();
+  // Only for the load it was saved for: any later menu click or link goes where it says.
+  const restored = useRef(readLastEnginePath(location.pathname));
+  const firstKey = useRef(location.key);
+  if (location.key !== firstKey.current) restored.current = null;
+  const wanted = useRef(enginePath);
+  wanted.current = restored.current ?? enginePath;
   const navigate = useNavigate();
   const here = useRef(location.pathname);
   here.current = location.pathname;
@@ -104,13 +116,21 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== site.current || e.source !== frame.current?.contentWindow) return;
       // The engine says when it has started, in case a menu click arrived before it was listening.
-      if (e.data?.type === 'conts:ready') { steer(); tellTheme(); }
+      if (e.data?.type === 'conts:ready') {
+        // The frame's own Refresh reloads it alone: it goes back to the record it was on, not to this menu's list.
+        const back = readLastEnginePath(here.current);
+        if (back) wanted.current = back;
+        steer();
+        tellTheme();
+      }
       if (e.data?.type === 'conts:shown') setStarted(true);
       // A link inside the frame moved it: the address and the menu follow, without a new history entry.
       if (e.data?.type === 'conts:location' && typeof e.data.path === 'string' && isActive.current) {
         // A screen in both sidebars (Finance) resolves to the one open now, so the sidebar does not jump.
         const to = menuPathFor(e.data.path, here.current);
-        if (to && to !== here.current) { followed.current = to; navigate(to, { replace: true }); }
+        try { sessionStorage.setItem(LAST_ENGINE_PATH_KEY, JSON.stringify({ menu: to ?? here.current, path: e.data.path })); } catch { /* storage blocked */ }
+        // The frame can say so twice before the address changes: a second navigate would steer it back to the list.
+        if (to && to !== here.current && to !== followed.current) { followed.current = to; navigate(to, { replace: true }); }
       }
     };
     window.addEventListener('message', onMessage);

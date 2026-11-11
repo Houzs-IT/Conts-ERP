@@ -27,6 +27,7 @@
 //
 // Route: /scm/delivery-orders/new (App.tsx flips ScmDeliveryOrderNewV2 here).
 
+import { afterCreatePath, sourceDocPath } from "../../lib/returnToSource";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -89,6 +90,7 @@ import { DateField } from "../../vendor/scm/components/DateField";
 import { fmtDate } from "../../vendor/shared/format";
 import { warehouseLabel } from "../../vendor/scm/lib/warehouse-label";
 import { buildDoHeaderBody, seedDoHeaderForm, DO_HEADER_LOCKED_NOTICE } from "../../vendor/scm/lib/do-header-form";
+import { useWarehouses } from "../../vendor/scm/lib/inventory-queries";
 import { doHeaderLocked, isDoHeaderKeyLocked } from "../../vendor/shared/do-header-lock";
 import {
   seedFollowerVariants,
@@ -547,8 +549,11 @@ export function DeliveryOrderNewV2() {
   const soSource = useSoConversionSource(soDocNo || null);
   /* Lines fallback for a bare ?fromSo= (no line-picker stash). Also cross-company,
      and semantically the right set: what is still UNDELIVERED on that SO. */
+  /* In edit mode the SO doc no. is the DO's own, seeded on load, so it cannot
+     be the trigger: only an explicit "Pull from SO" appends lines (HC-0146). */
+  const [editPullDoc, setEditPullDoc] = useState<string | null>(null);
   const soLines = useDeliverableSoLinesForDoc(
-    !editId && soDocNo && !fromPicks ? soDocNo : null,
+    editId ? editPullDoc : soDocNo && !fromPicks ? soDocNo : null,
   );
   const doDetail = useMfgDeliveryOrderDetail(editId || null);
   /* Owner ruling 2026-09-14: a live SI / DR locks the header's customer, address,
@@ -598,6 +603,8 @@ export function DeliveryOrderNewV2() {
   const [driver, setDriver] = useState("");
   const [vehicle, setVehicle] = useState("");
   const [buildingType, setBuildingType] = useState("");
+  const [shipFrom, setShipFrom] = useState("");
+  const warehouses = useWarehouses();
   const [venue, setVenue] = useState("");
   /* Carried, never typed: the SO's brand rides onto the DO the way /from-sos
      carries it. The form had no field for it, so every DO raised here shipped
@@ -811,33 +818,56 @@ export function DeliveryOrderNewV2() {
   // Lines fallback — only when the line-level picker didn't hand a stash over.
   // Sourced from the SO's still-undeliverable remainder (cross-company, same as
   // the header), so a bare ?fromSo= on a mirrored 2990 SO carries its lines too.
+  const soRowToLine = (it: NonNullable<typeof soLines.data>[number]): DoDraftLine => ({
+    /* Owner ruling 2026-09-11: default the line delivery date to the
+       SO's, same as the ?fromPicks= path above. */
+    ...newDoLine(customerDelDate || null),
+    soItemId: it.soItemId,
+    itemCode: it.itemCode,
+    itemGroup: it.itemGroup ?? "others",
+    description: it.description ?? "",
+    uom: it.uom ?? "UNIT",
+    qty: it.remaining,
+    unitPriceSen: it.unitPriceSen,
+    discountSen: it.discountSen,
+    unitCostSen: it.unitCostSen,
+    variants:
+      it.variants && typeof it.variants === "object"
+        ? (it.variants as Record<string, unknown>)
+        : {},
+    remark: "",
+  });
+
   useEffect(() => {
     if (editId || fromPicks) return;
     const rows = soLines.data;
     if (!rows || rows.length === 0) return;
-    setLines(
-      rows.map((it) => ({
-        /* Owner ruling 2026-09-11: default the line delivery date to the
-           SO's, same as the ?fromPicks= path above. */
-        ...newDoLine(customerDelDate || null),
-        soItemId: it.soItemId,
-        itemCode: it.itemCode,
-        itemGroup: it.itemGroup ?? "others",
-        description: it.description ?? "",
-        uom: it.uom ?? "UNIT",
-        qty: it.remaining,
-        unitPriceSen: it.unitPriceSen,
-        discountSen: it.discountSen,
-        unitCostSen: it.unitCostSen,
-        variants:
-          it.variants && typeof it.variants === "object"
-            ? (it.variants as Record<string, unknown>)
-            : {},
-        remark: "",
-      })),
-    );
+    setLines(rows.map(soRowToLine));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [soLines.data, editId, fromPicks]);
+
+  /* Edit mode: append what is still undelivered on the picked SO, beside the
+     DO's own lines. A DRAFT DO's lines do not count as delivered yet, so they
+     come back in the remainder and are skipped by their SO line. */
+  useEffect(() => {
+    if (!editId || !editPullDoc || !soLines.data) return;
+    const items = (doDetail.data as { items?: Array<{ so_item_id?: string | null }> } | undefined)?.items ?? [];
+    const taken = new Set<string>(items.map((it) => it.so_item_id ?? "").filter(Boolean));
+    for (const l of lines) if (l.soItemId) taken.add(l.soItemId);
+    const fresh = soLines.data.filter((it) => !taken.has(it.soItemId));
+    if (fresh.length === 0) {
+      void notify({
+        title: `No lines added from ${editPullDoc}.`,
+        body: `The undelivered lines found on ${editPullDoc} (${soLines.data.length}) are all on this delivery order. A wrong SO number, or lines on another draft delivery order, would also show this. Open the sales order to check its deliveries.`,
+        tone: "error",
+      });
+    } else {
+      setLines((prev) => [...prev.filter((l) => l.itemId || l.itemCode.trim()), ...fresh.map(soRowToLine)]);
+      setFlash(`Added ${fresh.length} line${fresh.length === 1 ? "" : "s"} from ${editPullDoc}`);
+    }
+    setEditPullDoc(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [soLines.data, editId, editPullDoc]);
 
   // ── Prefill from DO detail (when editing) ──────────────────────────
   // Seeds header + lines (with their persisted item id) once, and snapshots
@@ -968,6 +998,7 @@ export function DeliveryOrderNewV2() {
   const buildBody = () => ({
     soDocNo: soDocNo || undefined,
     ...buildHeaderBody(),
+    warehouseId: shipFrom || undefined,
     items: validLines().map(toDoItemBody),
   });
 
@@ -1014,7 +1045,7 @@ export function DeliveryOrderNewV2() {
              Never blocks; the DO exists and the goods have gone. */
           await notifyAcNotSent(notify, res, "Delivery order");
           if (res?.id) {
-            navigate(`/scm/delivery-orders/${res.id}`);
+            navigate(afterCreatePath(`/scm/delivery-orders/${res.id}`, sourceDocPath.salesOrder(fromSoParam)));
           } else {
             navigate("/scm/delivery-orders");
           }
@@ -1451,6 +1482,16 @@ export function DeliveryOrderNewV2() {
               />
             </div>
             <div>
+              <Label text="Ship from" />
+              <SelectInput
+                value={shipFrom}
+                onChange={setShipFrom}
+                disabled={!!editId}
+                placeholder="Default warehouse"
+                options={(warehouses.data ?? []).map((w) => ({ value: w.id, label: `${w.code} · ${w.name}` }))}
+              />
+            </div>
+            <div>
               <Label text="Building type" />
               <SelectInput
                 value={buildingType}
@@ -1574,7 +1615,8 @@ export function DeliveryOrderNewV2() {
         open={soPickerOpen}
         onClose={() => setSoPickerOpen(false)}
         onPick={(docNo) => {
-          setSoDocNo(docNo);
+          if (editId) setEditPullDoc(docNo);
+          else setSoDocNo(docNo);
           setSoPickerOpen(false);
         }}
         currentValue={soDocNo}

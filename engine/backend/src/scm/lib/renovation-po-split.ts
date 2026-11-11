@@ -14,7 +14,10 @@
      its PO (owner default 7);
    - a line with no supplier and no cost is internal work and needs none;
    - a line with a cost but no supplier BLOCKS the raise until one is picked;
-   - quantity already on a live PO line is not ordered twice. */
+   - quantity already on a live PO line is not ordered twice;
+   - a line the PO tab marks No PO is not ordered;
+   - one PO, one warehouse: the GR lands stock where the PO says;
+   - an INHOUSE PO pays nobody, so it carries no payment instalments. */
 
 import { mintDocNo, refuse, todayKl, yymmOf, type RenoDb } from './renovation-db';
 import { readContractHead, RENO_LIVE_STATUSES } from './renovation-so';
@@ -39,6 +42,7 @@ export interface SplitLine {
 export interface SplitGroup {
   /* One PO per supplier AND category group (owner, 14 Oct 2026: a renovation PO never mixes categories). */
   categoryGroup: string;
+  warehouseId: string | null;
   supplierId: string;
   supplierCode: string;
   supplierName: string;
@@ -62,7 +66,7 @@ interface CandidateRow {
   line_id: string; so_item_id: string; kind: 'ITEM' | 'CHILD'; item_code: string; description: string; qty: number; measure: string | null;
   measure_uom: string | null; uom: string | null; unit_cost_sen: number; supply_by_owner: boolean; supplier_id: string | null;
   supplier_code: string | null; supplier_name: string | null; category: string | null; sub_category?: string | null; item_description2: string | null; item_uom: string;
-  ordered_qty: number;
+  ordered_qty: number; no_po?: boolean; warehouse_id?: string | null;
 }
 
 /** Whether a contract line is meant to get a PO at all (the same rules groupForPo applies, before quantity).
@@ -118,6 +122,7 @@ export function groupForPo(rows: CandidateRow[]): SplitPreview {
     };
     if (r.item_code.startsWith('RENO-')) continue;
     if (Number(r.ordered_qty) >= orderQty && orderQty > 0) { out.alreadyOrdered.push(line); continue; }
+    if (r.no_po) { out.skipped.push({ ...line, reason: 'Marked No PO on the PO tab' }); continue; }
     if (Number(r.ordered_qty) > 0) {
       line.qty = orderQty - Number(r.ordered_qty);
       line.amountSen = line.qty * line.unitCostSen;
@@ -129,13 +134,13 @@ export function groupForPo(rows: CandidateRow[]): SplitPreview {
     }
     if (!r.supplier_id) {
       if (Number(r.unit_cost_sen) === 0 && GOODS_GROUPS.has(group ?? '')) out.unsupplied.push({ ...line, reason: 'No supplier: pick one on the contract line to order it' });
-      else if (Number(r.unit_cost_sen) === 0) out.skipped.push({ ...line, reason: 'No supplier and no cost: done in house' });
+      else if (Number(r.unit_cost_sen) === 0) out.skipped.push({ ...line, reason: 'No supplier and no cost: treated as in-house work. To buy it, pick a supplier in MRP' });
       else out.blocked.push({ ...line, reason: 'Has a cost but no supplier' });
       continue;
     }
     if (line.qty <= 0) continue;
-    const key = `${r.supplier_id}|${group ?? ''}`;
-    const g = groups.get(key) ?? { categoryGroup: group ?? '', supplierId: r.supplier_id, supplierCode: r.supplier_code ?? '', supplierName: r.supplier_name ?? '', lines: [], totalSen: 0 };
+    const key = `${r.supplier_id}|${group ?? ''}|${r.warehouse_id ?? ''}`;
+    const g = groups.get(key) ?? { categoryGroup: group ?? '', warehouseId: r.warehouse_id ?? null, supplierId: r.supplier_id, supplierCode: r.supplier_code ?? '', supplierName: r.supplier_name ?? '', lines: [], totalSen: 0 };
     g.lines.push(line);
     g.totalSen += line.amountSen;
     groups.set(key, g);
@@ -150,7 +155,8 @@ async function candidates(db: RenoDb, docNo: string, companyId: number): Promise
             l.unit_cost_sen, l.supply_by_owner, l.supplier_id, sup.code as supplier_code, sup.name as supplier_name,
             (select p.category::text from scm.mfg_products p where p.code = i.item_code and p.company_id = $2 order by (p.status = 'ACTIVE') desc limit 1) as category,
             (select p.sub_category from scm.mfg_products p where p.code = i.item_code and p.company_id = $2 order by (p.status = 'ACTIVE') desc limit 1) as sub_category,
-            i.description2 as item_description2, i.uom as item_uom,
+            i.description2 as item_description2, i.uom as item_uom, i.warehouse_id,
+            coalesce((select lp.no_po from scm.reno_beta_line_plans lp where lp.so_item_id = l.so_item_id), false) as no_po,
             coalesce((select sum(pi.qty) from scm.purchase_order_items pi join scm.purchase_orders po on po.id = pi.purchase_order_id
                        where pi.so_item_id = l.so_item_id and po.status::text <> 'CANCELLED'), 0)::int as ordered_qty
        from scm.reno_doc_lines l
@@ -193,17 +199,20 @@ export async function raisePos(
   for (const g of groups) {
     const poNumber = await mintDocNo(db, 'purchase_orders', 'po_number', `${actor.docPrefix}PO-${yymmOf(poDate)}`);
     const [po] = await db.q<{ id: string }>(
-      `insert into scm.purchase_orders (po_number, supplier_id, status, po_date, expected_at, subtotal_sen, tax_sen, total_sen, notes, submitted_at, created_by, company_id)
-       values ($1, $2, 'SUBMITTED', $3::date, $4::date, $5, 0, $5, $6, now(), $7, $8) returning id`,
-      [poNumber, g.supplierId, poDate, body.expectedAt ?? null, g.totalSen, `Renovation contract ${docNo}`, actor.staffId, actor.companyId],
+      /* Deliver To on the printed PO: the first line's warehouse, else the company's default. */
+      `insert into scm.purchase_orders (po_number, supplier_id, status, po_date, expected_at, subtotal_sen, tax_sen, total_sen, notes, submitted_at, created_by, company_id, purchase_location_id)
+       values ($1, $2, 'SUBMITTED', $3::date, $4::date, $5, 0, $5, $6, now(), $7, $8,
+         coalesce((select i.warehouse_id from scm.mfg_sales_order_items i where i.id = $9::uuid),
+                  (select w.id from scm.warehouses w where w.company_id = $8 and w.is_default limit 1))) returning id`,
+      [poNumber, g.supplierId, poDate, body.expectedAt ?? null, g.totalSen, `Renovation contract ${docNo}`, actor.staffId, actor.companyId, g.lines[0]?.soItemId ?? null],
     );
     await db.q(
       /* The SO line's options and its planned delivery date (the PO tab's line plan) ride to the supplier's line: a PO
          raised here came out with neither (owner run, 1 Nov 2026). */
       `insert into scm.purchase_order_items (purchase_order_id, material_kind, item_code, material_name, qty, unit_price_sen, line_total_sen,
-          item_group, description, description2, uom, unit_cost_sen, so_item_id, line_no, company_id, variants, delivery_date)
+          item_group, description, description2, uom, unit_cost_sen, so_item_id, line_no, company_id, variants, delivery_date, warehouse_id)
        select $2, 'mfg_product', x.item_code, x.description, x.qty, x.unit_cost_sen, x.amount_sen, 'RENOVATION', x.description, x.description2,
-              x.uom, x.unit_cost_sen, x.so_item_id, x.line_no, $3, si.variants, lp.deliver_on
+              x.uom, x.unit_cost_sen, x.so_item_id, x.line_no, $3, si.variants, lp.deliver_on, si.warehouse_id
          from jsonb_to_recordset($1::text::jsonb) as x(item_code text, description text, qty int, unit_cost_sen int, amount_sen int,
               description2 text, uom text, so_item_id uuid, line_no int)
          left join scm.mfg_sales_order_items si on si.id = x.so_item_id
@@ -217,7 +226,7 @@ export async function raisePos(
         where i.id::text = any(string_to_array($1, ','))`,
       [g.lines.map((l) => l.soItemId).join(',')],
     );
-    if (tplLines.length) {
+    if (tplLines.length && g.supplierCode !== 'INHOUSE') {
       const amounts = poInstalmentAmounts(tplLines.map((t) => Number(t.pct_bp)), g.totalSen);
       await db.q(
         `insert into scm.reno_po_instalments (company_id, purchase_order_id, seq, label, pct_bp, amount_sen, payable_on)

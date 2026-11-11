@@ -40,9 +40,11 @@ import {
 //   • Navigation repointed to /scm/sales-orders/*.
 // ----------------------------------------------------------------------------
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useRenovationDraft } from '../../lib/renovation/renovationFormDraft';
+import { RenovationDraftBanner } from '../renovation/renovationDraftBanner';
 import { useQuery as useTanstackQuery } from '@tanstack/react-query';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Camera, ChevronDown, Save, X } from 'lucide-react';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
 import { useAddLineHotkey } from '../../vendor/scm/lib/useAddLineHotkey';
@@ -63,6 +65,7 @@ import {
   photoLabel,
   photoUploadFailure,
   photoUploadFailureMessage,
+  pairSavedLines,
   unmatchedLinePhotos,
   type PhotoUploadFailure,
 } from '../../vendor/scm/lib/photo-upload-failures';
@@ -128,9 +131,17 @@ import styles from './SalesOrderNew.module.css';
 import { CustomerBlock } from '../projects/renovation/CustomerBlock';
 import { RenovationSoRooms, roomLayoutOf } from './RenovationSoRooms';
 import { autoRoomsPlan, placeRows } from '../renovation/roomSections';
+import {
+  instalmentsForSave, refusalOf, renoSend, sectionsForSave, useBrands, useQuotation, useRenoMutation, useTemplates, useTerms,
+  type DocHeader, type DocLine, type Instalment,
+} from '../../lib/renovation/api';
+import { headerFromParty } from '../renovation/QuotationCustomerCard';
+import { QuotationCards, QuotationNotices } from './renovationQuotationChrome';
+import { blockFromQuote, partyFromBlock, sectionsFromForm, seedQuoteForm, soFieldsFromBlock, type QuoteSources } from './renovationQuotationForm';
+import { SoInstalments } from './renovationSoInstalments';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
-  EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, toRenovationBlock,
+  EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, quoteBrandFor, toRenovationBlock,
   type CustomerPropertyValue, type ProjectShared,
 } from '../projects/renovation/customerPropertyModel';
 import { fmtMoneySen } from '@2990s/shared';
@@ -155,6 +166,9 @@ const newLine = (deliveryDate: string | null = null): DraftLine => ({
 
 const fmtRm = (centi: number, currency = 'MYR'): string => fmtMoneySen(centi, currency);
 
+/* A saved quotation stays on the project it was made for: the save has no way to move it. */
+const QUOTE_PROJECT_LOCKED: ReadonlySet<keyof CustomerPropertyValue> = new Set(['projectId']);
+
 const subtotalStyle = {
   display: 'flex',
   justifyContent: 'flex-end',
@@ -164,7 +178,8 @@ const subtotalStyle = {
   color: 'var(--c-burnt)',
 } as const;
 
-export const SalesOrderNew = () => {
+/* New Quotation is this page (owner, 5 Nov 2026: "它就是 sales order 来的"): the same blocks and rooms, saved as a quotation. */
+export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean } = {}) => {
   const navigate = useNavigate();
   const notify = useNotify();
   /* Copy-to-new-SO: ?copyFrom=<docNo> seeds this form from an existing SO
@@ -299,6 +314,29 @@ export const SalesOrderNew = () => {
      (owner 2026-08-13: company 1 only). Already cached app-wide by the chrome,
      so this costs no extra request. */
   const branding = useBranding();
+  const quoteBrands = useBrands();
+  const quoteTemplates = useTemplates();
+  const quoteTerms = useTerms();
+  /* The same four cards the saved order shows, worked out from the default terms until a contract sets them. */
+  const defaultTerms = (quoteTerms.data?.templates ?? []).find((t) => t.kind === 'CUSTOMER' && t.isDefault && t.brandId == null);
+  const [quoteBrandId, setQuoteBrandId] = useState<number | null>(null);
+  const [quoteTemplateId, setQuoteTemplateId] = useState('');
+  const [quoteBusy, setQuoteBusy] = useState(false);
+  /* A saved quotation opens on this same page (owner, 6 Nov 2026). */
+  const { id: routeQuoteId } = useParams();
+  const quoteId = asQuotation ? routeQuoteId : undefined;
+  const quoteRev = searchParams.get('rev') ? Number(searchParams.get('rev')) : undefined;
+  const savedQuote = useQuotation(quoteId, quoteRev);
+  const quoteView = savedQuote.data;
+  const quoteSave = useRenoMutation((body: { version: number; payload: object }) => renoSend<{ version: number }>(`/quotations/${quoteId}`, 'PUT', { version: body.version, ...body.payload }));
+  const quoteSources = useRef<QuoteSources>({ lines: {}, openedDiscountSen: {}, rooms: {} });
+  const [quoteHeader, setQuoteHeader] = useState<DocHeader | null>(null);
+  const [quoteInstalments, setQuoteInstalments] = useState<Instalment[]>([]);
+  const canQuote = can('scm.renovation.quote');
+  const quoteEditable = Boolean(quoteView?.editable) && canQuote;
+  useEffect(() => {
+    if (quoteBrandId === null && quoteBrands.data?.brands.length) setQuoteBrandId(quoteBrands.data.brands.find((b) => b.hasProfile)?.brandId ?? null);
+  }, [quoteBrands.data, quoteBrandId]);
 
   // ── Emergency contact ──────────────────────────────────────────────
   const [emergencyName,  setEmergencyName]   = useState('');
@@ -315,6 +353,16 @@ export const SalesOrderNew = () => {
   const renoPending = renoListsQ.isLoading;
   const [renoInfo, setRenoInfo] = useState<CustomerPropertyValue>(EMPTY_CUSTOMER_PROPERTY);
   const [renoProject, setRenoProject] = useState<ProjectShared | null>(null);
+  /* chew, 10 Nov 2026: a new quotation opened for a project starts on the project's brand (its letterhead), once per
+     project; it can still be changed, and a saved quotation keeps its own. */
+  const brandSeededFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (!asQuotation || quoteId || !renoProject || brandSeededFor.current === renoProject.id) return;
+    const id = quoteBrandFor(renoProject, quoteBrands.data?.brands ?? []);
+    if (id == null) return;
+    brandSeededFor.current = renoProject.id;
+    setQuoteBrandId(id);
+  }, [asQuotation, quoteId, renoProject, quoteBrands.data]);
   const [renoTried, setRenoTried] = useState(false);
   /* Rooms: the order's room list and each line's room by its rid. */
   const [renoRooms, setRenoRooms] = useState<string[]>([]);
@@ -404,6 +452,38 @@ export const SalesOrderNew = () => {
     setCopySeeded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [copyFromDocNo, copySeeded, copySource.data]);
+
+  /* A saved quotation fills the form when it opens and after each save or revision switch; typing does not reach here. */
+  const quoteSeedKey = quoteView ? `${quoteView.revision.id}:${quoteView.quotation.version}` : '';
+  useEffect(() => {
+    if (!quoteView) return undefined;
+    const { revision, quotation } = quoteView;
+    const seed = seedQuoteForm(revision.sections, () => newLine().rid);
+    quoteSources.current = seed.sources;
+    setQuoteHeader(revision.header);
+    setQuoteInstalments(revision.instalments);
+    setQuoteBrandId(quotation.brandId);
+    setRenoRooms(seed.rooms);
+    setRenoLineRoom(seed.lineRoom);
+    setLines(seed.lines.map((l) => ({ ...newLine(), ...l, itemGroup: 'others', priceAuthored: true })));
+    const b = blockFromQuote(revision.header, quotation.projectId);
+    setRenoInfo(b);
+    setDebtorName(b.customerName);
+    setPhone(b.customerPhone);
+    setEmail(b.customerEmail);
+    setAddress1(b.address1);
+    setAddress2(b.address2);
+    if (b.salespersonId) setSalespersonId(b.salespersonId);
+    setState(b.state);
+    setCity(b.city);
+    setPostcode(b.postcode);
+    if (b.salesLocation) setSalesLocation(b.salesLocation);
+    if (quotation.projectId == null) return undefined;
+    let live = true;
+    soInfoApi.project(quotation.projectId).then((r) => { if (live) setRenoProject(r.project); }).catch(() => undefined);
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the key is the trigger
+  }, [quoteSeedKey]);
 
   /* Customer Type default (owner 2026-07-16: "customer type default new
      customer") — this page is CREATE-only, so a blank select just costs the
@@ -770,6 +850,7 @@ export const SalesOrderNew = () => {
           itemCode:       p.code,
           itemGroup:      category,
           description:    p.name,
+          ...(p.uom ? { uom: p.uom } : {}),
           unitPriceSen: p.sell_price_sen ?? 0,
           variants:       seedFollowerVariants(inheritVariantsByCategory[category]),
           overriddenKeys: [],
@@ -1208,23 +1289,19 @@ export const SalesOrderNew = () => {
         (f) => photoUploadFailure(photoLabel(l.itemCode, f.name), e)));
     }
 
-    /* Positional match — `validLines` is the same slice we sent to
-       POST /mfg-sales-orders so `savedItems[i]` corresponds to
-       `validLines[i]`. We only iterate over validLines so cancelled
-       drafts (no itemCode) are skipped without breaking the index. */
+    /* Paired by code, never by position: the server re-ranks the lines it saves. validLines skips cancelled drafts. */
     const validLines = draftLines.filter((l) => l.itemCode.trim() && l.qty > 0);
+    const pairedItems = pairSavedLines(validLines, savedItems);
     const failures: PhotoUploadFailure[] = [];
     for (let i = 0; i < validLines.length; i++) {
       const line = validLines[i]!;
       const files = line.pendingPhotoFiles ?? [];
       if (files.length === 0) continue;
-      const saved = savedItems[i];
-      if (!saved || saved.item_code !== line.itemCode) {
+      const saved = pairedItems[i];
+      if (!saved) {
         // Mismatch — log + skip rather than upload to the wrong line.
         // eslint-disable-next-line no-console
-        console.warn('[so-line-photos] index/item_code mismatch — skipping pending uploads', {
-          index: i, expected: line.itemCode, got: saved?.item_code,
-        });
+        console.warn('[so-line-photos] no saved line for this code — skipping pending uploads', { expected: line.itemCode });
         /* A "skip" was never a different outcome to the operator: the photo is
            not on the order either way. It now says WHY it is not, instead of
            being folded into a total with the ones the server refused. */
@@ -1514,7 +1591,70 @@ export const SalesOrderNew = () => {
      The two header buttons both call onSave; only the flag differs. When the
      form was opened from a scan (fromScan), "Save as Draft" is the primary
      button so scanned orders default to draft for operator review. */
+  const quoteSections = quoteView ? sectionsFromForm(renoRooms, lines, renoLineRoom, quoteSources.current) : [];
+  const quoteHeaderNow = (): { header: DocHeader | null; problems: string[] } => {
+    const { patch, problems } = headerFromParty(partyFromBlock(blockRef.current));
+    return { header: quoteHeader ? { ...quoteHeader, ...patch, ...soFieldsFromBlock(blockRef.current) } : null, problems };
+  };
+  const saveSavedQuotation = async (): Promise<number | null> => {
+    const { header, problems } = quoteHeaderNow();
+    if (!quoteView || !header) return null;
+    if (problems.length) { void notify({ title: 'The quotation did not save', body: problems.join(' '), tone: 'error' }); return null; }
+    try {
+      const r = await quoteSave.mutateAsync({ version: quoteView.quotation.version, payload: {
+        header: { ...header, brandId: quoteBrandId }, sections: sectionsForSave(quoteSections), instalments: instalmentsForSave(quoteInstalments),
+      } });
+      quoteDraft.clear();
+      return r.version;
+    } catch (e) {
+      void notify({ title: 'The quotation did not save', body: refusalOf(e).message, tone: 'error' });
+      return null;
+    }
+  };
+
+  const saveQuotation = async () => {
+    if (!quoteBrandId) {
+      void notify({ title: 'Choose the letterhead', body: 'A quotation prints under one brand.', tone: 'error' });
+      return;
+    }
+    setQuoteBusy(true);
+    try {
+      const placed = placeRows(renoRooms, lines.map((l) => ({ key: l.rid, room: renoLineRoom[l.rid] ?? '' })));
+      const filled = lines.filter((l) => l.itemCode.trim() !== '');
+      /* A package template brings its own sections when no line was entered here. */
+      const sections = quoteTemplateId && filled.length === 0 ? undefined : placed.rooms.map((heading) => ({
+        heading, bandColor: null, lumpSumSen: null, pageBreakBefore: false,
+        lines: filled.filter((l) => placed.roomOf[l.rid] === heading).map((l): DocLine => {
+          const gross = l.qty * l.unitPriceSen;
+          return {
+            kind: 'ITEM', room: heading, itemCode: l.itemCode, description: [l.description, l.remark].filter((t) => t?.trim()).join(' - '),
+            qty: l.qty, measure: null, measureUom: null, uom: l.uom || null, unitPriceSen: l.unitPriceSen, listPriceSen: null,
+            discountBp: gross > 0 ? Math.min(10000, Math.round((l.discountSen / gross) * 10000)) : 0, amountOverrideSen: null,
+            isFoc: false, supplyByOwner: false, highlight: 'NONE', supplierId: null, unitCostSen: l.unitCostSen, stageCode: null, pageBreakBefore: false,
+          };
+        }),
+      }));
+      const num = (t: string) => (t.trim() === '' || Number.isNaN(Number(t.replace(/,/g, ''))) ? null : Number(t.replace(/,/g, '')));
+      const r = await renoSend<{ id: string }>('/quotations', 'POST', {
+        projectId: renoInfo.projectId, brandId: quoteBrandId, templateId: quoteTemplateId || null,
+        header: {
+          customerName: debtorName, customerPhone: phone, customerEmail: email, building: renoInfo.building, unitNo: renoInfo.unitNo,
+          siteAddress: [address1, address2].filter(Boolean).join('\n'), propertyType: renoInfo.propertyType, layoutLabel: renoInfo.layoutLabel,
+          bedrooms: num(renoInfo.bedrooms), bathrooms: num(renoInfo.bathrooms), builtUpSqft: num(renoInfo.builtUpSqft),
+          landAreaSqft: num(renoInfo.landAreaSqft), landSize: renoInfo.landSize, ...soFieldsFromBlock(blockRef.current),
+        },
+        ...(sections ? { sections: sectionsForSave(sections) } : {}),
+      });
+      navigate(`/scm/renovation/quotations/${r.id}`);
+    } catch (e) {
+      void notify({ title: 'The quotation did not save', body: refusalOf(e).message, tone: 'error' });
+    } finally {
+      setQuoteBusy(false);
+    }
+  };
+
   const onSave = async (asDraft = false) => {
+    if (asQuotation) { await saveQuotation(); return; }
     if (createdDocNo) {
       const intents = paymentIntents();
       if (intents.length === 0) {
@@ -1693,6 +1833,7 @@ export const SalesOrderNew = () => {
           /* PR-E — per-item delivery date + cascade override flag. */
           lineDeliveryDate:           l.lineDeliveryDate ?? null,
           lineDeliveryDateOverridden: l.lineDeliveryDateOverridden ?? false,
+          lineProcessingDate: l.lineProcessingDate ?? undefined,
           /* Every line belongs to a room: one without a room goes under Common area (placeRows). */
           ...(reno ? { room: renoPlaced.roomOf[l.rid] ?? '' } : {}),
         })),
@@ -1789,6 +1930,44 @@ export const SalesOrderNew = () => {
     setPostcode(n.postcode);
     setSalesLocation(n.salesLocation);
   }, []);
+  /* A saved quotation's unsaved edits stay in this browser and are offered back
+     ("Restore your draft?") after a closed tab or a reload. Lists and defaults keep
+     filling the form after it loads, so only the person's own typing, picking or
+     clicking inside the form marks it changed (quoteTouchedFor, per seed). */
+  type QuoteDraft = {
+    lines: DraftLine[]; renoRooms: string[]; renoLineRoom: Record<string, string>;
+    quoteHeader: DocHeader | null; quoteInstalments: Instalment[]; quoteBrandId: number | null; block: CustomerPropertyValue;
+    /* The saved line behind each row, by row id: restored with the rows so they keep their saved lines. */
+    sources: QuoteSources;
+  };
+  const quoteDraftJson = quoteView ? JSON.stringify({
+    lines, renoRooms, renoLineRoom, quoteHeader, quoteInstalments, quoteBrandId, block: blockValue, sources: quoteSources.current,
+  } satisfies QuoteDraft) : '';
+  const [quoteTouchedFor, setQuoteTouchedFor] = useState('');
+  const quoteDirty = quoteView !== undefined && quoteTouchedFor === quoteSeedKey;
+  const touchQuote = (e: { target: EventTarget | null; type: string }) => {
+    if (!quoteView || quoteTouchedFor === quoteSeedKey) return;
+    /* The draft banner's own Restore / Discard are not edits. */
+    if (e.target instanceof Element && e.target.closest('[data-draft-banner]')) return;
+    if (e.type === 'click' && !(e.target instanceof Element && e.target.closest('button,[role="option"],[role="menuitem"]'))) return;
+    setQuoteTouchedFor(quoteSeedKey);
+  };
+  const quoteDraft = useRenovationDraft<string>(
+    quoteEditable && quoteView ? `quotation-desk:${quoteView.quotation.id}:${quoteView.revision.revNo}` : null,
+    quoteDraftJson, quoteDirty, quoteView?.quotation.version ?? null,
+  );
+  const restoreQuoteDraft = () => {
+    try {
+      const d = quoteDraft.offered ? JSON.parse(quoteDraft.offered.v) as QuoteDraft : null;
+      if (d && Array.isArray(d.lines) && d.sources) {
+        quoteSources.current = d.sources;
+        setLines(d.lines); setRenoRooms(d.renoRooms); setRenoLineRoom(d.renoLineRoom);
+        setQuoteHeader(d.quoteHeader); setQuoteInstalments(d.quoteInstalments); setQuoteBrandId(d.quoteBrandId);
+        applyBlock(d.block);
+      }
+    } catch { /* a draft that no longer reads is dropped */ }
+    quoteDraft.answer(true);
+  };
   /* The project is the master record: picking one fills every shared field it has
      (a field it has empty keeps what was typed); the SO's save writes back to it. */
   const pickRenoProject = useCallback((p: ProjectShared | null) => {
@@ -1823,7 +2002,17 @@ export const SalesOrderNew = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the layout is the trigger
   }, [reno, renoLayoutKey]);
 
-  const renderNewLine = (line: DraftLine, idx: number) => {
+  const renderNewLine = (line: DraftLine, idx: number, move?: ReactNode) => {
+            /* A quotation's TEXT line is words only: it has no product, quantity or price. */
+            if (quoteSources.current.lines[line.rid]?.kind === 'TEXT') {
+              return (
+                <div key={line.rid} className="flex items-center gap-2 py-1">
+                  <input aria-label="Text line" className={styles.fieldInput} value={line.description} onChange={(e) => updateLine(line.rid, { description: e.target.value })} />
+                  {move}
+                  <Button variant="ghost" onClick={() => dropLine(line.rid)}><X {...ICON} /></Button>
+                </div>
+              );
+            }
             /* fromScan — the slip rawText still feeds the SKU picker's placeholder
                hint for a no-match line (searchHint below). The per-line
                "scanned · NN%" review chip was REMOVED: owner — it is scan-review
@@ -1834,6 +2023,8 @@ export const SalesOrderNew = () => {
             return (
               <div key={line.rid} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                 <SoLineCard
+                  compact={reno}
+                  actions={reno ? move : undefined}
                   index={idx}
                   draft={line}
                   onChange={(patch) => updateLine(line.rid, patch)}
@@ -2309,54 +2500,76 @@ export const SalesOrderNew = () => {
           fields are missing (only blocked while a save is in flight) — onSave
           validates and tells the operator EXACTLY what's missing. */}
       <PageHeader back
-        eyebrow="Sales order"
-        title={createdDocNo ? `Complete Sales Order ${createdDocNo}` : 'New Sales Order'}
-        description={createdDocNo
+        eyebrow={asQuotation ? `Quotation${quoteView?.quotation.projectName ? ` · ${quoteView.quotation.projectName}` : ''}` : 'Sales order'}
+        title={quoteView ? quoteView.revision.docNo : asQuotation ? 'New Quotation' : createdDocNo ? `Complete Sales Order ${createdDocNo}` : 'New Sales Order'}
+        description={quoteView
+          ? `${debtorName || 'No customer yet'}${renoInfo.building ? ` · ${renoInfo.building} ${renoInfo.unitNo}` : ''}`
+          : asQuotation
+          ? 'Customer, order info, delivery address and line items, the same as a sales order.'
+          : createdDocNo
           ? 'The order already exists. Finish or remove the retained payment rows, then continue to its Detail page.'
           : 'Customer, order info, delivery address, line items and payments — saved as one order.'}
-        actions={
+        actions={quoteView && quoteHeader ? (
+          <>
+            <Button variant="ghost" onClick={() => navigate(`/scm/renovation/quotations/${quoteId}`)}><X {...ICON} /> Cancel</Button>
+            {quoteEditable && (
+              <Button disabled={quoteSave.isPending} onClick={() => { void saveSavedQuotation().then((v) => { if (v !== null) navigate(`/scm/renovation/quotations/${quoteId}`); }); }}>
+                <Save {...ICON} /> {quoteSave.isPending ? 'Saving…' : 'Save'}
+              </Button>
+            )}
+          </>
+        ) : (
           <>
             {/* h-9 = the <Button> height — this link shares the rail with
                 Cancel / Create Sales Order / Save as Draft. */}
             <Link
-              to="/scm/sales-orders"
+              to={asQuotation ? '/scm/renovation/quotations' : '/scm/sales-orders'}
               className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[11px] font-semibold uppercase tracking-wider text-ink-secondary transition-colors hover:border-primary/40 hover:bg-primary-soft hover:text-primary"
             >
-              <ArrowLeft size={14} /> Sales Orders
+              <ArrowLeft size={14} /> {asQuotation ? 'Quotations' : 'Sales Orders'}
             </Link>
-            <Button variant="ghost" onClick={() => navigate('/scm/sales-orders')}>
+            <Button variant="ghost" onClick={() => navigate(asQuotation ? '/scm/renovation/quotations' : '/scm/sales-orders')}>
               <X {...ICON} /> Cancel
             </Button>
             {/* Persistent "Can't save — N to fix · tap to see" (owner 2026-09-16):
                 a blocked Save is never silent. Count + list are backend-authored
                 (useSoValidate), so it clears itself as fields are fixed. Renders
                 nothing when the order is complete. */}
-            <SaveBlockedIndicator problems={blockingProblems} onOpen={openBlockingList} />
+            {!asQuotation && <SaveBlockedIndicator problems={blockingProblems} onOpen={openBlockingList} />}
             <Button
               variant={fromScan ? 'secondary' : 'primary'}
               onClick={() => { void onSave(false); }}
-              disabled={create.isPending}
+              disabled={create.isPending || quoteBusy}
             >
               <Save {...ICON} />
-              {create.isPending
+              {create.isPending || quoteBusy
                 ? 'Saving…'
+                : asQuotation ? 'Create Quotation'
                 : createdDocNo
                   ? (paymentIntents().length > 0 ? 'Continue payment retry' : 'Open created order')
                   : 'Create Sales Order'}
             </Button>
-            <Button
-              variant={fromScan ? 'primary' : 'secondary'}
-              onClick={() => { void onSave(true); }}
-              disabled={create.isPending || !!createdDocNo}
-            >
-              <Save {...ICON} />
-              {create.isPending ? 'Saving…' : 'Save as Draft'}
-            </Button>
+            {!asQuotation && (
+              <Button
+                variant={fromScan ? 'primary' : 'secondary'}
+                onClick={() => { void onSave(true); }}
+                disabled={create.isPending || !!createdDocNo}
+              >
+                <Save {...ICON} />
+                {create.isPending ? 'Saving…' : 'Save as Draft'}
+              </Button>
+            )}
           </>
-        }
+        )}
       />
 
+      {quoteId && !quoteView ? (
+        <div className={styles.card}><div className={styles.cardBody} style={{ minHeight: 160 }} aria-busy={savedQuote.isLoading}>{savedQuote.error ? refusalOf(savedQuote.error).message : null}</div></div>
+      ) : (
+      <fieldset disabled={Boolean(quoteId) && !quoteEditable} className="m-0 min-w-0 border-0 p-0" onInputCapture={touchQuote} onChangeCapture={touchQuote} onClickCapture={touchQuote}>
       <div className="space-y-3">
+      {quoteView && <QuotationNotices view={quoteView} editable={quoteEditable} />}
+      {quoteDraft.offered && <RenovationDraftBanner savedAt={quoteDraft.offered.ts} stale={quoteDraft.stale} onRestore={restoreQuoteDraft} onDiscard={() => quoteDraft.answer(false)} />}
       {createdDocNo && (
         <div role="status" className="rounded-lg border border-warning-text/30 bg-warning-bg px-3 py-2 text-sm text-warning-text">
           Sales order {createdDocNo} already exists. This recovery view only keeps payment rows; customer, order and line-item fields are hidden so unsaved edits cannot be lost.
@@ -2396,6 +2609,27 @@ export const SalesOrderNew = () => {
           onPickProject={pickRenoProject}
           missing={renoMissing}
           canChangeSalesperson={canChangeSalesperson}
+          lockedKeys={quoteId ? QUOTE_PROJECT_LOCKED : undefined}
+          orderInfoFooter={asQuotation ? (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>Letterhead <span className={styles.req}>*</span></span>
+                <select className={styles.fieldSelect} value={quoteBrandId ?? ''} onChange={(e) => setQuoteBrandId(e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">Choose...</option>
+                  {(quoteBrands.data?.brands ?? []).map((b) => <option key={b.brandId} value={b.brandId}>{b.name}</option>)}
+                </select>
+              </label>
+              {!quoteId && (
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>Package template</span>
+                <select className={styles.fieldSelect} value={quoteTemplateId} onChange={(e) => setQuoteTemplateId(e.target.value)}>
+                  <option value="">Blank quotation</option>
+                  {(quoteTemplates.data?.templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </label>
+              )}
+            </div>
+          ) : undefined}
         />
       ) : (
         <>
@@ -2421,18 +2655,26 @@ export const SalesOrderNew = () => {
               setRenoRooms(next);
               if (rename) setRenoLineRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
             }}
-            rows={lines.map((line) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', render: (n: number) => renderNewLine(line, n) }))}
+            rows={lines.map((line) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', render: (n: number, move?: ReactNode) => renderNewLine(line, n, move) }))}
             onRowRoom={(rid, room) => setRenoLineRoom((m) => ({ ...m, [rid]: room }))}
             onAddLine={(room) => {
               const l = newLine(deliveryDate || null);
-              setLines((prev) => [...prev, l]);
+              /* The page opens with one empty line in the first room. Starting in another room replaces it, or the
+                 first real line would be number 2 and the empty one would drop out at save. */
+              const opening = lines.length === 1 && lines[0] ? lines[0] : null;
+              const openingRoom = opening ? placeRows(renoRooms, [{ key: opening.rid, room: renoLineRoom[opening.rid] ?? '' }]).roomOf[opening.rid] : null;
+              const replaces = !!opening && room !== openingRoom && !quoteView && !opening.itemCode.trim() && !opening.description.trim() && !opening.remark?.trim();
+              setLines((prev) => (replaces ? [l] : [...prev, l]));
               if (room) setRenoLineRoom((m) => ({ ...m, [l.rid]: room }));
             }}
             layout={roomLayoutOf(renoInfo)}
+            compact
           />
+          {!quoteView && (
           <section className={styles.card}>
             <div className={styles.cardBody} style={{ ...subtotalStyle, flexDirection: 'row' }}>Subtotal: {fmtRm(subtotalSen)}</div>
           </section>
+          )}
         </>
       ) : (
       <section className={styles.card}>
@@ -2462,7 +2704,22 @@ export const SalesOrderNew = () => {
           DRAFT mode it holds rows in local state; onSave (above) batches
           POST /:docNo/payments calls in parallel after the SO has been
           created and before navigating to the Detail page. */}
-      <PaymentsTable
+      {quoteView && quoteHeader && (
+        <QuotationCards view={quoteView} canQuote={canQuote} editable={quoteEditable} sections={quoteSections} header={quoteHeaderNow().header ?? quoteHeader}
+          onHeader={(p) => setQuoteHeader((h) => (h ? { ...h, ...p } : h))} instalments={quoteInstalments} onInstalments={setQuoteInstalments} brandId={quoteBrandId} />
+      )}
+      {!asQuotation && reno && defaultTerms && (
+        <section className={styles.card}>
+          <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Payment schedule</h2></header>
+          <div className={styles.cardBody}>
+            <SoInstalments
+              rows={defaultTerms.lines.map((l) => ({ seq: l.seq, label: l.label, pctBp: l.pctBp, amountSen: Math.round((subtotalSen * l.pctBp) / 10000), paidSen: 0 }))}
+              money={fmtRm}
+            />
+          </div>
+        </section>
+      )}
+      {!asQuotation && <PaymentsTable
         docNo={null}
         payments={paymentDrafts}
         onChange={setPaymentDrafts}
@@ -2472,8 +2729,10 @@ export const SalesOrderNew = () => {
         collectedByAllowedIds={paymentsCollectedByAllowedIds}
         defaultCollectedBy={selfStaffMatch?.id ?? ''}
         convertSources={cancelledForCustomer.data?.orders ?? []}
-      />
+      />}
       </div>
+      </fieldset>
+      )}
     </div>
   );
 };

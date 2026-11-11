@@ -2,7 +2,7 @@ import { type Env, all, json, mytToday } from '../../_lib/db';
 import { requireSession, hasColumn } from '../../_lib/auth';
 import { can } from '../../_lib/access';
 import { layoutKey } from '../../_lib/cleaningPrices';
-import { hasDatedUnitPrices, hasServicePrices, serviceBook } from '../../_lib/servicePrices';
+import { bedPricingMode, hasDatedUnitPrices, hasPriceByBed, hasServicePrices, serviceBook } from '../../_lib/servicePrices';
 import { statementSettings } from '../../_lib/ownerStatement';
 import { contractView } from '../../_lib/unitContract';
 import { heldContract } from '../../_lib/datedRows';
@@ -18,6 +18,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const today = mytToday();
   const dated = await hasDatedUnitPrices(env);
   const service = await hasServicePrices(env);
+  const byBed = service && (await hasPriceByBed(env)) ? 's.by_bed' : '0';
+  const bedPricing = service ? await bedPricingMode(env) : 'size';
   const seePrices = !!session.manage, seeContracts = !!session.manage || can(session, 'finance', 'view');
 
   const layout = (await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'u.layout_type' : 'NULL::text';
@@ -28,7 +30,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     JOIN properties p ON p.id = u.property_id JOIN owners ow ON ow.id = u.owner_id LEFT JOIN users by_user ON by_user.id = o.updated_by
     WHERE o.effective_from > ?`, today) : [];
   const list = service ? await all<any>(env, `
-    SELECT s.id, s.name, s.domain, s.clean_kind, s.by_layout, p.effective_from, COUNT(*)::int AS layouts, MIN(p.owner_price) AS owner_price, MIN(p.internal_cost) AS internal_cost,
+    SELECT s.id, s.name, s.domain, s.clean_kind, s.by_layout, MAX(${byBed}) AS by_bed, p.effective_from, COUNT(*)::int AS layouts, MIN(p.owner_price) AS owner_price, MIN(p.internal_cost) AS internal_cost,
            MAX(p.created_at) AS set_at, MAX(by_user.full_name) AS set_by
     FROM service_item_prices p JOIN service_items s ON s.id = p.item_id LEFT JOIN users by_user ON by_user.id = p.created_by
     WHERE p.effective_from > ? AND s.active = 1 GROUP BY s.id, s.name, s.domain, s.clean_kind, s.by_layout, p.effective_from`, today) : [];
@@ -57,7 +59,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         id: `list:${r.id}:${r.effective_from}`, kind: r.domain, scope: 'list', unitId: null, unitLabel: 'All units', ownerName: null,
         itemId: r.id, what: r.name, cleanKind: r.clean_kind, effectiveFrom: r.effective_from, setBy: r.set_by ?? null, setAt: r.set_at,
         // A price per layout has no one figure to show.
-        layouts: r.by_layout ? r.layouts : null,
+        layouts: r.by_layout ? r.layouts : null, byBed: !!r.by_bed, bedPricing: r.by_bed ? bedPricing : null,
         now: seePrices && !r.by_layout ? figures(now.owner, now.internal) : null, next: seePrices && !r.by_layout ? figures(r.owner_price, r.internal_cost) : null,
       };
     }),

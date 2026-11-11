@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { MoneyInput } from '../components/inputs';
@@ -8,15 +9,20 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
-import { rm, monthLabel } from '../lib/format';
+import { rm, monthLabel, plural } from '../lib/format';
 import { INPUT, mytDay } from '../components/ops/OpsUi';
 import { ServicePrices } from './ServicePrices';
+import { CleaningPriceTable } from './CleaningPriceTable';
+import { PriceChangePanel } from './units/PriceChangePanel';
 
 /* GET /api/housekeeping/prices, /unit-prices and /pay (functions/api/housekeeping). Amounts in sen; null = not set. */
 interface PriceRow { kind: string; layout: string; internalCost: number | null; externalCharge: number | null }
 interface PriceTable { ready: boolean; kinds: string[]; layouts: string[]; rows: PriceRow[]; mayEdit: boolean }
-interface UnitPrice { internalCost: number | null; externalCharge: number | null; source: 'unit' | 'table' | null; override: { internalCost: number | null; externalCharge: number | null } | null }
-interface UnitRow { unitId: string; unitNumber: string; propertyName: string; buildingId: string; layout: string; prices: Record<string, UnitPrice> }
+interface UnitPrice {
+  internalCost: number | null; externalCharge: number | null; guestCharge?: number | null; source: 'unit' | 'table' | null;
+  override: { internalCost: number | null; externalCharge: number | null; guestCharge?: number | null } | null;
+}
+interface UnitRow { unitId: string; unitNumber: string; propertyName: string; buildingId: string; layout: string; beds?: string | null; bedCount?: number; prices: Record<string, UnitPrice> }
 interface PayRow { cleanerId: string; name: string; unitJobs: number; externalJobs: number; unitPay: number; externalPay: number; unpriced: number; total: number }
 
 const KIND: Record<string, string> = { turnover: 'Basic', deep_clean: 'Deep', light_clean: 'Light' };
@@ -32,8 +38,10 @@ const money = (v: number | null) => (v == null ? <span className="text-warning">
  *  unit's own figures where it differs. Management edits; everyone in the office reads. */
 export function PricesView({ tabs }: { tabs: ReactNode }) {
   const table = useApi<PriceTable>('/housekeeping/prices');
-  const units = useApi<{ ready: boolean; rows: UnitRow[]; mayEdit: boolean }>('/housekeeping/unit-prices');
-  const service = useApi<{ ready: boolean }>('/operations/service-prices?domain=cleaning');
+  const units = useApi<{ ready: boolean; rows: UnitRow[]; mayEdit: boolean; byBed?: boolean; bedPricing?: 'size' | 'count'; guestPrices?: boolean }>('/housekeeping/unit-prices');
+  const service = useApi<{ ready: boolean; mayPrice?: boolean }>('/operations/service-prices?domain=cleaning');
+  const [isChangingByPercent, setIsChangingByPercent] = useState(false);
+  const [priceListVersion, setPriceListVersion] = useState(0);
   const t = table.data;
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto">
@@ -42,12 +50,25 @@ export function PricesView({ tabs }: { tabs: ReactNode }) {
       {!t || !service.data ? <Skeleton height={240} /> : !t.ready ? (
         <EmptyState icon="Sparkles" title="Cleaning prices are not switched on yet." body="They need a database update (migration 0126). Until then cleaning jobs are charged at the old rates." />
       ) : <>
-        {/* Service prices (0127) replace the price table; before it, the old table is still the one in use. */}
+        {/* By number of beds (chew, 10 Nov 2026), Basic and Deep clean as one table; it shows nothing otherwise. */}
+        {service.data.ready && <CleaningPriceTable key={priceListVersion} onSaved={() => { setPriceListVersion(version => version + 1); units.reload(); }} />}
+        {/* Service prices (0127) replace the price table; before it, the old table is still the one in use. Priced by
+            number of beds, the table above already holds Basic and Deep clean, so the item list stays under Settings only
+            (chew, 10 Nov 2026). */}
+        {service.data.ready && units.data?.bedPricing === 'count' && (
+          <p className="m-0 text-meta text-muted-ink">Light clean and the full list of cleaning items are under <Link to="/system/settings/services" className="text-gold-ink font-medium">Settings, Service prices</Link>.</p>
+        )}
         {service.data.ready
-          ? <ServicePrices domain="cleaning" above={<p className="m-0 text-meta text-muted-ink">Cleaning jobs made from reservations take the item for their clean type, at the unit's layout. Open an item to change its prices from a date; the whole list is also under Settings, Service prices.</p>} />
+          ? units.data && units.data.bedPricing !== 'count' && <ServicePrices key={priceListVersion} domain="cleaning" above={<div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="m-0 flex-1 min-w-[220px] text-meta text-muted-ink">Cleaning jobs made from reservations take the item for their clean type, {units.data.byBed ? "priced by the unit's beds (each bed size price times its quantity)" : "at the unit's layout"}. Open an item to change its prices from a date; the whole list is also under Settings, Service prices.</p>
+            {service.data.mayPrice && <Button size="sm" variant="secondary" className="max-md:w-full" onClick={() => setIsChangingByPercent(true)}>Schedule price change</Button>}
+          </div>} />
           : <PriceTableCard data={t} onSaved={() => { table.reload(); units.reload(); }} />}
-        <UnitPricesCard rows={units.data?.rows ?? null} mayEdit={!!units.data?.mayEdit} onSaved={units.reload} />
+        <UnitPricesCard rows={units.data?.rows ?? null} mayEdit={!!units.data?.mayEdit} byBed={!!units.data?.byBed} byCount={units.data?.bedPricing === 'count'}
+          guest={!!units.data?.guestPrices} onSaved={() => { units.reload(); setPriceListVersion(version => version + 1); }} />
       </>}
+      {isChangingByPercent && <PriceChangePanel kind="cleaning" onClose={() => setIsChangingByPercent(false)}
+        onSaved={() => { setIsChangingByPercent(false); setPriceListVersion(version => version + 1); units.reload(); }} />}
     </div>
   );
 }
@@ -106,18 +127,30 @@ function PriceTableCard({ data, onSaved }: { data: PriceTable; onSaved: () => vo
   );
 }
 
-function UnitPricesCard({ rows, mayEdit, onSaved }: { rows: UnitRow[] | null; mayEdit: boolean; onSaved: () => void }) {
+/* With the guest's charge (0257) the per-unit list has one more figure column. Literal classes: Tailwind reads them as written. */
+const UNIT_COLS = 'md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.6fr)]';
+const UNIT_COLS_GUEST = 'md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.6fr)]';
+
+function UnitPricesCard({ rows, mayEdit, byBed, byCount, guest, onSaved }: { rows: UnitRow[] | null; mayEdit: boolean; byBed: boolean; byCount: boolean; guest: boolean; onSaved: () => void }) {
+  const cols = guest ? UNIT_COLS_GUEST : UNIT_COLS;
   const [q, setQ] = useState('');
   const [kind, setKind] = useState('turnover');
   const [editing, setEditing] = useState<string | null>(null);
   const shown = useMemo(() => (rows ?? []).filter(r => !q.trim() || `${r.propertyName} ${r.unitNumber}`.toLowerCase().includes(q.trim().toLowerCase())), [rows, q]);
   const own = (rows ?? []).filter(r => Object.values(r.prices).some(p => p.override)).length;
+  const withoutBeds = (rows ?? []).filter(r => !r.beds).length;
   return (
     <section className="bg-card rounded-card border border-solid border-line p-4 flex flex-col gap-3">
       <div className="flex items-start gap-3 flex-wrap">
         <div className="flex-1 min-w-[200px]">
           <h2 className="m-0 text-heading font-semibold">Per unit</h2>
-          <p className="m-0 text-meta text-muted-ink">A unit's own figures replace the list price for that unit. {rows ? `${own} of ${rows.length} units have their own.` : ''}</p>
+          <p className="m-0 text-meta text-muted-ink">{byCount
+            ? "Each unit's price is the one for its number of beds (King, Queen and Single; floor mattresses and sofa beds do not count)."
+            : "Each unit's price is worked out from its beds: each bed size price times how many."} A unit's own figures replace that. {rows ? `${own} of ${rows.length} units have their own.` : ''}</p>
+          {!byBed && <p className="m-0 mt-1 text-meta text-warning">{byCount
+            ? 'No prices by number of beds yet. Enter them in the list above (Basic clean, Deep clean) and every unit\'s price fills in from its beds.'
+            : 'No bed size prices yet. Enter them in the list above (Basic clean, Deep clean) and every unit\'s price fills in from its beds.'}</p>}
+          {withoutBeds > 0 && <p className="m-0 mt-1 text-meta text-warning">{plural(withoutBeds, 'unit')} with no beds recorded. Add the beds on the unit's Settings, or they take the "No beds recorded" price.</p>}
         </div>
         <select className={cx(INPUT, 'h-9 w-auto')} value={kind} onChange={e => setKind(e.target.value)} aria-label="Clean type">
           {Object.entries(KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
@@ -126,19 +159,22 @@ function UnitPricesCard({ rows, mayEdit, onSaved }: { rows: UnitRow[] | null; ma
       </div>
       {!rows ? <Skeleton height={120} /> : shown.length === 0 ? <span className="text-muted-ink">No unit matches.</span> : (
         <div className="flex flex-col">
-          <div className="hidden md:grid grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.6fr)] gap-3 text-meta font-semibold text-muted-ink pb-2">
-            <span>Unit</span><span>Layout</span><span>Owner price</span><span>Internal cost</span><span />
+          <div className={cx('hidden md:grid gap-3 text-meta font-semibold text-muted-ink pb-2', cols)}>
+            <span>Unit</span><span>Beds</span><span>Owner price</span>{guest && <span>Guest price</span>}<span>Internal cost</span><span />
           </div>
           {shown.map(r => {
             const p = r.prices[kind];
             return editing === r.unitId
-              ? <UnitPriceEdit key={r.unitId} row={r} kind={kind} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onSaved(); }} />
+              ? <UnitPriceEdit key={r.unitId} row={r} kind={kind} guest={guest} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onSaved(); }} />
               : (
-                <div key={r.unitId} className="grid grid-cols-2 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.6fr)] gap-x-3 gap-y-1 py-2 [border-top:1px_solid_var(--color-line-soft)] items-center text-copy">
+                <div key={r.unitId} className={cx('grid grid-cols-2 gap-x-3 gap-y-1 py-2 [border-top:1px_solid_var(--color-line-soft)] items-center text-copy', cols)}>
                   <span className="col-span-2 md:col-span-1"><b>{r.unitNumber}</b> <span className="text-muted-ink">{r.propertyName}</span></span>
-                  <span className="text-muted-ink">{LAYOUT[r.layout] ?? r.layout}</span>
+                  {r.beds
+                    ? <span className="flex flex-col min-w-0"><span>{plural(r.bedCount ?? 0, 'bed')}</span><span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{r.beds}</span></span>
+                    : <span className="text-warning">No beds recorded</span>}
                   <span className="max-md:order-4"><span className="md:hidden text-muted-ink">Owner price </span>{money(p?.externalCharge ?? null)}{p?.override && <span className="ml-1 text-meta text-gold-ink">own</span>}</span>
-                  <span className="max-md:order-5"><span className="md:hidden text-muted-ink">Internal cost </span>{money(p?.internalCost ?? null)}</span>
+                  {guest && <span className="max-md:order-5"><span className="md:hidden text-muted-ink">Guest price </span>{money(p?.guestCharge ?? null)}</span>}
+                  <span className="max-md:order-6"><span className="md:hidden text-muted-ink">Internal cost </span>{money(p?.internalCost ?? null)}</span>
                   <span className="text-right">{mayEdit && <button type="button" onClick={() => setEditing(r.unitId)} className="text-gold-ink font-medium cursor-pointer bg-transparent border-0 p-0 [font-family:inherit]">Edit</button>}</span>
                 </div>
               );
@@ -149,16 +185,18 @@ function UnitPricesCard({ rows, mayEdit, onSaved }: { rows: UnitRow[] | null; ma
   );
 }
 
-function UnitPriceEdit({ row, kind, onClose, onSaved }: { row: UnitRow; kind: string; onClose: () => void; onSaved: () => void }) {
+function UnitPriceEdit({ row, kind, guest, onClose, onSaved }: { row: UnitRow; kind: string; guest: boolean; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const p = row.prices[kind];
   const [pay, setPay] = useState<number | null>(p?.override?.internalCost ?? null);
   const [charge, setCharge] = useState<number | null>(p?.override?.externalCharge ?? null);
+  const [guestCharge, setGuestCharge] = useState<number | null>(p?.override?.guestCharge ?? null);
   const [busy, setBusy] = useState(false);
   async function save(clear = false) {
     setBusy(true);
     try {
-      await api.put('/housekeeping/unit-prices', { unitId: row.unitId, kind, internalCost: clear ? null : pay, externalCharge: clear ? null : charge });
+      await api.put('/housekeeping/unit-prices', { unitId: row.unitId, kind, internalCost: clear ? null : pay, externalCharge: clear ? null : charge,
+        ...(guest ? { guestCharge: clear ? null : guestCharge } : {}) });
       toast({ tone: 'success', title: clear ? `${row.unitNumber} uses the list price again.` : `${row.unitNumber}: own price saved.` });
       onSaved();
     } catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); setBusy(false); }
@@ -166,9 +204,10 @@ function UnitPriceEdit({ row, kind, onClose, onSaved }: { row: UnitRow; kind: st
   return (
     <div className="py-3 [border-top:1px_solid_var(--color-line-soft)] flex flex-col gap-2 bg-page -mx-4 px-4">
       <b>{row.unitNumber} <span className="font-normal text-muted-ink">{row.propertyName} · {KIND[kind]} clean</span></b>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1 text-meta text-muted-ink">Owner price<MoneyInput className={INPUT} valueSen={charge} onChangeSen={setCharge} placeholder={p?.source === 'table' && p.externalCharge != null ? `Table ${(p.externalCharge / 100).toFixed(2)}` : 'Not set'} aria-label="Owner price" /></label>
-        <label className="flex flex-col gap-1 text-meta text-muted-ink">Internal cost<MoneyInput className={INPUT} valueSen={pay} onChangeSen={setPay} placeholder={p?.source === 'table' && p.internalCost != null ? `Table ${(p.internalCost / 100).toFixed(2)}` : 'Not set'} aria-label="Internal cost" /></label>
+      <div className={cx('grid gap-3', guest ? 'grid-cols-[repeat(auto-fit,minmax(140px,1fr))]' : 'grid-cols-2')}>
+        <label className="flex flex-col gap-1 text-meta text-muted-ink">Owner price<MoneyInput className={INPUT} valueSen={charge} onChangeSen={setCharge} placeholder={p?.source === 'table' && p.externalCharge != null ? `List ${(p.externalCharge / 100).toFixed(2)}` : 'Not set'} aria-label="Owner price" /></label>
+        {guest && <label className="flex flex-col gap-1 text-meta text-muted-ink">Guest price<MoneyInput className={INPUT} valueSen={guestCharge} onChangeSen={setGuestCharge} placeholder={p?.source === 'table' && p.guestCharge != null ? `List ${(p.guestCharge / 100).toFixed(2)}` : 'Not set'} aria-label="Guest price" /></label>}
+        <label className="flex flex-col gap-1 text-meta text-muted-ink">Internal cost<MoneyInput className={INPUT} valueSen={pay} onChangeSen={setPay} placeholder={p?.source === 'table' && p.internalCost != null ? `List ${(p.internalCost / 100).toFixed(2)}` : 'Not set'} aria-label="Internal cost" /></label>
       </div>
       <span className="text-meta text-muted-ink">Leave a box empty to use the list price for that figure.</span>
       <div className="flex gap-2 justify-end flex-wrap">

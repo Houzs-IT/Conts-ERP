@@ -7,7 +7,7 @@ export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
 /** `icon`: drawn only in the phone menu, where each screen is its own row; the desktop shows its category's icon. */
-export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey; icon?: string }
+export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey; icon?: string; phoneOnly?: boolean }
 /** `full`: the screen's data is for roles with Full on its area (the server refuses Edit), so it is shown only then.
  *  `fresh`: a newly added screen, marked New in the desktop menu. */
 export interface NavItem {
@@ -61,7 +61,7 @@ const LEDGER_ICON: Record<string, string> = {
   'supplier-ledger': 'book-user', 'deposit-invoices': 'file-plus', 'other-debtors': 'users', 'credit-debit-notes': 'file-minus',
   'not-yet-billed': 'hourglass', 'e-invoice': 'badge-check', 'official-receipts': 'receipt-text', 'debtors': 'contact',
   'customer-ledger': 'book-user', 'outstanding': 'clock', 'daily-bank': 'calendar-days', 'merchant-recon': 'credit-card',
-  'rental-unit-costs': 'building-2', 'department-spend': 'chart-pie', 'renovation-projects': 'hammer',
+  'rental-unit-costs': 'building-2', 'department-spend': 'chart-pie', 'renovation-projects': 'hammer', 'ai-usage': 'sparkles',
 };
 
 /** The Finance groups, in order, each by its screens: finance's own desk screens by key, the ledger's by slug
@@ -72,8 +72,8 @@ const FINANCE_LAYOUT: Array<[part: string, entries: string[]]> = [
   ['Rental bills', ['desk:payables', 'desk:utilityBills']],
   ['Billing', ['deposit-invoices', 'other-debtors', 'credit-debit-notes', 'not-yet-billed', 'e-invoice']],
   ['Collections', ['money-received', 'official-receipts', 'debtors', 'customer-ledger', 'outstanding', 'debtor-ageing']],
-  ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon']],
-  ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'department-spend', 'renovation-projects']],
+  ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon', 'desk:airbnbRecon']],
+  ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'department-spend', 'renovation-projects', 'ai-usage']],
   ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup']],
 ];
 
@@ -85,6 +85,8 @@ export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix:
     // What each unit earned and spent, in two layers (chew, 28 Oct 2026: it belongs in Finance).
     unitPnl: { key: `unitPnl${keySuffix}`, label: 'Unit P&L', icon: 'chart-column', path: `${prefix}/unit-pnl`, area: 'finance' },
     approvals: { key: `approvals${keySuffix}`, label: 'Approvals', icon: 'stamp', path: `${prefix}/approvals`, area: 'finance', badge: 'approvals' },
+    // Airbnb's payments matched to the bookings (chew, 10 Nov 2026): its own area, closed until management opens it.
+    airbnbRecon: { key: `airbnbRecon${keySuffix}`, label: 'Airbnb reconciliation', icon: 'arrow-left-right', path: `${prefix}/airbnb-reconciliation`, area: 'airbnbRecon' },
   };
   const ledger = new Map(LEDGER_SCREENS.map(s => [s.slug, {
     key: `ledger_${s.slug}${keySuffix}`, label: s.label, icon: LEDGER_ICON[s.slug] ?? 'book-open', path: `${prefix}/${s.slug}`, area: 'ledger',
@@ -144,9 +146,9 @@ export const NAV: NavGroup[] = [
   { label: 'UNITS', workspace: 'rental', items: [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
     { key: 'units', label: 'Units', icon: 'building-2', path: '/properties/units', area: 'properties' },
-    // Units we find a long-term tenant for, for the owner (staff sheet UNIT, 17 Oct 2026).
     // Everything set to change on a later date, in one list (owner, 30 Oct 2026).
-    { key: 'scheduledChanges', label: 'Scheduled changes', icon: 'calendar-clock', path: '/properties/scheduled-changes', area: 'properties', fresh: true },
+    { key: 'scheduledChanges', label: 'Scheduled changes', icon: 'calendar-clock', path: '/properties/scheduled-changes', area: 'properties' },
+    // Units we find a long-term tenant for, for the owner (staff sheet UNIT, 17 Oct 2026).
     { key: 'agentToLet', label: 'Agent to let', icon: 'key-round', path: '/properties/agent-to-let', area: 'properties' },
     // Owner statements and owner payouts live on the owner (owner, 11 Oct 2026): each owner's page, and the Owners
     // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
@@ -210,6 +212,9 @@ export const NAV: NavGroup[] = [
   { label: 'PROJECTS', workspace: 'supply', items: [
     { key: 'projectList', label: 'Projects', icon: 'folder-kanban', path: '/projects/list', area: 'projects' },
     { key: 'projectCalendar', label: 'Calendar', icon: 'calendar-days', path: '/projects/calendar', area: 'projects' },
+    // Handover snag list (TODO item 17): every project's open defects, and the checklists a handover check starts from.
+    { key: 'projectDefects', label: 'Defects', icon: 'clipboard-check', path: '/projects/defects', area: 'projects' },
+    { key: 'projectHandoverChecklists', label: 'Handover checklists', icon: 'list-checks', path: '/projects/handover-checklists', area: 'projects' },
     { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projects', full: true },
     { key: 'projectMaintenance', label: 'Project settings', icon: 'settings', path: '/projects/maintenance', area: 'projects', full: true },
   ] },
@@ -244,6 +249,8 @@ export const NAV: NavGroup[] = [
     ] },
     { key: 'scProduction', label: 'Production', icon: 'factory', area: 'scProcurement', children: [
       { key: 'productionOrders', label: 'Production orders', icon: 'clipboard-list', path: '/production/production-orders' },
+      { key: 'skuComposition', label: 'SKU Composition', icon: 'clipboard-list', path: '/production/sku-composition' },
+      { key: 'draftDelivery', label: 'Draft delivery', icon: 'truck', path: '/production/draft-delivery', phoneOnly: true },
     ] },
     { key: 'scTransportPlan', label: 'Transportation', icon: 'truck', area: 'scTransportPlan', children: [
       { key: 'deliveryPlanning', label: 'Delivery planning', icon: 'route', path: '/transport/planning' },

@@ -6,13 +6,14 @@ import Icon from '../components/Icon';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
-import { api, errorMessage } from '../lib/api';
+import { api, ApiFailure, errorMessage } from '../lib/api';
 import { saveBlob, zipStore } from '../lib/export';
 import type { Report } from './OwnerIncomeReportPage';
+import type { StatementPages } from '../lib/statementPdf';
 import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
 import { phone as formatPhone } from '../lib/phone';
 import { MoneyText } from '../components/MoneyText';
-import { Select } from '../components/Select';
+import { Menu, Select } from '../components/Select';
 import {
   type Owner, type Payload,
   FALLBACK, netOf, grossOf, guaranteedOf, managedNetOf, managedGrossOf, terms, addressLines,
@@ -54,6 +55,7 @@ const PayoutsPage = lazy(() => import('./PayoutsPage'));
  */
 
 type ModelFilter = '' | RevenueModel | 'none';
+interface ListedStatement { id: string; ownerId: string; ownerName: string }
 const modelOf = (u: Owner['units'][number]): RevenueModel => u.revenueModel ?? (u.model === 'grr' ? 'grr' : 'management');
 
 /** Terms shown for an owner in the list. A single-unit owner reads exactly as that unit's terms; an owner with
@@ -179,63 +181,113 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
   const filtered = !!(q || building || model);
   const monthText = month === thisMonth ? 'this month' : monthLabel(month);
 
-  /** The month's statement of every unit of the owners the table shows, one PDF per unit (its month and year to date),
+  /** The month's statement of every unit of the owners the table shows, one PDF per unit (its month, with or without the year to date),
    *  in one zip (owner, 22 Oct 2026). Drawn in the browser: the server has no PDF renderer. Four reports are fetched at a time. */
   const finance = !!user && areaOpen(user.role, 'finance', user.access);
   const [zipping, setZipping] = useState(false);
-  async function zipStatements() {
+  async function withZipping(task: () => Promise<void>): Promise<void> {
     if (zipping) return;
     setZipping(true);
     try {
-      // period always given: left out, the endpoint answers the latest month that has statements instead.
-      const list = await api.get<{ data: { id: string; ownerId: string; ownerName: string }[] }>('/statements', { period: month, pageSize: 500 });
-      const shown = new Set(tableRows.map(o => o.id));
-      const picked = list.data.filter(s => shown.has(s.ownerId));
-      if (!picked.length) {
-        toast({ tone: 'warning', title: `No owner statements for ${monthLabel(month)} yet.`, body: 'Generate them on the Statements tab, then export again.' });
-        return;
-      }
-      toast({ tone: 'info', title: `Making the unit statements of ${plural(picked.length, 'owner')}...`, body: 'The zip downloads when it is ready. Keep this page open.' });
-      const [{ statementPdf }, { printedPhone }] = await Promise.all([import('../lib/statementPdf'), import('./OwnerIncomeReportPage')]);
-      let logo: Promise<Uint8Array | null> | null = null;
-      const logoOf = (src: string) => (logo ??= fetch(src).then(async r => (r.ok ? new Uint8Array(await r.arrayBuffer()) : null)).catch(() => null));
-      const made: { name: string; bytes: Uint8Array }[] = [];
-      const noReport: string[] = [], failed: string[] = [];
-      for (let i = 0; i < picked.length; i += 4) {
-        await Promise.all(picked.slice(i, i + 4).map(async s => {
-          try {
-            const { data: r } = await api.get<{ data: Report }>(`/statements/${encodeURIComponent(s.id)}/report`);
-            if (!r.units.length) { noReport.push(titleCase(s.ownerName)); return; }
-            const opts = { logo: await logoOf(r.settings.company.logo), phone: printedPhone };
-            for (const u of r.units) made.push({ name: `${u.code} - ${titleCase(s.ownerName)}`, bytes: await statementPdf({ ...r, units: [u] }, opts) });
-          } catch {
-            failed.push(titleCase(s.ownerName));
-          }
-        }));
-      }
-      if (made.length) {
-        const used = new Map<string, number>();
-        const files = made.sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(({ name, bytes }): [string, Uint8Array] => {
-          const stem = `${name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Unit'} - ${monthLabel(month)}`;
-          const n = (used.get(stem) ?? 0) + 1;
-          used.set(stem, n);
-          return [`${stem}${n > 1 ? ` (${n})` : ''}.pdf`, bytes];
-        });
-        saveBlob(zipStore(files) as BlobPart, `unit-statements-${month}.zip`, 'application/zip');
-      }
-      const missing = tableRows.length - picked.length;
-      toast({
-        tone: failed.length || !made.length ? 'warning' : 'success',
-        title: made.length ? `${plural(made.length, 'unit statement')} in the zip.` : 'No statement could be made into a PDF.',
-        body: [
-          missing > 0 && `${plural(missing, 'owner')} had no statement for ${monthLabel(month)}.`,
-          noReport.length > 0 && `${plural(noReport.length, 'owner')} had a statement from before Property OS, with no report to draw: ${noReport.join(', ')}.`,
-          failed.length > 0 && `Could not be made: ${failed.join(', ')}. Try again in a moment.`,
-        ].filter(Boolean).join(' ') || undefined,
-      });
+      await task();
     } catch (e) {
       toast({ tone: 'critical', title: 'Owner statements could not be gathered.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setZipping(false); }
+  }
+
+  async function listShownStatements(): Promise<ListedStatement[]> {
+    // period always given: left out, the endpoint answers the latest month that has statements instead.
+    const list = await api.get<{ data: ListedStatement[] }>('/statements', { period: month, pageSize: 500 });
+    const shown = new Set(tableRows.map(o => o.id));
+    return list.data.filter(s => shown.has(s.ownerId));
+  }
+
+  async function generateStatements(ownerIds: string[]): Promise<void> {
+    const { count } = await api.post<{ count: number }>('/statements/generate', { period: month, ownerIds });
+    toast({ tone: 'info', title: `${plural(count, 'draft statement')} generated for ${monthLabel(month)}.`, body: 'Check them on the Statements tab before sending.' });
+  }
+
+  function askToGenerate(picked: ListedStatement[], missing: Owner[], pages: StatementPages): void {
+    const names = missing.slice(0, 5).map(o => titleCase(o.displayName)).join(', ');
+    setDialog({
+      title: `No ${monthLabel(month)} statement yet for ${plural(missing.length, 'owner')}`,
+      body: 'The zip is made from generated owner statements. Generate drafts for them now from the month\'s reservations and costs, then export?',
+      meta: missing.length > 5 ? `${names} and ${missing.length - 5} more` : names,
+      confirmLabel: 'Generate and export',
+      extraActions: picked.length ? [{ label: `Export the ${picked.length} existing`, onClick: () => { setDialog(null); void withZipping(() => zipPdfs(picked, pages)); } }] : [],
+      onConfirm: () => {
+        setDialog(null);
+        void withZipping(async () => {
+          await generateStatements(missing.map(o => o.id));
+          await zipPdfs(await listShownStatements(), pages);
+        });
+      },
+    });
+  }
+
+  function zipStatements(pages: StatementPages): Promise<void> {
+    return withZipping(async () => {
+      const picked = await listShownStatements();
+      const withStatement = new Set(picked.map(s => s.ownerId));
+      const missing = tableRows.filter(o => (grossOf(o) !== 0 || netOf(o) !== 0) && !withStatement.has(o.id));
+      if (missing.length) { askToGenerate(picked, missing, pages); return; }
+      await zipPdfs(picked, pages);
+    });
+  }
+
+  async function loadReport(statementId: string): Promise<Report> {
+    const path = `/statements/${encodeURIComponent(statementId)}/report`;
+    try {
+      return (await api.get<{ data: Report }>(path)).data;
+    } catch (e) {
+      if (e instanceof ApiFailure && e.status > 0 && e.status < 500) throw e;
+      return (await api.get<{ data: Report }>(path)).data;
+    }
+  }
+
+  async function zipPdfs(picked: ListedStatement[], pages: StatementPages): Promise<void> {
+    if (!picked.length) {
+      toast({ tone: 'warning', title: `No owner statements for ${monthLabel(month)} yet.`, body: 'No owner listed had reservations, costs or charges that month.' });
+      return;
+    }
+    toast({ tone: 'info', title: `Making the unit statements of ${plural(picked.length, 'owner')}...`, body: 'The zip downloads when it is ready. Keep this page open.' });
+    const [{ statementPdf }, { printedPhone }] = await Promise.all([import('../lib/statementPdf'), import('./OwnerIncomeReportPage')]);
+    let logo: Promise<Uint8Array | null> | null = null;
+    const logoOf = (src: string) => (logo ??= fetch(src).then(async r => (r.ok ? new Uint8Array(await r.arrayBuffer()) : null)).catch(() => null));
+    const made: { name: string; bytes: Uint8Array }[] = [];
+    const noReport: string[] = [], failed: string[] = [];
+    for (let i = 0; i < picked.length; i += 4) {
+      await Promise.all(picked.slice(i, i + 4).map(async s => {
+        try {
+          const r = await loadReport(s.id);
+          if (!r.units.length) { noReport.push(titleCase(s.ownerName)); return; }
+          const opts = { logo: await logoOf(r.settings.company.logo), phone: printedPhone, pages };
+          for (const u of r.units) made.push({ name: `${u.code} - ${titleCase(s.ownerName)}`, bytes: await statementPdf({ ...r, units: [u] }, opts) });
+        } catch {
+          failed.push(titleCase(s.ownerName));
+        }
+      }));
+    }
+    if (made.length) {
+      const used = new Map<string, number>();
+      const files = made.sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(({ name, bytes }): [string, Uint8Array] => {
+        const stem = `${name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Unit'} - ${monthLabel(month)}`;
+        const n = (used.get(stem) ?? 0) + 1;
+        used.set(stem, n);
+        return [`${stem}${n > 1 ? ` (${n})` : ''}.pdf`, bytes];
+      });
+      saveBlob(zipStore(files) as BlobPart, `unit-statements-${month}.zip`, 'application/zip');
+    }
+    const missing = tableRows.length - picked.length;
+    toast({
+      tone: failed.length || !made.length ? 'warning' : 'success',
+      title: made.length ? `${plural(made.length, 'unit statement')} in the zip.` : 'No statement could be made into a PDF.',
+      body: [
+        missing > 0 && `${plural(missing, 'owner')} had no statement for ${monthLabel(month)}.`,
+        noReport.length > 0 && `${plural(noReport.length, 'owner')} had a statement from before Property OS, with no report to draw: ${noReport.join(', ')}.`,
+        failed.length > 0 && `Could not be made: ${failed.join(', ')}. Try again in a moment.`,
+      ].filter(Boolean).join(' ') || undefined,
+    });
   }
 
   const openProfile = (id: string) => navigate(`/owners/${encodeURIComponent(id)}`);
@@ -319,11 +371,18 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
         <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">Owner payouts · {monthText} (estimate)</span>
         <span className="flex items-center gap-2 flex-wrap">
           <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
-          {finance && (
+          {finance && (zipping || !tableRows.length ? (
             <Button size="sm" variant="primary" icon={<Icon name="FileArchive" size="sm" />} loading={zipping} disabled={!tableRows.length}
-              disabledReason="No owners listed under these filters." title={`The ${monthLabel(month)} statement of each unit of the owners listed, one PDF per unit.`}
-              onClick={() => void zipStatements()}>Unit statements (.zip)</Button>
-          )}
+              disabledReason="No owners listed under these filters.">Unit statements (.zip)</Button>
+          ) : (
+            <Menu label="Unit statements (.zip)"
+              trigger={<span data-variant="primary" className="ui-btn relative isolate inline-flex items-center gap-2 h-[var(--control-height-sm)] px-[13px] rounded-control bg-[var(--color-brand-black)] text-[var(--color-text-inverse)] text-[13px] font-medium whitespace-nowrap">
+                <Icon name="FileArchive" size="sm" />Unit statements (.zip)<Icon name="ChevronDown" size="sm" /></span>}
+              items={[
+                { key: 'month', label: 'Month only', hint: `The ${monthLabel(month)} page of each unit, one PDF per unit.`, onSelect: () => void zipStatements('month') },
+                { key: 'year', label: 'Month and year to date', hint: `The ${monthLabel(month)} page, then Jan to Dec, one PDF per unit.`, onSelect: () => void zipStatements('monthAndYear') },
+              ]} />
+          ))}
         </span>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] gap-3 sm:gap-4">

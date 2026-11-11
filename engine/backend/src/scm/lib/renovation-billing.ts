@@ -103,6 +103,12 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
       order by cc.so_doc_no, cc.created_at`,
     [docsJson],
   );
+  const orderPaid = await db.q<{ so_doc_no: string; paid_sen: number | string }>(
+    `select p.so_doc_no, coalesce(sum(p.amount_sen), 0)::bigint as paid_sen from scm.mfg_sales_order_payments p
+      where p.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) group by p.so_doc_no`,
+    [docsJson],
+  );
+  const orderPaidOf = new Map(orderPaid.map((r) => [r.so_doc_no, Number(r.paid_sen)]));
   for (const so of sos) {
     const instalments = instRows
       .filter((r) => r.so_doc_no === so.doc_no)
@@ -112,7 +118,7 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
       creditNoteId: r.credit_note_id, noteNumber: r.note_number, amountSen: Number(r.amount_sen), noteDate: r.note_date, reason: r.reason, noteStatus: r.cn_status,
     }));
     const creditedSen = credits.reduce((s, c) => s + c.amountSen, 0);
-    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits, Number(so.billed_before_golive_sen ?? 0)));
+    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits, Number(so.billed_before_golive_sen ?? 0), orderPaidOf.get(so.doc_no) ?? 0));
   }
   return out;
 }
@@ -132,8 +138,11 @@ export function assembleView(
   creditedSen = 0,
   credits: ContractCredit[] = [],
   billedBeforeGoLiveSen = 0,
+  orderPaidSen = 0,
 ): BillingView {
-  const billByInst = new Map(bills.map((b) => [b.instalment_id, b]));
+  /* A cancelled invoice or credit note billed nothing: its instalment is due again and its amount does not count. */
+  const live = bills.filter((b) => b.si_status !== 'CANCELLED' && b.cn_status !== 'CANCELLED');
+  const billByInst = new Map(live.map((b) => [b.instalment_id, b]));
   const billedMap = new Map<number, number>();
   for (const i of instalments) {
     const b = billByInst.get(i.id);
@@ -158,8 +167,9 @@ export function assembleView(
       } : null,
     };
   });
-  const billedSen = bills.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen + billedBeforeGoLiveSen;
-  const receivedSen = bills.reduce((s, b) => s + (b.kind === 'INVOICE' ? Number(b.paid_sen ?? 0) : 0), 0);
+  const billedSen = live.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen + billedBeforeGoLiveSen;
+  /* Paid on the invoices, and paid on the order itself: a deposit is taken on the SO. */
+  const receivedSen = orderPaidSen + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? Number(b.paid_sen ?? 0) : 0), 0);
   const original = originalContractSen === null ? revised : Number(originalContractSen);
   return {
     soDocNo, status, originalContractSen: original, revisedContractSen: revised, voTotalSen: revised - original,
@@ -176,6 +186,11 @@ export interface BillResult {
   creditNoteId?: string;
 }
 
+/** Billed ahead of this instalment. A later bill is its own share of the contract, so an earlier instalment billed again
+    after its invoice was cancelled comes to what the screen previews (instalmentPreview), not a credit. */
+export const billedBeforeInstalment = (view: Pick<BillingView, 'billedSen' | 'instalments'>, seq: number): number =>
+  view.billedSen - view.instalments.reduce((s, i) => s + (i.seq > seq && i.bill ? i.bill.amountSen : 0), 0);
+
 export async function billInstalment(
   db: RenoDb,
   actor: RenoActor,
@@ -190,11 +205,12 @@ export async function billInstalment(
   if (!inst) throw refuse(404, 'instalment_not_found', 'That instalment is not on this contract.');
   if (inst.bill) throw refuse(409, 'already_billed', `Instalment ${inst.seq} is already billed.`);
   if (!inst.isNext) throw refuse(409, 'not_next', `Bill instalment ${view.nextSeq} first: instalments are billed in order.`, { nextSeq: view.nextSeq });
+  const billedBefore = billedBeforeInstalment(view, inst.seq);
   const n = nextInstalmentAmount({
     instalments: view.instalments.map((i) => ({ seq: i.seq, pctBp: i.pctBp })),
     seq: inst.seq,
     revisedContractSen: view.revisedContractSen,
-    billedSen: view.billedSen,
+    billedSen: billedBefore,
   });
   if (n.amountSen !== body.expectedAmountSen) {
     throw refuse(409, 'stale_amount', 'The amount changed since this screen was opened (a variation order moved the contract sum). Check the new amount and bill again.',
@@ -250,11 +266,13 @@ export async function billInstalment(
   } else {
     result = { kind: 'ZERO', amountSen: 0 };
   }
+  /* One bill per instalment: a cancelled one is replaced. Its document keeps its own record. */
+  await db.q(`delete from scm.reno_instalment_bills where instalment_id = $1`, [instalmentId]);
   await db.q(
     `insert into scm.reno_instalment_bills (company_id, so_doc_no, instalment_id, seq, kind, amount_sen, cum_bp, revised_contract_sen, billed_before_sen,
         invoice_date, sales_invoice_id, invoice_number, credit_note_id, note_number, created_by)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11, $12, $13, $14, $15)`,
-    [actor.companyId, soDocNo, instalmentId, inst.seq, result.kind, result.amountSen, n.cumBp, view.revisedContractSen, view.billedSen, invoiceDate,
+    [actor.companyId, soDocNo, instalmentId, inst.seq, result.kind, result.amountSen, n.cumBp, view.revisedContractSen, billedBefore, invoiceDate,
       result.salesInvoiceId ?? null, result.invoiceNumber ?? null, result.creditNoteId ?? null, result.noteNumber ?? null, actor.name],
   );
   await auditSo(db, {

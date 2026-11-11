@@ -3,10 +3,12 @@
 // framing, but the money flows OUT to the supplier instead of in from the
 // customer. Outstanding here is what WE owe, not what customers owe us.
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildVariantSummary, fmtSen, fmtDate, orderLineIdentity } from "@2990s/shared";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
+  CheckCircle2,
   Plus,
   ChevronDown,
   Users,
@@ -22,7 +24,7 @@ import {
 } from "lucide-react";
 import { fetchPiExportRows, PI_DEFAULT_COLUMN_KEYS, PI_LABELS, senToRinggit, type PiListLine } from "../../vendor/scm/lib/pi-list-export";
 import type { PiPoPriceSummary } from "../../vendor/scm/lib/pi-list-po-price";
-import { piLineColumns } from "./pi-list-line-columns";
+import { PoAmountCell, piLineColumns } from "./pi-list-line-columns";
 import { transferFromLabel } from '../../lib/convertScope';
 import { PrintPreviewBatchModal, usePrintPreview } from "../../components/scm-v2/PrintPreviewModal";
 import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
@@ -50,6 +52,7 @@ import { SearchScopeHint } from "../../components/SearchScopeHint";
 import { useDebouncedSearchTerm, useSearchResultTransition } from "../../hooks/useServerSearch";
 import { useSuppliers } from "../../vendor/scm/lib/suppliers-queries";
 import { useServerColumnFunnels, funnelValues } from "../../hooks/useServerColumnFunnels";
+import { conditionDateRange } from "../../components/dataTableConditionFilters";
 import { poPriceMarker, usePiListPoPriceMap } from "../../vendor/scm/lib/pi-list-po-price";
 import {
   usePurchaseInvoicesPaged,
@@ -57,12 +60,14 @@ import {
   usePurchaseInvoiceDetail,
   useCancelPurchaseInvoice,
   usePostPurchaseInvoice,
+  piNotBookedProblem,
 } from "../../vendor/scm/lib/purchase-invoice-queries";
 import { useAuth as useHouzsAuth } from "../../auth/AuthContext";
 import { apPaymentHrefFor, canOpenApPayment, piAwaitsPayment } from "../../vendor/scm/lib/pi-payment-path";
 import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { useConfirm } from "../../vendor/scm/components/ConfirmDialog";
+import { useBatchConfirm } from "../../vendor/scm/lib/batch-confirm";
 import { useChoice } from "../../vendor/scm/components/ChoiceDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "../../lib/utils";
@@ -632,7 +637,7 @@ export function PurchaseInvoicesListV2() {
   const supplierNames = useMemo(() => [...new Set((suppliersQ.data ?? []).map((s) => s.name).filter((n): n is string => !!n))], [suppliersQ.data]);
   const supplierCodes = useMemo(() => [...new Set((suppliersQ.data ?? []).map((s) => s.code).filter((c): c is string => !!c))], [suppliersQ.data]);
   const { serverFunnels, onColFiltersChange } = useServerColumnFunnels(
-    (cf) => ({ creditorNames: funnelValues(cf, "supplier"), creditorCodes: funnelValues(cf, "supplier_code"), currencies: funnelValues(cf, "currency") }),
+    (cf) => ({ ...conditionDateRange(cf["invoice_date"]), creditorNames: funnelValues(cf, "supplier"), creditorCodes: funnelValues(cf, "supplier_code"), currencies: funnelValues(cf, "currency") }),
     () => setPageParam(0),
   );
   const { requestTerm: debouncedSearch } = useDebouncedSearchTerm(search);
@@ -669,6 +674,16 @@ export function PurchaseInvoicesListV2() {
   const statsFail = { failed: Boolean(error), onRetry: () => void refetch() };
   const cancelPi = useCancelPurchaseInvoice();
   const postPi = usePostPurchaseInvoice();
+  /* Confirm every ticked draft in turn (Houzs 5191c5f7c, TODO port item 15). */
+  const batchConfirm = useBatchConfirm<PiRow>({
+    noun: "invoice",
+    body: "Inventory and Payables will be updated.",
+    pathOf: (r) => `/purchase-invoices/${r.id}/post`,
+    docOf: (r) => r.invoice_number,
+    problemOf: piNotBookedProblem,
+    refresh: [["purchase-invoices"], ["purchase-invoices-paged"]],
+    onDone: () => setSelectedIds(new Set()),
+  });
 
   // Server already filtered + sorted this page — render verbatim. The four
   // MRP-derived columns (Assigned SO / Delivered) arrive from the deferred
@@ -680,6 +695,8 @@ export function PurchaseInvoicesListV2() {
      fetched a beat after the page renders, never gating anything. */
   const poPriceById = usePiListPoPriceMap(useMemo(() => serverRows.map((r) => r.id).filter(Boolean) as string[], [serverRows]), !listLoading);
   const total = data?.total ?? 0;
+  /* Each tab's money, server-summed over the same rows as its count (TODO item 5). */
+  const tabMoney: Record<string, number> = data?.statusMoneySen ?? {};
   const counts = data?.statusCounts ?? {
     all: 0,
     draft: 0,
@@ -840,7 +857,7 @@ export function PurchaseInvoicesListV2() {
       for (const r of chosen) bundles.push(await fetchPiBundle(r));
       if (how === "one") {
         await generateCombinedPurchaseInvoicePdf(bundles as never, {
-          fileName: `purchase-invoices-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `purchase-invoices-${todayMyt()}.pdf`,
           action,
         });
       } else {
@@ -888,6 +905,8 @@ export function PurchaseInvoicesListV2() {
         }),
     });
   };
+  /* Ticked on this page and still a draft: a posted or held row is left out. */
+  const draftsPicked = rows.filter((r) => selectedIds.has(r.id) && (r.status || "").toUpperCase() === "DRAFT" && !rowIsHeld(r));
   const doCancelPi = async (r: PiRow) => {
     if (!(await askConfirm({
       title: `Cancel invoice ${r.invoice_number}?`,
@@ -1000,10 +1019,22 @@ export function PurchaseInvoicesListV2() {
       getValue: (r) => r.tax_sen ?? 0, exportValue: (r) => senToRinggit(r.tax_sen ?? 0, 2), exportFormat: "money",
       render: (r) => moneyCell(r.tax_sen),
     },
+    /* Screen names; the file keeps AutoCount's captions (exportLabel), and PO
+       Price / PO Amount carry no export value, so a default export still equals
+       the AutoCount listing (owner 2026-09-15). */
     total: {
-      key: "total", label: PI_LABELS.total, width: "128px", align: "right",
+      key: "total", label: "Invoice Amount", exportLabel: PI_LABELS.total, width: "128px", align: "right",
       getValue: (r) => totalOf(r), exportValue: (r) => senToRinggit(totalOf(r), 2), exportFormat: "money",
       render: (r) => <span className="font-money text-[13px] font-semibold text-ink">{fmtRm(totalOf(r))}</span>,
+    },
+    po_amount: {
+      key: "po_amount",
+      label: "PO Amount",
+      width: "180px",
+      align: "right",
+      disableSort: true,
+      description: "What these lines come to at our purchase order prices. Lines with no PO price are left out, and the cell says how many were counted.",
+      render: (r) => <PoAmountCell summary={r.po_price_summary ?? poPriceById.get(String(r.id))} />,
     },
     local_total: {
       key: "local_total", label: PI_LABELS.localTotal, width: "128px", align: "right", disableSort: true,
@@ -1137,17 +1168,18 @@ export function PurchaseInvoicesListV2() {
       },
     },
   };
+  const beside: Record<string, string> = { total: "po_amount", qty: "po_price" };
   const columns: Column<PiRow, PiListLine>[] = [
-    ...PI_DEFAULT_COLUMN_KEYS.map((k) => byKey[k]!),
-    ...Object.keys(byKey).filter((k) => !(PI_DEFAULT_COLUMN_KEYS as readonly string[]).includes(k)).map((k) => byKey[k]!),
+    ...PI_DEFAULT_COLUMN_KEYS.flatMap((k) => (beside[k] ? [byKey[k]!, byKey[beside[k]]!] : [byKey[k]!])),
+    ...Object.keys(byKey).filter((k) => !(PI_DEFAULT_COLUMN_KEYS as readonly string[]).includes(k) && !Object.values(beside).includes(k)).map((k) => byKey[k]!),
   ];
 
-  const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
-    { value: "all", label: `All · ${counts.all}` },
-    { value: "draft", label: `Draft · ${counts.draft}` },
-    { value: "posted", label: `Submitted · ${counts.posted}` },
-    { value: "partial", label: `Partial · ${counts.partial}` },
-    { value: "paid", label: `Paid · ${counts.paid}` },
+  const statusPillOptions: Array<{ value: StatusTab; label: string; moneySen?: number }> = [
+    { value: "all", label: `All · ${counts.all}`, moneySen: tabMoney.all },
+    { value: "draft", label: `Draft · ${counts.draft}`, moneySen: tabMoney.draft },
+    { value: "posted", label: `Submitted · ${counts.posted}`, moneySen: tabMoney.posted },
+    { value: "partial", label: `Partial · ${counts.partial}`, moneySen: tabMoney.partial },
+    { value: "paid", label: `Paid · ${counts.paid}`, moneySen: tabMoney.paid },
     { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
     { value: "on_hold", label: `On Hold · ${counts.on_hold ?? 0}` },
   ];
@@ -1288,8 +1320,13 @@ export function PurchaseInvoicesListV2() {
                     Combine into one PDF or download separately.
                   </span>
                   <div className="flex-1" />
+                  {draftsPicked.length > 0 && (
+                    <Button variant="primary" icon={<CheckCircle2 size={14} />} disabled={batchConfirm.confirming} onClick={() => void batchConfirm.confirm(draftsPicked)}>
+                      {batchConfirm.confirming ? batchConfirm.progressLabel : `Confirm (${draftsPicked.length})`}
+                    </Button>
+                  )}
                   <Button
-                    variant="primary"
+                    variant="secondary"
                     icon={<Printer size={14} />}
                     disabled={printingDocs}
                     onClick={batchPrint.openPreview}

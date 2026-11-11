@@ -125,6 +125,8 @@ export interface ProjectDetail {
     id: number; code: string | null; name: string; customer_name: string | null; customer_phone: string | null; customer_email?: string | null; layout_label?: string | null; customer_kind: string | null;
     /** Conts (finance phase 1.5): RENOVATION / INHOUSE_RENOVATION, or null to follow the quotation's brand. */
     finance_kind?: string | null;
+    /** The brand it is sold under; its sales order carries the same one. */
+    brand?: string | null;
     building: string | null; unit_no: string | null; site_address: string | null; planned_handover_date: string | null;
     handed_over_at: string | null; salesperson_name: string | null; notes: string | null;
   };
@@ -236,8 +238,8 @@ export const renovationApi = {
     return api.postBinary<{ key: string }>(`${R}/${id}/files?kind=${encodeURIComponent(kind)}`, body, body.type || "image/jpeg");
   },
   fileUrl: (id: number, key: string) => `${R}/${id}/files?key=${encodeURIComponent(key)}`,
-  bill: (docNo: string, instalmentId: string, expectedAmountSen: number | null, invoiceDate: string) =>
-    api.post<unknown>(`/api/scm/renovation/sales-orders/${encodeURIComponent(docNo)}/instalments/${encodeURIComponent(instalmentId)}/bill`, { invoiceDate, expectedAmountSen }),
+  bill: (docNo: string, instalmentId: string, expectedAmountSen: number | null, invoiceDate: string, confirmCreditNote = false) =>
+    api.post<unknown>(`/api/scm/renovation/sales-orders/${encodeURIComponent(docNo)}/instalments/${encodeURIComponent(instalmentId)}/bill`, { invoiceDate, expectedAmountSen, confirmCreditNote }),
   openLines: (projectId: number) => api.get<{ data: OpenLine[] }>(`/api/scm/site-receipts/projects/${projectId}/open-lines`),
   siteReceipt: (b: Record<string, unknown>, idempotencyKey: string) => api.post<{ created: Array<{ id: string; grnNumber: string; posted: boolean; postError?: string }>; tasksCompleted: number }>(`/api/scm/site-receipts`, b, { idempotencyKey }),
   siteReceiptDetail: (grnId: string) => api.get<{ receipt: Record<string, unknown> | null; photos: PodPhoto[]; lines: Array<{ id: string; item_code: string; material_name: string; qty_accepted: number }> }>(`/api/scm/site-receipts/${grnId}`),

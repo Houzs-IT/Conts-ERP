@@ -7,6 +7,8 @@
 // by both the dialog and the unit test).
 // ----------------------------------------------------------------------------
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
+import { fmtSen } from '../../vendor/shared/format';
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../../components/Button';
@@ -177,11 +179,12 @@ export function exportBindingsCsv(
     }
   }
 
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  // BOM: without it Excel opens the file in the PC's codepage and KŌRI-style codes come out garbled (HC-0165).
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `supplier-${supplierCode}-bindings-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `supplier-${supplierCode}-bindings-${todayMyt()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -309,9 +312,10 @@ export function buildWidePatches(
   bindingByCode: Map<string, BindingRow>,
   productByCode: Map<string, MfgProductRow>,
   sofaHeights: string[],
-): { patches: Map<string, AccumPatch>; skippedUnknown: number } {
+): { patches: Map<string, AccumPatch>; skippedUnknown: number; matched: number } {
   const idx = (col: string) => header.indexOf(col);
   const colCode = idx('internal_code');
+  const matchedCodes = new Set<string>();
   const sofaColIndex = new Map<string, Map<'P1' | 'P2' | 'P3', number>>();
   for (const h of sofaHeights) {
     const inner = new Map<'P1' | 'P2' | 'P3', number>();
@@ -334,6 +338,7 @@ export function buildWidePatches(
     if (!code) continue;
     const binding = bindingByCode.get(code);
     if (!binding) { skippedUnknown += 1; continue; }
+    matchedCodes.add(code);
     const kind = csvKindForProduct(productByCode.get(code));
 
     const patch: Partial<NewBinding> = {};
@@ -357,9 +362,8 @@ export function buildWidePatches(
           const colIdx = indices.get(t);
           if (colIdx == null) continue;
           const sen = parseRmCell(r[colIdx]);
-          if (sen == null) {
-            if (inner[t] !== undefined) { delete inner[t]; innerChanged = true; }
-          } else if (inner[t] !== sen) { inner[t] = sen; innerChanged = true; }
+          // A blank cell keeps the stored price (TODO port item 10): never a clear.
+          if (sen != null && inner[t] !== sen) { inner[t] = sen; innerChanged = true; }
         }
         if (innerChanged) {
           if (Object.keys(inner).length === 0) delete next[h];
@@ -373,34 +377,44 @@ export function buildWidePatches(
       let changed = false;
       if (colBedP1 >= 0) {
         const sen = parseRmCell(r[colBedP1]);
-        if (sen == null) { if (next.P1 !== undefined) { delete next.P1; changed = true; } }
-        else if (next.P1 !== sen) { next.P1 = sen; changed = true; }
+        if (sen != null && next.P1 !== sen) { next.P1 = sen; changed = true; }
       }
       if (colBedP2 >= 0) {
         const sen = parseRmCell(r[colBedP2]);
-        if (sen == null) { if (next.P2 !== undefined) { delete next.P2; changed = true; } }
-        else if (next.P2 !== sen) { next.P2 = sen; changed = true; }
+        if (sen != null && next.P2 !== sen) { next.P2 = sen; changed = true; }
       }
       if (changed) patch.priceMatrix = Object.keys(next).length === 0 ? null : next;
     }
 
     if (Object.keys(patch).length > 0) patches.set(binding.id, { binding, patch });
   }
-  return { patches, skippedUnknown };
+  return { patches, skippedUnknown, matched: matchedCodes.size };
+}
+
+/* Two price matrices hold the same prices, whatever order their keys are in. */
+function sameMatrix(a: unknown, b: unknown): boolean {
+  const canon = (v: unknown): string => {
+    if (v == null || typeof v !== 'object') return JSON.stringify(v ?? null);
+    const o = v as Record<string, unknown>;
+    const keys = Object.keys(o).filter((k) => o[k] != null).sort();
+    return keys.length === 0 ? 'null' : `{${keys.map((k) => `${k}:${canon(o[k])}`).join(',')}}`;
+  };
+  return canon(a) === canon(b);
 }
 
 /** LONG parser — one row per binding × price-point. Multiple rows for the same
  *  internal_code merge: scalars take last non-blank; each row layers ONE matrix
  *  cell (sofa height×tier, or bedframe tier, or the flat unit price) onto the
- *  binding's current matrix. Blank price clears that cell. */
+ *  binding's current matrix. A blank price keeps the stored one. */
 export function buildLongPatches(
   dataRows: string[][],
   header: string[],
   bindingByCode: Map<string, BindingRow>,
   productByCode: Map<string, MfgProductRow>,
-): { patches: Map<string, AccumPatch>; skippedUnknown: number } {
+): { patches: Map<string, AccumPatch>; skippedUnknown: number; matched: number } {
   const idx = (col: string) => header.indexOf(col);
   const colCode = idx('internal_code');
+  const matchedCodes = new Set<string>();
   const colCategory = idx('category');
   const colHeight = idx('height');
   const colTier = idx('tier');
@@ -421,6 +435,7 @@ export function buildLongPatches(
     if (!code) continue;
     const binding = bindingByCode.get(code);
     if (!binding) { skippedCodes.add(code); continue; }
+    matchedCodes.add(code);
 
     const acc = patches.get(binding.id) ?? { binding, patch: {} as Partial<NewBinding> };
     patches.set(binding.id, acc);
@@ -446,7 +461,8 @@ export function buildLongPatches(
     } else if (kind === 'bedframe') {
       if (tier === 'P1' || tier === 'P2') {
         const m = bedMatrices.get(binding.id) ?? { ...((binding.price_matrix ?? {}) as BedframePriceMatrix) };
-        if (sen == null) delete m[tier]; else m[tier] = sen;
+        // A blank price keeps the stored one (TODO port item 10): never a clear.
+        if (sen != null) m[tier] = sen;
         bedMatrices.set(binding.id, m);
         bedTouched.add(binding.id);
       }
@@ -455,9 +471,8 @@ export function buildLongPatches(
       if (height && (tier === 'P1' || tier === 'P2' || tier === 'P3')) {
         const m = sofaMatrices.get(binding.id) ?? { ...((binding.price_matrix ?? {}) as SofaPriceMatrix) };
         const inner = { ...(m[height] ?? {}) } as { P1?: number; P2?: number; P3?: number };
-        if (sen == null) delete inner[tier]; else inner[tier] = sen;
-        if (Object.keys(inner).length === 0) delete m[height];
-        else m[height] = inner;
+        if (sen != null) inner[tier] = sen;
+        if (Object.keys(inner).length > 0) m[height] = inner;
         sofaMatrices.set(binding.id, m);
         sofaTouched.add(binding.id);
       }
@@ -469,20 +484,20 @@ export function buildLongPatches(
     const acc = patches.get(id);
     if (!acc) continue;
     const m = sofaMatrices.get(id)!;
-    acc.patch.priceMatrix = Object.keys(m).length === 0 ? null : m;
+    if (!sameMatrix(m, acc.binding.price_matrix)) acc.patch.priceMatrix = Object.keys(m).length === 0 ? null : m;
   }
   for (const id of bedTouched) {
     const acc = patches.get(id);
     if (!acc) continue;
     const m = bedMatrices.get(id)!;
-    acc.patch.priceMatrix = Object.keys(m).length === 0 ? null : m;
+    if (!sameMatrix(m, acc.binding.price_matrix)) acc.patch.priceMatrix = Object.keys(m).length === 0 ? null : m;
   }
 
   // Drop bindings whose accumulated patch ended up empty (anchor-only rows).
   for (const [id, acc] of patches) {
     if (Object.keys(acc.patch).length === 0) patches.delete(id);
   }
-  return { patches, skippedUnknown: skippedCodes.size };
+  return { patches, skippedUnknown: skippedCodes.size, matched: matchedCodes.size };
 }
 
 /* A blank binding for an unknown code — the empty BASE the shared builders
@@ -572,7 +587,23 @@ type ImportPreview = {
   format: ImportFormat;
   updates: { binding: BindingRow; patch: Partial<NewBinding> }[];
   creates: NewBinding[];
+  /* Bound codes in the file whose values already match: nothing is written. */
+  unchanged: number;
 };
+
+const rmText = (sen: number | null | undefined) => (sen == null ? '(blank)' : fmtSen(sen));
+
+/* What one update changes, in plain words, old → new (TODO port item 10). */
+export function describeBindingPatch(binding: BindingRow, patch: Partial<NewBinding>): string[] {
+  const out: string[] = [];
+  if (patch.unitPriceSen !== undefined) out.push(`Price: ${rmText(binding.unit_price_sen)} → ${rmText(patch.unitPriceSen)}`);
+  if (patch.priceMatrix !== undefined) out.push('Size / tier prices: updated');
+  if (patch.supplierSku !== undefined) out.push(`Supplier SKU: ${binding.supplier_sku || '(blank)'} → ${patch.supplierSku}`);
+  if (patch.leadTimeDays !== undefined) out.push(`Lead time: ${binding.lead_time_days ?? 0} → ${patch.leadTimeDays} days`);
+  if (patch.moq !== undefined) out.push(`MOQ: ${binding.moq ?? 0} → ${patch.moq}`);
+  if (patch.isMainSupplier !== undefined) out.push(patch.isMainSupplier ? 'Becomes the main supplier' : 'No longer the main supplier');
+  return out;
+}
 
 export const ImportBindingsDialog = ({
   supplierId,
@@ -631,11 +662,11 @@ export const ImportBindingsDialog = ({
       const dataRows = rows.slice(1);
 
       const format = detectImportFormat(header);
-      const { patches } = format === 'long'
+      const { patches, matched } = format === 'long'
         ? buildLongPatches(dataRows, header, bindingByCode, productByCode)
         : buildWidePatches(dataRows, header, bindingByCode, productByCode, sofaHeights);
       const creates = buildCreates(dataRows, header, format, bindingByCode, productByCode, sofaHeights);
-      setPreview({ format, updates: Array.from(patches.values()), creates });
+      setPreview({ format, updates: Array.from(patches.values()), creates, unchanged: matched - patches.size });
     } finally {
       setParsing(false);
     }
@@ -704,8 +735,9 @@ export const ImportBindingsDialog = ({
             worklist columns <code>internal_code / supplier_sku / price_rm</code>). Both the
             <strong> long</strong> and legacy <strong>wide</strong> layouts are detected
             automatically. Rows matching an existing binding are <strong>updated</strong>;
-            unknown <code>internal_code</code>s are <strong>created</strong>. Preview shows
-            exactly what will be created and updated before anything is written.
+            unknown <code>internal_code</code>s are <strong>created</strong>. A blank price
+            keeps the stored one. Preview shows what is new, what changes (old → new) and
+            what is unchanged before anything is written.
           </p>
           <input
             type="file"
@@ -720,11 +752,22 @@ export const ImportBindingsDialog = ({
               background: '#fff', border: '1px solid #d6d9d2', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-2)',
             }}>
               <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                {preview.format} format · {preview.creates.length} to create · {preview.updates.length} to update
+                {preview.creates.length} new · {preview.updates.length} changed · {preview.unchanged} unchanged
               </div>
+              {preview.updates.length > 0 && (
+                <div style={{ maxHeight: 220, overflowY: 'auto', marginTop: 4 }}>
+                  <div style={{ fontSize: 'var(--fs-11)', color: '#767b6e', marginBottom: 2 }}>Changed:</div>
+                  {preview.updates.map(({ binding, patch }) => (
+                    <div key={binding.id} style={{ fontSize: 'var(--fs-12)', marginBottom: 2 }}>
+                      <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>{binding.item_code}</span>
+                      {' · '}{describeBindingPatch(binding, patch).join(' · ')}
+                    </div>
+                  ))}
+                </div>
+              )}
               {preview.creates.length > 0 && (
                 <div style={{ maxHeight: 180, overflowY: 'auto', marginTop: 4 }}>
-                  <div style={{ fontSize: 'var(--fs-11)', color: '#767b6e', marginBottom: 2 }}>New bindings:</div>
+                  <div style={{ fontSize: 'var(--fs-11)', color: '#767b6e', marginBottom: 2 }}>New:</div>
                   {preview.creates.map((c) => (
                     <div key={c.itemCode} style={{ fontSize: 'var(--fs-12)', fontFamily: 'var(--font-mono, monospace)' }}>
                       {c.itemCode} → {c.supplierSku} · {fmtRm(c.unitPriceSen)}{c.priceMatrix ? ' · matrix' : ''}
@@ -759,7 +802,7 @@ export const ImportBindingsDialog = ({
           </Button>
           {preview ? (
             <Button variant="primary" onClick={apply} disabled={running}>
-              {running ? 'Applying…' : `Apply (${preview.creates.length} + ${preview.updates.length})`}
+              {running ? 'Applying…' : `Apply (${preview.creates.length} new + ${preview.updates.length} changed)`}
             </Button>
           ) : (
             <Button variant="primary" onClick={doPreview} disabled={!file || parsing}>

@@ -292,16 +292,21 @@ export function DocumentsCard({ unitId, unitLabel, documents, onUploaded }: { un
 export function BuildingModal({ initial, onClose, onSubmit, onDelete }: { initial?: Building; onClose: () => void; onSubmit: (b: Omit<Building, 'id'>) => void; onDelete?: () => void }) {
   const [name, setName] = useState(initial?.name ?? ''); const [city, setCity] = useState(initial?.city ?? ''); const [state, setState] = useState(initial?.state ?? STATES[0]);
   const [fullAccessCard, setFullAccessCard] = useState(initial?.fullAccessCard ?? false);
+  const [needsPassKey, setNeedsPassKey] = useState(initial?.needsPassKey ?? false);
   const ok = name.trim() !== '' && city.trim() !== '';
   return (
     <CentreModal title={initial ? 'Edit building' : 'Add building'} sub={initial ? 'Correct the name or location. Its units stay as they are.' : 'A building holds units. Add units to it next.'} onClose={onClose}
-      footer={<>{onDelete && <ConfirmButton confirm={{ title: `Delete ${initial ? initial.name : 'this building'}?`, body: 'It has no units, and it is deleted for good.', confirmLabel: 'Delete building', cancelLabel: 'Keep it' }} onConfirm={onDelete} style={{ marginRight: 'auto' }}>Delete building</ConfirmButton>}<Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!ok} disabledReason="Fill name and city" onClick={() => onSubmit({ name: name.trim(), city: city.trim(), state, fullAccessCard })}>{initial ? 'Save' : 'Add building'}</Button></>}>
+      footer={<>{onDelete && <ConfirmButton confirm={{ title: `Delete ${initial ? initial.name : 'this building'}?`, body: 'It has no units, and it is deleted for good.', confirmLabel: 'Delete building', cancelLabel: 'Keep it' }} onConfirm={onDelete} style={{ marginRight: 'auto' }}>Delete building</ConfirmButton>}<Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!ok} disabledReason="Fill name and city" onClick={() => onSubmit({ name: name.trim(), city: city.trim(), state, fullAccessCard, needsPassKey })}>{initial ? 'Save' : 'Add building'}</Button></>}>
       <Field label="Building name" placeholder="e.g. Arte Mont Kiara" value={name} onChange={e => setName(e.target.value)} />
       <Field label="City / area" placeholder="e.g. Mont Kiara, 50480 KL" value={city} onChange={e => setCity(e.target.value)} />
       <Labeled label="State" help={initial ? 'Every unit in the building is in this state.' : undefined}><Select label="State" value={state} onChange={setState} options={STATES.map(s => ({ value: s, label: s }))} /></Labeled>
       <label className="flex items-start gap-2 text-copy cursor-pointer">
         <input type="checkbox" checked={fullAccessCard} onChange={e => setFullAccessCard(e.target.checked)} className="mt-[3px] accent-[var(--color-gold-ink)]" />
         <span>Full access card <span className="block text-meta text-muted-ink">One card opens the lobby, lift and car park. Shown on each unit's Access tab.</span></span>
+      </label>
+      <label className="flex items-start gap-2 text-copy cursor-pointer">
+        <input type="checkbox" checked={needsPassKey} onChange={e => setNeedsPassKey(e.target.checked)} className="mt-[3px] accent-[var(--color-gold-ink)]" />
+        <span>Check-ins need a pass key <span className="block text-meta text-muted-ink">Every check-in here becomes a Pass key job in Maintenance, unless the reservation says the guest checks in by themselves.</span></span>
       </label>
     </CentreModal>
   );

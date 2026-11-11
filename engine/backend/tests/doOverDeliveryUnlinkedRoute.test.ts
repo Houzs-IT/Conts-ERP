@@ -52,7 +52,7 @@ class FakeQuery {
   }
   order() { return this; } limit() { return this; } range() { return this; }
   gt() { return this; } gte() { return this; } lt() { return this; } lte() { return this; }
-  not() { return this; } like() { return this; } or() { return this; }
+  not() { return this; } like() { return this; } or() { return this; } filter() { return this; }
   private run(): Row[] {
     if (this.op === 'insert') { this.rows.push(...this.inserted); return this.inserted; }
     const hit = this.rows.filter((r) => this.preds.every((p) => p(r)));
@@ -96,7 +96,7 @@ const confirm = (app: Hono, id: string) =>
   app.request(`/delivery-orders/${id}/status`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ status: 'LOADED' }),
+    body: JSON.stringify({ status: 'LOADED', confirmShortStock: true }),
   });
 
 async function overDeliveryRefusal(res: Response): Promise<{ error?: string; conflicts?: string[] } | null> {

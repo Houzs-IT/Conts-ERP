@@ -45,8 +45,12 @@ const SRC = readFileSync(FILE, 'utf8');
 function stockOutBody(src: string): string {
   const start = src.indexOf('async function stockOutDoLinesFromRacks(');
   expect(start, 'stockOutDoLinesFromRacks not found — did it move or get renamed?').toBeGreaterThan(-1);
-  const end = src.indexOf('\nasync function refreshRackStatusInline(', start);
-  expect(end, 'refreshRackStatusInline no longer follows it — re-anchor this slice').toBeGreaterThan(start);
+  /* Since d7435ba6 (DO ship inside 50 outside calls) the batch status refresh
+     `refreshRackStatuses` follows the helper. Like refreshRackStatusInline it
+     only ever receives `touchedRacks`, which are ids out of the company-filtered
+     `rackById` (asserted below), so it stays outside the slice. */
+  const end = src.indexOf('\nasync function refreshRackStatuses(', start);
+  expect(end, 'refreshRackStatuses no longer follows it — re-anchor this slice').toBeGreaterThan(start);
   return src.slice(start, end);
 }
 
@@ -90,10 +94,20 @@ describe('DO rack stock-out is bounded to the order\'s own company', () => {
   test('the caller-named rack is resolved with the company filter, not just by id', () => {
     // The explicit-pick branch is the one a request body can steer. Named on its
     // own because it is the only door an outsider controls.
-    const explicit = statements(BODY, 'warehouse_racks').filter((s) => /explicitRackId/.test(s.text));
+    // Batched since d7435ba6: every explicit pick is read in one `.in('id', explicitIds)`.
+    const explicit = statements(BODY, 'warehouse_racks').filter((s) => /explicitRackId|explicitIds/.test(s.text));
     expect(explicit.length).toBeGreaterThanOrEqual(1);
     for (const s of explicit) {
       expect(/company_id|companyCol|scopeToCompanyIdOrOpen/.test(s.text), `delivery-orders-mfg.ts:~${s.line}`).toBe(true);
     }
+  });
+
+  test('only racks read through the company filter are moved or refreshed', () => {
+    // An explicit pick that the company-filtered read did not return gets no rack at all...
+    expect(BODY).toMatch(/rackById\.has\(l\.explicitRackId\) \? \[l\.explicitRackId\] : \[\]/);
+    // ...and a line with no rack is skipped before the explicit fallback can name one.
+    expect(BODY).toMatch(/if \(rackIds\.size === 0\) continue;[\s\S]*outByRack\.set\(l\.explicitRackId, l\.qty\)/);
+    // The status refresh is handed only the racks this helper touched.
+    expect(BODY).toMatch(/refreshRackStatuses\(sb, \[\.\.\.touchedRacks\]\)/);
   });
 });

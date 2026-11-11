@@ -33,6 +33,7 @@
 //
 // Mounted at '/sales-invoices' in scm/index.ts.
 
+import { readStatusMoney } from '../lib/status-money';
 import { lineDiscountShare } from '../shared/line-discount-share';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -51,6 +52,7 @@ import { postUnpostedSiPayments } from '../../acc/payments';
 import { afterSiPaymentRemoved, insertSiPaymentRow } from '../lib/si-payment-row';
 import { recomputeSiPaid as recomputePaid, readOrderDepositForInvoice } from '../lib/si-order-deposit';
 import { stampSoDates, stampDoNumber, stampOrderDeposit } from '../lib/si-list-stamps';
+import { stampBillsFor } from '../lib/renovation-si-bills-for';
 import { SI_HEADER_COLS, SI_LIST_SELECT, filterSiList, orderSiList, readSiListFilters } from '../lib/si-list-read';
 import { attachSiLines } from '../lib/si-export-rows';
 import { SI_STATUS_BUCKETS } from '../lib/si-status-buckets';
@@ -63,7 +65,7 @@ import { resolveSalesScopeIds, salesDocOutOfScope } from '../lib/salesScope';
 import { readStatusCounts } from '../lib/status-counts';
 import { canViewAllSales, canViewScmFinance } from '../lib/houzs-perms';
 import { SO_ITEM_FINANCE_KEYS } from '../lib/finance-keys';
-import { doLineRemaining, doRemainingByItemId, checkSiOverRemaining, checkSiReopenOverRemaining, findOverInvoicedDoItems, resolveCandidateDoIds, custKeyOf, remainingUnavailableResponse, siTransferRefusal, type DoRemainingLine } from '../lib/do-line-remaining';
+import { doLineRemaining, doRemainingByItemId, checkSiOverRemaining, isDoLineOverInvoiced, checkSiReopenOverRemaining, findOverInvoicedDoItems, resolveCandidateDoIds, custKeyOf, remainingUnavailableResponse, siTransferRefusal, type DoRemainingLine } from '../lib/do-line-remaining';
 import { siShadowRefusal, unlinkedEditRefusal } from '../lib/unlinked-line-edit-guard';
 import { assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
 import { resolveSiHeaderSources, resolveDoLineSources } from '../lib/source-po-trace';
@@ -479,7 +481,7 @@ salesInvoices.get('/', async (c) => {
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   const total = count ?? (data?.length ?? 0);
 
-  /* Status counts mirror the FE filter-pill buckets (sent / partial / paid /
+  /* Status counts mirror the FE filter-pill buckets (draft / sent / partial / paid /
      cancelled) over the SAME scope + company filters but WITHOUT status /
      search / pagination. */
   const countBase = () => {
@@ -488,22 +490,31 @@ salesInvoices.get('/', async (c) => {
     cq = scopeToCompany(cq, c);
     return cq;
   };
-  const [allC, sentC, partialC, paidC, cancelledC] = await Promise.all([
+  /* Each tab's money over the same filters (TODO item 5). */
+  const moneyProm = readStatusMoney((sel) => {
+    let mq = sb.from('sales_invoices').select(sel);
+    if (scopeIds) mq = mq.in('salesperson_id', scopeIds);
+    return scopeToCompany(mq, c);
+  }, 'local_total_sen', SI_STATUS_BUCKETS);
+  const [allC, draftC, sentC, partialC, paidC, cancelledC] = await Promise.all([
     countBase(),
+    countBase().in('status', SI_STATUS_BUCKETS.draft),
     countBase().in('status', SI_STATUS_BUCKETS.sent),
     countBase().in('status', SI_STATUS_BUCKETS.partial),
     countBase().in('status', SI_STATUS_BUCKETS.paid),
     countBase().in('status', SI_STATUS_BUCKETS.cancelled),
   ]);
   // A count that could not be READ is reported, never served as 0; an empty bucket still answers 0 (lib/status-counts.ts).
-  const counted = readStatusCounts({ all: allC, sent: sentC, partial: partialC, paid: paidC, cancelled: cancelledC });
+  const counted = readStatusCounts({ all: allC, draft: draftC, sent: sentC, partial: partialC, paid: paidC, cancelled: cancelledC });
   if (!counted.ok) return c.json({ error: 'status_counts_failed', reason: counted.reason }, 500);
   const statusCounts = counted.counts;
+  const statusMoneySen = await moneyProm;
 
   await stampSoDates(sb, data);
   await stampDoNumber(sb, data);
   await stampSourcePos(sb, data);
   await stampOrderDeposit(sb, data, activeCompanyId(c) ?? null);
+  await stampBillsFor(sb, data);
   gateSiFinance(data, canViewScmFinance(c));
   /* The page's LINES, in AutoCount's spelling — the same attach the export
      uses (lib/si-export-rows.ts), so a line column shows on screen exactly
@@ -511,7 +522,7 @@ salesInvoices.get('/', async (c) => {
      callers never render a line column. */
   const withLines = await attachSiLines(sb, c, (data ?? []) as Array<{ id: string } & Record<string, unknown>>);
   if (withLines.error !== null) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
-  return c.json({ salesInvoices: withLines.rows, total, page, pageSize, statusCounts });
+  return c.json({ salesInvoices: withLines.rows, total, page, pageSize, statusCounts, statusMoneySen });
 });
 
 // ── Invoiceable DO lines (line-level partial-invoice picker) ──────────────
@@ -784,7 +795,12 @@ export const createSalesInvoiceHandler = async (c: Context<{ Bindings: Env; Vari
   if (items.length > 0) {
     const rows = items.map((it, lineNo) => buildItemRow(h.id, it, lineNo));
     const { error: iErr } = await sb.from('sales_invoice_items').insert(stampCompany(rows, c));
-    if (iErr) { await sb.from('sales_invoices').delete().eq('id', h.id); return c.json({ error: 'items_insert_failed', reason: iErr.message }, 500); }
+    if (iErr) {
+      await sb.from('sales_invoices').delete().eq('id', h.id);
+      // HC-0004: the DB cap (migration 0273) refused a line past its DO line.
+      if (isDoLineOverInvoiced(iErr)) return c.json({ error: 'race_conflict', message: 'Another operator just invoiced overlapping qty from this Delivery Order. Refresh and try again.', reason: iErr.message }, 409);
+      return c.json({ error: 'items_insert_failed', reason: iErr.message }, 500);
+    }
 
   /* Race-condition guard — the SI counterpart of "Edge #E" in
      delivery-orders-mfg.ts. checkSiOverRemaining above is read-before-write, so
@@ -852,7 +868,7 @@ export const createSalesInvoiceHandler = async (c: Context<{ Bindings: Env; Vari
   }
 
   /* REVENUE — record it now. Idempotent + best-effort. */
-  let revenue: { posted: boolean; jeNo?: string; status: string } = { posted: false, status: 'skipped' };
+  let revenue: { posted: boolean; jeNo?: string; status: string; reason?: string } = { posted: false, status: 'skipped' };
   const post = await postSiRevenue(sb, h.invoice_number);
   if (post.ok) {
     /* 'migrated_source' carries no jeNo and needs none: AutoCount already booked
@@ -861,7 +877,7 @@ export const createSalesInvoiceHandler = async (c: Context<{ Bindings: Env; Vari
       ? { posted: false, status: post.status }
       : { posted: post.status === 'posted', jeNo: post.jeNo, status: post.status };
   } else {
-    revenue = { posted: false, status: post.status };
+    revenue = { posted: false, status: post.status, reason: post.reason };
     if (post.status !== 'zero_total' && post.status !== 'invoice_not_found') {
       // eslint-disable-next-line no-console
       console.error(`[si-revenue] post failed for ${h.invoice_number}:`, post.status, post.reason);
@@ -1023,6 +1039,7 @@ export const appendDoLinesToSalesInvoiceHandler = async (c: any) => {
   if (rows.length === 0) return c.json({ error: 'do_fully_invoiced' }, 409);
 
   const { error: iErr } = await sb.from('sales_invoice_items').insert(stampCompany(rows, c));
+  if (isDoLineOverInvoiced(iErr)) return c.json({ error: 'race_conflict', message: 'Another operator just invoiced overlapping qty from this Delivery Order. Refresh and try again.', reason: iErr?.message }, 409);
   if (iErr) return c.json({ error: 'items_insert_failed', reason: iErr.message }, 500);
   await recomputeTotals(sb, id);
   await recomputePaid(sb, id);
@@ -1236,6 +1253,7 @@ export const appendSalesInvoiceItemHandler = async (c: any) => {
 
   const row = buildItemRow(id, it, nextLineNo);
   const { data, error } = await sb.from('sales_invoice_items').insert({ ...row, company_id: co.companyId }).select(ITEM).single();
+  if (isDoLineOverInvoiced(error)) return c.json({ error: 'over_remaining', message: 'Add qty exceeds what is left to invoice on the linked Delivery Order line.', reason: error?.message }, 409);
   if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
   await recomputeTotals(sb, id);
   await recomputePaid(sb, id);
@@ -1373,6 +1391,7 @@ salesInvoices.patch('/:id/items/:itemId', async (c) => {
   }
 
   const { error } = await scopeToCompanyId(sb.from('sales_invoice_items').update(updates).eq('id', itemId), co.companyId);
+  if (isDoLineOverInvoiced(error)) return c.json({ error: 'over_remaining', message: 'New qty exceeds what is left to invoice on the linked Delivery Order line.', reason: error?.message }, 409);
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
 
   /* Diff `updates` — the EFFECTIVE values written — against the stored row. qty,
@@ -1844,6 +1863,9 @@ export const patchSalesInvoiceStatusHandler = async (c: any) => {
       .eq('id', id), co.companyId)
       .select('id, status, invoice_number, paid_sen, debtor_code, debtor_name')
       .single();
+    if (isDoLineOverInvoiced(error)) {
+      return c.json({ error: 'over_remaining', message: 'Cannot reopen — the delivered quantity has since been invoiced elsewhere. The DO lines no longer have room for this invoice.', reason: error?.message }, 409);
+    }
     if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
     data = updated as typeof data;
   }

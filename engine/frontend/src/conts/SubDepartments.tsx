@@ -6,6 +6,7 @@ import { Button } from "@2990s/design-system";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import type { Department } from "./department";
 import { useSaveSubDepartment, useStaffDepartments, useSubDepartments, type SubDepartment, type SubDepartmentSave } from "./subDepartmentQueries";
+import { SetupCard } from "./SetupCard";
 
 const GROUPS: ReadonlyArray<{ department: Department; label: string }> = [
   { department: "rental", label: "Rental" },
@@ -86,12 +87,7 @@ export function SubDepartments({ canSave }: { canSave: boolean }) {
   };
 
   return (
-    <section style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 16, display: "flex", flexDirection: "column", gap: 12, maxWidth: 640 }}>
-      <h2 style={{ margin: 0, fontSize: 16 }}>Departments</h2>
-      <p style={{ margin: 0, color: MUTED, fontSize: "var(--fs-13)" }}>
-        Every line names one of these. Its department (Rental, Renovation, Company) is a column of the profit and loss; staff
-        documents start on the one mapped to the person&apos;s staff department.
-      </p>
+    <SetupCard title="Departments" description={<>Every line names one of these. Its department (Rental, Renovation, Company) is a column of the profit and loss; staff documents start on the one mapped to the person&apos;s staff department.</>}>
       {q.isError && <div role="alert" style={{ color: "var(--c-festive-b, #b3261e)" }}>The departments did not load.</div>}
       {note && <div role="alert" style={{ color: "var(--c-festive-b, #b3261e)" }}>{note}</div>}
       {GROUPS.map((g) => (
@@ -102,6 +98,6 @@ export function SubDepartments({ canSave }: { canSave: boolean }) {
         </fieldset>
       ))}
       {!canSave && <span style={{ fontSize: "var(--fs-12)", color: MUTED }}>Only someone who can post to the ledger may change these.</span>}
-    </section>
+    </SetupCard>
   );
 }

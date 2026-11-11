@@ -12,6 +12,7 @@ import { refusalOf, renoSend, usePoSchedule, useRenoMutation, type PoSchedule } 
 import { Card, ErrorBanner, Field, fmtDate, inputCls, MoneyInput, pctLabel, rm, todayIso } from './shared';
 import { cn } from '../../lib/utils';
 import { useDialog } from '../../hooks/useDialog';
+import { useToast } from '../../hooks/useToast';
 
 const PAYABLE_LABEL: Record<string, string> = { ON_CONFIRM: 'on confirm', ON_RECEIPT: 'on receipt', ON_HANDOVER: 'after handover', MANUAL: 'on release' };
 
@@ -22,16 +23,17 @@ function PayDialog({ inst, onClose }: { inst: Inst | null; onClose: () => void }
   const [paidOn, setPaidOn] = useState(todayIso());
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const pay = useRenoMutation(() => renoSend(`/po-instalments/${inst!.id}/payments`, 'POST', { amountSen: amount, paidOn, note }));
+  const toast = useToast();
+  const pay = useRenoMutation(() => renoSend<{ voucher: { pvNumber: string | null; posted: boolean; problem: string | null } | null }>(`/po-instalments/${inst!.id}/payments`, 'POST', { amountSen: amount, paidOn, note }));
   if (!inst) return null;
   return (
     <ModalOverlay open onClose={onClose} title={`Record payment · ${inst.label}`} icon={<Wallet size={16} />}
-      footer={<div className="flex w-full justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={pay.isPending} onClick={async () => { setError(null); try { await pay.mutateAsync(undefined); onClose(); } catch (e) { setError(refusalOf(e).message); } }}>{pay.isPending ? 'Saving…' : 'Record'}</Button></div>}>
+      footer={<div className="flex w-full justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={pay.isPending} onClick={async () => { setError(null); try { const { voucher: v } = await pay.mutateAsync(undefined); if (v?.problem) toast.error(`Payment recorded. The journal did not post: ${v.problem}`); else toast.success(v?.pvNumber ? `Payment recorded on ${v.pvNumber}` : 'Payment recorded'); onClose(); } catch (e) { setError(refusalOf(e).message); } }}>{pay.isPending ? 'Saving…' : 'Record'}</Button></div>}>
       <div className="space-y-3">
         <p className="text-[13px] text-ink-secondary">Outstanding {rm(inst.outstandingSen)} of {rm(inst.amountSen)}.</p>
         <Field label="Amount"><MoneyInput value={amount} onChange={(v) => setAmount(v ?? 0)} /></Field>
         <Field label="Paid on"><input type="date" className={inputCls} value={paidOn} onChange={(e) => setPaidOn(e.target.value)} /></Field>
-        <Field label="Note (e.g. payment voucher number)"><input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+        <Field label="Note"><input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         <ErrorBanner error={error} />
       </div>
     </ModalOverlay>

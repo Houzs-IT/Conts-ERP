@@ -285,7 +285,7 @@ describe("Projects.tsx — every list filter param is sticky", () => {
     };
     const keysOf = (block: string) =>
       [...new Set((block.match(/^\s{10,14}([a-z_]+):/gm) ?? []).map((k) => k.trim().replace(":", "")))];
-    const listKeys = keysOf(between("const list = useQuery", "per_page: perPage,"));
+    const listKeys = keysOf(between("const list = useQuery", "per_page: boardMode ? BOARD_MAX : perPage,"));
     const exportKeys = keysOf(between("const exportProjects = async", "per_page: per,"));
     expect(listKeys.length).toBeGreaterThan(8);
     for (const k of listKeys) {

@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import type { RenoLineKind } from '../../vendor/shared/renovation-money';
 import type { PrintFormat } from './print-formats';
+import { setDocLetterhead } from './renovation-doc-theme';
 
 export type Highlight = 'NONE' | 'GREY' | 'PINK';
 
@@ -101,6 +102,15 @@ export interface DocHeader {
   bedrooms?: number | null;
   bathrooms?: number | null;
   builtUpSqft?: number | null;
+  landAreaSqft?: number | null;
+  landSize?: string;
+  /* What else a sales order asks for (mig 0234). */
+  salespersonId?: string;
+  state?: string;
+  city?: string;
+  postcode?: string;
+  country?: string;
+  salesLocation?: string;
 }
 
 export type QuotationStatus = 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
@@ -113,6 +123,7 @@ export interface QuotationHead {
 
 export interface QuotationListRow extends QuotationHead {
   docNo: string; customerName: string; building: string; unitNo: string; docDate: string; printFormat: PrintFormat; totalSen: number;
+  projectCode: string | null; brandName: string | null;
 }
 
 export interface Revision {
@@ -174,18 +185,6 @@ export interface VoView {
   sections: DocSection[]; totals: { addSen: number; omitSen: number; netSen: number };
 }
 
-export interface SplitLine {
-  lineId: string; soItemId: string; itemCode: string; description: string; description2: string | null; uom: string; qty: number;
-  unitCostSen: number; amountSen: number; supplierId: string | null; reason?: string;
-}
-export interface SplitPreview {
-  /* One PO per supplier and category group (mig 0116). */
-  groups: Array<{ categoryGroup?: string; supplierId: string; supplierCode: string; supplierName: string; lines: SplitLine[]; totalSen: number }>;
-  blocked: SplitLine[]; skipped: SplitLine[]; alreadyOrdered: SplitLine[];
-  /* Goods with no supplier: not ordered by this raise (older servers do not send it). */
-  unsupplied?: SplitLine[];
-}
-
 export interface PoFlag {
   id: string; action: 'AMEND' | 'CANCEL'; newQty: number | null; status: 'OPEN' | 'RESOLVED'; note: string; createdAt: string;
   resolvedAt: string | null; voNo: string; poNumber: string; purchaseOrderId: string; itemCode: string; qty: number;
@@ -204,7 +203,7 @@ export interface PoSchedule {
 }
 
 export interface TermTemplate {
-  id: string; kind: 'CUSTOMER' | 'PO'; name: string; isDefault: boolean; active: boolean;
+  id: string; kind: 'CUSTOMER' | 'PO'; name: string; brandId: number | null; isDefault: boolean; active: boolean;
   lines: Array<{ seq: number; label: string; pctBp: number; description: string; stageCode: string | null; trigger: string; payableOn: string | null }>;
 }
 
@@ -230,6 +229,15 @@ const send = <T>(path: string, method: string, body?: unknown) =>
 export const renoGet = <T>(path: string) => authedFetch<T>(`${BASE}${path}`);
 export const renoSend = send;
 
+/** Keeps the letterhead the documents print in step with SO Maintenance. A failed read leaves the company's details. */
+export async function loadDocLetterhead(): Promise<void> {
+  try {
+    const { brands } = await renoGet<{ brands: BrandProfile[] }>('/brands');
+    const b = brands.find((x) => x.name.trim().toLowerCase() === 'the conts' && x.hasProfile);
+    if (b) setDocLetterhead([...b.companyLines, b.contactLine].filter((l) => l.trim()));
+  } catch { /* the company's details stay */ }
+}
+
 /** The server's machine code and detail on a refusal (authedFetch keeps the raw body on the error). */
 export function refusalOf(err: unknown): { code: string | null; message: string; detail: Record<string, unknown> } {
   const e = err as { message?: string; body?: string } | null | undefined;
@@ -244,7 +252,6 @@ export const qk = {
   templates: ['reno', 'templates'] as const,
   template: (id: string) => ['reno', 'template', id] as const,
   contract: (docNo: string) => ['reno', 'contract', docNo] as const,
-  poSplit: (docNo: string) => ['reno', 'po-split', docNo] as const,
   poFlags: (docNo: string) => ['reno', 'po-flags', docNo] as const,
   vo: (id: string) => ['reno', 'vo', id] as const,
   terms: ['reno', 'terms'] as const,
@@ -274,10 +281,6 @@ export function useTemplate(id: string | undefined) {
 
 export function useContract(docNo: string | undefined) {
   return useQuery({ queryKey: qk.contract(docNo ?? ''), queryFn: () => renoGet<ContractView>(`/sales-orders/${encodeURIComponent(docNo!)}`), enabled: Boolean(docNo) });
-}
-
-export function usePoSplit(docNo: string | undefined, enabled: boolean) {
-  return useQuery({ queryKey: qk.poSplit(docNo ?? ''), queryFn: () => renoGet<SplitPreview>(`/sales-orders/${encodeURIComponent(docNo!)}/po-split`), enabled: Boolean(docNo) && enabled });
 }
 
 /** How a contract change was posted to the project's accounts, as convert / VO approve / post-contract answer it. */

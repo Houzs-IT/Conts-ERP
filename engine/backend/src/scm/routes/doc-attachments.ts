@@ -29,7 +29,7 @@ import type { Db } from '../../services/renovation/load';
 import {
   DOC_TYPES, MAX_FILE_BYTES, MAX_VIDEO_BYTES, adoptLegacySoAttachments, attachmentKey, attachmentsReady,
   carriedFileRow, carriedFiles, linkedDocFiles, cleanName, evidenceFiles, fileKind, fileRow, findDocsByNumber, isDocType, lineBelongs, listFiles, listLines,
-  loadDoc, podFileById, podFiles, isPodFileId, textArray, type DocFile, type DocLine, type DocRef, type DocType,
+  loadDoc, podFileById, podFiles, isPodFileId, isTwinPodFileId, textArray, type DocFile, type DocLine, type DocRef, type DocType,
 } from '../lib/doc-attachments';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
@@ -215,7 +215,7 @@ function router(type: DocType, sub = '') {
     const doc = await docOr404(c, type);
     if (doc instanceof Response) return doc;
     const fileId = c.req.param('fileId') ?? '';
-    if (isPodFileId(fileId)) return c.json({ error: 'pod_kept', message: 'The proof-of-delivery photo stays with the delivery.' }, 409);
+    if (isPodFileId(fileId) || isTwinPodFileId(fileId)) return c.json({ error: 'pod_kept', message: 'The proof-of-delivery photo stays with the delivery.' }, 409);
     if (fileId.startsWith('ev-')) return c.json({ error: 'evidence_kept', message: "Remove the bill in the voucher's own Files panel." }, 409);
     if (!(await fileRow(dbOf(c), doc, fileId))) {
       return c.json({ error: 'not_found', message: 'That file is not kept on this document; remove it where it was added.' }, 404);
@@ -234,6 +234,11 @@ function router(type: DocType, sub = '') {
     const range = c.req.header('range');
     if (type === 'delivery_order' && isPodFileId(fileId)) {
       const pod = await podFileById(dbOf(c), doc.id, fileId);
+      const res = pod && ((await streamObject(c.env.SLIPS, pod.key, pod.mime, pod.name, range)) ?? (await streamObject(c.env.POD_BUCKET, pod.key, pod.mime, pod.name, range)));
+      return res ?? c.json({ error: 'not_found' }, 404);
+    }
+    if (isTwinPodFileId(fileId)) {
+      const pod = (await linkedDocFiles(dbOf(c), doc)).find((f) => f.id === fileId);
       const res = pod && ((await streamObject(c.env.SLIPS, pod.key, pod.mime, pod.name, range)) ?? (await streamObject(c.env.POD_BUCKET, pod.key, pod.mime, pod.name, range)));
       return res ?? c.json({ error: 'not_found' }, 404);
     }

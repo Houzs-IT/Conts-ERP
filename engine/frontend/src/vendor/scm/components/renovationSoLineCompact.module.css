@@ -2,8 +2,8 @@
    compact row, in the same column order as the read-only table, instead of Houzs's tall card.
    The header and every row share one grid, so the column widths are fixed (no `auto` track):
    separate grids only line up when every track is sized the same way.
-   Children of .row, in order: no, item, remarks, qty, price, discount, date, amount, photos,
-   actions, then four .label spans that show only on a narrow list. */
+   Children of .row, in order: no, item, remarks, qty, price, discount, processing, delivery, amount, photos,
+   actions, then five .label spans that show only on a narrow list. */
 
 .lines {
   container-type: inline-size;
@@ -21,7 +21,8 @@
     60px                  /* Qty */
     96px                  /* Unit price */
     100px                 /* Disc */
-    124px                 /* Date */
+    124px                 /* Processing */
+    124px                 /* Delivery */
     96px                  /* Amount */
     36px                  /* Photos */
     84px;                 /* Override / move / remove */
@@ -154,8 +155,9 @@
       "rem   rem    rem    rem    rem    rem"
       "qtyL  qtyL   priceL priceL discL  discL"
       "qty   qty    price  price  disc   disc"
-      "dateL dateL  dateL  dateL  .      ."
-      "date  date   date   date   photo  amt";
+      "procL procL  procL  delL   delL   delL"
+      "proc  proc   proc   del    del    del"
+      "photo photo  amt    amt    amt    amt";
     row-gap: 4px;
   }
   .row > :nth-child(1) { grid-area: no; }
@@ -164,14 +166,16 @@
   .row > :nth-child(4) { grid-area: qty; }
   .row > :nth-child(5) { grid-area: price; }
   .row > :nth-child(6) { grid-area: disc; }
-  .row > :nth-child(7) { grid-area: date; }
-  .row > :nth-child(8) { grid-area: amt; }
-  .row > :nth-child(9) { grid-area: photo; justify-self: end; }
-  .row > :nth-child(10) { grid-area: act; }
-  .row > :nth-child(11) { grid-area: qtyL; }
-  .row > :nth-child(12) { grid-area: priceL; }
-  .row > :nth-child(13) { grid-area: discL; }
-  .row > :nth-child(14) { grid-area: dateL; }
+  .row > :nth-child(7) { grid-area: proc; }
+  .row > :nth-child(8) { grid-area: del; }
+  .row > :nth-child(9) { grid-area: amt; justify-self: end; }
+  .row > :nth-child(10) { grid-area: photo; justify-self: start; }
+  .row > :nth-child(11) { grid-area: act; }
+  .row > :nth-child(12) { grid-area: qtyL; }
+  .row > :nth-child(13) { grid-area: priceL; }
+  .row > :nth-child(14) { grid-area: discL; }
+  .row > :nth-child(15) { grid-area: procL; }
+  .row > :nth-child(16) { grid-area: delL; }
   .label {
     display: block;
     margin-top: 4px;

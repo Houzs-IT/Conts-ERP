@@ -59,6 +59,10 @@ export const queryClient = new QueryClient({
   mutationCache: new MutationCache({
     onSuccess: () => {
       broadcastDataChanged();
+      /* Order status reads across documents: a Complete on a production order changes the GR and DO rows of the trail
+         without touching its own query key, so every write refreshes the trails on screen. */
+      void queryClient.invalidateQueries({ queryKey: ["renovation-doc-trail"] });
+      void queryClient.invalidateQueries({ queryKey: ["so-line-status"] });
     },
   }),
   defaultOptions: {

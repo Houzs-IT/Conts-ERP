@@ -2,7 +2,7 @@ import { type Env, one } from './db';
 import { numericDay, rmText } from './format';
 import { peopleWithAccess } from './access';
 import { notifyUsers, taskPeople, technicianFor } from './notify';
-import { fieldVisibleSql, hasJobType } from './maintenance';
+import { fieldVisibleSql, hasJobType, jobPlaceJoin, BUILDING_JOB_LABEL } from './maintenance';
 
 /** The notices staff get when something happens to a booking, a clean or a repair job. Every function here
  *  is safe to await inside a handler: notifyUsers never throws, and the lookups are wrapped the same way. */
@@ -73,7 +73,7 @@ async function task(env: Env, id: string): Promise<Task | null> {
 }
 
 /** A clean was given to someone, finished, or ran past its time. */
-export async function cleaningNotice(env: Env, id: string, event: 'assigned' | 'completed' | 'overdue', by: string | null) {
+export async function cleaningNotice(env: Env, id: string, event: 'assigned' | 'picked' | 'completed' | 'overdue', by: string | null, byName?: string) {
   const t = await task(env, id);
   if (!t) return;
   const link = `/operations/cleaning?task=${encodeURIComponent(id)}`;
@@ -82,6 +82,8 @@ export async function cleaningNotice(env: Env, id: string, event: 'assigned' | '
   if (event === 'assigned') {
     const people = await taskPeople(env, id);
     if (people.length) await notifyUsers(env, people, { ...base, kind: 'cleaning.assigned', title: `Cleaning job assigned to you: ${t.unit}`, body: `${t.title}${when}.`, dedupeKey: `clean-assigned-${id}-${people.join('-')}` });
+  } else if (event === 'picked') {
+    await notifyUsers(env, { roles: ['ops_managers'] }, { ...base, kind: 'cleaning.assigned', title: `Cleaning job picked up: ${t.unit}`, body: `${t.title}${when} – ${byName ?? 'a cleaner'} took it on the phone.`, dedupeKey: `clean-picked-${id}-${by ?? ''}` });
   } else if (event === 'completed') {
     await notifyUsers(env, 'ops', { ...base, kind: 'cleaning.completed', title: `Cleaning job done: ${t.unit}`, body: `${t.title} is finished; the unit is ready.`, dedupeKey: `clean-done-${id}` });
   } else {
@@ -94,15 +96,16 @@ interface Issue { id: string; title: string; unit: string; urgency: string | nul
 
 async function issue(env: Env, id: string): Promise<Issue | null> {
   try {
+    const placeJoin = await jobPlaceJoin(env);
     return await one<Issue>(env, `
       SELECT m.id, m.title, m.urgency, m.vendor_name, m.assignee_user_id, m.reported_by, m.quoted_amount, o.user_id AS owner_user,
-             trim(coalesce(p.name, '') || ' ' || u.unit_number) AS unit
-      FROM maintenance_issues m JOIN units u ON u.id = m.unit_id LEFT JOIN properties p ON p.id = u.property_id
+             trim(coalesce(p.name, '') || ' ' || COALESCE(u.unit_number, '${BUILDING_JOB_LABEL}')) AS unit
+      FROM maintenance_issues m ${placeJoin}
       LEFT JOIN owners o ON o.id = u.owner_id WHERE m.id = ?`, id);
   } catch { return null; }
 }
 
-export type RepairEvent = 'reported' | 'assigned' | 'picked' | 'ended' | 'window' | 'done' | 'overdue' | 'approval_requested' | 'approval_decided';
+export type RepairEvent = 'reported' | 'assigned' | 'picked' | 'dropped' | 'ended' | 'window' | 'done' | 'overdue' | 'approval_requested' | 'approval_decided' | 'support' | 'pass_key_today';
 
 /** A repair job was reported, given to someone, given a time to enter the unit, finished, ran late, or needs /
  *  got the owner's approval. `detail` adds a line (the window's time, the decision). */
@@ -125,7 +128,10 @@ export async function repairNotice(env: Env, id: string, event: RepairEvent, by:
       break;
     }
     case 'picked':
-      await notifyUsers(env, { roles: ['ops_managers'] }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job picked up: ${m.unit}`, body: `${m.title} – ${m.vendor_name ?? 'a technician'} took it on the phone.`, dedupeKey: `repair-picked-${id}` });
+      await notifyUsers(env, { roles: ['ops_managers'] }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job picked up: ${m.unit}`, body: `${m.title} – ${m.vendor_name ?? 'a technician'} took it on the phone.`, dedupeKey: `repair-picked-${id}-${Date.now()}` });
+      break;
+    case 'dropped':
+      await notifyUsers(env, { roles: ['ops_managers'] }, { ...base, kind: 'maintenance.assigned', title: `Maintenance job dropped: ${m.unit}`, body: `${m.title} – ${detail ?? 'a technician'} gave it back before starting. It is open to pick up again.`, dedupeKey: `repair-dropped-${id}-${Date.now()}` });
       break;
     case 'ended':
       await notifyUsers(env, { roles: ['ops_managers'], userIds: [m.reported_by] }, { ...base, kind: 'maintenance.done', title: `Repair finished, ready to close: ${m.unit}`, body: `${m.title}${m.vendor_name ? ` – ${m.vendor_name}` : ''}.`, dedupeKey: `repair-ended-${id}` });
@@ -147,6 +153,12 @@ export async function repairNotice(env: Env, id: string, event: RepairEvent, by:
         title: `Repair quote to approve: ${m.unit}`, body: `${m.title}${quote ? `. Quote ${quote}` : ''}. Open your owner portal to approve it.` });
       break;
     }
+    case 'support':
+      await notifyUsers(env, 'ops', { ...base, kind: 'maintenance.support', title: `Technician needs support: ${m.unit}`, body: `${m.title} – ${m.vendor_name ?? 'the technician'} tried: ${detail ?? ''}`, dedupeKey: `repair-support-${id}-${Date.now()}` });
+      break;
+    case 'pass_key_today':
+      await notifyUsers(env, { roles: ['technician', 'ops_managers'] }, { ...base, kind: 'maintenance.pass_key_today', title: `Pass key today: ${m.unit}`, body: `${m.title}${detail ? `. ${detail}` : ''}.`, dedupeKey: `repair-pass-key-today-${id}` });
+      break;
     case 'approval_decided':
       await notifyUsers(env, { roles: ['ops'], userIds: tech }, { ...base, kind: 'approval.decided', title: `Maintenance job ${detail ?? 'decided'}: ${m.unit}`, body: m.title });
       break;

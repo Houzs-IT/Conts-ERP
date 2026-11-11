@@ -52,7 +52,30 @@ export function RenovationSkuMaster({
   const rows = q.data ?? null;
   const showCost = useMemo(() => (rows ?? []).some((r) => 'mainCostSen' in r), [rows]);
   const { label: subLabel, uomPrint } = useRenovationCatalog();
-  const columns = useMemo(() => renovationSkuColumns({ showCost, subLabel, uomPrint }), [showCost, subLabel, uomPrint]);
+  const notify = useNotify();
+  const statusSave = useUpdateMfgProductCatalog();
+  const setStatus = (r: MfgProductRow, status: 'ACTIVE' | 'INACTIVE'): void => statusSave.mutate({ id: r.id, status }, {
+    onSuccess: () => void notify({ title: status === 'ACTIVE' ? `${r.code} is active.` : `${r.code} is inactive.` }),
+    onError: (e) => void notify({ title: 'Status not changed', body: e instanceof Error ? e.message : 'Could not save.', tone: 'error' }),
+  });
+  /* Edit and Deactivate on the row itself: behind the row click the owner could not find them (5 Nov 2026). */
+  const columns = useMemo(() => [
+    ...renovationSkuColumns({ showCost, subLabel, uomPrint }),
+    {
+      key: 'actions', label: 'Actions', width: '160px', disableSort: true, disableFilter: true,
+      render: (r: MfgProductRow) => {
+        const active = r.status === 'ACTIVE';
+        return (
+          <span className="inline-flex items-center gap-3 whitespace-nowrap text-[12.5px] font-semibold" onClick={(e) => e.stopPropagation()}>
+            <button type="button" aria-label={`Edit ${r.code}`} className="text-primary hover:underline" onClick={() => setOpenId(r.id)}>Edit</button>
+            <button type="button" aria-label={`${active ? 'Deactivate' : 'Activate'} ${r.code}`} className={active ? 'text-err hover:underline' : 'text-primary hover:underline'}
+              onClick={() => setStatus(r, active ? 'INACTIVE' : 'ACTIVE')}>{active ? 'Deactivate' : 'Activate'}</button>
+          </span>
+        );
+      },
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- setStatus only reads the stable mutate and notify
+  ], [showCost, subLabel, uomPrint]);
   const openRow = openId ? (rows ?? []).find((r) => r.id === openId) ?? null : null;
   const count = rows ? `${rows.length} SKU${rows.length === 1 ? '' : 's'}` : 'Loading…';
 
@@ -105,7 +128,7 @@ export function RenovationSkuMaster({
         emptyLabel={group || sub || debounced ? 'No SKUs match.' : 'No SKUs yet. Use New SKU or Import SKUs.'}
         getRowKey={(r) => r.id}
         columns={columns}
-        onRowClick={(r) => setOpenId(r.id)}
+        onRowClick={onOpenSuppliers}
       />
 
       {newOpen && (

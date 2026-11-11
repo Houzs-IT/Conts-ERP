@@ -5,12 +5,12 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const h = vi.hoisted(() => ({ coverage: [] as unknown[], puts: [] as Array<[string, unknown]>, patches: [] as Array<[string, unknown]>, furniture: false, supplier: false }));
+const h = vi.hoisted(() => ({ coverage: [] as unknown[], puts: [] as Array<[string, unknown]>, patches: [] as Array<[string, unknown]>, furniture: false, pdf: [] as unknown[] }));
 
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
   const get = async (path: string): Promise<unknown> => {
-    if (path.endsWith("/lines")) return h.furniture ? FURNITURE : h.supplier ? SUPPLIER : LINES;
+    if (path.endsWith("/lines")) return h.furniture ? FURNITURE : LINES;
     if (path.endsWith("/vo")) return { vos: [] };
     if (path.endsWith("/site")) return SITE;
     if (path.endsWith("/photos")) return { photos: [], areas: [], docs: { dos: [], grs: [], pos: [] }, tasks: [] };
@@ -19,7 +19,6 @@ vi.mock("../../api/client", async (importOriginal) => {
   const put = async (path: string, body: unknown): Promise<unknown> => {
     h.puts.push([path, body]);
     if (path.endsWith("/line-plans")) return { ok: true, saved: (body as { itemIds: string[] }).itemIds, refused: [] };
-    if (path.endsWith("/supplier")) { SUPPLIER.lines[1].supplierId = "s2"; return { ok: true, supplierId: "s2", supplierName: "Other Co" }; }
     return { ok: true, plan: {} };
   };
   return { ...actual, api: { ...actual.api, get, put } };
@@ -37,6 +36,7 @@ vi.mock("../../vendor/scm/lib/authed-fetch", async (importOriginal) => {
     },
   };
 });
+vi.mock("../scm-v2/soPdfDownload", () => ({ downloadSoPdfs: async (orders: unknown) => { h.pdf.push(orders); } }));
 vi.mock("../scm-v2/ProductionOrderChips", () => ({ ProductionOrderChips: () => null }));
 vi.mock("../../auth/AuthContext", () => ({ useAuth: () => ({ can: () => true }) }));
 /* The SO line's pickers have their own test (renovationVariantPicker.test.tsx); here a pick is one button. */
@@ -84,16 +84,6 @@ const FURNITURE = {
   ],
 };
 
-const CHOICES = [{ id: "s1", code: "MAIN", name: "Main Co", main: true, priceSen: 500 }, { id: "s2", code: "OTH", name: "Other Co", main: false, priceSen: 450 }];
-const SUPPLIER = {
-  ...LINES,
-  lines: [
-    { ...LINES.lines[0], contractLineId: "cl-a", supplierId: "s1", supplierChoices: CHOICES },
-    { ...LINES.lines[1], contractLineId: "cl-b", supplierId: "s1", supplierChoices: CHOICES },
-    { ...base, id: "c", itemCode: "LT-3", description: "Downlight C", plan: { orderOn: null, deliverOn: null, noPo: false }, pos: [], contractLineId: "cl-c", supplierId: null, supplierChoices: [] },
-  ],
-  suppliers: [{ id: "s9", name: "In-house" }],
-};
 
 const SITE = {
   ready: true, areas: ["Kitchen"],
@@ -108,6 +98,9 @@ function renderTab(): void {
   render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><BetaPoTab {...props} /></MemoryRouter></QueryClientProvider>);
 }
 
+
+// These are Dream Crafter screens: dates read day first (YH, 11 Nov 2026).
+
 describe("PO tab", () => {
   it("is plain text until Edit, then the fields open and the band can set every line's date", async () => {
     renderTab();
@@ -116,19 +109,22 @@ describe("PO tab", () => {
     expect(within(region).queryByLabelText(/Processing date/)).toBeNull();
     // One line PO cell: number and short date.
     expect(within(region).getByText("TC-PO-2610-006")).toBeTruthy();
-    expect(within(region).getAllByText("24 Oct").length).toBeGreaterThan(0);
+    expect(within(region).getAllByText("24/10").length).toBeGreaterThan(0);
     // One band per category, no sub-category band: processing differs between the lines (their span), delivery is set
     // on the PO line only.
     expect(within(region).queryByText("Downlights")).toBeNull();
-    expect(within(region).getAllByText("1 Nov - 2 Nov").length).toBe(1);
-    expect(within(region).getAllByText("10 Nov, 1 not set").length).toBe(1);
+    expect(within(region).getAllByText("01/11 - 02/11").length).toBe(1);
+    expect(within(region).getAllByText("10/11, 1 not set").length).toBe(1);
     // DO: the delivery order that carried line a, a link to it; line b has none yet.
     expect(await within(region).findByText("TC-DO-2610-003")).toBeTruthy();
     expect(within(region).getAllByText("Not yet").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    // A renovation contract's SKU and qty open too (saving raises a contract VO for you), with the remark and dates.
-    expect(within(region).getAllByLabelText(/^Qty for/)).toHaveLength(2);
+    // SKU, qty and supplier cannot be changed here (owner, 05/11/2026): the remark and dates can.
+    expect(within(region).queryByLabelText(/^Qty for/)).toBeNull();
+    expect(within(region).queryByRole("button", { name: /^Change SKU/ })).toBeNull();
+    expect(within(region).queryByLabelText(/^Supplier for/)).toBeNull();
+    expect(within(region).queryByRole("columnheader", { name: "Supplier" })).toBeNull();
     expect(within(region).getAllByRole("button", { name: /Add a remark to/ }).length).toBe(2);
     // The PO's own date is changed in the PO: the number opens its editor.
     expect(within(region).queryByLabelText("PO date of TC-PO-2610-006")).toBeNull();
@@ -204,35 +200,34 @@ describe("PO tab", () => {
     expect(heads()[0]).toBe("SKU");
   });
 
-  it("locks the SKU and variants of a line with goods received; the qty stays editable", async () => {
+  it("locks the variants of a line with goods received", async () => {
     h.furniture = true;
     PO.received = 1;
     renderTab();
     const region = await screen.findByRole("region", { name: "Sales order lines" });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(within(region).queryByRole("button", { name: "Change variants of BED-HKA-1003-(K)" })).toBeNull();
-    expect(within(region).queryByRole("button", { name: "Change SKU BED-HKA-1003-(K)" })).toBeNull();
     expect(within(region).getByRole("button", { name: "Change variants of SOF-GEN-3S" })).toBeTruthy();
-    expect(within(region).getByLabelText("Qty for BED-HKA-1003-(K)")).toBeTruthy();
     PO.received = 0;
     h.furniture = false;
   });
+});
 
-  it("picks a waiting line's supplier from the SKU's bound suppliers, main starred; any other supplier follows", async () => {
-    h.supplier = true;
-    h.puts.length = 0;
+describe("PO tab head (owner, 07/11/2026)", () => {
+  it("has Export PDF and no Close all, Export, Quantity helper or Create PO", async () => {
+    h.furniture = false;
     renderTab();
-    const region = await screen.findByRole("region", { name: "Sales order lines" });
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const pick = within(region).getByLabelText("Supplier for LT-2") as HTMLSelectElement;
-    expect([...pick.options].map((o) => o.textContent)).toEqual(["★ Main Co (main)", "Other Co", "In-house"]);
-    expect(pick.value).toBe("s1");
-    // The line on a PO has no pick; a SKU with no binding offers every supplier.
-    expect(within(region).queryByLabelText("Supplier for LT-1")).toBeNull();
-    expect([...(within(region).getByLabelText("Supplier for LT-3") as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(["Pick a supplier", "In-house"]);
-    fireEvent.change(pick, { target: { value: "s2" } });
-    await waitFor(() => expect(h.puts).toEqual([["/api/beta/projects/7/lines/b/supplier", { supplierId: "s2" }]]));
-    await waitFor(() => expect((within(region).getByLabelText("Supplier for LT-2") as HTMLSelectElement).value).toBe("s2"));
-    h.supplier = false;
+    expect(await screen.findByRole("button", { name: "Export PDF" })).toBeTruthy();
+    for (const name of [/Close all/, /Open all/, /^Export$/, /Quantity helper/, /Create PO/]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+      expect(screen.queryByRole("link", { name })).toBeNull();
+    }
+  });
+  it("Export PDF downloads each sales order", async () => {
+    h.furniture = false;
+    h.pdf.length = 0;
+    renderTab();
+    fireEvent.click(await screen.findByRole("button", { name: "Export PDF" }));
+    await waitFor(() => expect(h.pdf).toEqual([[{ docNo: "TC-SO-1", status: "CONFIRMED", voLocked: true, renovation: true }]]));
   });
 });

@@ -35,6 +35,7 @@ import { scopeToCompany, activeCompanyId, stampCompany,
   detailMissResponse } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
 import { pgrestIn } from '../lib/pgrest-in-list';
+import { netUnitSen, planPriceRefresh, type BindingForRefresh, type PaidLine } from '../lib/supplier-price-refresh';
 import { apControlOf, resolveRoles } from '../../acc/rules';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { holdsLedger } from '../../conts/ledger-access';
@@ -759,6 +760,12 @@ export const createSupplierBindingHandler = async (c: any) => {
   };
   if (priceMatrix !== undefined) row.price_matrix = priceMatrix;
 
+  // Every line of a SKU can ask to bind the same supplier before the list reloads: the second ask finds the first.
+  const { data: same } = await supabase.from('supplier_material_bindings').select(BINDING_COLS)
+    .eq('supplier_id', supplierId).eq('material_kind', kind).eq('item_code', body.itemCode as string)
+    .eq('company_id', activeCompanyId(c)).limit(1).maybeSingle();
+  if (same) return c.json({ binding: same }, 200);
+
   // The first binding of a SKU is its main supplier. A failed read leaves the
   // request as sent (not main): this is a default, not a gate.
   if (!row.is_main_supplier) {
@@ -1284,6 +1291,139 @@ export const createBindingPriceChangeHandler = async (c: any) => {
   return c.json({ ok: true, baselined, row }, 201);
 };
 suppliers.post('/:id/bindings/:bindingId/price-changes', createBindingPriceChangeHandler);
+
+// ── Price list from what was paid (TODO port item 11, Hookka 5957bdd87 + 6801df6fb)
+// GET  /suppliers/:id/price-refresh  — each binding against the latest purchase
+//      invoice line for this supplier and item: eligible changes and refusals.
+//      Writes nothing.
+// POST /suppliers/:id/price-refresh  body { bindingIds: string[] } — re-plans
+//      on fresh reads and applies only the chosen rows that are still eligible.
+//      The new price takes effect from the invoice's own date (price_valid_from),
+//      through the same after-write step as PATCH so the cost history and the
+//      product cost follow it exactly as for a typed price.
+/* Accepted invoices only: a draft is not a price yet, a cancelled one never was. */
+const PAID_PI_STATUSES = ['POSTED', 'PARTIALLY_PAID', 'PAID', 'ON_HOLD'];
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hono ctx, matches the binding handlers
+async function loadPriceRefreshPlan(c: any, supplierId: string, companyId: number) {
+  const supabase = c.get('supabase');
+  /* Paged: PostgREST stops at 1,000 rows, and a dropped row here would leave that item out of the plan. */
+  const { data: bindings, error: bErr } = await paginateAll((from, to) => scopeToCompanyId(
+    supabase.from('supplier_material_bindings')
+      .select('id, supplier_id, item_code, material_name, unit_price_sen, price_matrix, price_valid_from, currency, is_main_supplier')
+      .eq('supplier_id', supplierId)
+      .eq('material_kind', 'mfg_product'),
+    companyId,
+  ).order('id').range(from, to));
+  if (bErr) return { ok: false as const, reason: bErr.message };
+  const list = (bindings ?? []) as Array<BindingForRefresh & { supplier_id: string; is_main_supplier: boolean | null }>;
+  if (list.length === 0) return { ok: true as const, plan: [], bindings: list };
+
+  const { data: pis, error: piErr } = await paginateAll((from, to) => scopeToCompanyId(
+    supabase.from('purchase_invoices').select('id, invoice_number, invoice_date, currency')
+      .eq('supplier_id', supplierId).in('status', PAID_PI_STATUSES),
+    companyId,
+  ).order('id').range(from, to));
+  if (piErr) return { ok: false as const, reason: piErr.message };
+  const piById = new Map(((pis ?? []) as Array<{ id: string; invoice_number: string | null; invoice_date: string | null; currency: string | null }>).map((p) => [p.id, p]));
+  const codes = [...new Set(list.map((b) => b.item_code))];
+  const lines: PaidLine[] = [];
+  const piIds = [...piById.keys()];
+  for (let i = 0; i < piIds.length; i += 100) {
+    /* Paged: 100 invoices can hold more than 1,000 lines, and a dropped newest line would offer an older price. */
+    const { data, error } = await paginateAll((from, to) => pgrestIn(
+      supabase.from('purchase_invoice_items').select('purchase_invoice_id, item_code, qty, unit_price_sen, discount_sen, uom').gt('unit_price_sen', 0),
+      'purchase_invoice_id', piIds.slice(i, i + 100),
+    ).order('id').range(from, to));
+    if (error) return { ok: false as const, reason: (error as { message: string }).message };
+    for (const l of (data ?? []) as Array<{ purchase_invoice_id: string; item_code: string | null; qty: number | null; unit_price_sen: number; discount_sen: number | null; uom: string | null }>) {
+      const pi = piById.get(l.purchase_invoice_id);
+      if (!pi || !l.item_code || !codes.includes(l.item_code)) continue;
+      /* Net of the line's discount: what one unit actually cost. */
+      lines.push({ itemCode: l.item_code, invoiceDate: pi.invoice_date, invoiceNumber: pi.invoice_number, unitPriceSen: netUnitSen(l.qty, l.unit_price_sen, l.discount_sen), uom: l.uom, currency: pi.currency });
+    }
+  }
+  const skuUom = new Map<string, string | null>();
+  for (let i = 0; i < codes.length; i += 100) {
+    const { data, error } = await scopeToCompanyId(
+      pgrestIn(supabase.from('mfg_products').select('code, uom'), 'code', codes.slice(i, i + 100)),
+      companyId,
+    );
+    if (error) return { ok: false as const, reason: (error as { message: string }).message };
+    for (const r of (data ?? []) as Array<{ code: string; uom: string | null }>) skuUom.set(r.code, r.uom);
+  }
+  /* A price change entered on the binding's timeline (POST .../price-changes)
+     lands in supplier_binding_price_history and leaves price_valid_from alone:
+     the newest effective_from there also makes the list "newer" than an invoice. */
+  const { data: hist, error: hErr } = await supabase.from('supplier_binding_price_history')
+    .select('item_code, effective_from')
+    .eq('company_id', companyId).eq('supplier_id', supplierId).eq('material_kind', 'mfg_product');
+  if (hErr) return { ok: false as const, reason: hErr.message };
+  const newest = new Map<string, string>();
+  for (const h of (hist ?? []) as Array<{ item_code: string; effective_from: string | null }>) {
+    const d = String(h.effective_from ?? '').slice(0, 10);
+    if (d && d > (newest.get(h.item_code) ?? '')) newest.set(h.item_code, d);
+  }
+  for (const b of list) b.history_from = newest.get(b.item_code) ?? null;
+  return { ok: true as const, plan: planPriceRefresh(list, lines, skuUom), bindings: list };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- bare-Hono handler, mirrors the binding handlers
+export const getSupplierPriceRefreshHandler = async (c: any) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const res = await loadPriceRefreshPlan(c, c.req.param('id'), co.companyId);
+  if (!res.ok) return c.json({ error: 'load_failed', reason: res.reason }, 500);
+  return c.json({
+    changes: res.plan.filter((r) => r.eligible),
+    /* The ones a person has to look at, kept apart from "already current". */
+    unitMismatches: res.plan.filter((r) => r.reason === 'unit_mismatch'),
+    refused: res.plan.filter((r) => !r.eligible && r.reason !== 'current' && r.reason !== 'unit_mismatch'),
+    current: res.plan.filter((r) => r.reason === 'current').length,
+  });
+};
+suppliers.get('/:id/price-refresh', getSupplierPriceRefreshHandler);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- bare-Hono handler, mirrors the binding handlers
+export const applySupplierPriceRefreshHandler = async (c: any) => {
+  let body: { bindingIds?: unknown };
+  try { body = (await c.req.json()) as typeof body; } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const chosen = new Set(Array.isArray(body.bindingIds) ? body.bindingIds.map(String) : []);
+  if (chosen.size === 0) return c.json({ error: 'binding_ids_required' }, 400);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const supabase = c.get('supabase');
+  const res = await loadPriceRefreshPlan(c, c.req.param('id'), co.companyId);
+  if (!res.ok) return c.json({ error: 'load_failed', reason: res.reason }, 500);
+
+  const updated: string[] = [];
+  const failed: Array<{ bindingId: string; itemCode: string; reason: string }> = [];
+  for (const r of res.plan) {
+    if (!chosen.has(r.bindingId)) continue;
+    /* Chosen but no longer eligible (someone changed the price or a new invoice came in). */
+    if (!r.eligible || r.paidSen == null) { failed.push({ bindingId: r.bindingId, itemCode: r.itemCode, reason: r.whyNot ?? 'no longer eligible' }); continue; }
+    const { data, error } = await scopeToCompanyId(
+      supabase.from('supplier_material_bindings')
+        .update({ unit_price_sen: r.paidSen, price_valid_from: r.paidOn, updated_at: new Date().toISOString() })
+        .eq('id', r.bindingId),
+      co.companyId,
+    ).select(BINDING_COLS).maybeSingle();
+    if (error || !data) { failed.push({ bindingId: r.bindingId, itemCode: r.itemCode, reason: error?.message ?? 'not found' }); continue; }
+    await afterBindingWrite(
+      supabase,
+      co.companyId,
+      r.itemCode,
+      () => syncAnchoredProductFromBinding(supabase, data as unknown as Record<string, unknown>, co.companyId),
+      data as unknown as BindingSnapshot,
+    );
+    updated.push(r.bindingId);
+  }
+  for (const id of chosen) {
+    if (!res.plan.some((r) => r.bindingId === id)) failed.push({ bindingId: id, itemCode: '', reason: 'not a binding of this supplier with an invoice' });
+  }
+  return c.json({ updated: updated.length, failed });
+};
+suppliers.post('/:id/price-refresh', applySupplierPriceRefreshHandler);
 
 // ── Scorecard: live PO + GRN aggregation for KPI tiles ───────────────
 //

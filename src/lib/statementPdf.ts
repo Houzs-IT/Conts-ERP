@@ -5,7 +5,7 @@ import { isTenancy } from './revenueModel';
 /**
  * One owner statement as a real PDF file, drawn page for page like the Owner Income Report on screen
  * (src/pages/OwnerIncomeReportPage.tsx): the owner's all-units month and year to date when they have more than one
- * unit, then each unit's month and year to date. Called once per unit by the Owners list's "Unit statements (.zip)" export.
+ * unit, then each unit's month and year to date (or the month pages only). Called once per unit by the Owners list's "Unit statements (.zip)" export.
  * Keep the two in step: a row added to the screen report has to be drawn here too.
  * No imports beyond pdf-lib and types, so `node --test src/lib/statementPdf.test.mjs` runs it as it is.
  */
@@ -15,7 +15,10 @@ export interface StatementPdfOptions {
   logo?: Uint8Array | null;
   /** How a phone number prints (the screen report writes Malaysian numbers as dialled at home). */
   phone?: (raw: string | null) => string;
+  pages?: StatementPages;
 }
+
+export type StatementPages = 'month' | 'monthAndYear';
 
 const MM = 72 / 25.4;
 const PAGE_W = 210 * MM, PAGE_H = 297 * MM;
@@ -34,8 +37,8 @@ const money = (sen: number | null, opts: { brackets?: boolean; dash?: boolean } 
   return sen < 0 || opts.brackets ? `(${v})` : v;
 };
 const pct = (n: number) => `${Number(n.toFixed(2))}%`;
-/** 2026/09/30, the one date rule (owner, 3 Nov 2026). */
-const dayMonYear = (iso: string) => `${iso.slice(0, 4)}/${iso.slice(5, 7)}/${iso.slice(8, 10)}`;
+/** 30/09/2026, the one date rule (day first, YH 11 Nov 2026). */
+const dayMonYear = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 // ponytail: the built-in Times font only has Western European letters, so a Chinese name prints as "?". Embed a
 // Unicode TTF through @pdf-lib/fontkit when an owner's name or the company address needs other scripts.
@@ -277,7 +280,8 @@ export async function statementPdf(r: Report, opts: StatementPdfOptions = {}): P
     logo: opts.logo ? await doc.embedPng(opts.logo).catch(() => null) : null,
     phone: opts.phone ?? (raw => (raw ?? '').trim()),
   };
-  if (r.units.length > 1) { ownerMonthPage(ctx); ownerYearPage(ctx); }
-  for (const u of r.units) { monthPage(ctx, u); yearPage(ctx, u); }
+  const shouldDrawYearPages = (opts.pages ?? 'monthAndYear') === 'monthAndYear';
+  if (r.units.length > 1) { ownerMonthPage(ctx); if (shouldDrawYearPages) ownerYearPage(ctx); }
+  for (const u of r.units) { monthPage(ctx, u); if (shouldDrawYearPages) yearPage(ctx, u); }
   return doc.save();
 }

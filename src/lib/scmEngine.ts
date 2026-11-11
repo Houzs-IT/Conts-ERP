@@ -36,6 +36,8 @@ export const LEDGER_SCREENS: readonly LedgerScreen[] = [
   { slug: 'rental-unit-costs', label: 'Rental unit costs', enginePath: '/scm/rental-unit-costs' },
   { slug: 'department-spend', label: 'Spending by department', enginePath: '/scm/department-spend' },
   { slug: 'renovation-projects', label: 'Renovation projects', enginePath: '/scm/reno-projects' },
+  // What the AI bill reader costs and how often it answers (TODO item 19, Houzs AI Usage).
+  { slug: 'ai-usage', label: 'AI usage', enginePath: '/scm/ai-usage' },
 ];
 
 function ledgerPaths(prefix: string): Record<string, string> {
@@ -54,6 +56,8 @@ export const ENGINE_PATH: Record<string, string> = {
   // Schedule addresses, so old links open them. Project monitor's old links move to the Calendar (App.tsx).
   '/projects/list': '/beta/projects',
   '/projects/calendar': '/beta/calendar',
+  '/projects/defects': '/beta/defects',
+  '/projects/handover-checklists': '/beta/handover-checklists',
   '/projects/finances': '/projects?view=finances',
   '/projects/maintenance': '/projects?view=maintenance',
   '/sales/quotations': '/scm/renovation/quotations',
@@ -73,6 +77,8 @@ export const ENGINE_PATH: Record<string, string> = {
   '/procurement/mrp': '/scm/mrp',
   '/procurement/purchase-orders': '/scm/purchase-orders',
   '/production/production-orders': '/scm/production-orders',
+  '/production/sku-composition': '/scm/sku-composition',
+  '/production/draft-delivery': '/scm/draft-delivery',
   '/procurement/po-amendments': '/scm/po-amendments',
   '/procurement/cancellations': '/scm/cancel-requests',
   '/procurement/goods-received': '/scm/grns',

@@ -39,10 +39,43 @@ r = await call('GET', '/api/maintenance/approval-rules', undefined, 'technician'
 check('rules: a technician cannot read them (403)', r.status === 403, r.text);
 
 // A job the rules do not hold goes straight to the technician.
-r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key ${tag}`, category: 'other', jobType: 'pass_key', assigneeName: HAFIZ }, 'operations_staff');
+const mytToday = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key no day ${tag}`, category: 'other', jobType: 'pass_key' }, 'operations_staff');
+check('pass key: a job with no check-in day is refused (422)', r.status === 422 && !!r.json?.error?.fields?.dueOn, r.text);
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key ${tag}`, category: 'other', jobType: 'pass_key', dueOn: mytToday, assigneeName: HAFIZ }, 'operations_staff');
 check('CS (operations staff) adds a Pass key job and gives it to a technician', r.status === 201 && r.json.ownerApprovalRequired === false, r.text);
 const passKey = r.json.id;
 check('visibility: a job that needs no approval is in the technician app at once', await listed(passKey));
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key later ${tag}`, category: 'other', jobType: 'pass_key', dueOn: '2030-03-01' }, 'operations_staff');
+check('visibility: a Pass key job for a later check-in day is not in the technician app yet', r.status === 201 && !(await listed(r.json.id)), r.text);
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key earlier ${tag}`, category: 'other', jobType: 'pass_key', dueOn: '2020-03-01' }, 'operations_staff');
+check('visibility: a missed Pass key job stays in the technician app', r.status === 201 && await listed(r.json.id), r.text);
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key today ${tag}`, category: 'other', jobType: 'pass_key', dueOn: mytToday }, 'operations_staff');
+check('visibility: a Pass key job for today is offered to technicians', r.status === 201 && await listed(r.json.id), r.text);
+const mytTomorrow = new Date(Date.now() + 32 * 3600e3).toISOString().slice(0, 10);
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key tomorrow ${tag}`, category: 'other', jobType: 'pass_key', dueOn: mytTomorrow }, 'operations_staff');
+check('visibility: a Pass key job for tomorrow is offered to technicians', r.status === 201 && await listed(r.json.id), r.text);
+const handAdded = (await call('GET', '/api/maintenance/issues')).json.data.find(i => i.id === r.json.id);
+check('urgency: a hand-added Pass key job for tomorrow is Urgent', handAdded?.urgency === 'urgent', JSON.stringify(handAdded?.urgency));
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key urgent by hand ${tag}`, category: 'other', jobType: 'pass_key', dueOn: '2030-03-02', urgentByHand: true }, 'operations_staff');
+const byHand = (await call('GET', '/api/maintenance/issues')).json.data.find(i => i.id === r.json.id);
+check('urgency: a Pass key job marked Urgent by hand stays Urgent far from check-in', byHand?.urgency === 'urgent' && byHand?.urgentByHand === true, JSON.stringify(byHand && { urgency: byHand.urgency, urgentByHand: byHand.urgentByHand }));
+
+// A Pass key job is finished with Pass key done: a photo, no repair steps, no amount, no expense.
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key done ${tag}`, category: 'other', jobType: 'pass_key', dueOn: mytToday, assigneeName: HAFIZ }, 'operations_staff');
+const doneKey = r.json.id;
+r = await call('POST', `/api/maintenance/issues/${doneKey}/start`, {}, 'technician');
+check('pass key: Start repair is refused on a Pass key job (409)', r.status === 409, r.text);
+r = await call('POST', `/api/maintenance/issues/${doneKey}/pass-key-done`, {}, 'technician');
+check('pass key: Pass key done needs a photo first (422)', r.status === 422 && !!r.json?.error?.fields?.photos, r.text);
+const keyPhoto = new FormData();
+keyPhoto.append('file', new Blob([PNG], { type: 'image/png' }), 'key.png');
+keyPhoto.append('kind', 'after');
+const uploaded = await fetch(`${BASE}/api/maintenance/issues/${doneKey}/photos`, { method: 'POST', headers: { cookie: cookieFor('technician') }, body: keyPhoto });
+check('pass key: the technician adds a photo', uploaded.status === 200 || uploaded.status === 201, String(uploaded.status));
+r = await call('POST', `/api/maintenance/issues/${doneKey}/pass-key-done`, {}, 'technician');
+const doneJob = (await call('GET', '/api/maintenance/issues')).json.data.find(i => i.id === doneKey);
+check('pass key: Pass key done closes the job at RM 0 with no expense', r.status === 200 && doneJob?.state === 'resolved' && !doneJob?.finalAmount && !doneJob?.expensed, JSON.stringify(doneJob && { state: doneJob.state, finalAmount: doneJob.finalAmount, expensed: doneJob.expensed }));
 
 // The rules hold an aircon job (always) until the owner approves AND its parts arrive.
 r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Aircon ${tag}`, category: 'aircon', jobType: 'normal', needsParts: true, dueOn: '2030-01-05', assigneeName: HAFIZ }, 'operations_manager');

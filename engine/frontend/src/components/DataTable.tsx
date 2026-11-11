@@ -1,3 +1,4 @@
+import { todayMyt } from "../vendor/scm/lib/dates";
 import {
   Fragment,
   useCallback,
@@ -95,7 +96,7 @@ import { SearchScopeHint } from "./SearchScopeHint";
 import { DataTableConditionSection } from "./DataTableConditionSection";
 import { DataTableGroupBanner } from "./DataTableGroupBanner";
 import { gridLayoutToTableLayout, readLegacyGridLayout } from "./dataTableLegacyGridLayout";
-import { buildSearchBlob, conditionToken, isConditionToken, parseCondition } from "./dataTableConditionFilters";
+import { buildSearchBlob, conditionToken, isConditionToken, looksLikeDateColumn, parseCondition } from "./dataTableConditionFilters";
 import { MobileVirtualList } from "../mobile/MobileVirtualList";
 import { reorderKeys } from "../lib/reorder";
 import { useDragAutoScroll } from "./useDragAutoScroll";
@@ -144,6 +145,7 @@ export function DataTable<T, L = never>(props: Props<T, L>) {
 
 function DataTableInner<T, L>({
   tableId,
+  onDisplayKeys,
   layoutFamily,
   persistFilters = true,
   persistSort = true,
@@ -961,6 +963,9 @@ function DataTableInner<T, L>({
      the leading select/expand gutters plus every display column's resolved px
      width. Recomputes as a drag mutates `widths` (via resolveWidth), so the
      table grows live while a column is resized. undefined when the flag is off. */
+  const displayKeys = displayColumns.map((c) => c.key).join(",");
+  useEffect(() => { onDisplayKeys?.(displayKeys.split(",")); }, [displayKeys, onDisplayKeys]);
+
   const fixedTableWidth = useMemo(() => {
     if (!layoutFixed) return undefined;
     const lead = (selection ? 36 : 0) + (expandable ? 32 : 0);
@@ -1617,7 +1622,7 @@ function DataTableInner<T, L>({
       const fetched = await spec.fetchRows({ exportKeys: cols.map((c) => c.key), filterKeys });
       const kept = tickedOrAll(sortTableRows(applyColumnFilters(fetched, colFilters, allColumns), sort, allColumns, Boolean(serverSort), defaultSort ?? null), selection?.selectedIds, getRowKey).rows;
       const matrix = buildLineExportMatrix(kept, spec.linesOf, cols);
-      const date = new Date().toISOString().slice(0, 10);
+      const date = todayMyt();
       await writeLineExportFile(matrix, spec.sheetName, `${exportName || tableId || "export"}-${date}.xlsx`);
     } catch (e) {
       spec.onError(e instanceof Error ? e : new Error(String(e)));
@@ -1640,7 +1645,7 @@ function DataTableInner<T, L>({
       }));
     if (onExport) { onExport(csvCols); return; }
     if (!actionRows || actionRows.rows.length === 0 || csvCols.length === 0) return;
-    const date = new Date().toISOString().slice(0, 10), outRows = actionRows.rows;
+    const date = todayMyt(), outRows = actionRows.rows;
     if (exportXlsx) {
       // No lines: one sheet row per list row, keeping each column's exportFormat.
       const matrix = buildLineExportMatrix(outRows, () => [], exportableColumns(visibleColumns as Column<T, L>[]));
@@ -1895,7 +1900,10 @@ function DataTableInner<T, L>({
       const w = th.getBoundingClientRect().width;
       // Not laid out (a hidden tab): measure on a later paint instead.
       if (w <= 0) return;
-      next[th.dataset.colKey!] = Math.max(MIN_COL_WIDTH, Math.round(w));
+      /* A wide list squeezes every column: the one naming the row keeps its declared width, or doc numbers cut off. */
+      const col = displayColumns.find((c) => c.key === th.dataset.colKey);
+      const floor = col?.alwaysVisible ? parsePxWidth(col.width) ?? 0 : 0;
+      next[th.dataset.colKey!] = Math.max(MIN_COL_WIDTH, floor, Math.round(w));
     }
     setMeasured({ idKey, widths: next });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scrollWrapRef is a ref
@@ -2134,7 +2142,7 @@ function DataTableInner<T, L>({
     <div ref={freezeRootRef}>
       {urlFilterParam && inRouter && <UrlFilterResync param={urlFilterParam} value={serializeUrlColFilters(colFilters)} />}
       {/* ── Toolbar (always rendered; an embedded grid has none) ── */}
-      <div className={cn("mb-2.5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between", embedded && "hidden")}>
+      <div className={cn("dt-bar mb-2.5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between", embedded && "hidden")}>
         <div className="flex flex-1 flex-wrap items-center gap-2 sm:gap-3">
           {search && (
             <div className="w-full sm:w-72 sm:max-w-full">
@@ -2345,7 +2353,14 @@ function DataTableInner<T, L>({
             // sum (it scrolls) and at least the container (the filler takes it).
             style={layoutFixed ? { tableLayout: "fixed", minWidth: fixedTableWidth } : undefined}
           >
-            <thead className="sticky top-0 z-10">
+            {/* z-30, ABOVE the body sticky cells (z-20): the thead's own z-index
+                opens a stacking context, so a frozen header <th>'s inline z-30 is
+                scoped to it and cannot out-stack a body sticky cell at the ROOT
+                level. At z-10 the frozen-left/right BODY cells (z-20) painted OVER
+                the frozen header on scroll-down — the header's own corner showed
+                a data row where its heading should be. Lifting the whole thead
+                above z-20 keeps the frozen header on top on both axes. */}
+            <thead className="sticky top-0 z-30">
               <tr>
                 {selection && (
                   <th
@@ -2425,9 +2440,11 @@ function DataTableInner<T, L>({
                   if (isSticky) {
                     cellStyle.position = "sticky";
                     cellStyle.left = stickyLeft[i];
-                    // Above body sticky cells (z-20) and the sticky header
-                    // baseline (the thead is z-10); 30 keeps frozen headers
-                    // on top of everything during a two-axis scroll.
+                    // Above the scrollable header cells WITHIN the thead's own
+                    // stacking context (thead is z-30), so a frozen corner header
+                    // stays on top of the scrolling header during a two-axis
+                    // scroll. The thead being z-30 (> body sticky z-20) is what
+                    // keeps the whole header above the body — see the thead above.
                     cellStyle.zIndex = 30;
                   } else if (isStickyRight) {
                     cellStyle.position = "sticky";
@@ -2964,7 +2981,7 @@ function DataTableInner<T, L>({
               )}
             </tbody>
             {footerTotals && (
-              <tfoot className="sticky bottom-0 z-10">
+              <tfoot className="sticky bottom-0 z-30">
                 <tr title={footerTotals.picked ? "Total of the ticked rows" : "Total of the rows shown"}>
                   {selectColCount + expandColCount > 0 && (
                     <td colSpan={selectColCount + expandColCount} className="border-t-2 border-border bg-surface-dim" />
@@ -3215,6 +3232,7 @@ function DataTableInner<T, L>({
              See facetedFilterValues for the exact rule (0-count options drop
              unless they are fixed vocabulary or currently ticked). */
           const values = facetedFilterValues(rows ?? [], colFilters, col, allColumns);
+          const filterType = col.filterType ?? (looksLikeDateColumn(values.map(([v]) => v)) ? "date" : undefined);
           const allTokens = colFilters[col.key] ?? [];
           const conditionTokens = allTokens.filter(isConditionToken);
           const selected = new Set(allTokens.filter((v) => !isConditionToken(v)));
@@ -3311,10 +3329,10 @@ function DataTableInner<T, L>({
                 <DataTableFreezeItems className={sortBtn} anyFrozen={pinnedSet.size > 0} onFreezeUpTo={() => { freezeUpTo(col.key); setFilterMenu(null); }} onUnfreezeAll={() => { setPinned([]); setFilterMenu(null); }} />
               </div>
 
-              {col.filterType && (
+              {filterType && (
                 <DataTableConditionSection
                   key={col.key}
-                  filterType={col.filterType}
+                  filterType={filterType}
                   current={currentCondition}
                   onChange={(next) =>
                     setColumnFilter(col.key, [...(next ? [conditionToken(next)] : []), ...selected])

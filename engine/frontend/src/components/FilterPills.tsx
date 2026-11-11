@@ -13,7 +13,17 @@ interface Pill<T extends string> {
    * loaded.
    */
   count?: number;
+  /**
+   * Optional money in this state, in sen, shown after the count as "· RM 15,631"
+   * (TODO item 5, Hookka 5aff2b333). Server-aggregated over the SAME rows as the
+   * count. Left out (or 0) shows nothing: callers leave it off Cancelled and any
+   * state whose documents carry no price, so no tab reads "RM 0".
+   */
+  moneySen?: number;
 }
+
+/** Whole ringgit for a tab: the cents add noise at a glance. */
+export const pillMoney = (sen: number): string => `RM ${Math.round(sen / 100).toLocaleString("en-MY")}`;
 
 interface Props<T extends string> {
   options: Pill<T>[];
@@ -35,7 +45,7 @@ export function FilterPills<T extends string>({ options, value, onChange }: Prop
     // a phone) it scrolls horizontally inside the slab without
     // bleeding into the layout. max-w-full prevents the inline-flex
     // from forcing parent width.
-    <div className="inline-block max-w-full overflow-hidden rounded-md border border-border bg-surface shadow-stone align-middle">
+    <div className="dc-glass inline-block max-w-full overflow-hidden rounded-md border border-border bg-surface shadow-stone align-middle">
       <div
         className={cn(
           "no-scrollbar flex items-center gap-0.5 overflow-x-auto p-1",
@@ -64,6 +74,11 @@ export function FilterPills<T extends string>({ options, value, onChange }: Prop
                   )}
                 >
                   {opt.count}
+                </span>
+              )}
+              {typeof opt.moneySen === "number" && opt.moneySen !== 0 && (
+                <span className={cn("ml-1.5 font-money normal-case tracking-normal tabular-nums", active ? "text-white/85" : "text-ink-muted")}>
+                  · {pillMoney(opt.moneySen)}
                 </span>
               )}
             </button>

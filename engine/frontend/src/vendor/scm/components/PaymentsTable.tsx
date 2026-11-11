@@ -1240,13 +1240,17 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
      unsaved and committed by the page's own Save, so tinting them all just
      paints the table orange. Same reasoning as the Unsaved pill. */
   const unsavedCls = isSaved ? paymentsStyles.unsavedCell : '';
+  /* Every track shares the width in proportion (owner, 5 Nov 2026: the table runs left to right), so no single column
+     balloons, which is what the fixed widths above were avoiding. */
   const gridStyle: CSSProperties | undefined = showSlip
     ? {
         gridTemplateColumns:
-          `112px 116px 116px 140px 140px 88px 140px ${hasUnsavedRows ? '104px' : '28px'}`,
+          `minmax(112px, 1fr) minmax(116px, 1fr) minmax(116px, 1fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) minmax(88px, 0.8fr) minmax(140px, 1.25fr) ${hasUnsavedRows ? '104px' : '28px'}`,
         minWidth: hasUnsavedRows ? 956 : 880,
       }
-    : undefined;
+    /* Without a Slip column (a new order) the same widths, and room for the slip and remove buttons at the row's end:
+       the 32px the stylesheet gives that track pushed them off the card. */
+    : { gridTemplateColumns: `minmax(112px, 1fr) minmax(116px, 1fr) minmax(116px, 1fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) ${isSaved && !hasUnsavedRows ? '28px' : '112px'}` };
 
   return (
     <section className={detailStyles.card}>

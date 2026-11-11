@@ -16,6 +16,8 @@
 //   PATCH /mfg-purchase-orders/:id/reopen     — flip CANCELLED → SUBMITTED
 // ----------------------------------------------------------------------------
 
+import { readStatusMoney } from '../lib/status-money';
+import { isPoLineOverReceived } from '../lib/qty-cap';
 import { Hono } from 'hono';
 import { PO_STATUS_BUCKETS } from '../lib/po-status-buckets';
 import { HELD_OR_TERM, isDocumentHeld } from '../lib/document-hold';
@@ -40,13 +42,13 @@ import { inPoLineOrder, nextPoLineNo, sortBySourceSoLine, stampPoLineNos } from 
 import { poConvertLineRows } from '../lib/po-convert-line';
 import { parseLineNumbers, invalidLineNumberBody } from '../shared/line-numbers';
 import { changedPoIdentityLockCols, poIdentityLockedRefusal } from '../shared/po-identity-lock';
-import { poVariantGaps, poVariantCheckFailedBody, poVariantConfirmRefusal, poWarehouseGap, PO_WAREHOUSE_REQUIRED } from './po-gates';
+import { poVariantGaps, poVariantCheckFailedBody, poVariantConfirmRefusal, poWarehouseGap, PO_WAREHOUSE_REQUIRED, poInactivePickRefusal } from './po-gates';
 import { VALID_CURRENCIES, VALID_KINDS } from '../lib/purchase-doc-vocab';
 import { resolveMaintenanceConfigForSupplier, poVariantPricingInput } from '../lib/po-pricing';
 import { readMfgProductBindings } from '../lib/supplier-bindings';
 import { loadOutstandingSoLines } from '../lib/outstanding-so-lines';
 import { poHasDownstream } from '../lib/downstream-lock';
-import { cascadePoSupplierDate, SUPPLIER_DATE_SLOT_COL, type SupplierDateSlot } from '../lib/po-supplier-date-cascade';
+import { cascadePoSupplierDate, recordedSupplierDate, supplierDatePatchGate, SUPPLIER_DATE_SLOT_COL, type SupplierDateSlot } from '../lib/po-supplier-date-cascade';
 import { description2InputsChanged } from '../lib/po-line-description2';
 import { dateOrNull, coerceEmptyDates } from '../lib/date-coerce';
 import { todayMyt } from '../lib/my-time';
@@ -66,7 +68,7 @@ import {
   LEAD_TIME_SELECT,
   LEAD_OVERRIDE_SELECT,
 } from '../lib/lead-time';
-import { groupKeyFor } from '../lib/po-grouping';
+import { takesOnSiteDefault, groupKeyFor, loadPoGroupFacts } from '../lib/po-grouping';
 import { findOverConvertOffender, soLineHeadroom, type OverConvertOffender, loadBoundOrderedQty, boundAwarePicked, isBoundForCompany } from '../lib/po-over-convert';
 import {
   planAllocationCreate,
@@ -103,10 +105,14 @@ import { provenanceNote } from '../shared/transfer-vocabulary';
 import type { Env, Variables } from '../env';
 import { skuCategoryResolver, lineIdentityFields } from '../lib/sku-category';
 import { loadUnitBoundCodes, NO_UNIT_BOUND_CODES } from '../lib/unit-bound-sku';
+import { inHouseSupplierId } from '../lib/grn-from-po-core';
+import { ON_SITE_WAREHOUSE_CODE } from '../lib/non-selling-warehouse';
 import { firstSoLinkCategoryMismatch, soLinkCategoryMismatch, hardBoundUnlinkRefusal, hardBoundSplitRefusal, editedLineGroup } from '../lib/hard-bound-po-line';
 import { pgrestIn } from '../lib/pgrest-in-list';
+import { expireMrpSnapshot } from '../lib/mrp-snapshot';
 import { withSoRefPoIds } from '../lib/so-ref-search';
 import { poPickerOffers } from '../lib/renovation-po-split';
+import { chunkIn } from '../lib/paginate-all';
 
 /* ── Supplier sofa-combo auto-pricing (Commander 2026-05-29) ─────────────────
    The supplier prices a sofa SET (a colour-matched bundle of modules) as a
@@ -402,6 +408,7 @@ mfgPurchaseOrders.get('/', async (c) => {
   let page = 0;
   let pageSize = 50;
   let statusCounts: { all: number; draft: number; outstanding: number; open: number; partial: number; received: number; cancelled: number } | undefined;
+  let statusMoneySen: Record<string, number> | undefined;
   let countError: string | null = null; // held, not returned here, so the LIST read's own error still wins the report
 
   if (!paginate) {
@@ -446,6 +453,12 @@ mfgPurchaseOrders.get('/', async (c) => {
     };
     /* PERF: the seven head-only counts read nothing the page query produces, so
        they are issued alongside it rather than after it. Semantics unchanged. */
+    /* Each tab's money over the same filters (TODO item 5). */
+    const moneyProm = readStatusMoney((sel) => {
+      let mq = supabase.from('purchase_orders').select(sel);
+      if (supplierId) mq = mq.eq('supplier_id', supplierId);
+      return scopeToCompany(mq, c);
+    }, 'total_sen', PO_STATUS_BUCKETS);
     const countsProm = eager(Promise.all([
       countBase(),
       countBase().in('status', PO_STATUS_BUCKETS.draft),
@@ -464,6 +477,7 @@ mfgPurchaseOrders.get('/', async (c) => {
     // A count that could not be READ is reported, never served as 0; an empty bucket still answers 0 (lib/status-counts.ts).
     const counted = readStatusCounts({ all: allC, draft: draftC, outstanding: outstandingC, open: openC, partial: partialC, received: receivedC, cancelled: cancelledC, on_hold: onHoldC });
     if (counted.ok) statusCounts = counted.counts; else countError = counted.reason;
+    statusMoneySen = await moneyProm;
   }
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   if (countError) return c.json({ error: 'status_counts_failed', reason: countError }, 500);
@@ -487,7 +501,7 @@ mfgPurchaseOrders.get('/', async (c) => {
        carry them: its callers never render a line column. */
     const withLines = await attachPoLines(supabase, c, stamped.rows);
     if (withLines.error) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
-    return c.json({ purchaseOrders: withLines.rows, total, page, pageSize, statusCounts });
+    return c.json({ purchaseOrders: withLines.rows, total, page, pageSize, statusCounts, statusMoneySen });
   }
   const purchaseOrders = stamped.rows;
   return c.json({ purchaseOrders });
@@ -587,13 +601,39 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
     console.error('[outstanding-so-items] pooled shortage compute failed; falling back to picked cap', e);
   }
 
+  /* A line the plan does not list is judged by what is really on a PO. po_qty_picked is not kept by every way a PO is
+     raised (MRP Proceed PO on a renovation order leaves it at 0), so on its own it kept ordered, received and delivered
+     lines on the picker (owner, 7 Nov 2026). */
+  const unplanned = ((items ?? []) as unknown as Row[]).filter((r) => !(pooledOk && shortageBySoItem.has(r.id))).map((r) => r.id);
+  const onPo = new Map<string, number>();
+  const onPro = new Map<string, number>();
+  if (unplanned.length > 0) {
+    const { data: poRows } = await chunkIn<{ so_item_id: string; qty: number | string | null; purchase_order: { status: string } | Array<{ status: string }> | null }>(
+      unplanned,
+      (batch, from, to) => supabase.from('purchase_order_items')
+        .select('so_item_id, qty, purchase_order:purchase_orders!inner(status)')
+        .in('so_item_id', batch).neq('purchase_order.status', 'CANCELLED').range(from, to),
+    );
+    for (const p of poRows) onPo.set(p.so_item_id, (onPo.get(p.so_item_id) ?? 0) + Number(p.qty ?? 0));
+    // A Works line made straight into a production order (no in-house PO) is covered as well.
+    const { data: proRows } = await chunkIn<{ so_item_id: string; qty: number | string | null }>(
+      unplanned,
+      (batch, from, to) => supabase.from('production_order_items')
+        .select('so_item_id, qty, production_order:production_orders!inner(status)')
+        .in('so_item_id', batch).neq('production_order.status', 'CANCELLED').range(from, to),
+    );
+    for (const p of proRows) onPro.set(p.so_item_id, (onPro.get(p.so_item_id) ?? 0) + Number(p.qty ?? 0));
+  }
+  const unplannedLeft = (r: Row): number => r.qty - Math.max(r.po_qty_picked, onPo.get(r.id) ?? 0, onPro.get(r.id) ?? 0);
+
   const outstanding = ((items ?? []) as unknown as Row[])
     .filter((r) => !isDocumentHeld(r.so)
       && r.so.status !== 'CANCELLED' && r.so.status !== 'DRAFT' && r.so.status !== 'ON_HOLD')
-    .filter((r) => (pooledOk ? (shortageBySoItem.get(r.id) ?? 0) > 0 : r.qty - r.po_qty_picked > 0))
+    .filter((r) => (pooledOk && shortageBySoItem.has(r.id) ? (shortageBySoItem.get(r.id) ?? 0) > 0 : unplannedLeft(r) > 0))
     .filter((r) => poPickerOffers({ itemCode: r.item_code, itemGroup: r.item_group, mainSupplierCode: mainSupplierByCode.get(r.item_code)?.code ?? null }))
     .map((r) => {
-      const remaining = pooledOk ? (shortageBySoItem.get(r.id) ?? 0) : (r.qty - r.po_qty_picked);
+      /* A line the plan does not list, such as one with no delivery date, is still open work. */
+      const remaining = pooledOk && shortageBySoItem.has(r.id) ? (shortageBySoItem.get(r.id) ?? 0) : unplannedLeft(r);
       return {
         soItemId:        r.id,
         soDocNo:         r.doc_no,
@@ -784,6 +824,11 @@ async function poLineReceipts(
 }
 
 // ── Detail ────────────────────────────────────────────────────────────
+async function onSiteWarehouseId(sb: Variables['supabase'], c: Parameters<typeof scopeToCompany>[1]): Promise<string | null> {
+  const { data } = await scopeToCompany(sb.from('warehouses').select('id').eq('code', ON_SITE_WAREHOUSE_CODE), c).maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+}
+
 mfgPurchaseOrders.get('/:id', async (c) => {
   const id = c.req.param('id');
   const supabase = c.get('supabase');
@@ -915,6 +960,8 @@ mfgPurchaseOrders.get('/:id', async (c) => {
         .select('id, status, amendment_no')
         .in('so_doc_no', soDocNos), c)
         .not('status', 'in', '("SENT","REJECTED")')
+        /* A VO recorded before this order was raised is already in it: nothing is waiting. */
+        .gte('created_at', (purchaseOrder as { created_at?: string }).created_at ?? '1970-01-01')
         .order('created_at', { ascending: false })
         .limit(1);
       const am = ((amRows ?? []) as Array<Record<string, unknown>>)[0];
@@ -1071,6 +1118,7 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
      manual lines (no soItemId) skip this — a PO can be raised with no SO link,
      unchanged. Mirror of the DO create-gate. */
   const groupOf = await skuCategoryResolver(supabase, items, activeCompanyId(c) ?? null); // SKU wins — lib/sku-category.ts
+  { const inactive = await poInactivePickRefusal(supabase, activeCompanyId(c) ?? null, items); if (inactive) return c.json(inactive, 409); }
   {
     const lineSoItemIds = items
       .map((it) => it.soItemId as string | undefined)
@@ -1198,6 +1246,7 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
       variants:     (it.variants as unknown) ?? null,
       description:  (it.description as string | undefined) ?? null,
       ...lineIdentityFields(groupOf, it, buildVariantSummary), // item_group + description2, from ONE group
+      ...(it.uom ? { uom: String(it.uom) } : {}),
       /* Commander 2026-05-29 (BUG 1) — persist the source SO line (migration
          0098) so deleting this PO line can release po_qty_picked back to the
          From-SO picker. NULL for manually-added lines. */
@@ -2070,6 +2119,7 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
     lines: Line[]; soDocNos: Set<string>;
   };
   const byGroup = new Map<string, Bucket>();
+  const groupFacts = await loadPoGroupFacts(supabase, activeCompanyId(c) ?? null, soItems.map((it) => it.itemCode), soItems.map((it) => it.soDocNo));
   for (const it of soItems) {
     const b = effectiveBindingFor(it)!;
     const effectiveSupplierId = b.supplier_id;
@@ -2103,7 +2153,10 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
     // 4 Nov 2026; scm/lib/po-grouping.ts). Every key starts (warehouse, supplier),
     // which is what keeps each emitted PO single-warehouse.
     const groupKey = groupKeyFor(
-      { warehouseId: lineWarehouseId, supplierId: effectiveSupplierId, soDocNo: it.soDocNo },
+      {
+        warehouseId: lineWarehouseId, supplierId: effectiveSupplierId, soDocNo: it.soDocNo,
+        categoryGroup: groupFacts.categoryGroupOf(it.itemCode, it.soDocNo), unitBound: groupFacts.unitBound(it.itemCode),
+      },
       poMode,
     );
     const bucket = byGroup.get(groupKey)
@@ -2171,6 +2224,16 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
     if (targetLines.length === 0) {
       return c.json({ error: 'supplier_mismatch', reason: 'None of the picked SO lines belong to this PO’s supplier.' }, 409);
     }
+    /* Works and Built-in: one PO, one SO, on this path too. */
+    if (targetLines.some((l) => groupFacts.unitBound(l.itemCode))) {
+      const { data: already } = await supabase.from('purchase_order_items').select('so_item_id').eq('purchase_order_id', target.id).not('so_item_id', 'is', null);
+      const linked = ((already ?? []) as Array<{ so_item_id: string }>).map((x) => x.so_item_id);
+      const { data: linkedSo } = linked.length > 0 ? await supabase.from('mfg_sales_order_items').select('doc_no').in('id', linked) : { data: [] };
+      const docs = new Set([...((linkedSo ?? []) as Array<{ doc_no: string }>).map((x) => x.doc_no), ...targetLines.map((l) => l.soDocNo ?? '')]);
+      if (docs.size > 1) {
+        return c.json({ error: 'one_so_per_po', reason: `${target.po_number} already serves another sales order. Works and Built-in need their own PO.` }, 409);
+      }
+    }
     const appendFrom = await nextPoLineNo(supabase, target.id);
     const rows = await poConvertLineRows(
       supabase, target.id, targetLines, fromMrp, activeCompanyId(c) ?? null, appendFrom);
@@ -2222,7 +2285,8 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
       .filter((d): d is string => Boolean(d))
       .sort();
     const headerExpectedAt = lineDates[0] ?? null;
-    const headerPurchaseLocationId: string | null = bucket.warehouseId;
+    const onSiteDefault = takesOnSiteDefault({ ...bucket, itemCodes: bucket.lines.map((l) => l.itemCode) }, await inHouseSupplierId(supabase, c), groupFacts.unitBound);
+    const headerPurchaseLocationId: string | null = onSiteDefault ? await onSiteWarehouseId(supabase, c) : bucket.warehouseId;
 
     const headerPayload = {
       company_id: activeCompanyId(c), // multi-company: stamp the active company
@@ -2289,6 +2353,8 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
       supabase, header.id, sortBySourceSoLine(bucket.lines), fromMrp, activeCompanyId(c) ?? null, 1);
     const { error: iErr } = await supabase.from('purchase_order_items').insert(stampCompany(rows, c));
     if (iErr) {
+      /* An in-house PO made its production order when the header landed, and that order holds the PO in place. */
+      await supabase.from('production_orders').delete().eq('source_po_id', header.id);
       await supabase.from('purchase_orders').delete().eq('id', header.id);
       dropped.push({ supplierId, lineCount: bucket.lines.length, reason: `po_items_insert_failed: ${iErr.message}` });
       continue;
@@ -2453,11 +2519,14 @@ mfgPurchaseOrders.patch('/:id', async (c) => {
   if (lockedChanges.length > 0 && (await poHasDownstream(sb, id))) {
     return c.json(poIdentityLockedRefusal(lockedChanges), 409);
   }
+  const sdGate = supplierDatePatchGate(before, updates); // a recorded Supplier Date 2/3/4 is history (Houzs #5035)
+  if (sdGate.refusal) return c.json(sdGate.refusal, 409);
   /* A cleared Supplier Date 2/3/4 posts "", which Postgres rejects on a date
      column, so every PO that left one blank failed to save (production,
      2026-08-17). It mutates `updates`, so the audit below records the NULL. */
-  const { data, error } = await scopeToCompanyId(sb.from('purchase_orders').update(coerceEmptyDates(updates)).eq('id', id), co.companyId).select('*').single();
+  const { data, error } = await sdGate.onlyIfEmpty(scopeToCompanyId(sb.from('purchase_orders').update(coerceEmptyDates(updates)).eq('id', id), co.companyId)).select('*').maybeSingle();
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
+  if (!data) return sdGate.fill.length ? c.json(sdGate.raced, 409) : c.json(NOT_THIS_COMPANY, 404);
 
   {
     const auditPatch: Record<string, unknown> = {};
@@ -2499,6 +2568,11 @@ mfgPurchaseOrders.patch('/:id', async (c) => {
   }
   await queueAcPoEdit(c, id);
 
+  /* The lines carry the warehouse a receipt uses, so the header's new one has to reach them (owner, 6 Nov 2026). */
+  const movedTo = (updates as Record<string, unknown>).purchase_location_id as string | undefined;
+  if (movedTo && movedTo !== before.purchase_location_id && before.purchase_location_id) {
+    await sb.from('purchase_order_items').update({ warehouse_id: movedTo }).eq('purchase_order_id', id).eq('warehouse_id', before.purchase_location_id as string);
+  }
   return c.json({ purchaseOrder: data });
 });
 
@@ -2605,11 +2679,13 @@ mfgPurchaseOrders.post('/bulk-supplier-date', async (c) => {
 
     const childLock = await poHasDownstream(sb, id);
     if (childLock) { skipped.push({ id, poNumber, reason: childLock.message }); continue; }
+    const recorded = recordedSupplierDate(before, slot);
+    if (recorded) { skipped.push({ id, poNumber, reason: `Supplier Date ${slot} already recorded (${recorded}).` }); continue; }
 
     /* Header + every line + the audit row, in lib/po-supplier-date-cascade.ts —
        the one writer the PO line import's estimate dates share. */
     const written = await cascadePoSupplierDate(sb, {
-      companyId: co.companyId, poId: id, before, slot, date, applyToLines, actor: c.get('houzsUser') ?? null, note: null,
+      companyId: co.companyId, poId: id, before, slot, date, applyToLines, actor: c.get('houzsUser') ?? null, note: null, requireEmpty: true,
     });
     if (!written.ok) { skipped.push({ id, poNumber, reason: written.reason }); continue; }
     /* ERP -> AutoCount edit, ONE PER PO THAT ACTUALLY MOVED — inside the loop
@@ -2863,7 +2939,7 @@ export async function soLineOverConvertRefusal(
   return requested > remaining ? { soItemId, requested, remaining } : null;
 }
 
-mfgPurchaseOrders.post('/:id/items', async (c) => {
+export const addPoLineHandler = async (c: any) => {
   const poId = c.req.param('id');
   let it: Record<string, unknown>;
   try { it = (await c.req.json()) as Record<string, unknown>; } catch { return c.json({ error: 'invalid_json' }, 400); }
@@ -2909,6 +2985,7 @@ mfgPurchaseOrders.post('/:id/items', async (c) => {
     const refusal = await soLinkTargetRefusal(sb, c, soItemId, String(it.itemCode ?? ''), addGroupOf(it));
     if (refusal) return c.json(refusal.body, refusal.status);
   }
+  { const inactive = await poInactivePickRefusal(sb, co.companyId ?? null, [{ materialKind: it.materialKind, itemCode: it.itemCode, soItemId }]); if (inactive) return c.json(inactive, 409); }
   /* Remaining-qty cap — a NEW line contributes nothing to po_qty_picked yet, so
      its own headroom is the raw remainder (ownCurrentQty = 0). */
   if (it.confirmOverConvert !== true) {
@@ -2987,7 +3064,8 @@ mfgPurchaseOrders.post('/:id/items', async (c) => {
   await queueAcPoEdit(c, poId, [], data?.id ? [String(data.id)] : []);
 
   return c.json({ item: data }, 201);
-});
+};
+mfgPurchaseOrders.post('/:id/items', addPoLineHandler);
 
 mfgPurchaseOrders.patch('/:id/items/:itemId', async (c) => {
   const poId = c.req.param('id'); const itemId = c.req.param('itemId');
@@ -3113,8 +3191,8 @@ mfgPurchaseOrders.patch('/:id/items/:itemId', async (c) => {
     if (soItemKeySent) updates['so_item_id'] = nextSoItemId;
   }
   const unlinkUnitBound = prevSoItemId && !nextSoItemId ? await loadUnitBoundCodes(sb, co.companyId ?? null, [effCode]) : NO_UNIT_BOUND_CODES;
-  const unlinkRefusal = hardBoundUnlinkRefusal(co.companyId ?? null, { item_group: effGroup, item_code: effCode }, prevSoItemId, nextSoItemId, unlinkUnitBound);
-  if (unlinkRefusal) return c.json(unlinkRefusal, 409);
+  const lineRefusal = hardBoundUnlinkRefusal(co.companyId ?? null, { item_group: effGroup, item_code: effCode }, prevSoItemId, nextSoItemId, unlinkUnitBound) ?? (effCode !== String(prev.item_code ?? '') ? await poInactivePickRefusal(sb, co.companyId ?? null, [{ materialKind: prev.material_kind, itemCode: effCode, soItemId: nextSoItemId }]) : null);
+  if (lineRefusal) return c.json(lineRefusal, 409);
 
   /* Remaining-qty cap — runs even when the bind key is ABSENT, because raising
      qty on an ALREADY-bound line over-orders just as surely as binding a new
@@ -3131,6 +3209,8 @@ mfgPurchaseOrders.patch('/:id/items/:itemId', async (c) => {
   }
 
   const { error } = await scopeToCompanyId(sb.from('purchase_order_items').update(coerceEmptyDates(updates)).eq('id', itemId), co.companyId);
+  // HC-0004: the DB floor (migration 0275) refused a cut below what a GRN, posted after the lock read above, received.
+  if (isPoLineOverReceived(error)) return c.json({ error: 'received_floor', message: 'A goods received note has just received this line. Its qty can no longer be cut below what was received. Refresh and check the order.', reason: error!.message }, 409);
   if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
 
   /* Diff `updates` — the EFFECTIVE values written — against the stored row. qty,
@@ -4286,6 +4366,7 @@ export const cancelPurchaseOrderHandler = async (c: any) => {
     createdBy: c.get('houzsUser')?.id ?? null,
   });
 
+  await expireMrpSnapshot(supabase, co.companyId, 'po-cancel');
   return c.json({ purchaseOrder: after ?? { id, status: 'CANCELLED' } });
 };
 mfgPurchaseOrders.patch('/:id/cancel', cancelPurchaseOrderHandler);
@@ -4300,7 +4381,7 @@ mountHoldRoute(mfgPurchaseOrders, 'po');
    PGRST116 can't 500 it. A cancellable PO never has a GRN (poHasDownstream
    blocks cancel once one exists), so a CANCELLED PO was always SUBMITTED —
    reopening to SUBMITTED is correct. */
-mfgPurchaseOrders.patch('/:id/reopen', async (c) => {
+export const reopenPurchaseOrderHandler = async (c: any) => {
   const id = c.req.param('id');
   const supabase = c.get('supabase');
 
@@ -4394,8 +4475,10 @@ mfgPurchaseOrders.patch('/:id/reopen', async (c) => {
     .select('id, status, cancelled_at')
     .eq('id', id), co.companyId)
     .maybeSingle();
+  await expireMrpSnapshot(supabase, co.companyId, 'po-reopen');
   return c.json({ purchaseOrder: after ?? { id, status: 'SUBMITTED' } });
-});
+};
+mfgPurchaseOrders.patch('/:id/reopen', reopenPurchaseOrderHandler);
 
 /* ── Delete: REMOVED (owner rule, 2026-08-11) ──────────────────────────────
    There was a DELETE /:id here that hard-purged a CANCELLED PO, header and

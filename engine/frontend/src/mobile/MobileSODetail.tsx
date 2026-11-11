@@ -78,13 +78,6 @@ import { PrintPreviewModal, usePrintPreview } from "../components/scm-v2/PrintPr
 import type { PdfAction } from "../vendor/scm/lib/pdf-common";
 import { amendmentPrintedStatus, soAmendmentToPdfInput } from "../vendor/scm/lib/amendment-pdf-map";
 import { useStaffLookup } from "../hooks/useStaffLookup";
-/* The 2990 bridge's staff row — the vocabulary so_amendments.requested_by is
-   written in (a scm.staff uuid). Desktop AmendmentDetailV2 compares it to decide
-   "did I raise this?"; mirrored here so the mobile withdraw gate matches exactly
-   (the Houzs bridge has no staff id, so isRequester is inert on BOTH surfaces —
-   the effective gate is canReject — but the logic is kept identical so a future
-   bridge fix lands on both at once). */
-import { useAuth as useScmAuth } from "../vendor/scm/lib/auth";
 import {
   buildAmendmentDecisionHistory,
   isRejectDecision,
@@ -511,18 +504,13 @@ export function MobileSODetail({ docNo, onBack, onEdit, onAddLine, flowNav, onCo
          requester OR anyone who could reject — desktop `status === "REQUESTED"
          && (isRequester || canReject)`.
      The server re-checks both; these gates only decide whether to show the
-     control. `requested_by` (a scm.staff uuid) comes off the shared amendment
-     detail (useAmendmentDetail — same query key the diff sheet warms). The
-     scm-auth bridge has no staff id on Houzs, so isRequester is inert here
-     exactly as on desktop (the effective gate is canReject), but the shape is
-     kept identical so a future bridge fix lands on both surfaces at once. */
-  const { staff: scmStaff } = useScmAuth();
+     control. Whether the caller raised it comes from the SERVER
+     (viewerIsRequester on the shared amendment detail — useAmendmentDetail,
+     same query key the diff sheet warms): the browser has no scm.staff id to
+     compare requested_by against, so a local compare was always false. */
   const openAmendmentDetail = useAmendmentDetail(hasOpenAmendment && openAmendment ? openAmendment.id : null);
   const amendmentStatus = (openAmendment?.status ?? "").toUpperCase();
-  const amendmentRequestedBy =
-    (openAmendmentDetail.data?.amendment as { requested_by?: string | null } | undefined)?.requested_by ?? null;
-  const isAmendmentRequester =
-    amendmentRequestedBy != null && scmStaff?.id != null && String(amendmentRequestedBy) === String(scmStaff.id);
+  const isAmendmentRequester = openAmendmentDetail.data?.viewerIsRequester === true;
   /* Two-lane rework (2026-07-27): a lane row (open_amendment.lane set) has ONE
      approver key — LINES → purchasing, DELIVERY → logistics — and its whole
      life is REQUESTED → applied. The legacy chain keys below stay for
@@ -854,7 +842,9 @@ export function MobileSODetail({ docNo, onBack, onEdit, onAddLine, flowNav, onCo
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c66a34" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="m10.5 13-2.5 2.5 2.5 2.5" /><path d="m13.5 13 2.5 2.5-2.5 2.5" /></svg>
                 {hasOpenAmendment
                   ? "On order to the supplier — a VO is pending (see below). Line changes are locked until it's confirmed or rejected."
-                  : "On order to the supplier. Tap Edit to request a VO — the coordinator and supplier confirm it before the order is revised."}
+                  : h?.vo_locked
+                    ? "Confirmed order. Adding or removing a line, or changing its SKU, qty or price, is a VO. Photos, options, remarks and dates just save."
+                    : "On order to the supplier. Tap Edit to request a VO — the coordinator and supplier confirm it before the order is revised."}
               </div>
             ) : (
               <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#eef1ec", border: "1px solid #e3e6e0", borderRadius: 10, padding: "9px 11px", marginBottom: 12, fontSize: 11, color: "#5c6156" }}>
@@ -2022,8 +2012,9 @@ function AmendmentDiffSheet({ amendmentId, onClose }: { amendmentId: string; onC
                             <div className="money" style={{ fontSize: 12.5, fontWeight: 700, color: "#0c3f39", ...mEmphIf(chg.itemCode) }}>{l.new_item_code ?? old.itemCode ?? "—"}</div>
                             <div className="money" style={{ fontSize: 11, color: "var(--mut)", marginTop: 2 }}>
                               <span style={mEmphIf(chg.qty)}>Qty {l.new_qty ?? old.qty ?? "—"}</span>
-                              {typeof l.new_unit_price_sen === "number" ? (
-                                <>{" · "}<span style={mEmphIf(chg.unitPrice)}>RM {rm(l.new_unit_price_sen)}</span></>
+                              {/* A null requested price keeps the stored one (desktop parity): show it unchanged. */}
+                              {typeof (l.new_unit_price_sen ?? old.unitPriceSen) === "number" ? (
+                                <>{" · "}<span style={mEmphIf(chg.unitPrice)}>RM {rm((l.new_unit_price_sen ?? old.unitPriceSen) as number)}</span></>
                               ) : ""}
                             </div>
                             {newSummary ? <div style={{ fontSize: 10.5, color: "var(--mut2)", marginTop: 2, ...mEmphIf(chg.variants) }}>{newSummary}</div> : null}

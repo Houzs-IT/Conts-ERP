@@ -15,6 +15,7 @@
    info card. The required list and the two-way sync rule live in
    vendor/shared/renovation-property.ts, the same file the server runs. */
 
+import { isLanded } from "../../../vendor/shared/renovation-property";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Search, X } from "lucide-react";
 import { cn } from "../../../lib/utils";
@@ -142,7 +143,7 @@ function ProjectPicker({ value, project, onPick, disabled, id }: {
         <ul role="listbox" className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-surface py-1 shadow-lg">
           {state === "loading" && rows.length === 0 && <li className="px-3 py-2 text-sm text-ink-secondary">Searching...</li>}
           {state === "error" && <li className="px-3 py-2 text-sm text-err">Projects could not be loaded. Try again.</li>}
-          {state !== "error" && rows.length === 0 && state !== "loading" && <li className="px-3 py-2 text-sm text-ink-secondary">No project matches. Create it under Projects first.</li>}
+          {state !== "error" && rows.length === 0 && state !== "loading" && <li className="px-3 py-2 text-sm text-ink-secondary">No project without a sales order matches. A project takes one sales order; to start a new one, create it under Projects first.</li>}
           {rows.map((p) => (
             <li key={p.id}>
               <button
@@ -257,6 +258,8 @@ export function CustomerBlock({
               <Row label="Property">{value.propertyType}</Row>
               <Row label="Layout">{layoutText}</Row>
               <Row label="Built-up">{value.builtUpSqft ? `${Number(value.builtUpSqft).toLocaleString("en-MY")} sq ft` : ""}</Row>
+              {isLanded(value.propertyType) && <Row label="Land area">{value.landAreaSqft ? `${Number(value.landAreaSqft).toLocaleString("en-MY")} sq ft` : ""}</Row>}
+              {isLanded(value.propertyType) && <Row label="Land size">{value.landSize}</Row>}
             </>
           )}
         </>)}
@@ -357,7 +360,7 @@ export function CustomerBlock({
       <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-4">
         <Cell label="Project" className="col-span-2" htmlFor={id("project")}>
           {mode === "so"
-            ? <ProjectPicker id={id("project")} value={value.projectId} project={project ?? null} onPick={(p) => onPickProject?.(p)} disabled={disabled} />
+            ? <ProjectPicker id={id("project")} value={value.projectId} project={project ?? null} onPick={(p) => onPickProject?.(p)} disabled={off("projectId")} />
             : <ReadOnly>{projectLabel}</ReadOnly>}
           {gaps.length > 0 && (
             <p className="mt-1 text-[11px] text-ink-secondary">
@@ -402,6 +405,18 @@ export function CustomerBlock({
               <input id={id("sqft")} inputMode="decimal" className={cn(input, miss("Built-up sq ft") && ring)} value={value.builtUpSqft}
                 disabled={off("builtUpSqft")} placeholder="e.g. 1,100" onChange={(e) => set({ builtUpSqft: e.target.value.replace(/[^\d.,]/g, "") })} />
             </Cell>
+            {isLanded(value.propertyType) && (
+              <>
+                <Cell label="Land area sq ft" required missing={miss("Land area sq ft")} htmlFor={id("landarea")}>
+                  <input id={id("landarea")} inputMode="decimal" className={cn(input, miss("Land area sq ft") && ring)} value={value.landAreaSqft}
+                    disabled={off("builtUpSqft")} placeholder="e.g. 1,650" onChange={(e) => set({ landAreaSqft: e.target.value.replace(/[^\d.,]/g, "") })} />
+                </Cell>
+                <Cell label="Land size" required missing={miss("Land size")} htmlFor={id("landsize")}>
+                  <input id={id("landsize")} className={cn(input, miss("Land size") && ring)} value={value.landSize}
+                    disabled={off("builtUpSqft")} placeholder="e.g. 22 x 75" onChange={(e) => set({ landSize: e.target.value })} />
+                </Cell>
+              </>
+            )}
           </>
         )}
       </div>

@@ -6,10 +6,10 @@
    order made for its buckets: a self-contained vocabulary does not need to live
    inside a 2,300-line screen, and the screen cannot grow.
 
-   THE TAB LIST IS ONE PER STATUS (页签＝状态, owner 2026-08-21). If a status is
-   added to the route's vocabulary, its tab belongs here — the counts are
-   generated server-side by walking that same set, so a missing row here is a
-   status with a number and nowhere to show it.
+   THE TAB LIST WAS ONE PER STATUS (页签＝状态, owner 2026-08-21) UNTIL 6 NOV 2026,
+   when the owner grouped them into stages. If a status is added to the route's
+   vocabulary, its stage in so-tab-statuses.ts must be chosen too, or the order
+   lands in Other.
 
    `closed` was absent for one day, because CLOSED was retired from SO_STATUSES
    on 2026-08-21. It is back on 2026-08-22 carrying a meaning the retired one
@@ -26,20 +26,18 @@
    vendor/scm/lib/status-pill.ts.
    ---------------------------------------------------------------------------- */
 
-/* Every status the backend vocabulary carries (mfg-sales-orders.ts
-   SO_STATUSES), in lifecycle order — the strip shows ALL of them with live
-   counts so the buckets always sum to All and no order can look lost inside a
-   hidden status (owner 2026-07-24: "ALL 68 but CONFIRMED 35 — where did they
-   go?"). `other` is the server's catch-all for legacy/unknown spellings and
-   only earns a pill when its count is non-zero. */
+/* The desktop strip is stages, not statuses (owner, 6 Nov 2026): Contract, In
+   Progress and Completed each hold several exact statuses, and the exact status
+   stays on the row. The server owns the membership (so-tab-statuses.ts) and its
+   buckets still sum to All. `other` is the server's catch-all for legacy/unknown
+   spellings and only earns a pill when its count is non-zero (owner 2026-07-24:
+   "ALL 68 but CONFIRMED 35 — where did they go?"). */
 export type StatusTab =
   | "all"
   | "draft"
-  | "confirmed"
-  | "in_production"
-  | "ready_to_ship"
-  | "delivered"
-  | "invoiced"
+  | "contract"
+  | "in_progress"
+  | "completed"
   | "closed"
   | "on_hold"
   | "cancelled"
@@ -49,15 +47,31 @@ export type StatusTab =
 export const SO_STATUS_TABS: Array<{ value: StatusTab; label: string }> = [
   { value: "all", label: "All" },
   { value: "draft", label: "Draft" },
-  { value: "confirmed", label: "Submitted" },
-  { value: "in_production", label: "In Production" },
-  { value: "ready_to_ship", label: "Ready to Ship" },
-  { value: "delivered", label: "Delivered" },
-  { value: "invoiced", label: "Invoiced" },
+  { value: "contract", label: "Contract" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "completed", label: "Completed" },
   { value: "closed", label: "Closed" },
   { value: "on_hold", label: "On Hold" },
   { value: "cancelled", label: "Cancelled" },
 ];
+
+/* A saved link or a Back to the list can still carry a one-status tab from before
+   the stages; it opens on the stage that holds that status. */
+const STAGE_OF_OLD_TAB: Record<string, StatusTab> = {
+  confirmed: "contract",
+  reno_confirmed: "contract",
+  reno_in_progress: "in_progress",
+  in_production: "in_progress",
+  ready_to_ship: "in_progress",
+  reno_completed: "completed",
+  delivered: "completed",
+  invoiced: "completed",
+};
+
+export const soStatusTabOf = (raw: string | null): StatusTab => {
+  const v = raw ?? "all";
+  return STAGE_OF_OLD_TAB[v] ?? (v as StatusTab);
+};
 
 
 // Status → tone + label. The upstream `status` string is one of the SO

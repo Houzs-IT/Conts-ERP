@@ -21,3 +21,12 @@ export const takePvFiles = (): PvFilePayload[] => {
   stash = [];
   return taken;
 };
+
+/** A carried page back to a File, for the document-attachment upload (the
+ *  purchase invoice keeps scanned pages as ordinary attachments). */
+export const pvFileToFile = (f: PvFilePayload): File => {
+  const bin = atob(f.dataBase64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new File([bytes], f.name, { type: f.mime });
+};

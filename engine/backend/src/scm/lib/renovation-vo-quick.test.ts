@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { carryToAddedLine, quickVoLines } from './renovation-vo';
+import { carryToAddedLine, poLineTargets, quickVoLines } from './renovation-vo';
 import type { RenoDb } from './renovation-db';
 import type { DocLineOut } from './renovation-doc-lines';
 
@@ -100,5 +100,25 @@ describe('carryToAddedLine (quickVo, the line a VO adds)', () => {
     await carryToAddedLine(db, { ...base, respec: false }, 'NEW', 'bedframe');
     expect(db.calls.map((c) => c.text).join('\n')).toMatch(/variants = o\.variants/);
     expect(db.calls.map((c) => c.text).join('\n')).toMatch(/set room = coalesce/);
+  });
+});
+
+describe('poLineTargets: what each PO line keeps', () => {
+  const line = (id: string, qty: number, received_qty = 0) => ({ id, qty, received_qty });
+  it('a line split across two POs shares the new total', () => {
+    expect(poLineTargets([line('a', 3), line('b', 2)], 4)).toEqual([{ id: 'b', action: 'AMEND', newQty: 1 }]);
+  });
+  it('the old way told both PO lines to become 4; only the excess moves', () => {
+    expect(poLineTargets([line('a', 3), line('b', 2)], 2)).toEqual([{ id: 'a', action: 'AMEND', newQty: 2 }, { id: 'b', action: 'CANCEL', newQty: 0 }]);
+  });
+  it('what was received stays, even on a full omit', () => {
+    expect(poLineTargets([line('a', 5, 2)], 0)).toEqual([{ id: 'a', action: 'AMEND', newQty: 2 }]);
+  });
+  it('the line holding receipts keeps them first', () => {
+    expect(poLineTargets([line('open', 3), line('got', 2, 2)], 2)).toEqual([{ id: 'open', action: 'CANCEL', newQty: 0 }]);
+  });
+  it('nothing to change, nothing flagged', () => {
+    expect(poLineTargets([line('a', 3)], 3)).toEqual([]);
+    expect(poLineTargets([line('a', 3, 3)], 0)).toEqual([]);
   });
 });

@@ -400,12 +400,98 @@ export async function podFiles(db: Db, doId: string): Promise<Array<DocFile & { 
 /* Files a document shows from a neighbour with no line link (owner, 4 Nov 2026), read each time so nothing is copied and
    a photo added later arrives by itself:
    - a production order shows its PO's whole-document photos, marked as from the PO;
-   - the GR and DO a completed production order raised show its progress photos as their proof of receipt and proof of
-     delivery (source 'pod'), the document's and every line's. */
+   - a GR and a DO show the progress photos and line photos of every production order behind them as their proof of
+     receipt and proof of delivery (source 'pod'): a GR through its PO, a DO through its sales order lines, either through
+     the completion link (owner, 7 Nov 2026). */
+type Linked = DocFile & { key: string };
+
+const ORDERS_BEHIND = `
+  SELECT 'goods_received' AS for_type, g.id::text AS for_id, o.id AS order_id, o.po_number AS order_no
+    FROM scm.grns g JOIN scm.production_orders o ON o.company_id = g.company_id AND (o.completion_grn_id = g.id OR o.source_po_id = g.purchase_order_id
+      OR o.source_po_id IN (SELECT x.purchase_order_id FROM scm.grn_items gi JOIN scm.purchase_order_items x ON x.id = gi.purchase_order_item_id WHERE gi.grn_id = g.id))
+   WHERE g.id::text = ANY(?::text[])
+  UNION
+  SELECT 'delivery_order', d.id::text, o.id, o.po_number
+    FROM scm.delivery_orders d JOIN scm.production_orders o ON o.company_id = d.company_id AND (o.completion_do_id = d.id
+      OR o.id IN (SELECT pi.production_order_id FROM scm.delivery_order_items di JOIN scm.production_order_items pi ON pi.so_item_id = di.so_item_id WHERE di.delivery_order_id = d.id))
+   WHERE d.id::text = ANY(?::text[])`;
+
+/** What the production orders behind these GRs and DOs show on them, keyed "type:id". */
+async function orderFilesBehind(db: Db, docs: ReadonlyArray<{ type: DocType; id: string }>, companyId: number): Promise<Map<string, Linked[]>> {
+  const out = new Map<string, Linked[]>();
+  const ids = (t: DocType) => textArray(docs.filter((d) => d.type === t).map((d) => d.id));
+  if (docs.length === 0) return out;
+  const add = (k: string, f: Linked) => { if (!(out.get(k) ?? []).some((x) => x.id === f.id)) out.set(k, [...(out.get(k) ?? []), f]); };
+  const files = await db.prepare(
+    `SELECT b.for_type, b.for_id, b.order_no, a.id::text AS id, a.file_name, a.mime, a.size_bytes, a.caption, a.source, a.uploaded_by_name, a.created_at,
+            a.doc_type, a.doc_id, a.line_id, a.r2_key
+       FROM (${ORDERS_BEHIND}) b
+       JOIN scm.doc_attachments a ON a.doc_type = 'production_order' AND a.doc_id = b.order_id::text AND a.deleted_at IS NULL AND a.company_id = ?
+      ORDER BY a.created_at, a.id`,
+  ).bind(ids("goods_received"), ids("delivery_order"), companyId).all<Row & { r2_key: string; for_type: string; for_id: string; order_no: string }>();
+  for (const r of files.results ?? []) {
+    add(`${r.for_type}:${r.for_id}`, { ...toFile(r), key: r.r2_key, source: "pod", lineId: null, readOnly: true, from: `Production order ${r.order_no}` });
+  }
+  const lines = await db.prepare(
+    `SELECT b.for_type, b.for_id, b.order_no, pi.id::text AS item_id, pi.photo_urls, pi.created_at
+       FROM (${ORDERS_BEHIND}) b JOIN scm.production_order_items pi ON pi.production_order_id = b.order_id
+      WHERE coalesce(cardinality(pi.photo_urls), 0) > 0 ORDER BY pi.line_no, pi.id`,
+  ).bind(ids("goods_received"), ids("delivery_order")).all<{ for_type: string; for_id: string; order_no: string; item_id: string; photo_urls: string[]; created_at: string }>();
+  for (const r of lines.results ?? []) {
+    lineKeys(r.photo_urls).forEach((key, n) => add(`${r.for_type}:${r.for_id}`, {
+      id: `${LINE_PHOTO_ID}${r.item_id}-${n}`, key, name: "Line photo", mime: "image/jpeg", kind: "image", size: 0, caption: "", source: "pod", by: null,
+      at: new Date(r.created_at).toISOString(), lineId: null, readOnly: true, from: `Production order ${r.order_no}`,
+    }));
+  }
+  return out;
+}
+
+const LINE_PHOTO_ID = "pline-";
+
+/* The database shim hands a text[] back as its literal, "{a,b}", when it reads by SQL. */
+const lineKeys = (v: unknown): string[] => (Array.isArray(v) ? v.filter((k): k is string => typeof k === "string" && !!k)
+  : typeof v === "string" && v.startsWith("{") ? v.slice(1, -1).split(",").map((k) => k.replace(/^"|"$/g, "")).filter(Boolean) : []);
+
+/** The photos on production orders' lines, keyed by order id: the project's Site tab streams them from the order. */
+export async function orderLineFiles(db: Db, orderIds: readonly string[]): Promise<Map<string, Linked[]>> {
+  const out = new Map<string, Linked[]>();
+  if (orderIds.length === 0) return out;
+  const res = await db.prepare(
+    `SELECT pi.production_order_id::text AS order_id, pi.id::text AS item_id, pi.photo_urls, pi.created_at, pi.room FROM scm.production_order_items pi
+      WHERE pi.production_order_id::text = ANY(?::text[]) AND coalesce(cardinality(pi.photo_urls), 0) > 0 ORDER BY pi.line_no, pi.id`,
+  ).bind(textArray([...orderIds])).all<{ order_id: string; item_id: string; photo_urls: string[]; created_at: string; room: string | null }>();
+  for (const r of res.results ?? []) {
+    out.set(r.order_id, [...(out.get(r.order_id) ?? []), ...lineKeys(r.photo_urls).map((key, n): Linked => ({
+      id: `${LINE_PHOTO_ID}${r.item_id}-${n}`, key, name: "Line photo", mime: "image/jpeg", kind: "image", size: 0, caption: r.room?.trim() ?? "", source: "upload", by: null,
+      at: new Date(r.created_at).toISOString(), lineId: r.item_id, readOnly: true,
+    }))]);
+  }
+  return out;
+}
+
+/** linkedDocFiles for a project's GRs and DOs at once, keyed "type:id": the roll-up reads this instead of one call a document. */
+export async function linkedFilesFor(db: Db, docs: ReadonlyArray<{ type: DocType; id: string }>, companyId: number): Promise<Map<string, Linked[]>> {
+  const out = await orderFilesBehind(db, docs, companyId);
+  if (docs.length === 0) return out;
+  const paired = (await db.prepare(
+    `SELECT grn_id::text AS grn, do_id::text AS dord FROM scm.onsite_twins WHERE grn_id::text = ANY(?::text[]) OR do_id::text = ANY(?::text[])`,
+  ).bind(textArray(docs.map((d) => d.id)), textArray(docs.map((d) => d.id))).all<{ grn: string; dord: string }>()).results ?? [];
+  const tied = new Set(paired.flatMap((p) => [`goods_received:${p.grn}`, `delivery_order:${p.dord}`]));
+  for (const d of docs) {
+    const k = `${d.type}:${d.id}`;
+    if (!tied.has(k)) continue;
+    const twin = await onsiteTwinFiles(db, { ...d, no: "", companyId }, loader(db, companyId));
+    out.set(k, [...twin, ...(out.get(k) ?? []).filter((f) => !twin.some((t) => t.id === f.id))]);
+  }
+  return out;
+}
+
+const loader = (db: Db, companyId: number) => async (where: string, ...args: unknown[]): Promise<Array<Row & { r2_key: string }>> => (await db.prepare(
+  `SELECT ${COLS}, r2_key FROM scm.doc_attachments WHERE deleted_at IS NULL AND company_id = ? AND ${where} ORDER BY created_at, id`,
+).bind(companyId, ...args).all<Row & { r2_key: string }>()).results ?? [];
+
 export async function linkedDocFiles(db: Db, doc: DocRef): Promise<Array<DocFile & { key: string }>> {
-  const load = async (where: string, ...args: unknown[]): Promise<Array<Row & { r2_key: string }>> => (await db.prepare(
-    `SELECT ${COLS}, r2_key FROM scm.doc_attachments WHERE deleted_at IS NULL AND company_id = ? AND ${where} ORDER BY created_at, id`,
-  ).bind(doc.companyId, ...args).all<Row & { r2_key: string }>()).results ?? [];
+  const load = loader(db, doc.companyId);
   if (doc.type === "production_order") {
     const po = await db.prepare(
       `SELECT p.id::text AS id, p.po_number FROM scm.production_orders o JOIN scm.purchase_orders p ON p.id = o.source_po_id WHERE o.id = ?::uuid`,
@@ -415,12 +501,29 @@ export async function linkedDocFiles(db: Db, doc: DocRef): Promise<Array<DocFile
       .map((r) => ({ ...toFile(r), key: r.r2_key, lineId: null, readOnly: true, from: `Purchase order ${po.po_number}` }));
   }
   if (doc.type !== "goods_received" && doc.type !== "delivery_order") return [];
-  const col = doc.type === "goods_received" ? "completion_grn_id" : "completion_do_id";
-  const order = await db.prepare(`SELECT id::text AS id, po_number FROM scm.production_orders WHERE ${col} = ?::uuid LIMIT 1`).bind(doc.id).first<{ id: string; po_number: string }>();
-  if (!order) return [];
-  return (await load("doc_type = 'production_order' AND doc_id = ?", order.id))
-    .map((r) => ({ ...toFile(r), key: r.r2_key, source: "pod" as const, lineId: null, readOnly: true, from: `Production order ${order.po_number}` }));
+  /* On site a receipt and a delivery are one event (owner, 6 Nov 2026): the proof of delivery is the proof of receipt. */
+  const twin = await onsiteTwinFiles(db, doc, load);
+  return [...twin, ...((await orderFilesBehind(db, [doc], doc.companyId)).get(`${doc.type}:${doc.id}`) ?? [])];
 }
+
+async function onsiteTwinFiles(db: Db, doc: DocRef, load: (where: string, ...args: unknown[]) => Promise<Array<Row & { r2_key: string }>>): Promise<Array<DocFile & { key: string }>> {
+  const isGrn = doc.type === "goods_received";
+  const others = (await db.prepare(
+    isGrn
+      ? `SELECT t.do_id::text AS id, d.do_number AS no FROM scm.onsite_twins t JOIN scm.delivery_orders d ON d.id = t.do_id WHERE t.grn_id = ?::uuid`
+      : `SELECT t.grn_id::text AS id, g.grn_number AS no FROM scm.onsite_twins t JOIN scm.grns g ON g.id = t.grn_id WHERE t.do_id = ?::uuid`,
+  ).bind(doc.id).all<{ id: string; no: string }>()).results ?? [];
+  const out: Array<DocFile & { key: string }> = [];
+  for (const o of others) {
+    if (isGrn) out.push(...(await podFiles(db, o.id)).map((f) => ({ ...f, id: `twin-${o.id}-${f.id}`, lineId: null, readOnly: true, from: `Delivery order ${o.no}` })));
+    out.push(...(await load("doc_type = ? AND doc_id = ?", isGrn ? "delivery_order" : "goods_received", o.id))
+      .map((r) => ({ ...toFile(r), key: r.r2_key, source: "pod" as const, lineId: null, readOnly: true, from: `${isGrn ? "Delivery order" : "Goods receipt"} ${o.no}` })));
+  }
+  return out;
+}
+
+/** A proof-of-delivery photo a goods receipt shows from its on-site delivery. It lives where the delivery keeps it. */
+export const isTwinPodFileId = (fileId: string): boolean => fileId.startsWith("twin-");
 
 export const isPodFileId = (fileId: string): boolean => fileId === POD_FILE_ID || /^pod-\d+$/.test(fileId);
 
@@ -439,7 +542,11 @@ export async function fileRow(db: Db, doc: DocRef, fileId: string): Promise<{ ke
 
 /** A file the document shows from a line upstream (for its stream). */
 export async function carriedFileRow(db: Db, doc: DocRef, fileId: string): Promise<{ key: string; mime: string; name: string } | null> {
-  if (!UUID.test(fileId)) return null;
+  if (!UUID.test(fileId) && !fileId.startsWith(LINE_PHOTO_ID)) return null;
+  if (doc.type === "production_order" && fileId.startsWith(LINE_PHOTO_ID)) {
+    const own = (await orderLineFiles(db, [doc.id])).get(doc.id)?.find((f) => f.id === fileId);
+    return own ? { key: own.key, mime: own.mime, name: own.name } : null;
+  }
   const linked = (await linkedDocFiles(db, doc)).find((f) => f.id === fileId);
   if (linked) return { key: linked.key, mime: linked.mime, name: linked.name };
   if (!DOC_TYPES[doc.type].lines?.parent) return null;

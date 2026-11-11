@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inArm, poIdsForSoDocNos, soDocNosByRef, SO_REF_MATCH_CAP } from './so-ref-search';
+import { inArm, poIdsByLineText, poIdsForSoDocNos, soDocNosByRef, SO_REF_MATCH_CAP } from './so-ref-search';
 import { filterDoList, type DoListParams } from './do-list-read';
 import { filterSiList, type SiListFilters } from './si-list-read';
 import { filterPoList, type PoListFilters } from './po-list-read';
@@ -36,7 +36,7 @@ describe('inArm', () => {
 describe('list searches match the SO link resolved from the SO reference', () => {
   it('DO list', () => {
     const { self, calls } = recorder();
-    const p: DoListParams = { status: null, q: 'PO-778', sort: null, from: null, to: null, debtorNames: null, currencies: null, soRefDocNos: ['HC-SO-2609-001'] };
+    const p: DoListParams = { status: null, type: null, q: 'PO-778', sort: null, from: null, to: null, debtorNames: null, currencies: null, soRefDocNos: ['HC-SO-2609-001'] };
     filterDoList(self, p, ctx, null);
     expect(orString(calls)).toContain('so_doc_no.in.("HC-SO-2609-001")');
     expect(orString(calls)).toContain('ref.ilike.%PO-778%');
@@ -124,5 +124,20 @@ describe('Delivery Planning board', () => {
   it("the board's Reference (its search field) falls back to customer_so_no like customer-ref.ts", () => {
     expect(planningRaw).toMatch(/so_ref: \(\(r\.ref as string \| null\) \|\| \(r\.customer_so_no as string \| null\)\) \?\? null/);
     expect(planningRaw).toMatch(/referral, ref, customer_so_no, delivery_message_status/);
+  });
+});
+
+describe('poIdsByLineText (PO list search matches line items)', () => {
+  it('searches the line code, name, supplier SKU and description, company-scoped, one id per PO', async () => {
+    const { sb, log } = fakeSb({ purchase_order_items: [{ purchase_order_id: 'po-1' }, { purchase_order_id: 'po-1' }, { purchase_order_id: 'po-3' }, { purchase_order_id: null }] });
+    expect(await poIdsByLineText(sb, ctx, 'AKEMI')).toEqual(['po-1', 'po-3']);
+    expect(log).toContain('purchase_order_items.or(item_code.ilike.%AKEMI%,material_name.ilike.%AKEMI%,supplier_sku.ilike.%AKEMI%,description.ilike.%AKEMI%)');
+    expect(log).toContain('purchase_order_items.eq(company_id,1)');
+  });
+  it('a blank or one-letter term reads nothing', async () => {
+    const { sb, log } = fakeSb({});
+    expect(await poIdsByLineText(sb, ctx, ' ')).toEqual([]);
+    expect(await poIdsByLineText(sb, ctx, 'a')).toEqual([]);
+    expect(log).toEqual([]);
   });
 });

@@ -28,7 +28,7 @@
 // ----------------------------------------------------------------------------
 
 import type { Context } from 'hono';
-import { snapshotPo, ReceivedFloorError } from './so-revision';
+import { snapshotPo, ReceivedFloorError, receivedFloorFromDb } from './so-revision';
 import { recordEntityAudit } from './entity-audit';
 import { poReceivedFloorViolation } from '../shared/po-amendment';
 import { routingNote, type AmendmentFieldKind } from '../shared/amendment-routing';
@@ -104,6 +104,8 @@ export async function applyPoAmendment(
   amendmentId: string,
   userId: string | null,
   c?: Context<any>,
+  /* A contract VO's amendment names its lines (renovation-vo.ts changeVoPoLine): each keeps its price, and no line is added. */
+  opts?: { fromVo?: boolean },
 ): Promise<ApplyPoAmendmentResult> {
   // (1) Load amendment + its lines + the PO header it targets.
   const { data: amdRow, error: amdErr } = await sb
@@ -119,7 +121,7 @@ export async function applyPoAmendment(
      purchase of a customer's piece: a company-1 sofa or pillow the MRP page then
      reports SHORT with the purchase order open. The route already branches; this
      makes the other door impossible rather than merely unused. */
-  if (amdRow.source_so_amendment_id) {
+  if (amdRow.source_so_amendment_id && !opts?.fromVo) {
     throw new Error('applyPoAmendment: a sales-order follow-up amendment applies through reviseBoundPo');
   }
   const poId = String(amdRow.po_id);
@@ -335,7 +337,10 @@ export async function applyPoAmendment(
       .from('purchase_order_items')
       .update(patch)
       .eq('id', diff.purchase_order_item_id);
-    if (updErr) throw new Error(`applyPoAmendment: line update failed for ${diff.purchase_order_item_id}: ${updErr.message}`);
+    if (updErr) {
+      throw receivedFloorFromDb(updErr, String(diff.purchase_order_item_id), qty)
+        ?? new Error(`applyPoAmendment: line update failed for ${diff.purchase_order_item_id}: ${updErr.message}`);
+    }
     linesUpdated++;
   }
 
@@ -362,7 +367,7 @@ export async function applyPoAmendment(
     updated_at:     new Date().toISOString(),
   };
   // Only let the line set drive expected_at when the header did not set it explicitly.
-  if (!expectedAtOverridden) bump.expected_at = dates[0] ?? null;
+  if (!expectedAtOverridden && dates[0]) bump.expected_at = dates[0];
   const { error: bumpErr } = await sb.from('purchase_orders').update(bump).eq('id', poId);
   if (bumpErr) throw new Error(`applyPoAmendment: PO revision bump failed: ${bumpErr.message}`);
 

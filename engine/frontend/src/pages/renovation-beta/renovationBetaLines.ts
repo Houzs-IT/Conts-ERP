@@ -32,6 +32,9 @@ export interface PendingPoChange { id: string; amendmentNo: string; poId: string
 
 export interface LinePlan { orderOn: string | null; deliverOn: string | null; noPo: boolean }
 
+export interface LineMaterial { code: string; name: string | null; uom: string | null; qty: number }
+export interface RawMaterialSku { code: string; name: string | null; uom: string | null }
+
 export interface ManagedLine {
   id: string;
   soDocNo: string;
@@ -57,6 +60,10 @@ export interface ManagedLine {
   contractLineId?: string | null;
   /** The suppliers the SKU can be ordered from (its bindings), main first. LinesAnswer.suppliers has the rest. */
   supplierChoices?: SupplierChoice[];
+  /** Its raw materials: the list saved on the line, else the SKU's composition times the line's qty. */
+  materials?: LineMaterial[];
+  /** The completed production order that closes its raw materials (null: they can still change). */
+  materialsClosedBy?: string | null;
   goesTo: GoesTo;
   /** The catalog group and sub-category codes (null: the product has none). */
   categoryCode: string | null;
@@ -90,15 +97,15 @@ export interface LinesAnswer {
 const B = "/api/beta";
 
 export const linesApi = {
+  rawMaterials: (): Promise<{ skus: RawMaterialSku[] }> => api.get<{ skus: RawMaterialSku[] }>(`${B}/raw-materials`),
+  saveMaterials: (projectId: number, itemId: string, materials: Array<{ code: string; qty: number }>): Promise<{ ok: true }> =>
+    api.put<{ ok: true }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/materials`, { materials }),
   lines: (projectId: number): Promise<LinesAnswer> => api.get<LinesAnswer>(`${B}/projects/${projectId}/lines`),
   savePlan: (projectId: number, itemId: string, b: Partial<LinePlan>): Promise<{ ok: true; plan: LinePlan }> =>
     api.put<{ ok: true; plan: LinePlan }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/plan`, b),
   /** One date on many lines in one request: a band's date, which each line's own request made slow (owner, 4 Nov 2026). */
   savePlans: (projectId: number, itemIds: readonly string[], b: Partial<LinePlan>): Promise<{ ok: true; saved: string[]; refused: { itemCode: string; reason: string }[] }> =>
     api.put<{ ok: true; saved: string[]; refused: { itemCode: string; reason: string }[] }>(`${B}/projects/${projectId}/line-plans`, { itemIds, ...b }),
-  /** The supplier of a line with no PO yet (backend renovationBeta.ts PUT .../supplier). */
-  saveSupplier: (projectId: number, itemId: string, supplierId: string): Promise<{ ok: true; supplierId: string; supplierName: string }> =>
-    api.put<{ ok: true; supplierId: string; supplierName: string }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/supplier`, { supplierId }),
   /** A PO line's delivery date, through the PO's own line update (PATCH /:id/items/:itemId). */
   setPoLineDelivery: (poId: string, poLineId: string, deliveryDate: string | null): Promise<unknown> =>
     authedFetch(`/mfg-purchase-orders/${encodeURIComponent(poId)}/items/${encodeURIComponent(poLineId)}`, { method: "PATCH", body: JSON.stringify({ deliveryDate }) }),
@@ -167,10 +174,11 @@ export function effectiveEdit(l: ManagedLine, e: LineEdit | undefined): LineEdit
 }
 
 /** The unit price after the edit, by the SO edit's own rule: a picked SKU starts at its catalog sell price
-    (SoLineCard pickProduct), a qty change keeps the line's price. The server re-derives it when the VO applies. */
+    (SoLineCard pickProduct), a qty change keeps the line's price. The server re-derives it when the VO applies.
+    A picked SKU with no sell price (0) keeps the line's price: that 0 is "no price found", not a price anyone typed. */
 export function unitAfter(l: ManagedLine, e: LineEdit | null): number | null {
   if (l.unitPriceSen === null) return null;
-  if (e?.itemCode && e.pickedPriceSen !== undefined) return e.pickedPriceSen;
+  if (e?.itemCode && e.pickedPriceSen !== undefined && e.pickedPriceSen > 0) return e.pickedPriceSen;
   return l.unitPriceSen;
 }
 
@@ -427,16 +435,6 @@ export function dateFixedReason(l: ManagedLine, which: "orderOn" | "deliverOn", 
   return "planned dates are not switched on yet";
 }
 
-/** Whether the line still waits for a PO, so its supplier can be picked here. */
-export function picksSupplier(l: ManagedLine): boolean {
-  return !l.plan.noPo && !livePo(l);
-}
-
-/** Who the line is bought from: the live PO's supplier once a PO holds it, else the one picked or defaulted. */
-export function supplierOf(l: ManagedLine): string | null {
-  return livePo(l)?.supplierName ?? l.supplierName;
-}
-
 /** A line after a date saved from here: the PO line's delivery date once a PO holds it, else the plan. */
 export function withDate(l: ManagedLine, which: "orderOn" | "deliverOn", value: string | null): ManagedLine {
   const po = livePo(l);
@@ -472,27 +470,6 @@ export function lineLate(l: ManagedLine, today: string): "order" | "deliver" | n
   if (!d.fromPo && !l.plan.noPo && l.goesTo === "po" && d.orderOn && d.orderOn < today) return "order";
   if (l.do !== "yes" && d.deliverOn && d.deliverOn < today) return "deliver";
   return null;
-}
-
-/* ---------- export ---------- */
-
-const csvCell = (v: unknown): string => {
-  const t = v === null || v === undefined ? "" : String(v);
-  return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
-};
-
-export function linesCsv(lines: readonly ManagedLine[], finance: boolean): string {
-  const head = ["SO", "Category", "Sub-category", "SKU", "Description", "Variants", "Colour", "Area", "Remark", "UOM", "Qty",
-    ...(finance ? ["Amount (RM)"] : []), "Processing date", "Delivery date", "Supplier", "PO", "PO date", "GR", "DO"];
-  const out = [head];
-  for (const l of lines) {
-    const d = lineDates(l);
-    out.push([l.soDocNo, l.categoryLabel, l.subLabel, l.itemCode, l.description, l.variantText ?? "", colourOf(l), l.area ?? "", l.remark ?? "", l.uom, String(l.qty),
-      ...(finance ? [l.amountSen === null ? "" : (l.amountSen / 100).toFixed(2)] : []),
-      d.orderOn ?? "", d.deliverOn ?? "", supplierOf(l) ?? "", l.pos.filter((p) => p.poStatus !== "CANCELLED").map((p) => p.poNumber).join(" "), d.fromPo?.poDate ?? "",
-      l.goesTo === "po" || l.pos.length ? l.gr : "", l.do]);
-  }
-  return out.map((r) => r.map(csvCell).join(",")).join("\r\n");
 }
 
 /* ---------- by area ---------- */

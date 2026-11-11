@@ -38,7 +38,7 @@
 // autotable didDrawPage hook + jsPDF putTotalPages.
 // ----------------------------------------------------------------------------
 
-import { buildDefaultSofaCells, effectiveDelivery, findModule, fmtMoneySen, SOFA_MODULES, type Cell, type Depth } from '@2990s/shared';
+import { buildDefaultSofaCells, effectiveDelivery, findModule, fmtMoneySen, isoForExport, SOFA_MODULES, type Cell, type Depth } from '@2990s/shared';
 import { formatPhone } from '@2990s/shared/phone';
 import { parseProvenanceNote } from '../../shared/transfer-vocabulary';
 import {
@@ -75,6 +75,7 @@ import {
 import { isAttachmentKey, loadDocPdfPhotos } from './pdf-doc-photos';
 import { fetchPoItemPhotoBlob } from './sales-order-queries';
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
+import { deliverToAddress } from './warehouse-print';
 
 type PoHeader = {
   po_number:     string;
@@ -181,6 +182,27 @@ const fmtMoney = (centi: number, currency: string): string => fmtMoneySen(centi,
 const fmtAmount = (centi: number): string =>
   (centi / 100).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** DEV-65 (Sim 2026-10-09): delivery under 2 weeks after the PO date prints
+    "URGENT", under 1 week "TOP URGENT". Compared on MYT calendar days, the
+    same days the PDF prints. */
+export function poUrgencyLabel(
+  poDate: string | null | undefined,
+  deliveryDate: string | null | undefined,
+): 'TOP URGENT' | 'URGENT' | null {
+  const toUtcDay = (d: string | null | undefined): number | null => {
+    // isoForExport turns either side's display shape back into yyyy-mm-dd.
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoForExport(fmtDocDate(d))));
+    return m ? Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!) : null;
+  };
+  const from = toUtcDay(poDate);
+  const to = toUtcDay(deliveryDate);
+  if (from === null || to === null) return null;
+  const days = (to - from) / 86_400_000;
+  if (days < 7) return 'TOP URGENT';
+  if (days < 14) return 'URGENT';
+  return null;
+}
+
 /* A sofa is split into per-MODULE PO lines. Each line's `variants` carries that
    ONE module's spatial slot at the TOP LEVEL (x / y / rot + cellIndex), its module
    code lives in `item_code` ("{MODEL}-2A(RHF)"), and a shared `summary` string
@@ -265,6 +287,7 @@ async function renderPurchaseOrderInto(
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 10; // tighter left/right than the SO's 14 (owner 2026-06-19)
   const docTitle = opts?.docTitle ?? 'PURCHASE ORDER';
+  const firstPage = doc.getNumberOfPages();
 
   /* Print-time lookups (all fail-soft): supplier SKU bindings + Fabric
      Converter colour map + the FULL supplier master record (the PO detail
@@ -347,6 +370,7 @@ async function renderPurchaseOrderInto(
     name: COMPANY.shortName,
     logo: getBrandingLogoCache(),
     lines: letterheadLines(),
+    meta: [{ label: '', value: poDisplayNumber(header.po_number, header.revision) }, { label: '', value: fmtDocDate(header.po_date) }],
     margin,
   }) + 2;
 
@@ -388,6 +412,21 @@ async function renderPurchaseOrderInto(
   // Your Ref No above).
   const singleSourceSo = (!lineSoDocs.length && noteSoDocTokens.length === 1) ? noteSoDocTokens[0]! : '';
 
+  const effDelivery = effectiveDelivery(
+    header.expected_at,
+    header.supplier_delivery_date_2,
+    header.supplier_delivery_date_3,
+    header.supplier_delivery_date_4,
+  );
+  /* Conts's PO DETAILS rows (renovation letterhead): no PO No row, the renovation rows after Your Ref. */
+  const poDetailRows: Array<[string, string | null]> = [
+    ['Your Ref No', yourRef],
+    ...renoDetailRows(opts?.renovation).slice(0, 3),
+    ['Date', fmtDocDate(header.po_date)],
+    /* Migration 0180 — print the EFFECTIVE (latest revised) delivery date. */
+    ['Delivery Date', effDelivery ? fmtDocDate(effDelivery) : ''],
+  ];
+  const infoTop = y;
   y = drawInfoColumns(doc, y,
     /* Canonical supplier block — Company, Code, Address, Tel, Fax, Email,
        Attn, Terms — via the shared helper. formatPhone the tel like every
@@ -407,34 +446,36 @@ async function renderPurchaseOrderInto(
       attention: sFull.attention ?? s.contact_person,
       paymentTerms: sFull.payment_terms ?? header.supplier?.payment_terms ?? null,
     }),
-    {
-      title: 'PO DETAILS',
-      rows: [
-        // _R suffix (owner 2026-07-27) — the printed number shows the revision.
-        ['PO No', poDisplayNumber(header.po_number, header.revision)],
-        ['Your Ref No', yourRef],
-        ...renoDetailRows(opts?.renovation).slice(0, 2),
-        ['Date', fmtDocDate(header.po_date)],
-        /* Migration 0180 — print the EFFECTIVE (latest revised) delivery date. */
-        ['Delivery Date', (() => {
-          const eff = effectiveDelivery(
-            header.expected_at,
-            header.supplier_delivery_date_2,
-            header.supplier_delivery_date_3,
-            header.supplier_delivery_date_4,
-          );
-          return eff ? fmtDocDate(eff) : '';
-        })()],
-      ],
-    },
+    { title: 'PO DETAILS', rows: poDetailRows },
     margin,
   );
+
+  /* Boxed under the PO DETAILS rows; the row geometry mirrors drawInfoColumns
+     (first baseline +4.6, 4 per row, blank rows skipped). Judged on OUR
+     delivery date, not the supplier ETA: an order that was urgent stays urgent
+     however far the supplier postpones (Houzs DEV-65). */
+  const urgency = poUrgencyLabel(header.po_date, header.expected_at);
+  if (urgency) {
+    const printedRows = poDetailRows.filter(([, v]) => String(v ?? '').trim()).length;
+    const boxX = pageW / 2 + 2;
+    const boxY = infoTop + 4.6 + printedRows * 4 - 1;
+    const boxW = 50;
+    const boxH = 8;
+    const prevLineWidth = doc.getLineWidth();
+    doc.setDrawColor(220, 38, 38); doc.setLineWidth(0.5);
+    doc.rect(boxX, boxY, boxW, boxH);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(220, 38, 38);
+    doc.text(urgency, boxX + boxW / 2, boxY + boxH / 2 + 1.4, { align: 'center' });
+    doc.setTextColor(0); doc.setDrawColor(0); doc.setLineWidth(prevLineWidth);
+    doc.setFont('helvetica', 'normal');
+    y = Math.max(y, boxY + boxH + 4);
+  }
 
   /* Deliver To — the purchase-location warehouse + its FULL address, wrapped
      full-width so the supplier sees exactly where to ship (owner 2026-06-19;
      the address is the warehouse `location` field). */
   const deliverToName = (header.purchase_location_name ?? '').trim();
-  const deliverToAddr = (header.delivery_address ?? '').trim();
+  const deliverToAddr = deliverToAddress(deliverToName, (header.delivery_address ?? '').trim(), opts?.renovation);
   if (deliverToName || deliverToAddr) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(110);
     doc.text('DELIVER TO', margin, y); doc.setTextColor(0);
@@ -519,11 +560,12 @@ async function renderPurchaseOrderInto(
      total-pages placeholder, resolved by putTotalPages below. */
   const totalPagesExp = '{total_pages}';
   const drawPageHeader = (pageNumber: number) => {
+    // The first page carries the letterhead and its number in the details; the footer pages it.
+    if (pageNumber === 1) return;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(80);
-    doc.text(
-      `${poDisplayNumber(header.po_number, header.revision)} · Page ${pageNumber} of ${totalPagesExp}`,
-      pageW - margin, 10, { align: 'right' },
-    );
+    /* Right edge measured on the printed text: aligning right on the {total_pages} placeholder leaves it short of the margin. */
+    const prefix = `${poDisplayNumber(header.po_number, header.revision)} · Page ${pageNumber} of `;
+    doc.text(`${prefix}${totalPagesExp}`, pageW - margin - doc.getTextWidth(`${prefix}1`), 10);
     doc.setTextColor(0);
   };
 
@@ -547,7 +589,7 @@ async function renderPurchaseOrderInto(
       // and were wrapping ("HC-SO-2608-00" / "8"). 34mm fits 16 ch at 8.5pt; the
       // 'auto' Description column absorbs the extra width.
       0: { cellWidth: 34 },                    // For SO — fits "2990-SO-2608-026" on one line
-      1: { cellWidth: 27, fontStyle: 'bold' }, // Supplier Code (the code they act on)
+      1: { cellWidth: 38, fontStyle: 'bold' }, // Supplier Code (the code they act on)
       2: { cellWidth: 'auto' },                // Description — auto-fills the remainder
       3: { cellWidth: 11 },                    // UOM
       4: { cellWidth: 10, halign: 'right' },   // Qty
@@ -810,6 +852,23 @@ async function renderPurchaseOrderInto(
   doc.text('Supplier Acknowledgement',               margin + sigW + 8 + 2, lastY + 21);
   lastY += 28;
 
+  /* 2990-0028 (Sim 2026-10-29): a cancelled PO's paper must read as void, on
+     every one of its pages, so a re-sent copy cannot pass for a live order. */
+  if (header.status === 'CANCELLED') {
+    const pageH = doc.internal.pageSize.getHeight();
+    for (let p = firstPage; p <= doc.getNumberOfPages(); p += 1) {
+      doc.setPage(p);
+      doc.saveGraphicsState();
+      doc.setGState(doc.GState({ opacity: 0.14 }));
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(72);
+      doc.setTextColor(180, 30, 30);
+      doc.text('CANCELLED', pageW / 2, pageH / 2, { align: 'center', angle: 30 });
+      doc.restoreGraphicsState();
+      doc.setTextColor(0, 0, 0);
+    }
+  }
+
   return { supplierName: s.name ?? 'supplier' };
 }
 
@@ -840,13 +899,14 @@ function finalizePoPdf(doc: JsPdf): void {
 export async function generatePurchaseOrderPdf(
   header: PoHeader,
   items: PoItem[],
-  opts?: { docTitle?: string; action?: PdfAction; sofaPhotos?: Record<string, string>; renovation?: RenoDocInfo | null },
+  opts?: { docTitle?: string; action?: PdfAction; sofaPhotos?: Record<string, string>; renovation?: RenoDocInfo | null; appendAfter?: ((doc: JsPdf) => Promise<void>) | null },
 ): Promise<void> {
   const { jsPDF } = await import('jspdf');
   const autoTable = (await import('jspdf-autotable')).default;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const { supplierName } = await renderPurchaseOrderInto(doc, autoTable, header, items, opts);
   finalizePoPdf(doc);
+  await opts?.appendAfter?.(doc);
   // Was a private copy of the old ASCII-only scrub — a China supplier's name is
   // exactly the case it destroyed, and the PO is the document that goes to them.
   deliverPdf(

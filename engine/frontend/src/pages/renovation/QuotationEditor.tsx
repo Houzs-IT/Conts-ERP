@@ -24,6 +24,8 @@ import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerProper
 import { HeaderForm, InstalmentEditor, totalsOfSections, TotalsCard } from './DocParts';
 import { QuotationCustomerCard } from './QuotationCustomerCard';
 import { PrintDialog } from './PrintDialog';
+import { useRenovationDraft } from '../../lib/renovation/renovationFormDraft';
+import { RenovationDraftBanner } from './renovationDraftBanner';
 import { Card, ErrorBanner, fmtDate, StatusPill, todayIso } from './shared';
 
 export function QuotationEditor() {
@@ -79,6 +81,16 @@ export function QuotationEditor() {
       : { missing: proj.isLoading ? 'Reading the project layout...' : "Choose the project's layout first (on the project or its sales order)." };
 
   const editable = Boolean(q.data?.editable) && canQuote;
+  const draftValue = useMemo(() => ({ header, sections, instalments, brandId }), [header, sections, instalments, brandId]);
+  const draft = useRenovationDraft(
+    editable && q.data ? `quotation:${q.data.quotation.id}:${q.data.revision.revNo}` : null,
+    draftValue, dirty, q.data?.quotation.version ?? null,
+  );
+  const restoreDraft = () => {
+    const d = draft.offered?.v;
+    if (d?.header) { setHeader(d.header); setSections(d.sections); setInstalments(d.instalments); setBrandId(d.brandId); setDirty(true); }
+    draft.answer(true);
+  };
   const totals = useMemo(() => totalsOfSections(sections, header?.docDiscountSen ?? 0), [sections, header?.docDiscountSen]);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
   const act = async (fn: () => Promise<unknown>) => {
@@ -94,7 +106,7 @@ export function QuotationEditor() {
 
   const save = () => (partyProblems.length ? Promise.resolve(setError(partyProblems.join(' '))) : act(() => renoSend(`/quotations/${quotation.id}`, 'PUT', {
     version, header: { ...header, brandId }, sections: sectionsForSave(sections), instalments: instalmentsForSave(instalments),
-  })).then(() => setDirty(false)).catch(() => undefined));
+  })).then(() => { setDirty(false); draft.clear(); }).catch(() => undefined));
   const partyHere = q.data.propertyReady === true;
   const status = async (to: string, confirm?: string) => {
     if (confirm && !(await serviceConfirm({ title: confirm }))) return;
@@ -148,6 +160,7 @@ export function QuotationEditor() {
         )}
       />
       <ErrorBanner error={error} onClose={() => setError(null)} />
+      {draft.offered && <RenovationDraftBanner savedAt={draft.offered.ts} stale={draft.stale} onRestore={restoreDraft} onDiscard={() => draft.answer(false)} />}
       {quotation.convertedSoDocNo && (
         <div className="rounded-lg border border-synced/30 bg-synced-bg px-3 py-2 text-[13px] text-synced">
           Converted to sales order <Link className="font-semibold underline" to={`/scm/renovation/contracts/${encodeURIComponent(quotation.convertedSoDocNo)}`}>{quotation.convertedSoDocNo}</Link>. This quotation is locked.
@@ -184,7 +197,7 @@ export function QuotationEditor() {
             files={{ docType: 'quotation', docId: quotation.id, canEdit: canQuote }} />
           <DocAttachments docType="quotation" docId={quotation.id} canEdit={canQuote} />
           <Card title="Payment terms">
-            <InstalmentEditor rows={instalments} disabled={!editable} terms={terms.data?.templates ?? []} totalSen={totals.finalSen}
+            <InstalmentEditor rows={instalments} disabled={!editable} terms={(terms.data?.templates ?? []).filter((t) => t.brandId == null || t.brandId === brandId)} totalSen={totals.finalSen}
               onChange={(r) => { setInstalments(r); setDirty(true); }} />
           </Card>
         </div>

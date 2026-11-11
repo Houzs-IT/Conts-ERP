@@ -4,7 +4,7 @@
 // tags them without moving any account's total. Reverse it to upload again.
 import { useRef, useState } from "react";
 import { Button } from "@2990s/design-system";
-import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
+import { SetupCard } from "./SetupCard";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import { readWorkbookGrid } from "./opening";
 import {
@@ -77,8 +77,7 @@ export function OpeningDeposits({ canSave, ledgerStartDate }: { canSave: boolean
   };
 
   return (
-    <section className={styles.card} style={{ padding: "var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-      <h2 className={styles.cardTitle}>Opening deposits</h2>
+    <SetupCard title="Opening deposits">
       {!ledgerStartDate ? (
         <p style={{ margin: 0, color: MUTED }}>Set the day the books start first, and import the opening balances.</p>
       ) : (
@@ -114,6 +113,6 @@ export function OpeningDeposits({ canSave, ledgerStartDate }: { canSave: boolean
           {note && <p style={{ margin: 0, color: note.ok ? GOOD : BAD }}>{note.text}</p>}
         </>
       )}
-    </section>
+    </SetupCard>
   );
 }

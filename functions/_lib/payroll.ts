@@ -1,4 +1,4 @@
-import { type Env, all, one, run, nowIso, mytToday } from './db';
+import { type Env, all, one, run, nowIso, mytToday, transaction } from './db';
 import { hasColumn } from './auth';
 import { listEmployees, ensureEmployeeId } from './hr';
 import type { Employee } from './hrFields';
@@ -107,6 +107,7 @@ export async function monthInputs(env: Env, people: Employee[], period: string, 
       basicSalarySen: salaryBy.get(e.id) ?? e.basicSalarySen,
       days, leaves: approved, holidays, advanceSen: advanceBy.get(e.id) ?? 0, penaltySen: penaltyBy.get(e.id) ?? 0,
       ytd: ytdBy.get(e.id) ?? { remunerationSen: 0, epfSen: 0, pcbSen: 0 }, rules,
+      lastWorkingDay: e.status === 'resigned' ? e.resignedAt : null,
     });
   }
   return out;
@@ -163,9 +164,23 @@ export async function payslipsFor(env: Env, period: string, employeeId?: string)
   return rows.map(toPayslip);
 }
 
+/** Who is on a month's payroll and has no slip for it: the people Approve All would leave unpaid. */
+export async function missingSlips(env: Env, period: string): Promise<{ id: string | null; name: string }[]> {
+  const people = (await listEmployees(env)).filter(e => onPayroll(e, period));
+  const have = new Set((await all<{ employee_id: string }>(env, 'SELECT employee_id FROM payslips WHERE period = ?', period)).map(r => r.employee_id));
+  return people.filter(e => !e.id || !have.has(e.id)).map(e => ({ id: e.id, name: e.name }));
+}
+
+/** Rows per INSERT: ~40 parameters a row keeps a statement far under Postgres's 65,535-parameter limit. */
+const SLIPS_PER_INSERT = 200;
+
 /**
  * Make or refresh the month's draft slips for everyone on payroll. Approved and paid slips are never touched. Returns
  * how many were written. The month must have started.
+ *
+ * Every slip is worked out first, then all of them are written in one transaction with a read-back (Hookka #1181:
+ * a request cut off part-way saved 27 of 39 slips, and the 27 were approved). A cut-off or failed run saves nothing,
+ * and a run that would leave anyone on payroll without a slip throws instead of committing.
  */
 export async function generateDrafts(env: Env, period: string, userId: string): Promise<{ written: number; kept: number }> {
   const through = throughDay(period);
@@ -176,25 +191,32 @@ export async function generateDrafts(env: Env, period: string, userId: string): 
   const inputs = await monthInputs(env, people, period, through);
   const locked = new Set((await all<{ employee_id: string }>(env, `SELECT employee_id FROM payslips WHERE period = ? AND status <> 'draft'`, period)).map(r => r.employee_id));
   const now = nowIso();
-  let written = 0;
+  const colNames = ['employee_name', 'employee_no', 'pay_basis', 'payment_method', 'bank_name', 'bank_account',
+    ...FIGURE_COLS.map(([, c]) => c), 'rules', 'generated_by', 'generated_at', 'updated_at'];
+  const rows: unknown[][] = [];
   for (const e of people) {
     if (!e.id || locked.has(e.id)) continue;
     const input = inputs.get(e.id);
-    if (!input) continue;
+    if (!input) throw new Error(`No pay inputs for ${e.name}; nothing was saved.`);
     const f = computePay(input);
-    const cols: [string, unknown][] = [
-      ['employee_name', e.name], ['employee_no', e.employeeId], ['pay_basis', e.payBasis], ['payment_method', e.paymentMethod],
-      ['bank_name', e.bankName], ['bank_account', e.bankAccount],
-      ...FIGURE_COLS.map(([k, c]): [string, unknown] => [c, f[k]]),
-      ['rules', JSON.stringify(input.rules)], ['generated_by', userId], ['generated_at', now], ['updated_at', now],
-    ];
-    await run(env, `
-      INSERT INTO payslips (id, employee_id, period, status, ${cols.map(([c]) => c).join(', ')}, created_at)
-      VALUES (?, ?, ?, 'draft', ${cols.map(([c]) => (c === 'rules' ? '?::jsonb' : '?')).join(', ')}, ?)
-      ON CONFLICT (employee_id, period) DO UPDATE SET ${cols.map(([c]) => `${c} = excluded.${c}`).join(', ')}
-      WHERE payslips.status = 'draft'`,
-      crypto.randomUUID(), e.id, period, ...cols.map(([, v]) => v), now);
-    written++;
+    rows.push([crypto.randomUUID(), e.id, period,
+      e.name, e.employeeId, e.payBasis, e.paymentMethod, e.bankName, e.bankAccount,
+      ...FIGURE_COLS.map(([k]) => f[k]),
+      JSON.stringify(input.rules), userId, now, now, now]);
   }
-  return { written, kept: locked.size };
+  const rowSql = `(?, ?, ?, 'draft', ${colNames.map(c => (c === 'rules' ? '?::jsonb' : '?')).join(', ')}, ?)`;
+  await transaction(env, async tx => {
+    for (let i = 0; i < rows.length; i += SLIPS_PER_INSERT) {
+      const chunk = rows.slice(i, i + SLIPS_PER_INSERT);
+      await run(tx, `
+        INSERT INTO payslips (id, employee_id, period, status, ${colNames.join(', ')}, created_at)
+        VALUES ${chunk.map(() => rowSql).join(', ')}
+        ON CONFLICT (employee_id, period) DO UPDATE SET ${colNames.map(c => `${c} = excluded.${c}`).join(', ')}
+        WHERE payslips.status = 'draft'`, ...chunk.flat());
+    }
+    // Read back inside the transaction: everyone on payroll must now have a slip, or none of this run is kept.
+    const missing = await missingSlips(tx, period);
+    if (missing.length) throw new Error(`Payroll was not saved: no payslip for ${missing.map(m => m.name).join(', ')}.`);
+  });
+  return { written: rows.length, kept: locked.size };
 }

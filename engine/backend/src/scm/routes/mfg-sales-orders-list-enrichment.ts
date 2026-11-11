@@ -36,10 +36,11 @@ import { resolveSalesScopeIds, applySoScope, soDocOutOfScope } from '../lib/sale
 import { canViewAllSales } from '../lib/houzs-perms';
 import { loadLeadBuffers } from '../../services/agents/procurement-learning';
 import { computeMrp, mrpLineCoverage, type MrpResult } from './mrp';
+import { withListMemo } from '../lib/mrp-list-memo';
 import { soLineReadySourcePos } from '../lib/source-po-trace';
 import { soCoverage } from './mfg-sales-orders';
 import { effectiveLineStockStatus, type LiveStockState } from '../lib/so-line-effective-stock';
-import { loadNonSellingWarehouses, nonSellingWarehouseNotice } from '../lib/non-selling-warehouse';
+import { exceptOnSite, loadNonSellingWarehouses, nonSellingWarehouseNotice } from '../lib/non-selling-warehouse';
 import { isHardBoundLine } from '../lib/so-stock-allocation';
 import { isServiceLine } from '../shared/service-sku';
 import { soDeliverableRemaining } from './delivery-orders-mfg';
@@ -148,10 +149,10 @@ mfgSalesOrdersListEnrichment.get('/list-mrp-enrichment', async (c) => {
      readiness + no READY chips, identical to the list's fail-soft. */
   let mrp: MrpResult | null = null;
   try {
-    mrp = await computeMrp(sb, {
+    mrp = await withListMemo(`so-list:${companyId}`, async () => computeMrp(sb, {
       catFilter: null, whFilter: null, includeUndated: true,
       companyId, leadBuffers: await loadLeadBuffers(c.env.DB),
-    });
+    }));
   } catch { mrp = null; }
 
   /* 4. Catalog category per code (normalised, the list's exact build) — feeds
@@ -196,7 +197,7 @@ mfgSalesOrdersListEnrichment.get('/list-mrp-enrichment', async (c) => {
      the list's first paint deliberately passes null and leans on the stored
      status the allocator already gated. */
   const nonSellingWarehouseIds = new Set(
-    (await loadNonSellingWarehouses(sb)).keys(),
+    exceptOnSite(await loadNonSellingWarehouses(sb)).keys(),
   ) as ReadonlySet<string>;
 
   const enrichment = assembleSoListMrpEnrichment({
@@ -288,7 +289,7 @@ mfgSalesOrdersListEnrichment.get('/:docNo/coverage', async (c) => {
        is always undefined; a service is inherently available, so surface it as
        READY ('stock'). (Owner Q2, 2026-07-24.) */
     const isSvcLine = isServiceLine({ itemGroup: it.item_group ?? null, itemCode: it.item_code ?? null });
-    const lineNonSelling = nonSellingWh.get(String(it.warehouse_id ?? '')) ?? null;
+    const lineNonSelling = exceptOnSite(nonSellingWh).get(String(it.warehouse_id ?? '')) ?? null;
     const stockState = isSvcLine
       ? 'stock'
       : isSofaLine

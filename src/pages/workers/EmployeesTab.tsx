@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { StatusBadge } from '../../components/StatusBadge';
+import { StatusBadge, StatusDot } from '../../components/StatusBadge';
+import type { AnyTone } from '../../lib/status';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
@@ -18,7 +19,7 @@ import { useSession } from '../../lib/session';
 import { rm, plural, todayMyt } from '../../lib/format';
 import {
   EMPLOYEE_DEFAULTS, POSITION_LABEL, MALAYSIAN_BANKS, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, TAX_RESIDENCIES, TAX_RESIDENCY_LABEL,
-  TAX_CATEGORIES, TAX_CATEGORY_LABEL, type Employee, type EmployeeInput,
+  TAX_CATEGORIES, TAX_CATEGORY_LABEL, EMPLOYEE_STATUSES, EMPLOYEE_STATUS_LABEL, isEmployeeStatus, type Employee, type EmployeeInput,
 } from '../../../functions/_lib/hrFields';
 
 /* ------------------------------------------------------------------ *
@@ -43,6 +44,7 @@ const departmentsOf = ({ cleanerId, technicianId, cleanerActive, technicianActiv
 };
 function statusOf(e: Employee): { label: string; tone: 'success' | 'neutral' | 'warning' } {
   if (e.status === 'resigned') return { label: 'Resigned', tone: 'neutral' };
+  if (e.status === 'test') return { label: 'Test', tone: 'neutral' };
   if (!e.isActive) return { label: 'Switched off', tone: 'warning' };
   return { label: 'Active', tone: 'success' };
 }
@@ -121,7 +123,7 @@ export default function EmployeesTab() {
       <DataTable<Employee>
         id="employees" columns={columns} rows={loading && people.length === 0 ? null : people}
         rowKey={e => e.cleanerId ?? e.technicianId ?? e.name} pageSize={0} noun={['employee', 'employees']} exportName="employee-master"
-        rowTone={e => (e.status === 'resigned' || !e.isActive ? 'muted' : null)}
+        rowTone={e => (e.status !== 'active' || !e.isActive ? 'muted' : null)}
         onRowClick={mayEdit ? e => setForm({ person: e }) : undefined}
         header={
           <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -161,11 +163,15 @@ export default function EmployeesTab() {
 
 type Dept = 'cleaning' | 'maintenance';
 const ROSTER: Record<Dept, string> = { cleaning: '/housekeeping/cleaners', maintenance: '/maintenance/technicians' };
+const DEPARTMENTS: { value: Dept; label: string; tone: AnyTone }[] = [
+  { value: 'cleaning', label: 'Cleaning', tone: 'info' },
+  { value: 'maintenance', label: 'Maintenance', tone: 'warning' },
+];
 
 /**
- * Add or edit one employee. Adding puts them on the roster of each department ticked (Cleaning first when both) and,
- * when asked, gives them app access; two departments share one login, so both need app access. Name and phone live on
- * the roster and are saved there; everything else is the HR record.
+ * Add or edit one employee. Adding puts them on the roster of the department picked and, when asked, gives them app
+ * access. Moving them to the other department switches the old roster entry off; the app login moves with them, so it
+ * must exist first. Name and phone live on the roster and are saved there; everything else is the HR record.
  */
 function EmployeeForm({ person, onClose, onSaved }: {
   person: Employee | null; onClose: () => void; onSaved: (given: { name: string; employeeId: string; pin: string } | null) => void;
@@ -182,8 +188,9 @@ function EmployeeForm({ person, onClose, onSaved }: {
   });
   const [name, setName] = useState(person?.name ?? '');
   const [phone, setPhone] = useState(person?.phone ?? '');
-  const wasDepts: Dept[] = [...(person?.cleanerActive ? ['cleaning' as const] : []), ...(person?.technicianActive ? ['maintenance' as const] : [])];
-  const [depts, setDepts] = useState<Dept[]>(person ? wasDepts : ['cleaning']);
+  const isOnBoth = !!person?.cleanerActive && !!person.technicianActive;
+  const wasDept: Dept | null = person?.cleanerActive === person?.technicianActive ? null : person?.cleanerActive ? 'cleaning' : 'maintenance';
+  const [dept, setDept] = useState<Dept | null>(person ? wasDept : 'cleaning');
   // Changing a department changes the roster, which is Operations' to run (as Switch off is).
   const mayRoster = mayWork(user, 'operations');
   const [giveAccess, setGiveAccess] = useState(mayGrant);
@@ -193,22 +200,16 @@ function EmployeeForm({ person, onClose, onSaved }: {
   const set = <K extends keyof EmployeeInput>(k: K, v: EmployeeInput[K]) => setD(p => ({ ...p, [k]: v }));
   const daily = d.payBasis === 'daily';
   const salaryChanged = !creating && !daily && d.basicSalarySen > 0 && d.basicSalarySen !== start.basicSalarySen;
-  const toggleDept = (dep: Dept, on: boolean) => setDepts(p => (on ? [...p.filter(x => x !== dep), dep] : p.filter(x => x !== dep)).sort());
 
   async function save() {
     const problems: Record<string, string> = {};
     if (!name.trim()) problems.name = 'Enter their name.';
     const phoneError = phone.trim() ? phoneProblem(phone) : null;
     if (phoneError) problems.phone = phoneError;
-    if (creating && depts.length === 0) problems.departments = 'Tick at least one department.';
-    if (creating && depts.length === 2 && !giveAccess) problems.departments = 'Both departments share one app login: give app access, or tick one.';
-    // Editing: a department they are not on yet needs the shared login, and someone cannot be taken off both here.
-    const added = person ? depts.filter(dep => !(dep === 'cleaning' ? person.cleanerId : person.technicianId)) : [];
-    const deptsChanged = !!person && mayRoster && depts.join() !== wasDepts.join();
-    if (person && deptsChanged) {
-      if (depts.length === 0) problems.departments = 'Tick at least one department. To take them off both, use Switch off on the list.';
-      else if (added.length && !person.userId) problems.departments = 'Both departments share one app login: use Give app access on the list first, then add the department.';
-    }
+    if (creating && !dept) problems.departments = 'Pick a department.';
+    const deptChanged = !!person && mayRoster && dept !== null && dept !== wasDept;
+    const isNewRoster = !!person && !(dept === 'cleaning' ? person.cleanerId : person.technicianId);
+    if (deptChanged && isNewRoster && !person?.userId) problems.departments = 'Moving them needs their app login: use Give app access on the list first, then move them.';
     if (Object.keys(problems).length) { setErrors(problems); return; }
     setBusy(true);
     setErrors({});
@@ -217,18 +218,12 @@ function EmployeeForm({ person, onClose, onSaved }: {
       let given: { name: string; employeeId: string; pin: string } | null = null;
       const roster = { name: name.trim(), phone: phone.trim() || null };
       if (creating) {
-        const [first, second] = depts;
-        const { id } = await api.post<{ id: string }>(ROSTER[first], { ...roster, employmentType: 'internal', vendorName: null });
-        if (first === 'cleaning') cleanerId = id; else technicianId = id;
-        let userId: string | null = null;
+        if (!dept) return;
+        const { id } = await api.post<{ id: string }>(ROSTER[dept], { ...roster, employmentType: 'internal', vendorName: null });
+        if (dept === 'cleaning') cleanerId = id; else technicianId = id;
         if (giveAccess) {
-          const g = await api.post<{ employeeId: string; pin: string; userId: string }>(`${ROSTER[first]}/${id}/access`, {});
-          given = { name: roster.name, employeeId: g.employeeId, pin: g.pin };
-          userId = g.userId;
-        }
-        if (second) {
-          const { id: id2 } = await api.post<{ id: string }>(ROSTER[second], { ...roster, employmentType: 'internal', vendorName: null, userId });
-          technicianId = id2;
+          const { employeeId, pin } = await api.post<{ employeeId: string; pin: string }>(`${ROSTER[dept]}/${id}/access`, {});
+          given = { name: roster.name, employeeId, pin };
         }
       } else {
         // Name and phone are kept on the roster, once per department.
@@ -236,20 +231,21 @@ function EmployeeForm({ person, onClose, onSaved }: {
           if (cleanerId) await api.patch(`${ROSTER.cleaning}/${cleanerId}`, { name: roster.name, phone: roster.phone ?? '' });
           if (technicianId) await api.patch(`${ROSTER.maintenance}/${technicianId}`, { name: roster.name, phone: roster.phone ?? '' });
         }
-        // Departments: add or switch on first so the shared login is never left with nothing on, then switch off.
-        if (deptsChanged) {
+        // Moving: add or switch on the new department first so the shared login is never left with nothing on, then
+        // switch the old one off; the login's role follows on that last step.
+        if (deptChanged) {
           const entries = [
             { dep: 'cleaning' as const, id: cleanerId, was: person.cleanerActive },
             { dep: 'maintenance' as const, id: technicianId, was: person.technicianActive },
           ];
           for (const { dep, id, was } of entries) {
-            if (!depts.includes(dep)) continue;
+            if (dep !== dept) continue;
             if (!id) {
               const made = await api.post<{ id: string }>(ROSTER[dep], { ...roster, employmentType: 'internal', vendorName: null, userId: person.userId });
               if (dep === 'cleaning') cleanerId = made.id; else technicianId = made.id;
             } else if (!was) await api.patch(`${ROSTER[dep]}/${id}`, { isActive: true });
           }
-          for (const { dep, id, was } of entries) if (id && was && !depts.includes(dep)) await api.patch(`${ROSTER[dep]}/${id}`, { isActive: false });
+          for (const { dep, id, was } of entries) if (id && was && dep !== dept) await api.patch(`${ROSTER[dep]}/${id}`, { isActive: false });
         }
       }
       await api.put('/employees', { ...d, cleanerId, technicianId, ...(salaryChanged ? { salaryEffectiveFrom: salaryFrom } : {}) });
@@ -282,22 +278,24 @@ function EmployeeForm({ person, onClose, onSaved }: {
               <span className="text-meta text-muted-ink">Leads a team and can get the leader allowance. Unticked: a normal employee.</span>
             </span>
           </label>
-          <div className="sm:col-span-2 flex flex-col gap-1.5">
-            <span className="text-meta font-medium text-muted-ink">Departments</span>
+          <fieldset className="sm:col-span-2 m-0 p-0 border-none flex flex-col gap-1.5">
+            <legend className="p-0 mb-1.5 text-meta font-medium text-muted-ink">Department</legend>
             {creating || mayRoster ? (
-              <span className="flex gap-5 flex-wrap">
-                {(['cleaning', 'maintenance'] as const).map(dep => (
-                  <label key={dep} className="flex items-center gap-2.5 min-h-10 cursor-pointer">
-                    <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={depts.includes(dep)} onChange={e => toggleDept(dep, e.target.checked)} />
-                    <span className="text-copy">{dep === 'cleaning' ? 'Cleaning' : 'Maintenance'}</span>
-                  </label>
+              <div role="radiogroup" aria-label="Department" className="flex gap-2 flex-wrap">
+                {DEPARTMENTS.map(({ value, label, tone }) => (
+                  <button key={value} type="button" role="radio" aria-checked={dept === value} onClick={() => setDept(value)}
+                    className={`inline-flex items-center gap-2 h-11 px-4 rounded-control cursor-pointer font-sans text-copy border border-solid ${dept === value ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink hover:text-ink'}`}>
+                    <StatusDot tone={tone} />{label}
+                  </button>
                 ))}
-              </span>
+              </div>
             ) : <span className="text-copy min-h-10 flex items-center">{departmentsOf(person)}</span>}
+            {isOnBoth && !dept && <span className="text-meta text-muted-ink">On both now. Pick one to keep: the other is switched off.</span>}
+            {!creating && dept && dept !== wasDept && <span className="text-meta text-muted-ink">Saving moves them to {dept === 'cleaning' ? 'Cleaning' : 'Maintenance'}. Their app opens on {dept === 'cleaning' ? 'cleaning jobs' : 'repair jobs'} from the next time it loads.</span>}
             {errors.departments && <span className="text-meta text-danger">{errors.departments}</span>}
-          </div>
-          <Select label="Status" showLabel size="md" value={d.status} onChange={v => set('status', v === 'resigned' ? 'resigned' : 'active')}
-            options={[{ value: 'active', label: 'Active' }, { value: 'resigned', label: 'Resigned' }]} />
+          </fieldset>
+          <Select label="Status" showLabel size="md" value={d.status} onChange={v => set('status', isEmployeeStatus(v) ? v : 'active')}
+            options={EMPLOYEE_STATUSES.map(status => ({ value: status, label: EMPLOYEE_STATUS_LABEL[status] }))} />
           <DateField label="Join date" value={d.joinDate ?? ''} onChange={v => set('joinDate', v || null)} error={errors.joinDate} />
           {d.status === 'resigned' && (
             <DateField label="Last working day" value={d.resignedAt ?? ''} onChange={v => set('resignedAt', v || null)} required error={errors.resignedAt} />

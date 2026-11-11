@@ -19,6 +19,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const authedFetch = vi.fn();
+vi.mock('../pages/renovation-beta/renovationBetaPoDrawings', () => ({ poDrawingsAppender: async () => null }));
 vi.mock("../vendor/scm/lib/authed-fetch", () => ({ authedFetch: (p: string) => authedFetch(p) }));
 
 const gen = {

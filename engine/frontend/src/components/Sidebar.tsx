@@ -42,6 +42,7 @@ import {
   ArrowLeftRight,
   SlidersHorizontal,
   ClipboardCheck,
+  ListChecks,
   ShoppingCart,
   Send,
   RotateCcw,
@@ -359,6 +360,19 @@ export const ALL_NAV_TABS: NavTab[] = [
         icon: Calendar,
         pageAccess: "projects.list",
       },
+      // Handover snag list (TODO item 17): every project's open defects, and the checklists a handover check starts from.
+      {
+        to: "/beta/defects",
+        label: "Defects",
+        icon: ClipboardCheck,
+        pageAccess: "projects.list",
+      },
+      {
+        to: "/beta/handover-checklists",
+        label: "Handover checklists",
+        icon: ListChecks,
+        pageAccess: "projects.list",
+      },
       {
         to: "/projects?view=finances",
         label: "Finances",
@@ -546,6 +560,7 @@ export const ALL_NAV_TABS: NavTab[] = [
         hideForSalesRep: true,
         children: [
           { to: "/scm/production-orders", label: "Production Orders", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.production"], hideForSalesRep: true },
+          { to: "/scm/sku-composition", label: "SKU Composition", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.production"], hideForSalesRep: true },
         ],
       },
       {

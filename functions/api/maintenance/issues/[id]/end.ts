@@ -1,7 +1,8 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
-import { isAssignee } from '../../../../_lib/maintenance';
+import { isAssignee, hasSupportRequest } from '../../../../_lib/maintenance';
 import { repairNotice } from '../../../../_lib/notices';
+import { PASS_KEY_DONE_ONLY } from '../../../../_lib/passKeyJobs';
 
 /** POST /api/maintenance/issues/:id/end { note? } — records when the repair finished. The job is not
  *  yet resolved: completing it (with the final amount) still raises the expense. This only
@@ -15,8 +16,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const id = String(params.id);
   const b = await request.json<any>().catch(() => null);
   const note = typeof b?.note === 'string' && b.note.trim() ? b.note.trim().slice(0, 1000) : null;
-  const cur = await one<any>(env, 'SELECT id, state, started_at, ended_at FROM maintenance_issues WHERE id = ?', id);
+  const cur = await one<any>(env, 'SELECT id, state, job_type, started_at, ended_at FROM maintenance_issues WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That job no longer exists.', 404);
+  if (cur.job_type === 'pass_key') return fail('CONFLICT', PASS_KEY_DONE_ONLY, 409);
   if (field && !(await isAssignee(env, id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
   if (cur.state === 'resolved') return fail('CONFLICT', 'That job is already finished.', 409);
   if (!cur.started_at) return fail('CONFLICT', 'Start the job before ending it.', 409);
@@ -27,7 +29,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
   const now = nowIso();
   const endedAt = cur.ended_at ?? now;
-  await run(env, `UPDATE maintenance_issues SET ended_at = ?, updated_at = ? WHERE id = ?`, endedAt, now, id);
+  const clearSupport = (await hasSupportRequest(env)) ? ', support_requested_at = NULL, support_note = NULL' : '';
+  await run(env, `UPDATE maintenance_issues SET ended_at = ?, updated_at = ?${clearSupport} WHERE id = ?`, endedAt, now, id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.end', entityTable: 'maintenance_issues', entityId: id, before: { startedAt: cur.started_at }, after: { endedAt, note }, source: field ? 'field_app' : 'web' });
   if (!cur.ended_at) await repairNotice(env, id, 'ended', session.userId);
   return json({ ok: true, endedAt });

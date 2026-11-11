@@ -14,8 +14,9 @@ describe('category badges', () => {
     expect(badgeFor('fabric_accessory').bg).toBe(CATEGORY_BADGE.sofa!.bg);
   });
 
-  it('still falls back to OTHERS for a group it does not know', () => {
-    expect(badgeFor('dining').label).toBe('OTHERS');
+  it('names a group it has no swatch for, in the OTHERS colours, and says OTHERS for no group', () => {
+    expect(badgeFor('dining').label).toBe('DINING');
+    expect(badgeFor('dining').bg).toBe(badgeFor(null).bg);
     expect(badgeFor(null).label).toBe('OTHERS');
   });
 });

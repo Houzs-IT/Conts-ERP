@@ -10,7 +10,7 @@ import type { DocKind, PrintBrand, PrintDoc, PrintLineInput, PrintSectionInput }
 export function toPrintLine(l: DocLine): PrintLineInput {
   const m = l.measureMilli ?? (l.measure ? parseMeasureMilli(l.measure) : null);
   return {
-    kind: l.kind, description: l.description, room: l.room, qty: l.qty,
+    id: l.id, itemCode: l.itemCode, kind: l.kind, description: l.description, room: l.room, qty: l.qty,
     measureMilli: m !== null && !Number.isNaN(m) ? m : null, measureUom: l.measureUom, uom: l.uom,
     unitPriceSen: l.unitPriceSen, listPriceSen: l.listPriceSen, discountBp: l.discountBp, amountOverrideSen: l.amountOverrideSen,
     isFoc: l.isFoc, highlight: l.highlight, pageBreakBefore: l.pageBreakBefore, parentId: l.parentId ?? null,
@@ -27,6 +27,28 @@ export function toPrintSections(sections: DocSection[]): PrintSectionInput[] {
   /* A VO that replaced a section's only line leaves that heading empty beside the new one of the same name. */
   return printed.filter((s) => s.lines.length > 0 || s.lumpSumSen !== null
     || !printed.some((o) => o !== s && o.heading === s.heading && o.lines.length > 0));
+}
+
+export type PrintLayout = 'item' | 'area' | 'category';
+export const PRINT_LAYOUTS: ReadonlyArray<{ key: PrintLayout; label: string }> = [{ key: 'area', label: 'By area' }, { key: 'item', label: 'By item' }, { key: 'category', label: 'By category' }];
+
+/** The sections a sales order prints in each layout (owner, 31 Oct 2026: by area unless asked). The document is drawn by
+    area, so that is as it stands. A lump sum is one price for its lines, which cannot be regrouped. A child line stays
+    with its parent. */
+export function sectionsByLayout(sections: PrintSectionInput[], layout: PrintLayout, groupOf: (l: PrintLineInput) => string | null): PrintSectionInput[] {
+  if (layout === 'area' || sections.some((s) => s.lumpSumSen !== null)) return sections;
+  const lines = sections.flatMap((s) => s.lines);
+  if (layout === 'item') return [{ heading: '', bandColor: null, lumpSumSen: null, lines }];
+  const parentOf = new Map(lines.filter((l) => l.id).map((l) => [l.id!, l]));
+  const groups = new Map<string, PrintLineInput[]>();
+  for (const l of lines) {
+    const owner = l.parentId ? parentOf.get(l.parentId) ?? l : l;
+    const label = groupOf(owner) ?? 'Other';
+    groups.set(label, [...(groups.get(label) ?? []), l]);
+  }
+  const named = [...groups].filter(([k]) => k !== 'Other');
+  const other = groups.get('Other');
+  return [...named, ...(other ? [['Other', other] as const] : [])].map(([heading, ls]) => ({ heading, bandColor: null, lumpSumSen: null, lines: ls }));
 }
 
 export async function printBrand(brand: BrandProfile | undefined): Promise<PrintBrand> {

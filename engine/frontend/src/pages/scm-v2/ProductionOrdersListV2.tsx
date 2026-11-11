@@ -6,11 +6,11 @@
 // Route: /scm/production-orders (App.tsx flips ScmProductionOrdersV2 here).
 // Data: useProductionOrders (vendored suppliers-queries slice).
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { todayMyt } from '../../vendor/scm/lib/dates';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { productionOrderRowMenu } from "./row-menus";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { buildVariantSummary, fmtSen, fmtDate, orderLineIdentity } from "@2990s/shared";
-import { formatPhone } from "@2990s/shared/phone";
 import {
   Plus,
   ChevronDown,
@@ -63,10 +63,14 @@ import {
   usePoListFacets,
   useEnrichedPoListRows,
   fetchProductionExportRows,
+  useMaterialStatus,
+  useProductionMaterials,
   type PoHeaderRow,
   type PoItemRow,
+  type ProductionProgress,
 } from "../../vendor/scm/lib/production-order-queries";
 import {
+  hoursOf,
   useProductionOrdersPaged,
   useProductionOrderDetail,
   fetchProductionOrderDetail,
@@ -84,6 +88,7 @@ import { useHoldAction } from "./use-hold-action";
 import { usePoCancelAction } from "./use-production-cancel-action";
 import { StatusWithHold, rowIsHeld } from "../../vendor/scm/components/HoldChip";
 import { PrintPreviewBatchModal, usePrintPreview } from "../../components/scm-v2/PrintPreviewModal";
+import { ProgressBar } from "./renovationProductionParts";
 import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -94,13 +99,16 @@ import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
 // the pill counts no longer sum to All; that is intended.
 type StatusTab =
   | "all"
-  | "outstanding"
   | "draft"
+  | "pending"
+  | "in_progress"
+  | "overdue"
+  | "on_hold"
+  | "completed"
+  | "cancelled"
   | "open"
   | "partial"
-  | "received"
-  | "cancelled"
-  | "on_hold";
+  | "received";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -162,6 +170,13 @@ const statusFor = (
     label: s || "—",
     bucket: "open",
   };
+
+/* Status and Progress are worked out on the server from Start and the plan dates (lib/renovation-production.ts). */
+type ProductionRowExtra = { plan_start?: string | null; progress?: ProductionProgress; assigned_to?: string[]; production_time_hours?: number | string | null; actual_minutes?: number };
+const extraOf = (r: PoHeaderRow): ProductionRowExtra => r as unknown as ProductionRowExtra;
+const PROGRESS_TONE: Record<string, "success" | "warning" | "error" | "neutral"> = {
+  Draft: "neutral", Pending: "warning", "In Progress": "neutral", Overdue: "error", "On Hold": "neutral", Completed: "success", Cancelled: "error",
+};
 
 // ─── GRN No cell ────────────────────────────────────────────────────────────
 
@@ -408,8 +423,8 @@ function DetailDrawer({
     ((detailQ.data as { items?: PoItemRow[] } | undefined)?.items ?? []);
 
   const open = !!row;
-  const st = row ? statusFor(row.status) : null;
-  const total = row ? totalOf(row) : 0;
+  /* The same words as the list's Status column. */
+  const word = row ? extraOf(row).progress?.statusLabel ?? statusFor(row.status).label : null;
   /* SO→Production Order drift (owner 2026-07-27) — surface the pending SO change in the peek
      drawer too, not only the full page. Actionable pre-receipt only. */
   const showDrift =
@@ -422,7 +437,7 @@ function DetailDrawer({
       onClose={onClose}
       ariaLabel={row ? `Production order ${row.po_number}` : "Production order details"}
     >
-        {row && st && (
+        {row && word && (
           <>
             <div className="flex h-[60px] shrink-0 items-center gap-3 bg-sidebar px-5 text-sidebar-ink">
               <button
@@ -446,57 +461,22 @@ function DetailDrawer({
               >
                 Open full page <ExternalLink size={12} />
               </button>
-              <Badge tone={st.tone} variant="solid" size="xs">
-                {st.label}
+              <Badge tone={PROGRESS_TONE[word] ?? "neutral"} variant="solid" size="xs">
+                {word}
               </Badge>
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-5">
-              <div className="text-[19px] font-bold text-ink">{supplierNameOf(row)}</div>
-              <div className="mt-1.5 flex items-center gap-2.5">
-                <span className="font-mono text-[11.5px] text-ink-muted">
-                  {supplierCodeOf(row)}
-                </span>
-                <span className="text-[12.5px] text-ink-muted">
-                  Ordered {fmtDate(row.po_date)}
-                </span>
-              </div>
+              <div className="text-[19px] font-bold text-ink">{(row as { project_label?: string | null }).project_label || "No project"}</div>
 
-              <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-border bg-surface-2 px-4 py-4">
-                <MetaItem k="Production Order date" v={fmtDate(row.po_date)} />
-                <MetaItem
-                  k="Expected"
-                  v={row.expected_at ? fmtDate(row.expected_at) : "—"}
-                />
-                <MetaItem k="Currency" v={row.currency} />
-                <MetaItem k="Lines" v={row.items?.length ?? "—"} />
+              <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-border bg-surface-2 px-4 py-4">
+                <MetaItem k="SO Doc No." v={[...new Set((row.lines ?? []).map((l) => l.so_doc_no).filter(Boolean))].join(", ") || "—"} />
+                <MetaItem k="Assigned to" v={(extraOf(row).assigned_to ?? []).join(", ") || "Nobody yet"} />
+                <MetaItem k="Plan start" v={fmtDate(extraOf(row).plan_start ?? null)} />
+                <MetaItem k="Plan finish" v={fmtDate(row.expected_at)} />
+                <MetaItem k="Progress" v={extraOf(row).progress?.label || "—"} />
+                <MetaItem k="Warehouse" v={locationOf(row) || "—"} />
               </dl>
-
-              <SectionHeading>Supplier</SectionHeading>
-              <div className="overflow-hidden rounded-lg border border-border bg-surface">
-                <div className="flex items-center gap-3 border-b border-border-subtle px-4 py-3.5">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[13px] font-bold text-accent-ink">
-                    {(supplierNameOf(row) || "S")
-                      .split(/\s+/)
-                      .filter(Boolean)
-                      .slice(0, 2)
-                      .map((w) => w[0]?.toUpperCase())
-                      .join("") || "S"}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-[14px] font-bold text-ink">
-                      {supplierNameOf(row)}
-                    </div>
-                    <div className="mt-0.5 font-mono text-[11.5px] text-ink-muted">
-                      {supplierCodeOf(row)}
-                    </div>
-                  </div>
-                </div>
-                <RowKV k="Contact" v={row.supplier?.contact_person || "—"} />
-                <RowKV k="Phone" v={formatPhone(row.supplier?.phone) || "—"} />
-                <RowKV k="Email" v={row.supplier?.email || "—"} />
-                <RowKV k="Address" v={row.supplier?.address || "—"} />
-              </div>
 
               <SectionHeading>Line items</SectionHeading>
               {driftCount > 0 && (
@@ -506,12 +486,9 @@ function DetailDrawer({
                 </div>
               )}
               <div className="overflow-hidden rounded-lg border border-border">
-                <div className="grid grid-cols-[1fr_44px_44px_44px_92px] gap-2 border-b border-border-subtle bg-surface-2 px-4 py-2 font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
+                <div className="grid grid-cols-[1fr_96px] gap-2 border-b border-border-subtle bg-surface-2 px-4 py-2 font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
                   <span>Item</span>
-                  <span className="text-right">Ord</span>
-                  <span className="text-right">Rcv</span>
-                  <span className="text-right">Bal</span>
-                  <span className="text-right">Amount</span>
+                  <span className="text-right">Qty</span>
                 </div>
                 {detailQ.isLoading && (
                   <div className="px-4 py-8 text-center text-[12px] text-ink-muted">
@@ -534,14 +511,10 @@ function DetailDrawer({
                       buildVariantSummary(l.item_group ?? "others", l.variants ?? null) ||
                       (l.description2 ?? ""),
                   });
-                  const received = Number(l.received_qty ?? 0);
-                  const ordered = Number(l.qty ?? 0);
-                  const balance = Math.max(0, ordered - received);
-                  const fullyReceived = ordered > 0 && received >= ordered;
                   return (
                     <div
                       key={l.id}
-                      className="grid grid-cols-[1fr_44px_44px_44px_92px] items-start gap-2 border-b border-border-subtle px-4 py-3 last:border-b-0"
+                      className="grid grid-cols-[1fr_96px] items-start gap-2 border-b border-border-subtle px-4 py-3 last:border-b-0"
                     >
                       <div className="min-w-0">
                         <div className="text-[12.5px] font-medium leading-snug text-ink">
@@ -564,30 +537,12 @@ function DetailDrawer({
                           </div>
                         )}
                       </div>
-                      <span className="text-right font-money text-[12.5px] text-ink-secondary">
-                        {ordered}
-                      </span>
-                      <span className={cn("text-right font-money text-[12.5px] font-semibold", fullyReceived ? "text-synced" : "text-ink-secondary")}>
-                        {received}
-                      </span>
-                      <span className={cn("text-right font-money text-[12.5px] font-semibold", balance > 0 ? "text-accent-bright" : "text-ink-muted")}>
-                        {balance > 0 ? balance : "—"}
-                      </span>
-                      <span className="text-right font-money text-[12.5px] font-semibold text-ink">
-                        {fmtRm(l.line_total_sen ?? 0)}
+                      <span className="text-right font-money text-[12.5px] font-semibold text-ink-secondary">
+                        {Number(l.qty ?? 0)} {l.uom ?? ""}
                       </span>
                     </div>
                   );
                 })}
-              </div>
-
-              <div className="mt-4 rounded-lg border border-border bg-surface px-5 py-4">
-                <div className="flex items-center justify-between gap-3 border-b border-border-subtle pb-3">
-                  <QtyTotal label="Qty" value={items.reduce((s, l) => s + l.qty, 0)} />
-                </div>
-                <div className="pt-3">
-                  <TotalRow k="Grand total" v={fmtRm(total)} strong />
-                </div>
               </div>
             </div>
 
@@ -647,57 +602,6 @@ function SectionHeading({ children }: { children: ReactNode }) {
   );
 }
 
-function RowKV({ k, v }: { k: string; v: ReactNode }) {
-  return (
-    <div className="flex items-start gap-3 border-b border-border-subtle px-4 py-2.5 last:border-b-0">
-      <span className="w-20 shrink-0 font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-        {k}
-      </span>
-      <span className="flex-1 text-[13px] font-semibold leading-relaxed text-ink">
-        {v}
-      </span>
-    </div>
-  );
-}
-
-function QtyTotal({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone?: "synced" | "balance";
-}) {
-  const color =
-    tone === "synced" && value > 0
-      ? "text-synced"
-      : tone === "balance" && value > 0
-        ? "text-accent-bright"
-        : "text-ink";
-  return (
-    <div className="flex flex-col items-center gap-0.5">
-      <span className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-        {label}
-      </span>
-      <span className={cn("font-money text-[15px] font-bold", color)}>{value}</span>
-    </div>
-  );
-}
-
-function TotalRow({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
-  return (
-    <div className="flex items-center justify-between py-1.5">
-      <span className={cn("text-[12px] text-ink-muted", strong && "text-[13px] font-semibold text-ink")}>
-        {k}
-      </span>
-      <span className={cn("font-money text-[13px] font-semibold", strong && "text-[15px] font-bold text-ink")}>
-        {v}
-      </span>
-    </div>
-  );
-}
-
 // Table column key → backend sort-whitelist column. Production Order backend whitelist is
 // { po_date, po_number, status, total_sen }; only `total` differs from its
 // backend name. Non-whitelisted columns (supplier / expected) carry `disableSort`.
@@ -713,6 +617,63 @@ const SORT_COL_MAP: Record<string, string> = {
 // Amount, via the shared DocumentLinesExpansion. A Production Order is a purchase-side doc
 // with no MRP coverage on its lines, so the SO/DO-only Stock + Incoming Production Order
 // columns are correctly absent.
+/* The row dropdown keeps its line table and adds the order's raw materials (owner, 6 Nov 2026). */
+function RawMaterialsDrop({ id }: { id: string }) {
+  const materials = useProductionMaterials(id);
+  const statuses = useMaterialStatus(id);
+  const rows = materials.data ?? [];
+  if (rows.length === 0) return null;
+  const TH = "whitespace-nowrap px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-brand text-ink-muted";
+  const TD = "whitespace-nowrap px-3 py-2";
+  return (
+    <div className="overflow-x-auto rounded-md border border-border bg-surface">
+      <table className="w-full border-collapse text-left text-[13px]">
+        <thead><tr className="bg-surface-2"><th className={TH}>Raw material</th><th className={TH}>Needed</th><th className={TH}>Stock</th><th className={TH}>Warehouse</th><th className={TH}>PO</th><th className={TH}>Arrives</th></tr></thead>
+        <tbody>
+          {rows.map((m) => {
+            const st = statuses.data?.[m.id];
+            const word = !st ? "Checking…" : st.state === "received" || st.state === "stock" ? "Ready" : st.state === "po" ? "On order" : st.issued > 0 ? "Short" : "No PO yet";
+            return (
+              <tr key={m.id} className="border-t border-border-subtle">
+                <td className="px-3 py-2"><b className="font-semibold">{m.description || m.item_code}</b> <span className="text-[12px] text-ink-muted">{m.item_code}</span></td>
+                <td className={cn(TD, "font-semibold")}>{Number(m.qty_needed)} {m.uom ?? ""}</td>
+                <td className={TD}><Badge tone={word === "Ready" ? "success" : word === "On order" ? "warning" : word === "Checking…" ? "neutral" : "error"} size="xs">{word}</Badge></td>
+                <td className={TD}>{st?.warehouse ?? "—"}</td>
+                <td className={TD}>{st?.poNumber ?? "—"}</td>
+                <td className={TD}>{st?.state === "po" && st.eta ? fmtDate(st.eta) : "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* The dropdown sits in a row as wide as every column. It holds to the width on screen and stays there as the table
+   scrolls sideways, so nothing in it is cut off. */
+function VisibleWidth({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState<{ left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    let scroller = el?.parentElement ?? null;
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowX)) scroller = scroller.parentElement;
+    if (!el || !scroller) return;
+    const box = scroller;
+    const measure = () => {
+      const left = el.getBoundingClientRect().left - box.getBoundingClientRect().left + box.scrollLeft;
+      const inset = Math.min(left, 20);
+      setFit({ left: inset, width: Math.max(0, box.clientWidth - inset * 2) });
+    };
+    measure();
+    const seen = new ResizeObserver(measure);
+    seen.observe(box);
+    return () => seen.disconnect();
+  }, []);
+  return <div ref={ref} className="flex flex-col gap-2" style={fit ? { position: "sticky", left: fit.left, width: fit.width } : undefined}>{children}</div>;
+}
+
 function PoLinesExpansion({ id }: { id: string }) {
   const navigate = useNavigate();
   const detailQ = useProductionOrderDetail(id);
@@ -732,7 +693,7 @@ function PoLinesExpansion({ id }: { id: string }) {
     deliveredDos: [],
   }));
   return (
-    <div className="flex flex-col gap-2">
+    <VisibleWidth>
       <DocumentLinesExpansion
         isLoading={detailQ.isLoading}
         coverage="ready"
@@ -745,7 +706,8 @@ function PoLinesExpansion({ id }: { id: string }) {
         onOpenSo={(soDocNo) => navigate(`/scm/sales-orders/${encodeURIComponent(soDocNo)}`)}
         onOpenDo={(doNo) => navigate(`/scm/delivery-orders?q=${encodeURIComponent(doNo)}`)}
       />
-    </div>
+      <RawMaterialsDrop id={id} />
+    </VisibleWidth>
   );
 }
 
@@ -826,15 +788,9 @@ export function ProductionOrdersListV2() {
   const serverRows = (data?.purchaseOrders ?? []) as PoHeaderRow[];
   const rows = useEnrichedPoListRows(serverRows, !listLoading);
   const total = data?.total ?? 0;
-  const counts = data?.statusCounts ?? {
-    all: 0,
-    draft: 0,
-    outstanding: 0,
-    open: 0,
-    partial: 0,
-    received: 0,
-    cancelled: 0,
-    on_hold: 0,
+  const counts = {
+    all: 0, draft: 0, pending: 0, in_progress: 0, overdue: 0, on_hold: 0, completed: 0, cancelled: 0,
+    ...data?.statusCounts,
   };
 
   /* The rows the TABLE is actually showing — the page rows minus whatever the
@@ -1073,7 +1029,7 @@ export function ProductionOrdersListV2() {
       }
       if (how === "one") {
         await pdf.generateCombinedProductionOrderPdf(pos as never, {
-          fileName: `production-orders-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `production-orders-${todayMyt()}.pdf`,
           action,
         });
       } else {
@@ -1145,7 +1101,53 @@ export function ProductionOrdersListV2() {
       ),
     },
     lineCols.so_doc_no!,
-    lineCols.item_code!,
+    /* Straight after the order numbers, so the job's state shows without scrolling (owner, 7 Nov 2026). */
+    {
+      key: "progress_status",
+      label: "Status",
+      width: "116px",
+      className: "dt-cancel-keep",
+      disableSort: true,
+      getValue: (r) => extraOf(r).progress?.statusLabel ?? statusFor(r.status).label,
+      render: (r) => {
+        const word = extraOf(r).progress?.statusLabel ?? statusFor(r.status).label;
+        return <Badge tone={PROGRESS_TONE[word] ?? "neutral"} size="xs">{word}</Badge>;
+      },
+    },    {
+      key: "progress",
+      label: "Progress",
+      width: "124px",
+      disableSort: true,
+      getValue: (r) => extraOf(r).progress?.label ?? "",
+      render: (r) => {
+        const p = extraOf(r).progress;
+        if (!p?.label) return <span className="text-[12.5px] text-ink-muted">—</span>;
+        return <div className="min-w-[96px]"><div className="mb-1 whitespace-nowrap text-[12px] font-semibold text-ink">{p.label}</div><ProgressBar pct={p.pct} overdue={p.overdue} /></div>;
+      },
+    },    {
+      key: "plan_start",
+      label: "Plan Start",
+      width: "108px",
+      disableSort: true,
+      exportFormat: "date",
+      getValue: (r) => extraOf(r).plan_start ?? "",
+      render: (r) => <span className="text-[12.5px] text-ink-secondary">{fmtDate(extraOf(r).plan_start ?? null)}</span>,
+    },    {
+      key: "plan_finish",
+      label: "Plan Finish",
+      width: "108px",
+      disableSort: true,
+      exportFormat: "date",
+      getValue: (r) => r.expected_at ?? "",
+      render: (r) => <span className="text-[12.5px] text-ink-secondary">{fmtDate(r.expected_at)}</span>,
+    },    {
+      key: "assigned_to",
+      label: "Assigned To",
+      width: "132px",
+      disableSort: true,
+      getValue: (r) => (extraOf(r).assigned_to ?? []).join(", "),
+      render: (r) => <span className="text-[12.5px] text-ink-secondary">{(extraOf(r).assigned_to ?? []).join(", ") || "Nobody yet"}</span>,
+    },    lineCols.item_code!,
     lineCols.item_description!,
     lineCols.item_description_2!,
     lineCols.location!,
@@ -1179,15 +1181,45 @@ export function ProductionOrdersListV2() {
       render: (r) => <span className="text-[12.5px] text-ink-secondary">{(r as { project_label?: string | null }).project_label ?? "—"}</span>,
     },
     {
+      /* As an SO line's Stock (owner, 6 Nov 2026): are this order's raw materials here? */
+      key: "material_stock_status",
+      label: "Stock Status",
+      width: "116px",
+      getValue: (r) => (r as { material_stock_status?: string | null }).material_stock_status ?? "",
+      render: (r) => {
+        const v = (r as { material_stock_status?: string | null }).material_stock_status;
+        if (!v) return <span className="text-[12.5px] text-ink-muted">—</span>;
+        return <Badge tone={v === "READY" ? "success" : "warning"} size="xs">{v}</Badge>;
+      },
+    },
+    {
       key: "production_time",
       label: "Production Time",
       width: "120px",
-      getValue: (r) => Number((r as { production_time_days?: number | string | null }).production_time_days ?? 0),
+      getValue: (r) => Number(extraOf(r).production_time_hours ?? 0),
       render: (r) => {
-        const d = (r as { production_time_days?: number | string | null }).production_time_days;
-        return <span className="text-[12.5px] text-ink-secondary">{d == null ? "—" : `${Number(d)} day${Number(d) === 1 ? "" : "s"}`}</span>;
+        const h = extraOf(r).production_time_hours;
+        return <span className="text-[12.5px] text-ink-secondary">{h == null ? "—" : `${Number(h)} hour${Number(h) === 1 ? "" : "s"}`}</span>;
       },
     },
+    {
+      /* Worker hours so far against the Production time budget (TODO item 16); red when over it. */
+      key: "actual_hours",
+      label: "Actual Hours",
+      width: "112px",
+      getValue: (r) => hoursOf(extraOf(r).actual_minutes ?? 0),
+      render: (r) => {
+        const x = extraOf(r);
+        const actual = hoursOf(x.actual_minutes ?? 0);
+        const over = x.production_time_hours != null && actual > Number(x.production_time_hours);
+        return <span className={cn("text-[12.5px]", over ? "font-semibold text-err" : "text-ink-secondary")}>{x.actual_minutes ? `${actual} h` : "—"}</span>;
+      },
+    },
+
+
+
+
+
     {
       key: "expected",
       label: "Completion date",
@@ -1272,19 +1304,13 @@ export function ProductionOrdersListV2() {
 
   const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
     { value: "all", label: `All · ${counts.all}` },
-    // Roll-up first: "what's still on order" is the working view of this page,
-    // and it reads as a summary of the 1:1 pills that follow it. A worker
-    // predating the bucket omits the key — open + partial IS the same number
-    // off the same server-side aggregate, so derive rather than show nothing.
-    {
-      value: "outstanding",
-      label: `Outstanding · ${counts.outstanding ?? counts.open + counts.partial}`,
-    },
     { value: "draft", label: `Draft · ${counts.draft}` },
-    { value: "open", label: `Submitted · ${counts.open}` },
-    { value: "received", label: `Complete · ${counts.received}` },
-    { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
+    { value: "pending", label: `Pending · ${counts.pending}` },
+    { value: "in_progress", label: `In Progress · ${counts.in_progress}` },
+    { value: "overdue", label: `Overdue · ${counts.overdue}` },
     { value: "on_hold", label: `On Hold · ${counts.on_hold ?? 0}` },
+    { value: "completed", label: `Completed · ${counts.completed}` },
+    { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
   ];
 
   return (
@@ -1341,49 +1367,12 @@ export function ProductionOrdersListV2() {
         </div>
 
         {/* Stat strip */}
-        <div className="mb-5 hidden grid-cols-2 gap-3 md:grid lg:grid-cols-4">
-          {/* Owner 2026-08-12 — every tile now describes the rows ON SCREEN, and
-              says so when a column funnel is narrowing them. The count tile is
-              the one that has to switch source: `total` is the server's full
-              match count and is right until a client-side funnel hides part of
-              the page, at which point it contradicts the table underneath. */}
-          <StatCard
-            pending={statsPending} {...statsFail}
-            label="Total Orders"
-            value={(visible.filtered ? visible.rows.length : total).toLocaleString("en-MY")}
-            subtitle={visible.filtered ? "Filtered · shown below" : "All matching orders"}
-            rail="bg-primary"
-            active
-          />
-          <StatCard
-            pending={statsPending} {...statsFail}
-            label="Order value"
-            value={fmtRm(money.committed)}
-            subtitle={visible.filtered ? "Filtered · sum shown below" : "Sum on this page"}
-            rail="bg-accent"
-          />
-          <StatCard
-            pending={statsPending} {...statsFail}
-            label="Submitted"
-            value={fmtRm(money.outstanding)}
-            subtitle={
-              visible.filtered
-                ? "Filtered"
-                : "On this page"
-            }
-            tone="warning"
-            rail="bg-accent-bright"
-          />
-          <StatCard
-            pending={statsPending} {...statsFail}
-            label="Complete"
-            value={fmtRm(money.received)}
-            subtitle={
-              visible.filtered ? "Filtered" : "On this page"
-            }
-            tone="success"
-            rail="bg-synced"
-          />
+        <div className="mb-5 hidden grid-cols-2 gap-3 md:grid lg:grid-cols-5">
+          <StatCard pending={statsPending} {...statsFail} label="Pending" value={counts.pending.toLocaleString("en-MY")} subtitle="Not started yet" tone="warning" rail="bg-accent-bright" />
+          <StatCard pending={statsPending} {...statsFail} label="In Progress" value={counts.in_progress.toLocaleString("en-MY")} subtitle="Started, not finished" rail="bg-accent" />
+          <StatCard pending={statsPending} {...statsFail} label="Overdue" value={counts.overdue.toLocaleString("en-MY")} subtitle="Past plan finish" tone={counts.overdue > 0 ? "error" : undefined} rail="bg-err" />
+          <StatCard pending={statsPending} {...statsFail} label="On Hold" value={(counts.on_hold ?? 0).toLocaleString("en-MY")} subtitle="Stopped for now" rail="bg-ink-muted" />
+          <StatCard pending={statsPending} {...statsFail} label="Completed" value={counts.completed.toLocaleString("en-MY")} subtitle="Sent for GR and DO" tone="success" rail="bg-synced" />
         </div>
 
         {/* Mobile sticky search */}

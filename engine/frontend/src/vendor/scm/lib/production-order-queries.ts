@@ -51,6 +51,10 @@ export type PoStatusCounts = {
   /* ON_HOLD (mig 0318, owner 2026-08-21). Optional for the same reason
      `outstanding` is: an older deployment answers without it. */
   on_hold?: number;
+  pending?: number;
+  in_progress?: number;
+  overdue?: number;
+  completed?: number;
 };
 export function useProductionOrdersPaged(params: { page: number; pageSize: number; status?: string; supplierId?: string; q?: string; sort?: string; creditorNames?: string[]; creditorCodes?: string[]; currencies?: string[]; docDates?: string[] }) {
   const { page, pageSize, status, supplierId, q, sort, creditorNames, creditorCodes, currencies, docDates } = params;
@@ -428,6 +432,8 @@ export function useCreateProductionOrder() {
           invisible to MRP supply). Omitted/false → SUBMITTED, as before. */
       asDraft?: boolean;
       productionTimeDays?: string;
+      productionTimeHours?: string;
+      planStart?: string;
       /** Over-convert override (owner 2026-07-24). SO-sourced lines are capped at
           the source SO line's remaining qty (409 qty_exceeds_remaining); set this
           after the operator confirms to raise a Production Order beyond what the SO still needs.
@@ -457,6 +463,8 @@ export function useUpdateProductionOrderHeader() {
       /** PR #77 — default ship-to warehouse for every line on this Production Order. */
       purchaseLocationId?: string | null;
       productionTimeDays?: string | number | null;
+      productionTimeHours?: string | number | null;
+      planStart?: string | null;
     }) => authedFetch<{ purchaseOrder: PoHeaderRow }>(`/production-orders/${id}`, {
       method: 'PATCH', body: JSON.stringify(body),
     }),
@@ -610,7 +618,7 @@ export function useCancelProductionOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
-      authedFetch<{ purchaseOrder: { id: string; status: PoStatus; cancelled_at: string } }>(
+      authedFetch<{ purchaseOrder: { id: string; status: PoStatus; cancelled_at: string }; warning?: string }>(
         `/production-orders/${id}/cancel`,
         { method: 'PATCH', body: JSON.stringify({ reason }) },
       ),
@@ -668,12 +676,86 @@ export async function fetchProductionExportRows<T extends { id: string }>(
 export type MaterialRow = {
   id: string; item_code: string; description: string | null; uom: string | null; qty_needed: number | string;
   processing_date: string | null; delivery_date: string | null; notes: string | null;
+  qty_issued: number; qty_returned: number; qty_issued_short: number; added_how: 'LISTED' | 'REQUESTED'; from_composition: boolean;
 };
 export type MaterialStatus = {
   state: 'received' | 'stock' | 'po' | 'short'; received: number; onOrder: number; shortQty: number | null;
   poNumber: string | null; poId: string | null; eta: string | null;
+  issued: number; warehouse: string | null; arriving: boolean;
+};
+export type ProductionProgress = {
+  bucket: string; overdue: boolean; label: string; statusLabel: string; planDays: string[]; dayNo: number | null; daysLeft: number | null; pct: number;
+};
+export type ProductionWorker = { id: string; person_key: string; name: string; trade: string | null; how: 'ASSIGNED' | 'STARTED' };
+export type OrderChange = { source: string; text: string; at: string; href: string | null };
+export type ProductionProject = { id: number; code: string | null; name: string | null; state: string | null; building: string | null; unit_no: string | null };
+export type ProductionDetail = {
+  purchaseOrder: PoHeaderRow; items: PoItemRow[]; linkedSo: Record<string, unknown> | null; project: ProductionProject | null;
+  progress: ProductionProgress; workers: ProductionWorker[]; changes: OrderChange[]; holidays: string[];
+  completion: { grn: { id: string; grn_number: string } | null; deliveryOrder: { id: string; do_number: string } | null };
 };
 const materialKeys = (id: string) => [['production-order-materials', id], ['production-order-material-status', id]];
+const refreshOrder = (qc: ReturnType<typeof useQueryClient>, id: string) => {
+  for (const k of materialKeys(id)) void qc.invalidateQueries({ queryKey: k });
+  void qc.invalidateQueries({ queryKey: ['production-order-detail', id] });
+  void qc.invalidateQueries({ queryKey: ['production-orders'] });
+  void qc.invalidateQueries({ queryKey: ['production-orders-paged'] });
+};
+const orderPost = <T,>(path: string, method = 'POST') => (body: unknown) =>
+  authedFetch<T>(`/production-orders/${path}`, { method, body: JSON.stringify(body) });
+
+export function useStartProduction(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => orderPost<{ ok: true; alreadyStarted?: boolean; shortLines?: number }>(`${id}/start`)({}),
+    onSettled: () => refreshOrder(qc, id),
+  });
+}
+export function useRequestMore(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { itemCode: string; qty: number; neededBy: string | null }) => orderPost<{ ok: true; short: boolean }>(`${id}/request-more`)(body),
+    onSuccess: () => refreshOrder(qc, id),
+  });
+}
+export function useReturnStock(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (lines: Array<{ materialId: string; qty: number; warehouseId: string }>) => orderPost<{ ok: true; moved: number }>(`${id}/return-stock`)({ lines }),
+    onSettled: () => refreshOrder(qc, id),
+  });
+}
+export function useProductionWorkers(enabled: boolean) {
+  return useQuery({
+    queryKey: ['production-workers'],
+    enabled,
+    queryFn: () => authedFetch<{ workers: Array<{ id: string; name: string; trade: string | null }> }>(`/production-orders/workers`).then((r) => r.workers),
+    staleTime: 60_000,
+    retry: retryUnlessClientError,
+  });
+}
+export function useAssignWorkers(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (workerIds: string[]) => orderPost<{ ok: true }>(`${id}/workers`, 'PUT')({ workerIds }),
+    onSuccess: () => refreshOrder(qc, id),
+  });
+}
+export function useSetProductionTime(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (hours: number | null) => orderPost<{ ok: true }>(`${id}/production-time`, 'PATCH')({ hours }),
+    onSuccess: () => refreshOrder(qc, id),
+  });
+}
+/** Complete is three requests, each small enough for the free Workers plan and each safe to repeat. */
+export async function completeProductionOrder(id: string, onStep?: (label: string) => void): Promise<void> {
+  for (const [step, label] of [['grn', 'Receiving…'], ['do', 'Raising delivery…'], ['deliver', 'Delivering…']] as const) {
+    onStep?.(label);
+    await authedFetch(`/production-orders/${id}/complete`, { method: 'POST', body: JSON.stringify({ step }) });
+  }
+}
+
 export function useProductionMaterials(id: string) {
   return useQuery({
     queryKey: ['production-order-materials', id],
@@ -720,6 +802,100 @@ export function useDeleteProductionMaterial(id: string) {
     onSuccess: () => { for (const k of materialKeys(id)) void qc.invalidateQueries({ queryKey: k }); },
   });
 }
+/** What raw materials one unit of a SKU uses (Production > SKU Composition). */
+export type CompositionRow = { id: string; sku_code: string; sku_name: string | null; material_code: string; material_name: string | null; uom: string | null; qty: number; notes: string | null };
+const COMPOSITION_KEY = ['sku-composition'];
+export function useSkuCompositions() {
+  return useQuery({
+    queryKey: COMPOSITION_KEY,
+    queryFn: () => authedFetch<{ rows: CompositionRow[] }>(`/production-orders/sku-composition`).then((r) => r.rows),
+    retry: retryUnlessClientError,
+  });
+}
+export function useCompositionSkus() {
+  return useQuery({
+    queryKey: ['sku-composition-skus'],
+    queryFn: () => authedFetch<{ skus: Array<{ code: string; name: string | null; uom: string | null }> }>(`/production-orders/sku-composition/skus`).then((r) => r.skus),
+    staleTime: 60_000,
+    retry: retryUnlessClientError,
+  });
+}
+export function useAddComposition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { skuCode: string; materialCode: string; qty: number; notes?: string | null }) =>
+      authedFetch<{ id: string }>(`/production-orders/sku-composition`, { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: COMPOSITION_KEY }); },
+  });
+}
+export function useUpdateComposition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; qty?: number; notes?: string | null }) =>
+      authedFetch(`/production-orders/sku-composition/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: COMPOSITION_KEY }); },
+  });
+}
+export function useDeleteComposition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => authedFetch(`/production-orders/sku-composition/${id}`, { method: 'DELETE' }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: COMPOSITION_KEY }); },
+  });
+}
+/* ── Worker actual hours (TODO item 16; backend routes/production-hours.ts) ── */
+export type ProductionTimeEntry = {
+  id: string; person_key: string; name: string; started_at: string; stopped_at: string | null; notes: string | null;
+  how: 'TIMER' | 'MANUAL'; minutes: number; created_by_name: string | null; updated_by_name: string | null;
+};
+export type ProductionHoursPerson = { personKey: string; name: string; minutes: number; running: boolean; entries: number };
+export type ProductionHours = {
+  budgetHours: number | null;
+  summary: { actualMinutes: number; budgetMinutes: number | null; varianceMinutes: number | null; overBudget: boolean; running: number; people: ProductionHoursPerson[] };
+  entries: ProductionTimeEntry[];
+  me: string;
+  canTime: boolean;
+  canEnter: boolean;
+  /** Full access to Production Orders: may time anyone and add, correct or remove entries. */
+  canSupervise: boolean;
+};
+/** Minutes as hours with one decimal, the way the budget is typed (7.5). */
+export const hoursOf = (minutes: number): number => Math.round(minutes / 6) / 10;
+
+export function useProductionHours(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ['production-order-hours', id],
+    enabled: enabled && !!id,
+    queryFn: () => authedFetch<ProductionHours>(`/production-orders/${id}/hours`),
+    /* A running timer counts up: read again each minute while the page is open. */
+    refetchInterval: 60_000,
+    retry: retryUnlessClientError,
+  });
+}
+export type HoursAction =
+  | { kind: 'start' | 'stop'; personKey?: string }
+  | { kind: 'add'; personKey?: string; startedAt: string; stoppedAt: string; notes?: string }
+  | { kind: 'edit'; entryId: string; startedAt?: string; stoppedAt?: string; notes?: string }
+  | { kind: 'delete'; entryId: string };
+export function useProductionHoursAction(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (a: HoursAction) => {
+      switch (a.kind) {
+        case 'start': case 'stop': return orderPost<{ ok: true }>(`${id}/hours/${a.kind}`)({ personKey: a.personKey });
+        case 'add': return orderPost<{ ok: true }>(`${id}/hours`)({ personKey: a.personKey, startedAt: a.startedAt, stoppedAt: a.stoppedAt, notes: a.notes });
+        case 'edit': return orderPost<{ ok: true }>(`${id}/hours/${a.entryId}`, 'PATCH')({ startedAt: a.startedAt, stoppedAt: a.stoppedAt, notes: a.notes });
+        case 'delete': return authedFetch<{ ok: true }>(`/production-orders/${id}/hours/${a.entryId}`, { method: 'DELETE' });
+      }
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['production-order-hours', id] });
+      void qc.invalidateQueries({ queryKey: ['production-orders'] });
+      void qc.invalidateQueries({ queryKey: ['production-orders-paged'] });
+    },
+  });
+}
+
 /** MRP's Proceed PO for raw materials. A repeat press finds nothing left to order and answers total 0. */
 export const createMaterialPos = ({ idempotencyKey, ...body }: {
   idempotencyKey?: string; picks: Array<{ materialId: string; qty: number; supplierId: string | null }>; mode: 'combined' | 'per-so'; expectedAt?: string;

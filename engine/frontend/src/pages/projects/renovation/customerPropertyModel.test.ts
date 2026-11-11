@@ -9,6 +9,7 @@ import {
   layoutFor,
   mergeProjectIntoSo,
   missingFields,
+  quoteBrandFor,
   showDate,
   projectDatesText,
   toRenovationBlock,
@@ -27,7 +28,7 @@ const PROJECT: ProjectShared = {
   salespersonId: "00000000-0000-4000-8000-000000000001", salespersonName: "Aisyah", address1: "A-12-3 Skyline", address2: "Jalan Ampang",
   state: "Selangor", city: "Ampang", postcode: "68000", country: "Malaysia", salesLocation: "TESTWH",
   siteAddress: "A-12-3 Skyline\nJalan Ampang", building: "Skyline Residence", unitNo: "A-12-3", propertyType: "Condo",
-  layoutLabel: "3 bed 2 bath", bedrooms: 3, bathrooms: 2, builtUpSqft: 1100, startDate: "2026-10-20", endDate: null,
+  layoutLabel: "3 bed 2 bath", bedrooms: 3, bathrooms: 2, builtUpSqft: 1100, landAreaSqft: null, landSize: "", startDate: "2026-10-20", endDate: null,
 };
 
 describe("prefill from a project", () => {
@@ -66,7 +67,7 @@ describe("what is sent and what is missing", () => {
   test("the SO renovation block", () => {
     expect(toRenovationBlock({ ...fromProject(PROJECT), building: " Skyline " })).toEqual({
       projectId: 7, building: "Skyline", unitNo: "A-12-3", propertyType: "Condo", layoutLabel: "3 bed 2 bath",
-      bedrooms: "3", bathrooms: "2", builtUpSqft: "1100",
+      bedrooms: "3", bathrooms: "2", builtUpSqft: "1100", landAreaSqft: "", landSize: "",
     });
   });
 
@@ -77,7 +78,7 @@ describe("what is sent and what is missing", () => {
   });
 
   test("dates read as the numeric year-first rule", () => {
-    expect(showDate("2026-10-20")).toBe("2026/10/20");
+    expect(showDate("2026-10-20")).toBe("20/10/2026");
     expect(showDate(null)).toBe("Not set");
   });
 });
@@ -118,7 +119,27 @@ describe("Start date / End date are read-only and come from the project (owner, 
     expect(projectDatesText(null, "project")).toMatchObject({ start: "Set when saved", end: "Set when Closed" });
   });
   test("a linked project: its created day, and its Closed day once it has one", () => {
-    expect(projectDatesText({ startDate: "2026-10-01", endDate: null }, "so")).toEqual({ start: "2026/10/01", end: "Set when Closed", startSet: true, endSet: false });
-    expect(projectDatesText({ startDate: "2026-10-01", endDate: "2026-10-15" }, "project")).toEqual({ start: "2026/10/01", end: "2026/10/15", startSet: true, endSet: true });
+    expect(projectDatesText({ startDate: "2026-10-01", endDate: null }, "so")).toEqual({ start: "01/10/2026", end: "Set when Closed", startSet: true, endSet: false });
+    expect(projectDatesText({ startDate: "2026-10-01", endDate: "2026-10-15" }, "project")).toEqual({ start: "01/10/2026", end: "15/10/2026", startSet: true, endSet: true });
+  });
+});
+
+/* chew, 10 Nov 2026: a new quotation opened for a project starts on the project's brand (its letterhead). */
+describe("the brand a new quotation for a project starts on", () => {
+  const BRANDS = [
+    { brandId: 1, name: "Dream Crafter", active: true },
+    { brandId: 2, name: "The Conts", active: true },
+    { brandId: 3, name: "Old Brand", active: false },
+  ];
+  test("the brand in use named like the project's, in any case", () => {
+    expect(quoteBrandFor({ brand: "The Conts" }, BRANDS)).toBe(2);
+    expect(quoteBrandFor({ brand: " dream crafter " }, BRANDS)).toBe(1);
+  });
+  test("none when the project has no brand, or names one no longer in use", () => {
+    expect(quoteBrandFor({ brand: null }, BRANDS)).toBeNull();
+    expect(quoteBrandFor({}, BRANDS)).toBeNull();
+    expect(quoteBrandFor(null, BRANDS)).toBeNull();
+    expect(quoteBrandFor({ brand: "Old Brand" }, BRANDS)).toBeNull();
+    expect(quoteBrandFor({ brand: "Somebody else" }, BRANDS)).toBeNull();
   });
 });

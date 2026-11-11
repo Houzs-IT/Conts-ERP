@@ -164,3 +164,18 @@ export function photoUploadFailureMessage(failures: readonly PhotoUploadFailure[
  *  the line-write module as well to ask the one question that decides its
  *  wording. Same function, same answer, by construction. */
 export { isRefusal };
+
+/**
+ * Pair the lines the form sent with the items the server saved. The server re-ranks a new order (mains, accessories,
+ * services), so position says nothing; the code does, and lines with one code keep their order inside a rank.
+ */
+export function pairSavedLines<L extends { itemCode: string }, S extends { id: string; item_code: string }>(
+  lines: readonly L[],
+  saved: readonly S[],
+): Array<S | null> {
+  const left = [...saved];
+  return lines.map((l) => {
+    const at = left.findIndex((s) => s.item_code === l.itemCode);
+    return at < 0 ? null : left.splice(at, 1)[0]!;
+  });
+}

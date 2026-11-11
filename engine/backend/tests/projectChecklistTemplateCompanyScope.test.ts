@@ -94,6 +94,10 @@ beforeAll(async () => {
   ]) {
     await addCompanyIdColumn(t);
   }
+  // Same gap: the pg tree added section.stage_key in Conts migration 0077 and the routes now read it.
+  await env.DB.prepare(`ALTER TABLE project_checklist_template_sections ADD COLUMN stage_key TEXT`)
+    .run()
+    .catch(() => {});
 });
 
 beforeEach(async () => {

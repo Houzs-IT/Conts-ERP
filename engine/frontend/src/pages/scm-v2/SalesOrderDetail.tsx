@@ -18,6 +18,7 @@
 // PATCH /:docNo/status, GET /debtors/search.
 // ----------------------------------------------------------------------------
 
+import { SoBrandPicker } from './SoBrandPicker';
 import {
   forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
   type CSSProperties, type ReactNode,
@@ -46,7 +47,7 @@ import { addLineHref } from '../../vendor/scm/lib/add-line-handoff';
 import { RenovationSoOrderInfo } from './RenovationSoOrderInfo';
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from './renovationSoAreaLines';
 import { SoInstalments, instalmentRows, nextInstalmentSen, paymentSlots, useSoInstalments } from './renovationSoInstalments';
-import { ContractSections, InstalmentBillDialog } from '../renovation/RenovationSalesOrder';
+import { ContractQuickLinks, ContractSections, InstalmentBillDialog } from '../renovation/RenovationSalesOrder';
 import { useBrands, useContract } from '../../lib/renovation/api';
 import { SPEC_LOCKED_NOTE } from '../renovation-beta/renovationBetaLines';
 import {
@@ -54,6 +55,7 @@ import {
   displayStatusFor, fmtMoney, refOf, soLineColumns,
 } from './soDetailParts';
 import { SoPrintPreview, useSoPrintLayout } from './soPrintPreview';
+import { soPdfContract } from './soPdfDownload';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { useSetBreadcrumbs } from '../../hooks/useBreadcrumbs';
 import { canonicalizeVariants, fmtDate, fmtMoneySen, fmtSen, missingVariantAxes } from '@2990s/shared'; // Commander 2026-05-28
@@ -105,7 +107,7 @@ import {
 import { diffHeaderPayload, hasHeaderChanges } from '../../vendor/scm/lib/so-header-diff';
 import { soSaveEndFields, soVersionAfter } from '../../vendor/scm/lib/so-save-lease';
 import { planAmendmentSubmit, amendmentSubmittedNotice, AMENDMENT_MODE_BANNER, VO_MODE_BANNER, CONTRACT_MODE_BANNER,
-  AMENDMENT_NOTHING_TO_SUBMIT } from '../../vendor/scm/lib/so-amendment-submit';
+  AMENDMENT_NOTHING_TO_SUBMIT, NO_VO_NEEDED_TITLE, NO_VO_NEEDED_BODY } from '../../vendor/scm/lib/so-amendment-submit';
 import { useAmendmentSubmitDialog } from '../../vendor/scm/components/AmendmentSubmitDialog';
 import { todayMyt } from '../../vendor/scm/lib/dates';
 import { addressLineProps } from '../../lib/acColumnWidths';
@@ -121,6 +123,7 @@ import { paymentSaveOutcome } from '../../vendor/scm/lib/payment-save-outcome';
 import { completePaymentRetryDraft, consumePaymentRetryNavigationState, readPaymentRetryHandoff, readPaymentRetryNavigationState } from '../../lib/paymentRetryHandoff';
 import { DocumentRelationshipMapModal, DocumentChoiceDialog } from '../../components/scm-v2/DocumentRelationshipMapModal';
 import { useSoRelationshipMap } from './so-relationship-map';
+import { RenovationDocTrail } from './RenovationDocTrail';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
 import { usePrompt } from '../../vendor/scm/components/PromptDialog';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
@@ -139,7 +142,7 @@ import {
   amendmentLineFieldKinds,
   amendmentOldSnapshot,
   amendmentVariantSummaries,
-  visibleAmendmentLines, amendmentLineSig} from '../../vendor/scm/lib/so-amendment-line-diff';
+  visibleAmendmentLines, amendmentLineSig, amendmentRequestedUnitPriceSen, amendmentPriceFields} from '../../vendor/scm/lib/so-amendment-line-diff';
 import { routeField, type AmendmentFieldKind } from '../../vendor/scm/lib/amendment-routing';
 import { fetchSoSlipUrl } from '../../vendor/scm/lib/slip';
 import {
@@ -465,6 +468,7 @@ type SoItem = {
      when the header date changes. */
   line_delivery_date: string | null;
   line_delivery_date_overridden: boolean;
+  line_processing_date?: string | null;
   /* Delivery breakdown stamped by the SO detail endpoint — which DO took how
      much off this line, plus the live balance still deliverable. */
   deliveries?: { doNumber: string; qty: number; status: string }[];
@@ -493,6 +497,19 @@ type SoItem = {
    Hoisted to module scope so the edit-mode seed effect can map every line
    without re-allocating the function each render. Mirrors the snake_case →
    camelCase field mapping the per-row editor used before. */
+/* A date the operator did not touch follows the line as it now is: a processing or delivery date set elsewhere (the
+   project's PO tab) while this order was open in Edit must not be saved back as blank (11 Nov 2026, TC-SO-2611-029). */
+export function keepUntouchedDates(draft: SoLineDraft, was: SoLineDraft | undefined, now: SoLineDraft | undefined): SoLineDraft {
+  if (!was || !now) return draft;
+  const out = { ...draft };
+  if ((draft.lineProcessingDate ?? null) === (was.lineProcessingDate ?? null)) out.lineProcessingDate = now.lineProcessingDate;
+  if ((draft.lineDeliveryDate ?? null) === (was.lineDeliveryDate ?? null) && draft.lineDeliveryDateOverridden === was.lineDeliveryDateOverridden) {
+    out.lineDeliveryDate = now.lineDeliveryDate;
+    out.lineDeliveryDateOverridden = now.lineDeliveryDateOverridden;
+  }
+  return out;
+}
+
 const draftFromItem = (it: SoItem): SoLineDraft => ({
   itemCode:       it.item_code ?? '',
   itemGroup:      it.item_group ?? 'others',
@@ -500,6 +517,8 @@ const draftFromItem = (it: SoItem): SoLineDraft => ({
   uom:            it.uom ?? 'UNIT',
   qty:            it.qty ?? 1,
   unitPriceSen: it.unit_price_sen ?? 0,
+  // The persisted price IS this line's price, 0 included; a product re-pick clears it.
+  priceAuthored: true,
   discountSen:  it.discount_sen ?? 0,
   unitCostSen:  it.unit_cost_sen ?? 0,
   // 2026-06-08 (Loo) — canonicalise POS-vocabulary sofa keys (depth →
@@ -516,6 +535,7 @@ const draftFromItem = (it: SoItem): SoLineDraft => ({
   photoUrls:      it.photo_urls ?? [],
   lineDeliveryDate:           it.line_delivery_date ?? null,
   lineDeliveryDateOverridden: it.line_delivery_date_overridden ?? false,
+  lineProcessingDate:         it.line_processing_date ?? null,
 });
 
 /* Serialised signature of exactly the fields a line PATCH persists. Two drafts
@@ -971,6 +991,15 @@ export const SalesOrderDetail = () => {
      resolve; any failure surfaces inline and keeps the user in edit mode so
      nothing is silently lost. */
   const [savingOrder, setSavingOrder] = useState(false);
+  /* Never stops the save: the rest of the order is what the operator came to commit. */
+  const saveProcessingDates = async (dates: Record<string, string | null>) => {
+    try {
+      await authedFetch(`/mfg-sales-orders/${encodeURIComponent(header!.doc_no)}/line-processing-dates`, { method: 'PUT', body: JSON.stringify({ dates }) });
+    } catch {
+      void notify({ title: 'Processing dates did not save', body: 'The order saved. Open Edit and set the dates again.', tone: 'error' });
+    }
+  };
+
   const saveEdit = async () => {
     const handle = customerCardRef.current;
     if (!handle || !header) return;
@@ -1028,6 +1057,11 @@ export const SalesOrderDetail = () => {
       return true;
     });
     const deleteEntries = items.filter((it) => !(it.id in editingDrafts));
+    /* Processing dates save on their own: they live on the line's plan, not the line. */
+    const processingDates = Object.fromEntries(Object.entries(editingDrafts)
+      .filter(([id, d]) => (d.lineProcessingDate ?? null) !== (originalDraftsRef.current[id]?.lineProcessingDate ?? null))
+      .map(([id, d]) => [id, d.lineProcessingDate ?? null]));
+    if (Object.keys(processingDates).length > 0) await saveProcessingDates(processingDates);
     // Snapshot: the set that goes out must be the set the guards above passed.
     const pendingAdds = addingDrafts;
     // What the operator will read in a failure message.
@@ -1158,7 +1192,12 @@ export const SalesOrderDetail = () => {
       /* Fall back to the item's own pristine draft when the seed is missing, so a
          line can never be recorded just because its snapshot went absent. */
       const orig = originalDraftsRef.current[it.id] ?? draftFromItem(it);
-      if (amendmentLineSig(draft) === amendmentLineSig(orig)) continue; // nothing amendable moved
+      /* A SEEDED 0 (an unpriced SKU re-pick, priceAuthored false) requests no
+         price: the line keeps its stored one, so the signature and the QTY/SPEC
+         test both read it as the stored price (HC-SO-013490, billed RM 0). */
+      const requestedUnitSen = amendmentRequestedUnitPriceSen(draft);
+      const effective = { ...draft, unitPriceSen: requestedUnitSen ?? orig.unitPriceSen };
+      if (amendmentLineSig(effective) === amendmentLineSig(orig)) continue; // nothing amendable moved
       /* QTY vs SPEC — compared against the same pristine draft the signature
          used, so both sides are canonicalised alike (an `it`-derived fallback
          would compare canonicalised drafts to a raw blob and mis-classify a
@@ -1166,7 +1205,7 @@ export const SalesOrderDetail = () => {
       const qtyOnly =
         draft.itemCode === orig.itemCode
         && JSON.stringify(draft.variants ?? null) === JSON.stringify(orig.variants ?? null)
-        && draft.unitPriceSen === orig.unitPriceSen
+        && effective.unitPriceSen === orig.unitPriceSen
         && draft.qty !== orig.qty;
       out.push({
         salesOrderItemId: it.id,
@@ -1174,7 +1213,8 @@ export const SalesOrderDetail = () => {
         newItemCode: draft.itemCode || undefined,
         newVariants: draft.variants ?? undefined,
         newQty: draft.qty,
-        newUnitPriceSen: draft.unitPriceSen,
+        // Omitted (null on the row) when no price is requested: the apply keeps the stored price.
+        ...amendmentPriceFields(draft),
         /* mig 0280 — the line's remark rides the amendment. Sent ONLY when it
            actually moved: null/absent means "not requested", which is what stops
            the apply from rewriting a remark this session never touched. */
@@ -1257,6 +1297,27 @@ export const SalesOrderDetail = () => {
      no VO), then every added, removed or re-priced line, SKU or qty change as one contract VO approved for you
      (POST /renovation/sales-orders/:docNo/line-edits, owner 2 Nov 2026). Options go first so a line the VO then
      replaces carries them. */
+  /* Line photos upload the moment they are picked, so an edit with nothing else in it has nothing left to do. */
+  const finishEditWithoutVo = () => {
+    endEditSession();
+    refreshAfterSave();
+    notify({ title: NO_VO_NEEDED_TITLE, body: NO_VO_NEEDED_BODY, tone: 'info' });
+  };
+
+  /* Line dates are not a VO and no amendment carries them, so they save on their own routes. */
+  const lineDateChanges = () => {
+    const moved = (read: (d: SoLineDraft) => string | null) => Object.fromEntries(Object.entries(editingDrafts)
+      .filter(([id, d]) => read(d) !== read(originalDraftsRef.current[id] ?? d))
+      .map(([id, d]) => [id, read(d)]));
+    return { processing: moved((d) => d.lineProcessingDate ?? null), delivery: moved((d) => (d.lineDeliveryDateOverridden ? d.lineDeliveryDate ?? null : null)) };
+  };
+  const saveLineDates = async (changes: ReturnType<typeof lineDateChanges>, docNo: string) => {
+    if (Object.keys(changes.processing).length > 0) await saveProcessingDates(changes.processing);
+    if (Object.keys(changes.delivery).length > 0) {
+      await authedFetch(`/mfg-sales-orders/${encodeURIComponent(docNo)}/line-delivery-dates`, { method: 'PUT', body: JSON.stringify({ dates: changes.delivery }) });
+    }
+  };
+
   const saveContractEdit = async (handle: CustomerCardHandle) => {
     if (!header) return;
     const lines = buildAmendmentLines();
@@ -1269,7 +1330,9 @@ export const SalesOrderDetail = () => {
       setSaveError("A renovation contract's customer, address and dates are changed on its project (Customer info, Edit); they follow to this order.");
       return;
     }
-    if (lines.length === 0 && !handle.hasDirectHeaderChanges()) { setSaveError(AMENDMENT_NOTHING_TO_SUBMIT); return; }
+    const contractDates = lineDateChanges();
+    const contractDatesMoved = Object.keys(contractDates.processing).length + Object.keys(contractDates.delivery).length > 0;
+    if (lines.length === 0 && !handle.hasDirectHeaderChanges() && !contractDatesMoved) { finishEditWithoutVo(); return; }
     type Edit = { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string };
     const edits: Edit[] = [];
     const adds: Array<{ room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string }> = [];
@@ -1299,6 +1362,7 @@ export const SalesOrderDetail = () => {
       await new Promise<void>((resolve, reject) => {
         handle.save({ onSuccess: () => resolve(), onError: (msg) => reject(new Error(msg)) }, { renoBlockOnly: true });
       });
+      await saveLineDates(contractDates, header.doc_no);
       let poFlags = 0;
       for (const l of specs) {
         const r = await authedFetch<{ flags?: number }>(`/renovation-so-info/${encodeURIComponent(header.doc_no)}/lines/${encodeURIComponent(l.salesOrderItemId ?? '')}/spec`, {
@@ -1326,6 +1390,13 @@ export const SalesOrderDetail = () => {
       setSavingOrder(false);
       setSaveError(e instanceof Error ? e.message : 'Something went wrong.');
     }
+  };
+
+  /* A VO is a change of amount or an added line (owner, 4 Nov 2026); options, remarks and dates only save. */
+  const lineChangesAmount = (l: ReturnType<typeof buildAmendmentLines>[number]): boolean => {
+    const it = items.find((x) => x.id === l.salesOrderItemId);
+    return !it || l.changeType === 'REMOVE' || (l.newItemCode ?? it.item_code) !== it.item_code
+      || (l.newQty ?? it.qty) !== it.qty || (l.newUnitPriceSen ?? it.unit_price_sen) !== it.unit_price_sen;
   };
 
   const submitAmendment = async () => {
@@ -1368,16 +1439,31 @@ export const SalesOrderDetail = () => {
     }
 
     if (header.so_kind === 'RENOVATION') { await saveContractEdit(handle); return; }
-    const { changes: headerChanges } = handle.getLockedHeaderChanges();
-    const lines = buildAmendmentLines();
+    const { changes: lockedHeaderChanges } = handle.getLockedHeaderChanges();
+    /* Dates, the address and customer details never change what the customer pays, so on a confirmed order they save
+       as they are; only a Houzs-style locked order still sends them for approval (owner, 4 and 6 Nov 2026). */
+    const voOrder = Boolean(header.vo_locked);
+    const headerSaves = voOrder && hasAmendmentHeaderChanges(lockedHeaderChanges);
+    const headerChanges = voOrder ? {} : lockedHeaderChanges;
+    const allLines = buildAmendmentLines();
+    /* Options and remarks are not a VO (owner, 4 Nov 2026): on a confirmed order they save on their own. */
+    const saveOnly = header.vo_locked ? allLines.filter((l) => l.changeType === 'SPEC' && !lineChangesAmount(l)) : [];
+    const lines = allLines.filter((l) => !saveOnly.includes(l));
+    const dates = lineDateChanges();
+    const datesMoved = voOrder && Object.keys(dates.processing).length + Object.keys(dates.delivery).length > 0;
 
     // Asks about BOTH halves — see vendor/scm/lib/so-amendment-submit.
     const plan = planAmendmentSubmit({
       hasLineChanges: lines.length > 0,
       hasFrozenHeaderChanges: hasAmendmentHeaderChanges(headerChanges),
-      hasDirectHeaderChanges: handle.hasDirectHeaderChanges(),
+      hasDirectHeaderChanges: handle.hasDirectHeaderChanges() || headerSaves,
+      hasSaveOnlyLineChanges: saveOnly.length > 0 || datesMoved,
     });
-    if (plan === 'NOTHING') { setSaveError(AMENDMENT_NOTHING_TO_SUBMIT); return; }
+    if (plan === 'NOTHING') {
+      if (header.vo_locked) finishEditWithoutVo();
+      else setSaveError(AMENDMENT_NOTHING_TO_SUBMIT);
+      return;
+    }
     /* DIRECT_ONLY needs no ask: nothing is going for approval. Otherwise the shared
        dialog shows WHO approves and takes the required reason
        (owner 2026-09-15; vendor/scm/components/AmendmentSubmitDialog). */
@@ -1393,9 +1479,15 @@ export const SalesOrderDetail = () => {
       await new Promise<void>((resolve, reject) => {
         handle.save(
           { onSuccess: () => resolve(), onError: (msg) => reject(new Error(msg)) },
-          { keepLockedColsAsOriginal: true },
+          { keepLockedColsAsOriginal: !voOrder },
         );
       });
+      if (datesMoved) await saveLineDates(dates, header.doc_no);
+      for (const l of saveOnly) {
+        await authedFetch(`/renovation-so-info/${encodeURIComponent(header.doc_no)}/lines/${encodeURIComponent(l.salesOrderItemId ?? '')}/spec`, {
+          method: 'PUT', body: JSON.stringify({ variants: l.newVariants ?? {}, ...(l.newRemark !== undefined ? { remark: l.newRemark } : {}) }),
+        });
+      }
       /* 2. The approval half — frozen header fields + line diffs. DIRECT_ONLY
             skips ONLY this: the save above is the whole of that edit. */
       let createdRes: unknown = null;
@@ -1562,11 +1654,12 @@ export const SalesOrderDetail = () => {
     // gone ones. A naive re-seed used to wipe unsaved picks (docs/bugs/).
     const orig: Record<string, SoLineDraft> = {};
     for (const it of items) orig[it.id] = draftFromItem(it);
+    const before = originalDraftsRef.current;
     originalDraftsRef.current = orig;
     setEditingDrafts((prev) => {
       const alive = new Set(items.map((it) => it.id));
       const next: Record<string, SoLineDraft> = {};
-      for (const id of Object.keys(prev)) if (alive.has(id)) next[id] = prev[id];
+      for (const id of Object.keys(prev)) if (alive.has(id)) next[id] = keepUntouchedDates(prev[id], before[id], orig[id]);
       for (const it of items) if (!(it.id in next)) next[it.id] = draftFromItem(it);
       return next;
     });
@@ -1683,9 +1776,9 @@ export const SalesOrderDetail = () => {
       uom:            d.uom,
       qty:            d.qty,
       unitPriceSen: d.unitPriceSen,
-      /* This line ALREADY EXISTS: its 0 is the price it carries, so re-sending
-         it must not silently re-price it (a qty-only edit sends the price too). */
-      ...zeroPriceClaim(d.unitPriceSen, true),
+      /* A persisted 0 or a typed 0 is claimed; the 0 a product re-pick seeds
+         (no sell price) is not, so the server keeps the stored price (BUG-63). */
+      ...zeroPriceClaim(d.unitPriceSen, d.priceAuthored === true),
       discountSen:  d.discountSen,
       unitCostSen:  d.unitCostSen,
       variants:       d.variants,
@@ -1726,6 +1819,7 @@ export const SalesOrderDetail = () => {
        soft warning so the line can be re-attached. */
     const newItemId = (res.item as { id?: string } | null)?.id;
     if (newItemId) renoAddedIds.current[staged.key] = newItemId;
+    if (newItemId && d.lineProcessingDate) await saveProcessingDates({ [newItemId]: d.lineProcessingDate });
     if (newItemId && pendingFiles.length > 0) {
       let failed = 0;
       for (const f of pendingFiles) {
@@ -1928,7 +2022,9 @@ export const SalesOrderDetail = () => {
 
   /* Back always returns to the Sales Orders list (owner 2026-07-24), which restores its own sticky filters. */
   const goBack = async () => {
-    if (await guardUnsavedPayments()) void navigate(scmListReturnTo('/scm/sales-orders'));
+    /* Opened from a project: back returns there, not to the list of every order. */
+    const backTo = (location.state as { backTo?: string } | null)?.backTo;
+    if (await guardUnsavedPayments()) void navigate(backTo ?? scmListReturnTo('/scm/sales-orders'));
   };
   /* Collect payment unlocks the card and scrolls to it. */
   const goPayments = () => {
@@ -2021,10 +2117,7 @@ export const SalesOrderDetail = () => {
     const pwpCodes = ((detail.data as { pwpCodes?: unknown[] } | undefined)?.pwpCodes ?? []) as never;
     const contract = contractQ.data;
     const brand = brandsQ.data?.brands.find((b) => b.brandId === contract?.header.brandId);
-    const pdfContract = contract && brand ? {
-      brandName: brand.name, letterhead: [...brand.companyLines, brand.contactLine].filter(Boolean), bankLine: brand.bankLine, termsLines: brand.termsLines,
-      instalments: contract.instalments.map((i) => ({ label: i.label, percent: `${i.pctBp / 100}%`, description: i.description })),
-    } : undefined;
+    const pdfContract = soPdfContract(contract, brand);
     /* Loaded here, not at the top: the PDF library has no business on a page that may never print. */
     return import('../../vendor/scm/lib/sales-order-pdf')
       .then(({ generateSalesOrderPdf }) => generateSalesOrderPdf(header, lineRows, payments, action, pwpCodes, { ...printLayoutState.pdfOpts, contract: pdfContract }))
@@ -2153,14 +2246,9 @@ export const SalesOrderDetail = () => {
     ...(customerRef !== '—' ? [<>Ref <span className="font-mono font-semibold text-ink-secondary">{customerRef}</span></>] : []),
     ...(customerCreditSen > 0 ? [`Customer credit balance: ${fmtSen(customerCreditSen)}`] : []),
   ];
-  /* A VO is a change of amount or an added line (owner, 4 Nov 2026); options, remarks and dates only save. */
-  const raisesVo = amendmentMode && header.so_kind === 'RENOVATION' && buildAmendmentLines().some((l) => {
-    const it = items.find((x) => x.id === l.salesOrderItemId);
-    return !it || l.changeType === 'REMOVE' || (l.newItemCode ?? it.item_code) !== it.item_code
-      || (l.newQty ?? it.qty) !== it.qty || (l.newUnitPriceSen ?? it.unit_price_sen) !== it.unit_price_sen;
-  });
+  const raisesVo = amendmentMode && buildAmendmentLines().some(lineChangesAmount);
   const saveLabel = amendmentMode
-    ? (savingOrder || createAmendment.isPending ? 'Submitting…' : header.so_kind === 'RENOVATION' ? (raisesVo ? 'Save as VO' : 'Save') : header.vo_locked ? 'Record VO' : 'Submit VO')
+    ? (savingOrder || createAmendment.isPending ? 'Submitting…' : header.so_kind === 'RENOVATION' ? (raisesVo ? 'Save as VO' : 'Save') : header.vo_locked ? (raisesVo ? 'Record VO' : 'Save') : 'Submit VO')
     : (updateHeader.isPending || savingOrder ? 'Saving…' : 'Save');
   const saveBusy = amendmentMode ? savingOrder || createAmendment.isPending : updateHeader.isPending || savingOrder;
   const saveNow = () => { void (amendmentMode ? submitAmendment : saveEdit)(); };
@@ -2174,7 +2262,7 @@ export const SalesOrderDetail = () => {
         meta={headerMeta}
         onBack={() => { void goBack(); }}
         /* mig 0324 — the hold marker sits BESIDE the status, never instead of it. */
-        chips={<><HoldChip onHold={(header as { on_hold?: boolean | null }).on_hold} reason={(header as { hold_reason?: string | null }).hold_reason} /><ProductionOrderChips soDocNo={header.doc_no} /></>}
+        chips={<><HoldChip onHold={(header as { on_hold?: boolean | null }).on_hold} reason={(header as { hold_reason?: string | null }).hold_reason} /><ProductionOrderChips soDocNo={header.doc_no} />{header.so_kind === 'RENOVATION' && (can('scm.access') || pageAccess('scm.sales.orders') !== 'none') && <ContractQuickLinks docNo={header.doc_no} />}</>}
         actions={
           <>
             <Button variant="ghost" icon={<History size={14} />} onClick={() => setHistoryOpen(true)}>History</Button>
@@ -2501,6 +2589,7 @@ export const SalesOrderDetail = () => {
             </DetailAside>
           </DetailGrid>
 
+          <RenovationDocTrail kind="so" id={header.doc_no} />
           {/* Line items, full width in both modes: the edit rows need it, and Edit must not move the section. */}
           <Section
             title={`Line items · ${isEditing ? visibleLines.total : lineRows.length}`}
@@ -2565,7 +2654,7 @@ export const SalesOrderDetail = () => {
               <SoAreaLines<(typeof lineRows)[number]>
                 items={lineRows}
                 rooms={shownRooms}
-                columns={lineColumns.filter((col) => ['item', 'qty', 'unit', 'disc', 'total'].includes(col.key))}
+                columns={lineColumns.filter((col) => ['item', 'qty', 'unit', 'disc', 'processing', 'delivery', 'total'].includes(col.key))}
                 money={(sen) => fmtMoney(sen, header.currency)}
               />
             ) : (
@@ -3898,6 +3987,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
             disabled={renoInfoLoading}
             lockedKeys={renoLocked}
             canChangeSalesperson={canChangeSalesperson}
+            orderInfoFooter={<SoBrandPicker docNo={header.doc_no} />}
           />
         )
       ) : (

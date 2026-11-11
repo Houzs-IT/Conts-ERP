@@ -159,7 +159,7 @@ describe('cancel and edit are hooked, and only where the downstream lock has alr
        an anchor pinned to the whole statement failed on the wording while the
        wiring it exists to protect was untouched. The window still ends at the
        response, so an enqueue that slipped past the 200 would still be caught. */
-    const tail = between(grnSource, 'await recomputePoReceived(sb, lineList.map', "return c.json({ grn: data ?? { id, status: 'CANCELLED' }");
+    const tail = between(grnSource, 'await recountPoAndRewalk(lineList.map', "return c.json({ grn: data ?? { id, status: 'CANCELLED' }");
     expect(tail).toContain('enqueueCancel(sb, {');
     expect(tail).toContain("docType: 'GR'");
   });
@@ -235,7 +235,7 @@ describe('cancel and edit are hooked, and only where the downstream lock has alr
   test('the SO and PO routers use the SHARED downstream lock, not a private copy', () => {
     expect(soSource).toContain("import { soHasDownstream } from '../lib/downstream-lock';");
     expect(poSource).toContain("import { poHasDownstream } from '../lib/downstream-lock';");
-    expect(doSource).toContain("import { doHasDownstream } from '../lib/downstream-lock';");
+    expect(doSource).toMatch(/import \{[^}]*\bdoHasDownstream\b[^}]*\} from '\.\.\/lib\/downstream-lock';/);
     expect(grnSource).toContain("import { grnHasDownstream } from '../lib/downstream-lock';");
     // The private copies are gone — one rule, one place, one test.
     expect(soSource).not.toContain('async function soHasDownstream');
@@ -299,7 +299,7 @@ describe('a cancel that reached AutoCount is final', () => {
   });
 
   test('the PO reopen route refuses the same way', () => {
-    const h = rawPo.slice(rawPo.indexOf("mfgPurchaseOrders.patch('/:id/reopen'"));
+    const h = rawPo.slice(rawPo.indexOf('export const reopenPurchaseOrderHandler'));
     const guard = h.slice(0, h.indexOf('cannot_reopen'));
     expect(guard).toContain('cancel_is_final');
     expect(guard).toContain('linked_ac_docno');

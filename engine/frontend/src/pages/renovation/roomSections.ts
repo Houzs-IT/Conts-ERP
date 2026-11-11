@@ -90,9 +90,8 @@ export function autoRoomsPlan(
   lines: ReadonlyArray<{ key: string; filled: boolean }>,
   layout: { bedrooms: number; bathrooms: number } | null,
 ): { rooms: string[]; assign: Record<string, string> } | null {
-  /* The single Common area an order starts with before a layout is chosen does not count as rooms. */
-  const onlyDefault = rooms.length === 1 && key(rooms[0]!) === key(DEFAULT_ROOM);
-  if (!layout || (rooms.length > 0 && !onlyDefault) || lines.some((l) => l.filled)) return null;
+  /* Until a line has a product the rooms simply follow the layout, however often it changes (owner, 5 Nov 2026). */
+  if (!layout || lines.some((l) => l.filled)) return null;
   const made = generateRooms([], layout.bedrooms, layout.bathrooms).rooms;
   return { rooms: made, assign: Object.fromEntries(lines.map((l) => [l.key, made[0]!])) };
 }

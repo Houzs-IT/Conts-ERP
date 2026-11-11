@@ -2,6 +2,24 @@
 
 Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw, schema `pos`, via Hyperdrive e0781ccd...). Staging preview: https://staging-preview.theconts-os.pages.dev (Supabase ecgyrmblqfxvbfjlqkdq).
 
+## Ports from Houzs / Hookka (owner picks 8-9 Nov 2026) - all merged 11 Nov 2026
+- How to work: one item = one branch = one PR; port by `git format-patch -1 <sha>` from the Houzs repo (C:/Users/User/Desktop/houzs-erp-local, read only) and `git apply --directory=engine --reject`, then fit by hand; Houzs frontend/ = engine/frontend, backend/ = engine/backend. Hookka (C:/Users/User/hookka-erp-testing, use origin/main, read only) is reference only.
+- Checks per item: engine/frontend `npx tsc -b`; engine/backend `npx tsc --noEmit -p .`; backend tests with `npx vitest run --config vitest.light.config.mts <name>`; frontend `npx vitest run <file>`; then real clicks from the menu on the local system (Conts-ERP-worktrees/conts-local: `node start.mjs`, login management@theconts.com / LocalTest1; set CONTS_CODE to the worktree to run its engine or screens); merge; wait for "Deploy engine to production"; check erp.theconts.com.
+- PC is slow (owner, 9 Nov): one helper, one install, one test run, one server at a time; stop the local system when done. Built-in browser pane freezes when hidden; Chrome extension works when the window is visible.
+- Migrations: new file in migrations-pg/ with the next number; apply to production through the Supabase connector inside begin/commit with `select demo.drop_views();` first and `select demo.sync();` last, plus `insert into public.pos_migrations (filename, checksum)` (sha256 of the LF body, first 16 hex); apply before merging the code.
+- Every Conts sales order is a renovation contract (so_kind RENOVATION); Houzs SO-only features usually need a renovation equivalent or are skipped. Accounting is out of scope except item 13 below.
+- Done (all on main and production by 11 Nov 2026): bug batch #799-#803; cancelled number strike + PO CANCELLED watermark #804; PO supplier type-to-search #805; PO Copy as new #806; quotation Copy as new #807; return to the source document after save #809; PO urgent mark + GRN Date column + deactivated SKU not pickable #810; 1 qty arrows / - + and typed price box #813 (walked locally 10 Nov); 2 Restore your draft? on quotations and VOs #844 (desktop quotation walked locally); 3 project search per word #815 + building initials #845; 4 server-side date filter on list dates #849; 5 count and money on status tabs #853 (walked locally); 6 PO list search matches line items #846 (global search already found documents); 7 database quantity caps #856 (migrations 0270-0275); 8 DO "item not ready" warning #825 (walked); 9 DO pulls the SO's remaining lines #826 (walked); 10 Excel import preview #848; 11 supplier price list from the price paid #851; 12 blank SKU template + Excel-readable CSV #824, rest of the CSV exports #859; 13 separate default banks for receiving and paying #850 (books start date and opening balances already in Ledger setup > Go-live); 14 SO line photo reaches the PO (ddabbd52, with #787); 15 batch confirm draft GRNs / supplier invoices #854; 16 worker hours per production order #857 (migration 0291); 17 handover checklists, checks and defect queue #858 (migration 0296); 18 stock take rounds + stock adjustment documents #852 (migration 0290); 19 payment voucher bill scanning + AI usage page #860 (migration 0298); PO supplier dates 2/3/4 cannot be overwritten #847; main tests green #861.
+- Production migrations applied 11 Nov 2026 through the Supabase connector (each with its pos_migrations row): 0270-0275, 0290, 0291, 0296, 0298; also 0251-0254 (contract type options, need support, pass key jobs), which had been merged without being applied (their features were inert until then); 0230_clean_price_by_bed recorded only (same change as 0231, already applied).
+- Not clicked through by a person: items 4, 6, 7, 10, 11, 13, 15, 16, 17, 18, 19 and #847 (code review + unit/db tests only; the local database has no documents). Check them on erp.theconts.com in normal use.
+- Left from reviews, not fixed: on-site twin over-raise when a receipt exceeds what is left on the SO now fails with twin_failed and leaves a draft DO (onsite-twin-rules.ts:58); a draft completion GRN re-posted after a manual receipt is refused on every retry (production-orders.ts completeGrnStep); supplier price refresh applies every ticked row in one request (fine on Workers Paid up to about 120 rows); handover check row not locked between Finish and a concurrent mark; drafts are per browser, not per user.
+- Waiting on the owner (ask, do not act): keep or delete project CURVO 1234 (RN-2610-060, GGCOM's; its SO was cleared on 8 Nov). Answered: #749 merged 9 Nov; #387 (finance phase 1.5 docs) stays open, not merged or closed; the four seeded staff accounts are in use, keep them; ANTHROPIC_API_KEY is set on the production engine.
+- Go-live clear (8 Nov): production test data was deleted, so test only on the local system; document numbers were not reset.
+- Owner said no: merge duplicate item codes, cash flow forecast, PO email from staff mailbox, phone SO progress / print DO, cheapest-supplier default, purchase return kinds, GRN post permission / multi-rack, SO Copy as new, accounting bugs and other accounting features.
+- Background reviews (scratchpad, may be gone): per-commit tables of every Houzs commit since c20343f5 and Hookka since 8 Aug; regenerate with `git log` if needed.
+
+## Engine
+- Staging lacks migration 0189 (the RAW category), so 0222 is not applied there and K & K SKUs do not exist on staging.
+
 ## Next: connect Airbnb, Booking.com, Agoda through Channex
 - Decision made: Channex (WhiteLabel plan, $130/month + $0.50 per unit per month, free staging at staging.channex.io; check current price at signup).
 - Stages 1-4 are done, tested and merged to main; migrations `0003`-`0005` are applied on production too. Still inert in production — no `CHANNEX_API_KEY` set there yet.
@@ -14,7 +32,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Channex is live on production (2 Oct): certification passed, Whitelabel subscribed, production key and webhook secret set, booking notifications on. No real unit connected yet.
 - Per-channel prices (feat/channex-per-channel-prices): each linked unit has four Channex rate plans (Direct, Airbnb, Booking.com, Agoda); one pricing rule in functions/_lib/channelPrice.ts (night's own price, else base + uplift, weekend x1.22; default uplift 12/18/16% of base) shared by Pricing, Calendar and Channex. Needs migration 0041 on production before merge.
 - Production still holds the seeded example data (3 sample units, 5 owners, 5 bookings ...). Owner chose to clear it before real data: scripts/clear-example-data.mjs (listing by default; --apply --confirm=<ref>; keeps users, settings, integrations, automations, audit trail). Then enter the real owner, building and unit, and connect Airbnb first (Booking.com after; Agoda not used yet).
-- Four seeded staff accounts exist on production (management@, finance@, aina@, nurul@theconts.com); owner to confirm whether they are used or switch them off.
+- Four seeded staff accounts on production (management@, finance@, aina@, nurul@theconts.com) are still in use: keep them as they are (owner, 10 Nov 2026).
 - Scheduled worker theconts-cron (Channex outbox retry, email/WhatsApp retry, overdue sweep, 08:00 digest, repair-block release): published by the "Deploy scheduled jobs" workflow on merge or by hand (.github/workflows/deploy-cron.yml); needs repository secret CHANNEX_API_KEY (live key). Local check: node scripts/cron-dry-run.mjs.
 - Watch: one listing must never be controlled by both the old connection and Channex; plan the import of existing bookings.
 - Building listings (feat/channex-buildings, migration 0128): a unit set up in Channex becomes a room type inside its building's Channex property; Booking.com / Agoda are connected per building with each room paired to a unit, and Disconnect on one unit keeps the others connected. Units set up before 0128 (the live pilot unit) keep a listing of their own and cannot share a hotel until moved. Tested on the Channex sandbox with hotel 4372137: scripts/api-checks/channex-buildings.mjs. Needs 0128 on staging, then production, before merge.
@@ -605,6 +623,24 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Engine screens tests: 34 of 6,726 fail. The ones read are stale guards, not screen faults: Houzs menus and routes removed, Chinese removed, category master list, the Production Order clone not added to the DataTable, coverage and storage lists. Worth a clean-up so a real failure stands out. Not read in full: MonthlyReport, ReportLayoutTree, renovationFlowFixes, mrp-views, convertScope. To fix: MobileRenovationDocs.tsx has no crash boundary of its own around its lazy pages.
 - Not yet seen live: the received-lock note on the SO edit page (needs a line received with no DO; the only one on a test order is cancelled). Project SO tab at phone width: tab switch is a native select that automation cannot drive.
 
+## SO, quotation and raw material round (6 Nov 2026)
+- Quotation lines keep their own row (add-ons, measure, supplier): the SO's row has none of these. Headings match the SO.
+- Walked by mouse on 6 Nov: TC-SO-2611-021 VO, PO TC-PO-2611-024, TC-PRO-2611-018 with raw materials, Complete, TC-GRN-2611-012, TC-DO-2611-013, all PDFs. Not walked: a credit note's row leaving the project SO tab; a DO typed by hand with Ship From.
+- Open: the print preview stays open when the page behind it changes. Raised PO numbers on the SO are plain text, not links.
+- Smart Placement was tried and reverted (#718, #722): every request got slower. First open after an idle worker still takes 1-2 s a request; a fix needs the owner's choice (paid plan or fewer MRP reads).
+- 16 DOs, 1 GRN, 4 POs got BLK and CONTS-WH sales locations became BLK by hand on production, owner's request.
+
+## End-user test with a real mouse (5 Nov 2026)
+- Walked on erp.theconts.com from the menu: RN-2611-014, QT-2611-009, TC-SO-2611-016, TC-PO-2611-020 and -021 (In-house), TC-PRO-2611-014, TC-GRN-2611-011, TC-DO-2611-012, TC-SI-2611-003, payment RM 900, VO-TC-SO-2611-016-01, TC-CN-2611-002, Works started.
+- Not walked by mouse: a PO to a real outside supplier, Goods Receipt by hand, Delivery Order by hand (the test uses In-house, which raises them on Complete), Works completed, closing a project.
+- Not checked at phone width: the browser window would not resize.
+- Payment cards and Bill were missing on TC-SO-2611-016 straight after Convert. Retry added (#693); the failing read was never captured and the fix is not proven.
+- Open: Incoming PO number on an SO line is not a link. Doc numbers cut off in the SO and Production lists at some widths. The SO status tab Delivered read 0 with a delivered order. The side panel offers Transfer to Delivery Order on a delivered order.
+- Open: a production order raised from Plan POs has no Location; the others show CONTS-WH.
+- Owner to decide: the stage bar reads Design approved and Ordering with no drawing approved. MRP lists no line without a Processing date, so a new order is invisible there until one is set. Needs attention keeps saying Order the main items after the POs are raised.
+- Owner to decide: the Contract PDF prints RM 3,200 after a RM 100 credit note, while the contract on screen reads RM 3,100. Prepared By prints blank because nothing fills it. The sales order PDF still says "submit our quotation".
+- Left over: test projects RN-2611-013 (now used by someone else), -014, -015; QT-2611-003 draft with no project.
+
 ## Engine click-through (4-5 Nov 2026)
 - Walked live on test data, no console errors: project RN-2611-012, quotation QT-2611-002, contract TC-SO-2611-012, VO, invoice TC-SI-2611-002, credit note TC-CN-2611-001, production order TC-PRO-2611-010 with raw material, goods receipt TC-GRN-2611-010, DOs TC-DO-2611-010 and 011, Works started, all their PDFs. Bound line with no PO refused with short_stock.
 - Run in a hidden tab, read from page text, PDF text and the database: no one has looked at these screens on a real phone or by eye since the tab went hidden. Horizontal overflow at 375px was scanned on 10 pages (0 found, but that scan ignores anything inside a clipped container).
@@ -614,4 +650,22 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - TC-SO-2611-008 keeps one line with no room (added before the fix). Test data only.
 - Slow, not changed: coverage about 3 s because each SO view works out the whole company's MRP; line-edits 3-4 s. The 504 on SO detail was not reproduced; the only trace is one Postgres statement timeout on 4 Nov 11:35 with no query text.
 - The 33 contract VOs from before 5 Nov read Requested by The Conts ERP: the real person was never stored.
-- Privacy page has no postal address until the owner confirms the current one; production and delivery PDFs still print C-41-06 Jaya One from Settings while contract letterheads print E-28-02.
+- Quotation on phone still opens the old QuotationEditor (src/mobile/MobileRenovationDocs.tsx); desktop uses the SO page since 6 Nov 2026.
+- Edit SO shows a credit row at amount 0.00 (real amount unchanged on save).
+
+## Production rebuild, left open (7 Nov 2026)
+- Accounting: renovation item groups unbound, invoices skip the ledger; someone else is mapping them.
+- A material kept at what is out after a VO removal, then re-added by another line, can over-issue; Return stock corrects it.
+- A VO recorded only as a flag (hand amendment already open) does not stop a receipt.
+- `acc/reno-projects.ts:245` reads the next instalment on total billed, display only, wrong after an earlier SI is cancelled.
+- A PO-line upload overwrites the production line's own pro-items photos (trigger from 0211).
+- Not tried on a real phone camera, nor Built-in and 2D photos with real data. PO payment journal not seen on screen.
+- Backend `test:light` has about 13 files failing on main itself (scans, wording); not touched here.
+- Local test data lives only on localhost.
+
+## Manual and pickers (7-8 Nov 2026, PRs #791-#793)
+- User manuals (computer and phone, English and Chinese) are published artifacts and PDFs, built by a script outside the repo from localhost screenshots; the owner shares them. Screens that change need new screenshots there.
+- Transfer from Sales Order pickers (PO, Production, DO) show Stock & orders per line (GET /renovation-doc-trail/lines). Lines the MRP plan does not list are judged by the quantity on POs and production orders, since MRP Proceed PO leaves po_qty_picked at 0.
+- Project SO tab nets delivery returns (PR #792); a returned line reads PENDING, as on the sales order page.
+- Production photos follow the upload standard (PR #793): sheet after each shot, Record video. A real phone recording a video has not been tried.
+- Payments on the project Overview read Not confirmed until Finance confirms the receipt; tied to the accounting mapping above.

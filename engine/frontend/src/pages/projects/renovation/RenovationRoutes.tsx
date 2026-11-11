@@ -6,12 +6,12 @@
    an install still in exhibition mode) keeps the original screens. */
 
 import { useEffect, useState, type ReactNode } from "react";
+import { Navigate } from "react-router-dom";
 import { useQuery } from "../../../hooks/useQuery";
 import { useAuth } from "../../../auth/AuthContext";
 import { renovationApi } from "./renovationApi";
 import { RenovationBoard } from "./RenovationBoard";
 import { RenovationCalendar } from "./RenovationCalendar";
-import { RenovationDetail } from "./RenovationDetail";
 import { ProjectMonitor } from "./ProjectMonitor";
 import { useScrollToRenovationSection } from "./renovationScrollToHash";
 
@@ -59,5 +59,7 @@ export function RenovationProjectRoute({ id, fallback }: { id: number; fallback:
   useScrollToRenovationSection(kind === "renovation");
   if (kind === "checking") return <p className="py-10 text-center text-sm text-ink-secondary">Loading project...</p>;
   if (kind === "other") return <>{fallback()}</>;
-  return <RenovationDetail id={id} canWrite={can("projects.write")} />;
+  /* One project page (owner, 11 Nov 2026): every link to a renovation project, from the SO, PO, MRP or search, opens the
+     project workspace staff use, not the older detail page. */
+  return <Navigate to={`/beta/projects/${id}${window.location.hash}`} replace />;
 }

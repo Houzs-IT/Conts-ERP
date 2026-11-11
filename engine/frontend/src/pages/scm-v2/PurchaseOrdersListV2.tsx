@@ -6,7 +6,10 @@
 // Route: /scm/purchase-orders (App.tsx flips ScmPurchaseOrdersV2 here).
 // Data: usePurchaseOrders (vendored suppliers-queries slice).
 
+import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { funnelTicked } from "../../hooks/useServerColumnFunnels";
+import { conditionDateRange } from "../../components/dataTableConditionFilters";
 import { purchaseOrderRowMenu } from "./row-menus";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { buildVariantSummary, fmtSen, fmtDate, orderLineIdentity } from "@2990s/shared";
@@ -171,9 +174,11 @@ const statusFor = (
    shape — a chip with nowhere to go should not pretend to be a link. */
 const grnRefsOf = (
   raw: PoHeaderRow["transfer_to_grns"]
-): Array<{ id: string | null; grnNumber: string }> =>
+): Array<{ id: string | null; grnNumber: string; receivedAt: string | null }> =>
   (raw ?? []).map((g) =>
-    typeof g === "string" ? { id: null, grnNumber: g } : { id: g.id, grnNumber: g.grnNumber }
+    typeof g === "string"
+      ? { id: null, grnNumber: g, receivedAt: null }
+      : { id: g.id, grnNumber: g.grnNumber, receivedAt: g.receivedAt ?? null }
   );
 
 /* The Goods Received doc(s) this PO was received into. Styled as the sibling of
@@ -221,6 +226,26 @@ function GrnNoCell({
           </span>
         ),
       )}
+    </span>
+  );
+}
+
+/* HC-0179: the received date of each GRN in the GRN No column, one per line in
+   the same order. Each line sits in the chip's own box (transparent border, same
+   padding) so a date lines up with its GRN when the two columns are adjacent. */
+function GrnDateCell({ grns }: { grns: PoHeaderRow["transfer_to_grns"] }) {
+  const list = grnRefsOf(grns);
+  if (list.length === 0) return <span className="text-[12px] text-ink-muted">—</span>;
+  return (
+    <span className="flex min-w-0 flex-col gap-0.5">
+      {list.map((g) => (
+        <span
+          key={g.grnNumber}
+          className="w-fit rounded border border-transparent px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-secondary"
+        >
+          {g.receivedAt ? fmtDate(g.receivedAt) : "—"}
+        </span>
+      ))}
     </span>
   );
 }
@@ -807,7 +832,7 @@ export function PurchaseOrdersListV2() {
      and the MRP-derived Assigned SO / Delivered) stays
      client-side on the loaded page — those columns are line- or MRP-level and
      the list query cannot express them cheaply. */
-  const [serverFunnels, setServerFunnels] = useState<{ creditorNames?: string[]; creditorCodes?: string[]; currencies?: string[]; docDates?: string[] }>({});
+  const [serverFunnels, setServerFunnels] = useState<{ creditorNames?: string[]; creditorCodes?: string[]; currencies?: string[]; docDates?: string[]; from?: string; to?: string }>({});
   const { requestTerm: debouncedSearch } = useDebouncedSearchTerm(search);
 
   // Send the active tab's BUCKET NAME as `status`; the backend resolves each
@@ -854,6 +879,8 @@ export function PurchaseOrdersListV2() {
   const serverRows = (data?.purchaseOrders ?? []) as PoHeaderRow[];
   const rows = useEnrichedPoListRows(serverRows, !listLoading);
   const total = data?.total ?? 0;
+  /* Each tab's money, server-summed over the same rows as its count (TODO item 5). */
+  const tabMoney: Record<string, number> = data?.statusMoneySen ?? {};
   const counts = data?.statusCounts ?? {
     all: 0,
     draft: 0,
@@ -908,7 +935,8 @@ export function PurchaseOrdersListV2() {
       creditorNames: pick("supplier"),
       creditorCodes: pick("creditor_code"),
       currencies: pick("currency"),
-      docDates: pick("po_date"),
+      docDates: funnelTicked(colFilters, "po_date"),
+      ...conditionDateRange(colFilters.po_date),
     };
     const sig = JSON.stringify(next);
     if (sig === serverFunnelSigRef.current) return;
@@ -1117,7 +1145,7 @@ export function PurchaseOrdersListV2() {
       }
       if (how === "one") {
         await pdf.generateCombinedPurchaseOrderPdf(pos as never, {
-          fileName: `purchase-orders-${new Date().toISOString().slice(0, 10)}.pdf`,
+          fileName: `purchase-orders-${todayMyt()}.pdf`,
           action,
         });
       } else {
@@ -1151,6 +1179,7 @@ export function PurchaseOrdersListV2() {
   const setPoHold = (r: PoHeaderRow, onHold: boolean) => holdAction(r.id, r.po_number, onHold);
   const poContextMenu = purchaseOrderRowMenu<PoHeaderRow>({
     open: goFullPage, edit: goEdit, print: printDocument,
+    copyAsNew: (r) => navigate(`/scm/purchase-orders/new?copyFrom=${r.id}`),
     transferToGrn: goGrnFromPo, cancel: (r) => doCancel(r), setHold: setPoHold,
     canReceive: (r) => !rowIsHeld(r) && ["SUBMITTED", "PARTIALLY_RECEIVED"].includes(r.status.toUpperCase()),
     canCancel: (r) => !["CANCELLED", "RECEIVED"].includes(r.status.toUpperCase()),
@@ -1350,6 +1379,18 @@ export function PurchaseOrdersListV2() {
       ),
     },
     {
+      key: "grn_date",
+      label: "GRN Date",
+      width: "108px",
+      defaultHidden: true,
+      disableSort: true,
+      getValue: (r) =>
+        grnRefsOf(r.transfer_to_grns)
+          .map((g) => (g.receivedAt ? fmtDate(g.receivedAt) : "—"))
+          .join(", "),
+      render: (r) => <GrnDateCell grns={r.transfer_to_grns} />,
+    },
+    {
       // Owner 2026-07-31: what has been DELIVERED against this PO — the DO(s) that
       // shipped its goods (batch_no = this PO) + qty per DO. EVERY DO renders
       // (no collapse); "—" when nothing has shipped yet.
@@ -1400,8 +1441,8 @@ export function PurchaseOrdersListV2() {
     lineCols.line_id!,
   ];
 
-  const statusPillOptions: Array<{ value: StatusTab; label: string }> = [
-    { value: "all", label: `All · ${counts.all}` },
+  const statusPillOptions: Array<{ value: StatusTab; label: string; moneySen?: number }> = [
+    { value: "all", label: `All · ${counts.all}`, moneySen: tabMoney.all },
     // Roll-up first: "what's still on order" is the working view of this page,
     // and it reads as a summary of the 1:1 pills that follow it. A worker
     // predating the bucket omits the key — open + partial IS the same number
@@ -1409,11 +1450,12 @@ export function PurchaseOrdersListV2() {
     {
       value: "outstanding",
       label: `Outstanding · ${counts.outstanding ?? counts.open + counts.partial}`,
+      moneySen: tabMoney.outstanding,
     },
-    { value: "draft", label: `Draft · ${counts.draft}` },
-    { value: "open", label: `Submitted · ${counts.open}` },
-    { value: "partial", label: `Partial · ${counts.partial}` },
-    { value: "received", label: `Received · ${counts.received}` },
+    { value: "draft", label: `Draft · ${counts.draft}`, moneySen: tabMoney.draft },
+    { value: "open", label: `Submitted · ${counts.open}`, moneySen: tabMoney.open },
+    { value: "partial", label: `Partial · ${counts.partial}`, moneySen: tabMoney.partial },
+    { value: "received", label: `Received · ${counts.received}`, moneySen: tabMoney.received },
     { value: "cancelled", label: `Cancelled · ${counts.cancelled}` },
     { value: "on_hold", label: `On Hold · ${counts.on_hold ?? 0}` },
   ];

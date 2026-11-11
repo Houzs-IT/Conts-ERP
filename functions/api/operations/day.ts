@@ -2,7 +2,8 @@ import { type Env, all, json, fail, nowIso } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
 import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, windowsOnDay, mytToday, isDay } from '../../_lib/cleaning';
-import { hasAssigneeUser } from '../../_lib/maintenance';
+import { hasAssigneeUser, jobPlaceJoin } from '../../_lib/maintenance';
+import { hasPassKeyJobs } from '../../_lib/passKeyJobs';
 
 // The last time the booking was moved into a state, from the audit trail: when the guest was recorded in or out.
 const MOVED_AT = (state: string) => `(SELECT a.occurred_at FROM audit_log a WHERE a.entity_table = 'reservations' AND a.entity_id = r.id
@@ -21,13 +22,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const date = isDay(asked) ? asked : today;
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
 
+  const placeJoin = await jobPlaceJoin(env);
+  const hasPassKey = await hasPassKeyJobs(env);
+  const passKeyColumns = hasPassKey ? 'pk.id AS pass_key_id, pk.state AS pass_key_state, pk.vendor_name AS pass_key_technician' : 'NULL AS pass_key_id, NULL AS pass_key_state, NULL AS pass_key_technician';
+  const passKeyJoin = hasPassKey ? `LEFT JOIN maintenance_issues pk ON pk.reservation_id = r.id AND pk.job_type = 'pass_key'` : '';
   const [arrivals, departures, cleans, urgent, repairs, maintenance, available] = await Promise.all([
     all<any>(env, `
     SELECT r.id, r.state, r.channel, r.check_in_time, r.check_out, r.guests_count, u.id AS unit_id, u.unit_number, u.readiness,
            p.id AS property_id, p.name AS property_name, COALESCE(NULLIF(g.full_name, ''), CASE WHEN r.channel = 'owner_stay' THEN 'Owner stay' ELSE 'Guest' END) AS guest_name,
            (SELECT t.state FROM tasks t WHERE t.unit_id = r.unit_id AND t.kind IN ${CLEAN_KINDS_SQL} AND ${when} = r.check_in ORDER BY t.created_at DESC LIMIT 1) AS clean_state,
-           ${MOVED_AT('checked_in')} AS arrived_at
+           ${MOVED_AT('checked_in')} AS arrived_at, ${passKeyColumns}
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
+    ${passKeyJoin}
     WHERE r.check_in = ? AND ${LIVE_STAY_SQL('r')}
     ORDER BY r.check_in_time, p.name, u.unit_number`, date),
 
@@ -53,7 +59,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
     all<any>(env, `
     SELECT m.id, m.title, m.state, m.category, m.vendor_name, m.blocks_unit, u.unit_number, p.name AS property_name
-    FROM maintenance_issues m JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id
+    FROM maintenance_issues m ${placeJoin}
     WHERE m.state != 'resolved' AND (m.urgency = 'urgent' OR m.blocks_unit = 1) ORDER BY m.reported_at`),
 
     windowsOnDay(env, date), maintenanceOnDay(env, date, today), availableOnNight(env, date, today),
@@ -67,6 +73,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       checkInTime: a.check_in_time || '15:00', checkOut: a.check_out,
       unitId: a.unit_id, unitNumber: a.unit_number, readiness: a.readiness, buildingId: a.property_id, propertyName: a.property_name,
       cleanState: a.clean_state ?? null, arrivedAt: a.state === 'checked_in' || a.state === 'checked_out' ? a.arrived_at ?? null : null,
+      passKey: a.pass_key_id ? { isHandedOver: a.pass_key_state === 'resolved', technician: a.pass_key_technician?.trim() || null } : null,
     })),
     departures: departures.map(d => ({
       reservationId: d.id, state: d.state, channel: d.channel, guestName: d.guest_name, checkOutTime: d.check_out_time || '11:00',
@@ -104,13 +111,14 @@ async function maintenanceOnDay(env: Env, date: string, today: string) {
   const cutoff = date >= today ? new Date().toISOString() : from;
   // Migration 0105 may not be applied yet; without the column the screen failed to load at all.
   const assignee = (await hasAssigneeUser(env)) ? 'm.assignee_user_id' : 'NULL AS assignee_user_id';
+  const placeJoin = await jobPlaceJoin(env);
   const rows = await all<any>(env, `
     SELECT m.id, m.title, m.state, m.urgency, m.category, m.vendor_name, ${assignee}, m.blocks_unit, m.blocked_to,
            m.owner_approval_required, m.owner_approved_at, m.charge_to, m.started_at, m.ended_at, m.resolved_at, m.reported_at,
            u.id AS unit_id, u.unit_number, p.id AS property_id, p.name AS property_name,
            w.starts_at AS window_start, w.ends_at AS window_end,
            EXISTS (SELECT 1 FROM maintenance_windows x WHERE x.issue_id = m.id AND x.ends_at::timestamptz < ?::timestamptz) AS visit_missed
-    FROM maintenance_issues m JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id
+    FROM maintenance_issues m ${placeJoin}
     LEFT JOIN LATERAL (
       SELECT x.starts_at, x.ends_at FROM maintenance_windows x
       WHERE x.issue_id = m.id AND x.starts_at::timestamptz <= ?::timestamptz AND x.ends_at::timestamptz >= ?::timestamptz

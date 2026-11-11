@@ -8,10 +8,12 @@
 // an editable working state because the commander has to enter counted_qty
 // per line BEFORE posting; "OPEN" makes the intent clearer.
 //
+// Round 1 (owner 2026-10-06): ASSIGNEES (several) are a record, editable with
+// the notes while OPEN, and do not gate Post; Add line for stock the sheet
+// does not list; RM gain/loss from the server's per-line cost estimate; the
+// column header stays on screen while scrolling (sticky).
+//
 // Phase 1 (owner-approved 2026-08-08, mig 0270):
-//   • ASSIGNEE on the header; Post is enabled only for the assignee / a
-//     supervisor (the backend enforces it — the button state just tells the
-//     truth early, driven by the server's `viewer` facts, never re-derived).
 //   • MODEL view (default): lines grouped by product code via the pure fold
 //     in stock-take-grouping.ts — "CODY · 12 lines · system 3" expands to its
 //     variant lines; "All zero" fills a group with 0. Flat view stays.
@@ -28,13 +30,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { History, Save, X, Trash2, Send, Ban, AlertTriangle, Search, Wand2, Undo2, ChevronRight, ChevronDown, EyeOff, Rows3, List, Printer } from 'lucide-react';
+import { History, Save, X, Trash2, Send, Ban, AlertTriangle, Search, Wand2, Undo2, ChevronRight, ChevronDown, EyeOff, Rows3, List, Printer, Pencil, Plus, Camera, Download } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { SkeletonDetailPage } from '../../vendor/scm/components/Skeleton';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import { StatusPill } from '../../vendor/scm/components/StatusPill';
-import { fmtDateOrDash, fmtDateTime, fmtQty } from '@2990s/shared';
+import { fmtDateOrDash, fmtDateTime, fmtQty, fmtSen } from '@2990s/shared';
 import {
   useStockTakeDetail,
   useUpdateStockTakeLines,
@@ -42,9 +44,18 @@ import {
   useCancelStockTake,
   useReverseStockTake,
   useDeleteStockTake,
+  useUpdateStockTakeHeader,
+  useAddStockTakeLine,
+  useStockTakeBucketOptions,
+  useStockTakeRacks,
+  stockTakeAssignees,
   type StockTakeStatus,
   type StockTakeLine,
 } from '../../vendor/scm/lib/stock-queries';
+import { usePickableStaff } from '../../vendor/scm/lib/admin-queries';
+import { useMfgProducts } from '../../vendor/scm/lib/mfg-products-queries';
+import { StaffMultiPick } from '../../vendor/scm/components/StaffMultiPick';
+import { StockTakeSheetReader, type SheetApply } from '../../vendor/scm/components/StockTakeSheetReader';
 import styles from './SalesOrderDetail.module.css';
 import { PageHeader } from '../../components/Layout';
 import { EntityHistoryPanel } from './EntityHistoryPanel';
@@ -54,6 +65,7 @@ import { useStaffLookup } from '../../hooks/useStaffLookup';
 import { PrintPreviewModal, useOpenPrintPreviewFromUrl, usePrintPreview } from '../../components/scm-v2/PrintPreviewModal';
 import { warehouseLabel } from '../../vendor/scm/lib/warehouse-label';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
+import { statusLabel } from '../../vendor/scm/lib/status-pill';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -79,6 +91,12 @@ type LineDraft = {
   /* WHO/WHEN this cell was counted (mig 0270) — display-only here. */
   countedBy: string | null;
   countedAt: string | null;
+  /* Round 1: unit cost (sen) the post would value a variance at; null = none. */
+  estUnitCostSen: number | null;
+  addedOnCount: boolean;
+  /* Round 2: where the counter found the goods (moved there at post). */
+  rackId: string | null;
+  origRackId: string | null;
 };
 
 const toDraft = (l: StockTakeLine): LineDraft => ({
@@ -93,6 +111,10 @@ const toDraft = (l: StockTakeLine): LineDraft => ({
   origNotes:        l.notes ?? '',
   countedBy:        l.counted_by ?? null,
   countedAt:        l.counted_at ?? null,
+  estUnitCostSen:   l.est_unit_cost_sen ?? null,
+  addedOnCount:     l.added_on_count === true,
+  rackId:           l.rack_id ?? null,
+  origRackId:       l.rack_id ?? null,
 });
 
 const parseCounted = (s: string): number | null => {
@@ -100,6 +122,13 @@ const parseCounted = (s: string): number | null => {
   const n = Math.max(0, Math.floor(Number(s)));
   if (!Number.isFinite(n)) return null;
   return n;
+};
+
+/* The RM a line's variance is worth, in sen; null when there is no variance
+   to show or no cost to value it at. */
+const valueOf = (d: LineDraft): number | null => {
+  const v = varianceOf(d);
+  return v == null || d.estUnitCostSen == null ? null : v * d.estUnitCostSen;
 };
 
 /* null = "no variance to show": uncounted, OR system qty hidden (blind). */
@@ -136,6 +165,33 @@ export const StockTakeDetail = () => {
   const [view, setView] = useState<'model' | 'flat'>('model');
   /* Expanded model groups (multi-line groups start collapsed to one header). */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /* Header edit (round 1): assignees + notes while OPEN. */
+  const updateHeader = useUpdateStockTakeHeader();
+  const pickableStaff = usePickableStaff();
+  const [editingHeader, setEditingHeader] = useState(false);
+  const [draftAssignees, setDraftAssignees] = useState<string[]>([]);
+  const [draftNotes, setDraftNotes] = useState('');
+  /* Round 2: racks of this take's warehouse + the paper-sheet reader. */
+  const racksQ = useStockTakeRacks(id ?? null);
+  const rackLabel = useCallback((rid: string | null) => {
+    if (!rid) return '—';
+    return (racksQ.data ?? []).find((r) => r.id === rid)?.rack ?? '—';
+  }, [racksQ.data]);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const applySheet = (rows: SheetApply[]) => {
+    const by = new Map(rows.map((r) => [r.lineId, r]));
+    setLines((cur) => cur.map((l) => {
+      const r = by.get(l.id);
+      if (!r) return l;
+      return {
+        ...l,
+        countedQtyInput: r.counted == null ? l.countedQtyInput : String(r.counted),
+        rackId: r.rackId ?? l.rackId,
+      };
+    }));
+    setDirty(true);
+    void notify({ title: `${rows.length} line${rows.length === 1 ? '' : 's'} filled from the sheet`, body: 'Check them, then Save Counts.' });
+  };
 
   useEffect(() => {
     if (!detail.data) return;
@@ -152,8 +208,9 @@ export const StockTakeDetail = () => {
      this phase (no blind, buttons enabled; the backend still enforces). */
   const viewer = detail.data?.viewer ?? { isAssignee: true, canSupervise: true, blindActive: false };
   const blindActive = viewer.blindActive;
-  const canPost =
-    !detail.data?.take.assignee_staff_id || viewer.isAssignee || viewer.canSupervise;
+  /* Owner 2026-10-06: the assignees are a record of who counted, not a gate —
+     anyone who can open the take can post it (a big variance still needs a
+     supervisor, enforced by the server). */
 
   /* id → name for assignee + per-cell counted-by (same idiom as the Stock
      Adjustments "Performed By" column — never render a uuid). */
@@ -179,6 +236,9 @@ export const StockTakeDetail = () => {
     let variancePos = 0;
     let varianceNeg = 0;
     let nonZeroVarianceLines = 0;
+    let valuePosSen = 0;
+    let valueNegSen = 0;
+    let uncostedVarianceLines = 0;
     for (const l of lines) {
       /* Counted-ness is judged on the ENTRY, not the variance — on a blind
          take variance is unknowable here, but "how many cells are done" must
@@ -191,12 +251,18 @@ export const StockTakeDetail = () => {
       if (v > 0) variancePos += v;
       if (v < 0) varianceNeg += v;       // negative number
       if (v !== 0) nonZeroVarianceLines += 1;
+      const val = valueOf(l);
+      if (v !== 0 && val == null) uncostedVarianceLines += 1;
+      if (val != null && val > 0) valuePosSen += val;
+      if (val != null && val < 0) valueNegSen += val;
     }
     return {
       counted, uncounted,
       variancePos, varianceNeg,
       varianceNet: variancePos + varianceNeg,
       nonZeroVarianceLines,
+      valuePosSen, valueNegSen, valueNetSen: valuePosSen + valueNegSen,
+      uncostedVarianceLines,
       totalLines: lines.length,
     };
   }, [lines]);
@@ -226,7 +292,7 @@ export const StockTakeDetail = () => {
           ...d.take,
           /* Resolved here, never inside the PDF lib — `assignee_staff_id` is a
              uuid and a uuid never reaches a person. */
-          assignee_name: d.take.assignee_staff_id ? actorNameOf(d.take.assignee_staff_id) : null,
+          assignee_name: stockTakeAssignees(d.take).map((x) => actorNameOf(x)).join(', ') || null,
         },
         d.lines,
         { action },
@@ -238,6 +304,31 @@ export const StockTakeDetail = () => {
       }));
   };
   const print = usePrintPreview(deliverPrintPdf);
+
+  /* 2990-0014: the same server rows as the PDF, as a workbook. */
+  const exportExcel = () => {
+    const d = detail.data;
+    if (!d) return;
+    const tk = d.take;
+    const subtitle = [
+      tk.warehouse ? `${tk.warehouse.code} · ${tk.warehouse.name}` : tk.warehouse_id,
+      fmtDateOrDash(tk.take_date),
+      scopeLabel(tk.scope_type, tk.scope_value),
+      statusLabel('stockTake', tk.status),
+      stockTakeAssignees(tk).map((x) => actorNameOf(x)).join(', '),
+    ].filter(Boolean).join(' · ');
+    import('../../vendor/scm/lib/stock-take-xlsx')
+      .then(({ downloadStockTakeXlsx }) => downloadStockTakeXlsx(
+        { takeNo: tk.take_no, subtitle },
+        d.lines,
+        { rackOf: rackLabel, staffOf: actorNameOf },
+      ))
+      .catch((e) => notify({
+        title: 'Excel export failed',
+        body: e instanceof Error ? e.message : 'Something went wrong.',
+        tone: 'error',
+      }));
+  };
   /* The list's right-click Print navigates here with ?print=1 — same contract
      every other document's row menu uses. */
   useOpenPrintPreviewFromUrl(print.openPreview, !!detail.data);
@@ -292,7 +383,7 @@ export const StockTakeDetail = () => {
     // Build diff payload — only lines whose counted or notes changed.
     const changed = lines.filter((l) => {
       const parsedCounted = parseCounted(l.countedQtyInput);
-      return parsedCounted !== l.origCountedQty || l.notes !== l.origNotes;
+      return parsedCounted !== l.origCountedQty || l.notes !== l.origNotes || l.rackId !== l.origRackId;
     });
     if (changed.length === 0) { setDirty(false); return; }
     update.mutate(
@@ -302,6 +393,7 @@ export const StockTakeDetail = () => {
           id:         l.id,
           countedQty: parseCounted(l.countedQtyInput),
           notes:      l.notes.trim() ? l.notes.trim() : null,
+          ...(l.rackId !== l.origRackId ? { rackId: l.rackId } : {}),
         })),
       },
       {
@@ -321,7 +413,8 @@ export const StockTakeDetail = () => {
         `Blind count — variances are revealed after posting.`
       : `Lines: ${totals.totalLines} (${totals.counted} counted, ${totals.uncounted} untouched)\n` +
         `Variance lines: ${totals.nonZeroVarianceLines}\n` +
-        `Net variance: ${totals.varianceNet > 0 ? '+' : ''}${totals.varianceNet}`;
+        `Net variance: ${totals.varianceNet > 0 ? '+' : ''}${totals.varianceNet}\n` +
+        `Estimated gain / loss: ${fmtSignedRM(totals.valueNetSen)}`;
     const proceed = await askConfirm({
       title: 'Post this stock take?',
       body: `${summary}\n\nOne ADJUSTMENT movement will be written per non-zero-variance line. Untouched lines (no counted qty) are skipped.`,
@@ -338,7 +431,11 @@ export const StockTakeDetail = () => {
             tone: 'error',
           });
         } else {
-          notify({ title: 'Posted', body: `${res.movementsWritten} adjustment movement${res.movementsWritten === 1 ? '' : 's'} written.` });
+          const rackNote = res.rackError
+            ? `\nRacks were NOT updated: ${res.rackError} — move them on Racks & Bins.`
+            : `${res.racksMoved ? `\n${res.racksMoved} rack placement${res.racksMoved === 1 ? '' : 's'} updated.` : ''}` +
+              `${res.racksSkipped?.length ? `\nRacks left as they were (a counted line had no rack): ${res.racksSkipped.join(', ')}.` : ''}`;
+          notify({ title: 'Posted', body: `${res.movementsWritten} adjustment movement${res.movementsWritten === 1 ? '' : 's'} written.${rackNote}` });
         }
       },
       onError: (err) => notify({ title: 'Post failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' }),
@@ -444,6 +541,9 @@ export const StockTakeDetail = () => {
               <Button variant="ghost" size="md" onClick={print.openPreview}>
                 <Printer {...ICON} /> Print PDF
               </Button>
+              <Button variant="ghost" size="md" onClick={exportExcel}>
+                <Download {...ICON} /> Export Excel
+              </Button>
               {isDraft && (
                 <>
                   <Button variant="ghost" size="md" onClick={onDelete} disabled={del.isPending}>
@@ -452,17 +552,15 @@ export const StockTakeDetail = () => {
                   <Button variant="ghost" size="md" onClick={onCancel} disabled={cancel.isPending}>
                     <Ban {...ICON} /> Cancel
                   </Button>
+                  <Button variant="ghost" size="md" onClick={() => setSheetOpen(true)}>
+                    <Camera {...ICON} /> Upload counted sheet
+                  </Button>
                   <Button variant="ghost" size="md" onClick={onSave} disabled={!dirty || update.isPending}>
                     <Save {...ICON} /> {update.isPending ? 'Saving…' : 'Save Counts'}
                   </Button>
-                  {/* Post is the assignee's (or a supervisor's) move — the
-                      backend refuses anyone else; disabling here just says so
-                      before the round-trip. */}
-                  <span title={canPost ? undefined : 'Only the assignee or a stock-take supervisor can post this count.'}>
-                    <Button variant="primary" size="md" onClick={onPost} disabled={post.isPending || dirty || !canPost}>
-                      <Send {...ICON} /> {post.isPending ? 'Posting…' : 'Post'}
-                    </Button>
-                  </span>
+                  <Button variant="primary" size="md" onClick={onPost} disabled={post.isPending || dirty}>
+                    <Send {...ICON} /> {post.isPending ? 'Posting…' : 'Post'}
+                  </Button>
                 </>
               )}
               {isPosted && (
@@ -484,6 +582,32 @@ export const StockTakeDetail = () => {
       <section className={styles.card}>
         <div className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>Setup</h2>
+          {isDraft && !editingHeader && (
+            <Button variant="ghost" size="sm" onClick={() => {
+              setDraftAssignees(stockTakeAssignees(t));
+              setDraftNotes(t.notes ?? '');
+              setEditingHeader(true);
+            }}>
+              <Pencil size={14} strokeWidth={1.75} /> Edit
+            </Button>
+          )}
+          {isDraft && editingHeader && (
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <Button variant="ghost" size="sm" onClick={() => setEditingHeader(false)}>
+                <X size={14} strokeWidth={1.75} /> Cancel
+              </Button>
+              <Button variant="primary" size="sm" disabled={updateHeader.isPending || draftAssignees.length === 0}
+                onClick={() => updateHeader.mutate(
+                  { id: t.id, assigneeStaffIds: draftAssignees, notes: draftNotes.trim() || null },
+                  {
+                    onSuccess: () => setEditingHeader(false),
+                    onError: (err) => { void notify({ title: 'Save failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' }); },
+                  },
+                )}>
+                <Save size={14} strokeWidth={1.75} /> {updateHeader.isPending ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          )}
         </div>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
@@ -505,16 +629,32 @@ export const StockTakeDetail = () => {
             </div>
             <div className={styles.field}>
               <span className={styles.fieldLabel}>Notes</span>
-              <div style={{ padding: '8px 0', fontSize: 'var(--fs-13)', color: t.notes ? 'var(--c-ink)' : 'var(--fg-muted)' }}>
-                {t.notes || '(none)'}
-              </div>
+              {editingHeader ? (
+                <input type="text" className={styles.fieldInput} value={draftNotes}
+                  onChange={(e) => setDraftNotes(e.target.value)} aria-label="Notes" />
+              ) : (
+                <div style={{ padding: '8px 0', fontSize: 'var(--fs-13)', color: t.notes ? 'var(--c-ink)' : 'var(--fg-muted)' }}>
+                  {t.notes || '(none)'}
+                </div>
+              )}
             </div>
             {/* Phase 1 — accountability facts on the header. */}
             <div className={styles.field}>
-              <span className={styles.fieldLabel}>Assignee</span>
-              <div style={{ padding: '8px 0', fontSize: 'var(--fs-13)', color: t.assignee_staff_id ? 'var(--c-ink)' : 'var(--fg-muted)' }}>
-                {t.assignee_staff_id ? actorNameOf(t.assignee_staff_id) : '(none — legacy take)'}
-              </div>
+              <span className={styles.fieldLabel}>Assignees</span>
+              {editingHeader ? (
+                <StaffMultiPick
+                  label="Add assignee"
+                  options={pickableStaff.data ?? []}
+                  value={draftAssignees}
+                  onChange={setDraftAssignees}
+                  nameOf={actorNameOf}
+                  disabled={false}
+                />
+              ) : (
+                <div style={{ padding: '8px 0', fontSize: 'var(--fs-13)', color: stockTakeAssignees(t).length ? 'var(--c-ink)' : 'var(--fg-muted)' }}>
+                  {stockTakeAssignees(t).map((x) => actorNameOf(x)).join(', ') || '(none)'}
+                </div>
+              )}
             </div>
             <div className={styles.field}>
               <span className={styles.fieldLabel}>Blind Count</span>
@@ -563,6 +703,26 @@ export const StockTakeDetail = () => {
                   value={`${totals.varianceNet > 0 ? '+' : ''}${fmtQty(totals.varianceNet)}`}
                   tone={totals.varianceNet > 0 ? 'positive' : totals.varianceNet < 0 ? 'negative' : 'muted'}
                 />
+                {/* Owner 2026-10-06: what the count is worth in money, at the
+                    cost the post would book it at. An estimate until posted —
+                    the post re-reads live stock. */}
+                <SummaryStat
+                  label="+ Gain (RM)"
+                  value={fmtSignedRM(totals.valuePosSen)}
+                  tone={totals.valuePosSen > 0 ? 'positive' : 'muted'}
+                />
+                <SummaryStat
+                  label="− Loss (RM)"
+                  value={fmtSignedRM(totals.valueNegSen)}
+                  tone={totals.valueNegSen < 0 ? 'negative' : 'muted'}
+                />
+                <SummaryStat
+                  label={totals.uncostedVarianceLines > 0
+                    ? `Net (RM) · ${totals.uncostedVarianceLines} line${totals.uncostedVarianceLines === 1 ? '' : 's'} uncosted`
+                    : 'Net (RM)'}
+                  value={fmtSignedRM(totals.valueNetSen)}
+                  tone={totals.valueNetSen > 0 ? 'positive' : totals.valueNetSen < 0 ? 'negative' : 'muted'}
+                />
               </>
             )}
             {blindActive && (
@@ -573,7 +733,10 @@ export const StockTakeDetail = () => {
       </section>
 
       {/* ── Lines ───────────────────────────────────────────────────── */}
-      <section className={styles.card}>
+      {/* overflow: clip, not the card's hidden — `hidden` makes the card a
+          scroll container, and a sticky header then sticks to a box that never
+          scrolls (owner 2026-10-06: the header must stay on screen). */}
+      <section className={styles.card} style={{ overflow: 'clip' }}>
         <div className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>
             Count Sheet
@@ -624,7 +787,7 @@ export const StockTakeDetail = () => {
           </div>
         </div>
         <div className={styles.cardBody}>
-          <table className={styles.table}>
+          <table className={`${styles.table} ${styles.tableOwnWidths} ${styles.stickyHead}`}>
             <thead>
               <tr>
                 <th style={{ width: '18%' }}>SKU</th>
@@ -635,7 +798,9 @@ export const StockTakeDetail = () => {
                     stripped them from the payload. */}
                 {!blindActive && <th style={{ width: 110, textAlign: 'right' }}>System Qty</th>}
                 <th style={{ width: 130, textAlign: 'right' }}>Counted Qty</th>
+                <th style={{ width: 120 }}>Rack</th>
                 {!blindActive && <th style={{ width: 110, textAlign: 'right' }}>Variance</th>}
+                {!blindActive && <th style={{ width: 110, textAlign: 'right' }}>Value (RM)</th>}
                 <th style={{ width: 130 }}>Counted By</th>
                 {isDraft && <th style={{ width: 110 }} />}
               </tr>
@@ -643,7 +808,7 @@ export const StockTakeDetail = () => {
             <tbody>
               {(() => {
                 /* SKU + Name + Variant + Counted + Counted By = 5 fixed. */
-                const colCount = 5 + (blindActive ? 0 : 2) + (isDraft ? 1 : 0);
+                const colCount = 6 + (blindActive ? 0 : 3) + (isDraft ? 1 : 0);
                 if (filteredLines.length === 0) {
                   return (
                     <tr><td colSpan={colCount} className={styles.emptyRow}>
@@ -671,6 +836,10 @@ export const StockTakeDetail = () => {
                         }}>
                           {ln.itemCode}
                         </span>
+                        {ln.addedOnCount && (
+                          <span className={styles.chip} title="Added during the count — not on the original sheet"
+                            style={{ marginLeft: 6, fontSize: 'var(--fs-11)' }}>Added</span>
+                        )}
                       </td>
                       <td style={{ fontSize: 'var(--fs-13)' }}>
                         {ln.productName || <span className={styles.muted}>—</span>}
@@ -691,11 +860,14 @@ export const StockTakeDetail = () => {
                       <td className={styles.tableRight}>
                         {isDraft ? (
                           <input
-                            type="number"
-                            min={0}
-                            step={1}
+                            type="text"
+                            inputMode="numeric"
+                            aria-label={`Counted qty for ${ln.itemCode}`}
                             value={ln.countedQtyInput}
-                            onChange={(e) => setLine(ln.id, { countedQtyInput: e.target.value })}
+                            /* Digits only: a text box has no spinner and no
+                               mouse-wheel change, the two ways a count got
+                               nudged by accident. */
+                            onChange={(e) => setLine(ln.id, { countedQtyInput: e.target.value.replace(/[^0-9]/g, '') })}
                             placeholder="—"
                             className={styles.fieldInput}
                             style={{
@@ -711,6 +883,23 @@ export const StockTakeDetail = () => {
                           </span>
                         )}
                       </td>
+                      {/* Round 2: where the goods actually sit — moved there at post. */}
+                      <td>
+                        {isDraft && (racksQ.data ?? []).length > 0 ? (
+                          <select
+                            className={styles.fieldSelect}
+                            aria-label={`Rack for ${ln.itemCode}`}
+                            value={ln.rackId ?? ''}
+                            onChange={(e) => setLine(ln.id, { rackId: e.target.value || null })}
+                            style={{ fontSize: 'var(--fs-12)' }}
+                          >
+                            <option value="">—</option>
+                            {(racksQ.data ?? []).map((r) => <option key={r.id} value={r.id}>{r.rack}</option>)}
+                          </select>
+                        ) : (
+                          <span style={{ fontSize: 'var(--fs-12)' }}>{rackLabel(ln.rackId)}</span>
+                        )}
+                      </td>
                       {!blindActive && (
                         <td className={styles.tableRight}
                             style={{
@@ -722,6 +911,16 @@ export const StockTakeDetail = () => {
                             : `${v > 0 ? '+' : ''}${fmtQty(v)}`}
                         </td>
                       )}
+                      {!blindActive && (() => {
+                        const val = valueOf(ln);
+                        return (
+                          <td className={styles.tableRight}
+                              title={v != null && v !== 0 && val == null ? 'No cost on record for this SKU' : undefined}
+                              style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-13)', color: varianceColor }}>
+                            {val == null || val === 0 ? '—' : fmtSignedRM(val)}
+                          </td>
+                        );
+                      })()}
                       {/* WHO counted this cell (mig 0270) — stamped server-side
                           on save; a just-typed, unsaved entry still shows the
                           previous author until Save Counts round-trips. */}
@@ -801,6 +1000,7 @@ export const StockTakeDetail = () => {
                           ? <span className={styles.muted}>0/{g.lines.length}</span>
                           : <>{fmtQty(g.countedTotal)} <span style={{ color: 'var(--fg-muted)' }}>({g.countedLines}/{g.lines.length})</span></>}
                       </td>
+                      <td><span className={styles.muted}>—</span></td>
                       {!blindActive && (
                         <td className={styles.tableRight}
                             style={{
@@ -812,6 +1012,17 @@ export const StockTakeDetail = () => {
                           {groupVariance == null ? '—' : `${groupVariance > 0 ? '+' : ''}${fmtQty(groupVariance)}`}
                         </td>
                       )}
+                      {!blindActive && (() => {
+                        const gv = g.lines.reduce<number | null>((acc, l) => {
+                          const val = valueOf(l);
+                          return val == null ? acc : (acc ?? 0) + val;
+                        }, null);
+                        return (
+                          <td className={styles.tableRight} style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-13)', fontWeight: 600 }}>
+                            {gv == null || gv === 0 ? '—' : fmtSignedRM(gv)}
+                          </td>
+                        );
+                      })()}
                       <td><span className={styles.muted}>—</span></td>
                       {isDraft && (
                         <td>
@@ -834,6 +1045,14 @@ export const StockTakeDetail = () => {
             </tbody>
           </table>
 
+          {isDraft && (
+            <AddFoundLine
+              takeId={t.id}
+              dirty={dirty}
+              onAdded={() => { void detail.refetch(); }}
+            />
+          )}
+
           {isDraft && totals.uncounted > 0 && (
             <div style={{
               marginTop: 'var(--space-3)',
@@ -855,6 +1074,17 @@ export const StockTakeDetail = () => {
           )}
         </div>
       </section>
+
+      {sheetOpen && (
+        <StockTakeSheetReader
+          takeId={t.id}
+          takeNo={t.take_no}
+          current={new Map(lines.map((l) => [l.id, { counted: l.countedQtyInput, rackId: l.rackId }]))}
+          rackLabel={rackLabel}
+          onApply={applySheet}
+          onClose={() => setSheetOpen(false)}
+        />
+      )}
 
       {/* History drawer — portals to <body>, so its position here is only
           about lifecycle, not layout. */}
@@ -920,3 +1150,71 @@ const SummaryStat = (props: { label: string; value: string; tone?: SummaryTone }
     </div>
   );
 };
+
+/* "+RM 1,234.00" / "−RM 56.00" / "RM 0.00" from sen. */
+const fmtSignedRM = (sen: number): string =>
+  sen > 0 ? `+${fmtSen(sen)}` : sen < 0 ? `−${fmtSen(-sen)}` : fmtSen(0);
+
+/* Add line (owner 2026-10-06): stock found on the shelf that the sheet does not
+   list. Pick the SKU (and, for a SKU the business holds in variants, which
+   one), type the count, Add — it lands counted. Unsaved counts must be saved
+   first, because adding re-reads the take and would drop them. */
+function AddFoundLine({ takeId, dirty, onAdded }: { takeId: string; dirty: boolean; onAdded: () => void }) {
+  const notify = useNotify();
+  const products = useMfgProducts();
+  const add = useAddStockTakeLine();
+  const [code, setCode] = useState('');
+  const [variantKey, setVariantKey] = useState('');
+  const [qty, setQty] = useState('');
+  const known = (products.data ?? []).some((p) => p.code === code.trim());
+  const options = useStockTakeBucketOptions(takeId, known ? code : '');
+  const opts = options.data ?? [];
+
+  const submit = () => {
+    if (dirty) { void notify({ title: 'Save your counts first', body: 'Adding a line reloads the sheet.', tone: 'error' }); return; }
+    if (!known) { void notify({ title: 'Pick a SKU from the list.', tone: 'error' }); return; }
+    if (qty === '') { void notify({ title: 'Type the counted quantity.', tone: 'error' }); return; }
+    add.mutate(
+      { id: takeId, itemCode: code.trim(), variantKey, countedQty: Number(qty) },
+      {
+        onSuccess: () => { setCode(''); setVariantKey(''); setQty(''); onAdded(); },
+        onError: (err) => { void notify({ title: 'Add line failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' }); },
+      },
+    );
+  };
+
+  return (
+    <div style={{
+      marginTop: 'var(--space-3)', padding: 'var(--space-3)',
+      border: '1px dashed var(--line)', borderRadius: 'var(--radius-md)',
+      display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', alignItems: 'flex-end',
+    }}>
+      <label className={styles.field} style={{ flex: '1 1 220px' }}>
+        <span className={styles.fieldLabel}>Add line — SKU found, not on the sheet</span>
+        <input className={styles.fieldInput} list="stk-add-skus" value={code} placeholder="Type or pick a SKU code…"
+          onChange={(e) => { setCode(e.target.value); setVariantKey(''); }} style={{ fontFamily: 'var(--font-mono)' }} />
+        <datalist id="stk-add-skus">
+          {(products.data ?? []).map((p) => <option key={p.id} value={p.code}>{p.name}</option>)}
+        </datalist>
+      </label>
+      <label className={styles.field} style={{ flex: '2 1 280px' }}>
+        <span className={styles.fieldLabel}>Variant</span>
+        <select className={styles.fieldSelect} value={variantKey} onChange={(e) => setVariantKey(e.target.value)}
+          disabled={!known || options.isLoading}>
+          <option value="">{opts.length && !opts.some((o) => o.variantKey === '') ? '— Pick variant —' : '(plain / no variant)'}</option>
+          {opts.filter((o) => o.variantKey !== '').map((o) => (
+            <option key={o.variantKey} value={o.variantKey}>{o.variantLabel ?? o.variantKey} — {o.qtyHere} here</option>
+          ))}
+        </select>
+      </label>
+      <label className={styles.field} style={{ flex: '0 0 110px' }}>
+        <span className={styles.fieldLabel}>Counted</span>
+        <input className={styles.fieldInput} inputMode="numeric" value={qty} aria-label="Counted qty for the new line"
+          onChange={(e) => setQty(e.target.value.replace(/[^0-9]/g, ''))} style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }} />
+      </label>
+      <Button variant="secondary" size="md" onClick={submit} disabled={add.isPending}>
+        <Plus size={14} strokeWidth={1.75} /> {add.isPending ? 'Adding…' : 'Add line'}
+      </Button>
+    </div>
+  );
+}

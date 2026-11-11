@@ -26,6 +26,7 @@
 // ./GrnFromPo); nav repointed to /scm/grns.
 // ----------------------------------------------------------------------------
 
+import { afterCreatePath, sourceDocPath } from "../../lib/returnToSource";
 import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -162,6 +163,10 @@ export const GrnNew = () => {
   const [selPoId, setSelPoId] = useState<string>(params.get('poId') ?? '');
   const poListQ = usePurchaseOrders();
   const poQ     = usePurchaseOrderDetail(selPoId || null);
+  // The PO this receipt was raised from; null once the operator picks a different PO in the form.
+  const backToPo = selPoId && selPoId === params.get('poId')
+    ? sourceDocPath.purchaseOrder(selPoId)
+    : sourceDocPath.purchaseOrder(params.get('backToPo'));
 
   // Manual-mode supplier (Commander 2026-05-29 — blank GRN, no PO).
   const [manualSupplierId, setManualSupplierId] = useState<string>('');
@@ -280,7 +285,7 @@ export const GrnNew = () => {
      warehouse can never override (the `if (warehouseId) return` guard blocks the
      correction). This was the GRN-2605 "received into PG instead of SLGR" bug. */
   const [picksResolved, setPicksResolved]     = useState<boolean>(false);
-  const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string } | null>(null);
+  const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string; goLabel?: string } | null>(null);
 
   // ── On mount: restore the stashed draft + merge the From-PO-multi picks.
   //    Commander 2026-05-30 (anti-double-pick): leaving for the picker now
@@ -757,7 +762,8 @@ export const GrnNew = () => {
         body: asDraft
           ? 'Saved as a draft — no stock moved yet. Open it and Confirm to receive the goods.'
           : 'Received & posted — inventory + PO received qty updated.',
-        goTo: `/scm/grns/${createRes.id}`,
+        goTo: afterCreatePath(`/scm/grns/${createRes.id}`, backToPo),
+        goLabel: backToPo ? 'Back to PO' : undefined,
       });
     } catch (err) {
       setDialog({ title: 'Save failed', body: err instanceof Error ? err.message : 'Something went wrong.' });
@@ -1449,7 +1455,7 @@ export const GrnNew = () => {
         <ActionResultDialog
           title={dialog.title}
           body={dialog.body}
-          primaryLabel={dialog.goTo ? 'Open Goods Receipt' : undefined}
+          primaryLabel={dialog.goTo ? (dialog.goLabel ?? 'Open Goods Receipt') : undefined}
           onPrimary={dialog.goTo ? () => { const g = dialog.goTo!; setDialog(null); navigate(g); } : undefined}
           /* Owner 2026-08-13 ("need create the new GRN for like this also") — the
              receiving loop keys one GRN per delivery back-to-back, so success

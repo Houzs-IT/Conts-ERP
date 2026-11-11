@@ -1,3 +1,4 @@
+import { useEscapeLayer } from "../lib/escapeStack";
 import {
   createContext,
   useCallback,
@@ -140,13 +141,12 @@ function DialogShell({
     return () => clearTimeout(t);
   }, [item.kind]);
 
-  // Esc closes (cancel). Enter confirms when not in a textarea.
+  // Esc closes (cancel) through the shared Esc stack, so the form under the
+  // dialog stays open. Enter confirms when not in a textarea.
+  useEscapeLayer(() => onClose(item.kind === "confirm" ? false : null));
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose(item.kind === "confirm" ? false : null);
-      } else if (e.key === "Enter") {
+      if (e.key === "Enter") {
         // Enter inside a textarea adds a newline — let it through.
         const target = e.target as HTMLElement;
         if (target.tagName === "TEXTAREA") return;

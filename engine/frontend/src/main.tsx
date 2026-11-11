@@ -297,6 +297,14 @@ await restoreNativeSession();
    returns, and a user who has never signed in is never prompted at boot. */
 if (readAuthToken()) void registerNativePush();
 
+/* The Chinese faces wait for first paint: a stylesheet this size in <head> holds up every screen. */
+window.addEventListener("load", () => {
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "/fonts/fonts-cjk-v1.css";
+  document.head.appendChild(link);
+});
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     {/* Top-level boundary: any render error (in Layout, Sidebar, a provider, or

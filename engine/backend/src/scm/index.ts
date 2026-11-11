@@ -48,6 +48,7 @@ import { purchaseInvoices } from "./routes/purchase-invoices";
 import { purchaseInvoicesListEnrichment } from "./routes/purchase-invoices-list-enrichment";
 import { purchaseInvoiceExports } from "./routes/purchase-invoice-exports";
 import { paymentVouchers } from "./routes/payment-vouchers";
+import { aiUsageRoutes } from "./routes/ai-usage";
 import { otherDebtors } from "./routes/other-debtors";
 import { apInvoices } from "./routes/ap-invoices";
 import { creditNotes } from "./routes/credit-notes";
@@ -367,6 +368,18 @@ scm.route("/mfg-purchase-orders", purchaseOrderItemPhotos);
 // gates layer on inside the handlers (mig 0192).
 scm.use("/po-amendments/*", scmAreaGuard("scm.procurement.po"));
 scm.route("/po-amendments", poAmendments);
+/* A GR's twin needs the right to work GRs, a DO's the right to work DOs: the same gate as confirming either, so a
+   storekeeper or driver who may confirm a delivery by scan may also raise its twin. */
+scm.use("/onsite-twin/grn/*", scmAreaGuard("scm.procurement.grn"));
+scm.use("/onsite-twin/do/*", scmAreaGuard("scm.sales.delivery", {
+  readInheritsFrom: "scm.sales.orders",
+  writeBypass: (c) => {
+    const u = c.get("user") as unknown as Parameters<typeof hasPositionCapability>[0];
+    return c.req.method === "POST" && (hasPositionCapability(u, "scm.do.load") || hasPositionCapability(u, "scm.do.dispatch"));
+  },
+}));
+scm.route("/onsite-twin/grn", onsiteTwinGrn);
+scm.route("/onsite-twin/do", onsiteTwinDo);
 scm.use("/grns/*", scmAreaGuard("scm.procurement.grn"));
 // Deferred list enrichment — the MRP-derived GRN-list columns (Assigned SO /
 // Delivered) the list no longer computes on its critical path. Mounted BEFORE
@@ -579,7 +592,10 @@ scm.route("/purchase-consignment-returns", purchaseConsignmentReturns);
 // fire BOTH and re-couple the two, defeating the split.) The reads the
 // adjustment form needs (warehouses, buckets, movements) stay under /inventory
 // on `scm.warehouse.inventory`.
-scm.use("/inventory/adjustments", scmAreaGuard("scm.warehouse.adjustments"));
+// Wildcard since BUG-66 (2026-10-07): the router now serves /:id too, and an
+// exact-path guard would leave those paths behind supabaseAuth alone, because
+// this router answers before the broad /inventory/* guard is reached.
+scm.use("/inventory/adjustments/*", scmAreaGuard("scm.warehouse.adjustments"));
 scm.route("/inventory/adjustments", inventoryAdjustments);
 // openReadPaths /inventory/warehouses (2026-07-19, fix/so-maintenance-403) —
 // GET /inventory/warehouses is the warehouse PICKLIST (id / code / name /
@@ -615,6 +631,7 @@ scm.route("/stock-takes", stockTakes);
 scm.use("/accounting/*", scmAreaGuard("scm.finance.accounting"));
 scm.use("/accounting/*", requireLedgerAccess({ except: ACCOUNTING_OPEN_PATHS })); // Conts: the Ledger area
 scm.route("/accounting", officialReceiptAttachments); // photos and documents (mig 0119)
+scm.route("/accounting", aiUsageRoutes); // AI usage: what the bill reader costs (mig 0298)
 scm.route("/accounting", accounting);
 // Payment Vouchers — standalone AP cash-out doc (port of 2990 0189/0202, Phase
 // 1-B MYR). A finance document that posts a JE to the GL + can settle PIs, so it
@@ -1046,11 +1063,16 @@ scm.route("/renovation-so-info", renovationSoInfo);
 
 // ── Production orders (mig 0208): the Purchase Order routes cloned onto their own tables ──
 import { productionOrders } from "./routes/production-orders";
+import { draftDeliveries } from "./routes/draft-deliveries";
+import { onsiteTwinDo, onsiteTwinGrn } from "./routes/onsite-twin";
 import { productionLineImport } from "./routes/production-line-import";
 import { productionOrderItemPhotos } from "./routes/production-order-item-photos";
 import { productionOrderAttachments } from "./routes/doc-attachments";
 import { renovationProductionInfo } from "./routes/renovation-doc-flow";
+import { renovationDocTrail } from "./routes/renovation-doc-trail";
+scm.route("/renovation-doc-trail", renovationDocTrail);
 scm.use("/production-orders/*", scmAreaGuard("scm.procurement.production"));
+scm.route("/production-orders/draft-deliveries", draftDeliveries);
 scm.route("/production-orders", productionLineImport);
 scm.route("/production-orders", productionOrderAttachments);
 scm.route("/production-orders", renovationProductionInfo);

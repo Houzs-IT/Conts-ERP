@@ -69,6 +69,18 @@ export function toInstant(v: unknown): string | null {
  *  Without it those fields are left out of every read and refused on write, and the job works as before. */
 export const hasBilling = (env: Env) => hasColumn(env, 'maintenance_issues', 'billing_date').catch(() => false);
 
+/** Migration 0255: property_id on a job that sits in a building, not a unit. Without it every job has a unit. */
+export const hasBuildingJobs = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'property_id').catch(() => false);
+
+export const BUILDING_JOB_LABEL = 'Building (no unit)';
+
+/** The units and properties joins for a query on `maintenance_issues m`, as aliases u (may be null) and p. */
+export async function jobPlaceJoin(env: Env): Promise<string> {
+  return (await hasBuildingJobs(env))
+    ? 'LEFT JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = COALESCE(u.property_id, m.property_id)'
+    : 'LEFT JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id';
+}
+
 export const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Whether a picked name is one of the company's own people (an active technician, housekeeper or operations
@@ -85,6 +97,8 @@ export function mineSql(byId: boolean) {
 }
 
 export const hasAssigneeUser = (env: Env) => hasColumn(env, 'maintenance_issues', 'assignee_user_id').catch(() => false);
+
+export const hasSupportRequest = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'support_requested_at').catch(() => false);
 
 /** Whether a repair job is the signed-in field user's: the rule every field write on a repair checks. */
 export async function isAssignee(env: Env, id: string, userId: string): Promise<boolean> {
@@ -142,6 +156,13 @@ export function ruleNeedsApproval(rules: Record<string, ApprovalRule>, category:
 export const fieldVisibleSql = (cols: boolean) => cols
   ? `NOT (m.owner_approval_required = 1 AND m.charge_to = 'owner' AND (m.owner_approved_at IS NULL OR (m.needs_parts = 1 AND m.parts_arrived_at IS NULL)))`
   : `NOT (m.owner_approval_required = 1 AND m.charge_to = 'owner' AND m.owner_approved_at IS NULL)`;
+
+export const MYT_DAY = (offsetDays: number): string =>
+  `to_char((now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date + ${Math.trunc(offsetDays)}, 'YYYY-MM-DD')`;
+
+export const passKeyShownSql = (cols: boolean): string => cols
+  ? `(m.job_type IS DISTINCT FROM 'pass_key' OR m.due_on IS NULL OR m.due_on <= ${MYT_DAY(1)} OR m.urgency = 'urgent')`
+  : 'TRUE';
 
 /** Field order: Urgent, Pass key, then Normal by due date (the day reported when none is set), oldest first. */
 export const fieldOrderSql = (cols: boolean) => cols

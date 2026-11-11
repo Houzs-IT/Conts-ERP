@@ -18,7 +18,8 @@ import {
   type BrandingLogo,
 } from '../../../lib/branding';
 import { canonicalizeSinglePhone, formatPhone } from '../../shared/phone';
-import { drawDocLetterhead } from '../../../lib/renovation/renovation-doc-theme';
+import { drawDocLetterhead, getDocLetterhead } from '../../../lib/renovation/renovation-doc-theme';
+import { pushEscape } from '../../../lib/escapeStack';
 
 /* HOUZS letterhead — name / reg no / address / phone / email now come from the
    centralised Branding config (one editable record in Settings → Branding),
@@ -134,6 +135,8 @@ export const COMPANY = {
 /** The company block of the shared letterhead (renovation-doc-theme.ts), in the samples' shape: name and registration
  *  on one line, the address, then "PHONE : ... // EMAIL : ...". */
 export function letterheadLines(contactOf: { phone: string; email: string } = COMPANY): string[] {
+  const set = getDocLetterhead();
+  if (set) return set;
   const contact = [contactOf.phone && `PHONE : ${contactOf.phone}`, contactOf.email && `EMAIL : ${contactOf.email}`].filter(Boolean).join(' // ');
   return [[COMPANY.name.toUpperCase(), COMPANY.reg].filter(Boolean).join(' '), ...COMPANY.addressLines, contact];
 }
@@ -170,7 +173,12 @@ const WINANSI_ABOVE_LATIN1 = new Set([
    would refuse to print over its own punctuation. Folded to ASCII for paper;
    the screen keeps the symbols. Applied to a whole cell, a customer's own
    arrow folds the same way, which is a faithful print, not a corruption. */
-const PAPER_FOLDS: ReadonlyArray<[RegExp, string]> = [[/→/g, '->'], [/←/g, '<-'], [/−/g, '-'], [/≈/g, '~']];
+/* Spaces and marks pasted from Word or a website (HC-PO-2611-134 held a U+2006): they
+   look like nothing, so nobody can find them to remove, and neither font carries them. */
+const PAPER_FOLDS: ReadonlyArray<[RegExp, string]> = [
+  [/→/g, '->'], [/←/g, '<-'], [/−/g, '-'], [/≈/g, '~'],
+  [/[ -   　]/g, ' '], [/[​-‏⁠﻿]/g, ''],
+];
 export const paperText = (s: string): string => PAPER_FOLDS.reduce((acc, [re, to]) => acc.replace(re, to), s);
 
 /** Hanzi proper (vs. CJK punctuation) — picks which subset a document needs. */
@@ -202,8 +210,8 @@ const CJK_FETCH_FAILED =
 /* Not worded as "Chinese": the same guard catches anything helvetica can't
    paint that the subset doesn't carry either — a traditional 陳, a rare given
    name, an emoji someone pasted into a remark. */
-const CJK_GLYPH_MISSING =
-  'This document has a character we cannot print yet, so the PDF was not created.';
+const glyphMissing = (cps: readonly number[]): string =>
+  `This document has a character we cannot print yet (${cps.slice(0, 5).map((cp) => `"${String.fromCodePoint(cp)}" U+${cp.toString(16).toUpperCase()}`).join(', ')}), so the PDF was not created. Remove it from the document and try again.`;
 
 /* Scans the text as it will be PAINTED: the fold shim below turns these
    symbols into ASCII at draw time, so an "→" in a line remark (BUG-28,
@@ -349,7 +357,7 @@ export async function ensurePdfCjkFont(
     | Record<number, number>
     | undefined;
   const missing = [...needed].filter((cp) => codeMap?.[cp] === undefined);
-  if (missing.length > 0) throw new Error(CJK_GLYPH_MISSING);
+  if (missing.length > 0) throw new Error(glyphMissing(missing));
 
   if (!docShimmed.has(doc)) {
     /* The generators ask for 'helvetica' by name in ~50 places, and
@@ -575,8 +583,10 @@ export function drawInfoColumns(
     if (!v) continue;
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(110); doc.text(label, midX, ry); doc.setTextColor(0);
-    doc.text(`: ${v}`, rValX, ry);
-    ry += lh;
+    /* Wraps inside the page margin: one long value ran past the rule and the table (owner, 5 Nov 2026). */
+    const wrapped = doc.splitTextToSize(`: ${v}`, pageW - margin - rValX) as string[];
+    doc.text(wrapped, rValX, ry);
+    ry += Math.max(1, wrapped.length) * lh;
   }
   return Math.max(ly, ry) + 4;
 }
@@ -644,49 +654,22 @@ export const safeName = (s: string, maxLen = 32): string => {
 //
 //   'save'    → download it (the historical default; keep it the fallback so an
 //               un-migrated caller behaves exactly as before)
-//   'print'   → blob → a new tab showing the document full-size, and the
-//               browser's print dialog opened on it once the viewer has loaded.
-//               A 0×0 hidden iframe's contentWindow.print() is answered by
-//               Chrome's PDF viewer with nothing at all (no dialog, no error)
-//               often enough that it is now only the popup-blocked fallback.
-//               A tab of our OWN pages is never the answer: the global @media
-//               print block (index.css) hides `body *` and shows only
-//               `.org-print-area`, so window.print() on a detail page prints a
-//               BLANK sheet.
-//   'preview' → blob → new tab, i.e. the "View full PDF" escape hatch from the
-//               summary card when the operator wants to see every line first.
+//   'print'   → blob → the in-app viewer below, with the browser's print
+//               dialog opened on it once the PDF has laid out. The PDF must sit
+//               in a VISIBLE iframe: a 0×0 hidden iframe's contentWindow.print()
+//               is answered by Chrome's PDF viewer with nothing at all often
+//               enough to be useless. Never window.print() on our own pages: the
+//               global @media print block (index.css) hides `body *` and shows
+//               only `.org-print-area`, so a detail page prints a BLANK sheet.
+//   'preview' → blob → the same viewer without the auto-print, i.e. the "View
+//               full PDF" escape hatch from the summary card.
+//
+// Both used to open a NEW TAB. That window.open runs only after the
+// generator's jspdf render has been awaited, so the click's user gesture is
+// gone and Chrome blocks it as a popup (owner 2026-10-02: "Print 不能在 ERP
+// 里面…会跳去新的 window"). The viewer's "New tab" button is a fresh click, so
+// that route still exists and is never blocked.
 export type PdfAction = 'save' | 'print' | 'preview';
-
-/* Mount a blob URL in a hidden iframe and (optionally) trigger print.
-   Cleanup is deferred 60 s so the OS print dialog can hold the iframe
-   document until the user closes it. */
-const renderViaIframe = (blobUrl: string, andPrint: boolean): void => {
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  iframe.src = blobUrl;
-  document.body.appendChild(iframe);
-  if (andPrint) {
-    iframe.onload = () => {
-      try {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-      } catch {
-        /* Some browsers throw if the PDF viewer hasn't fully hydrated.
-           Worst case the user sees the iframe content briefly; we still
-           clean up below. */
-      }
-    };
-  }
-  window.setTimeout(() => {
-    try { document.body.removeChild(iframe); } catch { /* already detached */ }
-    URL.revokeObjectURL(blobUrl);
-  }, 60_000);
-};
 
 /** Deliver a rendered doc by the requested route. Defaults to a download. */
 export function deliverPdf(
@@ -721,12 +704,107 @@ export function deliverPdfBlob(
     window.setTimeout(() => { URL.revokeObjectURL(url); }, 60_000);
     return;
   }
+  openPdfViewerOverlay(blob, filename, { print: action === 'print' });
+}
+
+/* ── The in-app viewer ───────────────────────────────────────────────────────
+ *
+ * Plain DOM rather than React: deliverPdf is called from vendor generators with
+ * no component tree to mount into. The PDF sits in a VISIBLE iframe (the
+ * browser's own PDF viewer), so Print here prints the real document — not the
+ * page, which index.css's @media print would blank. Esc / backdrop / Close all
+ * tear it down and release the blob. */
+function openPdfViewerOverlay(blob: Blob, filename: string, opts: { print?: boolean } = {}): void {
   const blobUrl = URL.createObjectURL(blob);
-  if (action === 'preview') {
-    openPdfPreviewTab(blob, blobUrl, filename);
-    return;
+  const title = filename.replace(/\.pdf$/i, '');
+  const prevOverflow = document.body.style.overflow;
+
+  const backdrop = document.createElement('div');
+  backdrop.setAttribute('role', 'dialog');
+  backdrop.setAttribute('aria-modal', 'true');
+  backdrop.setAttribute('aria-label', title);
+  /* Above the Print preview modal it was opened from. */
+  backdrop.style.cssText =
+    'position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.6);' +
+    'display:flex;align-items:center;justify-content:center;padding:16px';
+
+  const panel = document.createElement('div');
+  panel.style.cssText =
+    'display:flex;flex-direction:column;width:min(1100px,100%);height:100%;' +
+    'background:#3a3a3a;border-radius:10px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.4)';
+
+  const bar = document.createElement('div');
+  bar.style.cssText =
+    'display:flex;align-items:center;gap:8px;padding:8px 12px;background:#1f2937;color:#fff;' +
+    'font:600 13px/1.2 system-ui,sans-serif';
+
+  const name = document.createElement('div');
+  name.textContent = title;
+  name.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+  bar.appendChild(name);
+
+  const iframe = document.createElement('iframe');
+  iframe.title = title;
+  iframe.style.cssText = 'flex:1;width:100%;border:0;display:block;background:#525659';
+
+  const button = (label: string, primary: boolean, onClick: () => void) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.style.cssText =
+      'border:0;border-radius:6px;padding:7px 12px;cursor:pointer;font:600 12px/1 system-ui,sans-serif;' +
+      (primary ? 'background:#0f766e;color:#fff' : 'background:rgba(255,255,255,.12);color:#fff');
+    b.addEventListener('click', onClick);
+    bar.appendChild(b);
+    return b;
+  };
+
+  const printFrame = () => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch {
+      /* Viewer not hydrated yet — its own toolbar print button still works. */
+    }
+  };
+  button('Print', true, printFrame);
+  button('Download', false, () => deliverPdfBlob(blob, filename, 'save'));
+  /* A fresh click, so this window.open keeps its user gesture. */
+  button('New tab', false, () => openPdfPreviewTab(blob, URL.createObjectURL(blob), filename));
+  button('Close', false, () => close());
+
+  /* Through the shared Esc stack, so Esc closes only the viewer, not the Print preview under it. */
+  let popEscape = (): void => {};
+  function close() {
+    popEscape();
+    backdrop.remove();
+    document.body.style.overflow = prevOverflow;
+    URL.revokeObjectURL(blobUrl);
   }
-  openPdfPrintTab(blob, blobUrl, filename);
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) close();
+  });
+  popEscape = pushEscape(close);
+
+  /* The browser's own Save takes its name from the address: a blob saves as a
+     GUID (owner 2026-11-06), the worker's path saves as the document. An iframe
+     with no src fires load too, so print listens only once the real one is set. */
+  void (async () => {
+    let path: string | null = null;
+    try {
+      path = await putPrintPreview(blob, filename);
+    } catch {
+      // Any storage/worker failure just means the blob, as in the preview tab.
+    }
+    if (opts.print) iframe.addEventListener('load', () => { window.setTimeout(printFrame, PRINT_SETTLE_MS); }, { once: true });
+    iframe.src = path ?? blobUrl;
+  })();
+
+  panel.appendChild(bar);
+  panel.appendChild(iframe);
+  backdrop.appendChild(panel);
+  document.body.appendChild(backdrop);
+  document.body.style.overflow = 'hidden';
 }
 
 /* Inside the Conts ERP frame (erp.theconts.com embeds this app from another site) the browser keeps this page's
@@ -747,19 +825,6 @@ const tabBlobUrl = (tab: Window, blob: Blob, fallback: string): string => {
     return fallback;
   }
 };
-
-/* 'print' — the named wrapper page (route 2), never the service-worker path:
-   the viewer sits in a VISIBLE iframe there, the shape Chrome prints reliably,
-   and the page carries a Print button for a second go. Opened synchronously
-   for the same reason the preview's tab is. */
-function openPdfPrintTab(blob: Blob, blobUrl: string, filename: string): void {
-  const tab = window.open('', '_blank');
-  if (!tab) {
-    renderViaIframe(blobUrl, true);
-    return;
-  }
-  writeNamedPdfTab(tab, tabBlobUrl(tab, blob, blobUrl), filename, { print: true });
-}
 
 /* ── The preview tab ──────────────────────────────────────────────────────────
  *
@@ -855,7 +920,7 @@ async function putPrintPreview(
     asked for too early prints a blank sheet. */
 const PRINT_SETTLE_MS = 400;
 
-function writeNamedPdfTab(tab: Window, blobUrl: string, filename: string, opts: { print?: boolean } = {}): void {
+function writeNamedPdfTab(tab: Window, blobUrl: string, filename: string): void {
   const title = filename.replace(/\.pdf$/i, '');
   const esc = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -885,9 +950,6 @@ function writeNamedPdfTab(tab: Window, blobUrl: string, filename: string, opts: 
     }
   };
   tab.document.querySelector('[data-print]')?.addEventListener('click', printFrame);
-  if (opts.print && frame) {
-    frame.addEventListener('load', () => { tab.setTimeout(printFrame, PRINT_SETTLE_MS); });
-  }
   /* No revoke timer. The old code revoked after 60 s, which was safe when the
      tab was the blob itself (already loaded) but would quietly break this page's
      Download link the moment the operator took longer than a minute to decide.

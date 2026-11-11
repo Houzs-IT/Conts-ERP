@@ -47,7 +47,7 @@ export const AccountLinesRow = ({ code, from, to, department = '', colSpan }: { 
             <tfoot>
               <tr>
                 <td colSpan={5} style={{ ...td, borderBottom: 0, fontWeight: 600 }}>
-                  {lines.length} entries
+                  {lines.length} {lines.length === 1 ? 'entry' : 'entries'}
                   <Link to={ledgerHref([code], from, to, department)} style={{ marginLeft: 12, fontWeight: 400, color: 'var(--c-orange)' }}>Open in GL</Link>
                 </td>
                 <td style={{ ...num, borderBottom: 0, fontWeight: 700 }}>{fmtLedger(block?.debitSen ?? 0)}</td>

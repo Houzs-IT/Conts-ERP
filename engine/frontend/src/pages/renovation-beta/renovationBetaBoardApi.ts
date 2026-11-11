@@ -43,6 +43,8 @@ export interface BetaBoardProject {
   createdOn: string | null;
   /** When the project was made (ISO); absent from an older server. */
   createdAt?: string | null;
+  /** The brand it is sold under; absent from an older server. */
+  brand?: string | null;
   /** The project's sales order numbers, for the list's search. */
   soDocNos?: string[];
   handoverOn: string | null;

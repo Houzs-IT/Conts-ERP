@@ -140,6 +140,33 @@ const refusalLabel = (o: BlockedSo, draftWords: string): string =>
   : o.status === 'ON_HOLD' ? 'is on hold'
   : `is ${o.status.toLowerCase()}`;
 
+/* A hold stops work on what the SO ordered, whatever the document in hand is. Lines are followed to their SO, because one
+   document may carry several; one read, because a DO confirm already spends most of a request's outside calls. */
+const firstHeld = (rows: readonly SoStateRow[]): BlockedSo | null => {
+  const held = rows.find((r) => isDocumentHeld(r));
+  return held ? { docNo: held.doc_no, status: (held.status ?? '').toUpperCase(), onHold: true } : null;
+};
+
+/** The first Sales Order on hold among these, or null. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see readSoStates
+export async function firstHeldSo(sb: any, soDocNos: Array<string | null | undefined>): Promise<BlockedSo | null> {
+  const read = await readSoStates(sb, soDocNos);
+  return read.error ? unreadable(soDocNos, read.error) : firstHeld(read.rows);
+}
+
+/** The first Sales Order on hold behind a document's lines, or null. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see readSoStates
+export async function heldSoBehindLines(sb: any, table: 'delivery_order_items' | 'production_order_items', parentColumn: string, parentId: string): Promise<BlockedSo | null> {
+  const { data, error } = await sb.from(table).select('line:mfg_sales_order_items!so_item_id (so:mfg_sales_orders (doc_no, status, on_hold))').eq(parentColumn, parentId).not('so_item_id', 'is', null);
+  if (error) return unreadable(['behind this document'], error.message ?? 'unknown');
+  return firstHeld(((data ?? []) as Array<{ line: { so: SoStateRow | null } | null }>).flatMap((l) => (l.line?.so ? [l.line.so] : [])));
+}
+
+export function soOnHoldResponse(offender: BlockedSo) {
+  const label = refusalLabel(offender, 'is on hold');
+  return { error: 'so_on_hold', message: `Sales Order ${offender.docNo} ${label}. ${offender.onHold ? 'Take it off hold first.' : 'Try again.'}`, soDocNo: offender.docNo };
+}
+
 export function soNotDeliverableResponse(offender: BlockedSo) {
   return {
     error: 'so_not_deliverable',

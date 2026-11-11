@@ -11,11 +11,14 @@ import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
 import { billingViews } from "../scm/lib/renovation-billing";
 import { todayMyt } from "../scm/lib/my-time";
+import { builtinPosOf, poDrawings, projectDrawings, recordDrawingAmendments } from "../services/renovation/betaBuiltinPo";
 import { financeHiddenForUser } from "../services/pmsAccess";
 import { keepVisiblePos, loadCategoryScope, type CategoryScope } from "../services/categoryAccess";
 import { setChecklistStatus } from "../services/projects";
 import { calendarMePersonIds } from "../services/renovation/calendarItems";
 import { syncPeopleFromUsers } from "../services/renovation/peopleSync";
+import { teamPersonIds, teamProjectSql } from "../services/renovation/teamScope";
+import { hasPermission } from "../services/permissions";
 import { isMissingRelation, loadProjectRows, loadRenovationFacts, type Db, type DbStmt } from "../services/renovation/load";
 import { renoDbFromD1 } from "../services/renovation/dbBridge";
 import { writeCachedStage } from "../services/renovation/contractSync";
@@ -30,9 +33,12 @@ import {
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
-import { bindSupplier, cleanLinePlan, contractLineOf, lineSupplierState, loadProjectLines, projectLine, saveLinePlan, saveLinePlans, saveLineSupplier, supplierBinding } from "../services/renovation/betaLines";
+import { bindSupplier, cleanLinePlan, contractLineOf, lineSupplierState, loadProjectLines, notRawMaterials, projectLine, saveLinePlan, saveLinePlans, saveLineSupplier, supplierBinding } from "../services/renovation/betaLines";
 import { patchContract } from "../scm/lib/renovation-so";
 import { inRenoTx, RenoError, sqlFor } from "../scm/lib/renovation-db";
+import { saveMaterialsAndFollow } from "../scm/lib/renovation-line-materials";
+import { issueMaterials } from "../scm/lib/renovation-production-stock";
+import { getSupabaseService } from "../db/supabase";
 import { LINK_DAYS, signClientLink } from "../services/renovation/betaClientLink";
 import {
   betaCategory, cleanAssignee, cleanDefectPatch, defectPatchNote, isImageName, money, sortDeliveries, uniqueAreas,
@@ -43,9 +49,11 @@ import {
   type MediaItemIn, type ProjectPhoto,
 } from "../services/renovation/betaMedia";
 import { projectDocSql } from "../services/renovation/documents";
-import { plainEntry, readProjectTimeline, sortTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineEntry } from "../services/renovation/timeline";
+import { HANDOVER_NOT_READY, itemFailRefusal } from "../services/renovation/handoverChecks";
+import { chainTimeline, statusWords } from "../services/renovation/betaTimelineChain";
+import { datedAt, plainEntry, readProjectTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineDoc, type TimelineEntry } from "../services/renovation/timeline";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
-import { attachmentsReady, listFilesFor, podFiles, type DocFile } from "../scm/lib/doc-attachments";
+import { attachmentsReady, linkedFilesFor, listFilesFor, orderLineFiles, podFiles, textArray, type DocFile } from "../scm/lib/doc-attachments";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -234,13 +242,45 @@ app.post("/projects/:id/defects", requirePermission("projects.write"), async (c)
   const extra = cleanMediaList(raw.media, id, { area: location });
   if (!extra.ok) return c.json({ error: extra.error, message: extra.message }, 400);
   const more = extra.value.filter((m) => m.key !== photoKey);
+  // From a handover check (migration 0296): the item it failed is marked Fail and keeps the defect's id, in the same statement.
+  let checkItemId: number | null = null;
+  if (raw.checkItemId != null && raw.checkItemId !== "") {
+    checkItemId = parseId(String(raw.checkItemId));
+    if (!checkItemId) return c.json({ error: "invalid_id", message: "That checklist item is not valid." }, 400);
+    let item: { defect_id: number | null; completed_at: string | null } | null;
+    try {
+      item = await db(c).prepare(
+        `SELECT i.defect_id::int AS defect_id, k.completed_at::text AS completed_at
+           FROM project_handover_check_items i JOIN project_handover_checks k ON k.id = i.check_id WHERE i.id = ? AND k.project_id = ?`,
+      ).bind(checkItemId, id).first<{ defect_id: number | null; completed_at: string | null }>();
+    } catch (e) {
+      if (isMissingRelation(e)) return c.json(HANDOVER_NOT_READY, 409);
+      throw e;
+    }
+    if (!item) return c.json({ error: "not_found", message: "That checklist item is not on this project." }, 404);
+    const refused = itemFailRefusal({ completedAt: item.completed_at }, { result: null, defectId: item.defect_id == null ? null : Number(item.defect_id) });
+    if (refused) return c.json(refused, 409);
+  }
+  // With a check item the item row is locked first and the defect is inserted FROM that lock: when the item was linked
+  // or its check finished meanwhile (double submit, two people), the lock finds no row and nothing at all is written.
+  const fromCheck = checkItemId != null;
+  const lock = fromCheck ? `lk AS (
+       SELECT i.id FROM project_handover_check_items i JOIN project_handover_checks k ON k.id = i.check_id
+        WHERE i.id = ?::bigint AND k.project_id = ?::bigint AND k.completed_at IS NULL AND i.defect_id IS NULL
+          FOR UPDATE OF i, k),
+     ` : "";
+  const link = fromCheck ? `,
+     l AS (
+       UPDATE project_handover_check_items i SET result = 'fail', defect_id = d.id, checked_by = ?::bigint, checked_at = now()
+         FROM d, lk WHERE i.id = lk.id)` : "";
   // Phase 'snag' so the handover rule (every snag closed first) counts it.
   // One statement: the defect and its activity row are written together or not at all.
   const row = await db(c).prepare(
-    `WITH d AS (
+    `WITH ${lock}d AS (
        INSERT INTO project_defects (project_id, phase, reported_by_role, item_description, photo_r2_key, reported_by, reported_at,
                                     resolved, stage_key, location, due_date, trade, company_id, assignee_person_id)
-       VALUES (?, 'snag', 'supervisor', ?, ?, ?, to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 0, 'handover', ?, ?::date, ?, ?, ?::bigint)
+       SELECT ?::bigint, 'snag', 'supervisor', ?::text, ?::text, ?::bigint, to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 0, 'handover',
+              ?::text, ?::date, ?::text, ?::bigint, ?::bigint${fromCheck ? " FROM lk" : ""}
        RETURNING id, project_id, company_id, item_description),
      a AS (
        INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
@@ -248,10 +288,13 @@ app.post("/projects/:id/defects", requirePermission("projects.write"), async (c)
      m AS (
        INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
        SELECT d.project_id, '${MEDIA_ACTION}', 'defect:' || d.id || ':before', x.key, x.meta, ?::bigint, d.company_id
-         FROM d, jsonb_to_recordset(?::text::jsonb) AS x(key text, meta text))
+         FROM d, jsonb_to_recordset(?::text::jsonb) AS x(key text, meta text))${link}
      SELECT id::int AS id FROM d`,
-  ).bind(id, description, photoKey, userId(c), location, dueDate, trade, co, who.value, reportNote, userId(c), userId(c), mediaRowsJson(more))
+  ).bind(...(fromCheck ? [checkItemId, id] : []),
+    id, description, photoKey, userId(c), location, dueDate, trade, co, who.value, reportNote, userId(c), userId(c), mediaRowsJson(more),
+    ...(fromCheck ? [userId(c)] : []))
     .first<{ id: number }>();
+  if (!row && fromCheck) return c.json({ error: "check_changed", message: "This checklist item was just changed by someone else, or its check was finished. Reload and look again." }, 409);
   if (!row) return c.json({ error: "defect_not_saved", message: "The problem could not be saved. Try again." }, 409);
   return c.json({ id: row.id }, 201);
 });
@@ -362,7 +405,42 @@ app.post("/design-files/:fileId/approval", requirePermission("projects.write"), 
     ).bind(fileId, f.project_id, f.company_id, approvedOn, approvedByName, note, userId(c)),
     activityStmt(c, f.project_id, f.company_id, "beta_drawing_approved", approvedByName, designLabel(f.kind, f.version), [`On ${approvedOn}`, note].filter(Boolean).join(" · ")),
   ]);
-  return c.json({ ok: true });
+  /* The approval stands whatever happens here: a failure is kept on the project's activity, so a PO is not left unrecorded unseen. */
+  let amended: string[] = [];
+  if (f.kind === "2d") {
+    try {
+      amended = await recordDrawingAmendments(db(c), f.project_id, f.company_id, designLabel(f.kind, f.version), approvedOn);
+      if (amended.length > 0) await activityStmt(c, f.project_id, f.company_id, "beta_po_drawing_amended", null, designLabel(f.kind, f.version), amended.join(", ")).run();
+    } catch (e) {
+      console.error("[renovation-beta] PO amendment for drawings failed", e);
+      await activityStmt(c, f.project_id, f.company_id, "beta_po_drawing_amend_failed", null, designLabel(f.kind, f.version), "The PO amendment was not recorded.").run().catch(() => undefined);
+    }
+  }
+  return c.json({ ok: true, amended });
+});
+
+/* The Built-in POs of a project: the 2D tab downloads the latest of each. */
+app.get("/projects/:id/builtin-pos", requirePageAccess("projects.list"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  return readOr(c, "built-in PO", async () => ({ pos: await builtinPosOf(db(c), id, co) }));
+});
+
+/* The approved 2D set a Built-in line shows. */
+app.get("/projects/:id/approved-2d", requirePageAccess("projects.list"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  if ((await projectCompany(c, id)) == null) return c.json({ error: "not_found" }, 404);
+  return readOr(c, "2D drawing", async () => projectDrawings(db(c), id));
+});
+
+/* The approved 2D set a Built-in PO's PDF carries. */
+app.get("/po-drawings/:poId", requirePageAccess("projects.list"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  return readOr(c, "PO drawing", async () => poDrawings(db(c), c.req.param("poId"), co.companyId));
 });
 
 app.delete("/design-files/:fileId/approval", requirePermission("projects.write"), async (c) => {
@@ -477,9 +555,14 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
   const only = c.req.query("projectId");
   const projectId = only === undefined ? null : parseId(only);
   if (only !== undefined && projectId == null) return c.json({ error: "invalid_id" }, 400);
-  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}`;
-  const eventScope = projectId == null ? "" : ` AND e.project_id = ${projectId}`;
   const user = c.get("user");
+  // Dream Crafter visibility (11 Nov 2026): without Full on Projects, a person sees the projects whose steps they or
+  // the people reporting to them handle, and only those people's own events (services/renovation/teamScope.ts).
+  const seeAll = hasPermission(user?.permissions_set ?? user?.permissions ?? [], "projects.manage");
+  const team = seeAll ? null : await teamPersonIds(db(c), user?.id, user?.email);
+  const teamSql = team == null ? "" : ` AND ${teamProjectSql(team)}`;
+  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}${teamSql}`;
+  const eventScope = `${projectId == null ? "" : ` AND e.project_id = ${projectId}`}${team == null ? "" : ` AND (e.person_id IN (${[0, ...team].join(",")}) OR (e.project_id IS NOT NULL${teamSql}))`}`;
   const hidden = financeHiddenForUser(user);
   try {
     // One query per data set over the whole scoped project list, grouped in code below.
@@ -488,7 +571,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
         .bind(companyId).first<{ d3: number; d2: number }>(),
       boardPeople(c, companyId),
       db(c).prepare(
-        `SELECT p.id::int AS id, p.code, p.name, p.building, p.unit_no, p.customer_name, coalesce(sp.name, p.salesperson_name) AS sales_name, p.created_at,
+        `SELECT p.id::int AS id, p.code, p.name, p.building, p.unit_no, p.customer_name, coalesce(sp.name, p.salesperson_name) AS sales_name, p.created_at, p.brand,
                 p.planned_handover_date::text AS handover_on,
                 p.designer_person_id::int AS lead_id, dp.name AS lead_name, p.reno_pic_person_id::int AS pic_id, rp.name AS pic_name,
                 ${designPeopleSql("3d")} AS p3_people, ${designPeopleSql("2d")} AS p2_people,
@@ -865,6 +948,56 @@ app.put("/projects/:id/line-plans", requirePermission("projects.write"), async (
   }
 });
 
+/* The Raw material SKUs a line's list can take. */
+app.get("/raw-materials", requirePageAccess("projects.list"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  return readOr(c, "raw material", async () => {
+    const { results } = await db(c).prepare(
+      `SELECT DISTINCT ON (code) code, name, uom FROM scm.mfg_products WHERE company_id = ? AND category::text = 'RAW' AND status::text = 'ACTIVE' ORDER BY code`,
+    ).bind(co.companyId).all<{ code: string; name: string | null; uom: string | null }>();
+    return { skus: results ?? [] };
+  });
+});
+
+/* A line's raw materials (owner, 5 Nov 2026): the whole list replaces what it had, and a production order made from the
+   line brings it along (migration 0223). Once an order exists the change follows it (owner, 7 Nov 2026), and an extra on
+   a started order leaves stock now, as Request more does. */
+app.put("/projects/:id/lines/:itemId/materials", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const b = await body(c);
+  const raw = Array.isArray(b.materials) ? (b.materials as Array<Record<string, unknown>>) : null;
+  if (!raw) return c.json({ error: "invalid_materials", message: "Send the list of materials." }, 400);
+  const materials = raw.map((m) => ({ code: String(m.code ?? "").trim(), qty: Math.round(Number(m.qty) * 1000) / 1000 }));
+  if (materials.some((m) => !m.code || !(m.qty > 0) || m.qty >= 1e8)) return c.json({ error: "invalid_materials", message: "Every material needs a quantity above zero." }, 400);
+  if (new Set(materials.map((m) => m.code)).size !== materials.length) return c.json({ error: "invalid_materials", message: "A material is listed twice." }, 400);
+  const line = await projectLine(db(c), id, co, c.req.param("itemId"), await categoryScope(c));
+  if (!line) return c.json({ error: "not_found" }, 404);
+  const state = await lineSupplierState(db(c), line.id);
+  const wrong = await notRawMaterials(db(c), materials.map((m) => m.code), co);
+  if (wrong.length > 0) return c.json({ error: "invalid_materials", message: `${wrong[0]} is not a Raw material SKU.` }, 400);
+  const sql = sqlFor(c.env);
+  if (!sql) return c.json({ error: "materials_save_failed", message: "The materials could not be saved. Try again." }, 503);
+  try {
+    const started = await inRenoTx(sql, (tx) => saveMaterialsAndFollow(tx, { soItemId: line.id, companyId: co, userId: userId(c), materials }));
+    await activityStmt(c, id, co, "beta_line_materials", null, line.doc_no, `${state.itemCode}: ${materials.length} raw material${materials.length === 1 ? "" : "s"}`).run();
+    const sb = getSupabaseService(c.env);
+    for (const o of started) {
+      const { data } = await sb.from("production_order_materials").select("id").eq("production_order_id", o.orderId).in("item_code", o.codes);
+      const issued = await issueMaterials(sb, { orderId: o.orderId, poNumber: o.poNumber, companyId: co, performedBy: null, only: ((data ?? []) as Array<{ id: string }>).map((m) => m.id) });
+      if (!issued.ok) return c.json({ error: "stock_failed", message: `Saved, but the extra did not leave stock for ${o.poNumber}: ${issued.reason}` }, 409);
+    }
+  } catch (e) {
+    if (e instanceof RenoError) return c.json({ error: e.code, message: e.message }, e.status === 503 ? 409 : e.status);
+    console.error("[renovation-beta] line materials save failed", e);
+    return c.json({ error: "materials_save_failed", message: "The materials could not be saved. Try again.", detail: readDetail(e) }, 500);
+  }
+  return c.json({ ok: true });
+});
+
 /* The supplier a line is to be bought from, picked on the SO tab before its PO (owner, 3 and 4 Nov 2026), like MRP's
    per-line pick, on any line. A bound supplier's price (scm.supplier_material_bindings) becomes a contract line's cost;
    any other supplier is bound to the SKU by the pick, with no price. Kept on the line's plan, which MRP starts from. A contract
@@ -942,7 +1075,7 @@ const LINE_AREA = `coalesce(nullif(trim((SELECT l.room FROM scm.reno_doc_lines l
     lines it carries and every photo on it: the driver's POD, the site team's receipt photos and files added to it. */
 async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Promise<{ areas: string[]; deliveries: SiteDelivery[] }> {
   const q = (sql: string) => projectDocSql(sql, projectId, companyId);
-  const [soAreas, dos, grs, doAreas, grAreas, sitePhotos] = await Promise.all([
+  const [soAreas, dos, grs, doAreas, grAreas, sitePhotos, doReceipts] = await Promise.all([
     rowsOf(c, q(`SELECT ${LINE_AREA} AS area FROM scm.mfg_sales_order_items i
                   WHERE i.doc_no IN (SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2) AND NOT i.cancelled
                   ORDER BY i.doc_no, i.line_no NULLS LAST, i.created_at, i.id`)),
@@ -966,6 +1099,12 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
                   WHERE gi.grn_id IN (__GRS__) ORDER BY gi.created_at, gi.id`)),
     rowsOf(c, { text: `SELECT ph.id::text AS id, ph.grn_id::text AS grn_id, ph.location, ph.r2_key, ph.caption, ph.kind, ${TS("coalesce(ph.taken_at, ph.created_at)")} AS at
                          FROM scm.grn_site_photos ph WHERE ph.project_id = ? ORDER BY ph.created_at`, args: [projectId] }),
+    /* The receipts behind each DO, by the sales order line both carry or the on-site pairing: their site photos reach the DO. */
+    rowsOf(c, q(`SELECT di.delivery_order_id::text AS do_id, gi.grn_id::text AS grn_id
+                   FROM scm.delivery_order_items di JOIN scm.purchase_order_items x ON x.so_item_id = di.so_item_id
+                   JOIN scm.grn_items gi ON gi.purchase_order_item_id = x.id
+                  WHERE di.delivery_order_id IN (__DOS__)
+                 UNION SELECT t.do_id::text, t.grn_id::text FROM scm.onsite_twins t WHERE t.do_id IN (__DOS__)`)),
   ]);
   const ready = await attachmentsReady(db(c)).catch(() => false);
   const docRefs = [
@@ -973,24 +1112,36 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
     ...grs.map((g) => ({ type: "goods_received" as const, id: String(g.id) })),
   ];
   const attached = ready ? await listFilesFor(db(c), docRefs, companyId) : new Map<string, DocFile[]>();
+  const linked = ready ? await linkedFilesFor(db(c), docRefs, companyId) : new Map<string, Array<DocFile & { key: string }>>();
   const areasOf = (rows: Row[], id: string) => uniqueAreas(rows.filter((r) => r.doc_id === id).map((r) => str(r.area)));
   const linesOf = (rows: Row[], id: string): DeliveryLine[] => rows.filter((r) => r.doc_id === id)
     .map((r) => ({ soItemId: str(r.so_item_id), poLineId: str(r.po_line_id), qty: Number(r.qty ?? 0) }));
   const docPath = (type: DeliveryType, docId: string, fileId: string) =>
     `/api/renovation/${projectId}/document-files/${type}/${encodeURIComponent(docId)}/${encodeURIComponent(fileId)}`;
-  const uploads = (type: DeliveryType, docId: string): SitePhoto[] => (attached.get(`${type}:${docId}`) ?? []).map((f) => ({
+  /* A drop-ship delivery's POD is its site receipt's photos: one picture, shown once. */
+  const siteKeys = new Set(sitePhotos.map((p) => String(p.r2_key)));
+  const uploads = (type: DeliveryType, docId: string): SitePhoto[] => [...(attached.get(`${type}:${docId}`) ?? []), ...(linked.get(`${type}:${docId}`) ?? []).filter((f) => !siteKeys.has(f.key))].map((f) => ({
     id: `${type}-${docId}-${f.id}`, path: docPath(type, docId, f.id), name: f.caption || f.name, image: f.kind === "image", kind: mediaKindOf(f.mime, f.name),
-    area: null, at: f.at || null, source: "upload" as const,
+    area: null, at: f.at || null, source: f.source === "pod" ? "pod" as const : "upload" as const, ...(f.from ? { from: f.from } : {}),
   }));
+  const siteShot = (p: Row, prefix = ""): SitePhoto => ({
+    id: `${prefix}site-${String(p.id)}`, path: `/api/renovation/${projectId}/files?key=${encodeURIComponent(String(p.r2_key))}`,
+    name: str(p.caption) ?? (p.kind === "supplier_do" ? "Supplier delivery order" : "Site photo"), image: isImageName(String(p.r2_key)), kind: mediaKindOf(null, String(p.r2_key)),
+    area: str(p.location), at: str(p.at), source: "site" as const,
+  });
 
   const out: SiteDelivery[] = [];
   for (const d of dos) {
     const id = String(d.id);
     const photos: SitePhoto[] = [];
-    for (const pod of await podFiles(db(c), id).catch(() => [])) {
+    const pods = await podFiles(db(c), id).catch(() => []);
+    for (const pod of pods) {
       photos.push({ id: `${pod.id}-${id}`, path: docPath("delivery_order", id, pod.id), name: "Proof of delivery", image: true, kind: "image", area: null, at: pod.at || null, source: "pod" });
     }
     photos.push(...uploads("delivery_order", id));
+    const receipts = new Set(doReceipts.filter((r) => r.do_id === id).map((r) => String(r.grn_id)));
+    const podKeys = new Set(pods.map((p) => p.key));
+    photos.push(...sitePhotos.filter((p) => receipts.has(String(p.grn_id)) && !podKeys.has(String(p.r2_key))).map((p) => siteShot(p, `do-${id}-`)));
     out.push({
       type: "delivery_order", id, no: String(d.no), at: str(d.at) ?? str(d.made_on), status: String(d.status), from: str(d.so_doc_no), poNumber: null, poIds: [],
       areas: areasOf(doAreas, id), lines: linesOf(doAreas, id), photos, note: str(d.note), driver: str(d.driver), supplierRef: null,
@@ -998,11 +1149,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
   }
   for (const g of grs) {
     const id = String(g.id);
-    const site: SitePhoto[] = sitePhotos.filter((p) => p.grn_id === id).map((p) => ({
-      id: `site-${String(p.id)}`, path: `/api/renovation/${projectId}/files?key=${encodeURIComponent(String(p.r2_key))}`,
-      name: str(p.caption) ?? (p.kind === "supplier_do" ? "Supplier delivery order" : "Site photo"), image: isImageName(String(p.r2_key)), kind: mediaKindOf(null, String(p.r2_key)),
-      area: str(p.location), at: str(p.at), source: "site" as const,
-    }));
+    const site: SitePhoto[] = sitePhotos.filter((p) => p.grn_id === id).map((p) => siteShot(p));
     const poIds = uniqueAreas([str(g.po_id), ...(Array.isArray(g.po_ids) ? (g.po_ids as unknown[]).map(str) : [])]);
     out.push({
       type: "goods_received", id, no: String(g.no), at: str(g.at), status: String(g.status), from: str(g.supplier), poNumber: str(g.po_number), poIds,
@@ -1093,23 +1240,36 @@ app.patch("/defects/:defectId", requirePermission("projects.write"), async (c) =
   return c.json({ ok: true });
 });
 
-/** Beta's own Timeline: the engine's timeline, each entry filed under what it is about, plus the sales order,
-    payments received, variation orders, deliveries and site receipts. */
+/** Beta's own Timeline: the engine's timeline, each entry filed under what it is about, plus the rest of the document
+    chain: quotations, sales orders, production Start and Complete, invoices, payments, variation orders, deliveries
+    and site receipts. */
 async function betaTimelineExtras(c: Ctx, projectId: number, companyId: number): Promise<TimelineEntry[]> {
   const q = (sql: string) => projectDocSql(sql, projectId, companyId);
   const hidden = financeHiddenForUser(c.get("user"));
   const safe = (p: Promise<Row[]>): Promise<Row[]> => p.catch((e: unknown) => { if (isMissingRelation(e)) return []; throw e; });
-  const [sos, pays, vos, dos, grs] = await Promise.all([
-    safe(rowsOf(c, q(`SELECT doc_no, so_date::text AS so_date, ${TS("created_at")} AS created_at, status::text AS status, local_total_sen::bigint AS total_sen
+  const [quotes, sos, orders, invoices, pays, vos, dos, grs] = await Promise.all([
+    safe(rowsOf(c, q(`SELECT q.id::text AS id, q.quote_no, q.status::text AS status, q.current_rev, ${TS("q.created_at")} AS created_at,
+                             (SELECT r.doc_date::date::text FROM scm.reno_quotation_revisions r WHERE r.quotation_id = q.id AND r.rev_no = q.current_rev) AS doc_date
+                        FROM scm.reno_quotations q WHERE q.project_id = ?1 AND q.company_id = ?2`))),
+    safe(rowsOf(c, q(`SELECT doc_no, so_date::date::text AS so_date, ${TS("created_at")} AS created_at, status::text AS status, local_total_sen::bigint AS total_sen
                         FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2`))),
+    /* Complete makes its GR and DO a moment before it stamps the order: it sits at the first of them, so it reads before them. */
+    safe(rowsOf(c, q(`SELECT o.id::text AS id, o.po_number AS no, o.status::text AS status, po.po_number AS po_no, ${TS("o.actual_start_at")} AS started_at,
+                             o.actual_start_by_name AS started_by, ${TS("least(o.received_at, g.created_at, d.created_at)")} AS done_at
+                        FROM scm.production_orders o LEFT JOIN scm.purchase_orders po ON po.id = o.source_po_id
+                        LEFT JOIN scm.grns g ON g.id = o.completion_grn_id LEFT JOIN scm.delivery_orders d ON d.id = o.completion_do_id
+                       WHERE o.company_id = ?2 AND o.status::text <> 'CANCELLED' AND (o.project_id = ?1 OR o.source_po_id IN (__POS__))`))),
+    safe(rowsOf(c, q(`SELECT s.id::text AS id, s.invoice_number, s.invoice_date::date::text AS invoice_date, ${TS("s.created_at")} AS created_at, s.status::text AS status,
+                             s.total_sen::bigint AS total_sen
+                        FROM scm.sales_invoices s WHERE s.id IN (__SIS__)`))),
     hidden ? Promise.resolve([] as Row[]) : safe(rowsOf(c, q(
-      `SELECT p.id::text AS id, p.so_doc_no, p.paid_at::text AS paid_on, ${TS("p.created_at")} AS created_at, p.amount_sen::bigint AS amount_sen, p.method::text AS method
+      `SELECT p.id::text AS id, p.so_doc_no, p.paid_at::date::text AS paid_on, ${TS("p.created_at")} AS created_at, p.amount_sen::bigint AS amount_sen, p.method::text AS method
          FROM scm.mfg_sales_order_payments p WHERE p.so_doc_no IN (SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2)`))),
     safe(rowsOf(c, q(`SELECT v.id::text AS id, v.vo_no, v.title, v.status, v.net_sen::bigint AS net_sen, ${TS("v.created_at")} AS created_at,
                              ${TS("v.approved_at")} AS approved_at, v.approved_by, v.signed_name
                         FROM scm.reno_variation_orders v
                        WHERE v.company_id = ?2 AND v.so_doc_no IN (SELECT doc_no FROM scm.mfg_sales_orders WHERE project_id = ?1 AND company_id = ?2)`))),
-    safe(rowsOf(c, q(`SELECT d.id::text AS id, d.do_number, ${TS("d.delivered_at")} AS delivered_at, d.pod_r2_key IS NOT NULL AS has_pod,
+    safe(rowsOf(c, q(`SELECT d.id::text AS id, d.do_number, ${TS("d.delivered_at")} AS delivered_at, d.pod_r2_key, d.pod_photo_keys,
                              d.signature_data IS NOT NULL AS signed
                         FROM scm.delivery_orders d WHERE d.id IN (__DOS__) AND d.delivered_at IS NOT NULL`))),
     safe(rowsOf(c, q(`SELECT g.id::text AS id, g.grn_number, ${TS("g.site_received_at")} AS at, sup.name AS supplier, g.customer_signer_name,
@@ -1117,38 +1277,65 @@ async function betaTimelineExtras(c: Ctx, projectId: number, companyId: number):
                         FROM scm.grns g LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id
                        WHERE g.id IN (__GRS__) AND g.received_at_site AND g.site_received_at IS NOT NULL`))),
   ]);
+  /* The photos behind a delivery prove it too: a production order's photos are its POD, a twin's POD is shared. */
+  const proof: Map<string, DocFile[]> = await attachmentsReady(db(c)).catch(() => false)
+    ? await linkedFilesFor(db(c), [
+      ...dos.map((d) => ({ type: "delivery_order" as const, id: String(d.id) })),
+      ...grs.map((g) => ({ type: "goods_received" as const, id: String(g.id) })),
+    ], companyId)
+    : new Map<string, DocFile[]>();
+  const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? "" : "s"}`;
   const out: TimelineEntry[] = [];
-  const day = (d: unknown, fallback: unknown): { at: string; dateOnly: boolean } | null => {
-    const s = str(d);
-    if (s && /^\d{4}-\d{2}-\d{2}$/.test(s)) return { at: `${s}T00:00:00Z`, dateOnly: true };
-    const f = str(fallback);
-    return f ? { at: f, dateOnly: false } : null;
+  const add = (id: string, when: { at: string; dateOnly: boolean } | null, category: TimelineCategory, title: string, body: string | null, by: string | null, doc: TimelineDoc) => {
+    if (when) out.push({ id, at: when.at, dateOnly: when.dateOnly, category, title, body, by, doc });
   };
-  const add = (id: string, when: { at: string; dateOnly: boolean } | null, category: TimelineCategory, title: string, body: string | null, by: string | null = null) => {
-    if (when) out.push({ id, at: when.at, dateOnly: when.dateOnly, category, title, body, by });
-  };
+  const moment = (at: unknown) => { const s = str(at); return s ? { at: s, dateOnly: false } : null; };
+  for (const x of quotes) {
+    const no = String(x.quote_no);
+    add(`quotation:${String(x.id)}`, datedAt(x.doc_date, x.created_at), "sales", `Quotation ${no}`,
+      [statusWords(x.status), Number(x.current_rev) > 1 ? `Revision ${String(x.current_rev)}` : null].filter(Boolean).join(" · ") || null, null, { kind: "quotation", id: String(x.id), no });
+  }
   for (const s of sos) {
-    add(`so:${String(s.doc_no)}`, day(s.so_date, s.created_at), "sales", `Sales order ${String(s.doc_no)}`,
-      [hidden || s.total_sen == null ? null : money(Number(s.total_sen)), str(s.status)].filter(Boolean).join(" · ") || null);
+    const no = String(s.doc_no);
+    add(`so:${no}`, datedAt(s.so_date, s.created_at), "sales", `Sales order ${no}`,
+      [hidden || s.total_sen == null ? null : money(Number(s.total_sen)), statusWords(s.status)].filter(Boolean).join(" · ") || null, null, { kind: "so", id: no, no });
+  }
+  for (const o of orders) {
+    const doc = { kind: "production" as const, id: String(o.id), no: String(o.no) };
+    const made = str(o.po_no) ? `From ${String(o.po_no)}` : null;
+    add(`prod:${doc.id}:start`, moment(o.started_at), "production", `Production started: ${doc.no}`, made, str(o.started_by), doc);
+    if (o.status === "RECEIVED") add(`prod:${doc.id}:done`, moment(o.done_at), "production", `Production completed: ${doc.no}`, made, null, doc);
+  }
+  for (const s of invoices) {
+    const no = String(s.invoice_number);
+    add(`si:${String(s.id)}`, datedAt(s.invoice_date, s.created_at), "sales", `Sales invoice ${no}`,
+      [hidden || s.total_sen == null ? null : money(Number(s.total_sen)), statusWords(s.status)].filter(Boolean).join(" · ") || null, null, { kind: "invoice", id: String(s.id), no });
   }
   for (const p of pays) {
-    add(`pay:${String(p.id)}`, day(p.paid_on, p.created_at), "sales", `Payment received ${money(Number(p.amount_sen ?? 0))}`,
-      [str(p.method), str(p.so_doc_no)].filter(Boolean).join(" · ") || null);
+    add(`pay:${String(p.id)}`, datedAt(p.paid_on, p.created_at), "sales", `Payment received ${money(Number(p.amount_sen ?? 0))}`,
+      [statusWords(p.method), str(p.so_doc_no)].filter(Boolean).join(" · ") || null, null, { kind: "payment", id: String(p.id), no: String(p.so_doc_no) });
   }
   for (const v of vos) {
-    const label = `Variation order ${String(v.vo_no)}`;
-    add(`vo:${String(v.id)}`, day(null, v.created_at), "sales", `${label} drafted`,
-      [str(v.title), hidden ? null : money(Number(v.net_sen ?? 0))].filter(Boolean).join(" · ") || null);
-    if (v.approved_at) add(`vo:${String(v.id)}:approved`, day(null, v.approved_at), "sales", `${label} approved`, str(v.signed_name) ? `Signed by ${String(v.signed_name)}` : null, str(v.approved_by));
+    const doc = { kind: "vo" as const, id: String(v.id), no: String(v.vo_no) };
+    const label = `Variation order ${doc.no}`;
+    add(`vo:${doc.id}`, moment(v.created_at), "sales", `${label} drafted`,
+      [str(v.title), hidden ? null : money(Number(v.net_sen ?? 0))].filter(Boolean).join(" · ") || null, null, doc);
+    if (v.approved_at) add(`vo:${doc.id}:approved`, moment(v.approved_at), "sales", `${label} approved`, str(v.signed_name) ? `Signed by ${String(v.signed_name)}` : null, str(v.approved_by), doc);
   }
   for (const d of dos) {
-    add(`deliv:${String(d.id)}`, day(null, d.delivered_at), "supplier", `Delivered: ${String(d.do_number)}`,
-      [d.has_pod === true ? "Proof of delivery photo" : null, d.signed === true ? "signed" : null].filter(Boolean).join(" · ") || "No proof of delivery yet");
+    const id = String(d.id);
+    const listed = Array.isArray(d.pod_photo_keys) ? d.pod_photo_keys.length : 0;
+    const shots = (listed || (d.pod_r2_key ? 1 : 0)) + (proof.get(`delivery_order:${id}`)?.length ?? 0);
+    add(`deliv:${id}`, moment(d.delivered_at), "delivery", `Delivered: ${String(d.do_number)}`,
+      [shots ? plural(shots, "proof of delivery photo") : null, d.signed === true ? "signed" : null].filter(Boolean).join(" · ") || "No proof of delivery yet", null,
+      { kind: "do", id, no: String(d.do_number) });
   }
   for (const g of grs) {
-    const n = Number(g.photos ?? 0);
-    add(`grsite:${String(g.id)}`, day(null, g.at), "supplier", `Received on site: ${String(g.grn_number)}`,
-      [str(g.supplier), `${n} photo${n === 1 ? "" : "s"}`, str(g.customer_signer_name) ? `signed by ${String(g.customer_signer_name)}` : null].filter(Boolean).join(" · "));
+    const id = String(g.id);
+    const n = Number(g.photos ?? 0) + (proof.get(`goods_received:${id}`)?.length ?? 0);
+    add(`grsite:${id}`, moment(g.at), "delivery", `Received on site: ${String(g.grn_number)}`,
+      [str(g.supplier), plural(n, "photo"), str(g.customer_signer_name) ? `signed by ${String(g.customer_signer_name)}` : null].filter(Boolean).join(" · "), null,
+      { kind: "gr", id, no: String(g.grn_number) });
   }
   return out;
 }
@@ -1164,7 +1351,7 @@ app.get("/projects/:id/timeline", requirePageAccess("projects.list"), async (c) 
       readProjectTimeline(db(c), id, co, { docsReady, notesReady }),
       docsReady ? betaTimelineExtras(c, id, co) : Promise.resolve([] as TimelineEntry[]),
     ]);
-    const entries = sortTimeline([...base, ...extra]).map((e) => plainEntry({ ...e, category: betaCategory(e) }));
+    const entries = chainTimeline([...base, ...extra].map((e) => ({ ...e, category: betaCategory(e) }))).map(plainEntry);
     return c.json({ entries });
   } catch (e) {
     console.error("[renovation-beta] timeline read failed", e);
@@ -1229,8 +1416,9 @@ app.post("/projects/:id/media", requirePermission("projects.write"), async (c) =
   return c.json({ ok: true, added: list.value.length }, 201);
 });
 
-/** Every photo and video of the project, newest first, each with what it is (progress, DO, GR, PO, measure, defect)
-    and its area when one is known; with the project's DOs, GRs, POs and site steps for the upload form. */
+/** Every photo and video of the project, newest first, each with what it is (progress, production, DO, GR, PO, measure,
+    defect) and its area when one is known; with the project's DOs, GRs, POs and site steps for the upload form, and the
+    documents that hold no photo yet, so the page can say so. */
 app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
@@ -1261,7 +1449,24 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
     const shownPos = scope === null ? pos
       : keepVisiblePos(pos, (p) => String(p.id), (await loadProjectPoLines(db(c), id, co, scope)).lines.map((l) => l.poId), scope);
     const poFiles = ready && shownPos.length ? await listFilesFor(db(c), shownPos.map((p) => ({ type: "purchase_order" as const, id: String(p.id) })), co) : new Map<string, DocFile[]>();
+    /* Every production order of the project, through its PO or its own project mark: its photos are on Site from the
+       first day, before any GR or DO. A restricted role keeps to the POs it may see. */
+    const orders = ready ? await rowsOf(c, { text: `SELECT o.id::text AS id, o.po_number AS no, g.grn_number AS gr_no, d.do_number AS do_no,
+                                                           (SELECT min(pi.room) FROM scm.production_order_items pi WHERE pi.production_order_id = o.id
+                                                             HAVING count(DISTINCT pi.room) = 1) AS room
+                                                      FROM scm.production_orders o LEFT JOIN scm.grns g ON g.id = o.completion_grn_id
+                                                      LEFT JOIN scm.delivery_orders d ON d.id = o.completion_do_id
+                                                     WHERE o.company_id = ? AND o.status::text <> 'CANCELLED'
+                                                       AND (o.source_po_id::text = ANY(?::text[]) OR (?::boolean AND o.project_id = ?)) ORDER BY o.po_number`,
+      args: [co, textArray(shownPos.map((p) => String(p.id))), scope === null, id] }) : [];
+    const orderIds = orders.map((o) => String(o.id));
+    const [orderFiles, orderLines] = await Promise.all([
+      listFilesFor(db(c), orderIds.map((oid) => ({ type: "production_order" as const, id: oid })), co),
+      orderLineFiles(db(c), orderIds),
+    ]);
     const out: ProjectPhoto[] = [];
+    /* A production order's photos are also its GR's and DO's proof, on those chips; All shows each picture once, on the order's card. */
+    const orderOrigin = new Set(orders.map((o) => `Production order ${String(o.no)}`));
     for (const d of site.deliveries) {
       const isDo = d.type === "delivery_order";
       const group = { key: `${isDo ? "do" : "gr"}:${d.id}`, title: `${isDo ? "DO" : "GR"} ${d.no}${!isDo && d.from ? ` · ${d.from}` : ""}` };
@@ -1269,7 +1474,7 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
       for (const ph of d.photos) {
         out.push({
           id: ph.id, path: ph.path, kind: ph.kind, name: ph.name, at: ph.at ?? d.at, area: ph.area ?? oneArea,
-          category: isDo ? "do" : "gr", label: ph.source === "pod" ? "POD" : null, group, note: null,
+          category: isDo ? "do" : "gr", label: ph.source === "pod" ? "POD" : null, group, note: null, ...(ph.from && orderOrigin.has(ph.from) ? { repeat: true } : {}),
         });
       }
     }
@@ -1280,6 +1485,17 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
           id: `po-${pid}-${f.id}`, path: `/api/renovation/${id}/document-files/purchase_order/${encodeURIComponent(pid)}/${encodeURIComponent(f.id)}`,
           kind: mediaKindOf(f.mime, f.name), name: f.caption || f.name, at: f.at || null, area: null, category: "po", label: null,
           group: { key: `po:${pid}`, title: `PO ${String(p.no)}${p.supplier ? ` · ${String(p.supplier)}` : ""}` }, note: null,
+        });
+      }
+    }
+    for (const o of orders) {
+      const oid = String(o.id);
+      const also = [str(o.gr_no) ? `GR ${String(o.gr_no)}` : null, str(o.do_no) ? `DO ${String(o.do_no)}` : null].filter(Boolean).join(" and ");
+      for (const f of [...(orderFiles.get(`production_order:${oid}`) ?? []), ...(orderLines.get(oid) ?? [])]) {
+        out.push({
+          id: `production-${oid}-${f.id}`, path: `/api/renovation/${id}/document-files/production_order/${encodeURIComponent(oid)}/${encodeURIComponent(f.id)}`,
+          kind: mediaKindOf(f.mime, f.name), name: f.lineId ? f.name : f.caption || f.name, at: f.at || null, area: (f.lineId ? f.caption : null) || str(o.room), category: "production", label: null,
+          group: { key: `production:${oid}`, title: `Production order ${String(o.no)}` }, note: also ? `Also on ${also}` : null,
         });
       }
     }
@@ -1319,6 +1535,12 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
         dos: site.deliveries.filter((d) => d.type === "delivery_order").map((d) => ({ id: d.id, no: d.no })),
         grs: site.deliveries.filter((d) => d.type === "goods_received").map((d) => ({ id: d.id, no: d.no })),
         pos: shownPos.map((p) => ({ id: String(p.id), no: String(p.no) })),
+      },
+      empty: {
+        production: orders.filter((o) => !orderFiles.has(`production_order:${String(o.id)}`) && !orderLines.has(String(o.id))).map((o) => String(o.no)),
+        do: site.deliveries.filter((d) => d.type === "delivery_order" && d.photos.length === 0).map((d) => d.no),
+        gr: site.deliveries.filter((d) => d.type === "goods_received" && d.photos.length === 0).map((d) => d.no),
+        po: shownPos.filter((p) => !poFiles.has(`purchase_order:${String(p.id)}`)).map((p) => String(p.no)),
       },
       tasks: tasks.filter((t) => t.state !== "skipped").map((t) => ({ id: Number(t.id), label: taskName.get(Number(t.id)) ?? "Site step", state: String(t.state) })),
     });

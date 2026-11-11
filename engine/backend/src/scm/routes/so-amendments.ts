@@ -27,12 +27,13 @@ import {
 import { applySoAmendment, reviseBoundPo, ReceivedFloorError } from '../lib/so-revision';
 import { chunkIn } from '../lib/paginate-all';
 import { renovationAmendmentChanges } from '../../services/renovation/renovationVoChangeRead';
+import { voListDetails, type VoListDetail } from '../../services/renovation/renovationVoListRead';
 import { raisePoFollowUps } from '../lib/amendment-po-followup';
 import { DESK, judgeLaneHandover, judgeLaneMove } from '../lib/amendment-lane-handover';
 import { countCancelRequestsAwaitingSigner } from '../lib/cancel-pending-count';
 import { approveKeysFor } from '../shared/document-cancel';
 import { CANCEL_REQUESTS_TABLE } from './document-cancel-routes';
-import { hasHouzsPerm, holdsHouzsPermLiterally, canViewAllSales, canWriteScmConfig } from '../lib/houzs-perms';
+import { hasHouzsPerm, holdsHouzsPermLiterally, canViewAllSales, canViewScmFinance, canWriteScmConfig } from '../lib/houzs-perms';
 import { resolveSalesScopeIds, applySoScope, soDocOutOfScope, resolveCallerStaffId, resolveUserIdByStaffId } from '../lib/salesScope';
 import {
   notifySoAmendmentResolved,
@@ -389,10 +390,18 @@ soAmendments.get('/', async (c) => {
       refBySo.set(so.doc_no, so);
     }
   }
+  /* What each renovation VO changed (owner, 6 Nov 2026). Never blocks the queue: a row with no `vo` shows dashes. */
+  let voById = new Map<string, VoListDetail>();
+  try {
+    voById = await voListDetails(sb, (rows as Array<{ id: string; resolution?: string | null }>).filter((r) => r.resolution === 'RENOVATION_VO').map((r) => r.id), canViewScmFinance(c));
+  } catch (e) {
+    console.warn('[so-amendments] VO detail skipped', e instanceof Error ? e.message : e);
+  }
   const amendments = rows.map((r) => {
     const so = r.so_doc_no ? refBySo.get(r.so_doc_no) : undefined;
     return {
       ...r,
+      vo: voById.get((r as { id: string }).id) ?? null,
       bound_pos: r.so_doc_no ? (boundBySo.get(r.so_doc_no) ?? []) : [],
       so_ref: so?.ref ?? null,
       so_customer_so_no: so?.customer_so_no ?? null,
@@ -622,7 +631,16 @@ soAmendments.get('/:id', async (c) => {
     console.warn('[so-amendments] change labels skipped', e instanceof Error ? e.message : e);
   }
 
-  return c.json({ amendment, lines, salesOrder, purchaseOrders, poFollowUps, changes });
+  /* Whether the caller raised this amendment, decided here because only the
+     server can: requested_by is a scm.staff uuid and the browser's scm-auth
+     bridge has no staff id, so the page's own compare was always false and the
+     requester never saw Withdraw (ported from Houzs #4454). Same identity rule
+     PATCH /:id/withdraw enforces. */
+  const callerStaffId = await resolveCallerStaffId(sb, c.get('houzsUser')?.id);
+  const viewerIsRequester = callerStaffId != null && amendment.requested_by != null
+    && callerStaffId === amendment.requested_by;
+
+  return c.json({ amendment, lines, salesOrder, purchaseOrders, poFollowUps, changes, viewerIsRequester });
 });
 
 /* ── PATCH /:id/supplier-confirm ───────────────────────────────────────────
@@ -969,6 +987,15 @@ export async function approveSoCommandHandler(c: any, sb: any): Promise<Response
     }).eq('id', id).eq('version', applyVersion + 1).eq('apply_lease_token', applyToken);
     // eslint-disable-next-line no-console
     console.error('[so-amendment] approve-so apply failed:', e);
+    /* HC-0004: the DB floor (migration 0274) refused a qty cut below what
+       live delivery orders already ship — one raced in after the freeze read. */
+    if (e instanceof Error && e.message.includes('so_line_over_delivered')) {
+      return c.json({
+        error: 'qty_below_delivered',
+        message: 'A Delivery Order has just shipped this Sales Order line. Its qty can no longer be cut below what was delivered. Refresh and check the order.',
+        reason: e.message,
+      }, 409);
+    }
     return c.json({
       error: 'apply_failed',
       reason: e instanceof Error ? e.message : 'Failed to apply the SO revision.',

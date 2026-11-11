@@ -27,6 +27,7 @@
 // repointed to /scm/purchase-invoices (and /scm/grns for the GRN backlink).
 // ----------------------------------------------------------------------------
 
+import { afterCreatePath, sourceDocPath } from "../../lib/returnToSource";
 import { transferFromLabel } from '../../lib/convertScope';
 import { todayMyt } from '../../vendor/scm/lib/dates';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -67,6 +68,9 @@ import { PageHeader } from '../../components/Layout';
 import { resolveFxRate } from './fx-rate';
 import { computeTotalHeight, isTotalHeightCategory, isTotalHeightPart } from '../../vendor/shared/total-height';
 import { DateField } from "../../vendor/scm/components/DateField";
+import { takePvFiles, pvFileToFile } from '../../vendor/scm/lib/pv-file-handoff';
+import type { PvFilePayload } from '../../vendor/scm/lib/payment-voucher-queries';
+import { uploadDocFile } from '../../components/doc-attachments/docAttachmentsApi';
 
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
@@ -156,7 +160,7 @@ export const PurchaseInvoiceNew = () => {
      rather than book the supplier's bill a second time. */
   const idemKey = useIdempotencyKey();
   const create = useCreatePurchaseInvoice();
-  const post   = usePostPurchaseInvoice();
+  const post   = usePostPurchaseInvoice({ reportNotBooked: false });
   const saving = create.isPending || post.isPending;
 
   // Manual-mode supplier (mirrors GrnNew).
@@ -183,6 +187,8 @@ export const PurchaseInvoiceNew = () => {
   }, [specialAddonsQ.data]);
 
   const [supplierInvoiceRef, setSupplierInvoiceRef] = useState<string>('');
+  /* The scanned bill's pages, handed over by the scan page; attached after save. */
+  const [pendingFiles, setPendingFiles] = useState<PvFilePayload[]>([]);
   const [invoiceDate, setInvoiceDate] = useState<string>(() => todayMyt());
   const [dueDate, setDueDate]         = useState<string>('');
   /* Commander 2026-05-29 — "Bill date 都是 standard 的，放 30 天之内，根据这个
@@ -204,7 +210,7 @@ export const PurchaseInvoiceNew = () => {
      Mirrors GrnNew's "Charge allocation"; the server does the authoritative split. */
   const [allocationMethod, setAllocationMethod] = useState<'QTY' | 'VALUE' | 'CBM'>('QTY');
   const [lines, setLines]             = useState<DraftLine[]>([]);
-  const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string } | null>(null);
+  const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string; goLabel?: string } | null>(null);
 
   // ── GRN-sourced lines (only when ?grnId= present). ──────────────────────
   /* Every loaded note's lines, primary first (multi-note invoices). Waits for
@@ -293,6 +299,8 @@ export const PurchaseInvoiceNew = () => {
     } | null)?.scanBill;
     if (!scan || scanApplied.current || !isManual) return;
     scanApplied.current = true;
+    const carried = takePvFiles();
+    if (carried.length > 0) setPendingFiles(carried);
     if (scan.supplierId) setManualSupplierId(scan.supplierId);
     if (scan.extraction.invoiceNumber) setSupplierInvoiceRef(scan.extraction.invoiceNumber);
     if (scan.extraction.invoiceDate) setInvoiceDate(scan.extraction.invoiceDate);
@@ -590,10 +598,27 @@ export const PurchaseInvoiceNew = () => {
           variants:       l.variants,
         })),
       });
-      if (!asDraft) {
-        // Auto-post (Confirm) so PI lands in POSTED state (matches PO + GRN).
-        await post.mutateAsync(createRes.id);
+      /* Attach the scanned bill AFTER the invoice exists, in scan order. A failed
+         upload never un-saves the bill: the dialog says what still needs adding
+         from the detail page's Files card. */
+      let attached = 0;
+      let attachErr: string | null = null;
+      for (const f of pendingFiles) {
+        try {
+          await uploadDocFile('purchase_invoice', createRes.id, pvFileToFile(f), { caption: 'Scanned supplier bill' });
+          attached += 1;
+        } catch (e) {
+          attachErr = e instanceof Error ? e.message : 'The file could not be uploaded.';
+          break;
+        }
       }
+      if (attached > 0) setPendingFiles((prev) => prev.slice(attached));
+      const filesNote = [
+        attached > 0 ? `${attached} scanned file(s) attached.` : null,
+        attachErr ? `${pendingFiles.length - attached} file(s) did not attach (${attachErr}) - add them from the invoice's Files card.` : null,
+      ].filter(Boolean).join(' ');
+      // Auto-post (Confirm) so PI lands in POSTED state (matches PO + GRN).
+      const ledger = asDraft ? undefined : (await post.mutateAsync(createRes.id)).ledger;
       /* THE ACCOUNTS MAY HAVE IT WITHOUT ALL OF IT — and on a purchase
          invoice the field most likely to be missing is the SUPPLIER'S OWN
          invoice number, which is the one accounts will ask about. Same shared
@@ -601,10 +626,16 @@ export const PurchaseInvoiceNew = () => {
       await notifyAcNotSent(notify, createRes, 'Purchase invoice');
       setDialog({
         title: `PI ${createRes.invoiceNumber} created`,
-        body: asDraft
-          ? 'Saved as Draft — review, then Confirm to post the AP liability.'
-          : 'Created + posted — AP liability recorded.',
-        goTo: `/scm/purchase-invoices/${createRes.id}`,
+        body: [
+          asDraft
+            ? 'Saved as Draft — review, then Confirm to post the AP liability.'
+            : ledger
+              ? `Created, but it is not in the ledger yet: ${ledger.reason ?? ledger.status}`
+              : 'Created + posted — AP liability recorded.',
+          filesNote,
+        ].filter(Boolean).join(' '),
+        goTo: afterCreatePath(`/scm/purchase-invoices/${createRes.id}`, sourceDocPath.goodsReceipt(grnId)),
+        goLabel: grnId ? 'Back to GRN' : undefined,
       });
     } catch (err) {
       setDialog({ title: 'Save failed', body: err instanceof Error ? err.message : 'Something went wrong.' });
@@ -721,6 +752,11 @@ export const PurchaseInvoiceNew = () => {
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Supplier Invoice #</span>
               <input type="text" value={supplierInvoiceRef} onChange={(e) => setSupplierInvoiceRef(e.target.value)} placeholder="From the supplier's printed invoice" className={styles.fieldInput} />
+              {pendingFiles.length > 0 && (
+                <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
+                  {pendingFiles.length} scanned file(s) will be attached on save: {pendingFiles.map((f) => f.name).join(', ')}
+                </span>
+              )}
             </label>
             <label className={styles.field}>
               <span className={styles.fieldLabel}>Invoice Date</span>
@@ -1076,7 +1112,7 @@ export const PurchaseInvoiceNew = () => {
         <ActionResultDialog
           title={dialog.title}
           body={dialog.body}
-          primaryLabel={dialog.goTo ? 'Open PI' : undefined}
+          primaryLabel={dialog.goTo ? (dialog.goLabel ?? 'Open PI') : undefined}
           onPrimary={dialog.goTo ? () => { const g = dialog.goTo!; setDialog(null); navigate(g); } : undefined}
           /* Owner 2026-07-23: "Need a button to new purchase invoice" — the
              billing loop keys one PI per GRN back-to-back, so success offers a

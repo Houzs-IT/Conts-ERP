@@ -1,3 +1,4 @@
+import { rmFromText } from "../lib/money";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1754,7 +1755,7 @@ function SalesPanel({
     const amtStr = await prompt({
       title: "Sale amount (RM)",
       placeholder: "0.00",
-      validate: (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? null : "Enter a positive number."; },
+      validate: (v) => { const n = rmFromText(v); return Number.isFinite(n) && n > 0 ? null : "Enter a positive number."; },
     });
     if (amtStr == null) return;
     const ref = await prompt({ title: "Reference no. (optional)", placeholder: "e.g. INV-123" });
@@ -1765,7 +1766,7 @@ function SalesPanel({
       await api.post(`/api/sales/entries`, {
         project_id: projectId,
         quick_log: true,
-        amount: parseFloat(amtStr),
+        amount: rmFromText(amtStr),
         ref_no: ref.trim() || null,
         occurred_at: today,
       });
@@ -4141,7 +4142,7 @@ function QuickTotalSalesField({
   const save = async () => {
     const trimmed = val.trim();
     if (trimmed === "") return; // leave unset rather than forcing 0
-    const n = parseFloat(trimmed);
+    const n = rmFromText(trimmed);
     if (!Number.isFinite(n) || n < 0) {
       await notify({ title: "Invalid amount", body: "Enter a valid total sales amount.", tone: "error" });
       return;
@@ -4207,7 +4208,7 @@ function QuickRentalField({
 
   const save = async () => {
     const trimmed = val.trim();
-    const n = trimmed === "" ? 0 : parseFloat(trimmed);
+    const n = trimmed === "" ? 0 : rmFromText(trimmed);
     if (isNaN(n) || n < 0) {
       await notify({ title: "Invalid amount", body: "Enter a valid rental amount.", tone: "error" });
       return;

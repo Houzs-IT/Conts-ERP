@@ -19,6 +19,7 @@ import type { DocHeaderInput, NormSection, PrintFormat } from './renovation-vali
 import { stampContractFromQuotation } from './renovation-doc-flow';
 import { lineCostSen, soMirrorRow } from '../shared/renovation-money';
 import { isStageKey } from '../shared/renovation-stages';
+import { isServiceLine } from '../shared/service-sku';
 
 export const RENO_LIVE_STATUSES = ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'] as const;
 export type RenoSoStatus = (typeof RENO_LIVE_STATUSES)[number] | 'CLOSED' | 'CANCELLED';
@@ -213,7 +214,7 @@ export async function convertQuotationToSo(
   await insertSections(db, { kind: 'so', id: docNo }, sections, actor.companyId);
   await stampContractFromQuotation(db, docNo, {
     projectId: q.projectId, companyId: actor.companyId, building: h.building, unitNo: h.unitNo, sections,
-    property: { siteAddress: h.siteAddress, propertyType: h.propertyType, layoutLabel: h.layoutLabel, bedrooms: h.bedrooms, bathrooms: h.bathrooms, builtUpSqft: h.builtUpSqft },
+    property: { siteAddress: h.siteAddress, propertyType: h.propertyType, layoutLabel: h.layoutLabel, bedrooms: h.bedrooms, bathrooms: h.bathrooms, builtUpSqft: h.builtUpSqft, landAreaSqft: h.landAreaSqft, landSize: h.landSize, salespersonId: h.salespersonId, state: h.state, city: h.city, postcode: h.postcode, country: h.country, salesLocation: h.salesLocation },
   });
   await insertInstalments(db, { kind: 'so', id: docNo }, rev.instalments.map(({ id: _id, ...r }) => r), actor.companyId);
   await db.q(
@@ -412,6 +413,33 @@ export async function setContractStatus(db: RenoDb, actor: RenoActor, docNo: str
       [docNo],
     );
     if (Number(p.n) > 0) throw refuse(409, 'has_purchase_orders', 'Cancel the purchase orders raised from this contract first.');
+    /* The other documents that act on its lines. A sent invoice is the billing rule above, not a block. */
+    const [d] = await db.q<{ n: number }>(`select count(*)::int as n from scm.delivery_orders d where d.so_doc_no = $1 and d.status::text <> 'CANCELLED'`, [docNo]);
+    if (Number(d.n) > 0) throw refuse(409, 'has_deliveries', 'Cancel or return the delivery orders raised from this contract first.');
+    const [m] = await db.q<{ n: number }>(
+      `select count(*)::int as n from scm.production_order_items pi join scm.production_orders o on o.id = pi.production_order_id
+         join scm.mfg_sales_order_items si on si.id = pi.so_item_id
+        where si.doc_no = $1 and o.status::text <> 'CANCELLED'`,
+      [docNo],
+    );
+    if (Number(m.n) > 0) throw refuse(409, 'has_production_orders', 'Cancel the production orders raised from this contract first.');
+  }
+  if (to === 'CANCELLED') {
+    /* The stock allocator walks live orders only, so a cancelled contract's goods lines kept READY, stock_qty_ready
+       and any claimed batch for ever, holding stock no one will deliver. Service lines are READY from birth and stay so.
+       Same release as the generic SO cancel (Houzs f238fd2b4). */
+    const lines = await db.q<{ id: string; item_code: string | null; item_group: string | null }>(
+      `select id, item_code, item_group from scm.mfg_sales_order_items where doc_no = $1 and cancelled = false`,
+      [docNo],
+    );
+    const goodsIds = lines.filter((l) => !isServiceLine({ itemGroup: l.item_group, itemCode: l.item_code })).map((l) => l.id);
+    if (goodsIds.length > 0) {
+      await db.q(
+        `update scm.mfg_sales_order_items set stock_status = 'PENDING', stock_qty_ready = 0, allocated_batch_no = null
+          where doc_no = $1 and id = any($2::uuid[])`,
+        [docNo, goodsIds],
+      );
+    }
   }
   await db.q(`update scm.mfg_sales_orders set status = $2::scm.mfg_so_status, version = version + 1, updated_at = now() where doc_no = $1`, [docNo, to]);
   await db.q(

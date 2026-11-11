@@ -3,9 +3,9 @@ import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
 import { MoneyInput, PercentInput, DateField } from '../../components/inputs';
 import { StatusBadge } from '../../components/StatusBadge';
-import { rm, todayMyt } from '../../lib/format';
+import { rm } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
-import { MODEL, MODEL_TONE, typeOf, codeName, codeFromModel, isTenancy, offeredTypes, type ContractType, type RevenueModel, type ContractCode } from '../../lib/revenueModel';
+import { MODEL, MODEL_TONE, typeOf, codeName, codeFromModel, isTenancy, isShare, offeredTypes, optionsOfType, type ContractType, type ContractTypeOptions, type RevenueModel, type ContractCode } from '../../lib/revenueModel';
 
 /** The rent-to-rent grid beyond the rent and deposit (0161): what else we pay the owner, and what we rent it out for. */
 export const RENT_TO_RENT_KEYS = ['depositUtilities', 'depositCard', 'rentOutAmount', 'rentOutDeposit', 'rentOutDepositUtilities', 'rentOutDepositCard'] as const;
@@ -43,7 +43,7 @@ export const pctText = (n: number | null | undefined): string => (n == null ? ''
 export function draftOf(c: ContractView, types: readonly ContractType[]): Draft {
   return {
     revenueModel: c.revenueModel, contractCode: c.contractCode ?? codeFromModel(types, c.revenueModel), yearlyGuarantee: senOrEmpty(c.yearlyGuarantee),
-    ownerPct: pctOf(c.ownerPct ?? 75), managementPct: pctOf(c.managementPct != null && !isTenancy(c.revenueModel) ? c.managementPct : c.ownerPct != null ? 100 - c.ownerPct - (c.agentPct ?? 0) : 25),
+    ownerPct: pctOf(c.ownerPct ?? 75), managementPct: pctOf(c.managementPct != null && (!isTenancy(c.revenueModel) || c.managementPct > 0) ? c.managementPct : c.ownerPct != null ? 100 - c.ownerPct - (c.agentPct ?? 0) : 25),
     agentPct: pctOf(c.agentPct ?? 0), agentName: c.agentName ?? '',
     minimumGuarantee: senOrEmpty(c.minimumGuarantee), guaranteeStartsOn: c.guaranteeStartsOn ?? '', guaranteeEndsOn: c.guaranteeEndsOn ?? '',
     monthlyRent: senOrEmpty(c.monthlyRent), deposit: senOrEmpty(c.deposit), tenantName: c.tenantName ?? '',
@@ -69,32 +69,31 @@ export interface ContractBody extends Partial<Record<RentToRentKey, number | nul
   monthlyRent?: number; ownerAmount?: number; deposit?: number | null; tenantName?: string;
   startsOn: string; endsOn: string | null; renewsOn: string | null;
 }
-export function bodyOf(d: Draft): ContractBody {
+export function bodyOf(d: Draft, options: ContractTypeOptions): ContractBody {
   const m = d.revenueModel, share = isShare(m);
   return {
     revenueModel: m, contractCode: d.contractCode,
     ...(m === 'management_yearly_guarantee' ? { yearlyGuarantee: d.yearlyGuarantee ?? 0 } : {}),
-    ...(share ? { ownerPct: d.contractCode === 'MANAGE' ? manageOwnerPct(d) : d.ownerPct ?? 0, managementPct: d.managementPct ?? 0, agentPct: d.agentPct ?? 0, agentName: d.agentName || null, miscCharges: d.miscCharges } : {}),
+    ...(share ? { ownerPct: ownerPctOf(d, options), managementPct: d.managementPct ?? 0, agentPct: agentPctOf(d, options), agentName: options.hasAgentShare ? d.agentName || null : null, miscCharges: d.miscCharges } : {}),
     ...(m === 'management_guarantee' ? { minimumGuarantee: d.minimumGuarantee ?? 0, guaranteeStartsOn: d.guaranteeStartsOn || null, guaranteeEndsOn: d.guaranteeEndsOn || null } : {}),
     ...(!share ? { monthlyRent: d.monthlyRent ?? 0 } : {}),
-    ...(d.contractCode === 'MANAGE' ? { ownerAmount: d.ownerAmount ?? 0 } : {}),
+    ...(options.hasFixedOwnerAmount ? { ownerAmount: d.ownerAmount ?? 0 } : {}),
     ...(m === 'master_lease' ? { deposit: d.deposit ?? null } : {}),
-    ...(d.contractCode === 'RTR' ? Object.fromEntries(RENT_TO_RENT_KEYS.map(k => [k, d[k]])) : {}),
-    // LT (Package C) has no operator share (staff sheet UNIT, 26 Oct 2026).
-    ...(isTenancy(m) ? { tenantName: d.tenantName, managementPct: 0 } : {}),
+    ...(options.hasRentOutGrid ? Object.fromEntries(RENT_TO_RENT_KEYS.map(k => [k, d[k]])) : {}),
+    ...(isTenancy(m) ? { tenantName: d.tenantName, managementPct: options.hasNoOperatorShare ? 0 : d.managementPct ?? 0 } : {}),
     startsOn: d.startsOn, endsOn: d.endsOn || null, renewsOn: d.renewsOn || null,
   };
 }
 /** Problems the form can see before asking the server (the server checks the same and more). */
-export function problems(d: Draft): Record<string, string> {
+export function problems(d: Draft, options: ContractTypeOptions): Record<string, string> {
   const f: Record<string, string> = {}, m = d.revenueModel;
   if (isShare(m)) {
-    const sum = (d.contractCode === 'MANAGE' ? manageOwnerPct(d) : d.ownerPct ?? 0) + (d.managementPct ?? 0) + (d.agentPct ?? 0);
-    if (d.contractCode === 'MANAGE' && manageOwnerPct(d) < 0) f.managementPct = 'Management and agent add up to more than 100%.';
+    const sum = ownerPctOf(d, options) + (d.managementPct ?? 0) + agentPctOf(d, options);
+    if (options.hasFixedOwnerAmount && ownerPctOf(d, options) < 0) f.managementPct = 'Management and agent add up to more than 100%.';
     else if (Math.abs(sum - 100) > 0.001) f.ownerPct = `Owner, management and agent add up to ${Number(sum.toFixed(2))}%, not 100%.`;
     if (m === 'management_guarantee' && !((d.minimumGuarantee ?? 0) > 0)) f.minimumGuarantee = 'Enter the monthly minimum.';
     if (m === 'management_yearly_guarantee' && !((d.yearlyGuarantee ?? 0) > 0)) f.yearlyGuarantee = 'Enter the guarantee for each contract year.';
-    if (d.contractCode === 'MANAGE' && !((d.ownerAmount ?? 0) > 0)) f.ownerAmount = "Enter the owner's amount.";
+    if (options.hasFixedOwnerAmount && !((d.ownerAmount ?? 0) > 0)) f.ownerAmount = "Enter the owner's amount.";
   } else if (!((d.monthlyRent ?? 0) > 0)) f.monthlyRent = 'Enter the monthly rent.';
   if (isTenancy(m) && !d.tenantName.trim()) f.tenantName = 'Enter the tenant.';
   if (d.endsOn && d.startsOn && d.endsOn < d.startsOn) f.endsOn = 'The end date is before the start date.';
@@ -102,9 +101,11 @@ export function problems(d: Draft): Record<string, string> {
   return f;
 }
 
-/** MANAGE has no Owner % box: the owner's share of the split is what management and agent leave. */
-export const manageOwnerPct = (d: Draft): number => Number((100 - (d.managementPct ?? 0) - (d.agentPct ?? 0)).toFixed(2));
-export const isShare = (m: RevenueModel): boolean => m === 'management' || m === 'management_guarantee' || m === 'management_yearly_guarantee';
+const agentPctOf = (d: Draft, options: ContractTypeOptions): number => (options.hasAgentShare ? d.agentPct ?? 0 : 0);
+/** A fixed owner amount has no Owner % box: the owner's share of the split is what management and agent leave. */
+const ownerPctOf = (d: Draft, options: ContractTypeOptions): number =>
+  (options.hasFixedOwnerAmount ? Number((100 - (d.managementPct ?? 0) - agentPctOf(d, options)).toFixed(2)) : d.ownerPct ?? 0);
+export { isShare };
 
 export function ModelChip({ model, label }: { model: RevenueModel; label?: string }): ReactElement {
   return <StatusBadge tone={MODEL_TONE[model]} label={label ?? MODEL[model].label} />;
@@ -117,14 +118,12 @@ export interface ContractFieldsProps {
   /** Default: the active types and the draft's own. */
   offered?: readonly ContractType[];
   label?: string;
-  /** The narrow Scheduled changes panel: two columns, and a start date after today. */
-  narrow?: boolean;
   afterSelect?: ReactNode;
   onPickType?: () => void;
 }
 
 // Renders as direct children: the parent lays them out in a column.
-export function ContractFields({ d, set, errors, types, offered, label = 'Income model', narrow, afterSelect, onPickType }: ContractFieldsProps): ReactElement {
+export function ContractFields({ d, set, errors, types, offered, label = 'Income model', afterSelect, onPickType }: ContractFieldsProps): ReactElement {
   const m = d.revenueModel;
   const share = isShare(m);
   const choices = offered ?? offeredTypes(types, d.contractCode);
@@ -136,10 +135,11 @@ export function ContractFields({ d, set, errors, types, offered, label = 'Income
   );
   const day = (k: 'startsOn' | 'endsOn' | 'renewsOn' | 'guaranteeStartsOn' | 'guaranteeEndsOn', text: string) => (
     <DateField label={text} value={d[k]} onChange={v => set({ [k]: v })} error={errors[k]}
-      min={k === 'endsOn' || k === 'renewsOn' ? d.startsOn || undefined : k === 'guaranteeEndsOn' ? d.guaranteeStartsOn || undefined : k === 'startsOn' && narrow ? todayMyt(1) : undefined} />
+      min={k === 'endsOn' || k === 'renewsOn' ? d.startsOn || undefined : k === 'guaranteeEndsOn' ? d.guaranteeStartsOn || undefined : undefined} />
   );
-  const formGrid = narrow ? 'grid grid-cols-2 gap-4' : 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4';
+  const formGrid = 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4';
   const o = typeOf(types, d.contractCode);
+  const options = optionsOfType(types, d.contractCode, m);
 
   return (
     <>
@@ -164,12 +164,14 @@ export function ContractFields({ d, set, errors, types, offered, label = 'Income
       {d.contractCode && <>
         <div className={formGrid}>
           {share && <>
-            {/* MANAGE: the owner's amount in RM instead of a %; the owner % still makes the split up to 100 until
+            {/* A fixed owner amount: RM instead of a %; the owner % still makes the split up to 100 until
                 the MANAGE payout is decided (PLAN-units-form.md Q6b). */}
-            {d.contractCode === 'MANAGE' ? money('ownerAmount', 'Owner (RM)') : pct('ownerPct', 'Owner %')}
+            {options.hasFixedOwnerAmount ? money('ownerAmount', 'Owner (RM)') : pct('ownerPct', 'Owner %')}
             {pct('managementPct', 'Management %')}
-            {pct('agentPct', 'Agent %')}
-            <Field label="Agent" placeholder="Who brought the unit in" value={d.agentName} onChange={e => set({ agentName: e.target.value })} />
+            {options.hasAgentShare && <>
+              {pct('agentPct', 'Agent %')}
+              <Field label="Agent" placeholder="Who brought the unit in" value={d.agentName} onChange={e => set({ agentName: e.target.value })} />
+            </>}
           </>}
           {m === 'management_guarantee' && <>
             {money('minimumGuarantee', 'Monthly minimum (RM)', 'The owner gets at least this a month.')}
@@ -179,21 +181,22 @@ export function ContractFields({ d, set, errors, types, offered, label = 'Income
           {m === 'management_yearly_guarantee' && money('yearlyGuarantee', 'Guarantee per contract year (RM)',
             `${(d.yearlyGuarantee ?? 0) > 0 ? `${rm(d.yearlyGuarantee ?? 0)} a year / 12 months = ${rm(Math.round((d.yearlyGuarantee ?? 0) / 12))} per month. ` : ''}Checked once a year: on the last statement of each contract year the company tops up any shortfall.`)}
           {m === 'grr' && money('monthlyRent', 'Monthly rent to owner (RM)', 'Paid whatever the unit earns.')}
-          {m === 'master_lease' && d.contractCode !== 'RTR' && <>
+          {m === 'master_lease' && !options.hasRentOutGrid && <>
             {money('monthlyRent', 'Monthly rent to the owner (RM)', 'Recorded as a company cost; no owner statement.')}
             {money('deposit', 'Deposit (RM)')}
           </>}
           {isTenancy(m) && <>
             <Field label="Tenant" placeholder="Tenant's name" value={d.tenantName} onChange={e => set({ tenantName: e.target.value })} error={errors.tenantName} />
             {money('monthlyRent', 'Monthly rent from tenant (RM)')}
+            {!options.hasNoOperatorShare && pct('managementPct', 'Operator %')}
           </>}
         </div>
-        {d.contractCode === 'MANAGE' && (
+        {options.hasFixedOwnerAmount && (
           <p className="m-0 -mt-2 text-meta text-muted-ink">
             Operator share = {rm(d.ownerAmount ?? 0)} x {pctText(d.managementPct ?? 0)}% = <span className="font-semibold text-ink">{rm(Math.round(((d.ownerAmount ?? 0) * (d.managementPct ?? 0)) / 100))}</span>
           </p>
         )}
-        {d.contractCode === 'RTR' && (() => {
+        {options.hasRentOutGrid && (() => {
           // One row per thing, one column per side: the row name is printed once, so the two sides read across.
           const rows = [
             ['Monthly rent', 'monthlyRent', 'rentOutAmount'],
@@ -201,7 +204,7 @@ export function ContractFields({ d, set, errors, types, offered, label = 'Income
             ['Deposit utilities', 'depositUtilities', 'rentOutDepositUtilities'],
             ['Deposit card', 'depositCard', 'rentOutDepositCard'],
           ] as const;
-          const gridCols = cx('grid grid-cols-[84px_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 px-4', !narrow && 'sm:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)]');
+          const gridCols = 'grid grid-cols-[84px_minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-[150px_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 px-4';
           const gap = (d.rentOutAmount ?? 0) - (d.monthlyRent ?? 0);
           return (
             <div role="group" aria-label="Rent to rent terms" className="rounded-card [border:1px_solid_var(--color-line)] bg-page overflow-hidden max-w-[760px]">

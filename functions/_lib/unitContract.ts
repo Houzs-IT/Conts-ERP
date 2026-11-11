@@ -1,7 +1,7 @@
 /** A unit's contract as the Contract tab edits it (one revenue model, only that model's fields), its history, and
  *  the "how this month's statement works" example worked out by the statement engine on real figures. */
 import { loadInputs, withYearToDate, computeMonth, statementSettings, termsFor, unitForMonth, type Query, type UnitRow, type UnitMonth } from './ownerStatement';
-import { modelOf, isRevenueModel, termsLabel, draftColumns, isShare, isTenancy, RENT_TO_RENT, RENT_TO_RENT_KEYS, type RevenueModel, type ContractDraft, type RentToRentKey } from './revenueModel';
+import { modelOf, isRevenueModel, termsLabel, isShare, isTenancy, RENT_TO_RENT, RENT_TO_RENT_KEYS, type RevenueModel, type ContractColumns, type RentToRentKey } from './revenueModel';
 import { monthEndExclusive } from './revenue';
 import { shiftMonth } from './expenses';
 import { codeOf, type ContractCode } from './unitPurpose';
@@ -59,7 +59,7 @@ export function contractView(c: any | null, unit: { split_kind?: string | null; 
     yearlyGuarantee: model === 'management_yearly_guarantee' ? Number(c.minimum_guarantee_annual ?? 0) : 0,
     contractCode: code, typeStored: types.some(t => t.code === c.contract_code) || isRevenueModel(c.revenue_model), agreementDocumentId: c.agreement_document_id ?? null,
     guaranteeStartsOn: c.guarantee_starts_on ?? null, guaranteeEndsOn: c.guarantee_ends_on ?? null,
-    ownerAmount: code === 'MANAGE' ? Number(c.grr_amount ?? 0) : null,
+    ownerAmount: types.find(type => type.code === code)?.hasFixedOwnerAmount ? Number(c.grr_amount ?? 0) : null,
     monthlyRent: share ? 0 : Number(c.grr_amount ?? 0), deposit: c.deposit_amount == null ? null : Number(c.deposit_amount), tenantName: c.tenant_name ?? null,
     startsOn: c.starts_on ?? null, endsOn: c.ends_on ?? null, renewsOn: c.renews_on ?? null, miscCharges: Number(c.misc_charges ?? 0) === 1,
     rentToRent: rentToRentOf(c), sharedWith, createdAt: c.created_at ?? null,
@@ -79,15 +79,15 @@ export interface Example {
   otherPayers: number;
 }
 
-/** Last month (or `month`) for one unit, by the statement engine. `draft` replaces the unit's contract terms, so the
+/** Last month (or `month`) for one unit, by the statement engine. `draftTerms` replaces the unit's contract terms, so the
  *  screen shows what the statement would be under terms not yet saved. */
-export async function unitExample(q: Query, unitId: string, month: string, draft?: ContractDraft): Promise<Example | null> {
+export async function unitExample(q: Query, unitId: string, month: string, draftTerms?: ContractColumns): Promise<Example | null> {
   const [settings, inputs] = await Promise.all([statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month), { unitId })]);
   const base = inputs.units.find(u => u.id === unitId);
   if (!base) return null;
   let unit: UnitRow = base;
-  if (draft) {
-    const c = draftColumns(draft);
+  if (draftTerms) {
+    const c = draftTerms;
     unit = {
       ...base, history: undefined, contract_id: base.contract_id ?? 'draft', revenue_model: c.revenue_model, model: c.model, management_fee_pct: c.management_fee_pct,
       agent_fee_pct: c.agent_fee_pct, grr_amount: c.grr_amount, minimum_guarantee: c.minimum_guarantee, guarantee_starts_on: c.guarantee_starts_on,

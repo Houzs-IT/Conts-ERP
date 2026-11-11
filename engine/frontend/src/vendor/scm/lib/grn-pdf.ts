@@ -28,6 +28,7 @@ import {
   type PdfPhotoImage,
 } from './pdf-item-photos';
 import { loadDocPdfPhotos } from './pdf-doc-photos';
+import { warehouseLine } from './warehouse-print';
 
 type GrnHeader = {
   /* Row id: the photos are read by it. A consignment receive has none and prints no photos. */
@@ -36,6 +37,7 @@ type GrnHeader = {
   received_at: string; delivery_note_ref: string | null;
   notes: string | null; posted_at: string | null;
   supplier_id?: string | null;
+  warehouse_id?: string | null;
   supplier?: { code: string; name: string };
   purchase_order?: { id: string; po_number: string };
 };
@@ -125,6 +127,16 @@ export async function renderGrnInto(
       ],
     },
   );
+
+  const receivedAt = await warehouseLine(header.warehouse_id);
+  if (receivedAt) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(110);
+    doc.text('RECEIVED AT', margin, y); doc.setTextColor(0);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+    const lines = doc.splitTextToSize(receivedAt, pageW - margin * 2 - 26) as string[];
+    doc.text(lines, margin + 26, y);
+    y += lines.length * 4 + 3;
+  }
 
   // Codes note (dual-code lookups already loaded above with the supplier
   // top-up, so the block prints with a full supplier profile in one round).
@@ -242,7 +254,7 @@ export async function generateGrnPdf(
 /* Several GRNs → ONE combined file, each GRN starting on a new page. For the
    batch "Export PDF" action on the Goods Received list. */
 export async function generateCombinedGrnPdf(
-  docs: Array<{ header: GrnHeader; items: GrnItem[] }>,
+  docs: Array<{ header: GrnHeader; items: GrnItem[]; renovation?: RenoDocInfo | null }>,
   opts?: { fileName?: string; docTitle?: string; docNoLabel?: string; action?: PdfAction },
 ): Promise<void> {
   const { jsPDF } = await import('jspdf');
@@ -250,7 +262,7 @@ export async function generateCombinedGrnPdf(
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   for (let i = 0; i < docs.length; i += 1) {
     if (i > 0) doc.addPage();
-    await renderGrnInto(doc, autoTable, docs[i]!.header, docs[i]!.items, opts);
+    await renderGrnInto(doc, autoTable, docs[i]!.header, docs[i]!.items, { ...opts, renovation: docs[i]!.renovation });
   }
   deliverPdf(doc, opts?.fileName ?? 'goods-received.pdf', opts?.action);
 }
