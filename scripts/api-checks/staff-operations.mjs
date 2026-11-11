@@ -41,7 +41,7 @@ check('rules: a technician cannot read them (403)', r.status === 403, r.text);
 // A job the rules do not hold goes straight to the technician.
 const mytToday = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key no day ${tag}`, category: 'other', jobType: 'pass_key' }, 'operations_staff');
-check('pass key: a job with no check-in day is refused (422)', r.status === 422 && !!r.json?.fields?.dueOn, r.text);
+check('pass key: a job with no check-in day is refused (422)', r.status === 422 && !!r.json?.error?.fields?.dueOn, r.text);
 r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key ${tag}`, category: 'other', jobType: 'pass_key', dueOn: mytToday, assigneeName: HAFIZ }, 'operations_staff');
 check('CS (operations staff) adds a Pass key job and gives it to a technician', r.status === 201 && r.json.ownerApprovalRequired === false, r.text);
 const passKey = r.json.id;
@@ -67,7 +67,7 @@ const doneKey = r.json.id;
 r = await call('POST', `/api/maintenance/issues/${doneKey}/start`, {}, 'technician');
 check('pass key: Start repair is refused on a Pass key job (409)', r.status === 409, r.text);
 r = await call('POST', `/api/maintenance/issues/${doneKey}/pass-key-done`, {}, 'technician');
-check('pass key: Pass key done needs a photo first (422)', r.status === 422 && !!r.json?.fields?.photos, r.text);
+check('pass key: Pass key done needs a photo first (422)', r.status === 422 && !!r.json?.error?.fields?.photos, r.text);
 const keyPhoto = new FormData();
 keyPhoto.append('file', new Blob([PNG], { type: 'image/png' }), 'key.png');
 keyPhoto.append('kind', 'after');

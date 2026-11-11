@@ -84,8 +84,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   } else if (b?.urgency !== undefined) {
     if (!URGENCIES.includes(b.urgency)) return fail('VALIDATION', 'Normal or urgent.', 422, { urgency: 'Normal or urgent.' });
     put('urgency', 'urgency', b.urgency);
-    // Urgency from an older screen moves the type with it; a Pass key job stays one unless made urgent.
-    if (cols && (b.urgency === 'urgent' || cur.job_type === 'urgent')) put('job_type', 'jobType', b.urgency === 'urgent' ? 'urgent' : 'normal');
+    // Urgency from an older screen moves the type with it; a Pass key job stays one.
+    if (cols && cur.job_type !== 'pass_key' && (b.urgency === 'urgent' || cur.job_type === 'urgent')) put('job_type', 'jobType', b.urgency === 'urgent' ? 'urgent' : 'normal');
   }
   if (b?.severity !== undefined || b?.needsParts !== undefined || b?.partsArrived !== undefined || b?.dueOn !== undefined) {
     if (!cols) return fail('NOT_CONFIGURED', 'Severity, parts and due dates need a database update (migration 0126) that is not applied yet.', 501);
