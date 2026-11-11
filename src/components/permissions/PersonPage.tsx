@@ -9,7 +9,7 @@ import { areaKeysOf, countChanged, countDifferences, personChanges, type RoleLev
 import type { AccessLevel, PersonAccess, PersonAccessArea, PersonAccessChange } from '../../lib/types';
 import { BackLink } from './MasterDetail';
 import RoleGrid, { groupByCompany, type GridCategory } from './RoleGrid';
-import { closedBySide, closedCompanyLabel, sideLabel } from './shared';
+import { SAVE_BAR, closedBySide, closedCompanyLabel, sideLabel } from './shared';
 
 export interface PersonPageProps {
   personId: string;
@@ -155,7 +155,7 @@ function PersonAccessEditor({ access, onBack, onSaved, onDirtyChange }: PersonAc
         isLocked={!canEdit || isSaving} onChange={setLevels} />
 
       {canEdit && (
-        <div className="sticky bottom-0 z-[2] flex items-center justify-between gap-3 flex-wrap py-3 px-5 max-md:px-4 bg-card [border-top:1px_solid_var(--color-line)] pb-[max(12px,env(safe-area-inset-bottom))]">
+        <div className={SAVE_BAR}>
           <Button size="sm" disabled={isSaving || ownSettingCount === 0} disabledReason="They already get exactly what their role gives." onClick={askResetAll}>
             Reset all to role
           </Button>

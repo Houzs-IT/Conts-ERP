@@ -7,7 +7,7 @@ import { areaKeysOf, countChanged, countGrants, resolveRoleLevels, rulesToWrite 
 import type { AccessChart, Department, Position } from '../../lib/types';
 import { BackLink } from './MasterDetail';
 import RoleGrid, { groupByCompany } from './RoleGrid';
-import { closedCompanyLabel, defaultRoleName, headCountWithoutPosition, sideLabel, visibleCategoriesOf, type RoleTarget } from './shared';
+import { SAVE_BAR, closedCompanyLabel, defaultRoleName, headCountWithoutPosition, sideLabel, visibleCategoriesOf, type RoleTarget } from './shared';
 
 export interface RolePageProps {
   chart: AccessChart;
@@ -110,7 +110,7 @@ function RoleEditor({ chart, department, position, onBack, onSaved, onDirtyChang
       <RoleGrid companies={companies} levels={levels} savedLevels={savedLevels} isLocked={isLocked} onChange={setLevels} />
 
       {chart.canEdit && (
-        <div className="sticky bottom-0 z-[2] flex items-center justify-between gap-3 flex-wrap py-3 px-5 max-md:px-4 bg-card [border-top:1px_solid_var(--color-line)] pb-[max(12px,env(safe-area-inset-bottom))]">
+        <div className={SAVE_BAR}>
           <span className="text-meta text-muted-ink">
             {changedCount === 0 ? 'No unsaved changes.' : `${changedCount} ${changedCount === 1 ? 'area' : 'areas'} changed.`}
           </span>
