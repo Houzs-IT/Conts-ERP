@@ -187,7 +187,7 @@ export async function syncLateIncome(env: Env, scope: { unitIds?: string[]; owne
         diff: v.payoutBeforeAdjustments - f.payoutBeforeAdjustments,
         target: openMonthAfter(month, finals.get(l.unit_id) ?? new Set()),
         held: termsFor(unitForMonth(unit, month), settings.defaultFeePct).model === 'management_yearly_guarantee',
-        text: lateText(`${unit.property_name} ${unit.unit_number}`, monthLabel(month)),
+        text: lateText('income', `${unit.property_name} ${unit.unit_number}`, monthLabel(month)),
       });
     }
   }
