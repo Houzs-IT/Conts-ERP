@@ -202,9 +202,28 @@ export const categoryList = (): CategoryList[] =>
   GROUPS.map(group => ({ group, areas: AREAS.filter(a => a.group === group).map(({ key, label, managed }) => ({ key, label, managed: !!managed })) }));
 
 /** The body of GET and PUT /api/users/access. */
+export interface PermissionPerson {
+  id: string; fullName: string; departmentId: string; positionId: string | null; isActive: boolean; customCount: number;
+}
+
+interface PermissionPersonRow {
+  id: string; full_name: string; department_id: string; position_id: string | null; is_active: unknown; custom_count: number;
+}
+
+async function loadPermissionPeople(env: Env): Promise<PermissionPerson[]> {
+  const rows = await all<PermissionPersonRow>(env,
+    `SELECT u.id, u.full_name, u.department_id, u.position_id, u.is_active,
+            (SELECT count(*)::int FROM access_rules r WHERE r.scope = 'user' AND r.scope_id = u.id) AS custom_count
+       FROM users u WHERE u.department_id IS NOT NULL ORDER BY lower(u.full_name)`);
+  return rows.map(row => ({
+    id: row.id, fullName: row.full_name, departmentId: row.department_id, positionId: row.position_id,
+    isActive: !!row.is_active, customCount: row.custom_count,
+  }));
+}
+
 export async function permissionBody(env: Env, canEdit: boolean) {
-  const [departments, rules] = await Promise.all([loadDepartments(env), loadRuleBook(env)]);
-  return { levels: LEVELS, categories: categoryList(), departments, rules, canEdit };
+  const [departments, rules, people] = await Promise.all([loadDepartments(env), loadRuleBook(env), loadPermissionPeople(env)]);
+  return { levels: LEVELS, categories: categoryList(), departments, rules, people, canEdit };
 }
 
 // ---- one person's access ----

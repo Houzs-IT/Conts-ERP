@@ -87,8 +87,12 @@ export interface AccessRules {
   position: Record<string, Record<string, AccessSetting>>;
 }
 
+export interface PermissionPerson {
+  id: string; fullName: string; departmentId: string; positionId: string | null; isActive: boolean; customCount: number;
+}
+
 export interface AccessChart {
-  levels: AccessLevel[]; categories: AccessCategory[]; departments: Department[]; rules: AccessRules; canEdit: boolean;
+  levels: AccessLevel[]; categories: AccessCategory[]; departments: Department[]; rules: AccessRules; people: PermissionPerson[]; canEdit: boolean;
 }
 
 /** `level: null` deletes the stored row. Category keys take a level or null, never 'inherit'. */

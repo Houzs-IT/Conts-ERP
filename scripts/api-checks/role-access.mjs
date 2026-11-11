@@ -117,7 +117,10 @@ check('back to Operations / Operations Staff', r.status === 200, r.text);
 // cleaners or technicians (or the reverse) outside HR > Employees.
 const maintenance = start.departments.find(d => d.kind === 'maintenance');
 r = await call('POST', '/api/departments', { name: `Field ${Date.now()}`, kind: 'cleaning', side: 'conts' });
-check('a Cleaning-kind department cannot be added (422)', r.status === 422, r.text);
+const addedWithCleaningKind = r.json?.department;
+check('a department added with kind Cleaning is made Staff', r.status === 201 && addedWithCleaningKind?.kind === 'staff', r.text);
+r = await call('DELETE', `/api/departments/${addedWithCleaningKind?.id}`);
+check('...and is removed again', r.status === 200, r.text);
 r = await call('PATCH', `/api/departments/${ops.id}`, { kind: 'maintenance' });
 check('an office department cannot become Maintenance (422)', r.status === 422, r.text);
 r = await call('PATCH', `/api/departments/${maintenance.id}`, { kind: 'staff' });
