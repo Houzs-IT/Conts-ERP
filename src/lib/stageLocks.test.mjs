@@ -2,13 +2,22 @@
 // the rules that decide where a late change goes and what unlocking does, without the database.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lockMonthProblem, openMonthAfter, planLate, planUnlock, carriedText, monthAfter, monthLabel, lateText } from '../../functions/_lib/stageLocks.ts';
+import { lockMonthProblem, openMonthAfter, planLate, planUnlock, carriedText, monthAfter, monthLabel, lateText, incomeLockable } from '../../functions/_lib/stageLocks.ts';
 
-test('locks start from October 2026', () => {
-  assert.equal(lockMonthProblem('2026-09'), 'Locks start from October 2026.');
-  assert.equal(lockMonthProblem('2026-10'), null);
-  assert.equal(lockMonthProblem('2027-01'), null);
-  assert.equal(lockMonthProblem('2026-13'), 'Month must look like 2026-10.');
+test('locks start from October 2026, and only for a month that has ended', () => {
+  const today = '2026-11-11';
+  assert.equal(lockMonthProblem('2026-09', today), 'Locks start from October 2026.');
+  assert.equal(lockMonthProblem('2026-10', today), null);
+  assert.equal(lockMonthProblem('2026-11', today), 'November 2026 has not ended yet.');
+  assert.equal(lockMonthProblem('2027-01', today), 'January 2027 has not ended yet.');
+  assert.equal(lockMonthProblem('2027-01', '2027-02-01'), null);
+  assert.equal(lockMonthProblem('2026-13', today), 'Month must look like 2026-10.');
+});
+
+test('a fixed rent or master lease unit has no income to lock: the owner is paid the same whatever it earns', () => {
+  assert.equal(incomeLockable('share'), true);
+  assert.equal(incomeLockable('fixed_rent'), false);
+  assert.equal(incomeLockable('none'), false);
 });
 
 test('next open month skips closed months and crosses the year', () => {
@@ -36,10 +45,18 @@ test('late difference: insert, top up the open one, remove when back to zero, no
 });
 
 test('unlock: open differences are withdrawn, final ones are balanced, a final month is refused', () => {
-  assert.deepEqual(planUnlock([], false, 'October 2026'), { problem: null, remove: [], carried: null });
+  assert.deepEqual(planUnlock([], false, 'October 2026'), { problem: null, remove: [], carried: null, regenerate: [] });
   assert.deepEqual(planUnlock([{ id: 'a', month: '2026-11', amount: 7500, movable: true }], false, 'October 2026'),
-    { problem: null, remove: ['a'], carried: null });
+    { problem: null, remove: ['a'], carried: null, regenerate: [] });
   assert.deepEqual(planUnlock([{ id: 'a', month: '2026-11', amount: 7500, movable: false }, { id: 'b', month: '2026-12', amount: 500, movable: true }], false, 'October 2026'),
-    { problem: null, remove: ['b'], carried: { amount: 7500, months: ['2026-11'] } });
+    { problem: null, remove: ['b'], carried: { amount: 7500, months: ['2026-11'] }, regenerate: [] });
   assert.equal(planUnlock([], true, 'October 2026').problem, 'The October 2026 statement is final. Unlock the final statement first.');
+});
+
+test('unlock names the draft statements that printed a withdrawn difference, to be generated again', () => {
+  assert.deepEqual(planUnlock([
+    { id: 'a', month: '2026-11', amount: 7500, movable: true, onDraft: true },
+    { id: 'b', month: '2026-12', amount: 500, movable: true, onDraft: false },
+    { id: 'c', month: '2026-11', amount: 100, movable: true, onDraft: true },
+  ], false, 'October 2026'), { problem: null, remove: ['a', 'b', 'c'], carried: null, regenerate: ['2026-11'] });
 });

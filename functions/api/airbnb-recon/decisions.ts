@@ -193,7 +193,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     throw e;
   }
 
-  if (changedUnits.size) await syncLateIncome(env, { unitIds: [...changedUnits] });
+  // The late difference of a locked month goes on the next open month: that statement is the one to generate again.
+  if (changedUnits.size) (await syncLateIncome(env, { unitIds: [...changedUnits] })).months.forEach(m => regenerate.add(m));
 
   return json({
     ok: true, confirmed: decisions.filter(d => d.action !== 'keep').length, kept: decisions.filter(d => d.action === 'keep').length,

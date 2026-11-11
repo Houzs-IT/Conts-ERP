@@ -20,9 +20,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       AND EXISTS (SELECT 1 FROM expenses e JOIN units u ON u.id = e.unit_id WHERE u.owner_id = s.owner_id AND e.charge_to = 'owner'
         AND NOT e.record_only AND e.deduct_month = substr(s.period_start, 1, 7) AND e.created_at::timestamptz > s.generated_at::timestamptz
         AND NOT EXISTS (SELECT 1 FROM statement_lines l WHERE l.statement_id = s.id AND l.expense_id = e.id))`, JSON.stringify(b.statementIds))).map(r => r.id));
-  const ok = rows.filter(r => r.state === 'provisional' && !stale.has(r.id));
+  // An owner adjustment the draft prints that changed or went since it was made (a late income difference brought up
+  // to date by Owner statement close, an unlock, an edit on the owner's page): finalising the draft as it stands would
+  // pay what it prints while the books hold another amount. A deleted adjustment leaves its line with none.
+  const adjusted = new Set((await all<{ id: string }>(env, `
+    SELECT s.id FROM owner_statements s WHERE s.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND s.state = 'provisional'
+      AND EXISTS (SELECT 1 FROM statement_lines l WHERE l.statement_id = s.id AND (
+        (l.adjustment_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM owner_adjustments a WHERE a.id = l.adjustment_id AND a.statement_id = s.id AND a.amount = l.amount))
+        OR (l.adjustment_id IS NULL AND l.category IN ('owner_credit', 'owner_charge'))))`, JSON.stringify(b.statementIds))).map(r => r.id));
+  const ok = rows.filter(r => r.state === 'provisional' && !stale.has(r.id) && !adjusted.has(r.id));
   const failed = b.statementIds.filter(id => !ok.some(r => r.id === id)).map(id => ({ id, reason: stale.has(id)
     ? 'A bill was added after this draft was made. Generate the statement again, then mark it final.'
+    : adjusted.has(id) ? 'An owner adjustment changed after this draft was made. Generate the statement again, then mark it final.'
     : rows.find(r => r.id === id) ? 'Only a draft statement can be marked final.' : 'That statement no longer exists.' }));
 
   const now = nowIso();

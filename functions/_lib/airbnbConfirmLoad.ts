@@ -13,13 +13,13 @@ import type { Line } from './airbnbRecon';
  *  master lease, long-term let). `guarantee`: a share contract with a minimum, where a month the minimum was paid
  *  may not move with the stay. */
 export interface UnitOwner { unitId: string; ownerId: string; ownerName: string; unit: string; ownerPct: number | null; guarantee: boolean }
-export interface ConfirmContext { finals: Map<string, Set<string>>; units: Map<string, UnitOwner> }
+export interface ConfirmContext { finals: Map<string, Set<string>>; units: Map<string, UnitOwner>; locked: Map<string, Set<string>> }
 
 /** For every unit of these lines, in three queries: the months whose owner statement is final (from Oct 2026), and its
  *  owner and current contract as the statements read it (termsFor). */
 export async function confirmContext(env: Env, lines: readonly Line[]): Promise<ConfirmContext> {
   const unitIds = [...new Set(lines.flatMap(l => l.stays.map(s => s.unitId)))];
-  if (!unitIds.length) return { finals: new Map(), units: new Map() };
+  if (!unitIds.length) return { finals: new Map(), units: new Map(), locked: new Map() };
   const q: Query = (sql, ...args) => all(env, sql, ...args);
   const [finals, rows, settings, locked] = await Promise.all([
     finalMonthsFor(env, unitIds, NET_FROM_MONTH),
@@ -27,8 +27,9 @@ export async function confirmContext(env: Env, lines: readonly Line[]): Promise<
     statementSettings(q),
     incomeLockedMonths(env, unitIds),
   ]);
-  // A month whose income is locked (owner report close) is not final here: the confirmed figure changes the live month
-  // only, and syncLateIncome posts the owner's difference, worked out again through the contract, on the next open month.
+  // A month whose income is locked (owner report close) is neither final nor open here: the confirmed figure changes
+  // the live month only, its statement keeps the locked income, and syncLateIncome posts the owner's difference,
+  // worked out again through the contract, on the next open month.
   for (const [unitId, months] of locked) for (const m of months) finals.get(unitId)?.delete(m);
   const units = new Map<string, UnitOwner>();
   for (const u of rows) {
@@ -39,7 +40,7 @@ export async function confirmContext(env: Env, lines: readonly Line[]): Promise<
       guarantee: ownerPct != null && (Number(t.guarantee) > 0 || Number(t.yearlyGuarantee ?? 0) > 0),
     });
   }
-  return { finals, units };
+  return { finals, units, locked };
 }
 
 const moneyOf = (l: Line): StayMoney[] =>
@@ -51,7 +52,7 @@ export const setsAirbnbFigure = (line: Line, setAmount: boolean) => setAmount &&
 /** planLine with what the context read. */
 export function planWith(ctx: ConfirmContext, line: Line, today: string, setAmount = false): Plan {
   const l = setsAirbnbFigure(line, setAmount) ? { ...line, action: 'set_amount' as const } : line;
-  return planLine(l, moneyOf(line), today, u => ctx.finals.get(u) ?? new Set(), u => ctx.units.get(u)?.ownerPct ?? null);
+  return planLine(l, moneyOf(line), today, u => ctx.finals.get(u) ?? new Set(), u => ctx.units.get(u)?.ownerPct ?? null, u => ctx.locked.get(u) ?? new Set());
 }
 
 /** What the confirm window lists: each reservation before and after (its state, guest total and net) with the open

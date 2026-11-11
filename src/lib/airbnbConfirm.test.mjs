@@ -50,6 +50,16 @@ test('set the amount: the guest total moves so the net is Airbnb’s; the fee st
   assert.deepEqual(final.changes[0].openMonths, [], 'October was final: the share goes on November instead');
 });
 
+test('a month whose income is locked is neither open nor final: no statement to generate again, no flat share', () => {
+  const lockedOct = () => new Set(['2026-10']);
+  const p = planLine({ code: 'HMQFZYBTXQ', action: 'set_amount', newAmount: 29_766 }, [stay()], '2026-11-11', none, pct70, lockedOct);
+  assert.equal(p.ok, true);
+  assert.deepEqual(p.changes[0].openMonths, [], 'October is locked: its statement keeps the locked income');
+  assert.deepEqual(p.shares, [], 'the late difference is worked out through the contract by the lock, not as a flat share');
+  const across = planLine({ code: 'HMACROSS', action: 'set_amount', newAmount: 60_000 }, [stay({ checkIn: '2026-10-30', checkOut: '2026-11-02' })], '2026-11-11', none, pct70, lockedOct);
+  assert.deepEqual(across.changes[0].openMonths, ['2026-11'], 'November is open: it follows when generated');
+});
+
 test('set the amount over two units, and leave a cancelled one alone', () => {
   const p = planLine({ code: 'HMTWO', action: 'set_amount', newAmount: 60_000 }, [
     stay({ id: 'a', unitId: 'u1', gross: 30_000, fee: 5_000 }), stay({ id: 'b', unitId: 'u2', gross: 30_000, fee: 5_000 }), stay({ id: 'c', state: 'cancelled' }),

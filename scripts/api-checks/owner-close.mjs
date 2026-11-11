@@ -2,12 +2,17 @@
 // Locking a month's income for ticked units freezes it; a later change to a booking reaches the owner once, as an owner
 // adjustment on the next open month, worked out again through the contract; unlocking (with a reason) brings the month
 // back, withdrawing what can be withdrawn and balancing what already sits on a final statement:
-//   - lock, lock again (a no-op), a month before October 2026 refused, a stage other than income refused;
+//   - lock, lock again (a no-op), a month before October 2026 refused, a stage other than income refused, the month
+//     running now refused;
 //   - a changed booking leaves the locked income alone and its difference lands on November once, however often the
 //     statements are generated; a stay across October and November sends only its October part there;
-//   - unlock needs a reason, withdraws an open difference, and with November final balances October instead;
-//     a final October cannot be unlocked;
-//   - a long-term let keeps its locked rent when the tenancy dates change, and the rent difference is posted;
+//   - a November draft that printed the difference is not finalised once the difference changed or was withdrawn,
+//     until it is generated again;
+//   - unlock needs a reason, withdraws an open difference, names the draft to generate again, and with November final
+//     balances October instead; a final October cannot be unlocked, and a unit whose October is final cannot be locked;
+//   - unlock waits for a late-income update that is running (Postgres only);
+//   - a master-lease unit is not on the income step; a long-term let keeps its locked rent when the tenancy dates
+//     change, and the rent difference is posted;
 //   - a finance admin without the Lock income and Unlock a step powers (migration 0302 closed them) is refused.
 // Needs a fresh local database (see harness.mjs) and DB_URL pointing at it, e.g.
 //   DB_URL=postgres://pos_app:local@127.0.0.1:55441/postgres API_BASE=http://localhost:8788 node scripts/api-checks/owner-close.mjs
@@ -93,6 +98,13 @@ r = await lock(u.id, '2026-09');
 check('September cannot be locked', r.status === 422 && r.json?.error?.message === 'Locks start from October 2026.', r.text);
 r = await lock(u.id, OCT, 'deductions');
 check('only income can be locked so far', r.status === 422 && r.json?.error?.message === 'Only income can be locked so far.', r.text);
+// The month running now (Malaysia time) would freeze half its reservations (review finding 3).
+const thisMonth = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7);
+const running = `${new Date(`${thisMonth}-01T00:00:00Z`).toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })} has not ended yet.`;
+r = await lock(u.id, thisMonth);
+check('a month that has not ended cannot be locked', r.status === 422 && r.json?.error?.message === running, r.text);
+r = await call('GET', `/api/owner-close?month=${thisMonth}`);
+check('… and its page says so', r.json?.lockProblem === running, JSON.stringify(r.json?.lockProblem));
 
 // A changed booking: the locked income stays, the difference lands on November once.
 await db(`UPDATE reservations SET gross_booking_value = gross_booking_value + 10000, collected_revenue = collected_revenue + 10000 WHERE id = $1`, A);
@@ -109,18 +121,40 @@ check('generating again posts nothing more', again.length === 1 && Number(again[
 // A stay across October and November: only its October part goes to the adjustment; November follows the change.
 const nov0 = await income(NOV, u.id);
 await db(`UPDATE reservations SET gross_booking_value = gross_booking_value + 8000, collected_revenue = collected_revenue + 8000 WHERE id = $1`, B);
+// The November draft already prints the earlier difference. Generating October brings the late difference up to date
+// without building November again, so the draft no longer matches what the owner is due: marking it final is
+// refused until it is generated again (review finding 1).
+await generate(OCT, u.owner_id);
+const novId = async () => (await db(`SELECT id FROM owner_statements WHERE owner_id = $1 AND period_start = '2026-11-01'`, u.owner_id))[0]?.id;
+const finalise = async () => call('POST', '/api/statements/finalise', { statementIds: [await novId()] });
+const backToDraft = async () => db(`UPDATE owner_statements SET state = 'provisional', finalised_at = NULL WHERE id = $1`, await novId());
+const STALE = 'An owner adjustment changed after this draft was made. Generate the statement again, then mark it final.';
+r = await finalise();
+check('a draft whose late difference changed since it was made cannot be marked final', r.status === 200 && r.json?.finalised === 0 && r.json?.failed?.[0]?.reason === STALE, r.text);
+await backToDraft();
 await generate(NOV, u.owner_id);
 late = await lateOf(u.id);
 const octPart = (8000 * bOctNights) / bNights;
 check('a stay across months sends only its October part', late.length === 1 && near(late[0].amount, Math.round(((10000 + octPart) * pct) / 100)), JSON.stringify(late));
 check('November follows the change itself', near((await income(NOV, u.id)) - nov0, 8000 - octPart), `${await income(NOV, u.id)} - ${nov0}`);
+r = await finalise();
+check('generated again, it can be marked final', r.status === 200 && r.json?.finalised === 1, r.text);
+await backToDraft();
 
 // Unlocking.
 r = await unlock(u.id, '');
 check('unlocking needs a reason', r.status === 422 && r.json?.error?.message === 'Say why you are unlocking.', r.text);
 r = await unlock(u.id, 'Correct the booking');
 check('unlocking with a reason works', r.status === 200, r.text);
+check('… and names the November draft to generate again', JSON.stringify(r.json?.regenerate) === JSON.stringify([NOV]), r.text);
 check('unlocking withdraws the open difference', (await lateOf(u.id)).length === 0, JSON.stringify(await lateOf(u.id)));
+r = await finalise();
+check('the November draft that printed it cannot be marked final until generated again', r.status === 200 && r.json?.finalised === 0 && r.json?.failed?.[0]?.reason === STALE, r.text);
+await backToDraft();
+await generate(NOV, u.owner_id);
+r = await finalise();
+check('generated again, it can be marked final', r.status === 200 && r.json?.finalised === 1, r.text);
+await backToDraft();
 check("the month is back to today's data", near(await income(OCT, u.id), oct0 + 10000 + octPart), `${await income(OCT, u.id)} vs ${oct0 + 10000 + octPart}`);
 const why = await db(`SELECT after_state FROM audit_log WHERE action = 'owner_report.unlock' AND entity_id = $1 ORDER BY occurred_at DESC LIMIT 1`, u.id);
 check('the reason is kept in the history', JSON.stringify(why[0]?.after_state ?? '').includes('Correct the booking'), JSON.stringify(why));
@@ -144,11 +178,54 @@ await generate(OCT, u.owner_id);
 await db(`UPDATE owner_statements SET state = 'finalised', finalised_at = $2 WHERE owner_id = $1 AND period_start = '2026-10-01'`, u.owner_id, now);
 r = await unlock(u.id, 'This should be refused');
 check('a final month cannot be unlocked', r.status === 409 && r.json?.error?.message === 'The October 2026 statement is final. Unlock the final statement first.', r.text);
+// A unit whose month is already final is not locked: a lock would keep today's stays, not what that statement paid
+// (review finding 3). The lock is taken off by hand here, as a final month cannot be unlocked.
+await db(`DELETE FROM owner_report_locks WHERE unit_id = $1`, u.id);
+r = await lock(u.id);
+check('a unit whose October statement is final is not locked', r.status === 200 && !r.json?.locked?.length && !!r.json?.final?.includes(u.id), r.text);
+r = await call('GET', `/api/owner-close?month=${OCT}`);
+check('… and the page shows its statement is final', r.json?.units?.find(x => x.unitId === u.id)?.statementFinal === true, JSON.stringify(r.json?.units?.find(x => x.unitId === u.id)));
 await db(`UPDATE owner_statements SET state = 'provisional', finalised_at = NULL WHERE owner_id = $1 AND period_start IN ('2026-10-01', '2026-11-01')`, u.owner_id);
+
+// Unlock waits for a late-income update that is running, then withdraws what it wrote (review finding 2). Postgres
+// only: PGlite runs one transaction at a time, so an unlock and an update can never overlap there.
+if (/emscripten|emcc/i.test(String((await db('SELECT version() AS v'))[0]?.v ?? ''))) {
+  console.log('  (skipped on PGlite: unlock waiting for a running late-income update needs Postgres)');
+} else {
+  await lock(u.id);
+  const lockId = (await db(`SELECT id FROM owner_report_locks WHERE unit_id = $1 AND month = $2 AND stage = 'income'`, u.id, OCT))[0]?.id;
+  const side = postgres(DB_URL, { max: 1, onnotice: () => {}, connection: { search_path: 'pos' } });
+  let finished = false, pending = null;
+  try {
+    await side.begin(async sql => {
+      await sql.unsafe(`SELECT pg_advisory_xact_lock(hashtext('owner-report-late-income'))`);
+      pending = unlock(u.id, 'Unlocked during an update').then(x => { finished = true; return x; });
+      await new Promise(res => setTimeout(res, 1500));
+      check('unlock waits for a late-income update that is running', !finished);
+      await sql.unsafe(`INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
+        VALUES ('oc-check-race', $1, $2, 'credit', 100, 'Written by the running update', '2026-11-01', $3, 'open', 'stage_lock', NULL, $4, $4)`, [u.owner_id, u.id, `stage-lock:${lockId}`, now]);
+    });
+  } finally { await side.end({ timeout: 5 }); }
+  r = await pending;
+  check('… then unlocks and withdraws what the update wrote', r?.status === 200 && !(await db(`SELECT 1 AS x FROM owner_adjustments WHERE id = 'oc-check-race'`)).length, r?.text);
+}
 
 // A long-term let: its locked rent stays when the tenancy dates change; the rent difference reaches the owner.
 const ltBefore = lt.contract_id;
 await db(`DELETE FROM owner_contracts WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM units WHERE contract_id = $1)`, LTC);
+// First as a master lease: the owner is paid the same whatever the unit earns, so it has no income to lock (review
+// finding 4; new fixed-rent contracts are refused since migration 0206). An October owner credit puts it in the month.
+await db(`INSERT INTO owner_contracts (id, owner_id, unit_id, management_fee_pct, starts_on, ends_on, created_at, model, revenue_model, grr_amount, minimum_guarantee, misc_charges)
+  VALUES ($1, $2, $3, 10, '2026-01-01', '2026-12-31', $4, 'management', 'master_lease', 300000, 0, 0)
+  ON CONFLICT (id) DO UPDATE SET ends_on = '2026-12-31', revenue_model = 'master_lease', grr_amount = 300000, management_fee_pct = 10`, LTC, lt.owner_id, lt.id, now);
+await db(`UPDATE units SET contract_id = $1 WHERE id = $2`, LTC, lt.id);
+await db(`INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
+  VALUES ('oc-check-ml', $1, $2, 'credit', 1000, 'Check credit', '2026-10-15', NULL, 'open', 'manual', NULL, $3, $3) ON CONFLICT (id) DO NOTHING`, lt.owner_id, lt.id, now);
+r = await call('GET', `/api/owner-close?month=${OCT}`);
+check('a master-lease unit is not on the income step', r.status === 200 && !r.json.units.some(x => x.unitId === lt.id), JSON.stringify(r.json?.units?.find(x => x.unitId === lt.id)));
+r = await lock(lt.id);
+check('… and is not locked', r.status === 200 && !r.json?.locked?.length && !!r.json?.notLockable?.includes(lt.id), r.text);
+await db(`DELETE FROM owner_adjustments WHERE id = 'oc-check-ml'`);
 await db(`INSERT INTO owner_contracts (id, owner_id, unit_id, management_fee_pct, starts_on, ends_on, created_at, model, revenue_model, grr_amount, minimum_guarantee, misc_charges)
   VALUES ($1, $2, $3, 10, '2026-01-01', '2026-12-31', $4, 'management', 'long_term', 300000, 0, 0)
   ON CONFLICT (id) DO UPDATE SET ends_on = '2026-12-31', revenue_model = 'long_term', grr_amount = 300000, management_fee_pct = 10`, LTC, lt.owner_id, lt.id, now);

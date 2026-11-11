@@ -428,4 +428,16 @@ Branch `feat/owner-report-locks`. Tasks 1–9 as planned, with these differences
 - **Tests run locally** (fresh PGlite, CI order): late-bills, utility-listing, unit-pnl, yearly-report, airbnb-recon, owner-close and demo-mode all pass, except the lines that use the operations-staff test user `…0004`. The PGlite demo does not have that user; CI's seed does. rbac-matrix could not run locally (it needs its own database set-up), so its three new rows (`AFFFFFFU`) are checked by CI.
 - **Pre-existing failures.** `npm test` has three failures that are already on main: categoryCatalog ×2, and statementPdf (an extensionless import).
 
+**After the whole-branch review** (one fix pass; each fix has a test that failed first):
+
+- **A draft that printed a late difference which changed since is not finalised.** The sync and unlock may still change or withdraw an owner adjustment a draft prints. Instead, `statements/finalise` refuses a draft whose owner adjustment lines no longer match their rows (changed, detached, or deleted, which leaves the line with no adjustment): "An owner adjustment changed after this draft was made. Generate the statement again, then mark it final." Generate holds the late-income advisory lock while it reads and attaches adjustments. Unlock returns `regenerate`, the months whose draft printed what it withdrew, and the page says so.
+- **Unlock waits for a running late-income update** (same advisory lock, `LATE_INCOME_LOCK`), so an update that read the lock cannot post for it after it is gone. The check for this runs on Postgres only (CI): PGlite runs one transaction at a time.
+- **Not lockable:**
+  - a month that has not ended in Malaysia time ("November 2026 has not ended yet."), and the page's month stepper stops at last month;
+  - a unit on a fixed rent or a master lease (`incomeLockable`: share only), which is left off the income step;
+  - a unit whose owner's statement for the month is final, shown as "Statement final".
+  - `incomeStep()` is the one list both the page and the reconciliation banner count.
+- **Reconciliation names the month that changed.** A locked month is no longer an open month of a confirmed change (`planLine`'s `lockedMonthsOf`). `syncLateIncome` returns the months it wrote to, and confirm and undo add them to `regenerate`.
+- **Open with chew:** where the company's part of a late change goes (frozen income also feeds unit P&L, the yearly report and the portfolio); the notice on a manual reservation edit in a locked month (deferred to part 2 with the bill and O2 notices).
+
 Not done in part 1 (parts 2 and 3): Deductions and O2 locks; Make final gating; Unlock final with a Cancelled payout state; on the Overall owner report, the Locks column, the Agent/Company split and the agent % fill.

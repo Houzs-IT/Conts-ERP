@@ -13,11 +13,18 @@ export const LOCK_FROM = '2026-10';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-/** Why `month` cannot be locked, or null. */
-export function lockMonthProblem(month: string): string | null {
+/** Why `month` cannot be locked on `today` (YYYY-MM-DD, Malaysia time), or null. A month still running would freeze
+ *  half its reservations and send every later one to the next month as a late change (review finding 3). */
+export function lockMonthProblem(month: string, today: string): string | null {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return 'Month must look like 2026-10.';
-  return month < LOCK_FROM ? 'Locks start from October 2026.' : null;
+  if (month < LOCK_FROM) return 'Locks start from October 2026.';
+  return month >= today.slice(0, 7) ? `${monthLabel(month)} has not ended yet.` : null;
 }
+
+/** Whether a unit's income can be locked, by its contract's basis (termsFor): only a share. A fixed rent or a master
+ *  lease pays the owner the same whatever the unit earns, so a lock there would only freeze the company's own figures
+ *  (review finding 4; where the company's part of a late change goes is chew's call). */
+export const incomeLockable = (basis: string): boolean => basis === 'share';
 
 /** The month after `month` (YYYY-MM). */
 export function monthAfter(month: string): string {
@@ -39,8 +46,9 @@ export function openMonthAfter(month: string, closed: ReadonlySet<string>): stri
 }
 
 /** An owner adjustment already posted for a lock's late difference. `movable`: it can still be changed or withdrawn
- *  (the statement it falls on is not final). */
-export interface PostedLate { id: string; month: string; amount: number; movable: boolean }
+ *  (the statement it falls on is not final). `onDraft`: a draft statement prints it, so changing or withdrawing it
+ *  means that draft must be generated again before it is marked final (finalise refuses it until then). */
+export interface PostedLate { id: string; month: string; amount: number; movable: boolean; onDraft?: boolean }
 
 export type LatePlan =
   | { kind: 'none' }
@@ -62,19 +70,22 @@ export function planLate(diff: number, posted: PostedLate[], target: string): La
   return { kind: 'insert', month: target, amount: remaining };
 }
 
-export interface UnlockPlan { problem: string | null; remove: string[]; carried: { amount: number; months: string[] } | null }
+export interface UnlockPlan { problem: string | null; remove: string[]; carried: { amount: number; months: string[] } | null; regenerate: string[] }
 
 /** Unlocking brings the month back to today's data (spec call 9): the adjustments the lock posted that can still be
  *  withdrawn are removed; any that already sit on a final statement stay there, and the unlocked month carries the
- *  same amount back (`carried`), so the owner is never paid twice. A month whose own statement is final is refused. */
+ *  same amount back (`carried`), so the owner is never paid twice. A month whose own statement is final is refused.
+ *  `regenerate`: the months whose draft statement printed a withdrawn adjustment and must be generated again. */
 export function planUnlock(posted: PostedLate[], monthIsFinal: boolean, label: string): UnlockPlan {
-  if (monthIsFinal) return { problem: `The ${label} statement is final. Unlock the final statement first.`, remove: [], carried: null };
+  if (monthIsFinal) return { problem: `The ${label} statement is final. Unlock the final statement first.`, remove: [], carried: null, regenerate: [] };
   const stay = posted.filter(p => !p.movable);
   const amount = stay.reduce((n, p) => n + p.amount, 0);
+  const remove = posted.filter(p => p.movable);
   return {
     problem: null,
-    remove: posted.filter(p => p.movable).map(p => p.id),
+    remove: remove.map(p => p.id),
     carried: stay.length && amount !== 0 ? { amount, months: [...new Set(stay.map(p => p.month))].sort() } : null,
+    regenerate: [...new Set(remove.filter(p => p.onDraft).map(p => p.month))].sort(),
   };
 }
 

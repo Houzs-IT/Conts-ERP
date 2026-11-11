@@ -23,5 +23,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const r = await unlockStage(env, { userId: session.userId, fullName: session.fullName }, month, stage as Stage, unitId, reason);
   if ('problem' in r) return fail(r.status === 404 ? 'NOT_FOUND' : 'CONFLICT', r.problem, r.status);
-  return json({ ok: true });
+  // regenerate: the months whose draft statement printed a difference this withdrew (generate them again before final).
+  return json({ ok: true, regenerate: r.regenerate });
 };

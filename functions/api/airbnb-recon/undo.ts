@@ -86,6 +86,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Statements generated meanwhile still show the confirmed figures until generated again.
   const regenerate = new Set<string>([...changes.flatMap(c => c.openMonths), ...adjustments.filter(a => a.period_start).map(a => String(a.period_start).slice(0, 7))]);
   // A locked month of these units: its late difference follows the restored figures (owner report close).
-  if (changes.length) await syncLateIncome(env, { unitIds: [...new Set(changes.map(c => c.unitId))] });
+  if (changes.length) (await syncLateIncome(env, { unitIds: [...new Set(changes.map(c => c.unitId))] })).months.forEach(m => regenerate.add(m));
   return json({ ok: true, regenerate: [...regenerate].sort() });
 };

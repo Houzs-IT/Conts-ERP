@@ -23,6 +23,7 @@ interface CloseUnit {
   unitId: string; building: string; unit: string; ownerName: string;
   reservations: number; nights: number; income: number; toConfirm: number; warnings: string[];
   incomeLock: { by: string; at: string } | null;
+  statementFinal: boolean;
 }
 interface Payload {
   month: string; today: string; lockProblem: string | null;
@@ -41,7 +42,9 @@ const short = (w: string) => w.split(/[:(]/)[0].replace(/\.$/, '').trim();
 export default function OwnerReportClosePage() {
   const url = useUrlState();
   const navigate = useNavigate();
-  const month = /^\d{4}-\d{2}$/.test(url.get('month')) ? url.get('month') : shiftMonth(todayMyt().slice(0, 7), -1);
+  // Last month is the latest that has ended, so the latest that can be locked.
+  const lastMonth = shiftMonth(todayMyt().slice(0, 7), -1);
+  const month = /^\d{4}-\d{2}$/.test(url.get('month')) ? url.get('month') : lastMonth;
   const show = (['open', 'look', 'locked', 'all'] as Show[]).find(s => s === url.get('show')) ?? 'open';
   const { data, loading, error, reload } = useApi<Payload>(`/owner-close?month=${month}`);
   const toast = useToast();
@@ -78,9 +81,13 @@ export default function OwnerReportClosePage() {
     });
     if (yes === null) return;
     try {
-      const r = await api.post<{ locked: string[]; already: string[] }>('/owner-close/lock', { month, stage: 'income', unitIds: selected.map(u => u.unitId) });
-      toast({ tone: 'success', title: `Income locked for ${plural(r.locked.length, 'unit')}.`,
-        body: r.already.length ? `${plural(r.already.length, 'unit')} ${r.already.length === 1 ? 'was' : 'were'} already locked.` : undefined });
+      const r = await api.post<{ locked: string[]; already: string[]; notLockable: string[]; final: string[] }>('/owner-close/lock', { month, stage: 'income', unitIds: selected.map(u => u.unitId) });
+      const skipped = [
+        r.already.length ? `${plural(r.already.length, 'unit')} ${r.already.length === 1 ? 'was' : 'were'} already locked.` : '',
+        r.final.length ? `${plural(r.final.length, 'unit')} not locked: the ${label} statement is already final.` : '',
+        r.notLockable.length ? `${plural(r.notLockable.length, 'unit')} not locked: a fixed rent or master lease has no income to lock.` : '',
+      ].filter(Boolean).join(' ');
+      toast({ tone: r.locked.length ? 'success' : 'warning', title: r.locked.length ? `Income locked for ${plural(r.locked.length, 'unit')}.` : 'No unit was locked.', body: skipped || undefined });
       clear();
       reload();
     } catch (err) {
@@ -97,8 +104,11 @@ export default function OwnerReportClosePage() {
     });
     if (reason === null) return;
     try {
-      await api.post('/owner-close/unlock', { month, stage: 'income', unitId: u.unitId, reason });
-      toast({ tone: 'success', title: `${unitName(u)} unlocked.`, body: `Its ${label} income follows today's reservations again.` });
+      const r = await api.post<{ regenerate?: string[] }>('/owner-close/unlock', { month, stage: 'income', unitId: u.unitId, reason });
+      const again = (r.regenerate ?? []).map(m => monthLabel(m, { long: true }));
+      toast({ tone: 'success', title: `${unitName(u)} unlocked.`,
+        body: again.length ? `Its ${label} income follows today's reservations again. Generate the ${again.join(' and ')} statement again before marking it final.`
+          : `Its ${label} income follows today's reservations again.` });
       reload();
     } catch (err) {
       notifyFailure(err);
@@ -131,6 +141,8 @@ export default function OwnerReportClosePage() {
           </span>
           {data?.may.unlock && <Button size="sm" variant="ghost" className="ml-auto" onClick={e => { e.stopPropagation(); void unlock(u); }}>Unlock</Button>}
         </span>
+      ) : u.statementFinal ? (
+        <span className="text-muted-ink" title={`Its owner's ${label} statement is already final, so its income can no longer be locked.`}>Statement final</span>
       ) : <span className="text-muted-ink">Not locked</span>),
     },
   ];
@@ -143,7 +155,7 @@ export default function OwnerReportClosePage() {
     <>
       <PageHeader title="Owner statement close"
         sub="Check each month's owner statements in steps and lock what is checked, unit by unit. A locked figure never changes; a change that comes later goes to the next open month."
-        actions={<MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by), show: null })} />} />
+        actions={<MonthStepper label={monthLabel(month)} nextDisabled={month >= lastMonth} onStep={by => url.set({ month: shiftMonth(month, by), show: null })} />} />
       <div className="flex flex-col gap-4">
         {error && <StaleBanner message={data ? `Showing the last figures we have. ${error}` : error} onRetry={reload} />}
         {loading && !data ? <TableSkeleton rows={8} cols={6} /> : data ? (
@@ -169,7 +181,7 @@ export default function OwnerReportClosePage() {
                 { value: 'all', label: `All (${count(tally.all)})` },
               ]} />
             <DataTable id="owner-close.income" urlPrefix="c" columns={columns} rows={rows} rowKey={u => u.unitId}
-              selectable={mayLock ? u => !u.incomeLock : false} selectionKey={`${month}|${show}`}
+              selectable={mayLock ? u => !u.incomeLock && !u.statementFinal : false} selectionKey={`${month}|${show}`}
               bulkActions={(selected, clear) => (
                 <Button size="sm" variant="primary" icon={<Icon name="Lock" size="sm" />} onClick={() => void lock(selected, clear)}>
                   Lock income ({count(selected.length)})
