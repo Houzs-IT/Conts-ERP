@@ -224,7 +224,10 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
       setCreating(false);
       // Above the approval threshold it waits for a second person and is not on the list yet.
       if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); return; }
-      toast({ tone: 'success', title: 'Expense added.', body: `${catLabel(input.category)} · ${moneyString(input.amount, 'exact')} on ${dateShort(input.incurredOn)}.` });
+      // A cost dated in a month whose deductions are locked goes on the next open statement: the notice says where.
+      const notice = (res as { notice?: string | null } | null)?.notice;
+      toast(notice ? { tone: 'info', title: 'Expense added.', body: notice }
+        : { tone: 'success', title: 'Expense added.', body: `${catLabel(input.category)} · ${moneyString(input.amount, 'exact')} on ${dateShort(input.incurredOn)}.` });
       refresh();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFormFields(e.fields);
@@ -239,7 +242,9 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
       if (isStaged(res)) { setEditing(null); toast(stagedToast(res)); void refreshNavCounts(); return; }
       setEdits(e => ({ ...e, [id]: { ...e[id], ...delta } }));
       setEditing(null);
-      toast({ tone: 'success', title: 'Expense updated.', body: 'The change lands on this period’s statement.' });
+      // A cost on a month whose deductions are locked: that month keeps it; the difference goes to the next open month.
+      const notice = (res as { notice?: string | null } | null)?.notice;
+      toast(notice ? { tone: 'info', title: 'Expense updated.', body: notice } : { tone: 'success', title: 'Expense updated.', body: 'The change lands on this period’s statement.' });
       refresh();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFormFields(e.fields);

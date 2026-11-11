@@ -1,6 +1,7 @@
 import { type Env, all, one, run, audit, nowIso, transaction } from './db';
 import { numericDay } from './format';
-import { CHARGE_TO, finalMonthsFor } from './expenses';
+import { CHARGE_TO } from './expenses';
+import { closedMonthsFor } from './ownerLocks';
 import { firstOpenMonth } from '../../src/lib/deductMonth';
 import { contractSplit, type SplitContract } from '../../src/lib/utilitySplit';
 import type { AccountMark, RecentBill } from '../../src/lib/utilityMatch';
@@ -100,7 +101,8 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
   const unitOf = new Map(ctx.units.map(u => [u.id, u]));
   const missing = rows.find(r => !unitOf.has(r.unitId));
   if (missing) return bad(missing.scanId, 'That unit was not found.');
-  const finals = await finalMonthsFor(env, [...new Set(rows.map(r => r.unitId))], rows.map(r => r.billMonth).sort()[0]);
+  // A bill month that is final, or whose deductions are locked (owner statement close), goes on the next open month.
+  const finals = await closedMonthsFor(env, [...new Set(rows.map(r => r.unitId))], rows.map(r => r.billMonth).sort()[0], 'deductions');
   const now = nowIso();
   const rolled: { scanId: string; deductMonth: string }[] = [], notSplit: string[] = [];
   let ownerLines = 0, alreadyDone = 0;

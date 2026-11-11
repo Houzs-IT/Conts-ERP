@@ -148,7 +148,8 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
       // A utility bill the company pays goes to finance as a payment request (chew, 5 Nov 2026; SOP 3.10).
       const requests = await sendUtilityRequests((res as { toPay?: ToPay[] } | null)?.toPay);
       const sentNote = requestsNote(requests);
-      toast({ tone: requests.failed.length ? 'warning' : 'success', title: 'Bill recorded.', body: `${kind}, ${monthLabel(billMonth)}. ${chargeTo === 'owner' ? 'The owner statement deducts it before the operator\'s share.' : `${PAYER_LABEL[chargeTo] ?? chargeTo} pays: not on the owner statement.`}${ownerPaid && UTILITY.has(category) ? ' The owner paid it, so it goes back to them as O2.' : ''}${sentNote ? ` ${sentNote}` : ''}` });
+      const notice = (res as { notice?: string | null } | null)?.notice;
+      toast({ tone: requests.failed.length ? 'warning' : notice ? 'info' : 'success', title: 'Bill recorded.', body: `${notice ?? `${kind}, ${monthLabel(billMonth)}.`} ${chargeTo === 'owner' ? 'The owner statement deducts it before the operator\'s share.' : `${PAYER_LABEL[chargeTo] ?? chargeTo} pays: not on the owner statement.`}${ownerPaid && UTILITY.has(category) ? ' The owner paid it, so it goes back to them as O2.' : ''}${sentNote ? ` ${sentNote}` : ''}` });
       onSaved(); onClose();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);
@@ -161,7 +162,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
     <Modal title="Add a bill" width={520} onClose={onClose}
       sub={fee
             ? 'The condo\'s maintenance fee, paid for the owner. The owner statement deducts it after the operator\'s share.'
-            : 'A bill or cost on the unit. The bill date decides its month; a utility bill for a month whose statement is already final goes on the next open statement.'}
+            : 'A bill or cost on the unit. The bill date decides its month; a bill for a month whose deductions are locked, or a utility bill for a month whose statement is already final, goes on the next open statement.'}
       footer={<>
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason={needsReceipt && !receipt && amount && validDay ? 'Attach the receipt: the owner pays this bill' : 'Pick the bill and enter the amount and bill date'} onClick={() => void save()}>Add bill</Button>
@@ -172,7 +173,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
             <MoneyInput label="Amount (RM)" placeholder="e.g. 120.50" minSen={1} valueSen={amount} onChangeSen={setAmount} error={fields.amount} />
             <DateField label="Bill date" value={incurredOn} onChange={setIncurredOn}
               error={fields.incurredOn ?? (validDay ? undefined : 'A bill date is required.')}
-              help={validDay ? `Goes on ${monthLabel(billMonth, { long: true })}.` : undefined} />
+              help={validDay ? `Goes on the ${monthLabel(billMonth, { long: true })} statement, or on the next open one if that month's deductions are locked.` : undefined} />
             {fee
               ? <Field label="Reference (optional)" placeholder="Bill number" maxLength={80} value={reference} onChange={e => setReference(e.target.value)} />
               : <Select showLabel size="md" label="Paid by" value={chargeTo} onChange={setChargeTo} options={PAYERS.map(p => ({ value: p.value, label: p.label }))} />}
@@ -415,10 +416,12 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
   async function chargeCleans() {
     setCharging(true);
     try {
-      const r = await api.post<{ charged: { amount: number }[]; skipped: { reason: string }[] }>('/expenses/clean-charges', { unitId, month });
+      const r = await api.post<{ charged: { amount: number }[]; skipped: { reason: string }[]; rolled?: number }>('/expenses/clean-charges', { unitId, month });
+      // Charges for a month whose deductions are locked go on the next open statement.
+      const later = r.rolled ? ` ${plural(r.rolled, 'charge')} ${r.rolled === 1 ? 'goes' : 'go'} on a later statement (late bill).` : '';
       const sum = r.charged.reduce((n, c) => n + c.amount, 0);
       toast({ tone: r.skipped.length ? 'warning' : 'success', title: `${plural(r.charged.length, 'cleaning job')} charged, ${rm(sum)}.`,
-        body: r.skipped.length ? `${plural(r.skipped.length, 'cleaning job')} not charged: ${[...new Set(r.skipped.map(s => s.reason))].join('; ')}.` : `On the ${monthLabel(month)} costs, dated the day each was finished.` });
+        body: (r.skipped.length ? `${plural(r.skipped.length, 'cleaning job')} not charged: ${[...new Set(r.skipped.map(s => s.reason))].join('; ')}.` : `On the ${monthLabel(month)} costs, dated the day each was finished.`) + later });
       changed();
     } catch (e) { notifyFailure(e); } finally { setCharging(false); }
   }

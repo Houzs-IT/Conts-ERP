@@ -23,10 +23,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!(await one(env, 'SELECT 1 AS x FROM units WHERE id = ?', unitId))) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
 
   const { unchargedCleans } = await unitCosts(env, month, { unitId });
-  const charged: { taskId: string; amount: number; day: string }[] = [], skipped: { taskId: string; reason: string }[] = [];
+  const charged: { taskId: string; amount: number; day: string; rolledTo: string | null }[] = [], skipped: { taskId: string; reason: string }[] = [];
   for (const c of unchargedCleans) {
     const r = await chargeClean(env, session, { id: c.taskId, unit_id: c.unitId, kind: c.kind, title: c.title }, c.doneOn);
-    if (r.created) charged.push({ taskId: c.taskId, amount: r.amount, day: c.doneOn });
+    if (r.created) charged.push({ taskId: c.taskId, amount: r.amount, day: c.doneOn, rolledTo: r.rolledTo ?? null });
     else skipped.push({ taskId: c.taskId, reason: r.reason ?? 'not charged' });
   }
   await audit(env, {
@@ -34,5 +34,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     before: { month, unchargedCleans: unchargedCleans.length },
     after: { month, charged: charged.length, amount: charged.reduce((n, c) => n + c.amount, 0), skipped: skipped.length },
   });
-  return json({ charged, skipped }, charged.length ? 201 : 200);
+  // rolled: charges whose month's deductions are locked, so they go on a later statement (late bill).
+  return json({ charged, skipped, rolled: charged.filter(c => c.rolledTo).length }, charged.length ? 201 : 200);
 };

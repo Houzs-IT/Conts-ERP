@@ -1,6 +1,7 @@
 import { type Env, all, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { CHARGE_TO, finalMonthsFor } from '../../_lib/expenses';
+import { closedMonthsFor } from '../../_lib/ownerLocks';
 import { firstOpenMonth } from '../../../src/lib/deductMonth';
 import { receiptRequired, RECEIPT_REQUIRED } from '../../../src/lib/receipts';
 import { billsToRequest, ownerPaidCredit } from '../../_lib/utilityRequests';
@@ -17,8 +18,8 @@ const nextMonth = (ym: string) => { const [y, m] = ym.split('-').map(Number); re
 
 /** GET /api/expenses/utilities?month=YYYY-MM[&ownerId=|&unitId=]
  *  Also lists the units in scope with no account number on file at all, so the screen can offer to add one, and
- *  `rollsTo`: for each unit whose owner statement for the month is already final, the month a new bill will be
- *  deducted in instead. */
+ *  `rollsTo`: for each unit whose owner statement for the month is already final, or whose deductions for it are locked
+ *  (owner statement close), the month a new bill will be deducted in instead; `rollsWhy` says which. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -50,10 +51,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT unit_id, category, amount, deduct_month, rolled, record_only FROM expenses WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
       AND category IN ('electricity','water','internet','sewerage') AND incurred_on >= ? AND incurred_on < ?
     ORDER BY created_at`, JSON.stringify(bare.map(u => u.id)), `${month}-01`, `${nextMonth(month)}-01`) : [];
-  const finals = await finalMonthsFor(env, [...new Set([...rows.map(r => r.unit_id as string), ...bare.map(u => u.id as string)])], month);
-  const rollsTo = Object.fromEntries([...finals].map(([unit, set]) => [unit, firstOpenMonth(month, set)]).filter(([, m]) => m !== month));
+  const inScope = [...new Set([...rows.map(r => r.unit_id as string), ...bare.map(u => u.id as string)])];
+  const [finals, closed] = await Promise.all([finalMonthsFor(env, inScope, month), closedMonthsFor(env, inScope, month, 'deductions')]);
+  const rollsTo = Object.fromEntries([...closed].map(([unit, set]) => [unit, firstOpenMonth(month, set)]).filter(([, m]) => m !== month));
+  const rollsWhy = Object.fromEntries(Object.keys(rollsTo).map(unit => [unit, finals.get(unit)?.has(month) ? 'final' : 'locked']));
   return json({
-    generatedAt: nowIso(), month, rollsTo,
+    generatedAt: nowIso(), month, rollsTo, rollsWhy,
     unitsWithoutAccount: bare.map(u => ({
       unitId: u.id, unitLabel: `${u.property_name} ${u.unit_number}`,
       recorded: bareBills.filter(x => x.unit_id === u.id).map(x => ({ kind: x.category, kindLabel: KIND_LABEL[x.category], amount: Number(x.amount), deductMonth: x.deduct_month, rolled: !!x.rolled, recordOnly: !!x.record_only })),
@@ -119,7 +122,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Read once what each row is checked against: final months, bills recorded without an account number, receipts,
   // and for unit-only bills any bill of that kind already in the month.
   const [finals, blankRows, onFile, known, anyRows, current] = await Promise.all([
-    finalMonthsFor(env, unitIds, month),
+    closedMonthsFor(env, unitIds, month, 'deductions'),
     unitIds.length ? all<{ unit_id: string; category: string }>(env, `
       SELECT DISTINCT unit_id, category FROM expenses WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
         AND (reference IS NULL OR reference = '') AND incurred_on >= ? AND incurred_on < ?`, JSON.stringify(unitIds), from, to) : Promise.resolve([]),
