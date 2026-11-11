@@ -738,6 +738,21 @@
 - 启用后：月结之后那个月的记录不能再改，错误在当前月份用调整分录修正；有权限的人可以重新打开已锁的月份。
 - 系统现有的规则保留：业主结算单定稿后，那个月的 Rental 费用不能再改。
 
+### 9.1 业主报表分阶段锁（Owner statement close，财务确认，2026-11-11）
+
+每个月的业主报表分三段检查，查好一段就锁一段：Income → Deductions → O2，三段都锁了，每个单位的 GP 和付完业主后的利润才定下来，然后才 final。设计：`docs/superpowers/specs/2026-11-11-owner-report-stage-locks-design.md`。
+
+**第一部分已做：Income 锁**（Owners › Owner statement close）
+
+- 一个月一页，列出这个月有业主报表的单位：订单数、晚数、Income、要看的地方（Airbnb 对账还没确认的订单、系统的提醒）、锁了没有。
+- **只锁打了勾的单位**，没勾的保持没锁，可以之后再锁（chew：「应该是我要锁的我tick 了锁」「可以留部分单位」）。还有东西要看的单位，锁的时候会提醒，不会挡住。
+- 2026 年 10 月以前的月份不能锁（9 月及以前是业主 Excel 导入、已付）。
+- **锁了以后，那个月的 Income 不会再变。** 之后订单改了（Airbnb 对账确认、手改订单、HostPlatform 或 Channex 取消），差额自动变成**下一个还没 final 的月份**的 O2（来源 stage_lock），按合约重新算业主应得多少（保底也算进去），不是直接乘分成 %；年保底的单位，这笔先 hold，等人看过再放出去。同一个锁只会有一笔，不会重复；生成报表、对账确认或撤回、以及每 15 分钟都会核对一次。
+- **解锁要写原因**，系统记下是谁、几时、为什么。解锁后那个月回到最新的订单：之前因为锁而移到下个月的差额会拿回来；如果那笔已经在 final 的报表上，就留在那里，解锁的月份多一笔相反的调整（「Already settled on the … statement」），业主不会多拿或少拿。那个月自己的报表已经 final，就不能解锁（要先解锁 final，第三部分做）。
+- **权限由 chew 分配到个人**（Users and roles）：Owner statement close（看页面）、Lock income（锁）、Unlock a step（解锁）。上线时三个都只开给管理层。
+
+**还没做**：第二部分 Deductions 和 O2 的锁；第三部分 Final（三段都锁才能 final）、解锁 final（钱还没付 → 回草稿；转账中 → 不能解；已付 → 差额放下个月 O2）、Overall owner report 的 Locks 栏和 Agent / Company 两栏（先补合约的 agent %）。
+
 ---
 
 ## 10. 报表
