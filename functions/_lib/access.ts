@@ -76,10 +76,10 @@ export const AREAS: Area[] = [
   // Airbnb's payments matched to the bookings (chew, 10 Nov 2026). Migration 0258 closed it for every department until
   // management opens it (chew: "到时我才给权限"), so no Finance baseline reaches it.
   { key: 'airbnbRecon', label: 'Airbnb reconciliation', group: 'Finance', api: ['airbnb-recon'], managed: true, strictRead: true },
-  // Owner report close (chew, 11 Nov 2026): each month's owner report locked in stages, unit by unit. The page is its
+  // Owner statement close (chew, 11 Nov 2026): each month's owner statements locked in stages, unit by unit. The page is its
   // own area; locking each stage and unlocking are separate powers chew gives person by person ("lock 的功能我会自己
   // assign 去相关做的同事去lock"). Migration 0302 closed all three for every department until management opens them.
-  { key: 'ownerClose', label: 'Owner report close', group: 'Finance', api: ['owner-close'], managed: true, strictRead: true },
+  { key: 'ownerClose', label: 'Owner statement close', group: 'Finance', api: ['owner-close'], managed: true, strictRead: true },
   { key: 'lockIncome', label: 'Lock income', group: 'Finance', api: [], managed: true },
   { key: 'unlockStep', label: 'Unlock a step', group: 'Finance', api: [], managed: true },
   { key: 'pricing', label: 'Pricing and reviews', group: 'Growth', api: ['pricing', 'rates', 'reviews'] },
