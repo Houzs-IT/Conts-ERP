@@ -13,7 +13,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   let rows = await listSampleOwners(env);
   /* There is always one ready (owner, 11 Nov 2026): with none left, a default sample owner is made from the three real units
      with the most stays in the last 90 days, so the portal opens without setting anything up. */
-  if (rows.length === 0) {
+  if (!rows.some(o => o.units > 0)) try {
     const busiest = await all<{ id: string }>(env, `
       SELECT u.id FROM units u
       LEFT JOIN reservations r ON r.unit_id = u.id AND r.check_in >= to_char(now() - interval '90 days', 'YYYY-MM-DD')
@@ -26,6 +26,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         rows = await listSampleOwners(env);
       }
     }
+  } catch (e) {
+    // The page still lists what there is; Add sample owner stays available.
+    console.error('[demo owners] default sample owner not made:', e instanceof Error ? e.message : e);
   }
   return json({ sample: true, data: rows.map(o => ({ id: o.id, name: o.display_name, sharePct: o.default_management_fee_pct ?? 25, units: o.units, reservations: o.reservations, createdAt: o.created_at })) });
 };
