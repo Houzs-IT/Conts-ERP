@@ -18,6 +18,10 @@ export const SIDE_OPTIONS: { value: UserSide; label: string }[] = [
 ];
 export const sideLabel = (s: UserSide | undefined): string => SIDE_OPTIONS.find(o => o.value === (s ?? 'both'))?.label ?? 'Both';
 
+export type Company = Exclude<UserSide, 'both'>;
+export const COMPANIES: readonly Company[] = ['conts', 'dream_crafter'];
+export const companiesOf = (side: UserSide): readonly Company[] => (side === 'both' ? COMPANIES : [side]);
+
 /** The area groups each side closes. Same table as CLOSED_BY_SIDE and closedBySide in functions/_lib/access.ts: keep them
  *  in step. Management always sees both sides; Finance and System are on neither list, so they follow the rules. */
 const CLOSED_BY_SIDE: Record<UserSide, string[]> = {
