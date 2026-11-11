@@ -15,20 +15,30 @@ const WINDOW_NOTE = 'Guest check-in';
 const AUTO_JOB = `m.source = 'booking' AND m.job_type = 'pass_key'`;
 const UNTOUCHED = `m.state = 'open' AND (m.vendor_name IS NULL OR trim(m.vendor_name) = '') AND m.started_at IS NULL
   AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.maintenance_id = m.id)`;
-const CHECK_IN_SOON = `m.due_on BETWEEN ${MYT_DAY(0)} AND ${MYT_DAY(1)}`;
-const URGENCY_DUE = `CASE WHEN ${CHECK_IN_SOON} THEN 'urgent' ELSE 'normal' END`;
-const URGENCY_STALE = `m.job_type = 'pass_key' AND m.state != 'resolved' AND m.due_on IS NOT NULL AND m.urgency IS DISTINCT FROM ${URGENCY_DUE}`;
+const CHECK_IN_DUE = `m.due_on <= ${MYT_DAY(1)}`;
+const urgencyDueSql = (hasUrgentByHand: boolean): string =>
+  `CASE WHEN ${hasUrgentByHand ? 'm.urgent_by_hand IS TRUE OR ' : ''}${CHECK_IN_DUE} THEN 'urgent' ELSE 'normal' END`;
+const urgencyStaleSql = (hasUrgentByHand: boolean): string =>
+  `m.job_type = 'pass_key' AND m.state != 'resolved' AND m.urgency IS DISTINCT FROM ${urgencyDueSql(hasUrgentByHand)}`;
+
+export const PASS_KEY_DONE_ONLY = 'A Pass key job is finished with Pass key done, not as a repair.';
 
 export interface UrgencyChange { id: string; urgency: string }
 
-export const passKeyUrgencyChanges = (env: Env): Promise<UrgencyChange[]> =>
-  all<UrgencyChange>(env, `SELECT m.id, ${URGENCY_DUE} AS urgency FROM maintenance_issues m WHERE ${URGENCY_STALE}`);
+export const hasUrgentByHand = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'urgent_by_hand').catch(() => false);
 
-export const applyPassKeyUrgency = (env: Env): Promise<UrgencyChange[]> =>
-  all<UrgencyChange>(env, `
-    UPDATE maintenance_issues m SET urgency = ${URGENCY_DUE}, updated_at = ?
-    WHERE ${URGENCY_STALE}
+export async function passKeyUrgencyChanges(env: Env): Promise<UrgencyChange[]> {
+  const byHand = await hasUrgentByHand(env);
+  return all<UrgencyChange>(env, `SELECT m.id, ${urgencyDueSql(byHand)} AS urgency FROM maintenance_issues m WHERE ${urgencyStaleSql(byHand)}`);
+}
+
+export async function applyPassKeyUrgency(env: Env): Promise<UrgencyChange[]> {
+  const byHand = await hasUrgentByHand(env);
+  return all<UrgencyChange>(env, `
+    UPDATE maintenance_issues m SET urgency = ${urgencyDueSql(byHand)}, updated_at = ?
+    WHERE ${urgencyStaleSql(byHand)}
     RETURNING m.id, m.urgency`, nowIso());
+}
 
 export const hasPassKeyJobs = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'reservation_id').catch(() => false);
 

@@ -4,6 +4,7 @@ import { CHARGE_TO, DAY, hasBilling } from '../../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../../_lib/expenses';
 import { releaseRepairBlocks } from '../../../../_lib/repairBlocks';
 import { repairNotice } from '../../../../_lib/notices';
+import { PASS_KEY_DONE_ONLY } from '../../../../_lib/passKeyJobs';
 
 /** POST /api/maintenance/issues/:id/complete { finalAmount, chargeTo?, billingDate? } — closes the job, puts a blocked unit back
  *  on sale and raises the expense on the unit with the payer chosen (owner through the statement, the company, the guest's
@@ -25,8 +26,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (b?.billingDate != null && (typeof b.billingDate !== 'string' || !DAY.test(b.billingDate))) return fail('VALIDATION', 'Pick the billing date.', 422, { billingDate: 'Pick the billing date.' });
   const billing = await hasBilling(env);
 
-  const cur = await one<any>(env, `SELECT id, state, unit_id, title, blocks_unit, charge_to, owner_approval_required, owner_approved_at${billing ? ', billing_date' : ''} FROM maintenance_issues WHERE id = ?`, id);
+  const cur = await one<any>(env, `SELECT id, state, job_type, unit_id, title, blocks_unit, charge_to, owner_approval_required, owner_approved_at${billing ? ', billing_date' : ''} FROM maintenance_issues WHERE id = ?`, id);
   if (!cur) return fail('NOT_FOUND', 'That job no longer exists.', 404);
+  if (cur.job_type === 'pass_key') return fail('CONFLICT', PASS_KEY_DONE_ONLY, 409);
   if (cur.state === 'resolved') return json({ ok: true });
   const chargeTo: string = b?.chargeTo ?? cur.charge_to;
   if (!cur.unit_id && chargeTo !== 'the_conts') return fail('VALIDATION', 'A job in the building is paid by The Conts.', 422, { chargeTo: 'A job in the building is paid by The Conts.' });

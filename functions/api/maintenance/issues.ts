@@ -6,7 +6,7 @@ import { resolveUnit } from '../../_lib/ops';
 import { windowsFor, staysOverlapping } from '../../_lib/cleaning';
 import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, JOB_TYPES, SEVERITIES, DAY, assigneeUserId, pickAssignee, hasTechnicianList, hasBilling, hasBuildingJobs, jobPlaceJoin, toInstant, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../_lib/maintenance';
 import { repairNotice } from '../../_lib/notices';
-import { applyPassKeyUrgency } from '../../_lib/passKeyJobs';
+import { applyPassKeyUrgency, hasUrgentByHand } from '../../_lib/passKeyJobs';
 import { hasServicePrices, serviceBook } from '../../_lib/servicePrices';
 import { layoutKey } from '../../_lib/cleaningPrices';
 import { hasJobInvoices } from '../../_lib/jobProfit';
@@ -66,6 +66,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       jobType: r.job_type ?? (r.urgency === 'urgent' ? 'urgent' : 'normal'), severity: r.severity ?? 'minor', dueOn: r.due_on ?? null,
       needsParts: !!r.needs_parts, partsArrivedAt: r.parts_arrived_at ?? null,
       supportRequestedAt: r.support_requested_at ?? null, supportNote: r.support_note ?? null,
+      urgentByHand: r.urgent_by_hand === true,
       // Needs owner approval / Approved / Not needed (owner, 17 Oct 2026).
       approvalStatus: r.owner_approved_at ? 'approved' : r.owner_approval_required && r.charge_to === 'owner' ? 'needed' : 'not_needed', source: r.source ?? 'staff', sourceTaskId: r.source_task_id ?? null, reservationId: r.reservation_id ?? null,
       vendorName: r.vendor_name, assigneeName: r.vendor_name, assigneeKind: r.assignee_kind ?? null,
@@ -130,6 +131,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const severity = b.severity ?? 'minor';
   if (!SEVERITIES.includes(severity)) return fail('VALIDATION', 'Minor or major.', 422, { severity: 'Minor or major.' });
   if (b.dueOn != null && (typeof b.dueOn !== 'string' || !DAY.test(b.dueOn))) return fail('VALIDATION', 'Pick the due date.', 422, { dueOn: 'Pick the due date.' });
+  if (jobType === 'pass_key' && !b.dueOn) return fail('VALIDATION', 'Pick the check-in day.', 422, { dueOn: 'Pick the check-in day.' });
+  if (b.urgentByHand !== undefined && (typeof b.urgentByHand !== 'boolean' || jobType !== 'pass_key')) return fail('VALIDATION', 'Only a Pass key job has its own urgency.', 422, { urgentByHand: 'Only for Pass key.' });
   if (field && (b.needsParts != null || b.dueOn != null)) return fail('FORBIDDEN', 'The office plans parts and due dates.', 403);
   const source = b.reportSource ?? (session.role === 'housekeeper' ? 'cleaner' : 'staff');
   if (!SOURCES.includes(source)) return fail('VALIDATION', 'Say who reported it.', 422, { reportSource: 'Guest, cleaner, inspection or staff.' });
@@ -211,7 +214,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     now, now, now, ...(withUser ? [userId] : []), ...(listed ? [who?.technicianId ?? null] : []), ...(cols ? [jobType, severity, b.needsParts ? 1 : 0, b.dueOn ?? null] : []), ...(billingCols ? [internal] : []));
 
   if (lines.length) await writeLines(env, id, lines, session.userId);
-  if (jobType === 'pass_key') await applyPassKeyUrgency(env);
+  if (jobType === 'pass_key') {
+    if (b.urgentByHand === true && await hasUrgentByHand(env)) await run(env, 'UPDATE maintenance_issues SET urgent_by_hand = TRUE WHERE id = ?', id);
+    await applyPassKeyUrgency(env);
+  }
   if (b.blocksUnit && unit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
   let overlaps: unknown[] = [];
   if (win) {
