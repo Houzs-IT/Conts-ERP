@@ -99,7 +99,6 @@ export default function ListView({ onGoToRoles }: { onGoToRoles: () => void }) {
   const [move, setMove] = useState<MovePrompt | null>(null);
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
-  const [newKind, setNewKind] = useState<DepartmentKind>('staff');
   const [newSide, setNewSide] = useState<UserSide>('conts');
   const [addError, setAddError] = useState<string | null>(null);
   // Both read `departments` and `reorderTo` below; they only run on a drop, after the list has rendered.
@@ -131,7 +130,7 @@ export default function ListView({ onGoToRoles }: { onGoToRoles: () => void }) {
     if (!name) { setAddError('Enter a name.'); return; }
     if (usedName(name)) { setAddError('A department with that name already exists.'); return; }
     setAddError(null);
-    if (await run(() => api.post('/departments', { name, kind: newKind, side: newSide }), 'The department was not added.')) {
+    if (await run(() => api.post('/departments', { name, side: newSide }), 'The department was not added.')) {
       setJustAdded(name); setNewName('');
     }
   }
@@ -211,7 +210,6 @@ export default function ListView({ onGoToRoles }: { onGoToRoles: () => void }) {
       {canEdit && (
         <form onSubmit={addDepartment} className="py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-3 flex-wrap">
           <div className="min-w-[200px]"><Field label="New department" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Procurement" error={addError ?? undefined} /></div>
-          <Select label="Kind" showLabel size="md" className="min-w-[190px]" value={newKind} onChange={v => setNewKind(v as DepartmentKind)} options={KIND_OPTIONS} />
           <Select label="Side" showLabel size="md" className="min-w-[150px]" value={newSide} onChange={v => setNewSide(v as UserSide)} options={SIDE_OPTIONS} />
           <div className="pt-[22px]"><Button type="submit" variant="primary" loading={busy}>Add department</Button></div>
         </form>
