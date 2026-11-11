@@ -2189,7 +2189,7 @@ function DataTableInner<T, L>({
             onReset={handleResetFilters}
             label={resetFilters?.label}
           />
-          <div className="flex items-center gap-2 text-[11px] font-medium text-ink-secondary">
+          <div className="dt-count flex items-center gap-2 text-[11px] font-medium text-ink-secondary">
             {caption && (
               <>
                 <span className="text-[10px] font-semibold uppercase tracking-brand text-ink-muted">

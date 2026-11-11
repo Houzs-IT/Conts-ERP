@@ -6,3 +6,29 @@ html.conts-embedded .sticky.top-14,
 html.conts-embedded .sticky.lg\:top-\[52px\] {
   top: 0;
 }
+
+/* Every screen here sits on the Dream Crafter page that /projects/list (the Beta screens) and the ERP sidebar draw,
+   light or night as Property OS's theme says (data-beta-skin, embed.ts). Cards and tables keep their own look
+   (dreamcrafters feedback, 11 Nov 2026). The two gradients are PAGE_VISION and PAGE_NIGHT in
+   pages/renovation-beta/renovationBetaTheme.ts, copied so the main bundle does not load that module;
+   embedPage.test.ts keeps them equal. The pinned page header takes the same fixed backdrop, so it hides what
+   scrolls under it without a seam. */
+html.conts-embedded {
+  --conts-page: linear-gradient(rgba(47,107,255,.07) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(90deg,rgba(47,107,255,.07) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(180deg,rgba(250,251,253,.30),rgba(236,239,245,.38)),linear-gradient(118deg,rgba(255,255,255,0) 58%,rgba(255,248,226,.85) 66%,rgba(255,255,255,0) 76%),radial-gradient(48% 52% at 14% 16%,#F6C9D6 0%,rgba(246,201,214,0) 72%),radial-gradient(52% 58% at 90% 34%,#BFE6EA 0%,rgba(191,230,234,0) 72%),radial-gradient(46% 46% at 40% 100%,#CBD3FA 0%,rgba(236,227,207,0) 72%),linear-gradient(160deg,#E6ECEA 0%,#ECEEF3 50%,#DDE2EC 100%);
+}
+html.conts-embedded[data-beta-skin="night"] {
+  --conts-page: linear-gradient(rgba(47,107,255,.07) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(90deg,rgba(47,107,255,.07) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(180deg,rgba(16,18,26,.25),rgba(16,18,26,.35)),radial-gradient(45% 40% at 18% 12%,rgba(70,110,255,.35) 0%,rgba(70,110,255,0) 70%),radial-gradient(40% 40% at 88% 70%,rgba(150,90,255,.28) 0%,rgba(150,90,255,0) 70%),radial-gradient(35% 35% at 50% 100%,rgba(60,180,255,.18) 0%,rgba(60,180,255,0) 70%),linear-gradient(160deg,#151823 0%,#0D0F16 100%);
+}
+html.conts-embedded main.paper-grain,
+html.conts-embedded .page-head {
+  background: var(--conts-page);
+  background-attachment: fixed;
+}
+/* Night: the text that sits straight on the page (the page title block, a table's row count) takes the Beta night
+   inks; buttons, cards and tables keep their dark ink on white. */
+html.conts-embedded[data-beta-skin="night"] .page-head { border-color: rgba(150,175,255,.18); }
+html.conts-embedded[data-beta-skin="night"] :is(.page-head-text, .dt-count:not(.bg-surface .dt-count)) .text-ink:not(.bg-surface) { color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] :is(.page-head-text, .dt-count:not(.bg-surface .dt-count)) :is(.text-ink-secondary, .text-ink-muted):not(.bg-surface) { color: #B9C0D0; }
+html.conts-embedded[data-beta-skin="night"] .dt-count:not(.bg-surface .dt-count) { color: #B9C0D0; }
+/* The black main-action button would melt into the night page: a faint edge keeps its shape. */
+html.conts-embedded[data-beta-skin="night"] .page-head .bg-primary { box-shadow: 0 0 0 1px rgba(150,175,255,.35); }
