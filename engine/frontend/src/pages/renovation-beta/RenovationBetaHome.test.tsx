@@ -85,7 +85,7 @@ function renderAt(url: string): void {
 
 describe("Beta Home", () => {
   it("shows the title, counts, tabs and rows as the mockup does", async () => {
-    renderAt("/beta/projects");
+    renderAt("/beta/projects?brand=Dream%20Crafter");
     expect(await screen.findByRole("heading", { name: "All projects" })).toBeTruthy();
     expect(screen.getByText("3 projects")).toBeTruthy();
     const tabs = within(screen.getByRole("tablist", { name: "Project groups" })).getAllByRole("tab");
@@ -98,16 +98,16 @@ describe("Beta Home", () => {
   });
 
   it("lists the newest project first, and keeps the order chosen in the address", async () => {
-    renderAt("/beta/projects");
+    renderAt("/beta/projects?brand=Dream%20Crafter");
     await screen.findByRole("heading", { name: "All projects" });
     const names = (): string[] => within(screen.getByRole("table")).getAllByRole("link").map((a) => String(a.textContent));
     expect(names()).toEqual(["Bukit Jalil The Park 2", "Seri Riana C-12-03", "Baron C-20-08"]);
     fireEvent.change(screen.getByRole("combobox", { name: "Sort projects" }), { target: { value: "due" } });
-    expect(where).toBe("/beta/projects?sort=due");
+    expect(where).toBe("/beta/projects?brand=Dream+Crafter&sort=due");
   });
 
   it("sorts oldest first from the address and offers every sort", async () => {
-    renderAt("/beta/projects?sort=oldest");
+    renderAt("/beta/projects?brand=Dream%20Crafter&sort=oldest");
     await screen.findByRole("heading", { name: "All projects" });
     const box = screen.getByRole("combobox", { name: "Sort projects" }) as HTMLSelectElement;
     expect(Array.from(box.options).map((o) => o.textContent)).toEqual(["Newest first", "Oldest first", "Due soonest", "Handover soonest", "Building A-Z"]);
@@ -118,21 +118,24 @@ describe("Beta Home", () => {
     expect(heads.findIndex((t) => t.includes("Created"))).toBe(heads.findIndex((t) => t.includes("Project")) + 1);
   });
 
-  it("lists Dream Crafter's projects only: a The Conts-brand project is left off, one with no brand stays", async () => {
+  it("lists every brand; the Brand filter leaves off a The Conts project and keeps one with no brand", async () => {
     renderAt("/beta/projects");
     await screen.findByRole("heading", { name: "All projects" });
+    expect(screen.getByText("Skyline Embassy B-3-1")).toBeTruthy();
+    expect(screen.getByText("4 projects")).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter by brand" }), { target: { value: "Dream Crafter" } });
     expect(screen.queryByText("Skyline Embassy B-3-1")).toBeNull();
     expect(screen.getByText("3 projects")).toBeTruthy();
   });
 
   it("finds a project as you type, by unit, client, code, SO number or person, and keeps it in the address", async () => {
-    renderAt("/beta/projects?q=c-12");
+    renderAt("/beta/projects?brand=Dream%20Crafter&q=c-12");
     await screen.findByRole("heading", { name: "All projects" });
     expect(screen.getByRole("status").textContent).toBe("1 of 3");
     expect(within(screen.getByRole("table")).getAllByRole("link").map((a) => a.textContent)).toEqual(["Seri Riana C-12-03"]);
     const box = screen.getByRole("searchbox", { name: "Search projects" });
     fireEvent.change(box, { target: { value: "TC-SO-2610" } });
-    expect(where).toBe("/beta/projects?q=TC-SO-2610");
+    expect(where).toBe("/beta/projects?brand=Dream+Crafter&q=TC-SO-2610");
     expect(within(screen.getByRole("table")).getAllByRole("link").map((a) => a.textContent)).toEqual(["Baron C-20-08"]);
     fireEvent.change(box, { target: { value: "jia" } });
     expect(screen.getByRole("status").textContent).toBe("2 of 3");

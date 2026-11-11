@@ -31,10 +31,13 @@ export function sortHome(list: readonly DesignProject[], sort: HomeSort): Design
   return [...list];
 }
 
-/** The Projects list sits on the Dream Crafter side of the menu, so it lists Dream Crafter's projects (YH, 11 Nov 2026:
-    "dreamcrafter only"). A project with no brand yet stays listed. */
-export function onDreamCrafterList(p: { brand?: string | null }): boolean {
-  return !p.brand?.trim() || p.brand.trim().toLowerCase() === "dream crafter";
+/** Every project is listed; the Brand filter narrows it (owner, 11 Nov 2026: "在 branding 那边做 filter"). Blank brand = all.
+    A project with no brand yet shows under every brand, as it did before. */
+export function onBrandList(p: { brand?: string | null }, brand: string): boolean {
+  const want = brand.trim().toLowerCase();
+  if (!want) return true;
+  const has = p.brand?.trim().toLowerCase() ?? "";
+  return !has || has === want;
 }
 
 /** Everything a person may type to find a project: name, building, unit, client, project code, SO numbers, people. */

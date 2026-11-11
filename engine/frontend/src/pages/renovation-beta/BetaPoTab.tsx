@@ -427,9 +427,12 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
           {changedCount > 0
             ? <button type="button" style={btnStyle("outline", "md")} onClick={() => { setEdits({}); setRefusals({}); setEditing(false); }}>Discard</button>
             : <button type="button" style={btnStyle("outline", "md")} onClick={() => { setRefusals({}); setEditing(false); }}>Done</button>}
-          <button type="button" style={btnStyle("teal", "md")} disabled={problems.length > 0 || changedCount === 0} onClick={() => setConfirming(true)}>
-            {saveLabel}{voBatchesShown.length > 0 ? ` (${voBatchesShown.map((_, i) => voLabel(i)).join(", ")})` : ""}
-          </button>
+          {/* One way out at a time (owner, 11 Nov 2026): nothing changed is Done; a change is Save or Discard. */}
+          {changedCount > 0 && (
+            <button type="button" style={btnStyle("teal", "md")} disabled={problems.length > 0} onClick={() => setConfirming(true)}>
+              {saveLabel}{voBatchesShown.length > 0 ? ` (${voBatchesShown.map((_, i) => voLabel(i)).join(", ")})` : ""}
+            </button>
+          )}
         </div>
       )}
 
