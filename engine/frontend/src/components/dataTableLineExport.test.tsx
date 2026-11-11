@@ -161,7 +161,7 @@ describe("DataTable exportLines", () => {
     expect(h.files[0]).toMatch(/^purchase-orders-\d{4}-\d{2}-\d{2}\.xlsx$/);
   });
 
-  it("formats a money cell as #,##0.00 and a date cell as a yyyy/mm/dd date serial", async () => {
+  it("formats a money cell as #,##0.00 and a date cell as a dd/mm/yyyy date serial", async () => {
     render(
       <DataTable<Doc, Line>
         tableId="docs-formats"
@@ -174,7 +174,7 @@ describe("DataTable exportLines", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     await waitFor(() => expect(h.files).toHaveLength(1));
     // columns: 0 Doc No, 1 Item Code, 2 Qty, 3 Delivery Date, 4 Status, 5 Total; row 1 = first data row
-    expect(h.cells["3:1"]).toEqual({ t: "n", v: 46296, z: "yyyy/mm/dd" });
+    expect(h.cells["3:1"]).toEqual({ t: "n", v: 46296, z: "dd/mm/yyyy" });
     expect(h.cells["5:1"]).toMatchObject({ t: "n", v: 50, z: "#,##0.00" });
   });
 

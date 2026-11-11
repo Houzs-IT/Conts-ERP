@@ -31,7 +31,7 @@ export interface ConnectOrder {
   /** COALESCE(linked_ac_docno, doc_no) — the number the customer knows. */
   ref: string;
   branding: string;
-  /** yyyy/mm/dd, already the effective (amended ?? original) date. */
+  /** dd/mm/yyyy, already the effective (amended ?? original) date. */
   deliveryDate: string;
 }
 

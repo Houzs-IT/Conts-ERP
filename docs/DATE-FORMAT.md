@@ -11,13 +11,10 @@ Separator: a slash on both sides (YH, 11 Nov 2026: "Slashes"). Where a slash is 
 the value stays ISO with dashes: file names and file stamps (`fileStamp()`), URLs and query strings, CSV exports
 (`isoForExport()`), date input values, and stored or keyed values.
 
-Still year-first, on purpose or pending a decision:
-- The typed date box in the engine (`DateField`) shows and reads `yyyy/mm/dd` while typing; flipping it changes
-  how staff type dates (pending YH).
-- The WhatsApp delivery follow-up sends `yyyy/mm/dd` to the outside Connect service, an integration payload
-  (`engine/backend/src/scm/routes/delivery-messages.ts`).
-- The Excel line export's date cells use `yyyy/mm/dd`, AutoCount's listing format
-  (`engine/frontend/src/components/dataTableLineExport.ts`), an export.
+The typed date box (`DateField`) shows and reads `dd/mm/yyyy` (8 digits typed straight through are day, month,
+year; an older year-first paste still reads). The WhatsApp delivery follow-up sends `dd/mm/yyyy` to Connect, which
+only shows it as text. The Excel line export's date cells are real Excel dates shown `dd/mm/yyyy` (YH, 11 Nov 2026:
+"Yes, all three").
 
 Single source of truth on the screens: [`src/lib/format.ts`](../src/lib/format.ts). On the server:
 [`functions/_lib/dates.ts`](../functions/_lib/dates.ts). The engine keeps its own copy of the same rule

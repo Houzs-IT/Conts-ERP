@@ -402,7 +402,7 @@ describe('the plain Payment Voucher (/new)', () => {
     );
     const [y, m, d] = todayMyt().split('-');
     const date = screen.getByLabelText(/Voucher Date/) as HTMLInputElement;
-    expect(date.value).toBe(`${y}/${m}/${d}`);
+    expect(date.value).toBe(`${d}/${m}/${y}`);
     expect(date.value).not.toBe('25/08/2026');
     expect((screen.getByLabelText('Notes') as HTMLTextAreaElement).value).toBe('BILL T0012 · DATED 2026-08-25 · DUE 2026-09-15');
   });
