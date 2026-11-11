@@ -606,15 +606,15 @@ Agent/Company split.
 failed first):
 
 - **The lock route refuses someone with no lock power before reading the request**, so the permissions matrix row for
-   stays as it was (it posts ). Someone with one power but not the step's is
-  still told which power they lack.
-- **An owner adjustment an O2 lock keeps is never deleted** by an Airbnb reconciliation undo ( refuses it) or by
-  replacing a bill on Utility bills (the bill is listed under ). Either would have left the locked month printing a
-  line with nothing behind it, which finalise refuses for ever.
+  `POST /api/owner-close/(lock|unlock)` stays as it was (the matrix posts `{}`). Someone with one power but not the
+  step's is still told which power they lack.
+- **An owner adjustment an O2 lock keeps is never deleted** by an Airbnb reconciliation undo (`undoProblem` refuses it)
+  or by replacing a bill on Utility bills (the bill is listed under `locked`). Either would have left the locked month
+  printing a line with nothing behind it, which finalise refuses for ever.
 - **The 0303 trigger checks the search path in an outer IF.** PL/pgSQL plans a whole condition before running it, so the
-  first version failed every expense write from a session without  on its path.
-- **What an O2 lock keeps is taken only by that month's statement** (), and generating never moves an
-  adjustment off another statement. Before, a later month's draft could take it and regenerating the locked month took it
+  first version failed every expense write from a session without `pos` on its path.
+- **What an O2 lock keeps is taken only by that month's statement** (`Inputs.keptElsewhere`), and generating never moves
+  an adjustment off another statement. Before, a later month's draft could take it and regenerating the locked month took it
   back, so the owner could be paid twice. (The reviewer graded this Minor; regraded Important by its effect.)
 - **Not changed in code:** the order of going live. 0303 runs on production before the merge, as 0302 did.
 - **Deferred minors:** the approvals executor dates an owner-paid credit by the bill month; misc attribution when income is
@@ -625,11 +625,5 @@ failed first):
   draft generated before the month's last lock or unlock.
 - **After the fixes,** main merged (#894, #895) and everything rerun on a fresh PGlite in CI order: late-bills 27,
   utility-listing 32, unit-pnl 15, yearly-report 10, airbnb-recon 53, owner-close 38 and owner-close-steps 41 all pass.
-  role-access, unit-costs and demo-mode fail only on the operations-staff test user. Unknown command: "test"
-
-
-Did you mean this?
-  npm test # Test a package
-To see a list of supported npm commands, run:
-  npm help: 345 of 348 (the three on
-  main).  and : clean.
+  role-access, unit-costs and demo-mode fail only on the operations-staff test user. `npm test`: 345 of 348 (the three
+  on main). `npm run check` and `tsc -b`: clean.
