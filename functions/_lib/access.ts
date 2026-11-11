@@ -78,9 +78,11 @@ export const AREAS: Area[] = [
   { key: 'airbnbRecon', label: 'Airbnb reconciliation', group: 'Finance', api: ['airbnb-recon'], managed: true, strictRead: true },
   // Owner statement close (chew, 11 Nov 2026): each month's owner statements locked in stages, unit by unit. The page is its
   // own area; locking each stage and unlocking are separate powers chew gives person by person ("lock 的功能我会自己
-  // assign 去相关做的同事去lock"). Migration 0302 closed all three for every department until management opens them.
+  // assign 去相关做的同事去lock"). Migrations 0302 and 0303 closed them for every department until management opens them.
   { key: 'ownerClose', label: 'Owner statement close', group: 'Finance', api: ['owner-close'], managed: true, strictRead: true },
   { key: 'lockIncome', label: 'Lock income', group: 'Finance', api: [], managed: true },
+  { key: 'lockDeductions', label: 'Lock deductions', group: 'Finance', api: [], managed: true },
+  { key: 'lockO2', label: 'Lock O2', group: 'Finance', api: [], managed: true },
   { key: 'unlockStep', label: 'Unlock a step', group: 'Finance', api: [], managed: true },
   { key: 'pricing', label: 'Pricing and reviews', group: 'Growth', api: ['pricing', 'rates', 'reviews'] },
   // Messages sat under Reservations from 30 Oct to 2 Nov 2026; migration 0200 pinned its stored levels when it moved here.
@@ -204,7 +206,7 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; w
   // One public holiday list for the whole company (migration 0202), kept from Pricing and from HR: the handlers let in
   // Pricing (Full to change) or Employees (edit to change), whichever the person has (functions/_lib/holidays.ts).
   ...(['GET', 'POST', 'PUT', 'DELETE'] as const).map(method => ({ method, path: /^\/api\/holidays(\/[^/]+)?$/, area: null, why: 'The public holiday list is shared by Pricing and HR; its handlers check either area.' })),
-  { method: 'POST', path: /^\/api\/owner-close\/(lock|unlock)$/, area: null, why: 'Each stage has its own lock power and unlocking has its own (lockIncome, unlockStep); the handlers check them.' },
+  { method: 'POST', path: /^\/api\/owner-close\/(lock|unlock)$/, area: null, why: 'Each stage has its own lock power and unlocking has its own (lockIncome, lockDeductions, lockO2, unlockStep); the handlers check them.' },
 ];
 
 function routeArea(method: string, path: string): Area | null {

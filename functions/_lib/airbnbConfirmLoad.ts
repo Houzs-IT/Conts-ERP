@@ -28,7 +28,7 @@ export async function confirmContext(env: Env, lines: readonly Line[]): Promise<
     incomeLockedMonths(env, unitIds),
   ]);
   // A month whose income is locked (owner report close) is neither final nor open here: the confirmed figure changes
-  // the live month only, its statement keeps the locked income, and syncLateIncome posts the owner's difference,
+  // the live month only, its statement keeps the locked income, and syncLate posts the owner's difference,
   // worked out again through the contract, on the next open month.
   for (const [unitId, months] of locked) for (const m of months) finals.get(unitId)?.delete(m);
   const units = new Map<string, UnitOwner>();
