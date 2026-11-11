@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApi, type Query } from '../../lib/useApi';
-import type { AccessCategory, AccessChart, AccessLevel, AccessOrigin, Department, DepartmentKind, DepartmentsPayload, UserSide } from '../../lib/types';
+import type { AccessCategory, AccessChart, AccessLevel, Department, DepartmentKind, DepartmentsPayload, UserSide } from '../../lib/types';
 
 export const LEVEL_LABEL: Record<AccessLevel, string> = { none: 'No access', view: 'View only', edit: 'Edit', full: 'Full' };
 export const LEVEL_COLOR: Record<AccessLevel, string> = {
@@ -9,9 +9,6 @@ export const LEVEL_COLOR: Record<AccessLevel, string> = {
 };
 export const MUTED = 'var(--color-text-muted)';
 export const SELECT = 'h-8 w-full max-w-[200px] px-2 py-0 [font-family:inherit] text-copy bg-card border border-solid rounded-control outline-none';
-
-/** The origin tags on a person's grid. */
-export const ORIGIN_LABEL: Record<AccessOrigin, string> = { user: 'Custom', position: 'Position', department: 'Dept', fixed: 'Fixed', none: 'Not set' };
 
 /** The Conts, Dream Crafter or both. A person's side is their department's side. */
 export const SIDE_OPTIONS: { value: UserSide; label: string }[] = [

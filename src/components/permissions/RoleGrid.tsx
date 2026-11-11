@@ -1,17 +1,19 @@
 import Icon from '../Icon';
 import { cx } from '../../lib/design-tokens';
 import { plural } from '../../lib/format';
-import type { AccessCategory } from '../../lib/types';
 import {
-  TIER_LEVELS, areaKeysOf, lowerBelow, raiseTo, tierState, type RoleLevels, type TierLevel, type TierState,
+  TIER_LEVELS, areaKeysOf, lowerBelow, raiseTo, resetToRole, tierState, type RoleLevels, type TierLevel, type TierState,
 } from '../../lib/roleGrid';
 import { CompanyToggle } from './CompanyToggle';
+import { RoleDifferenceMark } from './RoleDifferenceMark';
 import { SIDE_OPTIONS, categorySide, useToggleSet } from './shared';
 import { TIER_HINT, TIER_LABEL, TierBoxes } from './TierBoxes';
 
-export interface RoleCompany { key: string; label: string; categories: AccessCategory[] }
+export interface GridArea { key: string; label: string }
+export interface GridCategory { group: string; areas: GridArea[] }
+export interface RoleCompany { key: string; label: string; categories: GridCategory[] }
 
-export function groupByCompany(categories: AccessCategory[]): RoleCompany[] {
+export function groupByCompany(categories: GridCategory[]): RoleCompany[] {
   return SIDE_OPTIONS
     .map(option => ({
       key: option.value,
@@ -27,6 +29,7 @@ export interface RoleGridProps {
   savedLevels: RoleLevels;
   isLocked: boolean;
   onChange: (next: RoleLevels) => void;
+  roleLevels?: RoleLevels;
 }
 
 const ROW = 'grid items-center px-5 grid-cols-[minmax(0,1fr)_repeat(3,64px)] max-md:px-4 max-md:grid-cols-[minmax(0,1fr)_repeat(3,46px)]';
@@ -37,9 +40,14 @@ const statesFor = (levels: RoleLevels, keys: string[]): Record<TierLevel, TierSt
   full: tierState(levels, keys, 'full'),
 });
 
-export default function RoleGrid({ companies, levels, savedLevels, isLocked, onChange }: RoleGridProps) {
+export default function RoleGrid({ companies, levels, savedLevels, isLocked, onChange, roleLevels }: RoleGridProps) {
   const openGroups = useToggleSet();
   const collapsedCompanies = useToggleSet();
+
+  const differenceFor = (label: string, keys: string[]) => roleLevels && (
+    <RoleDifferenceMark label={label} areaKeys={keys} levels={levels} roleLevels={roleLevels} isLocked={isLocked}
+      onReset={() => onChange(resetToRole(levels, roleLevels, keys))} />
+  );
 
   const boxesFor = (label: string, keys: string[]) => (
     <TierBoxes
@@ -69,7 +77,7 @@ export default function RoleGrid({ companies, levels, savedLevels, isLocked, onC
             return (
               <div key={category.group}>
                 <div className={cx(ROW, 'min-h-[42px] [border-bottom:1px_solid_var(--color-line-soft)]')}>
-                  <div className="flex items-center gap-2 min-w-0 text-copy font-medium">
+                  <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0 text-copy font-medium">
                     {isExpandable ? (
                       <button type="button" onClick={() => openGroups.toggle(category.group)} aria-expanded={isOpen}
                         aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${category.group}`}
@@ -79,12 +87,16 @@ export default function RoleGrid({ companies, levels, savedLevels, isLocked, onC
                     ) : <span className="size-6 max-md:size-8 flex-none" />}
                     <span>{category.group}</span>
                     <span className="text-caption font-normal text-muted-ink whitespace-nowrap">{category.areas.length} {category.areas.length === 1 ? 'area' : 'areas'}</span>
+                    {differenceFor(category.group, areaKeysOf([category]))}
                   </div>
                   {boxesFor(category.group, areaKeysOf([category]))}
                 </div>
                 {isOpen && category.areas.map(area => (
                   <div key={area.key} className={cx(ROW, 'min-h-[42px] bg-muted pl-[46px] max-md:pl-[38px] [border-bottom:1px_solid_var(--color-line-soft)]')}>
-                    <div className="text-copy min-w-0">{area.label}</div>
+                    <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0 text-copy">
+                      <span>{area.label}</span>
+                      {differenceFor(area.label, [area.key])}
+                    </div>
                     {boxesFor(area.label, [area.key])}
                   </div>
                 ))}

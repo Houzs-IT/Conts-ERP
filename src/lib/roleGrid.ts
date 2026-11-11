@@ -1,4 +1,4 @@
-import type { AccessCategory, AccessLevel, AccessSetting } from './types';
+import type { AccessCategory, AccessLevel, AccessSetting, PersonAccessChange } from './types';
 
 export const TIER_LEVELS = ['view', 'edit', 'full'] as const;
 export type TierLevel = (typeof TIER_LEVELS)[number];
@@ -19,7 +19,7 @@ const storedLevel = (rules: RuleMap, key: string): AccessLevel | undefined => {
   return setting && setting !== 'inherit' ? setting : undefined;
 };
 
-export const areaKeysOf = (categories: AccessCategory[]): string[] => categories.flatMap(category => category.areas.map(area => area.key));
+export const areaKeysOf = (categories: { areas: { key: string }[] }[]): string[] => categories.flatMap(category => category.areas.map(area => area.key));
 
 export function resolveRoleLevels(categories: AccessCategory[], departmentRules: RuleMap, positionRules: RuleMap = {}): RoleLevels {
   const levels: RoleLevels = {};
@@ -70,4 +70,27 @@ export function countGrants(levels: RoleLevels, areaKeys: string[]): RoleGrants 
 
 export function countChanged(saved: RoleLevels, draft: RoleLevels, areaKeys: string[]): number {
   return areaKeys.filter(key => saved[key] !== draft[key]).length;
+}
+
+export type RoleDifference = 'extra' | 'less' | 'same';
+
+export function differenceFromRole(level: AccessLevel, roleLevel: AccessLevel): RoleDifference {
+  if (RANK[level] > RANK[roleLevel]) return 'extra';
+  return RANK[level] < RANK[roleLevel] ? 'less' : 'same';
+}
+
+export function countDifferences(levels: RoleLevels, roleLevels: RoleLevels, areaKeys: string[]): number {
+  return areaKeys.filter(key => levels[key] !== roleLevels[key]).length;
+}
+
+export function resetToRole(levels: RoleLevels, roleLevels: RoleLevels, areaKeys: string[]): RoleLevels {
+  const next = { ...levels };
+  for (const key of areaKeys) next[key] = roleLevels[key];
+  return next;
+}
+
+export function personChanges(saved: RoleLevels, draft: RoleLevels, roleLevels: RoleLevels, areaKeys: string[]): PersonAccessChange[] {
+  return areaKeys
+    .filter(key => saved[key] !== draft[key])
+    .map(key => ({ area: key, level: draft[key] === roleLevels[key] ? null : draft[key] }));
 }

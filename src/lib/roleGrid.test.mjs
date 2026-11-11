@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   resolveRoleLevels, rulesToWrite, tierState, raiseTo, lowerBelow, countGrants, countChanged, areaKeysOf,
+  differenceFromRole, countDifferences, resetToRole, personChanges,
 } from './roleGrid.ts';
 
 const categories = [
@@ -85,4 +86,41 @@ test('changed areas are the ones that differ from the saved levels', () => {
   const saved = { operations: 'none', properties: 'view', owners: 'view', finance: 'none' };
   const draft = { operations: 'none', properties: 'edit', owners: 'view', finance: 'full' };
   assert.equal(countChanged(saved, draft, keys), 2);
+});
+
+test('a level above the role reads as extra, below as less, equal as same', () => {
+  assert.equal(differenceFromRole('edit', 'view'), 'extra');
+  assert.equal(differenceFromRole('none', 'view'), 'less');
+  assert.equal(differenceFromRole('view', 'view'), 'same');
+});
+
+test('only the areas that differ from the role are counted', () => {
+  const roleLevels = { operations: 'edit', properties: 'view', owners: 'none', finance: 'none' };
+  const levels = { operations: 'view', properties: 'view', owners: 'none', finance: 'full' };
+  assert.equal(countDifferences(levels, roleLevels, keys), 2);
+});
+
+test('resetting puts just the given areas back on the role', () => {
+  const roleLevels = { operations: 'edit', properties: 'view', owners: 'none', finance: 'none' };
+  const levels = { operations: 'view', properties: 'full', owners: 'none', finance: 'full' };
+  assert.deepEqual(resetToRole(levels, roleLevels, ['properties', 'finance']), { operations: 'view', properties: 'view', owners: 'none', finance: 'none' });
+});
+
+test('a person change sends the level when it differs from the role', () => {
+  const roleLevels = { operations: 'edit', properties: 'view', owners: 'none', finance: 'none' };
+  const saved = { ...roleLevels };
+  const draft = { ...roleLevels, finance: 'view', operations: 'none' };
+  assert.deepEqual(personChanges(saved, draft, roleLevels, keys), [{ area: 'operations', level: 'none' }, { area: 'finance', level: 'view' }]);
+});
+
+test('a person change back to the role level clears their own setting', () => {
+  const roleLevels = { operations: 'edit', properties: 'view', owners: 'none', finance: 'none' };
+  const saved = { ...roleLevels, finance: 'full' };
+  assert.deepEqual(personChanges(saved, roleLevels, roleLevels, keys), [{ area: 'finance', level: null }]);
+});
+
+test('an untouched area sends nothing, even when it differs from the role', () => {
+  const roleLevels = { operations: 'edit', properties: 'view', owners: 'none', finance: 'none' };
+  const saved = { ...roleLevels, finance: 'full' };
+  assert.deepEqual(personChanges(saved, { ...saved }, roleLevels, keys), []);
 });
