@@ -30,7 +30,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const limit = Math.min(POOL_MAX, Math.max(POOL_PAGE, Math.trunc(Number(searchParams.get('limit')) || POOL_PAGE)));
 
   const byId = await hasAssigneeUser(env);
-  // A job waiting for the owner (or its parts) stays with the office, and a Pass key job shows only on the day before and the day of its check-in.
+  // A job waiting for the owner (or its parts) stays with the office, and a Pass key job shows only on its check-in day.
   const hasJobTypes = await hasJobType(env);
   const visible = `${fieldVisibleSql(hasJobTypes)} AND ${passKeyShownSql(hasJobTypes)}`;
   const since = new Date(Date.now() - 14 * 864e5).toISOString();

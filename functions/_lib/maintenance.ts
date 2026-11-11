@@ -161,7 +161,7 @@ export const MYT_DAY = (offsetDays: number): string =>
   `to_char((now() AT TIME ZONE 'Asia/Kuala_Lumpur')::date + ${Math.trunc(offsetDays)}, 'YYYY-MM-DD')`;
 
 export const passKeyShownSql = (cols: boolean): string => cols
-  ? `(m.job_type IS DISTINCT FROM 'pass_key' OR m.due_on IS NULL OR m.due_on BETWEEN ${MYT_DAY(0)} AND ${MYT_DAY(1)})`
+  ? `(m.job_type IS DISTINCT FROM 'pass_key' OR m.due_on IS NULL OR m.due_on = ${MYT_DAY(0)})`
   : 'TRUE';
 
 /** Field order: Urgent, Pass key, then Normal by due date (the day reported when none is set), oldest first. */

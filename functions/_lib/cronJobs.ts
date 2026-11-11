@@ -279,8 +279,9 @@ export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobRep
   const repairs = await all<{ id: string; urgency: string; reported_at: string }>(env, `
     SELECT id, urgency, reported_at FROM maintenance_issues
     WHERE state IN ('open','assigned','in_progress','reopened') AND reported_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+      AND (job_type = 'pass_key' AND due_on >= ?) IS NOT TRUE
       AND reported_at::timestamptz < (?::timestamptz - CASE WHEN urgency = 'urgent' THEN interval '1 day' ELSE interval '7 days' END)
-      AND reported_at::timestamptz > (?::timestamptz - interval '60 days')`, now, now);
+      AND reported_at::timestamptz > (?::timestamptz - interval '60 days')`, mytParts(new Date(now)).day, now, now);
   const stale = await all<{ id: string; owner: string; period_start: string }>(env, `
     SELECT s.id, o.display_name AS owner, s.period_start FROM owner_statements s JOIN owners o ON o.id = s.owner_id
     WHERE s.state = 'finalised' AND s.finalised_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' AND s.finalised_at::timestamptz < (?::timestamptz - interval '3 days')`, now);
