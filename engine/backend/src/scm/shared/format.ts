@@ -93,6 +93,13 @@ const DASH = '—';
 let dayFirst = false;
 export const setDayFirst = (on: boolean): void => { dayFirst = on; };
 export const isDayFirst = (): boolean => dayFirst;
+/** Runs `f` with day-first dates, then puts the switch back: for a document that belongs to the Dream Crafter
+ *  side but is built where no side is set (a server PDF). Synchronous only. */
+export const withDayFirst = <T>(f: () => T): T => {
+  const was = dayFirst;
+  dayFirst = true;
+  try { return f(); } finally { dayFirst = was; }
+};
 const ymdText = (p: DateParts): string => (dayFirst ? `${p.dd}-${p.mm}-${p.yyyy}` : `${p.yyyy}/${p.mm}/${p.dd}`);
 
 type DateParts = { yyyy: string; mm: string; dd: string; hh: string; mi: string; ss: string };

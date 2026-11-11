@@ -1,5 +1,6 @@
 /* Small building blocks shared by the renovation pages. */
 
+import { fmtDate as sharedFmtDate } from '../../vendor/shared/format';
 import { useState, type ReactNode } from 'react';
 import { formatRm } from '../../vendor/shared/renovation-money';
 import { STATUS_LABEL } from '../../lib/renovation/api';
@@ -139,11 +140,9 @@ export function Stat({ label, value, tone }: { label: string; value: ReactNode; 
   );
 }
 
+/** The app's one date rule (dd-mm-yyyy on the Dream Crafter side); '—' when there is no date. */
 export function fmtDate(iso: string | null | undefined): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? '');
-  if (!m) return '—';
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${Number(m[3])} ${months[Number(m[2]) - 1]} ${m[1]}`;
+  return /^\d{4}-\d{2}-\d{2}/.test(iso ?? '') ? sharedFmtDate(iso!.slice(0, 10)) : '—';
 }
 
 export const todayIso = (): string => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);

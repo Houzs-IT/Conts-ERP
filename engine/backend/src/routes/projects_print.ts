@@ -14,7 +14,7 @@ import {
 import { getPmsAccess, isFinanceViewer } from "../services/pmsAccess";
 import { scopeSalesReportsForUser } from "../services/orgScope";
 import { hasPermission } from "../services/permissions";
-import { fmtDate, fmtDateTime } from "../scm/shared/format";
+import { fmtDate as ruleDate, fmtDateTime as ruleDateTime, withDayFirst } from "../scm/shared/format";
 
 /**
  * Post-event summary — A4 printable sheet.
@@ -49,11 +49,13 @@ function esc(s: unknown): string {
 // naive-wall-clock branch the Projects copy grew on 2026-08-12, so a crew time
 // typed as 11:00 printed as 19:00).
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Projects are Dream Crafter's: this sheet reads dates day first, 16-11-2026 (YH, 11 Nov 2026).
+const fmtDate = (d: string | null | undefined): string => withDayFirst(() => ruleDate(d));
+const fmtDateTime = (d: string | null | undefined): string => withDayFirst(() => ruleDateTime(d));
 
-// "31 Jul - 2 Aug 2026" / "1 - 3 Aug 2026" / "9 Aug 2026" — the event dates read
-// as one line under the title instead of two Start/End fields in the grid
-// (owner's reference sheet, 2026-08-12). Date-only strings, no timezone shift.
+// "31-07-2026 - 02-08-2026" / "09-08-2026" — the event dates read as one line
+// under the title instead of two Start/End fields in the grid (owner's
+// reference sheet, 2026-08-12). Date-only strings, no timezone shift.
 function fmtRange(a: string | null | undefined, b: string | null | undefined): string {
   const part = (s: string | null | undefined) => {
     if (!s) return null;
@@ -67,14 +69,13 @@ function fmtRange(a: string | null | undefined, b: string | null | undefined): s
   };
   const s = part(a);
   const e = part(b);
-  const one = (x: { y: number; m: number; d: number }) => `${x.d} ${MONTHS[x.m - 1]} ${x.y}`;
+  const one = (x: { y: number; m: number; d: number }) =>
+    fmtDate(`${x.y}-${String(x.m).padStart(2, "0")}-${String(x.d).padStart(2, "0")}`);
   if (!s && !e) return "—";
   if (!s) return one(e!);
   if (!e) return one(s);
   if (s.y === e.y && s.m === e.m && s.d === e.d) return one(s);
-  if (s.y !== e.y) return `${one(s)} - ${one(e)}`;
-  if (s.m !== e.m) return `${s.d} ${MONTHS[s.m - 1]} - ${e.d} ${MONTHS[e.m - 1]} ${e.y}`;
-  return `${s.d} - ${e.d} ${MONTHS[e.m - 1]} ${e.y}`;
+  return `${one(s)} - ${one(e)}`;
 }
 
 // ── Crew (projects.setup_crew / dismantle_crew) ─────────────────────

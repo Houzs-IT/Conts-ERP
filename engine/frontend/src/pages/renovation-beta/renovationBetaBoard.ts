@@ -3,6 +3,7 @@
    server's BetaBoard instead of its sample data. Pure: nothing here reads the clock; today comes from the board.
    Plan: docs/superpowers/plans/2026-10-23-beta-project-workspace.md, section 10. */
 
+import { fmtDayMonth } from "../../vendor/shared/format";
 import type {
   BetaBoard, BetaBoardAppointment, BetaBoardProject, BetaBoardRef, BoardRange, DesignKind,
 } from "./renovationBetaBoardApi";
@@ -96,7 +97,6 @@ export interface BoardModel {
 }
 
 const MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const;
-const MS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 export const MONTHS: readonly string[] = MON;
 
 /* ---------- dates ---------- */
@@ -109,10 +109,9 @@ export function diff(a: string, b: string): number {
   return Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 864e5);
 }
 
-/** "23 Oct". */
+/** "23-10": the app's short date (day first on the Dream Crafter side). */
 export function ds(s: string): string {
-  const [, m, d] = s.split("-");
-  return `${Number(d)} ${MS[Number(m) - 1] ?? ""}`;
+  return fmtDayMonth(s);
 }
 
 export function ord(n: number): string {

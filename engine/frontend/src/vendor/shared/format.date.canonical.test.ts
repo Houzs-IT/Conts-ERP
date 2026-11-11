@@ -1,11 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { fmtDate, fmtDateTime, fmtDateOrDash, fmtTime, fmtDayMonth, fmtDayMonthRange, fmtTimestamp, isoForExport, setDayFirst } from './format';
+import { fmtDate, fmtDateTime, fmtDateOrDash, fmtTime, fmtDayMonth, fmtDayMonthRange, fmtTimestamp, isoForExport, setDayFirst, withDayFirst, isDayFirst } from './format';
 
 /* THE DREAM CRAFTER SIDE (YH, 11 Nov 2026): day first, dd-mm-yyyy, short form dd-mm. The Conts side keeps year
    first. A month-first date (11-16-2026, 11/16) must never come out of either side. */
 describe('day first on the Dream Crafter side', () => {
+  test('withDayFirst prints day first for one call and puts the switch back (the Projects PDF)', () => {
+    expect(withDayFirst(() => fmtDate('2026-11-16'))).toBe('16-11-2026');
+    expect(isDayFirst()).toBe(false);
+    expect(fmtDate('2026-11-16')).toBe('2026/11/16');
+    expect(() => withDayFirst(() => { throw new Error('x'); })).toThrow();
+    expect(isDayFirst()).toBe(false);
+  });
   const monthFirst = /^(0[1-9]|1[0-2])[-/](1[3-9]|2\d|3[01])\b/; // a month then a day that cannot be a month
   test('dates, timestamps and the short form read day first', () => {
     setDayFirst(true);

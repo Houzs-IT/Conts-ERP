@@ -2,6 +2,7 @@
    minute, under day headings; inside a day one card per event (one DO's POD, one defect's before / after, one
    upload of progress photos), each with its time and a category chip. Pure rules, tested on fixed data. */
 
+import { fmtDate, fmtDayMonth } from "../../vendor/shared/format";
 import type { EmptySources, PhotoCategory, ProjectPhoto } from "./renovationBetaMediaApi";
 
 export type PhotoFilter = "all" | "progress" | "production" | "do" | "gr" | "po" | "measure" | "defect";
@@ -79,16 +80,14 @@ export function clockOf(iso: string | null): string | null {
   return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
-
-/** "Today · 24 Oct", "Yesterday · 23 Oct", "21 Oct", "3 Dec 2025". */
+/** "Today · 24-10", "Yesterday · 23-10", "21-10", "03-12-2025". */
 export function dayTitle(day: string, today: string): string {
-  const [y, mo, d] = day.split("-").map(Number);
-  const short = `${d} ${MONTHS.at(mo - 1) ?? ""}`;
+  const y = Number(day.slice(0, 4));
+  const short = fmtDayMonth(day);
   const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
   if (day === today) return `Today · ${short}`;
   if (day === yesterday) return `Yesterday · ${short}`;
-  return String(y) === today.slice(0, 4) ? short : `${short} ${y}`;
+  return String(y) === today.slice(0, 4) ? short : fmtDate(day);
 }
 
 export interface PhotoCard {

@@ -9,7 +9,10 @@ workspace every date reads day first, `16-11-2026`, timestamps `16-11-2026 14:06
 Conts side keeps the year-first rule above. The same helpers do both: `AppShell` calls `setDayFirst()` for the side
 on view (the workspace of the address, else the side last picked in the sidebar), and the supply chain frame is told
 with each menu move (`conts:navigate`, `dayFirst`). Nothing else changes: stored values, API payloads, date inputs,
-CSV exports and file stamps stay ISO. Server text and PDFs do not know a side and stay year-first.
+CSV exports and file stamps stay ISO. Two Dream Crafter places with no side switch are day first too (YH, 11 Nov
+2026, "dd-mm-yyyy for both"): the Projects print sheet (`engine/backend/src/routes/projects_print.ts`, through
+`withDayFirst()`) and the Renovation Beta screens, whose "10 Nov 2026" month names now go through `fmtDate` /
+`fmtDayMonth`. Other server text and PDFs do not know a side and stay year-first.
 
 Single source of truth on the screens: [`src/lib/format.ts`](../src/lib/format.ts). On the server:
 [`functions/_lib/dates.ts`](../functions/_lib/dates.ts). The engine keeps its own copy of the same rule
