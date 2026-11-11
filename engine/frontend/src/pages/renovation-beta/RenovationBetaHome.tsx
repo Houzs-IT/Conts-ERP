@@ -11,7 +11,7 @@ import { CreateRenovationPanel } from "../projects/renovation/CreateRenovationPa
 import { money } from "../projects/renovation/renovationModel";
 import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type ConditionWord, type HomeRow, type HomeTab } from "./renovationBetaBoard";
-import { HOME_SORTS, keepOrder, matchesSearch, newestFirst, orderOf, sortFromParam, voCell, type HomeSort } from "./renovationBetaHomeModel";
+import { HOME_SORTS, keepOrder, onDreamCrafterList, matchesSearch, orderOf, sortFromParam, sortHome, voCell, type HomeSort } from "./renovationBetaHomeModel";
 import { boardApi, boardKey, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
 import { BetaSkin, useBetaPreload } from "./BetaWsUi";
@@ -111,6 +111,8 @@ function homeColumns(showPay: boolean): Column<TableRow>[] {
         {x.r.p.customer && <span style={{ color: MUTED, fontSize: 12, overflowWrap: "anywhere" }}>{x.r.p.customer}</span>}
       </span>
     ) },
+    { key: "created", label: "Created", group: "Project", width: "120px", getValue: (x) => x.r.p.createdAt, render: (x) => (x.r.p.createdAt ? fmtDate(x.r.p.createdAt) : DASH),
+      filterType: "date", dateValue: (x) => x.r.p.createdAt },
     { key: "condition", label: "ID condition", group: "Project", width: "150px", getValue: (x) => x.r.word, render: (x) => <StatusCell r={x.r} /> },
     { key: "due", label: "Due", group: "Project", width: "120px", getValue: (x) => x.r.left, render: (x) => <DueCell r={x.r} /> },
     ...(showPay ? [{ key: "payment", label: "Payment", group: "Project", width: "220px", getValue: (x: TableRow) => x.r.p.payment,
@@ -167,15 +169,14 @@ function HomeScreen(): ReactElement {
     }, { replace: true });
   }
   const last = readLastProject();
-  const m = useMemo(() => (q.data ? buildModel(q.data) : null), [q.data]);
+  const m = useMemo(() => (q.data ? buildModel({ ...q.data, projects: q.data.projects.filter(onDreamCrafterList) }) : null), [q.data]);
 
   if (q.error && !m) return <ErrorBanner text={`The projects could not be loaded: ${q.error}`} onRetry={q.reload} />;
   if (!m) return <BetaLoading label="Loading projects" size="page" />;
 
   const counts = homeCounts(m);
   const inTab = homeList(m, tab);
-  const sorted = sort === "newest" ? newestFirst(inTab) : inTab;
-  const found = sorted.filter((p) => matchesSearch(p, query));
+  const found = sortHome(inTab, sort).filter((p) => matchesSearch(p, query));
   const viewKey = `${tab}|${sort}|${query.trim().toLowerCase()}`;
   if (!kept.current || kept.current.key !== viewKey) kept.current = { key: viewKey, order: orderOf(found) };
   const list = keepOrder(found, kept.current.order);
@@ -293,7 +294,7 @@ function HomeScreen(): ReactElement {
         </div>
       )}
 
-      <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · {sort === "newest" ? "newest first" : "due soonest first"} · tap a project to open it</div>
+      <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · {(HOME_SORTS.find(([k]) => k === sort)?.[1] ?? "").toLowerCase()} · tap a project to open it</div>
     </div>
     </BetaMotion>
   );

@@ -4,7 +4,7 @@
 import { useId, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Download, ExternalLink, MessageCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { errorText, money } from "../projects/renovation/renovationModel";
 import { BrandFact, FinanceKindFact } from "../projects/renovation/ProjectBrandFacts";
 import { BetaSiteProgressCard } from "./BetaSiteProgressCard";
@@ -21,6 +21,7 @@ import {
   type PaymentTotals, type TodoAction, type TodoRow,
 } from "./renovationBetaModel";
 import { downloadAsPdf } from "./renovationBetaPdf";
+import { downloadSoPdf } from "../scm-v2/soPdfDownload";
 import { sheetSetAt, sheetsApi } from "./renovationBetaSheets";
 import { BETA, GLASS, TONES } from "./renovationBetaTheme";
 import { useQuery } from "../../hooks/useQuery";
@@ -247,9 +248,11 @@ function TodoCard({ rows, p }: { rows: TodoRow[]; p: BetaTabProps }): ReactEleme
 
 /* ---------- Sales order ---------- */
 
-function OrderCard({ p }: { p: BetaTabProps }): ReactElement {
-  const { pathname } = useLocation();
+export function OrderCard({ p }: { p: BetaTabProps }): ReactElement {
   const { detail: d } = p;
+  /* Open SO shows the order's PDF, not its page (feedback 11 Nov 2026). */
+  const soDoc = (d.so ?? d.signedSo)?.doc_no ?? null;
+  const [opening, setOpening] = useState(false);
   const rooms = [...new Set((d.lines ?? []).flatMap((l) => (l.room?.trim() ? [l.room.trim()] : [])))];
   const unit = [d.project.layout_label, [d.project.building, d.project.unit_no].filter(Boolean).join(" ")].filter(Boolean).join(" · ");
   const rowsList: Array<[string, ReactNode]> = [];
@@ -264,7 +267,15 @@ function OrderCard({ p }: { p: BetaTabProps }): ReactElement {
       title="Sales order"
       gap={12}
       sub={d.signedSo ? `${d.signedSo.doc_no} · signed ${dayMonthYear(d.signedSo.so_date)}` : d.so ? (soConfirmed(d.so.status) ? `${d.so.doc_no} · signed ${dayMonthYear(d.so.so_date)}` : `${d.so.doc_no} · draft, not signed yet`) : "Not signed yet"}
-      right={(d.so ?? d.signedSo) ? <Link to={`/scm/sales-orders/${encodeURIComponent((d.so ?? d.signedSo)!.doc_no)}`} state={{ backTo: pathname }} style={{ ...btnStyle("outline", "sm"), color: BETA.ink }}>Open SO</Link> : undefined}
+      right={soDoc ? (
+        <button type="button" disabled={opening} style={{ ...btnStyle("outline", "sm"), color: BETA.ink }}
+          onClick={async () => {
+            setOpening(true);
+            try { await downloadSoPdf(soDoc, null, "preview"); } catch (e) { p.onError(errorText(e)); } finally { setOpening(false); }
+          }}>
+          {opening ? "Opening…" : "Open SO"}
+        </button>
+      ) : undefined}
     >
       {rowsList.length > 0 && (
         <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "110px 1fr", gap: "8px 10px", fontSize: 13 }}>

@@ -259,7 +259,7 @@ const refOf = (id: number | null, name: string | null): BoardPersonRef | null =>
 
 export interface BoardProjectRow {
   id: number; code: string | null; name: string; building: string | null; unit_no: string | null; customer_name: string | null;
-  sales_name: string | null; created_at: string | null; handover_on: string | null;
+  sales_name: string | null; created_at: string | null; handover_on: string | null; brand?: string | null;
   lead_id: number | null; lead_name: string | null; pic_id: number | null; pic_name: string | null;
   /** The 3D and 2D people in the order picked, as JSON text or parsed ([{ id, name }]). */
   p3_people: unknown; p2_people: unknown;
@@ -287,6 +287,8 @@ export interface BoardProject {
   customerName: string | null; salesName: string | null; createdOn: string | null; handoverOn: string | null;
   /** When the project was made (UTC ISO), for "newest first". */
   createdAt: string | null;
+  /** The brand it is sold under (Dream Crafter, The Conts): the project list shows Dream Crafter's. */
+  brand: string | null;
   soDocNos: string[];
   lead: BoardPersonRef | null; sitePic: BoardPersonRef | null;
   /** The first of people3d / people2d, for screens that show one name. */
@@ -319,6 +321,7 @@ export function buildBoardProject(p: BoardProjectRow, sets: BoardSets, payment: 
     id: p.id, code: p.code, name: p.name, building: p.building, unitNo: p.unit_no, customerName: p.customer_name, salesName: p.sales_name,
     createdOn: createdOnOf(p.created_at), handoverOn: p.handover_on,
     createdAt: p.created_at && !Number.isNaN(Date.parse(p.created_at)) ? new Date(Date.parse(p.created_at)).toISOString() : null,
+    brand: p.brand?.trim() || null,
     soDocNos: String(p.so_doc_nos ?? "").split(/\s+/).filter(Boolean),
     lead: refOf(p.lead_id, p.lead_name), sitePic: refOf(p.pic_id, p.pic_name),
     person3d: people3d[0] ?? null, person2d: people2d[0] ?? null, people3d, people2d,

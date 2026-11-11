@@ -9,7 +9,7 @@ vi.mock("../../api/client", async (importOriginal) => {
 });
 
 import { MediaGrid, MediaStrip, durationText, mediaRefusal, type MediaItem } from "./BetaMedia";
-import { keepOrder, matchesSearch, newestFirst, orderOf } from "./renovationBetaHomeModel";
+import { keepOrder, onDreamCrafterList, matchesSearch, newestFirst, orderOf, sortFromParam, sortHome } from "./renovationBetaHomeModel";
 import { cardLine, dayTitle, photoTimeline } from "./renovationBetaPhotosModel";
 import type { ProjectPhoto } from "./renovationBetaMediaApi";
 import type { DesignProject } from "./renovationBetaBoard";
@@ -83,6 +83,20 @@ describe("the project list", () => {
 
   it("puts the newest project first", () => {
     expect(newestFirst([p(1, "2026-10-01T00:00:00Z"), p(3, "2026-10-24T02:57:52Z"), p(2, null)]).map((x) => x.id)).toEqual([3, 1, 2]);
+  });
+
+  it("sorts oldest first, by handover and by building, with no date last", () => {
+    const list = [p(1, "2026-10-05T00:00:00Z", { tag: "Baron", handover: "2026-12-01" }), p(2, null, { tag: "astrum", handover: null }), p(3, "2026-10-01T00:00:00Z", { tag: "Astrum", handover: "2026-11-20" })];
+    expect(sortHome(list, "oldest").map((x) => x.id)).toEqual([3, 1, 2]);
+    expect(sortHome(list, "handover").map((x) => x.id)).toEqual([3, 1, 2]);
+    expect(sortHome(list, "building").map((x) => x.id)).toEqual([2, 3, 1]);
+    expect(sortHome(list, "due").map((x) => x.id)).toEqual([1, 2, 3]);
+    expect(sortFromParam("oldest")).toBe("oldest");
+    expect(sortFromParam("nonsense")).toBe("newest");
+  });
+
+  it("lists Dream Crafter-brand projects and those with no brand, any case", () => {
+    expect([" dream crafter ", "Dream Crafter", null, "", undefined, "The Conts"].map((brand) => onDreamCrafterList({ brand }))).toEqual([true, true, true, true, true, false]);
   });
 
   it("keeps a row where it was after a save re-sorts the list", () => {
