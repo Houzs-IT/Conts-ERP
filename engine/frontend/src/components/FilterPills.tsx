@@ -45,7 +45,7 @@ export function FilterPills<T extends string>({ options, value, onChange }: Prop
     // a phone) it scrolls horizontally inside the slab without
     // bleeding into the layout. max-w-full prevents the inline-flex
     // from forcing parent width.
-    <div className="inline-block max-w-full overflow-hidden rounded-md border border-border bg-surface shadow-stone align-middle">
+    <div className="dc-glass inline-block max-w-full overflow-hidden rounded-md border border-border bg-surface shadow-stone align-middle">
       <div
         className={cn(
           "no-scrollbar flex items-center gap-0.5 overflow-x-auto p-1",

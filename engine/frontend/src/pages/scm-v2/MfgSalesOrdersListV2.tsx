@@ -367,7 +367,7 @@ function ViewToggle({
     );
   };
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-md border border-border bg-surface p-1 shadow-stone">
+    <div className="dc-glass inline-flex items-center gap-0.5 rounded-md border border-border bg-surface p-1 shadow-stone">
       {btn("table", "Table", TableIcon)}
       {btn("cards", "Cards", LayoutGrid)}
     </div>

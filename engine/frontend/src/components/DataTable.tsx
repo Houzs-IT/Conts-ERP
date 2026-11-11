@@ -2142,7 +2142,7 @@ function DataTableInner<T, L>({
     <div ref={freezeRootRef}>
       {urlFilterParam && inRouter && <UrlFilterResync param={urlFilterParam} value={serializeUrlColFilters(colFilters)} />}
       {/* ── Toolbar (always rendered; an embedded grid has none) ── */}
-      <div className={cn("mb-2.5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between", embedded && "hidden")}>
+      <div className={cn("dt-bar mb-2.5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between", embedded && "hidden")}>
         <div className="flex flex-1 flex-wrap items-center gap-2 sm:gap-3">
           {search && (
             <div className="w-full sm:w-72 sm:max-w-full">
@@ -2189,7 +2189,7 @@ function DataTableInner<T, L>({
             onReset={handleResetFilters}
             label={resetFilters?.label}
           />
-          <div className="dt-count flex items-center gap-2 text-[11px] font-medium text-ink-secondary">
+          <div className="flex items-center gap-2 text-[11px] font-medium text-ink-secondary">
             {caption && (
               <>
                 <span className="text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
