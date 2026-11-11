@@ -1,7 +1,6 @@
 /* The shared media grid keeps one 4:3 box for any count and the strip one tile size with "+N", a video is a play tile, a file that fails
    is a plain tile; the list keeps a row in place after a save; photo cards group by event. */
-import { describe, expect, it, vi, beforeAll, afterAll } from "vitest";
-import { setDayFirst } from "../../vendor/shared/format";
+import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 vi.mock("../../api/client", async (importOriginal) => {
@@ -19,8 +18,6 @@ const item = (i: number, kind: MediaItem["kind"] = "image", path = `/p/${i}`): M
 
 
 // These are Dream Crafter screens: dates read day first (YH, 11 Nov 2026).
-beforeAll(() => setDayFirst(true));
-afterAll(() => setDayFirst(false));
 
 describe("MediaGrid", () => {
   it.each([
@@ -122,8 +119,8 @@ describe("photo cards", () => {
     ]);
     expect(days.map((d) => d.day)).toEqual(["2026-10-24", "2026-10-23"]);
     expect(days[0].cards.map(cardLine)).toEqual(["3:42 pm · DO do:1 · POD · 1 photo, 1 video", "11:00 am · Defect: tile crack · Before / After · 2 photos"]);
-    expect(dayTitle("2026-10-24", "2026-10-24")).toBe("Today · 24-10");
-    expect(dayTitle("2026-10-23", "2026-10-24")).toBe("Yesterday · 23-10");
-    expect(dayTitle("2025-12-03", "2026-10-24")).toBe("03-12-2025");
+    expect(dayTitle("2026-10-24", "2026-10-24")).toBe("Today · 24/10");
+    expect(dayTitle("2026-10-23", "2026-10-24")).toBe("Yesterday · 23/10");
+    expect(dayTitle("2025-12-03", "2026-10-24")).toBe("03/12/2025");
   });
 });

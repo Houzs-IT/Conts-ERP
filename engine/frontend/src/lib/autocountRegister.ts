@@ -35,8 +35,8 @@ import { fmtDate, fmtDayMonth, fmtTime } from "../vendor/shared/format";
 
 import type { AcDocGroup, AcOutboxRow } from "./autocountOutbox";
 
-/** What `fmtDate` produces for anything it can read: `yyyy/mm/dd`, or `dd-mm-yyyy` on the Dream Crafter side. */
-const AC_DMY = /^\d{4}\/\d{2}\/\d{2}$|^\d{2}-\d{2}-\d{4}$/;
+/** What `fmtDate` produces for anything it can read: `dd/mm/yyyy`. */
+const AC_DMY = /^\d{2}\/\d{2}\/\d{4}$/;
 
 /** The mark for a cell with no value. One constant so no column picks its own,
  *  and so a test can ask for it by name rather than by glyph. */
@@ -205,7 +205,7 @@ export const acDayKey = (row: AcOutboxRow): string => fmtDate(acWhenIso(row));
  */
 export function acWhenText(row: AcOutboxRow): string {
   const key = acDayKey(row);
-  // The separator above the row carries the full date; the cell shows month/day
+  // The separator above the row carries the full date; the cell shows day/month
   // (the same rule's short form) + the time.
   return AC_DMY.test(key) ? `${fmtDayMonth(acWhenIso(row))} ${fmtTime(acWhenIso(row))}` : AC_NO_VALUE;
 }
@@ -341,9 +341,9 @@ export function acGroupsInRange(
      disagree at a day boundary. A row whose timestamp cannot be read matches no
      window and is honestly dropped from every range except All time. */
   if (range === "month") {
-    // The year-first key's "yyyy/mm" prefix is the calendar month.
-    const mm = today.slice(0, 7);
-    return groups.filter((g) => acDayKey(g.current).slice(0, 7) === mm);
+    // The day-first key's "mm/yyyy" tail is the calendar month.
+    const mm = today.slice(3);
+    return groups.filter((g) => acDayKey(g.current).slice(3) === mm);
   }
   const days = range === "today" ? 1 : 7;
   const keys = new Set(

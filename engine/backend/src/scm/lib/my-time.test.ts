@@ -1,6 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { todayMyt, mytDateOf, rangeBoundsMy } from "./my-time";
-import { isDayFirst } from "../shared/format";
 
 // The whole point of todayMyt() is the 00:00-08:00 MYT window, where the UTC
 // calendar date is still YESTERDAY. Every assertion below pins a moment inside
@@ -86,9 +85,8 @@ describe("mytDateOf", () => {
 });
 
 describe("rangeBoundsMy label", () => {
-  it("reads day first (Dream Crafter's sales orders) and leaves the switch off", () => {
-    expect(rangeBoundsMy("2026-11-03", "2026-11-16").label).toBe("03-11-2026 – 16-11-2026");
-    expect(rangeBoundsMy("2026-11-03", null).label).toBe("From 03-11-2026");
-    expect(isDayFirst()).toBe(false);
+  it("reads day first", () => {
+    expect(rangeBoundsMy("2026-11-03", "2026-11-16").label).toBe("03/11/2026 – 16/11/2026");
+    expect(rangeBoundsMy("2026-11-03", null).label).toBe("From 03/11/2026");
   });
 });

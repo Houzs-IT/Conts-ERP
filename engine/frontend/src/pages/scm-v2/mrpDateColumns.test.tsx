@@ -58,7 +58,7 @@ describe('MRP date columns — selectable from the Columns drawer', () => {
     mrpData = base({ sofaSets: [sofaSet()] });
     render(<MemoryRouter><Mrp /></MemoryRouter>);
 
-    expect(screen.getAllByText('2026/10/01').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('01/10/2026').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: /columns/i }));
     const drawer = screen.getByRole('dialog', { name: 'Columns' });
@@ -75,6 +75,6 @@ describe('MRP date columns — selectable from the Columns drawer', () => {
     const drawer = screen.getByRole('dialog', { name: 'Columns' });
     fireEvent.click(within(drawer).getByRole('button', { name: 'Delivery Date' }));
 
-    expect(screen.queryByText('2026/10/01')).toBeNull();
+    expect(screen.queryByText('01/10/2026')).toBeNull();
   });
 });

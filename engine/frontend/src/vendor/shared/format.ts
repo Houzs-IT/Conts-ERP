@@ -90,23 +90,10 @@ export const fmtQty = (n: number | null | undefined): string => {
 const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
 const DASH = '—';
 
-/* THE DREAM CRAFTER SIDE READS DAY FIRST (YH, 11 Nov 2026, asked for by Dream
-   Crafter's users): "11-11-2026", and "11-11" for the short form. The Conts side
-   keeps the year-first rule (owner, 3 Nov 2026). Property OS sets this for the
-   side on view (src/components/AppShell.tsx) and passes it into the engine frame
-   (conts/embed.ts). Off by default, so the server, the PDFs and a standalone
-   engine keep year-first. */
-let dayFirst = false;
-export const setDayFirst = (on: boolean): void => { dayFirst = on; };
-export const isDayFirst = (): boolean => dayFirst;
-/** Runs `f` with day-first dates, then puts the switch back: for a document that belongs to the Dream Crafter
- *  side but is built where no side is set (a server PDF). Synchronous only. */
-export const withDayFirst = <T>(f: () => T): T => {
-  const was = dayFirst;
-  dayFirst = true;
-  try { return f(); } finally { dayFirst = was; }
-};
-const ymdText = (p: DateParts): string => (dayFirst ? `${p.dd}-${p.mm}-${p.yyyy}` : `${p.yyyy}/${p.mm}/${p.dd}`);
+/* DAY FIRST ON BOTH SIDES (YH, 11 Nov 2026: Dream Crafter asked first,
+   then "conts also dd/mm/yyyy across the board", slashes): "11/11/2026", and
+   "11/11" for the short form. Replaces the year-first rule of 3 Nov 2026. */
+const ymdText = (p: DateParts): string => `${p.dd}/${p.mm}/${p.yyyy}`;
 
 type DateParts = { yyyy: string; mm: string; dd: string; hh: string; mi: string; ss: string };
 
@@ -142,14 +129,10 @@ function dateParts(d: Date | string | number | null | undefined): DateParts | nu
      "Invalid Date" when a second caller wrapped a first. */
   const ymd = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(s);
   if (ymd) return { yyyy: ymd[1], mm: ymd[2], dd: ymd[3], hh: '00', mi: '00', ss: '00' };
-  /* Legacy day-first display (pre-2026-09-25) still parses, so any value that
-     round-tripped through the OLD fmtDate is CONVERTED to the new shape, never
-     read as an invalid date. */
+  /* The day-first display (YH, 2026-11-11; also the shape before 2026-09-25),
+     so formatting it again is a no-op (Date would read it month first). */
   const dmy = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
   if (dmy) return { yyyy: dmy[3], mm: dmy[2], dd: dmy[1], hh: '00', mi: '00', ss: '00' };
-  // The Dream Crafter display shape, so formatting it again is a no-op (Date would read it month first).
-  const dmyDash = /^(\d{2})-(\d{2})-(\d{4})$/.exec(s);
-  if (dmyDash) return { yyyy: dmyDash[3], mm: dmyDash[2], dd: dmyDash[1], hh: '00', mi: '00', ss: '00' };
 
   /* NO ZONE IN THE VALUE → NO CONVERSION. Covers the two shapes this ERP
      actually stores: a date-only `date`/`text` column (`2026-08-16`) and a
@@ -185,7 +168,7 @@ function dateParts(d: Date | string | number | null | undefined): DateParts | nu
   return mytParts(new Date(s));
 }
 
-/** THE date format: "2026/08/16" (year-first, owner 2026-09-25); "16-08-2026" on the Dream Crafter side. Null-safe,
+/** THE date format: "16/08/2026" (day first, YH 2026-11-11). Null-safe,
  *  invalid-safe, idempotent. Display only — never feed this to a date input, an
  *  API or AutoCount. */
 export const fmtDate = (d: Date | string | number | null | undefined): string => {
@@ -193,7 +176,7 @@ export const fmtDate = (d: Date | string | number | null | undefined): string =>
   return p === null ? DASH : ymdText(p);
 };
 
-/** THE date+time format: "2026/08/16 14:30". 24-hour, no comma — the same
+/** THE date+time format: "16/08/2026 14:30". 24-hour, no comma — the same
  *  numeric, unambiguous rule as {@link fmtDate}, one export further. */
 export const fmtDateTime = (d: Date | string | number | null | undefined): string => {
   const p = dateParts(d);
@@ -208,7 +191,7 @@ export const fmtDateTime = (d: Date | string | number | null | undefined): strin
  *  "—", exactly as {@link fmtDate}. */
 export const fmtDayMonth = (d: Date | string | number | null | undefined): string => {
   const p = dateParts(d);
-  return p === null ? DASH : dayFirst ? `${p.dd}-${p.mm}` : `${p.mm}/${p.dd}`;
+  return p === null ? DASH : `${p.dd}/${p.mm}`;
 };
 
 /** A PERIOD as one label: "13/08 - 17/08", and just "13/08" when it is one day.
@@ -247,7 +230,7 @@ export const fmtTimestamp = (d: Date | string | number | null | undefined): stri
   return p === null ? DASH : `${ymdText(p)} ${p.hh}:${p.mi}:${p.ss}`;
 };
 
-/** The display rule, normalised for export — "2026/08/16" → "2026-08-16";
+/** The display rule, normalised for export — "16/08/2026" → "2026-08-16";
  *  anything else is returned untouched.
  *
  *  WHY THIS EXISTS. Export is not display: the sheet gets the storage shape
@@ -260,7 +243,7 @@ export const isoForExport = (v: string | number | null | undefined): string | nu
   if (typeof v !== 'string') return v ?? '';
   const m = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(v.trim());
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  const d = /^(\d{2})-(\d{2})-(\d{4})$/.exec(v.trim()); // the Dream Crafter display shape
+  const d = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v.trim()); // the display shape, day first
   return d ? `${d[3]}-${d[2]}-${d[1]}` : v;
 };
 

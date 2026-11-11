@@ -1,6 +1,5 @@
 /* The approved 2D set on a Built-in PO and line: nothing before approval, and sheets as they are in the set. */
-import { describe, expect, it, vi, beforeAll, afterAll } from "vitest";
-import { setDayFirst } from "../../vendor/shared/format";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -20,8 +19,6 @@ const wrap = (node: React.ReactNode) => render(<QueryClientProvider client={new 
 
 
 // These are Dream Crafter screens: dates read day first (YH, 11 Nov 2026).
-beforeAll(() => setDayFirst(true));
-afterAll(() => setDayFirst(false));
 
 describe("approved 2D", () => {
   it("shows nothing for a PO that is not Built-in, or before approval", () => {
@@ -31,7 +28,7 @@ describe("approved 2D", () => {
   it("shows the set on the PO", async () => {
     h.answer = { projectId: 7, files: [FILE], approved: { fileId: 1, version: 2, approvedOn: "2026-11-05" } };
     wrap(<PoApprovedDrawings poId="p1" />);
-    expect(await screen.findByText("2D V2, approved 05-11-2026")).toBeTruthy();
+    expect(await screen.findByText("2D V2, approved 05/11/2026")).toBeTruthy();
     expect(await screen.findByAltText("Kitchen.png")).toBeTruthy();
   });
   it("shows the set on the line", async () => {

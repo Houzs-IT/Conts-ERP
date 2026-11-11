@@ -140,7 +140,7 @@ export function Stat({ label, value, tone }: { label: string; value: ReactNode; 
   );
 }
 
-/** The app's one date rule (dd-mm-yyyy on the Dream Crafter side); '—' when there is no date. */
+/** The app's one date rule (dd/mm/yyyy); '—' when there is no date. */
 export function fmtDate(iso: string | null | undefined): string {
   return /^\d{4}-\d{2}-\d{2}/.test(iso ?? '') ? sharedFmtDate(iso!.slice(0, 10)) : '—';
 }

@@ -1,5 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import { setDayFirst } from "../../vendor/shared/format";
+import { describe, expect, it } from "vitest";
 import type { TimelineEntry } from "../projects/renovation/renovationTimelineModel";
 import type { DesignFile, SiteMeasure, TaskViewV2 } from "../projects/renovation/simpleApi";
 import { buildModel } from "./renovationBetaBoard";
@@ -33,8 +32,6 @@ const input = (i: Partial<TodoInput> = {}): TodoInput => ({ today: TODAY, projec
 
 
 // These are Dream Crafter screens: dates read day first (YH, 11 Nov 2026).
-beforeAll(() => setDayFirst(true));
-afterAll(() => setDayFirst(false));
 
 describe("approvedSet", () => {
   it("is empty with no files", () => {
@@ -281,12 +278,12 @@ describe("site feed", () => {
 
 describe("dates as the mockup prints them", () => {
   it("prints day and month, with the year only where asked", () => {
-    expect(dayMonth("2026-10-14")).toBe("14-10");
-    expect(dayMonth("2026-10-14T05:00:00Z")).toBe("14-10");
+    expect(dayMonth("2026-10-14")).toBe("14/10");
+    expect(dayMonth("2026-10-14T05:00:00Z")).toBe("14/10");
     expect(dayMonth(null)).toBe("-");
-    expect(dayMonthYear("2026-11-15")).toBe("15-11-2026");
-    expect(dayHeading("2026-10-20", TODAY)).toBe("20-10");
-    expect(dayHeading("2025-12-30", TODAY)).toBe("30-12-2025");
+    expect(dayMonthYear("2026-11-15")).toBe("15/11/2026");
+    expect(dayHeading("2026-10-20", TODAY)).toBe("20/10");
+    expect(dayHeading("2025-12-30", TODAY)).toBe("30/12/2025");
   });
   it("reads a stored time as Malaysia time", () => {
     expect(mytDay("2026-10-20T17:30:00Z")).toBe("2026-10-21");
@@ -314,7 +311,7 @@ describe("paymentCard", () => {
   });
   it("a later step is the grey card, and the handover one says so", () => {
     expect(paymentCard({ status: "not_billed", stageCode: "handover", unlocks: "Cleaning & handover" }, "design", "2026-11-15")).toEqual({
-      look: "quiet", badge: "At handover", note: "Unlocks Cleaning & handover · 15-11",
+      look: "quiet", badge: "At handover", note: "Unlocks Cleaning & handover · 15/11",
     });
     expect(paymentCard({ status: "not_billed", stageCode: "hardware", unlocks: "Hardware works" }, "design", null).badge).toBe("Not due yet");
   });
@@ -377,8 +374,8 @@ describe("stepperItems", () => {
   it("draws the mockup's order and words each step as the mockup does", () => {
     const sla = { stepKey: "renovation", enteredOn: "2026-10-12", daysIn: 11, days: 45, overdueBy: null };
     expect(at("renovation", { sla }).map((i) => [i.label, i.state, i.sub])).toEqual([
-      ["Sales order", "done", "Signed 10-08"], ["Design", "done", "Design approved"], ["Ordering", "done", "Main items ordered"],
-      ["Renovation", "current", "Day 12 of 45"], ["Handover", "later", "15-11"], ["Closed", "later", "-"],
+      ["Sales order", "done", "Signed 10/08"], ["Design", "done", "Design approved"], ["Ordering", "done", "Main items ordered"],
+      ["Renovation", "current", "Day 12 of 45"], ["Handover", "later", "15/11"], ["Closed", "later", "-"],
     ]);
   });
   it("Renovation reads the step SLA, the same words as the project list (TESTING: entered today, 45 days)", () => {
@@ -386,7 +383,7 @@ describe("stepperItems", () => {
     expect(at("renovation", { sla })[3]?.sub).toBe("Day 1 of 45");
     expect(slaDayText(sla, TODAY)).toBe("Day 1 of 45");
     expect(slaDayText({ ...sla, daysIn: 48, overdueBy: 3 }, TODAY)).toBe("3d over SLA");
-    expect(slaDayText({ ...sla, enteredOn: "2026-11-02", daysIn: 0 }, TODAY)).toBe("Starts 02-11");
+    expect(slaDayText({ ...sla, enteredOn: "2026-11-02", daysIn: 0 }, TODAY)).toBe("Starts 02/11");
     expect(slaDayText({ ...sla, days: null }, TODAY)).toBe("Day 1");
     expect(slaDayText(null, TODAY)).toBeNull();
     /* no SLA data: the stepper no longer counts the site tasks' own span ("Day 1 of 1") */
@@ -398,11 +395,11 @@ describe("stepperItems", () => {
     ]);
   });
   it("at signed the Sales order is done and Design is current; at ordering both are done", () => {
-    expect(at("signed").slice(0, 2).map((i) => [i.state, i.sub])).toEqual([["done", "Signed 10-08"], ["current", "In progress"]]);
+    expect(at("signed").slice(0, 2).map((i) => [i.state, i.sub])).toEqual([["done", "Signed 10/08"], ["current", "In progress"]]);
     expect(at("ordering").slice(0, 3).map((i) => i.state)).toEqual(["done", "done", "current"]);
   });
   it("counts a confirmed sales order as signed, with its date, while the flow is still at design", () => {
-    expect(at("design", { soStatus: "CONFIRMED" })[0]).toMatchObject({ state: "done", sub: "Signed 10-08" });
+    expect(at("design", { soStatus: "CONFIRMED" })[0]).toMatchObject({ state: "done", sub: "Signed 10/08" });
     expect(at("design", { soStatus: "DRAFT" })[0]).toMatchObject({ state: "later", sub: "Not signed yet" });
     expect(at("design", { soStatus: "CANCELLED" })[0]).toMatchObject({ state: "later" });
   });
@@ -433,13 +430,13 @@ describe("designTodoRows (the board logic Calendar uses)", () => {
 
   it("a 3D in progress is a deadline row with the Calendar's wording", () => {
     const row = rowsFor([project({ start3dOn: "2026-10-10" })]).find((r) => r.id === "due-3-0");
-    expect(row).toMatchObject({ tone: "err", group: "design deadline", title: "3D deadline · 20-10" });
-    expect(row?.detail).toBe("3 days late · 3D by Jia Xin · Started 10-10 · SOP 10 days");
+    expect(row).toMatchObject({ tone: "err", group: "design deadline", title: "3D deadline · 20/10" });
+    expect(row?.detail).toBe("3 days late · 3D by Jia Xin · Started 10/10 · SOP 10 days");
   });
   it("a 3D sent and not approved is waiting for client, with Remind client, + Amendment and Client approved", () => {
     const rows = rowsFor([project({ files: [f3], reviews: [{ fileId: 1, sentOn: "2026-10-20", approvedOn: null }] })]);
     const w = rows.find((r) => r.id.startsWith("approval"));
-    expect(w?.title).toBe("3D sent 01-10 · 22 days ago");
+    expect(w?.title).toBe("3D sent 01/10 · 22 days ago");
     expect(w?.action).toMatchObject({ type: "remind", kind: "client_approval", label: "Remind client", phone: "012-345 6789" });
     expect(w?.more?.map((a) => a.label)).toEqual(["+ Amendment", "Client approved"]);
   });

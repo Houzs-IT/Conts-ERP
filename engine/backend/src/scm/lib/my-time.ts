@@ -10,7 +10,7 @@
 // exclusive upper bound is the MY-midnight of the following day.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { fmtDate, withDayFirst } from '../shared/format';
+import { fmtDate } from '../shared/format';
 
 const MY_OFFSET_MS = 8 * 60 * 60 * 1000;
 const MY_TZ = 'Asia/Kuala_Lumpur';
@@ -90,8 +90,7 @@ export function monthBoundsMy(year: number, month0: number): PeriodBounds {
 
 /* Was `{ day: 'numeric', month: 'short' }` — "16 Aug 2026", a month NAME in a
    filter label sitting next to DD/MM/YYYY everywhere else on the same screen. */
-// Sales order filter labels are Dream Crafter's, so day first (YH, 11 Nov 2026).
-const fmtDay = (d: Date) => withDayFirst(() => fmtDate(d));
+const fmtDay = fmtDate;
 
 /**
  * From–to date range (MY calendar days, `to` inclusive) → UTC bounds.

@@ -80,7 +80,7 @@ export function clockOf(iso: string | null): string | null {
   return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
 }
 
-/** "Today · 24-10", "Yesterday · 23-10", "21-10", "03-12-2025". */
+/** "Today · 24/10", "Yesterday · 23/10", "21/10", "03/12/2025". */
 export function dayTitle(day: string, today: string): string {
   const y = Number(day.slice(0, 4));
   const short = fmtDayMonth(day);

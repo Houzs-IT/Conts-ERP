@@ -109,7 +109,7 @@ export function diff(a: string, b: string): number {
   return Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 864e5);
 }
 
-/** "23-10": the app's short date (day first on the Dream Crafter side). */
+/** "23/10": the app's short date, day first. */
 export function ds(s: string): string {
   return fmtDayMonth(s);
 }

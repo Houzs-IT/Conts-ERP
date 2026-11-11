@@ -1,5 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import { setDayFirst } from "../../vendor/shared/format";
+import { describe, expect, it } from "vitest";
 import { datesText, deliveredGroups, docSummary } from "./renovationBetaDocsModel";
 import type { LinePo, ManagedLine } from "./renovationBetaLines";
 import { dayMonth } from "./renovationBetaModel";
@@ -27,8 +26,6 @@ const lines = [
 
 
 // These are Dream Crafter screens: dates read day first (YH, 11 Nov 2026).
-beforeAll(() => setDayFirst(true));
-afterAll(() => setDayFirst(false));
 
 describe("DO and GR rows", () => {
   it("show the PO number, Client PO and delivery date the PO tab shows", () => {
@@ -38,8 +35,8 @@ describe("DO and GR rows", () => {
     expect(s.clientPo).toBe(true);
     // a: the PO line's date (not the plan's); b: no PO, so the line's plan.
     expect(s.deliverOn).toEqual(["2026-10-30", "2026-11-05"]);
-    expect(datesText(s.deliverOn, dayMonth)).toBe("30-10, 05-11");
-    expect(datesText(["2026-10-01", "2026-10-02", "2026-10-09"], dayMonth)).toBe("01-10 to 09-10");
+    expect(datesText(s.deliverOn, dayMonth)).toBe("30/10, 05/11");
+    expect(datesText(["2026-10-01", "2026-10-02", "2026-10-09"], dayMonth)).toBe("01/10 to 09/10");
   });
 
   it("link a goods receipt to the DOs that carried its lines", () => {

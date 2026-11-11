@@ -481,24 +481,24 @@ export function filterFeed(items: readonly FeedItem[], room: string): FeedItem[]
   return items.filter((i) => (room === NO_ROOM ? !i.room : i.room === room));
 }
 
-/* ---------- Dates: the app's one rule (dd-mm-yyyy on the Dream Crafter side, YH 11 Nov 2026) ---------- */
+/* ---------- Dates: the app's one rule (dd/mm/yyyy, YH 11 Nov 2026) ---------- */
 
 function ymd(iso: string | null | undefined): [number, number, number] | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
   return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
 }
 
-/** "14-10" (a card never prints the year); "-" when there is no date. */
+/** "14/10" (a card never prints the year); "-" when there is no date. */
 export function dayMonth(iso: string | null | undefined): string {
   return ymd(iso) ? fmtDayMonth(iso!.slice(0, 10)) : "-";
 }
 
-/** "15-11-2026"; "-" when there is no date. */
+/** "15/11/2026"; "-" when there is no date. */
 export function dayMonthYear(iso: string | null | undefined): string {
   return ymd(iso) ? fmtDate(iso!.slice(0, 10)) : "-";
 }
 
-/** A day's heading: "14-10", with the year when it is not today's year. */
+/** A day's heading: "14/10", with the year when it is not today's year. */
 export function dayHeading(dayValue: string, today: string): string {
   return ymd(dayValue)?.[0] === ymd(today)?.[0] ? dayMonth(dayValue) : dayMonthYear(dayValue);
 }
