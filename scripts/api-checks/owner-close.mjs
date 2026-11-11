@@ -2,7 +2,7 @@
 // Locking a month's income for ticked units freezes it; a later change to a booking reaches the owner once, as an owner
 // adjustment on the next open month, worked out again through the contract; unlocking (with a reason) brings the month
 // back, withdrawing what can be withdrawn and balancing what already sits on a final statement:
-//   - lock, lock again (a no-op), a month before October 2026 refused, a stage other than income refused, the month
+//   - lock, lock again (a no-op), a month before October 2026 refused, an unknown step refused, the month
 //     running now refused;
 //   - a changed booking leaves the locked income alone and its difference lands on November once, however often the
 //     statements are generated; a stay across October and November sends only its October part there;
@@ -77,7 +77,7 @@ await db(`INSERT INTO reservations (id, unit_id, channel, external_ref, state, c
   A, B, u.id, day(win.a), day(win.a + 2), day(win.b.s), day(win.b.e), now);
 const bNights = win.b.e - win.b.s, bOctNights = 32 - win.b.s;
 
-const income = async (month, unitId) => (await call('GET', `/api/owner-close?month=${month}`)).json?.units?.find(x => x.unitId === unitId)?.income;
+const income = async (month, unitId) => (await call('GET', `/api/owner-close?month=${month}`)).json?.units?.find(x => x.unitId === unitId)?.income?.amount;
 const lateOf = unitId => db(`SELECT id, amount, occurred_on, state, reference, description FROM owner_adjustments WHERE unit_id = $1 AND source = 'stage_lock' ORDER BY created_at, id`, unitId);
 const generate = (month, ownerId) => call('POST', '/api/statements/generate', { period: month, ownerIds: [ownerId] });
 const lock = (unitId, month = OCT, stage = 'income', role) => call('POST', '/api/owner-close/lock', { month, stage, unitIds: [unitId] }, role);
@@ -86,18 +86,18 @@ const unlock = (unitId, reason, role) => call('POST', '/api/owner-close/unlock',
 // Locking.
 r = await call('GET', `/api/owner-close?month=${OCT}`);
 const row = r.json.units.find(x => x.unitId === u.id);
-check('the unit is listed, not locked yet', !!row && row.incomeLock === null && r.json.may?.lockIncome === true, JSON.stringify(row));
-const oct0 = row?.income;
+check('the unit is listed, not locked yet', !!row && row.locks?.income === null && r.json.may?.lockIncome === true, JSON.stringify(row));
+const oct0 = row?.income?.amount;
 r = await lock(u.id);
 check('locking October income locks the ticked unit', r.status === 201 && r.json?.locked?.length === 1 && r.json.locked[0] === u.id, r.text);
 r = await lock(u.id);
 check('locking it again changes nothing', r.status === 200 && !r.json?.locked?.length && r.json?.already?.includes(u.id), r.text);
 r = await call('GET', `/api/owner-close?month=${OCT}`);
-check('the page shows who locked it', !!r.json.units.find(x => x.unitId === u.id)?.incomeLock?.by && r.json.counts.income.locked >= 1, JSON.stringify(r.json.counts));
+check('the page shows who locked it', !!r.json.units.find(x => x.unitId === u.id)?.locks?.income?.by && r.json.counts.income.locked >= 1, JSON.stringify(r.json.counts));
 r = await lock(u.id, '2026-09');
 check('September cannot be locked', r.status === 422 && r.json?.error?.message === 'Locks start from October 2026.', r.text);
-r = await lock(u.id, OCT, 'deductions');
-check('only income can be locked so far', r.status === 422 && r.json?.error?.message === 'Only income can be locked so far.', r.text);
+r = await lock(u.id, OCT, 'gp');
+check('an unknown step cannot be locked', r.status === 422 && r.json?.error?.message === 'Say which step to lock: income, deductions or O2.', r.text);
 // The month running now (Malaysia time) would freeze half its reservations (review finding 3).
 const thisMonth = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7);
 const running = `${new Date(`${thisMonth}-01T00:00:00Z`).toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })} has not ended yet.`;
@@ -222,7 +222,7 @@ await db(`UPDATE units SET contract_id = $1 WHERE id = $2`, LTC, lt.id);
 await db(`INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
   VALUES ('oc-check-ml', $1, $2, 'credit', 1000, 'Check credit', '2026-10-15', NULL, 'open', 'manual', NULL, $3, $3) ON CONFLICT (id) DO NOTHING`, lt.owner_id, lt.id, now);
 r = await call('GET', `/api/owner-close?month=${OCT}`);
-check('a master-lease unit is not on the income step', r.status === 200 && !r.json.units.some(x => x.unitId === lt.id), JSON.stringify(r.json?.units?.find(x => x.unitId === lt.id)));
+check('a master-lease unit is not on the income step', r.status === 200 && !(r.json.units.find(x => x.unitId === lt.id)?.steps ?? []).includes('income'), JSON.stringify(r.json?.units?.find(x => x.unitId === lt.id)));
 r = await lock(lt.id);
 check('… and is not locked', r.status === 200 && !r.json?.locked?.length && !!r.json?.notLockable?.includes(lt.id), r.text);
 await db(`DELETE FROM owner_adjustments WHERE id = 'oc-check-ml'`);
