@@ -4,7 +4,7 @@ import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, JOB_TYPES, SEVERITIES, pickAssignee, hasBilling, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../_lib/expenses';
 import { repairNotice } from '../../../_lib/notices';
-import { applyPassKeyUrgency } from '../../../_lib/passKeyJobs';
+import { applyPassKeyUrgency, hasUrgentByHand } from '../../../_lib/passKeyJobs';
 import { hasServicePrices, serviceBook } from '../../../_lib/servicePrices';
 import { layoutKey } from '../../../_lib/cleaningPrices';
 
@@ -63,6 +63,20 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     put('category', 'category', b.category);
   }
   const cols = await hasJobType(env);
+  const nextJobType: unknown = b?.jobType ?? cur.job_type;
+  if (cur.source === 'booking' && cur.job_type === 'pass_key' && b?.jobType !== undefined && b.jobType !== 'pass_key') {
+    return fail('VALIDATION', 'A Pass key job from a reservation stays a Pass key job. Use Urgency to make it urgent.', 422, { jobType: 'Keep it a Pass key job.' });
+  }
+  const isClearingCheckInDay = b?.dueOn === null || (b?.jobType === 'pass_key' && cur.job_type !== 'pass_key' && !(b?.dueOn ?? cur.due_on));
+  if (nextJobType === 'pass_key' && isClearingCheckInDay) return fail('VALIDATION', 'Pick the check-in day.', 422, { dueOn: 'Pick the check-in day.' });
+  if (b?.urgentByHand !== undefined) {
+    if (typeof b.urgentByHand !== 'boolean') return fail('VALIDATION', 'Normal or urgent.', 422, { urgentByHand: 'Normal or urgent.' });
+    if (nextJobType !== 'pass_key') return fail('VALIDATION', 'Only a Pass key job has its own urgency.', 422, { urgentByHand: 'Only for Pass key.' });
+    if (!(await hasUrgentByHand(env))) return fail('NOT_CONFIGURED', 'Urgency on a Pass key job needs a database update (migration 0301) that is not applied yet.', 501);
+    put('urgent_by_hand', 'urgentByHand', b.urgentByHand);
+  } else if (nextJobType !== 'pass_key' && cur.urgent_by_hand === true) {
+    put('urgent_by_hand', 'urgentByHand', false);
+  }
   if (b?.jobType !== undefined) {
     if (!JOB_TYPES.includes(b.jobType) || (!cols && b.jobType === 'pass_key')) return fail('VALIDATION', 'Urgent, Normal or Pass key.', 422, { jobType: 'Urgent, Normal or Pass key.' });
     if (cols) put('job_type', 'jobType', b.jobType);

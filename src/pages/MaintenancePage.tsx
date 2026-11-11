@@ -30,6 +30,7 @@ import { ServicePrices } from './ServicePrices';
 import { PriceChangePanel } from './units/PriceChangePanel';
 import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
 import { HistoryDisclosure, PhoneHistory, RecordHistory } from '../components/RecordHistory';
+import { passKeyStatus, type PassKeyStatus } from '../lib/passKeyStatus';
 
 /* ---------- the API's shape (functions/api/maintenance/issues.ts) ---------- */
 
@@ -47,7 +48,7 @@ interface Issue {
   /** Migration 0126: job type, severity, parts and due date; approvalStatus is Needs owner approval / Approved / Not needed. */
   jobType?: JobType; severity?: 'minor' | 'major'; dueOn?: string | null; needsParts?: boolean; partsArrivedAt?: string | null;
   approvalStatus?: 'needed' | 'approved' | 'not_needed';
-  supportRequestedAt?: string | null; supportNote?: string | null;
+  supportRequestedAt?: string | null; supportNote?: string | null; urgentByHand?: boolean;
 }
 type JobType = 'urgent' | 'pass_key' | 'normal';
 const JOB_TYPE: Record<JobType, string> = { urgent: 'Urgent', pass_key: 'Pass key', normal: 'Normal' };
@@ -83,7 +84,12 @@ const COLLECT_FROM: Partial<Record<ChargeTo, string>> = { owner: 'the owner', gu
 const FIELD_ROLES = ['housekeeper', 'technician'];
 
 const awaitingOwner = (i: Issue) => i.state !== 'resolved' && i.ownerApprovalRequired && !i.ownerApprovedAt && i.chargeTo === 'owner';
+const PASS_KEY_STATUS: Record<PassKeyStatus, { label: string; tone: AnyTone }> = {
+  new: { label: 'New', tone: 'neutral' }, assigned: { label: 'Assigned', tone: 'neutral' }, needs_support: { label: 'Needs support', tone: 'critical' },
+  missed: { label: 'Missed', tone: 'critical' }, done: { label: 'Pass key done', tone: 'success' },
+};
 function statusOf(i: Issue): { label: string; tone: AnyTone } {
+  if (typeOf(i) === 'pass_key') return PASS_KEY_STATUS[passKeyStatus({ state: i.state, assigneeName: i.vendorName, dueOn: i.dueOn ?? null, supportRequestedAt: i.supportRequestedAt ?? null }, mytDay(0))];
   if (i.state === 'resolved') return { label: i.finalAmount ? `Done · ${PAYER_SHORT[i.chargeTo]}` : 'Done', tone: 'success' };
   if (awaitingOwner(i)) return { label: 'Awaiting owner approval', tone: 'warning' };
   if (waitingParts(i)) return { label: 'Waiting for parts', tone: 'warning' };
@@ -745,7 +751,11 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
             </section>
           )}
           {/* Phones have no hover, so the reason a button is off is written out. The bar sticks to the bottom of a long sheet on phones. */}
-          {(!started(i) || money) && <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
+          {typeOf(i) === 'pass_key' ? <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
+            <Button variant="primary" icon={<Icon name="KeyRound" size="sm" />} loading={busy === 'passKeyDone'} disabled={media.length === 0} disabledReason="Add a photo first."
+              onClick={() => void act('passKeyDone', () => api.post(`/maintenance/issues/${i.id}/pass-key-done`, {}), 'Pass key done.')}>Pass key done</Button>
+            {media.length === 0 && <span className="text-meta text-muted-ink">Add a photo first.</span>}
+          </section> : (!started(i) || money) && <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
             <div className="grid grid-flow-col auto-cols-fr gap-3">
               {/* One black button, the next step: Start repair until it is under way, then Mark done. */}
               {!started(i) && <Button variant="primary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval."
@@ -886,22 +896,31 @@ function CompleteModal({ issue, billing, onClose, onDone }: { issue: Issue; bill
  *  due date Normal jobs are worked in, and the parts it waits for. */
 function JobPlan({ i, busy, act }: { i: Issue; busy: string | null; act: (key: string, fn: () => Promise<unknown>, ok: string, body?: string) => Promise<boolean> }) {
   const patch = (key: string, body: Record<string, unknown>, ok: string, note?: string) => void act(key, () => api.patch(`/maintenance/issues/${i.id}`, body), ok, note);
+  const isPassKey = typeOf(i) === 'pass_key';
+  const isBookingPassKey = isPassKey && i.source === 'booking';
   return (
     <section className="flex flex-col gap-2.5 rounded-card border border-solid border-line p-3.5">
       <h3 className="m-0 text-copy font-semibold">Job</h3>
       <div className="grid grid-cols-2 gap-3">
-        <FormRow label="Type">
-          <select className={INPUT} value={typeOf(i)} disabled={busy === 'type'} onChange={e => patch('type', { jobType: e.target.value }, 'Job type saved.')}>
+        <FormRow label="Type" hint={isPassKey ? 'Urgent by itself on the day before check-in, on the day and when missed.' : undefined}>
+          <select className={INPUT} value={typeOf(i)} disabled={busy === 'type' || isBookingPassKey} onChange={e => patch('type', { jobType: e.target.value }, 'Job type saved.')}>
             {(Object.keys(JOB_TYPE) as JobType[]).map(t => <option key={t} value={t}>{JOB_TYPE[t]}</option>)}
           </select>
         </FormRow>
+        {isPassKey && (
+          <FormRow label="Urgency">
+            <select className={INPUT} value={i.urgentByHand ? 'urgent' : 'normal'} disabled={busy === 'urgency'} onChange={e => patch('urgency', { urgentByHand: e.target.value === 'urgent' }, 'Urgency saved.')}>
+              <option value="normal">Normal</option><option value="urgent">Urgent</option>
+            </select>
+          </FormRow>
+        )}
         <FormRow label="Severity">
           <select className={INPUT} value={i.severity ?? 'minor'} disabled={busy === 'severity'} onChange={e => patch('severity', { severity: e.target.value }, 'Severity saved.')}>
             <option value="minor">Minor</option><option value="major">Major</option>
           </select>
         </FormRow>
-        <FormRow label="Due" hint={typeOf(i) === 'normal' ? 'Normal jobs are worked one by one in this order.' : undefined}>
-          <DateField aria-label="Due date" className={INPUT} value={i.dueOn ?? ''} onChange={v => patch('due', { dueOn: v || null }, v ? 'Due date saved.' : 'Due date cleared.')} />
+        <FormRow label={isPassKey ? 'Check-in day' : 'Due'} hint={typeOf(i) === 'normal' ? 'Normal jobs are worked one by one in this order.' : undefined}>
+          <DateField aria-label={isPassKey ? 'Check-in day' : 'Due date'} className={INPUT} value={i.dueOn ?? ''} onChange={v => patch('due', { dueOn: v || null }, v ? 'Due date saved.' : 'Due date cleared.')} />
         </FormRow>
         <FormRow label="Owner approval">
           <span className="h-10 flex items-center"><StatusBadge tone={APPROVAL[i.approvalStatus ?? 'not_needed'].tone}>{APPROVAL[i.approvalStatus ?? 'not_needed'].label}</StatusBadge></span>

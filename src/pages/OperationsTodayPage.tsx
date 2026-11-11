@@ -222,7 +222,7 @@ function StayLine({ id, channel, time, done, unit, guest, sub, subTone, actions 
 }
 
 function PassKeyBadge({ passKey: { isHandedOver, technician } }: { passKey: PassKeyJob }): JSX.Element {
-  if (isHandedOver) return <StatusBadge tone="success">Key handed over</StatusBadge>;
+  if (isHandedOver) return <StatusBadge tone="success">Pass key done</StatusBadge>;
   return technician
     ? <StatusBadge tone="info">Pass key · {technician}</StatusBadge>
     : <StatusBadge tone="warning">Pass key · no technician</StatusBadge>;

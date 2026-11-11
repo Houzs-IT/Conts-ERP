@@ -18,6 +18,7 @@ import { useFieldRefresh, useFreshIds } from '../lib/fieldLive';
 import { MoneyInput } from '../components/inputs';
 import { readReceipt } from '../lib/claims';
 import { todayMyt } from '../lib/format';
+import { passKeyStatus } from '../lib/passKeyStatus';
 
 /* GET /api/field/repairs and /api/field/repairs/:id (functions/api/field/repairs*.ts). No amounts: the server never sends any. */
 interface Repair {
@@ -73,6 +74,7 @@ interface Detail {
 
 /** The repair's step in the words of the Maintenance screen (status vocabulary "maintenance"). */
 function progress(r: Repair): string {
+  if (r.jobType === 'pass_key') return passKeyStatus({ state: r.state, assigneeName: r.assigneeName, dueOn: r.dueOn ?? null, supportRequestedAt: r.supportRequestedAt ?? null }, todayMyt());
   if (r.state === 'resolved') return 'done';
   if (r.waitingForOwner) return 'awaiting_owner';
   if (r.endedAt) return 'repair_finished';
@@ -434,12 +436,48 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   const counts = { before: media.filter(m => m.stage === 'before').length, after: media.filter(m => m.stage === 'after').length };
   const windows = j?.windows ?? [];
 
+  const supportForm = (
+    <div className="flex flex-col gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-copy font-semibold">{tr.supportTitle}</span>
+        <span className="text-meta text-muted-ink">{tr.supportHint}</span>
+        <textarea className={cx(TEXTAREA, 'text-[16px]')} value={supportNote} onChange={e => setSupportNote(e.target.value)} placeholder={tr.supportPh} maxLength={1000} autoFocus />
+      </label>
+      <Button size="touch" variant="primary" className="w-full" icon={<Icon name="Send" size="sm" />} loading={busy === 'support'}
+        disabled={!supportNote.trim()} disabledReason={tr.supportNeedNote}
+        onClick={() => void act('support', () => api.post(`/maintenance/issues/${id}/support`, { note: supportNote.trim() }), tr.supportSent, tr.supportSentBody).then(ok => { if (ok) { setIsAskingSupport(false); setSupportNote(''); } })}>{tr.supportSend}</Button>
+      <Button size="touch" variant="ghost" className="w-full" onClick={() => setIsAskingSupport(false)}>{tr.form.cancel}</Button>
+    </div>
+  );
+  const supportAskedNote = j?.supportRequestedAt ? (
+    <div className="rounded-control bg-warning-bg text-warning p-3 flex flex-col gap-1">
+      <span>{tr.supportAsked(stamp(j.supportRequestedAt))}</span>
+      {j.supportNote && <span className="text-meta whitespace-pre-wrap [overflow-wrap:anywhere]">{j.supportNote}</span>}
+    </div>
+  ) : null;
+  const hasPhoto = media.length > 0;
+
   let footer: ReactNode = null;
   if (j && d.data?.mayPick) {
     footer = <Button size="touch" variant="primary" className="w-full" icon={<Icon name="Hand" size="sm" />} loading={busy === 'pick'}
       onClick={() => void act('pick', () => api.post(`/field/repairs/${id}/pick`, {}), tr.picked, tr.pickedBody).then(ok => { if (ok) onPicked(); })}>{tr.pickUp}</Button>;
   } else if (j && working && j.waitingForOwner) {
     footer = <p className="m-0 text-copy text-warning text-center">{tr.waitingOwner}</p>;
+  } else if (j && working && j.jobType === 'pass_key' && isAskingSupport) {
+    footer = supportForm;
+  } else if (j && working && j.jobType === 'pass_key') {
+    footer = (
+      <div className="flex flex-col gap-2">
+        {supportAskedNote}
+        <Button size="touch" variant="primary" className="w-full" icon={<Icon name="KeyRound" size="sm" />} loading={busy === 'passKeyDone'}
+          disabled={!hasPhoto} disabledReason={tr.passKeyNeedPhoto}
+          onClick={() => void act('passKeyDone', () => api.post(`/maintenance/issues/${id}/pass-key-done`, {}), tr.passKeyMarked, tr.passKeyMarkedBody)}>{tr.passKeyDone}</Button>
+        {!hasPhoto && <span className="text-meta text-muted-ink text-center">{tr.passKeyNeedPhoto}</span>}
+        {!j.supportRequestedAt && (
+          <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="LifeBuoy" size="sm" />} onClick={() => setIsAskingSupport(true)}>{tr.cantDoIt}</Button>
+        )}
+      </div>
+    );
   } else if (j && working && !j.startedAt) {
     footer = (
       <div className="flex flex-col gap-2">
@@ -452,28 +490,11 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
       </div>
     );
   } else if (j && working && !j.endedAt && isAskingSupport) {
-    footer = (
-      <div className="flex flex-col gap-2">
-        <label className="flex flex-col gap-1">
-          <span className="text-copy font-semibold">{tr.supportTitle}</span>
-          <span className="text-meta text-muted-ink">{tr.supportHint}</span>
-          <textarea className={cx(TEXTAREA, 'text-[16px]')} value={supportNote} onChange={e => setSupportNote(e.target.value)} placeholder={tr.supportPh} maxLength={1000} autoFocus />
-        </label>
-        <Button size="touch" variant="primary" className="w-full" icon={<Icon name="Send" size="sm" />} loading={busy === 'support'}
-          disabled={!supportNote.trim()} disabledReason={tr.supportNeedNote}
-          onClick={() => void act('support', () => api.post(`/maintenance/issues/${id}/support`, { note: supportNote.trim() }), tr.supportSent, tr.supportSentBody).then(ok => { if (ok) { setIsAskingSupport(false); setSupportNote(''); } })}>{tr.supportSend}</Button>
-        <Button size="touch" variant="ghost" className="w-full" onClick={() => setIsAskingSupport(false)}>{tr.form.cancel}</Button>
-      </div>
-    );
+    footer = supportForm;
   } else if (j && working && !j.endedAt) {
     footer = (
       <div className="flex flex-col gap-2">
-        {j.supportRequestedAt && (
-          <div className="rounded-control bg-warning-bg text-warning p-3 flex flex-col gap-1">
-            <span>{tr.supportAsked(stamp(j.supportRequestedAt))}</span>
-            {j.supportNote && <span className="text-meta whitespace-pre-wrap [overflow-wrap:anywhere]">{j.supportNote}</span>}
-          </div>
-        )}
+        {supportAskedNote}
         <input className={cx(INPUT, 'h-11')} value={doneNote} onChange={e => setDoneNote(e.target.value)} placeholder={tr.whatYouDid} aria-label={tr.whatYouDidLabel} maxLength={1000} />
         <Button size="touch" variant="primary" className="w-full" icon={<Icon name="CircleCheck" size="sm" />} loading={busy === 'end'}
           disabled={counts.after === 0} disabledReason={tr.needAfter}
@@ -487,7 +508,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   } else if (j && working && j.endedAt) {
     footer = <p className="m-0 text-copy text-success text-center">{tr.doneAt(hm(j.endedAt), short(j.endedAt.slice(0, 10)))}</p>;
   } else if (j && closed) {
-    footer = <p className="m-0 text-copy text-muted-ink text-center">{tr.closed(j.resolvedAt ? short(j.resolvedAt.slice(0, 10)) : null)}</p>;
+    footer = <p className="m-0 text-copy text-muted-ink text-center">{j.jobType === 'pass_key' ? tr.passKeyMarked : tr.closed(j.resolvedAt ? short(j.resolvedAt.slice(0, 10)) : null)}</p>;
   }
 
   return (
@@ -548,14 +569,24 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
               </InfoRow>
 
               <section className="flex flex-col gap-2.5">
-                <AttachmentLabel title={tr.media} count={media.length} hint={working && j.startedAt && counts.after === 0 ? tr.atLeastAfter : undefined} />
-                <Segmented label={tr.beforeOrAfter} className="[&>button]:h-11" value={stage} onChange={setStage} options={[
-                  { value: 'before', label: <>{tr.before} <span className="text-muted-ink tabular-nums">{counts.before}</span></> },
-                  { value: 'after', label: <>{tr.after} <span className="text-muted-ink tabular-nums">{counts.after}</span></> },
-                ]} />
-                <MediaGallery key={stage} items={media.filter(m => m.stage === stage)} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: stage }, placeName(j)) : undefined}
-                  onDone={refresh} onRemove={working ? m => void removePhoto(m) : undefined} addLabel={stage === 'before' ? tr.addBefore : tr.addAfter}
-                  emptyText={stage === 'before' ? tr.noBefore : tr.noAfter} />
+                {j.jobType === 'pass_key' ? (
+                  <>
+                    <AttachmentLabel title={tr.media} count={media.length} hint={working && !hasPhoto ? tr.passKeyNeedPhoto : undefined} />
+                    <MediaGallery items={media} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: 'after' }, placeName(j)) : undefined}
+                      onDone={refresh} onRemove={working ? m => void removePhoto(m) : undefined} addLabel={t.jobs.addPhoto} emptyText={t.jobs.noPhotos} />
+                  </>
+                ) : (
+                  <>
+                    <AttachmentLabel title={tr.media} count={media.length} hint={working && j.startedAt && counts.after === 0 ? tr.atLeastAfter : undefined} />
+                    <Segmented label={tr.beforeOrAfter} className="[&>button]:h-11" value={stage} onChange={setStage} options={[
+                      { value: 'before', label: <>{tr.before} <span className="text-muted-ink tabular-nums">{counts.before}</span></> },
+                      { value: 'after', label: <>{tr.after} <span className="text-muted-ink tabular-nums">{counts.after}</span></> },
+                    ]} />
+                    <MediaGallery key={stage} items={media.filter(m => m.stage === stage)} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: stage }, placeName(j)) : undefined}
+                      onDone={refresh} onRemove={working ? m => void removePhoto(m) : undefined} addLabel={stage === 'before' ? tr.addBefore : tr.addAfter}
+                      emptyText={stage === 'before' ? tr.noBefore : tr.noAfter} />
+                  </>
+                )}
               </section>
 
               {(working || d.data!.files.length > 0) && (
