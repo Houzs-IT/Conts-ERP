@@ -138,6 +138,9 @@ export const PaymentVoucherDetail = () => {
   const detailQ = usePaymentVoucherDetail(id || null);
   const pv    = detailQ.data?.paymentVoucher as Record<string, any> | undefined;
   const lines = (detailQ.data?.lines ?? []) as Array<Record<string, any>>;
+  /* The projects its lines name. An AP payment over invoices of two or more projects is split over them (chew 11 Nov
+     2026): it has no one project, and the edit sends none. */
+  const lineProjectIds = [...new Set(lines.map((l) => l.project_id).filter((p) => p != null).map(Number))];
   // Migration 0202 — PIs this voucher settles (camelCase from the API).
   const allocations = (detailQ.data?.allocations ?? []) as Array<Record<string, any>>;
 
@@ -277,7 +280,7 @@ export const PaymentVoucherDetail = () => {
     setCreditAccountCode(pv.credit_account_code ?? '');
     setVoucherDate(pv.voucher_date ?? '');
     setNotes(pv.notes ?? '');
-    setEditProjectId(lines.find((l) => l.project_id != null)?.project_id ?? null);
+    setEditProjectId(lineProjectIds.length === 1 ? lineProjectIds[0]! : null);
     setExchangeRate(String(pv.exchange_rate ?? '1'));
     /* Cleared on entering edit, never back-derived from the stored rate: the MYR
        field means "this is what I actually paid", and inventing it from a rate would
@@ -706,9 +709,12 @@ export const PaymentVoucherDetail = () => {
               {viewCurrency !== 'MYR' && <InfoCell label="Exchange Rate" value={`${pv.exchange_rate} (MYR per 1 ${viewCurrency})`} />}
               <InfoCell label="Notes" value={pv.notes ?? null} />
               {/* An AP payment's one project, from its bills; a plain voucher shows each line's own below. */}
-              {!isRefundPv && pvTypeOf(pv.purpose) === 'SUPPLIER_PAYMENT' && lines.some((l) => l.project_id != null) && (
-                <ProjectLimitField projectId={lines.find((l) => l.project_id != null)?.project_id ?? null} onChange={() => undefined} amountSen={isDraft && !pv.submitted_at ? viewTotalSen : 0} disabled
+              {!isRefundPv && pvTypeOf(pv.purpose) === 'SUPPLIER_PAYMENT' && lineProjectIds.length === 1 && (
+                <ProjectLimitField projectId={lineProjectIds[0]!} onChange={() => undefined} amountSen={isDraft && !pv.submitted_at ? viewTotalSen : 0} disabled
                   fieldClass={styles.field} labelClass={styles.fieldLabel} inputClass={styles.fieldInput} />
+              )}
+              {!isRefundPv && pvTypeOf(pv.purpose) === 'SUPPLIER_PAYMENT' && lineProjectIds.length > 1 && (
+                <InfoCell label="Projects" value={`Split over ${lineProjectIds.length} projects, as the invoices are — see the lines`} />
               )}
             </div>
           ) : (
@@ -788,6 +794,9 @@ export const PaymentVoucherDetail = () => {
               {apEdit && (
                 <ProjectLimitField projectId={editProjectId} onChange={setEditProjectId} amountSen={viewTotalSen} exceptPvId={id}
                   fieldClass={styles.field} labelClass={styles.fieldLabel} inputClass={styles.fieldInput} />
+              )}
+              {apEdit && editProjectId == null && lineProjectIds.length > 1 && (
+                <InfoCell label="Projects" value={`Split over ${lineProjectIds.length} projects, as the invoices are. Leave Project empty.`} />
               )}
             </div>
           )}

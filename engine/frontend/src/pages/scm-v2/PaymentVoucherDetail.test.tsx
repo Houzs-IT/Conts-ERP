@@ -291,4 +291,38 @@ describe('a plain voucher: each line says what it is for', () => {
       shown.detail = DETAIL;
     }
   });
+
+  /* chew 11 Nov 2026: an AP payment over invoices of two projects is split over them, line by line. */
+  const SPLIT = {
+    ...DETAIL,
+    lines: [
+      { ...DETAIL.lines[0]!, department: 'supply', project_id: 175, amount_sen: 900000 },
+      { ...DETAIL.lines[0]!, id: 'l2', line_no: 2, department: 'supply', project_id: 324, amount_sen: 107742 },
+    ],
+  };
+
+  test('an AP payment split over two projects says so, instead of showing one project', async () => {
+    shown.detail = SPLIT;
+    try {
+      draw('/scm/payment-vouchers/pv-9');
+      await waitFor(() => expect(screen.getByText('Split over 2 projects, as the invoices are — see the lines')).toBeTruthy());
+      expect(screen.queryByText(/Voucher project/)).toBeNull();
+    } finally {
+      shown.detail = DETAIL;
+    }
+  });
+
+  test('editing a split AP payment sends no project, so the server splits it again', async () => {
+    shown.detail = SPLIT;
+    updateAsync.mockClear();
+    try {
+      draw();
+      await waitFor(() => expect(screen.getByText('Voucher project none')).toBeTruthy());
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(updateAsync).toHaveBeenCalledTimes(1));
+      expect(updateAsync.mock.calls[0]![0]).toMatchObject({ projectId: null, allocations: [{ apInvoiceId: 'api-meta', amountSen: 1007742 }] });
+    } finally {
+      shown.detail = DETAIL;
+    }
+  });
 });
