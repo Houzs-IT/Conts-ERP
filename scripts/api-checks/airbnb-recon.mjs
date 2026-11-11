@@ -25,16 +25,19 @@ let r = await call('GET', `/api/airbnb-recon?month=${MONTH}`);
 check('the month reads, with confirming set up (migration 0259)', r.status === 200 && r.json?.ready === true && r.json?.confirmReady === true, r.text.slice(0, 300));
 if (!r.json?.confirmReady) done();
 
-// Two profit-share units of different owners with no statement from October on: a management contract with no minimum,
-// or no contract and no split of its own (the default operator share), as the statements read them (termsFor).
+// Two profit-share units of different owners whose October and November 2026 statements are not final yet (a draft is
+// fine: generating rebuilds it; the checks before this one in CI leave drafts for those months, unit-costs.mjs):
+// a management contract with no minimum, or no contract and no split of its own (the default operator share), as the
+// statements read them (termsFor). Owners with no statement in those months first.
 const units = await db(`SELECT u.id, u.owner_id, c.management_fee_pct AS fee FROM units u LEFT JOIN owner_contracts c ON c.id = u.contract_id
   WHERE u.parent_unit_id IS NULL AND coalesce(c.model, 'management') = 'management' AND coalesce(c.minimum_guarantee, 0) = 0
     AND (c.id IS NOT NULL OR coalesce(u.split_kind, '') !~* 'grr|guaranteed rent|profit share')
-    AND NOT EXISTS (SELECT 1 FROM owner_statements s WHERE s.owner_id = u.owner_id AND s.period_end >= '2026-10-01')
-  ORDER BY u.id`);
+    AND NOT EXISTS (SELECT 1 FROM owner_statements s WHERE s.owner_id = u.owner_id AND substr(s.period_start, 1, 7) IN ('2026-10', '2026-11')
+                      AND s.state IN ('finalised', 'sent', 'paid'))
+  ORDER BY (SELECT count(*) FROM owner_statements s WHERE s.owner_id = u.owner_id AND substr(s.period_start, 1, 7) IN ('2026-10', '2026-11')), u.id`);
 const u1 = units[0];
 const u2 = units.find(u => u.owner_id !== u1?.owner_id);
-check('two profit-share units of different owners, with no statement from October', !!u1 && !!u2, `${units.length} units`);
+check('two profit-share units of different owners, October and November not final', !!u1 && !!u2, `${units.length} units`);
 if (!u1 || !u2) done();
 const [setting] = await db(`SELECT coalesce((SELECT value FROM settings WHERE key = 'locale.managementFeePct'), (SELECT value FROM settings WHERE key = 'finance.default_fee_pct'), '25') AS fee`);
 
