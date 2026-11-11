@@ -1,11 +1,12 @@
-import { useState } from 'react';
 import Icon from '../Icon';
 import { cx } from '../../lib/design-tokens';
+import { plural } from '../../lib/format';
 import type { AccessCategory } from '../../lib/types';
 import {
   TIER_LEVELS, areaKeysOf, lowerBelow, raiseTo, tierState, type RoleLevels, type TierLevel, type TierState,
 } from '../../lib/roleGrid';
-import { SIDE_OPTIONS, categorySide } from './shared';
+import { CompanyToggle } from './CompanyToggle';
+import { SIDE_OPTIONS, categorySide, useToggleSet } from './shared';
 import { TIER_HINT, TIER_LABEL, TierBoxes } from './TierBoxes';
 
 export interface RoleCompany { key: string; label: string; categories: AccessCategory[] }
@@ -37,13 +38,8 @@ const statesFor = (levels: RoleLevels, keys: string[]): Record<TierLevel, TierSt
 });
 
 export default function RoleGrid({ companies, levels, savedLevels, isLocked, onChange }: RoleGridProps) {
-  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
-
-  const toggleGroup = (group: string) => setOpenGroups(previous => {
-    const next = new Set(previous);
-    if (next.has(group)) next.delete(group); else next.add(group);
-    return next;
-  });
+  const openGroups = useToggleSet();
+  const collapsedCompanies = useToggleSet();
 
   const boxesFor = (label: string, keys: string[]) => (
     <TierBoxes
@@ -64,8 +60,10 @@ export default function RoleGrid({ companies, levels, savedLevels, isLocked, onC
       </div>
       {companies.map(company => (
         <div key={company.key}>
-          <div className="px-5 max-md:px-4 pt-3.5 pb-1.5 text-caption font-semibold uppercase tracking-wide text-muted-ink">{company.label}</div>
-          {company.categories.map(category => {
+          <CompanyToggle label={company.label} note={plural(company.categories.length, 'group')}
+            isOpen={!collapsedCompanies.has(company.key)} onToggle={() => collapsedCompanies.toggle(company.key)}
+            className="px-3 max-md:px-2 pt-2 pb-1 bg-transparent text-muted-ink hover:text-ink" />
+          {!collapsedCompanies.has(company.key) && company.categories.map(category => {
             const isExpandable = category.areas.length > 1;
             const isOpen = isExpandable && openGroups.has(category.group);
             return (
@@ -73,7 +71,7 @@ export default function RoleGrid({ companies, levels, savedLevels, isLocked, onC
                 <div className={cx(ROW, 'min-h-[42px] [border-bottom:1px_solid_var(--color-line-soft)]')}>
                   <div className="flex items-center gap-2 min-w-0 text-copy font-medium">
                     {isExpandable ? (
-                      <button type="button" onClick={() => toggleGroup(category.group)} aria-expanded={isOpen}
+                      <button type="button" onClick={() => openGroups.toggle(category.group)} aria-expanded={isOpen}
                         aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${category.group}`}
                         className="grid place-items-center size-6 max-md:size-8 p-0 border-0 rounded-control bg-transparent text-muted-ink cursor-pointer">
                         <span className={cx('grid transition-transform duration-150', !isOpen && '-rotate-90')}><Icon name="ChevronDown" size="sm" /></span>

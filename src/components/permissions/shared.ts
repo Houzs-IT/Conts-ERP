@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useApi, type Query } from '../../lib/useApi';
 import type { AccessCategory, AccessChart, AccessLevel, AccessOrigin, Department, DepartmentKind, DepartmentsPayload, UserSide } from '../../lib/types';
 
@@ -53,7 +54,19 @@ export function useDepartments(enabled = true): Query<DepartmentsPayload> {
 
 export interface RoleTarget { departmentId: string; positionId: string | null }
 
-export const isSameRole = (first: RoleTarget | null, second: RoleTarget): boolean =>
+export interface ToggleSet { has: (key: string) => boolean; toggle: (key: string) => void }
+
+export function useToggleSet(): ToggleSet {
+  const [keys, setKeys] = useState<Set<string>>(new Set());
+  const toggle = (key: string) => setKeys(previous => {
+    const next = new Set(previous);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  return { has: key => keys.has(key), toggle };
+}
+
+export const isSameRole =(first: RoleTarget | null, second: RoleTarget): boolean =>
   first !== null && first.departmentId === second.departmentId && first.positionId === second.positionId;
 
 export function useAccessChart(): Query<AccessChart> {

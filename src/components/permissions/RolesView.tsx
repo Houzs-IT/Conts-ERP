@@ -3,7 +3,8 @@ import { cx } from '../../lib/design-tokens';
 import { plural } from '../../lib/format';
 import { areaKeysOf, countGrants, resolveRoleLevels } from '../../lib/roleGrid';
 import type { AccessChart, Department, Position } from '../../lib/types';
-import { SIDE_OPTIONS, TAG, defaultRoleName, headCountWithoutPosition, isFieldKind, isSameRole, visibleCategoriesOf, type RoleTarget } from './shared';
+import { CompanyToggle } from './CompanyToggle';
+import { SIDE_OPTIONS, TAG, defaultRoleName, headCountWithoutPosition, isFieldKind, isSameRole, useToggleSet, visibleCategoriesOf, type RoleTarget } from './shared';
 
 export interface RolesViewProps {
   chart: AccessChart;
@@ -80,6 +81,7 @@ function DepartmentRoles({ chart, department, selectedRole, onOpen }: Department
 }
 
 export default function RolesView({ chart, selectedRole, onOpen }: RolesViewProps) {
+  const collapsedCompanies = useToggleSet();
   const companies = SIDE_OPTIONS
     .map(option => ({ option, departments: chart.departments.filter(department => !isFieldKind(department.kind) && department.side === option.value) }))
     .filter(company => company.departments.length > 0);
@@ -91,10 +93,10 @@ export default function RolesView({ chart, selectedRole, onOpen }: RolesViewProp
     <>
       {companies.map(({ option, departments }) => (
         <div key={option.value}>
-          <div className="py-2.5 px-4 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold uppercase tracking-wide text-ink">
-            {option.value === 'both' ? 'Both companies' : option.label}
-          </div>
-          {departments.map(department => (
+          <CompanyToggle label={option.value === 'both' ? 'Both companies' : option.label} note={plural(departments.length, 'department')}
+            isOpen={!collapsedCompanies.has(option.value)} onToggle={() => collapsedCompanies.toggle(option.value)}
+            className="py-2 px-3 bg-muted hover:bg-page [border-bottom:1px_solid_var(--color-line)] text-ink" />
+          {!collapsedCompanies.has(option.value) && departments.map(department => (
             <DepartmentRoles key={department.id} chart={chart} department={department} selectedRole={selectedRole} onOpen={onOpen} />
           ))}
         </div>
