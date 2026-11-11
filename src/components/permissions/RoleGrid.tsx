@@ -4,9 +4,9 @@ import { plural } from '../../lib/format';
 import {
   TIER_LEVELS, areaKeysOf, lowerBelow, raiseTo, resetToRole, tierState, type RoleLevels, type TierLevel, type TierState,
 } from '../../lib/roleGrid';
-import { CompanyToggle } from './CompanyToggle';
+import { GroupToggle } from './GroupToggle';
 import { RoleDifferenceMark } from './RoleDifferenceMark';
-import { SIDE_OPTIONS, categorySide, useToggleSet } from './shared';
+import { COMPANY_LABEL, SIDE_OPTIONS, categorySide, useToggleSet } from './shared';
 import { TIER_HINT, TIER_LABEL, TierBoxes } from './TierBoxes';
 
 export interface GridArea { key: string; label: string }
@@ -68,9 +68,9 @@ export default function RoleGrid({ companies, levels, savedLevels, isLocked, onC
       </div>
       {companies.map(company => (
         <div key={company.key}>
-          <CompanyToggle label={company.label} note={plural(company.categories.length, 'group')}
+          <GroupToggle label={company.label} note={plural(company.categories.length, 'group')}
             isOpen={!collapsedCompanies.has(company.key)} onToggle={() => collapsedCompanies.toggle(company.key)}
-            className="px-3 max-md:px-2 pt-2 pb-1 bg-transparent text-muted-ink hover:text-ink" />
+            className="px-3 max-md:px-2 pt-2 pb-1 bg-transparent text-muted-ink hover:text-ink" labelClassName={COMPANY_LABEL} />
           {!collapsedCompanies.has(company.key) && company.categories.map(category => {
             const isExpandable = category.areas.length > 1;
             const isOpen = isExpandable && openGroups.has(category.group);

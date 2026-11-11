@@ -4,9 +4,10 @@ import Icon from '../Icon';
 import { cx } from '../../lib/design-tokens';
 import { plural } from '../../lib/format';
 import type { AccessChart, Department, PermissionPerson } from '../../lib/types';
-import { CompanyToggle } from './CompanyToggle';
+import { GroupToggle } from './GroupToggle';
 import {
-  COMPANY_HEADING, DEPARTMENT_HEADING, LIST_ROW, SELECTED_ROW, TAG, deskCompaniesOf, defaultRoleName, useToggleSet,
+  COMPANY_HEADING, COMPANY_LABEL, DEPARTMENT_HEADING, DEPARTMENT_LABEL, LIST_ROW, SELECTED_ROW, TAG, deskCompaniesOf, defaultRoleName, useToggleSet,
+  type ToggleSet,
 } from './shared';
 
 export interface PeopleViewProps {
@@ -50,9 +51,12 @@ function PersonRow({ person, roleName, isSelected, onOpen }: PersonRowProps) {
 export default function PeopleView({ chart, selectedPersonId, onOpen }: PeopleViewProps) {
   const [search, setSearch] = useState('');
   const collapsedCompanies = useToggleSet();
+  const collapsedDepartments = useToggleSet();
   const searchText = search.trim().toLowerCase();
+  const isSearching = searchText !== '';
+  const isOpen = (collapsed: ToggleSet, key: string) => isSearching || !collapsed.has(key);
   const peopleIn = (department: Department) => chart.people.filter(person =>
-    person.departmentId === department.id && (searchText === '' || person.fullName.toLowerCase().includes(searchText)));
+    person.departmentId === department.id && (!isSearching || person.fullName.toLowerCase().includes(searchText)));
   const companies = deskCompaniesOf(chart.departments)
     .map(company => ({ ...company, departments: company.departments.filter(department => peopleIn(department).length > 0) }))
     .filter(company => company.departments.length > 0);
@@ -63,21 +67,21 @@ export default function PeopleView({ chart, selectedPersonId, onOpen }: PeopleVi
         <Field aria-label="Search people" type="search" placeholder="Search people" value={search} onChange={event => setSearch(event.target.value)} />
       </div>
       {companies.length === 0 && (
-        <p className="m-0 p-5 text-copy text-muted-ink">{searchText ? `Nobody matches “${search.trim()}”.` : 'Nobody is in a department yet.'}</p>
+        <p className="m-0 p-5 text-copy text-muted-ink">{isSearching ? `Nobody matches “${search.trim()}”.` : 'Nobody is in a department yet.'}</p>
       )}
       {companies.map(({ side, label, departments }) => (
         <div key={side}>
-          <CompanyToggle label={label} note={plural(departments.length, 'department')}
-            isOpen={!collapsedCompanies.has(side)} onToggle={() => collapsedCompanies.toggle(side)} className={COMPANY_HEADING} />
-          {!collapsedCompanies.has(side) && departments.map(department => {
+          <GroupToggle label={label} note={plural(departments.length, 'department')}
+            isOpen={isOpen(collapsedCompanies, side)} onToggle={() => collapsedCompanies.toggle(side)}
+            className={COMPANY_HEADING} labelClassName={COMPANY_LABEL} />
+          {isOpen(collapsedCompanies, side) && departments.map(department => {
             const people = peopleIn(department);
             return (
               <div key={department.id}>
-                <div className={DEPARTMENT_HEADING}>
-                  <span className="text-copy font-semibold">{department.name}</span>
-                  <span className="text-caption text-muted-ink">{plural(people.length, 'person', 'people')}</span>
-                </div>
-                {people.map(person => (
+                <GroupToggle label={department.name} note={plural(people.length, 'person', 'people')}
+                  isOpen={isOpen(collapsedDepartments, department.id)} onToggle={() => collapsedDepartments.toggle(department.id)}
+                  className={DEPARTMENT_HEADING} labelClassName={DEPARTMENT_LABEL} />
+                {isOpen(collapsedDepartments, department.id) && people.map(person => (
                   <PersonRow key={person.id} person={person} roleName={roleNameOf(person, department)}
                     isSelected={person.id === selectedPersonId} onOpen={() => onOpen(person.id)} />
                 ))}

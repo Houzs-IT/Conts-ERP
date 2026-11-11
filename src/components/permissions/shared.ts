@@ -46,9 +46,11 @@ export const deskCompaniesOf = (departments: Department[]): DeskCompany[] =>
     }))
     .filter(company => company.departments.length > 0);
 
+export const COMPANY_LABEL = 'text-caption font-semibold uppercase tracking-wide';
 export const COMPANY_HEADING = 'py-2 px-3 bg-muted hover:bg-page [border-bottom:1px_solid_var(--color-line)] text-ink';
-export const DEPARTMENT_HEADING = 'flex items-baseline gap-2 py-2.5 px-4 bg-card [border-bottom:1px_solid_var(--color-line-soft)]';
-export const LIST_ROW = 'flex w-full items-center gap-3 text-left border-0 [border-bottom:1px_solid_var(--color-line-soft)] [font-family:inherit] min-h-14 py-2.5 pr-4 pl-8';
+export const DEPARTMENT_LABEL = 'text-copy font-semibold text-ink';
+export const DEPARTMENT_HEADING = 'py-2 px-4 bg-card hover:bg-muted [border-bottom:1px_solid_var(--color-line-soft)]';
+export const LIST_ROW = 'flex w-full items-center gap-3 text-left border-0 [border-bottom:1px_solid_var(--color-line-soft)] [font-family:inherit] min-h-14 py-2.5 pr-4 pl-10';
 export const SAVE_BAR = 'sticky bottom-[var(--sticky-bottom-offset,0px)] z-[2] flex items-center justify-between gap-3 flex-wrap py-3 px-5 max-md:px-4 bg-card [border-top:1px_solid_var(--color-line)]';
 export const SELECTED_ROW ='bg-info-bg shadow-[inset_3px_0_0_var(--color-gold)]';
 export const KIND_OPTIONS: { value: DepartmentKind; label: string }[] = [

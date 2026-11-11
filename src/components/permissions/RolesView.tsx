@@ -3,9 +3,9 @@ import { cx } from '../../lib/design-tokens';
 import { plural } from '../../lib/format';
 import { areaKeysOf, countGrants, resolveRoleLevels } from '../../lib/roleGrid';
 import type { AccessChart, Department, Position } from '../../lib/types';
-import { CompanyToggle } from './CompanyToggle';
+import { GroupToggle } from './GroupToggle';
 import {
-  COMPANY_HEADING, DEPARTMENT_HEADING, LIST_ROW, SELECTED_ROW, TAG, deskCompaniesOf, defaultRoleName, headCountWithoutPosition, isSameRole, useToggleSet, visibleCategoriesOf, type RoleTarget,
+  COMPANY_HEADING, COMPANY_LABEL, DEPARTMENT_HEADING, DEPARTMENT_LABEL, LIST_ROW, SELECTED_ROW, TAG, deskCompaniesOf, defaultRoleName, headCountWithoutPosition, isSameRole, useToggleSet, visibleCategoriesOf, type RoleTarget,
 } from './shared';
 
 export interface RolesViewProps {
@@ -27,6 +27,8 @@ interface DepartmentRolesProps {
   chart: AccessChart;
   department: Department;
   selectedRole: RoleTarget | null;
+  isOpen: boolean;
+  onToggle: () => void;
   onOpen: (target: RoleTarget) => void;
 }
 
@@ -56,7 +58,7 @@ function RoleRow({ name, isLocked, isSelected, people, summary, onOpen }: RoleRo
   );
 }
 
-function DepartmentRoles({ chart, department, selectedRole, onOpen }: DepartmentRolesProps) {
+function DepartmentRoles({ chart, department, selectedRole, isOpen, onToggle, onOpen }: DepartmentRolesProps) {
   const isManagement = department.kind === 'management';
   const rowFor = (position: Position | null) => {
     const target = { departmentId: department.id, positionId: position?.id ?? null };
@@ -69,19 +71,18 @@ function DepartmentRoles({ chart, department, selectedRole, onOpen }: Department
   };
   return (
     <div>
-      <div className={DEPARTMENT_HEADING}>
-        <span className="text-copy font-semibold">{department.name}</span>
-        <span className="text-caption text-muted-ink">{plural(isManagement ? 1 : department.positions.length + 1, 'role')}</span>
-      </div>
-      {isManagement
+      <GroupToggle label={department.name} note={plural(isManagement ? 1 : department.positions.length + 1, 'role')}
+        isOpen={isOpen} onToggle={onToggle} className={DEPARTMENT_HEADING} labelClassName={DEPARTMENT_LABEL} />
+      {isOpen && (isManagement
         ? <RoleRow name="Management" isLocked isSelected={false} people={department.headCount} summary="Full on everything. Cannot be changed." onOpen={() => undefined} />
-        : [rowFor(null), ...department.positions.map(rowFor)]}
+        : [rowFor(null), ...department.positions.map(rowFor)])}
     </div>
   );
 }
 
 export default function RolesView({ chart, selectedRole, onOpen }: RolesViewProps) {
   const collapsedCompanies = useToggleSet();
+  const collapsedDepartments = useToggleSet();
   const companies = deskCompaniesOf(chart.departments);
 
   if (companies.length === 0) {
@@ -91,11 +92,12 @@ export default function RolesView({ chart, selectedRole, onOpen }: RolesViewProp
     <>
       {companies.map(({ side, label, departments }) => (
         <div key={side}>
-          <CompanyToggle label={label} note={plural(departments.length, 'department')}
+          <GroupToggle label={label} note={plural(departments.length, 'department')}
             isOpen={!collapsedCompanies.has(side)} onToggle={() => collapsedCompanies.toggle(side)}
-            className={COMPANY_HEADING} />
+            className={COMPANY_HEADING} labelClassName={COMPANY_LABEL} />
           {!collapsedCompanies.has(side) && departments.map(department => (
-            <DepartmentRoles key={department.id} chart={chart} department={department} selectedRole={selectedRole} onOpen={onOpen} />
+            <DepartmentRoles key={department.id} chart={chart} department={department} selectedRole={selectedRole}
+              isOpen={!collapsedDepartments.has(department.id)} onToggle={() => collapsedDepartments.toggle(department.id)} onOpen={onOpen} />
           ))}
         </div>
       ))}
