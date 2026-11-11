@@ -51,7 +51,11 @@ export function SampleTab() {
           What an owner sees after joining The Conts, on the real owner portal screens, filled with sample data from Demo
           mode. Add a sample owner, open their portal on a laptop or a phone, and walk a prospective owner through it.
         </p>
-        <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add sample owner</Button>
+        <div className="flex gap-2 flex-wrap">
+          {/* The Owner Showcase site, full screen, laptop and phone (brought back by the owner, 11 Nov 2026). */}
+          <Button size="sm" variant="secondary" icon={<Icon name="MonitorSmartphone" size="sm" />} onClick={() => navigate('/performance/showcase')}>Open showcase site</Button>
+          <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setAdding(true)}>Add sample owner</Button>
+        </div>
       </div>
       {loading && !data ? <RowsSkeleton rows={3} cols={3} /> : error && !data ? (
         <EmptyState icon="TriangleAlert" title="Sample owners could not load" body={error} action={{ label: 'Try again', onClick: reload }} />
