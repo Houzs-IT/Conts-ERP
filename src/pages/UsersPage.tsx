@@ -11,7 +11,6 @@ import { Field } from '../components/Field';
 import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Select } from '../components/Select';
 import { Modal } from '../components/Modal';
-import UserAccess from '../components/permissions/UserAccess';
 import { KIND_NOTE, SIDE_OPTIONS, isFieldKind, needsPosition, sideLabel, useDepartments } from '../components/permissions/shared';
 import { Segmented } from '../components/Metric';
 import { StaleBanner } from '../components/DataState';
@@ -32,8 +31,9 @@ import { hasRealEmail } from '../lib/pin';
 /* ------------------------------------------------------------------ *
  * Users and roles — three tabs (routes.json → SYSTEM → UsersPage):
  *   1. Users        — list with department, position and reporting line; invite + edit.
- *   2. Permissions  — two views (components/PermissionsChart): Roles, what each position (or a department's
- *                     default) can do in each area, and Setup, the managed list of departments and positions.
+ *   2. Permissions  — three views (components/PermissionsChart): Roles, what each position (or a department's
+ *                     default) can do in each area; People, one person's own settings on top of their role; and
+ *                     Setup, the managed list of departments and positions.
  *   3. Organisation — the reporting line (manager_id). Explicitly NOT a
  *                     permission source; permissions come from the department, position and the person's own settings.
  *   4. Sign-ins     — management only: every sign-in attempt (UsersSignIns).
@@ -707,7 +707,6 @@ export default function UsersPage() {
             </label>
           </form>
           <div className="mt-4 flex flex-col gap-3">
-            {editing.role !== 'owner' && <UserAccess key={editing.id} userId={editing.id} />}
             <HistoryDisclosure entity="users" id={editing.id} />
           </div>
         </Modal>

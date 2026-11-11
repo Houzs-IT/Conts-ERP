@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../Button';
-import Icon from '../Icon';
 import { useToast } from '../Toast';
 import { api, errorMessage } from '../../lib/api';
 import { plural } from '../../lib/format';
 import { areaKeysOf, countChanged, countGrants, resolveRoleLevels, rulesToWrite } from '../../lib/roleGrid';
 import type { AccessChart, Department, Position } from '../../lib/types';
+import { BackLink } from './MasterDetail';
 import RoleGrid, { groupByCompany } from './RoleGrid';
 import { closedCompanyLabel, defaultRoleName, headCountWithoutPosition, sideLabel, visibleCategoriesOf, type RoleTarget } from './shared';
 
@@ -26,18 +26,10 @@ interface RoleEditorProps {
   onDirtyChange: (hasUnsavedChanges: boolean) => void;
 }
 
-function BackLink({ onBack }: { onBack: () => void }) {
-  return (
-    <div className="-ml-2.5 lg:hidden">
-      <Button variant="tertiary" size="sm" icon={<Icon name="ChevronLeft" size="sm" />} onClick={onBack}>Roles</Button>
-    </div>
-  );
-}
-
 function Unavailable({ message, onBack }: { message: string; onBack: () => void }) {
   return (
     <div className="flex flex-col gap-3 items-start p-5 max-md:p-4">
-      <BackLink onBack={onBack} />
+      <BackLink label="Roles" onBack={onBack} />
       <p className="m-0 text-copy text-muted-ink">{message}</p>
     </div>
   );
@@ -104,7 +96,7 @@ function RoleEditor({ chart, department, position, onBack, onSaved, onDirtyChang
   return (
     <div className="flex flex-col">
       <div className="flex flex-col gap-1.5 px-5 pt-4 pb-3.5 max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
-        <BackLink onBack={onBack} />
+        <BackLink label="Roles" onBack={onBack} />
         <h2 className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{department.name} / {roleName}</h2>
         <span className="text-meta text-muted-ink">
           {position ? `Position in ${department.name}` : `Everyone in ${department.name} with no position`}

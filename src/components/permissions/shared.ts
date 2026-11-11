@@ -34,6 +34,22 @@ export const categorySide = (group: string): UserSide =>
  *  only: Users and roles never lists, offers or changes them. */
 export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance';
 export const needsPosition = (kind: DepartmentKind): boolean => kind !== 'management';
+
+export interface DeskCompany { side: UserSide; label: string; departments: Department[] }
+
+export const deskCompaniesOf = (departments: Department[]): DeskCompany[] =>
+  SIDE_OPTIONS
+    .map(option => ({
+      side: option.value,
+      label: option.value === 'both' ? 'Both companies' : option.label,
+      departments: departments.filter(department => !isFieldKind(department.kind) && department.side === option.value),
+    }))
+    .filter(company => company.departments.length > 0);
+
+export const COMPANY_HEADING = 'py-2 px-3 bg-muted hover:bg-page [border-bottom:1px_solid_var(--color-line)] text-ink';
+export const DEPARTMENT_HEADING = 'flex items-baseline gap-2 py-2.5 px-4 bg-card [border-bottom:1px_solid_var(--color-line-soft)]';
+export const LIST_ROW = 'flex w-full items-center gap-3 text-left border-0 [border-bottom:1px_solid_var(--color-line-soft)] [font-family:inherit] min-h-14 py-2.5 pr-4 pl-8';
+export const SELECTED_ROW = 'bg-info-bg shadow-[inset_3px_0_0_var(--color-gold)]';
 export const KIND_OPTIONS: { value: DepartmentKind; label: string }[] = [
   { value: 'staff', label: 'Staff (office work)' },
   { value: 'management', label: 'Management (full access)' },

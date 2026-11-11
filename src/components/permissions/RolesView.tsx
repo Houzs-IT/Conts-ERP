@@ -4,7 +4,9 @@ import { plural } from '../../lib/format';
 import { areaKeysOf, countGrants, resolveRoleLevels } from '../../lib/roleGrid';
 import type { AccessChart, Department, Position } from '../../lib/types';
 import { CompanyToggle } from './CompanyToggle';
-import { SIDE_OPTIONS, TAG, defaultRoleName, headCountWithoutPosition, isFieldKind, isSameRole, useToggleSet, visibleCategoriesOf, type RoleTarget } from './shared';
+import {
+  COMPANY_HEADING, DEPARTMENT_HEADING, LIST_ROW, SELECTED_ROW, TAG, deskCompaniesOf, defaultRoleName, headCountWithoutPosition, isSameRole, useToggleSet, visibleCategoriesOf, type RoleTarget,
+} from './shared';
 
 export interface RolesViewProps {
   chart: AccessChart;
@@ -28,8 +30,6 @@ interface DepartmentRolesProps {
   onOpen: (target: RoleTarget) => void;
 }
 
-const ROW = 'flex w-full items-center gap-3 text-left border-0 [border-bottom:1px_solid_var(--color-line-soft)] [font-family:inherit] min-h-14 py-2.5 pr-4 pl-8';
-
 function summaryFor(chart: AccessChart, department: Department, position: Position | null): string {
   const categories = visibleCategoriesOf(chart.categories, department);
   const areaKeys = areaKeysOf(categories);
@@ -42,7 +42,7 @@ function summaryFor(chart: AccessChart, department: Department, position: Positi
 function RoleRow({ name, isLocked, isSelected, people, summary, onOpen }: RoleRowProps) {
   return (
     <button type="button" onClick={onOpen} disabled={isLocked} aria-current={isSelected || undefined}
-      className={cx(ROW, isSelected ? 'bg-info-bg shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card',
+      className={cx(LIST_ROW, isSelected ? SELECTED_ROW : 'bg-card',
         isLocked ? 'cursor-default' : 'cursor-pointer hover:bg-muted')}>
       <span className="flex-1 min-w-0 flex flex-col gap-0.5">
         <span className="flex items-center gap-2 flex-wrap text-copy font-medium">
@@ -69,7 +69,7 @@ function DepartmentRoles({ chart, department, selectedRole, onOpen }: Department
   };
   return (
     <div>
-      <div className="flex items-baseline gap-2 py-2.5 px-4 bg-card [border-bottom:1px_solid_var(--color-line-soft)]">
+      <div className={DEPARTMENT_HEADING}>
         <span className="text-copy font-semibold">{department.name}</span>
         <span className="text-caption text-muted-ink">{plural(isManagement ? 1 : department.positions.length + 1, 'role')}</span>
       </div>
@@ -82,21 +82,19 @@ function DepartmentRoles({ chart, department, selectedRole, onOpen }: Department
 
 export default function RolesView({ chart, selectedRole, onOpen }: RolesViewProps) {
   const collapsedCompanies = useToggleSet();
-  const companies = SIDE_OPTIONS
-    .map(option => ({ option, departments: chart.departments.filter(department => !isFieldKind(department.kind) && department.side === option.value) }))
-    .filter(company => company.departments.length > 0);
+  const companies = deskCompaniesOf(chart.departments);
 
   if (companies.length === 0) {
     return <div className="p-5 text-copy text-muted-ink">No departments yet. Add one under Setup.</div>;
   }
   return (
     <>
-      {companies.map(({ option, departments }) => (
-        <div key={option.value}>
-          <CompanyToggle label={option.value === 'both' ? 'Both companies' : option.label} note={plural(departments.length, 'department')}
-            isOpen={!collapsedCompanies.has(option.value)} onToggle={() => collapsedCompanies.toggle(option.value)}
-            className="py-2 px-3 bg-muted hover:bg-page [border-bottom:1px_solid_var(--color-line)] text-ink" />
-          {!collapsedCompanies.has(option.value) && departments.map(department => (
+      {companies.map(({ side, label, departments }) => (
+        <div key={side}>
+          <CompanyToggle label={label} note={plural(departments.length, 'department')}
+            isOpen={!collapsedCompanies.has(side)} onToggle={() => collapsedCompanies.toggle(side)}
+            className={COMPANY_HEADING} />
+          {!collapsedCompanies.has(side) && departments.map(department => (
             <DepartmentRoles key={department.id} chart={chart} department={department} selectedRole={selectedRole} onOpen={onOpen} />
           ))}
         </div>
