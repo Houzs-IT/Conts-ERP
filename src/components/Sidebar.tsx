@@ -14,6 +14,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { DARK_MODE_READY } from '../lib/theme';
 import { cx } from '../lib/design-tokens';
 import { count as countLabel } from '../lib/format';
+import { opensInPlace } from '../lib/linkClick';
 
 interface Props { path: string; navigate: (p: string) => void; open: boolean; onToggle: () => void }
 
@@ -314,60 +315,70 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
               const isOpen = open && (expanded[it.key] ?? activeParent === it.key);
               const selfActive = it.key === selected || (!!it.children && activeParent === it.key && !isOpen);
               const n = countOf(it.badge) || (it.children ?? []).reduce((s, c) => s + countOf(c.badge), 0);
+              const tip = n > 0 ? `${it.label}: ${countWords(it.badge ?? it.children?.find(c => countOf(c.badge))?.badge, n)}` : it.label;
+              const named = n > 0 ? `${it.label}, ${countWords(it.badge ?? it.children?.find(c => countOf(c.badge))?.badge, n)}` : it.label;
+              const itemStyle: CSSProperties = {
+                position: 'relative', display: 'flex', alignItems: 'center', gap: 10, height: look.itemH,
+                padding: open ? (look.tile ? '0 6px' : '0 9px') : 0, justifyContent: open ? 'flex-start' : 'center',
+                borderRadius: look.tile ? 10 : radius.control, cursor: 'pointer', border: 'none', width: '100%',
+                font: 'inherit', textAlign: 'left', textDecoration: 'none', boxSizing: 'border-box',
+                transition: `background ${motion.fast} ease-out`,
+                color: selfActive ? look.textOn : look.text,
+                background: selfActive ? look.activeBg : 'transparent',
+                boxShadow: selfActive ? look.activeShadow : 'none',
+                fontWeight: selfActive ? look.weightOn : undefined,
+              };
+              const itemInner = (
+                <>
+                  {look.tile
+                    ? <span aria-hidden style={{ width: 30, height: 30, flex: 'none', borderRadius: 9, display: 'grid', placeItems: 'center', ...look.tile }}><Icon name={toPascal(it.icon)} size="sm" /></span>
+                    : <Icon name={toPascal(it.icon)} size="nav" />}
+                  {open && <span style={{ flex: 1, minWidth: 0, fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</span>}
+                  {open && it.fresh && n === 0 && <span style={{ fontSize: text.micro, fontWeight: 700, padding: '1px 6px', borderRadius: radius.pill, flex: 'none', background: color.gold, color: color.black }}>New</span>}
+                  {open && !it.children && n > 0 && <span style={badge(selfActive)}>{countLabel(n)}</span>}
+                  {/* The rail shows a dot where the full menu shows a count. */}
+                  {!open && n > 0 && <span aria-hidden style={{ position: 'absolute', top: look.tile ? 4 : 6, right: look.tile ? 6 : 10, width: 7, height: 7, borderRadius: 999, background: look.dot, boxShadow: `0 0 0 2px ${look.dotRing}` }} />}
+                  {open && it.children && (
+                    <span style={{ display: 'flex', opacity: 0.6, transition: `transform 180ms ${motion.ease}`, transform: `rotate(${isOpen ? 90 : 0}deg)` }}>
+                      <Icon name="ChevronRight" size="sm" />
+                    </span>
+                  )}
+                </>
+              );
+              const leafPath = !it.children ? it.path : undefined;
               return (
                 <div key={it.key} style={{ display: 'flex', flexDirection: 'column' }}>
-                  <button type="button"
-                    title={n > 0 ? `${it.label}: ${countWords(it.badge ?? it.children?.find(c => countOf(c.badge))?.badge, n)}` : it.label}
-                    aria-label={n > 0 ? `${it.label}, ${countWords(it.badge ?? it.children?.find(c => countOf(c.badge))?.badge, n)}` : it.label}
-                    aria-current={selfActive && !it.children ? 'page' : undefined}
-                    aria-expanded={open && it.children ? isOpen : undefined}
-                    onClick={() => {
-                      if (it.children) {
+                  {leafPath ? (
+                    // A link, so right-click, Ctrl or Cmd + click and middle click open it in a new tab (chew, 11 Nov 2026).
+                    <a href={leafPath} title={tip} aria-label={named} aria-current={selfActive ? 'page' : undefined} style={itemStyle}
+                      onClick={e => { if (!opensInPlace(e)) return; e.preventDefault(); navigate(leafPath); }}>
+                      {itemInner}
+                    </a>
+                  ) : (
+                    <button type="button" title={tip} aria-label={named} aria-expanded={open && it.children ? isOpen : undefined} style={itemStyle}
+                      onClick={() => {
+                        if (!it.children) return;
                         if (!open) { navigate(it.children[0].path); return; }
                         const willOpen = !(expanded[it.key] ?? activeParent === it.key);
                         setExpanded(e => ({ ...e, [it.key]: willOpen }));
                         if (willOpen && activeParent !== it.key) navigate(it.children[0].path);
-                      } else if (it.path) navigate(it.path);
-                    }}
-                    style={{
-                      position: 'relative', display: 'flex', alignItems: 'center', gap: 10, height: look.itemH,
-                      padding: open ? (look.tile ? '0 6px' : '0 9px') : 0, justifyContent: open ? 'flex-start' : 'center',
-                      borderRadius: look.tile ? 10 : radius.control, cursor: 'pointer', border: 'none', width: '100%',
-                      font: 'inherit', textAlign: 'left',
-                      transition: `background ${motion.fast} ease-out`,
-                      color: selfActive ? look.textOn : look.text,
-                      background: selfActive ? look.activeBg : 'transparent',
-                      boxShadow: selfActive ? look.activeShadow : 'none',
-                      fontWeight: selfActive ? look.weightOn : undefined,
-                    }}
-                  >
-                    {look.tile
-                      ? <span aria-hidden style={{ width: 30, height: 30, flex: 'none', borderRadius: 9, display: 'grid', placeItems: 'center', ...look.tile }}><Icon name={toPascal(it.icon)} size="sm" /></span>
-                      : <Icon name={toPascal(it.icon)} size="nav" />}
-                    {open && <span style={{ flex: 1, minWidth: 0, fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</span>}
-                    {open && it.fresh && n === 0 && <span style={{ fontSize: text.micro, fontWeight: 700, padding: '1px 6px', borderRadius: radius.pill, flex: 'none', background: color.gold, color: color.black }}>New</span>}
-                    {open && !it.children && n > 0 && <span style={badge(selfActive)}>{countLabel(n)}</span>}
-                    {/* The rail shows a dot where the full menu shows a count. */}
-                    {!open && n > 0 && <span aria-hidden style={{ position: 'absolute', top: look.tile ? 4 : 6, right: look.tile ? 6 : 10, width: 7, height: 7, borderRadius: 999, background: look.dot, boxShadow: `0 0 0 2px ${look.dotRing}` }} />}
-                    {open && it.children && (
-                      <span style={{ display: 'flex', opacity: 0.6, transition: `transform 180ms ${motion.ease}`, transform: `rotate(${isOpen ? 90 : 0}deg)` }}>
-                        <Icon name="ChevronRight" size="sm" />
-                      </span>
-                    )}
-                  </button>
+                      }}>
+                      {itemInner}
+                    </button>
+                  )}
 
                   {isOpen && it.children && (
                     <div style={{ margin: `2px 0 4px ${look.tile ? 22 : 20}px`, paddingLeft: 12, borderLeft: `1px solid ${look.rule}`, display: 'flex', flexDirection: 'column', gap: 1 }}>
                       {it.children.map(c => {
                         const on = c.path === path;
                         return (
-                          <button key={c.key} type="button" onClick={() => navigate(c.path)} aria-current={on ? 'page' : undefined}
+                          <a key={c.key} href={c.path} onClick={e => { if (!opensInPlace(e)) return; e.preventDefault(); navigate(c.path); }} aria-current={on ? 'page' : undefined}
                             aria-label={countOf(c.badge) > 0 ? `${c.label}, ${countWords(c.badge, countOf(c.badge))}` : c.label}
                             title={countOf(c.badge) > 0 ? `${c.label}: ${countWords(c.badge, countOf(c.badge))}` : undefined}
                             style={{
                               display: 'flex', alignItems: 'center', gap: 8, height: shell.navItemL3,
                               padding: '0 9px', borderRadius: 7, cursor: 'pointer', border: 'none', width: '100%',
-                              font: 'inherit', textAlign: 'left',
+                              font: 'inherit', textAlign: 'left', textDecoration: 'none', boxSizing: 'border-box',
                               color: on ? look.textOn : look.faint,
                               background: on ? look.childOnBg : 'transparent',
                               boxShadow: on ? look.childOnShadow : 'none',
@@ -375,7 +386,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                             }}>
                             <span style={{ flex: 1, minWidth: 0, fontSize: text.meta, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
                             {countOf(c.badge) > 0 && <span style={badge(on)}>{countLabel(countOf(c.badge))}</span>}
-                          </button>
+                          </a>
                         );
                       })}
                     </div>
