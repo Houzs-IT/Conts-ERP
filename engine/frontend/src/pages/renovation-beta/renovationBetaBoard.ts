@@ -589,6 +589,20 @@ export function progressList(m: BoardModel, who: Viewing): DesignProject[] {
     .sort((a, b) => currentStep(m, a) - currentStep(m, b));
 }
 
+/** The whole team's progress as one group per person, by name: each project under everyone on any of its steps (lead,
+    3D, 2D, site), so a project handed from A to B for a step is in B's group too; projects with nobody under null. */
+export function progressByPerson(m: BoardModel): Array<{ person: PersonRef | null; projects: DesignProject[] }> {
+  const people = new Map<number, PersonRef>();
+  for (const p of m.projects) for (const x of [p.lead, ...p.team["3"], ...p.team["2"], p.site]) if (x) people.set(x.id, x);
+  const out: Array<{ person: PersonRef | null; projects: DesignProject[] }> = [...people.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((person) => ({ person, projects: progressList(m, person.id) }));
+  const seen = new Set(out.flatMap((g) => g.projects.map((p) => p.id)));
+  const none = progressList(m, "All").filter((p) => !seen.has(p.id));
+  if (none.length) out.push({ person: null, projects: none });
+  return out;
+}
+
 /** The index of the step the project is on now, or 99 when every step is done. */
 export function currentStep(m: BoardModel, p: DesignProject): number {
   const i = STEPS.findIndex(([k]) => !stepDone(m, p, k));

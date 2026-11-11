@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BetaBoard, BetaBoardProject } from "./renovationBetaBoardApi";
 import {
   add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, diff, ds, homeCounts, homeList, homeRow, initials, items,
-  listFor, monthCells, nextFor, progressList, rangeFor, shiftMonth, stage, status, type BoardModel, type DesignProject,
+  listFor, monthCells, nextFor, progressByPerson, progressList, rangeFor, shiftMonth, stage, status, type BoardModel, type DesignProject,
 } from "./renovationBetaBoard";
 
 const TODAY = "2026-10-23";
@@ -250,6 +250,18 @@ describe("several 3D and 2D people", () => {
     expect(items(mm, 3).map((x) => [x.p.id, x.k])).toEqual([[20, "3"]]);
     expect(progressList(mm, 2).map((x) => x.id)).toEqual([20]);
     expect(items(mm, 1)).toEqual([]);
+  });
+
+  it("puts the project in the card of everyone on any of its steps, by name", () => {
+    expect(progressByPerson(mm).map((g) => [g.person?.name, g.projects.map((x) => x.id)])).toEqual([
+      ["Alex", [20]], ["Jia Xin", [20]], ["Siti Aminah", [20]], ["Yi Xuan", [20]], ["Ying Tzy", [20]],
+    ]);
+  });
+
+  it("keeps a project with nobody on it in a last card of its own", () => {
+    const g = progressByPerson(m);
+    expect(g[g.length - 1]).toMatchObject({ person: null, projects: [{ id: 13 }] });
+    expect(g.find((x) => x.person?.id === 2)?.projects.map((x) => x.id)).toEqual(progressList(m, 2).map((x) => x.id));
   });
 
   it("offers only people linked to an active account, but still names everyone", () => {

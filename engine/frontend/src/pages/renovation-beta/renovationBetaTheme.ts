@@ -177,6 +177,7 @@ html[data-beta-skin="night"]{${rows(1)}}
 @media (prefers-reduced-transparency:reduce){:root,html[data-beta-skin="night"]{--beta-glass:var(--beta-glassSolid);--beta-blur:none;--beta-blurSm:none}}
 html.beta-page body,html.beta-page main.paper-grain{background:var(--beta-page);background-attachment:fixed}
 html.beta-page[data-beta-skin="night"]{color-scheme:dark}
+html.beta-page option{background:var(--beta-surface);color:var(--beta-ink)}
 @media (pointer:coarse){html.beta-page :is(input:not([type=checkbox],[type=radio],[type=range],[type=file],[type=color]),select,textarea){font-size:16px!important}}
 html.beta-page[data-beta-skin="night"] .skeleton{background:linear-gradient(90deg,rgba(255,255,255,.05) 0%,rgba(255,255,255,.11) 50%,rgba(255,255,255,.05) 100%);background-size:800px 100%}
 @media (prefers-reduced-motion:no-preference){.stag>*{animation:bwsin .34s cubic-bezier(.2,.8,.2,1) both}@keyframes bwsin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.stag>*:nth-child(1){animation-delay:0ms}.stag>*:nth-child(2){animation-delay:45ms}.stag>*:nth-child(3){animation-delay:90ms}.stag>*:nth-child(4){animation-delay:135ms}.stag>*:nth-child(5){animation-delay:180ms}.stag>*:nth-child(6){animation-delay:225ms}.stag>*:nth-child(7){animation-delay:270ms}.stag>*:nth-child(8){animation-delay:315ms}.stag>*:nth-child(9){animation-delay:360ms}.stag>*:nth-child(10){animation-delay:405ms}.stag>*:nth-child(11){animation-delay:450ms}.stag>*:nth-child(12){animation-delay:495ms}}`;
