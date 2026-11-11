@@ -73,6 +73,9 @@ export const AREAS: Area[] = [
   // The company ledger in the engine (finance phase 1): no Property OS routes, sent to the engine at sign-on.
   // Operations managers read the rest of Finance but never the company books.
   { key: 'ledger', label: 'Ledger', group: 'Finance', api: [], managed: true, strictRead: true },
+  // Airbnb's payments matched to the bookings (chew, 10 Nov 2026). Migration 0258 closed it for every department until
+  // management opens it (chew: "到时我才给权限"), so no Finance baseline reaches it.
+  { key: 'airbnbRecon', label: 'Airbnb reconciliation', group: 'Finance', api: ['airbnb-recon'], managed: true, strictRead: true },
   { key: 'pricing', label: 'Pricing and reviews', group: 'Growth', api: ['pricing', 'rates', 'reviews'] },
   // Messages sat under Reservations from 30 Oct to 2 Nov 2026; migration 0200 pinned its stored levels when it moved here.
   { key: 'comms', label: 'Messages', group: 'Growth', api: ['messages'] },

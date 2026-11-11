@@ -83,6 +83,7 @@ const StockTakesPage = lazy(() => import('./pages/StockTakesPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
 const UnitPnlPage = lazy(() => import('./pages/UnitPnlPage'));
+const AirbnbReconPage = lazy(() => import('./pages/finance/AirbnbReconPage'));
 const YearlyReportPage = lazy(() => import('./pages/YearlyReportPage'));
 const YgrrReportPage = lazy(() => import('./pages/YgrrReportPage'));
 const StatementDetailPage = lazy(() => import('./pages/StatementDetailPage'));
@@ -363,6 +364,7 @@ function Routed() {
         <Route path="/finance/payables" element={<ExpensesPage />} />
         <Route path="/finance/utility-bills" element={<ExpensesPage utilities />} />
         <Route path="/finance/unit-pnl" element={<UnitPnlPage />} />
+        <Route path="/finance/airbnb-reconciliation" element={<AirbnbReconPage />} />
         <Route path="/reports/yearly" element={<YearlyReportPage />} />
         <Route path="/reports/ygrr" element={<YgrrReportPage />} />
         <Route path="/finance/expenses" element={<Moved to="/finance/payables" />} />
@@ -374,6 +376,7 @@ function Routed() {
         <Route path="/supply/finance/payables" element={<ExpensesPage />} />
         <Route path="/supply/finance/utility-bills" element={<ExpensesPage utilities />} />
         <Route path="/supply/finance/unit-pnl" element={<UnitPnlPage />} />
+        <Route path="/supply/finance/airbnb-reconciliation" element={<AirbnbReconPage />} />
         <Route path="/supply/finance/approvals" element={<ApprovalsPage />} />
         {/* Project monitor was dropped (owner, 11 Oct 2026): old links open the project Calendar. */}
         <Route path="/projects/monitor" element={<Moved to="/projects/calendar" />} />
