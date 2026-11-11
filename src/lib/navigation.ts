@@ -72,7 +72,7 @@ const FINANCE_LAYOUT: Array<[part: string, entries: string[]]> = [
   ['Rental bills', ['desk:payables', 'desk:utilityBills']],
   ['Billing', ['deposit-invoices', 'other-debtors', 'credit-debit-notes', 'not-yet-billed', 'e-invoice']],
   ['Collections', ['money-received', 'official-receipts', 'debtors', 'customer-ledger', 'outstanding', 'debtor-ageing']],
-  ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon']],
+  ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon', 'desk:airbnbRecon']],
   ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'department-spend', 'renovation-projects', 'ai-usage']],
   ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup']],
 ];
@@ -85,6 +85,8 @@ export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix:
     // What each unit earned and spent, in two layers (chew, 28 Oct 2026: it belongs in Finance).
     unitPnl: { key: `unitPnl${keySuffix}`, label: 'Unit P&L', icon: 'chart-column', path: `${prefix}/unit-pnl`, area: 'finance' },
     approvals: { key: `approvals${keySuffix}`, label: 'Approvals', icon: 'stamp', path: `${prefix}/approvals`, area: 'finance', badge: 'approvals' },
+    // Airbnb's payments matched to the bookings (chew, 10 Nov 2026): its own area, closed until management opens it.
+    airbnbRecon: { key: `airbnbRecon${keySuffix}`, label: 'Airbnb reconciliation', icon: 'arrow-left-right', path: `${prefix}/airbnb-reconciliation`, area: 'airbnbRecon' },
   };
   const ledger = new Map(LEDGER_SCREENS.map(s => [s.slug, {
     key: `ledger_${s.slug}${keySuffix}`, label: s.label, icon: LEDGER_ICON[s.slug] ?? 'book-open', path: `${prefix}/${s.slug}`, area: 'ledger',
