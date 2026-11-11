@@ -218,10 +218,17 @@ export const useRejectPaymentVoucher = () => {
    this call. */
 export type BillExtraction = {
   vendorName: string | null; vendorRegNo: string | null;
-  documentKind: 'invoice' | 'bill' | 'receipt' | 'statement' | 'unknown';
+  /** proforma / quotation: not yet the real invoice. payment_proof (a transfer slip) / summary (a claim listing):
+      read, but not a bill — the pile sets them aside (Houzs #5243). */
+  documentKind: 'invoice' | 'bill' | 'receipt' | 'statement' | 'proforma' | 'quotation' | 'payment_proof' | 'summary' | 'unknown';
+  /** One page of several separate purchases — each line is one purchase. Absent from an older reader. */
+  severalReceipts?: boolean;
   invoiceNumber: string | null; invoiceDate: string | null; dueDate: string | null;
   currency: string; totalSen: number | null; sstSen: number | null;
   lines: Array<{ description: string | null; amountSen: number | null }>;
+  /** What the bill is for, one line as printed; the bank account printed to pay into. Absent from an older reader. */
+  summary?: string | null;
+  payTo?: { bankName: string | null; accountNo: string | null; accountName: string | null } | null;
 };
 /* Vendor memory (mig 0341) — what the operator saved the LAST time this
    vendor was paid; the reader hands it back so the form can pre-fill the

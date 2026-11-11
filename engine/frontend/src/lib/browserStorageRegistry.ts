@@ -54,6 +54,12 @@ export const BROWSER_STORAGE_KEY_REGISTRY: readonly StorageKeyRegistration[] = [
   { id: "active-company", classification: "AUTH", storage: ["localStorage", "sessionStorage"], keyFamily: "houzs.activeCompanyId.v2 (durable, keyed u<user>) + houzs.activeCompanyId.tab (this tab) + pre-v2 ownerless keys, cleanup only", matches: prefix("houzs.activeCompanyId") },
   { id: "remembered-login", classification: "AUTH", storage: ["localStorage"], keyFamily: "houzs:login:lastEmail:v1 (+ legacy aliases)", matches: (key) => ["houzs:login:lastEmail:v1", "auth:lastEmail", "houzs_remember_email"].includes(key) },
   { id: "mail-drafts", classification: "DRAFT_UI", storage: ["localStorage"], keyFamily: "houzs-mail-local:v1|v2:u<user>:c<company>", matches: (key) => key === "houzs-mail-local:v1" || key.startsWith("houzs-mail-local:v2:") },
+  // Unsaved renovation form drafts (Quotation editor, VO editor, the desktop
+  // quotation inside SalesOrderNew): "Restore your draft?" after a closed tab or
+  // a reload. Kept 7 days per browser, then dropped on the next read; cleared on
+  // a successful save. Keyed by record + revision (vo:<id>,
+  // quotation:<id>:<rev>, quotation-desk:<id>:<rev>); never applied by itself.
+  { id: "renovation-form-drafts", classification: "DRAFT_UI", storage: ["localStorage"], keyFamily: "conts:reno-draft:(vo:<id>|quotation:<id>:<rev>|quotation-desk:<id>:<rev>)", matches: prefix("conts:reno-draft:") },
   { id: "payment-retry-handoffs", classification: "DRAFT_UI", storage: ["localStorage"], keyFamily: "houzs:scm-handoff:v<version>:(so|si)PaymentRetry:u<user>:c<company>:<document>", matches: (key) => /^houzs:scm-handoff:v\d+:(?:so|si)PaymentRetry:u\d+:c\d+:.+$/.test(key) },
   { id: "scm-handoffs", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "houzs:scm-handoff:v<version>:<registered non-payment handoff>", matches: (key) => SCM_TRANSIENT_KEYS.has(key) },
   { id: "query-snapshots", classification: "CACHE", storage: ["localStorage"], keyFamily: "houzs-rq-snapshot:<build>:<session>:<company>", matches: prefix("houzs-rq-snapshot:") },
@@ -183,6 +189,12 @@ export const PRODUCTION_STORAGE_CALLERS = [
   "lib/nativePush.ts",
   "lib/query-persist.ts",
   "lib/rememberedEmail.ts",
+  // Unsaved renovation form drafts (renovation-form-drafts, DRAFT_UI): the
+  // Quotation / VO editors and the desktop quotation in SalesOrderNew offer
+  // "Restore your draft?". Kept 7 days per browser; only conts:reno-draft:*
+  // keys; read, write and remove, never a whole-store clear. Reviewed with
+  // the Hookka form-draft port (2026-11-11).
+  "lib/renovation/renovationFormDraft.ts",
   "lib/assrListFilter.ts",
   "lib/scmHandoffStorage.ts",
   "lib/scmListReturn.ts",

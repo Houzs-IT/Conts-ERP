@@ -71,10 +71,16 @@ export const API_URL =
    error; a caller-initiated abort is never rewritten.
    NB: `path` here is the segment AFTER the /api/scm mount, so the /scan- test
    still matches the vendored scan endpoints. */
+/* The bill readers — a supplier bill, the PDF splitter — each hand paper to the
+   AI reader, which can take past 30 s on a long bill (Houzs #4463: the pile's
+   "That took too long"). They get the scan wait, and since they WRITE NOTHING a
+   timeout says so instead of warning of a duplicate save. */
+export const BILL_READER_PATH = /\/payment-vouchers\/extract$|\/payment-vouchers\/split-pdf$/;
 function timeoutSignal(path: string): AbortSignal | undefined {
   // A scan job's /work request is held open for the whole OCR run (scan-job-driver.ts): give it longer than the
   // server's 3-minute stale window so the browser never gives up on a job that is still alive.
-  const ms = /\/scan-[a-z]+\/jobs\/[^/]+\/work$/.test(path) ? 240_000 : /\/scan-/.test(path) ? 120_000 : 30_000;
+  // Reading a counted stock take sheet or a scanned bill holds the request open while the photo is read.
+  const ms = /\/scan-[a-z]+\/jobs\/[^/]+\/work$/.test(path) ? 240_000 : /\/scan-|\/stock-takes\/[^/]+\/read-sheet$/.test(path) || BILL_READER_PATH.test(path) ? 120_000 : 30_000;
   try { return AbortSignal.timeout(ms); } catch { return undefined; } // pre-2022 browsers
 }
 
@@ -111,6 +117,11 @@ async function fetchWithTimeout(url: string, init: RequestInit, path: string): P
          Either way it fails LOUDLY — never a spinner the operator walks away
          from believing it saved (owner ruling 2026-07-19). */
       const method = String(init.method ?? 'GET').toUpperCase();
+      if (method !== 'GET' && BILL_READER_PATH.test(path)) {
+        /* A reader writes nothing — reading again is always safe; it is not
+           replayed by itself, since one try already waited two minutes. */
+        throw correlateError(new Error('Reading took too long — nothing was saved. Please read it again.'), requestId);
+      }
       if (method !== 'GET') {
         const hasIdemKey = Boolean(
           (init.headers as Record<string, string> | undefined)?.['Idempotency-Key'],

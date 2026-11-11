@@ -15,7 +15,7 @@ import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
 import { monthLabel, rm, todayMyt } from '../lib/format';
 import {
-  DEPARTMENT, RECEIPT_STATUS, REQUEST_STATUS, postWithFiles, readReceipt, receiptFileHref, thisMonthMyt,
+  DEPARTMENT, RECEIPT_STATUS, REQUEST_STATUS, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, thisMonthMyt,
   type LineDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
 } from '../lib/claims';
 
@@ -204,11 +204,30 @@ function HandInForm({ me, onDone }: { me: Me; onDone: () => void }) {
   const readNo = useRef(0);
   const dateTyped = useRef(false);
   const switchKind = (k: Kind) => { if (k !== kind) { readNo.current++; setReading(false); setKind(k); setFiles([]); setProblem(null); } };
+  /* The form as it is NOW, for a bill read that comes back after the person changed it (a PO or supplier picked,
+     a payee typed while reading): pick()'s own variables are the values from when the files were chosen. */
+  const formNow = useRef({ amountSen, hasSupplierOrPo: false, payeeName, wantedOn, note });
+  formNow.current = { amountSen, hasSupplierOrPo: !!supplier || !!poId, payeeName, wantedOn, note };
 
   async function pick(list: FileList) {
     const chosen = [...files, ...Array.from(list)].slice(0, 8);
     setFiles(chosen);
-    if (kind !== 'claim') return;
+    if (kind === 'direct') {
+      /* The bill fills what is still empty (Houzs payment-request-bill.ts): amount, the supplier it names, pay by,
+         what it is for. A read still running when the kind is switched or files are picked again does not land. */
+      const mine = ++readNo.current;
+      setReading(true);
+      const read = await readRequestBill(chosen);
+      if (mine !== readNo.current) return;
+      setReading(false);
+      const fill = requestBillFill(read, { ...formNow.current, today: todayMyt() });
+      if (fill.amountSen != null) setAmountSen(a => a ?? fill.amountSen!);
+      if (fill.supplier && !formNow.current.hasSupplierOrPo) setSupplier(s => s ?? fill.supplier!);
+      if (fill.payeeName) setPayeeName(v => v || fill.payeeName!);
+      if (fill.wantedOn) setWantedOn(v => v || fill.wantedOn!);
+      if (fill.note) setNote(v => v || fill.note!);
+      return;
+    }
     const mine = ++readNo.current;
     setReading(true);
     const read = await readReceipt(chosen);
@@ -283,8 +302,8 @@ function HandInForm({ me, onDone }: { me: Me; onDone: () => void }) {
             <MoneyInput label="Amount" valueSen={amountSen} onChangeSen={setAmountSen} />
             <DateField label="Pay by (optional)" value={wantedOn} onChange={setWantedOn} min={todayMyt()} />
           </div>
-          <FileDropRow label="Add the invoice, receipt or quotation" accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
-            chosen={files.length ? files.map(f => f.name).join(', ') : null} />
+          <FileDropRow label="Add the invoice, receipt or quotation" hint="Photos or a PDF. Empty fields are filled from it; check them before you send." accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
+            busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
         </>
       )}
       <LinesEditor lines={lines} setLines={setLines} totalSen={amountSen} department={me.lineDepartment} />

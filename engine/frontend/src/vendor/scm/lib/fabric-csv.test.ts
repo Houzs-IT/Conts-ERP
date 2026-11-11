@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
-import { parseCsv, parseWorkbook, importErrorDetail } from './fabric-csv';
+import { parseCsv, parseWorkbook, importErrorDetail, triggerDownload, withBom } from './fabric-csv';
 
 // Build an .xlsx workbook buffer in memory from an array-of-arrays, so the test
 // exercises the real SheetJS read path parseWorkbook uses (no committed binary
@@ -93,5 +93,42 @@ describe('importErrorDetail — the server reason reaches the UI', () => {
     expect(importErrorDetail(new Error('boom'))).toBeNull();
     expect(importErrorDetail(Object.assign(new Error('x'), { body: 'not json' }))).toBeNull();
     expect(importErrorDetail(undefined)).toBeNull();
+  });
+});
+
+describe('triggerDownload — CSV files Excel reads in Chinese', () => {
+  test('withBom adds the UTF-8 mark once', () => {
+    expect(withBom('a,b\r\n')).toBe('﻿a,b\r\n');
+    expect(withBom('﻿a,b\r\n')).toBe('﻿a,b\r\n');
+    expect(withBom('')).toBe('﻿');
+  });
+
+  test('the downloaded file starts with one BOM, whether or not the caller added it', async () => {
+    const blobs: Blob[] = [];
+    const saved = { create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+    URL.createObjectURL = vi.fn((b: Blob) => { blobs.push(b); return 'blob:x'; });
+    URL.revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    try {
+      triggerDownload('a.csv', 'fabric_code\r\n布料\r\n');
+      triggerDownload('b.csv', '﻿fabric_code\r\n');
+    } finally {
+      click.mockRestore();
+      URL.createObjectURL = saved.create;
+      URL.revokeObjectURL = saved.revoke;
+    }
+    expect(blobs).toHaveLength(2);
+    // jsdom's Blob has no arrayBuffer(); FileReader gives the raw bytes.
+    const read = (b: Blob) => new Promise<number[]>((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve([...new Uint8Array(r.result as ArrayBuffer)]);
+      r.readAsArrayBuffer(b);
+    });
+    const bytes = await Promise.all(blobs.map(read));
+    const BOM = [0xef, 0xbb, 0xbf];
+    expect(bytes[0].slice(0, 3)).toEqual(BOM);
+    expect(new TextDecoder('utf-8', { ignoreBOM: true }).decode(new Uint8Array(bytes[0]))).toBe('﻿fabric_code\r\n布料\r\n');
+    expect(bytes[1].slice(0, 3)).toEqual(BOM);
+    expect(bytes[1].slice(3, 6)).not.toEqual(BOM);
   });
 });

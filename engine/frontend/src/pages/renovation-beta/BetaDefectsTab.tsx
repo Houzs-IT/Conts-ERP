@@ -21,6 +21,7 @@ import { dueLine, overdueCount, ticketColumns } from "./renovationBetaSiteModel"
 import { BETA, TONES } from "./renovationBetaTheme";
 import { BetaLoading } from "./BetaLoading";
 import { BetaHandoverDialog } from "./BetaHandoverDialog";
+import { BetaHandoverChecklist } from "./BetaHandoverChecklist";
 
 /** Column header colours: amber for the contractor's turn, blue for the check, green for done. */
 const COLUMNS: ReadonlyArray<{ key: DefectColumn; title: string; caption: string; ink: string; bg: string; bar: string; empty: string }> = [
@@ -102,6 +103,8 @@ export function BetaDefectsTab(p: BetaTabProps): ReactElement {
           </div></div>
         )}
 
+      <BetaHandoverChecklist p={p} areas={areas} />
+
       <section aria-label="Handover" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px 20px", padding: "16px 18px", background: BETA.surface, border: `1px solid ${BETA.line}`, borderRadius: 12 }}>
         <div style={{ flex: "1 1 300px" }}>
           <div style={{ fontSize: 18, fontWeight: 700 }}>{detail.project.handed_over_at ? `Handed over on ${dayMonth(handoverOn as string)}` : `Ready for handover${handoverOn ? ` on ${dayMonth(handoverOn)}` : ""}?`}</div>
@@ -173,11 +176,14 @@ function PeopleSelect({ p, value, onChange }: { p: BetaTabProps; value: number |
   );
 }
 
-function ReportForm({ p, areas, onClose }: { p: BetaTabProps; areas: readonly string[]; onClose: () => void }): ReactElement {
+/** A problem found on a handover check: the form opens filled from its item, and saving marks the item Fail. */
+export interface ReportFromCheck { checkItemId: number; location: string; description: string }
+
+export function ReportForm({ p, areas, onClose, fromCheck }: { p: BetaTabProps; areas: readonly string[]; onClose: () => void; fromCheck?: ReportFromCheck }): ReactElement {
   const [files, setFiles] = useState<File[]>([]);
   const [step, setStep] = useState<string | null>(null);
-  const [location, setLocation] = useState("");
-  const [description, setDescription] = useState("");
+  const [location, setLocation] = useState(fromCheck?.location ?? "");
+  const [description, setDescription] = useState(fromCheck?.description ?? "");
   const [trade, setTrade] = useState<BetaTrade | "">("");
   const [assignee, setAssignee] = useState<number | null>(null);
   const [dueDate, setDueDate] = useState("");
@@ -197,8 +203,9 @@ function ReportForm({ p, areas, onClose }: { p: BetaTabProps; areas: readonly st
       await betaSiteApi.report(p.projectId, {
         location: location.trim() || null, description: description.trim(), trade: trade || null, dueDate: dueDate || null, photoKey: first.key, assigneePersonId: assignee,
         media: up.filter((u) => u !== first),
+        ...(fromCheck ? { checkItemId: fromCheck.checkItemId } : {}),
       });
-      p.onDone("Defect reported. It is in To fix.");
+      p.onDone(fromCheck ? "Marked failed and reported. The defect is in To fix." : "Defect reported. It is in To fix.");
       onClose();
     } catch (err) {
       setError(errorText(err));
@@ -210,7 +217,7 @@ function ReportForm({ p, areas, onClose }: { p: BetaTabProps; areas: readonly st
   return (
     <form
       onSubmit={(e) => void submit(e)}
-      aria-label="Report a problem"
+      aria-label={fromCheck ? "Report the failed item" : "Report a problem"}
       style={{ background: BETA.surface, border: `2px solid ${BETA.accent}`, borderRadius: 12, padding: 18, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12, alignItems: "end" }}
     >
       <div style={{ gridColumn: "1 / -1" }}><MediaPicker files={files} onChange={setFiles} label="Photos or videos of the problem" required onError={setError} /></div>

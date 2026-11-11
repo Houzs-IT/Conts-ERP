@@ -42,6 +42,7 @@ import {
   ArrowLeftRight,
   SlidersHorizontal,
   ClipboardCheck,
+  ListChecks,
   ShoppingCart,
   Send,
   RotateCcw,
@@ -357,6 +358,19 @@ export const ALL_NAV_TABS: NavTab[] = [
         to: "/beta/calendar",
         label: "Calendar",
         icon: Calendar,
+        pageAccess: "projects.list",
+      },
+      // Handover snag list (TODO item 17): every project's open defects, and the checklists a handover check starts from.
+      {
+        to: "/beta/defects",
+        label: "Defects",
+        icon: ClipboardCheck,
+        pageAccess: "projects.list",
+      },
+      {
+        to: "/beta/handover-checklists",
+        label: "Handover checklists",
+        icon: ListChecks,
         pageAccess: "projects.list",
       },
       {

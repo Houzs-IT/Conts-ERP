@@ -40,6 +40,19 @@ export interface ProjectShared {
   landSize: string;
   startDate: string | null;
   endDate: string | null;
+  /** The project's brand name (Dream Crafter / The Conts), or null: a quotation opened for it starts on it. */
+  brand?: string | null;
+}
+
+/** The brand a new quotation for this project starts on (chew, 10 Nov 2026): the brand in use named like the
+    project's, by id; null when the project has none or names one no longer in use. */
+export function quoteBrandFor(
+  project: { brand?: string | null } | null,
+  brands: ReadonlyArray<{ brandId: number; name: string; active: boolean }>,
+): number | null {
+  const want = project?.brand?.trim().toLowerCase();
+  if (!want) return null;
+  return brands.find((b) => b.active && b.name.trim().toLowerCase() === want)?.brandId ?? null;
 }
 
 export interface CustomerPropertyValue {

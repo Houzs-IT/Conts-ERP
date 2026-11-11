@@ -18,6 +18,7 @@ import { productionNote } from "./renovationProductionDays";
 import { AssignDialog, ChangeNotice, ProductionTimeDialog, ProgressPhotos, ProgressSummary, useAddPhotos, useProductionPress } from "./renovationProductionParts";
 import { useHoldAction } from "./use-hold-action";
 import { ProductionMaterialsSection } from "./ProductionMaterialsSection";
+import { ProductionHoursPanel } from "./ProductionHours";
 import { ActivityRow, SoAddressFields, SoCustomerFields, SoDetailHeader, SoOrderInfoFields } from "./soDetailParts";
 import { scmListReturnTo } from "../../lib/scmListReturn";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
@@ -981,6 +982,11 @@ function ProductionOrderDetailV2ReadOnly() {
             </Section>
             <ProductionMaterialsSection orderId={purchaseOrder.id} canEdit={mayEditPoPhotos && !isCancelled && !started && rawStatus !== "RECEIVED"} started={started} canAct={canAct} finished={rawStatus === "RECEIVED"}
               works={items.map((l) => ({ qty: Number(l.qty), uom: l.uom }))} />
+            {(started || rawStatus === "RECEIVED") && (
+              <Section dense title="Worker hours">
+                <ProductionHoursPanel orderId={purchaseOrder.id} workers={page?.workers ?? []} canAct={canAct} />
+              </Section>
+            )}
             {progress && (
               <Section
                 dense

@@ -19,8 +19,10 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 type TransferCall = { idempotencyKey?: string; fromWarehouseId: string; toWarehouseId: string; items: Array<{ itemCode: string; qty: number }> };
 const transferCalls: TransferCall[] = [];
-const adjustCalls: Array<{ warehouseId: string; itemCode: string; qtyDelta: number; reasonCode: string }> = [];
+// One entry per posted adjustment DOCUMENT (BUG-66: one POST per Save).
+const adjustCalls: Array<{ warehouseId: string; lines: Array<{ itemCode: string; qty: number; reasonCode: string }> }> = [];
 
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ user: { id: 1 }, can: () => false }) }));
 vi.mock('../../vendor/scm/lib/stock-queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../vendor/scm/lib/stock-queries')>()),
   useInventoryBuckets: (itemCode: string | null, warehouseId: string | null) => ({
@@ -38,18 +40,12 @@ vi.mock('../../vendor/scm/lib/stock-queries', async (importOriginal) => ({
   }),
   useStockAdjustment: () => ({
     isPending: false,
-    mutate: (vars: (typeof adjustCalls)[number], opts: { onSuccess: (r: { movement: { id: string } }) => void }) => {
-      adjustCalls.push(vars);
-      opts.onSuccess({ movement: { id: `mv-${adjustCalls.length}` } });
-    },
-    // StockAdjustmentNew's multi-item Save loop posts each item sequentially
-    // via mutateAsync (owner 2026-09-18) — react-query's real useMutation
-    // always provides both; this stub needs to as well.
     mutateAsync: async (vars: (typeof adjustCalls)[number]) => {
       adjustCalls.push(vars);
-      return { movement: { id: `mv-${adjustCalls.length}` } };
+      return { id: `sa-${adjustCalls.length}`, adjustmentNo: `TC-SA-2610-00${adjustCalls.length}` };
     },
   }),
+  useUpdateStockAdjustment: () => ({ isPending: false, mutateAsync: async () => ({}) }),
 }));
 vi.mock('../../vendor/scm/lib/inventory-queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../vendor/scm/lib/inventory-queries')>()),
@@ -149,6 +145,7 @@ describe('StockAdjustmentNew — the next step after Save', () => {
       <Routes>
         <Route path="/scm/stock-adjustments/new" element={<StockAdjustmentNew />} />
         <Route path="/scm/stock-adjustments" element={<div>adjustments list page</div>} />
+        <Route path="/scm/stock-adjustments/:id" element={<div>adjustment detail page</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -179,13 +176,13 @@ describe('StockAdjustmentNew — the next step after Save', () => {
     fillAndSave('5');
     await screen.findByRole('dialog');
     expect(adjustCalls).toHaveLength(2);
-    expect(adjustCalls[1]!.qtyDelta).toBe(5);
+    expect(adjustCalls[1]!.lines.map((l) => l.qty)).toEqual([5]);
   });
 
-  test('"Open stock adjustments" goes to the list, where adjustments are read', async () => {
+  test('"Open TC-SA-..." opens the adjustment just saved (BUG-66)', async () => {
     draw();
     fillAndSave('2');
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Open stock adjustments' }));
-    expect(screen.getByText('adjustments list page')).toBeTruthy();
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Open TC-SA-2610-001' }));
+    expect(screen.getByText('adjustment detail page')).toBeTruthy();
   });
 });

@@ -153,7 +153,17 @@ describe('a line already on a Delivery Order is frozen', () => {
 });
 
 describe('the undelivered sibling on the same order stays editable', () => {
+  /* Conts (owner 2026-10-24, lib/renovation-vo-rule.ts, commit ed874b11): every line
+     change on a CONFIRMED order is a VO, so the direct delete on this READY_TO_SHIP
+     order is refused with so_locked_vo. That refusal is the VO door, not the freeze:
+     the freeze check runs first and lets the undelivered line past it. With the order
+     still a Draft (no VO rule) the same delete goes all the way through. */
   test('deleting the undelivered line goes through', async () => {
+    const confirmed = await call('DELETE', '/items/line-open');
+    expect(confirmed.status).toBe(409);
+    expect((await confirmed.json()).error).toBe('so_locked_vo');
+
+    tables.mfg_sales_orders[0].status = 'DRAFT';
     const res = await call('DELETE', '/items/line-open');
     expect(res.status).toBe(204);
     expect(tables.mfg_sales_order_items.map((l) => l.id)).toEqual(['line-delivered']);
@@ -174,6 +184,12 @@ describe('the undelivered sibling on the same order stays editable', () => {
 
   test('a cancelled delivery order frees its line again', async () => {
     tables.delivery_orders[0].status = 'CANCELLED';
+    // No longer so_line_frozen; on a confirmed order the change now goes through a VO (see above).
+    const confirmed = await call('DELETE', '/items/line-delivered');
+    expect(confirmed.status).toBe(409);
+    expect((await confirmed.json()).error).toBe('so_locked_vo');
+
+    tables.mfg_sales_orders[0].status = 'DRAFT';
     const res = await call('DELETE', '/items/line-delivered');
     expect(res.status).toBe(204);
   });

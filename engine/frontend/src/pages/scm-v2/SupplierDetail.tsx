@@ -24,7 +24,7 @@ import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   TrendingUp, Package, Plus, Pencil, Trash2, Star, X, Save, Search,
-  Tag, ChevronDown, ChevronRight, Download, Upload, Anchor,
+  Tag, ChevronDown, ChevronRight, Download, Upload, Anchor, RefreshCw,
 } from 'lucide-react';
 // Products wave un-stubbed these: the REAL MaintenanceTab (+ MaintenanceSection)
 // is exported from the vendored Products page, and the REAL supplier-scoped
@@ -93,6 +93,7 @@ import { MoneyInput } from '../../vendor/scm/components/MoneyInput';
 import { NumberInput } from '../../vendor/scm/components/NumberInput';
 import styles from './SupplierDetail.module.css';
 import { exportBindingsCsv, ImportBindingsDialog } from './SupplierBindingsCsv';
+import { SupplierPriceRefreshDialog } from './SupplierPriceRefresh';
 import { EffectiveDatedHistory } from '../../vendor/scm/components/EffectiveDatedHistory';
 import { todayMyt } from '../../vendor/scm/lib/dates';
 import { statusLabel } from '../../vendor/scm/lib/status-pill';
@@ -643,6 +644,7 @@ const SupplierSkuPricingPanel = ({
      Products page Export/Import toolbar but per-supplier (different shape:
      one row per binding, per-category price-matrix columns). */
   const [importing, setImporting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const sofaConfig = useMaintenanceConfig('master');
   const sofaHeights = sofaConfig.data?.data?.sofaSizes
     ? maintValues(sofaConfig.data.data.sofaSizes)
@@ -778,12 +780,23 @@ const SupplierSkuPricingPanel = ({
             <Upload {...ICON} />
             <span>Import Bindings</span>
           </Button>
+          {/* TODO port item 11: the price list follows what was actually paid. */}
+          <Button
+            variant="secondary"
+            onClick={() => setRefreshing(true)}
+            disabled={bindings.length === 0}
+            title="Compare each price with the latest posted purchase invoice and update it"
+          >
+            <RefreshCw {...ICON} />
+            <span>Update prices from invoices</span>
+          </Button>
           <Button variant="primary" onClick={() => setSkuDialog({ mode: 'multi' })}>
             <Plus {...ICON} />
             <span>Add SKU Mappings</span>
           </Button>
         </span>
       </header>
+      {refreshing && <SupplierPriceRefreshDialog supplierId={id} onClose={() => setRefreshing(false)} />}
       {importing && (
         <ImportBindingsDialog
           supplierId={id}

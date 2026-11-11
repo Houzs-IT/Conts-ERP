@@ -83,7 +83,7 @@ export async function receiptAccountProblem(sb: any, companyId: number, codes: s
   if (error) return 'The chart of accounts could not be read.';
   const found = new Map(((accts ?? []) as Array<{ account_code: string; account_name: string; is_active: boolean | null; acc_money: boolean | null; special_type: string | null }>).map(a => [a.account_code, a]));
   const headers = new Set(((kids ?? []) as Array<{ parent_code: string }>).map(k => k.parent_code));
-  const reserved = new Set([...CONTROL_ROLES.map(r => roles[r]), roles.CASH, roles.BANK_DEFAULT, roles.CUSTOMER_DEPOSITS]);
+  const reserved = new Set([...CONTROL_ROLES.map(r => roles[r]), roles.CASH, roles.BANK_DEFAULT, roles.BANK_PAY_DEFAULT, roles.CUSTOMER_DEPOSITS]);
   for (const code of wanted) {
     const a = found.get(code);
     if (!a) return `${code} is not in the chart of accounts.`;
@@ -675,7 +675,7 @@ export const optionsHandler = async (c: Ctx): Promise<Response> => {
   ]);
   const active = accts.filter(a => a.is_active === true);
   const headers = new Set(accts.map(a => a.parent_code).filter((p): p is string => !!p));
-  const reserved = new Set([...CONTROL_ROLES.map(r => roles[r]), roles.CASH, roles.BANK_DEFAULT, roles.CUSTOMER_DEPOSITS]);
+  const reserved = new Set([...CONTROL_ROLES.map(r => roles[r]), roles.CASH, roles.BANK_DEFAULT, roles.BANK_PAY_DEFAULT, roles.CUSTOMER_DEPOSITS]);
   const floatOn = new Map(live.filter(f => f.active && f.account_code).map(f => [String(f.account_code), f.id]));
   const everFloat = new Set(live.map(f => f.account_code).filter((x): x is string => !!x));
   const costable = active.filter(a => !headers.has(a.account_code) && a.acc_money !== true && !a.special_type && !reserved.has(a.account_code));
