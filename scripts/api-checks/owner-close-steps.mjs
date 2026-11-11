@@ -87,9 +87,23 @@ const firstUnit = async () => (await db(`SELECT u.id FROM units u JOIN propertie
 check("u is its owner's first unit", (await firstUnit()) === u.id, String(await firstUnit()));
 const receipt = await receiptFor(u.id);
 await db(`INSERT INTO unit_utility_accounts (id, unit_id, kind, account_no, provider, created_at, updated_at)
-  VALUES ('ocs-acc-w', $1, 'water', 'OCS-W1', 'Check water', $2, $2), ('ocs-acc-e', $1, 'electricity', 'OCS-E1', 'Check power', $2, $2)`, u.id, now);
+  VALUES ('ocs-acc-w', $1, 'water', 'OCS-W1', 'Check water', $2, $2), ('ocs-acc-e', $1, 'electricity', 'OCS-E1', 'Check power', $2, $2),
+         ('ocs-acc-i', $1, 'internet', 'OCS-I1', 'Check internet', $2, $2)`, u.id, now);
 r = await call('POST', '/api/expenses/utilities', { month: OCT, rows: [{ accountId: 'ocs-acc-w', amount: 2000, receiptDocumentId: receipt }] });
 check('an October water bill before the lock is deducted in October', r.status === 201 && r.json?.saved >= 1, r.text);
+r = await call('POST', '/api/expenses/utilities', { month: OCT, rows: [{ accountId: 'ocs-acc-i', amount: 1500, receiptDocumentId: receipt, ownerPaid: true }] });
+check('an October internet bill the owner paid gives the owner a credit in October', r.status === 201 && r.json?.saved >= 1, r.text);
+// Review finding 3: an expense written from a session without pos on its search path (a data fix through the database
+// connector) still works; the lock check is skipped there, it does not fail the write.
+{
+  // SET LOCAL inside its own transaction: the local PGlite database runs one session for every connection.
+  const c = postgres(DB_URL, { max: 1, onnotice: () => {} });
+  let err = null;
+  try { await c.begin(async sql => { await sql.unsafe('SET LOCAL search_path = public'); await sql.unsafe(`INSERT INTO pos.expenses (id, unit_id, category, description, amount, currency, incurred_on, charge_to, created_at) VALUES ('ocs-public', $1, 'other', 'Check: written from public', 100, 'MYR', '2026-09-05', 'the_conts', $2)`, [u.id, now]); }); }
+  catch (e) { err = e.message; } finally { await c.end({ timeout: 5 }); }
+  check('an expense written from a session without pos on its search path still works', err === null, err);
+  await db(`DELETE FROM expenses WHERE id = 'ocs-public'`);
+}
 
 const close = async (month = OCT) => (await call('GET', `/api/owner-close?month=${month}`)).json;
 const unitOf = (j, id) => j?.units?.find(x => x.unitId === id);
@@ -197,8 +211,18 @@ check('… and a bill that would replace a locked one is left alone', r.status =
   && water.length === 1 && Number(water[0].amount) === 2000, `${r.text} ${JSON.stringify(water)}`);
 
 // ── O2 ──
+await db(`INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
+  VALUES ('ocs-a1', $1, $2, 'credit', 400, 'Check: October credit on no draft yet', '2026-10-06', NULL, 'open', 'manual', NULL, $3, $3)`, u.owner_id, u.id, now);
 r = await lock('o2', [u.id]);
 const kept = (await db(`SELECT frozen FROM owner_report_locks WHERE unit_id = $1 AND month = $2 AND stage = 'o2'`, u.id, OCT))[0]?.frozen;
+{
+  await generate(NOV, u.owner_id);
+  const onNov = await db(`SELECT l.adjustment_id FROM statement_lines l JOIN owner_statements s ON s.id = l.statement_id WHERE s.owner_id = $1 AND s.period_start = '2026-11-01' AND l.adjustment_id = 'ocs-a1'`, u.owner_id);
+  const row = (await db(`SELECT statement_id FROM owner_adjustments WHERE id = 'ocs-a1'`))[0];
+  const nov = (await db(`SELECT id FROM owner_statements WHERE owner_id = $1 AND period_start = '2026-11-01'`, u.owner_id))[0]?.id;
+  check("November's statement does not take what October's O2 lock kept", (kept?.adjustments ?? []).some(a => a.id === 'ocs-a1') && onNov.length === 0 && row?.statement_id !== nov,
+    `${JSON.stringify(onNov)} ${JSON.stringify(row)}`);
+}
 check('O2 can be locked', r.status === 201 && (kept?.adjustments ?? []).some(a => a.id === 'ocs-a0'), `${r.text} ${JSON.stringify(kept)}`);
 r = await call('POST', `/api/owners/${u.owner_id}/adjustments`, { kind: 'credit', amount: 2500, description: 'Check: late O2', occurredOn: '2026-10-15', unitId: u.id });
 const o2 = (await db(`SELECT id, occurred_on FROM owner_adjustments WHERE description = 'Check: late O2'`))[0];
@@ -257,7 +281,20 @@ ded = await lateOf(u.id, 'deductions');
 check('a late difference skips a locked O2 month', r.status === 201 && inc.length === 1 && ymd(inc[0].occurred_on) === '2026-12-01' && near(inc[0].amount, owner(5000))
   && ded.length === 1 && ded[0].id === dedOnNov?.id && ymd(ded[0].occurred_on) === '2026-11-01', `${r.text} ${JSON.stringify(inc)} ${JSON.stringify(ded)}`);
 
+// Review finding 2: re-entering the owner-paid internet bill would delete its owner line, which October's O2 lock
+// keeps (October could then never be marked final). Deductions are unlocked first, so only the O2 lock stands in the way.
+{
+  await unlock('deductions', u.id, 'Check the internet bill');
+  const line = (await db(`SELECT a.id FROM owner_adjustments a JOIN expenses e ON e.id = a.expense_id WHERE e.reference = 'OCS-I1'`))[0]?.id;
+  r = await call('POST', '/api/expenses/utilities', { month: OCT, rows: [{ accountId: 'ocs-acc-i', amount: 1800, receiptDocumentId: receipt, ownerPaid: true }] });
+  const still = await db(`SELECT 1 AS x FROM owner_adjustments WHERE id = $1`, line ?? '');
+  check('a bill whose owner line an O2 lock keeps is not replaced', r.status === 201 && (r.json?.locked ?? []).includes('OCS-I1') && !!line && still.length === 1, `${r.text} ${line}`);
+}
+
 // ── The powers: closed for every department by migration 0303 ──
+// Review finding 1: without any lock power the route answers 403 before reading the request (the permissions matrix posts {}).
+r = await call('POST', '/api/owner-close/lock', {}, 'finance_admin');
+check('without any lock power the lock route refuses first', r.status === 403, r.text);
 const noDed = await lock('deductions', [u.id], 'finance_admin');
 const noO2 = await lock('o2', [u.id], 'finance_admin');
 check('without the powers, deductions and O2 cannot be locked',

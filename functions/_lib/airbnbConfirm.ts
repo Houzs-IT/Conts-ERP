@@ -174,7 +174,8 @@ export interface Applied { changes: StayChange[]; shares: (OwnerShare & { adjust
 export function undoProblem(applied: Applied, now: {
   stays: ReadonlyMap<string, { gross: number | null; state: string }>;
   finalMonthsOf: (unitId: string) => ReadonlySet<string>;
-  adjustments: ReadonlyMap<string, { state: string; final: boolean }>;
+  /** locked: why an O2 lock keeps the adjustment (owner statement close), when one does. */
+  adjustments: ReadonlyMap<string, { state: string; final: boolean; locked?: string | null }>;
 }): string | null {
   for (const c of applied.changes) {
     const s = now.stays.get(c.id);
@@ -186,6 +187,8 @@ export function undoProblem(applied: Applied, now: {
   }
   for (const s of applied.shares) {
     const a = now.adjustments.get(s.adjustmentId);
+    // Kept by an O2 lock: deleting it would leave the locked month's statement printing a line with nothing behind it.
+    if (a?.locked) return a.locked;
     if (a && (a.final || a.state !== 'open')) {
       return `The owner’s ${s.sen > 0 ? 'credit' : 'charge'} it made is on a final statement now, or was held or settled.`;
     }

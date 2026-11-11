@@ -135,13 +135,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       SELECT DISTINCT unit_id, category FROM expenses WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
         AND incurred_on >= ? AND incurred_on < ?`, JSON.stringify(unitBills.map(r => r.unitId)), from, to) : Promise.resolve([]),
     // The bills this save would replace, and the statement each is deducted on.
-    picked.length ? all<{ unit_id: string; category: string; reference: string; deduct_month: string; payment_request_no: string | null; requested: boolean }>(env, `
-      SELECT unit_id, category, reference, deduct_month, payment_request_no, payment_request_id IS NOT NULL AS requested FROM expenses WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+    picked.length ? all<{ id: string; unit_id: string; category: string; reference: string; deduct_month: string; payment_request_no: string | null; requested: boolean }>(env, `
+      SELECT id, unit_id, category, reference, deduct_month, payment_request_no, payment_request_id IS NOT NULL AS requested FROM expenses WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
         AND incurred_on >= ? AND incurred_on < ?`, JSON.stringify(unitIds), from, to) : Promise.resolve([]),
   ]);
   const finalFor = (unitId: string) => finals.get(unitId) ?? new Set<string>();
   const deduction = (unitId: string) => { const deductMonth = firstOpenMonth(month, finalFor(unitId)); return { deduct_month: deductMonth, rolled: deductMonth !== month }; };
   const onFinal = new Set(current.filter(x => finalFor(x.unit_id).has(x.deduct_month)).map(x => `${x.unit_id}|${x.category}|${x.reference}`));
+  // A bill whose owner line an O2 lock keeps (owner statement close) is not replaced either: replacing deletes the line,
+  // and the locked month's statement would print a line with nothing behind it.
+  const keptLines = current.length ? new Set((await all<{ expense_id: string }>(env, `
+    SELECT DISTINCT a.expense_id FROM owner_adjustments a WHERE a.expense_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
+      AND EXISTS (SELECT 1 FROM owner_report_locks k WHERE k.stage = 'o2' AND k.frozen->'adjustments' @> jsonb_build_array(jsonb_build_object('id', a.id)))`,
+    JSON.stringify(current.map(x => x.id)))).map(r => r.expense_id)) : new Set<string>();
+  const onKept = new Set(current.filter(x => keptLines.has(x.id)).map(x => `${x.unit_id}|${x.category}|${x.reference}`));
   // A bill already sent for payment is not replaced here: a new entry would pay it twice (chew, 5 Nov 2026; SOP 3.10).
   const onRequest = new Set(current.filter(x => x.requested).map(x => `${x.unit_id}|${x.category}|${x.reference}`));
   const keptReceipt = new Map(onFile.map(x => [`${x.unit_id}|${x.category}|${x.reference}`, x.receipt_document_id]));
@@ -153,7 +160,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // One bill per unit, kind and account number: a later row for the same account replaces an earlier one, as before.
   const bills = new Map<string, { id: string; unit_id: string; kind: string; description: string; amount: number; account_no: string; charge_to: string; receipt: string | null; accountId: string; deduct_month: string; rolled: boolean; owner_paid: boolean }>();
   for (const { r, a } of picked) {
-    if (onFinal.has(`${a.unit_id}|${a.kind}|${a.account_no}`)) { locked.push(a.account_no); continue; }
+    if (onFinal.has(`${a.unit_id}|${a.kind}|${a.account_no}`) || onKept.has(`${a.unit_id}|${a.kind}|${a.account_no}`)) { locked.push(a.account_no); continue; }
     if (onRequest.has(`${a.unit_id}|${a.kind}|${a.account_no}`)) { requested.push(a.account_no); continue; }
     if (blank.has(`${a.unit_id}|${a.kind}`)) { elsewhere.push(a.account_no); continue; }
     const id = crypto.randomUUID();

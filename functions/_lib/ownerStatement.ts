@@ -475,6 +475,8 @@ export interface Inputs {
   frozen?: Map<string, FrozenIncome & { lockId: string }>;
   deductions?: Map<string, FrozenDeductions & { lockId: string }>;
   o2?: Map<string, FrozenO2 & { lockId: string }>;
+  /** The owner adjustments an O2 lock of a month outside this load keeps: only that month's statement takes them. */
+  keptElsewhere?: Set<string>;
 }
 
 /** The kept deductions with the misc charge worked out again from occupancy: the late update's run with today's income
@@ -511,7 +513,7 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
   // six lists this used to read one by one were twelve waits in a row; the Dashboard waits on this. Stays come in a
   // fixed order, so two check-ins on the same day always list (and share out a rounding sen) the same way.
   const [loaded] = await q<{ units: UnitRow[] | null; stays: StayRow[] | null; costs: CostRow[] | null; adjustments: AdjustmentRow[] | null; history: ContractRow[] | null; pieces: PaymentPiece[] | null;
-    locks: { id: string; unit_id: string; month: string; stage: string; frozen: Partial<FrozenIncome> & Partial<FrozenDeductions> & Partial<FrozenO2> }[] | null }>(`
+    locks: { id: string; unit_id: string; month: string; stage: string; frozen: Partial<FrozenIncome> & Partial<FrozenDeductions> & Partial<FrozenO2> }[] | null; kept_elsewhere: string[] | null }>(`
     WITH su AS (SELECT u.id, u.owner_id FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id ${unitWhere}),
     st AS (
       SELECT r.id, r.unit_id, r.check_in, r.check_out, r.collected_revenue, r.channel, r.external_ref, g.full_name AS guest_name,
@@ -541,8 +543,12 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
       -- The months whose income, deductions or O2 are locked (migrations 0302, 0303): worked out from what each lock kept.
       ${withLocks ? `(SELECT json_agg(x) FROM (
         SELECT l.id, l.unit_id, l.month, l.stage, l.frozen FROM owner_report_locks l
-        WHERE l.month >= substr(?, 1, 7) AND l.month < substr(?, 1, 7) AND l.unit_id IN (SELECT id FROM su)) x)` : 'NULL::json'} AS locks`,
-    ...unitArg, toExclusive, from, from, toExclusive, toExclusive, ...(withLocks ? [from, toExclusive] : []));
+        WHERE l.month >= substr(?, 1, 7) AND l.month < substr(?, 1, 7) AND l.unit_id IN (SELECT id FROM su)) x)` : 'NULL::json'} AS locks,
+      -- The owner adjustments an O2 lock of another month keeps (0303): no statement of these months takes them.
+      ${withLocks ? `(SELECT json_agg(DISTINCT e.id) FROM owner_report_locks l CROSS JOIN LATERAL jsonb_to_recordset(l.frozen->'adjustments') AS e(id text)
+        WHERE l.stage = 'o2' AND (l.month < substr(?, 1, 7) OR l.month >= substr(?, 1, 7))
+          AND l.unit_id IN (SELECT x.id FROM units x WHERE x.owner_id IN (SELECT owner_id FROM su)))` : 'NULL::json'} AS kept_elsewhere`,
+    ...unitArg, toExclusive, from, from, toExclusive, toExclusive, ...(withLocks ? [from, toExclusive, from, toExclusive] : []));
   const [units, stays, costs, adjustments, history, pieces] = [loaded.units ?? [], loaded.stays ?? [], loaded.costs ?? [], loaded.adjustments ?? [], loaded.history ?? [], loaded.pieces ?? []];
   const frozen = new Map<string, FrozenIncome & { lockId: string }>();
   const deductions = new Map<string, FrozenDeductions & { lockId: string }>();
@@ -585,7 +591,7 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
     }),
     costs: costs.map(c => ({ ...c, incurred_on: ymd(c.incurred_on), amount: Number(c.amount) })),
     adjustments: adjustments.map(a => ({ ...a, amount: Number(a.amount) })),
-    frozen, deductions, o2,
+    frozen, deductions, o2, keptElsewhere: new Set(loaded.kept_elsewhere ?? []),
   };
 }
 
@@ -626,6 +632,9 @@ export function computeMonth(month: string, inputs: Inputs, settings: { defaultF
     // A statement being built for a month whose O2 is locked takes, for that unit, what the lock kept and nothing else;
     // what the lock kept never lands on another unit too (a no-unit one, when another unit has become the first). Any
     // other open adjustment rolls to the next statement. History ('dated') reads adjustments by their dates.
+    // What an O2 lock of another month keeps belongs to that month's statement alone (review: a later month's draft
+    // took it, and regenerating the locked month took it back, so the owner could be paid twice).
+    if (mode === 'open' && inputs.keptElsewhere?.size) adj = adj.filter(a => !inputs.keptElsewhere!.has(a.id));
     if (mode === 'open' && inputs.o2?.size) {
       const kept = asOf.flatMap(u => inputs.o2?.get(`${u.id}|${month}`)?.adjustments ?? []);
       const lockedUnits = new Set(asOf.filter(u => inputs.o2?.has(`${u.id}|${month}`)).map(u => u.id));

@@ -45,20 +45,23 @@ BEGIN
   END IF;
   -- 0303 (owner statement close): a month whose deductions are locked for the unit takes no new cost. It goes on the
   -- first later month that is neither locked for the unit nor final for its owner, as a late bill.
+  -- The search path is checked in an outer IF of its own: PL/pgSQL plans a whole condition before it runs it, so a
+  -- query on owner_report_locks in the same condition would fail where that table is not on the path.
   IF NEW.charge_to = 'owner' AND NOT NEW.record_only AND NEW.deduct_month >= '2026-10'
      AND (TG_OP = 'INSERT' OR NEW.deduct_month IS DISTINCT FROM OLD.deduct_month OR NEW.unit_id IS DISTINCT FROM OLD.unit_id
           OR NEW.charge_to IS DISTINCT FROM OLD.charge_to OR NEW.record_only IS DISTINCT FROM OLD.record_only)
-     AND to_regclass('owner_report_locks') IS NOT NULL
-     AND EXISTS (SELECT 1 FROM owner_report_locks l WHERE l.unit_id = NEW.unit_id AND l.stage = 'deductions' AND l.month = NEW.deduct_month) THEN
-    SELECT u.owner_id INTO owner_of FROM units u WHERE u.id = NEW.unit_id;
-    m := NEW.deduct_month;
-    LOOP
-      m := to_char((m || '-01')::date + interval '1 month', 'YYYY-MM');
-      EXIT WHEN NOT EXISTS (SELECT 1 FROM owner_report_locks l WHERE l.unit_id = NEW.unit_id AND l.stage = 'deductions' AND l.month = m)
-        AND NOT EXISTS (SELECT 1 FROM owner_statements s WHERE s.owner_id = owner_of AND s.period_start = m || '-01' AND s.state IN ('finalised', 'sent', 'paid'));
-    END LOOP;
-    NEW.deduct_month := m;
-    NEW.rolled := true;
+     AND to_regclass('owner_report_locks') IS NOT NULL THEN
+    IF EXISTS (SELECT 1 FROM owner_report_locks l WHERE l.unit_id = NEW.unit_id AND l.stage = 'deductions' AND l.month = NEW.deduct_month) THEN
+      SELECT u.owner_id INTO owner_of FROM units u WHERE u.id = NEW.unit_id;
+      m := NEW.deduct_month;
+      LOOP
+        m := to_char((m || '-01')::date + interval '1 month', 'YYYY-MM');
+        EXIT WHEN NOT EXISTS (SELECT 1 FROM owner_report_locks l WHERE l.unit_id = NEW.unit_id AND l.stage = 'deductions' AND l.month = m)
+          AND NOT EXISTS (SELECT 1 FROM owner_statements s WHERE s.owner_id = owner_of AND s.period_start = m || '-01' AND s.state IN ('finalised', 'sent', 'paid'));
+      END LOOP;
+      NEW.deduct_month := m;
+      NEW.rolled := true;
+    END IF;
   END IF;
   RETURN NEW;
 END $$;

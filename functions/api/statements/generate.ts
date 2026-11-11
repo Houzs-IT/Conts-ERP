@@ -108,7 +108,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       // Rebuilding releases what these statements carried before; whatever is still due is attached again.
       await run(tx, "UPDATE owner_adjustments SET statement_id = NULL, updated_at = ? WHERE statement_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND state = 'open'", now, sids);
       if (attach.length) await run(tx, `UPDATE owner_adjustments a SET statement_id = x.statement_id, updated_at = ?
-        FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, statement_id text) WHERE a.id = x.id AND a.state = 'open'`, now, JSON.stringify(attach));
+        FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, statement_id text) WHERE a.id = x.id AND a.state = 'open'
+          AND (a.statement_id IS NULL OR a.statement_id = x.statement_id)`, now, JSON.stringify(attach));
       // A month whose deductions or O2 are locked prints what its locks kept: a cost or owner adjustment gone since keeps
       // its line, without the link (the foreign key would refuse the line).
       const present = async (table: 'expenses' | 'owner_adjustments', key: 'expense_id' | 'adjustment_id') => {

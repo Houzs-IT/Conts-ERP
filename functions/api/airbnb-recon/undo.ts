@@ -7,6 +7,7 @@ import { NET_FROM_MONTH, monthName, undoProblem, type Applied } from '../../_lib
 import { MONTH, hasAirbnbRecon } from './index';
 import { hasIncomeTypes } from './income-types';
 import { syncLate } from '../../_lib/ownerLocks';
+import { refusedText, monthLabel as stageMonthLabel } from '../../_lib/stageLocks';
 
 /* Airbnb reconciliation, step 2: undo a confirmation, or a reservation kept as it is, while the owner statements it
    touched are still open (chew, 11 Nov 2026). The reservations go back to what they were, the owner credits and charges
@@ -44,10 +45,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       WHERE a.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(shares.map(s => s.adjustmentId)))
       : Promise.resolve([] as { id: string; state: string; statement_state: string | null; period_start: string | null }[]),
   ]);
+  // The owner shares an O2 lock keeps (owner statement close): undoing would delete what a locked month prints.
+  const kept = adjustments.length ? await all<{ id: string; label: string; month: string }>(env, `
+    SELECT a.id, p.name || ' ' || u.unit_number AS label, k.month FROM owner_adjustments a
+      JOIN owner_report_locks k ON k.stage = 'o2' AND k.frozen->'adjustments' @> jsonb_build_array(jsonb_build_object('id', a.id))
+      JOIN units u ON u.id = k.unit_id JOIN properties p ON p.id = u.property_id
+    WHERE a.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(adjustments.map(a => a.id))) : [];
+  const lockedWhy = new Map(kept.map(k => [k.id, refusedText('o2', k.label, stageMonthLabel(k.month))]));
   const problem = undoProblem(applied, {
     stays: new Map(stays.map(s => [s.id, { gross: Number(s.gross_booking_value), state: s.state }])),
     finalMonthsOf: u => finals.get(u) ?? new Set(),
-    adjustments: new Map(adjustments.map(a => [a.id, { state: a.state, final: FINAL.includes(a.statement_state ?? '') }])),
+    adjustments: new Map(adjustments.map(a => [a.id, { state: a.state, final: FINAL.includes(a.statement_state ?? ''), locked: lockedWhy.get(a.id) ?? null }])),
   });
   if (problem) return fail('CANNOT_UNDO', `${code}: ${problem}`, 409);
 

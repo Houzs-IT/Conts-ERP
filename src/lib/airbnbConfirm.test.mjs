@@ -157,3 +157,14 @@ test('a confirmed change on a final month is posted past a month whose O2 is loc
   const p = planLine({ code: 'HMQFZYBTXQ', action: 'set_amount', newAmount: 29_766 }, [stay()], '2026-11-11', oct, pct70, none, novO2);
   assert.deepEqual(p.shares, [{ unitId: 'u1', reservationId: 'r1', sen: 4_197, months: ['2026-10'], onMonth: '2026-12' }]);
 });
+
+test('undo: refused while an O2 lock keeps the owner’s share it made (the locked month could never be made final)', () => {
+  const applied = {
+    changes: [{ id: 'r1', unitId: 'u1', before: { gross: 28_196, state: 'checked_out' }, after: { gross: 34_191, state: 'checked_out' }, openMonths: [] }],
+    shares: [{ unitId: 'u1', reservationId: 'r1', sen: 4_197, months: ['2026-09'], onMonth: '2026-10', adjustmentId: 'a1' }],
+    incomeIds: [],
+  };
+  const locked = 'October 2026 O2 is locked for Vista 22-04. Ask someone who can unlock a step to unlock it first.';
+  const now = { stays: new Map([['r1', { gross: 34_191, state: 'checked_out' }]]), finalMonthsOf: none, adjustments: new Map([['a1', { state: 'open', final: false, locked }]]) };
+  assert.equal(undoProblem(applied, now), locked);
+});

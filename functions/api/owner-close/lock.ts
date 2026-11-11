@@ -18,6 +18,8 @@ const POWER: Record<Stage, { area: string; name: string }> = {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
+  // Someone with none of the three powers is refused before the request is read (the permissions matrix posts {}).
+  if (!STAGES.some(s => can(session, POWER[s].area, 'edit'))) return fail('FORBIDDEN', "You can't lock any step. Ask management for the Lock income, Lock deductions or Lock O2 permission.", 403);
 
   const b = await request.json<{ month?: unknown; stage?: unknown; unitIds?: unknown }>().catch(() => null);
   const month = String(b?.month ?? ''), stage = String(b?.stage ?? '') as Stage;
