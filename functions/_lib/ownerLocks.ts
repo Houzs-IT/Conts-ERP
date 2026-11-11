@@ -8,7 +8,7 @@
  *  open month for the difference in what the owner is due (spec call 10: worked out again through the contract,
  *  guarantee included, not a flat %; a yearly-guarantee unit's is held for a person to check). */
 import { type Env, all, one, run, transaction, nowIso, audit } from './db';
-import { auditMany } from './history';
+import { auditMany, type AuditEntry } from './history';
 import { loadInputs, computeMonth, statementSettings, withYearToDate, freezeIncome, termsFor, unitForMonth, hasLocksTable, type Query } from './ownerStatement';
 import { monthEndExclusive } from './revenue';
 import { finalMonthsFor } from './expenses';
@@ -60,14 +60,19 @@ export async function lockIncome(env: Env, who: { userId: string; fullName: stri
   return { locked, already: [...known].filter(id => !locked.includes(id)), unknown };
 }
 
-/** The adjustments a lock has posted, and whether each can still be changed: open or held, and on no statement or on
- *  one that is still a draft. */
-async function postedFor(env: Env, lockId: string): Promise<PostedLate[]> {
-  const rows = await all<{ id: string; month: string; amount: number; movable: boolean }>(env, `
-    SELECT a.id, substr(a.occurred_on, 1, 7) AS month, a.amount,
+/** The adjustments these locks have posted, by lock id, and whether each can still be changed: open or held, and on no
+ *  statement or on one that is still a draft. One query for any number of locks. */
+async function postedFor(env: Env, lockIds: string[]): Promise<Map<string, PostedLate[]>> {
+  const out = new Map<string, PostedLate[]>(lockIds.map(id => [id, []]));
+  if (!lockIds.length) return out;
+  const rows = await all<{ id: string; reference: string; month: string; amount: number; movable: boolean }>(env, `
+    SELECT a.id, a.reference, substr(a.occurred_on, 1, 7) AS month, a.amount,
            (a.state IN ('open','held') AND (a.statement_id IS NULL OR EXISTS (SELECT 1 FROM owner_statements s WHERE s.id = a.statement_id AND s.state = 'provisional'))) AS movable
-    FROM owner_adjustments a WHERE a.source = 'stage_lock' AND a.reference = ? ORDER BY a.occurred_on, a.id`, `stage-lock:${lockId}`);
-  return rows.map(r => ({ id: r.id, month: r.month, amount: Number(r.amount), movable: !!r.movable }));
+    FROM owner_adjustments a
+    WHERE a.source = 'stage_lock' AND a.reference IN (SELECT 'stage-lock:' || x FROM jsonb_array_elements_text(?::text::jsonb) x)
+    ORDER BY a.occurred_on, a.id`, ids(lockIds));
+  for (const r of rows) out.get(r.reference.slice('stage-lock:'.length))?.push({ id: r.id, month: r.month, amount: Number(r.amount), movable: !!r.movable });
+  return out;
 }
 
 /** Unlocks one step of one unit's month (a reason is required by the route). Brings the month back to today's data:
@@ -80,7 +85,7 @@ export async function unlockStage(env: Env, who: { userId: string; fullName: str
       WHERE l.month = ? AND l.unit_id = ? AND l.stage = ? FOR UPDATE OF l`, month, unitId, stage);
     if (!lock) return { problem: 'That step is not locked for this unit.', status: 404 as const };
     const final = !!(await one(tx, `SELECT 1 AS x FROM owner_statements WHERE owner_id = ? AND period_start = ? AND state IN ${FINAL}`, lock.owner_id, `${month}-01`));
-    const plan = planUnlock(await postedFor(tx, lock.id), final, monthLabel(month));
+    const plan = planUnlock((await postedFor(tx, [lock.id])).get(lock.id) ?? [], final, monthLabel(month));
     if (plan.problem) return { problem: plan.problem, status: 409 as const };
     const at = nowIso();
     if (plan.remove.length) await run(tx, 'DELETE FROM owner_adjustments WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', ids(plan.remove));
@@ -100,8 +105,8 @@ export async function unlockStage(env: Env, who: { userId: string; fullName: str
 
 /** For every income lock in scope: the difference between what the owner is due on the live figures and on the
  *  locked ones, kept as one owner adjustment on the next open month (inserted, topped up or withdrawn). Safe to run
- *  as often as anything calls it (statement generation, Airbnb reconciliation, the 15-minute cron): each lock is
- *  handled under its own advisory lock and posts only what is still missing. */
+ *  as often as anything calls it (statement generation, Airbnb reconciliation, the 15-minute cron): the writes happen
+ *  in one transaction under one advisory lock, and each lock posts only what is still missing. */
 export async function syncLateIncome(env: Env, scope: { unitIds?: string[]; ownerIds?: string[] } = {}, o: { dryRun?: boolean } = {}): Promise<{ inserted: number; updated: number; removed: number; planned: number }> {
   const out = { inserted: 0, updated: 0, removed: 0, planned: 0 };
   const q: Query = (sql, ...args) => all(env, sql, ...args);
@@ -112,9 +117,11 @@ export async function syncLateIncome(env: Env, scope: { unitIds?: string[]; owne
     ${scope.unitIds ? 'AND l.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : scope.ownerIds ? 'AND u.owner_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : ''}
     ORDER BY l.month, l.unit_id`, ...(scope.unitIds ? [ids(scope.unitIds)] : scope.ownerIds ? [ids(scope.ownerIds)] : []));
   if (!locks.length) return out;
+
+  // What each lock's difference is now, month by month (a few months at most: the ones still being closed).
   const settings = await statementSettings(q);
-  const months = [...new Set(locks.map(l => l.month))];
-  for (const month of months) {
+  const due: { lockId: string; ownerId: string; unitId: string; month: string; diff: number; target: string; held: boolean; text: string }[] = [];
+  for (const month of [...new Set(locks.map(l => l.month))]) {
     const mine = locks.filter(l => l.month === month);
     const unitIds = [...new Set(mine.map(l => l.unit_id))];
     const inputs = await withYearToDate(q, await loadInputs(q, `${month}-01`, monthEndExclusive(month), { unitIds }), month, settings);
@@ -125,35 +132,48 @@ export async function syncLateIncome(env: Env, scope: { unitIds?: string[]; owne
       const f = locked.find(r => r.unitId === l.unit_id), v = live.find(r => r.unitId === l.unit_id);
       const unit = inputs.units.find(u => u.id === l.unit_id);
       if (!f || !v || !unit) continue;
-      const diff = v.payoutBeforeAdjustments - f.payoutBeforeAdjustments;
-      const target = openMonthAfter(month, finals.get(l.unit_id) ?? new Set());
-      const held = termsFor(unitForMonth(unit, month), settings.defaultFeePct).model === 'management_yearly_guarantee';
-      await transaction(env, async tx => {
-        await one(tx, 'SELECT 1 AS x FROM (SELECT pg_advisory_xact_lock(hashtext(?::text))) k', `stage-lock:${l.id}`);
-        if (!(await one(tx, 'SELECT 1 AS x FROM owner_report_locks WHERE id = ?', l.id))) return;
-        const plan = planLate(diff, await postedFor(tx, l.id), target);
-        if (plan.kind === 'none') return;
-        out.planned++;
-        if (o.dryRun) return;
-        const at = nowIso();
-        if (plan.kind === 'insert') {
-          const id = `adj-lock-${crypto.randomUUID()}`;
-          await run(tx, `INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'stage_lock', NULL, ?, ?)`,
-            id, l.owner_id, l.unit_id, plan.amount >= 0 ? 'credit' : 'charge', plan.amount,
-            lateText(`${unit.property_name} ${unit.unit_number}`, monthLabel(month)), `${plan.month}-01`, `stage-lock:${l.id}`, held ? 'held' : 'open', at, at);
-          out.inserted++;
-        } else if (plan.kind === 'update') {
-          await run(tx, `UPDATE owner_adjustments SET amount = ?, kind = ?, updated_at = ? WHERE id = ?`, plan.amount, plan.amount >= 0 ? 'credit' : 'charge', at, plan.id);
-          out.updated++;
-        } else {
-          await run(tx, 'DELETE FROM owner_adjustments WHERE id = ?', plan.id);
-          out.removed++;
-        }
-        await audit(tx, { actorId: null, actorLabel: 'Late income sync', action: `owner_report.late_income.${plan.kind}`, entityTable: 'units', entityId: l.unit_id,
-          after: { month, lockId: l.id, diff, plan }, source: 'system' });
+      due.push({
+        lockId: l.id, ownerId: l.owner_id, unitId: l.unit_id, month,
+        diff: v.payoutBeforeAdjustments - f.payoutBeforeAdjustments,
+        target: openMonthAfter(month, finals.get(l.unit_id) ?? new Set()),
+        held: termsFor(unitForMonth(unit, month), settings.defaultFeePct).model === 'management_yearly_guarantee',
+        text: lateText(`${unit.property_name} ${unit.unit_number}`, monthLabel(month)),
       });
     }
   }
+
+  await transaction(env, async tx => {
+    await one(tx, 'SELECT 1 AS x FROM (SELECT pg_advisory_xact_lock(hashtext(?::text))) k', 'owner-report-late-income');
+    const alive = new Set((await all<{ id: string }>(tx, 'SELECT id FROM owner_report_locks WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', ids(due.map(d => d.lockId)))).map(r => r.id));
+    const posted = await postedFor(tx, [...alive]);
+    const at = nowIso();
+    const inserts: Record<string, unknown>[] = [], updates: { id: string; amount: number; kind: string }[] = [], removes: string[] = [];
+    const audits: AuditEntry[] = [];
+    for (const d of due) {
+      if (!alive.has(d.lockId)) continue;
+      const plan = planLate(d.diff, posted.get(d.lockId) ?? [], d.target);
+      if (plan.kind === 'none') continue;
+      out.planned++;
+      if (plan.kind === 'insert') {
+        inserts.push({ id: `adj-lock-${crypto.randomUUID()}`, owner_id: d.ownerId, unit_id: d.unitId, kind: plan.amount >= 0 ? 'credit' : 'charge', amount: plan.amount,
+          description: d.text, occurred_on: `${plan.month}-01`, reference: `stage-lock:${d.lockId}`, state: d.held ? 'held' : 'open' });
+      } else if (plan.kind === 'update') updates.push({ id: plan.id, amount: plan.amount, kind: plan.amount >= 0 ? 'credit' : 'charge' });
+      else removes.push(plan.id);
+      audits.push({ actorId: null, actorLabel: 'Late income update', action: `owner_report.late_income.${plan.kind}`, entityTable: 'units', entityId: d.unitId,
+        after: { month: d.month, lockId: d.lockId, diff: d.diff, plan }, source: 'system' });
+    }
+    if (o.dryRun || !audits.length) return;
+    if (inserts.length) await run(tx, `
+      INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
+      SELECT x.id, x.owner_id, x.unit_id, x.kind, x.amount, x.description, x.occurred_on, x.reference, x.state, 'stage_lock', NULL, ?, ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, owner_id text, unit_id text, kind text, amount integer, description text, occurred_on text, reference text, state text)`,
+      at, at, JSON.stringify(inserts));
+    if (updates.length) await run(tx, `
+      UPDATE owner_adjustments a SET amount = x.amount, kind = x.kind, updated_at = ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, amount integer, kind text) WHERE a.id = x.id`, at, JSON.stringify(updates));
+    if (removes.length) await run(tx, 'DELETE FROM owner_adjustments WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', ids(removes));
+    await auditMany(tx, audits);
+    out.inserted = inserts.length; out.updated = updates.length; out.removed = removes.length;
+  });
   return out;
 }
