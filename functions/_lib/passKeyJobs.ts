@@ -17,7 +17,7 @@ const UNTOUCHED = `m.state = 'open' AND (m.vendor_name IS NULL OR trim(m.vendor_
   AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.maintenance_id = m.id)`;
 const CHECK_IN_SOON = `m.due_on BETWEEN ${MYT_DAY(0)} AND ${MYT_DAY(1)}`;
 const URGENCY_DUE = `CASE WHEN ${CHECK_IN_SOON} THEN 'urgent' ELSE 'normal' END`;
-const URGENCY_STALE = `${AUTO_JOB} AND m.state != 'resolved' AND m.due_on IS NOT NULL AND m.urgency IS DISTINCT FROM ${URGENCY_DUE}`;
+const URGENCY_STALE = `m.job_type = 'pass_key' AND m.state != 'resolved' AND m.due_on IS NOT NULL AND m.urgency IS DISTINCT FROM ${URGENCY_DUE}`;
 
 export interface UrgencyChange { id: string; urgency: string }
 
