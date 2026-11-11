@@ -1,8 +1,20 @@
 # Date & Time Formatting Convention
 
-**Owner's decision, 3 Nov 2026:** every full date in the system is numeric and year first, `2026/11/03`, the same rule
-the supply-chain engine (MRP) has used since 25 Sep 2026. Screens, PDFs, notices and messages alike. Times are
-unchanged: 24-hour, Malaysian time. Whole-month labels stay readable (`Nov 2026`, `November 2026`).
+**YH's decision, 11 Nov 2026:** every full date in the system reads day first, `16/11/2026`, on both sides (Dream
+Crafter asked first; then "conts also dd/mm/yyyy across the board"). Timestamps read `16/11/2026 14:06`, the short
+form `16/11`. Screens, PDFs, prints, notices, the digest, the letterhead and ledger references alike. This replaces
+the year-first rule of 3 Nov 2026 (`2026/11/03`). Times are unchanged: 24-hour, Malaysian time. Whole-month labels
+stay readable (`Nov 2026`, `November 2026`). Nothing else changes: stored values, API payloads, date inputs' values,
+CSV exports and file stamps stay ISO.
+
+Separator: a slash on both sides (YH, 11 Nov 2026: "Slashes"). Where a slash is not allowed or changes meaning,
+the value stays ISO with dashes: file names and file stamps (`fileStamp()`), URLs and query strings, CSV exports
+(`isoForExport()`), date input values, and stored or keyed values.
+
+The typed date box (`DateField`) shows and reads `dd/mm/yyyy` (8 digits typed straight through are day, month,
+year; an older year-first paste still reads). The WhatsApp delivery follow-up sends `dd/mm/yyyy` to Connect, which
+only shows it as text. The Excel line export's date cells are real Excel dates shown `dd/mm/yyyy` (YH, 11 Nov 2026:
+"Yes, all three").
 
 Single source of truth on the screens: [`src/lib/format.ts`](../src/lib/format.ts). On the server:
 [`functions/_lib/dates.ts`](../functions/_lib/dates.ts). The engine keeps its own copy of the same rule
@@ -16,7 +28,7 @@ hand-build a date in a component; `scripts/checks/formatting.mjs` fails the buil
 
 | You are showing… | Render as | How |
 | --- | --- | --- |
-| A record / a specific day | `2026/09/16` | `date()` |
+| A record / a specific day | `16/09/2026` | `date()` |
 | A period (month) | `Sep 2026` | `monthLabel()` |
 | A data-entry field | native date picker | `<input type="date">` |
 | A chat / activity time | `2 hours ago` | `relative()` |
@@ -26,25 +38,25 @@ hand-build a date in a component; `scripts/checks/formatting.mjs` fails the buil
 
 | Context | Helper | Example | Notes |
 | --- | --- | --- | --- |
-| Full specific date | `date(iso)` | `2026/09/16` | The default for any record, reservation, statement line, or timeline entry. |
-| Date range | `dateRange(from, to)` | `2026/09/16 – 2026/09/29` | Both ends in full, en dash between. Stays, statement periods, report windows. |
+| Full specific date | `date(iso)` | `16/09/2026` | The default for any record, reservation, statement line, or timeline entry. |
+| Date range | `dateRange(from, to)` | `16/09/2026 – 29/09/2026` | Both ends in full, en dash between. Stays, statement periods, report windows. |
 | Month period | `monthLabel(iso)` | `Sep 2026` | Whole months stay words. `monthLabel(iso, { long: true })` gives `September 2026` for one prominent title (the calendar's month header). |
 | Year | `year(iso)` | `2026` | |
 | Data-entry input | native `<input type="date">` | browser picker | Value stays ISO `yyyy-mm-dd` in state and transport. Seed it with `dateInputValue()`. |
 | Time | `time(iso)` | `15:00` | 24-hour, MYT. No AM/PM. |
 | Time with zone | `timeWithZone(iso)` | `14:06 MYT` | When the reader must not guess the zone. |
-| Full timestamp | `dateTime(iso)` | `2026/09/16 14:06` | Audit rows, message receipts, "last synced". |
+| Full timestamp | `dateTime(iso)` | `16/09/2026 14:06` | Audit rows, message receipts, "last synced". |
 | Relative | `relative(iso)` | `2 hours ago` / `Yesterday` | Falls back to `date()` after a day. |
-| Compact cell, year implied | `dateShort(iso)` | `09/16` | Month/day, as the engine's `fmtDayMonth`. Dense grids where the year is plain from the page. |
+| Compact cell, year implied | `dateShort(iso)` | `16/09` | Day and month, as the engine's `fmtDayMonth`. Dense grids where the year is plain from the page. |
 | Day header | `weekdayDate(iso)` | `Sat 10/10` | Cleaning, Today and the field app. |
 | Stamp inside one job | `dateTimeShort(iso)` | `10/10 14:00` | |
-| Long weekday date | `dateLong(iso)` | `Sunday, 2026/10/25` | |
+| Long weekday date | `dateLong(iso)` | `Sunday, 25/10/2026` | |
 | Calendar weekday cell | `weekdayDay(iso)` | `Wed 16` | Week/day calendar column headers (not a full date). |
 | Filenames / exports | `fileStamp()` | `2026-09-22` | ISO, so files sort by name and the sheet reads it as a date. |
 
 ## Server text
 
-`functions/_lib/dates.ts`: `numericDate(d)` gives `2026/11/03`, `numericDay(d)` gives `11/03`. Used by notices,
+`functions/_lib/dates.ts`: `numericDate(d)` gives `03/11/2026`, `numericDay(d)` gives `03/11`. Used by notices,
 digests, reservation messages, expense and utility messages, the unit P&L notes and the printed letterhead
 (`functions/_lib/letterhead.ts`). The owner statement PDF (`src/lib/statementPdf.ts`) prints its DATE field the same
 way. Month headings on documents stay words ("SEP 2026").

@@ -37,8 +37,8 @@ const money = (sen: number | null, opts: { brackets?: boolean; dash?: boolean } 
   return sen < 0 || opts.brackets ? `(${v})` : v;
 };
 const pct = (n: number) => `${Number(n.toFixed(2))}%`;
-/** 2026/09/30, the one date rule (owner, 3 Nov 2026). */
-const dayMonYear = (iso: string) => `${iso.slice(0, 4)}/${iso.slice(5, 7)}/${iso.slice(8, 10)}`;
+/** 30/09/2026, the one date rule (day first, YH 11 Nov 2026). */
+const dayMonYear = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
 // ponytail: the built-in Times font only has Western European letters, so a Chinese name prints as "?". Embed a
 // Unicode TTF through @pdf-lib/fontkit when an owner's name or the company address needs other scripts.

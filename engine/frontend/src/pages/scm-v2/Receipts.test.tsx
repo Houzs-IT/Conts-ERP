@@ -142,9 +142,9 @@ describe('the unified money-in list', () => {
        typed year-first, sent ISO; the number's month follows it server-side. */
     const date = screen.getByLabelText('Receipt date') as HTMLInputElement;
     fireEvent.focus(date);
-    fireEvent.change(date, { target: { value: '20260902' } });
+    fireEvent.change(date, { target: { value: '02092026' } });
     fireEvent.blur(date);
-    expect(date.value).toBe('2026/09/02');
+    expect(date.value).toBe('02/09/2026');
     fireEvent.change(screen.getByLabelText(/Received from/), { target: { value: 'ALLIANZ INSURANCE' } });
     const combos = screen.getAllByRole('combobox');
     fireEvent.focus(combos[0]!); // Received into — money only
@@ -174,7 +174,7 @@ describe('the unified money-in list', () => {
     draw();
     fireEvent.click(screen.getByText('New receipt'));
     const date = screen.getByLabelText('Receipt date') as HTMLInputElement;
-    expect(date.value).toMatch(/^\d{4}\/\d{2}\/\d{2}$/);
+    expect(date.value).toMatch(/^\d{2}\/\d{2}\/\d{4}$/);
     /* Payer, both account pickers, the description and the amount all carry
        the PV form's fieldInput class — no more bordered boxes beside bare
        selects (owner 2026-09-07: 有些有格子有些没有). */
@@ -208,10 +208,10 @@ describe('edit a posted receipt and re-post (owner 2026-09-07: 收钱的日期�
     await waitFor(() => expect(screen.getByText('Edit HC-OR-2609-001 — saving re-posts it')).toBeTruthy());
     expect((screen.getByLabelText(/Received from/) as HTMLInputElement).value).toBe('ALLIANZ INSURANCE');
     const date = screen.getByLabelText('Receipt date') as HTMLInputElement;
-    expect(date.value).toBe('2026/09/03');
+    expect(date.value).toBe('03/09/2026');
     expect((screen.getByLabelText('line 1 amount') as HTMLInputElement).value).toBe('888.00');
     fireEvent.focus(date);
-    fireEvent.change(date, { target: { value: '20260828' } });
+    fireEvent.change(date, { target: { value: '28082026' } });
     fireEvent.blur(date);
     fireEvent.click(screen.getByText('Save & re-post'));
     await waitFor(() => expect(updateAsync).toHaveBeenCalledWith({

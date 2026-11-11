@@ -17,6 +17,9 @@ import { LineApprovedDrawings, PoApprovedDrawings, approvedSheets } from "./Beta
 const FILE = { id: 1, kind: "2d", version: 2, file_name: "Kitchen.png", r2_key: "renovation/7/k.png", external_url: null, content_type: "image/png", size_bytes: 1, submitted_on: null, uploaded_at: "2026-11-01" };
 const wrap = (node: React.ReactNode) => render(<QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>);
 
+
+// These are Dream Crafter screens: dates read day first (YH, 11 Nov 2026).
+
 describe("approved 2D", () => {
   it("shows nothing for a PO that is not Built-in, or before approval", () => {
     expect(approvedSheets({ projectId: null }, [])).toBeNull();
@@ -25,7 +28,7 @@ describe("approved 2D", () => {
   it("shows the set on the PO", async () => {
     h.answer = { projectId: 7, files: [FILE], approved: { fileId: 1, version: 2, approvedOn: "2026-11-05" } };
     wrap(<PoApprovedDrawings poId="p1" />);
-    expect(await screen.findByText("2D V2, approved 5 Nov 2026")).toBeTruthy();
+    expect(await screen.findByText("2D V2, approved 05/11/2026")).toBeTruthy();
     expect(await screen.findByAltText("Kitchen.png")).toBeTruthy();
   });
   it("shows the set on the line", async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { todayMyt, mytDateOf } from "./my-time";
+import { todayMyt, mytDateOf, rangeBoundsMy } from "./my-time";
 
 // The whole point of todayMyt() is the 00:00-08:00 MYT window, where the UTC
 // calendar date is still YESTERDAY. Every assertion below pins a moment inside
@@ -81,5 +81,12 @@ describe("mytDateOf", () => {
     const iso = "2026-07-16T17:00:00Z";
     expect(mytDateOf(new Date(iso))).toBe("2026-07-17");
     expect(mytDateOf(new Date(iso).getTime())).toBe("2026-07-17");
+  });
+});
+
+describe("rangeBoundsMy label", () => {
+  it("reads day first", () => {
+    expect(rangeBoundsMy("2026-11-03", "2026-11-16").label).toBe("03/11/2026 – 16/11/2026");
+    expect(rangeBoundsMy("2026-11-03", null).label).toBe("From 03/11/2026");
   });
 });

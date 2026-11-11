@@ -213,9 +213,9 @@ describe("Purchase Order list: the ONE Export", () => {
     expect(h.aoa[2]![4]).toBe("AK-BASTION (K)");
     expect(h.aoa[3]![0]).toBe("HC-PO-009950"); // not linked to AutoCount: the ERP number
     expect(h.aoa[4]!.slice(0, 5)).toEqual(["HC-PO-009951", null, "400-A006", "AKEMI UNITED SDN BHD", null]);
-    // Doc Date and the delivery dates are real Excel dates shown yyyy/mm/dd.
-    expect(h.cells["9:1"]).toEqual({ t: "n", v: 46269, z: "yyyy/mm/dd" });
-    expect(h.cells["11:1"]).toMatchObject({ t: "n", z: "yyyy/mm/dd" });
+    // Doc Date and the delivery dates are real Excel dates shown dd/mm/yyyy.
+    expect(h.cells["9:1"]).toEqual({ t: "n", v: 46269, z: "dd/mm/yyyy" });
+    expect(h.cells["11:1"]).toMatchObject({ t: "n", z: "dd/mm/yyyy" });
     expect(h.written[0]).toMatch(/^purchase-orders-\d{4}-\d{2}-\d{2}\.xlsx$/);
   });
 

@@ -84,11 +84,14 @@ const get = (pid: number): DesignProject => {
   return p;
 };
 
+
+// These are Dream Crafter screens: dates read day first (YH, 11 Nov 2026).
+
 describe("dates", () => {
   it("adds and counts days without a time zone", () => {
     expect(add("2026-10-30", 3)).toBe("2026-11-02");
     expect(diff("2026-10-24", TODAY)).toBe(1);
-    expect(ds("2026-10-23")).toBe("23 Oct");
+    expect(ds("2026-10-23")).toBe("23/10");
   });
   it("makes badge letters", () => {
     expect(initials("Jia Xin")).toBe("JX");
@@ -194,7 +197,7 @@ describe("progress and calendar", () => {
     expect(up.title).toBe("Coming up");
     expect(up.events.map((e) => e.id)).toEqual(["ap|5|cm", "ap|11|sb"]);
     const day = listFor(m, "All", "2026-10-23");
-    expect(day.title).toBe("23 Oct · today");
+    expect(day.title).toBe("23/10 · today");
     expect(day.due.map((x) => x.p.id)).toEqual([4]);
   });
   it("builds the month grid Monday first", () => {
@@ -217,7 +220,7 @@ describe("form checks", () => {
     expect(amendDue("2026-10-23", 3)).toBe("2026-10-26");
   });
   it("keeps the site briefing after the carpentry measure", () => {
-    expect(bookIssue(get(11), "sb", "2026-10-14")).toBe("Site briefing must be after the carpentry measure (14 Oct)");
+    expect(bookIssue(get(11), "sb", "2026-10-14")).toBe("Site briefing must be after the carpentry measure (14/10)");
     expect(bookIssue(get(11), "sb", "2026-10-15")).toBeNull();
     expect(bookIssue(get(11), "cm", "2026-10-01")).toBeNull();
   });

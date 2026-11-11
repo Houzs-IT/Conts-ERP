@@ -1,6 +1,6 @@
 // Dates, times, money and counts are formatted only in src/lib/format.ts, so every screen prints
-// "2026/09/16", "14:06", "RM 1,250.00" and "4,290" the same way (never "16 Sep 2026" since 3 Nov 2026, never 2:06 pm,
-// never RM1250). Year-first numeric dates are the owner's rule for the whole system, the engine included.
+// "16/09/2026", "14:06", "RM 1,250.00" and "4,290" the same way (never "16 Sep 2026", never 2:06 pm, never RM1250).
+// Day-first numeric dates on both sides are YH's rule (11 Nov 2026), replacing year-first (3 Nov 2026).
 import { runCheck, runIfMain, srcFiles, stripComments, lineHits } from './_lib.mjs';
 
 const PATTERNS = [
@@ -8,7 +8,7 @@ const PATTERNS = [
   { re: /\bIntl\.(?:DateTimeFormat|NumberFormat|RelativeTimeFormat)\b/, msg: 'Intl formatter: use src/lib/format.ts' },
   { re: /\bRM\s?(?:\$\{|\{)/, msg: 'hand-built "RM" amount: use rm() / rmShort() / <MoneyText>' },
   { re: /['"`]RM ['"`]\s*\+/, msg: 'hand-built "RM" amount: use rm() / rmShort() / <MoneyText>' },
-  { re: /\$\{[^}]+\} \$\{MONTHS\[/, msg: 'hand-built day-and-month-name date: use date() / dateShort() from src/lib/format.ts (2026/09/16, 09/16)' },
+  { re: /\$\{[^}]+\} \$\{MONTHS\[/, msg: 'hand-built day-and-month-name date: use date() / dateShort() from src/lib/format.ts (16/09/2026, 16/09)' },
 ];
 
 export const allow = {

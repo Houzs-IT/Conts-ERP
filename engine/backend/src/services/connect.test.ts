@@ -18,7 +18,7 @@ describe('isConnectConfigured', () => {
 describe('buildDeliveryFollowUp', () => {
   it('single order → ref_1 only, order_total 1, automation by name', () => {
     const contact = buildDeliveryFollowUp('+60123', 'Wong', [
-      { ref: 'HC13234', branding: 'AKEMI', deliveryDate: '2026/10/05' },
+      { ref: 'HC13234', branding: 'AKEMI', deliveryDate: '05/10/2026' },
     ]);
     expect(contact).toEqual({
       phone: '+60123',
@@ -28,7 +28,7 @@ describe('buildDeliveryFollowUp', () => {
         full_name: 'Wong',
         order_total: '1',
         ref_1: 'HC13234',
-        delivery_date_1: '2026/10/05',
+        delivery_date_1: '05/10/2026',
         brand_1: 'AKEMI',
       },
     });
@@ -36,15 +36,15 @@ describe('buildDeliveryFollowUp', () => {
 
   it('bundles multiple orders as 1-indexed ref_N / delivery_date_N / brand_N', () => {
     const contact = buildDeliveryFollowUp('+60123', 'Wong', [
-      { ref: 'A1', branding: 'AKEMI', deliveryDate: '2026/10/05' },
-      { ref: 'B2', branding: 'SLUMBERLAND', deliveryDate: '2026/10/06' },
-      { ref: 'C3', branding: 'GOODNITE', deliveryDate: '2026/10/07' },
+      { ref: 'A1', branding: 'AKEMI', deliveryDate: '05/10/2026' },
+      { ref: 'B2', branding: 'SLUMBERLAND', deliveryDate: '06/10/2026' },
+      { ref: 'C3', branding: 'GOODNITE', deliveryDate: '07/10/2026' },
     ]);
     expect(contact.attributes.order_total).toBe('3');
     expect(contact.attributes.ref_1).toBe('A1');
     expect(contact.attributes.ref_2).toBe('B2');
     expect(contact.attributes.ref_3).toBe('C3');
-    expect(contact.attributes.delivery_date_2).toBe('2026/10/06');
+    expect(contact.attributes.delivery_date_2).toBe('06/10/2026');
     expect(contact.attributes.brand_3).toBe('GOODNITE');
   });
 });
@@ -54,7 +54,7 @@ describe('postConnectContact', () => {
 
   const env = { CONNECT_WEBHOOK_URL: 'https://chat.houzscentury.com/', CONNECT_WEBHOOK_KEY: 'secret48' };
   const contact = buildDeliveryFollowUp('+60123', 'Wong', [
-    { ref: 'A1', branding: 'AKEMI', deliveryDate: '2026/10/05' },
+    { ref: 'A1', branding: 'AKEMI', deliveryDate: '05/10/2026' },
   ]);
 
   it('posts to /api/webhooks/erp with the X-Connect-Key header, trimming a trailing slash', async () => {
