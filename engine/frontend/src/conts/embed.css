@@ -8,8 +8,8 @@ html.conts-embedded .sticky.lg\:top-\[52px\] {
 }
 
 /* Every screen here sits on the Dream Crafter page that /projects/list (the Beta screens) and the ERP sidebar draw,
-   light or night as Property OS's theme says (data-beta-skin, embed.ts). Tables keep their own look
-   (dreamcrafters feedback, 11 Nov 2026). The two gradients are PAGE_VISION and PAGE_NIGHT in
+   light or night as Property OS's theme says (data-beta-skin, embed.ts). Tables keep their own look in light;
+   on night they turn dark (rules at the end). The two gradients are PAGE_VISION and PAGE_NIGHT in
    pages/renovation-beta/renovationBetaTheme.ts, copied so the main bundle does not load that module;
    embedTheme.test.ts keeps them equal. The pinned page header takes the same fixed backdrop, so it hides what
    scrolls under it without a seam. */
@@ -62,3 +62,28 @@ html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dt-bar:not(.bg-surf
 html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dc-glass:not(.bg-surface .dc-glass)) .bg-primary { background: #EEF1F8; color: #151823; border-color: #EEF1F8; }
 html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dc-glass:not(.bg-surface .dc-glass)) .bg-primary :is(.text-white, [class*="text-white/"]) { color: #151823; }
 html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dc-glass:not(.bg-surface .dc-glass)) .bg-primary .bg-white\/20 { background: rgba(21,24,35,.12); }
+
+/* Night: the shared table (DataTable's .dt-table box) was left white, so the Beta screens' light night ink (the
+   /projects/list Project link) was near-invisible on it (YH, 11 Nov 2026). Its head, rows, stripes, lines and inks
+   take the Beta night colours (surface, ink, text2, muted, line, lineSoft in renovationBetaTheme.ts). Solid, not
+   glass: the sticky head and frozen cells must hide what scrolls under them; --dt-row(-alt) also feed those cells.
+   A table inside a white card keeps its look, as the rules above leave that card. */
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) {
+  --dt-row: #1C2030;
+  --dt-row-alt: #232736;
+  background: var(--dt-row);
+  border-color: rgba(150,175,255,.24);
+  color-scheme: dark;
+}
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) tr.bg-surface { background: var(--dt-row); }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) tr.bg-surface-dim\/35 { background: var(--dt-row-alt); }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is(.bg-surface-dim, .bg-surface-dim\/70, .hover\:bg-surface-dim:hover) { background: #2A2F42; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .bg-surface-dim\/20 { background: rgba(255,255,255,.03); }
+/* White panels and buttons inside a cell (a row's expanded lines, a cell button) take the faint night wash, as their text turns light. */
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) td :is(.bg-surface, .bg-surface-2, [class*="bg-surface-2/"]) { background: rgba(255,255,255,.04); }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .border-border { border-color: rgba(150,175,255,.18); }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .border-border-subtle { border-color: rgba(150,175,255,.11); }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink { color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink-secondary { color: #B9C0D0; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink-muted { color: #9AA2B4; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-primary { color: #9FC0FF; }
