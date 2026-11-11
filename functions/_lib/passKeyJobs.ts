@@ -92,11 +92,38 @@ export async function syncPassKeyJobs(env: Env, scope: PassKeyScope, limit = 200
       SELECT made.id, made.reservation_id, made.due_on, picked.starts_at FROM made JOIN picked ON picked.issue_id = made.id`, ...filter.args, mytToday(), now, now, now, WINDOW_NOTE, now);
     await logSystem(env, 'maintenance.pass_key_created', created);
     await noticeSameDay(env, created);
+    await markPassKeyUrgency(env);
     return created.length;
   } catch (error) {
     console.error('syncPassKeyJobs failed', error);
     return 0;
   }
+}
+
+interface UrgencyChange { id: string; reservation_id: string; urgency: string }
+
+const URGENCY_CHANGES = `
+  SELECT m.id, m.reservation_id, CASE WHEN m.due_on <= to_char(?::date + 1, 'YYYY-MM-DD') THEN 'urgent' ELSE 'normal' END AS urgency
+  FROM maintenance_issues m
+  WHERE m.job_type = 'pass_key' AND m.state != 'resolved' AND m.due_on ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`;
+
+export async function passKeyUrgencyChanges(env: Env, today = mytToday()): Promise<UrgencyChange[]> {
+  if (!(await hasPassKeyJobs(env))) return [];
+  return all<UrgencyChange>(env, `
+    SELECT x.* FROM (${URGENCY_CHANGES}) x JOIN maintenance_issues m ON m.id = x.id
+    WHERE m.urgency IS DISTINCT FROM x.urgency`, today);
+}
+
+export async function markPassKeyUrgency(env: Env, today = mytToday()): Promise<UrgencyChange[]> {
+  if (!(await hasPassKeyJobs(env))) return [];
+  const changed = await all<UrgencyChange>(env, `
+    UPDATE maintenance_issues m SET urgency = x.urgency, updated_at = ?
+    FROM (${URGENCY_CHANGES}) x
+    WHERE m.id = x.id AND m.urgency IS DISTINCT FROM x.urgency
+    RETURNING m.id, m.reservation_id, m.urgency`, nowIso(), today);
+  await logSystem(env, 'maintenance.pass_key_urgent', changed.filter(({ urgency }) => urgency === 'urgent'));
+  await logSystem(env, 'maintenance.pass_key_normal', changed.filter(({ urgency }) => urgency !== 'urgent'));
+  return changed;
 }
 
 export interface PassKeyStatus {

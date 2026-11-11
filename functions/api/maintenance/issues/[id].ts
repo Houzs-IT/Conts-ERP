@@ -4,6 +4,7 @@ import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, JOB_TYPES, SEVERITIES, pickAssignee, hasBilling, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../_lib/expenses';
 import { repairNotice } from '../../../_lib/notices';
+import { markPassKeyUrgency } from '../../../_lib/passKeyJobs';
 import { hasServicePrices, serviceBook } from '../../../_lib/servicePrices';
 import { layoutKey } from '../../../_lib/cleaningPrices';
 
@@ -170,6 +171,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
 
   await run(env, `UPDATE maintenance_issues SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, now, id);
+  if ((b?.jobType ?? cur.job_type) === 'pass_key') await markPassKeyUrgency(env);
   if (moved) {
     await run(env, 'UPDATE expenses SET incurred_on = ? WHERE id = ?', moved.to, moved.id);
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.update', entityTable: 'expenses', entityId: moved.id, before: { incurredOn: moved.from }, after: { incurredOn: moved.to, reason: 'Maintenance billing date changed' } });

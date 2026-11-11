@@ -6,6 +6,7 @@ import { resolveUnit } from '../../_lib/ops';
 import { windowsFor, staysOverlapping } from '../../_lib/cleaning';
 import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, JOB_TYPES, SEVERITIES, DAY, assigneeUserId, pickAssignee, hasTechnicianList, hasBilling, hasBuildingJobs, jobPlaceJoin, toInstant, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../_lib/maintenance';
 import { repairNotice } from '../../_lib/notices';
+import { markPassKeyUrgency } from '../../_lib/passKeyJobs';
 import { hasServicePrices, serviceBook } from '../../_lib/servicePrices';
 import { layoutKey } from '../../_lib/cleaningPrices';
 import { hasJobInvoices } from '../../_lib/jobProfit';
@@ -210,6 +211,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     now, now, now, ...(withUser ? [userId] : []), ...(listed ? [who?.technicianId ?? null] : []), ...(cols ? [jobType, severity, b.needsParts ? 1 : 0, b.dueOn ?? null] : []), ...(billingCols ? [internal] : []));
 
   if (lines.length) await writeLines(env, id, lines, session.userId);
+  if (jobType === 'pass_key') await markPassKeyUrgency(env);
   if (b.blocksUnit && unit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
   let overlaps: unknown[] = [];
   if (win) {

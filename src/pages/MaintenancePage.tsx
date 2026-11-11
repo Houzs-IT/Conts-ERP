@@ -57,6 +57,10 @@ const APPROVAL: Record<string, { label: string; tone: AnyTone }> = {
 };
 const typeOf = (i: Issue): JobType => i.jobType ?? (i.urgency === 'urgent' ? 'urgent' : 'normal');
 const isOffDayPassKey = (i: Issue): boolean => typeOf(i) === 'pass_key' && !!i.dueOn && i.dueOn !== mytDay(0);
+const isUrgentPassKey = (i: Issue): boolean => typeOf(i) === 'pass_key' && i.urgency === 'urgent' && i.state !== 'resolved';
+const typeBadge = (i: Issue): { label: string; tone: 'critical' | 'info' | 'neutral' } => isUrgentPassKey(i)
+  ? { label: 'Pass key · Urgent', tone: 'critical' }
+  : { label: JOB_TYPE[typeOf(i)], tone: typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral' };
 /** Approved, but the parts it waits for have not come: still hidden from the technicians. */
 const needsSupport = (i: Issue): boolean => i.state !== 'resolved' && !i.endedAt && !!i.supportRequestedAt;
 const waitingParts = (i: Issue) => i.state !== 'resolved' && i.approvalStatus === 'approved' && !!i.needsParts && !i.partsArrivedAt;
@@ -121,7 +125,7 @@ export default function MaintenancePage() {
   const recentDone = issues.filter(i => i.state === 'resolved' && i.resolvedAt && Date.parse(i.resolvedAt) > Date.now() - 30 * 864e5);
   // The header counts what the tabs count: a job waiting for its owner sits under that tab, not under Open.
   const openTab = open.filter(i => !awaitingOwner(i) && !isOffDayPassKey(i));
-  const urgent = openTab.filter(i => typeOf(i) === 'urgent').length;
+  const urgent = openTab.filter(i => typeOf(i) === 'urgent' || isUrgentPassKey(i)).length;
   const passKeys = openTab.filter(i => typeOf(i) === 'pass_key');
   const support = openTab.filter(needsSupport);
   const monthCost = issues.filter(i => i.state === 'resolved' && (i.resolvedAt ?? '').slice(0, 7) === monthStart).reduce((s, i) => s + (i.finalAmount ?? 0), 0);
@@ -295,7 +299,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
         : <>From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}{i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</>,
       render: i => <span className="block whitespace-normal text-ink">{i.title}</span> },
     { key: 'urgency', label: 'Type', type: 'status', value: i => typeOf(i),
-      status: i => ({ label: JOB_TYPE[typeOf(i)], tone: typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral' }), width: 110, phone: 'meta',
+      status: typeBadge, width: 110, phone: 'meta',
       filter: { kind: 'select', options: Object.entries(JOB_TYPE).map(([value, label]) => ({ value, label })) } },
     { key: 'status', label: 'Status', type: 'status', value: i => statusOf(i).label, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 160 },
     { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, hidden: true,
@@ -365,7 +369,7 @@ function JobCard({ i, money }: { i: Issue; money: boolean }) {
         {i.source === 'booking' ? <>Guest check-in {stamp(checkInAt(i))}</> : CATEGORY[i.category] ?? i.category} · {i.vendorName ? i.vendorName : <span className="text-danger">Unassigned</span>}{i.source !== 'booking' && <> · reported {dateShort(i.reportedAt)}</>}
       </span>
       <span className="flex gap-1.5 flex-wrap pt-0.5">
-        {typeOf(i) !== 'normal' && <StatusBadge tone={typeOf(i) === 'urgent' ? 'critical' : 'info'}>{JOB_TYPE[typeOf(i)]}</StatusBadge>}
+        {typeOf(i) !== 'normal' && <StatusBadge tone={typeBadge(i).tone}>{typeBadge(i).label}</StatusBadge>}
         {i.blocksUnit && i.state !== 'resolved' && <StatusBadge tone="critical">Unit blocked</StatusBadge>}
         {i.dueOn && typeOf(i) === 'normal' && i.state !== 'resolved' && <StatusBadge tone="neutral">Due {dateShort(i.dueOn)}</StatusBadge>}
         <StatusBadge tone={s.tone === 'gold' ? 'neutral' : s.tone}>{s.label}</StatusBadge>
@@ -510,7 +514,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         <span className="[&_button]:text-white [&_button]:border-charcoal [&_button]:bg-transparent"><CloseButton onClick={onClose} /></span>
       </div>
       <div className="flex gap-1.5 flex-wrap">
-        <StatusBadge tone={typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral'}>{JOB_TYPE[typeOf(i)]}</StatusBadge>
+        <StatusBadge tone={typeBadge(i).tone}>{typeBadge(i).label}</StatusBadge>
         {i.approvalStatus === 'approved' && <StatusBadge tone="success">Owner approved</StatusBadge>}
         <StatusBadge tone="neutral">{CATEGORY[i.category] ?? i.category}</StatusBadge>
         <StatusBadge tone={statusOf(i).tone}>{statusOf(i).label}</StatusBadge>

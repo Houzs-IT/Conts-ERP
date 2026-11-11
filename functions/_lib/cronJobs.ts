@@ -16,6 +16,7 @@ import { hasAttendance } from './attendance';
 import { FORGOTTEN_AFTER_HOURS } from './attendanceCalc';
 import { dueDepartures, markGuestLeft } from './guestLeft';
 import { runGuestReviews } from './guestReviews';
+import { markPassKeyUrgency, passKeyUrgencyChanges } from './passKeyJobs';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -246,6 +247,20 @@ async function hostplatformWrite(env: Env, job: string, startedAt: Date, w: { up
   return { dryRun: false as const, pulled: pulled.length, created: result?.created ?? 0, updated: result?.updated ?? 0, items: [...items, ...problems.slice(0, 20)] };
 }
 
+/** Every 5 minutes: a Pass key job is Urgent on the day before its check-in and on the day itself, Normal before that.
+ *  Runs on the clock so the change lands just after 00:00 MYT, not only when a booking changes. */
+export async function passKeyUrgency(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const { day } = mytParts(o.now ?? new Date());
+  const changes = o.dryRun ? await passKeyUrgencyChanges(env, day) : await markPassKeyUrgency(env, day);
+  const urgent = changes.filter(({ urgency }) => urgency === 'urgent').length;
+  const verb = o.dryRun ? 'Would mark' : 'Marked';
+  return {
+    job: 'pass-key-urgency',
+    summary: changes.length ? `${verb} ${plural(urgent, 'Pass key job')} Urgent and ${changes.length - urgent} back to Normal.` : 'Every Pass key job already has the right urgency.',
+    items: changes.map(({ id, urgency }) => `${id}: ${urgency}`),
+  };
+}
+
 /** Hourly: work past its time. A cleaning job becomes Overdue by the one rule (src/lib/cleanOverdue.ts: still not done at
  *  the next guest's check-in, or after midnight at the end of its day with no check-in), and its cleaner and the
  *  operations managers are told once; other tasks (an inspection) when past their due time. A repair job left open too
@@ -268,8 +283,9 @@ export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobRep
   const repairs = await all<{ id: string; urgency: string; reported_at: string }>(env, `
     SELECT id, urgency, reported_at FROM maintenance_issues
     WHERE state IN ('open','assigned','in_progress','reopened') AND reported_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+      AND (job_type = 'pass_key' AND due_on >= ?) IS NOT TRUE
       AND reported_at::timestamptz < (?::timestamptz - CASE WHEN urgency = 'urgent' THEN interval '1 day' ELSE interval '7 days' END)
-      AND reported_at::timestamptz > (?::timestamptz - interval '60 days')`, now, now);
+      AND reported_at::timestamptz > (?::timestamptz - interval '60 days')`, mytParts(new Date(now)).day, now, now);
   const stale = await all<{ id: string; owner: string; period_start: string }>(env, `
     SELECT s.id, o.display_name AS owner, s.period_start FROM owner_statements s JOIN owners o ON o.id = s.owner_id
     WHERE s.state = 'finalised' AND s.finalised_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' AND s.finalised_at::timestamptz < (?::timestamptz - interval '3 days')`, now);
@@ -392,7 +408,7 @@ export const CRON = {
 /** What each trigger runs, in order. */
 export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<JobReport>)[]> = {
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
-  [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox],
+  [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox, passKeyUrgency],
   [CRON.quarterHour]: [drainOutbox, repairBlockSweep, guestReviewSweep],
   [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep],
   [CRON.daily]: [dailyDigest],
