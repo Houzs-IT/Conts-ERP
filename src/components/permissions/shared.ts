@@ -36,6 +36,7 @@ export const categorySide = (group: string): UserSide =>
 /** The Cleaning and Maintenance departments hold the cleaners' and technicians' logins, which are managed on Workers
  *  only: Users and roles never lists, offers or changes them. */
 export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance';
+export const needsPosition = (kind: DepartmentKind): boolean => kind !== 'management';
 export const KIND_OPTIONS: { value: DepartmentKind; label: string }[] = [
   { value: 'staff', label: 'Staff (office work)' },
   { value: 'management', label: 'Management (full access)' },

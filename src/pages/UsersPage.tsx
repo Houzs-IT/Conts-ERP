@@ -12,7 +12,7 @@ import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Select } from '../components/Select';
 import { Modal } from '../components/Modal';
 import UserAccess from '../components/permissions/UserAccess';
-import { KIND_NOTE, SIDE_OPTIONS, isFieldKind, sideLabel, useDepartments } from '../components/permissions/shared';
+import { KIND_NOTE, SIDE_OPTIONS, isFieldKind, needsPosition, sideLabel, useDepartments } from '../components/permissions/shared';
 import { Segmented } from '../components/Metric';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
@@ -244,6 +244,8 @@ export default function UsersPage() {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) errs.email = 'Enter a valid work email.';
     if (rows.some(r => r.email.toLowerCase() === email.trim().toLowerCase())) errs.email = 'That email already has an account.';
     if (!departmentId) errs.departmentId = 'Pick a department.';
+    const invitedDepartment = departmentById.get(departmentId);
+    if (invitedDepartment && needsPosition(invitedDepartment.kind) && !positionId) errs.positionId = 'Pick a position.';
     if (Object.keys(errs).length) { setFieldErrors(errs); return; }
 
     setBusy(true); setFieldErrors({});
@@ -650,7 +652,7 @@ export default function UsersPage() {
           <form id="invite-form" onSubmit={submitInvite} className="flex flex-col gap-4">
             <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" error={fieldErrors.fullName} />
             <Field label="Work email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" error={fieldErrors.email} />
-            <PlaceFields departments={departments} side={side} onSide={setSide} departmentId={departmentId} positionId={positionId}
+            <PlaceFields departments={departments} side={side} onSide={setSide} departmentId={departmentId} positionId={positionId} isPositionRequired
               onDepartment={v => { setDepartmentId(v); setPositionId(''); }} onPosition={setPositionId}
               errors={{ side: fieldErrors.side, departmentId: fieldErrors.departmentId, positionId: fieldErrors.positionId }} />
             <Select label="Reports to" showLabel size="md" value={managerId} onChange={setManagerId} placeholder="No manager"
@@ -686,7 +688,7 @@ export default function UsersPage() {
             <Field label="Full name" value={editName} onChange={e => setEditName(e.target.value)} error={editErrors.fullName} />
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
             {editing.role === 'owner' && <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />}
-            {editing.role !== 'owner' && <PlaceFields departments={departments} side={editSide} onSide={setEditSide} departmentId={editDepartmentId} positionId={editPositionId}
+            {editing.role !== 'owner' && <PlaceFields departments={departments} side={editSide} onSide={setEditSide} departmentId={editDepartmentId} positionId={editPositionId} isPositionRequired={false}
               onDepartment={v => { setEditDepartmentId(v); setEditPositionId(''); }} onPosition={setEditPositionId}
               errors={{ side: editErrors.side, departmentId: editErrors.departmentId, positionId: editErrors.positionId }} />}
             {editing.role !== 'owner' && editPlaceChanged && (
@@ -792,16 +794,17 @@ export default function UsersPage() {
 }
 
 /* ------------------------------ forms ------------------------------ */
-/** Works on, then department (required), then position (optional), from the managed list. Only the departments on the
+/** Works on, then department (required), then position (required on an invitation unless the department is Management), from the managed list. Only the departments on the
  *  chosen side (or on both) are offered, so a department picked earlier is cleared when the side no longer fits it.
  *  A position belongs to one department, so changing the department clears the position. */
-function PlaceFields({ departments, side, onSide, departmentId, positionId, onDepartment, onPosition, errors }: {
-  departments: Department[]; side: UserSide; onSide: (s: UserSide) => void; departmentId: string; positionId: string;
+function PlaceFields({ departments, side, onSide, departmentId, positionId, isPositionRequired, onDepartment, onPosition, errors }: {
+  departments: Department[]; side: UserSide; onSide: (s: UserSide) => void; departmentId: string; positionId: string; isPositionRequired: boolean;
   onDepartment: (id: string) => void; onPosition: (id: string) => void;
   errors: { side?: string; departmentId?: string; positionId?: string };
 }) {
   const offered = departments.filter(d => !isFieldKind(d.kind) && sideFits(d, side));
   const dept = offered.find(d => d.id === departmentId);
+  const mustPickPosition = isPositionRequired && !!dept && needsPosition(dept.kind);
   const pickSide = (s: UserSide) => {
     onSide(s);
     const current = departments.find(d => d.id === departmentId);
@@ -821,13 +824,16 @@ function PlaceFields({ departments, side, onSide, departmentId, positionId, onDe
           {errors.departmentId && <span className={cx('text-meta', TONE.critical.text)}>{errors.departmentId}</span>}
         </div>
         <div className="flex flex-col gap-1">
-          <Select label="Position" showLabel size="md" value={positionId} onChange={onPosition} placeholder="No position" disabled={!dept || dept.positions.length === 0}
+          <Select label="Position" showLabel size="md" value={positionId} onChange={onPosition} placeholder={mustPickPosition ? 'Pick a position' : 'No position'} disabled={!dept || dept.positions.length === 0}
             options={(dept?.positions ?? []).map(p => ({ value: p.id, label: p.name }))} />
           {errors.positionId && <span className={cx('text-meta', TONE.critical.text)}>{errors.positionId}</span>}
         </div>
       </div>
       {dept && <span className="text-meta text-muted-ink">{departmentNote(dept)}</span>}
-      {offered.length === 0 && <span className="text-meta text-muted-ink">No department works on this side yet. Add one under the Permissions tab, under Departments and positions.</span>}
+      {mustPickPosition && dept.positions.length === 0 && (
+        <span className="text-meta text-muted-ink">{dept.name} has no positions yet. Add one under Permissions, Setup, before inviting anyone to it.</span>
+      )}
+      {offered.length === 0 && <span className="text-meta text-muted-ink">No department works on this side yet. Add one under Permissions, Setup.</span>}
     </div>
   );
 }
