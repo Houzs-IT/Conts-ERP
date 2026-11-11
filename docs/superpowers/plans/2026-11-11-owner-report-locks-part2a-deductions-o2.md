@@ -564,3 +564,40 @@ The Task 3 check proves the behaviour once Task 5 can take the locks.
 - **Part 3:** Final needs all three locks; Unlock final with a Cancelled payout state; the Locks column; the Agent/Company split and the agent % fill.
 - **Final months:** costs on a final month keep today's rules; see Global Constraints.
 - The deferred minors from part 1's review, which this plan does not touch.
+
+## As built (12 Nov 2026)
+
+Branch `feat/owner-close-part2`. Tasks 1–9 as planned, with these differences (each is also in the branch's ledger):
+
+- **Migration 0303** as planned. The trigger also skips the lock check when its session's search path has no
+  `owner_report_locks` (a session outside the app). The demo overlay's expense store runs the same function (0203), so
+  Demo mode behaves the same.
+- **Frozen misc keeps its occupancy** (`FrozenDeductions.misc.occupancy`), so a locked month's misc line names the
+  occupancy it was locked at. `computeUnitMonth`'s new parameter is `kept`.
+- **`utilityDeduction` still reads final months only.** `expenses.ts` would otherwise import `ownerLocks.ts`, which
+  imports it. The trigger moves a bill past a locked month, and `POST /api/expenses` reports the month the row was
+  saved with (`RETURNING`), so the notice is right.
+- **Maintenance complete** refuses only the RM 0 delete of an earlier cost on a locked month. Changing that cost is
+  allowed, as `PATCH /api/expenses/:id` allows it (the late update posts the difference).
+- **Screens' hints:** "Goes on the {month} statement, or on the next open one if that month's deductions are locked";
+  on Add deduction for an O2, "Dated {month}, or the next open month if its O2 is locked". A non-utility cost on a
+  final month is still refused, so the hints do not promise more.
+- **A held owner adjustment dated in a locked month can still be deleted:** it is on no statement and in no month's
+  figures. Holding, settling or deleting an open one, or anything an O2 lock kept, is refused.
+- **The behaviour check makes its own owner, building and unit** ("Check Owner", "Check Court C-01", plus a second unit
+  and a building that sorts first for the no-unit case) and removes them at the end. CI seeds the same three-unit demo
+  as PGlite, and the checks before it (airbnb-recon, owner-close) finalise or lock every demo unit.
+- **D9's expectation follows `splitLate`:** with income and deductions both locked, the income adjustment carries the
+  whole misc drift since the deductions lock, and the deductions adjustment is the cost change alone.
+- **`src/lib/access.test.mjs`** lists the two new powers as closed for staff and finance, as it lists part 1's three.
+  Task 5 added the areas without running the whole unit suite; Task 9's run caught it.
+- **Tests run locally** on a fresh PGlite, in CI order: late-bills 27, utility-listing 32, unit-pnl 15, yearly-report 10,
+  airbnb-recon 53, owner-close 38 and owner-close-steps 35 all pass. role-access, unit-costs and demo-mode fail only on
+  the operations-staff test user, which PGlite's demo lacks and CI's seed has (as in part 1). `npm test`: only the three
+  failures already on main. `npm run check` and `tsc -b`: clean.
+- **Seen in the browser:** on the Deductions and O2 steps, locking two units and unlocking one with a reason; dark theme;
+  375 px wide with no sideways scroll.
+
+Not done here (2b and part 3): the company's share of a late change in the company reports (choice A); fixed-rent units
+on Income and Deductions; the notice on a manual reservation edit; Final gating, Unlock final, the Locks column and the
+Agent/Company split.
