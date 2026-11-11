@@ -49,7 +49,7 @@ const offSide = (kind: DepartmentKind, side: Side, area: Area): boolean => close
 export const AREAS: Area[] = [
   { key: 'dashboard', label: 'Dashboard', group: 'Home', api: ['dashboard'] },
   { key: 'portfolio', label: 'Portfolio', group: 'Home', api: ['portfolio'], managed: true, strictRead: true },
-  { key: 'performance', label: 'Performance', group: 'Home', api: ['analytics'] },
+  { key: 'performance', label: 'Performance', group: 'Home', api: ['analytics', 'showcase'] },
   // The yearly unit report. Its figures are Finance's, so it stays management-only like Finance.
   { key: 'reports', label: 'Reports', group: 'Reports', api: [], managed: true, strictRead: true },
   // Reservations arrive from the channels through the API; finance reads them but does not create or change them (owner, 11 Oct 2026).
