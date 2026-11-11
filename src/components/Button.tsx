@@ -18,7 +18,7 @@ interface Props extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'
 
 const base: CSSProperties = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-  fontFamily: 'var(--font-sans)', fontWeight: 500, whiteSpace: 'nowrap',
+  fontFamily: 'var(--font-sans)', fontWeight: 600, whiteSpace: 'nowrap',
   // Longhands only: the variants and the disabled state set borderColor, and React warns when a
   // `border` shorthand and a borderColor longhand change between renders.
   borderRadius: 'var(--radius-control)', borderWidth: 1, borderStyle: 'solid', borderColor: 'transparent',
@@ -34,7 +34,8 @@ const sizes: Record<Size, CSSProperties> = {
 };
 
 const variants: Record<Look, CSSProperties> = {
-  primary:   { background: 'var(--color-brand-black)', color: 'var(--color-text-inverse)' },
+  // Conts DS v2: the one primary action is Conts green (black stays the brand slab).
+  primary:   { background: 'var(--color-primary)', color: 'var(--color-on-primary)', borderColor: 'var(--color-primary)' },
   secondary: { background: 'var(--color-surface-card)', color: 'var(--color-text-primary)', borderColor: 'var(--color-border-default)' },
   tertiary:  { background: 'transparent', color: 'var(--color-text-muted)' },
   brand:     { background: 'transparent', color: 'var(--color-text-accent)', borderColor: 'var(--color-brand-gold)' },

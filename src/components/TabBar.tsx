@@ -19,7 +19,8 @@ const FADE = 32;
 export const tabId = (id: string, key: string): string => `${id}-tab-${key}`;
 export const panelId = (id: string): string => `${id}-panel`;
 
-/** Horizontal tabs with an indigo underline: scrolls sideways on narrow screens with faded edges, arrow keys move. */
+/** Sub-tabs with a gold underline (Conts DS v2; the --color-tab token): one line that scrolls sideways on narrow screens
+ *  with faded edges, never wraps; arrow keys move. */
 export function TabBar<K extends string>({ tabs, value, onChange, label, id }: TabBarProps<K>): JSX.Element {
   const scroller = useRef<HTMLDivElement>(null);
   const buttons = useRef(new Map<K, HTMLButtonElement>());

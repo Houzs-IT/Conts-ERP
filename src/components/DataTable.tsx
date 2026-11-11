@@ -673,7 +673,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
               <thead>
                 <tr>
                   {pickCol && (
-                    <th className="sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] pl-[22px] pr-1 py-[9px] text-left">
+                    <th className="sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] pl-[22px] pr-1 py-2 text-left">
                       <input type="checkbox" aria-label="Tick every row on this page" className="w-4 h-4 cursor-pointer align-middle" checked={allOnPage}
                         ref={el => { if (el) el.indeterminate = !allOnPage && someOnPage; }} onChange={togglePage} disabled={!pickable.length} />
                     </th>
@@ -686,12 +686,12 @@ export function DataTable<R>(props: DataTableProps<R>) {
                     const fOn = !!filterValue(c);
                     return (
                       <th key={c.key} scope="col" aria-sort={on ? (sortDir === 'desc' ? 'descending' : 'ascending') : undefined}
-                        className={cx('group/th sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] py-[9px] text-meta font-semibold text-muted-ink',
+                        className={cx('group/th sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] py-2 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink',
                           i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]', i === visible.length - 1 && 'pr-[22px]', right ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left')}>
                         <span className={cx('flex items-center gap-[2px] max-w-full', right && 'justify-end')}>
                           {k ? (
                             <button type="button" onClick={() => toggleSort(c)} title={c.title ?? `Sort by ${c.label}`}
-                              className={cx('inline-flex items-center gap-1 min-w-0 font-sans text-meta font-semibold bg-transparent border-none cursor-pointer p-0', on ? 'text-ink' : 'text-muted-ink')}>
+                              className={cx('inline-flex items-center gap-1 min-w-0 font-sans text-caption font-bold uppercase tracking-[0.09em] bg-transparent border-none cursor-pointer p-0', on ? 'text-ink' : 'text-muted-ink')}>
                               <span className={cx('line-clamp-2 leading-[1.25] [overflow-wrap:normal]', right ? 'text-right' : 'text-left')}>{c.label}</span>
                               <Icon name={on ? (sortDir === 'desc' ? 'ArrowDown' : 'ArrowUp') : 'ChevronsUpDown'} size="sm" color={on ? 'var(--color-ink)' : 'var(--color-line-strong)'} />
                             </button>
@@ -720,17 +720,17 @@ export function DataTable<R>(props: DataTableProps<R>) {
                   return (
                     <tr key={k} onClick={onRowClick ? () => onRowClick(r) : undefined}
                       tabIndex={onRowClick ? 0 : undefined} onKeyDown={onRowClick ? e => { if (e.key === 'Enter' && e.target === e.currentTarget) onRowClick(r); } : undefined}
-                      className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', onRowClick && 'cursor-pointer hover:bg-page focus-visible:bg-page outline-none', on ? 'bg-gold-tint' : toneClass(r))}>
+                      className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', onRowClick && 'cursor-pointer hover:bg-gold-tint focus-visible:bg-gold-tint outline-none', on ? 'bg-primary-soft' : toneClass(r))}>
                       {pickCol && (
-                        <td className="pl-[22px] pr-1 py-[9px] align-middle" onClick={e => e.stopPropagation()}>
+                        <td className="pl-[22px] pr-1 py-1.5 align-middle" onClick={e => e.stopPropagation()}>
                           {canPick(r) && <input type="checkbox" aria-label="Tick this row" className="w-4 h-4 cursor-pointer align-middle" checked={on} onChange={() => toggleOne(r)} />}
                         </td>
                       )}
                       {visible.map((c, i) => {
                         const right = c.align === 'right' || (!c.align && RIGHT.includes(typeOf(c)));
                         return (
-                          <td key={c.key} className={cx('py-[9px] h-[52px] align-middle text-copy min-w-0 overflow-hidden', i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]',
-                            i === visible.length - 1 && 'pr-[22px]', right ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left')}>
+                          <td key={c.key} className={cx('py-1.5 h-[var(--table-row-height)] align-middle text-copy text-ink-2 min-w-0 overflow-hidden', i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]',
+                            i === visible.length - 1 && 'pr-[22px]', right ? 'text-right tabular-nums' : c.align === 'center' ? 'text-center' : 'text-left')}>
                             <div className={cx('flex flex-col gap-px min-w-0', right && 'items-end', c.align === 'center' && 'items-center')}>
                               {cellFace(c, r)}
                               {c.sub && <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis max-w-full">{c.sub(r)}</span>}
