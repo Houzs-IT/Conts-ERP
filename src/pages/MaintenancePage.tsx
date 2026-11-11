@@ -62,7 +62,7 @@ const jobBadge = (i: Issue): { label: string; tone: 'critical' | 'info' | 'neutr
   if (type === 'pass_key' && isUrgent(i)) return { label: 'Pass key · Urgent', tone: 'critical' };
   return { label: JOB_TYPE[type], tone: type === 'urgent' ? 'critical' : type === 'pass_key' ? 'info' : 'neutral' };
 };
-const isOffDayPassKey = (i: Issue): boolean => typeOf(i) === 'pass_key' && !!i.dueOn && (i.dueOn < mytDay(0) || i.dueOn > mytDay(1));
+const isOffDayPassKey = (i: Issue): boolean => typeOf(i) === 'pass_key' && !!i.dueOn && i.dueOn > mytDay(1);
 /** Approved, but the parts it waits for have not come: still hidden from the technicians. */
 const needsSupport = (i: Issue): boolean => i.state !== 'resolved' && !i.endedAt && !!i.supportRequestedAt;
 const waitingParts = (i: Issue) => i.state !== 'resolved' && i.approvalStatus === 'approved' && !!i.needsParts && !i.partsArrivedAt;
