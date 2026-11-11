@@ -1534,7 +1534,7 @@ export const settlementInTransit = guard(async (c) => {
   const buckets = (n: number) => (n <= 7 ? '0-7' : n <= 14 ? '8-14' : n <= 30 ? '15-30' : 'over-30');
   const byAcquirer: Record<string, Record<string, { count: number; sen: number }>> = {};
   for (const l of lines) {
-    /* Money keyed in without a bank ages under its own key, 未标 (docs/bugs/0688). */
+    /* Money keyed in without a bank ages under its own key, Untagged (docs/bugs/0688). */
     const a = l.acquirerCode == null ? UNTAGGED_LIST : String(l.acquirerCode);
     const b = buckets(Number(l.ageDays));
     ((byAcquirer[a] ??= {})[b] ??= { count: 0, sen: 0 });

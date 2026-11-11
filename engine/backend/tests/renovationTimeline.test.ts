@@ -41,7 +41,7 @@ describe("timeline: system entries in words", () => {
   test("project activity", () => {
     expect(activityText({ action: "created", to_value: "RN-2610-001" })).toEqual({ title: "Project created", body: "RN-2610-001" });
     // the importer's from_value is its source, not a changed value
-    expect(activityText({ action: "notion_import", from_value: "notion", note: "Imported from Notion" })).toEqual({ title: "Notion import", body: "Imported from Notion" });
+    expect(activityText({ action: "notion_import", from_value: "notion", note: "Imported from Notion" })).toEqual({ title: "Data import", body: "Imported from Notion" });
     expect(activityText({ action: "sla_changed", from_value: "14 days", to_value: "21 days", note: "SLA for Design" })).toEqual({ title: "SLA for Design changed", body: "14 days to 21 days" });
     expect(activityText({ action: "so_linked", to_value: "SO-1" }).title).toBe("Sales order SO-1 linked");
     expect(activityText({ action: "so_unlinked", from_value: "SO-1" }).title).toBe("Sales order SO-1 unlinked");

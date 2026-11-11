@@ -5,6 +5,7 @@
 // not printed stays null, so an unreadable amount never arrives as RM 0.00. Matching the page to a unit happens in
 // Property OS, which holds the utility accounts.
 import { BILL_IMAGE_MIMES } from './bill-extract';
+import { recordAiError, recordAiResponse, type AiUsageTag } from '../services/aiUsage';
 
 /** One place for the model id, so it can be changed without touching anything else. */
 export const UTILITY_READ_MODEL = 'claude-sonnet-5-5';
@@ -102,6 +103,7 @@ export async function readUtilityPage(
   apiKey: string,
   page: { mime: string; dataBase64: string },
   fetchImpl: typeof fetch = fetch,
+  usage: AiUsageTag | null = null,
 ): Promise<{ read: UtilityRead; model: string } | { error: string }> {
   const block = BILL_IMAGE_MIMES.has(page.mime)
     ? { type: 'image', source: { type: 'base64', media_type: page.mime, data: page.dataBase64 } }
@@ -120,8 +122,10 @@ export async function readUtilityPage(
       }),
     });
   } catch (e) {
+    await recordAiError(usage, e);
     return { error: `The reader could not be reached: ${e instanceof Error ? e.message : String(e)}` };
   }
+  await recordAiResponse(usage, res);
   if (!res.ok) return { error: `The reader refused (${res.status}): ${(await res.text().catch(() => '')).slice(0, 200)}` };
   let data: { stop_reason?: string; content?: Array<{ type: string; text?: string }> };
   try { data = await res.json(); } catch { return { error: "The reader's answer was unreadable." }; }

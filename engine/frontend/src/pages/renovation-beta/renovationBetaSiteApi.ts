@@ -91,6 +91,8 @@ export interface NewTicket {
   assigneePersonId: number | null;
   /** The other photos and videos of the problem. */
   media?: UploadedMedia[];
+  /** A handover check item this problem failed (migration 0296): saving marks it Fail. */
+  checkItemId?: number;
 }
 
 const B = "/api/beta";

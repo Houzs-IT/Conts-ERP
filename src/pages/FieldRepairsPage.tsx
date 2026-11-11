@@ -119,10 +119,12 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const pool = (data?.open ?? []).filter(isShown);
   const team = (data?.team ?? []).filter(isShown);
   const passKeyTodo = todo.filter(r => r.jobType === 'pass_key');
+  const passKeyPool = pool.filter(r => r.jobType === 'pass_key');
   const myJobsShown = tab === 'pass_key' ? passKeyTodo : tab === 'ongoing' || tab === 'all' ? todo : [];
+  const poolShown = tab === 'pass_key' ? passKeyPool : tab === 'all' ? pool : [];
   const groups = [
     ...groupByUnit(myJobsShown).map(group => ({ group, offer: false })),
-    ...groupByUnit(tab === 'all' ? pool : []).map(group => ({ group, offer: true })),
+    ...groupByUnit(poolShown).map(group => ({ group, offer: true })),
   ];
   const finishedShown = tab === 'all' || tab === 'done' ? finished : [];
   const emptyTitle = tab === 'pass_key' ? tr.noPassKey : tab === 'done' ? tr.noDone : tr.noMine;
@@ -161,7 +163,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
           <Segmented label={tr.which} value={tab} onChange={setTab}
             className="w-full grid grid-flow-col auto-cols-fr [&>button]:h-auto [&>button]:self-stretch [&>button]:min-h-11 [&>button]:px-1 [&>button]:py-1 [&>button]:whitespace-normal [&>button]:leading-tight"
             options={[
-              { value: 'pass_key', label: tabLabel(tr.passKey, passKeyTodo.length) },
+              { value: 'pass_key', label: tabLabel(tr.passKey, passKeyTodo.length + passKeyPool.length) },
               { value: 'ongoing', label: tabLabel(tr.ongoing, todo.length) },
               { value: 'all', label: tabLabel(tr.all, todo.length + openTotal) },
               { value: 'done', label: tabLabel(tr.done, finished.length) },

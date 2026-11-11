@@ -70,6 +70,7 @@ import {
   type ProductionProgress,
 } from "../../vendor/scm/lib/production-order-queries";
 import {
+  hoursOf,
   useProductionOrdersPaged,
   useProductionOrderDetail,
   fetchProductionOrderDetail,
@@ -171,7 +172,7 @@ const statusFor = (
   };
 
 /* Status and Progress are worked out on the server from Start and the plan dates (lib/renovation-production.ts). */
-type ProductionRowExtra = { plan_start?: string | null; progress?: ProductionProgress; assigned_to?: string[]; production_time_hours?: number | string | null };
+type ProductionRowExtra = { plan_start?: string | null; progress?: ProductionProgress; assigned_to?: string[]; production_time_hours?: number | string | null; actual_minutes?: number };
 const extraOf = (r: PoHeaderRow): ProductionRowExtra => r as unknown as ProductionRowExtra;
 const PROGRESS_TONE: Record<string, "success" | "warning" | "error" | "neutral"> = {
   Draft: "neutral", Pending: "warning", "In Progress": "neutral", Overdue: "error", "On Hold": "neutral", Completed: "success", Cancelled: "error",
@@ -1199,6 +1200,19 @@ export function ProductionOrdersListV2() {
       render: (r) => {
         const h = extraOf(r).production_time_hours;
         return <span className="text-[12.5px] text-ink-secondary">{h == null ? "—" : `${Number(h)} hour${Number(h) === 1 ? "" : "s"}`}</span>;
+      },
+    },
+    {
+      /* Worker hours so far against the Production time budget (TODO item 16); red when over it. */
+      key: "actual_hours",
+      label: "Actual Hours",
+      width: "112px",
+      getValue: (r) => hoursOf(extraOf(r).actual_minutes ?? 0),
+      render: (r) => {
+        const x = extraOf(r);
+        const actual = hoursOf(x.actual_minutes ?? 0);
+        const over = x.production_time_hours != null && actual > Number(x.production_time_hours);
+        return <span className={cn("text-[12.5px]", over ? "font-semibold text-err" : "text-ink-secondary")}>{x.actual_minutes ? `${actual} h` : "—"}</span>;
       },
     },
 

@@ -6,7 +6,7 @@
      · a request: a deposit names a supplier; over a project's limit it is refused; withdrawn only before a voucher;
        a field worker hands receipts in but does not ask finance to pay; a deposit's voucher is a supplier payment. */
 import { Hono } from 'hono';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import { myClaimsRouter } from './my-claims-routes';
 import { requestVoucherHandler, closeRequestHandler } from './payment-request-routes';
@@ -296,5 +296,49 @@ describe('sub-departments on staff documents', () => {
     const r = await post(fin, `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' });
     expect(r.status, await r.clone().text()).toBe(201);
     expect(sb.tables.payment_voucher_lines[0]).toMatchObject({ sub_department_id: 's-co' });
+  });
+});
+
+/* Reading the paper (Houzs payment-request-bill.ts, TODO item 19): a receipt gives amount, date and shop; the bill on a
+   Direct pay request also gives the due date, what it is for and the supplier on the list it names. The AI service is a
+   stub here: no real call is made. */
+describe('reading a receipt or a request bill', () => {
+  const modelSays = (json: Record<string, unknown>) => vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({
+    model: 'claude-sonnet-5-5', usage: { input_tokens: 10, output_tokens: 5 },
+    content: [{ type: 'text', text: JSON.stringify(json) }],
+  }), { status: 200 }));
+  const keyed = { ...env, ANTHROPIC_API_KEY: 'k', DATABASE_URL: '' };
+  const read = (a: Hono<any>, body: unknown) => a.request('/extract', { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }, keyed);
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  test('a receipt: amount, date and shop only', async () => {
+    vi.stubGlobal('fetch', modelSays({ vendorName: 'ACE HARDWARE SDN BHD', totalRm: 45, invoiceDate: '2026-11-02', summary: 'Tap washers' }));
+    const r = await read(appFor(world(), OPS), { files: [PNG] });
+    expect(await r.json()).toEqual({ amountSen: 4500, date: '2026-11-02', vendorName: 'ACE HARDWARE SDN BHD' });
+  });
+
+  test('a request bill: due date, what it is for and the matched supplier come back too', async () => {
+    const f = modelSays({ vendorName: 'ACE HARDWARE SDN BHD', totalRm: 1200.5, invoiceDate: '2026-11-02', dueDate: '2026-12-02', documentKind: 'invoice', summary: 'Door hinges, Skyline A-01' });
+    vi.stubGlobal('fetch', f);
+    const r = await read(appFor(world(), OPS), { kind: 'request', files: [PNG] });
+    expect(await r.json()).toEqual({
+      amountSen: 120050, date: '2026-11-02', vendorName: 'ACE HARDWARE SDN BHD', dueDate: '2026-12-02',
+      summary: 'Door hinges, Skyline A-01', documentKind: 'invoice', supplier: { id: 'S1', code: '400-A001', name: 'ACE HARDWARE' },
+    });
+    expect(JSON.parse(String(f.mock.calls[0]![1]!.body)).model).toBe('claude-sonnet-5-5');
+  });
+
+  test('a supplier not on the list is no match; a field worker is never matched to the list', async () => {
+    vi.stubGlobal('fetch', modelSays({ vendorName: 'UNKNOWN TRADING', totalRm: 10 }));
+    expect(await (await read(appFor(world(), OPS), { kind: 'request', files: [PNG] })).json()).toMatchObject({ supplier: null });
+    vi.stubGlobal('fetch', modelSays({ vendorName: 'ACE HARDWARE', totalRm: 10 }));
+    expect(await (await read(appFor(world(), TECH), { kind: 'request', files: [PNG] })).json()).toMatchObject({ supplier: null });
+  });
+
+  test('an unreadable answer says so; no key says reading is not set up', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"content":[{"type":"text","text":"a cat"}]}', { status: 200 })));
+    expect(await (await read(appFor(world(), OPS), { kind: 'request', files: [PNG] })).json()).toMatchObject({ unreadable: true, amountSen: null });
+    const noKey = await appFor(world(), OPS).request('/extract', { method: 'POST', body: JSON.stringify({ files: [PNG] }), headers: { 'content-type': 'application/json' } }, env);
+    expect(noKey.status).toBe(503);
   });
 });

@@ -23,6 +23,8 @@ import { computeProjectView, stageCompletionBlockers, type ProjectView } from ".
 import { manualSkipRefusal } from "../services/renovation/stages";
 import { GATE_REASON_TEXT } from "../services/renovation/gate";
 import { createRenovationProject, validateCreate, type CreateRenovationInput } from "../services/renovation/create";
+import { projectBrandFrom } from "../services/renovation/projectBrand";
+import { blockedText, deleteBlockers, deleteProjectRows } from "../services/renovation/deleteProject";
 import { plannedDatesRefusal, isInternalTradeCode, tradeTaskStatus } from "../services/renovation/tradeTasks";
 import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
 import { groupEvidence, type EvidencePhoto } from "../services/renovation/pod";
@@ -224,6 +226,11 @@ app.post("/", requirePermission("projects.write"), async (c) => {
       building: v.building || null, unitNo: v.unitNo || null,
     });
   }
+  /* chew, 10 Nov 2026: the brand is chosen when the project opens (Dream Crafter or The Conts) and brings its finance
+     type; an older caller that sends only a finance type gets that type's brand. */
+  const picked = await projectBrandFrom(db(c), body as Record<string, unknown>, co.companyId);
+  if (!picked.ok) return c.json({ error: picked.error, message: picked.message }, 400);
+  if (picked.brand && (body as Record<string, unknown>).financeKind == null) (body as Record<string, unknown>).financeKind = picked.brand.financeKind;
   /* Conts (finance phase 1.5; SOP 3.4): an internal project — the company's own money — has a department and a budget,
      and no customer of its own. */
   const fund = fundingFrom(body as Record<string, unknown>);
@@ -232,7 +239,13 @@ app.post("/", requirePermission("projects.write"), async (c) => {
   if (!String(body.name ?? "").trim()) body.name = projectNameFrom(body.building, body.unitNo, body.customerName);
   const refusal = validateCreate(body);
   if (refusal) return c.json({ error: refusal }, 400);
-  const created = await createRenovationProject(db(c), body as CreateRenovationInput, userId(c), co.companyId);
+  /* A customer project and an internal Renovation one carry the brand; an internal Rental one has none (SOP 1.1). */
+  const branded = fund.funding === "customer" || fund.department === "supply";
+  const created = await createRenovationProject(db(c), {
+    ...(body as CreateRenovationInput),
+    brand: branded ? picked.brand?.name ?? null : null,
+    financeKind: branded ? fund.financeKind ?? picked.brand?.financeKind ?? null : null,
+  }, userId(c), co.companyId);
   if (!created) return c.json({ error: "type_not_found" }, 400);
   if (info) await writeProjectShared(db(c), created.id, info.value);
   if (fund.funding === "internal") {
@@ -673,6 +686,32 @@ app.patch("/:id", requirePermission("projects.write"), async (c) => {
     return c.json({ ok: true, salesOrdersUpdated: pushed.updated, salesOrdersKept: pushed.kept });
   }
   return c.json({ ok: true });
+});
+
+/* Delete a project opened by mistake (chew, 10 Nov 2026). Refused once anything is made on it; the rule and what goes
+   with it are in services/renovation/deleteProject.ts. Who deleted which project stays on the entity audit log. */
+app.delete("/:id", requirePermission("projects.manage"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const p = await db(c).prepare(`SELECT code, name, company_id::int AS company_id FROM projects WHERE id = ? AND project_kind = 'renovation'${coSql(c)}`)
+    .bind(id).first<{ code: string | null; name: string; company_id: number }>();
+  if (!p) return c.json({ error: "not_found" }, 404);
+  const label = p.code || p.name;
+  try {
+    const blockers = await deleteBlockers(db(c), id);
+    // Named `documents`, not `blockers`: the page's errorText reads a `blockers` list as stage-gate keys.
+    if (blockers.length > 0) return c.json({ error: "project_has_documents", message: blockedText(label, blockers), documents: blockers }, 409);
+    await deleteProjectRows(db(c), id, Number(p.company_id));
+  } catch (e) {
+    console.error("[renovation] delete failed", e);
+    return c.json({ error: "delete_failed", message: `${label} could not be deleted, so nothing was changed. Try again.` }, 409);
+  }
+  await db(c).prepare(
+    `INSERT INTO scm.entity_audit_log (company_id, entity_type, entity_id, entity_doc_no, action, actor_name_snapshot, field_changes, note, source)
+     VALUES (?, 'renovation_project', ?, ?, 'DELETE', ?, '[]'::jsonb, ?, 'renovation')`,
+  ).bind(Number(p.company_id), String(id), p.code, c.get("user").name?.trim() || null, `Deleted project ${p.name}`).run()
+    .catch((e: unknown) => console.error("[renovation] delete audit failed", e));
+  return c.json({ ok: true, code: p.code, name: p.name });
 });
 
 app.post("/:id/trade-tasks/sync", requirePermission("projects.write"), failClosed(async (c) => {

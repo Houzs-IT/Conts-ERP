@@ -41,6 +41,8 @@ import {
 // ----------------------------------------------------------------------------
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useRenovationDraft } from '../../lib/renovation/renovationFormDraft';
+import { RenovationDraftBanner } from '../renovation/renovationDraftBanner';
 import { useQuery as useTanstackQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Camera, ChevronDown, Save, X } from 'lucide-react';
@@ -139,7 +141,7 @@ import { blockFromQuote, partyFromBlock, sectionsFromForm, seedQuoteForm, soFiel
 import { SoInstalments } from './renovationSoInstalments';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
-  EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, toRenovationBlock,
+  EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, quoteBrandFor, toRenovationBlock,
   type CustomerPropertyValue, type ProjectShared,
 } from '../projects/renovation/customerPropertyModel';
 import { fmtMoneySen } from '@2990s/shared';
@@ -351,6 +353,16 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
   const renoPending = renoListsQ.isLoading;
   const [renoInfo, setRenoInfo] = useState<CustomerPropertyValue>(EMPTY_CUSTOMER_PROPERTY);
   const [renoProject, setRenoProject] = useState<ProjectShared | null>(null);
+  /* chew, 10 Nov 2026: a new quotation opened for a project starts on the project's brand (its letterhead), once per
+     project; it can still be changed, and a saved quotation keeps its own. */
+  const brandSeededFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (!asQuotation || quoteId || !renoProject || brandSeededFor.current === renoProject.id) return;
+    const id = quoteBrandFor(renoProject, quoteBrands.data?.brands ?? []);
+    if (id == null) return;
+    brandSeededFor.current = renoProject.id;
+    setQuoteBrandId(id);
+  }, [asQuotation, quoteId, renoProject, quoteBrands.data]);
   const [renoTried, setRenoTried] = useState(false);
   /* Rooms: the order's room list and each line's room by its rid. */
   const [renoRooms, setRenoRooms] = useState<string[]>([]);
@@ -1592,6 +1604,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
       const r = await quoteSave.mutateAsync({ version: quoteView.quotation.version, payload: {
         header: { ...header, brandId: quoteBrandId }, sections: sectionsForSave(quoteSections), instalments: instalmentsForSave(quoteInstalments),
       } });
+      quoteDraft.clear();
       return r.version;
     } catch (e) {
       void notify({ title: 'The quotation did not save', body: refusalOf(e).message, tone: 'error' });
@@ -1917,6 +1930,44 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     setPostcode(n.postcode);
     setSalesLocation(n.salesLocation);
   }, []);
+  /* A saved quotation's unsaved edits stay in this browser and are offered back
+     ("Restore your draft?") after a closed tab or a reload. Lists and defaults keep
+     filling the form after it loads, so only the person's own typing, picking or
+     clicking inside the form marks it changed (quoteTouchedFor, per seed). */
+  type QuoteDraft = {
+    lines: DraftLine[]; renoRooms: string[]; renoLineRoom: Record<string, string>;
+    quoteHeader: DocHeader | null; quoteInstalments: Instalment[]; quoteBrandId: number | null; block: CustomerPropertyValue;
+    /* The saved line behind each row, by row id: restored with the rows so they keep their saved lines. */
+    sources: QuoteSources;
+  };
+  const quoteDraftJson = quoteView ? JSON.stringify({
+    lines, renoRooms, renoLineRoom, quoteHeader, quoteInstalments, quoteBrandId, block: blockValue, sources: quoteSources.current,
+  } satisfies QuoteDraft) : '';
+  const [quoteTouchedFor, setQuoteTouchedFor] = useState('');
+  const quoteDirty = quoteView !== undefined && quoteTouchedFor === quoteSeedKey;
+  const touchQuote = (e: { target: EventTarget | null; type: string }) => {
+    if (!quoteView || quoteTouchedFor === quoteSeedKey) return;
+    /* The draft banner's own Restore / Discard are not edits. */
+    if (e.target instanceof Element && e.target.closest('[data-draft-banner]')) return;
+    if (e.type === 'click' && !(e.target instanceof Element && e.target.closest('button,[role="option"],[role="menuitem"]'))) return;
+    setQuoteTouchedFor(quoteSeedKey);
+  };
+  const quoteDraft = useRenovationDraft<string>(
+    quoteEditable && quoteView ? `quotation-desk:${quoteView.quotation.id}:${quoteView.revision.revNo}` : null,
+    quoteDraftJson, quoteDirty, quoteView?.quotation.version ?? null,
+  );
+  const restoreQuoteDraft = () => {
+    try {
+      const d = quoteDraft.offered ? JSON.parse(quoteDraft.offered.v) as QuoteDraft : null;
+      if (d && Array.isArray(d.lines) && d.sources) {
+        quoteSources.current = d.sources;
+        setLines(d.lines); setRenoRooms(d.renoRooms); setRenoLineRoom(d.renoLineRoom);
+        setQuoteHeader(d.quoteHeader); setQuoteInstalments(d.quoteInstalments); setQuoteBrandId(d.quoteBrandId);
+        applyBlock(d.block);
+      }
+    } catch { /* a draft that no longer reads is dropped */ }
+    quoteDraft.answer(true);
+  };
   /* The project is the master record: picking one fills every shared field it has
      (a field it has empty keeps what was typed); the SO's save writes back to it. */
   const pickRenoProject = useCallback((p: ProjectShared | null) => {
@@ -2515,9 +2566,10 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
       {quoteId && !quoteView ? (
         <div className={styles.card}><div className={styles.cardBody} style={{ minHeight: 160 }} aria-busy={savedQuote.isLoading}>{savedQuote.error ? refusalOf(savedQuote.error).message : null}</div></div>
       ) : (
-      <fieldset disabled={Boolean(quoteId) && !quoteEditable} className="m-0 min-w-0 border-0 p-0">
+      <fieldset disabled={Boolean(quoteId) && !quoteEditable} className="m-0 min-w-0 border-0 p-0" onInputCapture={touchQuote} onChangeCapture={touchQuote} onClickCapture={touchQuote}>
       <div className="space-y-3">
       {quoteView && <QuotationNotices view={quoteView} editable={quoteEditable} />}
+      {quoteDraft.offered && <RenovationDraftBanner savedAt={quoteDraft.offered.ts} stale={quoteDraft.stale} onRestore={restoreQuoteDraft} onDiscard={() => quoteDraft.answer(false)} />}
       {createdDocNo && (
         <div role="status" className="rounded-lg border border-warning-text/30 bg-warning-bg px-3 py-2 text-sm text-warning-text">
           Sales order {createdDocNo} already exists. This recovery view only keeps payment rows; customer, order and line-item fields are hidden so unsaved edits cannot be lost.

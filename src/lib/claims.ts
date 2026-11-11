@@ -6,6 +6,7 @@
  */
 import { api } from './api';
 import { todayMyt } from './format';
+import { requestBillFill, type RequestBillRead } from './requestBill';
 
 export type LineDepartment = 'rental' | 'supply' | 'shared';
 export type ReceiptStatus = 'HANDED_IN' | 'CHECKED' | 'TOPPED_UP' | 'PAID_BACK' | 'REJECTED' | 'REPAID' | 'WRITTEN_OFF' | 'REPLACED';
@@ -43,6 +44,15 @@ export async function readReceipt(files: File[]): Promise<{ amountSen: number | 
   for (const f of files) form.append('file', f);
   try { return await api.post('/claims/extract', form); } catch { return { amountSen: null, date: null, vendorName: null }; }
 }
+
+/** What a Direct pay request's bill says (requestBill.ts), read by the engine's bill reader. */
+export async function readRequestBill(files: File[]): Promise<RequestBillRead> {
+  const form = new FormData();
+  form.set('data', JSON.stringify({ kind: 'request' }));
+  for (const f of files) form.append('file', f);
+  try { return await api.post('/claims/extract', form); } catch { return { amountSen: null, date: null, vendorName: null }; }
+}
+export { requestBillFill };
 
 /** Hands a receipt in (or asks finance to pay): the fields as JSON beside the files. */
 export function postWithFiles<T>(path: '/claims/receipts' | '/claims/requests', data: Record<string, unknown>, files: File[]): Promise<T> {

@@ -388,7 +388,7 @@ describe("nav: the renovation Projects and Calendar (Beta until 3 Nov 2026) show
     rep({ position_name: "Admin", department_name: "Operations", permissions: ["*"], ...over });
   const all = { "projects.list": "full" };
 
-  const BETA = ["/beta/projects", "/beta/calendar"];
+  const BETA = ["/beta/projects", "/beta/calendar", "/beta/defects", "/beta/handover-checklists"];
 
   it("shows Beta on desktop and phone", () => {
     const u = office();

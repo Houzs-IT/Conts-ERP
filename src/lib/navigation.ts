@@ -61,7 +61,7 @@ const LEDGER_ICON: Record<string, string> = {
   'supplier-ledger': 'book-user', 'deposit-invoices': 'file-plus', 'other-debtors': 'users', 'credit-debit-notes': 'file-minus',
   'not-yet-billed': 'hourglass', 'e-invoice': 'badge-check', 'official-receipts': 'receipt-text', 'debtors': 'contact',
   'customer-ledger': 'book-user', 'outstanding': 'clock', 'daily-bank': 'calendar-days', 'merchant-recon': 'credit-card',
-  'rental-unit-costs': 'building-2', 'department-spend': 'chart-pie', 'renovation-projects': 'hammer',
+  'rental-unit-costs': 'building-2', 'department-spend': 'chart-pie', 'renovation-projects': 'hammer', 'ai-usage': 'sparkles',
 };
 
 /** The Finance groups, in order, each by its screens: finance's own desk screens by key, the ledger's by slug
@@ -73,7 +73,7 @@ const FINANCE_LAYOUT: Array<[part: string, entries: string[]]> = [
   ['Billing', ['deposit-invoices', 'other-debtors', 'credit-debit-notes', 'not-yet-billed', 'e-invoice']],
   ['Collections', ['money-received', 'official-receipts', 'debtors', 'customer-ledger', 'outstanding', 'debtor-ageing']],
   ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon']],
-  ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'department-spend', 'renovation-projects']],
+  ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'department-spend', 'renovation-projects', 'ai-usage']],
   ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup']],
 ];
 
@@ -210,6 +210,9 @@ export const NAV: NavGroup[] = [
   { label: 'PROJECTS', workspace: 'supply', items: [
     { key: 'projectList', label: 'Projects', icon: 'folder-kanban', path: '/projects/list', area: 'projects' },
     { key: 'projectCalendar', label: 'Calendar', icon: 'calendar-days', path: '/projects/calendar', area: 'projects' },
+    // Handover snag list (TODO item 17): every project's open defects, and the checklists a handover check starts from.
+    { key: 'projectDefects', label: 'Defects', icon: 'clipboard-check', path: '/projects/defects', area: 'projects' },
+    { key: 'projectHandoverChecklists', label: 'Handover checklists', icon: 'list-checks', path: '/projects/handover-checklists', area: 'projects' },
     { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projects', full: true },
     { key: 'projectMaintenance', label: 'Project settings', icon: 'settings', path: '/projects/maintenance', area: 'projects', full: true },
   ] },

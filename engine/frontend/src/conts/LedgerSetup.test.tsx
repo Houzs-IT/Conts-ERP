@@ -140,7 +140,7 @@ describe("Ledger setup — the go-live checklist", () => {
     page();
     fireEvent.click(screen.getByRole("button", { name: "Open Posting rules and banks" }));
     expect(screen.getByRole("tab", { name: "Posting rules" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByText("Default bank")).toBeTruthy();
+    expect(screen.getByText("Default bank — receiving")).toBeTruthy();
   });
 });
 
@@ -224,11 +224,11 @@ describe("Ledger setup — Posting rules", () => {
     // Conts: a customer control with sub-accounts could not be posted to.
     expect(rules.getByText(/1 customer or supplier control has sub-accounts/)).toBeTruthy();
     expect(rules.getByText(/Controls with sub-accounts/).parentElement!.textContent).toContain("301-0000");
-    const bank = rules.getByText("Default bank").closest("tr")!;
+    const bank = rules.getByText("Default bank — receiving").closest("tr")!;
     expect(bank.getAttribute("data-problem")).toBe("not_money");
     expect(bank.textContent).toContain("must be a bank or cash account");
     confirmFn.mockClear();
-    fireEvent.focus(screen.getByLabelText("Default bank account"));
+    fireEvent.focus(screen.getByLabelText("Default bank — receiving account"));
     /* The money rule offers money only; the clearing rule offers the 326- / 327- clearings only. */
     expect(screen.queryByText("300-0000 — DEBTORS")).toBeNull();
     fireEvent.mouseDown(screen.getByText("310-0020 — CIMB"));
