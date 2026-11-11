@@ -90,6 +90,10 @@ body { margin: 0; }
   /* The active tab's underline on TabBar (owner, Oct 2026: indigo). 6.3:1 on white. */
   --color-tab: #4F46E5;
 
+  /* text-on-dark: the quiet line on a black panel or photo tile. Pages used the class before it existed, so the
+     Portfolio tiles drew it in page ink, unreadable on the photo. */
+  --color-on-dark: #DEDAD3;
+
   --color-airbnb: #FF5A5F;
   --color-booking: #003B95;
   --color-agoda: #5C2D91;
