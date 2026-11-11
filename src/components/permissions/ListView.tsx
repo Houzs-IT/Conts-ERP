@@ -88,10 +88,10 @@ function useReorderDrag(onDrop: (id: string, targetId: string, after: boolean) =
 type DragApi = ReturnType<typeof useReorderDrag>;
 
 /**
- * View 3 of the Permissions tab: the managed list that the invite and edit forms pick from. Departments are grouped by
+ * The Setup view of the Permissions tab: the managed list that the invite and edit forms pick from. Departments are grouped by
  * the side they work on; each one lists its positions. Only management can change it.
  */
-export default function ListView({ onGoToDepartments }: { onGoToDepartments: () => void }) {
+export default function ListView({ onGoToRoles }: { onGoToRoles: () => void }) {
   const { data, error, reload } = useDepartments();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -219,7 +219,7 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
       {justAdded && (
         <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-3 flex-wrap bg-page">
           <span className="text-meta text-ink">{justAdded} starts with No access everywhere until you set its rules.</span>
-          <Button size="sm" onClick={onGoToDepartments}>Set its access</Button>
+          <Button size="sm" onClick={onGoToRoles}>Set its access</Button>
           <Button size="sm" variant="tertiary" onClick={() => setJustAdded(null)}>Dismiss</Button>
         </div>
       )}

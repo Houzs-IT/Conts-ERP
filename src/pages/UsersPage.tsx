@@ -32,8 +32,8 @@ import { hasRealEmail } from '../lib/pin';
 /* ------------------------------------------------------------------ *
  * Users and roles — three tabs (routes.json → SYSTEM → UsersPage):
  *   1. Users        — list with department, position and reporting line; invite + edit.
- *   2. Permissions  — three views (components/PermissionsChart): what each department and position can do
- *                     in each area, and the managed list of departments and positions.
+ *   2. Permissions  — two views (components/PermissionsChart): Roles, what each position (or a department's
+ *                     default) can do in each area, and Setup, the managed list of departments and positions.
  *   3. Organisation — the reporting line (manager_id). Explicitly NOT a
  *                     permission source; permissions come from the department, position and the person's own settings.
  *   4. Sign-ins     — management only: every sign-in attempt (UsersSignIns).

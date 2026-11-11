@@ -1,5 +1,5 @@
 import { useApi, type Query } from '../../lib/useApi';
-import type { AccessLevel, AccessOrigin, AccessSetting, DepartmentKind, DepartmentsPayload, UserSide } from '../../lib/types';
+import type { AccessCategory, AccessChart, AccessLevel, AccessOrigin, AccessSetting, Department, DepartmentKind, DepartmentsPayload, UserSide } from '../../lib/types';
 
 export const LEVEL_LABEL: Record<AccessLevel, string> = { none: 'No access', view: 'View only', edit: 'Edit', full: 'Full' };
 export const LEVEL_NOTE: Record<AccessLevel, string> = {
@@ -59,6 +59,23 @@ export const settingLabel = (s: AccessSetting | undefined | null): string => (s 
 export function useDepartments(enabled = true): Query<DepartmentsPayload> {
   return useApi<DepartmentsPayload>(enabled ? '/departments' : null);
 }
+
+export interface RoleTarget { departmentId: string; positionId: string | null }
+
+export function useAccessChart(): Query<AccessChart> {
+  return useApi<AccessChart>('/users/access');
+}
+
+export const visibleCategoriesOf = (categories: AccessCategory[], department: Department): AccessCategory[] =>
+  categories.filter(category => !closedBySide(department.kind, department.side, category.group));
+
+export const headCountWithoutPosition = (department: Department): number =>
+  department.headCount - department.positions.reduce((total, position) => total + position.headCount, 0);
+
+export const defaultRoleName = (department: Department): string =>
+  department.positions.some(position => position.name.trim().toLowerCase() === 'staff') ? 'Staff (no position)' : 'Staff';
+
+export const closedCompanyLabel = (side: UserSide): string => (side === 'conts' ? 'Dream Crafter' : 'The Conts');
 
 /** Small tag next to a value, e.g. Override or Dept. */
 export const TAG = 'flex-none text-[11px] leading-none font-semibold py-[3px] px-1.5 rounded-[4px] border border-solid';
