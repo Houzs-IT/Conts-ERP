@@ -6,6 +6,7 @@ import { finalMonthsFor } from '../../_lib/expenses';
 import { NET_FROM_MONTH, monthName, undoProblem, type Applied } from '../../_lib/airbnbConfirm';
 import { MONTH, hasAirbnbRecon } from './index';
 import { hasIncomeTypes } from './income-types';
+import { syncLateIncome } from '../../_lib/ownerLocks';
 
 /* Airbnb reconciliation, step 2: undo a confirmation, or a reservation kept as it is, while the owner statements it
    touched are still open (chew, 11 Nov 2026). The reservations go back to what they were, the owner credits and charges
@@ -84,5 +85,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   // Statements generated meanwhile still show the confirmed figures until generated again.
   const regenerate = new Set<string>([...changes.flatMap(c => c.openMonths), ...adjustments.filter(a => a.period_start).map(a => String(a.period_start).slice(0, 7))]);
+  // A locked month of these units: its late difference follows the restored figures (owner report close).
+  if (changes.length) await syncLateIncome(env, { unitIds: [...new Set(changes.map(c => c.unitId))] });
   return json({ ok: true, regenerate: [...regenerate].sort() });
 };

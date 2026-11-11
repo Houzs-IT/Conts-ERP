@@ -5,6 +5,7 @@ import { loadInputs, computeMonth, statementSettings, hasActivity, withYearToDat
 import { monthEndExclusive } from '../../_lib/revenue';
 import { auditMany } from '../../_lib/history';
 import { notifyUsers } from '../../_lib/notify';
+import { syncLateIncome } from '../../_lib/ownerLocks';
 
 /** POST /api/statements/generate { period: "2026-09", ownerIds?: string[] }
  *  One provisional statement per owner, built by the owner workbook's rules (functions/_lib/ownerStatement.ts):
@@ -31,6 +32,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const start = `${period}-01`, endEx = monthEndExclusive(period);
   const end = new Date(Date.parse(`${endEx}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
+
+  // Months whose income is locked: a booking changed since reaches the owner as an owner adjustment on the next open
+  // month (owner report close). Brought up to date first, so the statements built below carry it.
+  await syncLateIncome(env, ownerIds ? { ownerIds } : {});
 
   // One transaction, one period at a time: a second click while the first was still writing failed half-way through
   // (11 Oct 2026), and a finalise landing between the reads and the writes would have had its lines rebuilt.

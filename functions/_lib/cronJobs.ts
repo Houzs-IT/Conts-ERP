@@ -17,6 +17,7 @@ import { FORGOTTEN_AFTER_HOURS } from './attendanceCalc';
 import { dueDepartures, markGuestLeft } from './guestLeft';
 import { runGuestReviews } from './guestReviews';
 import { passKeyUrgencyChanges, applyPassKeyUrgency } from './passKeyJobs';
+import { syncLateIncome } from './ownerLocks';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -405,10 +406,22 @@ export const CRON = {
 export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<JobReport>)[]> = {
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
   [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox],
-  [CRON.quarterHour]: [drainOutbox, repairBlockSweep, guestReviewSweep],
+  [CRON.quarterHour]: [drainOutbox, repairBlockSweep, guestReviewSweep, lateIncomeSweep],
   [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep, passKeyUrgencySweep],
   [CRON.daily]: [dailyDigest],
 };
+
+/** Every 15 minutes: months whose income is locked (owner report close). A booking changed since, by HostPlatform,
+ *  Channex or by hand, reaches the owner as an owner adjustment on the next open month, once (functions/_lib/ownerLocks.ts).
+ *  With dryRun nothing is written. */
+export async function lateIncomeSweep(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const r = await syncLateIncome(env, {}, { dryRun: o.dryRun });
+  return {
+    job: 'late-income',
+    summary: o.dryRun ? `Would change ${plural(r.planned, 'late income adjustment')}.`
+      : r.planned ? `Posted ${r.inserted}, changed ${r.updated} and withdrew ${r.removed} late income adjustments.` : 'No locked month changed.',
+  };
+}
 
 /** Every 15 minutes: Airbnb guest reviews (functions/_lib/guestReviews.ts). The auto rules write reviews for stays
  *  that checked out, then every review that is due goes to Airbnb: approved and auto ones, a Bad guest's on day 13,

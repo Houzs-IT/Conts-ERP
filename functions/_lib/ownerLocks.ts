@@ -26,6 +26,16 @@ export async function locksFor(env: Env, month: string, unitIds?: string[]): Pro
     ${unitIds ? 'AND unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : ''} ORDER BY unit_id, stage`, month, ...(unitIds ? [ids(unitIds)] : []));
 }
 
+/** For each unit, the months whose income is locked. */
+export async function incomeLockedMonths(env: Env, unitIds: string[]): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  if (!unitIds.length || !(await hasLocksTable((sql, ...args) => all(env, sql, ...args)))) return out;
+  const rows = await all<{ unit_id: string; month: string }>(env,
+    `SELECT unit_id, month FROM owner_report_locks WHERE stage = 'income' AND unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, ids(unitIds));
+  for (const r of rows) { const s = out.get(r.unit_id) ?? new Set<string>(); s.add(r.month); out.set(r.unit_id, s); }
+  return out;
+}
+
 /** Locks `month`'s income for these units: each keeps the stays (and a long-term let's rent) it is worked out from now.
  *  A unit already locked is left as it is and reported as `already`; an id that is not a unit is `unknown`. */
 export async function lockIncome(env: Env, who: { userId: string; fullName: string }, month: string, unitIds: string[]): Promise<{ locked: string[]; already: string[]; unknown: string[] }> {

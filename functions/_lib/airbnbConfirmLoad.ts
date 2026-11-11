@@ -1,5 +1,6 @@
 import { type Env, all } from './db';
 import { finalMonthsFor } from './expenses';
+import { incomeLockedMonths } from './ownerLocks';
 import { UNIT_SQL, termsFor, statementSettings, type Query, type UnitRow } from './ownerStatement';
 import { isTenancy } from './revenueModel';
 import { NET_FROM_MONTH, netOf, planLine, type Plan, type StayMoney } from './airbnbConfirm';
@@ -20,11 +21,15 @@ export async function confirmContext(env: Env, lines: readonly Line[]): Promise<
   const unitIds = [...new Set(lines.flatMap(l => l.stays.map(s => s.unitId)))];
   if (!unitIds.length) return { finals: new Map(), units: new Map() };
   const q: Query = (sql, ...args) => all(env, sql, ...args);
-  const [finals, rows, settings] = await Promise.all([
+  const [finals, rows, settings, locked] = await Promise.all([
     finalMonthsFor(env, unitIds, NET_FROM_MONTH),
     all<UnitRow>(env, `${UNIT_SQL} WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(unitIds)),
     statementSettings(q),
+    incomeLockedMonths(env, unitIds),
   ]);
+  // A month whose income is locked (owner report close) is not final here: the confirmed figure changes the live month
+  // only, and syncLateIncome posts the owner's difference, worked out again through the contract, on the next open month.
+  for (const [unitId, months] of locked) for (const m of months) finals.get(unitId)?.delete(m);
   const units = new Map<string, UnitOwner>();
   for (const u of rows) {
     const t = termsFor(u, settings.defaultFeePct);
