@@ -24,6 +24,7 @@ import { BetaMotion, SPRING } from "./betaMotion";
 import { DataTable } from "../../components/DataTable";
 import type { Column } from "../../components/dataTableTypes";
 import { fetchProjectSos, soColumns, type ProjectSo } from "./renovationBetaSoColumns";
+import { readBoardCache, writeBoardCache } from "./boardCache";
 
 const DASH = <span style={{ color: BETA.faint }}>–</span>;
 
@@ -142,9 +143,14 @@ export function RenovationBetaHome(): ReactElement {
 
 function HomeScreen(): ReactElement {
   const navigate = useNavigate();
-  const q = useQuery(boardKey(), () => boardApi.board(), []);
+  /* The last list shows at once and the server's answer replaces it (initialDataUpdatedAt 0 = always refetch). */
+  const [cachedBoard] = useState(() => readBoardCache<Awaited<ReturnType<typeof boardApi.board>>>("board"));
+  const [cachedSteps] = useState(() => readBoardCache<Awaited<ReturnType<typeof simpleApi.boardRows>>>("step-sla"));
+  const q = useQuery(boardKey(), async () => { const r = await boardApi.board(); writeBoardCache("board", r); return r; }, [],
+    cachedBoard ? { initialData: () => cachedBoard.data, initialDataUpdatedAt: () => 0 } : {});
   // Step and SLA come from the current project board, so both screens agree while they run side by side.
-  const steps = useQuery(["renovation-beta", "step-sla"], () => simpleApi.boardRows(), []);
+  const steps = useQuery(["renovation-beta", "step-sla"], async () => { const r = await simpleApi.boardRows(); writeBoardCache("step-sla", r); return r; }, [],
+    cachedSteps ? { initialData: () => cachedSteps.data, initialDataUpdatedAt: () => 0 } : {});
   const slaById = useMemo(() => new Map((steps.data?.data ?? []).map((r) => [r.id, r])), [steps.data]);
   const phone = useIsPhone();
   /* Every order in the company, for columns that start hidden: read only once one of them is showing. */
