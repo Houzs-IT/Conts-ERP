@@ -1,6 +1,6 @@
 import { type Env, all } from './db';
 import { finalMonthsFor } from './expenses';
-import { incomeLockedMonths } from './ownerLocks';
+import { lockedMonthsFor } from './ownerLocks';
 import { UNIT_SQL, termsFor, statementSettings, type Query, type UnitRow } from './ownerStatement';
 import { isTenancy } from './revenueModel';
 import { NET_FROM_MONTH, netOf, planLine, type Plan, type StayMoney } from './airbnbConfirm';
@@ -13,19 +13,20 @@ import type { Line } from './airbnbRecon';
  *  master lease, long-term let). `guarantee`: a share contract with a minimum, where a month the minimum was paid
  *  may not move with the stay. */
 export interface UnitOwner { unitId: string; ownerId: string; ownerName: string; unit: string; ownerPct: number | null; guarantee: boolean }
-export interface ConfirmContext { finals: Map<string, Set<string>>; units: Map<string, UnitOwner>; locked: Map<string, Set<string>> }
+export interface ConfirmContext { finals: Map<string, Set<string>>; units: Map<string, UnitOwner>; locked: Map<string, Set<string>>; o2Locked: Map<string, Set<string>> }
 
 /** For every unit of these lines, in three queries: the months whose owner statement is final (from Oct 2026), and its
  *  owner and current contract as the statements read it (termsFor). */
 export async function confirmContext(env: Env, lines: readonly Line[]): Promise<ConfirmContext> {
   const unitIds = [...new Set(lines.flatMap(l => l.stays.map(s => s.unitId)))];
-  if (!unitIds.length) return { finals: new Map(), units: new Map(), locked: new Map() };
+  if (!unitIds.length) return { finals: new Map(), units: new Map(), locked: new Map(), o2Locked: new Map() };
   const q: Query = (sql, ...args) => all(env, sql, ...args);
-  const [finals, rows, settings, locked] = await Promise.all([
+  const [finals, rows, settings, locked, o2Locked] = await Promise.all([
     finalMonthsFor(env, unitIds, NET_FROM_MONTH),
     all<UnitRow>(env, `${UNIT_SQL} WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(unitIds)),
     statementSettings(q),
-    incomeLockedMonths(env, unitIds),
+    lockedMonthsFor(env, unitIds, 'income'),
+    lockedMonthsFor(env, unitIds, 'o2'),
   ]);
   // A month whose income is locked (owner report close) is neither final nor open here: the confirmed figure changes
   // the live month only, its statement keeps the locked income, and syncLate posts the owner's difference,
@@ -40,7 +41,7 @@ export async function confirmContext(env: Env, lines: readonly Line[]): Promise<
       guarantee: ownerPct != null && (Number(t.guarantee) > 0 || Number(t.yearlyGuarantee ?? 0) > 0),
     });
   }
-  return { finals, units, locked };
+  return { finals, units, locked, o2Locked };
 }
 
 const moneyOf = (l: Line): StayMoney[] =>
@@ -52,7 +53,7 @@ export const setsAirbnbFigure = (line: Line, setAmount: boolean) => setAmount &&
 /** planLine with what the context read. */
 export function planWith(ctx: ConfirmContext, line: Line, today: string, setAmount = false): Plan {
   const l = setsAirbnbFigure(line, setAmount) ? { ...line, action: 'set_amount' as const } : line;
-  return planLine(l, moneyOf(line), today, u => ctx.finals.get(u) ?? new Set(), u => ctx.units.get(u)?.ownerPct ?? null, u => ctx.locked.get(u) ?? new Set());
+  return planLine(l, moneyOf(line), today, u => ctx.finals.get(u) ?? new Set(), u => ctx.units.get(u)?.ownerPct ?? null, u => ctx.locked.get(u) ?? new Set(), u => ctx.o2Locked.get(u) ?? new Set());
 }
 
 /** What the confirm window lists: each reservation before and after (its state, guest total and net) with the open

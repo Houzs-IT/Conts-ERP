@@ -130,7 +130,10 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
           kind: 'charge', amount, occurredOn: incurredOn, unitId, reference: reference.trim() || null, description: maintenanceFeeText(description, incurredOn),
         });
         if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); onSaved(); onClose(); return; }
-        toast({ tone: 'success', title: 'Maintenance fee recorded.', body: `On the ${monthLabel(billMonth)} costs. The owner statement deducts it after the operator's share.` });
+        // Dated in a month whose O2 is locked, it moves to the next open month: the notice says where.
+        const notice = (res as { notice?: string | null } | null)?.notice;
+        toast(notice ? { tone: 'info', title: 'Maintenance fee recorded.', body: notice }
+          : { tone: 'success', title: 'Maintenance fee recorded.', body: `On the ${monthLabel(billMonth)} costs. The owner statement deducts it after the operator's share.` });
         onSaved(); onClose(); return;
       }
       let receiptDocumentId: string | null = null;

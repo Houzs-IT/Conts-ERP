@@ -29,75 +29,58 @@ let r = await call('GET', `/api/owner-close?month=${OCT}`);
 check('the month reads', r.status === 200 && Array.isArray(r.json?.units), r.text.slice(0, 300));
 if (r.status !== 200) done();
 
-// A clean start for this check's own rows (a local rerun): its units lose their locks and late differences.
-const mine = (await db(`SELECT DISTINCT unit_id FROM expenses WHERE id LIKE 'ocs-%' UNION SELECT DISTINCT unit_id FROM reservations WHERE id LIKE 'ocs-%'
-  UNION SELECT DISTINCT unit_id FROM owner_adjustments WHERE id LIKE 'ocs-%' AND unit_id IS NOT NULL`)).map(x => x.unit_id);
-for (const id of mine) {
-  await db(`DELETE FROM owner_adjustments WHERE unit_id = $1 AND (source = 'stage_lock' OR id LIKE 'ocs-%' OR description LIKE 'Check:%')`, id);
-  await db(`DELETE FROM owner_report_locks WHERE unit_id = $1`, id);
-}
-await db(`DELETE FROM owner_adjustments WHERE id LIKE 'ocs-%' OR description LIKE 'Check:%'`);
-await db(`DELETE FROM expenses WHERE id LIKE 'ocs-%' OR description LIKE 'Check:%'`);
-await db(`DELETE FROM reservations WHERE id LIKE 'ocs-%'`);
+// The check's own owner, building and unit, so the checks before it in CI (which use or finalise every demo unit)
+// cannot get in its way: a share split with no contract (the default fee), the misc charge on, nothing in October yet.
+// A local rerun starts from a clean slate.
+const OWNER = 'ocs-owner', PROP = 'ocs-prop', UNIT = 'ocs-u';
+const dropAll = async () => {
+  const ofOwner = 'SELECT id FROM units WHERE owner_id = $1';
+  await db(`DELETE FROM expenses WHERE id LIKE 'ocs-%'`);
+  await db(`DELETE FROM owner_adjustments WHERE id LIKE 'ocs-%'`);
+  await db(`DELETE FROM statement_lines WHERE statement_id IN (SELECT id FROM owner_statements WHERE owner_id = $1)`, OWNER);
+  await db(`DELETE FROM statement_units WHERE statement_id IN (SELECT id FROM owner_statements WHERE owner_id = $1)`, OWNER);
+  await db(`DELETE FROM owner_statements WHERE owner_id = $1`, OWNER);
+  await db(`DELETE FROM owner_adjustments WHERE owner_id = $1`, OWNER);
+  for (const table of ['owner_report_locks', 'expenses', 'unit_utility_accounts', 'reservations', 'documents']) await db(`DELETE FROM ${table} WHERE unit_id IN (${ofOwner})`, OWNER);
+  await db(`DELETE FROM units WHERE owner_id = $1`, OWNER);
+  await db(`DELETE FROM properties WHERE id IN ($1, 'ocs-p0')`, PROP);
+  await db(`DELETE FROM owners WHERE id = $1`, OWNER);
+};
 const dropUnit2 = async () => {
   await db(`DELETE FROM statement_lines WHERE unit_id = 'ocs-u2'`);
   await db(`DELETE FROM statement_units WHERE unit_id = 'ocs-u2'`);
   await db(`DELETE FROM units WHERE id = 'ocs-u2'`);
   await db(`DELETE FROM properties WHERE id = 'ocs-p0'`);
 };
-await dropUnit2();
-await db(`DELETE FROM expenses WHERE reference IN ('OCS-W1', 'OCS-E1')`);
-await db(`DELETE FROM unit_utility_accounts WHERE id LIKE 'ocs-%'`);
-
-// u: a unit on a share contract (no contract, or management with no minimum) whose October to December statements are
-// not final, that the income check (owner-close.mjs, before this one in CI) did not use, with free October nights for
-// two stays of its own (5 and 3 nights).
-const candidates = await db(`SELECT u.id, u.owner_id, u.contract_id, u.split_kind, u.split_value, u.misc_charges, u.unit_number, p.name AS property_name,
-    c.management_fee_pct AS fee
-  FROM units u JOIN properties p ON p.id = u.property_id LEFT JOIN owner_contracts c ON c.id = u.contract_id
-  WHERE u.parent_unit_id IS NULL
-    AND (c.id IS NULL OR (coalesce(c.revenue_model, c.model) = 'management' AND coalesce(c.minimum_guarantee, 0) = 0 AND coalesce(c.minimum_guarantee_annual, 0) = 0))
-    AND NOT EXISTS (SELECT 1 FROM owner_statements s WHERE s.owner_id = u.owner_id AND substr(s.period_start, 1, 7) IN ('2026-10', '2026-11', '2026-12')
-                      AND s.state IN ('finalised', 'sent', 'paid'))
-    AND NOT EXISTS (SELECT 1 FROM owner_adjustments a WHERE a.unit_id = u.id AND a.source = 'stage_lock')
-    AND NOT EXISTS (SELECT 1 FROM owner_report_locks l WHERE l.unit_id = u.id)
-    AND u.owner_id NOT IN (SELECT x.owner_id FROM units x JOIN reservations y ON y.unit_id = x.id WHERE y.id LIKE 'oc-check-%')
-  ORDER BY u.id`);
-const day = n => new Date(Date.UTC(2026, 9, n)).toISOString().slice(0, 10); // day(1) = 1 Oct
-const freeOf = async unitId => {
-  const busy = await db(`SELECT check_in, check_out FROM reservations WHERE unit_id = $1 AND state <> 'cancelled' AND check_out > '2026-10-01' AND check_in < '2026-11-01'`, unitId);
-  const free = (a, b) => !busy.some(s => ymd(s.check_in) < b && ymd(s.check_out) > a);
-  let s1 = 0, s2 = 0;
-  for (let d = 2; d <= 26 && !s1; d++) if (free(day(d), day(d + 5))) s1 = d;
-  for (let d = 2; d <= 28 && !s2; d++) if (free(day(d), day(d + 3)) && (d + 3 <= s1 || d >= s1 + 5)) s2 = d;
-  return s1 && s2 ? { s1, s2 } : null;
-};
-let u = null, win = null;
-for (const c of candidates) { const f = await freeOf(c.id); if (f) { u = c; win = f; break; } }
-check('a share unit with free October nights', !!u, `${candidates.length} candidates`);
+await dropAll();
+await db(`INSERT INTO owners (id, display_name, email, created_at, updated_at) VALUES ($1, 'Check Owner', 'check-owner@example.invalid', $2, $2)`, OWNER, now);
+await db(`INSERT INTO properties (id, name, address_line, city, state, created_at, updated_at) VALUES ($1, 'Check Court', 'Check', 'Check', 'Check', $2, $2)`, PROP, now);
+await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, misc_charges, created_at, updated_at) VALUES ($1, $2, $3, 'C-01', 0, 1, $4, $4)`, UNIT, PROP, OWNER, now);
+const [u] = await db(`SELECT u.id, u.owner_id, u.contract_id, u.split_kind, u.split_value, u.unit_number, p.name AS property_name
+  FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = $1`, UNIT);
+check('the check has its own owner and unit', !!u, 'not created');
 if (!u) done();
+const day = n => new Date(Date.UTC(2026, 9, n)).toISOString().slice(0, 10); // day(1) = 1 Oct
+const win = { s1: 2, s2: 10 }; // 2–7 Oct and 10–13 Oct: the unit has nothing else
 
 const label = `${u.property_name} ${u.unit_number}`;
 const settings = Object.fromEntries((await db(`SELECT key, value FROM settings WHERE key IN ('locale.managementFeePct', 'finance.default_fee_pct', 'report.miscChargeMonthly')`)).map(s => [s.key, s.value]));
 const defaultFee = Number(settings['locale.managementFeePct'] ?? settings['finance.default_fee_pct'] ?? 25);
-const pct = u.contract_id ? 100 - Number(u.fee ?? defaultFee) : /profit share/i.test(u.split_kind ?? '') && u.split_value != null ? Number(u.split_value) : 100 - defaultFee;
+const pct = 100 - defaultFee; // no contract and no split: the default fee
 const miscMonthly = Number(settings['report.miscChargeMonthly'] ?? 10000);
 const misc = nights => Math.round(miscMonthly * Math.min(1, nights / 31));
 const owner = share => Math.round((share * pct) / 100);
 
-// The fixture: the misc charge on; an October cost, an October owner credit and a held September debt.
-const miscBefore = u.misc_charges;
-await db(`UPDATE units SET misc_charges = 1 WHERE id = $1`, u.id);
+// The fixture: an October cost, an October owner credit and a held September debt.
 await db(`INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, charge_to, created_at)
   VALUES ('ocs-c0', $1, 'other', 'Check: October cost', 12000, 'MYR', '2026-10-10', 'owner', $2)`, u.id, now);
 await db(`INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
   VALUES ('ocs-a0', $1, $2, 'credit', 3000, 'Check: October credit', '2026-10-05', NULL, 'open', 'manual', NULL, $3, $3),
          ('ocs-h0', $1, $2, 'charge', -1000, 'Check: held September debt', '2026-09-15', NULL, 'held', 'manual', NULL, $3, $3)`, u.owner_id, u.id, now);
-// A second unit of u's owner, listed after u (same building, its unit number extended), and an owner adjustment with no
+// A second unit of the owner, listed after u (same building, its unit number extended), and an owner adjustment with no
 // unit: the statement puts it on the owner's first unit, u.
-const [prop] = await db(`SELECT property_id FROM units WHERE id = $1`, u.id);
 await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, created_at, updated_at) VALUES ('ocs-u2', $1, $2, $3, 0, $4, $4)`,
-  prop.property_id, u.owner_id, `${u.unit_number}-zz`, now);
+  PROP, u.owner_id, `${u.unit_number}-zz`, now);
 await db(`INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
   VALUES ('ocs-n0', $1, NULL, 'credit', 700, 'Check: October credit with no unit', '2026-10-04', NULL, 'open', 'manual', NULL, $2, $2)`, u.owner_id, now);
 const firstUnit = async () => (await db(`SELECT u.id FROM units u JOIN properties p ON p.id = u.property_id WHERE u.owner_id = $1 ORDER BY p.name, u.unit_number LIMIT 1`, u.owner_id))[0]?.id;
@@ -281,14 +264,6 @@ check('without the powers, deductions and O2 cannot be locked',
   noDed.status === 403 && noDed.json?.error?.message === "You can't lock deductions. Ask management for the Lock deductions permission."
     && noO2.status === 403 && noO2.json?.error?.message === "You can't lock O2. Ask management for the Lock O2 permission.", `${noDed.text} | ${noO2.text}`);
 
-// Put things back for the checks after this one.
-await db(`DELETE FROM owner_report_locks WHERE unit_id = $1`, u.id);
-await db(`DELETE FROM owner_adjustments WHERE unit_id = $1 AND source = 'stage_lock'`, u.id);
-await db(`DELETE FROM owner_adjustments WHERE id LIKE 'ocs-%' OR description LIKE 'Check:%'`);
-await db(`DELETE FROM expenses WHERE id LIKE 'ocs-%' OR description LIKE 'Check:%'`);
-await db(`DELETE FROM expenses WHERE reference IN ('OCS-W1', 'OCS-E1')`);
-await db(`DELETE FROM unit_utility_accounts WHERE id LIKE 'ocs-%'`);
-await dropUnit2();
-await db(`DELETE FROM reservations WHERE id LIKE 'ocs-%'`);
-await db(`UPDATE units SET misc_charges = $2 WHERE id = $1`, u.id, miscBefore);
+// Remove everything the check made.
+await dropAll();
 done();

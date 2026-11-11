@@ -1,4 +1,5 @@
 import { type Env, all, run } from './db';
+import { o2Date } from './lockGuards';
 
 /** Utility bills and their payment requests (chew, 5 Nov 2026; SOP 3.10 "手动录入也一样", "Utility bills 两张表").
  *  The bills the company pays (not "Owner paid this bill") go to finance as one engine payment request per provider and
@@ -59,5 +60,5 @@ export async function ownerPaidCredit(tx: Env, b: { expenseId: string; unitId: s
   userId: string, now: string): Promise<void> {
   await run(tx, `INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, expense_id, created_by, created_at, updated_at)
     VALUES (?, ?, ?, 'credit', ?, ?, ?, ?, 'open', 'manual', ?, ?, ?, ?)`,
-    crypto.randomUUID(), b.ownerId, b.unitId, b.amountSen, `${b.label}, paid by the owner`, `${b.deductMonth}-01`, b.accountNo, b.expenseId, userId, now, now);
+    crypto.randomUUID(), b.ownerId, b.unitId, b.amountSen, `${b.label}, paid by the owner`, (await o2Date(tx, b.ownerId, b.unitId, `${b.deductMonth}-01`)).occurredOn, b.accountNo, b.expenseId, userId, now, now);
 }

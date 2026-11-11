@@ -149,3 +149,11 @@ test('undo: refused once the reservation moved on, a statement with the change i
   assert.equal(undoProblem(applied, { ...fine, adjustments: new Map() }), null, 'a credit removed by hand is simply gone');
   assert.equal(undoProblem({ changes: [], shares: [], incomeIds: [] }, fine), null, 'kept as it is: nothing to put back');
 });
+
+test('a confirmed change on a final month is posted past a month whose O2 is locked', () => {
+  // October is final, so the owner's share of the change goes on the next open month; November's O2 is locked for the
+  // unit (owner statement close), so that is December.
+  const novO2 = () => new Set(['2026-11']);
+  const p = planLine({ code: 'HMQFZYBTXQ', action: 'set_amount', newAmount: 29_766 }, [stay()], '2026-11-11', oct, pct70, none, novO2);
+  assert.deepEqual(p.shares, [{ unitId: 'u1', reservationId: 'r1', sen: 4_197, months: ['2026-10'], onMonth: '2026-12' }]);
+});

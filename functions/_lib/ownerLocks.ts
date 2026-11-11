@@ -126,15 +126,18 @@ export async function incomeLockCounts(env: Env, month: string): Promise<{ locke
   return (await incomeStep(env, month)).counts;
 }
 
-/** For each unit, the months whose income is locked. */
-export async function incomeLockedMonths(env: Env, unitIds: string[]): Promise<Map<string, Set<string>>> {
+/** For each unit, the months whose `stage` is locked. */
+export async function lockedMonthsFor(env: Env, unitIds: string[], stage: Stage): Promise<Map<string, Set<string>>> {
   const out = new Map<string, Set<string>>();
   if (!unitIds.length || !(await hasLocksTable(queryOf(env)))) return out;
   const rows = await all<{ unit_id: string; month: string }>(env,
-    `SELECT unit_id, month FROM owner_report_locks WHERE stage = 'income' AND unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, ids(unitIds));
+    `SELECT unit_id, month FROM owner_report_locks WHERE stage = ? AND unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, stage, ids(unitIds));
   for (const r of rows) { const s = out.get(r.unit_id) ?? new Set<string>(); s.add(r.month); out.set(r.unit_id, s); }
   return out;
 }
+
+/** For each unit, the months whose income is locked. */
+export const incomeLockedMonths = (env: Env, unitIds: string[]) => lockedMonthsFor(env, unitIds, 'income');
 
 /** Locks one step of `month` for these units. Each lock keeps what the month is worked out from now: income, the stays
  *  (and a long-term let's rent); deductions, the costs and the misc charge; O2, the owner adjustments its statement
