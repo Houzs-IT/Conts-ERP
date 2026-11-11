@@ -34,7 +34,9 @@ export interface RoleGridProps {
 
 const ROW = 'grid items-center px-5 grid-cols-[minmax(0,1fr)_repeat(3,64px)] max-md:px-4 max-md:grid-cols-[minmax(0,1fr)_repeat(3,46px)]';
 
-const statesFor = (levels: RoleLevels, keys: string[]): Record<TierLevel, TierState> => ({
+const GROUP_BUTTON = 'flex items-center gap-2 min-w-0 min-h-8 max-md:min-h-11 p-0 pr-1.5 border-0 rounded-control bg-transparent text-left [font-family:inherit] text-copy font-medium text-ink cursor-pointer hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-border-focus)]';
+
+const statesFor =(levels: RoleLevels, keys: string[]): Record<TierLevel, TierState> => ({
   view: tierState(levels, keys, 'view'),
   edit: tierState(levels, keys, 'edit'),
   full: tierState(levels, keys, 'full'),
@@ -74,19 +76,29 @@ export default function RoleGrid({ companies, levels, savedLevels, isLocked, onC
           {!collapsedCompanies.has(company.key) && company.categories.map(category => {
             const isExpandable = category.areas.length > 1;
             const isOpen = isExpandable && openGroups.has(category.group);
+            const groupLabel = (
+              <>
+                <span>{category.group}</span>
+                <span className="text-caption font-normal text-muted-ink whitespace-nowrap">{plural(category.areas.length, 'area')}</span>
+              </>
+            );
             return (
               <div key={category.group}>
                 <div className={cx(ROW, 'min-h-[42px] [border-bottom:1px_solid_var(--color-line-soft)]')}>
                   <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0 text-copy font-medium">
                     {isExpandable ? (
-                      <button type="button" onClick={() => openGroups.toggle(category.group)} aria-expanded={isOpen}
-                        aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${category.group}`}
-                        className="grid place-items-center size-6 max-md:size-8 p-0 border-0 rounded-control bg-transparent text-muted-ink cursor-pointer">
-                        <span className={cx('grid transition-transform duration-150', !isOpen && '-rotate-90')}><Icon name="ChevronDown" size="sm" /></span>
+                      <button type="button" onClick={() => openGroups.toggle(category.group)} aria-expanded={isOpen} className={GROUP_BUTTON}>
+                        <span className="grid place-items-center size-6 max-md:size-8 flex-none text-muted-ink">
+                          <span className={cx('grid transition-transform duration-150 motion-reduce:transition-none', !isOpen && '-rotate-90')}><Icon name="ChevronDown" size="sm" /></span>
+                        </span>
+                        {groupLabel}
                       </button>
-                    ) : <span className="size-6 max-md:size-8 flex-none" />}
-                    <span>{category.group}</span>
-                    <span className="text-caption font-normal text-muted-ink whitespace-nowrap">{category.areas.length} {category.areas.length === 1 ? 'area' : 'areas'}</span>
+                    ) : (
+                      <>
+                        <span className="size-6 max-md:size-8 flex-none" />
+                        {groupLabel}
+                      </>
+                    )}
                     {differenceFor(category.group, areaKeysOf([category]))}
                   </div>
                   {boxesFor(category.group, areaKeysOf([category]))}
