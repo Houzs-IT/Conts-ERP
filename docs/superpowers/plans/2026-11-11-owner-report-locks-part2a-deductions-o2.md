@@ -570,8 +570,8 @@ The Task 3 check proves the behaviour once Task 5 can take the locks.
 Branch `feat/owner-close-part2`. Tasks 1–9 as planned, with these differences (each is also in the branch's ledger):
 
 - **Migration 0303** as planned. The trigger also skips the lock check when its session's search path has no
-  `owner_report_locks` (a session outside the app). The demo overlay's expense store runs the same function (0203), so
-  Demo mode behaves the same.
+  `owner_report_locks` (a session outside the app). The demo overlay's expense store runs the same function (0203); in
+  Demo mode the first edit of a real cost inserts its shadow, which the trigger treats as new (see the deferred minors).
 - **Frozen misc keeps its occupancy** (`FrozenDeductions.misc.occupancy`), so a locked month's misc line names the
   occupancy it was locked at. `computeUnitMonth`'s new parameter is `kept`.
 - **`utilityDeduction` still reads final months only.** `expenses.ts` would otherwise import `ownerLocks.ts`, which
@@ -601,3 +601,35 @@ Branch `feat/owner-close-part2`. Tasks 1–9 as planned, with these differences 
 Not done here (2b and part 3): the company's share of a late change in the company reports (choice A); fixed-rent units
 on Income and Deductions; the notice on a manual reservation edit; Final gating, Unlock final, the Locks column and the
 Agent/Company split.
+
+**After the whole-branch review** (fresh reviewer; 0 Critical, 4 Important, 10 Minor; one fix pass, each fix with a check that
+failed first):
+
+- **The lock route refuses someone with no lock power before reading the request**, so the permissions matrix row for
+   stays as it was (it posts ). Someone with one power but not the step's is
+  still told which power they lack.
+- **An owner adjustment an O2 lock keeps is never deleted** by an Airbnb reconciliation undo ( refuses it) or by
+  replacing a bill on Utility bills (the bill is listed under ). Either would have left the locked month printing a
+  line with nothing behind it, which finalise refuses for ever.
+- **The 0303 trigger checks the search path in an outer IF.** PL/pgSQL plans a whole condition before running it, so the
+  first version failed every expense write from a session without  on its path.
+- **What an O2 lock keeps is taken only by that month's statement** (), and generating never moves an
+  adjustment off another statement. Before, a later month's draft could take it and regenerating the locked month took it
+  back, so the owner could be paid twice. (The reviewer graded this Minor; regraded Important by its effect.)
+- **Not changed in code:** the order of going live. 0303 runs on production before the merge, as 0302 did.
+- **Deferred minors:** the approvals executor dates an owner-paid credit by the bill month; misc attribution when income is
+  locked after deductions; Demo mode shadows and notices; two check-chip miscounts; uneven O2 guards; copy and notice nits;
+  a unit whose basis changes after a lock drops off its step; over-blocking of record-only and company-paid costs; small
+  test gaps.
+- **Left for part 3:** an old draft can still be finalised after its own month is unlocked; Make final should refuse a
+  draft generated before the month's last lock or unlock.
+- **After the fixes,** main merged (#894, #895) and everything rerun on a fresh PGlite in CI order: late-bills 27,
+  utility-listing 32, unit-pnl 15, yearly-report 10, airbnb-recon 53, owner-close 38 and owner-close-steps 41 all pass.
+  role-access, unit-costs and demo-mode fail only on the operations-staff test user. Unknown command: "test"
+
+
+Did you mean this?
+  npm test # Test a package
+To see a list of supported npm commands, run:
+  npm help: 345 of 348 (the three on
+  main).  and : clean.

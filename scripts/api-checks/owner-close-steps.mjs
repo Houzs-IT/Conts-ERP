@@ -295,8 +295,18 @@ check('a late difference skips a locked O2 month', r.status === 201 && inc.lengt
 // Review finding 1: without any lock power the route answers 403 before reading the request (the permissions matrix posts {}).
 r = await call('POST', '/api/owner-close/lock', {}, 'finance_admin');
 check('without any lock power the lock route refuses first', r.status === 403, r.text);
+r = await lock('deductions', [u.id], 'finance_admin');
+check('without any lock power, no step can be locked', r.status === 403
+  && r.json?.error?.message === "You can't lock any step. Ask management for the Lock income, Lock deductions or Lock O2 permission.", r.text);
+// Given Lock income alone (a rule for the person), deductions and O2 are still refused, each by its own power. Access
+// rules are remembered for 10 seconds per person (functions/_lib/access.ts), so the check waits before asking again.
+const FINANCE_ADMIN = '11111111-1111-4111-8111-000000000003';
+await db(`INSERT INTO access_rules (scope, scope_id, area, level, updated_by) VALUES ('user', $1, 'lockIncome', 'edit', 'check')
+  ON CONFLICT (scope, scope_id, area) DO UPDATE SET level = 'edit'`, FINANCE_ADMIN);
+await new Promise(res => setTimeout(res, 11_000));
 const noDed = await lock('deductions', [u.id], 'finance_admin');
 const noO2 = await lock('o2', [u.id], 'finance_admin');
+await db(`DELETE FROM access_rules WHERE scope = 'user' AND scope_id = $1 AND area = 'lockIncome'`, FINANCE_ADMIN);
 check('without the powers, deductions and O2 cannot be locked',
   noDed.status === 403 && noDed.json?.error?.message === "You can't lock deductions. Ask management for the Lock deductions permission."
     && noO2.status === 403 && noO2.json?.error?.message === "You can't lock O2. Ask management for the Lock O2 permission.", `${noDed.text} | ${noO2.text}`);
