@@ -83,7 +83,9 @@ export function ownerShareOfChange(
 }
 
 /** One reservation changed. `openMonths`: its months the change reaches (from Oct 2026) whose statement was still open
- *  when confirmed; one of them final by the time of an undo means that statement already has the new amount. */
+ *  when confirmed, leaving out a month whose income is locked (its statement keeps the locked income; the lock posts
+ *  the owner's difference on the next open month); one of them final by the time of an undo means that statement
+ *  already has the new amount. */
 export interface StayChange {
   id: string; unitId: string; before: { gross: number | null; state: string }; after: { gross: number | null; state: string }; openMonths: string[];
 }
@@ -93,17 +95,20 @@ export type Plan = { ok: true; changes: StayChange[]; shares: OwnerShare[] } | {
 
 /** What confirming one line changes on its reservations, and the owner's share for final months. set_amount: the
  *  code's counted stays to Airbnb's net. cancel: a past stay is marked cancelled (one still to come is cancelled on
- *  the reservation itself, where its nights reopen). Anything else changes no reservation. */
+ *  the reservation itself, where its nights reopen). Anything else changes no reservation.
+ *  lockedMonthsOf: a unit's months whose income is locked (owner statement close). The caller leaves them out of
+ *  finalMonthsOf too: a locked month gets no flat share either, as its lock posts the difference by the contract. */
 export function planLine(
   line: Pick<Line, 'code' | 'action' | 'newAmount'>, stays: ReadonlyArray<StayMoney>, today: string,
   finalMonthsOf: (unitId: string) => ReadonlySet<string>, ownerPctOf: (unitId: string, month: string) => number | null,
+  lockedMonthsOf: (unitId: string) => ReadonlySet<string> = () => new Set(),
 ): Plan {
   const counted = stays.filter(s => COUNTED.includes(s.state));
   const changes: StayChange[] = [];
   const shares: OwnerShare[] = [];
   const reached = (s: StayMoney, all: boolean) => stayMonths(s.checkIn, s.checkOut).filter(m => all || m >= NET_FROM_MONTH);
   const change = (s: StayMoney, after: StayChange['after'], all: boolean) => changes.push({
-    id: s.id, unitId: s.unitId, before: { gross: s.gross, state: s.state }, after, openMonths: reached(s, all).filter(m => !finalMonthsOf(s.unitId).has(m)),
+    id: s.id, unitId: s.unitId, before: { gross: s.gross, state: s.state }, after, openMonths: reached(s, all).filter(m => !finalMonthsOf(s.unitId).has(m) && !lockedMonthsOf(s.unitId).has(m)),
   });
   const share = (s: StayMoney, delta: number) => {
     const finals = finalMonthsOf(s.unitId);

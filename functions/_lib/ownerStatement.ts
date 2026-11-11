@@ -81,6 +81,10 @@ export interface StayRow {
   host_payout?: number;
 }
 export interface StayPart { check_in: string; check_out: string; amount: number }
+/** A unit's month whose income is locked (owner report close, migration 0302): the stays it was worked out from, as
+ *  they were loaded when it was locked, and a long-term let's rent. The month is worked out from these instead of the
+ *  live bookings, so its income never changes; a later change reaches the owner through functions/_lib/ownerLocks.ts. */
+export interface FrozenIncome { stays: StayRow[]; rent: { tenancyDays: number; rentExact: number } | null }
 /** An owner-charged expense. incurred_on is the bill's own date; deduct_month (YYYY-MM) the statement that takes it, a later
  *  month when the bill came after its own month was final (rolled: the line says so). */
 export interface CostRow { id: string; unit_id: string; category: string; description: string; amount: number; incurred_on: string; deduct_month?: string; rolled?: boolean; reference: string | null; task_kind: string | null }
@@ -170,6 +174,22 @@ export function unitForMonth(u: UnitRow, month: string): UnitRow {
   };
 }
 
+/** A long-term let's rent for `month`: the days of the month the tenancy covers and that share of the monthly rent. */
+export function tenancyRentFor(month: string, terms: Terms): { tenancyDays: number; rentExact: number } {
+  const tenancyDays = daysCovered(month, terms.activeFrom, terms.activeTo);
+  return { tenancyDays, rentExact: (terms.fixedRent * tenancyDays) / daysInMonth(month) };
+}
+
+/** What a lock keeps of a unit's month (FrozenIncome): its stays that touch the month, exactly as loaded (payment
+ *  pieces and host payout included), and the rent when the contract is a long-term let. */
+export function freezeIncome(unitId: string, month: string, stays: StayRow[], terms: Terms): FrozenIncome {
+  const start = `${month}-01`, endEx = monthEndExclusive(month);
+  return {
+    stays: stays.filter(s => s.unit_id === unitId && s.check_in < endEx && s.check_out > start),
+    rent: isTenancy(terms.model) ? tenancyRentFor(month, terms) : null,
+  };
+}
+
 /** Days of the month inside [from, to] (inclusive dates; null = open). */
 function daysCovered(month: string, from: string | null, to: string | null) {
   const start = `${month}-01`, endEx = monthEndExclusive(month);
@@ -256,14 +276,15 @@ export function stayParts(s: StayRow, pieces: PaymentPiece[]): StayPart[] | unde
 
 /** One unit, one month. `stays`, `costs` and `adjustments` may hold other months and units: only what belongs here is used.
  *  adjustments: pass the ones to put on this statement (the caller decides: open ones for a new statement, dated ones for history). */
-export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, stays: StayRow[], costs: CostRow[], adjustments: AdjustmentRow[], miscMonthly: number): UnitMonth {
+export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, stays: StayRow[], costs: CostRow[], adjustments: AdjustmentRow[], miscMonthly: number, frozen?: FrozenIncome): UnitMonth {
   const start = `${month}-01`, endEx = monthEndExclusive(month), days = daysInMonth(month), end = new Date(Date.parse(`${endEx}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
   const lines: Line[] = [];
 
   // Income: each stay's nights in the month and that share of its payout. A long-term let or a master lease has no
   // stays that belong to the owner (the tenant's rent is the income; under a master lease all trading is the company's).
+  // A month whose income is locked is worked out from the stays as they were when it was locked.
   const ownTrading = !isTenancy(terms.model) && terms.model !== 'master_lease';
-  const mine = stays.filter(s => s.unit_id === unit.id && ownTrading).map(s => {
+  const mine = (frozen ? frozen.stays : stays).filter(s => s.unit_id === unit.id && ownTrading).map(s => {
     const n = nightsInWindow(ymd(s.check_in), ymd(s.check_out), start, endEx);
     // Each payment piece is split by night over the nights it covers, so a long stay paid in monthly instalments is
     // credited to each month by its own instalment rather than by the stay's average night.
@@ -272,9 +293,8 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
     return { s, n, exact, paid: parts.reduce((sum, p) => sum + p.amount, 0) };
   }).filter(x => x.n > 0).sort((a, b) => a.s.check_in.localeCompare(b.s.check_in));
   const nights = mine.reduce((n, x) => n + x.n, 0);
-  // Long-term let: the month's rent, for the days of the month the tenancy covers.
-  const tenancyDays = isTenancy(terms.model) ? daysCovered(month, terms.activeFrom, terms.activeTo) : 0;
-  const rentExact = isTenancy(terms.model) ? (terms.fixedRent * tenancyDays) / days : 0;
+  // Long-term let: the month's rent, for the days of the month the tenancy covers (as locked, when the income is).
+  const { tenancyDays, rentExact } = isTenancy(terms.model) ? (frozen?.rent ?? tenancyRentFor(month, terms)) : { tenancyDays: 0, rentExact: 0 };
   const grossExact = mine.reduce((n, x) => n + x.exact, 0) + rentExact;
   const gross = roundSen(grossExact);
   // Each stay's line is rounded so that the lines add up to the rounded total (largest remainder).
@@ -423,7 +443,17 @@ export const hasActivity = (m: UnitMonth) => m.terms.basis === 'none'
 /* Loading                                                             */
 /* ------------------------------------------------------------------ */
 
-export interface Inputs { units: UnitRow[]; stays: StayRow[]; costs: CostRow[]; adjustments: AdjustmentRow[] }
+/** `frozen`: the months whose income is locked, by `${unitId}|${month}` (lockId: the owner_report_locks row). Leave it
+ *  out ({ ...inputs, frozen: undefined }) to work the months out from the live bookings instead. */
+export interface Inputs { units: UnitRow[]; stays: StayRow[]; costs: CostRow[]; adjustments: AdjustmentRow[]; frozen?: Map<string, FrozenIncome & { lockId: string }> }
+
+/** Whether the locks table exists yet (migration 0302), so this code can ship before the migration is applied. Once
+ *  it is there it stays; until then it is asked again on each load. */
+let locksTable = false;
+export async function hasLocksTable(q: Query): Promise<boolean> {
+  if (!locksTable) locksTable = !!(await q<{ ok: boolean }>(`SELECT to_regclass('owner_report_locks') IS NOT NULL AS ok`))[0]?.ok;
+  return locksTable;
+}
 
 export const UNIT_SQL = `
   SELECT u.id, u.owner_id, o.display_name AS owner_name, u.unit_number, u.unit_code, p.name AS property_name, u.address,
@@ -440,11 +470,12 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
     : scope.unitIds ? 'WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))'
     : scope.ownerIds ? 'WHERE u.owner_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : '';
   const unitArg = scope.unitId ? [scope.unitId] : scope.unitIds ? [JSON.stringify(scope.unitIds)] : scope.ownerIds ? [JSON.stringify(scope.ownerIds)] : [];
+  const withLocks = await hasLocksTable(q);
   // One statement, each list as json (json, not jsonb, keeps the columns in order). With prepare: false (db.ts) the
   // database library waits on every statement that carries a value twice and holds the next one back meanwhile, so the
   // six lists this used to read one by one were twelve waits in a row; the Dashboard waits on this. Stays come in a
   // fixed order, so two check-ins on the same day always list (and share out a rounding sen) the same way.
-  const [loaded] = await q<{ units: UnitRow[] | null; stays: StayRow[] | null; costs: CostRow[] | null; adjustments: AdjustmentRow[] | null; history: ContractRow[] | null; pieces: PaymentPiece[] | null }>(`
+  const [loaded] = await q<{ units: UnitRow[] | null; stays: StayRow[] | null; costs: CostRow[] | null; adjustments: AdjustmentRow[] | null; history: ContractRow[] | null; pieces: PaymentPiece[] | null; locks: { id: string; unit_id: string; month: string; frozen: Partial<FrozenIncome> }[] | null }>(`
     WITH su AS (SELECT u.id, u.owner_id FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id ${unitWhere}),
     st AS (
       SELECT r.id, r.unit_id, r.check_in, r.check_out, r.collected_revenue, r.channel, r.external_ref, g.full_name AS guest_name,
@@ -470,8 +501,25 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
       -- The payments recorded against these stays (migration 0091).
       (SELECT json_agg(x) FROM (
         SELECT bp.reservation_id, bp.amount, bp.status, bp.kind, bp.source, bp.note FROM booking_payments bp
-        WHERE bp.reservation_id IN (SELECT id FROM st)) x) AS pieces`, ...unitArg, toExclusive, from, from, toExclusive, toExclusive);
+        WHERE bp.reservation_id IN (SELECT id FROM st)) x) AS pieces,
+      -- The months whose income is locked (migration 0302): worked out from what the lock kept.
+      ${withLocks ? `(SELECT json_agg(x) FROM (
+        SELECT l.id, l.unit_id, l.month, l.frozen FROM owner_report_locks l
+        WHERE l.stage = 'income' AND l.month >= substr(?, 1, 7) AND l.month < substr(?, 1, 7) AND l.unit_id IN (SELECT id FROM su)) x)` : 'NULL::json'} AS locks`,
+    ...unitArg, toExclusive, from, from, toExclusive, toExclusive, ...(withLocks ? [from, toExclusive] : []));
   const [units, stays, costs, adjustments, history, pieces] = [loaded.units ?? [], loaded.stays ?? [], loaded.costs ?? [], loaded.adjustments ?? [], loaded.history ?? [], loaded.pieces ?? []];
+  const frozen = new Map<string, FrozenIncome & { lockId: string }>();
+  for (const l of loaded.locks ?? []) {
+    frozen.set(`${l.unit_id}|${l.month}`, {
+      lockId: l.id,
+      stays: (l.frozen.stays ?? []).map(s => ({
+        ...s, check_in: ymd(s.check_in), check_out: ymd(s.check_out), collected_revenue: Number(s.collected_revenue),
+        host_payout: s.host_payout == null ? undefined : Number(s.host_payout),
+        parts: s.parts?.map(p => ({ check_in: ymd(p.check_in), check_out: ymd(p.check_out), amount: Number(p.amount) })),
+      })),
+      rent: l.frozen.rent ?? null,
+    });
+  }
   const historyOf = new Map<string, ContractRow[]>();
   for (const h of history) { const l = historyOf.get(h.unit_id); if (l) l.push(h); else historyOf.set(h.unit_id, [h]); }
   const piecesOf = new Map<string, PaymentPiece[]>();
@@ -485,6 +533,7 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
     }),
     costs: costs.map(c => ({ ...c, incurred_on: ymd(c.incurred_on), amount: Number(c.amount) })),
     adjustments: adjustments.map(a => ({ ...a, amount: Number(a.amount) })),
+    frozen,
   };
 }
 
@@ -522,7 +571,7 @@ export function computeMonth(month: string, inputs: Inputs, settings: { defaultF
     // An owner credit or charge with no unit goes on the owner's first unit that has a statement (not a master lease).
     const first = asOf.find(u => modelOf(u) !== 'master_lease') ?? asOf[0];
     const adj = adjustmentsFor(inputs.adjustments, ownerId, month, mode, statementIdOf(ownerId), first?.id ?? null);
-    for (const u of asOf) out.push(computeUnitMonth(month, u, termsFor(u, settings.defaultFeePct), stays, costs, adj, settings.miscMonthly));
+    for (const u of asOf) out.push(computeUnitMonth(month, u, termsFor(u, settings.defaultFeePct), stays, costs, adj, settings.miscMonthly, inputs.frozen?.get(`${u.id}|${month}`)));
   }
   return out;
 }

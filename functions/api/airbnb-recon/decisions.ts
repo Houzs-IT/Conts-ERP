@@ -7,6 +7,7 @@ import { COUNTED, adjustmentText, bulkEligible, checkIncomeType, incomeKey, mont
 import { confirmContext, planWith, setsAirbnbFigure } from '../../_lib/airbnbConfirmLoad';
 import { MONTH, hasAirbnbRecon, loadMonth } from './index';
 import { hasIncomeTypes, loadIncomeTypes } from './income-types';
+import { syncLateIncome } from '../../_lib/ownerLocks';
 
 /* Airbnb reconciliation, step 2 (chew, 11 Nov 2026): finance confirms a reservation's line, or keeps it as it is.
    Confirming writes what the confirm window listed, all together or nothing:
@@ -89,6 +90,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const adjustments: { id: string; owner_id: string; unit_id: string; kind: string; amount: number; description: string; occurred_on: string; reference: string }[] = [];
   const audits: AuditEntry[] = [];
   const regenerate = new Set<string>();
+  // The units whose reservations this changes: a locked month of theirs needs its late difference posted (owner report close).
+  const changedUnits = new Set<string>();
   let incomeSen = 0;
 
   for (const { item, line } of work) {
@@ -113,6 +116,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     for (const c of plan.changes) {
       updates.push({ id: c.id, gross: c.after.gross, state: c.after.state, before_gross: c.before.gross, before_state: c.before.state });
       c.openMonths.forEach(m => regenerate.add(m));
+      changedUnits.add(c.unitId);
       audits.push({ ...actor, action: c.after.state === 'cancelled' ? 'reservation.status' : 'reservation.airbnb_amount', entityTable: 'reservations', entityId: c.id,
         before: { grossBookingValue: c.before.gross, state: c.before.state },
         after: { grossBookingValue: c.after.gross, state: c.after.state, source: 'airbnb_recon', month, code: line.code } });
@@ -188,6 +192,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (e instanceof Refused) return fail(e.code, e.message, e.status);
     throw e;
   }
+
+  // The late difference of a locked month goes on the next open month: that statement is the one to generate again.
+  if (changedUnits.size) (await syncLateIncome(env, { unitIds: [...changedUnits] })).months.forEach(m => regenerate.add(m));
 
   return json({
     ok: true, confirmed: decisions.filter(d => d.action !== 'keep').length, kept: decisions.filter(d => d.action === 'keep').length,
