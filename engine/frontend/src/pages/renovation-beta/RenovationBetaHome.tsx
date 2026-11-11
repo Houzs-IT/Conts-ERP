@@ -11,7 +11,7 @@ import { CreateRenovationPanel } from "../projects/renovation/CreateRenovationPa
 import { money } from "../projects/renovation/renovationModel";
 import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type ConditionWord, type HomeRow, type HomeTab } from "./renovationBetaBoard";
-import { HOME_SORTS, keepOrder, onDreamCrafterList, matchesSearch, orderOf, sortFromParam, sortHome, voCell, type HomeSort } from "./renovationBetaHomeModel";
+import { HOME_SORTS, keepOrder, onBrandList, matchesSearch, orderOf, sortFromParam, sortHome, voCell, type HomeSort } from "./renovationBetaHomeModel";
 import { boardApi, boardKey, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
 import { BetaSkin, useBetaPreload } from "./BetaWsUi";
@@ -161,7 +161,8 @@ function HomeScreen(): ReactElement {
   /* The order rows were first shown in, per tab, sort and search: Assign and other saves reload the board, and a row
      must not jump under the finger (live run, 24 Oct 2026: the wrong project was opened). A reload starts afresh. */
   const kept = useRef<{ key: string; order: Map<number, number> } | null>(null);
-  function setParam(k: "q" | "sort", v: string): void {
+  const brand = params.get("brand") ?? "";
+  function setParam(k: "q" | "sort" | "brand", v: string): void {
     setParams((prev) => {
       const next = new URLSearchParams(prev);
       if (v && !(k === "sort" && v === "newest")) next.set(k, v); else next.delete(k);
@@ -169,7 +170,7 @@ function HomeScreen(): ReactElement {
     }, { replace: true });
   }
   const last = readLastProject();
-  const m = useMemo(() => (q.data ? buildModel({ ...q.data, projects: q.data.projects.filter(onDreamCrafterList) }) : null), [q.data]);
+  const m = useMemo(() => (q.data ? buildModel({ ...q.data, projects: q.data.projects.filter((p) => onBrandList(p, brand)) }) : null), [q.data, brand]);
 
   if (q.error && !m) return <ErrorBanner text={`The projects could not be loaded: ${q.error}`} onRetry={q.reload} />;
   if (!m) return <BetaLoading label="Loading projects" size="page" />;
@@ -236,6 +237,14 @@ function HomeScreen(): ReactElement {
               <X size={16} />
             </button>
           )}
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: MUTED }}>
+          Brand
+          <select aria-label="Filter by brand" value={brand} onChange={(e) => setParam("brand", e.target.value)}
+            style={{ minHeight: 40, padding: "0 12px", border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, background: BETA.field, font: "inherit", fontSize: 14, color: BETA.ink }}>
+            <option value="">All brands</option>
+            {[...new Set((q.data?.projects ?? []).map((p) => p.brand?.trim()).filter((b): b is string => Boolean(b)))].sort().map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: MUTED }}>
           Sort

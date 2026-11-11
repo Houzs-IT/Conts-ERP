@@ -9,7 +9,7 @@ vi.mock("../../api/client", async (importOriginal) => {
 });
 
 import { MediaGrid, MediaStrip, durationText, mediaRefusal, type MediaItem } from "./BetaMedia";
-import { keepOrder, onDreamCrafterList, matchesSearch, newestFirst, orderOf, sortFromParam, sortHome } from "./renovationBetaHomeModel";
+import { keepOrder, onBrandList, matchesSearch, newestFirst, orderOf, sortFromParam, sortHome } from "./renovationBetaHomeModel";
 import { cardLine, dayTitle, photoTimeline } from "./renovationBetaPhotosModel";
 import type { ProjectPhoto } from "./renovationBetaMediaApi";
 import type { DesignProject } from "./renovationBetaBoard";
@@ -98,8 +98,10 @@ describe("the project list", () => {
     expect(sortFromParam("nonsense")).toBe("newest");
   });
 
-  it("lists Dream Crafter-brand projects and those with no brand, any case", () => {
-    expect([" dream crafter ", "Dream Crafter", null, "", undefined, "The Conts"].map((brand) => onDreamCrafterList({ brand }))).toEqual([true, true, true, true, true, false]);
+  it("lists every project; the Brand filter keeps that brand and those with no brand, any case", () => {
+    const brands = [" dream crafter ", "Dream Crafter", null, "", undefined, "The Conts"];
+    expect(brands.map((brand) => onBrandList({ brand }, ""))).toEqual([true, true, true, true, true, true]);
+    expect(brands.map((brand) => onBrandList({ brand }, "Dream Crafter"))).toEqual([true, true, true, true, true, false]);
   });
 
   it("keeps a row where it was after a save re-sorts the list", () => {
