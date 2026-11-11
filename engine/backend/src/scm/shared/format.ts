@@ -84,6 +84,17 @@ export const fmtMoneySen = (
 const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
 const DASH = '—';
 
+/* THE DREAM CRAFTER SIDE READS DAY FIRST (YH, 11 Nov 2026, asked for by Dream
+   Crafter's users): "11-11-2026", and "11-11" for the short form. The Conts side
+   keeps the year-first rule (owner, 3 Nov 2026). Property OS sets this for the
+   side on view (src/components/AppShell.tsx) and passes it into the engine frame
+   (conts/embed.ts). Off by default, so the server, the PDFs and a standalone
+   engine keep year-first. */
+let dayFirst = false;
+export const setDayFirst = (on: boolean): void => { dayFirst = on; };
+export const isDayFirst = (): boolean => dayFirst;
+const ymdText = (p: DateParts): string => (dayFirst ? `${p.dd}-${p.mm}-${p.yyyy}` : `${p.yyyy}/${p.mm}/${p.dd}`);
+
 type DateParts = { yyyy: string; mm: string; dd: string; hh: string; mi: string; ss: string };
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
@@ -123,6 +134,9 @@ function dateParts(d: Date | string | number | null | undefined): DateParts | nu
      read as an invalid date. */
   const dmy = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
   if (dmy) return { yyyy: dmy[3], mm: dmy[2], dd: dmy[1], hh: '00', mi: '00', ss: '00' };
+  // The Dream Crafter display shape, so formatting it again is a no-op (Date would read it month first).
+  const dmyDash = /^(\d{2})-(\d{2})-(\d{4})$/.exec(s);
+  if (dmyDash) return { yyyy: dmyDash[3], mm: dmyDash[2], dd: dmyDash[1], hh: '00', mi: '00', ss: '00' };
 
   /* NO ZONE IN THE VALUE → NO CONVERSION. Covers the two shapes this ERP
      actually stores: a date-only `date`/`text` column (`2026-08-16`) and a
@@ -158,19 +172,19 @@ function dateParts(d: Date | string | number | null | undefined): DateParts | nu
   return mytParts(new Date(s));
 }
 
-/** THE date format: "2026/08/16" (year-first, owner 2026-09-25). Null-safe,
+/** THE date format: "2026/08/16" (year-first, owner 2026-09-25); "16-08-2026" on the Dream Crafter side. Null-safe,
  *  invalid-safe, idempotent. Display only — never feed this to a date input, an
  *  API or AutoCount. */
 export const fmtDate = (d: Date | string | number | null | undefined): string => {
   const p = dateParts(d);
-  return p === null ? DASH : `${p.yyyy}/${p.mm}/${p.dd}`;
+  return p === null ? DASH : ymdText(p);
 };
 
 /** THE date+time format: "2026/08/16 14:30". 24-hour, no comma — the same
  *  numeric, unambiguous rule as {@link fmtDate}, one export further. */
 export const fmtDateTime = (d: Date | string | number | null | undefined): string => {
   const p = dateParts(d);
-  return p === null ? DASH : `${p.yyyy}/${p.mm}/${p.dd} ${p.hh}:${p.mi}`;
+  return p === null ? DASH : `${ymdText(p)} ${p.hh}:${p.mi}`;
 };
 
 /** "13/08" — {@link fmtDate} with the YEAR trimmed, for a label that already
@@ -181,7 +195,7 @@ export const fmtDateTime = (d: Date | string | number | null | undefined): strin
  *  "—", exactly as {@link fmtDate}. */
 export const fmtDayMonth = (d: Date | string | number | null | undefined): string => {
   const p = dateParts(d);
-  return p === null ? DASH : `${p.mm}/${p.dd}`;
+  return p === null ? DASH : dayFirst ? `${p.dd}-${p.mm}` : `${p.mm}/${p.dd}`;
 };
 
 /** A PERIOD as one label: "13/08 - 17/08", and just "13/08" when it is one day.
@@ -217,7 +231,7 @@ export const fmtTime = (d: Date | string | number | null | undefined): string =>
  *  the second is the evidence (activity log, attachment uploaded_at). */
 export const fmtTimestamp = (d: Date | string | number | null | undefined): string => {
   const p = dateParts(d);
-  return p === null ? DASH : `${p.yyyy}/${p.mm}/${p.dd} ${p.hh}:${p.mi}:${p.ss}`;
+  return p === null ? DASH : `${ymdText(p)} ${p.hh}:${p.mi}:${p.ss}`;
 };
 
 /** The display rule, normalised for export — "2026/08/16" → "2026-08-16";
@@ -232,7 +246,9 @@ export const fmtTimestamp = (d: Date | string | number | null | undefined): stri
 export const isoForExport = (v: string | number | null | undefined): string | number => {
   if (typeof v !== 'string') return v ?? '';
   const m = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(v.trim());
-  return m ? `${m[1]}-${m[2]}-${m[3]}` : v;
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const d = /^(\d{2})-(\d{2})-(\d{4})$/.exec(v.trim()); // the Dream Crafter display shape
+  return d ? `${d[3]}-${d[2]}-${d[1]}` : v;
 };
 
 /** Null-safe date. Kept as the name 62 call sites already use; `fmtDate` is

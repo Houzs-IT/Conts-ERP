@@ -4,6 +4,13 @@
 the supply-chain engine (MRP) has used since 25 Sep 2026. Screens, PDFs, notices and messages alike. Times are
 unchanged: 24-hour, Malaysian time. Whole-month labels stay readable (`Nov 2026`, `November 2026`).
 
+**Dream Crafter side, 11 Nov 2026 (YH, asked for by Dream Crafter's users):** on screens in the Dream Crafter
+workspace every date reads day first, `16-11-2026`, timestamps `16-11-2026 14:06`, and the short form `16-11`. The
+Conts side keeps the year-first rule above. The same helpers do both: `AppShell` calls `setDayFirst()` for the side
+on view (the workspace of the address, else the side last picked in the sidebar), and the supply chain frame is told
+with each menu move (`conts:navigate`, `dayFirst`). Nothing else changes: stored values, API payloads, date inputs,
+CSV exports and file stamps stay ISO. Server text and PDFs do not know a side and stay year-first.
+
 Single source of truth on the screens: [`src/lib/format.ts`](../src/lib/format.ts). On the server:
 [`functions/_lib/dates.ts`](../functions/_lib/dates.ts). The engine keeps its own copy of the same rule
 (`engine/frontend/src/vendor/shared/format.ts`, `fmtDate`). Never call `toLocaleDateString`, `toLocaleString`, or
@@ -16,7 +23,7 @@ hand-build a date in a component; `scripts/checks/formatting.mjs` fails the buil
 
 | You are showing… | Render as | How |
 | --- | --- | --- |
-| A record / a specific day | `2026/09/16` | `date()` |
+| A record / a specific day | `2026/09/16` (Dream Crafter `16-09-2026`) | `date()` |
 | A period (month) | `Sep 2026` | `monthLabel()` |
 | A data-entry field | native date picker | `<input type="date">` |
 | A chat / activity time | `2 hours ago` | `relative()` |
@@ -35,7 +42,7 @@ hand-build a date in a component; `scripts/checks/formatting.mjs` fails the buil
 | Time with zone | `timeWithZone(iso)` | `14:06 MYT` | When the reader must not guess the zone. |
 | Full timestamp | `dateTime(iso)` | `2026/09/16 14:06` | Audit rows, message receipts, "last synced". |
 | Relative | `relative(iso)` | `2 hours ago` / `Yesterday` | Falls back to `date()` after a day. |
-| Compact cell, year implied | `dateShort(iso)` | `09/16` | Month/day, as the engine's `fmtDayMonth`. Dense grids where the year is plain from the page. |
+| Compact cell, year implied | `dateShort(iso)` | `09/16` (Dream Crafter `16-09`) | Month/day on The Conts side, day-month on Dream Crafter, as the engine's `fmtDayMonth`. Dense grids where the year is plain from the page. |
 | Day header | `weekdayDate(iso)` | `Sat 10/10` | Cleaning, Today and the field app. |
 | Stamp inside one job | `dateTimeShort(iso)` | `10/10 14:00` | |
 | Long weekday date | `dateLong(iso)` | `Sunday, 2026/10/25` | |

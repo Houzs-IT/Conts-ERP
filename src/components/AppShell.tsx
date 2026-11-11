@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { useScrollMemory } from '../lib/useScrollMemory';
 import { useDevice } from '../lib/deviceClass';
-import Sidebar, { useDarkTheme } from './Sidebar';
+import Sidebar, { readWs, useDarkTheme } from './Sidebar';
 import TopBar from './TopBar';
 import { DemoBand } from './DemoMode';
 import { Logo } from './Logo';
@@ -10,6 +10,7 @@ import MobileTabBar, { TAB_BAR_HEIGHT } from './MobileTabBar';
 import { PagePrimaryScope } from './States';
 import { color, dcGlass } from '../theme';
 import { workspaceOf } from '../lib/navigation';
+import { setDayFirst } from '../lib/format';
 
 /** Persisted so the collapse choice survives a reload (BUTTONS §2, Writes = localStorage).
  *  Storage can throw (private mode, blocked cookies), so every access is guarded. */
@@ -57,6 +58,9 @@ export default function AppShell({
   useScrollMemory(mainRef, path);
   // A supply chain screen is Dream Crafter's side: the phone header shows its logo there, as the sidebar does.
   const dc = workspaceOf(path) === 'supply';
+  // Dates read day first on the Dream Crafter side (YH, 11 Nov 2026). Set while rendering, so the page below formats with it.
+  // shortcut: an off-menu page keeps the side last chosen and re-formats on the next move, not on the switch itself.
+  setDayFirst((workspaceOf(path) ?? readWs()) === 'supply');
   // The Beta screens paint the glass backdrop in their frame; painting the same one behind the top bar lets it float
   // over the page as the designs draw it, with no seam where the frame starts.
   const dark = useDarkTheme();

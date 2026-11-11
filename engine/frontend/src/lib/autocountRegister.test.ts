@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AcDocGroup, AcOutboxRow } from "./autocountOutbox";
 import { acGroupByDocument } from "./autocountOutbox";
+import { setDayFirst } from "../vendor/shared/format";
 import {
   AC_BOOK_DIFFERENT_FLAG,
   AC_DATE_RANGES,
@@ -230,6 +231,17 @@ describe("the day a run of rows happened on", () => {
     const r = row({ sent_at: "2026-08-20T20:00:00.000Z" });
     expect(acWhenText(r)).toBe("08/21 04:00");
     expect(acDayLabel(acDayKey(r), NOW)).toBe("Today · 2026/08/21");
+  });
+
+  it("reads day first on the Dream Crafter side, the cell and the separator alike", () => {
+    const r = row({ sent_at: "2026-08-20T20:00:00.000Z" });
+    setDayFirst(true);
+    try {
+      expect(acWhenText(r)).toBe("21-08 04:00");
+      expect(acDayLabel(acDayKey(r), NOW)).toBe("Today · 21-08-2026");
+    } finally {
+      setDayFirst(false);
+    }
   });
 });
 

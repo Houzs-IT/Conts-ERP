@@ -31,12 +31,12 @@
 // row unclicked, the page still opens on what is stuck, and a document already
 // in the account book still has nothing to open. Those are rulings, not layout.
 // ----------------------------------------------------------------------------
-import { fmtDate, fmtTime } from "../vendor/shared/format";
+import { fmtDate, fmtDayMonth, fmtTime } from "../vendor/shared/format";
 
 import type { AcDocGroup, AcOutboxRow } from "./autocountOutbox";
 
-/** `yyyy/mm/dd`, which is what `fmtDate` produces for anything it can read. */
-const AC_DMY = /^(\d{4})\/(\d{2})\/(\d{2})$/;
+/** What `fmtDate` produces for anything it can read: `yyyy/mm/dd`, or `dd-mm-yyyy` on the Dream Crafter side. */
+const AC_DMY = /^\d{4}\/\d{2}\/\d{2}$|^\d{2}-\d{2}-\d{4}$/;
 
 /** The mark for a cell with no value. One constant so no column picks its own,
  *  and so a test can ask for it by name rather than by glyph. */
@@ -206,8 +206,8 @@ export const acDayKey = (row: AcOutboxRow): string => fmtDate(acWhenIso(row));
 export function acWhenText(row: AcOutboxRow): string {
   const key = acDayKey(row);
   // The separator above the row carries the full date; the cell shows month/day
-  // (the year-first key with its leading "yyyy/" trimmed) + the time.
-  return AC_DMY.test(key) ? `${key.slice(5)} ${fmtTime(acWhenIso(row))}` : AC_NO_VALUE;
+  // (the same rule's short form) + the time.
+  return AC_DMY.test(key) ? `${fmtDayMonth(acWhenIso(row))} ${fmtTime(acWhenIso(row))}` : AC_NO_VALUE;
 }
 
 /** A row whose timestamp cannot be read still belongs somewhere, and it says so

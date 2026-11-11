@@ -1,6 +1,7 @@
 // Dates, times, money and counts are formatted only in src/lib/format.ts, so every screen prints
 // "2026/09/16", "14:06", "RM 1,250.00" and "4,290" the same way (never "16 Sep 2026" since 3 Nov 2026, never 2:06 pm,
 // never RM1250). Year-first numeric dates are the owner's rule for the whole system, the engine included.
+// The Dream Crafter side reads them day first (16-09-2026, YH 11 Nov 2026): the same helpers, switched by setDayFirst().
 import { runCheck, runIfMain, srcFiles, stripComments, lineHits } from './_lib.mjs';
 
 const PATTERNS = [

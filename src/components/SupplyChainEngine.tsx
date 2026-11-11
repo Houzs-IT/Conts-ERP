@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
 import { menuPathFor } from '../lib/scmEngine';
 import { useSession } from '../lib/session';
+import { isDayFirst } from '../lib/format';
 import { color } from '../theme';
 
 const b64url = (s: string) => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -104,7 +105,7 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     return () => mo.disconnect();
   }, []);
-  const steer = () => { if (site.current) frame.current?.contentWindow?.postMessage({ type: 'conts:navigate', path: wanted.current }, site.current); };
+  const steer = () => { if (site.current) frame.current?.contentWindow?.postMessage({ type: 'conts:navigate', path: wanted.current, dayFirst: isDayFirst() }, site.current); };
   // On every menu click, the item already open included (location.key changes), so it leaves a record. The path is
   // watched too: an address typed or changed in the bar twice in a row keeps the same key ("default").
   useEffect(() => {

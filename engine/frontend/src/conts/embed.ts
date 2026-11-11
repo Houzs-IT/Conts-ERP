@@ -5,6 +5,7 @@
 // once), then tells the frame where to go when a menu item is clicked. Inside the frame this app hides
 // its own side menu: Property OS's menu is the one people use.
 import { tokenStore, passStore } from "../api/client";
+import { setDayFirst } from "../vendor/shared/format";
 import "./embed.css";
 
 /** Pages allowed to hold this app in a frame and steer it. */
@@ -68,6 +69,7 @@ export function betaSkinFor(theme: unknown): "night" | "vision" | null {
 }
 
 /** Follows Property OS's menu: { type: "conts:navigate", path } moves this app without reloading it, and
+ *  (with dayFirst: whether dates read day first, the Dream Crafter side) and
  *  { type: "conts:theme", theme: "light" | "dark" } sets the Beta screens' look.
  *  Tells Property OS where it is after every move ({ type: "conts:location", path }), so its menu follows links
  *  inside these screens. */
@@ -76,7 +78,7 @@ export function listenForContsNavigation(): void {
   window.addEventListener("message", (e: MessageEvent) => {
     if (!trusted(e.origin)) return;
     parentOrigin = e.origin;
-    const d = e.data as { type?: string; path?: string; theme?: unknown } | null;
+    const d = e.data as { type?: string; path?: string; theme?: unknown; dayFirst?: unknown } | null;
     // Property OS's light or dark theme: the Beta screens read it as data-beta-skin on <html> (renovationBetaTheme.ts).
     // Opened on its own this app never hears it, so it stays light.
     if (d?.type === "conts:theme") {
@@ -85,6 +87,8 @@ export function listenForContsNavigation(): void {
       return;
     }
     if (d?.type !== "conts:navigate" || typeof d.path !== "string" || !d.path.startsWith("/") || d.path.startsWith("//")) return;
+    // Day-first dates when the menu is on the Dream Crafter side; set before the screen below re-renders.
+    if (typeof d.dayFirst === "boolean") setDayFirst(d.dayFirst);
     if (d.path !== here()) window.history.pushState(null, "", d.path);
     // Also on the same address: the phone screens keep the open record out of the address, so this takes them
     // back to the menu item's own screen.

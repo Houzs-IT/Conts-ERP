@@ -9,6 +9,8 @@
  * date or money shape there and Property OS, the server and the engine all follow.
  */
 import { fmtDate, fmtDateTime, fmtDayMonth, fmtTime, fmtSen } from '../../engine/frontend/src/vendor/shared/format';
+/** Day-first dates on the Dream Crafter side (YH, 11 Nov 2026); AppShell sets it for the side on view. */
+export { setDayFirst, isDayFirst } from '../../engine/frontend/src/vendor/shared/format';
 
 
 const MYT = 'Asia/Kuala_Lumpur';

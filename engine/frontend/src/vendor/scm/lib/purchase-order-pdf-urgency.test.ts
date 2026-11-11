@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { poUrgencyLabel } from './purchase-order-pdf';
+import { setDayFirst } from '../../shared/format';
 
 vi.mock('./sales-order-queries', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
@@ -76,6 +77,16 @@ describe('poUrgencyLabel', () => {
   it('reads a timestamp PO date as its Malaysia calendar day', () => {
     // 2026-10-08T17:00Z is 2026-10-09 01:00 MYT, printed as 2026/10/09.
     expect(poUrgencyLabel('2026-10-08T17:00:00Z', '2026-10-23')).toBeNull();
+  });
+
+  it('still reads the dates when they print day first (Dream Crafter side)', () => {
+    setDayFirst(true);
+    try {
+      expect(poUrgencyLabel('2026-10-09', '2026-10-15')).toBe('TOP URGENT');
+      expect(poUrgencyLabel('2026-10-09', '2026-10-16')).toBe('URGENT');
+    } finally {
+      setDayFirst(false);
+    }
   });
 });
 

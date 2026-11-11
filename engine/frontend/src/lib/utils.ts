@@ -1,7 +1,7 @@
 // The module, NOT the `@2990s/shared` barrel: the barrel star-exports 15
 // modules and this file is in the app shell, so the barrel would pull all of
 // them into the initial chunk (+7.9 KB gzip, measured).
-import { fmtDate, fmtDateTime, fmtTimestamp } from "../vendor/shared/format";
+import { fmtDate, fmtDateTime, fmtTimestamp, isoForExport } from "../vendor/shared/format";
 
 export function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");
@@ -149,10 +149,10 @@ export function isExpired(d: string | null | undefined): boolean {
   // Audit timestamp — compare its GMT+8 calendar date.
   const date = parseDate(d);
   if (!date) return false;
-  const inTz = fmtDate(d); // YYYY/MM/DD
+  const inTz = fmtDate(d);
   if (inTz === "—") return false;
-  // Convert YYYY/MM/DD → YYYY-MM-DD for lexicographic compare.
-  return inTz.replace(/\//g, "-") < today;
+  // Back to YYYY-MM-DD (from either side's display shape) for lexicographic compare.
+  return String(isoForExport(inTz)) < today;
 }
 
 export function isExpiringSoon(d: string | null | undefined, days = 3): boolean {
@@ -161,8 +161,8 @@ export function isExpiringSoon(d: string | null | undefined, days = 3): boolean 
   // Compute cutoff in GMT+8 by anchoring midnight at this calendar date.
   const cutoff = new Date(`${today}T00:00:00+08:00`);
   cutoff.setDate(cutoff.getDate() + days);
-  // fmtDate is year-first (YYYY/MM/DD), so YYYY-MM-DD is just a separator swap.
-  const cutoffIso = fmtDate(cutoff).replace(/\//g, "-");
+  // Back to YYYY-MM-DD from either side's display shape.
+  const cutoffIso = String(isoForExport(fmtDate(cutoff)));
 
   const datePart =
     isDateOnly(d) || isWallClockDateTime(d) ? d.slice(0, 10) : null;
@@ -170,7 +170,7 @@ export function isExpiringSoon(d: string | null | undefined, days = 3): boolean 
 
   const inTz = fmtDate(d);
   if (inTz === "—") return false;
-  const iso = inTz.replace(/\//g, "-");
+  const iso = String(isoForExport(inTz));
   return iso >= today && iso <= cutoffIso;
 }
 
