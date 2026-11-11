@@ -1,8 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../Button';
-import { Card } from '../Card';
 import Icon from '../Icon';
-import { useConfirm } from '../ConfirmDialog';
 import { useToast } from '../Toast';
 import { api, errorMessage } from '../../lib/api';
 import { plural } from '../../lib/format';
@@ -16,6 +14,7 @@ export interface RolePageProps {
   target: RoleTarget;
   onBack: () => void;
   onSaved: () => void;
+  onDirtyChange: (hasUnsavedChanges: boolean) => void;
 }
 
 interface RoleEditorProps {
@@ -24,24 +23,27 @@ interface RoleEditorProps {
   position: Position | null;
   onBack: () => void;
   onSaved: () => void;
+  onDirtyChange: (hasUnsavedChanges: boolean) => void;
 }
 
 function BackLink({ onBack }: { onBack: () => void }) {
   return (
-    <Button variant="tertiary" size="sm" icon={<Icon name="ChevronLeft" size="sm" />} onClick={onBack}>Roles</Button>
+    <div className="-ml-2.5 lg:hidden">
+      <Button variant="tertiary" size="sm" icon={<Icon name="ChevronLeft" size="sm" />} onClick={onBack}>Roles</Button>
+    </div>
   );
 }
 
 function Unavailable({ message, onBack }: { message: string; onBack: () => void }) {
   return (
-    <div className="flex flex-col gap-3 items-start">
+    <div className="flex flex-col gap-3 items-start p-5 max-md:p-4">
       <BackLink onBack={onBack} />
       <p className="m-0 text-copy text-muted-ink">{message}</p>
     </div>
   );
 }
 
-export default function RolePage({ chart, target, onBack, onSaved }: RolePageProps) {
+export default function RolePage({ chart, target, onBack, onSaved, onDirtyChange }: RolePageProps) {
   const department = chart.departments.find(candidate => candidate.id === target.departmentId);
   const position = department?.positions.find(candidate => candidate.id === target.positionId) ?? null;
 
@@ -51,12 +53,11 @@ export default function RolePage({ chart, target, onBack, onSaved }: RolePagePro
   if (department.kind === 'management') {
     return <Unavailable message="Management always has full access to everything and cannot be changed." onBack={onBack} />;
   }
-  return <RoleEditor key={`${department.id}:${position?.id ?? ''}`} chart={chart} department={department} position={position} onBack={onBack} onSaved={onSaved} />;
+  return <RoleEditor chart={chart} department={department} position={position} onBack={onBack} onSaved={onSaved} onDirtyChange={onDirtyChange} />;
 }
 
-function RoleEditor({ chart, department, position, onBack, onSaved }: RoleEditorProps) {
+function RoleEditor({ chart, department, position, onBack, onSaved, onDirtyChange }: RoleEditorProps) {
   const toast = useToast();
-  const [confirmDialog, ask] = useConfirm();
   const [isSaving, setIsSaving] = useState(false);
 
   const categories = useMemo(() => visibleCategoriesOf(chart.categories, department), [chart.categories, department]);
@@ -73,6 +74,9 @@ function RoleEditor({ chart, department, position, onBack, onSaved }: RoleEditor
   const [levels, setLevels] = useState(savedLevels);
 
   const changedCount = countChanged(savedLevels, levels, areaKeys);
+  const hasUnsavedChanges = changedCount > 0;
+  useEffect(() => { onDirtyChange(hasUnsavedChanges); }, [hasUnsavedChanges, onDirtyChange]);
+
   const { granted, full, available } = countGrants(levels, areaKeys);
   const isLocked = !chart.canEdit || isSaving;
   const roleName = position?.name ?? defaultRoleName(department);
@@ -80,11 +84,6 @@ function RoleEditor({ chart, department, position, onBack, onSaved }: RoleEditor
   const closedNote = department.side === 'both'
     ? null
     : `${department.name} works on ${sideLabel(department.side)} only. ${closedCompanyLabel(department.side)} areas are closed for it, so they are not shown.`;
-
-  async function goBack() {
-    if (changedCount > 0 && (await ask({ title: 'Discard the unsaved changes?', confirmLabel: 'Discard changes', danger: true })) === null) return;
-    onBack();
-  }
 
   async function save() {
     const scope = position ? 'position' : 'department';
@@ -103,38 +102,23 @@ function RoleEditor({ chart, department, position, onBack, onSaved }: RoleEditor
   }
 
   return (
-    <div className="flex flex-col gap-3.5">
-      <div className="flex flex-col gap-1">
-        <div className="-ml-2.5"><BackLink onBack={goBack} /></div>
-        <div className="flex items-baseline gap-x-2.5 gap-y-0.5 flex-wrap">
-          <h2 className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{department.name} / {roleName}</h2>
-          <span className="text-meta text-muted-ink">
-            {position ? `Position in ${department.name}` : `Everyone in ${department.name} with no position`}
-            <span className="md:hidden"> · {sideLabel(department.side)} · {plural(people, 'person', 'people')}</span>
-          </span>
-        </div>
+    <div className="flex flex-col">
+      <div className="flex flex-col gap-1.5 px-5 pt-4 pb-3.5 max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
+        <BackLink onBack={onBack} />
+        <h2 className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{department.name} / {roleName}</h2>
+        <span className="text-meta text-muted-ink">
+          {position ? `Position in ${department.name}` : `Everyone in ${department.name} with no position`}
+          {' · '}{sideLabel(department.side)} · {plural(people, 'person', 'people')}
+        </span>
+        <span className="text-copy"><b>{granted}</b> of {available} areas{full > 0 && <> · <b>{full}</b> Full</>}</span>
+        {closedNote && <p className="m-0 mt-1 py-2 px-2.5 rounded-control bg-muted text-meta text-muted-ink">{closedNote}</p>}
+        {!chart.canEdit && <p className="m-0 text-meta text-muted-ink">Only management can change this.</p>}
       </div>
 
-      <div className="grid gap-3.5 items-start md:grid-cols-[270px_minmax(0,1fr)]">
-        <Card className="flex flex-col gap-3 p-4 max-md:p-3">
-          <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3.5 gap-y-1.5 text-copy max-md:hidden">
-            <dt className="text-muted-ink">Department</dt><dd className="m-0 text-right font-medium">{department.name}</dd>
-            <dt className="text-muted-ink">Works on</dt><dd className="m-0 text-right font-medium">{sideLabel(department.side)}</dd>
-            <dt className="text-muted-ink">People</dt><dd className="m-0 text-right font-medium">{people}</dd>
-          </dl>
-          {closedNote && <p className="m-0 py-2 px-2.5 rounded-control bg-muted text-meta text-muted-ink">{closedNote}</p>}
-          {!chart.canEdit && <p className="m-0 text-meta text-muted-ink">Only management can change this.</p>}
-          <div className="py-2.5 px-3 rounded-control bg-muted text-copy">
-            <b>{granted}</b> of {available} areas{full > 0 && <> · <b>{full}</b> Full</>}
-          </div>
-        </Card>
-        <Card>
-          <RoleGrid companies={companies} levels={levels} savedLevels={savedLevels} isLocked={isLocked} onChange={setLevels} />
-        </Card>
-      </div>
+      <RoleGrid companies={companies} levels={levels} savedLevels={savedLevels} isLocked={isLocked} onChange={setLevels} />
 
       {chart.canEdit && (
-        <div className="sticky bottom-0 z-[2] flex items-center justify-between gap-3 flex-wrap py-3 px-4 rounded-card border border-solid border-line bg-card pb-[max(12px,env(safe-area-inset-bottom))]">
+        <div className="sticky bottom-0 z-[2] flex items-center justify-between gap-3 flex-wrap py-3 px-5 max-md:px-4 bg-card [border-top:1px_solid_var(--color-line)] pb-[max(12px,env(safe-area-inset-bottom))]">
           <span className="text-meta text-muted-ink">
             {changedCount === 0 ? 'No unsaved changes.' : `${changedCount} ${changedCount === 1 ? 'area' : 'areas'} changed.`}
           </span>
@@ -144,7 +128,6 @@ function RoleEditor({ chart, department, position, onBack, onSaved }: RoleEditor
           </span>
         </div>
       )}
-      {confirmDialog}
     </div>
   );
 }

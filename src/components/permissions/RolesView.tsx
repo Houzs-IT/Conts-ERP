@@ -3,22 +3,31 @@ import { cx } from '../../lib/design-tokens';
 import { plural } from '../../lib/format';
 import { areaKeysOf, countGrants, resolveRoleLevels } from '../../lib/roleGrid';
 import type { AccessChart, Department, Position } from '../../lib/types';
-import { SIDE_OPTIONS, TAG, defaultRoleName, headCountWithoutPosition, isFieldKind, visibleCategoriesOf, type RoleTarget } from './shared';
+import { SIDE_OPTIONS, TAG, defaultRoleName, headCountWithoutPosition, isFieldKind, isSameRole, visibleCategoriesOf, type RoleTarget } from './shared';
 
 export interface RolesViewProps {
   chart: AccessChart;
+  selectedRole: RoleTarget | null;
   onOpen: (target: RoleTarget) => void;
 }
 
 interface RoleRowProps {
   name: string;
   isLocked: boolean;
+  isSelected: boolean;
   people: number;
   summary: string;
   onOpen: () => void;
 }
 
-const ROW = 'grid w-full items-center gap-3 text-left bg-card border-0 [border-bottom:1px_solid_var(--color-line-soft)] [font-family:inherit] min-h-12 py-2.5 pr-5 pl-9 grid-cols-[minmax(0,1.3fr)_100px_minmax(0,1.6fr)_20px] max-md:grid-cols-[minmax(0,1fr)_20px] max-md:gap-y-0.5 max-md:px-4 max-md:pl-6';
+interface DepartmentRolesProps {
+  chart: AccessChart;
+  department: Department;
+  selectedRole: RoleTarget | null;
+  onOpen: (target: RoleTarget) => void;
+}
+
+const ROW = 'flex w-full items-center gap-3 text-left border-0 [border-bottom:1px_solid_var(--color-line-soft)] [font-family:inherit] min-h-14 py-2.5 pr-4 pl-8';
 
 function summaryFor(chart: AccessChart, department: Department, position: Position | null): string {
   const categories = visibleCategoriesOf(chart.categories, department);
@@ -29,46 +38,48 @@ function summaryFor(chart: AccessChart, department: Department, position: Positi
   return `${granted} of ${available} areas${full > 0 ? ` · ${full} Full` : ''}`;
 }
 
-function RoleRow({ name, isLocked, people, summary, onOpen }: RoleRowProps) {
+function RoleRow({ name, isLocked, isSelected, people, summary, onOpen }: RoleRowProps) {
   return (
-    <button type="button" onClick={onOpen} disabled={isLocked}
-      className={cx(ROW, isLocked ? 'cursor-default' : 'cursor-pointer hover:bg-muted')}>
-      <span className="flex items-center gap-2 flex-wrap min-w-0 text-copy font-medium">
-        {name}
-        {isLocked && <span className={TAG} style={{ color: 'var(--color-text-muted)', borderColor: 'var(--color-line)' }}>Locked</span>}
+    <button type="button" onClick={onOpen} disabled={isLocked} aria-current={isSelected || undefined}
+      className={cx(ROW, isSelected ? 'bg-info-bg shadow-[inset_3px_0_0_var(--color-gold)]' : 'bg-card',
+        isLocked ? 'cursor-default' : 'cursor-pointer hover:bg-muted')}>
+      <span className="flex-1 min-w-0 flex flex-col gap-0.5">
+        <span className="flex items-center gap-2 flex-wrap text-copy font-medium">
+          {name}
+          {isLocked && <span className={TAG} style={{ color: 'var(--color-text-muted)', borderColor: 'var(--color-line)' }}>Locked</span>}
+        </span>
+        <span className="text-meta text-muted-ink">{plural(people, 'person', 'people')} · {summary}</span>
       </span>
-      <span className="text-meta text-muted-ink max-md:col-start-1 max-md:row-start-2">{plural(people, 'person', 'people')}</span>
-      <span className="text-meta text-muted-ink max-md:col-start-1 max-md:row-start-3">{summary}</span>
-      {!isLocked && <span className="text-muted-ink justify-self-end max-md:col-start-2 max-md:row-start-1 max-md:row-span-3"><Icon name="ChevronRight" size="sm" /></span>}
+      {!isLocked && <span className="flex-none text-muted-ink lg:hidden"><Icon name="ChevronRight" size="sm" /></span>}
     </button>
   );
 }
 
-function DepartmentRoles({ chart, department, onOpen }: { chart: AccessChart; department: Department; onOpen: RolesViewProps['onOpen'] }) {
+function DepartmentRoles({ chart, department, selectedRole, onOpen }: DepartmentRolesProps) {
   const isManagement = department.kind === 'management';
+  const rowFor = (position: Position | null) => {
+    const target = { departmentId: department.id, positionId: position?.id ?? null };
+    return (
+      <RoleRow key={position?.id ?? 'staff'} name={position?.name ?? defaultRoleName(department)} isLocked={false}
+        isSelected={isSameRole(selectedRole, target)}
+        people={position ? position.headCount : headCountWithoutPosition(department)}
+        summary={summaryFor(chart, department, position)} onOpen={() => onOpen(target)} />
+    );
+  };
   return (
     <div>
-      <div className="flex items-baseline gap-2 py-2.5 px-5 max-md:px-4 bg-card [border-bottom:1px_solid_var(--color-line-soft)]">
+      <div className="flex items-baseline gap-2 py-2.5 px-4 bg-card [border-bottom:1px_solid_var(--color-line-soft)]">
         <span className="text-copy font-semibold">{department.name}</span>
         <span className="text-caption text-muted-ink">{plural(isManagement ? 1 : department.positions.length + 1, 'role')}</span>
       </div>
-      {isManagement ? (
-        <RoleRow name="Management" isLocked people={department.headCount} summary="Full on everything. Cannot be changed." onOpen={() => undefined} />
-      ) : (
-        <>
-          <RoleRow name={defaultRoleName(department)} isLocked={false} people={headCountWithoutPosition(department)} summary={summaryFor(chart, department, null)}
-            onOpen={() => onOpen({ departmentId: department.id, positionId: null })} />
-          {department.positions.map(position => (
-            <RoleRow key={position.id} name={position.name} isLocked={false} people={position.headCount} summary={summaryFor(chart, department, position)}
-              onOpen={() => onOpen({ departmentId: department.id, positionId: position.id })} />
-          ))}
-        </>
-      )}
+      {isManagement
+        ? <RoleRow name="Management" isLocked isSelected={false} people={department.headCount} summary="Full on everything. Cannot be changed." onOpen={() => undefined} />
+        : [rowFor(null), ...department.positions.map(rowFor)]}
     </div>
   );
 }
 
-export default function RolesView({ chart, onOpen }: RolesViewProps) {
+export default function RolesView({ chart, selectedRole, onOpen }: RolesViewProps) {
   const companies = SIDE_OPTIONS
     .map(option => ({ option, departments: chart.departments.filter(department => !isFieldKind(department.kind) && department.side === option.value) }))
     .filter(company => company.departments.length > 0);
@@ -80,10 +91,12 @@ export default function RolesView({ chart, onOpen }: RolesViewProps) {
     <>
       {companies.map(({ option, departments }) => (
         <div key={option.value}>
-          <div className="py-2.5 px-5 max-md:px-4 bg-muted [border-top:1px_solid_var(--color-line)] [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold uppercase tracking-wide text-ink">
+          <div className="py-2.5 px-4 bg-muted [border-bottom:1px_solid_var(--color-line)] text-caption font-semibold uppercase tracking-wide text-ink">
             {option.value === 'both' ? 'Both companies' : option.label}
           </div>
-          {departments.map(department => <DepartmentRoles key={department.id} chart={chart} department={department} onOpen={onOpen} />)}
+          {departments.map(department => (
+            <DepartmentRoles key={department.id} chart={chart} department={department} selectedRole={selectedRole} onOpen={onOpen} />
+          ))}
         </div>
       ))}
     </>

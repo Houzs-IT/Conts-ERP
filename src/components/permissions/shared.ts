@@ -1,13 +1,7 @@
 import { useApi, type Query } from '../../lib/useApi';
-import type { AccessCategory, AccessChart, AccessLevel, AccessOrigin, AccessSetting, Department, DepartmentKind, DepartmentsPayload, UserSide } from '../../lib/types';
+import type { AccessCategory, AccessChart, AccessLevel, AccessOrigin, Department, DepartmentKind, DepartmentsPayload, UserSide } from '../../lib/types';
 
 export const LEVEL_LABEL: Record<AccessLevel, string> = { none: 'No access', view: 'View only', edit: 'Edit', full: 'Full' };
-export const LEVEL_NOTE: Record<AccessLevel, string> = {
-  none: 'Hidden from the menu and cannot be changed.',
-  view: 'Can open and read, cannot change anything.',
-  edit: 'Day-to-day work: create and update records.',
-  full: 'Everything, including management-only actions such as deleting and approving.',
-};
 export const LEVEL_COLOR: Record<AccessLevel, string> = {
   none: 'var(--color-neutral-fg)', view: 'var(--color-info-fg)',
   edit: 'var(--color-warning-fg)', full: 'var(--color-success-fg)',
@@ -52,15 +46,15 @@ export const KIND_NOTE: Partial<Record<DepartmentKind, string>> = {
   maintenance: 'Uses the field app only.',
 };
 
-/** A level or 'inherit' to its label; a category with nothing set reads "Not set". */
-export const settingLabel = (s: AccessSetting | undefined | null): string => (s && s !== 'inherit' ? LEVEL_LABEL[s] : 'Not set');
-
 /** The managed list of departments and positions (GET /api/departments). `path` null skips the request. */
 export function useDepartments(enabled = true): Query<DepartmentsPayload> {
   return useApi<DepartmentsPayload>(enabled ? '/departments' : null);
 }
 
 export interface RoleTarget { departmentId: string; positionId: string | null }
+
+export const isSameRole = (first: RoleTarget | null, second: RoleTarget): boolean =>
+  first !== null && first.departmentId === second.departmentId && first.positionId === second.positionId;
 
 export function useAccessChart(): Query<AccessChart> {
   return useApi<AccessChart>('/users/access');
