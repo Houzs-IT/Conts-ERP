@@ -68,7 +68,9 @@ Finance > **Airbnb reconciliation**. This is Airbnb paying the company, not the 
   uploaded before, is recorded once.
 - R13 "Paid before these files": a code with no Reservation line in any uploaded file, only AirCover, resolution or
   refund lines. The spec has no rule for it; October had 14. AirCover and resolution money are company income; a
-  refund is looked at by hand.
+  refund is looked at by hand. chew, 11 Nov 2026: "可以，标 R13".
+- Airbnb paid the system's amount, then took part back for the guest: R99, finance decides each one with the amount
+  after the refund shown (chew, 11 Nov 2026: "每笔自己看"; October had 6).
 - "Difference" on screen is system − what Airbnb kept (Reservation lines + adjustments). The spec's 差额 leaves the
   adjustments out, which showed 0.00 beside a refund. The rules use both figures as the spec says.
 - "To confirm" is every line with something to write (an amount, a cancellation, company income), something to look
