@@ -5,6 +5,7 @@ import { reconcileMonth, proposeIncomeType, RULES, INCOME_KINDS, type ReconTxn, 
 import { bulkEligible, checkIncomeType, incomeKey, type Applied } from '../../_lib/airbnbConfirm';
 import { confirmContext, planWith, previewOf } from '../../_lib/airbnbConfirmLoad';
 import { hasIncomeTypes, loadIncomeTypes, type IncomeType } from './income-types';
+import { incomeLockCounts, incomeLockedMonths } from '../../_lib/ownerLocks';
 
 /* Finance > Airbnb reconciliation (chew, 10 Nov 2026; docs/superpowers/plans/2026-11-10-airbnb-reconciliation.md).
    Airbnb's transaction lines for a month, from the uploaded CSVs, matched to the reservations by confirmation code and
@@ -106,8 +107,21 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const decided = new Map(decisions.map(d => [d.code, d]));
   const open = recon.lines.filter(l => l.needsConfirm && !decided.has(l.code));
   const ctx = confirmReady && open.length ? await confirmContext(env, open) : null;
+  // Owner statement close: how much of the month's income is locked, and which months each line's stays fall in that
+  // are locked for their unit (a confirmed change there reaches the owner on the next open month).
+  const [incomeLocks, lockedByUnit] = await Promise.all([
+    incomeLockCounts(env, month),
+    incomeLockedMonths(env, [...new Set(recon.lines.flatMap(l => l.stays.map(s => s.unitId)))]),
+  ]);
+  const monthsOfStay = (s: Stay) => {
+    const out: string[] = [];
+    const last = new Date(Date.parse(`${s.checkOut.slice(0, 10)}T00:00:00Z`) - 864e5).toISOString().slice(0, 7);
+    for (let m = s.checkIn.slice(0, 7); m <= last; m = nextMonth(m)) out.push(m);
+    return out;
+  };
   const lines = recon.lines.map(l => {
     const d = decided.get(l.code);
+    const lockedMonths = [...new Set(l.stays.flatMap(s => monthsOfStay(s).filter(m => lockedByUnit.get(s.unitId)?.has(m))))].sort();
     const income = l.income.map(i => ({ ...i, key: incomeKey(i), proposed: confirmReady ? proposeIncomeType(types, i.kind, i.details) : null }));
     const toConfirm = !!ctx && !d && l.needsConfirm;
     const preview = toConfirm ? previewOf(ctx!, l, planWith(ctx!, l, today)) : null;
@@ -122,11 +136,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         ownerShares: (applied?.shares ?? []).map(s => ({ sen: s.sen, onMonth: s.onMonth })),
       };
     }
-    return { ...l, income, decision, preview, previewSet, bulk };
+    return { ...l, income, decision, preview, previewSet, bulk, lockedMonths };
   });
 
   return json({
-    ready: true, confirmReady, month, today, mayUpload,
+    ready: true, confirmReady, month, today, mayUpload, incomeLocks,
     mayConfirm: confirmReady && can(session, 'airbnbRecon', 'edit'), mayManageTypes: confirmReady && can(session, 'airbnbRecon', 'full'),
     rules: RULES, incomeKinds: INCOME_KINDS, incomeTypes: types,
     months: months.map(m => ({ month: m.month, lines: Number(m.n) })),

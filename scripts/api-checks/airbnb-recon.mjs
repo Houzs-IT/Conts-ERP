@@ -23,6 +23,8 @@ const MONTH = '2026-10';
 
 let r = await call('GET', `/api/airbnb-recon?month=${MONTH}`);
 check('the month reads, with confirming set up (migration 0259)', r.status === 200 && r.json?.ready === true && r.json?.confirmReady === true, r.text.slice(0, 300));
+check('the month says how much of its income is locked (Owner statement close)',
+  Number.isInteger(r.json?.incomeLocks?.locked) && Number.isInteger(r.json?.incomeLocks?.total) && r.json.incomeLocks.locked <= r.json.incomeLocks.total, JSON.stringify(r.json?.incomeLocks));
 if (!r.json?.confirmReady) done();
 
 // Two profit-share units of different owners whose October and November 2026 statements are not final yet (a draft is

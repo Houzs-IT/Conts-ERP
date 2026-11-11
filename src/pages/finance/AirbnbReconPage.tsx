@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import { SectionCard } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -53,11 +54,15 @@ interface Line {
   payments: { id: string; date: string; amount: number; inMonth: boolean }[];
   reservation: number; adjustment: number; extra: number; aircover: number; difference: number | null;
   decision?: Decision | null; preview?: Preview | null; previewSet?: Preview | null; bulk?: boolean;
+  /** Months of this line's stays whose income is locked for their unit (Owner statement close). */
+  lockedMonths?: string[];
 }
 interface IncomeType { id: string; parentId: string | null; name: string; systemKey: string | null; matchWords: string | null; active: boolean; sortOrder: number }
 interface RuleTotal { rule: Rule; label: string; count: number; system: number; airbnb: number; difference: number }
 interface Payload {
   ready: boolean; month: string; today: string; mayUpload: boolean;
+  /** Owner statement close: units of the month with their income locked, of those with an owner statement. */
+  incomeLocks?: { locked: number; total: number };
   confirmReady?: boolean; mayConfirm?: boolean; mayManageTypes?: boolean;
   rules?: Record<Rule, string>; incomeKinds?: Record<IncomeKind, string>; incomeTypes?: IncomeType[];
   months?: { month: string; lines: number }[];
@@ -126,6 +131,7 @@ function answerText(r: DecideAnswer) {
 
 export default function AirbnbReconPage() {
   const url = useUrlState();
+  const navigate = useNavigate();
   const today = todayMyt();
   const month = /^\d{4}-\d{2}$/.test(url.get('month')) ? url.get('month') : shiftMonth(today.slice(0, 7), -1);
   const view = (['confirm', 'done', 'all', 'income', 'bank'] as View[]).find(v => v === url.get('view')) ?? 'confirm';
@@ -231,6 +237,12 @@ export default function AirbnbReconPage() {
               action={data.mayUpload ? { label: 'Upload Airbnb CSV', onClick: () => fileRef.current?.click() } : undefined} />
           ) : data && t ? (
             <>
+              {data.incomeLocks && data.incomeLocks.total > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2 border border-line border-l-[3px] border-l-info bg-info-bg px-3 py-2 text-copy">
+                  <span>{monthLabel(month, { long: true })} income is locked for {count(data.incomeLocks.locked)} of {count(data.incomeLocks.total)} units.</span>
+                  <Button size="sm" variant="secondary" onClick={() => navigate(`/owners/close?month=${month}`)}>Owner statement close</Button>
+                </div>
+              )}
               <Files files={data.files ?? []} />
               <StatRow cols={4}>
                 <StatTile label="Paid to the bank" value={rm(t.bank)}
@@ -523,6 +535,9 @@ function ConfirmWindow({ line, month, types, ruleText, onClose, onDone }: {
       )}
 
       <Field label="Note (optional)" value={note} maxLength={500} onChange={e => setNote(e.target.value)} placeholder="Why, if it is not obvious" />
+      {!!line.lockedMonths?.length && (
+        <p className="m-0 text-meta text-muted-ink">{line.lockedMonths.map(m => monthLabel(m, { long: true })).join(' and ')} income is locked for this unit, so the owner's share of this change goes to the next open month as an owner adjustment.</p>
+      )}
       <p className="m-0 text-meta text-muted-ink">Keep as it is closes the line and changes nothing. Either can be undone from Confirmed.</p>
     </Modal>
   );

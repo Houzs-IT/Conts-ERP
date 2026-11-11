@@ -9,7 +9,7 @@
  *  guarantee included, not a flat %; a yearly-guarantee unit's is held for a person to check). */
 import { type Env, all, one, run, transaction, nowIso, audit } from './db';
 import { auditMany, type AuditEntry } from './history';
-import { loadInputs, computeMonth, statementSettings, withYearToDate, freezeIncome, termsFor, unitForMonth, hasLocksTable, type Query } from './ownerStatement';
+import { loadInputs, computeMonth, statementSettings, withYearToDate, freezeIncome, termsFor, unitForMonth, hasLocksTable, hasActivity, type Query } from './ownerStatement';
 import { monthEndExclusive } from './revenue';
 import { finalMonthsFor } from './expenses';
 import { type Stage, openMonthAfter, planLate, planUnlock, carriedText, lateText, monthLabel, type PostedLate } from './stageLocks';
@@ -24,6 +24,16 @@ export async function locksFor(env: Env, month: string, unitIds?: string[]): Pro
   if (!(await hasLocksTable((sql, ...args) => all(env, sql, ...args)))) return [];
   return all<LockRow>(env, `SELECT id, month, unit_id, stage, locked_by_name, locked_at FROM owner_report_locks WHERE month = ?
     ${unitIds ? 'AND unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : ''} ORDER BY unit_id, stage`, month, ...(unitIds ? [ids(unitIds)] : []));
+}
+
+/** How many units have something in the month's owner statements, and how many of them have their income locked:
+ *  the figures Owner statement close shows on its Income step (Airbnb reconciliation shows them too). */
+export async function incomeLockCounts(env: Env, month: string): Promise<{ locked: number; total: number }> {
+  const q: Query = (sql, ...args) => all(env, sql, ...args);
+  const [settings, loaded, locks] = await Promise.all([statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month)), locksFor(env, month)]);
+  const rows = computeMonth(month, await withYearToDate(q, loaded, month, settings), settings, 'dated').filter(hasActivity);
+  const locked = new Set(locks.filter(l => l.stage === 'income').map(l => l.unit_id));
+  return { locked: rows.filter(r => locked.has(r.unitId)).length, total: rows.length };
 }
 
 /** For each unit, the months whose income is locked. */
