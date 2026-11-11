@@ -275,7 +275,8 @@ function PaidOnBehalfList({ items, adjustments, ownerId, showUnit, canChange, ca
           <span className="flex flex-col gap-0.5 min-w-0">
             <span className="text-copy text-ink [overflow-wrap:anywhere]">{a.description}</span>
             <span className="text-meta text-muted-ink">
-              {[ADJUSTMENT_KIND[a.kind] ?? a.kind, fmtDate(a.occurredOn), showUnit ? titleCase(a.unitLabel) : null, a.source === 'owner_workbook' ? 'from the owner workbook' : null].filter(Boolean).join(' · ')}
+              {[ADJUSTMENT_KIND[a.kind] ?? a.kind, fmtDate(a.occurredOn), showUnit ? titleCase(a.unitLabel) : null,
+                a.source === 'owner_workbook' ? 'from the owner workbook' : a.source === 'airbnb_recon' ? 'from Airbnb reconciliation' : null].filter(Boolean).join(' · ')}
             </span>
             {a.placedOnFirstUnit && <span className="text-caption text-muted-ink">Recorded for the owner, not a unit: the statement puts it on this unit.</span>}
             {a.statement && <Link to={`/owners/statements/${encodeURIComponent(a.statement.id)}`} className="text-meta text-ink underline underline-offset-2 self-start">On the {monthLabel(a.statement.period)} owner statement</Link>}
@@ -322,7 +323,7 @@ export function costLines(items: CostItem[], adjustments: AdjustmentItem[]): Cos
     lines.push({
       id: a.id, unitLabel: a.unitLabel, date: a.occurredOn, description: a.description,
       kindLabel: a.isMaintenanceFee ? 'Maintenance fee (condo)' : ADJUSTMENT_KIND[a.kind] ?? a.kind,
-      how: a.source === 'owner_workbook' ? 'Imported' : a.isMaintenanceFee ? 'Bill' : 'Manual',
+      how: a.source === 'owner_workbook' ? 'Imported' : a.source === 'airbnb_recon' ? 'Airbnb reconciliation' : a.isMaintenanceFee ? 'Bill' : 'Manual',
       amount: Math.abs(a.amount), effect: a.amount < 0 ? 'after' : 'credit', payer: 'Owner', receiptDocumentId: null,
       expenseId: null, unitId: a.unitId, missingReceipt: false,
     });

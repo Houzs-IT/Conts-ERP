@@ -82,7 +82,7 @@ test('R2 extra charge inside the booking is split out: HMMKXRNCPY', () => {
   assert.equal(l.rule, 'R2');
   assert.equal(l.action, 'set_amount');
   assert.equal(l.newAmount, 71519, 'the booking keeps the room (chew: 拆出来)');
-  assert.deepEqual(l.income.map(i => [i.kind, i.amount]).sort(), [['aircover', 999], ['extra_charge', 25001]]);
+  assert.deepEqual(l.income.map(i => [i.kind, i.amount]).sort(), [['additional_charge', 25001], ['aircover', 999]]);
   assert.equal(l.needsConfirm, true);
 });
 
@@ -101,11 +101,11 @@ test('R3 cancelled and fully refunded: HM3NEJ9PW4', () => {
   assert.equal(live.newAmount, 0);
 });
 
-test('R4 money won back goes to the company: HMY8ZD3RBC', () => {
+test('R4 recovered from Airbnb goes to the company: HMY8ZD3RBC', () => {
   const l = classify('HMY8ZD3RBC', [res('HMY8ZD3RBC', 3563.98), tx('Adjustment', 'HMY8ZD3RBC', -2794.50), resolution('HMY8ZD3RBC', 2794.50)], [stay('HMY8ZD3RBC', 1846.27)], ctx);
   assert.equal(l.rule, 'R4');
   assert.equal(l.newAmount, 76948, 'the owner’s booking is 769.48');
-  assert.deepEqual(l.income.map(i => [i.kind, i.amount]), [['won_back', 279450]]);
+  assert.deepEqual(l.income.map(i => [i.kind, i.amount]), [['recovered', 279450]]);
 });
 
 test('R5 equal after the adjustment', () => {
@@ -197,6 +197,7 @@ test('a refund to the guest after the system amount is named, not a mystery', ()
   assert.match(l.suggestion, /took back RM 42\.09/);
   assert.match(l.suggestion, /RM 258\.31/);
   assert.equal(l.difference, 4209, 'the difference is against what Airbnb kept, so the refund shows');
+  assert.equal(l.newAmount, 25831, 'confirming may set the reservation to what Airbnb kept (chew: 每笔自己看)');
   const r5 = classify('HMM39TAH2S', [res('HMM39TAH2S', 1178.54), tx('Adjustment', 'HMM39TAH2S', -995.01)], [stay('HMM39TAH2S', 183.53)], ctx);
   assert.equal(r5.difference, 0, 'equal after the adjustment shows no difference');
 });
@@ -231,7 +232,7 @@ test('the month: every code with a line in it, check-ins not paid yet, and the b
   const old = m.lines.find(l => l.code === 'HMOLD00001');
   assert.equal(old.payments[0].inMonth, false);
   assert.equal(old.needsConfirm, true, 'its AirCover money is to be recorded');
-  assert.match(old.suggestion, /^Equal\. Nothing to do\. Also record RM 10\.00 as company income \(aircover reimbursement\)\.$/);
+  assert.match(old.suggestion, /^Equal\. Nothing to do\. Also record RM 10\.00 as company income \(AirCover\)\.$/);
   assert.equal(m.totals.bank, 40166);
   assert.equal(m.totals.money, 40166, 'the transfers are made of the month’s coded lines');
   assert.equal(m.totals.income.aircover, 1500);

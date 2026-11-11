@@ -87,3 +87,46 @@ Finance > **Airbnb reconciliation**. This is Airbnb paying the company, not the 
    - Next-month owner adjustment when the month is final.
 9. The "who gets the money" setting.
 10. Owner statements never show company income. It sits in its own table, so nothing to subtract.
+
+### Decisions (chew, 11 Nov 2026)
+
+- A confirm window, not ticks: it lists what changes (the reservation, the owner statement, the company income) and
+  has two buttons, Keep as it is and Confirm. Each company income line has a type to choose.
+- Income types, kept by finance on the page: Additional charge (sub-types Early check-in / late checkout, Pickup,
+  Others), Compensation, AirCover, Recovered from Airbnb (not "money won back"), Cancelled but paid. Any type can be
+  renamed or made inactive, never deleted; an inactive type is left for finance to choose. Words in Airbnb's Details
+  pick a type ("reconciliation 认的字眼"); chew sends new ones as they come.
+- Six defaults chew agreed:
+  1. A new amount moves the guest total (`gross_booking_value`) so the net is Airbnb's; Airbnb's fee stays.
+  2. A month whose owner statement is already final: the owner's share by contract goes on the next open month's
+     statement as an open owner adjustment (source `airbnb_recon`). Fixed rent, master lease and long-term let get
+     nothing (their income does not follow the stay).
+  3. Undo while the statements it touched are open.
+  4. Confirming needs edit access to Airbnb reconciliation; changing the income types needs full access.
+  5. Lines that only record company income are confirmed together; R10 and anything that changes a reservation one
+     by one.
+  6. All company income is the company's; no setting page for now.
+
+### As built (11 Nov 2026)
+
+- Migration 0259: `airbnb_income_types` (two levels, `system_key` for the four the rules pick, `match_words`,
+  `active`), company income by `type_id` / `sub_type_id` and the `decision_id` that wrote it (ON DELETE CASCADE),
+  `owner_adjustments.source` may be `airbnb_recon`. The page only shows until it runs.
+- `functions/_lib/airbnbConfirm.ts` (pure, tested in `src/lib/airbnbConfirm.test.mjs`): the plan for a line —
+  reservations to change (a code over several units shares the new net by their nets now), the owner's share for
+  final months (by nights, from Oct 2026 only, as earlier statements read collected revenue), the open month it goes
+  on — and why an undo is refused.
+- `POST /api/airbnb-recon/decisions` plans again from fresh figures and writes everything in one transaction:
+  the decision with what it wrote (`applied`), the reservation updates (only from the figures planned on, else the
+  whole confirmation stops), the company income rows, the owner adjustments, the audit rows.
+- `POST /api/airbnb-recon/undo` puts the reservations back, removes the owner adjustments and the decision (its
+  company income goes with it). Refused when the reservation changed since, a statement that has the change is final
+  now, or the owner adjustment is on a final statement, held or settled.
+- Refused when confirming: cancelling a stay still to come (cancel it on the reservation, so its nights open again),
+  cancelling a stay with nights before Oct 2026, setting an amount of RM 0.00 or less.
+- A line to check whose reservation Airbnb paid in these files (R99) offers Airbnb's figure in the window: leave the
+  reservation, or set it to what Airbnb kept (chew on the refund-after-payment cases: "每笔自己看").
+- Not handled: a share contract with a minimum guarantee whose minimum was paid that month (the window says to check
+  by hand); Channex may later overwrite a corrected guest total if Airbnb sends a change to that reservation.
+- `scripts/api-checks/airbnb-recon.mjs` (in CI) covers confirm, together, keep, undo, the final-statement refusal and
+  the income types.
