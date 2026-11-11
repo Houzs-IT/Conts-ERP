@@ -109,6 +109,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await run(tx, "UPDATE owner_adjustments SET statement_id = NULL, updated_at = ? WHERE statement_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND state = 'open'", now, sids);
       if (attach.length) await run(tx, `UPDATE owner_adjustments a SET statement_id = x.statement_id, updated_at = ?
         FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, statement_id text) WHERE a.id = x.id AND a.state = 'open'`, now, JSON.stringify(attach));
+      // A month whose deductions or O2 are locked prints what its locks kept: a cost or owner adjustment gone since keeps
+      // its line, without the link (the foreign key would refuse the line).
+      const present = async (table: 'expenses' | 'owner_adjustments', key: 'expense_id' | 'adjustment_id') => {
+        const ids = [...new Set(lines.map(l => l[key]).filter((x): x is string => typeof x === 'string' && !!x))];
+        return new Set(ids.length ? (await all<{ id: string }>(tx, `SELECT id FROM ${table} WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(ids))).map(r => r.id) : []);
+      };
+      const haveExpense = await present('expenses', 'expense_id');
+      const haveAdjustment = await present('owner_adjustments', 'adjustment_id');
+      for (const l of lines) {
+        if (typeof l.expense_id === 'string' && !haveExpense.has(l.expense_id)) l.expense_id = null;
+        if (typeof l.adjustment_id === 'string' && !haveAdjustment.has(l.adjustment_id)) l.adjustment_id = null;
+      }
       for (let i = 0; i < lines.length; i += 2000) {
         await run(tx, `
           INSERT INTO statement_lines (id, statement_id, unit_id, reservation_id, expense_id, line_type, category, description, occurred_on, amount, reference, sort_order, quantity, adjustment_id)
