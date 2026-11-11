@@ -11,8 +11,8 @@ import { Field } from '../components/Field';
 import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Select } from '../components/Select';
 import { Modal } from '../components/Modal';
-import UserAccess from '../components/permissions/UserAccess';
-import { KIND_NOTE, SIDE_OPTIONS, isFieldKind, sideLabel, useDepartments } from '../components/permissions/shared';
+import { COMPANIES, KIND_NOTE, SIDE_OPTIONS, companiesOf, isFieldKind, needsPosition, sideLabel, useDepartments, type Company } from '../components/permissions/shared';
+import { CompanyBadges } from '../components/permissions/CompanyBadges';
 import { Segmented } from '../components/Metric';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
@@ -32,8 +32,9 @@ import { hasRealEmail } from '../lib/pin';
 /* ------------------------------------------------------------------ *
  * Users and roles — three tabs (routes.json → SYSTEM → UsersPage):
  *   1. Users        — list with department, position and reporting line; invite + edit.
- *   2. Permissions  — three views (components/PermissionsChart): what each department and position can do
- *                     in each area, and the managed list of departments and positions.
+ *   2. Permissions  — three views (components/PermissionsChart): Roles, what each position (or a department's
+ *                     default) can do in each area; People, one person's own settings on top of their role; and
+ *                     Setup, the managed list of departments and positions.
  *   3. Organisation — the reporting line (manager_id). Explicitly NOT a
  *                     permission source; permissions come from the department, position and the person's own settings.
  *   4. Sign-ins     — management only: every sign-in attempt (UsersSignIns).
@@ -69,6 +70,10 @@ const departmentNote = (d: Department | undefined): string | null => (d ? KIND_N
  *  (sideSql in functions/_lib/access.ts). */
 const sideFits = (d: Department, side: UserSide) => d.side === 'both' || d.side === side;
 
+type CompanyFilter = 'all' | Company;
+const companyText = (companies: readonly Company[]): string => (companies.length === 0 ? 'Owner portal' : companies.map(sideLabel).join(', '));
+const roleName = (u: Pick<Row, 'role' | 'position'>): string => (u.role === 'owner' ? 'Owner' : u.position?.trim() || 'No position');
+
 /** "Position · Department", skipping what is not set. */
 const jobLine = (u: Pick<Row, 'department' | 'position'>) => [u.position, u.department].map(v => (v ?? '').trim()).filter(Boolean).join(' · ');
 
@@ -76,12 +81,12 @@ const FALLBACK: Payload = {
   generatedAt: '',
   data: [
     { id: 'u1', fullName: 'Lee Wei Siang', email: 'management@theconts.com', phone: '+60 12-345 6702', role: 'management', department: 'Management', position: 'Director', managerId: null, isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-16' },
-    { id: 'u2', fullName: 'Aina Zulkifli', email: 'aina@theconts.com', phone: '+60 12-345 6701', role: 'operations_staff', department: 'Operations', position: 'Operations Manager', managerId: 'u1', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-16' },
+    { id: 'u2', fullName: 'Aina Zulkifli', email: 'aina@theconts.com', phone: '+60 12-345 6701', role: 'operations_staff', side: 'conts', department: 'Operations', position: 'Operations Manager', managerId: 'u1', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-16' },
     { id: 'u4', fullName: 'Priya Devi', email: 'finance@theconts.com', phone: '+60 12-345 6703', role: 'operations_staff', department: 'Finance', position: 'Finance Admin', managerId: 'u1', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-16' },
-    { id: 'u3', fullName: 'Chan Wei Wen', email: 'weiwen@theconts.com', phone: '+60 12-345 6704', role: 'operations_staff', department: 'Admin', position: 'Admin', managerId: 'u2', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-15' },
-    { id: 'u5', fullName: 'Nurul Huda', email: 'nurul@theconts.com', phone: '+60 12-345 6705', role: 'housekeeper', department: 'Cleaning', position: 'Cleaner', managerId: 'u2', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-16' },
-    { id: 'u6', fullName: 'Faridah Ismail', email: 'faridah@theconts.com', phone: '+60 12-345 6706', role: 'housekeeper', department: 'Cleaning', position: 'Cleaner', managerId: 'u2', isActive: true, mustChangePassword: true, lastLoginAt: null },
-    { id: 'u7', fullName: 'Hafiz Omar', email: 'hafiz@theconts.com', phone: '+60 12-345 6707', role: 'technician', department: 'Maintenance', position: 'Technician', managerId: 'u2', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-14' },
+    { id: 'u3', fullName: 'Chan Wei Wen', email: 'weiwen@theconts.com', phone: '+60 12-345 6704', role: 'operations_staff', side: 'dream_crafter', department: 'Admin', position: 'Admin', managerId: 'u2', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-15' },
+    { id: 'u5', fullName: 'Nurul Huda', email: 'nurul@theconts.com', phone: '+60 12-345 6705', role: 'housekeeper', side: 'conts', department: 'Cleaning', position: 'Cleaner', managerId: 'u2', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-16' },
+    { id: 'u6', fullName: 'Faridah Ismail', email: 'faridah@theconts.com', phone: '+60 12-345 6706', role: 'housekeeper', side: 'conts', department: 'Cleaning', position: 'Cleaner', managerId: 'u2', isActive: true, mustChangePassword: true, lastLoginAt: null },
+    { id: 'u7', fullName: 'Hafiz Omar', email: 'hafiz@theconts.com', phone: '+60 12-345 6707', role: 'technician', side: 'conts', department: 'Maintenance', position: 'Technician', managerId: 'u2', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-14' },
     { id: 'u8', fullName: 'Tan Boon Huat', email: 'tanbh@example.com', phone: '+60 12-345 6715', role: 'owner', managerId: null, isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-12' },
   ],
 };
@@ -173,7 +178,13 @@ export default function UsersPage() {
     const d = departmentOfRow(u);
     return d && d.side !== 'both' ? d.side : u.side ?? 'both';
   }, [departmentOfRow]);
-  const sideOf = useMemo(() => (u: Row) => (u.role === 'owner' ? null : sideLabel(sideValueOf(u))), [sideValueOf]);
+  const companiesOfRow = useMemo(() => (u: Row): readonly Company[] => (u.role === 'owner' ? [] : companiesOf(sideValueOf(u))), [sideValueOf]);
+  const [companyFilter, setCompanyFilter] = useState<CompanyFilter>('all');
+  const shownRows = companyFilter === 'all' ? rows : rows.filter(u => companiesOfRow(u).includes(companyFilter));
+  const companyFilterOptions = [
+    { key: 'all' as const, label: 'All', count: rows.length },
+    ...COMPANIES.map(company => ({ key: company, label: sideLabel(company), count: rows.filter(u => companiesOfRow(u).includes(company)).length })),
+  ];
 
   const columns = useMemo<Column<Row>[]>(() => [
     { key: 'name', label: 'Name', value: u => u.fullName, hideable: false, width: 220,
@@ -188,18 +199,16 @@ export default function UsersPage() {
           </span>
         </span>
       ) },
-    // The side they work on shows under the department's name.
-    { key: 'department', label: 'Department', value: u => u.department || null, width: 160,
-      render: u => {
-        const side = u.role === 'owner' ? null : sideOf(u);
-        return u.department ? (
-          <span className="flex flex-col gap-px min-w-0" title={side ? `${u.department}, works on ${side}` : u.department}>
-            <span className="text-copy whitespace-nowrap overflow-hidden text-ellipsis">{u.department}</span>
-            {side && <span className="text-caption text-muted-ink whitespace-nowrap">{side}</span>}
-          </span>
-        ) : <span className="text-copy text-muted-ink">—</span>;
-      } },
-    { key: 'position', label: 'Position', value: u => u.position || null, width: 160 },
+    { key: 'company', label: 'Company', value: u => companyText(companiesOfRow(u)), width: 230,
+      render: u => (u.role === 'owner' ? <span className="text-copy text-muted-ink">Owner portal</span> : <CompanyBadges side={sideValueOf(u)} />) },
+    { key: 'role', label: 'Role', value: u => roleName(u), text: u => jobLine(u) || roleName(u), width: 190,
+      render: u => (
+        <span className="flex flex-col gap-px min-w-0" title={jobLine(u) || roleName(u)}>
+          <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{roleName(u)}</span>
+          {u.department && u.role !== 'owner' && <span className="text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.department}</span>}
+        </span>
+      ) },
+    { key: 'department', label: 'Department', value: u => u.department || null, hidden: true, width: 160 },
     { key: 'email', label: 'Email or employee ID', value: u => (hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'), width: 210 },
     { key: 'phone', label: 'Phone', type: 'phone', value: u => u.phone || null, hidden: true, width: 140 },
     { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 150 },
@@ -212,7 +221,7 @@ export default function UsersPage() {
     // The menu is read through a ref: its actions depend on state the memoised columns would otherwise hold stale.
     { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
       render: u => <RowActions name={u.fullName} items={actionsRef.current(u)} /> },
-  ], [nameById, sideOf]);
+  ], [nameById, companiesOfRow, sideValueOf]);
   const invitedRows = rows.filter(isInvited);
   const invitedCount = invitedRows.length;
   const actionsRef = useRef<(u: Row) => RowAction[]>(() => []);
@@ -244,6 +253,8 @@ export default function UsersPage() {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) errs.email = 'Enter a valid work email.';
     if (rows.some(r => r.email.toLowerCase() === email.trim().toLowerCase())) errs.email = 'That email already has an account.';
     if (!departmentId) errs.departmentId = 'Pick a department.';
+    const invitedDepartment = departmentById.get(departmentId);
+    if (invitedDepartment && needsPosition(invitedDepartment.kind) && !positionId) errs.positionId = 'Pick a position.';
     if (Object.keys(errs).length) { setFieldErrors(errs); return; }
 
     setBusy(true); setFieldErrors({});
@@ -583,7 +594,9 @@ export default function UsersPage() {
       {/* ------------------------------ Users tab ------------------------------ */}
       {tab === 'users' && (
         <DataTable<Row>
-          id="users" columns={columns} rows={data ? rows : null} rowKey={u => u.id}
+          id="users" columns={columns} rows={data ? shownRows : null} rowKey={u => u.id}
+          toolbar={<Segmented label="Company" options={companyFilterOptions} value={companyFilter} onChange={setCompanyFilter} />}
+          filtered={companyFilter !== 'all'} onClearFilters={() => setCompanyFilter('all')}
           loading={loading} error={error} onRetry={reload} onRowClick={canManage ? openEdit : undefined}
           pageSize={0} noun={['account', 'accounts']} exportName="users"
           header={
@@ -601,9 +614,9 @@ export default function UsersPage() {
                 </span>
                 <span className="flex flex-col gap-1 min-w-0 flex-1">
                   <span className="text-copy font-medium truncate" title={u.fullName}>{u.fullName}</span>
-                  {jobLine(u) && <span className="text-meta text-ink truncate" title={jobLine(u)}>{jobLine(u)}</span>}
+                  <span className="text-meta text-ink truncate" title={jobLine(u) || roleName(u)}>{jobLine(u) || roleName(u)}</span>
                   <span className="text-meta text-muted-ink truncate" title={u.email}>{hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'}</span>
-                  <span className="flex items-center gap-1.5 flex-wrap">{sideOf(u) && u.role !== 'owner' && <StatusBadge tone="neutral" label={sideOf(u) ?? ''} size="sm" />}<StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
+                  <span className="flex items-center gap-1.5 flex-wrap">{u.role !== 'owner' && <CompanyBadges side={sideValueOf(u)} />}<StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
                   {isInvited(u) && <InviteCell u={u} onResend={canManage ? () => confirmResend(u) : undefined} />}
                 </span>
                 <RowActions name={u.fullName} items={actionsFor(u)} />
@@ -650,7 +663,7 @@ export default function UsersPage() {
           <form id="invite-form" onSubmit={submitInvite} className="flex flex-col gap-4">
             <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" error={fieldErrors.fullName} />
             <Field label="Work email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" error={fieldErrors.email} />
-            <PlaceFields departments={departments} side={side} onSide={setSide} departmentId={departmentId} positionId={positionId}
+            <PlaceFields departments={departments} side={side} onSide={setSide} departmentId={departmentId} positionId={positionId} isPositionRequired
               onDepartment={v => { setDepartmentId(v); setPositionId(''); }} onPosition={setPositionId}
               errors={{ side: fieldErrors.side, departmentId: fieldErrors.departmentId, positionId: fieldErrors.positionId }} />
             <Select label="Reports to" showLabel size="md" value={managerId} onChange={setManagerId} placeholder="No manager"
@@ -686,7 +699,7 @@ export default function UsersPage() {
             <Field label="Full name" value={editName} onChange={e => setEditName(e.target.value)} error={editErrors.fullName} />
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
             {editing.role === 'owner' && <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />}
-            {editing.role !== 'owner' && <PlaceFields departments={departments} side={editSide} onSide={setEditSide} departmentId={editDepartmentId} positionId={editPositionId}
+            {editing.role !== 'owner' && <PlaceFields departments={departments} side={editSide} onSide={setEditSide} departmentId={editDepartmentId} positionId={editPositionId} isPositionRequired={false}
               onDepartment={v => { setEditDepartmentId(v); setEditPositionId(''); }} onPosition={setEditPositionId}
               errors={{ side: editErrors.side, departmentId: editErrors.departmentId, positionId: editErrors.positionId }} />}
             {editing.role !== 'owner' && editPlaceChanged && (
@@ -705,7 +718,6 @@ export default function UsersPage() {
             </label>
           </form>
           <div className="mt-4 flex flex-col gap-3">
-            {editing.role !== 'owner' && <UserAccess key={editing.id} userId={editing.id} />}
             <HistoryDisclosure entity="users" id={editing.id} />
           </div>
         </Modal>
@@ -792,16 +804,17 @@ export default function UsersPage() {
 }
 
 /* ------------------------------ forms ------------------------------ */
-/** Works on, then department (required), then position (optional), from the managed list. Only the departments on the
+/** Works on, then department (required), then position (required on an invitation unless the department is Management), from the managed list. Only the departments on the
  *  chosen side (or on both) are offered, so a department picked earlier is cleared when the side no longer fits it.
  *  A position belongs to one department, so changing the department clears the position. */
-function PlaceFields({ departments, side, onSide, departmentId, positionId, onDepartment, onPosition, errors }: {
-  departments: Department[]; side: UserSide; onSide: (s: UserSide) => void; departmentId: string; positionId: string;
+function PlaceFields({ departments, side, onSide, departmentId, positionId, isPositionRequired, onDepartment, onPosition, errors }: {
+  departments: Department[]; side: UserSide; onSide: (s: UserSide) => void; departmentId: string; positionId: string; isPositionRequired: boolean;
   onDepartment: (id: string) => void; onPosition: (id: string) => void;
   errors: { side?: string; departmentId?: string; positionId?: string };
 }) {
   const offered = departments.filter(d => !isFieldKind(d.kind) && sideFits(d, side));
   const dept = offered.find(d => d.id === departmentId);
+  const mustPickPosition = isPositionRequired && !!dept && needsPosition(dept.kind);
   const pickSide = (s: UserSide) => {
     onSide(s);
     const current = departments.find(d => d.id === departmentId);
@@ -821,13 +834,16 @@ function PlaceFields({ departments, side, onSide, departmentId, positionId, onDe
           {errors.departmentId && <span className={cx('text-meta', TONE.critical.text)}>{errors.departmentId}</span>}
         </div>
         <div className="flex flex-col gap-1">
-          <Select label="Position" showLabel size="md" value={positionId} onChange={onPosition} placeholder="No position" disabled={!dept || dept.positions.length === 0}
+          <Select label="Position" showLabel size="md" value={positionId} onChange={onPosition} placeholder={mustPickPosition ? 'Pick a position' : 'No position'} disabled={!dept || dept.positions.length === 0}
             options={(dept?.positions ?? []).map(p => ({ value: p.id, label: p.name }))} />
           {errors.positionId && <span className={cx('text-meta', TONE.critical.text)}>{errors.positionId}</span>}
         </div>
       </div>
       {dept && <span className="text-meta text-muted-ink">{departmentNote(dept)}</span>}
-      {offered.length === 0 && <span className="text-meta text-muted-ink">No department works on this side yet. Add one under the Permissions tab, under Departments and positions.</span>}
+      {mustPickPosition && dept.positions.length === 0 && (
+        <span className="text-meta text-muted-ink">{dept.name} has no positions yet. Add one under Permissions, Setup, before inviting anyone to it.</span>
+      )}
+      {offered.length === 0 && <span className="text-meta text-muted-ink">No department works on this side yet. Add one under Permissions, Setup.</span>}
     </div>
   );
 }

@@ -117,6 +117,7 @@ export const isKind = (v: unknown): v is DepartmentKind => v === 'management' ||
 /** Cleaning and Maintenance hold the cleaners' and technicians' logins, which are managed on HR > Employees only (owner,
  *  23 Oct 2026): no department screen or user form creates one, moves anyone into or out of one, or changes its kind. */
 export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance';
+export const needsPosition = (kind: DepartmentKind): boolean => kind !== 'management';
 /** Where a person's level in an area comes from. 'fixed': management, always Full. 'none': nothing sets it. */
 export type Origin = 'department' | 'position' | 'user' | 'fixed' | 'none';
 export type RuleMap = ReadonlyMap<string, Setting>;

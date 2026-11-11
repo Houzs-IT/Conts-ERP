@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useScrollMemory } from '../lib/useScrollMemory';
 import { useDevice } from '../lib/deviceClass';
 import Sidebar, { useDarkTheme } from './Sidebar';
@@ -14,6 +14,14 @@ import { workspaceOf } from '../lib/navigation';
 /** Persisted so the collapse choice survives a reload (BUTTONS §2, Writes = localStorage).
  *  Storage can throw (private mode, blocked cookies), so every access is guarded. */
 const NAV_COLLAPSED_KEY = 'conts.shell.navCollapsed';
+
+const DESK_BOTTOM_PADDING_PX = 40;
+const PHONE_GAP_ABOVE_TAB_BAR_PX = 24;
+
+function stickyBottomOffset(isFlush: boolean, isNarrow: boolean): string {
+  if (isFlush) return '0px';
+  return `-${isNarrow ? PHONE_GAP_ABOVE_TAB_BAR_PX : DESK_BOTTOM_PADDING_PX}px`;
+}
 
 /** Tablets start on the 68px rail so content gets the width; an explicit choice always wins. */
 function readNavOpen(defaultOpen: boolean): boolean {
@@ -86,9 +94,10 @@ export default function AppShell({
         {/* The phone's bottom padding clears the home indicator / browser bar (safe area). */}
         <main ref={mainRef} data-app-main tabIndex={-1} className="app-main" style={{
           flex: 1, minHeight: 0, overflowY: flush ? 'hidden' : 'auto', overflowX: 'hidden', scrollbarGutter: flush ? 'auto' : undefined,
-          padding: flush ? (isNarrow ? `0 0 calc(${TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom))` : 0) : isNarrow ? `16px 16px calc(${TAB_BAR_HEIGHT + 24}px + env(safe-area-inset-bottom))` : '24px 28px 40px',
+          padding: flush ? (isNarrow ? `0 0 calc(${TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom))` : 0) : isNarrow ? `16px 16px calc(${TAB_BAR_HEIGHT + PHONE_GAP_ABOVE_TAB_BAR_PX}px + env(safe-area-inset-bottom))` : `24px 28px ${DESK_BOTTOM_PADDING_PX}px`,
           display: 'flex', flexDirection: 'column', gap: flush ? 0 : isNarrow ? 16 : 20,
-        }}>
+          '--sticky-bottom-offset': stickyBottomOffset(flush ?? false, isNarrow),
+        } as CSSProperties}>
           <PagePrimaryScope path={path}>{children}</PagePrimaryScope>
         </main>
         {isNarrow && <MobileTabBar path={path} navigate={navigate} />}

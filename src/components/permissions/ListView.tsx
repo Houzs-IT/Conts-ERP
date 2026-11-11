@@ -88,10 +88,10 @@ function useReorderDrag(onDrop: (id: string, targetId: string, after: boolean) =
 type DragApi = ReturnType<typeof useReorderDrag>;
 
 /**
- * View 3 of the Permissions tab: the managed list that the invite and edit forms pick from. Departments are grouped by
+ * The Setup view of the Permissions tab: the managed list that the invite and edit forms pick from. Departments are grouped by
  * the side they work on; each one lists its positions. Only management can change it.
  */
-export default function ListView({ onGoToDepartments }: { onGoToDepartments: () => void }) {
+export default function ListView({ onGoToRoles }: { onGoToRoles: () => void }) {
   const { data, error, reload } = useDepartments();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -99,7 +99,6 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
   const [move, setMove] = useState<MovePrompt | null>(null);
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
-  const [newKind, setNewKind] = useState<DepartmentKind>('staff');
   const [newSide, setNewSide] = useState<UserSide>('conts');
   const [addError, setAddError] = useState<string | null>(null);
   // Both read `departments` and `reorderTo` below; they only run on a drop, after the list has rendered.
@@ -131,7 +130,7 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
     if (!name) { setAddError('Enter a name.'); return; }
     if (usedName(name)) { setAddError('A department with that name already exists.'); return; }
     setAddError(null);
-    if (await run(() => api.post('/departments', { name, kind: newKind, side: newSide }), 'The department was not added.')) {
+    if (await run(() => api.post('/departments', { name, side: newSide }), 'The department was not added.')) {
       setJustAdded(name); setNewName('');
     }
   }
@@ -211,7 +210,6 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
       {canEdit && (
         <form onSubmit={addDepartment} className="py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-start gap-3 flex-wrap">
           <div className="min-w-[200px]"><Field label="New department" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Procurement" error={addError ?? undefined} /></div>
-          <Select label="Kind" showLabel size="md" className="min-w-[190px]" value={newKind} onChange={v => setNewKind(v as DepartmentKind)} options={KIND_OPTIONS} />
           <Select label="Side" showLabel size="md" className="min-w-[150px]" value={newSide} onChange={v => setNewSide(v as UserSide)} options={SIDE_OPTIONS} />
           <div className="pt-[22px]"><Button type="submit" variant="primary" loading={busy}>Add department</Button></div>
         </form>
@@ -219,7 +217,7 @@ export default function ListView({ onGoToDepartments }: { onGoToDepartments: () 
       {justAdded && (
         <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex items-center gap-3 flex-wrap bg-page">
           <span className="text-meta text-ink">{justAdded} starts with No access everywhere until you set its rules.</span>
-          <Button size="sm" onClick={onGoToDepartments}>Set its access</Button>
+          <Button size="sm" onClick={onGoToRoles}>Set its access</Button>
           <Button size="sm" variant="tertiary" onClick={() => setJustAdded(null)}>Dismiss</Button>
         </div>
       )}
