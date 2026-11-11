@@ -50,7 +50,7 @@ export default function PermissionsChart() {
   const isDetailOpen = (view === 'roles' && selectedRole !== null) || (view === 'people' && selectedPersonId !== null);
 
   return (
-    <Card style={{ overflow: 'clip' }}>
+    <Card className="w-full max-w-[1120px]" style={{ overflow: 'clip' }}>
       <div className={cx('py-3 px-5 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-2.5', isDetailOpen && 'max-lg:hidden')}>
         <Segmented label="Permissions view" value={view} onChange={switchView} options={VIEWS} />
         <span className="text-meta text-muted-ink leading-[1.5]">{INTRO[view]}</span>
