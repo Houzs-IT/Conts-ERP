@@ -11,7 +11,7 @@ import { CreateRenovationPanel } from "../projects/renovation/CreateRenovationPa
 import { money } from "../projects/renovation/renovationModel";
 import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type ConditionWord, type HomeRow, type HomeTab } from "./renovationBetaBoard";
-import { HOME_SORTS, keepOrder, matchesSearch, orderOf, sortFromParam, sortHome, voCell, type HomeSort } from "./renovationBetaHomeModel";
+import { HOME_SORTS, keepOrder, onDreamCrafterList, matchesSearch, orderOf, sortFromParam, sortHome, voCell, type HomeSort } from "./renovationBetaHomeModel";
 import { boardApi, boardKey, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
 import { BetaSkin, useBetaPreload } from "./BetaWsUi";
@@ -169,7 +169,7 @@ function HomeScreen(): ReactElement {
     }, { replace: true });
   }
   const last = readLastProject();
-  const m = useMemo(() => (q.data ? buildModel(q.data) : null), [q.data]);
+  const m = useMemo(() => (q.data ? buildModel({ ...q.data, projects: q.data.projects.filter(onDreamCrafterList) }) : null), [q.data]);
 
   if (q.error && !m) return <ErrorBanner text={`The projects could not be loaded: ${q.error}`} onRetry={q.reload} />;
   if (!m) return <BetaLoading label="Loading projects" size="page" />;

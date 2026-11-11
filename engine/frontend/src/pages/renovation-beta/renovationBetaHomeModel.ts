@@ -31,6 +31,12 @@ export function sortHome(list: readonly DesignProject[], sort: HomeSort): Design
   return [...list];
 }
 
+/** The Projects list sits on the Dream Crafter side of the menu, so it lists Dream Crafter's projects (YH, 11 Nov 2026:
+    "dreamcrafter only"). A project with no brand yet stays listed. */
+export function onDreamCrafterList(p: { brand?: string | null }): boolean {
+  return !p.brand?.trim() || p.brand.trim().toLowerCase() === "dream crafter";
+}
+
 /** Everything a person may type to find a project: name, building, unit, client, project code, SO numbers, people. */
 export function searchText(p: DesignProject): string {
   const people = [p.lead, p.site, ...p.team["3"], ...p.team["2"]].map((x) => x?.name ?? "");

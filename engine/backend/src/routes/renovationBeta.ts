@@ -564,7 +564,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
         .bind(companyId).first<{ d3: number; d2: number }>(),
       boardPeople(c, companyId),
       db(c).prepare(
-        `SELECT p.id::int AS id, p.code, p.name, p.building, p.unit_no, p.customer_name, coalesce(sp.name, p.salesperson_name) AS sales_name, p.created_at,
+        `SELECT p.id::int AS id, p.code, p.name, p.building, p.unit_no, p.customer_name, coalesce(sp.name, p.salesperson_name) AS sales_name, p.created_at, p.brand,
                 p.planned_handover_date::text AS handover_on,
                 p.designer_person_id::int AS lead_id, dp.name AS lead_name, p.reno_pic_person_id::int AS pic_id, rp.name AS pic_name,
                 ${designPeopleSql("3d")} AS p3_people, ${designPeopleSql("2d")} AS p2_people,
