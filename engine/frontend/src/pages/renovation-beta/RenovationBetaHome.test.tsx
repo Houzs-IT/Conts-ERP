@@ -104,6 +104,18 @@ describe("Beta Home", () => {
     expect(where).toBe("/beta/projects?sort=due");
   });
 
+  it("sorts oldest first from the address and offers every sort", async () => {
+    renderAt("/beta/projects?sort=oldest");
+    await screen.findByRole("heading", { name: "All projects" });
+    const box = screen.getByRole("combobox", { name: "Sort projects" }) as HTMLSelectElement;
+    expect(Array.from(box.options).map((o) => o.textContent)).toEqual(["Newest first", "Oldest first", "Due soonest", "Handover soonest", "Building A-Z"]);
+    expect(within(screen.getByRole("table")).getAllByRole("link").map((a) => a.textContent)).toEqual(["Baron C-20-08", "Seri Riana C-12-03", "Bukit Jalil The Park 2"]);
+    expect(screen.getByText("3 shown · oldest first · tap a project to open it")).toBeTruthy();
+    // The creation date is a column of its own, next to the project, so it sorts from its header too.
+    const heads = within(screen.getByRole("table")).getAllByRole("columnheader").map((c) => c.textContent ?? "");
+    expect(heads.findIndex((t) => t.includes("Created"))).toBe(heads.findIndex((t) => t.includes("Project")) + 1);
+  });
+
   it("finds a project as you type, by unit, client, code, SO number or person, and keeps it in the address", async () => {
     renderAt("/beta/projects?q=c-12");
     await screen.findByRole("heading", { name: "All projects" });
