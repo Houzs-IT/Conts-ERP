@@ -367,8 +367,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
   }, [filterOf, filterKeys, setParams, PAGE]);
   const allFilterKeys = useMemo(() => columns.flatMap(c => filterKeys(c)), [columns, filterKeys]);
   const activeFilters = columns.filter(c => filterValue(c));
-  const clearColumnFilters = useCallback(() => setParams(prev => {
-    const next = new URLSearchParams(prev);
+  const clearColumnFilters = useCallback(() => setParams(() => {
+    const next = new URLSearchParams(window.location.search);
     for (const k of allFilterKeys) next.delete(k);
     next.delete(PAGE);
     return next;
@@ -554,7 +554,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const firstLoad = rows === null;
   const refreshing = !!loading && !firstLoad;
   const anyFilter = !!filtered || activeFilters.length > 0;
-  const clearEverything = () => { clearColumnFilters(); onClearFilters?.(); };
+  const clearEverything = () => { onClearFilters?.(); clearColumnFilters(); };
   const pickCol = !!selectable;
   const minWidth = visible.reduce((n, c) => n + (c.width ?? MIN_WIDTH[typeOf(c)]), 0) + (pickCol ? 44 : 0);
   const filterable = columns.filter(c => filterOf(c));
@@ -678,7 +678,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       {/* A wide box (the list's own width, not the window's): the table. Its own scroll box keeps the header in view and scrolls sideways when narrow. */}
       <div className={cx(cardsOnly ? 'hidden' : '@max-3xl/dt:hidden', 'relative')}>
         <BusyLine on={refreshing} />
-        <div ref={scrollBox} data-keep-scroll={id} className="overflow-auto" style={{ minHeight: firstLoad || shown.length > 6 ? 240 : undefined }} aria-busy={!!loading}>
+        <div ref={scrollBox} data-keep-scroll={id} className="overflow-auto [scrollbar-gutter:stable]" style={{ minHeight: firstLoad || shown.length > 6 ? 240 : undefined }} aria-busy={!!loading}>
           {firstLoad && !error ? <RowsSkeleton rows={8} cols={Math.min(7, visible.length || 5)} /> : errorView ?? (
             <table className="w-full border-collapse [table-layout:fixed]" style={{ minWidth }}>
               <colgroup>

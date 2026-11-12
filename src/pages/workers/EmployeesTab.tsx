@@ -126,7 +126,7 @@ export default function EmployeesTab() {
     // The row itself opens the form, so a click or Enter on a button here must not reach it. In the table the
     // buttons are icons with their name as a tooltip until the table is wide enough for the words, so the row stays
     // one line and the buttons stay in view.
-    const word = (w: string) => (align === 'end' ? <span className="@max-[1440px]/dt:sr-only">{w}</span> : w);
+    const word = (w: string) => (align === 'end' ? <span className="@max-[1500px]/dt:sr-only">{w}</span> : w);
     const access = e.employeeId ? 'Reset PIN' : 'Give app access';
     const onOff = e.isActive ? 'Switch off' : 'Switch on';
     const isOnFieldRoster = !e.renovatorId;
