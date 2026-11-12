@@ -452,8 +452,9 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
     <>
       <Card>
         <div className="pt-[14px] px-[14px] pb-0">
-          <CoverPhotoDrop photo={photo} onPick={takeFile} busy={uploading} className="h-[96px] sm:h-[128px]"
-            label="Add a photo of this unit" hint="Drop an image here, or click to browse" />
+          <CoverPhotoDrop photo={photo} onPick={takeFile} busy={uploading} className="h-[120px]"
+            standIn={{ place: buildingName(building?.name ?? u.propertyName), code: form?.unitCode || u.unitNumber }} canAdd={canEdit}
+            label="Add photos of this unit" hint="Drop an image here, or click to browse" />
         </div>
 
         <div className="pt-[18px] px-5 sm:px-6 pb-4 flex items-start justify-between gap-6 flex-wrap">
