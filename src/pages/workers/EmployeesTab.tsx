@@ -5,6 +5,9 @@ import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
+import { FilterBar } from '../../components/FilterBar';
+import type { SegmentOption } from '../../components/Metric';
+import { useUrlState } from '../finance/listKit';
 import { Modal } from '../../components/Modal';
 import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
@@ -38,10 +41,18 @@ const STATUTORY: { key: 'epfEnabled' | 'socsoEnabled' | 'eisEnabled' | 'pcbEnabl
 ];
 
 /** The departments they work in now; a person switched off everywhere still shows the ones they were on. */
-const departmentsOf = ({ cleanerId, technicianId, cleanerActive, technicianActive }: Pick<Employee, 'cleanerId' | 'technicianId' | 'cleanerActive' | 'technicianActive'>): string => {
-  const working = [cleanerActive && 'Cleaning', technicianActive && 'Maintenance'].filter(Boolean);
-  return (working.length ? working : [cleanerId && 'Cleaning', technicianId && 'Maintenance'].filter(Boolean)).join(', ');
+const departmentNamesOf = ({ cleanerId, technicianId, cleanerActive, technicianActive }: Pick<Employee, 'cleanerId' | 'technicianId' | 'cleanerActive' | 'technicianActive'>): string[] => {
+  const working = [cleanerActive && 'Cleaning', technicianActive && 'Maintenance'].filter(isDepartmentName);
+  return working.length ? working : [cleanerId && 'Cleaning', technicianId && 'Maintenance'].filter(isDepartmentName);
 };
+const isDepartmentName = (name: string | false | null | undefined): name is string => !!name;
+const departmentsOf = (e: Employee): string => departmentNamesOf(e).join(', ');
+
+type DepartmentFilter = 'all' | 'cleaning' | 'maintenance';
+const DEPARTMENT_FILTER_NAME: Record<Exclude<DepartmentFilter, 'all'>, string> = { cleaning: 'Cleaning', maintenance: 'Maintenance' };
+const isDepartmentFilter = (value: string): value is DepartmentFilter => value === 'all' || value in DEPARTMENT_FILTER_NAME;
+const isInDepartment = (e: Employee, department: DepartmentFilter): boolean =>
+  department === 'all' || departmentNamesOf(e).includes(DEPARTMENT_FILTER_NAME[department]);
 function statusOf(e: Employee): { label: string; tone: 'success' | 'neutral' | 'warning' } {
   if (e.status === 'resigned') return { label: 'Resigned', tone: 'neutral' };
   if (e.status === 'test') return { label: 'Test', tone: 'neutral' };
@@ -62,6 +73,13 @@ export default function EmployeesTab() {
   const [form, setForm] = useState<{ person: Employee | null } | null>(null);
   const [given, setGiven] = useState<{ name: string; employeeId: string; pin: string } | null>(null);
   const people = data?.data ?? [];
+  const url = useUrlState();
+  const requestedDepartment = url.get('dept', 'all');
+  const department: DepartmentFilter = isDepartmentFilter(requestedDepartment) ? requestedDepartment : 'all';
+  const visiblePeople = people.filter(e => isInDepartment(e, department));
+  const departmentViews: SegmentOption<DepartmentFilter>[] = (['all', 'cleaning', 'maintenance'] as const).map(key => ({
+    key, label: key === 'all' ? 'All' : DEPARTMENT_FILTER_NAME[key], count: data ? people.filter(e => isInDepartment(e, key)).length : undefined,
+  }));
 
   const columns = useMemo<Column<Employee>[]>(() => [
     { key: 'empNo', label: 'Emp No', value: e => e.employeeId, width: 100 },
@@ -121,7 +139,10 @@ export default function EmployeesTab() {
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <DataTable<Employee>
-        id="employees" columns={columns} rows={loading && people.length === 0 ? null : people}
+        id="employees" columns={columns} rows={loading && people.length === 0 ? null : visiblePeople}
+        viewParams={['dept']} filtered={department !== 'all'} onClearFilters={() => url.set({ dept: null, page: null })}
+        toolbar={<FilterBar<DepartmentFilter> label="Department" value={department} views={departmentViews}
+          onChange={key => url.set({ dept: key === 'all' ? null : key, page: null })} />}
         rowKey={e => e.cleanerId ?? e.technicianId ?? e.name} pageSize={0} noun={['employee', 'employees']} exportName="employee-master"
         rowTone={e => (e.status !== 'active' || !e.isActive ? 'muted' : null)}
         onRowClick={mayEdit ? e => setForm({ person: e }) : undefined}

@@ -4,8 +4,8 @@
    with not_ready.
 
    GET  /handover-templates                 the company's checklists with their items (?all=1 also lists switched-off ones)
-   POST /handover-templates                 { name, items: [{ area, item, criteria }] }            projects.manage
-   PUT  /handover-templates/:id             { name, active, items } replaces the items              projects.manage
+   POST /handover-templates                 { name, items: [{ area, item, criteria }] }            page projects.handover, full
+   PUT  /handover-templates/:id             { name, active, items } replaces the items              page projects.handover, full
    GET  /projects/:id/handover-checks       the project's checks, newest first, each with its items and their defect
    POST /projects/:id/handover-checks       { templateId } copies the template's items; one open check per project
    POST /handover-check-items/:itemId       { result: "pass" | "na" | null, note } (a Fail is a defect report:
@@ -17,7 +17,7 @@
 
 import { Hono, type Context } from "hono";
 import type { Env } from "../types";
-import { requirePageAccess, requirePermission } from "../middleware/auth";
+import { requireAnyAccess, requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
 import { isMissingRelation, type Db } from "../services/renovation/load";
 import {
@@ -89,7 +89,7 @@ function activity(c: Ctx, projectId: number, companyId: number, action: string, 
 
 // ── Templates ────────────────────────────────────────────────────────────
 
-app.get("/handover-templates", requirePageAccess("projects.list"), guarded(true, async (c) => {
+app.get("/handover-templates", requireAnyAccess(["projects.list", "projects.handover"]), guarded(true, async (c) => {
   const all = c.req.query("all") === "1";
   const rows = await db(c).prepare(
     `SELECT t.id::int AS id, t.name, t.active::int AS active, ${TS("t.updated_at")} AS updated_at,
@@ -116,7 +116,7 @@ const CHECK_OPEN = { error: "check_open", message: "This project already has an 
 const CHECK_OPEN_OTHER = { error: "check_open", message: "Another handover check of this project is open. Finish it first." } as const;
 const NAME_TAKEN = { error: "name_taken", message: "Another checklist already has that name." } as const;
 
-app.post("/handover-templates", requirePermission("projects.manage"), guarded(false, async (c) => {
+app.post("/handover-templates", requirePageAccess("projects.handover", "full"), guarded(false, async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const v = cleanTemplate(await body(c));
@@ -135,7 +135,7 @@ app.post("/handover-templates", requirePermission("projects.manage"), guarded(fa
   }
 }));
 
-app.put("/handover-templates/:id", requirePermission("projects.manage"), guarded(false, async (c) => {
+app.put("/handover-templates/:id", requirePageAccess("projects.handover", "full"), guarded(false, async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
   const v = cleanTemplate(await body(c));
@@ -325,7 +325,7 @@ app.post("/handover-checks/:id/remove", requirePermission("projects.write"), gua
 
 // ── The queue across projects ────────────────────────────────────────────
 
-app.get("/defect-queue", requirePageAccess("projects.list"), async (c) => {
+app.get("/defect-queue", requirePageAccess("projects.defects"), async (c) => {
   const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}`;
   try {
     const defects = await db(c).prepare(

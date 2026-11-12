@@ -37,7 +37,7 @@ import { PhoneText } from '../components/PhoneText';
 import { OwnerPayouts, StatementSteps } from './owners/OwnerMoney';
 import { useSession } from '../lib/session';
 import { areaOpen } from '../lib/navigation';
-import { mayInviteOwners, portalAction, portalBadge, portalOf } from './owners/portalAccess';
+import { mayInviteOwners, mayViewAsOwner, portalAction, portalBadge, portalOf } from './owners/portalAccess';
 import { go } from '../lib/go';
 
 /**
@@ -155,6 +155,8 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
     onDone: state => { patch({ portalInvited: true, portal: { ...portalOf(o), state, invitedAt: state === 'invited' ? new Date().toISOString() : portalOf(o).invitedAt } }); reload(); },
   }) : null;
   const badge = portalBadge(o);
+  // Management and Finance only, and only for an owner with a unit (their portal is empty otherwise).
+  const viewAs = mayViewAsOwner(user) && o.units.length > 0;
   function deleteOwner() {
     if (!o) return;
     setDialog({
@@ -189,6 +191,10 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
             {o.phone && <PhoneText value={o.phone} className="text-ink" />}
           </span>
         }
+        actions={viewAs ? (
+          // View as owner moved here from Owner B (owner, 12 Nov 2026): the owner's real portal, read-only, under a band.
+          <Button size="sm" variant="secondary" icon={<Icon name="Eye" size="sm" />} onClick={() => navigate(`/owners/${encodeURIComponent(o.id)}/portal`)}>View as owner</Button>
+        ) : undefined}
         primary={portal ? <Button size="sm" variant="secondary" icon={<Icon name={portal.icon} size="sm" />} onClick={portal.run}>{portal.label}</Button> : undefined}
       />
 
@@ -371,7 +377,7 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
   return (
     <section className="bg-card border border-solid border-line rounded-card p-4 flex flex-col gap-2 min-w-0">
       <div className="flex items-start justify-between gap-2">
-        <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} className="text-[16px] font-semibold tracking-[-0.01em] text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</Link>
+        <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} className="text-[15px] font-semibold tracking-[-0.01em] text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</Link>
         <span className="inline-flex flex-wrap items-center justify-end gap-1.5"><CodeBadge code={u.contractCode} types={types} /><ModelChip model={model} label={terms(u)} /></span>
       </div>
       {!f ? <div className="text-meta text-muted-ink">Figures are visible to finance and management.</div> : model === 'master_lease' ? <>

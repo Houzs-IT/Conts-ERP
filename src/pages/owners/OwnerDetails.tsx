@@ -31,7 +31,7 @@ export function OwnerDetails({ owner, ready, canEdit, onSaved }: { owner: Owner;
     <Card>
       <div className="p-5 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em]">Owner details</h2>
+          <h2 className="m-0 text-[15px] font-semibold tracking-[-0.01em]">Owner details</h2>
           {canEdit && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setEditing(true)}>Edit</Button>}
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-x-8">

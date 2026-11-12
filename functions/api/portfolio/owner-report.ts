@@ -13,8 +13,8 @@ const UTILITIES = new Set(['electricity', 'water', 'internet', 'sewerage']);
 
 /** A type is grouped by its income model; one whose owner is paid a fixed amount is in the MANAGE group. GRR is no
  *  longer a contract type (contractTypes.ts NO_GRR), so it has no group of its own. */
-const MODEL_GROUP: Record<RevenueModel, ReportGroup> = {
-  management: 'PS', management_guarantee: 'PS', management_yearly_guarantee: 'PS', long_term: 'LT', master_lease: 'RTR', grr: 'NONE',
+const MODEL_GROUP: Partial<Record<RevenueModel, ReportGroup>> = {
+  management: 'PS', management_guarantee: 'PS', management_yearly_guarantee: 'PS', long_term: 'LT', master_lease: 'RTR',
 };
 
 /** Reads a master lease as a GRR contract: the company trades the unit and pays the owner a fixed rent. */
@@ -27,7 +27,7 @@ const asFixedRent = (u: UnitRow): UnitRow => ({
 /** GET /api/portfolio/owner-report?month=2026-09 — the overall owner report (the owner workbook's overall report sheet): one row
  *  per unit with figures that month, worked out by the statement engine (ownerStatement.ts), so it agrees with the
  *  owner statements. Only the inputs are sent; every derived column comes from src/lib/ownerOverall.ts.
- *  Rows are grouped by the contract's income model (its staff code); a unit with no contract record is its own group.
+ *  Rows are grouped by the contract's income model (its staff code); a unit with no contract record is left out.
  *  A master lease (RTR) has no statement, so its row is the unit's trading worked out as a GRR unit's would be. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -60,7 +60,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // The stored code belongs to the current contract; a month under an earlier one reads its code from that model.
     const stored = unitForMonth(u, month).contract_id === u.contract_id ? u.contract_code : null;
     const code = m.terms.source === 'contract' ? codeOf(types, m.terms.model, stored) : null;
-    const group: ReportGroup = code === null ? 'NONE' : types.find(type => type.code === code)?.hasFixedOwnerAmount ? 'MANAGE' : MODEL_GROUP[m.terms.model];
+    const group = code === null ? undefined : types.find(type => type.code === code)?.hasFixedOwnerAmount ? 'MANAGE' : MODEL_GROUP[m.terms.model];
+    if (!group) return [];
     const sum = (pick: (category: string) => boolean) => f.deductionGroups.filter(g => pick(g.category)).reduce((n, g) => n + g.amount, 0);
     return [{
       unitId: m.unitId, // The workbook's code (SKYLINE-C2701): the unit's own code field holds only its number (C27-01).

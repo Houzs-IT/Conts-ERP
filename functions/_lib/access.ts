@@ -17,6 +17,8 @@ export interface Area {
   /** Kept for the Permissions chart's wording. Reads are refused at "No access" in every area now; the few
    *  reads other screens share across areas are listed in SHARED_READS instead. */
   strictRead?: boolean;
+  /** Off the Permissions chart: its pages are switched off for everyone (SWITCHED_OFF_AREAS in src/lib/navigation.ts). */
+  hidden?: boolean;
 }
 
 /** Which side of the business an account works on (migration 0143): The Conts is rental, Dream Crafter the supply
@@ -78,11 +80,23 @@ export const AREAS: Area[] = [
   { key: 'lockO2', label: 'Lock O2', group: 'Units', api: [], managed: true },
   { key: 'unlockStep', label: 'Unlock a step', group: 'Units', api: [], managed: true },
   { key: 'serviceCases', label: 'Service cases', group: 'Service cases', api: [] },
+  { key: 'serviceMetrics', label: 'Quality metrics', group: 'Service cases', api: [] },
+  // Picker lists and SLA lead times; changing them needs Full, as it did on Service cases.
+  { key: 'serviceSettings', label: 'Case settings', group: 'Service cases', api: [] },
+  { key: 'serviceMyCases', label: 'My cases', group: 'Service cases', api: [] },
   { key: 'projects', label: 'Projects', group: 'Projects', api: [] },
+  { key: 'projectDefects', label: 'Defects', group: 'Projects', api: [] },
+  { key: 'projectHandover', label: 'Handover checklists', group: 'Projects', api: [] },
+  // Cost and profit: the engine opens it at Full only, as the menu does.
+  { key: 'projectFinances', label: 'Finances', group: 'Projects', api: [] },
+  // Brands, event types, crews, venues and the other lists; Full only, as it was on Projects. Calendar stays with Projects:
+  // it reads the same board as the Projects list.
+  { key: 'projectSettings', label: 'Project settings', group: 'Projects', api: [] },
   { key: 'scSales', label: 'Sales order', group: 'Supply chain', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
   { key: 'scInvoices', label: 'Invoices and payments', group: 'Supply chain', api: ['payment-vouchers', 'purchase-invoices', 'sales-invoices', 'unbilled-deliveries', 'credit-notes', 'accounting'], managed: true, strictRead: true },
-  { key: 'scConsignment', label: 'Consignment', group: 'Supply chain', api: ['consignment-notes', 'purchase-consignment'] },
+  { key: 'scConsignment', label: 'Consignment', group: 'Supply chain', api: ['consignment-notes', 'purchase-consignment'], hidden: true },
   { key: 'scProcurement', label: 'Procurement', group: 'Supply chain', api: ['products', 'product-models', 'categories', 'fabrics', 'suppliers', 'mrp', 'purchase-orders', 'goods-receipts', 'purchase-returns'] },
+  { key: 'scProduction', label: 'Production', group: 'Supply chain', api: [] },
   { key: 'scTransportPlan', label: 'Transportation', group: 'Supply chain', api: ['delivery-schedule', 'delivery-zones', 'driver-leave', 'drivers', 'fleet-health', 'coverage-fleet', 'vehicles', 'threepl-companies', 'rate-cards'] },
   { key: 'scWarehouse', label: 'Warehouse', group: 'Supply chain', api: ['loading-list', 'warehouses', 'racks', 'stock', 'stock-takes', 'stock-transfers'] },
   { key: 'dcHr', label: 'Employees', group: 'Dream Crafter HR', api: [], strictRead: true },
