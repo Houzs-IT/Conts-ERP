@@ -24,15 +24,21 @@ const AREA_PAGE: Record<string, string> = {
 };
 export const CONTS_AREAS = Object.keys(AREA_PAGE);
 /** Areas split off one of the eight above after sign-ons carried them (split permission areas, part 2): each covers
- *  one page under its parent's. A sign-on without one (Property OS before the split) gives it the parent's level. */
-const SUB_AREAS: Record<string, { parent: string; page: string }> = {
+ *  one page under its parent's. A sign-on without one (Property OS before the split) gives it the parent's level.
+ *  `shell` is the page whose screen it opens inside (the route guard of /projects and /assr): it opens at view when
+ *  the sub-area is open, so the screen loads; the parent's other pages keep the parent's level. */
+const SUB_AREAS: Record<string, { parent: string; page: string; shell?: string }> = {
   scProduction: { parent: "scProcurement", page: "scm.procurement.production" },
+  serviceMetrics: { parent: "serviceCases", page: "service_cases.metrics", shell: "service_cases" },
+  projectDefects: { parent: "projects", page: "projects.defects", shell: "projects" },
+  projectHandover: { parent: "projects", page: "projects.handover", shell: "projects" },
+  projectFinances: { parent: "projects", page: "projects.finances", shell: "projects" },
 };
 const SPLIT_AREAS = [...CONTS_AREAS, ...Object.keys(SUB_AREAS)];
 /** Invoices sit inside Sales and Procurement here but are their own area in Property OS. */
 const INVOICE_PAGES = ["scm.sales.invoices", "scm.procurement.pi"];
 /** Profit and cost views inside an area: open only at Full. */
-const MONEY_PAGES: Record<string, string> = { "projects.finances": "projects", "service_cases.pnl": "serviceCases" };
+const MONEY_PAGES: Record<string, string> = { "projects.finances": "projectFinances", "service_cases.pnl": "serviceCases" };
 
 export type ContsAccess = Record<string, ContsLevel>;
 
@@ -80,8 +86,10 @@ export function contsPageAccess(a: ContsAccess): Record<string, AccessLevel> {
   for (const [area, page] of Object.entries(AREA_PAGE)) {
     for (const p of PAGES) if (p.key === page || p.key.startsWith(page + ".")) out[p.key] = a[area];
   }
-  for (const [area, { parent, page }] of Object.entries(SUB_AREAS)) {
-    for (const p of PAGES) if (p.key === page || p.key.startsWith(page + ".")) out[p.key] = a[area] ?? a[parent];
+  for (const [area, { parent, page, shell }] of Object.entries(SUB_AREAS)) {
+    const level = a[area] ?? a[parent];
+    for (const p of PAGES) if (p.key === page || p.key.startsWith(page + ".")) out[p.key] = level;
+    if (shell && shell in out && out[shell] === "none" && level !== "none") out[shell] = "view";
   }
   for (const key of INVOICE_PAGES) if (key in out) out[key] = a.scInvoices;
   // The ledger screens sit on the accounting page: it opens at the higher of Invoices and Ledger.
@@ -103,8 +111,9 @@ export function contsPermissions(a: ContsAccess): string[] {
   const ladder = (level: ContsLevel, view: string[], edit: string[], full: string[]) =>
     [...(rank(level) >= 1 ? view : []), ...(rank(level) >= 2 ? edit : []), ...(rank(level) >= 3 ? full : [])];
   keys.push(...ladder(a.serviceCases, ["service_cases.read"], ["service_cases.create", "service_cases.write"], ["service_cases.manage", "service_cases.approve"]));
-  // Full on Projects opens the Finances view, which Property OS's menu offers at Full (owner, 16 Oct 2026).
-  keys.push(...ladder(a.projects, ["projects.read"], ["projects.write", "projects.chat"], ["projects.manage", "projects.approve", "projects.finance.view"]));
+  // Full on Finances opens the Finances view, which Property OS's menu offers at Full (owner, 16 Oct 2026).
+  keys.push(...ladder(a.projects, ["projects.read"], ["projects.write", "projects.chat"], ["projects.manage", "projects.approve"]));
+  if ((a.projectFinances ?? a.projects) === "full") keys.push("projects.finance.view");
   // Renovation sales documents: quoting with Sales at edit, approving VOs and terms at full; POs with
   // Procurement at edit; billing with Invoices at edit.
   keys.push(...ladder(a.scSales, [], ["scm.renovation.quote"], ["scm.renovation.vo.apply", "scm.renovation.terms"]));

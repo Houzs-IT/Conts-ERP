@@ -59,3 +59,52 @@ describe("Conts Production area", () => {
     expect(isFullEverywhere(parseContsAccess(all("full", { scProduction: "edit" }))!)).toBe(false);
   });
 });
+
+// Split permission areas, part 2c: Quality metrics, Defects, Handover checklists and Finances are their own boxes.
+describe("Conts Projects and Service cases boxes", () => {
+  it("each takes its parent's level when a sign-on leaves it out", () => {
+    const access = parseContsAccess(all("none", { projects: "edit", serviceCases: "view" }))!;
+    expect([access.projectDefects, access.projectHandover, access.projectFinances]).toEqual(["edit", "edit", "edit"]);
+    expect(access.serviceMetrics).toBe("view");
+  });
+
+  it("sets its own page and leaves the parent's other pages alone", () => {
+    const pages = contsPageAccess(parseContsAccess(all("none", { projects: "edit", projectDefects: "none", projectHandover: "full", serviceCases: "edit", serviceMetrics: "none" }))!);
+    expect(pages["projects.defects"]).toBe("none");
+    expect(pages["projects.handover"]).toBe("full");
+    expect(pages["projects.list"]).toBe("edit");
+    expect(pages["service_cases.metrics"]).toBe("none");
+    expect(pages["service_cases.cases"]).toBe("edit");
+  });
+
+  it("alone opens the parent's screen at view, not the parent's other pages", () => {
+    const pages = contsPageAccess(parseContsAccess(all("none", { projectDefects: "view", serviceMetrics: "view" }))!);
+    expect(pages.projects).toBe("view");
+    expect(pages["projects.defects"]).toBe("view");
+    expect(pages["projects.list"]).toBe("none");
+    expect(pages.service_cases).toBe("view");
+    expect(pages["service_cases.cases"]).toBe("none");
+    expect(pages["projects.finances"]).toBe("none");
+  });
+
+  it("Finances opens at Full only, on its own box", () => {
+    const at = (projects: string, projectFinances: string) => {
+      const access = parseContsAccess(all("none", { projects, projectFinances }))!;
+      return { page: contsPageAccess(access)["projects.finances"], key: contsPermissions(access).includes("projects.finance.view") };
+    };
+    expect(at("full", "full")).toEqual({ page: "full", key: true });
+    expect(at("full", "edit")).toEqual({ page: "none", key: false });
+    expect(at("none", "full")).toEqual({ page: "full", key: true });
+    expect(contsPermissions(parseContsAccess(all("none", { projects: "full", projectFinances: "none" }))!)).toContain("projects.manage");
+  });
+
+  it("day one: the same pages and keys as before for every parent level", () => {
+    for (const level of ["none", "view", "edit", "full"]) {
+      const pages = contsPageAccess(parseContsAccess(all(level))!);
+      expect(pages["projects.defects"]).toBe(pages["projects.list"]);
+      expect(pages["projects.handover"]).toBe(pages["projects.list"]);
+      expect(pages["service_cases.metrics"]).toBe(pages["service_cases.cases"]);
+      expect(pages["projects.finances"]).toBe(level === "full" ? "full" : "none");
+    }
+  });
+});

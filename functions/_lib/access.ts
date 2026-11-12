@@ -80,7 +80,12 @@ export const AREAS: Area[] = [
   { key: 'lockO2', label: 'Lock O2', group: 'Units', api: [], managed: true },
   { key: 'unlockStep', label: 'Unlock a step', group: 'Units', api: [], managed: true },
   { key: 'serviceCases', label: 'Service cases', group: 'Service cases', api: [] },
+  { key: 'serviceMetrics', label: 'Quality metrics', group: 'Service cases', api: [] },
   { key: 'projects', label: 'Projects', group: 'Projects', api: [] },
+  { key: 'projectDefects', label: 'Defects', group: 'Projects', api: [] },
+  { key: 'projectHandover', label: 'Handover checklists', group: 'Projects', api: [] },
+  // Cost and profit: the engine opens it at Full only, as the menu does.
+  { key: 'projectFinances', label: 'Finances', group: 'Projects', api: [] },
   { key: 'scSales', label: 'Sales order', group: 'Supply chain', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
   { key: 'scInvoices', label: 'Invoices and payments', group: 'Supply chain', api: ['payment-vouchers', 'purchase-invoices', 'sales-invoices', 'unbilled-deliveries', 'credit-notes', 'accounting'], managed: true, strictRead: true },
   { key: 'scConsignment', label: 'Consignment', group: 'Supply chain', api: ['consignment-notes', 'purchase-consignment'], hidden: true },

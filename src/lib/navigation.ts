@@ -205,7 +205,7 @@ export const NAV: NavGroup[] = [
   ] },
   { label: 'SERVICE CASES', workspace: 'supply', items: [
     { key: 'serviceCaseList', label: 'Service cases', icon: 'zap', path: '/service/cases', area: 'serviceCases' },
-    { key: 'serviceMetrics', label: 'Quality metrics', icon: 'trending-up', path: '/service/metrics', area: 'serviceCases' },
+    { key: 'serviceMetrics', label: 'Quality metrics', icon: 'trending-up', path: '/service/metrics', area: 'serviceMetrics' },
     { key: 'serviceMaintenance', label: 'Case settings', icon: 'settings', path: '/service/maintenance', area: 'serviceCases', full: true },
     { key: 'myCases', label: 'My cases', icon: 'inbox', path: '/service/my-cases', area: 'serviceCases' },
   ] },
@@ -215,9 +215,9 @@ export const NAV: NavGroup[] = [
     { key: 'projectList', label: 'Projects', icon: 'folder-kanban', path: '/projects/list', area: 'projects' },
     { key: 'projectCalendar', label: 'Calendar', icon: 'calendar-days', path: '/projects/calendar', area: 'projects' },
     // Handover snag list (TODO item 17): every project's open defects, and the checklists a handover check starts from.
-    { key: 'projectDefects', label: 'Defects', icon: 'clipboard-check', path: '/projects/defects', area: 'projects' },
-    { key: 'projectHandoverChecklists', label: 'Handover checklists', icon: 'list-checks', path: '/projects/handover-checklists', area: 'projects' },
-    { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projects', full: true },
+    { key: 'projectDefects', label: 'Defects', icon: 'clipboard-check', path: '/projects/defects', area: 'projectDefects' },
+    { key: 'projectHandoverChecklists', label: 'Handover checklists', icon: 'list-checks', path: '/projects/handover-checklists', area: 'projectHandover' },
+    { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projectFinances', full: true },
     { key: 'projectMaintenance', label: 'Project settings', icon: 'settings', path: '/projects/maintenance', area: 'projects', full: true },
   ] },
   { label: 'SUPPLY CHAIN', workspace: 'supply', items: [

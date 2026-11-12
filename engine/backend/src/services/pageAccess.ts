@@ -186,6 +186,22 @@ export const PAGES: PageDef[] = [
     backfill: projectsBackfill,
   },
   {
+    key: "projects.defects",
+    parent: "projects",
+    label: "Defects",
+    partialMeaning: "Open defects of every project.",
+    supportsPartial: true,
+    backfill: projectsBackfill,
+  },
+  {
+    key: "projects.handover",
+    parent: "projects",
+    label: "Handover checklists",
+    partialMeaning: "Read the checklists; changing them needs full.",
+    supportsPartial: true,
+    backfill: projectsBackfill,
+  },
+  {
     key: "projects.finances",
     parent: "projects",
     label: "Finances (list / analytics / P&L)",

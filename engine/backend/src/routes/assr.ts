@@ -34,7 +34,7 @@ import { sendEmail, publicUrl } from "../services/email";
 import { resolveCompanyCode, getBrandingForCompany } from "../services/branding";
 import { AutoCountClient, routeRegion, isAutoCountSyncDisabled } from "../services/autocount";
 import { upsertSalesOrder } from "../services/pull";
-import { requirePermission, requireAnyPermission } from "../middleware/auth";
+import { requirePermission, requireAnyPermission, requireAnyAccess, requirePageAccessOrSalesView } from "../middleware/auth";
 import { baseKeyOf, isThumbKey, THUMB_MAX_BYTES, thumbKeyFor } from "../services/photoThumbs";
 import {
   houzsCompanyId,
@@ -639,7 +639,7 @@ app.get("/:id/cost-suggestion", requireServiceCaseAccess(), assrCostSuggestionHa
 
 // ── Summary ───────────────────────────────────────────────────
 
-app.get("/summary", requirePermission("service_cases.read"), async (c) => {
+app.get("/summary", requireAnyAccess(["service_cases.metrics"], ["service_cases.read"]), async (c) => {
   // Accept the same period filter the /metrics endpoint takes so the
   // ServiceMetrics dashboard can share one dropdown. The pulse row
   // (Pending Review / Aging / Breach) and Stage Funnel below now narrow
@@ -2307,7 +2307,7 @@ app.post("/run-escalation", requirePermission("service_cases.manage"), async (c)
 
 // ── Quality metrics (for manager dashboard) ───────────────────
 
-app.get("/metrics", requirePermission("service_cases.read"), async (c) => {
+app.get("/metrics", requirePageAccessOrSalesView("service_cases.metrics"), async (c) => {
   const sinceDays = Math.min(730, Math.max(1, parseInt(c.req.query("since_days") || "90", 10) || 90));
   // Period filter falls back to created_at when complained_date is
   // NULL — legacy rows + manual SQL inserts often skipped the intake
@@ -2563,7 +2563,7 @@ const DRILL_METRICS = new Set([
   "item_cases",
 ] as const);
 
-app.get("/metrics/drill", requirePermission("service_cases.read"), async (c) => {
+app.get("/metrics/drill", requirePageAccessOrSalesView("service_cases.metrics"), async (c) => {
   const metric = (c.req.query("metric") || "").trim();
   if (!DRILL_METRICS.has(metric as any)) {
     return c.json({ error: `Unknown metric: ${metric}` }, 400);
